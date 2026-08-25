@@ -1,0 +1,406 @@
+#!/usr/bin/env bash
+# harness-shim contract=1 mechanism=harness-plugin
+#
+# GERADO por `harness install`. Nao edite: contem zero regra, zero veredito e zero estado —
+# ele so ACHA o mecanismo e o executa. Um hook de git roda num shell comum, onde o comando
+# `harness` nao existe (ele entra no PATH apenas de uma sessao de agente), e por isso as
+# superficies fora da sessao passam por aqui.
+#
+# Ordem de resolucao, e cada passo existe por um motivo:
+#   1. $HARNESS_MECHANISM  — precedencia maxima; e como integracao e desenvolvimento
+#      apontam para um clone especifico sem tocar em nada versionado;
+#   2. [plugin] local_path da politica — desenvolvimento do proprio mecanismo;
+#   3. o registro de instalacao do Claude Code, casando ESTE repositorio (escopo de
+#      usuario, ou projectPath igual a raiz) — declaracao, nao layout de disco.
+# E, antes das tres em ordem de execucao, a QUARTA causa de nao-resolucao:
+#   4. o INTERPRETADOR. As vias 2 e 3 leem TOML e JSON com Python, e sem um interpretador
+#      que importe o parser de TOML nenhuma delas chega a ser consultada. Atribuir a falha
+#      ao registro nesse caso e apontar para o lugar errado — era o que este resolvedor
+#      fazia, e foi medido.
+# Nada casou => saida 3 e mensagem. NUNCA fail-open: um resolvedor que segue calado
+# quando nao acha o mecanismo transforma "sem enforcement" em "tudo verde".
+set -euo pipefail
+
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ── Razao 4: o interpretador, resolvido ANTES de qualquer leitura de declaracao ──────
+#
+# Ordem FECHADA, identica a do mecanismo (SPEC-001 C2.2). Esta e a UNICA duplicacao
+# autorizada dela, e a razao e estrutural: este arquivo e, por construcao, o unico que
+# ainda NAO alcancou o mecanismo — nao existe de onde importar a resolucao.
+#
+# Adequacao por CAPACIDADE EXECUTADA, nunca por texto de versao: o que quebra tudo e o
+# modulo faltar, e ha atalho de gerenciador de versao que existe no PATH e nao roda.
+CANDIDATOS_PY=(python3 python3.13 python3.12 python3.11 /usr/bin/python3)
+
+py_adequado() {
+    command -v -- "$1" >/dev/null 2>&1 && "$1" -c 'import tomllib' >/dev/null 2>&1
+}
+
+# `[plugin] python` da politica, lido em BASH. A circularidade e a mesma do mecanismo: ler
+# TOML e justamente o que exige o modulo que ainda nao se sabe existir.
+#
+# Este e o gemeo de `harness_plugin_python()` em `lib/common.sh`, forma por forma. C2.6
+# exige "a MESMA ordem de C2.2", e a ordem so e a mesma se os dois concordarem sobre o
+# VALOR do candidato 2 — foi medido que nao concordavam em 6 de 12 formas, e o resolvedor
+# era o mais permissivo dos dois: aceitava TOML invalido, devolvia aspas mistas cruas e
+# nao via escape.
+#
+# O QUE GARANTE A CONCORDANCIA, dito sem exagero: este texto e TRANSCRITO, nao derivado.
+# `render()` apenas formata o template com o marcador e o numero de contrato — nada aqui
+# le `lib/common.sh` em tempo de renderizacao, e os dois lados ainda carregam renomes
+# (`$arq`/`$politica`, `toml_nome`/`harness_toml_nome`). O risco de transcricao CONTINUA
+# existindo; o que o contem e o corpus diferencial de `tests/test_harness.py`, que roda os
+# DOIS leitores sobre os MESMOS arquivos com o `tomllib` como oraculo e reprova na
+# divergencia — inclusive sobre a LISTA DE CANDIDATOS, que tambem e gemea. Editar um lado
+# sem o outro nao e impossivel: e detectavel, que e coisa diferente e mais modesta.
+#
+# (Uma revisao anterior afirmou que este gemeo era GERADO a partir do outro arquivo. Era
+# falso — a geracao aconteceu uma vez, numa ferramenta de edicao descartavel, e nunca no
+# produto. A afirmacao viajou tres mensagens antes de alguem abrir o `render()`.)
+#
+# A lei e a mesma: duvida e RECUSA (2). Nunca um palpite, nunca "nao declarado" sem
+# certeza. Saidas: 0 = lida (valor no stdout) · 1 = comprovadamente nao declarada ·
+# 2 = nao da para responder com seguranca (motivo no stdout).
+# Nome de tabela / segmento de chave, como o parser o ve: sem espaco em volta e sem as
+# aspas que o formato permite. `[ plugin ]`, `["plugin"]` e `[plugin]` sao a MESMA tabela,
+# e `"python" = ...` e a MESMA chave que `python = ...`. Tratar o texto cru como se fosse
+# o nome fazia tres formas de TOML valido virarem "nao declarado" — declaracao real
+# perdida em silencio, que e a metade do defeito que este leitor existe para nao cometer.
+toml_nome() {
+    local n="$1"
+    n="${n#"${n%%[![:space:]]*}"}"
+    n="${n%"${n##*[![:space:]]}"}"
+    case "$n" in
+        '"'?*'"') n="${n#\"}"; n="${n%\"}" ;;
+        "'"?*"'") n="${n#\'}"; n="${n%\'}" ;;
+    esac
+    printf '%s' "$n"
+}
+
+py_da_politica() {
+    local arq="$ROOT/harness.toml"
+    [ -f "$arq" ] || return 1
+    local linha l secao="" nome chave chave_prim chave_ponto rhs sufixo corpo resto q s2 r2
+    local valor="" achou=0 plugin_visto=0
+    local tres_d tres_s
+    tres_d='"""'
+    tres_s="'"
+    tres_s="$tres_s$tres_s$tres_s"
+    while IFS= read -r linha || [ -n "$linha" ]; do
+        # Fim de linha do Windows. Sem isto, o `\r` vira "lixo depois do valor" e um
+        # arquivo CRLF inteiro — perfeitamente valido para o parser — era RECUSADO.
+        linha="${linha%$'\r'}"
+        # Cadeia multilinha em QUALQUER lugar do arquivo. Um leitor por linha nao tem como
+        # saber se a linha seguinte e conteudo de texto ou declaracao — e uma cadeia
+        # multilinha contendo `python = "..."` fazia este leitor devolver o conteudo de um
+        # comentario como se fosse a politica. Recusa o arquivo inteiro, com escapatoria
+        # nomeada ($HARNESS_PYTHON), em vez de manter um estado que erra em silencio.
+        case "$linha" in
+            *"$tres_d"*|*"$tres_s"*)
+                printf 'cadeia multilinha em %s: este leitor le uma linha por vez e nao pode garantir o que e texto e o que e declaracao' "$arq"
+                return 2 ;;
+        esac
+        l="${linha#"${linha%%[![:space:]]*}"}"          # tira o espaco a esquerda
+        case "$l" in ''|'#'*) continue ;; esac
+
+        # ── Cabecalho de tabela ──────────────────────────────────────────────────
+        case "$l" in
+            '[['*)
+                resto="${l#'[['}"
+                case "$resto" in
+                    *']]'*) : ;;
+                    *) printf 'cabecalho de array de tabelas malformado em %s: %s' "$arq" "$l"; return 2 ;;
+                esac
+                nome="${resto%%']]'*}"
+                resto="${resto#*']]'}"
+                nome="$(toml_nome "$nome")"
+                # `[[plugin]]` faz de `plugin` uma LISTA, e nao a tabela de onde esta
+                # chave sai. Devolver um valor daqui seria afirmar uma forma que o parser
+                # de verdade nao ve.
+                if [ "$nome" = "plugin" ]; then
+                    printf '[[plugin]] em %s e array de tabelas, nao a tabela [plugin]' "$arq"
+                    return 2
+                fi
+                # Sentinela: fecha a tabela anterior sem nunca se confundir com `plugin`
+                # nem com a raiz. Era exatamente este fechamento que faltava.
+                secao=$'\001'
+                ;;
+            '['*)
+                resto="${l#'['}"
+                case "$resto" in
+                    *']'*) : ;;
+                    *) printf 'cabecalho de tabela malformado em %s: %s' "$arq" "$l"; return 2 ;;
+                esac
+                nome="${resto%%']'*}"
+                resto="${resto#*']'}"
+                # `[ plugin ]` e `["plugin"]` sao a MESMA tabela que `[plugin]` para o
+                # parser. Sem normalizar, a secao ficava com o texto cru, nunca casava
+                # `plugin`, e uma declaracao real virava "nao declarado" — medido.
+                nome="$(toml_nome "$nome")"
+                if [ "$nome" = "plugin" ]; then
+                    # Tabela declarada duas vezes: o parser RECUSA o arquivo inteiro.
+                    # Devolver o valor da segunda seria opinar sobre um arquivo invalido.
+                    if [ "$plugin_visto" = 1 ]; then
+                        printf 'a tabela [plugin] e declarada duas vezes em %s: o parser recusa o arquivo inteiro' "$arq"
+                        return 2
+                    fi
+                    plugin_visto=1
+                fi
+                secao="$nome"
+                ;;
+            *) resto="__nao_e_cabecalho__" ;;
+        esac
+        if [ "$resto" != "__nao_e_cabecalho__" ]; then
+            resto="${resto#"${resto%%[![:space:]]*}"}"
+            case "$resto" in
+                ''|'#'*) continue ;;
+                *) printf 'lixo depois do cabecalho de tabela em %s: %s' "$arq" "$l"; return 2 ;;
+            esac
+        fi
+
+        # ── Linha de chave = valor ───────────────────────────────────────────────
+        # Sem `=` nao ha atribuicao: e continuacao de array multilinha, fechamento de
+        # colchete, e afins. Seguir e correto — o que NAO pode e seguir dentro de
+        # `[plugin]`, e a guarda de array multilinha logo abaixo cobre esse caso.
+        case "$l" in *=*) : ;; *) continue ;; esac
+        chave="${l%%=*}"
+        chave="${chave#"${chave%%[![:space:]]*}"}"
+        chave="${chave%"${chave##*[![:space:]]}"}"
+
+        # PRIMEIRO SEGMENTO da chave, normalizado, e se ela e pontilhada. Chave entre
+        # aspas e TOML valido (`"python" = "..."`), e trata-la como texto cru fazia a
+        # declaracao sumir. A parte entre aspas e lida como esta — sem tirar espaco de
+        # dentro dela — para que `"pyt hon"` continue sendo outra chave.
+        chave_ponto=0
+        case "$chave" in
+            '"'*|"'"*)
+                q="${chave:0:1}"
+                s2="${chave#?}"
+                chave_prim="${s2%%"$q"*}"
+                if [ "$chave_prim" = "$s2" ]; then
+                    printf 'chave entre aspas sem fechamento em %s: %s' "$arq" "$l"
+                    return 2
+                fi
+                r2="${s2#"$chave_prim""$q"}"
+                r2="${r2//[[:space:]]/}"
+                case "$r2" in
+                    '') : ;;
+                    .*) chave_ponto=1 ;;
+                    *) printf 'chave malformada em %s: %s' "$arq" "$l"; return 2 ;;
+                esac
+                ;;
+            *)
+                # Chave nua: o formato nao admite espaco dentro dela, entao tirar todo o
+                # espaco em branco aqui nao pode juntar dois segmentos que o parser ve
+                # separados.
+                chave_prim="${chave//[[:space:]]/}"
+                case "$chave_prim" in
+                    *.*) chave_ponto=1; chave_prim="${chave_prim%%.*}" ;;
+                esac
+                # Um segmento nua entre aspas so aparece em chave pontilhada
+                # (`"plugin".python`), e ai o primeiro segmento ainda precisa perder as
+                # aspas para ser comparavel.
+                chave_prim="$(toml_nome "$chave_prim")"
+                ;;
+        esac
+
+        # `plugin` declarado na RAIZ — tabela inline (`plugin = { ... }`) ou chave
+        # pontilhada (`plugin.python = ...`). Sao declaracoes REAIS que este leitor nao
+        # le; ignora-las era perder o apontamento do repositorio em silencio.
+        if [ "$secao" = "" ] && [ "$chave_prim" = "plugin" ]; then
+            printf 'em %s, `plugin` e declarado na raiz (chave pontilhada ou tabela inline); declare a tabela [plugin] com `python = "<caminho>"` numa linha' "$arq"
+            return 2
+        fi
+        [ "$secao" = "plugin" ] || continue
+
+        rhs="${l#*=}"
+        rhs="${rhs#"${rhs%%[![:space:]]*}"}"
+
+        # A chave e decidida ANTES da forma do valor. Invertido, `python = ["/x"]` caia na
+        # guarda de array e era PULADO — uma declaracao real virando "nao declarado", que e
+        # a metade silenciosa do defeito.
+        if [ "$chave_prim" != "python" ]; then
+            # Array multilinha em OUTRA chave de `[plugin]`: as linhas seguintes deixam de
+            # ser confiaveis para um leitor por linha, e sao justamente as que ele olha.
+            case "$rhs" in
+                '['*)
+                    case "$rhs" in
+                        *']'*) : ;;
+                        *) printf 'array multilinha na tabela [plugin] de %s: %s' "$arq" "$l"; return 2 ;;
+                    esac ;;
+            esac
+            continue
+        fi
+        # `python.<algo>` faz de `plugin.python` uma TABELA, e nao o apontamento.
+        if [ "$chave_ponto" = 1 ]; then
+            printf '`python` e chave pontilhada na tabela [plugin] de %s: o apontamento tem de ser uma cadeia, nao uma sub-tabela' "$arq"
+            return 2
+        fi
+        if [ "$achou" = 1 ]; then
+            printf '`python` declarado duas vezes na tabela [plugin] de %s' "$arq"
+            return 2
+        fi
+
+        case "$rhs" in
+            '"'*) q='"' ;;
+            "'"*) q="'" ;;
+            *)    printf 'o valor de [plugin] python em %s nao e cadeia basica de uma linha: %s' "$arq" "$rhs"; return 2 ;;
+        esac
+        sufixo="${rhs#"$q"}"
+        corpo="${sufixo%%"$q"*}"
+        if [ "$corpo" = "$sufixo" ]; then
+            printf 'cadeia sem aspa de fechamento em [plugin] python de %s: %s' "$arq" "$rhs"
+            return 2
+        fi
+        # Escape so existe na cadeia BASICA (aspas duplas); na literal (aspas simples) a
+        # barra invertida e caractere comum, e devolve-la crua concorda com o parser.
+        if [ "$q" = '"' ]; then
+            case "$corpo" in
+                *\\*) printf 'escape em [plugin] python de %s: este leitor nao interpreta sequencia de escape' "$arq"; return 2 ;;
+            esac
+        fi
+        resto="${sufixo#"$corpo""$q"}"
+        resto="${resto#"${resto%%[![:space:]]*}"}"
+        case "$resto" in
+            ''|'#'*) : ;;
+            *) printf 'lixo depois do valor de [plugin] python em %s: %s' "$arq" "$rhs"; return 2 ;;
+        esac
+        if [ -z "$corpo" ]; then
+            printf '[plugin] python declarado VAZIO em %s: apontamento vazio nao e apontamento' "$arq"
+            return 2
+        fi
+        valor="$corpo"
+        achou=1
+    done < "$arq"
+    if [ "$achou" = 1 ]; then
+        printf '%s' "$valor"
+        return 0
+    fi
+    return 1
+}
+
+# Imprime `ok <caminho>` ou `erro <motivo>` no stdout. O motivo viaja pelo STDOUT, e nao
+# por variavel: a chamada e uma substituicao de comando, que roda em subshell — variavel
+# atribuida la dentro morre com ela, e a recusa sairia com o motivo em branco. Medido.
+#
+# Os dois candidatos EXPLICITOS falham ALTO: apontamento inadequado e RECUSA, nunca
+# rebaixamento para o candidato seguinte. Rebaixar aqui LAVARIA a recusa — o mecanismo
+# receberia, herdado e ja aprovado, um interpretador que o repositorio nao escolheu.
+resolver_python() {
+    local alvo valor rc
+    if [ -n "${HARNESS_PYTHON:-}" ]; then
+        if ! py_adequado "$HARNESS_PYTHON"; then
+            printf 'erro a variavel de ambiente aponta para %s, que nao importa tomllib (apontamento explicito nao e rebaixado)\n' "$HARNESS_PYTHON"
+            return 0
+        fi
+        printf 'ok %s\n' "$(command -v -- "$HARNESS_PYTHON")"
+        return 0
+    fi
+    rc=0
+    valor="$(py_da_politica)" || rc=$?
+    if [ "$rc" = 2 ]; then
+        printf 'erro a resolucao nao consegue ler [plugin] python com seguranca: %s\n' "$valor"
+        return 0
+    fi
+    if [ "$rc" = 0 ] && [ -n "$valor" ]; then
+        case "$valor" in
+            /*)  alvo="$valor" ;;
+            */*) alvo="$ROOT/$valor" ;;
+            *)   alvo="$valor" ;;
+        esac
+        if ! py_adequado "$alvo"; then
+            printf 'erro [plugin] python de %s/harness.toml aponta para %s, que nao importa tomllib (apontamento explicito nao e rebaixado)\n' "$ROOT" "$valor"
+            return 0
+        fi
+        printf 'ok %s\n' "$(command -v -- "$alvo")"
+        return 0
+    fi
+    for alvo in "${CANDIDATOS_PY[@]}"; do
+        if py_adequado "$alvo"; then
+            printf 'ok %s\n' "$(command -v -- "$alvo")"
+            return 0
+        fi
+    done
+    printf 'erro nenhum dos candidatos declarados importa tomllib: %s\n' "${CANDIDATOS_PY[*]}"
+}
+
+PY_RESULTADO="$(resolver_python)"
+if [ "${PY_RESULTADO%% *}" = "ok" ]; then
+    HARNESS_PYTHON="${PY_RESULTADO#ok }"
+else
+    echo "harness: mecanismo NAO RESOLVIVEL para $ROOT." >&2
+    echo "  Razao 4 de 4: nenhum interpretador adequado (sem 'tomllib')." >&2
+    echo "    ${PY_RESULTADO#erro }" >&2
+    echo "  As vias 1 a 3 (\$HARNESS_MECHANISM, [plugin] local_path, registro do Claude" >&2
+    echo "  Code) NAO chegaram a ser consultadas: ler a politica e o registro exige o" >&2
+    echo "  parser de TOML que falta. Culpar o registro aqui e apontar para o lugar errado." >&2
+    echo "  Conserte com um python3 >= 3.11 alcancavel, com \$HARNESS_PYTHON, ou" >&2
+    echo "  declarando [plugin] python na politica deste repositorio." >&2
+    echo "  Isto e uma RECUSA (3), nao um 'tudo certo': nada foi verificado." >&2
+    exit 3
+fi
+export HARNESS_PYTHON
+
+resolver() {
+    if [ -n "${HARNESS_MECHANISM:-}" ]; then
+        printf '%s\n' "$HARNESS_MECHANISM"
+        return 0
+    fi
+    "$HARNESS_PYTHON" - "$ROOT" <<'PY'
+import json, os, sys, tomllib
+
+root = sys.argv[1]
+
+politica = os.path.join(root, "harness.toml")
+if os.path.isfile(politica):
+    with open(politica, "rb") as h:
+        local = (tomllib.load(h).get("plugin") or {}).get("local_path") or ""
+    if local:
+        alvo = local if os.path.isabs(local) else os.path.join(root, local)
+        alvo = os.path.join(alvo, "bin", "harness")
+        if os.path.isfile(alvo):
+            print(alvo)
+            raise SystemExit(0)
+
+registro = os.path.expanduser("~/.claude/plugins/installed_plugins.json")
+try:
+    with open(registro, encoding="utf-8") as h:
+        dados = json.load(h)
+except (OSError, json.JSONDecodeError):
+    raise SystemExit(3)
+
+alvo_real = os.path.realpath(root)
+for chave, entradas in (dados.get("plugins") or {}).items():
+    if chave.split("@", 1)[0] != "harness-plugin":
+        continue
+    for e in entradas or []:
+        projeto = e.get("projectPath")
+        reivindica = e.get("scope") == "user" or (
+            projeto and os.path.realpath(projeto) == alvo_real)
+        if not reivindica:
+            continue
+        binario = os.path.join(e.get("installPath") or "", "bin", "harness")
+        if os.path.isfile(binario):
+            print(binario)
+            raise SystemExit(0)
+raise SystemExit(3)
+PY
+}
+
+if ! MECANISMO="$(resolver)" || [ -z "$MECANISMO" ]; then
+    echo "harness: mecanismo NAO RESOLVIVEL para $ROOT." >&2
+    echo "  Nenhuma das tres vias de registro casou:" >&2
+    echo "    1. \$HARNESS_MECHANISM nao esta definido" >&2
+    echo "    2. harness.toml nao declara [plugin] local_path (ou o caminho nao existe)" >&2
+    echo "    3. nenhuma entrada de 'harness-plugin' no registro do Claude Code" >&2
+    echo "       reivindica este repositorio (escopo de usuario ou projectPath)" >&2
+    echo "    4. o interpretador NAO e a causa aqui: $HARNESS_PYTHON foi resolvido e" >&2
+    echo "       importa 'tomllib' — as tres vias acima foram de fato consultadas." >&2
+    echo "  Conserte instalando o plugin para este repo, ou aponte \$HARNESS_MECHANISM." >&2
+    echo "  Isto e uma RECUSA (3), nao um 'tudo certo': nada foi verificado." >&2
+    exit 3
+fi
+
+export HARNESS_SHIM_CONTRACT=1
+exec bash "$MECANISMO" "$@"

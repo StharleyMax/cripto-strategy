@@ -1,0 +1,47 @@
+# Estado de máquina, não contrato de repositório.
+#
+# `.claude/settings.json` carrega regras de permissão com caminhos absolutos DESTA
+# máquina (`/home/stharley/...`) — quem clonar não tem esses caminhos, e as regras não
+# significam nada fora daqui. O que é contrato do repositório mora em `harness.toml`,
+# que É versionado.
+#
+# Agente e skill são CONTRATO: `harness.toml` declara
+#
+#   [agents.by_component.sentimento]   (e convergencia, backtest)
+#   architect = ".claude/agents/quant-architect.md"
+#
+# Num clone limpo esse ponteiro precisa resolver, senão o validador acusa `V-16` e a
+# mitigação da lacuna de julgamento quantitativo desaparece sem nada apontar. Por isso
+# `agents/` e `skills/` são versionados e `settings.json` segue fora. Precedente e
+# molde: `comparador-preco/.gitignore`, mesma estrutura e mesmo argumento.
+.claude/*
+!.claude/agents/
+!.claude/skills/
+
+# Python (backend FastAPI)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node / Next.js (frontend)
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Segredos. `.env.example` sobrevive porque documenta o formato sem carregar valor.
+# Chave de API de exchange (Binance/Bybit/Coinalyze) NUNCA entra na árvore — nem em
+# config de teste: testnet key também é key.
+.env
+.env.*
+!.env.example
+
+# Dados de mercado baixados (candles, aggTrades, OI/funding históricos): são
+# reproduzíveis a partir das APIs e pesados demais para git. O que se versiona são
+# FIXTURES pequenas e curadas de teste (marcação SMC fixada à mão), que moram junto
+# dos testes — não aqui.
+data/

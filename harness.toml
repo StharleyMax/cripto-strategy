@@ -1,0 +1,144 @@
+# Política do harness deste repositório.
+#
+# O mecanismo vem do plugin; a política mora aqui e é o único arquivo pelo qual o
+# mecanismo lê este repositório.
+#
+# ── O ESTADO EM QUE ESTA POLÍTICA FOI ESCRITA ──────────────────────────────────────
+#
+# Escrita em 2026-08-22, quando o repositório continha `docs/proposta-discovery.md` e
+# NADA MAIS: zero código, discovery ainda não iniciado. Os campos que descrevem código
+# (`code_paths`, `test_globs`) descrevem uma INTENÇÃO declarada pelo owner (backend
+# Python modular + FastAPI, frontend Next.js), não uma medição — não há o que medir.
+# Onde não há medição, este arquivo diz que não há, em vez de emprestar a confiança de
+# um número inventado. Precedente e molde: `comparador-preco/harness.toml`.
+
+schema_version = 1
+
+# Vocabulário fechado de componente.
+#
+# Derivado da decomposição que a própria proposta faz (§2, Módulos A–D), mais as duas
+# superfícies de stack que o owner declarou na criação do projeto:
+#
+#   sentimento   — Módulo A: ingestão de OI/Funding/L-S Ratio (Coinalyze, Binance,
+#                  Bybit), pipeline event-driven, screener de anomalias, CVD via WS.
+#   charts       — Módulo B: engine de gráficos (Lightweight Charts) e detecção
+#                  programática de SMC (OB, FVG, BSL/SSL, BOS/CHoCH).
+#   convergencia — Módulo C: matriz de confirmação cruzada e regras de gatilho.
+#   backtest     — Módulo D: banco time-series, motor de backtest event-driven,
+#                  paper trading/testnet, dashboard de métricas.
+#   web          — frontend Next.js (dashboard, painéis sincronizados, presets).
+#   docs         — o que já existe hoje.
+#
+# Diferente do comparador-preco, nenhum módulo foi deixado de fora: a proposta (§1)
+# coloca os quatro como objeto do MESMO discovery, não como fases futuras.
+components = ["sentimento", "charts", "convergencia", "backtest", "web", "docs"]
+
+[repo]
+name = "cripto-strategy"
+# Versionada. Projeto pessoal e greenfield, mesmo argumento do comparador-preco:
+# preservar a superfície de clone limpo desde o primeiro commit é o momento barato.
+policy_tracked = true
+
+[plugin]
+repo = "git@github.com:StharleyMax/harness-plugin.git"
+# Pin, não "main": o `doctor` acusa deriva entre o que esta política fixa e o que está
+# instalado. v0.12.0 é a versão efetivamente instalada NESTE repositório em 2026-08-22
+# (`claude plugin install harness-plugin@harness -s project`, commit 2233eb1) — pin e
+# instalação nascem de acordo.
+ref = "v0.12.0"
+
+[tracker]
+# Declaração e capacidade nasceram juntas em 2026-08-22: o servidor `mcp-atlassian`
+# (stdio via `uv`, site `conversationhub.atlassian.net`) foi registrado em escopo local
+# DESTA raiz no mesmo dia em que esta política foi escrita.
+kind = "jira"
+
+# CST — "cripto strategy", id 10036, `jira/software`, team-managed, criado em
+# 2026-08-22 via REST (template gh-simplified-agility-scrum, mesmo formato do CDP do
+# comparador-preco).
+#   board 36 ("CST board"), tipo simple
+#   0 issues na criação — a estrutura nasce daqui.
+#
+# Tipos medidos em CST (`/rest/api/3/issuetype/project?projectId=10036`, 2026-08-22),
+# com os ids porque nome traduzido não é identidade estável:
+#   Epic 10052 · Subtask 10053 · Tarefa 10054 · História 10055 · Feature 10056 · Bug 10057
+project = "CST"
+board_id = "36"
+
+# ⚠️ INCERTEZA HERDADA DO comparador-preco, ainda NÃO MEDIDA: "Tarefa" é o `name`
+# traduzido do tipo 10054, cujo `untranslated_name` é "Task". Qual literal a integração
+# aceita em `jira_create_issue` só se mede criando uma issue real (a validação do MCP
+# não valida — medido lá). A primeira issue criada neste board fecha a questão.
+parent_kind = "Epic"
+child_kind = "Tarefa"
+
+[docs]
+# Único documento existente: o plano de discovery (objetivo, módulos A–D, entregáveis).
+# Quando o discovery produzir avaliação crítica / decisões de arquitetura, elas entram
+# aqui na ordem de leitura — proposta primeiro, decomposição depois.
+bootstrap_docs = ["docs/proposta-discovery.md"]
+
+# Precedência: exclude > include_globs > include_prefixes.
+#
+# ── PREMISSAS, e de onde vieram ────────────────────────────────────────────────────
+#
+# `backend/src/` + `*.py`: NÃO é suposição — o owner declarou a stack na criação do
+# projeto (2026-08-22): "python modular com fastapi e next no front", estrutura nos
+# moldes do comparador-preco (`backend/` + `frontend/`).
+#
+# `backend/src/` AINDA NÃO EXISTE. O validador responde V-12 ("code_paths que não casa
+# nada") como AVISO e não erro, exatamente para política escrita antes do código. O
+# aviso é ESPERADO hoje e some no primeiro módulo.
+#
+# ⚠️ MESMO BURACO DE GOVERNANÇA DO comparador-preco, herdado conscientemente:
+# `include_globs = ["*.py"]` + `packs = ["core"]` (5 regras, todas `**/*.py`) significa
+# que `frontend/` nascerá com ZERO regra cobrindo — e PARECENDO coberto, porque o
+# `doctor` diz CONFORME sobre um universo que não o inclui. Fechar isto é: globs TS em
+# `include_globs` + um pack que morda TypeScript. Enquanto isso, `frontend/` é ÁREA
+# DECLARADAMENTE NÃO COBERTA.
+[code_paths]
+include_prefixes = ["backend/src/"]
+include_globs = ["*.py"]
+exclude_globs = [
+    "**/__pycache__/**",
+    "**/.venv/**",
+    "**/migrations/**",
+]
+# `test_globs` guarda o que é código MAS NÃO É PRODUÇÃO.
+test_globs = ["**/tests/**", "**/test_*.py"]
+
+# ── LACUNA DECLARADA: `[test_cmd]` está ausente de propósito ───────────────────────
+#
+# Não há suíte, não há runner, não há sequer `pyproject.toml`. Declarar `test = "pytest"`
+# seria escrever um comando que hoje falha por não existir. Esta tabela entra junto com
+# o primeiro teste, e não antes. Precedente: comparador-preco e harness-panel, mesmo
+# argumento.
+
+[rules]
+# Só o pack de ofício. Packs de topologia (`hexagonal-layers`, `web-fullstack`) cobram
+# uma arquitetura que este repositório ainda não tem: não há camada para violar.
+# `hexagonal-layers` é candidato natural quando `sentimento` e `backtest` ganharem
+# forma — a proposta já separa domínio (matriz de convergência, motor de backtest) de
+# borda (APIs de exchange, WebSocket), que é a fronteira que esse pack cobra.
+packs = ["core"]
+
+# ── SEM `[[rules.core.disabled]]` e sem `[[rules.own]]` ────────────────────────────
+#
+# Nenhuma regra desligada: não há código sobre o qual medir se ela acusa uso legítimo.
+# Nenhuma regra própria: regra própria sem contagem que a justifique é palpite com
+# severidade. As duas tabelas entram quando houver código — com o comando que as mediu.
+
+# ── PONTEIRO DE PAPEL PRÓPRIO DO REPOSITÓRIO (V-16) ────────────────────────────────
+#
+# Mesmo mecanismo do comparador-preco (lá: mobile), aqui para o domínio quantitativo:
+# o owner precisa de julgamento especializado em SMC/order flow/microestrutura que os
+# subagentes genéricos do plugin não carregam. O agente local supre esse julgamento no
+# refinamento e na arquitetura dos componentes de domínio.
+[agents.by_component.sentimento]
+architect = ".claude/agents/quant-architect.md"
+
+[agents.by_component.convergencia]
+architect = ".claude/agents/quant-architect.md"
+
+[agents.by_component.backtest]
+architect = ".claude/agents/quant-architect.md"
