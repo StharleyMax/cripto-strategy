@@ -32,7 +32,7 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 | Q | assunto | estado | relógio |
 |---|---|---|---|
 | **Q1** | autoriza ligar os coletores hoje | `ABERTA` | **SIM — capture-or-lose** |
-| **Q2** | onde roda, quem acessa, orçamento | `ABERTA` | **SIM**, herdado de Q1 |
+| **Q2** | onde roda, quem acessa, orçamento | **`RESPONDIDA`** | resolvida — ver §Q2 |
 | **Q3** | canal de alarme fora do browser | `ABERTA` | SIM (condicional) |
 | **Q4** | Coinalyze | **`RESPONDIDA COM RESÍDUO`** | resíduo sem relógio no `daily` |
 | **Q5** | universo inicial (N, nomes, cadência) | `ABERTA` | SIM, herdado — **mas já não trava F0** |
@@ -78,7 +78,7 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 
 ---
 
-### Q2 · `ABERTA` · Onde isso roda, e quem acessa?
+### Q2 · **`RESPONDIDA` em 2026-08-25** · Onde isso roda, e quem acessa?
 
 **(a)** Host **não exposto** ou **serviço exposto** — e com qual orçamento de disco? **R2 acrescenta o eixo que faltava: localhost, VPS ou NUVEM?**
 
@@ -94,6 +94,37 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 **(c) Trava:** os coletores **contínuos** de Q1 (o snapshot diário e o one-shot da Coinalyze **não**); a decisão auth/TLS/multi-sessão, que é **estrutura de UI e não detalhe**; e a região do observador, que é **coluna de F0**.
 
 **(d) RELÓGIO: SIM, herdado de Q1** — e **parcialmente**, porque o gate de F0 é **por coletor**.
+
+**✅ RESPOSTA DO OWNER (2026-08-25), e ela fecha as DUAS metades — o registro completo, com a medição que ela
+disparou, está em [`premissas-de-infra-e-stack.md`](premissas-de-infra-e-stack.md):**
+
+> *"vai estar em uma VPS[, a] mesma que roda o anything_monorepo, então n temos tanto recurso assim"* ·
+> *"Por hora podemos ter o menor escopo possível de auth, considerando um único user, daí o isolamento de users,
+> keys e afins entra em outro momento, somente precisamos garantir que seja extensível sem grande complicações"*
+
+| a metade | o que a resposta fixa |
+|---|---|
+| **onde roda** | **VPS**, compartilhada com um stack de **6 serviços já medidos** (`postgres:15`, `redis:7`, `evolution`, `backend`, `frontend`, `caddy` com TLS público) e **sob pressão de disco documentada** — o runbook `KAN-86` do vizinho move mídia para Cloudflare R2 com o passo *"liberar disco"*. ⇒ **restrição de vizinhança, não de benchmark**, e ela restringe o ADR de motor mais que qualquer medição de performance |
+| **quem acessa** | **exposto** (a VPS tem Caddy/TLS público) + **auth mínima, single-user, obrigatoriamente extensível**. ⇒ o non-goal *"login/autenticação: indefinido — não construir especulativamente"* (PRD §12) **está respondido e sai da lista**; e a condição de PRD §13.5 para um Epic novo (*"exposto ⇒ auth entra como FASE NOVA"*) **NÃO se realiza**, porque o pedido é escopo mínimo com extensibilidade, não isolamento multi-tenant ⇒ **continuam 7 Epics** |
+
+**O requisito que fica, e é falsificável:** identidade é **dimensão desde a primeira linha** — nunca constante
+implícita nem `NULL`. Mesmo princípio já aplicado a `env` e a `provider`.
+
+**⚠️ RESÍDUO — e é ele que impede o ADR de motor de fechar:** *"n temos tanto recurso assim"* é qualitativo. **RAM
+livre, disco livre e a região da VPS não estão medidos, e eu não tenho acesso a ela.** Os dois primeiros são teto
+declarável no falsificador do ADR; **o terceiro é `observer_region`, que é COLUNA DE F0 e impossível
+retroativamente** (`[GAP G7]`). Obtenção: `free -m` · `df -h` · `curl -s ipinfo.io` — dentro da VPS.
+
+**⚠️ E uma premissa técnica do owner foi CORRIGIDA, porque não corrigida ela elimina o candidato preferido por
+motivo errado:** *"um banco relacional ta totalmente fora de contexto, certo?"* — **não.** **Os três candidatos são
+relacionais e falam SQL** (TimescaleDB **é** uma extensão do PostgreSQL; DuckDB é SQL embarcado). O eixo que decide
+é **row-store OLTP × column-store OLAP** e **daemon × embarcado**. Ver
+[`premissas-de-infra-e-stack.md` §3.1](premissas-de-infra-e-stack.md).
+
+**⭐ E a medição do vizinho acrescentou DOIS candidatos ao ADR de motor que não existiam:** **(4) TimescaleDB na
+instância `postgres:15` que já está de pé** — sem daemon novo, ao custo de acoplar a um banco de produção alheio; e
+**(5) Parquet particionado no Cloudflare R2 já provisionado, lido por DuckDB embarcado via `httpfs`** — que tira os
+~87 GB do disco da VPS e cujo *egress zero* é o que torna varredura de backtest viável (em S3, não seria).
 
 ---
 

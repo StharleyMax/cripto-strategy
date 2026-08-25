@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Regra DETERMINÍSTICA de commit — declarada pelo owner em 2026-08-25.
+#
+#   1. Nenhum trailer de co-autoria, em nenhuma variação de caixa.
+#   2. Autor E committer são o owner: stharleymax@gmail.com
+#
+# Fonte VERSIONADA deste hook: scripts/hooks/commit-msg
+# Instalação:                  bash scripts/install-git-hooks.sh
+#
+# Por que hook e não convenção: convenção depende de quem lembra. Este arquivo reprova
+# o commit antes de ele existir, e reprova igual para humano e para agente.
+#
+# Sem `set -e`: morrer por erro não-relacionado reprovaria um commit legítimo.
+set -uo pipefail
+
+MSG_FILE="${1:?commit-msg exige o caminho do arquivo de mensagem}"
+OWNER_EMAIL="stharleymax@gmail.com"
+FALHOU=0
+
+# ---- 1. co-autoria -----------------------------------------------------------
+if grep -qiE '^[[:space:]]*co-authored-by:' "$MSG_FILE"; then
+    printf 'REPROVADO · trailer de co-autoria presente na mensagem:\n' >&2
+    grep -inE '^[[:space:]]*co-authored-by:' "$MSG_FILE" | sed 's/^/    linha /' >&2
+    printf '    Regra do repositório: commit sem co-autor. Remova a linha.\n' >&2
+    FALHOU=1
+fi
+
+# ---- 2. identidade -----------------------------------------------------------
+# `git var` resolve a identidade REAL que seria gravada, já considerando
+# --author, GIT_AUTHOR_EMAIL, config local e global. Checar a config em vez
+# disso deixaria passar `git commit --author=...`.
+extrai_email() { sed -n 's/.*<\([^>]*\)>.*/\1/p' <<<"$1"; }
+
+AUTOR="$(extrai_email "$(git var GIT_AUTHOR_IDENT 2>/dev/null || true)")"
+COMMITTER="$(extrai_email "$(git var GIT_COMMITTER_IDENT 2>/dev/null || true)")"
+
+for par in "autor:$AUTOR" "committer:$COMMITTER"; do
+    papel="${par%%:*}"; email="${par#*:}"
+    if [ "$email" != "$OWNER_EMAIL" ]; then
+        printf 'REPROVADO · %s é "%s", esperado "%s".\n' "$papel" "$email" "$OWNER_EMAIL" >&2
+        printf '    Conserto: git config --local user.email %s\n' "$OWNER_EMAIL" >&2
+        FALHOU=1
+    fi
+done
+
+exit "$FALHOU"
