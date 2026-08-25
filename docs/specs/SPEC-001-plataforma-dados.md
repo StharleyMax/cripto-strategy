@@ -537,9 +537,15 @@ Cinco superfícies (`S1`..`S5`), quatro com tela e uma que é **dado, não tela*
 
 `idade = tempo_de_referência − available_at` (em `COMO EM T`, é `T`), **nunca `now − available_at`**. **Um gráfico de 3 dias tem zero carimbos de idade, e isso está certo.**
 
-### 6.2 Vermelho não significa "preço caiu"
+### 6.2 Governança de cor por tipo de marca
 
-**Nesta plataforma, vermelho significa "o dado quebrou".** Paleta com **4 papéis simultâneos** passa validação nos dois modos, com **`critical` fora do canal de cor**. Medido: `#2a78d6 ↔ #eb6834` **PASS** (protan ΔE 24,7/26,8) · `#008300 ↔ #e34948` **WARN** (7,2/8,6) · `#d03b3b ↔ #eb6834` **FAIL** (ΔE 10,8, abaixo do piso 15) `[MEDIDO]`. **Cor é token nomeado por papel desde a primeira linha de CSS** ⇒ `Q13` deixa de gatear e vira preferência trocável (trocar o esquema = trocar 2 tokens).
+> **⚠️ REVOGADO e SUPERSEDIDO por [`ADR-010`](../adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md)** (aceita pelo owner em 2026-08-25). O texto anterior desta seção decretava *"nesta plataforma, vermelho significa o dado quebrou"* e publicava ΔE de **24,7/26,8 · 7,2/8,6 · 10,8** que **não reproduzem sob nenhum estimador declarado**. Isto é correção de **citação** sob a ADR, não mudança de decisão desta SPEC. **A regra `CA-F4-10` — `critical` fora do canal de cor — continua em vigor e ganhou três argumentos independentes novos.**
+
+**Direção de preço segue a convenção ocidental** (verde alta / vermelho baixa) e vive **só em `fill`**, nunca em glifo. **Integridade do dado é violeta, e o hue é o TERCEIRO canal** — glifo e palavra carregam a afirmação. **Ação e procedência não consomem hue** (luminância). **Severidade operacional é papel distinto de integridade** e não tem token de cor.
+
+Medido `[MEDIDO: scripts/validate_palette.js, 361 medições, exit 0, Brettel 1997 + CIEDE2000, veredito por min(protan, deutan, tritan)]`: `#089981 ↔ #f23645` **PASS** min3 **18,0** · `#008300 ↔ #e34948` **WARN** **12,2** · `#f23645 ↔ #eb6834` **FAIL** **5,3** — e **é este último par que prova que `critical` não cabe no canal de cor**. Redundância de **forma** é obrigatória: nenhum par de hue sobrevive à escala de cinza (razão de luminância 1,09–1,38).
+
+⇒ `Q13` continua não gateando, mas **trocar o esquema custa 4 valores de hue + 361 medições**, não 2 tokens.
 
 ### 6.3 Zero seleção é informação
 
@@ -640,7 +646,7 @@ Ver §1.4. **A conclusão de `E-07` sobrevive** (não capturar tick: o dump é r
 | **Q10** ordem dos produtos | `ABERTA` | decide qual superfície ganha teclado e densidade em F4 | **F1 entrega "pesquisar" e é a única construível hoje** |
 | **Q11** owner marca o corpus | `ABERTA` | decide se o **modo** de marcação fica em F4 | `<Anotacao>` + `pointer_mode` são requisito **hoje**, custo de campos num JSON. **A primeira tranche é marcação de SWING**, que sobrevive a qualquer resposta de `Q20` |
 | **Q12** alias | `ABERTA` | `instrument_alias` é mecanismo **de qualquer jeito** | a resposta é o **conteúdo** de ~5 linhas/ano |
-| **Q13** cor do candle | `ABERTA` | §6.2 | token por papel ⇒ trocar = 2 tokens |
+| **Q13** cor do candle | **`RESPONDIDA`** 2026-08-25 (convenção ocidental; ver [`ADR-010`](../adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md)) | §6.2 | token por papel ⇒ trocar = **4 valores de hue + 361 medições** |
 | **Q14** idioma | `INFERÍVEL` | `[INFERRED: pt-BR em microcopy; identificadores não traduzidos]` | **§3.8 tira de Q14 o poder de invalidar fixture** |
 | **Q15** ToS | `ABERTA` | nada tecnicamente | `[MEDIDO]: nada` — **ninguém leu os três ToS. Zero evidência.** Restrição incide **retroativamente** sobre o que `Q1` manda acumular ⇒ **tensão real com Q1**, e esta SPEC não a esconde |
 | **Q16** dono de `charts`/`web` | `ABERTA` | [`ADR-003`](../adr/ADR-003-fronteira-charts-web.md) desenha a fronteira; **o ponteiro em `[agents.by_component]` é edição de política** | `harness policy --key agents.by_component` → hoje só `sentimento`, `convergencia`, `backtest` |

@@ -1,0 +1,957 @@
+# Doc de tasks de `plataforma-dados` — o DADO DE MAQUINA da quebra.
+#
+# A narrativa e o racional vivem em `tasks_review.md` (720 linhas, aprovado pelo owner em
+# 2026-08-25, declaracao literal: "tasks aprovadas"). Os dois NAO se sobrepoem: este arquivo
+# nao argumenta, e aquele nao e lido por maquina.
+#
+# A chave da feature e o campo `feature` ABAIXO, nunca o nome do diretorio (ADR-013/D4).
+#
+# ── MARCACAO DAS ARESTAS CONTESTADAS (D-1 e D-2) ───────────────────────────────────
+#
+# As duas discordancias de arquitetura registradas em `tasks_review.md` §7 NAO foram
+# aplicadas: o grafo abaixo e o que o `index.md` do plano declara. Elas estao marcadas em
+# `refs`, com o prefixo `CONTESTADO:`, nas 5 tasks cujas arestas mudariam.
+#
+# `refs` e o veiculo escolhido, e a razao e medida: `TASK_KEYS` do validador
+# (`scripts/tasks.sh:126`) e vocabulario FECHADO, e chave fora dele cai em V-09, cuja
+# propria mensagem diz "chave IGNORADA pelo validador: nada a le, nada a valida"
+# (`scripts/tasks.sh:565`). Um campo proprio seria um marcador que nada le — exatamente o
+# que a instrucao pedia para evitar. `refs` e obrigatorio, e lista de string livre, e sai
+# em `harness tasks json plataforma-dados`, logo e greppavel.
+#
+# Recuperar as arestas contestadas, por comando:
+#   harness tasks json plataforma-dados | grep -B4 CONTESTADO
+#   jql: project = CST AND labels IN (contestado-d1, contestado-d2)
+#
+# ── STATUS ─────────────────────────────────────────────────────────────────────────
+#
+# `blocked` = 18 tasks com bloqueio duro: 16 por pergunta de owner em aberto
+# (Q1 x8 · Q16 x3 · Q3 x2 · Q19 · Q11 · Q10) + 2 por NUMERO QUE FALTA e nao por pergunta
+# (`T-03.9` regiao da VPS · `T-08.1` regiao + `free -m` + `df -h`). Os dois eixos ficam
+# separados de proposito: colapsar "esperando o owner" com "esperando um ssh" faz o segundo
+# nunca ser resolvido, porque parece decisao de terceiro.
+#
+# `T-03.12` (coletor de spread) NAO EXISTE neste arquivo. Ela era contingente a `Q17 = (c)`
+# e `Q17` esta `RESPONDIDA COM RESIDUO` em `docs/decisoes-do-owner.md:50` — o residuo
+# nomeado e "(a2) ou (a3)?", ainda do owner. Sem a resposta, criar a task seria decidir por
+# ele. Total: 81, nao 82.
+
+schema_version = "1"
+feature = "plataforma-dados"
+spec   = "docs/specs/SPEC-001-plataforma-dados.md"
+plan   = "docs/plans/SPEC-001-plataforma-dados"
+review = "docs/context/plataforma-dados/tasks_review.md"
+
+# ── 01 · Governanca gateante · CST-1 ───────────────────────────────────────────────
+
+[[tasks]]
+id = "T-01.1"
+title = "[docs] 01 · [test_cmd] declarado e o primeiro teste nascendo junto"
+components = ["docs"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = ["GAP G2", "CA-F5-5", "ADR-009/D1", "plano 01 itens 1.1+1.8", "DoD D1.1", "DoD D1.5"]
+tracker = { provider = "jira", id = "CST-8", url = "https://conversationhub.atlassian.net/browse/CST-8" }
+
+[[tasks]]
+id = "T-01.2"
+title = "[docs] 01 · Cobertura de frontend/ fechada — include_prefixes, globs TS/TSX e pack que morda TypeScript"
+components = ["docs"]
+status = "blocked"
+phase = "01"
+depends_on = ["T-01.1"]
+refs = [
+    "CA-F5-4", "ADR-009/D3", "plano 01 itens 1.4+1.5", "DoD D1.3", "DoD D1.4",
+    "BLOQUEADA: Q16 (dono de charts/web + regra em frontend/) — ABERTA, relogio de retrabalho",
+    "CONTESTADO: D-1 — aresta '01 (inteira, com Q16) -> 02 e 03'. Aplicar D-1 move esta task para montante de T-05.1 e a retira de montante de 02/03. Argumento: tasks_review.md §7/D-1. NAO APLICADA; decisao do owner.",
+]
+tracker = { provider = "jira", id = "CST-9", url = "https://conversationhub.atlassian.net/browse/CST-9" }
+
+[[tasks]]
+id = "T-01.3"
+title = "[docs] 01 · agents.by_component ganha charts e web; fronteira charts <-> web como contrato forbidden"
+components = ["docs"]
+status = "blocked"
+phase = "01"
+depends_on = ["T-01.1"]
+refs = [
+    "CA-F5-1", "ADR-003", "ADR-009/D1", "plano 01 itens 1.2+1.3", "DoD D1.2", "DoD D1.6",
+    "BLOQUEADA: Q16 — ABERTA",
+    "CONTESTADO: D-1 — ja e upstream de T-05.1; o que D-1 muda e ela DEIXAR de gatear 02/03 no index.md do plano. Argumento: tasks_review.md §7/D-1. NAO APLICADA; decisao do owner.",
+]
+tracker = { provider = "jira", id = "CST-10", url = "https://conversationhub.atlassian.net/browse/CST-10" }
+
+[[tasks]]
+id = "T-01.4"
+title = "[docs] 01 · .python-version removido, Python 3.12 declarado; proposta do componente infra levada ao owner"
+components = ["docs"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = ["ADR-009/D4", "ADR-009/D5", "plano 01 itens 1.6+1.7", "vocabulario fechado e ato do owner"]
+tracker = { provider = "jira", id = "CST-11", url = "https://conversationhub.atlassian.net/browse/CST-11" }
+
+# ── 02 · Captura sem gate de host · CST-2 ──────────────────────────────────────────
+
+[[tasks]]
+id = "T-02.1"
+title = "[sentimento] 02 · Coletor de snapshot diario datado de exchangeInfo + fundingInfo, com premiumIndex como segunda testemunha"
+components = ["sentimento"]
+status = "blocked"
+phase = "02"
+depends_on = ["T-01.1"]
+refs = [
+    "CA-F0-1", "CA-F0-1b", "CA-F0-7", "CA-F0-11", "SPEC-001 §3.4", "plano 02 itens 2.1+2.2",
+    "DoD D2.1", "DoD D2.2", "DoD D2.3", "DoD D2.4", "DoD D2.5", "DoD D2.7",
+    "BLOQUEADA: Q1 — ABERTA, relogio SIM",
+    "CAPTURE-OR-LOSE: CL-3 exchangeInfo datado",
+]
+tracker = { provider = "jira", id = "CST-12", url = "https://conversationhub.atlassian.net/browse/CST-12" }
+
+[[tasks]]
+id = "T-02.2"
+title = "[sentimento] 02 · One-shot Coinalyze daily (OI + liquidacao) nascendo em quarentena; broker de cota CEGO"
+components = ["sentimento"]
+status = "blocked"
+phase = "02"
+depends_on = ["T-01.1"]
+refs = [
+    "CA-F0-13", "CA-F3-9", "avaliacao:A3", "SPEC-001 §5.2", "plano 02 itens 2.3+2.4", "DoD D2.6",
+    "BLOQUEADA: Q1 — ABERTA, relogio SIM",
+    "RESIDUO: Q4 (Coinalyze free/pago/descartar) — bloqueio parcial, o mecanismo anda",
+]
+tracker = { provider = "jira", id = "CST-13", url = "https://conversationhub.atlassian.net/browse/CST-13" }
+
+[[tasks]]
+id = "T-02.3"
+title = "[sentimento] 02 · md.ingest_run / md.ingest_gap persistidos e lidos pela consulta nomeada ingest_health_query"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.1"]
+refs = ["CA-F0-6", "ADR-008/D1", "ADR-008/D2", "ADR-008/D3", "plano 02 itens 2.6+2.7", "DoD D2.9", "falsificador em T-07.13"]
+tracker = { provider = "jira", id = "CST-14", url = "https://conversationhub.atlassian.net/browse/CST-14" }
+
+[[tasks]]
+id = "T-02.4a"
+title = "[sentimento] 02 · Verificacao de .CHECKSUM na borda de ingestao — rejeita truncamento antes de qualquer linha entrar"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.1"]
+refs = ["GAP G1", "SPEC-001 §5.8", "plano 02 item 2.5 (metade executavel)", "DoD D2.8", "particao de D-3: tasks_review.md §7/D-3"]
+tracker = { provider = "jira", id = "CST-15", url = "https://conversationhub.atlassian.net/browse/CST-15" }
+
+[[tasks]]
+id = "T-02.4b"
+title = "[docs] 02 · Politica de backup com teste de restauracao, declarando por tabela o que e re-derivavel dos dumps"
+components = ["docs"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.1"]
+refs = ["GAP G1", "plano 02 item 2.5 (metade documental)", "particao de D-3: tasks_review.md §7/D-3"]
+tracker = { provider = "jira", id = "CST-16", url = "https://conversationhub.atlassian.net/browse/CST-16" }
+
+# ── 03 · Captura continua · CST-2 · a fase de maior custo de atraso do projeto ──────
+
+[[tasks]]
+id = "T-03.1"
+title = "[sentimento] 03 · Medir se o WS symbol@aggTrade carrega nq — hoje NAO MEDIDO, gate NENHUM"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-01.1"]
+refs = ["ADR-001 (dependencia)", "plano 03 item 3.6", "DoD D3.9", "PRECEDE: o desenho de T-03.4 depende do resultado"]
+tracker = { provider = "jira", id = "CST-17", url = "https://conversationhub.atlassian.net/browse/CST-17" }
+
+[[tasks]]
+id = "T-03.2"
+title = "[sentimento] 03 · Coletor !forceOrder@arr gravando cru, com o rotulo de subamostragem nao resolvida na SAIDA"
+components = ["sentimento"]
+status = "blocked"
+phase = "03"
+depends_on = ["T-01.1"]
+refs = ["CA-F0-2", "SPEC-001 §5.10", "SPEC-001 §8.5/5", "plano 03 item 3.1", "BLOQUEADA: Q1", "CAPTURE-OR-LOSE: CL-1 liquidacao intraday"]
+tracker = { provider = "jira", id = "CST-18", url = "https://conversationhub.atlassian.net/browse/CST-18" }
+
+[[tasks]]
+id = "T-03.3"
+title = "[sentimento] 03 · Politica de reconexao POR CLASSE de stream, com taxa de colisao publicada e direcao do vies escrita"
+components = ["sentimento"]
+status = "blocked"
+phase = "03"
+depends_on = ["T-03.2"]
+refs = ["ADR-004 (gate de F0)", "plano 03 item 3.2", "DoD D3.6", "BLOQUEADA: Q1", "CAPTURE-OR-LOSE", "registro consolidado em T-09.3"]
+tracker = { provider = "jira", id = "CST-19", url = "https://conversationhub.atlassian.net/browse/CST-19" }
+
+[[tasks]]
+id = "T-03.4"
+title = "[sentimento] 03 · Agregado de bucket q/nq do stream aggTrade (CL-5) — a task de maior relogio do projeto"
+components = ["sentimento"]
+status = "blocked"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = [
+    "ADR-001/6", "SPEC-001 §1.4 (CL-5)", "plano 03 item 3.5", "DoD D3.5", "DoD D3.7", "DoD D3.8",
+    "BLOQUEADA: Q1", "CAPTURE-OR-LOSE: CL-5 — nq vive em janela de 48h e em nenhum historico",
+]
+tracker = { provider = "jira", id = "CST-20", url = "https://conversationhub.atlassian.net/browse/CST-20" }
+
+[[tasks]]
+id = "T-03.5"
+title = "[sentimento] 03 · Coletor premiumIndex — funding estimado, que nao tem endpoint de historico em fonte nenhuma"
+components = ["sentimento"]
+status = "blocked"
+phase = "03"
+depends_on = ["T-01.1"]
+refs = ["CA-F0-1b", "plano 03 item 3.3", "BLOQUEADA: Q1", "CAPTURE-OR-LOSE: CL-2 serie efemera"]
+tracker = { provider = "jira", id = "CST-21", url = "https://conversationhub.atlassian.net/browse/CST-21" }
+
+[[tasks]]
+id = "T-03.6"
+title = "[sentimento] 03 · availability_probe continuo com availability_probe_set declarado, e o M-1 de lag_ms por endpoint"
+components = ["sentimento"]
+status = "blocked"
+phase = "03"
+depends_on = ["T-01.1"]
+refs = [
+    "CA-F0-9", "CA-F0-3", "plano 03 itens 3.4+3.9", "DoD D3.2", "DoD D3.3", "DoD D3.4",
+    "BLOQUEADA: Q19 (availability_probe_set) — ABERTA, relogio SIM",
+    "CAPTURE-OR-LOSE: decide quais series tem defasagem real PARA SEMPRE",
+    "abre a quarentena de T-06.6",
+]
+tracker = { provider = "jira", id = "CST-22", url = "https://conversationhub.atlassian.net/browse/CST-22" }
+
+[[tasks]]
+id = "T-03.7"
+title = "[sentimento] 03 · Rampa ate o primeiro 429 com recuo, e o registro de que dois dos tres baldes sao cegos"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-01.1"]
+refs = ["CA-F0-4", "plano 03 item 3.10", "DoD D3.11", "DoD D3.12", "SPEC-001 §9.2 declara NAO DIFERIVEL", "PRECEDE: T-07.7 e T-08.13"]
+tracker = { provider = "jira", id = "CST-23", url = "https://conversationhub.atlassian.net/browse/CST-23" }
+
+[[tasks]]
+id = "T-03.8"
+title = "[sentimento] 03 · NTP como dependencia de runtime; skew persistido por ingest_run"
+components = ["sentimento"]
+status = "blocked"
+phase = "03"
+depends_on = ["T-01.1"]
+refs = ["CA-F0-8", "GAP G6", "plano 03 item 3.7", "DoD D3.10", "BLOQUEADA: Q1", "a tolerancia calibra em T-07.10"]
+tracker = { provider = "jira", id = "CST-24", url = "https://conversationhub.atlassian.net/browse/CST-24" }
+
+[[tasks]]
+id = "T-03.9"
+title = "[sentimento] 03 · observer_id e observer_region ao lado de todo available_at"
+components = ["sentimento"]
+status = "blocked"
+phase = "03"
+depends_on = ["T-03.2"]
+refs = [
+    "CA-F0-10", "GAP G7", "plano 03 item 3.8", "BLOQUEADA: Q1",
+    "NUMERO QUE FALTA: regiao da VPS, [NAO MEDIDO]. Comando: curl -s ipinfo.io de dentro da VPS.",
+    "IRREVERSIVEL: observer_region e coluna de F0, impossivel retroativamente (SPEC-001 §9.2). Vence junto com Q1, nao com 08.",
+]
+tracker = { provider = "jira", id = "CST-25", url = "https://conversationhub.atlassian.net/browse/CST-25" }
+
+[[tasks]]
+id = "T-03.10"
+title = "[sentimento] 03 · Fila de ETL do dump retomavel, com profundidade como parametro; curl -sI mensal em aggTrades e bookDepth"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-01.1"]
+refs = ["CA-F0-5", "SPEC-001 §5.8", "plano 03 itens 3.11+3.14", "DoD D3.1", "Q18 NAO bloqueia: tasks_review.md §7/D-5", "ORDEM: T-07.1 deveria preceder — tasks_review.md §7/D-7"]
+tracker = { provider = "jira", id = "CST-26", url = "https://conversationhub.atlassian.net/browse/CST-26" }
+
+[[tasks]]
+id = "T-03.11"
+title = "[sentimento] 03 · Reconciliacao diaria liquidacao capturada x agregado Coinalyze, com a ressalva na tela"
+components = ["sentimento"]
+status = "blocked"
+phase = "03"
+depends_on = ["T-02.2", "T-03.2"]
+refs = ["CA-F0-14", "plano 03 item 3.12", "BLOQUEADA: Q1"]
+tracker = { provider = "jira", id = "CST-27", url = "https://conversationhub.atlassian.net/browse/CST-27" }
+
+# ── 04 · Contrato temporal e identidade · CST-3 · zero rede, zero API key ──────────
+
+[[tasks]]
+id = "T-04.1"
+title = "[sentimento] 04 · Shift canonico event_time = create_time + 300000 nas oito colunas, com ordenacao obrigatoria antes de emitir"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-01.1"]
+refs = ["SPEC-001 §2.2", "CA-F1-1", "CA-F1-14", "CA-F1-2", "plano 04 itens 4.1+4.2+4.4", "DoD D4.1", "DoD D4.2", "DoD D4.3", "DoD D4.10"]
+tracker = { provider = "jira", id = "CST-28", url = "https://conversationhub.atlassian.net/browse/CST-28" }
+
+[[tasks]]
+id = "T-04.2"
+title = "[sentimento] 04 · SeriesKey completa (15 termos, com quantity_field e reduction) + as sete colunas de procedencia"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-01.1"]
+refs = ["ADR-001", "CA-F2-17", "SPEC-001 §2.1", "SPEC-001 §3.1", "plano 04 itens 4.7+4.9", "DoD D4.9", "falsificador global F-2"]
+tracker = { provider = "jira", id = "CST-29", url = "https://conversationhub.atlassian.net/browse/CST-29" }
+
+[[tasks]]
+id = "T-04.3"
+title = "[sentimento] 04 · Unicidade por agg_id com verificacao de contiguidade — nunca por tempo, nunca first/last trade_id"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.1"]
+refs = ["CA-F1-5", "CA-F1-6", "plano 04 item 4.3", "DoD D4.4", "DoD D4.5"]
+tracker = { provider = "jira", id = "CST-30", url = "https://conversationhub.atlassian.net/browse/CST-30" }
+
+[[tasks]]
+id = "T-04.4"
+title = "[sentimento] 04 · Acessor unico as_of() = argmin(observed_at) com LOCF e sem interpolate; R-1 e R-2 e knowledge_time na leitura"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2"]
+refs = [
+    "SPEC-001 §2.3", "SPEC-001 §2.5", "ADR-006", "CA-F4-25", "plano 04 itens 4.5+4.6+4.10",
+    "DoD D4.6 (fixture envenenada, 3 classes)", "DoD D4.11", "DoD D4.13", "DoD D4.14",
+    "falsificador global F-1",
+    "REGRA: o operador seguro e '>=' e a regra e expressa por qual lado do tempo o operador alcanca, nunca por literal proibido — lint sobre literal produziu a inversao de ASOF",
+]
+tracker = { provider = "jira", id = "CST-31", url = "https://conversationhub.atlassian.net/browse/CST-31" }
+
+[[tasks]]
+id = "T-04.5"
+title = "[sentimento] 04 · cvd_delta por bucket como fato; cvd_cum(anchor) como view com ancora obrigatoria; Decimal canonico"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2"]
+refs = ["CA-F1-8", "SPEC-001 §2.6", "plano 04 item 4.8", "DoD D4.7", "DoD D4.8"]
+tracker = { provider = "jira", id = "CST-32", url = "https://conversationhub.atlassian.net/browse/CST-32" }
+
+[[tasks]]
+id = "T-04.6"
+title = "[sentimento] 04 · Serializacao de numeral invariante de locale em todo caminho de dado"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.1"]
+refs = ["SPEC-001 §3.8", "plano 04 item 4.12", "DoD D4.12", "tira de Q14 o poder de invalidar fixture"]
+tracker = { provider = "jira", id = "CST-33", url = "https://conversationhub.atlassian.net/browse/CST-33" }
+
+[[tasks]]
+id = "T-04.7"
+title = "[sentimento] 04 · principal_id como dimensao em toda linha de ato humano — nunca constante implicita, nunca NULL"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2"]
+refs = ["SPEC-001 §4.4", "Q2 (RESPONDIDA)", "plano 04 item 4.11", "verificado em 05 por D5.10", "ADR-009/D2 recusa organization_id"]
+tracker = { provider = "jira", id = "CST-34", url = "https://conversationhub.atlassian.net/browse/CST-34" }
+
+# ── 05 · S2-minima + auth minima · CST-3 ──────────────────────────────────────────
+
+[[tasks]]
+id = "T-05.1"
+title = "[charts] 05 · Grade canonica como UMA funcao, dona de charts — o motor de backtest a importa, nunca reimplementa"
+components = ["charts"]
+status = "blocked"
+phase = "05"
+depends_on = ["T-01.3", "T-04.4"]
+refs = [
+    "ADR-003/FR-3", "plano 05 item 5.2", "DoD D5.9",
+    "BLOQUEADA: Q16 — charts nao tem dono de julgamento, e e esta task que torna charts componente e nao pasta",
+    "CONTESTADO: D-1 — alvo proposto. Aplicar D-1 acrescenta T-01.2 ao depends_on desta task (relogio de retrabalho de Q16 e 'antes do primeiro .tsx', que e a fase 05). Argumento: tasks_review.md §7/D-1. NAO APLICADA; decisao do owner.",
+]
+tracker = { provider = "jira", id = "CST-35", url = "https://conversationhub.atlassian.net/browse/CST-35" }
+
+[[tasks]]
+id = "T-05.2"
+title = "[charts] 05 · S2-minima: BTCUSDT, 4 dias, paineis Preco + OI + CVD delta e acumulado"
+components = ["charts"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.1"]
+refs = [
+    "CA-F1-16", "plano 05 item 5.1", "DoD D5.11",
+    "RISCO: eixo do Lightweight Charts, [NAO MEDIDO], SPEC-001 §9.2 o declara o MAIOR RISCO TECNICO",
+    "CONTESTADO: D-2 — aresta ausente. Aplicar D-2 acrescenta T-08.2 (spike do eixo com carga cheia, D8.19) ao depends_on desta task, e opcionalmente migra T-08.2 de CST-6 para CST-1. 16 tasks de charts assumem a premissa que D8.19 testa. Argumento: tasks_review.md §7/D-2. NAO APLICADA; decisao do owner.",
+]
+tracker = { provider = "jira", id = "CST-36", url = "https://conversationhub.atlassian.net/browse/CST-36" }
+
+[[tasks]]
+id = "T-05.3"
+title = "[charts] 05 · O selo de quatro campos visivel sem hover; icamento em tres niveis"
+components = ["charts"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.2"]
+refs = ["SPEC-001 §6.1", "CA-F4-14", "ADR-005/D3", "plano 05 itens 5.3+5.4", "icamento contratual: 519 B -> 54 B, 9,6x"]
+tracker = { provider = "jira", id = "CST-37", url = "https://conversationhub.atlassian.net/browse/CST-37" }
+
+[[tasks]]
+id = "T-05.4"
+title = "[charts] 05 · Politica de ausencia por nature; carimbo de idade do FECHO; linha-guia apontando para tras"
+components = ["charts"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.2"]
+refs = ["SPEC-001 §5.11", "plano 05 item 5.5", "DoD D5.1", "DoD D5.2", "DoD D5.3"]
+tracker = { provider = "jira", id = "CST-38", url = "https://conversationhub.atlassian.net/browse/CST-38" }
+
+[[tasks]]
+id = "T-05.5"
+title = "[charts] 05 · Painel de Preco declara price_source E price_use; marcacao amarrada a serie de preco"
+components = ["charts"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.2"]
+refs = ["ADR-007/PS-1", "ADR-007/PS-3", "plano 05 item 5.7", "DoD D5.5", "serial com Q11 (T-08.9)"]
+tracker = { provider = "jira", id = "CST-39", url = "https://conversationhub.atlassian.net/browse/CST-39" }
+
+[[tasks]]
+id = "T-05.6"
+title = "[charts] 05 · pointer_mode em {read, annotate} declarado, com overlay acima do plot e abaixo do crosshair"
+components = ["charts"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.2"]
+refs = ["SPEC-001 §3.6", "plano 05 item 5.8", "torna Q11 decisao de quantas horas, nao de arquitetura"]
+tracker = { provider = "jira", id = "CST-40", url = "https://conversationhub.atlassian.net/browse/CST-40" }
+
+[[tasks]]
+id = "T-05.7"
+title = "[charts] 05 · Cor como token nomeado por papel; critical fora do canal de cor"
+components = ["charts"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.2"]
+refs = [
+    "CA-F4-10", "SPEC-001 §6.2", "plano 05 item 5.9",
+    "DOD ATUALIZADO: D5.6 foi REESCRITO por ADR-010/E-3 e a edicao JA ESTA no plano. Medido em 05_fatia_visivel.md:34 — comando `node scripts/validate_palette.js`, saida esperada `exit 0 · 361 medicoes · min(protan,deutan,tritan) >= 15 em todo par critico nos dois modos`; par que prova a regra: `#f23645 <-> #eb6834` FAIL em 5,3 (deutan) => critical nao cabe no canal de cor.",
+    "MEDIDO 2026-08-25: `node scripts/validate_palette.js` -> exit 0. O comando do DoD e executavel; o script existe (era [NAO MEDIDO] quando D5.6 o nomeou).",
+    "ADR-010 (Governanca de cor por TIPO DE MARCA) esta ACEITO pelo owner em 2026-08-25 e SUPERSEDE SPEC-001 §6.2. E-1 (SPEC:542) e E-2 (SPEC:649, Q13) tambem JA APLICADAS — medido: `git diff --stat` da SPEC = +9/-3, do plano = +1/-1.",
+    "RESIDUO REAL, e e o unico: E-4 (tasks_review.md:307) NAO aplicada — a narrativa ainda diz 'trocar custa 2 tokens', e o numero certo e 25 tokens / 4 valores com hue / 361 medicoes. NAO a corrigi de proposito: tasks_review.md e artefato APROVADO pelo owner, e reescrever narrativa aprovada sem o gate dele e o defeito que ADR-010 §5 existe para evitar.",
+    "ATENCAO DE ESTADO: E-1..E-3 estao aplicadas no WORKING TREE e NAO COMMITADAS (`git status` -> ` M`). Nao estao no historico; um checkout limpo ainda tem os numeros revogados.",
+    "Q13: ADR-010 a declara RESPONDIDA pelo owner em 2026-08-25 (convencao ocidental). tasks_review.md §6 a listava como bloqueio parcial ABERTO — leitura obsoleta. Continua nao gateando, por motivo diferente.",
+]
+tracker = { provider = "jira", id = "CST-41", url = "https://conversationhub.atlassian.net/browse/CST-41" }
+
+[[tasks]]
+id = "T-05.8"
+title = "[web] 05 · knowledge_time na URL; o bundle E a URL, nao um CRUD; COMO EM T sobrevive a navegacao"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-04.4"]
+refs = ["SPEC-001 §7", "plano 05 item 5.6", "DoD D5.4", "teste negativo obrigatorio"]
+tracker = { provider = "jira", id = "CST-42", url = "https://conversationhub.atlassian.net/browse/CST-42" }
+
+[[tasks]]
+id = "T-05.9"
+title = "[web] 05 · Transporte HTTP enderecavel por conteudo para o historico. Nenhum tick chega ao browser"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-04.4"]
+refs = ["ADR-005/D1", "plano 05 item 5.12", "DoD D5.8", "3.468 msg/s de pico medido"]
+tracker = { provider = "jira", id = "CST-43", url = "https://conversationhub.atlassian.net/browse/CST-43" }
+
+[[tasks]]
+id = "T-05.10"
+title = "[web] 05 · Auth minima single-user extensivel, e a atribuicao obrigatoria do Lightweight Charts"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.8"]
+refs = [
+    "SPEC-001 §8.3", "Q2 (RESPONDIDA)", "CA-F1-15", "GAP G4", "plano 05 itens 5.11+5.10", "DoD D5.7",
+    "FRONTEIRA: SPEC §8.3 aponta esta como a task que nenhum dos 7 Epics carregava — acrescenta item a CST-3, NAO cria Epic",
+    "CONDICIONAL: se as rotas nao forem publicadas, esta task sai e T-04.7 fica",
+]
+tracker = { provider = "jira", id = "CST-44", url = "https://conversationhub.atlassian.net/browse/CST-44" }
+
+# ── 06 · series_catalog + quarentena + S3 · CST-4 ─────────────────────────────────
+
+[[tasks]]
+id = "T-06.1"
+title = "[sentimento] 06 · series_catalog como contrato lido pelos testes; unit e denom obrigatorios verbatim da fonte"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = ["T-04.2"]
+refs = ["SPEC-001 §3.3", "CA-F2-2", "CA-F2-11", "plano 06 itens 6.1+6.5+6.15"]
+tracker = { provider = "jira", id = "CST-45", url = "https://conversationhub.atlassian.net/browse/CST-45" }
+
+[[tasks]]
+id = "T-06.2"
+title = "[sentimento] 06 · Tabela de shift POR ENDPOINT: dump = REST -5 min, com takerlongshortRatio como excecao sem shift"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1"]
+refs = ["CA-F2-1", "plano 06 item 6.2", "288 vs 288 e MAE = 0,000000 medidos"]
+tracker = { provider = "jira", id = "CST-46", url = "https://conversationhub.atlassian.net/browse/CST-46" }
+
+[[tasks]]
+id = "T-06.3"
+title = "[sentimento] 06 · As QUATRO series de L/S com colunas proprias; ls_ratio generico PROIBIDO"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1"]
+refs = ["CA-F2-3", "SPEC-001 §5.11", "plano 06 itens 6.3+6.10", "DoD D6.4", "DoD D6.5", "DoD D6.6", "a doc do repositorio dizia TRES series e esta errada"]
+tracker = { provider = "jira", id = "CST-47", url = "https://conversationhub.atlassian.net/browse/CST-47" }
+
+[[tasks]]
+id = "T-06.4"
+title = "[sentimento] 06 · funding_settled != funding_estimado, series distintas com interval_hours_declared por linha"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1"]
+refs = ["CA-F2-7", "SPEC-001 §3.4", "plano 06 item 6.4", "DoD D6.11", "DoD D6.12", "DoD D6.16", "4h e a regra (433 de 570), nao 8h"]
+tracker = { provider = "jira", id = "CST-48", url = "https://conversationhub.atlassian.net/browse/CST-48" }
+
+[[tasks]]
+id = "T-06.5"
+title = "[sentimento] 06 · reduction na SeriesKey: OI da Coinalyze = 4 linhas OHLC_OVER_BUCKET, Binance = 1 POINT"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1"]
+refs = ["CA-F2-17", "plano 06 item 6.11", "DoD D6.7", "DoD D6.8", "sem este termo eram quatro series com a mesma identidade"]
+tracker = { provider = "jira", id = "CST-49", url = "https://conversationhub.atlassian.net/browse/CST-49" }
+
+[[tasks]]
+id = "T-06.6"
+title = "[sentimento] 06 · Quarentena pelo predicado de TRES termos; endpoint sem lag_ms grava available_at NULL + MODELED"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1"]
+refs = ["CA-F2-2", "CA-F2-13", "SPEC-001 §5.2", "plano 06 item 6.12", "DoD D6.1", "DoD D6.2 (falsificador da fase)", "DoD D6.3", "a quarentena nao se abre aqui: abre com Q19 (T-03.6)"]
+tracker = { provider = "jira", id = "CST-50", url = "https://conversationhub.atlassian.net/browse/CST-50" }
+
+[[tasks]]
+id = "T-06.7"
+title = "[sentimento] 06 · ZL-1..ZL-3: zero devolvido pelo fornecedor nao e zero legitimo — converte em SEM_FONTE"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.6"]
+refs = ["SPEC-001 §5.3", "plano 06 item 6.13", "DoD D6.10", "CA-F3-10 tem de dizer que pontos x intervalo e POR LADO"]
+tracker = { provider = "jira", id = "CST-51", url = "https://conversationhub.atlassian.net/browse/CST-51" }
+
+[[tasks]]
+id = "T-06.8"
+title = "[sentimento] 06 · Campo aditivo desconhecido -> quarentena + alarme; campo ausente/renomeado -> reprova"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.6"]
+refs = ["CA-F2-12", "SPEC-001 §5.5", "plano 06 item 6.14", "DoD D6.14", "caso real: a Binance ADICIONOU nq ao aggTrades, e foi o que gerou CL-5"]
+tracker = { provider = "jira", id = "CST-52", url = "https://conversationhub.atlassian.net/browse/CST-52" }
+
+[[tasks]]
+id = "T-06.9"
+title = "[sentimento] 06 · As quatro series de preco, implied_avg_price PROIBIDO, fee_schedule datada, cvd_source com erro medido"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1"]
+refs = ["ADR-007/PS-1", "ADR-007/PS-2", "CA-F2-14", "CA-F2-16", "ADR-001/5", "plano 06 itens 6.6+6.7+6.8+6.9", "DoD D6.9", "DoD D6.13"]
+tracker = { provider = "jira", id = "CST-53", url = "https://conversationhub.atlassian.net/browse/CST-53" }
+
+[[tasks]]
+id = "T-06.10"
+title = "[web] 06 · S3 inspetor de serie: catalogo filtravel + src_label_raw AO LADO de event_time na mesma linha"
+components = ["web"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1", "T-05.8"]
+refs = ["SPEC-001 §6", "plano 06 item 6.16", "DoD D6.15", "nao reconcilia automaticamente: divergencia e exibida como divergencia"]
+tracker = { provider = "jira", id = "CST-54", url = "https://conversationhub.atlassian.net/browse/CST-54" }
+
+# ── 07 · Aquisicao em regime + S1 + universe_at · CST-5 ───────────────────────────
+
+[[tasks]]
+id = "T-07.1"
+title = "[sentimento] 07 · Paginador correto: janela [startTime, endTime] fechada e enumerada A PRIORI, nunca por cursor"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-01.1"]
+refs = [
+    "CA-F3-2", "CA-F3-1", "CA-F3-5", "SPEC-001 §5.7", "plano 07 itens 7.1+7.2+7.4",
+    "DoD D7.1", "DoD D7.3", "DoD D7.4", "DoD D7.5", "DoD D7.8",
+    "PRECEDE: T-03.10 — pre-requisito de qualquer backfill grande. tasks_review.md §7/D-7",
+]
+tracker = { provider = "jira", id = "CST-55", url = "https://conversationhub.atlassian.net/browse/CST-55" }
+
+[[tasks]]
+id = "T-07.2"
+title = "[sentimento] 07 · Survivorship na borda de ingestao: simbolo fora do exchangeInfo -> ACCEPTED_WITH_WARNING, nunca REJECTED"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.1"]
+refs = ["CA-F3-14", "SPEC-001 §5.6", "plano 07 item 7.3", "DoD D7.2", "DoD D7.6", "109 simbolos historicos invisiveis hoje; 21,6% do universo (727 -> 570)"]
+tracker = { provider = "jira", id = "CST-56", url = "https://conversationhub.atlassian.net/browse/CST-56" }
+
+[[tasks]]
+id = "T-07.3"
+title = "[sentimento] 07 · ETL com dedupe por hash de conteudo (byte-estavel verificado)"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.1"]
+refs = ["CA-F3-*", "plano 07 item 7.5", "nunca por nome de arquivo nem por timestamp de download"]
+tracker = { provider = "jira", id = "CST-57", url = "https://conversationhub.atlassian.net/browse/CST-57" }
+
+[[tasks]]
+id = "T-07.4"
+title = "[sentimento] 07 · Redis Streams + consumer group para todo consumidor com estado — nunca Pub/Sub"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-01.1"]
+refs = ["CA-F3-8", "ADR-009/D2", "plano 07 item 7.6", "DoD D7.10", "Redis Pub/Sub e at-most-once por doc"]
+tracker = { provider = "jira", id = "CST-58", url = "https://conversationhub.atlassian.net/browse/CST-58" }
+
+[[tasks]]
+id = "T-07.5"
+title = "[sentimento] 07 · Escritor unico consumindo a fila; backfill MODELADO nao sobrescreve captura OBSERVADA"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.4"]
+refs = ["ADR-002/D5", "CA-F3-12", "CA-F4-25", "plano 07 item 7.7", "DoD D7.16", "vale nos cinco candidatos de ADR-002"]
+tracker = { provider = "jira", id = "CST-59", url = "https://conversationhub.atlassian.net/browse/CST-59" }
+
+[[tasks]]
+id = "T-07.6"
+title = "[sentimento] 07 · Particionamento dimensionado contra a vazao medida"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.5"]
+refs = ["CA-F3-7", "plano 07 item 7.8", "DoD D7.11: p50 21 · p95 204 · p99 483 · p99.9 1.251 · max 3.224 msg/s"]
+tracker = { provider = "jira", id = "CST-60", url = "https://conversationhub.atlassian.net/browse/CST-60" }
+
+[[tasks]]
+id = "T-07.7"
+title = "[sentimento] 07 · Broker de cota com jitter e circuit breaker, contagem local — dois dos tres baldes sao cegos"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-03.7"]
+refs = ["CA-F3-9", "plano 07 item 7.9", "contagem local conservadora e o caso geral, nao adaptacao a um fornecedor pior"]
+tracker = { provider = "jira", id = "CST-61", url = "https://conversationhub.atlassian.net/browse/CST-61" }
+
+[[tasks]]
+id = "T-07.8"
+title = "[sentimento] 07 · universe_at(ts, filtro) com universe_source inadmissivel POR TIPO no caminho de decisao"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-02.1", "T-07.2"]
+refs = ["CA-F3-4", "SPEC-001 §3.7", "plano 07 item 7.10", "DoD D7.7", "s3_inferred inadmissivel por tipo, nao por convencao"]
+tracker = { provider = "jira", id = "CST-62", url = "https://conversationhub.atlassian.net/browse/CST-62" }
+
+[[tasks]]
+id = "T-07.9"
+title = "[sentimento] 07 · instrument_alias como YAML versionado com evidence_url obrigatorio — sem tela"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.8"]
+refs = ["plano 07 item 7.11", "BLOQUEIO PARCIAL: Q12 — o mecanismo anda, o CONTEUDO (~5 linhas/ano) espera; e decisao de significado economico"]
+tracker = { provider = "jira", id = "CST-63", url = "https://conversationhub.atlassian.net/browse/CST-63" }
+
+[[tasks]]
+id = "T-07.10"
+title = "[sentimento] 07 · clock_skew_tolerance_ms CALIBRADO sobre a distribuicao que 03 acumulou"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-03.8"]
+refs = ["CA-F3-13", "plano 07 item 7.12", "DoD D7.18", "calibrado, nao adivinhado: depende de T-03.8 ter rodado 7 dias"]
+tracker = { provider = "jira", id = "CST-64", url = "https://conversationhub.atlassian.net/browse/CST-64" }
+
+[[tasks]]
+id = "T-07.11"
+title = "[sentimento] 07 · Detector de liveness por contiguidade + heartbeat, nunca taxa; e o canal de alarme fora do browser"
+components = ["sentimento"]
+status = "blocked"
+phase = "07"
+depends_on = ["T-03.4"]
+refs = [
+    "GAP G5", "plano 07 DoD D7.9",
+    "BLOQUEADA: Q3 (canal de alarme fora do browser) — ABERTA, relogio SIM condicional. Q3 bloqueia so o TRANSPORTE; o detector ja esta fixado.",
+    "alarme por taxa e impossivel: media variou 3,66x entre dois dias e o pico nao escala com o volume",
+    "sem canal externo, Q1, Q4 e Q19 morrem em silencio e a perda e permanente",
+]
+tracker = { provider = "jira", id = "CST-65", url = "https://conversationhub.atlassian.net/browse/CST-65" }
+
+[[tasks]]
+id = "T-07.12"
+title = "[web] 07 · S1 console: janela_de_perda como FORMULA por serie, fila de ETL, orcamento aritmetico, GB/dia"
+components = ["web"]
+status = "todo"
+phase = "07"
+depends_on = ["T-02.3", "T-05.8"]
+refs = ["SPEC-001 §6", "plano 07 item 7.13", "DoD D7.12", "DoD D7.13", "DoD D7.14", "DoD D7.15", "S1 NAO e o canal de alarme"]
+tracker = { provider = "jira", id = "CST-66", url = "https://conversationhub.atlassian.net/browse/CST-66" }
+
+[[tasks]]
+id = "T-07.13"
+title = "[web] 07 · S1 le pela consulta nomeada ingest_health_query — a MESMA de 02"
+components = ["web"]
+status = "todo"
+phase = "07"
+depends_on = ["T-02.3", "T-07.12"]
+refs = ["ADR-008/D3", "ADR-008/DoD-3", "plano 07 item 7.14", "DoD D7.17 (falsificador da fase)", "unico teste que expoe duplicacao silenciosa"]
+tracker = { provider = "jira", id = "CST-67", url = "https://conversationhub.atlassian.net/browse/CST-67" }
+
+[[tasks]]
+id = "T-07.14"
+title = "[web] 07 · S5 embutido: seletor por universe_at, badge de delisting de deliveryDate, universe_source carimbado"
+components = ["web"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.8"]
+refs = ["SPEC-001 §6", "plano 07 item 7.15", "caso-ancora: ICXUSDT/STORJUSDT/SCRTUSDT com deliveryDate 2026-08-26T09:00:00Z"]
+tracker = { provider = "jira", id = "CST-68", url = "https://conversationhub.atlassian.net/browse/CST-68" }
+
+# ── 08 · Motor, S4, S2 completa, run_registry · CST-6 ────────────────────────────
+
+[[tasks]]
+id = "T-08.1"
+title = "[docs] 08 · Spike do motor de armazenamento, com os 5 criterios declarados ANTES de rodar"
+components = ["docs"]
+status = "blocked"
+phase = "08"
+depends_on = ["T-01.1"]
+refs = [
+    "ADR-002/D4", "CA-F4-24", "plano 08 item 8.1", "DoD D8.21 (os cinco criterios)",
+    "NUMERO QUE FALTA: RAM livre, [NAO MEDIDO]. Comando: free -m de dentro da VPS.",
+    "NUMERO QUE FALTA: disco livre, [NAO MEDIDO]. Comando: df -h de dentro da VPS. A VPS roda 6 servicos e esta sob pressao de disco documentada (KAN-86).",
+    "NUMERO QUE FALTA: regiao da VPS, [NAO MEDIDO]. Comando: curl -s ipinfo.io. Mesma lacuna de T-03.9, e ela vence ANTES de 08.",
+    "finalistas: (4) TimescaleDB no postgres:15 ja de pe x (5) Parquet no R2 + DuckDB httpfs. ClickHouse eliminado como 7o container.",
+]
+tracker = { provider = "jira", id = "CST-69", url = "https://conversationhub.atlassian.net/browse/CST-69" }
+
+[[tasks]]
+id = "T-08.2"
+title = "[charts] 08 · Spike do eixo do Lightweight Charts com CARGA CHEIA (D8.19)"
+components = ["charts"]
+status = "todo"
+phase = "08"
+depends_on = ["T-01.1"]
+refs = [
+    "SPEC-001 §9.2", "plano 08 DoD D8.19 (288 pontos + 1.440 candles, tolerancia 0,5 px)",
+    "RISCO: [NAO MEDIDO], declarado o MAIOR RISCO TECNICO desta especificacao",
+    "custo de executar: uma pagina estatica com 1.728 pontos sinteticos, zero rede, zero API key, zero dependencia de outra fase",
+    "CONTESTADO: D-2 — origem da aresta. Aplicar D-2 faz esta task executar ANTES de T-05.2 (depends_on += T-08.2 em T-05.2) e, se o owner quiser que a contabilidade acompanhe, migra esta task de CST-6 para CST-1 — mudanca de atribuicao de Epic, logo decisao dele. Argumento: tasks_review.md §7/D-2. NAO APLICADA.",
+]
+tracker = { provider = "jira", id = "CST-70", url = "https://conversationhub.atlassian.net/browse/CST-70" }
+
+[[tasks]]
+id = "T-08.3"
+title = "[sentimento] 08 · Regra de compactacao x knowledge_time: compaction_epoch por particao"
+components = ["sentimento"]
+status = "todo"
+phase = "08"
+depends_on = ["T-07.5", "T-08.1"]
+refs = ["ADR-002/D6", "plano 08 item 8.2", "DoD D8.10", "sem isso a reprodutibilidade se perde pela porta da manutencao, em silencio"]
+tracker = { provider = "jira", id = "CST-71", url = "https://conversationhub.atlassian.net/browse/CST-71" }
+
+[[tasks]]
+id = "T-08.4"
+title = "[backtest] 08 · run_registry com bundle_hash, knowledge_time, intrabar_convention E intrabar_decided_count"
+components = ["backtest"]
+status = "todo"
+phase = "08"
+depends_on = ["T-04.4", "T-08.1"]
+refs = ["CA-F4-25", "SPEC-001 §3.5", "plano 08 item 8.3", "DoD D8.9", "falsificador global F-4", "unica task de backtest: reprodutibilidade e requisito da plataforma, nao do motor de estrategia"]
+tracker = { provider = "jira", id = "CST-72", url = "https://conversationhub.atlassian.net/browse/CST-72" }
+
+[[tasks]]
+id = "T-08.5"
+title = "[web] 08 · Bundle de parametros versionado e hasheavel — que E a URL, nao um CRUD; nenhum eixo tem default"
+components = ["web"]
+status = "todo"
+phase = "08"
+depends_on = ["T-05.8"]
+refs = ["SPEC-001 §7", "plano 08 item 8.4", "DoD D8.3", "ESCOPO RECUSADO: gerenciador de presets e produto prematuro"]
+tracker = { provider = "jira", id = "CST-73", url = "https://conversationhub.atlassian.net/browse/CST-73" }
+
+[[tasks]]
+id = "T-08.6"
+title = "[charts] 08 · S4 bancada: distribution / scan / firing_rate, bordas de bin por (field, nature) com overflow contado"
+components = ["charts"]
+status = "blocked"
+phase = "08"
+depends_on = ["T-08.2", "T-08.5"]
+refs = [
+    "SPEC-001 §6", "plano 08 item 8.5", "DoD D8.1", "DoD D8.6", "DoD D8.7",
+    "BLOQUEADA: Q10 (ordem monitorar/pesquisar/executar) — ABERTA, relogio NAO. Bloqueio parcial: decide teclado e densidade, nao a existencia.",
+    "MANDATO: entregue a distribuicao; o limiar e parametro. Limiar absoluto e um filtro 'nao-BTC' disfarcado de sinal.",
+]
+tracker = { provider = "jira", id = "CST-74", url = "https://conversationhub.atlassian.net/browse/CST-74" }
+
+[[tasks]]
+id = "T-08.7"
+title = "[charts] 08 · Anti-overfit: min_obs devolve ausencia, n_obs efetivo POR PONTO, dispersao do z como telemetria"
+components = ["charts"]
+status = "todo"
+phase = "08"
+depends_on = ["T-08.6"]
+refs = ["SPEC-001 §6", "plano 08 item 8.5 (metade estatistica)", "DoD D8.4", "DoD D8.5", "DoD D8.8", "caso concreto: rolling(2016, min_periods=576) nunca preencheu a janela nos alts e a conclusao publicada caiu"]
+tracker = { provider = "jira", id = "CST-75", url = "https://conversationhub.atlassian.net/browse/CST-75" }
+
+[[tasks]]
+id = "T-08.8"
+title = "[charts] 08 · firing_rate in-sample declarado tautologico na propria celula; OOS walk-forward"
+components = ["charts"]
+status = "todo"
+phase = "08"
+depends_on = ["T-08.6"]
+refs = ["SPEC-001 §6", "plano 08 item 8.5 (metade de honestidade)", "DoD D8.2", "OOS n=23: media 1,404%, max 12,847% = 12,8x o alvo"]
+tracker = { provider = "jira", id = "CST-76", url = "https://conversationhub.atlassian.net/browse/CST-76" }
+
+[[tasks]]
+id = "T-08.9"
+title = "[charts] 08 · S2 completa: as-of com moldura impossivel de nao notar, marcacao de fixture com teclado obrigatorio"
+components = ["charts"]
+status = "blocked"
+phase = "08"
+depends_on = ["T-05.2", "T-08.5"]
+refs = [
+    "SPEC-001 §6", "plano 08 item 8.6",
+    "BLOQUEADA: Q11 (owner marca o corpus, quantas horas) — ABERTA, relogio NAO. Se a resposta for 'nao vou marcar', a fase seguinte perde o unico plano de verificacao que tem.",
+    "RECOMENDACAO: a primeira tranche de horas deve ser marcacao de SWING — sobrevive a qualquer resposta de Q20",
+    "serial com Q8 (fuso) e com price_source (ordenacao de highs vizinhos inverte em 2,09%)",
+]
+tracker = { provider = "jira", id = "CST-77", url = "https://conversationhub.atlassian.net/browse/CST-77" }
+
+[[tasks]]
+id = "T-08.10"
+title = "[charts] 08 · Primitivo swing_point em Anotacao — zero algoritmo, zero limiar, zero nivel"
+components = ["charts"]
+status = "todo"
+phase = "08"
+depends_on = ["T-05.6"]
+refs = ["SPEC-001 §3.6", "plano 08 item 8.7", "Q20 NAO bloqueia: os dois vocabularios se apoiam no mesmo primitivo", "zone (OB/FVG/Fib) depende de Q20 e NAO entra aqui"]
+tracker = { provider = "jira", id = "CST-78", url = "https://conversationhub.atlassian.net/browse/CST-78" }
+
+[[tasks]]
+id = "T-08.11"
+title = "[web] 08 · Transporte ao vivo por SSE com envelope de bucket"
+components = ["web"]
+status = "todo"
+phase = "08"
+depends_on = ["T-05.9"]
+refs = ["ADR-005/D1", "ADR-005/D2", "plano 08 item 8.8", "SSE e nao WS bidirecional: canal bidirecional e superficie de ataque sem consumidor", "e nao polling: a cadencia honesta e a do fechamento do bucket"]
+tracker = { provider = "jira", id = "CST-79", url = "https://conversationhub.atlassian.net/browse/CST-79" }
+
+[[tasks]]
+id = "T-08.12"
+title = "[charts] 08 · Regras de renderizacao de painel: habilitacao por multiplo da grade, colisao de discos, nunca dois eixos Y"
+components = ["charts"]
+status = "todo"
+phase = "08"
+depends_on = ["T-08.2", "T-08.6"]
+refs = ["SPEC-001 §6", "plano 08 itens 8.5/8.9", "DoD D8.11", "DoD D8.12", "DoD D8.13", "DoD D8.14"]
+tracker = { provider = "jira", id = "CST-80", url = "https://conversationhub.atlassian.net/browse/CST-80" }
+
+[[tasks]]
+id = "T-08.13"
+title = "[charts] 08 · Honestidade de leitura: idade so na borda direita, denom verbatim, zero selecao e informacao, S4 retrospectiva"
+components = ["charts"]
+status = "todo"
+phase = "08"
+depends_on = ["T-08.6", "T-03.7"]
+refs = ["SPEC-001 §6", "ADR-006/D4", "plano 08 item 8.5", "DoD D8.15", "DoD D8.16", "DoD D8.17", "DoD D8.18", "DoD D8.20"]
+tracker = { provider = "jira", id = "CST-81", url = "https://conversationhub.atlassian.net/browse/CST-81" }
+
+[[tasks]]
+id = "T-08.14"
+title = "[charts] 08 · Grade canonica versionada junto com o dado derivado"
+components = ["charts"]
+status = "todo"
+phase = "08"
+depends_on = ["T-05.1", "T-08.4"]
+refs = ["ADR-003/FR-3", "plano 08 item 8.9", "mudar a grade nao reinterpreta silenciosamente dado antigo"]
+tracker = { provider = "jira", id = "CST-82", url = "https://conversationhub.atlassian.net/browse/CST-82" }
+
+# ── 09 · Consolidacao de fronteira · CST-7 ───────────────────────────────────────
+
+[[tasks]]
+id = "T-09.1"
+title = "[docs] 09 · Os ADRs desta rodada numerados e referenciados pelas fases, cada um com falsificador"
+components = ["docs"]
+status = "todo"
+phase = "09"
+depends_on = ["T-08.14"]
+refs = [
+    "CA-F5-2", "plano 09 itens 9.1+9.2", "DoD D9.1", "DoD D9.2",
+    "CONTAGEM OBSOLETA: o plano e tasks_review.md dizem 'os nove ADRs' e D9.1 fixa 9. Medido em 2026-08-25 (ls docs/adr/): 10 arquivos, ADR-001..ADR-010. ADR-010 nasceu depois da narrativa de review. Reconciliar AQUI, nao antes: corrigir DoD de plano aprovado sem o gate do owner e o defeito que ADR-010 §5 evita.",
+]
+tracker = { provider = "jira", id = "CST-83", url = "https://conversationhub.atlassian.net/browse/CST-83" }
+
+[[tasks]]
+id = "T-09.2"
+title = "[docs] 09 · env em {mainnet, testnet, demo, replay} em toda linha de ordem/fill, com chip no chrome"
+components = ["docs"]
+status = "todo"
+phase = "09"
+depends_on = ["T-04.2"]
+refs = ["CA-F5-3", "plano 09 item 9.3", "DoD D9.3"]
+tracker = { provider = "jira", id = "CST-84", url = "https://conversationhub.atlassian.net/browse/CST-84" }
+
+[[tasks]]
+id = "T-09.3"
+title = "[docs] 09 · Registro consolidado de ADR-004 e do finalista do motor, com os numeros que o spike de 08 produziu"
+components = ["docs"]
+status = "todo"
+phase = "09"
+depends_on = ["T-03.3", "T-08.1"]
+refs = ["ADR-004", "ADR-002/D4", "plano 09 itens 9.4+9.5", "DoD D9.4", "registrado com numeros medidos, nao com preferencia"]
+tracker = { provider = "jira", id = "CST-85", url = "https://conversationhub.atlassian.net/browse/CST-85" }
+
+[[tasks]]
+id = "T-09.4"
+title = "[docs] 09 · Decisao sobre o componente infra registrada — adotada ou recusada, com o motivo escrito"
+components = ["docs"]
+status = "todo"
+phase = "09"
+depends_on = ["T-01.4", "T-02.4a"]
+refs = ["ADR-009/D5", "plano 09 item 9.6", "DoD D9.6", "alterar vocabulario fechado e ato do owner; a task registra a decisao nas duas direcoes"]
+tracker = { provider = "jira", id = "CST-86", url = "https://conversationhub.atlassian.net/browse/CST-86" }
+
+[[tasks]]
+id = "T-09.5"
+title = "[docs] 09 · Runbook de uma pagina para coletor parado, e quem e notificado em segundo lugar"
+components = ["docs"]
+status = "blocked"
+phase = "09"
+depends_on = ["T-07.11"]
+refs = ["GAP G5", "plano 09 item 9.7", "DoD D9.5", "BLOQUEADA: Q3 — a unica task de 09 com gate", "operacao de um so, com SLO P1 de 24 h"]
+tracker = { provider = "jira", id = "CST-87", url = "https://conversationhub.atlassian.net/browse/CST-87" }
+
+[[tasks]]
+id = "T-09.6"
+title = "[docs] 09 · docs/INDEX.md atualizado, append-only"
+components = ["docs"]
+status = "todo"
+phase = "09"
+depends_on = ["T-09.1"]
+refs = ["CLAUDE.md: registro de artefatos e append-only"]
+tracker = { provider = "jira", id = "CST-88", url = "https://conversationhub.atlassian.net/browse/CST-88" }

@@ -42,10 +42,15 @@ policy_tracked = true
 [plugin]
 repo = "git@github.com:StharleyMax/harness-plugin.git"
 # Pin, não "main": o `doctor` acusa deriva entre o que esta política fixa e o que está
-# instalado. v0.12.0 é a versão efetivamente instalada NESTE repositório em 2026-08-22
-# (`claude plugin install harness-plugin@harness -s project`, commit 2233eb1) — pin e
-# instalação nascem de acordo.
-ref = "v0.12.0"
+# instalado. Pin e instalação nascem de acordo — e o `doctor` já provou que a regra vale:
+# em 2026-08-25 o plugin foi atualizado 0.12.0 -> 0.13.0
+# (`claude plugin update harness-plugin@harness -s project`), e por alguns minutos o shim
+# que os hooks de git resolvem reportou NAO-CONFORME (instalada v0.13.0 x pin v0.12.0)
+# enquanto o `harness` da sessão ainda reportava v0.12.0. O gate de push funcionou.
+# ⚠️ O `harness` DESTA sessão continua em v0.12.0 até reiniciar o Claude Code; os hooks
+# já estão em v0.13.0. A divergência é transitória e resolve no restart.
+# Histórico: v0.12.0 instalada em 2026-08-22 (commit 2233eb1).
+ref = "v0.13.0"
 
 [tracker]
 # Declaração e capacidade nasceram juntas em 2026-08-22: o servidor `mcp-atlassian`

@@ -16,6 +16,24 @@ O hook checa a identidade com `git var GIT_AUTHOR_IDENT` / `GIT_COMMITTER_IDENT`
 vive em `.git/hooks`; redirecionar `hooksPath` o desligaria **em silêncio**, que é a pior classe de
 quebra — o portão para de existir e nada avisa.
 
+## Design — autonomia delegada, com gate de validação
+
+**Declarado pelo owner em 2026-08-25:** *"quero que meus agents nessa questão de design tenha autonomia
+… porém n tenho experiência nem habilidades suficientes com ui-ux … o agente tem autonomia de decisão,
+**desde que ux-ui-mastery esteja de acordo**"*.
+
+| | |
+|---|---|
+| **quem decide** | [`ui-designer`](.claude/agents/ui-designer.md) — operador do Stitch, e ele decide de UI/UX **sem pedir permissão** |
+| **o gate** | `ux-ui-mastery` (plugin, 19 skills / 10 comandos). **Nenhuma decisão de design vale antes de o validador concordar.** Não é revisão opcional — é a condição da autonomia |
+| **por que dois** | agente que gera e aprova o próprio trabalho não tem gate. O ciclo é **gera → critica → itera** |
+| **o que muda com a delegação** | a obrigação de prestar contas **aumenta**: argumento, fonte lida com arquivo citado, falsificador, e `[NÃO SEI]` explícito. Quem não pode auditar merece mais rigor, não menos |
+
+O owner intervém **por exceção** — ele pontua o que discordar. Silêncio dele não é aprovação; aprovação
+é o veredito do validador.
+
+---
+
 ## O ledger é a identidade do estado, não o texto do documento
 
 O pipeline é o `harness`. Um documento marcado "aprovado" **sem o evento `approve` no ledger não está
