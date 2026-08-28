@@ -280,7 +280,7 @@ cd backend && grep -rnE 'http|socket|requests|urllib|websocket|Binance|Bybit|Coi
   src/ tests/ scripts/ pyproject.toml poetry.toml
 # scripts/test.sh:8:# ZERO REDE: nenhum teste desta suite chama Binance, Bybit ou Coinalyze. ...
 # scripts/test.sh:11:# com `socket` amputado por um `sitecustomize.py`, que alcanca tambem o ...
-# scripts/bootstrap.sh:84:# "Zero rede, zero chave", varre `scripts/` com um padrao que casa `http` ...
+# scripts/bootstrap.sh:98:# "Zero rede, zero chave", varre `scripts/` com um padrao que casa `http` ...
 ```
 
 **⚠️ O COMANDO MUDOU EM 2026-08-28 (`T-01.6`), e o número mudou com ele.** `requirements-dev.txt`
@@ -291,17 +291,24 @@ ocorrência** `[MEDIDO 2026-08-28: `poetry.lock:545` → `dev = [..., "requests"
 `extras` opcionais do `pytest` — metadado de pacote, não dependência instalada]`. Incluí-lo somaria
 ruído de metadado a um portão que existe para achar chamada de rede.
 
-**Re-medido em 2026-08-28 DEPOIS de escrever esta passada** (`/review`: itens B/D/E/F/G/H/I mexeram
-em `scripts/test.sh`, `scripts/check-coverage-layers.sh`, `scripts/bootstrap.sh` e neste `README.md`)
-— **continua 2, e o universo continua 19**. O procedimento é a lição, não o número: *o texto que
-descreve a medição vive dentro do universo medido*, então escrever "Coinalyze" num comentário de
-`src/`, `tests/` ou `scripts/` cria uma ocorrência nova. **Este número só vale re-rodado depois da
-última edição** — não antes.
+**⚠️ PARÁGRAFO DA PASSADA DE `T-01.4`. A CONTAGEM ESTÁ SUPERSEDIDA; a lição, não** — e é por ela
+que ele fica. ~~Re-medido em 2026-08-28 DEPOIS de escrever **esta** passada~~ **Re-medido à época,
+depois DAQUELA passada** (`/review`: itens B/D/E/F/G/H/I mexeram em `scripts/test.sh`,
+`scripts/check-coverage-layers.sh`, `scripts/bootstrap.sh` e neste `README.md`) — ~~**continua 2**~~
+**eram 2 À ÉPOCA**, e o universo **continua 19**. **Hoje são 3** — o bloco abaixo é a medição em
+vigor, e o universo de 19 sobreviveu à troca de `requirements-dev.txt` por `poetry.toml`
+`[MEDIDO 2026-08-28, re-rodado por `T-01.6` e conferido pelo `/review`]`.
+
+**E o parágrafo ter ficado dois ciclos lendo-se em presente É a própria lição acontecendo**, agora
+sobre a frase que a enuncia: *o texto que descreve a medição vive dentro do universo medido*, então
+escrever "Coinalyze" num comentário de `src/`, `tests/` ou `scripts/` cria uma ocorrência nova — e
+**um número em presente envelhece em silêncio enquanto a prosa ao redor continua verdadeira**.
+**Este número só vale re-rodado depois da última edição** — não antes.
 
 **[MEDIDO 2026-08-28, RE-RODADO por `T-01.6` depois da migração para Poetry]: 3 ocorrências**,
 **as três prosa de comentário**, universo **19 arquivos** — os 17 `.py`/`.sh` sob `src/`, `tests/` e
 `scripts/`, mais `pyproject.toml` e `poetry.toml`. As duas antigas continuam em `scripts/test.sh:8`
-e `:11`; **a terceira nasceu nesta passada**, em `scripts/bootstrap.sh:84`, e é a lição do parágrafo
+e `:11`; **a terceira nasceu nesta passada**, em `scripts/bootstrap.sh:98`, e é a lição do parágrafo
 acima acontecendo de novo — é o comentário que explica **por que** este README varre `scripts/` com
 um padrão que casa `http`. Nenhuma é chamada de rede.
 Excluindo linhas de comentário, **[MEDIDO 2026-08-28]: 0 ocorrência**:
@@ -319,6 +326,17 @@ Poetry dentro de um `echo` — que **não** é linha de comentário — e o núm
 de o número ser explicado: **endereço de documentação em prosa gasta o sinal de um portão que existe
 para achar chamada de rede.** A alternativa — manter a URL e afrouxar o padrão — seria consertar o
 instrumento para caber no resultado.
+
+**A linha removida está publicada abaixo para que a afirmação seja FALSIFICÁVEL por terceiro** — sem
+ela, este parágrafo mede um rascunho que não existe mais em disco e ninguém pode conferir:
+
+```bash
+# a linha que estava em backend/scripts/bootstrap.sh e foi retirada:
+    echo "        Instale-o (https://python-poetry.org/docs/#installation) e rode de novo." >&2
+```
+
+Reponha-a no lugar da linha `Instale-o conforme a documentacao oficial do Poetry (python-poetry.org).`
+e re-rode o grep sem comentários: ele passa a devolver **1**, e é `bootstrap.sh` que aparece.
 
 **Universo declarado com precisão:** este `README.md` **não** está na varredura, de propósito — ele
 cita os três nomes de exchange nesta mesma seção, e incluí-lo faria o portão medir a si mesmo.

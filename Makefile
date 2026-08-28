@@ -19,10 +19,16 @@
 # piso de cobertura. Ele chama `bash backend/scripts/test.sh`, que ja os encadeia sob
 # `set -euo pipefail`. `ADR-011/D2` decide essa forma explicitamente.
 #
-# REGRA DE ESCRITA DESTE ARQUIVO, para quem for acrescentar alvo: UM COMANDO POR LINHA de
-# receita. O `make` confere o exit code de CADA linha e aborta na primeira que falhar — e o
-# perigo do `;` so existe DENTRO de uma linha. Onde precisar de dois comandos numa linha, use
-# `&&`, nunca `;`.
+# REGRA DE ESCRITA DESTE ARQUIVO, para quem for acrescentar alvo: A ULTIMA PALAVRA DA LINHA
+# DECIDE O `rc`. O `make` confere o exit code de CADA linha e aborta na primeira que falhar, e
+# o perigo do `;` so existe DENTRO de uma linha — onde ele descarta o veredito de tudo que veio
+# antes. Prefira uma linha, um comando; quando forem dois, encadeie com `&&`.
+#
+# A EXCECAO, e ela esta nos alvos `lint-frontend` e `boundaries`: `cmd || { printf ...; exit N; }`
+# usa `;` DE PROPOSITO e esta CERTO — quem tem a ultima palavra e o `exit N`, entao o `rc` e o
+# que se quer. Trocar por `printf ... && exit N` seria pior: um `printf` que falhasse (saida
+# fechada, disco cheio) engoliria o `exit` e o alvo devolveria SUCESSO. "Nunca `;`" seria uma
+# regra que quebra o codigo correto — o que importa nao e o separador, e quem fala por ultimo.
 #
 # ── O CODIGO DE SAIDA DO `make` NAO E O DO SCRIPT, e citar um pelo outro e meia medicao ──
 #
