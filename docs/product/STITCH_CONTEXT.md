@@ -1,7 +1,36 @@
 # STITCH_CONTEXT.md — cripto-strategy
 
-**Data:** 2026-08-25 (**3ª** revisão do dia — as 8 condições do gate `ux-ui-mastery` fechadas) · **Projeto Stitch:** `projects/9264019151773162472` ("crypto", `TEXT_TO_UI_PRO`, PRIVATE)
-**Telas no Stitch hoje:** **0** `[MEDIDO: list_screens → {}]` · **Design systems:** 0
+**Data:** 2026-08-25 (**5ª** revisão do dia — reabertura sob gate `REPROVADO`) · **Projeto Stitch:** `projects/9264019151773162472` ("crypto", `TEXT_TO_UI_PRO`, PRIVATE, DESKTOP)
+**Telas no Stitch hoje:** **2** — `S2 Símbolo - Operacional Core` (`f233…`) e **`S2 Símbolo - Operacional Core Rev. A`** (`7c81…`) `[MEDIDO: list_screens + get_project, 2026-08-25 5ª revisão]`
+**Design systems:** **4** `[MEDIDO: list_design_systems]` — ver §5.1 · **e um quinto tema que não é asset: `project.designTheme`**
+
+> ### ⛔ TARJA de 2026-08-25 (5ª revisão): as DUAS linhas acima estavam erradas, pelo MESMO método
+>
+> ~~**Telas no Stitch hoje:** **1** · **Design systems:** **3**~~
+>
+> **São 2 telas e 4 design systems.** E a tarja logo abaixo — escrita na 4ª revisão, sobre
+> `list_screens` — **nomeia com precisão o erro que a 4ª revisão cometeu em seguida, duas vezes.**
+> `edit_screens` **bifurca** em vez de editar no lugar (§5.3), e `update_design_system` **persistiu**
+> (§5.1). Em ambos os casos a leitura estava no recurso errado ou cedo demais, e o **negativo foi
+> publicado como fato**.
+>
+> **Uma regra derivada corretamente e não aplicada ao caso seguinte não é uma regra: é uma frase.**
+
+> ### ⛔ TARJA de 2026-08-25 (4ª revisão): a linha acima dizia **"Telas no Stitch hoje: 0"**, e era FALSO
+>
+> ~~**Telas no Stitch hoje:** **0** `[MEDIDO: list_screens → {}]` · **Design systems:** 0~~
+>
+> **Havia 1 tela e 1 design system, e os dois materializavam a paleta que o owner REVOGOU.**
+> O erro não foi de leitura: foi de **método**. `list_screens` devolveu `{}` no momento em que
+> aquela linha foi escrita, e eu tratei uma resposta vazia de **um** endpoint como prova de
+> ausência — sem cruzar com `get_project`, que **sempre** trouxe a tela em `screenInstances`.
+>
+> **A regra que sai disto, e ela é operacional:** `get_project.screenInstances` é a fonte de
+> verdade sobre o que existe no canvas. `list_screens` é **corroboração**, nunca prova de
+> ausência. `[MEDIDO: na 4ª revisão `list_screens` devolveu a tela normalmente — ou seja, o
+> `{}` era transitório, e um resultado transitório publicado como fato é pior que um `[NÃO
+> MEDIDO]`, porque parece medição.]`
+
 **Mantido por:** `/design` · **Lido por:** quem for implementar UI, **antes** de escrever `.tsx`
 **Modelo do Stitch:** **`GEMINI_3_1_PRO`** em toda geração e edição `[PREMISSA-OWNER: 2026-08-25]` · **`deviceType: DESKTOP`**
 
@@ -59,7 +88,29 @@ fora de escopo, por mais natural que pareça num produto de trading.
 
 ## 3. Mapa de navegação
 
-**Desktop-first.** Operação de **um só usuário**, em VPS exposta, com **auth mínima single-user**.
+**Desktop-first.** Operação de **um só usuário**.
+
+> ### ⛔ TARJA de 2026-08-25 (4ª revisão) — a premissa de host mudou, por declaração do owner
+>
+> ~~**Desktop-first.** Operação de **um só usuário**, em VPS exposta, com **auth mínima single-user**.~~
+>
+> O owner declarou: *"vps n é problema agora, vai rodar muito local até lá"*
+> ⇒ **a VPS é DESTINO, não presente.** Roda **local** por bastante tempo.
+>
+> **Consequência para o design, e é UMA só:** o chip de ambiente e o desenho de sessão **não
+> podem assumir host exposto**, e **auth não é superfície visível** ⇒ **não se desenha tela de
+> login, nem avatar, nem menu de conta.** `principal_id` **continua** dimensão obrigatória
+> (`D5.10`: preenchido, nunca `NULL`) — o que mudou é que ele é **dado**, não **tela**.
+>
+> **Falsificador:** no dia em que o serviço passar a escutar em interface pública, `auth` volta
+> a ser superfície e esta tarja expira. Não é "auth foi cancelada"; é "auth foi **adiada**, e a
+> condição de reabrir está escrita".
+
+**`observer_region = GRU1` (São Paulo)** `[MEDIDO 2026-08-25, sem SSH, pelo caminho de rede até a
+Binance: `x-amz-cf-pop: GRU1-P6` no REST e `GRU1-P9` nos dumps]`. Resolve a pendência de região
+**para o host local**. ⚠️ **Não transporta para a VPS futura:** quando o host mudar, a região tem
+de ser **medida de novo pelo mesmo caminho** — `observer_region` é propriedade do observador, não
+do projeto. **Isto não é elemento de tela:** é dimensão de dado, e não recebe pixel na `S2`.
 
 ```
 shell autenticado
@@ -78,7 +129,117 @@ shell autenticado
 
 ## 4. Inventário detalhado das telas
 
-### 4.1 S2 — símbolo · **NÚCLEO OPERACIONAL** · `[NÃO EXISTE NO STITCH AINDA]`
+### 4.1 S2 — símbolo · **NÚCLEO OPERACIONAL** · **EXISTE NO STITCH** `[MEDIDO 2026-08-25]`
+
+> ### ⛔ TARJA de 2026-08-25 (4ª revisão): esta seção dizia `[NÃO EXISTE NO STITCH AINDA]`
+>
+> ~~### 4.1 S2 — símbolo · **NÚCLEO OPERACIONAL** · `[NÃO EXISTE NO STITCH AINDA]`~~
+>
+> **Existe, e existia quando a frase foi escrita.** Ver a tarja do cabeçalho para o defeito de
+> método que produziu o erro.
+
+**Identidade medida:**
+
+| campo | valor |
+|---|---|
+| `screenId` | `f233baf87e12403797d1c867f69ab53d` |
+| título | `S2 Símbolo - Operacional Core` |
+| `deviceType` | `DESKTOP` |
+| render | `2560 × 2048` (canvas: `1280 × 1024` em `x=1024`) |
+
+#### 4.1.1 O que a tela materializada ACERTOU — medido no HTML, não estimado
+
+**Isto é o ativo desta tela, e é o motivo pelo qual ela foi EDITADA em vez de descartada.**
+
+| acerto | evidência no HTML |
+|---|---|
+| os 4 painéis, na ordem, empilhados com crosshair vertical compartilhado | `Panel 1: PREÇO` … `Panel 4: CVD ACUMULADO` + `Global Vertical Crosshair` |
+| cabeçalho de painel com identidade completa, **sempre visível**, nunca em tooltip | 4 blocos `Panel Header` inline no fluxo |
+| **`price_source` E `price_use` declarados** — as duas coisas, e são diferentes | `klines_last` + `uso: structure_detection` |
+| rótulo completo do OI, sem a string `OI` sozinha | `OI · grade 5m · BTC · bn-dump · reduction=CLOSE` |
+| `DERIVADO` mostrando **a expressão** que o gerou | `DERIVADO (2*taker_buy - volume)` |
+| **`D5.2` satisfeito em geometria** — linha-guia tracejada apontando **para trás** + marca no fim | `stroke-dasharray="4,2"` de `x1=400` a `x2=600` + `<circle cx="600">` |
+| **`D5.3` satisfeito** — lacuna de `FLOW` como traço na linha de base | `Gap represented as dash on 0 line`, `h-px` |
+| JetBrains Mono em todo numeral · ponto decimal · sem separador de milhar | `font-data-sm/md/lg`, `66000.00`, `65241.50` |
+| rail 48px · chrome 40px · rodapé 20px · bordas 1px · zero sombra | `w-sidebar_width`, `h-header_height`, `h-5` |
+| atribuição da TradingView **com link**, no rodapé | `Lightweight Charts — TradingView` em `<a>` |
+| `pointer_mode` em **pt-BR** | `LER` / `MARCAR` |
+| vocabulário de ambiente **correto na tela** | chip `MAINNET` |
+| escopo respeitado | zero sinal, zero score, zero placar, zero ordem |
+
+⚠️ **Nota sobre o chip de ambiente:** o `designMd` do tema antigo prescrevia literalmente
+`"PROD v2.4"`, e **a tela não obedeceu** — ela renderizou `MAINNET` + `v2.4` separados, que é o
+vocabulário certo. **Registro porque contraria a expectativa:** o drift não foi uniforme, e
+neste ponto o gerador ficou **mais correto que o próprio design system** que o alimentava.
+
+#### 4.1.2 O que a tela materializada ERROU — 13 desvios, medidos
+
+**Todos com a paleta REVOGADA embutida.** `[MEDIDO: extração de hex do HTML + `min3` sob Brettel 1997]`
+
+| # | desvio | medição |
+|---|---|---|
+| 1 | direção = `chart-up: #2a78d6` / `chart-down: #eb6834` | **os dois REVOGADOS**, e vivem na *config do Tailwind* + 12 referências por nome |
+| 2 | **redundância de forma AUSENTE** — todo candle e toda barra é bloco **sólido** | direção carregada **só por hue** ⇒ **reprova SC 1.4.1**. Zero vazado, zero cruz |
+| 3 | **numeral tingido de vermelho**: `1149/1152` e `1 lacuna` em `text-error` `#ffb4ab` | **o pior defeito.** Severidade tingindo numeral — viola D14 **e** o item 5 do §9 |
+| 4 | **selo em 3 de 4 campos: falta `idade`** | zero carimbo de idade na tela — e `idade` é o campo do defeito que `D5.1` reprova |
+| 5 | **canal de integridade inexistente** | zero violeta, zero losango, zero `QUARENTENA` em toda a tela |
+| 6 | procedência como **tint de cor**: `OBSERVADO` azul `#4b91f1`, `DERIVADO` laranja `#a53600` | viola `ADR-010` D-4. E os tints do `designMd` medem **0,5** entre si ⇒ **FAIL** |
+| 7 | **ação é azul**: `#a8c8ff` em 7 usos + `#4b91f1` no rail ativo | `#a8c8ff × #e0aaff` = **0,9** sob deutan ⇒ **FAIL**, são a MESMA cor |
+| 8 | superfícies `#121315` / `#16181d` / `#0d0e10` / `#2a2e39` | **nenhuma** é nossa. `#16181d × #131722` = **1,008** — quase idêntica, e ainda assim errada |
+| 9 | **glassmorphism** nos 4 cabeçalhos de painel | `backdrop-blur-sm` + `bg-…/80` — proibido pelo próprio `designMd` que o gerou |
+| 10 | microcopy em inglês no chrome e no rodapé | `LIVE`, `AS AT T`, `Documentation`, `API Status`, `lang="en"` |
+| 11 | **sino de notificação** no chrome | afordância que promete um canal de aviso que **não existe** (`Q3`) |
+| 12 | **scroll vertical** nos painéis: `h-[1200px]` + `overflow-y-auto` | dois painéis que exigem rolagem **não compartilham crosshair** |
+| 13 | acentuação transliterada | `preco`, `ancora`, `Graficos` |
+
+⚠️ **Um número que eu NÃO vou usar para reforçar o item 3, porque ele não reforça:**
+`#ffb4ab × #f23645` mede **21,1 ⇒ PASS**, e o contraste de `#ffb4ab` sobre a superfície é
+**10,46**. **O vermelho do numeral não é uma colisão de dicromacia nem de contraste — é
+legível e é separável.** O defeito é **categórico**: severidade não tem canal de cor, e numeral
+tem um único eixo de tinta. Dizer que "colide" seria inventar apoio aritmético para uma
+conclusão que se sustenta sozinha, e é exatamente o defeito que `§1.4-quater` do
+`DESIGN_SYSTEM.md` existe para não repetir.
+
+#### 4.1.3 EDITAR ou GERAR NOVA — a decisão, e a medição que a decidiu
+
+**Decisão: EDITAR.** `edit_screens` sobre `f233baf87e12403797d1c867f69ab53d`, com o §9 verbatim
+seguido de uma lista de 13 correções nomeadas e uma lista de 13 preservações explícitas.
+
+**A hipótese que motivava GERAR NOVA era:** *"a paleta rejeitada está embutida na geometria, e
+editar a arrasta."* **Medi, e a hipótese é FALSA:**
+
+```
+grep -c 'chart-up\|chart-down'   =>  a paleta de direção vive em 2 LINHAS da config do Tailwind
+                                      + 12 referências POR NOME nos elementos
+```
+
+A paleta está **centralizada num bloco de configuração**, não espalhada na geometria. Trocar
+dois valores nomeados corrige 12 marcas de uma vez. **Isto favorece editar, não gerar.**
+
+**O que gerar nova custaria, e é o que decidiu:** re-rolar estrutura que é **específica e difícil
+de re-derivar** —
+
+| ativo em risco numa geração nova | por que é difícil de recuperar |
+|---|---|
+| a linha-guia tracejada **apontando para trás** com marca no fim (`D5.2`) | é geometria derivada de `available_at`, não um padrão que um gerador produz por default |
+| `price_source` **E** `price_use` declarados juntos | é `ADR-007`, e o default de qualquer gerador é declarar **uma** fonte de preço |
+| o traço na linha de base para lacuna de `FLOW` (`D5.3`) | o default é interpolar ou zerar — os dois são o defeito |
+| `DERIVADO` **com a expressão** | o default é um badge com a palavra, sem a expressão |
+| o chip `MAINNET` (contra o `"PROD v2.4"` que o `designMd` mandava) | o gerador **desobedeceu para o lado certo** — isso não se pede, acontece |
+
+**Contra-argumento, e ele é real:** o que a edição **não** pode fazer é o que exige *acrescentar*
+— o campo `idade` (o selo estava em 3/4) e o canal de integridade inteiro (violeta + losango +
+palavra, ausentes). Esses dois não são correção, são **inclusão**, e uma edição pode falhar em
+inclusão de um jeito que uma geração nova não falharia.
+
+**Ficou registrado como o falsificador desta decisão:** se a edição voltar sem o campo `idade` e
+sem o losango, **editar foi a escolha errada** para estes dois itens, e o remédio é uma segunda
+passada dirigida **só** a eles — não uma geração nova, porque a estrutura correta continuaria
+valendo.
+
+**E `R7` pesa aqui:** `S2` é núcleo operacional. Descartar uma `S2` materializada que acerta 13
+coisas para consertar 13 outras é uma mudança maior do que consertar — e mudança em `S2` é
+BLOCKER por default.
 
 **Job:** *olhar uma série contra o preço e afirmar o que ela significa.*
 
@@ -132,8 +293,22 @@ as TRÊS dicromacias.** Estimador: **Brettel 1997**, planos derivados em execuç
 >
 > **O novo eixo é o TIPO DE MARCA**, não o significado. E a medição fechou o caso por um segundo
 > caminho: o par da TradingView `#089981 ↔ #f23645` mede **18,0** sob `min(protan, deutan, tritan)` e
-> **PASSA** — o verde/vermelho *genérico* mede 12,2 e é WARN. **Não havia trade-off a pagar.**
-> *(Tarja: a 2ª revisão publicou `18,2` sob Viénot 1999; sob Brettel 1997 é `18,0`. Veredito idêntico.)*
+> **PASSA** — o verde/vermelho *genérico* mede 12,2 e é WARN. ~~**Não havia trade-off a pagar.**~~
+>
+> ⛔ **TARJA de 2026-08-25 (5ª revisão): "não havia trade-off a pagar" é FALSO, e sobreviveu aqui
+> por 24h depois de já ter sido tarjado em outro arquivo.** `[MEDIDO: bash scripts/measure_stitch_drift.sh,
+> BLOCO D2]` — o par **REVOGADO** mede **51,1**, o adotado mede **18,0** ⇒ a troca **custou 33,1 ΔE**
+> de separação sob dicromacia, e o custo foi **ACEITO** (os dois passam o piso de 15; o que se exige
+> do par de direção é *passar*, não *maximizar*, porque a direção é coberta por **forma**).
+> **A decisão não muda. A prestação de contas muda:** uma decisão com custo declarado é auditável,
+> uma anunciada como grátis não é.
+>
+> **E o modo de falha é o que importa registrar:** `DESIGN_SYSTEM.md` §0.2 tarjou isto na **4ª**
+> revisão, `STITCH_CONTEXT.md` e `ADR-010` **não** — e `measure_stitch_drift.sh` imprime a
+> contradição **a cada execução** desde então. É exatamente a divergência de terceiro lugar que o
+> §5 deste arquivo avisa, ocorrendo **entre três documentos e um script ao mesmo tempo**. A regra
+> que sai disto: **tarjar um número obriga a `grep` do número nos outros arquivos, no mesmo commit.**
+> *(Tarja anterior, mantida: a 2ª revisão publicou `18,2` sob Viénot 1999; sob Brettel 1997 é `18,0`. Veredito idêntico.)*
 >
 > ### ⛔ SEGUNDA MUDANÇA ESTRUTURAL, de 2026-08-25 (3ª revisão)
 >
@@ -183,6 +358,376 @@ O que **nenhum** prompt de Stitch pode contrariar:
 
 Os valores exatos vivem **só** em [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) §1.2 e no §9 deste arquivo —
 repeti-los em terceiro lugar **já produziu divergência** entre documentos uma vez.
+
+---
+
+### 5.1 Os design systems que existem DENTRO do Stitch `[MEDIDO 2026-08-25, 5ª revisão]`
+
+> ### ⛔ TARJA de 2026-08-25 (5ª revisão): a tabela desta seção dizia **3** design systems, e são **4**
+>
+> ~~3 design systems: `95d1…` (v1, paleta revogada) · `483322…` (criado nesta rodada) · `15706…` (sonda)~~
+>
+> **São QUATRO**, `95d1…` está em **`version: 2`**, e o quarto — `0334…` — **é o que de fato governou
+> a geração**. `[MEDIDO: list_design_systems + get_project, 2026-08-25]`
+
+| asset | nome | estado `[MEDIDO: list_design_systems, 5ª revisão]` |
+|---|---|---|
+| **`assets/0334450534074a98ba400e46f5b69dc7`** | `Quant-Precision Core` | ✅ **É O TEMA QUE GOVERNOU A GERAÇÃO DA `Rev. A`.** `version: 1`. Os 54 `namedColors` são **idênticos, token por token, ao `tailwind.config` do HTML da `Rev. A`** — é assim que se sabe. Carrega os **6 tokens de papel governado** (`direction-up`, `direction-down`, `integrity-ink`, `provenance-strong`, `provenance-weak`, `focus-stroke`) + `surface-border`, tem `labelFont: JETBRAINS_MONO` e **nenhum campo `roundness`** (⇒ cantos retos sobrevivem). ⚠️ **A ORIGEM DELE É `[NÃO SEI]`: nenhuma chamada registrada no §8.2 o explica.** Seu mapeamento de slot (`primary #131722` · `secondary #333846` · `neutral #0d1017`) é um **terceiro** mapeamento, diferente do que o §5.1 diz ter enviado |
+| `assets/95d106376b754a1b96ff2496b0630432` | `Quant-Precision Core` | ⛔ **`version: 2`. A ESCRITA PERSISTIU** — ver a tarja do "achado de API" abaixo. E a v2 é **pior** que o alvo em três eixos: `labelFont: PUBLIC_SANS` (numerais saíram da monoespaçada, contra §9 item 13), `roundness: ROUND_FOUR`, e **7 tokens de violeta** derivados de **um** override. **Não é o tema que gerou a `Rev. A`** |
+| `assets/483322114126186925` | `Procedencia-Core (ADR-010, 3a revisao)` | ⚠️ criado na 4ª rodada. `version: 1`, e **não tem `namedColors`, `typography`, `spacing`, `styleGuidelines` nem `labelFont`** — é um registro de tema **NÃO DERIVADO**. ⇒ **o falsificador que o §5.1 declarou ("reler `namedColors.primary`") é INEXECUTÁVEL neste asset: não há `namedColors` para ler.** Não governou geração nenhuma |
+| `assets/15706151352078452366` | ~~`PROBE-persistencia`~~ → **`Slate & Steel`** (nome **escolhido pela ferramenta**, não por mim) | 🧹 sonda descartável, **reusada na 5ª revisão** e agora em `version: 2`. **É a prova de que `update_design_system` REGENERA em vez de atualizar** — ver §5.2. Entrega o tema **100% acromático** que a condição G1 pede: **43 de 47 tokens abaixo do teto C* 9,95, zero violeta, zero bege**; o único resíduo é a escada de `error`. **Não há tool de delete**; fica para limpeza manual |
+
+⚠️ **E há um QUINTO tema, que não é asset: `project.designTheme`.** Ele continua sendo a paleta
+**integralmente revogada** (`customColor #2a78d6` · `overrideSecondary #eb6834` · `overrideTertiary
+#f23645` · `namedColors.primary #a8c8ff` · `primary_container #4b91f1` · `surface #121315`) —
+`[MEDIDO: get_project, 5ª revisão]`. **É uma cópia desnormalizada, e ela NÃO seguiu `95d1…` de v1
+para v2.** Consequências, e as duas importam:
+
+1. **Ler `get_project.designTheme` nunca poderia ter mostrado a mudança do asset.** Aquela leitura
+   não é uma leitura tardia do recurso certo — é a leitura de **outro objeto**. Ver §5.3, degrau 1.
+2. **Nenhum tool deste MCP escreve `project.designTheme`.** `update_design_system` endereça
+   `assets/{id}`. ⇒ se `designTheme` fosse o que governa a geração, a paleta revogada seria
+   **inconsertável por este MCP**. **Ela não é o que governa:** a `Rev. A` saiu de `0334…`, com as
+   três superfícies corretas e zero azul. `[NÃO SEI]` **para que serve** `project.designTheme`, e a
+   pergunta baixou de prioridade porque deixou de bloquear.
+
+#### O que o `Quant-Precision Core` prescrevia, e é o que a tela obedeceu
+
+`"Bullish (Up): #2a78d6 (Blue)"` · `"Bearish (Down): #eb6834 (Orange)"` ·
+`"System Alert/Error: #f23645 (Red)"` · superfícies `#0a0b0d` / `#16181d` ·
+`"Provenance Badges: soft, desaturated tints (#93c5fd, #c4b5fd, #99f6e4)"` ·
+chip `"PROD v2.4"` · `"AS AT T" / "LIVE"`.
+
+⇒ **a tela não era um desvio do design system: era obediência a um design system errado.** Essa
+distinção importa para escolher o remédio — não se conserta por prompt melhor, conserta-se
+trocando a fonte.
+
+#### ⛔ POR QUE NÃO SUBI O `DESIGN_SYSTEM.md` COMO FONTE — e a medição que decidiu
+
+`upload_design_md` + `create_design_system_from_design_md` existe, e a tentação é óbvia: o
+`DESIGN_SYSTEM.md` **é** a fonte de verdade. **Medi antes de subir:**
+
+```
+ocorrências de hex REVOGADO em DESIGN_SYSTEM.md:  51
+  #eb6834 14 · #2a78d6 8 · #d03b3b 8 · #c084fc 5 · #6d28d9 4 · #f5f5f5 4 · #e34948 4 · #008300 4
+ocorrências de hex EM VIGOR:                      67
+linhas dentro do §0 (o bloco REVOGADO, preservado por R11): 257 de 962  ⇒  27% do arquivo
+```
+
+**`#eb6834` (14) aparece MAIS vezes que `#089981` (8).** Um gerador **sem memória**, lendo este
+arquivo, encontra o laranja de baixa revogado com **mais frequência** que o teal de alta em
+vigor — porque `R11` manda **tarjar, não apagar**, e a tarja é texto que o modelo lê como
+qualquer outro.
+
+⇒ **`DESIGN_SYSTEM.md` e o `designMd` do Stitch são artefatos com jobs OPOSTOS, e conflatá-los
+é o defeito:**
+
+| artefato | job | forma |
+|---|---|---|
+| `DESIGN_SYSTEM.md` | **registro de decisão** — precisa do erro tarjado para ser auditável | argumento, com histórico |
+| `designMd` do Stitch | **brief de gerador** — precisa de **zero** menção ao revogado | prescrição, sem histórico |
+
+**A propriedade que torna `DESIGN_SYSTEM.md` bom como registro (não apaga o erro) é exatamente
+a que o torna perigoso como brief.** O brief novo foi escrito à mão e **verificado por comando**:
+`grep` de todos os 8 hexes revogados ⇒ **zero ocorrências**.
+
+#### O caminho escolhido, e por quê
+
+**`create_design_system` com tema explícito.** Não `apply_design_system` (aplicaria o sistema
+**errado**, que é o único que existia). Não `create_design_system_from_design_md` (deriva os
+*slots* de tema a partir da prosa — e é justamente o mapeamento de slot que eu precisava
+controlar, ver abaixo).
+
+#### ⚠️ O desencontro de esquema que eu declaro em vez de esconder
+
+**O modelo de tema do Stitch tem um slot chamado `primary`, e o usa para ação: botão, link,
+estado ativo, rail. Este design system NÃO TEM hue de ação** (`ADR-010` D-4: ação vive em
+luminância). O `customColor` `#2a78d6` do tema antigo gerou `namedColors.primary: #a8c8ff` — e
+é **esse** azul derivado que apareceu 7× na tela. **O drift de ação-é-azul não foi invenção do
+gerador de tela: foi o sistema de cor dinâmica cumprindo o seu papel a partir de uma semente
+azul.**
+
+Resolução adotada, e é uma escolha entre males:
+
+| slot | valor | razão |
+|---|---|---|
+| `colorVariant` | `MONOCHROME` | faz a paleta derivada nascer **neutra** ⇒ o gerador não fabrica um azul |
+| `customColor` (semente) | `#8b949e` | `--acao-borda`. Semente acromática, para não haver hue a derivar |
+| `overridePrimaryColor` | `#8b949e` | "primary" é **deliberadamente acromático** |
+| `overrideSecondaryColor` | `#e0aaff` | integridade é o **único** hue que precisa viver em INK/chrome |
+| `overrideTertiaryColor` | `#8b949e` | **starvation deliberada:** o orçamento de hue tem 3 vagas e 3 ocupantes ⇒ não há hue para um terceiro papel de acento |
+| `overrideNeutralColor` | `#131722` | `--sup-base` |
+
+**Direção (`#089981` / `#f23645`) NÃO entrou em slot nenhum de tema, e isso é intencional.**
+Direção é `fill`, vive no plot, e por `D19`/`FR-1` chega a `charts` **como argumento**, nunca de
+CSS. Pôr direção num slot de tema é o que produziu os tokens `chart-up` / `chart-down` no
+Tailwind da tela antiga. Direção é prescrita **só na prosa do `designMd`**.
+
+⚠️ **`[NÃO SEI]` se `MONOCHROME` + estes overrides produz a paleta derivada que eu espero.**
+Não li de volta os `namedColors` do asset novo. **Falsificador executável, uma chamada:**
+`get_project` depois de o tema novo ficar ativo — se `namedColors.primary` voltar a ser um azul,
+a starvation não funcionou e o remédio passa a ser prescrever os `namedColors` um por um.
+
+#### ⛔ O "ACHADO DE API" DESTA SEÇÃO ESTAVA ERRADO, E O ERRO ERA PIOR QUE O DEFEITO QUE ELE ALEGAVA
+
+> ### ⛔ TARJA de 2026-08-25 (5ª revisão): **`update_design_system` PERSISTIU.**
+>
+> ~~**ACHADO DE API: resposta de sucesso não é prova de escrita.** `update_design_system` sobre
+> `assets/95d1…` retornou 200 com o tema novo ecoado inteiro — e **não persistiu**. `create_*`
+> devolve `name` + `version` de um asset ⇒ persistiu. `update_design_system` devolve
+> `sessions/...` ⇒ **não confie**.~~
+>
+> **`assets/95d106376b754a1b96ff2496b0630432` está em `version: "2"`, e o payload gravado é
+> exatamente o que esta seção diz ter enviado** `[MEDIDO: list_design_systems, 5ª revisão]`:
+>
+> ```
+> customColor            #8b949e   (migrou de #2a78d6)
+> overridePrimaryColor   #8b949e
+> overrideSecondaryColor #e0aaff
+> overrideTertiaryColor  #8b949e
+> overrideNeutralColor   #131722
+> ```
+>
+> **A escrita landou. As duas leituras que a declararam ausente falharam por motivos DIFERENTES,
+> e essa distinção é o achado real:**
+>
+> | leitura | por que falhou |
+> |---|---|
+> | `list_design_systems → version: 1` | **cedo demais.** Reproduzido ao vivo na 5ª revisão: um `update_design_system` retornou 200 e a releitura **imediata** mostrou `version: 1` inalterado. Uma leitura única que devolve a versão antiga **não é** "não persistiu" — é **"ainda não visível"** |
+> | `get_project.designTheme → INALTERADO` | **nunca poderia ter mostrado a mudança.** `designTheme` é **cópia desnormalizada no projeto** e **não seguiu o asset de v1 para v2**. Ler a cópia não é ler o recurso. Isto não é latência: é **objeto errado** |
+>
+> **E a consequência é pior que o erro, porque uma escrita bem-sucedida e NÃO PERCEBIDA é mais
+> perigosa que uma falha.** A escrita que passou desapercebida degradou o asset em três eixos e
+> promoveu um hue a papel que ele não tem:
+>
+> - **`labelFont: PUBLIC_SANS`** — os numerais **saíram do JetBrains Mono**, e de propósito: o
+>   `designMd` regenerado chama Public Sans de *"alternative to traditional monospaced fonts"*.
+>   Contra §9 item 13 (`tabular-nums` **em monoespaçada**).
+> - **`roundness: ROUND_FOUR`** + prosa *"Soft (4px) corners for all primary containers"* — contra
+>   cantos retos. ⚠️ **Mas ver §5.2: `roundness` é campo OBRIGATÓRIO do schema e não existe valor
+>   "0px". Isto é limitação de esquema, não descuido de payload.**
+> - **o violeta de integridade promovido a ESTADO ATIVO**: *"used sparingly … to highlight active
+>   states"*, e o Sidebar *"`#e0aaff` when active"*. **Cruzamento de papel — `ADR-010` D-3 × D-4.**
+>
+> **E o vazamento é MAIOR do que "um slot":** `overrideSecondaryColor: #e0aaff` não acrescentou
+> **um** hue, acrescentou uma **escada tonal de sete**. `[MEDIDO: audit de croma Lab, estimador
+> extraído de validate_palette.js linhas 1..185]`
+>
+> ```
+> teto acromático derivado dos tokens SEM HUE do próprio DS  = C* 9,95  (#222634)
+> 95d1… v2:  12 de 47 tokens ACIMA do teto, e nenhum deles é hue governado
+>   on_secondary               #481965  C* 50,57
+>   secondary_container        #633480  C* 49,60
+>   on_secondary_fixed_variant #60327d  C* 49,12
+>   on_secondary_container     #d9a4f8  C* 48,66   <== mede 1,6 contra #e0aaff nas TRÊS dicromacias
+>   secondary                  #e5b5ff  C* 42,65   <== mede 2,2 contra #e0aaff  ⇒ MESMA COR
+>   secondary_fixed_dim        #e5b5ff  C* 42,65
+>   secondary_fixed            #f4d9ff  C* 21,94   <== 9,4 contra #e0aaff (WARN)
+>   + a escada de error: #93000a 66,31 · #690005 50,73 · #ffb4ab 30,39 · #ffdad6 13,94
+> ```
+>
+> **O pior deles é `on_secondary_container #d9a4f8`, e não é o mais cromático: é o de PAPEL
+> errado.** Um token `on_*` é **tinta desenhada sobre um container** — isto é, **texto**. ⇒ o tema
+> passou a oferecer ao gerador o violeta de integridade como **cor de texto genérica**, que é a
+> violação exata de `ADR-010` D-3 (integridade só em INK do losango e da régua) e do §9 item 4
+> (*"integridade nunca tinge numeral"*).
+>
+> **⇒ O erro NÃO era "200 mentindo".** A família de defeito é: **"li o recurso errado, ou cedo
+> demais, e publiquei o negativo como fato."** E a regra que faltava **está escrita neste mesmo
+> arquivo, ~270 linhas antes** — a tarja do cabeçalho: *"um resultado transitório publicado como
+> fato é pior que um `[NÃO MEDIDO]`, porque parece medição"*. Ela foi derivada corretamente ali e
+> **não foi aplicada ao caso seguinte**. Ver §5.3.
+
+⚠️ **O que fica de pendência, reformulado:** `[NÃO SEI]` **o que `apply_design_system` faz** —
+e a pergunta **deixou de bloquear**, porque a `Rev. A` provou que **`edit_screens` já carrega o
+tema sem nenhum `apply`**. A recusa do `apply` cego, registrada na 4ª revisão, estava certa **por
+razão melhor do que a que foi dada**: a doc do tool diz que ele aplica *"colors, **fonts,
+shapes**, etc."* ⇒ um `apply` de `95d1…` v2 teria empurrado **Public Sans** e **ROUND_FOUR** para
+a tela. **Criaria dois defeitos novos enquanto consertava cor.**
+
+---
+
+### 5.2 O ESQUEMA do tema do Stitch — o que ele pode e o que ele NÃO pode expressar `[MEDIDO 2026-08-25, 5ª revisão]`
+
+Medido com sondas, não inferido da doc. A sonda é `assets/15706151352078452366`, que já era
+descartável.
+
+#### `roundness` é OBRIGATÓRIO, e o esquema NÃO TEM valor para "canto reto"
+
+**Duas chamadas idênticas exceto por um campo** — o desenho de uma variável do §5.3 degrau 5:
+
+```
+update_design_system(…, theme SEM roundness)   =>  "Request contains an invalid argument."
+update_design_system(…, theme COM roundness)   =>  200
+```
+
+⇒ `roundness` é obrigatório **de fato**, não só no texto do schema. E o enum é
+`ROUND_TWO` (**deprecado**) · `ROUND_FOUR` · `ROUND_EIGHT` · `ROUND_TWELVE` · `ROUND_FULL`.
+**O menor valor não-deprecado é 4px. Não existe 0px.**
+
+⚠️ **CONSEQUÊNCIA OPERACIONAL, e ela é um BLOCKER de ferramenta, não de design:** `ADR-010`/§9
+exigem **cantos retos**, e `update_design_system` **não consegue escrever isso**. Qualquer
+`update_design_system` sobre `assets/0334…` — o único asset hoje **sem** campo `roundness`, e
+portanto o único com cantos retos — **estamparia `ROUND_FOUR` nele**. ⇒ **consertar cor via
+`update_design_system` custa a forma.** É a mesma classe de troca que a 4ª revisão recusou ao não
+fazer `apply` cego, e a resposta é a mesma: **não se paga.**
+
+**O que sobra, e é o que a `Rev. A` demonstrou funcionar:** a forma chega pela **prosa** do
+`designMd`. `0334…` diz *"Cantos Retos (0px) para todos os elementos"* e a `Rev. A` obedeceu —
+`rounded-sm` (2px) **só** no chip de `QUARENTENA`, que é exatamente a licença que o próprio
+`designMd` concede (*"Chip e badge podem usar 2px"*). **Um `borderRadius.DEFAULT: 0.25rem` ficou
+declarado no `tailwind.config` e não foi aplicado a container nenhum.**
+
+#### ⛔ `update_design_system` NÃO ATUALIZA: ele REGENERA, e descarta a sua prosa
+
+> ### ⛔ TARJA, escrita ~20 min depois do texto que ela tarja (5ª revisão)
+>
+> ~~**`namedColors` é o frontmatter YAML do `designMd`, não os `override*Color`.** Nos dois assets
+> derivados o bloco `colors:` e o mapa `namedColors` são o mesmo conjunto ⇒ **o frontmatter é que
+> NOMEIA.**~~
+>
+> **A causalidade estava INVERTIDA.** Os dois concordam **porque são as duas saídas da mesma
+> geração**, não porque um controla o outro. `[MEDIDO: sonda com sentinela, 5ª revisão]`
+
+**A sonda, e ela é o degrau 4 da §5.3 executado:** enviei a `assets/15706…` um `designMd` curto
+em português com frontmatter carregando **`sonda-frontmatter: '#ab12cd'`** — valor que não ocorre
+por acidente — mais `direction-up`, `direction-down`, `integrity-ink`, e `labelFont:
+JETBRAINS_MONO`. Releitura:
+
+```
+version:      1 -> 2                                    (persistiu, degrau 2)
+displayName:  "PROBE-2 esquema…"  ->  "Slate & Steel"   <== NÃO é o que eu enviei
+designMd:     o meu texto em pt   ->  brief inteiro em INGLÊS que eu nunca escrevi
+namedColors:  #ab12cd             ->  AUSENTE
+              direction-up / direction-down / integrity-ink  ->  AUSENTES
+labelFont:    JETBRAINS_MONO      ->  PUBLIC_SANS         <== NÃO honrado
+os slots de tema que eu enviei    ->  TODOS gravados (MONOCHROME, os 3 overrides, o neutral)
+```
+
+⇒ **`update_design_system` aceita os SLOTS DE TEMA e joga fora `displayName`, `designMd` e
+`labelFont`, regenerando os três a partir dos slots.** Ele batizou um tema cinza de *"Slate &
+Steel"* e escreveu sozinho um brief que prescreve **Public Sans** para numerais e *"Soft (0.25rem)
+roundedness"*.
+
+**Isto explica, de uma vez, tudo o que parecia inexplicável em `95d1…` v2:** o `designMd` em
+inglês *"Monochrome Technical"* que ninguém escreveu · o `labelFont: PUBLIC_SANS` · a ausência de
+`direction-up`/`integrity-ink`. **Nada disso foi degradação de payload. Foi o regenerador
+trabalhando.** ⇒ a leitura de que *"a escrita degradou três decisões governadas"* é verdadeira no
+efeito e **errada na causa**, e a causa muda o remédio.
+
+> ⚠️ **CORREÇÃO a uma leitura que me foi repassada, e ela é minha responsabilidade verificar:**
+> *"`direction-up` e `direction-down` DESAPARECERAM"* de `95d1…` **pressupõe que eles estavam lá.**
+> **Não estavam.** `[MEDIDO: get_project.designTheme, que espelha o `Quant-Precision Core`
+> pré-update]` — o `namedColors` daquele tema **não tem** `direction-up`, `direction-down`,
+> `integrity-ink`, `provenance-*` nem `focus-stroke`. Esses tokens existem **só em `0334…`**.
+> ⇒ não foram destruídos: **nunca estiveram em `95d1…`.** A distinção importa porque "a escrita
+> destrói tokens custom" seria motivo para nunca escrever; o que de fato ocorre é mais estreito e
+> mais acionável: **a escrita não os PRESERVA, porque regenera o documento que os declara.**
+
+#### ⇒ CONSEQUÊNCIA OPERACIONAL: **`update_design_system` NÃO PODE ser usado para consertar `0334…`**
+
+`0334…` é o asset que **governa a geração** (§5.1), e é o único que tem: os 7 tokens de papel
+governado com **os nomes e os valores certos** · a prosa em **português** com a governança inteira
+· `labelFont: JETBRAINS_MONO` · **nenhum `roundness`** (cantos retos).
+
+**Um `update_design_system` sobre ele destruiria os quatro ao mesmo tempo** — regeneraria a prosa,
+perderia os tokens, escolheria a fonte e estamparia `ROUND_FOUR`. ⇒ **a condição G1 do gate
+("consertar o asset antes de gerar") NÃO É EXECUTÁVEL com esta ferramenta sobre ESTE asset.**
+Não é recusa de julgamento: é medição. O caminho que resta é **`create_design_system`**, que
+**armazena** o que se escreve — é o que `assets/483322114126186925` prova, com o `designMd` em
+português **verbatim** e nenhum `namedColors` inventado.
+
+#### E ISTO REABILITA A DECISÃO DA 4ª REVISÃO, que estava certa e foi lida como falha
+
+`0334…` carrega `direction-up: #089981`, `direction-down: #f23645`, `integrity-ink: #e0aaff`,
+`provenance-strong: #e6e9ef`, `provenance-weak: #8b949e`, `focus-stroke: #8b949e`,
+`surface-border: #222634` — **os nomes que eu escrevi, com os valores que eu escrevi**, e prosa em
+português que preserva a governança inteira. **Nenhum regenerador inventa isso.**
+
+⇒ **hipótese forte, com falsificador nomeado:** `0334…` é a **derivação de `483322…`** feita pelo
+`edit_screens` para poder gerar a tela — a prosa que a 4ª revisão escreveu à mão virou
+`namedColors`, com os nomes certos, e daí foi para o `tailwind.config` da `Rev. A`. **Ou seja: o
+caminho "criar asset novo com a governança em prosa, em vez de dar `update` no antigo" FUNCIONOU,
+ponta a ponta.** O que falhou foi exclusivamente a **leitura** (§5.3).
+**Falsificador:** um `create_design_system` novo com prosa igualmente específica deve produzir,
+após um `edit_screens`, um asset derivado com os tokens **nomeados por mim**. Se produzir nomes de
+Material genéricos, a hipótese cai.
+⚠️ **Continua `[NÃO SEI]` o mecanismo exato**, e o mapeamento de slot de `0334…`
+(`primary #131722` · `secondary #333846` · `neutral #0d1017`) **não é** o que foi enviado a
+`483322…` (`#8b949e` / `#e0aaff` / `#131722`). Essa discrepância **não está explicada**.
+
+#### O TEMA 100% ACROMÁTICO É ALCANÇÁVEL, e foi MEDIDO — o resíduo é UM, e não é o violeta
+
+A mesma sonda entrega o alvo da condição G1. `MONOCHROME` + os três `override*Color` acromáticos
+(`#8b949e`) + `overrideNeutralColor #131722`:
+
+```
+teto acromático derivado dos tokens SEM HUE do DS = C* 9,95
+43 dos 47 tokens ficam ABAIXO do teto.  ZERO violeta.  ZERO bege.
+primary #ffffff (C* 0,00) · secondary #bec7d2 (6,61) · tertiary #dae3ee (3,04)
+os 4 acima do teto sao TODOS da escada de error:
+   #93000a 66,31 · #690005 50,73 · #ffb4ab 30,39 · #ffdad6 13,94
+```
+
+⇒ **a starvation funciona, e funciona nos três slots de acento ao mesmo tempo.** A condição
+mecânica é: **sobrescrever com valor acromático.** `0334…` falhou em `tertiary` porque **não
+setou** `overrideTertiaryColor` e deixou o slot à derivação, que produziu bege `#d9c3ae` (C*
+14,09, 1,4× o teto) — e esse bege **colide com o violeta de integridade em 1,8 sob tritanopia.**
+
+⇒ **e o violeta NÃO deve entrar em slot nenhum.** Pô-lo em `overrideSecondaryColor` (o que a 4ª
+revisão fez em `95d1…` e em `483322…`) não acrescenta **um** hue: acrescenta **sete**, porque o
+sistema deriva uma escada tonal por slot. **A ferramenta não desobedeceu — ela obedeceu ao slot.**
+`secondary` num tema derivado de Material é o slot de **acento de ação**, e pôr ali o hue
+exclusivo de integridade faz `ADR-010` **D-3 e D-4 colidirem dentro de um slot**. Os três hues
+governados são **Tier 3** (`fill`, `ink` de glifo, `on`) num esquema que só tem **Tier 2** (slots
+de acento), e o Stitch **deriva** em vez de aliasar. **Direção já vivia fora do tema por `D19`/
+`FR-1`; integridade tem de sair também, e chegar pelo mesmo caminho: prosa + argumento.**
+
+#### A escada de `error` NÃO É SUPRIMÍVEL pelo esquema — e a defesa que funcionou foi a prosa
+
+`error: #ffb4ab` (C* **30,39**), `error_container: #93000a` (66,31), `on_error: #690005` (50,73),
+`on_error_container: #ffdad6` (13,94) existem **nos dois assets derivados** e no
+`project.designTheme`. **Não há campo para omiti-los**, e o §9 item 5 diz *"não existe token de cor
+de severidade"* enquanto no esquema do tema **ele existe sempre**.
+
+**Mas o desenlace foi medido e é favorável, e o número que importa é a diferença entre DECLARAR e
+APLICAR:**
+
+```
+tela original  (f233…)  'text-error' APLICADO 2x   |  'ffb4ab' fora do tailwind.config: 0
+tela Rev. A    (7c81…)  'text-error' APLICADO 0x   |  'ffb4ab' fora do tailwind.config: 0
+```
+
+⇒ **a prosa do `designMd` derrotou o token do esquema.** O token continua declarado no
+`tailwind.config` da `Rev. A` e **não é usado em nenhum elemento**. A regra que sai: **um token de
+cor que o esquema impõe não é um defeito; é uma munição. O defeito é o USO.** ⇒ toda verificação
+de severidade tem de medir **uso aplicado**, nunca presença do literal. Ver §8.2.
+
+---
+
+### 5.3 A ESCADA DE LEITURA — cinco degraus, e ela substitui a regra que estava errada `[5ª revisão]`
+
+A regra antiga (*"`create_*` devolve asset ⇒ persistiu; `update_*` devolve `sessions/…` ⇒ não
+confie"*) diagnosticava a ferramenta. **O defeito era no método de leitura.** Substituída por:
+
+| # | degrau | por que |
+|---|---|---|
+| **1** | **NOMEIE O RECURSO.** Releia o **mesmo `name`** que você escreveu. | `get_project.designTheme` é **outro objeto** que a escrita em `assets/{id}`. Ler a cópia desnormalizada não é ler o recurso, e nenhuma espera conserta isso |
+| **2** | **LEIA A `version` E EXIJA MONOTONIA.** | *"`version` igual"* numa leitura **única** não é "não persistiu": é **"ainda não visível"**. Reproduzido ao vivo na 5ª revisão |
+| **3** | **RESPEITE O HORIZONTE QUE A FERRAMENTA DECLARA PARA SI.** | `generate_screen_from_text` declara *"every 30 seconds for up to 10 times"* ⇒ ~5 min. A 4ª revisão aplicou isto **corretamente** ao `edit_screens` (esperou 10× o horizonte) e **não aplicou** ao `update_design_system`, cuja releitura foi **imediata**. **Mesma régua, dois casos, um uso** |
+| **4** | **LEITURA AMBÍGUA ⇒ NÃO REESCREVA, SONDE** — com valor que não ocorre por acidente. | A sonda `PROBE-persistencia` **era esse instinto e estava certa**; só não foi usada para discriminar *aquele* write. Sondar custa uma chamada; reescrever custa um asset |
+| **5** | **`[NÃO SEI]` É ESTADO TERMINAL LEGÍTIMO.** | *"não persistiu"* é **conclusão**; a evidência suportava **"não observei"**. Publicar a conclusão fechou a investigação por 24h |
+
+> ⚠️ **E o degrau que faltava para o `edit_screens`, que é a mesma falha num objeto diferente:**
+> `edit_screens` **NÃO edita no lugar — ele BIFURCA.** `[MEDIDO: list_screens, 5ª revisão]` O
+> original `f233…` continua **byte-idêntico** (`files/9933b6…`, o mesmo id que a 4ª revisão
+> registrou) e apareceu uma tela **nova**, `7c81…`, intitulada **`"S2 Símbolo - Operacional Core
+> Rev. A"`** (`files/3e5b80…`). ⇒ as **9 leituras** que a 4ª revisão fez estavam todas no recurso
+> **certo para a pergunta errada**: elas provaram que o original não mudou, o que é **verdadeiro e
+> irrelevante**. O degrau 1 pega isto: *o `name` que você escreveu não é necessariamente o `name`
+> onde o resultado aparece* — quando a ferramenta bifurca, **é `get_project.screenInstances` que
+> tem de ser lido**, e a tarja do cabeçalho deste arquivo **já dizia exatamente isso** sobre
+> `list_screens`.
 
 ---
 
@@ -243,8 +788,239 @@ O passo 7 tem um buraco declarado: **o canal de aviso não existe** (`Q3`).
 | `Q3` | canal de alarme fora do browser | o passo 7 da jornada não fecha sem ela |
 | `Q20` | SMC × pivôs+Fibonacci | decide o que a **fase seguinte** detecta; aqui só `swing_point` |
 
+### 8.1 O que a 4ª revisão RESOLVEU, e o que ela ABRIU
+
+| item | estado |
+|---|---|
+| ~~região do observador~~ | **RESOLVIDA para o host local: `GRU1` (São Paulo).** Medida sem SSH, por `x-amz-cf-pop`. Ver §3. **Não transporta** para a VPS futura |
+| ~~VPS exposta / auth como superfície~~ | **ADIADA por declaração do owner.** Roda local; **não se desenha login**. `principal_id` continua dimensão. Ver §3 |
+| ~~"Telas no Stitch: 0"~~ | **CORRIGIDO com tarja.** Havia 1, e ela materializava a paleta revogada |
+| ~~**`apply_design_system` promove o tema a ativo?**~~ | **DESBLOQUEADA, e não por resposta: por irrelevância.** `[MEDIDO 5ª rev.]` A `Rev. A` foi gerada a partir de `0334…` **sem nenhum `apply`** ⇒ `edit_screens` já carrega o tema. `[NÃO SEI]` o que `apply` faz, e **deixou de bloquear** |
+| ~~**`MONOCHROME` + overrides starva o azul derivado?**~~ | **RESPONDIDA, e o mecanismo não é o `colorVariant`.** `[MEDIDO 5ª rev.]` A starvation **funciona quando o slot é sobrescrito com valor acromático** (`95d1…` v2: `tertiary #bec7d2`, C* **6,61**) e **falha quando é deixado à derivação** (`0334…`: `tertiary #d9c3ae` bege, C* **14,09**). O `colorVariant` de `95d1…` v2 é **`FIDELITY`, não `MONOCHROME`** — e a starvation funcionou de todo modo. Ver §5.2 |
+| ~~**a edição consegue ACRESCENTAR (`idade`, losango)?**~~ | **RESPONDIDA: SIM, e num único passe.** `[MEDIDO 5ª rev.]` `Rev. A` trouxe `idade 30h18m`, o **losango vazado** (`rotate-45`, só borda) e a palavra `QUARENTENA` — as três inclusões **juntas**. Era o falsificador da decisão de editar, e ele **não se realizou** |
+| ~~**o `designMd` de 12,3 KB cabe no contexto do gerador?**~~ | **CONSISTENTE COM "sim", n=1.** O prompt de ≈29 KB completou e a tela obedeceu inclusive o `Fora de escopo` (zero login, zero sino). **Não é prova:** uma execução bem-sucedida não estabelece um limite, só não o exibe |
+| **novo — `roundness` é obrigatório e não tem valor 0px** | ⛔ **MEDIDO, e é `BLOCKER` de ferramenta.** Duas chamadas idênticas exceto por esse campo: sem ele, `invalid argument`. ⇒ **consertar cor via `update_design_system` custa a forma.** Ver §5.2 |
+| **novo — a escada de `error` é suprimível?** | **NÃO pelo esquema** — `error`/`#ffb4ab` existe nos dois assets derivados e no `designTheme`, sem campo para omitir. **Mas a prosa do `designMd` derrotou o token:** `text-error` aplicado **2 → 0**. ⇒ verificar **uso**, nunca presença |
+| **novo — de onde veio `assets/0334…`?** | ⛔ **`[NÃO SEI]`, e é a pendência aberta mais incômoda,** porque **é ele que governou a geração**. Nenhuma chamada registrada no §8.2 o explica, e o mapeamento de slot dele é um terceiro, diferente do que foi enviado |
+| **novo — as três superfícies são expressáveis no tema?** | **NÃO.** Os assets derivam escada de ~7 superfícies e **todo `background` fica a 1,02–1,04 de `#131722`** (`95d1…` 1,036 · `0334…` 1,038) `[MEDIDO]`. Uma superfície a 1,008 da correta ainda está errada — §9 item 16(h) **⇒ o item 16(h) acusa o TEMA, não só o gerador** |
+
 **Não medido e é o maior risco técnico:** o eixo do Lightweight Charts aguenta **288 pontos + 1.440
 candles** no mesmo eixo? Tolerância de **0,5 px** entre coordenada X e `event_time` original.
+
+---
+
+## 8.2 Registro da iteração de 2026-08-25 (4ª revisão) — o que foi enviado ao Stitch
+
+| ação | resultado medido |
+|---|---|
+| `get_project` | tema ativo = `Quant-Precision Core` **revogado** · `screenInstances` = **1 tela + 1 DESIGN_SYSTEM_INSTANCE** |
+| `get_screen` + download do HTML | **22.612 bytes**. Base de toda a medição de §4.1 |
+| `list_screens` | devolveu a tela **normalmente** ⇒ o `{}` da 3ª revisão era **transitório** |
+| `node scripts/validate_palette.js` | **exit 0 · 361 medições** — os tokens em vigor reproduzem |
+| medição do drift (estimador **extraído** de `validate_palette.js` linhas 1–185, não reimplementado) | os números de §4.1.2 |
+| discovery `@shadcn` | registries **vazio** ⇒ nada instalável. Reconfirmado |
+| `update_design_system` | ⛔ **200 mas NÃO persistiu** — escreveu numa `sessions/...`. Ver §5.1 |
+| `create_design_system` (global, sem `projectId`) | ⛔ `invalid argument` ⇒ **modo global não é suportado** neste projeto |
+| `create_design_system` (com `projectId`) | ✅ `assets/483322114126186925` · `version: 1` |
+| `edit_screens` (`GEMINI_3_1_PRO`, `DESKTOP`) | **timeout** — esperado, **não repetido** (`R1`/`R2` respeitadas) |
+
+**O prompt enviado:** §9 **verbatim** (229 linhas, extraídas por `awk` do próprio arquivo, não
+transcritas de memória) + **13 preservações explícitas** + **13 correções nomeadas com o hex
+errado e o hex certo em cada uma**.
+
+**Por que as preservações vão no prompt, e isto é o aprendizado de método desta rodada:** um
+prompt que só lista o que está errado convida o gerador a refazer a tela. A tela acertava 13
+coisas, e **algumas delas são difíceis de re-derivar** (`D5.2`, `price_use`, a expressão do
+`DERIVADO`). Nomear o acerto é tão necessário quanto nomear o erro — **e nenhuma rodada anterior
+fez isso**, porque nenhuma rodada anterior sabia que existia uma tela para preservar.
+
+### ⛔ A EDIÇÃO MATERIALIZOU. Esta seção dizia o contrário, e o contrário era falso
+
+> ### ⛔ TARJA de 2026-08-25 (5ª revisão) — **`edit_screens` PRODUZIU UMA TELA**
+>
+> ~~**A EDIÇÃO NÃO MATERIALIZOU.** `edit_screens` deu timeout e não produziu efeito observável.
+> `htmlCode` em todas as 9 leituras: `files/9933b6…` INALTERADO. Telas no projeto: 1 (nenhuma tela
+> nova foi criada). A tela no Stitch continua sendo exatamente a que §4.1.2 descreve — com os 13
+> desvios. `[NÃO SEI]` a causa, e sobram duas hipóteses: (1) o prompt de ≈29 KB excedeu um limite
+> de entrada — reenviar em DUAS PASSADAS; (2) falha transitória do serviço.~~
+>
+> `[MEDIDO: list_screens + get_project + download do HTML, 2026-08-25 5ª revisão]`
+>
+> ```
+> projects/9264019151773162472/screens/f233baf87e12403797d1c867f69ab53d
+>     "S2 Símbolo - Operacional Core"          files/9933b6…   22.612 bytes   INALTERADO
+> projects/9264019151773162472/screens/7c81c2672b944f8a88c06ae436b19274
+>     "S2 Símbolo - Operacional Core Rev. A"   files/3e5b80…   22.766 bytes   <== NOVA
+> ```
+>
+> **`edit_screens` NÃO edita no lugar: ele BIFURCA**, criando `"<título> Rev. A"` e deixando o
+> original byte-idêntico. ⇒ as 9 leituras de `get_screen` e as 3 de `list_screens` estavam no
+> **recurso certo para a pergunta errada**: provaram que o original não mudou — verdadeiro e
+> irrelevante. Ver §5.3.
+>
+> **O argumento do "10× o horizonte" estava aritmeticamente certo e logicamente inválido:** ele
+> media o relógio correto contra o **objeto errado**. Nenhuma quantidade de espera faz um recurso
+> não-modificado revelar uma modificação que aconteceu **em outro recurso**.
+>
+> ⚠️ **E a HIPÓTESE 1 CAIU.** O prompt de ≈29 KB **completou e produziu tela**. ⇒ **não há
+> problema de tamanho a testar, e o plano de DUAS PASSADAS não tem mais objeto.** Ele foi
+> projetado para falsificar uma hipótese que a medição já falsificou.
+>
+> ⚠️ **Correção de FORMA, e é o mesmo defeito que o `DESIGN_SYSTEM.md` §0.2 tarjou em si mesmo:**
+> a frase *"se uma passada de ~15 KB completar, a hipótese está confirmada"* comparava o resultado
+> **contra o piso** e não **contra a alternativa**. Uma chamada menor completando (n=1) é
+> **igualmente consistente** com "transitório". O predicado correto nunca é *"confirmada"* — é
+> **"é consistente com"**, e só um desenho de **duas chamadas com uma variável cada** discrimina.
+> **Piso e alternativa respondem perguntas diferentes, e a 4ª revisão trocou uma pela outra pela
+> segunda vez no mesmo dia.**
+
+### O QUE A `Rev. A` DE FATO ENTREGOU — a tabela de aceitação, executada `[MEDIDO]`
+
+**11 dos 13 desvios corrigidos · 1 parcial · 1 falso positivo de grep · ZERO regressão nos 4
+testes negativos · e um ganho que não estava na lista.**
+
+| desvio | antes (`f233…`) | `Rev. A` (`7c81…`) | veredito |
+|---|---|---|---|
+| **(a)** direção azul/laranja | `2a78d6`×1 `eb6834`×1 | **0 / 0**; `089981`×6 `f23645`×5 | ✅ |
+| **(b)** candle como bloco sólido | `bg-transparent`×0 | `bg-transparent`×**4**, `rotate-45`×1 | ✅ ver ablação abaixo |
+| **(c)** completude tingida de erro | `text-error`×**2** | `text-error`×**0**; `1 lacuna` em `text-[#8b949e]` | ✅ |
+| **(d)** selo com 3 de 4 campos | `idade`×0 | **`idade 30h18m`**, 1 ocorrência, na borda direita | ✅ |
+| **(e)** canal de integridade ausente | `e0aaff`×0 | `e0aaff`×**4** + losango vazado + `QUARENTENA` | ✅ **os três canais juntos** |
+| **(f)** procedência como chip colorido | tints `93c5fd/c4b5fd/99f6e4`: **0** nos dois | `OBSERVADO`×2 `DERIVADO`×2, sem tint | ✅ com ressalva¹ |
+| **(g)** ação em azul | `a8c8ff`×**7** `4b91f1`×1 | **0 / 0** | ✅ |
+| **(h)** superfícies inventadas | `121315`×3 `16181d`×9 `0d0e10`×1 `2a2e39`×9 | **0/0/0/0**; `131722`×6 `0d1017`×11 `222634`×58 | ✅ |
+| **(i)** `backdrop-blur` | ×**4** | ×**0** | ✅ |
+| **(j)** microcopy em inglês | `AS AT T`×1 `LIVE`×1 | **0/0**; `AO VIVO`×1 `COMO EM T`×1 — **mas `Documentation`×1 e `API Status`×1 SOBREVIVERAM** | ⚠️ **PARCIAL** |
+| **(k)** sino de notificação | `notifications`×**2** | ×**0** | ✅ |
+| **(l)** painéis com `overflow-y-auto` | ×1 | ×**0** | ✅ |
+| **(m)** acentuação transliterada | `Graficos` `ancora` `preco`×3 | `Gráficos` `âncora` `preço`; os 2 `preco` restantes são **`rel="preconnect"`** | ✅ **falso positivo do grep** |
+| **GANHO** não listado | `tabular-nums`×**0** | ×**1**, como regra CSS global sobre `.font-data-*` | ✅ fecha o §9 item 13, que a tela original violava |
+| `P1` `klines_last` · `structure_detection` | 1 · 1 | **1 · 1** | ✅ preservado |
+| `P2` `stroke-dasharray` | 1 | **1** | ✅ preservado |
+| `P3` `taker_buy` | 1 | **1** | ✅ preservado |
+| `P4` `MAINNET` presente · `PROD` ausente | 1 · 0 | **1 · 0** | ✅ preservado |
+
+¹ **Ressalva honesta:** os três tints que §4.1.2 (f) acusa **não existem no HTML original** — são
+0 nos dois arquivos. Eles estão na **prosa do `designMd` revogado**, não na tela. ⇒ `[NÃO SEI]`
+**por qual mecanismo** o chip de procedência era "colorido" na tela original, e o desvio (f) pode
+ser uma leitura do design system atribuída à tela. **Fica marcado, não corrigido em silêncio.**
+
+#### A ABLAÇÃO DE CINZA — o teste que não pode ser fingido, e a `Rev. A` passa
+
+```
+sed 's/089981/808080/g; s/f23645/808080/g'   e reclassificar
+        partição de corpos que usam hue de direção:  CHEIO 5 · VAZADO 4 · AMBÍGUO 0
+        marcador de CRUZ/doji no markup:             1
+        'bloco sólido pintado' (bg E border do mesmo direcional):  0
+        classes distintas ANTES da ablação:  3
+        classes distintas DEPOIS da ablação: 3     => PASSA
+```
+
+E a forma é literal no markup, não inferida:
+
+```html
+<!-- Vazado (Up)   -->  border border-[#089981] bg-transparent
+<!-- Cheio (Down)  -->  bg-[#f23645]
+<!-- Doji (Cross)  -->  bg-[#8b949e]        <= NEUTRO, sem hue de direção
+```
+
+⇒ **o doji veio em tinta neutra**, que é **melhor** do que o §9 item 2 exigia (*"o hue do corpo de
+1 px de um doji não carrega informação nenhuma"*). E a redundância vazado/cheio foi carregada
+também para o **histograma de CVD delta**, que ninguém pediu.
+
+### ⛔ A TABELA DE VERIFICAÇÃO ANTERIOR TINHA TRÊS CHEQUES QUE PRODUZEM VEREDITO FALSO — e agora está MEDIDO
+
+> ~~| 2 | `grep -c '089981.*f23645\|direcao-alta-fill'` | reprova se **== 0** |~~
+> ~~| 5 | `grep -ci 'text-error\|ffb4ab'` | reprova se **> 0** |~~
+> ~~| 7 | `grep -c 'e0aaff'` **e** existe glifo de losango | reprova se **== 0** |~~
+>
+> **Executados contra a `Rev. A`, que é conformante nos três pontos:**
+>
+> | # | resultado | por que é veredito falso |
+> |---|---|---|
+> | **#2** | **0** ⇒ *reprovaria* | é regex de **mesma linha**. Os dois hexes existem (6 e 5 usos) e nunca aparecem na mesma linha. ⇒ **FALSO FAIL numa edição conformante** |
+> | **#5** | **1 nas DUAS telas** ⇒ *reprovaria as duas* | `#ffb4ab` está no `tailwind.config` de ambas. O que mudou foi `text-error` **APLICADO: 2 → 0**. ⇒ **o cheque devolve o MESMO número para a tela defeituosa e para a corrigida. É cego exatamente à mudança que existe para detectar** |
+> | **#7** | **4** ⇒ passaria | mas 1 das 4 é a **declaração do token** no `tailwind.config`. Um tema que declarasse `e0aaff` sem nenhum uso **passaria**. E o cheque **nomeia o hex, não o papel** — sob `95d1…` v2 o tema pinta `#e5b5ff`, que mede **2,2** contra `#e0aaff` (⇒ **é a mesma cor**) e o cheque **reprovaria** |
+>
+> **O padrão, e ele é o achado de método:** das 13 verificações, **9 eram `grep` negativo** ("este
+> literal não deve existir") e são **robustas**; as **4 que exigiam estrutura POSITIVA** (#3, #4,
+> #6, #7) eram **existenciais e sem comando** — e são exatamente as 4 que cobrem as **duas
+> inclusões** (idade, losango) e os **dois canais de `SC 1.4.1`** (forma da vela, forma do doji).
+> **A tabela era forte onde o risco era baixo e fraca onde o risco era alto.**
+
+**A regra de construção que sai disto, e ela vale para toda verificação futura:**
+
+| princípio | por quê |
+|---|---|
+| **Medir USO APLICADO, nunca presença do literal** | o esquema do tema **impõe** `error`/`#ffb4ab` e não há campo para omiti-lo (§5.2). Presença do token é munição; **o defeito é o uso** |
+| **Nomear o PAPEL, não o hex** | `#e0aaff` e `#e5b5ff` medem 2,2 ⇒ **são a mesma cor**, e um cheque por hex reprova a cor certa vinda por derivação |
+| **Verificação estrutural é RELACIONAL e EXAUSTIVA, nunca existencial** | *"existe corpo vazado"* passa com **1 vazado entre 199 sólidos**. O correto é **particionar TODO corpo** em CHEIO/VAZADO/CRUZ, reprovar se qualquer classe tem count 0, reprovar corpo cujo `fill` **e** `stroke` são o mesmo direcional, e reprovar se a partição **não cobre o total** |
+| **A ablação de cinza carrega o peso** | uma linha de `sed`, e **não pode ser fingida**, porque testa a propriedade que o sistema realmente alega: que a forma sobrevive sem cor |
+| **`idade` é CONTAGEM, não presença** | *"a string aparece"* passa com rótulo de coluna sem valor **e** com carimbo em **toda** barra — que viola `D3`/§9 item 10 (*"um gráfico de 3 dias tem ZERO carimbos"*). O correto é **exatamente um na borda direita do tempo, zero em qualquer outro ponto**. A `Rev. A` mede **1** ✅ |
+| **A cruz do doji tem de separar CÓDIGO de FIXTURE** | *"existe a cruz"* testa o **fixture**, não o design: a cruz só existe se o dado tiver `open == close`, e §1.9 diz que o predicado real é `\|close − open\| < tick_size` **datado**, com a fração `[NÃO SEI]`. Separe: **4a** existe um **terceiro ramo** (verificável sem dado) · **4b** contar no fixture, e se 0 declarar **`[NÃO APLICÁVEL NESTE FIXTURE]`** em vez de reprovar por ausência de dado · **4c** cada barra dessas é CRUZ · **4d** **reprovar corpo ≥2 px numa barra doji** (é a altura mínima proibida entrando por trás) |
+| **Os testes negativos precisam ser DERIVADOS da lista de acertos, não escolhidos** | `P1` nomeou `klines_last`/`structure_detection`, e `price_use`/`price_source` medem **0 nas DUAS telas** ⇒ `P1` **nunca poderia** ter detectado uma regressão de `price_use`. §4.1.1 lista `price_use` entre os acertos e o literal **não está no HTML**: `[NÃO SEI]` se §4.1.1 está errado ou se o acerto era expresso em prosa |
+
+### A VERIFICAÇÃO AGORA É UM COMANDO, não uma tabela em prosa
+
+`scripts/verify_screen.py <arquivo.html>` · exit **0** passa, **1** reprova, `[NÃO APLICÁVEL]`
+**não** reprova. **Prosa não é verificação** — a tabela anterior tinha três cheques que só se
+descobriu estarem errados quando alguém os executou à mão, 24h depois.
+
+Ele implementa os três princípios como código: **uso aplicado** (separa o `tailwind.config` do
+resto e mede fora dele) · **partição relacional e exaustiva** dos corpos (`CHEIO`/`VAZADO`/
+`AMBÍGUO`/`PINTADO`, e `AMBÍGUO > 0` reprova) · **ablação de cinza** · **`idade` por contagem** ·
+**doji em 4 sub-cheques** (`a` terceiro ramo no código, verificável sem dado · `b` fixture, com
+`[NÃO APLICÁVEL]` em vez de reprovar por ausência de dado · `c` classificação · `d` corpo ≥2 px
+reprova) · **integridade por PAPEL**, aceitando qualquer violeta derivado e reprovando-o por
+**não ser** o governado, além de reprovar **violeta sem glifo**, que é a ordem invertida dos canais.
+
+`[MEDIDO — o discriminante que a tabela antiga não tinha:]`
+
+```
+python3 scripts/verify_screen.py orig.html   =>  REPROVADO, 22 reprovações   (exit 1)
+python3 scripts/verify_screen.py revA.html   =>  REPROVADO,  2 reprovações   (exit 1)
+                                                 e as 2 são 'Documentation' e 'API Status'
+```
+
+⇒ **22 contra 2.** A tabela antiga devolvia números **indistinguíveis** para estes dois arquivos
+em três dos seus cheques. **Um gate que não separa a tela defeituosa da corrigida não é gate.**
+
+⚠️ **`price_use` / `price_source` entram como AVISO, não como reprovação, e isto é deliberado:**
+eles medem **0 nas duas telas**. Reprovar por eles seria reprovar por uma ausência que **nunca
+esteve presente** — e reprovar por um critério que o artefato de referência também viola é a
+receita de um gate que se ignora. Fica `[NÃO SEI]` se §4.1.1 erra ao listá-los entre os acertos.
+
+### ⛔ O CORTE DAS DUAS PASSADAS ERA ERRADO EM ESPÉCIE, e vale registrar mesmo tendo perdido o objeto
+
+O plano recortava **passada 1 = cor, superfície e forma** · **passada 2 = selo, integridade e
+microcopy**. **Esse corte separa a COR da integridade do seu GLIFO e da sua PALAVRA** — e o §9
+item 4 diz que a cor é o **terceiro** canal, **nunca o primeiro**. O estado intermediário
+(violeta na tela, sem losango, sem `QUARENTENA`) **é literalmente a violação que a regra existe
+para impedir: o corte FABRICA o defeito.** E o desvio (e) não é corrigível na passada 1, que não
+tem glifo nem palavra.
+
+Se algum dia houver motivo para partir uma edição, **o corte é SUBSTITUIÇÃO × INCLUSÃO**, não
+cor × selo: substituir valores errados é reversível e local; **acrescentar estrutura que não
+existe** é o que pode falhar. A costura certa já estava identificada em §4.1.3 e o corte foi
+feito em outro lugar.
+
+⚠️ **E a `Rev. A` fechou a questão empiricamente: `#e0aaff` + losango vazado + `QUARENTENA`
+chegaram JUNTOS, numa ÚNICA passada de ≈29 KB.** A costura nunca precisou ser cortada.
+
+### O que a `Rev. A` NÃO resolveu — a lista curta e completa
+
+1. **`Documentation` + `API Status` no rodapé** (desvio **j**, parcial). É o **único** desvio de
+   conteúdo remanescente. O rodapé tem a atribuição correta e com link
+   (`Gráficos por Lightweight Charts — TradingView`), e **dois links inventados ao lado dela** —
+   contra o `designMd`, que diz *"Não invente outros links de rodapé"*.
+2. **`#d9c3ae` (bege) e a escada de `error` declarados no `tailwind.config`** e **não aplicados**
+   a elemento nenhum. Vêm de `0334…`. Munição, não defeito — mas é munição a remover na origem
+   (§5.2), **e a remoção na origem custa `ROUND_FOUR`**, o que a torna um `BLOCKER` de ferramenta.
+3. **`borderRadius.DEFAULT: 0.25rem`** declarado e não aplicado a container.
+
+⇒ **`Rev. A` NÃO é um redesenho e NÃO é a `S2` do canvas.** A `S2` original (`f233…`) segue
+intacta, com os 13 desvios. **Nada foi decidido sobre promover a `Rev. A` — é `R7`, é BLOCKER, e
+escala ao owner.**
 
 ---
 
@@ -266,14 +1042,99 @@ candles** no mesmo eixo? Tolerância de **0,5 px** entre coordenada X e `event_t
 > | 7 | **novo:** `--foco` é byte-idêntico ao token que encosta ⇒ `outline-offset` é requisito | `C2` |
 > | 15 | **novo:** `forced-colors` afeta CSS e **não** afeta canvas ⇒ híbrido descasado | `C8` |
 >
+> ### 4ª revisão (2026-08-25) — `--sync` contra o Stitch real
+>
+> | item | mudança | motivo |
+> |---|---|---|
+> | **16** | **NOVO BLOCO: `DRIFT MEDIDO`** — os **13 erros que um gerador com este mesmo §9 já cometeu**, extraídos do HTML e medidos | o §9 era todo **prescritivo**; passa a ter uma seção **descritiva do erro observado**. Prescrição não impediu o drift; a lista do erro concreto é o canal que faltava |
+> | FORA DE ESCOPO | **+ tela de login / auth / avatar** e **+ sino de notificação** | declaração do owner (roda local) e `Q3` (o canal de aviso não existe) |
+>
+> ⚠️ **O que esta revisão NÃO fez, e é deliberado:** não mexeu em nenhum dos 15 itens de
+> governança de cor. O drift medido **não desmentiu nenhuma regra** — ele mostrou que as regras
+> estavam certas e **não foram lidas como operacionais**. O remédio para uma regra correta que
+> não pega não é reescrever a regra: é **nomear a saída errada que ela deveria ter barrado**.
+>
+> ⚠️ **E há um custo que declaro:** o §9 cresceu ~35 linhas, e ele já é o artefato mais copiado
+> deste repositório. **`[NÃO MEDIDO]` se existe um comprimento a partir do qual acrescentar
+> guarda passa a diluir as guardas que já existiam.** Se uma rodada futura mostrar o gerador
+> obedecendo o item 16 e regredindo num item de 1 a 15, esse é o sintoma — e a resposta seria
+> mover o item 16 para um anexo, não apagá-lo.
+>
 > ⚠️ **`C4` é a regressão que EU introduzi**, e vale registrar como ela aconteceu: a 2ª revisão
 > reescreveu o item **melhor operacionalmente** (nomeou glifo, palavra e ordem dos canais) e **pior em
 > escopo** — trocou "alerta crítico" por "integridade do dado". Sob o texto estreito, o gerador **não
 > tinha regra** para `coletor PAROU`, e a saída provável era **barra vermelha preenchida**: satisfaz a
 > letra do item 1 e **destrói a intenção**. Melhorar a redação de uma regra e encolher o seu domínio no
 > mesmo movimento é um modo de falha silencioso, porque o diff parece um upgrade.
+>
+> ### 5ª revisão (2026-08-25) — POSIÇÃO, não conteúdo
+>
+> | item | mudança | motivo |
+> |---|---|---|
+> | **16** | **MOVIDO PARA O TOPO do prompt.** Conteúdo **inalterado**; delta de **+155 bytes** (só o cabeçalho de 2 linhas que explica a renumeração) | o bloco ocupava **~70% do caminho**: sem **primazia** e sem **recência** — as duas únicas posições de serial position que um prompt tem. O `LEMBRETE FINAL` é o slot de recência e já está ocupado; sobrava a primazia |
+> | numeração | **o número 16 foi PRESERVADO**, apesar de agora vir antes do item 1 | `STITCH_CONTEXT.md` cita *"§9 item 16"* em vários lugares. Renumerar para "0" ou "A" quebraria **toda** citação existente, e este repositório já pagou o preço de uma divergência de terceiro lugar |
+>
+> ⚠️ **O remédio que a 4ª revisão pré-comprometeu ("mover o item 16 para um anexo") ia na DIREÇÃO
+> ERRADA**, e vale registrar porque o raciocínio parecia certo: anexo é **menos** proeminente que
+> 70% do caminho, não mais. O problema nunca foi "o bloco está muito presente" — era "o bloco está
+> no único lugar em que ninguém lê com atenção".
+>
+> ⚠️ **DUPLICAÇÃO NOMEADA E NÃO RESOLVIDA, deliberadamente.** O item 16 reafirma, em registro
+> negado, os itens **1, 2, 3, 4, 5, 6, 8, 9 e 15** — custo de comprimento sem ganho de canal. O
+> conteúdo **unicamente** novo dele é o conjunto de **literais proibidos** (os hexes revogados, as
+> superfícies inventadas, `backdrop-blur`, o microcopy em inglês, o sino, o `overflow`, a
+> transliteração) e o **acerto a não regredir** (`MAINNET`).
+>
+> **Por que a deduplicação NÃO foi feita agora, e é uma tensão real entre duas condições do gate:**
+> o desenho experimental que discrimina *tamanho* de *posição* exige **duas chamadas com uma
+> variável cada** — (A) §9 **sem** o item 16, menor ⇒ isola tamanho; (B) §9 **com** o item 16 no
+> topo, **tamanho idêntico** ⇒ isola posição. **Encurtar o item 16 agora mexeria nas duas
+> variáveis ao mesmo tempo e anularia o experimento.** A variante (B) **é exatamente este §9**; a
+> variante (A) se constrói **por deleção, no momento da chamada**, e não vive no arquivo.
+>
+> ⚠️ **E há um fato novo que rebaixa a urgência do experimento:** o prompt de ≈29 KB **completou e
+> produziu tela** (`Rev. A`, §8.2). ⇒ **não existe hipótese de limite de tamanho a testar.** O
+> experimento passa a medir uma pergunta legítima mas **não bloqueante**: *o item 16 no topo
+> produz obediência melhor que no meio?* Isso se responde comparando saídas, não completude.
 
 ```text
+ 16. DRIFT MEDIDO — LEIA ESTE BLOCO PRIMEIRO. Ele conserva o numero 16 porque
+     STITCH_CONTEXT.md cita "item 16" em varios lugares: a POSICAO mudou, a referencia nao.
+     ESTES TREZE ERROS JA FORAM COMETIDOS NESTA TELA, POR UM GERADOR QUE
+     TINHA ESTE MESMO CONTEXTO. Nao sao hipoteses: foram extraidos do HTML gerado em
+     2026-08-25 e medidos. Verifique cada um contra a sua saida ANTES de responder.
+       (a)  direcao desenhada em azul #2a78d6 / laranja #eb6834. Os dois estao REVOGADOS.
+            Nenhum dos dois pode aparecer em lugar nenhum. Direcao e #089981 / #f23645.
+       (b)  candle e barra desenhados como BLOCO SOLIDO, sem vazado/cheio/cruz. E o defeito
+            mais facil de cometer, porque bloco solido e o default de todo gerador, e
+            reprova SC 1.4.1 sozinho.
+       (c)  numeral de completude ("1149/1152", "1 lacuna") tingido de vermelho de erro.
+            Completude incompleta e SEVERIDADE OPERACIONAL e nao tem cor. Tinta neutra.
+       (d)  selo entregue com 3 de 4 campos — faltou a IDADE. Conte os campos.
+       (e)  canal de integridade AUSENTE: zero violeta, zero losango, zero palavra.
+            Ausencia nao e conformidade: se ha lacuna na tela, ha afirmacao de integridade.
+       (f)  procedencia como CHIP COLORIDO (azul para OBSERVADO, laranja para DERIVADO).
+            Procedencia nao consome hue. Medido: dois tints pastel de procedencia medem 0.5
+            de separacao entre si sob dicromacia — sao a MESMA cor — e um deles mede 0.6
+            contra o violeta de integridade.
+       (g)  acao em azul claro #a8c8ff (7 usos) e #4b91f1 no rail ativo. Medido: #a8c8ff
+            contra #e0aaff da 0.9 sob deuteranopia. Sao a MESMA COR. Acao e luminancia.
+       (h)  superficies inventadas: #121315, #16181d, #0d0e10, #2a2e39. Sao TRES e sao
+            #131722 / #0d1017 / #222634. Uma superficie a 1.008 de contraste da correta
+            ainda esta errada.
+       (i)  backdrop-blur com fundo translucido no cabecalho de painel. Sem blur, sem alpha.
+       (j)  microcopy em ingles: "LIVE", "AS AT T", "Documentation", "API Status". E
+            AO VIVO, COMO EM T, e o rodape so tem a atribuicao da TradingView.
+       (k)  sino de notificacao no chrome.
+       (l)  paineis num container de altura fixa com overflow-y-auto, exigindo SCROLL para
+            ver os quatro. Dois paineis que precisam de rolagem para serem vistos juntos NAO
+            compartilham crosshair, e crosshair compartilhado e o motivo da tela existir.
+       (m)  acentuacao transliterada: "preco", "ancora", "Graficos". E preço, âncora, Gráficos.
+
+     E UM ACERTO PARA NAO REGREDIR: aquele gerador escreveu o chip de ambiente como MAINNET
+     mesmo com um design system que mandava escrever "PROD v2.4". Ele desobedeceu para o lado
+     certo. Nao regrida isso: PROD nao existe neste sistema.
+
 CONTEXTO DO PROJETO — cripto-strategy
 
 Plataforma pessoal, single-user, desktop-first, de analise quantitativa de cripto-derivativos.
@@ -481,6 +1342,12 @@ FORA DE ESCOPO — NAO DESENHE, por mais natural que pareca num produto de tradi
   - entrada de ordem, carteira, saldo, posicao, execucao
   - detectores de padrao nomeados (order block, FVG, BOS, CHoCH, Fibonacci)
   - watchlist multi-simbolo ao vivo, painel de liquidacao, gerenciador de layouts
+  - TELA DE LOGIN, autenticacao, avatar de usuario, menu de conta. A plataforma roda LOCAL
+    neste momento (declaracao do owner, 2026-08-25: "vps n e problema agora, vai rodar muito
+    local ate la") e auth NAO e superficie visivel. principal_id continua sendo dimensao
+    OBRIGATORIA de dado — mas dado nao e tela.
+  - icone de sino, badge de notificacao, central de alertas. O canal de aviso deste sistema
+    NAO vive no browser. Uma afordancia que promete o que nao existe e defeito.
   - qualquer elemento que EMPURRE o usuario a mais operacoes. Zero selecao e informacao valida,
     e a ausencia dessa afordancia e deliberada.
 

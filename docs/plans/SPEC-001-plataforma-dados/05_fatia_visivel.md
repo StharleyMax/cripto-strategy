@@ -19,7 +19,7 @@
 | 5.8 | `pointer_mode ∈ {read, annotate}` declarado, com overlay reservado acima do plot e abaixo do crosshair | `SPEC-001` §3.6 | `charts` |
 | 5.9 | Cor como **token nomeado por papel**; **`critical` fora do canal de cor** | `CA-F4-10` | `charts` |
 | 5.10 | **Atribuição do Lightweight Charts** — notice do `NOTICE` + crédito à **TradingView** com link | `CA-F1-15`, `[GAP G4]` | `web` |
-| 5.11 | **Auth mínima, single-user, extensível** — primeira superfície servida de host exposto | `SPEC-001` §8.3, `Q2` | `web` |
+| 5.11 | ⚠️ **REBAIXADO em 2026-08-25 por declaração do owner** — *"vps n é problema agora, vai rodar muito local até lá"*. A `Q2` havia respondido *"VPS exposta, auth mínima"*, e este item nasceu como *"primeira superfície servida de host exposto"*. **Rodando LOCAL, auth como superfície é prematura** — o `PRD-001` §12 proíbe construir especulativamente. **O que FICA:** `principal_id` é **dimensão em toda linha que registre ato humano**, nunca constante implícita nem `NULL` (`SPEC-001` §4.4) — isso não depende de onde roda. **O que SAI desta fase:** mecanismo de login e tela de auth. A VPS é **destino, não presente** | `SPEC-001` §8.3, `Q2` | `web` |
 | 5.12 | Transporte: **HTTP endereçável por conteúdo** para o histórico. **Nenhum tick chega ao browser** | `ADR-005`/D1 | `web` |
 
 ## DoD — comando e universo

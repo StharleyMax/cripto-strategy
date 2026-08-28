@@ -80,8 +80,27 @@ TradingView, nos dois modos.
 **18,0** sob `min(protan, deutan, tritan)` e **PASSA** o piso de 15. O verde/vermelho *genérico*
 (`#008300 ↔ #e34948`) mede **12,2** e é **WARN**. A TradingView escolheu um verde deslocado para o
 **teal** (`#089981`, matiz ≈176°) e um vermelho claro e rosado (`#f23645`), e esse deslocamento é
-exatamente o que separa o par sob dicromacia. ⇒ **não havia trade-off a pagar**: seguir a convenção que
-o owner já lê **e** passar no critério de dicromacia são a mesma decisão.
+exatamente o que separa o par sob dicromacia. ⇒ ~~**não havia trade-off a pagar**: seguir a convenção que
+o owner já lê **e** passar no critério de dicromacia são a mesma decisão.~~
+
+> ⛔ **TARJA de 2026-08-25 (5ª revisão) — "não havia trade-off a pagar" é OVERCLAIM, e este é o
+> TERCEIRO lugar em que ele foi escrito.**
+>
+> `[MEDIDO: bash scripts/measure_stitch_drift.sh, BLOCO D2]`
+>
+> ```
+> #2a78d6 x #eb6834  (REVOGADO)  min3 51,1  PASS
+> #089981 x #f23645  (EM VIGOR)  min3 18,0  PASS
+> ```
+>
+> **O trade-off é de 33,1 ΔE e foi ACEITO.** A decisão **não muda** — o que se exige do par de
+> direção é *passar* o piso de 15, não *maximizar*, porque a direção é coberta por **forma**
+> (`D-2`: vazado/cheio/cruz) e o hue é acelerador, não portador. O correto é: **a Lei de Jakob
+> decide, e o piso ainda passa com folga de 3,0.**
+>
+> `DESIGN_SYSTEM.md` §0.2 tarjou isto na 4ª revisão; este ADR e o `STITCH_CONTEXT.md` §5 **não**,
+> e o script imprimia a contradição a cada execução. **Uma decisão anunciada como grátis não é
+> auditável** — e este ADR existe para ser auditável.
 
 ### D-2 · Redundância de FORMA obrigatória na direção, e ela tem TRÊS estados
 

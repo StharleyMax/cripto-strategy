@@ -2,8 +2,25 @@
 
 **Data:** 2026-08-25 (**terceira** revisão do dia) · **Deriva de:** [`ADR-010`](../adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md) · [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §6 · `CA-F4-10` · plano [`05`](../plans/SPEC-001-plataforma-dados/05_fatia_visivel.md) D5.6
 **Status:** **§1 REVISADO na 3ª rodada** — tritanopia MEDIDA, o violeta TROCADO nos dois modos, `--foco` declarado.
+**5ª rodada (2026-08-25, reabertura sob gate `REPROVADO`):** nada de cor mudou — **os 25 tokens e as
+361 medições são os mesmos, `node scripts/validate_palette.js` continua `exit 0`.** O que se aprendeu
+é sobre a **FERRAMENTA**, e está em `STITCH_CONTEXT.md` §5.2/§5.3: `update_design_system` **regenera**
+em vez de atualizar (descarta `designMd`, `displayName` e `labelFont`) · `roundness` é **obrigatório**
+e **não existe valor 0px** ⇒ cantos retos só chegam por **prosa** · a escada de `error` (`#ffb4ab`
+C* 30,39 e mais três) é **inexpurgável do esquema**, e a defesa medida é a prosa: `text-error`
+aplicado caiu de **2 para 0** na tela · o tema **100% acromático é alcançável** (43 de 47 tokens sob
+o teto C* **9,95**, zero violeta) e a condição é **sobrescrever o slot com valor acromático**, nunca
+deixá-lo à derivação. ⚠️ **E um achado que é regra de governança, não de ferramenta:** pôr
+`--dado-quebrado-ink` num slot de tema (`overrideSecondaryColor`) **não acrescenta um hue —
+acrescenta SETE**, porque o sistema deriva uma escada tonal por slot, e um deles
+(`on_secondary_container #d9a4f8`) mede **1,6** contra `#e0aaff` nas três dicromacias **e tem papel
+de TEXTO**. ⇒ **`D-3` (integridade) tem de sair do tema pelo mesmo motivo que `D-1` (direção) já
+estava fora: os três hues governados são Tier 3 num esquema que só tem Tier 2.**
+
+**4ª rodada (2026-08-25, `--sync`):** §0.2 **tarjado** (o "sem trade-off" era overclaim: são **33,1 ΔE** aceitos) · **§1.4-quinquies novo** — procedência-como-tint reprova por **aritmética**, não só por escassez · §1.4-quater ganhou o par que **de fato ocorreu numa tela** (`#a8c8ff × #e0aaff` = **0,9**, valor **derivado** de uma semente que passava).
 **Documento vivo** — atualizado por `/design --sync`, nunca por prompt do Stitch.
-**Comando de verificação:** `node scripts/validate_palette.js` — **361 medições, exit 0, sob as TRÊS dicromacias.**
+**Comando de verificação (GATE):** `node scripts/validate_palette.js` — **361 medições, exit 0, sob as TRÊS dicromacias.**
+**Comando de auditoria (NÃO é gate):** `bash scripts/measure_stitch_drift.sh` — mede os valores **rejeitados** que apareceram no Stitch. **Extrai o estimador das linhas 1–185 do gate em tempo de execução**, para que não exista uma segunda cópia capaz de divergir em silêncio.
 **Estimador de recorde:** **Brettel, Viénot & Mollon (1997)**, dois semiplanos, planos **derivados em execução**. Viénot 1999 foi **rebaixado** — ver §1.4.
 
 > **Este design system não é preferência estética. Ele é consequência de medição.** Onde há número, há
@@ -101,9 +118,34 @@ dicromacia.
 > arquivo mais teme. ~~*"matiz ≈168°"*~~ também estava errado: medido em Lab, o matiz de `#089981` é
 > **176°**.
 
-⇒ **não existe trade-off aqui.** Seguir a convenção que o owner já lê **e** passar no critério de
-dicromacia são a mesma decisão. A rodada anterior pagou um custo de reaprendizado para comprar uma
-robustez que a convenção já entregava.
+⇒ **Seguir a convenção que o owner já lê **e** passar no critério de dicromacia são a mesma
+decisão.** A rodada anterior pagou um custo de reaprendizado para comprar uma robustez que a
+convenção já entregava.
+
+> ### ⚠️ TARJA de 2026-08-25 (4ª revisão) — **"não existe trade-off aqui" era OVERCLAIM meu**
+>
+> ~~⇒ **não existe trade-off aqui.**~~
+>
+> **Existe, e é medido.** `[MEDIDO: bash scripts/measure_stitch_drift.sh, BLOCO D2]`
+>
+> ```
+> #2a78d6 x #eb6834  (REVOGADO)  min3 51.1  PASS
+> #089981 x #f23645  (EM VIGOR)  min3 18.0  PASS
+> ```
+>
+> **O par revogado media 51,1 e o adotado mede 18,0** ⇒ a troca **custou 33,1 ΔE** de separação
+> sob dicromacia. Os dois passam o piso de 15, e é por isso que **a decisão não muda**: o que se
+> exige do par de direção é *passar*, não *maximizar* — a direção é coberta por **forma**
+> (vazado/cheio/cruz), e o hue é acelerador, não portador (§1.4).
+>
+> **Mas "não existe trade-off" é falso, e a diferença importa.** O correto é: **o trade-off é de
+> 33,1 ΔE e foi ACEITO, porque a Lei de Jakob decide e o piso ainda passa com folga de 3,0.**
+> Uma decisão com custo declarado é auditável; uma decisão anunciada como grátis não é — e este
+> arquivo tem uma regra própria contra isso (§1.4-quater).
+>
+> **Como o erro aconteceu:** eu comparei o par adotado **contra o piso** (18,0 > 15 ⇒ passa) e
+> concluí "sem trade-off", sem comparar **contra a alternativa** (51,1). Piso e alternativa
+> respondem perguntas diferentes, e eu troquei uma pela outra.
 
 ### 0.3 O que a medição REPROVOU, e que nenhuma escolha de hue conserta
 
@@ -544,6 +586,32 @@ não é medição: é memória. Estão agora no BLOCO 1b do script.
 | `#3b82f6` × `#a855f7` | 0,8 | **0,7** (deutan) | reproduz |
 | `#2a78d6` × `#c084fc` | **6,3** | **9,8** (protan) | ⛔ **ERRADO em ~56%** |
 
+> **⚠️ Acréscimo de 2026-08-25 (4ª revisão): o azul que APARECEU numa tela real mede 0,9, e não
+> é nenhum dos três acima.** `[MEDIDO: measure_stitch_drift.sh, BLOCO D4]`
+>
+> | par | `min3` | veredito | de onde vem |
+> |---|---|---|---|
+> | **`#a8c8ff` × `#e0aaff`** | **0,9** | ⛔ **FAIL** | o azul que a tela do Stitch usou em **7 lugares** |
+> | `#4b91f1` × `#e0aaff` | 11,6 | WARN | a borda do item ativo do rail |
+> | `#2a78d6` × `#e0aaff` | 20,3 | PASS | a semente `customColor` do tema |
+>
+> **O achado que importa não é o `0,9`: é de onde ele veio.** `#a8c8ff` **não foi escolhido por
+> ninguém.** É o `namedColors.primary` que o sistema de cor dinâmica do Stitch **derivou** da
+> semente `#2a78d6`. E a semente mede **20,3 ⇒ PASS**, enquanto o valor derivado dela mede
+> **0,9 ⇒ FAIL**.
+>
+> ⇒ **medir a semente não mede a paleta.** Um tema pode ter seed aprovada e ainda entregar, na
+> tela, um token que reprova por 16× de margem. Esta é a razão pela qual o tema novo usa
+> `colorVariant: MONOCHROME` com semente **acromática**: não é preferência estética, é **remover
+> a matéria-prima de que a derivação faz hue**.
+>
+> **E corrige uma atribuição minha:** o §9 ensina *"azul de acao contra violeta de integridade da
+> 0.3 sob deuteranopia"*. O `0,3` é de `#1d4ed8 × #6d28d9` — **dois valores que nunca estiveram
+> nesta tela**, sendo o segundo um violeta **revogado**. O número **reproduz** e o argumento é o
+> mesmo, mas o par que **de fato ocorreu** é `#a8c8ff × #e0aaff` = **0,9**. Mantive o `0,3` no §9
+> (ele não está errado) e registro o `0,9` aqui, porque **um exemplo que aconteceu vale mais que
+> um exemplo que ilustra**.
+
 > **⚠️ Tarja: o `6,3` que eu publiquei é falso.** O valor correto sob Brettel é **9,8**. O gate mediu
 > **9,6** por fora; a diferença de 0,2 é atribuível ao estimador (a minha derivação e a dele divergem em
 > até 0,3 em protan). **Nenhuma das duas versões muda a decisão** — o número que a carrega é o **0,3**,
@@ -551,6 +619,46 @@ não é medição: é memória. Estão agora no BLOCO 1b do script.
 > uma lista de três, e uma lista em que um terço está errado por metade não é evidência: é ornamento.
 > **Este é o defeito de forma que gerou a regra nova:** todo número publicado neste documento tem de
 > existir dentro do script.
+
+### 1.4-quinquies PROCEDÊNCIA COMO TINT DE COR — o argumento aritmético que faltava a `D15`
+
+**Até esta revisão, `D15` ("procedência não consome hue") era justificada por ESCASSEZ:** o
+orçamento de hue tem 3 vagas e 3 ocupantes, logo não sobra vaga. **É um argumento de alocação, e
+ele não diz nada sobre se o tint funcionaria se houvesse vaga.**
+
+Agora diz. O `designMd` que o Stitch tinha em vigor prescrevia três tints pastel para os três
+níveis de procedência — `#93c5fd` (OBSERVADO), `#c4b5fd` (DERIVADO), `#99f6e4` (MODELADO). Medi
+os três. `[MEDIDO: bash scripts/measure_stitch_drift.sh, BLOCO D5]`
+
+| par | `min3` | veredito |
+|---|---|---|
+| `#93c5fd` × `#c4b5fd` — **os dois primeiros níveis entre si** | **0,5** | ⛔ **FAIL** |
+| `#93c5fd` × `#99f6e4` | 9,1 | WARN |
+| `#c4b5fd` × `#99f6e4` | 17,4 | PASS |
+| `#93c5fd` × `--dado-quebrado-ink` `#e0aaff` | **1,1** | ⛔ **FAIL** |
+| `#c4b5fd` × `--dado-quebrado-ink` `#e0aaff` | **0,6** | ⛔ **FAIL** |
+| `#99f6e4` × `--dado-quebrado-ink` `#e0aaff` | 17,7 | PASS |
+
+**Duas reprovações independentes, e a segunda é pior que a primeira:**
+
+1. **O tint não separa os próprios níveis.** `OBSERVADO` e `DERIVADO` — os dois valores mais
+   frequentes da coluna — medem **0,5** entre si. São **a mesma cor** sob dicromacia. Um canal
+   que não distingue os seus próprios estados não é canal; é decoração.
+2. **O tint INVADE o canal de integridade.** Dois dos três medem **1,1** e **0,6** contra
+   `#e0aaff`. Ou seja: para um observador dicromata, o badge que diz *"este número é derivado"*
+   e a tinta que diz *"este número quebrou"* **são a mesma cor** — e essas duas afirmações
+   convivem literalmente na mesma linha do cabeçalho de painel.
+
+⇒ **`D15` deixa de ser uma decisão de orçamento e passa a ser uma decisão de aritmética.** Mesmo
+se houvesse uma quarta vaga de hue, **procedência-como-tint reprovaria**. O ramp em vigor, sem
+hue nenhum, mede `#e6e9ef × #8b949e` = **22,5** com razão de luminância **2,53** — separa os
+níveis **e** não toca a integridade.
+
+⚠️ **Onde este argumento NÃO alcança:** ele mede os **três tints específicos** que o Stitch
+prescrevia, não *todo* esquema de tint concebível. **`[NÃO SEI]`** se existe um trio de hues que
+separe entre si por >15 **e** de `#e0aaff` por >15 **e** passe 4,5:1 como texto. **Não varri o
+espaço.** O que está provado é mais estreito e mais útil: **o trio que um gerador escolhe por
+default reprova**, e reprova pelo pior motivo possível.
 
 ### 1.5 O NUMERAL TINGIDO — a colisão que a auditoria deixou aberta
 
@@ -898,6 +1006,7 @@ multi-símbolo ao vivo · dashboard de métricas financeiras · tela de curadori
 | `components.json` | **não existe** neste repositório | ⇒ nenhum componente pode ser **instalado** ainda. Discovery é registro de intenção, não de instalação. `[MEDIDO: mcp shadcn get_project_registries → vazio, reconfirmado 2026-08-25]` |
 | **anel de foco** (§1.8) | `search_items_in_registries("focus ring outline offset")` → **nenhum item** | **não existe componente para isto, e não deveria:** anel de foco é **token + `outline-offset`**, não componente React. O que existe no `@shadcn` é o *utility class* `focus-visible:ring-*` embutido em cada primitivo — e é justamente ele que **precisa ser auditado**, porque o default do Tailwind usa `ring-offset` com a **cor do fundo do tema**, não com a superfície declarada em §1.2. `[MEDIDO: registro vazio, busca sem resultado]` |
 | **candle vazado / doji** (§1.9) | não procurado no `@shadcn` | é **configuração do `lightweight-charts`**, não componente. Mesmo motivo que rejeitou `@shadcn/chart` |
+| `components.json` / registries | **RECONFIRMADO 2026-08-25 (4ª revisão)** | `get_project_registries` → **lista vazia** · `search_items_in_registries("badge chip status indicator")` → **nenhum item**. ⇒ nada instalável, e a busca por componente **não retorna nem o `@shadcn/badge`** porque sem `components.json` não há registro configurado para consultar. **Discovery continua sendo registro de intenção.** `[MEDIDO: mcp shadcn, 2026-08-25]` |
 
 
 ---
