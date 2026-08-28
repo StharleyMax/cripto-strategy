@@ -1,0 +1,11 @@
+# Dependencias de desenvolvimento do backend, FIXADAS. Instaladas por
+# `backend/scripts/bootstrap.sh`, que e o unico passo que precisa de rede — o `test_cmd`
+# declarado roda offline sobre este ambiente.
+#
+# Versoes medidas na instalacao de 2026-08-28 (`uv pip install`, `uv 0.10.12`,
+# CPython 3.12.8). Pin e nao faixa: o portao tem de rodar o mesmo em clone limpo.
+coverage==7.15.4
+mypy==2.3.1
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.5

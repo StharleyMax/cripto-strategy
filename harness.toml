@@ -99,14 +99,72 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # nada") como AVISO e não erro, exatamente para política escrita antes do código. O
 # aviso é ESPERADO hoje e some no primeiro módulo.
 #
+# ── ATUALIZAÇÃO 2026-08-28 (`T-01.1`): o primeiro módulo nasceu e o aviso morreu ────
+#
+# `backend/src/modules/sentimento/{domain,use_cases,infra}` existe. `[MEDIDO 2026-08-28:
+# harness validate → 0 aviso, antes 1]`. O parágrafo acima fica como registro do estado
+# em que a política foi escrita, não como descrição do disco.
+#
+# `backend/tests/` entrou em `include_prefixes` NESTA task, e a razão é medida: sem o
+# prefixo, `harness code-paths classify backend/tests/test_x.py` responde **"não é
+# código"** — nenhum prefixo casa — e as 3 regras `core` de escopo `code`
+# (`relative-import`, `silent-except`, `print-statement`) não avaliam UMA LINHA da suíte
+# que está nascendo. Com o prefixo, o arquivo passa a ser código e `test_globs`
+# (`**/tests/**`) o mantém FORA de produção — que é exatamente a classificação certa.
+# O layout é `backend/tests/` e não `backend/src/tests/` por duas razões: é a forma do
+# vizinho que `ADR-009/D1` declara copiada, e é o alvo literal de
+# `web-fullstack.server-test-directory-present` (`target = "backend/tests/**"`,
+# `path-presence`), que `T-01.2` pode adotar sem ter de mover arquivo.
+#
 # ⚠️ MESMO BURACO DE GOVERNANÇA DO comparador-preco, herdado conscientemente:
 # `include_globs = ["*.py"]` + `packs = ["core"]` (5 regras, todas `**/*.py`) significa
 # que `frontend/` nascerá com ZERO regra cobrindo — e PARECENDO coberto, porque o
 # `doctor` diz CONFORME sobre um universo que não o inclui. Fechar isto é: globs TS em
 # `include_globs` + um pack que morda TypeScript. Enquanto isso, `frontend/` é ÁREA
 # DECLARADAMENTE NÃO COBERTA.
+#
+# ⚠️ SEGUNDA ÁREA DECLARADAMENTE NÃO COBERTA: `backend/scripts/` — declarada em 2026-08-28
+# pelo `/review` (item D). A lacuna de `frontend/` acima estava declarada, e a de
+# `backend/tests/` foi medida e FECHADA nesta mesma task; esta terceira superfície ficou de
+# fora das duas análises, e o silêncio é o defeito que `ADR-009/D3` nomeia — *"a diferença
+# entre coberto e 'parecendo coberto'"*. Ela não é periférica: os **4 arquivos**
+# (`bootstrap.sh`, `test.sh`, `lint.sh`, `check-coverage-layers.sh`; **216 linhas**
+# `[MEDIDO 2026-08-28: cat backend/scripts/*.sh | wc -l]`) são o `test_cmd` inteiro, isto é
+# **todo o DoD desta trilha daqui para frente** — e foi dentro de um deles que o mesmo
+# `/review` achou o BLOQUEIO desta passada (`test.sh` media cobertura a partir de relatório
+# velho).
+#
+# O comando que a mede, e as DUAS causas independentes que ele separa:
+#
+#   harness code-paths classify backend/scripts/test.sh
+#   # -> nao-producao: nenhum include_prefixes casa ['backend/src/', 'backend/tests/']
+#   harness code-paths classify backend/src/foo.sh
+#   # -> nao-producao: nenhum include_globs casa
+#
+# `[MEDIDO 2026-08-28: os 4 `.sh` classificados um a um → 4 de 4 "nenhum include_prefixes
+# casa"]`. Ou seja **nem o prefixo alcança `backend/scripts/`, nem o glob alcança `.sh`** —
+# fechar exige as duas metades, exatamente como em `frontend/`.
+#
+# **NÃO fechada aqui, e o motivo é medido:** fechar exige `*.sh` em `include_globs` MAIS um
+# pack cujas regras mordam shell, e **nenhum pack instalado morde `.sh`**
+# `[MEDIDO 2026-08-28: grep -hE '^(paths|target) *=' packs/*/rules.toml | sort -u sobre os 4
+# packs do plugin v0.13.0 (core, hexagonal-layers, read-model-projection, web-fullstack) →
+# os alvos são `**/*.py`, `backend/**/*.py`, `frontend/src/**`, `backend/tests/**` e
+# `frontend/src/**/*.test.*`; ZERO deles casa um `.sh` sob `backend/scripts/`]`. Declarar o
+# glob sem regra que morda produziria exatamente o "parecendo coberto" que esta nota existe
+# para impedir.
+#
+# **Dono PROPOSTO (proposta, não decisão — quem decide é `/architect`): `T-01.2`**, que já é
+# a task de "cobertura fechada, medida por bloqueio devolvido" (`D1.3`/`D1.4`) e já tem de
+# adotar um pack novo. O que a proposta cobra é **estender o título dela, hoje escrito só
+# para `frontend/`**. Se a resposta for que `T-01.2` fica como está, esta lacuna **não tem
+# dono** e precisa de task própria — e criar task não é ato de builder.
+#
+# **Falsificador desta declaração:** se `harness code-paths classify backend/scripts/test.sh`
+# passar a responder `producao` ou `nao-producao: test_globs casa`, a lacuna deixou de
+# existir e este parágrafo tem de sair.
 [code_paths]
-include_prefixes = ["backend/src/"]
+include_prefixes = ["backend/src/", "backend/tests/"]
 include_globs = ["*.py"]
 exclude_globs = [
     "**/__pycache__/**",
@@ -116,12 +174,31 @@ exclude_globs = [
 # `test_globs` guarda o que é código MAS NÃO É PRODUÇÃO.
 test_globs = ["**/tests/**", "**/test_*.py"]
 
-# ── LACUNA DECLARADA: `[test_cmd]` está ausente de propósito ───────────────────────
+# ── LACUNA FECHADA em 2026-08-28 por `T-01.1` ──────────────────────────────────────
 #
-# Não há suíte, não há runner, não há sequer `pyproject.toml`. Declarar `test = "pytest"`
-# seria escrever um comando que hoje falha por não existir. Esta tabela entra junto com
-# o primeiro teste, e não antes. Precedente: comparador-preco e harness-panel, mesmo
-# argumento.
+# O parágrafo que vivia aqui dizia: "não há suíte, não há runner, não há sequer
+# `pyproject.toml`… esta tabela entra JUNTO COM O PRIMEIRO TESTE, e não antes."
+# É o que aconteceu: `backend/pyproject.toml`, `backend/scripts/` e a primeira suíte
+# nasceram no mesmo ato que esta tabela. `[MEDIDO 2026-08-28: harness policy --key
+# test_cmd → deixou de ser `{}`]`.
+#
+# `sentimento` e SÓ `sentimento`, e o silêncio dos outros cinco componentes é
+# declaração: `charts`, `convergencia`, `backtest` e `web` não têm código, e `docs` não
+# tem o que rodar. Declarar um comando para eles seria reescrever a lacuna que este
+# bloco acabou de fechar — um comando que falha por não existir.
+#
+# **O runner RECUSA (saída 3) se `backend/.venv` não existir** em vez de cair para o
+# `python3` do PATH. O motivo é medido neste disco: hoje `python3` resolve para
+# `…/harness-panel/.venv/bin/python3` (3.12.8) por vazamento de PATH, e o `pyenv` deste
+# repositório resolveria 3.13.13 pelo `.python-version` — dois ambientes diferentes, o
+# mesmo comando. Portão que roda em ambiente não declarado mede outra coisa.
+# Preparar o ambiente: `bash backend/scripts/bootstrap.sh` (único passo com rede).
+#
+# ZERO REDE no portão: nenhum teste chama Binance, Bybit ou Coinalyze. `Q1` e `Q15`
+# estão ABERTAS e coletor não roda em gate.
+[test_cmd.sentimento]
+lint = "bash backend/scripts/lint.sh"
+test = "bash backend/scripts/test.sh"
 
 [rules]
 # Só o pack de ofício. Packs de topologia (`hexagonal-layers`, `web-fullstack`) cobram
@@ -136,6 +213,24 @@ packs = ["core"]
 # Nenhuma regra desligada: não há código sobre o qual medir se ela acusa uso legítimo.
 # Nenhuma regra própria: regra própria sem contagem que a justifique é palpite com
 # severidade. As duas tabelas entram quando houver código — com o comando que as mediu.
+#
+# ── `T-01.1` (2026-08-28) declarou ZERO `[[rules.own]]`, e isto é escrito e não subentendido
+#
+# Item 1.8 do plano manda: "toda `[[rules.own]]` que esta fase declarar nasce com corpus".
+# Esta task declarou nenhuma ⇒ **`D1.5` é satisfeito VACUAMENTE**, e o universo de
+# `harness corpus verify` / `harness corpus mutate` nesta task é **0 regra**. Não é a mesma
+# coisa que "rodei o corpus e passou": não havia o que rodar.
+# Motivo de não declarar: as 4 regras `core` de bloqueio já cobrem o que este código escreve
+# (`[MEDIDO 2026-08-28: harness rules --mode sweep, repositório inteiro → 0 achado; e o
+# mesmo comando com dois violadores plantados devolveu 4 BLOQUEIOS, que é o que prova que
+# o zero não é vazio. NÃO cito `--changed-only`: ele é `git diff --name-only HEAD`
+# (`lib/runner.py:88`) e portanto CEGO a arquivo novo não rastreado — nesta task, em que
+# tudo é arquivo novo, ele varre 0 arquivo e devolve verde sem medir nada]`), e a regra
+# própria que esta fase de fato precisa — o contrato `forbidden` de import entre `charts` e
+# `web` (`D1.6`) e o pack que morde TypeScript (`D1.3`) — pertence a `T-01.2`/`T-01.3`.
+# Declará-la aqui seria escrever enforcement sem o corpus que o mede.
+# Continua valendo, e agora com código no disco: `backend/src/` é 4 módulos e 107 statements
+# — contagem pequena demais para justificar regra própria de arquitetura.
 
 # ── PONTEIRO DE PAPEL PRÓPRIO DO REPOSITÓRIO (V-16) ────────────────────────────────
 #
