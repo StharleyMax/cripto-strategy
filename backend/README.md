@@ -4,13 +4,30 @@ Nascido em **2026-08-28** pela task **`T-01.1`** (`CST-8`, fase `01`, item `1.1`
 Antes desta task o repositório tinha **zero código** e `harness policy --key test_cmd` devolvia
 **`{}`** `[MEDIDO 2026-08-28]`.
 
-## Os três comandos
+## Os três comandos — e desde 2026-08-28 eles têm uma fachada
 
 ```bash
-bash backend/scripts/bootstrap.sh   # cria backend/.venv — ÚNICO passo que usa rede
-bash backend/scripts/test.sh        # [test_cmd.sentimento] test  — suíte + piso por camada
-bash backend/scripts/lint.sh        # [test_cmd.sentimento] lint  — ruff + ruff format + mypy --strict
+make setup   # cria backend/.venv com POETRY + instala frontend/node_modules — ÚNICO passo com rede
+make test    # [test_cmd.sentimento] test  — suíte + piso por camada
+make lint    # [test_cmd.sentimento] lint (backend) + ESLint do projeto (frontend)
 ```
+
+O `Makefile` da raiz (`ADR-011/D2`, `T-01.6`) é a **fachada**: ele **chama** os scripts abaixo, que
+continuam sendo a **implementação**. Os comandos diretos continuam válidos e são os que este
+documento cita nas medições:
+
+```bash
+bash backend/scripts/bootstrap.sh   # o que `make setup` chama
+bash backend/scripts/test.sh        # o que `make test` chama
+bash backend/scripts/lint.sh        # o que `make lint-backend` chama
+```
+
+**Por que as medições citam o script e não o `make`:** quando uma receita falha, o `make` sai com
+**2**, qualquer que seja o `rc` do comando. As recusas deste repositório distinguem **`rc=3`** ("não
+mediu") de **`rc=1`** ("mediu e reprovou"), e essa distinção só é visível na chamada direta
+`[MEDIDO 2026-08-28: `make boundaries` → `make: *** [Makefile:135: boundaries] Erro 3`, e o `make`
+sai **2**; `bash backend/scripts/test.sh --no-cov -k <1 teste>` → **3**]`. Para portão ("passou ou
+não"), `make` basta.
 
 `test.sh` e `lint.sh` **RECUSAM com saída 3** se `backend/.venv` não existir, em vez de cair para o
 `python3` do `PATH`. O motivo é medido neste disco: `python3` resolve hoje para
@@ -81,6 +98,146 @@ commit que introduziu a `ADR-009`** `[MEDIDO 2026-08-28]`.
 `backend/.venv/pyvenv.cfg`]`). O assert compara **major.minor** e por isso aceita. Fechar o patch é
 decisão de `T-01.6`, que escolhe o gerenciador — não desta task.
 
+### ✅ FECHAMENTO 2026-08-28 por `T-01.6` — as três pendências acima, cada uma com o comando
+
+**Nada do ERRATUM foi apagado.** As três pendências que `T-01.4` deixou nomeadas (`2` idempotência,
+`3` interpretador não honrado, e a divergência de patch) foram para o disco de `T-01.6`, que é quem
+trocou `uv venv` por `poetry install` — e **as três fecharam, mas não pelo motivo que se supunha**.
+
+| pendência | como estava | como está, e o comando |
+|---|---|---|
+| **divergência de patch** (`.python-version` = 3.13.13, venv nascia 3.13.12) | `uv python find` preferia o CPython dele (`~/.local/share/uv/python/cpython-3.13-…`) | **FECHADA. O venv nasce 3.13.13** `[MEDIDO 2026-08-28: `bash backend/scripts/bootstrap.sh` → `backend/.venv/pyvenv.cfg` com `home = ~/.pyenv/versions/3.13.13/bin`, `version = 3.13.13` — **igual** ao `.python-version` da raiz]` |
+| **`bootstrap.sh` não era idempotente** (`rc=2` com venv em disco, `uv venv` exigia `--clear`) | defeito, e `T-01.4` declarou que não era dela consertar | **FECHADA por natureza do `poetry install`** `[MEDIDO 2026-08-28: duas execuções seguidas de `bash backend/scripts/bootstrap.sh` sobre o venv já em disco → **`rc=0` nas duas**, `No dependencies to install or update`, `ambiente pronto: Python 3.13.13 … CONFERIDO`]` |
+| **`uv` não honrava o interpretador que recebia** (num `PATH` com `python3` = 3.12.8 e sem `python3.13`, criava um venv **3.13.12** assim mesmo) | a pergunta que `T-01.4` mandou `T-01.6` responder sobre o Poetry | **O Poetry NÃO tem esse comportamento — e recusa ANTES de criar** `[MEDIDO 2026-08-28 por `T-01.6`, bancada isolada, `PATH` construído com `python3` = 3.12.8 REAL e `python3.13` inexistente: `The specified Python version (3.12.8) is not supported by the project (>=3.13,<3.14)`, **`backend/.venv` não chegou a nascer**, `bootstrap.sh` → **`rc=3`**]` |
+
+**Quem faz o serviço na terceira linha é o `requires-python` que `T-01.6` acabou de declarar** — a
+superfície 4 de 4 de `ADR-011/D5`, a metade que faltava de `D1.9`. Ele deixou de ser declaração de
+alvo e virou recusa executável na criação do ambiente.
+
+#### ⚠️ E o conserto de uma linha que o `/review` prescreveu NÃO era suficiente — medido
+
+O `/review` de `T-01.4` prescreveu passar `"$(command -v -- "$candidato")"`, o **caminho absoluto**,
+em vez do nome. **`T-01.6` mediu e o caminho absoluto também não é versão:** `command -v python3.13`
+devolve `~/.pyenv/shims/python3.13`, que é um **despachante**, não um interpretador — ele resolve a
+versão contra o `.python-version` do diretório **de onde é invocado**.
+
+`[MEDIDO 2026-08-28: numa réplica do `backend/` fora da árvore (logo sem o `.python-version` da
+raiz), `poetry env use ~/.pyenv/shims/python3.13` falhou com `pyenv: python3.13: command not found` /
+`Could not find the python executable`]`.
+
+⇒ É a lição de *"nome não é versão"* numa **terceira** forma, depois de (1) o nome do binário e (2) o
+nome passado à ferramenta. O `bootstrap.sh` de hoje não para no `command -v`: ele pergunta ao
+próprio candidato onde ele mora (`sys.executable`), o que resolve o shim até o binário real
+`[MEDIDO 2026-08-28: `python3.13 -c 'import sys; print(sys.executable)'` →
+`~/.pyenv/versions/3.13.13/bin/python3.13`]`, e **recusa um candidato que nem executa** em vez de
+passá-lo adiante.
+
+**O assert de `PY_ALVO` continua sendo a única coisa que confere o que NASCEU**, e agora ele vive em
+**dois** lugares. Os dois lados, os dois arquivos, **4 medições**
+`[MEDIDO 2026-08-28: mutação de `PY_ALVO` sobre o venv real 3.13.13]`:
+
+| script | `PY_ALVO=3.12` (mutado) | `PY_ALVO=3.13` (real) |
+|---|---|---|
+| `scripts/bootstrap.sh` | **`rc=3`**, `RECUSA: o venv nasceu em Python 3.13.13, e ADR-011/D5 declara Python 3.12.` | **`rc=0`** |
+| `scripts/lint.sh` | **`rc=3`**, `RECUSA: o venv em …/.venv e Python 3.13.13, e ADR-011/D5 declara Python 3.12.` | **`rc=0`** |
+
+### 🔒 `backend/poetry.toml` — o arquivo sem o qual a migração quebra no próximo clone
+
+`ADR-011/D1`. Os quatro scripts resolvem `backend/.venv` **literal**, e o Poetry só põe o venv ali se
+`virtualenvs.in-project` for verdadeiro — que **nesta máquina é config de USUÁRIO, não do
+repositório**. `backend/poetry.toml`, versionado, fixa isso para o clone.
+
+**Teste dos dois lados (item `1.8'` do plano `01`), em réplica isolada com config de usuário
+VIRGEM** (`POETRY_CONFIG_DIR` e `POETRY_CACHE_DIR` apontados para diretórios novos, logo
+`virtualenvs.in-project` no default de fábrica) `[MEDIDO 2026-08-28]`:
+
+| lado | `poetry config virtualenvs.in-project` | onde o venv nasceu | `bootstrap.sh` | `lint.sh` |
+|---|---|---|---|---|
+| **SEM `backend/poetry.toml`** | **`null`** (fábrica) | `<cache>/virtualenvs/cripto-strategy-backend-…-py3.13` | **`rc=3`**, `RECUSA: 'poetry env use' nao criou …/backend/.venv/bin/python` — **o falsificador de `ADR-011/D1`, escrito como recusa** | **`rc=3`**, venv não existe |
+| **COM `backend/poetry.toml`** | **`true`** | **`backend/.venv`**, Python **3.13.13** | **`rc=0`**, `ambiente pronto … CONFERIDO` | **`rc=0`** |
+
+**Uma sem a outra não contaria:** o lado "morde" sozinho não distinguiria este arquivo de um
+`poetry.toml` que quebrasse tudo; o lado "cala" sozinho seria indistinguível de o arquivo não fazer
+nada — porque **nesta máquina a config de usuário já dá `true`**, e foi exatamente para escapar
+desse falso positivo que a medição foi feita em réplica com config virgem.
+
+**Uma armadilha nomeada, achada nessa mesma bancada:** rodar o lado SEM e depois o lado COM **no
+mesmo cache** dá `rc=3` nas duas vezes. O Poetry registra o env corrente por projeto no
+`envs.toml` do cache e `env use` o **reaproveita** em vez de criar em `backend/.venv`
+`[MEDIDO 2026-08-28: `<cache>/virtualenvs/envs.toml` → `[cripto-strategy-backend-LNkTWgt4]`,
+`patch = "3.13.13"`]`.
+
+#### ⚠️ CORREÇÃO 2026-08-28 (`/qa` → `NEEDS_FIX`) — a receita de recuperação publicada aqui NÃO funcionava
+
+**O que esta seção dizia, e estava errado:** *"precisa de `poetry -C backend env remove --all` antes
+— e a recusa do `bootstrap.sh` diz isso na saída"*. A **armadilha** estava medida; o **remédio**
+não, e saiu publicado sob o mesmo selo `[MEDIDO … em réplica isolada]` da frase ao lado. **O `/qa`
+executou a receita — que é o passo que faltou — e ela é um no-op.**
+
+**Causa:** com `in-project = true` em vigor, `env remove --all` **só enumera o `.venv` do
+projeto**, e o env que gruda é justamente o do **cache**, que ele não vê. Ele esvazia o `envs.toml`
+e deixa o env de pé: `poetry env list` continua listando-o como `(Activated)` depois do `remove`.
+
+**As três receitas, com controle invertido em cada uma** — `bootstrap.sh` rodado **depois** de cada
+uma, a partir do mesmo estado grudado `[MEDIDO 2026-08-28 pelo `/qa`, reproduzido por `T-01.6`,
+n=3 receitas + 1 controle sem receita]`:
+
+| receita | saída dela | `bootstrap.sh` depois | `backend/.venv` nasce? |
+|---|---|---|---|
+| *(nenhuma — controle)* | — | **`rc=3`** | **não** |
+| `poetry -C <backend> env remove --all` **(a que estava publicada)** | **nada impresso**, `rc=0`; `env list` ainda mostra `(Activated)` | **`rc=3`**, `Using virtualenv: <cache>/virtualenvs/…` | **não** |
+| `POETRY_VIRTUALENVS_IN_PROJECT=false poetry -C <backend> env remove --all` | `Deleted virtualenv: …-py3.13`, `env list` vazio | **`rc=0`**, `ambiente pronto: Python 3.13.13 … CONFERIDO` | **sim** |
+| `rm -rf <cache>/virtualenvs/<nome>` | — | **`rc=0`** | **sim** |
+
+⇒ **A receita correta carrega a variável de ambiente NA LINHA**, não numa nota de rodapé — é ela que
+faz o serviço:
+
+```bash
+POETRY_VIRTUALENVS_IN_PROJECT=false poetry -C backend env remove --all && make setup
+```
+
+**E ela foi executada VERBATIM antes de ser publicada**, extraída da saída do próprio `bootstrap.sh`
+em vez de redigitada `[MEDIDO 2026-08-28: réplica completa (Makefile + `frontend/`), estado grudado
+reproduzido, a linha extraída da recusa por `grep -oE` e passada a `eval` → `Deleted virtualenv` +
+`Creating virtualenv … backend/.venv` + `ambiente pronto: Python 3.13.13 … CONFERIDO` +
+`added 88 packages`, **`rc=0`**; e o controle invertido depois: `bootstrap.sh` de novo **`rc=0`**,
+`lint.sh` **`rc=0`**]`.
+
+**A lição, e ela é a razão de este parágrafo existir em vez de a linha ser só trocada:** é **a mesma
+classe de defeito que esta task cobrou do `/review`** na dívida 1 de 4 — *"o conserto prescrito não
+bastava"* —, agora do outro lado do balcão. **Medir a armadilha não é medir o remédio**, e o cenário
+em que alguém lê essa linha é exatamente o clone limpo que esta task inteira existe para proteger.
+Pior: a recusa antiga imprimia a receita quebrada **de novo** depois de ela falhar, o que põe quem
+seguiu a instrução num laço.
+
+### 🧱 O achado mais grave do `/review`, e o que `T-01.6` decidiu — **as duas metades**
+
+**O achado:** *nenhum portão chamava `bootstrap.sh`*. Não há CI (`ls .github` → inexistente), o
+`pre-push` gerado roda `require-push` + `rules --mode sweep` e **não chama `make`**, e as três
+menções a `bootstrap.sh` em `lint.sh`, `test.sh` e `check-coverage-layers.sh` eram **texto de
+mensagem de erro**, não chamada. Logo o único assert da versão **efetiva** do interpretador não era
+executado por ninguém — e `mypy python_version` / `ruff target-version` declaram **alvo**: um venv
+3.12 passaria o lint igual.
+
+**A decisão de `T-01.6`, e por que não é uma só:**
+
+| metade | onde | o que ela fecha, e o que ela NÃO fecha |
+|---|---|---|
+| **(a)** `make setup` chama `bash backend/scripts/bootstrap.sh` | `Makefile`, alvo `setup` | dá ao script um chamador nomeado e uma superfície única. **Não fecha o achado:** `make setup` é comando de **humano**, e quem não o rodar segue com o venv errado e sem ninguém conferindo |
+| **(b)** a asserção da versão **efetiva** entra em `backend/scripts/lint.sh` | `lint.sh`, `rc=3` citando `ADR-011/D5` | **esta é a que fecha.** `make lint` é o que `scripts/hooks/pre-push.pre-harness` (`ADR-011/D3b`, **`T-01.5`**) vai rodar no `pre-push` — a assertion passa a ser alcançável por um portão que reprova sozinho |
+
+**Escolher só (a) deixaria o achado aberto com aparência de fechado**, que é a classe de defeito que
+este repositório passou o dia catalogando. **Registro honesto do que ainda falta:** enquanto
+`T-01.5` não escrever `scripts/hooks/pre-push.pre-harness`, **(b) é uma recusa que existe e que
+nenhum portão automático dispara** — ela só roda quando alguém chama `make lint` ou `lint.sh`. O
+achado está **com dono e com mecanismo**, não **fechado por portão**.
+
+**Duplicação deliberada e nomeada:** a expressão do assert está em `bootstrap.sh` **e** em `lint.sh`,
+idêntica. Centralizá-la exigiria um quinto script, e `ADR-011/D2` não autoriza `T-01.6` a criar um.
+Se `PY_ALVO` mudar, mudam os dois — e o comando do DoD `D1.9`
+(`grep -n 'PY_ALVO' backend/scripts/*.sh`) os encontra **juntos**, que é o motivo de a duplicação ser
+tolerável aqui e não em geral.
+
 ## O que existe, e por quê
 
 | caminho | camada | papel |
@@ -103,7 +260,9 @@ testes de domínio puro desselecionados, o piso **global** de 70% passa em **95,
 
 | decisão | por quê | falsificador |
 |---|---|---|
-| **`venv` + `uv pip` + `requirements-dev.txt` fixado**, e **não Poetry** | `ADR-009/D1` enumera as 4 peças copiadas do vizinho e **Poetry não é uma delas**. `uv 0.10.12` já está no disco e resolve sem decidir formato de lock | se uma dependência de runtime entrar e a resolução transitiva derivar entre clones, o lock passa a valer e a escolha vira ADR |
+| ~~**`venv` + `uv pip` + `requirements-dev.txt` fixado**, e **não Poetry**~~ **⚠️ SUPERSEDIDA em 2026-08-28 por `ADR-011/D1`** | ~~`ADR-009/D1` enumera as 4 peças copiadas do vizinho e **Poetry não é uma delas**. `uv 0.10.12` já está no disco e resolve sem decidir formato de lock~~ | **o falsificador FOI REALIZADO — por caminho diferente do previsto.** Ele previa pressão técnica (resolução transitiva derivando); o que chegou primeiro foi a declaração do owner: *"Aplicacao deve rodar com poetry, ter Makefile para simplicar as chamadas, builds e afins"* `[PREMISSA-OWNER: 2026-08-28]`. A escolha era defensável e caiu por **autoridade, não por erro de raciocínio** — e isso fica escrito para que a próxima decisão tática não seja tomada com medo |
+| **Poetry 2.4.1 (PEP 621), com `poetry.lock` VERSIONADO** — e `requirements-dev.txt` REMOVIDO | `ADR-011/D1`, por declaração do owner. As 5 dependências viraram `[tool.poetry.group.dev.dependencies]` com **pin exato**, e o lock passa a garantir a mesma resolução transitiva em clone limpo — que era exatamente o que o falsificador da linha acima previa. **Duas listas para o mesmo ambiente divergem**, então o `requirements-dev.txt` não sobreviveu ao lado do `pyproject.toml` | se `poetry install` deixar de produzir `backend/.venv/bin/python`, a forma não preserva o contrato dos scripts e `ADR-011/D2` precisa reescrever a resolução de interpretador. **`bootstrap.sh` já checa isso e recusa com `rc=3`** `[MEDIDO 2026-08-28: sem `backend/poetry.toml`, a recusa DISPARA]` |
+| **`package-mode = false`** no `pyproject.toml`, e o alvo `make build` **RECUSA com `rc=3`** | não há artefato distribuível hoje: **zero** dependência de runtime, `src/` não é pacote publicável, e `frontend/package.json` declara **um** script — `lint`, não `build` `[MEDIDO 2026-08-28]`. Um `build:` vazio devolvendo **0** faria alguém ler *"build passou"* de um alvo que não construiu nada | a primeira task que trouxer artefato preenche a receita e remove a recusa |
 | **`backend/tests/`**, não `backend/src/tests/` | é a forma do vizinho, e é o alvo literal de `web-fullstack.server-test-directory-present` (`target = "backend/tests/**"`) — `T-01.2` pode adotar o pack sem mover arquivo | se o pack for adotado com outro alvo, a razão cai |
 | **`backend/tests/` entra em `code_paths.include_prefixes`** | sem o prefixo a suíte fica **fora do universo de regras**. Medido: violador com 2 regras quebradas devolve **saída vazia, zero regras avaliadas** sem o prefixo, e **BLOQUEIO nas 2** com ele | se alguma regra `core` de escopo `code` acusar uso legítimo em teste, o prefixo cobra `[[rules.core.disabled]]` com motivo |
 | **nenhuma `[[rules.own]]`** | item `1.8` manda que toda regra própria nasça com corpus; esta task não declarou nenhuma ⇒ **`D1.5` é vacuamente satisfeito**, com universo **0 regra** | a primeira regra própria (contrato `forbidden` de `T-01.3`) nasce com `harness corpus verify` **e** `mutate` |
@@ -118,31 +277,66 @@ está certo, o universo está certo, e as duas ocorrências são nomeadas, não 
 
 ```bash
 cd backend && grep -rnE 'http|socket|requests|urllib|websocket|Binance|Bybit|Coinalyze|api[_-]?key|API_KEY' \
-  src/ tests/ scripts/ pyproject.toml requirements-dev.txt
+  src/ tests/ scripts/ pyproject.toml poetry.toml
 # scripts/test.sh:8:# ZERO REDE: nenhum teste desta suite chama Binance, Bybit ou Coinalyze. ...
 # scripts/test.sh:11:# com `socket` amputado por um `sitecustomize.py`, que alcanca tambem o ...
+# scripts/bootstrap.sh:98:# "Zero rede, zero chave", varre `scripts/` com um padrao que casa `http` ...
 ```
 
-**Re-medido em 2026-08-28 DEPOIS de escrever esta passada** (`/review`: itens B/D/E/F/G/H/I mexeram
-em `scripts/test.sh`, `scripts/check-coverage-layers.sh`, `scripts/bootstrap.sh` e neste `README.md`)
-— **continua 2, e o universo continua 19**. O procedimento é a lição, não o número: *o texto que
-descreve a medição vive dentro do universo medido*, então escrever "Coinalyze" num comentário de
-`src/`, `tests/` ou `scripts/` cria uma ocorrência nova. **Este número só vale re-rodado depois da
-última edição** — não antes.
+**⚠️ O COMANDO MUDOU EM 2026-08-28 (`T-01.6`), e o número mudou com ele.** `requirements-dev.txt`
+**deixou de existir** — as 5 dependências migraram para `[tool.poetry.group.dev.dependencies]` do
+`pyproject.toml` (`ADR-011/D1`) — e `poetry.toml` entrou no lugar dele na varredura. **`poetry.lock`
+ficou de FORA, e a exclusão é declarada com o número:** ele é gerado por máquina e teria **1
+ocorrência** `[MEDIDO 2026-08-28: `poetry.lock:545` → `dev = [..., "requests", ...]`, a lista de
+`extras` opcionais do `pytest` — metadado de pacote, não dependência instalada]`. Incluí-lo somaria
+ruído de metadado a um portão que existe para achar chamada de rede.
 
-**[MEDIDO 2026-08-28]: 2 ocorrências**, ambas prosa de comentário no mesmo arquivo
-(`scripts/test.sh:8` e `:11` — a frase que declara a ausência de rede e a que nomeia o
-instrumento que a prova), universo **19 arquivos** — os 17 `.py`/`.sh` sob `src/`,
-`tests/` e `scripts/`, mais `pyproject.toml` e `requirements-dev.txt`. **As duas são prosa de
-comentário** — o grep pegou a frase que declara a ausência de rede (`:8`) e a que nomeia o
-instrumento de runtime que a prova (`:11`). Nenhuma é chamada de rede.
+**⚠️ PARÁGRAFO DA PASSADA DE `T-01.4`. A CONTAGEM ESTÁ SUPERSEDIDA; a lição, não** — e é por ela
+que ele fica. ~~Re-medido em 2026-08-28 DEPOIS de escrever **esta** passada~~ **Re-medido à época,
+depois DAQUELA passada** (`/review`: itens B/D/E/F/G/H/I mexeram em `scripts/test.sh`,
+`scripts/check-coverage-layers.sh`, `scripts/bootstrap.sh` e neste `README.md`) — ~~**continua 2**~~
+**eram 2 À ÉPOCA**, e o universo **continua 19**. **Hoje são 3** — o bloco abaixo é a medição em
+vigor, e o universo de 19 sobreviveu à troca de `requirements-dev.txt` por `poetry.toml`
+`[MEDIDO 2026-08-28, re-rodado por `T-01.6` e conferido pelo `/review`]`.
+
+**E o parágrafo ter ficado dois ciclos lendo-se em presente É a própria lição acontecendo**, agora
+sobre a frase que a enuncia: *o texto que descreve a medição vive dentro do universo medido*, então
+escrever "Coinalyze" num comentário de `src/`, `tests/` ou `scripts/` cria uma ocorrência nova — e
+**um número em presente envelhece em silêncio enquanto a prosa ao redor continua verdadeira**.
+**Este número só vale re-rodado depois da última edição** — não antes.
+
+**[MEDIDO 2026-08-28, RE-RODADO por `T-01.6` depois da migração para Poetry]: 3 ocorrências**,
+**as três prosa de comentário**, universo **19 arquivos** — os 17 `.py`/`.sh` sob `src/`, `tests/` e
+`scripts/`, mais `pyproject.toml` e `poetry.toml`. As duas antigas continuam em `scripts/test.sh:8`
+e `:11`; **a terceira nasceu nesta passada**, em `scripts/bootstrap.sh:98`, e é a lição do parágrafo
+acima acontecendo de novo — é o comentário que explica **por que** este README varre `scripts/` com
+um padrão que casa `http`. Nenhuma é chamada de rede.
 Excluindo linhas de comentário, **[MEDIDO 2026-08-28]: 0 ocorrência**:
 
 ```bash
-cd backend && grep -rnE '<mesmo padrão>' src/ tests/ scripts/ pyproject.toml requirements-dev.txt \
+cd backend && grep -rnE '<mesmo padrão>' src/ tests/ scripts/ pyproject.toml poetry.toml \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'
 # (vazio)
 ```
+
+**E o "0 fora de comentário" custou uma decisão, que fica escrita para não parecer sorte:** a
+primeira redação da recusa de `poetry` ausente em `bootstrap.sh` trazia a URL da documentação do
+Poetry dentro de um `echo` — que **não** é linha de comentário — e o número saltava de 0 para **1**
+`[MEDIDO 2026-08-28]`. A URL foi retirada da mensagem (o texto continua nomeando o projeto) em vez
+de o número ser explicado: **endereço de documentação em prosa gasta o sinal de um portão que existe
+para achar chamada de rede.** A alternativa — manter a URL e afrouxar o padrão — seria consertar o
+instrumento para caber no resultado.
+
+**A linha removida está publicada abaixo para que a afirmação seja FALSIFICÁVEL por terceiro** — sem
+ela, este parágrafo mede um rascunho que não existe mais em disco e ninguém pode conferir:
+
+```bash
+# a linha que estava em backend/scripts/bootstrap.sh e foi retirada:
+    echo "        Instale-o (https://python-poetry.org/docs/#installation) e rode de novo." >&2
+```
+
+Reponha-a no lugar da linha `Instale-o conforme a documentacao oficial do Poetry (python-poetry.org).`
+e re-rode o grep sem comentários: ele passa a devolver **1**, e é `bootstrap.sh` que aparece.
 
 **Universo declarado com precisão:** este `README.md` **não** está na varredura, de propósito — ele
 cita os três nomes de exchange nesta mesma seção, e incluí-lo faria o portão medir a si mesmo.
@@ -242,7 +436,7 @@ plano da fase `01` **não deu dono a ela**: o item `1.3` dá dono ao contrato `f
 | | |
 |---|---|
 | **o que existe hoje** | a direção está **correta**, mas **por disciplina, não por enforcement** |
-| **medida** | `[MEDIDO 2026-08-28: grep -rnE '^\s*(from\|import)\s+' backend/src --include='*.py'` sobre os **10** arquivos de produção → **1 único import interno** em todo `backend/src/`, `use_cases → domain` (`drain_etl_backlog.py:8`); **`domain` importa zero** módulo interno; `import-linter` **não está** em `requirements-dev.txt` nem em `pyproject.toml`]` |
+| **medida** | `[MEDIDO 2026-08-28: grep -rnE '^\s*(from\|import)\s+' backend/src --include='*.py'` sobre os **10** arquivos de produção → **1 único import interno** em todo `backend/src/`, `use_cases → domain` (`drain_etl_backlog.py:8`); **`domain` importa zero** módulo interno; `import-linter` **não está** em `pyproject.toml`]`. **Re-conferido 2026-08-28 por `T-01.6`**, depois de `requirements-dev.txt` deixar de existir: `grep -n importlinter backend/pyproject.toml` → **0 linha**, e `make boundaries` **RECUSA com `rc=3`** nomeando `T-01.5` como dona dos contratos, em vez de devolver verde sobre universo vazio |
 | **por que não é consertado aqui** | **é defeito de plano e exige `/architect`.** Inventar a regra, instalar `import-linter` ou escrever `[[rules.own]]` seria criar enforcement sem dono declarado — e `1.8` manda que toda regra própria nasça **com corpus** |
 | **o que o `/architect` precisa nomear** | quem possui a peça 1, em que fase, e com que instrumento |
 | **falsificador** | se `harness rules list` passar a listar uma regra que reprove `domain → infra`, ou se um `.importlinter` aparecer com contrato `layers`, este parágrafo caiu |
