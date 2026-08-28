@@ -44,7 +44,10 @@
 # `T-03.12` (coletor de spread) NAO EXISTE neste arquivo. Ela era contingente a `Q17 = (c)`
 # e `Q17` esta `RESPONDIDA COM RESIDUO` em `docs/decisoes-do-owner.md:50` — o residuo
 # nomeado e "(a2) ou (a3)?", ainda do owner. Sem a resposta, criar a task seria decidir por
-# ele. Total: 81, nao 82.
+# ele. O total do arquivo NAO a inclui: sao 82 `[MEDIDO 2026-08-28: harness tasks
+# validate plataforma-dados -> 82 task(s), 0 ERROR, 0 WARN]`, e COM `T-03.12` seriam 83.
+# Eram 81 ate 2026-08-28, quando `T-01.5` (contrato `layers`, item 1.9 do plano da fase
+# 01) foi acrescentada — o 82 de hoje e ela, NAO a criacao de `T-03.12`.
 
 schema_version = "1"
 feature = "plataforma-dados"
@@ -111,6 +114,33 @@ phase = "01"
 depends_on = []
 refs = ["ADR-009/D4", "ADR-009/D5", "plano 01 itens 1.6+1.7", "vocabulario fechado e ato do owner"]
 tracker = { provider = "jira", id = "CST-11", url = "https://conversationhub.atlassian.net/browse/CST-11" }
+
+[[tasks]]
+id = "T-01.5"
+# Prefixo `[docs]` sozinho, e CONFERIDO, nao presumido: V-26 compara o CONJUNTO de
+# colchetes da sequencia INICIAL do titulo com `components` (`scripts/tasks.sh:888-891`,
+# `set(prefix) != set(components)`). O `[[rules.own]]` no MEIO do titulo NAO entra na
+# conta — `TITLE_PREFIX_RE` (`^\s*((?:\[[^\[\]]+\][\s+]*)+)`) para no primeiro caractere
+# que nao abre colchete, e aqui isso e o `0` de `01`. `[MEDIDO 2026-08-28: harness tasks
+# validate plataforma-dados -> 82 task(s), 0 ERROR, 0 WARN]`.
+title = "[docs] 01 · contrato layers executavel — duas [[rules.own]] de direcao de camada, com corpus"
+# So `docs`: esta task declara regra e corpus, e NAO escreve producao. O corpus mora em
+# `corpus/` na raiz, FORA de `code_paths` — por construcao os casos sao violadores, e sob
+# `backend/src/` ou `backend/tests/` eles proprios reprovariam D1.7d e o sweep do pre-push.
+components = ["docs"]
+status = "todo"
+phase = "01"
+# `T-01.1` esta mergeada em `master` (commit `3b31ebc`), logo a dependencia esta satisfeita
+# e esta task nasce `todo`, nao `blocked`.
+depends_on = ["T-01.1"]
+refs = [
+    "ADR-009/D1 (peca 1)", "ADR-003:61", "plano 01 item 1.9",
+    "DoD D1.7a", "D1.7b", "D1.7c", "D1.7d", "D1.7e", "DoD D1.5 (1.8 aplicado)",
+    "ORIGEM: blocker remanescente do /review da `T-01.1` (item A, NON_COMPLIANT) — a peca 1 de `ADR-009/D1` (o contrato `layers`) NAO TINHA DONO: o item 1.3 do plano da fase 01 deu dono ao contrato `forbidden`, `1.1` levou o layout de modulo e o piso por camada, `1.4`/`1.5` levaram o frontend, e o `layers` caiu ENTRE os itens. E defeito de PLANO, nao de codigo; o /architect especificou a correcao em 2026-08-28 (item `1.9` + DoD `D1.7a`-`D1.7e`), e esta task e a materializacao dela.",
+    "ESCOPO: duas `[[rules.own]]` — `own.layer-domain-up-import` e `own.layer-use-cases-imports-infra` — cada uma nascendo COM CORPUS (`1.8` aplicado a `1.9`), mais os casos de corpus em `corpus/`. NAO e `import-linter` no `lint.sh` e NAO e conserto do pack `hexagonal-layers`: `test_cmd` nao e lido por portao nenhum (so pelos agentes builder/qa) e o `pre-push` roda `require-push` + `rules --mode sweep` sem rodar `lint`; o pack nao esta adotado (`packs` -> `[\"core\"]`) e tem 3 defeitos independentes para este layout, e consertar o pack e mudanca em OUTRO repositorio (`harness-plugin`).",
+    "CADA REGRA PRECISA DE VIOLADOR EM CAMINHO DE TESTE, alem do de producao: `harness corpus mutate` so reprova quem tem violador sob caminho de teste. Medido em bancada pelo /architect: corpus com violador so em producao devolveu `[SOBREVIVEU] own.layer-domain-up-import`; com o de teste acrescentado, `2/2 mutantes mortos`. O `--reference` de `corpus mutate` e OBRIGATORIO e tem de ser INDEPENDENTE — parse de `import`/`from` por `ast`, nunca copia da regex, senao a igualdade de veredito vira tautologia e D1.7e nao e satisfeito.",
+    "NAO CARDADA NO JIRA — e ISTO NAO E DECISAO, E FALHA DE ACESSO (por isso NAO ha `local_only`, que significaria 'o owner decidiu nao cardar'; o link_state derivado e `uncarded`, o sinal ambar). Em 2026-08-28 o MCP `atlassian` nao estava exposto na sessao e as credenciais da REST v3 nao estavam disponiveis: `claude mcp get atlassian` -> \"No MCP server named atlassian\"; o conector `claude.ai Atlassian` exige OAuth e a sessao era nao-interativa; `curl https://conversationhub.atlassian.net/rest/api/3/myself` -> `HTTP 401`. PENDENTE, e o cadastro e MANUAL: criar Tarefa no Epic `CST-1` (F5a, governanca gateante), o mesmo de `T-01.1`..`T-01.4`, e preencher aqui `tracker = { provider = \"jira\", id = \"CST-<n>\", url = \"https://conversationhub.atlassian.net/browse/CST-<n>\" }`.",
+]
 
 # ── 02 · Captura sem gate de host · CST-2 ──────────────────────────────────────────
 
