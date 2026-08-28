@@ -49,7 +49,7 @@ Três modos de falha, e cada um deles é um contrato:
 
 ## Stack (declarada, não construída)
 
-Monorepo `backend/` + `frontend/` · backend **Python 3.12 + FastAPI**, modular por bounded context com
+Monorepo `backend/` + `frontend/` · backend **Python 3.13 + FastAPI** ([`ADR-011/D5`](docs/adr/ADR-011-o-portao-sai-do-harness-e-vai-para-o-make.md), que supersede o 3.12 de `ADR-009/D4`), modular por bounded context com
 contratos de import executáveis · frontend **Next** · store **partido**: catálogo e registro em
 PostgreSQL, série de mercado em store colunar append-only (finalista pendente de spike,
 [`ADR-002`](docs/adr/ADR-002-motor-de-armazenamento.md)).

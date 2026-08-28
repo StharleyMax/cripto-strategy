@@ -1,6 +1,23 @@
-# Configuracao das ferramentas do backend. NAO declara versao de Python de proposito:
-# `ADR-009/D4` decide 3.12 e a APLICACAO dessa decisao (remover o `.python-version` = 3.13.13
-# solto na raiz) e a task `T-01.4`. Declarar aqui seria decidir por ela em outra superficie.
+# Configuracao das ferramentas do backend.
+#
+# ── VERSAO DE PYTHON: 3.13, e a decisao INVERTEU (`ADR-011/D5` supersede `ADR-009/D4`) ──
+#
+# Ate 2026-08-28 este arquivo NAO declarava versao de proposito: `ADR-009/D4` decidia 3.12 e
+# mandava REMOVER o `.python-version` = 3.13.13 da raiz, e declarar aqui seria decidir por
+# `T-01.4` em outra superficie. O owner derrubou as duas metades:
+#   "essa questao do python, pode regredir, quero que tenha o python version no 3.13"
+#   [PREMISSA-OWNER: 2026-08-28, citacao literal, registrada em `ADR-011/D5`]
+# O `.python-version` FICA (3.13.13, rastreado) e 3.13 passa a ser DECLARADO.
+#
+# `T-01.4` declara 4 superficies e esta e a casa de duas: `[tool.mypy] python_version` e
+# `[tool.ruff] target-version`. As outras duas sao o proprio `.python-version` da raiz e o
+# `PY_ALVO` de `backend/scripts/bootstrap.sh`.
+#
+# `requires-python` NAO ESTA AQUI, e a ausencia e deliberada, nao esquecimento: ela mora em
+# `[project]`, que so nasce quando `T-01.6` adota Poetry (2.4.1 e PEP 621). ENQUANTO `T-01.6`
+# nao rodar, o DoD `D1.9` NAO FECHA — ele e conjunto de `T-01.4` + `T-01.6`, e o comando do
+# DoD (`grep -n 'requires-python|python_version|target-version|PY_ALVO'`) devolve 3 de 4
+# ocorrencias, nao 4. Quem ler 3 como "cumprido" declarou verde sem olhar a outra metade.
 
 [tool.pytest.ini_options]
 # `pythonpath = ["."]` torna `src` e `tests` importaveis com a raiz em `backend/`, que e o
@@ -24,6 +41,10 @@ show_missing = true
 
 [tool.ruff]
 line-length = 100
+# Superficie 3 de 4 (`ADR-011/D5`). Ate 2026-08-28 estava AUSENTE, e o `ruff` inferia o alvo
+# do `requires-python` — que este arquivo nao tinha. Inferir de um campo inexistente e cair no
+# default da ferramenta: alvo NAO declarado, que muda quando o `ruff` muda de versao.
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "S", "ANN", "C90"]
@@ -36,5 +57,9 @@ max-complexity = 10
 "tests/**/*.py" = ["S101", "S603", "S607", "ANN401"]
 
 [tool.mypy]
+# Superficie 2 de 4 (`ADR-011/D5`). Ate 2026-08-28 esta seccao tinha so `strict` e
+# `ignore_missing_imports`, e o `mypy` checava contra a versao do interpretador que o RODAVA —
+# alvo por acidente de ambiente, nao por declaracao.
+python_version = "3.13"
 strict = true
 ignore_missing_imports = true
