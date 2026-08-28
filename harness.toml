@@ -261,7 +261,12 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # `[NÃO MEDIDO: medir exige um commit contendo um `.test.tsx` e um intervalo de push, e
 # `T-01.2` está proibida de commitar]`.
 #
-# **NÃO fechada aqui, e o motivo é medido:** hoje o universo é ZERO
+# **NÃO fechada aqui, e o motivo PRINCIPAL não é o universo:** a classificação errada
+# **não altera veredito de regra nenhuma hoje** — as duas regras de escopo `production`
+# têm alvo `**/*.py` e as duas que alcançam `frontend/src/**` são escopo `code`, que
+# cobre teste e produção igualmente. Logo o fator (1) da regra de três fatores abaixo
+# **não se aplica**: não há regra retida por `code_paths` esperando para morder. E, em
+# segundo lugar, o universo é ZERO
 # `[MEDIDO 2026-08-28: `find frontend/src -name '*.test.*' | wc -l` → **0**]`. Declarar
 # `**/*.test.*` agora seria escrever cobertura sobre universo vazio — a mesma coisa que
 # a nota de `backend/scripts/` acima recusa fazer com `*.sh`. **Dono: a task que trouxer
@@ -290,8 +295,18 @@ include_prefixes = ["backend/src/", "backend/tests/", "frontend/src/"]
 # superfície não coberta desta task, e ela nasceu sem declaração.
 #
 # **Por que aqui a resposta é FECHAR, e nas notas de `backend/scripts/` e `test_globs`
-# acima é DECLARAR:** lá o bloqueio é que nenhum pack morde o alvo (`.sh`) ou que o
-# universo é zero. Aqui **a regra já alcança o caminho**: o alvo de
+# acima é DECLARAR — e a REGRA tem TRÊS fatores, com PRECEDÊNCIA declarada, porque a
+# redação anterior era reusável errado `[/review 2026-08-28]`:**
+#   (1) uma regra em vigor já declara alvo que cobre o caminho;
+#   (2) o que impede a avaliação é a declaração de `code_paths` DESTE repositório;
+#   (3) fechar custa ZERO hoje — nenhum arquivo novo vira produção.
+# **O fator (1) VENCE "universo zero".** A redação anterior punha "universo zero" como
+# disjunção, e isso condenaria o próprio `.jsx`: ele TAMBÉM tinha universo zero no ato
+# da decisão `[MEDIDO 2026-08-28: `frontend/src` tinha 0 `.js*`]`. Universo zero só
+# justifica DECLARAR quando nenhuma regra alcança o alvo. E o fator (3) não é
+# decorativo: sem ele, "a regra alcança, então feche" varreria código gerado para o
+# universo de produção e quebraria `require-push`.
+# Aqui os três valem, e o (1) é o que decide: o alvo de
 # `web-fullstack.browser-imports-server` é `frontend/src/**`, sem extensão nenhuma
 # `[MEDIDO 2026-08-28: packs/web-fullstack/rules.toml:16 → `paths = ["frontend/src/**"]`]`.
 # Quem retinha o `.jsx` era exclusivamente esta lista. Declarar em vez de fechar seria
