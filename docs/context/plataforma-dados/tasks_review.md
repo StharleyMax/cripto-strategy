@@ -718,3 +718,83 @@ cortes.**
 `jira_get_project_components(CST)` · `jira_search(project = KAN, …)` · `jira_get_issue(KAN-269)`.
 
 **`harness doctor` CONFORME não é evidência de nada acima.**
+
+---
+
+## 10. Alinhamento da fase `01` a `ADR-011` — 2026-08-28, APPEND
+
+**Nenhuma linha das §0–§9 foi reescrita.** Elas são a narrativa aprovada pelo owner em
+2026-08-25 (*"tasks aprovadas"*), e reescrevê-las apagaria o registro de o que se sabia
+quando se decidiu. Esta seção é acréscimo datado, e descreve **só** o que a correção de rumo
+de 2026-08-28 mudou na quebra.
+
+### 10.1 O gate de narrativa, e por que a materialização não esperou nova aprovação
+
+O rito normal é *narrativa → aprovação humana → materialização*. Aqui a aprovação já
+aconteceu **acima**: o owner declarou a correção de rumo, o `/architect` a materializou em
+[`ADR-011`](../../adr/ADR-011-o-portao-sai-do-harness-e-vai-para-o-make.md) com as seis
+decisões `D1`–`D6` e um falsificador por item, **o owner aprovou a ADR**, e ela foi mergeada
+em `master` (`aa0c690`). O plano da fase `01` foi reescrito no mesmo ato. Esta sessão não
+decidiu nada de arquitetura: ela **traduziu** para `tasks.toml` e para o Jira o que já estava
+aprovado, e o que ela decidiu sozinha está nomeado em §10.4.
+
+### 10.2 Nenhuma task morreu — e o motivo, caso a caso
+
+| task | o que muda | por que ela não morre |
+|---|---|---|
+| `T-01.2` | as duas `[[rules.own]]` de TS saem, **ESLint** entra, `D1.3b` novo | o que ela fecha independe de quem valida TS: sem `code_paths` conhecendo `frontend/`, o harness **nem classifica** um `.tsx` como produção, e é isso que `D1.3`/`D1.4` medem |
+| `T-01.3` | **nada** | `ADR-011` não toca `agents.by_component` |
+| `T-01.4` | metade `.python-version` **inverte de sinal** (3.12 removido → 3.13 mantido); metade "proposta do componente `infra`" **intacta** | matá-la mataria a proposta junto, e nada nesta correção a derruba |
+| `T-01.5` | as duas `[[rules.own]]` de camada saem, **`import-linter` + o portão que o roda** entram | a **necessidade** é idêntica — a peça 1 de `ADR-009/D1` continua sem dono — e matá-la apagaria a trilha de origem, que é o blocker **A** do `/review` da `T-01.1` |
+
+E duas nascem: **`T-01.6`** (item `1.10` — Poetry + `Makefile` + `backend/poetry.toml`) e
+**`T-01.7`** (item `1.11` — docstrings em inglês + README).
+
+### 10.3 As três coisas que esta quebra insiste em não deixar colapsar
+
+**(a) `T-01.5` tem duas metades, e a segunda é a que importa.** `import-linter` sozinho é
+ferramenta que ninguém roda: não há CI (`ls .github` → inexistente) e o `pre-push` gerado não
+chama `make`. Por isso o **título** e os `refs` nomeiam as duas — instrumento **e**
+`scripts/hooks/pre-push.pre-harness`. Um título que só dissesse "import-linter" faria a
+segunda metade desaparecer no primeiro resumo que alguém escrevesse da task.
+
+**(b) `D1.9` não fecha com uma task só.** As quatro superfícies de 3.13 ficam com `T-01.4`;
+`requires-python` fica com `T-01.6`, porque `[project]` só nasce com Poetry. Está escrito nos
+`refs` **das duas** e no cabeçalho do `tasks.toml`, porque um DoD conjunto declarado num lugar
+só é um DoD que alguém fecha pela metade e chama de verde.
+
+**(c) `uncarded` não é `local_only`.** `T-01.5` estava `uncarded` desde 2026-08-28 por **falha
+de acesso**, nunca por decisão. Nesta sessão o acesso voltou (o MCP local `atlassian` estava
+conectado e suas credenciais autenticaram a REST v3 — o `401` anterior era chamador anônimo),
+e ela foi cardada em `CST-89`. **Em nenhum momento `local_only` foi escrito**, e se o acesso
+tivesse falhado de novo ela teria continuado `uncarded`.
+
+### 10.4 O que esta sessão decidiu sozinha, e que precisa de olho do owner
+
+1. **`requires-python` mudou de dono.** O item `1.6` do plano o lista entre as quatro
+   superfícies de `T-01.4`; esta quebra o move para `T-01.6` porque `[project]` só existe
+   depois do Poetry, e põe `.python-version` na contagem no lugar dele. **Universo idêntico —
+   5 superfícies entre as duas tasks — e nenhuma sem dono.** O plano **não** foi editado.
+2. **`T-01.5` fica `components = ["docs"]`.** Os dois violadores de camada que `D1.7a`/`D1.7c`
+   exigem vivem em caminho de **produção** (`backend/src/modules/sentimento/…`), mas são
+   **efêmeros**: `D1.7d` exige verde sem nenhum deles. O plano declarou exceção de produção
+   para `1.1` e `1.11` e **não** para `1.9'`. Se o owner quiser dono de julgamento também
+   sobre violador efêmero, vira `["docs","sentimento"]` — e o prefixo do título no mesmo ato.
+3. **O escopo de caminhos foi ampliado.** Sete dos caminhos que as tasks novas escrevem eram
+   recusados pelo portão de escrita. Medido antes, medido depois — ver §10.5.
+4. **Existe uma feature `docstrings-em-ingles` solta no ledger**, em `INIT`, com um único
+   evento e sem escopo. Duas casas para o mesmo trabalho é a ambiguidade que faz uma das duas
+   nunca ser resolvida. Esta quebra seguiu o plano `01`; encerrar ou reaproveitar aquela
+   feature é decisão do owner.
+
+### 10.5 Nada foi tocado, e nada foi medido de memória
+
+| superfície | antes | depois |
+|---|---|---|
+| ledger | `BUILD_AUTHORIZED` | **`BUILD_AUTHORIZED`** — nenhum `approve`, `advance`, `override` ou `gate-record` |
+| escopo de caminhos | 8 prefixos; `Makefile`, `README.md`, `.python-version`, `backend/poetry.toml`, `backend/pyproject.toml`, `backend/scripts/bootstrap.sh` e `scripts/hooks/pre-push.pre-harness` **recusados** pelo portão de escrita | **19 prefixos**; os 7 passam a devolver *"código permitido"* |
+| `docs/plans/**`, `docs/adr/**` | — | **intocados** — superfície do `/architect` |
+| `harness.toml`, código, `Makefile`, `pyproject.toml` | — | **intocados** |
+| git | `master` limpa | **intocada** — nenhum commit, push ou branch |
+| `T-01.3` | — | **intocada** |
+| `CST-8` (`summary`) | `[docs] 01 · …` | **intocado**, e é dívida conhecida: o `tasks.toml` diz `[docs][sentimento]` desde a correção do `/review`. Fora do escopo de `ADR-011`; nomeado para não sumir |

@@ -234,3 +234,80 @@ gitignored, ~850 MB, dado de terceiro re-obtenível, catalogado em `data/MANIFES
 ## 9. Próximo passo
 
 **`/build`** — e o gate é do **owner**, não deste papel nem do builder.
+
+---
+
+## 10. ADDENDUM 2026-08-28 — a fase `01` depois de `ADR-011`
+
+**Nenhuma seção acima foi reescrita.** Elas descrevem o estado de 2026-08-25 e continuam
+sendo o registro do que se sabia então — inclusive a contagem `81` da §2 e as `18 blocked` da
+§5, que os números abaixo superam sem apagar.
+
+### 10.1 Números de hoje, e o comando de cada um
+
+```
+harness tasks validate plataforma-dados   →  84 task(s), 0 ERROR, 0 WARN
+harness tasks list plataforma-dados       →  1 done · 68 todo · 15 blocked
+harness pipeline state plataforma-dados   →  BUILD_AUTHORIZED
+```
+
+`[MEDIDO 2026-08-28, re-rodado DEPOIS de escritos]`. A trilha do total: **81 → 82** (`T-01.5`,
+a peça 1 de `ADR-009/D1` que caíra entre os itens do plano) **→ 84** (`T-01.6` e `T-01.7`, os
+itens `1.10` e `1.11` do plano reescrito). `T-03.12` continua **não existindo**.
+
+### 10.2 A ordem da fase `01`, e ela é declaração do `/architect`
+
+```
+T-01.1 (done) ─┬─> T-01.4 ──> T-01.6 ──┬──> T-01.5
+               │                       └──> T-01.7
+               ├─> T-01.2
+               └─> T-01.3
+```
+
+- **`T-01.4` antes de `T-01.6`** porque `T-01.6` reescreve o *conteúdo* de `bootstrap.sh`
+  (venv+uv → `poetry install`), e o assert de versão é o que mais facilmente se perde numa
+  reescrita.
+- **`T-01.6` antes de `T-01.5`** porque `make boundaries` não existe sem o `Makefile` e
+  `poetry run lint-imports` não existe sem Poetry.
+- **`T-01.6` antes de `T-01.7`** porque o README documenta a ativação da venv **por comando
+  `make`**.
+
+### 10.3 Cinco coisas que reprovam a fase se forem lidas pela metade
+
+1. **`T-01.5` tem DUAS metades.** `import-linter` **e** `scripts/hooks/pre-push.pre-harness`
+   rodando `make boundaries`. Sem a segunda, a ferramenta existe e ninguém a roda — não há CI
+   (`ls .github` → inexistente) e o `pre-push` gerado não chama `make`. **Zero edição no hook
+   gerado, zero `core.hooksPath`** (proibido pelo `CLAUDE.md`): o hook gerado **já** resolve e
+   executa `hooks/pre-push.pre-harness`, e `scripts/install-git-hooks.sh` **já** o instala.
+2. **`D1.9` não fecha com uma task só.** `T-01.4` traz `.python-version`, `mypy
+   python_version`, `ruff target-version` e `PY_ALVO`; `T-01.6` traz `requires-python`. Quem
+   fechar uma e declarar o DoD cumprido declarou verde sem olhar a outra metade.
+3. **As duas recusas `rc=3` do piso são contrato.** Relatório **ausente** → `rc=3`; relatório
+   **velho** → `rc=3`. O `Makefile` **CHAMA** `bash backend/scripts/test.sh` — nunca encadeia
+   `pytest` e o piso com `;` numa receita, que é o construto de falso-verde que o repositório
+   de referência já mediu (`KAN-172`). E **`rc=3` por "venv não existe" NÃO conta como
+   aprovação**: é a falha que `backend/poetry.toml` existe para impedir.
+4. **`D1.3b` é medição, não citação.** A frase *"AST não tem os dois defeitos da regex"* é
+   **mecanismo**, e está `[NÃO MEDIDO]` neste disco. O ESLint **do projeto** tem de acusar
+   `tipos.ts`, calar em `config.ts` e calar em `Filtro.tsx`.
+5. **Docstrings em inglês são CONVENÇÃO, não portão.** `D1.10` **reprova** se alguém declarar
+   uma `[[rules.own]]` de idioma: a de diacrítico devolve **0 achados sobre 18**, e a de
+   palavra-função ASCII pega **12 de 18**.
+
+### 10.4 Escopo de caminhos — ampliado, e a §7 acima está desatualizada de propósito
+
+Sete caminhos que as tasks novas escrevem eram **recusados** pelo portão de escrita
+`[MEDIDO 2026-08-28: harness pipeline require-code]`. O escopo foi de **8 para 19** prefixos e
+os sete passam a devolver *"código permitido"*. O vigente sai por comando — não confie nesta
+lista nem na da §7:
+
+```
+harness pipeline scope plataforma-dados list
+```
+
+### 10.5 Cards
+
+`T-01.5` → **`CST-89`** · `T-01.6` → **`CST-90`** · `T-01.7` → **`CST-91`**, Tarefas no Epic
+`CST-1`. `CST-9` e `CST-11` atualizados. **Nenhuma task da feature está `local_only`.**
+O rótulo `bloqueada-q16` foi removido de `CST-9`, `CST-10` e `CST-35`
+`[MEDIDO depois da remoção: JQL do rótulo → total 0]`.
