@@ -29,15 +29,39 @@ do outro"*). Apontar para ele mandaria quem lê a política encontrar a doutrina
 | `charts` | [`quant-architect`](../.claude/agents/quant-architect.md) | `ux-ui-mastery` | **arquiteto:** o gráfico mente sobre o dado. **gate:** a tela é ilegível, inacessível ou engana pela interação |
 | `web` | [`ui-designer`](../.claude/agents/ui-designer.md) | `ux-ui-mastery` | **designer:** decide UI/UX sem pedir permissão. **gate:** a condição dessa autonomia |
 
-**A citação que fixa a divisão de `charts`, do owner, em 2026-08-28:**
+**⚠️ Duas frases, dois rótulos — e fundi-las foi o defeito que o `/review` reprovou aqui
+em 2026-08-28.** A fonte única é [`docs/decisoes-do-owner.md`](decisoes-do-owner.md) §`Q16`,
+e ela mesma marca onde a fala do owner termina.
+
+**(a) O que o owner declarou, literal** — `decisoes-do-owner.md:405`, sob o título
+*"Declaração literal da opção selecionada"*, com o rótulo na `:407`:
+
+> **`charts` → `quant-architect` · `web` → `ui-designer`**
+
+`[PREMISSA-OWNER: 2026-08-28]`
+
+**(b) A consequência que o `/architect` registrou ao anotar `Q16`** — `:418-421`, aberta por
+*"Consequência operacional a registrar em `T-01.3`:"*, **voz do redator**, no mesmo parágrafo
+em que ele **lê** a resposta (*"Esta resposta NÃO revoga a delegação de design"*):
 
 > toda tela de `charts` passa a ter **dois** julgamentos independentes — `quant-architect`
 > sobre a fidelidade do dado, `ux-ui-mastery` sobre a interação. **Nenhum dos dois aprova
 > o trabalho do outro.**
 
-`[PREMISSA-OWNER: 2026-08-28]` · fonte única: [`docs/decisoes-do-owner.md`](decisoes-do-owner.md) §`Q16`
+`[DOC: docs/decisoes-do-owner.md:418-421 — consequência registrada pelo /architect, não fala
+literal do owner]`
 
-**A citação que fixa a de `web`, do `CLAUDE.md`, em 2026-08-25:** *"agente que gera e
+**O falsificador, e é de um comando:** `grep -rn -F "aprova o trabalho do outro" docs/`
+devolve **duas redações diferentes** para a suposta citação — `decisoes-do-owner.md:421`
+(*"Nenhum **dos dois** aprova…"*) e `decisoes-de-execucao-2026-08-28.md:132` (*"Nenhum
+aprova…"*). **Citação literal não tem duas redações.** O `tasks.toml:152` já separava as
+duas coisas certo: chama a seta de *"citacao literal"* e o resto de *"Conteudo obrigatorio
+desta task"*.
+
+**E a chave `design_gate` não depende de (b) para existir:** (c) abaixo é base independente,
+anterior em três dias, e é ela que sustenta o desenho.
+
+**(c) A citação que fixa a de `web`, do `CLAUDE.md`, em 2026-08-25:** *"agente que gera e
 aprova o próprio trabalho não tem gate. O ciclo é **gera → critica → itera**"*. O
 `ui-designer` é o gerador; declarar `web` só com `architect = ui-designer` publicaria, na
 política, um gerador sem gate.
@@ -76,7 +100,7 @@ próprio gate não entregava o P1 que o gate pedia), e foi por isso que prevalec
 ## ⚠️ O limite deste documento, declarado e não escondido
 
 **Nenhum comando do plugin roteia por `design_gate`.**
-`[MEDIDO 2026-08-28: grep -rn "agents" sobre os 8 arquivos de `commands/` do harness-plugin
+`[MEDIDO 2026-08-28: grep -rn "agents" sobre os 9 arquivos de `commands/` do harness-plugin
 v0.13.0 → 3 ocorrências; só `build.md:36` e `qa.md:19` rodam `harness policy --key agents`,
 e as duas agem exclusivamente sobre os papéis `builder` e `qa`]`. A chave `architect`, que
 já estava declarada para `sentimento`/`convergencia`/`backtest` desde antes, tem **a mesma

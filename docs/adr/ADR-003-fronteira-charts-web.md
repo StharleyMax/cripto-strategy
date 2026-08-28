@@ -111,7 +111,9 @@ isso, que o `/review` julgou **ACEITÁVEL** que `T-01.2` criasse **4 arquivos qu
 circuito**, logo a omissão não custava julgamento nenhum. Era **deferimento**, e deferimento
 tem prazo.
 
-**O prazo venceu com esta ADR e com `harness.toml`.** A partir de 2026-08-28:
+**O prazo vence NO DIA EM QUE `T-01.3` FECHAR** — a forma do `tasks.toml`, que é a
+precisa: esta ADR e a declaração em `harness.toml` só existem no branch da task, e
+`T-01.3` está `status = "todo"` enquanto isto se lê. Fechada ela:
 
 > **Toda task que escrever sob `frontend/src/` declarando apenas `components = ["docs"]` é
 > VIOLAÇÃO de `ADR-003:11-13`** — *"componente omitido é componente sem dono de julgamento"* —
@@ -141,7 +143,21 @@ que **não** é produção.
 `web` e vice-versa"*, universo **2 imports proibidos, 1 em cada direção**. **Ele não fecha
 aqui, e a razão é medida, não estimada.**
 
-**Fato 1 — o universo está vazio, e isso é um número.**
+**A ordem destes fatos importa, e ela foi corrigida em 2026-08-28 pelo `/review`:** o
+primeiro motivo **não** é o universo vazio — é que o único instrumento disponível reprova
+por **caminho**, e declará-lo gravaria no artefato de política a alternativa que **esta ADR
+recusa** (`:46`). Um universo vazio se enche na semana seguinte; **inverter a ADR pela porta
+dos fundos para satisfazer um DoD, não.**
+
+**Fato 1 — o único instrumento disponível hoje reprova pelo CAMINHO, e isso contradiz a
+decisão desta ADR.** `import-linter` é Python (`ADR-011/D3`, e é da `T-01.5`); `ADR-011/D4`
+**proíbe** `[[rules.own]]` de TypeScript nesta fase; sobra o ESLint, e a regra que ele tem é
+`no-restricted-imports`, que só sabe casar **especificador de módulo** — isto é, **caminho**.
+`ADR-003:46` recusa a fronteira por caminho com um argumento que continua de pé: *"amarrar
+componente a caminho faz **mover arquivo trocar de dono de julgamento**"*. **Declarar esse
+contrato seria escrever a alternativa recusada dentro do arquivo que a recusa.**
+
+**Fato 2 — e, ainda que se aceitasse o caminho, o universo está vazio.**
 
 ```
 $ find frontend/src -type f | wc -l                                     → 4
@@ -150,12 +166,9 @@ $ harness code-paths classify frontend/src/<cada um dos 4>              → prod
 ```
 
 **Zero declarações de import no componente inteiro.** Um contrato `forbidden` sobre um
-universo com **0 imports** não tem o que avaliar.
-
-**Fato 2 — o único instrumento disponível hoje reprova pelo caminho, que é a alternativa
-que `ADR-003:46` recusou.** `import-linter` é Python (`ADR-011/D3`, e é da `T-01.5`);
-`ADR-011/D4` **proíbe** `[[rules.own]]` de TypeScript nesta fase; sobra o ESLint, e a regra
-que ele tem é `no-restricted-imports`, que só sabe casar **especificador de módulo**.
+universo com **0 imports** não tem o que avaliar. **Este é o segundo argumento, não o
+primeiro:** ele diz que o contrato seria inútil hoje; o `Fato 1` diz que ele seria **errado**
+em qualquer dia.
 
 **Fato 3 — o teste dos dois lados (`1.8'`) foi RODADO, e ele reprova.** Bancada em
 `eslint@10` + `typescript-eslint@8`, **fixture fora do repositório**, com um contrato
@@ -196,9 +209,10 @@ seja, para o contrato morder é preciso **primeiro adotar a convenção de camin
 > trata como **fechado**. Ou seja: ele reprova demais, e um critério que reprova tudo não
 > distingue nada — que é exatamente a objeção que `1.8'` faz ao lado "morde".
 >
-> **O que sustenta a recusa de `D1.6` é o número acima, e ele não depende do controle:** o
-> universo tem **0 declarações de import**. O `/qa` reproduziu a recusa com fixture própria e
-> chegou ao mesmo lugar.
+> **O que sustenta a recusa de `D1.6` não depende do controle:** o `Fato 1` (o instrumento
+> reprova por caminho, que esta ADR recusa) vale sozinho, e o número acima — **0 declarações
+> de import** — é o reforço. O `/qa` reproduziu a recusa com fixture própria e chegou ao
+> mesmo lugar.
 
 **Declarar esse contrato hoje seria "ferramenta que existe e ninguém roda" com aparência de
 progresso. Não declarei.**

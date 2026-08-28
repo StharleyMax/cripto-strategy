@@ -473,12 +473,30 @@ architect = ".claude/agents/quant-architect.md"
 #
 # ── POR QUE `charts` TEM DUAS CHAVES, E POR QUE ACHATAR EM UMA SERIA DEFEITO ────────
 #
-# A mesma resposta do owner registra a consequencia operacional, tambem literal:
-# "toda tela de `charts` passa a ter DOIS julgamentos independentes — `quant-architect`
-# sobre a fidelidade do dado, `ux-ui-mastery` sobre a interacao. NENHUM DOS DOIS APROVA O
-# TRABALHO DO OUTRO." E o `CLAUDE.md` ja declarava o mesmo desenho para design desde
-# 2026-08-25: o `ui-designer` decide sem pedir permissao E `ux-ui-mastery` e o gate,
-# porque "agente que gera e aprova o proprio trabalho nao tem gate".
+# ⚠️ ATENCAO AO ROTULO, e ele foi corrigido em 2026-08-28 depois de o /review reprovar:
+# a fala LITERAL do owner e SO a seta — "charts -> quant-architect · web -> ui-designer"
+# (`decisoes-do-owner.md:405`, com o `[PREMISSA-OWNER: 2026-08-28]` na `:407`). A frase dos
+# dois julgamentos NAO e fala do owner: ela esta nas linhas 418-421 do mesmo arquivo, aberta
+# por "Consequencia operacional a registrar em `T-01.3`:", que e voz do redator no mesmo
+# paragrafo em que ele LE a resposta ("Esta resposta NAO revoga a delegacao de design").
+#
+# O consequente, com o rotulo que lhe cabe: toda tela de `charts` passa a ter DOIS
+# julgamentos independentes — `quant-architect` sobre a fidelidade do dado, `ux-ui-mastery`
+# sobre a interacao, e nenhum dos dois aprova o trabalho do outro.
+# `[DOC: docs/decisoes-do-owner.md:418-421 — consequencia registrada pelo /architect ao
+# anotar Q16; NAO e fala literal do owner]`
+#
+# O falsificador que fecha o caso e de um comando: `grep -rn -F "aprova o trabalho do outro"
+# docs/` devolve DUAS REDACOES DIFERENTES para a suposta citacao —
+# `decisoes-do-owner.md:421` ("Nenhum DOS DOIS aprova...") e
+# `decisoes-de-execucao-2026-08-28.md:132` ("Nenhum aprova..."). Citacao literal nao tem
+# duas redacoes. O `tasks.toml` (`:152`) ja separava as duas coisas certo, chamando a seta
+# de "citacao literal" e o resto de "Conteudo obrigatorio desta task".
+#
+# E a chave `design_gate` NAO depende dessa frase para existir: o `CLAUDE.md` ja declarava
+# o mesmo desenho desde 2026-08-25 — o `ui-designer` decide sem pedir permissao E
+# `ux-ui-mastery` e o gate, porque "agente que gera e aprova o proprio trabalho nao tem
+# gate" `[DOC: CLAUDE.md]`. Essa base e INDEPENDENTE da anotacao de `Q16`.
 #
 # `web` carrega as duas chaves pelo MESMO motivo, e nao por simetria decorativa: o dono
 # de julgamento que o owner nomeou para `web` e o `ui-designer`, que e precisamente o
@@ -503,7 +521,7 @@ architect = ".claude/agents/quant-architect.md"
 #
 # LIMITE DECLARADO, e ele vale igual para a chave `architect` que ja estava aqui:
 # NENHUM comando do plugin ROTEIA por estas chaves. `[MEDIDO 2026-08-28: grep -rn "agents"
-# sobre os 8 arquivos de commands/ do v0.13.0 -> 3 ocorrencias; `build.md:36` e `qa.md:19`
+# sobre os 9 arquivos de commands/ do v0.13.0 -> 3 ocorrencias; `build.md:36` e `qa.md:19`
 # rodam `harness policy --key agents` e agem so sobre os papeis `builder` e `qa`, e
 # `skills.toml:12` so cita a palavra num comentario. Nenhuma le `architect`]`.
 # Estes ponteiros sao DOUTRINA LEGIVEL — que e exatamente o que V-16 diz existir para:
