@@ -1,0 +1,23 @@
+# Configuracao LOCAL do Poetry para `backend/` — e ela e VERSIONADA de proposito.
+#
+# `ADR-011/D1`. Os quatro scripts de `backend/scripts/` resolvem o interpretador como
+# `backend/.venv/bin/python`, LITERAL, e o caminho esta espalhado por quatro arquivos, nao
+# centralizado [MEDIDO 2026-08-28: `PY="$BACKEND/.venv/bin/python"` -> 3 ocorrencias, em
+# `lint.sh`, `test.sh` e `check-coverage-layers.sh`; mais `VENV="$BACKEND/.venv"` -> 1, em
+# `bootstrap.sh`. Total 4].
+#
+# O Poetry so poe o venv em `backend/.venv` se `virtualenvs.in-project` for verdadeiro, e
+# NESTA MAQUINA ele e verdadeiro por configuracao de USUARIO, nao do repositorio
+# [MEDIDO 2026-08-28: `cd /tmp && poetry config virtualenvs.in-project` -> `true`, lido de
+# FORA do repositorio, logo global]. Num clone limpo com o default de fabrica o venv nasce em
+# `~/.cache/pypoetry/virtualenvs/...` e as TRES recusas `rc=3` de "venv nao existe"
+# (`lint.sh`, `test.sh`, `check-coverage-layers.sh`) passam a disparar SEMPRE — a migracao
+# pareceria funcionar aqui e quebraria na proxima maquina.
+#
+# Este arquivo e a config LOCAL do repositorio, que viaja no clone. E o conserto.
+#
+# ATENCAO A QUEM FOR EDITAR: `rc=3` por "venv nao existe" NAO e aprovacao de portao nenhum —
+# e a falha que este arquivo existe para impedir. Confundir as duas e ler verde num portao
+# que nao olhou.
+[virtualenvs]
+in-project = true
