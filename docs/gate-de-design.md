@@ -48,9 +48,30 @@ política, um gerador sem gate.
    classe de risco.
 2. O gate critica. Enquanto ele não concordar, **a decisão de design não vale**.
 3. Discordância entre os dois **não se resolve por antiguidade nem por hierarquia**: sobe
-   para o owner. Precedente medido: em `ADR-010` o designer discordou do gate em 4 pontos
-   e **acertou nos 4** `[DOC: docs/INDEX.md, linha 2026-08-25T20:22Z]`.
+   para o owner — ver o precedente abaixo.
 4. Silêncio do owner **não é aprovação**; aprovação é o veredito do gate `[DOC: CLAUDE.md]`.
+
+### O precedente que calibra o item 3
+
+**Precedente, e ele tem de ser citado INTEIRO — as duas metades estão na mesma linha
+`docs/INDEX.md:41` (a entrada `2026-08-25T20:22Z`), mais `docs/adr/ADR-010-…:6`:**
+
+| metade | o que a fonte diz, literal | onde |
+|---|---|---|
+| **o gate mordeu** | *"O gate `ux-ui-mastery` emitiu `APROVADO COM CONDIÇÃO`"*, tendo *"testado o testador antes de julgar"*, e **gateou por duas falhas medidas** | `docs/INDEX.md:41` |
+| **e não foi barato** | *"o gate `ux-ui-mastery` (`APROVADO COM CONDIÇÃO`, **8 condições**)"* | `docs/adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md:6` |
+| **o designer contestou, e a contestação foi julgada pelo mérito** | *"O designer discordou do gate em 4 pontos e acertou nos 4"* | `docs/INDEX.md:41` |
+
+`[DOC]` nas três · `[MEDIDO 2026-08-28: grep -on "O designer discordou do gate em 4 pontos e
+acertou nos 4" docs/INDEX.md → `41:…`; e `sed -n '6p'` na ADR-010 → a linha das 8 condições]`
+
+**A leitura que este precedente autoriza, e a que ele NÃO autoriza.** Ele **não** diz que o
+designer costuma ter razão contra o gate: no mesmo episódio o gate impôs **8 condições** e
+reprovou por **duas falhas medidas** que o designer não tinha visto. O que ele diz é mais
+estreito e é o que interessa aqui: **discordância se resolve por medição, não por posto** —
+o designer recusou 4 pontos **apresentando medição** (entre eles, que o valor sugerido pelo
+próprio gate não entregava o P1 que o gate pedia), e foi por isso que prevaleceu nesses 4.
+**Citar só a metade que favorece um dos lados é o defeito, e ele quase entrou aqui.**
 
 ## ⚠️ O limite deste documento, declarado e não escondido
 
@@ -69,16 +90,27 @@ componente fora do vocabulário fechado e **avisa** sobre ponteiro que não reso
 
 ### O que a mutação mostrou, e é pior do que o parágrafo acima admitia
 
-Três mutações efêmeras contra a declaração de `harness.toml`, `[MEDIDO 2026-08-28]`:
+Cinco mutações efêmeras contra a declaração de `harness.toml`, `[MEDIDO 2026-08-28]` — as
+duas últimas acrescentadas depois de o `/qa` apontar que a tabela de três não cobria o caso
+pior:
 
 | mutação | resultado | leitura |
 |---|---|---|
 | componente **fora** do vocabulário fechado (`[agents.by_component.frontend]`) | **`rc=1`**, `[erro] V-16 … esperado um dos componentes declarados` | o validador **de fato lê** esta seção; o verde não é carimbo |
 | `design_gate` apontando para caminho **inexistente** | `rc=0` com **2 `[aviso]` V-16** nomeando as duas chaves | o ponteiro quebrado é **visível**, mas **não reprova** (`fatal=False` em `lib/policy.py`) |
 | **`design_gate` simplesmente APAGADO das duas entradas** | **`rc=0`, silêncio total** — e `harness policy` passa a devolver `charts` e `web` só com `architect` | **⚠️ nada no mecanismo protege o segundo julgamento.** Apagar o gate é indistinguível, para o validador, de nunca tê-lo declarado |
+| **donos TROCADOS** — `charts` → `ui-designer`, `web` → `quant-architect`, contradizendo **literalmente** a resposta de `Q16` | **`rc=0` em tudo**: `validate --strict`, `policy`, `doctor`, `sweep`, `tasks validate` — silêncio total | **⚠️ pior que a anterior.** Não é só o segundo julgamento que está desprotegido: **a atribuição do owner inteira** pode ser invertida sem que um único comando acuse |
+| **seção vazia** — `[agents.by_component.charts]` sem nenhuma chave | `rc=0` em tudo, e `harness policy` publica **`"charts": {}`** | **⚠️ e isto atinge o próprio `D1.2`:** o comando do DoD (*"contém `charts` e `web`"*) é satisfeito por `{}`. A entrega real **não** está vazia, então `D1.2` fecha de verdade — mas **o comando do DoD, sozinho, não é portão**: ele testa presença de chave, não presença de dono |
 
-**Consequência, escrita para não ser descoberta depois:** a separação dos dois julgamentos é
-**doutrina, não portão**. Quem apagar a linha `design_gate` de `charts` ou de `web` desfaz uma
-decisão do owner (`Q16`, 2026-08-28) e do `CLAUDE.md` (2026-08-25) **sem que nenhum comando
-acuse**. O que sobra contra isso é a revisão humana e este parágrafo — e chamar isso de
-enforcement seria a mentira que o resto do repositório existe para evitar.
+**Consequência, escrita para não ser descoberta depois, e ela é mais ampla do que parecia
+com três mutações:** o que é **doutrina, não portão**, não é só a separação dos dois
+julgamentos — é **toda a atribuição de dono que o owner fez em `Q16`**. Apagar o
+`design_gate`, trocar `charts` por `ui-designer`, ou esvaziar a seção inteira: as três
+desfazem uma decisão do owner (`Q16`, 2026-08-28) e do `CLAUDE.md` (2026-08-25) **sem que
+nenhum comando acuse**. O único erro que o mecanismo FECHA é o componente fora do
+vocabulário fechado.
+
+**Corolário para quem for conferir `D1.2` no futuro:** rodar o comando do DoD e ver `charts`
+e `web` na saída **não basta** — é preciso olhar **o que há dentro** de cada um. O que sobra
+contra tudo isto é a revisão humana e este parágrafo, e chamar isso de enforcement seria a
+mentira que o resto do repositório existe para evitar.

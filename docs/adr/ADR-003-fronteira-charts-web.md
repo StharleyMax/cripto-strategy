@@ -164,23 +164,41 @@ que ele tem é `no-restricted-imports`, que só sabe casar **especificador de m�
 | metade | corpus | comando | resultado |
 |---|---|---|---|
 | **MORDE** | os 4 arquivos reais **+ 2 violadores plantados**, 1 em cada direção | `eslint srcB` | **`exit=1`**, `2 problems (2 errors)`, **nomeando** `no-restricted-imports` e as duas mensagens de contrato (`charts-nao-importa-web`, `web-nao-importa-charts`) ✅ |
-| **CALA** | os 4 arquivos reais de hoje | `eslint srcA` | `exit=0` ❌ **e o zero não vale nada** |
+| **CALA** | os 4 arquivos reais de hoje | `eslint srcA` | `exit=0` ❌ **e o zero é VACUOSO** |
 
-**Por que o `exit=0` não conta — o controle que fecha o argumento:** rodei o **mesmo corpus
-A** contra o **contrato removido** e comparei as duas saídas.
+**Por que o `exit=0` não conta:** ele é **vacuoso**, não suspeito. O corpus tem **zero
+declarações de import** (`grep -rnE '^\s*(import|export)\s.*from\s' frontend/src` →
+nenhuma ocorrência) ⇒ **o lado "cala" não exercita o contrato uma única vez.** Não é que a
+regra tenha sido testada e calado; é que **não houve nada para ela olhar**. E `1.8'` pede que
+"cala" mostre que a ferramenta *"não reprova o código legítimo de hoje"* — sobre um universo
+sem imports, essa demonstração não tem conteúdo.
 
-```
-$ eslint srcA                              → exit=0
-$ eslint -c eslint.desligado.mjs srcA      → exit=0
-$ diff <as duas saídas>                    → IDÊNTICAS (0 bytes de diferença)
-```
+E a metade "morde" só passou porque **2 dos 6 arquivos do corpus B são inventados**, um deles
+exigindo o diretório `frontend/src/features/charts/`, que **não existe no repositório** — ou
+seja, para o contrato morder é preciso **primeiro adotar a convenção de caminho que
+`ADR-003:46` recusou**.
 
-**O contrato ligado e o contrato desligado são byte-idênticos sobre o código legítimo de
-hoje.** É exatamente o modo de falha que `1.8'` nomeia: *"contrato desligado passa em 'cala'
-e falha em 'morde'"*. E a metade "morde" só passou porque **2 dos 6 arquivos do corpus B são
-inventados**, um deles exigindo o diretório `frontend/src/features/charts/`, que **não existe
-no repositório** — ou seja, para o contrato morder é preciso **primeiro adotar a convenção de
-caminho que `ADR-003:46` recusou**.
+> **⚠️ Correção de argumento aplicada em 2026-08-28 pelo `/build`, após o `/qa` falsificar a
+> redação anterior. O veredito não mudou; a razão dele mudou.**
+>
+> A primeira redação argumentava: *"o contrato ligado e o desligado dão saída **byte-idêntica**
+> sobre o código de hoje ⇒ reprova"*. **Esse controle é sobre-estrito, e a falsificação é de uma
+> linha** — ele vale para **qualquer regra correta sobre corpus limpo**. Reproduzido no próprio
+> repositório `[MEDIDO 2026-08-28]`:
+>
+> ```
+> harness rules --mode file --path frontend/src/features/painel/Filtro.tsx --surface ci
+>   packs = ["core", "web-fullstack"]   → rc=0, 0 byte
+>   packs = ["core"]        (controle)  → rc=0, 0 byte     ⇒ saídas IDÊNTICAS
+> ```
+>
+> Aplicado uniformemente, esse critério reprovaria o lado "cala" de **`D1.3`**, que esta fase
+> trata como **fechado**. Ou seja: ele reprova demais, e um critério que reprova tudo não
+> distingue nada — que é exatamente a objeção que `1.8'` faz ao lado "morde".
+>
+> **O que sustenta a recusa de `D1.6` é o número acima, e ele não depende do controle:** o
+> universo tem **0 declarações de import**. O `/qa` reproduziu a recusa com fixture própria e
+> chegou ao mesmo lugar.
 
 **Declarar esse contrato hoje seria "ferramenta que existe e ninguém roda" com aparência de
 progresso. Não declarei.**
