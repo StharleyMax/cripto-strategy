@@ -1,0 +1,38 @@
+"""Driver de subprocesso: dreno REAL, para que o teste possa matar o processo no meio."""
+
+from __future__ import annotations
+
+import hashlib
+import sys
+import time
+from collections.abc import Callable
+from pathlib import Path
+
+from src.modules.sentimento.domain.etl_backlog import EtlBacklog
+from src.modules.sentimento.infra.file_etl_worker import FileEtlWorker
+from src.modules.sentimento.infra.jsonl_checkpoint import JsonlCheckpoint
+from src.modules.sentimento.use_cases.drain_etl_backlog import drain
+
+
+def _transform(atraso_s: float) -> Callable[[bytes], bytes]:
+    def transform(payload: bytes) -> bytes:
+        if atraso_s:
+            time.sleep(atraso_s)
+        return hashlib.sha256(payload).hexdigest().encode("ascii")
+
+    return transform
+
+
+def main(argv: list[str]) -> int:
+    source_dir, output_dir, ledger, atraso_s = argv
+    keys = sorted(item.name for item in Path(source_dir).iterdir() if item.is_file())
+    drain(
+        EtlBacklog.of(keys),
+        FileEtlWorker(Path(source_dir), Path(output_dir), _transform(float(atraso_s))),
+        JsonlCheckpoint(Path(ledger)),
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

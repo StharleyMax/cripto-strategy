@@ -1,0 +1,40 @@
+# Configuracao das ferramentas do backend. NAO declara versao de Python de proposito:
+# `ADR-009/D4` decide 3.12 e a APLICACAO dessa decisao (remover o `.python-version` = 3.13.13
+# solto na raiz) e a task `T-01.4`. Declarar aqui seria decidir por ela em outra superficie.
+
+[tool.pytest.ini_options]
+# `pythonpath = ["."]` torna `src` e `tests` importaveis com a raiz em `backend/`, que e o
+# diretorio de onde `backend/scripts/test.sh` roda. Sem isto o driver de subprocesso do
+# teste de `D3.1` nao acha `src.modules.sentimento`.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config -q"
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = ["*/__init__.py"]
+
+[tool.coverage.report]
+# Piso GLOBAL. As metas POR CAMADA — o que `ADR-009/D1` copia do vizinho — sao verificadas
+# por `backend/scripts/check-coverage-layers.sh`, porque um piso global sobe na camada
+# barata (`infra`) enquanto `domain` fica descoberto.
+fail_under = 70
+show_missing = true
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "S", "ANN", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+# Fixture de teste usa `assert` (S101) e chama subprocesso com argv literal (S603/S607).
+"tests/**/*.py" = ["S101", "S603", "S607", "ANN401"]
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true

@@ -45,3 +45,7 @@ out/
 # FIXTURES pequenas e curadas de teste (marcação SMC fixada à mão), que moram junto
 # dos testes — não aqui.
 data/
+
+# Backend — relatorio de cobertura gerado por `backend/scripts/test.sh` (T-01.1, 2026-08-28)
+backend/coverage.xml
+.coverage
