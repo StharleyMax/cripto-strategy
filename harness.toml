@@ -483,15 +483,37 @@ architect = ".claude/agents/quant-architect.md"
 # O consequente, com o rotulo que lhe cabe: toda tela de `charts` passa a ter DOIS
 # julgamentos independentes — `quant-architect` sobre a fidelidade do dado, `ux-ui-mastery`
 # sobre a interacao, e nenhum dos dois aprova o trabalho do outro.
-# `[DOC: docs/decisoes-do-owner.md:418-421 — consequencia registrada pelo /architect ao
-# anotar Q16; NAO e fala literal do owner]`
+# `[DOC: docs/decisoes-do-owner.md:418-421 (a frase fecha na `:420`-`:421`) — consequencia
+# registrada pelo /architect ao anotar Q16; NAO e fala literal do owner]`
 #
-# O falsificador que fecha o caso e de um comando: `grep -rn -F "aprova o trabalho do outro"
-# docs/` devolve DUAS REDACOES DIFERENTES para a suposta citacao —
-# `decisoes-do-owner.md:421` ("Nenhum DOS DOIS aprova...") e
-# `decisoes-de-execucao-2026-08-28.md:132` ("Nenhum aprova..."). Citacao literal nao tem
-# duas redacoes. O `tasks.toml` (`:152`) ja separava as duas coisas certo, chamando a seta
-# de "citacao literal" e o resto de "Conteudo obrigatorio desta task".
+# O FALSIFICADOR, e ele foi RODADO antes de ser publicado aqui (a versao anterior nao
+# fora, e por isso estava errada — ver a tarja no fim deste bloco):
+#
+#   $ grep -n -F "aprova o trabalho do" docs/decisoes-do-owner.md \
+#       docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md
+#   decisoes-de-execucao-2026-08-28.md:132: ... **Nenhum aprova o trabalho do outro.**
+#   decisoes-do-owner.md:420:              ... **Nenhum dos dois aprova o trabalho do
+#
+# DUAS REDACOES DIFERENTES para a suposta citacao. Citacao literal nao tem duas redacoes.
+# O `tasks.toml` (`:152`) ja separava as duas coisas certo, chamando a seta de "citacao
+# literal" e o resto de "Conteudo obrigatorio desta task".
+#
+# ⚠️ TARJA 2026-08-28 (/review, ciclo 3): a redacao anterior deste falsificador publicava
+# `grep -rn -F "aprova o trabalho do outro" docs/` e dizia que ele devolvia as duas fontes.
+# NAO DEVOLVE. A fonte unica CAI DA SAIDA, porque a frase atravessa uma quebra de linha: a
+# `:420` termina em "aprova o trabalho do" e a `:421` contem so "outro.**". O fragmento
+# tambem estava na linha errada (`:421`, e o certo e `:420`). Tirar a palavra "outro" do
+# padrao alcanca as duas fontes. NAO APAGUEI o erro: quem so olhasse a conclusao nunca
+# saberia que a prova oferecida ao leitor futuro nao rodava.
+#
+# Versao wrap-safe, que exibe as duas redacoes INTEIRAS (o `grep` por linha nao consegue):
+#
+#   python3 -c 'import re,pathlib
+#   for f in ["docs/decisoes-do-owner.md","docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md"]:
+#       t=re.sub(r"\s+"," ",pathlib.Path(f).read_text())
+#       print(f,"->",re.search(r"Nenhum[^.]*aprova o trabalho do outro\.",t).group(0))'
+#   decisoes-do-owner.md          -> Nenhum dos dois aprova o trabalho do outro.
+#   decisoes-de-execucao-...md    -> Nenhum aprova o trabalho do outro.
 #
 # E a chave `design_gate` NAO depende dessa frase para existir: o `CLAUDE.md` ja declarava
 # o mesmo desenho desde 2026-08-25 — o `ui-designer` decide sem pedir permissao E
@@ -516,8 +538,8 @@ architect = ".claude/agents/quant-architect.md"
 # papeis do pipeline (`scripts/pipeline.sh:85` -> `["pm","architect","tech-lead","builder",
 # "qa","reviewer"]`) e nomeia o auditor ARQUITETURAL (`agents/reviewer.md`, COMPLIANT /
 # NON_COMPLIANT). Reaproveitar `reviewer` para o gate de interacao faria o gate de UX
-# PARECER substituir a auditoria de arquitetura — que e achatar os dois julgamentos, o
-# oposto do que o owner declarou.
+# PARECER substituir a auditoria de arquitetura — que e achatar os dois julgamentos: a
+# decisao do owner (a separacao dos donos) e a consequencia que o /architect registrou.
 #
 # LIMITE DECLARADO, e ele vale igual para a chave `architect` que ja estava aqui:
 # NENHUM comando do plugin ROTEIA por estas chaves. `[MEDIDO 2026-08-28: grep -rn "agents"

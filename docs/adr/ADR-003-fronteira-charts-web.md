@@ -95,14 +95,16 @@ $ harness policy --key agents.by_component          # DEPOIS
 mesmo `CONFORME (12 checagens)` sai na baseline sem esta task** `[MEDIDO 2026-08-28 com
 `git stash -u`]`, o que prova que o validador não passou a aprovar coisa nova por acidente.
 
-**`charts` tem DUAS chaves de propósito**, e achatá-las em uma seria desfazer a decisão do
-owner: `architect` julga **fidelidade do dado**, `design_gate` julga **interação**, e
-**nenhum dos dois aprova o trabalho do outro**. `web` também tem duas, porque o dono de
+**`charts` tem DUAS chaves de propósito**, e achatá-las em uma seria desfazer **a decisão do
+owner (a separação dos donos) e a consequência que o `/architect` registrou**: `architect`
+julga **fidelidade do dado**, `design_gate` julga **interação**, e **nenhum dos dois aprova o
+trabalho do outro** `[DOC: decisoes-do-owner.md:418-421 — a consequência é do /architect, não
+fala literal do owner]`. `web` também tem duas, porque o dono de
 julgamento que o owner lhe deu é o `ui-designer` — o agente que o `CLAUDE.md` proíbe de
 aprovar o próprio trabalho. A doutrina está em [`docs/gate-de-design.md`](../gate-de-design.md);
 o esquema que comporta os dois ponteiros está medido em `harness.toml`.
 
-## 🔴 O gatilho que `T-01.3` armou — e a data de validade que ele venceu
+## 🔴 O gatilho que `T-01.3` armou — e a data de validade que ele arma
 
 Até hoje, `agents.by_component` **não tinha dono para `web`**. Foi por isso, e **só** por
 isso, que o `/review` julgou **ACEITÁVEL** que `T-01.2` criasse **4 arquivos que
@@ -119,7 +121,7 @@ precisa: esta ADR e a declaração em `harness.toml` só existem no branch da ta
 > VIOLAÇÃO de `ADR-003:11-13`** — *"componente omitido é componente sem dono de julgamento"* —
 > **e não deferimento.**
 
-**Por que a regra morde agora e não mordia ontem, em um número:** `docs` **continua sem dono**
+**Por que a regra passa a morder quando `T-01.3` fechar, e não mordia ontem, em um número:** `docs` **continua sem dono**
 `[MEDIDO 2026-08-28: `harness policy --key agents.by_component` → `docs` **ausente**]`, e
 `charts` e `web` **passaram a ter**. Omitir o componente deixou de ser gratuito — passou a
 **custar o julgamento que existe**.

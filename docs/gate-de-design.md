@@ -48,15 +48,45 @@ em que ele **lê** a resposta (*"Esta resposta NÃO revoga a delegação de desi
 > sobre a fidelidade do dado, `ux-ui-mastery` sobre a interação. **Nenhum dos dois aprova
 > o trabalho do outro.**
 
-`[DOC: docs/decisoes-do-owner.md:418-421 — consequência registrada pelo /architect, não fala
-literal do owner]`
+`[DOC: docs/decisoes-do-owner.md:418-421 — a frase fecha na `:420`-`:421`; consequência
+registrada pelo /architect, não fala literal do owner]`
 
-**O falsificador, e é de um comando:** `grep -rn -F "aprova o trabalho do outro" docs/`
-devolve **duas redações diferentes** para a suposta citação — `decisoes-do-owner.md:421`
-(*"Nenhum **dos dois** aprova…"*) e `decisoes-de-execucao-2026-08-28.md:132` (*"Nenhum
-aprova…"*). **Citação literal não tem duas redações.** O `tasks.toml:152` já separava as
-duas coisas certo: chama a seta de *"citacao literal"* e o resto de *"Conteudo obrigatorio
-desta task"*.
+**O falsificador — e este foi RODADO antes de ser publicado:**
+
+```
+$ grep -n -F "aprova o trabalho do" docs/decisoes-do-owner.md \
+    docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md
+decisoes-de-execucao-2026-08-28.md:132: … **Nenhum aprova o trabalho do outro.**
+decisoes-do-owner.md:420:               … **Nenhum dos dois aprova o trabalho do
+```
+
+**Duas redações diferentes para a suposta citação. Citação literal não tem duas redações.**
+O `tasks.toml:152` já separava as duas coisas certo: chama a seta de *"citacao literal"* e o
+resto de *"Conteudo obrigatorio desta task"*.
+
+> **⚠️ Tarja 2026-08-28 (`/review`, ciclo 3): a versão anterior deste falsificador não
+> rodava, e está registrada em vez de apagada.** Ela publicava `grep -rn -F "aprova o
+> trabalho do outro" docs/` afirmando que devolvia as duas fontes. **Não devolve:** a fonte
+> única **cai da saída**, porque a frase atravessa uma quebra de linha — a `:420` termina em
+> `aprova o trabalho do` e a `:421` contém só `outro.**`. O fragmento também estava na linha
+> errada (`:421`; o certo é `:420`). Tirar a palavra `outro` do padrão alcança as duas.
+>
+> **Versão wrap-safe**, que exibe as duas redações inteiras — o `grep` por linha não consegue:
+>
+> ```
+> python3 -c 'import re,pathlib
+> for f in ["docs/decisoes-do-owner.md","docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md"]:
+>     t=re.sub(r"\s+"," ",pathlib.Path(f).read_text())
+>     print(f,"->",re.search(r"Nenhum[^.]*aprova o trabalho do outro\.",t).group(0))'
+> decisoes-do-owner.md       -> Nenhum dos dois aprova o trabalho do outro.
+> decisoes-de-execucao-….md  -> Nenhum aprova o trabalho do outro.
+> ```
+>
+> **A lição, e ela é o método:** um falsificador publicado sem ter sido executado é a mesma
+> classe de defeito que ele acusa. Esta família de armadilha — texto que atravessa wrap —
+> mordeu **cinco vezes** nesta task: `\|` em BRE, `cut -c1-N`, `sed -n 'Np'` em linha longa,
+> `grep -on` cruzando wrap, e `grep -F` cruzando wrap. **Rode o comando e confira que a saída
+> contém o que o texto diz que ela contém, antes de publicá-lo.**
 
 **E a chave `design_gate` não depende de (b) para existir:** (c) abaixo é base independente,
 anterior em três dias, e é ela que sustenta o desenho.
