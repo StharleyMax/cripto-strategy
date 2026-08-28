@@ -58,7 +58,7 @@ política, um gerador sem gate.
 
 | metade | o que a fonte diz, literal | onde |
 |---|---|---|
-| **o gate mordeu** | *"O gate `ux-ui-mastery` emitiu `APROVADO COM CONDIÇÃO`"*, tendo *"testado o testador antes de julgar"*, e **gateou por duas falhas medidas** | `docs/INDEX.md:41` |
+| **o gate mordeu** | *"O gate `ux-ui-mastery` emitiu `APROVADO COM CONDIÇÃO` — testou o testador antes de julgar"*, e *"gateou por duas falhas medidas"* | `docs/INDEX.md:41` |
 | **e não foi barato** | *"o gate `ux-ui-mastery` (`APROVADO COM CONDIÇÃO`, **8 condições**)"* | `docs/adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md:6` |
 | **o designer contestou, e a contestação foi julgada pelo mérito** | *"O designer discordou do gate em 4 pontos e acertou nos 4"* | `docs/INDEX.md:41` |
 

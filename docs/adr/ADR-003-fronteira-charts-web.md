@@ -169,9 +169,9 @@ que ele tem é `no-restricted-imports`, que só sabe casar **especificador de m�
 **Por que o `exit=0` não conta:** ele é **vacuoso**, não suspeito. O corpus tem **zero
 declarações de import** (`grep -rnE '^\s*(import|export)\s.*from\s' frontend/src` →
 nenhuma ocorrência) ⇒ **o lado "cala" não exercita o contrato uma única vez.** Não é que a
-regra tenha sido testada e calado; é que **não houve nada para ela olhar**. E `1.8'` pede que
-"cala" mostre que a ferramenta *"não reprova o código legítimo de hoje"* — sobre um universo
-sem imports, essa demonstração não tem conteúdo.
+regra tenha sido testada e calado; é que **não houve nada para ela olhar**. E `1.8'` exige a
+metade *"**CALA** (o código legítimo de hoje ⇒ verde)"* (plano `01`, linha 21) — sobre um
+universo sem imports, essa demonstração não tem conteúdo.
 
 E a metade "morde" só passou porque **2 dos 6 arquivos do corpus B são inventados**, um deles
 exigindo o diretório `frontend/src/features/charts/`, que **não existe no repositório** — ou
