@@ -44,10 +44,49 @@
 # `T-03.12` (coletor de spread) NAO EXISTE neste arquivo. Ela era contingente a `Q17 = (c)`
 # e `Q17` esta `RESPONDIDA COM RESIDUO` em `docs/decisoes-do-owner.md:50` — o residuo
 # nomeado e "(a2) ou (a3)?", ainda do owner. Sem a resposta, criar a task seria decidir por
-# ele. O total do arquivo NAO a inclui: sao 82 `[MEDIDO 2026-08-28: harness tasks
-# validate plataforma-dados -> 82 task(s), 0 ERROR, 0 WARN]`, e COM `T-03.12` seriam 83.
-# Eram 81 ate 2026-08-28, quando `T-01.5` (contrato `layers`, item 1.9 do plano da fase
-# 01) foi acrescentada — o 82 de hoje e ela, NAO a criacao de `T-03.12`.
+# ele. O total do arquivo NAO a inclui: sao 84 `[MEDIDO 2026-08-28: harness tasks
+# validate plataforma-dados -> 84 task(s), 0 ERROR, 0 WARN]`, e COM `T-03.12` seriam 85.
+#
+# A TRILHA DO TOTAL, porque numero sem trilha nao se audita. 81 -> 82 -> 84, tudo em
+# 2026-08-28: 81 ate a manha; 82 quando `T-01.5` foi acrescentada (a peca 1 de
+# `ADR-009/D1` que caira ENTRE os itens do plano); 84 quando a correcao de rumo do owner
+# virou `ADR-011` e o alinhamento da fase 01 criou `T-01.6` (Poetry + `Makefile`, item
+# 1.10 do plano) e `T-01.7` (docstrings em ingles + README, item 1.11). NENHUMA das
+# duas e `T-03.12`, que continua nao existindo.
+#
+# ── ADR-011 · O QUE MUDOU NA FASE 01, E O QUE NAO MUDOU ────────────────────────────
+#
+# A correcao de rumo de 2026-08-28 (`docs/adr/ADR-011-...md`, aprovada e mergeada em
+# `aa0c690`) trocou o MECANISMO de validacao da fase 01. Ela NAO MATOU NENHUMA TASK, e o
+# motivo esta escrito task a task no campo `refs` de cada uma, sob o rotulo
+# `MUDANCA DE CONTEUDO 2026-08-28`:
+#
+#   `T-01.2` muda de conteudo — as duas `[[rules.own]]` de TS saem, ESLint entra (`D4`).
+#   `T-01.4` muda de conteudo — a metade `.python-version` INVERTE de sinal (3.12 removido
+#            -> 3.13 mantido, `D5`); a metade "proposta do componente `infra`" fica INTACTA.
+#   `T-01.5` muda de conteudo — as duas `[[rules.own]]` de camada saem, `import-linter`
+#            entra, E o `pre-push.pre-harness` que o roda entra junto (`D3`, duas metades).
+#   `T-01.3` NAO E TOCADA — `ADR-011` nao mexe com `agents.by_component`.
+#   `T-01.6` e `T-01.7` NASCEM (itens 1.10 e 1.11 do plano).
+#
+# ORDEM materializada em `depends_on`, e ela e declaracao do /architect:
+# `T-01.4` -> `T-01.6` -> `T-01.5`. `T-01.7` tambem depende de `T-01.6`, porque o README
+# documenta a ativacao da venv POR COMANDO `make`.
+#
+# DoD que NAO FECHA COM UMA TASK SO, e por isso esta no cabecalho e nao so nos `refs`:
+# `D1.9` (Python 3.13) e CONJUNTO de `T-01.4` (4 superficies) + `T-01.6`
+# (`requires-python`, que so existe depois que Poetry cria a seccao `[project]`).
+#
+# ── ESCOPO DE CAMINHOS DA FEATURE ──────────────────────────────────────────────────
+#
+# As tasks novas escrevem FORA do escopo que a feature declarava. Medido antes de
+# ampliar `[MEDIDO 2026-08-28: harness pipeline require-code <path>]`: `Makefile`,
+# `README.md`, `.python-version`, `backend/poetry.toml`, `backend/pyproject.toml`,
+# `backend/scripts/bootstrap.sh` e `scripts/hooks/pre-push.pre-harness` devolviam os 7
+# "nenhuma feature autorizada reivindica o path", enquanto
+# `backend/src/modules/sentimento/domain/etl_backlog.py` devolvia "codigo permitido".
+# O escopo foi ampliado nesta sessao; o vigente sai em
+# `harness pipeline scope plataforma-dados list`.
 
 schema_version = "1"
 feature = "plataforma-dados"
@@ -80,15 +119,22 @@ tracker = { provider = "jira", id = "CST-8", url = "https://conversationhub.atla
 
 [[tasks]]
 id = "T-01.2"
-title = "[docs] 01 · Cobertura de frontend/ fechada — include_prefixes, globs TS/TSX e pack que morda TypeScript"
+title = "[docs] 01 · Cobertura de frontend/ fechada — include_prefixes, globs TS/TSX, pack web-fullstack e ESLint no lugar das duas regras proprias de TS"
 components = ["docs"]
 status = "todo"
 phase = "01"
 depends_on = ["T-01.1"]
 refs = [
-    "CA-F5-4", "ADR-009/D3", "plano 01 itens 1.4+1.5", "DoD D1.3", "DoD D1.4",
-    "RESPONDIDA: Q16 — em 2026-08-28 o owner respondeu, citacao literal: \"charts -> quant-architect · web -> ui-designer\" [PREMISSA-OWNER: 2026-08-28]. Fonte unica: docs/decisoes-do-owner.md §Q16; registro de execucao: docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md §3. O bloqueio desta task caiu.",
+    "CA-F5-4", "ADR-009/D3", "ADR-011/D4", "plano 01 itens 1.4+1.5",
+    "DoD D1.3", "DoD D1.3b", "DoD D1.4",
+    "MUDANCA DE CONTEUDO 2026-08-28 (ADR-011/D4; plano 01 item 1.4(c) reescrito). SAI: as duas `[[rules.own]]` de TypeScript (`ts-explicit-any`, `ts-browser-console`) e o corpus `corpus/frontend-ts/`. ENTRA: ESLint como validador de TS, e o DoD novo `D1.3b`. A task NAO MORRE porque o que ela fecha independe de quem valida TS: sem `code_paths.include_prefixes += 'frontend/src/'` e sem os globs TS/TSX o harness nem CLASSIFICA um `.tsx` como producao, e e exatamente isso que `D1.3`/`D1.4` medem. As duas regras nunca chegaram ao repositorio [DOC: ADR-011, tabela de supersede — `git log --all -p -- harness.toml | grep ts-explicit-any` -> 0 linhas, MEDIDO 2026-08-28]: nao ha reversao a fazer no disco, so troca de escopo aqui.",
+    "O QUE FICA, e e a razao de a task sobreviver — as TRES partes so valem juntas: (a) `code_paths.include_prefixes += 'frontend/src/'`; (b) globs TS/TSX em `include_globs`; (c) o pack `web-fullstack` adotado. (a)+(b) sem (c) nao fecha nada, e (c) sem (a)+(b) tambem nao [DOC: plano 01, item 1.4].",
+    "`D1.3b` E O ONUS NOVO DESTA TASK, e ele e uma MEDICAO que ainda nao existe: a afirmacao 'AST nao tem os dois defeitos da regex' e MECANISMO, nao medicao — `[NAO MEDIDO]` neste disco. O ESLint DO PROJETO (nao o global `/usr/bin/eslint`, v6.4.0 [MEDIDO 2026-08-28 pelo /architect]) tem de ACUSAR `tipos.ts` (`Record<string, any>` e `Map<string, any>`), CALAR em `config.ts` (`any` como chave de objeto) e CALAR em `Filtro.tsx` (`any` em texto JSX). Universo: 3 arquivos / 4 linhas / 2 violacoes reais / 2 usos legitimos. Reprova se o ESLint repetir qualquer um dos dois defeitos medidos das regexes.",
+    "`1.8'` (o TESTE DOS DOIS LADOS) se aplica ao pack e ao ESLint: `harness corpus verify`/`mutate` so sabem falar de regra do `harness` e NAO alcancam ESLint nem pack de terceiro. A prova e MORDE (violador plantado -> `exit != 0`) mais CALA (o `.tsx` legitimo -> silencio, `exit=0`), e uma sem a outra nao conta.",
+    "ESCOPO DE ARQUIVO que a metade ESLint acrescenta: `frontend/eslint.config.*` e `frontend/package.json` — fora de `backend/`. Em 2026-08-28 `harness pipeline require-code frontend/eslint.config.js` REPROVAVA ('nenhuma feature autorizada reivindica o path') e o escopo foi ampliado nesta sessao; ver a nota de ESCOPO DE CAMINHOS no fim deste arquivo.",
+    "RESPONDIDA: Q16 — em 2026-08-28 o owner respondeu, citacao literal: 'charts -> quant-architect · web -> ui-designer' [PREMISSA-OWNER: 2026-08-28]. Fonte unica: docs/decisoes-do-owner.md §Q16; registro de execucao: docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md §3. O bloqueio desta task caiu.",
     "RESOLVIDO: D-1 ACEITA pelo owner em 2026-08-28 (registro: docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md §0.1 item 2 e §2; argumento original: tasks_review.md §7/D-1). A aresta '01 (inteira, com Q16) -> 02 e 03' deixa de valer: esta task sai de montante de 02/03 e passa a preceder T-05.1. A aresta no index.md do plano e superficie do /architect, nao deste arquivo.",
+    "JIRA 2026-08-28: `summary` e `description` de `CST-9` atualizados para o conteudo novo, e o rotulo `bloqueada-q16` REMOVIDO (era falso desde que Q16 foi respondida). [MEDIDO 2026-08-28: PUT /rest/api/3/issue/CST-9 -> HTTP 204; `project = CST AND labels = bloqueada-q16` -> total 0]",
 ]
 tracker = { provider = "jira", id = "CST-9", url = "https://conversationhub.atlassian.net/browse/CST-9" }
 
@@ -108,40 +154,112 @@ tracker = { provider = "jira", id = "CST-10", url = "https://conversationhub.atl
 
 [[tasks]]
 id = "T-01.4"
-title = "[docs] 01 · .python-version removido, Python 3.12 declarado; proposta do componente infra levada ao owner"
+title = "[docs] 01 · .python-version MANTIDO e Python 3.13 declarado; proposta do componente infra levada ao owner"
 components = ["docs"]
 status = "todo"
 phase = "01"
-depends_on = []
-refs = ["ADR-009/D4", "ADR-009/D5", "plano 01 itens 1.6+1.7", "vocabulario fechado e ato do owner"]
+# `depends_on` ganhou `T-01.1` (que esta `done`) porque o conteudo NOVO edita
+# `backend/pyproject.toml` e `backend/scripts/bootstrap.sh`, os dois criados por ela; o
+# conteudo ANTIGO so removia um arquivo da raiz, e por isso a aresta nao existia.
+depends_on = ["T-01.1"]
+refs = [
+    "ADR-011/D5 (supersede ADR-009/D4)", "ADR-009/D5", "plano 01 itens 1.6+1.7",
+    "DoD D1.9", "vocabulario fechado e ato do owner",
+    "MUDANCA DE CONTEUDO 2026-08-28 (ADR-011/D5). A task tem DUAS metades e SO UMA INVERTE. Metade `D4` (`.python-version`): era 'remover o arquivo e declarar 3.12', passa a 'MANTER o arquivo (3.13.13) e declarar 3.13'. Citacao literal: 'essa questao do python, pode regredir, quero que tenha o python version no 3.13' [PREMISSA-OWNER: 2026-08-28]. Metade `D5` (proposta do componente `infra` ao owner, com argumento e falsificador, NAO decidida aqui): INTACTA — `ADR-011` nao a toca. A task NAO MORRE porque mata-la mataria a proposta junto [DOC: ADR-011/D5, seccao 'O destino de T-01.4'].",
+    "AS 4 SUPERFICIES DESTA TASK: (1) `.python-version` na raiz, MANTIDO com `3.13.13`; (2) `python_version = '3.13'` em `[tool.mypy]` do `backend/pyproject.toml` (hoje a seccao tem so `strict` e `ignore_missing_imports`); (3) `target-version = 'py313'` em `[tool.ruff]` (hoje ausente — o ruff inferia do `requires-python`, que nao existia); (4) `PY_ALVO='3.13'` no assert de `backend/scripts/bootstrap.sh`, com a mensagem de recusa citando `ADR-011/D5`. O assert continua CONFERINDO A VERSAO DO VENV e saindo 3 se divergir — so o alvo muda de 3.12 para 3.13.",
+    "`requires-python` NAO E DESTA TASK, e a fronteira e deliberada: `[project]` so nasce com Poetry, em `T-01.6` (Poetry 2.4.1 e PEP 621). CONSEQUENCIA QUE NAO PODE PASSAR EM SILENCIO: `D1.9` NAO FECHA COM ESTA TASK SOZINHA. O comando do DoD (`grep -n 'requires-python|python_version|target-version|PY_ALVO' backend/pyproject.toml backend/scripts/bootstrap.sh` -> 4 ocorrencias, todas 3.13) so devolve as 4 com `T-01.6` tambem pronta. `D1.9` e CONJUNTO de `T-01.4` + `T-01.6`, e quem fechar uma sozinha e declarar o DoD cumprido esta declarando verde por nao ter olhado a outra metade.",
+    "DIVERGENCIA REGISTRADA, e nao silenciosa: o item 1.6 do plano enumera as quatro superficies como `requires-python`, `mypy python_version`, `ruff target-version` e `PY_ALVO` — tirando `.python-version` da conta por ele ser 'MANTIDO'. Esta quebra move `requires-python` para `T-01.6` e poe `.python-version` na conta desta. O universo total e o mesmo, 5 superficies entre as duas tasks, e NENHUMA fica sem dono. O plano e superficie do /architect e NAO foi editado.",
+    "FALSIFICADOR (ADR-011/D5): se alguma dependencia do backend nao tiver wheel para 3.13 e forcar compilacao de fonte no bootstrap, o custo aparece onde `ADR-009/D4` temia — e a decisao vira negociacao de qual dependencia sai, nao reversao do pin. Universo pequeno hoje: 5 dependencias de desenvolvimento, zero de runtime [MEDIDO 2026-08-28: `backend/requirements-dev.txt` -> coverage, mypy, pytest, pytest-cov, ruff].",
+    "ORDEM declarada pelo /architect em ADR-011: T-01.4 -> T-01.6 (Poetry/Makefile) -> T-01.5. Esta task e a PRIMEIRA porque `T-01.6` reescreve o CONTEUDO de `bootstrap.sh` (venv+uv -> `poetry install`); inverter a ordem faria a declaracao de 3.13 ser escrita num arquivo prestes a ser reescrito, e o assert e o lugar mais facil de perder numa reescrita.",
+    "JIRA 2026-08-28: `summary` e `description` de `CST-11` atualizados para o conteudo novo. [MEDIDO 2026-08-28: PUT /rest/api/3/issue/CST-11 -> HTTP 204]",
+]
 tracker = { provider = "jira", id = "CST-11", url = "https://conversationhub.atlassian.net/browse/CST-11" }
 
 [[tasks]]
-id = "T-01.5"
 # Prefixo `[docs]` sozinho, e CONFERIDO, nao presumido: V-26 compara o CONJUNTO de
-# colchetes da sequencia INICIAL do titulo com `components` (`scripts/tasks.sh:888-891`,
-# `set(prefix) != set(components)`). O `[[rules.own]]` no MEIO do titulo NAO entra na
-# conta — `TITLE_PREFIX_RE` (`^\s*((?:\[[^\[\]]+\][\s+]*)+)`) para no primeiro caractere
-# que nao abre colchete, e aqui isso e o `0` de `01`. `[MEDIDO 2026-08-28: harness tasks
-# validate plataforma-dados -> 82 task(s), 0 ERROR, 0 WARN]`.
-title = "[docs] 01 · contrato layers executavel — duas [[rules.own]] de direcao de camada, com corpus"
-# So `docs`: esta task declara regra e corpus, e NAO escreve producao. O corpus mora em
-# `corpus/` na raiz, FORA de `code_paths` — por construcao os casos sao violadores, e sob
-# `backend/src/` ou `backend/tests/` eles proprios reprovariam D1.7d e o sweep do pre-push.
+# colchetes da sequencia INICIAL do titulo com `components` (`scripts/tasks.sh:887-891`,
+# `set(prefix) != set(components)`). `TITLE_PREFIX_RE` (`^\s*((?:\[[^\[\]]+\][\s+]*)+)`)
+# para no primeiro caractere que nao abre colchete, e aqui isso e o `0` de `01`.
+id = "T-01.5"
+title = "[docs] 01 · Fronteira de modulo por import-linter, e o pre-push.pre-harness que roda make boundaries"
+# So `docs`: os violadores que `D1.7a`/`D1.7c` exigem sao EFEMEROS e nao sobrevivem a
+# task — ver o ref 'VIOLADORES SAO EFEMEROS'. Se o owner decidir que eles tambem
+# precisam de dono de julgamento, isto vira `["docs", "sentimento"]` e o prefixo do
+# titulo acompanha no mesmo ato (V-26 reprova se so um dos dois mudar).
 components = ["docs"]
 status = "todo"
 phase = "01"
-# `T-01.1` esta mergeada em `master` (commit `3b31ebc`), logo a dependencia esta satisfeita
-# e esta task nasce `todo`, nao `blocked`.
-depends_on = ["T-01.1"]
+# `T-01.1` esta mergeada em `master` (commit `3b31ebc`), logo aquela aresta esta
+# satisfeita. `T-01.6` e a aresta NOVA, e ela e `todo`: esta task so pode comecar
+# depois do `Makefile` e do Poetry.
+depends_on = ["T-01.1", "T-01.6"]
 refs = [
-    "ADR-009/D1 (peca 1)", "ADR-003:61", "plano 01 item 1.9",
-    "DoD D1.7a", "D1.7b", "D1.7c", "D1.7d", "D1.7e", "DoD D1.5 (1.8 aplicado)",
-    "ORIGEM: blocker remanescente do /review da `T-01.1` (item A, NON_COMPLIANT) — a peca 1 de `ADR-009/D1` (o contrato `layers`) NAO TINHA DONO: o item 1.3 do plano da fase 01 deu dono ao contrato `forbidden`, `1.1` levou o layout de modulo e o piso por camada, `1.4`/`1.5` levaram o frontend, e o `layers` caiu ENTRE os itens. E defeito de PLANO, nao de codigo; o /architect especificou a correcao em 2026-08-28 (item `1.9` + DoD `D1.7a`-`D1.7e`), e esta task e a materializacao dela.",
-    "ESCOPO: duas `[[rules.own]]` — `own.layer-domain-up-import` e `own.layer-use-cases-imports-infra` — cada uma nascendo COM CORPUS (`1.8` aplicado a `1.9`), mais os casos de corpus em `corpus/`. NAO e `import-linter` no `lint.sh` e NAO e conserto do pack `hexagonal-layers`: `test_cmd` nao e lido por portao nenhum (so pelos agentes builder/qa) e o `pre-push` roda `require-push` + `rules --mode sweep` sem rodar `lint`; o pack nao esta adotado (`packs` -> `[\"core\"]`) e tem 3 defeitos independentes para este layout, e consertar o pack e mudanca em OUTRO repositorio (`harness-plugin`).",
-    "CADA REGRA PRECISA DE VIOLADOR EM CAMINHO DE TESTE, alem do de producao: `harness corpus mutate` so reprova quem tem violador sob caminho de teste. Medido em bancada pelo /architect: corpus com violador so em producao devolveu `[SOBREVIVEU] own.layer-domain-up-import`; com o de teste acrescentado, `2/2 mutantes mortos`. O `--reference` de `corpus mutate` e OBRIGATORIO e tem de ser INDEPENDENTE — parse de `import`/`from` por `ast`, nunca copia da regex, senao a igualdade de veredito vira tautologia e D1.7e nao e satisfeito.",
-    "NAO CARDADA NO JIRA — e ISTO NAO E DECISAO, E FALHA DE ACESSO (por isso NAO ha `local_only`, que significaria 'o owner decidiu nao cardar'; o link_state derivado e `uncarded`, o sinal ambar). Em 2026-08-28 o MCP `atlassian` nao estava exposto na sessao e as credenciais da REST v3 nao estavam disponiveis: `claude mcp get atlassian` -> \"No MCP server named atlassian\"; o conector `claude.ai Atlassian` exige OAuth e a sessao era nao-interativa; `curl https://conversationhub.atlassian.net/rest/api/3/myself` -> `HTTP 401`. PENDENTE, e o cadastro e MANUAL: criar Tarefa no Epic `CST-1` (F5a, governanca gateante), o mesmo de `T-01.1`..`T-01.4`, e preencher aqui `tracker = { provider = \"jira\", id = \"CST-<n>\", url = \"https://conversationhub.atlassian.net/browse/CST-<n>\" }`.",
+    "ADR-011/D3 (supersede o item 1.9 antigo)", "ADR-009/D1 (peca 1)", "ADR-003:61",
+    "plano 01 itens 1.9'+1.8'",
+    "DoD D1.7a", "D1.7b", "D1.7c", "D1.7d", "D1.7e",
+    "ORIGEM (INALTERADA pela correcao de rumo): blocker remanescente do /review da `T-01.1` (item A, NON_COMPLIANT) — a peca 1 de `ADR-009/D1` (o contrato `layers`) NAO TINHA DONO: o item 1.3 do plano da fase 01 deu dono ao contrato `forbidden`, `1.1` levou o layout de modulo e o piso por camada, `1.4`/`1.5` levaram o frontend, e o `layers` caiu ENTRE os itens. E defeito de PLANO, nao de codigo.",
+    "MUDANCA DE CONTEUDO 2026-08-28 (ADR-011/D3; plano 01 item 1.9 -> 1.9'). SAI: as duas `[[rules.own]]` `own.layer-domain-up-import` e `own.layer-use-cases-imports-infra`, e o corpus `corpus/layers/`. ENTRA: `import-linter` mais a costura do portao. A task NAO MORRE porque a NECESSIDADE e identica — a peca 1 continua sem dono — e mata-la apagaria a trilha de origem acima. Muda o INSTRUMENTO, nao o buraco.",
+    "METADE (a) — O INSTRUMENTO: `[tool.importlinter]` em `backend/pyproject.toml`, com `root_package = 'src'`, UM contrato `type = 'layers'` (`infra > use_cases > domain`, `containers = ['src.modules.<ctx>']`, `exhaustive = false`) e contratos `type = 'forbidden'` por componente; alvo `make boundaries` -> `poetry run lint-imports`. E a forma do vizinho lida no disco [DOC: ADR-011/D3a — o `backend/pyproject.toml` do anything_monorepo tem 1 contrato `layers` com 11 containers e 12 contratos `forbidden`; a assimetria 11x12 e o que `exhaustive = false` permite, e e o motivo de copia-lo]. Por que melhor que a regex, e o motivo NAO e estetica: `grimp` le o GRAFO de imports, e o grafo ve `import src.modules.x.infra as y`, re-export por `__init__.py` e import dentro de funcao — os tres que a regex de linha perdia.",
+    "METADE (b) — O PORTAO, E ELA E OBRIGATORIA: `scripts/hooks/pre-push.pre-harness` versionado, rodando `make boundaries` (e `make lint`). SEM (b), (a) e ferramenta que existe e ninguem roda, que e REGRESSAO com aparencia de progresso: este repositorio NAO TEM CI [MEDIDO 2026-08-28: `ls .github` -> 'Arquivo ou diretorio inexistente'] e o `pre-push` gerado roda `require-push` + `rules --mode sweep` SEM chamar `make` [MEDIDO 2026-08-28: `cat .git/hooks/pre-push`]. A costura ja e documentada e CHAMADA pelo proprio hook gerado (ele resolve `hooks/pre-push.pre-harness`, executa se for `-x`, e soma o veredito com `|| FALHOU=1` no `exit $FALHOU`), e `scripts/install-git-hooks.sh` ja a instala por basename, pulando o hook gerado. ZERO edicao no hook gerado, ZERO `core.hooksPath` — proibido pelo `CLAUDE.md`. Um `.github/workflows/ci.yml` e desejavel e NAO substitui: CI reprova DEPOIS do push, o `pre-push` reprova ANTES.",
+    "O QUE SUBSTITUI O CORPUS, e por que o corpus nao serve mais: `harness corpus verify`/`mutate` so sabem falar de regra do `harness` e NAO alcancam `import-linter`. O sucessor e `1.8'`, o TESTE DOS DOIS LADOS, e `D1.7e` o materializa: MORDE (`D1.7a` — os 2 violadores plantados fazem `make boundaries` sair `!= 0` NOMEANDO o contrato) mais CALA (`D1.7d` — verde sobre os 10 arquivos de producao de hoje, com o unico import interno do repositorio, `use_cases` -> `domain`, continuando a passar), os dois na MESMA passada e para CADA contrato declarado. Uma metade sozinha nao conta: contrato que reprova tudo passa em D1.7a e falha em D1.7d; contrato desligado passa em D1.7d e falha em D1.7a. A exigencia antiga de `--reference` independente em `corpus mutate` CAI JUNTO com as regras proprias — nao porque afrouxou, mas porque `corpus mutate` nao alcanca a ferramenta nova.",
+    "LIMITE HERDADO E AINDA VALIDO, registrado para nao virar promessa: `import-linter` TAMBEM e estatico e tambem NAO ve `importlib.import_module('src.modules.<ctx>.infra')` nem alias construido em runtime. A troca fecha tres buracos da regex e NAO fecha este.",
+    "VIOLADORES SAO EFEMEROS E VIVEM EM CAMINHO DE PRODUCAO — diferenca real em relacao ao corpus, que morava em `corpus/` FORA de `code_paths`. `D1.7a`/`D1.7c` exigem plantar 2 violadores sob `backend/src/modules/sentimento/{domain,use_cases}/`, que o classificador chama `producao` [MEDIDO 2026-08-28: `harness code-paths classify backend/src/modules/sentimento/domain/etl_backlog.py` -> 'producao']. Eles NAO sobrevivem: `D1.7d` exige verde SEM nenhum violador plantado, entao violador em `master` significa task errada. Por isso `components` fica `['docs']`, acompanhando o item 1.9' do plano. SINAL AMBAR PARA O /architect E PARA O OWNER: o plano declarou excecao de producao para `1.1` e para `1.11`, e NAO para `1.9'`. Se o julgamento sobre os violadores efemeros tambem tiver de ter dono, `components` vira `['docs','sentimento']`.",
+    "FALSIFICADOR, e e UM comando: com os 2 violadores de camada E o `.tsx` violador num branch, `git push --dry-run` tem de ser RECUSADO. O 'antes' e conhecido e assimetrico, que e o que torna o teste informativo: hoje o push e recusado para o `.py` (o sweep do `pre-push` o pega) e ACEITO para o `.tsx` (fora de `code_paths`). Depois, os DOIS recusados.",
+    "CARDADA NO JIRA em 2026-08-28: `CST-89`, Tarefa no Epic `CST-1`. O `uncarded` anterior era FALHA DE ACESSO e nunca decisao — nao havia `local_only`, e nao ha agora. A causa media foi chamador ANONIMO: `curl https://conversationhub.atlassian.net/rest/api/3/myself` sem credencial -> HTTP 401. Nesta sessao o MCP local `atlassian` estava conectado e as credenciais dele autenticaram a REST v3 [MEDIDO 2026-08-28: mesmo endpoint com Basic auth -> HTTP 200; POST /rest/api/3/issue -> HTTP 201, key CST-89].",
 ]
+tracker = { provider = "jira", id = "CST-89", url = "https://conversationhub.atlassian.net/browse/CST-89" }
+
+[[tasks]]
+id = "T-01.6"
+title = "[docs] 01 · Poetry e Makefile na raiz como fachada unica, com backend/poetry.toml versionado"
+# So `docs`: nenhum dos arquivos que esta task escreve e producao [MEDIDO 2026-08-28:
+# `harness code-paths classify` sobre `Makefile`, `backend/poetry.toml`,
+# `backend/pyproject.toml` e `backend/scripts/bootstrap.sh` -> os quatro devolvem
+# 'nao-producao: nenhum include_prefixes casa [backend/src/, backend/tests/]'].
+components = ["docs"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1", "T-01.4"]
+refs = [
+    "ADR-011/D1", "ADR-011/D2", "plano 01 item 1.10", "DoD D1.8", "DoD D1.9 (metade)",
+    "NASCE em 2026-08-28 do item 1.10 do plano 01. Citacao literal: 'Aplicacao deve rodar com poetry, ter Makefile para simplicar as chamadas, builds e afins' [PREMISSA-OWNER: 2026-08-28]. Ela SUPERSEDE a decisao tatica de `T-01.1` (`venv` + `uv pip` + `requirements-dev.txt`), que nascera COM falsificador; o falsificador foi realizado por caminho diferente do previsto — chegou a declaracao do owner antes da pressao tecnica [DOC: ADR-011/D1]. `poetry --version` -> `Poetry (version 2.4.1)` [MEDIDO 2026-08-28].",
+    "O `Makefile` CHAMA `backend/scripts/*.sh`, NAO OS ABSORVE. Superficie unica na raiz: `setup`, ativacao da venv, `lint`, `test`, `boundaries`, `build`. Os quatro `.sh` continuam sendo a IMPLEMENTACAO; so `bootstrap.sh` muda de CONTEUDO (venv+uv -> `poetry install`), nunca de papel. E a forma do vizinho, que o owner mandou copiar [DOC: ADR-011/D2 — no `anything_monorepo`, `bootstrap`, `gate`, `hard-rules`, `artifacts`, `status`, `phase-gate`, `jira-sync`, `scaffold` e `hooks-install` sao todos `@bash scripts/<x>.sh`].",
+    "POR QUE ABSORVER SERIA DEFEITO, e o motivo e MEDIDO no repositorio de referencia: uma receita de Make encadeia linhas por `;`, cada uma num subshell, e o recipe devolve o exit code do ULTIMO comando. O vizinho carrega o aviso literal no alvo `lint-frontend`: 'NOTE (KAN-172): set -e e OBRIGATORIO. Sem ele, o `;` entre os comandos faz o recipe retornar o exit code do ULTIMO comando (echo OK = 0), mascarando falha de eslint/tsc -> falso-verde local (o gate mente)'. OBRIGACAO NOVA QUE O `Makefile` ACRESCENTA: o alvo `test` NAO PODE encadear `pytest` e o piso de cobertura com `;`. Ou chama `bash backend/scripts/test.sh` (que ja os encadeia sob `set -euo pipefail`), ou a receita abre com `set -e`. A ADR decide a PRIMEIRA forma.",
+    "`backend/poetry.toml` VERSIONADO com `[virtualenvs] in-project = true` NAO E DETALHE, e a ausencia dele quebra em clone limpo enquanto parece funcionar aqui: nesta maquina `in-project` e `true` por config de USUARIO, nao do repositorio [MEDIDO 2026-08-28: `cd /tmp && poetry config virtualenvs.in-project` -> `true` — lido de fora do repo, logo global]. Com o default de fabrica o venv nasce em `~/.cache/pypoetry/virtualenvs/` e as TRES recusas `rc=3` de 'venv nao existe' passam a disparar SEMPRE. O caminho literal esta ESPALHADO POR 4 ARQUIVOS e nao centralizado [MEDIDO 2026-08-28: `PY=\"$BACKEND/.venv/bin/python\"` -> 3 ocorrencias, em `lint.sh`, `test.sh` e `check-coverage-layers.sh`; mais `VENV=\"$BACKEND/.venv\"` -> 1, em `bootstrap.sh`].",
+    "AS DUAS RECUSAS DO PISO SAO CONTRATO, nao detalhe de implementacao, e sao o ativo mais caro desta trilha (`D1.8`): relatorio AUSENTE -> `rc=3`; relatorio VELHO, medido por frescor contra o `.py` mais novo de `src/` -> `rc=3` nomeando o arquivo ofensor. As duas ficam INALTERADAS dentro de `check-coverage-layers.sh`, e o `rm -f coverage.xml` de `test.sh` fica junto. Verificacao (falsificador de ADR-011/D2): `bash backend/scripts/test.sh --no-cov -k <1 teste>` e `touch backend/src/modules/sentimento/domain/etl_backlog.py && bash backend/scripts/check-coverage-layers.sh`. Os dois valores de 'antes' estao publicados em `backend/README.md`: ambos `rc=3`. `rc` diferente de 3 em qualquer uma REPROVA a fase. E `rc=3` por 'venv nao existe' NAO CONTA como aprovacao — e exatamente a falha que o `poetry.toml` existe para impedir, e confundir as duas seria ler verde num portao que nao olhou.",
+    "`requires-python = '>=3.13,<3.14'` em `[project]` E DESTA TASK, porque `[project]` so nasce aqui (Poetry 2.4.1 e PEP 621) e hoje o `backend/pyproject.toml` declara EM COMENTARIO que nao fixa versao de proposito. CONSEQUENCIA: `D1.9` e CONJUNTO de `T-01.4` (as outras 4 superficies) + `T-01.6` (esta) — nenhuma das duas o fecha sozinha. Ver o ref homonimo em `T-01.4`.",
+    "ORDEM declarada pelo /architect em ADR-011: T-01.4 -> T-01.6 -> T-01.5. A jusante: `T-01.5` depende desta porque `make boundaries` nao existe sem o `Makefile` e `poetry run lint-imports` nao existe sem Poetry. A montante: `T-01.4` vem antes porque esta task reescreve o CONTEUDO de `bootstrap.sh`, e o assert de versao e o que mais facilmente se perde numa reescrita.",
+    "FALSIFICADOR (ADR-011/D1): com Poetry instalado e `backend/poetry.toml` versionado, se `poetry install` produzir ambiente em que `backend/.venv/bin/python` NAO exista, a forma escolhida nao preserva o contrato dos scripts e `D2` precisa reescrever a resolucao de interpretador em vez de herda-la.",
+    "CARDADA NO JIRA em 2026-08-28: `CST-90`, Tarefa no Epic `CST-1` [MEDIDO 2026-08-28: POST /rest/api/3/issue -> HTTP 201, key CST-90].",
+]
+tracker = { provider = "jira", id = "CST-90", url = "https://conversationhub.atlassian.net/browse/CST-90" }
+
+[[tasks]]
+id = "T-01.7"
+# Prefixo `[docs][sentimento]`: V-26 compara o CONJUNTO de colchetes da sequencia INICIAL
+# do titulo com `components`. CONFERIDO rodando o validador, nao presumido — e a mesma
+# forma sem separador que `T-01.1` fixou de precedente.
+title = "[docs][sentimento] 01 · Docstrings em ingles, as 18 retroativas, e README com setup e ativacao da venv por make"
+# `sentimento` DESDE O NASCIMENTO, e nao depois do fato: os 4 arquivos que a correcao
+# retroativa edita sao `producao`, `sentimento` tem dono de julgamento
+# (`quant-architect`) e `docs` NAO tem. `ADR-003:11-13`. Em `T-01.1` isto foi corrigido
+# depois; aqui e pre-condicao, e o plano ja a declarou (plano 01, "Nao faz", 2a excecao).
+components = ["docs", "sentimento"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1", "T-01.6"]
+refs = [
+    "ADR-011/D6", "plano 01 item 1.11", "DoD D1.10",
+    "NASCE em 2026-08-28 do item 1.11 do plano 01. Citacoes literais: 'vale adicionar docstrings em ingles, corrigindo ja o retroativo' e 'atualizar o readme com o setup e ativacao da venv via comando MAKE para simplificar' [PREMISSA-OWNER: 2026-08-28].",
+    "CONVENCAO DECLARADA, NAO PORTAO — e a resposta e explicita porque a pergunta foi explicita: idioma de docstring NAO E MENSURAVEL POR COMANDO neste disco. As tres formas de medir falham, e as duas primeiras foram medidas: proibir diacriticos devolve 0 ACHADOS SOBRE 18 (este codigo escreve portugues sem acento — `nao`, `atomico`, `duravel`) [MEDIDO 2026-08-28], que e literalmente o portao que devolve verde por nao ter olhado; lista fechada de palavras-funcao ASCII pega 12 de 18, 33% de falso negativo [MEDIDO 2026-08-28]; detector probabilistico e `[NAO MEDIDO]` e pode errar sozinho. `D1.10` REPROVA se alguem declarar uma `[[rules.own]]` de idioma.",
+    "O QUE E MEDIDO, e o que cada comando de fato mede: `ruff check --select D` verde — ele mede PRESENCA e FORMA (docstring existe, resumo numa linha, pontuacao, imperativo em D401) e NENHUMA regra `D` e sensivel a idioma. Mais o `README.md` da raiz contendo, POR ESCRITO, que idioma de docstring e convencao e nao portao. A correcao das 18 e verificavel por REVISAO HUMANA — o /review a confere lendo — e nao por portao.",
+    "UNIVERSO RETROATIVO, re-medido nesta sessao e nao repassado: 18 docstrings em 4 dos 10 arquivos `.py` de `backend/src` — `domain/etl_backlog.py` 6, `infra/jsonl_checkpoint.py` 5, `use_cases/drain_etl_backlog.py` 4, `infra/file_etl_worker.py` 3; os outros 6 arquivos sao `__init__.py` sem docstring nenhuma. As 18 estao em portugues. [MEDIDO 2026-08-28: script `ast` percorrendo Module/ClassDef/FunctionDef/AsyncFunctionDef em `backend/src/**/*.py`, excluindo `__pycache__` -> 18 docstrings / 4 arquivos / 10 `.py` no total].",
+    "FRONTEIRA DO QUE ESTA TASK PODE TOCAR: APENAS o conteudo de docstring. Nenhuma assinatura, nenhum nome, nenhum comportamento. Falsificador barato e obrigatorio: a suite continua verde COM OS MESMOS NUMEROS de cobertura por camada — se algum numero mudar, a edicao nao foi so de docstring.",
+    "A METADE README: setup e ATIVACAO DA VENV POR COMANDO `make`, que e o motivo de `depends_on` incluir `T-01.6` — documentar um alvo que ainda nao existe seria escrever a promessa antes do fato.",
+    "SINAL AMBAR, e ele e de GOVERNANCA e nao desta task: existe uma feature separada `docstrings-em-ingles` no ledger, em `INIT`, criada em 2026-08-28T19:45:52Z com um unico evento (`override`) e SEM escopo declarado [MEDIDO 2026-08-28: `harness pipeline show docstrings-em-ingles`]. Ela nao colide com o portao de escrita (a resolucao so considera features `>= BUILD_AUTHORIZED`), mas DUAS CASAS PARA O MESMO TRABALHO e a classe de ambiguidade que faz uma das duas nunca ser resolvida. Esta task segue o plano `01` (superficie do /architect, aprovado e mergeado). A decisao de encerrar ou reaproveitar aquela feature e do owner.",
+    "CARDADA NO JIRA em 2026-08-28: `CST-91`, Tarefa no Epic `CST-1`, rotulos `docs` + `sentimento` + `fase-01` + `spec-001` [MEDIDO 2026-08-28: POST /rest/api/3/issue -> HTTP 201, key CST-91].",
+]
+tracker = { provider = "jira", id = "CST-91", url = "https://conversationhub.atlassian.net/browse/CST-91" }
 
 # ── 02 · Captura sem gate de host · CST-2 ──────────────────────────────────────────
 
