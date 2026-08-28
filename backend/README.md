@@ -23,7 +23,7 @@ portão que roda em ambiente não declarado mede outra coisa.
 | recusa | o que ela impede | prova de que morde |
 |---|---|---|
 | **`test.sh` apaga `coverage.xml` antes do pytest**, e `check-coverage-layers.sh` exige o XML **mais novo que o `.py` mais novo de `src/`** | o portão anunciar cobertura lida de **relatório velho**. `test.sh` repassa `"$@"`, logo aceita `--no-cov`/`-k`: sem invalidar o relatório, `--no-cov` não escrevia XML nenhum e o piso media o da **rodada anterior** | `[MEDIDO 2026-08-28: bash backend/scripts/test.sh --no-cov -k test_pendente_preserva_a_ordem_declarada → **rc=3**, `RECUSA: … coverage.xml ausente`. **Antes** do conserto, o **mesmo comando** → `1 passed, 13 deselected` + três `[OK]` 100% + **rc=0**, com o XML **byte-idêntico** (md5 `73dbab8d…`) ao de **3 h antes**]` |
-| **`bootstrap.sh` confere a versão efetiva do venv** e sai 3 se não for 3.12 (`ADR-009/D4`) | o venv nascer **3.13 em silêncio**. Antes ele escolhia interpretador **por nome** e só **imprimia** a versão — informava, não recusava | `[MEDIDO 2026-08-28: num `PATH` em que só existe 3.13, `bootstrap.sh` → **rc=3**, `RECUSA: o venv nasceu em Python 3.13.12, e ADR-009/D4 declara Python 3.12`, e **nada foi instalado** — o assert roda antes do `uv pip install`. Caminho feliz → **rc=0**, `Python 3.12.13 … (alvo ADR-009/D4: 3.12, CONFERIDO)`]` |
+| **`bootstrap.sh` confere a versão efetiva do venv** e sai 3 se não for **3.13** (`ADR-011/D5`) | o venv nascer com a **versão errada em silêncio**. Antes ele escolhia interpretador **por nome** e só **imprimia** a versão — informava, não recusava | **O assert, os dois lados, com o alvo de hoje** `[MEDIDO 2026-08-28 por `T-01.4`]`: **MORDE** — a expressão exata do assert com `PY_ALVO=3.13` contra o venv 3.12.8 que estava no disco → **rc=1**; **CALA** — a mesma expressão contra um 3.13 real → **rc=0**. **Controle, que prova que o par não é vácuo:** com o `PY_ALVO` **antigo** (3.12) os dois lados **invertem** (3.12.8 → rc=0, 3.13.12 → rc=1). Caminho feliz do script inteiro → **rc=0**, `ambiente pronto: Python 3.13.12 … (alvo ADR-011/D5: 3.13, CONFERIDO)` |
 
 **Por que a cobertura precisou das duas metades:** o `rm -f` protege quem entra por `test.sh`; a
 checagem de frescor protege a chamada **direta** de `check-coverage-layers.sh` e o caso de um `.py`
@@ -33,8 +33,53 @@ ofensor nomeado na saída]`.
 
 **E o nome do binário não é a versão** — este disco prova: `command -v python3.12` →
 `…/harness-panel/.venv/bin/python3.12` `[MEDIDO 2026-08-28]`, **o venv de outro projeto**. O
-`.python-version` = 3.13.13 da raiz continua onde estava: removê-lo é `T-01.4`, e o assert acima
-**não** é substituto disso — é a recusa que faltava enquanto ele existe.
+`.python-version` = 3.13.13 da raiz **fica onde está, e agora por decisão e não por adiamento**
+(`ADR-011/D5` — ver o ERRATUM abaixo). O assert acima **não** é substituto dele: é a recusa que
+garante que o que o arquivo declara seja o que o venv de fato é.
+
+### ⚠️ ERRATUM 2026-08-28 — o alvo era 3.12, e inverteu para 3.13
+
+**Nada acima foi apagado; a linha da tabela teve o CLAIM atualizado e a medição REFEITA**, porque a
+medição antiga media o alvo antigo e repeti-la seria citar um número que nenhum comando de hoje
+devolve.
+
+`ADR-009/D4` decidia **Python 3.12** e mandava **remover** o `.python-version` = 3.13.13 da raiz.
+O owner derrubou as duas metades:
+
+> *"essa questao do python, pode regredir, quero que tenha o python version no 3.13"*
+> `[PREMISSA-OWNER: 2026-08-28, citação literal]`
+
+`ADR-011/D5` registra a supersessão. O arquivo **fica** e o alvo é **3.13**.
+
+**Uma afirmação de `ADR-009/D4` estava errada de fato, e ela não é corrigida na ADR de origem**
+(ADR é registro histórico): `D4` escreveu que o `.python-version` *"não estava commitado"*. **Estava
+rastreado** — `git log --oneline -- .python-version` → **1 commit, `086a8af`**, que é **o mesmo
+commit que introduziu a `ADR-009`** `[MEDIDO 2026-08-28]`.
+
+**Três coisas medidas na migração do venv 3.12 → 3.13, que valem mais que a decisão:**
+
+1. **Nenhuma das 5 dependências fixadas precisou compilar do fonte em 3.13** — o falsificador de
+   `ADR-011/D5` **não disparou**. `coverage 7.15.4` e `mypy 2.3.1` trocam wheel `cp312` por `cp313`;
+   `pytest`, `pytest-cov` (`py3-none-any`) e `ruff` (`py3-none-manylinux…`) são os mesmos arquivos.
+   `[MEDIDO 2026-08-28: `Tag:` do `WHEEL` de cada `.dist-info` instalado; **239 `.so`** com ABI
+   `cpython-313` no venv novo, contra **239** com `cpython-312` no antigo — mesma contagem]`
+2. **`bootstrap.sh` NÃO é idempotente**, e isto é defeito, não escolha: com `backend/.venv` já no
+   disco ele sai **rc=2**, `A virtual environment already exists … Use --clear to replace it`, sem
+   tocar no venv. Para migrar foi preciso mover o venv antigo para fora antes de rodar.
+   `[MEDIDO 2026-08-28]`. **`T-01.4` não conserta isto**: `ADR-011/D1` põe `poetry install` no lugar
+   de `uv venv` e quem reescreve este script é **`T-01.6`** — consertar aqui seria arrumar uma linha
+   que some na semana que vem, e calar sobre ela seria pior.
+3. **`uv` não honra o nome do interpretador que recebe.** Num `PATH` construído para que `python3`
+   fosse 3.12.8 e `python3.13` não existisse, `uv venv --python python3` criou um venv
+   **3.13.12** assim mesmo `[MEDIDO 2026-08-28]`. É a lição de *"nome não é versão"* numa segunda
+   forma — nem o nome **passado à ferramenta** determina a versão —, e é o argumento mais forte a
+   favor do assert: ele confere o que **nasceu**, não o que foi **pedido**.
+
+**Divergência de patch, nomeada:** o `.python-version` declara **3.13.13** (pyenv) e o venv nasceu
+**3.13.12**, de um CPython gerido pelo próprio `uv`
+(`home = ~/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/bin` `[MEDIDO 2026-08-28:
+`backend/.venv/pyvenv.cfg`]`). O assert compara **major.minor** e por isso aceita. Fechar o patch é
+decisão de `T-01.6`, que escolhe o gerenciador — não desta task.
 
 ## O que existe, e por quê
 
