@@ -3,7 +3,7 @@
 **Epic:** `CST-7` (F5b) · **Componente alvo: `docs`** · **Gate: nenhum**
 **Depende de:** `04`, `06`, `07`, `08` — **por construção: consolida o que elas decidiram.**
 
-**Por que é Epic separado de `01`:** `01` (F5a) e esta (F5b) têm **o mesmo componente e prazos OPOSTOS** — `01` fecha **antes de `02`**, esta só fecha **depois de `08`**. Um Epic único atravessaria o projeto **sem DoD encerrável** e tornaria impossível representar no board que **F5a gateia F0**.
+**Por que é Epic separado de `01`:** `01` (F5a) e esta (F5b) têm **o mesmo componente e prazos OPOSTOS** — `01` fecha (na parte que gateia, `T-01.1`) **antes de `02`** — `D-1` (owner, 2026-08-28 — [registro](../../context/plataforma-dados/decisoes-de-execucao-2026-08-28.md) §2) —, esta só fecha **depois de `08`**. Um Epic único atravessaria o projeto **sem DoD encerrável** e tornaria impossível representar no board que **F5a gateia F0**.
 
 ## Itens
 

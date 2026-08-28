@@ -1,7 +1,7 @@
 # Fase 03 — Captura contínua
 
 **Epic:** `CST-2` (F0, segunda metade) · **Componente alvo: `sentimento`** · **Gate: `Q1` + `Q2` + `Q19`** (+ **`Q17`** só para o coletor de spread)
-**Depende de:** `01` (runner). **Independe de `02`** — as duas metades correm em paralelo.
+**Depende de:** **`T-01.1`** (o runner), não da fase `01` inteira — `D-1` (owner, 2026-08-28 — [registro](../../context/plataforma-dados/decisoes-de-execucao-2026-08-28.md) §2). **Independe de `02`** — as duas metades correm em paralelo.
 
 **Por que é a fase de maior custo de atraso do projeto:** é a única cujo custo é **irreversível**. `CL-1` (liquidação intraday) · `CL-2` (série efêmera) · `CL-3` (`exchangeInfo` datado) · `CL-4` (spread) · **`CL-5` (`nq`), novo nesta SPEC** · `available_at` OBSERVED · o átomo de `interestRate`.
 

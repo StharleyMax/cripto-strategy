@@ -28,13 +28,39 @@
 ## Ordem e dependência real
 
 ```
-01 (gateia tudo)
- └─> 02 ──┐                      02 e 03 são o MESMO Epic, separados pelo GATE
-     03 ──┴─> 04 ──> 05
-                 └──> 06 ──> 07 ──> 08 ──> 09
+T-01.1  (runner · gate nenhum)
+   ├──> 02 ──┐                   02 e 03 são o MESMO Epic, separados pelo GATE
+   ├──> 03 ──┤
+   └─────────┴──> 04 ──> 05
+                    └──> 06 ──> 07 ──> 08 ──> 09
+
+T-01.2 + T-01.3  (Q16) ──────> 05    o relógio de retrabalho de Q16 é "antes do
+                                     primeiro .tsx", e o primeiro .tsx é 05
+T-01.4  ─── independente: não precede fase nenhuma
 ```
 
-**`01` gateia `02`** e não o contrário: as condições de pronto de `02` e `03` **já são testes** (`CA-F0-3`, `CA-F0-4`, `CA-F0-5`) e `harness policy --key test_cmd` devolve **`{}`**. Sem runner, a fase cujo dado não se recaptura termina com afirmações não conferíveis.
+**`T-01.1` gateia `02`/`03`/`04` — não a fase `01` inteira.** O que essas três fases precisam de `01` é **o runner**: as condições de pronto de `02` e `03` **já são testes** (`CA-F0-3`, `CA-F0-4`, `CA-F0-5`) e `harness policy --key test_cmd` devolve **`{}`** `[MEDIDO 2026-08-28]`. Sem runner, a fase cujo dado não se recaptura termina com afirmações não conferíveis.
+
+**`T-01.2` e `T-01.3` não são o runner.** São cobertura de `frontend/` e dono de julgamento de `charts`/`web` — `Q16` — e o relógio de **retrabalho** de `Q16` está declarado como *"antes do primeiro `.tsx`"* **[DOC:** `docs/decisoes-do-owner.md` §Q16(d)**]**. O primeiro `.tsx` é `05`. Deixá-las a montante de `02`/`03` punha uma pergunta **sem relógio** a montante de `CL-1`..`CL-5`, que é a fase de custo **irreversível**.
+
+### Registro — `D-1` aplicada em 2026-08-28
+
+**A aresta que saiu:** `01 (gateia tudo) └─> 02` — a fase `01` **inteira** precedia `02`, e por extensão `03`.
+**A aresta que entrou:** somente **`T-01.1`** precede `02`/`03`/`04`; **`T-01.2` e `T-01.3` passam a preceder `05`**.
+
+**Origem.** Decisão do **owner** em **2026-08-28**, `D-1` **ACEITA** — registrada em [`decisoes-de-execucao-2026-08-28.md`](../../context/plataforma-dados/decisoes-de-execucao-2026-08-28.md) §0.1 (item **1** da tabela de superfícies) e §2. A proposta original é do `/tech-lead`, em [`tasks_review.md`](../../context/plataforma-dados/tasks_review.md) §7/`D-1`, que **recusou aplicá-la sozinho** por ser aresta de grafo. `[PREMISSA-OWNER: 2026-08-28]` para a aceitação; `[DOC]` para o argumento.
+
+**Isto é reconciliação de duas superfícies, não decisão nova de arquitetura.** `tasks.toml` **já materializava `D-1` no nível de task** desde 2026-08-25; era o plano, no nível de **fase**, que dizia o contrário — e como `/build` opera **por fase**, era a superfície mais restritiva que valia. Medido com `grep -n 'depends_on' docs/context/plataforma-dados/tasks.toml`, sobre **81** tasks `[MEDIDO 2026-08-28]`:
+
+| o que | valor | universo |
+|---|---|---|
+| tasks de `02`/`03`/`04` que declaram exatamente `depends_on = ["T-01.1"]` | **13** | **23** tasks nas três fases `[MEDIDO 2026-08-28]` |
+| tasks de `02`/`03`/`04` que citam `T-01.2` **ou** `T-01.3` em `depends_on` | **0** | idem — as outras **10** dependem de irmãs da própria fase, e **toda** cadeia enraíza em `T-01.1` `[MEDIDO 2026-08-28]` |
+| linhas `depends_on` do arquivo inteiro que citam `T-01.3` | **1** | `T-05.1`, que é **fase `05`** — exatamente para onde `D-1` move a aresta `[MEDIDO 2026-08-28]` |
+
+⇒ **`D-1` move o plano na direção que o `tasks.toml` já tinha.** Nenhum Epic muda de dono, nenhuma fronteira de valor se move: `T-01.1`..`T-01.4` seguem em `CST-1`.
+
+**O que este documento NÃO afirma.** A outra metade de `D-1` — `T-05.1` recebendo `T-01.2` em `depends_on`, e o desbloqueio de `T-01.2`/`T-01.3`/`T-05.1` em `tasks.toml` e no Jira — é superfície do `/tech-lead` (§0.1, item **2**), e **não foi tocada aqui**. E o **ledger não se moveu**: `harness pipeline state plataforma-dados` segue **`TASKS_APPROVED`**; `build` é gate do **owner**.
 
 **`04` não depende de rede.** Todos os fixtures estão em disco (`data/`, 850 MB, `data/MANIFEST.md`). Ela pode correr em paralelo com `03`.
 

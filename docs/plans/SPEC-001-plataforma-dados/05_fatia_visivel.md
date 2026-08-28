@@ -1,7 +1,7 @@
 # Fase 05 — S2-mínima: a primeira fatia de valor visível
 
 **Epic:** `CST-3` (F1, segunda metade) · **Componentes alvo: `charts`** (geometria) e **`web`** (rota, sessão, auth) · **Gate: `Q16`**
-**Depende de:** `04`. **Zero rede de mercado, zero API key** — o dado já está em disco.
+**Depende de:** `04` **e de `T-01.2` + `T-01.3`** — as duas tasks de `Q16` migraram de gatear `02`/`03`/`04` para gatear esta fase, por `D-1` (owner, 2026-08-28 — [registro](../../context/plataforma-dados/decisoes-de-execucao-2026-08-28.md) §2), porque o relógio de retrabalho de `Q16` é *"antes do primeiro `.tsx`"* e o primeiro `.tsx` é esta fase. **Zero rede de mercado, zero API key** — o dado já está em disco.
 
 **Honestidade sobre que valor é este:** a S2-mínima entrega valor **de verificação** — o owner olha uma série contra o preço e afirma que ela significa o que ele pensa. **Não** entrega valor operacional: não mostra o mercado agora (o painel de OI vem do dump com **~30,3 h** de idade e cobre 4 dias **com um buraco**). **As duas coisas se chamam "primeira tela" e não são a mesma** — escolher entre elas é `Q10`.
 
