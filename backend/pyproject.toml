@@ -1,23 +1,69 @@
-# Configuracao das ferramentas do backend.
+# Configuracao das ferramentas do backend, e — desde 2026-08-28 — o MANIFESTO DO PROJETO.
+#
+# ── GERENCIADOR: POETRY (`ADR-011/D1`, supersede a decisao tatica de `T-01.1`) ──
+#
+# Ate 2026-08-28 este arquivo era so `[tool.*]`: as dependencias viviam em
+# `backend/requirements-dev.txt` e o ambiente nascia de `uv venv` + `uv pip`. O owner
+# derrubou a escolha:
+#   "Aplicacao deve rodar com poetry, ter Makefile para simplicar as chamadas, builds e afins"
+#   [PREMISSA-OWNER: 2026-08-28, citacao literal, registrada em `ADR-011/D1`]
+# `T-01.6` executa. `requirements-dev.txt` FOI REMOVIDO — duas listas de dependencia para o
+# mesmo ambiente divergem, e o dia em que divergirem ninguem sabera qual esta certa.
+#
+# Poetry 2.4.1 e PEP 621 [MEDIDO 2026-08-28: `poetry --version` -> `Poetry (version 2.4.1)`],
+# entao a metadata do projeto mora em `[project]` e as dependencias de desenvolvimento em
+# `[tool.poetry.group.dev.dependencies]`.
+#
+# `package-mode = false`: este backend NAO e um distribuivel hoje — zero dependencia de
+# runtime, nenhuma aplicacao, e `src/` nao e pacote publicavel. Declarar o contrario faria
+# `poetry install` tentar instalar a raiz como pacote e falhar por motivo que nao e o do
+# repositorio. Ver o alvo `build` do `Makefile` da raiz, que RECUSA com `rc=3` em vez de
+# devolver verde sobre artefato que nao existe.
 #
 # ── VERSAO DE PYTHON: 3.13, e a decisao INVERTEU (`ADR-011/D5` supersede `ADR-009/D4`) ──
 #
 # Ate 2026-08-28 este arquivo NAO declarava versao de proposito: `ADR-009/D4` decidia 3.12 e
-# mandava REMOVER o `.python-version` = 3.13.13 da raiz, e declarar aqui seria decidir por
-# `T-01.4` em outra superficie. O owner derrubou as duas metades:
+# mandava REMOVER o `.python-version` = 3.13.13 da raiz. O owner derrubou as duas metades:
 #   "essa questao do python, pode regredir, quero que tenha o python version no 3.13"
 #   [PREMISSA-OWNER: 2026-08-28, citacao literal, registrada em `ADR-011/D5`]
 # O `.python-version` FICA (3.13.13, rastreado) e 3.13 passa a ser DECLARADO.
 #
-# `T-01.4` declara 4 superficies e esta e a casa de duas: `[tool.mypy] python_version` e
-# `[tool.ruff] target-version`. As outras duas sao o proprio `.python-version` da raiz e o
-# `PY_ALVO` de `backend/scripts/bootstrap.sh`.
+# `D1.9` E CONJUNTO DE DUAS TASKS, e agora as duas rodaram: `T-01.4` declarou 3 superficies
+# (`.python-version` da raiz, `[tool.mypy] python_version`, `[tool.ruff] target-version` — mais
+# o `PY_ALVO` de `bootstrap.sh`), e `T-01.6` declara a QUARTA, `requires-python`, que so podia
+# nascer aqui porque `[project]` so existe com Poetry. O comando do DoD
+# (`grep -n 'requires-python|python_version|target-version|PY_ALVO'` sobre `pyproject.toml` +
+# `bootstrap.sh`) devolvia 3 de 4 e agora devolve 4 de 4.
+
+[project]
+name = "cripto-strategy-backend"
+version = "0.1.0"
+description = "Backend da plataforma de dados de cripto: captura, contrato temporal e sentimento."
+# Superficie 4 de 4 (`ADR-011/D5`), e a METADE QUE FALTAVA DE `D1.9`. Faixa fechada em cima:
+# `>=3.13` sozinho autorizaria 3.14 em silencio, e `[tool.mypy] python_version = "3.13"` e
+# `[tool.ruff] target-version = "py313"` passariam a descrever um alvo que o interpretador nao
+# e mais. O assert de `backend/scripts/bootstrap.sh` confere a versao do venv que NASCEU.
+requires-python = ">=3.13,<3.14"
+# Zero dependencia de RUNTIME, e a lista vazia e declaracao, nao esquecimento: nenhum coletor
+# roda em portao (`Q1`/`Q15` ABERTAS) e a suite e offline.
+dependencies = []
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+# As 5 dependencias de desenvolvimento, FIXADAS — herdadas de `backend/requirements-dev.txt`,
+# que este bloco SUBSTITUI (o arquivo foi removido por `T-01.6`).
 #
-# `requires-python` NAO ESTA AQUI, e a ausencia e deliberada, nao esquecimento: ela mora em
-# `[project]`, que so nasce quando `T-01.6` adota Poetry (2.4.1 e PEP 621). ENQUANTO `T-01.6`
-# nao rodar, o DoD `D1.9` NAO FECHA — ele e conjunto de `T-01.4` + `T-01.6`, e o comando do
-# DoD (`grep -n 'requires-python|python_version|target-version|PY_ALVO'`) devolve 3 de 4
-# ocorrencias, nao 4. Quem ler 3 como "cumprido" declarou verde sem olhar a outra metade.
+# Pin exato e nao faixa (`==` no requirements virou versao literal aqui, que o Poetry le como
+# igualdade exata): o portao tem de rodar o mesmo em clone limpo. Quem afrouxar para `^` esta
+# trocando reprodutibilidade por conveniencia, e o `poetry.lock` versionado deixa de ser a
+# unica coisa que segura o ambiente.
+coverage = "7.15.4"
+mypy = "2.3.1"
+pytest = "9.1.1"
+pytest-cov = "7.1.0"
+ruff = "0.16.5"
 
 [tool.pytest.ini_options]
 # `pythonpath = ["."]` torna `src` e `tests` importaveis com a raiz em `backend/`, que e o

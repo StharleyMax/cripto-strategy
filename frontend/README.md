@@ -146,9 +146,21 @@ veredito lido por portões diferentes.
 `[[rules.own]]` de TypeScript neste repositório, e não deve haver.**
 
 ```bash
+make setup    # instala frontend/node_modules (e o venv do backend) — desde T-01.6
+make lint     # lint do backend + `npm --prefix frontend run lint` — desde T-01.6
+```
+
+Os comandos diretos continuam valendo, e são os que as receitas abaixo citam:
+
+```bash
 npm --prefix frontend install          # uma vez
 npm --prefix frontend run lint         # eslint src
 ```
+
+**`make lint-frontend` RECUSA com `rc=3` se `frontend/node_modules/` não existir**, em vez de deixar
+o `npm run lint` falhar por motivo que **não** é violação de regra. É a mesma semântica dos scripts
+do backend: `rc=3` é *"não mediu"*, `rc=1` é *"mediu e reprovou"* — e ler um pelo outro é declarar
+verde (ou vermelho) sobre universo errado.
 
 **Use o ESLint DO PROJETO.** Existe um `eslint` global nesta máquina
 (`/usr/bin/eslint`, **v6.4.0**) e ele **não vale**: é anterior ao flat config e não
@@ -164,6 +176,26 @@ algo que reprova é `ADR-011/D2` (o `Makefile`, `T-01.6`) mais `D3b`
 (`scripts/hooks/pre-push.pre-harness`, `T-01.5`). **Nenhuma das duas é esta task**, e por
 isso `[test_cmd.web]` **não** foi declarado: escrever a chave daria aparência de portão
 sem criar um.
+
+#### ✅ Atualização 2026-08-28 (`T-01.6`) — METADE andou, e a outra metade continua aberta
+
+**O que mudou:** existe `Makefile`, e `make lint` roda o ESLint do projeto. A bancada de `D1.3b`
+deixou de ser **receita** e voltou a **rodar sozinha** — plantar os dois violadores das `§3` e `§4`
+e chamar **um** comando basta.
+
+**Teste dos dois lados, pelo `make lint`** `[MEDIDO 2026-08-28]`:
+
+| lado | árvore | `make lint` | `harness rules --mode sweep --surface git-hook` |
+|---|---|---|---|
+| **CALA** | de hoje, sem violador | **`rc=0`**, ESLint silencioso | **`rc=0`** |
+| **MORDE** | `serie.tsx` (`§3`) + `tipos.ts` (`§4`) plantados | **`rc=2`** (o `make` sai 2; o `npm run lint` saiu 1), **3 errors**: `no-console` em `serie.tsx:2:27`, `@typescript-eslint/no-explicit-any` em `tipos.ts:1:38` e `2:33` | **`rc=1`**, `[BLOQUEIO] [web-fullstack.browser-imports-server] serie.tsx:1` |
+| **limpeza** | violadores removidos | **`rc=0`** | **`rc=0`** |
+
+**O que NÃO mudou, e é o que impede chamar isto de fechado:** `make lint` continua sendo comando de
+**humano**. O `pre-push` gerado segue rodando `require-push` + `rules --mode sweep` e **não chama
+`make`**. Quem liga os dois é **`scripts/hooks/pre-push.pre-harness`** — `ADR-011/D3b`, **`T-01.5`**,
+que `T-01.6` está proibida de criar. **Até lá o ESLint é ferramenta que existe e que nenhum portão
+automático roda**, e `[test_cmd.web]` continua **não** declarado pelo mesmo motivo de antes.
 
 ### `D1.3b` — a medição que prova por que AST, e não regex
 
