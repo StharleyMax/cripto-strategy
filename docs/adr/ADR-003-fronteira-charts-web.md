@@ -60,3 +60,148 @@ web     = o que transforma INTENÇÃO em leitura tipada, e resposta em página
 
 - O teste de `FR-1`/`FR-2` é **de comportamento e executável**: um contrato de import `forbidden` por componente, na forma medida no `anything_monorepo` (`import-linter`) — ver [`ADR-009`](ADR-009-reuso-da-forma-do-anything.md). **`grep` não é aprovação.**
 - **`Q16` deixa de ser pergunta de arquitetura e passa a ser edição de política** (`[agents.by_component]` + `code_paths` + pack), que é `CST-1` e `ADR-009`.
+
+---
+
+# ⚠️ Acrescentado por `T-01.3` (`CST-10`) em 2026-08-28 — nenhuma linha acima foi apagada
+
+**Erro não se apaga, se tarja.** Três afirmações desta ADR deixaram de ser verdadeiras hoje,
+e as três continuam legíveis onde estavam porque carregam a medição que as sustentava.
+
+| linha | o que ela diz | estado em 2026-08-28 |
+|---|---|---|
+| **`:5`** | *"hoje nenhum dos dois tem arquiteto atribuído em `[agents.by_component]`"* | **SUPERADA.** Era verdadeira quando escrita e é falsa agora — ver `D1.2` abaixo, com o antes e o depois |
+| **`:40`** | *"**Ponteiro de arquiteto:** ambos apontam para o mesmo dono de julgamento **hoje**, porque o repositório tem um arquiteto de domínio"* | **REVOGADA PELO OWNER, e a previsão estava errada.** O owner **separou** os dois: `charts` → `quant-architect`, `web` → `ui-designer` `[PREMISSA-OWNER: 2026-08-28]`. O critério que ele aplicou é **classe de risco**, não camada nem quantidade de arquitetos disponíveis |
+| **`:61`** | *"o teste de `FR-1`/`FR-2` é … um contrato de import `forbidden` por componente, na forma medida no `anything_monorepo` (`import-linter`)"* | **INEXEQUÍVEL COMO ESCRITA.** `import-linter` lê o grafo de imports **de Python** (`grimp`); `charts` e `web` são **TypeScript**. A ADR nomeou um instrumento que **não alcança a fronteira que ela mesma define** — ver "`D1.6` não fecha aqui" abaixo |
+
+## `D1.2` — fechado, e medido pelos dois lados
+
+```
+$ harness policy --key agents.by_component          # ANTES (base af02beb)
+{"backtest": {...}, "convergencia": {...}, "sentimento": {...}}          # rc=0
+
+$ harness policy --key agents.by_component          # DEPOIS
+{"backtest": {"architect": ".claude/agents/quant-architect.md"},
+ "charts":   {"architect": ".claude/agents/quant-architect.md",
+              "design_gate": "docs/gate-de-design.md"},
+ "convergencia": {"architect": ".claude/agents/quant-architect.md"},
+ "sentimento":   {"architect": ".claude/agents/quant-architect.md"},
+ "web":      {"architect": ".claude/agents/ui-designer.md",
+              "design_gate": "docs/gate-de-design.md"}}                  # rc=0
+```
+
+**Universo: 2 componentes** (`charts`, `web`), os dois presentes. `harness validate --strict`
+→ `politica valida`, `rc=0`; `harness doctor` → `CONFORME (12 checagens)`, `rc=0` — **e o
+mesmo `CONFORME (12 checagens)` sai na baseline sem esta task** `[MEDIDO 2026-08-28 com
+`git stash -u`]`, o que prova que o validador não passou a aprovar coisa nova por acidente.
+
+**`charts` tem DUAS chaves de propósito**, e achatá-las em uma seria desfazer a decisão do
+owner: `architect` julga **fidelidade do dado**, `design_gate` julga **interação**, e
+**nenhum dos dois aprova o trabalho do outro**. `web` também tem duas, porque o dono de
+julgamento que o owner lhe deu é o `ui-designer` — o agente que o `CLAUDE.md` proíbe de
+aprovar o próprio trabalho. A doutrina está em [`docs/gate-de-design.md`](../gate-de-design.md);
+o esquema que comporta os dois ponteiros está medido em `harness.toml`.
+
+## 🔴 O gatilho que `T-01.3` armou — e a data de validade que ele venceu
+
+Até hoje, `agents.by_component` **não tinha dono para `web`**. Foi por isso, e **só** por
+isso, que o `/review` julgou **ACEITÁVEL** que `T-01.2` criasse **4 arquivos que
+`harness code-paths classify` chama `producao`** sob `frontend/src/` com a task declarando
+`components = ["docs"]`: acrescentar `web` naquele dia **não poria arquiteto nenhum no
+circuito**, logo a omissão não custava julgamento nenhum. Era **deferimento**, e deferimento
+tem prazo.
+
+**O prazo venceu com esta ADR e com `harness.toml`.** A partir de 2026-08-28:
+
+> **Toda task que escrever sob `frontend/src/` declarando apenas `components = ["docs"]` é
+> VIOLAÇÃO de `ADR-003:11-13`** — *"componente omitido é componente sem dono de julgamento"* —
+> **e não deferimento.**
+
+**Por que a regra morde agora e não mordia ontem, em um número:** `docs` **continua sem dono**
+`[MEDIDO 2026-08-28: `harness policy --key agents.by_component` → `docs` **ausente**]`, e
+`charts` e `web` **passaram a ter**. Omitir o componente deixou de ser gratuito — passou a
+**custar o julgamento que existe**.
+
+**Regra operacional, sem margem:** arquivo sob `frontend/src/` que renderiza, roteia, ou
+transforma série tipada em geometria ⇒ a task declara `charts` ou `web` em `components`
+**antes de o arquivo existir**, não depois. `docs` sozinho só continua valendo para arquivo
+que **não** é produção.
+
+**Onde este gatilho está escrito, e por que em três lugares e não em um:**
+
+| superfície | por que ela, e não só a outra |
+|---|---|
+| **`harness.toml`**, encostado nas 4 linhas novas | é o arquivo cujo **conteúdo arma** o gatilho. É impossível mudar o estado de propriedade sem passar por ali |
+| **esta ADR** (aqui) | a norma violada **é** `ADR-003:11-13`. Quem for confrontado com *"você violou `ADR-003:11-13`"* abre **este** arquivo, e tem de encontrar a data em que a regra passou a morder |
+| **`tasks.toml`**, `refs` de `T-01.3` (já estava) | é a fonte que o `/tech-lead` lê ao criar a próxima task — mas **só** quem for ler `T-01.3` a vê, e é por isso que ela **não basta sozinha** |
+
+## `D1.6` NÃO fecha nesta task — e o dono está nomeado, não órfão
+
+`D1.6` pede que *"o contrato `forbidden` de import **reprove** um import de `charts` para
+`web` e vice-versa"*, universo **2 imports proibidos, 1 em cada direção**. **Ele não fecha
+aqui, e a razão é medida, não estimada.**
+
+**Fato 1 — o universo está vazio, e isso é um número.**
+
+```
+$ find frontend/src -type f | wc -l                                     → 4
+$ grep -rnE '^\s*(import|export)\s.*from\s' frontend/src                → nenhuma ocorrência
+$ harness code-paths classify frontend/src/<cada um dos 4>              → producao (4 de 4)
+```
+
+**Zero declarações de import no componente inteiro.** Um contrato `forbidden` sobre um
+universo com **0 imports** não tem o que avaliar.
+
+**Fato 2 — o único instrumento disponível hoje reprova pelo caminho, que é a alternativa
+que `ADR-003:46` recusou.** `import-linter` é Python (`ADR-011/D3`, e é da `T-01.5`);
+`ADR-011/D4` **proíbe** `[[rules.own]]` de TypeScript nesta fase; sobra o ESLint, e a regra
+que ele tem é `no-restricted-imports`, que só sabe casar **especificador de módulo**.
+
+**Fato 3 — o teste dos dois lados (`1.8'`) foi RODADO, e ele reprova.** Bancada em
+`eslint@10` + `typescript-eslint@8`, **fixture fora do repositório**, com um contrato
+`no-restricted-imports` nas duas direções `[MEDIDO 2026-08-28]`:
+
+| metade | corpus | comando | resultado |
+|---|---|---|---|
+| **MORDE** | os 4 arquivos reais **+ 2 violadores plantados**, 1 em cada direção | `eslint srcB` | **`exit=1`**, `2 problems (2 errors)`, **nomeando** `no-restricted-imports` e as duas mensagens de contrato (`charts-nao-importa-web`, `web-nao-importa-charts`) ✅ |
+| **CALA** | os 4 arquivos reais de hoje | `eslint srcA` | `exit=0` ❌ **e o zero não vale nada** |
+
+**Por que o `exit=0` não conta — o controle que fecha o argumento:** rodei o **mesmo corpus
+A** contra o **contrato removido** e comparei as duas saídas.
+
+```
+$ eslint srcA                              → exit=0
+$ eslint -c eslint.desligado.mjs srcA      → exit=0
+$ diff <as duas saídas>                    → IDÊNTICAS (0 bytes de diferença)
+```
+
+**O contrato ligado e o contrato desligado são byte-idênticos sobre o código legítimo de
+hoje.** É exatamente o modo de falha que `1.8'` nomeia: *"contrato desligado passa em 'cala'
+e falha em 'morde'"*. E a metade "morde" só passou porque **2 dos 6 arquivos do corpus B são
+inventados**, um deles exigindo o diretório `frontend/src/features/charts/`, que **não existe
+no repositório** — ou seja, para o contrato morder é preciso **primeiro adotar a convenção de
+caminho que `ADR-003:46` recusou**.
+
+**Declarar esse contrato hoje seria "ferramenta que existe e ninguém roda" com aparência de
+progresso. Não declarei.**
+
+**Fato 4 — e este é defeito desta ADR, não da task:** `:61` nomeia `import-linter` como o
+teste de `FR-1`/`FR-2`. `import-linter` não lê TypeScript. **A mesma assimetria de linguagem
+atinge `FR-3`**, que exige que *"o motor de backtest **importe** a grade canônica"*: `backtest`
+é Python (`backend/src/`) e `charts` é TypeScript ⇒ **não existe `import` literal atravessando
+essa fronteira** `[INFERRED: dos componentes declarados em `harness.toml` e de
+`code_paths.include_prefixes`; não há código de `charts` nem de `backtest` para medir]`.
+**Não resolvi isto aqui** — é decisão de arquitetura, não de implementação.
+
+### De quem `D1.6` passa a ser
+
+| o quê | dono | por quê ele |
+|---|---|---|
+| **o contrato executável** (as duas metades na mesma passada) | **`T-05.1` / `CST-35`** | é a primeira task com **universo não vazio**: ela cria os módulos de `charts` e sua própria `refs` diz que *"é esta task que torna `charts` componente e não pasta"*. Nesse momento o "cala" é medido contra código **real** (`charts` + `frontend/src/app/rotas.ts`, que é lado `web`), e o "morde" contra violadores **efêmeros** — as duas metades ficam disponíveis na mesma passada, que é o que `1.8'` exige. Ela já declara `depends_on = ["T-01.3"]` |
+| **a reconciliação do plano** | **`/architect`** | `D1.6` é DoD da **fase 01**, e o plano diz que *"`1.2` e `1.3` fecham antes de `05`"*. Um DoD de `01` que só pode fechar em `05` é **contradição do plano**, da mesma classe das duas que o próprio `01_governanca_gateante.md` já registra (*"a peça 1 caiu entre os itens"*, *"`D1.1` contradiz a proibição de produção"*). Editar DoD de plano aprovado é superfície do `/architect` — **as três correções ⚠️ daquele arquivo foram acrescentadas pelo `/architect` e pelo `/review`, nunca pelo `/build`** |
+
+**O que NÃO é aceitável fazer com isto, e está escrito para que ninguém o faça depois:**
+declarar o contrato agora em `frontend/eslint.config.mjs` para o DoD "fechar". Ele passaria
+em `cala` por vacuidade, ninguém o rodaria contra um violador real, e o repositório trocaria
+um DoD aberto e nomeado por um portão falso. **`D1.6` aberto com dono é mais barato que
+`D1.6` fechado com mentira.**
