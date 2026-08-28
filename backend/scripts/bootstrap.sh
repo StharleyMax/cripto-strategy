@@ -167,7 +167,12 @@ if [ ! -x "$VENV/bin/python" ]; then
     echo "        env corrente por projeto, e 'env use' o reaproveita em vez de criar em" >&2
     echo "        backend/.venv [MEDIDO 2026-08-28 por T-01.6, em replica isolada: bootstrap" >&2
     echo "        rodado SEM poetry.toml e depois COM ele -> as duas vezes rc=3, pelo residuo]." >&2
-    echo "        Desgrude e repita:  poetry -C \"$BACKEND\" env remove --all && make setup" >&2
+    echo "        Desgrude e repita (o IN_PROJECT=false e OBRIGATORIO: com ele ligado," >&2
+    echo "        'env remove --all' so enumera o .venv do PROJETO e NAO ve o env do cache," >&2
+    echo "        que e justamente o que gruda — sai rc=0 sem imprimir nada e sem apagar" >&2
+    echo "        nada) [MEDIDO 2026-08-28 pelo /qa e reproduzido por T-01.6, n=3 receitas" >&2
+    echo "        com controle invertido em cada uma]:" >&2
+    echo "          POETRY_VIRTUALENVS_IN_PROJECT=false poetry -C \"$BACKEND\" env remove --all && make setup" >&2
     exit 3
 fi
 

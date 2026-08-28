@@ -165,8 +165,50 @@ desse falso positivo que a medição foi feita em réplica com config virgem.
 mesmo cache** dá `rc=3` nas duas vezes. O Poetry registra o env corrente por projeto no
 `envs.toml` do cache e `env use` o **reaproveita** em vez de criar em `backend/.venv`
 `[MEDIDO 2026-08-28: `<cache>/virtualenvs/envs.toml` → `[cripto-strategy-backend-LNkTWgt4]`,
-`patch = "3.13.13"`]`. Quem migrar um clone que já tinha bootstrapped sem o `poetry.toml` precisa de
-`poetry -C backend env remove --all` antes — e a recusa do `bootstrap.sh` diz isso na saída.
+`patch = "3.13.13"`]`.
+
+#### ⚠️ CORREÇÃO 2026-08-28 (`/qa` → `NEEDS_FIX`) — a receita de recuperação publicada aqui NÃO funcionava
+
+**O que esta seção dizia, e estava errado:** *"precisa de `poetry -C backend env remove --all` antes
+— e a recusa do `bootstrap.sh` diz isso na saída"*. A **armadilha** estava medida; o **remédio**
+não, e saiu publicado sob o mesmo selo `[MEDIDO … em réplica isolada]` da frase ao lado. **O `/qa`
+executou a receita — que é o passo que faltou — e ela é um no-op.**
+
+**Causa:** com `in-project = true` em vigor, `env remove --all` **só enumera o `.venv` do
+projeto**, e o env que gruda é justamente o do **cache**, que ele não vê. Ele esvazia o `envs.toml`
+e deixa o env de pé: `poetry env list` continua listando-o como `(Activated)` depois do `remove`.
+
+**As três receitas, com controle invertido em cada uma** — `bootstrap.sh` rodado **depois** de cada
+uma, a partir do mesmo estado grudado `[MEDIDO 2026-08-28 pelo `/qa`, reproduzido por `T-01.6`,
+n=3 receitas + 1 controle sem receita]`:
+
+| receita | saída dela | `bootstrap.sh` depois | `backend/.venv` nasce? |
+|---|---|---|---|
+| *(nenhuma — controle)* | — | **`rc=3`** | **não** |
+| `poetry -C <backend> env remove --all` **(a que estava publicada)** | **nada impresso**, `rc=0`; `env list` ainda mostra `(Activated)` | **`rc=3`**, `Using virtualenv: <cache>/virtualenvs/…` | **não** |
+| `POETRY_VIRTUALENVS_IN_PROJECT=false poetry -C <backend> env remove --all` | `Deleted virtualenv: …-py3.13`, `env list` vazio | **`rc=0`**, `ambiente pronto: Python 3.13.13 … CONFERIDO` | **sim** |
+| `rm -rf <cache>/virtualenvs/<nome>` | — | **`rc=0`** | **sim** |
+
+⇒ **A receita correta carrega a variável de ambiente NA LINHA**, não numa nota de rodapé — é ela que
+faz o serviço:
+
+```bash
+POETRY_VIRTUALENVS_IN_PROJECT=false poetry -C backend env remove --all && make setup
+```
+
+**E ela foi executada VERBATIM antes de ser publicada**, extraída da saída do próprio `bootstrap.sh`
+em vez de redigitada `[MEDIDO 2026-08-28: réplica completa (Makefile + `frontend/`), estado grudado
+reproduzido, a linha extraída da recusa por `grep -oE` e passada a `eval` → `Deleted virtualenv` +
+`Creating virtualenv … backend/.venv` + `ambiente pronto: Python 3.13.13 … CONFERIDO` +
+`added 88 packages`, **`rc=0`**; e o controle invertido depois: `bootstrap.sh` de novo **`rc=0`**,
+`lint.sh` **`rc=0`**]`.
+
+**A lição, e ela é a razão de este parágrafo existir em vez de a linha ser só trocada:** é **a mesma
+classe de defeito que esta task cobrou do `/review`** na dívida 1 de 4 — *"o conserto prescrito não
+bastava"* —, agora do outro lado do balcão. **Medir a armadilha não é medir o remédio**, e o cenário
+em que alguém lê essa linha é exatamente o clone limpo que esta task inteira existe para proteger.
+Pior: a recusa antiga imprimia a receita quebrada **de novo** depois de ela falhar, o que põe quem
+seguiu a instrução num laço.
 
 ### 🧱 O achado mais grave do `/review`, e o que `T-01.6` decidiu — **as duas metades**
 
