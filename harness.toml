@@ -242,8 +242,13 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # alvo `**/*.py`, e as duas que alcançam `frontend/src/**`
 # (`web-fullstack.browser-imports-server`, `web-fullstack.hardcoded-url`) são escopo
 # `code`, que por construção cobre teste e produção IGUALMENTE
-# `[MEDIDO 2026-08-28: `harness rules list` — 10 regras; lib/paths.py:105-124, `code` =
-# prefixos ∩ globs − exclusões, `production` = `code` − `test_globs`]`. Ou seja: o
+# `[MEDIDO 2026-08-28: `harness rules list` conta as 10 regras em vigor MAS NAO IMPRIME
+# `paths` — o JSON dele traz form/id/message/origin/scope/severity e mais nada, entao ele
+# NAO demonstra o alvo. Quem demonstra sao as fontes: `packs/core/rules.toml:50` e `:62`
+# (as duas `production`, ambas `paths = ["**/*.py"]`) e `packs/web-fullstack/rules.toml:16`
+# (`browser-imports-server`, `scope = "code"`, `paths = ["frontend/src/**"]`). Conferido
+# nos QUATRO packs instalados do v0.13.0, nao so nos dois adotados. E lib/paths.py:105-124
+# para a algebra: `code` = prefixos ∩ globs − exclusoes, `production` = `code` − `test_globs`]`. Ou seja: o
 # veredito de regra sobre um `.test.tsx` é o MESMO classificado como produção ou como
 # teste, e por isso a lacuna é **latente**, não ativa.
 #
