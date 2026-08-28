@@ -123,6 +123,56 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # `include_globs` + um pack que morda TypeScript. Enquanto isso, `frontend/` é ÁREA
 # DECLARADAMENTE NÃO COBERTA.
 #
+# ── LACUNA DE `frontend/` FECHADA em 2026-08-28 por `T-01.2` ───────────────────────
+#
+# O parágrafo acima FICA como registro do estado em que a política foi escrita; ele
+# deixou de descrever o disco. A receita que ele mesmo prescreveu foi executada nas
+# TRÊS partes que o item `1.4` do plano diz que só valem juntas:
+#
+#   (a) `frontend/src/` em `include_prefixes`
+#   (b) `*.ts` e `*.tsx` em `include_globs`
+#   (c) o pack `web-fullstack` em `[rules].packs`
+#
+# **Medido antes, no repositório real, com `frontend/` inexistente:**
+#
+#   harness code-paths classify frontend/src/features/painel/serie.tsx
+#   # -> nao-producao: nenhum include_prefixes casa ['backend/src/', 'backend/tests/']
+#   harness rules --mode file --path frontend/src/features/painel/serie.tsx
+#   # -> saída VAZIA, exit=0   (a lacuna de `D1.4`, re-medida hoje)
+#
+# **Medido depois, com um violador plantado de `browser-imports-server`:**
+#
+#   harness code-paths classify frontend/src/features/painel/serie.tsx
+#   # -> producao: include_prefixes + include_globs casam e nada exclui
+#   harness rules --mode file --path frontend/src/features/painel/serie.tsx --surface ci
+#   # -> [BLOQUEIO] web-fullstack.browser-imports-server, exit=1
+#   harness rules --mode file --path frontend/src/features/painel/Filtro.tsx --surface ci
+#   # -> saída VAZIA, exit=0   (o outro lado: a regra CALA sobre código legítimo)
+#
+# `[MEDIDO 2026-08-28, universo 2 arquivos: 1 violador + 1 legítimo]`. **As duas metades
+# são obrigatórias** (item `1.8'` do plano): "morde" sozinho não exclui um pack que
+# reprove tudo, e "cala" sozinho é indistinguível de pack desligado.
+#
+# ⚠️ O CÓDIGO DE SAÍDA É FUNÇÃO DA SUPERFÍCIE, e citá-lo sem ela é meia medição. O DoD
+# `D1.3` fala em `exit=2`; a superfície em que esse 2 aparece é a `posttool`, que é o
+# DEFAULT de `--mode file` — não a `ci`. Mesmo arquivo, mesmo veredito, três leituras
+# `[MEDIDO 2026-08-28: lib/runner.py:188, `surface = args.surface or ("posttool" if
+# args.mode == "file" else "ci")`, mais a tabela de `decide()`]`:
+#
+#   --mode file, sem --surface   -> posttool -> {"decision": "block", …}   rc=2
+#   --mode file --surface ci     -> ci       -> [BLOQUEIO] legível          rc=1
+#   --mode file --surface git-hook -> git-hook -> [BLOQUEIO] legível        rc=1
+#
+# Corolário medido, e ele CONTRADIZ um aviso que circulava nesta feature: `harness rules
+# --mode sweep` **NÃO** devolve `rc=0` imprimindo `[BLOQUEIO]`. O default de `--mode
+# sweep` é a superfície `ci`, e com o violador plantado ele sai `rc=1`
+# `[MEDIDO 2026-08-28: sweep com violador → rc=1; sweep sem violador → rc=0]`. O aviso
+# valia para alguma versão anterior do mecanismo; em v0.13.0 não reproduz.
+#
+# **O violador NÃO ficou na árvore**, e a razão é medida: com ele presente,
+# `harness rules --mode sweep --surface git-hook` sai `rc=1` e o `pre-push` recusa o
+# push. A receita de 4 linhas que o reproduz do zero está em `frontend/README.md`.
+#
 # ⚠️ SEGUNDA ÁREA DECLARADAMENTE NÃO COBERTA: `backend/scripts/` — declarada em 2026-08-28
 # pelo `/review` (item D). A lacuna de `frontend/` acima estava declarada, e a de
 # `backend/tests/` foi medida e FECHADA nesta mesma task; esta terceira superfície ficou de
@@ -163,9 +213,34 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # **Falsificador desta declaração:** se `harness code-paths classify backend/scripts/test.sh`
 # passar a responder `producao` ou `nao-producao: test_globs casa`, a lacuna deixou de
 # existir e este parágrafo tem de sair.
+#
+# ⚠️ TERCEIRA SUPERFÍCIE, e ela NASCEU nesta task — declarada aqui para não ser
+# descoberta depois: `test_globs` não reconhece teste de frontend. Os padrões vigentes
+# são `**/tests/**` e `**/test_*.py`, e a convenção do vizinho para TS é
+# `<nome>.test.tsx` `[DOC: ADR-009/D1, `vitest` em `frontend/`; e o próprio pack, cujo
+# alvo é `frontend/src/**/*.test.*`]`. Logo, o primeiro `Filtro.test.tsx` que existir
+# será classificado **produção**, e `core.hardcoded-secret` (escopo `production`) passará
+# a avaliá-lo — que é a classificação ERRADA, e é o espelho exato do defeito que
+# `backend/tests/` fechou nesta política em `T-01.1`.
+#
+# **NÃO fechada aqui, e o motivo é medido:** hoje o universo é ZERO
+# `[MEDIDO 2026-08-28: `find frontend/src -name '*.test.*' | wc -l` → **0**]`. Declarar
+# `**/*.test.*` agora seria escrever cobertura sobre universo vazio — a mesma coisa que
+# a nota de `backend/scripts/` acima recusa fazer com `*.sh`. **Dono: a task que trouxer
+# a suíte de frontend** (hoje inexistente — não há `[test_cmd.web]`, e por isso
+# `web-fullstack.browser-test-file-present` fica ACESO como AVISO, deliberadamente:
+# plantar um `.test.tsx` vazio produziria o "parecendo coberto" que `ADR-009/D3` recusa).
+#
+# **Falsificador:** no dia em que existir um `frontend/src/**/*.test.tsx`, se
+# `harness code-paths classify` sobre ele responder `producao`, esta nota virou dívida
+# vencida e `test_globs` tem de ganhar `**/*.test.*`.
 [code_paths]
-include_prefixes = ["backend/src/", "backend/tests/"]
-include_globs = ["*.py"]
+# `frontend/src/` entrou em 2026-08-28 (`T-01.2`), e é a parte (a) do item `1.4`.
+include_prefixes = ["backend/src/", "backend/tests/", "frontend/src/"]
+# `*.ts` e `*.tsx` entraram em 2026-08-28 (`T-01.2`), e são a parte (b) do item `1.4`.
+# Sem eles o prefixo sozinho não basta: `explain()` responderia "nenhum include_globs
+# casa" e o `.tsx` continuaria fora do escopo `code` de toda regra.
+include_globs = ["*.py", "*.ts", "*.tsx"]
 exclude_globs = [
     "**/__pycache__/**",
     "**/.venv/**",
@@ -196,6 +271,19 @@ test_globs = ["**/tests/**", "**/test_*.py"]
 #
 # ZERO REDE no portão: nenhum teste chama Binance, Bybit ou Coinalyze. `Q1` e `Q15`
 # estão ABERTAS e coletor não roda em gate.
+#
+# ── `[test_cmd.web]` NÃO foi declarado em `T-01.2`, e o silêncio é deliberado ───────
+#
+# A task instalou o ESLint DO PROJETO (`frontend/package.json`, `frontend/eslint.config.mjs`)
+# porque `ADR-011/D4` o adotou no lugar de duas `[[rules.own]]` de TypeScript, e porque
+# `D1.3b` exige MEDIR que ele acerta os 3 arquivos de bancada. **Instalado não é portão.**
+# Declarar `[test_cmd.web] lint = "npm --prefix frontend run lint"` aqui daria a APARÊNCIA
+# de portão sem criar um: `test_cmd` não é lido por portão nenhum — quem o consome são os
+# agentes `builder` e `qa` `[DOC: ADR-011, item 1.9 do plano, medição re-conferida em
+# 2026-08-28]`. O caminho que de fato reprova é o do `ADR-011/D2`/`D3b`: um alvo no
+# `Makefile` chamado por `scripts/hooks/pre-push.pre-harness`, e o `Makefile` é de `T-01.6`
+# e o hook é de `T-01.5`. **Nenhuma das duas é esta task.** Escrever a chave agora seria
+# declarar cobertura antes de existir o mecanismo que a cobra.
 [test_cmd.sentimento]
 lint = "bash backend/scripts/lint.sh"
 test = "bash backend/scripts/test.sh"
@@ -206,7 +294,40 @@ test = "bash backend/scripts/test.sh"
 # `hexagonal-layers` é candidato natural quando `sentimento` e `backtest` ganharem
 # forma — a proposta já separa domínio (matriz de convergência, motor de backtest) de
 # borda (APIs de exchange, WebSocket), que é a fronteira que esse pack cobra.
-packs = ["core"]
+#
+# ── `web-fullstack` ADOTADO em 2026-08-28 por `T-01.2` — parte (c) do item `1.4` ────
+#
+# O parágrafo acima FICA: ele descreve por que o pack não entrou em 2026-08-22, e a
+# razão que ele dá ("não há camada para violar") continua verdadeira para
+# `hexagonal-layers`, que segue FORA. O que mudou é só `web-fullstack`: `frontend/src/`
+# passou a existir, e `ADR-009/D3` mediu que **adotar o pack sozinho não resolve nada** —
+# as regras dele são `scope = "code"`, e sem (a)+(b) o classificador não considera
+# `frontend/` código. As três partes entram no mesmo ato ou nenhuma vale.
+#
+# **O que o pack acrescenta, e o efeito medido de cada regra sobre o disco de hoje:**
+#
+#   web-fullstack.browser-imports-server        BLOQUEIO · frontend/src/**
+#     -> é a regra que fecha `D1.3`. Violador plantado: exit=2. Legítimo: exit=0.
+#   web-fullstack.hardcoded-url                 AVISO    · frontend/src/**
+#     -> 0 achado sobre os 4 arquivos de `frontend/src/` que ficam.
+#   web-fullstack.server-test-directory-present BLOQUEIO · backend/tests/** (sweep)
+#     -> PASSA: `backend/tests/` existe desde `T-01.1` (`helpers/`, `sentimento/`).
+#        Foi por antecipar exatamente isto que `T-01.1` escolheu `backend/tests/` e não
+#        `backend/src/tests/` — ver a nota de `include_prefixes` acima.
+#   web-fullstack.browser-test-file-present     AVISO    · frontend/src/**/*.test.* (sweep)
+#     -> ACENDE, e fica aceso DE PROPÓSITO. Não há suíte de frontend. Plantar um
+#        `.test.tsx` vazio para apagar o aviso é o "parecendo coberto" que `ADR-009/D3`
+#        recusa, e sem `[test_cmd.web]` nenhum portão o rodaria. O aviso é a declaração
+#        honesta da lacuna; ele morre quando a suíte nascer, e não antes.
+#   web-fullstack.tenant-from-request           BLOQUEIO · backend/**/*.py
+#     -> **0 achado** sobre os 13 `.py` de `backend/` de hoje
+#        `[MEDIDO 2026-08-28: harness rules --mode sweep, repositório inteiro, DEPOIS da
+#        adoção do pack → nenhuma linha citando `tenant-from-request`]`. O risco era
+#        travar a suíte Python inteira ao adotar o pack; não se realizou.
+#        **E por isso NÃO existe `[[rules.web-fullstack.disabled]]` para ela:** desligar
+#        regra que não acusou é escrever exceção sem caso, e a exceção sobreviveria ao
+#        dia em que o código passar a ter multi-tenancy vindo do pedido.
+packs = ["core", "web-fullstack"]
 
 # ── SEM `[[rules.core.disabled]]` e sem `[[rules.own]]` ────────────────────────────
 #
