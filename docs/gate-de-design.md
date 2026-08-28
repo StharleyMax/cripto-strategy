@@ -56,8 +56,8 @@ registrada pelo /architect, não fala literal do owner]`
 ```
 $ grep -n -F "aprova o trabalho do" docs/decisoes-do-owner.md \
     docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md
-decisoes-de-execucao-2026-08-28.md:132: … **Nenhum aprova o trabalho do outro.**
-decisoes-do-owner.md:420:               … **Nenhum dos dois aprova o trabalho do
+docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md:132: … **Nenhum aprova o trabalho do outro.**
+docs/decisoes-do-owner.md:420: … **Nenhum dos dois aprova o trabalho do
 ```
 
 **Duas redações diferentes para a suposta citação. Citação literal não tem duas redações.**
@@ -83,10 +83,26 @@ resto de *"Conteudo obrigatorio desta task"*.
 > ```
 >
 > **A lição, e ela é o método:** um falsificador publicado sem ter sido executado é a mesma
-> classe de defeito que ele acusa. Esta família de armadilha — texto que atravessa wrap —
-> mordeu **cinco vezes** nesta task: `\|` em BRE, `cut -c1-N`, `sed -n 'Np'` em linha longa,
-> `grep -on` cruzando wrap, e `grep -F` cruzando wrap. **Rode o comando e confira que a saída
-> contém o que o texto diz que ela contém, antes de publicá-lo.**
+> classe de defeito que ele acusa.
+>
+> **O nome da família — e o nome estreito era parte do problema.** Chamei-a de *"texto que
+> atravessa wrap"*, e só **2** das ocorrências são de wrap. O nome que de fato as cobre é
+> **"método de busca que não vê o que afirma ver"**, e sob ele a conta sobe:
+>
+> | # | instrumento | por que não viu | quem, e quando |
+> |---|---|---|---|
+> | 1 | `grep` com `\|` em **BRE** | alternância não interpretada — `\|` é literal | `/build`, ciclo 1 |
+> | 2 | `cut -c1-N` | truncamento antes de afirmar sobre o conteúdo | `/qa`, ciclo 2 |
+> | 3 | `sed -n 'Np'` em linha de **3.607 bytes** | linha longa lida pelo começo | `/qa`, ciclo 2 |
+> | 4 | `grep -on` | citação atravessa quebra de linha | `/build`, ciclo 3 — **pego antes de publicar** |
+> | 5 | `grep -F` | idem, e **foi publicado** como prova em 3 superfícies | `/review` → `/build`, ciclo 3 |
+> | 6 | `grep -c` por substring | contaria ocorrência fora do campo pretendido | `/review`, ciclo 3 — **quase** |
+> | 7 | `grep -cE` casando **o nome do arquivo no conteúdo** em vez do campo de origem | atribuiu a fontes a montante linhas que só **citavam** o caminho | `/build`, ciclo 5 — **pego ao medir este próprio parágrafo** |
+>
+> **Sete instâncias, três agentes, cinco ciclos** — e a nº 7 nasceu conferindo a nº 5, o que
+> diz o tamanho real do risco. **Rode o comando e confira que a saída contém o que o texto
+> diz que ela contém, antes de publicá-lo** — e, quando o comando devolver caminhos, confira
+> que você casou o **campo de origem**, não o texto que menciona o caminho.
 
 **E a chave `design_gate` não depende de (b) para existir:** (c) abaixo é base independente,
 anterior em três dias, e é ela que sustenta o desenho.

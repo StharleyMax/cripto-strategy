@@ -491,8 +491,9 @@ architect = ".claude/agents/quant-architect.md"
 #
 #   $ grep -n -F "aprova o trabalho do" docs/decisoes-do-owner.md \
 #       docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md
-#   decisoes-de-execucao-2026-08-28.md:132: ... **Nenhum aprova o trabalho do outro.**
-#   decisoes-do-owner.md:420:              ... **Nenhum dos dois aprova o trabalho do
+#   docs/context/plataforma-dados/decisoes-de-execucao-2026-08-28.md:132: ... **Nenhum
+#       aprova o trabalho do outro.**
+#   docs/decisoes-do-owner.md:420: ... **Nenhum dos dois aprova o trabalho do
 #
 # DUAS REDACOES DIFERENTES para a suposta citacao. Citacao literal nao tem duas redacoes.
 # O `tasks.toml` (`:152`) ja separava as duas coisas certo, chamando a seta de "citacao
