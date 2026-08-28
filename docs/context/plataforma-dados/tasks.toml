@@ -56,12 +56,22 @@ review = "docs/context/plataforma-dados/tasks_review.md"
 
 [[tasks]]
 id = "T-01.1"
-title = "[docs] 01 · [test_cmd] declarado e o primeiro teste nascendo junto"
-components = ["docs"]
+# Prefixo `[docs][sentimento]`: V-26 compara o CONJUNTO de colchetes da sequencia INICIAL do
+# titulo com `components` (`scripts/tasks.sh:888-891`), logo o titulo tem de listar os dois ou
+# o arquivo sai com WARN. `[test_cmd]` no meio do texto nao conta — V-26 nunca olha o meio.
+# Esta e a PRIMEIRA task de dois componentes do arquivo `[MEDIDO 2026-08-28: grep '^components
+# = \[.*,' -> 1 ocorrencia, esta]`, entao a forma sem separador fica de precedente.
+title = "[docs][sentimento] 01 · [test_cmd] declarado e o primeiro teste nascendo junto"
+# `docs` E `sentimento`, e a segunda entrada e CORRECAO, nao ampliacao de escopo — ver o
+# ultimo item de `refs`. O campo e lista e `T-03.10` ja usa `["sentimento"]`; a forma existe.
+components = ["docs", "sentimento"]
 status = "todo"
 phase = "01"
 depends_on = []
-refs = ["GAP G2", "CA-F5-5", "ADR-009/D1", "plano 01 itens 1.1+1.8", "DoD D1.1", "DoD D1.5"]
+refs = [
+    "GAP G2", "CA-F5-5", "ADR-009/D1", "plano 01 itens 1.1+1.8", "DoD D1.1", "DoD D1.5",
+    "CORRECAO 2026-08-28 (/review NON_COMPLIANT, item C): `components` era `[\"docs\"]` e a task criou 10 arquivos que `harness code-paths classify` chama `producao`, todos sob `backend/src/modules/sentimento/` [MEDIDO 2026-08-28: 10 de 10]. Consequencia medida, e nao teorica: `harness policy --key agents.by_component` tem dono para `sentimento` (`quant-architect`) e NAO tem para `docs` => as invariantes de `domain` nasceram sem o arquiteto declarado no circuito de julgamento. `ADR-003:11-13`: \"componente omitido e componente sem dono de julgamento\". Acrescentado `sentimento`; `docs` FICA, porque a task tambem escreve `harness.toml` e `backend/README.md`, que sao superficie de `docs`. O prefixo do titulo foi de `[docs]` para `[docs][sentimento]` no mesmo ato, e nao por estetica: V-26 compara o CONJUNTO de colchetes iniciais com `components`, e sem isso o arquivo sai `1 WARN` [MEDIDO 2026-08-28: com `[docs]` -> `81 task(s), 0 ERROR, 1 WARN`; com `[docs][sentimento]` -> `81 task(s), 0 ERROR, 0 WARN`]. O `summary` de `CST-8` no Jira NAO foi tocado — o git e o tracker sao do loop principal.",
+]
 tracker = { provider = "jira", id = "CST-8", url = "https://conversationhub.atlassian.net/browse/CST-8" }
 
 [[tasks]]

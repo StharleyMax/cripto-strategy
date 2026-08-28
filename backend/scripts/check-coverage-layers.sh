@@ -7,6 +7,13 @@
 # este repositorio nomeia — verde sem universo varrido nao e medicao.
 #
 # Metas por camada, herdadas do vizinho: domain 90 · use_cases 80 · infra 70.
+#
+# ── RELATORIO VELHO E TRATADO COMO RELATORIO AUSENTE (conserto do `/review`, item B) ──
+#
+# "Ausente" ja recusava. "Velho" NAO recusava, e era pior: um XML de horas antes descreve um
+# universo que nao e mais o do disco, mas tem numeros, e numero fabricado passa por medicao.
+# A recusa por frescor abaixo cobre o que o `rm -f` do `test.sh` NAO cobre: chamada direta
+# deste script, e `.py` editado DEPOIS da ultima suite verde.
 set -euo pipefail
 
 BACKEND="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,6 +28,17 @@ fi
 if [ ! -f "$COV_XML" ]; then
     echo "RECUSA: $COV_XML ausente — sem relatorio nao ha piso a verificar." >&2
     echo "        Rode 'bash backend/scripts/test.sh', que o gera antes de chamar este." >&2
+    exit 3
+fi
+
+MAIS_NOVOS="$(find "$BACKEND/src" -name '*.py' -not -path '*/__pycache__/*' -newer "$COV_XML" -print 2>/dev/null || true)"
+if [ -n "$MAIS_NOVOS" ]; then
+    echo "RECUSA: $COV_XML e mais VELHO que o codigo que ele diz medir." >&2
+    echo "        Relatorio velho descreve um universo que nao e mais o do disco — e numero" >&2
+    echo "        de universo errado nao e medicao, e a mesma falha de 'relatorio ausente'." >&2
+    echo "        Arquivo(s) de src/ mais novos que o relatorio:" >&2
+    printf '          %s\n' $MAIS_NOVOS >&2
+    echo "        Rode 'bash backend/scripts/test.sh' (sem --no-cov) para remedir." >&2
     exit 3
 fi
 

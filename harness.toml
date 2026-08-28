@@ -122,6 +122,47 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # `doctor` diz CONFORME sobre um universo que não o inclui. Fechar isto é: globs TS em
 # `include_globs` + um pack que morda TypeScript. Enquanto isso, `frontend/` é ÁREA
 # DECLARADAMENTE NÃO COBERTA.
+#
+# ⚠️ SEGUNDA ÁREA DECLARADAMENTE NÃO COBERTA: `backend/scripts/` — declarada em 2026-08-28
+# pelo `/review` (item D). A lacuna de `frontend/` acima estava declarada, e a de
+# `backend/tests/` foi medida e FECHADA nesta mesma task; esta terceira superfície ficou de
+# fora das duas análises, e o silêncio é o defeito que `ADR-009/D3` nomeia — *"a diferença
+# entre coberto e 'parecendo coberto'"*. Ela não é periférica: os **4 arquivos**
+# (`bootstrap.sh`, `test.sh`, `lint.sh`, `check-coverage-layers.sh`; **216 linhas**
+# `[MEDIDO 2026-08-28: cat backend/scripts/*.sh | wc -l]`) são o `test_cmd` inteiro, isto é
+# **todo o DoD desta trilha daqui para frente** — e foi dentro de um deles que o mesmo
+# `/review` achou o BLOQUEIO desta passada (`test.sh` media cobertura a partir de relatório
+# velho).
+#
+# O comando que a mede, e as DUAS causas independentes que ele separa:
+#
+#   harness code-paths classify backend/scripts/test.sh
+#   # -> nao-producao: nenhum include_prefixes casa ['backend/src/', 'backend/tests/']
+#   harness code-paths classify backend/src/foo.sh
+#   # -> nao-producao: nenhum include_globs casa
+#
+# `[MEDIDO 2026-08-28: os 4 `.sh` classificados um a um → 4 de 4 "nenhum include_prefixes
+# casa"]`. Ou seja **nem o prefixo alcança `backend/scripts/`, nem o glob alcança `.sh`** —
+# fechar exige as duas metades, exatamente como em `frontend/`.
+#
+# **NÃO fechada aqui, e o motivo é medido:** fechar exige `*.sh` em `include_globs` MAIS um
+# pack cujas regras mordam shell, e **nenhum pack instalado morde `.sh`**
+# `[MEDIDO 2026-08-28: grep -hE '^(paths|target) *=' packs/*/rules.toml | sort -u sobre os 4
+# packs do plugin v0.13.0 (core, hexagonal-layers, read-model-projection, web-fullstack) →
+# os alvos são `**/*.py`, `backend/**/*.py`, `frontend/src/**`, `backend/tests/**` e
+# `frontend/src/**/*.test.*`; ZERO deles casa um `.sh` sob `backend/scripts/`]`. Declarar o
+# glob sem regra que morda produziria exatamente o "parecendo coberto" que esta nota existe
+# para impedir.
+#
+# **Dono PROPOSTO (proposta, não decisão — quem decide é `/architect`): `T-01.2`**, que já é
+# a task de "cobertura fechada, medida por bloqueio devolvido" (`D1.3`/`D1.4`) e já tem de
+# adotar um pack novo. O que a proposta cobra é **estender o título dela, hoje escrito só
+# para `frontend/`**. Se a resposta for que `T-01.2` fica como está, esta lacuna **não tem
+# dono** e precisa de task própria — e criar task não é ato de builder.
+#
+# **Falsificador desta declaração:** se `harness code-paths classify backend/scripts/test.sh`
+# passar a responder `producao` ou `nao-producao: test_globs casa`, a lacuna deixou de
+# existir e este parágrafo tem de sair.
 [code_paths]
 include_prefixes = ["backend/src/", "backend/tests/"]
 include_globs = ["*.py"]

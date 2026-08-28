@@ -34,6 +34,20 @@
 
 Não escreve código de produção. **Não consolida ADR** (é `09`). Não decide arquitetura de dado. **Não altera o vocabulário fechado de componentes** — `1.7` é proposta ao owner.
 
+### ⚠️ Exceção explícita à primeira frase: `1.1` escreve, sim, código de produção — e é `D1.1` que o obriga
+
+**Acrescentado em 2026-08-28 pelo `/review` (`NON_COMPLIANT`, item C). A frase acima NÃO foi apagada** — ela continua valendo para `1.2`–`1.8`. O que ela não pode fazer é valer para `1.1`, porque **contradiz o `D1.1` da tabela de DoD**, e a contradição é defeito do plano, não indisciplina de quem o executou:
+
+| | |
+|---|---|
+| **o que `D1.1` exige** | universo **`≥ 1 teste`, e ele é um dos de `02`/`03`** |
+| **qual teste é esse** | `CA-F0-5` — *matar o processo e retomar* |
+| **por que a proibição não pode valer aqui** | **não existe teste de matar o processo e retomar sem o código que se mata.** O critério nomeia um teste de comportamento de produção; satisfazê-lo sem produção é impossível |
+| **o que de fato nasceu** | **10 arquivos** que `harness code-paths classify` chama `producao`, todos sob `backend/src/modules/sentimento/` `[MEDIDO 2026-08-28: 10 de 10]` |
+| **a consequência de governança, e o motivo de isto estar escrito** | a task declarava `components = ["docs"]`, e `docs` **não tem dono** em `agents.by_component` `[MEDIDO 2026-08-28: harness policy --key agents.by_component → backtest, convergencia, sentimento; docs ausente]` ⇒ as invariantes de `domain` nasceram **sem o arquiteto no circuito de julgamento**. Corrigido para `["docs", "sentimento"]` em `tasks.toml`. `ADR-003:11-13`: *"componente omitido é componente sem dono de julgamento"* |
+
+**Para a próxima task não herdar uma proibição que o próprio DoD contradiz:** o escopo de produção liberado aqui é **exatamente** o mínimo que `D1.1` exige — o módulo que o teste de `02`/`03` exercita — e **nada além**. Produção fora disso continua proibida nesta fase, e o componente que ela tocar tem de estar declarado em `components` **antes de o arquivo existir**, não depois.
+
 ## Falsificador da fase
 
 Se, com `1.4` aplicado nas **duas** partes, D1.3 continuar devolvendo saída vazia, o fecho de `CA-F5-4` precisa de uma **terceira** parte que ninguém identificou — e `ADR-009/D3` está errado.
