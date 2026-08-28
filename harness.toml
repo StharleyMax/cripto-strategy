@@ -458,3 +458,86 @@ architect = ".claude/agents/quant-architect.md"
 
 [agents.by_component.backtest]
 architect = ".claude/agents/quant-architect.md"
+
+# ── `T-01.3` (2026-08-28): `charts` e `web` ganham dono de julgamento ───────────────
+#
+# `Q16` foi RESPONDIDA pelo owner em 2026-08-28. Citacao literal da opcao selecionada:
+#
+#     "charts -> quant-architect · web -> ui-designer"   [PREMISSA-OWNER: 2026-08-28]
+#
+# Fonte unica: `docs/decisoes-do-owner.md` §Q16. O criterio que o owner aplicou e
+# CLASSE DE RISCO, nao camada: `charts` carrega a honestidade do dado (selo de 4 campos,
+# politica de ausencia por `nature`, `LOCF` sobre `FLOW` como erro de tipo, ancora de
+# `cvd_cum`) e errar ali produz um grafico que MENTE SEM AVISAR; `web` carrega transporte,
+# `knowledge_time` na URL, auth minima e o bundle enderecavel por conteudo.
+#
+# ── POR QUE `charts` TEM DUAS CHAVES, E POR QUE ACHATAR EM UMA SERIA DEFEITO ────────
+#
+# A mesma resposta do owner registra a consequencia operacional, tambem literal:
+# "toda tela de `charts` passa a ter DOIS julgamentos independentes — `quant-architect`
+# sobre a fidelidade do dado, `ux-ui-mastery` sobre a interacao. NENHUM DOS DOIS APROVA O
+# TRABALHO DO OUTRO." E o `CLAUDE.md` ja declarava o mesmo desenho para design desde
+# 2026-08-25: o `ui-designer` decide sem pedir permissao E `ux-ui-mastery` e o gate,
+# porque "agente que gera e aprova o proprio trabalho nao tem gate".
+#
+# `web` carrega as duas chaves pelo MESMO motivo, e nao por simetria decorativa: o dono
+# de julgamento que o owner nomeou para `web` e o `ui-designer`, que e precisamente o
+# agente que o `CLAUDE.md` proibe de aprovar o proprio trabalho. Declarar so `architect`
+# em `web` publicaria, na politica, um gerador sem gate.
+#
+# ── O ESQUEMA COMPORTA DOIS PONTEIROS — MEDIDO, NAO PRESUMIDO ───────────────────────
+#
+# `[agents.by_component.<c>]` e uma tabela PAPEL -> CAMINHO com o conjunto de papeis
+# ABERTO: `lib/policy.py:549-550` (plugin v0.13.0) itera `for papel, valor in mapa.items()`
+# e a unica exigencia por papel e `checa_ponteiro` — caminho relativo nao vazio que
+# EXISTA sob a raiz (ponteiro que nao resolve e AVISO, `fatal=False`). O que FECHA e o
+# componente fora do enum (`policy.py:540-543`). Logo dois papeis por componente sao
+# expressaveis sem forcar encaixe nenhum, e `harness validate --strict` confirma.
+#
+# `design_gate` NAO e `reviewer` de proposito. `reviewer` pertence ao conjunto FECHADO de
+# papeis do pipeline (`scripts/pipeline.sh:85` -> `["pm","architect","tech-lead","builder",
+# "qa","reviewer"]`) e nomeia o auditor ARQUITETURAL (`agents/reviewer.md`, COMPLIANT /
+# NON_COMPLIANT). Reaproveitar `reviewer` para o gate de interacao faria o gate de UX
+# PARECER substituir a auditoria de arquitetura — que e achatar os dois julgamentos, o
+# oposto do que o owner declarou.
+#
+# LIMITE DECLARADO, e ele vale igual para a chave `architect` que ja estava aqui:
+# NENHUM comando do plugin ROTEIA por estas chaves. `[MEDIDO 2026-08-28: grep -rn "agents"
+# sobre os 8 arquivos de commands/ do v0.13.0 -> 3 ocorrencias; `build.md:36` e `qa.md:19`
+# rodam `harness policy --key agents` e agem so sobre os papeis `builder` e `qa`, e
+# `skills.toml:12` so cita a palavra num comentario. Nenhuma le `architect`]`.
+# Estes ponteiros sao DOUTRINA LEGIVEL — que e exatamente o que V-16 diz existir para:
+# "que uma skill do plugin encontre a doutrina PROPRIA do repositorio". Quem os consome e
+# quem le `harness policy --key agents.by_component` antes de despachar revisao.
+#
+# ⚠️⚠️ O GATILHO QUE ESTAS QUATRO LINHAS ARMAM — LEIA ANTES DE ESCREVER A PROXIMA TASK ⚠️⚠️
+#
+# Ate 2026-08-28, `agents.by_component` NAO tinha dono para `web`. Por causa disso, o
+# /review julgou ACEITAVEL que `T-01.2` criasse 4 arquivos que `harness code-paths classify`
+# chama `producao` sob `frontend/src/` com a task declarando `components = ["docs"]`:
+# acrescentar `web` naquele dia nao poria arquiteto nenhum no circuito, entao a omissao
+# nao custava julgamento. Era DEFERIMENTO, e tinha data de validade.
+#
+# ESTA DECLARACAO E A DATA DE VALIDADE. A partir dela, toda task que escrever sob
+# `frontend/src/` declarando so `docs` e VIOLACAO de `ADR-003:11-13` — "componente omitido
+# e componente sem dono de julgamento" —, nao deferimento. `docs` continua sem dono aqui
+# `[MEDIDO 2026-08-28: harness policy --key agents.by_component -> `docs` ausente]`, e
+# agora `charts` e `web` tem, entao a omissao passou a CUSTAR o julgamento que existe.
+#
+# Regra operacional, sem ambiguidade: arquivo sob `frontend/src/` que renderiza, roteia ou
+# transforma serie em geometria ⇒ a task declara `charts` ou `web` em `components` ANTES de
+# o arquivo existir. `docs` sozinho so continua valendo para arquivo que NAO e producao.
+# A mesma marca esta em `docs/adr/ADR-003-fronteira-charts-web.md` §"O gatilho que T-01.3
+# armou" e em `docs/context/plataforma-dados/tasks.toml` (`refs` de `T-01.3`).
+
+[agents.by_component.charts]
+# Fidelidade do dado — o julgamento que o owner moveu para o arquiteto quantitativo.
+architect = ".claude/agents/quant-architect.md"
+# Interacao — o gate que NAO responde ao arquiteto e que ele nao aprova.
+design_gate = "docs/gate-de-design.md"
+
+[agents.by_component.web]
+# Superficie e interacao — o dono de julgamento que o owner nomeou.
+architect = ".claude/agents/ui-designer.md"
+# O gate da autonomia do `ui-designer`, declarado no `CLAUDE.md` em 2026-08-25.
+design_gate = "docs/gate-de-design.md"
