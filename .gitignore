@@ -49,3 +49,6 @@ data/
 # Backend — relatorio de cobertura gerado por `backend/scripts/test.sh` (T-01.1, 2026-08-28)
 backend/coverage.xml
 .coverage
+
+# frontend — dependencias de npm nao sao versionadas (T-01.2, ADR-011/D4)
+frontend/node_modules/
