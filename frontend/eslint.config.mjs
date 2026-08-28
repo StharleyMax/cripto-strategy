@@ -25,7 +25,25 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["**/*.ts", "**/*.tsx"],
+    // The extension must NOT decide whether a file is linted. With
+    // `["**/*.ts", "**/*.tsx"]` a `.jsx` component was reported by nothing at all, and
+    // a `.js` fell through to the flat-config default expansion without the two pinned
+    // rules -- measured 2026-08-28 over a bench of two sibling probes carrying the same
+    // `console.log`: `eslint -f json src` listed 6 files, `serie.jsx` ABSENT, `serie.js`
+    // present with `no-undef` only. Next.js emits `.js` and `.jsx`, so that hole is on
+    // the path of the `charts`/`web` tasks. The list below is the same source-extension
+    // family that `code_paths.include_globs` now carries, and the two lists are meant to
+    // stay in step: a file the rule gate calls code is a file this linter reads.
+    files: [
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.mts",
+      "**/*.cts",
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.mjs",
+      "**/*.cjs",
+    ],
     rules: {
       // Successor of the dropped `own.ts-explicit-any`.
       "@typescript-eslint/no-explicit-any": "error",

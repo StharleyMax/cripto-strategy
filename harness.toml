@@ -219,9 +219,42 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # são `**/tests/**` e `**/test_*.py`, e a convenção do vizinho para TS é
 # `<nome>.test.tsx` `[DOC: ADR-009/D1, `vitest` em `frontend/`; e o próprio pack, cujo
 # alvo é `frontend/src/**/*.test.*`]`. Logo, o primeiro `Filtro.test.tsx` que existir
-# será classificado **produção**, e `core.hardcoded-secret` (escopo `production`) passará
-# a avaliá-lo — que é a classificação ERRADA, e é o espelho exato do defeito que
-# `backend/tests/` fechou nesta política em `T-01.1`.
+# será classificado **produção** — que é a classificação ERRADA, e é o espelho exato do
+# defeito que `backend/tests/` fechou nesta política em `T-01.1`
+# `[MEDIDO 2026-08-28: `harness code-paths classify frontend/src/__sonda__/Filtro.test.tsx`
+# → **rc=0**, "producao: … include_prefixes + include_globs casam e nada exclui"]`.
+#
+# **CORREÇÃO 2026-08-28 (`NEEDS_FIX` A1): a versão anterior deste parágrafo nomeava um
+# mecanismo que não existe.** Ela dizia que `core.hardcoded-secret` (escopo `production`)
+# "passará a avaliá-lo". Não passa, e a razão não é o escopo: **é o alvo**. Essa regra
+# declara `paths = ["**/*.py"]`
+# `[MEDIDO 2026-08-28: packs/core/rules.toml:50, pack `core` v0.13.0]`, e um `.tsx` nunca
+# casa. Medido dos dois lados, MESMAS duas credenciais (`token = "abcdef123456"`,
+# `api_key = "sk-live-0000000000"`):
+#
+#   rules --mode file --path frontend/src/__sonda__/Filtro.test.tsx --surface ci
+#   # -> rc=0, saída de 0 byte
+#   rules --mode file --path backend/src/__sonda_segredo__.py --surface ci
+#   # -> rc=1, [BLOQUEIO] core.hardcoded-secret, "2 ocorrencia(s) fora da allowlist"
+#
+# **Hoje NENHUMA regra em vigor avalia um `.tsx` por escopo `production`**: as duas de
+# escopo `production` (`core.hardcoded-secret`, `core.module-docstring-single-line`) têm
+# alvo `**/*.py`, e as duas que alcançam `frontend/src/**`
+# (`web-fullstack.browser-imports-server`, `web-fullstack.hardcoded-url`) são escopo
+# `code`, que por construção cobre teste e produção IGUALMENTE
+# `[MEDIDO 2026-08-28: `harness rules list` — 10 regras; lib/paths.py:105-124, `code` =
+# prefixos ∩ globs − exclusões, `production` = `code` − `test_globs`]`. Ou seja: o
+# veredito de regra sobre um `.test.tsx` é o MESMO classificado como produção ou como
+# teste, e por isso a lacuna é **latente**, não ativa.
+#
+# **O que a classificação errada de fato alimenta**, e é por isso que ela continua sendo
+# dívida: (i) a primeira regra de escopo `production` cujo alvo alcance `frontend/src/**`
+# — hoje nenhuma, e é uma linha de pack; (ii) `harness require-push`, o portão de estado
+# do `pre-push`, que exige que todo arquivo **de produção** do push seja reivindicado por
+# feature autorizada e lê exatamente este classificador
+# `[DOC: lib/runner.py:633, `lambda rel: classifier.is_production(...)`]`
+# `[NÃO MEDIDO: medir exige um commit contendo um `.test.tsx` e um intervalo de push, e
+# `T-01.2` está proibida de commitar]`.
 #
 # **NÃO fechada aqui, e o motivo é medido:** hoje o universo é ZERO
 # `[MEDIDO 2026-08-28: `find frontend/src -name '*.test.*' | wc -l` → **0**]`. Declarar
@@ -240,7 +273,45 @@ include_prefixes = ["backend/src/", "backend/tests/", "frontend/src/"]
 # `*.ts` e `*.tsx` entraram em 2026-08-28 (`T-01.2`), e são a parte (b) do item `1.4`.
 # Sem eles o prefixo sozinho não basta: `explain()` responderia "nenhum include_globs
 # casa" e o `.tsx` continuaria fora do escopo `code` de toda regra.
-include_globs = ["*.py", "*.ts", "*.tsx"]
+#
+# ── A FAMÍLIA INTEIRA entrou em 2026-08-28 (`T-01.2`, correção do `NEEDS_FIX` A2) ──
+#
+# `*.ts`/`*.tsx` sozinhos deixavam o MESMO violador passar só por trocar de extensão
+# `[MEDIDO 2026-08-28, mesmo import de `backend/src/` em três arquivos irmãos:
+# `serie.tsx` → classify `producao`, `rules --mode file --surface ci` **rc=1** com
+# `[BLOQUEIO] web-fullstack.browser-imports-server`; `serie.jsx` e `serie.js` →
+# classify `nao-producao: nenhum include_globs casa`, `rules --mode file --surface ci`
+# **rc=0 e 0 byte**, e `rules --mode sweep` rc=1 acusando SÓ o `.tsx`]`. Era a quarta
+# superfície não coberta desta task, e ela nasceu sem declaração.
+#
+# **Por que aqui a resposta é FECHAR, e nas notas de `backend/scripts/` e `test_globs`
+# acima é DECLARAR:** lá o bloqueio é que nenhum pack morde o alvo (`.sh`) ou que o
+# universo é zero. Aqui **a regra já alcança o caminho**: o alvo de
+# `web-fullstack.browser-imports-server` é `frontend/src/**`, sem extensão nenhuma
+# `[MEDIDO 2026-08-28: packs/web-fullstack/rules.toml:16 → `paths = ["frontend/src/**"]`]`.
+# Quem retinha o `.jsx` era exclusivamente esta lista. Declarar em vez de fechar seria
+# deixar um `[BLOQUEIO]` pronto sem alcance por causa de um sufixo.
+#
+# **Custo medido, e ele é zero hoje:** os únicos `.js`/`.mjs` fora de `node_modules` são
+# `scripts/validate_palette.js` e `frontend/eslint.config.mjs`, e **nenhum dos dois está
+# sob `include_prefixes`** — o predicado de prefixo os recusa antes de a lista de globs
+# ser consultada `[MEDIDO 2026-08-28: `find . -path ./frontend/node_modules -prune -o
+# \( -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' \) -print` → 2
+# arquivos; `find backend -name '*.js'` → 0; `find frontend/src -name '*.js*'` → 0]`.
+# `node_modules/` não entra na varredura por outra razão, independente desta lista: o
+# caminhador do sweep o pula `[MEDIDO 2026-08-28: lib/rules.py:304, `skip = {'.git',
+# 'node_modules', …}`]`.
+#
+# **O risco nomeado no review — `.js` gerado de build alcançado sob `frontend/src/`** —
+# não se materializa hoje e é estrutural: o Next.js emite `.next/`, `next-env.d.ts` e
+# `next.config.js` na RAIZ do pacote, e `include_prefixes` só alcança `frontend/src/`.
+# A saída, se um dia gerar dentro de `src/`, é `exclude_globs` — não amputar a extensão.
+#
+# **Falsificador:** plante o mesmo import de `backend/src/` num arquivo novo sob
+# `frontend/src/` com qualquer uma destas extensões; se `harness rules --mode file
+# --path <ele> --surface ci` sair `rc=0` com 0 byte, esta lista voltou a decidir
+# enforcement por sufixo e a linha abaixo está errada.
+include_globs = ["*.py", "*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs"]
 exclude_globs = [
     "**/__pycache__/**",
     "**/.venv/**",
