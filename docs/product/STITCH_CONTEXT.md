@@ -1,8 +1,20 @@
 # STITCH_CONTEXT.md — cripto-strategy
 
-**Data:** 2026-08-25 (**5ª** revisão do dia — reabertura sob gate `REPROVADO`) · **Projeto Stitch:** `projects/9264019151773162472` ("crypto", `TEXT_TO_UI_PRO`, PRIVATE, DESKTOP)
-**Telas no Stitch hoje:** **2** — `S2 Símbolo - Operacional Core` (`f233…`) e **`S2 Símbolo - Operacional Core Rev. A`** (`7c81…`) `[MEDIDO: list_screens + get_project, 2026-08-25 5ª revisão]`
+**Data:** 2026-08-28 (**6ª** revisão — promoção da `S2` autorizada pelo owner) · **Projeto Stitch:** `projects/9264019151773162472` ("crypto", `TEXT_TO_UI_PRO`, PRIVATE, DESKTOP)
+**Telas no Stitch hoje:** **3** `[MEDIDO: get_project.screenInstances + list_screens, 2026-08-28]`
+**A `S2` CANÔNICA É `8174234965cd4ffbacfb7b2a0a61a427`** — `S2 Símbolo - Operacional Core Rev. B` · **APROVADO, 0 reprovações** `[MEDIDO: python3 scripts/verify_screen.py revB.html ⇒ exit 0]`. As outras duas estão **REVOGADAS**. Ver §4.1.0.
 **Design systems:** **4** `[MEDIDO: list_design_systems]` — ver §5.1 · **e um quinto tema que não é asset: `project.designTheme`**
+
+> ### ⛔ TARJA de 2026-08-28 (6ª revisão): a linha de telas dizia **2**, e nomeava como únicas duas telas que hoje estão as DUAS revogadas
+>
+> ~~**Telas no Stitch hoje:** **2** — `S2 Símbolo - Operacional Core` (`f233…`) e **`S2 Símbolo - Operacional Core Rev. A`** (`7c81…`)~~
+>
+> **São 3.** A terceira é a canônica, e apareceu porque `edit_screens` **bifurcou de novo** (§5.3).
+> **O número não estava errado quando foi escrito — envelheceu.** Registro porque a linha 4 deste
+> arquivo já errou a contagem de telas em **duas** revisões consecutivas (0, depois 2), sempre pelo
+> mesmo motivo: **contagem é estado, e estado escrito em prosa envelhece em silêncio.**
+> ⇒ **é por isso que a linha nova não carrega só a contagem: carrega o `screenId` canônico.**
+> Um id não envelhece; uma contagem sim.
 
 > ### ⛔ TARJA de 2026-08-25 (5ª revisão): as DUAS linhas acima estavam erradas, pelo MESMO método
 >
@@ -131,6 +143,44 @@ shell autenticado
 
 ### 4.1 S2 — símbolo · **NÚCLEO OPERACIONAL** · **EXISTE NO STITCH** `[MEDIDO 2026-08-25]`
 
+#### 4.1.0 QUAL DAS TRÊS TELAS É A `S2` — leia isto antes de qualquer coisa `[MEDIDO 2026-08-28]`
+
+**A `S2` é `8174234965cd4ffbacfb7b2a0a61a427`.** As outras duas existem, não podem ser apagadas,
+e estão revogadas.
+
+| `screenId` | título no canvas | `x` no canvas | desvios corrigidos | gate | estado |
+|---|---|---|---|---|---|
+| **`8174234965cd4ffbacfb7b2a0a61a427`** | `S2 Símbolo - Operacional Core Rev. B` | 4736 | **13 de 13** | **APROVADO · 0 reprovações** | ✅ **CANÔNICA** |
+| `7c81c2672b944f8a88c06ae436b19274` | `S2 Símbolo - Operacional Core Rev. A` | 3392 | 12 de 13 | REPROVADO · **4** reprovações | ⛔ REVOGADA — superada |
+| `f233baf87e12403797d1c867f69ab53d` | `S2 Símbolo - Operacional Core` | 1024 | **0 de 13** | REPROVADO · **24** reprovações | ⛔ REVOGADA — é a tela dos 13 desvios |
+
+```
+python3 scripts/verify_screen.py revB.html   =>  APROVADO   ( 0 reprovacoes)  exit 0
+python3 scripts/verify_screen.py revA.html   =>  REPROVADO  ( 4 reprovacoes)  exit 1
+python3 scripts/verify_screen.py orig.html   =>  REPROVADO  (24 reprovacoes)  exit 1
+```
+
+##### ⚠️ A REGRA DE IDENTIDADE, e ela vale mais que esta tabela
+
+**A identidade da `S2` é o `screenId` escrito nesta seção. O TÍTULO NO CANVAS NÃO É IDENTIDADE.**
+Três fatos medidos sustentam isso, e o terceiro é o que fecha:
+
+1. **Os títulos são escritos pela FERRAMENTA, não por mim.** `edit_screens` derivou
+   `"… Rev. A"` do título base e `"… Rev. B"` de `"… Rev. A"` — **auto-incremento de letra**.
+   `[MEDIDO: list_screens antes e depois de cada chamada, 2026-08-25 e 2026-08-28]`
+2. **Não existe operação de renomear.** O MCP expõe, para tela: `generate_screen_from_text`,
+   `edit_screens`, `generate_variants`, `apply_design_system`. **Nenhuma toca título.**
+3. **A LETRA INCREMENTA POR TENTATIVA, NÃO POR MÉRITO.** Se esta rodada tivesse regredido, a
+   saída ainda se chamaria `Rev. B`. ⇒ **"a letra mais alta" não é "a melhor", e nunca será.**
+   Quem escolher a `S2` pelo título vai acertar hoje e errar na primeira revisão reprovada.
+
+⇒ **O discriminante executável não é o nome, é a propriedade:** a `S2` canônica é a única das três
+para a qual `verify_screen.py` **sai com exit 0**. Isso é verificável sem este documento.
+Discriminante de emergência, se alguém tiver só os arquivos: **`grep -l 'lang="pt-BR"'`** acerta a
+canônica entre as três hoje `[MEDIDO]` — mas é **frágil por acidente** (nada garante que uma
+revisão futura reprovada não tenha `pt-BR` também), então serve para desempate manual, **nunca
+como gate**.
+
 > ### ⛔ TARJA de 2026-08-25 (4ª revisão): esta seção dizia `[NÃO EXISTE NO STITCH AINDA]`
 >
 > ~~### 4.1 S2 — símbolo · **NÚCLEO OPERACIONAL** · `[NÃO EXISTE NO STITCH AINDA]`~~
@@ -138,14 +188,24 @@ shell autenticado
 > **Existe, e existia quando a frase foi escrita.** Ver a tarja do cabeçalho para o defeito de
 > método que produziu o erro.
 
-**Identidade medida:**
+**Identidade medida — da tela CANÔNICA** `[MEDIDO 2026-08-28]`:
 
 | campo | valor |
 |---|---|
-| `screenId` | `f233baf87e12403797d1c867f69ab53d` |
-| título | `S2 Símbolo - Operacional Core` |
+| `screenId` | **`8174234965cd4ffbacfb7b2a0a61a427`** |
+| título | `S2 Símbolo - Operacional Core Rev. B` (escolhido pela ferramenta) |
 | `deviceType` | `DESKTOP` |
-| render | `2560 × 2048` (canvas: `1280 × 1024` em `x=1024`) |
+| render | `2560 × 2048` (canvas: `1280 × 1024` em `x=4736`) |
+| arquivo | `projects/…/files/6a64ce20577a4b9f9117949a7dec119c` |
+| gate | `verify_screen.py` **exit 0**, 0 reprovações, 1 aviso (`P5b`), 1 não-aplicável (`E3b`) |
+
+> ### ⛔ TARJA de 2026-08-28 (6ª revisão): esta tabela descrevia a tela `f233…` como "a" `S2`
+>
+> ~~| `screenId` | `f233baf87e12403797d1c867f69ab53d` | · | título | `S2 Símbolo - Operacional Core` | · | render em `x=1024` |~~
+>
+> `f233…` **continua existindo, intacta, com os 13 desvios e 24 reprovações**, e não pode ser
+> apagada (§4.1.4). Ela é **histórico**, não a `S2`. Tudo o que as seções 4.1.1 a 4.1.3 dizem
+> sobre "a tela materializada" **é sobre `f233…`** — e continua verdadeiro **sobre ela**.
 
 #### 4.1.1 O que a tela materializada ACERTOU — medido no HTML, não estimado
 
@@ -200,6 +260,40 @@ tem um único eixo de tinta. Dizer que "colide" seria inventar apoio aritmético
 conclusão que se sustenta sozinha, e é exatamente o defeito que `§1.4-quater` do
 `DESIGN_SYSTEM.md` existe para não repetir.
 
+##### ⇒ OS 13 DESVIOS, FECHADOS: a conta por desvio, com o comando `[MEDIDO 2026-08-28]`
+
+| # | desvio | `f233…` | `Rev. A` | `Rev. B` |
+|---|---|---|---|---|
+| 1 | direção em `chart-up`/`chart-down` (azul/laranja revogados) | **11** aplicados **por nome** + 2 na config | 0 | 0 |
+| 2 | redundância de forma ausente (bloco sólido) | presente | 0 | 0 |
+| 3 | numeral tingido — `text-error` | 2 | 0 | 0 |
+| 4 | selo sem o campo `idade` | ausente | 0 | 0 |
+| 5 | canal de integridade inexistente | ausente | 0 | 0 |
+| 6 | procedência como tint de cor (`*-container`) | **10** aplicados **por nome** | 0 | 0 |
+| 7 | ação é azul (`#a8c8ff` / `#4b91f1`) | 4 | 0 | 0 |
+| 8 | superfícies inventadas | 18 | 0 | 0 |
+| 9 | glassmorphism (`backdrop-blur`) | 4 | 0 | 0 |
+| 10 | **microcopy em inglês** — `LIVE`, `AS AT T`, `Documentation`, `API Status`, `lang="en"` | 5 | **3** ⛔ | **0** ✅ |
+| 11 | sino de notificação | 2 | 0 | 0 |
+| 12 | scroll vertical em painel | 1 | 0 | 0 |
+| 13 | acentuação transliterada | 3 | 0 | 0 |
+| | **desvios com contagem 0** | **0 de 13** | **12 de 13** | **13 de 13** |
+
+⚠️ **CORREÇÃO A UM NÚMERO QUE ME FOI REPASSADO, e é minha obrigação medir em vez de adotar:**
+a instrução desta rodada dizia *"os **11** de 13 desvios corrigidos"*. **É 12, não 11**
+`[MEDIDO: o script acima, n=13 desvios × 3 arquivos]`. O único desvio que a `Rev. A` **não**
+fechou foi o **10**, e ela o fechou **parcialmente** — matou `LIVE` e `AS AT T`, deixou
+`Documentation`, `API Status` e `lang="en"`. Não corrijo por pedantismo: **"11 de 13" implica dois
+desvios abertos, e um deles seria invisível** — quem fosse conferir procuraria um segundo defeito
+que não existe, e a busca terminaria em "não achei", que é indistinguível de "não olhei".
+
+⚠️ **E um `[MEDIDO]` deste arquivo que NÃO reproduz exatamente:** §4.1.3 diz *"12 referências POR
+NOME"* de `chart-up`/`chart-down`. **Medi 11** aplicadas + 2 na config
+(`grep -o 'chart-up\|chart-down'` fora do bloco `tailwind.config`). Diferença de **1**, o
+argumento é **idêntico** (a paleta está centralizada, trocar 2 valores corrige N marcas) e a
+decisão que ele sustentou está certa. Registro porque **número publicado que não reproduz já é
+defeito conhecido deste repositório**, mesmo quando é inócuo.
+
 #### 4.1.3 EDITAR ou GERAR NOVA — a decisão, e a medição que a decidiu
 
 **Decisão: EDITAR.** `edit_screens` sobre `f233baf87e12403797d1c867f69ab53d`, com o §9 verbatim
@@ -240,6 +334,56 @@ valendo.
 **E `R7` pesa aqui:** `S2` é núcleo operacional. Descartar uma `S2` materializada que acerta 13
 coisas para consertar 13 outras é uma mudança maior do que consertar — e mudança em `S2` é
 BLOCKER por default.
+
+#### 4.1.4 O QUE "PROMOVER" VIROU MECANICAMENTE — e por que não foi um rename `[MEDIDO 2026-08-28]`
+
+`R7` foi liberado pelo owner (*"ok, pode seguir com as sugestões, considere aprovado"*). A
+pergunta que sobrou é **o que promover SIGNIFICA nesta ferramenta**, e a resposta é medida:
+
+**A promoção NÃO É um ato no Stitch, porque o Stitch não expõe nenhuma operação de identidade de
+tela.** O inventário completo de tools que tocam tela é:
+
+| tool | o que faz | toca identidade? |
+|---|---|---|
+| `generate_screen_from_text` | **cria** tela nova | não (título é derivado) |
+| `edit_screens` | edita — e **bifurca**, criando tela nova (§5.3) | não |
+| `generate_variants` | **cria** variantes | não |
+| `apply_design_system` | reaplica tokens em instâncias | não |
+
+⇒ **não há `delete_screen`, não há `rename_screen`, não há `update_screen`.** As duas ações que a
+palavra "promover" sugere — **renomear a boa** e **apagar a velha** — são **as duas inexecutáveis**.
+`[MEDIDO: o schema do MCP, 15 tools, nenhuma com verbo de mutação de título ou de remoção de tela]`
+
+**Portanto a promoção é DOCUMENTAL, e foi desenhada para ser mais forte do que um rename seria:**
+
+1. **§4.1.0 nomeia o `screenId` canônico**, com a tabela das três e o número de reprovações de cada.
+2. **A linha 4 do cabeçalho carrega o id**, não só a contagem — primazia. É o mesmo argumento de
+   posição que moveu o item 16 do §9 para o topo na 5ª revisão: o leitor futuro lê o cabeçalho,
+   não a seção 4.
+3. **A `f233…` e a `Rev. A` ficam rotuladas como REVOGADAS, com o número** (24 e 4 contra 0), em
+   tarja — `R11`: erro se tarja, não se apaga. Aqui a tarja é literalmente a única opção, porque
+   apagar é impossível.
+4. **A identidade passou a ser uma REGRA, não um retrato** (§4.1.0): identidade é o `screenId`;
+   título é ruído gerado pela ferramenta; e o discriminante executável é `verify_screen.py` → exit 0.
+
+**Por que isso é melhor que o rename que o owner supôs, e não só um substituto:** um rename
+deixaria três títulos separados por **6 caracteres** (`""`, `" Rev. A"`, `" Rev. B"`) — que é
+exatamente a armadilha de confusão que já custou reler o id errado. A regra de identidade **remove
+a autoridade do título**, então a armadilha deixa de existir mesmo com os títulos parecidos.
+
+⚠️ **O que a promoção NÃO conseguiu, e fica declarado:** **o canvas do Stitch continua ambíguo
+para quem o abrir sem este documento.** As três telas ficam lado a lado, e a **defeituosa é a
+primeira em ordem de leitura** (`x`: `f233…` 1024 → `Rev. A` 3392 → `Rev. B` 4736)
+`[MEDIDO: get_project.screenInstances]`. Não há como marcar a canônica **dentro** do Stitch.
+**Falsificador / condição de expirar:** se o MCP ganhar `delete_screen` ou um campo de título
+gravável, esta seção expira e a limpeza passa a ser executável em um comando.
+
+⚠️ **Uma opção que EU RECUSEI, e o motivo:** pedir ao gerador, no prompt, que escrevesse um título
+canônico. **Não fiz, e não é timidez:** o título do *screen* não é um campo que o prompt endereça
+(prova: pedi `<title>` do **documento** e obtive; o título do *screen* saiu `Rev. B` de qualquer
+forma), e instruir um gerador de UI a "nomear a tela" tem risco real de virar **texto renderizado
+na tela** — que seria uma regressão de conteúdo contra uma linha de base de 0 reprovações.
+Custo de tentar: uma regressão possível num artefato aprovado. Benefício: cosmético no canvas.
 
 **Job:** *olhar uma série contra o preço e afirmar o que ela significa.*
 
@@ -705,6 +849,64 @@ de severidade tem de medir **uso aplicado**, nunca presença do literal. Ver §8
 
 ---
 
+#### AS TRÊS LIMITAÇÕES DE FERRAMENTA, juntas — porque a terceira só apareceu na 6ª revisão
+
+| # | limitação | medição | mitigação que FUNCIONA |
+|---|---|---|---|
+| 1 | **`roundness` é obrigatório e não tem valor `0px`** | `update_design_system` sem o campo ⇒ `"invalid argument"`; menor enum não-deprecado = `ROUND_FOUR` | **prosa** do `designMd`: `0334…` diz *"Cantos Retos (0px)"* e a tela obedeceu |
+| 2 | **a escada de `error` é inexpurgável** | ver o bloco abaixo | **prosa**: `text-error` aplicado caiu de **2 → 0** |
+| 3 | **não existe operação de identidade de tela** — nem apagar, nem renomear | os 15 tools do MCP; nenhum verbo de remoção ou de título (§4.1.4) | **documento**: a identidade é o `screenId` em §4.1.0, e o título perde autoridade |
+
+**O padrão das três é o mesmo, e vale mais que as três:** o esquema do Stitch **impõe** decisões que
+esta governança proíbe, e **a prosa vence o esquema em duas de três**. A terceira não tem mitigação
+técnica nenhuma — só documental. ⇒ **a régua para julgar a ferramenta não é "ela obedece?", é "o
+que ela impõe é reversível por prosa?"**
+
+#### ⇒ FECHADO: `error: #ffb4ab` NÃO É OMISSÍVEL, e a pergunta estava mal-posta `[MEDIDO 2026-08-28]`
+
+Ficava `[NÃO SEI]` *"se o esquema permite omitir"* o token de `error`, com a instrução de **sondar
+num asset descartável**. **A sonda não foi feita, e a razão é que ela não discrimina nada — o que
+faltava era ler o esquema:**
+
+**1. Não há campo de entrada para omitir.** `DesignTheme` aceita: `colorMode` · `colorVariant` ·
+`customColor` · `designMd` · `headlineFont` · `bodyFont` · `labelFont` ·
+`overrideNeutral/Primary/Secondary/TertiaryColor` · `roundness` · `spacing` · `typography`.
+**Não existe `error`, não existe `overrideErrorColor`.** ⇒ *"omitir `error`"* não é uma operação
+mal-sucedida: **não é uma operação.** `error` é **saída** do sistema de cor dinâmica, não entrada.
+
+**2. E ele é INVARIANTE sob toda entrada que o esquema expõe** `[MEDIDO: list_design_systems,
+n=3 assets derivados]`:
+
+```
+asset      semente / variante                    escada de error
+0334…      #131722  FIDELITY                     #ffb4ab · #690005 · #93000a · #ffdad6
+95d1… v2   #8b949e  FIDELITY                     #ffb4ab · #690005 · #93000a · #ffdad6
+15706… v2  #8b949e  MONOCHROME + 3 overrides     #ffb4ab · #690005 · #93000a · #ffdad6
+                    acromáticos + neutral        <== IDÊNTICA, com starvation total
+```
+
+**Três sementes diferentes, duas variantes diferentes, starvation completa dos três slots de
+acento — e os quatro valores de `error` são byte-idênticos nos três.** Nenhuma entrada disponível
+o move.
+
+**3. O único asset SEM a escada é `483322…`** — e ele não tem `namedColors` nenhum, porque **nunca
+foi derivado**. ⇒ **"sem `error`" e "governa uma geração" são mutuamente exclusivos** com esta
+ferramenta: a derivação é o que produz os tokens, e é também o que produz o `error`.
+
+**4. E a prosa NÃO suprime, ao contrário das limitações 1 e 2 da tabela acima.** `483322…` diz
+literalmente *"Nao existe token de severidade"* — e o asset derivado `0334…` **tem a escada
+completa**. `[MEDIDO]` ⚠️ **A força desta afirmação depende da hipótese de §5.2 de que `0334…` é a
+derivação de `483322…`, que continua `[NÃO SEI]` no mecanismo.** Independente da hipótese, o item 2
+(invariância sob n=3) se sustenta sozinho.
+
+⇒ **É limitação de ferramenta, ao lado de `roundness`, e a defesa é a mesma e é medida: o token
+declarado não é defeito; o defeito é o USO, e o uso está em 0.** `[MEDIDO: 'text-error' aplicado —
+`f233…` 2 · `Rev. A` 0 · `Rev. B` 0]`
+**Falsificador:** se uma versão futura do MCP expuser `overrideErrorColor`, ou se aparecer um asset
+derivado sem a escada, este bloco expira.
+
+---
+
 ### 5.3 A ESCADA DE LEITURA — cinco degraus, e ela substitui a regra que estava errada `[5ª revisão]`
 
 A regra antiga (*"`create_*` devolve asset ⇒ persistiu; `update_*` devolve `sessions/…` ⇒ não
@@ -728,6 +930,66 @@ confie"*) diagnosticava a ferramenta. **O defeito era no método de leitura.** S
 > onde o resultado aparece* — quando a ferramenta bifurca, **é `get_project.screenInstances` que
 > tem de ser lido**, e a tarja do cabeçalho deste arquivo **já dizia exatamente isso** sobre
 > `list_screens`.
+
+---
+
+### 5.3-bis `edit_screens` TEM DOIS MODOS, e um deles NÃO PERSISTE `[MEDIDO 2026-08-28]`
+
+A 5ª revisão concluiu *"`edit_screens` NÃO edita no lugar — ele BIFURCA"*. **Está certo, mas é
+estreito demais: a ferramenta tem dois comportamentos observados, e eles se distinguem pela
+resposta.**
+
+| | **modo A — operação de DOM** | **modo B — regeneração** |
+|---|---|---|
+| resposta | **rápida** (segundos), `sessionEvent` com `payload_type: DomOperationEvent` e uma lista de `dom_operations` (`set_attribute`, `replace_content`, `remove_element`), cada uma com `selector` e `verified_html_context` | **timeout do tool** (a chamada estoura antes de responder) |
+| `screen_id` na resposta | o **mesmo** que eu enviei (`7c81…`) | — |
+| tela nova criada | **nenhuma** | **sim** — `8174…`, título `Rev. B` (auto-incremento) |
+| **persistiu?** | **NÃO** | **SIM** |
+
+**A medição do modo A, e ela é o ponto:** a resposta descreveu três operações corretas, com
+`verified_html_context` citando o HTML real (`<html class="dark" lang="en">`) — ou seja, **leu a
+tela certa e calculou o patch certo**. E então:
+
+```
+t+1min   list_screens          => 2 telas, mesmos ids, mesmo files/3e5b80ce…
+t+1min   curl do HTML          => md5 2efd7fdf… == IDENTICO ao pre-edicao
+t+1..5m  9 leituras a cada 30s => md5 INALTERADO nas nove
+t+7min   list_screens (novo)   => mesmo content-id html_9646397a…
+t+7min   get_screen (o `name` que eu escrevi) => mesmo arquivo
+t+7min   screenshot renderizado no servidor   => rodape AINDA com os dois links
+t+11min  segunda chamada       => bifurcou e persistiu (modo B)
+```
+
+⇒ **três recursos independentes** (bytes do HTML, ponteiro do arquivo, screenshot renderizado
+server-side), **~11 minutos**, **>2× o horizonte que a ferramenta declara para si** (~5 min).
+**A conclusão sustentada é: o modo A relatou operações que não chegaram ao arquivo da tela.**
+
+⚠️ **E o que NÃO está provado, porque o degrau 5 existe:** `[NÃO SEI]` **para onde** as operações
+do modo A foram. A resposta trouxe `sessionId` e as operações vieram embrulhadas num
+`sessionEvent` ⇒ **hipótese:** existem num rascunho de sessão que **nenhum tool deste MCP lê**
+(não há `get_session`). Se for isso, não é "a escrita falhou": é **"a escrita foi para um objeto
+que eu não consigo ler"** — que é a **mesma família** do `get_project.designTheme` do degrau 1,
+num objeto novo. **Não afirmo qual das duas, porque não tenho leitura que discrimine.**
+
+#### O DEGRAU 6, e ele é o único que faltava
+
+> **6 — DUAS RESPOSTAS DIFERENTES PARA A MESMA CHAMADA SÃO DOIS MODOS, NÃO RUÍDO.**
+> Quando o tool responde **rápido e descrevendo o que fez**, desconfie mais, não menos: no modo A
+> a resposta era *mais informativa* que no modo B (que só deu timeout) **e era a que não valia**.
+> **Riqueza de resposta não é evidência de efeito.** É a mesma lição do "200 ecoando o tema
+> inteiro" da 4ª revisão — e ela reapareceu num tool diferente, com uma roupa diferente, 3 dias
+> depois. ⇒ o predicado operacional é **um só**: *o artefato mudou?* Nada além disso conta.
+
+**Consequência prática, e é uma regra de operação:** depois de `edit_screens`, **se a resposta
+vier rápida com `DomOperationEvent`, trate como NÃO APLICADO** e re-emita a chamada pedindo
+explicitamente a reescrita do arquivo. Foi o que funcionou: a segunda chamada carregava
+*"Uma tentativa anterior desta MESMA correcao relatou tres operacoes de DOM e o arquivo da tela
+permaneceu BYTE-IDENTICO … REESCREVA O ARQUIVO DA TELA por completo, em vez de emitir operacoes
+pontuais de DOM"* — e ela regenerou e persistiu.
+⚠️ **`[NÃO SEI]` se foi ESSA frase que mudou o modo** ou se o modo é não-determinístico. **Duas
+variáveis mudaram entre as chamadas** (o texto e a tentativa), então não atribuo causa. **O
+experimento de uma variável está desenhado e não foi feito:** repetir uma edição trivial **sem** a
+frase e ver se o modo A volta.
 
 ---
 
@@ -1018,9 +1280,151 @@ chegaram JUNTOS, numa ÚNICA passada de ≈29 KB.** A costura nunca precisou ser
    (§5.2), **e a remoção na origem custa `ROUND_FOUR`**, o que a torna um `BLOCKER` de ferramenta.
 3. **`borderRadius.DEFAULT: 0.25rem`** declarado e não aplicado a container.
 
-⇒ **`Rev. A` NÃO é um redesenho e NÃO é a `S2` do canvas.** A `S2` original (`f233…`) segue
-intacta, com os 13 desvios. **Nada foi decidido sobre promover a `Rev. A` — é `R7`, é BLOCKER, e
-escala ao owner.**
+> ### ⛔ TARJA de 2026-08-28 (6ª revisão): os itens 1 e 3 desta lista mudaram de estado
+>
+> **Item 1 (`Documentation` + `API Status`) está FECHADO** — e não na `Rev. A`: numa tela nova,
+> `Rev. B` (`8174…`), porque `edit_screens` bifurcou (§5.3-bis).
+> **Item 3 (`borderRadius.DEFAULT: 0.25rem` declarado e não aplicado) continua** — declarado no
+> `tailwind.config` da `Rev. B` e aplicado a container nenhum. Munição, não defeito.
+> **Item 2 (bege + escada de `error`) continua, e agora está EXPLICADO e fechado como limitação de
+> ferramenta**, não como pendência de design — ver §5.2.
+>
+> ~~⇒ **`Rev. A` NÃO é um redesenho e NÃO é a `S2` do canvas.** A `S2` original (`f233…`) segue
+> intacta, com os 13 desvios. **Nada foi decidido sobre promover a `Rev. A` — é `R7`, é BLOCKER, e
+> escala ao owner.**~~
+>
+> **Escalou, e o owner liberou** (*"ok, pode seguir com as sugestões, considere aprovado"*,
+> 2026-08-28). A `S2` do canvas passa a ser `8174…` — **`Rev. A` também não é a `S2`**, e por um
+> motivo que não estava previsto aqui: ela foi **superada**, não promovida. Ver §4.1.0 e §4.1.4.
+
+⇒ **`Rev. A` NÃO é um redesenho.** A `S2` original (`f233…`) segue intacta, com os 13 desvios, e a
+`Rev. A` segue intacta com 4 reprovações. **As duas são histórico inapagável** (§4.1.4).
+
+---
+
+## 8.3 Registro da 6ª rodada (2026-08-28) — o rodapé, o idioma e a promoção
+
+**Autorização:** o owner liberou `R7` — *"ok, pode seguir com as sugestões, considere aprovado"*
+`[PREMISSA-OWNER: 2026-08-28, citação literal]`.
+
+### Os critérios foram PRÉ-REGISTRADOS, antes da chamada
+
+Escritos em arquivo antes de tocar o Stitch, para que "passou" não fosse decidido depois de ver o
+resultado:
+
+| # | critério | resultado |
+|---|---|---|
+| `C1` | `verify_screen.py` na saída ⇒ exit 0, **zero** reprovações | ✅ **0 reprovações, exit 0** |
+| `C2` | reprovações da saída ⊆ {`Documentation`, `API Status`} ⇒ **qualquer reprovação NOVA é regressão** | ✅ conjunto vazio |
+| `C3` | preservações intactas: `klines_last` · `structure_detection` · `taker_buy` · `stroke-dasharray` · `MAINNET` · `P5` | ✅ nenhuma virou reprovação |
+| `C4` | `E2` CHEIO>0, VAZADO>0, AMBÍGUO==0, PINTADO==0 · `E4` ≥3 · `E5` glifo≥1, palavra≥1, violeta governado · `E6` idade==1 | ✅ 5 · 4 · 0 · 0 · 3 · 1 · 1 · 1 |
+| `C5` | **observação, não gate:** `lang`/`<title>` são controláveis pelo prompt? | ✅ **SÃO** ⇒ promovidos a reprovação |
+| `C6` | bifurcação esperada ⇒ ler `screenInstances`, não reler o id antigo | ✅ **bifurcou**; id novo detectado sem reler o antigo esperando mudança |
+
+### O que foi pedido, e é UMA classe de desvio, não três
+
+O desvio **10** do §4.1.2 (*"microcopy em inglês"*) nomeia cinco coisas. A `Rev. A` fechou duas.
+As três restantes eram `Documentation`, `API Status` e `lang="en"` — **e o `<title>` em inglês, que
+o desvio 10 não nomeava porque ninguém tinha olhado a aba do navegador.** Pedi as quatro numa
+chamada, e a justificativa de juntar é que **são o mesmo desvio**, não uma lista de tarefas:
+
+- `lang="en"` num documento cujo microcopy é todo pt-BR é **falha de WCAG 3.1.1 (nível A)** — o
+  leitor de tela pronuncia português com fonemas de inglês. Isto está **dentro** da autonomia
+  delegada de UI/UX, e é acessibilidade, não gosto.
+- **Custo declarado:** juntar aumentou o diff. **Falsificador nomeado antes:** se a saída
+  regredisse em qualquer preservação, o escopo extra seria o primeiro suspeito e o remédio seria
+  re-rodar só o rodapé. **Não regrediu.**
+
+### O resultado, com o diff medido
+
+```
+diff normalizado  Rev. A -> Rev. B   =  4 linhas, e são exatamente as 4 pedidas
+   <html … lang="en">                 ->  lang="pt-BR"
+   <title>… - Symbol (BTCUSDT)</title> ->  <title>cripto-strategy — Símbolo (BTCUSDT)</title>
+   -<span …>Documentation</span>
+   -<span …>API Status</span>
+```
+
+⚠️ **E isto é o achado que eu não esperava: `edit_screens` REGENEROU o arquivo inteiro e o diff
+ficou em 4 linhas.** A hipótese natural — *"regeneração re-rola a tela e arrasta drift"* — **é
+falsa neste caso**, e o que a torna falsa é falsificável: o prompt levava **15 preservações
+nomeadas** que são exatamente o que `verify_screen.py` gateia. ⇒ **a lista de preservação não é
+burocracia: é o que faz uma regeneração se comportar como um patch.**
+
+### O gate, nos três artefatos, com o comando
+
+```
+python3 scripts/verify_screen.py orig.html   =>  REPROVADO  (24 reprovacoes)   f233…
+python3 scripts/verify_screen.py revA.html   =>  REPROVADO  ( 4 reprovacoes)   7c81…
+python3 scripts/verify_screen.py revB.html   =>  APROVADO   ( 0 reprovacoes)   8174…  <== CANONICA
+```
+
+⚠️ **Os números 22 e 2 da 5ª revisão viraram 24 e 4, e não é regressão:** o verificador ganhou
+dois cheques (`N12-lang`, `N13-title`). **A extensão foi medida contra a linha de base antes de
+ser usada como gate** — `orig` e `revA` receberam **os mesmos 3 avisos**, ou seja, a extensão
+**não move o discriminante**; ela só passou a ver um defeito que os dois já tinham.
+
+### Duas correções ao próprio verificador, e uma delas era um cheque CEGO
+
+| cheque | o que estava errado | agora |
+|---|---|---|
+| `price_use` / `price_source` | procurava os **nomes de campo do `ADR-007`**, que são identificadores de esquema e **nunca foram copy de interface**. Mediam 0 nas duas telas porque **nunca deveriam medir 1** | virou `P5`: mede os literais que **de fato** carregam os dois fatos |
+| o `[NÃO SEI]` que o acompanhava | dizia *"P1 nunca poderá detectar regressão dele"* e *"`[NÃO SEI]` se §4.1.1 erra"*. **As duas falsas** | ver abaixo |
+
+**§4.1.1 NÃO erra, e o acerto não é fantasma** `[MEDIDO: cabeçalho do painel de preço, nas três telas]`:
+
+```
+candles 15m · BTCUSDT · klines_last · fonte bn-dump · uso: structure_detection · OBSERVADO
+                        ^^^^^^^^^^^                   ^^^^^^^^^^^^^^^^^^^^^^^^
+                        a FONTE do preco              o USO do preco
+```
+
+**Os dois fatos estão na tela.** E `P1` **sempre** pôde detectar regressão dos dois, porque já
+checava `klines_last` e `structure_detection`. ⇒ **era bug de verificador, não acerto fantasma** —
+das duas possibilidades acionáveis, a que se realizou foi a primeira.
+
+⚠️ **Mas apareceu uma terceira coisa, que nenhuma das duas hipóteses previa, e ela é de design:**
+o **uso** tem rótulo (`uso:`) e a **fonte não tem** — `klines_last` entra cru numa sequência
+separada por `·`, ao lado de `BTCUSDT` e de `fonte bn-dump`. **Quem não sabe que `klines_last` é um
+endpoint de kline não lê aquele token como "fonte do preço"** — e pior, o vizinho `fonte bn-dump`
+usa a palavra "fonte" para outra coisa. Entrou como **aviso `P5b`**, não reprovação: não houve
+regressão, e consertar é mudança de copy, que é variável nova. **Candidata a rodada futura, sob
+gate.**
+
+### O item 16 do §9 — a condição que destrava a deduplicação
+
+O deferimento da dedup está mantido, e o owner concordou. **A condição que o destrava, registrada
+aqui para não se perder:**
+
+> **O experimento de *tamanho × posição* PERDEU O OBJETO.** Ele exigia duas chamadas de uma
+> variável cada: (A) §9 **sem** o item 16 ⇒ isola tamanho; (B) §9 **com** o item 16 no topo ⇒
+> isola posição. **A hipótese de limite de tamanho está morta em n=3:** prompts de ≈29 KB (`Rev. A`)
+> e **24,4 KB** (`Rev. B`, medido: `wc -c` do arquivo montado) completaram e produziram tela, e a
+> `Rev. B` obedeceu **15 de 15** preservações.
+> ⇒ **a dedup do item 16 passou a ser mudança de UMA variável só** (comprimento), porque não há
+> mais experimento de tamanho a preservar. **Ela está DESTRAVADA e não foi feita** — fica para
+> quem mexer no §9 com o gate de `ux-ui-mastery` na mesa, porque §9 é o artefato mais copiado
+> deste repositório e encurtá-lo é `R8`, não prompt.
+
+### O que continua divergente entre `docs/product/` e o Stitch
+
+| # | divergência | quem consegue consertar |
+|---|---|---|
+| 1 | **§9 não prescreve `lang="pt-BR"` nem `<title>` em português.** Uma tela gerada **do zero** vai reincidir — foi assim que `f233…` e `Rev. A` nasceram com `lang="en"`. **PROPOSTA, não aplicada:** uma linha no item 16(j) e uma no item 11 | é edição do §9 ⇒ **proponho e aguardo**, não escrevo |
+| 2 | `project.designTheme` continua com a paleta **integralmente revogada** (`#2a78d6`, `#eb6834`, `#a8c8ff`, `#121315`) `[MEDIDO: get_project, 2026-08-28]` | **nenhum tool escreve esse objeto.** Não bloqueia: a geração sai de `0334…` |
+| 3 | `95d1…` v2 e `15706…` v2 seguem com `PUBLIC_SANS` e `ROUND_FOUR` | consertar custa a forma (§5.2) ⇒ **não se paga** |
+| 4 | três telas no canvas, a defeituosa primeiro na ordem de leitura | **inexecutável** — não há `delete_screen` (§4.1.4) |
+| 5 | `#d9c3ae` (bege), escada de `error` e `borderRadius.DEFAULT` **declarados e não aplicados** na `Rev. B` | munição, não defeito. Uso medido = 0 |
+| 6 | **`flat no shadows` como classes literais** no `<footer>`, nas **três** telas (3 ocorrências cada) — palavras de prosa que vazaram para o atributo `class` | inertes (não existem no Tailwind). **Achado novo desta rodada**, herdado de `f233…`; candidato a limpeza, uma variável |
+
+⚠️ **E uma divergência que não é do Stitch, é MINHA:** a definição do agente
+[`ui-designer.md`](../../.claude/agents/ui-designer.md) ainda carrega, como "guarda de domínio",
+que *"vermelho significa 'o dado quebrou', não 'o preço caiu'"*. **Essa regra foi REVOGADA pelo
+owner na 2ª revisão de 2026-08-25** (§5) — hoje direção **é** verde/vermelho da TradingView e
+integridade é violeta. **Um agente cuja guarda mais enfática está revogada é um risco ativo**: se
+eu tivesse parafraseado a minha própria definição em vez de colar o §9 verbatim, teria reinjetado
+a regra revogada no prompt. **`R3` (§9 verbatim) foi o que impediu.** ⇒ correção de
+`.claude/agents/ui-designer.md` é **proposta**, e está fora do que o owner aprovou nesta rodada.
 
 ---
 
@@ -1096,6 +1500,23 @@ escala ao owner.**
 > produziu tela** (`Rev. A`, §8.2). ⇒ **não existe hipótese de limite de tamanho a testar.** O
 > experimento passa a medir uma pergunta legítima mas **não bloqueante**: *o item 16 no topo
 > produz obediência melhor que no meio?* Isso se responde comparando saídas, não completude.
+>
+> ### 6ª revisão (2026-08-28) — o §9 NÃO MUDOU, e a dedup do item 16 está DESTRAVADA
+>
+> **Nenhuma linha deste prompt foi alterada nesta rodada.** Ele foi colado **verbatim** (`R3`) e a
+> saída passou o gate com **0 reprovações** ⇒ não há evidência para mexer nele.
+>
+> **A condição que destrava a deduplicação do item 16 está em §8.3, e em resumo:** o experimento de
+> *tamanho × posição* **perdeu o objeto** — a hipótese de limite de tamanho está morta em **n=3**
+> (≈29 KB e **24,4 KB** completaram e produziram tela), então encurtar o item 16 deixou de mexer em
+> duas variáveis e passou a mexer em **uma**. ⇒ **destravado, e deliberadamente não feito**: §9 é o
+> artefato mais copiado deste repositório e encurtá-lo é `R8` (`ADR`), não prompt.
+>
+> ⚠️ **PROPOSTA NÃO APLICADA, e é a lacuna que mais provavelmente reincide:** o §9 **não prescreve
+> `lang="pt-BR"` nem `<title>` em português**. As duas telas nascidas do zero saíram com
+> `lang="en"` e `<title>` em inglês — foi preciso pedir explicitamente. **Uma tela nova gerada
+> amanhã vai reincidir.** O conserto é uma linha no item 16(j) e uma no item 11; **não escrevi,
+> porque é edição do §9 e não estava no que o owner aprovou.**
 
 ```text
  16. DRIFT MEDIDO — LEIA ESTE BLOCO PRIMEIRO. Ele conserva o numero 16 porque

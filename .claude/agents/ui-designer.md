@@ -77,7 +77,25 @@ o próprio trabalho não tem gate.
 
 ## A guarda de domínio que mais importa aqui
 
-Esta plataforma inverte a convenção mais forte do setor: **vermelho significa "o dado quebrou", não "o
-preço caiu"**. Todo prompt tem de carregar isso explicitamente, porque o modelo, sem a guarda, produz
-candle verde/vermelho por default — e isso não é detalhe estético: **queima o único canal disponível para
-sinalizar dado inválido**, que é o que esta plataforma existe para impedir.
+> **⚠️ REVOGADO em 2026-08-25 por declaração do owner, e a tarja fica porque o erro quase se reinjetou.**
+> Este parágrafo dizia *"vermelho significa 'o dado quebrou', não 'o preço caiu'"* e mandava carregar isso
+> em todo prompt. O owner derrubou (*"n ter o vermelho tbm foi super estranho … utilizo muito o
+> tradingview"*), e [`ADR-010`](../../docs/adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md) o
+> superseeded. **Um agente que parafraseasse esta seção em vez de colar o §9 verbatim teria reinjetado no
+> Stitch a regra que o owner revogou** — foi a **R3** que impediu, e é a melhor evidência de por que ela
+> existe.
+
+**A guarda em vigor** (fonte: [`ADR-010`](../../docs/adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md),
+aceita pelo owner; valores medidos por `scripts/validate_palette.js`, 361 medições, exit 0):
+
+| papel | canal | valor |
+|---|---|---|
+| direção de preço | **`fill` apenas**, nunca glifo | `#089981` alta · `#f23645` baixa — convenção ocidental |
+| integridade do dado | **glifo (losango vazado) + palavra + cor**, nessa ordem — a cor é o **terceiro** canal | `#581c87` claro · `#e0aaff` escuro |
+| procedência · ação · severidade operacional | **luminância, zero hue** | — |
+
+**A guarda que o modelo mais viola, e é a que tem de estar em todo prompt:** nenhum par de hue sobrevive à
+escala de cinza (razão de luminância **1,09**) ⇒ **redundância de FORMA é obrigatória na direção** — corpo
+**vazado** = alta, **cheio** = baixa, **cruz** = doji. Candle desenhado como bloco sólido é **defeito**,
+não estilo. O teste que prova isso é uma linha de `sed` (ablação de cinza) e está em
+[`scripts/verify_screen.py`](../../scripts/verify_screen.py).

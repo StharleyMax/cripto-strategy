@@ -43,16 +43,17 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 | **Q10** | ordem: monitorar / pesquisar / executar | `ABERTA` | NÃO |
 | **Q11** | owner marca o corpus? quantas horas | `ABERTA` | NÃO |
 | **Q12** | `MATIC→POL` / `RNDR→RENDER` | `ABERTA` | NÃO |
-| **Q13** | cor do candle | `ABERTA` | NÃO |
+| **Q13** | cor do candle | **`RESPONDIDA`** | NÃO — ver §Q13 (reconciliada com `SPEC-001:649` em 2026-08-28) |
 | **Q14** | idioma da UI | `INFERÍVEL` | NÃO |
 | **Q15** | ToS dos fornecedores | `ABERTA` | NÃO por si |
-| **Q16** | dono de `charts`/`web` + regra em `frontend/` | `ABERTA` | NÃO (de dado) |
+| **Q16** | dono de `charts`/`web` + regra em `frontend/` | **`RESPONDIDA`** 2026-08-28 | NÃO (de dado) — o relógio de retrabalho **parou** |
 | **Q17** | spread: medir ou assumir | **`RESPONDIDA COM RESÍDUO`** | **SIM — capture-or-lose** |
 | **Q18** | profundidade do backfill de `metrics` | `ABERTA` | NÃO |
 | **Q19** | `availability_probe_set` | `ABERTA` | **SIM** |
 | **Q20** | SMC, pivôs+Fibonacci, ou os dois | **`ABERTA` (nova em R2)** | NÃO |
 
-**Contagem: 20 · 13 `ABERTA` · 3 `INFERÍVEL` · 2 `RESPONDIDA COM RESÍDUO` · 1 `MORTA` · 1 nova em R2.**
+**Contagem: 20 · 11 `ABERTA` · 3 `INFERÍVEL` · 3 `RESPONDIDA` · 2 `RESPONDIDA COM RESÍDUO` · 1 `MORTA`.**
+*(Atualizada em 2026-08-28: `Q16` respondida pelo owner; `Q13` reconciliada contra `SPEC-001:649`, que já a registrava `RESPONDIDA` desde 2026-08-25 — a divergência era deste arquivo.)*
 **Capture-or-lose: `Q1`, `Q2` (herdado), `Q17`, `Q19`** — e `Q5` saiu dessa classe quando `!forceOrder@arr` foi confirmado.
 
 ---
@@ -337,7 +338,7 @@ instância `postgres:15` que já está de pé** — sem daemon novo, ao custo de
 
 ---
 
-### Q13 · `ABERTA` · Esquema de cor do candle: convencional (verde/vermelho) ou divergente (azul/laranja)?
+### Q13 · **`RESPONDIDA` em 2026-08-25** (registrada aqui em 2026-08-28) · Esquema de cor do candle: convencional (verde/vermelho) ou divergente (azul/laranja)?
 
 **(a)** Qual dos dois, sabendo que o convencional exige **codificação secundária obrigatória**?
 
@@ -345,7 +346,19 @@ instância `postgres:15` que já está de pé** — sem daemon novo, ao custo de
 
 **(c) Trava:** a alocação de cor da plataforma inteira, e como "dado quebrado" é sinalizado sem colidir com "preço caiu".
 
-**(d) RELÓGIO: NÃO.** **Requisito que torna a resposta tardia barata: cor é token nomeado POR PAPEL desde a primeira linha de CSS** ⇒ trocar o esquema é trocar 2 tokens.
+**(d) RELÓGIO: NÃO.** **Requisito que torna a resposta tardia barata: cor é token nomeado POR PAPEL desde a primeira linha de CSS** ⇒ trocar o esquema é trocar tokens, não CSS espalhado. **⚠️ O "2 tokens" que esta linha dizia estava ERRADO e foi corrigido em 2026-08-28:** o custo medido é **25 tokens · 4 valores com `hue` · 361 medições** (`SPEC-001:548`, `ADR-010` §5/`E-2`). `[MEDIDO]`
+
+**✅ RESPOSTA DO OWNER (2026-08-25) — registrada AQUI só em 2026-08-28, e o atraso é o defeito:**
+**convenção ocidental (verde/vermelho)**, com a codificação secundária obrigatória que `(b)` exige.
+Consolidada em [`ADR-010`](adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md) (**`ACEITO pelo owner em
+2026-08-25`**, supersede `SPEC-001` §6.2) e já refletida em `SPEC-001:649`.
+
+> **Por que este bloco existe.** Entre 2026-08-25 e 2026-08-28 a `SPEC` dizia **`RESPONDIDA`** e este
+> arquivo — que se declara **fonte única de estado** — dizia **`ABERTA`**. Duas superfícies discordando
+> sobre o estado de uma decisão do owner é exatamente o defeito que o §"colisão de numeração" deste
+> arquivo existe para não repetir. **A divergência era daqui, não da SPEC.** Encontrada por
+> `grep -n Q13` nas duas superfícies durante a orquestração de `/workflow` em 2026-08-28.
+> `SPEC-001` §12/`ADR-010` seguem valendo: `critical` **fora do canal de cor**.
 
 ---
 
@@ -375,7 +388,7 @@ instância `postgres:15` que já está de pé** — sem daemon novo, ao custo de
 
 ---
 
-### Q16 · `ABERTA` · `charts` e `web` têm dono de julgamento, e `frontend/` ganha regra?
+### Q16 · **`RESPONDIDA` em 2026-08-28** · `charts` e `web` têm dono de julgamento, e `frontend/` ganha regra?
 
 **(a)** Escrever a entrada em `[agents.by_component]` para `charts`/`web`, e decidir se `frontend/` recebe globs TS + pack — ou **re-declarar a lacuna explicitamente**.
 
@@ -385,6 +398,37 @@ instância `postgres:15` que já está de pé** — sem daemon novo, ao custo de
 **(c) Trava:** nada de dado. Trava **a revisão da primeira linha de frontend** — e é exatamente lá que **todo o sistema de honestidade do dado especificado nesta rodada vai morar**.
 
 **(d) RELÓGIO: NÃO** (de dado). **Relógio de retrabalho: antes do primeiro `.tsx`.** Descobrir depois de 3.000 linhas de Next.js é o cenário caro.
+
+**✅ RESPOSTA DO OWNER (2026-08-28), escolhida de um conjunto enumerado durante a orquestração de
+`/workflow`. Declaração literal da opção selecionada:**
+
+> **`charts` → `quant-architect` · `web` → `ui-designer`**
+
+`[PREMISSA-OWNER: 2026-08-28]`
+
+**O critério que a resposta aplica é CLASSE DE RISCO, não camada.** `charts` carrega a honestidade do
+dado — o selo de quatro campos, a política de ausência por `nature`, `LOCF` sobre `FLOW` como **erro de
+tipo**, a âncora obrigatória de `cvd_cum` — e errar ali produz um gráfico que **mente sem avisar**. Isso
+é julgamento quantitativo. `web` carrega transporte, `knowledge_time` na URL, auth mínima e o bundle
+endereçável por conteúdo — julgamento de superfície e interação.
+
+**⚠️ Esta resposta NÃO revoga a delegação de design do `CLAUDE.md`.** O `ui-designer` continua decidindo
+UI/UX sem pedir permissão, com `ux-ui-mastery` como gate. O que `[agents.by_component]` nomeia é **dono
+de julgamento no harness** — quem responde pela revisão do componente —, e para `charts` o owner
+declarou que essa responsabilidade é do arquiteto quantitativo. **Consequência operacional a registrar
+em `T-01.3`:** toda tela de `charts` passa a ter **dois** julgamentos independentes — `quant-architect`
+sobre a fidelidade do dado, `ux-ui-mastery` sobre a interação. **Nenhum dos dois aprova o trabalho do
+outro.**
+
+**O que isto DESTRAVA:** `T-01.2` (`CST-9`) e `T-01.3` (`CST-10`), as duas únicas tasks bloqueadas por
+`Q16`. **O relógio de retrabalho parou** — a resposta chegou antes do primeiro `.tsx`, que é a condição
+que `(d)` nomeava.
+
+**O que isto NÃO resolve, e continua sendo trabalho de `T-01.2`:** o fecho de `frontend/` tem **duas
+partes obrigatórias** (`(b)`), e nomear o dono é **zero** delas. Medido em 2026-08-28, inalterado:
+`harness policy --key code_paths` → `include_prefixes=["backend/src/"]`, `include_globs=["*.py"]`
+⇒ `harness rules --mode file --path frontend/src/<violador>.tsx` **continua devolvendo saída vazia**
+até `D1.3` fechar.
 
 ---
 

@@ -37,6 +37,11 @@ cat >> "$OUT" <<'JSEOF'
 // DRIFT DO STITCH — medido em 2026-08-25 (4a revisao)
 // Fonte dos valores: extracao de hex do HTML de
 //   projects/9264019151773162472/screens/f233baf87e12403797d1c867f69ab53d
+// ATENCAO (2026-08-28): essa tela esta REVOGADA e e o registro do drift, nao a S2.
+//   A S2 canonica e screens/8174234965cd4ffbacfb7b2a0a61a427 (Rev. B), APROVADA com
+//   0 reprovacoes em scripts/verify_screen.py. Ver STITCH_CONTEXT.md 4.1.0.
+//   Este bloco mede o DRIFT HISTORICO e por isso continua apontando para f233 de proposito:
+//   trocar a fonte aqui apagaria a medicao que justifica a governanca.
 // ==================================================================
 
 const linha = (r) => console.log(r);

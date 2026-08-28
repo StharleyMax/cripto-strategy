@@ -2,6 +2,19 @@
 
 **Data:** 2026-08-25 (**terceira** revisão do dia) · **Deriva de:** [`ADR-010`](../adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md) · [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §6 · `CA-F4-10` · plano [`05`](../plans/SPEC-001-plataforma-dados/05_fatia_visivel.md) D5.6
 **Status:** **§1 REVISADO na 3ª rodada** — tritanopia MEDIDA, o violeta TROCADO nos dois modos, `--foco` declarado.
+**6ª rodada (2026-08-28):** **nada de cor mudou de novo** — os 25 tokens e as 361 medições são os
+mesmos, `node scripts/validate_palette.js` continua `exit 0`. O que mudou é **ferramenta e estado**,
+e está em `STITCH_CONTEXT.md`: (a) a `S2` canônica passou a ser `8174234965cd4ffbacfb7b2a0a61a427`
+(`Rev. B`), **APROVADA com 0 reprovações** em `python3 scripts/verify_screen.py`, contra 4 da
+`Rev. A` e 24 da tela original — **13 de 13 desvios fechados**; (b) apareceu a **terceira limitação
+de ferramenta**, e é a única sem mitigação técnica: **não existe operação de apagar nem de renomear
+tela**, logo a identidade da `S2` é documental (§4.1.4); (c) a escada de `error` foi **fechada como
+inexpurgável com prova estrutural** — não há campo de entrada para ela no esquema e ela é
+**byte-idêntica em 3 assets derivados** com sementes e variantes diferentes (§5.2); (d)
+`edit_screens` tem **dois modos**, e o que responde rápido descrevendo o patch **não persiste**
+(§5.3-bis). ⚠️ **A afirmação desta página de que a escada de `error` é "inexpurgável do esquema"
+estava certa e agora tem o comando e o `n`.**
+
 **5ª rodada (2026-08-25, reabertura sob gate `REPROVADO`):** nada de cor mudou — **os 25 tokens e as
 361 medições são os mesmos, `node scripts/validate_palette.js` continua `exit 0`.** O que se aprendeu
 é sobre a **FERRAMENTA**, e está em `STITCH_CONTEXT.md` §5.2/§5.3: `update_design_system` **regenera**

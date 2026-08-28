@@ -71,11 +71,49 @@ def main(path):
     # -- P1..P4  PRESERVACOES, derivadas da lista de acertos --
     for tok in ["klines_last", "structure_detection", "taker_buy", "stroke-dasharray", "MAINNET"]:
         if not re.search(re.escape(tok), src): reprova("P-preservacao", f"{tok!r} AUSENTE (regressao)")
-    # price_use/price_source: MEDIDO ausente nas duas telas de 2026-08-25 => nao reprova, AVISA.
-    for tok in ["price_use", "price_source"]:
-        if not re.search(tok, src):
-            avisa("P-preservacao", f"{tok!r} ausente. MEDIDO ausente tambem em f233 e Rev.A "
-                                   f"=> P1 nunca pudera detectar regressao dele. [NAO SEI] se 4.1.1 erra")
+    # -- P5  price_source X price_use: RESOLVIDO em 2026-08-28. Ver a TARJA abaixo.
+    #
+    # TARJA: este bloco dizia
+    #   ~~for tok in ["price_use","price_source"]: ... "P1 nunca pudera detectar regressao dele.
+    #     [NAO SEI] se 4.1.1 erra"~~
+    # As DUAS afirmacoes eram falsas, e o defeito era NESTE arquivo, nao na tela:
+    #   - procurava os NOMES DE CAMPO do ADR-007 (`price_use` / `price_source`), que sao
+    #     identificadores de esquema e nunca foram copy de interface. Medem 0 nas duas telas
+    #     porque nunca deveriam medir 1.
+    #   - `4.1.1` NAO erra. Os dois fatos estao na tela, medidos no cabecalho do painel de preco:
+    #       candles 15m · BTCUSDT · klines_last · fonte bn-dump · uso: structure_detection
+    #     `klines_last` E a fonte de preco; `uso: structure_detection` E o uso.
+    #   - e P1 SEMPRE pudera detectar regressao dos dois, porque ja checa os dois literais que
+    #     de fato os carregam. A cobertura existia; o cheque redundante e que estava cego.
+    # O que sobra e uma ASSIMETRIA DE ROTULO, e ela e observacao, nao reprovacao (ver P5b).
+    if re.search(r'klines_last', src) and re.search(r'uso:\s*structure_detection', src):
+        print("P5 price_source E price_use: os dois declarados no cabecalho do painel de preco")
+    else:
+        reprova("P5-preco", "fonte de preco e/ou uso de preco deixaram de ser declarados JUNTOS "
+                            "(ADR-007). Medido presente em f233 e em Rev.A")
+    # P5b  o `uso` tem rotulo (`uso:`); a FONTE nao tem — `klines_last` entra cru numa
+    # sequencia separada por `·`, ao lado de `BTCUSDT` e `fonte bn-dump`. Quem nao sabe que
+    # `klines_last` e um endpoint de kline nao le aquele token como "fonte do preco".
+    # NAO e reprovacao: nao houve regressao e mexer nisto e mudanca de copy (variavel nova).
+    if re.search(r'klines_last', src) and not re.search(r'(fonte|source)\s*:?\s*klines_last', src):
+        avisa("P5b-rotulo", "`klines_last` aparece SEM rotulo de fonte enquanto o uso aparece com "
+                            "`uso:`. Assimetria de rotulo: candidata a rodada futura, sob gate")
+
+    # -- N12/N13  IDIOMA DO DOCUMENTO: mesma classe de defeito que (j), fora do corpo visivel.
+    # Entraram como AVISO em 2026-08-28 e foram PROMOVIDOS A REPROVACAO na mesma rodada,
+    # pela condicao pre-registrada: `[NAO SEI]` se estavam sob controle do prompt. Ficou MEDIDO
+    # que estao — a Rev. B escreveu `lang="pt-BR"` e o <title> acentuado a pedido, e o diff
+    # normalizado contra a Rev. A tem 4 linhas e nenhuma outra. `[NAO SEI]` virou `[MEDIDO]`,
+    # entao o cheque virou gate. Se um dia o Stitch passar a sobrescrever `lang` por conta
+    # propria, isto reprova sem culpa do design e o remedio e rebaixar de volta, com o comando.
+    m_lang = re.search(r'<html[^>]*\blang="([^"]+)"', src)
+    if m_lang and not m_lang.group(1).lower().startswith("pt"):
+        reprova("N12-lang", f'lang="{m_lang.group(1)}" num documento cujo microcopy e todo pt-BR. '
+                            f'SC 3.1.1 (nivel A): leitor de tela pronuncia pt com fonemas de en')
+    m_tit = re.search(r'<title>([^<]*)</title>', src)
+    if m_tit and re.search(r'\bSymbol\b|\bChart\b|\bPrice\b', m_tit.group(1)):
+        reprova("N13-title", f'<title>{m_tit.group(1)}</title> em ingles: e a MESMA classe do '
+                             f'desvio (j), num lugar que o §9 nao nomeia porque nao e corpo visivel')
 
     # -- E1  SUPERFICIES: as tres, e so as tres --
     for sup in SUPERFICIES:
