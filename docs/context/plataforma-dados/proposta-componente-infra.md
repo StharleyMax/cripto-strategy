@@ -101,8 +101,15 @@ Adiar não é arquivar. A diferença é que o gatilho fica escrito e verificáve
 > **(a)** um diretório de infraestrutura executável passar a existir neste repositório (`deploy/`,
 > compose, reverse proxy, TLS) — porque aí o buraco de `code_paths` deixa de ser hipótese e vira
 > arquivo em disco; **ou**
-> **(b)** um item de plano precisar declarar componente e **nenhum dos seis servir sem forçar** —
-> o marcador `[COMPONENTE-ALVO FORÇADO]` reaparecendo em um plano é a evidência, e ela é grep.
+> **(b)** um item de plano precisar declarar componente e **nenhum dos seis servir sem forçar**.
+> A evidência é grep, **e ela precisa da linha de base escrita aqui dentro, senão não é gatilho:**
+> `grep -rc 'COMPONENTE-ALVO FORÇADO' docs/plans/SPEC-001-plataforma-dados/*.md` devolve **1** hoje
+> `[MEDIDO 2026-08-28]`, e a única ocorrência é o item `2.5` em
+> [`02_captura_sem_gate_de_host.md:16`](../../plans/SPEC-001-plataforma-dados/02_captura_sem_gate_de_host.md).
+> **Dispara quando a contagem passar de 1, ou quando o marcador aparecer em arquivo diferente desse.**
+> ⚠️ A redação anterior dizia apenas *"reaparecendo em um plano"* — e o marcador **nunca desapareceu**,
+> logo a linha de base já o disparava. Um gatilho que a própria baseline aciona não é gatilho: exigia
+> que o leitor soubesse, de fora do documento, que o esperado era 1 e não 0. `[/review, 2026-08-28]`
 
 **O argumento para adiar, e ele é o custo, não a preguiça.** Um componente não é uma string: ele é
 um nome que outras três superfícies passam a poder referenciar, e duas delas hoje estão
