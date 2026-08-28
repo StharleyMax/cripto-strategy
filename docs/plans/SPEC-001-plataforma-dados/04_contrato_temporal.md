@@ -1,7 +1,7 @@
 # Fase 04 — Contrato temporal e identidade do registro
 
 **Epic:** `CST-3` (F1, primeira metade) · **Componente alvo: `sentimento`** · **Gate: nenhum**
-**Depende de:** `01`. **Zero rede, zero API key** — todos os fixtures estão em `data/` (850 MB, `data/MANIFEST.md`).
+**Depende de:** **`T-01.1`** (o runner), não da fase `01` inteira — `D-1` (owner, 2026-08-28 — [registro](../../context/plataforma-dados/decisoes-de-execucao-2026-08-28.md) §2). **Zero rede, zero API key** — todos os fixtures estão em `data/` (850 MB, `data/MANIFEST.md`).
 
 **Por que existe separada de `05`:** esta fase decide se **todo** dado gravado a partir daqui nasce certo, e ela é verificável **offline**. `05` é a primeira superfície servida de um host exposto. **Duas classes de risco, dois DoD.**
 

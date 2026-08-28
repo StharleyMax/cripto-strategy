@@ -1,7 +1,7 @@
 # Fase 02 — Captura que não precisa de host 24/7
 
 **Epic:** `CST-2` (F0, primeira metade) · **Componente alvo: `sentimento`** · **Gate: `Q1` apenas**
-**Depende de:** `01` (runner)
+**Depende de:** **`T-01.1`** (o runner), não da fase `01` inteira — `D-1` (owner, 2026-08-28 — [registro](../../context/plataforma-dados/decisoes-de-execucao-2026-08-28.md) §2)
 
 **Por que existe separada de `03`:** **o gate de F0 é declarado POR COLETOR.** Os dois itens abaixo **não precisam de `Q2`** — o snapshot é um `GET` mais `gzip` (um `cron` num host que dorme perde no máximo o dia em que dormiu) e o one-shot da Coinalyze são **1.140 chamadas ≈ 28,5 min de relógio, uma vez**. Dizer *"sem `Q2`, F0 não começa"* **bloqueia a captura mais barata e de prazo mais curto por uma decisão de que ela não precisa**.
 

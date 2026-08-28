@@ -1,6 +1,6 @@
 # Fase 01 — Governança gateante
 
-**Epic:** `CST-1` (F5a) · **Componente alvo: `docs`** (+ `harness.toml`) · **Gate:** nenhum · **Fecha ANTES de 02**
+**Epic:** `CST-1` (F5a) · **Componente alvo: `docs`** (+ `harness.toml`) · **Gate:** nenhum · **Só `1.1` (o runner) fecha ANTES de `02`/`03`/`04`** — `1.2` e `1.3` fecham antes de `05`, por `D-1` (owner, 2026-08-28 — [registro](../../context/plataforma-dados/decisoes-de-execucao-2026-08-28.md) §2)
 
 **Por que primeiro:** as condições de pronto de `02` e `03` **já são testes** (`CA-F0-3` é o M-1, `CA-F0-4` é a rampa até o primeiro 429, `CA-F0-5` é matar o processo e retomar). Medido: `harness policy --key test_cmd` → **`{}`**. **Sem runner, a fase cujo dado não se recaptura termina com sete afirmações e nenhuma conferível por comando.**
 

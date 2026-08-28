@@ -47,8 +47,12 @@ repo = "git@github.com:StharleyMax/harness-plugin.git"
 # (`claude plugin update harness-plugin@harness -s project`), e por alguns minutos o shim
 # que os hooks de git resolvem reportou NAO-CONFORME (instalada v0.13.0 x pin v0.12.0)
 # enquanto o `harness` da sessão ainda reportava v0.12.0. O gate de push funcionou.
-# ⚠️ O `harness` DESTA sessão continua em v0.12.0 até reiniciar o Claude Code; os hooks
-# já estão em v0.13.0. A divergência é transitória e resolve no restart.
+# A divergência transitória que esta nota registrava — sessão em v0.12.0 e hooks em
+# v0.13.0 — RESOLVEU no restart, como previsto. Reconferido em 2026-08-28: `harness
+# version` -> 0.13.0, pin v0.13.0, `harness doctor` CONFORME, e o commit instalado
+# (ab25712d43…) é o próprio HEAD do mecanismo, que é a tag mais alta. `v0.13.0` é a
+# última: NÃO há versão nova para subir. Registro: docs/context/plataforma-dados/
+# decisoes-de-execucao-2026-08-28.md §6.
 # Histórico: v0.12.0 instalada em 2026-08-22 (commit 2233eb1).
 ref = "v0.13.0"
 
