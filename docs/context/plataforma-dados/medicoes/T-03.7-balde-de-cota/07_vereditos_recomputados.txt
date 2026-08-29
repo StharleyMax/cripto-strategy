@@ -1,0 +1,20 @@
+=== binance-futures-data  (universo: 150 degraus crus de ../.bancada/05_ramp_futures_data.jsonl)
+  conclusao                : CEILING_NOT_REACHED
+  publica um teto?         : False
+  despachadas / nao        : 150 / 0
+  aceitas/429/outros       : 150 / 0 / 0
+  429 na requisicao        : None
+  ACEITAS antes do 429     : None
+  pesos observados unicos  : ['None']
+  motivo                   : 150 requisicao(oes) despachada(s), nenhum 429: LIMITE INFERIOR de 150, nunca o limite. A rampa acabou, a cota nao
+
+=== coinalyze  (universo: 41 degraus crus de ../.bancada/06_ramp_coinalyze.jsonl)
+  conclusao                : THROTTLED
+  publica um teto?         : True
+  despachadas / nao        : 41 / 0
+  aceitas/429/outros       : 40 / 1 / 0
+  429 na requisicao        : 41
+  ACEITAS antes do 429     : 40
+  pesos observados unicos  : ['None']
+  motivo                   : 429 na requisicao 41 desta passada; 40 foram ACEITAS antes dela. O que cabe na janela e 40, nao 41
+

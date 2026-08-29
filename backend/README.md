@@ -693,6 +693,71 @@ processo pai → `RuntimeError: REDE PROIBIDA`; e um subprocesso com `PYTHONPATH
 mesmo diretório → `rc=1`, a mesma `RuntimeError`.
 O `sitecustomize.py` **não ficou na árvore** — é instrumento de medição, não código do produto.
 
+### ⚠️ `T-03.7` (2026-08-29) mudou esta seção INTEIRA — e mudou o **instrumento**, não só o número
+
+`T-03.7` (a rampa até o primeiro `429`) trouxe **o primeiro módulo de `src/` que abre soquete**:
+[`src/modules/sentimento/infra/https_quota_probe.py`](src/modules/sentimento/infra/https_quota_probe.py).
+Três afirmações desta seção envelheceram no mesmo ato, e as três estão corrigidas abaixo **com o
+comando que as re-mediu**. Nenhuma foi apagada: o texto acima continua verdadeiro **à época**.
+
+**(a) O grep publicado deixou de discriminar.** ~~3 ocorrências, universo 20~~ →
+**`[MEDIDO 2026-08-29: 113 ocorrências, universo 52`** (50 `.py`/`.sh` sob `src/`, `tests/`,
+`scripts/` mais `pyproject.toml` e `poetry.toml`)**`]`**. O salto **não** é rede: o padrão casa
+`requests`, e `T-03.7` introduziu os identificadores `blind_requests`, `max_requests` e
+`requests_done`. Classificando por **token** em vez de por linha
+`[MEDIDO 2026-08-29: `tokenize` sobre os 45 `.py` de `src/` e `tests/`]`: **6 em comentário, 30 em
+docstring, 72 em código — e dos 72, apenas 4 são de rede**, todos em `https_quota_probe.py`
+(`import http.client`, `http.client.HTTPSConnection`, e o nome `open_https_connection` duas vezes).
+**Um portão que casa `max_requests` procurando chamada de rede parou de medir o que afirma medir.**
+
+A medição que **substitui** o grep, porque discrimina o que aquele deixou de discriminar:
+
+```bash
+cd backend && grep -rlE '^(import|from) (http|socket|urllib|ssl|websocket)' src/
+# src/modules/sentimento/infra/https_quota_probe.py
+```
+
+`[MEDIDO 2026-08-29: **1 arquivo**, universo 21 `.py` sob `src/`]`. **Um módulo, e ele é `infra`.**
+A conexão real nasce em **uma linha só** (`open_https_connection`), marcada `# pragma: no cover`, e
+alcançável apenas por `infra/quota_ramp_cli.py` — que **nenhum portão chama**.
+
+**(b) A receita de amputação publicada acima QUEBROU, e quebra pelo motivo errado.** `socket.socket =
+_proibido` troca a **classe** por uma função, e `ssl` a herda (`class SSLSocket(socket)`). Enquanto
+nada importava `http.client`, ninguém notava; agora
+`[MEDIDO 2026-08-29: `TypeError: function() argument 'code' must be code, not str` **na coleta**,
+`1 error`, **zero teste rodado**]`. Um operador leria "a suíte reprova com o soquete amputado" como
+"a suíte usa rede" — e a conclusão certa é **"o instrumento se quebrou antes de medir"**.
+
+**A correção é amputar a CONEXÃO, não a classe:**
+
+```bash
+cat > backend/sitecustomize.py <<'EOF'
+import socket
+def _proibido(*a, **k): raise RuntimeError("REDE PROIBIDA: a suite tentou abrir soquete")
+socket.socket.connect = _proibido
+socket.socket.connect_ex = _proibido
+socket.create_connection = _proibido
+socket.getaddrinfo = _proibido
+EOF
+PYTHONPATH="$PWD/backend" bash backend/scripts/test.sh; rm backend/sitecustomize.py
+```
+
+**(c) E o instrumento corrigido foi auditado dos dois lados, na mesma passada**, porque guarda que
+não morde daria verde por não estar instalado:
+
+| lado | comando | resultado |
+|---|---|---|
+| **morde** | `http.client.HTTPSConnection('fapi.binance.com').request('GET', '/fapi/v1/time')` no interpretador amputado | `RuntimeError: REDE PROIBIDA` `[MEDIDO 2026-08-29]` |
+| **cala** | a suíte inteira no **mesmo** interpretador amputado | **187 passed** `[MEDIDO 2026-08-29]` |
+
+**O módulo que abre soquete existe em `src/` e a suíte continua sem tocar a rede.** É o que a
+injeção da fábrica de conexão compra: o `HttpsQuotaProbe` dos testes recebe uma `FakeConnection`, e
+a fábrica real (`open_https_connection`) só é construída pela raiz de composição do CLI.
+
+**A medição AO VIVO de `T-03.7` NÃO roda na suíte e nunca vai rodar.** Ela está registrada em
+[`docs/context/plataforma-dados/medicao-balde-de-cota-2026-08-29.md`](../docs/context/plataforma-dados/medicao-balde-de-cota-2026-08-29.md),
+com momento, IP e endpoint ao lado de cada número.
+
 `Q1` (ligar coletores) e `Q15` (ToS) continuam **ABERTAS**, e coletor não roda em portão.
 
 ## Uma cegueira do portão, medida aqui e que vale saber
