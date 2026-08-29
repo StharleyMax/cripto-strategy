@@ -1044,3 +1044,227 @@ documentada com precisão errada é pior que não documentada**.
   `.CHECKSUM`** — os dumps do bucket. **`T-02.1` (snapshot `exchangeInfo`/`fundingInfo`) e
   `T-02.2` (one-shot Coinalyze) são respostas REST, NÃO publicam `.CHECKSUM`, e NÃO devem ser
   roteadas por aqui**: aplicá-las a esta borda como está recusaria 100% do tráfego legítimo.
+
+## 📒 O registro de ingestão de F0 — `T-02.3` (`CST-14`, `ADR-008` D1+D2+D3, plano 02 itens 2.6+2.7)
+
+`md.ingest_run` e `md.ingest_gap` passam a existir **persistidos**, e a leitura deles é **uma
+única** função nomeada — `ingest_health_query` — porque `ADR-008/D3` decide que o registro cru
+de F0 (CLI) e o console S1 de F3 (`T-07.13`) são **dois consumidores da mesma verdade**.
+
+### As quatro peças, e a camada de cada uma
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/ingest_record.py` | `domain` | `IngestRun`/`IngestGap` (as colunas de `SPEC-001` §3.5), o conjunto fechado de `verdict`, e a **projeção canônica** que vira `sha256` |
+| `use_cases/ingest_health.py` | `use_cases` | **`ingest_health_query`** — a definição única — mais o `Protocol` de leitura. Nenhum consumidor conhece o motor |
+| `infra/sqlite_ingest_record_store.py` | `infra` | o adaptador durável: uma conexão por chamada, `commit` por linha |
+| `infra/ingest_health_cli.py` | `infra` | o relatório: **registrador nomeado escrevendo `stdout`**, `ADR-008/D2` |
+
+### ⚠️ O motor é SQLite e `ADR-002/D1` diz PostgreSQL — a divergência é declarada, não escondida
+
+`ADR-002/D1` põe estas duas tabelas no PostgreSQL "que já está de pé". Ela é de **F4**, está
+`proposto`, e o finalista de motor está **pendente de spike** (`D4`). Hoje o `backend` declara
+`dependencies = []` e a suíte é offline por construção — não há driver, não há daemon, e o
+plano `02` existe separado do `03` justamente porque **F0 não depende de host**.
+
+O que esta task escolheu é o **adaptador**, não a decisão. **A decisão de motor continua sendo
+de `ADR-002`**, e a pergunta está aberta e endereçada ao `quant-architect`.
+
+#### ⚠️ ERRATUM 2026-08-29 (`/review`) — "o custo da troca é **um arquivo**" estava ERRADO
+
+Era número publicado **sem o comando que o produziu**, no mesmo documento que faz disso um
+portão. O comando devolve **dois**:
+
+```
+$ grep -rln "sqlite3\|SqliteIngestRecordStore" backend/src/
+backend/src/modules/sentimento/infra/ingest_health_cli.py
+backend/src/modules/sentimento/infra/sqlite_ingest_record_store.py
+```
+`[MEDIDO 2026-08-29: **2 arquivos** em `backend/src/`, mais **5** em `backend/tests/`]`
+
+O segundo é o **CLI**, que nomeia o store concreto porque é a **raiz de composição** — compor é
+exatamente o trabalho dele, então isso não é acoplamento indevido. O número é que estava errado.
+
+**E o agravante é o que de fato decide se a troca é barata**, porque ele não aparece em
+contagem nenhuma: **só o caminho de LEITURA tem porta.** `IngestRecordSource`
+(`use_cases/ingest_health.py`) é `Protocol` e tem **3 implementadores** — o store, mais dois de
+teste que não são o store `[MEDIDO 2026-08-29: `grep -rln "def runs(self)" backend/src backend/tests`]`.
+**`initialise` / `record_run` / `record_gap` não têm porta alguma:** um segundo motor teria de
+ser introduzido contra a classe concreta.
+
+| | |
+|---|---|
+| **por que fica assim hoje** | não existe escritor de produção — porta sem implementador é cerimônia, e o repositório já recusa "enforcement declarado, não medido" pelo mesmo motivo |
+| **dono de fechar** | **`T-03.8`**, a primeira task que persiste por `ingest_run` em produção (skew por execução). É ela que traz o escritor real, e portanto a primeira que **não pode** adiar |
+| **falsificador** | se `T-03.8` conseguir escrever sem introduzir porta e sem `use_cases` conhecer `sqlite3`, a assimetria era teórica |
+
+### A bancada de mutação — verde não prova nada até algo reprovar
+
+Seis mutantes, cada um revertido e o arquivo reconferido por `sha256` antes do seguinte
+`[MEDIDO 2026-08-29, `n=6`, com `PYTHONDONTWRITEBYTECODE=1` e `__pycache__` apagado entre
+mutantes — ver o achado logo abaixo, que é o motivo dessas duas precauções]`:
+
+**A COLUNA "quem morde" CARREGA O COMANDO LITERAL, e ela não carregava até o `/review` de
+2026-08-29 cobrar.** O cabeçalho trazia o rótulo e a linha `A` trazia o comando; as outras
+cinco diziam "2 testes falham" sem dizer **quem** os rodou, que é meia medição.
+
+| # | mutante | quem morde (comando literal) | resultado |
+|---|---|---|---|
+| **A** | `print(...)` na raiz de composição do CLI | `harness rules --mode sweep` | **rc=1**, 1 achado `[BLOQUEIO] [core.print-statement]`. Árvore boa: **rc=0** |
+| **B** | o driver troca o store durável por memória | `bash backend/scripts/test.sh` | **rc=1**, 2 testes reprovados |
+| **C** | `ORDER BY started_at, run_id` → `ORDER BY run_id DESC` | `bash backend/scripts/test.sh` | **rc=1**, 3 testes reprovados |
+| **D** | duas das 15 colunas trocam de ordem no `domain` | `bash backend/scripts/test.sh` | **rc=1**, 2 testes reprovados — e ver abaixo: na 1ª passada **SOBREVIVEU** |
+| **E** | a consulta **esconde** o `verdict` inédito em vez de reprovar | `bash backend/scripts/test.sh` | **rc=1**, 2 testes reprovados |
+| **F** | `record_run` deixa de dar `COMMIT` | `bash backend/scripts/test.sh` | **rc=1**, 9 testes reprovados |
+| **G** | `ORDER BY started_at, run_id` perde o desempate | `bash backend/scripts/test.sh` | **rc=1**, 1 teste reprovado |
+| **H** | o `ORDER BY` de `md_ingest_gap` perde o desempate | `bash backend/scripts/test.sh` | **rc=1**, 1 teste reprovado |
+| **I** | `mkdir(parents=True)` → `mkdir(...)` | `bash backend/scripts/test.sh` | **rc=1**, 1 teste reprovado |
+| **J** | `logger.propagate = False` → `True` | `bash backend/scripts/test.sh` | **rc=1**, 1 teste reprovado — e ver abaixo: **SOBREVIVEU** à 1ª passada pós-conserto |
+| **K** | `VERDICTS_SPELLED_IN_THE_SPEC` perde `REJECTED` | `bash backend/scripts/test.sh` | **rc=1**, 4 testes reprovados |
+| **L** | a guarda de `_fetch` volta a ser só `path.exists()` | `bash backend/scripts/test.sh` | **rc=1**, 2 testes reprovados |
+
+**A BANCADA RECUSA MUTANTE QUE NÃO APLICOU, e isso não é detalhe de implementação.** Quando um
+conserto de idioma moveu duas linhas, a âncora do mutante `E` deixou de casar e a bancada
+imprimiu **`INERTE`** em vez de contar um resultado: um mutante que não chegou ao disco não é
+"morto" nem "sobreviveu" — é **não medido**, e é a mesma distinção `rc=3` que os scripts deste
+repositório fazem. Uma bancada que casasse silenciosamente devolveria "12 mortos" tendo aplicado
+11. A âncora foi corrigida e `E` re-rodado: `rc=1`, 2 testes reprovados.
+
+**Procedência do universo, porque ele não é todo meu:** `A`–`F` são os 6 que `T-02.3` rodou na
+entrega. `G`–`K` são os **5 que o `/qa` levantou e que SOBREVIVIAM** — todos sobre linhas com
+**100% de cobertura**, que é a demonstração de que cobertura não é medida de verificação. `L` é
+o mutante do defeito que esta rodada consertou. **Universo desta passada: 12 mutantes, 12
+mortos**, restauração conferida por `sha256` dos 25 fontes **e** por importação efetiva.
+
+#### 🔴 O mutante `D` sobreviveu na primeira passada, e o defeito era do TESTE
+
+A primeira versão do teste de colunas comparava a projeção com **a própria constante de que a
+projeção deriva** (`INGEST_HEALTH_RUN_COLUMNS`). Reordenar a constante movia **os dois lados
+da igualdade juntos**: `[MEDIDO 2026-08-29: mutante D contra o teste antigo → **17 passed**,
+rc=0]`. É a família que este repositório caça — **um controle que devolve o mesmo número dos
+dois lados não está medindo** — desta vez dentro do teste que existia para medir o contrato.
+
+O conserto é uma **transcrição independente**, copiada à mão de `ADR-008/D3` e de `SPEC-001`
+§3.5, que existe para **não ser** a constante do `domain`. Com ela, o mesmo mutante mata dois
+testes. Quem for editar as duas listas até baterem está desfazendo o conserto: o caminho certo
+é reabrir a ADR.
+
+#### 🔴 O mutante `J` sobreviveu ao PRÓPRIO CONSERTO, e o defeito era meu de novo
+
+Rodada de correção. O conserto do defeito 2 do `/qa` manda o diagnóstico desta aplicação para
+`stderr`; com isso, **`logger.propagate = False` deixou de proteger o que protegia**. Os
+registros do CLI passam a subir para o registrador `src`, cujo handler está em `stderr` — então
+`stdout` continua exatamente certo e **toda a suíte passa, inclusive os testes que o `/qa`
+escreveu para essa linha** `[MEDIDO 2026-08-29, bancada privada: mutante J → `bash
+backend/scripts/test.sh` **rc=0, 55 passed, SOBREVIVEU**]`.
+
+O que ele quebra é outra coisa, e ninguém olhava: **as 5 linhas do produto saem REPETIDAS em
+`stderr`**, com prefixo `INFO src.modules…`. Um operador que escreve `cmd >record.jsonl 2>&1`
+— o reflexo de quem põe isso em `cron` — passa a ter cada linha duas vezes no arquivo, que não
+é JSON Lines válido nem é a projeção que `ADR-008/DoD-2` compara.
+
+**Linha coberta que nenhum mutante alcança é linha que ninguém está medindo.** O conserto é o
+teste `test_the_product_never_leaks_onto_the_diagnostic_stream`, que afirma a divisão nos DOIS
+sentidos: `stdout` é a projeção **e** `stderr` não contém nenhuma linha dela.
+
+#### 🔴 E um terceiro achado, uma camada abaixo: o `.pyc` obsoleto falsifica a própria bancada
+
+Restaurar o arquivo mutado e conferir o `sha256` **não basta**. A invalidação de bytecode do
+CPython compara `(mtime em segundos, tamanho)`; um mutante que só **troca linhas de lugar**
+tem **o mesmo tamanho**, e se mutar/rodar/restaurar couber no **mesmo segundo**, o `.pyc`
+continua sendo considerado válido — o interpretador lê o **mutante** enquanto o disco já tem o
+original. Foi medido aqui: `sha256` do fonte **idêntico ao original** e
+`INGEST_HEALTH_RUN_COLUMNS[0]` importado devolvendo **`'source'`** (o valor do mutante) em vez
+de `'run_id'` `[MEDIDO 2026-08-29]`.
+
+O portão não mente — `bash backend/scripts/test.sh` reprovava de verdade. **Quem mentia era a
+bancada de mutação**, que poderia ter registrado "mutante morto" para um mutante que o
+interpretador nunca deixou de executar, ou o contrário. A bancada acima foi **inteiramente
+re-rodada** com `PYTHONDONTWRITEBYTECODE=1` e `__pycache__` apagado entre mutantes.
+
+### O que esta task NÃO fechou, nomeado
+
+| item | por quê |
+|---|---|
+| **`ADR-008/DoD-1` na forma `[[rules.own]]` + corpus** | ver o **gatilho de reabertura** logo abaixo, que é a parte que faltava |
+| **o lado TypeScript da unicidade** | o varredor é AST de Python e cobre `backend/src/`. O segundo consumidor nasce em **`T-07.13`**, e é lá que a varredura do outro lado tem dono |
+| **a 5ª forma de definição — a construída em runtime** | `setattr`, import hook, registro dinâmico. Está **fora do alcance de qualquer AST** e fica `[NÃO MEDIDO]`. As formas `def`/`class` e a de **atribuição** estão cobertas, cada uma com controle dos dois lados |
+| **`ADR-008/DoD-2` e `DoD-3` inteiros** | as duas metades de F0 estão feitas (a projeção com `sha256`, e o `verdict` inédito reprovando). A **comparação entre os dois consumidores** só é executável quando o segundo existir — `T-07.13`, `D7.17` |
+| **`janela_de_perda`** | a coluna existe na projeção e vale `null`. Ela é **fórmula por série** (`D7.12`) e o dono é `T-07.12`. Um número seco aqui é exatamente o que `D7.14` proíbe |
+
+#### 🔓 O gatilho de reabertura de `DoD-1` — e ele é comando, não memória
+
+O `/review` de 2026-08-29 **julgou a recusa e deu razão a ela por escrito**: `harness.toml:463`
+fixa *"toda `[[rules.own]]` que esta fase declarar nasce com corpus"* e `:475` diz *"Declará-la
+aqui seria escrever enforcement sem o corpus que o mede"*. Declarar a regra sem corpus violaria
+o documento, e o vácuo não ficou aberto — a unicidade é medida por **duas varreduras AST com
+controle dos dois lados** (`def`/`class`, e **atribuição**, esta última escrita pelo `/qa`).
+
+**Onde a recusa ficava abaixo do precedente:** `ADR-012/D2:100` não guardou uma dívida na
+cabeça de ninguém — escreveu um gatilho que **um comando resolve** (*"no dia em que
+`command -v shellcheck` devolver um caminho, esta decisão vence"*). Esta não tinha. Agora tem:
+
+```
+$ test -d corpus && echo "DoD-1 VOLTA À MESA" || echo "corpus ainda não existe"
+corpus ainda não existe
+```
+`[MEDIDO 2026-08-29: `ls -d corpus` → inexistente na raiz do repositório]`
+
+**No dia em que esse comando imprimir `DoD-1 VOLTA À MESA`**, a recusa vence e `DoD-1` volta na
+forma que a ADR pede: `[[rules.own]]` de `forbidden-regex` contra uma segunda definição,
+**nascendo com os casos `conforming/` e `violating/`** no corpus que passou a existir, mais
+`harness corpus verify` e `harness corpus mutate`.
+
+⚠️ **E a dívida ainda não é grepável a partir de quem a herda:** os `refs` de `T-07.13` em
+`docs/context/plataforma-dados/tasks.toml:907` **não citam `ADR-008/DoD-1` nem `DoD-2`**. Isso é
+**ato do `/tech-lead`**, não de builder — esta task não edita `tasks.toml` — e está encaminhado.
+Enquanto não for feito, este parágrafo é o único fio, e ele é mais fraco que um `ref`.
+
+### Uma pergunta de domínio que NÃO foi decidida aqui
+
+O conjunto fechado de `verdict` tem **dois** valores escritos na `SPEC-001`
+(`ACCEPTED_WITH_WARNING`, `REJECTED`) e o terceiro — `ACCEPTED` — é
+`[INFERRED: §5.6 trata `ACCEPTED_WITH_WARNING` como a variante COM AVISO de um aceite, logo um
+aceite sem aviso é pressuposto; ele nunca aparece literal em documento nenhum]`. Sem ele uma
+execução limpa não teria `verdict`. **Quem é dono da enumeração é o `quant-architect`**, e a
+pergunta está aberta.
+
+**E a inferência agora está CONTIDA, o que na entrega ela não estava.** O `/review` achou que a
+disciplina de transcrição independente tinha sido aplicada às *colunas* e **não ao enum** —
+exatamente onde mora o `[INFERRED]`. `test_every_known_verdict_passes_the_shared_query` era
+parametrizado por `sorted(KNOWN_VERDICTS)`, a mesma constante que a consulta usa para decidir:
+encolher a enumeração encolhia a parametrização e o teste seguia verde **com menos casos**
+`[MEDIDO 2026-08-29: mutante K → `bash backend/scripts/test.sh` rc=0, SOBREVIVEU]`. E
+`VERDICTS_SPELLED_IN_THE_SPEC` tinha **0 referências** fora da linha que a define: a constante
+existia e nada a cobrava.
+
+A contenção são duas linhas, e a segunda é a que importa:
+
+```python
+assert VERDICTS_SPELLED_IN_THE_SPEC == ("ACCEPTED_WITH_WARNING", "REJECTED")
+assert KNOWN_VERDICTS - set(VERDICTS_SPELLED_IN_THE_SPEC) == {"ACCEPTED"}
+```
+
+A primeira fixa o que o documento **escreve**. A segunda diz que a entrega excede o documento em
+**exatamente um** membro, e o nomeia — então **no dia em que um quarto valor entrar por
+inferência, ela reprova**. Não responde à pergunta; impede que ela seja respondida por omissão.
+
+### 🔧 Rodada de correção 2026-08-29 (`/qa` → `NEEDS_FIX`, `/review` → `COMPLIANT` com 5 avisos)
+
+| defeito | o que era | o conserto |
+|---|---|---|
+| **`D2.9` media a morte só onde ela é inofensiva** | o teste só matava depois de 10 linhas legíveis, com o schema já commitado. **Antes disso** o `SIGKILL` deixa um arquivo que **existe e tem 0 B**, e a guarda perguntava `path.exists()` → `OperationalError: no such table` `[MEDIDO pelo /qa: 6 de 40 mortes entre 1 ms e 60 ms]`. Contradizia a docstring do próprio módulo | a guarda passa a perguntar a `sqlite_master`. **Arquivo vazio e arquivo ausente são o mesmo caso semântico** e os dois lêem como registro vazio. **Sem `except`:** corrupção continua estourando sozinha `[MEDIDO, n=2 estados: 0 B → `None`; corrompido → `DatabaseError: database disk image is malformed`]` |
+| **o relatório deixava de ser a projeção em processo hospedeiro** | `propagate = False` protegia o registrador do CLI **e só ele**. Com `logging.basicConfig(stream=sys.stdout, level=INFO)` — o que um wrapper de `cron` faz — a 1ª linha do `stdout` virava `ingest_health_query_lida` | **duas metades.** (1) os diagnósticos das camadas caem para **`DEBUG`**, que é o nível cujo contrato é "desligado até alguém pedir" — conserta qualquer host em INFO, inclusive os que nunca rodam este CLI; (2) `main` manda o diagnóstico da aplicação para **`stderr`**, o que vale **em qualquer nível**, porque muda o destino e não o volume |
+| **o `D2.9` não cobria a janela pré-`COMMIT`** | a que o `< 10` excluía por construção | teste com `SIGKILL` **real** logo após o `Popen`, e a asserção é **invariante e não resultado de corrida**: não levanta, e o que volta é um **prefixo válido** — vale para os 4 estados possíveis, em vez de falhar 85% das vezes |
+
+**Idioma** — o `/review` mediu **82 de 100 linhas de comentário em português** nos 10 arquivos do
+diff, e a regra do owner (*"Assim como docstring, todo código gerado é em inglês"*) precedeu o
+commit. Traduzidos: comentários, docstrings, o identificador `inedito` → `unheard_of`, e os
+nomes de evento de log (`ingest_health_query_lida` → `ingest_health_query_read`,
+`..._persistido` → `..._persisted`). **Preservados por decisão, não por esquecimento:** os
+rótulos `[MEDIDO]`/`[NÃO MEDIDO]`/`[INFERRED]`, as **citações literais marcadas** de ADR e de
+mensagem de regra, os nomes de coluna de contrato **`janela_de_perda`** e **`window`** (vêm de
+`ADR-008/D3`; renomear quebra o consumidor de `T-07.13`), e a microcopy de operador
+`uso: ingest_health_cli <caminho-do-store>` — `SPEC-001` §3.8 reserva pt-BR **exclusivamente**
+para microcopy. Os 2 arquivos de teste do `/qa` e os 14 `test_*` pré-existentes **não** foram
+tocados: são de outro dono.
