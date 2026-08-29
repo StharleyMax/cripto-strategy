@@ -870,11 +870,22 @@ exatamente como um mês truncado entra sem ninguém ver.
 ### A bancada de mutação — `n=22`, e ela é **obrigatoriamente** com bytecode desligado
 
 `[MEDIDO 2026-08-29, ciclo 2, diretório de trabalho PRIVADO, `backend/.venv/bin/python`;
-universo = os **41 casos** de `tests/sentimento/test_checksum_at_the_ingestion_edge.py`
+universo = os **46 casos coletados** (30 funções, o resto é parametrização) de
+`tests/sentimento/test_checksum_at_the_ingestion_edge.py` na árvore de `13b960e`, onde a
+bancada rodou — `pytest <arquivo> --collect-only -q` → `46`, `grep -c "^def test_"` → `30`
 (**60 passed** na suíte inteira); cada mutação aplicada isolada, revertida, e os 3 módulos
 reconferidos por `sha256sum` ao fim; controle `rc=0` nos dois extremos]`:
 
 **`n=22` ⇒ 21 mordem, 1 sobrevive.**
+
+> **Errata 2026-08-29 (coordenador do loop, não o `/build`):** este parágrafo publicava
+> *"os **41 casos**"*. O `41` é o total da suíte **inteira** no ciclo 1 (`49161c9`:
+> `27+2+12`) — número certo de outra medição, colado no rótulo errado, e a mesma frase
+> acertava o `60 passed` ao lado, o que mostra que era troca de etiqueta e não erro de
+> contagem. Achado pelo `/review` na re-auditoria do delta (`WARNING D1`) e medido aqui:
+> `pytest … --collect-only -q` → **46** em `13b960e`, **49** na árvore de `dab5bd3`.
+> Vale registrar o que estava em jogo: era a **declaração de universo da evidência
+> central do delta** — a bancada que substituiu o desenho recusado.
 
 | # | mutação | veredito | reprova |
 |---|---|---|---|
