@@ -399,3 +399,49 @@ zero.
 > código, e **isso não acende o portão**: `*.md` não está em `include_globs`, então o
 > arquivo não é `code` e nenhuma regra o avalia. É o mesmo escape que a `§5-bis (i)`
 > recomenda — e o `sweep` acima, `rc=0` com este texto já no disco, é a prova.
+
+---
+
+## 7. `src/charts/` — o spike de `D8.19`, e por que ele mora aqui (`T-08.2`, 2026-08-29)
+
+O §1 explica o layout `src/{app,features,components}`. `T-08.2` acrescentou um **quarto**
+diretório, `src/charts/`, e ele **não** é uma quinta camada: é o **componente fechado**
+`charts` de `harness policy --key components`, casando por igualdade de string — o mesmo
+teste que o falsificador de erosão do `CLAUDE.md` aplica.
+
+**Dois comandos, e os dois medem coisas diferentes:**
+
+```bash
+npm --prefix frontend run spike:axis    # a medição de D8.19: um comando, um número
+npm --prefix frontend run test:charts   # 9 testes de unidade da própria medição
+```
+
+**Códigos de saída de `spike:axis`**, com a semântica que os scripts do backend já usam:
+`0` mediu e o eixo aguenta · `1` mediu e não aguenta (**resultado**, não defeito) · `3`
+RECUSOU medir.
+
+### O resultado, com o comando que o produziu
+
+`[MEDIDO 2026-08-29, `npm --prefix frontend run spike:axis`, n=1.728 itens]` — **pior caso
+`2,27e-13 px` com a grade de 1 m completa** (tolerância `D8.19` = 0,5 px) e **`36,390 px`
+com a cobertura de 20,0% que o plano 08 `D8.11` mediu no dado real**. O eixo do Lightweight
+Charts é **ordinal**, não temporal: sobre grade uniforme as duas leituras coincidem; com
+buracos, não. Relatório completo, incluindo o falso verde que a primeira versão da medição
+produziu: `docs/context/plataforma-dados/gates/T-08.2-builder.md`.
+
+### ⚠️ O que aqui NÃO é portão, e isto continua a lista do §5
+
+`harness policy --key test_cmd` declara **um** componente — `sentimento`. **Não há
+`test_cmd.charts`**, e `make verify` roda `eslint src` (que lê estes arquivos) mas **não**
+roda `test:charts`. Os 9 testes passam e **nada reprova se alguém os quebrar**. Declarar
+`test_cmd.charts` é ato do **owner** sobre política. Pelo mesmo motivo **não há medição de
+cobertura no `frontend`**: instrumento sem portão foi o que `ADR-011/D1.10` mandou não criar.
+
+### `jsdom` como devDependency — o que o stub pode e o que ele não pode
+
+O spike roda um gráfico **de verdade** sem navegador. O contexto 2D é um stub que não
+desenha nada, e isso é sólido **para `D8.19` e só para ele**: `timeToCoordinate` é
+respondida pelo **modelo** da escala de tempo (índice, `barSpacing`, `rightOffset`, largura
+da pane), calculado antes de qualquer chamada de pintura e sem nunca reler do canvas.
+Qualquer medição que dependa de **pixels pintados** — cor, sobreposição de discos (`D8.12`),
+texto do eixo — **não** pode usar este stub.
