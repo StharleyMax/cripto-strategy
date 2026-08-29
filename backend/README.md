@@ -817,6 +817,7 @@ reprova nada**.
 | **o risco concreto** | o **primeiro chamador de produção** — **`T-03.10`** — vai ter de **inventar onde isso mora**, e os dois candidatos naturais **invertem a direção**: em `use_cases`, a camada de caso de uso passa a conhecer `infra`; em `infra`, a borda passa a orquestrar o caso de uso |
 | **dono** | **`T-03.10`** — é ela que traz o primeiro chamador de produção, e portanto a primeira que **não pode** adiar a decisão |
 | **falsificador** | se `T-03.10` puder ligar as quatro peças sem nenhum módulo novo e sem `use_cases` ou `infra` importar para o lado errado, o achado era falso alarme |
+| **✅ VEREDITO 2026-08-29 (`T-03.10`)** | **FECHADO, e o achado NÃO era falso alarme — mas ele errou metade do risco.** O falsificador tem duas metades e elas deram respostas opostas: **(1) um módulo novo FOI necessário** — `infra/dump_etl_cli.py` —, logo o achado procede; **(2) a direção NÃO se inverteu.** O achado dizia que os dois candidatos *"invertem a direção"*, e isso é verdade para `use_cases` e **falso para `infra`**: `[tool.importlinter]` declara `layers = ["infra", "use_cases", "domain"]` com **a primeira como a mais alta**, então `infra` importando `use_cases` e `domain` corre **a favor** do contrato. Medido: `bash backend/scripts/boundaries.sh` → **`2 kept, 0 broken`**, `Analyzed 22 files, 20 dependencies` (linha de base antes desta task: **17 files, 7 dependencies**, `2 kept`). E o precedente já estava na árvore: `infra/ingest_health_cli.py`, que este README já chama de raiz de composição |
 
 ### `I` · `web-fullstack.tenant-from-request` passará a avaliar **a suíte inteira** quando `T-01.2` adotar o pack
 
@@ -981,14 +982,19 @@ documentada com precisão errada é pior que não documentada**.
 - **Não há chamador de produção.** `ingest_verified` é a borda; **quem a chama ainda não
   existe**, e isso é o achado `H` deste mesmo README (*"não existe raiz de composição"*) —
   dono declarado **`T-03.10`**. Esta task **não** inventou raiz de composição.
+  **✅ FECHADO 2026-08-29 por `T-03.10`:** o chamador é `infra/dump_ingest_worker.py`, e a raiz
+  de composição é `infra/dump_etl_cli.py`.
 - **`LineSink` não tem implementação de produção.** O único sink hoje é o de teste. Quem
   trouxer o primeiro destino real o traz.
+  **✅ FECHADO 2026-08-29 por `T-03.10`:** `BinaryFileLineSink`, em `infra/dump_ingest_worker.py`.
 - **Nada de `data/`.** Os testes fabricam o próprio arquivo e o próprio `.CHECKSUM`, e
   corrompem o byte deles mesmos. `data/` é dado de terceiro e continua fora do portão.
 - **A metade documental do item `2.5` do plano é `T-02.4b`** (`docs`): política de backup com
   teste de restauração. **Não é desta task**, pela partição `D-3` do `tasks_review.md` §7.
 - **`curl -sI` mensal** em prefixo antigo e recente (`SPEC-001` §5.8) é mitigação **de retenção
   do bucket**, não de integridade de corpo. Não entrou aqui — e **tem dono**: **`T-03.10`**
+  (**✅ FECHADO 2026-08-29:** `domain/retention_probe.py` enumera e classifica; a rede fica com o
+  cron e entra por `infra/head_probe_log.py`)
   (`tasks_review.md`, linha da task; plano `3.14`; `D7.19`). A redação de `2026-08-29T11:44Z`
   dizia *"não tem dono nesta task"*, o que se lia como *"não tem dono"* — e o mesmo bullet
   acima já nomeia `T-03.10` para a raiz de composição.
@@ -1035,6 +1041,20 @@ documentada com precisão errada é pior que não documentada**.
   `[MEDIDO 2026-08-29: árvore como está → **1**, `rc=0` `[CALA]`; com um segundo chamador
   plantado → **2**, `rc=1` `[MORDE]`]`. No dia em que a contagem chegar a 2, a garantia parou
   de cobrir o código.
+
+  **✅ 2026-08-29, `T-03.10` — o gatilho SAIU DO COMENTÁRIO E VIROU TESTE, e tinha dois pontos
+  cegos.** `tests/sentimento/test_verified_edge_call_sites.py` agora o **roda** em
+  `bash backend/scripts/test.sh` (*"ferramenta que ninguém roda não é portão"* — `ADR-011:268`).
+  E o scanner do comentário só via `ast.Call` sobre `ast.Attribute`; medi as duas evasões, cada
+  uma sozinha numa árvore isolada `[MEDIDO 2026-08-29, `python -B` + `PYTHONDONTWRITEBYTECODE=1`,
+  `__pycache__` apagado]`: `pull = payload.lines` + `pull()` → **0 `[CEGO]`** e
+  `getattr(payload, "lines")()` → **0 `[CEGO]`**, contra `payload.lines()` → **1**. São as
+  **mesmas duas** que `[tool.importlinter]` já nomeia por escrito como limite herdado. O scanner
+  novo vê as três, e **é falsificado pela própria suíte** (as três formas entram como texto e
+  têm de ser vistas). O que continua invisível e está escrito: `getattr(payload, nome)()` com
+  `nome` calculado em runtime. **A contagem em produção continua `1`** — `T-03.10` trouxe o
+  primeiro chamador de produção e **não** acrescentou call site: ele entrega um sink a
+  `ingest_verified` e nunca toca em `payload.lines`.
 
 - **A falha fechada está CONTIDA hoje, e isso é achado documental, não arquitetural.**
   `grep -rn "ingest_verified\|ChecksummedFilePayload\|VerifiablePayload\|LineSink" backend/src
@@ -1268,3 +1288,128 @@ mensagem de regra, os nomes de coluna de contrato **`janela_de_perda`** e **`win
 `uso: ingest_health_cli <caminho-do-store>` — `SPEC-001` §3.8 reserva pt-BR **exclusivamente**
 para microcopy. Os 2 arquivos de teste do `/qa` e os 14 `test_*` pré-existentes **não** foram
 tocados: são de outro dono.
+
+---
+
+## 📦 A fila de ETL do dump, retomável e com profundidade como parâmetro — `T-03.10` (`CST-26`, `CA-F0-5`, `SPEC-001` §5.8, plano `03` itens 3.11+3.14, DoD `D3.1`)
+
+**Nenhum segundo mecanismo de retomada nasceu aqui.** `EtlBacklog` + `drain` + `JsonlCheckpoint`
+já provavam *"não duplica, não perde"* sob `SIGKILL` real; esta task aponta esse mecanismo para
+uma **janela do dump enumerada a priori a partir de uma PROFUNDIDADE**. Duas respostas para
+*"o que ainda falta"* seria uma a mais, e no dia em que discordassem nenhuma valeria.
+
+### As peças, e a camada de cada uma
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/dump_window.py` | `domain` | a janela **fechada e enumerada a priori** — `DumpDataset`, `DumpPartition`, `enumerate_window`, e `backlog_of`, que devolve o `EtlBacklog` que o `drain` já consome |
+| `domain/retention_probe.py` | `domain` | o `curl -sI` de §5.8: **enumera o que sondar** e **classifica o que voltou**. Zero rede |
+| `infra/head_probe_log.py` | `infra` | a costura entre o `curl` (cron) e a classificação offline: parser de `curl -sI` + leitor do JSONL |
+| `infra/dump_ingest_worker.py` | `infra` | o **primeiro chamador de produção** de `ingest_verified` e o **primeiro `LineSink` de produção** |
+| `infra/dump_etl_cli.py` | `infra` | **a raiz de composição** — o achado `H` |
+
+### `Q18` não é gate, é default — e a afirmação do owner virou teste
+
+> **(d) RELÓGIO: NÃO.** *…a fila é retomável e a profundidade é PARÂMETRO dela* ⇒ começar por 30
+> dias e estender depois **não é retrabalho**, é a mesma fila com outro limite.
+> `[PREMISSA-OWNER: citação literal, via `tasks_review.md` §7/D-5]`
+
+Isso só é verdade se aprofundar **preservar** as chaves já drenadas — senão o checkpoint fica
+cheio de chaves fora da janela e `EtlBacklog.pending` levanta `CheckpointOutsideWindowError`.
+`test_extending_the_depth_drains_only_what_the_deeper_window_added` fixa isso: 10 → 20 dias
+drena **exatamente os 10 novos**, e os conjuntos são disjuntos.
+
+### Os DOIS portões, e por que o segundo **nunca recusa**
+
+`ADR-014/D3b` (status **proposto**) decide a forma, e ela é a resposta ao achado mais importante
+do dia: **`SPEC-001` §5.8 infere que `.CHECKSUM` é obrigatório a partir de um caso que o
+`.CHECKSUM` NÃO PEGA.**
+
+| portão | quando | testemunha | veredito |
+|---|---|---|---|
+| **P1** | antes da 1ª linha | classe **T** — `.CHECKSUM` | **recusa**, zero linhas escritas |
+| **P2** | no nível da **janela** | classe **O** — o último período antes de um `404` | **avisa e registra, NUNCA recusa** |
+
+O objeto de `monthly/bookTicker` 2024-04 passa por **cinco** portões — `200`, `content-length`,
+`sha256sum -c` → **SUCESSO**, `unzip -t` → **No errors detected**, e a invariante de janela de
+§5.7 — cobrindo **0,942 %** do mês que o nome dele declara `[MEDIDO, `ADR-014`, n = 1 objeto de
+37.761.761 B]`. **Só a cobertura da janela morde, e ela não é nenhum dos cinco.**
+
+**P2 não recusa porque as 6,781 h de abril são dado REAL.** Recusá-las plantaria a generalização
+de fail-closed que `SPEC-001` §5.6 existe para impedir. *O objetivo é impedir o SILÊNCIO, não a
+escrita.* — `test_a_suspect_period_is_ingested_with_a_warning_and_is_never_refused`.
+
+### `bookDepth` não tem prefixo `monthly`, e a palavra "mensal" é a armadilha
+
+§5.8, terceira linha `[MEDIDO, CST-5]`: *"um ETL que assuma mensal **quebra**"*. O item 3.14 diz
+*"`curl -sI` **mensal**"* — e essa palavra é a **cadência da sonda**, não a **granularidade do
+objeto**. `aggTrades` é sondado `monthly`, `bookDepth` `daily`; pedir `monthly` para `bookDepth`
+**recusa na construção**, em vez de gerar um `404` que se leria como *"o balde apagou"*.
+
+### O que o vocabulário desta task deliberadamente NÃO reusa
+
+Os achados de retenção **não são `verdict`**. `verdict` é o conjunto fechado de `md.ingest_run`,
+a SPEC é dona (`ADR-014/D2a`), e **`ADR-014` está `proposto`** — escrever `ACCEPTED_WITH_WARNING`
+aqui seria adotar enumeração não ratificada e pôr um segundo escritor num vocabulário que esta
+task não possui.
+
+### A bancada de mutação — `n=12`, e ela sabe dizer INERTE e AMBÍGUO
+
+Cada mutante com a **âncora conferida antes** (0 ocorrências ⇒ `INERTE`, >1 ⇒ `AMBÍGUO`),
+revertido e o arquivo **reconferido por `sha256`** antes do seguinte, com `python -B` +
+`PYTHONDONTWRITEBYTECODE=1` e `__pycache__` **apagado antes de cada rodada**
+`[MEDIDO 2026-08-29; quem morde: `.venv/bin/python -B -m pytest -x -q`]`:
+
+| # | mutante | resultado |
+|---|---|---|
+| 1 | `bookDepth` passa a aceitar o prefixo `monthly` | **rc=1** |
+| 2 | a janela passa a ser enumerada do mais NOVO para o mais velho | **rc=1** |
+| 3 | a profundidade perde um dia (off-by-one na janela fechada) | **rc=1** |
+| 4 | a regra do vizinho some: `404` seguinte deixa de tornar o período suspeito (`A7`) | **rc=1** |
+| 5 | `bookDepth` passa a ser sondado como `monthly` | **rc=1** |
+| 6 | o `.partial` deixa de ser removido quando a borda recusa | **rc=1** |
+| 7 | o período suspeito passa a ser **RECUSADO** em vez de avisado (`ADR-014/D3b`) | **rc=1** |
+| 8 | o checkpoint volta a coagir a chave com `str()` (a dívida do `{"key": null}`) | **rc=1** |
+| 9 | a detecção de chave repetida exige 3 e não 2 ocorrências | **rc=1** |
+| 10 | os achados de retenção passam a ser gravados **depois** da drenagem | **rc=1** |
+| 11 | o parser de `HEAD` passa a ler o **primeiro** status em vez do último | **rc=1** |
+| 12 | períodos `ABSENT` deixam de sair da janela de trabalho | **rc=1** |
+
+**`n=12` mutantes · 12 morderam · 0 sobreviveram · 0 inertes · 0 ambíguos.**
+
+### ⚠️ Um achado sobre o INSTRUMENTO do portão de regras, e ele é da família que este repositório caça
+
+**`harness rules --mode sweep --changed-only` é CEGO a arquivo NÃO RASTREADO.** Medido plantando
+`print(...)` — que viola `core.print-statement`, severidade `block` — e variando **só** o estado
+do arquivo no git `[MEDIDO 2026-08-29, n=3 estados, mutante revertido e conferido por `sha256`]`:
+
+| estado do arquivo | comando | resultado |
+|---|---|---|
+| **não rastreado**, com o `print` | `harness rules --mode sweep --changed-only` | **0 achados, `rc=0`** — **`[CEGO]`** |
+| **não rastreado**, com o `print` | `harness rules --mode sweep` (completo) | **1 achado, `rc=1`** — `[MORDE]` |
+| **staged** (`git add`), com o mesmo `print` | `harness rules --mode sweep --changed-only` | **`rc=1`**, nomeia `dump_etl_cli.py:165` — `[MORDE]` |
+
+**Consequência para o procedimento de qualquer builder:** uma task que **cria arquivos** e roda
+`--changed-only` antes de `git add` recebe **verde falso**. Não é hipótese — foi exatamente o que
+esta task recebeu na primeira execução do portão, e só apareceu porque a bancada de mutação foi
+rodada **contra o próprio portão**. O `rc=0` reportado no gate desta task é o de **depois** do
+`git add`, com os 15 arquivos no universo. **Não consertei o `harness`** — é ferramenta de
+plugin, fora desta árvore e fora do escopo desta task; fica registrado com o comando que o
+reproduz.
+
+### O que esta task NÃO fecha, nomeado
+
+- **Não baixa nada.** O espelho do balde em `<workdir>/mirror/` é alimentado por quem busca;
+  **`T-07.1`** é dona do paginador correto e da listagem S3 por `NextContinuationToken`.
+- **Não escreve `md.ingest_run` / `md.ingest_gap`.** A casa durável de um achado de classe O
+  **é** `md.ingest_gap`; o escritor de produção chega com **`T-03.8`**. Até lá o achado é durável
+  em `findings.jsonl` — segundo-melhor **escrito como tal**, não apresentado como o desenho.
+- **Não lê o conteúdo do objeto.** Cobertura medida contra os *timestamps* de dentro do CSV exige
+  unzip + parse, e é outra task. Na resolução de `HEAD`, a testemunha de classe O é a regra do
+  vizinho — e é só isso que está implementado. **O `n_missing` real continua `[NÃO MEDIDO]`.**
+- **A razão de tamanho é ALARME e não `n_missing`** — `177,8x` contra déficit real de `106,2x`
+  `[MEDIDO, `ADR-014/D3d`]`. `size_ratio_alarm` devolve um `float` e se chama `alarm` por isso.
+- **Não decidiu a testemunha das fontes que não são o dump.** `ADR-014/D3` decide por fonte e uma
+  linha dela é **`[NÃO SEI]`** (`!forceOrder@arr`, sem testemunha de integridade hoje). O
+  roteamento desta raiz é **estrutural e restrito ao dump**: ela só aceita um `DumpDataset`, e
+  nenhuma fonte REST tem um. O registro geral por fonte nasce quando `ADR-014` for aceita.
