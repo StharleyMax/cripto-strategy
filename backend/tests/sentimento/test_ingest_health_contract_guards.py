@@ -368,3 +368,40 @@ def test_a_host_asking_for_debug_still_gets_the_projection_alone_on_stdout(
     for line in diagnostics:
         assert line.startswith(("DEBUG ", "INFO ", "WARNING ", "ERROR ", "CRITICAL ")), line
         assert " src." in f" {line}", f"the diagnostic does not name its logger: {line}"
+
+
+def test_importing_the_cli_module_hijacks_nobody_s_logging() -> None:
+    """The BOUNDARY of the cost that half (b) charges — and it is the reason to accept it.
+
+    Routing this application's records to `stderr` has a price the module names in writing:
+    while the CLI runs, `src.*` records stop reaching handlers the host installed on the root
+    logger. That price is acceptable for a short-lived report CLI and would NOT be acceptable
+    for a library — and the whole difference is that the hijack happens in `main` and nowhere
+    else `[MEDIDO 2026-08-29 by the /qa: `grep -rn route_diagnostics_away_from_the_product_stream
+     backend/src backend/tests` -> 2 hits, the definition and the call inside `main`]`.
+
+    A grep is a fact about today; this test is a fact about every day. `T-07.13` wires a SECOND
+    consumer to the same query, and the day somebody imports this module from a long-lived
+    process — a web worker, a scheduler — an import with side effects on the root logger would
+    silence that process's own diagnostics for good, from a line nobody would think to read.
+
+    The subprocess is the universe on purpose: inside the suite the module is already imported
+    and `logging` is global, so an in-process assertion would be measuring the leftovers of
+    whatever ran first.
+    """
+    probe = (
+        "import logging, sys\n"
+        f"import {CLI_MODULE}\n"
+        "application = logging.getLogger('src')\n"
+        "print(len(application.handlers), application.propagate, logging.getLogger().handlers)\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=str(BACKEND_ROOT),
+        env=dict(os.environ, PYTHONPATH=str(BACKEND_ROOT)),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert completed.stdout.strip() == "0 True []"
