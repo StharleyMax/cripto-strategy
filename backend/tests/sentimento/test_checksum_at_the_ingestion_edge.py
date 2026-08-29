@@ -752,3 +752,119 @@ def test_the_subject_is_the_whole_remainder_of_the_line_and_never_its_first_char
     assert manifest.subject != PAYLOAD_NAME[:1]
     with pytest.raises(ChecksumSubjectMismatchError):
         manifest.verify(observed_digest=digest, observed_subject=PAYLOAD_NAME)
+
+
+# ── QA re-check of the fix (2026-08-29): the two sentences the fix added, measured ─────────
+
+
+class FailingMidStreamPayload:
+    """A payload whose digest matches and whose stream dies after `break_after` lines.
+
+    A real mid-stream `OSError` (a read error on the device) cannot be provoked from a test
+    on a `tmp_path` file, and faking it at the PORT is the honest instrument anyway: the
+    sentence under test lives in the docstring of `ingest_verified`, and it is about what the
+    SINK holds when the port raises — not about how the device failed.
+    """
+
+    def __init__(self, body: bytes, break_after: int) -> None:
+        """Bind the body the digest is taken over and how many lines survive."""
+        self._body = body
+        self._break_after = break_after
+
+    def subject(self) -> str:
+        """Return the name the manifest attests."""
+        return PAYLOAD_NAME
+
+    def checksum_text(self) -> str | None:
+        """Return a sidecar that MATCHES, so the failure is reached after verification."""
+        return _sidecar_text(self._body, PAYLOAD_NAME)
+
+    def digest(self) -> str:
+        """Return the digest the manifest attests — this payload passes verification."""
+        return hashlib.sha256(self._body).hexdigest()
+
+    def lines(self) -> Iterator[bytes]:
+        """Yield `break_after` lines and then fail the way a device does."""
+        yield from self._body.splitlines(keepends=True)[: self._break_after]
+        raise OSError(5, "Input/output error")
+
+
+def test_an_oserror_while_opening_leaves_the_sink_empty(tmp_path: Path) -> None:
+    """First half of the asymmetry the `Raises:` block claims: opening fails, nothing entered.
+
+    This is the COMMON case — a vanished path, a permission — and it fires before any line
+    exists, so the sink is genuinely empty. Asserted separately from the second half because
+    they are different statements, and the first draft of that docstring stated only this one
+    and generalised it to all of `OSError`.
+    """
+    body = _body()
+    payload = tmp_path / PAYLOAD_NAME
+    payload.with_name(payload.name + ".CHECKSUM").write_text(
+        _sidecar_text(body, PAYLOAD_NAME), encoding="utf-8"
+    )
+    sink = RecordingSink()
+
+    with pytest.raises(OSError):
+        ingest_verified(ChecksummedFilePayload(payload), sink)
+
+    assert sink.accepted == []
+
+
+def test_an_oserror_mid_stream_leaves_the_lines_already_accepted_in_the_sink() -> None:
+    """Second half, and it is the one worth writing down: HALF THE FILE ENTERED.
+
+    The zero-lines guarantee belongs to the `ChecksumRejectedError` family and to it alone.
+    An `OSError` raised after the digest already matched has no such guarantee, and saying
+    "nothing was written to `sink`" about all of `OSError` would have been false — measured
+    here rather than trusted, because it is exactly the kind of sentence that reads true and
+    is not.
+
+    A caller that retries this object must therefore treat the sink as DIRTY. That is the
+    operational consequence, and it is why the asymmetry is documented instead of smoothed.
+    """
+    body = _body()
+    sink = RecordingSink()
+
+    with pytest.raises(OSError):
+        ingest_verified(FailingMidStreamPayload(body, break_after=3), sink)
+
+    assert sink.accepted == body.splitlines(keepends=True)[:3]
+    assert len(sink.accepted) == 3, "the guarantee that does not hold here is 'zero lines'"
+
+
+def test_the_utf8_guard_fires_on_the_bytes_and_not_on_the_shape_of_the_text(
+    tmp_path: Path,
+) -> None:
+    """The guard must refuse because the sidecar is not decodable, not because it looks odd.
+
+    THE CASE THAT SEPARATES THEM, and the existing test could not: with the stray byte at
+    position 0 the digest is no longer at the start, so the FORMAT check refuses too and the
+    verdict comes out the same for the wrong reason. Here the bad byte sits INSIDE the
+    subject name, where a lenient read would produce a perfectly well-formed manifest
+    attesting a name with `U+FFFD` in it — and the edge would then report a SUBJECT
+    MISMATCH, telling the operator *"this manifest was never about this file"* when the truth
+    is *"this sidecar is unreadable"*. That is precisely the misdiagnosis `verify` orders its
+    two checks to avoid.
+
+    `__cause__` is the discriminator, and it is what makes this test bite: the chain exists
+    only when a real `UnicodeDecodeError` was caught and re-raised `from exc`. Swapping the
+    guard for `errors="replace"` raises no `UnicodeDecodeError` at all, so the chain is empty
+    — a mutation that survived every other test in this file
+    [MEDIDO 2026-08-29, bancada n=25 com bytecode desligado: `errors="replace"` -> 60 passed,
+    rc=0, 0 reprovam].
+    """
+    body = _body()
+    payload = tmp_path / PAYLOAD_NAME
+    payload.write_bytes(body)
+    payload.with_name(payload.name + ".CHECKSUM").write_bytes(
+        hashlib.sha256(body).hexdigest().encode("ascii") + b"  BTCUSDT-15m\xff-2026-08-23.csv\n"
+    )
+    sink = RecordingSink()
+
+    with pytest.raises(MalformedChecksumError) as refusal:
+        ingest_verified(ChecksummedFilePayload(payload), sink)
+
+    assert isinstance(refusal.value.__cause__, UnicodeDecodeError), (
+        f"refused, but not because of the bytes: __cause__ is {refusal.value.__cause__!r}"
+    )
+    assert sink.accepted == []
