@@ -30,6 +30,7 @@ from src.modules.sentimento.domain.stream_probe_outcome import (
     ProbeNotMeasured,
     ProbeStage,
     SymbolBreakdown,
+    WindowEnd,
 )
 from src.modules.sentimento.infra.aggtrade_nq_probe_cli import (
     _report_lines,
@@ -123,6 +124,16 @@ def _universe(
         max_messages=100,
         endpoint="wss://exemplo/stream",
         event_type=event_type,
+    )
+
+
+def _universe_cap(cap: int) -> DeclaredUniverse:
+    """Build a universe whose message cap is the binding limit."""
+    return DeclaredUniverse(
+        symbols=("BTCUSDT",),
+        window_seconds=5.0,
+        max_messages=cap,
+        endpoint="wss://exemplo/stream",
     )
 
 
@@ -781,3 +792,69 @@ def test_consecutive_text_messages_are_yielded_one_after_the_other() -> None:
     data = _server_frame(b'{"n":1}') + _server_frame(b'{"n":2}')
     stream = iter_text_messages(_reader(data))  # type: ignore[arg-type]
     assert [next(stream), next(stream)] == ['{"n":1}', '{"n":2}']
+
+
+# ── Control 9: o universo RELATADO tem de ser o universo OBSERVADO (defeitos do /qa) ─────────
+
+
+def test_a_window_cut_short_by_transport_says_so_in_the_result() -> None:
+    """DEFEITO 1 do `/qa`: uma janela interrompida saia indistinguivel de uma janela completa.
+
+    Uma corrida que entrega 1 mensagem e cai aos 2 s de uma janela DECLARADA de 120 s publicava
+    `window_seconds: 120.0`, `VALUED_IN_ALL` e `rc=0`, sem nenhuma chave dizendo que fora
+    interrompida. E a trajetoria em que `D3.9` FECHA — o DoD pede "1 simbolo, 1 mensagem" — logo
+    o defeito mora no caminho feliz minimo do criterio, nao numa borda exotica.
+    """
+    universe = DeclaredUniverse(
+        symbols=("BTCUSDT",),
+        window_seconds=120.0,
+        max_messages=300,
+        endpoint="wss://exemplo/stream",
+    )
+    relogio = iter([0.0, 2.0, 2.0, 2.0])
+    outcome = probe_stream_quantity_fields(
+        ExplodingSource([_aggtrade("BTCUSDT", "1.0", "0.5")], ProbeStage.FRAME),
+        universe,
+        lambda: next(relogio),
+    )
+    assert isinstance(outcome, ProbeMeasured)
+    assert outcome.verdict is NqVerdict.VALUED_IN_ALL  # o veredito NAO muda de valor
+    assert outcome.window_end is WindowEnd.INTERRUPTED
+    assert outcome.interrupted_at_stage is ProbeStage.FRAME
+    assert not outcome.window_complete
+
+    resumo = _summary(outcome, universe)
+    assert resumo["window_complete"] is False
+    assert resumo["window_end"] == "INTERRUPTED"
+    assert resumo["interrupted_at_stage"] == "FRAME"
+    assert resumo["observed_seconds"] == 2.0
+    assert resumo["universe"]["window_seconds"] == 120.0  # type: ignore[index]
+
+    assert any("INTERROMPIDA" in linha for linha in _report_lines(outcome, universe))
+
+
+def test_a_window_that_closed_on_its_own_terms_is_marked_complete() -> None:
+    """O outro lado do controle: fechar por TETO ou por TEMPO nao e interrupcao."""
+    por_teto = _run([_aggtrade("BTCUSDT", "1.0", "0.5")] * 3, universe=_universe_cap(1))
+    assert isinstance(por_teto, ProbeMeasured)
+    assert por_teto.window_end is WindowEnd.MESSAGE_CAP
+    assert por_teto.window_complete
+    assert _summary(por_teto, _universe_cap(1))["window_complete"] is True
+
+    fim_de_fonte = _run([_aggtrade("BTCUSDT", "1.0", "0.5")])
+    assert isinstance(fim_de_fonte, ProbeMeasured)
+    assert fim_de_fonte.window_end is WindowEnd.STREAM_ENDED
+
+
+def test_a_reserved_opcode_does_not_deliver_half_a_message() -> None:
+    """DEFEITO 2 do `/qa`: opcode reservado entregava meia mensagem como mensagem inteira.
+
+    RFC 6455 5.2 manda FALHAR a conexao diante de opcode reservado. Sem o ramo, um texto com
+    `FIN=0` seguido de um frame `0xB` com `FIN=1` publicava `'{"e":"agg'` como se fosse uma
+    mensagem completa. E o ramo `153->155`, o unico descoberto do arquivo.
+    """
+    data = _server_frame(b'{"e":"agg', fin=False) + _server_frame(b"", opcode=0xB)
+    with pytest.raises(StreamTransportError) as raised:
+        next(iter_text_messages(_reader(data)))  # type: ignore[arg-type]
+    assert raised.value.stage is ProbeStage.FRAME
+    assert "opcode reservado" in raised.value.detail

@@ -1,12 +1,11 @@
-"""Live WebSocket transport for the probe, with EVERY failure tagged by the stage it hit.
-
-The socket is INJECTED (`connect`), for two reasons that are not style. First, the suite is
-offline by construction, and an injected channel is the only way the handshake and the read loop
-are exercised at all. Second, the negative control of `D3.9` needs failures it can PRODUCE: a
-fake channel that refuses at TLS, or returns a 404 to the upgrade, proves this module reports
-`NOT_MEASURED` and not "field absent". A transport that could only fail by real outage would be
-a control nobody can run.
-"""
+"""Live WebSocket transport for the probe, with EVERY failure tagged by the stage it hit."""
+#
+# The socket is INJECTED (`connect`), for two reasons that are not style. First, the suite is
+# offline by construction, and an injected channel is the only way the handshake and the read loop
+# are exercised at all. Second, the negative control of `D3.9` needs failures it can PRODUCE: a
+# fake channel that refuses at TLS, or returns a 404 to the upgrade, proves this module reports
+# `NOT_MEASURED` and not "field absent". A transport that could only fail by real outage would be
+# a control nobody can run.
 
 from __future__ import annotations
 

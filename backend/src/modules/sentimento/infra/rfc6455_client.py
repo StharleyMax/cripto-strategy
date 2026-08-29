@@ -1,17 +1,16 @@
-"""The bytes of RFC 6455: handshake and frame reading, with NO socket in sight.
-
-Kept free of I/O on purpose. Every function here takes bytes or a `read_exact` callable, so the
-whole protocol layer is exercised by the offline suite — the suite is "ZERO REDE" by
-construction (`backend/scripts/test.sh`) and a protocol parser that only runs against the live
-internet is a parser nobody ever tested against a malformed frame.
-
-WHY THIS IS HAND-ROLLED AND NOT A LIBRARY. `backend/pyproject.toml` declares
-`dependencies = []`, and the comment there calls the empty list "declaracao, nao esquecimento".
-Adding a runtime dependency to answer a MEASUREMENT question would change a declared property of
-the repository as a side effect of a probe. The read path needed here is small: a client never
-has to UNMASK (only servers do), and a probe whose window is under one minute never has to
-answer the 3-minute ping.
-"""
+"""The bytes of RFC 6455: handshake and frame reading, with NO socket in sight."""
+#
+# Kept free of I/O on purpose. Every function here takes bytes or a `read_exact` callable, so the
+# whole protocol layer is exercised by the offline suite — the suite is "ZERO REDE" by
+# construction (`backend/scripts/test.sh`) and a protocol parser that only runs against the live
+# internet is a parser nobody ever tested against a malformed frame.
+#
+# WHY THIS IS HAND-ROLLED AND NOT A LIBRARY. `backend/pyproject.toml` declares
+# `dependencies = []`, and the comment there calls the empty list "declaracao, nao esquecimento".
+# Adding a runtime dependency to answer a MEASUREMENT question would change a declared property of
+# the repository as a side effect of a probe. The read path needed here is small: a client never
+# has to UNMASK (only servers do), and a probe whose window is under one minute never has to
+# answer the 3-minute ping.
 
 from __future__ import annotations
 
@@ -152,6 +151,16 @@ def iter_text_messages(read_exact: Callable[[int], bytes]) -> Iterator[str]:
             pending_text = opcode == OPCODE_TEXT
         elif opcode == OPCODE_CONTINUATION:
             buffer.extend(payload)
+        else:
+            # RFC 6455 5.2: opcode reservado (0x3-0x7, 0xB-0xF) manda FALHAR a conexao. Sem este
+            # ramo o fluxo caia no `if fin and pending_text` abaixo e ENTREGAVA o buffer parcial:
+            # meia mensagem publicada como mensagem inteira. Um fragmento cortado dificilmente e
+            # JSON valido, entao o efeito provavel era perda silenciosa — mas "provavel" nao e
+            # garantia, e um parser escrito a mao nao deve adivinhar o que fazer com o que a
+            # norma manda recusar.
+            raise StreamTransportError(
+                ProbeStage.FRAME, f"opcode reservado {opcode:#x}: RFC 6455 5.2 manda falhar"
+            )
         if fin and pending_text:
             yield buffer.decode("utf-8", errors="replace")
             buffer = bytearray()

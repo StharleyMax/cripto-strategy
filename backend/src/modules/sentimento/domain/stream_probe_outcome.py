@@ -1,15 +1,14 @@
-"""The outcome of a stream probe, built so that "did not connect" CANNOT be read as "no field".
-
-THE DEFECT THIS MODULE EXISTS TO PREVENT, stated plainly: a probe that returns "`nq` absent"
-when the socket never opened is not measuring the stream — it is measuring itself. An empty
-result is not evidence of absence; it can equally be a host that refused, a handshake that was
-rejected, or a frame that never arrived.
-
-The guarantee here is STRUCTURAL, not a convention a caller has to remember: field readings live
-ONLY inside `ProbeMeasured`. `ProbeNotMeasured` has no field to hold them, so there is no value
-of this type that says "absent" without a message having actually been decoded. A caller cannot
-misreport a transport failure as a field verdict, because it cannot CONSTRUCT one.
-"""
+"""The outcome of a stream probe, built so that "did not connect" CANNOT be read as "no field"."""
+#
+# THE DEFECT THIS MODULE EXISTS TO PREVENT, stated plainly: a probe that returns "`nq` absent"
+# when the socket never opened is not measuring the stream — it is measuring itself. An empty
+# result is not evidence of absence; it can equally be a host that refused, a handshake that was
+# rejected, or a frame that never arrived.
+#
+# The guarantee here is STRUCTURAL, not a convention a caller has to remember: field readings live
+# ONLY inside `ProbeMeasured`. `ProbeNotMeasured` has no field to hold them, so there is no value
+# of this type that says "absent" without a message having actually been decoded. A caller cannot
+# misreport a transport failure as a field verdict, because it cannot CONSTRUCT one.
 
 from __future__ import annotations
 
@@ -39,6 +38,22 @@ class ProbeStage(Enum):
     FRAME = "FRAME"
     DECODE = "DECODE"
     MESSAGE = "MESSAGE"
+
+
+class WindowEnd(Enum):
+    """COMO a janela terminou. Sem isto, uma observacao de 2 s se apresenta como uma de 120 s.
+
+    `DeclaredUniverse` guarda o que foi PEDIDO; este enum, com `observed_seconds`, guarda o que
+    foi OBSERVADO. Os dois nao sao o mesmo objeto, e o defeito que esta enumeracao fecha era
+    exatamente confundi-los: uma corrida que morria apos a primeira mensagem publicava
+    `window_seconds: 120.0` e `rc=0`, sem nenhuma chave dizendo que fora interrompida — e essa e
+    a trajetoria em que `D3.9` FECHARIA, porque o DoD pede "1 simbolo, 1 mensagem".
+    """
+
+    WINDOW_ELAPSED = "WINDOW_ELAPSED"
+    MESSAGE_CAP = "MESSAGE_CAP"
+    STREAM_ENDED = "STREAM_ENDED"
+    INTERRUPTED = "INTERRUPTED"
 
 
 class NqVerdict(Enum):
@@ -100,6 +115,14 @@ class ProbeMeasured:
     """At least one message was decoded. Only THIS type can speak about the field."""
 
     readings: tuple[AggTradeQuantityReading, ...]
+    window_end: WindowEnd
+    observed_seconds: float
+    interrupted_at_stage: ProbeStage | None = None
+
+    @property
+    def window_complete(self) -> bool:
+        """True so quando a janela fechou pelo criterio DECLARADO (tempo ou teto)."""
+        return self.window_end in (WindowEnd.WINDOW_ELAPSED, WindowEnd.MESSAGE_CAP)
 
     @property
     def messages(self) -> int:

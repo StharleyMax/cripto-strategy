@@ -1,10 +1,9 @@
-"""Drive a message source and build a probe outcome, mapping every failure to its STAGE.
-
-This is the only place that turns "something went wrong" into a result. It maps a transport
-error to `ProbeNotMeasured` carrying the stage that failed, and it refuses to call an empty
-window an answer: zero messages within the window is `NOT_MEASURED` at `FRAME`, never
-"`nq` absent". The distinction is the entire point of `D3.9`.
-"""
+"""Drive a message source and build a probe outcome, mapping every failure to its STAGE."""
+#
+# This is the only place that turns "something went wrong" into a result. It maps a transport
+# error to `ProbeNotMeasured` carrying the stage that failed, and it refuses to call an empty
+# window an answer: zero messages within the window is `NOT_MEASURED` at `FRAME`, never
+# "`nq` absent". The distinction is the entire point of `D3.9`.
 
 from __future__ import annotations
 
@@ -19,6 +18,7 @@ from src.modules.sentimento.domain.stream_probe_outcome import (
     ProbeNotMeasured,
     ProbeOutcome,
     ProbeStage,
+    WindowEnd,
 )
 
 
@@ -83,18 +83,28 @@ def _collect(
     # probe normally ENDS in a socket timeout, and treating that as a transport failure would
     # throw away the very evidence the probe was opened to collect — the measurement would fail
     # precisely when it succeeded. The stage is only decisive while `readings` is still empty.
+    #
+    # MAS ENGOLIR A EXCECAO EM SILENCIO ERA O DEFEITO: guardar a evidencia e legitimo, esconder
+    # que a janela fechou cedo nao e. `window_end` e `observed_seconds` viajam com o veredito
+    # para que o universo RELATADO seja o universo OBSERVADO.
+    window_end = WindowEnd.STREAM_ENDED
+    interrupted_at: ProbeStage | None = None
     try:
         for raw in source.messages():
             payload = _decode(raw, universe.event_type)
             if payload is not None:
                 readings.append(read_quantity_fields(payload))
             if len(readings) >= universe.max_messages:
+                window_end = WindowEnd.MESSAGE_CAP
                 break
             if now() - started >= universe.window_seconds:
+                window_end = WindowEnd.WINDOW_ELAPSED
                 break
-    except StreamTransportError:
+    except StreamTransportError as failure:
         if not readings:
             raise
+        window_end = WindowEnd.INTERRUPTED
+        interrupted_at = failure.stage
     if not readings:
         return ProbeNotMeasured(
             failed_stage=ProbeStage.FRAME,
@@ -103,7 +113,12 @@ def _collect(
                 f"para {list(universe.symbols)} — universo vazio NAO e ausencia de campo"
             ),
         )
-    return ProbeMeasured(readings=tuple(readings))
+    return ProbeMeasured(
+        readings=tuple(readings),
+        window_end=window_end,
+        observed_seconds=round(now() - started, 3),
+        interrupted_at_stage=interrupted_at,
+    )
 
 
 def _decode(raw: str, event_type: str) -> dict[str, object] | None:

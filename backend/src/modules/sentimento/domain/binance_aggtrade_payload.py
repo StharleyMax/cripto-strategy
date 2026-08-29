@@ -1,21 +1,20 @@
-"""Shape of a Binance `aggTrade` payload, and the THREE states `ADR-001` refuses to merge.
-
-`ADR-001` closes on a dependency it names as `[NAO MEDIDO]`: whether the WebSocket
-`<symbol>@aggTrade` carries `nq` (quantity EXCLUDING RPI orders). The REST endpoint carries it
-`[DOC: ADR-001, eight fields 'T a f l m nq p q']`; the S3 dump does NOT.
-
-WHY THREE STATES AND NOT A BOOLEAN. "Does the WS carry `nq`?" admits three answers that a
-boolean would collapse into one, and the collapse is the defect this module exists to prevent:
-
-  ABSENT  the key is not in the object at all
-  NULL    the key IS there and its value is `null`
-  VALUED  the key is there and carries a value
-
-`ABSENT` and `NULL` have OPPOSITE consequences for the collector of `T-03.4`: absence means the
-field must come from REST (weight, and a 48 h window); a null means the field is delivered but
-empty for this trade, and the aggregator must decide what an empty means. Answering "no" to both
-would hide that difference.
-"""
+"""Shape of a Binance `aggTrade` payload, and the THREE states `ADR-001` refuses to merge."""
+#
+# `ADR-001` closes on a dependency it names as `[NAO MEDIDO]`: whether the WebSocket
+# `<symbol>@aggTrade` carries `nq` (quantity EXCLUDING RPI orders). The REST endpoint carries it
+# `[DOC: ADR-001, eight fields 'T a f l m nq p q']`; the S3 dump does NOT.
+#
+# WHY THREE STATES AND NOT A BOOLEAN. "Does the WS carry `nq`?" admits three answers that a
+# boolean would collapse into one, and the collapse is the defect this module exists to prevent:
+#
+#   ABSENT  the key is not in the object at all
+#   NULL    the key IS there and its value is `null`
+#   VALUED  the key is there and carries a value
+#
+# `ABSENT` and `NULL` have OPPOSITE consequences for the collector of `T-03.4`: absence means the
+# field must come from REST (weight, and a 48 h window); a null means the field is delivered but
+# empty for this trade, and the aggregator must decide what an empty means. Answering "no" to both
+# would hide that difference.
 
 from __future__ import annotations
 

@@ -1,13 +1,12 @@
-"""The reproducible command of `D3.9`: subscribe, inspect the payload, report with the universe.
-
-Product output goes to `stdout` through a NAMED logger and diagnostics to `stderr`, the shape
-`infra/ingest_health_cli.py` already established here (`core.print-statement` is a BLOCKING rule
-of this repository, and the report is product output, not a log).
-
-Every line of the report carries the universe it rests on. A verdict printed without the symbol
-count, the message count and the window is exactly the "numero sem o comando que o produziu"
-that this repository refuses.
-"""
+"""The reproducible command of `D3.9`: subscribe, inspect the payload, report with the universe."""
+#
+# Product output goes to `stdout` through a NAMED logger and diagnostics to `stderr`, the shape
+# `infra/ingest_health_cli.py` already established here (`core.print-statement` is a BLOCKING rule
+# of this repository, and the report is product output, not a log).
+#
+# Every line of the report carries the universe it rests on. A verdict printed without the symbol
+# count, the message count and the window is exactly the "numero sem o comando que o produziu"
+# that this repository refuses.
 
 from __future__ import annotations
 
@@ -85,8 +84,19 @@ def _report_lines(outcome: ProbeOutcome, universe: DeclaredUniverse) -> list[str
             "ATENCAO: isto NAO e ausencia do campo nq. A sonda nao chegou a ler payload algum.",
         ]
     breakdowns = outcome.by_symbol()
+    janela = (
+        f"janela OBSERVADA: {outcome.observed_seconds}s de {universe.window_seconds}s "
+        f"declarados · fim: {outcome.window_end.value}"
+    )
+    if not outcome.window_complete:
+        estagio = outcome.interrupted_at_stage
+        janela += (
+            f" · INTERROMPIDA em {estagio.value if estagio else '?'}"
+            " — o universo observado e MENOR que o declarado"
+        )
     lines = [
         header,
+        janela,
         f"veredito: {outcome.verdict.value}  (n = {outcome.messages} mensagens)",
         f"nq > q (2o falsificador de ADR-001): {outcome.nq_above_q_count} de {outcome.messages}",
     ]
@@ -109,6 +119,13 @@ def _summary(outcome: ProbeOutcome, universe: DeclaredUniverse) -> dict[str, obj
         "verdict": outcome.verdict.value,
     }
     if isinstance(outcome, ProbeMeasured):
+        # O universo OBSERVADO, ao lado do declarado. Publicar so o declarado era o defeito.
+        base["observed_seconds"] = outcome.observed_seconds
+        base["window_end"] = outcome.window_end.value
+        base["window_complete"] = outcome.window_complete
+        base["interrupted_at_stage"] = (
+            outcome.interrupted_at_stage.value if outcome.interrupted_at_stage else None
+        )
         base["messages"] = outcome.messages
         base["nq_above_q"] = outcome.nq_above_q_count
         base["by_symbol"] = [
