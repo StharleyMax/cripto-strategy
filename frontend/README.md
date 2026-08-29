@@ -197,6 +197,40 @@ e chamar **um** comando basta.
 que `T-01.6` está proibida de criar. **Até lá o ESLint é ferramenta que existe e que nenhum portão
 automático roda**, e `[test_cmd.web]` continua **não** declarado pelo mesmo motivo de antes.
 
+#### ✅ FECHADO em 2026-08-28 (`T-01.5`) — o ESLint passou a reprovar um `push`
+
+**As linhas acima ficam**: elas descrevem o estado que era verdade quando foram medidas, e o
+`append-only` deste repositório vale para a prosa também. O que mudou é a última frase delas.
+
+`scripts/hooks/pre-push.pre-harness` existe, é versionado, e o `pre-push` **gerado** o chama e **soma
+o veredito** (`|| FALHOU=1` no `exit $FALHOU`) — **sem uma linha editada no hook gerado e sem
+`core.hooksPath`**, que o `CLAUDE.md` proíbe. Ele roda `make boundaries` **e** `make lint`.
+
+**O falsificador foi medido, e é o mesmo `.tsx` desta seção** `[MEDIDO 2026-08-28, bancada isolada:
+clone do repositório em `/tmp`, `pre-push` gerado copiado, ledger de `.git/harness/` copiado
+(`BUILD_AUTHORIZED`), remoto local `remoto.git`; **nada escrito no repositório real**]`:
+
+| árvore | hook instalado | `git push --dry-run` |
+|---|---|---|
+| violador `.tsx` com `any` + `console` | **não** | **ACEITO**, `rc=0` |
+| o mesmo violador | **sim** | **RECUSADO**, `rc=1`, e a saída nomeia as **2** violações: `no-explicit-any` em `2:32` e `no-console` em `3:3` |
+| limpa | **sim** | **ACEITO**, `rc=0` |
+
+**⚠️ E a medição derrubou o motivo que este README dava para o `.tsx` passar.** A `§2` já registra
+que `frontend/src/` **entrou** em `code_paths` com `T-01.2`; re-conferido agora
+`[MEDIDO 2026-08-28: harness code-paths classify frontend/src/components/ui/violador_eslint.tsx →
+"producao"]`. O que deixava o `.tsx` passar **não** era o recorte de caminho: é que **nenhuma regra em
+vigor cobre `any`/`console`** desde que `ADR-011/D4` as trocou por ESLint
+`[MEDIDO 2026-08-28: harness rules --mode file sobre ele → rc=0, saída vazia; sweep --surface
+git-hook → rc=0]`. O buraco era **de regra**, não de caminho — e é exatamente o buraco que o ESLint
+no `pre-push` fecha.
+
+**`[test_cmd.web]` continua NÃO declarado, e agora por um motivo diferente do de antes.** O motivo
+antigo ("o mecanismo que cobra não existe") caiu. O que sobra é o motivo original e menor:
+`test_cmd` **não é lido por portão nenhum** — quem o consome são os agentes. Declará-lo é decisão de
+quem possuir o componente `web`, com dono nomeado; `T-01.5` não a toma de passagem
+`[NÃO MEDIDO: nenhuma medição desta task diz o que mudaria no comportamento de `/qa` para `web`]`.
+
 ### `D1.3b` — a medição que prova por que AST, e não regex
 
 O argumento *"AST não tem os dois defeitos da regex"* era **mecanismo, não medição**.

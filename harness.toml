@@ -375,6 +375,21 @@ test_globs = ["**/tests/**", "**/test_*.py"]
 # `Makefile` chamado por `scripts/hooks/pre-push.pre-harness`, e o `Makefile` é de `T-01.6`
 # e o hook é de `T-01.5`. **Nenhuma das duas é esta task.** Escrever a chave agora seria
 # declarar cobertura antes de existir o mecanismo que a cobra.
+#
+# ── ATUALIZAÇÃO 2026-08-28 (`T-01.5`): o mecanismo EXISTE, e a chave continua NÃO declarada ──
+#
+# O parágrafo acima FICA — ele descreve por que `T-01.2` se calou, e o motivo era verdadeiro.
+# O que mudou: `T-01.6` escreveu o `Makefile` e `T-01.5` escreveu
+# `scripts/hooks/pre-push.pre-harness`, que roda `make boundaries` + `make lint` e RECUSA o
+# push `[MEDIDO 2026-08-28, bancada isolada: com um `.tsx` carregando `any` + `console`,
+# `git push --dry-run` -> rc=1, RECUSADO; sem ele -> rc=0, ACEITO]`. Logo o ESLint É portão
+# hoje — **pelo hook, não por esta chave**.
+#
+# A chave segue não declarada porque o motivo ORIGINAL, e menor, não caiu: `test_cmd` não é
+# lido por portão nenhum; quem o consome são os agentes `builder` e `qa`. Declará-la é
+# decisão de quem possuir o componente `web`, e `T-01.5` não a toma de passagem — o que ela
+# faz é registrar que a CONDIÇÃO citada acima mudou, para o próximo leitor não concluir do
+# parágrafo antigo que o mecanismo continua ausente.
 [test_cmd.sentimento]
 lint = "bash backend/scripts/lint.sh"
 test = "bash backend/scripts/test.sh"

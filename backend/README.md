@@ -4,22 +4,31 @@ Nascido em **2026-08-28** pela task **`T-01.1`** (`CST-8`, fase `01`, item `1.1`
 Antes desta task o repositório tinha **zero código** e `harness policy --key test_cmd` devolvia
 **`{}`** `[MEDIDO 2026-08-28]`.
 
-## Os três comandos — e desde 2026-08-28 eles têm uma fachada
+## Os comandos — e desde 2026-08-28 eles têm uma fachada
+
+**Eram três; são quatro desde `T-01.5`**, e o quarto é o único que não pergunta se o código está bem
+escrito, e sim se ele está **no lugar certo**:
 
 ```bash
-make setup   # cria backend/.venv com POETRY + instala frontend/node_modules — ÚNICO passo com rede
-make test    # [test_cmd.sentimento] test  — suíte + piso por camada
-make lint    # [test_cmd.sentimento] lint (backend) + ESLint do projeto (frontend)
+make setup       # cria backend/.venv com POETRY + instala frontend/node_modules — ÚNICO passo com rede
+make test        # [test_cmd.sentimento] test  — suíte + piso por camada
+make lint        # [test_cmd.sentimento] lint (backend) + ESLint do projeto (frontend)
+make boundaries  # fronteira de módulo por grafo de imports (ADR-011/D3a, T-01.5)
 ```
+
+**`make boundaries` e `make lint` são os dois que o `pre-push` roda sozinho** desde que
+`scripts/hooks/pre-push.pre-harness` existe (`ADR-011/D3b`) — ver a seção *"A fronteira de módulo, e
+o portão que a roda"*.
 
 O `Makefile` da raiz (`ADR-011/D2`, `T-01.6`) é a **fachada**: ele **chama** os scripts abaixo, que
 continuam sendo a **implementação**. Os comandos diretos continuam válidos e são os que este
 documento cita nas medições:
 
 ```bash
-bash backend/scripts/bootstrap.sh   # o que `make setup` chama
-bash backend/scripts/test.sh        # o que `make test` chama
-bash backend/scripts/lint.sh        # o que `make lint-backend` chama
+bash backend/scripts/bootstrap.sh    # o que `make setup` chama
+bash backend/scripts/test.sh         # o que `make test` chama
+bash backend/scripts/lint.sh         # o que `make lint-backend` chama
+bash backend/scripts/boundaries.sh   # o que `make boundaries` chama (T-01.5)
 ```
 
 **Por que as medições citam o script e não o `make`:** quando uma receita falha, o `make` sai com
@@ -29,7 +38,15 @@ mediu") de **`rc=1`** ("mediu e reprovou"), e essa distinção só é visível n
 sai **2**; `bash backend/scripts/test.sh --no-cov -k <1 teste>` → **3**]`. Para portão ("passou ou
 não"), `make` basta.
 
-`test.sh` e `lint.sh` **RECUSAM com saída 3** se `backend/.venv` não existir, em vez de cair para o
+**RE-MEDIDO em 2026-08-28 depois de `T-01.5`, e o número não mudou — mudou de onde ele vem.** A
+recusa `rc=3` do alvo `boundaries` era a guarda de `[tool.importlinter]` ausente, escrita na receita;
+agora ela mora em `backend/scripts/boundaries.sh`, junto com mais duas (venv ausente, versão do
+interpretador ≠ `PY_ALVO`). Com o venv ausente: `make: *** [Makefile:144: boundaries] Erro 3` e o
+`make` sai **2**, enquanto `bash backend/scripts/boundaries.sh` sai **3**
+`[MEDIDO 2026-08-28 em clone isolado, com `backend/.venv` movido para fora]`. A linha citada mudou de
+`135` para `144` porque a receita encolheu para uma linha.
+
+`test.sh`, `lint.sh` e `boundaries.sh` **RECUSAM com saída 3** se `backend/.venv` não existir, em vez de cair para o
 `python3` do `PATH`. O motivo é medido neste disco: `python3` resolve hoje para
 `…/harness-panel/.venv/bin/python3` (3.12.8) por vazamento de `PATH`, e o `pyenv` deste repositório
 resolveria **3.13.13** pelo `.python-version` da raiz. **Dois ambientes, o mesmo comando** — e um
@@ -238,6 +255,123 @@ Se `PY_ALVO` mudar, mudam os dois — e o comando do DoD `D1.9`
 (`grep -n 'PY_ALVO' backend/scripts/*.sh`) os encontra **juntos**, que é o motivo de a duplicação ser
 tolerável aqui e não em geral.
 
+## 🧱 A fronteira de módulo, e o portão que a roda — `T-01.5` (`ADR-011/D3`)
+
+`make boundaries` → `backend/scripts/boundaries.sh` → `import-linter` sobre o **grafo** de imports.
+Os contratos vivem em `[tool.importlinter]` do `backend/pyproject.toml`; o portão que os roda
+**sozinho** é `scripts/hooks/pre-push.pre-harness`. **As duas metades são obrigatórias:** contrato sem
+portão é ferramenta que existe e ninguém roda.
+
+**São `2` contratos**, e cada um foi provado **dos dois lados** (`1.8'`, `D1.7e`) — morde *e* cala:
+
+| contrato | morde (`D1.7a`) | cala (`D1.7d`) |
+|---|---|---|
+| `Camadas por contexto: infra > use_cases > domain` | com os **2** violadores de camada: `BROKEN`, nomeando as **2** linhas ofensoras. O contrato **2** fica `KEPT` na mesma passada — logo ele não é "contrato que reprova tudo" `[MEDIDO 2026-08-28: make boundaries → "1 kept, 1 broken", rc(make)=2, rc(boundaries.sh)=1]` | `KEPT` `[MEDIDO 2026-08-28: make boundaries → "Analyzed 10 files, 1 dependencies", "2 kept, 0 broken", rc=0]` |
+| `Fronteira de contexto: sentimento nao importa outro contexto` | com o contexto `charts` **efêmero** e um import de `sentimento` para ele: `BROKEN`, nomeando a linha. O contrato **1** fica `KEPT` na mesma passada `[MEDIDO 2026-08-28: make boundaries → "Analyzed 14 files, 2 dependencies", "1 kept, 1 broken"]` | `KEPT` — **e este lado é VÁCUO hoje**, ver o parágrafo abaixo |
+
+**⚠️ O lado "cala" do contrato 2 é vácuo, e dizer isso é o que o separa de propaganda.** Os três
+módulos proibidos (`charts`, `convergencia`, `backtest`) **não existem no disco**, e o `import-linter`
+**não recusa** contrato que nomeie módulo inexistente — ele devolve `KEPT`
+`[MEDIDO 2026-08-28: contrato idêntico, repositório como está → "fronteira sentimento x charts KEPT", rc=0]`.
+O que **não** é vácuo é o lado "morde": plantando o contexto vizinho junto com o violador, ele reprova.
+O contrato está **dormente e ARMADO**, não desligado — e a diferença entre os dois só se conhece
+medindo. **Quem criar o segundo contexto acrescenta o contrato `forbidden` dele**; nada neste
+repositório obriga isso hoje, e por isso está escrito aqui como **dívida nomeada, não portão**.
+
+### O controle que separa "quem pegou" de "alguém pegou"
+
+Os `2` violadores de camada usam o símbolo que importam, de propósito: com import ocioso o `ruff`
+reprovaria por `F401` e seria impossível dizer **qual** portão pegou a violação. Com eles na árvore,
+`make lint` sai **`rc=0`** sobre **15** arquivos `[MEDIDO 2026-08-28: make lint → "All checks passed!",
+"15 files already formatted", "Success: no issues found in 15 source files", rc=0]` — logo quem os
+recusa é **só** `make boundaries`.
+
+### O falsificador de `D1.7c`, medido dos dois lados — e o "antes" do plano estava ERRADO
+
+Bancada isolada: clone do repositório em `/tmp`, com o `pre-push` **gerado** copiado, o ledger de
+`.git/harness/` copiado (estado `BUILD_AUTHORIZED`, o mesmo do repositório real) e um `remoto.git`
+local. **Nada foi escrito no repositório real, e os hooks compartilhados não foram tocados.**
+
+| # | árvore | `pre-push.pre-harness` | `git push --dry-run` |
+|---|---|---|---|
+| **a** | limpa | **não** instalado | **ACEITO**, `rc=0` |
+| **b** | + violador `.tsx` (`any` + `console`) | **não** instalado | **ACEITO**, `rc=0` |
+| **c** | + os **2** violadores de camada `.py` | **não** instalado | **ACEITO**, `rc=0` |
+| **d** | os **3** violadores | **instalado** | **RECUSADO**, `rc=1` — a saída nomeia o contrato `layers` e as **2** linhas, e o ESLint nomeia as **2** violações do `.tsx` |
+| **e** | limpa | **instalado** | **ACEITO**, `rc=0` |
+| **f** | limpa, **sem `make setup`** | **instalado** | **RECUSADO**, `rc=1`, por `rc=3` de "venv ausente" nos dois alvos — *não mediu* também recusa |
+
+`[MEDIDO 2026-08-28, seis passadas de `git push --dry-run` na bancada isolada]`
+
+**A correção que a medição impôs, e ela derruba uma frase do plano `01` (item `1.9'`) e da própria
+`T-01.5`:** o "antes" descrito lá é *"hoje o push é recusado para o `.py` (o `rules --mode sweep` o
+pega) e aceito para o `.tsx` (fora de `code_paths`)"*. **As duas metades estão erradas hoje**, e as
+duas foram medidas:
+
+- o `.py` violador de camada **não** é pego por regra nenhuma — as duas `[[rules.own]]` de camada
+  foram derrubadas por `ADR-011/D3` e nunca chegaram a existir
+  `[MEDIDO 2026-08-28: harness rules --mode file --path backend/src/modules/sentimento/domain/violador_de_camada.py → rc=0, saída vazia; harness rules --mode sweep --surface git-hook → rc=0, só o AVISO de browser-test-file-present]`;
+- o `.tsx` **está** dentro de `code_paths` desde `T-01.2`
+  `[MEDIDO 2026-08-28: harness code-paths classify frontend/src/components/ui/violador_eslint.tsx → "producao: include_prefixes + include_globs casam e nada exclui"]` — o que o deixa passar não é o
+  recorte de caminho, é que **nenhuma regra em vigor cobre `any`/`console`** desde que `ADR-011/D4` as
+  trocou por ESLint `[MEDIDO 2026-08-28: harness rules --mode file sobre ele → rc=0]`.
+
+⇒ o "antes" real é **simétrico e pior do que o plano supunha: os dois eram ACEITOS**. O desfecho de
+`D3b` não muda — muda a força do argumento a favor dele.
+
+### A 5ª via de resolução de interpretador, fechada — e a receita publicada não executava
+
+O `/review` de 2026-08-28 mediu que `Makefile:136` (`cd backend && poetry run lint-imports`) era a
+**única** execução de backend fora de `backend/.venv/bin/python`, e portanto sem a recusa `rc=3` e sem
+o assert de versão. Ela era **latente** (a guarda de `[tool.importlinter]` ausente recusava antes) e
+`T-01.5` a tornaria **alcançável**. Ela foi fechada **no mesmo ato** em que deixou de ser latente:
+o alvo passou a ser `bash backend/scripts/boundaries.sh`, que herda a recusa dos outros scripts.
+
+**As duas formas que o `/review` prescreveu, conferidas antes de escolher:**
+
+| forma prescrita | veredito medido |
+|---|---|
+| `backend/.venv/bin/python -m importlinter` | **NÃO EXECUTA.** O pacote não tem `__main__.py` `[MEDIDO 2026-08-28: → "No module named importlinter.__main__; 'importlinter' is a package and cannot be directly executed"]`. Publicar a receita sem rodá-la teria posto no repositório um comando que não roda |
+| herdar a recusa dos scripts | **ESCOLHIDA.** `boundaries.sh` carrega as mesmas 3 recusas `rc=3` (venv ausente · versão ≠ `PY_ALVO` · `[tool.importlinter]` ausente) e chama `"$PY" "$BACKEND/.venv/bin/lint-imports"` — interpretador e script **nomeados**, os dois dentro do venv já conferido |
+
+**Por que `poetry run` não serve, e o número é o que assusta:** num projeto cujo venv **não** tem
+`import-linter`, `poetry run lint-imports` **cai para o `PATH`** e resolve para
+`/home/stharley/.pyenv/versions/3.12.8/bin/lint-imports`, cujo shebang é **Python 3.12.8** — o
+interpretador que `ADR-011/D5` recusa
+`[MEDIDO 2026-08-28 em bancada isolada: venv 3.13.13 real criado com Poetry, sem import-linter → `poetry run which lint-imports` → o caminho acima; `head -1` dele → `#!/home/stharley/.pyenv/versions/3.12.8/bin/python`]`.
+
+**Consequência para `D1.9`:** `grep -n 'PY_ALVO' backend/scripts/*.sh` agora encontra **3** arquivos
+(`bootstrap.sh`, `lint.sh`, `boundaries.sh`) e não 2. A duplicação continua deliberada e nomeada, pela
+mesma razão que `lint.sh` já registra.
+
+### Um defeito do instalador, medido e consertado no mesmo ato
+
+`scripts/install-git-hooks.sh` **morria numa worktree** — o layout que este repositório usa para rodar
+tasks em paralelo — porque `$ROOT/.git` ali é um **arquivo**
+`[MEDIDO 2026-08-28: rodado de `/tmp/claude-1002/wt/T-01.5` → "install: não foi possível obter estado
+de '.../.git/hooks/commit-msg': Não é um diretório", rc=1, zero arquivo instalado]`. Quem acabara de
+escrever `scripts/hooks/pre-push.pre-harness` não conseguia instalá-lo de onde o escreveu. O destino
+passou a ser `git rev-parse --path-format=absolute --git-path hooks`, que responde *"onde o git
+procura hook?"* e devolve o diretório **comum**
+`[MEDIDO 2026-08-28: da raiz principal e da worktree, os dois devolvem o mesmo caminho; sem
+`--path-format=absolute` a raiz principal devolve o RELATIVO `.git/hooks`]`. Conferido na bancada:
+instalação **a partir de uma worktree** do clone põe os 2 hooks no `.git/hooks` comum e **não**
+sobrescreve o `pre-push` gerado `[MEDIDO 2026-08-28: rc=0; `grep -c harness-githook .git/hooks/pre-push` → 1]`.
+
+**Corolário que vale dizer em voz alta: hook é COMPARTILHADO entre worktrees.** Instalar de uma
+worktree instala para **todas**, inclusive as das outras tasks em andamento. É por isso que esta task
+**não** instalou o hook no repositório real — a instalação é ato de quem tiver a árvore inteira, não
+de uma task rodando em paralelo com outras duas.
+
+### O que este portão NÃO fecha, e não é rodapé
+
+| buraco | por quê |
+|---|---|
+| `importlib.import_module("src.modules.<ctx>.infra")` e alias construído em runtime | `import-linter` **também** é estático. A troca fecha os **três** buracos da regex (`import … as`, re-export por `__init__.py`, import dentro de função) e **não** fecha este `[DOC: ADR-011/D3a]` |
+| `make test` | o hook roda `boundaries` e `lint`, **não** `test` — é o que `ADR-011/D3b` decide, e ampliar isso é decisão do `/architect`, não desta task `[NÃO MEDIDO: nenhum número deste README fala do custo de rodar a suíte no `pre-push`]` |
+| relatório parcial do `make lint` | `lint-backend` e `lint-frontend` são pré-requisitos de `lint`, e o `make` aborta no primeiro que falhar: se o backend reprovar, o relatório do frontend não sai **naquela** passada. É relatório parcial, nunca falso-verde — o `rc` chega inteiro |
+| um segundo contexto nascer sem contrato `forbidden` próprio | nada obriga. Dívida nomeada acima |
+
 ## O que existe, e por quê
 
 | caminho | camada | papel |
@@ -443,6 +577,23 @@ plano da fase `01` **não deu dono a ela**: o item `1.3` dá dono ao contrato `f
 
 **Um import certo em dez arquivos não é prova de que a direção se sustenta em cem.** Hoje ela vale
 porque o módulo é pequeno e uma pessoa o escreveu inteiro num dia.
+
+#### ✅ FECHADO em 2026-08-28 por `T-01.5` — **pelo próprio falsificador que o parágrafo publicou**
+
+O parágrafo acima dizia: *"se um `.importlinter` aparecer com contrato `layers`, este parágrafo caiu"*.
+Ele caiu — **e as linhas acima não foram reescritas**, porque o registro é append-only e o que elas
+afirmam **era verdade quando foi medido**. O que mudou:
+
+| então | agora |
+|---|---|
+| `grep -n importlinter backend/pyproject.toml` → **0** linha | `[tool.importlinter]` com **2** contratos `[MEDIDO 2026-08-28: make boundaries → "Contracts: 2 kept, 0 broken", rc=0]` |
+| `make boundaries` **RECUSA `rc=3`** nomeando `T-01.5` | `make boundaries` **avalia**, e a recusa `rc=3` mudou de arquivo para `backend/scripts/boundaries.sh` |
+| a direção valia *"por disciplina, não por enforcement"* | vale por portão: `scripts/hooks/pre-push.pre-harness` recusa o push `[MEDIDO 2026-08-28: 6 passadas de `git push --dry-run` em bancada isolada — ver a seção "A fronteira de módulo" acima]` |
+| o instrumento não tinha dono | `ADR-011/D3` (o `/architect` nomeou), `T-01.5` executou |
+
+**O que NÃO fechou junto, e é a metade do achado que sobrevive:** a peça 1 cobre `sentimento`, o
+único contexto que existe. **Nada obriga o segundo contexto a nascer com contrato.** A frase *"um
+import certo em dez arquivos não é prova"* continua valendo — o que mudou é que agora há quem meça.
 
 ### `G` · `check-coverage-layers.sh` é **cego a arquivo de produção que não case nenhuma camada**
 
