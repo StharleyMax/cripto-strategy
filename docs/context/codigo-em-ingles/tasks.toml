@@ -197,7 +197,7 @@ title = "[docs][sentimento] 02 · Os 2 arquivos, os 40 identificadores e as 3 ci
 # de colchetes da sequencia INICIAL com `components` (`scripts/tasks.sh:887-891`) e sai
 # WARN se so um dos dois mudar.
 components = ["docs", "sentimento"]
-status = "done"
+status = "done"  # resolve: QA APPROVED 2026-08-29T21:54:16Z @ e718fb3e1bf2a70800fd98c105ef73ced2fda0b7
 phase = "02"
 depends_on = ["T-01.1", "T-01.2"]
 refs = [
