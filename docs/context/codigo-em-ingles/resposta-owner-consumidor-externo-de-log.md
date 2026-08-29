@@ -19,7 +19,7 @@
 > `etl_item_publicado`, `etl_item_concluido`, `etl_drenagem_concluida`, `checkpoint_cauda_truncada`,
 > ou as chaves `destino`, `processados`, `janela`, `bytes_descartados`?"*
 
-`[DOC: docs/context/codigo-em-ingles/tasks.toml:279, bloco `T-04.2`]`
+`[DOC: docs/context/codigo-em-ingles/tasks.toml:284, bloco `T-04.2` que comeca em `:272`]`
 
 **Nenhuma das duas respostas bloqueia qualquer fase desta SPEC** — é por isso que a task nasceu `todo`
 e não `blocked`.

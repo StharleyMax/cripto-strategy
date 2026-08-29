@@ -17,10 +17,24 @@
 | `docs/INDEX.md` | modified | **+1 linha, append**, zero removidas |
 
 ```bash
-git diff --stat master...            # → 3 files changed, 154 insertions(+)   [0 deletions]
+# os TRES entregaveis — e o filtro de caminho faz parte do comando, nao e implicito
+git diff --stat master... -- CLAUDE.md \
+    docs/context/codigo-em-ingles/resposta-owner-consumidor-externo-de-log.md \
+    docs/INDEX.md
+# -> 3 files changed, 154 insertions(+)   [0 deletions]
+
+# o comando SEM filtro, para nao publicar um numero que ele nao produz
+git diff --stat master...
+# -> 5 files changed, 432 insertions(+)
 ```
 
-*(o `T-04x.md` do handoff entra no mesmo commit por ser o registro de despacho, `R2`)*
+**Os 2 arquivos da diferenca sao registro de processo, nao entregavel:** o
+`handoff/T-04x.md` (registro de despacho, `R2`) e este proprio relatorio de gate.
+
+> ⚠️ **CORRECAO, ciclo 2 — achado pelo `/qa`:** a versao anterior desta linha publicava
+> `3 files changed, 154 insertions(+)` ao lado de `git diff --stat master...` **sem o filtro
+> de caminho**, e o comando literal devolve **5 / 432**. Numero verdadeiro, comando errado —
+> a familia que este repositorio caca, cometida no proprio relatorio que a mede.
 
 ## 2. DoD — critério a critério, com o comando literal
 
