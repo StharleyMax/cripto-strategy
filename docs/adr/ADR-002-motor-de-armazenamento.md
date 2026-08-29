@@ -109,3 +109,18 @@ curl -s ipinfo.io  # região/provedor       -> observer_region, COLUNA DE F0, im
 ## Consequência que esta ADR nomeia e não resolve
 
 **Acoplamento ao Postgres alheio (D1) é custo, não detalhe.** Catálogo e registro passam a compartilhar **ciclo de backup, janela de upgrade e falha** com uma aplicação de produção não relacionada. **Mitigação declarada: schema próprio, usuário próprio, e `G1` (backup com TESTE DE RESTAURAÇÃO) declarando por tabela o que é re-derivável dos dumps e o que não é.** O que **não** é re-derivável — liquidação intraday, `available_at` OBSERVED, snapshot datado, `nq` — é exatamente o que precisa do teste de restauração, e nenhuma fase o carregava antes desta.
+
+---
+
+## ⚠️ Emenda 2026-08-29 — `D1` está PROVISORIAMENTE DIVERGENTE do que roda
+
+**Acréscimo, nada acima foi reescrito.** [`ADR-014/D1`](ADR-014-motor-de-f0-enumeracao-de-verdict-e-testemunha-por-fonte.md) decide que **`md.ingest_run` e `md.ingest_gap` rodam em SQLite durante F0**, contra o que `D1` desta ADR escreve (PostgreSQL, a instância que já está de pé).
+
+**Duas coisas que quem chegar aqui precisa saber antes de citar `D1` ou `D4`:**
+
+| | |
+|---|---|
+| **`D4` NÃO é o foro desta divergência** | `D4` defere o finalista da **SÉRIE DE MERCADO** (candidato 4 × 5), com universo declarado *"as 8.637 linhas de `metrics` … + 1 dia de `aggTrades`"*. **`D1` — catálogo e registro — não está pendente de spike**, e `T-08.1` não o revisa. ⇒ **a divergência não tem foro em nenhuma das 9 fases**, e é por isso que `ADR-014/D1e` a arma com três gatilhos nomeados em vez de com uma intenção |
+| **o custo da troca está travado por contrato, não por promessa** | `ADR-014/D1d` põe um terceiro contrato de `import-linter` que proíbe `sqlite3`/`psycopg`/`asyncpg`/`duckdb`/`sqlalchemy` em `domain` e `use_cases`, **rodado nas duas metades** (`rc=0` na árvore limpa; `rc=1` nomeando arquivo e linha sob mutante) `[MEDIDO 2026-08-29]` |
+
+**`D1` desta ADR continua sendo a decisão de destino. O que `ADR-014` decide é o caminho até lá, e a data de validade dele.**

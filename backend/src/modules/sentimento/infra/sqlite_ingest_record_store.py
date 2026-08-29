@@ -25,16 +25,36 @@ _GapRow = tuple[str, str, str, str, str, int, str, str]
 
 # ── THE ENGINE IS SQLite AND `ADR-002/D1` SAYS PostgreSQL — the divergence goes IN WRITING ─
 #
-# `ADR-002/D1` puts `md.ingest_run` and `md.ingest_gap` on the PostgreSQL "que ja esta de pe",
-# and that ADR belongs to F4, carries status `proposto`, and its engine finalist is PENDING A
-# SPIKE (`D4`). This repository TODAY declares `dependencies = []` in `backend/pyproject.toml`
-# and the suite is offline by construction (`backend/scripts/test.sh`, "ZERO REDE"): there is
-# no Postgres driver, no daemon, and `Q2` is not a requirement of this phase — plan 02 exists
-# separately from 03 precisely because F0 does not depend on a host.
+# `ADR-002/D1` puts `md.ingest_run` and `md.ingest_gap` on the PostgreSQL "que ja esta de pe".
+# SQLite stands, and `ADR-014/D1a` decided so — but read the next paragraph before reusing the
+# argument that used to live here, because it was the WRONG one.
 #
-# What this module picks is the ADAPTER, not the decision: the engine is `ADR-002`'s to decide.
-# THE QUESTION ("does F0 persist in SQLite until the spike of `ADR-002/D4`, or wait for
-# Postgres?") is OPEN and addressed to the `quant-architect`; it was not answered here.
+# ⚠️ ERRATUM 2026-08-29 (`ADR-014/A3`) — THE JUSTIFICATION THAT SHIPPED HERE DID NOT HOLD.
+#
+# It read: `ADR-002` "belongs to F4, carries status `proposto`, and its engine finalist is
+# PENDING A SPIKE (`D4`)" — as if that made the choice provisional. It does not. `D4` defers
+# the engine of the SERIES; the record is `D1`, and `D1` is NOT pending. Invoking the open
+# question of one decision to soften a different, closed one is exactly the defect family this
+# repository hunts: a guarantee credited to a term that does not give it.
+#
+# THE ARGUMENT THAT ACTUALLY SUSTAINS IT (`ADR-014/D1c`), and nobody had made it: THE RECORD IS
+# ITSELF CAPTURE-OR-LOSE. `md.ingest_run` carries `clock_skew_ms`, `observer_id` and
+# `observer_region`. `SPEC-001` §5.9 is explicit that `clock_skew_tolerance_ms` is NOT
+# measurable before the collector runs, so F0 persists the OBSERVED skew per `ingest_run` and
+# F3 calibrates the tolerance from it; and `ADR-002` calls `observer_region` a column of F0,
+# "impossivel retroativamente". Waiting for Postgres does not postpone the record — it LOSES
+# the skew distribution F3 depends on, and loses the region of every go-forward row.
+#
+# Still true, and still the reason the adapter can be this one: this repository declares
+# `dependencies = []` in `backend/pyproject.toml`, the suite is offline by construction
+# (`backend/scripts/test.sh`, "ZERO REDE"), and plan 02 exists separately from 03 precisely
+# because F0 does not depend on a host. What this module picks is the ADAPTER, not the decision.
+#
+# WHAT KEEPS THE PROVISIONAL FROM BECOMING PERMANENT is not good intentions: `ADR-014/D1d`
+# declares an `import-linter` contract forbidding the engine in `domain`/`use_cases`, plus
+# three reopening triggers with a command each (`ADR-014/D1e`). And `ADR-014/A4` is the part
+# that would otherwise rot in silence: `T-08.1` is NOT a forum for `ADR-002/D1`, so this
+# divergence has no forum in any of the nine phases — which is why the triggers exist.
 #
 # ⚠️ AND THE COST OF SWAPPING IS NOT SYMMETRIC — the `/review` of 2026-08-29 measured it and
 # the earlier claim of "one file" was wrong. `[MEDIDO 2026-08-29:

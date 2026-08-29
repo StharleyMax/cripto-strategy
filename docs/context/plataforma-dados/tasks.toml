@@ -314,20 +314,39 @@ tracker = { provider = "jira", id = "CST-13", url = "https://conversationhub.atl
 id = "T-02.3"
 title = "[sentimento] 02 · md.ingest_run / md.ingest_gap persistidos e lidos pela consulta nomeada ingest_health_query"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "02"
 depends_on = ["T-01.1"]
-refs = ["CA-F0-6", "ADR-008/D1", "ADR-008/D2", "ADR-008/D3", "plano 02 itens 2.6+2.7", "DoD D2.9", "falsificador em T-07.13"]
+refs = [
+    "CA-F0-6", "ADR-008/D1", "ADR-008/D2", "ADR-008/D3", "plano 02 itens 2.6+2.7", "DoD D2.9", "falsificador em T-07.13",
+    "FECHADA 2026-08-29: /qa APPROVED (2 ciclos, 3 defeitos provados por teste que reprova) e /review COMPLIANT (2 auditorias: entrega + delta de6284c..025e212). Mergeada em master: PR #17 (7af0e4f). Medido na arvore mergeada: 107 passed, cobertura domain 100% (124/124) / use_cases 100% (52/52) / infra 100% (194/194) contra 90/80/70, boundaries 2 kept 0 broken, sweep rc=0.",
+    "DIVIDA COM DONO (1) — ADR-008/DoD-1 na forma [[rules.own]] + corpus NAO entregue, e o /review JULGOU A RECUSA E DEU RAZAO: harness.toml:463 fixa 'toda [[rules.own]] que esta fase declarar nasce com corpus' e :475 diz 'Declara-la aqui seria escrever enforcement sem o corpus que o mede'. Substituto medido: duas varreduras AST com controle dos dois lados. Gatilho de reabertura como COMANDO (precedente ADR-012/D2): `test -d corpus && echo \"DoD-1 VOLTA A MESA\"` — hoje imprime 'corpus ainda nao existe'.",
+    "DIVIDA COM DONO (2) — o caminho de ESCRITA nao tem porta. So a leitura tem (IngestRecordSource, 3 implementadores); initialise/record_run/record_gap sao chamados contra a classe concreta. Dono: T-03.8 (primeira task que persiste por ingest_run em producao). RESSALVA DO /review: T-03.8 esta `blocked` por Q1, entao a divida HERDA o bloqueio — se Q1 nao resolver, ou se qualquer task anterior passar a escrever no store, a titularidade migra.",
+    "DIVIDA COM DONO (3) — ADR-014/A5: md.ingest_gap NAO tem run_id, logo a fronteira entre ACCEPTED e ACCEPTED_WITH_WARNING nao e computavel. NAO e defeito desta task: SPEC-001 §3.5:258 escreve a tabela sem run_id e o builder transcreveu literalmente. E emenda de SPEC (ADR-014/E-2). PRAZO: run_id entra em INGEST_HEALTH_GAP_COLUMNS, que e PROJECAO, logo move todo sha256 que ADR-008/DoD-2 compara entre consumidores — hoje custa uma coluna, depois de T-07.13 ligar custa renegociar os dois lados. A EMENDA TEM DE POUSAR ANTES DE T-07.13. Registrada em docs/INDEX.md 13:40Z e na mensagem da assercao test_ingest_health_query.py:231.",
+    "ACHADO DE METODO, nao de defeito — a cegueira do .pyc: CPython valida bytecode por (mtime-em-segundos, tamanho), entao mutante que preserve os dois e revertido no mesmo segundo continua sendo EXECUTADO. QUATRO confirmacoes independentes em 2026-08-29 (os dois builders, os dois QA) mais uma do coordenador em bancada minima. Bancada re-rodada com PYTHONDONTWRITEBYTECODE=1 + __pycache__ apagado. CANDIDATO A REGRA DO REPOSITORIO — ato do owner, nao de agente.",
+    "ACHADO DE METODO — `harness rules --mode sweep --changed-only` e CEGO a arquivo novo sem `git add` [MEDIDO: mesmo arquivo com print, sem stage -> rc=0 saida vazia; apos git add -> rc=1 citando a linha].",
+    "ABERTO, INFO do /review — a bancada de mutacao NAO e versionada (git ls-files | grep -iE 'mutant|bench|bancada' -> 0 arquivos), e a guarda INERTE que da credito ao '12 de 12' e hoje inauditavel. Regua do /review: INFO e nao WARNING, porque a bancada NAO e portao (os portoes sao lint/test/boundaries/sweep, os quatro verdes e reprodutiveis por terceiros) e evidencia nao-reproduzivel deve ser lida como asserção do autor, nao como medicao. Ele reproduziu 7 mutantes independentemente e todos morreram.",
+]
 tracker = { provider = "jira", id = "CST-14", url = "https://conversationhub.atlassian.net/browse/CST-14" }
 
 [[tasks]]
 id = "T-02.4a"
 title = "[sentimento] 02 · Verificacao de .CHECKSUM na borda de ingestao — rejeita truncamento antes de qualquer linha entrar"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "02"
 depends_on = ["T-01.1"]
-refs = ["GAP G1", "SPEC-001 §5.8", "plano 02 item 2.5 (metade executavel)", "DoD D2.8", "particao de D-3: tasks_review.md §7/D-3"]
+refs = [
+    "GAP G1", "SPEC-001 §5.8", "plano 02 item 2.5 (metade executavel)", "DoD D2.8", "particao de D-3: tasks_review.md §7/D-3",
+    "FECHADA 2026-08-29: /qa APPROVED (2 ciclos, 1 BLOQUEANTE provado por xfail(strict=True)) e /review COMPLIANT (2 auditorias: entrega + delta 49161c9..dab5bd3). Mergeada em master: PR #16 (9f11fc7). D2.8 medido dos DOIS lados na mesma passada: morde = 1 byte invertido por XOR com comprimento IGUAL (checagem de tamanho nao pegaria) -> zero linha no sink; cala = arquivo integro entra inteiro. Bancada n=25 -> 24 mordem, 1 sobrevive (o sobrevivente e redundancia real, nao buraco).",
+    "O BLOQUEANTE, achado pelo /qa e pelo /review por caminhos INDEPENDENTES: checksum_text() chamava read_text(encoding='utf-8') sem guarda, entao um .CHECKSUM com byte nao-UTF-8 levantava UnicodeDecodeError, que e ValueError e esta FORA de ChecksumRejectedError. A seguranca nunca esteve em risco (a excecao propaga, nada entra); o que era falso era o CONTRATO PUBLICADO — o Raises: prometia 'any refusal at the edge'. Um lote escrito como `except ChecksumRejectedError: skip_one_file()` morreria no lote inteiro em vez de pular um objeto. Mesma classe do ^/.match(): garantia atribuida a um termo que nao a da.",
+    "PREMISSA DA SPEC DERRUBADA POR MEDICAO (ADR-014, PR #19, do quant-architect) — SPEC-001 §5.8 infere 'dai G1 ser obrigatoria na ingestao' A PARTIR do caso monthly/bookTicker 2024-04 (200 com 37,7 MB contra 6,7 GB). Baixado e conferido: `sha256sum -c` -> SUCESSO rc=0, `unzip -t` -> No errors detected. O CHECKSUM BATE — o arquivo nao foi corrompido em transito, ele JA NASCE CURTO no publicador (0,942% do mes que o nome declara). Duas classes: T (bytes perdidos em transito — todo digest do publicador morde) e O (o objeto do publicador ja e curto — NENHUMA testemunha de classe T morde). .CHECKSUM e T; o bookTicker e O. A CONCLUSAO sobrevive, a PREMISSA nao.",
+    "DIVIDA COM DONO (1) — a garantia de ordem tem escopo de UMA funcao. O desenho `verify -> VerifiedPayload como unico portador de lines()` foi RECUSADO com argumento de merito, e o /qa MEDIU o argumento construindo os dois desenhos: token -> VAZOU 1 linha; guarda de estado -> RECUSOU. E mediu que NENHUM portao existente ve o violador (lint/test/boundaries/sweep todos rc=0 com um 2o caso de uso plantado). Dono: T-03.10. Gatilho de reabertura: contagem de call sites de .lines() lida do AST -> 1 rc=0 hoje, 2 rc=1 com plantado.",
+    "DIVIDA COM DONO (2) — o gatilho de AST acima tem DOIS PONTOS CEGOS, e sao exatamente os dois que o [tool.importlinter] deste repositorio ja nomeou por escrito para o import-linter [MEDIDO pelo /review, n=3 plantios: `for line in payload.lines():` -> 2 rc=1 MORDE; `pull = payload.lines` ... `pull()` -> 1 rc=0 CEGO; `getattr(payload,'lines')()` -> 1 rc=0 CEGO]. O instrumento novo herdou a limitacao SEM herdar a declaracao. Dono: proxima passagem por estes arquivos (T-03.10).",
+    "DIVIDA COM DONO (3) — a falha fechada (sidecar ausente => recusa) esta CONTIDA hoje [MEDIDO: zero referencia externa aos 4 simbolos da borda], mas T-02.1 (snapshot exchangeInfo/fundingInfo) e T-02.2 (one-shot Coinalyze) sao respostas REST e NAO publicam .CHECKSUM — roteá-las por esta borda recusaria 100% do trafego legitimo. ADR-014/D3 inverte a formulacao sem enfraquece-la: o que recusa e ausencia de TESTEMUNHA DECLARADA, nao ausencia de .CHECKSUM. Dono: o merge da ADR-014.",
+    "DIVIDA COM DONO (4) — o Raises: credita ao next() uma reprovacao que acontece em digest() para o caso que a frase nomeia (caminho sumido, permissao) [MEDIDO por traceback]; e a frase 'Python has no mechanism to stop a caller from calling source.lines()' e verdadeira sobre FAZER a chamada e falsa sobre a chamada TER SUCESSO. Terceira instancia da mesma familia dentro desta task, sentada no paragrafo cujo argumento E essa familia. Nao bloqueia; dono: proxima passagem (T-03.10).",
+    "ASSIMETRIA MEDIDA que nao tinha teste — a frase mais surpreendente do modulo vivia so em docstring [MEDIDO pelo /qa, n=3: abertura FileNotFoundError -> sink 0; lines() PermissionError -> sink 0; MEIO DO STREAM OSError -> sink 2, ENTROU METADE]. Duas asserções separadas acrescentadas, nao-vacuas: bufferizar o loop faz a do meio reprovar.",
+]
 tracker = { provider = "jira", id = "CST-15", url = "https://conversationhub.atlassian.net/browse/CST-15" }
 
 [[tasks]]
