@@ -58,6 +58,28 @@ reais deste projeto foram encontrados por essa disciplina, incluindo uma regra a
 Corolário: **`[PREMISSA-OWNER]` é para citação literal do owner.** Paráfrase vestida de declaração já
 produziu defeito aqui — leitura adotada por agente leva rótulo próprio.
 
+## Higiene de contexto — o subagente devolve ponteiro, não relatório
+
+`[MEDIDO 2026-08-29, sessão `b227a990`: 692 turnos do loop principal, 16h, 41 subagentes]` — **62% do
+custo foi releitura de contexto**, não geração. Relatório de subagente inlinado: média **9,4KB**, e o
+texto integral **já estava em disco**, no `<output-file>` que a própria notificação cita. Um relatório
+entregue no turno 300 de 692 é relido **~390 vezes**: o custo de uma linha é o que ela custa vezes os
+turnos que faltam.
+
+Vinculante para o loop principal e para todo subagente — R1–R5 em
+[`docs/protocolo-de-despacho.md`](docs/protocolo-de-despacho.md):
+
+- **Subagente devolve no máximo 15 linhas** — veredito, números com o comando que os produziu, e o
+  caminho do relatório completo em `docs/context/<feature>/gates/`. **NUNCA cole o corpo.**
+- **Prompt de despacho: no máximo 20 linhas**, citando caminhos. Contexto longo vai para
+  `docs/context/<feature>/handoff/<TASK>.md` **antes** do despacho.
+- **NUNCA `cat` nem `sed -n '1,300p'` de arquivo grande no loop principal** — `grep -n` com âncora,
+  `--json` com filtro, ou delegue a leitura.
+- Todo comando que pode passar de ~50 linhas termina em `| head -N` ou `| tail -N`.
+
+**Nada disto é portão** — é doutrina, e `agents/qa.md` já mediu que prosa sem portão tem 0% de adesão.
+Por isso o documento carrega um falsificador que o manda sair se não pagar o que custa.
+
 ## Dado bruto não é versionado
 
 `data/` (~850 MB) está no `.gitignore`. É dado de terceiro, re-obtenível, catalogado em

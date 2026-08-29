@@ -482,6 +482,37 @@ packs = ["core", "web-fullstack"]
 # o owner precisa de julgamento especializado em SMC/order flow/microestrutura que os
 # subagentes genéricos do plugin não carregam. O agente local supre esse julgamento no
 # refinamento e na arquitetura dos componentes de domínio.
+
+# ── PONTEIRO DE PAPEL VÁLIDO PARA TODOS OS COMPONENTES ─────────────────────────────
+#
+# Declarado em 2026-08-29. Diferente dos ponteiros por componente abaixo, este não carrega
+# julgamento de domínio: carrega a HIGIENE DE CONTEXTO do repositório — o que um subagente
+# devolve e o que ele deixa em disco. É `[agents]` de topo e não `by_component` porque a
+# medição que o produziu não varia por componente.
+#
+# A CHAVE DE LEITURA NÃO É A DE ESCRITA, e isto se mede em vez de se supor: escrito como
+# `[agents] dispatch_protocol`, o acessor o serve em `agents.roles.dispatch_protocol` — ele
+# separa papel de componente `[MEDIDO 2026-08-29: harness policy --key agents.dispatch_protocol
+# → "campo ausente na politica"; --key agents.roles.dispatch_protocol → rc=0 com o caminho]`.
+# Citar a chave errada num documento manda o leitor a um `campo ausente` que parece defeito.
+#
+# O QUE O MEDIU `[MEDIDO 2026-08-29, sessão b227a990: 692 turnos, 16h, 41 subagentes]`:
+# 62% do custo da sessão foi RELEITURA de contexto; relatório de subagente inlinado tinha
+# média 9,4KB e o texto integral JÁ ESTAVA em disco, no `<output-file>` que a própria
+# notificação cita. Um relatório entregue no turno 300 de 692 é relido ~390 vezes.
+#
+# ⚠️ QUEM DE FATO LÊ ESTA CHAVE, medido e não suposto: `harness policy --key agents` é
+# consultado por DOIS arquivos do plugin — `commands/build.md:36` e `commands/qa.md:19`
+# `[MEDIDO 2026-08-29: grep -rn 'agents' commands/*.md sobre o plugin v0.13.0 → 2 ocorrências]`.
+# Ou seja o ponteiro alcança `/build` e `/qa` e NÃO alcança `/pm`, `/architect`, `/tech-lead`
+# nem `/review`. Para esses, quem vincula é o `CLAUDE.md`, que carrega incondicionalmente.
+# Declarar aqui sem essa ressalva seria o "parecendo coberto" que este arquivo caça.
+#
+# Falsificador: o próprio documento carrega o dele (US$/turno < 0,223 e p50 de contexto
+# < 275k numa sessão comparável), e manda a si mesmo sair se não for atingido.
+[agents]
+dispatch_protocol = "docs/protocolo-de-despacho.md"
+
 [agents.by_component.sentimento]
 architect = ".claude/agents/quant-architect.md"
 
