@@ -12,6 +12,8 @@ be measuring anything, and this repository has caught that failure twelve times.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from src.modules.sentimento.domain.quota_bucket import (
@@ -260,3 +262,73 @@ def test_a_rung_cannot_claim_dispatch_without_a_status() -> None:
             retry_after_seconds=None,
             elapsed_seconds=0.0,
         )
+
+
+def test_a_redirect_is_never_folded_into_what_fit_in_the_window() -> None:
+    """`3xx` spent the bucket without answering the question — `REJECTED`, never `ACCEPTED`.
+
+    The module says so in prose and nothing asserted it: widening `_SUCCESS_RANGE` from
+    `range(200, 300)` to `range(200, 400)` SURVIVED the 187-test suite
+    `[MEDIDO 2026-08-29, bancada de mutacao do QA, n=18 mutacoes medidas]`.
+    """
+    ledger = RampLedger(
+        bucket_identifier=BINANCE_FUTURES_DATA.identifier,
+        rungs=_rungs_from(
+            ProbeObservation(status=200),
+            ProbeObservation(status=302),
+            ProbeObservation(status=429),
+        ),
+    )
+
+    verdict = ledger.verdict()
+
+    assert ledger.rungs[1].outcome is RungOutcome.REJECTED
+    assert verdict.accepted_before_throttle == 1
+    assert verdict.rejected == 1
+
+
+def test_a_pass_with_zero_successes_still_reports_the_ordinal_counters_apart() -> None:
+    """The keyless run, and it is a REACHABLE state, not a hypothetical.
+
+    `authentication_headers()` returns NO header when `$COINALYZE_API_KEY` is absent, and its
+    own docstring says the provider then answers `401` — `REJECTED`, "dispatched, spent, and
+    explicitly not a ceiling". This test freezes what such a pass reports today
+    `[MEDIDO 2026-08-29: 150 degraus `401` -> CEILING_NOT_REACHED, accepted=0, rejected=150]`.
+    """
+    ledger = RampLedger(
+        bucket_identifier="coinalyze",
+        rungs=_rungs_from(*[ProbeObservation(status=401) for _ in range(150)]),
+    )
+
+    verdict = ledger.verdict()
+
+    assert verdict.conclusion is RampConclusion.CEILING_NOT_REACHED
+    assert verdict.accepted == 0
+    assert verdict.rejected == 150
+    assert verdict.publishes_a_ceiling is False
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "DEFEITO PROVADO (QA T-03.7): o mesmo par 'quantas couberam' x 'quantas foram "
+        "despachadas' do off-by-one do 429, do outro lado do `if`. O ramo THROTTLED define o "
+        "que cabe como ACEITAS ('o que cabe na janela e 40, nao 41'); o ramo "
+        "CEILING_NOT_REACHED publica `LIMITE INFERIOR de {dispatched}`, que conta tambem os "
+        "REJECTED. Numa passada sem chave (150 x 401) ele imprime 'LIMITE INFERIOR de 150' "
+        "com accepted=0. Remova o marcador quando o numero publicado for o de ACEITAS — ou "
+        "quando a passada sem nenhum sucesso passar a ser INCONCLUSIVE."
+    ),
+)
+def test_the_lower_bound_never_counts_requests_that_did_not_succeed() -> None:
+    """A number published as a bound must be backed by requests that actually went through."""
+    verdict = RampLedger(
+        bucket_identifier="coinalyze",
+        rungs=_rungs_from(*[ProbeObservation(status=401) for _ in range(150)]),
+    ).verdict()
+
+    if verdict.conclusion is not RampConclusion.CEILING_NOT_REACHED:
+        return
+    published = re.search(r"LIMITE INFERIOR de (\d+)", verdict.reason)
+    assert published is not None
+    assert int(published.group(1)) <= verdict.accepted

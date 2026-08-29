@@ -487,3 +487,37 @@ def test_main_wires_the_streams_and_refuses_an_unknown_command_offline() -> None
         application.propagate = propagate_before
         quota_ramp_cli.logger.handlers = product_handlers_before
         quota_ramp_cli.logger.propagate = product_propagate_before
+
+
+def test_the_load_loop_pauses_between_the_blind_calls_and_not_after_the_last_one() -> None:
+    """`n` calls take `n - 1` pauses: a pause after the last one lengthens only ONE half.
+
+    The two halves of the control are already asymmetric in duration; an extra pause on the
+    loaded side widens that asymmetry for nothing, and nothing asserted the cadence — the
+    mutation `attempt + 1 < blind_requests` -> `attempt < blind_requests` SURVIVED the suite
+    `[MEDIDO 2026-08-29, bancada de mutacao do QA]`.
+    """
+    script: list[ProbeObservation | OSError] = [
+        accepted({USED_WEIGHT_HEADER: "10"}),
+        accepted({USED_WEIGHT_HEADER: "12"}),
+        accepted({USED_WEIGHT_HEADER: "14"}),
+        accepted(),
+        accepted(),
+        accepted(),
+        accepted({USED_WEIGHT_HEADER: "16"}),
+    ]
+    clock = RecordingClock()
+    plan = CouplingPlan(
+        observed_bucket=BINANCE_FAPI,
+        observed_path="/fapi/v1/depth",
+        blind_bucket=BINANCE_FUTURES_DATA,
+        blind_path="/futures/data/openInterestHist",
+        blind_requests=3,
+        interval_seconds=0.25,
+    )
+
+    probe_bucket_coupling(plan, ScriptedProbe(script), clock)
+
+    # Two pauses separate the three observed reads, and two more separate the three blind
+    # calls: 3 - 1 = 2, never 3.
+    assert clock.slept == [0.25, 0.25, 0.25, 0.25]

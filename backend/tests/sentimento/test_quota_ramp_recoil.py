@@ -109,3 +109,75 @@ def test_retry_after_is_read_off_the_response_case_insensitively() -> None:
     )
 
     assert rung.retry_after_seconds == 30.0
+
+
+def test_a_delay_seconds_that_is_negative_is_clamped_and_never_a_negative_pause() -> None:
+    """`Retry-After: -5` is junk in the ONE direction that matters: it reads as "go now".
+
+    Left unclamped it would reach the record as `-5.0` and reach `SystemRampClock.sleep()` as a
+    `ValueError`, turning a hostile header into a crash in the middle of a back-off. The clamp
+    was written but nothing asserted it: the mutation `max(0.0, float(int(candidate)))` ->
+    `float(int(candidate))` SURVIVED the 187-test suite
+    `[MEDIDO 2026-08-29, bancada de mutacao do QA, n=18 mutacoes medidas]`.
+    """
+    assert parse_retry_after("-5", NOW) == 0.0
+    assert POLICY.decide(throttle_index=0, retry_after_seconds=0.0).seconds == 60.0
+
+
+def test_a_fractional_delay_seconds_is_absent_and_never_silently_rounded() -> None:
+    """`RFC 9110` delay-seconds is an integer; `12.5` is junk and must route to our own policy."""
+    assert parse_retry_after("12.5", NOW) is None
+    decision = POLICY.decide(throttle_index=0, retry_after_seconds=parse_retry_after("12.5", NOW))
+
+    assert decision.source is RecoilSource.POLICY_NO_RETRY_AFTER
+    assert decision.retry_after_present is False
+
+
+def test_the_boundary_where_the_provider_asks_exactly_our_own_escalation() -> None:
+    """At equality the authority is the PROVIDER, not the policy — and the two are different.
+
+    The pause is 60 s either way, so only the recorded `source` can tell a run that obeyed a
+    header from a run that guessed. The mutation `>=` -> `>` changes nothing but that label and
+    SURVIVED the suite `[MEDIDO 2026-08-29, bancada de mutacao do QA]`.
+    """
+    decision = POLICY.decide(throttle_index=0, retry_after_seconds=60.0)
+
+    assert decision.seconds == 60.0
+    assert decision.source is RecoilSource.RETRY_AFTER
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "DEFEITO PROVADO (QA T-03.7): o cap declarado nao alcanca o Retry-After do fornecedor. "
+        "`Retry-After: 999999999` produz uma pausa de 11.574 dias, e uma data HTTP em 2099 "
+        "produz 72 anos. O proprio docstring de `cap_seconds` diz por que isso e um defeito: "
+        "'an operator who cannot predict the upper bound of a wait will kill the process, "
+        "which loses the ledger'. Remova este marcador quando a pausa passar a ser limitada."
+    ),
+)
+def test_an_absurd_retry_after_is_bounded_by_the_declared_cap() -> None:
+    """A header the third party controls must not decide how long OUR process blocks.
+
+    `[MEDIDO 2026-08-29] POLICY.decide(0, parse_retry_after("999999999", NOW))` ->
+    `seconds=999999999.0`, `source=RETRY_AFTER`, contra `cap_seconds=300.0`.
+    """
+    seconds = parse_retry_after("999999999", NOW)
+    decision = POLICY.decide(throttle_index=0, retry_after_seconds=seconds)
+
+    assert decision.seconds <= POLICY.cap_seconds
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "DEFEITO PROVADO (QA T-03.7): mesma classe pela forma de data. "
+        "`Retry-After: Fri, 01 Jan 2099 00:00:00 GMT` -> 2.270.908.800 s (72 anos)."
+    ),
+)
+def test_an_absurd_retry_after_date_is_bounded_by_the_declared_cap() -> None:
+    """The HTTP-date form reaches the same unbounded pause by another road."""
+    seconds = parse_retry_after("Fri, 01 Jan 2099 00:00:00 GMT", NOW)
+    decision = POLICY.decide(throttle_index=0, retry_after_seconds=seconds)
+
+    assert decision.seconds <= POLICY.cap_seconds

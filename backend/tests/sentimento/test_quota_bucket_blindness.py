@@ -173,3 +173,51 @@ def test_a_coupling_sample_with_no_load_is_refused() -> None:
             loaded_after=14,
             blind_requests=0,
         )
+
+
+def test_the_live_readings_of_the_measurement_recompute_to_separate() -> None:
+    """The committed raw record, recomputed — the number in the document is not the authority.
+
+    `docs/context/plataforma-dados/medicoes/T-03.7-balde-de-cota/04_acoplamento.json` holds
+    `readings_baseline_before_after_loaded_before_after = [2, 4, 6, 8]` with `blind_requests=20`
+    `[MEDIDO 2026-08-29T15:00Z]`. Both deltas are 2 — the self-cost of one `depth?limit=5` read,
+    which `02_peso_de_fapi_depth.txt` measured as 5 -> 7 -> 9.
+    """
+    result = measure_coupling(
+        CouplingSample(
+            baseline_before=2, baseline_after=4, loaded_before=6, loaded_after=8, blind_requests=20
+        )
+    )
+
+    assert result.verdict is CouplingVerdict.SEPARATE
+    assert result.baseline_delta == result.loaded_delta == 2
+    assert result.weight_per_blind_request == 0.0
+
+
+def test_comparing_the_loaded_delta_against_zero_would_have_proved_sharing() -> None:
+    """The vice the baseline exists to remove, reproduced on the SAME live readings.
+
+    The observed read costs weight ITSELF, so a baseline of zero attributes that self-cost to
+    the blind load and reports `SHARED` with a fabricated `0,1` of weight per blind call. The
+    first unbased attempt of this task measured exactly that
+    `[MEDIDO 2026-08-29: reconhecimento sem base -> delta 3, veredito "compartilhado"]`.
+    Same subtraction, same `n`, opposite verdict: the control is the baseline, not the read.
+    """
+    against_zero = measure_coupling(
+        CouplingSample(
+            baseline_before=6, baseline_after=6, loaded_before=6, loaded_after=8, blind_requests=20
+        )
+    )
+    against_baseline = measure_coupling(
+        CouplingSample(
+            baseline_before=2, baseline_after=4, loaded_before=6, loaded_after=8, blind_requests=20
+        )
+    )
+
+    assert against_zero.verdict is CouplingVerdict.SHARED
+    assert against_zero.weight_per_blind_request == 0.1
+    assert against_baseline.verdict is CouplingVerdict.SEPARATE
+    # Compared by `.value`: `mypy --strict` PROVES the two branches cannot be the same
+    # verdict (`comparison-overlap` on `is not`), which is the two-sidedness checked at type
+    # level; the runtime assertion keeps it visible in the test's own output.
+    assert against_zero.verdict.value != against_baseline.verdict.value

@@ -166,3 +166,76 @@ def test_the_first_pause_is_exactly_the_declared_initial_interval() -> None:
     plan = _plan(max_requests=3)
 
     assert plan.interval_after(1) == plan.initial_interval_seconds == 1.0
+
+
+def test_a_429_on_the_very_first_rung_recoils_and_reports_that_nothing_fit() -> None:
+    """The window may already be spent when the ramp starts, and zero is a legal answer.
+
+    The ordinal is 1 and what fits is 0 — the same two quantities the live pass confused, at
+    the smallest `n` where they can still be told apart.
+    """
+    probe = ScriptedProbe([throttled({"retry-after": "45"}), accepted()])
+    clock = RecordingClock()
+
+    run = run_quota_ramp(_plan(max_requests=5), probe, clock, POLICY)
+
+    verdict = run.ledger.verdict()
+    assert len(probe.calls) == 1
+    assert verdict.throttled_at_request == 1
+    assert verdict.accepted_before_throttle == 0
+    assert verdict.publishes_a_ceiling is True
+    # `Retry-After: 45` is SHORTER than our 60 s escalation, so the policy raises it and says
+    # so: waiting longer than asked is conservative, waiting less would be the violation.
+    assert clock.slept == [60.0]
+    assert run.recoil is not None
+    assert run.recoil.source is RecoilSource.RETRY_AFTER_RAISED_BY_POLICY
+
+
+def test_a_second_429_after_a_success_is_never_reached_because_the_ramp_stopped() -> None:
+    """`429` -> `200` -> `429` scripted; only the FIRST is spent, and the rest is proof of that.
+
+    `ScriptedProbe` raises if the ramp asks for more than the script holds, so the assertion
+    that matters is the CALL COUNT: one request, one recoil, and two scripted steps left
+    untouched.
+    """
+    probe = ScriptedProbe([throttled(), accepted(), throttled({"retry-after": "600"})])
+    clock = RecordingClock()
+
+    run = run_quota_ramp(_plan(max_requests=3), probe, clock, POLICY)
+
+    assert len(probe.calls) == 1
+    assert len(run.ledger.rungs) == 1
+    assert run.recoil is not None
+    assert run.recoil.source is RecoilSource.POLICY_NO_RETRY_AFTER
+    assert clock.slept == [60.0]
+
+
+def test_the_recoil_reads_an_http_date_retry_after_against_the_wall_clock() -> None:
+    """The date form has to be resolved against `epoch()`, not against `monotonic()`.
+
+    `RecordingClock` starts at epoch `1 800 000 000`, so a header naming 120 s later is
+    `'Fri, 15 Jan 2027 08:02:00 GMT'` and MUST come out as a 120 s pause. Reading it against
+    the monotonic reading (which starts at zero) would produce a 57-year wait.
+    """
+    probe = ScriptedProbe([accepted(), throttled({"Retry-After": "Fri, 15 Jan 2027 08:02:00 GMT"})])
+    clock = RecordingClock()
+
+    run = run_quota_ramp(_plan(max_requests=4), probe, clock, POLICY)
+
+    assert run.recoil is not None
+    assert run.recoil.source is RecoilSource.RETRY_AFTER
+    assert 119.0 <= run.recoil.seconds <= 121.0
+    assert run.ledger.rungs[1].retry_after_seconds is not None
+
+
+def test_an_http_date_retry_after_already_in_the_past_falls_back_to_our_policy() -> None:
+    """A clock-skewed provider must not shorten the back-off below our own escalation."""
+    probe = ScriptedProbe([accepted(), throttled({"Retry-After": "Fri, 15 Jan 2027 07:55:00 GMT"})])
+    clock = RecordingClock()
+
+    run = run_quota_ramp(_plan(max_requests=4), probe, clock, POLICY)
+
+    assert run.recoil is not None
+    assert run.recoil.seconds == 60.0
+    assert run.recoil.source is RecoilSource.RETRY_AFTER_RAISED_BY_POLICY
+    assert run.recoil.retry_after_present is True
