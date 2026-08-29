@@ -311,3 +311,60 @@ def test_the_assignment_scan_bites_a_planted_alias(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert len(_bindings_named(INGEST_HEALTH_QUERY_NAME, (SRC_ROOT, tmp_path))) == 1
+
+
+# ── 6. O host em DEBUG: a metade do conserto que so um argumento sustentava ────────────────
+
+
+def test_a_host_asking_for_debug_still_gets_the_projection_alone_on_stdout(
+    tmp_path: Path,
+) -> None:
+    """The DESTINATION half of the fix, measured at the level where the LEVEL half gives up.
+
+    The correction of 2026-08-29 has two halves and they defend different things. Half (a) —
+    layer diagnostics dropped from INFO to DEBUG — fixes the ordinary host. Half (b) —
+    `main` routing this application's records to `stderr` and setting `propagate = False` on
+    the `src` logger — is the one claimed to hold "at any level, because it changes the
+    destination and not the volume". A HOST ASKING FOR DEBUG IS THE ONLY UNIVERSE WHERE THE
+    TWO HALVES DISAGREE, and nothing exercised it: zero tests configured DEBUG
+    `[MEDIDO 2026-08-29 by the /qa: `grep -rn "logging.DEBUG" backend/tests/` -> 0 occurrences,
+     n = the whole test tree]`.
+
+    What that left behind is measurable and was measured. `application.propagate = False` died
+    only to an assertion about the FLAG (`app_logger.propagate is False`), never to an
+    observable byte; and `_DIAGNOSTIC_FORMAT` survived being rewritten into the product format
+    `[MEDIDO 2026-08-29, private bench: mutant "_DIAGNOSTIC_FORMAT -> '%(message)s'" ->
+     `bash backend/scripts/test.sh` rc=0, 56 passed, SURVIVED]`. A diagnostic wearing the
+    product's clothes is what makes `cmd >record.jsonl 2>&1` unreadable, which is the same
+    harm the whole correction exists to prevent, one notch quieter.
+
+    So this test asserts the three things the argument for half (b) actually claims: `stdout`
+    is the projection ALONE even at DEBUG, the diagnostics do come out (or the split would be
+    proven by silence, which proves nothing), and they are TOLD APART by carrying the level
+    and the logger name.
+    """
+    path = _store_with_three_runs(tmp_path)
+    expected = ingest_health_query(SqliteIngestRecordStore(path)).canonical_lines()
+
+    hosted = (
+        "import logging, sys\n"
+        "logging.basicConfig(stream=sys.stdout, format='%(message)s', level=logging.DEBUG)\n"
+        f"from {CLI_MODULE} import main\n"
+        "raise SystemExit(main(sys.argv[1:]))\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", hosted, str(path)],
+        cwd=str(BACKEND_ROOT),
+        env=dict(os.environ, PYTHONPATH=str(BACKEND_ROOT)),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert completed.stdout.rstrip("\n").split("\n") == list(expected)
+    diagnostics = [line for line in completed.stderr.rstrip("\n").split("\n") if line]
+    assert diagnostics, "at DEBUG the diagnostics have to appear somewhere — silence proves nothing"
+    assert [line for line in expected if line in completed.stderr] == []
+    for line in diagnostics:
+        assert line.startswith(("DEBUG ", "INFO ", "WARNING ", "ERROR ", "CRITICAL ")), line
+        assert " src." in f" {line}", f"the diagnostic does not name its logger: {line}"
