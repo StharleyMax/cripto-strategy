@@ -146,6 +146,7 @@ refs = [
     "NAO FAZ: nao toca `README.md` (e `T-01.2`, e a separacao existe para dar DoD proprio ao 'ponteiro, nao copia'); nao toca nada sob `backend/` ou `frontend/`; NAO declara `[[rules.own]]` de idioma — `ADR-011/D1.10` REPROVA A FASE, e CA-F1-4 mede nos dois lados.",
     "ESCOPO DE CAMINHO: `CLAUDE.md` NAO e reivindicado por nenhuma feature [MEDIDO 2026-08-29: `harness pipeline require-code CLAUDE.md` -> 'nenhuma feature autorizada reivindica o path']. Esta entre os 4 prefixos LIVRES do cabecalho — declara-lo nao cria colisao.",
 ]
+tracker = { provider = "jira", id = "CST-92", url = "https://conversationhub.atlassian.net/browse/CST-92" }
 
 [[tasks]]
 id = "T-01.2"
@@ -162,6 +163,7 @@ refs = [
     "O QUE VAI NO docs/INDEX.md: UMA linha nova registrando a convencao e a correcao de uma linha da tabela VIVA x HISTORICA da `ADR-013` decidida em `ADR-015/D3` (o plano `01` de SPEC-001 e HISTORICA, nao VIVA). ACRESCENTA-SE; NAO SE REESCREVE NENHUMA LINHA EXISTENTE — `CLAUDE.md` declara o INDEX append-only, e reescrever uma linha REPROVA.",
     "ESCOPO DE CAMINHO: `docs/INDEX.md` NAO e reivindicado por nenhuma feature; `README.md` E reivindicado por `plataforma-dados` [MEDIDO 2026-08-29]. Ver a nota de ESCOPO no cabecalho — hoje o verde vem da feature errada e NADA TRAVA; declarar o prefixo de `README.md` para esta feature ARMARIA colisao no `approve build`.",
 ]
+tracker = { provider = "jira", id = "CST-93", url = "https://conversationhub.atlassian.net/browse/CST-93" }
 
 [[tasks]]
 id = "T-01.3"
@@ -178,6 +180,7 @@ refs = [
     "NAO FAZ, E ESTE E O PONTO MAIS IMPORTANTE DA TASK: NAO muda o status da `ADR-015`, que esta `proposto`. Status de ADR NAO vive no ledger — a `ADR-013` foi de `proposto` a `aceito` por ATO REGISTRADO em `docs/INDEX.md`, com as respostas do owner na mao, e nao existe evento equivalente para a `ADR-015`. Um agente que 'aproveitasse para arrumar' estaria ACEITANDO UMA ADR EM NOME DO OWNER. O incomodo e real e esta escalado: `ADR-015/D1` e `/D2` sao normativas dentro dos DoDs `CA-F2-4` e `CA-F3-4` de uma SPEC APROVADA, ou seja uma ADR `proposto` ja esta gateando trabalho. DECISAO B do `tasks_review.md` §12.",
     "NAO E PRE-REQUISITO DE 02 NEM DE 03 — e divida de documento, nao de fronteira. `depends_on` VAZIO de proposito: declarar aresta falsa e pior que nao declarar.",
 ]
+tracker = { provider = "jira", id = "CST-94", url = "https://conversationhub.atlassian.net/browse/CST-94" }
 
 # ── 02 · Retroativo backend/tests · sentimento · retroativo · PARALELA com 03 e 04 ─
 
@@ -210,6 +213,7 @@ refs = [
     "NAO FAZ: `backend/tests/sentimento/` NAO muda de nome — `sentimento` e excecao de `RN-7` e do vocabulario fechado, e CA-F2-5 mede OS DOIS LADOS (`test -d backend/tests/sentimento` -> rc=0 E `test -d backend/tests/sentiment` -> rc=1; o segundo lado e o que pega o builder que 'aproveitou para arrumar'). NENHUM evento de log renomeado — CA-F2-9: 9 eventos, os 4 portugueses (`etl_item_publicado`, `etl_item_concluido`, `etl_drenagem_concluida`, `checkpoint_cauda_truncada`) INTACTOS. NENHUMA `[[rules.own]]` de idioma.",
     "ESCOPO DE CAMINHO: `backend/tests` NAO e reivindicado por ninguem (esta entre os 4 prefixos LIVRES); `backend/README.md` e `backend/src/...` SAO reivindicados por `plataforma-dados` [MEDIDO 2026-08-29]. Ver a nota de ESCOPO no cabecalho.",
 ]
+tracker = { provider = "jira", id = "CST-95", url = "https://conversationhub.atlassian.net/browse/CST-95" }
 
 # ── 03 · Retroativo frontend/src · web · retroativo · PARALELA com 02 e 04 ─────────
 
@@ -241,6 +245,7 @@ refs = [
     "NAO FAZ: nao cria `Filter.test.tsx` nem fecha o aviso `web-fullstack.browser-test-file-present` — o `sweep` continua com 1 [AVISO] e 0 [BLOQUEIO] depois desta task, e fechar o aviso e divida de OUTRA trilha. Nao toca `backend/` exceto `backend/README.md`. NENHUMA `[[rules.own]]` de idioma.",
     "ESCOPO DE CAMINHO: `frontend/src`, `harness.toml`, `frontend/README.md`, `backend/README.md` e `docs/context/plataforma-dados/` SAO TODOS reivindicados por `plataforma-dados` [MEDIDO 2026-08-29, n=12 caminhos]. ESTA E A TASK MAIS EXPOSTA A DECISAO A do `tasks_review.md` §12 — se o owner escolher declarar os prefixos disputados para esta feature, e aqui que a COLISAO detona no `approve build`.",
 ]
+tracker = { provider = "jira", id = "CST-96", url = "https://conversationhub.atlassian.net/browse/CST-96" }
 
 # ── 04 · Superficies de contrato · docs · fronteira · ZERO codigo · PARALELA 02/03 ─
 
@@ -262,6 +267,7 @@ refs = [
     "DoD: CA-F4-1 (a linha 10 contem `[INFERRED:` e NAO contem o marcador de nao-decidido) · CA-F4-2 · CA-F4-3 · CA-F4-4 · CA-F4-5 (os 9 eventos INTACTOS: `grep -rnE 'logger\\.(info|warning|debug|error)\\(\"' backend/src | wc -l` -> 9, com os 4 portugueses presentes por `grep -F` de cada um) · CA-F4-7 (`docs/INDEX.md` CRESCE, nao muda: zero linhas removidas).",
     "FALSIFICADOR DESTA FASE, observavel e barato: se, duas fases adiante, um evento de log NOVO nascer em portugues TENDO O `CLAUDE.md` NO CONTEXTO, a decisao prospectiva nao pegou e a superficie precisa de MECANISMO, nao de doutrina. Hoje sao 4 de 9, E O NUMERO DE PORTUGUESES NAO PODE SUBIR. Se subir, `ADR-013/D2e` volta a mesa com um caso concreto — e e a primeira vez nesta trilha que ele teria um.",
 ]
+tracker = { provider = "jira", id = "CST-97", url = "https://conversationhub.atlassian.net/browse/CST-97" }
 
 [[tasks]]
 id = "T-04.2"
@@ -280,3 +286,4 @@ refs = [
     "POR QUE E TASK SEPARADA DE `T-04.1`: arquivo diferente (`docs/context/codigo-em-ingles/`), AUDIENCIA DIFERENTE (o owner, nao o builder), e e o deliverable mais facil de ser engolido por uma task cujo trabalho principal e editar o `CLAUDE.md`. A SUPERFICIE DE LOG DIVERGIU JUSTAMENTE POR NAO TER DONO DECLARADO — `docs/INDEX.md:68`: 'o codigo novo e todo em ingles ... o que cria um SEGUNDO VOCABULARIO DE OBSERVABILIDADE ... Nada existente foi renomeado. A divergencia e DECISAO DE LEITURA DO AGENTE, nao citacao do owner'. 9 eventos nomeados, 4 em portugues e 5 em ingles, NASCIDOS NO MESMO MES. Repetir o padrao de esconde-la dentro de outra entrega seria ironico.",
     "ESCOPO DE CAMINHO: `docs/context/codigo-em-ingles/` NAO e reivindicado por ninguem — esta entre os 4 prefixos LIVRES do cabecalho.",
 ]
+tracker = { provider = "jira", id = "CST-98", url = "https://conversationhub.atlassian.net/browse/CST-98" }

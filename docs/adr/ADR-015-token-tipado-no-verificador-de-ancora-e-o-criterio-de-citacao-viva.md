@@ -1,6 +1,15 @@
 # ADR-015 — O verificador de âncora tem **token tipado**, e citação VIVA se define por **obrigação em vigor**, não por executabilidade
 
-**Status:** `proposto` · **Data:** 2026-08-29 · **Componente:** `docs` · **Feature:** `codigo-em-ingles`
+**Status:** `aceito` · **Data:** 2026-08-29 · **Aceita em** 2026-08-29 pelo owner
+> **Por que passou a `aceito`, e o motivo é o próprio critério desta casa:** ela estava `proposto`
+> **enquanto já gateava `CA-F2-4` e `CA-F3-4` de uma SPEC APROVADA** — documento `proposto`
+> sustentando critério de aceite de SPEC aprovada é a mesma contradição texto × ledger que o
+> `CLAUDE.md` proíbe. O `/tech-lead` achou a contradição e **recusou decidir sozinho**, o que
+> estava certo: mudar o status de uma ADR não é ato de quem quebra tasks. Levada ao owner com
+> as alternativas e o custo de cada uma; ele escolheu aceitar.
+> `[DECISÃO-OWNER: 2026-08-29 — escolha entre alternativas apresentadas, NÃO citação literal]`
+
+**Data original:** 2026-08-29 · **Componente:** `docs` · **Feature:** `codigo-em-ingles`
 **Autor:** `/architect` (segundo desta trilha — a `ADR-013` é de outro, está `aceito` e **não é reaberta aqui**)
 **Rev de ancoragem de TODA medição:** **`master@5f4ece0`** · **Substitui um número e uma linha da `ADR-013`; não substitui nenhuma decisão dela.**
 **Insumos:** [`ADR-013`](ADR-013-codigo-em-ingles-convencao-com-fronteira-e-sem-portao.md) (`aceito`) · [`ADR-011/D4`](ADR-011-o-portao-sai-do-harness-e-vai-para-o-make.md) · [`ADR-012/D4`](ADR-012-o-portao-de-shell-e-o-make-nao-o-code-paths.md) · [`PRD-002`](../specs/PRD-002-codigo-em-ingles.md) §12 · `CLAUDE.md`
