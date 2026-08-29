@@ -253,7 +253,7 @@ tracker = { provider = "jira", id = "CST-96", url = "https://conversationhub.atl
 id = "T-04.1"
 title = "[docs] 04 · As tres superficies de contrato ganham dono no CLAUDE.md — evento de log, coluna de contrato e segmento de URL"
 components = ["docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-08-29T19:04:00Z @ a2dd0a3d3d13b38b644819aa257a414ac0f4f271
 phase = "04"
 depends_on = ["T-01.1"]
 refs = [
@@ -273,7 +273,7 @@ tracker = { provider = "jira", id = "CST-97", url = "https://conversationhub.atl
 id = "T-04.2"
 title = "[docs] 04 · A pergunta FACTUAL ao owner sobre consumidor externo dos 4 eventos de log"
 components = ["docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-08-29T19:04:00Z @ a2dd0a3d3d13b38b644819aa257a414ac0f4f271
 phase = "04"
 # `depends_on` VAZIO e DELIBERADO: a pergunta nao depende do `CLAUDE.md` nem de nenhuma
 # outra task. O plano poe a fase 04 dependendo da 01, e essa ordem e do PORTAO DE FASE,
