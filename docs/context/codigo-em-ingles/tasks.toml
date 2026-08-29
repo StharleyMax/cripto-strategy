@@ -1,0 +1,282 @@
+# Doc de tasks de `codigo-em-ingles` — o DADO DE MAQUINA da quebra.
+#
+# A narrativa e o racional vivem em `tasks_review.md`. Os dois NAO se sobrepoem: este
+# arquivo nao argumenta, e aquele nao e lido por maquina.
+#
+# A chave da feature e o campo `feature` ABAIXO, nunca o nome do diretorio.
+#
+# ── REV DE ANCORAGEM, E ELE NAO E O DO PLANO ───────────────────────────────────────
+#
+# TODA medicao deste arquivo esta em `master@7c3599b`. A `SPEC-002`, a `ADR-015` e os 5
+# arquivos de plano ancoram em `5f4ece0`, e a diferenca NAO e formal: ela move dois
+# numeros do DoD. Medido, mesmo comando e mesmo escopo nos dois revs
+# [MEDIDO 2026-08-29, n=12 tokens x 2 revs]:
+#
+#   `Filtro.tsx`  MORDE  8 -> 12      `painel/`  MORDE  17 -> 19
+#   os outros 10 tokens: INALTERADOS
+#
+# Causa unica, e e auto-envenenamento puro (`SPEC-002` §4.1 / `[G-A1]`):
+#   git diff --name-only 5f4ece0..HEAD -- <escopo VIVO>  ->  UM arquivo,
+#   `docs/context/codigo-em-ingles/handoff_to_architect.md` — o handoff DESTA feature.
+#   git diff --stat 5f4ece0..HEAD -- backend frontend  ->  VAZIO. Zero linha de codigo.
+#
+# E vai subir de novo: este arquivo, o `tasks_review.md` e o `handoff_to_builder.md`
+# citam os dois tokens. CONSEQUENCIA OPERACIONAL, aplicada em `T-02.1` e `T-03.1`: o DoD
+# NAO congela o `n`. O builder RE-MEDE no rev dele, declara `n > 0` por token ANTES do
+# rename (e isso que `RN-8` compra — um `n=0` reprova no ato) e exige `0` DEPOIS. Os
+# numeros do plano viram PISO DE SANIDADE, nao alvo.
+#
+# ── UNIDADE DA CONTAGEM: LINHAS, NAO OCORRENCIAS ───────────────────────────────────
+#
+# `ADR-015/D2` rotula a tabela como "n de OCORRENCIAS" e publica valores de LINHAS. O
+# rotulo contradiz o valor, e a diferenca e real [MEDIDO 2026-08-29 em 7c3599b]:
+#
+#   git grep -n -F 'ROTAS' -- backend/src backend/tests frontend/src
+#   frontend/src/app/rotas.ts:14:export const ROTAS = {
+#   frontend/src/app/rotas.ts:18:export type Rota = (typeof ROTAS)[keyof typeof ROTAS];
+#   -> 2 LINHAS, 3 OCORRENCIAS. O plano diz 2, logo o plano esta em linhas.
+#
+# Todo DoD deste arquivo fixa a unidade no proprio comando (`git grep -c` / `wc -l`
+# sobre linhas). O lado CALA (`n = 0`) e identico nas duas unidades; a unidade so
+# importa no lado MORDE.
+#
+# ── AS FASES 02 E 03 COMPARTILHAM UM ARQUIVO, E O `index.md` NEGA ──────────────────
+#
+# O `index.md` do plano afirma "os diffs sao disjuntos ... zero arquivo em comum" e
+# nomeia `docs/context/plataforma-dados/tasks.toml` como "a unica intersecao". A
+# medicao dele esta certa (02 NAO toca esse arquivo) e a conclusao NAO
+# [MEDIDO 2026-08-29 em 7c3599b]:
+#
+#   backend/README.md  :568 :569 :717 :743 :815  -> lista VIVA da fase 02
+#   backend/README.md  :455 :457                 -> lista VIVA da fase 03
+#
+# O PROPRIO PLANO o enumera nas duas fases. As linhas distam ~110 e o merge resolve, logo
+# o PARALELISMO CONTINUA SEGURO — o que e falso e a justificativa, nao a conclusao. As
+# duas tasks declaram o compartilhamento: colisao de ARQUIVO, nao de LINHA. A segunda a
+# mergear rebaseia, e `backend/README.md` no proprio diff NAO e sinal de erro.
+#
+# ── TRACKER: NENHUM CARD, E A MARCACAO DIZ EXATAMENTE ISSO ─────────────────────────
+#
+# `harness policy --key tracker` -> kind=jira, project=CST, board_id=36 [MEDIDO
+# 2026-08-29]. O tracker EXISTE e esta configurado. Nenhum card foi criado por INSTRUCAO
+# EXPLICITA DO COORDENADOR em 2026-08-29: ele carda depois de o owner aprovar o `build`.
+#
+# As 7 tasks saem SEM `tracker` e SEM `local_only`, e a escolha e deliberada:
+#   `tracker = {...}`                     = cardou.                      NAO e o caso.
+#   `local_only = true` + `local_reason`  = o owner decidiu NAO cardar,  NAO e o caso —
+#                                           NUNCA. A decisao aqui e      a decisao e
+#                                           "nao cardar".                "cardar depois".
+#   sem marcacao + declaracao no handoff  = pendencia CONSCIENTE.        E o caso.
+#
+# Um marcador que colapse "decidi" e "vou fazer depois" faz o segundo nunca chamar
+# atencao. Recuperavel por comando: `harness tasks json codigo-em-ingles | grep -c
+# tracker` -> 0. O que deveria ser cardado (1 Epic + 7 Tarefa em CST) esta enumerado no
+# `handoff_to_builder.md`.
+#
+# ── ESCOPO DE CAMINHOS: VAZIO, E DECLARA-LO ARMA UMA COLISAO ───────────────────────
+#
+# `harness pipeline scope codigo-em-ingles list` -> 0 byte, rc=0. NENHUM prefixo.
+# E o portao ja devolve verde pela feature ERRADA [MEDIDO 2026-08-29, n=12 caminhos]:
+#
+#   harness pipeline require-code frontend/src/features/painel/Filtro.tsx
+#   [pipeline] codigo permitido (...) — feature 'plataforma-dados' (scope)
+#
+# 9 dos 12 caminhos desta feature ja sao reivindicados por `plataforma-dados`, que esta
+# em BUILD_AUTHORIZED. Lido no motor: colisao e ">1 feature AUTORIZADA reivindica o path"
+# (`scripts/pipeline.sh:1036-1050`) e `authorized_features()` e ">= BUILD_AUTHORIZED"
+# (`:512-522`) => um escopo declarado agora e INERTE, e acorda no instante do
+# `approve build`, bloqueando os 3 builders de `plataforma-dados` que rodam hoje.
+#
+# E `scope add` GRAVA NO LEDGER com `actor: "owner"` (`scripts/pipeline.sh:755`). O
+# coordenador proibiu mexer no ledger. NAO EXECUTADO. Os 4 prefixos LIVRES, prontos:
+#
+#   harness pipeline scope codigo-em-ingles add CLAUDE.md backend/tests \
+#                                               docs/INDEX.md docs/context/codigo-em-ingles
+#
+# Os 9 disputados sao decisao do owner — `tasks_review.md` §4 tem as tres saidas com o
+# custo de cada uma, e a recomendacao com rotulo `[INFERRED]`.
+#
+# ── LINHA DE BASE COMPORTAMENTAL, CONFERIDA EM 7c3599b ─────────────────────────────
+#
+# `make test` -> 107 passed · 370 statements · 54 branches · domain 124/124 ·
+# use_cases 52/52 · infra 194/194 · 100% [MEDIDO 2026-08-29 em 7c3599b, worktree com
+# .venv apos `make setup`] — IDENTICA a congelada pelo /architect em 5f4ece0.
+# `harness rules list --severity block` -> 7 regras. `harness rules --mode sweep` ->
+# 1 [AVISO] (`web-fullstack.browser-test-file-present`), 0 [BLOQUEIO], rc=0.
+# Toda task RETROATIVA termina com esses numeros IDENTICOS. Divergencia reprova,
+# INCLUSIVE PARA MAIS. `rc=3` e "nao mediu", nao "passou".
+#
+# ── O SHELL E `zsh`, E ISSO REPROVA UM COMANDO DE DoD ──────────────────────────────
+#
+# zsh NAO faz word-splitting de variavel sem aspas. Medido na propria bancada desta
+# quebra: `git grep -o -F 'Filtro.tsx' -- $VIVO | wc -l` -> 0 (o `$VIVO` inteiro vira UM
+# pathspec e nao casa nada); com os prefixos LITERAIS -> 13. Um `0` que significa "nao
+# mediu", vestido de rc=0 e de "nenhuma ancora sobrou" — o terceiro significado de rc=0
+# da `ADR-012`, produzido pelo shell. NENHUM DoD deste arquivo passa lista de caminho
+# por variavel.
+#
+# ── STATUS ─────────────────────────────────────────────────────────────────────────
+#
+# 7 tasks, TODAS `todo`. NENHUMA `blocked`, e isso e afirmacao medida e nao descuido: as
+# tres decisoes de owner em aberto (escopo de caminhos §4; status da `ADR-015` §5;
+# consumidor externo de log / `T-04.2`) NAO bloqueiam nenhuma task. A `[Q2]` (segmento de
+# URL) tambem nao: `T-03.1` mantem `"/painel"` de proposito, e `CA-F3-8` mede isso.
+
+schema_version = "1"
+feature = "codigo-em-ingles"
+spec   = "docs/specs/SPEC-002-codigo-em-ingles.md"
+plan   = "docs/plans/SPEC-002-codigo-em-ingles"
+review = "docs/context/codigo-em-ingles/tasks_review.md"
+
+# ── 01 · Convencao escrita · docs · prospectivo ────────────────────────────────────
+
+[[tasks]]
+id = "T-01.1"
+title = "[docs] 01 · A secao normativa no CLAUDE.md — a tabela de fronteira de 12 linhas, a excecao literal do vocabulario e o gatilho de reabertura"
+components = ["docs"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 itens 1.1+1.2+1.3+1.4+1.5", "SPEC-002 §2 ([Q3] RESOLVIDA)", "SPEC-002 §6.1 ([Q1] metade prospectiva)", "PRD-002/U1", "ADR-013/D1", "ADR-013/D2e",
+    "DoD: CA-F1-1 (a tabela de 12 linhas integral) · CA-F1-2 (a excecao grepavel por grep -F, 1 linha rc=0) · CA-F1-3 (grep -n 'glossary_doc' CLAUDE.md, >=1 linha) · CA-F1-4 (dois lados: `harness rules list --severity block` antes e depois com diff VAZIO e as MESMAS 7 regras; e `git diff master -- harness.toml` sem a substring [[rules.own]]) · CA-F1-8 (`git diff --name-only master... -- backend frontend` VAZIO) · CA-F1-9 (make lint e make test rc=0; rc=3 REPROVA).",
+    "ONDE: secao nova em `CLAUDE.md`, ADJACENTE a 'Vocabulario fechado de componentes' (`:70`). O argumento de `[Q3]` nao e arrumacao e nao e o `bootstrap_docs` — esse argumento CAIU na medicao (`harness policy --key docs.bootstrap_docs` -> UM arquivo, `docs/proposta-discovery.md`, que nao e o CLAUDE.md nem o README). O que sustenta e o CLAUDE.md ser carregado INCONDICIONALMENTE como project instructions em toda sessao de agente, e ja carregar em `:70` o vocabulario fechado — que e o REFERENTE da excecao. Regra e excecao a 4 linhas uma da outra, e CA-F1-2 fica satisfeita por um grep num arquivo so.",
+    "LINHA 10 RESOLVIDA NESTA TASK: evento de log e chave de `extra={}` nascem EM INGLES, prospectivamente, com o rotulo `[INFERRED: aplicacao de ADR-013/D3 linha 1 a superficie nao enumerada]` — E a nota de que os 4 existentes em portugues NAO sao renomeados por esta SPEC. LINHA 12 PERMANECE `NAO DECIDIDO` com o dono (owner), `[Q2]`, SPEC-002 §7.",
+    "ROTULO OBRIGATORIO NA EXCECAO, e ele NAO e `[PREMISSA-OWNER]`: `[DECISAO-OWNER: 2026-08-29, escolha entre alternativas apresentadas]`. `CLAUDE.md` reserva `[PREMISSA-OWNER]` para CITACAO LITERAL, e aqui o owner escolheu uma opcao de um menu que um agente redigiu. O custo declarado a ele foi 'o repositorio fica bilingue numa fronteira, mas a fronteira e declarada e tem uma linha so'.",
+    "NAO FAZ: nao toca `README.md` (e `T-01.2`, e a separacao existe para dar DoD proprio ao 'ponteiro, nao copia'); nao toca nada sob `backend/` ou `frontend/`; NAO declara `[[rules.own]]` de idioma — `ADR-011/D1.10` REPROVA A FASE, e CA-F1-4 mede nos dois lados.",
+    "ESCOPO DE CAMINHO: `CLAUDE.md` NAO e reivindicado por nenhuma feature [MEDIDO 2026-08-29: `harness pipeline require-code CLAUDE.md` -> 'nenhuma feature autorizada reivindica o path']. Esta entre os 4 prefixos LIVRES do cabecalho — declara-lo nao cria colisao.",
+]
+
+[[tasks]]
+id = "T-01.2"
+title = "[docs] 01 · O ponteiro no README.md, SEM copia, e a linha nova em docs/INDEX.md"
+components = ["docs"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1"]
+refs = [
+    "plano 01 itens 1.6+1.7", "SPEC-002 §2 (metade ponteiro)", "RN-2", "[GAP G4]", "ADR-015/D3",
+    "DoD: CA-F1-5, AS DUAS METADES — `grep -c 'CLAUDE.md' README.md` -> >=1 E `grep -cF '<a frase literal da excecao>' README.md` -> 0. E CA-F1-7 — `git diff --numstat master... -- docs/INDEX.md` -> `N  0  docs/INDEX.md`: ZERO linhas removidas, qualquer `-` REPROVA.",
+    "POR QUE E TASK SEPARADA DE T-01.1, e nao e arrumacao: a metade `-> 0` de CA-F1-5 e a UNICA coisa que impede as duas verdades sobre a mesma superficie, e e a mais facil de perder dentro de uma task cujo trabalho principal e ESCREVER a tabela. Como deliverable proprio, 'nao copiar' tem DoD, dono e revisor. `PRD-002` §3.2 mede o custo de duas verdades. Arquivos diferentes de T-01.1 => zero conflito de linha.",
+    "O QUE VAI NO README.md: a secao 'Idioma de docstring e convencao, nao portao' (`:83`, o precedente de `D1.10`) tem o TITULO generalizado para 'idioma de identificador' e o CORPO apontando para o `CLAUDE.md`. NENHUMA reproducao da tabela.",
+    "O QUE VAI NO docs/INDEX.md: UMA linha nova registrando a convencao e a correcao de uma linha da tabela VIVA x HISTORICA da `ADR-013` decidida em `ADR-015/D3` (o plano `01` de SPEC-001 e HISTORICA, nao VIVA). ACRESCENTA-SE; NAO SE REESCREVE NENHUMA LINHA EXISTENTE — `CLAUDE.md` declara o INDEX append-only, e reescrever uma linha REPROVA.",
+    "ESCOPO DE CAMINHO: `docs/INDEX.md` NAO e reivindicado por nenhuma feature; `README.md` E reivindicado por `plataforma-dados` [MEDIDO 2026-08-29]. Ver a nota de ESCOPO no cabecalho — hoje o verde vem da feature errada e NADA TRAVA; declarar o prefixo de `README.md` para esta feature ARMARIA colisao no `approve build`.",
+]
+
+[[tasks]]
+id = "T-01.3"
+title = "[docs] 01 · A divida de status: SPEC-002 e o index.md do plano dizem DRAFT e o ledger diz SPEC_APPROVED"
+components = ["docs"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "ACHADO DO /tech-lead, 2026-08-29 — NAO esta em nenhum item do plano, porque o plano foi escrito quando o ledger dizia DRAFT. `tasks_review.md` §5.",
+    "O FATO: `docs/specs/SPEC-002-codigo-em-ingles.md:3` diz `Status: DRAFT` e `docs/plans/SPEC-002-codigo-em-ingles/index.md:3` diz '(DRAFT — SPEC_APPROVED e gate do owner)'. O ledger diz `SPEC_APPROVED` desde `2026-08-29T14:35:45Z` [MEDIDO 2026-08-29: `harness pipeline state codigo-em-ingles` -> SPEC_APPROVED; `harness pipeline show` -> 8 eventos, o `approve spec` em 14:35:44Z com o motivo escrito].",
+    "POR QUE ISTO E SINCRONIZACAO E NAO DECISAO, e a autorizacao vem do proprio texto: a `SPEC-002` escreve sobre si mesma 'e DRAFT PORQUE O LEDGER DIZ DRAFT'. O ledger deixou de dizer isso. Aplicar a regra que o documento escreveu para si e a leitura correta, e o evento do ledger e a evidencia CITAVEL. `CLAUDE.md`: 'o ledger e a identidade do estado, nao o texto do documento' — isso resolve QUEM TEM RAZAO, nao O QUE FAZER com o texto errado; documento que contradiz o ledger e DIVIDA.",
+    "DoD: `git diff --name-only master...` -> EXATAMENTE 2 arquivos · `harness pipeline state codigo-em-ingles` -> `SPEC_APPROVED` (a evidencia citada e CONFERIDA, nao presumida) · `git diff --name-only master... -- docs/adr` -> VAZIO · `git diff --name-only master... -- backend frontend` -> VAZIO · o diff toca SO linhas de cabecalho: nenhuma decisao, nenhuma medicao e nenhum corpo de documento alterado.",
+    "NAO FAZ, E ESTE E O PONTO MAIS IMPORTANTE DA TASK: NAO muda o status da `ADR-015`, que esta `proposto`. Status de ADR NAO vive no ledger — a `ADR-013` foi de `proposto` a `aceito` por ATO REGISTRADO em `docs/INDEX.md`, com as respostas do owner na mao, e nao existe evento equivalente para a `ADR-015`. Um agente que 'aproveitasse para arrumar' estaria ACEITANDO UMA ADR EM NOME DO OWNER. O incomodo e real e esta escalado: `ADR-015/D1` e `/D2` sao normativas dentro dos DoDs `CA-F2-4` e `CA-F3-4` de uma SPEC APROVADA, ou seja uma ADR `proposto` ja esta gateando trabalho. DECISAO B do `tasks_review.md` §12.",
+    "NAO E PRE-REQUISITO DE 02 NEM DE 03 — e divida de documento, nao de fronteira. `depends_on` VAZIO de proposito: declarar aresta falsa e pior que nao declarar.",
+]
+
+# ── 02 · Retroativo backend/tests · sentimento · retroativo · PARALELA com 03 e 04 ─
+
+[[tasks]]
+id = "T-02.1"
+title = "[docs][sentimento] 02 · Os 2 arquivos, os 40 identificadores e as 3 citacoes VIVAS, atomico e com a linha de base intacta"
+# `docs` E `sentimento`, e a segunda nao e enfeite: a task escreve `backend/README.md`,
+# superficie de `docs`, E `backend/tests/sentimento/` + `backend/src/.../sentimento/`,
+# superficie de `sentimento` (dono de julgamento `quant-architect`, `harness policy
+# --key agents.by_component`). O plano declara so `sentimento`; eu acrescento `docs`
+# pelo precedente MEDIDO da `T-01.1` de `plataforma-dados`, corrigida pelo /review
+# exatamente por isto, e por `ADR-003:11-13` ('componente omitido e componente sem dono
+# de julgamento'). O prefixo do titulo acompanha NO MESMO ATO: V-26 compara o CONJUNTO
+# de colchetes da sequencia INICIAL com `components` (`scripts/tasks.sh:887-891`) e sai
+# WARN se so um dos dois mudar.
+components = ["docs", "sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.1", "T-01.2"]
+refs = [
+    "plano 02 itens 2.1+2.2+2.3+2.4", "SPEC-002 §3.1 (o mapa NORMATIVO e FECHADO)", "PRD-002/U2", "RN-1", "RN-2", "RN-7", "RN-8",
+    "POR QUE UMA TASK PARA A FASE INTEIRA, e o argumento e do plano e eu concordo: '2 + 4 arquivos, 49 identificadores, diff revisavel por inteiro. Fragmentar multiplica o risco de rename nao-atomico, que e o UNICO risco real desta feature' (`RN-1`: caminho renomeado cujo comando documentado nao foi atualizado devolve rc=0 e 0 byte — indistinguivel de 'avaliado e limpo'). Duas tasks tornariam a violacao de `RN-1` o caminho de menor resistencia.",
+    "AS 3 CITACOES VIVAS, ENUMERADAS — E PARA COPIAR, NAO PARA RESUMIR: (1) `backend/README.md` linhas :568 :569 :717 :743 :815 — instrui trabalho corrente e nomeia o caminho; (2) `backend/src/modules/sentimento/infra/jsonl_checkpoint.py:22`, docstring de PRODUCAO — a UNICA linha de `backend/src` que esta fase toca; (3) `backend/tests/sentimento/test_resumable_etl_backlog.py`, a citacao cruzada entre os 2 arquivos. TODAS no MESMO COMMIT do `git mv` (`RN-1`).",
+    "A HISTORICA, E ELA NAO SE TOCA: `docs/INDEX.md` — append-only por `CLAUDE.md`. 'Atualize todas as citacoes' produz a violacao que `RN-2` existe para evitar. CA-F2-7 mede: `git diff --numstat master... -- docs/INDEX.md docs/adr docs/plans docs/specs` -> VAZIO.",
+    "EMENDA 1 AO DoD (achado do /tech-lead, `tasks_review.md` §1) — CA-F2-4 e RE-MEDIDO, NAO CONGELADO. O builder mede `test_durabilidade_da_infra` e `test_etl_backlog_retomavel` NO REV DELE, declara `n > 0` por token ANTES do rename e exige `0` por token DEPOIS, mesmo escopo e mesmo comando. Um `n=0` no lado MORDE REPROVA NO ATO DA DECLARACAO (`RN-8` / `ADR-015/D2`: um token de MORDE zero contribui rc=0 em silencio e e indistinguivel de um token que passou). Os valores do plano (4 e 3) sao PISO DE SANIDADE: medir MENOS significa que alguem ja mexeu nas ancoras e a fase para. Os dois NAO derivaram entre 5f4ece0 e 7c3599b [MEDIDO 2026-08-29].",
+    "EMENDA 2 AO DoD — A UNIDADE E LINHAS (`tasks_review.md` §2). Comando literal, sem variavel de shell: `git grep -c -F '<token>' -- harness.toml README.md backend/README.md frontend/README.md docs/context backend/src backend/tests frontend/src`. Escopo INTEGRAL para estes dois tokens por excecao declarada (`ADR-015`/Consequencia), nao so-codigo.",
+    "EMENDA 3 — `backend/README.md` E COMPARTILHADO COM `T-03.1` (`tasks_review.md` §3), e o `index.md` do plano afirma o contrario ('zero arquivo em comum'). O compartilhamento e de ARQUIVO e NAO de LINHA: `:568+` aqui, `:455`/`:457` la, ~110 linhas de distancia. Ver `backend/README.md` no proprio diff E ESPERADO e NAO e sinal de erro; a segunda fase a mergear rebaseia. O paralelismo com `03` CONTINUA SEGURO.",
+    "CA-F2-3 E O CRITERIO QUE IMPEDE A RENOMEACAO DE VIRAR REESCRITA, e o numero que denuncia e o 370, nao o 107: `make test` -> 107 passed · 370 statements · 54 branches · domain 124/124 · use_cases 52/52 · infra 194/194 · 100% [MEDIDO 2026-08-29 em 7c3599b pelo /tech-lead, worktree com .venv apos `make setup` — IDENTICA a congelada pelo /architect em 5f4ece0]. QUALQUER divergencia reprova, INCLUSIVE PARA MAIS. `rc=3` reprova: e 'nao mediu', nao 'passou'. FALSIFICADOR: apague uma docstring, um `noqa` ou uma assercao junto com a renomeacao — CA-F2-3 TEM DE REPROVAR.",
+    "CA-F2-2 TEM DUAS METADES E AS DUAS IMPORTAM: `em_PT=0` nos dois arquivos E `ligados_distintos` continua 15 e 55. So a primeira seria satisfeita APAGANDO CODIGO. E o falsificador do proprio criterio: o conjunto `PT` do script `ast` e CLASSIFICACAO HUMANA, ASSINADA, e NAO vem de dicionario — dicionario erra em `so` (o /qa da T-02.3 acusou 46 linhas por causa dele), `oi`, `sem`, `os`, `com`, `parametrize`. `so_linha_em_branco` EXISTE nesta arvore (`test_etl_backlog_retomavel.py:250,251,252`): o falso positivo do instrumento e identificador real do repositorio. Substituir o conjunto `PT` literal por um detector faz o criterio virar estimativa: REPROVA.",
+    "NAO FAZ: `backend/tests/sentimento/` NAO muda de nome — `sentimento` e excecao de `RN-7` e do vocabulario fechado, e CA-F2-5 mede OS DOIS LADOS (`test -d backend/tests/sentimento` -> rc=0 E `test -d backend/tests/sentiment` -> rc=1; o segundo lado e o que pega o builder que 'aproveitou para arrumar'). NENHUM evento de log renomeado — CA-F2-9: 9 eventos, os 4 portugueses (`etl_item_publicado`, `etl_item_concluido`, `etl_drenagem_concluida`, `checkpoint_cauda_truncada`) INTACTOS. NENHUMA `[[rules.own]]` de idioma.",
+    "ESCOPO DE CAMINHO: `backend/tests` NAO e reivindicado por ninguem (esta entre os 4 prefixos LIVRES); `backend/README.md` e `backend/src/...` SAO reivindicados por `plataforma-dados` [MEDIDO 2026-08-29]. Ver a nota de ESCOPO no cabecalho.",
+]
+
+# ── 03 · Retroativo frontend/src · web · retroativo · PARALELA com 02 e 04 ─────────
+
+[[tasks]]
+id = "T-03.1"
+title = "[docs][web] 03 · 4 arquivos + 1 diretorio, as citacoes VIVAS atomicas e a prova de dois lados re-executada DEPOIS"
+# `docs` E `web`: `frontend/src` e `web` (dono de julgamento `ui-designer` + `design_gate`,
+# `harness policy --key agents.by_component`); `harness.toml`, os dois READMEs e
+# `docs/context/` sao `docs`. Prefixo do titulo casa o conjunto (V-26).
+components = ["docs", "web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-01.1", "T-01.2"]
+refs = [
+    "plano 03 itens 3.1+3.2+3.3+3.4+3.5", "SPEC-002 §3.2 (o mapa NORMATIVO)", "SPEC-002 §4.4 (CA-F3-6 reescrita em tres lados)", "PRD-002/U3", "ADR-011/D4", "ADR-015/D1", "ADR-015/D2", "ADR-015/D3", "RN-1", "RN-2", "RN-3", "RN-5", "RN-8",
+    "POR QUE UMA TASK, MESMO SENDO A MAIOR — e a razao e um arquivo e uma linha: `harness.toml:149` E A METADE `CALA` da prova de dois lados que fez o ESLint (AST) substituir duas `[[rules.own]]` de TypeScript na `T-01.2` de `plataforma-dados`. Renomear `Filtro.tsx` sem consertar essa citacao NO MESMO COMMIT converte a prova em rc=0 POR CAMINHO INEXISTENTE — conformidade falsa. E `harness code-paths classify` NAO PEGA ISSO: ele e CEGO A EXISTENCIA do arquivo (`SPEC-002` §0.4, reproduzido pelo /tech-lead em 2026-08-29). Separar o rename da correcao da prova E criar exatamente esse commit intermediario.",
+    "AS CITACOES VIVAS (5 arquivos) — E PARA COPIAR, NAO PARA RESUMIR: (1) `harness.toml`, 5 linhas com `features/painel` (`:138`, `:140`, `:145`, `:147`, `:149`), INCLUINDO AS 4 DE `serie.tsx`, que continua sendo caminho HIPOTETICO — plantado por `printf` e removido por `rm`, e NAO passa a existir; (2) `frontend/README.md`, os lugares do protocolo de reproducao: `:33`, `:85-86`, `:118-121`, `:250`, `:253`, `:381`; (3) `backend/README.md` `:455`, `:457`; (4) `docs/context/plataforma-dados/tasks.toml` `:133` e `:234`; (5) `docs/context/plataforma-dados/handoff_to_builder.md`. TODAS ATOMICAS com o `git mv` (`RN-1`).",
+    "AS HISTORICAS (6) — NAO SE TOCAM: `docs/INDEX.md` (append-only por `CLAUDE.md`) · `docs/adr/ADR-003` · `ADR-011` · `ADR-012` · `ADR-013` · `docs/plans/SPEC-001-plataforma-dados/01_governanca_gateante.md`. O plano `01` e HISTORICA por `ADR-015/D3`, e isso CORRIGE a `ADR-013`, que o classificava como VIVA — o argumento medido: `01_governanca_gateante.md:36` nomeia uma bancada de TRES arquivos e `tipos.ts` NUNCA EXISTIU (nem `serie.tsx`), logo o teste 'receita que nomeia arquivo inexistente e ancora morta' classificaria o plano como morto HOJE, sem rename nenhum. `docs/proposta-discovery.md` e `docs/specs/PRD-001-plataforma-dados.md` casam a PALAVRA `Filtro` e nao o caminho: FORA do universo do verificador (`ADR-015/D1`) e HISTORICOS de qualquer modo. CA-F3-7 mede.",
+    "TRES COISAS QUE NAO MUDAM — OMITIR QUALQUER UMA REPROVA A FASE: (1) `<p>Filtro: any resultado serve</p>` fica LITERAL — a palavra `Filtro` SOBREVIVE DENTRO DA STRING e esse e o resultado CORRETO, porque a evidencia e a posicao sintatica do token `any` (um no `JSXText`), nao o nome do arquivo; CA-F3-2 mede por `grep -F` de IGUALDADE, nao por ausencia. (2) `{ retry: 3, any: true }` fica LITERAL — `any` como CHAVE DE OBJETO e a outra metade da bancada `D1.3b`. (3) O valor `\"/painel\"` fica EM PORTUGUES: o arquivo contera `panel: \"/painel\"`, MISTA DE PROPOSITO, porque `[Q2]` e do owner (`SPEC-002` §7). UM BUILDER QUE 'ARRUMAR' ISSO REPROVA A FASE — CA-F3-8 mede por `grep -F '\"/painel\"' frontend/src/app/routes.ts` -> 1 linha, rc=0.",
+    "UMA QUARTA, QUE O /tech-lead ACRESCENTA PORQUE ESTA DENTRO DE UMA VIVA (`tasks_review.md` §7): em `frontend/README.md:250` a celula com o CAMINHO `Filtro.tsx` ATUALIZA e o payload `<p>Filtro: any resultado serve</p>` NA MESMA LINHA NAO — `RN-3`: renomear o continente e permitido, traduzir o conteudo citado nao. UMA LINHA, DUAS REGRAS OPOSTAS. A lista fechada de evidencia protegida esta em `PRD-002` §5.3.",
+    "EMENDA 1 AO DoD (achado do /tech-lead, `tasks_review.md` §1) — CA-F3-4 e RE-MEDIDO, NAO CONGELADO, e aqui e onde a deriva JA BATEU: `Filtro.tsx` foi de MORDE 8 (5f4ece0) para 12 (7c3599b) e `painel/` de 17 para 19, por causa de UM arquivo — `docs/context/codigo-em-ingles/handoff_to_architect.md`, desta propria feature — com ZERO linha de codigo alterada no intervalo [MEDIDO 2026-08-29, n=12 tokens x 2 revs]. E vai subir de novo com o `tasks.toml`, o `tasks_review.md` e o `handoff_to_builder.md`. O builder MEDE NO REV DELE, declara `n > 0` por token ANTES e exige `0` DEPOIS. UM DoD QUE EXIGISSE LITERALMENTE `8` REPROVARIA HOJE UM BUILDER CORRETO.",
+    "EMENDA 2 AO DoD — A UNIDADE E LINHAS (`tasks_review.md` §2), e este e o token que prova: `ROTAS` tem 2 LINHAS e 3 OCORRENCIAS (`rotas.ts:18` o cita duas vezes na mesma linha); o plano publica 2, logo o plano esta em linhas, embora `ADR-015/D2` ROTULE a coluna como 'ocorrencias'. Comandos LITERAIS, sem variavel de shell. TIPAGEM DO TOKEN (`ADR-015/D1`), e o escopo e o que resolve: CAMINHO (`Filtro.tsx`, `painel/`, `rotas.ts`, `formatar-percentual.ts`) -> escopo VIVO INTEGRAL; IDENTIFICADOR (`configPainel`, `ROTAS`, `formatarPercentual`, `razao`, `casas`, `sinal`) -> escopo SO-CODIGO (`backend/src backend/tests frontend/src`). A regra ingenua 'o token e o caminho, nunca a palavra' custa 20 FALSOS POSITIVOS MEDIDOS, dois deles a evidencia que o criterio manda preservar; com tipagem, 20 -> 1, e o 1 e estrutural (o texto JSX).",
+    "EMENDA 3 — `backend/README.md` E COMPARTILHADO COM `T-02.1` (`tasks_review.md` §3), e o `index.md` do plano afirma 'zero arquivo em comum'. Compartilhamento de ARQUIVO, nao de LINHA (`:455`/`:457` aqui, `:568+` la). Esperado no diff; a segunda a mergear rebaseia.",
+    "CA-F3-6 TEM TRES LADOS E OS TRES SAO OBRIGATORIOS (`SPEC-002` §4.4): (1) `test -f` nos 4 caminhos NOVOS -> rc=0 (o arquivo nasceu); (2) `test -f` nos 4 caminhos ANTIGOS -> rc=1 (o arquivo morreu — E ESTE LADO que pega o rename para o lugar errado ou com erro de digitacao); (3) SO ENTAO `harness code-paths classify` nos 4 novos -> `producao`. SEM O PASSO (2) O CRITERIO E VACUO: `classify` devolve `producao`/rc=0 para caminho INEXISTENTE, reproduzido pelo /tech-lead [MEDIDO 2026-08-29, n=3 caminhos, 2 inexistentes, os tres `producao` rc=0]. E O COROLARIO QUE ALCANCA O PROTOCOLO: `RN-5` manda (1) `test -f`, (2) `classify`, (3) so entao o `rc` — e O PASSO (2) NAO E REDE DO PASSO (1). Quem pula o `test -f` confiando que o `classify` o cobre NAO ESTA COBERTO.",
+    "CA-F3-3 MEDIDO ANTES DO RENAME NAO CONTA, mesmo com todos os comandos verdes — e o falso-verde que a `ADR-012` nomeia como 'barato de cometer e caro de detectar'. Os QUATRO casos de `ADR-011/D4`, na ordem, DEPOIS: `printf ... > frontend/src/features/panel/tipos.ts`; `npm --prefix frontend run lint` (MORDE: 2 erros `@typescript-eslint/no-explicit-any`, rc=1); `rm .../tipos.ts`; `npm --prefix frontend run lint` (CALA: 0 erro, rc=0); `test -f .../Filter.tsx` E `classify` E `harness rules --mode file --path .../Filter.tsx --surface ci` (CALA: 0 byte, rc=0); `harness rules --mode sweep` (1 [AVISO] `browser-test-file-present`, 0 [BLOQUEIO], rc=0). E O FALSIFICADOR QUE QUASE NINGUEM LEMBRA: renomear `features/painel/` invalida AS DUAS METADES da prova, nao so a CALA — `harness.toml` cita `features/painel` em 5 linhas e 4 DELAS SAO A METADE MORDE (`serie.tsx`, o violador plantado). E por isso que sao os QUATRO casos e nao so o do `Filtro.tsx`.",
+    "CA-F3-5 — a SONDA documentada de `harness.toml:238-252` passa a `Filter.test.tsx` E a medicao que a acompanha e RE-EXECUTADA e o `rc` REPUBLICADO: `grep -c 'Filtro' harness.toml` -> 0; `harness code-paths classify frontend/src/__sonda__/Filter.test.tsx` -> `producao`, rc=0, O MESMO VEREDITO DE HOJE sobre o caminho antigo. A sonda hipotetica e re-mensuravel PRECISAMENTE porque `classify` nao exige que o arquivo exista (`SPEC-002` §0.4) — o mesmo defeito que torna CA-F3-6 vacua sem o passo (2) e o que torna esta medicao possivel.",
+    "CA-F3-1 e CA-F1-6 (o medidor de EROSAO da excecao, o UNICO criterio que sobrevive ao fim da feature): depois desta task o conjunto de segmentos de caminho em portugues sob `backend/src|backend/tests|frontend/src` vai de `{sentimento, painel}` (tamanho 2, MORDE) para `{sentimento}` (tamanho 1, CALA), e `sentimento` casa POR IGUALDADE DE STRING com `harness policy --key components`. UM TERCEIRO ELEMENTO, EM QUALQUER FASE FUTURA, E A EVIDENCIA DE QUE A EXCECAO VIROU RAMPA.",
+    "CA-F3-9 — a arvore continua VERDE e MEDIDA: `make lint` e `make test` rc=0, `make test` INALTERADO em 107 passed / 370 statements / 54 branches. `rc=3` REPROVA. Linha de base conferida em 7c3599b, ver o cabecalho.",
+    "NAO FAZ: nao cria `Filter.test.tsx` nem fecha o aviso `web-fullstack.browser-test-file-present` — o `sweep` continua com 1 [AVISO] e 0 [BLOQUEIO] depois desta task, e fechar o aviso e divida de OUTRA trilha. Nao toca `backend/` exceto `backend/README.md`. NENHUMA `[[rules.own]]` de idioma.",
+    "ESCOPO DE CAMINHO: `frontend/src`, `harness.toml`, `frontend/README.md`, `backend/README.md` e `docs/context/plataforma-dados/` SAO TODOS reivindicados por `plataforma-dados` [MEDIDO 2026-08-29, n=12 caminhos]. ESTA E A TASK MAIS EXPOSTA A DECISAO A do `tasks_review.md` §12 — se o owner escolher declarar os prefixos disputados para esta feature, e aqui que a COLISAO detona no `approve build`.",
+]
+
+# ── 04 · Superficies de contrato · docs · fronteira · ZERO codigo · PARALELA 02/03 ─
+
+[[tasks]]
+id = "T-04.1"
+title = "[docs] 04 · As tres superficies de contrato ganham dono no CLAUDE.md — evento de log, coluna de contrato e segmento de URL"
+components = ["docs"]
+status = "todo"
+phase = "04"
+depends_on = ["T-01.1"]
+refs = [
+    "plano 04 itens 4.1+4.2+4.3", "SPEC-002 §6.3 ([Q1] a regra condicional)", "SPEC-002 §7 ([Q2])", "SPEC-002 §8 ([GAP G1])", "PRD-002/U4", "ADR-008/D3",
+    "ESTA FASE ENTREGA TEXTO. ZERO LINHA DE CODIGO. CA-F4-4 e o lado que PROVA isso: `git diff --name-only master... -- backend frontend` -> VAZIO.",
+    "4.1 TEM TRES METADES E AS TRES SAO OBRIGATORIAS: (a) PROSPECTIVO — todo evento de log e chave de `extra={}` NOVO nasce em ingles (ja escrito por `T-01.1`, item 1.4); (b) RETROATIVO — os 4 existentes em portugues (`etl_item_publicado`, `etl_item_concluido`, `etl_drenagem_concluida`, `checkpoint_cauda_truncada`) e as 4 chaves (`destino`, `processados`, `janela`, `bytes_descartados`) NAO SAO RENOMEADOS POR ESTA SPEC; (c) A REGRA CONDICIONAL, escrita AGORA para que a resposta do owner nao precise de mais um round: sem consumidor -> migracao em fase propria e futura, rename direto; COM consumidor OU o owner nao sabe -> migracao com EMISSAO DUPLA por janela declarada, e o antigo so sai depois de o owner confirmar que a consulta migrou; SEM RESPOSTA -> nada acontece com os 4 e NADA TRAVA: a superficie passa a ter dono e a divergencia PARA DE CRESCER mesmo que nao encolha.",
+    "POR QUE A MIGRACAO DOS 4 E UNIDADE PROPRIA E FUTURA, e nao entra em 02 nem em 03: ela tem um risco que nenhuma renomeacao de identificador tem. E classe D de `PRD-002` §5.1 — o consumidor vive FORA deste repositorio e a quebra e SILENCIOSA. Renomear um identificador Python quebra um import e o import reprova; renomear um evento de log quebra uma consulta, E A CONSULTA CONTINUA DEVOLVENDO rc=0 COM ZERO LINHAS.",
+    "4.2 — A COLUNA DE CONTRATO, com o gatilho literal: `janela_de_perda` e uma das 15 colunas que `ADR-008/D3` fixou, e A ORDEM DELAS ALIMENTA O sha256 DA PROJECAO CANONICA (`ADR-008/DoD-2`). A excecao JA ESTA ESCRITA EM CODIGO DE PRODUCAO, EM INGLES, COM O MOTIVO (`ingest_record.py:87-89`); o que faltava era ALGUEM MARCAR O MOMENTO DE REABRIR. A reabertura acontece quando `T-07.12`/`T-07.13` (fase 07, componente `web`) escrever o consumidor da projecao, E QUEM DECIDE E `ADR-008/D3`, NAO ESTA FEATURE. Renomear muda a impressao digital de TODO relatorio ja emitido: e MUDANCA DE CONTRATO, nao de estilo, e exige plano de migracao do fingerprint. CA-F4-2 mede por tres `grep -F`: `janela_de_perda`, `ADR-008/D3` e `T-07.13`, rc=0 nos tres.",
+    "4.3 — A LINHA 12 CONTINUA ABERTA: `NAO DECIDIDO`, com o dono (OWNER) e o CUSTO DE ADIAR escritos. Hoje e 1 rota; na fase 05 de `SPEC-001` sao muitas, e trocar URL depois quebra bookmark e link. A pergunta e barata agora e MONOTONICAMENTE MAIS CARA DEPOIS — mas NAO BLOQUEIA NADA. CA-F4-3: a linha contem o marcador de nao-decidido E a palavra `owner`.",
+    "FRONTEIRA ACRESCENTADA PELO /tech-lead (`tasks_review.md` §6.2), e ela protege um criterio ja escrito: a coluna de contrato entra como PROSA ADJACENTE a tabela de fronteira, NAO como uma 13a linha dela. `CA-F1-1` exige 12 LINHAS DE TABELA, e uma 13a linha faria `CA-F1-1` — se re-medida ao fim de `04` — REPROVAR sobre um `CLAUDE.md` CORRETO. `CA-F4-2` mede por tres `grep -F` e nunca contou linhas, entao nada se perde. `[NAO SEI]` se o /architect pretendia 13 linhas: `SPEC-002` §8 diz 'esta linha esteja escrita no CLAUDE.md' sem dizer ONDE. Escolhi a leitura que nao quebra um criterio ja escrito, e declaro a escolha em vez de deixa-la implicita. DoD ADICIONAL: `CA-F1-1` re-medida ao fim desta task continua devolvendo 12.",
+    "DoD: CA-F4-1 (a linha 10 contem `[INFERRED:` e NAO contem o marcador de nao-decidido) · CA-F4-2 · CA-F4-3 · CA-F4-4 · CA-F4-5 (os 9 eventos INTACTOS: `grep -rnE 'logger\\.(info|warning|debug|error)\\(\"' backend/src | wc -l` -> 9, com os 4 portugueses presentes por `grep -F` de cada um) · CA-F4-7 (`docs/INDEX.md` CRESCE, nao muda: zero linhas removidas).",
+    "FALSIFICADOR DESTA FASE, observavel e barato: se, duas fases adiante, um evento de log NOVO nascer em portugues TENDO O `CLAUDE.md` NO CONTEXTO, a decisao prospectiva nao pegou e a superficie precisa de MECANISMO, nao de doutrina. Hoje sao 4 de 9, E O NUMERO DE PORTUGUESES NAO PODE SUBIR. Se subir, `ADR-013/D2e` volta a mesa com um caso concreto — e e a primeira vez nesta trilha que ele teria um.",
+]
+
+[[tasks]]
+id = "T-04.2"
+title = "[docs] 04 · A pergunta FACTUAL ao owner sobre consumidor externo dos 4 eventos de log"
+components = ["docs"]
+status = "todo"
+phase = "04"
+# `depends_on` VAZIO e DELIBERADO: a pergunta nao depende do `CLAUDE.md` nem de nenhuma
+# outra task. O plano poe a fase 04 dependendo da 01, e essa ordem e do PORTAO DE FASE,
+# nao de conteudo. Declarar uma aresta falsa e pior que nao declarar.
+depends_on = []
+refs = [
+    "plano 04 item 4.4", "SPEC-002 §6.2", "[GAP G2]", "DoD: CA-F4-6",
+    "A PERGUNTA, E ELA E UM FATO E NAO UMA ESCOLHA DE IDIOMA — sim ou nao: 'alguma query, alerta, dashboard ou script FORA DESTE REPOSITORIO consulta os nomes `etl_item_publicado`, `etl_item_concluido`, `etl_drenagem_concluida`, `checkpoint_cauda_truncada`, ou as chaves `destino`, `processados`, `janela`, `bytes_descartados`?'. NENHUMA DAS DUAS RESPOSTAS BLOQUEIA QUALQUER FASE DESTA SPEC — e por isso que esta task e `todo` e nao `blocked`.",
+    "O QUE ACOMPANHA A PERGUNTA, e as duas metades sao obrigatorias: o que FOI medido — `git ls-files | grep -icE 'dashboard|alert|grafana|prometheus|loki|logql'` -> 0, ZERO dashboards/alertas/coletores VERSIONADOS [MEDIDO 2026-08-29] — E o que isso NAO PROVA: ausencia de consumidor. `backend/src/modules/sentimento/infra/ingest_health_cli.py:69` diz EM DOCSTRING que 'a scheduler or a supervisor calls logging.basicConfig(stream=sys.stdout, level=INFO)': O DESENHO ANTECIPA UM HOSPEDEIRO EXTERNO, e o que roda na VPS do owner esta fora do alcance de qualquer agente. `[NAO MEDIDO]`, declarado. E exatamente isso que torna a pergunta BARATA DE RESPONDER E CARA DE ERRAR.",
+    "POR QUE E TASK SEPARADA DE `T-04.1`: arquivo diferente (`docs/context/codigo-em-ingles/`), AUDIENCIA DIFERENTE (o owner, nao o builder), e e o deliverable mais facil de ser engolido por uma task cujo trabalho principal e editar o `CLAUDE.md`. A SUPERFICIE DE LOG DIVERGIU JUSTAMENTE POR NAO TER DONO DECLARADO — `docs/INDEX.md:68`: 'o codigo novo e todo em ingles ... o que cria um SEGUNDO VOCABULARIO DE OBSERVABILIDADE ... Nada existente foi renomeado. A divergencia e DECISAO DE LEITURA DO AGENTE, nao citacao do owner'. 9 eventos nomeados, 4 em portugues e 5 em ingles, NASCIDOS NO MESMO MES. Repetir o padrao de esconde-la dentro de outra entrega seria ironico.",
+    "ESCOPO DE CAMINHO: `docs/context/codigo-em-ingles/` NAO e reivindicado por ninguem — esta entre os 4 prefixos LIVRES do cabecalho.",
+]
