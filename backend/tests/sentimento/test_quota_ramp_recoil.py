@@ -12,6 +12,7 @@ from src.modules.sentimento.domain.quota_bucket import BINANCE_FUTURES_DATA
 from src.modules.sentimento.domain.ramp_ledger import ProbeObservation, observe_rung
 from src.modules.sentimento.domain.recoil_policy import (
     InvalidRecoilPolicyError,
+    RecoilDecision,
     RecoilPolicy,
     RecoilSource,
     parse_retry_after,
@@ -146,38 +147,115 @@ def test_the_boundary_where_the_provider_asks_exactly_our_own_escalation() -> No
     assert decision.source is RecoilSource.RETRY_AFTER
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFEITO PROVADO (QA T-03.7): o cap declarado nao alcanca o Retry-After do fornecedor. "
-        "`Retry-After: 999999999` produz uma pausa de 11.574 dias, e uma data HTTP em 2099 "
-        "produz 72 anos. O proprio docstring de `cap_seconds` diz por que isso e um defeito: "
-        "'an operator who cannot predict the upper bound of a wait will kill the process, "
-        "which loses the ledger'. Remova este marcador quando a pausa passar a ser limitada."
-    ),
-)
 def test_an_absurd_retry_after_is_bounded_by_the_declared_cap() -> None:
     """A header the third party controls must not decide how long OUR process blocks.
 
-    `[MEDIDO 2026-08-29] POLICY.decide(0, parse_retry_after("999999999", NOW))` ->
-    `seconds=999999999.0`, `source=RETRY_AFTER`, contra `cap_seconds=300.0`.
+    ── O MARCADOR `xfail(strict=True)` DO `/qa` FOI REMOVIDO PORQUE O DEFEITO FOI CONSERTADO ──
+
+    Antes de `RETRY_AFTER_CAPPED`, isto media `seconds=999999999.0` — **11.574 dias** — com
+    `source=RETRY_AFTER`, contra `cap_seconds=300.0`
+    `[MEDIDO 2026-08-29 pelo /qa; reproduzido pelo builder antes do conserto]`. O teto agora
+    alcanca o header, e o que sobra vira `unmet_seconds` em vez de sumir.
     """
     seconds = parse_retry_after("999999999", NOW)
     decision = POLICY.decide(throttle_index=0, retry_after_seconds=seconds)
 
     assert decision.seconds <= POLICY.cap_seconds
+    assert decision.seconds == 300.0
+    assert decision.source is RecoilSource.RETRY_AFTER_CAPPED
+    # O corte e REGISTRADO, nao absorvido: sem isto, cortar seria a mesma perda de estado que
+    # `POLICY_NO_RETRY_AFTER` existe para impedir do outro lado.
+    assert decision.requested_seconds == 999999999.0
+    assert decision.unmet_seconds == 999999699.0
+    assert decision.honoured_in_full is False
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFEITO PROVADO (QA T-03.7): mesma classe pela forma de data. "
-        "`Retry-After: Fri, 01 Jan 2099 00:00:00 GMT` -> 2.270.908.800 s (72 anos)."
-    ),
-)
 def test_an_absurd_retry_after_date_is_bounded_by_the_declared_cap() -> None:
-    """The HTTP-date form reaches the same unbounded pause by another road."""
+    """The HTTP-date form reached the same unbounded pause by another road, and is capped too.
+
+    Marcador `xfail(strict=True)` do `/qa` removido pelo conserto: antes, **72 anos**
+    (2.270.908.800 s) `[MEDIDO 2026-08-29 pelo /qa]`.
+    """
     seconds = parse_retry_after("Fri, 01 Jan 2099 00:00:00 GMT", NOW)
     decision = POLICY.decide(throttle_index=0, retry_after_seconds=seconds)
 
     assert decision.seconds <= POLICY.cap_seconds
+    assert decision.source is RecoilSource.RETRY_AFTER_CAPPED
+    assert decision.unmet_seconds > 0.0
+
+
+def test_the_cap_is_never_reached_by_a_request_that_fits_under_it() -> None:
+    """O OUTRO LADO do teto, e sem ele o corte nao estaria medindo nada.
+
+    Um teto que cortasse tambem o pedido legitimo daria o mesmo `seconds` nos dois casos e
+    seria indistinguivel de um `sleep(cap)` fixo. Aqui `299` passa inteiro e `301` e cortado —
+    **1 segundo de diferenca no pedido, dois `source` diferentes.**
+    """
+    abaixo = POLICY.decide(throttle_index=0, retry_after_seconds=299.0)
+    acima = POLICY.decide(throttle_index=0, retry_after_seconds=301.0)
+
+    assert abaixo.source != acima.source
+    assert abaixo.seconds == 299.0
+    assert abaixo.source is RecoilSource.RETRY_AFTER
+    assert abaixo.honoured_in_full is True
+    assert acima.seconds == 300.0
+    assert acima.source is RecoilSource.RETRY_AFTER_CAPPED
+    assert acima.unmet_seconds == 1.0
+
+
+def test_exactly_the_cap_is_served_in_full_and_not_cut() -> None:
+    """A fronteira exata: `Retry-After == cap_seconds` cabe, e nao vira corte.
+
+    `>` e nao `>=` no ramo do teto, pela mesma razao que a fronteira do `Retry-After` contra a
+    escalacao usa `>=`: cortar o que cabe exato marcaria como truncado um pedido servido
+    inteiro, e `unmet_seconds` passaria a mentir em zero.
+    """
+    decision = POLICY.decide(throttle_index=0, retry_after_seconds=300.0)
+
+    assert decision.seconds == 300.0
+    assert decision.source is RecoilSource.RETRY_AFTER
+    assert decision.honoured_in_full is True
+
+
+@pytest.mark.parametrize(
+    "retry_after",
+    [None, 0.0, 1.0, 59.0, 60.0, 61.0, 299.0, 300.0, 301.0, 86_400.0, 2_270_908_800.0],
+)
+@pytest.mark.parametrize("throttle_index", [0, 1, 2, 3, 10])
+def test_no_decision_ever_exceeds_the_declared_cap(
+    retry_after: float | None, throttle_index: int
+) -> None:
+    """A invariante inteira, varrida: **nenhum** `seconds` passa de `cap_seconds`.
+
+    Venha de onde vier o pedido. 55 combinacoes (11 valores de `Retry-After` x 5 degraus de
+    escalacao). O defeito `F1`
+    existia porque a garantia estava afirmada para UM caminho — a escalacao propria — e o
+    outro caminho nunca foi varrido.
+    """
+    decision = POLICY.decide(throttle_index=throttle_index, retry_after_seconds=retry_after)
+
+    assert 0.0 <= decision.seconds <= POLICY.cap_seconds
+    assert decision.retry_after_present is (retry_after is not None)
+    assert decision.unmet_seconds >= 0.0
+
+
+def test_a_decision_cannot_claim_a_header_it_does_not_carry() -> None:
+    """`retry_after_present` e `requested_seconds` sao a MESMA informacao, e nao se separam.
+
+    Sem esta guarda, um chamador poderia construir uma decisao dizendo "o fornecedor pediu" sem
+    dizer quanto — e `unmet_seconds` devolveria `0.0`, que e indistinguivel de "servido inteiro".
+    """
+    with pytest.raises(InvalidRecoilPolicyError, match="mesma informacao"):
+        RecoilDecision(
+            seconds=60.0,
+            source=RecoilSource.RETRY_AFTER,
+            retry_after_present=True,
+            requested_seconds=None,
+        )
+    with pytest.raises(InvalidRecoilPolicyError, match="mesma informacao"):
+        RecoilDecision(
+            seconds=60.0,
+            source=RecoilSource.POLICY_NO_RETRY_AFTER,
+            retry_after_present=False,
+            requested_seconds=60.0,
+        )

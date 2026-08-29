@@ -251,9 +251,39 @@ class RampLedger:
     def verdict(self) -> RampVerdict:
         """Conclude the pass, refusing to name a ceiling the dispatch counters do not support.
 
-        The three branches are mutually exclusive and ordered by evidence: a `429` observed
-        beats everything, incomplete dispatch beats an empty silence, and only a pass that
-        was FULLY dispatched may publish a lower bound.
+        The branches are mutually exclusive and ordered by evidence: a `429` observed beats
+        everything, incomplete dispatch beats an empty silence, and only a pass that was FULLY
+        dispatched AND had at least one success may publish a lower bound.
+
+        ── F2 (/qa 2026-08-29): O MESMO PAR DO OFF-BY-ONE, DO OUTRO LADO DO `if` ──────────────
+
+        O ramo `THROTTLED` define "o que cabe" como **ACEITAS** e diz isso na propria `reason`
+        (*"o que cabe na janela e 40, nao 41"*). O ramo `CEILING_NOT_REACHED` publicava
+        **DESPACHADAS** — que conta tambem as `REJECTED`, cujo proprio docstring ja declara que
+        dobra-las em aceitas *"would inflate the lower bound"*. Duas grandezas respondendo a
+        mesma pergunta em dois ramos do mesmo metodo.
+
+        Media, e o estado e alcancavel e nao hipotetico: uma passada SEM chave
+        (`authentication_headers()` devolve header nenhum quando `$COINALYZE_API_KEY` falta)
+        imprimia *"LIMITE INFERIOR de 150"* com **`accepted=0`**
+        `[MEDIDO 2026-08-29 pelo /qa: 150 degraus 401]`.
+
+        O `/qa` autorizou duas correcoes; estao AS DUAS aqui, porque consertam metades
+        diferentes e nenhuma cobre a outra:
+
+        **(a) o numero publicado passa a ser ACEITAS.** Um `401` prova que a requisicao saiu e
+        recebeu status; nao prova que o limitador a deixou passar como requisicao valida, e nao
+        ha como saber se o fornecedor a contabiliza na cota. Aceita e a unica contagem que
+        sustenta um piso de capacidade.
+
+        **(b) zero sucessos deixa de ser `CEILING_NOT_REACHED` e vira `INCONCLUSIVE`.** So (a)
+        publicaria *"LIMITE INFERIOR de 0"* sob uma conclusao cujo nome se le como "correu bem
+        e nao achou teto" — verdadeiro, vacuo e enganoso ao mesmo tempo. `INCONCLUSIVE` ja e a
+        palavra deste ledger para *"o silencio nao carrega informacao sobre o limite"*, e e
+        exatamente o estado de uma passada em que nada passou.
+
+        A regra de (b) e ESTREITA de proposito: 149 aceitas e 1 recusada continua
+        `CEILING_NOT_REACHED` com piso 149. So o zero muda de ramo.
         """
         throttled = self.first_throttled()
         counters = {
@@ -291,13 +321,28 @@ class RampLedger:
                 ),
                 **counters,
             )
+        accepted = counters["accepted"]
+        if accepted == 0:
+            return RampVerdict(
+                conclusion=RampConclusion.INCONCLUSIVE,
+                throttled_at_request=None,
+                accepted_before_throttle=None,
+                reason=(
+                    f"{self.dispatched} requisicao(oes) despachada(s) e NENHUMA aceita "
+                    f"({counters['rejected']} recusada(s) por outro motivo que nao 429): um "
+                    "limite inferior de zero nao e limite, e chamar isso de teto-nao-alcancado "
+                    "leria como uma passada que correu bem"
+                ),
+                **counters,
+            )
         return RampVerdict(
             conclusion=RampConclusion.CEILING_NOT_REACHED,
             throttled_at_request=None,
             accepted_before_throttle=None,
             reason=(
-                f"{self.dispatched} requisicao(oes) despachada(s), nenhum 429: LIMITE INFERIOR "
-                f"de {self.dispatched}, nunca o limite. A rampa acabou, a cota nao"
+                f"{accepted} requisicao(oes) ACEITA(s) de {self.dispatched} despachada(s), "
+                f"nenhum 429: LIMITE INFERIOR de {accepted}, nunca o limite. A rampa acabou, "
+                "a cota nao"
             ),
             **counters,
         )

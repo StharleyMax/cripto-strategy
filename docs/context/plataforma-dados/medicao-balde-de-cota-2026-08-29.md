@@ -44,9 +44,21 @@ Comando do observador: `curl -s https://ipinfo.io` `[MEDIDO 2026-08-29T14:42Z]`.
 `x-amz-cf-id`. **Nginx, CORS, CSP, HSTS e CloudFront — e nada de cota.** Não existe numerador para a
 razão *consumido / limite*: a contagem é local ou não existe.
 
-**Coinalyze** devolve `200` com **8 headers**, e nenhum é cota: `cf-cache-status`, `cf-ray`,
-`connection`, `content-length`, `content-type`, `date`, `etag`, `nel`, `report-to`, `server:
-cloudflare`. Nem consumido, nem restante, nem janela. O limite de **40 chamadas/min** é `[DOC]` do
+**Coinalyze** devolve `200` com ~~**8 headers**~~ **10 headers** (⚠️ **corrigido 2026-08-29 pelo
+`/review`, e a correção é a disciplina funcionando contra o próprio autor:** o parágrafo dizia `8` e
+**enumerava 10 na mesma frase** — refutado pelo comando ao lado, sem precisar de fonte nova), e
+nenhum é cota: `cf-cache-status`, `cf-ray`, `connection`, `content-length`, `content-type`, `date`,
+`etag`, `nel`, `report-to`, `server: cloudflare`. Nem consumido, nem restante, nem janela.
+
+```bash
+python3 -c "import json;[print(x['bucket'], len(x['headers'])) for x in \
+  map(json.loads, open('medicoes/T-03.7-balde-de-cota/03_headers_dos_tres_baldes.jsonl'))]"
+# binance-fapi 24 · binance-futures-data 22 · coinalyze 10        [MEDIDO 2026-08-29]
+```
+
+**A conclusão não muda** — nenhum dos 10 é de cota, e `D3.12` continua fechado. O que muda é que o
+número publicado passa a ser o que o comando devolve. O `8` também foi para `docs/INDEX.md`, que é
+**append-only**: lá a correção é **linha nova**, nunca edição. O limite de **40 chamadas/min** é `[DOC]` do
 fornecedor — e a §3 abaixo é a primeira vez que ele foi **confirmado por medição**.
 
 **O cego que importa é o do screener.** `/futures/data/*` é onde vive a varredura transversal, e
@@ -149,8 +161,16 @@ partindo de **1,0 s** e encolhendo por fator **0,93** até o piso de **0,25 s**;
 | latência min/mediana/p95/máx | **0,269 / 0,276 / 0,365 / 0,469 s** |
 | **conclusão** | **`CEILING_NOT_REACHED`** · `publishes_a_ceiling: false` |
 
-> `150 requisicao(oes) despachada(s), nenhum 429: LIMITE INFERIOR de 150, nunca o limite.`
-> `A rampa acabou, a cota nao`
+> `150 requisicao(oes) ACEITA(s) de 150 despachada(s), nenhum 429: LIMITE INFERIOR de 150,`
+> `nunca o limite. A rampa acabou, a cota nao`
+
+⚠️ **A `reason` mudou de GRANDEZA em 2026-08-29 (conserto de `F2`, achado do `/qa`), e não de
+valor.** Ela publicava `LIMITE INFERIOR de {despachadas}`, e despachadas **inclui as recusadas por
+outro motivo que não `429`**. Nesta passada as duas contagens são 150, então **o número estava certo
+por coincidência**; numa passada sem chave (150 × `401`) ela imprimia *"LIMITE INFERIOR de 150"* com
+**zero sucessos** `[MEDIDO 2026-08-29 pelo `/qa`]`. Hoje o piso publicado é **ACEITAS**, e uma
+passada sem nenhum sucesso cai em `INCONCLUSIVE`. Ver [`07_vereditos_recomputados.txt`](medicoes/T-03.7-balde-de-cota/07_vereditos_recomputados.txt),
+recomputado dos mesmos 150 degraus crus.
 
 **`≥ 150 requisições em 88 s (≈102/min) sem throttle`, e NADA além disso.** O número não é um
 limite; é um piso.
@@ -168,6 +188,27 @@ mediana **0,276 s**, a taxa máxima que esta bancada consegue produzir é
 serial a partir deste observador** — e alcançá-lo exigiria **concorrência**, que é rajada e não
 rampa: com `n` requisições em voo o **ordinal do primeiro `429` deixa de ser definido**, e o ordinal
 é o número que todo o exercício existe para produzir.
+
+### A recusa da concorrência é uma DÍVIDA NOMEADA — com dono e gatilho, não só com argumento
+
+⚠️ **Acrescentado em 2026-08-29 por achado do `/review` (`WARNING`):** o argumento acima foi
+**aceito** por ele e está medido, mas tinha **1 de 3** da forma que as ADRs desta casa (`ADR-012`,
+`ADR-013`) carregam. `grep -rn "reabertura|reabrir|dono|gatilho|falsificador"` neste documento →
+**0 ocorrência** `[MEDIDO pelo `/review`]`. Faltavam **dono** e **gatilho de reabertura observável**
+— e *"`T-07.7` ia herdar um `[NÃO MEDIDO]` sem saber que condição o reabriria"*.
+
+| | |
+|---|---|
+| **o que fica recusado** | medir o limite de `/futures/data/*` por **rampa concorrente** |
+| **por quê** | o produto do exercício é o **ordinal do primeiro `429`**; com `n` requisições em voo a ordem de chegada **no servidor** é desconhecida, então o ordinal **deixa de ter referente**. Concorrência não mede mais rápido — mede **outra coisa** |
+| **o custo declarado** | o limite absoluto de `/futures/data/*` fica **`[NÃO MEDIDO]`** enquanto o teto do instrumento (**114 req/min**, `[MEDIDO n=150]`) estiver abaixo dele |
+| **dono** | **`quant-architect`** — `harness policy --key agents.by_component` dá `sentimento` → `.claude/agents/quant-architect.md` `[MEDIDO 2026-08-29]`. **Não é decisão de builder**, e esta seção **registra** a dívida em vez de decidi-la |
+| **gatilho de reabertura (observável, qualquer um dos três)** | **(G1)** existir observador em **VPS** com latência mediana medida **< 0,10 s** contra `fapi.binance.com` — o teto do instrumento passa a `60/(0,25+0,10) = 171 req/min` e a rampa serial volta a poder alcançar limites que hoje não alcança. Comando: `quota_ramp_cli ramp binance-futures-data <n>` da VPS, e `08_latencias_e_teto_do_instrumento.txt` recalculado · **(G2)** o screener de `F3` exigir taxa sustentada **> 102 req/min** em `/futures/data/*` — aí o piso medido deixa de cobrir o uso real e o limite vira parâmetro, não curiosidade · **(G3)** qualquer resposta `429` observada em `/futures/data/*` em operação normal — ela dá o ordinal de graça, sem rampa nenhuma |
+| **falsificador desta recusa** | se alguém desenhar uma medição concorrente em que **o ordinal continue definido** (por exemplo: contagem por janela com `n=1` em voo por vez, `k` janelas em paralelo contra `k` IPs distintos), a recusa cai — ela é sobre **este** desenho de rampa, não sobre concorrência em geral |
+
+**Nenhuma ADR foi aberta por este builder, e isso é deliberado:** emitir ADR é ato de owner
+(`CLAUDE.md`, *"o ledger é a identidade do estado"*). O que está acima é a dívida **registrada com
+dono e gatilho**, na forma que o `/review` pediu, para que `T-07.7` a herde sabendo o que a reabre.
 
 **⇒ `D3.11` fica PARCIALMENTE fechado para este balde.** A topologia está resolvida (§2); o **limite
 absoluto** de `/futures/data/*` continua **`[NÃO MEDIDO]`**, com um piso medido de 102/min. Escrever

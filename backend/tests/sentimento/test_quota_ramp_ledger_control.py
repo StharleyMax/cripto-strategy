@@ -292,8 +292,20 @@ def test_a_pass_with_zero_successes_still_reports_the_ordinal_counters_apart() -
 
     `authentication_headers()` returns NO header when `$COINALYZE_API_KEY` is absent, and its
     own docstring says the provider then answers `401` — `REJECTED`, "dispatched, spent, and
-    explicitly not a ceiling". This test freezes what such a pass reports today
-    `[MEDIDO 2026-08-29: 150 degraus `401` -> CEILING_NOT_REACHED, accepted=0, rejected=150]`.
+    explicitly not a ceiling".
+
+    ── ⚠️ O CONGELAMENTO DESTE TESTE MUDOU, E DE PROPOSITO ────────────────────────────────
+
+    O `/qa` escreveu-o para congelar o estado de entao
+    `[MEDIDO 2026-08-29: 150 degraus 401 -> CEILING_NOT_REACHED, accepted=0, rejected=150]`, e
+    apontou no mesmo relatorio que esse estado era metade do defeito `F2`. O conserto (b) —
+    que o proprio `/qa` listou como correcao aceitavel — move esta passada para `INCONCLUSIVE`,
+    entao a assercao da CONCLUSAO foi atualizada **deliberadamente**, com esta nota.
+
+    **As assercoes que dao nome ao teste ficaram intactas** — `accepted`, `rejected` e
+    `publishes_a_ceiling` continuam sendo os contadores separados que ele existe para vigiar.
+    Um teste de caracterizacao que fica vermelho quando o comportamento muda de proposito
+    esta fazendo exatamente o trabalho dele; o que seria defeito era apaga-lo.
     """
     ledger = RampLedger(
         bucket_identifier="coinalyze",
@@ -302,33 +314,90 @@ def test_a_pass_with_zero_successes_still_reports_the_ordinal_counters_apart() -
 
     verdict = ledger.verdict()
 
-    assert verdict.conclusion is RampConclusion.CEILING_NOT_REACHED
+    assert verdict.conclusion is RampConclusion.INCONCLUSIVE
     assert verdict.accepted == 0
     assert verdict.rejected == 150
+    assert verdict.dispatched == 150
+    assert verdict.not_dispatched == 0
     assert verdict.publishes_a_ceiling is False
+    assert "NENHUMA aceita" in verdict.reason
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFEITO PROVADO (QA T-03.7): o mesmo par 'quantas couberam' x 'quantas foram "
-        "despachadas' do off-by-one do 429, do outro lado do `if`. O ramo THROTTLED define o "
-        "que cabe como ACEITAS ('o que cabe na janela e 40, nao 41'); o ramo "
-        "CEILING_NOT_REACHED publica `LIMITE INFERIOR de {dispatched}`, que conta tambem os "
-        "REJECTED. Numa passada sem chave (150 x 401) ele imprime 'LIMITE INFERIOR de 150' "
-        "com accepted=0. Remova o marcador quando o numero publicado for o de ACEITAS — ou "
-        "quando a passada sem nenhum sucesso passar a ser INCONCLUSIVE."
-    ),
-)
 def test_the_lower_bound_never_counts_requests_that_did_not_succeed() -> None:
-    """A number published as a bound must be backed by requests that actually went through."""
+    """A number published as a bound must be backed by requests that actually went through.
+
+    Marcador `xfail(strict=True)` do `/qa` removido pelo conserto de `F2`. Antes, esta passada
+    caia em `CEILING_NOT_REACHED` e publicava *"LIMITE INFERIOR de 150"* com `accepted=0`
+    `[MEDIDO 2026-08-29 pelo /qa]`. Hoje ela nao publica piso nenhum.
+    """
     verdict = RampLedger(
         bucket_identifier="coinalyze",
         rungs=_rungs_from(*[ProbeObservation(status=401) for _ in range(150)]),
     ).verdict()
 
     if verdict.conclusion is not RampConclusion.CEILING_NOT_REACHED:
+        assert re.search(r"LIMITE INFERIOR de (\d+)", verdict.reason) is None
         return
     published = re.search(r"LIMITE INFERIOR de (\d+)", verdict.reason)
     assert published is not None
     assert int(published.group(1)) <= verdict.accepted
+
+
+def test_the_published_lower_bound_is_accepted_and_not_dispatched() -> None:
+    """O conserto (a) de `F2`, medido no ponto onde as duas grandezas DIVERGEM.
+
+    149 aceitas + 1 recusada: `dispatched` e 150 e `accepted` e 149. Antes o piso publicado era
+    150 — um numero sustentado por uma requisicao que nao passou. **Se os dois contadores
+    fossem iguais aqui, este teste nao estaria medindo nada**, e e por isso que ele usa uma
+    passada mista em vez de uma passada limpa.
+    """
+    verdict = RampLedger(
+        bucket_identifier="coinalyze",
+        rungs=_rungs_from(
+            *[ProbeObservation(status=200) for _ in range(149)],
+            ProbeObservation(status=401),
+        ),
+    ).verdict()
+
+    assert verdict.conclusion is RampConclusion.CEILING_NOT_REACHED
+    assert verdict.dispatched == 150
+    assert verdict.accepted == 149
+    assert verdict.dispatched != verdict.accepted
+    published = re.search(r"LIMITE INFERIOR de (\d+)", verdict.reason)
+    assert published is not None
+    assert int(published.group(1)) == 149
+
+
+def test_the_two_branches_answer_the_same_question_with_the_same_grandeza() -> None:
+    """A classe inteira do defeito, afirmada de uma vez: **os dois ramos publicam ACEITAS**.
+
+    `F2` e o off-by-one eram o mesmo par ("quantas couberam" x "quantas foram despachadas")
+    em dois ramos do mesmo metodo. Este teste compara os ramos entre si em vez de cada um
+    contra uma constante, que e o unico jeito de a divergencia nao voltar por um lado so.
+    """
+    com_429 = RampLedger(
+        bucket_identifier="coinalyze",
+        rungs=_rungs_from(
+            *[ProbeObservation(status=200) for _ in range(40)],
+            ProbeObservation(status=401),
+            ProbeObservation(status=429),
+        ),
+    ).verdict()
+    sem_429 = RampLedger(
+        bucket_identifier="coinalyze",
+        rungs=_rungs_from(
+            *[ProbeObservation(status=200) for _ in range(40)],
+            ProbeObservation(status=401),
+        ),
+    ).verdict()
+
+    # O ramo THROTTLED: 41 degraus antes do 429, mas 40 ACEITAS.
+    assert com_429.throttled_at_request == 42
+    assert com_429.accepted_before_throttle == 40
+    # O ramo CEILING_NOT_REACHED: 41 despachadas, mas o piso publicado e 40.
+    assert sem_429.dispatched == 41
+    published = re.search(r"LIMITE INFERIOR de (\d+)", sem_429.reason)
+    assert published is not None
+    assert int(published.group(1)) == 40
+    # E a igualdade que fecha a classe: os dois ramos, o mesmo numero.
+    assert int(published.group(1)) == com_429.accepted_before_throttle

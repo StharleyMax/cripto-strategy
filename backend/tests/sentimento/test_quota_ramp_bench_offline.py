@@ -338,6 +338,41 @@ def test_the_cli_ramp_command_reports_the_verdict_and_the_blind_weights() -> Non
     assert payload["observed_weights"] == [None, None, None]
     assert payload["retry_after_present"] is True
     assert payload["recoil_seconds"] == 60.0
+    assert payload["retry_after_requested_seconds"] == 15.0
+    assert payload["recoil_unmet_seconds"] == 0.0
+    assert payload["recoil_honoured_in_full"] is True
+
+
+def test_the_cli_records_a_capped_recoil_as_capped_and_not_as_served() -> None:
+    """O outro lado de `F1` na superficie que o registro publica.
+
+    Um `Retry-After` acima do teto sai com `recoil_seconds` **igual** ao de um pedido de 300 s
+    servido inteiro. Se o registro parasse ai, as duas passadas seriam indistinguiveis — e a
+    ao vivo e a unica fonte de `T-07.7`. O que as separa e `recoil_unmet_seconds`.
+    """
+    lines: list[str] = []
+
+    def capture(payload: Mapping[str, object]) -> str:
+        line = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+        lines.append(line)
+        return line
+
+    from tests.helpers.quota_ramp_doubles import throttled
+
+    probe = ScriptedProbe([throttled({"retry-after": "999999999"})])
+    original = quota_ramp_cli.emit
+    quota_ramp_cli.emit = capture
+    try:
+        quota_ramp_cli.dispatch(["ramp", "coinalyze", "4"], probe, RecordingClock())
+    finally:
+        quota_ramp_cli.emit = original
+
+    payload = json.loads(lines[0])
+    assert payload["recoil_seconds"] == 300.0
+    assert payload["recoil_source"] == "RETRY_AFTER_CAPPED"
+    assert payload["retry_after_requested_seconds"] == 999999999.0
+    assert payload["recoil_unmet_seconds"] == 999999699.0
+    assert payload["recoil_honoured_in_full"] is False
 
 
 def test_the_cli_coupling_command_reports_the_verdict_with_both_deltas() -> None:

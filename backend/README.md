@@ -677,7 +677,23 @@ Grep é evidência **textual** — prova que ninguém escreveu a palavra, não q
 A prova de comportamento é rodar a suíte com `socket` amputado, e ela também alcança o **subprocesso
 do driver** (que recebe `PYTHONPATH=<backend>`, o mesmo diretório do `sitecustomize.py`):
 
+> ### ⛔ A RECEITA ABAIXO NÃO FUNCIONA MAIS. NÃO A RODE — pule para a corrigida.
+>
+> Ela **quebrou em 2026-08-29**, quando `T-03.7` trouxe o primeiro módulo que importa
+> `http.client`: trocar a **classe** `socket.socket` por uma função mata `import ssl`
+> (`class SSLSocket(socket)`) e o resultado é `TypeError` **na coleta, com ZERO teste rodado**
+> — que um operador lê como *"a suíte usa rede"* quando o que houve foi **o instrumento se
+> quebrar antes de medir**. **A tarja está aqui, no lugar onde a receita é lida**, e não só no
+> aviso que começa 25 linhas abaixo — que é onde ela estava, e é a mesma classe de defeito que
+> este documento inteiro persegue: o aviso que chega depois do dano
+> `[achado do /review 2026-08-29, INFO]`.
+>
+> **A receita que funciona amputa a CONEXÃO e está mais abaixo, na seção de `T-03.7`.**
+> O bloco fica onde está — apagá-lo removeria o registro de que a prova de 2026-08-28 foi
+> tirada com ele.
+
 ```bash
+# ⛔ QUEBRADA desde 2026-08-29 (T-03.7). Ver a tarja acima e a receita corrigida abaixo.
 cat > backend/sitecustomize.py <<'EOF'
 import socket
 def _proibido(*a, **k): raise RuntimeError("REDE PROIBIDA: a suite tentou abrir soquete")

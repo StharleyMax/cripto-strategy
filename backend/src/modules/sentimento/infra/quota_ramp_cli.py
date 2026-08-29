@@ -193,6 +193,12 @@ def command_ramp(probe: QuotaProbe, clock: RampClock, identifier: str, ceiling: 
             "recoil_seconds": run.recoil.seconds if run.recoil else None,
             "recoil_source": run.recoil.source.value if run.recoil else None,
             "retry_after_present": run.recoil.retry_after_present if run.recoil else None,
+            # `F1` (/qa 2026-08-29): sem estes dois, uma passada em que o teto cortou o pedido
+            # do fornecedor sairia do registro indistinguivel de uma servida inteira — e a
+            # passada ao vivo e a unica fonte que `T-07.7` vai ter.
+            "retry_after_requested_seconds": run.recoil.requested_seconds if run.recoil else None,
+            "recoil_unmet_seconds": run.recoil.unmet_seconds if run.recoil else None,
+            "recoil_honoured_in_full": run.recoil.honoured_in_full if run.recoil else None,
             "observed_weights": list(run.ledger.observed_weights()),
             "rungs": [asdict(rung) | {"outcome": rung.outcome.value} for rung in run.ledger.rungs],
         }

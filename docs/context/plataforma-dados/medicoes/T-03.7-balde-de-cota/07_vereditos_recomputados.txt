@@ -1,4 +1,18 @@
-=== binance-futures-data  (universo: 150 degraus crus de ../.bancada/05_ramp_futures_data.jsonl)
+# Vereditos RECOMPUTADOS dos degraus crus versionados — nao e byte do fornecedor, e derivado.
+#
+# ⚠️ CORRIGIDO 2026-08-29 (achado do /review). A versao anterior citava como universo
+# `../.bancada/05_ramp_futures_data.jsonl` e `../.bancada/06_ramp_coinalyze.jsonl` — um
+# diretorio PRIVADO que nunca existiu na arvore nem no historico. Proveniencia que aponta para
+# fora do repositorio e a mesma classe de defeito que este diretorio existe para impedir: o
+# terceiro tinha de ADIVINHAR que os arquivos em disco tem outro nome e outra extensao.
+# Os caminhos abaixo sao os versionados, e o script que os produz esta no README deste diretorio.
+#
+# ⚠️ E OS NUMEROS DE `binance-futures-data` MUDARAM DE ROTULO, nao de valor: o conserto de `F2`
+# (/qa 2026-08-29) fez o piso publicado passar de DESPACHADAS para ACEITAS. Nesta passada as
+# duas contagens sao 150, entao o piso continua 150 — estava certo por coincidencia, e agora
+# esta certo por construcao.
+
+=== binance-futures-data  (universo: 150 degraus crus de docs/context/plataforma-dados/medicoes/T-03.7-balde-de-cota/05_rampa_futures_data.json)
   conclusao                : CEILING_NOT_REACHED
   publica um teto?         : False
   despachadas / nao        : 150 / 0
@@ -6,9 +20,9 @@
   429 na requisicao        : None
   ACEITAS antes do 429     : None
   pesos observados unicos  : ['None']
-  motivo                   : 150 requisicao(oes) despachada(s), nenhum 429: LIMITE INFERIOR de 150, nunca o limite. A rampa acabou, a cota nao
+  motivo                   : 150 requisicao(oes) ACEITA(s) de 150 despachada(s), nenhum 429: LIMITE INFERIOR de 150, nunca o limite. A rampa acabou, a cota nao
 
-=== coinalyze  (universo: 41 degraus crus de ../.bancada/06_ramp_coinalyze.jsonl)
+=== coinalyze  (universo: 41 degraus crus de docs/context/plataforma-dados/medicoes/T-03.7-balde-de-cota/06_rampa_coinalyze.json)
   conclusao                : THROTTLED
   publica um teto?         : True
   despachadas / nao        : 41 / 0
@@ -17,4 +31,3 @@
   ACEITAS antes do 429     : 40
   pesos observados unicos  : ['None']
   motivo                   : 429 na requisicao 41 desta passada; 40 foram ACEITAS antes dela. O que cabe na janela e 40, nao 41
-
