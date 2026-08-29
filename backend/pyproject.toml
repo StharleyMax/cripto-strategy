@@ -168,6 +168,8 @@ ignore_missing_imports = true
 
 [tool.importlinter]
 root_package = "src"
+# Necessario para nomear pacote de FORA da arvore (`socket`, `ssl`) num contrato.
+include_external_packages = true
 
 # ── CONTRATO 1 de 2 — a direcao de camada, UM contrato para todos os contextos ──────────
 #
@@ -220,3 +222,32 @@ forbidden_modules = [
     "src.modules.convergencia",
     "src.modules.backtest",
 ]
+
+
+# ── CONTRATO 3 de 3 — a NATUREZA do que `domain` e `use_cases` podem tocar ──────────────
+#
+# ACRESCENTADO por `T-03.1` a partir do achado `A-5` do `/review`. Os dois contratos acima
+# guardam a DIRECAO dos imports (`infra > use_cases > domain`) e a fronteira ENTRE contextos.
+# Nenhum dos dois olha a NATUREZA da dependencia: `[MEDIDO 2026-08-29 pelo /review, e
+# reproduzido aqui] domain/ importando `socket` e abrindo `ssl.create_default_context()`
+# passava por TODOS os portoes deste repositorio` — ruff, mypy --strict, pytest, lint-imports
+# e o sweep. A camada estava limpa por DISCIPLINA, e disciplina nao e mecanismo: o proximo
+# modulo de I/O nao herda o cuidado com que este foi escrito.
+#
+# O repositorio ja declarou esta forma para o mesmo tipo de fronteira em `ADR-014/D1d`
+# (contrato proibindo o motor em `domain`/`use_cases`). Este e o mesmo instrumento.
+#
+# AS DUAS METADES, MEDIDAS — e o criterio de admissao que `ADR-012` exige, porque contrato que
+# so foi visto CALAR e vacuo:
+#   CALA  na arvore como esta -> `3 kept, 0 broken`. Os `time`/`datetime` do CLI vivem em
+#         `infra`, que NAO e `source_module` deste contrato.
+#   MORDE com o violador plantado -> nomeia a linha E a cadeia transitiva
+#         (`use_cases ... -> domain.binance_aggtrade_payload -> ssl`).
+[[tool.importlinter.contracts]]
+name = "Natureza: domain e use_cases nao falam com socket, ssl nem relogio"
+type = "forbidden"
+source_modules = [
+    "src.modules.sentimento.domain",
+    "src.modules.sentimento.use_cases",
+]
+forbidden_modules = ["socket", "ssl", "time", "datetime"]
