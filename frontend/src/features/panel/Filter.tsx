@@ -6,6 +6,6 @@
  * correct over this universe: there is no position on the axis where this file does not
  * fail. An AST-based linter sees a `JSXText` node and says nothing.
  */
-export function Filtro() {
+export function Filter() {
   return <p>Filtro: any resultado serve</p>;
 }

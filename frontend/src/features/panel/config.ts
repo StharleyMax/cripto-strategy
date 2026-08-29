@@ -5,4 +5,4 @@
  * as a violation (false positive, measured 2026-08-28 in ADR-011/D4); an AST-based
  * linter sees an `Identifier` in a property position and says nothing.
  */
-export const configPainel = { retry: 3, any: true };
+export const panelConfig = { retry: 3, any: true };

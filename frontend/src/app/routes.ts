@@ -11,8 +11,8 @@
  * The Next.js pages themselves belong to the `web` component and are NOT created by
  * this task: scaffolding an application here would be scope this task does not own.
  */
-export const ROTAS = {
-  painel: "/painel",
+export const ROUTES = {
+  panel: "/painel",
 } as const;
 
-export type Rota = (typeof ROTAS)[keyof typeof ROTAS];
+export type Route = (typeof ROUTES)[keyof typeof ROUTES];

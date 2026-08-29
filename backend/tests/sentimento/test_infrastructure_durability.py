@@ -30,45 +30,45 @@ from src.modules.sentimento.infra.file_etl_worker import (
 from src.modules.sentimento.infra.jsonl_checkpoint import JsonlCheckpoint
 
 
-def test_checkpoint_faz_fsync_e_a_linha_ja_esta_no_arquivo_quando_ele_ocorre(
+def test_checkpoint_fsyncs_and_the_line_is_already_in_the_file_when_it_happens(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`flush` BEFORE, `fsync` AFTER. Falsifier: delete both from `record` and this FAILS."""
     ledger = tmp_path / "checkpoint.jsonl"
-    chamadas: list[int] = []
-    visto: list[bytes] = []
+    calls: list[int] = []
+    seen: list[bytes] = []
     original = os.fsync
 
-    def espia(fd: int) -> None:
-        chamadas.append(fd)
-        visto.append(ledger.read_bytes())
+    def spy(fd: int) -> None:
+        calls.append(fd)
+        seen.append(ledger.read_bytes())
         original(fd)
 
-    monkeypatch.setattr(os, "fsync", espia)
+    monkeypatch.setattr(os, "fsync", spy)
     JsonlCheckpoint(ledger).record("a.csv")
 
-    assert len(chamadas) == 1, "record() tem de chamar os.fsync UMA vez por linha"
-    assert visto == [b'{"key": "a.csv"}\n'], "o flush tem de preceder o fsync"
+    assert len(calls) == 1, "record() tem de chamar os.fsync UMA vez por linha"
+    assert seen == [b'{"key": "a.csv"}\n'], "o flush tem de preceder o fsync"
 
 
-def test_worker_faz_fsync_no_parcial_antes_do_rename_atomico(
+def test_worker_fsyncs_the_partial_before_the_atomic_rename(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Order: write -> `flush` -> `fsync` -> `os.replace`. Publishing before the `fsync` FAILS."""
     source_dir, output_dir = tmp_path / "dump", tmp_path / "out"
     source_dir.mkdir()
     (source_dir / "k.csv").write_bytes(b"conteudo")
-    parcial = output_dir / f"k.csv{OUTPUT_SUFFIX}{PARTIAL_SUFFIX}"
-    destino = output_dir / f"k.csv{OUTPUT_SUFFIX}"
-    visto: list[tuple[bytes, bool]] = []
+    partial = output_dir / f"k.csv{OUTPUT_SUFFIX}{PARTIAL_SUFFIX}"
+    destination = output_dir / f"k.csv{OUTPUT_SUFFIX}"
+    seen: list[tuple[bytes, bool]] = []
     original = os.fsync
 
-    def espia(fd: int) -> None:
-        visto.append((parcial.read_bytes(), destino.exists()))
+    def spy(fd: int) -> None:
+        seen.append((partial.read_bytes(), destination.exists()))
         original(fd)
 
-    monkeypatch.setattr(os, "fsync", espia)
+    monkeypatch.setattr(os, "fsync", spy)
     FileEtlWorker(source_dir, output_dir, lambda payload: payload.upper()).process("k.csv")
 
-    assert visto == [(b"CONTEUDO", False)], "fsync do parcial JA flushado e ANTES do rename"
-    assert destino.read_bytes() == b"CONTEUDO", "e o rename publica o que foi sincronizado"
+    assert seen == [(b"CONTEUDO", False)], "fsync do parcial JA flushado e ANTES do rename"
+    assert destination.read_bytes() == b"CONTEUDO", "e o rename publica o que foi sincronizado"
