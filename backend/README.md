@@ -247,7 +247,7 @@ portão**, o que até 2026-08-29 não era verdade.
 
 **`"D"` entrou em `[tool.ruff.lint] select` por `T-01.7`.** Antes disso `select` não o tinha e
 `lint.sh:51` roda `ruff check src tests` **sem** `--select D` ⇒ **as 55 docstrings podiam ser apagadas e
-`lint.sh`, `make lint` e o `pre-push` continuavam verdes**, e os 3 `noqa: D102` abaixo eram **inertes**
+`lint.sh` e `make lint` continuavam verdes**, e os 3 `noqa: D102` abaixo eram **inertes**
 `[MEDIDO 2026-08-29, em cópia restaurada e conferida por sha256: com a docstring de
 `JsonlCheckpoint.done()` apagada, `ruff check src tests` → **rc=0** "All checks passed!", enquanto
 `ruff check --select D src tests` → **rc=1** `D102`]`. `ADR-011:268` já tinha recusado a forma mais
@@ -259,7 +259,7 @@ fraca — *"ferramenta só no `lint.sh` fica fora do portão que de fato reprova
 | mutação | `bash backend/scripts/lint.sh` |
 |---|---|
 | apagar a docstring de `JsonlCheckpoint.done()` | **`rc=1`** · `D102 Missing docstring in public method` |
-| tirar o ponto final do resumo de `record()` | **`rc=1`** · `D400 First line should end with a period` |
+| tirar o ponto final do resumo de `record()` | **`rc=1`** · `D400` **e** `D415` (a mesma linha acende as duas) |
 | remover **1** dos 3 `noqa: D102` | **`rc=1`** · `D102` — os `noqa` **suprimem achado real**, não são enfeite |
 | traduzir `done()` de volta ao **português**, forma intacta | **`rc=0`** · "All checks passed!" |
 

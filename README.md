@@ -114,7 +114,7 @@ ser apagadas e o portão continuava verde
 JsonlCheckpoint.done() apagada, «ruff check src tests» → rc=0 "All checks passed!", enquanto
 «ruff check --select D src tests» → rc=1 D102]`. **Depois de `"D"` entrar no `select`, a mesma mutação
 reprova o portão real:** `bash backend/scripts/lint.sh` → **`rc=1`, `D102`**; tirar o ponto final de um
-resumo → **`rc=1`, `D400`**; árvore limpa → **`rc=0`** `[MEDIDO 2026-08-29, n=3 mutações]`. E a
+resumo → **`rc=1`, `D400` + `D415`**; árvore limpa → **`rc=0`** `[MEDIDO 2026-08-29, n=3 mutações]`. E a
 recusa é medida também: numa árvore extraída **sem** `backend/.venv`, `bash backend/scripts/lint.sh` →
 **`rc=3`**, "RECUSA: …/backend/.venv/bin/python nao existe"
 `[MEDIDO 2026-08-29: git archive | tar -x, e o script na árvore extraída]`.
@@ -136,12 +136,22 @@ documentação, é medição: trocar uma docstring inglesa por português **com 
 comando **verde**
 `[MEDIDO 2026-08-29, n=3 mutações no mesmo arquivo, na grafia literal publicada acima: M3 traduz
 JsonlCheckpoint.done() de volta ao português e o comando devolve rc=0, "All checks passed!"; M1 apaga
-essa mesma docstring → rc=1, D102; M2 tira o ponto final do resumo de record() → rc=1, D400]`.
+essa mesma docstring → rc=1, D102; M2 tira o ponto final do resumo de record() → rc=1, D400 + D415]`.
 
 **E agora isso vale para o portão real, não só para o comando isolado:** com `"D"` no `select`, a mesma
-M3 passada por `bash backend/scripts/lint.sh` — o portão que `make lint` e o `pre-push` rodam — devolve
+M3 passada por `bash backend/scripts/lint.sh` — o portão que `make lint` roda **hoje**, e que o
+`pre-push` **passará a rodar** quando `T-01.5` instalar `scripts/hooks/pre-push.pre-harness`
+(`ADR-011/D3b`) — devolve
 **`rc=0`, "All checks passed!"** `[MEDIDO 2026-08-29]`. **O portão morde presença e forma, e é cego a
 idioma. Por isso o idioma continua sendo convenção conferida por leitura humana.**
+
+**E o alcance de hoje, dito no tempo certo:** o `pre-push` instalado roda **exatamente dois** comandos —
+`require-push` e `rules --mode sweep --surface git-hook` — e **não chama `make`**; ele encadeia
+`pre-push.pre-harness` **só se o arquivo existir e for executável**, e ele **não existe**
+`[MEDIDO 2026-08-29: `ls scripts/hooks/` → só `commit-msg`; `ls .git/hooks/pre-push.pre-harness` →
+inexistente; o hook gerado o busca sob `if [ -n "$ANTERIOR" ] && [ -x "$ANTERIOR" ]`]`. Instalá-lo é de
+`T-01.5` (`ADR-011/D3b`). **Hoje as duas superfícies que de fato medem docstring são `bash
+backend/scripts/lint.sh` e `make lint`, e são essas duas que estão medidas acima.**
 
 ⚠️ **O caminho faz parte do número, e a forma nua mede outra coisa.** O escopo acima (`src tests`, a
 partir de `backend/`) é o de `backend/scripts/lint.sh`. **Rodado nu da raiz**, o mesmo comando devolve

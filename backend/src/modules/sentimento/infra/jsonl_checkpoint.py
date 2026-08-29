@@ -42,7 +42,9 @@ class JsonlCheckpoint:
         return self._path
 
     def entries(self) -> tuple[str, ...]:
-        """Return every recorded key, in order — repetition included, so that it stays measurable.
+        """Return every recorded key, in order, with repetition kept.
+
+        Repetition is not collapsed here, so that a repeated key stays measurable.
 
         NAMED DEBT — the error classification is INCOMPLETE, and `CorruptedCheckpointError`
         only covers unreadable JSON. A readable payload with the wrong shape escapes the
