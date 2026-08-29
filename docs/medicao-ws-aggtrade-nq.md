@@ -32,9 +32,14 @@ Um "sim/não" esconde três desfechos com consequências **opostas** para `T-03.
 | **nenhuma mensagem** (o que ocorreu) | nada acima se aplica: não há observação |
 
 O instrumento desta task separa `ABSENT` · `NULL` · `VALUED` · `NOT_MEASURED`, e a separação é
-**estrutural**: leitura de campo só existe dentro de `ProbeMeasured`; `ProbeNotMeasured` não tem
-onde guardá-la. Não é convenção que alguém precise lembrar — é um valor que não se consegue
-construir.
+**tipada**: leitura de campo só existe dentro de `ProbeMeasured`; `ProbeNotMeasured` não tem
+onde guardá-la.
+
+> ⚠️ **E ela NÃO é portão — o `/review` provou, e a correção é dele.** Plantando um campo
+> `readings` em `ProbeNotMeasured`, **`pytest`, `ruff`, `mypy --strict`, `lint-imports` e o
+> `sweep` passam: 5 de 5** `[MEDIDO 2026-08-29 pelo /review, achado A-4]`. A separação é
+> verdadeira **hoje porque foi escrita com cuidado**, e cuidado não é mecanismo. Chamá-la de
+> "estrutural" sugeria uma garantia que nenhum portão sustenta — **dívida nomeada abaixo.**
 
 ---
 
@@ -118,7 +123,13 @@ Uma conexão por stream, 10 s de espera, mesmo host `fstream.binance.com`:
 ### 5. Não há interceptação de TLS no caminho `[MEDIDO]`
 
 ```
-python -c "…ssl.getpeercert()…"   # fstream / stream / fapi .binance.com
+python3 -c "
+import socket, ssl
+for h, port in [('fstream.binance.com',443), ('stream.binance.com',9443), ('fapi.binance.com',443)]:
+    s = ssl.create_default_context().wrap_socket(
+        socket.create_connection((h, port), timeout=10), server_hostname=h)
+    print(h, dict(x[0] for x in s.getpeercert()['issuer'])['organizationName']); s.close()
+"
 ```
 
 Os três hosts apresentam certificado emitido por **DigiCert Inc**, CN `*.binance.com`, e o
@@ -147,15 +158,25 @@ reais e classificar `nq` neles — logo o resultado dos futuros não é artefato
 > `e,E,s,a,p,q,f,l,T,m,M`. Isso **não responde `D3.9`** — spot é outro produto, e `ADR-001`
 > mede futuros. Fica registrado como contexto, com rótulo próprio.
 
-### O controle que NÃO discrimina, e por isso não vale
+### O ack de `SUBSCRIBE` — o que ele cega, e o que ele de fato vê
 
 O `SUBSCRIBE` explícito devolve `{"result":null,"id":99}` para um nome de stream **inventado**
 (`btcusdt@naoExisteStream`) exatamente como para um válido. **Universo:** 3 streams, 1 conexão
 cada.
 
-⇒ **O ack de assinatura é inútil como evidência.** Quem escrever `T-03.4` não pode tratar
-"assinatura aceita" como "stream existe e vai entregar". Está registrado aqui para que o
-próximo não gaste a rodada que esta gastou.
+Mas ele **não** é cego para tudo, e a versão anterior deste documento errou ao chamá-lo de
+"inútil" — jogava fora a metade que serve `[MEDIDO 2026-08-29, 3 streams, 1 conexão cada]`:
+
+| o que se assina | resposta |
+|---|---|
+| `btcusdt@aggTrade` (válido) | `{"result":null,"id":99}` |
+| `btcusdt@naoExisteStream` (**inexistente, bem-formado**) | `{"result":null,"id":99}` — **idêntica** |
+| `@@@lixo###` (**sintaxe inválida**) | `{"error":{"code":2,"msg":"Invalid request: invalid stream"}}` + `CLOSE` |
+
+⇒ **O ack valida SINTAXE e é cego para EXISTÊNCIA.** A distinção é operacional para `T-03.4`:
+o ack **serve** para pegar um nome de stream malformado (erro de digitação, montagem errada da
+string), e **não serve** como evidência de que o stream existe ou vai entregar. Tratar
+"assinatura aceita" como "stream vivo" é o erro que esta rodada gastou para descobrir.
 
 ---
 
@@ -182,7 +203,15 @@ próximo não gaste a rodada que esta gastou.
   **muda o desenho do item 3.5, não o contrato**.
 - **O REST de futuros carrega `nq` hoje** — reproduzido nesta rodada, 8 campos.
 - **O instrumento e os controles estão prontos e em portão.** Refazer a medição é **um comando**,
-  e ele já sabe distinguir os quatro desfechos.
+  e ele já sabe distinguir os quatro desfechos — inclusive **janela interrompida**, que agora
+  viaja no `summary` (`window_end`, `observed_seconds`, `window_complete`).
+- **`<symbol>@trade` entrega, e entrega rápido:** primeiro evento em **0,1 s**, no mesmo host e
+  na mesma janela em que `@aggTrade` ficou mudo `[MEDIDO]`. **`@trade` dispara nos MESMOS
+  negócios que `@aggTrade` agrega** — é o candidato imediato caso `T-03.4` precise de fluxo de
+  negócio ao vivo. **O que ele NÃO traz é `nq`** (nem `a`, o `aggTradeId`), então ele resolve
+  presença de fluxo, **não** o problema de `CL-5`.
+- **O ack de `SUBSCRIBE` valida SINTAXE.** Serve para pegar nome de stream malformado; **não**
+  serve como prova de que o stream existe ou entrega.
 
 **NÃO pode assumir:**
 
@@ -193,10 +222,65 @@ próximo não gaste a rodada que esta gastou.
 - **Que o WS não tem `nq`.** Não foi observado. Desenhar a queda para REST como se fosse fato
   medido herda uma conclusão que esta rodada explicitamente **não** produziu.
 
-**Recomendação operacional (rótulo `[INFERRED: dos itens 2–4 acima]`):** antes de `T-03.4`
-escolher o desenho, **repetir esta medição de outra origem de rede e em outro horário**. É um
-comando e uma janela de 2 min. Se `aggTrade` entregar de lá, a pergunta de `D3.9` fecha na hora
-e o desenho de `T-03.4` deixa de ser escolhido no escuro.
+### Regra de parada — o que fazer se a remedição também der 0
+
+A recomendação de *"repetir de outra origem e em outro horário"* precisa de um critério de
+parada, senão vira espera indefinida sobre um relógio `capture-or-lose`. **Proposta, e a
+decisão de aceitá-la é do `quant-architect`** (`[INFERRED: dos itens 1–2 de "não medido"]`):
+
+| tentativa | o que fazer |
+|---|---|
+| **1ª** — outra origem de rede, outro horário, janela ≥ 120 s | se entregar ⇒ `D3.9` **fecha**, e o desenho de `T-03.4` sai da medição |
+| **2ª** — terceira origem, ≥ 6 h depois | se entregar ⇒ o silêncio é **do observador**, e vira requisito de infraestrutura (de onde a VPS captura), não de desenho |
+| **as duas dão 0** | **pare de tentar.** Trate como `[MEDIDO]`: *"o WS de futuros não entrega `aggTrade` para nós"*, e `T-03.4` desenha sobre **REST com peso e janela de 48 h** — com a perda declarada, não presumida |
+
+**O gatilho é `≥ 2 tentativas independentes com 0 eventos em janela ≥ 120 s.`** Enquanto o
+critério não for atingido, `T-03.4` **não** deve escolher o desenho no escuro; depois dele,
+esperar mais é gastar o relógio de `CL-5` sem comprar informação.
+
+---
+
+## Dívidas nomeadas, com dono e gatilho
+
+Nenhuma das duas bloqueia esta task. As duas são **doutrina sem mecanismo** — e este repositório
+já decidiu, em `ADR-012`, que doutrina sem portão se registra como dívida em vez de ser vendida
+como garantia.
+
+### `DIV-1` · O piso de cobertura mede LINHA, e linha não vê RAMO
+
+`backend/scripts/check-coverage-layers.sh` afere **linhas**. O `DEFEITO 2` desta rodada (opcode
+reservado entregando meia mensagem) vivia num **ramo** — `153->155` — com o arquivo em **100% de
+linhas**. `[MEDIDO 2026-08-29]`:
+
+```
+pytest --cov=src --cov-branch  ->  rfc6455_client.py  99%, ramo 153->155 DESCOBERTO
+pytest --cov=src               ->  rfc6455_client.py 100%
+```
+
+Os `96,8%` de `infra` estavam **certos para linhas** (`444 − 430 = 14 = connect_tls`) — e o
+defeito passou assim mesmo. **Um piso que só vê linha declara verde sobre ramo que ninguém
+executou.**
+
+- **Dono:** `T-01.5` (o contrato/piso de cobertura é o sujeito dela).
+- **Gatilho:** o próximo módulo com parser, máquina de estados ou `elif` encadeado — onde ramo e
+  linha divergem por construção.
+- **Custo hoje:** `--cov-branch` já roda; o que falta é o **piso** olhar a coluna `BrPart`.
+- **Estado após esta rodada:** os 6 módulos novos estão em **100% de ramos**, `0 parcial`
+  (`rfc6455_client.py`: 78 stmts, **26 ramos**, 0 parcial). O número existe; o portão é que não
+  o exige.
+
+### `DIV-2` · A separação `NOT_MEASURED` × `ABSENT_IN_ALL` é verdadeira, e não é portão
+
+`[MEDIDO 2026-08-29 pelo `/review`, achado A-4]`: plantando um campo `readings` em
+`ProbeNotMeasured`, **5 de 5 portões passam** — `pytest`, `ruff`, `mypy --strict`,
+`lint-imports` e `sweep`. A garantia de que "não conectei" nunca vira "campo ausente" é
+sustentada por **como o tipo foi escrito**, não por algo que reprove quem o reescrever.
+
+- **Dono:** `T-03.4` (é ela quem herda o instrumento e quem mais paga se a separação cair).
+- **Gatilho:** a primeira alteração em `stream_probe_outcome.py` feita por quem não escreveu o
+  original.
+- **O que NÃO fazer:** vender a separação como "estrutural" em documento. Este documento parou
+  de fazê-lo.
 
 ---
 
@@ -231,6 +315,13 @@ $PY -m src.modules.sentimento.infra.aggtrade_nq_probe_cli \
     --symbols BTCUSDT --seconds 8 --host nao-existe.fstream.binance.invalid \
     --evidence $EV/ctrl_dns.jsonl --summary $EV/ctrl_dns.json
 
+# o controle POSITIVO do instrumento -> ABSENT_IN_ALL n=60, rc=0
+# (SPOT entrega aggTrade; prova que a sonda LE aggTrade e classifica nq nele)
+$PY -m src.modules.sentimento.infra.aggtrade_nq_probe_cli \
+    --symbols BTCUSDT,ETHUSDT --seconds 25 --max-messages 60 \
+    --host data-stream.binance.vision \
+    --evidence $EV/spot_aggtrade.jsonl --summary $EV/spot_aggtrade.json
+
 # o controle negativo de campo      -> ABSENT_IN_ALL, rc=0
 $PY -m src.modules.sentimento.infra.aggtrade_nq_probe_cli \
     --symbols BTCUSDT,ETHUSDT --seconds 15 --max-messages 40 \
@@ -239,7 +330,14 @@ $PY -m src.modules.sentimento.infra.aggtrade_nq_probe_cli \
 ```
 
 **Evidência crua** (JSONL, uma mensagem por linha, com carimbo UTC de captura):
-`data/binance/ws/` — `data/` é gitignored (`data/MANIFEST.md` traduz o caminho).
+`data/binance/ws/`.
+
+> ⚠️ **Ela é LOCAL, e um clone não a alcança.** `data/` é gitignored — e `data/MANIFEST.md`
+> **também é** (`.gitignore:47` cobre o diretório inteiro), então o MANIFEST **não pode**
+> servir de ponteiro para quem clonar: ele não viaja no repositório. A versão anterior deste
+> documento afirmava que o MANIFEST "traduz o caminho", o que é falso para esta evidência.
+> **O que substitui o ponteiro são os comandos desta seção**, que re-obtêm a evidência do zero
+> — que é a razão de eles estarem escritos por extenso, e não elididos.
 
 **A suíte é offline** (`backend/scripts/test.sh`, ZERO REDE): nada acima roda em portão. O que
 está em portão é o **classificador e o leitor de frames**, exercitados contra os bytes que a
