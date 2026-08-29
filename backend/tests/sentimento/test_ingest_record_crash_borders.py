@@ -20,6 +20,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -148,5 +149,9 @@ def test_concurrent_recorders_neither_lose_rows_nor_corrupt_the_file(tmp_path: P
     assert SqliteIngestRecordStore(path).runs() == tuple(
         build_run(index) for index in range(ROWS_PER_WRITER)
     )
-    with sqlite3.connect(path) as connection:
+    # `with sqlite3.connect(...)` is a TRANSACTION context, not a resource one: it commits or
+    # rolls back on exit and leaves the connection OPEN. It reads like `open()` and is not.
+    # `closing()` is what closes, and it is what production already uses two files over
+    # (`sqlite_ingest_record_store.py:188,195,222`) — this test was the only place that did not.
+    with closing(sqlite3.connect(path)) as connection:
         assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
