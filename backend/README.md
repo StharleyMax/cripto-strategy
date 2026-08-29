@@ -831,3 +831,91 @@ motivo medido — tem um **custo** que ela não nomeou.
 | **por que registrar mesmo assim** | é **custo de uma decisão já tomada**, e a decisão o omitiu. O `scope = "code"` de outras regras do mesmo pack tem a mesma propriedade — a lista de quais só se mede na adoção |
 | **dono** | **`T-01.2`**, a task que adota o pack. O que ela deve fazer é **medir antes**: `harness rules --mode sweep` com o pack ligado, e comparar o universo avaliado |
 | **falsificador** | se, com o pack adotado, o sweep completo devolver o mesmo número de achados de hoje (**0**), o custo era teórico e esta linha vira nota histórica |
+
+---
+
+## 🛡️ A borda de ingestão verifica o `.CHECKSUM` — `T-02.4a` (`GAP G1`, `SPEC-001` §5.8, `D2.8`)
+
+**O defeito que esta guarda existe para pegar não levanta exceção.** `monthly/bookTicker` de
+2024-04 respondeu **200 com 37,7 MB** contra **6,7 GB** do mês anterior `[MEDIDO, SPEC-001
+§5.8]`. Um ETL que trate `status == 200` como testemunha de integridade grava uma **série
+curta** e chama isso de sucesso — modo de falha **pior que o 404**, porque o 404 pelo menos
+falha em voz alta.
+
+| peça | camada | o que ela faz |
+|---|---|---|
+| `domain/checksum_manifest.py` | `domain` | lê a linha `sha256sum` do sidecar e compara o par (digest, nome). Zero I/O |
+| `use_cases/ingest_verified_payload.py` | `use_cases` | **a ordem**: `checksum_text` → `parse` → `digest` → `verify` → **só então** `lines()` |
+| `infra/checksummed_file_payload.py` | `infra` | o arquivo + `<nome>.CHECKSUM` ao lado; digest em blocos de 1 MiB, `lines()` preguiçoso |
+
+### Por que DUAS passadas sobre o arquivo, e não uma
+
+A task diz **"antes de qualquer linha entrar"**, e essa palavra elimina o desenho mais barato.
+Um digest de arquivo inteiro só existe **depois do último byte** ⇒ hashear durante o streaming
+e levantar no fim é uma guarda que **reporta o truncamento depois de a série curta já estar
+escrita**. Isso é o defeito, não o conserto. A alternativa (bufferizar tudo) não sobrevive a
+6,7 GB. Ler duas vezes custa **uma varredura sequencial extra** e mantém a garantia.
+
+**E a ordem não é prosa: ela é asserção.** `CallOrderSpy` registra a sequência de chamadas, e o
+teste exige que `lines()` **nem sequer seja chamado** quando o digest não bate — afirmação mais
+forte que *"o sink ficou vazio"*, e que continua valendo se alguém tornar o iterador ansioso.
+
+### Falha fechada, e as três formas são a mesma família
+
+Sidecar **ausente**, sidecar **malformado** e digest **divergente** terminam com **zero linha
+entregue**, todos sob `ChecksumRejectedError`. *"Não conseguimos conferir"* e *"conferimos e
+está íntegro"* são estados diferentes, e deixar o primeiro passar com o nome do segundo é
+exatamente como um mês truncado entra sem ninguém ver.
+
+### A bancada de mutação — 8 mutações, e as duas que "passaram" na primeira rodada
+
+`[MEDIDO 2026-08-29, `backend/.venv/bin/python`, universo = os 27 testes de
+`tests/sentimento/test_checksum_at_the_ingestion_edge.py`; cada mutação aplicada isolada,
+revertida, e a árvore reconferida por `sha256sum` (n=3 arquivos, idênticos ao fim)]`:
+
+| # | mutação | veredito | quem reprovou |
+|---|---|---|---|
+| `M1` | `verify` movido para **depois** do loop (desenho de uma passada) | **MORDEU** | 5 testes |
+| `M2` | checagem de **assunto** removida de `verify()` | **MORDEU** | 1 |
+| `M3` | sidecar ausente deixa de reprovar (*fail-open*) | **MORDEU** | 2 |
+| `M4` | `digest()` lê só o **primeiro bloco** | **MORDEU** | 1 |
+| `M5` | `fullmatch` trocado por `search` | **MORDEU** | 9 |
+| `M6` | sidecar por `with_suffix` em vez de `with_name` | **MORDEU** | 9 |
+| `M7` | divergência de digest deixa de reprovar | **MORDEU** | 3 |
+| `M8` | `parse` aceita a **primeira** de várias entradas | **MORDEU** | 1 |
+
+Controle nos dois lados: árvore boa `rc=0` antes e depois, **27 passed** nas duas.
+
+#### ⚠️ E as duas que passaram na PRIMEIRA rodada — as duas por motivos que valem mais que a tabela
+
+**`M1` "passou" porque a bancada estava cega, não porque a suíte estava.** Mover `verify()`
+para depois do loop **reordena linhas sem mudar um byte do tamanho do arquivo**
+`[MEDIDO 2026-08-29: os dois blocos têm **227 bytes** exatos]`. A validação de `.pyc` do
+CPython é **`mtime` em segundos + tamanho** ⇒ mutação aplicada dentro do mesmo segundo, com
+tamanho idêntico, **reusa o bytecode velho** e a suíte roda contra o código **não mutado**.
+Com `PYTHONDONTWRITEBYTECODE=1` + `python -B` + `__pycache__` apagado, `M1` **reprova 5
+testes**. É a família *"método de busca que não vê o que afirma ver"* — desta vez **dentro do
+instrumento que mede o portão**, que é a pior localização possível para ela.
+
+**`M5` passou porque não havia nada a detectar, e isso era um defeito MEU.** O padrão nascera
+`^...$` com um comentário creditando ao `^` o mérito de impedir que uma linha que apenas
+*contém* um digest fosse lida como manifesto. **Falso:** a chamada era `.match()`, que já
+ancora no início sozinha ⇒ apagar o `^` **não mudava nada** `[MEDIDO: 27 passed, rc=0]`. Um
+comentário que credita a guarda ao mecanismo errado **sobrevive ao dia em que alguém edita o
+mecanismo**. Corrigido: a âncora passou a ser dita **uma vez**, no `fullmatch`, e a mutação
+`fullmatch → search` agora **morde** — o que torna o caso `digest-not-at-the-start` da
+parametrização **portante** em vez de decorativo.
+
+### O que esta task NÃO fecha, e não é rodapé
+
+- **Não há chamador de produção.** `ingest_verified` é a borda; **quem a chama ainda não
+  existe**, e isso é o achado `H` deste mesmo README (*"não existe raiz de composição"*) —
+  dono declarado **`T-03.10`**. Esta task **não** inventou raiz de composição.
+- **`LineSink` não tem implementação de produção.** O único sink hoje é o de teste. Quem
+  trouxer o primeiro destino real o traz.
+- **Nada de `data/`.** Os testes fabricam o próprio arquivo e o próprio `.CHECKSUM`, e
+  corrompem o byte deles mesmos. `data/` é dado de terceiro e continua fora do portão.
+- **A metade documental do item `2.5` do plano é `T-02.4b`** (`docs`): política de backup com
+  teste de restauração. **Não é desta task**, pela partição `D-3` do `tasks_review.md` §7.
+- **`curl -sI` mensal** em prefixo antigo e recente (`SPEC-001` §5.8) é mitigação **de retenção
+  do bucket**, não de integridade de corpo. Não entrou aqui e não tem dono nesta task.
