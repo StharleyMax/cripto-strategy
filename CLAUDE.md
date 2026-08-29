@@ -74,7 +74,11 @@ texto integral **já estava em disco**, no `<output-file>` que a própria notifi
 entregue no turno 300 de 692 é relido **~390 vezes**: o custo de uma linha é o que ela custa vezes os
 turnos que faltam.
 
-Vinculante para o loop principal e para todo subagente — R1–R5 em
+**E os subagentes são 74–89% disso, não o loop principal** `[MEDIDO 2026-08-29: loop principal
+276,7M de contexto em 868 turnos; 45 subagentes 822,2M em 6.746 turnos]`. `/compact` não os
+alcança — cada um nasce em 30,7k e constrói os próprios milhões dentro da própria vida.
+
+Vinculante para o loop principal e para todo subagente — R1–R7 em
 [`docs/protocolo-de-despacho.md`](docs/protocolo-de-despacho.md):
 
 - **Subagente devolve no máximo 15 linhas** — veredito, números com o comando que os produziu, e o
@@ -84,6 +88,12 @@ Vinculante para o loop principal e para todo subagente — R1–R5 em
 - **NUNCA `cat` nem `sed -n '1,300p'` de arquivo grande no loop principal** — `grep -n` com âncora,
   `--json` com filtro, ou delegue a leitura.
 - Todo comando que pode passar de ~50 linhas termina em `| head -N` ou `| tail -N`.
+- **Verificação é `make verify`** — os seis portões numa chamada, ~10 linhas, saída bruta em
+  arquivo. Nunca os seis comandos soltos: eles custaram ~397k tokens de saída bruta em 1.320
+  chamadas `[MEDIDO 2026-08-29 sobre 105 transcripts de subagente]`.
+- **O subagente morre cedo.** Passando de ~150 turnos, escreva o estado em
+  `docs/context/<feature>/handoff/<TASK>.md` e devolva — o workflow invoca o próximo. O custo é
+  **quadrático** nos turnos: 376 turnos custaram 93M; 188 custariam ~22M.
 
 **Nada disto é portão** — é doutrina, e `agents/qa.md` já mediu que prosa sem portão tem 0% de adesão.
 Por isso o documento carrega um falsificador que o manda sair se não pagar o que custa.
