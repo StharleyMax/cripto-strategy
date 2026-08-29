@@ -14,7 +14,7 @@ from src.modules.sentimento.use_cases.ingest_verified_payload import ingest_veri
 logger = logging.getLogger(__name__)
 
 
-# ── O QUE ESTA PECA FECHA, E O QUE ELA DELIBERADAMENTE NAO FAZ ────────────────────────────────
+# ── WHAT THIS PIECE CLOSES, AND WHAT IT DELIBERATELY DOES NOT DO ─────────────────────────────
 #
 # `backend/README.md` records two open items whose declared owner is `T-03.10`:
 #
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # `tests/sentimento/test_verified_edge_call_sites.py` now RUNS that trigger, instead of it living
 # typed inside a comment.
 #
-# ── ATOMICIDADE E IDEMPOTENCIA SAO CONTRATO DA PORTA, NAO GENTILEZA ───────────────────────────
+# ── ATOMICITY AND IDEMPOTENCE ARE THE PORT'S CONTRACT, NOT A COURTESY ────────────────────────
 #
 # `ItemWorker` states it literally: *"`process` publishes ATOMICALLY and is IDEMPOTENT"*. That
 # contract is what buys "never duplicates" — `drain` buys "never loses" by recording only AFTER
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # cannot distinguish from an interrupted write. The `finally` below unlinks it and **re-raises**
 # — nothing is swallowed (`core.silent-except`).
 #
-# ── A SUSPEITA DE CLASSE O CHEGA DE FORA, E O MOTIVO E QUE ELA NAO CABE AQUI ──────────────────
+# ── CLASS-O SUSPICION ARRIVES FROM OUTSIDE, BECAUSE IT CANNOT BE DECIDED HERE ────────────────
 #
 # A short month is NOT detectable from the bytes of one object: its `.CHECKSUM` matches, its zip
 # is intact, its `content-length` agrees `[MEDIDO, ADR-014, n = 1 objeto]`. The only witness at
@@ -103,19 +103,34 @@ class BinaryFileLineSink:
 class DumpIngestWorker:
     """Verify one dump object at the `.CHECKSUM` edge, then publish it atomically.
 
-    THE ROUTING DECISION IS STRUCTURAL, NOT DECLARED, and this is the answer to *"which source
-    routes through which edge"* that `ADR-014/D3` reframes. `T-02.1` (`exchangeInfo` snapshot)
-    and `T-02.2` (Coinalyze one-shot) are REST responses that publish NO sidecar; routing them
-    through this edge would refuse **100 % of legitimate traffic**. They are not refused here by
-    a policy line that a later edit could delete — they are refused because this worker only
-    ever builds keys from a `DumpPartition`, and no REST source has one.
+    WHERE THE ROUTING BARRIER ACTUALLY IS — AND THE FIRST VERSION OF THIS PARAGRAPH WAS WRONG.
+
+    It claimed the barrier was the TYPE: *"they are refused because this worker only ever builds
+    keys from a `DumpPartition`, and no REST source has one"*, and therefore *"there is no policy
+    line anyone could delete"*. **`/qa` refuted the load-bearing half by measurement.**
+    `process(self, key: str)` takes a `str`. A REST source planted at this edge
+    (`worker.process("api/v3/exchangeInfo.json")`) passes **`ruff` "All checks passed!", `mypy
+    --strict` "Success: no issues found in 23 source files", and `import-linter` `2 kept`**
+    `[MEDIDO 2026-08-29]`. **No static gate barred it.** What refuses is the absent `.CHECKSUM`,
+    at RUNTIME, with `ChecksumMissingError` — fail-closed, which is right, but it is the opposite
+    of "by type".
+
+    WHAT SURVIVED THE REFUTATION, because it is the part that was measured true: **through
+    `run()` there is no path.** `dataset_by_name` resolves only `{aggTrades, bookDepth}` and
+    every key is born from `DumpPartition.object_key`, so no REST response reaches this edge
+    THROUGH THE COMPOSITION ROOT — only by hand-building the worker, and then it fails closed.
+
+    SO THE BARRIER IS ONE LINE — `DATASETS_BY_NAME` in `domain/dump_window.py` — AND IT HAD NO
+    TEST. `/qa` added `"exchangeInfo"` to that dict and the whole suite stayed GREEN (mutant
+    `M08`). It is covered now by
+    `test_the_dataset_vocabulary_is_exactly_the_two_the_dump_publishes`. A closed vocabulary
+    nobody asserts is a convention, not a gate — which is the same lesson this repository
+    already learned about tools that live only in a comment.
 
     `ADR-014/D3a` states the general rule (*"o que falha fechado e a AUSENCIA DE TESTEMUNHA
     DECLARADA, nao a ausencia de `.CHECKSUM`"*), and for the S3 dump the two formulations
-    COINCIDE: its declared witness IS the `.CHECKSUM`, and a missing sidecar where the publisher
-    publishes one means something went wrong. **`ADR-014` is status `proposto`**, so the general
-    per-source registry it proposes is NOT built here; what is built is the one routing this task
-    actually owns.
+    COINCIDE: its declared witness IS the `.CHECKSUM`. **`ADR-014` is status `proposto`**, so the
+    general per-source registry it proposes is NOT built here.
     """
 
     def __init__(

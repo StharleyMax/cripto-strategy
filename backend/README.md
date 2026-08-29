@@ -1377,7 +1377,7 @@ revertido e o arquivo **reconferido por `sha256`** antes do seguinte, com `pytho
 
 **`n=12` mutantes · 12 morderam · 0 sobreviveram · 0 inertes · 0 ambíguos.**
 
-### ⚠️ Um achado sobre o INSTRUMENTO do portão de regras, e ele é da família que este repositório caça
+### ⚠️ Uma DÍVIDA JÁ DOCUMENTADA do portão de regras, e a forma nova que esta task acrescenta
 
 **`harness rules --mode sweep --changed-only` é CEGO a arquivo NÃO RASTREADO.** Medido plantando
 `print(...)` — que viola `core.print-statement`, severidade `block` — e variando **só** o estado
@@ -1388,6 +1388,14 @@ do arquivo no git `[MEDIDO 2026-08-29, n=3 estados, mutante revertido e conferid
 | **não rastreado**, com o `print` | `harness rules --mode sweep --changed-only` | **0 achados, `rc=0`** — **`[CEGO]`** |
 | **não rastreado**, com o `print` | `harness rules --mode sweep` (completo) | **1 achado, `rc=1`** — `[MORDE]` |
 | **staged** (`git add`), com o mesmo `print` | `harness rules --mode sweep --changed-only` | **`rc=1`**, nomeia `dump_etl_cli.py:165` — `[MORDE]` |
+
+**⚠️ ENQUADRAMENTO CORRIGIDO NO CICLO 2 — isto NÃO é achado novo.** A cegueira já está escrita
+neste repositório, em `harness.toml:470-472`: *"NÃO cito `--changed-only`: ele é
+`git diff --name-only HEAD` (`lib/runner.py:88`) e portanto CEGO a arquivo novo não rastreado"*.
+Apresentá-la como descoberta foi erro meu de leitura. **O que esta task acrescenta é uma FORMA
+NOVA da mesma dívida** — não "arquivo novo numa task cujo universo é todo novo", mas **arquivo
+não rastreado convivendo com arquivos rastreados**, em que o portão devolve `rc=0` tendo varrido
+os rastreados e ignorado os novos, o que **parece** medição.
 
 **Consequência para o procedimento de qualquer builder:** uma task que **cria arquivos** e roda
 `--changed-only` antes de `git add` recebe **verde falso**. Não é hipótese — foi exatamente o que
@@ -1410,6 +1418,15 @@ reproduz.
 - **A razão de tamanho é ALARME e não `n_missing`** — `177,8x` contra déficit real de `106,2x`
   `[MEDIDO, `ADR-014/D3d`]`. `size_ratio_alarm` devolve um `float` e se chama `alarm` por isso.
 - **Não decidiu a testemunha das fontes que não são o dump.** `ADR-014/D3` decide por fonte e uma
-  linha dela é **`[NÃO SEI]`** (`!forceOrder@arr`, sem testemunha de integridade hoje). O
-  roteamento desta raiz é **estrutural e restrito ao dump**: ela só aceita um `DumpDataset`, e
-  nenhuma fonte REST tem um. O registro geral por fonte nasce quando `ADR-014` for aceita.
+  linha dela é **`[NÃO SEI]`** (`!forceOrder@arr`, sem testemunha de integridade hoje). O registro
+  geral por fonte nasce quando `ADR-014` for aceita.
+  **⚠️ ERRATUM 2026-08-29 (ciclo 2) — a redação anterior desta linha era FALSA na metade que ela
+  usava como argumento.** Ela dizia que o roteamento é *"estrutural e restrito ao dump: ela só
+  aceita um `DumpDataset`"* e que *"não há linha de política que alguém possa apagar"*. O `/qa`
+  refutou por medição: `DumpIngestWorker.process(self, key: str)` recebe **`str`**, e uma fonte
+  REST plantada nessa borda passa por **`ruff`, `mypy --strict` e `import-linter`** sem que
+  nenhum portão estático morda `[MEDIDO 2026-08-29]`. O que sobrevive: **pela `run()` não há
+  caminho** — `dataset_by_name` só resolve `{aggTrades, bookDepth}`. **A barreira real É uma
+  linha** — `DATASETS_BY_NAME` — **e ela não tinha teste**: acrescentar `"exchangeInfo"` deixava
+  a suíte inteira verde (mutante `M08`). Coberta agora por
+  `test_the_dataset_vocabulary_is_exactly_the_two_the_dump_publishes`.

@@ -15,9 +15,10 @@ stream itself) leaves the whole suite green `[MEDIDO 2026-08-29: mutante `M32`, 
 
 The two tests below run the composition root **as a process**, which is the only way an operator
 invokes it, and they are the first assertions in this repository about the CONTENT of its streams.
-Two of them are `xfail(strict=True)`: they describe the contract the module declares, they fail
-today, and the day the defect is fixed they XPASS and this file has to be updated instead of the
-defect disappearing quietly.
+Two of them were `xfail(strict=True)` when the `/qa` of 2026-08-29 wrote them and both are PLAIN
+TESTS now: `T-03.10` ciclo 2 gave the product stream a logger of its own, OUTSIDE the `src`
+hierarchy, and stopped `_APPLICATION_LOGGER` collapsing onto `__main__` when the root runs as a
+script. They describe the contract the module declares, and they are what keeps it true.
 """
 
 from __future__ import annotations
@@ -28,8 +29,6 @@ import subprocess
 import sys
 from datetime import date
 from pathlib import Path
-
-import pytest
 
 from src.modules.sentimento.domain.dump_window import AGG_TRADES, enumerate_window
 from src.modules.sentimento.infra.dump_etl_cli import MIRROR_DIR
@@ -98,16 +97,14 @@ def test_every_processed_key_is_published_on_the_product_stream(tmp_path: Path) 
     assert published == list(keys), "the product stream lost the order or lost a key"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECT MEASURED 2026-08-29 by /qa: the FIRST line of stdout is "
-        "`dump_window_enumerated`, a diagnostic. `run` emits that record through the SAME logger "
-        "that `main` fits with the stdout handler, so the stderr routing never reaches it — and "
-        "it is literally the line the docstring of "
-        "`route_diagnostics_away_from_the_product_stream` says it exists to prevent."
-    ),
-)
+# ✅ REGRESSION GUARD — this was an `xfail(strict=True)` until `T-03.10` ciclo 2
+# fixed it. It is a plain test now: the defect below is CORRECTED, and this is
+# what keeps it corrected. The measurement that found it is preserved verbatim.
+#
+# DEFECT MEASURED 2026-08-29 by /qa: the FIRST line of stdout is `dump_window_enumerated`, a
+# diagnostic. `run` emits that record through the SAME logger that `main` fits with the stdout
+# handler, so the stderr routing never reaches it — and it is literally the line the docstring
+# of `route_diagnostics_away_from_the_product_stream` says it exists to prevent.
 def test_a_diagnostic_never_reaches_the_product_stream(tmp_path: Path) -> None:
     """`stdout` carries keys and NOTHING else, or the pipeline downstream acts on a non-key.
 
@@ -122,17 +119,15 @@ def test_a_diagnostic_never_reaches_the_product_stream(tmp_path: Path) -> None:
     assert finished.stdout.splitlines() == list(keys)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECT MEASURED 2026-08-29 by /qa: run as a script — the only way an operator "
-        "invokes it — `__name__` is `__main__`, so `_APPLICATION_LOGGER` "
-        "(`__name__.split('.')[0]`) resolves to the module's OWN logger instead of `src`. Both "
-        "handlers end up on one logger and every record leaves on BOTH streams: the 3 keys also "
-        "appear on stderr. Imported in process the same code does separate them, which is why "
-        "the current suite cannot see it."
-    ),
-)
+# ✅ REGRESSION GUARD — this was an `xfail(strict=True)` until `T-03.10` ciclo 2
+# fixed it. It is a plain test now: the defect below is CORRECTED, and this is
+# what keeps it corrected. The measurement that found it is preserved verbatim.
+#
+# DEFECT MEASURED 2026-08-29 by /qa: run as a script — the only way an operator invokes it —
+# `__name__` is `__main__`, so `_APPLICATION_LOGGER` (`__name__.split('.')[0]`) resolves to the
+# module's OWN logger instead of `src`. Both handlers end up on one logger and every record
+# leaves on BOTH streams: the 3 keys also appear on stderr. Imported in process the same code
+# does separate them, which is why the current suite cannot see it.
 def test_the_two_streams_are_disjoint_when_the_root_runs_as_a_script(tmp_path: Path) -> None:
     """A record belongs to ONE stream. Duplicated, `2>&1` doubles every key of the run."""
     keys = _seed(tmp_path)
@@ -142,3 +137,48 @@ def test_the_two_streams_are_disjoint_when_the_root_runs_as_a_script(tmp_path: P
     assert finished.returncode == 0, finished.stderr
     echoed = [key for key in keys if key in finished.stderr]
     assert echoed == [], f"these keys came out on BOTH streams: {echoed}"
+
+
+def test_a_host_that_puts_the_root_logger_on_stdout_does_not_contaminate_the_product(
+    tmp_path: Path,
+) -> None:
+    """`_APPLICATION_LOGGER` has to resolve to `src` even when this file runs as `__main__`.
+
+    THIS TEST EXISTS BECAUSE A MUTANT SURVIVED. Ciclo 2 fixed the `__main__` collapse two ways —
+    deriving the application logger from `DumpIngestWorker.__module__`, and fitting this module's
+    own logger explicitly — and the second fix alone was enough to keep the two streams disjoint.
+    So reverting `_APPLICATION_LOGGER` to `__name__.split(".")[0]` broke nothing and no test
+    noticed `[MEDIDO 2026-08-29, bancada de ciclo 2: mutante `C2-4` SOBREVIVEU]`. A fix nothing
+    asserts is a fix waiting to be undone.
+
+    The risk it actually carries is the one `T-02.3` was bitten by: a `cron` wrapper or a
+    supervisor calling `logging.basicConfig(stream=sys.stdout)` before invoking anything. With
+    the application logger collapsed onto `__main__`, every `src.*` diagnostic — the worker's
+    `dump_object_published`, one per object — propagates to the root handler and lands on
+    `stdout`, in the middle of the keys.
+    """
+    keys = _seed(tmp_path)
+    wrapper = tmp_path / "host_wrapper.py"
+    wrapper.write_text(
+        "import logging, runpy, sys\n"
+        "logging.basicConfig(stream=sys.stdout, level=logging.INFO)\n"
+        f"sys.argv = ['dump_etl_cli.py', {str(tmp_path)!r}, {SYMBOL!r}, {DATASET!r}, "
+        f"{END.isoformat()!r}, {DEPTH!r}, 'daily']\n"
+        f"runpy.run_path({str(CLI)!r}, run_name='__main__')\n",
+        encoding="utf-8",
+    )
+
+    finished = subprocess.run(  # noqa: S603 - literal argv, no shell
+        [sys.executable, "-B", str(wrapper)],
+        cwd=str(BACKEND_ROOT),
+        env=dict(os.environ, PYTHONPATH=str(BACKEND_ROOT), PYTHONDONTWRITEBYTECODE="1"),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert finished.returncode == 0, finished.stderr
+    assert finished.stdout.splitlines() == list(keys), (
+        "a src.* diagnostic reached the product stream through the host's root handler"
+    )

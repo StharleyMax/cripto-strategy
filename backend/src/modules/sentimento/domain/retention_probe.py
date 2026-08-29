@@ -14,7 +14,7 @@ from src.modules.sentimento.domain.dump_window import (
     Granularity,
 )
 
-# ── O QUE ESTE MODULO E, E O QUE ELE EXPLICITAMENTE NAO E ─────────────────────────────────────
+# ── WHAT THIS MODULE IS, AND WHAT IT EXPLICITLY IS NOT ───────────────────────────────────────
 #
 # `SPEC-001` §5.8 fixes the contract: the dump is *"re-baixavel (retencao do balde NAO MEDIDA)"*,
 # **never "infinito"**, and the mandated mitigation is a monthly `curl -sI` on an OLD prefix AND a
@@ -26,55 +26,58 @@ from src.modules.sentimento.domain.dump_window import (
 # `infra/head_probe_log.py` parses its output. Nothing here opens a socket, so the classification
 # is testable without one — which is why the suite of this repository stays offline.
 #
-# ── A REGRA QUE FALTAVA, E ELA NAO E O `404` ──────────────────────────────────────────────────
+# ── THE RULE THAT WAS MISSING, AND IT IS NOT THE `404` ───────────────────────────────────────
 #
-# `ADR-014` (status **proposto**), achado `A7`, MEASURED with `n = 3 simbolos x 3 meses = 9`
-# requisicoes `HEAD`:
+# `ADR-014` (status **proposed**), finding `A7`, MEASURED with `n = 3 symbols x 3 months = 9`
+# `HEAD` requests:
 #
 #     BTCUSDT 2024-03 200 6712517585 | 2024-04 200   37761761 | 2024-05 404
 #     ETHUSDT 2024-03 200 5384737931 | 2024-04 200   31343866 | 2024-05 404
 #     SOLUSDT 2024-03 200 3952724227 | 2024-04 200   24390426 | 2024-05 404
 #
-# => **o `curl -sI` mensal pega o `404` de maio e NAO pega o abril parcial** — e abril parcial e o
-# mes em que os dados existem pela metade, que e o que envenena a serie. **O ultimo periodo antes
-# de um `404` e sistematicamente suspeito**, e essa e a regra que faltava.
+# => **the monthly `curl -sI` catches May's `404` and does NOT catch the partial April** — and the
+# partial April is the month whose data exists by halves, which is what poisons the series.
+# **The last period before a `404` is systematically suspect**, and that is the rule that was
+# missing.
 #
 # The April object is not corrupt. Its `.CHECKSUM` published by the vendor **CONFERE**
 # (`sha256sum -c` -> `rc=0`), `unzip -t` says *"No errors detected"*, `content-length` matches the
 # bytes received, and every timestamp inside it IS inside April. It covers **0,942 %** of the month
-# its own name declares `[MEDIDO 2026-08-29, ADR-014, n = 1 objeto de 37.761.761 B baixado e
-# hasheado]`. Five gates pass over it. **Only the coverage of the declared window bites, and it is
+# its own name declares `[MEDIDO 2026-08-29, ADR-014, n = 1 object of 37,761,761 B actually
+# downloaded and hashed]`. Five gates pass over it. **Only the coverage of the declared window
+# bites, and it is
 # none of the five.**
 #
 # That is the difference between the two classes of failure, and it decides what this module can
 # and cannot promise:
 #
-# | classe | o que aconteceu | quem testemunha |
+# | class | what happened | who witnesses it |
 # |---|---|---|
-# | **T · transporte** | os bytes se perderam ENTRE o publicador e nos | qualquer digest do
-#   publicador: `.CHECKSUM`, `content-length`, o zip |
-# | **O · origem** | o objeto do publicador JA E CURTO | **nenhuma testemunha de classe T** — todas
-#   sao computadas sobre o mesmo objeto curto |
+# | **T · transport** | the bytes were lost BETWEEN the publisher and us | any digest computed by
+#   the publisher: `.CHECKSUM`, `content-length`, the zip |
+# | **O · origin** | the publisher's object IS ALREADY SHORT | **no class-T witness** — all of them
+#   are computed over the same short object, so they agree with each other and are wrong together |
 #
 # `.CHECKSUM` is a class-T witness. `SPEC-001` §5.8 infers *"dai `G1` (verificacao de `.CHECKSUM`)
 # ser obrigatoria na ingestao"* FROM a class-O case. **The conclusion survives; the premise is a
-# non sequitur** (`ADR-014`, achado `A1`). This module is the class-O half, at the only resolution
+# non sequitur** (`ADR-014`, finding `A1`). This module is the class-O half, at the only resolution
 # `HEAD` can reach: the WINDOW, not the body.
 #
-# ── O VOCABULARIO E PROPRIO, E ISSO E DELIBERADO ──────────────────────────────────────────────
+# ── THE VOCABULARY IS THIS MODULE'S OWN, AND THAT IS DELIBERATE ──────────────────────────────
 #
 # These findings are NOT `verdict` values. `verdict` is the closed set of `md.ingest_run`, the SPEC
-# is its owner (`ADR-014/D2a`), and `ADR-014` is **proposto** — writing `ACCEPTED_WITH_WARNING`
+# is its owner (`ADR-014/D2a`), and `ADR-014` is **proposed** — writing `ACCEPTED_WITH_WARNING`
 # here would be adopting an unratified enumeration and would put a second writer on a vocabulary
 # this task does not own. When `ADR-014` is accepted, the mapping is one function and it has a
 # home; today the finding is reported under its own name and nothing is silently equated.
 
 # The object is there and nothing about the window says otherwise.
 PRESENT: Final[str] = "PRESENT"
-# `404`: honest failure. `SPEC-001` §5.9-adjacent vocabulary calls this `SEM_FONTE` downstream;
+# `404`: honest failure. The vocabulary adjacent to `SPEC-001` §5.9 calls this `SEM_FONTE`
+# downstream (a contract term, kept verbatim);
 # here it is only "the bucket no longer serves it".
 ABSENT: Final[str] = "ABSENT"
-# `200`, and the NEXT period is `ABSENT`. This is achado `A7`: the last period before a `404` is
+# `200`, and the NEXT period is `ABSENT`. This is finding `A7`: the last period before a `404` is
 # where a dataset was discontinued MID-PERIOD, so the object exists, verifies, and is short.
 SUSPECT_LAST_BEFORE_ABSENT: Final[str] = "SUSPECT_LAST_BEFORE_ABSENT"
 
@@ -157,22 +160,28 @@ def probe_targets(
 
 
 def classify(outcomes: tuple[ProbeOutcome, ...]) -> tuple[RetentionFinding, ...]:
-    """Classify a run of outcomes for ONE series, ordered oldest to newest.
+    """Classify a run of outcomes for ONE series. ADJACENCY IS BY CALENDAR, never by position.
 
-    The order is the contract, and it is not cosmetic: `SUSPECT_LAST_BEFORE_ABSENT` is a
-    statement about a NEIGHBOUR, so it cannot be decided one outcome at a time. Handed a
-    shuffled sequence this function would answer confidently and wrongly, which is why the
-    caller's ordering obligation is written here and asserted by a test.
+    ⚠️ THIS IS THE CORRECTION OF A DEFECT `/qa` MEASURED 2026-08-29, and the old shape is worth
+    recording because each half of it was correct on its own. This function used to read
+    `outcomes[index + 1]` as *the* successor while `outcomes_for` SKIPS any partition nobody
+    probed. Composed, a hole in the probe log made **2024-03 the neighbour of 2024-06** and
+    produced a `SUSPECT` with 2024-04 and 2024-05 healthy and present — while this very docstring
+    claimed *"the boundary is one step wide"*. It was one ROW wide, and a row is an accident of
+    which lines the cron happened to write.
 
-    Only the immediate successor is consulted. A gap further along the sequence says nothing
-    about this period, and widening the rule would manufacture suspicion that achado `A7` does
-    not support — `A7` is about the discontinuation boundary, and the boundary is one step wide.
+    Now the successor is `partition.successor()` — the calendar one — looked up in the probed
+    set. **A period whose calendar successor was never probed is NOT suspect**, and it is not
+    `PRESENT`-with-a-clean-bill either: the reason string says the successor was not probed, so
+    the finding carries what it does and does not know.
+
+    The caller no longer owes this function an ordering. That obligation was real and it was a
+    trap, so it was removed rather than documented harder.
     """
-    findings: list[RetentionFinding] = []
-    for index, outcome in enumerate(outcomes):
-        successor = outcomes[index + 1] if index + 1 < len(outcomes) else None
-        findings.append(_classify_one(outcome, successor))
-    return tuple(findings)
+    probed = {outcome.partition: outcome for outcome in outcomes}
+    return tuple(
+        _classify_one(outcome, probed.get(outcome.partition.successor())) for outcome in outcomes
+    )
 
 
 def _classify_one(outcome: ProbeOutcome, successor: ProbeOutcome | None) -> RetentionFinding:
@@ -192,6 +201,17 @@ def _classify_one(outcome: ProbeOutcome, successor: ProbeOutcome | None) -> Rete
                 f"{label}: 200, and {successor.partition.period_label} is 404 — the last period "
                 f"before a 404 is where the dataset was discontinued MID-PERIOD. The object "
                 f"verifies and is still short (ADR-014/A7, [MEDIDO])"
+            ),
+        )
+    if successor is None:
+        return RetentionFinding(
+            partition=outcome.partition,
+            finding=PRESENT,
+            reason=(
+                f"{label}: {outcome.status} — present. The calendar successor "
+                f"({outcome.partition.successor().period_label}) was NOT probed, so the `A7` "
+                f"boundary could not be evaluated here: this is absence of evidence, not "
+                f"evidence of health"
             ),
         )
     return RetentionFinding(
@@ -217,3 +237,33 @@ def size_ratio_alarm(
     if not subject.content_length or not neighbour.content_length:
         return None
     return neighbour.content_length / subject.content_length
+
+
+def probe_targets_for_window(
+    partitions: tuple[DumpPartition, ...],
+) -> tuple[DumpPartition, ...]:
+    """Return what an operator must `curl -sI` for P2 to have anything to say about THIS drain.
+
+    ⚠️ THIS FUNCTION EXISTS BECAUSE `/qa` MEASURED THAT P2 WAS STRUCTURALLY SILENT. The two
+    probe questions had been conflated, and they are not the same question:
+
+    | function | question it answers | targets |
+    |---|---|---|
+    | `probe_targets` | **bucket retention** — *is the old object still there?* | 1 old + 1 recent
+    per dataset |
+    | `probe_targets_for_window` | **class O** — *is what I am about to ingest short?* | the whole
+    window + the successor of the newest |
+
+    Measured: `probe_targets` against the queue's declared default window is **4 targets against
+    30 partitions, intersection = 0** `[MEDIDO 2026-08-29 by the /qa]` — so on a default run there
+    was no
+    observation to classify and P2 never spoke. Retention monitoring cannot double as the
+    class-O witness of a specific drain, and asking it to was the design error.
+
+    **The successor of the newest partition is included and it is the whole point of `A7`:** an
+    operator backfilling *up to the last month that exists* is doing the ordinary thing, and the
+    `404` that convicts that last month sits one period OUTSIDE the window.
+    """
+    if not partitions:
+        return ()
+    return (*partitions, partitions[-1].successor())

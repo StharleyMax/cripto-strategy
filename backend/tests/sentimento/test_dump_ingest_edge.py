@@ -232,8 +232,17 @@ def test_a_window_whose_every_period_is_absent_drains_to_nothing(tmp_path: Path)
     assert run(tmp_path, SYMBOL, DATASET, END, 2, "daily") == ()
 
 
-def test_the_sink_counts_exactly_what_the_edge_says_it_delivered(tmp_path: Path) -> None:
-    """Two independent observations of the same number have to agree."""
+def test_the_published_object_is_byte_identical_to_the_verified_source(tmp_path: Path) -> None:
+    """RENAMED 2026-08-29: the old name claimed a comparison this body never made.
+
+    It was `test_the_sink_counts_exactly_what_the_edge_says_it_delivered`, and mutant `M25`
+    (deleting `self.accepted += 1`) SURVIVED it — the body asserts published bytes and a
+    newline count and never reads `accepted`. A test whose name asserts what it does not
+    verify is worse than no test: it answers the question for whoever greps for it.
+
+    The comparison the old name promised now exists, written by the `/qa`:
+    `test_the_sink_count_and_what_the_edge_delivered_are_compared`.
+    """
     keys = _seed(tmp_path, depth=1)
     worker = DumpIngestWorker(tmp_path / MIRROR_DIR, tmp_path / OUTPUT_DIR)
 
@@ -299,3 +308,51 @@ def test_a_vanished_payload_whose_sidecar_survived_raises_outside_the_integrity_
 
     assert not isinstance(FileNotFoundError(), ChecksumRejectedError)
     _no_residue(tmp_path)
+
+
+def test_a_hole_in_the_bucket_stops_the_drain_and_the_cost_is_named(tmp_path: Path) -> None:
+    """NAMED LIMITATION, pinned rather than hidden — `/review` raised it and it is real.
+
+    The window is PREDICTED by date arithmetic; the bucket is OBSERVED. When the two disagree —
+    a day the publisher never wrote — `drain` propagates and stops, so a hole in the FIRST
+    position publishes **0 of 3** even though the other two objects are perfect, and every resume
+    dies on the same key.
+
+    THIS IS NOT REPAIRED, AND THE REFUSAL IS ON THE MERITS. Skipping a missing object would make
+    the queue continue over a gap it never records, which is the silent short series this whole
+    task exists to prevent; and changing `drain` to swallow would change a contract shared with
+    the other queue, whose `D3.1` guarantee is built on it. **The remedy is the probe** — the
+    next test — and ciclo 2 is what made it reachable, because `probe_targets_for_window` now
+    enumerates exactly the window being drained.
+    """
+    keys = _seed(tmp_path, depth=3)
+    (tmp_path / MIRROR_DIR / keys[0]).unlink()
+    (tmp_path / MIRROR_DIR / f"{keys[0]}.CHECKSUM").unlink()
+
+    with pytest.raises(ChecksumRejectedError):
+        run(tmp_path, SYMBOL, DATASET, END, 3, "daily")
+
+    assert JsonlCheckpoint(tmp_path / CHECKPOINT_FILE).entries() == (), "0 of 3, and it is named"
+
+
+def test_probing_the_window_turns_that_hole_into_a_drain_that_finishes(tmp_path: Path) -> None:
+    """The remedy for the test above: probe the window, and the missing period leaves it.
+
+    `probe_targets_for_window` is the list an operator `curl -sI`s. Once the hole is observed as
+    a `404` it stops being an unexplained crash and becomes a recorded `ABSENT` — the queue
+    drains what exists and the gap is durable in `findings.jsonl` instead of being skipped in
+    silence.
+    """
+    keys = _seed(tmp_path, depth=3)
+    (tmp_path / MIRROR_DIR / keys[0]).unlink()
+    (tmp_path / MIRROR_DIR / f"{keys[0]}.CHECKSUM").unlink()
+    _write_probe(tmp_path, [{"object_key": keys[0], "status": 404, "content_length": None}])
+
+    processed = run(tmp_path, SYMBOL, DATASET, END, 3, "daily")
+
+    assert processed == keys[1:]
+    recorded = [
+        json.loads(line)
+        for line in (tmp_path / FINDINGS_FILE).read_text(encoding="utf-8").splitlines()
+    ]
+    assert {row["object_key"]: row["finding"] for row in recorded}[keys[0]] == ABSENT

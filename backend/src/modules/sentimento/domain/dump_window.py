@@ -12,42 +12,45 @@ from src.modules.sentimento.domain.etl_backlog import EtlBacklog
 #
 # `SPEC-001` §5.7 and `T-07.1` both require a CLOSED window enumerated up front. The reason is
 # measured and it is not style: `D7.3` records that replaying the `startTime`-alone case returns
-# *"a cauda de hoje, HTTP 200, sem aviso"* `[DOC: tasks_review.md, linha de `T-07.1`]`, so a loop
+# *"a cauda de hoje, HTTP 200, sem aviso"* `[DOC: tasks_review.md, the `T-07.1` row]`, so a loop
 # shaped `cursor += janela` never advances and writes today's data carrying a timestamp of weeks
 # ago. A window built by date arithmetic cannot have that failure mode, because no response is
 # allowed to decide what the next unit of work is.
 #
-# This module is `domain`: no file, no socket, no clock. `date` comes in as an argument precisely
+# This module is `domain`: no file, no socket, no clock. `date` arrives as an argument precisely
 # so that nothing here reads one.
 #
-# ── DEPTH IS A PARAMETER, AND THAT IS A DECISION WITH A CITED SOURCE ──────────────────────────
+# ── DEPTH IS A PARAMETER — AND THE LABEL ON THIS PARAGRAPH WAS WRONG UNTIL 2026-08-29 ────────
 #
-# `Q18` is NOT a gate. `decisoes-do-owner.md`, `Q18`(d), literal:
+# ⚠️ CORRECTION, and it is the exact defect `CLAUDE.md` warns about. This block used to carry
+# `[PREMISSA-OWNER]` over the `Q18`(d) text. **`[PREMISSA-OWNER]` is reserved for a LITERAL quote
+# of the owner**, and `Q18` is not answered: `docs/decisoes-do-owner.md` lists it as **`ABERTA`**
+# `[MEDIDO 2026-08-29: line 51, `| **Q18** | profundidade do backfill de `metrics` | `ABERTA` |
+# NÃO |`, and the section at line 435 is headed `### Q18 · `ABERTA``]`. The `(a)/(b)/(c)/(d)`
+# items are FIELDS OF THE REGISTRY'S OWN FORM — filled in by whoever maintains the register —
+# and `(d) RELÓGIO` records whether an open question has a clock. **It is not the owner
+# speaking.** Compare `Q16` (`RESPONDIDA` 2026-08-28) and `Q17` (`RESPONDIDA COM RESÍDUO`):
+# an answered question says so in its status.
 #
-#     **(d) RELOGIO: NAO.** *Requisito que torna a resposta tardia barata: a fila e retomavel e a
-#     profundidade e PARAMETRO dela* => comecar por 30 dias e estender depois **nao e retrabalho**,
-#     e a mesma fila com outro limite.
+# So the correct citation is `[DOC: docs/decisoes-do-owner.md, Q18(d)]`, and it reads:
 #
-# `[PREMISSA-OWNER: citacao literal, via tasks_review.md §7/D-5]`
+#     **(d) RELÓGIO: NÃO.** Requisito que torna a resposta tardia barata: a fila é retomável e a
+#     profundidade é PARÂMETRO dela ⇒ começar por 30 dias e estender depois não é retrabalho, é
+#     a mesma fila com outro limite.
 #
-# So `DEFAULT_DEPTH_DAYS` is 30 and it is a DEFAULT, not a limit: extending it is a different
-# argument to the same function, and the queue that consumes this window is resumable, so the
-# extension re-enters an already-drained window and redoes nothing.
+# WHAT SURVIVES THE CORRECTION, AND WHAT DOES NOT. The DESIGN survives untouched: depth is a
+# parameter, and `tasks_review.md` §7/D-5 decomposes `T-03.10` to be born with
+# *"`profundidade = 30 dias` como default declarado"* — a default declared by the DECOMPOSITION.
+# What does NOT survive is the authority the old label claimed: **30 is not an owner decision,
+# and `Q18` remains OPEN.** Whoever answers it changes an argument, not this code.
 #
-# ── `bookDepth` NAO TEM PREFIXO `monthly`, E ISSO ESTA MEDIDO ─────────────────────────────────
-#
-# `SPEC-001` §5.8, third row of the table: *"`bookDepth` nao tem prefixo `monthly` — um ETL que
-# assuma mensal **quebra**"* `[MEDIDO, CST-5]`. This module refuses that combination at
-# construction time instead of building a URL that 404s at 3 a.m., because a window that enumerates
-# objects which cannot exist is not a window — it is a list of future failures.
-
 # `Q18`(d): the default is 30 days, and the owner's own argument for why it is cheap to be
 # wrong about it is that the queue is resumable. Extending is the same queue with another limit.
 DEFAULT_DEPTH_DAYS: Final[int] = 30
 
 # The bucket layout, verbatim from an URL that was actually fetched:
 # `https://data.binance.vision/data/futures/um/monthly/bookTicker/BTCUSDT/BTCUSDT-bookTicker-2024-04.zip`
-# `[MEDIDO 2026-08-29, ADR-014, bloco de codigo do achado que abre a ADR]`.
+# `[MEDIDO 2026-08-29, ADR-014, the code block of the finding that opens the ADR]`.
 BUCKET_ROOT: Final[str] = "data/futures/um"
 BUCKET_HOST: Final[str] = "https://data.binance.vision"
 
@@ -153,6 +156,29 @@ class DumpPartition:
     def url(self) -> str:
         """Return the absolute URL — what `curl -sI` of `SPEC-001` §5.8 is pointed at."""
         return f"{BUCKET_HOST}/{self.object_key}"
+
+    def successor(self) -> DumpPartition:
+        """Return the partition the CALENDAR puts immediately after this one.
+
+        THIS IS THE FIX FOR A DEFECT `/qa` MEASURED, and the defect is worth naming because both
+        halves that produced it were individually correct. `classify` used to take
+        `outcomes[index + 1]` as *the* successor, and `outcomes_for` SKIPS a partition nobody
+        probed — so a hole in the probe log made 2024-03 the neighbour of 2024-06 and three
+        healthy months produced a `SUSPECT`. Position in a list is an accident of which rows the
+        cron happened to write; the calendar is not.
+        """
+        if self.granularity == "daily":
+            following = self.period + timedelta(days=1)
+        else:
+            following = (
+                self.period.replace(day=1) + timedelta(days=_days_in_month(self.period))
+            ).replace(day=1)
+        return DumpPartition(
+            dataset=self.dataset,
+            symbol=self.symbol,
+            granularity=self.granularity,
+            period=following,
+        )
 
     def declared_hours(self) -> float:
         """Return how many hours the object NAME claims to contain.

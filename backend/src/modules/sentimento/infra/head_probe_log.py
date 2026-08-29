@@ -14,7 +14,7 @@ from src.modules.sentimento.domain.retention_probe import ProbeOutcome
 logger = logging.getLogger(__name__)
 
 
-# ── POR QUE EXISTE UM ARQUIVO NO MEIO, EM VEZ DE UMA CHAMADA DIRETA ───────────────────────────
+# ── WHY THERE IS A FILE IN THE MIDDLE, INSTEAD OF A DIRECT CALL ──────────────────────────────
 #
 # `SPEC-001` §5.8 mandates a MONTHLY `curl -sI`. Monthly means cron, and cron means the probe does
 # not run inside the process that drains the queue. Putting the socket behind a file has three
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 #   3. **The classification is falsifiable without a bucket.** Every case in `ADR-014`'s measured
 #      table — including the `200`-then-`404` boundary — is reproducible as three lines of text.
 #
-# ── O FORMATO, E O COMANDO LITERAL QUE O PRODUZ ───────────────────────────────────────────────
+# ── THE FORMAT, AND THE LITERAL COMMAND THAT PRODUCES IT ─────────────────────────────────────
 #
 # One JSON object per line: `{"object_key": ..., "status": ..., "content_length": ...}`.
 # `content_length` is `null` on a `404`. The operator's monthly job is:
@@ -40,10 +40,10 @@ logger = logging.getLogger(__name__)
 #     done < targets.txt
 #
 # `parse_head_response` is the parser for the raw `curl -sI` text, so the shell half never has to
-# grep a header itself. **Nenhuma chave, nenhum segredo**: this bucket is public and the probe
+# grep a header itself. **No key, no secret**: this bucket is public and the probe
 # carries no credential — `$COINALYZE_API_KEY` belongs to a different source entirely.
 #
-# ── A CAUDA TRUNCADA E TOLERADA; A LINHA COMPLETA ILEGIVEL NAO E ──────────────────────────────
+# ── A TRUNCATED TAIL IS TOLERATED; A COMPLETE UNREADABLE LINE IS NOT ─────────────────────────
 #
 # Same discipline as `JsonlCheckpoint`, and for the same reason: a job killed mid-write leaves a
 # line with no newline, which is a known and harmless state, while a COMPLETE line that cannot be

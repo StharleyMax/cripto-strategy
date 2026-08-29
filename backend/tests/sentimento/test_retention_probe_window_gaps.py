@@ -14,9 +14,12 @@ by the `/qa` of 2026-08-29 with `n = 1` scenario each:
   * **A false alarm.** With a hole in the probe log, the oldest probed period is marked suspect
     because a `404` three steps away became its neighbour after the skip.
 
-Both are `xfail(strict=True)`: they state the contract the module's own docstring claims (*"the
-boundary is one step wide"*), they fail today, and the day the seam is fixed they XPASS instead of
-the defect disappearing without a trace.
+Both were written as `xfail(strict=True)` by the `/qa` of 2026-08-29 and both are PLAIN TESTS
+now: `T-03.10` ciclo 2 fixed the seam — adjacency became CALENDAR adjacency
+(`DumpPartition.successor()`) and `assess_window` resolves the successor of the newest partition,
+so the `404` that convicts the last month is read even when it sits outside the window. They
+state the contract the module's own docstring claims (*"the boundary is one step wide"*), and
+they are what keeps it true.
 
 **Nada de `data/`**: every object and every sidecar below is fabricated here.
 """
@@ -27,8 +30,6 @@ import hashlib
 import json
 from datetime import date
 from pathlib import Path
-
-import pytest
 
 from src.modules.sentimento.domain.dump_window import (
     AGG_TRADES,
@@ -85,17 +86,16 @@ def _findings_by_key(workdir: Path) -> dict[str, str]:
     return {str(row["object_key"]): str(row["finding"]) for row in rows}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECT MEASURED 2026-08-29 by /qa, and it is the case that motivated `G1`: with the "
-        "window ending on 2024-04 — the last month the publisher served — the `404` of 2024-05 "
-        "sits in the probe log but OUTSIDE the window, `assess_window` only looks records up for "
-        "partitions IN the window, and April is drained with `finding = PRESENT` and 0 warnings. "
-        "The build report claims *'a fila NAO aceita um mes curto por o checksum ter batido'*; "
-        "measured, it accepts it and records that it is healthy."
-    ),
-)
+# ✅ REGRESSION GUARD — this was an `xfail(strict=True)` until `T-03.10` ciclo 2
+# fixed it. It is a plain test now: the defect below is CORRECTED, and this is
+# what keeps it corrected. The measurement that found it is preserved verbatim.
+#
+# DEFECT MEASURED 2026-08-29 by /qa, and it is the case that motivated `G1`: with the window
+# ending on 2024-04 — the last month the publisher served — the `404` of 2024-05 sits in the
+# probe log but OUTSIDE the window, `assess_window` only looks records up for partitions IN the
+# window, and April is drained with `finding = PRESENT` and 0 warnings. The build report claims
+# *'a fila NAO aceita um mes curto por o checksum ter batido'*; measured, it accepts it and
+# records that it is healthy.
 def test_a_month_whose_successor_is_a_404_outside_the_window_is_not_called_present(
     tmp_path: Path,
 ) -> None:
@@ -125,17 +125,15 @@ def test_a_month_whose_successor_is_a_404_outside_the_window_is_not_called_prese
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECT MEASURED 2026-08-29 by /qa: `outcomes_for` skips unprobed partitions and "
-        "`classify` reads `outcomes[index + 1]` as *the* successor, so a hole in the probe log "
-        "makes 2024-03 the neighbour of 2024-06. Measured: findings = "
-        "[('2024-03', SUSPECT_LAST_BEFORE_ABSENT), ('2024-06', ABSENT)] while 2024-04 and "
-        "2024-05 are present. `classify` documents the opposite: *'the boundary is one step "
-        "wide'*."
-    ),
-)
+# ✅ REGRESSION GUARD — this was an `xfail(strict=True)` until `T-03.10` ciclo 2
+# fixed it. It is a plain test now: the defect below is CORRECTED, and this is
+# what keeps it corrected. The measurement that found it is preserved verbatim.
+#
+# DEFECT MEASURED 2026-08-29 by /qa: `outcomes_for` skips unprobed partitions and `classify`
+# reads `outcomes[index + 1]` as *the* successor, so a hole in the probe log makes 2024-03 the
+# neighbour of 2024-06. Measured: findings = [('2024-03', SUSPECT_LAST_BEFORE_ABSENT),
+# ('2024-06', ABSENT)] while 2024-04 and 2024-05 are present. `classify` documents the opposite:
+# *'the boundary is one step wide'*.
 def test_a_hole_in_the_probe_log_does_not_manufacture_an_adjacency() -> None:
     """Suspicion has to come from the calendar, never from which rows the cron happened to write.
 

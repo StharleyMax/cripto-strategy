@@ -57,6 +57,22 @@ logger = logging.getLogger(__name__)
 #
 # The day that count reaches 2, this comment is the record of when the guarantee stopped
 # covering the code.
+#
+# ⚠️ AND THIS SCANNER IS BLIND IN TWO WAYS — MEASURED BY `T-03.10`, 2026-08-29. The heading above
+# says "OBSERVABLE REOPENING TRIGGER", and it is observable only for the form written literally
+# as `payload.lines()`. Each evasion measured alone in an isolated tree `[python -B,
+# PYTHONDONTWRITEBYTECODE=1, __pycache__ removed]`:
+#
+#     pull = payload.lines ; pull()      -> 0   [BLIND]
+#     getattr(payload, "lines")()        -> 0   [BLIND]
+#     payload.lines()                    -> 1   [SEEN]
+#
+# They are the SAME two evasions `[tool.importlinter]` already names in writing as its own
+# inherited limit. **The fixed trigger is no longer a comment: it RUNS**, in
+# `tests/sentimento/test_verified_edge_call_sites.py`, which sees all three and is falsified by
+# the suite itself. What stays invisible, and is stated rather than papered over:
+# `getattr(payload, name)()` with `name` computed at runtime. Prefer the test over the snippet
+# above — the snippet is kept because it is what the reopening record cites.
 
 
 # ── THE ORDER IS THE CONTRACT, AND A TEST WATCHES IT ─────────────────────────────────────────

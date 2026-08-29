@@ -87,7 +87,7 @@ class JsonlCheckpoint:
             keys.append(self._key_of(payload, numero))
         return tuple(keys)
 
-    def _key_of(self, payload: object, numero: int) -> str:
+    def _key_of(self, payload: object, number: int) -> str:
         """Extract the key from one decoded line, refusing every shape that is not `{"key": str}`.
 
         NO COERCION ANYWHERE, and that is the whole fix. `str(payload["key"])` was the defect:
@@ -97,16 +97,16 @@ class JsonlCheckpoint:
         """
         if not isinstance(payload, dict):
             raise CorruptedCheckpointError(
-                f"linha {numero} de {self._path} e {type(payload).__name__}, nao um objeto"
+                f"linha {number} de {self._path} e {type(payload).__name__}, nao um objeto"
             )
         if "key" not in payload:
             raise CorruptedCheckpointError(
-                f"linha {numero} de {self._path} nao tem o campo 'key': {sorted(payload)}"
+                f"linha {number} de {self._path} nao tem o campo 'key': {sorted(payload)}"
             )
         key = payload["key"]
         if not isinstance(key, str) or not key:
             raise CorruptedCheckpointError(
-                f"linha {numero} de {self._path} traz 'key' = {key!r} "
+                f"linha {number} de {self._path} traz 'key' = {key!r} "
                 f"({type(key).__name__}); so uma cadeia nao vazia nomeia trabalho concluido"
             )
         return key

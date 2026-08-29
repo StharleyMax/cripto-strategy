@@ -70,7 +70,8 @@ def test_every_key_the_queue_can_build_is_a_bucket_key_under_the_dump_prefix() -
 def test_the_sink_count_and_what_the_edge_delivered_are_compared(tmp_path: Path) -> None:
     """`BinaryFileLineSink.accepted` becomes a witness only when something reads it.
 
-    The existing `test_the_sink_counts_exactly_what_the_edge_says_it_delivered` asserts the
+    The neighbouring `test_the_published_object_is_byte_identical_to_the_verified_source` (renamed
+    from `test_the_sink_counts_exactly_what_the_edge_says_it_delivered` in ciclo 2) asserts the
     published bytes and a newline count — it never touches `accepted`, so deleting
     `self.accepted += 1` left the whole suite green `[MEDIDO 2026-08-29: mutante `M25`, rc=0]`.
     Two independent observations of the same number only disagree in a test that compares them.

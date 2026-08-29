@@ -23,6 +23,7 @@ from src.modules.sentimento.domain.retention_probe import (
     SUSPECT_FINDINGS,
     RetentionFinding,
     classify,
+    probe_targets_for_window,
 )
 from src.modules.sentimento.infra.dump_ingest_worker import DumpIngestWorker
 from src.modules.sentimento.infra.head_probe_log import outcomes_for, read_probe_log
@@ -32,9 +33,9 @@ from src.modules.sentimento.use_cases.drain_etl_backlog import drain
 logger = logging.getLogger(__name__)
 
 
-# ── O ACHADO, E POR QUE ELE NAO ERA FALSO ALARME ──────────────────────────────────────────────
+# ── THE FINDING, AND WHY IT WAS NOT A FALSE ALARM ────────────────────────────────────────────
 #
-# `backend/README.md`, achado `H`: *"nao existe raiz de composicao — todo o fio de ligacao vive em
+# `backend/README.md`, finding `H`: *"nao existe raiz de composicao — todo o fio de ligacao vive em
 # `backend/tests/`"*. Measured there: of the 13 versioned `.py` under `backend/`, exactly **2**
 # cite three or more of the four pieces (`EtlBacklog`, `FileEtlWorker`, `JsonlCheckpoint`,
 # `drain`), and **both are tests**. Its falsifier is written literally:
@@ -42,8 +43,8 @@ logger = logging.getLogger(__name__)
 #     se `T-03.10` puder ligar as quatro pecas SEM NENHUM MODULO NOVO e sem `use_cases` ou
 #     `infra` importar para o lado errado, o achado era falso alarme.
 #
-# **The first half fails and the second half holds, so the achado stands.** A new module WAS
-# needed — this one. What did NOT happen is the inversion the achado feared: it named two candidate
+# **The first half fails and the second half holds, so the finding stands.** A new module WAS
+# needed — this one. What did NOT happen is the inversion the finding feared: it named two candidate
 # homes and said both *"invertem a direcao"* (`use_cases` would come to know `infra`; `infra` would
 # come to orchestrate `use_cases`). Only the second is a real inversion, and only under a layering
 # where `infra` is the bottom. **In THIS repository `infra` is the TOP layer** —
@@ -55,7 +56,7 @@ logger = logging.getLogger(__name__)
 # `infra/ingest_health_cli.py` is described in the README as *"a raiz de composicao — compor e
 # exatamente o trabalho dele, entao isso nao e acoplamento indevido"*.
 #
-# ── A ORDEM DAS DUAS METADES, E ELA E DELIBERADA ──────────────────────────────────────────────
+# ── THE ORDER OF THE TWO HALVES, AND IT IS DELIBERATE ────────────────────────────────────────
 #
 # The retention findings are classified and **written durably BEFORE the first object is drained**.
 # Not after, and not as the queue goes: a run killed halfway would otherwise take the knowledge
@@ -63,17 +64,20 @@ logger = logging.getLogger(__name__)
 # would never revisit it. The finding is about the WINDOW, so it is recorded when the window is
 # decided.
 #
-# ── O QUE ESTA RAIZ NAO FAZ, NOMEADO ──────────────────────────────────────────────────────────
+# ── WHAT THIS ROOT DOES NOT DO, NAMED ────────────────────────────────────────────────────────
 #
-#   * **Nao baixa nada.** The bucket mirror under `<workdir>/mirror/` is fed by whoever fetches;
+#   * **It downloads nothing.** The bucket mirror under `<workdir>/mirror/` is fed by whoever
+#   fetches;
 #     `T-07.1` owns the correct paginator and the S3 listing by `NextContinuationToken`. This queue
 #     consumes an enumerated window, which is precisely the shape `T-07.1` mandates — see the
 #     ordering note in the PR body.
-#   * **Nao escreve `md.ingest_run` / `md.ingest_gap`.** The durable home of a class-O finding IS
+#   * **It does not write `md.ingest_run` / `md.ingest_gap`.** The durable home of a class-O
+#   finding IS
 #     `md.ingest_gap`, and its production writer arrives with `T-03.8` (`backend/README.md` names
 #     that owner). Until then the finding is durable in `findings.jsonl` — a second-best that is
 #     written down as such rather than presented as the design.
-#   * **Nao le o conteudo do objeto.** Coverage measured against the object's own timestamps needs
+#   * **It does not read the object's content.** Coverage measured against the object's own
+#   timestamps needs
 #     unzip + CSV parsing, which is a different task. At `HEAD` resolution the class-O witness is
 #     the neighbour rule, and that is what is implemented.
 
@@ -85,7 +89,21 @@ PROBE_FILE: Final[str] = "probe.jsonl"
 
 _STABLE_FORMAT: Final[str] = "%(message)s"
 _DIAGNOSTIC_FORMAT: Final[str] = "%(levelname)s %(name)s %(message)s"
-_APPLICATION_LOGGER: Final[str] = __name__.split(".")[0]
+# ⚠️ DERIVED FROM AN IMPORTED CLASS, NOT FROM `__name__`, AND THAT IS A FIX. It used to be
+# `__name__.split(".")[0]`, which is `"src"` when this module is IMPORTED and `"__main__"` when
+# it is RUN AS A SCRIPT — the only way an operator invokes it. Collapsed onto `"__main__"`, the
+# application logger and this module's own logger became the SAME logger, both handlers landed
+# on it, and every record left on BOTH streams: the keys appeared on `stderr` too, so `2>&1`
+# doubled every key `[MEDIDO 2026-08-29 by the /qa]`. `DumpIngestWorker.__module__` is always
+# `src.modules.sentimento.infra.dump_ingest_worker`, however THIS file was entered.
+_APPLICATION_LOGGER: Final[str] = DumpIngestWorker.__module__.split(".")[0]
+
+# The product stream has a logger of its OWN, deliberately OUTSIDE the `src` hierarchy so that
+# routing `src` diagnostics to `stderr` can never reach it and it can never inherit a handler
+# meant for diagnostics. `stdout` carries bucket keys and nothing else — a shell `while read KEY`
+# downstream acts on whatever word arrives, so one diagnostic line makes it act on a non-key.
+_PRODUCT_LOGGER_NAME: Final[str] = "dump_etl_cli.keys"
+product = logging.getLogger(_PRODUCT_LOGGER_NAME)
 
 # `uso: ...` STAYS IN PORTUGUESE and it is a decision: `SPEC-001` §3.8 reserves pt-BR EXCLUSIVELY
 # for microcopy, and an operator-facing usage line is microcopy. Everything else here is English.
@@ -141,7 +159,14 @@ def assess_window(
     compare against.
     """
     records = read_probe_log(workdir / PROBE_FILE)
-    findings = classify(outcomes_for(partitions, records))
+    # THE SUCCESSOR OF THE NEWEST PARTITION IS RESOLVED TOO, and this one line is the fix for the
+    # defect that motivated `G1` in the first place. `/qa` measured it: with the window ending on
+    # 2024-04 — the LAST month the publisher served — the `404` of 2024-05 sat in the probe log
+    # but OUTSIDE the window, so nothing looked it up and April was drained and recorded
+    # `PRESENT`. Not merely silent: a positive certificate of health over a month holding
+    # **0,942 %** of what its name declares. `probe_targets_for_window` enumerates exactly this
+    # set, so what the operator probes and what this reads are the same list by construction.
+    findings = classify(outcomes_for(probe_targets_for_window(partitions), records))
     if findings:
         _write_findings(workdir / FINDINGS_FILE, findings)
     return findings
@@ -195,7 +220,7 @@ def run(
         JsonlCheckpoint(workdir / CHECKPOINT_FILE),
     )
     for key in processed:
-        logger.info(key)
+        product.info(key)
     return processed
 
 
@@ -229,9 +254,18 @@ def route_diagnostics_away_from_the_product_stream() -> None:
     processed, which a shell pipeline is expected to read; one diagnostic line in front of it
     makes the pipeline act on a key that does not exist.
     """
+    diagnostic = build_stream_handler(sys.stderr, _DIAGNOSTIC_FORMAT)
     application = logging.getLogger(_APPLICATION_LOGGER)
-    application.addHandler(build_stream_handler(sys.stderr, _DIAGNOSTIC_FORMAT))
+    application.addHandler(diagnostic)
     application.propagate = False
+    # THIS MODULE'S OWN LOGGER IS FITTED SEPARATELY, and that is not belt-and-braces: run as a
+    # script its name is `__main__`, which is NOT under `src`, so the handler above would never
+    # reach it and `dump_window_enumerated` would fall through to `logging.lastResort` — whose
+    # level is WARNING, so an INFO diagnostic would be DROPPED IN SILENCE. Fitted here, the
+    # diagnostic reaches `stderr` whichever way this file was entered.
+    logger.setLevel(logging.INFO)
+    logger.addHandler(diagnostic)
+    logger.propagate = False
 
 
 def main(argv: Sequence[str]) -> int:
@@ -241,9 +275,11 @@ def main(argv: Sequence[str]) -> int:
     workdir, symbol, dataset_name, end_text, depth_text, granularity_text = argv
     granularity = _granularity_of(granularity_text)
     route_diagnostics_away_from_the_product_stream()
-    logger.setLevel(logging.INFO)
-    logger.addHandler(build_stream_handler(sys.stdout, _STABLE_FORMAT))
-    logger.propagate = False
+    product.setLevel(logging.INFO)
+    product.addHandler(build_stream_handler(sys.stdout, _STABLE_FORMAT))
+    # `product` lives outside the `src` hierarchy on purpose, so this only stops the ROOT logger
+    # from re-emitting each key — duplicated, the output matches no pipeline and no `sha256`.
+    product.propagate = False
     run(
         Path(workdir),
         symbol,

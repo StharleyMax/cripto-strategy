@@ -11,6 +11,7 @@ from src.modules.sentimento.domain.dump_window import (
     BOOK_DEPTH,
     DumpDataset,
     DumpPartition,
+    enumerate_window,
 )
 from src.modules.sentimento.domain.retention_probe import (
     ABSENT,
@@ -21,6 +22,7 @@ from src.modules.sentimento.domain.retention_probe import (
     UnknownProbeDatasetError,
     classify,
     probe_targets,
+    probe_targets_for_window,
     size_ratio_alarm,
 )
 
@@ -198,3 +200,22 @@ def test_book_depth_probes_carry_the_daily_object_name() -> None:
         "BTCUSDT-bookDepth-2024-03-01.zip",
         "BTCUSDT-bookDepth-2026-08-01.zip",
     ]
+
+
+def test_the_window_probe_targets_add_the_successor_of_the_newest_period() -> None:
+    """The successor is the whole point of `A7`: the `404` that convicts sits OUTSIDE the window.
+
+    An operator backfilling *up to the last month that exists* is doing the ordinary thing, and
+    that is exactly the shape which silenced P2 before ciclo 2 — the `404` proving the last month
+    was cut short lives one period past the end of what they asked for.
+    """
+    window = enumerate_window(AGG_TRADES, "BTCUSDT", date(2024, 4, 30), 60, "monthly")
+    targets = probe_targets_for_window(window)
+
+    assert [t.period_label for t in window] == ["2024-03", "2024-04"]
+    assert [t.period_label for t in targets] == ["2024-03", "2024-04", "2024-05"]
+
+
+def test_an_empty_window_asks_for_no_probe_at_all() -> None:
+    """No window is no work, and asking for the successor of nothing would raise on `[-1]`."""
+    assert probe_targets_for_window(()) == ()
