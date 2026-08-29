@@ -831,3 +831,216 @@ motivo medido — tem um **custo** que ela não nomeou.
 | **por que registrar mesmo assim** | é **custo de uma decisão já tomada**, e a decisão o omitiu. O `scope = "code"` de outras regras do mesmo pack tem a mesma propriedade — a lista de quais só se mede na adoção |
 | **dono** | **`T-01.2`**, a task que adota o pack. O que ela deve fazer é **medir antes**: `harness rules --mode sweep` com o pack ligado, e comparar o universo avaliado |
 | **falsificador** | se, com o pack adotado, o sweep completo devolver o mesmo número de achados de hoje (**0**), o custo era teórico e esta linha vira nota histórica |
+
+---
+
+## 🛡️ A borda de ingestão verifica o `.CHECKSUM` — `T-02.4a` (`GAP G1`, `SPEC-001` §5.8, `D2.8`)
+
+**O defeito que esta guarda existe para pegar não levanta exceção.** `monthly/bookTicker` de
+2024-04 respondeu **200 com 37,7 MB** contra **6,7 GB** do mês anterior `[MEDIDO, SPEC-001
+§5.8]`. Um ETL que trate `status == 200` como testemunha de integridade grava uma **série
+curta** e chama isso de sucesso — modo de falha **pior que o 404**, porque o 404 pelo menos
+falha em voz alta.
+
+| peça | camada | o que ela faz |
+|---|---|---|
+| `domain/checksum_manifest.py` | `domain` | lê a linha `sha256sum` do sidecar e compara o par (digest, nome). Zero I/O |
+| `use_cases/ingest_verified_payload.py` | `use_cases` | **a ordem**: `checksum_text` → `parse` → `digest` → `verify` → **só então** `lines()` |
+| `infra/checksummed_file_payload.py` | `infra` | o arquivo + `<nome>.CHECKSUM` ao lado; digest em blocos de 1 MiB, `lines()` preguiçoso |
+
+### Por que DUAS passadas sobre o arquivo, e não uma
+
+A task diz **"antes de qualquer linha entrar"**, e essa palavra elimina o desenho mais barato.
+Um digest de arquivo inteiro só existe **depois do último byte** ⇒ hashear durante o streaming
+e levantar no fim é uma guarda que **reporta o truncamento depois de a série curta já estar
+escrita**. Isso é o defeito, não o conserto. A alternativa (bufferizar tudo) não sobrevive a
+6,7 GB. Ler duas vezes custa **uma varredura sequencial extra** e mantém a garantia.
+
+**E a ordem não é prosa: ela é asserção.** `CallOrderSpy` registra a sequência de chamadas, e o
+teste exige que `lines()` **nem sequer seja chamado** quando o digest não bate — afirmação mais
+forte que *"o sink ficou vazio"*, e que continua valendo se alguém tornar o iterador ansioso.
+
+### Falha fechada, e as três formas são a mesma família
+
+Sidecar **ausente**, sidecar **malformado** e digest **divergente** terminam com **zero linha
+entregue**, todos sob `ChecksumRejectedError`. *"Não conseguimos conferir"* e *"conferimos e
+está íntegro"* são estados diferentes, e deixar o primeiro passar com o nome do segundo é
+exatamente como um mês truncado entra sem ninguém ver.
+
+### A bancada de mutação — `n=22`, e ela é **obrigatoriamente** com bytecode desligado
+
+`[MEDIDO 2026-08-29, ciclo 2, diretório de trabalho PRIVADO, `backend/.venv/bin/python`;
+universo = os **46 casos coletados** (30 funções, o resto é parametrização) de
+`tests/sentimento/test_checksum_at_the_ingestion_edge.py` na árvore de `13b960e`, onde a
+bancada rodou — `pytest <arquivo> --collect-only -q` → `46`, `grep -c "^def test_"` → `30`
+(**60 passed** na suíte inteira); cada mutação aplicada isolada, revertida, e os 3 módulos
+reconferidos por `sha256sum` ao fim; controle `rc=0` nos dois extremos]`:
+
+**`n=22` ⇒ 21 mordem, 1 sobrevive.**
+
+> **Errata 2026-08-29 (coordenador do loop, não o `/build`):** este parágrafo publicava
+> *"os **41 casos**"*. O `41` é o total da suíte **inteira** no ciclo 1 (`49161c9`:
+> `27+2+12`) — número certo de outra medição, colado no rótulo errado, e a mesma frase
+> acertava o `60 passed` ao lado, o que mostra que era troca de etiqueta e não erro de
+> contagem. Achado pelo `/review` na re-auditoria do delta (`WARNING D1`) e medido aqui:
+> `pytest … --collect-only -q` → **46** em `13b960e`, **49** na árvore de `dab5bd3`.
+> Vale registrar o que estava em jogo: era a **declaração de universo da evidência
+> central do delta** — a bancada que substituiu o desenho recusado.
+
+| # | mutação | veredito | reprova |
+|---|---|---|---|
+| `M1` | `verify` movido para **depois** do loop | **MORDE** | 5 |
+| `M2` | checagem de **assunto** removida de `verify()` | **MORDE** | 3 |
+| `M3` | sidecar ausente deixa de reprovar (*fail-open*) | **MORDE** | 3 |
+| `M4` | `digest()` lê só o **primeiro bloco** | **MORDE** | 2 |
+| `M5` | `fullmatch` → `search` | **MORDE** | 17 |
+| `M6` | sidecar por `with_suffix` em vez de `with_name` | **MORDE** | 14 |
+| `M7` | divergência de digest deixa de reprovar | **MORDE** | 3 |
+| `M8` | `parse` aceita a **primeira** de várias entradas | **MORDE** | 1 |
+| `M9` | `stream = payload.lines()` **içado para antes** do `verify` | **MORDE** | 2 |
+| `M10` | `verify` confere **digest antes de assunto** | **MORDE** | 1 |
+| `M11`–`M14` | cada uma das **4 recusas** sai de `ChecksumRejectedError` | **MORDE** | 1–2 cada |
+| `M15` | `logger.warning` do sidecar ausente removido | **MORDE** | 1 |
+| `M16` | `logger.info` da ingestão aceita removido | **MORDE** | 1 |
+| `M17` | `checksum_suffix` ignorado (costura morta) | **MORDE** | 1 |
+| `M18` | `lines()` **ansioso** | **MORDE** | 1 |
+| `M19` | `digest()` com `read_bytes()` | **MORDE** | 1 |
+| `M20` | regex `{64}` → `{32,128}` | **SOBREVIVE** | — |
+| `M21` | guarda de `UnicodeDecodeError` **removida** (o defeito `QA-1` de volta) | **MORDE** | 1 |
+| `M22` | assunto vazio deixa de reprovar em `__post_init__` | **MORDE** | 1 |
+
+**`M20` é o sobrevivente CORRETO, e sobrevivente correto não é buraco:** `__post_init__` já
+recusa qualquer digest que não tenha 64 hex, então afrouxar o quantificador do regex **não muda
+comportamento observável** — é redundância real. `M9` é do `/review`, e é a refatoração inocente
+mais provável: içar o iterador derrota *"o sink ficou vazio"* e **não** derrota o `CallOrderSpy`,
+que observa a **chamada**.
+
+`M11`–`M14` e `M15`–`M17` existem porque o `/qa` mediu que **7 de 16** mutações sobreviviam à
+bancada original: cada sobrevivente era **uma frase de docstring que nenhuma asserção cobrava** —
+inclusive a própria advertência da classe base sobre *"catch three and forget the fourth"*.
+
+#### 🔴 BYTECODE DESLIGADO É OBRIGAÇÃO DA BANCADA, NÃO RECOMENDAÇÃO
+
+`python -B` + `PYTHONDONTWRITEBYTECODE=1` + `__pycache__` **apagado a cada rodada**. Sem os
+três, a bancada mede o código **errado** e devolve verde.
+
+**O mecanismo:** o CPython valida o `.pyc` por **`mtime` da fonte em segundos + tamanho da
+fonte**. Uma mutação que preserve os dois, aplicada dentro do mesmo segundo, **reusa o bytecode
+velho** — e a suíte roda contra o código **não mutado**.
+
+**A demonstração, com uma mutação de tamanho invariante POR CONSTRUÇÃO** — `!=` → `==` em
+`verify`, **um caractere por outro**, que **inverte o veredito de integridade inteiro**
+`[MEDIDO 2026-08-29, n=1, `mtime` restaurado com `os.utime`]`:
+
+```
+arquivo: checksum_manifest.py   tamanho=6662 -> 6662 (igual)   mtime restaurado
+  RUN A (.pyc vivo, sem -B)                        -> rc=0,  0 reprovam   ⇠ VERDE sobre código MUTADO
+  RUN B (-B + PYTHONDONTWRITEBYTECODE + cache off) -> rc=1, 11 reprovam
+```
+
+**⚠️ ERRATA À PRIMEIRA REDAÇÃO DESTA SECÇÃO, e ela é da mesma família que a secção denuncia.**
+A versão de `2026-08-29T11:44Z` creditava a invariância de tamanho a uma medição — *"os dois
+blocos têm **227 bytes** exatos"*. **O termo estava errado, uma camada acima do `^`/`.match()`:**
+`M1` é **permutação das mesmas linhas**, logo o tamanho é invariante **por construção** e a
+igualdade dos dois blocos **não é a evidência** — é consequência. Pior, o número **não é
+estável**: depende de onde a linha em branco cai dentro do recorte, e com o recorte da bancada
+de hoje os blocos medem **179 e 178** bytes `[MEDIDO 2026-08-29, ciclo 2]`, enquanto o `/review`
+mediu **80 e 98** num terceiro recorte. **Três recortes, três pares de números, e nenhum deles é
+o argumento.** O argumento é: *toda* mutação que preserve tamanho é invisível com `.pyc` quente —
+e as que preservam tamanho **não são raras** (`!=`→`==`, `<`→`>`, permutação de linhas).
+
+
+### ⚠️ A divergência de vocabulário de observabilidade — declarada com PRECISÃO, na segunda tentativa
+
+A regra de idioma de 2026-08-29 (*"todo código gerado é em inglês"* `[PREMISSA-OWNER]`) tem uma
+consequência que **não** é só nome de identificador, e a primeira redação desta task a declarou
+**menor do que ela é**: dizer *"mensagens de exceção e nome de evento de log"* **omitia a metade
+mais cara**.
+
+**As CHAVES DE `extra=` também viraram inglês** — e chave de campo é **o que uma consulta de log
+filtra**, logo é a metade que dói unificar. Enumerado do **AST**, não por grep
+`[MEDIDO 2026-08-29, universo = 13 `.py` sob `backend/src/`, 6 chamadas de `logger.*`]`:
+
+| módulo | evento | chaves de `extra=` | |
+|---|---|---|---|
+| `infra/file_etl_worker.py` | `etl_item_publicado` | `etl_key`, `destino` | pré-existente |
+| `infra/jsonl_checkpoint.py` | `checkpoint_cauda_truncada` | `bytes_descartados` | pré-existente |
+| `use_cases/drain_etl_backlog.py` | `etl_drenagem_concluida` | `processados`, `janela` | pré-existente |
+| `use_cases/drain_etl_backlog.py` | `etl_item_concluido` | `etl_key` | pré-existente |
+| **`infra/checksummed_file_payload.py`** | **`checksum_sidecar_absent`** | **`subject`** | **novo, inglês** |
+| **`use_cases/ingest_verified_payload.py`** | **`ingestion_verified`** | **`subject`, `sha256`, `lines`** | **novo, inglês** |
+
+**4 chamadas em português contra 2 em inglês; 6 chaves de campo contra 4.** **Nada existente foi
+renomeado.** A divergência é **decisão de leitura do agente**, não citação do owner — a regra
+enumera *identificador, docstring, comentário, nome de teste* e **não** decide mensagem, evento
+nem chave de campo. Quem for unificar precisa saber que ela nasceu aqui, e que **cegueira
+documentada com precisão errada é pior que não documentada**.
+
+### O que esta task NÃO fecha, e não é rodapé
+
+- **Não há chamador de produção.** `ingest_verified` é a borda; **quem a chama ainda não
+  existe**, e isso é o achado `H` deste mesmo README (*"não existe raiz de composição"*) —
+  dono declarado **`T-03.10`**. Esta task **não** inventou raiz de composição.
+- **`LineSink` não tem implementação de produção.** O único sink hoje é o de teste. Quem
+  trouxer o primeiro destino real o traz.
+- **Nada de `data/`.** Os testes fabricam o próprio arquivo e o próprio `.CHECKSUM`, e
+  corrompem o byte deles mesmos. `data/` é dado de terceiro e continua fora do portão.
+- **A metade documental do item `2.5` do plano é `T-02.4b`** (`docs`): política de backup com
+  teste de restauração. **Não é desta task**, pela partição `D-3` do `tasks_review.md` §7.
+- **`curl -sI` mensal** em prefixo antigo e recente (`SPEC-001` §5.8) é mitigação **de retenção
+  do bucket**, não de integridade de corpo. Não entrou aqui — e **tem dono**: **`T-03.10`**
+  (`tasks_review.md`, linha da task; plano `3.14`; `D7.19`). A redação de `2026-08-29T11:44Z`
+  dizia *"não tem dono nesta task"*, o que se lia como *"não tem dono"* — e o mesmo bullet
+  acima já nomeia `T-03.10` para a raiz de composição.
+
+- **Recusas fora da família são DECISÃO, e estão nomeadas.** `ChecksumRejectedError` cobre todo
+  veredito de **integridade** — sidecar ausente, malformado (**bytes não-UTF-8 inclusive**),
+  digest divergente, assunto divergente. **`OSError` e subclasses propagam CRUAS**:
+  `FileNotFoundError` (payload sumido com sidecar presente), `PermissionError`,
+  `IsADirectoryError`, erro de leitura no dispositivo. Não é sobra: são falhas **do chamador ou
+  da máquina**, não vereditos sobre a integridade de um objeto, e embrulhá-las diria *"este
+  arquivo está corrompido"* onde a verdade é *"o caminho que você passou não existe"*.
+  Consequência explícita: um lote escrito como `except ChecksumRejectedError: skip_one_file()`
+  **pula objeto corrompido e MORRE em caminho sumido** — que é o comportamento correto, porque
+  payload que desapareceu no meio da corrida significa que a visão de mundo do chamador está
+  errada. `test_a_payload_file_that_vanished_delivers_nothing` fixa isso.
+  **E a assimetria está escrita no `Raises:`:** a garantia de **zero linha** é da família de
+  integridade; `OSError` **na abertura** deixa o sink vazio, `OSError` **no meio do stream**
+  não deixa — e afirmar o contrário seria a mesma classe de defeito que esta task existe para
+  nomear.
+
+- **A garantia de ordem tem escopo de UMA função, e a alternativa foi RECUSADA com argumento.**
+  A asserção do `CallOrderSpy` observa `ingest_verified` e mais nada: nem o sistema de tipos nem
+  o `import-linter` impedem um **segundo** use case, escrito depois, de chamar `payload.lines()`
+  antes de verificar. O desenho que "fecharia" — `verify` devolvendo um `VerifiedPayload` que é
+  a única coisa a expor `lines()` — **não foi implementado, e a recusa é sobre o mérito**: em
+  Python **não há mecanismo** que impeça quem já segura o objeto de origem de chamar
+  `source.lines()` nele; o token **moveria o caminho feliz sem fechar o buraco**, produzindo um
+  portão que **parece** estrutural e não é — exatamente a família que este repositório caça. E
+  fixaria a forma de uma porta **antes de existir o primeiro chamador de produção**, que é
+  decidir por premissa. **Dono da lacuna: `T-03.10`** (o mesmo do achado `H`).
+  **Gatilho de reabertura, observável e medido dos dois lados** — contagem de **call sites** lida
+  do **AST**, não regex sobre texto:
+
+  ```
+  cd backend && .venv/bin/python -c '
+  import ast, pathlib
+  n=[f"{f}:{o.lineno}" for f in pathlib.Path("src").rglob("*.py")
+     for o in ast.walk(ast.parse(f.read_text()))
+     if isinstance(o,ast.Call) and isinstance(o.func,ast.Attribute)
+     and o.func.attr=="lines" and not o.args]
+  print(len(n),n); raise SystemExit(0 if len(n)<=1 else 1)'
+  ```
+
+  `[MEDIDO 2026-08-29: árvore como está → **1**, `rc=0` `[CALA]`; com um segundo chamador
+  plantado → **2**, `rc=1` `[MORDE]`]`. No dia em que a contagem chegar a 2, a garantia parou
+  de cobrir o código.
+
+- **A falha fechada está CONTIDA hoje, e isso é achado documental, não arquitetural.**
+  `grep -rn "ingest_verified\|ChecksummedFilePayload\|VerifiablePayload\|LineSink" backend/src
+  backend/tests`, descontando os próprios arquivos, → **`rc=1`, zero referência** `[MEDIDO pelo
+  /review 2026-08-29]`: não há raiz de composição nem despachante, logo nada está sendo roteado
+  para cá por engano. **A política de recusa por sidecar ausente vale para fontes que publicam
+  `.CHECKSUM`** — os dumps do bucket. **`T-02.1` (snapshot `exchangeInfo`/`fundingInfo`) e
+  `T-02.2` (one-shot Coinalyze) são respostas REST, NÃO publicam `.CHECKSUM`, e NÃO devem ser
+  roteadas por aqui**: aplicá-las a esta borda como está recusaria 100% do tráfego legítimo.
