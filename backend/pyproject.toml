@@ -52,14 +52,20 @@ dependencies = []
 package-mode = false
 
 [tool.poetry.group.dev.dependencies]
-# As 5 dependencias de desenvolvimento, FIXADAS — herdadas de `backend/requirements-dev.txt`,
+# As 6 dependencias de desenvolvimento, FIXADAS — herdadas de `backend/requirements-dev.txt`,
 # que este bloco SUBSTITUI (o arquivo foi removido por `T-01.6`).
 #
 # Pin exato e nao faixa (`==` no requirements virou versao literal aqui, que o Poetry le como
 # igualdade exata): o portao tem de rodar o mesmo em clone limpo. Quem afrouxar para `^` esta
 # trocando reprodutibilidade por conveniencia, e o `poetry.lock` versionado deixa de ser a
 # unica coisa que segura o ambiente.
+#
+# `import-linter` e a SEXTA, e ela entrou com `T-01.5` (`ADR-011/D3a`): e a ferramenta que
+# avalia os contratos de `[tool.importlinter]` mais abaixo. `poetry add` a escreveu como
+# `^2.14` e a linha foi CORRIGIDA para pin exato no mesmo ato — a faixa que o Poetry sugere
+# por default e exatamente o afrouxamento que o paragrafo acima proibe.
 coverage = "7.15.4"
+import-linter = "2.14"
 mypy = "2.3.1"
 pytest = "9.1.1"
 pytest-cov = "7.1.0"
@@ -136,3 +142,81 @@ max-complexity = 10
 python_version = "3.13"
 strict = true
 ignore_missing_imports = true
+
+# ── FRONTEIRA DE MODULO POR GRAFO DE IMPORTS (`ADR-011/D3a`, `T-01.5`, plano 01 item 1.9') ──
+#
+# Esta seccao e a peca 1 de `ADR-009/D1`, que ficou sem dono entre os itens do plano da fase
+# 01 e foi o blocker remanescente do `/review` de `T-01.1`. Ela SUPERSEDE as duas
+# `[[rules.own]]` de camada que nunca chegaram a existir (`own.layer-domain-up-import` e
+# `own.layer-use-cases-imports-infra`).
+#
+# POR QUE GRAFO E MELHOR QUE REGEX, E O MOTIVO NAO E ESTETICA. As duas regras derrubadas
+# casavam `from src.modules.<ctx>.<camada>` por LINHA DE TEXTO, e por isso dependiam de um
+# argumento em duas pernas ("`core.relative-import` proibe todo import relativo, logo a forma
+# absoluta e a unica legal") que e verdadeiro e FRAGIL. O `grimp` monta o grafo de imports e
+# ve os tres casos que a regex de linha perdia: `import src.modules.x.infra as y`, re-export
+# por `__init__.py`, e import dentro de funcao [DOC: ADR-011/D3a].
+#
+# LIMITE HERDADO, REGISTRADO PARA NAO VIRAR PROMESSA: `import-linter` TAMBEM e estatico. Ele
+# NAO ve `importlib.import_module("src.modules.<ctx>.infra")` nem alias construido em runtime.
+# A troca fecha os tres buracos acima e NAO fecha este. Quem precisar fechar o dinamico
+# precisa de instrumentacao em tempo de execucao, que nenhuma task da fase 01 tem.
+#
+# ONDE ISTO E EXECUTADO: `make boundaries` -> `bash backend/scripts/boundaries.sh`, e o
+# portao que o roda sozinho e `scripts/hooks/pre-push.pre-harness` (`ADR-011/D3b`). Sem esse
+# portao, esta seccao seria ferramenta que existe e ninguem roda.
+
+[tool.importlinter]
+root_package = "src"
+
+# ── CONTRATO 1 de 2 — a direcao de camada, UM contrato para todos os contextos ──────────
+#
+# `containers` e a lista dos contextos: o contrato e aplicado DENTRO de cada um, e nao entre
+# eles (a fronteira entre contextos e o contrato 2). Ordem das camadas: a PRIMEIRA e a mais
+# alta. `infra` pode importar `use_cases`, que pode importar `domain`; o inverso reprova.
+#
+# `exhaustive = false` e o que permite a assimetria entre esta lista e a de contratos
+# `forbidden`: um contexto pode ter contrato `forbidden` sem estar entre os `containers`, e
+# um `container` pode ganhar subpacote que nao seja camada sem que o contrato reprove por
+# isso. E a forma do vizinho [DOC: ADR-011/D3a — 1 contrato `layers` com 11 containers e 12
+# contratos `forbidden`, e a assimetria 11x12 e justamente isto].
+#
+# HOJE `containers` TEM UMA ENTRADA SO, e isso e o disco e nao escolha: `src/modules/` tem
+# exatamente um contexto [MEDIDO 2026-08-28: `ls backend/src/modules/` -> `__init__.py`,
+# `sentimento`]. Quem criar o segundo contexto ACRESCENTA a linha aqui — e o contrato NAO o
+# cobre ate que ela exista, porque `exhaustive = false` nao inventa container.
+[[tool.importlinter.contracts]]
+name = "Camadas por contexto: infra > use_cases > domain"
+type = "layers"
+layers = ["infra", "use_cases", "domain"]
+containers = ["src.modules.sentimento"]
+exhaustive = false
+
+# ── CONTRATO 2 de 2 — a fronteira ENTRE contextos, um contrato por componente ───────────
+#
+# `sentimento` nao importa de outro contexto: contextos se falam por contrato publicado, nao
+# por import direto. Os tres contextos nomeados (`charts`, `convergencia`, `backtest`) sao os
+# componentes de codigo Python do vocabulario fechado [DOC: harness policy --key components ->
+# sentimento, charts, convergencia, backtest, web, docs; `web` e o frontend TypeScript, que
+# nao vive sob `src`, e `docs` nao e codigo].
+#
+# ⚠️ O QUE ESTE CONTRATO E HOJE, DITO EM VOZ ALTA: os tres modulos proibidos NAO EXISTEM no
+# disco, e `import-linter` NAO recusa contrato que nomeie modulo inexistente — ele devolve
+# `KEPT` [MEDIDO 2026-08-28: contrato identico a este, com o repositorio como esta ->
+# `fronteira sentimento x charts KEPT`, rc=0]. Logo o lado "cala" deste contrato e VACUO hoje,
+# e vacuo nao e prova. O lado "morde" NAO e vacuo e foi medido plantando o contexto vizinho
+# junto com o violador (ver `backend/README.md`, secao da fronteira de modulo): o contrato
+# reprova nomeando a linha exata. Ele esta DORMENTE E ARMADO, nao desligado — e a diferenca
+# entre as duas so se conhece medindo, que e o que `D1.7e` exige.
+#
+# QUEM CRIAR O SEGUNDO CONTEXTO acrescenta o contrato `forbidden` DELE aqui embaixo. Nada
+# neste repositorio obriga isso hoje: e divida nomeada, nao portao.
+[[tool.importlinter.contracts]]
+name = "Fronteira de contexto: sentimento nao importa outro contexto"
+type = "forbidden"
+source_modules = ["src.modules.sentimento"]
+forbidden_modules = [
+    "src.modules.charts",
+    "src.modules.convergencia",
+    "src.modules.backtest",
+]

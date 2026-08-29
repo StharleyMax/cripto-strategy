@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# pre-push.pre-harness — O PORTAO QUE RODA O `make`. E a metade (b) de `ADR-011/D3`, e sem ela
+# a metade (a) — os contratos de `[tool.importlinter]` — seria ferramenta que existe e ninguem
+# roda: REGRESSAO com aparencia de progresso.
+#
+# ── POR QUE ESTE ARQUIVO EXISTE, com o buraco medido e nao suposto ─────────────────────
+#
+# Este repositorio NAO TEM CI [MEDIDO 2026-08-28: `ls .github` -> "Arquivo ou diretorio
+# inexistente"], e o `pre-push` GERADO por `harness install-hooks` roda `require-push` +
+# `rules --mode sweep --surface git-hook` e NAO chama `make` [MEDIDO 2026-08-28:
+# `cat .git/hooks/pre-push`]. Logo, antes deste arquivo, NENHUM portao automatico executava
+# `ruff`, `mypy`, ESLint ou `import-linter`. As quatro ferramentas que a fase 01 adotou
+# rodavam apenas quando um humano se lembrasse.
+#
+# ── O NOME NAO E ESCOLHA ESTETICA: E A COSTURA QUE O HOOK GERADO JA DOCUMENTA E CHAMA ──
+#
+# O `pre-push` gerado termina assim, e este trecho e a razao do sufixo `.pre-harness`:
+#
+#     ANTERIOR="$(git rev-parse --git-path hooks/pre-push.pre-harness 2>/dev/null || true)"
+#     if [ -n "$ANTERIOR" ] && [ -x "$ANTERIOR" ]; then
+#         printf '%s\n' "$ENTRADA" | "$ANTERIOR" "$@" || FALHOU=1
+#     fi
+#     exit $FALHOU
+#
+# Ele resolve o caminho, exige o bit de execucao, passa a MESMA entrada padrao e os MESMOS
+# argumentos, e SOMA o veredito. Portanto: ZERO edicao no hook gerado (ele proibe, e com
+# razao — e gerado) e ZERO `core.hooksPath`, que o `CLAUDE.md` proibe em voz alta porque
+# redirecionar `hooksPath` desligaria o hook gerado EM SILENCIO.
+#
+# A INSTALACAO ja existe e nao precisou mudar: `scripts/install-git-hooks.sh` copia tudo de
+# `scripts/hooks/` para `.git/hooks` por BASENAME e pula o que for hook gerado pelo harness.
+# Este arquivo entra por ela, sem caso especial.
+#
+# ── SEM `set -e`, E O MOTIVO E O MESMO DO HOOK GERADO ──────────────────────────────────
+#
+# Os dois portoes rodam SEMPRE, mesmo que o primeiro reprove: parar no primeiro esconde
+# metade do trabalho e transforma o conserto em duas viagens. `set -e` faria exatamente isso.
+set -uo pipefail
+
+# O hook gerado nos entrega a entrada padrao do `pre-push` (as refs sendo enviadas). Nenhum
+# dos dois portoes abaixo a usa — eles avaliam a ARVORE DE TRABALHO, nao o intervalo de
+# commits —, mas ela e CONSUMIDA de proposito: um leitor que nao le deixa o `printf` do
+# chamador levar EPIPE, e um erro de canal no meio do portao e ruido que nao diz nada sobre
+# o codigo. Se algum dia um portao aqui precisar das refs, elas estao em "$ENTRADA".
+ENTRADA="$(cat)"
+: "${ENTRADA:=}"
+
+RAIZ="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$RAIZ" || exit 1
+
+if ! command -v make >/dev/null 2>&1; then
+    echo "[pre-push.pre-harness] RECUSADO — 'make' nao esta no PATH." >&2
+    echo "  A fachada de comandos deste repositorio e o Makefile da raiz (ADR-011/D2)." >&2
+    echo "  Sem 'make' nada foi verificado, e isso NAO e o mesmo que estar tudo certo." >&2
+    exit 1
+fi
+
+FALHOU=0
+
+# ── PORTAO 1 · FRONTEIRA DE MODULO (`ADR-011/D3a`) ─────────────────────────────────────
+# `make boundaries` -> `backend/scripts/boundaries.sh` -> `import-linter` sobre o grafo de
+# imports. E a peca 1 de `ADR-009/D1`, que ate `T-01.5` nao tinha dono nenhum.
+echo "[pre-push.pre-harness] make boundaries"
+make boundaries || FALHOU=1
+
+# ── PORTAO 2 · LINT DOS DOIS LADOS (`ADR-011/D4`, e o assert de versao de `ADR-011/D5`) ─
+# `make lint` = `lint-backend` (ruff + ruff format --check + mypy --strict, precedido do
+# assert do interpretador EFETIVO que `T-01.6` pos em `lint.sh`) + `lint-frontend` (ESLint do
+# projeto). Ate aqui esse assert era, nas palavras do proprio `tasks.toml`, "uma recusa que
+# NENHUM portao automatico dispara" — esta linha e o portao que a dispara.
+#
+# LIMITE CONHECIDO, e ele e do `make` e nao deste arquivo: `lint-backend` e `lint-frontend`
+# sao PRE-REQUISITOS de `lint`, e o `make` aborta no primeiro que falhar. Se o backend
+# reprovar, o relatorio do frontend nao sai nesta passada. Isso e relatorio parcial, nunca
+# falso-verde: o `rc` nao-zero chega inteiro aqui.
+echo "[pre-push.pre-harness] make lint"
+make lint || FALHOU=1
+
+if [ "$FALHOU" -ne 0 ]; then
+    echo "" >&2
+    echo "[pre-push.pre-harness] PUSH RECUSADO — um dos portoes acima reprovou." >&2
+    echo "  Reproduza local, sem push: 'make boundaries' e 'make lint'." >&2
+    echo "  Se a recusa foi rc=3 ('nao mediu': venv ausente, versao errada do interpretador," >&2
+    echo "  ou frontend/node_modules ausente), o conserto e 'make setup' — e 'nao mediu' NAO" >&2
+    echo "  e o mesmo que 'esta tudo certo', por isso ele tambem recusa." >&2
+fi
+
+exit $FALHOU

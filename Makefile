@@ -24,9 +24,12 @@
 # o perigo do `;` so existe DENTRO de uma linha — onde ele descarta o veredito de tudo que veio
 # antes. Prefira uma linha, um comando; quando forem dois, encadeie com `&&`.
 #
-# A EXCECAO, e ela esta nos alvos `lint-frontend` e `boundaries`: `cmd || { printf ...; exit N; }`
-# usa `;` DE PROPOSITO e esta CERTO — quem tem a ultima palavra e o `exit N`, entao o `rc` e o
-# que se quer. Trocar por `printf ... && exit N` seria pior: um `printf` que falhasse (saida
+# A EXCECAO, e ela esta no alvo `lint-frontend`: `cmd || { printf ...; exit N; }` usa `;`
+# DE PROPOSITO e esta CERTO — quem tem a ultima palavra e o `exit N`, entao o `rc` e o que se
+# quer. (Ate `T-01.5` o alvo `boundaries` era o segundo caso; a guarda dele mudou de arquivo
+# para `backend/scripts/boundaries.sh` e este paragrafo foi atualizado no mesmo ato — nota de
+# cabecalho que sobrevive ao codigo que ela descreve e como um portao que nao olha.)
+# Trocar por `printf ... && exit N` seria pior: um `printf` que falhasse (saida
 # fechada, disco cheio) engoliria o `exit` e o alvo devolveria SUCESSO. "Nunca `;`" seria uma
 # regra que quebra o codigo correto — o que importa nao e o separador, e quem fala por ultimo.
 #
@@ -58,7 +61,8 @@ help:
 	  '  make lint-frontend   ESLint do PROJETO sobre frontend/src (ADR-011/D4)' \
 	  '  make test            suite + piso de cobertura POR CAMADA (backend/scripts/test.sh)' \
 	  '                       argumentos: make test ARGS="-k nome"' \
-	  '  make boundaries      fronteira de modulo por import-linter (ADR-011/D3a — T-01.5)' \
+	  '  make boundaries      fronteira de modulo por grafo de imports, via import-linter' \
+	  '                       (ADR-011/D3a; backend/scripts/boundaries.sh)' \
 	  '  make build           artefato distribuivel — hoje RECUSA com rc=3, e o alvo diz porque' \
 	  '' \
 	  'O make sai com 2 em qualquer receita que falhe: ele NAO propaga o rc=3 dos scripts.'
@@ -125,21 +129,19 @@ test:
 	bash backend/scripts/test.sh $(ARGS)
 
 # ── boundaries ─────────────────────────────────────────────────────────────────────────
-# ⚠️ ALVO DECLARADO POR `T-01.6`, CONTEUDO DEVIDO POR `T-01.5`. Ele NAO fica verde hoje.
+# PREENCHIDO POR `T-01.5` (`ADR-011/D3a`, plano 01 item 1.9'). `T-01.6` declarou o alvo e o
+# fez RECUSAR com rc=3 enquanto nao houvesse contrato; agora ha, e a recusa nao sumiu — ela
+# MUDOU DE ARQUIVO. Ver `backend/scripts/boundaries.sh`, que a carrega junto com as outras
+# duas ("venv ausente" e "venv na versao errada").
 #
-# `ADR-011/D3a` decide `import-linter` para a direcao de camada e para a fronteira entre
-# componentes; quem escreve `[tool.importlinter]` no `backend/pyproject.toml` e adiciona a
-# dependencia e `T-01.5`, nao esta task — inventar contrato aqui seria decidir por ela.
-# `ADR-011/D3b` acrescenta a metade que o transforma em portao
-# (`scripts/hooks/pre-push.pre-harness` rodando `make boundaries`), e tambem e de `T-01.5`.
-#
-# O alvo existe porque o plano 01 item 1.10 enumera `boundaries` na fachada, e porque
-# `T-01.5` depende de `make boundaries` existir. O que ele NAO faz e devolver 0: um alvo que
-# sai verde sem ter contrato nenhum a avaliar e literalmente o portao que aprova por nao ter
-# olhado — a classe de defeito que este repositorio catalogou seis vezes em 2026-08-28.
+# UMA LINHA, UM COMANDO, e um `.sh` do outro lado — a forma que `ADR-011/D2` decide. O que a
+# receita de T-01.6 fazia (`cd backend && poetry run lint-imports`) era a QUINTA via de
+# resolucao de interpretador do repositorio e a unica execucao de backend fora de
+# `backend/.venv/bin/python`; o `/review` de 2026-08-28 a mediu como LATENTE, porque a guarda
+# recusava antes de chegar la. Preencher os contratos a tornaria alcancavel, entao ela foi
+# fechada NO MESMO ATO em que deixou de ser latente.
 boundaries:
-	@grep -q '^\[tool\.importlinter' backend/pyproject.toml || { printf '%s\n' "RECUSA: [tool.importlinter] ausente em backend/pyproject.toml — nao ha contrato a avaliar." "        Os contratos sao de T-01.5 (ADR-011/D3a), junto com a dependencia import-linter" "        e o portao scripts/hooks/pre-push.pre-harness (ADR-011/D3b)." "        T-01.6 declarou este alvo (plano 01, item 1.10) e o fez RECUSAR em vez de" "        devolver verde sobre universo vazio." >&2; exit 3; }
-	cd backend && poetry run lint-imports
+	bash backend/scripts/boundaries.sh
 
 # ── build ──────────────────────────────────────────────────────────────────────────────
 # ⚠️ ALVO DECLARADO, E ELE RECUSA — de proposito, e a recusa e a informacao.

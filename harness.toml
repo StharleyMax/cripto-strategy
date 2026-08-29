@@ -177,12 +177,29 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # pelo `/review` (item D). A lacuna de `frontend/` acima estava declarada, e a de
 # `backend/tests/` foi medida e FECHADA nesta mesma task; esta terceira superfície ficou de
 # fora das duas análises, e o silêncio é o defeito que `ADR-009/D3` nomeia — *"a diferença
-# entre coberto e 'parecendo coberto'"*. Ela não é periférica: os **4 arquivos**
-# (`bootstrap.sh`, `test.sh`, `lint.sh`, `check-coverage-layers.sh`; **216 linhas**
-# `[MEDIDO 2026-08-28: cat backend/scripts/*.sh | wc -l]`) são o `test_cmd` inteiro, isto é
+# entre coberto e 'parecendo coberto'"*. Ela não é periférica: ~~os **4 arquivos**
+# (`bootstrap.sh`, `test.sh`, `lint.sh`, `check-coverage-layers.sh`; **216 linhas**)~~
+# `[MEDIDO 2026-08-28 — número À ÉPOCA]` são o `test_cmd` inteiro, isto é
 # **todo o DoD desta trilha daqui para frente** — e foi dentro de um deles que o mesmo
 # `/review` achou o BLOQUEIO desta passada (`test.sh` media cobertura a partir de relatório
 # velho).
+#
+# ⚠️ RE-RODADO 2026-08-29 por `T-01.5`, e o número mudou POR CAUSA DELA — achado do
+# `/review`: são **5 arquivos** e **558 linhas** `[MEDIDO 2026-08-29: o MESMO comando
+# publicado acima, `cat backend/scripts/*.sh | wc -l`; e `ls backend/scripts/*.sh | wc -l`
+# → 5]`. O quinto é **`boundaries.sh`**, que `T-01.5` criou — e a task acrescentou um bloco
+# de comentário a ESTE arquivo sem corrigir a enumeração ao lado, que é o defeito de "número
+# medido envelhece com a edição seguinte" pela terceira vez nesta trilha. **A contagem de
+# linhas é volátil por construção** (todo comentário novo a move); o que não é volátil, e é
+# o que a nota existe para dizer, é que **nenhum deles é alcançado por regra alguma**.
+#
+# ⚠️ QUARTA SUPERFÍCIE, e ela nasceu em 2026-08-29 sem entrar em nenhuma das análises
+# anteriores: **`scripts/hooks/`**. `scripts/hooks/pre-push.pre-harness` **É o portão** de
+# `ADR-011/D3b` — o executável que decide se um push passa — e ele está fora de `code_paths`
+# pelas mesmas duas metades (nem prefixo, nem glob). Somando: **os dois executáveis que hoje
+# constituem o portão de fronteira (`backend/scripts/boundaries.sh` e
+# `scripts/hooks/pre-push.pre-harness`) são governados por `bash -n` e por mais ninguém** —
+# `shellcheck` não existe nesta máquina `[MEDIDO 2026-08-29: command -v shellcheck → ausente]`.
 #
 # O comando que a mede, e as DUAS causas independentes que ele separa:
 #
@@ -375,6 +392,21 @@ test_globs = ["**/tests/**", "**/test_*.py"]
 # `Makefile` chamado por `scripts/hooks/pre-push.pre-harness`, e o `Makefile` é de `T-01.6`
 # e o hook é de `T-01.5`. **Nenhuma das duas é esta task.** Escrever a chave agora seria
 # declarar cobertura antes de existir o mecanismo que a cobra.
+#
+# ── ATUALIZAÇÃO 2026-08-28 (`T-01.5`): o mecanismo EXISTE, e a chave continua NÃO declarada ──
+#
+# O parágrafo acima FICA — ele descreve por que `T-01.2` se calou, e o motivo era verdadeiro.
+# O que mudou: `T-01.6` escreveu o `Makefile` e `T-01.5` escreveu
+# `scripts/hooks/pre-push.pre-harness`, que roda `make boundaries` + `make lint` e RECUSA o
+# push `[MEDIDO 2026-08-28, bancada isolada: com um `.tsx` carregando `any` + `console`,
+# `git push --dry-run` -> rc=1, RECUSADO; sem ele -> rc=0, ACEITO]`. Logo o ESLint É portão
+# hoje — **pelo hook, não por esta chave**.
+#
+# A chave segue não declarada porque o motivo ORIGINAL, e menor, não caiu: `test_cmd` não é
+# lido por portão nenhum; quem o consome são os agentes `builder` e `qa`. Declará-la é
+# decisão de quem possuir o componente `web`, e `T-01.5` não a toma de passagem — o que ela
+# faz é registrar que a CONDIÇÃO citada acima mudou, para o próximo leitor não concluir do
+# parágrafo antigo que o mecanismo continua ausente.
 [test_cmd.sentimento]
 lint = "bash backend/scripts/lint.sh"
 test = "bash backend/scripts/test.sh"
