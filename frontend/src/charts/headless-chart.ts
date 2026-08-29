@@ -159,8 +159,16 @@ function installGlobals(dom: JSDOM): void {
  * This is the guard, not a formality: without it a frozen model reports 0.000 px and the
  * spike publishes a green it never earned. `rc=3` ("nao mediu") is the honest answer, and
  * it is a different answer from `rc=1` ("mediu e reprovou").
+ *
+ * Exported for `headless-chart.test.ts`: until then the only proof this guard works was a
+ * mutation run once by hand, and a manual mutation does not regress. It is a pure function
+ * of three numbers, so pinning both answers costs two cases.
  */
-function assertViewportFitted(paneWidthPx: number, barSpacingPx: number, barCount: number): void {
+export function assertViewportFitted(
+  paneWidthPx: number,
+  barSpacingPx: number,
+  barCount: number,
+): void {
   if (paneWidthPx <= 0) {
     throw new Error(`a pane do eixo tem largura ${paneWidthPx} px; o modelo nao foi dimensionado`);
   }
