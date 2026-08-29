@@ -831,3 +831,92 @@ motivo medido — tem um **custo** que ela não nomeou.
 | **por que registrar mesmo assim** | é **custo de uma decisão já tomada**, e a decisão o omitiu. O `scope = "code"` de outras regras do mesmo pack tem a mesma propriedade — a lista de quais só se mede na adoção |
 | **dono** | **`T-01.2`**, a task que adota o pack. O que ela deve fazer é **medir antes**: `harness rules --mode sweep` com o pack ligado, e comparar o universo avaliado |
 | **falsificador** | se, com o pack adotado, o sweep completo devolver o mesmo número de achados de hoje (**0**), o custo era teórico e esta linha vira nota histórica |
+
+---
+
+## 📒 O registro de ingestão de F0 — `T-02.3` (`CST-14`, `ADR-008` D1+D2+D3, plano 02 itens 2.6+2.7)
+
+`md.ingest_run` e `md.ingest_gap` passam a existir **persistidos**, e a leitura deles é **uma
+única** função nomeada — `ingest_health_query` — porque `ADR-008/D3` decide que o registro cru
+de F0 (CLI) e o console S1 de F3 (`T-07.13`) são **dois consumidores da mesma verdade**.
+
+### As quatro peças, e a camada de cada uma
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/ingest_record.py` | `domain` | `IngestRun`/`IngestGap` (as colunas de `SPEC-001` §3.5), o conjunto fechado de `verdict`, e a **projeção canônica** que vira `sha256` |
+| `use_cases/ingest_health.py` | `use_cases` | **`ingest_health_query`** — a definição única — mais o `Protocol` de leitura. Nenhum consumidor conhece o motor |
+| `infra/sqlite_ingest_record_store.py` | `infra` | o adaptador durável: uma conexão por chamada, `commit` por linha |
+| `infra/ingest_health_cli.py` | `infra` | o relatório: **registrador nomeado escrevendo `stdout`**, `ADR-008/D2` |
+
+### ⚠️ O motor é SQLite e `ADR-002/D1` diz PostgreSQL — a divergência é declarada, não escondida
+
+`ADR-002/D1` põe estas duas tabelas no PostgreSQL "que já está de pé". Ela é de **F4**, está
+`proposto`, e o finalista de motor está **pendente de spike** (`D4`). Hoje o `backend` declara
+`dependencies = []` e a suíte é offline por construção — não há driver, não há daemon, e o
+plano `02` existe separado do `03` justamente porque **F0 não depende de host**.
+
+O que esta task escolheu é o **adaptador**, e o custo da troca é **um arquivo**: o contrato de
+leitura é o `Protocol` em `use_cases`, e nenhum consumidor importa `sqlite3`. **A decisão de
+motor continua sendo de `ADR-002`**, e a pergunta está aberta e endereçada ao `quant-architect`.
+
+### A bancada de mutação — verde não prova nada até algo reprovar
+
+Seis mutantes, cada um revertido e o arquivo reconferido por `sha256` antes do seguinte
+`[MEDIDO 2026-08-29, `n=6`, com `PYTHONDONTWRITEBYTECODE=1` e `__pycache__` apagado entre
+mutantes — ver o achado logo abaixo, que é o motivo dessas duas precauções]`:
+
+| # | mutante | quem morde | resultado |
+|---|---|---|---|
+| **A** | `print(...)` na raiz de composição do CLI | `harness rules --mode sweep` | **rc=1**, `[BLOQUEIO] [core.print-statement] … ingest_health_cli.py:66`. Árvore boa: **rc=0** |
+| **B** | o driver troca o store durável por memória | `D2.9` | `test_killing_the_recorder_mid_run…` **FALHA** — o observador nunca vê linha nenhuma |
+| **C** | `ORDER BY` deixa de ser total e estável | `D2.9` | **FALHA** na comparação campo a campo do prefixo sobrevivente |
+| **D** | duas das 15 colunas trocam de ordem no `domain` | `ADR-008/D3` | **2 testes falham** — e ver a correção abaixo, porque na primeira passada este mutante **SOBREVIVEU** |
+| **E** | a consulta **esconde** o `verdict` inédito em vez de reprovar | `ADR-008/DoD-3` | **2 testes falham** |
+| **F** | `record_run` deixa de dar `COMMIT` | `D2.9` | **3 testes falham** |
+
+#### 🔴 O mutante `D` sobreviveu na primeira passada, e o defeito era do TESTE
+
+A primeira versão do teste de colunas comparava a projeção com **a própria constante de que a
+projeção deriva** (`INGEST_HEALTH_RUN_COLUMNS`). Reordenar a constante movia **os dois lados
+da igualdade juntos**: `[MEDIDO 2026-08-29: mutante D contra o teste antigo → **17 passed**,
+rc=0]`. É a família que este repositório caça — **um controle que devolve o mesmo número dos
+dois lados não está medindo** — desta vez dentro do teste que existia para medir o contrato.
+
+O conserto é uma **transcrição independente**, copiada à mão de `ADR-008/D3` e de `SPEC-001`
+§3.5, que existe para **não ser** a constante do `domain`. Com ela, o mesmo mutante mata dois
+testes. Quem for editar as duas listas até baterem está desfazendo o conserto: o caminho certo
+é reabrir a ADR.
+
+#### 🔴 E um segundo achado, uma camada abaixo: o `.pyc` obsoleto falsifica a própria bancada
+
+Restaurar o arquivo mutado e conferir o `sha256` **não basta**. A invalidação de bytecode do
+CPython compara `(mtime em segundos, tamanho)`; um mutante que só **troca linhas de lugar**
+tem **o mesmo tamanho**, e se mutar/rodar/restaurar couber no **mesmo segundo**, o `.pyc`
+continua sendo considerado válido — o interpretador lê o **mutante** enquanto o disco já tem o
+original. Foi medido aqui: `sha256` do fonte **idêntico ao original** e
+`INGEST_HEALTH_RUN_COLUMNS[0]` importado devolvendo **`'source'`** (o valor do mutante) em vez
+de `'run_id'` `[MEDIDO 2026-08-29]`.
+
+O portão não mente — `bash backend/scripts/test.sh` reprovava de verdade. **Quem mentia era a
+bancada de mutação**, que poderia ter registrado "mutante morto" para um mutante que o
+interpretador nunca deixou de executar, ou o contrário. A bancada acima foi **inteiramente
+re-rodada** com `PYTHONDONTWRITEBYTECODE=1` e `__pycache__` apagado entre mutantes.
+
+### O que esta task NÃO fechou, nomeado
+
+| item | por quê |
+|---|---|
+| **`ADR-008/DoD-1` na forma `[[rules.own]]` + corpus** | a unicidade de `ingest_health_query` está provada **por teste AST, dos dois lados** (árvore de hoje → 1 definição; duplicado plantado → 2). A forma que `DoD-1` pede é uma **regra própria acompanhada de corpus**, e este repositório **não tem diretório de corpus** — declarar a regra sem ele seria "enforcement declarado, não medido", que é o que o próprio `harness.toml` recusa por escrito |
+| **o lado TypeScript da unicidade** | o varredor é AST de Python e cobre `backend/src/`. O segundo consumidor nasce em **`T-07.13`**, e é lá que a varredura do outro lado tem dono |
+| **`ADR-008/DoD-2` e `DoD-3` inteiros** | as duas metades de F0 estão feitas (a projeção com `sha256`, e o `verdict` inédito reprovando). A **comparação entre os dois consumidores** só é executável quando o segundo existir — `T-07.13`, `D7.17` |
+| **`janela_de_perda`** | a coluna existe na projeção e vale `null`. Ela é **fórmula por série** (`D7.12`) e o dono é `T-07.12`. Um número seco aqui é exatamente o que `D7.14` proíbe |
+
+### Uma pergunta de domínio que NÃO foi decidida aqui
+
+O conjunto fechado de `verdict` tem **dois** valores escritos na `SPEC-001`
+(`ACCEPTED_WITH_WARNING`, `REJECTED`) e o terceiro — `ACCEPTED` — é
+`[INFERRED: §5.6 trata `ACCEPTED_WITH_WARNING` como a variante COM AVISO de um aceite, logo um
+aceite sem aviso é pressuposto; ele nunca aparece literal em documento nenhum]`. Sem ele uma
+execução limpa não teria `verdict`. **Quem é dono da enumeração é o `quant-architect`**, e a
+pergunta está aberta.
