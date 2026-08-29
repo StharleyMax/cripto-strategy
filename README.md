@@ -80,13 +80,44 @@ seja o código do comando. As recusas **`rc=3`** deste repositório (*"não medi
 *"mediu e reprovou"*) só são visíveis na chamada **direta** do script — e é por isso que os DoD citam
 `bash backend/scripts/test.sh`, não `make test`.
 
-## Idioma de docstring é convenção, **não portão**
+## Idioma de identificador é convenção, **não portão**
 
-> Em uma linha, e literal para quem vier grepar: idioma de docstring é convenção, não portão.
+> Em uma linha, e literal para quem vier grepar: **idioma de identificador é convenção, não portão** —
+> e docstring é um caso dele, não uma regra à parte.
+
+### ⛔ A fronteira mora no [`CLAUDE.md`](CLAUDE.md), e aqui não há cópia dela
+
+A convenção de idioma de **identificador** — a tabela de fronteira de 12 superfícies, a exceção literal
+do vocabulário fechado de componentes e o gatilho que reabriria a decisão — é **normativa e mora em um
+lugar só**: [`CLAUDE.md`](CLAUDE.md), seção *"Idioma de identificador — a fronteira escrita, e ela é
+convenção, não portão"*. Escolhido em `SPEC-002` §2 porque `CLAUDE.md` é o **único** arquivo deste
+repositório carregado **incondicionalmente** como *project instructions* em toda sessão de agente.
+
+**Este `README` aponta e não copia, e a ausência de cópia é o deliverable, não uma economia de texto.**
+Duas cópias da mesma tabela divergem em silêncio na primeira edição que só uma das duas receber —
+`PRD-002` §3.2 mede o custo de duas verdades sobre a mesma superfície, e este repositório já pagou por
+ele. Se você veio procurar a tabela aqui, **vá ao `CLAUDE.md`**; se ela aparecer aqui um dia, isso é o
+defeito, não a conveniência.
+
+*Esta seção nasceu como §"Idioma de docstring é convenção, não portão" — o precedente de `D1.10` — e o
+título generalizou em `T-01.2` (`SPEC-002`, plano `01`, item `1.6`). **Nenhuma medição abaixo mudou de
+valor**; o que mudou é o alcance do título.*
 
 **As docstrings deste repositório são escritas em inglês** (`ADR-011/D6`). Os comentários `#`, as
-mensagens de erro e a documentação continuam em português — a convenção alcança **a docstring, e só
-ela**.
+mensagens de erro e a documentação continuam em português — **a convenção de `ADR-011/D6` alcança a
+docstring, e só ela.** O alcance sobre identificador, nome de arquivo, nome de diretório **e comentário**
+é outro, é posterior, e está na tabela do [`CLAUDE.md`](CLAUDE.md).
+
+> **⚠️ E sobre `comentário` os dois documentos DIVERGEM hoje — a divergência está escrita aqui em vez de
+> resolvida à revelia.** A linha 5 da tabela do `CLAUDE.md` diz *"docstring / comentário → **inglês**"*
+> (copiada íntegra de `PRD-002` §3.1), e o parágrafo acima — texto **medido** por `T-01.7` — diz que os
+> comentários `#` continuam em português. **A força que a linha 5 cita é `ADR-011/D6`, e `ADR-011/D6`
+> alcança só a docstring.** ⇒ a tabela afirma, nesta linha, mais do que a decisão que ela invoca
+> sustenta. **Dono: `/architect`** — quem tem de se decidir entre *"docstring"* e *"docstring /
+> comentário"* é a linha 5 de `PRD-002` §3.1, não este `README` nem o `CLAUDE.md`.
+> **Nada foi editado dos dois lados de propósito:** mexer na tabela violaria *"íntegra"* (`CA-F1-1`) e
+> apagar a frase acima violaria `RN-2`. Sinalizar é o que cabe no escopo desta task. `/review`
+> `[WARNING-4]`, ciclo 2.
 
 E aqui vai a parte que importa mais que a convenção: **idioma de docstring é convenção declarada, não
 portão. Este repositório NÃO mede o idioma das docstrings, e não finge que mede.** Não porque medir seja

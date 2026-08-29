@@ -30,7 +30,7 @@ declaram `scope = "code"`: sem o prefixo e os globs, o classificador não consid
 O comando que separa as duas causas:
 
 ```
-harness code-paths classify frontend/src/features/painel/Filtro.tsx
+harness code-paths classify frontend/src/features/panel/Filter.tsx
 # ANTES: nao-producao — nenhum include_prefixes casa ['backend/src/', 'backend/tests/']
 # HOJE : producao — include_prefixes + include_globs casam e nada exclui
 ```
@@ -82,8 +82,8 @@ dentro de `src/`, a saída é `exclude_globs`, não amputar a extensão.
 `[MEDIDO 2026-08-28]`:
 
 ```
-harness code-paths classify frontend/src/features/painel/serie.<ext>
-harness rules --mode file --path frontend/src/features/painel/serie.<ext> --surface ci
+harness code-paths classify frontend/src/features/panel/serie.<ext>
+harness rules --mode file --path frontend/src/features/panel/serie.<ext> --surface ci
 ```
 
 | ext | `classify` | `rules … --surface ci` |
@@ -115,10 +115,10 @@ não consegue empurrar.
 Para reproduzir do zero, da raiz do repositório:
 
 ```bash
-printf 'import { x } from "../../../../backend/src/modules/sentimento/domain/etl_backlog";\nexport function Serie() { console.log(x); return null; }\n' > frontend/src/features/painel/serie.tsx
-harness rules --mode file --path frontend/src/features/painel/serie.tsx --surface ci   # espera BLOQUEIO, rc=1
-harness rules --mode file --path frontend/src/features/painel/Filtro.tsx  --surface ci   # espera SILÊNCIO, rc=0
-rm frontend/src/features/painel/serie.tsx
+printf 'import { x } from "../../../../backend/src/modules/sentimento/domain/etl_backlog";\nexport function Serie() { console.log(x); return null; }\n' > frontend/src/features/panel/serie.tsx
+harness rules --mode file --path frontend/src/features/panel/serie.tsx --surface ci   # espera BLOQUEIO, rc=1
+harness rules --mode file --path frontend/src/features/panel/Filter.tsx  --surface ci   # espera SILÊNCIO, rc=0
+rm frontend/src/features/panel/serie.tsx
 ```
 
 **As duas linhas do meio são obrigatórias juntas** — é o item `1.8'` do plano, o *teste
@@ -247,19 +247,19 @@ Universo: **3 arquivos / 4 linhas de código / 2 violações reais / 2 usos leg�
 |---|---|---|---|---|---|
 | `tipos.ts` | `Record<string, any>` + `Map<string, any>` | **sim, 2** | silêncio — **2 FN** | BLOQUEIO | **2 erros** ✔ |
 | `config.ts` | `{ retry: 3, any: true }` — chave de objeto | não | silêncio | **BLOQUEIO — FP** | **silêncio** ✔ |
-| `Filtro.tsx` | `<p>Filtro: any resultado serve</p>` — texto JSX | não | **BLOQUEIO — FP** | **BLOQUEIO — FP** | **silêncio** ✔ |
+| `Filter.tsx` | `<p>Filtro: any resultado serve</p>` — texto JSX | não | **BLOQUEIO — FP** | **BLOQUEIO — FP** | **silêncio** ✔ |
 
 O ESLint acerta os três e **não repete nenhum dos dois defeitos**. `config.ts` e
-`Filtro.tsx` **ficam na árvore** — eles são o lado "cala" da prova, e é por isso que
+`Filter.tsx` **ficam na árvore** — eles são o lado "cala" da prova, e é por isso que
 parecem estranhos para arquivos de placeholder. **`tipos.ts` foi removido** pelo mesmo
 motivo do violador da `§3`: ele reprovaria `npm run lint` para sempre.
 
 Para reproduzir a linha que falta:
 
 ```bash
-printf 'export type Payload = Record<string, any>;\nexport const cache: Map<string, any> = new Map();\n' > frontend/src/features/painel/tipos.ts
+printf 'export type Payload = Record<string, any>;\nexport const cache: Map<string, any> = new Map();\n' > frontend/src/features/panel/tipos.ts
 npm --prefix frontend run lint   # espera 2 erros @typescript-eslint/no-explicit-any, rc=1
-rm frontend/src/features/painel/tipos.ts
+rm frontend/src/features/panel/tipos.ts
 ```
 
 O `no-console` (sucessor de `own.ts-browser-console`) é mordido pela receita da `§3`,
@@ -378,7 +378,7 @@ find frontend/src -type f                    ->  4 arquivo(s)
 npm --prefix frontend run lint               ->  rc=0   (eslint -f json src: 4 arquivos
                                                  lidos, 0 erro, 0 aviso)
 harness rules --mode file --path \
-  frontend/src/features/painel/Filtro.tsx \
+  frontend/src/features/panel/Filter.tsx \
   --surface ci                               ->  rc=0, saída de 0 byte  (o lado "cala")
 harness rules --mode sweep                   ->  1 AVISO, 0 BLOQUEIO, rc=0
 harness rules --mode sweep --surface git-hook->  1 AVISO, 0 BLOQUEIO, rc=0

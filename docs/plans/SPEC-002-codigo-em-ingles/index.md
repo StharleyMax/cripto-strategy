@@ -1,7 +1,7 @@
 # Plano de execução — `SPEC-002` · Código em inglês
 
-**SPEC:** [`SPEC-002`](../../specs/SPEC-002-codigo-em-ingles.md) (`DRAFT` — `SPEC_APPROVED` é gate **do owner**)
-**ADRs:** [`ADR-013`](../../adr/ADR-013-codigo-em-ingles-convencao-com-fronteira-e-sem-portao.md) (`aceito`, usada) · [`ADR-015`](../../adr/ADR-015-token-tipado-no-verificador-de-ancora-e-o-criterio-de-citacao-viva.md) (`proposto`, nasce com esta SPEC)
+**SPEC:** [`SPEC-002`](../../specs/SPEC-002-codigo-em-ingles.md) (**`SPEC_APPROVED`** — o gate **do owner** aconteceu: `approve spec` em `2026-08-29T14:35:44Z`; a feature está hoje em **`BUILD_AUTHORIZED`** `[MEDIDO 2026-08-29 em c7df90c: harness pipeline state codigo-em-ingles]`)
+**ADRs:** [`ADR-013`](../../adr/ADR-013-codigo-em-ingles-convencao-com-fronteira-e-sem-portao.md) (`aceito`, usada) · [`ADR-015`](../../adr/ADR-015-token-tipado-no-verificador-de-ancora-e-o-criterio-de-citacao-viva.md) (**`aceito`** em 2026-08-29 pelo owner, `[DECISÃO-OWNER]` registrada no cabeçalho da própria ADR; nasceu com esta SPEC)
 **Rev de ancoragem de TODA medição:** **`master@5f4ece0`**
 **Data:** 2026-08-29
 

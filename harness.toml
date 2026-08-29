@@ -135,18 +135,18 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 #
 # **Medido antes, no repositório real, com `frontend/` inexistente:**
 #
-#   harness code-paths classify frontend/src/features/painel/serie.tsx
+#   harness code-paths classify frontend/src/features/panel/serie.tsx
 #   # -> nao-producao: nenhum include_prefixes casa ['backend/src/', 'backend/tests/']
-#   harness rules --mode file --path frontend/src/features/painel/serie.tsx
+#   harness rules --mode file --path frontend/src/features/panel/serie.tsx
 #   # -> saída VAZIA, exit=0   (a lacuna de `D1.4`, re-medida hoje)
 #
 # **Medido depois, com um violador plantado de `browser-imports-server`:**
 #
-#   harness code-paths classify frontend/src/features/painel/serie.tsx
+#   harness code-paths classify frontend/src/features/panel/serie.tsx
 #   # -> producao: include_prefixes + include_globs casam e nada exclui
-#   harness rules --mode file --path frontend/src/features/painel/serie.tsx --surface ci
+#   harness rules --mode file --path frontend/src/features/panel/serie.tsx --surface ci
 #   # -> [BLOQUEIO] web-fullstack.browser-imports-server, exit=1
-#   harness rules --mode file --path frontend/src/features/painel/Filtro.tsx --surface ci
+#   harness rules --mode file --path frontend/src/features/panel/Filter.tsx --surface ci
 #   # -> saída VAZIA, exit=0   (o outro lado: a regra CALA sobre código legítimo)
 #
 # `[MEDIDO 2026-08-28, universo 2 arquivos: 1 violador + 1 legítimo]`. **As duas metades
@@ -235,10 +235,10 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # descoberta depois: `test_globs` não reconhece teste de frontend. Os padrões vigentes
 # são `**/tests/**` e `**/test_*.py`, e a convenção do vizinho para TS é
 # `<nome>.test.tsx` `[DOC: ADR-009/D1, `vitest` em `frontend/`; e o próprio pack, cujo
-# alvo é `frontend/src/**/*.test.*`]`. Logo, o primeiro `Filtro.test.tsx` que existir
+# alvo é `frontend/src/**/*.test.*`]`. Logo, o primeiro `Filter.test.tsx` que existir
 # será classificado **produção** — que é a classificação ERRADA, e é o espelho exato do
 # defeito que `backend/tests/` fechou nesta política em `T-01.1`
-# `[MEDIDO 2026-08-28: `harness code-paths classify frontend/src/__sonda__/Filtro.test.tsx`
+# `[MEDIDO 2026-08-28: `harness code-paths classify frontend/src/__sonda__/Filter.test.tsx`
 # → **rc=0**, "producao: … include_prefixes + include_globs casam e nada exclui"]`.
 #
 # **CORREÇÃO 2026-08-28 (`NEEDS_FIX` A1): a versão anterior deste parágrafo nomeava um
@@ -249,7 +249,7 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # casa. Medido dos dois lados, MESMAS duas credenciais (`token = "abcdef123456"`,
 # `api_key = "sk-live-0000000000"`):
 #
-#   rules --mode file --path frontend/src/__sonda__/Filtro.test.tsx --surface ci
+#   rules --mode file --path frontend/src/__sonda__/Filter.test.tsx --surface ci
 #   # -> rc=0, saída de 0 byte
 #   rules --mode file --path backend/src/__sonda_segredo__.py --surface ci
 #   # -> rc=1, [BLOQUEIO] core.hardcoded-secret, "2 ocorrencia(s) fora da allowlist"
@@ -482,6 +482,37 @@ packs = ["core", "web-fullstack"]
 # o owner precisa de julgamento especializado em SMC/order flow/microestrutura que os
 # subagentes genéricos do plugin não carregam. O agente local supre esse julgamento no
 # refinamento e na arquitetura dos componentes de domínio.
+
+# ── PONTEIRO DE PAPEL VÁLIDO PARA TODOS OS COMPONENTES ─────────────────────────────
+#
+# Declarado em 2026-08-29. Diferente dos ponteiros por componente abaixo, este não carrega
+# julgamento de domínio: carrega a HIGIENE DE CONTEXTO do repositório — o que um subagente
+# devolve e o que ele deixa em disco. É `[agents]` de topo e não `by_component` porque a
+# medição que o produziu não varia por componente.
+#
+# A CHAVE DE LEITURA NÃO É A DE ESCRITA, e isto se mede em vez de se supor: escrito como
+# `[agents] dispatch_protocol`, o acessor o serve em `agents.roles.dispatch_protocol` — ele
+# separa papel de componente `[MEDIDO 2026-08-29: harness policy --key agents.dispatch_protocol
+# → "campo ausente na politica"; --key agents.roles.dispatch_protocol → rc=0 com o caminho]`.
+# Citar a chave errada num documento manda o leitor a um `campo ausente` que parece defeito.
+#
+# O QUE O MEDIU `[MEDIDO 2026-08-29, sessão b227a990: 692 turnos, 16h, 41 subagentes]`:
+# 62% do custo da sessão foi RELEITURA de contexto; relatório de subagente inlinado tinha
+# média 9,4KB e o texto integral JÁ ESTAVA em disco, no `<output-file>` que a própria
+# notificação cita. Um relatório entregue no turno 300 de 692 é relido ~390 vezes.
+#
+# ⚠️ QUEM DE FATO LÊ ESTA CHAVE, medido e não suposto: `harness policy --key agents` é
+# consultado por DOIS arquivos do plugin — `commands/build.md:36` e `commands/qa.md:19`
+# `[MEDIDO 2026-08-29: grep -rn 'agents' commands/*.md sobre o plugin v0.13.0 → 2 ocorrências]`.
+# Ou seja o ponteiro alcança `/build` e `/qa` e NÃO alcança `/pm`, `/architect`, `/tech-lead`
+# nem `/review`. Para esses, quem vincula é o `CLAUDE.md`, que carrega incondicionalmente.
+# Declarar aqui sem essa ressalva seria o "parecendo coberto" que este arquivo caça.
+#
+# Falsificador: o próprio documento carrega o dele (US$/turno < 0,223 e p50 de contexto
+# < 275k numa sessão comparável), e manda a si mesmo sair se não for atingido.
+[agents]
+dispatch_protocol = "docs/protocolo-de-despacho.md"
+
 [agents.by_component.sentimento]
 architect = ".claude/agents/quant-architect.md"
 
