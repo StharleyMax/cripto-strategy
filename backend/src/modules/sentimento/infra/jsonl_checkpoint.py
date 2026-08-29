@@ -47,7 +47,7 @@ class JsonlCheckpoint:
         NAMED DEBT — the error classification is INCOMPLETE, and `CorruptedCheckpointError`
         only covers unreadable JSON. A readable payload with the wrong shape escapes the
         declared class `[MEDIDO 2026-08-28, universo 4 payloads, backend/.venv/bin/python
-        contra este modulo]`:
+        against this module]`:
           `{"chave": "a.csv"}` -> `KeyError: 'key'`
           `5`                  -> `TypeError: 'int' object is not subscriptable`
           `["a.csv"]`          -> `TypeError: list indices must be integers or slices, not str`

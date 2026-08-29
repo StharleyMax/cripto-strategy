@@ -242,9 +242,18 @@ tolerável aqui e não em geral.
 
 As docstrings deste backend estão em **inglês** (`ADR-011/D6`, `plano 01` item `1.11`). Comentários `#`,
 mensagens de erro e nomes de teste **continuam em português** — a convenção alcança a docstring, e só
-ela. **Idioma de docstring é convenção, não portão:** o que roda é `ruff check --select D`, que mede
-**presença e forma** e é **cego a idioma** — medido, não lido: traduzir uma docstring de volta ao
-português com a forma intacta deixa o comando **verde** (`README.md` da raiz, §"Idioma de docstring").
+ela. **Idioma de docstring é convenção, não portão.** O que roda é
+
+```bash
+cd backend && ruff check --select D src tests     # rc=0, "All checks passed!"
+```
+
+— o mesmo escopo de `backend/scripts/lint.sh`. Ele mede **presença e forma**, e é **cego a idioma**:
+medido, não lido — traduzir uma docstring de volta ao português com a forma intacta deixa o comando
+**verde**. ⚠️ **O caminho faz parte do número:** rodado **nu da raiz**, esse comando devolve `rc=1` com
+**8 achados pré-existentes em `scripts/verify_screen.py`**, que nenhum portão deste repositório linta
+`[MEDIDO 2026-08-29]`. Os dois números e as três mutações estão no `README.md` da raiz,
+§"Idioma de docstring é convenção, não portão".
 
 **O achado desta task, e ele é sobre o piso de cobertura, não sobre idioma.** Documentar um método de
 `Protocol` obriga a trocar o corpo `...` pela docstring — e **o `...` de uma linha é excluído da
@@ -252,7 +261,7 @@ cobertura pelo regex PADRÃO do `coverage.py`**, não por escolha deste reposit�
 `[MEDIDO 2026-08-28: CoverageConfig().exclude_list tem 3 padrões, e o segundo casa "def …: ..." numa
 linha só]`. A troca foi **feita e medida antes de ser desfeita**:
 
-| forma dos 3 stubs de `Protocol` | `use_cases` | TOTAL | `ruff check --select D` |
+| forma dos 3 stubs de `Protocol` | `use_cases` | TOTAL | `cd backend && ruff check --select D src tests` |
 |---|---|---|---|
 | `def process(...) -> None: ...` (hoje, com `noqa` nomeado) | **16/16 linhas** | **107** statements | verde |
 | `def process(...) -> None:` + docstring | **19/19 linhas** | **110** statements | verde |

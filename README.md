@@ -98,13 +98,32 @@ caro, mas porque as formas de medir que existem falham de maneiras que foram **m
 | lista fechada de palavras-função portuguesas em ASCII | **12 de 18** `[MEDIDO 2026-08-28]` — **6 falsos negativos, 33%** | recall de 67% num portão de bloqueio é ruído com severidade |
 | detector probabilístico de idioma | `[NÃO MEDIDO]` — dependência nova, veredito probabilístico | portão que erra sozinho é pior que convenção honesta |
 
-**O que É medido, e o que ele de fato mede:** `ruff check --select D` (pydocstyle) mede **presença** e
-**forma** — a docstring existe, o resumo cabe numa linha, termina em ponto, está no imperativo (`D401`).
-**Nenhuma regra `D` é sensível a idioma**, e isso não é leitura de documentação, é medição: trocar uma
-docstring inglesa por português **com a forma intacta** deixa o comando **verde**
-`[MEDIDO 2026-08-28, n=3 mutações no mesmo arquivo: M3 traduz JsonlCheckpoint.done() de volta ao
-português e o comando devolve rc=0, "All checks passed!"; M1 apaga essa mesma docstring → rc=1,
-D102; M2 tira o ponto final do resumo de record() → rc=1, D400]`.
+**O que É medido, e o que ele de fato mede:**
+
+```bash
+eval "$(make venv)"                               # ver §Setup — o `ruff` mora na venv
+cd backend && ruff check --select D src tests     # rc=0, "All checks passed!"
+```
+
+Ele (pydocstyle) mede **presença** e **forma** — a docstring existe, o resumo cabe numa linha, termina em
+ponto, está no imperativo (`D401`). **Nenhuma regra `D` é sensível a idioma**, e isso não é leitura de
+documentação, é medição: trocar uma docstring inglesa por português **com a forma intacta** deixa o
+comando **verde**
+`[MEDIDO 2026-08-28, n=3 mutações no mesmo arquivo, comando `cd backend && ruff check --select D src tests`:
+M3 traduz JsonlCheckpoint.done() de volta ao português e o comando devolve rc=0, "All checks passed!";
+M1 apaga essa mesma docstring → rc=1, D102; M2 tira o ponto final do resumo de record() → rc=1, D400]`.
+
+⚠️ **O caminho faz parte do número, e a forma nua mede outra coisa.** O escopo acima (`src tests`, a
+partir de `backend/`) é o de `backend/scripts/lint.sh`. **Rodado nu da raiz**, o mesmo comando devolve
+**`rc=1`, 8 achados, todos em `scripts/verify_screen.py`** — `D103`×4, `D403`×2, `D205`, `D209`
+`[MEDIDO 2026-08-29: backend/.venv/bin/python -m ruff check --select D, a partir da raiz → rc=1,
+"Found 8 errors."]`. Os 8 são **pré-existentes** (`scripts/` não foi tocado por `T-01.7`) e estão **fora
+de todo escopo de lint deste repositório**: `lint.sh` linta `src tests`, o ESLint linta `frontend/src`,
+e **`scripts/` não é lintado por ninguém**. Na base `c89d435` a forma nua devolvia **39 = 16
+(`backend/src`) + 15 (`backend/tests`) + 8 (`scripts/`)**
+`[MEDIDO 2026-08-29: git archive c89d435 | tar -x, e o mesmo comando na árvore extraída → "Found 39 errors."]`;
+hoje devolve **8**, porque os 31 do backend fecharam. **Cite sempre a forma escopada** — a nua nunca
+disse "All checks passed!" neste repositório.
 
 **A correção de idioma é verificável por revisão humana — e é assim que ela é conferida.**
 Declarar uma regra automática de idioma **reprova** a fase (`plano 01`, `D1.10`).
