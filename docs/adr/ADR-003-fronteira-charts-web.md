@@ -250,7 +250,7 @@ que era do `/architect`, **está feita**:
 
 | o que | onde foi parar |
 |---|---|
-| o DoD, com o critério **inalterado** | **`D5.12`** da [fase `05`](../plans/SPEC-001-plataforma-dados/05_fatia_visivel.md) — é onde o universo nasce e onde as duas metades de `1.8'` ficam disponíveis na mesma passada |
+| o DoD, com a **propriedade inalterada** e o **comando mais forte** | **`D5.12`** da [fase `05`](../plans/SPEC-001-plataforma-dados/05_fatia_visivel.md) — é onde o universo nasce e onde as duas metades de `1.8'` ficam disponíveis na mesma passada. **O universo migra literal; o comando ganha a metade `cala`, que `D1.6` não exigia** — dizer "critério inalterado" subdeclarava a migração `[/review 2026-08-29]` |
 | a linha `D1.6` da fase `01` | **tarjada, não apagada**, com a migração declarada — [plano `01`](../plans/SPEC-001-plataforma-dados/01_governanca_gateante.md) §*"`D1.6` não era DoD desta fase"* |
 
 **Por que migrar e não diferir:** a fase `01` fechou com `f01·QA=APPROVED` e `f01·REVIEW=COMPLIANT`

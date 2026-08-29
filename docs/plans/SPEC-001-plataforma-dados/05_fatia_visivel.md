@@ -41,7 +41,7 @@
 
 ### ⬅️ Por que `D5.12` está aqui e não na fase `01` — e por que isto NÃO é o DoD sendo afrouxado
 
-**Migrado em 2026-08-29 pelo `/architect`.** O critério **não mudou uma palavra**; mudou de fase. `D1.6` foi escrito na fase `01` porque a fronteira é decidida lá (`ADR-003`), mas **o instrumento que a torna executável só tem universo aqui** — e a fase `01` fechou com o DoD aberto, produzindo um documento em desacordo com o ledger (`f01·QA=APPROVED`).
+**Migrado em 2026-08-29 pelo `/architect`.** A **propriedade verificada é a mesma** e o **universo migrou literal** (*2 imports proibidos, 1 em cada direção*); o **comando ficou ESTRITAMENTE mais forte** — ganhou a metade **`cala`** de `1.8'`, que `D1.6` não exigia. **⚠️ Correção do `/review` 2026-08-29:** a primeira redação dizia *"não mudou uma palavra"*, e isso é **falso campo a campo** — só o universo é literal. A direção da mudança é de **aperto**, e a frase antiga **subdeclarava o próprio mérito da migração**. `D1.6` foi escrito na fase `01` porque a fronteira é decidida lá (`ADR-003`), mas **o instrumento que a torna executável só tem universo aqui** — e a fase `01` fechou com o DoD aberto, produzindo um documento em desacordo com o ledger (`f01·QA=APPROVED`).
 
 **A recusa da fase `01` foi sustentada por `/build`, `/qa` e `/review` com dois fatos, e a ORDEM deles decide:**
 

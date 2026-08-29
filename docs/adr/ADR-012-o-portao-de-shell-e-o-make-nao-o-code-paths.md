@@ -47,6 +47,21 @@ $ harness rules --mode file --path <o mesmo> --surface ci                 # rc=0
 
 ⇒ **`rc=0` de `harness rules --mode file` é ambíguo entre *"avaliado e limpo"* e *"nunca avaliado"*, e o desempate é `code-paths classify` (rc=0 vs rc=1).** Quem citar o `rc=0` sem o `classify` ao lado publicou meia medição — é a mesma classe das nove instâncias de *"método de busca que não vê o que afirma ver"* desta trilha.
 
+> **⚠️ E há um TERCEIRO significado, que o `classify` NÃO separa — achado do `/review` em 2026-08-29, e é o pior dos três.** `classify` é **puramente sintático sobre o caminho**: ele **não confere existência**. Um erro de digitação no `--path` devolve `rc=0` **e** `"producao"`, e a regra acima, como estava escrita, manda ler isso como *"avaliado e limpo"*.
+>
+> ```
+> $ harness rules --mode file --path frontend/src/features/painel/serie.tsx   # rc=0, saída de 0 byte
+> $ harness code-paths classify   frontend/src/features/painel/serie.tsx      # rc=0, "producao"
+> $ ls frontend/src/features/painel/
+> config.ts   Filtro.tsx                                    ⇐ serie.tsx NÃO EXISTE
+> ```
+>
+> `[MEDIDO 2026-08-29 pelo /review]`. E o arquivo que expõe o buraco é **exatamente** o `serie.tsx` que o erratum de `1.9'` discute — o nome circula nesta trilha como receita de bancada, e não está na árvore.
+>
+> **`[BLOQUEIO]` por vácuo é ruído; verde por caminho inexistente é FALSO POSITIVO DE CONFORMIDADE**, e o segundo é barato de cometer e caro de detectar.
+>
+> ⇒ **A regra tem TRÊS termos, não dois.** Antes de citar `rules --mode file`: **(1)** `test -f <path>` — o arquivo existe? **(2)** `code-paths classify <path>` — está no universo? **(3)** só então o `rc` de `rules`. **Ou, mais barato e imune aos três:** use **`--mode sweep`**, que enumera a árvore e por construção só enxerga o que existe.
+
 ## Decisão
 
 ### D1 · `*.sh` **não** entra em `include_globs` — e há um terceiro motivo, além dos dois do `/review`
@@ -60,7 +75,21 @@ $ ls scripts/hooks/
 commit-msg   pre-push.pre-harness
 ```
 
-`[MEDIDO 2026-08-29]` · **`commit-msg` é o portão que o `CLAUDE.md` declara em voz alta** (*"não é convenção — é portão"*), e `pre-push.pre-harness` é `ADR-011/D3b`. Um glob por extensão os deixa de fora **por construção**, e fecharia a lacuna exatamente onde ela não dói, publicando cobertura no lugar errado. Universo de shell real, por conteúdo e não por extensão: **9 arquivos** — 5 em `backend/scripts/`, 2 em `scripts/`, 2 em `scripts/hooks/` `[MEDIDO 2026-08-29: os 9 enumerados um a um em D3 abaixo, cada um com seu `rc` impresso]`.
+`[MEDIDO 2026-08-29]` · **`commit-msg` é o portão que o `CLAUDE.md` declara em voz alta** (*"não é convenção — é portão"*), e `pre-push.pre-harness` é `ADR-011/D3b`. Um glob por extensão os deixa de fora **por construção**, e fecharia a lacuna exatamente onde ela não dói, publicando cobertura no lugar errado. **Universo de shell versionado, descoberto por shebang: 10 arquivos — e `lint-shell` avalia 9, com o décimo EXCLUÍDO por escrito.**
+
+```
+$ git grep -lI -E '^#!.*(bash|sh)$' 48d5500 -- .
+.harness/mechanism    ← GERADO, excluído   |   scripts/hooks/commit-msg
+backend/scripts/bootstrap.sh               |   scripts/hooks/pre-push.pre-harness
+backend/scripts/boundaries.sh              |   scripts/install-git-hooks.sh
+backend/scripts/check-coverage-layers.sh   |   scripts/measure_stitch_drift.sh
+backend/scripts/lint.sh                    |
+backend/scripts/test.sh                    |
+```
+
+`[MEDIDO 2026-08-29: 10 arquivos, e os **10 shebangs impressos um a um** → **10 de 10 são `#!/usr/bin/env bash`**. Não há `#!/bin/sh` cujo dialeto o parser do `bash` julgaria por outra gramática — a objeção óbvia contra `bash -n` não se aplica a este universo]`
+
+> **⚠️ Correção de 2026-08-29, e ela é do `/review`: a primeira redação publicava "9 arquivos" e o método não reproduzia o número.** Eu contei por diretório; `D1` e `D3` mandam descobrir **por shebang**, e por shebang são **10**. O décimo é **`.harness/mechanism`** — versionado, shebang `bash`, `bash -n` → `rc=0`. **Excluir é certo** (é arquivo **gerado**, marcado *"não edite"*: um portão que reprove código gerado transfere para quem edita um arquivo que ninguém edita). **O que estava errado era o silêncio** — quem implementasse `make lint-shell` à letra do método declarado o incluiria. ⇒ **`lint-shell` exclui `.harness/**` explicitamente, e a exclusão é parte da decisão, não detalhe de implementação.**
 
 ### D2 · `shellcheck` **não** é adotado hoje — e a razão não é gosto, é `1.8'`
 
@@ -98,14 +127,19 @@ scripts/hooks/pre-push.pre-harness   -> rc=2 :: linha  92: erro de sintaxe: fim 
 **E o "antes" não é *"já temos `bash -n`"* — é ZERO, e isto foi medido em vez de suposto.** A frase que circulava (*"são governados por `bash -n` e por mais ninguém"*) sugere um verificador em operação. **Não há nenhum.** O comando, e ele precisa excluir este arquivo pela razão dita logo abaixo:
 
 ```
-$ grep -rn 'bash -n' . --exclude-dir=.venv --exclude-dir=node_modules --exclude-dir=.git \
-    --exclude='ADR-012-*'
+$ git grep -F 'bash -n' 48d5500
 harness.toml:201        docs/INDEX.md:63        backend/README.md:558
 ```
 
-**3 ocorrências, 3 de 3 em PROSA** — e **zero** em `Makefile`, em `.sh` ou em hook `[MEDIDO 2026-08-29 na base `48d5500`]`.
+**3 ocorrências, 3 de 3 em PROSA** — e **zero** em `Makefile`, em `.sh` ou em hook `[MEDIDO 2026-08-29, ancorado no rev `48d5500`]`.
 
-> **⚠️ E este parágrafo quase publicou o defeito que ele descreve.** Escrevi *"3 ocorrências"*, rodei o `grep` **depois** de o rascunho existir, e a saída veio **11** — porque **8 delas são desta própria ADR**. É *"número medido envelhece com a edição seguinte"* pela quarta vez nesta trilha, agora dentro do documento que a nomeia. O número **3** é do universo `48d5500` **antes** deste arquivo, e por isso o comando publicado carrega o `--exclude` que o torna reproduzível **depois** dele `[MEDIDO 2026-08-29: sem o `--exclude` → 11; com ele → 3]`.
+> **⚠️ Este parágrafo publicou o defeito que ele descreve — DUAS vezes, e a segunda dentro da correção da primeira.**
+>
+> **1ª:** escrevi *"3 ocorrências"*, rodei o `grep` **depois** de o rascunho existir, e veio **11** — **8** eram desta própria ADR. *"Número medido envelhece com a edição seguinte"*, **4ª vez** nesta trilha.
+>
+> **2ª, achada pelo `/review`:** o conserto que publiquei — o mesmo `grep` **mais** `--exclude='ADR-012-*'` — eu afirmei que *"o torna reproduzível **depois** dele"*. **Não torna.** Rodado verbatim no `HEAD`, dá **7**, não 3: as 4 novas são as que escrevi **em outros arquivos** (`01_governanca_gateante.md` ×3 e `docs/INDEX.md` ×1), que nenhum `--exclude` de um arquivo alcança `[MEDIDO 2026-08-29]`. **5ª instância — dentro do parágrafo que a nomeava como quarta.**
+>
+> **A lição, e ela é o conserto:** `--exclude` enumera **o que eu já sabia que ia mudar**, e por isso envelhece junto comigo. **`git grep <termo> <rev>` ancora no COMMIT** — a saída é a mesma amanhã, e nenhuma edição futura, minha ou de outrem, a move. **O número `3` sempre esteve certo e sempre esteve rotulado `[na base 48d5500]`; o que não reproduzia era a meta-afirmação sobre o método.**
 
 O que existe hoje é o parse incidental da execução, e **ele não é equivalente**:
 
@@ -148,7 +182,7 @@ commands/qa.md:19     → harness policy --key agents ;  :23 age sobre `by_compo
 
 > **⚠️ A primeira redação deste parágrafo publicava "17 ocorrências de `by_component`", e o método estava errado — é a instância nº 7 da família, *"casar o homônimo em vez do campo"*, reincidindo.** `grep -rn 'by_component'` devolve **28** `[MEDIDO 2026-08-29]`, e as de `scripts/tasks.sh:492-537` e `scripts/status.sh:639-663` são uma **variável local que conta TASKS por componente** — objeto sem relação nenhuma com `[agents.by_component]`. Contá-las como consumidoras da política teria publicado *"há mais consumidores do que eu pensava"* a partir de um homônimo. **O veredito não mudou; a evidência dele mudou, e só a busca pelo campo qualificado (`agents.by_component`) o sustenta.**
 
-**E `architect` tem exatamente a mesma propriedade** — declarado para `sentimento`/`convergencia`/`backtest` desde antes desta feature, e igualmente não roteado. ⇒ **não é fraqueza que `T-01.3` introduziu**, e tratá-la como dívida desta fase seria atribuir a `charts`/`web` um defeito que o repositório sempre teve. Mudar isso é **editar `commands/*.md` do `harness-plugin` — outro repositório** — exatamente a mesma fronteira que o plano `01:60` já respeitou ao recusar consertar o pack `hexagonal-layers` daqui. **Recomendação ao owner, não ato de agente.**
+**E `architect` tem exatamente a mesma propriedade** — declarado para `sentimento`/`convergencia`/`backtest` desde antes desta feature, e igualmente não roteado. ⇒ **não é fraqueza que `T-01.3` introduziu**, e tratá-la como dívida desta fase seria atribuir a `charts`/`web` um defeito que o repositório sempre teve. Mudar isso é **editar `commands/*.md` do `harness-plugin` — outro repositório** — exatamente a mesma fronteira que o plano da fase `01` já respeitou ao recusar consertar o pack `hexagonal-layers` daqui — ver o ⚠️ *"`D1.7` não passa com o pack `hexagonal-layers`"* em [`01_governanca_gateante.md`](../plans/SPEC-001-plataforma-dados/01_governanca_gateante.md) (**âncora textual, não número de linha**: era `01:60` na base `48d5500`, e a edição desta rodada moveu o alvo). **Recomendação ao owner, não ato de agente.**
 
 **(b) A atribuição do owner deixar de ser desfazível em silêncio — SIM, e é barato.** O que a mutação de `docs/gate-de-design.md` mostrou é mais grave que a ausência de roteamento: **trocar `charts` → `ui-designer` e `web` → `quant-architect`, invertendo literalmente a resposta de `Q16`, sai `rc=0` em `validate --strict`, `policy`, `doctor`, `sweep` e `tasks validate` — silêncio total** `[DOC: docs/gate-de-design.md §"O que a mutação mostrou", 5 mutações efêmeras, MEDIDO 2026-08-28 por `T-01.3`]`. Uma decisão do owner que qualquer edição desfaz sem um único comando acusar.
 
