@@ -1,4 +1,4 @@
-"""`CA-F0-5` / `D3.1`: matar o processo no meio e retomar — nao duplica e nao perde."""
+"""`CA-F0-5` / `D3.1`: kill the process halfway and resume — it never duplicates, never loses."""
 
 from __future__ import annotations
 
@@ -55,53 +55,63 @@ def _conferir_saida_integra(source_dir: Path, output_dir: Path, keys: tuple[str,
 
 
 class ContadorDeTrabalho:
-    """Envolve um worker e conta QUANTAS vezes cada chave foi realmente processada."""
+    """Wrap a worker and count HOW MANY times each key was actually processed."""
 
     def __init__(self, alvo: FileEtlWorker) -> None:
+        """Wrap `alvo` and start the call log empty."""
         self._alvo = alvo
         self.chamadas: list[str] = []
 
     def process(self, key: str) -> None:
+        """Log the call and delegate to the wrapped worker."""
         self.chamadas.append(key)
         self._alvo.process(key)
 
 
 class CheckpointVolatil:
-    """Checkpoint em MEMORIA — o contra-exemplo, nao um substituto."""
+    """Checkpoint held in MEMORY — the counter-example, not a substitute."""
 
     def __init__(self) -> None:
+        """Start with nothing recorded as done."""
         self._done: set[str] = set()
 
     def done(self) -> frozenset[str]:
+        """Return what this in-memory checkpoint believes is done."""
         return frozenset(self._done)
 
     def record(self, key: str) -> None:
+        """Record `key` in memory only — it does not survive a restart, and that is the point."""
         self._done.add(key)
 
 
 def test_janela_declarada_recusa_chave_repetida() -> None:
+    """Reject a window that declares the same key twice."""
     with pytest.raises(InvalidBacklogError):
         EtlBacklog.of(["a.csv", "b.csv", "a.csv"])
 
 
 def test_janela_declarada_recusa_chave_vazia() -> None:
+    """Reject a window that declares an empty key."""
     with pytest.raises(InvalidBacklogError):
         EtlBacklog.of(["a.csv", ""])
 
 
 def test_pendente_preserva_a_ordem_declarada() -> None:
+    """Keep the declared order in what is still pending, not the sorted order."""
     backlog = EtlBacklog.of(["c", "a", "b"])
     assert backlog.pending(done=["a"]) == ("c", "b")
     assert len(backlog) == 3
 
 
 def test_checkpoint_fora_da_janela_e_erro_e_nao_ruido() -> None:
+    """Raise when the checkpoint claims a key the declared window does not contain."""
     backlog = EtlBacklog.of(["a", "b"])
     with pytest.raises(CheckpointOutsideWindowError):
         backlog.pending(done=["a", "z"])
 
 
 def test_drenagem_completa_processa_cada_arquivo_uma_unica_vez(tmp_path: Path) -> None:
+    """Process each of the 120 files exactly once, and publish every one of them intact."""
     source_dir, output_dir = tmp_path / "dump", tmp_path / "out"
     keys = _semear(source_dir)
     checkpoint = JsonlCheckpoint(tmp_path / "checkpoint.jsonl")
@@ -116,6 +126,7 @@ def test_drenagem_completa_processa_cada_arquivo_uma_unica_vez(tmp_path: Path) -
 
 
 def test_segunda_drenagem_sem_falha_nao_refaz_nada(tmp_path: Path) -> None:
+    """Redo nothing on a second drain when the first one finished without failing."""
     source_dir, output_dir = tmp_path / "dump", tmp_path / "out"
     keys = _semear(source_dir, quantos=10)
     checkpoint = JsonlCheckpoint(tmp_path / "checkpoint.jsonl")
@@ -128,24 +139,26 @@ def test_segunda_drenagem_sem_falha_nao_refaz_nada(tmp_path: Path) -> None:
 
 
 def test_matar_o_processo_no_meio_e_retomar_nao_duplica_nem_perde(tmp_path: Path) -> None:
-    """`D3.1`, com SIGKILL de verdade: 120 arquivos, morte no meio, retomada em processo.
+    """`D3.1`, with a real SIGKILL: 120 files, death halfway, resume in-process.
 
-    DOIS CAVEATS REGISTRADOS, porque um teste que passa sem eles escritos vira defeito
-    redescoberto. Nenhum dos dois e consertado nesta task — pertencem a fase `03` (`T-03.10`).
+    TWO CAVEATS PUT ON THE RECORD, because a test that passes without them written down turns
+    into a rediscovered defect. Neither is fixed in this task — they belong to phase `03`
+    (`T-03.10`).
 
-    1. A JANELA DE RISCO REAL DE "NAO DUPLICA" NAO E GARANTIDA POR ESTE TESTE. Essa janela e
-       "item publicado (`os.replace` ja correu) mas AINDA NAO registrado", e ela so existe
-       entre `worker.process` e `checkpoint.record`. Aqui o relogio do driver e dominado pelo
-       `time.sleep(0,02 s)` que vive DENTRO de `transform`, isto e, ANTES do `os.replace` —
-       logo a morte quase certamente cai fora da janela. E este teste NAO afirma onde a morte
-       caiu: nao ha assercao sobre isso em nenhuma das suas linhas. Quem prova de fato que
-       reprocessar e inocuo e o teste de idempotencia no fim deste arquivo
-       (`test_reprocessar_o_mesmo_item_...`). Hoje "nao duplica" e REIVINDICADA aqui e PROVADA la.
-    2. ESCALA: `D3.1` declara custo de **0,86 s/arquivo (n=11)** `[DOC: tasks_review.md:274]`,
-       medido sobre dump real. Aqui os arquivos tem **8 a 10 bytes (media 9,08 B, n=120)**
-       `[MEDIDO 2026-08-28]` e o custo por item e um `time.sleep` ARTIFICIAL de 0,02 s. A
-       INVARIANTE testada (nao duplica / nao perde) e a mesma; a ESCALA nao e, e nada aqui
-       mede o custo por arquivo `[NAO MEDIDO]`.
+    1. THE REAL RISK WINDOW OF "NEVER DUPLICATES" IS NOT GUARANTEED BY THIS TEST. That window
+       is "item published (`os.replace` already ran) but NOT YET recorded", and it only exists
+       between `worker.process` and `checkpoint.record`. Here the driver's clock is dominated
+       by the `time.sleep(0.02 s)` living INSIDE `transform`, that is, BEFORE the `os.replace`
+       — so the death almost certainly falls outside the window. And this test does NOT claim
+       where the death fell: there is no assertion about it on any of its lines. What actually
+       proves that reprocessing is harmless is the idempotence test at the end of this file
+       (`test_reprocessar_o_mesmo_item_...`). Today "never duplicates" is CLAIMED here and
+       PROVEN there.
+    2. SCALE: `D3.1` declares a cost of **0.86 s/file (n=11)** `[DOC: tasks_review.md:274]`,
+       measured over a real dump. Here the files are **8 to 10 bytes (mean 9.08 B, n=120)**
+       `[MEDIDO 2026-08-28]` and the cost per item is an ARTIFICIAL `time.sleep` of 0.02 s. The
+       INVARIANT under test (never duplicates / never loses) is the same; the SCALE is not, and
+       nothing here measures the cost per file `[NAO MEDIDO]`.
     """
     source_dir, output_dir = tmp_path / "dump", tmp_path / "out"
     keys = _semear(source_dir)
@@ -185,7 +198,7 @@ def test_matar_o_processo_no_meio_e_retomar_nao_duplica_nem_perde(tmp_path: Path
 
 
 def test_checkpoint_volatil_reprocessa_a_janela_inteira(tmp_path: Path) -> None:
-    """O falsificador da durabilidade: troque o `fsync` por memoria e o `D3.1` REPROVA."""
+    """Falsify the durability claim: swap the `fsync` for memory and `D3.1` FAILS."""
     source_dir, output_dir = tmp_path / "dump", tmp_path / "out"
     keys = _semear(source_dir, quantos=10)
     worker = FileEtlWorker(source_dir, output_dir, _transform)
@@ -200,6 +213,7 @@ def test_checkpoint_volatil_reprocessa_a_janela_inteira(tmp_path: Path) -> None:
 
 
 def test_cauda_truncada_e_descartada_e_o_resto_sobrevive(tmp_path: Path) -> None:
+    """Discard a tail written without a newline, and keep every complete line before it."""
     ledger = tmp_path / "checkpoint.jsonl"
     checkpoint = JsonlCheckpoint(ledger)
     checkpoint.record("a.csv")
@@ -213,6 +227,7 @@ def test_cauda_truncada_e_descartada_e_o_resto_sobrevive(tmp_path: Path) -> None
 
 
 def test_linha_completa_ilegivel_e_corrupcao_e_nao_e_tolerada(tmp_path: Path) -> None:
+    """Treat a COMPLETE unreadable line as corruption, never as tolerable noise."""
     ledger = tmp_path / "checkpoint.jsonl"
     checkpoint = JsonlCheckpoint(ledger)
     checkpoint.record("a.csv")
@@ -224,6 +239,7 @@ def test_linha_completa_ilegivel_e_corrupcao_e_nao_e_tolerada(tmp_path: Path) ->
 
 
 def test_checkpoint_ausente_ou_vazio_devolve_janela_inteira(tmp_path: Path) -> None:
+    """Return no entry at all when the ledger is missing, empty, or only blank lines."""
     ausente = JsonlCheckpoint(tmp_path / "nao-existe.jsonl")
     assert ausente.entries() == ()
 
@@ -237,13 +253,14 @@ def test_checkpoint_ausente_ou_vazio_devolve_janela_inteira(tmp_path: Path) -> N
 
 
 def test_reprocessar_o_mesmo_item_nao_muda_o_resultado_nem_deixa_parcial(tmp_path: Path) -> None:
-    """IDEMPOTENCIA no caminho feliz — nao atomicidade: aqui NAO ha interrupcao nenhuma.
+    """IDEMPOTENCE on the happy path — not atomicity: there is NO interruption here at all.
 
-    O nome anterior (`..._e_atomica_...`) prometia mais do que o corpo mede, e nome de teste e
-    a documentacao que mais gente le. A atomicidade do `os.replace` NAO e testada nesta suite
-    `[NAO MEDIDO]`: exercitar de verdade exigiria interromper ENTRE o `fsync` e o `rename` e
-    observar o diretorio de fora. O que esta suite mede sobre a publicacao e a ORDEM das
-    chamadas (`tests/sentimento/test_durabilidade_da_infra.py`) e a ausencia de residuo aqui.
+    The previous name (`..._e_atomica_...`) promised more than the body measures, and a test
+    name is the documentation most people read. The atomicity of `os.replace` is NOT tested by
+    this suite `[NAO MEDIDO]`: exercising it for real would mean interrupting BETWEEN the
+    `fsync` and the `rename` and observing the directory from outside. What this suite does
+    measure about publication is the ORDER of the calls
+    (`tests/sentimento/test_durabilidade_da_infra.py`) and the absence of residue here.
     """
     source_dir, output_dir = tmp_path / "dump", tmp_path / "out"
     keys = _semear(source_dir, quantos=3)
