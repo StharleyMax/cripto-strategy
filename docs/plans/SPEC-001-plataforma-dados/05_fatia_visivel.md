@@ -37,6 +37,22 @@
 | **D5.9** | a grade tem **UMA** implementação | comparar a saída da grade usada pelo gráfico com a usada pelo acessor | `sha256` da projeção canônica **igual** sobre **4 dias × 1 símbolo × 3 TFs** |
 | **D5.10** | identidade é dimensão | inserir `<Anotacao>` | `principal_id` **preenchido**, nunca `NULL`, nunca constante implícita |
 | **D5.11** | o eixo aguenta a carga que F4 vai exigir | coordenadas X contra os `event_time` originais | tolerância **0,5 px**. **⚠️ `[NÃO MEDIDO]` — declarado o MAIOR RISCO TÉCNICO desta especificação.** Aqui com carga menor; a carga cheia (**288 pontos + 1.440 candles**) é `08` |
+| **D5.12** | **a fronteira `charts` ⇄ `web` é EXECUTÁVEL — o contrato reprova nas duas direções** — ⬅️ **RECEBIDO da fase `01` em 2026-08-29, onde era `D1.6`** | as duas metades de `1.8'` **na mesma passada**: **morde** — 2 violadores efêmeros, 1 em cada direção ⇒ `exit ≠ 0` **nomeando o contrato** · **cala** — os módulos **reais** de `charts` (`5.2`) e o lado `web` (`5.6`, `frontend/src/app/`) ⇒ verde | **2 imports proibidos, 1 em cada direção** — o universo que a fase `01` não tinha `[MEDIDO 2026-08-28 por `T-01.3`: `find frontend/src -type f` → **4**, e **zero** declaração de import; re-conferido em 2026-08-29 → os mesmos **4**, `grep -rnE '^\s*(import\|export)\s.*from\s' frontend/src` → **rc=1, nenhuma ocorrência**]`. **⚠️ O "cala" da fase `01` era VACUOSO** (contrato que nunca olhou nada), e é isso que esta fase conserta: aqui ele lê código real |
+
+### ⬅️ Por que `D5.12` está aqui e não na fase `01` — e por que isto NÃO é o DoD sendo afrouxado
+
+**Migrado em 2026-08-29 pelo `/architect`.** O critério **não mudou uma palavra**; mudou de fase. `D1.6` foi escrito na fase `01` porque a fronteira é decidida lá (`ADR-003`), mas **o instrumento que a torna executável só tem universo aqui** — e a fase `01` fechou com o DoD aberto, produzindo um documento em desacordo com o ledger (`f01·QA=APPROVED`).
+
+**A recusa da fase `01` foi sustentada por `/build`, `/qa` e `/review` com dois fatos, e a ORDEM deles decide:**
+
+1. **O que decide (vale em qualquer dia):** o único instrumento disponível para TypeScript é `no-restricted-imports`, que casa **especificador de módulo — isto é, CAMINHO**. Declará-lo gravaria `frontend/src/features/charts/**` no artefato de política, que é **a alternativa que [`ADR-003:46`](../../adr/ADR-003-fronteira-charts-web.md) recusa** (*"amarrar componente a caminho faz mover arquivo trocar de dono de julgamento"*). **Fechar `D1.6` assim seria inverter a ADR pela porta dos fundos para satisfazer um DoD.**
+2. **O que adia (vale só hoje):** universo vazio.
+
+⇒ **`D5.12` herda o `Fato 1` como pré-condição, e ele não vence com a mudança de fase.** Ter universo cheio resolve o `Fato 2` e **não** resolve o `Fato 1`.
+
+**Por isso este DoD nasce com uma pergunta de arquitetura embutida, e ela é para `T-05.1` responder com medição:** *o contrato pode ser expresso sem que `charts` e `web` sejam definidos por caminho?* Se **sim** — via `import/no-restricted-paths` sobre grupos declarados, `project references` do TypeScript, ou um campo de manifesto por módulo — `ADR-003` fica de pé e `D5.12` fecha. **Se NÃO**, então `ADR-003:75` está certo ao dizer que a ADR *"nomeou um instrumento que não alcança a fronteira que ela mesma define"*, e o desfecho correto **não é** declarar o contrato por caminho e chamar de fechado: é **reabrir `ADR-003` e reescrever `FR-1`/`FR-2` com um instrumento que exista**. `[NÃO MEDIDO: nenhuma das três alternativas foi rodada — não há universo em que rodá-las até `5.2` existir]`
+
+**O que NÃO é aceitável, e está escrito para que ninguém o faça depois** (herdado literal de `ADR-003:237-241`): declarar o contrato em `frontend/eslint.config.mjs` para o DoD "fechar". Ele passaria em `cala` por vacuidade, ninguém o rodaria contra violador real, e o repositório trocaria um DoD aberto e nomeado por um portão falso. **`D5.12` aberto com dono é mais barato que `D5.12` fechado com mentira.**
 
 ## Não faz
 

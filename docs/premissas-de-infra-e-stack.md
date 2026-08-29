@@ -144,9 +144,30 @@ estava faltando para F0 e F5:
 - **`import-linter` é o mecanismo de fronteira de bounded context**, e ele mapeia direto no vocabulário fechado de
   componentes deste repo (`sentimento`, `charts`, `convergencia`, `backtest`, `web`) — um contrato `forbidden` por
   componente é a versão executável de *"componente alvo declarado"*.
-- **Python 3.12** (`^3.12` no Poetry, `mypy python_version = "3.12"`) — **coincide com o 3.12.8 que o
+- ~~**Python 3.12** (`^3.12` no Poetry, `mypy python_version = "3.12"`) — **coincide com o 3.12.8 que o
   `harness doctor` resolve**, e **contradiz o `.python-version` = 3.13.13** que ficou solto na raiz deste repo.
-  ⇒ argumento a favor de removê-lo, não de comitá-lo.
+  ⇒ argumento a favor de removê-lo, não de comitá-lo.~~
+  > 🔴 **SUPERSEDED por [`ADR-011/D5`](adr/ADR-011-o-portao-sai-do-harness-e-vai-para-o-make.md) em 2026-08-28.
+  > Tarjado — não apagado — pelo `/architect` em 2026-08-29.** Este repositório **não apaga**; o texto acima
+  > continua legível porque a medição que ele carrega (`.python-version` = `3.13.13`, e o `harness doctor`
+  > resolvendo 3.12.8) **era verdadeira quando escrita**. O que caiu foi a **conclusão**, e o **sinal se
+  > inverteu**: o `.python-version` **FICA**, e **3.13 é o alvo**.
+  >
+  > **Estado de hoje, medido:** `cat .python-version` → **`3.13.13`** · as declarações de versão nas superfícies
+  > que declaram → **6 linhas, `0` divergentes de 3.13** `[MEDIDO 2026-08-29 na base `48d5500`:
+  > `grep -nE '^(requires-python|python_version|target-version|PY_ALVO)' backend/pyproject.toml backend/scripts/*.sh`
+  > lista as 6; a mesma lista por `grep -cvE '3\.13|py313'` → **`0`**]`.
+  >
+  > **Por que a inversão, em uma frase de `ADR-011/D5`:** a coincidência com o `3.12.8` do `doctor` era
+  > argumento sobre **conveniência de ambiente**, não sobre a versão que o projeto quer declarar — e um
+  > arquivo de versão solto na raiz é **declaração**, não sujeira, desde que alguma superfície a **confira**.
+  > Hoje **três** conferem, e o assert sai **`rc=3`** se o venv divergir (`bootstrap.sh`, `lint.sh`,
+  > `boundaries.sh`).
+  >
+  > **Esta órfã não era de task nenhuma** (diff zero em todas as 7 da fase `01`), e por isso sobreviveu ao
+  > ciclo inteiro. **As outras duas menções a 3.12 neste arquivo — `:60` e `:67` — caem pelo mesmo
+  > `ADR-011/D5`** e ficam igualmente legíveis: são a *declaração do owner à época*, e reescrevê-las
+  > apagaria o que ele de fato disse em 2026-08-25.
 
 *"podemos discutir os components de infra"* `[literal]` — registrado: os componentes de infra ficam **abertos para
 discussão no ADR**, não decididos aqui.
