@@ -452,9 +452,9 @@ respondendo pergunta ligeiramente diferente da que se quis fazer", desta vez com
 ⇒ O "antes" real é **assimétrico com as metades INVERTIDAS em relação ao plano**: o `.py` é **ACEITO**
 `[MEDIDO 2026-08-29: harness rules --mode file sobre o violador de camada → rc=0, saída vazia;
 harness rules --mode sweep --surface git-hook → rc=0]` e o `.tsx` **que o plano nomeia** é
-**RECUSADO** `[MEDIDO 2026-08-29: com `frontend/src/features/painel/serie.tsx` (a receita de `§3` do
+**RECUSADO** `[MEDIDO 2026-08-29: com `frontend/src/features/panel/serie.tsx` (a receita de `§3` do
 `frontend/README.md`) na árvore, `harness rules --mode sweep --surface git-hook` → rc=1,
-`[BLOQUEIO] [web-fullstack.browser-imports-server] frontend/src/features/painel/serie.tsx:1`]`. A
+`[BLOQUEIO] [web-fullstack.browser-imports-server] frontend/src/features/panel/serie.tsx:1`]`. A
 bancada usou um `.tsx` de `any` + `console` — **sobre ELE, e só sobre ele**, o "antes" é ACEITO
 `[MEDIDO 2026-08-29: o mesmo sweep, com o `any`+`console` no lugar → rc=0]`.
 
@@ -565,8 +565,8 @@ instalação é ato de quem tiver a árvore inteira, e não de uma task rodando 
 | `src/modules/sentimento/use_cases/drain_etl_backlog.py` | `use_cases` | a drenagem retomável e as duas **portas** (`ItemWorker`, `Checkpoint`) |
 | `src/modules/sentimento/infra/jsonl_checkpoint.py` | `infra` | checkpoint durável em JSONL append-only, `fsync` por linha, cauda truncada descartada |
 | `src/modules/sentimento/infra/file_etl_worker.py` | `infra` | publica por **rename atômico** ⇒ reprocessar é inócuo |
-| `tests/sentimento/test_etl_backlog_retomavel.py` | — | **`CA-F0-5` / `D3.1`**: 120 arquivos, `SIGKILL` de verdade no meio, retomada |
-| `tests/sentimento/test_durabilidade_da_infra.py` | — | a durabilidade **observada**: `os.fsync` espiado por `monkeypatch`, conteúdo já no arquivo e `rename` ainda não feito **no instante da chamada** |
+| `tests/sentimento/test_resumable_etl_backlog.py` | — | **`CA-F0-5` / `D3.1`**: 120 arquivos, `SIGKILL` de verdade no meio, retomada |
+| `tests/sentimento/test_infrastructure_durability.py` | — | a durabilidade **observada**: `os.fsync` espiado por `monkeypatch`, conteúdo já no arquivo e `rename` ainda não feito **no instante da chamada** |
 | `tests/helpers/drain_driver.py` | — | o subprocesso que o teste mata. Sem ele "matar o processo" seria simulação |
 
 O layout `modules/<contexto>/{domain,use_cases,infra}` é a peça 1 de **`ADR-009/D1`**. O piso de
@@ -677,7 +677,23 @@ Grep é evidência **textual** — prova que ninguém escreveu a palavra, não q
 A prova de comportamento é rodar a suíte com `socket` amputado, e ela também alcança o **subprocesso
 do driver** (que recebe `PYTHONPATH=<backend>`, o mesmo diretório do `sitecustomize.py`):
 
+> ### ⛔ A RECEITA ABAIXO NÃO FUNCIONA MAIS. NÃO A RODE — pule para a corrigida.
+>
+> Ela **quebrou em 2026-08-29**, quando `T-03.7` trouxe o primeiro módulo que importa
+> `http.client`: trocar a **classe** `socket.socket` por uma função mata `import ssl`
+> (`class SSLSocket(socket)`) e o resultado é `TypeError` **na coleta, com ZERO teste rodado**
+> — que um operador lê como *"a suíte usa rede"* quando o que houve foi **o instrumento se
+> quebrar antes de medir**. **A tarja está aqui, no lugar onde a receita é lida**, e não só no
+> aviso que começa 25 linhas abaixo — que é onde ela estava, e é a mesma classe de defeito que
+> este documento inteiro persegue: o aviso que chega depois do dano
+> `[achado do /review 2026-08-29, INFO]`.
+>
+> **A receita que funciona amputa a CONEXÃO e está mais abaixo, na seção de `T-03.7`.**
+> O bloco fica onde está — apagá-lo removeria o registro de que a prova de 2026-08-28 foi
+> tirada com ele.
+
 ```bash
+# ⛔ QUEBRADA desde 2026-08-29 (T-03.7). Ver a tarja acima e a receita corrigida abaixo.
 cat > backend/sitecustomize.py <<'EOF'
 import socket
 def _proibido(*a, **k): raise RuntimeError("REDE PROIBIDA: a suite tentou abrir soquete")
@@ -692,6 +708,71 @@ de valer como prova** — um guarda que não morde daria verde por não estar in
 processo pai → `RuntimeError: REDE PROIBIDA`; e um subprocesso com `PYTHONPATH` reescrito para o
 mesmo diretório → `rc=1`, a mesma `RuntimeError`.
 O `sitecustomize.py` **não ficou na árvore** — é instrumento de medição, não código do produto.
+
+### ⚠️ `T-03.7` (2026-08-29) mudou esta seção INTEIRA — e mudou o **instrumento**, não só o número
+
+`T-03.7` (a rampa até o primeiro `429`) trouxe **o primeiro módulo de `src/` que abre soquete**:
+[`src/modules/sentimento/infra/https_quota_probe.py`](src/modules/sentimento/infra/https_quota_probe.py).
+Três afirmações desta seção envelheceram no mesmo ato, e as três estão corrigidas abaixo **com o
+comando que as re-mediu**. Nenhuma foi apagada: o texto acima continua verdadeiro **à época**.
+
+**(a) O grep publicado deixou de discriminar.** ~~3 ocorrências, universo 20~~ →
+**`[MEDIDO 2026-08-29: 113 ocorrências, universo 52`** (50 `.py`/`.sh` sob `src/`, `tests/`,
+`scripts/` mais `pyproject.toml` e `poetry.toml`)**`]`**. O salto **não** é rede: o padrão casa
+`requests`, e `T-03.7` introduziu os identificadores `blind_requests`, `max_requests` e
+`requests_done`. Classificando por **token** em vez de por linha
+`[MEDIDO 2026-08-29: `tokenize` sobre os 45 `.py` de `src/` e `tests/`]`: **6 em comentário, 30 em
+docstring, 72 em código — e dos 72, apenas 4 são de rede**, todos em `https_quota_probe.py`
+(`import http.client`, `http.client.HTTPSConnection`, e o nome `open_https_connection` duas vezes).
+**Um portão que casa `max_requests` procurando chamada de rede parou de medir o que afirma medir.**
+
+A medição que **substitui** o grep, porque discrimina o que aquele deixou de discriminar:
+
+```bash
+cd backend && grep -rlE '^(import|from) (http|socket|urllib|ssl|websocket)' src/
+# src/modules/sentimento/infra/https_quota_probe.py
+```
+
+`[MEDIDO 2026-08-29: **1 arquivo**, universo 21 `.py` sob `src/`]`. **Um módulo, e ele é `infra`.**
+A conexão real nasce em **uma linha só** (`open_https_connection`), marcada `# pragma: no cover`, e
+alcançável apenas por `infra/quota_ramp_cli.py` — que **nenhum portão chama**.
+
+**(b) A receita de amputação publicada acima QUEBROU, e quebra pelo motivo errado.** `socket.socket =
+_proibido` troca a **classe** por uma função, e `ssl` a herda (`class SSLSocket(socket)`). Enquanto
+nada importava `http.client`, ninguém notava; agora
+`[MEDIDO 2026-08-29: `TypeError: function() argument 'code' must be code, not str` **na coleta**,
+`1 error`, **zero teste rodado**]`. Um operador leria "a suíte reprova com o soquete amputado" como
+"a suíte usa rede" — e a conclusão certa é **"o instrumento se quebrou antes de medir"**.
+
+**A correção é amputar a CONEXÃO, não a classe:**
+
+```bash
+cat > backend/sitecustomize.py <<'EOF'
+import socket
+def _proibido(*a, **k): raise RuntimeError("REDE PROIBIDA: a suite tentou abrir soquete")
+socket.socket.connect = _proibido
+socket.socket.connect_ex = _proibido
+socket.create_connection = _proibido
+socket.getaddrinfo = _proibido
+EOF
+PYTHONPATH="$PWD/backend" bash backend/scripts/test.sh; rm backend/sitecustomize.py
+```
+
+**(c) E o instrumento corrigido foi auditado dos dois lados, na mesma passada**, porque guarda que
+não morde daria verde por não estar instalado:
+
+| lado | comando | resultado |
+|---|---|---|
+| **morde** | `http.client.HTTPSConnection('fapi.binance.com').request('GET', '/fapi/v1/time')` no interpretador amputado | `RuntimeError: REDE PROIBIDA` `[MEDIDO 2026-08-29]` |
+| **cala** | a suíte inteira no **mesmo** interpretador amputado | **187 passed** `[MEDIDO 2026-08-29]` |
+
+**O módulo que abre soquete existe em `src/` e a suíte continua sem tocar a rede.** É o que a
+injeção da fábrica de conexão compra: o `HttpsQuotaProbe` dos testes recebe uma `FakeConnection`, e
+a fábrica real (`open_https_connection`) só é construída pela raiz de composição do CLI.
+
+**A medição AO VIVO de `T-03.7` NÃO roda na suíte e nunca vai rodar.** Ela está registrada em
+[`docs/context/plataforma-dados/medicao-balde-de-cota-2026-08-29.md`](../docs/context/plataforma-dados/medicao-balde-de-cota-2026-08-29.md),
+com momento, IP e endpoint ao lado de cada número.
 
 `Q1` (ligar coletores) e `Q15` (ToS) continuam **ABERTAS**, e coletor não roda em portão.
 
@@ -714,7 +795,7 @@ E a primeira versão dele tinha um buraco que a cobertura **não podia** enxerga
 | **o que estava verde** | `flush()` + `os.fsync()` nos dois módulos de `infra` — **4 statements, 100% de cobertura** |
 | **o falsificador** | apague os 4 statements e rode a suíte |
 | **o que acontecia** | `[MEDIDO 2026-08-28: **12 passed, rc=0**, cobertura segue **100%**]` — **a suíte não notava** |
-| **o que acontece agora** | `[MEDIDO 2026-08-28: **2 failed, 12 passed**]`, e os dois que reprovam são exatamente os dois de `test_durabilidade_da_infra.py` |
+| **o que acontece agora** | `[MEDIDO 2026-08-28: **2 failed, 12 passed**]`, e os dois que reprovam são exatamente os dois de `test_infrastructure_durability.py` |
 
 **A lição, que é o motivo de estar escrita aqui e não num commit:** cobertura mede que a linha
 **executou**, nunca que alguém **observou o efeito dela**. Quatro linhas podem estar 100% cobertas e
@@ -740,7 +821,7 @@ Está escrita também no código, junto do defeito, para não virar defeito rede
 |---|---|---|---|
 | `entries()` classifica erro de forma **incompleta**: `{"chave": …}` → `KeyError` · `5` → `TypeError` · `["a.csv"]` → `TypeError` — nenhum vira `CorruptedCheckpointError`, contra o próprio docstring. E **`{"key": null}` não levanta nada**: devolve `('None',)` porque `str(payload["key"])` coage, e uma chave chamada `None` seria marcada concluída **em silêncio**, derrotando "não perde" por coerção | **[MEDIDO 2026-08-28]**, universo **4 payloads** rodados contra o módulo | `infra/jsonl_checkpoint.py`, docstring de `entries()` | **`T-03.10`** — só um escritor **externo** produz esses payloads, e é a **fila** de `T-03.10` que expõe o arquivo a um **escritor de fora** |
 | `EtlBacklog.__post_init__` usa `self.keys.count(key)` **dentro** da comprehension ⇒ **O(n²)** | **[MEDIDO 2026-08-28]** por `timeit`, 3 repetições por `n`: n=120 → **0,26 ms** · n=1.200 → **22,90 ms** · n=12.000 → **2.345,81 ms**; 100× no `n` custa ~9.000× no tempo | `domain/etl_backlog.py`, comentário em `__post_init__` | **`T-03.10`** — irrelevante em 120; a profundidade **parametrizada** que `T-03.10` declara no título (`Q18`, default 30 d) pode não ser |
-| A **janela de risco real** de "não duplica" — item publicado mas **não** registrado, depois reprocessado — **não é garantida** pelo teste de `D3.1`: o relógio é dominado pelo `sleep` dentro de `transform`, logo **antes** do `os.replace`, e o teste **não afirma onde a morte caiu**. Hoje a propriedade é **reivindicada** por um teste e **provada** por outro (o de idempotência) | **[MEDIDO]** por leitura das asserções — nenhuma delas fala da janela | `tests/sentimento/test_etl_backlog_retomavel.py`, docstring do teste de `D3.1` | **`T-03.10`** (fase `03`) |
+| A **janela de risco real** de "não duplica" — item publicado mas **não** registrado, depois reprocessado — **não é garantida** pelo teste de `D3.1`: o relógio é dominado pelo `sleep` dentro de `transform`, logo **antes** do `os.replace`, e o teste **não afirma onde a morte caiu**. Hoje a propriedade é **reivindicada** por um teste e **provada** por outro (o de idempotência) | **[MEDIDO]** por leitura das asserções — nenhuma delas fala da janela | `tests/sentimento/test_resumable_etl_backlog.py`, docstring do teste de `D3.1` | **`T-03.10`** (fase `03`) |
 | **Escala**: `D3.1` declara **0,86 s/arquivo (n=11)** `[DOC: tasks_review.md:274]` sobre dump real; o teste usa arquivos de **8 a 10 bytes (média 9,08 B, n=120)** `[MEDIDO 2026-08-28]` com atraso **artificial** de 0,02 s. **Invariante igual, escala diferente** — nada aqui mede custo por arquivo `[NÃO MEDIDO]` | idem | idem | **`T-03.10`** (fase `03`) |
 
 E uma correção de nome, esta **feita** aqui: `test_publicacao_e_atomica_e_nao_deixa_parcial` **não
@@ -812,7 +893,7 @@ reprova nada**.
 
 | | |
 |---|---|
-| **medida** | `[MEDIDO 2026-08-28: dos **13** `.py` versionados sob `backend/`, exatamente **2** citam ≥ 3 das 4 peças — `tests/helpers/drain_driver.py` (**4 de 4**) e `tests/sentimento/test_etl_backlog_retomavel.py` (**4 de 4**). Em `backend/src/`, **nenhum** módulo fora de `infra/` conhece as duas implementações]` |
+| **medida** | `[MEDIDO 2026-08-28: dos **13** `.py` versionados sob `backend/`, exatamente **2** citam ≥ 3 das 4 peças — `tests/helpers/drain_driver.py` (**4 de 4**) e `tests/sentimento/test_resumable_etl_backlog.py` (**4 de 4**). Em `backend/src/`, **nenhum** módulo fora de `infra/` conhece as duas implementações]` |
 | **por que importa** | quem monta o objeto **decide a direção das dependências**. Hoje quem monta é o teste, e teste pode depender de tudo |
 | **o risco concreto** | o **primeiro chamador de produção** — **`T-03.10`** — vai ter de **inventar onde isso mora**, e os dois candidatos naturais **invertem a direção**: em `use_cases`, a camada de caso de uso passa a conhecer `infra`; em `infra`, a borda passa a orquestrar o caso de uso |
 | **dono** | **`T-03.10`** — é ela que traz o primeiro chamador de produção, e portanto a primeira que **não pode** adiar a decisão |

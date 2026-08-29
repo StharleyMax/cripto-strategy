@@ -19,7 +19,7 @@ class JsonlCheckpoint:
 
     WHAT THIS SUITE MEASURES `[MEDIDO 2026-08-28: bash backend/scripts/test.sh -> 14 passed,
     rc=0]`: that `os.fsync` is called once per line, and that the line is ALREADY in the file
-    at that instant (`tests/sentimento/test_durabilidade_da_infra.py`, 2 tests; deleting
+    at that instant (`tests/sentimento/test_infrastructure_durability.py`, 2 tests; deleting
     `flush`+`fsync` from both `infra` modules makes both FAIL `[MEDIDO 2026-08-28: 2 failed,
     12 passed]`).
 

@@ -1,0 +1,51 @@
+### /futures/data/openInterestHist
+HTTP/2 200 
+content-type: application/json;charset=UTF-8
+content-length: 172
+date: Sat, 29 Aug 2026 14:42:18 GMT
+x-xss-protection: 1; mode=block
+server: nginx
+vary: Accept-Encoding
+access-control-allow-origin: *
+access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS
+access-control-allow-credentials: true
+access-control-allow-headers: *,clienttype,Content-Type,lang,x-ui-request-trace,bnc-uuid
+content-security-policy: default-src 'self'
+cache-control: no-cache, no-store, must-revalidate
+expires: 0
+pragma: no-cache
+strict-transport-security: max-age=31536000; includeSubdomains
+x-content-type-options: nosniff
+x-frame-options: SAMEORIGIN
+x-cache: Miss from cloudfront
+via: 1.1 b02e367278560409ab9f3626e5d3eb58.cloudfront.net (CloudFront)
+x-amz-cf-pop: GRU1-P6
+x-amz-cf-id: OwwqNgiruQUxuMD4BiSaDgD_1TgTvX9n3hZdp3quqxNLt_wNRqtvrA==
+
+
+### /fapi/v1/depth
+HTTP/2 200 
+content-type: application/json
+content-length: 295
+date: Sat, 29 Aug 2026 14:42:19 GMT
+x-xss-protection: 1; mode=block
+server: nginx
+vary: Accept-Encoding
+x-mbx-used-weight-1m: 3
+x-response-time: 0ms
+access-control-allow-origin: *
+access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS
+access-control-allow-credentials: true
+access-control-allow-headers: *
+content-security-policy: default-src 'self'
+cache-control: no-cache, no-store, must-revalidate
+expires: 0
+pragma: no-cache
+strict-transport-security: max-age=31536000; includeSubdomains
+x-content-type-options: nosniff
+x-frame-options: SAMEORIGIN
+x-cache: Miss from cloudfront
+via: 1.1 e6e36b350cf1254dffad1b916f880e0a.cloudfront.net (CloudFront)
+x-amz-cf-pop: GRU1-P6
+x-amz-cf-id: hshmPMFszEUNAkR-sQsDKPIOS6jnA-OQNhsRpaABPsUB68jWwyVxOQ==
+

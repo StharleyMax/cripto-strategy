@@ -1,0 +1,12 @@
+=== binance-futures-data  (n=150 degraus)
+  latencia  min/mediana/p95/max (s) : 0.269 / 0.276 / 0.365 / 0.469
+  soma das latencias (s)            : 44.1
+  janela de relogio (UTC)           : 15:02:29 -> 15:03:57
+  TETO DO INSTRUMENTO (req/min)     : 114  = 60 / (piso 0,25 s + latencia mediana)
+
+=== coinalyze  (n=41 degraus)
+  latencia  min/mediana/p95/max (s) : 0.188 / 0.193 / 0.272 / 0.293
+  soma das latencias (s)            : 8.8
+  janela de relogio (UTC)           : 15:04:17 -> 15:05:42
+  TETO DO INSTRUMENTO (req/min)     : 135  = 60 / (piso 0,25 s + latencia mediana)
+
