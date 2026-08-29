@@ -483,6 +483,35 @@ depends_on = ["T-02.2", "T-03.2"]
 refs = ["CA-F0-14", "plano 03 item 3.12", "BLOQUEADA: Q1"]
 tracker = { provider = "jira", id = "CST-27", url = "https://conversationhub.atlassian.net/browse/CST-27" }
 
+[[tasks]]
+id = "T-03.12"
+title = "[sentimento] 03 · Portao de natureza por USO: scanner de AST nasce no make e o contrato 3 estreita no MESMO commit (ADR-016/D5)"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = [
+    "ADR-016/D1 (capacidade x valor)", "ADR-016/D2", "ADR-016/D3", "ADR-016/D4", "ADR-016/D5", "ADR-012/D4 (o que morde e nao e motor do harness mora no make)",
+    "ADR-011/D3a (estrutura no lugar de regex, na MESMA fronteira)", "ADR-011/D3b (a costura de boundaries.sh)",
+    "narrativa: docs/context/plataforma-dados/tasks_review-T-03.12.md",
+    "DESTRAVA: PR #28 / T-03.10 — git push --dry-run rc=1 hoje, DoD-8 exige rc=0",
+    "ID DIVERGE DA ADR: ADR-016/D5 escreve 'T-03.11', que JA EXISTE (Reconciliacao Coinalyze, CST-27, cardada). Esta e T-03.12, o primeiro id livre da fase 03.",
+    "ATOMICO (D5): portao nasce e contrato estreita no MESMO commit. Dois commits REPROVAM mesmo com arvore final certa — estreitar antes abre janela sem portao (E2: ignore_imports = 3 kept 0 broken COM datetime.now() e date.today() dentro de domain/).",
+    "DoD-2 arvore limpa: make natureza -> rc=0, '0 leitura(s)', universo n=20 (13 domain + 7 use_cases) IMPRESSO pelo comando [MEDIDO 2026-08-29 em 6b8f441].",
+    "DoD-3 bateria de 6 mutantes, um por vez, arvore reconferida entre cada -> 6/6 rc=1 nomeando arquivo:linha. Os 4 de D5: datetime.now() ; date.today() SEM import novo ; import time + time.monotonic() ; f(datetime.now) SEM chamar.",
+    "DoD-3 MUTANTE 5 — ACHADO NOVO, NAO DECLARADO PELA ADR: 'from time import monotonic' chamado NU sai rc=0 na bancada [MEDIDO 2026-08-29, n=5 formas: time()/sleep()/monotonic()/alias -> todas rc=0; CONTROLE time.sleep(1) -> rc=1]. Causa estrutural: o sitio de chamada de um from-import nu e ast.Name e achados() so entra em ast.Attribute — a ligacao e criada em _bindings e nunca consultada. E a grafia IDIOMATICA e e ESTATICA, logo cai no 'por acidente' que D5 promete cobrir: enquanto existir, a frase de garantia da D5 e FALSA.",
+    "DoD-3 MUTANTE 6: um dos 9 nomes de relogio de time/ nao cobertos, escolhido pela justificativa do DoD-5.",
+    "DoD-4 zero falso positivo, n=9 e NAO 7, conferido POR LINHA: dump_window.py 129/171/174/194/196/214/230 (as 7 de D5) MAIS retention_probe.py 131/132 (anotacoes legitimas que D5 nao conta) [MEDIDO 2026-08-29].",
+    "DoD-5 o conjunto de nomes e DERIVADO e justificado nome a nome contra os 38 publicos de time (python3 -c 'import time; dir(time)'), no cabecalho do script. A conta 38/17/21 da D3 CONFERE [MEDIDO 2026-08-29, Python 3.13], mas a bancada cobre 12 dos 21: ficam de fora asctime clock_getres clock_gettime_ns clock_settime clock_settime_ns ctime process_time_ns pthread_getcpuclockid thread_time_ns, e time.ctime()/asctime()/clock_gettime_ns() saem rc=0 [MEDIDO, n=3]. A frase de D3 'o scanner cobre as 21' e falsa para a bancada como versionada. REPROVA se a lista for copiada sem justificativa.",
+    "[NAO SEI] quais dos 9 pertencem ao conjunto: ctime/asctime sem argumento LEEM, com argumento sao formatadores como strftime (que D3 pos entre os 17 nao-relogio), e clock_settime ESCREVE. Fronteira de arquitetura, nao do tech-lead. O DoD cobra a justificativa, nunca um numero inventado.",
+    "DoD-6 o contrato estreitado AINDA MORDE: boundaries.sh -> rc=0 'Contracts: 3 kept, 0 broken' E com 'import ssl' plantado em domain/ -> rc=1 (E5 reproduzido no PORTAO, nao na bancada).",
+    "DoD-7 git add ANTES do sweep: harness rules --mode sweep COMPLETO -> rc=0, 0 [BLOQUEIO]. --changed-only e CEGO a arquivo NAO RASTREADO [DOC: gates/T-03.10-build.md, n=3 estados, mutante conferido por sha256] e esta task CRIA arquivos — --changed-only sobre untracked NAO conta como medicao.",
+    "DoD-9 PONTO CEGO NO PROPRIO SCRIPT, nao so na ADR: getattr(date,'today')() -> 0 [MEDIDO, E6, reproduzido 2026-08-29], mesma classe de importlib e atributo montado em runtime. Este repositorio ja foi mordido por instrumento que herdou limitacao sem herdar a declaracao.",
+    "DoD-10 FALSIFICADOR DA PROPRIA ADR, contavel: uma linha estavel e grepavel por acusacao, para contar ao fim da fase 03 falso positivo x verdadeiro positivo. Se FP >= VP, D4 CAI e o par volta a ['socket','ssl'] com o relogio como convencao escrita sem portao. Placar de hoje: 0 x 3 [MEDIDO, ADR-016 E3]. Segundo falsificador: 30 dias sem nunca sair rc=1 em arvore real => e cerimonia e D5 sai (ADR-012/D5).",
+    "DoD-11 NAO reabre o que nao e seu: a bancada PERMANECE em docs/adr/bancadas/ (promover e COPIAR e endurecer, nao mover — a ADR precisa continuar reproduzivel); o status 'proposto' da ADR-016 NAO e tocado (aceitar ADR e ato de owner).",
+    "NAO CARDADA e SEM local_only, de proposito: o owner disse 'nao crie card no Jira — eu cardo' [PREMISSA-OWNER: 2026-08-29, citacao literal]. local_only=true significa 'decidiu-se nao cardar, NUNCA'; aqui e 'cardar depois'. Marcador que colapse 'decidi' e 'vou fazer depois' faz o segundo nunca chamar atencao. Eixo correto: harness tasks list plataforma-dados -> uncarded.",
+]
+
 # ── 04 · Contrato temporal e identidade · CST-3 · zero rede, zero API key ──────────
 
 [[tasks]]
