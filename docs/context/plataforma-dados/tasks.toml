@@ -528,7 +528,7 @@ tracker = { provider = "jira", id = "CST-28", url = "https://conversationhub.atl
 id = "T-04.2"
 title = "[sentimento] 04 · SeriesKey completa (15 termos, com quantity_field e reduction) + as sete colunas de procedencia"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "04"
 depends_on = ["T-01.1"]
 refs = ["ADR-001", "CA-F2-17", "SPEC-001 §2.1", "SPEC-001 §3.1", "plano 04 itens 4.7+4.9", "DoD D4.9", "falsificador global F-2"]
