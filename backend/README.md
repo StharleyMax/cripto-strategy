@@ -278,6 +278,21 @@ O contrato está **dormente e ARMADO**, não desligado — e a diferença entre 
 medindo. **Quem criar o segundo contexto acrescenta o contrato `forbidden` dele**; nada neste
 repositório obriga isso hoje, e por isso está escrito aqui como **dívida nomeada, não portão**.
 
+**⚠️ CORREÇÃO DE GENERALIDADE `[/review 2026-08-29]`, e ela importa porque a redação anterior
+ensinava uma impossibilidade que não existe:** *"o `import-linter` não recusa contrato que nomeie
+módulo inexistente"* é verdade **só do tipo `forbidden`**. O tipo `layers` **sabe recusar**
+`[MEDIDO 2026-08-29: `containers = ["src.modules.sentimentoo"]` → **rc=1**, *"module does not
+exist"*; `root_package = "srcX"` → **rc=1**, *"Could not find package"* — e, com a guarda 4 deste
+ciclo, os dois viram **rc=3**, porque declaração quebrada é *não mediu*, não *mediu e reprovou*]`.
+⇒ **o `layers` sabe; o `forbidden` não** — e é só sobre o `forbidden` que o vácuo acima vale.
+
+**Conserto barato disponível, registrado como OPÇÃO NOMEADA e não feito aqui:** cruzar
+`forbidden_modules` com o **vocabulário fechado** (`harness policy --key components`) dentro do
+mesmo `$PY` de `boundaries.sh` — um typo em `charts` viraria recusa **sem precisar que o módulo
+exista**. Não é obrigação desta task (`ADR-011/D3a` não a pede), e fazer política de componente
+dentro de um script de portão é decisão de quem possui o vocabulário `[NÃO MEDIDO: nenhum
+experimento deste ciclo mediu o custo ou os falsos positivos desse cruzamento]`.
+
 ### As quatro mutações que o `/qa` acrescentou, re-rodadas aqui — verde não prova nada até algo reprovar
 
 O `/qa` de 2026-08-29 estendeu esta bancada em três pontos e achou um defeito de código num quarto.
@@ -287,8 +302,56 @@ O `/qa` de 2026-08-29 estendeu esta bancada em três pontos e achou um defeito d
 |---|---|---|
 | plantar os **três** contextos proibidos (`charts` + `convergencia` + `backtest`) e importar os três | a bancada original exercitou **só `charts`**: as outras duas grafias de `forbidden_modules` podiam estar mortas | `BROKEN` nomeando as **3** separadamente (`… is not allowed to import src.modules.backtest` / `… charts` / `… convergencia`), `Analyzed 20 files, 4 dependencies`, rc(make)=2 |
 | inverter a ordem do contrato 1 para `["domain", "use_cases", "infra"]`, **sobre a árvore limpa** | o "cala" do contrato 1 lê o código de hoje, ou passa por não ter olhado? | `BROKEN` sobre o **único** import interno do repositório (`use_cases → domain`), `Analyzed 10 files, 1 dependencies`. Revertida a ordem: `2 kept, 0 broken`, rc=0. **O "cala" olha** |
-| renomear a secção para `[tool.importlinterXX]` | a guarda de `[tool.importlinter]` ausente distingue *"não mediu"* de *"mediu e reprovou"*? | **ACHADO REAL, e era defeito de código.** Com a guarda antiga (`'^\[tool\.importlinter'`, **sem** o `\]`) ela **escapava por prefixo**: passava, o `lint-imports` morria com `'root_package'` e saía **rc=1** — *não mediu* vestido de *mediu e reprovou*, pela fresta que o comentário logo acima existe para fechar. Conserto de **2 caracteres** (`\]`), com controle invertido: guarda antiga + mutação → **rc=1**; guarda nova + a **mesma** mutação → **rc=3**; guarda nova + árvore boa → **rc=0** |
+| renomear a secção para `[tool.importlinterXX]` | a guarda de `[tool.importlinter]` ausente distingue *"não mediu"* de *"mediu e reprovou"*? | **ACHADO REAL, e era defeito de código.** Com a guarda antiga (`'^\[tool\.importlinter'`, **sem** o `\]`) ela **escapava por prefixo**: passava, o `lint-imports` morria com `'root_package'` e saía **rc=1** — *não mediu* vestido de *mediu e reprovou*, pela fresta que o comentário logo acima existe para fechar. Conserto de **2 caracteres** (`\]`), com controle invertido: guarda antiga + mutação → **rc=1**; guarda nova + a **mesma** mutação → **rc=3**; guarda nova + árvore boa → **rc=0**. **⚠️ E o conserto fechava SÓ ESTA ROTA:** o `/review` de 2026-08-29 mediu **quatro outras** que continuavam abertas — ver a seção seguinte, que é onde a guarda deixou de medir texto |
 | custo do portão | um portão caro é um portão que alguém desliga | `make boundaries` + `make lint`, a quente, **1,06 · 1,08 · 1,06 s** (n=3). O `/qa` mediu o `pre-push` inteiro: **1,2–1,7 s** quente e **3,8 s** com caches limpos `[MEDIDO pelo /qa 2026-08-29, não re-rodado aqui]` |
+
+### 🔴 A NONA instância da família, e ela estava DENTRO do portão — `/review` 2026-08-29
+
+O `/review` reprovou `T-01.5` por **um** blocker, e ele dói mais do que o tamanho do conserto sugere:
+`boundaries.sh` media **a secção** e falava em nome dos **contratos**. A guarda perguntava *"o
+cabeçalho `[tool.importlinter]` existe?"* e a mensagem dela afirmava *"não há **contrato** a
+avaliar"* e *"portão sem contrato não é portão verde: é portão que não olhou"*. **Ela nunca olhou
+contrato nenhum** — e isso reintroduz, **no gate**, exatamente o defeito *regex-de-linha × estrutura*
+que `ADR-011/D3a` usa como argumento para derrubar as duas `[[rules.own]]`, num arquivo cujo
+cabeçalho tem 40 linhas explicando por que `grimp` lê o **grafo** em vez de ler texto.
+
+**A premissa que autorizava a guarda fraca era falsa, e estava publicada sem comando e sem rótulo:**
+o comentário dizia que *"`lint-imports` sem contrato nenhum sai `rc=1` com 'no contracts'"*. **Não
+reproduz** — sai **`rc=0`** com **`Contracts: 0 kept, 0 broken.`** `[MEDIDO 2026-08-29]`. Um número
+sem comando envelheceu **para dentro** de um portão e sustentou a fresta por dois ciclos.
+
+**O conserto mede o que a ferramenta FEZ, não o que o arquivo DIZ:** a linha de veredito que o
+próprio `import-linter` imprime. Sem linha de veredito ⇒ não julgou ⇒ **`rc=3`**. `0 kept, 0 broken`
+⇒ julgou o vazio ⇒ **`rc=3`**. Qualquer outro veredito ⇒ o `rc` da ferramenta passa **inteiro**.
+
+**A bancada: 10 passadas, cada mutação revertida e a árvore limpa reconferida entre elas**
+`[MEDIDO 2026-08-29]`. As linhas em **negrito** são as que a guarda anterior deixava passar:
+
+| passada | guarda ANTES (`\]` do ciclo 2) | guarda DEPOIS |
+|---|---|---|
+| árvore limpa | `rc=0`, `2 kept, 0 broken` | `rc=0` — **controle: o portão continua deixando passar** |
+| **os 2 blocos `[[…contracts]]` removidos** | **`rc=0`**, `0 kept, 0 broken` | **`rc=3`** |
+| **typo na tabela: `[[tool.importlinter.contract]]`** | **`rc=0`**, `0 kept, 0 broken` | **`rc=3`** |
+| **`backend/.importlinter` existe (precedência)** | **`rc=0`**, `0 kept, 0 broken` | **`rc=3`** |
+| **`backend/setup.cfg` com `[importlinter]`** | **`rc=0`**, `0 kept, 0 broken` | **`rc=3`** |
+| `[tool.importlinterXX]` (a rota do ciclo 2) | `rc=3` | `rc=3`, e a mensagem agora **nomeia a secção** |
+| `root_package = "srcX"` | `rc=1` | `rc=3` — declaração quebrada é *não mediu* |
+| `containers = ["src.modules.sentimentoo"]` | `rc=1` | `rc=3` — idem |
+| **violação de camada REAL** | `rc=1` | **`rc=1`** — **o controle que mais importa: violação real NÃO virou "não mediu"** |
+| árvore limpa, ao final | `rc=0` | `rc=0` |
+
+**As duas rotas de arquivo são a versão pior do mesmo defeito: a guarda lê UM arquivo e a ferramenta
+lê OUTRO.** Nenhuma regex sobre `pyproject.toml` fecha isso, porque o problema não está lá dentro —
+é a razão de a guarda nova não olhar arquivo nenhum.
+
+**E o conserto do conserto, medido na mesma bancada:** a primeira versão da guarda 4 ficou
+**inalcançável**. `grep` sem casar sai `1`, `set -o pipefail` propaga, `set -e` mata o script ali — e
+`root_package`/`containers` inexistentes saíam `rc=1` *fingindo ser a ferramenta*. O `|| true` no fim
+do pipeline é o que os leva a `rc=3` `[MEDIDO 2026-08-29: sem ele, rotas 6 e 7 → rc=1; com ele →
+rc=3]`. **Foi a bancada que pegou, não a leitura** — é a mesma família, uma camada abaixo.
+
+**A guarda da secção FICA**, agora dizendo o que mede: ela é a única que consegue **nomear** a secção
+errada. Sem ela, `[tool.importlinterXX]` cairia na guarda 4 com mensagem genérica.
 
 ### O controle que separa "quem pegou" de "alguém pegou"
 
@@ -442,6 +505,8 @@ instalação é ato de quem tiver a árvore inteira, e não de uma task rodando 
 | `make test` | o hook roda `boundaries` e `lint`, **não** `test` — é o que `ADR-011/D3b` decide, e ampliar isso é decisão do `/architect`, não desta task `[NÃO MEDIDO: nenhum número deste README fala do custo de rodar a suíte no `pre-push`]` |
 | relatório parcial do `make lint` | `lint-backend` e `lint-frontend` são pré-requisitos de `lint`, e o `make` aborta no primeiro que falhar: se o backend reprovar, o relatório do frontend não sai **naquela** passada. É relatório parcial, nunca falso-verde — o `rc` chega inteiro |
 | um segundo contexto nascer sem contrato `forbidden` próprio | nada obriga. Dívida nomeada acima |
+| **o que está sendo EMPURRADO, quando ele difere da árvore de trabalho** | os dois alvos avaliam a **árvore de trabalho**, não o intervalo de commits — **igual ao `rules --mode sweep` do hook gerado**, logo **não é regressão** e sim a mesma semântica dos portões que já existiam `[/review 2026-08-29, aceito como honesto]`. Mas `git push origin outro-branch:master` mediria **a árvore errada**: a que está no disco, não a que sobe. Fechar exigiria ler as refs de `"$ENTRADA"` — o hook já as consome e as guarda por isso — e é decisão do `/architect`, não desta task |
+| os dois `.sh` que **são** o portão | `scripts/**` e `*.sh` estão **fora** de `code_paths`, então `harness rules --mode file` sobre eles devolve `rc=0` **por não terem sido avaliados**, e não por estarem limpos; `shellcheck` não existe nesta máquina `[MEDIDO 2026-08-29: `command -v shellcheck` → ausente]`. Hoje eles são governados por `bash -n` e por mais ninguém. Dívida de **política**, com dono no `/architect` — e o `/review` mediu que acrescentar `*.sh` ao glob **não compraria cobertura**: falta também o prefixo, e **zero regra de shell existe** nos packs instalados |
 
 ## O que existe, e por quê
 

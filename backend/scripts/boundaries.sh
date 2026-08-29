@@ -58,28 +58,31 @@ if ! "$PY" -c "import sys; raise SystemExit(0 if '.'.join(map(str, sys.version_i
     exit 3
 fi
 
-# A guarda que `T-01.6` escreveu no alvo `boundaries` do `Makefile`, TRAZIDA PARA CA sem
-# mudar de sentido — e ganhando o `rc=3` de verdade, que o `make` nao propaga (ele sai 2 em
-# qualquer receita que falhe). Ela continua valendo depois que `T-01.5` preencheu os
-# contratos: quem apagar `[tool.importlinter]` faz o portao RECUSAR, e nao passar sobre
-# universo vazio. `lint-imports` sem contrato nenhum sai `rc=1` com "no contracts", que ja
-# seria reprovacao — mas reprovacao por motivo que nao e violacao de fronteira, e chamar as
-# duas pelo mesmo nome e o que esta recusa impede.
+# ── GUARDA 3 de 4 · A SECCAO EXISTE? E SO ISSO QUE ELA PERGUNTA ────────────────────────
 #
-# O `\]` FINAL DA REGEX NAO E ENFEITE, e a falta dele era DEFEITO — achado do /qa em 2026-08-29.
-# Sem ele a guarda casava por PREFIXO: `[tool.importlinterXX]` PASSAVA, o `lint-imports` morria com
-# `'root_package'` e o alvo saia rc=1. Ou seja, a fresta fazia sair pela porta do "mediu e reprovou"
-# exatamente o caso que esta guarda existe para mandar pela porta do "nao mediu".
+# ⚠️ ELA MEDE O ARQUIVO, NAO O UNIVERSO AVALIADO, e ate 2026-08-29 a mensagem dela dizia o
+# contrario ("nao ha CONTRATO a avaliar", "portao sem contrato nao e portao verde"). Isso era
+# uma guarda de TEXTO falando em nome de uma medicao que ela nunca fez — o /review achou, e o
+# achado dói porque e a NONA instancia da familia "regex de linha x estrutura" neste
+# repositorio, desta vez DENTRO do arquivo que E o portao, cujo cabecalho tem 40 linhas
+# explicando por que `grimp` le o GRAFO em vez de ler texto.
 #
-# FALSIFICADOR DESTA LINHA, e ele e o proprio teste do conserto: renomeie a seccao do
-# `pyproject.toml` para `[tool.importlinterXX]` e rode este script. Tem de sair rc=3.
-# [MEDIDO 2026-08-29, com controle invertido: guarda ANTIGA (sem `\]`) + mutacao -> rc=1, com
-#  `'root_package'` na saida; guarda NOVA + a MESMA mutacao -> rc=3; guarda NOVA + arvore boa -> rc=0]
+# A mensagem foi reescrita para dizer o que esta linha de fato mede. Quem responde pelo
+# universo avaliado e a GUARDA 4, depois da execucao, porque essa pergunta so tem resposta
+# DEPOIS de a ferramenta rodar.
+#
+# ESTA GUARDA FICA, e nao por inercia: ela e a unica que consegue NOMEAR a seccao errada. Sem
+# ela, `[tool.importlinterXX]` cairia na guarda 4 com uma mensagem generica.
+#
+# O `\]` final da regex nao e enfeite: sem ele a guarda casava por PREFIXO e
+# `[tool.importlinterXX]` PASSAVA [MEDIDO 2026-08-29, controle invertido: guarda sem `\]` +
+# mutacao -> rc=1 com `'root_package'`; com `\]` + a MESMA mutacao -> rc=3; arvore boa -> rc=0].
 if ! grep -q '^\[tool\.importlinter\]' "$BACKEND/pyproject.toml"; then
-    echo "RECUSA: [tool.importlinter] ausente em backend/pyproject.toml — nao ha contrato a avaliar." >&2
+    echo "RECUSA: a seccao [tool.importlinter] nao existe em backend/pyproject.toml." >&2
+    echo "        Esta guarda mede o ARQUIVO, nao o universo avaliado — quem mede o universo" >&2
+    echo "        e a guarda depois da execucao, porque so ali existe resposta." >&2
     echo "        Os contratos sao de ADR-011/D3a (a peca 1 de ADR-009/D1): um contrato" >&2
     echo "        'layers' por contexto e um 'forbidden' por componente." >&2
-    echo "        Portao sem contrato nao e portao verde: e portao que nao olhou." >&2
     exit 3
 fi
 
@@ -91,8 +94,84 @@ if [ ! -x "$LINT_IMPORTS" ]; then
 fi
 
 cd "$BACKEND"
+
+# ── A EXECUCAO ─────────────────────────────────────────────────────────────────────────
+#
 # O interpretador e o script sao NOMEADOS, os dois dentro do venv ja conferido acima. Chamar
 # `$LINT_IMPORTS` direto funcionaria (o shebang dele aponta para o mesmo `$PY`), mas ai quem
 # escolheria o interpretador seria uma linha escrita pelo instalador — e o que este arquivo
 # existe para garantir e que a escolha esteja AQUI.
-"$PY" "$LINT_IMPORTS"
+#
+# `|| RC=$?` E OBRIGATORIO, e nao e estilo: com `set -e` ligado, uma atribuicao cujo comando
+# falha ABORTA o script na hora, e nenhuma das classificacoes abaixo chegaria a rodar — o
+# portao sairia com o rc cru, que e exatamente o que este bloco existe para nao fazer.
+RC=0
+SAIDA="$("$PY" "$LINT_IMPORTS" 2>&1)" || RC=$?
+printf '%s\n' "$SAIDA"
+
+# ── GUARDA 4 de 4 · O QUE A FERRAMENTA FEZ, e nao o que o arquivo diz ──────────────────
+#
+# ACHADO DO /review 2026-08-29, e este era BLOQUEANTE: a guarda 3 responde "o cabecalho
+# existe" e a mensagem dela afirmava "nao ha contrato a avaliar". Sao perguntas diferentes, e
+# a distancia entre as duas sao QUATRO rotas medidas para VERDE SOBRE ZERO CONTRATO — todas
+# com a guarda 3 ja consertada, `n=4`, cada mutacao revertida e a arvore limpa reconferida
+# entre elas [MEDIDO 2026-08-29]:
+#
+#   seccao mantida e os 2 blocos [[...contracts]] removidos  -> "0 kept, 0 broken", rc=0
+#   typo no nome da tabela: [[tool.importlinter.contract]]    -> "0 kept, 0 broken", rc=0
+#   um backend/.importlinter passa a existir (precedencia)    -> "0 kept, 0 broken", rc=0
+#   um backend/setup.cfg com [importlinter]                   -> "0 kept, 0 broken", rc=0
+#
+# AS DUAS ULTIMAS SAO A VERSAO PIOR DO MESMO DEFEITO: a guarda le UM arquivo e a ferramenta le
+# OUTRO. Nenhuma regex sobre `pyproject.toml` fecha isso, porque o problema nao esta la dentro.
+#
+# E A PREMISSA QUE AUTORIZAVA A GUARDA FRACA ERA FALSA. O comentario antigo publicava, sem
+# comando e sem rotulo, que "`lint-imports` sem contrato nenhum sai rc=1 com 'no contracts'".
+# NAO REPRODUZ: sai `rc=0` com `Contracts: 0 kept, 0 broken.` [MEDIDO 2026-08-29, rota 1].
+# Um numero sem comando envelheceu para dentro de um portao — e sustentou a fresta.
+#
+# O QUE ESTA GUARDA MEDE: a linha de veredito que a PROPRIA ferramenta imprime.
+#   - nenhuma linha `Contracts: N kept, M broken` -> ela nem chegou a julgar => NAO MEDIU (3).
+#     Cobre `root_package` inexistente ("Could not find package") e `containers` com modulo
+#     que nao existe ("module does not exist"), que sao declaracao quebrada e nao fronteira
+#     violada — o `rc=1` cru da ferramenta os chamaria de "mediu e reprovou".
+#   - `0 kept, 0 broken` -> julgou o vazio => NAO MEDIU (3). E a familia das 4 rotas acima.
+#   - qualquer outro veredito -> o rc da ferramenta passa INTEIRO. Contrato BROKEN continua
+#     `rc=1`, e este e o controle que importa: nao se converte violacao real em "nao mediu".
+#
+# O `|| true` NAO E DEFENSIVO A ESMO, e a falta dele foi medida nesta mesma bancada: `grep`
+# sem casar sai `1`, `set -o pipefail` propaga esse `1` para a substituicao, e `set -e` MATA o
+# script ali — de modo que o ramo "nenhum veredito" abaixo ficava INALCANCAVEL e o portao
+# saia `rc=1` fingindo ser a ferramenta [MEDIDO 2026-08-29: sem o `|| true`, `root_package`
+# inexistente e `containers` inexistente davam rc=1; com ele, os dois dao rc=3]. E a mesma
+# familia do defeito que este bloco conserta, uma camada abaixo: um `rc` de ferramenta
+# passando por veredito de portao.
+VEREDITO="$(printf '%s' "$SAIDA" | grep -oE 'Contracts: [0-9]+ kept, [0-9]+ broken' | tail -1 || true)"
+
+if [ -z "$VEREDITO" ]; then
+    echo "" >&2
+    echo "RECUSA: o import-linter nao produziu veredito nenhum — nenhuma linha" >&2
+    echo "        'Contracts: N kept, M broken' na saida acima." >&2
+    echo "        Ele nao chegou a julgar a fronteira, entao isto e NAO MEDIU (rc=3) e nao" >&2
+    echo "        'mediu e reprovou' (rc=1). Causas tipicas, e a saida acima nomeia a sua:" >&2
+    echo "          - root_package apontando para pacote que nao existe;" >&2
+    echo "          - contrato citando modulo inexistente em 'containers';" >&2
+    echo "          - [tool.importlinter] sem root_package." >&2
+    exit 3
+fi
+
+if [ "$VEREDITO" = "Contracts: 0 kept, 0 broken" ]; then
+    echo "" >&2
+    echo "RECUSA: ZERO contrato avaliado — a seccao [tool.importlinter] existe e o universo" >&2
+    echo "        que ela produziu esta VAZIO. Verde sobre universo vazio e o portao que" >&2
+    echo "        aprova por nao ter olhado, e e a classe de defeito que ADR-011/D3b nomeia." >&2
+    echo "        As quatro causas medidas, todas passando pela guarda anterior:" >&2
+    echo "          - os blocos [[tool.importlinter.contracts]] foram removidos;" >&2
+    echo "          - typo no nome da tabela (ex.: [[tool.importlinter.contract]], singular);" >&2
+    echo "          - backend/.importlinter existe e toma precedencia sobre o pyproject.toml;" >&2
+    echo "          - backend/setup.cfg tem [importlinter] e toma precedencia." >&2
+    echo "        Nas duas ultimas a guarda le UM arquivo e a ferramenta le OUTRO." >&2
+    exit 3
+fi
+
+exit $RC

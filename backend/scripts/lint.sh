@@ -23,9 +23,16 @@
 # assert confere o interpretador que de fato RODA o portao.
 #
 # A expressao e a MESMA de `backend/scripts/bootstrap.sh` (mesma comparacao de major.minor,
-# mesmo `PY_ALVO`). Duplicacao deliberada e nomeada: centraliza-la exigiria um quinto script
-# que `ADR-011/D2` nao autoriza esta task a criar. Se `PY_ALVO` mudar, mudam os DOIS — e o
+# mesmo `PY_ALVO`). Duplicacao deliberada e nomeada: centraliza-la exigiria um script de
+# biblioteca que `ADR-011/D2` nao autoriza. Se `PY_ALVO` mudar, mudam os TRES — e o
 # `grep -n 'PY_ALVO' backend/scripts/*.sh` do DoD `D1.9` os encontra juntos.
+#
+# ⚠️ ERAM DOIS ATE 2026-08-28; SAO TRES desde que `T-01.5` criou `boundaries.sh`, e esta linha
+# dizia "os DOIS" enquanto o comando logo ao lado ja devolvia TRES — achado do /review
+# 2026-08-29 [MEDIDO: `grep -ln PY_ALVO backend/scripts/*.sh | wc -l` -> 3: bootstrap.sh,
+# lint.sh, boundaries.sh]. Corrigido no codigo, e nao por erratum, porque codigo nao e
+# append-only: nota de cabecalho que sobrevive ao codigo que ela descreve e como um portao
+# que nao olha (`Makefile`, cabecalho).
 set -euo pipefail
 
 PY_ALVO="3.13"   # ADR-011/D5 (supersede ADR-009/D4, que dizia 3.12)
