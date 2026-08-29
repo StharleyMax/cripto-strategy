@@ -452,9 +452,9 @@ respondendo pergunta ligeiramente diferente da que se quis fazer", desta vez com
 ⇒ O "antes" real é **assimétrico com as metades INVERTIDAS em relação ao plano**: o `.py` é **ACEITO**
 `[MEDIDO 2026-08-29: harness rules --mode file sobre o violador de camada → rc=0, saída vazia;
 harness rules --mode sweep --surface git-hook → rc=0]` e o `.tsx` **que o plano nomeia** é
-**RECUSADO** `[MEDIDO 2026-08-29: com `frontend/src/features/painel/serie.tsx` (a receita de `§3` do
+**RECUSADO** `[MEDIDO 2026-08-29: com `frontend/src/features/panel/serie.tsx` (a receita de `§3` do
 `frontend/README.md`) na árvore, `harness rules --mode sweep --surface git-hook` → rc=1,
-`[BLOQUEIO] [web-fullstack.browser-imports-server] frontend/src/features/painel/serie.tsx:1`]`. A
+`[BLOQUEIO] [web-fullstack.browser-imports-server] frontend/src/features/panel/serie.tsx:1`]`. A
 bancada usou um `.tsx` de `any` + `console` — **sobre ELE, e só sobre ele**, o "antes" é ACEITO
 `[MEDIDO 2026-08-29: o mesmo sweep, com o `any`+`console` no lugar → rc=0]`.
 

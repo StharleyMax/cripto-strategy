@@ -289,7 +289,7 @@ T-01.1 (done) ─┬─> T-01.4 ──> T-01.6 ──┬──> T-01.5
    aprovação**: é a falha que `backend/poetry.toml` existe para impedir.
 4. **`D1.3b` é medição, não citação.** A frase *"AST não tem os dois defeitos da regex"* é
    **mecanismo**, e está `[NÃO MEDIDO]` neste disco. O ESLint **do projeto** tem de acusar
-   `tipos.ts`, calar em `config.ts` e calar em `Filtro.tsx`.
+   `tipos.ts`, calar em `config.ts` e calar em `Filter.tsx`.
 5. **Docstrings em inglês são CONVENÇÃO, não portão.** `D1.10` **reprova** se alguém declarar
    uma `[[rules.own]]` de idioma: a de diacrítico devolve **0 achados sobre 18**, e a de
    palavra-função ASCII pega **12 de 18**.
