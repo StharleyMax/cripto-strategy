@@ -44,7 +44,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup venv lint lint-backend lint-frontend test boundaries build
+.PHONY: help setup venv lint lint-backend lint-frontend test boundaries build verify
 
 # Argumentos repassados ao pytest: `make test ARGS="-k nome --no-cov"`.
 ARGS ?=
@@ -64,6 +64,8 @@ help:
 	  '  make boundaries      fronteira de modulo por grafo de imports, via import-linter' \
 	  '                       (ADR-011/D3a; backend/scripts/boundaries.sh)' \
 	  '  make build           artefato distribuivel — hoje RECUSA com rc=3, e o alvo diz porque' \
+	  '  make verify          OS SEIS PORTOES numa chamada, veredito em ~10 linhas e a saida' \
+	  '                       bruta em arquivo (scripts/verify.sh). E o alvo para AGENTE rodar' \
 	  '' \
 	  'O make sai com 2 em qualquer receita que falhe: ele NAO propaga o rc=3 dos scripts.'
 
@@ -158,3 +160,24 @@ boundaries:
 build:
 	@printf '%s\n' "RECUSA: nao ha artefato a construir neste repositorio hoje, e este alvo diz isso" "        em voz alta em vez de devolver verde." "" "        backend : package-mode = false, zero dependencia de runtime, src/ nao e pacote" "                  publicavel (backend/pyproject.toml). 'poetry build' falharia por isso." "        frontend: package.json declara UM script, 'lint'. Nao ha 'build'. A aplicacao" "                  Next.js pertence ao componente 'web' e a outra task." "" "        O alvo existe porque o plano 01 item 1.10 enumera 'build' na fachada. Quem trouxer" "        o primeiro artefato preenche esta receita e remove esta recusa." >&2
 	@exit 3
+
+# ── verify ─────────────────────────────────────────────────────────────────────────────
+# Os cinco portoes numa chamada, veredito compacto, saida bruta em arquivo.
+#
+# EXISTE POR UM NUMERO, e o numero e de consumo e nao de gosto: `[MEDIDO 2026-08-29 sobre
+# 105 transcripts de subagente deste projeto, n=1.320 chamadas]` os comandos de verificacao
+# despejaram ~397 mil tokens de saida BRUTA no contexto dos agentes -- `git diff` 277
+# chamadas / ~201k tokens, `harness rules` 332 / ~66k, `make lint` 221 / ~43k, `make test`
+# 263 / ~41k, `git status` 158 / ~35k, `make boundaries` 69 / ~10k. E cada token que entra
+# num contexto e relido a cada turno seguinte: o maior /build da sessao leu 93,5M para
+# produzir 72,7k de conteudo unico (1.286x).
+# `[MEDIDO 2026-08-29: 5.915 bytes de log -> 591 bytes impressos, 10x, e UMA chamada no
+# lugar de seis]`. Doutrina em `docs/protocolo-de-despacho.md` R7.
+#
+# ⚠️ O `rc` UTIL E O DO SCRIPT, NAO O DO MAKE, e aqui isso pesa mais que nos outros alvos:
+# `verify.sh` distingue 1 ("mediu e reprovou") de 3 ("RECUSOU medir"), e o `make` colapsa os
+# dois em 2 -- que e exatamente a diferenca que o cabecalho deste arquivo existe para nao
+# deixar perder. Para portao, `make verify` basta. Para LER a causa, chame o script direto:
+#   bash scripts/verify.sh
+verify:
+	bash scripts/verify.sh
