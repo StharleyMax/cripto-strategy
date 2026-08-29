@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 #
 # O contrato de cada porta esta na docstring da CLASSE, logo acima do stub: nada se perde.
 # Se algum dia estes stubs ganharem corpo de verdade, o `noqa` sai junto com o `...`.
+#
+# E ELES SUPRIMEM ACHADO REAL, o que ate 2026-08-29 nao era verdade: `D` so entrou em
+# `[tool.ruff.lint] select` com este mesmo commit, e antes disso `lint.sh` nao media docstring
+# nenhuma — estes tres `noqa` eram INERTES. Falsificador, e ele foi RODADO: remover UM deles
+# faz `bash backend/scripts/lint.sh` sair `rc=1` com `D102` [MEDIDO 2026-08-29, em copia
+# restaurada e conferida por sha256].
 
 
 class ItemWorker(Protocol):
@@ -33,7 +39,7 @@ class ItemWorker(Protocol):
 
 
 class Checkpoint(Protocol):
-    """Durable checkpoint port — in memory does not do, and a test shows why."""
+    """Durable checkpoint port — in-memory will not do, and a test shows why."""
 
     def done(self) -> frozenset[str]: ...  # noqa: D102
 

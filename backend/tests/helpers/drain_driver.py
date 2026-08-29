@@ -24,7 +24,7 @@ def _transform(atraso_s: float) -> Callable[[bytes], bytes]:
 
 
 def main(argv: list[str]) -> int:
-    """Drain the whole source directory and return the exit code of this process."""
+    """Drain every file in the source directory; return 0 only if it reaches the end."""
     source_dir, output_dir, ledger, atraso_s = argv
     keys = sorted(item.name for item in Path(source_dir).iterdir() if item.is_file())
     drain(

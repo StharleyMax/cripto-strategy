@@ -1,1 +1,1 @@
-"""Backend source root: the `src` package that `import-linter` treats as `root_package`."""
+"""Backend source root: every internal import is spelled from `src`, never relatively."""

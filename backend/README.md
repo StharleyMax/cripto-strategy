@@ -238,22 +238,35 @@ Se `PY_ALVO` mudar, mudam os dois — e o comando do DoD `D1.9`
 (`grep -n 'PY_ALVO' backend/scripts/*.sh`) os encontra **juntos**, que é o motivo de a duplicação ser
 tolerável aqui e não em geral.
 
-### 📎 2026-08-28 por `T-01.7` — docstrings em inglês, e o `...` de `Protocol` que a cobertura NÃO conta
+### 📎 2026-08-28/29 por `T-01.7` — docstrings em inglês, `"D"` no `select`, e o `...` de `Protocol` que a cobertura NÃO conta
 
 As docstrings deste backend estão em **inglês** (`ADR-011/D6`, `plano 01` item `1.11`). Comentários `#`,
 mensagens de erro e nomes de teste **continuam em português** — a convenção alcança a docstring, e só
-ela. **Idioma de docstring é convenção, não portão.** O que roda é
+ela. **Idioma de docstring é convenção, não portão** — e a metade que É mensurável **agora está no
+portão**, o que até 2026-08-29 não era verdade.
 
-```bash
-cd backend && ruff check --select D src tests     # rc=0, "All checks passed!"
-```
+**`"D"` entrou em `[tool.ruff.lint] select` por `T-01.7`.** Antes disso `select` não o tinha e
+`lint.sh:51` roda `ruff check src tests` **sem** `--select D` ⇒ **as 55 docstrings podiam ser apagadas e
+`lint.sh`, `make lint` e o `pre-push` continuavam verdes**, e os 3 `noqa: D102` abaixo eram **inertes**
+`[MEDIDO 2026-08-29, em cópia restaurada e conferida por sha256: com a docstring de
+`JsonlCheckpoint.done()` apagada, `ruff check src tests` → **rc=0** "All checks passed!", enquanto
+`ruff check --select D src tests` → **rc=1** `D102`]`. `ADR-011:268` já tinha recusado a forma mais
+fraca — *"ferramenta só no `lint.sh` fica fora do portão que de fato reprova"* —, e esta estava fora
+**até do `lint.sh`**.
 
-— o mesmo escopo de `backend/scripts/lint.sh`. Ele mede **presença e forma**, e é **cego a idioma**:
-medido, não lido — traduzir uma docstring de volta ao português com a forma intacta deixa o comando
-**verde**. ⚠️ **O caminho faz parte do número:** rodado **nu da raiz**, esse comando devolve `rc=1` com
-**8 achados pré-existentes em `scripts/verify_screen.py`**, que nenhum portão deste repositório linta
-`[MEDIDO 2026-08-29]`. Os dois números e as três mutações estão no `README.md` da raiz,
-§"Idioma de docstring é convenção, não portão".
+**Depois, o portão real morde** `[MEDIDO 2026-08-29, n=4, via `bash backend/scripts/lint.sh`]`:
+
+| mutação | `bash backend/scripts/lint.sh` |
+|---|---|
+| apagar a docstring de `JsonlCheckpoint.done()` | **`rc=1`** · `D102 Missing docstring in public method` |
+| tirar o ponto final do resumo de `record()` | **`rc=1`** · `D400 First line should end with a period` |
+| remover **1** dos 3 `noqa: D102` | **`rc=1`** · `D102` — os `noqa` **suprimem achado real**, não são enfeite |
+| traduzir `done()` de volta ao **português**, forma intacta | **`rc=0`** · "All checks passed!" |
+
+A última linha é a prova, no portão de verdade, de que **`D` é cego a idioma** — e é por isso que o
+idioma continua sendo **convenção conferida por leitura humana**, e não regra automática (`D1.10`
+**reprova** quem declarar uma). Escopo e os 8 achados pré-existentes de `scripts/verify_screen.py`, que
+nenhum portão linta: `README.md` da raiz, §"Idioma de docstring é convenção, não portão".
 
 **O achado desta task, e ele é sobre o piso de cobertura, não sobre idioma.** Documentar um método de
 `Protocol` obriga a trocar o corpo `...` pela docstring — e **o `...` de uma linha é excluído da

@@ -93,7 +93,34 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "B", "S", "ANN", "C90"]
+# `D` (pydocstyle) ACRESCENTADO em 2026-08-29 por `T-01.7`, e ele fecha um vazio MEDIDO:
+# ate aqui a metade MENSURAVEL de `ADR-011/D6` — presenca e forma da docstring — nao estava
+# em portao nenhum. `lint.sh:51` roda `ruff check src tests` SEM `--select D`, entao apagar
+# uma docstring saia VERDE no portao que de fato reprova
+# [MEDIDO 2026-08-29, em copia restaurada e conferida por sha256: com a docstring de
+#  `JsonlCheckpoint.done()` apagada, `ruff check src tests` -> rc=0 "All checks passed!",
+#  enquanto `ruff check --select D src tests` -> rc=1 `D102`]. Um portao que so existe
+# digitado a mao no README nao e portao — e `ADR-011:268` ja tinha recusado a forma mais
+# fraca ("ferramenta so no lint.sh fica fora do portao"); esta estava fora ate do lint.sh.
+#
+# ATENCAO AO QUE `D` MEDE, porque confundir isto e o defeito que `ADR-011/D6` passou o dia
+# recusando: `D` mede PRESENCA e FORMA. Ele NAO mede IDIOMA, e NENHUMA regra `D` e sensivel
+# a idioma. O idioma das docstrings e CONVENCAO DECLARADA, conferida por revisao humana, e
+# declarar uma regra automatica de idioma REPROVA a fase (`plano 01`, `D1.10`).
+select = ["E", "F", "I", "N", "UP", "B", "S", "ANN", "C90", "D"]
+
+# As DUAS incompatibilidades do pydocstyle, resolvidas POR DECLARACAO e nao por desempate da
+# ferramenta. O `ruff` ja escolhia exatamente estas duas, e avisava em stderr a cada rodada:
+#   "D203 e D211 sao incompativeis. Ignorando D203."   "D212 e D213 ... Ignorando D213."
+# Escrever a escolha faz duas coisas: cala o aviso no portao e torna a escolha DURAVEL — um
+# desempate implicito muda quando a ferramenta muda de versao, que e a mesma classe de defeito
+# que `target-version` acima existe para impedir.
+#
+# NAO E AFROUXAMENTO, e isso foi MEDIDO e nao presumido: o conjunto de regras `D` habilitadas
+# e IDENTICO com e sem estas duas linhas [MEDIDO 2026-08-29: `ruff check --select D
+# --show-settings` com e sem `--ignore D203,D213` -> os dois conjuntos batem exato; `D203` e
+# `D213` ja estavam AUSENTES dos dois, e `D211`/`D212` presentes nos dois].
+ignore = ["D203", "D213"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

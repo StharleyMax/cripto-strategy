@@ -3,7 +3,7 @@
 Why this file exists apart from the `D3.1` test: without it, deleting `flush()`+`os.fsync()`
 from BOTH `infra` modules left the suite GREEN at `12 passed` with **100%** coverage
 `[MEDIDO 2026-08-28]`. Four fully covered statements and not one assertion about what they do —
-coverage measures execution, not behaviour.
+coverage measures execution, not behavior.
 
 The technique: spy on `os.fsync` via `monkeypatch` and check, **at the moment of the call**, (a)
 that the content is ALREADY in the file — which kills the removal of the `flush` — and (b) that

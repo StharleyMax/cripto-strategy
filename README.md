@@ -98,20 +98,50 @@ caro, mas porque as formas de medir que existem falham de maneiras que foram **m
 | lista fechada de palavras-função portuguesas em ASCII | **12 de 18** `[MEDIDO 2026-08-28]` — **6 falsos negativos, 33%** | recall de 67% num portão de bloqueio é ruído com severidade |
 | detector probabilístico de idioma | `[NÃO MEDIDO]` — dependência nova, veredito probabilístico | portão que erra sozinho é pior que convenção honesta |
 
-**O que É medido, e o que ele de fato mede:**
+**O que É medido, e onde:** `"D"` (pydocstyle) está em `[tool.ruff.lint] select` do
+`backend/pyproject.toml` — portanto **o portão que de fato reprova já mede docstring**, e não é preciso
+digitar `--select D` para isso acontecer:
 
 ```bash
-eval "$(make venv)"                               # ver §Setup — o `ruff` mora na venv
-cd backend && ruff check --select D src tests     # rc=0, "All checks passed!"
+bash backend/scripts/lint.sh    # o [test_cmd.sentimento] lint — rc=0; RECUSA com rc=3 sem a venv
+make lint                       # a mesma coisa, mais o ESLint do frontend
 ```
 
-Ele (pydocstyle) mede **presença** e **forma** — a docstring existe, o resumo cabe numa linha, termina em
+**Isto foi acrescentado por `T-01.7`, e fechou um vazio medido:** até 2026-08-29 o `select` **não** tinha
+`"D"`, e `lint.sh` roda `ruff check src tests` **sem** `--select D`. Consequência: as docstrings podiam
+ser apagadas e o portão continuava verde
+`[MEDIDO 2026-08-29, em cópia restaurada e conferida por sha256: com a docstring de
+JsonlCheckpoint.done() apagada, «ruff check src tests» → rc=0 "All checks passed!", enquanto
+«ruff check --select D src tests» → rc=1 D102]`. **Depois de `"D"` entrar no `select`, a mesma mutação
+reprova o portão real:** `bash backend/scripts/lint.sh` → **`rc=1`, `D102`**; tirar o ponto final de um
+resumo → **`rc=1`, `D400`**; árvore limpa → **`rc=0`** `[MEDIDO 2026-08-29, n=3 mutações]`. E a
+recusa é medida também: numa árvore extraída **sem** `backend/.venv`, `bash backend/scripts/lint.sh` →
+**`rc=3`**, "RECUSA: …/backend/.venv/bin/python nao existe"
+`[MEDIDO 2026-08-29: git archive | tar -x, e o script na árvore extraída]`.
+
+Para **isolar** só as regras `D` — útil para depurar, nunca necessário para o portão:
+
+```bash
+cd backend && ./.venv/bin/python -m ruff check --select D src tests    # rc=0, "All checks passed!"
+```
+
+⚠️ **Repare que o interpretador está escrito por extenso, e isso é deliberado.** `cd backend && ruff …`
+depende de um `ruff` no `PATH`: sem a venv, ou ele não existe, ou é **outro** `ruff` medindo outro
+universo — e essa é a forma que **pode sair verde por acidente**. Os comandos acima **não têm esse modo
+de falha**: `lint.sh` recusa com `rc=3` sem a venv, e o caminho literal falha alto.
+
+O que `D` mede é **presença** e **forma** — a docstring existe, o resumo cabe numa linha, termina em
 ponto, está no imperativo (`D401`). **Nenhuma regra `D` é sensível a idioma**, e isso não é leitura de
 documentação, é medição: trocar uma docstring inglesa por português **com a forma intacta** deixa o
 comando **verde**
-`[MEDIDO 2026-08-28, n=3 mutações no mesmo arquivo, comando `cd backend && ruff check --select D src tests`:
-M3 traduz JsonlCheckpoint.done() de volta ao português e o comando devolve rc=0, "All checks passed!";
-M1 apaga essa mesma docstring → rc=1, D102; M2 tira o ponto final do resumo de record() → rc=1, D400]`.
+`[MEDIDO 2026-08-29, n=3 mutações no mesmo arquivo, na grafia literal publicada acima: M3 traduz
+JsonlCheckpoint.done() de volta ao português e o comando devolve rc=0, "All checks passed!"; M1 apaga
+essa mesma docstring → rc=1, D102; M2 tira o ponto final do resumo de record() → rc=1, D400]`.
+
+**E agora isso vale para o portão real, não só para o comando isolado:** com `"D"` no `select`, a mesma
+M3 passada por `bash backend/scripts/lint.sh` — o portão que `make lint` e o `pre-push` rodam — devolve
+**`rc=0`, "All checks passed!"** `[MEDIDO 2026-08-29]`. **O portão morde presença e forma, e é cego a
+idioma. Por isso o idioma continua sendo convenção conferida por leitura humana.**
 
 ⚠️ **O caminho faz parte do número, e a forma nua mede outra coisa.** O escopo acima (`src tests`, a
 partir de `backend/`) é o de `backend/scripts/lint.sh`. **Rodado nu da raiz**, o mesmo comando devolve

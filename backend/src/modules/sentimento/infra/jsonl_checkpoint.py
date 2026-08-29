@@ -42,11 +42,11 @@ class JsonlCheckpoint:
         return self._path
 
     def entries(self) -> tuple[str, ...]:
-        """Return every recorded key, in order — repetition included, so it stays measurable.
+        """Return every recorded key, in order — repetition included, so that it stays measurable.
 
         NAMED DEBT — the error classification is INCOMPLETE, and `CorruptedCheckpointError`
         only covers unreadable JSON. A readable payload with the wrong shape escapes the
-        declared class `[MEDIDO 2026-08-28, universo 4 payloads, backend/.venv/bin/python
+        declared class `[MEDIDO 2026-08-28, n=4 payloads, backend/.venv/bin/python
         against this module]`:
           `{"chave": "a.csv"}` -> `KeyError: 'key'`
           `5`                  -> `TypeError: 'int' object is not subscriptable`
