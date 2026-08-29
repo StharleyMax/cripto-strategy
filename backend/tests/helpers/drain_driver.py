@@ -1,4 +1,4 @@
-"""Driver de subprocesso: dreno REAL, para que o teste possa matar o processo no meio."""
+"""Subprocess driver: a REAL drain, so the test can kill the process halfway through."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ def _transform(atraso_s: float) -> Callable[[bytes], bytes]:
 
 
 def main(argv: list[str]) -> int:
+    """Drain every file in the source directory; return 0 only if it reaches the end."""
     source_dir, output_dir, ledger, atraso_s = argv
     keys = sorted(item.name for item in Path(source_dir).iterdir() if item.is_file())
     drain(

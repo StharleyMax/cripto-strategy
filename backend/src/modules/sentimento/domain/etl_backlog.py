@@ -1,4 +1,4 @@
-"""Backlog de ETL: a janela FECHADA de trabalho e o que dela ainda falta."""
+"""ETL backlog: the CLOSED window of work, and what is still missing from it."""
 
 from __future__ import annotations
 
@@ -7,20 +7,21 @@ from dataclasses import dataclass
 
 
 class InvalidBacklogError(Exception):
-    """Janela de trabalho malformada: chave vazia ou repetida."""
+    """Malformed work window: an empty key, or a key declared twice."""
 
 
 class CheckpointOutsideWindowError(Exception):
-    """O checkpoint carrega chave que a janela declarada nao contem."""
+    """The checkpoint carries a key that the declared window does not contain."""
 
 
 @dataclass(frozen=True)
 class EtlBacklog:
-    """Janela enumerada a priori (`SPEC-001` §5.7) — a ordem declarada e a ordem de trabalho."""
+    """Window enumerated up front (`SPEC-001` §5.7) — declared order IS the work order."""
 
     keys: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        """Reject an empty or repeated key at construction time."""
         if any(not key for key in self.keys):
             raise InvalidBacklogError("chave vazia na janela declarada")
         # DIVIDA NOMEADA — `self.keys.count(key)` DENTRO da comprehension e O(n^2). Medido nesta
@@ -37,14 +38,18 @@ class EtlBacklog:
 
     @classmethod
     def of(cls, keys: Iterable[str]) -> EtlBacklog:
-        """Constroi a janela a partir de qualquer iteravel, preservando a ordem recebida."""
+        """Build the window from any iterable, preserving the order received."""
         return cls(tuple(keys))
 
     def __len__(self) -> int:
+        """Return how many keys the declared window holds."""
         return len(self.keys)
 
     def pending(self, done: Iterable[str]) -> tuple[str, ...]:
-        """O que falta, na ordem declarada. Chave concluida fora da janela e ERRO, nao ruido."""
+        """Return what is still missing, in the declared order.
+
+        A completed key that falls outside the declared window is an ERROR, not noise.
+        """
         done_set = frozenset(done)
         outside = sorted(done_set - set(self.keys))
         if outside:
