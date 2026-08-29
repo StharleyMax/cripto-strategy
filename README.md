@@ -105,8 +105,19 @@ valor**; o que mudou é o alcance do título.*
 
 **As docstrings deste repositório são escritas em inglês** (`ADR-011/D6`). Os comentários `#`, as
 mensagens de erro e a documentação continuam em português — **a convenção de `ADR-011/D6` alcança a
-docstring, e só ela.** O alcance sobre identificador, nome de arquivo e nome de diretório é outro, é
-posterior, e está na tabela do [`CLAUDE.md`](CLAUDE.md).
+docstring, e só ela.** O alcance sobre identificador, nome de arquivo, nome de diretório **e comentário**
+é outro, é posterior, e está na tabela do [`CLAUDE.md`](CLAUDE.md).
+
+> **⚠️ E sobre `comentário` os dois documentos DIVERGEM hoje — a divergência está escrita aqui em vez de
+> resolvida à revelia.** A linha 5 da tabela do `CLAUDE.md` diz *"docstring / comentário → **inglês**"*
+> (copiada íntegra de `PRD-002` §3.1), e o parágrafo acima — texto **medido** por `T-01.7` — diz que os
+> comentários `#` continuam em português. **A força que a linha 5 cita é `ADR-011/D6`, e `ADR-011/D6`
+> alcança só a docstring.** ⇒ a tabela afirma, nesta linha, mais do que a decisão que ela invoca
+> sustenta. **Dono: `/architect`** — quem tem de se decidir entre *"docstring"* e *"docstring /
+> comentário"* é a linha 5 de `PRD-002` §3.1, não este `README` nem o `CLAUDE.md`.
+> **Nada foi editado dos dois lados de propósito:** mexer na tabela violaria *"íntegra"* (`CA-F1-1`) e
+> apagar a frase acima violaria `RN-2`. Sinalizar é o que cabe no escopo desta task. `/review`
+> `[WARNING-4]`, ciclo 2.
 
 E aqui vai a parte que importa mais que a convenção: **idioma de docstring é convenção declarada, não
 portão. Este repositório NÃO mede o idioma das docstrings, e não finge que mede.** Não porque medir seja

@@ -51,12 +51,20 @@ Gates marcados **owner** (`spec`, `build`, `advance DONE`) **não podem ser feit
 ## Nenhum número sem o comando que o produziu
 
 Toda afirmação quantitativa carrega o comando, o universo (`n`) e um rótulo de força: `[MEDIDO]` ·
-`[DOC]` · `[NÃO MEDIDO]` · `[PREMISSA-OWNER]` · `[INFERRED: motivo]`. **Não é estilo.** Três defeitos
+`[DOC]` · `[NÃO MEDIDO]` · `[PREMISSA-OWNER]` · `[DECISÃO-OWNER: data, escolha entre alternativas
+apresentadas]` · `[INFERRED: motivo]`. **Não é estilo.** Três defeitos
 reais deste projeto foram encontrados por essa disciplina, incluindo uma regra anti-lookahead que estava
 **invertida** e propagada por dois documentos.
 
 Corolário: **`[PREMISSA-OWNER]` é para citação literal do owner.** Paráfrase vestida de declaração já
 produziu defeito aqui — leitura adotada por agente leva rótulo próprio.
+
+E os **dois rótulos de owner não são o mesmo ato**, que é a distinção que a paráfrase apaga:
+**`[PREMISSA-OWNER]` = o owner _disse_** (citação literal, na grafia dele); **`[DECISÃO-OWNER]` = o owner
+_escolheu_** entre opções que um agente redigiu, com o custo de cada uma declarado. O segundo **não** é
+coberto pelo corolário acima — aquele licencia rótulo próprio para *leitura adotada por agente*, e uma
+escolha do owner não é leitura de agente. Rotular uma escolha como `[PREMISSA-OWNER]` inventa uma frase
+que o owner nunca disse; rotular uma fala dele como `[DECISÃO-OWNER]` dissolve a autoridade dela.
 
 ## Higiene de contexto — o subagente devolve ponteiro, não relatório
 
@@ -97,7 +105,9 @@ comandos a referenciam só como `$COINALYZE_API_KEY`.
 ## Idioma de identificador — a fronteira escrita, e ela é **convenção, não portão**
 
 **A regra, em uma linha:** o código deste repositório nasce **em inglês**; o que fica em português está
-**enumerado na tabela abaixo**, e a enumeração é fechada.
+**enumerado na tabela abaixo**. A enumeração é **fechada sobre as superfícies que ela lista** — e há
+**uma lacuna conhecida, declarada logo abaixo da tabela**, em vez de escondida atrás da palavra
+*"fechada"*.
 
 `[PREMISSA-OWNER, 2026-08-29]` — e aqui o rótulo é este porque a frase é **citação literal** do owner:
 
@@ -105,7 +115,10 @@ comandos a referenciam só como `$COINALYZE_API_KEY`.
 
 ### A exceção do vocabulário de componentes — literal, e é para ser grepada
 
+>
 > **O vocabulário fechado de componentes e todo caminho que dele deriva ficam em português. Todo o resto do código vai para o inglês.**
+>
+> ⚠️ `[DECISÃO-OWNER: 2026-08-29, escolha entre alternativas apresentadas]` — **isto NÃO é fala do owner.**
 
 `[DECISÃO-OWNER: 2026-08-29, escolha entre alternativas apresentadas]` — **e o rótulo é este, e não
 `[PREMISSA-OWNER]`**: o owner escolheu uma opção de um menu que um agente redigiu, com o custo de cada
@@ -123,10 +136,30 @@ instrumento futuro que meça idioma **acusa `sentimento` de português**, e a pa
 acusação é **falsa por construção** ⇒ todo instrumento de idioma terá de carregar a lista de exceções
 como **entrada de primeira classe**.
 
-**O falsificador da exceção — ele mede EROSÃO, não intenção:** todo nome em português aceito sob
-`backend/src/` ou `frontend/src/` tem de casar, **por igualdade de string**, com um elemento de
-`harness policy --key components`. Um segundo nome português que **não** case é a evidência de que a
-exceção virou rampa.
+**O falsificador da exceção — ele mede EROSÃO, não intenção, e o universo dele é `CA-F1-6`:** todo
+**segmento de diretório** sob `backend/src/`, `backend/tests/` ou `frontend/src/` tem de casar, **por
+igualdade de string**, com um elemento de `harness policy --key components` — **menos** o que a própria
+tabela já declarou exceção (a coluna de contrato da **linha 11**) e **menos** o que as fases `02`/`03`
+existem para renomear. Um segundo segmento português que **não** case, e que **nenhuma** dessas
+subtrações cubra, é a evidência de que a exceção virou rampa.
+
+```bash
+git ls-tree -r --name-only HEAD | grep -E '^(backend/src|backend/tests|frontend/src)/' \
+  | awk -F/ '{for(i=1;i<NF;i++) print $i}' | sort -u \
+  | grep -vxE 'sentimento|charts|convergencia|backtest|web|docs'
+```
+
+**Hoje: 14 segmentos, e exatamente 1 em português — `painel`**, que a fase `03` renomeia; depois dela,
+**13 e zero** `[MEDIDO 2026-08-29 em 77cf178, n=14 segmentos]`.
+
+> **⛔ As duas subtrações não são conveniência — sem elas o falsificador nasce DISPARADO, e um
+> falsificador disparado no commit que o escreve não mede erosão nenhuma:** o próximo leitor o roda, vê
+> que dispara, conclui *"já estava assim"* e para de olhar. É o modo de falha que `ADR-012` nomeia para
+> o `rc=0` — sinal indistinguível entre *"nada erodiu"* e *"o instrumento nunca foi capaz de
+> distinguir"*. **A versão anterior desta frase dizia *"todo nome"* em vez de *"todo segmento"*, e por
+> isso acusava `janela_de_perda` — que é a linha 11 desta mesma tabela, 20 linhas abaixo — e `numero`,
+> variável local em `jsonl_checkpoint.py:84` `[MEDIDO 2026-08-29: 2 literais vivos + 2 ocorrências]`.
+> Corrigido no ciclo 2, achado por `/review` `[WARNING-1]`.**
 
 ### A tabela de fronteira — 12 linhas, normativa e fechada
 
@@ -160,6 +193,38 @@ divergência **parar de crescer** mesmo que não a encolha: hoje são **4 em por
 **Linha 12 — o custo de deixar em aberto, escrito para não ser esquecido:** hoje é **1 rota**. Na fase
 `05` de `SPEC-001` são muitas, e trocar URL depois quebra bookmark e link. **A pergunta é barata agora e
 monotonicamente mais cara depois** — mas não bloqueia nada. Dono: **owner**.
+
+### ⏸ A lacuna conhecida desta tabela — **mensagem de exceção**, e ela é dívida com dono
+
+**Nenhuma das 12 linhas acima cobre a string de `raise X("…")`.** Isto é declarado aqui, como prosa
+adjacente e **não como 13ª linha** — `CA-F1-1` congela a tabela em **12**, e uma 13ª reprovaria um
+`CLAUDE.md` correto. O precedente é o da coluna de contrato, que o `/tech-lead` colocou como prosa pelo
+mesmo motivo.
+
+**A superfície está viva e já divergiu**, `n=5` mensagens em 3 arquivos — **3 em português, 2 em inglês**
+`[MEDIDO 2026-08-29 em 77cf178]`:
+
+```bash
+grep -rnoE '(raise|Error|Exception)\w*\(\s*f?"[^"]{4,90}"' backend/src --include='*.py'
+#  etl_backlog.py:26,37       "chave vazia/repetida na janela declarada"        PT
+#  jsonl_checkpoint.py:84     "linha {numero} ilegivel em {self._path}"         PT
+#  checksum_manifest.py:90    "manifest attests an empty subject name"          EN
+#  checksum_manifest.py:111   "entry is not in `sha256sum` format: …"           EN
+```
+
+**E o argumento da linha 10 vale palavra por palavra aqui, o que torna a omissão inconsistente e não
+apenas incompleta:** *"a string em `logger.info("…")` é escrita em código, por quem escreve o código"* —
+troque `logger.info` por `raise ValueError` e **nada no argumento muda**. Ele não foi aplicado.
+
+> **Status: `⏸ NÃO DECIDIDO`. Dono: `/architect`** — a decisão é se esta vira a **13ª superfície** de
+> `PRD-002` §3.1, e ela **não é minha**: `T-01.1` transcreve fronteira, não a estende.
+> **Gatilho de reabertura, e ele é observável e barato:** hoje são **3 PT / 2 EN**; se o número de
+> mensagens em português **subir**, a lacuna deixou de ser inércia e virou rampa — e volta à mesa com um
+> caso concreto. Até lá, `README.md` §*"Idioma de identificador"* é a **única** resposta escrita
+> (*"as mensagens de erro … continuam em português"*), e ela **não** está nesta tabela normativa — um
+> leitor que pergunte *"em que idioma escrevo a próxima mensagem de erro?"* acha resposta no `README`,
+> **nenhuma** aqui, e uma árvore dividida 3 a 2. **É assim que a lacuna nasce, e por isso ela está
+> escrita em vez de silenciada.** Achado por `/review` `[WARNING-2]`, ciclo 2.
 
 ### Idioma de identificador é convenção, **não portão** — e o gatilho de reabertura tem endereço
 
