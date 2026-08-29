@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from src.modules.sentimento.domain.ingest_record import IngestGap, IngestRun
+from src.modules.sentimento.infra import ingest_health_cli
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
 from src.modules.sentimento.use_cases.ingest_health import ingest_health_query
 from tests.helpers.ingest_record_driver import build_run
@@ -82,22 +83,65 @@ def test_killing_the_recorder_mid_run_keeps_every_committed_record(tmp_path: Pat
     try:
         deadline = time.monotonic() + 30.0
         while len(observer.runs()) < 10:
-            assert process.poll() is None, "o driver terminou antes de a morte ser possivel"
-            assert time.monotonic() < deadline, "o driver nao progrediu em 30 s"
+            assert process.poll() is None, "the driver finished before a kill was possible"
+            assert time.monotonic() < deadline, "the driver made no progress in 30 s"
             time.sleep(0.01)
         process.kill()
     finally:
         process.wait(timeout=30)
 
-    assert process.returncode != 0, "SIGKILL tem de aparecer no codigo de saida"
+    assert process.returncode != 0, "SIGKILL has to show up in the exit code"
 
     survivors = SqliteIngestRecordStore(store_path).runs()
-    assert 0 < len(survivors) < UNIVERSE, f"morte fora do meio: {len(survivors)}/{UNIVERSE}"
-    # NAO PERDE E NAO INVENTA: os sobreviventes sao exatamente o prefixo que o driver gravou,
-    # campo a campo, e nao apenas "a mesma quantidade".
+    assert 0 < len(survivors) < UNIVERSE, (
+        f"the kill landed outside the middle: {len(survivors)}/{UNIVERSE}"
+    )
+    # LOSES NOTHING AND INVENTS NOTHING: the survivors are exactly the prefix the driver
+    # wrote, field by field, and not merely "the same count".
     assert list(survivors) == [build_run(index) for index in range(len(survivors))]
-    # E ELES CHEGAM PELA CONSULTA NOMEADA, que e o que o item 2.6 do plano de fato pede.
+    # AND THEY ARRIVE THROUGH THE NAMED QUERY, which is what plan item 2.6 actually asks.
     assert ingest_health_query(SqliteIngestRecordStore(store_path)).runs == survivors
+
+
+def test_killing_the_recorder_during_startup_never_makes_the_record_raise(tmp_path: Path) -> None:
+    """`D2.9` in the window the happy kill excludes BY CONSTRUCTION: death before the schema.
+
+    WHY THIS EXISTS SEPARATELY FROM THE TEST ABOVE. That one waits for ten readable rows
+    (`while len(observer.runs()) < 10`), so by the time it kills, the `CREATE TABLE` is long
+    committed. The plan says `D2.9` is *matar o processo e reler*, and a process can die before
+    it finished starting — which is exactly the hole the `/qa` of 2026-08-29 walked through:
+    over the file an early kill leaves, `runs()` raised `OperationalError: no such table`.
+
+    ── THE ASSERTION IS AN INVARIANT, NOT A RACE OUTCOME, AND THAT IS DELIBERATE ──────────
+
+    The kill lands wherever the scheduler puts it: no file, a 0 B file, a file with the schema
+    and no rows, or a file with some rows `[MEDIDO 2026-08-29 by the /qa: 6 of 40 kills fired
+    between 1 ms and 60 ms after the Popen leave the 0 B file]`. A test that asserted "the file is
+    0 B" would fail 85% of the time and teach nobody anything. What is asserted instead holds
+    for EVERY one of those outcomes: the record never raises, and whatever comes back is a
+    valid PREFIX of what the driver writes. `test_ingest_record_crash_borders.py` reconstructs
+    the 0 B state deterministically; this one proves a real `SIGKILL` can produce nothing the
+    reader cannot handle.
+    """
+    store_path = tmp_path / "record.sqlite3"
+    environment = dict(os.environ, PYTHONPATH=str(BACKEND_ROOT))
+    process = subprocess.Popen(
+        [sys.executable, str(DRIVER), str(store_path), str(UNIVERSE), "0.0"],
+        cwd=str(BACKEND_ROOT),
+        env=environment,
+    )
+    try:
+        process.kill()
+    finally:
+        process.wait(timeout=30)
+
+    # It does not raise — not over an absent file, not over a half-born one, not with rows.
+    health = ingest_health_query(SqliteIngestRecordStore(store_path))
+    assert health.gaps == ()
+    # And what came back is a valid PREFIX, whatever instant the kill happened to land on.
+    assert list(health.runs) == [build_run(index) for index in range(len(health.runs))]
+    # The CLI report — the surface an operator actually touches — survives the same state.
+    assert f'"n_runs":{len(health.runs)}' in ingest_health_cli.report(store_path)
 
 
 def test_an_in_memory_record_store_loses_everything_on_restart() -> None:
@@ -112,7 +156,7 @@ def test_an_in_memory_record_store_loses_everything_on_restart() -> None:
         volatile.record_run(build_run(index))
     assert len(volatile.runs()) == 5
 
-    restarted = VolatileIngestRecordStore()  # o "restart": a memoria do processo morto nao volta
+    restarted = VolatileIngestRecordStore()  # the "restart": a dead process's memory is gone
     assert restarted.runs() == ()
     assert ingest_health_query(restarted).runs == ()
 
@@ -163,8 +207,9 @@ def test_the_cli_projection_is_byte_identical_under_pt_br_and_c_locales(
 
     THE UNIVERSE IS REAL, AND IT WAS CHECKED BEFORE THIS TEST WAS TRUSTED: `pt_BR.UTF-8` is
     installed on this machine and reaches the subprocess as an EFFECTIVE locale
-    `[MEDIDO 2026-08-29: LANG=pt_BR.UTF-8 ... locale.setlocale(locale.LC_ALL, "") ->
-     ("pt_BR", "UTF-8"), and locale.format_string("%.2f", 1234.5, grouping=True) -> "1.234,50"]`.
+    `[MEDIDO 2026-08-29: LANG=pt_BR.UTF-8 with locale.setlocale(locale.LC_ALL, "") ->
+     ("pt_BR", "UTF-8"), and locale.format_string("%.2f", 1234.5, grouping=True) -> "1.234,50";
+     n = 1 machine, the one running this suite]`.
     A locale that does not exist would fall back in silence and this test would compare two
     identical `C` runs while claiming to compare two locales.
 
@@ -172,7 +217,7 @@ def test_the_cli_projection_is_byte_identical_under_pt_br_and_c_locales(
     the record today is `int`, `str` or `null`, and none of those has ever been
     locale-sensitive in JSON. The day a FLOAT column enters the projection, this test is the
     place that has to be re-read — it will still pass, and it will be proving less
-    `[NAO MEDIDO: nenhuma coluna de ponto flutuante existe hoje na projecao]`.
+    `[NAO MEDIDO: no floating-point column exists in the projection today]`.
     """
     store_path = tmp_path / "record.sqlite3"
     store = SqliteIngestRecordStore(store_path)

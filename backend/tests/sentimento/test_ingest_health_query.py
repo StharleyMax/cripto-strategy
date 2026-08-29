@@ -7,6 +7,9 @@ import hashlib
 import io
 import json
 import logging
+import os
+import subprocess
+import sys
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -17,6 +20,7 @@ from src.modules.sentimento.domain.ingest_record import (
     INGEST_HEALTH_GAP_COLUMNS,
     INGEST_HEALTH_RUN_COLUMNS,
     KNOWN_VERDICTS,
+    VERDICTS_SPELLED_IN_THE_SPEC,
     IngestGap,
     IngestHealthReport,
     IngestRun,
@@ -33,17 +37,22 @@ from tests.helpers.ingest_record_driver import build_run
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = BACKEND_ROOT / "src"
 
-# ── AS DUAS LISTAS ABAIXO SAO TRANSCRICAO INDEPENDENTE, E ISSO NAO E DUPLICACAO ────────────
+# ── THE LISTS BELOW ARE AN INDEPENDENT TRANSCRIPTION, AND THAT IS NOT DUPLICATION ──────────
 #
-# Elas foram copiadas A MAO de `ADR-008/D3` e de `SPEC-001` §3.5, e existem para nao serem
-# `INGEST_HEALTH_RUN_COLUMNS`. Uma versao anterior deste teste comparava a projecao com a
-# propria constante do `domain` — e uma MUTACAO que trocou duas colunas de ordem passou VERDE,
-# porque os dois lados da comparacao se moviam juntos [MEDIDO 2026-08-29: mutante "duas das 15
-# colunas trocam de ordem" -> 17 passed; com a transcricao abaixo -> reprova].
+# They were copied BY HAND from `ADR-008/D3` and from `SPEC-001` §3.5, and they exist in order
+# NOT to be `INGEST_HEALTH_RUN_COLUMNS`. An earlier version of this test compared the
+# projection against the very constant the projection derives from — and a MUTATION that
+# swapped two columns passed GREEN, because both sides of the comparison moved together
+# `[MEDIDO 2026-08-29: mutant "two of the 15 columns swap order" -> `bash backend/scripts/
+#  test.sh` rc=0, 17 passed; with the transcription below -> 2 tests fail]`.
 #
-# Um controle que devolve o mesmo numero dos dois lados nao esta medindo. Se alguem reordenar
-# ou renomear uma coluna no `domain`, quem reprova e a comparacao com esta transcricao, e o
-# conserto correto e reabrir a ADR — nao editar as duas listas ate baterem.
+# A control that returns the same number on both sides is not measuring. If somebody reorders
+# or renames a column in `domain`, what fails is the comparison against this transcription, and
+# the correct repair is to reopen the ADR — never to edit the two lists until they agree.
+#
+# THE SAME DISCIPLINE IS APPLIED TO THE `verdict` ENUMERATION further down, and it was NOT
+# applied there in the delivered version: the `/review` of 2026-08-29 found the same family one
+# constant along.
 ADR_008_D3_RUN_COLUMNS: tuple[str, ...] = (
     "run_id",
     "source",
@@ -60,6 +69,13 @@ ADR_008_D3_RUN_COLUMNS: tuple[str, ...] = (
     "observer_region",
     "clock_skew_ms",
     "janela_de_perda",
+)
+
+# The enumeration as DELIVERED by `T-02.3`, transcribed so that it is not the constant under
+# test. Two of the three are literal in `SPEC-001`; `ACCEPTED` is the `[INFERRED]` member, and
+# the test below is what stops the inference from growing quietly.
+KNOWN_VERDICTS_TRANSCRIBED: frozenset[str] = frozenset(
+    {"ACCEPTED", "ACCEPTED_WITH_WARNING", "REJECTED"}
 )
 
 SPEC_001_3_5_GAP_COLUMNS: tuple[str, ...] = (
@@ -115,6 +131,21 @@ def _definitions_named(name: str, roots: tuple[Path, ...]) -> list[str]:
     is "a search method that does not see what it claims to see", and a regex over lines is
     exactly the tool that misses `def  ingest_health_query`, a definition inside a class, or
     one produced by a decorator — while happily counting the word inside a docstring.
+
+    ⚠️ AND IT HAS A FOURTH BLIND SPOT OF ITS OWN, WHICH IS THE POINT OF WRITING THIS DOWN. It
+    walks `FunctionDef`, `AsyncFunctionDef` and `ClassDef`, so a module that BINDS the shared
+    name by ASSIGNMENT — `ingest_health_query = _other_impl`, or a `lambda` — installs a second
+    implementation while this scan keeps answering "exactly one"
+    `[MEDIDO 2026-08-29 by the /qa: this function over the tree plus one planted module with
+     `ingest_health_query = _really_the_second_implementation` -> 1 definition, the duplicate
+     INVISIBLE; the same with a `lambda` -> 1]`.
+
+    A scanner that names three blind spots and hides a fourth is the very defect this docstring
+    congratulates itself for avoiding, so: the assignment shape is covered by
+    `test_ingest_health_contract_guards.py::_bindings_named`, which the `/qa` wrote, and
+    `ADR-008/DoD-1` ("exactly ONE definition in the repository") is the CONJUNCTION of the two
+    scans. NEITHER ALONE IS THE CLAIM. A fifth shape — a definition reached only at runtime,
+    through `setattr` or an import hook — is beyond any AST and stays `[NAO MEDIDO]`.
     """
     found: list[str] = []
     for root in roots:
@@ -161,7 +192,7 @@ def isolated_cli_logger() -> Iterator[io.StringIO]:
         logger.propagate = previous_propagate
 
 
-# ── `ADR-008/D3` — a consulta e UMA, e as colunas dela sao contrato ────────────────────────
+# ── `ADR-008/D3` — the query is ONE, and its columns are a contract ────────────────────────
 
 
 def test_the_named_query_has_exactly_one_definition_under_backend_src() -> None:
@@ -200,6 +231,23 @@ def test_the_column_contract_still_matches_what_adr_008_and_the_spec_wrote() -> 
     assert INGEST_HEALTH_GAP_COLUMNS == SPEC_001_3_5_GAP_COLUMNS
 
 
+def test_the_verdict_enumeration_cannot_grow_or_shrink_without_somebody_signing_for_it() -> None:
+    """The containment the `/review` prescribed, and it is the guard on my OWN `[INFERRED]`.
+
+    The first line pins what the SPEC literally SPELLS. The second is the one that matters: it
+    says the delivered enumeration exceeds the document by EXACTLY ONE member, and names it. On
+    the day a fourth value enters by inference, this fails — which is the whole point, because
+    an inference that can grow in silence is not an inference any more, it is an invention.
+
+    It is deliberately NOT the answer to the open question. `quant-architect` owns the
+    enumeration; whoever answers changes this line in the same commit that changes `domain`,
+    and that is `ADR-008/DoD-3` applied to the enum instead of to the consumers.
+    """
+    assert VERDICTS_SPELLED_IN_THE_SPEC == ("ACCEPTED_WITH_WARNING", "REJECTED")
+    assert KNOWN_VERDICTS - set(VERDICTS_SPELLED_IN_THE_SPEC) == {"ACCEPTED"}
+    assert KNOWN_VERDICTS == KNOWN_VERDICTS_TRANSCRIBED
+
+
 def test_the_projection_carries_exactly_the_fifteen_columns_adr_008_fixed() -> None:
     """The 15 run columns, in the fixed order — reordering them changes every fingerprint."""
     health = ingest_health_query(FakeIngestRecordSource((build_run(0),), (_gap(),)))
@@ -210,8 +258,8 @@ def test_the_projection_carries_exactly_the_fifteen_columns_adr_008_fixed() -> N
     assert list(json.loads(lines[2])) == list(ADR_008_D3_RUN_COLUMNS)
     assert json.loads(lines[3]) == {"section": "ingest_gap", "n": 1}
     assert list(json.loads(lines[4])) == list(SPEC_001_3_5_GAP_COLUMNS)
-    # A coluna do `md.ingest_gap` continua se chamando `class` na saida, ainda que o campo do
-    # dataclass seja `gap_class` — renomea-la quebraria S1 sem teste de Python nenhum reclamar.
+    # The `md.ingest_gap` column is still called `class` on the wire even though the dataclass
+    # field is `gap_class` — renaming it would break S1 with no Python test complaining.
     assert json.loads(lines[4])["class"] == "SOURCE_GAP"
 
 
@@ -250,12 +298,20 @@ def test_a_different_state_moves_the_fingerprint() -> None:
     assert one.fingerprint() != other.fingerprint()
 
 
-# ── `ADR-008/DoD-3` — o `verdict` inedito: os dois mudam juntos ou os dois reprovam ────────
+# ── `ADR-008/DoD-3` — the unheard-of `verdict`: both change together or both fail ──────────
 
 
-@pytest.mark.parametrize("verdict", sorted(KNOWN_VERDICTS))
+@pytest.mark.parametrize("verdict", sorted(KNOWN_VERDICTS_TRANSCRIBED))
 def test_every_known_verdict_passes_the_shared_query(verdict: str) -> None:
-    """At least one run of EACH known verdict goes through — the query is not simply strict."""
+    """At least one run of EACH known verdict goes through — the query is not simply strict.
+
+    PARAMETRISED OVER THE TRANSCRIPTION, NEVER OVER `KNOWN_VERDICTS`. The delivered version
+    used `sorted(KNOWN_VERDICTS)` — the same constant `ingest_health_query` consults to decide
+    — so shrinking the enumeration shrank the parametrisation and the test stayed green with
+    FEWER cases `[MEDIDO 2026-08-29 by the /review: mutant "`VERDICTS_SPELLED_IN_THE_SPEC` loses
+    `REJECTED`" -> `bash backend/scripts/test.sh` rc=0, SURVIVED]`. It is the same family as
+    the column mutant above, one constant along.
+    """
     health = ingest_health_query(FakeIngestRecordSource((_run_with_verdict(0, verdict),)))
     assert health.runs[0].verdict == verdict
 
@@ -269,9 +325,9 @@ def test_a_verdict_no_consumer_knows_makes_the_shared_query_fail_loudly() -> Non
     implementation — and the defect would be invisible, which is why it gets a test and not a
     paragraph.
     """
-    inedito = _run_with_verdict(0, "ACCEPTED_WITH_QUARANTINE")
+    unheard_of = _run_with_verdict(0, "ACCEPTED_WITH_QUARANTINE")
     with pytest.raises(UnknownVerdictError) as raised:
-        ingest_health_query(FakeIngestRecordSource((inedito,)))
+        ingest_health_query(FakeIngestRecordSource((unheard_of,)))
     assert "ACCEPTED_WITH_QUARANTINE" in str(raised.value)
 
 
@@ -320,16 +376,72 @@ def test_the_cli_entrypoint_wires_the_logger_and_reports(tmp_path: Path) -> None
     store.initialise()
     store.record_run(build_run(0))
 
-    logger = ingest_health_cli.logger
-    previous_handlers, previous_level = list(logger.handlers), logger.level
-    previous_propagate = logger.propagate
+    # `main` MUTATES TWO LOGGERS, not one, and both are restored here. Restoring only the CLI
+    # logger would leave the `src` logger of the whole application holding a stderr handler and
+    # `propagate = False` for the rest of the session — global state leaking out of a test,
+    # which is the kind of thing that makes a LATER test fail for a reason nobody can find.
+    cli_logger = ingest_health_cli.logger
+    app_logger = logging.getLogger(ingest_health_cli._APPLICATION_LOGGER)
+    saved = [
+        (log, list(log.handlers), log.level, log.propagate) for log in (cli_logger, app_logger)
+    ]
     try:
         assert ingest_health_cli.main([str(store_path)]) == 0
-        assert logger.handlers, "main tem de instalar o registrador de stdout"
+        assert cli_logger.handlers, "main has to install the stdout logger"
+        assert app_logger.handlers, "main has to take diagnostics off the product stream"
+        assert app_logger.propagate is False
     finally:
-        logger.handlers = previous_handlers
-        logger.setLevel(previous_level)
-        logger.propagate = previous_propagate
+        for log, handlers, level, propagate in saved:
+            log.handlers = handlers
+            log.setLevel(level)
+            log.propagate = propagate
+
+
+def test_the_product_never_leaks_onto_the_diagnostic_stream(tmp_path: Path) -> None:
+    """`stdout` carries the projection and `stderr` carries NONE of it — the split is two-way.
+
+    ── THIS TEST EXISTS BECAUSE A MUTANT SURVIVED, AND THE MUTANT WAS MINE ────────────────
+
+    Routing this application's diagnostics to `stderr` (the fix for the `/qa` defect) MOVED
+    where `logger.propagate = False` earns its keep. Before the fix, flipping it duplicated
+    every line onto `stdout` and broke the `sha256`. After the fix, the CLI logger's records
+    propagate up to the `src` logger, whose handler is on `stderr` — so `stdout` stays
+    perfectly correct and every existing test, including the `/qa`'s, still passes
+    `[MEDIDO 2026-08-29, private bench, mutant J "propagate = False -> True":
+     `bash backend/scripts/test.sh` rc=0, 55 passed, SURVIVED; and the same hosted process hands
+     back the 5 product lines REPEATED on `stderr`, prefixed `INFO src.modules…`]`.
+
+    A line on a covered statement that no mutant can reach is a line nobody is measuring. The
+    property it actually protects now is this one, and it is not cosmetic: an operator running
+    the report under `cron` writes `cmd >record.jsonl 2>&1` by reflex, and with the product on
+    both streams that merged file holds every row twice — which is neither valid JSON Lines nor
+    the projection `ADR-008/DoD-2` compares.
+    """
+    store_path = tmp_path / "record.sqlite3"
+    store = SqliteIngestRecordStore(store_path)
+    store.initialise()
+    for index in range(2):
+        store.record_run(build_run(index))
+    expected = ingest_health_query(SqliteIngestRecordStore(store_path)).canonical_lines()
+
+    hosted = (
+        "import logging, sys\n"
+        "logging.basicConfig(stream=sys.stdout, format='%(message)s', level=logging.INFO)\n"
+        "from src.modules.sentimento.infra.ingest_health_cli import main\n"
+        "raise SystemExit(main(sys.argv[1:]))\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", hosted, str(store_path)],
+        cwd=str(BACKEND_ROOT),
+        env=dict(os.environ, PYTHONPATH=str(BACKEND_ROOT)),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert completed.stdout.rstrip("\n").split("\n") == list(expected)
+    leaked = [line for line in expected if line in completed.stderr]
+    assert leaked == [], f"the product leaked onto the diagnostic stream: {len(leaked)} line(s)"
 
 
 def test_the_cli_entrypoint_refuses_a_call_without_a_store_path() -> None:

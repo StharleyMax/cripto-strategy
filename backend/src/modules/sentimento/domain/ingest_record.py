@@ -7,17 +7,18 @@ import json
 from dataclasses import dataclass
 from typing import Final
 
-# ── OS 15 CAMPOS SAO CONTRATO, E A ORDEM FAZ PARTE DELE ───────────────────────────────────
+# ── THE 15 FIELDS ARE A CONTRACT, AND THE ORDER IS PART OF IT ─────────────────────────────
 #
-# `ADR-008/D3` fixa esta lista com a frase "colunas que a consulta devolve, fixadas aqui
-# porque sao o contrato entre os dois consumidores". Ela NAO e a lista de colunas da TABELA
-# `md.ingest_run` (`SPEC-001` §3.5), e a diferenca e nos dois sentidos:
+# `ADR-008/D3` fixes this list with the sentence "colunas que a consulta devolve, fixadas aqui
+# porque sao o contrato entre os dois consumidores" (quoted literally from the ADR). It is NOT
+# the column list of the `md.ingest_run` TABLE (`SPEC-001` §3.5), and it differs in BOTH
+# directions:
 #
-#   so na TABELA:    `started_at`, `ended_at`   -- gravados, nao projetados
-#   so na CONSULTA:  `janela_de_perda`          -- derivado, e em F0 ele nao existe ainda
+#   TABLE only:  `started_at`, `ended_at`   -- stored, never projected
+#   QUERY only:  `janela_de_perda`          -- derived, and in F0 it does not exist yet
 #
-# A ordem entra no `sha256` da projecao canonica (`ADR-008/DoD-2`), entao reordenar esta
-# tupla muda a impressao digital de todo relatorio: e mudanca de contrato, nao de estilo.
+# The order feeds the `sha256` of the canonical projection (`ADR-008/DoD-2`), so reordering
+# this tuple changes the fingerprint of every report: a contract change, not a style change.
 INGEST_HEALTH_RUN_COLUMNS: Final[tuple[str, ...]] = (
     "run_id",
     "source",
@@ -36,10 +37,10 @@ INGEST_HEALTH_RUN_COLUMNS: Final[tuple[str, ...]] = (
     "janela_de_perda",
 )
 
-# `SPEC-001` §3.5, literal. `class` e palavra reservada de Python, entao o CAMPO do dataclass
-# se chama `gap_class` e a CHAVE projetada continua `class` — quem renomear a chave quebra o
-# contrato com S1 sem que nenhum teste de Python perceba, e por isso a traducao e explicita
-# em `_GAP_FIELD_BY_COLUMN` logo abaixo, e nao implicita numa comprehension.
+# `SPEC-001` §3.5, literal. `class` is a reserved word in Python, so the dataclass FIELD is
+# named `gap_class` while the projected KEY stays `class` — renaming that key would break the
+# contract with S1 without a single Python test noticing, which is why the translation is
+# EXPLICIT in `_GAP_FIELD_BY_COLUMN` just below instead of implicit inside a comprehension.
 INGEST_HEALTH_GAP_COLUMNS: Final[tuple[str, ...]] = (
     "source",
     "symbol",
@@ -55,31 +56,37 @@ _GAP_FIELD_BY_COLUMN: Final[dict[str, str]] = {
     column: ("gap_class" if column == "class" else column) for column in INGEST_HEALTH_GAP_COLUMNS
 }
 
-# ── O CONJUNTO FECHADO DE `verdict`, E O QUE CADA MEMBRO CUSTA EM EVIDENCIA ────────────────
+# ── THE CLOSED SET OF `verdict`, AND WHAT EACH MEMBER COSTS IN EVIDENCE ───────────────────
 #
-# `ACCEPTED_WITH_WARNING` e `REJECTED` estao LITERAIS na `SPEC-001` (§5.6 e §5.5/§5.7), e o
-# `grep` que os enumera devolve so esses dois em todo `docs/`
-# [MEDIDO 2026-08-29: `grep -rn "ACCEPTED\|REJECTED" docs/` -> nenhum outro valor de
-#  `verdict` aparece escrito; n = 1 arvore de documentacao].
+# `ACCEPTED_WITH_WARNING` and `REJECTED` are LITERAL in `SPEC-001` (§5.6 and §5.5/§5.7), and
+# the `grep` that enumerates them returns only those two across all of `docs/`
+# `[MEDIDO 2026-08-29: `grep -rn "ACCEPTED\|REJECTED" docs/` -> no other `verdict` value is
+#  written anywhere; n = 1 documentation tree]`.
 #
-# `ACCEPTED` e o terceiro e ele e `[INFERRED: §5.6 chama `ACCEPTED_WITH_WARNING` de a variante
-# COM AVISO de um aceite e manda "NUNCA 'REJECTED', NUNCA zero linhas gravadas"; um aceite sem
-# aviso e pressuposto por essa frase e nunca escrito literalmente em lugar nenhum]`. Sem ele
-# uma execucao limpa nao teria `verdict` nenhum e o registro nasceria inutil. A PERGUNTA de
-# quem e o dono da enumeracao esta ABERTA e nomeada para o `quant-architect` — ela nao foi
-# decidida aqui, so rotulada.
-# Separados de proposito: a tupla abaixo e o que a SPEC ESCREVE, e o `frozenset` acrescenta o
-# terceiro. Fundir os dois numa linha so apagaria a diferenca entre medido e inferido.
+# `ACCEPTED` is the third and it is `[INFERRED: §5.6 calls `ACCEPTED_WITH_WARNING` the WITH-
+# WARNING variant of an accept and orders "NUNCA 'REJECTED', NUNCA zero linhas gravadas"; an
+# accept without a warning is presupposed by that sentence and never written literally
+# anywhere]`. Without it a clean run would carry no `verdict` at all and the record would be
+# born useless. WHO OWNS THE ENUMERATION IS AN OPEN QUESTION, addressed to the
+# `quant-architect` — this module labels the inference, it does not settle it.
+#
+# THE TWO CONSTANTS ARE SEPARATE ON PURPOSE: the tuple below is what the SPEC WRITES, and the
+# `frozenset` adds the third. Merging them into one line would erase the difference between
+# measured and inferred — and `test_ingest_health_contract_guards.py` pins BOTH against a
+# hand-made transcription, so shrinking either one is an act somebody has to sign for.
 VERDICTS_SPELLED_IN_THE_SPEC: Final[tuple[str, str]] = ("ACCEPTED_WITH_WARNING", "REJECTED")
 KNOWN_VERDICTS: Final[frozenset[str]] = frozenset({"ACCEPTED", *VERDICTS_SPELLED_IN_THE_SPEC})
 
-# ── `janela_de_perda` EM F0: AUSENTE POR DECLARACAO, e nunca por um numero inventado ───────
+# ── `janela_de_perda` IN F0: ABSENT BY DECLARATION, never by an invented number ────────────
 #
-# `D7.12` decide que ela e FORMULA por serie (`pontos x intervalo`), nao constante, e o dono
-# dela e `T-07.12` (`web`, fase 07). Em F0 nao ha formula, e um numero seco aqui seria
-# exatamente o que `D7.14` proibe. A COLUNA existe na projecao — `ADR-008/D3` a fixa — e o
-# valor e `null`. Tirar a coluna deixaria S1 reintroduzi-la com outro nome; preenche-la com
-# um chute publicaria uma retencao que ninguem mediu.
+# `D7.12` decides it is a FORMULA per series (`points x interval`), not a constant, and its
+# owner is `T-07.12` (`web`, phase 07). In F0 there is no formula, and a bare number here is
+# exactly what `D7.14` forbids. The COLUMN exists in the projection — `ADR-008/D3` fixes it —
+# and the value is `null`. Dropping the column would let S1 reintroduce it under another name;
+# filling it with a guess would publish a retention window nobody measured.
+#
+# The NAME stays Portuguese because it is a CONTRACT COLUMN NAME quoted from `ADR-008/D3`,
+# like `window` — renaming it here would break the consumer of `T-07.13`.
 LOSS_WINDOW_NOT_COMPUTED_IN_F0: Final[None] = None
 
 

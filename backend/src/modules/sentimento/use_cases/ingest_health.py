@@ -15,9 +15,9 @@ from src.modules.sentimento.domain.ingest_record import (
 
 logger = logging.getLogger(__name__)
 
-# O nome e ESTAVEL e vive num lugar so: `ADR-008/D3` fixa o nome antes de fixar as colunas,
-# porque e por ele que o segundo consumidor (S1, `T-07.13`/`CST-67`) encontra esta funcao em
-# vez de escrever a dele.
+# The name is STABLE and lives in exactly one place: `ADR-008/D3` fixes the name before it
+# fixes the columns, because the name is how the second consumer (S1, `T-07.13`/`CST-67`)
+# finds THIS function instead of writing its own.
 INGEST_HEALTH_QUERY_NAME: Final[str] = "ingest_health_query"
 
 
@@ -32,30 +32,39 @@ class IngestRecordSource(Protocol):
 def ingest_health_query(source: IngestRecordSource) -> IngestHealthReport:
     """Read the persisted record and return it in the shape both consumers share.
 
-    ── POR QUE A RECUSA DE `verdict` DESCONHECIDO MORA AQUI, E NAO NO DATACLASS ──────────
+    ── WHY THE REFUSAL OF AN UNKNOWN `verdict` LIVES HERE AND NOT IN THE DATACLASS ───────
 
-    `IngestRun` e o registro CRU: o plano da fase 02 manda "grava cru + `received_at`", e um
-    dataclass que recusasse valores no construtor tornaria IMPOSSIVEL persistir o que a borda
-    de ingestao de fato observou. O que nao pode acontecer e um consumidor EXIBIR uma execucao
-    cujo `verdict` ele nao entende como se entendesse.
+    `IngestRun` is the RAW record: the phase 02 plan says "grava cru + `received_at`", and a
+    dataclass that refused values in its constructor would make it IMPOSSIBLE to persist what
+    the ingestion edge actually observed. What must never happen is a consumer DISPLAYING a
+    run whose `verdict` it does not understand as though it understood it.
 
-    Entao a recusa fica exatamente onde `ADR-008/DoD-3` a quer: no caminho COMPARTILHADO de
-    leitura. Um `verdict` inedito injetado no store faz os DOIS consumidores reprovarem juntos,
-    porque so existe um lugar onde a decisao e tomada. Se um dia um passar e o outro nao,
-    isso prova que alguem escreveu a segunda implementacao — que e o unico defeito que
-    `ADR-008` inteira existe para impedir, e ele e SILENCIOSO por natureza.
+    So the refusal sits exactly where `ADR-008/DoD-3` wants it: on the SHARED read path. A
+    verdict nobody has heard of, injected into the store, makes BOTH consumers fail together,
+    because there is only one place where the decision is taken. If one day one passes and the
+    other does not, that proves somebody wrote the second implementation — the one defect the
+    whole of `ADR-008` exists to prevent, and it is SILENT by nature.
     """
     runs = source.runs()
     unknown = sorted({run.verdict for run in runs} - KNOWN_VERDICTS)
     if unknown:
+        # THE MESSAGE STAYS IN PORTUGUESE, and it is a decision like the `uso:` line of the CLI:
+        # `SPEC-001` §3.8 reserves pt-BR EXCLUSIVELY for microcopy, and this text is read by an
+        # operator whose F0 record just refused to display a run. Every identifier, docstring
+        # and comment around it is English, per the owner's rule.
         raise UnknownVerdictError(
             f"{INGEST_HEALTH_QUERY_NAME} nao conhece o(s) verdict(s) {unknown}; "
             f"conhecidos: {sorted(KNOWN_VERDICTS)}. Os dois consumidores mudam juntos "
             f"(ADR-008/DoD-3) — esconder a execucao seria a duplicacao silenciosa."
         )
     gaps = source.gaps()
-    logger.info(
-        "ingest_health_query_lida",
+    # DEBUG AND NOT INFO, and the level is load-bearing rather than taste: this record shares
+    # a call path with the CLI report, whose `stdout` is a byte contract (`ADR-008/DoD-2`).
+    # A library that logs at INFO imposes its volume on every host; DEBUG is the level whose
+    # contract is "off unless somebody asks". The other half of the fix is the stream split in
+    # `infra/ingest_health_cli.py`, which holds even when somebody DOES ask.
+    logger.debug(
+        "ingest_health_query_read",
         extra={"runs": len(runs), "gaps": len(gaps)},
     )
     return IngestHealthReport(runs=runs, gaps=gaps)

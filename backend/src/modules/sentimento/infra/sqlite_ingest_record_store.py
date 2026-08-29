@@ -12,35 +12,56 @@ from src.modules.sentimento.domain.ingest_record import IngestGap, IngestRun
 
 logger = logging.getLogger(__name__)
 
-# A FRONTEIRA COM O BANCO E UNTYPED POR NATUREZA — `sqlite3` devolve `Any`, e nenhum
-# `--strict` conserta isso lendo o driver. As duas tuplas abaixo sao a forma que este modulo
-# AFIRMA que o `SELECT` logo abaixo produz, e o `cast` unico por linha faz o `mypy` conferir
-# a ARIDADE e a ordem contra o construtor do dataclass. Vinte e quatro `cast` por campo
-# fariam a mesma coisa pior: cada um seria uma afirmacao separada e nenhuma delas contaria as
-# colunas. Se o `SELECT` mudar de forma sem que estas tuplas mudem, o `mypy` reprova.
+# THE DATABASE BOUNDARY IS UNTYPED BY NATURE — `sqlite3` hands back `Any`, and no `--strict`
+# fixes that by reading the driver. The two tuples below are the shape this module ASSERTS the
+# `SELECT` just underneath produces, and the single `cast` per row makes `mypy` check the
+# ARITY and the order against the dataclass constructor. Twenty-four per-field casts would do
+# the same job worse: each would be a separate assertion and none of them would count the
+# columns. If the `SELECT` changes shape without these tuples changing, `mypy` fails.
 _RunRow = tuple[
     str, str, str, str, int, int, int, str, int | None, str, int, str, str, int, str, str
 ]
 _GapRow = tuple[str, str, str, str, str, int, str, str]
 
-# ── O MOTOR E SQLite, E `ADR-002/D1` DIZ PostgreSQL — a divergencia vai ESCRITA ────────────
+# ── THE ENGINE IS SQLite AND `ADR-002/D1` SAYS PostgreSQL — the divergence goes IN WRITING ─
 #
-# `ADR-002/D1` poe `md.ingest_run` e `md.ingest_gap` no PostgreSQL "que ja esta de pe", e essa
-# ADR e de F4, esta com status `proposto` e tem o finalista de motor PENDENTE DE SPIKE (`D4`).
-# Este repositorio HOJE declara `dependencies = []` em `backend/pyproject.toml` e a suite e
-# offline por construcao (`backend/scripts/test.sh`, "ZERO REDE"): nao ha driver de Postgres,
-# nao ha daemon e `Q2` nao e requisito desta fase — o plano 02 existe separado do 03
-# exatamente porque F0 nao depende de host.
+# `ADR-002/D1` puts `md.ingest_run` and `md.ingest_gap` on the PostgreSQL "que ja esta de pe",
+# and that ADR belongs to F4, carries status `proposto`, and its engine finalist is PENDING A
+# SPIKE (`D4`). This repository TODAY declares `dependencies = []` in `backend/pyproject.toml`
+# and the suite is offline by construction (`backend/scripts/test.sh`, "ZERO REDE"): there is
+# no Postgres driver, no daemon, and `Q2` is not a requirement of this phase — plan 02 exists
+# separately from 03 precisely because F0 does not depend on a host.
 #
-# O que este modulo escolhe e o ADAPTADOR, nao a decisao: quem decide o motor e `ADR-002`, e
-# a troca custa UM arquivo porque o contrato de leitura e o `Protocol` `IngestRecordSource`
-# em `use_cases/ingest_health.py` — nenhum consumidor importa `sqlite3`. A PERGUNTA ("F0
-# persiste em SQLite ate o spike de `ADR-002/D4`, ou espera o Postgres?") esta ABERTA e
-# nomeada para o `quant-architect`; ela nao foi respondida aqui.
+# What this module picks is the ADAPTER, not the decision: the engine is `ADR-002`'s to decide.
+# THE QUESTION ("does F0 persist in SQLite until the spike of `ADR-002/D4`, or wait for
+# Postgres?") is OPEN and addressed to the `quant-architect`; it was not answered here.
 #
-# SQLite NAO TEM SCHEMA NOMEADO, entao `md.ingest_run` vira a tabela `md_ingest_run`. O ponto
-# do nome logico esta preservado no prefixo, e a projecao que os dois consumidores comparam
-# nao cita nome de tabela nenhum — ela cita as 15 colunas de `ADR-008/D3`.
+# ⚠️ AND THE COST OF SWAPPING IS NOT SYMMETRIC — the `/review` of 2026-08-29 measured it and
+# the earlier claim of "one file" was wrong. `[MEDIDO 2026-08-29:
+# `grep -rln "sqlite3\|SqliteIngestRecordStore" backend/src/` -> 2 arquivos]`: this module and
+# `infra/ingest_health_cli.py`, which names the concrete store because it is the composition
+# root and composing is its job.
+#
+# The asymmetry that decides whether the swap is really cheap: only the READ path has a port
+# (`IngestRecordSource`, in `use_cases/ingest_health.py`). `initialise`, `record_run` and
+# `record_gap` have NO port at all — a second engine would have to be introduced against the
+# concrete class. That is deliberate for now (there is no production writer yet, and a port
+# with no implementor is ceremony) and it has an owner: `T-03.8`, the first task that persists
+# through `ingest_run` in production. It is written here so that whoever swaps the engine
+# discovers it from the code and not from the compiler.
+#
+# SQLite HAS NO NAMED SCHEMA, so `md.ingest_run` becomes the table `md_ingest_run`. The point
+# of the logical name survives in the prefix, and the projection the two consumers compare
+# names no table at all — it names the 15 columns of `ADR-008/D3`.
+
+# The table names are constants because the READ GUARD asks `sqlite_master` for them by name:
+# a typo here would make the guard answer "no such table" forever and the record would report
+# zero runs over a store full of them. They are referenced by `_fetch`, and
+# `test_ingest_record_crash_borders.py` pins both directions.
+_RUN_TABLE: Final[str] = "md_ingest_run"
+_GAP_TABLE: Final[str] = "md_ingest_gap"
+
+_SELECT_TABLE_PRESENCE: Final[str] = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
 
 _DDL: Final[tuple[str, ...]] = (
     """
@@ -93,9 +114,11 @@ _INSERT_GAP: Final[str] = (
 )
 
 # A ORDENACAO E PARTE DA IMPRESSAO DIGITAL. `ADR-008/DoD-2` compara `sha256` de projecoes, e
-# duas leituras do MESMO estado que devolvessem ordens diferentes dariam hashes diferentes
-# sem que nada estivesse errado — o falsificador viraria ruido. Por isso o `ORDER BY` e
-# TOTAL: ele termina numa chave unica em cada tabela, e nao num campo que empata.
+# two reads of the SAME state coming back in different orders would give different hashes with
+# nothing actually wrong — the falsifier would turn into noise. That is why the `ORDER BY` is
+# TOTAL: it ends on a UNIQUE key in each table, never on a field that can tie. Both tie-breaks
+# are pinned by `test_ingest_health_contract_guards.py`, which the `/qa` wrote after measuring
+# that dropping either one changed no verdict.
 _SELECT_RUNS: Final[str] = (
     'SELECT run_id, source, endpoint, "window", n_expected, n_returned, n_written, verdict, '
     "       api_code, src_sha256, weight_used, observer_id, observer_region, clock_skew_ms, "
@@ -172,7 +195,7 @@ class SqliteIngestRecordStore:
                 ),
             )
             connection.commit()
-        logger.info("ingest_run_persistido", extra={"run_id": run.run_id})
+        logger.debug("ingest_run_persisted", extra={"run_id": run.run_id})
 
     def record_gap(self, gap: IngestGap) -> None:
         """Persist one `md.ingest_gap` row and COMMIT before returning."""
@@ -191,24 +214,54 @@ class SqliteIngestRecordStore:
                 ),
             )
             connection.commit()
-        logger.info("ingest_gap_persistido", extra={"source": gap.source, "symbol": gap.symbol})
+        logger.debug("ingest_gap_persisted", extra={"source": gap.source, "symbol": gap.symbol})
 
     def runs(self) -> tuple[IngestRun, ...]:
         """Return every persisted run, in a total and therefore reproducible order."""
-        return tuple(IngestRun(*cast(_RunRow, row)) for row in self._fetch(_SELECT_RUNS))
+        rows = self._fetch(_SELECT_RUNS, _RUN_TABLE)
+        return tuple(IngestRun(*cast(_RunRow, row)) for row in rows)
 
     def gaps(self) -> tuple[IngestGap, ...]:
         """Return every persisted gap, in a total and therefore reproducible order."""
-        return tuple(IngestGap(*cast(_GapRow, row)) for row in self._fetch(_SELECT_GAPS))
+        rows = self._fetch(_SELECT_GAPS, _GAP_TABLE)
+        return tuple(IngestGap(*cast(_GapRow, row)) for row in rows)
 
-    def _fetch(self, statement: str) -> list[tuple[object, ...]]:
-        """Run a read statement against the file, returning nothing when the file is absent.
+    def _fetch(self, statement: str, table: str) -> list[tuple[object, ...]]:
+        """Run a read statement, treating a record that does not exist YET as an empty record.
 
-        An ABSENT file is an empty record, not an error: the CLI report of a collector that
-        has never run has to say "zero runs" instead of blowing up, or the first thing the
-        F0 record does is hide the very state it exists to show.
+        A RECORD THAT DOES NOT EXIST YET HAS TWO SHAPES, AND ONLY ONE OF THEM WAS HANDLED
+        UNTIL THE `/qa` OF 2026-08-29 MEASURED THE OTHER. The collector that has never run
+        leaves NO FILE; the collector killed DURING startup leaves a file that exists, holds
+        zero bytes, and has no schema — `sqlite3.connect` creates the file on open and the
+        `CREATE TABLE` of `initialise()` only becomes visible at `COMMIT`, so a death between
+        the two is an ordinary outcome and not an exotic one
+        `[MEDIDO 2026-08-29 by the /qa: 6 of 40 SIGKILLs fired between 1 ms and 60 ms after the
+         Popen leave exactly this file; over it the old guard raised
+         `sqlite3.OperationalError: no such table: md_ingest_run`]`.
+
+        The two are the SAME semantic case — nothing has been recorded — and the F0 record has
+        to say "zero runs" for both, or the first thing it does is hide the very state it
+        exists to show. The operational shape of the defect is the one that decides it: `cron`
+        starts the collector, the host reboots during startup, and in the morning the raw
+        record answers with a traceback exactly where the phase promised observability.
+
+        ── AND THE GUARD MUST NOT BECOME BLANKET SILENCE, which is the easy wrong exit ─────
+
+        Asking `sqlite_master` separates the two states WITHOUT catching anything, and that is
+        why it is the guard chosen over `except sqlite3.DatabaseError: return []`
+        `[MEDIDO 2026-08-29, n=2 states, private bench: a 0 B file -> the `sqlite_master` query
+         returns `None`; a CORRUPTED file (truncated half + 16 null bytes) -> the SAME query
+         raises `DatabaseError: database disk image is malformed`]`.
+
+        A half-born store is a legitimate state of F0. A corrupted store is DATA LOSS, and
+        `D2.8` exists in this same phase because a `200` with a truncated body already happened
+        here. Swallowing both would trade a loud crash for a silent lie — and it would collide
+        with `core.silent-except`, which is blocking in this repository. There is no `except`
+        in this method, and that is the point: corruption propagates on its own.
         """
         if not self._path.exists():
             return []
         with closing(sqlite3.connect(self._path)) as connection:
+            if connection.execute(_SELECT_TABLE_PRESENCE, (table,)).fetchone() is None:
+                return []
             return list(connection.execute(statement).fetchall())
