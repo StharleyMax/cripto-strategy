@@ -15,7 +15,10 @@ from dataclasses import dataclass
 #
 # FORM PARSED HERE, and it is the one the vendor publishes: GNU `sha256sum` output — 64 hex
 # characters, one space, one mode character (` ` text / `*` binary), the subject name. Observed
-# literally as `bcd2d2...  BTCUSDT-15m-2026-08-23.zip` `[DOC: docs/avaliacao-discovery.md:295]`.
+# literally as `bcd2d2...  BTCUSDT-15m-2026-08-23.zip` `[DOC: docs/avaliacao-discovery.md,
+# the finding that opens "O plano baixa dezenas de milhares de zips" — TEXTUAL anchor and not
+# a line number, per the errata of `docs/INDEX.md` 2026-08-29T03:05Z: a line number breaks on
+# the next edit of the file it points into, and breaks SILENTLY]`.
 #
 # This module is `domain`: it touches no file, no network and no clock. Reading bytes is `infra`,
 # ordering the edge is `use_cases`.
@@ -28,8 +31,8 @@ SHA256_HEX_LENGTH = 64
 # hunts. It carried `^...$` in the pattern and a comment claiming the leading `^` was what kept
 # a line that merely CONTAINS a digest from being read as a manifest. It was not: the call was
 # `.match()`, which anchors at the start on its own, so deleting the `^` changed NOTHING
-# [MEDIDO 2026-08-29, bancada de mutacao com bytecode desligado, n=8 mutacoes: `^` removido ->
-# 27 passed, rc=0 — a mutacao nao foi detectada porque nao havia nada a detectar]. A comment
+# [MEDIDO 2026-08-29, mutation bench with bytecode disabled, n=8 mutations: `^` removed ->
+# 27 passed, rc=0 — the mutation was not detected because there was nothing to detect]. A comment
 # that credits a guard to the wrong mechanism survives the day someone edits the mechanism.
 #
 # So the anchor is stated ONCE, at the call site, with `fullmatch`. The mutation that swaps it

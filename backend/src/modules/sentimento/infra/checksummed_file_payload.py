@@ -7,6 +7,8 @@ import logging
 from collections.abc import Iterator
 from pathlib import Path
 
+from src.modules.sentimento.domain.checksum_manifest import MalformedChecksumError
+
 logger = logging.getLogger(__name__)
 
 CHECKSUM_SUFFIX = ".CHECKSUM"
@@ -60,14 +62,38 @@ class ChecksummedFilePayload:
 
         `None` is a report, not a verdict: `use_cases` decides that an unverifiable payload
         does not enter.
+
+        BYTES THAT ARE NOT UTF-8 ARE A REFUSAL, NOT A CRASH, and this guard is the fix for
+        the defect `T-02.4a/QA-1`. The sidecar travels the same wire as the payload and
+        corrupts the same way; before the guard, one stray byte raised `UnicodeDecodeError`
+        — a `ValueError`, OUTSIDE `ChecksumRejectedError` — so a caller written against the
+        documented contract (`except ChecksumRejectedError: skip_one_file()`) died on the
+        whole batch instead of skipping one object. The most literally unreadable sidecar
+        there is was escaping the family whose docstring says *"cannot be read as a
+        manifest"*.
+
+        Re-raised WITH context (`from exc`), never swallowed: `core.silent-except`.
         """
         if not self._checksum_path.is_file():
             logger.warning("checksum_sidecar_absent", extra={"subject": self._path.name})
             return None
-        return self._checksum_path.read_text(encoding="utf-8")
+        try:
+            return self._checksum_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise MalformedChecksumError(
+                f"the sidecar of {self._path.name!r} is not UTF-8 "
+                f"(byte {exc.object[exc.start]:#04x} at position {exc.start}): "
+                f"it cannot be read as a manifest, so nothing enters"
+            ) from exc
 
     def digest(self) -> str:
-        """Return the sha256 of the WHOLE file, read in chunks and never held in memory."""
+        """Return the sha256 of the WHOLE file, read in `READ_CHUNK_BYTES` blocks.
+
+        NEVER LOADED WHOLE — which is the true statement, and not "never held in
+        memory": one block IS in memory at a time, by construction. The bound is the
+        block size, not zero, and writing zero would credit the guarantee to a term
+        that does not give it.
+        """
         hasher = hashlib.sha256()
         with self._path.open("rb") as handle:
             while chunk := handle.read(READ_CHUNK_BYTES):
@@ -77,8 +103,16 @@ class ChecksummedFilePayload:
     def lines(self) -> Iterator[bytes]:
         """Yield the file line by line, lazily, with the line terminator kept.
 
-        Being a generator matters to the contract: the body does not run until the first
-        `next()`, so a caller that verifies first cannot leak a line by accident.
+        WHAT LAZINESS BUYS, AND WHAT IT DOES NOT. It does NOT buy the ordering guarantee: a
+        caller that verifies first leaks nothing whether this is lazy or eager, and a caller
+        that verifies last leaks either way. The order is owned by `ingest_verified`, and it
+        is asserted there.
+
+        What laziness buys is MEMORY — the file is never materialised — and one extra margin
+        of safety on the order: hoisting `stream = payload.lines()` above the verification
+        (the likeliest innocent refactor) still delivers nothing, because the body has not
+        run yet. That margin is asserted too, by the `CallOrderSpy`, which watches the CALL
+        and not the delivery.
         """
         with self._path.open("rb") as handle:
             yield from handle

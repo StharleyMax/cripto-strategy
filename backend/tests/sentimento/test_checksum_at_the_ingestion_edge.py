@@ -130,7 +130,11 @@ class BucketResponse:
 
 
 def test_intact_file_is_accepted_and_every_line_reaches_the_sink(tmp_path: Path) -> None:
-    """The `cala` side: a legitimate file passes whole. Without it, "rejects" proves nothing."""
+    """The SILENT side (`cala`): a legitimate file passes whole.
+
+    Without it, "rejects" proves nothing — a guard that refuses everything would pass every
+    other test in this file.
+    """
     body = _body()
     payload = _publish(tmp_path, body)
     sink = RecordingSink()
@@ -249,7 +253,7 @@ def test_sidecar_that_is_a_directory_reads_as_absent(tmp_path: Path) -> None:
 def test_malformed_sidecar_refuses_instead_of_guessing(tmp_path: Path) -> None:
     """A sidecar that is not a manifest cannot attest anything, so nothing enters."""
     payload = _publish(tmp_path, _body())
-    payload.with_name(payload.name + ".CHECKSUM").write_text("nao sou um checksum\n")
+    payload.with_name(payload.name + ".CHECKSUM").write_text("i am not a checksum\n")
 
     sink = RecordingSink()
     with pytest.raises(MalformedChecksumError):
@@ -344,7 +348,7 @@ def test_manifest_rejects_an_impossible_pair_at_construction(digest: str, subjec
 def test_verify_stays_silent_when_the_pair_matches() -> None:
     """The silent side of the domain object — the call itself is the assertion.
 
-    `verify` reports by RAISING, so a test that reaches its last line has measured the `cala`
+    `verify` reports by RAISING, so a test that reaches its last line has measured the SILENT
     half. Written down because a suite in which every domain test expects an exception would
     pass just as well against a `verify` that rejects everything.
     """
@@ -360,14 +364,25 @@ def test_verify_stays_silent_when_the_pair_matches() -> None:
 def test_digest_of_a_multi_chunk_file_matches_hashlib(tmp_path: Path) -> None:
     """The chunked loop is where a partial read would silently produce a WRONG digest.
 
-    A file of `2 * READ_CHUNK_BYTES + 7` bytes forces at least three reads, so a loop that
-    hashed only the first block would disagree with `hashlib` over the whole content.
+    THE FIXTURE WAS INERT UNTIL 2026-08-29, AND THE DOCSTRING SAID OTHERWISE. It promised
+    `2 * READ_CHUNK_BYTES + 7` bytes and delivered exactly `2 * READ_CHUNK_BYTES`: the
+    material was `READ_CHUNK_BYTES // 8` repetitions of a 16-byte word — exactly 2 MiB — so
+    the slice `[: 2 * R + 7]` cut NOTHING and the `+ 7` never existed
+    `[MEDIDO 2026-08-29 pelo /review, n=1: len(body) = 2097152, len(body) % R = 0]`. Two full
+    reads and a zero remainder, which means the case this test names — THE FINAL PARTIAL
+    BLOCK, where a truncated `read()` would hide — was never exercised. The old guard
+    (`len(body) > READ_CHUNK_BYTES`) could not catch it: 2 MiB > 1 MiB passes happily.
+
+    So the material grew by one repetition and the assertion below now checks the REMAINDER,
+    not the size. A fixture that silently stops exercising its own case is the same family as
+    a comment crediting a guard to the wrong term.
     """
-    body = (b"0123456789abcdef" * (READ_CHUNK_BYTES // 8))[: 2 * READ_CHUNK_BYTES + 7]
+    body = (b"0123456789abcdef" * (READ_CHUNK_BYTES // 8 + 1))[: 2 * READ_CHUNK_BYTES + 7]
     payload = tmp_path / "big.bin"
     payload.write_bytes(body)
 
-    assert len(body) > READ_CHUNK_BYTES
+    assert len(body) == 2 * READ_CHUNK_BYTES + 7
+    assert len(body) % READ_CHUNK_BYTES != 0, "the fixture needs a PARTIAL final block"
     assert ChecksummedFilePayload(payload).digest() == hashlib.sha256(body).hexdigest()
 
 
@@ -596,7 +611,7 @@ def test_a_sidecar_published_with_crlf_line_endings_is_still_read(tmp_path: Path
     """A refusal here would reject a LEGITIMATE file, which costs as much as accepting a bad one.
 
     `.CHECKSUM` files travel through Windows tooling and object stores that normalise
-    nothing. This is the `cala` side of the parser border: the suite above only ever asserts
+    nothing. This is the SILENT side (`cala`) of the parser border: the suite above only asserts
     the parser REFUSING, and a parser that refuses everything passes all of those.
     """
     body = _body()
@@ -683,28 +698,24 @@ def test_a_payload_file_that_vanished_delivers_nothing(tmp_path: Path) -> None:
     assert sink.accepted == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "DEFECT T-02.4a/QA-1: a sidecar carrying non-UTF-8 bytes escapes the "
-        "ChecksumRejectedError family as UnicodeDecodeError, against what ingest_verified "
-        "documents ('Raises: ChecksumRejectedError: any refusal at the edge') and against "
-        "MalformedChecksumError ('the sidecar itself cannot be read as a manifest'). The "
-        "fix belongs to infra/domain and is out of QA scope. strict=True turns the XPASS "
-        "into a FAILURE the day the code is fixed, forcing the marker to be removed: the "
-        "defect cannot be forgotten in silence."
-    ),
-)
 def test_a_sidecar_that_is_not_utf8_is_refused_as_a_malformed_manifest(tmp_path: Path) -> None:
-    """The most literally unreadable sidecar there is, and the family does not cover it.
+    """The most literally unreadable sidecar there is, and the family now covers it.
 
-    A truncated payload is the premise of this whole task; the sidecar travels the same
-    wire and corrupts the same way. `checksum_text()` calls `read_text(encoding="utf-8")`
-    with no guard, so a single stray byte raises `UnicodeDecodeError` — a `ValueError`,
-    outside `ChecksumRejectedError`. A caller written against the documented contract
-    (`except ChecksumRejectedError: skip_one_file()`) therefore dies on the whole batch
-    instead of skipping one object, and the operator reads a stack trace where the module
-    promised a verdict.
+    DEFECT `T-02.4a/QA-1`, found by `/qa` and by `/review` independently, FIXED 2026-08-29.
+    A truncated payload is the premise of this whole task; the sidecar travels the same wire
+    and corrupts the same way. `checksum_text()` called `read_text(encoding="utf-8")` with no
+    guard, so a single stray byte raised `UnicodeDecodeError` — a `ValueError`, OUTSIDE
+    `ChecksumRejectedError`. A caller written against the documented contract
+    (`except ChecksumRejectedError: skip_one_file()`) died on the whole batch instead of
+    skipping one object, and the operator read a stack trace where the module promised a
+    verdict.
+
+    The security was never the problem — the exception propagated and nothing entered the
+    sink. What was false was the PUBLISHED CONTRACT, which is the same defect as crediting a
+    guard to a term that does not give it.
+
+    This test arrived from `/qa` as `xfail(strict=True)`; the marker came off with the fix,
+    which is what `strict=True` exists to force.
     """
     body = _body()
     payload = _publish(tmp_path, body)

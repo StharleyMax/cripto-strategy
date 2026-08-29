@@ -13,6 +13,52 @@ from src.modules.sentimento.domain.checksum_manifest import (
 
 logger = logging.getLogger(__name__)
 
+# ── THE SCOPE OF THE ORDERING GUARANTEE, AND A REFUSAL IN THE FORM `ADR-012` ESTABLISHED ─────
+#
+# THE ASSERTION WATCHES THIS FUNCTION AND NOTHING ELSE. Neither the type system nor
+# `import-linter` stops a SECOND use case, written later, from calling `payload.lines()`
+# before verifying — and it would pass all four gates. The `/review` of 2026-08-29 named it,
+# and it is right.
+#
+# THE DESIGN THAT WOULD CLOSE IT, and why it is REFUSED here instead of deferred in silence:
+# `verify` returning a `VerifiedPayload` that is the only object exposing `lines()`. Refused
+# on the merits, and the argument is not "out of scope":
+#
+#   1. IT WOULD NOT BE STRUCTURAL. Python has no mechanism to stop a caller that already
+#      holds the source object from calling `source.lines()` on it directly. The token moves
+#      the happy path; it does not close the hole — a gate that LOOKS structural and is not,
+#      which is the exact defect family this repository hunts. `import-linter` cannot help
+#      either: it reads the IMPORT graph, and this is a method call.
+#   2. IT FIXES A PORT SHAPE BEFORE THE FIRST PRODUCTION CALLER EXISTS. There is none today
+#      (the trigger below measures it). Choosing the shape now decides from premise instead
+#      of from measurement.
+#
+# OWNER OF THE GAP: `T-03.10` — the task that brings the first production caller, and the
+# same owner already carrying achado `H` of `backend/README.md` ("there is no composition
+# root"). It cannot defer the decision, because it is the one that has to build the wiring.
+#
+# OBSERVABLE REOPENING TRIGGER, and it counts CALL SITES from the AST rather than matching a
+# regex over text — this repository has nine measured instances of "line regex vs structure":
+#
+#   cd backend && .venv/bin/python -c "$(cat <<EOF
+#   import ast, pathlib
+#   n = [f'{f}:{no.lineno}' for f in pathlib.Path('src').rglob('*.py')
+#        for no in ast.walk(ast.parse(f.read_text()))
+#        if isinstance(no, ast.Call) and isinstance(no.func, ast.Attribute)
+#        and no.func.attr == 'lines' and not no.args]
+#   print(len(n), n)
+#   raise SystemExit(0 if len(n) <= 1 else 1)
+#   EOF
+#   )"
+#
+# MEASURED ON BOTH SIDES 2026-08-29, which is what makes it a trigger and not a wish:
+#   the tree as it is           -> `1`, rc=0  (only the loop below)          [CALA]
+#   plus one planted 2nd caller -> `2`, rc=1                                 [MORDE]
+#
+# The day that count reaches 2, this comment is the record of when the guarantee stopped
+# covering the code.
+
+
 # ── THE ORDER IS THE CONTRACT, AND A TEST WATCHES IT ─────────────────────────────────────────
 #
 # `T-02.4a` states the contract literally — *"rejeita truncamento ANTES de qualquer linha
@@ -62,14 +108,41 @@ class LineSink(Protocol):
 def ingest_verified(payload: VerifiablePayload, sink: LineSink) -> int:
     """Verify at the edge, then stream; return how many lines were accepted.
 
-    FAILS CLOSED, and the three ways it does so are the same `ChecksumRejectedError` family:
-    a missing sidecar, a malformed one, and a digest that does not match all end with zero
-    lines delivered. A missing sidecar refusing is a decision and not an oversight — "we could
-    not check" and "we checked and it is fine" are different states, and letting the first one
-    through under the name of the second is how a truncated month enters unnoticed.
+    FAILS CLOSED, and every INTEGRITY verdict is the same `ChecksumRejectedError` family:
+    a missing sidecar, a malformed one (non-UTF-8 bytes included), a digest that does not
+    match, and a manifest that attests another name — all end with zero lines delivered. A
+    missing sidecar refusing is a decision and not an oversight — "we could not check" and
+    "we checked and it is fine" are different states, and letting the first one through under
+    the name of the second is how a truncated month enters unnoticed.
+
+    WHAT IS NOT IN THE FAMILY, NAMED INSTEAD OF IMPLIED. The first draft of this docstring
+    said *"any refusal at the edge"*, and that was false in the same way the `^`/`.match()`
+    comment was false: a guarantee credited to a term that does not give it. `OSError` and
+    its subclasses propagate RAW — `FileNotFoundError` (payload gone, sidecar present),
+    `PermissionError`, `IsADirectoryError`, a read error on the device.
+
+    That is a DECISION, not a leftover: those are faults of the caller or of the machine, not
+    verdicts about the integrity of an object. Wrapping `FileNotFoundError` as a checksum
+    refusal would tell the operator *"this file is corrupt"* when the truth is *"the path you
+    passed is not there"*, and the whole point of this module is that the two are different
+    questions. The consequence is explicit: a batch caller written as
+    `except ChecksumRejectedError: skip_one_file()` SKIPS corrupt objects and DIES on a
+    vanished path — which is the behaviour a batch should have, because a payload that
+    disappeared mid-run means the caller's view of the world is wrong.
+
+    `test_a_payload_file_that_vanished_delivers_nothing` pins it, so changing it is a
+    decision and not a drift.
 
     Raises:
-        ChecksumRejectedError: any refusal at the edge. Nothing was written to `sink`.
+        ChecksumRejectedError: every integrity verdict. Nothing was written to `sink`.
+        OSError: the payload or the sidecar could not be read. Deliberately outside the
+            family, for the reason written above. NOTE THE ASYMMETRY, because writing
+            "nothing was written to `sink`" here would have been false: an `OSError` while
+            OPENING (the common case — vanished path, permissions) fires on the first
+            `next()`, before any line exists, so the sink stays empty; an `OSError` raised
+            MID-STREAM, after the digest already matched, leaves the lines accepted so far
+            in the sink. The integrity family carries the zero-lines guarantee; `OSError`
+            does not, and pretending otherwise is the defect this module exists to name.
 
     """
     subject = payload.subject()
