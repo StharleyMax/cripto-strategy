@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import MISSING, fields
 from decimal import Decimal
 from typing import Any
@@ -16,6 +17,7 @@ from src.modules.sentimento.domain.series_key import (
     Reduction,
     SeriesKey,
     TsConvention,
+    _canonical_json,
     series_key_field_names,
 )
 
@@ -233,3 +235,86 @@ def test_the_identity_is_stable_across_constructions() -> None:
     """Two equal keys hash the same, so an id is a function of the terms and nothing else."""
     assert binance_oi_key().series_key_id() == binance_oi_key().series_key_id()
     assert len(binance_oi_key().series_key_id()) == 64
+
+
+# ── THE GOLDEN VECTOR — CHANGING IT IS A STORE MIGRATION, NEVER A REFACTOR ────────────────
+#
+# `series_key_id()` is `sha256(_canonical_json(canonical_terms()))`, and until this vector
+# existed the suite could not tell `_canonical_json` from a DIFFERENT `_canonical_json`:
+# flipping `sort_keys`, widening `separators` or dropping `ensure_ascii` re-identifies EVERY
+# series in the store and the whole suite still went green — measured, not feared, by the
+# `/qa` bench over `5c206ab` (n=15 mutants: Q1, Q2 and Q3 SURVIVED).
+#
+# `T-04.6` is going to rewrite that helper (plan 04 item 4.12 — it exists twice in `domain/`).
+# This vector is what makes the rewrite either byte-identical or loudly red.
+#
+# IF THIS TEST FAILS, EVERY `series_key_id` ALREADY WRITTEN TO `series_catalog` AND TO EVERY
+# `SPEC-001` §3.2 ROW IS STALE. The fix is a migration with a written plan — never a fresh
+# literal pasted over the old one.
+GOLDEN_CANONICAL_JSON = (
+    '{"provider":"binance","venue":"usdm_futures","instrument_id":"BTCUSDT",'
+    '"metric":"sum_open_interest","cohort":"all","interval":"5m","unit":"BTC",'
+    '"denom":"base","nature":"STOCK","ts_convention":"POINT_AT_BUCKET_END",'
+    '"reduction":"POINT","quantity_field":"NA","label_shift":300000,'
+    '"aggregation_scope":"Symbol","verified_by":"test_series_identity.py'
+    '::test_label_shift_is_a_term_with_a_witness"}'
+)
+GOLDEN_SERIES_KEY_ID = "2045d032bf0a2d40c944e2d9dccaf9a0fd26dc97ea2f2c670ff3c95fe22425d7"
+
+# Same reference key with ONE non-ASCII term. It is not decoration: `ensure_ascii` is
+# invisible on an all-ASCII key — the two spellings are byte-identical — so a vector without a
+# non-ASCII character cannot see that flag change. `µBTC` is the plausible instance (a unit,
+# not prose), and the day one real term carries an accent, flipping the flag re-identifies it.
+GOLDEN_NON_ASCII_UNIT = "µBTC"
+GOLDEN_NON_ASCII_SERIES_KEY_ID = "c64fa8cfc69e7d1bad53f86673e7da24731bb0e894e16e3f6d082b5488de8a51"
+
+
+def test_the_reference_key_serializes_and_hashes_to_its_golden_vector() -> None:
+    """The canonical bytes and the `sha256` of the reference key are FIXED, byte for byte."""
+    key = binance_oi_key()
+    assert _canonical_json(key.canonical_terms()) == GOLDEN_CANONICAL_JSON
+    assert key.series_key_id() == GOLDEN_SERIES_KEY_ID
+    assert key.series_key_id() == hashlib.sha256(GOLDEN_CANONICAL_JSON.encode("utf-8")).hexdigest()
+
+
+def test_a_non_ascii_term_is_escaped_so_the_canonical_form_stays_pure_ascii() -> None:
+    """`ensure_ascii` is part of the identity: the ASCII escape is the contract, not the byte."""
+    key = binance_oi_key(unit=GOLDEN_NON_ASCII_UNIT)
+    canonical = _canonical_json(key.canonical_terms())
+    assert canonical.isascii()
+    assert '"unit":"\\u00b5BTC"' in canonical
+    assert key.series_key_id() == GOLDEN_NON_ASCII_SERIES_KEY_ID
+    assert key.series_key_id() != GOLDEN_SERIES_KEY_ID
+
+
+@pytest.mark.parametrize(
+    ("member", "source_spelling"),
+    [(QuantityField.Q, "q"), (QuantityField.NQ, "nq"), (QuantityField.NA, "NA")],
+)
+def test_quantity_field_projects_the_sources_spelling_and_not_the_member_name(
+    member: QuantityField, source_spelling: str
+) -> None:
+    """`Q` goes to the wire as `q` and `NQ` as `nq` — `ADR-001`, and the member NAME never does.
+
+    The three members are parametrized on purpose. `NA` is the only one where `name == value`,
+    so a test that projects only `NA` asserts NOTHING about the projection rule: the `/qa`
+    bench over `5c206ab` mutated `value.value` to `value.name` and the suite stayed green
+    (Q14), while the mutant wrote `"Q"`/`"NQ"` into the wire payload and into the `sha256` —
+    renaming the Binance `aggTrades` field that `ADR-001` measured.
+    """
+    projected = binance_oi_key(quantity_field=member).canonical_terms()["quantity_field"]
+    assert projected == source_spelling
+    assert projected == member.value
+
+
+def test_the_member_name_and_the_source_spelling_actually_differ_for_q_and_nq() -> None:
+    """The guard on the guard: with no member where `name != value`, the test above is empty.
+
+    Written as a projection over the whole enum instead of member-by-member comparisons on
+    purpose: `mypy --strict` narrows `QuantityField.Q.name` to `Literal["Q"]` and `.value` to
+    `Literal["q"]`, then REFUSES `!=` between them as a non-overlapping check. The property
+    holds at type level; spelling it out a second time is what the type checker objects to.
+    """
+    differ = {member.name: member.value for member in QuantityField if member.name != member.value}
+    assert differ == {"Q": "q", "NQ": "nq"}
+    assert QuantityField.NA.name == QuantityField.NA.value
