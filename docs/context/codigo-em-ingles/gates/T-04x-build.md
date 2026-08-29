@@ -23,18 +23,29 @@ git diff --stat master... -- CLAUDE.md \
     docs/INDEX.md
 # -> 3 files changed, 154 insertions(+)   [0 deletions]
 
-# o comando SEM filtro, para nao publicar um numero que ele nao produz
+# o comando SEM filtro NAO TEM NUMERO PUBLICAVEL, e o motivo esta abaixo
 git diff --stat master...
-# -> 5 files changed, 432 insertions(+)
+# -> conta tambem os arquivos de processo, INCLUINDO ESTE RELATORIO
 ```
 
-**Os 2 arquivos da diferenca sao registro de processo, nao entregavel:** o
+**Os arquivos da diferenca sao registro de processo, nao entregavel:** o
 `handoff/T-04x.md` (registro de despacho, `R2`) e este proprio relatorio de gate.
 
-> ⚠️ **CORRECAO, ciclo 2 — achado pelo `/qa`:** a versao anterior desta linha publicava
-> `3 files changed, 154 insertions(+)` ao lado de `git diff --stat master...` **sem o filtro
-> de caminho**, e o comando literal devolve **5 / 432**. Numero verdadeiro, comando errado —
-> a familia que este repositorio caca, cometida no proprio relatorio que a mede.
+> ⛔ **POR QUE O COMANDO SEM FILTRO NAO CARREGA NUMERO — e a razao e estrutural, nao
+> preguica:** o `--stat` sem filtro **conta este arquivo**, e este arquivo e onde o numero
+> seria escrito. **Todo valor publicado ali se invalida no ato de ser escrito.** Um numero
+> assim so existe ancorado a um commit: em `72b4ad5` era `5 files / 432`
+> `[MEDIDO 2026-08-29 em 72b4ad5: git diff --stat master...72b4ad5]`, e no commit seguinte
+> ja era outro. O numero que **nao** se auto-invalida e o do comando COM filtro, porque o
+> filtro exclui o relatorio.
+
+> ⚠️ **CORRECAO, ciclo 2 — dois ciclos, e o segundo achou o conserto do primeiro:**
+> **(a)** achado pelo `/qa`: a versao original publicava `3 files changed, 154 insertions(+)`
+> ao lado de `git diff --stat master...` **sem o filtro de caminho**. Numero verdadeiro,
+> comando errado. **(b)** achado pelo `/review` em `b5ab958`: o conserto de (a) publicou
+> `5 / 432` **sem ancora de commit**, e naquele commit o comando ja devolvia `6 / 734` —
+> **a mesma familia reintroduzida dentro do commit que a consertava**. Por isso agora nao ha
+> numero sem filtro: nao e que falte medir, e que **a medida nao existe sem ancora**.
 
 ## 2. DoD — critério a critério, com o comando literal
 
