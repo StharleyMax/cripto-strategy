@@ -1,6 +1,6 @@
 # ADR-013 — Código em inglês é convenção com fronteira escrita, e o portão não existe hoje: eu medi por quê
 
-**Data:** 2026-08-29 · **Status:** proposto · **SPEC:** — (a decisão é do repositório, não de `SPEC-001`)
+**Data:** 2026-08-29 · **Status:** **aceito** (atualizada em 2026-08-29 com as duas respostas do owner) · **SPEC:** — (a decisão é do repositório, não de `SPEC-001`)
 **Fase/Epic:** — · **Componente alvo:** `docs`
 **Origem:** achado do owner em 2026-08-29, medido e re-medido nesta árvore (`master@01ec5a8`)
 **Supersede/estende:** `ADR-011/D6` (idioma de **docstring** — convenção, não portão). Esta ADR **não** o revoga: estende o mesmo veredito ao **identificador** e ao **nome de caminho**, com bancada própria e um falsificador construtivo que `D6` não tinha.
@@ -10,11 +10,12 @@
 
 **Fecha três perguntas:**
 
-| pergunta | decisão |
-|---|---|
-| onde a regra mora — task em `plataforma-dados` ou a feature órfã? | **D1** — feature própria, **renomeada**; com uma exceção nomeada e um custo declarado |
-| isso pode ter portão, ou é doutrina? | **D2** — **doutrina.** Três portões candidatos medidos e **os três recusados**, com o número que recusa cada um |
-| qual é a fronteira do universo? | **D3** — escrita item a item; e **uma colisão que não é minha para resolver**, formulada como uma pergunta |
+| pergunta | decisão | quem fechou |
+|---|---|---|
+| onde a regra mora — task em `plataforma-dados` ou a feature órfã? | **D1** — feature própria, **renomeada**. **Executado**: `docstrings-em-ingles` → `REJECTED`, `codigo-em-ingles` → `INIT` | proposta do `/architect`, **decidida e executada pelo owner em 2026-08-29** |
+| isso pode ter portão, ou é doutrina? | **D2** — **doutrina.** Três portões candidatos medidos e **os três recusados**, com o número que recusa cada um. **Inalterada nesta revisão**, e reforçada por evidência de campo de dois auditores independentes | `/architect` |
+| qual é a fronteira do universo? | **D3** — escrita item a item, e a colisão **FECHADA**: o vocabulário de componentes é **exceção declarada** | proposta do `/architect`, **decidida pelo owner em 2026-08-29** |
+| o `glossary_doc` vazio que o falsificador de `D2` encontrou | **D4** — **dívida com dono nomeado**, promovida a decisão própria nesta revisão | `/architect` |
 
 ---
 
@@ -63,6 +64,34 @@ O falsificador dela (`ast.dump` idêntico 13/13 com as docstrings removidas) **t
 
 `[MEDIDO 2026-08-29, todos em `01ec5a8`; comandos em `docs/INDEX.md` e reproduzidos ao longo desta ADR]`
 
+### O universo, RE-MEDIDO em `7af0e4f` — porque a minha própria linha de base envelheceu
+
+**Esta ADR nasceu sobre `01ec5a8`. Ao trazer o `master` (`7af0e4f`, `T-02.3` + `T-02.4a`) o universo cresceu, e um número de linha de base que não é re-medido é exatamente o defeito que esta ADR persegue.** Re-medido com o **meu próprio detector** (variante `D` + glossário), sobre declarações (`def`/`class`/`const`/`let`/`function`/`type`/`interface`) e nomes de arquivo:
+
+| superfície | identificadores/nomes distintos | acusados de português | antes (`01ec5a8`) |
+|---|---|---|---|
+| `backend/src` | **78** | **0** | 23 decl · 0 |
+| `backend/tests` | **149** | **19** | 27 decl · 19 |
+| `frontend/src` | **10** | **8** | 10 · 8 |
+| **total** | **237** | **27** | — |
+
+`[MEDIDO 2026-08-29 em `7af0e4f`, detector da bancada de `D2a`]`
+
+> **⇒ O achado é forte e é a favor de `D2`: `backend/src` mais que TRIPLICOU (23 → 78) e continua em ZERO português. E `backend/tests` ganhou 73 nomes de teste NOVOS — todos em inglês — sem que o número de acusados subisse um único ponto (19 antes, 19 depois).**
+>
+> ```
+> $ comm -23 <(nomes de teste em 7af0e4f) <(nomes de teste em 01ec5a8) | wc -l
+> 73        # ex.: test_absent_sidecar_refuses_instead_of_assuming_the_file_is_fine,
+>           #      test_killing_the_recorder_mid_run_keeps_every_committed_record
+> ```
+>
+> `[MEDIDO 2026-08-29]` · **Os 19 acusados de hoje são exatamente os 19 de ontem.** A convenção está sendo seguida **sem portão nenhum**, por tasks que nem sabiam desta ADR — `T-02.3` e `T-02.4a` fecharam antes de ela mergear. **É a evidência mais direta que existe de que a doutrina de `D2` está segurando**, e ela não foi construída por mim.
+
+**Limite declarado do método, para ninguém o vender como mais do que é:** o detector vê **declaração e nome de arquivo**, não **parâmetro**. `razao` e `casas`, parâmetros de `formatarPercentual`, são portugueses e **não estão** nos 27. ⇒ **27 é piso, não teto.**
+
+> **⚠️ E rodá-lo sobre a árvore real produziu DOIS FALSOS POSITIVOS que a bancada sintética não tinha previsto — em nomes de DIRETÓRIO:** dos 15 segmentos distintos, o detector acusa **4**: `painel`, `sentimento`, **`infra`** e **`ui`**. **`infra` e `ui` são inglês** (*infrastructure*, *user interface*) — abreviações técnicas correntes, que é **exatamente a família que `D2b` nomeou** (`oi`, `os`, `sem`, `com`). **Eu não os previ, e eles apareceram sozinhos, na primeira vez que apontei o instrumento para a árvore inteira em vez de para o corpus que eu tinha escrito.** Isso não enfraquece `D2` — **confirma-a pelo lado mais desconfortável**, que é o instrumento errando contra o seu autor.
+
+
 > **⚠️ A última linha da tabela falsifica, de fato, uma afirmação publicada.** O plano `01` (`01_governanca_gateante.md:110`) recomenda encerrar a feature órfã, e o falsificador dessa recomendação diz: *"se o owner a criou para trabalho de docstring **fora** de `backend/` — o `frontend/`, por exemplo, **que não tem docstring nenhuma medida**"*. **O frontend tem 4 docstrings, e as 4 estão em inglês.** O parêntese era `[NÃO MEDIDO]` vestido de fato, e é falso. ⇒ **A condição literal daquele falsificador não dispara** (não há docstring portuguesa fora de `backend/`). O que dispara é outra coisa, que ele não previu, e `D1` a trata.
 
 ---
@@ -72,6 +101,25 @@ O falsificador dela (`ast.dump` idêntico 13/13 com as docstrings removidas) **t
 ### D1 · A convenção mora em **feature própria, renomeada** — e o nome `docstrings-em-ingles` não sobrevive
 
 **Escolho (b), com o nome trocado.** A trilha correta é: `advance docstrings-em-ingles REJECTED "<motivo>"` + `init codigo-em-ingles`.
+
+> **✅ EXECUTADO PELO OWNER em 2026-08-29 — esta secção foi escrita como proposta e agora é fato.** Os dois atos estão no ledger, e o ledger é a identidade do estado:
+>
+> ```
+> $ harness pipeline show docstrings-em-ingles
+> ▸ docstrings-em-ingles — estado atual: REJECTED
+>     2026-08-28T19:45:52Z  override  execução sem risco
+>     2026-08-29T12:06:17Z  advance   REJECTED — Escopo nunca declarado (1 evento no ledger, um override de
+>                                     2026-08-28). O owner declarou em 2026-08-29 'todo codigo gerado e em
+>                                     ingles' — escopo MAIOR que o nome desta feature, que so cobre docstring.
+>                                     ADR-013 (PR #18) decide: encerrar aqui e abrir 'codigo-em-ingles' com o
+>                                     escopo correto. […] Decisao do owner em 2026-08-29.
+>
+> $ harness pipeline show codigo-em-ingles
+> ▸ codigo-em-ingles — estado atual: INIT
+>     2026-08-29T12:06:25Z  init      INIT
+> ```
+>
+> `[MEDIDO 2026-08-29, re-lido do ledger nesta revisão e não repassado do enunciado]` · **`REJECTED` e não `DONE`**, como `D1` pedia, e **com motivo escrito** — que é o que o `harness` exige (`pipeline.sh:617`) e o que preserva a história. **O owner aceitou explicitamente os dois gates dele** (`approve spec`, `approve build`) no caminho de `codigo-em-ingles`.
 
 **Por que não (a), task em `plataforma-dados`.** Três razões, em ordem de força:
 
@@ -133,7 +181,7 @@ Eu resisti à resposta fácil nas duas direções. Construí a melhor aproximaç
 
 Bancada isolada em `scratchpad`, **fora do repositório do owner**. Segmentação por `_`, `-` e fronteira camelCase; prefixo `test` descartado (é API do pytest, não idioma). Cinco variantes:
 
-| | detector | MORDE (33 identificadores PT de hoje) | CALA (29 identificadores EN de hoje) |
+| | detector | MORDE (33 identificadores PT, corpus de `01ec5a8`) | CALA (29 identificadores EN, mesmo corpus) |
 |---|---|---|---|
 | **A** | palavras-função PT (`de`, `da`, `nao`, `que`…) | 14/33 = **42,4%** | 0/29 |
 | **B** | A + sufixos só-PT (`-cao`, `-vel`, `-mento`, `-agem`…) | 19/33 = **57,6%** | 0/29 |
@@ -244,7 +292,32 @@ $ ls docs/glossario* docs/glossary*
 >
 > **A barra é a mesma de `1.8'`: as duas metades, e a metade CALA medida sobre corpus de retenção.** *"Cala sobre o corpus que usei para ajustar"* não conta — eu acabei de medir que essa métrica dá `0/29` e mente.
 
-**Dívida nomeada, com dono:** *este repositório não tem glossário, e a chave que o apontaria está vazia.* Não é dívida desta ADR nem de `T-01.7` — é anterior às duas. Fica declarada aqui porque é a **única** peça que converte uma doutrina em portão, e porque o `bootstrap` já a pede.
+**Esta lacuna deixou de ser nota de rodapé deste argumento: ela virou decisão própria — ver `D4`.** Ela é anterior a esta ADR e a `T-01.7`, e é a **única** peça que converteria a doutrina em portão.
+
+---
+
+#### D2f · CONFIRMAÇÃO DE CAMPO, obtida por acidente e por terceiros — e ela vale mais que os meus três protótipos
+
+**Acrescentado em 2026-08-29, na revisão que trouxe o `master`.** Enquanto eu construía a bancada de `D2a`, **dois auditores independentes da `T-02.3` mediram idioma com instrumentos próprios, construídos sem conhecer o meu — e os dois foram mordidos pela mesma família.** Isto não é corroboração que eu fui buscar; é corroboração que apareceu sozinha, e por isso vale mais.
+
+| auditor | o que o instrumento dele disse | o que a conferência à mão revelou |
+|---|---|---|
+| **`/qa`** | **46 linhas** em português | o dicionário PT dele incluía **`so`** — **e `so` é inglês** |
+| **`/review`** | **31 de 177 linhas** | conferiu **6 à mão** e achou **3 falso-positivos** — inglês que **cita** português entre aspas (`ingest_record.py:12`, citando a frase do `ADR-008/D3`) ⇒ **taxa de erro ~50%**, e ele **RECUSOU PUBLICAR O NÚMERO** |
+
+`[DOC: docs/INDEX.md, linha `2026-08-29T13:40Z`, registrada pelo coordenador do loop; os dois achados são dos auditores da `T-02.3`, não meus]`
+
+**A frase do `/qa` é a melhor formulação do defeito que eu li nesta trilha, e não é minha:**
+
+> *"instrumento que acende no idioma que ele deveria aprovar não está medindo"*
+
+E o `/review` nomeou a família ao se recusar a publicar: disse que o número dele **não confirma nem refuta** o `19/499` do `/qa`, e que era *"a mesma família mordendo o instrumento dele"*.
+
+> **⇒ Três instrumentos, construídos independentemente, por três agentes diferentes, no mesmo dia — e os três produzem falso positivo sobre inglês legítimo.** O meu sobre abreviações (`oi`, `sem`, `os`, `parametrize`) e sobre nomes de diretório (`infra`, `ui`); o do `/qa` sobre `so`; o do `/review` sobre citação entre aspas. **Nenhum dos três se conhecia.**
+>
+> **Isso muda a força da recusa de `D2`.** Ela deixa de ser *"eu tentei três aproximações e não consegui"* — que é uma afirmação sobre a minha competência — e passa a ser *"três autores independentes construíram instrumentos de idioma e os três erraram no mesmo eixo, o do CALAR"*, que é uma afirmação sobre **o problema**. `[MEDIDO por terceiros, 2026-08-29]`
+>
+> **E o `/review` fez a coisa certa, que é a que este repositório cobra: recusou publicar um número cuja taxa de erro ele mediu.** Um portão bloqueante não tem essa saída — ele **reprova o push**, e não pode escrever *"recuso-me a opinar"*. **Um instrumento com ~50% de erro que um humano pode descartar é um relatório; o mesmo instrumento ligado a um portão é uma parede.**
 
 ---
 
@@ -268,10 +341,19 @@ O owner disse *"todo código"*. Isto é a tradução operável, e ela vira promp
 `Filtro.tsx` contém `<p>Filtro: any resultado serve</p>`. São **três** objetos distintos numa linha:
 
 1. o **componente** `Filtro` → identificador → **inglês** (`Filter`);
-2. o **arquivo** `Filtro.tsx` → nome → **inglês** (`Filter.tsx`), **atômico com as 9 citações**, `harness.toml:149` inclusive;
+2. o **arquivo** `Filtro.tsx` → nome → **inglês** (`Filter.tsx`) — e **a instrução foi refinada nesta revisão, porque "atômico com as citações" estava perigosamente vago** (ver o quadro abaixo);
+> **⚠️ REFINAMENTO de 2026-08-29, e ele evita um dano que a redação anterior autorizava.** Re-medido em `HEAD`, `Filtro.tsx` é citado em **10** arquivos versionados — era 9 em `01ec5a8`, e **o décimo é esta própria ADR** (a família do auto-envenenamento, de novo, agora numa instrução em vez de num número). **Mas "atualize as 10" seria ERRADO**, e é por isso que a instrução muda de forma em vez de mudar de dígito:
+>
+> | superfície | arquivos | o que fazer no rename |
+> |---|---|---|
+> | **VIVA — receita executável ou instrução corrente** | `harness.toml` (`:149-150`), `frontend/README.md`, `docs/context/plataforma-dados/tasks.toml`, `handoff_to_builder.md`, `docs/plans/…/01_governanca_gateante.md` | **atualizar, atomicamente com o `git mv`** |
+> | **HISTÓRIA — registro do que foi decidido, com data** | `ADR-003`, `ADR-011`, `ADR-012`, **esta `ADR-013`**, `docs/INDEX.md` | **NÃO reescrever.** `INDEX.md` é **append-only** por `CLAUDE.md`; ADR registra a decisão **no estado em que ela foi tomada**. O rename entra como **linha nova** no `INDEX.md`, não como edição das antigas |
+>
+> `[MEDIDO 2026-08-29 em `HEAD`: 10 arquivos; 5 vivos, 5 de história]` · **A única que é receita executável é `harness.toml:149-150`** — as outras quatro vivas são prosa que instrui. **Reescrever a história para "consertar" um nome apagaria o registro de que a bancada existiu com aquele nome, que é exatamente a evidência que o cuidado inteiro existe para proteger.**
+
 3. o **texto JSX** `"Filtro: any resultado serve"` → string de interface → **fora do universo**, e **intocável por outra razão**: a palavra `any` **dentro dessa string** é o payload da bancada `D1.3b`. Traduzi-la apaga a prova de que nenhuma regex de linha é simultaneamente completa e correta (`ADR-011/D4`). ⇒ **traduzir o texto é destruir evidência; renomear o componente e o arquivo não é.**
 
-#### ⏸ A colisão que eu NÃO resolvo, e a pergunta que o owner precisa responder
+#### ✅ A colisão, FECHADA pelo owner: o vocabulário de governança é **exceção declarada**
 
 Duas regras do owner se contradizem, e nenhuma cede sozinha:
 
@@ -289,13 +371,71 @@ $ git grep -l 'convergencia' 01ec5a8 -- . | wc -l                     # 24 arqui
 
 `[MEDIDO 2026-08-29, ancorado em `01ec5a8`]` · `sentimento` está em **`harness.toml`** (`components`, `agents.by_component`, `code_paths`), em **84 tasks**, em **rótulos do Jira**, em **9 arquivos de plano** e em **10 caminhos de código**. **Não é renomeação de diretório: é mudança de vocabulário de governança, com efeito em `require-code`, em `classify` e no roteamento de agente por componente.**
 
-> **A PERGUNTA, em uma frase:**
+> **A PERGUNTA, COMO FOI APRESENTADA AO OWNER — e é importante que ela fique registrada na forma em que ele a leu:**
 >
 > **O vocabulário fechado de componentes está DENTRO ou FORA do universo "todo código em inglês" — isto é, `sentimento` e `convergencia` viram `sentiment` e `convergence` (e com eles `backend/src/modules/*`, `backend/tests/*`, `harness.toml`, os 84 `tasks.toml` e os rótulos do Jira), ou o vocabulário de governança é uma superfície declarada EXCETA, e os diretórios que dele derivam ficam em português por herança?**
 
-**Eu não decido, e não é modéstia — é competência declarada:** `components` é ato do owner por `CLAUDE.md`, e nenhuma leitura minha da citação de hoje revoga uma regra escrita. **`[NÃO SEI]` qual das duas o owner quis**, e a citação não desempata: *"nome dos arquivos"* alcança `sentimento/` literalmente, e *"alterar o vocabulário é ato do owner"* o protege literalmente. **Duas leituras literais, ambas defensáveis, é a definição de bloqueante.**
+**Eu não decidi, e não era modéstia — era competência declarada:** `components` é ato do owner por `CLAUDE.md`, e nenhuma leitura minha da citação revoga uma regra escrita. Escrevi `[NÃO SEI]` porque *"nome dos arquivos"* alcança `sentimento/` literalmente **e** *"alterar o vocabulário é ato do owner"* o protege literalmente — duas leituras literais defensáveis é a definição de bloqueante.
 
-**Recomendação, que é minha e leva rótulo próprio:** **EXCETAR o vocabulário de governança**, e escrever a exceção. Argumento: `components` não é identificador de código — é **chave de política**, consumida por `agents.by_component`, `code_paths` e `require-code`; o custo medido (400 ocorrências, 55 arquivos, 84 tasks, rótulos de tracker fora do repositório) é desproporcional ao ganho; e o precedente de fronteira já existe nesta trilha — `ADR-012/D5(a)` recusou mexer em superfície de governança de outro repositório pela mesma razão de custo/fronteira. **Falsificador da minha recomendação:** se o owner responder que o vocabulário entra, a exceção não sobrevive e a migração é **um** ato atômico do owner sobre `harness.toml` + tracker + código, **nunca** uma task de agente. `[INFERRED: recomendação de arquiteto, não declaração do owner]`
+#### ✅ A RESPOSTA — decisão do owner em 2026-08-29
+
+> **EXCETAR o vocabulário.** Os 6 componentes (`sentimento`, `charts`, `convergencia`, `backtest`, `web`, `docs`) ficam **como estão**, em português. `backend/src/modules/sentimento/` e `backend/tests/sentimento/` **derivam deles e ficam também**. A regra de inglês vale para **todo o resto**.
+>
+> **`[DECISÃO-OWNER: 2026-08-29 — escolha entre alternativas apresentadas por este documento]`**
+
+> **⚠️ E o rótulo desta linha é deliberado, porque este repositório já pagou por errá-lo.** **NÃO é `[PREMISSA-OWNER]`.** `CLAUDE.md` reserva `[PREMISSA-OWNER]` para **citação literal do owner**, e aqui não há citação literal: **o owner escolheu uma opção de um menu que EU escrevi.** A frase é minha; a escolha é dele. Chamar isto de `[PREMISSA-OWNER]` seria exatamente a *"paráfrase vestida de declaração"* que o `CLAUDE.md` nomeia como já tendo produzido defeito aqui — e seria pior que a média, porque a paráfrase seria **auto-atribuída**: eu estaria citando como palavra do owner uma frase que eu mesmo redigi. ⇒ **`[DECISÃO-OWNER]`, com a alternativa transcrita como foi apresentada, para que quem auditar veja o que ele leu antes de escolher.**
+
+**O custo que foi declarado JUNTO com a opção, e sobre o qual ele decidiu:**
+
+> *"o repositório fica bilíngue numa fronteira, mas a fronteira é declarada e tem uma linha só"*
+
+**Eu fui perguntado se sustento que esse custo estava bem declarado. Sustento — com uma ressalva medida, e ela não muda a decisão.**
+
+**O que estava bem declarado:** a fronteira é de fato **uma linha** e ela é **enumerável**, não difusa — são **6 palavras**, fixadas por `harness policy --key components`, e tudo que delas deriva é derivação **mecânica** (o diretório tem o nome do componente). Quem lê a exceção sabe exatamente onde ela começa e termina, o que é a diferença entre uma exceção e uma erosão.
+
+**A ressalva, e ela é uma medição que eu não tinha quando escrevi a frase:** *"bilíngue numa fronteira"* descreve o **repositório**, e o efeito real é um pouco maior — a exceção cria uma **classe nova de falso positivo para qualquer instrumento futuro**. Rodando o meu próprio detector sobre a árvore de hoje, `sentimento` é **acusado de português** — e a partir desta decisão essa acusação é **falsa por construção**, porque o nome passou a ser correto por exceção. ⇒ **todo instrumento que algum dia medir idioma terá de carregar a lista de exceções como entrada de primeira classe**, exatamente como `D2e` já exige para o glossário. Isso é custo real, é pequeno, e é **do mesmo tipo** que `D2e` já obriga a pagar — mas ele não estava na frase que o owner leu, e eu registro isso em vez de deixar passar.
+
+**Não muda a decisão** porque a alternativa (migrar o vocabulário) tinha o custo medido de **400 ocorrências em 55 arquivos, 84 tasks e rótulos de tracker fora deste repositório** — e **re-medido em `HEAD` esse custo SUBIU para 487 ocorrências em 69 arquivos e 28 caminhos** `[MEDIDO 2026-08-29, árvore extraída de `HEAD`]`, porque `T-02.3` e `T-02.4a` adicionaram código sob `sentimento/` nos dois dias entre a pergunta e a resposta. **A decisão do owner ficou mais barata por ter sido tomada agora, não mais cara** —, e porque `components` não é identificador de código: é **chave de política**, consumida por `agents.by_component`, `code_paths` e `require-code`. Renomeá-la seria mudar governança para satisfazer uma convenção de código — precedente que `ADR-012/D5(a)` já recusou pela mesma razão de custo e de fronteira.
+
+##### Falsificador da exceção — o que a faria cair
+
+**O principal, e ele é um ato, não uma observação: no dia em que o owner alterar o vocabulário de componentes** — ato dele por `CLAUDE.md`, nunca de agente — **a exceção morre junto com o nome que ela protegia**, e os diretórios derivados migram no **mesmo ato atômico** que muda `harness.toml`, `tasks.toml` e os rótulos do tracker. **Nunca como task de agente**, e nunca em dois commits: um `components` já renomeado com `backend/src/modules/sentimento/` ainda em disco é um repositório em que `require-code` e `classify` discordam do vocabulário — falha silenciosa, e da pior classe.
+
+**O segundo, e ele mede erosão em vez de intenção:** se algum dia um nome em português aparecer sob `backend/src/` ou `frontend/src/` **justificado pela exceção** sem derivar mecanicamente de um dos 6 componentes, então a exceção deixou de ser uma linha e virou uma rampa. **O sintoma é observável e barato:** todo nome português aceito tem de casar, por igualdade de string, com um elemento de `harness policy --key components`. **Hoje isso é `1` — `sentimento` — e nenhum outro** `[MEDIDO 2026-08-29, ver §"O universo, re-medido"]`. Um segundo nome português que **não** case é a evidência de que a rampa começou.
+
+---
+
+### D4 · O `glossary_doc` vazio é **dívida com dono nomeado**, e não observação de rodapé
+
+O falsificador de `D2e` foi procurar a peça que falta para um portão de idioma e **encontrou um buraco que não é sobre idioma**. Ele merece linha própria porque **não é uma lacuna deste trabalho — é uma lacuna do `bootstrap` de todo agente deste projeto**.
+
+**Medido nesta árvore (`7af0e4f`), e os três comandos foram reproduzidos:**
+
+```
+$ harness policy --key glossary_doc          # rc=0, saída de 1 byte (só o newline)
+$ grep -in 'glossar' harness.toml            # NADA — zero linhas
+$ ls docs/glossario* docs/glossary*          # nenhum arquivo
+```
+
+**E os consumidores existem, são instruções a agente, e são oito:**
+
+```
+$ grep -rln 'glossary_doc' <plugin 0.13.0>/agents <plugin 0.13.0>/commands
+agents/architect.md   agents/builder.md   agents/pm.md   agents/reviewer.md
+commands/architect.md   commands/grill-me.md   commands/pm.md   commands/review.md
+```
+
+`[MEDIDO 2026-08-29: n=8 arquivos de instrução; `agents/architect.md:14`, `commands/pm.md:23` e `commands/grill-me.md:41` conferidos linha a linha]` — e os três dizem, literalmente, *"leia o arquivo apontado"*.
+
+> **⚠️ Esta é a família da casa, no lugar mais caro possível.** **`rc=0` com saída vazia lido como sucesso** é exatamente o defeito que `ADR-012` nomeou em `harness rules --mode file`, e que esta ADR já encontrou uma terceira vez ao medir `OI`. Aqui ele mora **no primeiro passo de todo agente**: o `bootstrap` manda ler um ponteiro, o ponteiro devolve `rc=0`, e **o agente segue adiante achando que leu o glossário — quando não há glossário.** Ninguém é avisado, porque `rc=0` é o código de sucesso.
+>
+> **E a consequência é medível na própria trilha:** `D2f` mostra **três** instrumentos de idioma construídos no mesmo dia por três agentes, cada um com o seu próprio dicionário improvisado (`so` no do `/qa`, aspas no do `/review`, abreviações no meu). **Um glossário declarado é justamente o insumo que os três teriam compartilhado.** A ausência dele não causou os três defeitos, mas garantiu que cada um os descobrisse sozinho.
+
+**Decisão:** **a dívida fica DECLARADA com dono, e o dono não é este documento.** Preencher `glossary_doc` é escrever um glossário de domínio — vocabulário de `sentimento`, `charts`, `convergencia` e `backtest` (`OI`, `CVD`, `funding`, `basis`, `knowledge_time`, `nature`, `LOCF`…) — o que é **trabalho de produto e de domínio**, não de convenção de código. **Endereço natural: o `/pm`, no PRD de `codigo-em-ingles` ou numa trilha própria**, com julgamento técnico do `quant-architect`, que é quem `agents.by_component` declara para os três componentes de domínio.
+
+**O que eu NÃO faço, e declaro para ninguém esperar:** **não escrevo o glossário aqui e não declaro a chave.** `harness.toml` é superfície que esta ADR não toca (e `components`, que vive nele, acabou de ser objeto de decisão do owner). Escrever um glossário de domínio de dentro de uma ADR sobre idioma de identificador seria a ampliação de escopo que `Regra 5` do plano existe para disciplinar.
+
+**Falsificador de `D4`:** se o glossário for escrito e **nenhum** dos 8 arquivos de instrução mudar de comportamento — isto é, se nenhum agente citar o glossário numa decisão — então a chave era cerimônia e o certo é **removê-la das instruções**, não preenchê-la. **O sintoma é observável:** procure, nos artefatos das próximas fases, uma decisão que cite o glossário como fonte. **Hoje esse número é zero, e não pode ser outro: o arquivo não existe.**
 
 ---
 
@@ -313,19 +453,23 @@ $ git grep -l 'convergencia' 01ec5a8 -- . | wc -l                     # 24 arqui
 | **arquivo-dourado de segmentos de caminho** | zero FP por construção, mas **os 2 commits que criaram código tocaram 17 e 11 segmentos**, e a SPEC tem **9 fases / 84 tasks**. Dourado que todo builder edita é cerimônia — recusado pelo falsificador nº 4 de `ADR-012/D5(b)` |
 | **`[[rules.own]]` de idioma** | **não é expressável**: os tipos que a máquina de regras conhece são `forbidden-regex`, `forbidden-regex-allowlist`, `line-scoped` e `path-presence`; segmentação em tokens + consulta a dicionário não é regex de linha. E `ADR-011`/`D1.10` já declara que **declarar uma `[[rules.own]]` de idioma REPROVA a fase** |
 | **`langdetect` / plugin de `flake8`** | `[NÃO MEDIDO]` nos dois casos — `langdetect` não instalado; `flake8` fora do `PATH` do interpretador alvo (3.13). Instalar dependência não é ato de arquiteto (`ADR-011/D4`). Reabre pelo gatilho de `D2e`, não por gosto |
-| **renomear o frontend agora, como exceção** | `Filtro.tsx` é citado em **9 arquivos versionados**, e o nono é `harness.toml:149`, onde ele **é** a metade CALA de uma prova de dois lados. Renomeação não-atômica converte a prova em **falso positivo de conformidade** (`rc=0` por caminho inexistente, `ADR-012`) |
+| **renomear o frontend agora, como exceção** | `Filtro.tsx` é citado em **10 arquivos versionados** (9 em `01ec5a8` + esta ADR), e um deles é `harness.toml:149-150`, onde ele **é** a metade CALA de uma prova de dois lados. Renomeação não-atômica converte a prova em **falso positivo de conformidade** (`rc=0` por caminho inexistente, `ADR-012`). **E 5 das 10 são HISTÓRIA e não podem ser reescritas** — ver o quadro em `D3` |
 
 ---
 
 ## Falsificador
 
-**Contra `D1` — e ele reabre a escolha inteira.** Se o owner responder que o vocabulário de componentes **entra** no universo, então a convenção deixa de ser convenção de código e vira **migração de governança**: `harness.toml`, tracker e código num ato só. Nesse caso `codigo-em-ingles` é a casa **errada** — uma feature de repositório não move o vocabulário do repositório —, e o desfecho correto é um ato do owner, não uma trilha de pipeline. **`D1` está certa apenas sob a resposta que eu recomendo, e essa resposta não é minha.**
+**Contra `D1` — RESOLVIDO, e registro como estava escrito porque a condição dele era exatamente a pergunta que foi feita.** A redação original dizia: *"se o owner responder que o vocabulário de componentes **entra** no universo, então `codigo-em-ingles` é a casa errada"*. **O owner respondeu que NÃO entra** (`D3`), logo a condição **não disparou** e `D1` fica de pé — a casa é a feature, e ela já existe em `INIT`. **O falsificador continua vivo para o futuro:** se um dia o vocabulário entrar, a migração é ato atômico do owner e **não** trilha de pipeline, e `codigo-em-ingles` não é a casa dela.
 
-**Contra `D2`, e é o que me faria estar errado do jeito mais caro.** Se, nas fases `02`–`09`, aparecerem identificadores em português **em código que passou por `/qa` e `/review`** — isto é, se a revisão humana **não** pegar o que o portão não pega —, então "doutrina" comprou **nada** e a troca certa era aceitar 8% de falso positivo em `[AVISO]`. **O sintoma é observável e barato:** rode a variante `D` sobre a árvore a cada fim de fase; se o número de achados **subir** entre duas fases aprovadas, a doutrina não está segurando. **O "antes" está medido e é o marco zero: hoje, 33 identificadores em português, 19 deles em `backend/tests` e 9 em `frontend/src`.**
+**Contra `D2`, e é o que me faria estar errado do jeito mais caro.** Se, nas fases `02`–`09`, aparecerem identificadores em português **em código que passou por `/qa` e `/review`** — isto é, se a revisão humana **não** pegar o que o portão não pega —, então "doutrina" comprou **nada** e a troca certa era aceitar 8% de falso positivo em `[AVISO]`. **O sintoma é observável e barato:** rode a variante `D` sobre a árvore a cada fim de fase; se o número de achados **subir** entre duas fases aprovadas, a doutrina não está segurando. **O "antes" está medido, e ele foi RE-MEDIDO nesta revisão porque envelheceu em dois dias: o marco zero é `7af0e4f` — 237 identificadores/nomes, dos quais 27 acusados de português (19 em `backend/tests`, 8 em `frontend/src`, 0 em `backend/src`), com o limite declarado de que parâmetros ficam fora do método** (ver §*"O universo, RE-MEDIDO"*).
+
+> **E a primeira leitura já veio, sem que eu a fosse buscar: entre `01ec5a8` e `7af0e4f`, `backend/src` foi de 23 a 78 declarações e continuou em ZERO, e `backend/tests` ganhou 73 nomes novos, todos em inglês, com o número de acusados parado em 19.** ⇒ **na primeira medição depois da decisão, a doutrina está segurando** — e ela segurou sobre código escrito por tasks que sequer conheciam esta ADR.
 
 **Contra `D2` na direção oposta — o gatilho de reabertura.** O de `D2e`: glossário de domínio versionado sob `glossary_doc` **mais** lista de vocabulário de biblioteca, e a variante `D` medida sobre corpus de retenção não usado para construí-la. `0` FP com ≥ 90% MORDE ⇒ vira portão, no `make`.
 
-**Contra `D3`.** Se o owner disser que documentação e mensagem de commit **também** vão para o inglês, três linhas da tabela caem e o custo muda de ordem: são **todos** os ADR, SPEC e planos, e com eles as **âncoras textuais** que `ADR-011`, `ADR-012` e o plano `01` usam para se referir uns aos outros — e `ADR-012` já registrou que âncora textual foi adotada justamente porque número de linha envelhece. Traduzir o corpus quebraria as duas formas de âncora de uma vez.
+**Contra `D3`, na exceção que ele acabou de declarar.** Está escrito em §*"Falsificador da exceção"*, e tem duas metades: **(i)** o dia em que o owner alterar `components` — ato dele — a exceção morre com o nome que protegia, e a migração é **um** ato atômico; **(ii)** todo nome português aceito tem de casar, por igualdade de string, com um elemento de `harness policy --key components`. **Hoje isso é `1` (`sentimento`) e nenhum outro** `[MEDIDO 2026-08-29]`; um segundo que não case é a evidência de que a exceção virou rampa.
+
+**Contra `D3`, no resto da tabela.** Se o owner disser que documentação e mensagem de commit **também** vão para o inglês, três linhas da tabela caem e o custo muda de ordem: são **todos** os ADR, SPEC e planos, e com eles as **âncoras textuais** que `ADR-011`, `ADR-012` e o plano `01` usam para se referir uns aos outros — e `ADR-012` já registrou que âncora textual foi adotada justamente porque número de linha envelhece. Traduzir o corpus quebraria as duas formas de âncora de uma vez.
 
 **Contra a recusa da exceção do frontend.** Se a fase `05` começar a escrever `.tsx` **antes** de `codigo-em-ingles` chegar a `BUILD_AUTHORIZED`, o custo da minha escolha sobe: cada arquivo novo nasce com nome a renomear depois. **Se isso acontecer, a decisão certa não é abrir exceção — é o owner priorizar os dois gates**, porque renomear 4 arquivos com 9 citações já é caro e renomear 40 não fica mais barato por eu ter esperado.
 
@@ -337,33 +481,38 @@ $ git grep -l 'convergencia' 01ec5a8 -- . | wc -l                     # 24 arqui
 - **`ADR-011/D6` fica de pé e ganha bancada.** O veredito *"idioma não é mensurável por comando"* passa de leitura de documentação a **medição de retenção** — e a medição diz algo mais fino do que `D6` dizia: o problema não é o **MORDE** (94% é alto), é o **CALA**, e ele quebra exatamente nas **abreviações**, que é onde identificador vive.
 - **`T-01.7` fica absolvida, por escrito.** Ela obedeceu a uma fronteira explícita com falsificador. Quem ler o achado do owner como *"a task fez pela metade"* estará atribuindo a uma task um defeito que é de **lacuna entre tasks** — e no `frontend/` sequer isso: ali `T-01.7` nunca entrou (**0 arquivos**), e o docstring inglês ao lado do identificador português saiu do **mesmo commit** de `T-01.2`.
 - **O plano `01` (`01_governanca_gateante.md:110`) tem uma afirmação falsa que esta ADR corrige sem reescrever:** *"o `frontend/`, que não tem docstring nenhuma medida"* — são **4 blocos, 4 de 4 em inglês**. A recomendação de **encerrar** que se apoiava nela **cai**, por um motivo diferente do que o falsificador previa: não porque haja docstring portuguesa fora de `backend/`, mas porque **o owner acabou de dar escopo à feature, e o escopo é maior que o nome dela**.
-- **Duas perguntas voltam ao owner** (a colisão de `components`; e a confirmação da tabela de `D3`), e **duas aprovações de owner** ficam no caminho de qualquer código (`spec`, `build`). Nada é despachável hoje sem elas, e eu não fabrico uma casa autorizada para contornar isso.
-- **Eu não escrevo o código, não movi o ledger, não criei task e não renomeei nada.** `/architect` decide; `/tech-lead` materializa; `advance`/`approve` são do owner.
+- **As duas perguntas VOLTARAM RESPONDIDAS, e a ADR foi atualizada para refletir isso** (`D1` executada no ledger, `D3` fechada com exceção declarada). **Restam as duas aprovações de owner** no caminho de qualquer código (`spec`, `build`) — o owner as aceitou explicitamente.
+- **A exceção de `D3` cria obrigação para o futuro, e ela está escrita:** todo instrumento que algum dia medir idioma tem de carregar **a lista de componentes** como entrada de primeira classe, ao lado do glossário de `D2e` — porque a partir desta decisão `sentimento` é **correto por exceção**, e um detector que não souber disso o acusa.
+- **`glossary_doc` sai do rodapé e vira `D4`**, com dono nomeado (`/pm` + `quant-architect`) e falsificador próprio. **Não é dívida desta ADR**: ela está no `bootstrap` de **8** arquivos de instrução do plugin e é anterior a este trabalho.
+- **Eu não escrevo o código, não movi o ledger, não criei task e não renomeei nada.** `/architect` decide; `/tech-lead` materializa; `advance`/`approve` são do owner. **Os dois atos de ledger de `D1` foram do owner, e eu os LI para registrá-los — não os executei.**
 
 ---
 
 ## Roteamento operacional
 
-**O que o coordenador pode despachar HOJE: nada que renomeie.** Digo isto explicitamente porque a resposta útil aqui é a negativa, e inventar uma task despachável seria fabricar caminho.
+**Atualizado em 2026-08-29, depois das respostas do owner.** O quadro mudou: **dois dos cinco atos já estão feitos.**
 
-**O que precisa nascer, e onde:**
-
-| # | ato | feature | componente | quem | gate no caminho |
+| # | ato | feature | componente | quem | estado |
 |---|---|---|---|---|---|
-| 1 | `harness pipeline advance docstrings-em-ingles REJECTED "escopo real existe e é maior que o nome; segue em codigo-em-ingles (ADR-013/D1)"` | `docstrings-em-ingles` | — | **owner** (é ledger) | nenhum gate formal, mas **é ato de governança** — não de agente |
-| 2 | `harness pipeline init codigo-em-ingles` | `codigo-em-ingles` | — | **owner** | — |
-| 3 | PRD com a fronteira de `D3` **e a colisão de `components` respondida** | `codigo-em-ingles` | `docs` | `/pm` → `/architect` | `approve prd` (agente pode) |
-| 4 | SPEC + plano de renomeação em fases (backend/tests · frontend · nomes de caminho) | `codigo-em-ingles` | `docs` | `/architect` | **`approve spec` — OWNER** |
-| 5 | tasks | `codigo-em-ingles` | `docs`, `sentimento`, `web` | `/tech-lead` | `approve tasks` (agente pode) + **`approve build` — OWNER** |
+| 1 | `advance docstrings-em-ingles REJECTED "<motivo>"` | `docstrings-em-ingles` | — | owner | ✅ **FEITO** — `2026-08-29T12:06:17Z`, motivo escrito citando esta ADR |
+| 2 | `init codigo-em-ingles` | `codigo-em-ingles` | — | owner | ✅ **FEITO** — `2026-08-29T12:06:25Z`, estado `INIT` |
+| 3 | **PRD** com a fronteira de `D3` **e a exceção de `components` já decidida** | `codigo-em-ingles` | `docs` | `/pm` → `/architect` | ▶ **EM CURSO** — o coordenador despachou o `/pm` |
+| 4 | SPEC + plano de renomeação em fases | `codigo-em-ingles` | `docs` | `/architect` | ⏸ **`approve spec` — OWNER** |
+| 5 | tasks | `codigo-em-ingles` | `docs`, `sentimento`, `web` | `/tech-lead` | ⏸ `approve tasks` (agente) + **`approve build` — OWNER** |
 
-**Os dois portões de owner são `approve codigo-em-ingles spec` e `approve codigo-em-ingles build`.** `CLAUDE.md` proíbe agente de dar os dois. Não há rota que os evite — e a rota que os evitaria (task em `plataforma-dados`) é a que `D1` recusa.
+**Os dois portões de owner continuam sendo `approve codigo-em-ingles spec` e `approve codigo-em-ingles build`.** `CLAUDE.md` proíbe agente de dar os dois, e o owner os aceitou.
 
-**O que voltar ao owner, em três itens, nesta ordem:**
+### O que o `/pm` precisa desta ADR para o PRD — e nada aqui o segura
 
-1. **A pergunta de `D3`** (`components` dentro ou fora). **É bloqueante para o item 3** — sem ela o PRD não sabe se `backend/src/modules/sentimento/` está no universo, e um PRD que não sabe seu universo é o defeito que esta ADR inteira trata. Minha recomendação está escrita e rotulada, e ela é minha, não dele.
-2. **A confirmação da tabela de `D3`** — 5 das 8 linhas são `[INFERRED]`. Não são bloqueantes (assumi e registrei), mas a linha *"documentação continua em português"* governa muito arquivo e é barata de confirmar.
-3. **Os atos 1 e 2 no ledger.** Um comando cada.
+**Coordenei-me com o despacho em paralelo: o PRD tem tudo o que precisa, e a ADR não é bloqueante para ele.** As quatro peças que o `/pm` deve copiar, já fechadas:
 
-**Sinal para o `/tech-lead`:** ainda **não** há o que materializar. O gatilho é a SPEC de `codigo-em-ingles` chegar a `SPEC_APPROVED` — e antes disso a narrativa de review que o `/tech-lead` exige não tem o que revisar.
+1. **A tabela de fronteira de `D3`** — 8 superfícies. **3 estão decididas por owner/DOC; 5 são `[INFERRED]` minhas.** O PRD deve **transcrever os rótulos**, não promovê-los: um `[INFERRED]` que vira requisito sem rótulo é a paráfrase-vestida-de-declaração que `D3` acabou de recusar em si mesma.
+2. **A exceção de `components`** — `[DECISÃO-OWNER: 2026-08-29]`, com a alternativa transcrita como foi apresentada e o custo que foi declarado junto.
+3. **A separação identificador × string de UI** — `Filtro` (renomeia) vs. `"Filtro: any resultado serve"` (**não** traduz). Isto é requisito, não detalhe de implementação: um PRD que não o separe autoriza destruir a bancada `D1.3b`.
+4. **`D2`: o PRD NÃO deve pedir portão de idioma.** Critério de aceite verificável é *"revisão humana confere"*, e **nenhuma `[[rules.own]]` de idioma** — declarar uma **reprova a fase** por `D1.10`/`ADR-011`.
 
-**Cuidado que viaja junto com a task de frontend, quando ela existir** — está em `D1` e em `D3`, e resumido aqui para não se perder: renomear `Filtro.tsx` é **atômico com as 9 citações versionadas**, `harness.toml:149-150` incluído; o **texto JSX não se traduz** (é payload de bancada de `D1.3b`); e o falsificador da renomeação é o ESLint continuar acusando `tipos.ts` e continuar calando sobre os dois legítimos — os mesmos quatro casos de `ADR-011/D4`, medidos **depois** do rename.
+**A única coisa que eu seguraria, e não é da ADR:** o PRD **não** deve tentar declarar o glossário de `D4` — é trabalho de domínio, com dono diferente, e enfiá-lo aqui é a ampliação de escopo que `Regra 5` disciplina. **Se o `/pm` quiser cobri-lo, que seja como dívida referenciada, não como requisito desta feature.**
+
+**Sinal para o `/tech-lead`:** ainda **não** há o que materializar. O gatilho é `codigo-em-ingles` chegar a `SPEC_APPROVED`.
+
+**Cuidado que viaja junto com a task de frontend, quando ela existir — o VEREDITO é inalterado, e a INSTRUÇÃO ficou mais precisa nesta revisão. É o que impede alguém de apagar evidência arquitetural com um `git mv`:** `Filtro.tsx` é citado em **10** arquivos versionados, e o rename é **atômico com as 5 superfícies VIVAS** — `harness.toml:149-150` (a única receita executável), `frontend/README.md`, `tasks.toml`, `handoff_to_builder.md`, `plano 01`. **As outras 5 são HISTÓRIA e NÃO se reescrevem** (`ADR-003`, `ADR-011`, `ADR-012`, esta ADR, e `docs/INDEX.md`, que é append-only) — o rename entra como **linha nova** no `INDEX`. O **texto JSX não se traduz** (é payload da bancada `D1.3b`). E o falsificador do rename é o ESLint continuar acusando `tipos.ts` e continuar calando sobre os dois legítimos — os mesmos quatro casos de `ADR-011/D4`, medidos **depois** do rename.
