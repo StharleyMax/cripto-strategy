@@ -134,7 +134,7 @@ review = "docs/context/codigo-em-ingles/tasks_review.md"
 id = "T-01.1"
 title = "[docs] 01 · A secao normativa no CLAUDE.md — a tabela de fronteira de 12 linhas, a excecao literal do vocabulario e o gatilho de reabertura"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "01"
 depends_on = []
 refs = [
@@ -152,7 +152,7 @@ tracker = { provider = "jira", id = "CST-92", url = "https://conversationhub.atl
 id = "T-01.2"
 title = "[docs] 01 · O ponteiro no README.md, SEM copia, e a linha nova em docs/INDEX.md"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "01"
 depends_on = ["T-01.1"]
 refs = [
@@ -169,7 +169,7 @@ tracker = { provider = "jira", id = "CST-93", url = "https://conversationhub.atl
 id = "T-01.3"
 title = "[docs] 01 · A divida de status: SPEC-002 e o index.md do plano dizem DRAFT e o ledger diz SPEC_APPROVED"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "01"
 depends_on = []
 refs = [
@@ -197,7 +197,7 @@ title = "[docs][sentimento] 02 · Os 2 arquivos, os 40 identificadores e as 3 ci
 # de colchetes da sequencia INICIAL com `components` (`scripts/tasks.sh:887-891`) e sai
 # WARN se so um dos dois mudar.
 components = ["docs", "sentimento"]
-status = "todo"
+status = "done"
 phase = "02"
 depends_on = ["T-01.1", "T-01.2"]
 refs = [
@@ -224,7 +224,7 @@ title = "[docs][web] 03 · 4 arquivos + 1 diretorio, as citacoes VIVAS atomicas 
 # `harness policy --key agents.by_component`); `harness.toml`, os dois READMEs e
 # `docs/context/` sao `docs`. Prefixo do titulo casa o conjunto (V-26).
 components = ["docs", "web"]
-status = "todo"
+status = "done"
 phase = "03"
 depends_on = ["T-01.1", "T-01.2"]
 refs = [
