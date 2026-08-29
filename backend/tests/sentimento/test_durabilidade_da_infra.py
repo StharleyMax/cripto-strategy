@@ -1,17 +1,18 @@
-"""A durabilidade OBSERVADA: `os.fsync` acontece, e acontece na ordem que a torna util.
+"""Durability OBSERVED: `os.fsync` happens, and it happens in the order that makes it useful.
 
-Por que este arquivo existe separado do teste de `D3.1`: sem ele, apagar `flush()`+`os.fsync()`
-dos DOIS modulos de `infra` deixava a suite VERDE em `12 passed` com cobertura **100%**
-`[MEDIDO 2026-08-28]`. Quatro statements totalmente cobertos e nenhuma assercao sobre o que eles
-fazem — cobertura media execucao, nao comportamento.
+Why this file exists apart from the `D3.1` test: without it, deleting `flush()`+`os.fsync()`
+from BOTH `infra` modules left the suite GREEN at `12 passed` with **100%** coverage
+`[MEDIDO 2026-08-28]`. Four fully covered statements and not one assertion about what they do —
+coverage measures execution, not behaviour.
 
-A tecnica: espiar `os.fsync` por `monkeypatch` e conferir, **no instante da chamada**, (a) que o
-conteudo JA esta no arquivo — o que mata a remocao do `flush` — e (b) que o `rename` ainda NAO
-ocorreu — o que mata a inversao da ordem.
+The technique: spy on `os.fsync` via `monkeypatch` and check, **at the moment of the call**, (a)
+that the content is ALREADY in the file — which kills the removal of the `flush` — and (b) that
+the `rename` has NOT happened yet — which kills the inversion of the order.
 
-FRONTEIRA DO QUE ISTO MEDE: que o `fsync` e chamado com o dado ja flushado, antes da publicacao.
-Que o `fsync` de fato leve o bloco ao disco e sobreviva a QUEDA DE ENERGIA e `[NAO MEDIDO]` —
-nenhum teste desta suite corta energia nem derruba o kernel. Ver `infra/jsonl_checkpoint.py`.
+THE BOUNDARY OF WHAT THIS MEASURES: that `fsync` is called with the data already flushed, before
+publication. That the `fsync` actually carries the block to the disk and survives POWER LOSS is
+`[NAO MEDIDO]` — no test in this suite cuts power or brings the kernel down. See
+`infra/jsonl_checkpoint.py`.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from src.modules.sentimento.infra.jsonl_checkpoint import JsonlCheckpoint
 def test_checkpoint_faz_fsync_e_a_linha_ja_esta_no_arquivo_quando_ele_ocorre(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`flush` ANTES, `fsync` DEPOIS. Falsificador: apague os dois de `record` e isto REPROVA."""
+    """`flush` BEFORE, `fsync` AFTER. Falsifier: delete both from `record` and this FAILS."""
     ledger = tmp_path / "checkpoint.jsonl"
     chamadas: list[int] = []
     visto: list[bytes] = []
@@ -53,7 +54,7 @@ def test_checkpoint_faz_fsync_e_a_linha_ja_esta_no_arquivo_quando_ele_ocorre(
 def test_worker_faz_fsync_no_parcial_antes_do_rename_atomico(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ordem: escreve -> `flush` -> `fsync` -> `os.replace`. Publicar antes do `fsync` REPROVA."""
+    """Order: write -> `flush` -> `fsync` -> `os.replace`. Publishing before the `fsync` FAILS."""
     source_dir, output_dir = tmp_path / "dump", tmp_path / "out"
     source_dir.mkdir()
     (source_dir / "k.csv").write_bytes(b"conteudo")

@@ -238,6 +238,34 @@ Se `PY_ALVO` mudar, mudam os dois — e o comando do DoD `D1.9`
 (`grep -n 'PY_ALVO' backend/scripts/*.sh`) os encontra **juntos**, que é o motivo de a duplicação ser
 tolerável aqui e não em geral.
 
+### 📎 2026-08-28 por `T-01.7` — docstrings em inglês, e o `...` de `Protocol` que a cobertura NÃO conta
+
+As docstrings deste backend estão em **inglês** (`ADR-011/D6`, `plano 01` item `1.11`). Comentários `#`,
+mensagens de erro e nomes de teste **continuam em português** — a convenção alcança a docstring, e só
+ela. **Idioma de docstring é convenção, não portão:** o que roda é `ruff check --select D`, que mede
+**presença e forma** e é **cego a idioma** — medido, não lido: traduzir uma docstring de volta ao
+português com a forma intacta deixa o comando **verde** (`README.md` da raiz, §"Idioma de docstring").
+
+**O achado desta task, e ele é sobre o piso de cobertura, não sobre idioma.** Documentar um método de
+`Protocol` obriga a trocar o corpo `...` pela docstring — e **o `...` de uma linha é excluído da
+cobertura pelo regex PADRÃO do `coverage.py`**, não por escolha deste repositório
+`[MEDIDO 2026-08-28: CoverageConfig().exclude_list tem 3 padrões, e o segundo casa "def …: ..." numa
+linha só]`. A troca foi **feita e medida antes de ser desfeita**:
+
+| forma dos 3 stubs de `Protocol` | `use_cases` | TOTAL | `ruff check --select D` |
+|---|---|---|---|
+| `def process(...) -> None: ...` (hoje, com `noqa` nomeado) | **16/16 linhas** | **107** statements | verde |
+| `def process(...) -> None:` + docstring | **19/19 linhas** | **110** statements | verde |
+
+`[MEDIDO 2026-08-28: bash backend/scripts/test.sh nas duas formas → 14 passed, 100%, rc=0 nas duas]`
+
+**A segunda forma não é errada — ela mede MAIS.** Foi desfeita porque o falsificador declarado de
+`T-01.7` é *"a suíte continua verde com os mesmos números"*, e **um falsificador que se explica em vez
+de passar já foi derrotado**. Os três `noqa: D102` vivem em
+`src/modules/sentimento/use_cases/drain_etl_backlog.py`, cada um ao lado do stub, com o motivo escrito
+acima deles; o contrato de cada porta está na docstring da **classe**. **Quem der corpo real a esses
+stubs tira o `noqa` junto com o `...`** — e aí os 3 statements entram na medição de vez.
+
 ## O que existe, e por quê
 
 | caminho | camada | papel |
