@@ -206,7 +206,13 @@ automático roda**, e `[test_cmd.web]` continua **não** declarado pelo mesmo mo
 o veredito** (`|| FALHOU=1` no `exit $FALHOU`) — **sem uma linha editada no hook gerado e sem
 `core.hooksPath`**, que o `CLAUDE.md` proíbe. Ele roda `make boundaries` **e** `make lint`.
 
-**O falsificador foi medido, e é o mesmo `.tsx` desta seção** `[MEDIDO 2026-08-28, bancada isolada:
+**O falsificador foi medido com um `.tsx` da FAMÍLIA desta `§4`** — `any` + `console`, as duas
+violações que só o ESLint vê — **e NÃO com o `serie.tsx` da `§3`**, e a distinção é obrigatória
+`[ERRATUM 2026-08-29, achado do `/qa`]`: o `serie.tsx` da `§3` viola
+`web-fullstack.browser-imports-server`, que é **regra em vigor**, e por isso **já é recusado hoje**
+`[MEDIDO 2026-08-29: sweep --surface git-hook com ele na árvore → rc=1, `[BLOQUEIO] … serie.tsx:1`]`.
+Usá-lo tornaria o falsificador **não-informativo** — o push cairia antes de o `make lint` falar.
+`[MEDIDO 2026-08-28, bancada isolada:
 clone do repositório em `/tmp`, `pre-push` gerado copiado, ledger de `.git/harness/` copiado
 (`BUILD_AUTHORIZED`), remoto local `remoto.git`; **nada escrito no repositório real**]`:
 
@@ -216,7 +222,8 @@ clone do repositório em `/tmp`, `pre-push` gerado copiado, ledger de `.git/harn
 | o mesmo violador | **sim** | **RECUSADO**, `rc=1`, e a saída nomeia as **2** violações: `no-explicit-any` em `2:32` e `no-console` em `3:3` |
 | limpa | **sim** | **ACEITO**, `rc=0` |
 
-**⚠️ E a medição derrubou o motivo que este README dava para o `.tsx` passar.** A `§2` já registra
+**⚠️ E a medição derrubou o motivo que este README dava para o `.tsx` de `any`/`console` passar** —
+**para esse, e não para o da `§3`.** A `§2` já registra
 que `frontend/src/` **entrou** em `code_paths` com `T-01.2`; re-conferido agora
 `[MEDIDO 2026-08-28: harness code-paths classify frontend/src/components/ui/violador_eslint.tsx →
 "producao"]`. O que deixava o `.tsx` passar **não** era o recorte de caminho: é que **nenhuma regra em

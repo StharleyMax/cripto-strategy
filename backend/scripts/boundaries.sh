@@ -65,7 +65,17 @@ fi
 # universo vazio. `lint-imports` sem contrato nenhum sai `rc=1` com "no contracts", que ja
 # seria reprovacao — mas reprovacao por motivo que nao e violacao de fronteira, e chamar as
 # duas pelo mesmo nome e o que esta recusa impede.
-if ! grep -q '^\[tool\.importlinter' "$BACKEND/pyproject.toml"; then
+#
+# O `\]` FINAL DA REGEX NAO E ENFEITE, e a falta dele era DEFEITO — achado do /qa em 2026-08-29.
+# Sem ele a guarda casava por PREFIXO: `[tool.importlinterXX]` PASSAVA, o `lint-imports` morria com
+# `'root_package'` e o alvo saia rc=1. Ou seja, a fresta fazia sair pela porta do "mediu e reprovou"
+# exatamente o caso que esta guarda existe para mandar pela porta do "nao mediu".
+#
+# FALSIFICADOR DESTA LINHA, e ele e o proprio teste do conserto: renomeie a seccao do
+# `pyproject.toml` para `[tool.importlinterXX]` e rode este script. Tem de sair rc=3.
+# [MEDIDO 2026-08-29, com controle invertido: guarda ANTIGA (sem `\]`) + mutacao -> rc=1, com
+#  `'root_package'` na saida; guarda NOVA + a MESMA mutacao -> rc=3; guarda NOVA + arvore boa -> rc=0]
+if ! grep -q '^\[tool\.importlinter\]' "$BACKEND/pyproject.toml"; then
     echo "RECUSA: [tool.importlinter] ausente em backend/pyproject.toml — nao ha contrato a avaliar." >&2
     echo "        Os contratos sao de ADR-011/D3a (a peca 1 de ADR-009/D1): um contrato" >&2
     echo "        'layers' por contexto e um 'forbidden' por componente." >&2

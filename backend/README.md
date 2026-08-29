@@ -267,7 +267,7 @@ portão é ferramenta que existe e ninguém roda.
 | contrato | morde (`D1.7a`) | cala (`D1.7d`) |
 |---|---|---|
 | `Camadas por contexto: infra > use_cases > domain` | com os **2** violadores de camada: `BROKEN`, nomeando as **2** linhas ofensoras. O contrato **2** fica `KEPT` na mesma passada — logo ele não é "contrato que reprova tudo" `[MEDIDO 2026-08-28: make boundaries → "1 kept, 1 broken", rc(make)=2, rc(boundaries.sh)=1]` | `KEPT` `[MEDIDO 2026-08-28: make boundaries → "Analyzed 10 files, 1 dependencies", "2 kept, 0 broken", rc=0]` |
-| `Fronteira de contexto: sentimento nao importa outro contexto` | com o contexto `charts` **efêmero** e um import de `sentimento` para ele: `BROKEN`, nomeando a linha. O contrato **1** fica `KEPT` na mesma passada `[MEDIDO 2026-08-28: make boundaries → "Analyzed 14 files, 2 dependencies", "1 kept, 1 broken"]` | `KEPT` — **e este lado é VÁCUO hoje**, ver o parágrafo abaixo |
+| `Fronteira de contexto: sentimento nao importa outro contexto` | com o contexto `charts` **efêmero** e um import de `sentimento` para ele: `BROKEN`, nomeando a linha. O contrato **1** fica `KEPT` na mesma passada `[MEDIDO 2026-08-28: make boundaries → "Analyzed 14 files, 2 dependencies", "1 kept, 1 broken"; **fixture de 4 arquivos**, e o número só reproduz com ele: `charts/__init__.py`, `charts/domain/__init__.py`, `charts/domain/serie.py` e `sentimento/use_cases/violador_de_contexto.py` ⇒ 10 + 4 = 14. Com fixture de 3 arquivos sai 13, e o veredito cruzado (BROKEN/KEPT) é o mesmo — re-conferido 2026-08-29]` | `KEPT` — **e este lado é VÁCUO hoje**, ver o parágrafo abaixo |
 
 **⚠️ O lado "cala" do contrato 2 é vácuo, e dizer isso é o que o separa de propaganda.** Os três
 módulos proibidos (`charts`, `convergencia`, `backtest`) **não existem no disco**, e o `import-linter`
@@ -277,6 +277,18 @@ O que **não** é vácuo é o lado "morde": plantando o contexto vizinho junto c
 O contrato está **dormente e ARMADO**, não desligado — e a diferença entre os dois só se conhece
 medindo. **Quem criar o segundo contexto acrescenta o contrato `forbidden` dele**; nada neste
 repositório obriga isso hoje, e por isso está escrito aqui como **dívida nomeada, não portão**.
+
+### As quatro mutações que o `/qa` acrescentou, re-rodadas aqui — verde não prova nada até algo reprovar
+
+O `/qa` de 2026-08-29 estendeu esta bancada em três pontos e achou um defeito de código num quarto.
+**As quatro foram re-executadas nesta árvore**, e não repassadas:
+
+| mutação | o que ela responde | resultado `[MEDIDO 2026-08-29]` |
+|---|---|---|
+| plantar os **três** contextos proibidos (`charts` + `convergencia` + `backtest`) e importar os três | a bancada original exercitou **só `charts`**: as outras duas grafias de `forbidden_modules` podiam estar mortas | `BROKEN` nomeando as **3** separadamente (`… is not allowed to import src.modules.backtest` / `… charts` / `… convergencia`), `Analyzed 20 files, 4 dependencies`, rc(make)=2 |
+| inverter a ordem do contrato 1 para `["domain", "use_cases", "infra"]`, **sobre a árvore limpa** | o "cala" do contrato 1 lê o código de hoje, ou passa por não ter olhado? | `BROKEN` sobre o **único** import interno do repositório (`use_cases → domain`), `Analyzed 10 files, 1 dependencies`. Revertida a ordem: `2 kept, 0 broken`, rc=0. **O "cala" olha** |
+| renomear a secção para `[tool.importlinterXX]` | a guarda de `[tool.importlinter]` ausente distingue *"não mediu"* de *"mediu e reprovou"*? | **ACHADO REAL, e era defeito de código.** Com a guarda antiga (`'^\[tool\.importlinter'`, **sem** o `\]`) ela **escapava por prefixo**: passava, o `lint-imports` morria com `'root_package'` e saía **rc=1** — *não mediu* vestido de *mediu e reprovou*, pela fresta que o comentário logo acima existe para fechar. Conserto de **2 caracteres** (`\]`), com controle invertido: guarda antiga + mutação → **rc=1**; guarda nova + a **mesma** mutação → **rc=3**; guarda nova + árvore boa → **rc=0** |
+| custo do portão | um portão caro é um portão que alguém desliga | `make boundaries` + `make lint`, a quente, **1,06 · 1,08 · 1,06 s** (n=3). O `/qa` mediu o `pre-push` inteiro: **1,2–1,7 s** quente e **3,8 s** com caches limpos `[MEDIDO pelo /qa 2026-08-29, não re-rodado aqui]` |
 
 ### O controle que separa "quem pegou" de "alguém pegou"
 
@@ -316,8 +328,29 @@ duas foram medidas:
   recorte de caminho, é que **nenhuma regra em vigor cobre `any`/`console`** desde que `ADR-011/D4` as
   trocou por ESLint `[MEDIDO 2026-08-28: harness rules --mode file sobre ele → rc=0]`.
 
-⇒ o "antes" real é **simétrico e pior do que o plano supunha: os dois eram ACEITOS**. O desfecho de
-`D3b` não muda — muda a força do argumento a favor dele.
+⇒ **ERRATUM 2026-08-29, por `NEEDS_FIX` do `/qa`, e o defeito é meu:** a frase que estava aqui dizia
+que o "antes" era *"simétrico: os dois eram ACEITOS"*. **Ela só é verdadeira sob substituição do
+artefato, e a substituição não estava declarada** — que é exatamente a armadilha "ferramenta
+respondendo pergunta ligeiramente diferente da que se quis fazer", desta vez cometida por mim.
+
+**O `.tsx` que o PLANO nomeia não é o `.tsx` que esta bancada usou.** O do plano é o de `D1.3` — o
+`import … from "…/backend/src/…"`, que `web-fullstack.browser-imports-server` cobre. O desta bancada
+é um `any` + `console`, que **nenhuma regra em vigor** cobre.
+
+⇒ O "antes" real é **assimétrico com as metades INVERTIDAS em relação ao plano**: o `.py` é **ACEITO**
+`[MEDIDO 2026-08-29: harness rules --mode file sobre o violador de camada → rc=0, saída vazia;
+harness rules --mode sweep --surface git-hook → rc=0]` e o `.tsx` **que o plano nomeia** é
+**RECUSADO** `[MEDIDO 2026-08-29: com `frontend/src/features/painel/serie.tsx` (a receita de `§3` do
+`frontend/README.md`) na árvore, `harness rules --mode sweep --surface git-hook` → rc=1,
+`[BLOQUEIO] [web-fullstack.browser-imports-server] frontend/src/features/painel/serie.tsx:1`]`. A
+bancada usou um `.tsx` de `any` + `console` — **sobre ELE, e só sobre ele**, o "antes" é ACEITO
+`[MEDIDO 2026-08-29: o mesmo sweep, com o `any`+`console` no lugar → rc=0]`.
+
+**A troca foi metodologicamente melhor, e é por isso que ela fica** — mas declarada: o `.tsx` do plano
+já é recusado hoje, então ele tornaria o falsificador **não-informativo** (o push cairia antes de o
+`make lint` falar). O desfecho de `D3b` não muda: as duas metades do plano continuam erradas, e o
+buraco que o ESLint no `pre-push` fecha continua existindo — ele é **de regra** (`any`/`console` sem
+dono desde que `ADR-011/D4` trocou as duas `[[rules.own]]` por ESLint), **não de caminho**.
 
 ### A 5ª via de resolução de interpretador, fechada — e a receita publicada não executava
 
@@ -334,11 +367,26 @@ o alvo passou a ser `bash backend/scripts/boundaries.sh`, que herda a recusa dos
 | `backend/.venv/bin/python -m importlinter` | **NÃO EXECUTA.** O pacote não tem `__main__.py` `[MEDIDO 2026-08-28: → "No module named importlinter.__main__; 'importlinter' is a package and cannot be directly executed"]`. Publicar a receita sem rodá-la teria posto no repositório um comando que não roda |
 | herdar a recusa dos scripts | **ESCOLHIDA.** `boundaries.sh` carrega as mesmas 3 recusas `rc=3` (venv ausente · versão ≠ `PY_ALVO` · `[tool.importlinter]` ausente) e chama `"$PY" "$BACKEND/.venv/bin/lint-imports"` — interpretador e script **nomeados**, os dois dentro do venv já conferido |
 
-**Por que `poetry run` não serve, e o número é o que assusta:** num projeto cujo venv **não** tem
-`import-linter`, `poetry run lint-imports` **cai para o `PATH`** e resolve para
-`/home/stharley/.pyenv/versions/3.12.8/bin/lint-imports`, cujo shebang é **Python 3.12.8** — o
-interpretador que `ADR-011/D5` recusa
-`[MEDIDO 2026-08-28 em bancada isolada: venv 3.13.13 real criado com Poetry, sem import-linter → `poetry run which lint-imports` → o caminho acima; `head -1` dele → `#!/home/stharley/.pyenv/versions/3.12.8/bin/python`]`.
+**Por que `poetry run` não serve — e a evidência que estava aqui foi TROCADA pela pior, que é a
+verdadeira** `[ERRATUM 2026-08-29, achado do `/qa`]`. A versão anterior citava um caminho que **não é
+o que o comando devolve de dentro de `backend/`**, e citar saída que o leitor não reproduz é o defeito
+que este repositório caça. Re-medido em bancada própria — venv **3.13.13 real** criado com Poetry,
+**sem** `import-linter` — e o comportamento depende do `.python-version` do diretório, o que torna o
+problema **pior**, não menor:
+
+| contexto | `poetry run lint-imports --version` | leitura |
+|---|---|---|
+| diretório **com** `.python-version = 3.13.13` (é o caso de `backend/`) | **rc=127**, `pyenv: lint-imports: command not found` | falha barulhenta — a menos ruim |
+| diretório **sem** `.python-version` | **rc=0**, **`import-linter 2.13`** | **ferramenta de outra versão, sob interpretador que o repositório não declarou, saindo VERDE** |
+| `PYENV_VERSION=3.12.8 poetry run lint-imports --version` | **rc=0**, **`import-linter 2.13`**, resolvido em `/home/stharley/.pyenv/versions/3.12.8/bin/lint-imports` | **o cenário perigoso, explícito: 3.12.8 é exatamente o interpretador que `ADR-011/D5` recusa** |
+
+`[MEDIDO 2026-08-29, bancada isolada em `/tmp`; e no `backend/` REAL, cujo venv TEM a ferramenta,
+`poetry run which lint-imports` → `…/backend/.venv/bin/lint-imports` e `--version` → `import-linter
+2.14`, rc=0 — ou seja: **`poetry run` acerta quando o ambiente já está certo, e é justamente quando
+ele está errado que ele mente**]`
+
+⇒ um portão não pode depender de "o ambiente já estar certo": é para isso que ele existe. `boundaries.sh`
+nomeia o interpretador **e** o script, os dois dentro do venv que ele acabou de conferir.
 
 **Consequência para `D1.9`:** `grep -n 'PY_ALVO' backend/scripts/*.sh` agora encontra **3** arquivos
 (`bootstrap.sh`, `lint.sh`, `boundaries.sh`) e não 2. A duplicação continua deliberada e nomeada, pela
@@ -362,6 +410,29 @@ sobrescreve o `pre-push` gerado `[MEDIDO 2026-08-28: rc=0; `grep -c harness-gith
 worktree instala para **todas**, inclusive as das outras tasks em andamento. É por isso que esta task
 **não** instalou o hook no repositório real — a instalação é ato de quem tiver a árvore inteira, não
 de uma task rodando em paralelo com outras duas.
+
+### ⚠️ HAND-OFF OBRIGATÓRIO — o portão está versionado e **NÃO instalado**
+
+`T-01.5` **não instalou** o hook, e isso foi decisão medida, não esquecimento: `.git/hooks` é o
+diretório **COMUM** de todas as worktrees `[MEDIDO 2026-08-28: `git rev-parse --path-format=absolute
+--git-path hooks` devolve o mesmo caminho da raiz principal e de uma worktree]`, e instalá-lo com
+outras tasks rodando em paralelo ligaria o portão nas árvores **delas**, que não têm `make setup`.
+
+**Estado no disco do dono, hoje:** `ls .git/hooks` → só `commit-msg` e `pre-push`. **`harness doctor`
+diz `CONFORME` e não menciona a ausência** — ele confere os hooks que o *plugin* declara, e este não é
+um deles. Logo **nada avisa** que o portão está desligado.
+
+⇒ **depois do merge, uma vez, da raiz do repositório:**
+
+```bash
+bash scripts/install-git-hooks.sh   # idempotente; instala commit-msg e pre-push.pre-harness
+ls .git/hooks                       # espera: commit-msg, pre-push, pre-push.pre-harness
+make setup                          # sem ele, o pre-push RECUSA com rc=3 ("não mediu")
+```
+
+**Hooks são COMPARTILHADOS entre worktrees:** instalar de uma instala para **todas**. É por isso que a
+instalação é ato de quem tiver a árvore inteira, e não de uma task rodando em paralelo com outras duas.
+**Sem esta linha, `D1.7c` fecha no papel e fica desligado no disco.**
 
 ### O que este portão NÃO fecha, e não é rodapé
 
@@ -404,7 +475,11 @@ testes de domínio puro desselecionados, o piso **global** de 70% passa em **95,
 ## Zero rede, zero chave
 
 **⚠️ Correção de um número medido que estava errado.** Uma versão anterior desta seção afirmava
-**`0 ocorrência`** para o grep abaixo, e a correção seguinte disse **`1`**. **São `2`** — e a
+**`0 ocorrência`** para o grep abaixo, e a correção seguinte disse **`1`**. ~~**São `2`**~~ **eram `2`
+À ÉPOCA, e o bloco de código logo abaixo já lista `3` linhas** — a contagem em vigor é **`3` (em `2`
+arquivos, `0` fora de comentário)**, e ela está três parágrafos abaixo, em *"Hoje são 3"*. **A tarja é
+de 2026-08-29 (`/qa`), e a frase fica**: o defeito que ela documenta não é o número, é o presente do
+indicativo — e ele envelheceu de novo, em silêncio, exatamente como ela avisa. E a
 segunda nasceu *dentro* da própria iteração que corrigiu a primeira, o que é a lição:
 número medido envelhece com a edição seguinte. Corrigi **o número, não o comando** — o comando
 está certo, o universo está certo, e as duas ocorrências são nomeadas, não escondidas:
@@ -439,9 +514,16 @@ escrever "Coinalyze" num comentário de `src/`, `tests/` ou `scripts/` cria uma 
 **um número em presente envelhece em silêncio enquanto a prosa ao redor continua verdadeira**.
 **Este número só vale re-rodado depois da última edição** — não antes.
 
-**[MEDIDO 2026-08-28, RE-RODADO por `T-01.6` depois da migração para Poetry]: 3 ocorrências**,
-**as três prosa de comentário**, universo **19 arquivos** — os 17 `.py`/`.sh` sob `src/`, `tests/` e
-`scripts/`, mais `pyproject.toml` e `poetry.toml`. As duas antigas continuam em `scripts/test.sh:8`
+**[RE-RODADO 2026-08-29 por `T-01.5`, e o universo mudou POR CAUSA DELA]: 3 ocorrências**,
+**as três prosa de comentário**, universo **20 arquivos** — os **18** `.py`/`.sh` sob `src/`, `tests/` e
+`scripts/`, mais `pyproject.toml` e `poetry.toml`. **O 18º é `scripts/boundaries.sh`, que esta task
+criou** `[MEDIDO 2026-08-29: `find src tests scripts -type f \( -name '*.py' -o -name '*.sh' \)
+-not -path '*__pycache__*' | wc -l` → **18**; o mesmo universo em `origin/master` → **17**]`. É o
+parágrafo acima acontecendo pela terceira vez, agora comigo: a task **editou o diretório varrido** e
+publicou o número **19** sem re-rodar — foi o `/qa` que pegou. **As 3 ocorrências não mudaram**
+(`boundaries.sh` contribui **0**), e fora de comentário continua **0**
+`[MEDIDO 2026-08-29: o grep completo → 3 linhas; com o filtro de comentário → 0]`. O texto anterior
+dizia *"universo 19 … os 17"* `[MEDIDO 2026-08-28 por `T-01.6`]` e estava certo à época. As duas antigas continuam em `scripts/test.sh:8`
 e `:11`; **a terceira nasceu nesta passada**, em `scripts/bootstrap.sh:98`, e é a lição do parágrafo
 acima acontecendo de novo — é o comentário que explica **por que** este README varre `scripts/` com
 um padrão que casa `http`. Nenhuma é chamada de rede.
