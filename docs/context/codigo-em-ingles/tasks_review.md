@@ -404,3 +404,112 @@ Adotado integral do `index.md` do plano, mais um item meu:
 | **C** | existe consumidor externo dos 4 eventos de log? (**fato, não escolha**) | `T-04.2` | **nada trava.** `F1` escreve a regra prospectiva e a divergência para de crescer |
 
 **Nenhuma das três bloqueia nenhuma task.** É por isso que as 7 saem `todo` e não `blocked`.
+
+---
+
+# ADENDO pós-`/qa` retroativo das fases `01`–`03` — 2026-08-29
+
+Fonte: [`gates/fases-01-03-retroativo.md`](gates/fases-01-03-retroativo.md). **`01` e `03` passaram e estão
+no ledger; `02` reprovou nos PRÓPRIOS CRITÉRIOS, não na árvore** — `R067`+`R063`, `CA-F2-5` medida dos dois
+lados, `CA-F2-7` vazio, `backend/src` = 2 linhas de docstring. **Nada aqui toca código de produção ou de
+teste, e nada aqui grava gate.**
+
+## 13. As três erratas de `T-02.1` — o que mudou, e por que nenhuma é conveniência
+
+| # | critério | era | passa a ser | por quê, em uma linha |
+|---|---|---|---|---|
+| **1** | `CA-F2-3` | *"o critério que impede a renomeação de virar reescrita"*, com falsificador `docstring / noqa / asserção` | **linha de base de suíte, e só isso** — o falsificador sai | ele reprovava **0 de 3** |
+| **2** | `CA-F2-2` (b) | `ligados_distintos` = **15 e 55** | **15 e 54**, com a prova de conjunto | o mapa de `SPEC-002` §3.1 **não é injetivo** |
+| **3** | `CA-F2-2` (a) | `x in PT or x.startswith("test_")` | `x in PT40`, **lista fechada dos 40**, sem `startswith` | como estava, só era satisfeita **apagando a suíte** |
+
+### 13.1 A errata do `55` é sobre o MAPA, não sobre esta entrega
+
+`processo` (variável local do `Popen`) e `process` (método) são **dois** nomes ligados no ANTES e **um** no
+DEPOIS: o mapa manda `processo`→`process` e `process` **já existia**. **55 − 1 = 54.** A prova que eu rodei
+não é uma contagem — é igualdade de conjuntos, e ela fecha nos dois arquivos:
+
+```
+$ backend/.venv/bin/python   # ast: Name(Store) ∪ arg ∪ {FunctionDef, AsyncFunctionDef, ClassDef}
+test_infrastructure_durability.py   ANTES= 15  DEPOIS= 15  em_PT40_DEPOIS=0   colisoes=[]
+test_resumable_etl_backlog.py       ANTES= 55  DEPOIS= 54  em_PT40_DEPOIS=0
+                                    imagem(ANTES)−DEPOIS=[]   DEPOIS−imagem(ANTES)=[]
+                                    colisoes=[('process', ['processo', 'process'])]
+```
+
+`[MEDIDO 2026-08-29 em 75026ff pelo /tech-lead, n=2 arquivos]`. **Um DoD escrito sobre um mapa não-injetivo
+reprova um builder correto** — e o `54` não é exceção casuística concedida a esta entrega: é a **imagem do
+mapa**, que é o mesmo objeto que o DoD manda observar. **Precedente idêntico e já resolvido nesta trilha:**
+a `T-02.3` de `plataforma-dados` exigia 55 renomeações e o correto era 54, pelo mesmo motivo.
+
+`02_retroativo_backend_tests.md:39` e `PRD-002` §6/`CA-U2-2` repetem o `55` e **herdam** esta errata.
+**Corrigi-los é ato do `/architect`, não meu** — eu não edito SPEC nem PRD.
+
+### 13.2 `CA-F2-3'` — e eu **não aceitei o `3/3` de palavra**
+
+A causa-raiz do `0 de 3` é uma linha: `backend/scripts/test.sh:41` roda `--cov=src`, então **`backend/tests`
+contribui ZERO statement** e toda mutação dentro do corpo de um teste é invisível ao número **por
+construção** — que é exatamente a superfície que a fase `02` reescreveu. `--cov=tests/sentimento` fecharia
+`M1`/`M2` e **não** `M3`: comentário não é statement.
+
+`CA-F2-3'` é **igualdade de fluxo de tokens módulo o mapa fechado** — e igualdade não se satisfaz apagando
+nada, porque apagar **cria** divergência. Instrumento versionado em
+[`gates/CA-F2-3-linha-verificador.py`](gates/CA-F2-3-linha-verificador.py), `COMMENT` **deliberadamente não
+descartado** (é o único token que vê o `noqa` sumir). **Placar que eu mesmo medi**, árvore restaurada e
+`git status --porcelain` vazio entre cada mutação `[MEDIDO 2026-08-29 em 75026ff, n=3]`:
+
+| árvore | órfãs | `rc` | veredito |
+|---|---|---|---|
+| **como entregue** | `0` (e `ENUMERADAS_AUSENTES=0`) | `0` | **CALA** — o lado que impede o falsificador de morder em tudo |
+| **+ `M1`** apagar `assert leftovers == [], …` (`:51`) | `12` | `1` | **MORDE** |
+| **+ `M2`** apagar docstring (`:243`) | `10` | `1` | **MORDE** |
+| **+ `M3`** apagar `# noqa: S603` (`:171`) | `1` — `[delete] COMMENT '# noqa: S603 - argv literal, sem shell'` | `1` | **MORDE** — e este escapava de `test` **e** de `lint` |
+
+**A lista de exceções é fechada em 2 e isso é metade do critério:** a vírgula mágica de `:142` (que o
+`ruff format` obriga e que **nenhum critério anterior contabilizava** — `T-02.1-qa.md` §7, divergência nº 4)
+e a citação **truncada** `test_reprocessar_o_mesmo_item_...` → `test_reprocessing_the_same_item_...`.
+**Um `ORFAS=0` obtido acrescentando uma terceira exceção é a própria evidência de que a renomeação virou
+reescrita.**
+
+### 13.3 O que eu deliberadamente **não** fiz
+
+- **Não gravei gate, não usei `pipeline override`, não toquei código de produção nem de teste.**
+- **Não apliquei a ação 4 do `/qa`** (`master` → `origin/master` nos `diff` dos DoDs). Ela é **herdada e vale
+  para as três fases**, e `01`/`03` **já estão no ledger** — mexer no critério de uma fase aprovada é outro
+  ato, com outro dono. Fica **declarado como dívida aberta**, não silenciado.
+- **Não editei `SPEC-002`, `PRD-002` nem o plano `02`** — §13.1 nomeia as duas linhas que herdam a errata.
+
+---
+
+## 14. ⏸ O **10º evento de log em português** — registro, NÃO decisão
+
+**Não é meu para decidir, e não estou decidindo.** Dono: **owner / `/architect`** (linha 10 da tabela de
+fronteira do `CLAUDE.md`) **+ o dono de `plataforma-dados`, de onde o commit veio.**
+
+**O fato, confirmado:** `backend/src/modules/sentimento/use_cases/probe_bucket_coupling.py:75` —
+`logger.debug("leitura do contador de %s falhou: %s", …)`, introduzido por **`207c817`**
+(`feat(T-03.7)`, `plataforma-dados`), **em `master` hoje**.
+
+**As duas leituras, e as duas são defensáveis:**
+
+| leitura | argumento | consequência |
+|---|---|---|
+| **literal** | a linha 10 diz *"nome de EVENTO DE LOG (**a string em `logger.info("…")`**)"*. Isto **é** string em chamada de logger, **é** português, **é** nova | o contador vai de **4 para 5** e **o falsificador declarado da fase `04` DISPAROU**: *"se um evento de log NOVO nascer em português tendo o `CLAUDE.md` no contexto, a decisão prospectiva não pegou e a superfície precisa de MECANISMO, não de doutrina"* |
+| **estreita** | *"nome de EVENTO"* é o núcleo; uma mensagem formatada com `%s` **não é nome** de evento | não conta — **mas a linha 10 passa a ter uma lacuna para MENSAGEM FORMATADA**, exatamente paralela à lacuna de `raise X("…")` que o `CLAUDE.md` já declara como `⏸ NÃO DECIDIDO` |
+
+**Nenhuma das duas está escrita no `CLAUDE.md`**, e é essa ausência — não o commit — que é o achado.
+
+### 14.1 ⚠️ Risco de contaminação, e ele é **meu**
+
+A classificação operacional *"evento nomeado = 1º argumento literal, sem espaço"* **saiu do meu prompt de
+despacho**, e **quatro derivações `ast` a herdaram**. Elas foram independentes na **contagem**;
+**não** na **regra de classificação**. Portanto: **"quatro derivações concordam" NÃO é evidência sobre esta
+pergunta.** O instrumento que produziu o `9`, o `10` e o `4 de 9` **não distingue nome de evento de mensagem
+formatada** — ele nunca foi construído para isso.
+
+**Consequência prática, e ela é barata:** qualquer decisão sobre esta pergunta precisa ser tomada **contra
+as 13 chamadas de `logger.*` lidas à mão**, não contra o número que o `ast` publica. E se a leitura
+**literal** vencer, o `4 de 9` de `CA-F2-9`/`CA-F4-5` e a nota do `CLAUDE.md` **passam a estar errados por
+construção**, não por deriva.
+
+**Não bloqueia nenhuma task desta feature.** `CA-F2-9` mede os **4 eventos em português da fase `02`
+INTACTOS**, e isso continua verdadeiro.
