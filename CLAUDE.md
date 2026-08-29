@@ -200,6 +200,28 @@ linhas** — quebra silenciosa, com consumidor fora deste repositório. A regra 
 divergência **parar de crescer** mesmo que não a encolha: hoje são **4 em português de 9 eventos**
 `[DOC: PRD-002 §4.4]`, e o número **não pode subir**.
 
+**Linha 11 — o que faltava não era a exceção, era o MOMENTO DE REABRIR.** A exceção já está escrita em
+código de produção, em inglês, com o motivo — `backend/src/modules/sentimento/domain/ingest_record.py:88-89`:
+*"The NAME stays Portuguese because it is a CONTRACT COLUMN NAME quoted from `ADR-008/D3`, like `window` —
+renaming it here would break the consumer of `T-07.13`."* O que **nenhum** documento marcava era quando a
+pergunta volta à mesa, e exceção sem gatilho é exceção permanente por omissão.
+
+> **Gatilho de reabertura, e ele é literal:** a reabertura acontece quando **`T-07.12`/`T-07.13`**
+> (fase `07`, componente `web` — `CST-66`/`CST-67`, em `docs/context/plataforma-dados/tasks.toml:940,950`)
+> escreverem o **consumidor da projeção canônica**. **Quem decide é `ADR-008/D3`, não esta feature.**
+> `[DOC: SPEC-002 §8 + PRD-002 §3.4]`
+
+**E por que a decisão é daquela ADR e não desta:** `janela_de_perda` é uma das **15 colunas** que
+`ADR-008/D3` fixou em `INGEST_HEALTH_RUN_COLUMNS`, e **a ordem da tupla alimenta o `sha256` da projeção
+canônica** (`ADR-008/DoD-2`) `[DOC: PRD-002 §3.4:162, que a mede em 7af0e4f]`. Renomear a coluna muda a
+impressão digital de **todo relatório já emitido** — é **mudança de contrato, não de estilo**, e exige
+plano de migração do fingerprint. Renomear um identificador Python quebra um import, e o import reprova;
+renomear esta coluna quebra um `sha256` que **dois lados comparam justamente para provar que são iguais**
+(`ADR-008/DoD-2`), e a comparação passa a falhar sem que nada aponte o nome como causa.
+
+⚠️ **Isto é PROSA ADJACENTE, não uma 13ª linha da tabela**, pelo mesmo motivo da lacuna de mensagem de
+exceção logo abaixo: `CA-F1-1` congela a tabela em **12**, e uma 13ª reprovaria um `CLAUDE.md` correto.
+
 **Linha 12 — o custo de deixar em aberto, escrito para não ser esquecido:** hoje é **1 rota**. Na fase
 `05` de `SPEC-001` são muitas, e trocar URL depois quebra bookmark e link. **A pergunta é barata agora e
 monotonicamente mais cara depois** — mas não bloqueia nada. Dono: **owner**.
