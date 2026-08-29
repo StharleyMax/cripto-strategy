@@ -268,3 +268,188 @@ fase `01`, e nenhuma é decisão minha: §4.1 e §4.2 estão **resolvidas com a 
 **O que eu NÃO fiz, por proibição explícita do despacho:** nenhum `gate-record`, `approve` ou `advance`;
 nenhum QA despachado; nenhum merge; `tasks.toml` **não editado**; Jira **não tocado**; ledger
 **intocado** — `BUILD_AUTHORIZED` antes, `BUILD_AUTHORIZED` depois.
+
+---
+
+# CICLO 2 — resposta a `/qa APPROVED` + `/review COMPLIANT`
+
+**Base:** `77cf178` · **Commit dos consertos:** `e41a674` · **Zero `BLOCKER` nos dois gates.**
+Os 7 itens do despacho, item a item: **o que foi feito, ou o argumento de por que não.**
+
+| # | item | ação |
+|---|---|---|
+| 1 | falsificador da exceção nasce falso | ✅ **corrigido** — §C2.1 |
+| 2 | "enumeração fechada" com buraco medido | ✅ **corrigido como prosa**, não 13ª linha — §C2.2 |
+| 3 | `[DECISÃO-OWNER]` não definido em `:53-54` | ✅ **corrigido** — §C2.3 |
+| 4 | `README` subdeclara alcance (`comentário`) | ✅ **corrigido** — §C2.4 |
+| 5 | 3 mutações escaparam à bancada | ✅ **escaladas com dono** — §C2.5 |
+| 6 | `[PREMISSA-OWNER]` solda prescrição + queixa | ✅ **escalado ao owner, NÃO decidido** — §C2.6 |
+| 7 | errata do DoD de `T-01.3` | ✅ **nomeada para o `/tech-lead`** — §C2.7 |
+
+**Nenhum CA da fase mudou de valor:** `CA-F1-1` **12** · `CA-F1-2` **1**/`rc=0` · `CA-F1-3` **2** ·
+`CA-F1-5` **7** e **0** · `CA-F1-7` **`1  0`** · `CA-F1-8` **0**.
+**Linha de base intacta:** 107 passed · 370 statements · 54 branches · 124/52/194 · 100% ·
+`make lint` `rc=0` · sweep 0 BLOQ / 1 AVISO · `rules list` **7**, `diff` antes × agora **VAZIO**.
+
+---
+
+## C2.1 · `[WARNING-1]` — o falsificador reprovava a árvore que ele acabara de aprovar
+
+**Era o achado mais importante, e a correção não é a prescrita ao pé da letra — é uma mais forte.**
+O `/review` sugeriu *"…ou com um nome de coluna de contrato da linha 11"*. **Isso remendaria o sintoma e
+deixaria o defeito de raiz:** o universo estava errado, não a lista de exceções. O texto dizia **"todo
+nome"**, mas o critério que a fase de fato mede (`CA-F1-6`) varre **segmento de diretório**. Um
+falsificador cujo universo não é o do seu próprio comando não mede o que anuncia.
+
+**Universo corrigido para `CA-F1-6` + as duas subtrações:**
+
+```bash
+git ls-tree -r --name-only HEAD | grep -E '^(backend/src|backend/tests|frontend/src)/' \
+  | awk -F/ '{for(i=1;i<NF;i++) print $i}' | sort -u \
+  | grep -vxE 'sentimento|charts|convergencia|backtest|web|docs'
+```
+
+**14 segmentos, exatamente 1 em português (`painel`)** — que a fase `03` renomeia ⇒ depois: **13, zero**
+`[MEDIDO 2026-08-29 em 77cf178, n=14]`.
+
+**Os dois lados, provados — porque um falsificador que só cala não é falsificador:**
+
+| # | mutação | antes | sob mutação | |
+|---|---|---|---|---|
+| `N8` | alguém cria `backend/src/modules/sentimento/dominio/` | 1 seg. PT | **2** | ✅ **MORDE** erosão nova |
+| `N9` | `janela_de_perda` (a exceção da linha 11) | — | **0** no universo | ✅ **CALA** sobre a exceção |
+| `N10` | a versão **antiga** ("todo nome") | — | acusa `"janela_de_perda"` **e** `numero` | ❌ era isto que reprovava |
+
+---
+
+## C2.2 · `[WARNING-2]` — a lacuna entra como prosa, e a palavra "fechada" para de mentir
+
+**Não virou 13ª linha, e a recusa é a razão de a correção existir:** `CA-F1-1` congela a tabela em **12**,
+e uma 13ª **reprovaria um `CLAUDE.md` correto** se o critério fosse re-medido ao fim de `04`.
+Entrou como **prosa adjacente sob a tabela** — o precedente é a coluna de contrato, que o `/tech-lead`
+colocou assim pelo mesmo motivo.
+
+**Re-medi por conta própria em vez de copiar o número do `/review`** — `n=5` mensagens em 3 arquivos,
+**3 PT / 2 EN**, confirmado. Status **`⏸ NÃO DECIDIDO`**, **dono `/architect`**, com **gatilho
+observável**: se o número de mensagens em português subir, a lacuna deixou de ser inércia e virou rampa.
+
+E `:99-100` deixou de afirmar mais do que entrega: *"fechada **sobre as superfícies que ela lista** — e
+há **uma lacuna conhecida, declarada logo abaixo da tabela**, em vez de escondida atrás da palavra
+*fechada*"*.
+
+---
+
+## C2.3 · `[WARNING-3]` — o arquivo usava um rótulo que não definia
+
+`[DECISÃO-OWNER]` entrou na enumeração de `:53-55`, e a distinção virou cláusula própria junto ao
+corolário: **`[PREMISSA-OWNER]` = o owner _disse_** (citação literal); **`[DECISÃO-OWNER]` = o owner
+_escolheu_** entre opções que um agente redigiu. Com a assimetria escrita: *rotular uma escolha como
+`[PREMISSA-OWNER]` inventa uma frase que o owner nunca disse; rotular uma fala dele como
+`[DECISÃO-OWNER]` dissolve a autoridade dela.*
+
+**Também apliquei `[INFO-2]`** (1 linha, e reduz materialmente o risco que `WARNING-3` nomeia): o rótulo
+mudou para **dentro** do bloco `>` da exceção, com `⚠️ isto NÃO é fala do owner`. Antes, quem grepasse a
+frase — que é exatamente o que `CA-F1-2` treina o leitor a fazer — recebia a linha **sem** rótulo, no
+mesmo dispositivo tipográfico da citação literal do owner 2 linhas acima.
+
+---
+
+## C2.4 · `[WARNING-4]` — o único ponto corrigível sem violar `CA-F1-1` nem `RN-2`
+
+`README.md` passou a declarar `comentário` no alcance, **e a divergência ficou escrita em vez de
+resolvida à revelia**: a linha 5 manda *docstring / comentário → inglês*; o `README` diz que comentários
+`#` continuam em português; e **`ADR-011/D6`, a força que a linha 5 invoca, alcança só a docstring**.
+⇒ a tabela afirma, nesta linha, mais do que a decisão que ela cita sustenta. **Dono: `/architect`** — quem
+tem de se decidir é a **linha 5 de `PRD-002` §3.1**. Nem a tabela nem a medição do `README` foram
+tocadas: editar a primeira violaria *"íntegra"*, apagar a segunda violaria `RN-2`.
+
+---
+
+## C2.5 · Os três escapes — ESCALADOS, com dono, porque são buracos dos CRITÉRIOS
+
+O `/qa` mediu `n=7`, **4 reprovam e 3 escapam**. Nenhum reprova esta entrega — **nenhum DoD desta fase os
+promete** — e por isso a resposta certa é **escalar**, não remendar o texto para tapar um critério que
+não é meu. **Nenhum deles é corrigível dentro de `T-01.1`–`T-01.3`: os três exigem um CA novo**, e
+escrever CA é ato de quem quebra tasks, não de quem as implementa.
+
+| escape | o que passa despercebido | dono | conserto, e ele é de uma linha |
+|---|---|---|---|
+| **`N1`** | a **linha 10 revertida em silêncio** para `⏸ NÃO DECIDIDO` — todos os CA verdes | **`/tech-lead`** | **o detector JÁ EXISTE**: `CA-F4-1` (*"a linha 10 contém `[INFERRED:` e **não** contém o marcador"*). Está na fase `04` e não na `01` ⇒ a linha 10 fica **três fases sem guarda**. Adotar `CA-F4-1` como regressão a partir de `02` |
+| **`N2`** | a **linha 12 DECIDIDA por um agente**, fechando uma pergunta reservada ao **owner** (`[Q2]`) sem ele | **`/tech-lead`** + **owner** | **o mais caro dos três e o único sem dono declarado.** Nada mede que a pergunta continue **aberta**. Detector simétrico ao de `N1`: *a linha 12 contém `⏸` e a palavra `owner`* — é o que eu já meço no meu próprio DoD, e que nenhum CA da fase exige |
+| **`N6`** | a exceção copiada no `README` **parafraseada** | **`/architect`** | **falsifica uma afirmação publicada:** `01_convencao_escrita.md:42` diz que a metade `→ 0` *"é a que impede as duas verdades"*. Ela é `grep -F` de **uma frase literal** ⇒ impede a cópia **verbatim** e **não** impede a **paráfrase**, que produz as mesmas duas verdades pelo mesmo custo. **A conclusão do plano está certa; o argumento é mais fraco do que ele afirma** |
+
+> **`N2` é o que eu destacaria se só um pudesse ser levado adiante.** `N1` e `N6` degradam um critério;
+> `N2` permite que **uma decisão do owner seja tomada por um agente** e passe em todos os portões. É a
+> mesma classe de defeito que a linha 10 já sofreu — *"a divergência nasceu de a superfície não ter dono
+> declarado"* — só que aplicada a uma pergunta que **tem** dono e é dele.
+
+---
+
+## C2.6 · ⛔ PARA O OWNER — um rótulo solda duas orações de sentido oposto, e isso vira regra que ninguém enunciou
+
+**Isto não é conserto, é pergunta. Eu não a decido, e reproduzi a tabela como está porque `CA-F1-1`
+exige a íntegra — o defeito é herdado de `PRD-002` §3.1, não introduzido aqui.**
+
+**O parágrafo para o owner ler:**
+
+> Stharley — em 2026-08-29 você escreveu, sobre idioma de código:
+>
+> > *"Assim como docstring, todo código gerado é em inglês, olhando no front, ta tudo em portugues, nome
+> > dos arquivos, var, tudo."*
+>
+> Esta frase está hoje citada em `PRD-002` §3.1 sob **um único rótulo `[PREMISSA-OWNER]`**, e ela tem
+> **duas orações que fazem coisas diferentes**:
+>
+> - ***"todo código gerado é em inglês"* é PRESCRIÇÃO** — você manda. Disso saem as linhas 1 e 2 da
+>   tabela, e ninguém tem dúvida.
+> - ***"olhando no front, tá tudo em português, nome dos arquivos, var, tudo"* parece QUEIXA** — você
+>   está descrevendo **o que viu ao olhar**, não emitindo uma segunda ordem. Mas ela foi lida como
+>   prescrição e virou a força da **linha 3** (*nome de arquivo → inglês*, `[PREMISSA-OWNER]`, com
+>   *"nome dos arquivos"* citado como literal) e, por herança, da **linha 4** (nome de diretório).
+>
+> **Se a segunda oração era queixa e não ordem**, então as linhas 3 e 4 têm força **`[INFERRED]`**, não
+> `[PREMISSA-OWNER]` — e uma delas governa a fase `03`, que **renomeia arquivos e um diretório**.
+> **Se era ordem**, está tudo certo como está e esta pergunta morre em uma palavra sua.
+>
+> **A pergunta, e ela é de sim ou não:** *"tá tudo em português, nome dos arquivos, var, tudo"* era
+> **você mandando** renomear arquivos e diretórios, ou **você relatando** o que encontrou?
+>
+> **Nada trava enquanto você não responde.** As fases `01`–`03` seguem: a linha 1 (prescrição, sem
+> dúvida) já sustenta o trabalho de identificador. O que muda com a resposta é **o rótulo de força** das
+> linhas 3 e 4 — e rótulo de força errado é exatamente o defeito que este repositório mais paga.
+
+**Dono da correção depois da resposta:** `/architect` (é `PRD-002` §3.1 que se edita, não o `CLAUDE.md`).
+
+---
+
+## C2.7 · A errata do DoD de `T-01.3` — ato do `/tech-lead`, nomeada aqui para encaminhamento
+
+**Os dois auditores confirmaram o desvio, e os dois confirmaram que eu acertei em não editar o critério.**
+O DoD de `T-01.3` fixa `harness pipeline state codigo-em-ingles` → **`SPEC_APPROVED`**, que é um **valor
+derivado e monotônico** — ele envelhece a cada `advance`. O **evento é imutável**; o **estado não é**.
+Hoje o ledger diz `BUILD_AUTHORIZED`, e o DoD, lido ao pé da letra, **reprovaria uma entrega correta**.
+
+> **A errata, e ela é do `/tech-lead` porque `tasks.toml` é dele — eu não o edito:**
+> trocar `harness pipeline state codigo-em-ingles` → `SPEC_APPROVED` por
+> **`SPEC_APPROVED` ou posterior**, verificado por `harness pipeline show codigo-em-ingles` **contendo o
+> evento `approve spec`**. O evento não envelhece; o estado sim. **É a mesma lição da própria `T-01.3`,
+> aplicada ao critério em vez de ao documento** — e é a terceira volta da mesma espiral nesta trilha.
+
+**O que eu fiz e mantenho:** escrevi no cabeçalho o que o ledger sustenta — `SPEC_APPROVED` citando
+`approve spec` em `2026-08-29T14:35:44Z`, **e** registrando que a feature já seguiu para
+`BUILD_AUTHORIZED`. Evidência **conferida por comando**, não presumida do texto nem do resumo do despacho.
+
+---
+
+## C2.8 · O que eu NÃO consertei, e o argumento
+
+- **`[INFO-1]`** (a âncora do título sobrevive como **prosa**, e `grep -cF` é cego ao tipo): **não
+  consertado, de propósito.** O conserto real é atualizar `backend/README.md:262` e `:286` para o título
+  novo — e esse arquivo é **disputado pelas fases `02` e `03`**. Um terceiro editor ali criaria conflito
+  de merge sem necessidade. **Fica para quem tocar `backend/README.md` na `02`/`03`, atomicamente.**
+  O `/review` classificou como INFO e endossou a decisão.
+- **`[INFO-3]`** (`docs/INDEX.md:85` é não-monotônico no tempo e não avisa): **não corrigível por
+  edição** — o arquivo é **append-only por `CLAUDE.md`**, e reescrever a linha para acrescentar o aviso
+  **violaria `CA-F1-7`**, que é o critério que esta própria task existe para provar. A saída seria uma
+  **segunda linha** de errata, e o custo (uma linha permanente no registro) excede o do defeito (um
+  carimbo fora de ordem num arquivo que já tem outros). **Registrado, não consertado.**
