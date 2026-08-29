@@ -10,8 +10,17 @@ second reader appearing anywhere in the tree turns a green suite red.
 store in this repository yet and no consumer of this module, so the "nobody else imports it"
 half is VACUOUS today — and `rc=0` over an empty universe is indistinguishable from `rc=0` over
 a universe that was checked. The `morde` side of the column scan is therefore NOT vacuous and is
-what carries the weight: `backend/src` has 37 modules, one of which legitimately touches a
-read-path column, and the scan finds exactly that one. The planted-violator measurement is in
+what carries the weight: `backend/src` has 36 modules, TWO of which legitimately touch a
+read-path column (`as_of_accessor.py` and `provenance.py`, both named in `DECLARED_TOUCHERS`
+below), and the scan finds exactly those two — no more, no fewer.
+
+    python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"
+    # 36                                        [MEASURED 2026-08-29 at 555ded6]
+
+The previous version of this sentence said `37` and `one`, and BOTH were wrong — found by
+`/review`. The `36` matters beyond bookkeeping: it is the floor of the anti-vacuity guard on
+line 116, so a docstring claiming `37` put the reader one module away from believing the guard
+had slack it does not have. The planted-violator measurement is in
 `docs/context/plataforma-dados/gates/T-04.4-builder.md`.
 """
 
