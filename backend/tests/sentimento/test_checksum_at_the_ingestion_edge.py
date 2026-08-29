@@ -19,6 +19,8 @@ ZERO NETWORK: the "download" in this file is a local write. No Binance, no Bybit
 from __future__ import annotations
 
 import hashlib
+import logging
+import tracemalloc
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,9 +28,11 @@ from pathlib import Path
 import pytest
 
 from src.modules.sentimento.domain.checksum_manifest import (
+    SHA256_HEX_LENGTH,
     ChecksumManifest,
     ChecksumMismatchError,
     ChecksumMissingError,
+    ChecksumRejectedError,
     ChecksumSubjectMismatchError,
     MalformedChecksumError,
 )
@@ -388,3 +392,352 @@ def test_lines_keeps_the_terminator_and_does_not_swallow_a_tail_without_newline(
 
     assert accepted == 3
     assert sink.accepted == [b"a,1\n", b"b,2\n", b"c,3"]
+
+
+# ── QA pass of `T-02.4a`: the promises this module WRITES DOWN, now measured ──────────────
+#
+# WHY THIS SECTION EXISTS, and the measurement that put it here. The suite above reaches
+# 100,0% of lines and branches in all three layers, and a coverage number is not a defect
+# count: an adversarial mutation bench of 16 mutations, run with bytecode DISABLED
+# (`python -B` + `__pycache__` wiped) against the whole suite, left **7 alive**
+# [MEDIDO 2026-08-29, n=16 mutacoes, universo `backend/tests/`, baseline 41 passed rc=0].
+# Every survivor below was a sentence in a docstring of the production code that no
+# assertion held to account. A guarantee that only exists in prose is a comment.
+#
+# The mutations these tests kill are named next to each one, so the next person can rerun
+# the bench and see the count drop instead of taking this paragraph on faith.
+
+
+class DiscardingSink:
+    """A sink that counts and keeps nothing — so the MEASUREMENT is the edge, not the sink.
+
+    `RecordingSink` holds every line, which is fine for the small fixtures above and useless
+    for `test_the_whole_edge_stays_memory_bounded_...`: it would dominate the peak and the
+    test would measure the test.
+    """
+
+    def __init__(self) -> None:
+        """Start with nothing counted."""
+        self.count = 0
+
+    def accept(self, line: bytes) -> None:
+        """Count one line and drop it."""
+        self.count += 1
+
+
+def test_every_refusal_is_reachable_by_one_except_of_the_family_exception() -> None:
+    """The `ChecksumRejectedError` docstring makes this promise; nothing was checking it.
+
+    Kills the mutation `class ChecksumMissingError(Exception)` (and the same for the other
+    three), which the suite passed with rc=0 before this test existed
+    [MEDIDO 2026-08-29: 41 passed com a hierarquia quebrada]. The docstring of the base
+    class states the stake itself — *"splitting them into siblings would let a caller catch
+    three and forget the fourth"* — so this is the assertion that keeps the sentence true.
+    """
+    refusals = (
+        MalformedChecksumError,
+        ChecksumMissingError,
+        ChecksumMismatchError,
+        ChecksumSubjectMismatchError,
+    )
+
+    assert len(refusals) == 4
+    for refusal in refusals:
+        assert issubclass(refusal, ChecksumRejectedError), refusal.__name__
+
+
+def test_a_wrong_subject_is_named_as_such_even_when_the_digest_is_also_wrong() -> None:
+    """`verify` documents that the SUBJECT is checked FIRST. This is that claim, measured.
+
+    Every test above varies ONE of the two at a time — a foreign sidecar has the right
+    digest, a corrupted payload has the right name — so swapping the two `if` blocks left
+    the suite green [MEDIDO 2026-08-29: ordem invertida -> 41 passed, rc=0]. Only a payload
+    that is wrong on BOTH axes can tell the order apart, and the order is what decides
+    whether the log sends someone hunting a truncation that never happened.
+    """
+    manifest = ChecksumManifest(digest="a" * 64, subject="right.csv")
+
+    with pytest.raises(ChecksumSubjectMismatchError):
+        manifest.verify(observed_digest="b" * 64, observed_subject="wrong.csv")
+
+
+def test_the_sidecar_suffix_is_a_live_seam_and_not_a_decorative_parameter(tmp_path: Path) -> None:
+    """`checksum_suffix` was a constructor argument that no test ever passed.
+
+    100% coverage covered the LINE (the default runs on every other test) and nothing
+    asserted the parameter did anything: hardcoding `CHECKSUM_SUFFIX` in the body left the
+    suite green [MEDIDO 2026-08-29: 41 passed, rc=0]. Asserted end to end, not just on the
+    path property, so the seam is proven to reach the actual read.
+    """
+    body = _body()
+    payload = tmp_path / "alt.csv"
+    payload.write_bytes(body)
+    (tmp_path / "alt.csv.sha256").write_text(_sidecar_text(body, "alt.csv"), encoding="utf-8")
+    sink = RecordingSink()
+
+    accepted = ingest_verified(ChecksummedFilePayload(payload, ".sha256"), sink)
+
+    assert ChecksummedFilePayload(payload, ".sha256").checksum_path.name == "alt.csv.sha256"
+    assert accepted == LINE_COUNT
+    assert b"".join(sink.accepted) == body
+
+
+def test_an_accepted_ingestion_records_subject_digest_and_line_count(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The audit trail of what got IN, asserted — deleting the `logger.info` was invisible.
+
+    A refusal is loud by construction: it raises. An acceptance is only ever visible in this
+    record, and it is the record that answers *which* bytes were declared good on the day a
+    series turns out short. Removing the call left the suite green
+    [MEDIDO 2026-08-29: 41 passed, rc=0].
+    """
+    body = _body()
+    payload = _publish(tmp_path, body)
+
+    with caplog.at_level(logging.INFO):
+        ingest_verified(ChecksummedFilePayload(payload), DiscardingSink())
+
+    accepted_records = [r for r in caplog.records if r.message == "ingestion_verified"]
+    assert len(accepted_records) == 1
+    # `record.__dict__` and not `record.subject`: the `extra=` fields are attached at
+    # runtime, so `LogRecord` has no static attribute to type-check against. Reading the
+    # mapping asserts the same value and keeps `mypy --strict` honest instead of silenced.
+    fields = accepted_records[0].__dict__
+    assert fields["subject"] == PAYLOAD_NAME
+    assert fields["sha256"] == hashlib.sha256(body).hexdigest()
+    assert fields["lines"] == LINE_COUNT
+
+
+def test_an_absent_sidecar_is_recorded_and_not_only_returned_as_none(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A file refused for lack of a witness must leave a trace naming the file.
+
+    `checksum_text` returns `None` and warns; the `None` is asserted by the refusal tests
+    above, the WARNING was asserted by nothing, so deleting it left the suite green
+    [MEDIDO 2026-08-29: 41 passed, rc=0]. A silent refusal at the edge is a series that
+    stops arriving and nobody knows why.
+    """
+    payload = _publish(tmp_path, _body())
+    payload.with_name(payload.name + ".CHECKSUM").unlink()
+
+    with caplog.at_level(logging.WARNING), pytest.raises(ChecksumMissingError):
+        ingest_verified(ChecksummedFilePayload(payload), DiscardingSink())
+
+    warnings = [r for r in caplog.records if r.message == "checksum_sidecar_absent"]
+    assert len(warnings) == 1
+    assert warnings[0].__dict__["subject"] == PAYLOAD_NAME
+    assert warnings[0].levelno == logging.WARNING
+
+
+# ── Axis: "before any line enters" has to survive a file too big to hold ──────────────────
+
+
+def test_lines_does_not_touch_the_file_until_the_first_item_is_pulled(tmp_path: Path) -> None:
+    """`lines()` claims the body does not run until the first `next()`. Proven destructively.
+
+    The file is UNLINKED between the call and the first `next()`. On Linux an already-open
+    handle survives the unlink, so an eager `lines()` would still yield the content; a lazy
+    one opens the file only at the first pull and cannot find it. The exception IS the proof
+    — and it is what makes `assert "lines" not in spy.calls` above a statement about the
+    file and not merely about a method name.
+    """
+    payload = tmp_path / "lazy.csv"
+    payload.write_bytes(b"a,1\nb,2\n")
+
+    stream = ChecksummedFilePayload(payload).lines()
+    payload.unlink()
+
+    with pytest.raises(FileNotFoundError):
+        next(stream)
+
+
+def test_the_whole_edge_stays_memory_bounded_on_a_file_larger_than_a_chunk(
+    tmp_path: Path,
+) -> None:
+    """Two passes over 6,7 GB are only affordable if NEITHER pass holds the object.
+
+    The contract of `T-02.4a` forces a whole-file digest BEFORE the first line, and the
+    cheap way to get one is to read the file into memory — which passes every ordering test
+    in this suite and dies in production on the objects `SPEC-001` §5.8 measured
+    [MEDIDO: 6,7 GB]. So the bound is asserted, not assumed: peak allocation is compared
+    against a constant number of CHUNKS, never against a fraction of the file, because a
+    fraction would still grow with the file.
+
+    Universe: 1 file of exactly 8 chunks; measured peak 2,01 chunks
+    [MEDIDO 2026-08-29, `tracemalloc`, n=1]. The 3-chunk ceiling leaves room for one live
+    chunk plus one being replaced, and still fails any implementation that buffers the file.
+    """
+    line = b"1690000000000,1.5,2.25,aaaaaaaaaaaaaaaa\n"
+    body = line * (8 * READ_CHUNK_BYTES // len(line))
+    payload = _publish(tmp_path, body, subject="big.csv")
+    sink = DiscardingSink()
+
+    tracemalloc.start()
+    try:
+        accepted = ingest_verified(ChecksummedFilePayload(payload), sink)
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert len(body) > 7 * READ_CHUNK_BYTES
+    assert accepted == len(body) // len(line)
+    assert peak < 3 * READ_CHUNK_BYTES, (
+        f"the edge held {peak} bytes for a {len(body)}-byte file: it is buffering, "
+        f"and the ceiling is {3 * READ_CHUNK_BYTES}"
+    )
+
+
+# ── Axis: the sidecar is a PARSER, and every parser has a border ──────────────────────────
+
+
+def test_a_sidecar_published_with_crlf_line_endings_is_still_read(tmp_path: Path) -> None:
+    """A refusal here would reject a LEGITIMATE file, which costs as much as accepting a bad one.
+
+    `.CHECKSUM` files travel through Windows tooling and object stores that normalise
+    nothing. This is the `cala` side of the parser border: the suite above only ever asserts
+    the parser REFUSING, and a parser that refuses everything passes all of those.
+    """
+    body = _body()
+    payload = tmp_path / PAYLOAD_NAME
+    payload.write_bytes(body)
+    sidecar = f"{hashlib.sha256(body).hexdigest()}  {PAYLOAD_NAME}\r\n"
+    payload.with_name(payload.name + ".CHECKSUM").write_bytes(sidecar.encode("ascii"))
+    sink = RecordingSink()
+
+    accepted = ingest_verified(ChecksummedFilePayload(payload), sink)
+
+    assert accepted == LINE_COUNT
+    assert b"".join(sink.accepted) == body
+
+
+@pytest.mark.parametrize(
+    "algorithm",
+    ["md5", "sha1", "sha384", "sha512"],
+)
+def test_a_digest_of_another_algorithm_is_refused_instead_of_compared(algorithm: str) -> None:
+    """A 32/40/96/128-hex digest is not a sha256, and comparing it would always mismatch.
+
+    Refusing as MALFORMED and not as MISMATCH is the difference between *"this sidecar is
+    not the format we verify"* and *"this file is corrupt"* — the second sends someone
+    re-downloading a file that was never broken.
+    """
+    body = _body()
+    digest = hashlib.new(algorithm, body).hexdigest()
+
+    assert len(digest) != SHA256_HEX_LENGTH
+    with pytest.raises(MalformedChecksumError):
+        ChecksumManifest.parse(f"{digest}  {PAYLOAD_NAME}\n")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "SHA256 (BTCUSDT-15m-2026-08-23.csv) = {d}\n",
+        "  {d}  BTCUSDT-15m-2026-08-23.csv\n",
+        "{d}\tBTCUSDT-15m-2026-08-23.csv\n",
+        "{d}   BTCUSDT-15m-2026-08-23.csv\n",
+    ],
+    ids=[
+        "bsd-style-tagged-output",
+        "leading-whitespace-before-the-digest",
+        "tab-instead-of-the-two-spaces",
+        "three-spaces-so-the-subject-would-start-with-a-space",
+    ],
+)
+def test_sidecar_shapes_that_are_not_the_gnu_format_are_refused(text: str) -> None:
+    """Four more borders of the same parser, all of them fail-closed.
+
+    None of these is exotic: `bsd-style-tagged-output` is what `shasum -a 256 --tag` and the
+    BSD `sha256` emit, and it is a REAL sidecar for a real file — refusing it is a decision
+    (this edge verifies the GNU form the vendor publishes and nothing else), not an accident.
+    """
+    digest = hashlib.sha256(_body()).hexdigest()
+
+    with pytest.raises(MalformedChecksumError):
+        ChecksumManifest.parse(text.format(d=digest))
+
+
+# ── The gap this pass FOUND: a refusal that escapes the family ────────────────────────────
+
+
+def test_a_payload_file_that_vanished_delivers_nothing(tmp_path: Path) -> None:
+    """Sidecar present, payload gone: the edge must not deliver, and it does not.
+
+    It raises `FileNotFoundError`, which is NOT a `ChecksumRejectedError` — recorded here as
+    the behaviour that exists, not as the behaviour that is right. Arguably correct (a path
+    that does not exist is a caller bug, not a corrupt file), and left pinned so that
+    changing it becomes a decision instead of a drift.
+    """
+    sidecar_body = _body()
+    payload = tmp_path / PAYLOAD_NAME
+    payload.with_name(payload.name + ".CHECKSUM").write_text(
+        _sidecar_text(sidecar_body, PAYLOAD_NAME), encoding="utf-8"
+    )
+    sink = RecordingSink()
+
+    with pytest.raises(FileNotFoundError):
+        ingest_verified(ChecksummedFilePayload(payload), sink)
+
+    assert sink.accepted == []
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "DEFECT T-02.4a/QA-1: a sidecar carrying non-UTF-8 bytes escapes the "
+        "ChecksumRejectedError family as UnicodeDecodeError, against what ingest_verified "
+        "documents ('Raises: ChecksumRejectedError: any refusal at the edge') and against "
+        "MalformedChecksumError ('the sidecar itself cannot be read as a manifest'). The "
+        "fix belongs to infra/domain and is out of QA scope. strict=True turns the XPASS "
+        "into a FAILURE the day the code is fixed, forcing the marker to be removed: the "
+        "defect cannot be forgotten in silence."
+    ),
+)
+def test_a_sidecar_that_is_not_utf8_is_refused_as_a_malformed_manifest(tmp_path: Path) -> None:
+    """The most literally unreadable sidecar there is, and the family does not cover it.
+
+    A truncated payload is the premise of this whole task; the sidecar travels the same
+    wire and corrupts the same way. `checksum_text()` calls `read_text(encoding="utf-8")`
+    with no guard, so a single stray byte raises `UnicodeDecodeError` — a `ValueError`,
+    outside `ChecksumRejectedError`. A caller written against the documented contract
+    (`except ChecksumRejectedError: skip_one_file()`) therefore dies on the whole batch
+    instead of skipping one object, and the operator reads a stack trace where the module
+    promised a verdict.
+    """
+    body = _body()
+    payload = _publish(tmp_path, body)
+    payload.with_name(payload.name + ".CHECKSUM").write_bytes(
+        b"\xff\xfe" + _sidecar_text(body, PAYLOAD_NAME).encode("ascii")
+    )
+    sink = RecordingSink()
+
+    with pytest.raises(ChecksumRejectedError):
+        ingest_verified(ChecksummedFilePayload(payload), sink)
+
+    assert sink.accepted == []
+
+
+def test_the_subject_is_the_whole_remainder_of_the_line_and_never_its_first_character() -> None:
+    r"""The assertion that separates `fullmatch` from `.match()`, stated on its own.
+
+    `(?P<subject>\S.*?)` is LAZY. Under `.match()` — which anchors only the start — it stops
+    at the first character it can and `\s*` happily matches nothing, so the manifest would
+    attest `'B'` and compare that against the real file name. Under `fullmatch` the group is
+    forced to swallow the rest of the line, spaces included, which is also the right reading
+    of the GNU format: a file name may contain spaces.
+
+    So a sidecar whose subject carries a stray trailing token PARSES, and is then refused
+    where the refusal belongs — at `verify`, as a SUBJECT mismatch, not as a corrupt file.
+    This is the same distinction `test_a_wrong_subject_is_named_as_such...` guards.
+    """
+    digest = hashlib.sha256(_body()).hexdigest()
+    line = f"{digest}  {PAYLOAD_NAME} extra-token-that-is-not-the-name\n"
+
+    manifest = ChecksumManifest.parse(line)
+
+    assert manifest.subject == f"{PAYLOAD_NAME} extra-token-that-is-not-the-name"
+    assert manifest.subject != PAYLOAD_NAME[:1]
+    with pytest.raises(ChecksumSubjectMismatchError):
+        manifest.verify(observed_digest=digest, observed_subject=PAYLOAD_NAME)
