@@ -239,3 +239,42 @@ declarar o contrato agora em `frontend/eslint.config.mjs` para o DoD "fechar". E
 em `cala` por vacuidade, ninguém o rodaria contra um violador real, e o repositório trocaria
 um DoD aberto e nomeado por um portão falso. **`D1.6` aberto com dono é mais barato que
 `D1.6` fechado com mentira.**
+
+---
+
+# ⚠️ Acrescentado pelo `/architect` em 2026-08-29 — a segunda metade foi paga, e uma linha desta ADR fica em dívida
+
+**Nenhuma linha acima foi apagada.** A tabela *"De quem `D1.6` passa a ser"* (`:230-235`) nomeava
+dois donos. **O contrato executável** segue com `T-05.1`/`CST-35`. **A reconciliação do plano**,
+que era do `/architect`, **está feita**:
+
+| o que | onde foi parar |
+|---|---|
+| o DoD, com a **propriedade inalterada** e o **comando mais forte** | **`D5.12`** da [fase `05`](../plans/SPEC-001-plataforma-dados/05_fatia_visivel.md) — é onde o universo nasce e onde as duas metades de `1.8'` ficam disponíveis na mesma passada. **O universo migra literal; o comando ganha a metade `cala`, que `D1.6` não exigia** — dizer "critério inalterado" subdeclarava a migração `[/review 2026-08-29]` |
+| a linha `D1.6` da fase `01` | **tarjada, não apagada**, com a migração declarada — [plano `01`](../plans/SPEC-001-plataforma-dados/01_governanca_gateante.md) §*"`D1.6` não era DoD desta fase"* |
+
+**Por que migrar e não diferir:** a fase `01` fechou com `f01·QA=APPROVED` e `f01·REVIEW=COMPLIANT`
+no ledger. Um DoD marcado *"diferido"* dentro dela ficaria num estado que **nenhum evento futuro
+resolve** — ninguém reabre fase fechada para carimbar DoD —, e o `CLAUDE.md` é explícito sobre
+qual das duas superfícies manda: *"o ledger é a identidade do estado, não o texto do documento"*.
+
+## 🔴 A dívida que ISTO NÃO paga, e ela é desta ADR
+
+**`:75` já registra que `:61` é *"inexequível como escrita"*** — `import-linter` lê grafo de
+Python, e `charts`/`web` são TypeScript. **Migrar o DoD de fase não conserta isso.** O `Fato 1`
+(`:154-160`) — o único instrumento disponível reprova por **caminho**, que `:46` recusa — **vale em
+qualquer dia e viaja junto com `D5.12`**. Universo cheio resolve o `Fato 2`; **o `Fato 1` continua
+de pé**.
+
+⇒ **`D5.12` nasce com uma pergunta de arquitetura embutida, e `T-05.1` a responde com medição:**
+*é possível expressar o contrato sem definir `charts` e `web` por caminho?* **Se não for**, o
+desfecho correto **não é** declarar o contrato por caminho e chamar de fechado — é **reabrir esta
+ADR e reescrever `FR-1`/`FR-2` com um instrumento que exista**. `[NÃO MEDIDO: as alternativas
+plausíveis — `import/no-restricted-paths` sobre grupos declarados, `project references` do
+TypeScript, campo de manifesto por módulo — não foram rodadas, porque não há universo em que
+rodá-las até `5.2` existir]`
+
+**`FR-3` continua com o mesmo buraco, e ele é maior:** *"o motor de backtest IMPORTA a grade
+canônica"* atravessa Python ⇄ TypeScript, onde **não existe `import` literal** (`:222-228`).
+**Também não resolvi isto** — segue sendo decisão de arquitetura, sem dono nomeado, e o lugar
+natural dela é a fase `08` (o motor) ou a consolidação de `09`.
