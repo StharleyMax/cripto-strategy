@@ -283,7 +283,7 @@ Os 7 itens do despacho, item a item: **o que foi feito, ou o argumento de por qu
 | 3 | `[DECISÃO-OWNER]` não definido em `:53-54` | ✅ **corrigido** — §C2.3 |
 | 4 | `README` subdeclara alcance (`comentário`) | ✅ **corrigido** — §C2.4 |
 | 5 | 3 mutações escaparam à bancada | ✅ **escaladas com dono** — §C2.5 |
-| 6 | `[PREMISSA-OWNER]` solda prescrição + queixa | ✅ **escalado ao owner, NÃO decidido** — §C2.6 |
+| 6 | `[PREMISSA-OWNER]` solda prescrição + queixa | ✅ **reescrito no ciclo 2**: a distinção fica, a consequência CAI (linhas 3 e 4 → `[DECISÃO-OWNER]`, não `[INFERRED]`); ao owner sobe **só o rótulo** — §C2.6 |
 | 7 | errata do DoD de `T-01.3` | ✅ **nomeada para o `/tech-lead`** — §C2.7 |
 
 **Nenhum CA da fase mudou de valor:** `CA-F1-1` **12** · `CA-F1-2` **1**/`rc=0` · `CA-F1-3` **2** ·
@@ -381,46 +381,79 @@ escrever CA é ato de quem quebra tasks, não de quem as implementa.
 > **`N2` é o que eu destacaria se só um pudesse ser levado adiante.** `N1` e `N6` degradam um critério;
 > `N2` permite que **uma decisão do owner seja tomada por um agente** e passe em todos os portões. É a
 > mesma classe de defeito que a linha 10 já sofreu — *"a divergência nasceu de a superfície não ter dono
-> declarado"* — só que aplicada a uma pergunta que **tem** dono e é dele.
+> declarado"* — só que aplicada a uma pergunta que **tem** dono e é dele. **É um portão que aprova
+> exatamente o que ele existe para impedir**, que é a família que este repositório caça.
+>
+> **`N2` — dono e gatilho, nomeados:**
+> **Dono do conserto:** `/tech-lead` (o CA vive em `tasks.toml`, e eu não o edito). **Dono da decisão que
+> o CA protege:** **owner** — `[Q2]`, e só ele a fecha.
+> **Gatilho, e ele é observável e barato:** a cada fase, `awk '/^\| 12 \|/' CLAUDE.md | grep -c '⏸'` →
+> **1** e `… | grep -ci 'owner'` → **1**. **Se o `⏸` sumir sem um evento do owner no ledger
+> (`harness pipeline show codigo-em-ingles` contendo a resposta de `[Q2]`), um agente fechou a pergunta
+> dele** — e é isso, exatamente isso, que nenhum CA da fase mede hoje. Medido agora, na árvore desta
+> entrega: **1 e 1** `[MEDIDO 2026-08-29 em 2996caa]`.
 
 ---
 
-## C2.6 · ⛔ PARA O OWNER — um rótulo solda duas orações de sentido oposto, e isso vira regra que ninguém enunciou
+## C2.6 · O rótulo solda prescrição e queixa — **a distinção fica, a consequência que eu tirei dela CAI**
 
-**Isto não é conserto, é pergunta. Eu não a decido, e reproduzi a tabela como está porque `CA-F1-1`
-exige a íntegra — o defeito é herdado de `PRD-002` §3.1, não introduzido aqui.**
+**Correção de rumo do coordenador, ciclo 2, e ela corrige a MINHA conclusão — não o meu achado.**
+A análise linguística está de pé; **a consequência que eu derivei dela estava errada, e o erro era de
+altitude: eu procurei a força da fase `03` numa FRASE, e ela está em ATOS.**
 
-**O parágrafo para o owner ler:**
+### O que continua valendo — o achado
 
-> Stharley — em 2026-08-29 você escreveu, sobre idioma de código:
->
-> > *"Assim como docstring, todo código gerado é em inglês, olhando no front, ta tudo em portugues, nome
-> > dos arquivos, var, tudo."*
->
-> Esta frase está hoje citada em `PRD-002` §3.1 sob **um único rótulo `[PREMISSA-OWNER]`**, e ela tem
-> **duas orações que fazem coisas diferentes**:
->
-> - ***"todo código gerado é em inglês"* é PRESCRIÇÃO** — você manda. Disso saem as linhas 1 e 2 da
->   tabela, e ninguém tem dúvida.
-> - ***"olhando no front, tá tudo em português, nome dos arquivos, var, tudo"* parece QUEIXA** — você
->   está descrevendo **o que viu ao olhar**, não emitindo uma segunda ordem. Mas ela foi lida como
->   prescrição e virou a força da **linha 3** (*nome de arquivo → inglês*, `[PREMISSA-OWNER]`, com
->   *"nome dos arquivos"* citado como literal) e, por herança, da **linha 4** (nome de diretório).
->
-> **Se a segunda oração era queixa e não ordem**, então as linhas 3 e 4 têm força **`[INFERRED]`**, não
-> `[PREMISSA-OWNER]` — e uma delas governa a fase `03`, que **renomeia arquivos e um diretório**.
-> **Se era ordem**, está tudo certo como está e esta pergunta morre em uma palavra sua.
->
-> **A pergunta, e ela é de sim ou não:** *"tá tudo em português, nome dos arquivos, var, tudo"* era
-> **você mandando** renomear arquivos e diretórios, ou **você relatando** o que encontrou?
->
-> **Nada trava enquanto você não responde.** As fases `01`–`03` seguem: a linha 1 (prescrição, sem
-> dúvida) já sustenta o trabalho de identificador. O que muda com a resposta é **o rótulo de força** das
-> linhas 3 e 4 — e rótulo de força errado é exatamente o defeito que este repositório mais paga.
+`PRD-002` §3.1:98 cita, sob **um único `[PREMISSA-OWNER]`**, uma fala do owner com **duas orações que
+fazem coisas diferentes**:
 
-**Dono da correção depois da resposta:** `/architect` (é `PRD-002` §3.1 que se edita, não o `CLAUDE.md`).
+| oração | o que é | o que sustenta |
+|---|---|---|
+| *"todo código gerado é em inglês"* | **prescrição** — o owner manda | linhas 1 e 2 da tabela |
+| *"olhando no front, tá tudo em português, nome dos arquivos, var, tudo"* | **queixa** — ele descreve **o que viu ao olhar**, não emite uma segunda ordem | foi lida como prescrição e virou a força das linhas 3 e 4 |
 
----
+**Soldadas sob um rótulo só, viram regra que ninguém enunciou.** Isto continua sendo um defeito real.
+
+### O que CAI — a consequência que eu tinha escrito
+
+Eu concluí que as linhas 3 e 4 cairiam para **`[INFERRED]`**. **Não caem, e o argumento que me corrige é
+mais forte que o meu:** a autoridade da fase `03` **não vem da frase** — vem de **atos posteriores do
+owner**, todos de 2026-08-29 e **todos gravados no ledger**, que é a identidade do estado neste
+repositório. **Um ato de aprovação é mais forte que a leitura de uma frase.**
+
+```
+$ harness pipeline show codigo-em-ingles | grep -E 'approve'
+2026-08-29T14:35:44Z  approve  spec    <- gate de OWNER
+2026-08-29T15:07:01Z  approve  tasks   <- as 7 tasks, T-03.1 entre elas
+2026-08-29T15:06:46Z  approve  build   <- gate de OWNER
+2026-08-29T15:07:17Z  approve  build   <- regravado apos TASKS_APPROVED; e este que vale
+```
+
+`[MEDIDO 2026-08-29 em 2996caa; n=5 eventos `approve` no ledger]` · E o motivo do `approve spec` carrega
+a instrução do owner **na grafia dele**: *"aprove a spec se n tiver aprovado e vamos dar seguencia"*
+`[MEDIDO: a substring está no evento]`. A continuação *"puxar tasks paralelas do front e back"*, que
+despachou a `T-03.1`/**`CST-96`** — o retroativo do **frontend** — vem do **despacho do coordenador** e
+**não está no ledger**: `[DOC: despacho do coordenador, 2026-08-29]`, **não `[MEDIDO]`**. Registro a
+diferença de força porque foi ela que me fez errar da primeira vez.
+
+> **⇒ As linhas 3 e 4 passam a `[DECISÃO-OWNER: 2026-08-29 — os três gates de aprovação e o despacho da
+> fase 03]`**, com os eventos citáveis por `harness pipeline show codigo-em-ingles`. **O escopo da fase
+> `03` NÃO é reaberto**, e `T-03.1`/`CST-96` segue exatamente como está.
+
+### O que FICA escalado ao owner — e é só o rótulo
+
+**Nada de escopo. Só isto:** soldar **prescrição e queixa** sob um único `[PREMISSA-OWNER]` em
+`PRD-002` §3.1:98 continua errado, e **o conserto é separar os dois rótulos** — a oração prescritiva
+permanece `[PREMISSA-OWNER]` (é fala literal e é ordem); a oração de queixa deixa de emprestar força que
+ela nunca teve, e as linhas 3 e 4 passam a citar os **atos** em vez da frase.
+
+**Dono: `/architect`** — quem se edita é `PRD-002` §3.1, **não** o `CLAUDE.md`: a tabela desta fase é
+cópia **íntegra** por `CA-F1-1`, então ela acompanha a origem e **nunca a lidera**. Quando `PRD-002`
+mudar, a linha correspondente do `CLAUDE.md` muda **no mesmo ato**, ou as duas divergem — que é
+exatamente o defeito que esta fase existe para impedir.
+
+**Custo de não fazer:** baixo e não bloqueia nada — nenhuma fase espera por isto. **Custo de esquecer:**
+médio, e é o de sempre nesta casa — um rótulo de força errado sobrevive por herança, e a próxima leitura
+o trata como decisão tomada. **É por isso que fica escrito, e não porque trave alguma coisa.**
 
 ## C2.7 · A errata do DoD de `T-01.3` — ato do `/tech-lead`, nomeada aqui para encaminhamento
 
