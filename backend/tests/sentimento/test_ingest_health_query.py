@@ -228,7 +228,18 @@ def test_the_column_contract_still_matches_what_adr_008_and_the_spec_wrote() -> 
     `INGEST_HEALTH_RUN_COLUMNS`, so comparing the two would compare a value with itself.
     """
     assert INGEST_HEALTH_RUN_COLUMNS == ADR_008_D3_RUN_COLUMNS
-    assert INGEST_HEALTH_GAP_COLUMNS == SPEC_001_3_5_GAP_COLUMNS
+    assert INGEST_HEALTH_GAP_COLUMNS == SPEC_001_3_5_GAP_COLUMNS, (
+        "If this failed because you are ADDING `run_id` to `md.ingest_gap`: stop and read "
+        "`ADR-014/A5` first. The gap table has no `run_id` today, so the boundary between "
+        "ACCEPTED and ACCEPTED_WITH_WARNING is NOT computable — that is a SPEC amendment "
+        "(`SPEC-001` 3.5 writes the table without it), not a bug in this test. The column "
+        "belongs in `INGEST_HEALTH_GAP_COLUMNS`, which is a PROJECTION, so adding it MOVES "
+        "every sha256 that `ADR-008/DoD-2` compares between consumers. While no second "
+        "consumer exists that costs one column; once `T-07.13` is wired it costs "
+        "renegotiating the contract on both sides. Land the amendment BEFORE `T-07.13`. "
+        "Do NOT just edit both lists until they match — that is the one repair this test "
+        "exists to prevent."
+    )
 
 
 def test_the_verdict_enumeration_cannot_grow_or_shrink_without_somebody_signing_for_it() -> None:
