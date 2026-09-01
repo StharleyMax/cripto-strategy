@@ -46,24 +46,26 @@ class JsonlCheckpoint:
 
         Repetition is not collapsed here, so that a repeated key stays measurable.
 
-        NAMED DEBT — the error classification is INCOMPLETE, and `CorruptedCheckpointError`
-        only covers unreadable JSON. A readable payload with the wrong shape escapes the
-        declared class `[MEDIDO 2026-08-28, n=4 payloads, backend/.venv/bin/python
-        against this module]`:
+        DEBT CLOSED BY `T-03.10`, AND THE WORST CASE WAS THE SILENT ONE. Until 2026-08-29
+        `CorruptedCheckpointError` covered only unreadable JSON, and a readable payload with the
+        wrong SHAPE escaped the declared class `[MEDIDO 2026-08-28, n=4 payloads]`:
           `{"chave": "a.csv"}` -> `KeyError: 'key'`
           `5`                  -> `TypeError: 'int' object is not subscriptable`
           `["a.csv"]`          -> `TypeError: list indices must be integers or slices, not str`
-          `{"key": null}`      -> raises NOTHING: it returns `('None',)`, because `str(None)`
+          `{"key": null}`      -> raised NOTHING: it returned `('None',)`, because `str(None)`
                                   coerces.
-        The last one is the worst: a key named `None` would be marked done IN SILENCE, and that
-        defeats the "never loses" invariant by coercion.
+        The last one is the one that mattered: a key literally named `None` was marked done IN
+        SILENCE, and `EtlBacklog.pending` would then raise `CheckpointOutsideWindowError` on a
+        key nobody can find in the bucket — the symptom appearing one layer away from the cause.
 
-        WHY IT IS NOT FIXED HERE: today only an EXTERNAL writer produces those payloads — in
-        this tree the only writer is `record()`, which emits `{"key": <str>}` and nothing else.
-        The queue that exposes the file to an outside writer is `T-03.10` (CST-26, "fila de ETL
-        do dump retomavel"); that is where shape validation has an owner. It is NOT `T-03.11`,
-        which is the daily liquidation reconciliation and is `blocked` by `Q1` — debt parked
-        there never reaches whoever writes the queue.
+        WHY IT IS FIXED NOW, and it is not tidiness: the reason it was deferred was written as
+        *"today only an EXTERNAL writer produces those payloads — in this tree the only writer is
+        `record()`"*. `T-03.10` ends that. The checkpoint now sits in an operator-facing
+        `<workdir>/` next to `probe.jsonl` and `findings.jsonl`, and resuming a partially drained
+        window is a thing an operator DOES — by hand, with an editor, at the moment the queue is
+        already known to have died. `_key_of` below turns all four payloads into the declared
+        class, so a caller written as `except CorruptedCheckpointError` catches what the
+        docstring of that class promises.
         """
         if not self._path.exists():
             return ()
@@ -82,8 +84,32 @@ class JsonlCheckpoint:
                 payload = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise CorruptedCheckpointError(f"linha {numero} ilegivel em {self._path}") from exc
-            keys.append(str(payload["key"]))
+            keys.append(self._key_of(payload, numero))
         return tuple(keys)
+
+    def _key_of(self, payload: object, number: int) -> str:
+        """Extract the key from one decoded line, refusing every shape that is not `{"key": str}`.
+
+        NO COERCION ANYWHERE, and that is the whole fix. `str(payload["key"])` was the defect:
+        it turned `null` into the four-character string `None` and reported success. A checkpoint
+        line is a claim that a unit of work is DONE, and a claim that cannot be read is not a
+        weaker claim — it is a different kind of thing, and it fails closed.
+        """
+        if not isinstance(payload, dict):
+            raise CorruptedCheckpointError(
+                f"linha {number} de {self._path} e {type(payload).__name__}, nao um objeto"
+            )
+        if "key" not in payload:
+            raise CorruptedCheckpointError(
+                f"linha {number} de {self._path} nao tem o campo 'key': {sorted(payload)}"
+            )
+        key = payload["key"]
+        if not isinstance(key, str) or not key:
+            raise CorruptedCheckpointError(
+                f"linha {number} de {self._path} traz 'key' = {key!r} "
+                f"({type(key).__name__}); so uma cadeia nao vazia nomeia trabalho concluido"
+            )
+        return key
 
     def done(self) -> frozenset[str]:
         """Return the recorded keys as a set, repetition collapsed."""
