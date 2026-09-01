@@ -1562,6 +1562,49 @@ mensagem de regra, os nomes de coluna de contrato **`janela_de_perda`** e **`win
 para microcopy. Os 2 arquivos de teste do `/qa` e os 14 `test_*` pré-existentes **não** foram
 tocados: são de outro dono.
 
+### 📎 2026-09-01 por `T-04.6` — a serialização de numeral vira UM helper, e um segundo caminho de dado ganha o mesmo teste
+
+`CST-33`, `SPEC-001` §3.8, plano `04` item **4.12**, DoD **D4.12**. `series_key.py` e este
+módulo (`ingest_record.py`) carregavam **duas cópias byte-idênticas** do mesmo serializador
+JSON canônico — mesmo corpo, mesma docstring, dois lugares para divergir. A duplicação já
+estava nomeada como dívida no próprio comentário de `series_key.py`: *"Unifying them is
+`T-04.6`'s job … and doing it here would edit a module this task has no business touching"*.
+
+**A unificação:** [`domain/canonical_json.py`](src/modules/sentimento/domain/canonical_json.py)
+(novo, **4 linhas de código, 100% de cobertura**) — uma função só, `canonical_json()`, que os
+dois módulos passam a chamar. `series_key.py` mantém `_canonical_json` como um `def` fino que
+delega (não um `import ... as`), porque `mypy --strict`/`no_implicit_reexport` recusa uma
+importação renomeada como export implícito, e `test_series_identity.py` importa esse nome
+diretamente — sem isso o lint reprovava com `does not explicitly export attribute
+"_canonical_json"` `[MEDIDO 2026-09-01]`.
+
+**O que D4.12 já tinha e o que faltava.** O teste de `SPEC-001` §3.8 (`LANG=pt_BR.UTF-8` vs
+`LANG=C`, `sha256` comparado) já existia aqui desde `T-02.3`, mas a própria docstring dele
+confessava a lacuna: *"every column of the record today is int, str or null, and none of
+those has ever been locale-sensitive in JSON. The day a FLOAT column enters the projection,
+this test … will still pass, and it will be proving less"*. Nenhum `float` chegou a este
+módulo, mas um chega em produção em `infra/quota_ramp_cli.py::emit()`
+(`recoil_seconds`, `weight_per_blind_request`, …). Novo teste,
+[`test_quota_ramp_locale_invariance.py`](../tests/sentimento/test_quota_ramp_locale_invariance.py),
+roda o mesmo protocolo sobre um payload com `float` de verdade, chamando o `emit()` de
+produção via um driver de subprocesso
+([`quota_ramp_emit_driver.py`](../tests/helpers/quota_ramp_emit_driver.py)) — sem tocar
+`quota_ramp_cli.py`, que é de outra task (`T-03.7`), e sem rede: `main()` daquele CLI
+pede um `HttpsQuotaProbe` real, então o driver chama `emit()` direto.
+
+**O teste tem dentes, medido e não afirmado.** Um mutante temporário (nunca commitado) trocou
+o `float` do payload por `locale.format_string("%f", …, grouping=True)` dentro do driver:
+sob `LANG=pt_BR.UTF-8` o teste **reprovou** (hash diferente), sob `LANG=C` continuou verde
+`[MEDIDO 2026-09-01, n=1 mutante plantado e revertido, driver restaurado byte a byte]`.
+
+`make verify`/`bash backend/scripts/test.sh`: **562 passed** (era **560**, `+2`) · cobertura
+**99,43%**, domain/use_cases **100%**, infra **98,3%** (idêntico ao antes — o módulo novo tem
+4 linhas e 0 ramificação). `lint.sh`: limpo. `boundaries.sh`: **2 kept, 1 broken**, estado
+pré-existente do `master` (`dump_window.py`/`retention_probe.py`, `T-03.12` em review — não
+tocado por esta task). `harness rules --mode sweep --changed-only`: **0 achados**.
+
+`tasks.toml`, ledger e Jira **intocados**; nenhum `gate-record`, `approve` ou `advance`.
+
 ---
 
 ## 📦 A fila de ETL do dump, retomável e com profundidade como parâmetro — `T-03.10` (`CST-26`, `CA-F0-5`, `SPEC-001` §5.8, plano `03` itens 3.11+3.14, DoD `D3.1`)
