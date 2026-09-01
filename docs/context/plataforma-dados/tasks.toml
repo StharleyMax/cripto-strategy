@@ -521,7 +521,7 @@ refs = [
 id = "T-04.1"
 title = "[sentimento] 04 · Shift canonico event_time = create_time + 300000 nas oito colunas, com ordenacao obrigatoria antes de emitir"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-01T21:12:51Z @ b7300b09b538869a87516280b97b07d97179f622
 phase = "04"
 depends_on = ["T-01.1"]
 refs = ["SPEC-001 §2.2", "CA-F1-1", "CA-F1-14", "CA-F1-2", "plano 04 itens 4.1+4.2+4.4", "DoD D4.1", "DoD D4.2", "DoD D4.3", "DoD D4.10"]
@@ -531,7 +531,7 @@ tracker = { provider = "jira", id = "CST-28", url = "https://conversationhub.atl
 id = "T-04.2"
 title = "[sentimento] 04 · SeriesKey completa (15 termos, com quantity_field e reduction) + as sete colunas de procedencia"
 components = ["sentimento"]
-status = "done"
+status = "done"  # resolve: QA APPROVED 2026-09-01T21:12:51Z @ b7300b09b538869a87516280b97b07d97179f622
 phase = "04"
 depends_on = ["T-01.1"]
 refs = ["ADR-001", "CA-F2-17", "SPEC-001 §2.1", "SPEC-001 §3.1", "plano 04 itens 4.7+4.9", "DoD D4.9", "falsificador global F-2"]
@@ -541,7 +541,7 @@ tracker = { provider = "jira", id = "CST-29", url = "https://conversationhub.atl
 id = "T-04.3"
 title = "[sentimento] 04 · Unicidade por agg_id com verificacao de contiguidade — nunca por tempo, nunca first/last trade_id"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-01T21:12:51Z @ b7300b09b538869a87516280b97b07d97179f622
 phase = "04"
 depends_on = ["T-04.1"]
 refs = ["CA-F1-5", "CA-F1-6", "plano 04 item 4.3", "DoD D4.4", "DoD D4.5"]
@@ -551,7 +551,7 @@ tracker = { provider = "jira", id = "CST-30", url = "https://conversationhub.atl
 id = "T-04.4"
 title = "[sentimento] 04 · Acessor unico as_of() = argmin(observed_at) com LOCF e sem interpolate; R-1 e R-2 e knowledge_time na leitura"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-01T21:12:51Z @ b7300b09b538869a87516280b97b07d97179f622
 phase = "04"
 depends_on = ["T-04.2"]
 refs = [
@@ -566,7 +566,7 @@ tracker = { provider = "jira", id = "CST-31", url = "https://conversationhub.atl
 id = "T-04.5"
 title = "[sentimento] 04 · cvd_delta por bucket como fato; cvd_cum(anchor) como view com ancora obrigatoria; Decimal canonico"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-01T21:12:51Z @ b7300b09b538869a87516280b97b07d97179f622
 phase = "04"
 depends_on = ["T-04.2"]
 refs = ["CA-F1-8", "SPEC-001 §2.6", "plano 04 item 4.8", "DoD D4.7", "DoD D4.8"]
@@ -576,7 +576,7 @@ tracker = { provider = "jira", id = "CST-32", url = "https://conversationhub.atl
 id = "T-04.6"
 title = "[sentimento] 04 · Serializacao de numeral invariante de locale em todo caminho de dado"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-01T21:12:51Z @ b7300b09b538869a87516280b97b07d97179f622
 phase = "04"
 depends_on = ["T-04.1"]
 refs = ["SPEC-001 §3.8", "plano 04 item 4.12", "DoD D4.12", "tira de Q14 o poder de invalidar fixture"]
@@ -586,7 +586,7 @@ tracker = { provider = "jira", id = "CST-33", url = "https://conversationhub.atl
 id = "T-04.7"
 title = "[sentimento] 04 · principal_id como dimensao em toda linha de ato humano — nunca constante implicita, nunca NULL"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-01T21:12:51Z @ b7300b09b538869a87516280b97b07d97179f622
 phase = "04"
 depends_on = ["T-04.2"]
 refs = ["SPEC-001 §4.4", "Q2 (RESPONDIDA)", "plano 04 item 4.11", "verificado em 05 por D5.10", "ADR-009/D2 recusa organization_id"]
