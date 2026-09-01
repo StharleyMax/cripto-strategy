@@ -285,14 +285,13 @@ tracker = { provider = "jira", id = "CST-91", url = "https://conversationhub.atl
 id = "T-02.1"
 title = "[sentimento] 02 · Coletor de snapshot diario datado de exchangeInfo + fundingInfo, com premiumIndex como segunda testemunha"
 components = ["sentimento"]
-status = "blocked"  # resolve: QA APPROVED 2026-08-29T13:08:52Z @ 7af0e4f1e5dca4d593e90503fdc17ee9bf538445
-blocked_reason = "Q1 ABERTA (autoriza ligar coletores) — fora do escopo build 2026-08-28, decisoes-de-execucao-2026-08-28.md §1.1"
+status = "todo"  # Q1 RESPONDIDA 2026-09-01 (decisoes-do-owner.md) — destravada, unblock: harness tasks resolve nao cobre reabertura, escrita manual
 phase = "02"
 depends_on = ["T-01.1"]
 refs = [
     "CA-F0-1", "CA-F0-1b", "CA-F0-7", "CA-F0-11", "SPEC-001 §3.4", "plano 02 itens 2.1+2.2",
     "DoD D2.1", "DoD D2.2", "DoD D2.3", "DoD D2.4", "DoD D2.5", "DoD D2.7",
-    "BLOQUEADA: Q1 — ABERTA, relogio SIM",
+    "Q1 RESPONDIDA 2026-09-01, decisoes-do-owner.md",
     "CAPTURE-OR-LOSE: CL-3 exchangeInfo datado",
 ]
 tracker = { provider = "jira", id = "CST-12", url = "https://conversationhub.atlassian.net/browse/CST-12" }
@@ -301,13 +300,12 @@ tracker = { provider = "jira", id = "CST-12", url = "https://conversationhub.atl
 id = "T-02.2"
 title = "[sentimento] 02 · One-shot Coinalyze daily (OI + liquidacao) nascendo em quarentena; broker de cota CEGO"
 components = ["sentimento"]
-status = "blocked"  # resolve: QA APPROVED 2026-08-29T13:08:52Z @ 7af0e4f1e5dca4d593e90503fdc17ee9bf538445
-blocked_reason = "Q1 ABERTA (residuo Q4) — fora do escopo build 2026-08-28, decisoes-de-execucao-2026-08-28.md §1.1"
+status = "todo"  # Q1 RESPONDIDA 2026-09-01 (decisoes-do-owner.md) — destravada, unblock: harness tasks resolve nao cobre reabertura, escrita manual
 phase = "02"
 depends_on = ["T-01.1"]
 refs = [
     "CA-F0-13", "CA-F3-9", "avaliacao:A3", "SPEC-001 §5.2", "plano 02 itens 2.3+2.4", "DoD D2.6",
-    "BLOQUEADA: Q1 — ABERTA, relogio SIM",
+    "Q1 RESPONDIDA 2026-09-01, decisoes-do-owner.md",
     "RESIDUO: Q4 (Coinalyze free/pago/descartar) — bloqueio parcial, o mecanismo anda",
 ]
 tracker = { provider = "jira", id = "CST-13", url = "https://conversationhub.atlassian.net/browse/CST-13" }
@@ -378,32 +376,32 @@ tracker = { provider = "jira", id = "CST-17", url = "https://conversationhub.atl
 id = "T-03.2"
 title = "[sentimento] 03 · Coletor !forceOrder@arr gravando cru, com o rotulo de subamostragem nao resolvida na SAIDA"
 components = ["sentimento"]
-status = "blocked"
+status = "todo"  # Q1 RESPONDIDA 2026-09-01 (decisoes-do-owner.md)
 phase = "03"
 depends_on = ["T-01.1"]
-refs = ["CA-F0-2", "SPEC-001 §5.10", "SPEC-001 §8.5/5", "plano 03 item 3.1", "BLOQUEADA: Q1", "CAPTURE-OR-LOSE: CL-1 liquidacao intraday"]
+refs = ["CA-F0-2", "SPEC-001 §5.10", "SPEC-001 §8.5/5", "plano 03 item 3.1", "Q1 RESPONDIDA 2026-09-01", "CAPTURE-OR-LOSE: CL-1 liquidacao intraday"]
 tracker = { provider = "jira", id = "CST-18", url = "https://conversationhub.atlassian.net/browse/CST-18" }
 
 [[tasks]]
 id = "T-03.3"
 title = "[sentimento] 03 · Politica de reconexao POR CLASSE de stream, com taxa de colisao publicada e direcao do vies escrita"
 components = ["sentimento"]
-status = "blocked"
+status = "todo"  # Q1 RESPONDIDA 2026-09-01 (decisoes-do-owner.md)
 phase = "03"
 depends_on = ["T-03.2"]
-refs = ["ADR-004 (gate de F0)", "plano 03 item 3.2", "DoD D3.6", "BLOQUEADA: Q1", "CAPTURE-OR-LOSE", "registro consolidado em T-09.3"]
+refs = ["ADR-004 (gate de F0)", "plano 03 item 3.2", "DoD D3.6", "Q1 RESPONDIDA 2026-09-01", "CAPTURE-OR-LOSE", "registro consolidado em T-09.3"]
 tracker = { provider = "jira", id = "CST-19", url = "https://conversationhub.atlassian.net/browse/CST-19" }
 
 [[tasks]]
 id = "T-03.4"
 title = "[sentimento] 03 · Agregado de bucket q/nq do stream aggTrade (CL-5) — a task de maior relogio do projeto"
 components = ["sentimento"]
-status = "blocked"
+status = "todo"  # Q1 RESPONDIDA 2026-09-01 (decisoes-do-owner.md)
 phase = "03"
 depends_on = ["T-03.1"]
 refs = [
     "ADR-001/6", "SPEC-001 §1.4 (CL-5)", "plano 03 item 3.5", "DoD D3.5", "DoD D3.7", "DoD D3.8",
-    "BLOQUEADA: Q1", "CAPTURE-OR-LOSE: CL-5 — nq vive em janela de 48h e em nenhum historico",
+    "Q1 RESPONDIDA 2026-09-01", "CAPTURE-OR-LOSE: CL-5 — nq vive em janela de 48h e em nenhum historico",
 ]
 tracker = { provider = "jira", id = "CST-20", url = "https://conversationhub.atlassian.net/browse/CST-20" }
 
@@ -411,10 +409,10 @@ tracker = { provider = "jira", id = "CST-20", url = "https://conversationhub.atl
 id = "T-03.5"
 title = "[sentimento] 03 · Coletor premiumIndex — funding estimado, que nao tem endpoint de historico em fonte nenhuma"
 components = ["sentimento"]
-status = "blocked"
+status = "todo"  # Q1 RESPONDIDA 2026-09-01 (decisoes-do-owner.md)
 phase = "03"
 depends_on = ["T-01.1"]
-refs = ["CA-F0-1b", "plano 03 item 3.3", "BLOQUEADA: Q1", "CAPTURE-OR-LOSE: CL-2 serie efemera"]
+refs = ["CA-F0-1b", "plano 03 item 3.3", "Q1 RESPONDIDA 2026-09-01", "CAPTURE-OR-LOSE: CL-2 serie efemera"]
 tracker = { provider = "jira", id = "CST-21", url = "https://conversationhub.atlassian.net/browse/CST-21" }
 
 [[tasks]]
@@ -446,10 +444,10 @@ tracker = { provider = "jira", id = "CST-23", url = "https://conversationhub.atl
 id = "T-03.8"
 title = "[sentimento] 03 · NTP como dependencia de runtime; skew persistido por ingest_run"
 components = ["sentimento"]
-status = "blocked"
+status = "todo"  # Q1 RESPONDIDA 2026-09-01 (decisoes-do-owner.md)
 phase = "03"
 depends_on = ["T-01.1"]
-refs = ["CA-F0-8", "GAP G6", "plano 03 item 3.7", "DoD D3.10", "BLOQUEADA: Q1", "a tolerancia calibra em T-07.10"]
+refs = ["CA-F0-8", "GAP G6", "plano 03 item 3.7", "DoD D3.10", "Q1 RESPONDIDA 2026-09-01", "a tolerancia calibra em T-07.10"]
 tracker = { provider = "jira", id = "CST-24", url = "https://conversationhub.atlassian.net/browse/CST-24" }
 
 [[tasks]]
@@ -480,10 +478,10 @@ tracker = { provider = "jira", id = "CST-26", url = "https://conversationhub.atl
 id = "T-03.11"
 title = "[sentimento] 03 · Reconciliacao diaria liquidacao capturada x agregado Coinalyze, com a ressalva na tela"
 components = ["sentimento"]
-status = "blocked"
+status = "todo"  # Q1 RESPONDIDA 2026-09-01 (decisoes-do-owner.md)
 phase = "03"
 depends_on = ["T-02.2", "T-03.2"]
-refs = ["CA-F0-14", "plano 03 item 3.12", "BLOQUEADA: Q1"]
+refs = ["CA-F0-14", "plano 03 item 3.12", "Q1 RESPONDIDA 2026-09-01"]
 tracker = { provider = "jira", id = "CST-27", url = "https://conversationhub.atlassian.net/browse/CST-27" }
 
 [[tasks]]

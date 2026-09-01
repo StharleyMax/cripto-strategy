@@ -31,7 +31,7 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 
 | Q | assunto | estado | relógio |
 |---|---|---|---|
-| **Q1** | autoriza ligar os coletores hoje | `ABERTA` | **SIM — capture-or-lose** |
+| **Q1** | autoriza ligar os coletores hoje | **`RESPONDIDA`** 2026-09-01 | **SIM — capture-or-lose** — relógio parou |
 | **Q2** | onde roda, quem acessa, orçamento | **`RESPONDIDA`** | resolvida — ver §Q2 |
 | **Q3** | canal de alarme fora do browser | `ABERTA` | SIM (condicional) |
 | **Q4** | Coinalyze | **`RESPONDIDA COM RESÍDUO`** | resíduo sem relógio no `daily` |
@@ -52,15 +52,15 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 | **Q19** | `availability_probe_set` | `ABERTA` | **SIM** |
 | **Q20** | SMC, pivôs+Fibonacci, ou os dois | **`ABERTA` (nova em R2)** | NÃO |
 
-**Contagem: 20 · 11 `ABERTA` · 3 `INFERÍVEL` · 3 `RESPONDIDA` · 2 `RESPONDIDA COM RESÍDUO` · 1 `MORTA`.**
-*(Atualizada em 2026-08-28: `Q16` respondida pelo owner; `Q13` reconciliada contra `SPEC-001:649`, que já a registrava `RESPONDIDA` desde 2026-08-25 — a divergência era deste arquivo.)*
-**Capture-or-lose: `Q1`, `Q2` (herdado), `Q17`, `Q19`** — e `Q5` saiu dessa classe quando `!forceOrder@arr` foi confirmado.
+**Contagem: 20 · 10 `ABERTA` · 3 `INFERÍVEL` · 4 `RESPONDIDA` · 2 `RESPONDIDA COM RESÍDUO` · 1 `MORTA`.**
+*(Atualizada em 2026-09-01: `Q1` respondida pelo owner — 8 tasks destravadas nas fases 02/03 de `plataforma-dados`. Atualizada em 2026-08-28: `Q16` respondida pelo owner; `Q13` reconciliada contra `SPEC-001:649`, que já a registrava `RESPONDIDA` desde 2026-08-25 — a divergência era deste arquivo.)*
+**Capture-or-lose: `Q2` (herdado), `Q17`, `Q19`** — `Q1` saiu dessa classe ao ser respondida (2026-09-01); `Q5` saiu quando `!forceOrder@arr` foi confirmado.
 
 ---
 
 ## ⛔ CAPTURE-OR-LOSE — histórico que nenhuma fonte devolve depois
 
-### Q1 · `ABERTA` · Autoriza ligar HOJE os coletores que não precisam de estratégia nem de tela?
+### Q1 · **`RESPONDIDA` em 2026-09-01** · Autoriza ligar HOJE os coletores que não precisam de estratégia nem de tela?
 
 **(a)** Ligo hoje `!forceOrder@arr` (liquidação de mercado inteiro), `premiumIndex` (funding estimado), o snapshot diário de `exchangeInfo`+`fundingInfo` e o **probe de disponibilidade** — sim ou não?
 
@@ -76,6 +76,37 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 **(c) Trava:** o painel de liquidação (1 dos 3 gatilhos que a proposta nomeia) nasce vazio; `universe_at(ts)` fica preso em `s3_inferred`, **que é inadmissível no caminho de decisão** ⇒ **todo resultado transversal do passado é retrospectivo por construção**; `tick_size`/`price_precision`/`funding_interval` **com data de vigência** — base de toda tolerância de estrutura futura, que é expressa em ticks — não existem para nenhuma data passada; e o `available_at` **OBSERVED** das séries que a plataforma existe para servir, que **não é derivável retroativamente**.
 
 **(d) RELÓGIO: SIM — capture-or-lose.** ~1 dia perdido por dia. **É o único item deste registro cujo custo de atraso não tem mitigação de engenharia.**
+
+**✅ RESPOSTA DO OWNER (2026-09-01). Declaração literal:**
+
+> **"pode ligar o q1 e ligar os coletores"**
+
+`[PREMISSA-OWNER: 2026-09-01]`
+
+**A resposta é SIM às quatro capturas nomeadas em (a):** `!forceOrder@arr` (liquidação de mercado
+inteiro), `premiumIndex` (funding estimado), o snapshot diário de `exchangeInfo`+`fundingInfo`, e o
+probe de disponibilidade. **O relógio de capture-or-lose parou** — cada dia que passava sem isso era
+um dia de `nq` (janela de 48h) e de liquidação intraday perdidos para sempre; não voltam mais.
+
+**O que isto DESTRAVA — as 8 tasks nomeadas em `tasks_review.md` §"Mapa de rastreamento" (linha do
+`Q1`), e apenas estas:** `T-02.1` (snapshot diário datado), `T-02.2` (one-shot Coinalyze),
+`T-03.2` (`!forceOrder@arr`), `T-03.3` (política de reconexão por classe de stream, `ADR-004`),
+`T-03.4` (agregado `q`/`nq` do `aggTrade`, a de maior prioridade de relógio — janela de 48h),
+`T-03.5` (`premiumIndex`), `T-03.8` (rampa até o primeiro 429), `T-03.11` (scanner do relógio,
+`T-03.12`'s vizinha — reconciliação Coinalyze). `docs/context/plataforma-dados/tasks.toml` passa o
+`status` das 8 de `blocked` para `todo` no mesmo commit desta resposta — nenhuma delas está
+`done`, a resposta só remove o bloqueio de **poder começar**.
+
+**O que isto NÃO destrava, e por quê:** `T-02.4b` e `T-03.9` dependem de `T-02.1`/`T-03.2`
+respectivamente — ficam `blocked` até a dependência fechar, não por `Q1` diretamente. `T-03.9`
+carrega um segundo bloqueio que `Q1` não resolve: `observer_region` da VPS é `[NÃO MEDIDO]`
+(comando: `curl -s ipinfo.io` de dentro da VPS) — coluna de F0, impossível retroativamente
+(`SPEC-001` §9.2). `T-03.6` (`availability_probe_set`) segue travada por `Q19`, pergunta distinta.
+`T-15/Q15` (ToS de Binance/Bybit/Coinalyze) segue `ABERTA` e **incide retroativamente** sobre o que
+esta resposta manda acumular — não bloqueia o início, mas é dívida que não desaparece com `Q1`.
+
+**Nenhuma chave de API foi escrita neste documento** — `$COINALYZE_API_KEY` vive em `.env`,
+conforme `CLAUDE.md`.
 
 ---
 
