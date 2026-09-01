@@ -44,7 +44,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup venv lint lint-backend lint-frontend test boundaries build verify
+.PHONY: help setup venv lint lint-backend lint-frontend test boundaries natureza build verify
 
 # Argumentos repassados ao pytest: `make test ARGS="-k nome --no-cov"`.
 ARGS ?=
@@ -63,6 +63,8 @@ help:
 	  '                       argumentos: make test ARGS="-k nome"' \
 	  '  make boundaries      fronteira de modulo por grafo de imports, via import-linter' \
 	  '                       (ADR-011/D3a; backend/scripts/boundaries.sh)' \
+	  '  make natureza        natureza por USO (scanner de AST): domain/use_cases nao leem' \
+	  '                       relogio (ADR-016/D4; backend/scripts/natureza.sh)' \
 	  '  make build           artefato distribuivel — hoje RECUSA com rc=3, e o alvo diz porque' \
 	  '  make verify          OS SEIS PORTOES numa chamada, veredito em ~10 linhas e a saida' \
 	  '                       bruta em arquivo (scripts/verify.sh). E o alvo para AGENTE rodar' \
@@ -144,6 +146,18 @@ test:
 # fechada NO MESMO ATO em que deixou de ser latente.
 boundaries:
 	bash backend/scripts/boundaries.sh
+
+# ── natureza ───────────────────────────────────────────────────────────────────────────
+# `ADR-016/D4` + `T-03.12` (`ADR-016/D5`). `boundaries` guarda DIRECAO de import, granularidade
+# de modulo; este guarda NATUREZA — a distincao capacidade x valor que `import-linter` nao
+# consegue expressar (`datetime.date` nao e submodulo de `datetime`). Scanner de AST em
+# `backend/scripts/natureza.py`, promovido (copiado e endurecido) de
+# `docs/adr/bancadas/ADR-016-natureza.py`; a bancada permanece la, reproduzivel a partir do
+# texto da ADR (DoD-11).
+#
+# MESMA FORMA que `boundaries`: UMA LINHA, UM COMANDO, um `.sh` do outro lado.
+natureza:
+	bash backend/scripts/natureza.sh
 
 # ── build ──────────────────────────────────────────────────────────────────────────────
 # ⚠️ ALVO DECLARADO, E ELE RECUSA — de proposito, e a recusa e a informacao.
