@@ -61,6 +61,14 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # may be STORED. It never sees a decision instant, so it cannot answer "what was the value
     # at `t`" — which is what a second reader would be.
     "modules/sentimento/domain/provenance.py": frozenset({"reject_clock_skew"}),
+    # `T-02.2`: ANOTHER write path, same category as `provenance.py` above. `record()` persists
+    # `entry.available_at` (always `None` in F0 — `domain/quarantine_terms.py`'s
+    # `COINALYZE_ONE_SHOT_TERMS` never sets it) and never compares it against a decision instant
+    # `t`. `read_promoted()` in the SAME module does not appear here on purpose: it filters
+    # `available_at IS NOT NULL` in a SQL STRING (a presence check, "has this row been
+    # promoted", never "what was the value at t") and never touches `.available_at` as a Python
+    # attribute — `ast.Attribute` cannot see inside a string, and there is nothing to declare.
+    "modules/sentimento/infra/sqlite_series_quarantine_store.py": frozenset({"record"}),
 }
 
 

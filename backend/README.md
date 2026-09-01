@@ -2050,3 +2050,70 @@ imports_this_accessor_yet_and_that_is_recorded_not_claimed` reprovar: aquele tes
 `backend/src` por OCORRÊNCIA TEXTUAL da string `"as_of_accessor"`, deliberadamente mais largo que
 um `import`, para forçar qualquer menção a ser revista. Corrigido reformulando o comentário sem a
 citação literal do nome do arquivo — nenhuma linha de comportamento mudou, só a prosa.
+
+## 📎 2026-09-01 por `T-02.2` — o one-shot Coinalyze `daily`, nascendo em quarentena, e o broker cego
+
+`CA-F0-13` / `CA-F3-9` / `avaliacao:A3` (`SPEC-001` §5.2, plano 02 itens 2.3+2.4). Sete arquivos
+novos, nenhum existente tocado:
+
+| camada | arquivo | papel |
+|---|---|---|
+| `domain` | `coinalyze_daily_series.py` | tradução de símbolo, montagem do path, parse de `{t, o,h,l,c}`/`{t,l,s}` cru, e o piso `CA-F0-13` (OI ≥ 2.400/≤ 2020-01-21; liq ≥ 700/≤ 2024-08-26) |
+| `domain` | `quarantine_terms.py` | o predicado de três termos de `SPEC-001` §5.2, e a constante `COINALYZE_ONE_SHOT_TERMS` (label_shift + unit resolvidos, `available_at` sempre ausente enquanto `Q19` não fecha) |
+| `domain` | `local_quota_broker.py` | o broker CEGO: intervalo FIXO (`60 / 40 = 1,5 s`), nunca acelera, nunca lê header — porque não há header (`domain/quota_bucket.py`, já mediu `COINALYZE` como `BLIND`) |
+| `domain` | `quarantined_series_entry.py` | amarra pontos + veredito + termos de quarentena numa linha gravável, `available_at` derivado de `quarantine`, nunca hardcoded duas vezes |
+| `infra` | `coinalyze_history_client.py` | o irmão de `https_quota_probe.py` que devolve o CORPO em vez de descartá-lo — reaproveita conexão, autenticação e cabeçalhos do módulo de `T-03.7`, não reabre `http.client` |
+| `infra` | `sqlite_series_quarantine_store.py` | a tabela `series_quarantine`, com `read_promoted()` = a query que um `backtest` futuro rodaria (`available_at IS NOT NULL`) |
+| `use_cases` | `capture_coinalyze_daily_series.py` | orquestra: 2 chamadas por símbolo (OI, depois liquidação), pacetes pelo broker, nunca aborta a varredura por um símbolo ruim (`SPEC-001` §5.6, mesmo argumento do survivorship) |
+| `infra` | `coinalyze_one_shot_cli.py` | a bancada — só ela abre o `http.client` real, nenhum portão a chama |
+
+### `D2.6`, o falsificador da fase, medido nos dois sentidos
+
+`plano 02`: *"leitura de `backtest` sobre as duas séries recém-capturadas devolve ZERO
+linhas"*. `backtest` não existe como módulo (e `import-linter` já o proíbe como import de
+`sentimento` — contrato "Fronteira de contexto"), então `read_promoted()` é a forma que um
+consumidor futuro chamaria: filtra `available_at IS NOT NULL`.
+`test_sqlite_series_quarantine_store.py::test_d2_6_the_two_freshly_captured_series_read_zero_promoted_rows`
+grava as duas séries (OI com 2.500 pontos, liquidação com 730) para `BTCUSDT` e confirma **zero
+linhas** nas duas leituras. **E o lado que prova que a query não está vazia por estar morta**:
+`test_the_query_is_not_vacuously_empty_a_planted_promoted_row_is_read_back` escreve, por baixo
+de `record()`, uma linha com `available_at` preenchido e confirma que ELA volta — sem esse teste,
+um `read_promoted` que sempre devolvesse `()` por engano (ex.: `WHERE 1 = 0`) passaria no mesmo
+verde.
+
+### O broker: por que a pauta é intervalo FIXO, e a aritmética que ele reproduz
+
+`domain/local_quota_broker.py` não acelera como `domain/ramp_plan.py` (`T-03.7`) — a rampa existe
+para ACHAR o teto; este broker existe para NUNCA o alcançar, porque um `429` no meio de 1.140
+chamadas não avança medição nenhuma, só atrasa a varredura. `interval_seconds = window_seconds /
+calls_per_window`, aplicado igual à primeira e à última chamada.
+`test_the_declared_broker_reproduces_the_published_cost_of_the_one_shot` reproduz `1.140 × 1,5 s
+≈ 1.710 s ≈ 28,5 min` do `docs/decisoes-do-owner.md` — com uma diferença de **um intervalo**
+(1.708,5 s medido contra 1.710 s do napkin math do PM), porque este módulo conta PAUSAS (`n - 1`
+para `n` chamadas — mesma assimetria que `test_quota_ramp_bench_offline.py` já nomeia para o
+laço de carga da rampa), e o número publicado multiplica `n × intervalo`. O teste documenta a
+diferença em vez de forçar a igualdade exata contra um número aproximado (o próprio
+`docs/decisoes-do-owner.md` usa `~`).
+
+### Escopo que este task NÃO fecha, nomeado
+
+- **Não descobre o universo de símbolos.** `docs/decisoes-do-owner.md` custeia a varredura em
+  ~570 símbolos (perpétuos `TRADING` do `exchangeInfo`), mas nem `CA-F0-13` nem `avaliacao:A3`
+  atribuem a esta task a curadoria desse universo — é `T-02.1` (snapshot de `exchangeInfo`) ou um
+  catálogo futuro. `coinalyze_one_shot_cli.py` recebe a lista de símbolos como argumento; nada
+  aqui presume `/future-markets` nem inventa um schema de catálogo que este task não mediu com
+  chave real além dos 11 `[MEDIDO]` de `docs/medicao-coinalyze.md`.
+- **Não constrói o mecanismo de promoção.** O handoff desta task é explícito: desenhar o esquema
+  pensando no consumidor futuro (`T-03.11`), sem construir a promoção aqui. `read_promoted()` é a
+  LEITURA que a promoção teria de satisfazer; nada neste código escreve `available_at`.
+- **Não persiste `md.ingest_run`/`md.ingest_gap`.** Isso é plano 02 itens 2.6+2.7, `T-02.3`.
+
+### Se a chave existir: o que muda, e o que não muda
+
+`.env` foi verificado por presença de `COINALYZE_API_KEY`, nunca lido nem citado em texto (`grep`
+sobre o CONTEÚDO do arquivo é bloqueado pela política de permissão desta sessão, por desenho — a
+verificação usada foi `os.path.isfile` + varredura de linha por prefixo, sem nunca imprimir o
+valor). A chave **existe** nesta sessão. O código acima é testado inteiramente contra
+fixture/mock (rede zero, como toda a suíte) — a chamada REAL ao vivo (o "one-shot" de fato, ~570
+símbolos × 2 séries) é uma operação separada, de custo declarado ~28,5 min, que **não** é
+disparada pelo portão de teste e não deve ser repetida por engano.
