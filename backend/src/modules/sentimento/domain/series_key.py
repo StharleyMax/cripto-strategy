@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, fields
 from enum import Enum
 from typing import Final
+
+from src.modules.sentimento.domain.canonical_json import canonical_json
 
 # ── WHY IDENTITY AND NOT COLUMNS, IN ONE PARAGRAPH ────────────────────────────────────────
 #
@@ -223,11 +224,11 @@ def series_key_field_names() -> tuple[str, ...]:
 
 
 def _canonical_json(payload: dict[str, object]) -> str:
-    """Serialize with no whitespace slack and no locale — insertion order IS the term order.
+    """Delegate to the ONE shared serializer (`canonical_json.py`, unified by `T-04.6`).
 
-    SECOND COPY OF THIS HELPER IN `domain/` (the first is `ingest_record.py`). Unifying them
-    is `T-04.6`'s job — "serializacao de numeral invariante de locale em TODO caminho de
-    dado", plan 04 item 4.12 — and doing it here would edit a module this task has no
-    business touching. Named debt, not an oversight.
+    Kept as a thin private wrapper — not a bare re-import — so `test_series_identity.py`'s
+    `from ...series_key import _canonical_json` keeps resolving under `mypy --strict`'s
+    `no_implicit_reexport`: a plain `import canonical_json as _canonical_json` is an import,
+    which that rule refuses to treat as an export of this module; a local `def` is not.
     """
-    return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=False)
+    return canonical_json(payload)

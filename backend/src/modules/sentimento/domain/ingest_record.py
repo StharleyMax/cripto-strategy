@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from typing import Final
+
+from src.modules.sentimento.domain.canonical_json import canonical_json
 
 # ── THE 15 FIELDS ARE A CONTRACT, AND THE ORDER IS PART OF IT ─────────────────────────────
 #
@@ -138,11 +139,12 @@ class IngestHealthReport:
     of the CLI projection against the `sha256` of what feeds S1, so any consumer that wants
     to be the SAME implementation has to emit these bytes and not a prettier cousin.
 
-    LOCALE INVARIANCE (`SPEC-001` §3.8) IS INHERITED, NOT CLAIMED BY HAND: every line is
-    `json.dumps` with `ensure_ascii=True`, and JSON has no locale — the decimal point is a
-    dot and there is no thousands separator, by grammar. `tests/sentimento/
-    test_ingest_record_durability.py` runs the §3.8 test literally (`LANG=pt_BR.UTF-8`
-    against `LANG=C`, `sha256` compared) instead of trusting this paragraph.
+    LOCALE INVARIANCE (`SPEC-001` §3.8) IS INHERITED, NOT CLAIMED BY HAND: every line goes
+    through `canonical_json.py`'s `json.dumps` with `ensure_ascii=True`, and JSON has no
+    locale — the decimal point is a dot and there is no thousands separator, by grammar.
+    `tests/sentimento/test_ingest_record_durability.py` runs the §3.8 test literally
+    (`LANG=pt_BR.UTF-8` against `LANG=C`, `sha256` compared) instead of trusting this
+    paragraph.
     """
 
     runs: tuple[IngestRun, ...]
@@ -155,16 +157,16 @@ class IngestHealthReport:
         so the raw record stays greppable and sortable line by line, which is what a CLI
         record of F0 is for, without the format stopping being machine-exact.
         """
-        header = _canonical_json(
+        header = canonical_json(
             {
                 "query": "ingest_health_query",
                 "n_runs": len(self.runs),
                 "n_gaps": len(self.gaps),
             }
         )
-        lines = [header, _canonical_json({"section": "ingest_run", "n": len(self.runs)})]
+        lines = [header, canonical_json({"section": "ingest_run", "n": len(self.runs)})]
         lines.extend(_project_run(run) for run in self.runs)
-        lines.append(_canonical_json({"section": "ingest_gap", "n": len(self.gaps)}))
+        lines.append(canonical_json({"section": "ingest_gap", "n": len(self.gaps)}))
         lines.extend(_project_gap(gap) for gap in self.gaps)
         return tuple(lines)
 
@@ -177,11 +179,6 @@ class IngestHealthReport:
         return hashlib.sha256(self.canonical_projection().encode("utf-8")).hexdigest()
 
 
-def _canonical_json(payload: dict[str, object]) -> str:
-    """Serialize with no whitespace slack and no locale — insertion order IS the column order."""
-    return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=False)
-
-
 def _project_run(run: IngestRun) -> str:
     """Project one run onto the 15 columns `ADR-008/D3` fixed, in the order it fixed them."""
     payload: dict[str, object] = {}
@@ -190,11 +187,11 @@ def _project_run(run: IngestRun) -> str:
             payload[column] = LOSS_WINDOW_NOT_COMPUTED_IN_F0
         else:
             payload[column] = getattr(run, column)
-    return _canonical_json(payload)
+    return canonical_json(payload)
 
 
 def _project_gap(gap: IngestGap) -> str:
     """Project one gap onto the `md.ingest_gap` columns, keeping `class` as the wire name."""
-    return _canonical_json(
+    return canonical_json(
         {column: getattr(gap, _GAP_FIELD_BY_COLUMN[column]) for column in INGEST_HEALTH_GAP_COLUMNS}
     )
