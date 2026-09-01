@@ -666,6 +666,69 @@ armadilha de `rc=0` sobre universo vazio, e a metade *"ninguém mais importa"* �
 porque ainda não há consumidor. Então o que carrega o peso é o outro lado: **4 violadores
 plantados, 4 pegos**, cada um por um teste diferente, e a árvore volta verde ao desplantar.
 
+### 📎 2026-09-01 por `T-04.1` — o shift canônico `event_time`, a ordenação obrigatória e a lacuna nunca preenchida
+
+Um módulo novo em `domain`, um em `infra`, e o par que o CSV cru de `daily/metrics` vira
+`event_time`/`src_label_raw`/gap. `SPEC-001` §2.2, `CA-F1-1`, `CA-F1-14`, `CA-F1-2`, plano `04`
+itens **4.1** + **4.2** + **4.4**.
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/metrics_shift.py` | `domain` | `LABEL_SHIFT_MS = 300_000`; `RawMetricsRow`/`LabeledMetricsRow`; `label_and_sort_metrics_rows` — **único** ponto de saída, sem parâmetro para pular o `sorted(...)`; `MetricsGap`/`detect_gaps`, que não tem campo para um valor interpolado |
+| `src/modules/sentimento/infra/metrics_csv_reader.py` | `infra` | `parse_create_time_ms`/`format_event_time_iso` (os dois únicos pontos que tocam `datetime`); `read_raw_metrics_rows` devolve em **ordem do arquivo**, de propósito; `build_ingest_gap` liga `MetricsGap` ao `IngestGap` já existente (`domain/ingest_record.py`, `T-02.3`) |
+| `tests/sentimento/test_metrics_shift.py` | — | **17 testes** sintéticos: o mutante "bypass do sort" reprova, `MetricsGap` não tem onde guardar valor interpolado |
+| `tests/sentimento/test_metrics_event_time_fixtures.py` | — | `D4.1`/`D4.2`/`D4.3` sobre os fixtures reais pinados por `md5` |
+| `tests/sentimento/test_taker_lookahead_regression.py` | — | `D4.10`, reproduzido sobre fixtures deste repositório |
+| `tests/sentimento/test_metrics_csv_reader.py` | — | a borda de parsing, isolada do resto |
+| `tests/helpers/data_fixtures.py` | — | acha `data/` por `git rev-parse --git-common-dir` — portátil entre worktrees, já que `data/` é gitignored e não existe em `git worktree add` |
+
+**A ordenação é obrigatória por FORMA, não por convenção escrita.** `label_metrics_row` está
+exposto (o teste de bypass precisa dele), mas `label_and_sort_metrics_rows` é o único ponto que
+uma chamada de produção usaria, e ele não tem parâmetro `skip_sort`. `[MEDIDO 2026-09-01]`: o
+mutante literal — trocar `tuple(sorted(labeled, key=...))` por `tuple(labeled)` — foi aplicado,
+rodado, e **derrubou 2 testes nomeando o índice exato da discordância** (um sintético, um sobre
+`data/binance/metrics/btcusdt/2026-08-18.csv`); revertido antes do commit.
+
+**`D4.1` bate exato no número que o plano publica.** `data/binance/metrics/btcusdt/2026-08-18.csv`
+(md5 `b8ef79c353f2adce853c68084cc3b631`): 288 linhas, deslocamento posicional máximo **275 de
+288** `[MEDIDO 2026-09-01: posição na ordem do arquivo menos posição na ordem por `create_time`,
+máximo do valor absoluto]` — o mesmo número que `CA-F1-1` cita. O salto-para-trás que o plano
+cita como 1435 min mediu, nesta reprodução, **1415 min**; a diferença não foi investigada (não é
+DoD desta task) e o número não entrou como asserção — só o deslocamento posicional, que bateu.
+
+**`D4.2` é o gap real, e ele já era o fixture que outros dois arquivos de teste citavam sem
+prová-lo.** `data/binance/metrics/btcusdt/2026-08-12.csv` (md5 `bf1ddd8ba4248f975e92daae23ee3dc3`):
+285 linhas, **um** gap de `n_missing=3` entre `event_time` `2026-08-12T11:45:00Z` e
+`2026-08-12T12:05:00Z`. Essas strings já existiam como fixture à mão em
+`test_ingest_health_query.py::_gap` e `test_ingest_health_contract_guards.py::_gap` desde antes
+desta task — `test_metrics_event_time_fixtures.py` é o que transforma essa coincidência em
+medição: o gap é persistido pelo mesmo `SqliteIngestRecordStore` que o `ingest_health` lê, round-trip
+completo, e a contagem de linhas (285) não muda ao persistir o gap — nenhum ponto é inventado.
+
+**`D4.3` precisa da ordenação para existir.** A primeira linha em ORDEM DE ARQUIVO de
+`2026-08-23.csv` tem `create_time` `00:10:00` — o dia é ele mesmo um dos 13 fora de ordem.
+Só depois de `label_and_sort_metrics_rows` o verdadeiro primeiro bucket (`00:00:00`) aparece, e
+o shift o leva a `event_time` `2026-08-23T00:05:00Z` — nunca `00:00:00Z`.
+
+**`D4.10` é um NÃO-CONSERTO, testado como regressão.** `shift_to_event_time` soma o mesmo
+`LABEL_SHIFT_MS` às oito colunas, **incluindo** `sum_taker_long_short_vol_ratio` — que
+`PRD-001` P2 já media carregando o fluxo do bucket **seguinte** ao rótulo (`r = +0,5458` contra
+o retorno futuro). Esta task **não corrige essa coluna**: a defesa anti-lookahead correta é
+`available_at` (item 4.6, task futura), e um shift por coluna aqui seria um segundo desvio
+silencioso. `[MEDIDO 2026-09-01, reproduzido sobre os fixtures DESTE repositório — `n=863/862/863`,
+não o `864/862/862` do `PRD-001`, porque o corpus em disco é outro]`: `r_futuro = +0,5169`
+contra `r_passado = +0,0646` e `r_futuro+1 = -0,0209` — mesma assinatura, 3 dias
+(2026-08-21/22/23), preço de `klines` 1m reamostrado a 5m (21/22) + `klines` 5m nativo (23). Se
+uma mudança futura corrigir a coluna com um shift próprio, `r_futuro` cai para perto de zero e
+este teste reprova.
+
+**Os seis portões, no worktree `/tmp/claude-1002/wt/T-04.1`:** `lint.sh` (`ruff check` + `ruff
+format --check` + `mypy --strict`) limpo; `boundaries.sh` — os 3 contratos de import (incluindo
+`Natureza`, que este módulo respeita: `domain` só recebe `int`/`Decimal`/`str` injetados,
+`datetime` mora inteiro em `infra`) — `3 kept, 0 broken`; `test.sh` — **470 passed**, cobertura
+`domain 100% (877/877)` · `use_cases 100% (220/220)` · `infra 97,8% (614/628)`, todas acima do
+piso; `harness rules --mode sweep` (árvore completa) — **0 achado**.
+
 ## Decisões táticas desta task, e o que as derruba
 
 | decisão | por quê | falsificador |
