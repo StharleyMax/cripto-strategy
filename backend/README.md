@@ -575,6 +575,97 @@ cobertura **por camada** (`domain 90 · use_cases 80 · infra 70`, herdados do v
 testes de domínio puro desselecionados, o piso **global** de 70% passa em **95,20%** enquanto o piso
 **por camada** reprova `domain` em **88,0% (22/25 linhas)**.
 
+### 📎 2026-08-29 por `T-04.2` — a identidade de série e as sete colunas de procedência
+
+Dois módulos novos em `domain`, e a razão de os dois nascerem juntos é que um sem o outro não
+fecha nada: `series_key.py` diz **qual série é**, `provenance.py` diz **de onde cada linha dela
+veio**. `SPEC-001` §2.1 e §3.1, plano `04` itens **4.7** e **4.9**.
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/series_key.py` | `domain` | os **15 termos** de `SPEC-001` §2.1, os quatro conjuntos fechados (`Nature`, `TsConvention`, `Reduction`, `QuantityField`) e `series_key_id()` = `sha256` da projeção canônica |
+| `src/modules/sentimento/domain/provenance.py` | `domain` | as **sete colunas** de `SPEC-001` §3.1 + o par `observer_id`/`observer_region` + `is_final`; `Provenance`, `Absence`, `AvailabilitySource`; e as duas recusas que `§3.2` exige |
+| `tests/sentimento/test_series_identity.py` | — | **31 testes**. `F-2`, `CA-F2-17` e o teste que percorre os 15 termos um a um |
+| `tests/sentimento/test_provenance_columns.py` | — | **24 testes**. `D4.9`, a fronteira de `clock_skew` e o que `T-04.4` vai ler |
+
+**Nenhum termo da chave tem default, e isso é o portão de `CA-F2-17`.** Pedir *"o OI da
+Coinalyze"* sem `reduction` tem de ser **erro**, e um default é exatamente como isso deixa de ser
+verdade — as quatro leituras OHLC do mesmo bucket voltariam a colapsar numa identidade só. O teste
+não confia nesta frase: ele lê `dataclasses.fields` e reprova se alguém acrescentar um default.
+
+**`D4.9` foi REPRODUZIDO nesta task, não copiado** — reconciliação de tolerância **ZERO** a 8
+casas decimais, pareando `metrics.create_time` com `markPriceKlines.open_time`:
+
+```bash
+# n = 5 dias-símbolo, 1.440 buckets pareados; tradução de caminho por data/MANIFEST.md
+# BTCUSDT 2026-08-21  288/288 · BTCUSDT 2026-08-23  288/288  (pior resíduo 0,0000 bp)
+# COTIUSDT 282/288 (4,3407 bp) · DOGEUSDT 286/288 (1,0847 bp) · SLXUSDT 286/288 (1,9716 bp)
+# script literal em docs/context/plataforma-dados/gates/T-04.2-builder.md
+```
+
+`[MEDIDO 2026-08-29]`, e bate com o que o plano `04` publica (**288/288** no BTC, alts
+**282–286/288**, resíduo ≤ **4,34 bp**). É essa medição que dá a `price_mark_close` o direito à
+palavra *determinístico*, e por isso `reject_modeled_for_deterministic_metric` **recusa** carimbá-la
+`MODELADO`: um canal sempre tracejado não carrega informação (`SPEC-001` §3.1).
+
+**Tempo entra como valor injetado, e o contrato `Natureza` é o motivo.** `domain` e `use_cases` não
+importam `time` nem `datetime` (`backend/pyproject.toml`), então os cinco instantes da linha são
+`int` de milissegundos de época. O `int` também é o que faz `T-04.4` funcionar: `argmin(observed_at)`
+sobre inteiro é exato, total e sem parse — um instante formatado faria o `argmin` depender de toda
+fonte grafar com a mesma largura, o que é certo até a primeira que não grafa, e daí errado calado.
+
+**Verde não prova nada até uma mutação reprovar.** Bancada de **10 mutantes + 1 controle**:
+**10 mortos, 0 sobreviventes**; o controle (comentário inócuo) ficou verde. A guarda `AMBIGUO`
+mordeu de verdade — o `M3` na primeira passada casou a âncora **2×** e foi **recusado em vez de
+contado como morte**. Script e saída literais no relatório de gate.
+
+### 📎 2026-08-29 por `T-04.4` — o acessor **único** `as_of()`, e a largura do bucket que é injetada
+
+Um módulo novo em `domain` e o par de testes que o prende. `SPEC-001` §2.3 e §2.5, `ADR-006`,
+`CA-F4-25`, plano `04` itens **4.5** + **4.6** + **4.10**.
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/as_of_accessor.py` | `domain` | `as_of()` = `argmin(observed_at)` com **LOCF** e **sem interpolate**; `R-1`, `R-2` e o horizonte `knowledge_time`; `BarPolicy`, `ReadPurpose`, `SeriesReadPolicy`, `AsOfReading` |
+| `tests/sentimento/test_as_of_accessor.py` | — | **48 testes**. A fixture envenenada de `§5.1` nas três classes de `D4.6`, `D4.11`, `D4.13`, `D4.14` e `F-1` |
+| `tests/sentimento/test_as_of_is_the_single_reader.py` | — | **5 testes**. A metade *"acessor ÚNICO"*: varredura `ast` sobre `backend/src` que **pina o conjunto medido** de quem toca uma coluna de leitura |
+
+**A largura de um bucket é INJETADA e nunca derivada de `SeriesKey.interval`, e a razão é o lag
+de publicação.** A regra *"`LOCF` sobre `FLOW` é erro de tipo"* (`SPEC-001` §3.2/§5.11, `D4.11`)
+diz que um valor de fluxo deixa de ser a resposta quando **uma janela inteira** passou — e
+*"uma janela inteira"* não sai de `bucket_end` e `t` sozinhos. **Escrever a guarda como
+`age_ms > 0` tornaria toda série de fluxo permanentemente ilegível**: um bucket só fica legível
+**um lag DEPOIS** de fechar, então no primeiro instante em que um `cvd_delta` pode ser lido a
+idade dele já é estritamente positiva. O painel inteiro mostraria `"—"` para sempre, e pareceria
+dado faltando em vez de defeito. Por isso `SeriesReadPolicy.bucket_interval_ms` é campo
+**obrigatório e sem default**, e a grade canônica que traduz `"5m"` em milissegundos continua
+sendo **uma função, dona de `charts`** (`T-05.1`, `ADR-003`/FR-3) — um segundo parser aqui seria
+a segunda implementação que aquele item existe para proibir.
+
+**Verde não prova nada até uma mutação reprovar** — e aqui a bancada mediu **exatamente isso**.
+Bancada de **22 mutantes: 22 mortos, 0 sobreviventes**, com **atribuição de matadores por
+mutante** (não só o placar — foi ela que expôs o defeito abaixo). Contra a fixture **como
+encontrada** (`n=42`), porém:
+
+```bash
+# .venv/bin/python /tmp/claude-1002/mut/asfound.py   (script literal no relatório de gate)
+# M1 age_ms > 0                        -> KILLED    (3 matadores)
+# M2 derivado de SeriesKey.interval    -> SURVIVED  (0 matadores)
+# M3 >= vira >                         -> SURVIVED  (0 matadores)
+```
+
+`[MEDIDO 2026-08-29, n=42 testes da fixture como encontrada]`. O módulo já estava correto; a
+**fixture estava meio-feita**, que é o desfecho pior que suíte vermelha. `bucket_interval_ms` só
+aparecia como `300_000` ao lado de um `interval = "5m"` que vale `300_000` — logo *injetado* e
+*derivado* concordavam em todos os testes e o mutante `M2` era **equivalente**. Os **6 testes
+novos** fazem os dois números **DISCORDAREM nas duas direções** (grade declarada mais larga que
+`"5m"` e mais estreita que `"15m"`), que é a única forma de distinguir um do outro.
+
+**A varredura de acessor único MORDE, e isso foi medido plantando violador** — `ADR-012` nomeia a
+armadilha de `rc=0` sobre universo vazio, e a metade *"ninguém mais importa"* é **vacuosa hoje**
+porque ainda não há consumidor. Então o que carrega o peso é o outro lado: **4 violadores
+plantados, 4 pegos**, cada um por um teste diferente, e a árvore volta verde ao desplantar.
+
 ## Decisões táticas desta task, e o que as derruba
 
 | decisão | por quê | falsificador |

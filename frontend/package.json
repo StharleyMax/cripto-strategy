@@ -4,11 +4,15 @@
   "type": "module",
   "description": "Browser side of cripto-strategy. Today it carries the enforcement surface (ADR-009/D3) and the project ESLint (ADR-011/D4); the Next.js application belongs to the `web` component.",
   "scripts": {
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "spike:axis": "node src/charts/axis-spike.ts",
+    "test:charts": "node --test 'src/charts/*.test.ts'"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.9.1",
+    "jsdom": "^29.1.1",
+    "lightweight-charts": "^5.2.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.0"
   }

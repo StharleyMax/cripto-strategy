@@ -74,7 +74,11 @@ texto integral **já estava em disco**, no `<output-file>` que a própria notifi
 entregue no turno 300 de 692 é relido **~390 vezes**: o custo de uma linha é o que ela custa vezes os
 turnos que faltam.
 
-Vinculante para o loop principal e para todo subagente — R1–R5 em
+**E os subagentes são 74–89% disso, não o loop principal** `[MEDIDO 2026-08-29: loop principal
+276,7M de contexto em 868 turnos; 45 subagentes 822,2M em 6.746 turnos]`. `/compact` não os
+alcança — cada um nasce em 30,7k e constrói os próprios milhões dentro da própria vida.
+
+Vinculante para o loop principal e para todo subagente — R1–R7 em
 [`docs/protocolo-de-despacho.md`](docs/protocolo-de-despacho.md):
 
 - **Subagente devolve no máximo 15 linhas** — veredito, números com o comando que os produziu, e o
@@ -84,6 +88,12 @@ Vinculante para o loop principal e para todo subagente — R1–R5 em
 - **NUNCA `cat` nem `sed -n '1,300p'` de arquivo grande no loop principal** — `grep -n` com âncora,
   `--json` com filtro, ou delegue a leitura.
 - Todo comando que pode passar de ~50 linhas termina em `| head -N` ou `| tail -N`.
+- **Verificação é `make verify`** — os seis portões numa chamada, ~10 linhas, saída bruta em
+  arquivo. Nunca os seis comandos soltos: eles custaram ~397k tokens de saída bruta em 1.320
+  chamadas `[MEDIDO 2026-08-29 sobre 105 transcripts de subagente]`.
+- **O subagente morre cedo.** Passando de ~150 turnos, escreva o estado em
+  `docs/context/<feature>/handoff/<TASK>.md` e devolva — o workflow invoca o próximo. O custo é
+  **quadrático** nos turnos: 376 turnos custaram 93M; 188 custariam ~22M.
 
 **Nada disto é portão** — é doutrina, e `agents/qa.md` já mediu que prosa sem portão tem 0% de adesão.
 Por isso o documento carrega um falsificador que o manda sair se não pagar o que custa.
@@ -189,6 +199,28 @@ renomear um evento de log quebra uma consulta, **e a consulta continua devolvend
 linhas** — quebra silenciosa, com consumidor fora deste repositório. A regra prospectiva faz a
 divergência **parar de crescer** mesmo que não a encolha: hoje são **4 em português de 9 eventos**
 `[DOC: PRD-002 §4.4]`, e o número **não pode subir**.
+
+**Linha 11 — o que faltava não era a exceção, era o MOMENTO DE REABRIR.** A exceção já está escrita em
+código de produção, em inglês, com o motivo — `backend/src/modules/sentimento/domain/ingest_record.py:88-89`:
+*"The NAME stays Portuguese because it is a CONTRACT COLUMN NAME quoted from `ADR-008/D3`, like `window` —
+renaming it here would break the consumer of `T-07.13`."* O que **nenhum** documento marcava era quando a
+pergunta volta à mesa, e exceção sem gatilho é exceção permanente por omissão.
+
+> **Gatilho de reabertura, e ele é literal:** a reabertura acontece quando **`T-07.12`/`T-07.13`**
+> (fase `07`, componente `web` — `CST-66`/`CST-67`, em `docs/context/plataforma-dados/tasks.toml:940,950`)
+> escreverem o **consumidor da projeção canônica**. **Quem decide é `ADR-008/D3`, não esta feature.**
+> `[DOC: SPEC-002 §8 + PRD-002 §3.4]`
+
+**E por que a decisão é daquela ADR e não desta:** `janela_de_perda` é uma das **15 colunas** que
+`ADR-008/D3` fixou em `INGEST_HEALTH_RUN_COLUMNS`, e **a ordem da tupla alimenta o `sha256` da projeção
+canônica** (`ADR-008/DoD-2`) `[DOC: PRD-002 §3.4:162, que a mede em 7af0e4f]`. Renomear a coluna muda a
+impressão digital de **todo relatório já emitido** — é **mudança de contrato, não de estilo**, e exige
+plano de migração do fingerprint. Renomear um identificador Python quebra um import, e o import reprova;
+renomear esta coluna quebra um `sha256` que **dois lados comparam justamente para provar que são iguais**
+(`ADR-008/DoD-2`), e a comparação passa a falhar sem que nada aponte o nome como causa.
+
+⚠️ **Isto é PROSA ADJACENTE, não uma 13ª linha da tabela**, pelo mesmo motivo da lacuna de mensagem de
+exceção logo abaixo: `CA-F1-1` congela a tabela em **12**, e uma 13ª reprovaria um `CLAUDE.md` correto.
 
 **Linha 12 — o custo de deixar em aberto, escrito para não ser esquecido:** hoje é **1 rota**. Na fase
 `05` de `SPEC-001` são muitas, e trocar URL depois quebra bookmark e link. **A pergunta é barata agora e
