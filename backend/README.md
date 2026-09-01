@@ -767,6 +767,51 @@ bash backend/scripts/test.sh -k test_provenance_columns
 comando), domain 100,0%, use_cases 100,0%, infra 97,7% — universo completo do componente
 `sentimento`]`.
 
+### 📎 2026-09-01 por `T-04.5` — `cvd_delta` como fato, `cvd_cum(anchor)` como view, e a aritmética que o `awk` publicado erra
+
+Um módulo novo em `domain`. `SPEC-001` §2.6, `CA-F1-8`, plano `04` item **4.8**, `DoD` **D4.7**/**D4.8**.
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/cvd.py` | `domain` | `cvd_delta_by_bucket()` — o fato, anchor-free, `Decimal` sobre a string crua, soma ordenada por `agg_id`, bucket `transact_time // 60000`; `cvd_cum()` — a view, `anchor_ms` sem default |
+| `tests/sentimento/test_cvd.py` | — | **16 testes**. Convenção de sinal, grade de bucket, `MissingCvdAnchorError`/`TypeError` sem âncora, e os três totais-âncora **contra o dado real** |
+| `tests/helpers/data_fixtures.py` | — | `repo_data_root()`/`require_fixture()` — copiado **verbatim** de `tasks/T-04.1-shift-canonico-event-time` (mesmo utilitário, mesma necessidade: `git rev-parse --git-common-dir` para achar `data/` a partir de qualquer worktree). Path idêntico de propósito, para o merge das duas branches não colidir |
+
+**Fato e view são DUAS funções, nunca uma com argumento default.** `cvd_delta_by_bucket()` não
+sabe o que "o CVD" significa até uma âncora escolher onde a contagem começa — e três âncoras
+sobre o MESMO `cvd_delta` invertem o sinal do total (`D4.7`). Um default silencioso repetiria a
+classe de defeito que `SeriesKey` (`T-04.2`) já recusa para `reduction`/`quantity_field`:
+`cvd_cum()` chamado sem `anchor_ms` é `TypeError` (parâmetro obrigatório, sem default) e, para
+quem repassar `None` de uma borda externa, `MissingCvdAnchorError` — a mesma dupla camada que
+`SeriesReadPolicy`/`as_of()` já usa para `asof_max_staleness_ms`.
+
+**Os três totais são medidos sobre o dado real, não sintético** — a única forma de reproduzir
+literalmente `−1265,982 / +399,745 / +1598,508 BTC` é processar o dia inteiro de
+`BTCUSDT-aggTrades-2026-08-23.csv` (md5 `a68d9dbdfde1d7c0d25e78eae4d798bb`, 1.314.556 linhas,
+1.440 buckets de 1 min), porque nenhuma fixture pequena escrita à mão bate esses dígitos por
+acaso:
+
+```bash
+bash backend/scripts/test.sh -k test_cvd
+# 16 passed
+```
+
+**O falsificador de `D4.8`, rodado, não só citado:** o mesmo arquivo somado por `float` em vez
+de `Decimal` produz `-1265.9819999977815` para a âncora `00:00` — diverge do publicado na 10ª
+casa, o bastante para reprovar uma comparação exata contra `Decimal("-1265.982")`
+`[MEDIDO 2026-09-01]`. É o mesmo defeito de classe que o `awk` publicado no discovery tinha
+(`OFMT=%.6g`, erro de +4 mBTC): `test_d4_8_float_arithmetic_over_the_same_fixture_diverges_from_the_golden_total`
+prova a divergência em vez de presumir que `Decimal` "deveria" bastar.
+
+**O que este teste NÃO prova, e está dito em vez de implícito:** "soma ordenada por `agg_id`"
+(`D4.8`, literal) não é observável no VALOR do resultado — adição de `Decimal` exata é
+comutativa e associativa na escala de quantidade de BTC (sem estouro dos 28 dígitos de
+precisão do contexto padrão), então embaralhar a ordem de entrada não muda o total, com ou sem
+o `sorted(key=agg_id)` na implementação. `test_result_is_order_independent_...` documenta essa
+propriedade em vez de fingir que ela é um mutante morto: a ordenação está implementada porque o
+contrato a nomeia como parte da aritmética (auditabilidade), não porque algum caso testável aqui
+mude de sinal ou de dígito sem ela.
+
 ## Decisões táticas desta task, e o que as derruba
 
 | decisão | por quê | falsificador |
