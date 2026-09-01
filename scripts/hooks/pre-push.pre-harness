@@ -63,6 +63,13 @@ FALHOU=0
 echo "[pre-push.pre-harness] make boundaries"
 make boundaries || FALHOU=1
 
+# ── PORTAO 1b · NATUREZA POR USO (`ADR-016/D4`, `T-03.12`) ─────────────────────────────
+# `make boundaries` guarda DIRECAO de import; este guarda NATUREZA — scanner de AST que
+# domain/use_cases nao leem relogio (`datetime.now`/`date.today`/`time.sleep` etc.), na MESMA
+# costura de `ADR-011/D3b` que ja carrega o portao anterior.
+echo "[pre-push.pre-harness] make natureza"
+make natureza || FALHOU=1
+
 # ── PORTAO 2 · LINT DOS DOIS LADOS (`ADR-011/D4`, e o assert de versao de `ADR-011/D5`) ─
 # `make lint` = `lint-backend` (ruff + ruff format --check + mypy --strict, precedido do
 # assert do interpretador EFETIVO que `T-01.6` pos em `lint.sh`) + `lint-frontend` (ESLint do
@@ -79,7 +86,7 @@ make lint || FALHOU=1
 if [ "$FALHOU" -ne 0 ]; then
     echo "" >&2
     echo "[pre-push.pre-harness] PUSH RECUSADO — um dos portoes acima reprovou." >&2
-    echo "  Reproduza local, sem push: 'make boundaries' e 'make lint'." >&2
+    echo "  Reproduza local, sem push: 'make boundaries', 'make natureza' e 'make lint'." >&2
     echo "  Se a recusa foi rc=3 ('nao mediu': venv ausente, versao errada do interpretador," >&2
     echo "  ou frontend/node_modules ausente), o conserto e 'make setup' — e 'nao mediu' NAO" >&2
     echo "  e o mesmo que 'esta tudo certo', por isso ele tambem recusa." >&2
