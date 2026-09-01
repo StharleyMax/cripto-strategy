@@ -80,8 +80,16 @@ def test_dispatch_run_emits_one_line_per_call_plus_a_summary(
     sink = RecordingSink()
 
     code = coinalyze_one_shot_cli.dispatch(
-        ["run", "unused.sqlite3", "run-1", "2026-09-01T00:00:00Z", "0", "2000000000",
-         "BTCUSDT", "ETHUSDT"],
+        [
+            "run",
+            "unused.sqlite3",
+            "run-1",
+            "2026-09-01T00:00:00Z",
+            "0",
+            "2000000000",
+            "BTCUSDT",
+            "ETHUSDT",
+        ],
         source,
         NoopClock(),
         lambda path: sink,
@@ -146,8 +154,15 @@ def test_the_sink_factory_receives_the_path_argument(tmp_path: Path) -> None:
         return RecordingSink()
 
     coinalyze_one_shot_cli.dispatch(
-        ["run", str(tmp_path / "q.sqlite3"), "run-1", "2026-09-01T00:00:00Z", "0",
-         "2000000000", "BTCUSDT"],
+        [
+            "run",
+            str(tmp_path / "q.sqlite3"),
+            "run-1",
+            "2026-09-01T00:00:00Z",
+            "0",
+            "2000000000",
+            "BTCUSDT",
+        ],
         ScriptedSource([_ok(0), _ok(0)]),
         NoopClock(),
         factory,

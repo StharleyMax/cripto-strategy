@@ -90,7 +90,7 @@ def test_parse_daily_points_on_an_empty_array_is_legitimate_zero_history() -> No
         b'[{"symbol": "x", "history": "not-a-list"}]',
         b'[{"symbol": "x", "history": [{"o": 1.0}]}]',
         b'[{"symbol": "x", "history": [{"t": "not-an-int"}]}]',
-        b'[{}, {}]',
+        b"[{}, {}]",
     ],
 )
 def test_parse_daily_points_refuses_every_malformed_shape(body: bytes) -> None:

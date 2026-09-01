@@ -240,9 +240,7 @@ def evaluate_series_requirement(
     first_point_date = min((point.date_utc for point in points), default=None)
     reasons: list[str] = []
     if n_points < requirement.min_points:
-        reasons.append(
-            f"n_points={n_points} < min_points={requirement.min_points}"
-        )
+        reasons.append(f"n_points={n_points} < min_points={requirement.min_points}")
     if first_point_date is None or first_point_date > requirement.first_point_on_or_before:
         reasons.append(
             f"first_point_date={first_point_date} > "

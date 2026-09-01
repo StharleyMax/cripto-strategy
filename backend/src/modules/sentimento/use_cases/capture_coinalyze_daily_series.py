@@ -100,9 +100,7 @@ class SymbolSeriesOutcome:
 
 def _sweep_plan(binance_symbols: Sequence[str]) -> tuple[tuple[str, SeriesKind], ...]:
     """Enumerate every (symbol, series) pair, series nested inside symbol — 2 calls per symbol."""
-    return tuple(
-        (symbol, kind) for symbol in binance_symbols for kind in SERIES_KINDS
-    )
+    return tuple((symbol, kind) for symbol in binance_symbols for kind in SERIES_KINDS)
 
 
 def _capture_one(

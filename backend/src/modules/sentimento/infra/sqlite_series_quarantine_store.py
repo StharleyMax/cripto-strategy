@@ -143,9 +143,7 @@ class SqliteSeriesQuarantineStore:
         for every symbol this one-shot has written, because nothing in this task's code path
         ever sets `available_at`.
         """
-        rows = self._fetch(
-            _SELECT_PROMOTED, (series_kind.value, binance_symbol)
-        )
+        rows = self._fetch(_SELECT_PROMOTED, (series_kind.value, binance_symbol))
         return tuple(cast(_RowTuple, row) for row in rows)
 
     def _fetch(self, statement: str, parameters: tuple[object, ...]) -> list[tuple[object, ...]]:

@@ -121,9 +121,7 @@ def test_a_transport_failure_becomes_a_response_and_drops_the_connection() -> No
 
 def test_the_connection_is_reused_across_calls() -> None:
     """One connection serves the whole sweep — fewer TLS handshakes over ~1.140 calls."""
-    client, opened = _client_with(
-        [FakeResponse(200, b"[]"), FakeResponse(200, b"[]")]
-    )
+    client, opened = _client_with([FakeResponse(200, b"[]"), FakeResponse(200, b"[]")])
 
     client.fetch("/v1/open-interest-history?symbols=a&interval=daily&from=0&to=1")
     client.fetch("/v1/liquidation-history?symbols=a&interval=daily&from=0&to=1")
