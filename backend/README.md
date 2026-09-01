@@ -1961,3 +1961,92 @@ A evidência bruta (`backend/.probe-evidence/`) não é versionada — mesma raz
 **Isto é probe curto, não deploy contínuo** (decisão do owner, sem frontend ainda): o CLI acima
 é uma composição de `collect_premium_index_once`, chamada por um humano, um número declarado de
 vezes. Nenhum `cron`, `systemd` ou scheduler foi acrescentado por esta task.
+
+### 📎 2026-09-01 por `T-03.4` — o agregado de bucket `q`/`nq`, e `QF-6` provado sobre `data/` real
+
+`ADR-001`/6, `SPEC-001` §1.4 (`CL-5`), plano `03` item 3.5, DoD `D3.5`+`D3.7`+`D3.8`. **A task de
+maior custo de relógio do projeto** — `nq` vive numa janela REST de 48 h e em nenhum histórico
+(`GET /fapi/v1/aggTrades` em T-48h → `200` com `nq`; em T-49h → `400 -4166`). O escopo desta
+rodada é DECLARADAMENTE código + prova de mecanismo sobre fixture — não deploy contínuo: sem
+frontend, não há consumidor para o dado ao vivo ainda (decisão do owner), e o item pede o código
+pronto para ligar, não ligado.
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/aggtrade_bucket_aggregate.py` | `domain` | `AggTradeBucketTrade` (as DUAS quantidades da mesma trade); `aggregate_by_bucket` (fold de 1 min: `Σq_buy · Σq_sell · Σnq_buy · Σnq_sell · tx · btx · agg_id_min · agg_id_max`); `require_contiguous` (delega em `aggtrade_contiguity.py`, não duplica unicidade/contiguidade); `detect_bucket_agg_id_gaps` (a costura ENTRE fixtures, no grão do bucket) |
+| `src/modules/sentimento/domain/qnq_divergence.py` | `domain` | `QnqTrade`/`measure_qnq_divergence` — `QF-6`: `count(q≠nq)/n` e déficit em bp, por `(symbol, day)` |
+| `src/modules/sentimento/infra/aggtrade_csv_reader.py` | `infra` | **+`read_aggtrade_bucket_trades`** (dump replay: `quantity`+`is_buyer_maker`, `raw_nq=None` sempre — `CL-5` estrutural, o dump nunca teve a coluna) |
+| `src/modules/sentimento/infra/aggtrade_rest_snapshot_reader.py` | `infra` | **novo** — lê `data/binance/rest/nq_*.json` (a evidência de `ADR-001`) em `QnqTrade`, um dia por `T` |
+| `tests/sentimento/test_aggtrade_bucket_aggregate.py` | — | **15 testes** sintéticos: os oito termos por bucket, `nq` ausente vs PARCIAL (recusa — `PartialNqBucketError`), delegação de contiguidade, a costura entre fixtures |
+| `tests/sentimento/test_aggtrade_bucket_aggregate_fixtures.py` | — | **5 testes** sobre os primeiros 20.000 trades reais de `BTCUSDT-aggTrades-2026-08-21.csv` (md5 `31f5b006…`), incl. o falsificador de `D3.5` — "deletar 1 linha ⇒ reprova" — removendo uma linha do MEIO do arquivo (não a borda de um bucket, o caso que um `min`/`max` por bucket sozinho não pegaria) |
+| `tests/sentimento/test_qnq_divergence.py` | — | **12 testes**; 5 sobre a evidência REAL de `ADR-001` (`data/binance/rest/nq_{BTC,ETH,SOL,XRP,DOGE}USDT.json`), o resto sobre o agrupamento `(symbol, day)` em timestamps sintéticos |
+| `tests/sentimento/test_nq_bucket_capture_boundary.py` | — | **3 testes**: liga o agregado novo à borda `SEM_FONTE` de `T-04.4` (`as_of` + `first_capture_at`) |
+
+**`D3.7` reproduzido byte a byte sobre a evidência que `ADR-001` já cita.**
+`data/binance/rest/nq_DOGEUSDT.json` (md5 `44206adf…`, 1000 trades de UM `GET /fapi/v1/
+aggTrades`): **16/1000 divergentes, déficit 80,56 bp** — os mesmos dois números do ADR e de
+`docs/medicao-coinalyze.md`. Os outros quatro símbolos do conjunto declarado (BTC/ETH/SOL/XRP):
+**0/1000, 0,00 bp**. `[MEDIDO 2026-09-01: bash backend/scripts/test.sh -k test_qnq_divergence]`.
+
+**O que NÃO foi medido, e por quê — nomeado, não escondido.** `D3.7` pede "≥ 7 dias × conjunto
+declarado"; a evidência real disponível hoje é UMA janela de 251 s por símbolo (mín/máx do
+próprio campo `T`), nunca 7 dias e nunca atravessa meia-noite UTC
+(`test_d3_7_the_snapshot_never_crosses_a_utc_day_so_it_is_one_group_per_symbol`). A mecânica de
+agrupar por `(symbol, day)` está provada — sobre timestamps SINTÉTICOS, porque a evidência real
+não tem uma segunda data para exercitá-la. **Isto não é lacuna escondida: é exatamente o que o
+handoff desta task já nomeava** — "não é medível hoje em regime real, precisa de dias rodando".
+`D3.9` (o WS `<symbol>@aggTrade` carrega `nq`?) segue `[NÃO MEDIDO]`, herdado de
+`T-03.1`/`docs/medicao-ws-aggtrade-nq.md` (0 eventos em 2 tentativas registradas; a regra de
+parada daquele documento pede uma 2ª tentativa independente antes de tratar como medido). Esta
+task não reabriu rede — `test.sh` é ZERO REDE por contrato — e não tinha mandato para tanto.
+
+**`D3.5`: a "camada nova" é uma DELEGAÇÃO, não um segundo motor.** `require_contiguous` constrói
+a view estreita `AggTradeTick` (`agg_id`+`transact_time_ms`) e chama `aggtrade_contiguity.
+require_unique_agg_ids`/`detect_agg_id_gaps` (`T-04.3`, já em `master`) sem reimplementar
+unicidade nem contiguidade — a mesma instrução do handoff, "não duplique a lógica que já existe
+lá". Provado sobre os primeiros 20.000 trades reais de `BTCUSDT-aggTrades-2026-08-21.csv`: **0**
+saltos internos; deletando a linha do meio, o detector acusa
+`[MEDIDO 2026-09-01: bash backend/scripts/test.sh -k test_aggtrade_bucket_aggregate_fixtures]`.
+**A escala de milhões de linhas não foi reprocessada por este módulo** — reler as mesmas
+8.873.078 linhas que `T-04.3` já provou custaria `[MEDIDO 2026-09-01]` **68 s só para o primeiro
+dos 3 arquivos**, com `Decimal`, por zero informação nova (a MESMA função de `T-04.3` é chamada,
+inalterada); a delegação evita pagar esse custo duas vezes — o comando `bash backend/scripts/
+test.sh -k test_aggtrade_contiguity_fixtures` já paga a prova de escala, e continua verde.
+
+**`D3.8`: a borda `SEM_FONTE` já existia (`T-04.4`) — esta task liga o agregado novo a ela, não
+a reimplementa.** `test_nq_bucket_capture_boundary.py` prova que um bucket dobrado de trades
+"tipo dump" (`raw_nq=None` sempre) não produz observação NENHUMA sob `quantity_field=nq` — o
+weld fica IMPOSSÍVEL DE CONSTRUIR, mais forte que "a leitura recusa" — e que um bucket "tipo
+captura ao vivo" (as duas quantidades) atravessa a borda de `first_capture_at` normalmente, sem
+duplicar os testes exaustivos de `test_as_of_accessor.py::test_d4_6_c_a_read_under_nq_before_
+the_first_capture_is_no_source_and_never_welds_with_q` /
+`test_after_the_first_capture_the_nq_series_stops_being_no_source`.
+
+**A convenção `tx`/`btx` não foi inventada — é a que `docs/medicao-coinalyze.md` já mediu e
+publicou** (reconciliação sobre 699 buckets reais: `tx` == nº de aggTrades do dump, `btx` == nº
+com `is_buyer_maker=false`, 699/699 exato nos dois). `is_buyer_maker` segue a MESMA convenção de
+sinal de `cvd.py` (comprador MAKER ⇒ vendedor foi o agressor).
+
+**3 mutações aplicadas manualmente e revertidas, as 3 morrem:** inverter `is_buyer_maker` no fold
+(`sum_q_buy`/`btx` trocam de lado) → `test_a_single_bucket_folds_the_eight_terms_of_adr_001_6`
+reprova; inverter o sinal de `deficit_bp` (`sum_nq - sum_q` em vez de `sum_q - sum_nq`) →
+**2** testes reprovam, incluindo o da evidência REAL de DOGEUSDT; afrouxar a recusa de bucket
+parcial para tolerar `tx - 1` → `test_a_partial_bucket_refuses_instead_of_guessing_a_semantics`
+reprova. Os três arquivos, `diff` byte-idêntico ao original depois de revertidos
+`[MEDIDO 2026-09-01]`.
+
+**Os seis portões, neste worktree:** `lint.sh` limpo (`ruff` + `ruff format` + `mypy --strict`);
+`boundaries.sh` — **3 kept, 0 broken**; `natureza.sh` — universo de **29** arquivos em
+`domain`/`use_cases`, **0** leituras de relógio; `test.sh` — **652 passed** (era 617 em
+`master@634833b`), cobertura `domain 100,0% (1250/1250)` · `use_cases 100,0% (220/220)` ·
+`infra 97,8% (872/892)`, total **99,09%**, todas acima do piso
+`[MEDIDO 2026-09-01: bash backend/scripts/test.sh]`; `harness rules --mode sweep --changed-only`
+— **0 achados** sobre os 8 arquivos desta task.
+
+**Um achado do próprio portão, durante esta rodada.** A primeira versão de um comentário em
+`aggtrade_bucket_aggregate.py` citava o NOME do arquivo `as_of_accessor.py` em prosa — não um
+`import` — e isso bastou para `test_as_of_is_the_single_reader.py::test_no_production_module_
+imports_this_accessor_yet_and_that_is_recorded_not_claimed` reprovar: aquele teste varre
+`backend/src` por OCORRÊNCIA TEXTUAL da string `"as_of_accessor"`, deliberadamente mais largo que
+um `import`, para forçar qualquer menção a ser revista. Corrigido reformulando o comentário sem a
+citação literal do nome do arquivo — nenhuma linha de comportamento mudou, só a prosa.
