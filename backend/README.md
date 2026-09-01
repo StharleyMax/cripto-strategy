@@ -812,6 +812,62 @@ propriedade em vez de fingir que ela é um mutante morto: a ordenação está im
 contrato a nomeia como parte da aritmética (auditabilidade), não porque algum caso testável aqui
 mude de sinal ou de dígito sem ela.
 
+### 📎 2026-09-01 por `T-04.3` — unicidade por `agg_id` com verificação de contiguidade, nunca por tempo
+
+Um módulo novo em `domain`, um em `infra`, sobre o dado que `T-04.1` deixou de fora por natureza
+(`aggTrades` é `Nature.TICK`, não `daily/metrics`). `CA-F1-5`, `CA-F1-6`, plano `04` item **4.3**,
+DoD **D4.4** (contiguidade) e **D4.5** (unicidade sob colisão de ms).
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/aggtrade_contiguity.py` | `domain` | `AggTradeTick` (só `agg_id`+`transact_time_ms` — sem campo para `trade_id`, guarda estrutural de "nunca por trade_id"); `require_unique_agg_ids`/`DuplicateAggIdError`; `AggIdGap`/`detect_agg_id_gaps` (buraco contado, nunca costurado); `count_decreasing_timestamps`; `MillisecondCollisionStats`/`measure_millisecond_collisions` |
+| `src/modules/sentimento/infra/aggtrade_csv_reader.py` | `infra` | `read_aggtrade_ticks`/`read_aggtrade_ticks_from_many` — lê só as 2 colunas que este item precisa, em ordem de arquivo, concatenando dias na ordem que o chamador declarar |
+| `tests/sentimento/test_aggtrade_contiguity.py` | — | **18 testes** sintéticos, incluindo o falsificador "chave por tempo colapsa 2 de 3 trades legítimos" e a convenção `n_missing = to - from` pinada num par pequeno antes do fixture real |
+| `tests/sentimento/test_aggtrade_contiguity_fixtures.py` | — | **9 testes**: `D4.4`/`D4.5` sobre os fixtures reais pinados por `md5` |
+| `tests/sentimento/test_aggtrade_csv_reader.py` | — | **4 testes**: a borda de parsing (header, ordem, concatenação), isolada do resto |
+
+**Por que `agg_id` e não os outros dois candidatos, com número.** `D4.5`, medido em
+`BTCUSDT-aggTrades-2026-08-20.csv` (md5 `fa779db5ece6ad82b1b633649118113d`, 2.756.517 linhas):
+**959.949** milissegundos distintos, **245.890** com mais de um trade (**25,6%**), até **184**
+trades no mesmo ms — tempo não distingue o dado. Uma chave por `trade_id` teria que desfazer o
+enrolamento do `aggTrade` (a largura do intervalo `first_trade_id..last_trade_id` varia por
+linha) para comparar duas linhas — `agg_id` já é a chave que a própria Binance atribui, sem
+segunda derivação para manter sincronizada. `AggTradeTick` não carrega `first_trade_id`/
+`last_trade_id`: não há valor deste tipo com que montar a chave proibida.
+
+**O falsificador concreto de "nunca por tempo".** `test_d4_5_a_time_keyed_scheme_would_
+silently_drop_1_796_568_real_trades` roda, sobre o mesmo arquivo, um dedup ingênuo por
+`transact_time_ms` (não é código de produção) e mede a perda: **2.756.517 → 959.949**
+sobreviventes, **1.796.568** trades reais descartados em silêncio. `require_unique_agg_ids`
+sobre o mesmo arquivo **não levanta** — `test_d4_5_agg_id_stays_unique_on_the_very_file_that_
+collides_on_time`.
+
+**`D4.4` bate exato no número que o plano publica, inclusive o off-by-one.** Concatenando
+`2026-08-{20,21,23}.csv` (as três únicas datas capturadas — `2026-08-22` nunca existiu,
+`data/MANIFEST.md`) na ordem do calendário: **8.873.078** linhas, **0** timestamp decrescente,
+e **exatamente um** salto de `agg_id`: `3420055157 → 3421676065`. `n_missing` aqui é `to - from`
+= **1.620.908** — **não** `to - from - 1` (`1.620.907`, a contagem de inteiros estritamente
+entre os dois), porque é esse o número que o plano cita literalmente. A convenção está pinada
+antes num par pequeno (`test_detect_agg_id_gaps_n_missing_is_the_width_not_the_strict_between_
+count`) para não ser inventada só no fixture grande. `[MEDIDO 2026-09-01]`: mutante `n_missing =
+delta - 1` aplicado, rodado, **derrubou os 2 testes que citam o número** (o pequeno e o do
+fixture real, `1620907 == 1620908` falhando); revertido antes do commit — `diff` byte-idêntico
+ao original conferido.
+
+**O buraco é reportado, nunca costurado — por FORMA.** `AggIdGap` tem exatamente três campos
+(`from_agg_id`, `to_agg_id`, `n_missing`): não há onde anexar um tick fabricado para o
+`2026-08-22` ausente, e `read_aggtrade_ticks_from_many` não inventa linha nenhuma ao concatenar.
+
+**Os seis portões, neste worktree:** `lint.sh` limpo; `boundaries.sh` — `2 kept, 1 broken`, e o
+`broken` é **só** `dump_window.py`/`retention_probe.py` (dívida pré-existente de `T-03.10`,
+alheia a esta task — confirmado antes e depois da mudança, mesmos dois arquivos); `test.sh` —
+todos passando, cobertura `domain 100% (1057/1057)` · `use_cases 100% (220/220)` ·
+`infra 98,3% (832/846)`, todas acima do piso [MEDIDO 2026-09-01: `pytest --collect-only -q`
+soma **591** testes na suíte inteira]; `harness rules --mode sweep` (árvore completa
+E `--changed-only`) — **0 achado** (o único aviso do primeiro sweep, `core.module-docstring-
+single-line`, foi corrigido movendo a prosa estendida de docstring para comentário `#`, forma
+que `binance_aggtrade_payload.py` já usa).
+
 ## Decisões táticas desta task, e o que as derruba
 
 | decisão | por quê | falsificador |
