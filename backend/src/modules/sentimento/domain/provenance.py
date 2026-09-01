@@ -34,6 +34,18 @@ PROVENANCE_COLUMNS: Final[tuple[str, ...]] = (
 # the seven rather than standing on their own.
 OBSERVER_COLUMNS: Final[tuple[str, ...]] = ("observer_id", "observer_region")
 
+# `SPEC-001` §4.4, `T-04.7` (plan 04 item 4.11): "identidade e dimensao desde a primeira linha
+# — nunca constante implicita, nunca NULL (...) principal_id e coluna em toda linha que
+# registre ato humano". Listed apart from the seven for the same reason `OBSERVER_COLUMNS` is,
+# but the split is sharper: `principal_id` does not qualify one of the seven, it names WHICH
+# ROWS the dimension applies to — a `SeriesRow` is a human act exactly when its `provenance` is
+# `Provenance.HUMAN` (below), and only then is the column required. `<Anotacao>` and
+# `run_registry` carry the same dimension (SPEC-001 §4.4), but they belong to `charts` /
+# `backtest` / `web` — out of `sentimento`'s component boundary, so this task does not touch
+# them. `ADR-009/D2` refuses `organization_id` as a stand-in or complement for this dimension:
+# a single-user system does not get a constant tenant column.
+PRINCIPAL_COLUMN: Final[str] = "principal_id"
+
 # `SPEC-001` §2.2: `observer_region` is `[NAO MEDIDO]` and is a column of F0. Until someone
 # runs `curl -s ipinfo.io` inside the VPS, the column exists and holds THIS VALUE. It is a
 # VALUE AND NOT `NULL`, and the SPEC gives the reason: `NULL` here would push the series
@@ -77,8 +89,9 @@ class Provenance(Enum):
     """Produced by a model or a calibration, therefore carrying the model's error."""
 
     HUMAN = "HUMANO"
-    """Entered by a person. `SPEC-001` §4.4 requires `principal_id` alongside; that dimension
-    is `T-04.7`'s item (plan 04 item 4.11) and this module does not stand in for it."""
+    """Entered by a person. `SPEC-001` §4.4 requires `principal_id` alongside, and `SeriesRow`
+    below enforces it: a `HUMANO` row with a blank or absent `principal_id` is refused rather
+    than stored with the dimension silently missing (`T-04.7`, plan 04 item 4.11)."""
 
 
 class Absence(Enum):
@@ -137,10 +150,15 @@ class SeriesRow:
     resolves with `argmin(observed_at)` (`D4.13`: `as_of` returns the FIRST observation, never
     the last). A row shape without `observed_at` in the key would have made that unanswerable.
 
-    `is_final` IS THE ONLY OPTIONAL COLUMN, and `None` there means "the source does not
-    declare finality" — `SPEC-001` §3.1 lists it as "quando a fonte o declara". That is a
-    different thing from a missing required column, and mixing the two would let a source that
-    DOES declare finality be stored as though it did not.
+    `is_final` and `principal_id` are the two OPTIONAL COLUMNS, and `None` means something
+    different for each. For `is_final`, `None` means "the source does not declare finality" —
+    `SPEC-001` §3.1 lists it as "quando a fonte o declara". That is a different thing from a
+    missing required column, and mixing the two would let a source that DOES declare finality
+    be stored as though it did not. For `principal_id`, `None` means "this row is not a human
+    act" — it is REQUIRED, not optional, the moment `provenance` is `Provenance.HUMAN`
+    (`SPEC-001` §4.4, `T-04.7`), and `__post_init__` below refuses a `HUMANO` row that omits it
+    or leaves it blank. Nothing in this module ever supplies a default for it: the one caller
+    that builds a `HUMANO` row is the one that must say who acted.
     """
 
     series_key_id: str
@@ -157,9 +175,10 @@ class SeriesRow:
     observer_id: str
     observer_region: str
     is_final: bool | None
+    principal_id: str | None = None
 
     def __post_init__(self) -> None:
-        """Refuse a row with a blank required text column, per `SPEC-001` §3.2.
+        """Refuse a row with a blank required text column, per `SPEC-001` §3.2 and §4.4.
 
         The clock-skew check is NOT here: it needs `clock_skew_tolerance_ms`, which is a
         per-series configured value and not a column of the row. `build_series_row` below is
@@ -176,14 +195,23 @@ class SeriesRow:
                 "column 'observer_region' is blank: `SPEC-001` §2.2 says the value is "
                 f"'{UNKNOWN_OBSERVER_REGION}' until it is measured — a VALUE, never absent"
             )
+        if self.provenance is Provenance.HUMAN and not (self.principal_id or "").strip():
+            raise InvalidSeriesRowError(
+                "column 'principal_id' is blank on a HUMANO row: `SPEC-001` §4.4 makes "
+                "identity a dimension of every human-act row — never `NULL`, never an "
+                "implicit constant supplied by infra (`T-04.7`, plan 04 item 4.11)"
+            )
 
     def provenance_projection(self) -> dict[str, object]:
-        """Project the seven provenance columns plus the observer pair and `is_final`.
+        """Project the seven provenance columns, the observer pair, `is_final` and `principal_id`.
 
         Enums project as their VALUE so the projection is what a consumer reads off the wire.
+        `principal_id` projects as `None` for a row that is not a human act — the column
+        exists on every projection, the same way `is_final` does, and a consumer that only
+        cares about `HUMANO` rows reads it there rather than through a second code path.
         """
         projected: dict[str, object] = {}
-        for column in (*PROVENANCE_COLUMNS, *OBSERVER_COLUMNS, "is_final"):
+        for column in (*PROVENANCE_COLUMNS, *OBSERVER_COLUMNS, "is_final", PRINCIPAL_COLUMN):
             value = getattr(self, column)
             projected[column] = value.value if isinstance(value, Enum) else value
         return projected

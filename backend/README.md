@@ -729,6 +729,44 @@ format --check` + `mypy --strict`) limpo; `boundaries.sh` — os 3 contratos de 
 `domain 100% (877/877)` · `use_cases 100% (220/220)` · `infra 97,8% (614/628)`, todas acima do
 piso; `harness rules --mode sweep` (árvore completa) — **0 achado**.
 
+### 📎 2026-09-01 por `T-04.7` — `principal_id` como dimensão, e não constante implícita
+
+Nenhum módulo novo — `provenance.py` (`T-04.2`) já continha a lacuna nomeada por escrito: o
+docstring de `Provenance.HUMAN` dizia *"this module does not stand in for it"*, apontando
+exatamente para este item. `SPEC-001` §4.4, plano `04` item **4.11**; `ADR-009/D2` recusa
+`organization_id`. Sem `D4.x` citado nas refs desta task — o falsificador formal mora em `D5.10`
+(fase `05`), porque `sentimento` **constrói** a dimensão e `05` é quem a **usa** com ator humano
+autenticado.
+
+**O que muda:** `SeriesRow` ganha o campo `principal_id: str | None`, com `default=None` — o
+`None` não é "constante implícita", é o valor de uma linha que **não é** ato humano
+(`provenance` ∈ `{OBSERVADO, DERIVADO, MODELADO}`). `__post_init__` recusa qualquer linha
+`HUMANO` cujo `principal_id` esteja ausente ou em branco, com `InvalidSeriesRowError`
+apontando a coluna — a mesma forma que já recusava `series_key_id`/`symbol`/`source` em
+branco. `provenance_projection()` passa a incluir `principal_id` (projeta `None` quando não se
+aplica), pela mesma razão que já projeta `is_final`: um consumidor lê a dimensão por ali, não
+por um segundo caminho.
+
+**Fora de escopo, e por quê:** `<Anotacao>` e `run_registry` (`SPEC-001` §4.4) também carregam
+`principal_id`, mas pertencem a `web`/`backtest` — fora da fronteira de componente desta task
+(`sentimento`). Nenhum `organization_id` foi introduzido; `ADR-009/D2` já mediu que uma coluna
+constante em toda chave "ensina errado".
+
+**O falsificador, executável:**
+
+```bash
+bash backend/scripts/test.sh -k test_provenance_columns
+# 6 funcoes novas (8 testes, uma parametrizada em 3 provenancias): linha HUMANO sem
+# principal_id -> InvalidSeriesRowError (o caso que REJEITA); linha HUMANO com principal_id em
+# branco -> idem; linha HUMANO com principal_id -> aceita e projeta; as três outras
+# provenâncias -> principal_id continua None, sem exigência; omitir o argumento nunca cai num
+# default silencioso.
+```
+
+`[MEDIDO 2026-09-01: bash backend/scripts/test.sh -> 452 passed (era 444 em 840c500, mesmo
+comando), domain 100,0%, use_cases 100,0%, infra 97,7% — universo completo do componente
+`sentimento`]`.
+
 ## Decisões táticas desta task, e o que as derruba
 
 | decisão | por quê | falsificador |
