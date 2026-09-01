@@ -285,7 +285,8 @@ tracker = { provider = "jira", id = "CST-91", url = "https://conversationhub.atl
 id = "T-02.1"
 title = "[sentimento] 02 · Coletor de snapshot diario datado de exchangeInfo + fundingInfo, com premiumIndex como segunda testemunha"
 components = ["sentimento"]
-status = "blocked"
+status = "blocked"  # resolve: QA APPROVED 2026-08-29T13:08:52Z @ 7af0e4f1e5dca4d593e90503fdc17ee9bf538445
+blocked_reason = "Q1 ABERTA (autoriza ligar coletores) — fora do escopo build 2026-08-28, decisoes-de-execucao-2026-08-28.md §1.1"
 phase = "02"
 depends_on = ["T-01.1"]
 refs = [
@@ -300,7 +301,8 @@ tracker = { provider = "jira", id = "CST-12", url = "https://conversationhub.atl
 id = "T-02.2"
 title = "[sentimento] 02 · One-shot Coinalyze daily (OI + liquidacao) nascendo em quarentena; broker de cota CEGO"
 components = ["sentimento"]
-status = "blocked"
+status = "blocked"  # resolve: QA APPROVED 2026-08-29T13:08:52Z @ 7af0e4f1e5dca4d593e90503fdc17ee9bf538445
+blocked_reason = "Q1 ABERTA (residuo Q4) — fora do escopo build 2026-08-28, decisoes-de-execucao-2026-08-28.md §1.1"
 phase = "02"
 depends_on = ["T-01.1"]
 refs = [
@@ -314,7 +316,7 @@ tracker = { provider = "jira", id = "CST-13", url = "https://conversationhub.atl
 id = "T-02.3"
 title = "[sentimento] 02 · md.ingest_run / md.ingest_gap persistidos e lidos pela consulta nomeada ingest_health_query"
 components = ["sentimento"]
-status = "done"
+status = "done"  # resolve: QA APPROVED 2026-08-29T13:08:52Z @ 7af0e4f1e5dca4d593e90503fdc17ee9bf538445
 phase = "02"
 depends_on = ["T-01.1"]
 refs = [
@@ -333,7 +335,7 @@ tracker = { provider = "jira", id = "CST-14", url = "https://conversationhub.atl
 id = "T-02.4a"
 title = "[sentimento] 02 · Verificacao de .CHECKSUM na borda de ingestao — rejeita truncamento antes de qualquer linha entrar"
 components = ["sentimento"]
-status = "done"
+status = "done"  # resolve: QA APPROVED 2026-08-29T13:08:52Z @ 7af0e4f1e5dca4d593e90503fdc17ee9bf538445
 phase = "02"
 depends_on = ["T-01.1"]
 refs = [
@@ -353,7 +355,8 @@ tracker = { provider = "jira", id = "CST-15", url = "https://conversationhub.atl
 id = "T-02.4b"
 title = "[docs] 02 · Politica de backup com teste de restauracao, declarando por tabela o que e re-derivavel dos dumps"
 components = ["docs"]
-status = "todo"
+status = "blocked"  # resolve: QA APPROVED 2026-08-29T13:08:52Z @ 7af0e4f1e5dca4d593e90503fdc17ee9bf538445
+blocked_reason = "depends_on T-02.1, mesma trava Q1 — decisoes-de-execucao-2026-08-28.md §1.1"
 phase = "02"
 depends_on = ["T-02.1"]
 refs = ["GAP G1", "plano 02 item 2.5 (metade documental)", "particao de D-3: tasks_review.md §7/D-3"]
