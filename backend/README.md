@@ -1708,6 +1708,62 @@ tocado por esta task). `harness rules --mode sweep --changed-only`: **0 achados*
 
 ---
 
+### 📎 2026-09-02 por `T-03.8` — NTP vira dependência de runtime MEDIDA, e o skew nasce persistido em `md.ingest_run` de verdade
+
+`CST-24`, `CA-F0-8`, `[GAP G6]`, plano `03` item **3.7**, DoD **D3.10**. `SPEC-001` §5.9: NTP é
+dependência de runtime de F0; monitorar o relógio local contra `/fapi/v1/time` e **persistir o
+skew observado por `ingest_run`** — a tolerância NÃO se calibra aqui, `T-07.10` (fase futura) lê
+a distribuição acumulada e decide o limiar. Escopo desta task: **código + probe curto**, não
+deploy contínuo (`Q1`/`Q15` seguem fora do portão, `backend/scripts/test.sh` "ZERO REDE").
+
+**`ADR-016` (relógio é capacidade) governou o desenho.** `domain/clock_skew.py`
+(`ClockSkewSample`, `ServerTimeObservation`) faz só a subtração — nenhuma leitura de relógio,
+nenhum socket. `use_cases/measure_clock_skew.py` é o ÚNICO ponto onde as duas capacidades se
+encontram: brackets um `WallClock.now_ms()` antes e depois de um `ServerTimeSource.observe()`,
+e o skew lê o relógio local no **meio-termo** do bracket — a melhor estimativa sem medir
+latência de um sentido só, que este projeto não tem como medir (`/fapi/v1/time` só devolve o
+relógio do servidor). `use_cases/persist_ntp_skew_run.py` monta o `IngestRun` e **recusa
+persistir `weight_used` fabricado** quando o provedor não manda `x-mbx-used-weight-1m` — `D3.12`
+(`T-03.7`) já mediu uma família da Binance que omite todo `x-mbx-*`, e um número inventado seria
+pior que nenhuma linha.
+
+**Os adaptadores reais:** `infra/binance_server_time_probe.py` (mesmo desenho de
+`https_quota_probe.py` — `http.client` injetável, offline por padrão nos testes) e
+`infra/system_wall_clock.py` (`time.time()`, wall clock e não `monotonic()`, porque o que
+importa aqui é comparar contra uma autoridade externa). **O probe curto:**
+`infra/ntp_skew_probe_cli.py`, `--store <sqlite>` obrigatório — uma medição que ninguém persiste
+não é o que `D3.10` pede.
+
+**`T-03.8` é a primeira task a escrever em produção através de `SqliteIngestRecordStore`**
+(o comentário do próprio módulo, de `T-01.1`, já nomeava esta task como a dona dessa dívida).
+5 corridas reais contra `fapi.binance.com` — `[MEDIDO 2026-09-01T23:05Z]`: `clock_skew_ms` entre
+`-73` e `-23` (relógio local atrás do servidor), `weight_used` **lido do header a cada chamada**
+(`1..5`, nunca hardcoded), todas `ACCEPTED`, `http_status=200`. `ingest_health_query` — a MESMA
+função que `T-07.13` vai consumir — já lê essas 5 linhas de volta hoje: `n_runs: 5, n_gaps: 0`.
+Evidência em
+[`docs/context/plataforma-dados/medicoes/T-03.8-ntp-skew/`](../docs/context/plataforma-dados/medicoes/T-03.8-ntp-skew/README.md).
+**O que isto NÃO prova:** a distribuição de `D3.10` pede `>= 7 dias de runs` em produção — 5
+pontos de terminal provam o MECANISMO, nunca o REGIME.
+
+**`make natureza`** (`ADR-016`, o portão que barra leitura de relógio em `domain`/`use_cases`):
+`0 leitura(s)` sobre um universo de **30 arquivos** de `domain/`+`use_cases/` `[MEDIDO]`.
+**`boundaries.sh`: 3 kept, 0 broken** (os 3 contratos, incluindo o de `ADR-016`). `lint.sh`:
+limpo (`ruff` + `mypy --strict`). `harness rules --mode sweep --changed-only`: **0 achados**,
+rodado com os arquivos `git add`-ados (`T-03.10` já registrou que o sweep é cego a arquivo não
+rastreado). `bash backend/scripts/test.sh`: **649 passed** (era **617**, `+32`)
+`[MEDIDO 2026-09-01]` · cobertura **99,13%**, `domain` **100,0% (1133/1133)**, `use_cases`
+**100,0% (253/253)**, `infra` **97,6% (922/945)** — a única linha não coberta de produto é
+`infra/ntp_skew_probe_cli.py::main()` (composição real, o mesmo padrão descoberto de
+`quota_ramp_cli.py::main()`), e o restante do déficit de `infra` é código pré-existente de
+outras tasks.
+
+`tasks.toml`, `tasks_review.md` e o plano `03` **intocados por esta task**: os três já
+descreviam corretamente o DoD antes de eu começar — nenhuma linha precisava mudar para que o
+critério ficasse verdadeiro. `janela_de_perda` continua `null` (fora de escopo, `T-07.12`).
+Ledger e Jira **intocados**; nenhum `gate-record`, `approve` ou `advance`.
+
+---
+
 ## 📦 A fila de ETL do dump, retomável e com profundidade como parâmetro — `T-03.10` (`CST-26`, `CA-F0-5`, `SPEC-001` §5.8, plano `03` itens 3.11+3.14, DoD `D3.1`)
 
 **Nenhum segundo mecanismo de retomada nasceu aqui.** `EtlBacklog` + `drain` + `JsonlCheckpoint`
