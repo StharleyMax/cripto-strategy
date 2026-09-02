@@ -1,4 +1,4 @@
-"""`D7.7` (`SPEC-001` §3.7, `CA-F3-4`): `universe_at(ts, filtro)`, `s3_inferred` barred BY TYPE.
+"""`D7.7` (`SPEC-001` §3.7, `CA-F3-4`): `universe_at(ts, filter_)`, `s3_inferred` barred BY TYPE.
 
 Two witnesses feed `universe_at`: the `exchangeInfo` snapshot (`T-02.1`) and the S3-derived
 witness (`T-07.2`'s vocabulary). `T-02.1`'s daily snapshot series only started on `2026-08-25`
@@ -123,7 +123,7 @@ def test_maticusdt_absent_from_snapshot_but_present_in_s3_witness_is_a_marked_di
     assert result.label is None  # the snapshot IS available; the divergence is data, not a guess
 
 
-def test_filtro_market_restricts_the_decided_symbols_to_one_market() -> None:
+def test_filter_market_restricts_the_decided_symbols_to_one_market() -> None:
     """`SPEC-001` §6/Q5: "universo e filtro na LEITURA" — `market` is one of the persisted axes."""
     rows = _rows_0824()
     coin_m_only = universe_at(
@@ -141,7 +141,7 @@ def test_filtro_market_restricts_the_decided_symbols_to_one_market() -> None:
 
 
 def test_no_filter_is_the_default_and_is_equivalent_to_explicit_no_filter() -> None:
-    """Omitting `filtro` and passing `NO_FILTER` explicitly must decide the same symbols."""
+    """Omitting `filter_` and passing `NO_FILTER` explicitly must decide the same symbols."""
     rows = _rows_0824()
     implicit = universe_at("2026-08-24", snapshot_rows=rows)
     explicit = universe_at("2026-08-24", NO_FILTER, snapshot_rows=rows)

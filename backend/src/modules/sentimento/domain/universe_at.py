@@ -1,4 +1,4 @@
-"""`universe_at(ts, filtro)`: the point-in-time universe, with `s3_inferred` barred BY TYPE."""
+"""`universe_at(ts, filter_)`: the point-in-time universe, with `s3_inferred` barred BY TYPE."""
 
 # `SPEC-001` §3.7, `CA-F3-4`, plan `07` item 7.10 (`T-07.8`/`CST-62`). `SPEC-001` §3.7 fixes the
 # general vocabulary as a three-member type-sum:
@@ -135,7 +135,7 @@ def decide_universe_membership(
 
 @dataclass(frozen=True)
 class UniverseAtResult:
-    """The point-in-time universe at `ts`: the union of both testemunhas, divergence marked.
+    """The point-in-time universe at `ts`: the union of both witnesses, divergence marked.
 
     `symbols` is `decided_symbols | s3_witness_symbols` -- never one side alone. `label` is
     `None` when a snapshot witness was available (the decision is confirmed) and
@@ -153,12 +153,12 @@ class UniverseAtResult:
 
 def universe_at(
     ts: str,
-    filtro: UniverseFilter | None = None,
+    filter_: UniverseFilter | None = None,
     *,
     snapshot_rows: Sequence[InstrumentRow] | None = None,
     s3_witness_symbols: frozenset[str] = frozenset(),
 ) -> UniverseAtResult:
-    """Return the universe vigente at `ts`, filtered by `filtro` -- `SPEC-001` §3.7, `D7.7`.
+    """Return the universe in force at `ts`, filtered by `filter_` -- `SPEC-001` §3.7, `D7.7`.
 
     `snapshot_rows=None` means "no `exchangeInfo` snapshot exists for `ts`" (the honest state
     for any `ts` before `T-02.1`'s series started, `CA-F0-1`) -- distinct from `snapshot_rows=()`
@@ -170,11 +170,11 @@ def universe_at(
     NEVER passed to `decide_universe_membership`; it only contributes to the union and to
     `divergence`, per `s3_inferred`'s exclusion from the decision path.
     """
-    resolved_filtro = filtro if filtro is not None else NO_FILTER
+    resolved_filter = filter_ if filter_ is not None else NO_FILTER
     witnesses: dict[DecisiveUniverseSource, frozenset[str]] = {}
     if snapshot_rows is not None:
         witnesses[SNAPSHOT] = frozenset(
-            row.symbol for row in snapshot_rows if resolved_filtro.matches(row)
+            row.symbol for row in snapshot_rows if resolved_filter.matches(row)
         )
     decided_symbols = decide_universe_membership(witnesses)
     return UniverseAtResult(
