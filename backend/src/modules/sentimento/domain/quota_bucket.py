@@ -58,13 +58,13 @@ class QuotaBucket:
         observed = self.visibility is BucketVisibility.OBSERVED
         if observed and (self.counter_header is None or self.blindness_reason is not None):
             raise ValueError(
-                f"balde {self.identifier!r} declarado OBSERVED sem header de contagem "
-                "ou com motivo de cegueira"
+                f"bucket {self.identifier!r} declared OBSERVED without a counter header "
+                "or with a blindness reason"
             )
         if not observed and (self.counter_header is not None or not self.blindness_reason):
             raise ValueError(
-                f"balde {self.identifier!r} declarado BLIND com header de contagem "
-                "ou sem o motivo escrito"
+                f"bucket {self.identifier!r} declared BLIND with a counter header "
+                "or without the reason written"
             )
 
     @property

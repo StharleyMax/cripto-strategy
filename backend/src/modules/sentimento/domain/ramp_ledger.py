@@ -88,8 +88,9 @@ class ProbeObservation:
         """Reject an observation that is neither a dispatch nor a failure to dispatch."""
         if (self.status is None) == (self.transport_error is None):
             raise ValueError(
-                "observacao tem de trazer status HTTP OU erro de transporte, nunca os dois "
-                "nem nenhum: e essa distincao que separa 'nao levei 429' de 'nao requisitei'"
+                "observation must carry an HTTP status OR a transport error, never both "
+                "nor neither: this distinction is what separates 'did not get a 429' from "
+                "'did not request'"
             )
 
     def header(self, name: str | None) -> str | None:

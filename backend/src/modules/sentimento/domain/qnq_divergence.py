@@ -106,7 +106,7 @@ def _measure_group(symbol: str, day: str, trades: list[QnqTrade]) -> QnqDivergen
 
     if sum_q == 0:
         raise EmptyQnqGroupError(
-            f"{symbol}/{day}: total q volume is 0 over {n} trade(s) — the deficit-em-bp "
+            f"{symbol}/{day}: total q volume is 0 over {n} trade(s) — the deficit-in-bp "
             f"division has nothing to divide by"
         )
     deficit_bp = (sum_q - sum_nq) / sum_q * Decimal(10_000)

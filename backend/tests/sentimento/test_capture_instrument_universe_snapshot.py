@@ -73,7 +73,7 @@ def test_a_mutated_second_read_is_refused_instead_of_silently_accepted() -> None
     funding_info: list[FundingInfoEntry] = _load(_FI_0824, _FI_0824_MD5)
     premium_index: list[PremiumIndexEntry] = _load(_PI_0824, _PI_0824_MD5)
 
-    with pytest.raises(UnstableExchangeInfoReadError, match="duas leituras"):
+    with pytest.raises(UnstableExchangeInfoReadError, match="two exchangeInfo reads"):
         capture_instrument_universe_snapshot(
             exchange_info_first, exchange_info_second, funding_info, premium_index, "2026-08-24"
         )

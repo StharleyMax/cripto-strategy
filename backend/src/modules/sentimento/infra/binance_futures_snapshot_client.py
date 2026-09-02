@@ -113,7 +113,7 @@ class BinanceFuturesSnapshotClient:
             body = response.read()
             if response.status != 200:
                 raise UnexpectedStatusError(
-                    f"{self._host}{path} respondeu {response.status}, esperado 200: {body[:200]!r}"
+                    f"{self._host}{path} responded {response.status}, expected 200: {body[:200]!r}"
                 )
             return json.loads(body)
         finally:

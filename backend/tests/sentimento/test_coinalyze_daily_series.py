@@ -40,7 +40,7 @@ def test_to_coinalyze_symbol_refuses_an_already_suffixed_symbol() -> None:
 
 def test_to_coinalyze_symbol_refuses_an_empty_symbol() -> None:
     """An empty symbol has no honest translation."""
-    with pytest.raises(ValueError, match="vazio"):
+    with pytest.raises(ValueError, match="empty binance_symbol"):
         to_coinalyze_symbol("   ")
 
 
@@ -55,7 +55,7 @@ def test_history_path_for_builds_the_daily_query() -> None:
 
 def test_history_path_for_refuses_an_inverted_or_empty_window() -> None:
     """A window that enumerates nothing is a bug at the call site, not a legal empty request."""
-    with pytest.raises(ValueError, match="invertida ou vazia"):
+    with pytest.raises(ValueError, match="inverted or empty window"):
         history_path_for(SeriesKind.LIQUIDATION, "BTCUSDT_PERP.A", 2_000, 2_000)
 
 

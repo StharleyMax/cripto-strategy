@@ -320,11 +320,11 @@ def test_a_matching_accept_is_admitted() -> None:
 @pytest.mark.parametrize(
     ("response", "reason"),
     [
-        (b"HTTP/1.1 403 Forbidden\r\n\r\n", "status nao-101"),
-        (b"HTTP/1.1 101 Switching Protocols\r\n\r\n", "sem Sec-WebSocket-Accept"),
+        (b"HTTP/1.1 403 Forbidden\r\n\r\n", "non-101 status"),
+        (b"HTTP/1.1 101 Switching Protocols\r\n\r\n", "missing Sec-WebSocket-Accept"),
         (
             b"HTTP/1.1 101 Switching Protocols\r\nSec-WebSocket-Accept: errado=\r\n\r\n",
-            "nao confere",
+            "does not match",
         ),
     ],
 )
@@ -857,4 +857,4 @@ def test_a_reserved_opcode_does_not_deliver_half_a_message() -> None:
     with pytest.raises(StreamTransportError) as raised:
         next(iter_text_messages(_reader(data)))  # type: ignore[arg-type]
     assert raised.value.stage is ProbeStage.FRAME
-    assert "opcode reservado" in raised.value.detail
+    assert "reserved opcode" in raised.value.detail

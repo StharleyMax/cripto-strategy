@@ -75,6 +75,6 @@ class EtlBacklog:
         outside = sorted(done_set - set(self.keys))
         if outside:
             raise CheckpointOutsideWindowError(
-                f"checkpoint declara {len(outside)} chave(s) fora da janela: {outside[:5]}"
+                f"checkpoint declares {len(outside)} key(s) outside the window: {outside[:5]}"
             )
         return tuple(key for key in self.keys if key not in done_set)

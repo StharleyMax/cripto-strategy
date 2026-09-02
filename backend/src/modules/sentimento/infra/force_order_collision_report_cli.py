@@ -71,7 +71,7 @@ def _observations_from_evidence(
             try:
                 envelope = json.loads(line)
             except json.JSONDecodeError as failure:
-                raise MalformedEvidenceLineError(f"linha {number} ilegivel em {path}") from failure
+                raise MalformedEvidenceLineError(f"unreadable line {number} in {path}") from failure
             try:
                 key = extract_force_order_natural_key(envelope["raw"])
             except (ForceOrderKeyExtractionError, KeyError) as failure:

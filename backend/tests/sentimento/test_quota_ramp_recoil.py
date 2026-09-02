@@ -76,7 +76,7 @@ def test_a_policy_that_could_not_escalate_is_refused(
 
 def test_a_negative_throttle_index_is_refused() -> None:
     """There is no minus-first `429`."""
-    with pytest.raises(InvalidRecoilPolicyError, match="negativo"):
+    with pytest.raises(InvalidRecoilPolicyError, match="negative"):
         POLICY.escalation_for(-1)
 
 
@@ -245,14 +245,14 @@ def test_a_decision_cannot_claim_a_header_it_does_not_carry() -> None:
     Sem esta guarda, um chamador poderia construir uma decisao dizendo "o fornecedor pediu" sem
     dizer quanto — e `unmet_seconds` devolveria `0.0`, que e indistinguivel de "servido inteiro".
     """
-    with pytest.raises(InvalidRecoilPolicyError, match="mesma informacao"):
+    with pytest.raises(InvalidRecoilPolicyError, match="same information"):
         RecoilDecision(
             seconds=60.0,
             source=RecoilSource.RETRY_AFTER,
             retry_after_present=True,
             requested_seconds=None,
         )
-    with pytest.raises(InvalidRecoilPolicyError, match="mesma informacao"):
+    with pytest.raises(InvalidRecoilPolicyError, match="same information"):
         RecoilDecision(
             seconds=60.0,
             source=RecoilSource.POLICY_NO_RETRY_AFTER,

@@ -58,7 +58,7 @@ def test_every_blind_bucket_carries_a_written_reason() -> None:
 
 def test_a_bucket_cannot_be_declared_blind_and_publish_a_counter() -> None:
     """The two halves of the declaration are checked against each other at construction."""
-    with pytest.raises(ValueError, match="BLIND com header de contagem"):
+    with pytest.raises(ValueError, match="BLIND with a counter header"):
         QuotaBucket(
             identifier="impossivel",
             host="example.invalid",
@@ -71,7 +71,7 @@ def test_a_bucket_cannot_be_declared_blind_and_publish_a_counter() -> None:
 
 def test_a_bucket_cannot_be_declared_blind_without_saying_why() -> None:
     """A blind bucket with an empty reason is refused, not accepted with a shrug."""
-    with pytest.raises(ValueError, match="sem o motivo escrito"):
+    with pytest.raises(ValueError, match="without the reason written"):
         QuotaBucket(
             identifier="impossivel",
             host="example.invalid",
@@ -84,7 +84,7 @@ def test_a_bucket_cannot_be_declared_blind_without_saying_why() -> None:
 
 def test_an_observed_bucket_cannot_carry_a_blindness_reason() -> None:
     """The other side of the same guard: a contradictory declaration fails either way round."""
-    with pytest.raises(ValueError, match="OBSERVED sem header"):
+    with pytest.raises(ValueError, match="OBSERVED without a counter header"):
         QuotaBucket(
             identifier="impossivel",
             host="example.invalid",
@@ -165,7 +165,7 @@ def test_a_missing_counter_reading_is_inconclusive() -> None:
 
 def test_a_coupling_sample_with_no_load_is_refused() -> None:
     """Without load the two pairs are the SAME experiment, and would answer SEPARATE always."""
-    with pytest.raises(InvalidCouplingSampleError, match="controle daria"):
+    with pytest.raises(InvalidCouplingSampleError, match="control would yield"):
         CouplingSample(
             baseline_before=10,
             baseline_after=12,

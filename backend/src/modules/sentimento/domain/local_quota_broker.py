@@ -44,11 +44,11 @@ class LocalQuotaBroker:
         """Reject a broker that could not compute a positive, finite interval."""
         if self.calls_per_window < 1:
             raise InvalidQuotaBrokerError(
-                f"calls_per_window={self.calls_per_window}: uma janela sem chamada nao paceia nada"
+                f"calls_per_window={self.calls_per_window}: a window with no call paces nothing"
             )
         if self.window_seconds <= 0:
             raise InvalidQuotaBrokerError(
-                f"window_seconds={self.window_seconds}: uma janela nao positiva nao e uma janela"
+                f"window_seconds={self.window_seconds}: a non-positive window is not a window"
             )
 
     @property
@@ -73,7 +73,7 @@ class LocalQuotaBroker:
         """
         if call_count < 0:
             raise InvalidQuotaBrokerError(
-                f"call_count={call_count}: uma contagem negativa de chamadas nao existe"
+                f"call_count={call_count}: a negative call count does not exist"
             )
         pauses = max(0, call_count - 1)
         return pauses * self.interval_seconds

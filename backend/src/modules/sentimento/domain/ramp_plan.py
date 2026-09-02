@@ -36,19 +36,19 @@ class RampPlan:
     def __post_init__(self) -> None:
         """Reject a plan that cannot accelerate, cannot stop, or would burst."""
         if self.max_requests < 1:
-            raise InvalidRampPlanError("max_requests < 1: uma rampa sem degrau nao mede nada")
+            raise InvalidRampPlanError("max_requests < 1: a ramp with no rung measures nothing")
         if self.min_interval_seconds <= 0:
             raise InvalidRampPlanError(
-                "min_interval_seconds <= 0 e rajada, nao rampa: sem intervalo minimo a ordem "
-                "de chegada deixa de ser definida e o ordinal do primeiro 429 perde sentido"
+                "min_interval_seconds <= 0 is a burst, not a ramp: without a minimum interval "
+                "the arrival order stops being defined and the ordinal of the first 429 loses meaning"
             )
         if self.initial_interval_seconds < self.min_interval_seconds:
             raise InvalidRampPlanError(
-                "initial_interval_seconds abaixo do piso: a rampa comecaria no topo"
+                "initial_interval_seconds below the floor: the ramp would start at the top"
             )
         if not 0.0 < self.interval_factor <= 1.0:
             raise InvalidRampPlanError(
-                "interval_factor fora de (0, 1]: acima de 1 a rampa DESACELERA e o nome mente"
+                "interval_factor outside (0, 1]: above 1 the ramp DECELERATES and the name lies"
             )
 
     def interval_after(self, requests_done: int) -> float:
@@ -62,8 +62,8 @@ class RampPlan:
         """
         if requests_done < 1:
             raise InvalidRampPlanError(
-                f"requests_done = {requests_done}: a primeira pausa segue a PRIMEIRA "
-                "requisicao, entao a contagem comeca em 1"
+                f"requests_done = {requests_done}: the first pause follows the FIRST "
+                "request, so the count starts at 1"
             )
         decayed = self.initial_interval_seconds * self.interval_factor ** (requests_done - 1)
         return max(self.min_interval_seconds, decayed)
