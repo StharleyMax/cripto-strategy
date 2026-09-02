@@ -2117,3 +2117,76 @@ valor). A chave **existe** nesta sessão. O código acima é testado inteirament
 fixture/mock (rede zero, como toda a suíte) — a chamada REAL ao vivo (o "one-shot" de fato, ~570
 símbolos × 2 séries) é uma operação separada, de custo declarado ~28,5 min, que **não** é
 disparada pelo portão de teste e não deve ser repetida por engano.
+
+## 🔌 Política de reconexão POR CLASSE de stream, Classe B — `T-03.3` (`CST-19`, `ADR-004` gate de F0, plano `03` item 3.2, DoD `D3.6`)
+
+Implementa a Classe B de `ADR-004` (`!forceOrder@arr`, sem identificador de sequência e sem
+reposição): sobreposição obrigatória na reconexão (B1), chave natural declarada para dedupe (B2)
+e taxa de colisão publicada com a direção do viés escrita (B3). **Não constrói** a Classe A
+(`aggTrade`) nem a integração contínua — o handoff desta task é explícito: desenhar pensando no
+sucessor, sem construir a integração aqui.
+
+### As peças, e a camada de cada uma
+
+- **`domain/force_order_natural_key.py`** — `ForceOrderNaturalKey`, a chave `(symbol, side,
+  price, orig_qty, trade_time)` que B2 declara, lida SÓ desses cinco campos do `raw` (nunca do
+  restante do payload); `extract_force_order_natural_key` levanta `ForceOrderKeyExtractionError`
+  com contexto para qualquer texto que não caiba nesse formato — nunca engolida em silêncio.
+  `trade_time_utc_date` converte `trade_time` (epoch ms) no dia UTC, determinístico via
+  `tz=UTC` explícito (nunca lê o fuso da máquina).
+- **`domain/force_order_collision_accounting.py`** — `count_daily_collisions` bucketiza por
+  `(symbol, day)`; uma chave repetida vira `collisions` e **nunca** soma de novo em
+  `total_events` — é B3 ("subcontagem, nunca supercontagem") feito mecânico, não só documentado.
+  `COLLISION_BIAS_DIRECTION` carrega a frase literal da ADR, publicada em TODO relatório.
+  `d3_6_universe_met` diz se o universo declarado (`≥ 30` dias `× ≥ 20` símbolos) já foi
+  atingido — hoje **não** é, e o módulo nunca finge que é.
+- **`domain/force_order_reconnection_overlap.py`** — `require_overlap` levanta
+  `ReconnectionGapError` se a conexão antiga fechar ANTES da primeira mensagem da nova — B1 como
+  invariante que reprova, não como frase de comentário.
+- **`use_cases/reconnect_force_order_stream.py`** — `perform_overlap_handoff` executa a
+  ORDEM que B1 exige (abre a nova, lê a primeira mensagem, SÓ ENTÃO fecha a antiga) sobre
+  `MessageSource` de verdade; `reconnect_and_key` compõe o handoff com a chave B2, pronto para
+  alimentar `count_daily_collisions`.
+- **`infra/force_order_collision_report_cli.py`** — lê o(s) arquivo(s) de evidência que
+  `force_order_raw_recorder.py` (`T-03.2`) já grava, publica o relatório e o resumo JSON com a
+  taxa de colisão por `(symbol, day)`, a frase de viés SEMPRE presente, e um veredito honesto
+  sobre `D3.6` (atendido ou não). Uma linha de evidência corrompida (JSON inválido) É RECUSADA
+  (`MalformedEvidenceLineError`), nunca lida por cima em silêncio; uma linha que não tem os
+  campos de B2 é contada em `unkeyable_raw_lines`, nunca descartada sem registro.
+
+### `D3.6` não é medível em regime real hoje — a MECÂNICA está pronta, a leitura é o que falta
+
+O DoD declara isso explicitamente: o universo exigido (`≥ 30` dias `× ≥ 20` símbolos) precisa de
+dias de captura ao vivo que este repositório ainda não tem. Esta task prova a MECÂNICA sobre uma
+simulação de reconexão com overlap conhecido — `FRAME_A`/`FRAME_A_DUP` no bench (mesma chave B2,
+`raw` diferente, do jeito que uma liquidação genuinamente re-servida por duas conexões chegaria)
+produz `total_events=1, collisions=1` de ponta a ponta, do handoff até o relatório publicado. No
+dia em que o coletor acumular evidência real, publicar `D3.6` é rodar
+`force_order_collision_report_cli.py` sobre os arquivos — nenhuma lógica nova.
+
+### A bancada — falsificador medido, não afirmado
+
+`test_the_falsifier_removing_the_duplicate_makes_the_collision_disappear` remove a duplicata do
+cenário acima e o `collisions` cai para `0` — prova que o contador realmente detecta a colisão
+em vez de sempre devolver o mesmo número (`backend/tests/sentimento/test_force_order_reconnection.py`).
+`test_the_new_source_opens_and_is_read_before_the_old_source_closes` observa a SEQUÊNCIA de
+eventos (`new_opened → new_message_read → old_closed`) do handoff real, não só o resultado.
+`test_require_overlap_rejects_the_old_source_closing_first` é o falsificador de B1: inverter as
+duas marcas de tempo reprova, nomeando `ADR-004 B1`.
+
+`bash backend/scripts/test.sh`: **897 passed**, cobertura total **98,06%** (domain **99,9%**,
+use_cases **100%**, infra **95,8%** — todos acima do piso `90/80/70`). `lint.sh` limpo. `mypy
+--strict` limpo. `boundaries.sh`: **3 contratos KEPT**, incl. `Natureza` (nem `domain` nem
+`use_cases` tocam `socket`/`ssl`). `natureza.sh`: universo de 48 arquivos, **0 leituras de
+relógio** em `domain`/`use_cases`. `harness rules --mode sweep --changed-only`: **0 achados**.
+
+### O que esta task NÃO fecha, nomeado
+
+- **Não integra a Classe A (`aggTrade`).** O handoff é explícito: desenhar pensando no sucessor,
+  sem construir aqui — `T-03.2`'s sucessor de `aggTrade` (coberto por `T-03.1`/`T-03.4`) fica
+  para uma task futura.
+- **Não roda um daemon contínuo de reconexão.** `perform_overlap_handoff` é o mecanismo que um
+  processo de captura real chamaria; ligar isso 24/7 é decisão de deploy, fora de escopo (owner,
+  `docs/decisoes-do-owner.md` §Q1).
+- **`D3.6` não está medido sobre regime real** — está provado sobre simulação offline com
+  overlap conhecido, como o handoff pediu explicitamente.
