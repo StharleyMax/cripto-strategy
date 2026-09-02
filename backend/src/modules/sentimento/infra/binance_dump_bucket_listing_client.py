@@ -129,7 +129,7 @@ def list_all_object_keys(
 ) -> tuple[str, ...]:
     """Drain every page of `prefix`, following `NextContinuationToken` until `IsTruncated=false`.
 
-    `D7.8`: `[MEDIDO]` 980 prefixes against `MaxKeys=1000` is a folga of only 20 — a universe that
+    `D7.8`: `[MEDIDO]` 980 prefixes against `MaxKeys=1000` is a margin of only 20 — a universe that
     grows past 1000 in one page is not a hypothetical, it is the next backfill. `merge_pages`
     refuses the result if this loop is ever changed to stop early.
     """

@@ -2,7 +2,7 @@
 
 # `SPEC-001` §5.7, `T-07.1` (`CA-F3-5`): the `data.binance.vision` bucket listing paginates by
 # `IsTruncated` + `NextContinuationToken`, `[MEDIDO]` 980 prefixes against `MaxKeys=1000` — a
-# folga of only 20, and the universe grows (`+28 símbolos em 30 d`, `+136 em 90 d`). `D7.8` demands
+# margin of only 20, and the universe grows (`+28 symbols in 30 d`, `+136 in 90 d`). `D7.8` demands
 # the listing FAIL if `IsTruncated=true` without a subsequent page, rather than quietly returning a
 # partial listing that looks complete.
 #
