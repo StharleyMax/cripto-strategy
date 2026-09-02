@@ -25,6 +25,11 @@ from src.modules.sentimento.domain.retention_probe import (
     classify,
     probe_targets_for_window,
 )
+from src.modules.sentimento.infra.content_dedupe_store import JsonlContentDedupeStore
+from src.modules.sentimento.infra.content_deduping_worker import (
+    ContentDedupingWorker,
+    verified_digest_source,
+)
 from src.modules.sentimento.infra.dump_ingest_worker import DumpIngestWorker
 from src.modules.sentimento.infra.head_probe_log import outcomes_for, read_probe_log
 from src.modules.sentimento.infra.jsonl_checkpoint import JsonlCheckpoint
@@ -86,6 +91,7 @@ OUTPUT_DIR: Final[str] = "out"
 CHECKPOINT_FILE: Final[str] = "checkpoint.jsonl"
 FINDINGS_FILE: Final[str] = "findings.jsonl"
 PROBE_FILE: Final[str] = "probe.jsonl"
+CONTENT_DEDUPE_FILE: Final[str] = "content_dedupe.jsonl"
 
 _STABLE_FORMAT: Final[str] = "%(message)s"
 _DIAGNOSTIC_FORMAT: Final[str] = "%(levelname)s %(name)s %(message)s"
@@ -214,9 +220,19 @@ def run(
     if not workable:
         return ()
 
+    mirror_dir = workdir / MIRROR_DIR
+    # `T-07.3`: dedupe by CONTENT HASH, never by key name nor download timestamp. Two objects
+    # under different keys with byte-identical bodies collapse to one publication — the second
+    # is logged as `etl_item_duplicate_content` and never reaches `DumpIngestWorker`. Wrapping
+    # the worker keeps `drain()`/`EtlBacklog` unchanged; see `content_deduping_worker.py`.
+    worker = ContentDedupingWorker(
+        DumpIngestWorker(mirror_dir, workdir / OUTPUT_DIR, suspect_keys=suspect),
+        digest_of=verified_digest_source(mirror_dir),
+        store=JsonlContentDedupeStore(workdir / CONTENT_DEDUPE_FILE),
+    )
     processed = drain(
         backlog_of(workable),
-        DumpIngestWorker(workdir / MIRROR_DIR, workdir / OUTPUT_DIR, suspect_keys=suspect),
+        worker,
         JsonlCheckpoint(workdir / CHECKPOINT_FILE),
     )
     for key in processed:

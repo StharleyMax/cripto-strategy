@@ -2416,3 +2416,64 @@ SIMULADA e rotulada como tal no teste — nunca apresentada como medição real.
   existirem, `infra/clock_skew_tolerance_cli.py` já lê o mesmo store sem mudança de código.
 - **Não decide o que fazer com a tolerância calibrada** (alarme, campo de UI, etc.) — só a
   calcula e a devolve com a evidência (`sample_n`, `span_days`, `stat_name`) anexada.
+
+## 📎 2026-09-02 por `T-07.3` — dedupe por HASH DE CONTEÚDO, byte-estável verificado, nunca por nome/timestamp
+
+`CA-F3-*`, plano `07` item 7.5. Dois objetos com o MESMO conteúdo byte-a-byte, sob chaves
+diferentes (nome diferente, ou o mesmo dump re-baixado), colapsam num único item: o segundo é
+descartado como duplicata e nunca republicado. O contra-exemplo que o DoD exige rejeitado
+explicitamente — mesma chave, conteúdo DIFERENTE (dump republicado corrigido) — permanece NÃO
+duplicata, porque a identidade comparada é sempre o digest, nunca o nome nem o instante do
+download.
+
+**Reuso em vez de invenção**, como o handoff pediu: `domain/checksum_manifest.py` (existente,
+`T-02.4a`) já publicava o vocabulário de digest sha256; `T-07.3` reusa `ChecksumManifest`/
+`ChecksummedFilePayload` em vez de hashear de novo. `use_cases/drain_etl_backlog.py` (existente)
+não muda — a camada entra por DECORAÇÃO do `ItemWorker`, não por um segundo pipeline.
+
+### As peças, e a camada de cada uma
+
+| arquivo | camada | conteúdo |
+|---|---|---|
+| [`domain/content_dedupe.py`](src/modules/sentimento/domain/content_dedupe.py) (**novo**) | `domain` | `ContentDedupeVerdict` (NEW vs DUPLICATE-of-key) e `ContentDedupeLedger` (imutável, `decide`/`recording`) — pura: nenhum arquivo, rede ou relógio |
+| [`infra/content_dedupe_store.py`](src/modules/sentimento/infra/content_dedupe_store.py) (**novo**) | `infra` | `JsonlContentDedupeStore` — mesma disciplina de `jsonl_checkpoint.py` (`flush`+`fsync` por linha, cauda truncada tolerada, forma errada recusada por nome, nunca coagida) |
+| [`infra/content_deduping_worker.py`](src/modules/sentimento/infra/content_deduping_worker.py) (**novo**) | `infra` | `ContentDedupingWorker` (decorator de `ItemWorker`, ledger carregado UMA vez) + `verified_digest_source` (fábrica que confere o digest contra o `.CHECKSUM` ANTES de decidir, na mesma ordem de `ingest_verified`) |
+| [`infra/dump_etl_cli.py`](src/modules/sentimento/infra/dump_etl_cli.py) (modificado) | `infra` | `run()` envolve `DumpIngestWorker` com `ContentDedupingWorker`; `CONTENT_DEDUPE_FILE` novo, `drain()`/`EtlBacklog` intocados |
+| 4 suítes novas (**32 testes**) | — | `test_content_dedupe.py` (ledger puro, inclui os dois falsificadores), `test_content_dedupe_store.py` (durabilidade), `test_content_deduping_worker.py` (decorator + `verified_digest_source`), `test_content_dedupe_across_keys.py` (ponta a ponta pela raiz de composição) |
+
+**Por que a ordem de verificação importa, e um ciclo de correção nomeado.** A primeira versão
+ligava `digest_of` a `ChecksummedFilePayload(...).digest()` puro — abre o PAYLOAD antes de olhar
+o `.CHECKSUM`. Isso quebrou 4 testes pré-existentes: dois porque a fixture reusava o MESMO corpo
+de bytes para todas as partições de uma janela (colisão de conteúdo não intencional, corrigida
+com um corpo distinto por índice de partição em `test_dump_etl_cli_surface.py`/
+`test_dump_ingest_edge.py`), e dois porque `test_a_hole_in_the_bucket_stops_the_drain_and_the_cost_is_named`
+espera `ChecksumMissingError` quando o objeto E o sidecar estão ausentes — a forma ingênua abre o
+arquivo (ausente) primeiro e levanta `FileNotFoundError`, quebrando a distinção que
+`ingest_verified_payload.py` já documentava entre "sidecar ausente" e "caminho desaparecido".
+`verified_digest_source` conserta isso lendo o sidecar PRIMEIRO, na mesma ordem — e
+`test_verified_digest_source_reports_a_missing_sidecar_before_opening_the_payload` fixa o
+regressão para não voltar.
+
+**Custo nomeado, não escondido:** para uma chave NOVA (não-duplicata), o payload é hasheado
+DUAS vezes — uma em `verified_digest_source` (decide dedupe), outra dentro de `ingest_verified`
+(streaming). Eliminar a segunda exigiria mudar o contrato de retorno de `ingest_verified`, que é
+vigiado por uma asserção de ordem de chamada (`test_verified_edge_call_sites.py`) e está fora do
+escopo desta task — `T-02.4a` é dona daquele contrato, não `T-07.3`.
+
+`bash backend/scripts/test.sh`: **1108 passed**, cobertura **97,83%** — domain **99,9%** (meta
+90%), use_cases **100,0%** (meta 80%), infra **95,4%** (meta 70%, piso OK). **25 testes NOVOS**
+`[MEDIDO: pytest --collect-only -q sobre as 4 suítes novas → 7+2+10+6]`, mais ajustes de fixture
+(sem teste novo) em `test_dump_etl_cli_surface.py`/`test_dump_ingest_edge.py` para que o corpo
+sintético de cada partição pare de colidir por conteúdo com o das demais. `lint.sh` limpo (`ruff
+check`/`format --check`/`mypy --strict`). `boundaries.sh`: **3 kept, 0 broken** (138 arquivos,
+636 dependências). `natureza.sh`: universo 60 arquivos, 0 leituras de relógio.
+`harness rules --mode sweep --changed-only`: **0 achados**.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Não elimina o hash duplo por chave nova** — nomeado acima, dono é uma mudança de contrato em
+  `ingest_verified_payload.py` que esta task não faz.
+- **Não escreve `md.ingest_run`/`md.ingest_gap`** — mesma lacuna que `T-07.1` já registrou;
+  chega com `T-03.8`/produção real.
+- **Não decide o que fazer com um objeto marcado duplicata além de não republicá-lo** — sem
+  alarme, sem métrica agregada; o evento `etl_item_duplicate_content` fica no log.
