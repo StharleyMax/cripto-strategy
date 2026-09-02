@@ -71,6 +71,21 @@ _SELECT_PROMOTED: Final[str] = (
     "ORDER BY received_at, run_id"
 )
 
+# `T-03.11`'s reconciliation reads the quarantine DIRECTLY — the handoff is explicit this is a
+# DIFFERENT path from `read_promoted`: "lê da quarentena diretamente... não é o mesmo caminho que
+# `backtest` usaria... não tente 'promover' a série aqui". No `available_at` filter, on purpose:
+# every row this one-shot ever writes has `available_at = NULL` (`QuarantinedSeriesEntry
+# .available_at`), so `read_promoted` would always return `()` for it — that is `D2.6`'s whole
+# point, and exactly why this query cannot reuse it.
+_SELECT_LATEST_QUARANTINED: Final[str] = (
+    "SELECT source, series_kind, binance_symbol, coinalyze_symbol, points_json, n_points, "
+    "       available_at, received_at, run_id "
+    "FROM series_quarantine "
+    "WHERE series_kind = ? AND binance_symbol = ? "
+    "ORDER BY received_at DESC, run_id DESC "
+    "LIMIT 1"
+)
+
 _RowTuple = tuple[str, str, str, str, str, int, str, str, str]
 
 
@@ -145,6 +160,18 @@ class SqliteSeriesQuarantineStore:
         """
         rows = self._fetch(_SELECT_PROMOTED, (series_kind.value, binance_symbol))
         return tuple(cast(_RowTuple, row) for row in rows)
+
+    def read_latest(self, series_kind: SeriesKind, binance_symbol: str) -> _RowTuple | None:
+        """Return the most recent quarantined row for `(series_kind, binance_symbol)`.
+
+        Any `available_at` — `None`, never a raised error, when nothing was ever written for
+        this pair, the same "never-ran reads as empty" contract `_fetch` already gives
+        `read_promoted`. This is NOT the query a `backtest`-shaped reader would run (see the
+        module-level comment above `_SELECT_LATEST_QUARANTINED`); it is `T-03.11`'s
+        reconciliation reading the quarantine on its own, declared path.
+        """
+        rows = self._fetch(_SELECT_LATEST_QUARANTINED, (series_kind.value, binance_symbol))
+        return cast(_RowTuple, rows[0]) if rows else None
 
     def _fetch(self, statement: str, parameters: tuple[object, ...]) -> list[tuple[object, ...]]:
         """Run a read statement, treating a store that never ran as zero rows, not a crash.

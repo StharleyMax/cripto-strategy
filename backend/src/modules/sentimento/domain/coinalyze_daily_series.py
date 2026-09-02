@@ -161,6 +161,39 @@ def parse_daily_points(body: bytes) -> tuple[DailyPoint, ...]:
         raise MalformedCoinalizeResponseError(
             f"'history' esperado como lista, veio {type(history).__name__}"
         )
+    return _daily_points_from_history_items(history)
+
+
+def daily_points_from_stored_json(points_json: str) -> tuple[DailyPoint, ...]:
+    """Parse `QuarantinedSeriesEntry.points_json()`'s output back into `DailyPoint`s.
+
+    That method writes a BARE array (`[dict(point.raw) for point in points]`, never wrapped in
+    `{"symbol": ..., "history": [...]}`) — the one-shot already unwrapped the provider's shape
+    before storing, so this function starts one level in from `parse_daily_points`. Used by
+    `T-03.11`'s reconciliation to re-read the Coinalyze `daily` points a run of `T-02.2` put in
+    quarantine, without teaching that reader a second copy of the per-point validation below.
+    """
+    try:
+        items = json.loads(points_json)
+    except (json.JSONDecodeError, UnicodeDecodeError) as failure:
+        raise MalformedCoinalizeResponseError(
+            f"points_json nao e JSON valido: {type(failure).__name__}: {failure}"
+        ) from failure
+    if not isinstance(items, list):
+        raise MalformedCoinalizeResponseError(
+            f"points_json esperado como lista, veio {type(items).__name__}"
+        )
+    return _daily_points_from_history_items(items)
+
+
+def _daily_points_from_history_items(history: Sequence[object]) -> tuple[DailyPoint, ...]:
+    """Validate and wrap each raw `history` item — the one place `'t'` is ever required.
+
+    Shared by `parse_daily_points` (wire shape) and `daily_points_from_stored_json` (stored
+    shape): both hand this the same kind of list, `[{"t": …, …}, …]`, and neither re-checks the
+    other's outer wrapper, so a divergence between "what the provider sent" and "what this
+    process stored" can only ever show up as an outer-shape defect, never a per-point one.
+    """
     points: list[DailyPoint] = []
     for index, item in enumerate(history):
         if not isinstance(item, dict) or "t" not in item:

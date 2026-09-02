@@ -2190,3 +2190,106 @@ relógio** em `domain`/`use_cases`. `harness rules --mode sweep --changed-only`:
   `docs/decisoes-do-owner.md` §Q1).
 - **`D3.6` não está medido sobre regime real** — está provado sobre simulação offline com
   overlap conhecido, como o handoff pediu explicitamente.
+
+## 📎 2026-09-02 por `T-03.11` — reconciliação diária, e a ressalva é o requisito, não o número
+
+`CA-F0-14` (`SPEC-001`/plano `03` item 3.12, `DoD` em `tasks_review.md:275`). Seis arquivos
+novos, dois arquivos existentes de `T-02.2` estendidos (nenhum comportamento deles mudou):
+
+| camada | arquivo | papel |
+|---|---|---|
+| `domain` | `liquidation_reconciliation.py` (**novo**) | `parse_force_order_message` (primeiro leitor do `o` de `!forceOrder@arr` nesta base — `T-03.1`/`T-03.2` só gravam `raw` cru); `coinalyze_daily_liquidation_quantity` (`l+s`); `classify_daily_reconciliation` (as 4 hipóteses); `reconcile_daily_liquidation` (o agrupador por dia); `RECONCILIATION_CAVEAT` + `HYPOTHESIS_SCREEN_LABEL` |
+| `use_cases` | `reconcile_daily_liquidation.py` (**novo**) | `run_daily_liquidation_reconciliation` — tolera linha malformada, CONTANDO-A, nunca a descarta em silêncio |
+| `infra` | `liquidation_reconciliation_cli.py` (**novo**) | a bancada offline: lê o SQLite da quarentena (`T-02.2`) + os `.jsonl` de evidência (`T-03.2`), emite uma linha por dia + resumo |
+| `domain` | `coinalyze_daily_series.py` (**estendido**) | `daily_points_from_stored_json` — reconstrói `DailyPoint` a partir do `points_json()` que `QuarantinedSeriesEntry` grava (array nu, sem o envelope `{"symbol", "history"}` do wire); refatorada a validação por item para `_daily_points_from_history_items`, reusada pelas duas formas de entrada |
+| `infra` | `sqlite_series_quarantine_store.py` (**estendido**) | `read_latest()` — lê a quarentena **sem** o filtro `available_at IS NOT NULL` de `read_promoted()`; é o caminho que o handoff pede ("lê da quarentena diretamente… não é o mesmo caminho que `backtest` usaria") |
+
+### A ressalva é o requisito central — como o código a satisfaz, campo a campo
+
+O handoff é literal: *"não se sabe se a Coinalyze constrói o agregado dela a partir do MESMO
+stream subamostrado que `T-03.2` grava… as DUAS saídas têm de informar em qual caso estamos"*.
+Isso vira três decisões de código, não uma frase de comentário:
+
+1. **`DailyLiquidationReconciliation` nunca expõe um `ratio` sozinho** — `hypothesis` é campo
+   irmão na mesma dataclass, então nenhum consumidor consegue imprimir o número sem o rótulo.
+2. **`RECONCILIATION_CAVEAT` é uma constante fixa**, presente em TODA linha, independente do que
+   o `ratio` diga — "com a ressalva na tela" não é condicional ao resultado ser interessante.
+3. **`classify_daily_reconciliation` sempre devolve uma de 4 hipóteses**, nunca um `Decimal`
+   solto: as duas que o handoff nomeia (`SAME_STREAM_INCONCLUSIVE`,
+   `INDEPENDENT_STREAM_MEASURES_LOSS`) e duas que a moldura binária do handoff não nomeia mas uma
+   divisão real precisa responder (`NO_LIQUIDATION_EITHER_SIDE` para `0/0`, e
+   `CAPTURED_EXCEEDS_COINALYZE` para o lado que nem a hipótese "mesmo stream" nem "stream
+   independente mede perda" preveem — razão > 1, ou Coinalyze zerada com captura > 0). Dobrar
+   qualquer um dos dois casos extras dentro de um dos dois nomeados seria o próprio defeito de
+   "número solto" que o handoff aponta, uma camada abaixo.
+
+**O limiar "perto de 1" não tem default em lugar nenhum do código** — `docs/medicao-
+conectividade-forceorder.md` mediu **zero eventos reais** de `!forceOrder@arr` chegando a este
+observador (85 s combinados, abaixo do gatilho de parada de `T-03.1`), então não existe
+distribuição real de pares `(capturado, Coinalyze)` para calibrar uma faixa. `classify_daily_
+reconciliation` e o CLI exigem os dois limites como argumento **obrigatório**, sem fallback — a
+alternativa a embutir um número não medido como se fosse autoritativo.
+
+### O falsificador — a fronteira `<=`/`<=` do "perto de 1" MORDE, não só cala
+
+`test_classify_ratio_at_lower_boundary_is_inclusive` e `test_classify_ratio_at_upper_boundary_is_
+inclusive` fixam os dois limites como **inclusivos** (`SAME_STREAM_INCONCLUSIVE` em `ratio ==
+lower` e `ratio == upper`). Mutação manual, revertida em seguida (`git diff` conferido vazio
+depois):
+
+| mutante | comando | resultado |
+|---|---|---|
+| `classify_daily_reconciliation`: `ratio > near_one_upper_bound` → `ratio >= near_one_upper_bound` | `pytest -q tests/sentimento/test_liquidation_reconciliation.py -k classify` | **1 failed** — `test_classify_ratio_at_upper_boundary_is_inclusive` (o único que fixa `ratio == upper`) |
+| `classify_daily_reconciliation`: `ratio < near_one_lower_bound` → `ratio <= near_one_lower_bound` | idem | **1 failed** — `test_classify_ratio_at_lower_boundary_is_inclusive` |
+| `reconcile_daily_liquidation`: remove o `if day in seen_days: raise` (duplicidade de ponto Coinalyze) | `pytest -q tests/sentimento/test_liquidation_reconciliation.py -k duplicate` | **1 failed** — a soma silenciosa dos dois pontos do mesmo dia deixa de ser detectada |
+
+Os três mutantes revertidos, árvore reconferida (`git status --short` limpo antes de cada um).
+
+### Por que `l`, nunca `q` nem `z` — a mesma disciplina de `cvd.py`, uma camada acima
+
+`!forceOrder@arr` empurra no máximo UMA atualização por `{símbolo, janela de 1000 ms}` — rótulo
+`latest`/`largest` `NÃO_RESOLVIDA` (`force_order_envelope.py`). A MESMA ordem pode aparecer em
+mais de um push conforme preenche através de janelas: somar `q` (tamanho TOTAL declarado,
+repetido a cada push) ou `z` (total ACUMULADO, também repetido) contaria em dobro; `l` é o
+incremento QUE ESTE push relata — mesma disciplina "incremento, nunca total corrente" que
+`cvd.cvd_delta_by_bucket` já aplica a `aggTrade`. `test_parse_reads_l_never_q_or_z_when_they_
+disagree` fixa isso com um payload onde os três discordam.
+
+### Comandos rodados e resultado
+
+`bash backend/scripts/lint.sh` → limpo (`ruff check`/`format --check`/`mypy --strict`, 159
+arquivos). `bash backend/scripts/test.sh -q` → **rc=0**, cobertura total **98,09%** — `domain
+99,9%` (meta 90%) · `use_cases 100%` (meta 80%) · `infra 95,9%` (meta 70%); os três arquivos
+novos e os dois estendidos fecham em **100%** cada um. `bash backend/scripts/boundaries.sh` →
+`3 kept, 0 broken` (111 arquivos, 485 dependências). `bash backend/scripts/natureza.sh` →
+`universo de 46 arquivo(s), 0 leitura(s) de relogio` — `liquidation_reconciliation.py` só chama
+`datetime.fromtimestamp(ms, tz=UTC)` sobre um argumento já recebido, mesmo padrão isento que
+`coinalyze_daily_series.DailyPoint.date_utc` já usa.
+
+### Achado, não meu, não bloqueante: `ResourceWarning` pré-existente no arquivo de teste da quarentena
+
+`test_sqlite_series_quarantine_store.py` já reproduz, em `master@07193e6` (antes desta task),
+**3 `ResourceWarning: unclosed database`** ao rodar isolado com `-W error::ResourceWarning`
+`[MEDIDO nas duas árvores: idêntico antes e depois desta task]` — três usos pré-existentes de
+`with sqlite3.connect(...) as connection:` (linhas fora do meu diff) que, ao contrário de
+`with closing(sqlite3.connect(...))` (o padrão que o próprio módulo de produção usa), **não
+fecham a conexão** — o `with` do `sqlite3.Connection` só comita/reverte a transação, nunca fecha.
+O único ponto NOVO desta task que abre uma conexão crua (`test_read_latest_prefers_the_most_
+recently_received_row`) já nasceu com `closing()`. Não corrigido nos três pontos pré-existentes:
+não é desta fase, e `rc` continua `0` (é aviso, não falha) — nomeado aqui para não desaparecer.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhuma reconciliação real foi rodada.** `docs/medicao-conectividade-forceorder.md` (`T-03.2`)
+  mediu **zero eventos** de `!forceOrder@arr` chegando a este observador em 85 s combinados —
+  abaixo do gatilho de parada de `T-03.1` (≥ 120 s × 2). Não existe hoje nenhum arquivo de
+  evidência com liquidação real para alimentar `liquidation_reconciliation_cli.py` fora de
+  fixture; o CLI está pronto e testado ponta a ponta contra arquivos reais em `tmp_path`, mas o
+  "probe curto" que o handoff pede como prova é, nesta rodada, a suíte — não uma saída ao vivo.
+- **Não decide o limiar "perto de 1".** É uma decisão que exige a distribuição real que ainda não
+  existe (parágrafo acima); o código se recusa a inventar um default.
+- **Não constrói a "tela".** `screen_label`/`caveat` são o dado pronto para quando ela existir —
+  nenhuma UI é criada por esta task.
+- **Não resolve o `unit`/`denom` da Coinalyze** (`docs/medicao-coinalyze.md` §2.3: 744
+  `BASE_ASSET` / 20 `QUOTE_ASSET`) — citado como possível causa de `CAPTURED_EXCEEDS_COINALYZE`
+  em `HYPOTHESIS_SCREEN_LABEL`, nunca medido ou corrigido aqui.
