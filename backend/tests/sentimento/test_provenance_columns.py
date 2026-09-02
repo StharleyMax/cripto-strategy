@@ -8,6 +8,7 @@ import pytest
 
 from src.modules.sentimento.domain.provenance import (
     OBSERVER_COLUMNS,
+    PRINCIPAL_COLUMN,
     PROVENANCE_COLUMNS,
     UNKNOWN_OBSERVER_REGION,
     Absence,
@@ -65,7 +66,9 @@ def test_the_seven_provenance_columns_are_the_seven_spec_001_3_1_writes() -> Non
     assert OBSERVER_COLUMNS == ("observer_id", "observer_region")
 
 
-def test_every_row_projects_the_seven_plus_the_observer_pair_plus_is_final() -> None:
+def test_every_row_projects_the_seven_plus_the_observer_pair_plus_is_final_plus_principal_id() -> (
+    None
+):
     """`SPEC-001` §3.1: "em TODA linha de serie" — the projection is how that is checkable."""
     projected = row().provenance_projection()
     assert tuple(projected) == (
@@ -73,9 +76,11 @@ def test_every_row_projects_the_seven_plus_the_observer_pair_plus_is_final() -> 
         "observer_id",
         "observer_region",
         "is_final",
+        "principal_id",
     )
     assert projected["provenance"] == "OBSERVADO"
     assert projected["availability_source"] == "OBSERVED"
+    assert projected["principal_id"] is None
 
 
 @pytest.mark.parametrize(
@@ -137,6 +142,65 @@ def test_the_four_provenance_words_and_the_four_absence_words_are_closed_sets() 
 def test_no_source_is_the_answer_qf_4_requires() -> None:
     """`QF-4`: a read under `nq` before the first live capture returns `SEM_FONTE`, never `q`."""
     assert Absence.NO_SOURCE.value == "SEM_FONTE"
+
+
+# ── `principal_id`: IDENTITY IS A DIMENSION OF EVERY HUMAN-ACT ROW (`SPEC-001` §4.4, `T-04.7`)
+
+
+def test_principal_column_name_is_the_dimension_spec_001_4_4_names() -> None:
+    """The constant is what a caller and a projection consumer both key off of."""
+    assert PRINCIPAL_COLUMN == "principal_id"
+
+
+def test_a_human_row_with_no_principal_id_is_refused() -> None:
+    """The falsifier.
+
+    Absence of `principal_id` on a `HUMANO` row is an ERROR, never a silent `NULL`
+    (`SPEC-001` §4.4, plan 04 item 4.11) — the row is not constructible without it.
+    """
+    with pytest.raises(InvalidSeriesRowError, match="principal_id"):
+        row(provenance=Provenance.HUMAN)
+
+
+def test_a_human_row_with_blank_principal_id_is_refused() -> None:
+    """Blank is missing, the same rule `SPEC-001` §3.2 already applies to the other columns."""
+    with pytest.raises(InvalidSeriesRowError, match="principal_id"):
+        row(provenance=Provenance.HUMAN, principal_id="   ")
+
+
+def test_a_human_row_with_principal_id_is_valid_and_projects_it() -> None:
+    """The positive case.
+
+    A `HUMANO` row that names its actor is accepted and carries the dimension into the
+    projection a consumer reads off the wire.
+    """
+    acted = row(provenance=Provenance.HUMAN, principal_id="owner")
+    assert acted.principal_id == "owner"
+    assert acted.provenance_projection()["principal_id"] == "owner"
+
+
+@pytest.mark.parametrize(
+    "provenance", [Provenance.OBSERVED, Provenance.DERIVED, Provenance.MODELED]
+)
+def test_a_non_human_row_does_not_require_principal_id(provenance: Provenance) -> None:
+    """Required exactly for a human act.
+
+    Never for the other three — a market reading is not made into a human act by leaving
+    `principal_id` unset.
+    """
+    reading = row(provenance=provenance)
+    assert reading.principal_id is None
+
+
+def test_principal_id_is_never_supplied_as_an_implicit_default_by_this_module() -> None:
+    """`SPEC-001` §4.4: "ter um valor não é ter zero dimensões".
+
+    Nothing in `provenance.py` invents a value. Omitting the argument on a `HUMANO` row must
+    fail, not fall back to a constant; a caller that wants to name today's single principal
+    has to say so explicitly.
+    """
+    with pytest.raises(InvalidSeriesRowError):
+        row(provenance=Provenance.HUMAN, principal_id=None)
 
 
 # ── DERIVADO IS NOT MODELADO, AND `D4.9` IS WHY ───────────────────────────────────────────

@@ -31,7 +31,7 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 
 | Q | assunto | estado | relógio |
 |---|---|---|---|
-| **Q1** | autoriza ligar os coletores hoje | `ABERTA` | **SIM — capture-or-lose** |
+| **Q1** | autoriza ligar os coletores hoje | **`RESPONDIDA`** 2026-09-01 | **SIM — capture-or-lose** — relógio parou |
 | **Q2** | onde roda, quem acessa, orçamento | **`RESPONDIDA`** | resolvida — ver §Q2 |
 | **Q3** | canal de alarme fora do browser | `ABERTA` | SIM (condicional) |
 | **Q4** | Coinalyze | **`RESPONDIDA COM RESÍDUO`** | resíduo sem relógio no `daily` |
@@ -49,18 +49,22 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 | **Q16** | dono de `charts`/`web` + regra em `frontend/` | **`RESPONDIDA`** 2026-08-28 | NÃO (de dado) — o relógio de retrabalho **parou** |
 | **Q17** | spread: medir ou assumir | **`RESPONDIDA COM RESÍDUO`** | **SIM — capture-or-lose** |
 | **Q18** | profundidade do backfill de `metrics` | `ABERTA` | NÃO |
-| **Q19** | `availability_probe_set` | `ABERTA` | **SIM** |
+| **Q19** | `availability_probe_set` | **`RESPONDIDA`** 2026-09-02 | **SIM — capture-or-lose, ver §Q19** |
 | **Q20** | SMC, pivôs+Fibonacci, ou os dois | **`ABERTA` (nova em R2)** | NÃO |
 
-**Contagem: 20 · 11 `ABERTA` · 3 `INFERÍVEL` · 3 `RESPONDIDA` · 2 `RESPONDIDA COM RESÍDUO` · 1 `MORTA`.**
-*(Atualizada em 2026-08-28: `Q16` respondida pelo owner; `Q13` reconciliada contra `SPEC-001:649`, que já a registrava `RESPONDIDA` desde 2026-08-25 — a divergência era deste arquivo.)*
-**Capture-or-lose: `Q1`, `Q2` (herdado), `Q17`, `Q19`** — e `Q5` saiu dessa classe quando `!forceOrder@arr` foi confirmado.
+**Contagem: 20 · 9 `ABERTA` · 3 `INFERÍVEL` · 5 `RESPONDIDA` · 2 `RESPONDIDA COM RESÍDUO` · 1 `MORTA`.**
+*(Atualizada em 2026-09-02: `Q19` respondida pelo owner — destrava `T-03.6`; `T-03.9` segue `blocked` por
+`observer_region`/VPS, decisão explícita do owner de deixar a VPS fora por enquanto. Atualizada em
+2026-09-01: `Q1` respondida pelo owner — 8 tasks destravadas nas fases 02/03 de `plataforma-dados`.
+Atualizada em 2026-08-28: `Q16` respondida pelo owner; `Q13` reconciliada contra `SPEC-001:649`, que já a
+registrava `RESPONDIDA` desde 2026-08-25 — a divergência era deste arquivo.)*
+**Capture-or-lose: `Q2` (herdado), `Q17`, `Q19`** — `Q1` saiu dessa classe ao ser respondida (2026-09-01); `Q5` saiu quando `!forceOrder@arr` foi confirmado.
 
 ---
 
 ## ⛔ CAPTURE-OR-LOSE — histórico que nenhuma fonte devolve depois
 
-### Q1 · `ABERTA` · Autoriza ligar HOJE os coletores que não precisam de estratégia nem de tela?
+### Q1 · **`RESPONDIDA` em 2026-09-01** · Autoriza ligar HOJE os coletores que não precisam de estratégia nem de tela?
 
 **(a)** Ligo hoje `!forceOrder@arr` (liquidação de mercado inteiro), `premiumIndex` (funding estimado), o snapshot diário de `exchangeInfo`+`fundingInfo` e o **probe de disponibilidade** — sim ou não?
 
@@ -76,6 +80,37 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 **(c) Trava:** o painel de liquidação (1 dos 3 gatilhos que a proposta nomeia) nasce vazio; `universe_at(ts)` fica preso em `s3_inferred`, **que é inadmissível no caminho de decisão** ⇒ **todo resultado transversal do passado é retrospectivo por construção**; `tick_size`/`price_precision`/`funding_interval` **com data de vigência** — base de toda tolerância de estrutura futura, que é expressa em ticks — não existem para nenhuma data passada; e o `available_at` **OBSERVED** das séries que a plataforma existe para servir, que **não é derivável retroativamente**.
 
 **(d) RELÓGIO: SIM — capture-or-lose.** ~1 dia perdido por dia. **É o único item deste registro cujo custo de atraso não tem mitigação de engenharia.**
+
+**✅ RESPOSTA DO OWNER (2026-09-01). Declaração literal:**
+
+> **"pode ligar o q1 e ligar os coletores"**
+
+`[PREMISSA-OWNER: 2026-09-01]`
+
+**A resposta é SIM às quatro capturas nomeadas em (a):** `!forceOrder@arr` (liquidação de mercado
+inteiro), `premiumIndex` (funding estimado), o snapshot diário de `exchangeInfo`+`fundingInfo`, e o
+probe de disponibilidade. **O relógio de capture-or-lose parou** — cada dia que passava sem isso era
+um dia de `nq` (janela de 48h) e de liquidação intraday perdidos para sempre; não voltam mais.
+
+**O que isto DESTRAVA — as 8 tasks nomeadas em `tasks_review.md` §"Mapa de rastreamento" (linha do
+`Q1`), e apenas estas:** `T-02.1` (snapshot diário datado), `T-02.2` (one-shot Coinalyze),
+`T-03.2` (`!forceOrder@arr`), `T-03.3` (política de reconexão por classe de stream, `ADR-004`),
+`T-03.4` (agregado `q`/`nq` do `aggTrade`, a de maior prioridade de relógio — janela de 48h),
+`T-03.5` (`premiumIndex`), `T-03.8` (rampa até o primeiro 429), `T-03.11` (scanner do relógio,
+`T-03.12`'s vizinha — reconciliação Coinalyze). `docs/context/plataforma-dados/tasks.toml` passa o
+`status` das 8 de `blocked` para `todo` no mesmo commit desta resposta — nenhuma delas está
+`done`, a resposta só remove o bloqueio de **poder começar**.
+
+**O que isto NÃO destrava, e por quê:** `T-02.4b` e `T-03.9` dependem de `T-02.1`/`T-03.2`
+respectivamente — ficam `blocked` até a dependência fechar, não por `Q1` diretamente. `T-03.9`
+carrega um segundo bloqueio que `Q1` não resolve: `observer_region` da VPS é `[NÃO MEDIDO]`
+(comando: `curl -s ipinfo.io` de dentro da VPS) — coluna de F0, impossível retroativamente
+(`SPEC-001` §9.2). `T-03.6` (`availability_probe_set`) segue travada por `Q19`, pergunta distinta.
+`T-15/Q15` (ToS de Binance/Bybit/Coinalyze) segue `ABERTA` e **incide retroativamente** sobre o que
+esta resposta manda acumular — não bloqueia o início, mas é dívida que não desaparece com `Q1`.
+
+**Nenhuma chave de API foi escrita neste documento** — `$COINALYZE_API_KEY` vive em `.env`,
+conforme `CLAUDE.md`.
 
 ---
 
@@ -174,7 +209,7 @@ instância `postgres:15` que já está de pé** — sem daemon novo, ao custo de
 
 ---
 
-### Q19 · `ABERTA` · `availability_probe_set`: quais símbolos e endpoints ganham `available_at` OBSERVED?
+### Q19 · **`RESPONDIDA` em 2026-09-02** · `availability_probe_set`: quais símbolos e endpoints ganham `available_at` OBSERVED?
 
 **(a)** Declare o conjunto: símbolos, endpoints, período e resolução.
 
@@ -185,6 +220,49 @@ instância `postgres:15` que já está de pé** — sem daemon novo, ao custo de
 **(c) Trava:** só o probe de F0. **Decide quais séries têm defasagem real PARA SEMPRE** — latência de campo **não é derivável retroativamente**, e o que ficar fora é **MODELED permanentemente para o período em que ficou fora**.
 
 **(d) RELÓGIO: SIM.** O que não se recupera é a medição do período em que o símbolo ficou fora.
+
+**✅ RESPOSTA DO OWNER (2026-09-02). Declaração literal:**
+
+> **"podemos deixar a vps de fora por enquanto, vamos fazer toda a execução local primeiro antes de
+> enviar para lá. Então, a menos que ela trave algum desenvolvimento e teste que n seja relacionado a
+> deploy e ambiente, podemos deixar como blocked por enquanto. sobre q19, vamos inicar com btc/usdt,
+> eth/usdt, link/usdt, sol/usdt. podemos começar com esses."**
+
+`[PREMISSA-OWNER: 2026-09-02]`
+
+**Símbolos declarados — 4, não o universo inteiro:** `BTCUSDT`, `ETHUSDT`, `LINKUSDT`, `SOLUSDT`. Isto
+muda a aritmética de (b): o cálculo original (6 símbolos a 10s, 20 a 30s) era para o universo cheio;
+com só 4, **qualquer uma das duas resoluções medidas cabe folgadamente** no balde Binance de 200 req/min.
+
+**Endpoints + resolução — `[DECISÃO-OWNER: 2026-09-02, escolha entre alternativas apresentadas]`:**
+apresentadas as opções de resolução (10s vs. 30s, com o custo em chamadas/min de cada) e de escopo
+(só Binance vs. incluir Coinalyze), o owner escolheu:
+- **Resolução 10s** nos 5 endpoints `/futures/data/*` da Binance — `5 × 4 símbolos × 6/min = 120
+  chamadas/min` (60% da cota de 200/min, a resolução mais fina já medida neste registro).
+- **Incluir os endpoints da Coinalyze na mesma rodada** — resolve `T-03.6` **e** tira a série Coinalyze
+  da quarentena (`available_at IS NULL`, o terceiro termo do predicado que `bv` não fechou) na mesma
+  via. Orçamento próprio e cego (40 chamadas/min), **não compete** com o balde Binance.
+
+**Período — `[INFERRED: consistente com o escopo já usado em toda task destravada por Q1 nesta sessão,
+e com a frase do owner nesta mesma resposta — "execução local primeiro antes de enviar para lá"]`:**
+`T-03.6` constrói o MECANISMO do probe contínuo (a task já pede isso, não um one-shot) e prova a lógica
+com uma rodada de proof curta, local — não um deploy 24/7 em VPS. A VPS está deliberadamente fora
+(ver decisão abaixo sobre `T-03.9`); rodar o probe continuamente em produção fica para quando a VPS
+entrar.
+
+**O que isto DESTRAVA:** `T-03.6` (`availability_probe_set`, fase 03) passa de `blocked` para `todo` —
+código do probe (5 endpoints Binance + endpoints Coinalyze, 4 símbolos, 10s) + prova local curta.
+
+**O que isto NÃO destrava, e por quê — decisão explícita, não efeito colateral de Q19:** `T-03.9`
+(`observer_region` ao lado de `available_at`) continua `blocked`. Antes desta resposta, `T-03.9` tinha
+DOIS bloqueios (`observer_region` da VPS `[NÃO MEDIDO]` **e** dependência de `T-03.6`/`Q19`). Q19
+resolve só o segundo. O primeiro — `observer_region` exige `curl -s ipinfo.io` **de dentro da VPS**,
+que o owner decidiu deixar fora por enquanto ("podemos deixar como blocked por enquanto") — permanece,
+e é o único bloqueio restante de `T-03.9`. **Vale a ressalva que o próprio owner nomeou:** se algo em
+desenvolvimento/teste (não deploy/ambiente) travar por causa disso, isso volta à mesa — não é bloqueio
+absoluto, é adiamento deliberado.
+
+**Nenhuma chave de API foi escrita neste documento.**
 
 ---
 

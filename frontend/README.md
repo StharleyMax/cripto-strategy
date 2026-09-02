@@ -445,3 +445,279 @@ respondida pelo **modelo** da escala de tempo (índice, `barSpacing`, `rightOffs
 da pane), calculado antes de qualquer chamada de pintura e sem nunca reler do canvas.
 Qualquer medição que dependa de **pixels pintados** — cor, sobreposição de discos (`D8.12`),
 texto do eixo — **não** pode usar este stub.
+
+---
+
+## 8. `src/app/knowledge-time-bundle.ts` — o contrato de URL de `T-05.8` (2026-09-02)
+
+`T-05.8` (`CST-42`, componente `web`) escreve o que `item 5.6` do plano `05` e `DoD D5.4`
+pedem: `knowledge_time` na URL, o bundle de parâmetros **é** a URL (nenhuma tabela/CRUD de
+preset), e `COMO EM T` sobrevive à navegação até o operador voltar explicitamente para
+`AO VIVO`. É contrato de **estado/roteamento**, não de pixel — o `ui-designer` verificou
+que a `S2` canônica já materializa o sintoma visível de `D2` estruturalmente (par
+fill+borda migrando entre os dois `<span>` do chrome), e isso está fora do mandato dele
+(`docs/context/plataforma-dados/gates/T-05.8-design.md`).
+
+```bash
+npm --prefix frontend run test:app   # 13 testes, node --test 'src/app/*.test.ts'
+```
+
+`Bundle` é um discriminated union (`LiveBundle | AsOfBundle`): `knowledgeTime` é campo
+OBRIGATÓRIO em `AsOfBundle` e **inexistente** por tipo em `LiveBundle` — voltar para
+`AO VIVO` (`returnToLive`) não tem como carregar `knowledge_time` escondido, porque o
+tipo de retorno não tem onde guardá-lo. `decodeBundle` reforça isso na leitura: uma URL
+com `mode=live` e o parâmetro `t` ainda presente é **recusada** (não descartada em
+silêncio) — é exatamente o retrocesso sem sintoma que `D5.4` proíbe como teste negativo
+obrigatório, virado impossível de representar em vez de apenas testado.
+
+### O AVISO da `§5` já não se aplica — medido ANTES desta task, não por ela
+
+`[MEDIDO 2026-09-02, `git stash -u` + `harness rules --mode sweep --format ndjson`,
+árvore em `07193e6`, ANTES de qualquer arquivo de `T-05.8`]` — saída **vazia**, `rc=0`.
+O `[AVISO] web-fullstack.browser-test-file-present` que a `§5` documentou como "aceso de
+propósito" já **não** aparece nessa árvore: `T-08.2` (`src/charts/*.test.ts`) já havia
+nascido antes de `T-05.8` e já satisfazia a regra. **Este achado não é desta task** — está
+registrado aqui porque `T-05.8` é quem primeiro precisou reler a `§5` para não repetir o
+erro que ela proíbe ("plantar um `.test.tsx` vazio").
+
+### O que `T-05.8` de fato mudou no sweep
+
+`[MEDIDO 2026-09-02, `harness rules --mode sweep --format ndjson`, árvore com os dois
+arquivos desta task]` — **1 achado, severidade `warn`, 0 `block`**:
+
+```
+web-fullstack.hardcoded-url  frontend/src/app/knowledge-time-bundle.test.ts:22
+  "endereco absoluto fixo no codigo do navegador: leia-o da configuracao de ambiente"
+```
+
+É o literal `https://painel.local/simbolo` usado como `base` sintético para montar
+`URL` nos testes — nenhum host é contatado. **Não foi suprimido nem escondido**: é
+severidade `warn` (fora do conjunto de `harness rules list --severity block`, 7 regras),
+e nenhuma allowlist foi declarada para calá-lo — o mesmo motivo que a `§5-bis` já dá para
+não consertar comportamento de ferramenta de terceiro por conta própria. Dono: quem
+trouxer a aplicação Next real e decidir de onde vem a base de URL em teste.
+
+**`[test_cmd.web]` continua NÃO declarado** — mesmo motivo já registrado nas `§4`/`§7`:
+`test_cmd` não é lido por portão nenhum. O script `npm --prefix frontend run test:app`
+existe pelo mesmo motivo que `test:charts` existe: é o comando que o `builder`/`qa` rodam
+hoje, não uma declaração de política.
+
+---
+
+## 9. `src/app/history-transport.ts` — o lado `web` de `ADR-005/D1` (`T-05.9`, 2026-09-02)
+
+`T-05.9` (`CST-43`, componente `web`) escreve o que o item `5.12` do plano `05` e o `DoD D5.8`
+pedem: **transporte HTTP endereçável por conteúdo para o histórico, e nenhum tick chega ao
+browser**. `ADR-005/D1` já decide a FORMA (chave de seis termos, resposta imutável por
+`knowledge_time`) — este módulo fecha o lado `web` desse contrato, mesmo padrão de `T-05.8`
+(`§8`): módulo TypeScript puro, sem tela, sem chamada de rede real em teste.
+
+```bash
+npm --prefix frontend run test:app   # 37 testes, node --test 'src/app/*.test.ts' (23 novos)
+```
+
+### Achado ANTES de escrever qualquer linha — a fronteira que a task mandou verificar
+
+`docs/context/plataforma-dados/handoff/T-05.9.md` proíbe criar ou editar `backend/`, e manda
+**parar e devolver achado** se fechar `D5.8` de verdade exigisse um endpoint/servidor novo.
+Medido: `grep -rln 'fastapi\|flask\|uvicorn\|starlette' backend/ --include='*.py' --include='*.toml'`
+→ **0 ocorrência**; `find backend -iname '*server*' -o -iname '*api*' -o -iname '*route*'` → só
+`binance_server_time_probe.py` (sonda de relógio, não servidor). **Não há nenhum framework HTTP
+no backend, logo nenhuma rota real existe para consumir** `[MEDIDO 2026-09-02]`. Isto NÃO virou
+"pare e implemente backend": o que `ADR-005/D1` fixa é um CONTRATO (a forma da chave, a
+imutabilidade, `bar_policy` nunca default), e `backend/src/modules/sentimento/domain/
+as_of_accessor.py` já materializa o vocabulário desse contrato do lado do domínio (`BarPolicy`,
+linhas 54-70; `bar_policy` "declared by the CONSUMER, never defaulted", linha 55-60). Fechar o
+lado `web` é consumir ESSE contrato — request key + os dois portões do falsificador da ADR —
+sem depender de um servidor rodando, o mesmo raciocínio que `T-05.8` já registrou para
+`knowledge_time`/`Bundle` (`§8` acima). Nenhum arquivo de `backend/` foi tocado.
+
+### O que o módulo garante, e como cada parte fecha o `DoD D5.8`
+
+1. **Chave endereçável por conteúdo** (`HistoryRequestKey`, seis termos de `ADR-005/D1`) —
+   `encodeHistoryRequest`/`decodeHistoryRequest`/`historyRequestUrl`, mesmo padrão de
+   `encodeBundle`/`decodeBundle`.
+2. **"O cache É o `knowledge_time`"** — `contentAddress` é determinístico e discrimina por
+   QUALQUER termo da chave (testado: mudar só `knowledgeTime`, ou só `barPolicy`, muda o
+   endereço). `HistoryResponseCache` opera sobre esse endereço e **recusa** (lança) se a MESMA
+   chave receber um payload byte-a-byte diferente — a imutabilidade de `D1` como invariante
+   verificável, não como comentário.
+3. **`bar_policy` nunca é default (`D4`)** — `decodeHistoryRequest` RECUSA um parâmetro
+   ausente ou fora do conjunto fechado `{final_only, intrabar}`; nenhuma função do módulo tem
+   valor default para este campo.
+4. **Zero campo de nível de tick** — `assertNoTickLevelFields` percorre qualquer payload JSON
+   decodificado em qualquer profundidade e lança ao encontrar `agg_id`, `agg_trade_id`,
+   `price`, `quantity`, `first_trade_id`, `last_trade_id`, `transact_time` ou
+   `is_buyer_maker` — o conjunto transcrito do falsificador da ADR **e** do cabeçalho real de
+   `data/binance/aggtrades/*.csv` (`agg_trade_id,price,quantity,first_trade_id,last_trade_id,
+   transact_time,is_buyer_maker` `[MEDIDO 2026-09-02, head -2]`).
+5. **Taxa ≤ `max(1 Hz, 1/TF)`** — `assertBucketSpacingWithinInterval` recusa qualquer par de
+   buckets consecutivos mais próximos que o intervalo pedido: um espaçamento mais fino É a
+   definição de tick chegando disfarçado de bucket extra.
+
+Deliberadamente **agnóstico do schema completo** de içamento de `D3` (sessão/painel/célula):
+nenhuma ADR fixou ainda essa forma para a resposta histórica, e esse payload é de `charts`
+(item 5.4 do plano `05`), fora deste componente. Os dois portões acima (4 e 5) protegem
+QUALQUER payload que uma rota futura venha a servir, não um schema assumido.
+
+### Falsificadores rodados — não só "os testes passam"
+
+Cada um dos dois portões tem teste de MUTAÇÃO: um payload/série que passa limpo é alterado
+plantando exatamente o defeito que a ADR proíbe, e o mesmo teste prova que a alteração agora
+reprova (`assertNoTickLevelFields`: ganhar `is_buyer_maker` faz um envelope legítimo reprovar;
+`assertBucketSpacingWithinInterval`: ganhar um ponto a 500ms do vizinho faz uma série de 1 min
+limpa reprovar). `decodeHistoryRequest` tem o mesmo tratamento para `D4`: remover `barPolicy`
+da URL faz o round-trip que passava reprovar, nomeando `ADR-005/D4` na mensagem.
+
+### Comandos rodados, literais
+
+```bash
+cd frontend && npm ci --prefer-offline --no-audit --no-fund   # node_modules ausente na worktree
+npm run test:app     # node --test 'src/app/*.test.ts'  -> 37 pass (23 novos), 0 fail
+npm run lint         # eslint src                        -> 0 erro, 0 aviso
+npm run test:charts  # regressão dos módulos existentes  -> 13 pass, 0 fail (pré-existente)
+make lint-frontend   # rc=0
+git add frontend/src/app/history-transport.ts frontend/src/app/history-transport.test.ts
+harness rules --mode sweep --changed-only --format ndjson
+  -> 1 achado: web-fullstack.hardcoded-url (warn), frontend/src/app/history-transport.test.ts:21
+  -> 0 achado de severidade block, rc=0
+```
+
+**`web-fullstack.hardcoded-url` é o mesmo achado que `T-05.8` já teve** (`§8` acima): o literal
+`https://painel.local/historico` usado como `base` sintético para montar `URL` nos testes —
+nenhum host é contatado. Severidade `warn`, fora do conjunto de `harness rules list --severity
+block` (7 regras). Sem `--changed-only`, o sweep também mostra o achado pré-existente de
+`T-05.8` (`knowledge-time-bundle.test.ts:22`, mesma regra) — ambos já registrados, nenhum novo
+de fundo.
+
+### Cobertura
+
+Sem piso declarado para `web` (mesmo motivo da `§8`: `harness policy --key test_cmd` só cobre
+`sentimento`). Medição qualitativa: os 23 testes novos cobrem 100% das funções exportadas
+(`assertValidHistoryRequestKey`, `encodeHistoryRequest`, `decodeHistoryRequest`,
+`historyRequestUrl`, `contentAddress`, `HistoryResponseCache`, `assertNoTickLevelFields`,
+`assertBucketSpacingWithinInterval`), incluindo os dois falsificadores da ADR (com caso de
+mutação para cada um) e as duas recusas de `D4` (parâmetro ausente, valor fora do conjunto).
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§9` nova (append-only, nenhuma linha existente reescrita).
+`docs/plans/SPEC-001-plataforma-dados/05_fatia_visivel.md` — **sem mudança**: é o documento
+normativo do DoD, e a task o satisfaz, não o edita.
+
+---
+
+## 10. `src/features/s1-console/` — tradução da `S1` aprovada (`T-07.12`, 2026-09-02)
+
+`T-07.12` (`CST-66`, componente `web`) escreve o que o item `7.13` do plano `07` e os `DoD
+D7.12`-`D7.15` pedem: `janela_de_perda` como **fórmula por série** (nunca uma constante), o
+multiplicador de resiliência declarado (`~4,7x`), retenção **anticorrelacionada** com a
+necessidade escrita por extenso (não um número seco), e reconexão como **rotina**. A tela
+canônica é `S1 Console — Diagnóstico Operacional (Rev. B)`,
+`screens/c0fc0210272f42a1ae29b6364e68d2e4`, aprovada com condição pelo gate independente
+`ux-ui-mastery` e com a condição fechada
+(`docs/context/plataforma-dados/gates/T-07.12-design.md` + `T-07.12-ux-critique.md`,
+`docs/product/STITCH_CONTEXT.md` §4.2).
+
+### Por que não existe uma página React — mesmo raciocínio da `§1` e de `src/app/routes.ts`
+
+Este pacote **não é** a aplicação Next.js (`§1`; `harness code-paths classify` confirma
+`frontend/src/**` como `producao` de qualquer forma, mas não há `react` em
+`package-lock.json` — `[MEDIDO 2026-09-02: grep -c '"react"' frontend/package-lock.json` →
+**0**`]`, nem `tsconfig.json`). `S1Console.tsx` é TSX válido, lintado como qualquer outro
+arquivo do pacote (`npm run lint` o lê e aprova), no MESMO nível que
+`src/features/panel/Filter.tsx` já ocupava: um componente típico, correto por tipo, que
+espera a aplicação real para ser montado — não uma página rodando. O que carrega o DoD é a
+camada de domínio abaixo dele, que **é** testada.
+
+```bash
+npm --prefix frontend run test:s1   # 26 testes, node --test 'src/features/s1-console/*.test.ts'
+npm --prefix frontend run lint      # eslint src -> 0 erro, 0 aviso
+```
+
+### A tradução, em quatro arquivos
+
+1. **`domain.ts`** — tipos e fórmulas puras. `RetentionWindow` é um discriminated union de
+   6 variantes (`computed_uniform`, `measured_sparse`, `doc_only`, `declared_constant`,
+   `unmeasured`, `not_applicable`) porque o `D7.12` observa 6 formas distintas de saber a
+   janela, não uma fórmula universal. `computeUniformWindowDays` fecha o caso determinístico
+   (`pontos × intervalo`); o caso esparso (`D7.14`, liquidação) **não** passa por essa
+   função — `domain.test.ts` prova por que: rodar a fórmula uniforme sobre `3.052 pts × 1m`
+   dá ≈2,1 dias, não os 8 dias medidos, porque a série não tem cadência uniforme. `D17`
+   (severidade nunca por cor) é código, não só documentação: existe UMA constante de classe
+   de badge (`NEUTRAL_STATUS_BADGE_CLASS`) e `orderRowsBySeverity` é quem move o coletor
+   parado para o topo por POSIÇÃO.
+2. **`fixtures.ts`** — dado sintético, com a proveniência de cada número comentada linha a
+   linha. Ver a seção GAP abaixo.
+3. **`view-model.ts`** — formata para texto de tela. Deliberadamente separado do domínio: os
+   números ficam planos (`number`, ponto decimal) até aqui, porque
+   `docs/context/plataforma-dados/handoff_to_architect.md` `Q14` fixa que formatação de
+   locale é invariante de CAMINHO DE DADO — pt-BR só é legítimo em microcopy (`CLAUDE.md`,
+   linha 8 da tabela de fronteira), e este módulo é exatamente essa fronteira.
+4. **`S1Console.tsx`** — a tradução estrutural do HTML/Tailwind aprovado (mesmas classes,
+   mesma hierarquia — conferido por leitura lado a lado do HTML baixado da tela canônica),
+   tipada contra `S1ViewModel`.
+
+### ⚠️ GAP registrado — dado é fixture, não `ingest_health_query`
+
+`S1` é especificada para ler pela consulta nomeada `ingest_health_query` (`ADR-008/D3`,
+`DoD D7.17`) — e ligar essa consulta de verdade é **`T-07.13`**, task SEPARADA
+(`depends_on = ["T-02.3", "T-07.12"]`, `docs/context/plataforma-dados/tasks.toml:954-962`).
+Nada em `fixtures.ts` vem de banco. Dois números merecem nota explícita:
+
+- **`OI · grade 5m`**: o plano publica `"~2.000 pts × 5m ≈ 7,0 dias"` — os dois já
+  arredondados. O fixture usa `2016` pontos (não `2000`): é o menor valor "redondo" que (a)
+  ainda lê como `~2.000` e (b) faz `computeUniformWindowDays` bater EXATAMENTE em `7,0`
+  (`2016 × 5 / 1440 = 7`), para que o texto renderizado seja saída de uma fórmula de
+  verdade, não uma string ao lado de um ponto-de-partida que não a produz. A tela mostrará
+  `"2.016 pts"`, não `"~2.000 pts"` — divergência da microcopy literal aprovada, deliberada
+  e registrada aqui, não escondida.
+- **`ORÇAMENTO ARMAZENAMENTO (GB/DIA)`** e **`FILA ETL`**: os valores (`1.2`, `0.4`, `1.6
+  GB`, `14.204`) são os literais da tela canônica aprovada, reproduzidos como fixture —
+  `totalStorageBudgetGbPerDay` os SOMA (não copia um total solto), e
+  `view-model.test.ts` prova que a soma bate com `"1.6 GB"`.
+
+### Achado registrado, não corrigido: a tela aprovada mistura separador decimal
+
+`[MEDIDO 2026-09-02, grep no HTML baixado de `screens/c0fc0210272f42a1ae29b6364e68d2e4`]` —
+a coluna `JANELA_DE_PERDA` usa vírgula (`"1,5 dia"`, `"7,0 dias"`) e as colunas de uptime% e
+GB/dia usam ponto (`"99.8%"`, `"1.2"`, `"1.6 GB"`) na MESMA tela aprovada. `view-model.ts`
+reproduz essa mistura fielmente (`formatPtBrDecimal` para janela, `formatDotDecimal` — não
+exportada — para os demais) em vez de normalizar por conta própria: consertar é decisão de
+design system, fora do `DoD D7.12`-`D7.15` desta task. Registrado com o comando que o mede,
+não escondido atrás de uma escolha silenciosa de formatação.
+
+### Cobertura
+
+Sem piso declarado para `web` (mesmo motivo das `§8`/`§9`). Medição qualitativa: 26 testes
+cobrem 100% das funções exportadas de `domain.ts` e `view-model.ts`, incluindo os dois
+falsificadores centrais do DoD (`D7.14`: a fórmula uniforme NÃO reproduz a janela esparsa;
+`D17`: as 4 badges de status compartilham uma única classe, e só a linha `PARADO` carrega
+glifo) e a montagem completa (`buildS1ViewModel`) sobre os fixtures canônicos.
+
+### Comandos rodados, literais
+
+```bash
+npm --prefix frontend run test:s1                          # 26 pass, 0 fail
+npm --prefix frontend run lint                              # 0 erro, 0 aviso
+npm --prefix frontend run test:app                          # 42 pass, 0 fail (regressão)
+npm --prefix frontend run test:charts                       # 13 pass, 0 fail (regressão)
+make lint-frontend                                           # rc=0
+git add frontend/package.json frontend/src/features/s1-console/
+harness rules --mode sweep --changed-only --format ndjson   # saída vazia, rc=0
+harness rules --mode sweep --format ndjson
+  -> 2 achados pré-existentes (warn, web-fullstack.hardcoded-url, T-05.8/T-05.9), 0 novo
+harness code-paths classify frontend/src/features/s1-console/domain.ts       # producao
+harness code-paths classify frontend/src/features/s1-console/S1Console.tsx   # producao
+```
+
+**`make boundaries` não rodou** (`rc=3`, "RECUSA: backend/.venv nao existe") — é o portão de
+`backend/`, fora da fronteira desta task (`⛔ nao criar nem editar nada em backend/`, ver o
+despacho); nada em `frontend/` depende dele.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§10` nova (append-only). `docs/plans/SPEC-001-plataforma-dados/07_aquisicao_em_regime.md`
+— **sem mudança**: documento normativo do DoD, a task o satisfaz, não o edita.
+`docs/product/STITCH_CONTEXT.md` — **sem mudança**: é o `ui-designer` quem propõe edição ali
+(`R6`), não o builder.

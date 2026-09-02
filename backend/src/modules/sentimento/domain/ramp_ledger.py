@@ -88,8 +88,9 @@ class ProbeObservation:
         """Reject an observation that is neither a dispatch nor a failure to dispatch."""
         if (self.status is None) == (self.transport_error is None):
             raise ValueError(
-                "observacao tem de trazer status HTTP OU erro de transporte, nunca os dois "
-                "nem nenhum: e essa distincao que separa 'nao levei 429' de 'nao requisitei'"
+                "observation must carry an HTTP status OR a transport error, never both "
+                "nor neither: this distinction is what separates 'did not get a 429' from "
+                "'did not request'"
             )
 
     def header(self, name: str | None) -> str | None:
@@ -123,9 +124,9 @@ class RampRung:
     def __post_init__(self) -> None:
         """Reject a rung whose status contradicts its dispatch state."""
         if self.outcome.was_dispatched and self.status is None:
-            raise ValueError(f"degrau {self.index} despachado sem status HTTP")
+            raise ValueError(f"rung {self.index} dispatched without an HTTP status")
         if not self.outcome.was_dispatched and self.status is not None:
-            raise ValueError(f"degrau {self.index} nao despachado, mas carrega status HTTP")
+            raise ValueError(f"rung {self.index} not dispatched, but carries an HTTP status")
 
 
 def _classify(status: int) -> RungOutcome:

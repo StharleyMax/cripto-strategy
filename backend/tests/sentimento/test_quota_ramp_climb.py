@@ -157,7 +157,7 @@ def test_the_pause_count_is_one_based_and_refuses_anything_below(requests_done: 
     declared starting cadence and open one notch faster than the plan says — against somebody
     else's quota.
     """
-    with pytest.raises(InvalidRampPlanError, match="comeca em 1"):
+    with pytest.raises(InvalidRampPlanError, match="starts at 1"):
         _plan(max_requests=3).interval_after(requests_done)
 
 

@@ -117,7 +117,7 @@ class WebSocketMessageSource:
             chunk = channel.recv(4096)
             if not chunk:
                 raise StreamTransportError(
-                    ProbeStage.HTTP_UPGRADE, "conexao fechada antes de completar o handshake"
+                    ProbeStage.HTTP_UPGRADE, "connection closed before completing the handshake"
                 )
             buffer.extend(chunk)
         head, _, rest = bytes(buffer).partition(_HEADER_TERMINATOR)
@@ -127,7 +127,7 @@ class WebSocketMessageSource:
         """Read exactly `size` bytes, failing at `FRAME` on close or timeout."""
         channel = self._channel
         if channel is None:
-            raise StreamTransportError(ProbeStage.FRAME, "canal nao aberto")
+            raise StreamTransportError(ProbeStage.FRAME, "channel not open")
         buffer = bytearray()
         if self._pending:
             take = min(size, len(self._pending))
@@ -139,7 +139,7 @@ class WebSocketMessageSource:
             except TimeoutError as error:
                 raise StreamTransportError(ProbeStage.FRAME, f"timeout: {error}") from error
             if not chunk:
-                raise StreamTransportError(ProbeStage.FRAME, "conexao fechada no meio do frame")
+                raise StreamTransportError(ProbeStage.FRAME, "connection closed mid-frame")
             buffer.extend(chunk)
         return bytes(buffer)
 

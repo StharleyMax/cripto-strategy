@@ -285,13 +285,13 @@ tracker = { provider = "jira", id = "CST-91", url = "https://conversationhub.atl
 id = "T-02.1"
 title = "[sentimento] 02 · Coletor de snapshot diario datado de exchangeInfo + fundingInfo, com premiumIndex como segunda testemunha"
 components = ["sentimento"]
-status = "blocked"
+status = "done"
 phase = "02"
 depends_on = ["T-01.1"]
 refs = [
     "CA-F0-1", "CA-F0-1b", "CA-F0-7", "CA-F0-11", "SPEC-001 §3.4", "plano 02 itens 2.1+2.2",
     "DoD D2.1", "DoD D2.2", "DoD D2.3", "DoD D2.4", "DoD D2.5", "DoD D2.7",
-    "BLOQUEADA: Q1 — ABERTA, relogio SIM",
+    "Q1 RESPONDIDA 2026-09-01, decisoes-do-owner.md",
     "CAPTURE-OR-LOSE: CL-3 exchangeInfo datado",
 ]
 tracker = { provider = "jira", id = "CST-12", url = "https://conversationhub.atlassian.net/browse/CST-12" }
@@ -300,12 +300,12 @@ tracker = { provider = "jira", id = "CST-12", url = "https://conversationhub.atl
 id = "T-02.2"
 title = "[sentimento] 02 · One-shot Coinalyze daily (OI + liquidacao) nascendo em quarentena; broker de cota CEGO"
 components = ["sentimento"]
-status = "blocked"
+status = "done"
 phase = "02"
 depends_on = ["T-01.1"]
 refs = [
     "CA-F0-13", "CA-F3-9", "avaliacao:A3", "SPEC-001 §5.2", "plano 02 itens 2.3+2.4", "DoD D2.6",
-    "BLOQUEADA: Q1 — ABERTA, relogio SIM",
+    "Q1 RESPONDIDA 2026-09-01, decisoes-do-owner.md",
     "RESIDUO: Q4 (Coinalyze free/pago/descartar) — bloqueio parcial, o mecanismo anda",
 ]
 tracker = { provider = "jira", id = "CST-13", url = "https://conversationhub.atlassian.net/browse/CST-13" }
@@ -353,7 +353,8 @@ tracker = { provider = "jira", id = "CST-15", url = "https://conversationhub.atl
 id = "T-02.4b"
 title = "[docs] 02 · Politica de backup com teste de restauracao, declarando por tabela o que e re-derivavel dos dumps"
 components = ["docs"]
-status = "todo"
+status = "blocked"
+blocked_reason = "depends_on T-02.1, mesma trava Q1 — decisoes-de-execucao-2026-08-28.md §1.1"
 phase = "02"
 depends_on = ["T-02.1"]
 refs = ["GAP G1", "plano 02 item 2.5 (metade documental)", "particao de D-3: tasks_review.md §7/D-3"]
@@ -365,7 +366,7 @@ tracker = { provider = "jira", id = "CST-16", url = "https://conversationhub.atl
 id = "T-03.1"
 title = "[sentimento] 03 · Medir se o WS symbol@aggTrade carrega nq — hoje NAO MEDIDO, gate NENHUM"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-01.1"]
 refs = ["ADR-001 (dependencia)", "plano 03 item 3.6", "DoD D3.9", "PRECEDE: o desenho de T-03.4 depende do resultado"]
@@ -375,32 +376,32 @@ tracker = { provider = "jira", id = "CST-17", url = "https://conversationhub.atl
 id = "T-03.2"
 title = "[sentimento] 03 · Coletor !forceOrder@arr gravando cru, com o rotulo de subamostragem nao resolvida na SAIDA"
 components = ["sentimento"]
-status = "blocked"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-01.1"]
-refs = ["CA-F0-2", "SPEC-001 §5.10", "SPEC-001 §8.5/5", "plano 03 item 3.1", "BLOQUEADA: Q1", "CAPTURE-OR-LOSE: CL-1 liquidacao intraday"]
+refs = ["CA-F0-2", "SPEC-001 §5.10", "SPEC-001 §8.5/5", "plano 03 item 3.1", "Q1 RESPONDIDA 2026-09-01", "CAPTURE-OR-LOSE: CL-1 liquidacao intraday"]
 tracker = { provider = "jira", id = "CST-18", url = "https://conversationhub.atlassian.net/browse/CST-18" }
 
 [[tasks]]
 id = "T-03.3"
 title = "[sentimento] 03 · Politica de reconexao POR CLASSE de stream, com taxa de colisao publicada e direcao do vies escrita"
 components = ["sentimento"]
-status = "blocked"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-03.2"]
-refs = ["ADR-004 (gate de F0)", "plano 03 item 3.2", "DoD D3.6", "BLOQUEADA: Q1", "CAPTURE-OR-LOSE", "registro consolidado em T-09.3"]
+refs = ["ADR-004 (gate de F0)", "plano 03 item 3.2", "DoD D3.6", "Q1 RESPONDIDA 2026-09-01", "CAPTURE-OR-LOSE", "registro consolidado em T-09.3"]
 tracker = { provider = "jira", id = "CST-19", url = "https://conversationhub.atlassian.net/browse/CST-19" }
 
 [[tasks]]
 id = "T-03.4"
 title = "[sentimento] 03 · Agregado de bucket q/nq do stream aggTrade (CL-5) — a task de maior relogio do projeto"
 components = ["sentimento"]
-status = "blocked"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-03.1"]
 refs = [
     "ADR-001/6", "SPEC-001 §1.4 (CL-5)", "plano 03 item 3.5", "DoD D3.5", "DoD D3.7", "DoD D3.8",
-    "BLOQUEADA: Q1", "CAPTURE-OR-LOSE: CL-5 — nq vive em janela de 48h e em nenhum historico",
+    "Q1 RESPONDIDA 2026-09-01", "CAPTURE-OR-LOSE: CL-5 — nq vive em janela de 48h e em nenhum historico",
 ]
 tracker = { provider = "jira", id = "CST-20", url = "https://conversationhub.atlassian.net/browse/CST-20" }
 
@@ -408,22 +409,24 @@ tracker = { provider = "jira", id = "CST-20", url = "https://conversationhub.atl
 id = "T-03.5"
 title = "[sentimento] 03 · Coletor premiumIndex — funding estimado, que nao tem endpoint de historico em fonte nenhuma"
 components = ["sentimento"]
-status = "blocked"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-01.1"]
-refs = ["CA-F0-1b", "plano 03 item 3.3", "BLOQUEADA: Q1", "CAPTURE-OR-LOSE: CL-2 serie efemera"]
+refs = ["CA-F0-1b", "plano 03 item 3.3", "Q1 RESPONDIDA 2026-09-01", "CAPTURE-OR-LOSE: CL-2 serie efemera"]
 tracker = { provider = "jira", id = "CST-21", url = "https://conversationhub.atlassian.net/browse/CST-21" }
 
 [[tasks]]
 id = "T-03.6"
 title = "[sentimento] 03 · availability_probe continuo com availability_probe_set declarado, e o M-1 de lag_ms por endpoint"
 components = ["sentimento"]
-status = "blocked"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-01.1"]
 refs = [
     "CA-F0-9", "CA-F0-3", "plano 03 itens 3.4+3.9", "DoD D3.2", "DoD D3.3", "DoD D3.4",
-    "BLOQUEADA: Q19 (availability_probe_set) — ABERTA, relogio SIM",
+    "Q19 RESPONDIDA 2026-09-02 — decisoes-do-owner.md sec Q19",
+    "availability_probe_set: BTCUSDT+ETHUSDT+LINKUSDT+SOLUSDT, 5 endpoints Binance /futures/data/* a 10s, endpoints Coinalyze incluidos",
+    "escopo: mecanismo do probe continuo + prova local curta, sem deploy em VPS (VPS fora por decisao do owner)",
     "CAPTURE-OR-LOSE: decide quais series tem defasagem real PARA SEMPRE",
     "abre a quarentena de T-06.6",
 ]
@@ -433,7 +436,7 @@ tracker = { provider = "jira", id = "CST-22", url = "https://conversationhub.atl
 id = "T-03.7"
 title = "[sentimento] 03 · Rampa ate o primeiro 429 com recuo, e o registro de que dois dos tres baldes sao cegos"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-01.1"]
 refs = ["CA-F0-4", "plano 03 item 3.10", "DoD D3.11", "DoD D3.12", "SPEC-001 §9.2 declara NAO DIFERIVEL", "PRECEDE: T-07.7 e T-08.13"]
@@ -443,17 +446,18 @@ tracker = { provider = "jira", id = "CST-23", url = "https://conversationhub.atl
 id = "T-03.8"
 title = "[sentimento] 03 · NTP como dependencia de runtime; skew persistido por ingest_run"
 components = ["sentimento"]
-status = "blocked"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-01.1"]
-refs = ["CA-F0-8", "GAP G6", "plano 03 item 3.7", "DoD D3.10", "BLOQUEADA: Q1", "a tolerancia calibra em T-07.10"]
+refs = ["CA-F0-8", "GAP G6", "plano 03 item 3.7", "DoD D3.10", "Q1 RESPONDIDA 2026-09-01", "a tolerancia calibra em T-07.10"]
 tracker = { provider = "jira", id = "CST-24", url = "https://conversationhub.atlassian.net/browse/CST-24" }
 
 [[tasks]]
 id = "T-03.9"
 title = "[sentimento] 03 · observer_id e observer_region ao lado de todo available_at"
 components = ["sentimento"]
-status = "blocked"
+status = "blocked"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
+blocked_reason = "observer_region da VPS NAO MEDIDO, VPS deliberadamente fora por decisao do owner 2026-09-02 (execucao local primeiro). Q19 ja nao bloqueia mais (RESPONDIDA, T-03.6 fechada)"
 phase = "03"
 depends_on = ["T-03.2"]
 refs = [
@@ -467,7 +471,7 @@ tracker = { provider = "jira", id = "CST-25", url = "https://conversationhub.atl
 id = "T-03.10"
 title = "[sentimento] 03 · Fila de ETL do dump retomavel, com profundidade como parametro; curl -sI mensal em aggTrades e bookDepth"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-01.1"]
 refs = ["CA-F0-5", "SPEC-001 §5.8", "plano 03 itens 3.11+3.14", "DoD D3.1", "Q18 NAO bloqueia: tasks_review.md §7/D-5", "ORDEM: T-07.1 deveria preceder — tasks_review.md §7/D-7"]
@@ -477,17 +481,17 @@ tracker = { provider = "jira", id = "CST-26", url = "https://conversationhub.atl
 id = "T-03.11"
 title = "[sentimento] 03 · Reconciliacao diaria liquidacao capturada x agregado Coinalyze, com a ressalva na tela"
 components = ["sentimento"]
-status = "blocked"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-02.2", "T-03.2"]
-refs = ["CA-F0-14", "plano 03 item 3.12", "BLOQUEADA: Q1"]
+refs = ["CA-F0-14", "plano 03 item 3.12", "Q1 RESPONDIDA 2026-09-01"]
 tracker = { provider = "jira", id = "CST-27", url = "https://conversationhub.atlassian.net/browse/CST-27" }
 
 [[tasks]]
 id = "T-03.12"
 title = "[sentimento] 03 · Portao de natureza por USO: scanner de AST nasce no make e o contrato 3 estreita no MESMO commit (ADR-016/D5)"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-02T16:23:42Z @ 85a3e6a8f58058e930b168a9f5d37858487feef2
 phase = "03"
 depends_on = ["T-03.1"]
 refs = [
@@ -518,7 +522,7 @@ refs = [
 id = "T-04.1"
 title = "[sentimento] 04 · Shift canonico event_time = create_time + 300000 nas oito colunas, com ordenacao obrigatoria antes de emitir"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "04"
 depends_on = ["T-01.1"]
 refs = ["SPEC-001 §2.2", "CA-F1-1", "CA-F1-14", "CA-F1-2", "plano 04 itens 4.1+4.2+4.4", "DoD D4.1", "DoD D4.2", "DoD D4.3", "DoD D4.10"]
@@ -538,7 +542,7 @@ tracker = { provider = "jira", id = "CST-29", url = "https://conversationhub.atl
 id = "T-04.3"
 title = "[sentimento] 04 · Unicidade por agg_id com verificacao de contiguidade — nunca por tempo, nunca first/last trade_id"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "04"
 depends_on = ["T-04.1"]
 refs = ["CA-F1-5", "CA-F1-6", "plano 04 item 4.3", "DoD D4.4", "DoD D4.5"]
@@ -548,7 +552,7 @@ tracker = { provider = "jira", id = "CST-30", url = "https://conversationhub.atl
 id = "T-04.4"
 title = "[sentimento] 04 · Acessor unico as_of() = argmin(observed_at) com LOCF e sem interpolate; R-1 e R-2 e knowledge_time na leitura"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "04"
 depends_on = ["T-04.2"]
 refs = [
@@ -563,7 +567,7 @@ tracker = { provider = "jira", id = "CST-31", url = "https://conversationhub.atl
 id = "T-04.5"
 title = "[sentimento] 04 · cvd_delta por bucket como fato; cvd_cum(anchor) como view com ancora obrigatoria; Decimal canonico"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "04"
 depends_on = ["T-04.2"]
 refs = ["CA-F1-8", "SPEC-001 §2.6", "plano 04 item 4.8", "DoD D4.7", "DoD D4.8"]
@@ -573,7 +577,7 @@ tracker = { provider = "jira", id = "CST-32", url = "https://conversationhub.atl
 id = "T-04.6"
 title = "[sentimento] 04 · Serializacao de numeral invariante de locale em todo caminho de dado"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "04"
 depends_on = ["T-04.1"]
 refs = ["SPEC-001 §3.8", "plano 04 item 4.12", "DoD D4.12", "tira de Q14 o poder de invalidar fixture"]
@@ -583,7 +587,7 @@ tracker = { provider = "jira", id = "CST-33", url = "https://conversationhub.atl
 id = "T-04.7"
 title = "[sentimento] 04 · principal_id como dimensao em toda linha de ato humano — nunca constante implicita, nunca NULL"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "04"
 depends_on = ["T-04.2"]
 refs = ["SPEC-001 §4.4", "Q2 (RESPONDIDA)", "plano 04 item 4.11", "verificado em 05 por D5.10", "ADR-009/D2 recusa organization_id"]
@@ -683,7 +687,7 @@ tracker = { provider = "jira", id = "CST-41", url = "https://conversationhub.atl
 id = "T-05.8"
 title = "[web] 05 · knowledge_time na URL; o bundle E a URL, nao um CRUD; COMO EM T sobrevive a navegacao"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T11:28:27Z @ c36d584e39f9af575f0b833e202f6e1a17464f4a (PR #66)
 phase = "05"
 depends_on = ["T-04.4"]
 refs = ["SPEC-001 §7", "plano 05 item 5.6", "DoD D5.4", "teste negativo obrigatorio"]
@@ -693,7 +697,7 @@ tracker = { provider = "jira", id = "CST-42", url = "https://conversationhub.atl
 id = "T-05.9"
 title = "[web] 05 · Transporte HTTP enderecavel por conteudo para o historico. Nenhum tick chega ao browser"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T11:54:19Z @ 42dfb7cf86fafd56a75fa3fd2da4bd95ecfa47e1 (PR #68, 2a rodada apos NEEDS_FIX)
 phase = "05"
 depends_on = ["T-04.4"]
 refs = ["ADR-005/D1", "plano 05 item 5.12", "DoD D5.8", "3.468 msg/s de pico medido"]
@@ -703,7 +707,8 @@ tracker = { provider = "jira", id = "CST-43", url = "https://conversationhub.atl
 id = "T-05.10"
 title = "[web] 05 · Auth minima single-user extensivel, e a atribuicao obrigatoria do Lightweight Charts"
 components = ["web"]
-status = "todo"
+status = "blocked"
+blocked_reason = "PREMISSA-OWNER 2026-09-02: primeiro teste e local, auth so e necessaria ao subir pra VPS — a mesma condicao que ja estava em refs (\"se as rotas nao forem publicadas, esta task sai\"), agora aplicada em vez de deixada para depois. Reabre quando a VPS entrar em pauta; ate la T-04.7 basta (SPEC-001 sec8.3). Nota: a metade de atribuicao do Lightweight Charts (CA-F1-15) nao depende de VPS, mas a task nao foi desmembrada por decisao de agente — desmembrar e ato do /tech-lead, nao deste workflow"
 phase = "05"
 depends_on = ["T-05.8"]
 refs = [
@@ -940,7 +945,7 @@ tracker = { provider = "jira", id = "CST-65", url = "https://conversationhub.atl
 id = "T-07.12"
 title = "[web] 07 · S1 console: janela_de_perda como FORMULA por serie, fila de ETL, orcamento aritmetico, GB/dia"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T16:20:09Z @ c90442ee2a0496f41648474f9906c426b7bb6ca6 (PR #74; design com 2 rodadas de gate ux-ui-mastery independente)
 phase = "07"
 depends_on = ["T-02.3", "T-05.8"]
 refs = ["SPEC-001 §6", "plano 07 item 7.13", "DoD D7.12", "DoD D7.13", "DoD D7.14", "DoD D7.15", "S1 NAO e o canal de alarme"]
@@ -950,7 +955,7 @@ tracker = { provider = "jira", id = "CST-66", url = "https://conversationhub.atl
 id = "T-07.13"
 title = "[web] 07 · S1 le pela consulta nomeada ingest_health_query — a MESMA de 02"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T17:13:58Z @ b482d28ad7eac9698412d0a9fe7873db485e7d20 (PR #77; gatilho de reabertura ADR-008/D3 disparou, registrado e nao decidido)
 phase = "07"
 depends_on = ["T-02.3", "T-07.12"]
 refs = ["ADR-008/D3", "ADR-008/DoD-3", "plano 07 item 7.14", "DoD D7.17 (falsificador da fase)", "unico teste que expoe duplicacao silenciosa"]

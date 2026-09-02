@@ -684,6 +684,208 @@ armadilha de `rc=0` sobre universo vazio, e a metade *"ninguém mais importa"* �
 porque ainda não há consumidor. Então o que carrega o peso é o outro lado: **4 violadores
 plantados, 4 pegos**, cada um por um teste diferente, e a árvore volta verde ao desplantar.
 
+### 📎 2026-09-01 por `T-04.1` — o shift canônico `event_time`, a ordenação obrigatória e a lacuna nunca preenchida
+
+Um módulo novo em `domain`, um em `infra`, e o par que o CSV cru de `daily/metrics` vira
+`event_time`/`src_label_raw`/gap. `SPEC-001` §2.2, `CA-F1-1`, `CA-F1-14`, `CA-F1-2`, plano `04`
+itens **4.1** + **4.2** + **4.4**.
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/metrics_shift.py` | `domain` | `LABEL_SHIFT_MS = 300_000`; `RawMetricsRow`/`LabeledMetricsRow`; `label_and_sort_metrics_rows` — **único** ponto de saída, sem parâmetro para pular o `sorted(...)`; `MetricsGap`/`detect_gaps`, que não tem campo para um valor interpolado |
+| `src/modules/sentimento/infra/metrics_csv_reader.py` | `infra` | `parse_create_time_ms`/`format_event_time_iso` (os dois únicos pontos que tocam `datetime`); `read_raw_metrics_rows` devolve em **ordem do arquivo**, de propósito; `build_ingest_gap` liga `MetricsGap` ao `IngestGap` já existente (`domain/ingest_record.py`, `T-02.3`) |
+| `tests/sentimento/test_metrics_shift.py` | — | **17 testes** sintéticos: o mutante "bypass do sort" reprova, `MetricsGap` não tem onde guardar valor interpolado |
+| `tests/sentimento/test_metrics_event_time_fixtures.py` | — | `D4.1`/`D4.2`/`D4.3` sobre os fixtures reais pinados por `md5` |
+| `tests/sentimento/test_taker_lookahead_regression.py` | — | `D4.10`, reproduzido sobre fixtures deste repositório |
+| `tests/sentimento/test_metrics_csv_reader.py` | — | a borda de parsing, isolada do resto |
+| `tests/helpers/data_fixtures.py` | — | acha `data/` por `git rev-parse --git-common-dir` — portátil entre worktrees, já que `data/` é gitignored e não existe em `git worktree add` |
+
+**A ordenação é obrigatória por FORMA, não por convenção escrita.** `label_metrics_row` está
+exposto (o teste de bypass precisa dele), mas `label_and_sort_metrics_rows` é o único ponto que
+uma chamada de produção usaria, e ele não tem parâmetro `skip_sort`. `[MEDIDO 2026-09-01]`: o
+mutante literal — trocar `tuple(sorted(labeled, key=...))` por `tuple(labeled)` — foi aplicado,
+rodado, e **derrubou 2 testes nomeando o índice exato da discordância** (um sintético, um sobre
+`data/binance/metrics/btcusdt/2026-08-18.csv`); revertido antes do commit.
+
+**`D4.1` bate exato no número que o plano publica.** `data/binance/metrics/btcusdt/2026-08-18.csv`
+(md5 `b8ef79c353f2adce853c68084cc3b631`): 288 linhas, deslocamento posicional máximo **275 de
+288** `[MEDIDO 2026-09-01: posição na ordem do arquivo menos posição na ordem por `create_time`,
+máximo do valor absoluto]` — o mesmo número que `CA-F1-1` cita. O salto-para-trás que o plano
+cita como 1435 min mediu, nesta reprodução, **1415 min**; a diferença não foi investigada (não é
+DoD desta task) e o número não entrou como asserção — só o deslocamento posicional, que bateu.
+
+**`D4.2` é o gap real, e ele já era o fixture que outros dois arquivos de teste citavam sem
+prová-lo.** `data/binance/metrics/btcusdt/2026-08-12.csv` (md5 `bf1ddd8ba4248f975e92daae23ee3dc3`):
+285 linhas, **um** gap de `n_missing=3` entre `event_time` `2026-08-12T11:45:00Z` e
+`2026-08-12T12:05:00Z`. Essas strings já existiam como fixture à mão em
+`test_ingest_health_query.py::_gap` e `test_ingest_health_contract_guards.py::_gap` desde antes
+desta task — `test_metrics_event_time_fixtures.py` é o que transforma essa coincidência em
+medição: o gap é persistido pelo mesmo `SqliteIngestRecordStore` que o `ingest_health` lê, round-trip
+completo, e a contagem de linhas (285) não muda ao persistir o gap — nenhum ponto é inventado.
+
+**`D4.3` precisa da ordenação para existir.** A primeira linha em ORDEM DE ARQUIVO de
+`2026-08-23.csv` tem `create_time` `00:10:00` — o dia é ele mesmo um dos 13 fora de ordem.
+Só depois de `label_and_sort_metrics_rows` o verdadeiro primeiro bucket (`00:00:00`) aparece, e
+o shift o leva a `event_time` `2026-08-23T00:05:00Z` — nunca `00:00:00Z`.
+
+**`D4.10` é um NÃO-CONSERTO, testado como regressão.** `shift_to_event_time` soma o mesmo
+`LABEL_SHIFT_MS` às oito colunas, **incluindo** `sum_taker_long_short_vol_ratio` — que
+`PRD-001` P2 já media carregando o fluxo do bucket **seguinte** ao rótulo (`r = +0,5458` contra
+o retorno futuro). Esta task **não corrige essa coluna**: a defesa anti-lookahead correta é
+`available_at` (item 4.6, task futura), e um shift por coluna aqui seria um segundo desvio
+silencioso. `[MEDIDO 2026-09-01, reproduzido sobre os fixtures DESTE repositório — `n=863/862/863`,
+não o `864/862/862` do `PRD-001`, porque o corpus em disco é outro]`: `r_futuro = +0,5169`
+contra `r_passado = +0,0646` e `r_futuro+1 = -0,0209` — mesma assinatura, 3 dias
+(2026-08-21/22/23), preço de `klines` 1m reamostrado a 5m (21/22) + `klines` 5m nativo (23). Se
+uma mudança futura corrigir a coluna com um shift próprio, `r_futuro` cai para perto de zero e
+este teste reprova.
+
+**Os seis portões, no worktree `/tmp/claude-1002/wt/T-04.1`:** `lint.sh` (`ruff check` + `ruff
+format --check` + `mypy --strict`) limpo; `boundaries.sh` — os 3 contratos de import (incluindo
+`Natureza`, que este módulo respeita: `domain` só recebe `int`/`Decimal`/`str` injetados,
+`datetime` mora inteiro em `infra`) — `3 kept, 0 broken`; `test.sh` — **470 passed**, cobertura
+`domain 100% (877/877)` · `use_cases 100% (220/220)` · `infra 97,8% (614/628)`, todas acima do
+piso; `harness rules --mode sweep` (árvore completa) — **0 achado**.
+
+### 📎 2026-09-01 por `T-04.7` — `principal_id` como dimensão, e não constante implícita
+
+Nenhum módulo novo — `provenance.py` (`T-04.2`) já continha a lacuna nomeada por escrito: o
+docstring de `Provenance.HUMAN` dizia *"this module does not stand in for it"*, apontando
+exatamente para este item. `SPEC-001` §4.4, plano `04` item **4.11**; `ADR-009/D2` recusa
+`organization_id`. Sem `D4.x` citado nas refs desta task — o falsificador formal mora em `D5.10`
+(fase `05`), porque `sentimento` **constrói** a dimensão e `05` é quem a **usa** com ator humano
+autenticado.
+
+**O que muda:** `SeriesRow` ganha o campo `principal_id: str | None`, com `default=None` — o
+`None` não é "constante implícita", é o valor de uma linha que **não é** ato humano
+(`provenance` ∈ `{OBSERVADO, DERIVADO, MODELADO}`). `__post_init__` recusa qualquer linha
+`HUMANO` cujo `principal_id` esteja ausente ou em branco, com `InvalidSeriesRowError`
+apontando a coluna — a mesma forma que já recusava `series_key_id`/`symbol`/`source` em
+branco. `provenance_projection()` passa a incluir `principal_id` (projeta `None` quando não se
+aplica), pela mesma razão que já projeta `is_final`: um consumidor lê a dimensão por ali, não
+por um segundo caminho.
+
+**Fora de escopo, e por quê:** `<Anotacao>` e `run_registry` (`SPEC-001` §4.4) também carregam
+`principal_id`, mas pertencem a `web`/`backtest` — fora da fronteira de componente desta task
+(`sentimento`). Nenhum `organization_id` foi introduzido; `ADR-009/D2` já mediu que uma coluna
+constante em toda chave "ensina errado".
+
+**O falsificador, executável:**
+
+```bash
+bash backend/scripts/test.sh -k test_provenance_columns
+# 6 funcoes novas (8 testes, uma parametrizada em 3 provenancias): linha HUMANO sem
+# principal_id -> InvalidSeriesRowError (o caso que REJEITA); linha HUMANO com principal_id em
+# branco -> idem; linha HUMANO com principal_id -> aceita e projeta; as três outras
+# provenâncias -> principal_id continua None, sem exigência; omitir o argumento nunca cai num
+# default silencioso.
+```
+
+`[MEDIDO 2026-09-01: bash backend/scripts/test.sh -> 452 passed (era 444 em 840c500, mesmo
+comando), domain 100,0%, use_cases 100,0%, infra 97,7% — universo completo do componente
+`sentimento`]`.
+
+### 📎 2026-09-01 por `T-04.5` — `cvd_delta` como fato, `cvd_cum(anchor)` como view, e a aritmética que o `awk` publicado erra
+
+Um módulo novo em `domain`. `SPEC-001` §2.6, `CA-F1-8`, plano `04` item **4.8**, `DoD` **D4.7**/**D4.8**.
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/cvd.py` | `domain` | `cvd_delta_by_bucket()` — o fato, anchor-free, `Decimal` sobre a string crua, soma ordenada por `agg_id`, bucket `transact_time // 60000`; `cvd_cum()` — a view, `anchor_ms` sem default |
+| `tests/sentimento/test_cvd.py` | — | **16 testes**. Convenção de sinal, grade de bucket, `MissingCvdAnchorError`/`TypeError` sem âncora, e os três totais-âncora **contra o dado real** |
+| `tests/helpers/data_fixtures.py` | — | `repo_data_root()`/`require_fixture()` — copiado **verbatim** de `tasks/T-04.1-shift-canonico-event-time` (mesmo utilitário, mesma necessidade: `git rev-parse --git-common-dir` para achar `data/` a partir de qualquer worktree). Path idêntico de propósito, para o merge das duas branches não colidir |
+
+**Fato e view são DUAS funções, nunca uma com argumento default.** `cvd_delta_by_bucket()` não
+sabe o que "o CVD" significa até uma âncora escolher onde a contagem começa — e três âncoras
+sobre o MESMO `cvd_delta` invertem o sinal do total (`D4.7`). Um default silencioso repetiria a
+classe de defeito que `SeriesKey` (`T-04.2`) já recusa para `reduction`/`quantity_field`:
+`cvd_cum()` chamado sem `anchor_ms` é `TypeError` (parâmetro obrigatório, sem default) e, para
+quem repassar `None` de uma borda externa, `MissingCvdAnchorError` — a mesma dupla camada que
+`SeriesReadPolicy`/`as_of()` já usa para `asof_max_staleness_ms`.
+
+**Os três totais são medidos sobre o dado real, não sintético** — a única forma de reproduzir
+literalmente `−1265,982 / +399,745 / +1598,508 BTC` é processar o dia inteiro de
+`BTCUSDT-aggTrades-2026-08-23.csv` (md5 `a68d9dbdfde1d7c0d25e78eae4d798bb`, 1.314.556 linhas,
+1.440 buckets de 1 min), porque nenhuma fixture pequena escrita à mão bate esses dígitos por
+acaso:
+
+```bash
+bash backend/scripts/test.sh -k test_cvd
+# 16 passed
+```
+
+**O falsificador de `D4.8`, rodado, não só citado:** o mesmo arquivo somado por `float` em vez
+de `Decimal` produz `-1265.9819999977815` para a âncora `00:00` — diverge do publicado na 10ª
+casa, o bastante para reprovar uma comparação exata contra `Decimal("-1265.982")`
+`[MEDIDO 2026-09-01]`. É o mesmo defeito de classe que o `awk` publicado no discovery tinha
+(`OFMT=%.6g`, erro de +4 mBTC): `test_d4_8_float_arithmetic_over_the_same_fixture_diverges_from_the_golden_total`
+prova a divergência em vez de presumir que `Decimal` "deveria" bastar.
+
+**O que este teste NÃO prova, e está dito em vez de implícito:** "soma ordenada por `agg_id`"
+(`D4.8`, literal) não é observável no VALOR do resultado — adição de `Decimal` exata é
+comutativa e associativa na escala de quantidade de BTC (sem estouro dos 28 dígitos de
+precisão do contexto padrão), então embaralhar a ordem de entrada não muda o total, com ou sem
+o `sorted(key=agg_id)` na implementação. `test_result_is_order_independent_...` documenta essa
+propriedade em vez de fingir que ela é um mutante morto: a ordenação está implementada porque o
+contrato a nomeia como parte da aritmética (auditabilidade), não porque algum caso testável aqui
+mude de sinal ou de dígito sem ela.
+
+### 📎 2026-09-01 por `T-04.3` — unicidade por `agg_id` com verificação de contiguidade, nunca por tempo
+
+Um módulo novo em `domain`, um em `infra`, sobre o dado que `T-04.1` deixou de fora por natureza
+(`aggTrades` é `Nature.TICK`, não `daily/metrics`). `CA-F1-5`, `CA-F1-6`, plano `04` item **4.3**,
+DoD **D4.4** (contiguidade) e **D4.5** (unicidade sob colisão de ms).
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/aggtrade_contiguity.py` | `domain` | `AggTradeTick` (só `agg_id`+`transact_time_ms` — sem campo para `trade_id`, guarda estrutural de "nunca por trade_id"); `require_unique_agg_ids`/`DuplicateAggIdError`; `AggIdGap`/`detect_agg_id_gaps` (buraco contado, nunca costurado); `count_decreasing_timestamps`; `MillisecondCollisionStats`/`measure_millisecond_collisions` |
+| `src/modules/sentimento/infra/aggtrade_csv_reader.py` | `infra` | `read_aggtrade_ticks`/`read_aggtrade_ticks_from_many` — lê só as 2 colunas que este item precisa, em ordem de arquivo, concatenando dias na ordem que o chamador declarar |
+| `tests/sentimento/test_aggtrade_contiguity.py` | — | **18 testes** sintéticos, incluindo o falsificador "chave por tempo colapsa 2 de 3 trades legítimos" e a convenção `n_missing = to - from` pinada num par pequeno antes do fixture real |
+| `tests/sentimento/test_aggtrade_contiguity_fixtures.py` | — | **9 testes**: `D4.4`/`D4.5` sobre os fixtures reais pinados por `md5` |
+| `tests/sentimento/test_aggtrade_csv_reader.py` | — | **4 testes**: a borda de parsing (header, ordem, concatenação), isolada do resto |
+
+**Por que `agg_id` e não os outros dois candidatos, com número.** `D4.5`, medido em
+`BTCUSDT-aggTrades-2026-08-20.csv` (md5 `fa779db5ece6ad82b1b633649118113d`, 2.756.517 linhas):
+**959.949** milissegundos distintos, **245.890** com mais de um trade (**25,6%**), até **184**
+trades no mesmo ms — tempo não distingue o dado. Uma chave por `trade_id` teria que desfazer o
+enrolamento do `aggTrade` (a largura do intervalo `first_trade_id..last_trade_id` varia por
+linha) para comparar duas linhas — `agg_id` já é a chave que a própria Binance atribui, sem
+segunda derivação para manter sincronizada. `AggTradeTick` não carrega `first_trade_id`/
+`last_trade_id`: não há valor deste tipo com que montar a chave proibida.
+
+**O falsificador concreto de "nunca por tempo".** `test_d4_5_a_time_keyed_scheme_would_
+silently_drop_1_796_568_real_trades` roda, sobre o mesmo arquivo, um dedup ingênuo por
+`transact_time_ms` (não é código de produção) e mede a perda: **2.756.517 → 959.949**
+sobreviventes, **1.796.568** trades reais descartados em silêncio. `require_unique_agg_ids`
+sobre o mesmo arquivo **não levanta** — `test_d4_5_agg_id_stays_unique_on_the_very_file_that_
+collides_on_time`.
+
+**`D4.4` bate exato no número que o plano publica, inclusive o off-by-one.** Concatenando
+`2026-08-{20,21,23}.csv` (as três únicas datas capturadas — `2026-08-22` nunca existiu,
+`data/MANIFEST.md`) na ordem do calendário: **8.873.078** linhas, **0** timestamp decrescente,
+e **exatamente um** salto de `agg_id`: `3420055157 → 3421676065`. `n_missing` aqui é `to - from`
+= **1.620.908** — **não** `to - from - 1` (`1.620.907`, a contagem de inteiros estritamente
+entre os dois), porque é esse o número que o plano cita literalmente. A convenção está pinada
+antes num par pequeno (`test_detect_agg_id_gaps_n_missing_is_the_width_not_the_strict_between_
+count`) para não ser inventada só no fixture grande. `[MEDIDO 2026-09-01]`: mutante `n_missing =
+delta - 1` aplicado, rodado, **derrubou os 2 testes que citam o número** (o pequeno e o do
+fixture real, `1620907 == 1620908` falhando); revertido antes do commit — `diff` byte-idêntico
+ao original conferido.
+
+**O buraco é reportado, nunca costurado — por FORMA.** `AggIdGap` tem exatamente três campos
+(`from_agg_id`, `to_agg_id`, `n_missing`): não há onde anexar um tick fabricado para o
+`2026-08-22` ausente, e `read_aggtrade_ticks_from_many` não inventa linha nenhuma ao concatenar.
+
+**Os seis portões, neste worktree:** `lint.sh` limpo; `boundaries.sh` — `2 kept, 1 broken`, e o
+`broken` é **só** `dump_window.py`/`retention_probe.py` (dívida pré-existente de `T-03.10`,
+alheia a esta task — confirmado antes e depois da mudança, mesmos dois arquivos); `test.sh` —
+todos passando, cobertura `domain 100% (1057/1057)` · `use_cases 100% (220/220)` ·
+`infra 98,3% (832/846)`, todas acima do piso [MEDIDO 2026-09-01: `pytest --collect-only -q`
+soma **591** testes na suíte inteira]; `harness rules --mode sweep` (árvore completa
+E `--changed-only`) — **0 achado** (o único aviso do primeiro sweep, `core.module-docstring-
+single-line`, foi corrigido movendo a prosa estendida de docstring para comentário `#`, forma
+que `binance_aggtrade_payload.py` já usa).
+
 ## Decisões táticas desta task, e o que as derruba
 
 | decisão | por quê | falsificador |
@@ -1007,6 +1209,7 @@ reprova nada**.
 | **o risco concreto** | o **primeiro chamador de produção** — **`T-03.10`** — vai ter de **inventar onde isso mora**, e os dois candidatos naturais **invertem a direção**: em `use_cases`, a camada de caso de uso passa a conhecer `infra`; em `infra`, a borda passa a orquestrar o caso de uso |
 | **dono** | **`T-03.10`** — é ela que traz o primeiro chamador de produção, e portanto a primeira que **não pode** adiar a decisão |
 | **falsificador** | se `T-03.10` puder ligar as quatro peças sem nenhum módulo novo e sem `use_cases` ou `infra` importar para o lado errado, o achado era falso alarme |
+| **✅ VEREDITO 2026-08-29 (`T-03.10`)** | **FECHADO, e o achado NÃO era falso alarme — mas ele errou metade do risco.** O falsificador tem duas metades e elas deram respostas opostas: **(1) um módulo novo FOI necessário** — `infra/dump_etl_cli.py` —, logo o achado procede; **(2) a direção NÃO se inverteu.** O achado dizia que os dois candidatos *"invertem a direção"*, e isso é verdade para `use_cases` e **falso para `infra`**: `[tool.importlinter]` declara `layers = ["infra", "use_cases", "domain"]` com **a primeira como a mais alta**, então `infra` importando `use_cases` e `domain` corre **a favor** do contrato. Medido: `bash backend/scripts/boundaries.sh` → **`2 kept, 0 broken`**, `Analyzed 22 files, 20 dependencies` (linha de base antes desta task: **17 files, 7 dependencies**, `2 kept`). E o precedente já estava na árvore: `infra/ingest_health_cli.py`, que este README já chama de raiz de composição |
 
 ### `I` · `web-fullstack.tenant-from-request` passará a avaliar **a suíte inteira** quando `T-01.2` adotar o pack
 
@@ -1171,14 +1374,19 @@ documentada com precisão errada é pior que não documentada**.
 - **Não há chamador de produção.** `ingest_verified` é a borda; **quem a chama ainda não
   existe**, e isso é o achado `H` deste mesmo README (*"não existe raiz de composição"*) —
   dono declarado **`T-03.10`**. Esta task **não** inventou raiz de composição.
+  **✅ FECHADO 2026-08-29 por `T-03.10`:** o chamador é `infra/dump_ingest_worker.py`, e a raiz
+  de composição é `infra/dump_etl_cli.py`.
 - **`LineSink` não tem implementação de produção.** O único sink hoje é o de teste. Quem
   trouxer o primeiro destino real o traz.
+  **✅ FECHADO 2026-08-29 por `T-03.10`:** `BinaryFileLineSink`, em `infra/dump_ingest_worker.py`.
 - **Nada de `data/`.** Os testes fabricam o próprio arquivo e o próprio `.CHECKSUM`, e
   corrompem o byte deles mesmos. `data/` é dado de terceiro e continua fora do portão.
 - **A metade documental do item `2.5` do plano é `T-02.4b`** (`docs`): política de backup com
   teste de restauração. **Não é desta task**, pela partição `D-3` do `tasks_review.md` §7.
 - **`curl -sI` mensal** em prefixo antigo e recente (`SPEC-001` §5.8) é mitigação **de retenção
   do bucket**, não de integridade de corpo. Não entrou aqui — e **tem dono**: **`T-03.10`**
+  (**✅ FECHADO 2026-08-29:** `domain/retention_probe.py` enumera e classifica; a rede fica com o
+  cron e entra por `infra/head_probe_log.py`)
   (`tasks_review.md`, linha da task; plano `3.14`; `D7.19`). A redação de `2026-08-29T11:44Z`
   dizia *"não tem dono nesta task"*, o que se lia como *"não tem dono"* — e o mesmo bullet
   acima já nomeia `T-03.10` para a raiz de composição.
@@ -1225,6 +1433,20 @@ documentada com precisão errada é pior que não documentada**.
   `[MEDIDO 2026-08-29: árvore como está → **1**, `rc=0` `[CALA]`; com um segundo chamador
   plantado → **2**, `rc=1` `[MORDE]`]`. No dia em que a contagem chegar a 2, a garantia parou
   de cobrir o código.
+
+  **✅ 2026-08-29, `T-03.10` — o gatilho SAIU DO COMENTÁRIO E VIROU TESTE, e tinha dois pontos
+  cegos.** `tests/sentimento/test_verified_edge_call_sites.py` agora o **roda** em
+  `bash backend/scripts/test.sh` (*"ferramenta que ninguém roda não é portão"* — `ADR-011:268`).
+  E o scanner do comentário só via `ast.Call` sobre `ast.Attribute`; medi as duas evasões, cada
+  uma sozinha numa árvore isolada `[MEDIDO 2026-08-29, `python -B` + `PYTHONDONTWRITEBYTECODE=1`,
+  `__pycache__` apagado]`: `pull = payload.lines` + `pull()` → **0 `[CEGO]`** e
+  `getattr(payload, "lines")()` → **0 `[CEGO]`**, contra `payload.lines()` → **1**. São as
+  **mesmas duas** que `[tool.importlinter]` já nomeia por escrito como limite herdado. O scanner
+  novo vê as três, e **é falsificado pela própria suíte** (as três formas entram como texto e
+  têm de ser vistas). O que continua invisível e está escrito: `getattr(payload, nome)()` com
+  `nome` calculado em runtime. **A contagem em produção continua `1`** — `T-03.10` trouxe o
+  primeiro chamador de produção e **não** acrescentou call site: ele entrega um sink a
+  `ingest_verified` e nunca toca em `payload.lines`.
 
 - **A falha fechada está CONTIDA hoje, e isso é achado documental, não arquitetural.**
   `grep -rn "ingest_verified\|ChecksummedFilePayload\|VerifiablePayload\|LineSink" backend/src
@@ -1458,3 +1680,634 @@ mensagem de regra, os nomes de coluna de contrato **`janela_de_perda`** e **`win
 `uso: ingest_health_cli <caminho-do-store>` — `SPEC-001` §3.8 reserva pt-BR **exclusivamente**
 para microcopy. Os 2 arquivos de teste do `/qa` e os 14 `test_*` pré-existentes **não** foram
 tocados: são de outro dono.
+
+### 📎 2026-09-01 por `T-04.6` — a serialização de numeral vira UM helper, e um segundo caminho de dado ganha o mesmo teste
+
+`CST-33`, `SPEC-001` §3.8, plano `04` item **4.12**, DoD **D4.12**. `series_key.py` e este
+módulo (`ingest_record.py`) carregavam **duas cópias byte-idênticas** do mesmo serializador
+JSON canônico — mesmo corpo, mesma docstring, dois lugares para divergir. A duplicação já
+estava nomeada como dívida no próprio comentário de `series_key.py`: *"Unifying them is
+`T-04.6`'s job … and doing it here would edit a module this task has no business touching"*.
+
+**A unificação:** [`domain/canonical_json.py`](src/modules/sentimento/domain/canonical_json.py)
+(novo, **4 linhas de código, 100% de cobertura**) — uma função só, `canonical_json()`, que os
+dois módulos passam a chamar. `series_key.py` mantém `_canonical_json` como um `def` fino que
+delega (não um `import ... as`), porque `mypy --strict`/`no_implicit_reexport` recusa uma
+importação renomeada como export implícito, e `test_series_identity.py` importa esse nome
+diretamente — sem isso o lint reprovava com `does not explicitly export attribute
+"_canonical_json"` `[MEDIDO 2026-09-01]`.
+
+**O que D4.12 já tinha e o que faltava.** O teste de `SPEC-001` §3.8 (`LANG=pt_BR.UTF-8` vs
+`LANG=C`, `sha256` comparado) já existia aqui desde `T-02.3`, mas a própria docstring dele
+confessava a lacuna: *"every column of the record today is int, str or null, and none of
+those has ever been locale-sensitive in JSON. The day a FLOAT column enters the projection,
+this test … will still pass, and it will be proving less"*. Nenhum `float` chegou a este
+módulo, mas um chega em produção em `infra/quota_ramp_cli.py::emit()`
+(`recoil_seconds`, `weight_per_blind_request`, …). Novo teste,
+[`test_quota_ramp_locale_invariance.py`](../tests/sentimento/test_quota_ramp_locale_invariance.py),
+roda o mesmo protocolo sobre um payload com `float` de verdade, chamando o `emit()` de
+produção via um driver de subprocesso
+([`quota_ramp_emit_driver.py`](../tests/helpers/quota_ramp_emit_driver.py)) — sem tocar
+`quota_ramp_cli.py`, que é de outra task (`T-03.7`), e sem rede: `main()` daquele CLI
+pede um `HttpsQuotaProbe` real, então o driver chama `emit()` direto.
+
+**O teste tem dentes, medido e não afirmado.** Um mutante temporário (nunca commitado) trocou
+o `float` do payload por `locale.format_string("%f", …, grouping=True)` dentro do driver:
+sob `LANG=pt_BR.UTF-8` o teste **reprovou** (hash diferente), sob `LANG=C` continuou verde
+`[MEDIDO 2026-09-01, n=1 mutante plantado e revertido, driver restaurado byte a byte]`.
+
+`make verify`/`bash backend/scripts/test.sh`: **562 passed** (era **560**, `+2`) · cobertura
+**99,43%**, domain/use_cases **100%**, infra **98,3%** (idêntico ao antes — o módulo novo tem
+4 linhas e 0 ramificação). `lint.sh`: limpo. `boundaries.sh`: **2 kept, 1 broken**, estado
+pré-existente do `master` (`dump_window.py`/`retention_probe.py`, `T-03.12` em review — não
+tocado por esta task). `harness rules --mode sweep --changed-only`: **0 achados**.
+
+`tasks.toml`, ledger e Jira **intocados**; nenhum `gate-record`, `approve` ou `advance`.
+
+---
+
+### 📎 2026-09-02 por `T-03.8` — NTP vira dependência de runtime MEDIDA, e o skew nasce persistido em `md.ingest_run` de verdade
+
+`CST-24`, `CA-F0-8`, `[GAP G6]`, plano `03` item **3.7**, DoD **D3.10**. `SPEC-001` §5.9: NTP é
+dependência de runtime de F0; monitorar o relógio local contra `/fapi/v1/time` e **persistir o
+skew observado por `ingest_run`** — a tolerância NÃO se calibra aqui, `T-07.10` (fase futura) lê
+a distribuição acumulada e decide o limiar. Escopo desta task: **código + probe curto**, não
+deploy contínuo (`Q1`/`Q15` seguem fora do portão, `backend/scripts/test.sh` "ZERO REDE").
+
+**`ADR-016` (relógio é capacidade) governou o desenho.** `domain/clock_skew.py`
+(`ClockSkewSample`, `ServerTimeObservation`) faz só a subtração — nenhuma leitura de relógio,
+nenhum socket. `use_cases/measure_clock_skew.py` é o ÚNICO ponto onde as duas capacidades se
+encontram: brackets um `WallClock.now_ms()` antes e depois de um `ServerTimeSource.observe()`,
+e o skew lê o relógio local no **meio-termo** do bracket — a melhor estimativa sem medir
+latência de um sentido só, que este projeto não tem como medir (`/fapi/v1/time` só devolve o
+relógio do servidor). `use_cases/persist_ntp_skew_run.py` monta o `IngestRun` e **recusa
+persistir `weight_used` fabricado** quando o provedor não manda `x-mbx-used-weight-1m` — `D3.12`
+(`T-03.7`) já mediu uma família da Binance que omite todo `x-mbx-*`, e um número inventado seria
+pior que nenhuma linha.
+
+**Os adaptadores reais:** `infra/binance_server_time_probe.py` (mesmo desenho de
+`https_quota_probe.py` — `http.client` injetável, offline por padrão nos testes) e
+`infra/system_wall_clock.py` (`time.time()`, wall clock e não `monotonic()`, porque o que
+importa aqui é comparar contra uma autoridade externa). **O probe curto:**
+`infra/ntp_skew_probe_cli.py`, `--store <sqlite>` obrigatório — uma medição que ninguém persiste
+não é o que `D3.10` pede.
+
+**`T-03.8` é a primeira task a escrever em produção através de `SqliteIngestRecordStore`**
+(o comentário do próprio módulo, de `T-01.1`, já nomeava esta task como a dona dessa dívida).
+5 corridas reais contra `fapi.binance.com` — `[MEDIDO 2026-09-01T23:05Z]`: `clock_skew_ms` entre
+`-73` e `-23` (relógio local atrás do servidor), `weight_used` **lido do header a cada chamada**
+(`1..5`, nunca hardcoded), todas `ACCEPTED`, `http_status=200`. `ingest_health_query` — a MESMA
+função que `T-07.13` vai consumir — já lê essas 5 linhas de volta hoje: `n_runs: 5, n_gaps: 0`.
+Evidência em
+[`docs/context/plataforma-dados/medicoes/T-03.8-ntp-skew/`](../docs/context/plataforma-dados/medicoes/T-03.8-ntp-skew/README.md).
+**O que isto NÃO prova:** a distribuição de `D3.10` pede `>= 7 dias de runs` em produção — 5
+pontos de terminal provam o MECANISMO, nunca o REGIME.
+
+**`make natureza`** (`ADR-016`, o portão que barra leitura de relógio em `domain`/`use_cases`):
+`0 leitura(s)` sobre um universo de **30 arquivos** de `domain/`+`use_cases/` `[MEDIDO]`.
+**`boundaries.sh`: 3 kept, 0 broken** (os 3 contratos, incluindo o de `ADR-016`). `lint.sh`:
+limpo (`ruff` + `mypy --strict`). `harness rules --mode sweep --changed-only`: **0 achados**,
+rodado com os arquivos `git add`-ados (`T-03.10` já registrou que o sweep é cego a arquivo não
+rastreado). `bash backend/scripts/test.sh`: **649 passed** (era **617**, `+32`)
+`[MEDIDO 2026-09-01]` · cobertura **99,13%**, `domain` **100,0% (1133/1133)**, `use_cases`
+**100,0% (253/253)**, `infra` **97,6% (922/945)** — a única linha não coberta de produto é
+`infra/ntp_skew_probe_cli.py::main()` (composição real, o mesmo padrão descoberto de
+`quota_ramp_cli.py::main()`), e o restante do déficit de `infra` é código pré-existente de
+outras tasks.
+
+`tasks.toml`, `tasks_review.md` e o plano `03` **intocados por esta task**: os três já
+descreviam corretamente o DoD antes de eu começar — nenhuma linha precisava mudar para que o
+critério ficasse verdadeiro. `janela_de_perda` continua `null` (fora de escopo, `T-07.12`).
+Ledger e Jira **intocados**; nenhum `gate-record`, `approve` ou `advance`.
+
+---
+
+## 📦 A fila de ETL do dump, retomável e com profundidade como parâmetro — `T-03.10` (`CST-26`, `CA-F0-5`, `SPEC-001` §5.8, plano `03` itens 3.11+3.14, DoD `D3.1`)
+
+**Nenhum segundo mecanismo de retomada nasceu aqui.** `EtlBacklog` + `drain` + `JsonlCheckpoint`
+já provavam *"não duplica, não perde"* sob `SIGKILL` real; esta task aponta esse mecanismo para
+uma **janela do dump enumerada a priori a partir de uma PROFUNDIDADE**. Duas respostas para
+*"o que ainda falta"* seria uma a mais, e no dia em que discordassem nenhuma valeria.
+
+### As peças, e a camada de cada uma
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/dump_window.py` | `domain` | a janela **fechada e enumerada a priori** — `DumpDataset`, `DumpPartition`, `enumerate_window`, e `backlog_of`, que devolve o `EtlBacklog` que o `drain` já consome |
+| `domain/retention_probe.py` | `domain` | o `curl -sI` de §5.8: **enumera o que sondar** e **classifica o que voltou**. Zero rede |
+| `infra/head_probe_log.py` | `infra` | a costura entre o `curl` (cron) e a classificação offline: parser de `curl -sI` + leitor do JSONL |
+| `infra/dump_ingest_worker.py` | `infra` | o **primeiro chamador de produção** de `ingest_verified` e o **primeiro `LineSink` de produção** |
+| `infra/dump_etl_cli.py` | `infra` | **a raiz de composição** — o achado `H` |
+
+### `Q18` não é gate, é default — e a afirmação do owner virou teste
+
+> **(d) RELÓGIO: NÃO.** *…a fila é retomável e a profundidade é PARÂMETRO dela* ⇒ começar por 30
+> dias e estender depois **não é retrabalho**, é a mesma fila com outro limite.
+> `[PREMISSA-OWNER: citação literal, via `tasks_review.md` §7/D-5]`
+
+Isso só é verdade se aprofundar **preservar** as chaves já drenadas — senão o checkpoint fica
+cheio de chaves fora da janela e `EtlBacklog.pending` levanta `CheckpointOutsideWindowError`.
+`test_extending_the_depth_drains_only_what_the_deeper_window_added` fixa isso: 10 → 20 dias
+drena **exatamente os 10 novos**, e os conjuntos são disjuntos.
+
+### Os DOIS portões, e por que o segundo **nunca recusa**
+
+`ADR-014/D3b` (status **proposto**) decide a forma, e ela é a resposta ao achado mais importante
+do dia: **`SPEC-001` §5.8 infere que `.CHECKSUM` é obrigatório a partir de um caso que o
+`.CHECKSUM` NÃO PEGA.**
+
+| portão | quando | testemunha | veredito |
+|---|---|---|---|
+| **P1** | antes da 1ª linha | classe **T** — `.CHECKSUM` | **recusa**, zero linhas escritas |
+| **P2** | no nível da **janela** | classe **O** — o último período antes de um `404` | **avisa e registra, NUNCA recusa** |
+
+O objeto de `monthly/bookTicker` 2024-04 passa por **cinco** portões — `200`, `content-length`,
+`sha256sum -c` → **SUCESSO**, `unzip -t` → **No errors detected**, e a invariante de janela de
+§5.7 — cobrindo **0,942 %** do mês que o nome dele declara `[MEDIDO, `ADR-014`, n = 1 objeto de
+37.761.761 B]`. **Só a cobertura da janela morde, e ela não é nenhum dos cinco.**
+
+**P2 não recusa porque as 6,781 h de abril são dado REAL.** Recusá-las plantaria a generalização
+de fail-closed que `SPEC-001` §5.6 existe para impedir. *O objetivo é impedir o SILÊNCIO, não a
+escrita.* — `test_a_suspect_period_is_ingested_with_a_warning_and_is_never_refused`.
+
+### `bookDepth` não tem prefixo `monthly`, e a palavra "mensal" é a armadilha
+
+§5.8, terceira linha `[MEDIDO, CST-5]`: *"um ETL que assuma mensal **quebra**"*. O item 3.14 diz
+*"`curl -sI` **mensal**"* — e essa palavra é a **cadência da sonda**, não a **granularidade do
+objeto**. `aggTrades` é sondado `monthly`, `bookDepth` `daily`; pedir `monthly` para `bookDepth`
+**recusa na construção**, em vez de gerar um `404` que se leria como *"o balde apagou"*.
+
+### O que o vocabulário desta task deliberadamente NÃO reusa
+
+Os achados de retenção **não são `verdict`**. `verdict` é o conjunto fechado de `md.ingest_run`,
+a SPEC é dona (`ADR-014/D2a`), e **`ADR-014` está `proposto`** — escrever `ACCEPTED_WITH_WARNING`
+aqui seria adotar enumeração não ratificada e pôr um segundo escritor num vocabulário que esta
+task não possui.
+
+### A bancada de mutação — `n=12`, e ela sabe dizer INERTE e AMBÍGUO
+
+Cada mutante com a **âncora conferida antes** (0 ocorrências ⇒ `INERTE`, >1 ⇒ `AMBÍGUO`),
+revertido e o arquivo **reconferido por `sha256`** antes do seguinte, com `python -B` +
+`PYTHONDONTWRITEBYTECODE=1` e `__pycache__` **apagado antes de cada rodada**
+`[MEDIDO 2026-08-29; quem morde: `.venv/bin/python -B -m pytest -x -q`]`:
+
+| # | mutante | resultado |
+|---|---|---|
+| 1 | `bookDepth` passa a aceitar o prefixo `monthly` | **rc=1** |
+| 2 | a janela passa a ser enumerada do mais NOVO para o mais velho | **rc=1** |
+| 3 | a profundidade perde um dia (off-by-one na janela fechada) | **rc=1** |
+| 4 | a regra do vizinho some: `404` seguinte deixa de tornar o período suspeito (`A7`) | **rc=1** |
+| 5 | `bookDepth` passa a ser sondado como `monthly` | **rc=1** |
+| 6 | o `.partial` deixa de ser removido quando a borda recusa | **rc=1** |
+| 7 | o período suspeito passa a ser **RECUSADO** em vez de avisado (`ADR-014/D3b`) | **rc=1** |
+| 8 | o checkpoint volta a coagir a chave com `str()` (a dívida do `{"key": null}`) | **rc=1** |
+| 9 | a detecção de chave repetida exige 3 e não 2 ocorrências | **rc=1** |
+| 10 | os achados de retenção passam a ser gravados **depois** da drenagem | **rc=1** |
+| 11 | o parser de `HEAD` passa a ler o **primeiro** status em vez do último | **rc=1** |
+| 12 | períodos `ABSENT` deixam de sair da janela de trabalho | **rc=1** |
+
+**`n=12` mutantes · 12 morderam · 0 sobreviveram · 0 inertes · 0 ambíguos.**
+
+### ⚠️ Uma DÍVIDA JÁ DOCUMENTADA do portão de regras, e a forma nova que esta task acrescenta
+
+**`harness rules --mode sweep --changed-only` é CEGO a arquivo NÃO RASTREADO.** Medido plantando
+`print(...)` — que viola `core.print-statement`, severidade `block` — e variando **só** o estado
+do arquivo no git `[MEDIDO 2026-08-29, n=3 estados, mutante revertido e conferido por `sha256`]`:
+
+| estado do arquivo | comando | resultado |
+|---|---|---|
+| **não rastreado**, com o `print` | `harness rules --mode sweep --changed-only` | **0 achados, `rc=0`** — **`[CEGO]`** |
+| **não rastreado**, com o `print` | `harness rules --mode sweep` (completo) | **1 achado, `rc=1`** — `[MORDE]` |
+| **staged** (`git add`), com o mesmo `print` | `harness rules --mode sweep --changed-only` | **`rc=1`**, nomeia `dump_etl_cli.py:165` — `[MORDE]` |
+
+**⚠️ ENQUADRAMENTO CORRIGIDO NO CICLO 2 — isto NÃO é achado novo.** A cegueira já está escrita
+neste repositório, em `harness.toml:470-472`: *"NÃO cito `--changed-only`: ele é
+`git diff --name-only HEAD` (`lib/runner.py:88`) e portanto CEGO a arquivo novo não rastreado"*.
+Apresentá-la como descoberta foi erro meu de leitura. **O que esta task acrescenta é uma FORMA
+NOVA da mesma dívida** — não "arquivo novo numa task cujo universo é todo novo", mas **arquivo
+não rastreado convivendo com arquivos rastreados**, em que o portão devolve `rc=0` tendo varrido
+os rastreados e ignorado os novos, o que **parece** medição.
+
+**Consequência para o procedimento de qualquer builder:** uma task que **cria arquivos** e roda
+`--changed-only` antes de `git add` recebe **verde falso**. Não é hipótese — foi exatamente o que
+esta task recebeu na primeira execução do portão, e só apareceu porque a bancada de mutação foi
+rodada **contra o próprio portão**. O `rc=0` reportado no gate desta task é o de **depois** do
+`git add`, com os 15 arquivos no universo. **Não consertei o `harness`** — é ferramenta de
+plugin, fora desta árvore e fora do escopo desta task; fica registrado com o comando que o
+reproduz.
+
+### O que esta task NÃO fecha, nomeado
+
+- **Não baixa nada.** O espelho do balde em `<workdir>/mirror/` é alimentado por quem busca;
+  **`T-07.1`** é dona do paginador correto e da listagem S3 por `NextContinuationToken`.
+- **Não escreve `md.ingest_run` / `md.ingest_gap`.** A casa durável de um achado de classe O
+  **é** `md.ingest_gap`; o escritor de produção chega com **`T-03.8`**. Até lá o achado é durável
+  em `findings.jsonl` — segundo-melhor **escrito como tal**, não apresentado como o desenho.
+- **Não lê o conteúdo do objeto.** Cobertura medida contra os *timestamps* de dentro do CSV exige
+  unzip + parse, e é outra task. Na resolução de `HEAD`, a testemunha de classe O é a regra do
+  vizinho — e é só isso que está implementado. **O `n_missing` real continua `[NÃO MEDIDO]`.**
+- **A razão de tamanho é ALARME e não `n_missing`** — `177,8x` contra déficit real de `106,2x`
+  `[MEDIDO, `ADR-014/D3d`]`. `size_ratio_alarm` devolve um `float` e se chama `alarm` por isso.
+- **Não decidiu a testemunha das fontes que não são o dump.** `ADR-014/D3` decide por fonte e uma
+  linha dela é **`[NÃO SEI]`** (`!forceOrder@arr`, sem testemunha de integridade hoje). O registro
+  geral por fonte nasce quando `ADR-014` for aceita.
+  **⚠️ ERRATUM 2026-08-29 (ciclo 2) — a redação anterior desta linha era FALSA na metade que ela
+  usava como argumento.** Ela dizia que o roteamento é *"estrutural e restrito ao dump: ela só
+  aceita um `DumpDataset`"* e que *"não há linha de política que alguém possa apagar"*. O `/qa`
+  refutou por medição: `DumpIngestWorker.process(self, key: str)` recebe **`str`**, e uma fonte
+  REST plantada nessa borda passa por **`ruff`, `mypy --strict` e `import-linter`** sem que
+  nenhum portão estático morda `[MEDIDO 2026-08-29]`. O que sobrevive: **pela `run()` não há
+  caminho** — `dataset_by_name` só resolve `{aggTrades, bookDepth}`. **A barreira real É uma
+  linha** — `DATASETS_BY_NAME` — **e ela não tinha teste**: acrescentar `"exchangeInfo"` deixava
+  a suíte inteira verde (mutante `M08`). Coberta agora por
+  `test_the_dataset_vocabulary_is_exactly_the_two_the_dump_publishes`.
+
+## 📡 O coletor `premiumIndex` — funding estimado, sem histórico em fonte nenhuma — `T-03.5` (`CST-21`, `CA-F0-1b`, plano `03` item 3.3)
+
+**A ausência de parâmetro é a garantia.** `GET /fapi/v1/premiumIndex` não tem `startTime`,
+`endTime` nem `limit` documentados — não existe, em fonte nenhuma, um jeito de pedir o funding
+estimado de um dia em que ninguém estava ouvindo. `domain/premium_index_batch.py` reflete isso
+ao pé da letra: `PREMIUM_INDEX_ENDPOINT` é uma string sem `?`, e nenhuma função deste módulo
+aceita um argumento de tempo para construir uma. A série nasce no primeiro `poll` e nunca antes
+— não é uma regra que um `if` aplica, é uma requisição que não pode ser escrita.
+
+### As peças, e a camada de cada uma
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/premium_index_batch.py` | `domain` | `PremiumIndexReading` (campos numéricos crus, nunca `float`); `parse_premium_index_batch` — valida a forma, recusa `symbol` repetido (chave natural do batch); `PREMIUM_INDEX_BATCH_WEIGHT_DECLARED = 10`, reproduzido pelo probe abaixo |
+| `use_cases/collect_premium_index.py` | `use_cases` | `collect_premium_index_once` — um ciclo fetch→parse→persiste, nunca parcial; `PremiumIndexCycleStage` separa `TRANSPORT`/`DECODE`/`PAYLOAD`/`WRITTEN`; `received_at` é **injetado**, nunca lido de `time`/`datetime` aqui |
+| `infra/premium_index_http_client.py` | `infra` | reusa `ConnectionFactory`/`flatten_headers`/`open_https_connection` de `https_quota_probe.py` em vez de redeclarar o mesmo Protocol de socket; a única diferença é que o **corpo** da resposta é mantido, não drenado |
+| `infra/premium_index_jsonl_sink.py` | `infra` | armazenamento cru, append-only: **uma linha por símbolo**, `flush`+`fsync` uma vez por ciclo (a mesma garantia de `jsonl_checkpoint.py`, medida em `tests/sentimento/test_infrastructure_durability.py`) |
+| `infra/premium_index_probe_cli.py` | `infra` | o comando reprodutível de `CA-F0-1b`: `N` ciclos consecutivos, delta de peso reportado com a fórmula de veredito (`CONFIRMADO`/`DIVERGENTE`), nunca um número solto |
+
+### O que esta task NÃO faz — plano `03`, seção "Não faz"
+
+Não aplica shift, não normaliza, não pluga em `SeriesKey`/`SeriesRow` (isso é `T-04.1`/`T-04.2`,
+fase `04`). Este coletor grava exatamente o que `parse_premium_index_batch` aceitou, ao lado de
+`received_at` — nada além disso.
+
+### `CA-F0-1b` reproduzido ao vivo, com o comando literal
+
+Código real, não só `curl` — `infra/premium_index_probe_cli.py` chamado como CLI, dois ciclos
+com 1 s de intervalo, contra o endpoint público (zero chave):
+
+```
+$ python -m src.modules.sentimento.infra.premium_index_probe_cli \
+    --cycles 2 --interval-seconds 1.0 \
+    --evidence backend/.probe-evidence/premium_index_probe.jsonl \
+    --summary backend/.probe-evidence/premium_index_probe_summary.json
+
+ciclos executados: 2
+  received_at=1788304122239 estagio=WRITTEN n_simbolos=888 peso=10 status=200
+  received_at=1788304123653 estagio=WRITTEN n_simbolos=888 peso=20 status=200
+delta(s) de peso entre ciclos consecutivos: [10] (declarado CA-F0-1b: 10/chamada) -> CONFIRMADO
+$ echo $?
+0
+```
+
+`[MEDIDO 2026-09-01]`: **888 símbolos** no universo desta data — não 875. A contagem **drift**
+é o mesmo fenômeno que `docs/decisoes-do-owner.md:364` já registrou entre `exchangeInfo` e
+`premiumIndex` num único instante (872 vs 875); por isso `parse_premium_index_batch` nunca fixa
+a contagem como invariante, só a ausência de `symbol` repetido. O que `CA-F0-1b` declarava —
+**peso 10 por chamada, independente do universo** — se confirma de novo: `x-mbx-used-weight-1m`
+saiu de 10 para 20 entre os dois ciclos, delta exato.
+
+A evidência bruta (`backend/.probe-evidence/`) não é versionada — mesma razão de `data/`
+(`.gitignore`): é dado de mercado, reproduzível pelo comando acima a qualquer momento.
+
+**Isto é probe curto, não deploy contínuo** (decisão do owner, sem frontend ainda): o CLI acima
+é uma composição de `collect_premium_index_once`, chamada por um humano, um número declarado de
+vezes. Nenhum `cron`, `systemd` ou scheduler foi acrescentado por esta task.
+
+### 📎 2026-09-01 por `T-03.4` — o agregado de bucket `q`/`nq`, e `QF-6` provado sobre `data/` real
+
+`ADR-001`/6, `SPEC-001` §1.4 (`CL-5`), plano `03` item 3.5, DoD `D3.5`+`D3.7`+`D3.8`. **A task de
+maior custo de relógio do projeto** — `nq` vive numa janela REST de 48 h e em nenhum histórico
+(`GET /fapi/v1/aggTrades` em T-48h → `200` com `nq`; em T-49h → `400 -4166`). O escopo desta
+rodada é DECLARADAMENTE código + prova de mecanismo sobre fixture — não deploy contínuo: sem
+frontend, não há consumidor para o dado ao vivo ainda (decisão do owner), e o item pede o código
+pronto para ligar, não ligado.
+
+| caminho | camada | papel |
+|---|---|---|
+| `src/modules/sentimento/domain/aggtrade_bucket_aggregate.py` | `domain` | `AggTradeBucketTrade` (as DUAS quantidades da mesma trade); `aggregate_by_bucket` (fold de 1 min: `Σq_buy · Σq_sell · Σnq_buy · Σnq_sell · tx · btx · agg_id_min · agg_id_max`); `require_contiguous` (delega em `aggtrade_contiguity.py`, não duplica unicidade/contiguidade); `detect_bucket_agg_id_gaps` (a costura ENTRE fixtures, no grão do bucket) |
+| `src/modules/sentimento/domain/qnq_divergence.py` | `domain` | `QnqTrade`/`measure_qnq_divergence` — `QF-6`: `count(q≠nq)/n` e déficit em bp, por `(symbol, day)` |
+| `src/modules/sentimento/infra/aggtrade_csv_reader.py` | `infra` | **+`read_aggtrade_bucket_trades`** (dump replay: `quantity`+`is_buyer_maker`, `raw_nq=None` sempre — `CL-5` estrutural, o dump nunca teve a coluna) |
+| `src/modules/sentimento/infra/aggtrade_rest_snapshot_reader.py` | `infra` | **novo** — lê `data/binance/rest/nq_*.json` (a evidência de `ADR-001`) em `QnqTrade`, um dia por `T` |
+| `tests/sentimento/test_aggtrade_bucket_aggregate.py` | — | **15 testes** sintéticos: os oito termos por bucket, `nq` ausente vs PARCIAL (recusa — `PartialNqBucketError`), delegação de contiguidade, a costura entre fixtures |
+| `tests/sentimento/test_aggtrade_bucket_aggregate_fixtures.py` | — | **5 testes** sobre os primeiros 20.000 trades reais de `BTCUSDT-aggTrades-2026-08-21.csv` (md5 `31f5b006…`), incl. o falsificador de `D3.5` — "deletar 1 linha ⇒ reprova" — removendo uma linha do MEIO do arquivo (não a borda de um bucket, o caso que um `min`/`max` por bucket sozinho não pegaria) |
+| `tests/sentimento/test_qnq_divergence.py` | — | **12 testes**; 5 sobre a evidência REAL de `ADR-001` (`data/binance/rest/nq_{BTC,ETH,SOL,XRP,DOGE}USDT.json`), o resto sobre o agrupamento `(symbol, day)` em timestamps sintéticos |
+| `tests/sentimento/test_nq_bucket_capture_boundary.py` | — | **3 testes**: liga o agregado novo à borda `SEM_FONTE` de `T-04.4` (`as_of` + `first_capture_at`) |
+
+**`D3.7` reproduzido byte a byte sobre a evidência que `ADR-001` já cita.**
+`data/binance/rest/nq_DOGEUSDT.json` (md5 `44206adf…`, 1000 trades de UM `GET /fapi/v1/
+aggTrades`): **16/1000 divergentes, déficit 80,56 bp** — os mesmos dois números do ADR e de
+`docs/medicao-coinalyze.md`. Os outros quatro símbolos do conjunto declarado (BTC/ETH/SOL/XRP):
+**0/1000, 0,00 bp**. `[MEDIDO 2026-09-01: bash backend/scripts/test.sh -k test_qnq_divergence]`.
+
+**O que NÃO foi medido, e por quê — nomeado, não escondido.** `D3.7` pede "≥ 7 dias × conjunto
+declarado"; a evidência real disponível hoje é UMA janela de 251 s por símbolo (mín/máx do
+próprio campo `T`), nunca 7 dias e nunca atravessa meia-noite UTC
+(`test_d3_7_the_snapshot_never_crosses_a_utc_day_so_it_is_one_group_per_symbol`). A mecânica de
+agrupar por `(symbol, day)` está provada — sobre timestamps SINTÉTICOS, porque a evidência real
+não tem uma segunda data para exercitá-la. **Isto não é lacuna escondida: é exatamente o que o
+handoff desta task já nomeava** — "não é medível hoje em regime real, precisa de dias rodando".
+`D3.9` (o WS `<symbol>@aggTrade` carrega `nq`?) segue `[NÃO MEDIDO]`, herdado de
+`T-03.1`/`docs/medicao-ws-aggtrade-nq.md` (0 eventos em 2 tentativas registradas; a regra de
+parada daquele documento pede uma 2ª tentativa independente antes de tratar como medido). Esta
+task não reabriu rede — `test.sh` é ZERO REDE por contrato — e não tinha mandato para tanto.
+
+**`D3.5`: a "camada nova" é uma DELEGAÇÃO, não um segundo motor.** `require_contiguous` constrói
+a view estreita `AggTradeTick` (`agg_id`+`transact_time_ms`) e chama `aggtrade_contiguity.
+require_unique_agg_ids`/`detect_agg_id_gaps` (`T-04.3`, já em `master`) sem reimplementar
+unicidade nem contiguidade — a mesma instrução do handoff, "não duplique a lógica que já existe
+lá". Provado sobre os primeiros 20.000 trades reais de `BTCUSDT-aggTrades-2026-08-21.csv`: **0**
+saltos internos; deletando a linha do meio, o detector acusa
+`[MEDIDO 2026-09-01: bash backend/scripts/test.sh -k test_aggtrade_bucket_aggregate_fixtures]`.
+**A escala de milhões de linhas não foi reprocessada por este módulo** — reler as mesmas
+8.873.078 linhas que `T-04.3` já provou custaria `[MEDIDO 2026-09-01]` **68 s só para o primeiro
+dos 3 arquivos**, com `Decimal`, por zero informação nova (a MESMA função de `T-04.3` é chamada,
+inalterada); a delegação evita pagar esse custo duas vezes — o comando `bash backend/scripts/
+test.sh -k test_aggtrade_contiguity_fixtures` já paga a prova de escala, e continua verde.
+
+**`D3.8`: a borda `SEM_FONTE` já existia (`T-04.4`) — esta task liga o agregado novo a ela, não
+a reimplementa.** `test_nq_bucket_capture_boundary.py` prova que um bucket dobrado de trades
+"tipo dump" (`raw_nq=None` sempre) não produz observação NENHUMA sob `quantity_field=nq` — o
+weld fica IMPOSSÍVEL DE CONSTRUIR, mais forte que "a leitura recusa" — e que um bucket "tipo
+captura ao vivo" (as duas quantidades) atravessa a borda de `first_capture_at` normalmente, sem
+duplicar os testes exaustivos de `test_as_of_accessor.py::test_d4_6_c_a_read_under_nq_before_
+the_first_capture_is_no_source_and_never_welds_with_q` /
+`test_after_the_first_capture_the_nq_series_stops_being_no_source`.
+
+**A convenção `tx`/`btx` não foi inventada — é a que `docs/medicao-coinalyze.md` já mediu e
+publicou** (reconciliação sobre 699 buckets reais: `tx` == nº de aggTrades do dump, `btx` == nº
+com `is_buyer_maker=false`, 699/699 exato nos dois). `is_buyer_maker` segue a MESMA convenção de
+sinal de `cvd.py` (comprador MAKER ⇒ vendedor foi o agressor).
+
+**3 mutações aplicadas manualmente e revertidas, as 3 morrem:** inverter `is_buyer_maker` no fold
+(`sum_q_buy`/`btx` trocam de lado) → `test_a_single_bucket_folds_the_eight_terms_of_adr_001_6`
+reprova; inverter o sinal de `deficit_bp` (`sum_nq - sum_q` em vez de `sum_q - sum_nq`) →
+**2** testes reprovam, incluindo o da evidência REAL de DOGEUSDT; afrouxar a recusa de bucket
+parcial para tolerar `tx - 1` → `test_a_partial_bucket_refuses_instead_of_guessing_a_semantics`
+reprova. Os três arquivos, `diff` byte-idêntico ao original depois de revertidos
+`[MEDIDO 2026-09-01]`.
+
+**Os seis portões, neste worktree:** `lint.sh` limpo (`ruff` + `ruff format` + `mypy --strict`);
+`boundaries.sh` — **3 kept, 0 broken**; `natureza.sh` — universo de **29** arquivos em
+`domain`/`use_cases`, **0** leituras de relógio; `test.sh` — **652 passed** (era 617 em
+`master@634833b`), cobertura `domain 100,0% (1250/1250)` · `use_cases 100,0% (220/220)` ·
+`infra 97,8% (872/892)`, total **99,09%**, todas acima do piso
+`[MEDIDO 2026-09-01: bash backend/scripts/test.sh]`; `harness rules --mode sweep --changed-only`
+— **0 achados** sobre os 8 arquivos desta task.
+
+**Um achado do próprio portão, durante esta rodada.** A primeira versão de um comentário em
+`aggtrade_bucket_aggregate.py` citava o NOME do arquivo `as_of_accessor.py` em prosa — não um
+`import` — e isso bastou para `test_as_of_is_the_single_reader.py::test_no_production_module_
+imports_this_accessor_yet_and_that_is_recorded_not_claimed` reprovar: aquele teste varre
+`backend/src` por OCORRÊNCIA TEXTUAL da string `"as_of_accessor"`, deliberadamente mais largo que
+um `import`, para forçar qualquer menção a ser revista. Corrigido reformulando o comentário sem a
+citação literal do nome do arquivo — nenhuma linha de comportamento mudou, só a prosa.
+
+## 📎 2026-09-01 por `T-02.2` — o one-shot Coinalyze `daily`, nascendo em quarentena, e o broker cego
+
+`CA-F0-13` / `CA-F3-9` / `avaliacao:A3` (`SPEC-001` §5.2, plano 02 itens 2.3+2.4). Sete arquivos
+novos, nenhum existente tocado:
+
+| camada | arquivo | papel |
+|---|---|---|
+| `domain` | `coinalyze_daily_series.py` | tradução de símbolo, montagem do path, parse de `{t, o,h,l,c}`/`{t,l,s}` cru, e o piso `CA-F0-13` (OI ≥ 2.400/≤ 2020-01-21; liq ≥ 700/≤ 2024-08-26) |
+| `domain` | `quarantine_terms.py` | o predicado de três termos de `SPEC-001` §5.2, e a constante `COINALYZE_ONE_SHOT_TERMS` (label_shift + unit resolvidos, `available_at` sempre ausente enquanto `Q19` não fecha) |
+| `domain` | `local_quota_broker.py` | o broker CEGO: intervalo FIXO (`60 / 40 = 1,5 s`), nunca acelera, nunca lê header — porque não há header (`domain/quota_bucket.py`, já mediu `COINALYZE` como `BLIND`) |
+| `domain` | `quarantined_series_entry.py` | amarra pontos + veredito + termos de quarentena numa linha gravável, `available_at` derivado de `quarantine`, nunca hardcoded duas vezes |
+| `infra` | `coinalyze_history_client.py` | o irmão de `https_quota_probe.py` que devolve o CORPO em vez de descartá-lo — reaproveita conexão, autenticação e cabeçalhos do módulo de `T-03.7`, não reabre `http.client` |
+| `infra` | `sqlite_series_quarantine_store.py` | a tabela `series_quarantine`, com `read_promoted()` = a query que um `backtest` futuro rodaria (`available_at IS NOT NULL`) |
+| `use_cases` | `capture_coinalyze_daily_series.py` | orquestra: 2 chamadas por símbolo (OI, depois liquidação), pacetes pelo broker, nunca aborta a varredura por um símbolo ruim (`SPEC-001` §5.6, mesmo argumento do survivorship) |
+| `infra` | `coinalyze_one_shot_cli.py` | a bancada — só ela abre o `http.client` real, nenhum portão a chama |
+
+### `D2.6`, o falsificador da fase, medido nos dois sentidos
+
+`plano 02`: *"leitura de `backtest` sobre as duas séries recém-capturadas devolve ZERO
+linhas"*. `backtest` não existe como módulo (e `import-linter` já o proíbe como import de
+`sentimento` — contrato "Fronteira de contexto"), então `read_promoted()` é a forma que um
+consumidor futuro chamaria: filtra `available_at IS NOT NULL`.
+`test_sqlite_series_quarantine_store.py::test_d2_6_the_two_freshly_captured_series_read_zero_promoted_rows`
+grava as duas séries (OI com 2.500 pontos, liquidação com 730) para `BTCUSDT` e confirma **zero
+linhas** nas duas leituras. **E o lado que prova que a query não está vazia por estar morta**:
+`test_the_query_is_not_vacuously_empty_a_planted_promoted_row_is_read_back` escreve, por baixo
+de `record()`, uma linha com `available_at` preenchido e confirma que ELA volta — sem esse teste,
+um `read_promoted` que sempre devolvesse `()` por engano (ex.: `WHERE 1 = 0`) passaria no mesmo
+verde.
+
+### O broker: por que a pauta é intervalo FIXO, e a aritmética que ele reproduz
+
+`domain/local_quota_broker.py` não acelera como `domain/ramp_plan.py` (`T-03.7`) — a rampa existe
+para ACHAR o teto; este broker existe para NUNCA o alcançar, porque um `429` no meio de 1.140
+chamadas não avança medição nenhuma, só atrasa a varredura. `interval_seconds = window_seconds /
+calls_per_window`, aplicado igual à primeira e à última chamada.
+`test_the_declared_broker_reproduces_the_published_cost_of_the_one_shot` reproduz `1.140 × 1,5 s
+≈ 1.710 s ≈ 28,5 min` do `docs/decisoes-do-owner.md` — com uma diferença de **um intervalo**
+(1.708,5 s medido contra 1.710 s do napkin math do PM), porque este módulo conta PAUSAS (`n - 1`
+para `n` chamadas — mesma assimetria que `test_quota_ramp_bench_offline.py` já nomeia para o
+laço de carga da rampa), e o número publicado multiplica `n × intervalo`. O teste documenta a
+diferença em vez de forçar a igualdade exata contra um número aproximado (o próprio
+`docs/decisoes-do-owner.md` usa `~`).
+
+### Escopo que este task NÃO fecha, nomeado
+
+- **Não descobre o universo de símbolos.** `docs/decisoes-do-owner.md` custeia a varredura em
+  ~570 símbolos (perpétuos `TRADING` do `exchangeInfo`), mas nem `CA-F0-13` nem `avaliacao:A3`
+  atribuem a esta task a curadoria desse universo — é `T-02.1` (snapshot de `exchangeInfo`) ou um
+  catálogo futuro. `coinalyze_one_shot_cli.py` recebe a lista de símbolos como argumento; nada
+  aqui presume `/future-markets` nem inventa um schema de catálogo que este task não mediu com
+  chave real além dos 11 `[MEDIDO]` de `docs/medicao-coinalyze.md`.
+- **Não constrói o mecanismo de promoção.** O handoff desta task é explícito: desenhar o esquema
+  pensando no consumidor futuro (`T-03.11`), sem construir a promoção aqui. `read_promoted()` é a
+  LEITURA que a promoção teria de satisfazer; nada neste código escreve `available_at`.
+- **Não persiste `md.ingest_run`/`md.ingest_gap`.** Isso é plano 02 itens 2.6+2.7, `T-02.3`.
+
+### Se a chave existir: o que muda, e o que não muda
+
+`.env` foi verificado por presença de `COINALYZE_API_KEY`, nunca lido nem citado em texto (`grep`
+sobre o CONTEÚDO do arquivo é bloqueado pela política de permissão desta sessão, por desenho — a
+verificação usada foi `os.path.isfile` + varredura de linha por prefixo, sem nunca imprimir o
+valor). A chave **existe** nesta sessão. O código acima é testado inteiramente contra
+fixture/mock (rede zero, como toda a suíte) — a chamada REAL ao vivo (o "one-shot" de fato, ~570
+símbolos × 2 séries) é uma operação separada, de custo declarado ~28,5 min, que **não** é
+disparada pelo portão de teste e não deve ser repetida por engano.
+
+## 🔌 Política de reconexão POR CLASSE de stream, Classe B — `T-03.3` (`CST-19`, `ADR-004` gate de F0, plano `03` item 3.2, DoD `D3.6`)
+
+Implementa a Classe B de `ADR-004` (`!forceOrder@arr`, sem identificador de sequência e sem
+reposição): sobreposição obrigatória na reconexão (B1), chave natural declarada para dedupe (B2)
+e taxa de colisão publicada com a direção do viés escrita (B3). **Não constrói** a Classe A
+(`aggTrade`) nem a integração contínua — o handoff desta task é explícito: desenhar pensando no
+sucessor, sem construir a integração aqui.
+
+### As peças, e a camada de cada uma
+
+- **`domain/force_order_natural_key.py`** — `ForceOrderNaturalKey`, a chave `(symbol, side,
+  price, orig_qty, trade_time)` que B2 declara, lida SÓ desses cinco campos do `raw` (nunca do
+  restante do payload); `extract_force_order_natural_key` levanta `ForceOrderKeyExtractionError`
+  com contexto para qualquer texto que não caiba nesse formato — nunca engolida em silêncio.
+  `trade_time_utc_date` converte `trade_time` (epoch ms) no dia UTC, determinístico via
+  `tz=UTC` explícito (nunca lê o fuso da máquina).
+- **`domain/force_order_collision_accounting.py`** — `count_daily_collisions` bucketiza por
+  `(symbol, day)`; uma chave repetida vira `collisions` e **nunca** soma de novo em
+  `total_events` — é B3 ("subcontagem, nunca supercontagem") feito mecânico, não só documentado.
+  `COLLISION_BIAS_DIRECTION` carrega a frase literal da ADR, publicada em TODO relatório.
+  `d3_6_universe_met` diz se o universo declarado (`≥ 30` dias `× ≥ 20` símbolos) já foi
+  atingido — hoje **não** é, e o módulo nunca finge que é.
+- **`domain/force_order_reconnection_overlap.py`** — `require_overlap` levanta
+  `ReconnectionGapError` se a conexão antiga fechar ANTES da primeira mensagem da nova — B1 como
+  invariante que reprova, não como frase de comentário.
+- **`use_cases/reconnect_force_order_stream.py`** — `perform_overlap_handoff` executa a
+  ORDEM que B1 exige (abre a nova, lê a primeira mensagem, SÓ ENTÃO fecha a antiga) sobre
+  `MessageSource` de verdade; `reconnect_and_key` compõe o handoff com a chave B2, pronto para
+  alimentar `count_daily_collisions`.
+- **`infra/force_order_collision_report_cli.py`** — lê o(s) arquivo(s) de evidência que
+  `force_order_raw_recorder.py` (`T-03.2`) já grava, publica o relatório e o resumo JSON com a
+  taxa de colisão por `(symbol, day)`, a frase de viés SEMPRE presente, e um veredito honesto
+  sobre `D3.6` (atendido ou não). Uma linha de evidência corrompida (JSON inválido) É RECUSADA
+  (`MalformedEvidenceLineError`), nunca lida por cima em silêncio; uma linha que não tem os
+  campos de B2 é contada em `unkeyable_raw_lines`, nunca descartada sem registro.
+
+### `D3.6` não é medível em regime real hoje — a MECÂNICA está pronta, a leitura é o que falta
+
+O DoD declara isso explicitamente: o universo exigido (`≥ 30` dias `× ≥ 20` símbolos) precisa de
+dias de captura ao vivo que este repositório ainda não tem. Esta task prova a MECÂNICA sobre uma
+simulação de reconexão com overlap conhecido — `FRAME_A`/`FRAME_A_DUP` no bench (mesma chave B2,
+`raw` diferente, do jeito que uma liquidação genuinamente re-servida por duas conexões chegaria)
+produz `total_events=1, collisions=1` de ponta a ponta, do handoff até o relatório publicado. No
+dia em que o coletor acumular evidência real, publicar `D3.6` é rodar
+`force_order_collision_report_cli.py` sobre os arquivos — nenhuma lógica nova.
+
+### A bancada — falsificador medido, não afirmado
+
+`test_the_falsifier_removing_the_duplicate_makes_the_collision_disappear` remove a duplicata do
+cenário acima e o `collisions` cai para `0` — prova que o contador realmente detecta a colisão
+em vez de sempre devolver o mesmo número (`backend/tests/sentimento/test_force_order_reconnection.py`).
+`test_the_new_source_opens_and_is_read_before_the_old_source_closes` observa a SEQUÊNCIA de
+eventos (`new_opened → new_message_read → old_closed`) do handoff real, não só o resultado.
+`test_require_overlap_rejects_the_old_source_closing_first` é o falsificador de B1: inverter as
+duas marcas de tempo reprova, nomeando `ADR-004 B1`.
+
+`bash backend/scripts/test.sh`: **897 passed**, cobertura total **98,06%** (domain **99,9%**,
+use_cases **100%**, infra **95,8%** — todos acima do piso `90/80/70`). `lint.sh` limpo. `mypy
+--strict` limpo. `boundaries.sh`: **3 contratos KEPT**, incl. `Natureza` (nem `domain` nem
+`use_cases` tocam `socket`/`ssl`). `natureza.sh`: universo de 48 arquivos, **0 leituras de
+relógio** em `domain`/`use_cases`. `harness rules --mode sweep --changed-only`: **0 achados**.
+
+### O que esta task NÃO fecha, nomeado
+
+- **Não integra a Classe A (`aggTrade`).** O handoff é explícito: desenhar pensando no sucessor,
+  sem construir aqui — `T-03.2`'s sucessor de `aggTrade` (coberto por `T-03.1`/`T-03.4`) fica
+  para uma task futura.
+- **Não roda um daemon contínuo de reconexão.** `perform_overlap_handoff` é o mecanismo que um
+  processo de captura real chamaria; ligar isso 24/7 é decisão de deploy, fora de escopo (owner,
+  `docs/decisoes-do-owner.md` §Q1).
+- **`D3.6` não está medido sobre regime real** — está provado sobre simulação offline com
+  overlap conhecido, como o handoff pediu explicitamente.
+
+## 📎 2026-09-02 por `T-03.11` — reconciliação diária, e a ressalva é o requisito, não o número
+
+`CA-F0-14` (`SPEC-001`/plano `03` item 3.12, `DoD` em `tasks_review.md:275`). Seis arquivos
+novos, dois arquivos existentes de `T-02.2` estendidos (nenhum comportamento deles mudou):
+
+| camada | arquivo | papel |
+|---|---|---|
+| `domain` | `liquidation_reconciliation.py` (**novo**) | `parse_force_order_message` (primeiro leitor do `o` de `!forceOrder@arr` nesta base — `T-03.1`/`T-03.2` só gravam `raw` cru); `coinalyze_daily_liquidation_quantity` (`l+s`); `classify_daily_reconciliation` (as 4 hipóteses); `reconcile_daily_liquidation` (o agrupador por dia); `RECONCILIATION_CAVEAT` + `HYPOTHESIS_SCREEN_LABEL` |
+| `use_cases` | `reconcile_daily_liquidation.py` (**novo**) | `run_daily_liquidation_reconciliation` — tolera linha malformada, CONTANDO-A, nunca a descarta em silêncio |
+| `infra` | `liquidation_reconciliation_cli.py` (**novo**) | a bancada offline: lê o SQLite da quarentena (`T-02.2`) + os `.jsonl` de evidência (`T-03.2`), emite uma linha por dia + resumo |
+| `domain` | `coinalyze_daily_series.py` (**estendido**) | `daily_points_from_stored_json` — reconstrói `DailyPoint` a partir do `points_json()` que `QuarantinedSeriesEntry` grava (array nu, sem o envelope `{"symbol", "history"}` do wire); refatorada a validação por item para `_daily_points_from_history_items`, reusada pelas duas formas de entrada |
+| `infra` | `sqlite_series_quarantine_store.py` (**estendido**) | `read_latest()` — lê a quarentena **sem** o filtro `available_at IS NOT NULL` de `read_promoted()`; é o caminho que o handoff pede ("lê da quarentena diretamente… não é o mesmo caminho que `backtest` usaria") |
+
+### A ressalva é o requisito central — como o código a satisfaz, campo a campo
+
+O handoff é literal: *"não se sabe se a Coinalyze constrói o agregado dela a partir do MESMO
+stream subamostrado que `T-03.2` grava… as DUAS saídas têm de informar em qual caso estamos"*.
+Isso vira três decisões de código, não uma frase de comentário:
+
+1. **`DailyLiquidationReconciliation` nunca expõe um `ratio` sozinho** — `hypothesis` é campo
+   irmão na mesma dataclass, então nenhum consumidor consegue imprimir o número sem o rótulo.
+2. **`RECONCILIATION_CAVEAT` é uma constante fixa**, presente em TODA linha, independente do que
+   o `ratio` diga — "com a ressalva na tela" não é condicional ao resultado ser interessante.
+3. **`classify_daily_reconciliation` sempre devolve uma de 4 hipóteses**, nunca um `Decimal`
+   solto: as duas que o handoff nomeia (`SAME_STREAM_INCONCLUSIVE`,
+   `INDEPENDENT_STREAM_MEASURES_LOSS`) e duas que a moldura binária do handoff não nomeia mas uma
+   divisão real precisa responder (`NO_LIQUIDATION_EITHER_SIDE` para `0/0`, e
+   `CAPTURED_EXCEEDS_COINALYZE` para o lado que nem a hipótese "mesmo stream" nem "stream
+   independente mede perda" preveem — razão > 1, ou Coinalyze zerada com captura > 0). Dobrar
+   qualquer um dos dois casos extras dentro de um dos dois nomeados seria o próprio defeito de
+   "número solto" que o handoff aponta, uma camada abaixo.
+
+**O limiar "perto de 1" não tem default em lugar nenhum do código** — `docs/medicao-
+conectividade-forceorder.md` mediu **zero eventos reais** de `!forceOrder@arr` chegando a este
+observador (85 s combinados, abaixo do gatilho de parada de `T-03.1`), então não existe
+distribuição real de pares `(capturado, Coinalyze)` para calibrar uma faixa. `classify_daily_
+reconciliation` e o CLI exigem os dois limites como argumento **obrigatório**, sem fallback — a
+alternativa a embutir um número não medido como se fosse autoritativo.
+
+### O falsificador — a fronteira `<=`/`<=` do "perto de 1" MORDE, não só cala
+
+`test_classify_ratio_at_lower_boundary_is_inclusive` e `test_classify_ratio_at_upper_boundary_is_
+inclusive` fixam os dois limites como **inclusivos** (`SAME_STREAM_INCONCLUSIVE` em `ratio ==
+lower` e `ratio == upper`). Mutação manual, revertida em seguida (`git diff` conferido vazio
+depois):
+
+| mutante | comando | resultado |
+|---|---|---|
+| `classify_daily_reconciliation`: `ratio > near_one_upper_bound` → `ratio >= near_one_upper_bound` | `pytest -q tests/sentimento/test_liquidation_reconciliation.py -k classify` | **1 failed** — `test_classify_ratio_at_upper_boundary_is_inclusive` (o único que fixa `ratio == upper`) |
+| `classify_daily_reconciliation`: `ratio < near_one_lower_bound` → `ratio <= near_one_lower_bound` | idem | **1 failed** — `test_classify_ratio_at_lower_boundary_is_inclusive` |
+| `reconcile_daily_liquidation`: remove o `if day in seen_days: raise` (duplicidade de ponto Coinalyze) | `pytest -q tests/sentimento/test_liquidation_reconciliation.py -k duplicate` | **1 failed** — a soma silenciosa dos dois pontos do mesmo dia deixa de ser detectada |
+
+Os três mutantes revertidos, árvore reconferida (`git status --short` limpo antes de cada um).
+
+### Por que `l`, nunca `q` nem `z` — a mesma disciplina de `cvd.py`, uma camada acima
+
+`!forceOrder@arr` empurra no máximo UMA atualização por `{símbolo, janela de 1000 ms}` — rótulo
+`latest`/`largest` `NÃO_RESOLVIDA` (`force_order_envelope.py`). A MESMA ordem pode aparecer em
+mais de um push conforme preenche através de janelas: somar `q` (tamanho TOTAL declarado,
+repetido a cada push) ou `z` (total ACUMULADO, também repetido) contaria em dobro; `l` é o
+incremento QUE ESTE push relata — mesma disciplina "incremento, nunca total corrente" que
+`cvd.cvd_delta_by_bucket` já aplica a `aggTrade`. `test_parse_reads_l_never_q_or_z_when_they_
+disagree` fixa isso com um payload onde os três discordam.
+
+### Comandos rodados e resultado
+
+`bash backend/scripts/lint.sh` → limpo (`ruff check`/`format --check`/`mypy --strict`, 159
+arquivos). `bash backend/scripts/test.sh -q` → **rc=0**, cobertura total **98,09%** — `domain
+99,9%` (meta 90%) · `use_cases 100%` (meta 80%) · `infra 95,9%` (meta 70%); os três arquivos
+novos e os dois estendidos fecham em **100%** cada um. `bash backend/scripts/boundaries.sh` →
+`3 kept, 0 broken` (111 arquivos, 485 dependências). `bash backend/scripts/natureza.sh` →
+`universo de 46 arquivo(s), 0 leitura(s) de relogio` — `liquidation_reconciliation.py` só chama
+`datetime.fromtimestamp(ms, tz=UTC)` sobre um argumento já recebido, mesmo padrão isento que
+`coinalyze_daily_series.DailyPoint.date_utc` já usa.
+
+### Achado, não meu, não bloqueante: `ResourceWarning` pré-existente no arquivo de teste da quarentena
+
+`test_sqlite_series_quarantine_store.py` já reproduz, em `master@07193e6` (antes desta task),
+**3 `ResourceWarning: unclosed database`** ao rodar isolado com `-W error::ResourceWarning`
+`[MEDIDO nas duas árvores: idêntico antes e depois desta task]` — três usos pré-existentes de
+`with sqlite3.connect(...) as connection:` (linhas fora do meu diff) que, ao contrário de
+`with closing(sqlite3.connect(...))` (o padrão que o próprio módulo de produção usa), **não
+fecham a conexão** — o `with` do `sqlite3.Connection` só comita/reverte a transação, nunca fecha.
+O único ponto NOVO desta task que abre uma conexão crua (`test_read_latest_prefers_the_most_
+recently_received_row`) já nasceu com `closing()`. Não corrigido nos três pontos pré-existentes:
+não é desta fase, e `rc` continua `0` (é aviso, não falha) — nomeado aqui para não desaparecer.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhuma reconciliação real foi rodada.** `docs/medicao-conectividade-forceorder.md` (`T-03.2`)
+  mediu **zero eventos** de `!forceOrder@arr` chegando a este observador em 85 s combinados —
+  abaixo do gatilho de parada de `T-03.1` (≥ 120 s × 2). Não existe hoje nenhum arquivo de
+  evidência com liquidação real para alimentar `liquidation_reconciliation_cli.py` fora de
+  fixture; o CLI está pronto e testado ponta a ponta contra arquivos reais em `tmp_path`, mas o
+  "probe curto" que o handoff pede como prova é, nesta rodada, a suíte — não uma saída ao vivo.
+- **Não decide o limiar "perto de 1".** É uma decisão que exige a distribuição real que ainda não
+  existe (parágrafo acima); o código se recusa a inventar um default.
+- **Não constrói a "tela".** `screen_label`/`caveat` são o dado pronto para quando ela existir —
+  nenhuma UI é criada por esta task.
+- **Não resolve o `unit`/`denom` da Coinalyze** (`docs/medicao-coinalyze.md` §2.3: 744
+  `BASE_ASSET` / 20 `QUOTE_ASSET`) — citado como possível causa de `CAPTURED_EXCEEDS_COINALYZE`
+  em `HYPOTHESIS_SCREEN_LABEL`, nunca medido ou corrigido aqui.

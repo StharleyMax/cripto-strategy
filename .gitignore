@@ -50,5 +50,9 @@ data/
 backend/coverage.xml
 .coverage
 
+# Backend — evidencia bruta de probes manuais (T-03.5): dado de mercado reproduzivel pelo
+# comando do proprio CLI, nunca versionado — mesma razao de `data/` acima.
+backend/.probe-evidence/
+
 # frontend — dependencias de npm nao sao versionadas (T-01.2, ADR-011/D4)
 frontend/node_modules/

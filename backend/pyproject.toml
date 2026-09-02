@@ -237,17 +237,35 @@ forbidden_modules = [
 # O repositorio ja declarou esta forma para o mesmo tipo de fronteira em `ADR-014/D1d`
 # (contrato proibindo o motor em `domain`/`use_cases`). Este e o mesmo instrumento.
 #
+# ── ESTREITADO por `ADR-016/D2` + `T-03.12` (`ADR-016/D5`) — `time`/`datetime` SAEM daqui ──
+#
+# `T-03.10` poe em `domain/` dois modulos (`dump_window.py`, `retention_probe.py`) que
+# importam `date`/`timedelta` para aritmetica de calendario PURA, sem ler relogio nenhum —
+# e este contrato, como estava, os reprovava pelo MODULO inteiro (`E1` da `ADR-016`: a linha
+# acusada e sempre a do `import`, com ou sem `datetime.now()` dentro). `ADR-016/D1` decide que
+# a distincao certa e CAPACIDADE x VALOR, nao "o modulo inteiro": `socket`/`ssl` sao
+# capacidade pura (nada legitimo para `domain/` fazer com transporte) e ficam AQUI, por
+# import; `time`/`datetime` misturam valor (`date`, `timedelta`) com capacidade
+# (`.now()`, `.today()`, `.sleep()`) e passam a ser guardados POR USO, em
+# `backend/scripts/natureza.py` (`make natureza`, chamado por
+# `scripts/hooks/pre-push.pre-harness` na MESMA costura deste contrato).
+#
+# ATOMICO com o nascimento do portao (`ADR-016/D5`): `natureza.py`/`natureza.sh` entram no
+# MESMO commit que estreita este `forbidden_modules` — estreitar antes abriria uma janela em
+# que `datetime.now()`/`date.today()` novos em `domain/` nao seriam pegos por NADA (`E2` da
+# `ADR-016`: `ignore_imports` sai `3 kept, 0 broken` com as duas leituras DENTRO de `domain/`).
+#
 # AS DUAS METADES, MEDIDAS — e o criterio de admissao que `ADR-012` exige, porque contrato que
 # so foi visto CALAR e vacuo:
-#   CALA  na arvore como esta -> `3 kept, 0 broken`. Os `time`/`datetime` do CLI vivem em
+#   CALA  na arvore como esta -> `3 kept, 0 broken`. Os `socket`/`ssl` do CLI vivem em
 #         `infra`, que NAO e `source_module` deste contrato.
-#   MORDE com o violador plantado -> nomeia a linha E a cadeia transitiva
-#         (`use_cases ... -> domain.binance_aggtrade_payload -> ssl`).
+#   MORDE com `import ssl` plantado em `domain/` -> `2 kept, 1 broken`, nomeando a linha E a
+#         cadeia transitiva (`E5` da `ADR-016`, reproduzida no portao pela `T-03.12`, DoD-6).
 [[tool.importlinter.contracts]]
-name = "Natureza: domain e use_cases nao falam com socket, ssl nem relogio"
+name = "Natureza: domain e use_cases nao falam com socket nem ssl"
 type = "forbidden"
 source_modules = [
     "src.modules.sentimento.domain",
     "src.modules.sentimento.use_cases",
 ]
-forbidden_modules = ["socket", "ssl", "time", "datetime"]
+forbidden_modules = ["socket", "ssl"]
