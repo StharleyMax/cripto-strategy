@@ -1,4 +1,4 @@
-"""`write_series_row` is the escritor único: `D7.16` enforced, `sink` reached only when it clears.
+"""`write_series_row` is the single writer: `D7.16` enforced, `sink` reached only when it clears.
 
 The central falsifier is `test_a_modeled_candidate_over_an_observed_bucket_never_reaches_the_sink`:
 a green "rejects" assertion on its own would not prove the row was never written, only that a
@@ -90,7 +90,7 @@ def test_a_modeled_candidate_filling_a_gap_reaches_the_sink() -> None:
 def test_an_observed_candidate_always_reaches_the_sink_even_if_a_bucket_is_already_observed() -> (
     None
 ):
-    """Observado sempre vence — a second OBSERVED for the same bucket is a normal append."""
+    """Observed always wins -- a second OBSERVED for the same bucket is a normal append."""
     sink = FakeSeriesSink()
     candidate = row(provenance=Provenance.OBSERVED)
 
