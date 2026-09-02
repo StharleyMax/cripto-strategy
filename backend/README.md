@@ -2615,3 +2615,92 @@ alcançando o que o lock já declarava.
 - **Não decide `universe_at`** (união de duas testemunhas, `T-07.8`) — a "universo corrente"
   aqui é só `exchangeInfo` de HOJE, o literal da SPEC (*"ausente do exchangeInfo CORRENTE"*),
   não a reconstrução point-in-time que `T-07.8` faz depender desta task.
+
+## 📎 2026-09-02 por `T-07.8` — `universe_at(ts, filtro)`: `s3_inferred` inadmissível POR TIPO
+
+`CST-62`, `CA-F3-4`, `SPEC-001` §3.7, plano `07` item 7.10, DoD `D7.7`. `SPEC-001` §3.7 fixa o
+vocabulário de três membros `universe_source ∈ { snapshot, s3_inferred, premium_index_witness }`
+e desqualifica um deles para a decisão: *"`universe_source = s3_inferred` é INADMISSÍVEL no
+caminho de decisão. Ele deduz existência do símbolo da existência do arquivo — fato conhecível
+~30,3h depois e só para símbolos cujos arquivos continuam publicados: survivorship e lookahead
+na mesma coluna."* `PRD-001` `CA-F0-1` mede por que isso não é hipotético: a série diária de
+snapshot `exchangeInfo` (`T-02.1`) só começou em `2026-08-25` (captura manual única; o `cron`
+continua bloqueado por `Q1`) — todo `ts` anterior a essa data não tem NENHUM snapshot, só a
+testemunha derivada do S3.
+
+[`domain/universe_at.py`](src/modules/sentimento/domain/universe_at.py) (**novo**) fixa dois
+tipos onde a SPEC fixa um: `UniverseSource` (os três membros literais, para QUEM PRECISA marcar
+uma testemunha) e `DecisiveUniverseSource = Literal["snapshot", "premium_index_witness"]` —
+**sem** `s3_inferred` — que é o único tipo que aparece na assinatura de
+`decide_universe_membership`. Não existe `if fonte == "s3_inferred": raise` em lugar nenhum:
+`mypy --strict` recusa a própria ATRIBUIÇÃO antes de o código rodar, medido diretamente
+(`[MEDIDO 2026-09-02]`, arquivo descartável fora da árvore versionada):
+
+```
+$ mypy --strict <arquivo com `bad: DecisiveUniverseSource = "s3_inferred"`>
+error: Incompatible types in assignment (expression has type "Literal['s3_inferred']",
+variable has type "Literal['snapshot', 'premium_index_witness']")  [assignment]
+```
+
+`universe_at(ts, filtro)` nunca funde as duas testemunhas em silêncio: `symbols` é a UNIÃO
+(`decided_symbols | s3_witness_symbols`), e `divergence` — reusando `compare_symbol_sets` de
+`instrument_universe_snapshot.py` (`T-02.1`/`T-07.2`), nenhuma terceira representação do
+universo foi inventada — nomeia exatamente que símbolos só um lado atesta. Quando
+`snapshot_rows=None` (nenhum snapshot existe para `ts`, o caso honesto de todo `ts` antes de
+`2026-08-25`), `decided_symbols` fica `frozenset()` — não porque a decisão confirmou um universo
+vazio, mas porque não havia testemunha admissível — e `label=RETROSPECTIVE_LABEL` marca essa
+diferença, para que "vazio por não confirmado" nunca seja lido como "vazio por medido".
+`UniverseFilter` (`market`/`underlying_sub_type`) é o "universo é filtro na LEITURA" de
+`SPEC-001` §6/Q5, sobre os mesmos dois campos que `InstrumentRow` (`T-02.1`) já persiste por
+linha — nenhuma coluna nova.
+
+### `D7.7`, sem inventar uma série histórica que não existe
+
+`universe_at('2025-08-01')` tem de incluir `ICXUSDT` e excluir `DOSUSDT` (onboard `2026-08-11`,
+`[MEDIDO]`, `CA-F3-4`). Como nenhum snapshot real cobre `2025-08-01` (`CA-F0-1`), o teste
+constrói a testemunha S3 diretamente a partir do fato já medido em múltiplos documentos deste
+repositório (`DOSUSDT` não existia até `2026-08-11`) em vez de fingir um arquivo histórico que
+não foi capturado — a mesma disciplina de `test_dump_survivorship.py` ao reusar `MATICUSDT` real
+em vez de inventar um símbolo sintético. `snapshot_rows=None` produz `label=RETROSPECTIVE_LABEL`
+e `decided_symbols=frozenset()`; o resultado ainda inclui `ICXUSDT` e exclui `DOSUSDT` porque a
+UNIÃO carrega a testemunha S3 mesmo sem decisão confirmada — provando exatamente a distinção que
+o tipo existe para proteger: união (dado) não é decisão (confiança).
+
+O caminho decisivo (snapshot disponível) é exercido com a MESMA fixture real que `T-02.1`/
+`T-07.2` já cataloga (`data/binance/rest/ei.json`+`fi.json`+`pi.json`, 872 símbolos):
+`MATICUSDT` — ausência real, não sintética — aparece na testemunha S3 mas não na decidida,
+marcando divergência com `label=None` (decisão confirmada, divergência é dado). O filtro por
+`market` (`MARKET_USDS_M`/`MARKET_COIN_M`) particiona os símbolos decididos em dois conjuntos
+disjuntos cuja união bate com o total, sobre a mesma fixture.
+
+### O falsificador estrutural
+
+`test_decisive_universe_source_excludes_s3_inferred_by_member_set` prova, por
+`typing.get_args`, que `DecisiveUniverseSource` tem dois membros e `UniverseSource` tem os três
+da SPEC — a exclusão é deliberada, não um esquecimento. `test_structural_falsifier_decide_
+universe_membership_cannot_spell_s3_inferred` prova por AST que nenhuma constante `"s3_inferred"`
+é alcançável no corpo executável de `decide_universe_membership`, e prova que o scanner MORDE
+sobre um mutante manual — a mesma técnica de `test_dump_survivorship.py` contra `"REJECTED"`.
+
+### Comandos rodados e resultado
+
+`bash backend/scripts/lint.sh` → limpo (`ruff check`/`format --check`/`mypy --strict`, 216
+arquivos). `bash backend/scripts/test.sh` → **rc=0**, `1162 passed, 3 warnings` (296 s).
+Cobertura total **97,47%** — `domain 99,8%` (meta 90%, `2304/2308`) · `use_cases 100%`
+(meta 80%) · `infra 95,0%` (meta 70%); `universe_at.py` fecha em **100%** (40 linhas, 6
+branches). `harness rules --mode sweep --changed-only` → **rc=0**, nenhum achado sobre os 2
+arquivos desta task.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Não escreve o use_case/CLI que lê um snapshot real do disco e chama `universe_at`** — o
+  handoff pede a DECISÃO pura de `domain`; a composição com `instrument_universe_snapshot_store.py`
+  (`T-02.1`) e com a listagem S3 real fica para quem consumir esta função (`T-07.14`/`T-07.15`,
+  `web`).
+- **Não persiste `onboard_ts`/`deliveryDate` por símbolo** — `InstrumentRow` (`T-02.1`) não tem
+  esses campos hoje; sem eles, um `ts` histórico posterior a `2026-08-25` só pode ser decidido
+  se um snapshot real daquele dia exatamente existir, não por interpolação a partir do snapshot
+  de hoje. Essa extensão é `SPEC-001` §3.4 (`T-02.1`), não `T-07.8`.
+- **Não implementa `Q2`/S5 embutido** (seletor de símbolo, badge de delisting lido de
+  `deliveryDate`) — isso é `T-07.14`/`T-07.15`, componente `web`, que consome `universe_at`
+  como uma caixa fechada.
