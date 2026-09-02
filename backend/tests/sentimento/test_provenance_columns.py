@@ -17,6 +17,7 @@ from src.modules.sentimento.domain.provenance import (
     Provenance,
     SeriesRow,
     build_series_row,
+    modeled_write_overwrites_observed,
     reject_clock_skew,
     reject_modeled_for_deterministic_metric,
 )
@@ -314,6 +315,35 @@ def test_observed_at_is_part_of_the_row_key_so_the_same_bucket_can_be_observed_t
     second = row(observed_at=EVENT_TIME_MS + 90_000)
     assert first.bucket_end == second.bucket_end
     assert key_of(first) != key_of(second)
+
+
+# ── `D7.16`: MODELADO NUNCA VENCE OBSERVADO, OBSERVADO SEMPRE VENCE MODELADO ──────────────
+
+
+def test_modeled_over_an_already_observed_bucket_is_forbidden() -> None:
+    """The falsifier `D7.16` names: a backfill trying to land where a live capture already is."""
+    assert (
+        modeled_write_overwrites_observed(Provenance.MODELED, observed_already_present=True) is True
+    )
+
+
+def test_modeled_filling_a_gap_with_nothing_observed_yet_is_allowed() -> None:
+    """The other half of `D7.16`: "modelado pode preencher um gap onde não havia nada"."""
+    assert (
+        modeled_write_overwrites_observed(Provenance.MODELED, observed_already_present=False)
+        is False
+    )
+
+
+@pytest.mark.parametrize("provenance", [Provenance.OBSERVED, Provenance.DERIVED, Provenance.HUMAN])
+def test_only_modelado_is_ever_blocked_by_this_rule(provenance: Provenance) -> None:
+    """`D7.16` names one direction — only `MODELADO` is ever blocked.
+
+    A second OBSERVED landing on an observed bucket is a normal append
+    (`test_observed_at_is_part_of_the_row_key_so_the_same_bucket_can_be_observed_twice` above
+    already shows the key admits it) — never this predicate's concern.
+    """
+    assert modeled_write_overwrites_observed(provenance, observed_already_present=True) is False
 
 
 def test_is_final_absent_is_different_from_is_final_false() -> None:

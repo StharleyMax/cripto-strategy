@@ -2615,3 +2615,129 @@ alcançando o que o lock já declarava.
 - **Não decide `universe_at`** (união de duas testemunhas, `T-07.8`) — a "universo corrente"
   aqui é só `exchangeInfo` de HOJE, o literal da SPEC (*"ausente do exchangeInfo CORRENTE"*),
   não a reconstrução point-in-time que `T-07.8` faz depender desta task.
+
+## 📎 2026-09-02 por `T-07.5` — escritor único; backfill MODELADO nunca sobrescreve captura OBSERVADA
+
+`CST-59`, `ADR-002`/D5, `CA-F3-12`, plano `07` item 7.7, DoD `D7.16`. `ADR-002`/D5: todos os
+caminhos de escrita convergem para **um** processo escritor, e a lógica de ler-antes-de-escrever
+vive nele — não no motor de armazenamento, porque `D4` (candidato 4 × 5) segue **pendente de
+spike** (`T-08.1`, `status = blocked` em `tasks.toml`). Esta task constrói esse escritor como
+lógica de aplicação pura, atrás de PORTS (`Protocol`), independente de qual dos cinco candidatos
+`ADR-002` acabar escolhendo.
+
+| camada | arquivo | o que faz |
+|---|---|---|
+| `domain` | [`provenance.py`](src/modules/sentimento/domain/provenance.py) (**alterado**) | ganha `modeled_write_overwrites_observed(provenance, *, observed_already_present)` — predicado puro, sem I/O: `True` exatamente quando `provenance is Provenance.MODELED and observed_already_present` |
+| `use_cases` | [`write_series_row.py`](src/modules/sentimento/use_cases/write_series_row.py) (**novo**) | o ESCRITOR ÚNICO: consulta `ObservedLookup.observed_already_present(row)` e só então chama `SeriesSink.accept(row)` — ou nem chama, se `D7.16` bloqueia |
+| `use_cases` | [`run_single_writer.py`](src/modules/sentimento/use_cases/run_single_writer.py) (**novo**) | drena `SeriesWriteQueue.read_pending` DEPOIS `read_new` (ordem de recuperação de `D7.10`/`T-07.4`), chama `write_series_row` por entrada, `ack`a cada uma após o retorno |
+| `infra` | [`redis_series_write_queue.py`](src/modules/sentimento/infra/redis_series_write_queue.py) (**novo**) | adapta `RedisStreamConsumerGroup` (`T-07.4`) ao port `SeriesWriteQueue`, com `decode` INJETADO |
+
+### Por que só um predicado, e por que ele não decide sozinho quem escreve
+
+`D7.16` nomeia UMA direção: "modelado nunca vence observado; observado sempre vence modelado;
+modelado pode preencher um gap onde não havia nada". `modeled_write_overwrites_observed` não
+recebe o `SeriesRow` inteiro nem faz leitura nenhuma — recebe só o `Provenance` do candidato e um
+`bool` já respondido pelo chamador, porque `domain` não pode falar com um store (`Natureza`,
+`ADR-016`) e a resposta tem a mesma forma não importa qual dos cinco candidatos de `ADR-002` a
+supra. `OBSERVED`/`DERIVED`/`HUMAN` nunca são bloqueados por este predicado — um segundo `OBSERVED`
+sobre o mesmo bucket é um append normal (a chave de `SeriesRow` inclui `observed_at`, então dois
+`OBSERVED` do mesmo `bucket_end` já coexistem por desenho, `test_provenance_columns.py`).
+
+### A ordem "ler antes de escrever" é a ordem de DUAS LINHAS, não uma alegação de docstring
+
+`write_series_row` chama `lookup.observed_already_present(row)` e só interpreta o resultado antes
+de decidir se chama `sink.accept(row)` — nunca o contrário.
+`test_the_lookup_is_consulted_before_the_sink_is_ever_touched` planta um `lookup` que sempre
+levanta `RuntimeError` e prova que `sink.accept` nunca é alcançado quando isso acontece: se a
+ordem fosse invertida, uma linha poderia já estar durável no momento em que a leitura falhasse.
+
+### O falsificador central — prova AUSÊNCIA no sink fake, não só o veredito devolvido
+
+`test_a_modeled_candidate_over_an_observed_bucket_never_reaches_the_sink`
+(`test_write_series_row.py`) monta um candidato `MODELED` sobre um bucket com
+`observed_already_present=True` e afirma **duas** coisas: o retorno é
+`WriteOutcome.REJECTED_MODELED_OVER_OBSERVED` **e** `sink.accepted == []`. Uma asserção só sobre
+o retorno não provaria que a linha ficou fora do armazenamento — só que a função DISSE que sim.
+
+### A guarda estrutural — a mesma forma de `test_verified_edge_call_sites.py`, para um segundo escritor
+
+`test_single_writer_call_sites.py` varre `backend/src` por AST e conta chamadas diretas a
+`write_series_row`: hoje são **exatamente 1**, dentro de `run_single_writer.py`.
+`ADR-002`/D5 elimina a concorrência de escrita "por construção", e essa frase só continua
+verdadeira enquanto o grafo de chamadas tiver um único caminho até `sink.accept` — o dia em que
+esse número virar 2, um segundo escritor de produção existe e este teste reprova pelo nome, não
+por acaso. O mesmo arquivo nomeia o ponto cego que herda de `test_verified_edge_call_sites.py`:
+`getattr(modulo, "write_series_row")(...)` com o nome calculado em runtime não é visto — o mesmo
+limite que `[tool.importlinter]` já documenta para o próprio grafo de imports.
+
+### O schema de wire fica de fora, por decisão e não por esquecimento
+
+Nenhum produtor publica na fila ainda — `RedisStreamPublisher` (`T-07.4`) segue com zero
+chamadores de produção, o mesmo grep que `test_redis_series_write_queue.py` roda. Fixar um
+layout de campos aqui seria decisão a partir de premissa, o mesmo erro que
+`ingest_verified_payload.py:32` nomeia e recusa para outro port desta árvore. Por isso `decode`
+é um `Callable` INJETADO em `RedisSeriesWriteQueue`, e o dono do schema real é a task que ligar
+o primeiro produtor à fila.
+
+### Achado do próprio `fakeredis`, nomeado e contornado — não é defeito deste adapter
+
+`RedisStreamConsumerGroup.read_pending` sobre um Pending Entries List JÁ VAZIO **trava**, medido
+isoladamente com as classes cruas de `T-07.4`, sem nenhum código deste adapter envolvido — nem
+`test_redis_stream_bus.py` exercita essa forma (seus `read_pending` sempre têm PEL não-vazio).
+`test_ack_forwards_the_entry_id_unchanged_to_the_consumer_group` confirma o `ack` via `XPENDING`
+direto (a mesma técnica que `test_skipping_read_pending_loses_the_unacked_messages_forever` já
+usa para o caso espelho) em vez de chamar `read_pending` nesse estado.
+
+**Uma segunda forma do mesmo dublê, medida à parte**: chamar `ensure_group()` DUAS vezes — uma
+vez na criação, outra simulando um "restart" — imediatamente antes de `read_pending` sobre um
+PEL NÃO-vazio corrompe a conexão do mesmo jeito, mesmo com uma entrada de verdade para entregar
+`[MEDIDO 2026-09-02: mesma reprodução isolada com as classes cruas — COM o segundo
+`ensure_group()` antes de `read_pending`, `RedisProtocolError`; SEM ele, sucesso]`. A suíte deste
+adapter (`_queue(address, ensure_group=False)`) evita a forma que quebra em vez de escondê-la —
+`ensure_group` NUNCA é chamado por este adapter em produção (quem constrói o
+`RedisStreamConsumerGroup` decide isso fora dele), então o achado é só da bancada de teste.
+
+### `test_as_of_is_the_single_reader.py` ganha a 4ª entrada declarada — e a doctring dela estava desatualizada antes desta task
+
+`write_series_row` toca `row.bucket_end`, mas só para identificar o bucket num `extra={}` de
+`logger.info` — nunca como instante de decisão contra o qual algo é comparado — então entra em
+`DECLARED_TOUCHERS` na mesma categoria de `reject_clock_skew`/`record` (caminho de ESCRITA, não
+de leitura). Ao editar essa lista, a docstring do arquivo já estava errada ANTES desta task: dizia
+"36 módulos, DOIS" quando `DECLARED_TOUCHERS` já carregava uma 3ª entrada
+(`sqlite_series_quarantine_store.py`, de `T-02.2`) nunca mencionada ali, e a árvore já tinha
+crescido. Corrigido para o número medido agora, com o comando:
+`python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"` →
+**116** `[MEDIDO 2026-09-02]`.
+
+### Comandos rodados e resultado
+
+`bash backend/scripts/lint.sh` → limpo (`ruff check`/`format --check`/`mypy --strict`, 221
+arquivos). `bash backend/scripts/test.sh` → **rc=0**, `1174 passed, 3 warnings` (302 s) — os 3
+`ResourceWarning` são o mesmo achado pré-existente já nomeado na seção de `T-03.11`, não desta
+task. Cobertura total **97,48%** — `domain 99,8%` (meta 90%, `2266/2270`) · `use_cases 100%`
+(meta 80%, `585/585`) · `infra 95,1%` (meta 70%, `2187/2300`); `write_series_row.py`,
+`run_single_writer.py` e `redis_series_write_queue.py` fecham os três em **100%** — a primeira
+versão de `redis_series_write_queue.py` fechava em 96% (a linha de `read_pending` sem cobertura,
+porque só `read_new` tinha teste direto); `test_read_pending_decodes_the_unacked_tail_after_a_restart`
+foi acrescentado para fechar a lacuna com um teste que prova o caminho de recuperação de `D7.10`,
+não para satisfazer o número. `bash backend/scripts/boundaries.sh` → `3 kept, 0 broken` (148
+arquivos, 675 dependências) — as três peças novas respeitam `infra > use_cases > domain` e
+`Natureza`. `harness rules --mode sweep --changed-only` → **rc=0**, nenhum achado sobre os 12
+arquivos alterados/novos desta task (`git status --short`: 5 modificados incluindo os 2 docs, 7
+novos). **21 testes NOVOS desta task** `[MEDIDO: pytest --collect-only -q sobre as 4 suítes
+novas (4+4+4+4=16) mais os 3 testes novos de `test_provenance_columns.py` (2 simples + 1
+parametrizado em 3 = 5)]`.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhum produtor real publica na fila.** O schema de campos do wire (que chaves, que tipos)
+  fica para a task que ligar o primeiro coletor 24/7 ao stream — `decode` é injetado exatamente
+  para não fixar essa decisão aqui.
+- **Nenhum sink de armazenamento concreto.** `ADR-002`/D4 (candidato 4 × 5) segue pendente de
+  spike (`T-08.1`, `status = blocked`); `SeriesSink`/`ObservedLookup` são `Protocol`s que
+  qualquer um dos cinco candidatos pode implementar depois, sem mudar `write_series_row`.
+- **`CA-F4-25`** (recusar sob divergência de `knowledge_time`) não é fechado por esta task — é a
+  garantia de reprodutibilidade de `run_registry` (`04_contrato_temporal.md` item 4.10, já
+  fechada por `T-04.4`'s `as_of_accessor.py`), não uma segunda invariante do escritor único; o
+  `ADR-002`/D5 as cita juntas porque as duas exigem "ler antes de escrever", não porque vivem no
+  mesmo código.

@@ -232,6 +232,39 @@ def reject_modeled_for_deterministic_metric(metric: str, provenance: Provenance)
         )
 
 
+def modeled_write_overwrites_observed(
+    provenance: Provenance, *, observed_already_present: bool
+) -> bool:
+    """`D7.16`: True exactly when a MODELED candidate would land on a bucket OBSERVED already owns.
+
+    `ADR-002/D5`: `CA-F3-12` forbids `ReplacingMergeTree(ingested_at)` or any equivalent that lets
+    a MODELED backfill overwrite a captured OBSERVADA point — doing so destroys the real
+    `available_at` and erases the live `nq` variant, ALWAYS in the optimistic direction (the
+    engine keeps the tidy backfill and drops the messy real capture that arrived first). The fix
+    is this predicate, evaluated by the single writer BEFORE the row reaches any of the five
+    `ADR-002` storage candidates — the invariant is the application's, not the engine's.
+
+    Only `Provenance.MODELED` is ever blocked. `OBSERVED`, `DERIVED` and `HUMAN` candidates
+    always return `False` here: `D7.16` names one direction only ("modelado nunca vence
+    observado"), and `OBSERVED` landing on a bucket that already has an `OBSERVED` row (a source
+    correction, or a second source for the same bucket) is a normal append — `SeriesRow`'s key
+    includes `observed_at`, so two OBSERVED rows for the same bucket coexist by design and are
+    not this function's concern.
+
+    `observed_already_present` is the caller's answer to "does an OBSERVED row already exist for
+    THIS row's `(series_key_id, symbol, source, bucket_end)`?" — a question that needs a read
+    against whatever store `ADR-002/D4` eventually names, which is exactly why this function
+    takes the answer as a plain `bool` instead of performing the read itself: `domain` may not
+    talk to a store (`Natureza`, top of this file), and the answer is the same shape regardless
+    of which of the five candidates supplies it.
+
+    A MODELED row where `observed_already_present` is `False` — a gap with nothing in it yet —
+    returns `False`: "modelado pode preencher um gap onde não havia nada" is the other half of
+    `D7.16`, and refusing that case too would turn a legitimate backfill into a permanent hole.
+    """
+    return provenance is Provenance.MODELED and observed_already_present
+
+
 def reject_clock_skew(row: SeriesRow, *, clock_skew_tolerance_ms: int) -> None:
     """Refuse a row whose `available_at` precedes `event_time` beyond the declared tolerance.
 
