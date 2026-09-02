@@ -721,3 +721,103 @@ Este `README.md` — **atualizado**, `§10` nova (append-only). `docs/plans/SPEC
 — **sem mudança**: documento normativo do DoD, a task o satisfaz, não o edita.
 `docs/product/STITCH_CONTEXT.md` — **sem mudança**: é o `ui-designer` quem propõe edição ali
 (`R6`), não o builder.
+
+---
+
+## 11. `src/app/live-transport.ts` — o lado AO VIVO de `ADR-005/D1` (`T-08.11`, 2026-09-02)
+
+`T-08.11` (`CST-79`, componente `web`) escreve o item `8.8` do plano `08`: "Transporte ao vivo
+por SSE com envelope de bucket". Irmão de `§9` (`history-transport.ts`, `T-05.9`) — mesma ADR,
+borda oposta do tempo: `D1` fixa SSE unidirecional para `AO VIVO` ("não precisamos de canal do
+browser para o servidor"), `D2` fixa o envelope `(bucket_open_ts, cvd_delta_parcial, last_price,
+n_trades, seq)` a `max(1 Hz, 1/TF)`, e `D4` fixa que `bar_policy` é declarado pelo consumidor na
+requisição de abertura do fluxo — nunca default `intrabar`.
+
+```bash
+npm --prefix frontend run test:app   # 69 testes, node --test 'src/app/*.test.ts' (28 novos)
+```
+
+### Gate de design (já concluído antes desta implementação)
+
+`docs/context/plataforma-dados/gates/T-08.11-design.md`: **"SEM DECISÃO DE UI/UX NOVA. Contrato
+já coberto, nenhuma ação no Stitch necessária."** Mesmo veredito de `§9` para o lado histórico —
+`T-08.11` entrega o dado (`is_final`, `seq`, `bucket_open_ts`); quem lê e desenha é `T-08.12`
+(`charts`).
+
+### Fronteira: mesma verificada por `§9`, refeita para o SSE
+
+Backend segue sem framework HTTP (`[MEDIDO]` por `T-05.9`, zero `fastapi`/`flask`/`uvicorn`),
+logo não há endpoint SSE real para conectar hoje, e criar um está fora de uma task `web`. Este
+módulo fecha só o CONTRATO: a requisição que abre o fluxo (`bar_policy` obrigatório), a forma do
+envelope que uma mensagem carrega, e os dois portões que tornam o falsificador de `ADR-005`
+executável sobre qualquer payload/sequência que um fluxo real venha a produzir. Nenhum
+`EventSource` é instanciado — mesma fronteira que `§9` traçou para `fetch`.
+
+### O que o módulo garante, e como cada parte fecha o requisito
+
+1. **`LiveStreamOpenRequest`** (`seriesKeyId`, `symbol`, `interval`, `barPolicy`) —
+   `encodeLiveStreamOpenRequest`/`decodeLiveStreamOpenRequest`/`liveStreamUrl`, mesmo padrão de
+   `encodeHistoryRequest`. Sem `knowledgeTime`: a borda viva não tem instante fixo para travar
+   cache, seu horizonte é "agora".
+2. **`bar_policy` nunca é default (`D4`)** — `decodeLiveStreamOpenRequest` RECUSA um parâmetro
+   ausente ou fora de `{final_only, intrabar}`; nenhuma função do módulo assume um valor.
+3. **`is_final` explícito por TIPO, não só por checagem** — `InProgressBucketEnvelope.is_final`
+   é tipado como o literal `false` (não `boolean`), então nenhum bucket em formação pode ser
+   construído sem o campo. `decodeBucketEnvelope` reforça isso em runtime: `is_final` ausente,
+   `null`, ou de tipo errado é RECUSADO, nunca inferido.
+4. **Zero campo de nível de tick** — reusa `assertNoTickLevelFields` de `history-transport.ts`
+   (mesmo falsificador, mesma ADR, uma implementação só) sobre o payload BRUTO antes de
+   `decodeBucketEnvelope` estreitar para os campos conhecidos — narrowing sem essa ordem
+   deixaria um campo de tick aninhado (ex.: `{ trade: { price: "…" } }`) passar em silêncio,
+   achado durante a própria escrita do teste (`decodeBucketEnvelope REFUSES a nested tick-level
+   field`, corrigido antes de fechar a task).
+5. **Taxa ≤ `max(1 Hz, 1/TF)` por série** — `LiveEnvelopeRateGuard` delega para
+   `assertBucketSpacingWithinInterval` (mesma função de `§9`, reusada) a cada chegada, em vez de
+   reimplementar o limiar para o caso "uma mensagem por vez" do SSE.
+6. **`seq` monotônico por fluxo, lacuna sem inferir do relógio (`D2`)** — `LiveSeqGapTracker`
+   reporta lacuna (não lança) quando `seq` pula para a frente — evento de transporte recuperável
+   — e lança quando `seq` deixa de crescer, porque isso é o próprio invariante quebrando, não uma
+   lacuna. Nenhum teste do detector de lacuna usa relógio de parede — só a sequência de `seq`.
+
+### Falsificadores rodados — não só "os testes passam"
+
+Cada portão tem teste de MUTAÇÃO: `assertValidBucketEnvelope` reprova um envelope limpo assim
+que ganha `quantity`; `LiveSeqGapTracker` reprova uma sequência saudável assim que um `seq` é
+pulado; `LiveEnvelopeRateGuard` reprova um fluxo saudável no instante em que uma chegada é rápida
+demais. `decodeLiveStreamOpenRequest` tem o mesmo tratamento de `D4` que `decodeHistoryRequest`
+(`§9`): remover `barPolicy` da URL faz o round-trip que passava reprovar.
+
+### Comandos rodados, literais
+
+```bash
+cd frontend
+npm run test:app     # node --test 'src/app/*.test.ts'  -> 69 pass (28 novos), 0 fail
+npm run lint         # eslint src                        -> 0 erro, 0 aviso
+git add frontend/src/app/live-transport.ts frontend/src/app/live-transport.test.ts
+harness rules --mode sweep --changed-only
+  -> 1 achado: web-fullstack.hardcoded-url (AVISO), frontend/src/app/live-transport.test.ts:23
+  -> 0 achado de severidade block
+```
+
+**`web-fullstack.hardcoded-url` é o mesmo achado já registrado em `§9`/`§8`**: o literal
+`https://painel.local/ao-vivo` usado como `base` sintético para montar `URL` em teste — nenhum
+host é contatado. Severidade `warn` (`harness rules list --severity warn`), fora das 7 regras de
+`--severity block`; o próprio `history-transport.test.ts:21` dispara o mesmo aviso na mesma
+linha de padrão, confirmado por sweep isolado sobre esse arquivo.
+
+### Cobertura
+
+Sem piso declarado para `web` (mesmo motivo de `§8`/`§9`/`§10`: `harness policy --key test_cmd`
+só cobre `sentimento`). Medição qualitativa: 28 testes cobrem 100% das funções e classes
+exportadas (`assertValidLiveStreamOpenRequest`, `encode`/`decodeLiveStreamOpenRequest`,
+`liveStreamUrl`, `assertValidBucketEnvelope`, `decodeBucketEnvelope`, `LiveSeqGapTracker`,
+`LiveEnvelopeRateGuard`), incluindo os três falsificadores centrais do requisito (zero
+tick-level field, `seq` monotônico com lacuna detectável, taxa ≤ `max(1 Hz, 1/TF)`).
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§11` nova (append-only). `docs/adr/ADR-005-transporte-de-leitura.md`
+— **sem mudança**: `D1`/`D2`/`D4` já fixam a decisão; esta task consome, não emenda.
+`docs/context/plataforma-dados/gates/T-08.11-design.md` — **sem mudança**: gate de design já
+concluído antes desta implementação, veredito não revisitado (nenhum elemento visual novo
+apareceu, falsificador do próprio gate não disparou).
