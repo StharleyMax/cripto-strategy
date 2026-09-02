@@ -1097,7 +1097,7 @@ tracker = { provider = "jira", id = "CST-78", url = "https://conversationhub.atl
 id = "T-08.11"
 title = "[web] 08 · Transporte ao vivo por SSE com envelope de bucket"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T18:30:01Z @ 7ef3e7cd224ced6cdae78991ae1e6119af097200 (PR #79)
 phase = "08"
 depends_on = ["T-05.9"]
 refs = ["ADR-005/D1", "ADR-005/D2", "plano 08 item 8.8", "SSE e nao WS bidirecional: canal bidirecional e superficie de ataque sem consumidor", "e nao polling: a cadencia honesta e a do fechamento do bucket"]

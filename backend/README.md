@@ -559,6 +559,24 @@ instalação é ato de quem tiver a árvore inteira, e não de uma task rodando 
 
 ## O que existe, e por quê
 
+> ### 🗺️ O mapa desta árvore, em diagramas — [`docs/arquitetura-do-codigo.md`](../docs/arquitetura-do-codigo.md)
+>
+> Esta seção enumera **caminhos**; o mapa enumera **fluxos**. Lá estão os containers, os componentes
+> por camada, e **quatro diagramas de sequência** — o ingest verificado pela borda de checksum, a
+> drenagem retomável de ETL, a consulta do registro F0 e a leitura `as_of`. Mais o **esquema real do
+> SQLite** coluna a coluna, os 15 termos da `SeriesKey`, as 7 colunas de procedência, e o inventário
+> do que **ainda não existe** — banco de séries, API HTTP e aplicação de front, os três com a medição
+> ao lado em vez da afirmação.
+>
+> Ele **deriva da árvore**, não da SPEC. O par dele é [`docs/arquitetura-fluxos.md`](../docs/arquitetura-fluxos.md),
+> que deriva de `SPEC-001` e mostra o desenho: **quando divergirem, aquele é intenção e este é fato.**
+>
+> ⚠️ **Duas coisas que a tabela abaixo não diz e o mapa diz:** `record.sqlite3` **não é o banco de
+> mercado** — é o registro da ingestão, e o dado de mercado vive como arquivo em `data/` com
+> `.CHECKSUM` ao lado; e **não existe endpoint HTTP nenhum**, medido por
+> `grep -rniE 'fastapi|flask|uvicorn|aiohttp|@router|http.server' backend/src` → `rc=1`. A superfície
+> executável são **três CLIs**, e a saída de produto delas é `stdout`.
+
 | caminho | camada | papel |
 |---|---|---|
 | `src/modules/sentimento/domain/etl_backlog.py` | `domain` | a janela **fechada e enumerada a priori** (`SPEC-001` §5.7) e o cálculo do pendente. Zero IO |
