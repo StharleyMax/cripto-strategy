@@ -5,7 +5,17 @@
 
 > ## ⚠️ Leia isto antes dos diagramas
 >
-> **Nada aqui está implementado. Zero linha de código existe neste repositório.** O que os diagramas
+> **Nada aqui está implementado. Zero linha de código existe neste repositório.**
+>
+> > ### 📌 ADENDO 2026-08-30 — esta frase envelheceu, e ela NÃO foi reescrita
+> >
+> > Ela era **verdade em `2026-08-25`** e deixou de ser: hoje são **4.986 linhas em 36 módulos**
+> > `[MEDIDO 2026-08-30 em 840c500]`. Reescrevê-la aqui apagaria a linha do tempo — este documento
+> > é o registro do **desenho**, na data em que o desenho foi feito, e essa é a função dele.
+> >
+> > **Para o que existe HOJE na árvore, com o esquema real do banco e o que continua sem código:**
+> > [`arquitetura-do-codigo.md`](arquitetura-do-codigo.md). Os dois são pares — quando divergirem,
+> > **este aqui é intenção e aquele é fato.** O que os diagramas
 > mostram é o **contrato especificado**, não um sistema em operação. Onde um caminho está **decidido**,
 > o diagrama é sólido; onde está **deferido** ou é **non-goal desta fase**, o diagrama diz isso na
 > própria caixa. **Diagrama que não distingue as duas coisas é o mesmo defeito que este projeto passou
