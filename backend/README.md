@@ -1847,3 +1847,61 @@ reproduz.
   linha** — `DATASETS_BY_NAME` — **e ela não tinha teste**: acrescentar `"exchangeInfo"` deixava
   a suíte inteira verde (mutante `M08`). Coberta agora por
   `test_the_dataset_vocabulary_is_exactly_the_two_the_dump_publishes`.
+
+## 📡 O coletor `premiumIndex` — funding estimado, sem histórico em fonte nenhuma — `T-03.5` (`CST-21`, `CA-F0-1b`, plano `03` item 3.3)
+
+**A ausência de parâmetro é a garantia.** `GET /fapi/v1/premiumIndex` não tem `startTime`,
+`endTime` nem `limit` documentados — não existe, em fonte nenhuma, um jeito de pedir o funding
+estimado de um dia em que ninguém estava ouvindo. `domain/premium_index_batch.py` reflete isso
+ao pé da letra: `PREMIUM_INDEX_ENDPOINT` é uma string sem `?`, e nenhuma função deste módulo
+aceita um argumento de tempo para construir uma. A série nasce no primeiro `poll` e nunca antes
+— não é uma regra que um `if` aplica, é uma requisição que não pode ser escrita.
+
+### As peças, e a camada de cada uma
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/premium_index_batch.py` | `domain` | `PremiumIndexReading` (campos numéricos crus, nunca `float`); `parse_premium_index_batch` — valida a forma, recusa `symbol` repetido (chave natural do batch); `PREMIUM_INDEX_BATCH_WEIGHT_DECLARED = 10`, reproduzido pelo probe abaixo |
+| `use_cases/collect_premium_index.py` | `use_cases` | `collect_premium_index_once` — um ciclo fetch→parse→persiste, nunca parcial; `PremiumIndexCycleStage` separa `TRANSPORT`/`DECODE`/`PAYLOAD`/`WRITTEN`; `received_at` é **injetado**, nunca lido de `time`/`datetime` aqui |
+| `infra/premium_index_http_client.py` | `infra` | reusa `ConnectionFactory`/`flatten_headers`/`open_https_connection` de `https_quota_probe.py` em vez de redeclarar o mesmo Protocol de socket; a única diferença é que o **corpo** da resposta é mantido, não drenado |
+| `infra/premium_index_jsonl_sink.py` | `infra` | armazenamento cru, append-only: **uma linha por símbolo**, `flush`+`fsync` uma vez por ciclo (a mesma garantia de `jsonl_checkpoint.py`, medida em `tests/sentimento/test_infrastructure_durability.py`) |
+| `infra/premium_index_probe_cli.py` | `infra` | o comando reprodutível de `CA-F0-1b`: `N` ciclos consecutivos, delta de peso reportado com a fórmula de veredito (`CONFIRMADO`/`DIVERGENTE`), nunca um número solto |
+
+### O que esta task NÃO faz — plano `03`, seção "Não faz"
+
+Não aplica shift, não normaliza, não pluga em `SeriesKey`/`SeriesRow` (isso é `T-04.1`/`T-04.2`,
+fase `04`). Este coletor grava exatamente o que `parse_premium_index_batch` aceitou, ao lado de
+`received_at` — nada além disso.
+
+### `CA-F0-1b` reproduzido ao vivo, com o comando literal
+
+Código real, não só `curl` — `infra/premium_index_probe_cli.py` chamado como CLI, dois ciclos
+com 1 s de intervalo, contra o endpoint público (zero chave):
+
+```
+$ python -m src.modules.sentimento.infra.premium_index_probe_cli \
+    --cycles 2 --interval-seconds 1.0 \
+    --evidence backend/.probe-evidence/premium_index_probe.jsonl \
+    --summary backend/.probe-evidence/premium_index_probe_summary.json
+
+ciclos executados: 2
+  received_at=1788304122239 estagio=WRITTEN n_simbolos=888 peso=10 status=200
+  received_at=1788304123653 estagio=WRITTEN n_simbolos=888 peso=20 status=200
+delta(s) de peso entre ciclos consecutivos: [10] (declarado CA-F0-1b: 10/chamada) -> CONFIRMADO
+$ echo $?
+0
+```
+
+`[MEDIDO 2026-09-01]`: **888 símbolos** no universo desta data — não 875. A contagem **drift**
+é o mesmo fenômeno que `docs/decisoes-do-owner.md:364` já registrou entre `exchangeInfo` e
+`premiumIndex` num único instante (872 vs 875); por isso `parse_premium_index_batch` nunca fixa
+a contagem como invariante, só a ausência de `symbol` repetido. O que `CA-F0-1b` declarava —
+**peso 10 por chamada, independente do universo** — se confirma de novo: `x-mbx-used-weight-1m`
+saiu de 10 para 20 entre os dois ciclos, delta exato.
+
+A evidência bruta (`backend/.probe-evidence/`) não é versionada — mesma razão de `data/`
+(`.gitignore`): é dado de mercado, reproduzível pelo comando acima a qualquer momento.
+
+**Isto é probe curto, não deploy contínuo** (decisão do owner, sem frontend ainda): o CLI acima
+é uma composição de `collect_premium_index_once`, chamada por um humano, um número declarado de
+vezes. Nenhum `cron`, `systemd` ou scheduler foi acrescentado por esta task.
