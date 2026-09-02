@@ -85,3 +85,31 @@ def test_the_source_tree_the_gate_scans_is_not_empty() -> None:
     modules = list(SOURCE_ROOT.rglob("*.py"))
     assert SOURCE_ROOT.is_dir(), SOURCE_ROOT
     assert len(modules) >= 10, f"scanned {len(modules)} modules — the root is wrong"
+
+
+def test_the_docstrings_pointing_at_this_guard_cite_a_file_that_exists() -> None:
+    """QA falsifier: two production docstrings cite a guard file that was never written.
+
+    `write_series_row.py` and `run_single_writer.py` each cite this guard by path in their own
+    docstring — `tests/sentimento/test_write_series_row_call_sites.py` — but that path is not
+    this file's name (`test_single_writer_call_sites.py`) and no file by that cited name exists
+    anywhere under `backend/tests`. A citation to a file that was never written is the same
+    defect this repo's own doctrine names for a number without the command that produced it: a
+    reader who follows the citation gets nothing, and nothing in the test suite ever caught the
+    drift between the name the guard shipped with and the name its two callers still cite.
+    """
+    cited_path = "tests/sentimento/test_write_series_row_call_sites.py"
+    tests_root = Path(__file__).resolve().parents[1]
+    write_series_row_source = (
+        SOURCE_ROOT / "modules/sentimento/use_cases/write_series_row.py"
+    ).read_text(encoding="utf-8")
+    run_single_writer_source = (
+        SOURCE_ROOT / "modules/sentimento/use_cases/run_single_writer.py"
+    ).read_text(encoding="utf-8")
+    assert cited_path in write_series_row_source
+    assert cited_path in run_single_writer_source
+    cited_file = tests_root.parent / cited_path
+    assert cited_file.is_file(), (
+        f"write_series_row.py and run_single_writer.py cite '{cited_path}', but no such file "
+        f"exists — the guard actually shipped as '{Path(__file__).name}'"
+    )
