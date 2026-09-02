@@ -6,7 +6,8 @@
   "scripts": {
     "lint": "eslint src",
     "spike:axis": "node src/charts/axis-spike.ts",
-    "test:charts": "node --test 'src/charts/*.test.ts'"
+    "test:charts": "node --test 'src/charts/*.test.ts'",
+    "test:app": "node --test 'src/app/*.test.ts'"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
