@@ -2,7 +2,7 @@
 
 `ADR-002/D5`: "os coletores 24/7 produzem para fila durável; o escritor único é o único que toca
 a série." This module is the loop that makes that literal: it is the only production caller of
-`write_series_row` (`tests/sentimento/test_write_series_row_call_sites.py` proves the count), so
+`write_series_row` (`tests/sentimento/test_single_writer_call_sites.py` proves the count), so
 a second production writer would have to route around this file entirely, not merely call a
 different function inside it.
 """

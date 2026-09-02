@@ -1,10 +1,10 @@
-"""The escritor único: the ONE code path with authority to persist a `SeriesRow`.
+"""The single writer: the ONE code path with authority to persist a `SeriesRow`.
 
 `ADR-002/D5`: every write path converges on a single writer process precisely so the
 read-before-write logic `CA-F3-12`/`D7.16` requires has exactly one place to live, instead of
 being reimplemented (or forgotten) at each of the five storage candidates. This module is that
 place. `run_single_writer.py`, in this same package, is the only production caller — see
-`tests/sentimento/test_write_series_row_call_sites.py` for the structural proof.
+`tests/sentimento/test_single_writer_call_sites.py` for the structural proof.
 """
 
 from __future__ import annotations

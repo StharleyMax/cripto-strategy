@@ -88,17 +88,15 @@ def test_the_source_tree_the_gate_scans_is_not_empty() -> None:
 
 
 def test_the_docstrings_pointing_at_this_guard_cite_a_file_that_exists() -> None:
-    """QA falsifier: two production docstrings cite a guard file that was never written.
+    """QA falsifier: two production docstrings cited a guard file that was never written.
 
-    `write_series_row.py` and `run_single_writer.py` each cite this guard by path in their own
-    docstring — `tests/sentimento/test_write_series_row_call_sites.py` — but that path is not
-    this file's name (`test_single_writer_call_sites.py`) and no file by that cited name exists
-    anywhere under `backend/tests`. A citation to a file that was never written is the same
-    defect this repo's own doctrine names for a number without the command that produced it: a
-    reader who follows the citation gets nothing, and nothing in the test suite ever caught the
-    drift between the name the guard shipped with and the name its two callers still cite.
+    `T-07.5-qa.md`: they cited `tests/sentimento/test_write_series_row_call_sites.py`, a name
+    this guard never shipped under. Fixed by pointing both citations at this file's real name.
+    A citation to a file that was never written is the same defect this repo's own doctrine
+    names for a number without the command that produced it: a reader who follows the citation
+    gets nothing.
     """
-    cited_path = "tests/sentimento/test_write_series_row_call_sites.py"
+    cited_path = f"tests/sentimento/{Path(__file__).name}"
     tests_root = Path(__file__).resolve().parents[1]
     write_series_row_source = (
         SOURCE_ROOT / "modules/sentimento/use_cases/write_series_row.py"
