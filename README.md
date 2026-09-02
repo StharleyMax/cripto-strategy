@@ -21,6 +21,7 @@ com decisão **no fechamento do bucket**.
 | se você quer | leia |
 |---|---|
 | **entender como os fluxos funcionam, em diagramas** | **[`docs/arquitetura-fluxos.md`](docs/arquitetura-fluxos.md)** ← ingestão · estrutura de dados · gráfico · estratégia · alertas |
+| **entender o que EXISTE em código hoje, em diagramas** | **[`docs/arquitetura-do-codigo.md`](docs/arquitetura-do-codigo.md)** ← containers · componentes · 4 fluxos de sequência · o esquema real do SQLite · o que ainda NÃO existe |
 | o contrato técnico completo | [`docs/specs/SPEC-001-plataforma-dados.md`](docs/specs/SPEC-001-plataforma-dados.md) (`DRAFT`) |
 | as decisões de arquitetura, cada uma com falsificador | [`docs/adr/`](docs/adr/) — `ADR-001`..`ADR-011` |
 | o que vai ser construído, em ordem | [`docs/plans/SPEC-001-plataforma-dados/index.md`](docs/plans/SPEC-001-plataforma-dados/index.md) |
