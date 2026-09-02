@@ -501,3 +501,106 @@ trouxer a aplicação Next real e decidir de onde vem a base de URL em teste.
 `test_cmd` não é lido por portão nenhum. O script `npm --prefix frontend run test:app`
 existe pelo mesmo motivo que `test:charts` existe: é o comando que o `builder`/`qa` rodam
 hoje, não uma declaração de política.
+
+---
+
+## 9. `src/app/history-transport.ts` — o lado `web` de `ADR-005/D1` (`T-05.9`, 2026-09-02)
+
+`T-05.9` (`CST-43`, componente `web`) escreve o que o item `5.12` do plano `05` e o `DoD D5.8`
+pedem: **transporte HTTP endereçável por conteúdo para o histórico, e nenhum tick chega ao
+browser**. `ADR-005/D1` já decide a FORMA (chave de seis termos, resposta imutável por
+`knowledge_time`) — este módulo fecha o lado `web` desse contrato, mesmo padrão de `T-05.8`
+(`§8`): módulo TypeScript puro, sem tela, sem chamada de rede real em teste.
+
+```bash
+npm --prefix frontend run test:app   # 37 testes, node --test 'src/app/*.test.ts' (23 novos)
+```
+
+### Achado ANTES de escrever qualquer linha — a fronteira que a task mandou verificar
+
+`docs/context/plataforma-dados/handoff/T-05.9.md` proíbe criar ou editar `backend/`, e manda
+**parar e devolver achado** se fechar `D5.8` de verdade exigisse um endpoint/servidor novo.
+Medido: `grep -rln 'fastapi\|flask\|uvicorn\|starlette' backend/ --include='*.py' --include='*.toml'`
+→ **0 ocorrência**; `find backend -iname '*server*' -o -iname '*api*' -o -iname '*route*'` → só
+`binance_server_time_probe.py` (sonda de relógio, não servidor). **Não há nenhum framework HTTP
+no backend, logo nenhuma rota real existe para consumir** `[MEDIDO 2026-09-02]`. Isto NÃO virou
+"pare e implemente backend": o que `ADR-005/D1` fixa é um CONTRATO (a forma da chave, a
+imutabilidade, `bar_policy` nunca default), e `backend/src/modules/sentimento/domain/
+as_of_accessor.py` já materializa o vocabulário desse contrato do lado do domínio (`BarPolicy`,
+linhas 54-70; `bar_policy` "declared by the CONSUMER, never defaulted", linha 55-60). Fechar o
+lado `web` é consumir ESSE contrato — request key + os dois portões do falsificador da ADR —
+sem depender de um servidor rodando, o mesmo raciocínio que `T-05.8` já registrou para
+`knowledge_time`/`Bundle` (`§8` acima). Nenhum arquivo de `backend/` foi tocado.
+
+### O que o módulo garante, e como cada parte fecha o `DoD D5.8`
+
+1. **Chave endereçável por conteúdo** (`HistoryRequestKey`, seis termos de `ADR-005/D1`) —
+   `encodeHistoryRequest`/`decodeHistoryRequest`/`historyRequestUrl`, mesmo padrão de
+   `encodeBundle`/`decodeBundle`.
+2. **"O cache É o `knowledge_time`"** — `contentAddress` é determinístico e discrimina por
+   QUALQUER termo da chave (testado: mudar só `knowledgeTime`, ou só `barPolicy`, muda o
+   endereço). `HistoryResponseCache` opera sobre esse endereço e **recusa** (lança) se a MESMA
+   chave receber um payload byte-a-byte diferente — a imutabilidade de `D1` como invariante
+   verificável, não como comentário.
+3. **`bar_policy` nunca é default (`D4`)** — `decodeHistoryRequest` RECUSA um parâmetro
+   ausente ou fora do conjunto fechado `{final_only, intrabar}`; nenhuma função do módulo tem
+   valor default para este campo.
+4. **Zero campo de nível de tick** — `assertNoTickLevelFields` percorre qualquer payload JSON
+   decodificado em qualquer profundidade e lança ao encontrar `agg_id`, `agg_trade_id`,
+   `price`, `quantity`, `first_trade_id`, `last_trade_id`, `transact_time` ou
+   `is_buyer_maker` — o conjunto transcrito do falsificador da ADR **e** do cabeçalho real de
+   `data/binance/aggtrades/*.csv` (`agg_trade_id,price,quantity,first_trade_id,last_trade_id,
+   transact_time,is_buyer_maker` `[MEDIDO 2026-09-02, head -2]`).
+5. **Taxa ≤ `max(1 Hz, 1/TF)`** — `assertBucketSpacingWithinInterval` recusa qualquer par de
+   buckets consecutivos mais próximos que o intervalo pedido: um espaçamento mais fino É a
+   definição de tick chegando disfarçado de bucket extra.
+
+Deliberadamente **agnóstico do schema completo** de içamento de `D3` (sessão/painel/célula):
+nenhuma ADR fixou ainda essa forma para a resposta histórica, e esse payload é de `charts`
+(item 5.4 do plano `05`), fora deste componente. Os dois portões acima (4 e 5) protegem
+QUALQUER payload que uma rota futura venha a servir, não um schema assumido.
+
+### Falsificadores rodados — não só "os testes passam"
+
+Cada um dos dois portões tem teste de MUTAÇÃO: um payload/série que passa limpo é alterado
+plantando exatamente o defeito que a ADR proíbe, e o mesmo teste prova que a alteração agora
+reprova (`assertNoTickLevelFields`: ganhar `is_buyer_maker` faz um envelope legítimo reprovar;
+`assertBucketSpacingWithinInterval`: ganhar um ponto a 500ms do vizinho faz uma série de 1 min
+limpa reprovar). `decodeHistoryRequest` tem o mesmo tratamento para `D4`: remover `barPolicy`
+da URL faz o round-trip que passava reprovar, nomeando `ADR-005/D4` na mensagem.
+
+### Comandos rodados, literais
+
+```bash
+cd frontend && npm ci --prefer-offline --no-audit --no-fund   # node_modules ausente na worktree
+npm run test:app     # node --test 'src/app/*.test.ts'  -> 37 pass (23 novos), 0 fail
+npm run lint         # eslint src                        -> 0 erro, 0 aviso
+npm run test:charts  # regressão dos módulos existentes  -> 13 pass, 0 fail (pré-existente)
+make lint-frontend   # rc=0
+git add frontend/src/app/history-transport.ts frontend/src/app/history-transport.test.ts
+harness rules --mode sweep --changed-only --format ndjson
+  -> 1 achado: web-fullstack.hardcoded-url (warn), frontend/src/app/history-transport.test.ts:21
+  -> 0 achado de severidade block, rc=0
+```
+
+**`web-fullstack.hardcoded-url` é o mesmo achado que `T-05.8` já teve** (`§8` acima): o literal
+`https://painel.local/historico` usado como `base` sintético para montar `URL` nos testes —
+nenhum host é contatado. Severidade `warn`, fora do conjunto de `harness rules list --severity
+block` (7 regras). Sem `--changed-only`, o sweep também mostra o achado pré-existente de
+`T-05.8` (`knowledge-time-bundle.test.ts:22`, mesma regra) — ambos já registrados, nenhum novo
+de fundo.
+
+### Cobertura
+
+Sem piso declarado para `web` (mesmo motivo da `§8`: `harness policy --key test_cmd` só cobre
+`sentimento`). Medição qualitativa: os 23 testes novos cobrem 100% das funções exportadas
+(`assertValidHistoryRequestKey`, `encodeHistoryRequest`, `decodeHistoryRequest`,
+`historyRequestUrl`, `contentAddress`, `HistoryResponseCache`, `assertNoTickLevelFields`,
+`assertBucketSpacingWithinInterval`), incluindo os dois falsificadores da ADR (com caso de
+mutação para cada um) e as duas recusas de `D4` (parâmetro ausente, valor fora do conjunto).
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§9` nova (append-only, nenhuma linha existente reescrita).
+`docs/plans/SPEC-001-plataforma-dados/05_fatia_visivel.md` — **sem mudança**: é o documento
+normativo do DoD, e a task o satisfaz, não o edita.
