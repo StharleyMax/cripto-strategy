@@ -900,7 +900,7 @@ tracker = { provider = "jira", id = "CST-61", url = "https://conversationhub.atl
 id = "T-07.8"
 title = "[sentimento] 07 · universe_at(ts, filtro) com universe_source inadmissivel POR TIPO no caminho de decisao"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED + review COMPLIANT 2026-09-02T21:43:07Z @ c04d59a86c0c6a314fee1b2f35a5db0f67a281b2 (PR #88)
 phase = "07"
 depends_on = ["T-02.1", "T-07.2"]
 refs = ["CA-F3-4", "SPEC-001 §3.7", "plano 07 item 7.10", "DoD D7.7", "s3_inferred inadmissivel por tipo, nao por convencao"]
