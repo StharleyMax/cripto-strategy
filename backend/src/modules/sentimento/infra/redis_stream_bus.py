@@ -18,11 +18,15 @@ socket itself, matching `infra/https_quota_probe.py`'s connection-factory-is-inj
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
-from src.modules.sentimento.infra.redis_resp_client import RedisCommandError, RespConnection
+from src.modules.sentimento.infra.redis_resp_client import (
+    RedisCommandError,
+    RespConnection,
+    RespValue,
+)
 
 # `>` and `0` are RESP2 protocol literals (RESP `XREADGROUP` id argument), not this repository's
 # own naming — see the Redis Streams command reference for `XREADGROUP`.
@@ -140,6 +144,11 @@ class RedisStreamConsumerGroup:
                 f"single-stream array this client always requests"
             )
         [stream_reply] = reply
+        if not isinstance(stream_reply, list) or len(stream_reply) != 2:
+            raise UnexpectedStreamReplyError(
+                f"XREADGROUP for stream {self._stream!r} answered a per-stream entry of "
+                f"unexpected shape: {stream_reply!r}"
+            )
         _stream_name, entries = stream_reply
         if not isinstance(entries, list):
             raise UnexpectedStreamReplyError(
@@ -149,10 +158,18 @@ class RedisStreamConsumerGroup:
         return tuple(_to_message(entry) for entry in entries)
 
 
-def _to_message(entry: Sequence[object]) -> StreamMessage:
+def _to_message(entry: RespValue) -> StreamMessage:
     """Convert one raw `[id, [field, value, ...]]` RESP2 entry into a `StreamMessage`."""
+    if not isinstance(entry, list) or len(entry) != 2:
+        raise UnexpectedStreamReplyError(f"malformed stream entry: {entry!r}")
     entry_id, flat_fields = entry
     if not isinstance(entry_id, bytes) or not isinstance(flat_fields, list):
         raise UnexpectedStreamReplyError(f"malformed stream entry: {entry!r}")
-    fields = dict(zip(flat_fields[0::2], flat_fields[1::2], strict=True))
+    field_names = flat_fields[0::2]
+    field_values = flat_fields[1::2]
+    fields: dict[bytes, bytes] = {}
+    for name, value in zip(field_names, field_values, strict=True):
+        if not isinstance(name, bytes) or not isinstance(value, bytes):
+            raise UnexpectedStreamReplyError(f"malformed stream field pair: {name!r}={value!r}")
+        fields[name] = value
     return StreamMessage(entry_id=entry_id, fields=fields)

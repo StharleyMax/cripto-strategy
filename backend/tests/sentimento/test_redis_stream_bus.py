@@ -173,6 +173,7 @@ def test_skipping_read_pending_loses_the_unacked_messages_forever(
     host, port = redis_address
     inspection = connect_resp2(open_tcp_socket(host, port))
     pending_summary = inspection.command("XPENDING", STREAM, GROUP)
+    assert isinstance(pending_summary, list)
     assert pending_summary[0] == len(lost_ids)
 
 
