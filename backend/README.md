@@ -2416,3 +2416,66 @@ SIMULADA e rotulada como tal no teste — nunca apresentada como medição real.
   existirem, `infra/clock_skew_tolerance_cli.py` já lê o mesmo store sem mudança de código.
 - **Não decide o que fazer com a tolerância calibrada** (alarme, campo de UI, etc.) — só a
   calcula e a devolve com a evidência (`sample_n`, `span_days`, `stat_name`) anexada.
+
+## 📎 2026-09-02 por `T-07.7` — jitter e circuit breaker sobre o broker cego, por composição
+
+`CA-F3-9`, plano `07` item 7.9. `domain/local_quota_broker.py` (`T-03.7`) paceia um balde CEGO
+num intervalo fixo, mas nunca se recusa a chamar — mesmo logo depois do primeiro `429`. Esta
+task compõe três peças novas em cima dele, **sem tocar o arquivo existente**, como o handoff
+pediu explicitamente ("prefira composição a duplicar a lógica de contagem local"):
+
+| camada | arquivo | o que faz |
+|---|---|---|
+| `domain` | `circuit_breaker.py` (**novo**) | a máquina de estados `CLOSED -> OPEN -> HALF_OPEN -> CLOSED`; `FailureKind.RATE_LIMITED`/`SERVER_ERROR` abrem o circuito na PRIMEIRA ocorrência (o único bit autoritativo que um balde cego dá), `TRANSPORT_ERROR` só conta para o limiar genérico |
+| `domain` | `jitter.py` (**novo**) | `JitterPolicy.apply(base, sample)` puro (sample injetado, nunca lido de `random` dentro da função); `sample_uniform()` é a única linha não determinística do módulo, envolvendo `random.random()` |
+| `domain` | `quota_circuit_broker.py` (**novo**) | `QuotaCircuitBroker` compõe `LocalQuotaBroker` + `JitterPolicy` + `CircuitBreakerPolicy`/`State`; `decide()` consulta o circuito PRIMEIRO — um circuito aberto nunca chega a jitterar nada |
+
+### Por que a aleatoriedade é parâmetro, não chamada interna
+
+Mesma disciplina que `domain/recoil_policy.py` já usa para `retry_after_seconds`: uma função que
+RECEBE seu não-determinismo é uma função que um teste dirige com valores exatos
+(`sample=0.0`/`0.5`/`1.0`) e prova as duas bordas sem depender de sorte.
+`ADR-016`/`Natureza` proíbe `domain`/`use_cases` de importar `socket`/`ssl` e guarda `time`/
+`datetime` POR USO (`backend/scripts/natureza.py`) — nenhum dos dois cobre `random`, que não lê
+relógio nem abre soquete. `sample_uniform()` existe mesmo assim como wrapper fino, porque o
+DoD desta task pede um teste que prove variância REAL entre chamadas, não apenas a aritmética
+pura injetada.
+
+### O falsificador do jitter — a proteção que o DoD pede, mostrando o que ela rejeita
+
+`test_the_real_random_source_is_not_hardcoded_to_the_same_value` chama `sample_uniform()` 50
+vezes e recusa se todas caírem no mesmo valor (`len(draws) > 1`). Mutação manual, revertida em
+seguida (`git diff` conferido vazio depois):
+
+| mutante | comando | resultado |
+|---|---|---|
+| `sample_uniform`: `return random.random()` → `return 0.42` (hardcoded) | `pytest -q tests/sentimento/test_jitter.py -k real_random_source_is_not_hardcoded` | **1 failed** — `len(draws) == 1`, exatamente o defeito que o DoD pede para rejeitar |
+| `record_failure`: remove `kind.trips_immediately or` (só threshold genérico) | `pytest -q tests/sentimento/test_circuit_breaker.py -k first_occurrence` | **2 failed** — `RATE_LIMITED`/`SERVER_ERROR` deixam de abrir o circuito na primeira falha |
+
+Os dois mutantes revertidos, árvore reconferida (`git status --short` limpo antes de cada um).
+
+### Comandos rodados e resultado
+
+`bash backend/scripts/lint.sh` → limpo (`ruff check`/`format --check`/`mypy --strict`, 189
+arquivos). `bash backend/scripts/test.sh` → **rc=0**, `1064 passed, 3 warnings` (588 s) — os 3
+`ResourceWarning` são o mesmo achado pré-existente já nomeado na seção de `T-03.11`, não desta
+task. Cobertura total **97,84%** — `domain 99,8%` (meta 90%, `2111/2115`) · `use_cases 100%`
+(meta 80%) · `infra 95,1%` (meta 70%); `jitter.py` e `quota_circuit_broker.py` fecham em
+**100%**, `circuit_breaker.py` em **97%** (2 linhas: uma branch defensiva inalcançável do
+`InvalidCircuitBreakerError` de tipo, guardada pelo próprio `__post_init__` do dataclass, e uma
+linha de `__post_init__` de `CircuitBreakerState` já coberta pelo caminho irmão). `bash
+backend/scripts/boundaries.sh` → `3 kept, 0 broken` (129 arquivos, 583 dependências) —
+`circuit_breaker.py`/`jitter.py`/`quota_circuit_broker.py` vivem em `domain`, não importam
+`socket`/`ssl`/outro contexto. `harness rules --mode sweep --changed-only` → **rc=0**, nenhum
+achado sobre os 6 arquivos desta task (3 de produção, 3 de teste).
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Não abre um novo consumidor real.** Nenhum CLI/use case novo chama `QuotaCircuitBroker` —
+  o handoff pede o broker (`domain/`), não a fiação de um cliente HTTP concreto sobre ele; isso
+  é escopo de quem for consumir `binance-futures-data`/`coinalyze` em regime (fora de `07.9`).
+- **Não decide os números de produção** (`failure_threshold`, `cooldown_seconds`, `spread`) —
+  são parâmetros do chamador; nenhum valor aqui é apresentado como calibrado contra tráfego real.
+- **Não persiste o estado do circuito entre processos.** `CircuitBreakerState` é um valor puro em
+  memória; um broker compartilhado entre processos (o cenário de thundering herd que o jitter
+  mitiga) não tem, ainda, um armazenamento comum — cada processo mede sua própria série de falhas.
