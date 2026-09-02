@@ -85,7 +85,9 @@ def verify_handshake_response(raw: bytes, client_key: str) -> None:
         headers[name.strip().lower()] = value.strip()
     accept = headers.get("sec-websocket-accept")
     if accept is None:
-        raise StreamTransportError(ProbeStage.HTTP_UPGRADE, "101 response missing Sec-WebSocket-Accept")
+        raise StreamTransportError(
+            ProbeStage.HTTP_UPGRADE, "101 response missing Sec-WebSocket-Accept"
+        )
     if accept != expected_accept(client_key):
         raise StreamTransportError(
             ProbeStage.HTTP_UPGRADE,

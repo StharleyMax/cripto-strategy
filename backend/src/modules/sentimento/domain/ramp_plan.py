@@ -40,7 +40,8 @@ class RampPlan:
         if self.min_interval_seconds <= 0:
             raise InvalidRampPlanError(
                 "min_interval_seconds <= 0 is a burst, not a ramp: without a minimum interval "
-                "the arrival order stops being defined and the ordinal of the first 429 loses meaning"
+                "the arrival order stops being defined and the ordinal of the first 429 loses "
+                "meaning"
             )
         if self.initial_interval_seconds < self.min_interval_seconds:
             raise InvalidRampPlanError(
