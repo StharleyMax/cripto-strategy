@@ -1,0 +1,28 @@
+# instrument_alias.yaml — curated symbol-continuity catalog.
+#
+# `SPEC-001` §3.4: `instrument_alias ( de, para, effective_from, evidence_url )` — column names
+# in this file are the English spelling `backend/src/modules/sentimento/domain/instrument_alias.py`
+# reads (`from_symbol`/`to_symbol`/`effective_from`/`evidence_url`; the SPEC's own Portuguese
+# names are prose, per `CLAUDE.md`'s "idioma de identificador", tabela de fronteira, linha 7).
+#
+# `Q12` (`docs/decisoes-do-owner.md`) is OPEN, and what it leaves open is the CONTENT of this
+# file — WHICH renames enter, roughly 5 lines/year — not whether the mechanism that reads it
+# should exist. This file ships with ZERO real entries: populating it is `Q12`'s answer, and
+# `Q12` has not been answered yet. Two renames already `[MEDIDO]` and known to need an entry
+# some day — `MATICUSDT -> POLUSDT` and `RNDRUSDT -> RENDERUSDT` — are NOT listed below, because
+# listing them here without the owner's curated `evidence_url` would be exactly the "inferred,
+# never curated" shortcut `T-07.9`'s handoff forbids.
+#
+# `evidence_url` is MANDATORY, enforced by `domain/instrument_alias.py` at load time: an entry
+# without it (empty or absent) is refused before it ever becomes a usable alias — never a
+# convention a curator can forget to follow, a validation a curator cannot bypass.
+#
+# One entry per rename:
+#
+#   - from_symbol: <old venue_symbol, the one that stops resolving on its own after effective_from>
+#     to_symbol: <new venue_symbol, what `from_symbol` resolves to from effective_from onward>
+#     effective_from: <YYYY-MM-DD — the date the rename took effect at the venue>
+#     evidence_url: <external proof, e.g. the exchange's own rename announcement — never this
+#                    repository's own inference>
+
+aliases: []
