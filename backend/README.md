@@ -2366,3 +2366,53 @@ de docstring de módulo multi-linha, não-bloqueante, corrigido para o padrão d
 repositório). Relatório: [`gates/T-07.1-builder.md`](../docs/context/plataforma-dados/gates/T-07.1-builder.md).
 **`tasks.toml`, ledger e Jira INTOCADOS; nenhum `gate-record`, `approve` ou `advance`** — veredito
 é do `/qa`.
+
+## 📎 2026-09-02 por `T-07.10` — `clock_skew_tolerance_ms` CALIBRADO, RECUSADO hoje por falta de 7 dias
+
+`CA-F3-13`, plano `07` item 7.12, DoD `D7.18`. Lê a distribuição de `clock_skew_ms` que `T-03.8`
+mede e persiste (`domain/clock_skew.py`, `use_cases/persist_ntp_skew_run.py`, reusados sem
+duplicar `ClockSkewSample`) e calibra a tolerância como `p99` de `|clock_skew_ms|` — nunca um
+número fixo. `D3.10`/`D7.18`, literal: `>= 7 dias de runs` é o padrão real; hoje só existem os 5
+probes curtos de `T-03.8` (~6,6 s de span), e o mecanismo **RECUSA** calibrar sobre eles em vez de
+fabricar um número.
+
+### As peças, e a camada de cada uma
+
+- [`domain/clock_skew_tolerance.py`](src/modules/sentimento/domain/clock_skew_tolerance.py)
+  (**novo**): `ClockSkewObservation` (valor já computado + `observed_at_ms`, NÃO um
+  `ClockSkewSample` reimplementado — `md.ingest_run` nunca persiste o bracket que produz o
+  skew, só o resultado) e `calibrate_clock_skew_tolerance`, que reusa `p99` de
+  `availability_lag_stats.py` (mesma convenção `LAG_STAT_NAME`/`TOLERANCE_STAT_NAME = "p99"`,
+  nearest-rank, nunca interpolado) em vez de reimplementar percentil. Refusa
+  (`InsufficientClockSkewCalibrationDataError`) com zero amostras ou `span_days < 7`
+  (`MIN_CALIBRATION_SPAN_DAYS`, parametrizável só para teste de fronteira).
+- [`use_cases/calibrate_clock_skew_tolerance.py`](src/modules/sentimento/use_cases/calibrate_clock_skew_tolerance.py)
+  (**novo**): porta `ClockSkewHistorySource`, deixa a recusa propagar (mesma disciplina de
+  `MissingUsedWeightError` em `persist_ntp_skew_run.py` — nunca engolida num default).
+- [`infra/clock_skew_tolerance_reader.py`](src/modules/sentimento/infra/clock_skew_tolerance_reader.py)
+  (**novo**): `parse_iso_ms` (inverso de `ntp_skew_probe_cli.iso_ms`) faz a única leitura de
+  `datetime` desta task — `Natureza`, mesma fronteira de `infra/metrics_csv_reader.py` — e
+  `IngestRunClockSkewSource` adapta qualquer `IngestRecordSource` (ex.: `SqliteIngestRecordStore`)
+  lendo TODO `md.ingest_run`, não só linhas de probe NTP.
+- [`infra/clock_skew_tolerance_cli.py`](src/modules/sentimento/infra/clock_skew_tolerance_cli.py)
+  (**novo**): mesmo contrato de stream de `ingest_health_cli.py` (produto em `stdout`,
+  diagnóstico em `stderr`). A recusa vira `{"calibrated": false, "reason": "..."}` na MESMA linha
+  JSON de um sucesso — nunca um traceback escondendo o motivo.
+
+### O falsificador da fase — rodado contra os 5 runs REAIS de `T-03.8`
+
+`test_refuses_on_the_5_real_t038_probe_runs` (domain) e
+`test_report_on_the_real_5_run_t038_store_refuses` (infra/CLI) alimentam os `clock_skew_ms`
+efetivamente medidos (`-69,-69,-73,-66,-23`) com os `started_at` reais
+(`docs/context/plataforma-dados/medicoes/T-03.8-ntp-skew/01_ingest_health_query.jsonl`) — span
+`~6,6 s`, não `7 dias` — e o mecanismo **REPROVA com `InsufficientClockSkewCalibrationDataError`**.
+Toda distribuição não trivial usada para provar a fórmula (`p99` de 1..100, skew negativo) é
+SIMULADA e rotulada como tal no teste — nunca apresentada como medição real.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Não calibra uma tolerância real.** Os 7 dias de captura contínua que `D3.10`/`D7.18` exigem
+  não existem (owner ainda roda local/probe-curto, `docs/decisoes-do-owner.md` §Q19) — quando
+  existirem, `infra/clock_skew_tolerance_cli.py` já lê o mesmo store sem mudança de código.
+- **Não decide o que fazer com a tolerância calibrada** (alarme, campo de UI, etc.) — só a
+  calcula e a devolve com a evidência (`sample_n`, `span_days`, `stat_name`) anexada.
