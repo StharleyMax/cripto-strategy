@@ -70,6 +70,13 @@ mypy = "2.3.1"
 pytest = "9.1.1"
 pytest-cov = "7.1.0"
 ruff = "0.16.5"
+# `fakeredis` (`T-07.4`, `D7.10`) — DEV-ONLY, never `[project].dependencies`. Production code
+# (`infra/redis_resp_client.py`) speaks RESP2 over a raw socket, same as every other network
+# client in this tree; `fakeredis.TcpFakeServer` gives the test suite a REAL loopback listener
+# that speaks the real Streams + consumer group protocol, so the client under test exercises the
+# exact code path it would against a real Redis — without adding a runtime dependency or
+# reaching outside localhost. Pinned exact, per the paragraph above.
+fakeredis = "2.37.1"
 
 [tool.pytest.ini_options]
 # `pythonpath = ["."]` torna `src` e `tests` importaveis com a raiz em `backend/`, que e o
