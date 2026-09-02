@@ -23,14 +23,25 @@ END = date(2026, 8, 29)
 BODY = b"1700000000000,42.5,0.01,111,222,false\n"
 
 
+def _body_for(index: int) -> bytes:
+    """Content per partition: index 0 is plain `BODY`, every other index is DISTINGUISHABLE.
+
+    `T-07.3` dedupes by content hash across keys: reusing the identical `BODY` for every
+    partition would make every key past the first a duplicate of the first by construction,
+    which would silently defeat this file's "every key publishes" assertions.
+    """
+    return BODY if index == 0 else BODY + f"# partition {index}\n".encode("ascii")
+
+
 def _seed(workdir: Path, depth: int) -> tuple[str, ...]:
-    """Fabricate `depth` verified objects in the mirror."""
+    """Fabricate `depth` verified objects in the mirror, each with content of its own."""
     partitions = enumerate_window(AGG_TRADES, SYMBOL, END, depth, "daily")
-    for partition in partitions:
+    for index, partition in enumerate(partitions):
         target = workdir / MIRROR_DIR / partition.object_key
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(BODY)
-        digest = hashlib.sha256(BODY).hexdigest()
+        body = _body_for(index)
+        target.write_bytes(body)
+        digest = hashlib.sha256(body).hexdigest()
         target.with_name(target.name + ".CHECKSUM").write_text(
             f"{digest}  {target.name}\n", encoding="utf-8"
         )
@@ -117,11 +128,12 @@ def test_main_accepts_the_monthly_prefix_for_a_dataset_that_publishes_one(tmp_pa
     an argument parser is the one that turns out to be misspelled the day an operator needs it.
     """
     partitions = enumerate_window(AGG_TRADES, SYMBOL, END, 30, "monthly")
-    for partition in partitions:
+    for index, partition in enumerate(partitions):
         target = tmp_path / MIRROR_DIR / partition.object_key
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(BODY)
-        digest = hashlib.sha256(BODY).hexdigest()
+        body = _body_for(index)
+        target.write_bytes(body)
+        digest = hashlib.sha256(body).hexdigest()
         target.with_name(target.name + ".CHECKSUM").write_text(
             f"{digest}  {target.name}\n", encoding="utf-8"
         )

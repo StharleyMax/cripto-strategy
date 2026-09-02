@@ -50,15 +50,28 @@ END = date(2026, 8, 29)
 BODY = b"1700000000000,42.5,0.01,111,222,false\n" * 5
 
 
+def _body_for(index: int) -> bytes:
+    """Content per partition: index 0 is the plain `BODY`, every other index is DISTINGUISHABLE.
+
+    `T-07.3` dedupes by content hash across keys, so a fixture that reused `BODY` for every
+    partition would make every key past the first a DUPLICATE of the first by construction —
+    which is correct dedupe behaviour, but silently defeats any test in this file that seeds
+    `depth > 1` expecting every key to publish its own object. Index 0 stays plain `BODY` so the
+    single-partition tests (`depth=1`) keep asserting the exact bytes they always have.
+    """
+    return BODY if index == 0 else BODY + f"# partition {index}\n".encode("ascii")
+
+
 def _seed(workdir: Path, depth: int, *, sidecar: bool = True) -> tuple[str, ...]:
     """Fabricate `depth` objects in the mirror, each with a correct sidecar unless told not to."""
     partitions = enumerate_window(AGG_TRADES, SYMBOL, END, depth, "daily")
-    for partition in partitions:
+    for index, partition in enumerate(partitions):
         target = workdir / MIRROR_DIR / partition.object_key
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(BODY)
+        body = _body_for(index)
+        target.write_bytes(body)
         if sidecar:
-            digest = hashlib.sha256(BODY).hexdigest()
+            digest = hashlib.sha256(body).hexdigest()
             target.with_name(target.name + ".CHECKSUM").write_text(
                 f"{digest}  {target.name}\n", encoding="utf-8"
             )
@@ -175,7 +188,7 @@ def test_a_suspect_period_is_ingested_with_a_warning_and_is_never_refused(
         processed = run(tmp_path, SYMBOL, DATASET, END, 3, "daily")
 
     assert processed == keys[:2], "the suspect object still enters — it is data"
-    assert (tmp_path / OUTPUT_DIR / f"{keys[1]}{OUTPUT_SUFFIX}").read_bytes() == BODY
+    assert (tmp_path / OUTPUT_DIR / f"{keys[1]}{OUTPUT_SUFFIX}").read_bytes() == _body_for(1)
     assert "dump_object_window_suspect" in caplog.text
 
 
