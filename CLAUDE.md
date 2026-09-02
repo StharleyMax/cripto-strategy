@@ -226,37 +226,50 @@ exceção logo abaixo: `CA-F1-1` congela a tabela em **12**, e uma 13ª reprovar
 `05` de `SPEC-001` são muitas, e trocar URL depois quebra bookmark e link. **A pergunta é barata agora e
 monotonicamente mais cara depois** — mas não bloqueia nada. Dono: **owner**.
 
-### ⏸ A lacuna conhecida desta tabela — **mensagem de exceção**, e ela é dívida com dono
+### ✅ Mensagem de exceção — RESPONDIDA em 2026-09-02, era a lacuna conhecida desta tabela
 
 **Nenhuma das 12 linhas acima cobre a string de `raise X("…")`.** Isto é declarado aqui, como prosa
 adjacente e **não como 13ª linha** — `CA-F1-1` congela a tabela em **12**, e uma 13ª reprovaria um
 `CLAUDE.md` correto. O precedente é o da coluna de contrato, que o `/tech-lead` colocou como prosa pelo
 mesmo motivo.
 
-**A superfície está viva e já divergiu**, `n=5` mensagens em 3 arquivos — **3 em português, 2 em inglês**
-`[MEDIDO 2026-08-29 em 77cf178]`:
+**A superfície estava viva e divergindo — e o gatilho de reabertura DISPAROU.** Baseline: `n=5` mensagens
+em 3 arquivos, 3 PT/2 EN `[MEDIDO 2026-08-29 em 77cf178]`, medido por um grep de UMA linha que não
+alcança `raise X(\n    "...")` partido em várias linhas. Medição seguinte, ao construir `T-03.6`, refeita
+por AST (não regex, para não repetir o mesmo subconto) sobre toda chamada de `*Error`/`*Exception` com
+argumento string em `backend/src`: **`n=137`, 50 PT / 87 EN**, ~15 arquivos com PT `[MEDIDO 2026-09-02]`.
 
 ```bash
-grep -rnoE '(raise|Error|Exception)\w*\(\s*f?"[^"]{4,90}"' backend/src --include='*.py'
-#  etl_backlog.py:26,37       "chave vazia/repetida na janela declarada"        PT
-#  jsonl_checkpoint.py:84     "linha {numero} ilegivel em {self._path}"         PT
-#  checksum_manifest.py:90    "manifest attests an empty subject name"          EN
-#  checksum_manifest.py:111   "entry is not in `sha256sum` format: …"           EN
+# grep de uma linha (o que a baseline usava) SUBCONTA — 34, não 137 — porque raise partido em
+# varias linhas nao casa com uma regex de uma linha so:
+grep -rnoE '(raise|Error|Exception)\w*\(\s*f?"[^"]{4,90}"' backend/src --include='*.py' | wc -l  # 34
+# contagem real, por AST (percorre toda Call cujo nome termina em Error/Exception, string ou f-string):
+# 137 chamadas com argumento string, 50 delas em portugues
 ```
 
-**E o argumento da linha 10 vale palavra por palavra aqui, o que torna a omissão inconsistente e não
-apenas incompleta:** *"a string em `logger.info("…")` é escrita em código, por quem escreve o código"* —
-troque `logger.info` por `raise ValueError` e **nada no argumento muda**. Ele não foi aplicado.
+De 3 PT (subcontado) para 50 PT (contado direito) é exatamente o "se o número de mensagens em português
+subir" que a versão anterior desta seção nomeou como gatilho — e ele disparou antes que qualquer
+instrumento o medisse sozinho; foi `/review` de `T-03.6` que achou o primeiro sinal (o subconto de 34).
 
-> **Status: `⏸ NÃO DECIDIDO`. Dono: `/architect`** — a decisão é se esta vira a **13ª superfície** de
-> `PRD-002` §3.1, e ela **não é minha**: `T-01.1` transcreve fronteira, não a estende.
-> **Gatilho de reabertura, e ele é observável e barato:** hoje são **3 PT / 2 EN**; se o número de
-> mensagens em português **subir**, a lacuna deixou de ser inércia e virou rampa — e volta à mesa com um
-> caso concreto. Até lá, `README.md` §*"Idioma de identificador"* é a **única** resposta escrita
-> (*"as mensagens de erro … continuam em português"*), e ela **não** está nesta tabela normativa — um
-> leitor que pergunte *"em que idioma escrevo a próxima mensagem de erro?"* acha resposta no `README`,
-> **nenhuma** aqui, e uma árvore dividida 3 a 2. **É assim que a lacuna nasce, e por isso ela está
-> escrita em vez de silenciada.** Achado por `/review` `[WARNING-2]`, ciclo 2.
+**✅ RESPOSTA DO OWNER (2026-09-02). Declaração literal:**
+
+> **"pode ajustar essas questão do português e remover essas mensagens"**
+
+`[PREMISSA-OWNER: 2026-09-02]`
+
+**Decisão: mensagem de `raise X("…")`/`Error(...)`/`Exception(...)` entra na fronteira do inglês — mesmo
+tratamento da linha 1 da tabela (identificador de produção).** Isto fecha a lacuna sem virar 13ª linha
+(`CA-F1-1` continua em 12) — mesmo padrão da coluna de contrato (linha 11) e do evento de log (linha 10):
+decisão em prosa adjacente, efeito idêntico ao de uma linha normativa.
+
+**Na prática:**
+- Toda mensagem NOVA de `raise`/`Error`/`Exception` nasce em inglês, sem exceção, a partir de 2026-09-02.
+- As 50 mensagens PT existentes em 2026-09-02 são dívida paga no mesmo ciclo que achou o número — não
+  ficam como debt silencioso (ver `docs/INDEX.md` pela entrada da limpeza).
+- `janela_de_perda` (linha 11) **não é afetada** — é nome de COLUNA DE CONTRATO, não mensagem de
+  exceção; esta decisão não reabre aquela (dona continua sendo `ADR-008/D3`).
+- `README.md` §*"Idioma de identificador"* deixa de ser a única resposta escrita — esta seção agora é
+  normativa para a superfície.
 
 ### Idioma de identificador é convenção, **não portão** — e o gatilho de reabertura tem endereço
 

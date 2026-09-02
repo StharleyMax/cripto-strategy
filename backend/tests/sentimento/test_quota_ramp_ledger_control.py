@@ -236,15 +236,15 @@ def test_a_counter_that_is_not_a_number_is_absent_and_never_zero() -> None:
 
 def test_an_observation_cannot_be_silent_about_dispatch() -> None:
     """The control is enforced by the TYPE: neither both nor neither is constructible."""
-    with pytest.raises(ValueError, match="nao levei 429"):
+    with pytest.raises(ValueError, match="did not get a 429"):
         ProbeObservation()
-    with pytest.raises(ValueError, match="nao levei 429"):
+    with pytest.raises(ValueError, match="did not get a 429"):
         ProbeObservation(status=200, transport_error="ConnectionResetError: boom")
 
 
 def test_a_rung_cannot_claim_dispatch_without_a_status() -> None:
     """The same invariant, one layer up, so a hand-built rung cannot forge a dispatch."""
-    with pytest.raises(ValueError, match="despachado sem status"):
+    with pytest.raises(ValueError, match="dispatched without an HTTP status"):
         RampRung(
             index=1,
             outcome=RungOutcome.ACCEPTED,
@@ -253,7 +253,7 @@ def test_a_rung_cannot_claim_dispatch_without_a_status() -> None:
             retry_after_seconds=None,
             elapsed_seconds=0.0,
         )
-    with pytest.raises(ValueError, match="nao despachado, mas carrega status"):
+    with pytest.raises(ValueError, match="not dispatched, but carries an HTTP status"):
         RampRung(
             index=1,
             outcome=RungOutcome.NOT_DISPATCHED,

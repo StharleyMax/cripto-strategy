@@ -59,11 +59,11 @@ def to_coinalyze_symbol(binance_symbol: str) -> str:
     """
     symbol = binance_symbol.strip()
     if not symbol:
-        raise ValueError("binance_symbol vazio nao tem tradução para o namespace da Coinalyze")
+        raise ValueError("empty binance_symbol has no translation to the Coinalyze namespace")
     if "_PERP." in symbol:
         raise ValueError(
-            f"{binance_symbol!r} ja parece estar no namespace da Coinalyze "
-            "(contem '_PERP.'); passe o simbolo cru da Binance"
+            f"{binance_symbol!r} already looks like it is in the Coinalyze namespace "
+            "(contains '_PERP.'); pass the raw Binance symbol"
         )
     return f"{symbol}_PERP.{_BINANCE_EXCHANGE_CODE}"
 
@@ -87,7 +87,7 @@ def history_path_for(
     if from_epoch_seconds >= to_epoch_seconds:
         raise ValueError(
             f"from_epoch_seconds={from_epoch_seconds} >= to_epoch_seconds={to_epoch_seconds}: "
-            "uma janela invertida ou vazia nao pede historico nenhum"
+            "an inverted or empty window requests no history at all"
         )
     endpoint = ENDPOINT_PATH_BY_KIND[series_kind]
     return (
@@ -139,27 +139,27 @@ def parse_daily_points(body: bytes) -> tuple[DailyPoint, ...]:
         payload = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError) as failure:
         raise MalformedCoinalizeResponseError(
-            f"corpo nao e JSON valido: {type(failure).__name__}: {failure}"
+            f"body is not valid JSON: {type(failure).__name__}: {failure}"
         ) from failure
     if not isinstance(payload, list):
         raise MalformedCoinalizeResponseError(
-            f"corpo esperado como lista, veio {type(payload).__name__}"
+            f"expected body as a list, got {type(payload).__name__}"
         )
     if len(payload) == 0:
         return ()
     if len(payload) > 1:
         raise MalformedCoinalizeResponseError(
-            f"esperava no maximo 1 simbolo por chamada (este coletor pede 1 por vez), "
-            f"vieram {len(payload)}"
+            f"expected at most 1 symbol per call (this collector requests 1 at a time), "
+            f"got {len(payload)}"
         )
     entry = payload[0]
     if not isinstance(entry, dict) or "history" not in entry:
         shape = sorted(entry) if isinstance(entry, dict) else type(entry).__name__
-        raise MalformedCoinalizeResponseError(f"elemento sem campo 'history': {shape}")
+        raise MalformedCoinalizeResponseError(f"element missing 'history' field: {shape}")
     history = entry["history"]
     if not isinstance(history, list):
         raise MalformedCoinalizeResponseError(
-            f"'history' esperado como lista, veio {type(history).__name__}"
+            f"expected 'history' as a list, got {type(history).__name__}"
         )
     return _daily_points_from_history_items(history)
 
@@ -177,11 +177,11 @@ def daily_points_from_stored_json(points_json: str) -> tuple[DailyPoint, ...]:
         items = json.loads(points_json)
     except (json.JSONDecodeError, UnicodeDecodeError) as failure:
         raise MalformedCoinalizeResponseError(
-            f"points_json nao e JSON valido: {type(failure).__name__}: {failure}"
+            f"points_json is not valid JSON: {type(failure).__name__}: {failure}"
         ) from failure
     if not isinstance(items, list):
         raise MalformedCoinalizeResponseError(
-            f"points_json esperado como lista, veio {type(items).__name__}"
+            f"expected points_json as a list, got {type(items).__name__}"
         )
     return _daily_points_from_history_items(items)
 
@@ -198,13 +198,13 @@ def _daily_points_from_history_items(history: Sequence[object]) -> tuple[DailyPo
     for index, item in enumerate(history):
         if not isinstance(item, dict) or "t" not in item:
             raise MalformedCoinalizeResponseError(
-                f"ponto {index} de 'history' sem campo 't': {item!r}"
+                f"point {index} of 'history' missing 't' field: {item!r}"
             )
         try:
             timestamp = int(item["t"])
         except (TypeError, ValueError) as failure:
             raise MalformedCoinalizeResponseError(
-                f"ponto {index}: 't' nao e inteiro: {item['t']!r}"
+                f"point {index}: 't' is not an integer: {item['t']!r}"
             ) from failure
         points.append(DailyPoint(timestamp_epoch_seconds=timestamp, raw=item))
     return tuple(points)
@@ -222,7 +222,7 @@ class SeriesRequirement:
         """Reject a requirement that could never be met by construction."""
         if self.min_points < 1:
             raise ValueError(
-                f"min_points={self.min_points}: um requisito de zero pontos nao mede cobertura"
+                f"min_points={self.min_points}: a requirement of zero points measures no coverage"
             )
 
 

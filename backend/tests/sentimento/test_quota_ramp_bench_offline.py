@@ -265,7 +265,7 @@ def test_the_coupling_refuses_to_infer_a_bucket_that_can_simply_be_read() -> Non
         interval_seconds=0.25,
     )
 
-    with pytest.raises(ValueError, match="nao e cego"):
+    with pytest.raises(ValueError, match="is not blind"):
         probe_bucket_coupling(plan, ScriptedProbe([]), RecordingClock())
 
 
@@ -448,7 +448,7 @@ def test_the_stream_wiring_keeps_diagnostics_off_the_product_stream() -> None:
 
 def test_the_real_clock_refuses_a_negative_pause() -> None:
     """A clock skew must produce a refusal, never an instant return that fakes a recoil."""
-    with pytest.raises(ValueError, match="negativa"):
+    with pytest.raises(ValueError, match="negative"):
         SystemRampClock().sleep(-1.0)
 
 

@@ -119,8 +119,8 @@ class RecoilDecision:
         """Reject a decision whose fields contradict each other."""
         if self.retry_after_present != (self.requested_seconds is not None):
             raise InvalidRecoilPolicyError(
-                "retry_after_present tem de concordar com a presenca de requested_seconds: "
-                "'o fornecedor pediu' e 'quanto ele pediu' sao a mesma informacao"
+                "retry_after_present must agree with the presence of requested_seconds: "
+                "'the provider asked' and 'how much it asked' are the same information"
             )
 
     @property
@@ -156,16 +156,16 @@ class RecoilPolicy:
     def __post_init__(self) -> None:
         """Reject parameters that would make the escalation shrink or run away."""
         if self.base_seconds <= 0:
-            raise InvalidRecoilPolicyError("base_seconds tem de ser positivo")
+            raise InvalidRecoilPolicyError("base_seconds must be positive")
         if self.factor < 1.0:
-            raise InvalidRecoilPolicyError("factor < 1 faria a espera ENCOLHER a cada 429")
+            raise InvalidRecoilPolicyError("factor < 1 would make the wait SHRINK on every 429")
         if self.cap_seconds < self.base_seconds:
-            raise InvalidRecoilPolicyError("cap_seconds abaixo de base_seconds anula a base")
+            raise InvalidRecoilPolicyError("cap_seconds below base_seconds nullifies the base")
 
     def escalation_for(self, throttle_index: int) -> float:
         """Return our own pause for the n-th `429` of the run, counting from zero."""
         if throttle_index < 0:
-            raise InvalidRecoilPolicyError("throttle_index negativo nao e um degrau")
+            raise InvalidRecoilPolicyError("negative throttle_index is not a rung")
         return min(self.cap_seconds, self.base_seconds * self.factor**throttle_index)
 
     def decide(self, throttle_index: int, retry_after_seconds: float | None) -> RecoilDecision:

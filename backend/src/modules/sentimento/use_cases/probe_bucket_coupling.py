@@ -118,8 +118,8 @@ def probe_bucket_coupling(plan: CouplingPlan, probe: QuotaProbe, clock: RampCloc
     """Run baseline then loaded, and return the verdict with its four raw readings."""
     if not plan.blind_bucket.is_blind:
         raise ValueError(
-            f"balde {plan.blind_bucket.identifier!r} nao e cego: se ele publica o proprio "
-            "contador, leia-o em vez de inferi-lo pelo vizinho"
+            f"bucket {plan.blind_bucket.identifier!r} is not blind: if it publishes its own "
+            "counter, read it instead of inferring it from its neighbor"
         )
     baseline_before = _read_counter(probe, plan.observed_bucket, plan.observed_path)
     clock.sleep(plan.interval_seconds)

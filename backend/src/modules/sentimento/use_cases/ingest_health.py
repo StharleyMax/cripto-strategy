@@ -48,14 +48,14 @@ def ingest_health_query(source: IngestRecordSource) -> IngestHealthReport:
     runs = source.runs()
     unknown = sorted({run.verdict for run in runs} - KNOWN_VERDICTS)
     if unknown:
-        # THE MESSAGE STAYS IN PORTUGUESE, and it is a decision like the `uso:` line of the CLI:
-        # `SPEC-001` §3.8 reserves pt-BR EXCLUSIVELY for microcopy, and this text is read by an
-        # operator whose F0 record just refused to display a run. Every identifier, docstring
-        # and comment around it is English, per the owner's rule.
+        # THE MESSAGE IS ENGLISH: `CLAUDE.md` §"Mensagem de exceção — RESPONDIDA em 2026-09-02"
+        # closed the gap this comment used to justify via `SPEC-001` §3.8 (UI microcopy) — every
+        # `raise`/`Error`/`Exception` message now follows the same English boundary as production
+        # identifiers, with no carve-out for operator-facing exceptions.
         raise UnknownVerdictError(
-            f"{INGEST_HEALTH_QUERY_NAME} nao conhece o(s) verdict(s) {unknown}; "
-            f"conhecidos: {sorted(KNOWN_VERDICTS)}. Os dois consumidores mudam juntos "
-            f"(ADR-008/DoD-3) — esconder a execucao seria a duplicacao silenciosa."
+            f"{INGEST_HEALTH_QUERY_NAME} does not know verdict(s) {unknown}; "
+            f"known: {sorted(KNOWN_VERDICTS)}. The two consumers change together "
+            f"(ADR-008/DoD-3) — hiding the run would be the silent duplication."
         )
     gaps = source.gaps()
     # DEBUG AND NOT INFO, and the level is load-bearing rather than taste: this record shares

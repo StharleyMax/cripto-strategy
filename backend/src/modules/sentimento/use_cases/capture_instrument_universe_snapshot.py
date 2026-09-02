@@ -52,9 +52,9 @@ def capture_instrument_universe_snapshot(
     second_fingerprint = exchange_info_fingerprint(exchange_info_second_read)
     if first_fingerprint != second_fingerprint:
         raise UnstableExchangeInfoReadError(
-            f"duas leituras de exchangeInfo divergem na projecao canonica "
-            f"({first_fingerprint} != {second_fingerprint}); SPEC-001 §3.4 exige confirmacao "
-            f"em duas leituras antes de aceitar o snapshot"
+            f"two exchangeInfo reads disagree on the canonical projection "
+            f"({first_fingerprint} != {second_fingerprint}); SPEC-001 §3.4 requires "
+            f"confirmation across two reads before accepting the snapshot"
         )
     rows = build_instrument_rows(exchange_info_second_read, funding_info, premium_index)
     logger.debug(

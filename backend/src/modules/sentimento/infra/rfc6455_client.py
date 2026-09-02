@@ -78,18 +78,20 @@ def verify_handshake_response(raw: bytes, client_key: str) -> None:
     lines = head.split("\r\n")
     status = lines[0] if lines else ""
     if " 101" not in status:
-        raise StreamTransportError(ProbeStage.HTTP_UPGRADE, f"status nao-101: {status!r}")
+        raise StreamTransportError(ProbeStage.HTTP_UPGRADE, f"non-101 status: {status!r}")
     headers = {}
     for line in lines[1:]:
         name, _, value = line.partition(":")
         headers[name.strip().lower()] = value.strip()
     accept = headers.get("sec-websocket-accept")
     if accept is None:
-        raise StreamTransportError(ProbeStage.HTTP_UPGRADE, "resposta 101 sem Sec-WebSocket-Accept")
+        raise StreamTransportError(
+            ProbeStage.HTTP_UPGRADE, "101 response missing Sec-WebSocket-Accept"
+        )
     if accept != expected_accept(client_key):
         raise StreamTransportError(
             ProbeStage.HTTP_UPGRADE,
-            f"Sec-WebSocket-Accept nao confere: {accept!r}",
+            f"Sec-WebSocket-Accept does not match: {accept!r}",
         )
 
 
@@ -104,7 +106,7 @@ def _exactly(read_exact: Callable[[int], bytes], size: int, what: str) -> bytes:
     data = read_exact(size)
     if len(data) < size:
         raise StreamTransportError(
-            ProbeStage.FRAME, f"conexao fechada lendo {what}: {len(data)} de {size} byte(s)"
+            ProbeStage.FRAME, f"connection closed reading {what}: {len(data)} of {size} byte(s)"
         )
     return data
 
@@ -112,9 +114,9 @@ def _exactly(read_exact: Callable[[int], bytes], size: int, what: str) -> bytes:
 def _payload_length(read_exact: Callable[[int], bytes], first_length: int) -> int:
     """Resolve the 7-bit, 16-bit or 64-bit payload length."""
     if first_length == _LEN_16BIT:
-        return int.from_bytes(_exactly(read_exact, 2, "tamanho de 16 bits"), "big")
+        return int.from_bytes(_exactly(read_exact, 2, "16-bit length"), "big")
     if first_length == _LEN_64BIT:
-        return int.from_bytes(_exactly(read_exact, 8, "tamanho de 64 bits"), "big")
+        return int.from_bytes(_exactly(read_exact, 8, "64-bit length"), "big")
     return first_length
 
 
@@ -124,16 +126,16 @@ def read_frame(read_exact: Callable[[int], bytes]) -> tuple[bool, int, bytes]:
     A server-to-client frame is never masked (RFC 6455 §5.1); a masked one means we are not
     talking to a conforming server, and that is reported rather than silently unmasked.
     """
-    header = _exactly(read_exact, 2, "cabecalho do frame")
+    header = _exactly(read_exact, 2, "frame header")
     fin = bool(header[0] & 0x80)
     opcode = header[0] & 0x0F
     masked = bool(header[1] & 0x80)
     length = _payload_length(read_exact, header[1] & 0x7F)
     if masked:
         raise StreamTransportError(
-            ProbeStage.FRAME, "frame do servidor veio MASCARADO, contra RFC 6455 5.1"
+            ProbeStage.FRAME, "server frame came MASKED, against RFC 6455 5.1"
         )
-    return fin, opcode, _exactly(read_exact, length, "corpo do frame") if length else b""
+    return fin, opcode, _exactly(read_exact, length, "frame body") if length else b""
 
 
 def iter_text_messages(read_exact: Callable[[int], bytes]) -> Iterator[str]:
@@ -159,7 +161,7 @@ def iter_text_messages(read_exact: Callable[[int], bytes]) -> Iterator[str]:
             # garantia, e um parser escrito a mao nao deve adivinhar o que fazer com o que a
             # norma manda recusar.
             raise StreamTransportError(
-                ProbeStage.FRAME, f"opcode reservado {opcode:#x}: RFC 6455 5.2 manda falhar"
+                ProbeStage.FRAME, f"reserved opcode {opcode:#x}: RFC 6455 5.2 mandates failing"
             )
         if fin and pending_text:
             yield buffer.decode("utf-8", errors="replace")

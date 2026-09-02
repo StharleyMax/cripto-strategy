@@ -47,7 +47,7 @@ def test_total_seconds_for_refuses_a_negative_call_count() -> None:
     """A negative count of calls does not exist and must not silently become zero pauses."""
     broker = LocalQuotaBroker(calls_per_window=40, window_seconds=60.0)
 
-    with pytest.raises(InvalidQuotaBrokerError, match="negativa"):
+    with pytest.raises(InvalidQuotaBrokerError, match="negative"):
         broker.total_seconds_for(-1)
 
 

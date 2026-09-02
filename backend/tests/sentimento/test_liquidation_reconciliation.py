@@ -221,7 +221,7 @@ def test_classify_ratio_just_above_upper_boundary_is_captured_exceeds() -> None:
 
 def test_classify_negative_captured_quantity_raises() -> None:
     """Liquidation volume can never be negative — a defect upstream, not a value to accept."""
-    with pytest.raises(ValueError, match="quantidade negativa"):
+    with pytest.raises(ValueError, match="negative quantity"):
         classify_daily_reconciliation(
             captured_quantity=Decimal("-1"),
             coinalyze_quantity=Decimal("10"),
@@ -232,7 +232,7 @@ def test_classify_negative_captured_quantity_raises() -> None:
 
 def test_classify_negative_coinalyze_quantity_raises() -> None:
     """Symmetric to the negative-captured case above."""
-    with pytest.raises(ValueError, match="quantidade negativa"):
+    with pytest.raises(ValueError, match="negative quantity"):
         classify_daily_reconciliation(
             captured_quantity=Decimal("1"),
             coinalyze_quantity=Decimal("-10"),
@@ -251,7 +251,7 @@ def test_classify_negative_coinalyze_quantity_raises() -> None:
 )
 def test_classify_invalid_bound_raises(lower: Decimal, upper: Decimal) -> None:
     """`0 < lower <= 1 <= upper` is enforced — a band excluding 1 could never read inconclusive."""
-    with pytest.raises(ValueError, match="faixa 'perto de 1' invalida"):
+    with pytest.raises(ValueError, match="invalid 'near 1' band"):
         classify_daily_reconciliation(
             captured_quantity=Decimal("1"),
             coinalyze_quantity=Decimal("1"),
@@ -368,7 +368,7 @@ def test_reconcile_duplicate_coinalyze_point_for_the_same_day_raises() -> None:
         _liquidation_point(_DAY_EPOCH_SECONDS, "1", "0"),
         _liquidation_point(_DAY_EPOCH_SECONDS, "2", "0"),
     )
-    with pytest.raises(MalformedCoinalizeResponseError, match="mesmo dia"):
+    with pytest.raises(MalformedCoinalizeResponseError, match="same day"):
         reconcile_daily_liquidation(
             symbol="BTCUSDT",
             captured_orders=(),

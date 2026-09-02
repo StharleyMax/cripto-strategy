@@ -378,8 +378,8 @@ def _require_decision_staleness(policy: SeriesReadPolicy) -> int:
         raise DecisionReadRefusedError(
             f"asof_max_staleness_ms is absent, so this decision read REFUSES (`ADR-006`/D3). "
             f"It does not fall back to render_max_staleness_ms (which is {render_ms}), does "
-            f"not assume the native cadence, and does not assume infinite: ausencia e erro, "
-            f"nao default"
+            f"not assume the native cadence, and does not assume infinite: absence is an error, "
+            f"not a default"
         )
     if asof_ms < 0:
         raise DecisionReadRefusedError(

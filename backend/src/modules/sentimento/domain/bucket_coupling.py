@@ -62,8 +62,8 @@ class CouplingSample:
         """Reject a sample with no load: without load the two pairs measure the same thing."""
         if self.blind_requests < 1:
             raise InvalidCouplingSampleError(
-                "blind_requests < 1: sem carga, os dois pares sao o MESMO experimento e o "
-                "controle daria 'separado' por construcao"
+                "blind_requests < 1: without load, the two pairs are the SAME experiment and "
+                "the control would yield 'separate' by construction"
             )
 
 

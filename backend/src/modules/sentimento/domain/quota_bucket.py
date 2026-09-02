@@ -58,13 +58,13 @@ class QuotaBucket:
         observed = self.visibility is BucketVisibility.OBSERVED
         if observed and (self.counter_header is None or self.blindness_reason is not None):
             raise ValueError(
-                f"balde {self.identifier!r} declarado OBSERVED sem header de contagem "
-                "ou com motivo de cegueira"
+                f"bucket {self.identifier!r} declared OBSERVED without a counter header "
+                "or with a blindness reason"
             )
         if not observed and (self.counter_header is not None or not self.blindness_reason):
             raise ValueError(
-                f"balde {self.identifier!r} declarado BLIND com header de contagem "
-                "ou sem o motivo escrito"
+                f"bucket {self.identifier!r} declared BLIND with a counter header "
+                "or without the reason written"
             )
 
     @property
@@ -128,7 +128,7 @@ def bucket_by_identifier(identifier: str) -> QuotaBucket:
         if bucket.identifier == identifier:
             return bucket
     declared = ", ".join(sorted(candidate.identifier for candidate in KNOWN_BUCKETS))
-    raise UnknownBucketError(f"balde desconhecido: {identifier!r}; declarados: {declared}")
+    raise UnknownBucketError(f"unknown bucket: {identifier!r}; declared: {declared}")
 
 
 def blind_buckets() -> tuple[QuotaBucket, ...]:

@@ -39,7 +39,7 @@ def require_overlap(handoff: ReconnectionHandoff) -> None:
     """
     if handoff.old_source_closed_at < handoff.new_first_message_at:
         raise ReconnectionGapError(
-            f"old_source fechou em {handoff.old_source_closed_at} antes da primeira mensagem "
-            f"do new_source em {handoff.new_first_message_at} — ADR-004 B1 exige sobreposicao "
-            "obrigatoria, e um buraco em !forceOrder@arr e IRREVERSIVEL (sem reposicao)"
+            f"old_source closed at {handoff.old_source_closed_at} before new_source's first "
+            f"message at {handoff.new_first_message_at} — ADR-004 B1 requires mandatory "
+            "overlap, and a gap in !forceOrder@arr is IRREVERSIBLE (no replay)"
         )

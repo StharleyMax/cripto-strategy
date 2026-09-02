@@ -164,13 +164,13 @@ def test_no_key_in_the_environment_sends_no_api_key_header() -> None:
 
 def test_a_response_cannot_carry_both_a_status_and_a_transport_error() -> None:
     """The XOR the whole class is built on, checked directly at the type."""
-    with pytest.raises(ValueError, match="OU"):
+    with pytest.raises(ValueError, match="OR"):
         CoinalizeHistoryResponse(status=200, transport_error="boom")
 
 
 def test_a_response_must_carry_one_of_status_or_transport_error() -> None:
     """Neither present is the silent-collapse state this class exists to forbid."""
-    with pytest.raises(ValueError, match="OU"):
+    with pytest.raises(ValueError, match="OR"):
         CoinalizeHistoryResponse()
 
 
