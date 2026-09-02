@@ -993,7 +993,7 @@ tracker = { provider = "jira", id = "CST-69", url = "https://conversationhub.atl
 id = "T-08.2"
 title = "[charts] 08 · Spike do eixo do Lightweight Charts com CARGA CHEIA (D8.19)"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED ciclo2 2026-08-29 @ d149f74 (PR #41). gate-record recusou (rc=4, divida da fase 02) — veredito durável só em docs/context/plataforma-dados/gates/T-08.2-qa-ciclo2.md; reverificado 2026-09-02T19:17:19Z (npm run spike:axis exit 0, pior caso 2.27e-13px; test:charts 13/13; lint limpo)
 phase = "08"
 depends_on = ["T-01.1"]
 refs = [
