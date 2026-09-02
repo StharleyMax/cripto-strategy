@@ -1028,7 +1028,7 @@ tracker = { provider = "jira", id = "CST-72", url = "https://conversationhub.atl
 id = "T-08.5"
 title = "[web] 08 · Bundle de parametros versionado e hasheavel — que E a URL, nao um CRUD; nenhum eixo tem default"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T18:59:07Z @ 45b23d7fe87437b05b08195b90418e2a19e70a66 (PR #84)
 phase = "08"
 depends_on = ["T-05.8"]
 refs = ["SPEC-001 §7", "plano 08 item 8.4", "DoD D8.3", "ESCOPO RECUSADO: gerenciador de presets e produto prematuro"]
