@@ -2311,3 +2311,58 @@ não é desta fase, e `rc` continua `0` (é aviso, não falha) — nomeado aqui 
 - **Não resolve o `unit`/`denom` da Coinalyze** (`docs/medicao-coinalyze.md` §2.3: 744
   `BASE_ASSET` / 20 `QUOTE_ASSET`) — citado como possível causa de `CAPTURED_EXCEEDS_COINALYZE`
   em `HYPOTHESIS_SCREEN_LABEL`, nunca medido ou corrigido aqui.
+
+### 📎 2026-09-02 por `T-07.1` — o paginador correto: janela `[startTime, endTime]` fechada, enumerada A PRIORI, e a listagem S3 por `NextContinuationToken`
+
+`CST-55`, `CA-F3-2`/`CA-F3-1`/`CA-F3-5`, `SPEC-001` §5.7, plano `07` itens 7.1+7.2+7.4. **Pré-requisito
+de qualquer backfill grande** (`T-03.10` e além) — a prioridade declarada no handoff.
+
+[`domain/oi_history_paginator.py`](src/modules/sentimento/domain/oi_history_paginator.py) (**novo**)
+fixa `ClosedWindow` com **os dois limites obrigatórios** — não existe construtor que aceite só
+`start_time_ms`, então o caso perigoso que `D7.3` mediu (`startTime` sozinho) é irrepresentável no
+tipo. `enumerate_history_pages` divide a janela em sub-janelas fechadas **por aritmética pura**
+(`period_ms * limit`), nunca consultando uma resposta — a propriedade que `SPEC-001` §5.7 exige
+("enumerado ANTES do loop"). `classify_page` é a segunda metade da defesa: **qualquer** ponto
+retornado fora de `[start_time_ms, end_time_ms]` reprova a página inteira com zero linhas
+gravadas, `HTTP 200` ou não — é o que pega o comportamento `[MEDIDO]` da Binance (cauda de hoje,
+sem aviso, para uma janela antiga) mesmo que a chamada tenha sido montada corretamente.
+`api_code == -1130` é classificado como `end_of_history` (`D7.1`), nunca como erro transitório
+a repetir. Nenhum teto de linhas é aplicado (`D7.5`: 501 pontos dentro da janela são aceitos e
+gravados, contra o máximo documentado de 500 — o observado, não o documentado).
+
+[`infra/binance_oi_history_client.py`](src/modules/sentimento/infra/binance_oi_history_client.py)
+(**novo**) é o cliente HTTP de `/futures/data/openInterestHist`, mesmo padrão de conexão de
+`binance_futures_snapshot_client.py` (`http.client`, fábrica de conexão injetável, sem socket em
+teste). A assinatura recebe `ClosedWindow`, então nenhum caminho de código deste cliente consegue
+enviar `startTime` sem `endTime`.
+
+[`domain/s3_bucket_listing.py`](src/modules/sentimento/domain/s3_bucket_listing.py) (**novo**)
+fixa `BucketListingPage` (recusa `is_truncated=True` sem `next_continuation_token` — defesa contra
+um parser que descarta o token em silêncio) e `merge_pages` (recusa uma sequência de páginas cuja
+ÚLTIMA ainda está truncada — defesa contra quem para de paginar cedo demais, exatamente o que
+`D7.8` nomeia). [`infra/binance_dump_bucket_listing_client.py`](src/modules/sentimento/infra/binance_dump_bucket_listing_client.py)
+(**novo**) faz o `GET` do `data.binance.vision` (`ListObjectsV2`, XML via `xml.etree.ElementTree`,
+sem dependência nova) e `list_all_object_keys` drena todas as páginas seguindo
+`NextContinuationToken` até `IsTruncated=false`.
+
+**O falsificador de `D7.8`, medido diretamente:** `test_d7_8_the_falsifier_merging_only_the_first_of_two_truncated_pages_is_refused`
+prova que `merge_pages` de uma sequência com só a primeira das duas páginas (a mutação exata que
+o DoD nomeia) levanta `UnpaginatedTruncationError`; e `test_d7_8_list_all_object_keys_follows_nextcontinuationtoken_across_pages`
+prova, ponta a ponta com XML real de 2 páginas (500 + 480 chaves), que o loop devolve as **980**
+chaves e não as 500 da primeira página sozinha.
+
+**Escopo que esta task NÃO fecha, nomeado:** não escreve `md.ingest_run`/`md.ingest_gap` (chega
+com `T-03.8`/produção real, aqui é só o paginador e o cliente); não faz survivorship na borda de
+ingestão (`T-07.2`); não faz dedupe por hash de conteúdo (`T-07.3`); nenhum `use_cases` novo foi
+necessário — o escopo do plano (itens 7.1+7.2+7.4) é paginação e listagem, não o pipeline de
+escrita, que é dono de tasks posteriores da mesma fase.
+
+`bash backend/scripts/test.sh`: **1063 passed** (era 1029, `+34`), cobertura **97,84%** — `domain`
+**99,9%** (meta 90%), `use_cases` **100,0%** (meta 80%), `infra` **95,2%** (meta 70%). `lint.sh`
+limpo (`ruff check`/`format --check`/`mypy --strict`, 188 arquivos). `boundaries.sh`: **3 kept, 0
+broken** (131 arquivos, 592 dependências). `natureza.sh`: universo 57 arquivos, 0 leituras de
+relógio. `harness rules --mode sweep --changed-only`: **0 achados** (a 1ª rodada achou 4 `[AVISO]`
+de docstring de módulo multi-linha, não-bloqueante, corrigido para o padrão de uma linha do
+repositório). Relatório: [`gates/T-07.1-builder.md`](../docs/context/plataforma-dados/gates/T-07.1-builder.md).
+**`tasks.toml`, ledger e Jira INTOCADOS; nenhum `gate-record`, `approve` ou `advance`** — veredito
+é do `/qa`.
