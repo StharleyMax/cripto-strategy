@@ -10,18 +10,21 @@ second reader appearing anywhere in the tree turns a green suite red.
 store in this repository yet and no consumer of this module, so the "nobody else imports it"
 half is VACUOUS today — and `rc=0` over an empty universe is indistinguishable from `rc=0` over
 a universe that was checked. The `morde` side of the column scan is therefore NOT vacuous and is
-what carries the weight: `backend/src` has 36 modules, TWO of which legitimately touch a
-read-path column (`as_of_accessor.py` and `provenance.py`, both named in `DECLARED_TOUCHERS`
-below), and the scan finds exactly those two — no more, no fewer.
+what carries the weight: `backend/src` has 116 modules, FOUR of which legitimately touch a
+read-path column (`as_of_accessor.py`, `provenance.py`, `sqlite_series_quarantine_store.py` and
+`write_series_row.py`, all named in `DECLARED_TOUCHERS` below), and the scan finds exactly those
+four — no more, no fewer.
 
     python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"
-    # 36                                        [MEASURED 2026-08-29 at 555ded6]
+    # 116                                       [MEASURED 2026-09-02, T-07.5]
 
-The previous version of this sentence said `37` and `one`, and BOTH were wrong — found by
-`/review`. The `36` matters beyond bookkeeping: it is the floor of the anti-vacuity guard on
-line 116, so a docstring claiming `37` put the reader one module away from believing the guard
-had slack it does not have. The planted-violator measurement is in
-`docs/context/plataforma-dados/gates/T-04.4-builder.md`.
+The previous version of this sentence said `36` and `TWO`, and both were already stale by the
+time `T-07.5` read them: `DECLARED_TOUCHERS` already carried a third entry
+(`sqlite_series_quarantine_store.py`, added by `T-02.2`) that this docstring never mentioned, and
+the module count had grown along with the rest of `backend/src`. The `116` matters beyond
+bookkeeping: it is the floor of the anti-vacuity guard below, so a stale, lower number puts the
+reader further from believing the guard has slack it does not have. The `36` measurement's own
+history is in `docs/context/plataforma-dados/gates/T-04.4-builder.md`.
 """
 
 from __future__ import annotations
@@ -69,6 +72,14 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # promoted", never "what was the value at t") and never touches `.available_at` as a Python
     # attribute — `ast.Attribute` cannot see inside a string, and there is nothing to declare.
     "modules/sentimento/infra/sqlite_series_quarantine_store.py": frozenset({"record"}),
+    # `T-07.5`: a THIRD write path, same category as the two above. `write_series_row` reads
+    # `row.bucket_end` only to put it in a `logger.info` `extra={}` dict, identifying WHICH
+    # bucket a write outcome was about — never comparing it against a decision instant `t`, and
+    # never returning a value "as of" anything. `D7.16`'s own comparison
+    # (`modeled_write_overwrites_observed`, `domain/provenance.py`) does not touch a read-path
+    # column at all: it takes the caller's already-computed `observed_already_present: bool`,
+    # which is exactly why it needs no entry here.
+    "modules/sentimento/use_cases/write_series_row.py": frozenset({"write_series_row"}),
 }
 
 
@@ -130,7 +141,7 @@ def test_inside_those_modules_the_set_of_functions_is_exactly_the_declared_one()
 def test_the_scan_has_a_non_empty_universe_so_a_green_result_means_something() -> None:
     """`ADR-012`: `rc=0` over an empty universe cannot tell "clean" from "never looked"."""
     modules = list(SRC_ROOT.rglob("*.py"))
-    assert len(modules) >= 36, f"only {len(modules)} modules scanned — the universe collapsed"
+    assert len(modules) >= 116, f"only {len(modules)} modules scanned — the universe collapsed"
 
 
 def test_exactly_one_public_callable_in_the_module_produces_a_reading() -> None:
