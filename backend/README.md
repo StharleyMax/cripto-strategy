@@ -2926,3 +2926,70 @@ seguintes (inclusive após a correção de fórmula) → **0 achados**.
   medição de quantos símbolos podem espicaçar juntos.
 - **Nenhuma decisão de `partition_capacity_msg_per_second` de produção é tomada aqui** — o
   número é responsabilidade de quem operar o coletor real, com o comando que o mediu.
+
+## 📎 2026-09-02 por `T-07.9` — `instrument_alias`: YAML versionado, `evidence_url` OBRIGATÓRIO por validação
+
+`Q12`'s mecanismo (`SPEC-001` §3.4, plano `07` item 7.11, `CST-63`). `Q12` continua `ABERTA`
+(`docs/decisoes-do-owner.md`) — o que ela deixa em aberto é o CONTEÚDO (~5 linhas/ano de
+renomeações curadas), não se o mecanismo que as lê deve existir. Mesma postura de
+`T-07.10`/`clock_skew_tolerance.py`: constrói o mecanismo real, zero entrada fabricada.
+
+### As peças, e a camada de cada uma
+
+- [`domain/instrument_alias.py`](src/modules/sentimento/domain/instrument_alias.py) (**novo**):
+  `AliasEntry` (as 4 colunas de `SPEC-001` §3.4 — `from_symbol`/`to_symbol`/`effective_from`/
+  `evidence_url`, nomes em inglês por ser contrato NOVO sem herança de `janela_de_perda`) valida
+  `evidence_url` **por construção** (`MissingEvidenceUrlError`, nunca convenção) e recusa alias
+  para si mesmo. `InstrumentAliasCatalog.resolve(symbol, at)` decide CONTINUIDADE — nunca
+  PERTENCIMENTO (`universe_at`/`T-07.8` é a outra pergunta) — andando a cadeia inteira de
+  renomeações em uma chamada, com `AliasCycleError` guardando contra uma curadoria que ciclasse.
+  `date` usado como VALOR (nunca `.today()`/`.now()`), mesma exceção de `Natureza`
+  (`ADR-016/D1`) que `domain/dump_window.py` já usa, confirmada por `make natureza` — **0
+  leitura(s) de relógio** sobre os 68 arquivos de `domain`+`use_cases`.
+- [`infra/instrument_alias_reader.py`](src/modules/sentimento/infra/instrument_alias_reader.py)
+  (**novo**): lê o arquivo do disco e delega TODA validação de forma a `domain` — a fronteira
+  que o handoff pediu explicitamente. `yaml.YAMLError` nunca escapa cru (`from exc`,
+  `core.silent-except`).
+- [`config/instrument_alias.yaml`](config/instrument_alias.yaml) (**novo**): o arquivo
+  versionado real, `aliases: []` — **zero entradas reais**. `MATICUSDT -> POLUSDT` e
+  `RNDRUSDT -> RENDERUSDT` (os dois renomes `[MEDIDO]` que motivam o mecanismo) **não** entram
+  aqui: listá-los sem `evidence_url` curado pelo owner seria exatamente o atalho "inferido, nunca
+  curado" que o handoff proíbe.
+- **Nova dependência de RUNTIME**: `pyyaml==6.0.3`, pin exato (`backend/pyproject.toml`),
+  primeira desde que `T-01.6` declarou `dependencies = []`. Justificada em comentário no próprio
+  `pyproject.toml`: o formato YAML é FIXADO pelo `SPEC-001`/plano `07`, e escrever um parser de
+  subconjunto à mão trocaria uma biblioteca auditada por código próprio não testado contra a
+  gramática real.
+
+### O falsificador — a direção do calendário
+
+`test_resolve_returns_the_old_symbol_strictly_before_effective_from` é o caso que pegaria uma
+inversão `<`/`<=` (a mesma classe de defeito que `as_of_accessor.py` já documenta ter caçado):
+um dia ANTES de `effective_from`, `resolve` tem que devolver o símbolo ANTIGO, não o novo.
+`test_resolve_refuses_a_cycle` prova que uma curadoria `A -> B`, `B -> A` recusa
+(`AliasCycleError`) em vez de laçar para sempre.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **`1225 passed`**, cobertura total **97,56%**; por camada
+  (`ADR-009/D1`): domain **99,8%** (meta 90%), use_cases **100,0%** (meta 80%), infra **95,1%**
+  (meta 70%) — as 3 camadas declaradas, todas `[OK]`.
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 227 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (152 arquivos, 689 dependências).
+- `bash backend/scripts/natureza.sh` → **68 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → 2 `[AVISO]` (`core.module-docstring-single-line`,
+  não bloqueante — mesmo estilo de docstring de módulo multi-parágrafo já usado em
+  `checksum_manifest.py`/`clock_skew_tolerance.py`), **0 `[BLOQUEIO]`**.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **`Q12` continua `ABERTA`.** Esta task entrega o MECANISMO; curar o CONTEÚDO (quais pares
+  entram, com `evidence_url` de verdade) é decisão do owner, registrada em
+  `docs/decisoes-do-owner.md`.
+- **Nenhum consumidor real chama `InstrumentAliasCatalog.resolve` ainda** — `T-07.9`'s handoff é
+  explícito: "sem tela", mecanismo backend puro, consumido por código futuro (ex.: o
+  survivorship de `T-07.2`), não por esta task.
+- **Sem CLI.** Ao contrário de `clock_skew_tolerance_cli.py`, este mecanismo não ganhou um ponto
+  de entrada de linha de comando — nada na task pede um, e um consumidor real decide a forma da
+  integração quando existir.

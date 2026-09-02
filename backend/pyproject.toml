@@ -44,9 +44,14 @@ description = "Backend da plataforma de dados de cripto: captura, contrato tempo
 # `[tool.ruff] target-version = "py313"` passariam a descrever um alvo que o interpretador nao
 # e mais. O assert de `backend/scripts/bootstrap.sh` confere a versao do venv que NASCEU.
 requires-python = ">=3.13,<3.14"
-# Zero dependencia de RUNTIME, e a lista vazia e declaracao, nao esquecimento: nenhum coletor
-# roda em portao (`Q1`/`Q15` ABERTAS) e a suite e offline.
-dependencies = []
+# `T-07.9`/`CST-63` (plano `07` item 7.11) quebra o "zero dependencia de runtime" que valia ate
+# aqui: `instrument_alias` e um contrato NOVO cujo formato o `SPEC-001` FIXA como "YAML
+# versionado" (plano `07` linha 20). Escrever um parser de subconjunto de YAML a mao para fugir
+# da dependencia trocaria uma biblioteca auditada por um parser proprio nao testado contra a
+# gramatica real -- exatamente o debito tecnico que este repositorio recusa. Pin EXATO, pela
+# mesma razao de `[tool.poetry.group.dev.dependencies]` abaixo: reprodutibilidade sobre
+# conveniencia, e o `poetry.lock` versionado e o unico que segura o ambiente.
+dependencies = ["pyyaml (==6.0.3)"]
 
 [tool.poetry]
 package-mode = false
