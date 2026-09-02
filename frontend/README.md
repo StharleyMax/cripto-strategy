@@ -805,6 +805,84 @@ host é contatado. Severidade `warn` (`harness rules list --severity warn`), for
 `--severity block`; o próprio `history-transport.test.ts:21` dispara o mesmo aviso na mesma
 linha de padrão, confirmado por sweep isolado sobre esse arquivo.
 
+## 12. `src/app/threshold-spec-bundle.ts` — o bundle de `ThresholdSpec` de `T-08.5` (2026-09-02)
+
+`T-08.5` (`CST-73`, componente `web`, `depends_on = ["T-05.8"]`) escreve o item `8.4` do plano
+`08`: "Bundle de parâmetros versionado e hasheável — que É a URL, não um CRUD" (`SPEC-001` §7).
+O tipo-soma vem de `SPEC-001` §3.7 (linhas 292-303): `ThresholdSpec = Absolute{pct, op} |
+Percentile{q, window, scope, min_obs, interpolation, op} | RobustZ{k, window, min_obs, op} +
+spec_version + Custom{expr}` — `Custom` **desabilitado por padrão**. Mesma família de contrato
+de `§8` (`knowledge-time-bundle.ts`, `T-05.8`): bundle versionado/hasheável, zero default, teste
+negativo obrigatório (`D8.3`).
+
+```bash
+npm --prefix frontend run test:app   # 96 testes, node --test 'src/app/*.test.ts' (28 novos)
+```
+
+### Gate de design (já concluído antes desta implementação)
+
+`docs/context/plataforma-dados/gates/T-08.5-design.md`: **"SEM DECISÃO DE UI/UX POSSÍVEL. `S4`
+não existe no Stitch nem em `STITCH_CONTEXT.md`. Nenhuma ação no Stitch — nem geração, nem
+edição."** Diferente de `§8`/`§9`/`§11` (que verificaram convergência contra telas já
+canônicas), aqui não há tela candidata: `S4`, a única tela que consumiria este bundle, é
+`T-08.6` (`depends_on = ["T-08.2", "T-08.5"]`), ainda não iniciada. Este módulo entrega só o
+contrato de dado.
+
+### Decisões de forma que o SPEC não fecha sozinho, e por que cada uma foi tomada assim
+
+1. **`op` fecha em `">" | ">=" | "<" | "<="`.** `SPEC-001:303` só mede `>` e `>=` (a diferença de
+   20×: `9/1500` contra `184/1500`), mas um limiar compara nos dois sentidos por natureza — os
+   quatro símbolos são o vocabulário matemático padrão do qual os dois exemplos do próprio SPEC
+   já são membros, não vocabulário de domínio inventado.
+2. **`interpolation` fecha em `"linear" | "lower" | "higher" | "nearest" | "midpoint"`** — os
+   próprios valores do parâmetro `interpolation` de `numpy.percentile`, escolhidos porque
+   `SPEC-001:305` discute `numpy.percentile` na MESMA cláusula que nomeia este campo, e porque o
+   teste de regressão do próprio SPEC (`PRD-001:983`) fixa o estimador "porque percentil sem
+   estimador mente". `[INFERRED]`, documentado como tal no código.
+3. **`scope` fica como `string` não-vazia, NÃO um enum fechado.** `grep -rn "scope"
+   docs/specs docs/adr` só exibe UM valor em toda a árvore (`CrossSection`,
+   `ADR-001-quantity-field-na-identidade.md:27`) e nunca documenta um segundo. Fechar o enum
+   aqui inventaria vocabulário de domínio que esta task não possui — o que `D8.3`/`SPEC-001:303`
+   exigem ("sem default em nenhum eixo") é presença, que o tipo já obriga sem precisar de um
+   segundo membro inventado.
+4. **`Custom{expr}` existe como tipo documentado (`CustomSpec`) mas fica FORA da união
+   `ThresholdSpec`** — nenhuma função do módulo aceita, produz ou decodifica um `CustomSpec`.
+   `decodeThresholdSpec` recusa `variant=custom` citando a cláusula do SPEC pelo nome, em vez de
+   cair num "variante desconhecida" genérico — quem reabilitar `Custom` no futuro precisa mudar
+   este módulo de propósito, não por acidente de um `switch` mais largo.
+5. **`spec_version` versiona o bundle e trava em `CURRENT_THRESHOLD_SPEC_VERSION = 1`.**
+   `decodeBundle` recusa qualquer outra versão em vez de tentar adivinhar um mapeamento de campo
+   — adivinhar seria exatamente o default silencioso que `D8.3` proíbe.
+6. **`bundleHash`** — a metade "hasheável" de `SPEC-001:568` — usa `createHash("sha256")` de
+   `node:crypto` sobre a query string canônica de `encodeBundle` (mesmo padrão já em uso em
+   `src/features/s1-console/ingest-health-query.ts:73`), não `JSON.stringify`: o hash é função
+   pura dos mesmos bytes que apareceriam num link compartilhado.
+
+### O teste negativo obrigatório (`D8.3`)
+
+"Carregar a tela sem `ThresholdSpec` na URL → ZERO números derivados." `decodeBundle`/
+`decodeThresholdSpec` sobre `new URLSearchParams()` (vazio) RECUSA nomeando o primeiro campo
+ausente (`specVersion`, depois `variant`) — nunca completa com um valor assumido. O mesmo vale
+por eixo: `op` ausente em qualquer uma das três variantes, `minObs` ausente em
+`Percentile`/`RobustZ`, `variant=custom`, `specVersion` desconhecido — todos RECUSADOS, cada um
+com teste próprio.
+
+### Comandos rodados, literais
+
+```bash
+cd frontend
+npm run test:app     # node --test 'src/app/*.test.ts'  -> 96 pass (28 novos), 0 fail
+npm run lint         # eslint src                        -> 0 erro, 0 aviso
+git add frontend/src/app/threshold-spec-bundle.ts frontend/src/app/threshold-spec-bundle.test.ts
+harness rules --mode sweep --changed-only
+  -> 1 achado: web-fullstack.hardcoded-url (AVISO), frontend/src/app/threshold-spec-bundle.test.ts:22
+  -> 0 achado de severidade block, rc=0
+```
+
+**`web-fullstack.hardcoded-url` é o mesmo achado já registrado em `§8`/`§9`/`§11`**: o literal
+`https://painel.local/simbolo` usado como `base` sintético para montar `URL` em teste — nenhum
+host é contatado. Severidade `warn`, fora das 7 regras de `--severity block`.
+
 ### Cobertura
 
 Sem piso declarado para `web` (mesmo motivo de `§8`/`§9`/`§10`: `harness policy --key test_cmd`
