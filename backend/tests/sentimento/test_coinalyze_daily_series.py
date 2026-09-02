@@ -14,6 +14,7 @@ from src.modules.sentimento.domain.coinalyze_daily_series import (
     MalformedCoinalizeResponseError,
     SeriesKind,
     SeriesRequirement,
+    daily_points_from_stored_json,
     evaluate_series_requirement,
     history_path_for,
     parse_daily_points,
@@ -97,6 +98,39 @@ def test_parse_daily_points_refuses_every_malformed_shape(body: bytes) -> None:
     """Each shape is a DIFFERENT way the wire contract could break, and none is swallowed."""
     with pytest.raises(MalformedCoinalizeResponseError):
         parse_daily_points(body)
+
+
+def test_daily_points_from_stored_json_round_trips_quarantined_series_entry() -> None:
+    """`T-03.11` reads what `QuarantinedSeriesEntry.points_json()` wrote: bare array, no wrapper."""
+    points = (
+        DailyPoint(1_577_836_800, {"t": 1_577_836_800, "l": "1.0", "s": "0.5"}),
+        DailyPoint(1_577_923_200, {"t": 1_577_923_200, "l": "2.0", "s": "0.0"}),
+    )
+    stored = json.dumps([dict(point.raw) for point in points])
+
+    parsed = daily_points_from_stored_json(stored)
+
+    assert parsed == points
+
+
+def test_daily_points_from_stored_json_on_an_empty_array_is_legitimate_zero_history() -> None:
+    """Same "zero history is legitimate" rule `parse_daily_points` already applies."""
+    assert daily_points_from_stored_json("[]") == ()
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "not json at all",
+        '{"symbol": "x"}',
+        '[{"o": 1.0}]',
+        '[{"t": "not-an-int"}]',
+    ],
+)
+def test_daily_points_from_stored_json_refuses_every_malformed_shape(stored: str) -> None:
+    """The stored shape is unwrapped ONE level from the wire shape — still validated the same."""
+    with pytest.raises(MalformedCoinalizeResponseError):
+        daily_points_from_stored_json(stored)
 
 
 def test_the_open_interest_requirement_matches_ca_f0_13() -> None:
