@@ -73,6 +73,19 @@ FRAME_A_LATER_SAME_DAY = (
     '{"e":"forceOrder","E":1000,"o":{"s":"BTCUSDT","S":"SELL","o":"LIMIT","f":"IOC","q":"0.020",'
     '"p":"78500.00","ap":"78500.00","X":"FILLED","l":"0.020","z":"0.020","T":1000}}'
 )
+# Differs from FRAME_A in EXACTLY ONE B2 field: `side` (`SELL` -> `BUY`). Everything else that
+# feeds the key — `symbol`, `price`, `orig_qty`, `trade_time` — is byte-identical to FRAME_A.
+FRAME_A_SIDE_FLIPPED = (
+    '{"e":"forceOrder","E":0,"o":{"s":"BTCUSDT","S":"BUY","o":"LIMIT","f":"IOC","q":"0.010",'
+    '"p":"78000.00","ap":"78006.30","X":"FILLED","l":"0.010","z":"0.010","T":0}}'
+)
+# Differs from FRAME_A in EXACTLY ONE B2 field: `trade_time` (`0` -> `1`). `symbol`, `side`,
+# `price`, `orig_qty` are byte-identical to FRAME_A. `T=1` is still UTC day "1970-01-01", so a
+# bucket split here could only come from the KEY, never from `day`.
+FRAME_A_TRADE_TIME_SHIFTED = (
+    '{"e":"forceOrder","E":1,"o":{"s":"BTCUSDT","S":"SELL","o":"LIMIT","f":"IOC","q":"0.010",'
+    '"p":"78000.00","ap":"78006.30","X":"FILLED","l":"0.010","z":"0.010","T":1}}'
+)
 FRAME_C = (
     '{"e":"forceOrder","E":0,"o":{"s":"ETHUSDT","S":"SELL","o":"LIMIT","f":"IOC","q":"2.500",'
     '"p":"3500.00","ap":"3500.00","X":"FILLED","l":"2.500","z":"2.500","T":0}}'
@@ -125,6 +138,59 @@ def test_extract_ignores_fields_outside_the_declared_five() -> None:
     leaked in, this equality would fail and every genuine overlap duplicate would be missed.
     """
     assert extract_force_order_natural_key(FRAME_A) == extract_force_order_natural_key(FRAME_A_DUP)
+
+
+def test_side_alone_discriminates_the_key() -> None:
+    """`side` is not decorative: flipping ONLY it must change the key and refuse to collide.
+
+    `/qa`'s M4 mutation (`side="SELL"` hardcoded) makes this fail on BOTH assertions: the two
+    keys become equal, and the two observations collapse into one bucket with `collisions=1`
+    instead of the two independent events they are.
+    """
+    key_a = extract_force_order_natural_key(FRAME_A)
+    key_flipped = extract_force_order_natural_key(FRAME_A_SIDE_FLIPPED)
+    assert key_a.side == "SELL"
+    assert key_flipped.side == "BUY"
+    assert key_a != key_flipped
+
+    counts = count_daily_collisions(
+        [
+            ForceOrderKeyObservation(key=key_a, day="1970-01-01"),
+            ForceOrderKeyObservation(key=key_flipped, day="1970-01-01"),
+        ]
+    )
+    assert counts == (
+        DailyCollisionCount(symbol="BTCUSDT", day="1970-01-01", total_events=2, collisions=0),
+    )
+
+
+def test_trade_time_alone_discriminates_the_key() -> None:
+    """`trade_time` is not decorative: flipping ONLY it must change the key and refuse to collide.
+
+    `/qa`'s M3 mutation (`trade_time=0` hardcoded) makes this fail on BOTH assertions: the two
+    keys become equal, and the two observations collapse into one bucket with `collisions=1`
+    instead of the two independent events they are — even though both land on the SAME UTC day,
+    so a bucket split here can only come from the key, never from `day`.
+    """
+    key_a = extract_force_order_natural_key(FRAME_A)
+    key_shifted = extract_force_order_natural_key(FRAME_A_TRADE_TIME_SHIFTED)
+    assert key_a.trade_time == 0
+    assert key_shifted.trade_time == 1
+    assert key_a != key_shifted
+
+    day_a = trade_time_utc_date(key_a.trade_time)
+    day_shifted = trade_time_utc_date(key_shifted.trade_time)
+    assert day_a == day_shifted == "1970-01-01"
+
+    counts = count_daily_collisions(
+        [
+            ForceOrderKeyObservation(key=key_a, day=day_a),
+            ForceOrderKeyObservation(key=key_shifted, day=day_shifted),
+        ]
+    )
+    assert counts == (
+        DailyCollisionCount(symbol="BTCUSDT", day="1970-01-01", total_events=2, collisions=0),
+    )
 
 
 @pytest.mark.parametrize("raw", [NOT_JSON, MISSING_ORDER_OBJECT, "{}", '{"o": {}}'])
