@@ -965,7 +965,7 @@ tracker = { provider = "jira", id = "CST-67", url = "https://conversationhub.atl
 id = "T-07.14"
 title = "[web] 07 · S5 embutido: seletor por universe_at, badge de delisting de deliveryDate, universe_source carimbado"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T22:39:55Z @ e5b2b4b5aa2947055ca3d0782a711d43a6189934 (PR #91). gate-record recusou (rc=4, dependencia de fase 08 em estado nao-terminal, achado do proprio /qa, nao relacionado a esta task) — veredito durável em docs/context/plataforma-dados/gates/T-07.14-qa.md
 phase = "07"
 depends_on = ["T-07.8"]
 refs = ["SPEC-001 §6", "plano 07 item 7.15", "caso-ancora: ICXUSDT/STORJUSDT/SCRTUSDT com deliveryDate 2026-08-26T09:00:00Z"]
