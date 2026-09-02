@@ -419,13 +419,14 @@ tracker = { provider = "jira", id = "CST-21", url = "https://conversationhub.atl
 id = "T-03.6"
 title = "[sentimento] 03 · availability_probe continuo com availability_probe_set declarado, e o M-1 de lag_ms por endpoint"
 components = ["sentimento"]
-status = "blocked"  # resolve: QA APPROVED 2026-09-02T12:04:55Z @ 42dfb7cf86fafd56a75fa3fd2da4bd95ecfa47e1
-blocked_reason = "Q19 ABERTA (availability_probe_set) — impossivel medir universo inteiro por cota, owner precisa declarar conjunto (simbolos/endpoints/resolucao). decisoes-do-owner.md sec Q19"
+status = "todo"
 phase = "03"
 depends_on = ["T-01.1"]
 refs = [
     "CA-F0-9", "CA-F0-3", "plano 03 itens 3.4+3.9", "DoD D3.2", "DoD D3.3", "DoD D3.4",
-    "BLOQUEADA: Q19 (availability_probe_set) — ABERTA, relogio SIM",
+    "Q19 RESPONDIDA 2026-09-02 — decisoes-do-owner.md sec Q19",
+    "availability_probe_set: BTCUSDT+ETHUSDT+LINKUSDT+SOLUSDT, 5 endpoints Binance /futures/data/* a 10s, endpoints Coinalyze incluidos",
+    "escopo: mecanismo do probe continuo + prova local curta, sem deploy em VPS (VPS fora por decisao do owner)",
     "CAPTURE-OR-LOSE: decide quais series tem defasagem real PARA SEMPRE",
     "abre a quarentena de T-06.6",
 ]
@@ -456,7 +457,7 @@ id = "T-03.9"
 title = "[sentimento] 03 · observer_id e observer_region ao lado de todo available_at"
 components = ["sentimento"]
 status = "blocked"  # resolve: QA APPROVED 2026-09-02T12:04:55Z @ 42dfb7cf86fafd56a75fa3fd2da4bd95ecfa47e1
-blocked_reason = "observer_region da VPS NAO MEDIDO (curl -s ipinfo.io de dentro da VPS) — coluna de F0, impossivel retroativamente, SPEC-001 sec9.2. Tambem depende de T-03.6/Q19 para o probe completo"
+blocked_reason = "observer_region da VPS NAO MEDIDO (curl -s ipinfo.io de dentro da VPS) — coluna de F0, impossivel retroativamente, SPEC-001 sec9.2. VPS deliberadamente fora por decisao do owner 2026-09-02 (execucao local primeiro); Q19 ja nao bloqueia mais (RESPONDIDA, T-03.6 destravada)"
 phase = "03"
 depends_on = ["T-03.2"]
 refs = [
@@ -706,7 +707,8 @@ tracker = { provider = "jira", id = "CST-43", url = "https://conversationhub.atl
 id = "T-05.10"
 title = "[web] 05 · Auth minima single-user extensivel, e a atribuicao obrigatoria do Lightweight Charts"
 components = ["web"]
-status = "todo"
+status = "blocked"  # resolve: owner decidiu em 2026-09-02, ver blocked_reason
+blocked_reason = "PREMISSA-OWNER 2026-09-02: primeiro teste e local, auth so e necessaria ao subir pra VPS — a mesma condicao que ja estava em refs (\"se as rotas nao forem publicadas, esta task sai\"), agora aplicada em vez de deixada para depois. Reabre quando a VPS entrar em pauta; ate la T-04.7 basta (SPEC-001 sec8.3). Nota: a metade de atribuicao do Lightweight Charts (CA-F1-15) nao depende de VPS, mas a task nao foi desmembrada por decisao de agente — desmembrar e ato do /tech-lead, nao deste workflow"
 phase = "05"
 depends_on = ["T-05.8"]
 refs = [
