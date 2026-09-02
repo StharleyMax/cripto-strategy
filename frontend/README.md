@@ -604,3 +604,120 @@ mutação para cada um) e as duas recusas de `D4` (parâmetro ausente, valor for
 Este `README.md` — **atualizado**, `§9` nova (append-only, nenhuma linha existente reescrita).
 `docs/plans/SPEC-001-plataforma-dados/05_fatia_visivel.md` — **sem mudança**: é o documento
 normativo do DoD, e a task o satisfaz, não o edita.
+
+---
+
+## 10. `src/features/s1-console/` — tradução da `S1` aprovada (`T-07.12`, 2026-09-02)
+
+`T-07.12` (`CST-66`, componente `web`) escreve o que o item `7.13` do plano `07` e os `DoD
+D7.12`-`D7.15` pedem: `janela_de_perda` como **fórmula por série** (nunca uma constante), o
+multiplicador de resiliência declarado (`~4,7x`), retenção **anticorrelacionada** com a
+necessidade escrita por extenso (não um número seco), e reconexão como **rotina**. A tela
+canônica é `S1 Console — Diagnóstico Operacional (Rev. B)`,
+`screens/c0fc0210272f42a1ae29b6364e68d2e4`, aprovada com condição pelo gate independente
+`ux-ui-mastery` e com a condição fechada
+(`docs/context/plataforma-dados/gates/T-07.12-design.md` + `T-07.12-ux-critique.md`,
+`docs/product/STITCH_CONTEXT.md` §4.2).
+
+### Por que não existe uma página React — mesmo raciocínio da `§1` e de `src/app/routes.ts`
+
+Este pacote **não é** a aplicação Next.js (`§1`; `harness code-paths classify` confirma
+`frontend/src/**` como `producao` de qualquer forma, mas não há `react` em
+`package-lock.json` — `[MEDIDO 2026-09-02: grep -c '"react"' frontend/package-lock.json` →
+**0**`]`, nem `tsconfig.json`). `S1Console.tsx` é TSX válido, lintado como qualquer outro
+arquivo do pacote (`npm run lint` o lê e aprova), no MESMO nível que
+`src/features/panel/Filter.tsx` já ocupava: um componente típico, correto por tipo, que
+espera a aplicação real para ser montado — não uma página rodando. O que carrega o DoD é a
+camada de domínio abaixo dele, que **é** testada.
+
+```bash
+npm --prefix frontend run test:s1   # 26 testes, node --test 'src/features/s1-console/*.test.ts'
+npm --prefix frontend run lint      # eslint src -> 0 erro, 0 aviso
+```
+
+### A tradução, em quatro arquivos
+
+1. **`domain.ts`** — tipos e fórmulas puras. `RetentionWindow` é um discriminated union de
+   6 variantes (`computed_uniform`, `measured_sparse`, `doc_only`, `declared_constant`,
+   `unmeasured`, `not_applicable`) porque o `D7.12` observa 6 formas distintas de saber a
+   janela, não uma fórmula universal. `computeUniformWindowDays` fecha o caso determinístico
+   (`pontos × intervalo`); o caso esparso (`D7.14`, liquidação) **não** passa por essa
+   função — `domain.test.ts` prova por que: rodar a fórmula uniforme sobre `3.052 pts × 1m`
+   dá ≈2,1 dias, não os 8 dias medidos, porque a série não tem cadência uniforme. `D17`
+   (severidade nunca por cor) é código, não só documentação: existe UMA constante de classe
+   de badge (`NEUTRAL_STATUS_BADGE_CLASS`) e `orderRowsBySeverity` é quem move o coletor
+   parado para o topo por POSIÇÃO.
+2. **`fixtures.ts`** — dado sintético, com a proveniência de cada número comentada linha a
+   linha. Ver a seção GAP abaixo.
+3. **`view-model.ts`** — formata para texto de tela. Deliberadamente separado do domínio: os
+   números ficam planos (`number`, ponto decimal) até aqui, porque
+   `docs/context/plataforma-dados/handoff_to_architect.md` `Q14` fixa que formatação de
+   locale é invariante de CAMINHO DE DADO — pt-BR só é legítimo em microcopy (`CLAUDE.md`,
+   linha 8 da tabela de fronteira), e este módulo é exatamente essa fronteira.
+4. **`S1Console.tsx`** — a tradução estrutural do HTML/Tailwind aprovado (mesmas classes,
+   mesma hierarquia — conferido por leitura lado a lado do HTML baixado da tela canônica),
+   tipada contra `S1ViewModel`.
+
+### ⚠️ GAP registrado — dado é fixture, não `ingest_health_query`
+
+`S1` é especificada para ler pela consulta nomeada `ingest_health_query` (`ADR-008/D3`,
+`DoD D7.17`) — e ligar essa consulta de verdade é **`T-07.13`**, task SEPARADA
+(`depends_on = ["T-02.3", "T-07.12"]`, `docs/context/plataforma-dados/tasks.toml:954-962`).
+Nada em `fixtures.ts` vem de banco. Dois números merecem nota explícita:
+
+- **`OI · grade 5m`**: o plano publica `"~2.000 pts × 5m ≈ 7,0 dias"` — os dois já
+  arredondados. O fixture usa `2016` pontos (não `2000`): é o menor valor "redondo" que (a)
+  ainda lê como `~2.000` e (b) faz `computeUniformWindowDays` bater EXATAMENTE em `7,0`
+  (`2016 × 5 / 1440 = 7`), para que o texto renderizado seja saída de uma fórmula de
+  verdade, não uma string ao lado de um ponto-de-partida que não a produz. A tela mostrará
+  `"2.016 pts"`, não `"~2.000 pts"` — divergência da microcopy literal aprovada, deliberada
+  e registrada aqui, não escondida.
+- **`ORÇAMENTO ARMAZENAMENTO (GB/DIA)`** e **`FILA ETL`**: os valores (`1.2`, `0.4`, `1.6
+  GB`, `14.204`) são os literais da tela canônica aprovada, reproduzidos como fixture —
+  `totalStorageBudgetGbPerDay` os SOMA (não copia um total solto), e
+  `view-model.test.ts` prova que a soma bate com `"1.6 GB"`.
+
+### Achado registrado, não corrigido: a tela aprovada mistura separador decimal
+
+`[MEDIDO 2026-09-02, grep no HTML baixado de `screens/c0fc0210272f42a1ae29b6364e68d2e4`]` —
+a coluna `JANELA_DE_PERDA` usa vírgula (`"1,5 dia"`, `"7,0 dias"`) e as colunas de uptime% e
+GB/dia usam ponto (`"99.8%"`, `"1.2"`, `"1.6 GB"`) na MESMA tela aprovada. `view-model.ts`
+reproduz essa mistura fielmente (`formatPtBrDecimal` para janela, `formatDotDecimal` — não
+exportada — para os demais) em vez de normalizar por conta própria: consertar é decisão de
+design system, fora do `DoD D7.12`-`D7.15` desta task. Registrado com o comando que o mede,
+não escondido atrás de uma escolha silenciosa de formatação.
+
+### Cobertura
+
+Sem piso declarado para `web` (mesmo motivo das `§8`/`§9`). Medição qualitativa: 26 testes
+cobrem 100% das funções exportadas de `domain.ts` e `view-model.ts`, incluindo os dois
+falsificadores centrais do DoD (`D7.14`: a fórmula uniforme NÃO reproduz a janela esparsa;
+`D17`: as 4 badges de status compartilham uma única classe, e só a linha `PARADO` carrega
+glifo) e a montagem completa (`buildS1ViewModel`) sobre os fixtures canônicos.
+
+### Comandos rodados, literais
+
+```bash
+npm --prefix frontend run test:s1                          # 26 pass, 0 fail
+npm --prefix frontend run lint                              # 0 erro, 0 aviso
+npm --prefix frontend run test:app                          # 42 pass, 0 fail (regressão)
+npm --prefix frontend run test:charts                       # 13 pass, 0 fail (regressão)
+make lint-frontend                                           # rc=0
+git add frontend/package.json frontend/src/features/s1-console/
+harness rules --mode sweep --changed-only --format ndjson   # saída vazia, rc=0
+harness rules --mode sweep --format ndjson
+  -> 2 achados pré-existentes (warn, web-fullstack.hardcoded-url, T-05.8/T-05.9), 0 novo
+harness code-paths classify frontend/src/features/s1-console/domain.ts       # producao
+harness code-paths classify frontend/src/features/s1-console/S1Console.tsx   # producao
+```
+
+**`make boundaries` não rodou** (`rc=3`, "RECUSA: backend/.venv nao existe") — é o portão de
+`backend/`, fora da fronteira desta task (`⛔ nao criar nem editar nada em backend/`, ver o
+despacho); nada em `frontend/` depende dele.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§10` nova (append-only). `docs/plans/SPEC-001-plataforma-dados/07_aquisicao_em_regime.md`
+— **sem mudança**: documento normativo do DoD, a task o satisfaz, não o edita.
+`docs/product/STITCH_CONTEXT.md` — **sem mudança**: é o `ui-designer` quem propõe edição ali
+(`R6`), não o builder.
