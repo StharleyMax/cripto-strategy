@@ -110,7 +110,7 @@ def run_availability_probe(
     if total_duration_seconds <= 0:
         raise InvalidProbeRunError(
             f"total_duration_seconds={total_duration_seconds}: "
-            f"uma janela nao positiva nao mede nada"
+            f"a non-positive window measures nothing"
         )
     binance_cycle: Iterator[tuple[BinanceFuturesDataEndpoint, str]] = itertools.cycle(
         _binance_targets(probe_set)

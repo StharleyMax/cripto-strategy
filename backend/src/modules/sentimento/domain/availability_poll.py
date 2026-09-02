@@ -43,12 +43,12 @@ class AvailabilityPollOutcome:
         """Reject an outcome that is neither a dispatch nor a failure to dispatch, or both."""
         if (self.status is None) == (self.transport_error is None):
             raise ValueError(
-                "outcome tem de trazer status HTTP OU erro de transporte, nunca os dois nem nenhum"
+                "outcome must carry an HTTP status OR a transport error, never both nor neither"
             )
         if self.transport_error is not None and self.latest_event_time_ms is not None:
             raise ValueError(
-                "erro de transporte nao pode carregar latest_event_time_ms: nao houve resposta "
-                "para ler um timestamp"
+                "a transport error cannot carry latest_event_time_ms: there was no response "
+                "to read a timestamp from"
             )
 
     @property
@@ -81,21 +81,21 @@ def parse_binance_latest_event_time_ms(body: bytes) -> int | None:
         payload = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError) as failure:
         raise MalformedAvailabilityResponseError(
-            f"corpo nao e JSON valido: {type(failure).__name__}: {failure}"
+            f"body is not valid JSON: {type(failure).__name__}: {failure}"
         ) from failure
     if not isinstance(payload, list):
         raise MalformedAvailabilityResponseError(
-            f"corpo esperado como lista, veio {type(payload).__name__}"
+            f"expected body as a list, got {type(payload).__name__}"
         )
     if not payload:
         return None
     newest = payload[-1]
     if not isinstance(newest, dict) or "timestamp" not in newest:
         shape = sorted(newest) if isinstance(newest, dict) else type(newest).__name__
-        raise MalformedAvailabilityResponseError(f"elemento sem campo 'timestamp': {shape}")
+        raise MalformedAvailabilityResponseError(f"element missing 'timestamp' field: {shape}")
     try:
         return int(newest["timestamp"])
     except (TypeError, ValueError) as failure:
         raise MalformedAvailabilityResponseError(
-            f"'timestamp' nao e um inteiro: {newest['timestamp']!r}"
+            f"'timestamp' is not an integer: {newest['timestamp']!r}"
         ) from failure

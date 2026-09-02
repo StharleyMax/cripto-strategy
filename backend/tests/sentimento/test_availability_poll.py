@@ -13,13 +13,13 @@ from src.modules.sentimento.domain.availability_poll import (
 
 def test_an_outcome_cannot_carry_both_status_and_transport_error() -> None:
     """An outcome cannot carry both a status and a transport error."""
-    with pytest.raises(ValueError, match="OU"):
+    with pytest.raises(ValueError, match="OR"):
         AvailabilityPollOutcome(status=200, transport_error="boom")
 
 
 def test_an_outcome_must_carry_one_of_status_or_transport_error() -> None:
     """An outcome must carry one of status or transport error."""
-    with pytest.raises(ValueError, match="OU"):
+    with pytest.raises(ValueError, match="OR"):
         AvailabilityPollOutcome()
 
 
@@ -56,7 +56,7 @@ def test_parse_of_invalid_json_raises() -> None:
 
 def test_parse_of_a_non_list_body_raises() -> None:
     """Parsing of a non-list body raises."""
-    with pytest.raises(MalformedAvailabilityResponseError, match="lista"):
+    with pytest.raises(MalformedAvailabilityResponseError, match="list"):
         parse_binance_latest_event_time_ms(b'{"timestamp": 1}')
 
 

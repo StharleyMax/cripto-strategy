@@ -55,7 +55,7 @@ def test_the_coinalyze_broker_paces_one_sweep_across_its_own_period() -> None:
 
 def test_a_period_of_sixty_seconds_is_refused_regardless_of_budget() -> None:
     """`D3.3`: `periodo >= 60s` reprova on its own — coarser than the measured dispersion."""
-    with pytest.raises(InvalidProbeSetError, match="reprova"):
+    with pytest.raises(InvalidProbeSetError, match="refuses it"):
         AvailabilityProbeSet(
             symbols=("BTCUSDT",), binance_period_seconds=60.0, coinalyze_period_seconds=30.0
         )
@@ -73,7 +73,7 @@ def test_a_period_that_blows_the_binance_budget_is_refused() -> None:
 
 def test_a_period_that_blows_the_coinalyze_blind_budget_is_refused() -> None:
     """8 calls/sweep at 5 s = 96/min, over the blind bucket's 40/min."""
-    with pytest.raises(InvalidProbeSetError, match="cego"):
+    with pytest.raises(InvalidProbeSetError, match="blind"):
         AvailabilityProbeSet(
             symbols=AVAILABILITY_PROBE_SYMBOLS,
             binance_period_seconds=10.0,
@@ -104,7 +104,7 @@ def test_a_degenerate_set_is_refused(
 
 def test_duplicate_symbols_are_refused() -> None:
     """Duplicate symbols are refused."""
-    with pytest.raises(InvalidProbeSetError, match="repetidos"):
+    with pytest.raises(InvalidProbeSetError, match="duplicate symbols"):
         AvailabilityProbeSet(
             symbols=("BTCUSDT", "BTCUSDT"),
             binance_period_seconds=10.0,
@@ -114,7 +114,7 @@ def test_duplicate_symbols_are_refused() -> None:
 
 def test_duplicate_binance_endpoints_are_refused() -> None:
     """Duplicate Binance endpoints are refused."""
-    with pytest.raises(InvalidProbeSetError, match="Binance repetidos"):
+    with pytest.raises(InvalidProbeSetError, match="duplicate Binance"):
         AvailabilityProbeSet(
             symbols=("BTCUSDT",),
             binance_period_seconds=10.0,
@@ -128,7 +128,7 @@ def test_duplicate_binance_endpoints_are_refused() -> None:
 
 def test_duplicate_coinalyze_endpoints_are_refused() -> None:
     """Duplicate Coinalyze endpoints are refused."""
-    with pytest.raises(InvalidProbeSetError, match="Coinalyze repetidos"):
+    with pytest.raises(InvalidProbeSetError, match="duplicate Coinalyze"):
         AvailabilityProbeSet(
             symbols=("BTCUSDT",),
             binance_period_seconds=10.0,

@@ -152,20 +152,20 @@ class AvailabilityProbeSet:
 def _reject_empty_or_duplicate_targets(probe_set: AvailabilityProbeSet) -> None:
     """Reject a set with no symbols, no endpoints on either source, or a duplicate in any list."""
     if not probe_set.symbols:
-        raise InvalidProbeSetError("nenhum simbolo declarado: um probe sem alvo nao mede nada")
+        raise InvalidProbeSetError("no symbol declared: a probe with no target measures nothing")
     if len(set(probe_set.symbols)) != len(probe_set.symbols):
-        raise InvalidProbeSetError(f"simbolos repetidos em {probe_set.symbols!r}")
+        raise InvalidProbeSetError(f"duplicate symbols in {probe_set.symbols!r}")
     if not probe_set.binance_endpoints:
-        raise InvalidProbeSetError("nenhum endpoint Binance declarado")
+        raise InvalidProbeSetError("no Binance endpoint declared")
     if len(set(probe_set.binance_endpoints)) != len(probe_set.binance_endpoints):
         raise InvalidProbeSetError(
-            f"endpoints Binance repetidos em {probe_set.binance_endpoints!r}"
+            f"duplicate Binance endpoints in {probe_set.binance_endpoints!r}"
         )
     if not probe_set.coinalyze_endpoints:
-        raise InvalidProbeSetError("nenhum endpoint Coinalyze declarado")
+        raise InvalidProbeSetError("no Coinalyze endpoint declared")
     if len(set(probe_set.coinalyze_endpoints)) != len(probe_set.coinalyze_endpoints):
         raise InvalidProbeSetError(
-            f"endpoints Coinalyze repetidos em {probe_set.coinalyze_endpoints!r}"
+            f"duplicate Coinalyze endpoints in {probe_set.coinalyze_endpoints!r}"
         )
 
 
@@ -173,28 +173,28 @@ def _reject_period_that_d33_would_refuse(probe_set: AvailabilityProbeSet) -> Non
     """Reject a non-positive period, a `>= 60s` Binance period, or a budget `D3.3` would refuse."""
     if probe_set.binance_period_seconds <= 0:
         raise InvalidProbeSetError(
-            f"binance_period_seconds={probe_set.binance_period_seconds}: periodo nao positivo"
+            f"binance_period_seconds={probe_set.binance_period_seconds}: non-positive period"
         )
     if probe_set.coinalyze_period_seconds <= 0:
         raise InvalidProbeSetError(
-            f"coinalyze_period_seconds={probe_set.coinalyze_period_seconds}: periodo nao positivo"
+            f"coinalyze_period_seconds={probe_set.coinalyze_period_seconds}: non-positive period"
         )
     if probe_set.binance_period_seconds >= MAX_INFORMATIVE_PERIOD_SECONDS:
         raise InvalidProbeSetError(
             f"binance_period_seconds={probe_set.binance_period_seconds} >= "
-            f"{MAX_INFORMATIVE_PERIOD_SECONDS}: `D3.3` reprova — mais grosso que a dispersao "
-            f"medida (99,6-200,8 s), custa cota e nao informa"
+            f"{MAX_INFORMATIVE_PERIOD_SECONDS}: `D3.3` refuses it — coarser than the measured "
+            f"dispersion (99.6-200.8 s), it costs quota and informs nothing"
         )
     if probe_set.binance_requests_per_minute > BINANCE_FUTURES_DATA_REQUESTS_PER_MINUTE:
         raise InvalidProbeSetError(
-            f"binance: {probe_set.binance_requests_per_minute:.1f} chamadas/min > "
-            f"{BINANCE_FUTURES_DATA_REQUESTS_PER_MINUTE:.0f} do balde `/futures/data/*` — "
-            f"`D3.3` reprova (5 x S x (60/periodo) <= 200)"
+            f"binance: {probe_set.binance_requests_per_minute:.1f} calls/min > "
+            f"{BINANCE_FUTURES_DATA_REQUESTS_PER_MINUTE:.0f} of the `/futures/data/*` bucket — "
+            f"`D3.3` refuses it (5 x S x (60/period) <= 200)"
         )
     if probe_set.coinalyze_requests_per_minute > COINALYZE_REQUESTS_PER_MINUTE:
         raise InvalidProbeSetError(
-            f"coinalyze: {probe_set.coinalyze_requests_per_minute:.1f} chamadas/min > "
-            f"{COINALYZE_REQUESTS_PER_MINUTE:.0f} do balde cego da Coinalyze"
+            f"coinalyze: {probe_set.coinalyze_requests_per_minute:.1f} calls/min > "
+            f"{COINALYZE_REQUESTS_PER_MINUTE:.0f} of Coinalyze's blind bucket"
         )
 
 

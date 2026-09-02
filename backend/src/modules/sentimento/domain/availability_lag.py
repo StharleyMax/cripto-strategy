@@ -37,8 +37,8 @@ class AvailabilityLagSample:
         """Refuse a sample where the observer claims to have known before the fact happened."""
         if self.available_at_ms < self.event_time_ms:
             raise ValueError(
-                f"available_at_ms ({self.available_at_ms}) precede event_time_ms "
-                f"({self.event_time_ms}): um consumidor nao pode saber antes do fato"
+                f"available_at_ms ({self.available_at_ms}) precedes event_time_ms "
+                f"({self.event_time_ms}): a consumer cannot know before the fact"
             )
 
     @property

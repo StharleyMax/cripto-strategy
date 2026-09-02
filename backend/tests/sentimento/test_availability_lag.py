@@ -172,7 +172,7 @@ def test_classify_of_no_attempts_returns_nothing() -> None:
 
 def test_a_sample_cannot_claim_knowledge_before_the_fact_happened() -> None:
     """A sample cannot claim knowledge before the fact happened."""
-    with pytest.raises(ValueError, match="antes do fato"):
+    with pytest.raises(ValueError, match="before the fact"):
         AvailabilityLagSample(
             source=SOURCE,
             endpoint=ENDPOINT,

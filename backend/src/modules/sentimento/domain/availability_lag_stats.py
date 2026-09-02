@@ -41,7 +41,7 @@ def p99(values: Sequence[int]) -> int:
     raises against turning an ALARM into a fabricated count.
     """
     if not values:
-        raise EmptyLagSampleError("p99 de um conjunto vazio nao existe")
+        raise EmptyLagSampleError("p99 of an empty set does not exist")
     ordered = sorted(values)
     rank = math.ceil(0.99 * len(ordered))
     index = max(0, rank - 1)
@@ -65,13 +65,13 @@ class LagSummaryRow:
         """Refuse a row whose `p99` and `n` disagree about whether anything was observed."""
         if (self.lag_n == 0) != (self.lag_p99_ms is None):
             raise ValueError(
-                f"lag_n={self.lag_n} e lag_p99_ms={self.lag_p99_ms!r}: os dois tem de concordar "
-                f"sobre se ha observacao (n=0 <=> p99=None)"
+                f"lag_n={self.lag_n} and lag_p99_ms={self.lag_p99_ms!r}: the two must agree on "
+                f"whether there is an observation (n=0 <=> p99=None)"
             )
         if self.lag_n > self.total_polls:
             raise ValueError(
-                f"lag_n={self.lag_n} > total_polls={self.total_polls}: nao ha mais transicao do "
-                f"que tentativa de poll"
+                f"lag_n={self.lag_n} > total_polls={self.total_polls}: there cannot be more "
+                f"transitions than poll attempts"
             )
 
     @property

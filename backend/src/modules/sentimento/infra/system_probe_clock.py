@@ -24,5 +24,5 @@ class SystemProbeClock:
     def sleep(self, seconds: float) -> None:
         """Block for `seconds`, refusing a negative pause rather than returning at once."""
         if seconds < 0:
-            raise ValueError(f"pausa negativa: {seconds}")
+            raise ValueError(f"negative pause: {seconds}")
         time.sleep(seconds)

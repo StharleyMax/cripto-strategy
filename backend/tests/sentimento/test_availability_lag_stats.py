@@ -120,7 +120,7 @@ def test_no_attempts_at_all_produces_no_rows() -> None:
 
 def test_a_row_cannot_disagree_with_itself_about_whether_anything_was_observed() -> None:
     """A row cannot disagree with itself about whether anything was observed."""
-    with pytest.raises(ValueError, match="concordar"):
+    with pytest.raises(ValueError, match="must agree"):
         LagSummaryRow(
             endpoint=ENDPOINT,
             observer_region=REGION,
@@ -135,7 +135,7 @@ def test_a_row_cannot_disagree_with_itself_about_whether_anything_was_observed()
 
 def test_a_row_cannot_claim_more_transitions_than_polls() -> None:
     """A row cannot claim more transitions than polls."""
-    with pytest.raises(ValueError, match="nao ha mais transicao"):
+    with pytest.raises(ValueError, match="cannot be more transitions"):
         LagSummaryRow(
             endpoint=ENDPOINT,
             observer_region=REGION,
