@@ -2311,3 +2311,171 @@ não é desta fase, e `rc` continua `0` (é aviso, não falha) — nomeado aqui 
 - **Não resolve o `unit`/`denom` da Coinalyze** (`docs/medicao-coinalyze.md` §2.3: 744
   `BASE_ASSET` / 20 `QUOTE_ASSET`) — citado como possível causa de `CAPTURED_EXCEEDS_COINALYZE`
   em `HYPOTHESIS_SCREEN_LABEL`, nunca medido ou corrigido aqui.
+
+### 📎 2026-09-02 por `T-07.1` — o paginador correto: janela `[startTime, endTime]` fechada, enumerada A PRIORI, e a listagem S3 por `NextContinuationToken`
+
+`CST-55`, `CA-F3-2`/`CA-F3-1`/`CA-F3-5`, `SPEC-001` §5.7, plano `07` itens 7.1+7.2+7.4. **Pré-requisito
+de qualquer backfill grande** (`T-03.10` e além) — a prioridade declarada no handoff.
+
+[`domain/oi_history_paginator.py`](src/modules/sentimento/domain/oi_history_paginator.py) (**novo**)
+fixa `ClosedWindow` com **os dois limites obrigatórios** — não existe construtor que aceite só
+`start_time_ms`, então o caso perigoso que `D7.3` mediu (`startTime` sozinho) é irrepresentável no
+tipo. `enumerate_history_pages` divide a janela em sub-janelas fechadas **por aritmética pura**
+(`period_ms * limit`), nunca consultando uma resposta — a propriedade que `SPEC-001` §5.7 exige
+("enumerado ANTES do loop"). `classify_page` é a segunda metade da defesa: **qualquer** ponto
+retornado fora de `[start_time_ms, end_time_ms]` reprova a página inteira com zero linhas
+gravadas, `HTTP 200` ou não — é o que pega o comportamento `[MEDIDO]` da Binance (cauda de hoje,
+sem aviso, para uma janela antiga) mesmo que a chamada tenha sido montada corretamente.
+`api_code == -1130` é classificado como `end_of_history` (`D7.1`), nunca como erro transitório
+a repetir. Nenhum teto de linhas é aplicado (`D7.5`: 501 pontos dentro da janela são aceitos e
+gravados, contra o máximo documentado de 500 — o observado, não o documentado).
+
+[`infra/binance_oi_history_client.py`](src/modules/sentimento/infra/binance_oi_history_client.py)
+(**novo**) é o cliente HTTP de `/futures/data/openInterestHist`, mesmo padrão de conexão de
+`binance_futures_snapshot_client.py` (`http.client`, fábrica de conexão injetável, sem socket em
+teste). A assinatura recebe `ClosedWindow`, então nenhum caminho de código deste cliente consegue
+enviar `startTime` sem `endTime`.
+
+[`domain/s3_bucket_listing.py`](src/modules/sentimento/domain/s3_bucket_listing.py) (**novo**)
+fixa `BucketListingPage` (recusa `is_truncated=True` sem `next_continuation_token` — defesa contra
+um parser que descarta o token em silêncio) e `merge_pages` (recusa uma sequência de páginas cuja
+ÚLTIMA ainda está truncada — defesa contra quem para de paginar cedo demais, exatamente o que
+`D7.8` nomeia). [`infra/binance_dump_bucket_listing_client.py`](src/modules/sentimento/infra/binance_dump_bucket_listing_client.py)
+(**novo**) faz o `GET` do `data.binance.vision` (`ListObjectsV2`, XML via `xml.etree.ElementTree`,
+sem dependência nova) e `list_all_object_keys` drena todas as páginas seguindo
+`NextContinuationToken` até `IsTruncated=false`.
+
+**O falsificador de `D7.8`, medido diretamente:** `test_d7_8_the_falsifier_merging_only_the_first_of_two_truncated_pages_is_refused`
+prova que `merge_pages` de uma sequência com só a primeira das duas páginas (a mutação exata que
+o DoD nomeia) levanta `UnpaginatedTruncationError`; e `test_d7_8_list_all_object_keys_follows_nextcontinuationtoken_across_pages`
+prova, ponta a ponta com XML real de 2 páginas (500 + 480 chaves), que o loop devolve as **980**
+chaves e não as 500 da primeira página sozinha.
+
+**Escopo que esta task NÃO fecha, nomeado:** não escreve `md.ingest_run`/`md.ingest_gap` (chega
+com `T-03.8`/produção real, aqui é só o paginador e o cliente); não faz survivorship na borda de
+ingestão (`T-07.2`); não faz dedupe por hash de conteúdo (`T-07.3`); nenhum `use_cases` novo foi
+necessário — o escopo do plano (itens 7.1+7.2+7.4) é paginação e listagem, não o pipeline de
+escrita, que é dono de tasks posteriores da mesma fase.
+
+`bash backend/scripts/test.sh`: **1063 passed** (era 1029, `+34`), cobertura **97,84%** — `domain`
+**99,9%** (meta 90%), `use_cases` **100,0%** (meta 80%), `infra` **95,2%** (meta 70%). `lint.sh`
+limpo (`ruff check`/`format --check`/`mypy --strict`, 188 arquivos). `boundaries.sh`: **3 kept, 0
+broken** (131 arquivos, 592 dependências). `natureza.sh`: universo 57 arquivos, 0 leituras de
+relógio. `harness rules --mode sweep --changed-only`: **0 achados** (a 1ª rodada achou 4 `[AVISO]`
+de docstring de módulo multi-linha, não-bloqueante, corrigido para o padrão de uma linha do
+repositório). Relatório: [`gates/T-07.1-builder.md`](../docs/context/plataforma-dados/gates/T-07.1-builder.md).
+**`tasks.toml`, ledger e Jira INTOCADOS; nenhum `gate-record`, `approve` ou `advance`** — veredito
+é do `/qa`.
+
+## 📎 2026-09-02 por `T-07.10` — `clock_skew_tolerance_ms` CALIBRADO, RECUSADO hoje por falta de 7 dias
+
+`CA-F3-13`, plano `07` item 7.12, DoD `D7.18`. Lê a distribuição de `clock_skew_ms` que `T-03.8`
+mede e persiste (`domain/clock_skew.py`, `use_cases/persist_ntp_skew_run.py`, reusados sem
+duplicar `ClockSkewSample`) e calibra a tolerância como `p99` de `|clock_skew_ms|` — nunca um
+número fixo. `D3.10`/`D7.18`, literal: `>= 7 dias de runs` é o padrão real; hoje só existem os 5
+probes curtos de `T-03.8` (~6,6 s de span), e o mecanismo **RECUSA** calibrar sobre eles em vez de
+fabricar um número.
+
+### As peças, e a camada de cada uma
+
+- [`domain/clock_skew_tolerance.py`](src/modules/sentimento/domain/clock_skew_tolerance.py)
+  (**novo**): `ClockSkewObservation` (valor já computado + `observed_at_ms`, NÃO um
+  `ClockSkewSample` reimplementado — `md.ingest_run` nunca persiste o bracket que produz o
+  skew, só o resultado) e `calibrate_clock_skew_tolerance`, que reusa `p99` de
+  `availability_lag_stats.py` (mesma convenção `LAG_STAT_NAME`/`TOLERANCE_STAT_NAME = "p99"`,
+  nearest-rank, nunca interpolado) em vez de reimplementar percentil. Refusa
+  (`InsufficientClockSkewCalibrationDataError`) com zero amostras ou `span_days < 7`
+  (`MIN_CALIBRATION_SPAN_DAYS`, parametrizável só para teste de fronteira).
+- [`use_cases/calibrate_clock_skew_tolerance.py`](src/modules/sentimento/use_cases/calibrate_clock_skew_tolerance.py)
+  (**novo**): porta `ClockSkewHistorySource`, deixa a recusa propagar (mesma disciplina de
+  `MissingUsedWeightError` em `persist_ntp_skew_run.py` — nunca engolida num default).
+- [`infra/clock_skew_tolerance_reader.py`](src/modules/sentimento/infra/clock_skew_tolerance_reader.py)
+  (**novo**): `parse_iso_ms` (inverso de `ntp_skew_probe_cli.iso_ms`) faz a única leitura de
+  `datetime` desta task — `Natureza`, mesma fronteira de `infra/metrics_csv_reader.py` — e
+  `IngestRunClockSkewSource` adapta qualquer `IngestRecordSource` (ex.: `SqliteIngestRecordStore`)
+  lendo TODO `md.ingest_run`, não só linhas de probe NTP.
+- [`infra/clock_skew_tolerance_cli.py`](src/modules/sentimento/infra/clock_skew_tolerance_cli.py)
+  (**novo**): mesmo contrato de stream de `ingest_health_cli.py` (produto em `stdout`,
+  diagnóstico em `stderr`). A recusa vira `{"calibrated": false, "reason": "..."}` na MESMA linha
+  JSON de um sucesso — nunca um traceback escondendo o motivo.
+
+### O falsificador da fase — rodado contra os 5 runs REAIS de `T-03.8`
+
+`test_refuses_on_the_5_real_t038_probe_runs` (domain) e
+`test_report_on_the_real_5_run_t038_store_refuses` (infra/CLI) alimentam os `clock_skew_ms`
+efetivamente medidos (`-69,-69,-73,-66,-23`) com os `started_at` reais
+(`docs/context/plataforma-dados/medicoes/T-03.8-ntp-skew/01_ingest_health_query.jsonl`) — span
+`~6,6 s`, não `7 dias` — e o mecanismo **REPROVA com `InsufficientClockSkewCalibrationDataError`**.
+Toda distribuição não trivial usada para provar a fórmula (`p99` de 1..100, skew negativo) é
+SIMULADA e rotulada como tal no teste — nunca apresentada como medição real.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Não calibra uma tolerância real.** Os 7 dias de captura contínua que `D3.10`/`D7.18` exigem
+  não existem (owner ainda roda local/probe-curto, `docs/decisoes-do-owner.md` §Q19) — quando
+  existirem, `infra/clock_skew_tolerance_cli.py` já lê o mesmo store sem mudança de código.
+- **Não decide o que fazer com a tolerância calibrada** (alarme, campo de UI, etc.) — só a
+  calcula e a devolve com a evidência (`sample_n`, `span_days`, `stat_name`) anexada.
+
+## 📎 2026-09-02 por `T-07.7` — jitter e circuit breaker sobre o broker cego, por composição
+
+`CA-F3-9`, plano `07` item 7.9. `domain/local_quota_broker.py` (`T-03.7`) paceia um balde CEGO
+num intervalo fixo, mas nunca se recusa a chamar — mesmo logo depois do primeiro `429`. Esta
+task compõe três peças novas em cima dele, **sem tocar o arquivo existente**, como o handoff
+pediu explicitamente ("prefira composição a duplicar a lógica de contagem local"):
+
+| camada | arquivo | o que faz |
+|---|---|---|
+| `domain` | `circuit_breaker.py` (**novo**) | a máquina de estados `CLOSED -> OPEN -> HALF_OPEN -> CLOSED`; `FailureKind.RATE_LIMITED`/`SERVER_ERROR` abrem o circuito na PRIMEIRA ocorrência (o único bit autoritativo que um balde cego dá), `TRANSPORT_ERROR` só conta para o limiar genérico |
+| `domain` | `jitter.py` (**novo**) | `JitterPolicy.apply(base, sample)` puro (sample injetado, nunca lido de `random` dentro da função); `sample_uniform()` é a única linha não determinística do módulo, envolvendo `random.random()` |
+| `domain` | `quota_circuit_broker.py` (**novo**) | `QuotaCircuitBroker` compõe `LocalQuotaBroker` + `JitterPolicy` + `CircuitBreakerPolicy`/`State`; `decide()` consulta o circuito PRIMEIRO — um circuito aberto nunca chega a jitterar nada |
+
+### Por que a aleatoriedade é parâmetro, não chamada interna
+
+Mesma disciplina que `domain/recoil_policy.py` já usa para `retry_after_seconds`: uma função que
+RECEBE seu não-determinismo é uma função que um teste dirige com valores exatos
+(`sample=0.0`/`0.5`/`1.0`) e prova as duas bordas sem depender de sorte.
+`ADR-016`/`Natureza` proíbe `domain`/`use_cases` de importar `socket`/`ssl` e guarda `time`/
+`datetime` POR USO (`backend/scripts/natureza.py`) — nenhum dos dois cobre `random`, que não lê
+relógio nem abre soquete. `sample_uniform()` existe mesmo assim como wrapper fino, porque o
+DoD desta task pede um teste que prove variância REAL entre chamadas, não apenas a aritmética
+pura injetada.
+
+### O falsificador do jitter — a proteção que o DoD pede, mostrando o que ela rejeita
+
+`test_the_real_random_source_is_not_hardcoded_to_the_same_value` chama `sample_uniform()` 50
+vezes e recusa se todas caírem no mesmo valor (`len(draws) > 1`). Mutação manual, revertida em
+seguida (`git diff` conferido vazio depois):
+
+| mutante | comando | resultado |
+|---|---|---|
+| `sample_uniform`: `return random.random()` → `return 0.42` (hardcoded) | `pytest -q tests/sentimento/test_jitter.py -k real_random_source_is_not_hardcoded` | **1 failed** — `len(draws) == 1`, exatamente o defeito que o DoD pede para rejeitar |
+| `record_failure`: remove `kind.trips_immediately or` (só threshold genérico) | `pytest -q tests/sentimento/test_circuit_breaker.py -k first_occurrence` | **2 failed** — `RATE_LIMITED`/`SERVER_ERROR` deixam de abrir o circuito na primeira falha |
+
+Os dois mutantes revertidos, árvore reconferida (`git status --short` limpo antes de cada um).
+
+### Comandos rodados e resultado
+
+`bash backend/scripts/lint.sh` → limpo (`ruff check`/`format --check`/`mypy --strict`, 189
+arquivos). `bash backend/scripts/test.sh` → **rc=0**, `1064 passed, 3 warnings` (588 s) — os 3
+`ResourceWarning` são o mesmo achado pré-existente já nomeado na seção de `T-03.11`, não desta
+task. Cobertura total **97,84%** — `domain 99,8%` (meta 90%, `2111/2115`) · `use_cases 100%`
+(meta 80%) · `infra 95,1%` (meta 70%); `jitter.py` e `quota_circuit_broker.py` fecham em
+**100%**, `circuit_breaker.py` em **97%** (2 linhas: uma branch defensiva inalcançável do
+`InvalidCircuitBreakerError` de tipo, guardada pelo próprio `__post_init__` do dataclass, e uma
+linha de `__post_init__` de `CircuitBreakerState` já coberta pelo caminho irmão). `bash
+backend/scripts/boundaries.sh` → `3 kept, 0 broken` (129 arquivos, 583 dependências) —
+`circuit_breaker.py`/`jitter.py`/`quota_circuit_broker.py` vivem em `domain`, não importam
+`socket`/`ssl`/outro contexto. `harness rules --mode sweep --changed-only` → **rc=0**, nenhum
+achado sobre os 6 arquivos desta task (3 de produção, 3 de teste).
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Não abre um novo consumidor real.** Nenhum CLI/use case novo chama `QuotaCircuitBroker` —
+  o handoff pede o broker (`domain/`), não a fiação de um cliente HTTP concreto sobre ele; isso
+  é escopo de quem for consumir `binance-futures-data`/`coinalyze` em regime (fora de `07.9`).
+- **Não decide os números de produção** (`failure_threshold`, `cooldown_seconds`, `spread`) —
+  são parâmetros do chamador; nenhum valor aqui é apresentado como calibrado contra tráfego real.
+- **Não persiste o estado do circuito entre processos.** `CircuitBreakerState` é um valor puro em
+  memória; um broker compartilhado entre processos (o cenário de thundering herd que o jitter
+  mitiga) não tem, ainda, um armazenamento comum — cada processo mede sua própria série de falhas.
