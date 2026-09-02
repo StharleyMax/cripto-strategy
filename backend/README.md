@@ -2460,13 +2460,15 @@ DUAS vezes — uma em `verified_digest_source` (decide dedupe), outra dentro de 
 vigiado por uma asserção de ordem de chamada (`test_verified_edge_call_sites.py`) e está fora do
 escopo desta task — `T-02.4a` é dona daquele contrato, não `T-07.3`.
 
-`bash backend/scripts/test.sh`: **1108 passed**, cobertura **97,83%** — domain **99,9%** (meta
-90%), use_cases **100,0%** (meta 80%), infra **95,4%** (meta 70%, piso OK). **25 testes NOVOS**
+`bash backend/scripts/test.sh` **pós-merge com `origin/master@21a5f1e`** (que trouxe `T-07.4`
+Redis Streams e `T-07.7` circuit breaker, sem conflito de código com esta task): **1147
+passed**, cobertura **97,44%** — domain **99,8%** (meta 90%, `2245/2249`), use_cases **100,0%**
+(meta 80%), infra **95,0%** (meta 70%, piso OK). **25 testes NOVOS desta task**
 `[MEDIDO: pytest --collect-only -q sobre as 4 suítes novas → 7+2+10+6]`, mais ajustes de fixture
 (sem teste novo) em `test_dump_etl_cli_surface.py`/`test_dump_ingest_edge.py` para que o corpo
 sintético de cada partição pare de colidir por conteúdo com o das demais. `lint.sh` limpo (`ruff
-check`/`format --check`/`mypy --strict`). `boundaries.sh`: **3 kept, 0 broken** (138 arquivos,
-636 dependências). `natureza.sh`: universo 60 arquivos, 0 leituras de relógio.
+check`/`format --check`/`mypy --strict`, 212 arquivos). `boundaries.sh`: **3 kept, 0 broken**
+(144 arquivos, 656 dependências). `natureza.sh`: universo 63 arquivos, 0 leituras de relógio.
 `harness rules --mode sweep --changed-only`: **0 achados**.
 
 ### Escopo que esta task NÃO fecha, nomeado
