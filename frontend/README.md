@@ -445,3 +445,59 @@ respondida pelo **modelo** da escala de tempo (índice, `barSpacing`, `rightOffs
 da pane), calculado antes de qualquer chamada de pintura e sem nunca reler do canvas.
 Qualquer medição que dependa de **pixels pintados** — cor, sobreposição de discos (`D8.12`),
 texto do eixo — **não** pode usar este stub.
+
+---
+
+## 8. `src/app/knowledge-time-bundle.ts` — o contrato de URL de `T-05.8` (2026-09-02)
+
+`T-05.8` (`CST-42`, componente `web`) escreve o que `item 5.6` do plano `05` e `DoD D5.4`
+pedem: `knowledge_time` na URL, o bundle de parâmetros **é** a URL (nenhuma tabela/CRUD de
+preset), e `COMO EM T` sobrevive à navegação até o operador voltar explicitamente para
+`AO VIVO`. É contrato de **estado/roteamento**, não de pixel — o `ui-designer` verificou
+que a `S2` canônica já materializa o sintoma visível de `D2` estruturalmente (par
+fill+borda migrando entre os dois `<span>` do chrome), e isso está fora do mandato dele
+(`docs/context/plataforma-dados/gates/T-05.8-design.md`).
+
+```bash
+npm --prefix frontend run test:app   # 13 testes, node --test 'src/app/*.test.ts'
+```
+
+`Bundle` é um discriminated union (`LiveBundle | AsOfBundle`): `knowledgeTime` é campo
+OBRIGATÓRIO em `AsOfBundle` e **inexistente** por tipo em `LiveBundle` — voltar para
+`AO VIVO` (`returnToLive`) não tem como carregar `knowledge_time` escondido, porque o
+tipo de retorno não tem onde guardá-lo. `decodeBundle` reforça isso na leitura: uma URL
+com `mode=live` e o parâmetro `t` ainda presente é **recusada** (não descartada em
+silêncio) — é exatamente o retrocesso sem sintoma que `D5.4` proíbe como teste negativo
+obrigatório, virado impossível de representar em vez de apenas testado.
+
+### O AVISO da `§5` já não se aplica — medido ANTES desta task, não por ela
+
+`[MEDIDO 2026-09-02, `git stash -u` + `harness rules --mode sweep --format ndjson`,
+árvore em `07193e6`, ANTES de qualquer arquivo de `T-05.8`]` — saída **vazia**, `rc=0`.
+O `[AVISO] web-fullstack.browser-test-file-present` que a `§5` documentou como "aceso de
+propósito" já **não** aparece nessa árvore: `T-08.2` (`src/charts/*.test.ts`) já havia
+nascido antes de `T-05.8` e já satisfazia a regra. **Este achado não é desta task** — está
+registrado aqui porque `T-05.8` é quem primeiro precisou reler a `§5` para não repetir o
+erro que ela proíbe ("plantar um `.test.tsx` vazio").
+
+### O que `T-05.8` de fato mudou no sweep
+
+`[MEDIDO 2026-09-02, `harness rules --mode sweep --format ndjson`, árvore com os dois
+arquivos desta task]` — **1 achado, severidade `warn`, 0 `block`**:
+
+```
+web-fullstack.hardcoded-url  frontend/src/app/knowledge-time-bundle.test.ts:22
+  "endereco absoluto fixo no codigo do navegador: leia-o da configuracao de ambiente"
+```
+
+É o literal `https://painel.local/simbolo` usado como `base` sintético para montar
+`URL` nos testes — nenhum host é contatado. **Não foi suprimido nem escondido**: é
+severidade `warn` (fora do conjunto de `harness rules list --severity block`, 7 regras),
+e nenhuma allowlist foi declarada para calá-lo — o mesmo motivo que a `§5-bis` já dá para
+não consertar comportamento de ferramenta de terceiro por conta própria. Dono: quem
+trouxer a aplicação Next real e decidir de onde vem a base de URL em teste.
+
+**`[test_cmd.web]` continua NÃO declarado** — mesmo motivo já registrado nas `§4`/`§7`:
+`test_cmd` não é lido por portão nenhum. O script `npm --prefix frontend run test:app`
+existe pelo mesmo motivo que `test:charts` existe: é o comando que o `builder`/`qa` rodam
+hoje, não uma declaração de política.
