@@ -687,7 +687,7 @@ tracker = { provider = "jira", id = "CST-41", url = "https://conversationhub.atl
 id = "T-05.8"
 title = "[web] 05 · knowledge_time na URL; o bundle E a URL, nao um CRUD; COMO EM T sobrevive a navegacao"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T11:28:27Z @ c36d584e39f9af575f0b833e202f6e1a17464f4a (PR #66)
 phase = "05"
 depends_on = ["T-04.4"]
 refs = ["SPEC-001 §7", "plano 05 item 5.6", "DoD D5.4", "teste negativo obrigatorio"]
@@ -697,7 +697,7 @@ tracker = { provider = "jira", id = "CST-42", url = "https://conversationhub.atl
 id = "T-05.9"
 title = "[web] 05 · Transporte HTTP enderecavel por conteudo para o historico. Nenhum tick chega ao browser"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T11:54:19Z @ 42dfb7cf86fafd56a75fa3fd2da4bd95ecfa47e1 (PR #68, 2a rodada apos NEEDS_FIX)
 phase = "05"
 depends_on = ["T-04.4"]
 refs = ["ADR-005/D1", "plano 05 item 5.12", "DoD D5.8", "3.468 msg/s de pico medido"]
@@ -945,7 +945,7 @@ tracker = { provider = "jira", id = "CST-65", url = "https://conversationhub.atl
 id = "T-07.12"
 title = "[web] 07 · S1 console: janela_de_perda como FORMULA por serie, fila de ETL, orcamento aritmetico, GB/dia"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T16:20:09Z @ c90442ee2a0496f41648474f9906c426b7bb6ca6 (PR #74; design com 2 rodadas de gate ux-ui-mastery independente)
 phase = "07"
 depends_on = ["T-02.3", "T-05.8"]
 refs = ["SPEC-001 §6", "plano 07 item 7.13", "DoD D7.12", "DoD D7.13", "DoD D7.14", "DoD D7.15", "S1 NAO e o canal de alarme"]
@@ -955,7 +955,7 @@ tracker = { provider = "jira", id = "CST-66", url = "https://conversationhub.atl
 id = "T-07.13"
 title = "[web] 07 · S1 le pela consulta nomeada ingest_health_query — a MESMA de 02"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T17:13:58Z @ b482d28ad7eac9698412d0a9fe7873db485e7d20 (PR #77; gatilho de reabertura ADR-008/D3 disparou, registrado e nao decidido)
 phase = "07"
 depends_on = ["T-02.3", "T-07.12"]
 refs = ["ADR-008/D3", "ADR-008/DoD-3", "plano 07 item 7.14", "DoD D7.17 (falsificador da fase)", "unico teste que expoe duplicacao silenciosa"]
