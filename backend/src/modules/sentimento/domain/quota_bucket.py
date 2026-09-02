@@ -128,7 +128,7 @@ def bucket_by_identifier(identifier: str) -> QuotaBucket:
         if bucket.identifier == identifier:
             return bucket
     declared = ", ".join(sorted(candidate.identifier for candidate in KNOWN_BUCKETS))
-    raise UnknownBucketError(f"balde desconhecido: {identifier!r}; declarados: {declared}")
+    raise UnknownBucketError(f"unknown bucket: {identifier!r}; declared: {declared}")
 
 
 def blind_buckets() -> tuple[QuotaBucket, ...]:

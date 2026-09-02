@@ -24,7 +24,7 @@ class EtlBacklog:
     def __post_init__(self) -> None:
         """Reject an empty or repeated key at construction time."""
         if any(not key for key in self.keys):
-            raise InvalidBacklogError("chave vazia na janela declarada")
+            raise InvalidBacklogError("empty key in declared window")
         # DIVIDA FECHADA POR `T-03.10`, E O NUMERO QUE A EXIGIA AGORA EXISTE.
         #
         # A forma anterior era `self.keys.count(key)` DENTRO da comprehension — O(n^2) — e ela
@@ -55,7 +55,7 @@ class EtlBacklog:
         # alfabetica —, entao nenhum teste existente muda de expectativa.
         repeated = sorted(key for key, times in Counter(self.keys).items() if times > 1)
         if repeated:
-            raise InvalidBacklogError(f"chave repetida na janela declarada: {repeated}")
+            raise InvalidBacklogError(f"repeated key in declared window: {repeated}")
 
     @classmethod
     def of(cls, keys: Iterable[str]) -> EtlBacklog:
