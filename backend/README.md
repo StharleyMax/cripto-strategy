@@ -2479,3 +2479,76 @@ achado sobre os 6 arquivos desta task (3 de produção, 3 de teste).
 - **Não persiste o estado do circuito entre processos.** `CircuitBreakerState` é um valor puro em
   memória; um broker compartilhado entre processos (o cenário de thundering herd que o jitter
   mitiga) não tem, ainda, um armazenamento comum — cada processo mede sua própria série de falhas.
+
+## 📎 2026-09-02 por `T-07.2` — survivorship na borda de ingestão: `ACCEPTED_WITH_WARNING`, nunca `REJECTED`
+
+`CST-56`, `CA-F3-14`, `SPEC-001` §5.6, plano `07` item 7.3, DoD `D7.2`+`D7.6`. Um símbolo ausente
+do `exchangeInfo` CORRENTE mas presente no dump histórico não pode ser descartado na borda de
+ingestão — a SPEC é literal: *"NUNCA 'REJECTED', NUNCA zero linhas gravadas"*. **109 símbolos
+históricos são invisíveis hoje** — 21,6% do universo cripto-perp com histórico não existe mais no
+snapshot corrente (727 → 570) `[DOC: SPEC-001 §5.6]` — rejeitar apagaria esse histórico em silêncio.
+
+[`domain/dump_survivorship.py`](src/modules/sentimento/domain/dump_survivorship.py) (**novo**)
+fixa `SurvivorshipVerdict = Literal["ACCEPTED", "ACCEPTED_WITH_WARNING"]` — sem o terceiro membro
+`REJECTED` no tipo, a mesma técnica que `ClosedWindow` usa contra `D7.3`: não é uma convenção que
+`classify_symbol_survivorship` lembra de honrar, é uma forma que a função não consegue devolver
+fora dela. `current_exchange_info_symbols` chega como o MESMO `frozenset[str]` que
+`instrument_universe_snapshot.exchange_info_symbols` já produz (`T-02.1`) — nenhuma segunda
+representação de "`exchangeInfo` corrente" foi inventada, por instrução explícita do handoff.
+`build_survivorship_gap` monta a linha de `md.ingest_gap` que a SPEC pede ao lado do veredito,
+com `gap_class="SURVIVORSHIP_WARNING"` — o **segundo** membro da enumeração de `class` que
+`infra/metrics_csv_reader.py` já registrava como "em aberto" (`SOURCE_GAP_CLASS`) — e
+`n_missing=0`, deliberado: a janela inteira FOI capturada, o aviso é sobre pertencimento ao
+universo, não sobre um buraco na série.
+
+### `D7.2`, medido sobre dado real, não inventado
+
+`MATICUSDT` não é um exemplo sintético: é a ausência real que
+`test_instrument_universe_snapshot.py::test_d2_3_premium_index_names_three_symbols_exchange_info_does_not`
+já mede na MESMA fixture (`data/binance/rest/ei.json`, 872 símbolos, `[MEDIDO 2026-09-01]`).
+`test_dump_survivorship.py` reusa exatamente essa captura: confirma a ausência antes de
+classificar (`test_d7_2_maticusdt_absent_from_the_real_exchange_info_capture`), classifica e
+confere `ACCEPTED_WITH_WARNING` + `reason`, e faz o "GRAVOU, com aviso" da SPEC ponta a ponta —
+`IngestRun`+`IngestGap` persistidos pelo MESMO `SqliteIngestRecordStore` que `T-02.3`/`T-04.2` já
+provam durável, `n_written=288` (nunca zero) e o `md.ingest_gap` com `gap_class` novo.
+
+### O falsificador — a fronteira que `SPEC-001` §5.6 diz que NÃO generaliza
+
+`classify_page` (`oi_history_paginator.py`, `T-07.1`) tem seu PRÓPRIO `Verdict` com `REJECTED`
+(fim de histórico, ponto fora da janela) — eixo diferente, e ler `CA-F3-1` sem `CA-F3-14`
+generaliza fail-closed e planta survivorship, o erro que a SPEC nomeia explicitamente.
+`test_structural_falsifier_classify_symbol_survivorship_cannot_spell_rejected` prova, por AST
+sobre o corpo executável (docstring excluída), que nenhuma constante `"REJECTED"` é alcançável
+em `classify_symbol_survivorship` — e prova que o scanner MORDE: a mesma verificação sobre um
+mutante manual (`verdict=ACCEPTED` → `verdict="REJECTED"`) encontra a palavra, confirmando que a
+ausência no código real não é o scanner cego.
+
+### Comandos rodados e resultado
+
+`bash backend/scripts/lint.sh` → limpo (`ruff check`/`format --check`/`mypy --strict`, 200
+arquivos). `bash backend/scripts/test.sh` → **rc=0**, `1128 passed, 3 warnings` (286 s) — os 3
+`ResourceWarning` são o mesmo achado pré-existente já nomeado na seção de `T-03.11`. Cobertura
+total **97,49%** — `domain 99,8%` (meta 90%, `2239/2243`) · `use_cases 100%` (meta 80%) ·
+`infra 95,0%` (meta 70%); `dump_survivorship.py` fecha em **100%** (19 linhas, 2 branches).
+`bash backend/scripts/boundaries.sh` → `3 kept, 0 broken` (142 arquivos, 641 dependências) —
+`dump_survivorship.py` vive em `domain`, importa só `ingest_record.py` (mesma camada).
+`harness rules --mode sweep --changed-only` → **rc=0**, nenhum achado sobre os 2 arquivos desta
+task. **Achado de ambiente, não desta task:** `bash backend/scripts/test.sh` reprovava na
+COLETA por `ModuleNotFoundError: No module named 'fakeredis'` — dependência que `T-07.4` já
+declarou em `pyproject.toml`/`poetry.lock` (mesclado em `master` depois desta worktree ter sido
+criada) mas que o venv compartilhado ainda não tinha instalado; corrigido com
+`pip install fakeredis==2.37.1` (pin exato do lock) no MESMO venv que todas as worktrees
+compartilham, sem tocar `pyproject.toml`/`poetry.lock` — não é dívida desta task, é a instalação
+alcançando o que o lock já declarava.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Não escreve o pipeline de ingestão real** (ETL do S3, escritor único, dedupe por hash) —
+  isso é `T-07.3`/`T-07.4`/`T-07.5`; esta task é a DECISÃO pura de `domain`, exercida com um
+  `IngestRun`/`IngestGap` de teste, não com um caminho de produção que a chama.
+- **Não mede novamente os 109 símbolos/21,6%** — esse número já é `[MEDIDO]` alhures
+  (`SPEC-001` §5.6, `tasks_review.md`); o que esta task prova é a DECISÃO sobre um caso real
+  (`MATICUSDT`) tirado da mesma fixture de `T-02.1`, não uma nova varredura S3 × `exchangeInfo`.
+- **Não decide `universe_at`** (união de duas testemunhas, `T-07.8`) — a "universo corrente"
+  aqui é só `exchangeInfo` de HOJE, o literal da SPEC (*"ausente do exchangeInfo CORRENTE"*),
+  não a reconstrução point-in-time que `T-07.8` faz depender desta task.
