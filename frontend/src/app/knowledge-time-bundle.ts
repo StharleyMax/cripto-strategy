@@ -61,7 +61,7 @@ export type Bundle = LiveBundle | AsOfBundle;
 /** Ordem canonica dos parametros de query — estavel, para que o mesmo bundle produza sempre
  * a mesma string de URL (pre-requisito para comparar/hashear URLs no futuro sem surpresa de
  * ordenacao de `Map`). */
-const PARAM_ORDER = ["symbol", "from", "to", "mode", "t"] as const;
+const PARAM_ORDER = ["symbol", "from", "to", "mode", "asOf"] as const;
 
 function assertIsoInstant(value: string, field: string): void {
   if (value === "" || Number.isNaN(Date.parse(value))) {
@@ -105,7 +105,7 @@ export function encodeBundle(bundle: Bundle): URLSearchParams {
     from: bundle.window.from,
     to: bundle.window.to,
     mode: bundle.mode,
-    t: bundle.mode === "as_of" ? bundle.knowledgeTime : undefined,
+    asOf: bundle.mode === "as_of" ? bundle.knowledgeTime : undefined,
   };
   const params = new URLSearchParams();
   for (const key of PARAM_ORDER) {
@@ -128,7 +128,7 @@ export function decodeBundle(params: URLSearchParams): Bundle {
   const from = params.get("from");
   const to = params.get("to");
   const mode = params.get("mode");
-  const knowledgeTime = params.get("t");
+  const knowledgeTime = params.get("asOf");
 
   if (symbol === null) throw new Error('bundle invalido: parametro "symbol" ausente na URL');
   if (from === null) throw new Error('bundle invalido: parametro "from" ausente na URL');
@@ -140,7 +140,7 @@ export function decodeBundle(params: URLSearchParams): Bundle {
   if (mode === "live") {
     if (knowledgeTime !== null) {
       throw new Error(
-        'bundle invalido: mode="live" mas o parametro "t" (knowledge_time) ainda esta na URL — ' +
+        'bundle invalido: mode="live" mas o parametro "asOf" (knowledge_time) ainda esta na URL — ' +
           "isto e o retrocesso silencioso que D5.4 proibe: voltar para AO VIVO tem de apagar " +
           "knowledge_time, nunca carrega-lo escondido.",
       );
@@ -151,7 +151,7 @@ export function decodeBundle(params: URLSearchParams): Bundle {
   }
 
   if (knowledgeTime === null) {
-    throw new Error('bundle invalido: mode="as_of" exige o parametro "t" (knowledge_time), e ele esta ausente');
+    throw new Error('bundle invalido: mode="as_of" exige o parametro "asOf" (knowledge_time), e ele esta ausente');
   }
   const bundle: AsOfBundle = { mode: "as_of", symbol, window: { from, to }, knowledgeTime };
   assertValidBundle(bundle);

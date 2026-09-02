@@ -24,23 +24,23 @@ const TEST_BASE_URL = "https://painel.local/simbolo";
 const LIVE: LiveBundle = { mode: "live", symbol: "BTCUSDT", window: WINDOW };
 const AS_OF: AsOfBundle = { mode: "as_of", symbol: "BTCUSDT", window: WINDOW, knowledgeTime: T };
 
-test("encodeBundle/decodeBundle round-trips a AO VIVO bundle sem parametro t", () => {
+test("encodeBundle/decodeBundle round-trips a AO VIVO bundle sem parametro asOf", () => {
   const params = encodeBundle(LIVE);
   assert.equal(params.get("mode"), "live");
-  assert.equal(params.has("t"), false, "AO VIVO nao pode carregar knowledge_time na URL");
+  assert.equal(params.has("asOf"), false, "AO VIVO nao pode carregar knowledge_time na URL");
   assert.deepEqual(decodeBundle(params), LIVE);
 });
 
 test("encodeBundle/decodeBundle round-trips um bundle COMO EM T, com knowledge_time na URL", () => {
   const params = encodeBundle(AS_OF);
   assert.equal(params.get("mode"), "as_of");
-  assert.equal(params.get("t"), T, "knowledge_time tem de estar no parametro t da URL — item 5.6");
+  assert.equal(params.get("asOf"), T, "knowledge_time tem de estar no parametro asOf da URL — item 5.6");
   assert.deepEqual(decodeBundle(params), AS_OF);
 });
 
 test("bundleUrl/parseBundleFromUrl fecham o laco: o bundle so existe como URL", () => {
   const url = bundleUrl(TEST_BASE_URL, AS_OF);
-  assert.match(url.toString(), /[?&]t=2023-10-26T14%3A30%3A00Z/);
+  assert.match(url.toString(), /[?&]asOf=2023-10-26T14%3A30%3A00Z/);
   assert.deepEqual(parseBundleFromUrl(url), AS_OF);
 });
 
@@ -78,9 +78,9 @@ test("returnToLive descarta knowledgeTime por TIPO, nao por convencao", () => {
   assert.equal("knowledgeTime" in back, false, "o campo nao pode sobreviver nem como undefined");
 });
 
-test("returnToLive produz uma URL sem o parametro t — o sintoma e observavel na propria URL", () => {
+test("returnToLive produz uma URL sem o parametro asOf — o sintoma e observavel na propria URL", () => {
   const url = bundleUrl(TEST_BASE_URL, returnToLive(AS_OF));
-  assert.equal(url.searchParams.has("t"), false);
+  assert.equal(url.searchParams.has("asOf"), false);
   assert.equal(url.searchParams.get("mode"), "live");
 });
 
@@ -91,20 +91,20 @@ test("navegar depois de voltar para AO VIVO nao ressuscita knowledge_time (sem e
   assert.equal("knowledgeTime" in afterHop, false);
 });
 
-test("decodeBundle RECUSA mode=live com t ainda presente — e o bug que D5.4 proibe, tornado impossivel", () => {
+test("decodeBundle RECUSA mode=live com asOf ainda presente — e o bug que D5.4 proibe, tornado impossivel", () => {
   const params = new URLSearchParams({
     symbol: "BTCUSDT",
     from: WINDOW.from,
     to: WINDOW.to,
     mode: "live",
-    t: T,
+    asOf: T,
   });
   assert.throws(() => decodeBundle(params), /retrocesso silencioso que D5.4 proibe/);
 });
 
-test("decodeBundle RECUSA mode=as_of sem t — COMO EM T sem knowledge_time nao e um estado valido", () => {
+test("decodeBundle RECUSA mode=as_of sem asOf — COMO EM T sem knowledge_time nao e um estado valido", () => {
   const params = new URLSearchParams({ symbol: "BTCUSDT", from: WINDOW.from, to: WINDOW.to, mode: "as_of" });
-  assert.throws(() => decodeBundle(params), /exige o parametro "t"/);
+  assert.throws(() => decodeBundle(params), /exige o parametro "asOf"/);
 });
 
 test("decodeBundle RECUSA mode fora do vocabulario fechado", () => {
