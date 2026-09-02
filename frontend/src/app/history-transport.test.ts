@@ -156,6 +156,31 @@ test("assertNoTickLevelFields RECUSA quantity por trade mesmo sem price no mesmo
   assert.throws(() => assertNoTickLevelFields(poisoned), /"quantity"/);
 });
 
+// Os 4 nomes a seguir (agg_trade_id, first_trade_id, last_trade_id, transact_time) so
+// apareciam antes no teste coletivo de MUTAÇÃO (is_buyer_maker) e no cabecalho do dump citado
+// no comentario de TICK_LEVEL_FIELD_NAMES — nenhum tinha teste que o planta ISOLADO. Sem isto,
+// remover qualquer um deles do Set (8 nomes) nao reprovava nenhum teste (QA T-05.9, mutacao C).
+
+test("assertNoTickLevelFields RECUSA agg_trade_id sozinho — falsificador literal da ADR", () => {
+  const poisoned = { bucket_open_ts: "2026-08-24T00:00:00Z", agg_trade_id: 3415253153 };
+  assert.throws(() => assertNoTickLevelFields(poisoned), /"agg_trade_id"/);
+});
+
+test("assertNoTickLevelFields RECUSA first_trade_id sozinho — falsificador literal da ADR", () => {
+  const poisoned = { bucket_open_ts: "2026-08-24T00:00:00Z", first_trade_id: 3415253100 };
+  assert.throws(() => assertNoTickLevelFields(poisoned), /"first_trade_id"/);
+});
+
+test("assertNoTickLevelFields RECUSA last_trade_id sozinho — falsificador literal da ADR", () => {
+  const poisoned = { bucket_open_ts: "2026-08-24T00:00:00Z", last_trade_id: 3415253200 };
+  assert.throws(() => assertNoTickLevelFields(poisoned), /"last_trade_id"/);
+});
+
+test("assertNoTickLevelFields RECUSA transact_time sozinho — falsificador literal da ADR", () => {
+  const poisoned = { bucket_open_ts: "2026-08-24T00:00:00Z", transact_time: 1787270400123 };
+  assert.throws(() => assertNoTickLevelFields(poisoned), /"transact_time"/);
+});
+
 test("assertNoTickLevelFields e MUTAÇÃO: um envelope legítimo que passa deixa de passar ao ganhar 1 campo de tick", () => {
   const envelope: Record<string, unknown> = {
     bucket_open_ts: "2026-08-24T00:00:00Z",
@@ -191,6 +216,19 @@ test("assertBucketSpacingWithinInterval RECUSA um tick disfarçado de bucket ext
   ];
   assert.throws(
     () => assertBucketSpacingWithinInterval(withTick, 5 * 60_000),
+    /taxa acima de max\(1 Hz, 1\/TF\)/,
+  );
+});
+
+test("assertBucketSpacingWithinInterval RECUSA espaçamento a 0,7×intervalMs — mata limiar frouxado para 2× (QA T-05.9, mutacao B)", () => {
+  // intervalMs = 60_000 (1 min); espaçamento = 42_000ms = 0,7×intervalMs. Fica ESTRITAMENTE
+  // entre 0,5×intervalMs (30_000ms, o valor que uma mutacao "spacing < intervalMs/2" ainda
+  // aceitaria) e 1×intervalMs (60_000ms) — a faixa que os casos de violacao pre-existentes
+  // (400ms/300000ms e 500ms/60000ms, ambos ~100-750x menores) nunca exercitavam.
+  const intervalMs = 60_000;
+  const spacedAt0_7x = ["2026-08-24T00:00:00Z", "2026-08-24T00:00:42.000Z"];
+  assert.throws(
+    () => assertBucketSpacingWithinInterval(spacedAt0_7x, intervalMs),
     /taxa acima de max\(1 Hz, 1\/TF\)/,
   );
 });
