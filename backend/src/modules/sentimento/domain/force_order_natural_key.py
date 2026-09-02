@@ -74,8 +74,8 @@ def extract_force_order_natural_key(raw: str) -> ForceOrderNaturalKey:
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as failure:
         raise ForceOrderKeyExtractionError(
-            "raw !forceOrder@arr message nao tem os cinco campos da chave natural B2 "
-            f"(symbol/side/price/orig_qty/trade_time) declarada em ADR-004: {failure!r}"
+            "raw !forceOrder@arr message does not have the five natural-key B2 fields "
+            f"(symbol/side/price/orig_qty/trade_time) declared in ADR-004: {failure!r}"
         ) from failure
 
 

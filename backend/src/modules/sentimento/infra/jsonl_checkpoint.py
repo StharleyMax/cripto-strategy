@@ -83,7 +83,7 @@ class JsonlCheckpoint:
             try:
                 payload = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise CorruptedCheckpointError(f"linha {numero} ilegivel em {self._path}") from exc
+                raise CorruptedCheckpointError(f"unreadable line {numero} in {self._path}") from exc
             keys.append(self._key_of(payload, numero))
         return tuple(keys)
 
@@ -97,17 +97,17 @@ class JsonlCheckpoint:
         """
         if not isinstance(payload, dict):
             raise CorruptedCheckpointError(
-                f"linha {number} de {self._path} e {type(payload).__name__}, nao um objeto"
+                f"line {number} of {self._path} is {type(payload).__name__}, not an object"
             )
         if "key" not in payload:
             raise CorruptedCheckpointError(
-                f"linha {number} de {self._path} nao tem o campo 'key': {sorted(payload)}"
+                f"line {number} of {self._path} has no 'key' field: {sorted(payload)}"
             )
         key = payload["key"]
         if not isinstance(key, str) or not key:
             raise CorruptedCheckpointError(
-                f"linha {number} de {self._path} traz 'key' = {key!r} "
-                f"({type(key).__name__}); so uma cadeia nao vazia nomeia trabalho concluido"
+                f"line {number} of {self._path} carries 'key' = {key!r} "
+                f"({type(key).__name__}); only a non-empty string names completed work"
             )
         return key
 

@@ -457,7 +457,7 @@ def test_the_cli_refuses_a_corrupted_evidence_line_instead_of_reading_past_it(
     """A line that is not even valid JSON raises — the recorder never writes this shape."""
     evidence = tmp_path / "raw.jsonl"
     evidence.write_text("{not json at all\n", encoding="utf-8")
-    with pytest.raises(MalformedEvidenceLineError, match="linha 1"):
+    with pytest.raises(MalformedEvidenceLineError, match="line 1"):
         main(["--evidence", str(evidence)])
 
 

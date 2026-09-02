@@ -152,23 +152,25 @@ def parse_force_order_message(raw: str) -> CapturedLiquidationOrder:
         payload = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError) as failure:
         raise MalformedForceOrderMessageError(
-            f"raw nao e JSON valido: {type(failure).__name__}: {failure}"
+            f"raw is not valid JSON: {type(failure).__name__}: {failure}"
         ) from failure
     if not isinstance(payload, dict) or "o" not in payload:
         shape = sorted(payload) if isinstance(payload, dict) else type(payload).__name__
-        raise MalformedForceOrderMessageError(f"mensagem sem campo 'o': {shape}")
+        raise MalformedForceOrderMessageError(f"message missing 'o' field: {shape}")
     order = payload["o"]
     if not isinstance(order, dict):
         raise MalformedForceOrderMessageError(
-            f"'o' esperado como objeto, veio {type(order).__name__}"
+            f"expected 'o' as an object, got {type(order).__name__}"
         )
     missing = [key for key in ("s", "S", "l", "T") if key not in order]
     if missing:
-        raise MalformedForceOrderMessageError(f"'o' sem campo(s) {missing}: {sorted(order)}")
+        raise MalformedForceOrderMessageError(f"'o' missing field(s) {missing}: {sorted(order)}")
     try:
         transact_time = int(order["T"])
     except (TypeError, ValueError) as failure:
-        raise MalformedForceOrderMessageError(f"'o.T' nao e inteiro: {order['T']!r}") from failure
+        raise MalformedForceOrderMessageError(
+            f"'o.T' is not an integer: {order['T']!r}"
+        ) from failure
     return CapturedLiquidationOrder(
         symbol=str(order["s"]),
         side=str(order["S"]),
@@ -192,13 +194,13 @@ def coinalyze_daily_liquidation_quantity(point: DailyPoint) -> Decimal:
     missing = [key for key in ("l", "s") if key not in point.raw]
     if missing:
         raise MalformedCoinalizeResponseError(
-            f"ponto de liquidacao sem campo(s) {missing}: {sorted(point.raw)}"
+            f"liquidation point missing field(s) {missing}: {sorted(point.raw)}"
         )
     try:
         return Decimal(str(point.raw["l"])) + Decimal(str(point.raw["s"]))
     except InvalidOperation as failure:
         raise MalformedCoinalizeResponseError(
-            f"'l'/'s' nao leem como Decimal: l={point.raw['l']!r} s={point.raw['s']!r}"
+            f"'l'/'s' do not read as Decimal: l={point.raw['l']!r} s={point.raw['s']!r}"
         ) from failure
 
 
@@ -251,13 +253,13 @@ def classify_daily_reconciliation(
     """
     if captured_quantity < 0 or coinalyze_quantity < 0:
         raise ValueError(
-            f"quantidade negativa nao e liquidacao valida: captured={captured_quantity} "
+            f"negative quantity is not a valid liquidation: captured={captured_quantity} "
             f"coinalyze={coinalyze_quantity}"
         )
     if not Decimal(0) < near_one_lower_bound <= Decimal(1) <= near_one_upper_bound:
         raise ValueError(
-            f"faixa 'perto de 1' invalida: near_one_lower_bound={near_one_lower_bound} "
-            f"near_one_upper_bound={near_one_upper_bound} (exige 0 < lower <= 1 <= upper)"
+            f"invalid 'near 1' band: near_one_lower_bound={near_one_lower_bound} "
+            f"near_one_upper_bound={near_one_upper_bound} (requires 0 < lower <= 1 <= upper)"
         )
     if coinalyze_quantity == 0 and captured_quantity == 0:
         return None, CoinalizeStreamHypothesis.NO_LIQUIDATION_EITHER_SIDE
@@ -306,8 +308,8 @@ def reconcile_daily_liquidation(
             quantity = Decimal(order.last_filled_quantity)
         except InvalidOperation as failure:
             raise MalformedForceOrderMessageError(
-                f"{symbol}/{day}: last_filled_quantity {order.last_filled_quantity!r} nao le "
-                f"como Decimal"
+                f"{symbol}/{day}: last_filled_quantity {order.last_filled_quantity!r} does not "
+                f"read as Decimal"
             ) from failure
         captured_totals[day] = captured_totals.get(day, Decimal(0)) + quantity
 
@@ -317,7 +319,7 @@ def reconcile_daily_liquidation(
         day = point.date_utc.isoformat()
         if day in seen_days:
             raise MalformedCoinalizeResponseError(
-                f"{symbol}/{day}: mais de um ponto Coinalyze `daily` para o mesmo dia"
+                f"{symbol}/{day}: more than one Coinalyze `daily` point for the same day"
             )
         seen_days.add(day)
         coinalyze_quantity = coinalyze_daily_liquidation_quantity(point)

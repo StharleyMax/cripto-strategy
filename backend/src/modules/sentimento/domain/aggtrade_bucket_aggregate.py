@@ -168,10 +168,10 @@ def require_contiguous(trades: Sequence[AggTradeBucketTrade]) -> None:
     if gaps:
         first = gaps[0]
         raise AggTradeGapError(
-            f"{len(gaps)} discontinuidade(s) de agg_id antes do fold em bucket — a primeira: "
+            f"{len(gaps)} agg_id discontinuity(ies) before folding into buckets — the first: "
             f"{first.from_agg_id} -> {first.to_agg_id} (n_missing={first.n_missing}). "
-            f"ADR-001/6 soma DIRETO do stream; agregar por cima de um buraco publicaria um "
-            f"total que exclui em silencio o que caiu nele"
+            f"ADR-001/6 sums DIRECTLY from the stream; aggregating over a gap would publish a "
+            f"total that silently excludes what fell into it"
         )
 
 

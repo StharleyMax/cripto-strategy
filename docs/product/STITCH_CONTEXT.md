@@ -1,8 +1,9 @@
 # STITCH_CONTEXT.md — cripto-strategy
 
-**Data:** 2026-08-28 (**6ª** revisão — promoção da `S2` autorizada pelo owner) · **Projeto Stitch:** `projects/9264019151773162472` ("crypto", `TEXT_TO_UI_PRO`, PRIVATE, DESKTOP)
-**Telas no Stitch hoje:** **3** `[MEDIDO: get_project.screenInstances + list_screens, 2026-08-28]`
+**Data:** 2026-09-02 (**7ª** revisão — `S1` nasce e é aprovada pelo gate independente) · **Projeto Stitch:** `projects/9264019151773162472` ("crypto", `TEXT_TO_UI_PRO`, PRIVATE, DESKTOP)
+**Telas no Stitch hoje:** **7** `[MEDIDO: list_screens, 2026-09-02]` — 3 de `S2` (ver §4.1.0) + 4 de `S1` (ver §4.2.0)
 **A `S2` CANÔNICA É `8174234965cd4ffbacfb7b2a0a61a427`** — `S2 Símbolo - Operacional Core Rev. B` · **APROVADO, 0 reprovações** `[MEDIDO: python3 scripts/verify_screen.py revB.html ⇒ exit 0]`. As outras duas estão **REVOGADAS**. Ver §4.1.0.
+**A `S1` CANÔNICA É `c0fc0210272f42a1ae29b6364e68d2e4`** — `S1 Console — Diagnóstico Operacional (Rev. B)` · **APROVADO COM CONDIÇÃO pelo gate independente `ux-ui-mastery`, condição fechada** `[MEDIDO: docs/context/plataforma-dados/gates/T-07.12-design.md + T-07.12-ux-critique.md, greps no HTML baixado]`. As outras três estão **REVOGADAS**. Ver §4.2.0.
 **Design systems:** **4** `[MEDIDO: list_design_systems]` — ver §5.1 · **e um quinto tema que não é asset: `project.designTheme`**
 
 > ### ⛔ TARJA de 2026-08-28 (6ª revisão): a linha de telas dizia **2**, e nomeava como únicas duas telas que hoje estão as DUAS revogadas
@@ -405,11 +406,81 @@ do dump com **~30,3 h de idade** e cobre 4 dias **com um buraco real**.
 **Não faz:** zero algoritmo, zero limiar, zero "sinal". A caixa que o owner desenha é **entrada** da fase
 seguinte, não saída desta.
 
-### 4.2 S1 — console de coleta e retenção · `[NÃO EXISTE]` · fase `07`
+### 4.2 S1 — console de coleta e retenção · **EXISTE NO STITCH** `[MEDIDO 2026-09-02]` · fase `07`
 
 **Job:** *o que está sendo gravado, o que parou, quanto disso é perda permanente.*
 **⚠️ S1 NÃO é canal de alarme.** É onde se **diagnostica depois de ser avisado** — "coletor parado" é P1
 com orçamento de 24 h e **não pode depender de uma aba aberta**.
+
+#### 4.2.0 QUAL DAS QUATRO TELAS É A `S1` — leia isto antes de qualquer coisa `[MEDIDO 2026-09-02]`
+
+**A `S1` é `c0fc0210272f42a1ae29b6364e68d2e4`.** As outras três existem, não podem ser apagadas
+(mesmo motivo de §4.1.4 — o MCP não expõe `delete_screen` nem `rename_screen`), e estão revogadas.
+
+| `screenId` | título no canvas | rodada | gate | estado |
+|---|---|---|---|---|
+| **`c0fc0210272f42a1ae29b6364e68d2e4`** | `S1 Console — Diagnóstico Operacional (Rev. B)` | 3ª edição | `/design-critique` **APROVADO COM CONDIÇÃO → condição fechada** (2 Must-Fix + 1 Should-Fix verificados por `grep`) | ✅ **CANÔNICA** |
+| `a0bea398e8794689b87452cb2626d3d5` | `S1 Console — Diagnóstico Operacional (Rev. A)` | 2ª edição | `/design-critique` — 2 Must-Fix, 1 Should-Fix | ⛔ REVOGADA — superada pela `Rev. B` |
+| `8d8d58da6472459abb0aba4143d1bf82` | `S1 Console — Diagnóstico Operacional` | geração inicial, tentativa 1 | autoavaliação `ui-designer` (sem sino, pt-BR) — não fechava `D7.14` nem tinha o seletor removido | ⛔ REVOGADA — base da `Rev. A` |
+| `f950d52a464c45cbac39d8a56c39122c` | `S1 Console — Diagnóstico Operacional` | geração inicial, tentativa 2 | autoavaliação `ui-designer` — **desqualificada**: sino de notificação real + microcopy em inglês (`LIVE`, `AS AT T`, `Documentation`, `API Status`) | ⛔ REVOGADA — nunca editada |
+
+**Por que existem duas gerações iniciais:** `generate_screen_from_text` retornou `"operation timed
+out"` no client **duas vezes seguidas**, mas **ambas completaram no servidor** — `list_screens`
+revelou as duas telas depois. A tentativa 1 é a que não tem sino nem microcopy em inglês; a
+tentativa 2 tem os dois, e por isso nunca foi editada. Histórico completo, com todos os `grep`
+que decidiram cada corte: `docs/context/plataforma-dados/gates/T-07.12-design.md`.
+
+##### ⇒ A REGRA DE IDENTIDADE — a mesma de §4.1.0, e vale aqui pelo mesmo motivo
+
+**A identidade da `S1` é o `screenId`, não o título.** `edit_screens` auto-incrementou o título de
+`"S1 Console — Diagnóstico Operacional"` para `"(Rev. A)"` e depois `"(Rev. B)"` — a mesma mecânica
+de auto-incremento por tentativa (não por mérito) que §4.1.0 já mediu para `S2`. O discriminante
+executável aqui **não é** `verify_screen.py` (calibrado para candles/painéis de preço — ver a nota
+de escopo abaixo) — é o par de relatórios em `docs/context/plataforma-dados/gates/`, com o `grep`
+exato que cada achado usou.
+
+**Identidade medida — da tela CANÔNICA** `[MEDIDO 2026-09-02]`:
+
+| campo | valor |
+|---|---|
+| `screenId` | **`c0fc0210272f42a1ae29b6364e68d2e4`** |
+| título | `S1 Console — Diagnóstico Operacional (Rev. B)` (escolhido pela ferramenta) |
+| `deviceType` | `DESKTOP` |
+| render | `2560 × 2048` |
+| arquivo | `projects/…/files/65ff7b0f690240c588fd6a2536084c84` |
+| design system | `assets/0334450534074a98ba400e46f5b69dc7` (`Quant-Precision Core` — o mesmo que governou a `S2` canônica) |
+| gate | `/design-critique` independente: **APROVADO COM CONDIÇÃO** → 2 Must-Fix + 1 Should-Fix fechados na `Rev. B`, verificados por `grep` no HTML baixado (não por autoavaliação) |
+
+#### 4.2.1 O que a tela materializada ACERTOU — medido no HTML, não estimado
+
+| acerto | evidência no HTML |
+|---|---|
+| **`D17` / item 5 do §9 (severidade sem cor) de verdade** | 4 badges de status (`PARADO`/`ATIVO`/`ARQUIVO`/`PENDENTE`) usam o MESMO token neutro `bg-surface-border text-provenance-strong` — nenhum vermelho, nenhuma cor de alerta |
+| **linha "parou" no TOPO por posição, não por cor** | `<!-- Stopped (TOP) -->` no código + linha `/futures/data/*` fisicamente primeira na tabela, com glifo `stop_circle`, badge idêntico ao `ATIVO` |
+| **`D7.12` — `janela_de_perda` como fórmula, com o produto visível** | `"2.206 pts × 1m ≈ 1,5 dia"`, `"~2.000 pts × 5m ≈ 7,0 dias"`, `"3.052 pts × 1m ≈ 8 dias"` — não é resultado seco, é `pontos × intervalo` |
+| **`D7.12` — tags de exceção sem inventar número** | `[DOC-ONLY]` para a série `daily`, `"NÃO MEDIDA"` para o dump S3 |
+| **`D7.13` — trilho de resiliência escrito com o multiplicador** | `"T1m / SLO ~4.7x"`, `"T5m / SLO ~4.7x"` em toda linha ativa, inclusive a de liquidação (fechado na `Rev. B`) |
+| **`D7.14` — retenção anticorrelacionada, texto quase literal** | `"janela válida no regime atual, não garantida em cascata"`, dentro da célula de `JANELA_DE_PERDA` (posição corrigida na `Rev. B`) |
+| **`D7.15` — reconexão como rotina, não como erro** | painel "Reconexões e Rotina": log monoespaçado em `text-provenance-weak`, `WS drop`/`WS resume` cronometrados, sem badge de erro, sem ícone de alerta |
+| **ausência do sino de notificação, com o motivo registrado no próprio código** | `<!-- No trailing icons as per constraints, removing settings/notifications -->` |
+| **microcopy 100% pt-BR, `lang="pt-BR"`** | zero ocorrência de `LIVE`/`AS AT T`/`Documentation`/`API Status` nas quatro rodadas a partir da tentativa 1 |
+| **`aria-label` nos 6 links da side nav, espelhando `title`** | fechado na `Rev. B` — 6 pares `title="X"`/`aria-label="X"` idênticos |
+| **figuras tabulares, `JetBrains Mono` em todo numeral** | `tabular-nums` em toda célula de dado |
+| **chrome global correto para o escopo da tela** | seletor de símbolo/timeframe (`BTCUSDT`/`15m`, herdado da `S2`) foi **removido** na `Rev. A` — `S1` não é escopada por símbolo; `AO VIVO`/`COMO EM T`/`MAINNET`/`v2.4`/`UTC` preservados |
+
+#### 4.2.2 O que ainda NÃO está resolvido — registrado, não escondido
+
+| item | estado |
+|---|---|
+| ambiguidade do multiplicador `~4.7x` idêntico em `T1m` e `T5m` | achado 4 do `/design-critique`, **não bloqueante por decisão do coordenador** — pergunta para a fonte de dado antes de promover além desta rodada, não resolvida aqui |
+| selo de 4 campos (série/idade/procedência/completude) aplicado a numerais operacionais | `[NÃO SEI]`, aberto desde a 1ª geração — os números de `S1` (janela em dias, GB/dia, fila) são operacionais, não leituras de mercado, e é uma leitura razoável que o selo estrito não se aplica, mas não foi confirmada pelo gate |
+| console sem nenhuma ação por linha (restart, ver log bruto) | fora do escopo de `D7.12`–`D7.15` (nenhum DoD pede ação) — achado "Could-Improve" do `/design-critique`, não bloqueia |
+| superfície herdada fora das três canônicas (`#10131a`/`#0b0e15`, contraste **1,038** contra `#131722`) | **não é defeito novo desta tela** — é o mesmo drift já registrado em §5.2 para o asset `0334…` inteiro (`background` a 1,02–1,04 de `#131722`); corrigir é ato sobre o design system, fora do escopo de `T-07.12` |
+| `verify_screen.py` não cobre `S1` | o script mede candle/direção/selo de mercado — calibrado para `S2`. A maioria das reprovações que ele produz contra `S1` (`E2`/`E3a`/`E4` de candle, `P-preservacao` de features de `S2`) são **falsos negativos estruturais**, não achados. O gate real desta tela foi `/design-critique`, registrado em `docs/context/plataforma-dados/gates/T-07.12-ux-critique.md` |
+
+**Histórico completo da iteração** (as 4 rodadas, cada `grep` que decidiu cada corte, o texto
+integral do `/design-critique`): `docs/context/plataforma-dados/gates/T-07.12-design.md` e
+`docs/context/plataforma-dados/gates/T-07.12-ux-critique.md`.
 
 ### 4.3 S3 — inspetor de série · `[NÃO EXISTE]` · fase `06`
 
