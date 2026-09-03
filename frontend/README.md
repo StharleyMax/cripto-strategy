@@ -1238,3 +1238,102 @@ consome os números publicados ali, não os emenda. `docs/context/plataforma-dad
 evitar — meu escopo é `charts`, não `docs`. `scripts/validate_palette.js` — **sem mudança**: é
 `docs`-owned (`ADR-010` header, "Componente alvo: `docs`"); esta task lê o texto dele
 (`color-tokens.test.ts`) e nunca o edita.
+
+## 17. `src/charts/s2-swing-point.ts` — `swing_point`, o primeiro primitivo de `<Anotacao>` (`T-08.10`, 2026-09-03)
+
+`T-08.10` (`CST-78`, componente `charts`, plano `08_superficie_e_reprodutibilidade.md` item
+`8.7`, `SPEC-001` §3.6): "`swing_point` em `<Anotacao>` — zero algoritmo, zero limiar, zero
+'nível'". `SPEC-001:282`, literal: "O primeiro primitivo de `<Anotacao>` é `swing_point`, não
+`zone`… pivô É uma definição de swing · âncora de Fibonacci É um par de swings · BOS/CHoCH É
+rompimento de swing · BSL/SSL É extremo de swing… um corpus de swings sobrevive a qualquer
+resposta [de `Q20`]; um corpus de zonas não." `Q20` (`SMC` × pivôs+Fibonacci) segue **ABERTA** e
+está deliberadamente fora do escopo desta task — o argumento da SPEC é exatamente que ambos os
+vocabulários se apoiam neste MESMO primitivo, então construí-lo aqui não presume a resposta.
+
+**Composto, não reimplementado** — mesma disciplina de `§14`/`§15`: `createSwingPoint` chama
+`createPriceBoundAnnotation` (`T-05.5`, `s2-annotation-price-binding.ts`) verbatim, que por sua
+vez já compõe `createAnnotationIdentity` (`T-05.2`, `D5.10`). Nenhum dos dois foi tocado.
+
+**O que o módulo entrega, e como cada peça fecha "zero algoritmo, zero limiar, zero nível":**
+- `SwingKind = "high" | "low"` + `SWING_KINDS` (runtime) + `assertSwingKind` — recusa qualquer
+  valor fora do par, mesmo padrão de `assertPointerMode` (`§15`): um `kind` inválido nunca vira
+  `"high"` por default silencioso.
+- `SwingPoint extends PriceBoundAnnotation` acrescenta exatamente 3 campos: `kind`,
+  `eventTimeMs` (mesmo conceito de `event_time` que `CellEnvelope`, `s2-badge.ts`, já usa para
+  uma célula de `<ValorDeMercado>` — um swing marca uma BARRA, não uma coordenada de clique
+  crua) e `price` (lido verbatim do que o humano marcou — nunca computado, nunca ajustado a um
+  "nível"). `primitive: "swing_point"` é discriminante literal, preparando (sem construir) uma
+  futura união `AnnotationPrimitive = SwingPoint | Zone`.
+- `createSwingPoint` recusa independentemente: `kind` fora do conjunto
+  (`InvalidSwingKindError`), `eventTimeMs` não finito ou negativo (`NonFiniteSwingEventTimeError`
+  — um swing não pousa em timestamp fabricado) e `price` não finito ou `<= 0`
+  (`NonFiniteSwingPriceError` — preço cripto nunca é zero/negativo).
+- **Zero algoritmo**: nenhuma comparação entre barras vizinhas, nenhuma janela de lookback —
+  a função registra um ponto já identificado (por humano; um `DETECTOR`, se algum dia existir,
+  é decisão de outra ADR, ver abaixo), nunca decide "isto é um swing".
+- **Zero limiar**: nenhum `ThresholdSpec` (`SPEC-001` §3.7), nenhum tamanho mínimo de movimento.
+- **Zero "nível"**: nenhuma razão de Fibonacci, nenhuma zona (OB/FVG), nenhum
+  `structure_definition` — exatamente o que a plan `08`'s seção "Não faz" nomeia ("não desenha
+  zona SMC, não detecta estrutura").
+
+### ⚠️ Conflito registrado com `ADR-017` (RASCUNHO, não aprovado) — resolvido a favor do escopo desta task
+
+`docs/adr/ADR-017-deteccao-autonoma-com-auditoria-por-excecao.md` (`Status: RASCUNHO — "aprovar
+é gate do owner"`, sem evento `approve` no ledger; o próprio commit que o introduziu se
+autodescreve como "(rascunho)") nomeia esta task, por número, em sua seção "Consequências":
+"`T-08.10`: campos `provenance`, `detector_key`, `review_verdict`; `structure_definition` com
+`break_by`, `ref_policy`, `impulse`." Esses campos **não foram construídos aqui.** Os `refs`
+desta task (`tasks.toml:1096`) citam `SPEC-001` §3.6 + plano item `8.7` + `Q20` — nenhum cita
+`ADR-017`. Construir os campos de um rascunho não ratificado seria exatamente o "amplie escopo"
+que este protocolo proíbe, e arriscaria divergir do que o owner de fato aprovar depois.
+`provenance = HUMANO` (a única linha que `SPEC-001` §3.6 já fixa, incondicional) já é coberto
+pela `AnnotationIdentity` que `createPriceBoundAnnotation` compõe — nada foi perdido do baseline
+aprovado. Se `ADR-017` for aprovado, seus campos são ADITIVOS a `SwingPoint`, não uma reescrita —
+mas essa decisão não é minha para tomar nesta task.
+
+### Falsificador rodado, não só "os testes passam"
+
+Cada recusa tem o caso que ela rejeita, no mesmo arquivo de teste (`kind` inválido, `eventTimeMs`
+`NaN`/negativo, `price` `Infinity`/zero/negativo — 6 casos de `MORDE`). Um falsificador
+estrutural adicional (`falsifier: SwingPoint carries ONLY the declared fields`) lista os 8 campos
+esperados e falha se qualquer campo fora dessa lista aparecer no objeto devolvido — um futuro
+`minMovePct`/`fibLevel` contrabandeado tropeça nele em vez de passar em silêncio.
+
+### Comandos rodados, literais
+
+```bash
+cp -r ../cripto-strategy/frontend/node_modules frontend/node_modules  # gitignored, ausente em worktree novo
+npm --prefix frontend run lint   # eslint src -> 0 erro, 0 aviso
+npm --prefix frontend run test:charts
+  # node --test 'src/charts/*.test.ts' -> universo total 147 testes, 114 pass / 33 fail
+  # (re-executado isolado: `node --test src/charts/s2-swing-point.test.ts` de dentro de
+  # frontend/ -> 12/12 pass, 0 fail — as 33 falhas do universo total são PRE-EXISTENTES,
+  # não relacionadas a este módulo: canonical-grid-sha256-proof.test.ts, s2-axis-integration.test.ts,
+  # s2-cvd.test.ts, s2-klines-loader.test.ts, s2-oi-loader.test.ts, s2-panels.test.ts — todas
+  # ENOENT/asserção sobre `data/binance/**`, ausente neste worktree (dado bruto não é
+  # versionado). Confirmado: `ls data` -> "Arquivo ou diretório inexistente".
+git add frontend/src/charts/s2-swing-point.ts frontend/src/charts/s2-swing-point.test.ts
+harness rules --mode sweep --changed-only   # rc=0, nenhuma saída — 0 achado
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (mesmo motivo de `§8`–`§16`: `harness policy --key test_cmd` só
+cobre `sentimento`). Medição qualitativa: 12 testes cobrem 100% das funções/constantes
+exportadas (`SWING_KINDS`, `assertSwingKind`, `createSwingPoint`), com um caso positivo por
+`kind`, um `MORDE` por recusa (6), a propagação das duas recusas já existentes em
+`s2-annotation-price-binding.ts`/`s2-annotation-identity.ts` através da composição, e o
+falsificador estrutural de campo fechado.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§17` nova (append-only). `docs/specs/SPEC-001-plataforma-dados.md`
+— **sem mudança**: `§3.6` já fixa a frase que este módulo torna executável; esta task consome,
+não emenda a SPEC. `docs/adr/ADR-017-deteccao-autonoma-com-auditoria-por-excecao.md` — **sem
+mudança**: é `RASCUNHO`, gate do owner; o conflito está registrado na seção acima, não resolvido
+por mim. `docs/INDEX.md` — **sem mudança, motivo explícito**: o padrão medido deste arquivo
+(`grep -oE` sobre os papéis, 73 linhas `/build` isoladas vs. entradas combinadas `/build`+`/qa`)
+é UMA linha por task escrita DEPOIS do ciclo completo build+QA+review (ex.: `T-05.6` linha 148,
+`T-05.1` linha 134 — que registra correção de uma auto-atribuição prematura do builder). Escrever
+a linha agora, antes do QA rodar, repetiria o defeito que aquela correção documenta. Gate de
+design — **não aplicável**: zero DOM, zero componente React, mesma classe de `§15`.
