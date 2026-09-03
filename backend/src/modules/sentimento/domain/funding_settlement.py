@@ -1,38 +1,37 @@
-"""`funding_settled` vs `funding_estimado`: two series, plus the grid and the PK that separate them.
+"""`funding_settled` vs `funding_estimado`: two series, plus the grid and PK that separate them."""
 
-`SPEC-001` §3.4 / `CA-F2-7` / `PRD-001` §5.6 (correction R1 · D-10), plan `06` item 6.4.
-
-── WHY TWO SERIES, NEVER ONE WITH AN OVERWRITE ──────────────────────────────────────────────
-
-`funding_settled` is what was actually charged — the historical `monthly/fundingRate` dump, one
-row per settlement that already happened. `funding_estimado` is the running prediction Binance
-publishes on `premiumIndex.lastFundingRate` before that settlement fires, and it can be sampled
-many times for the SAME upcoming settlement. Collapsing them into one series with the estimate
-overwritten by the settled value the moment it lands would destroy the very evidence a
-consumer needs to ask "how far off was the prediction" — reconciliation between the two is a
-CONSUMER'S question, never a filter this ingestion layer is allowed to apply on the way in.
-
-`PRD-001` §5.6 (correction R1 · D-10), literal:
-
-    PK funding = ( instrument_id, settle_bucket, source, observed_at )
-
-`source` is the axis this task's own DoD names directly: `funding_settled` or `funding_estimado`
-(`FundingSource` below) — WHICH of the two series this row belongs to. `settle_bucket` and
-`observed_at` are deliberately two different fields even though they carry the same value for
-every `SETTLED` row this task's fixture exercises: a `SETTLED` observation IS the settlement
-(there is only one wall-clock instant a settlement fires at), so `observed_at` is that instant
-and `settle_bucket` is the ideal grid slot it landed near. An `ESTIMATED` row observed hours
-before its settlement is the case that needs the two fields to differ, and that case is future
-work (`premiumIndex` polling) — this module's shape does not foreclose it.
-
-── WHY `interval_hours_declared` IS A FIELD ON THE ROW, NOT A CONSTANT ──────────────────────
-
-`PRD-001` §5.6, measured: `1000XECUSDT` moved `8h -> 1h -> 4h` inside July 2026 alone, with the
-`1h -> 4h` transition producing a 3,0h delta between consecutive settlements. A schedule
-generated from "today's" interval would emit settlements that never existed on either side of a
-transition. `interval_hours_declared` is read off the SAME line the settlement it describes came
-from — never a global default, never the symbol's "current" value looked up separately.
-"""
+# `SPEC-001` §3.4 / `CA-F2-7` / `PRD-001` §5.6 (correction R1 · D-10), plan `06` item 6.4.
+#
+# ── WHY TWO SERIES, NEVER ONE WITH AN OVERWRITE ──────────────────────────────────────────────
+#
+# `funding_settled` is what was actually charged — the historical `monthly/fundingRate` dump, one
+# row per settlement that already happened. `funding_estimado` is the running prediction Binance
+# publishes on `premiumIndex.lastFundingRate` before that settlement fires, and it can be sampled
+# many times for the SAME upcoming settlement. Collapsing them into one series with the estimate
+# overwritten by the settled value the moment it lands would destroy the very evidence a
+# consumer needs to ask "how far off was the prediction" — reconciliation between the two is a
+# CONSUMER'S question, never a filter this ingestion layer is allowed to apply on the way in.
+#
+# `PRD-001` §5.6 (correction R1 · D-10), literal:
+#
+#     PK funding = ( instrument_id, settle_bucket, source, observed_at )
+#
+# `source` is the axis this task's own DoD names directly: `funding_settled` or `funding_estimado`
+# (`FundingSource` below) — WHICH of the two series this row belongs to. `settle_bucket` and
+# `observed_at` are deliberately two different fields even though they carry the same value for
+# every `SETTLED` row this task's fixture exercises: a `SETTLED` observation IS the settlement
+# (there is only one wall-clock instant a settlement fires at), so `observed_at` is that instant
+# and `settle_bucket` is the ideal grid slot it landed near. An `ESTIMATED` row observed hours
+# before its settlement is the case that needs the two fields to differ, and that case is future
+# work (`premiumIndex` polling) — this module's shape does not foreclose it.
+#
+# ── WHY `interval_hours_declared` IS A FIELD ON THE ROW, NOT A CONSTANT ──────────────────────
+#
+# `PRD-001` §5.6, measured: `1000XECUSDT` moved `8h -> 1h -> 4h` inside July 2026 alone, with the
+# `1h -> 4h` transition producing a 3,0h delta between consecutive settlements. A schedule
+# generated from "today's" interval would emit settlements that never existed on either side of a
+# transition. `interval_hours_declared` is read off the SAME line the settlement it describes came
+# from — never a global default, never the symbol's "current" value looked up separately.
 
 from __future__ import annotations
 
