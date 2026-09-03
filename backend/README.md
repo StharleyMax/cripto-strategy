@@ -3306,6 +3306,109 @@ nas duas fontes, uma SEXTA linha duplicando um `reduction` existente reprovando 
   correção — a divergência Coinalyze×Binance continua visível como divergência, nunca
   corrigida antes de gravar.
 
+## 📎 2026-09-03 por `T-06.6` — quarentena generalizada sobre o catálogo inteiro (`D6.1`/`D6.2`) + regra de escrita `D6.3`
+
+`SPEC-001` §5.2, plano `06` item **6.12** (`CST-50`), `depends_on = ["T-06.1"]`. `T-06.7` e
+`T-06.8` dependem desta task. Escopo: generalizar o predicado de três termos de `T-02.2`
+(`COINALYZE_ONE_SHOT_TERMS`, aplicado à mão a uma fonte só) para rodar sobre `series_catalog`
+(`T-06.1`) inteiro, e fixar a regra de ESCRITA de `D6.3` — sem construir o mecanismo de
+promoção nem reimplementar `as_of` (fora do escopo, por instrução do handoff).
+
+### As duas peças
+
+[`domain/quarantine_terms.py`](src/modules/sentimento/domain/quarantine_terms.py)
+(**estendido**, `COINALYZE_ONE_SHOT_TERMS` intocado) ganha três funções:
+
+- `quarantine_terms_for_catalog_entry(entry, *, available_at_present)` — deriva
+  `label_shift_present`/`unit_present` de `entry.key` (nunca hardcoded a `True`): uma
+  `SeriesCatalogEntry` só existe se `SeriesKey.label_shift`/`unit` já estão presentes
+  (`__post_init__` de `series_key.py` recusa string em branco, e o campo `int` não aceita
+  `None`) — por isso os dois primeiros termos do predicado estão SEMPRE resolvidos para
+  qualquer linha que chegou ao catálogo, e `available_at_present` é o único termo que chega
+  como parâmetro (não é campo de `SeriesKey`; vem da tabela de defasagem, `Q19`/`T-03.6`).
+- `quarantine_drawer(catalog, *, available_at_present_by_key)` — a gaveta sobre o catálogo
+  inteiro (`D6.1`), tratando uma chave AUSENTE do mapa como não resolvida (silêncio não é
+  "ok", mesma regra de `LagSummaryRow`).
+- `readable_by_backtest(catalog, *, available_at_present_by_key)` — o complemento exato da
+  gaveta: "esta task decide QUAIS séries a leitura de backtest pode ver" (handoff, literal),
+  sem tocar `as_of_accessor.py`.
+
+[`domain/live_availability_write.py`](src/modules/sentimento/domain/live_availability_write.py)
+(**novo**): `resolve_unmeasured_endpoint_availability(*, lag_summary)` implementa `D6.3` —
+`SPEC-001` §5.2 literal: "endpoint sem `lag_ms` medido grava `available_at = NULL`,
+`availability_source = MODELED`... Nunca `event_time`, nunca `event_time + interval`" (o
+default **361x otimista**). O TIPO DE RETORNO é a proteção: `tuple[None, AvailabilitySource]`
+não tem ramo `int` nenhum, então nada passa `event_time_ms` por esta função mesmo por
+acidente. Um endpoint MEDIDO (`lag_summary.lag_n > 0`) é RECUSADO
+(`MeasuredLagCannotUseUnmeasuredPathError`) em vez de silenciosamente cair no ramo errado — a
+outra metade de `SPEC-001` §5.2 (fórmula MODELED arredondada à grade nativa) é computação
+diferente, fora do escopo desta task.
+
+### O falsificador `D6.2` — sobre a linha de PRODUÇÃO da Coinalyze, não uma fixture
+
+`master@fdb22aa` (`T-06.5`) mesclou `domain/open_interest_catalog.py` enquanto esta task já
+estava em progresso — ele POPULA as cinco linhas reais de OI (4 Coinalyze `OHLC_OVER_BUCKET` +
+1 Binance `POINT`). `test_quarantine_terms.py` foi reescrito para consumir essa população de
+produção diretamente (`open_interest_catalog_entries().entry_for(coinalyze_open_interest_key(
+Reduction.CLOSE))`) em vez de uma fixture própria: a 1ª versão desta task tinha adivinhado
+`label_shift=0` para a linha `CLOSE`, e a linha real de `T-06.5` prova esse palpite ERRADO —
+o valor medido é `label_shift=300_000` (`+interval`, `SPEC-001` §2.1). Corrigido no mesmo
+ciclo, antes do commit, ao mesclar `T-06.5`.
+
+`test_d6_2_the_third_term_alone_isolates_a_series_with_the_other_two_resolved` pega essa linha
+real (`unit="BTC"`, `label_shift=300_000`, ambos JÁ resolvidos por `T-06.5`) com
+`available_at_present=False` (o terceiro termo, que `Q19` não resolveu para a Coinalyze) e
+prova `is_quarantined is True` — os outros dois termos resolvidos não abrem a gaveta sozinhos.
+Os testes `D6.1` rodam sobre o catálogo real inteiro de `open_interest_catalog_entries()`
+(5 linhas): só a linha Binance é marcada disponível, a gaveta bate exatamente nas 4 linhas
+Coinalyze, e `test_readable_by_backtest_is_not_vacuously_empty` prova que a função devolve o
+catálogo INTEIRO quando nada está quarentenado (não apenas uma linha, por acidente de
+implementação).
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` (pós-merge com `origin/master@fdb22aa`, `T-06.5` incluída) →
+  **1300 passed**, cobertura total **97,63%**; por camada (`ADR-009/D1`): domain **99,8%**
+  (2536/2540, meta 90%), use_cases **100,0%** (585/585, meta 80%), infra **95,1%**
+  (2208/2321, meta 70%) — as 3 camadas `[OK]`. **+11 testes novos** desta task sobre os 1289
+  de `T-06.5` (5 em `test_quarantine_terms.py`, 11→16; 6 em `test_live_availability_write.py`,
+  novo, `[MEDIDO: pytest --collect-only -q]`).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 237 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (157 arquivos, 712
+  dependências).
+- `bash backend/scripts/natureza.sh` → **72 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados** no estado final (um `[AVISO]`
+  `core.module-docstring-single-line` apareceu durante o desenvolvimento em
+  `live_availability_write.py` e foi corrigido no mesmo ciclo, mesma forma de
+  `quarantine_terms.py`: conteúdo movido para comentário `#`, docstring de módulo em uma
+  linha).
+- Achado de ambiente, não desta task: uma rodada de `test.sh` sob contenção de CPU (6+
+  worktrees da fase 06 rodando `pytest` completo em paralelo na mesma máquina) reprovou
+  `test_ingest_record_crash_borders.py::test_concurrent_recorders_neither_lose_rows_nor_corrupt_the_file`
+  por estourar o timeout de 60s de um subprocesso — teste que não toca nenhum arquivo desta
+  task. Reproduzido em isolamento (`pytest tests/sentimento/test_ingest_record_crash_borders.py`,
+  sem contenção): **4 passed**. Não é defeito desta task nem do arquivo que ela testa.
+- Ciclo de correção: 1ª rodada de `test.sh` reprovou
+  `test_as_of_is_the_single_reader.py::test_no_production_module_imports_this_accessor_yet_and_that_is_recorded_not_claimed`
+  — o docstring de `quarantine_terms.py` citava literalmente `as_of_accessor.py` num
+  comentário (não um import), e o guard escaneia TEXTO de arquivo, não import real; reescrito
+  para citar "`T-04.4`'s decision-read module" sem a substring. Rodadas seguintes não
+  reproduzem.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **A Coinalyze continua em quarentena.** `Q19`/`T-03.6` respondeu o probe em geral, mas não
+  mediu `lag_ms` especificamente para os endpoints da Coinalyze — o terceiro termo permanece
+  `available_at_present=False` até essa medição existir, exatamente como `SPEC-001` §5.2 pede.
+- **Sem mecanismo de promoção.** Nenhuma linha muda de quarentenada para lida por `backtest`
+  aqui — isso é decisão de uma medição futura (`Q19` para a Coinalyze), não desta task.
+- **A fórmula MODELED do endpoint MEDIDO (grade nativa + `p99_lag` + margem) não é
+  implementada.** `D6.3` pede só o ramo NÃO medido; o outro ramo é
+  `MeasuredLagCannotUseUnmeasuredPathError`, recusado e nomeado, não aproximado.
+- **Nenhuma linha NOVA de produção do catálogo é escrita por esta task** — as cinco linhas de
+  OI que o falsificador `D6.2` consome já existiam, populadas por `T-06.5`; esta task só lê
+  esse catálogo pelo predicado, nunca o edita.
 ## 📎 2026-09-03 por `T-06.3` — as QUATRO séries de L/S; `ls_ratio` PROIBIDO; `delta()`/TF recusam o taker POR TIPO
 
 `SPEC-001` §3.1/§5.11, `CA-F2-3`, plano `06` itens **6.3 + 6.10** (`CST-47`). Depende de
