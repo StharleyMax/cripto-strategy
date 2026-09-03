@@ -2830,6 +2830,103 @@ parametrizado em 3 = 5)]`.
   `ADR-002`/D5 as cita juntas porque as duas exigem "ler antes de escrever", não porque vivem no
   mesmo código.
 
+## 📎 2026-09-02 por `T-07.6` — particionamento dimensionado contra a vazão MEDIDA de um único símbolo
+
+`CST-60`, `CA-F3-7`, plano `07` item 7.8, DoD `D7.11`. A medição que existe é por SÍMBOLO ÚNICO —
+`docs/specs/PRD-001-plataforma-dados.md` `CA-F3-7` e o plano `D7.11` publicam os mesmos cinco
+números sobre o `aggTrade` de um símbolo: **p50 21 · p95 204 · p99 483 · p99,9 1.251 · máx 3.224
+msg/s** `[MEDIDO]`. O handoff desta task
+(`docs/context/plataforma-dados/handoff/T-07.6.md`, mesclado em `master` durante a implementação
+— ver "Ciclo de correção" abaixo) é explícito sobre o que "dimensionado" significa: o orçamento
+por partição é o **máx** medido, gasto como se TODO símbolo da partição pudesse espicaçar ao
+mesmo tempo — "dimensionar pelo p50 sub-provisiona e derruba consumidor no pico real".
+
+| camada | arquivo | o que faz |
+|---|---|---|
+| `domain` | [`stream_partitioning.py`](src/modules/sentimento/domain/stream_partitioning.py) (**novo**) | `SingleSymbolThroughput` (percentis validados, não-decrescentes) + `MEASURED_SINGLE_SYMBOL_THROUGHPUT` = `D7.11` verbatim; `max_symbols_per_partition(capacity, throughput)` resolve `capacity // max`, recusando (`InfeasiblePartitionCapacityError`) capacidade abaixo do `max` medido; `partition_count(n, capacity, throughput)` = `ceil(n / max_symbols_per_partition(...))`; `partition_symbols(symbols, n)` faz o chunking determinístico, ordem preservada |
+| `infra` | [`stream_partition_plan.py`](src/modules/sentimento/infra/stream_partition_plan.py) (**novo**) | `plan_stream_connections` compõe `max_symbols_per_partition` + `partition_symbols` com `combined_stream_path` (`T-03.1`, `infra/binance_stream_probe.py`) — o mesmo builder que o probe CLI já prova live sobre handshake real — para devolver, por universo de símbolos e capacidade declarada, a tupla de conexões `/stream?streams=...` já particionadas |
+
+### Por que `partition_capacity_msg_per_second` não tem default
+
+Este módulo mede o lado da OFERTA (quão rápido um símbolo fala). Ele nunca mediu o lado da
+DEMANDA — quantas mensagens por segundo um consumidor de partição de fato drena — e cravar um
+default adivinhado seria exatamente o número sem rótulo que `CLAUDE.md` ("nenhum número sem o
+comando que o produziu") proíbe. Por isso `max_symbols_per_partition`/`partition_count`/
+`plan_stream_connections` exigem a capacidade como argumento: quem a declara carrega o comando
+que a mediu.
+
+### O orçamento é `max` por símbolo, simultâneo — não "um pico, o resto em regime"
+
+`n * max <= capacity` é a regra inteira: todo símbolo da partição é orçado no seu pico medido, ao
+mesmo tempo que os outros. Isto é MAIS conservador que reservar `max` só para um símbolo "quente"
+e `p50` para o resto — e é conservador **por instrução explícita do handoff**, não por escolha
+deste código: correlação de pico entre símbolos nunca foi medida (`[NÃO MEDIDO]`), e assumir que
+ela não existe (a leitura mais fraca) é exatamente o que produziria um consumidor derrubado no
+dia em que a correlação aparecer. `test_p50_based_sizing_would_overflow_capacity_under_simultaneous_peaks`
+(`test_stream_partitioning.py`) é o falsificador nomeado pelo handoff: sob capacidade de 10.000
+msg/s, a fórmula por `p50` (rejeitada) empacotaria 323 símbolos numa partição cujo pico
+simultâneo real seria `323 × 3.224 = 1.041.352` msg/s — **104× a capacidade declarada** — enquanto
+a fórmula por `max` (a implementada) limita a mesma partição a 3 símbolos, cujo pico simultâneo
+(`3 × 3.224 = 9.672`) cabe dentro dos 10.000 com folga.
+
+### `p50`/`p95`/`p99`/`p999` viajam no tipo, mas não entram na aritmética
+
+`SingleSymbolThroughput` carrega a régua de percentis inteira para que ela não possa divergir de
+`D7.11` sem que algo perceba, mas só `max` alimenta `max_symbols_per_partition`/`partition_count`.
+`test_only_max_feeds_the_sizing_arithmetic` prova isso: duas réguas que só concordam em `max`
+dimensionam igual.
+
+### `partition_symbols` nunca reordena
+
+Para um coletor WS, a partição em que um símbolo cai é parte da sua identidade de reconexão
+(`ADR-004`); reordenar aqui faria essa identidade depender do algoritmo de chunking em vez da
+lista que o chamador declarou.
+
+### Nenhum coletor de produção chama `plan_stream_connections` ainda — nomeado, não escondido
+
+Mesma forma de `T-07.4`/`T-07.5`: `RedisStreamPublisher` segue com zero chamadores de produção, e
+`combined_stream_path` só é chamado hoje pelo CLI de PROBE (`aggtrade_nq_probe_cli.py`, `T-03.1`),
+nunca por um coletor 24/7 real. `plan_stream_connections` é a peça que decide QUANTAS conexões e
+QUAIS símbolos cada uma carrega; ligá-la a um coletor real que efetivamente abre `N` sockets e
+consome cada partição é trabalho de uma task futura, não desta.
+
+### Ciclo de correção nomeado: o handoff chegou DEPOIS da primeira implementação
+
+`docs/context/plataforma-dados/handoff/T-07.6.md` não existia quando esta worktree foi criada
+(`master@bf15df6`); a primeira versão desta task foi reconstruída de fontes primárias (`PRD-001`,
+o plano, `tasks.toml`) e usou a reserva "um pico + resto em `p50`" — mais fraca que o handoff
+exige. Um `git fetch` + `merge-base` antes do commit achou `origin/master@b550a47` (handoff
+mesclado em paralelo, mesma disciplina de "sempre `git fetch` antes do push" que este próprio
+handoff pede), e o handoff nomeia a fórmula certa e o falsificador esperado, literalmente. A
+correção substituiu `max_symbols_per_partition`, acrescentou `partition_count` e o teste de
+overflow — sem tocar `partition_symbols`/`plan_stream_connections`, que já estavam corretos.
+
+### Comandos rodados e resultado
+
+`bash backend/scripts/lint.sh` → limpo (`ruff check`/`ruff format --check`/`mypy --strict`, 227
+arquivos). `bash backend/scripts/test.sh` → **rc=0, 1209 passed** (era 1184 antes desta task; **25
+testes NOVOS** `[MEDIDO: pytest --collect-only -q sobre as 2 suítes novas → 18+7]`), cobertura
+**97,52%** — `domain` **99,8%** (2341/2345, meta 90%), `use_cases` **100,0%** (585/585, meta
+80%), `infra` **95,1%** (2195/2308, meta 70%); `stream_partitioning.py` (35 linhas) e
+`stream_partition_plan.py` (8 linhas) fecham os dois em **100%**. `harness rules --mode sweep
+--changed-only` (arquivos `git add`ados antes de rodar — rodar sobre arquivo *untracked* devolve
+falso-verde, achado já nomeado por `T-03.10`) → 1ª rodada (antes do handoff aparecer): **2
+`[AVISO]`** `core.module-docstring-single-line` (docstring de módulo multi-linha nos 2 arquivos
+novos), corrigidos no mesmo ciclo para o padrão de uma linha do repositório (conteúdo movido para
+comentário `#` logo abaixo, mesma forma de `quota_bucket.py`/`clock_skew_tolerance.py`); rodadas
+seguintes (inclusive após a correção de fórmula) → **0 achados**.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhum coletor WS de produção existe.** `plan_stream_connections` decide o particionamento;
+  abrir `N` conexões reais e consumi-las é trabalho de uma task futura (o mesmo estado em que
+  `T-07.4`/`T-07.5` deixaram a fila e o escritor único: mecanismo pronto, sem produtor ligado).
+- **Correlação de pico entre símbolos segue `[NÃO MEDIDO]`.** O orçamento por `max` simultâneo é
+  a leitura CONSERVADORA que o handoff exige exatamente por essa ausência de medição — não uma
+  medição de quantos símbolos podem espicaçar juntos.
+- **Nenhuma decisão de `partition_capacity_msg_per_second` de produção é tomada aqui** — o
+  número é responsabilidade de quem operar o coletor real, com o comando que o mediu.
+
 ## 📎 2026-09-02 por `T-07.9` — `instrument_alias`: YAML versionado, `evidence_url` OBRIGATÓRIO por validação
 
 `Q12`'s mecanismo (`SPEC-001` §3.4, plano `07` item 7.11, `CST-63`). `Q12` continua `ABERTA`
