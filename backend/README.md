@@ -3591,3 +3591,79 @@ o teste conta os 12 e falha se um só cruzar 0,10.
   registrou ("`nature` precisa de um sexto membro, ou `§5.11` precisa de um segundo termo?")
   segue aberta para `/architect` — esta task resolve D6.5/D6.6 UMA CAMADA ACIMA de `SeriesKey`,
   sem tocar a identidade de 15 termos.
+
+## 📎 2026-09-03 por `T-06.7` — `ZL-1`..`ZL-3`: zero do fornecedor não é zero legítimo
+
+`SPEC-001` §5.3, plano `06` item **6.13**, `CA-F3-10` ("tem de dizer que `pontos × intervalo`
+é POR LADO"), `D6.10`. Depende de `T-06.6` (predicado de três termos, mesclada).
+
+### A peça
+
+[`domain/liquidation_zero_legitimacy.py`](src/modules/sentimento/domain/liquidation_zero_legitimacy.py)
+(**novo**), os três falsificadores literais de `SPEC-001` §5.3:
+
+- **`LiquidationSide`** (`LONG="l"`/`SHORT="s"`): os valores SÃO os campos do fio da Coinalyze
+  (`docs/medicao-coinalyze.md` §2.1: `{t, l, s}`), não uma tradução — as duas sequências são
+  INDEPENDENTES, e nenhuma função deste módulo aceita as duas juntas.
+- **`classify_side_points`** (ZL-2/ZL-3): dado um `Sequence[SidePoint]` de UM lado, em ordem
+  estrita de `event_time`, converte todo zero ANTES do primeiro não-zero desse lado em
+  `Absence.NO_SOURCE` (ZL-2); todo zero DEPOIS permanece um valor legítimo,
+  `ClassifiedSidePoint(value=Decimal(0), absence=None)` (ZL-3) — nunca dobrado em `NO_SOURCE`.
+  `ClassifiedSidePoint` é OU valor OU ausência nomeada, nunca os dois nem nenhum
+  (`__post_init__` recusa as duas formas erradas), a mesma disciplina que `AsOfReading`
+  (`as_of_accessor.py`, `T-04.4`) já aplica do lado da leitura — aqui aplicada do lado da
+  ESCRITA/classificação, que é onde `D6.10` mediu o defeito.
+  `classify_side_points` NUNCA ordena a entrada: `NonMonotonicSidePointsError` recusa
+  `event_time` fora de ordem estrita (ou repetido), porque aceitar e ordenar escamotearia
+  exatamente o erro de ZL-1 — os dois lados sendo misturados numa chamada só.
+- **`retention_window_per_side`** (ZL-1, `CA-F3-10` recalculado): `pontos × intervalo`,
+  contando SÓ os pontos LEGÍTIMOS (`absence is None`) do `Sequence[ClassifiedSidePoint]` de UM
+  lado — nunca o array bruto do fio (que contaria buckets `NO_SOURCE` como se fossem
+  observações retidas, reintroduzindo o otimismo que ZL-2 existe para remover) e nunca os dois
+  lados somados antes de multiplicar. Não existe função neste módulo que aceite os dois lados
+  numa chamada só — "por LADO, não por série inteira" é propriedade do grafo de chamada, não
+  só comentário.
+
+### O falsificador — `D6.10` reproduzido em escala de fixture
+
+Terceiro-partido não versionado: a captura de 730 dias que mediu **361 buckets com `s = 0`
+literal** onde o `daily` reporta **289,65 / 154,53 / 4.547,61 BTC** é dado bruto de terceiro
+(`CLAUDE.md`, "Dado bruto não é versionado") e não vive neste repositório.
+[`test_liquidation_zero_legitimacy.py`](tests/sentimento/test_liquidation_zero_legitimacy.py)
+(**novo**, 18 testes) reproduz o MESMO PADRÃO — N zeros líderes antes do primeiro não-zero de
+um lado — em escala de lista literal, citando os três números de `D6.10` no valor dos pontos
+legítimos (`test_zl1_reproduces_d6_10_pattern_at_fixture_scale`). O falsificador de `ZL-1`
+(`test_zl1_retention_window_is_per_side_not_summed`) constrói dois lados com contagens de
+pontos DIFERENTES e prova que a janela de cada lado nunca é igual à janela "série inteira"
+(soma dos dois lados × intervalo) — a hipótese que o mecanismo errado produziria.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1425 passed** (era 1407; +18 novos), cobertura total
+  **97,73%**; por camada (`ADR-009/D1`): domain **99,8%** (meta 90%, 2848/2853), use_cases
+  **100,0%** (meta 80%, 585/585), infra **95,1%** (meta 70%, 2208/2321) — as 3 camadas
+  declaradas, todas `[OK]`. `liquidation_zero_legitimacy.py` isolado: **100%** (66/66 stmts,
+  18/18 branches).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 252 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (165 arquivos, 751 dependências).
+- `bash backend/scripts/natureza.sh` → **79 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados**. (1 achado corrigido durante o
+  desenvolvimento, antes deste commit: a string literal `as_of_accessor` numa prosa de
+  docstring disparava `test_as_of_is_the_single_reader.py`'s escaneamento por SUBSTRING — não
+  é um `[[rules.own]]`, é o próprio guard-rail de `T-04.4`; a docstring foi reformulada para
+  citar `AsOfReading` sem o nome do módulo.)
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhuma ingestão real de `/liquidation-history?interval=1min` existe neste repositório.**
+  `coinalyze_daily_series.py` só captura `interval=daily` (`T-02.2`); ligar
+  `classify_side_points`/`retention_window_per_side` a um cliente REST de 1 min (mesmo `{t, l,
+  s}` do fio, `docs/medicao-coinalyze.md` §2.1) é task futura — este módulo entrega a
+  CLASSIFICAÇÃO, não o coletor.
+- **Nenhum `SeriesRow`/`md.ingest_gap` é escrito por esta task.** `ClassifiedSidePoint` é a
+  DECISÃO (valor legítimo vs `SEM_FONTE`); persistir essa decisão como linha de série ou como
+  lacuna do painel é território de `write_series_row.py`/`T-04.4`, não tocado aqui.
+- **`ZL-3`'s "distinguível de ausência em 100 ms" é uma propriedade de RENDERIZAÇÃO** (`charts`,
+  fora da fronteira de `sentimento`) — este módulo entrega a metade que `domain` pode garantir:
+  tipos estruturalmente diferentes (`value` vs `absence`), nunca a mesma forma.
