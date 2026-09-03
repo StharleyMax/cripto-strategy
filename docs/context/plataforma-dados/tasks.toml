@@ -670,7 +670,7 @@ tracker = { provider = "jira", id = "CST-40", url = "https://conversationhub.atl
 id = "T-05.7"
 title = "[charts] 05 · Cor como token nomeado por papel; critical fora do canal de cor"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "05"
 depends_on = ["T-05.2"]
 refs = [
