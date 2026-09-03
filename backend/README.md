@@ -3380,14 +3380,16 @@ mesma classe de deriva.
 
 ### Comandos rodados e resultado
 
-- `bash backend/scripts/test.sh` → **1296 passed** (era 1277 em `T-06.1`; +19 novos), cobertura
-  total **97,64%**; por camada (`ADR-009/D1`): domain **99,8%** (2558/2562, meta 90%), use_cases
-  **100,0%** (585/585, meta 80%), infra **95,1%** (2208/2321, meta 70%) — as 3 camadas `[OK]`.
-  `funding_settlement.py` isolado: **100%** (59/59 stmts, 16/16 branches).
+- `bash backend/scripts/test.sh` → **1366 passed** (rodado após reintegrar `T-06.2`/`T-06.5`/
+  `T-06.9`/`T-05.1`/`T-05.2`/`T-06.10`, mescladas em paralelo durante esta task; **+19 novos**
+  sobre a base rebaseada), cobertura total **97,68%**; por camada (`ADR-009/D1`): domain
+  **99,8%** (2715/2720, meta 90%), use_cases **100,0%** (585/585, meta 80%), infra **95,1%**
+  (2208/2321, meta 70%) — as 3 camadas `[OK]`. `funding_settlement.py` isolado: **100%**
+  (59/59 stmts, 16/16 branches).
 - `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
-  achado**, 236 arquivos.
-- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (156 arquivos, 709 dependências).
-- `bash backend/scripts/natureza.sh` → **71 arquivo(s), 0 leitura(s) de relógio**.
+  achado**, 246 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (162 arquivos, 735 dependências).
+- `bash backend/scripts/natureza.sh` → **76 arquivo(s), 0 leitura(s) de relógio**.
 - `harness rules --mode sweep --changed-only` → **0 achados**.
 
 ### Escopo que esta task NÃO fecha, nomeado
