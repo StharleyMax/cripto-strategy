@@ -967,7 +967,7 @@ tipando limpo.
 ```bash
 cd frontend
 npm install                                    # node_modules não versionado, worktree novo
-npm run test:charts   # node --test 'src/charts/*.test.ts' -> 76 pass (10 novos), 0 fail
+npm run test:charts   # node --test 'src/charts/*.test.ts' -> 76 pass, 0 fail
 npm run lint          # eslint src                          -> 0 erro, 0 aviso
 cd ..
 node scripts/validate_palette.js
@@ -978,13 +978,25 @@ harness rules --mode sweep --changed-only
   -> 0 achado, rc=0
 ```
 
+**⚠️ Correção do `/build`, ciclo de reinvocação (2026-09-03), sobre a linha acima:** a primeira
+redação desta seção dizia **"76 pass (10 novos)"**, e o parêntese não tinha o comando que o
+produziu — o próprio defeito que esta casa nomeia ("nenhum número sem o comando"). Medido
+depois, isolando o commit: worktree no PAI de `a10aa71` (`6ecb9ae`) + `npm run test:charts` →
+**69 pass**; neste branch, mesmo comando → **76 pass**. `76 − 69 = 7`, não `10`
+`[MEDIDO 2026-09-03: git worktree add --detach /tmp/t057-parent 6ecb9ae && npm --prefix
+frontend run test:charts]`. Os **7** batem exato com `color-tokens.test.ts` rodado isolado
+(`node --test src/charts/color-tokens.test.ts` → **7 pass**: 5 `test(...)` estáticos + 2
+gerados pelo laço `for (const mode of ["light", "dark"])`). O `10` da redação original não
+tinha universo nem comando — era estimativa não etiquetada, escrita como medição.
+
 ### Cobertura
 
 Sem piso declarado para `charts` (mesmo motivo de `§8`/`§9`/`§10`/`§12`: `harness policy --key
-test_cmd` só cobre `sentimento`). Medição qualitativa: 10 testes novos cobrem as 3 funções/
-constantes exportadas (`colorTokens`, `candlestickSeriesColors`, `assertNoForbiddenColorRoles`)
-nos 2 modos, o cross-check hex a hex contra `validate_palette.js`, e o caso negativo da guarda —
-mais 1 assert novo em `s2-axis-integration.test.ts` fechando o round-trip real com a biblioteca.
+test_cmd` só cobre `sentimento`). Medição: **7 testes novos** (`color-tokens.test.ts`, medido
+acima) cobrem as 3 funções/constantes exportadas (`colorTokens`, `candlestickSeriesColors`,
+`assertNoForbiddenColorRoles`) nos 2 modos, o cross-check hex a hex contra
+`validate_palette.js`, e o caso negativo da guarda — mais 1 assert novo (não um teste novo) em
+`s2-axis-integration.test.ts` fechando o round-trip real com a biblioteca.
 
 ### Doc delta
 
