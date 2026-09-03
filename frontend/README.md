@@ -899,3 +899,101 @@ Este `README.md` — **atualizado**, `§11` nova (append-only). `docs/adr/ADR-00
 `docs/context/plataforma-dados/gates/T-08.11-design.md` — **sem mudança**: gate de design já
 concluído antes desta implementação, veredito não revisitado (nenhum elemento visual novo
 apareceu, falsificador do próprio gate não disparou).
+
+## 13. `src/charts/color-tokens.ts` — cor como token nomeado por papel (`T-05.7`, 2026-09-03)
+
+`T-05.7` (`CST-41`, componente `charts`, `depends_on = ["T-05.2"]`) escreve o item `5.9` do plano
+`05`: "Cor como token nomeado por papel; `critical` fora do canal de cor" (`CA-F4-10`,
+`SPEC-001` §6.2, supersedido por [`ADR-010`](../docs/adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md)).
+`ADR-010` é `docs`-owned e já fixa a aritmética (`scripts/validate_palette.js`, 361 medições,
+`exit 0`); esta task é a metade `charts` — consumir essas mesmas cores como tokens tipados por
+papel em vez de hex soltos, e compor sobre `T-05.2` (que já existia e usava `{}`, isto é, as
+cores DEFAULT da biblioteca — `#26a69a`/`#ef5350` — não os tons exatos da TradingView que
+`ADR-010/D-1` fixa: `#089981`/`#f23645`).
+
+### O que o módulo entrega, e o que deliberadamente NÃO entrega
+
+`color-tokens.ts` expõe 6 papéis (`directionUpFill`, `directionDownFill`, `directionOn`,
+`dataBrokenInk`, `provenanceStrong`, `provenanceWeak`) × 2 modos — o subconjunto das `PAPEIS` de
+`ADR-010` que `charts` de fato desenha (candle, ink de canvas). `acao-fill`/`acao-on`/`foco`
+(chrome de `<button>`/anel de foco) ficam DE FORA por desenho: são DOM, e `ADR-003` FR-1 +
+o boundary `charts`⇄`web` (`eslint.config.mjs`, `D5.12`) dizem que isso é `web`, não `charts` —
+trazer esses papéis para cá seria escopo que nem `CA-F4-10` nem o item `5.9` pedem.
+
+`candlestickSeriesColors(mode)` deriva as 6 chaves de `CandlestickStyleOptions` que
+`lightweight-charts` consome (`upColor`/`downColor`/`borderUpColor`/`borderDownColor`/
+`wickUpColor`/`wickDownColor`) de EXATAMENTE 2 tokens — `ADR-010/D-1`'s próprio tipo `FILL`
+lista "corpo/pavio de vela" como a mesma marca, então wick e borda reusam o hue da direção em
+vez de inventar uma terceira cor. `D-2` (corpo vazado/cheio/cruz) e `forced-colors`/
+`prefers-contrast` continuam dívida declarada do próprio `ADR-010` — fora do escopo desta task.
+
+### `critical` fora do canal de cor — a guarda, e ela é mostrada REJEITANDO algo
+
+`ColorRole` é uma união fechada SEM `"critical"`/`"severidade"` (`ADR-010/D-5`: severidade
+operacional — "coletor PAROU", `S1`, fase `07` — não é este papel e não tem token de cor,
+nunca). A ausência é dupla: estática (o union não tem o membro; `colorTokens(mode).critical` é
+erro de compilação) e em runtime (`assertNoForbiddenColorRoles` +
+`FORBIDDEN_COLOR_ROLE_SUBSTRINGS`, testado contra um violador real construído no teste — não
+só contra dado que já passa).
+
+### Composição sobre `T-05.2` — nunca reimplementação
+
+`s2-headless-run.ts` (`T-05.2`) ganhou um campo opcional `style` em `HeadlessSeriesSpec` (default
+`{}`, todo call site anterior a `T-05.7` continua idêntico) e `appliedCandlestickColors` no
+resultado, lido de `series.options()` da biblioteca REAL — não do objeto que passamos, a mesma
+disciplina que `dataLength` já usa no mesmo arquivo. `s2-axis-integration.test.ts` (`T-05.2`)
+passou a estilizar a série de preço com `candlestickSeriesColors("dark")` e a comparar o
+resultado LIDO DE VOLTA contra o token — prova de que a cor nomeada chega a um render real da
+biblioteca, não só a um teste unitário do módulo novo.
+
+### Cross-check contra `scripts/validate_palette.js` — duas citações, uma aritmética
+
+`color-tokens.test.ts` NÃO reimplementa CIEDE2000 nem reexecuta o script (que imprime ~150
+linhas e define `process.exitCode` como efeito colateral — carregar isso dentro de um teste
+seria um defeito de outra classe). Em vez disso lê `scripts/validate_palette.js` como TEXTO,
+extrai a tabela `PAPEIS` por regex e compara, hex a hex, contra os 6 papéis deste módulo, nos 2
+modos — mesma disciplina de "duas implementações, uma prova" que
+`canonical-grid-sha256-proof.test.ts` já usa para a grade, aqui aplicada a uma paleta.
+
+### Falsificador rodado, não só "os testes passam"
+
+`the negative control: a role named like operational severity is REJECTED` alimenta
+`assertNoForbiddenColorRoles` com `criticalFill`/`severityFill`/`severidadeFill`/`CriticalFill`
+(caixa alta incluída) e afirma que cada um LANÇA — a guarda é exercitada rejeitando, não só
+tipando limpo.
+
+### Comandos rodados, literais
+
+```bash
+cd frontend
+npm install                                    # node_modules não versionado, worktree novo
+npm run test:charts   # node --test 'src/charts/*.test.ts' -> 76 pass (10 novos), 0 fail
+npm run lint          # eslint src                          -> 0 erro, 0 aviso
+cd ..
+node scripts/validate_palette.js
+  -> exit 0, "medicoes executadas nesta rodada: 361"
+git add frontend/src/charts/color-tokens.ts frontend/src/charts/color-tokens.test.ts \
+        frontend/src/charts/s2-headless-run.ts frontend/src/charts/s2-axis-integration.test.ts
+harness rules --mode sweep --changed-only
+  -> 0 achado, rc=0
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (mesmo motivo de `§8`/`§9`/`§10`/`§12`: `harness policy --key
+test_cmd` só cobre `sentimento`). Medição qualitativa: 10 testes novos cobrem as 3 funções/
+constantes exportadas (`colorTokens`, `candlestickSeriesColors`, `assertNoForbiddenColorRoles`)
+nos 2 modos, o cross-check hex a hex contra `validate_palette.js`, e o caso negativo da guarda —
+mais 1 assert novo em `s2-axis-integration.test.ts` fechando o round-trip real com a biblioteca.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§13` nova (append-only). `docs/specs/SPEC-001-plataforma-dados.md`
+§6.2 e `docs/plans/SPEC-001-plataforma-dados/05_fatia_visivel.md` `D5.6` — **sem mudança**: já
+carregam a correção de citação de `ADR-010` (commit `452e1f8`, anterior a esta task); esta task
+consome os números publicados ali, não os emenda. `docs/context/plataforma-dados/tasks_review.md:307`
+— **sem mudança**: é artefato aprovado pelo owner e a própria task (`T-05.7`'s `refs` em
+`tasks.toml`) registra que corrigi-lo sem o gate dele é o defeito que `ADR-010` §5 existe para
+evitar — meu escopo é `charts`, não `docs`. `scripts/validate_palette.js` — **sem mudança**: é
+`docs`-owned (`ADR-010` header, "Componente alvo: `docs`"); esta task lê o texto dele
+(`color-tokens.test.ts`) e nunca o edita.
