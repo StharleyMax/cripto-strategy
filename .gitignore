@@ -1,3 +1,7 @@
+# Piloto descartável de Q11 (docs/decisoes-do-owner.md) — HTML gerado embute candle real de
+# data/ (já gitignored); nunca deve virar código de produção nem PR.
+scripts/pilot-swing-marker/out/
+
 # Estado de máquina, não contrato de repositório.
 #
 # `.claude/settings.json` carrega regras de permissão com caminhos absolutos DESTA
