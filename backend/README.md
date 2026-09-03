@@ -3061,3 +3061,247 @@ para a mesma `SeriesKey`.
 - **Sem persistência.** Nenhum arquivo/DB grava `SeriesCatalog` ainda — é lógica pura de
   `domain`, por `ADR-016`/`Natureza`; se um dia houver um `infra/*_series_catalog_store.py`,
   ele mora naquela camada, não nesta.
+
+## 📎 2026-09-03 por `T-06.9` — preço por uso, `fee_schedule` datada, `cvd_source` com erro medido
+
+`ADR-007`, `SPEC-001` §3.4/§3.7, plano `06` itens **6.6 + 6.7 + 6.8 + 6.9** (`CST-53`), DoD
+`D6.9`/`D6.13`. Popula CONTEÚDO real sobre o contrato que `T-06.1` fixou
+(`series_catalog.py`, intocado) — a mesma relação que `T-06.2`/`T-06.3`/`T-06.4` têm com ele.
+
+### As três peças
+
+[`domain/price_source_catalog.py`](src/modules/sentimento/domain/price_source_catalog.py)
+(**novo**) — itens 6.6+6.7:
+
+- `PRICE_SOURCE_BY_USE` transcreve a tabela de decisão de `ADR-007` (`structure_detection`/
+  `execution` → `klines_last`; `liquidation_trigger`/`funding`/`cost` → `mark_price`,
+  cataloged como `price_mark_close`). **Não é um campo escalar por linha**:
+  `SeriesCatalogEntry.price_use` é `str | None` (`T-06.1`), e `mark_price` serve TRÊS usos —
+  uma linha por uso duplicaria a `SeriesKey` e `SeriesCatalog` recusaria
+  (`DuplicateSeriesKeyError`, corretamente: são a mesma série lida para propósitos
+  diferentes). A tabela é a única fonte da atribuição; a linha do catálogo só declara que a
+  série EXISTE.
+- `resolve_price_source(price_use)` é o mecanismo de `PS-1`: `None` levanta
+  `MissingPriceUseError`, fora do conjunto fechado levanta `InvalidPriceUseError` (reusado de
+  `series_catalog.py`) — nunca um default.
+- `build_klines_last_entry`/`build_price_mark_close_entry` materializam as duas linhas reais.
+  `price_mark_close` cataloga o conceito `mark_price` (`PS-2`) — `implied_avg_price`
+  permanece PROIBIDO (`series_key.py::FORBIDDEN_METRIC_NAMES`, `T-04.2`); este módulo prova a
+  recusa de novo com a MESMA forma de `SeriesKey` que suas próprias linhas usam, não só
+  confia no teste de `series_key.py`.
+
+[`domain/fee_schedule.py`](src/modules/sentimento/domain/fee_schedule.py) (**novo**) — item
+6.8: `FeeScheduleEntry(venue, market, tier, maker_bps, taker_bps, effective_from,
+evidence_url)` + `FeeScheduleCatalog.resolve(venue, market, tier, at)`, as-of, o mais recente
+`effective_from <= at` vence — mesma forma de `InstrumentAliasCatalog.resolve` (`T-07.9`).
+**Zero entradas reais** (`PRD-001`, literal: "`fee_schedule` é fato datado, e hoje não existe
+nenhum") — mesma postura de `instrument_alias.yaml`/`Q12`. `resolve` sem cobertura (data fora
+de toda janela, OU catálogo vazio) **RECUSA** com `NoFeeScheduleAsOfError`, nunca cai para o
+mais recente ou para zero — `D6.13`, literal. `exchangeInfo` não tem campo de taxa; a única é
+`liquidationFee` (penalidade de liquidação, outra grandeza) — nomeado em
+`EXCHANGE_INFO_LIQUIDATION_FEE_FIELD` para quem for procurar taxa ali antes de ler este
+módulo.
+
+[`domain/cvd_source_catalog.py`](src/modules/sentimento/domain/cvd_source_catalog.py)
+(**novo**) — item 6.9: registra as três fontes que o handoff nomeia.
+
+- `aggtrade_q`/`aggtrade_nq` são LEITURAS DIRETAS do stream de `aggTrade` (`ADR-001`/D2-D3),
+  distinguidas pelo termo de identidade `quantity_field` (Q/NQ) que `T-04.2` já criava para
+  isto — **não** carregam `reconstructed_from`/`published_error`. `QF-5` pede que as duas
+  publiquem `(mediana, p99, máx, n, data_da_medição)`; `ADR-001` só mede um ponto
+  (DOGEUSDT: déficit 80,56 bp, gap de `cvd_delta` 6,01%), não uma tripla agregada, e
+  sintetizar uma a partir de um ponto violaria "nenhum número sem o comando que o produziu" —
+  fica `[NÃO MEDIDO]`, nomeado no docstring do módulo, dono task futura ou `/quant-architect`.
+- `coinalyze_bv` É reconstrução: `reconstructed_from="aggtrade_q"`, `published_error` com os
+  números reais **`[MEDIDO 2026-08-24]`: mediana 0,0000 bp · p99 29,34 bp · máx 1.955,80 bp ·
+  n=699**. `CvdSourceMeasurement` (tipo novo deste módulo, não uma mudança em
+  `PublishedError` — `series_catalog.py`'s próprio docstring já reservava esse espaço para
+  "a task que popula") carrega `max_bp`/`measured_on`/`tail_cause` +
+  `refuted_hypotheses`: `tail_cause=NOT_DIAGNOSED`, e a hipótese "maker explica a cauda" é
+  registrada como `RefutedTailHypothesis(refuted_at_bp=2.584,87)` — **refutada, não
+  adotada como causa**.
+
+### O falsificador de `D6.9`, reproduzido com a forma real
+
+[`test_cvd_source_catalog.py::test_registering_a_cvd_source_reconstruction_without_published_error_is_refused`](tests/sentimento/test_cvd_source_catalog.py)
+constrói a MESMA `SeriesKey` que `build_coinalyze_bv_entry` usa, omite `published_error`, e
+prova `InvalidCatalogEntryError` — o mecanismo é o de `T-06.1`
+(`SeriesCatalogEntry.__post_init__`), não reimplementado aqui.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1319 passed** (era 1277; **+42 novos** — 13+13+16 em
+  `test_price_source_catalog.py`/`test_fee_schedule.py`/`test_cvd_source_catalog.py`),
+  cobertura total **97,63%**; por camada (`ADR-009/D1`): domain **99,8%** (2613/2618, meta
+  90%), use_cases **100,0%** (585/585, meta 80%), infra **95,1%** (2208/2321, meta 70%) — as 3
+  camadas `[OK]`. Os 3 módulos novos isolados: `fee_schedule.py`/`cvd_source_catalog.py`
+  100%, `price_source_catalog.py` 94% (1 linha não coberta — o `RuntimeError` de guarda do
+  invariante `PRICE_SOURCE_BY_USE`/`PRICE_USES`, inalcançável sem corromper o módulo em
+  runtime; substitui um `assert` que `ruff` (`S101`) recusa em código de produção).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 242 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (159 arquivos, 721
+  dependências).
+- `bash backend/scripts/natureza.sh` → **73 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados** (3 `[AVISO]`
+  `core.module-docstring-single-line` achados durante o desenvolvimento — os 3 módulos novos
+  abriam com docstring multi-linha — corrigidos antes deste commit: conteúdo movido para
+  comentário `#`, mesma forma de `series_catalog.py`/`quarantine_terms.py`).
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **`index_price`/`premium_index` sem linha de catálogo.** São membros de `PRICE_SOURCES`
+  (`SPEC-001` §3.7) mas `ADR-007` não atribui `price_use` a nenhum dos dois hoje — catalogar
+  uma série que ninguém lê ainda seria uma linha sem evidência atrás; o dia em que um
+  `price_use` precisar de um deles, é uma função a mais aqui, não um redesenho.
+- **`QF-5` de `aggtrade_q`/`aggtrade_nq` fica `[NÃO MEDIDO]`.** Só o ponto DOGEUSDT de
+  `ADR-001` existe; a tripla `(mediana, p99, máx, n, data)` agregada é medição futura.
+- **`fee_schedule` sem entrada real.** O mecanismo (schema + `resolve` as-of + recusa) está
+  completo e testado; curar uma linha real com `evidence_url` de verdade é task futura —
+  mesma postura de `instrument_alias.yaml`/`Q12`.
+- **`PS-3` (`<Anotacao>` carrega `price_source`+`price_use`) não é construído aqui.** Pertence
+  a `charts`/`backtest`/`web` (`provenance.py` já nomeia essa fronteira) — fora do componente
+  `sentimento` desta task.
+## 📎 2026-09-03 por `T-06.2` — tabela de shift POR ENDPOINT: dump = REST −5 min, exceto o taker
+
+`CA-F2-1`, plano `06` item 6.2 (`CST-46`). Popula o valor real de `SeriesKey.label_shift`
+(`T-06.1`, `series_key.py`) para os cinco endpoints REST cujo dump mensal do S3
+(`daily/metrics`) `T-06.2` precisa alinhar — sem reabrir `series_key.py`/`series_catalog.py`
+além de consumi-los.
+
+### A tabela e o porquê do sinal
+
+[`domain/endpoint_shift_table.py`](src/modules/sentimento/domain/endpoint_shift_table.py)
+(**novo**): `ENDPOINT_LABEL_SHIFT_MS` fixa `openInterestHist` / `topLongShortPositionRatio` /
+`topLongShortAccountRatio` / `globalLongShortAccountRatio` em `+300_000` e
+`takerlongshortRatio` — a EXCEÇÃO medida — em `0`. `label_shift_for_endpoint` é lookup de
+dicionário sem `.get(..., default)`: um endpoint não medido **reprova**
+(`UnknownEndpointShiftError`), nunca herda o shift majoritário.
+
+O sinal é `+300_000`, não `-300_000`, apesar do handoff descrever o fato como "dump tem
+timestamp REST − 5 min" — as duas frases descrevem o MESMO fato de pontas opostas.
+`SeriesKey.label_shift` é somado ao timestamp do dump para alcançar o instante que o valor
+de fato descreve (mesma convenção que `SPEC-001` §2.2 já fixa para a Coinalyze: "`+interval`,
+na mesma direção do dump `metrics`"), e é o valor que `test_series_identity.py` já fixava para
+`openInterestHist` antes desta task existir — esta tabela concorda com código que a precede,
+não inventa um sinal novo.
+
+### O falsificador — dado real, não sintético
+
+[`test_endpoint_shift_table.py`](tests/sentimento/test_endpoint_shift_table.py) (**novo**, 16
+testes) lê `data/binance/metrics/btcusdt/2026-08-23.csv` (md5
+`fc8c0fba983194cf356a7d172b3bd39e`) e `data/binance/rest/rest_oi.json` (md5
+`a3a941904ab9bbe27024929d157ca6d1`) — os mesmos dois arquivos que `docs/recorte-plataforma.md`
+linha 163 já cita. `[MEDIDO 2026-09-03]`: os dois têm exatamente 288 linhas para o mesmo dia
+UTC, e casar `create_time + 300_000` contra o `timestamp` do REST bate **288 de 288**, com
+`sum_open_interest` batendo `sumOpenInterest` a **MAE = 0,000000**.
+
+**A mutação que o teste tem de reprovar, e por que a versão ingênua não bastava:** aplicar o
+shift `0` (o do taker) ao `openInterestHist` real ainda casa **287 de 288** timestamps — o
+dump publica na MESMA grade de 5 min que o endpoint, então a linha `i` do dump colide com a
+linha `i+1` do REST por pura periodicidade, não porque o shift esteja certo. O que a mutação
+realmente quebra é o VALOR: `sum_open_interest` pareado com o bucket ERRADO do REST tem
+**MAE ≈ 41,9 BTC** (máx ≈ 496,8) contra o `0,000000` do shift correto — por isso
+`match_dump_to_rest_by_shifted_timestamp` existe separado de `mean_absolute_error`, e o teste
+verifica as DUAS, não só a contagem de casamentos.
+
+A exceção do taker é provada do mesmo jeito, na direção oposta: contra
+`data/binance/rest/r_takerlongshortRatio.json` (md5 `75821a6532a742127eb91bf2a07caddb`), shift
+`0` bate com MAE bem abaixo de `0,001` sobre a janela que as duas capturas compartilham (>200
+pares); aplicar `+300_000` (o shift dos outros quatro) nessa mesma série derruba a MAE para
+acima de `0,5` — a exceção não é apenas não testada na direção contrária, é MEDIDAMENTE PIOR.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1293 passed** (era 1277; +16 novos), cobertura total
+  **97,62%**; por camada (`ADR-009/D1`): domain **99,8%** (2524/2528, meta 90%), use_cases
+  **100,0%** (585/585, meta 80%), infra **95,1%** (2208/2321, meta 70%) — as 3 camadas
+  declaradas, todas `[OK]`.
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 235 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (156 arquivos, 707 dependências).
+- `bash backend/scripts/natureza.sh` → **71 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados**.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **`topLongShortPositionRatio` não tem captura REST própria em disco** (`data/MANIFEST.md`
+  não cataloga uma) — seu `+300_000` é o mesmo valor medido para os outros três endpoints de
+  L/S, aplicado por semelhança de forma (mesma família de endpoint, mesmo dump de origem), e
+  não por medição direta desse endpoint específico. Se uma captura REST desse endpoint entrar
+  em `data/`, o falsificador equivalente ao de `openInterestHist` deve ser acrescentado.
+- **`buyVol`/`sellVol` do REST `takerlongshortRatio` não são persistidos aqui** — é `T-06.10`
+  (plano `06` item 6.10, "SPEC-001 §5.11").
+- **`series_catalog.py` não recebe linhas populadas para estes 5 endpoints** — esta task fixa
+  a tabela de shift que alimentará `label_shift`/`verified_by` das linhas reais; escrever as
+  linhas do catálogo com `key=SeriesKey(...)` completo é composição de tasks futuras
+  (`T-06.3`/`T-06.5`/`T-06.9`), que esta não antecipa.
+## 📎 2026-09-03 por `T-06.5` — `reduction` populado: OI da Coinalyze = 4 linhas, Binance = 1
+
+`CA-F2-17`, plano `06` item **6.11** (`CST-49`). `T-06.1` já tinha construído o CONTRATO — o
+termo `reduction` na `SeriesKey`, o enum `Reduction` com os seis membros certos, e a recusa de
+default sobre qualquer termo de identidade (`test_series_identity.py`, escrito naquela task já
+citando esta medição). O que faltava era a POPULAÇÃO: as linhas reais de `series_catalog` para
+Open Interest das duas fontes — e é isso que esta task fecha.
+
+### A peça
+
+[`domain/open_interest_catalog.py`](src/modules/sentimento/domain/open_interest_catalog.py)
+(**novo**): três funções de produção, nenhuma delas uma cópia de fixture de teste.
+
+- `coinalyze_open_interest_key(reduction, *, instrument_id=...)` — `reduction` é parâmetro
+  **posicional obrigatório, sem default**. É o falsificador `D6.7` na própria assinatura:
+  chamar sem o argumento é `TypeError` nomeando `reduction`, nunca uma linha escolhida em
+  silêncio entre `OPEN`/`HIGH`/`LOW`/`CLOSE`.
+- `binance_open_interest_key(*, instrument_id=...)` — sempre `Reduction.POINT` /
+  `TsConvention.POINT_AT_BUCKET_END`, porque a Binance só publica UMA leitura por bucket.
+- `open_interest_catalog_entries(instrument_id=...)` — monta as **cinco** linhas (4 Coinalyze
+  `OHLC_OVER_BUCKET` + 1 Binance `POINT`) através de `build_series_catalog` (`T-06.1`), então a
+  invariante "UMA linha por `SeriesKey`" (`SPEC-001` §3.3) é validada na construção, não
+  apenas assumida por este módulo.
+
+`OPEN_INTEREST_LABEL_SHIFT_MS = 300_000` para as duas fontes — `SPEC-001` §2.1, literal: *"o
+`label_shift` da Coinalyze é `+interval`, na mesma direção do dump `metrics`, e não zero"*.
+`D6.8`, medido (`CST-4`, `[DOC: SPEC-001 §2.1]`): o `c` da Coinalyze casa com o
+`sumOpenInterest` da Binance no mesmo `create_time` a **1,86 bp de mediana / 9,46 bp de p99
+(n=1.706)**, enquanto `o(t) = c(t-300)` em só **6 de 2.141** pares — prova de que o `t` da
+Coinalyze é o INÍCIO do bucket, e de que as quatro leituras são identidades genuinamente
+distintas, não três mais uma repetida.
+
+### O falsificador — contra a população de PRODUÇÃO, não contra a fixture de `T-06.1`
+
+[`test_open_interest_catalog.py`](tests/sentimento/test_open_interest_catalog.py) (**novo**, 10
+testes) chama `open_interest_catalog.py` diretamente — nunca as fixtures locais de
+`test_series_identity.py`/`test_series_catalog.py`. Cobre: `D6.7` (chamar
+`coinalyze_open_interest_key()` sem `reduction` ⇒ `TypeError`), as cinco identidades
+distintas por `series_key_id()`, o catálogo de produção com exatamente 5 linhas (4
+`coinalyze` + 1 `binance`), busca de cada uma via `entry_for`, `label_shift` positivo e igual
+nas duas fontes, uma SEXTA linha duplicando um `reduction` existente reprovando por
+`DuplicateSeriesKeyError` através do `build_series_catalog` real (não uma cópia da regra), e
+`instrument_id` como parâmetro (não símbolo fixo).
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1289 passed**, cobertura total **97,62%**; por camada
+  (`ADR-009/D1`): domain **99,8%** (meta 90%), use_cases **100,0%** (meta 80%), infra **95,1%**
+  (meta 70%) — as 3 camadas declaradas, todas `[OK]`. `open_interest_catalog.py` em
+  **100% linha/branch** (`coverage.xml`).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 235 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (156 arquivos, 707 dependências).
+- `bash backend/scripts/natureza.sh` → **71 arquivo(s), 0 leitura(s) de relógio** (era 70 em
+  `T-06.1`; +1 pelo módulo novo).
+- `harness rules --mode sweep --changed-only` → **1 achado WARN** na primeira passada
+  (`core.module-docstring-single-line`, docstring de módulo multi-linha) — corrigido para
+  docstring de uma linha + comentário `#` (mesmo estilo de `series_catalog.py`/
+  `quarantine_terms.py`); segunda passada: **0 achados**. Nenhum achado de severidade `block`.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Sem persistência.** `open_interest_catalog_entries()` é lógica pura de `domain`
+  (`ADR-016`/`Natureza`) — nenhum store grava o resultado ainda.
+- **Sem quarentena/`available_at`.** O predicado de três termos (`T-06.6`) é quem decide se
+  estas cinco linhas nascem isoladas; esta task só declara a identidade e o `label_shift`.
+- **Não reconcilia automaticamente.** `D6.8` é uma medição publicada, não um mecanismo de
+  correção — a divergência Coinalyze×Binance continua visível como divergência, nunca
+  corrigida antes de gravar.

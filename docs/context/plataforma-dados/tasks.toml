@@ -616,7 +616,7 @@ tracker = { provider = "jira", id = "CST-35", url = "https://conversationhub.atl
 id = "T-05.2"
 title = "[charts] 05 · S2-minima: BTCUSDT, 4 dias, paineis Preco + OI + CVD delta e acumulado"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED (2 rodadas) + REVIEW COMPLIANT (2 rodadas) em 2026-09-03 @ 9fa993c (PR #102)
 phase = "05"
 depends_on = ["T-05.1"]
 refs = [
