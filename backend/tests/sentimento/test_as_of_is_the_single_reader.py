@@ -25,6 +25,13 @@ the module count had grown along with the rest of `backend/src`. The `116` matte
 bookkeeping: it is the floor of the anti-vacuity guard below, so a stale, lower number puts the
 reader further from believing the guard has slack it does not have. The `36` measurement's own
 history is in `docs/context/plataforma-dados/gates/T-04.4-builder.md`.
+
+`T-06.4` adds a FIFTH toucher (`funding_settlement.py`, a different aggregate — see its entry
+in `DECLARED_TOUCHERS` for why it is not a second reader) and the module count has grown past
+`116` again, same drift this docstring already names above rather than hides:
+
+    python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"
+    # 123                                       [MEASURED 2026-09-03, T-06.4]
 """
 
 from __future__ import annotations
@@ -80,6 +87,16 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # column at all: it takes the caller's already-computed `observed_already_present: bool`,
     # which is exactly why it needs no entry here.
     "modules/sentimento/use_cases/write_series_row.py": frozenset({"write_series_row"}),
+    # `T-06.4`: a DIFFERENT AGGREGATE, not a second read path. `FundingRecord.observed_at`
+    # (`PRD-001` §5.6's own PK spelling: `(instrument_id, settle_bucket, source, observed_at)`)
+    # names WHEN a funding row was observed — never a series' value AT a decision instant `t`.
+    # `__post_init__` checks `settle_bucket` is the grid slot its OWN `observed_at` implies
+    # (`D6.11`), `settlement_residual_ms` returns the jitter past that slot, and `primary_key`
+    # projects it into the PK tuple — none of the three ever consult a second row or a `t` to
+    # answer "what was this series worth", which is the one question `as_of` alone may answer.
+    "modules/sentimento/domain/funding_settlement.py": frozenset(
+        {"__post_init__", "settlement_residual_ms", "primary_key"}
+    ),
 }
 
 
