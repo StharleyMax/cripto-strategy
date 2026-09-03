@@ -2993,3 +2993,71 @@ um dia ANTES de `effective_from`, `resolve` tem que devolver o símbolo ANTIGO, 
 - **Sem CLI.** Ao contrário de `clock_skew_tolerance_cli.py`, este mecanismo não ganhou um ponto
   de entrada de linha de comando — nada na task pede um, e um consumidor real decide a forma da
   integração quando existir.
+
+## 📎 2026-09-02 por `T-06.1` — `series_catalog`: o contrato lido pelos testes, raiz da fase 06
+
+`SPEC-001` §3.3, plano `06` itens **6.1 + 6.5 + 6.15** (`CST-45`). Esta é a task-raiz da fase
+06 inteira — `T-06.2`..`T-06.10` dependem dela — e o escopo é deliberadamente estreito: o
+CONTRATO (o tipo e a validação), não o conteúdo de produção de nenhuma série real e não o
+mecanismo de quarentena (`T-06.6`).
+
+### A peça
+
+[`domain/series_catalog.py`](src/modules/sentimento/domain/series_catalog.py) (**novo**):
+`SeriesCatalogEntry` envolve `SeriesKey` (`T-04.2`, reusado — não redefinido) com os campos
+que `SPEC-001` §3.3 pede ALÉM da identidade:
+
+- `native_grid` — campo **por linha**, nunca constante de módulo (`CA-F2-11`): a Coinalyze
+  resolve `1min`, o `daily/metrics` da Binance resolve `5min`, e uma constante mislabelaria
+  quem não é o dono dela.
+- `max_staleness_ms` — obrigatório, positivo; é até onde um leitor pode `LOCF` (`SPEC-001`
+  §3.2).
+- `price_use` — opcional, restrito ao conjunto fechado de `SPEC-001` §3.7 (`InvalidPriceUseError`
+  fora dele).
+- `reconstructed_from` + `published_error` (`PublishedError.median_bp/p99_bp/n`) — obrigatórios
+  **juntos**: uma série que se declara reconstrução de outra fonte sem `(mediana, p99, n)`
+  reprova, literal de `SPEC-001` §3.3 ("`"bv` serve"` e `"bv` serve com p99 de 29,34 bp`" são
+  afirmações diferentes").
+
+`unit`, `denom`, `label_shift` e `verified_by` **não** são repetidos como campos do catálogo:
+são quatro dos quinze termos que `SeriesKey.__post_init__` já recusa em branco
+(`IncompleteSeriesKeyError`) — duplicá-los aqui criaria um segundo lugar para a mesma
+obrigação divergir do primeiro. `SeriesCatalog` (o container) recusa duas linhas com o mesmo
+`series_key_id()` — a "UMA linha por `SeriesKey`" de `§3.3` como falsificador, não como
+comentário.
+
+### O falsificador central — o teste lê o catálogo, não duplica valor
+
+[`test_series_catalog.py`](tests/sentimento/test_series_catalog.py) (**novo**, 26 testes) chama
+`SeriesCatalogEntry`/`PublishedError`/`build_series_catalog` de produção em todo
+`pytest.raises` — nenhum valor esperado é recopiado à mão. Cobre: ausência de
+`unit`/`denom`/`verified_by` (via `SeriesKey`, `IncompleteSeriesKeyError`), `native_grid` em
+branco, `max_staleness_ms` não-positivo, `price_use` fora do conjunto fechado, reconstrução
+sem erro publicado E o caso simétrico (erro publicado sem `reconstructed_from`), e duas linhas
+para a mesma `SeriesKey`.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1277 passed**, cobertura total **97,61%**; por camada
+  (`ADR-009/D1`): domain **99,8%** (meta 90%), use_cases **100,0%** (meta 80%), infra **95,1%**
+  (meta 70%) — as 3 camadas declaradas, todas `[OK]`.
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 234 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (155 arquivos, 703 dependências).
+- `bash backend/scripts/natureza.sh` → **70 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados** (o `[AVISO]` de docstring de
+  módulo multi-linha, achado uma vez durante o desenvolvimento, foi corrigido no próprio
+  módulo antes deste commit — `series_catalog.py` abre com docstring de uma linha e o resto
+  em comentário `#`, mesmo estilo de `quarantine_terms.py`).
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Zero shift/série real populado.** `T-06.2` (tabela de shift por endpoint), `T-06.3` (as
+  quatro séries de L/S), `T-06.4` (funding) e `T-06.9` (preço/`cvd_source`/`fee_schedule`)
+  escrevem as linhas de produção; esta task só valida a forma delas.
+- **Sem quarentena.** O predicado de três termos (`label_shift IS NULL OR unit IS NULL OR
+  available_at IS NULL`, `quarantine_terms.py`) é `T-06.6` — misturado aqui, deixaria aquela
+  task sem o que construir.
+- **Sem persistência.** Nenhum arquivo/DB grava `SeriesCatalog` ainda — é lógica pura de
+  `domain`, por `ADR-016`/`Natureza`; se um dia houver um `infra/*_series_catalog_store.py`,
+  ele mora naquela camada, não nesta.
