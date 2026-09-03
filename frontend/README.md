@@ -1480,3 +1480,103 @@ owner; `D2`/`D3`/`Q11`/`Q20` são consumidos, não ratificados por este commit. 
 **sem mudança, mesmo motivo registrado em `§17`**: uma linha por task é escrita depois do ciclo
 build+QA+review completo, não antes do QA rodar. Gate de design — **não aplicável**: zero DOM,
 zero componente React, mesma classe de `§15`/`§17`.
+---
+
+## 19. `A4` — o `frontend/` deixa de ter caminho próprio para o dado, e o portão de fronteira estava CALADO (2026-09-03)
+
+**Isto não é task.** É o espelho, neste pacote, de uma decisão de owner registrada em
+[`docs/decisoes-do-owner.md`](../docs/decisoes-do-owner.md) §*"2026-09-03 · A4/A6/A7"*, mais **um
+achado de portão medido ao escrevê-lo**. Nenhuma seção anterior deste `README.md` foi reescrita —
+`§5-bis` continua dizendo **quatro** achados, porque quatro era o número dela.
+
+### A decisão, e o que ela proíbe aqui dentro
+
+`[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]` — **não é fala do owner**; ele
+escolheu de um menu redigido por agente, com o custo de cada opção declarado.
+
+> **FastAPI é a ÚNICA porta de leitura.** As duas rotas de `ADR-005/D1` (HTTP endereçável por conteúdo
+> para histórico; SSE para a borda direita) vivem no backend. Este pacote **renderiza** e, se
+> precisar, **proxia sessão/auth apenas — zero SQL, zero regra de domínio, zero subprocess.**
+
+A pergunta do owner que a originou, literal `[PREMISSA-OWNER: 2026-09-03]`: *"Dono da verdade é o
+back … dentro do contexto que sou acostumado, os dados sempre vem do backend."* O arquiteto **não
+defendeu** o caminho alternativo: ele contradiz a aresta `API --> WEB --> CH` de
+[`docs/arquitetura-fluxos.md:78`](../docs/arquitetura-fluxos.md), e `spawnSync` **não existe em
+browser** ⇒ aquele caminho nunca viraria produção.
+
+### ⚠️ O ACHADO: `web-fullstack.browser-imports-server` NÃO VÊ subprocess — e a mensagem dele afirma que vê
+
+A regra existe e morde import estático — `§5-bis` deste arquivo mediu as três evasões dela. O que
+**nenhuma medição anterior** tinha olhado é o que a **mensagem** dela promete:
+
+> *"o codigo do navegador nao importa do servidor: os dois lados so se falam pelo contrato da
+> interface publicada"*
+> `[DOC: packs/web-fullstack/rules.toml:18, plugin 0.13.0]`
+
+E o `regex` que sustenta a promessa `[DOC: mesmo arquivo, :17]`:
+
+```
+from\s+["'](\.\./)*backend/|require\(["'].*backend/
+```
+
+**A cadeia é `from "…backend/"` ou `require("…backend/")`. `spawnSync` não é nenhuma das duas.**
+`frontend/src/features/s1-console/ingest-health-query.ts:74` faz
+`import { spawnSync } from "node:child_process"` e executa `ingest_health_cli.py` do backend — ou
+seja, **os dois lados se falam por fora da interface publicada, que é exatamente o que a mensagem
+diz não acontecer** — e o portão passa:
+
+```bash
+harness rules --mode file --path frontend/src/features/s1-console/ingest-health-query.ts
+# rc=0, ZERO byte de saída   [MEDIDO 2026-09-03]
+```
+
+**Por que isto é a mesma família de defeito que `ADR-012` nomeia, e não um detalhe:** o `rc=0` aqui é
+**indistinguível** entre *"o navegador não fala com o servidor"* e *"o instrumento não é capaz de ver
+esta forma de falar"*. É o mesmo modo de falha que `§5-bis (i)` registrou na direção oposta — lá a
+regra **mordia dentro de comentário** (falso positivo); aqui ela **cala sobre execução real** (falso
+negativo). **Regex de linha sobre cadeia de import não alcança chamada de processo**, e esta frase é
+o registro de que a lacuna é estrutural, não um `regex` a ser remendado.
+
+**⛔ NÃO consertei, e o motivo é o mesmo de `§5-bis`:** a regra é do **pack do mecanismo**
+(`packs/web-fullstack/rules.toml`, plugin `0.13.0`), não deste repositório, e `ADR-011/D1.10` proíbe
+`[[rules.own]]` como remendo. Declarar uma allowlist aqui seria indistinguível de bypass.
+
+### O que isto significa para o módulo que existe hoje
+
+`ingest-health-query.ts` **não é defeito de quem o escreveu** — o despacho de `T-07.13` autorizou o
+subprocess **explicitamente e por escrito** (`handoff/T-07.13.md`), na ausência de framework HTTP
+(`grep -rn 'fastapi|FastAPI|APIRouter|flask' backend/ -l` → **`rc=1`, zero arquivos**
+`[MEDIDO 2026-09-03]`), e o próprio arquivo nomeia a fronteira nas linhas 1-16. O parecer de
+2026-09-03 **confirmou** que ele não viola `ADR-008/D3`: não há segunda leitura de store, e sem a
+re-derivação independente `DoD-2` compararia um número consigo mesmo.
+
+**O que muda é o destino dele, não o julgamento:** com `A4`, aquele caminho não vira produção.
+**162 de 500 linhas (32,4%) morrem** quando a rota existir e **~250 sobrevivem reféns** do schema que
+`A5` decide `[MEDIDO 2026-09-03, comando no parecer]`. E **é produção hoje pela política deste
+repositório** — `frontend/src/` casa `include_prefixes` e **não** casa `test_globs`
+(`harness code-paths classify`), o que é o argumento de que ele **precisa** sair deste universo, por
+task, em vez de ficar.
+
+**Consequência já nomeada e sem dono antes de hoje:** `createHash` de `node:crypto` é **síncrono** e
+`crypto.subtle.digest` é **assíncrono** ⇒ `fingerprint(): string` (`:262`) vira `Promise`, e **o
+falsificador de `ADR-008/DoD-2` fica assíncrono**. `grep -rln 'createHash' frontend/src | grep -v test`
+→ **2 de 35** módulos não-teste `[MEDIDO 2026-09-03]`.
+
+### `A6` — quem julga este pacote muda, e o `design_gate` não
+
+`web.architect` deixa de ser o `ui-designer` (hoje [`harness.toml:643-645`](../harness.toml)); nasce
+um arquiteto de front, e a dupla `frontend_builder`/`frontend_qa` é portada do `anything_monorepo`.
+O `ui-designer` **mantém o `design_gate`**. Para este pacote o efeito prático é a rede de teste que
+`§4` deste arquivo declara faltando: o `frontend_qa` traz **Vitest + Testing Library + Playwright**,
+onde hoje há `node --test` sem `tsconfig.json` e **zero** `import` de `react`
+(`grep -rn 'from "react"' frontend/src | wc -l` → **0**, com 3 `.tsx`/409 linhas
+`[MEDIDO 2026-09-03]`).
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§19` nova (append-only; `§5-bis` **intocada**, e o "quatro" dela
+continua correto para o universo dela). `docs/decisoes-do-owner.md` e `docs/INDEX.md` — já
+atualizados no registro das decisões. `docs/adr/ADR-005-*.md` — **em emenda pelo `quant-architect`**
+nesta data (`A4`/`A5`), **não tocada aqui**. `packs/web-fullstack/rules.toml` — **não tocado, de
+propósito**: é do mecanismo. `tasks.toml`, ledger, `harness.toml` e Jira — **intocados**; o item de
+plano e as tasks são atos do `/architect` e do `/tech-lead`.

@@ -280,6 +280,52 @@ refs = [
 ]
 tracker = { provider = "jira", id = "CST-91", url = "https://conversationhub.atlassian.net/browse/CST-91" }
 
+[[tasks]]
+id = "T-01.8"
+# Prefixo `[docs]` sozinho e CONFERIDO: as quatro superficies desta task sao `nao-producao`
+# [MEDIDO 2026-09-03: `harness code-paths classify .claude/agents/infra-architect.md` e
+# `Makefile` -> nao-producao; include_prefixes = backend/src/, backend/tests/, frontend/src/].
+title = "[docs] 01 · A6 — web ganha architect proprio e a dupla builder/qa portada; infra ganha juiz NOVO (infra-architect)"
+components = ["docs"]
+status = "todo"
+phase = "01"
+# `T-09.4` E ARESTA DURA, nao cortesia: `V-16` reprova `[agents.by_component.infra]`
+# enquanto `infra` nao estiver em `components` (`lib/policy.py:539-543`).
+depends_on = ["T-01.3", "T-09.4"]
+refs = [
+    "NASCE de A6, aprovada pelo owner em 2026-09-03. [DECISAO-OWNER: 2026-09-03, escolha entre alternativas apresentadas] — NAO e fala do owner; ele escolheu opcao de menu com o custo de cada uma declarado. Registro: docs/decisoes-do-owner.md secao 'A6 — web ganha arquiteto de front proprio'.",
+    "ADR-009/D6.5", "F-D6-6", "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
+    "AS QUATRO SUPERFICIES. A QUARTA FOI ACRESCENTADA EM 2026-09-03 PORQUE A PRIMEIRA REDACAO DESTA TASK TINHA UM DEFEITO REAL: ela prometia em (3) que web.architect passa ao arquiteto de front e NAO CRIAVA ESSE ARQUIVO EM LUGAR NENHUM. Medido: grep -rn 'frontend-architect' docs/ .claude/ harness.toml -> 0 ocorrencias no repositorio inteiro [MEDIDO 2026-09-03]. (1) `.claude/agents/infra-architect.md` — CRIACAO, nao porte. Universo medido: `ls .claude/agents/` -> 2 (quant-architect.md, ui-designer.md); no vizinho, find de '*/agents/*.md' fora de node_modules -> 12 arquivos (3 em .claude/agents/, 9 em .github/agents/) e NENHUM e de infra [MEDIDO 2026-09-03]. (2) `.claude/agents/frontend-architect.md` — CRIACAO, nao porte, e e a MESMA NATUREZA de (1). O vizinho NAO TEM arquiteto de front: dos 12 agents dele, o unico `architect.agent.md` e GENERICO, e a descricao dele diz 'Solutions Architect Senior. Valida PRDs (Gap Analysis), produz Tech Specs numeradas, ADRs e Planos de Execucao' [MEDIDO 2026-09-03, lido em .github/agents/architect.agent.md:2]. A DECISAO DO OWNER EM A6 FOI DE DOIS AGENTS NOVOS, NAO UM. NOME: `frontend-architect.md`, por consistencia com os dois portados de (3) e com a convencao de hifen que os 2 agents locais ja usam (quant-architect.md, ui-designer.md); nenhuma razao medida para outro nome. (3) `.claude/agents/frontend-builder.md` e `frontend-qa.md` — PORTE de anything_monorepo/.github/agents/frontend_builder.agent.md (82 linhas) e frontend_qa.agent.md (92 linhas) [MEDIDO 2026-09-03]. (4) `harness.toml` [agents.by_component]: `web.architect` deixa de ser ui-designer.md e passa a `.claude/agents/frontend-architect.md`, o arquivo criado em (2); `web.builder` e `web.qa` entram apontando para a dupla portada de (3); `web.design_gate` FICA. E `infra` nasce com `architect = .claude/agents/infra-architect.md`, o arquivo criado em (1).",
+    "O DEFEITO QUE ISTO CORRIGE, MEDIDO: `harness.toml:643-645` poe `web.architect = \".claude/agents/ui-designer.md\"` — um operador de Stitch como dono de julgamento do schema de transporte SSE, do bundle-URL e de 7 modulos de dominio portado.",
+    "VIABILIDADE JA MEDIDA, nao presumida: o conjunto de papeis de [agents.by_component] e ABERTO — `lib/policy.py:549-550` itera `for papel, valor in mapa.items()`, e a unica exigencia por papel e `checa_ponteiro` (caminho relativo nao vazio que EXISTA sob a raiz; ponteiro que nao resolve e AVISO, fatal=False) [DOC: harness.toml:594-599] => `web.builder` e `web.qa` sao declaraveis SEM mudar o plugin.",
+    "DoD E O COMANDO QUE O PROVA: `harness policy --key agents.by_component` -> `infra` presente COM `architect` e o caminho existindo (F-D6-6); `web.architect` != ui-designer.md, `web.builder`/`web.qa` presentes, `web.design_gate` PRESENTE; e `harness validate --strict` em rc=0. MORDE: infra no enum e ausente da tabela e ADR-003:11-13 com uma camada de silencio a mais — o rotulo existe, entao ninguem procura o dono.",
+    "⛔ METADE DO DoD QUE NAO PODE SER DELEGADA AO checa_ponteiro, E O MOTIVO E MEDIDO: os DOIS caminhos de agent NOVOS TEM DE EXISTIR NO DISCO. Prova: `test -f .claude/agents/frontend-architect.md` e `test -f .claude/agents/infra-architect.md` (rc=0 nos dois), MAIS `test -f` sobre o valor LITERAL que `harness policy --key agents.by_component` devolve em web.architect e em infra.architect. NAO BASTA `harness validate --strict`: checa_ponteiro trata ponteiro que nao resolve como AVISO, fatal=False [DOC: harness.toml:594-599, e a linha de VIABILIDADE desta mesma task ja o registrava] => web.architect apontando para arquivo INEXISTENTE sai com resmungo e rc=0. Ponteiro pendurado passando em rc=0 e a MESMA FAMILIA de cegueira que D1.7c e D1.10 nomeiam, e aqui ela estaria DENTRO do ato que existe para consertar a cegueira de julgamento, que e o pior lugar possivel para ela. E FOI EXATAMENTE ESSE O DEFEITO da primeira redacao desta task: a assercao \"web.architect != ui-designer.md\" PASSA com o ponteiro pendurado.",
+    "O QUE ESTA TASK NAO FECHA, e nao e omissao: ela NAO congela nada. A atribuicao continua desfazivel em silencio — as 3 mutacoes que docs/gate-de-design.md mediu (apagar design_gate, TROCAR charts<->web, esvaziar a seccao) passam em rc=0. Congelar e T-01.9.",
+    "LIMITE HERDADO, DECLARADO: `design_gate` e papel que o mecanismo NAO ROTEIA — so `builder` e `qa` sao consumidos [DOC: ref de T-01.3, medido em 2026-08-28 sobre o plugin v0.13.0]. A6 MUDA isso para `web`: com builder/qa declarados, os dois papeis novos passam a ser efetivamente roteados. E o primeiro componente deste repositorio em que isso vale.",
+    "O QUE A6 NAO INVALIDA: a resposta de Q16 (2026-08-28, [PREMISSA-OWNER]) foi 'charts -> quant-architect · web -> ui-designer'. Ela NAO e apagada — era correta para o universo de 2026-08-28, quando `web` nao tinha modulo de dominio portado nem transporte. A6 SUCEDE Q16 na chave `web.architect`; `charts` fica INTOCADO.",
+    "ESCOPO DE ESCRITA: `.claude/agents` NAO estava no escopo da feature e foi acrescentado em 2026-09-03 com autorizacao explicita do owner [MEDIDO 2026-09-03: antes `harness pipeline require-code .claude/agents/infra-architect.md` -> 'nenhuma feature autorizada reivindica o path'; depois -> 'codigo permitido — feature plataforma-dados (scope)'; o escopo foi de 19 para 21 prefixos].",
+]
+tracker = { provider = "jira", id = "CST-100", url = "https://conversationhub.atlassian.net/browse/CST-100" }
+
+[[tasks]]
+id = "T-01.9"
+title = "[docs] 01 · A atribuicao de agents.by_component vira propriedade medida — arquivo dourado no make"
+components = ["docs"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.8"]
+refs = [
+    "ADR-012/D5b", "Q16", "A6", "plano 01 item 1.13", "DoD D1.12", "docs/gate-de-design.md",
+    "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
+    "ITEM 1.13 NUNCA TEVE TASK, e isso foi MEDIDO pelo /architect em 2026-09-03: T-01.1..T-01.7 sao 7 de 7 e nenhuma o carrega. Logo esta e task NOVA sobre item que JA EXISTE — NAO e item novo, e criar item de plano e ato do /architect.",
+    "DoD D1.12, literal do plano: `make lint` != 0 quando `harness policy --key agents.by_component` divergir do esperado declarado; VERDE sobre a politica de hoje. MORDE: as 3 mutacoes que hoje passam em rc=0 [DOC: docs/gate-de-design.md secao 'O que a mutacao mostrou' — apagar design_gate, TROCAR charts<->web, esvaziar a seccao; 5 mutacoes medidas em 2026-08-28 por T-01.3].",
+    "REPROVA SE A ASSERCAO SO COBRIR PRESENCA DE CHAVE — e exatamente o defeito de D1.2, cujo comando e satisfeito por `{\"charts\": {}}`.",
+    "A SAIDA E JSON DE CHAVES ORDENADAS, e o universo MUDOU com T-01.8: passa a ter 6 chaves (backtest, charts, convergencia, infra, sentimento, web), nao 5. `docs` continua AUSENTE de agents.by_component [MEDIDO 2026-09-03] e o dourado tem de congelar essa ausencia tambem — senao ele mede menos do que a politica diz.",
+    "NAO E ROTEAMENTO: ADR-012/D5a recusa, e roteamento e do harness-plugin. E fazer com que DESFAZER a decisao do owner custe editar DUAS superficies.",
+    "DIVERGENCIA D-1 DA NARRATIVA, ACEITA PELO OWNER em 2026-09-03 [DECISAO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]: o despacho esbocava UMA task para o item 1.13; a quebra propos DUAS (T-01.8 atribuicao + T-01.9 congelamento) e o owner aceitou como recomendado. Razao: o dourado nasce UMA vez, sobre a atribuicao final, e T-01.9 pode correr em paralelo com as tasks de web — nada em 05 depende dela. Se algum dia for revertido, T-01.9 some e D1.12 entra em refs de T-01.8.",
+]
+tracker = { provider = "jira", id = "CST-101", url = "https://conversationhub.atlassian.net/browse/CST-101" }
+
 # ── 02 · Captura sem gate de host · CST-2 ──────────────────────────────────────────
 
 [[tasks]]
@@ -718,6 +764,152 @@ refs = [
     "CONDICIONAL: se as rotas nao forem publicadas, esta task sai e T-04.7 fica",
 ]
 tracker = { provider = "jira", id = "CST-44", url = "https://conversationhub.atlassian.net/browse/CST-44" }
+
+# ── 05 · a SUPERFICIE SERVIDA · itens 5.13-5.17, reabertura de 2026-09-03 (A7) ─────
+#
+# ORDEM OBRIGATORIA E MEDIDA, nao preferencia. `V-16` tem DOIS sitios com o MESMO id de
+# regra: `lib/policy.py:539-543` guarda CHAVE de `agents.by_component`, e
+# `scripts/tasks.sh:777-778` guarda `components` DE TASK. O segundo foi medido com sonda
+# em arquivo avulso [MEDIDO 2026-09-03: `harness tasks validate <sonda>.toml` com
+# components = ["infra"] -> `ERROR ... V-16 componente fora do enum: infra` e o arquivo
+# FALHOU]. E ERROR, nao WARN => task de 5.13 escrita antes de `infra` entrar no enum
+# torna o `tasks.toml` INTEIRO vermelho, as 85 tasks existentes junto.
+#   T-09.4 (enum 6->7) -> T-01.8 (juiz de infra + A6) -> T-05.11/T-05.12 -> o resto.
+
+[[tasks]]
+id = "T-05.11"
+# `[docs][web]`: precedente exato de T-01.1 (`["docs","sentimento"]`) — a task escreve
+# producao E superficie de docs. V-26 exige o prefixo acompanhar os DOIS.
+title = "[docs][web] 05 · Scaffold Next real sob frontend/src/app, tsconfig e typecheck --strict dentro de make lint-frontend"
+components = ["docs", "web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-01.8"]
+refs = [
+    "SPEC-001 §6", "plano 05 item 5.16", "DoD D5.16", "DoD D5.16b", "index.md:72", "ADR-009/D3", "ADR-011/D4",
+    "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
+    "ACHADO MEDIDO QUE NENHUMA FONTE DECLARA, E ELE DECIDE ONDE O SCAFFOLD NASCE: `harness code-paths classify frontend/app/page.tsx` -> `nao-producao: nenhum include_prefixes casa ['backend/src/','backend/tests/','frontend/src/']` [MEDIDO 2026-09-03]. Um app Next criado em `frontend/app/` (o default do Next 13+ sem src/) nasce FORA DE TODA REGRA — mesma classe de lacuna que `deploy/`, e pior, porque .tsx de producao que o harness chama nao-producao tambem escapa do pack `web-fullstack` e do ESLint que T-01.2 instalou. RESTRICAO DURA DESTA TASK: o app vive em `frontend/src/app/`, que o Next suporta e que JA EXISTE (frontend/src/app/routes.ts, history-transport.ts). Criar em `frontend/app/` REPROVA a task, e reprova por COBERTURA, nao por estilo.",
+    "A OMISSAO ESTA DECLARADA NO PROPRIO CODIGO: `frontend/src/app/routes.ts:11-13` — 'the Next.js pages themselves belong to the `web` component and are NOT created by this task'.",
+    "DoD D5.16, o par morde/cala de 1.8' aplicado a `tsc`. MORDE: erro de tipo plantado -> `make lint` != 0 nomeando arquivo e linha, E `git push --dry-run` RECUSADO (o padrao de D1.7c/D1.11). CALA: arvore limpa -> rc=0. Universo: 35 modulos / 5.741 linhas + 3 .tsx / 409 linhas [MEDIDO 2026-09-03].",
+    "O 'ANTES' E ZERO, e e o argumento inteiro: `ls frontend/tsconfig.json` -> INEXISTENTE, `grep -cE 'typecheck|noEmit' frontend/package.json` -> 0 [MEDIDO 2026-09-03], e a unica passada de `tsc --noEmit --strict` do repositorio foi A MAO, UMA VEZ, por T-07.14 [DOC: docs/INDEX.md:125].",
+    "[NAO MEDIDO]: quantos dos 35 modulos passam hoje em --strict. MEDIR E O PRIMEIRO ATO DA TASK, e o numero vai no gate. BAIXAR O `strict` PARA O PORTAO 'FECHAR' REPROVA — e o mesmo modo de falha que D5.12 recusa por escrito.",
+    "DoD D5.16b: o app RENDERIZA, e nao so compila — subir o app e abrir a rota da S2-minima. Os 3 .tsx importam `react`; hoje `grep -rn 'from \"react\"' frontend/src | wc -l` -> 0 [MEDIDO 2026-09-03]. REPROVA SE O APP SUBIR SEM RENDERIZAR NENHUM DOS 3: compilar sem renderizar e o mesmo vacuo do transporte sem servidor.",
+    "ARESTA D-3, ACEITA PELO OWNER em 2026-09-03 [DECISAO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]: esta task vem ANTES de T-05.14/T-05.15, e a aresta foi acrescentada pelo /tech-lead, nao pelo despacho. Razao: o portao de tipo nasce antes de T-05.15 apagar 209 linhas de um modulo de 500. Invertido, as duas tasks de transporte seriam escritas SEM `tsc --noEmit --strict` no make, e o portao chegaria depois para julgar codigo que ninguem compilou com ele — o argumento de D1.7c: portao que chega depois do codigo e portao que negocia com o que ja esta escrito.",
+    "DEPENDE DE T-01.8 e nao de T-01.9: sem A6, esta task nasce julgada pelo `ui-designer`, que e o defeito que A6 corrige; o arquivo dourado (T-01.9) nao a gateia e pode correr em paralelo.",
+]
+tracker = { provider = "jira", id = "CST-102", url = "https://conversationhub.atlassian.net/browse/CST-102" }
+
+[[tasks]]
+id = "T-05.12"
+title = "[docs][infra] 05 · A porta de leitura como PROCESSO: src/api + src/main + raiz de composicao, provada PELA REDE"
+components = ["docs", "infra"]
+status = "todo"
+phase = "05"
+# T-09.4 e aresta de VALIDADOR (V-16/tasks.sh:777-778, ERROR), T-01.8 e aresta de JUIZ
+# (F-D6-6), T-05.9 e a metade cliente que ja existe e que esta task deixa de deixar orfa.
+depends_on = ["T-09.4", "T-01.8", "T-05.9"]
+refs = [
+    "ADR-005/D1", "ADR-005/D5", "ADR-005/D6.1", "ADR-009/D6", "ADR-009/D6.2", "ADR-008/DoD-1", "A4",
+    "plano 05 item 5.13", "DoD D5.13", "DoD D5.13b", "DoD D5.13c",
+    "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
+    "A FORMA FOI CORRIGIDA PELO OWNER em 2026-09-03, e a primeira redacao do item punha a rota como `infra/` do contexto `sentimento`. [PREMISSA-OWNER: 2026-09-03], citacao literal: 'e sim, precisa ser exposto uma camada de API, dai a camada de api n pertence ao bounded-context, e o consumidor, usando de injecao de dependencias dos modulos. works tendem a ser a mesma coisa.' => a camada CONSOME use_cases por injecao, NENHUM contexto conhece seu consumidor, e `src/jobs/` (worker) e a MESMA classe de coisa.",
+    "OS DIRETORIOS NASCEM NESTA TASK, e o universo de hoje e medido: `find backend/src -maxdepth 2 -type d` -> so `modules/` e `modules/sentimento` [MEDIDO 2026-09-03]. No vizinho, `grep -rln 'FastAPI(' anything_monorepo/backend/src` -> `src/main/__init__.py`, 1 arquivo [MEDIDO 2026-09-03]. E `harness code-paths classify backend/src/api/routes.py` e `backend/src/main/__init__.py` -> `producao` nos dois [MEDIDO 2026-09-03].",
+    "CORPO DA RESPOSTA, FIXADO POR ADR-005/D6.1 — REPROVA POR DESVIO: envelope `{ query, n_runs, n_gaps, runs[], gaps[] }`, EXATAMENTE as 15 colunas de ADR-008/D3 por `run`, as 8 de md.ingest_gap por `gap`, nome de fio `class` e NUNCA `gap_class`. Servir as 17 de IngestRun (ingest_record.py:100-117) REPROVA — `started_at`/`ended_at` sao colunas de TABELA, nao de projecao, e serve-las tornaria o sha256 nao-derivavel do payload sem um passo de descarte que nada declara.",
+    "DoD D5.13 — PROVA PELA REDE, NUNCA POR SUBPROCESSO: teste que SOBE O PROCESSO ASGI EM LOOPBACK e faz GET real por `http.client`, MAIS `find backend/src -maxdepth 1 -type d` para a localizacao. MORDE: com o processo DERRUBADO o teste reprova POR CONEXAO RECUSADA, nao por assercao de payload. CALA: processo de pe -> 200 + corpo enderecavel por conteudo, e ZERO campo de nivel de tick (agg_id, preco por trade, quantidade por trade) — que e D5.8 finalmente COM SUJEITO.",
+    "PRECEDENTE MEDIDO, a tecnica ja existe aqui: `grep -rln 'TcpFakeServer|HTTPServer|socketserver|bind(' backend/tests` -> 3 arquivos de 114; o cliente HTTP que este backend fala e `http.client` — 5 dos 49 modulos de infra/ o importam, e `httpx`/`requests` NAO sao declarados em backend/pyproject.toml [MEDIDO 2026-09-03].",
+    "DoD D5.13b — PIN EXATO: `grep -nE '^dependencies' -A4 backend/pyproject.toml`. Hoje 1 entrada (pyyaml (==6.0.3)); FastAPI + servidor ASGI sao as entradas 2 e 3, COM `==`. FAIXA (^, >=) REPROVA, pela doutrina escrita no proprio arquivo ('reprodutibilidade sobre conveniencia'). A dependencia e premissa do owner, nao escolha de agente: 'Ja havia sido pontuado antes que o back subiria um servidor com fastapi' [PREMISSA-OWNER: 2026-09-03].",
+    "DoD D5.13c — RESTRICAO DURA, e e a que se vigia primeiro: `grep -n 'ingest_health_query' <handler>` -> >= 1 chamada a `ingest_health_query(source)`, e `grep -niE 'SELECT|FROM |psycopg|sqlite3' <handler>` -> 0 linha de SQL no handler. SQL proprio no handler o torna candidato a 'segunda definicao' de ADR-008/DoD-1, na forma exata que ADR-008/D3 nomeia ('F3 reimplementa o mesmo registro'). O ponto unico existe e e medido: backend/src/modules/sentimento/use_cases/ingest_health.py:32, e `grep -c 'SELECT' ingest_health.py` -> 0 [MEDIDO 2026-09-03].",
+    "[NAO SEI] se a regra propria + corpus de ADR-008/DoD-1 ALCANCAM um route handler Python. DONA DA PERGUNTA: ADR-008/D4, NAO esta task. E a lacuna e MEDIDA, nao suposta: `harness rules list` -> 10 regras, 5 core + 5 web-fullstack, ZERO propria, e as 4 ocorrencias de [[rules.own]] em harness.toml estao TODAS em linha de comentario [MEDIDO 2026-09-03] => ESTE DoD PROVA POR SITIO DE CHAMADA, NAO POR REGRA, ate ADR-008/D4 decidir.",
+    "A RESTRICAO FICA MAIS FORTE COM A CORRECAO DO OWNER, nao mais fraca: fora do bounded context o handler NAO TEM COMO alcancar o store sem furar a camada — o contrato (4) de D5.13d reprova `src.api -> src.modules.sentimento.infra` POR GRAFO, e o adaptador so chega POR INJECAO. Dentro de infra/ (a forma recusada) o mesmo handler teria o driver do store como VIZINHO DE DIRETORIO, e nenhuma ferramenta o veria fazer SQL proprio.",
+    "AUTH: [DECISAO-OWNER: 2026-09-03] a rota NAO e exposta a rede publica (loopback; o proxy e a borda, como em anything/deploy/compose.prod.yml:162-163 -> 127.0.0.1:8000:8000). `5.11`/T-05.10 CONTINUA REBAIXADO e NAO e reaberto por esta task.",
+    "GATILHO G3 DA PARTICAO DE `sentimento` DISPARA POR ESTA TASK, e isso e o gatilho FUNCIONANDO, nao erro. O owner decidiu em 2026-09-03 NAO PARTIR `sentimento`, com o estudo na mao (gates/estudo-particao-sentimento-2026-09-03.md, 858 linhas, 51 [MEDIDO]): o contexto e ilha fechada (0 arestas entrando/saindo), DAG, 0 ciclos, profundidade 6, fan-in maximo 10, 207 arestas / 127 modulos, e NENHUMA particao abaixo de 10 contextos poe o maior sob os 50 modulos do `messages` => partir reduz governanca, nao tamanho. Os TRES gatilhos que revogam: G1 SCC > 1 (hoje 0 ciclos), G2 fan-in > 15 (hoje 10), G3 `src/api/` NASCER (hoje 0 modulos — e e esta task que o faz nascer). Quem abrir a reabertura depois: leia como o gatilho declarado disparando, nao como decisao mal tomada.",
+    "DIVERGENCIA D-2 DA NARRATIVA, ACEITA PELO OWNER em 2026-09-03 [DECISAO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]: o item 5.13 carrega 4 DoDs e foi partido em DUAS tasks — esta (D5.13, D5.13b, D5.13c: a camada) e T-05.13 (D5.13d: o portao de fronteira). Precedente medido na propria fase 01: T-01.1 levou o layout de modulo e T-01.5 levou o contrato `layers` + o pre-push que o roda, como task separada. D5.13d e o irmao de D1.7a uma camada acima.",
+]
+tracker = { provider = "jira", id = "CST-103", url = "https://conversationhub.atlassian.net/browse/CST-103" }
+
+[[tasks]]
+id = "T-05.13"
+title = "[docs][infra] 05 · Os dois contratos de import-linter da camada consumidora, com os 2 violadores plantados"
+components = ["docs", "infra"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.12", "T-01.5"]
+refs = [
+    "ADR-009/D6.3", "ADR-009/F-D6-2", "ADR-009/F-D6-3", "plano 05 item 5.13", "DoD D5.13d", "1.8'",
+    "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
+    "OS DOIS CONTRATOS, literais de ADR-009/D6.3: (3) `layers` com layers = [\"main\", \"api | jobs\", \"modules\"] e containers = [\"src\"]; (4) `forbidden` com source_modules = [\"src.api\", \"src.jobs\"] e forbidden_modules = [\"src.modules.sentimento.infra\"]. Alvo: `make boundaries` (=> `poetry run lint-imports`).",
+    "SINTAXE CONFERIDA NA FERRAMENTA, NAO NA DOC: `_INDEPENDENT_LAYER_DELIMITER = \"|\"` [MEDIDO 2026-09-03: backend/.venv/lib/python3.13/site-packages/importlinter/contracts/layers.py:20-21, import-linter 2.14] => `api` e `jobs` NAO se importam entre si.",
+    "DoD D5.13d, o par morde/cala de 1.8' com 2 VIOLADORES, 1 POR CONTRATO. MORDE: um `from src.api...` DENTRO de backend/src/modules/sentimento/ (contrato 3) e um `from src.modules.sentimento.infra...` DENTRO de backend/src/api/ (contrato 4) -> `make boundaries` != 0 NOMEANDO o contrato. CALA: sem os violadores -> VERDE, com a camada real de T-05.12 na arvore.",
+    "UNIVERSO DE HOJE E ZERO E POR ISSO MEDE EROSAO, NAO CONQUISTA: `grep -rnE 'from (src\\.)?(api|jobs)' backend/src/modules --include='*.py' | wc -l` -> 0, e `find backend/src -maxdepth 1 -type d` -> so `modules/` [MEDIDO 2026-09-03].",
+    "AQUI ESTE PLANO VAI ALEM DO VIZINHO, DE PROPOSITO: `grep -cE 'src\\.api|src\\.jobs' anything_monorepo/backend/pyproject.toml` -> 0 de 13 contratos [MEDIDO 2026-09-03] — o vizinho PRATICA e NAO DECLARA; o jobs/ dele importa infra 2x de 4. La e convencao, aqui passa a ser PORTAO.",
+    "O SINAL DE EROSAO QUE REPROVA ESTA TASK: recortar `src.jobs` de source_modules do contrato (4) para fechar o DoD. Faz `make boundaries` ficar verde e DESLIGA METADE do que o contrato existe para medir — e exatamente ADR-009/F-D6-3, e o desfecho certo e a RAIZ DE COMPOSICAO, nunca estreitar o contrato.",
+    "VIOLADORES SAO EFEMEROS e nao sobrevivem a task — mesma propriedade que T-01.5 declarou na fase 01.",
+    "DIVERGENCIA DELIBERADA DO PRECEDENTE T-01.5, e ela e declarada: T-01.5 (a task-irma de import-linter da fase 01) declarou components = [\"docs\"] sozinho, pelos violadores efemeros. A justificativa continua verdadeira e NAO e contestada — o que mudou e que em 2026-08-28 NAO EXISTIA JUIZ para a fronteira que o contrato desenha, e depois de T-01.8 existe. Declarar so `docs` poria o contrato da camada `infra` para ser julgado por um componente que NAO TEM `architect` (`docs` esta ausente de agents.by_component [MEDIDO 2026-09-03]) — ADR-003:11-13 outra vez.",
+]
+tracker = { provider = "jira", id = "CST-104", url = "https://conversationhub.atlassian.net/browse/CST-104" }
+
+[[tasks]]
+id = "T-05.14"
+title = "[web] 05 · O cliente liga na rota real: envelope de D6.1 e a paridade de DoD-2 comparando DUAS serializacoes"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.12", "T-05.11"]
+refs = [
+    "ADR-005/D6.0", "ADR-005/D6.1", "ADR-005/D6.2", "ADR-005/D6.3", "ADR-005/F-D6-1", "ADR-005/F-D6-2", "ADR-008/DoD-2", "A4",
+    "plano 05 item 5.14", "DoD D5.14",
+    "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
+    "O VACUO QUE ELA FECHA, DECLARADO PELO PROPRIO CODIGO: frontend/src/app/history-transport.ts:20-33 diz 'NAO cria servidor/endpoint algum ... sem assumir um schema de resposta que nenhuma ADR fixou ainda'. ADR-005/D6.0/D6.1 FIXARAM, e e por isso que a task existe agora e nao antes.",
+    "O QUE MORRE E O QUE VIVE, MEDIDO: SectionMarker + isHeaderLine + parseCanonicalProjection (:266-312, 47 linhas) MORREM — mante-los vivos depois de D6.1 e manter DOIS FORMATOS PARA UM CONTRATO. 204 de 251 linhas refens (81,3%) VIVEM [MEDIDO 2026-09-03 pelo quant-architect, ADR-005 secao 'Alternativas recusadas em D6': 92-265 (174) + 471-500 (30); a regiao refem e 221+30=251, nao '~250'].",
+    "DoD D5.14 — CALA: envelope real -> view-model montado e `fingerprint` do TS IGUAL ao de IngestHealthReport.fingerprint() sobre o MESMO fixture congelado.",
+    "DoD D5.14 — MORDE (i): servidor ausente -> REPROVA. E o defeito exato com que 5.12/T-05.9 fecharam done.",
+    "DoD D5.14 — MORDE (ii), CONTROLE NEGATIVO OBRIGATORIO DE F-D6-1: REORDENAR as 15 colunas na rota MOVE o sha256 e reprova. Igual nos dois lados e DoD-2 VACUOSO DE NOVO — comparando um numero consigo mesmo, que e a vacuidade que ADR-005/D6 recusou por escrito.",
+    "DoD D5.14 — MORDE (iii), F-D6-2: campo novo DENTRO de runs[] MOVE o sha256, e campo novo NO ENVELOPE NAO move. COMPORTAMENTO IGUAL NOS DOIS PROVA QUE A REGIAO HASHEADA NAO ESTA DEFINIDA E D6.3 ESTA VIOLADA.",
+    "POR QUE D6.2 FAZ ISSO FUNCIONAR: os dois lados RE-PROJETAM as linhas sobre a tupla do contrato antes de hashear — _project_run/_project_gap (ingest_record.py:181-200) e projectRun/projectGap (ingest-health-query.ts:200-234), que ITERAM A ORDEM DO CONTRATO, nao a ordem do objeto recebido => o contrato de bytes fica NA PROJECAO e nao no transporte, e um serializador HTTP, um proxy ou um framework que re-emita o JSON NAO MOVE a impressao digital.",
+    "FORMA DO FIO, REPROVA POR DESVIO: 15 colunas de `run` / 8 de `gap`, nome `class` e nunca `gap_class`. Servir as 17 de IngestRun (ingest_record.py:100-117) reprova.",
+    "O ENDERECO NAO E LITERAL: `harness rules --mode file --path frontend/src/app/history-transport.ts` NAO acusa `web-fullstack.hardcoded-url` [DOC: harness rules list, n=10 regras] => a base da URL vem de CONFIGURACAO DE AMBIENTE.",
+    "E A PRIMEIRA VEZ que ADR-008/DoD-2 compara DUAS SERIALIZACOES INDEPENDENTES, e e o argumento dirimente da emenda D6.",
+]
+tracker = { provider = "jira", id = "CST-105", url = "https://conversationhub.atlassian.net/browse/CST-105" }
+
+[[tasks]]
+id = "T-05.15"
+title = "[web] 05 · O transporte por subprocesso sai do universo de producao — 209 de 500 linhas de ingest-health-query.ts"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.14"]
+refs = [
+    "ADR-008/D3", "ADR-005/D6.1", "A4", "fato 5", "plano 05 item 5.15", "DoD D5.15",
+    "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
+    "A MORTE E FORCADA, NAO ESCOLHIDA: `spawnSync` nao existe em browser em nenhuma variante. Nao e acoplamento a consertar — e codigo que existe so porque nao havia rota.",
+    "O UNIVERSO, MEDIDO: 162 de 500 linhas (:313-470 + os 4 imports `node:` de :74-77) mais as 47 de :266-312 que D6.1 acrescenta => 209 de 500 (41,8%) saem de frontend/src/features/s1-console/ingest-health-query.ts.",
+    "DoD D5.15: `grep -rln 'from \"node:' frontend/src --include='*.ts' | grep -v '\\.test\\.'` -> rc=1, ZERO arquivos. Hoje 2 de 35 modulos nao-teste, e o SEGUNDO (app/threshold-spec-bundle.ts) NAO TEM SUBPROCESSO NENHUM — e createHash [MEDIDO 2026-09-03]. ESSE SEGUNDO NAO E DESTA TASK e nao pode ser arrastado para dentro dela.",
+    "O ARQUIVO NAO VIRA TESTE POR DECRETO: `harness code-paths classify frontend/src/features/s1-console/ingest-health-query.ts` continua `producao` (casa include_prefixes + include_globs, nao casa test_globs) [MEDIDO 2026-09-03]. O ITEM DIZ QUAL dos dois destinos — teste de contrato ou morte — e a task executa o que o item diz, nao o que for mais facil.",
+    "O QUE ESTE DoD NAO FECHA, e nao e omissao do /tech-lead: ONDE vive a testemunha cruzada Python x TS. Hoje 1 de 10 ports a tem e `grep -rln frontend backend/tests` -> rc=1, ZERO [MEDIDO 2026-09-03, fato 7]. E A1, dono `quant-architect`, e a emenda registra que D6 NAO o condiciona mais.",
+    "DEPOIS DE T-05.11: o portao de tipo (`tsc --noEmit --strict` no make) ja existe quando 209 linhas saem, e nao chega depois para julgar o resultado. Aresta D-3, aceita pelo owner em 2026-09-03.",
+]
+tracker = { provider = "jira", id = "CST-106", url = "https://conversationhub.atlassian.net/browse/CST-106" }
+
+[[tasks]]
+id = "T-05.16"
+title = "[web] 05 · A fronteira que mantem o falsificador de DoD-2 SINCRONO — importador de VALOR reprova"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.14", "T-05.15"]
+refs = [
+    "ADR-005/D6.3", "ADR-005/D6.4", "ADR-008/DoD-2", "fato 6", "plano 05 item 5.17", "DoD D5.17",
+    "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
+    "ADR-005/D6.4 REMOVEU O GATILHO EM VEZ DE PAGAR O CUSTO. O achado, que nenhum documento, gate ou handoff registrava antes de 2026-09-03: `createHash(\"sha256\")` de node:crypto e SINCRONO (ingest-health-query.ts:73,262-264 — `export function fingerprint(...): string`), e `crypto.subtle.digest` e ASSINCRONO [DOC: Web Crypto API, SubtleCrypto.digest() devolve Promise<ArrayBuffer>] => no browser `fingerprint` vira Promise<string>, e com ele canonicalProjection, os fetch*, e a cadeia ate buildS1ViewModelFromIngestHealthProjection (:488) e S1Console.tsx. NAO E TROCA DE IMPORT — e mudanca de forma no instrumento que prova a ADR.",
+    "DoD D5.17 (a): a paridade de F-D6-1 roda em Python x Node, FORA do caminho de render.",
+    "DoD D5.17 (b), o portao de importacao: `grep -rn 'from \"\\(\\.\\./s1-console/\\|\\./\\)ingest-health-query\\.ts\"' frontend/src --include='*.ts' --include='*.tsx' | grep -v '\\.test\\.'` cruzado com `import type`. MORDE: um importador DE VALOR (nao `import type`) plantado do bundle de browser para dentro do modulo de canonicalizacao -> o portao REPROVA NOMEANDO O ARQUIVO. CALA: a arvore de hoje -> 3 de 3 `import type`, ZERO aresta de runtime [MEDIDO 2026-09-03 em 8c002e4, n=3: s3-inspector/{fixtures,domain,view-model}.ts; S1Console.tsx importa so S1ViewModel].",
+    "=> `fingerprint(): string` PERMANECE SINCRONA (ingest-health-query.ts:262-264), e o fingerprint viaja no ETag (D6.3) SEM O CLIENTE CONFIAR NELE — 'servidor manda o fingerprint e o cliente confia' e alternativa RECUSADA em D6 por comparar UM NUMERO CONSIGO MESMO.",
+    "DECLARAR A FRONTEIRA HOJE CUSTA ZERO REFATORACAO — 3 de 3 importadores fora do modulo sao `import type` [MEDIDO 2026-09-03 em 8c002e4, n=3] — e o preco e MONOTONICAMENTE CRESCENTE depois.",
+    "[NAO SEI] A METADE DE PRODUTO, E ELA E DO OWNER: o operador VE o selo de integridade na tela? Se SIM, `crypto.subtle` e inevitavel e ESTE DoD MUDA DE FORMA (o falsificador de DoD-2 fica ASSINCRONO). Hoje o fingerprint NAO e exibido => D5.17 fica SINCRONO, e isso foi resolvido pela emenda D6.3/D6.4, NAO por decisao de agente. E POR ISSO QUE ESTA TASK NAO ESTA SOLDADA A T-05.15: soldada, a resposta do owner bloquearia EM SILENCIO a remocao das 209 linhas.",
+    "O INSTRUMENTO DO PORTAO NAO E DECIDIDO AQUI: `no-restricted-imports` casa CAMINHO, e ADR-003:46 recusa amarrar componente a caminho. Este item HERDA a pergunta de D5.12, nao a redecide. E frontend/src/app/threshold-spec-bundle.ts:36,371 (o 2o createHash do front) tem OUTRA DONA — bundle-URL de SPEC-001 §7: declarado, nao decidido.",
+]
+tracker = { provider = "jira", id = "CST-107", url = "https://conversationhub.atlassian.net/browse/CST-107" }
 
 # ── 06 · series_catalog + quarentena + S3 · CST-4 ─────────────────────────────────
 
@@ -1178,7 +1370,16 @@ components = ["docs"]
 status = "todo"
 phase = "09"
 depends_on = ["T-01.4", "T-02.4a"]
-refs = ["ADR-009/D5", "plano 09 item 9.6", "DoD D9.6", "alterar vocabulario fechado e ato do owner; a task registra a decisao nas duas direcoes"]
+refs = [
+    "ADR-009/D5", "plano 09 item 9.6", "DoD D9.6", "alterar vocabulario fechado e ato do owner; a task registra a decisao nas duas direcoes",
+    "ANTECIPADA em 2026-09-03 [DECISAO-OWNER: 2026-09-03, escolha entre alternativas apresentadas] — NAO e fala do owner; ele escolheu a opcao (i) de um menu que o /architect redigiu. Ela vive na fase 09, que depende de 04/06/07/08, e roda FORA DA ORDEM DE FASE: antecipacao EXPLICITA, nao acidente. RECUSADA a alternativa 'task na fase 01 junto do A6', e o motivo e o que importa: criaria SEGUNDA VERDADE sobre `infra`, com esta task continuando `todo` a dizer que a decisao precisa ser registrada DEPOIS de registrada em outro lugar.",
+    "A ANTECIPACAO CUSTA ZERO EDICAO, e isso foi medido antes de propo-la: `depends_on = [\"T-01.4\", \"T-02.4a\"]` e as DUAS estao `done` [MEDIDO 2026-09-03] => executavel hoje sem tocar em depends_on, sem editar o plano 09 e sem criar item. O item 9.6 JA EXISTE e e exatamente isto.",
+    "ADR-009/D5 esta FECHADA POR IDENTIDADE: D5 perguntava 'o componente infra e adotado?' e PROPOS ESSE NOME EXATO => ADOTADO, e a escolha do rotulo a fecha. Registrado em ADR-009 §D6.5 (append, D1-D5 intocados). O que esta task escreve e a decisao NAS DUAS DIRECOES que D9.6 exige — adotado, COM O MOTIVO.",
+    "⛔ ESTA TASK E PRE-REQUISITO DE VALIDADOR PARA T-05.12 E T-05.13, e o bloqueio e MEDIDO, nao inferido. `V-16` tem DOIS sitios com o MESMO id: `lib/policy.py:539-543` guarda CHAVE de agents.by_component (o que o despacho citou), e `scripts/tasks.sh:777-778` guarda `components` DE TASK. Medido com sonda em arquivo avulso [MEDIDO 2026-09-03: `harness tasks validate <sonda>.toml` com components = [\"infra\"] -> `ERROR ... V-16 componente fora do enum: infra` e FALHOU]. E ERROR, NAO WARN. CONSEQUENCIA REAL E CORRENTE: desde 2026-09-03, com T-05.12 e T-05.13 materializadas, `harness tasks validate plataforma-dados` sai `FALHOU: 2 ERROR, 4 WARN`, e o UNICO ato que o zera e EXECUTAR esta task (components de 6 para 7 com `infra`). Nao e defeito da quebra: e a aresta de ordem visivel no instrumento. NAO foi contornada rebaixando o rotulo das duas tasks para `docs`, porque isso as poria a serem julgadas por um componente sem `architect` (ADR-003:11-13) — verde por mentir sobre quem julga.",
+    "O QUE ESTA TASK NAO FAZ, e o item 9.6 nao pede: NAO declara o juiz. `F-D6-6` exige `infra` COM `architect` em agents.by_component, e isso e T-01.8 — separado porque V-16/policy.py:539-543 reprova o juiz enquanto o enum nao tiver mudado, e uma task nao pode depender de si mesma para validar. A ORDEM E: esta task -> T-01.8 -> as tasks de 05.",
+    "PENDENCIA QUE O ROTULO DEIXA ABERTA E QUE NAO E DESTA TASK: `deploy/` esta fora de TODA regra — code_paths.include_prefixes tem 3 entradas e `ls -d deploy` -> inexistente [MEDIDO 2026-09-03]. ROTULO NAO E COBERTURA. Falta item de fase (ato do /architect, despachado em 2026-09-03), e sem ele ADR-009/F-D6-5 dispara ao fim da fase 05 — ver a narrativa secao 6.",
+    "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
+]
 tracker = { provider = "jira", id = "CST-86", url = "https://conversationhub.atlassian.net/browse/CST-86" }
 
 [[tasks]]

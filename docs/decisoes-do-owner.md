@@ -630,3 +630,429 @@ O alarme **não pode** ser por taxa de mensagens: a vazão de `aggTrade` do mesm
 ---
 
 **Nada foi escrito, editado ou comentado no tracker por este documento.** Ledger em **`PRD_DRAFT`**, intocado. Arquivos lidos nesta consolidação: `docs/specs/PRD-001-plataforma-dados.md`, `docs/context/plataforma-dados/handoff_to_architect.md`, `docs/medicao-coinalyze.md`, `docs/direcionamento-operacional.md`, `docs/plataforma-superficies-e-faseamento.md`, `docs/recorte-plataforma.md`, `docs/avaliacao-discovery.md`, `docs/proposta-discovery.md`, `harness.toml`, `data/snapshots/`. **E `harness doctor` CONFORME não é evidência de nada acima.**
+
+---
+
+## ✅ 2026-09-03 · `A4`/`A6`/`A7` — a fronteira de processo do `web`, RESPONDIDAS
+
+**Estas três não são `Q` da rodada de discovery acima.** Elas nascem do parecer de fronteira
+[`gates/consulta-fronteira-web-2026-09-03.md`](context/plataforma-dados/gates/consulta-fronteira-web-2026-09-03.md)
+(pendências `A1`–`A7`), pedido pelo owner na mesma data. Ficam neste arquivo porque **as três eram
+gates de owner** e este é o registro único de decisão humana.
+
+**⚠️ O rótulo das três é `[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]`, NÃO
+`[PREMISSA-OWNER]`** — o owner escolheu opções de um menu que um agente redigiu, com o custo de cada
+uma declarado. Nenhuma das frases abaixo é fala dele. `CLAUDE.md` §*"os dois rótulos de owner não são
+o mesmo ato"*.
+
+### A pergunta que originou as três, e ela É citação literal
+
+> *"Dono da verdade é o back, então por isso da procupação. A menos que arquiteto me explique que cli
+> consultar direto é melhor do lado do front, n gostaria que isso ficasse ali, dentro do contexto que
+> sou acostumado, os dados sempre vem do backend. … Já havia sido pontuado antes que o back subiria um
+> servidor com fastapi. Do lado do next, precisamos de um especialista"*
+
+`[PREMISSA-OWNER: 2026-09-03]` — **e o arquiteto NÃO defendeu o CLI direto.** Ele mediu que o caminho
+é indefensável por três razões independentes: contradiz a aresta `API --> WEB --> CH` de
+[`arquitetura-fluxos.md:78`](arquitetura-fluxos.md); `spawnSync` não existe em browser, logo aquele
+caminho nunca viraria produção; e `ADR-005/D1` já fixou as duas rotas de leitura, nenhuma delas
+subprocess.
+
+### `A4` — **FastAPI é a única porta de leitura.** `Next` não é segunda verdade
+
+**Escolhido:** o backend serve as duas rotas de `ADR-005/D1` (HTTP endereçável por conteúdo para
+histórico, SSE para a borda direita). O `Next` renderiza e, se precisar, **proxia sessão/auth apenas —
+zero SQL, zero regra de domínio, zero subprocess.**
+
+**Recusadas, com o custo que estava no menu:** *BFF no Route Handler* — *"reabre a porta de segunda
+verdade que o `M3` está fechando, e o schema passa a existir em dois lugares"*; *serviço Python
+separado* — *"força o componente `infra` (`ADR-009/D5`) e um container novo numa VPS já com 6 serviços
+sob pressão de disco"*.
+
+⇒ **O componente `infra` NÃO nasce por esta decisão.** `ADR-009/D5` continua aberto e é ato do owner.
+⇒ **`ADR-005` precisa de emenda:** ela decidiu o PROTOCOLO e é **omissa na fronteira de processo**.
+Dono da emenda: `quant-architect`. **`A5` (o schema da RESPOSTA) continua `[NÃO SEI]`** e decide se
+~250 linhas de TS vivem.
+
+### `A6` — `web` ganha arquiteto de front próprio; o `ui-designer` volta a julgar só design
+
+**Escolhido:** criar o **arquiteto de front** e portar do `anything` a dupla **builder/QA de front**
+([`frontend_builder.agent.md`](/home/stharley/Documentos/projects/anything_monorepo/.github/agents/frontend_builder.agent.md),
+[`frontend_qa.agent.md`](/home/stharley/Documentos/projects/anything_monorepo/.github/agents/frontend_qa.agent.md)).
+O `ui-designer` **mantém o `design_gate`** e deixa de ser `architect` de `web`.
+
+**O defeito que isto corrige, medido:** [`harness.toml:643-645`](../harness.toml) põe
+`web.architect = ".claude/agents/ui-designer.md"` — um operador de Stitch como dono de julgamento do
+**schema de transporte SSE**, do bundle-URL e de 7 módulos de domínio portado.
+
+**O que a decisão NÃO invalida:** a resposta de `Q16` (2026-08-28, `[PREMISSA-OWNER]`, §Q16 acima)
+foi *"charts → quant-architect · web → ui-designer"*. Ela **não é apagada** — era correta para o
+universo de 2026-08-28, quando `web` não tinha módulo de domínio portado nem transporte. **`A6`
+sucede `Q16` na chave `web.architect`; `charts` fica intocado.**
+
+**Viabilidade já medida:** o conjunto de papéis de `[agents.by_component]` é **ABERTO** —
+`lib/policy.py:549-550` itera `for papel, valor in mapa.items()` ([`harness.toml:594-595`](../harness.toml))
+⇒ `web.builder` e `web.qa` são declaráveis **sem mudar o plugin**.
+
+**Ganho colateral, e é a resposta à outra metade da pergunta do owner:** o `frontend_qa` traz
+**Vitest + Testing Library + Playwright**. Hoje `frontend/` prova com `node --test` sem `tsconfig.json`,
+e os 3 `.tsx` **não importam `react`** (`grep -rn 'from "react"' frontend/src | wc -l` → **0**,
+`[MEDIDO 2026-09-03]`).
+
+**Duas correções de fato ao que o owner lembrou, registradas para a proposta não nascer torta:**
+**não existe `frontend_architect` no `anything`** (`find anything_monorepo -path '*/agents/*.md'` →
+**12 arquivos**, dos quais 3 de front; o `architect.agent.md` de lá é único e genérico), e o
+`ui_designer` daquele repo **é o que este repositório já tem**.
+
+### `A7` — a fase `05` é REABERTA para receber o item de scaffold
+
+**Escolhido:** reabrir [`05_fatia_visivel.md`](plans/SPEC-001-plataforma-dados/05_fatia_visivel.md).
+É onde `Q16` e a fatia visível já moram, e onde `T-05.8`/`T-05.9` deixaram **a metade cliente** de um
+transporte sem servidor.
+
+**Custo aceito, como estava no menu:** *"mexer numa fase com tasks `done` — ato de owner no ledger"*.
+**Recusadas:** fase nova depois da `08` (*"o front continua provando por `node --test` até lá, e as
+~250 linhas reféns envelhecem mais"*) e SPEC nova só para a superfície servida.
+
+### Ordem de execução que estas três impõem, e ela não é preferência
+
+`A4`→`A5` **antes** de `A1`–`A3`: o schema da resposta decide quanto dos 9 ports Python→TS sobrevive.
+Mexer nos ports antes disso é reescrever duas vezes.
+
+### O que continua ABERTO depois destas três
+
+| # | pergunta | dono |
+|---|---|---|
+| `A1` | qual lado é fonte de verdade do domínio portado, e como a paridade é provada sem `import` cross-language | `quant-architect` (gatilho de `ADR-003/D2` **já disparou**) |
+| `A2` | *delisting badge* é regra de exibição (`web`) ou predicado de domínio (`sentimento`)? | `quant-architect` |
+| `A3` | `bigint` de `s2-cvd.ts` × `Decimal` de `cvd.py` — divergência tolerável no universo real? | `quant-architect` |
+| `A5` | schema da RESPOSTA da rota de histórico — linhas canônicas do CLI ou rows? | `ADR-005` (omissa) + `ADR-008` para o efeito em `DoD-2` |
+| `ADR-009/D5` | o componente `infra` é adotado ou recusado? | **⛔ owner** — `A4` apenas **não o exige**; não o resolve |
+
+**Nada foi escrito no ledger, no `harness.toml`, no `tasks.toml` ou no Jira por este registro.**
+Materializar `A6` em `[agents.by_component]` e `A7` no ledger são atos subsequentes — `A6` tem
+precedente de forma em `T-01.3`, que foi a task que gravou a resposta de `Q16`.
+
+### ⚠️ 2026-09-03, MESMO DIA, MAIS TARDE — o owner CORRIGE a forma de `5.13`: a camada de API não pertence ao bounded context
+
+**Declaração literal, e o rótulo é `[PREMISSA-OWNER: 2026-09-03]` porque é fala dele:**
+
+> *"se é outro bounded context deve ser isolado dentro do que conversamos: sentimento, charts,
+> convergencia na minha visão deveria ser bounded-context. Até pq já me parece que sentimento ta
+> virando enorme.*
+>
+> *e sim, precisa ser exposto uma camada de API, daí a camada de api n pertence ao bounded-context, é
+> o consumidor, usando de injeção de dependencias dos módulos. works tendem a ser a mesma coisa."*
+
+**O que isto REVOGA:** o item `5.13` do plano `05`, escrito horas antes, declara a rota como **camada
+`infra` do contexto `sentimento`**. **Essa forma está recusada pelo owner.** A camada de API é
+**consumidora** dos módulos por injeção de dependência, e **worker é a mesma classe de coisa.**
+
+### As três medições que sustentam a correção — e elas mostram que o `/architect` divergiu do próprio `ADR-009`
+
+`[MEDIDO 2026-09-03 em 8c002e4]`:
+
+```bash
+# 1. o tamanho do unico bounded context deste repositorio
+for d in domain use_cases infra; do
+  find backend/src/modules/sentimento/$d -name '*.py' | wc -l
+  find backend/src/modules/sentimento/$d -name '*.py' -exec cat {} + | wc -l
+done
+# domain 61 modulos / 10.319 linhas · use_cases 20 / 2.034 · infra 49 / 6.593
+# => sentimento = 130 modulos, 18.946 linhas, e e o UNICO contexto
+
+# 2. o maior contexto do anything, para escala
+for d in anything_monorepo/backend/src/modules/*/; do ...; done | sort -rn
+# messages 50 modulos / 9.313 linhas, de 12 contextos
+
+# 3. ONDE a API vive no anything
+find anything_monorepo/backend/src -maxdepth 2 -type d
+# backend/src/{api,api/routes,jobs,main,core,infra,config,modules}
+grep -rln 'FastAPI(' anything_monorepo/backend/src   # -> src/main/__init__.py
+# api  = 34 modulos / 10.854 linhas  FORA de modules/
+# jobs =  3 modulos /    186 linhas  FORA de modules/
+```
+
+**`sentimento` é 2,6× o maior contexto do `anything`, sendo o único.** A observação do owner
+(*"ta virando enorme"*) **não é impressão — é 130 contra 50.**
+
+**E a forma que ele descreveu é a que o `anything` já roda.** ⇒ pôr a rota como `infra/` de
+`sentimento` **divergia de `ADR-009`**, cuja razão de existir é *"reuso da forma do `anything`"`. O
+`/architect` fundamentou a escolha em `backend/pyproject.toml:202-207` (`layers`/`containers` do
+`import-linter`) — que é verdade sobre o **contrato existente** e **não** sobre a forma do vizinho.
+**Nenhum dos dois agentes mediu `anything_monorepo/backend/src/api/` antes de escrever `5.13`.**
+
+### O que esta premissa RESOLVE de `ADR-009/D5`, e o que ela deixa em aberto
+
+**RESOLVE a substância:** a camada de API **não** é parte de bounded context. **`5.13` tem de ser
+reescrito** — e reescrever item que **nasceu hoje e nunca teve task** não é reabrir trabalho feito.
+
+**DEIXA EM ABERTO, e é decisão de owner porque mexe no vocabulário fechado:** *qual rótulo de
+componente* a camada de API recebe — `infra` (o nome que `ADR-009/D5` propôs), `api`, ou nenhum. Isso
+é `harness policy --key components`, com efeito em `[agents.by_component]`, `[code_paths]` e
+`require-code`. **Um menu com o custo de cada opção é ato do `/architect`; a escolha é do owner.**
+
+### ⏸ PERGUNTA NOVA, com relógio, que esta premissa abre e NINGUÉM tinha feito
+
+**`sentimento` deve ser PARTIDO em mais de um bounded context?** O owner nomeou três
+(*"sentimento, charts, convergencia"*), mas `charts` e `convergencia` são hoje **componentes de
+front/domínio**, não módulos de `backend/src/modules/`. A pergunta é **de partição de contexto, não de
+rótulo**, e ela **não bloqueia** a correção de `5.13`.
+
+**O relógio é de retrabalho, não de dado:** partir contexto depois de `import-linter` ter contrato
+`containers=["src.modules.sentimento"]` e depois de a camada de API injetar dos módulos custa
+migração de contrato + reescrita de import. **Hoje: 130 módulos.** Dono: **owner**, assessorado pelo
+`quant-architect`. **NÃO decidida aqui, e não decidi por omissão.**
+
+> **✅ CORREÇÃO MEDIDA a esta seção, 2026-09-03, mesmo dia — e o defeito é meu, não do owner.** Duas
+> linhas acima eu escrevi que o rótulo de componente tem efeito em *"`[agents.by_component]`,
+> `[code_paths]` e `require-code`"*. **A parte de `[code_paths]` e `require-code` é falsa, e eu a
+> publiquei sem comando** — exatamente o que `CLAUDE.md` §*"Nenhum número sem o comando que o
+> produziu"* existe para impedir. Medição do `/architect`: `harness code-paths classify` de
+> `backend/src/api/...` **já devolve `producao`** independentemente de rótulo, e `require-code`
+> responde *"código permitido — scope"* porque `backend/src` é **1 dos 19 prefixos**
+> `[MEDIDO 2026-09-03]`. **O rótulo afeta SÓ `components` + `[agents.by_component]`** (`V-16`,
+> `lib/policy.py:539-543`) — ou seja, **quem julga**, e nada mais. A frase original fica onde está,
+> porque apagá-la esconderia que a decisão do owner foi apresentada com um custo inflado.
+
+### ✅ 2026-09-03 — o rótulo da camada de API: **`infra`**, e o vocabulário fechado vai de 6 para 7
+
+`[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]` — **não é fala do owner.** Ele
+escolheu a **opção A** de um menu de três que o `/architect` redigiu, com o custo de cada uma medido.
+
+**Escolhido:** a camada de API **e os workers** recebem o rótulo **`infra`**.
+`harness policy --key components` passa de **6** (`sentimento · charts · convergencia · backtest ·
+web · docs`) para **7**.
+
+**O custo que ele aceitou, na redação do menu:** *"põe o schema HTTP e o TLS/compose sob o mesmo
+juiz — duas classes de risco diferentes com um só dono"*.
+
+**Recusadas, com o custo declarado:** **`api`** — *"nome preciso para a API, mas **mente para o
+worker** (`jobs/` não é API) e deixa `ADR-009/D5` aberto para `deploy/`/backup ⇒ duas decisões em vez
+de uma"*; **nenhum rótulo** — *"zero ato de política, mas cai em `ADR-003:11-13` (componente sem dono
+de julgamento) e faria `sentimento` rotular código que não é dele — falso por construção"*.
+
+**⚠️ O que o rótulo faz, MEDIDO, e é menos do que a primeira redação desta seção afirmava:** ele
+afeta **só** `components` + `[agents.by_component]` (`V-16`, `lib/policy.py:539-543`) — ou seja,
+**quem julga**. Ver a correção acima: `[code_paths]` e `require-code` **não** dependem dele.
+
+**Pendência que a escolha ABRE, e é do owner:** `[agents.by_component.infra]` precisa de um
+`architect`, e **nenhum dos agentes existentes é obviamente o juiz** — o próprio custo aceito
+(*"schema HTTP e TLS/compose sob o mesmo juiz"*) é o argumento de que talvez seja um novo. Menu a
+cargo do `/architect`; escolha do owner.
+
+### ✅ 2026-09-03 — partição de `sentimento`: o owner pediu **ESTUDO**, não decidiu partir
+
+`[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]`.
+
+**Escolhido:** encomendar ao `quant-architect` a **proposta de fronteiras com custo de migração
+medido**, em vez de partir agora ou de manter com gatilho. Razão que estava no menu:
+*"decidir com proposta na mão custa menos que decidir no escuro"*.
+
+**Recusadas:** *manter um contexto com gatilho declarado* (*"cada módulo novo torna a partição mais
+cara, e o `import-linter` já aponta para `src.modules.sentimento`"*); *partir agora, antes do
+scaffold* (*"o momento mais barato possível, mas atrasa `5.13`–`5.17` e mexe em 130 módulos com 8
+fases de task já `done` em cima deles"*).
+
+**A hipótese que o estudo testa NÃO é invenção de agente:** `docs/arquitetura-fluxos.md:48-56` já
+desenha **três** subgrafos dentro de `BACK` como contextos separados — `ingestion`, `catalog`
+(`series_catalog`) e `registry` (`ingest_run`/`ingest_gap`/`run_registry`). O estudo mede se o
+**grafo de import real** sustenta ou contradiz essa fronteira, por `grimp`/`import-linter`, não por
+regex.
+
+**⛔ O estudo NÃO decide.** Destino: `docs/context/plataforma-dados/gates/estudo-particao-sentimento-2026-09-03.md`.
+A partição continua sendo ato do owner, e ela **não bloqueia** `5.13`–`5.17`.
+
+### ✅ 2026-09-03 — como o vocabulário vira 7, e quem julga `infra`
+
+`[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]` nas duas.
+
+**(1) O ato acontece pela `T-09.4`/`CST-86`, ANTECIPADA — nenhum item de plano novo.** O `/architect`
+mediu que o item **já existia e estava aberto**: item `9.6` da fase `09` (*"Decisão sobre o componente
+`infra` registrada — adotada ou recusada, com o motivo escrito"*, `ADR-009/D5`, componente `docs`),
+DoD `D9.6`, task `T-09.4`/`CST-86`, `status = "todo"`
+`[MEDIDO 2026-09-03: grep -n -A6 '^id = "T-09.4"' tasks.toml]`.
+
+**Custo aceito, na redação do menu:** *"ela vive na fase `09`, que depende de `04`/`06`/`07`/`08`,
+então roda fora da ordem de fase — antecipação explícita, não acidente"*.
+
+**Recusada, e o motivo é o que importa:** *task na fase `01` junto do `A6`* — criaria **segunda
+verdade** sobre `infra`, com a `T-09.4` continuando `todo` a dizer que a decisão precisa ser
+registrada **depois** de registrada em outro lugar.
+
+**(2) O juiz de `infra` é um agent NOVO: `infra-architect`.** Universo medido: `ls .claude/agents/`
+→ **2 agents** (`quant-architect.md`, `ui-designer.md`), e **nenhum dos 12 do `anything` é de infra**
+`[MEDIDO 2026-09-03]`.
+
+**Custo aceito:** *"é **criação, não porte** — o agent nasce aqui e sem precedente medido"*.
+
+**Recusadas:** *acumular no `quant-architect`* (*"ele não é dono de TLS, `compose` nem fila — é o
+custo aceito realizado na pessoa errada"*); *declarar `infra` sem `architect`* (*"componente sem dono
+de julgamento, `ADR-003:11-13`; e é a omissão de hoje com uma camada extra de silêncio"*, falsificador
+`F-D6-6`); *owner por documento como o `design_gate`* (*"honesto, mas `checa_ponteiro` exige que o
+caminho exista"*).
+
+**⛔ A ORDEM ENTRE AS DUAS NÃO É PREFERÊNCIA:** `V-16` **reprova componente fora do enum**
+(`lib/policy.py:539-543`) ⇒ **`components` de 6 para 7 primeiro, o juiz depois.** Inverter faz o
+validador reprovar a política no meio do caminho.
+
+### `ADR-009/D5` — FECHADA por identidade, e o que sobra dela NÃO era pergunta de vocabulário
+
+`D5` perguntava *"o componente `infra` é adotado?"* e **propôs esse nome exato** ⇒ **ADOTADO**, e a
+escolha do rótulo a fecha. Registrado em `ADR-009` §`D6.5` (append, `D1`–`D5` intocados), com a
+instrução que **caduca** (camada consumidora) e a que **continua** (deploy/backup/topologia), mais
+`F-D6-5` e `F-D6-6` — os falsificadores novos, porque o da proposta perdeu objeto.
+
+**⏸ O QUE SOBRA, e é lacuna nova com dono:** **`deploy/` está fora de TODA regra** —
+`code_paths.include_prefixes` tem **3** entradas e `ls -d deploy` → **inexistente**
+`[MEDIDO 2026-09-03]`. **Rótulo não é cobertura**: `infra` no enum não faz `deploy/` ser medido por
+nada. Falta **item de fase**, do mesmo jeito que `T-01.2` fez por `frontend/src/`. **Não decidida
+aqui**, e não bloqueia `5.13`–`5.17`.
+
+### ✅ 2026-09-03 — partição de `sentimento`: **NÃO PARTIR**, com três gatilhos declarados
+
+`[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]`, tomada **com o estudo na mão**
+(`docs/context/plataforma-dados/gates/estudo-particao-sentimento-2026-09-03.md`, 858 linhas, 51
+`[MEDIDO]`) — que é o que a decisão anterior de encomendar o estudo existia para permitir.
+
+**O que o estudo mediu, e é o que sustenta a escolha:** `sentimento` é **ilha fechada** (0 arestas
+entrando, 0 saindo), **DAG, 0 ciclos, profundidade 6, fan-in máximo 10, 207 arestas / 127 módulos**.
+**Nenhuma partição abaixo de 10 contextos põe o maior sob os 50 módulos do `messages`** — `A` (3
+contextos) deixa o maior com **104** e `B` (5) com **85**. ⇒ **partir reduz governança, não tamanho.**
+
+**Custo aceito, na redação do menu:** *"a invariante do CVD segue sem portão"*.
+
+**Recusadas, com o custo medido:** **A** (3 contextos, **0** aresta cruzando — a única limpa por
+grafo — mas 23 módulos movidos / 102 imports / 42 arquivos, e o maior ainda com 104); **B** (5
+contextos, maior 85, mas **39 arestas cruzando**, 42 módulos / 236 imports / 131 arquivos, e **+4**
+nomes no vocabulário fechado, **cada um precisando de juiz**); **decidir depois do scaffold** (*"é
+exatamente o gatilho `G3` disparando — a migração passa a ter a camada de API injetando dos módulos,
+o cenário mais caro"*).
+
+**⚠️ E a hipótese do diagrama foi CONTRADITA como topologia:** `arquitetura-fluxos.md:48-56` desenha
+`ingestion`/`catalog`/`registry` com **0** aresta entre si; o grafo real tem **33**. Como três irmãos,
+**32 cruzam e os 3 pares são mutuamente cíclicos**. Como **pilha de 3 níveis**, **0 ciclos e 0
+subindo** — `catalog` e `registry` são **núcleo compartilhado ABAIXO** de `ingestion`, não vizinhos.
+O desenho não é fronteira de contexto; é nome de camada.
+
+**⛔ OS TRÊS GATILHOS — a decisão é revogável por eles, não por opinião:**
+
+| # | gatilho | valor hoje |
+|---|---|---|
+| `G1` | surgir componente fortemente conexo (`SCC > 1`) no grafo | **0 ciclos** |
+| `G2` | fan-in passar de **15** | **10** |
+| `G3` | **`src/api/` nascer** | **0 módulos — e esta é a janela que a fase `05` fecha** |
+
+**`G3` dispara pela própria task de `5.13`.** Isso é declarado aqui para que a reabertura, quando
+vier, seja lida como **o gatilho funcionando** e não como decisão mal tomada.
+
+**O ganho que vem de qualquer forma, e não dependia de partir:** o **wildcard** nos contratos de
+`import-linter` (`src.modules.*.infra`), que o estudo provou morder e calar. Ver `ADR-009` §`D6.6`.
+
+### ✅ 2026-09-03 — a narrativa de review APROVADA: 9 tasks, as 3 divergências aceitas, escopo ampliado
+
+`[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]` nas três.
+
+**(1) As 9 tasks aprovadas como o `/tech-lead` as propôs**, narrativa em
+`docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md` (649 linhas). Ordem:
+`T-09.4` (antecipada) → `T-01.8` → `T-01.9` → `T-05.11` → `T-05.12` → `T-05.13` → `T-05.14` →
+`T-05.15` → `T-05.16`.
+
+**As 3 divergências do esboço, TODAS aceitas na recomendação dele:** `D-1` duas tasks para o `A6`
+(atribuição e congelamento são atos distintos, e o arquivo dourado nasce **uma vez** sobre a
+atribuição final); `D-2` o item `5.13` em duas (camada e contrato têm naturezas diferentes —
+precedente medido: a fase `01` cortou igual em `T-01.1`/`T-01.5`); `D-3` o portão de tipo **antes**
+do transporte (*"portão que chega depois do código é portão que negocia com o que já está escrito"*).
+
+**(2) Escopo de escrita ampliado de 19 para 21 prefixos** — executado nesta data com autorização
+explícita do owner, **e o `/tech-lead` deliberadamente NÃO o rodou sozinho** (*"fazê-lo antes da
+aprovação seria materializar metade da decisão pela porta dos fundos"*):
+
+```bash
+harness pipeline scope plataforma-dados add .claude/agents   # rc=0
+harness pipeline scope plataforma-dados add docs/INDEX.md    # rc=0
+```
+
+Sem eles, `T-01.8`/`T-01.9` eram recusadas **antes do primeiro byte** — `require-code` de
+`.claude/agents/infra-architect.md` devolvia *"nenhuma feature autorizada reivindica o path"*
+`[MEDIDO 2026-09-03]`.
+
+**(3) O item de fase para `deploy/` foi despachado AGORA, em paralelo** — para que `F-D6-5` encontre
+as duas naturezas que exige e **não dispare**. Recusadas: aceitar o disparo (*"falsificador disparado
+e não consertado vira 'já estava assim'"*) e não criar o item (*"seria evidência de que `infra`
+comprou ambiguidade de juiz sem cobrir nada além da camada de API — ou seja, `api` era o nome certo"*).
+
+### Três achados do `/tech-lead` que mudaram a execução, e nenhum era conhecido antes
+
+1. **`V-16` tem DOIS sítios.** Sonda em `scripts/tasks.sh:777-778`: `components = ["infra"]` **antes**
+   do enum é **ERROR e faz o arquivo inteiro falhar** — não `WARN`. A ordem *components → juiz →
+   tasks* deixa de ser disciplina e vira **quebra total** se invertida.
+2. **O scaffold tem de nascer em `frontend/src/app/`.** `harness code-paths classify
+   frontend/app/page.tsx` → **`nao-producao`** ⇒ App Router na raiz do pacote cairia **fora do
+   universo de regra, em silêncio** — que é exatamente o argumento que `frontend/src/app/routes.ts`
+   já carregava no cabeçalho.
+3. **`ADR-009/F-D6-5` disparará ao fim da fase `05`** na quebra aprovada, e o `/tech-lead` **previu o
+   disparo com o número em vez de deixá-lo ser descoberto**. É a lacuna do `deploy/`, não defeito da
+   quebra — e o item (3) acima é o conserto.
+
+### ✅ 2026-09-03 — a fase `01` REABERTA para `deploy/`, e um único ato cobre `A6` + `deploy/`
+
+`[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]`. Termos idênticos aos da `05`:
+**só item novo, nada em `done` é tocado** — e a `01` tem **7 de 7 tasks `done`**.
+
+**Por que a `01` e não outra, medido pelo `/architect`:** precedente **literal** do item `1.4`
+(*"Cobertura de `frontend/` fechada, em três partes que só valem juntas"*, DoD `D1.3`/`D1.4`,
+componente `docs`) — `deploy/` é o mesmo ato para outro diretório. **Não é a `05`:** fechar `deploy/`
+ali contradiria o próprio `5.11` (*"vps n é problema agora, vai rodar muito local até lá"* +
+`PRD-001` §12 contra construção especulativa). **Não é a `09`:** os 8 itens dela são **registro**, e
+ela depende de `04`/`06`/`07`/`08` ⇒ `deploy/` ficaria fora de toda regra **o projeto inteiro**.
+
+**⚠️ E a lacuna é MAIOR que "falta um prefixo" — isto não é sobre um diretório futuro**
+`[MEDIDO 2026-09-03]`:
+
+```bash
+harness code-paths classify deploy/docker-compose.yml   # nao-producao, rc=1 (nenhum include_prefixes casa)
+harness code-paths classify backend/src/config.yml      # nao-producao, rc=1 (nenhum include_globs casa)  <- HOJE
+grep -hE '^(paths|target) *=' packs/*/rules.toml | sort -u
+# **/*.py · backend/**/*.py · frontend/src/**   => 10 de 10 regras, 4 packs, NAO alcancam *.yml
+```
+
+⇒ **`core.hardcoded-secret` declara `paths = ["**/*.py"]`** (`packs/core/rules.toml:50`) e **não veria
+uma senha num `docker-compose.yml`.**
+
+**Três partes que só valem juntas:** (a) `include_prefixes += "deploy/"` · (b) `include_globs +=
+"*.yml","*.yaml"` · (c) uma `[[rules.own]]` com corpus que alcance YAML. **Sem (c), (a)+(b) dão
+`classify → producao` com ZERO mordida** — o defeito que `D1.4` existe para nomear.
+
+**O DoD não pode ser `classify`, e a razão é vacuidade medida:** `classify` **não confere
+existência** — `classify backend/src/api/routes/ingest_health.py` devolve **`producao`** para arquivo
+**inexistente**. O DoD é `D1.3` verbatim: `harness rules --mode file` **BLOQUEIA nomeando a regra
+(`exit=2`) sobre arquivo que existe**, e cala (`exit=0`) sobre arquivo legítimo.
+
+**`F-D6-5` foi RE-MIRADO, não afrouxado:** o relógio *"ao fim da fase `05`"* media o escopo da fase e
+não a largura do rótulo — `grep -niE 'deploy|vps|compose|systemd|TLS'` nas **8** fases fora da `05` →
+**0 linhas**, logo nenhuma segunda natureza **podia** aparecer ali. Novo marco: o fechamento de
+`9.6`/`T-09.4`, e é **mais duro**. Mover o relógio **sem** especificar o item teria sido lavar o
+falsificador.
+
+### 📌 ESTADO EM QUE ESTE DIA TERMINA — `tasks.toml` VERMELHO, e o vermelho é PREVISTO
+
+**8 tasks criadas** (`T-01.8`/`CST-100`, `T-01.9`/`CST-101`, `T-05.11`–`T-05.16`/`CST-102`–`CST-107`)
+e **`T-09.4`/`CST-86` atualizada, não duplicada**. **Zero task `done` reaberta** — 64 antes, 64
+depois.
+
+```
+harness tasks validate plataforma-dados
+# FALHOU: 2 ERROR, 4 WARN   (baseline: 85 tasks, 0 ERROR, 4 WARN; agora 93 tasks)
+# ERROR T-05.12 V-16 componente fora do enum: infra
+# ERROR T-05.13 V-16 componente fora do enum: infra
+```
+
+**Os 2 ERROR são a sonda de `V-16` do `/tech-lead` realizada no arquivo real, e o ÚNICO ato que os
+zera é executar `T-09.4`** (enum 6→7) — **`/build` é gate de owner.** O `/tech-lead` **recusou o
+contorno óbvio**: rebaixar as duas para `docs` as poria sob componente sem `architect`
+(`ADR-003:11-13`) — **verde por mentir sobre quem julga**. E não tocou `harness.toml`, porque alterar
+o vocabulário fechado é ato do owner.
+
+**Não gateia `make verify` nem o `pre-push`** `[MEDIDO]` — mas todo agente que validar verá `FALHOU`
+até lá.
