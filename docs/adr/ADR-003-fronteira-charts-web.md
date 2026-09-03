@@ -471,3 +471,73 @@ usa um especificador LITERAL na esmagadora maioria dos casos reais (é assim que
 consegue fazer code-splitting estático); só o caso patológico de especificador computado em
 runtime escapa, e esse caso já teria outros problemas (o bundler também não consegue
 code-split um `import()` cujo argumento não é estaticamente conhecido).
+
+## Addendum `T-05.2` (2026-09-03, quant-architect) — o achado do `T-08.2` (`docs/INDEX.md:97`) É FECHADO, com medição real, não sintética
+
+`docs/INDEX.md:97` registrou o achado de `T-08.2`/`D8.19`: **o eixo do Lightweight Charts é
+ORDINAL, não temporal** — "com grade uniforme as duas leituras (índice de barra vs.
+`event_time`) coincidem, com buracos divergem", e o registro nomeou o achado como "maior que
+o veredito", com **16 tasks de `charts` assentando nessa premissa** sem que nenhum ADR o
+tivesse formalmente fechado. `T-05.1`'s handoff (`docs/context/plataforma-dados/handoff/
+T-05.2.md`) apontou `canonical-grid.ts`'s `buildChartSeries`/`GridSlot` (`candle: null`
+explícito, nunca compactado) como o mecanismo candidato a fechar isso **por construção**, e
+exigiu confirmação contra a biblioteca real antes de qualquer renderização — não assumida.
+
+**Confirmado, com dado real de 4 dias × `BTCUSDT` (`data/binance/klines`, `data/binance/
+metrics`, `data/binance/aggtrades`), não com carga sintética:**
+
+1. `GridSlot`/`ScalarSlot` mapeados para o formato do `lightweight-charts` v5
+   (`frontend/src/charts/s2-lightweight-adapter.ts`) usando o mecanismo de PRIMEIRA CLASSE
+   da própria biblioteca para isto — `WhitespaceData`, um item `{ time }` sem valor —
+   REALMENTE preservam a posição do slot no eixo: uma lacuna real de um dia inteiro
+   (`2026-08-22`, ausente em `metrics` e em `aggtrades`) foi passada como 288 (OI, grade 5
+   min) / 1.440 (CVD delta, grade 1 min) itens whitespace consecutivos, e
+   `timeScale.timeToCoordinate()` continuou resolvendo uma coordenada não-nula para o
+   primeiro minuto daquele dia — o slot ocupa posição no eixo mesmo sem dado
+   `[MEDIDO 2026-09-03: frontend/src/charts/s2-axis-integration.test.ts, teste "NEGATIVE
+   CONTROL — OI" — gapCoord=568.49 (lossless) vs gapCoord=null (naive, quando o mesmo
+   período é filtrado em vez de preenchido com whitespace)]`.
+2. `D5.11` (tolerância 0,5 px), medido na escala desta task (4 dias, 1 símbolo, 3 séries —
+   preço 1m + OI 5m + CVD 1m — 15.264 amostras reais, 5.760 timestamps distintos no eixo
+   compartilhado): **pior caso 0,0000 px**, dentro da tolerância
+   `[MEDIDO 2026-09-03: npm --prefix frontend run test:charts, "D5.11 combined: n=15264
+   distinct_t=5760 worst=0.0000px tol=0.5px within=true"]`.
+3. **O CONTROLE NEGATIVO, que é o que fecha o achado de verdade** (um verde que não pode
+   falhar não prova nada — `T-08.2`'s próprio argumento, reaplicado aqui): a MESMA lacuna
+   real, mapeada filtrando os slots ausentes em vez de emitir whitespace (o erro plausível
+   que um desenvolvedor futuro cometeria "limpando" a série), quebra `D5.11` em **189,50 px**
+   (OI) e **189,63 px** (CVD delta) — **379× a tolerância** — exatamente a divergência
+   ordinal-vs-temporal que `docs/INDEX.md:97` previu
+   `[MEDIDO 2026-09-03: mesmo comando, testes "NEGATIVE CONTROL — OI"/"— CVD delta"]`.
+
+**Conclusão, e ela é a que fecha o achado:** a premissa que 16 tasks de `charts` assumem —
+"a grade é gapless, então ordinal e temporal coincidem" — **é verdadeira NA BIBLIOTECA REAL,
+condicionada a `charts` sempre emitir um item por slot canônico (whitespace incluído)**. Essa
+condição não é automática: `T-05.2` mediu que **omiti-la quebra o eixo em 379× a tolerância
+com dado real**, não com um cenário hipotético. `frontend/src/charts/s2-lightweight-adapter.ts`
+é hoje o único ponto de conversão `GridSlot`/`ScalarSlot` → biblioteca, e ele SEMPRE emite
+whitespace para `candle`/`value === null` — a função `naiveDropGapsLine` que demonstra o
+contrário existe SÓ como controle negativo de teste (documentado na própria função como código
+morto de produção) e nunca é chamada pelo caminho de renderização real.
+
+**Achado colateral, medido e não escondido:** `series.data()` (o getter público da biblioteca)
+tem docstring afirmando devolver "original data items provided via setData"
+(`node_modules/lightweight-charts/dist/typings.d.ts:2497`), mas **descarta silenciosamente
+os itens whitespace do array retornado** — um `LineSeries`/`CandlestickSeries` alimentado com
+`[real, {time}, real]` devolve `.data().length === 2`, não 3, único ou consecutivo, na borda
+ou no meio `[MEDIDO 2026-09-03, bancada ad-hoc citada em
+frontend/src/charts/s2-headless-run.ts:23-32]`. Isto NÃO invalida o fechamento acima — a
+prova real de "losslessness" é o eixo (`timeToCoordinate` + `D5.11`), não `.data()` — mas é
+uma divergência entre o JSDoc da biblioteca e o comportamento medido que qualquer consumidor
+futuro de `series.data()` (auditoria, export, replay) precisa saber antes de usá-lo como fonte
+da verdade.
+
+**Segundo achado colateral, operacional, fora do escopo desta ADR mas nomeado para não se
+perder:** `minBarSpacing` da biblioteca é `0,5 px` por padrão. Em 5.760 slots (4 dias × 1 min)
+sobre uma pane de 1.200 px, o espaçamento exigido para caber tudo de uma vez é `~0,198 px`,
+abaixo desse piso — a biblioteca RECUSA comprimir tanto com as opções padrão
+(`assertViewportFitted` mediu isso como um `RangeError` real antes de o teste de `T-05.2`
+sobrescrever `minBarSpacing` para fins de medição do eixo). Ou seja: **um `S2-mínima` real,
+por padrão, não cabe inteiro numa viewport de 1.200 px de largura** — é decisão de UX de
+`T-05.3`+ (zoom inicial, janela visível padrão), não desta ADR, mas o número está aqui para
+quem for desenhar aquele chrome.
