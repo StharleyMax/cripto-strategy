@@ -1074,7 +1074,7 @@ tracker = { provider = "jira", id = "CST-76", url = "https://conversationhub.atl
 id = "T-08.9"
 title = "[charts] 08 · S2 completa: as-of com moldura impossivel de nao notar, marcacao de fixture com teclado obrigatorio"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-05.2", "T-08.5"]
 refs = [
