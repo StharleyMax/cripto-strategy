@@ -326,6 +326,38 @@ refs = [
 ]
 tracker = { provider = "jira", id = "CST-101", url = "https://conversationhub.atlassian.net/browse/CST-101" }
 
+[[tasks]]
+id = "T-01.10"
+# `[docs][infra]`: o item declara `infra`, e `docs` entra pela superficie `harness.toml`
+# — mesma forma de T-05.12/T-05.13 e o precedente de T-01.1 (`["docs","sentimento"]`,
+# "docs FICA porque a task tambem escreve harness.toml"). V-26 exige o prefixo acompanhar.
+title = "[docs][infra] 01 · Cobertura de deploy/ fechada em tres partes: prefixo, globs YAML e a PRIMEIRA rules.own viva, com corpus"
+components = ["docs", "infra"]
+status = "todo"
+phase = "01"
+# `T-01.8` cria `[agents.by_component.infra].architect`. Sem ela, esta task declara `infra`
+# e nasce SEM dono de julgamento (ADR-003:11-13). `T-01.2` e o precedente de FORMA — foi
+# ela que fechou a mesma propriedade para `frontend/` pelo item 1.4.
+depends_on = ["T-01.2", "T-01.8"]
+refs = [
+    "plano 01 item 1.14", "DoD D1.14", "DoD D1.14b", "ADR-009/D5", "ADR-009/D6.7", "CA-F5-4",
+    "ESPECIFICACAO TRANSPORTADA, NAO REINVENTADA: ela nasceu em ADR-009 §D6.7 com as medicoes e o falsificador; o item 1.14 a transporta e esta task transporta o item. Nenhum item ou DoD existente foi reescrito.",
+    "AS TRES PARTES SO VALEM JUNTAS — mesma forma do item 1.4, que fechou `frontend/`: (a) `code_paths.include_prefixes += \"deploy/\"`; (b) `include_globs += \"*.yml\", \"*.yaml\"`; (c) uma `[[rules.own]]` que ALCANCE YAML, nascida com corpus, alvo SEGREDO EM COMPOSE. (a)+(b) SEM (c) NAO FECHA NADA — da `classify -> producao` com ZERO MORDIDA, que e o defeito exato de D1.4; e (c) sem (a)+(b) NUNCA E AVALIADA.",
+    "A LACUNA MEDIDA, e ela e MAIOR que 'falta prefixo': `harness code-paths classify deploy/docker-compose.yml` -> `nao-producao` ('nenhum include_prefixes casa'), e `classify backend/src/config.yml` -> `nao-producao` ('nenhum include_globs casa'). As 10 regras em vigor alcancam `.py` e `frontend/src/**`, e ZERO alcanca `*.yml`, `*.yaml` ou `Dockerfile` (n=10 regras, 4 packs). `core.hardcoded-secret` — a regra que EXISTE para segredo em codigo — declara `paths = [\"**/*.py\"]` (packs/core/rules.toml:50) e NAO VERIA uma senha num docker-compose.yml [MEDIDO 2026-09-03].",
+    "⛔ O ITEM CRIA `deploy/` COM PELO MENOS UM ARQUIVO REAL E LEGITIMO. Sem isso o DoD PASSA POR VACUIDADE sobre caminho inexistente. Hoje `ls -d deploy` -> INEXISTENTE [MEDIDO 2026-09-03].",
+    "⛔ DoD D1.14 — O CRITERIO NAO E `classify`, E ISSO E MEDICAO E NAO OPINIAO: `harness code-paths classify` NAO CONFERE EXISTENCIA — `classify backend/src/api/routes/ingest_health.py` devolve `producao` para arquivo que NAO EXISTE [MEDIDO 2026-09-03] => um DoD por `classify` fecharia sobre `deploy/` VAZIO, e o repositorio trocaria um portao por um veredito. O criterio e `D1.3` verbatim: `harness rules --mode file --path deploy/<violador>`. MORDE -> BLOQUEIO NOMEANDO A REGRA, `exit=2`. CALA -> saida vazia, `exit=0`, sobre o `deploy/<arquivo legitimo>` real e versionado que este item cria. 2 ARQUIVOS: 1 violador efemero + 1 legitimo versionado. REPROVA SE O RELATORIO DE FECHO CITAR `classify` NO LUGAR DE `rules --mode file` COM `exit=2` — e o modo de falha que o proprio plano 01 nomeia.",
+    "O 'ANTES' E INEQUIVOCO: hoje `harness rules --mode file --path deploy/docker-compose.yml` -> SAIDA VAZIA, `rc=0`, e `ls -d deploy` -> inexistente [MEDIDO 2026-09-03]. Logo o `rc=0` de hoje e indistinguivel entre 'nao ha segredo' e 'o instrumento nunca olhou' — que e a familia de cegueira que ADR-012 nomeia.",
+    "⛔ O VIOLADOR E EFEMERO E FORA DA ARVORE VERSIONADA, e o motivo e medido: violador VERSIONADO deixa `harness rules --mode sweep` vermelho e o `pre-push` RECUSA — `scripts/hooks/pre-push.pre-harness` roda `make boundaries` (:63-64), `make natureza` (:70-71) e `make lint` (:83-84) [MEDIDO 2026-09-03]. E o defeito herdado que T-01.2 registrou ('os falsificadores de D1.3/D1.3b nao estao de pe, so existem como RECEITA'). A metade CALA e a que fica VERSIONADA e reproduzivel; a metade MORDE e a saida do comando, registrada no relatorio do gate, nao um arquivo na arvore.",
+    "DoD D1.14b — A REGRA PROPRIA E ENFORCEMENT MEDIDO, NAO DECLARADO: `harness corpus verify --corpus <dir> --reference <cmd>` E `harness corpus mutate --corpus <dir> --reference <cmd>`. Esperado: IGUALDADE DE VEREDITO em `verify` E o corpus DEFENDENDO a regra em `mutate`. Uma sem a outra nao conta.",
+    "⚠️ ISTO REATIVA O ITEM 1.8, e a reativacao e o ponto: `1.8` era um CONDICIONAL DE ANTECEDENTE FALSO — 'com ADR-011/D3 e D4 a fase deixa de declarar regra propria => 1.8 nao obriga nada. Fica no plano, porque volta a morder se alguma task desta fase declarar uma'. ESTA TASK DECLARA UMA => o antecedente vira VERDADEIRO e 1.8 OBRIGA. `D1.5` NAO e reescrito: ele registra o vacuo de 2026-08-28 e continua verdadeiro sobre aquele universo; `D1.14b` e o SUJEITO que faltava, do mesmo modo que D5.13 deu sujeito a D5.8 sem toca-lo.",
+    "ESTA SERIA A PRIMEIRA `[[rules.own]]` VIVA DO REPOSITORIO: `harness rules list` -> 10 regras, 5 `core` + 5 `web-fullstack`, ZERO propria, e as 4 ocorrencias de `[[rules.own]]` em harness.toml estao TODAS em linha de comentario (:386, :455, :461, :463) [MEDIDO 2026-09-03].",
+    "⚠️ `ADR-011/D4` NAO E CONTRADITO, e a distincao e o que autoriza esta task: ele recusou regra propria DE TYPESCRIPT, onde o ESLint JA ERA o validador — regra propria ali seria segunda verdade. NENHUM VALIDADOR DESTE REPOSITORIO LE YAML. E `ADR-011/D1.10` proibe `[[rules.own]]` DE IDIOMA, que nao e o caso: o alvo aqui e SEGREDO EM COMPOSE, propriedade verificavel por conteudo.",
+    "[NAO MEDIDO], ESCRITO E NAO SUPOSTO: se `include_globs` aceita NOME SEM EXTENSAO (`Dockerfile`). O comando que decide EXIGE o ato de politica: acrescentar \"Dockerfile\" a `include_globs` e rodar `harness code-paths classify deploy/Dockerfile`. ENQUANTO NAO MEDIDO, `Dockerfile` FICA FORA DA COBERTURA e esta task NAO finge o contrario [DOC: ADR-009:275 e plano 01:174].",
+    "O QUE ESTA TASK CONSERTA ALEM DE SI MESMA: `ADR-009/F-D6-5` mede a LARGURA do rotulo `infra` e exige >= 2 NATUREZAS DISTINTAS ao fim da fase 05. Na quebra de 2026-09-03, `infra` era declarado por T-05.12 e T-05.13, as DUAS a camada consumidora — uma natureza so, e o falsificador dispararia SEM CONSERTO DISPONIVEL. Esta task e a SEGUNDA NATUREZA (deploy/topologia). Sem ela, F-D6-5 diz que a opcao `api` era o nome certo e que o rotulo largo comprou so ambiguidade de juiz.",
+    "V-16 NAO BLOQUEIA MAIS: `harness policy --key components` devolve 7 com `infra` desde que T-09.4/CST-86 mergeou [MEDIDO 2026-09-03: enum = sentimento, charts, convergencia, backtest, web, docs, infra]. `depends_on` inclui T-01.8 porque ela e quem cria `[agents.by_component.infra].architect` — declarar `infra` sem o juiz e ADR-003:11-13.",
+]
+tracker = { provider = "jira", id = "CST-108", url = "https://conversationhub.atlassian.net/browse/CST-108" }
+
 # ── 02 · Captura sem gate de host · CST-2 ──────────────────────────────────────────
 
 [[tasks]]
