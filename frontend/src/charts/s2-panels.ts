@@ -36,6 +36,8 @@ import { buildScalarSeries } from "./s2-scalar-grid.ts";
 import type { ScalarPoint, ScalarSlot } from "./s2-scalar-grid.ts";
 import { cvdCumulativeScaled, unscale, CVD_BUCKET_WIDTH_MS } from "./s2-cvd.ts";
 import type { ScaledCvdDelta } from "./s2-cvd.ts";
+import { resolvePriceSource } from "./s2-price-source.ts";
+import type { PriceSource, PriceUse } from "./s2-price-source.ts";
 
 export const SYMBOL = "BTCUSDT";
 export const DAYS = ["2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23"] as const;
@@ -44,6 +46,17 @@ export const RANGE_END_MS_EXCLUSIVE = Date.UTC(2026, 7, 24, 0, 0, 0);
 
 export const ONE_MINUTE_MS = 60_000;
 export const FIVE_MINUTES_MS = 5 * 60_000;
+
+/**
+ * `T-05.5` / plan item `5.7`: this S2-mínima price panel is a VISUAL / STRUCTURE display —
+ * candles for the human to read swing/BOS/CHoCH context on, not a liquidation or funding
+ * surface — so its `price_use` is `structure_detection`, `ADR-007`'s own assignment for
+ * exactly that use. Exported (not inlined) so `buildPricePanel`'s caller passes it
+ * EXPLICITLY rather than the function defaulting it internally — `PS-1` forbids a silent
+ * default, and a required parameter with a named, documented constant at the call site is
+ * how that stays true without forcing every test to redeclare the string literal.
+ */
+export const S2_PRICE_USE: PriceUse = "structure_detection";
 
 export interface OiPanel {
   readonly timeframeMs: number;
@@ -59,18 +72,42 @@ export interface CvdPanel {
   readonly coveredDays: readonly string[];
 }
 
+/**
+ * `T-05.5` / plan item `5.7`: "o painel de Preço declara `price_source` E `price_use` na
+ * linha do painel" — both fields live on the panel row itself, not only on whatever marks a
+ * human later places over it, so a viewer can tell which price GRANDEZA is on screen before
+ * any `<Anotacao>` exists at all. `priceSource` is DERIVED from `priceUse` via
+ * `resolvePriceSource` (`ADR-007`/`PS-1`), never carried as an independent field a caller
+ * could set inconsistently with `priceUse`.
+ */
+export interface PricePanel {
+  readonly priceSource: PriceSource;
+  readonly priceUse: PriceUse;
+  readonly series: ChartSeries;
+}
+
 export interface S2Panels {
   readonly symbol: string;
   readonly rangeStartMs: number;
   readonly rangeEndMsExclusive: number;
-  readonly price: ChartSeries;
+  readonly price: PricePanel;
   readonly oi: OiPanel;
   readonly cvd: CvdPanel;
 }
 
-/** `candles` — already parsed (`parseKlinesDays`/`parseKlinesCsv`), never read from disk here. */
-export function buildPricePanel(candles: readonly RawCandle[]): ChartSeries {
-  return buildChartSeries(candles, ONE_MINUTE_MS, RANGE_START_MS, RANGE_END_MS_EXCLUSIVE);
+/**
+ * `candles` — already parsed (`parseKlinesDays`/`parseKlinesCsv`), never read from disk here.
+ *
+ * `priceUse` is a REQUIRED parameter, not optional/defaulted (`ADR-007`/`PS-1`): the caller
+ * names the use explicitly (`S2_PRICE_USE` for this task's own call site), and
+ * `resolvePriceSource` is what turns that into the `price_source` the panel declares.
+ */
+export function buildPricePanel(candles: readonly RawCandle[], priceUse: PriceUse): PricePanel {
+  return {
+    priceSource: resolvePriceSource(priceUse),
+    priceUse,
+    series: buildChartSeries(candles, ONE_MINUTE_MS, RANGE_START_MS, RANGE_END_MS_EXCLUSIVE),
+  };
 }
 
 /** `points`/`missingDays` — already assembled (`assembleOiPoints`), never read from disk here. */
@@ -122,9 +159,17 @@ export function buildCvdPanel(
   };
 }
 
-/** Raw, already-loaded inputs for all 3 panels — the caller has done every disk read already. */
+/**
+ * Raw, already-loaded inputs for all 3 panels — the caller has done every disk read already.
+ *
+ * `priceUse` has NO DEFAULT here either (`?` would let a caller of `buildS2Panels` fall back
+ * to an implicit choice one level up from `buildPricePanel`'s own required parameter,
+ * reopening the exact hole `PS-1` closes) — every caller of `buildS2Panels` names it, and
+ * this task's own caller passes `S2_PRICE_USE`.
+ */
 export interface S2RawInputs {
   readonly candles: readonly RawCandle[];
+  readonly priceUse: PriceUse;
   readonly oiPoints: readonly ScalarPoint[];
   readonly oiMissingDays: readonly string[];
   readonly cvdDeltas: readonly ScaledCvdDelta[];
@@ -138,7 +183,7 @@ export function buildS2Panels(inputs: S2RawInputs): S2Panels {
     symbol: SYMBOL,
     rangeStartMs: RANGE_START_MS,
     rangeEndMsExclusive: RANGE_END_MS_EXCLUSIVE,
-    price: buildPricePanel(inputs.candles),
+    price: buildPricePanel(inputs.candles, inputs.priceUse),
     oi: buildOiPanel(inputs.oiPoints, inputs.oiMissingDays),
     cvd: buildCvdPanel(inputs.cvdDeltas, inputs.cvdMissingDays, inputs.cvdCoveredDays, inputs.cvdAnchorMs),
   };
