@@ -278,3 +278,196 @@ rodá-las até `5.2` existir]`
 canônica"* atravessa Python ⇄ TypeScript, onde **não existe `import` literal** (`:222-228`).
 **Também não resolvi isto** — segue sendo decisão de arquitetura, sem dono nomeado, e o lugar
 natural dela é a fase `08` (o motor) ou a consolidação de `09`.
+
+---
+
+# ⚠️ Acrescentado por `T-05.1`/`quant-architect` em 2026-09-02 — a pergunta embutida de `:262-269` é RESPONDIDA com medição; `FR-3` fica com um escopo declarado, não fechado
+
+**Nenhuma linha acima foi apagada.** As duas dívidas que `:261-280` deixou nomeadas —
+"o contrato pode ser expresso sem caminho?" e "`FR-3` atravessa Python ⇄ TypeScript" — são
+respondidas aqui, com o universo que só existe a partir desta task (`find frontend/src -type f`
+deixou de ser **4**; ver `docs/context/plataforma-dados/gates/T-05.1-builder.md` pelo inventário).
+
+## D1 — o contrato É expresso por especificador de módulo, e a resposta às 3 alternativas é medida, não presumida
+
+`05_fatia_visivel.md:53` nomeou três instrumentos a testar antes de aceitar
+`no-restricted-imports`: *"`import/no-restricted-paths` sobre grupos declarados, `project
+references` do TypeScript, ou um campo de manifesto por módulo"*. Os três foram medidos, não
+escolhidos por preferência:
+
+| alternativa | medição | veredito |
+|---|---|---|
+| `import/no-restricted-paths` (`eslint-plugin-import`) | `[MEDIDO 2026-09-02: node -e "require.resolve('eslint-plugin-import')" → Cannot find module 'eslint-plugin-import'; grep -n eslint-plugin-import frontend/package.json frontend/package-lock.json → 0 linhas]` | **ausente do projeto hoje.** Instalá-la é possível, mas suas `zones` (`target`/`from`) casam **arrays de diretório** — a MESMA classe de padrão de `no-restricted-imports.patterns`, só com API diferente. Adotá-la não escapa do `Fato 1` de `:154-160`; troca o nome do instrumento, não a propriedade dele |
+| `project references` do TypeScript | `[MEDIDO 2026-09-02: ls frontend/tsconfig.json → No such file or directory (mesma ausência que `universe-at.ts:22-24` já documenta)]` | **inexequível sem infraestrutura nova.** Exigiria criar `tsconfig.json` + subprojetos (`references`) para `charts`/`web` — uma reestruturação de repositório inteira, fora do escopo desta task ("grid + boundary only", handoff `T-05.1.md`) |
+| campo de manifesto por módulo | `[NÃO MEDIDO por falta de objeto a medir: nenhum manifesto desse tipo existe no repositório hoje]` | **exigiria um scanner novo**, bespoke, para ler o campo — a mesma classe de instrumento que `ADR-011/D4` baniu (`[[rules.own]]` regex-like) pelo motivo já medido lá: sem AST, "nome do arquivo" e "conteúdo do arquivo" são coisas fáceis de dessincronizar, e nada aqui as manteria em acordo |
+
+**Conclusão medida, não presumida:** nenhuma das três alternativas está disponível HOJE sem
+adicionar dependência nova, criar infraestrutura nova (`tsconfig.json` + subprojetos), ou
+construir um instrumento novo da classe que `D4` já baniu. `no-restricted-imports.patterns`
+continua sendo, medido em 2026-09-02 como em 2026-08-28, o único instrumento que este
+repositório já tem e que casa especificador de módulo via AST.
+
+**E aqui está a distinção que faltava, e que resolve `Fato 1` sem inverter esta ADR pela porta
+dos fundos:** `Fato 1` (`:154-160`) tem razão sobre a LETRA — para um import relativo do mesmo
+repositório, "especificador de módulo" e "caminho" são, hoje, o MESMO texto (não há alias nem
+pacote publicado que os separe). **Mas o que `:46` recusou não foi "um instrumento que lê
+caminho" — foi usar caminho para decidir QUEM REVISA um arquivo** (`[agents.by_component]`,
+`code_paths.classify`, o roteamento de arquiteto). `frontend/eslint.config.mjs` não é essa
+superfície: `harness policy --key agents.by_component` e `harness code-paths classify` não leem
+este arquivo, e não vão passar a ler — **nenhuma linha das duas regras abaixo alimenta essas
+duas chaves de política**. Se `charts` for reorganizado fisicamente amanhã, o custo é UMA edição
+neste arquivo de lint (dois `files:`/`group:`), não uma reatribuição silenciosa de dono de
+julgamento — que é exatamente o dano que `:46` nomeia e que continua evitado.
+
+**Decisão:** `D5.12` fecha com `no-restricted-imports.patterns`, simétrico e total nas duas
+direções (`frontend/eslint.config.mjs`, dois blocos de `files`), provado nas duas metades de
+`1.8'` na mesma passada por `frontend/src/charts/eslint-boundary.test.ts` — `[MEDIDO
+2026-09-02: MORDE — 2 violadores efêmeros plantados, `eslint src` → `rc=1`, 2 problemas, ambos
+nomeando `no-restricted-imports` e citando esta ADR; CALA — violadores removidos, `eslint src`
+sobre os módulos REAIS de `charts`(12 arquivos) + `app`(11) + `features`(10) → `rc=0`,
+`[MEDIDO 2026-09-02: find frontend/src/{charts,app,features} -type f | wc -l por diretório]`]`.
+`ADR-003`
+fica de pé — não foi reescrita, porque a alternativa que `:53` temia (reabrir e reescrever
+`FR-1`/`FR-2`) não se tornou necessária.
+
+**O que fica deliberadamente de fora, e é gap declarado, não escondido:** `frontend/src/
+components/**` não está em nenhum dos dois grupos (`charts` nem `web`) — hoje ele tem 1 arquivo
+(`format-percentage.ts`) que não importa nem é importado por nenhum dos dois lados
+`[MEDIDO 2026-09-02]`, então a omissão não deixa nenhum import real sem guarda; mas um arquivo
+futuro ali poderia atravessar a fronteira sem que esta regra o veja. Fica para quem primeiro
+classificar aquele diretório — não é resolvido por presunção aqui.
+
+## D2 — `FR-3` (Python ⇄ TypeScript): escopo declarado, e o buraco de `:222-228`/`:275-278` NÃO fecha, porque não é desta fronteira
+
+`FR-3` diz "o motor de backtest importa a grade canônica". Esta task (`T-05.1`) prova que a
+grade tem UMA implementação **do lado TypeScript** — `frontend/src/charts/canonical-grid.ts`,
+consumida por dois call-sites reais e provada por `sha256` idêntico
+(`docs/context/plataforma-dados/gates/T-05.1-builder.md`). O segundo call-site
+(`canonical-grid-accessor-consumer.ts`) é um SUBSTITUTO declarado para o futuro consumidor
+`backtest` — não existe hoje nenhum motor de replay/paper-trading em `frontend/src/`, e o
+motor Python em `backend/src/` está fora do escopo desta task (handoff `T-05.1.md`: "Não toque
+`backend/`").
+
+**Isto não fecha `Fato 4` (`:222-228`), e não finjo que fecha:** um `import` Python de um
+módulo TypeScript não existe e não vai existir — a linguagem impede. Se o vocabulário fechado
+de componentes (`sentimento`·`charts`·`convergencia`·`backtest`·`web`·`docs`) algum dia tiver
+um motor de `backtest` em Python que precise da MESMA grade, `FR-3` para aquele consumidor só
+pode ser satisfeita por um contrato QUE NÃO É IMPORT — ex.: uma especificação compartilhada
+(schema/vetor de teste) que os dois lados implementam contra, com paridade provada por teste
+cruzado, nunca por um `import` que a linguagem não permite. **Isto é `[NÃO SEI]` de propósito:**
+decidir qual desses dois lados (TS ou Python) é a fonte de verdade da grade, se algum dia
+existirem os dois, é uma decisão de arquitetura que não tem candidato a resolver hoje —
+permanece em aberto, dona `quant-architect`, gatilho: o dia em que uma task real precisar de
+bucketing de tempo em AMBAS as linguagens para o MESMO propósito (hoje nenhuma precisa).
+
+---
+
+# ⚠️ Acrescentado por `T-05.1`/`quant-architect` em 2026-09-02 (correção pós-QA) — `D5.12` tinha um buraco estrutural em `import()` dinâmico, fechado com uma segunda regra
+
+**Nenhuma linha acima foi apagada.** O bloco `D1` (`:291-338`) afirmou que `D5.12` fechava
+"simétrico e total" com `no-restricted-imports.patterns`. **Essa afirmação estava incompleta,
+não errada na parte que mediu** — QA independente (`docs/context/plataforma-dados/gates/
+T-05.1-qa.md` §3) provou, contra a fonte da própria regra
+(`frontend/node_modules/eslint/lib/rules/no-restricted-imports.js:858-864`), que ela só
+registra listener para `ImportDeclaration`/`ExportNamedDeclaration`/`ExportAllDeclaration` —
+nunca para `ImportExpression`, o nó AST de `import(...)` dinâmico. `[MEDIDO 2026-09-02, QA:
+await import("../charts/canonical-grid.ts") em src/app/ → eslint rc=0, ruleId: []]`. Isto não
+era um gap de configuração deste repositório — é propriedade estrutural do `no-restricted-
+imports` do ESLint, e `import()` dinâmico é o padrão idiomático para lazy-load de bibliotecas
+de gráfico (`next/dynamic`), então não era cenário de laboratório.
+
+**Fechado, não apenas declarado — via a opção (a) que o QA sugeriu:** uma segunda regra,
+`no-restricted-syntax`, com seletor `esquery` sobre `ImportExpression[source.value=/.../]`,
+espelhando o mesmo grupo de alvo de cada bloco de `no-restricted-imports`
+(`frontend/eslint.config.mjs`, os dois blocos de `files:` de `D5.12`). Medido:
+
+```
+$ npx eslint src/app/_probe.ts        # await import("../charts/canonical-grid.ts")
+rc=1, ruleId: ["no-restricted-syntax"]          # [MEDIDO 2026-09-02]
+
+$ npx eslint src/charts/_probe.ts     # await import("../app/routes.ts")
+rc=1, ruleId: ["no-restricted-syntax"]          # [MEDIDO 2026-09-02]
+
+$ npx eslint src                      # árvore real, sem probes
+rc=0, 0 messages                                # [MEDIDO 2026-09-02]
+```
+
+Provado nas duas metades de `1.8'` (morde+cala) pelo mesmo padrão dos probes estáticos, em
+`frontend/src/charts/eslint-boundary.test.ts` (novo teste
+`"D5.12 MORDE+CALA (dynamic form): ..."`) — `npm --prefix frontend run test:charts` → **34
+pass, 0 fail** `[MEDIDO 2026-09-02]` (era 33 antes desta correção). `npm --prefix frontend run
+lint` → `rc=0`.
+
+**O que isto NÃO cobre, e é gap declarado, não escondido:** o seletor casa o segmento de
+caminho `app`/`features`/`charts` por regex sobre `source.value` — a mesma classe de padrão
+"casa especificador de módulo" que o resto de `D5.12` já usa (`:310-320`), então não reabre a
+discussão de `:46` sobre fronteira por caminho como critério de DONO. Um alias de bundler
+(`@charts/...`) resolvido em tempo de build, se algum dia existir, não é alcançado por este
+regex — não existe hoje (`grep -rn '"@charts' frontend` → nenhuma ocorrência), e fica para
+quem primeiro introduzir alias de import neste projeto.
+
+---
+
+# ⚠️ Acrescentado por `T-05.1`/`quant-architect` em 2026-09-02 (correção pós-QA rodada 2) — mais 2 formas fechadas por AST, 2 formas declaradas FORA DE ESCOPO por limite estrutural, não por preguiça
+
+**Nenhuma linha acima foi apagada.** O bloco anterior (`:365-407`) fechou `ImportExpression`
+com `source` do tipo `Literal` (string simples). QA independente, rodada 2
+(`docs/context/plataforma-dados/gates/T-05.1-qa.md`, seção "RODADA 2"), plantou 6 sondas
+próprias e achou que o seletor `esquery` só lê o atributo `.value`, que só existe em nó
+`Literal` — 4 formas cujo nó AST não tem `.value` atravessaram com `rc=0`/`ruleId: []`:
+template literal puro, template literal interpolado, concatenação de string, e `require(...)`.
+
+**As 4 formas se dividem em duas classes DIFERENTES, e o tratamento de cada uma é essa
+distinção, não um julgamento de gosto:**
+
+## Classe 1 — fechável por AST, e fechada nesta correção
+
+| forma | por que é fechável | seletor `esquery` (`frontend/eslint.config.mjs`) |
+|---|---|---|
+| template literal SEM interpolação — `` import(`../charts/x.ts`) `` | `TemplateLiteral` com `expressions.length === 0` tem a string inteira resolvível em `quasis[0].value.cooked` ANTES do programa rodar — é o mesmo dado que `Literal.value` carrega, só num campo diferente. `[MEDIDO 2026-09-02: node -e "esquery.match(ast, esquery.parse('ImportExpression[source.quasis.0.value.cooked=/charts/]'))" → 1 match]` | `ImportExpression[source.type='TemplateLiteral'][source.expressions.length=0][source.quasis.0.value.cooked=/.../ ]` |
+| `require("../charts/x.ts")` | `CallExpression` cujo `callee.name === "require"` com primeiro argumento `Literal` é EXATAMENTE tão resolvível quanto `ImportExpression` com `Literal` — mesmo padrão já usado, seletor novo porque nenhuma das duas regras existentes tinha qualquer seletor de `CallExpression` (`grep -c CallExpression node_modules/eslint/lib/rules/no-restricted-imports.js` → 0) | `CallExpression[callee.name='require'][arguments.0.value=/.../ ]` |
+
+Fechado nos DOIS blocos de `frontend/eslint.config.mjs` (`src/charts/**` e
+`src/app/**`+`src/features/**`), morde+cala provado nas duas direções em
+`frontend/src/charts/eslint-boundary.test.ts` — `[MEDIDO 2026-09-02: npm --prefix frontend
+run test:charts → 36 pass, 0 fail (era 34 antes desta correção); npm --prefix frontend run
+lint → rc=0]`.
+
+## Classe 2 — NÃO fechável por análise estática, declarado como limite permanente, não como TODO
+
+**Concatenação de string** (`import("../charts/" + "x.ts")`) e **template literal
+INTERPOLADO** (`` import(`../charts/${x}`) ``) exigem avaliar um valor computado em tempo de
+EXECUÇÃO. Nenhum dos dois nós AST expõe uma string que nomeie o módulo-alvo antes do programa
+rodar:
+
+- `BinaryExpression` (a concatenação) não tem `.value` nem `.cooked` — os dois operandos
+  podem ser, e frequentemente são, expressões arbitrárias (variável, chamada de função,
+  resultado de `fetch`); resolver o valor final exige INTERPRETAR o programa, que é
+  precisamente o que um linter estático não faz.
+- `TemplateLiteral` com `expressions.length > 0` tem `quasis` (os pedaços literais) e
+  `expressions` (os buracos) como arrays SEPARADOS — não existe um único `.cooked` que junte
+  os dois, porque o valor de cada `expression` só existe em tempo de execução.
+
+**Isto é a mesma classe de achado que a lacuna de alias já declarada** (`:401-407` acima,
+"gap declarado, não escondido"): não é configuração incompleta deste repositório, é
+propriedade estrutural de QUALQUER instrumento de análise estática (ESLint, TypeScript
+`project references`, ou qualquer scanner AST) — nenhum deles executa o programa, então
+nenhum pode saber o valor de uma expressão em tempo de escrita. Um especificador
+deliberadamente ofuscado (concatenação, interpolação, `require` computado) é, por construção,
+**indecidível estaticamente**.
+
+**Declaração de escopo do contrato, explícita a partir desta correção:** `D5.12` reprova
+import/export ES estático, e `import()`/`require()` dinâmico com argumento `Literal` ou
+template literal NÃO interpolado. Um especificador computado em tempo de execução
+(concatenação, interpolação, `require` com variável) está **fora do escopo deste contrato** —
+é limitação conhecida e aceita, não item pendente de "fechar depois". Quem escrever esse
+padrão em `charts` ou `web` está, por definição, contornando um contrato que declara
+explicitamente não alcançá-lo — o mesmo tipo de ofuscação deliberada que nenhum linter de
+nenhum projeto detecta sem executar o código.
+
+**O que isto NÃO significa:** não é uma admissão de que o contrato "não serve" — a idiomática
+para lazy-load de biblioteca de gráfico (`next/dynamic(() => import("../charts/algo.ts"))`)
+usa um especificador LITERAL na esmagadora maioria dos casos reais (é assim que o bundler
+consegue fazer code-splitting estático); só o caso patológico de especificador computado em
+runtime escapa, e esse caso já teria outros problemas (o bundler também não consegue
+code-split um `import()` cujo argumento não é estaticamente conhecido).
