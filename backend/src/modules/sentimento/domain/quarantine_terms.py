@@ -89,7 +89,7 @@ def quarantine_terms_for_catalog_entry(
     this function is the one place that would need to change, not every caller of it.
 
     `available_at_present` is NOT derivable from `entry` (see the module docstring) and is
-    always the caller's answer — typically `quarantine_gaveta`'s own
+    always the caller's answer — typically `quarantine_drawer`'s own
     `available_at_present_by_key` argument, resolved from the availability lag table
     (`Q19`/`T-03.6`).
     """
@@ -100,7 +100,7 @@ def quarantine_terms_for_catalog_entry(
     )
 
 
-def quarantine_gaveta(
+def quarantine_drawer(
     catalog: SeriesCatalog, *, available_at_present_by_key: Mapping[str, bool]
 ) -> frozenset[str]:
     """Return every `series_key_id` quarantined under the three-term predicate — `D6.1`.
@@ -112,8 +112,8 @@ def quarantine_gaveta(
     still gets a row, `lag_n=0`, rather than vanishing): a series nobody has measured yet must
     not be silently promoted to trust by falling off this mapping.
 
-    `D6.1`'s first invariant — `count(gaveta) == count(catálogo WHERE <predicado>)` — is true
-    of this function BY CONSTRUCTION (it is a filter over exactly that predicate), which is
+    `D6.1`'s first invariant, literal — `count(gaveta) == count(catálogo WHERE <predicado>)` —
+    is true of this function BY CONSTRUCTION (it is a filter over exactly that predicate), which is
     why the falsifying test for this DoD plants a real Coinalyze-shaped entry and checks the
     VERDICT rather than re-deriving the count a second way.
     """
@@ -137,11 +137,11 @@ def readable_by_backtest(
     that decision and nothing more — `T-04.4`'s decision-read module still owns HOW a decision
     read walks the rows of a series that IS readable; this only names the set.
 
-    It is the set-complement of `quarantine_gaveta` over the SAME catalog and the SAME
-    availability mapping, so `readable_by_backtest(...) & quarantine_gaveta(...) == frozenset()`
+    It is the set-complement of `quarantine_drawer` over the SAME catalog and the SAME
+    availability mapping, so `readable_by_backtest(...) & quarantine_drawer(...) == frozenset()`
     holds by construction — `D6.1`'s "`count(painéis sincronizados ∩ quarentena) == 0`" made
     executable, over the whole catalog rather than one series at a time.
     """
-    gaveta = quarantine_gaveta(catalog, available_at_present_by_key=available_at_present_by_key)
+    drawer = quarantine_drawer(catalog, available_at_present_by_key=available_at_present_by_key)
     all_keys = frozenset(entry.key.series_key_id() for entry in catalog.entries)
-    return all_keys - gaveta
+    return all_keys - drawer

@@ -3326,7 +3326,7 @@ promoção nem reimplementar `as_of` (fora do escopo, por instrução do handoff
   `None`) — por isso os dois primeiros termos do predicado estão SEMPRE resolvidos para
   qualquer linha que chegou ao catálogo, e `available_at_present` é o único termo que chega
   como parâmetro (não é campo de `SeriesKey`; vem da tabela de defasagem, `Q19`/`T-03.6`).
-- `quarantine_gaveta(catalog, *, available_at_present_by_key)` — a gaveta sobre o catálogo
+- `quarantine_drawer(catalog, *, available_at_present_by_key)` — a gaveta sobre o catálogo
   inteiro (`D6.1`), tratando uma chave AUSENTE do mapa como não resolvida (silêncio não é
   "ok", mesma regra de `LagSummaryRow`).
 - `readable_by_backtest(catalog, *, available_at_present_by_key)` — o complemento exato da

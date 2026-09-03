@@ -19,7 +19,7 @@ from src.modules.sentimento.domain.open_interest_catalog import (
 from src.modules.sentimento.domain.quarantine_terms import (
     COINALYZE_ONE_SHOT_TERMS,
     QuarantineTerms,
-    quarantine_gaveta,
+    quarantine_drawer,
     quarantine_terms_for_catalog_entry,
     readable_by_backtest,
 )
@@ -90,7 +90,7 @@ def _coinalyze_close_entry() -> SeriesCatalogEntry:
 def _binance_point_entry() -> SeriesCatalogEntry:
     """Return the PRODUCTION catalog row for the Binance OI point — the "other" real series.
 
-    Used only to prove the gaveta is not the WHOLE catalog (`D6.1`'s mixed-catalog tests):
+    Used only to prove the drawer is not the WHOLE catalog (`D6.1`'s mixed-catalog tests):
     it shares nothing with the Coinalyze row above except both being real `T-06.5` output.
     """
     catalog = open_interest_catalog_entries()
@@ -130,8 +130,8 @@ def test_d6_2_the_third_term_alone_isolates_a_series_with_the_other_two_resolved
     )
 
 
-def test_d6_1_gaveta_count_matches_the_predicate_applied_by_hand_over_the_whole_catalog() -> None:
-    """`D6.1`: `count(gaveta) == count(catálogo WHERE <predicado>)`, over the REAL catalog.
+def test_d6_1_drawer_count_matches_the_predicate_applied_by_hand_over_the_whole_catalog() -> None:
+    """`D6.1`, literal: `count(gaveta) == count(catálogo WHERE <predicado>)`, over the REAL catalog.
 
     `open_interest_catalog_entries()` (`T-06.5`) is five real rows: four Coinalyze
     (`OPEN`/`HIGH`/`LOW`/`CLOSE`) and one Binance (`POINT`). Only the Binance row is marked
@@ -143,7 +143,7 @@ def test_d6_1_gaveta_count_matches_the_predicate_applied_by_hand_over_the_whole_
     binance_entry = _binance_point_entry()
     availability = {binance_entry.key.series_key_id(): True}
 
-    gaveta = quarantine_gaveta(catalog, available_at_present_by_key=availability)
+    drawer = quarantine_drawer(catalog, available_at_present_by_key=availability)
     predicate_count = sum(
         1
         for entry in catalog.entries
@@ -157,21 +157,21 @@ def test_d6_1_gaveta_count_matches_the_predicate_applied_by_hand_over_the_whole_
 
     assert len(catalog.entries) == 5
     assert len(coinalyze_ids) == 4
-    assert len(gaveta) == predicate_count == 4
-    assert gaveta == coinalyze_ids
+    assert len(drawer) == predicate_count == 4
+    assert drawer == coinalyze_ids
 
 
-def test_d6_1_readable_by_backtest_never_intersects_the_gaveta() -> None:
+def test_d6_1_readable_by_backtest_never_intersects_the_drawer() -> None:
     """`D6.1`'s second invariant: `count(painéis sincronizados ∩ quarentena) == 0`."""
     catalog = open_interest_catalog_entries()
     binance_entry = _binance_point_entry()
     availability = {binance_entry.key.series_key_id(): True}
 
-    gaveta = quarantine_gaveta(catalog, available_at_present_by_key=availability)
+    drawer = quarantine_drawer(catalog, available_at_present_by_key=availability)
     readable = readable_by_backtest(catalog, available_at_present_by_key=availability)
 
     assert readable == frozenset({binance_entry.key.series_key_id()})
-    assert readable & gaveta == frozenset()
+    assert readable & drawer == frozenset()
 
 
 def test_readable_by_backtest_is_not_vacuously_empty() -> None:
