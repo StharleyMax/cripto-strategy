@@ -3205,3 +3205,85 @@ nas duas fontes, uma SEXTA linha duplicando um `reduction` existente reprovando 
 - **Não reconcilia automaticamente.** `D6.8` é uma medição publicada, não um mecanismo de
   correção — a divergência Coinalyze×Binance continua visível como divergência, nunca
   corrigida antes de gravar.
+
+## 📎 2026-09-03 por `T-06.3` — as QUATRO séries de L/S; `ls_ratio` PROIBIDO; `delta()`/TF recusam o taker POR TIPO
+
+`SPEC-001` §3.1/§5.11, `CA-F2-3`, plano `06` itens **6.3 + 6.10** (`CST-47`). Depende de
+`T-06.1` (`series_catalog`/`SeriesKey`, mesclada).
+
+### A peça
+
+- [`domain/series_key.py`](src/modules/sentimento/domain/series_key.py) (**editado**):
+  `FORBIDDEN_METRIC_NAMES` ganha `"ls_ratio"` ao lado de `"implied_avg_price"` — o guarda-chuva
+  que misturaria as quatro séries de L/S numa coluna só é recusado pela IDENTIDADE
+  (`IncompleteSeriesKeyError`), não por convenção. A mensagem de recusa deixou de assumir
+  "é `price_mark_close`" para todo nome proibido (`_FORBIDDEN_METRIC_REASONS`, um motivo por
+  nome) — o texto antigo já estava errado para um segundo nome antes desta task.
+- [`domain/long_short_ratio_series.py`](src/modules/sentimento/domain/long_short_ratio_series.py)
+  (**novo**): as constantes `POSITION_RATIO_METRICS`/`LONG_SHORT_METRICS` (as quatro, na ordem
+  de `SPEC-001` §3.1); `PositionRatioObservation` (STOCK-like, admite `delta()`) e
+  `TakerRatioComponents` (FLOW-like, carrega `buy_vol`/`sell_vol` — item 6.10 — e nunca um
+  campo `value` bruto). `PositionRatioMetric` é um `Literal` de TRÊS membros que exclui o
+  taker **estruturalmente** — a mesma técnica de `DecisiveUniverseSource`
+  (`universe_at.py`/`T-07.8`) para `s3_inferred`: `delta(before, after)` tipa os dois
+  parâmetros como `PositionRatioObservation`, e `TakerRatioComponents` não tem `.value`
+  nenhum — `mypy --strict` reprova a chamada errada antes de rodar, sem `isinstance`/`nature
+  ==` em lugar nenhum do corpo da função (verificado à mão, comando no cabeçalho do módulo).
+  `resample_position_ratio_to_timeframe` faz `last()` na borda (nunca `mean()`, `SPEC-001`
+  §5.11); `resample_taker_ratio_to_timeframe` é a ÚNICA forma legítima de reamostrar o taker —
+  recomputa `Σbuy_vol/Σsell_vol`, nunca soma `.ratio`; `resample_bare_taker_ratio_refuses`
+  recusa explicitamente (`NonAggregableFlowRatioError`) o caso de hoje, em que só a razão nua
+  do dump existe (sem `buy_vol`/`sell_vol` — a ingestão REST de `takerlongshortRatio` é task
+  futura).
+
+### D6.4 — o falsificador de autocorrelação, sobre dado real desta sessão
+
+[`test_long_short_ratio_series.py`](tests/sentimento/test_long_short_ratio_series.py) (**novo**,
+25 testes, `pytest --collect-only`) mede — não copia da SPEC — autocorrelação lag-1 sobre
+`data/binance/metrics/{btcusdt,alts}` (BTC/COTI/DOGE/SLX, 2026-08-17..23, catalogados em
+`data/MANIFEST.md`): as três séries de POSICIONAMENTO ficam em **0,99+** nos 4 símbolos; a
+série TAKER fica **|r| < 0,10** nos 4 (`[MEDIDO 2026-09-03]`: 0,0899 BTC / −0,0083 COTI /
+−0,0022 DOGE / 0,0365 SLX — os três últimos batem, casa decimal, com `PRD-001-plataforma-dados.md:288`).
+Ortogonalidade: **|r| < 0,10 em 12 de 12 pares** (4 símbolos × 3 métricas de posicionamento) —
+o teste conta os 12 e falha se um só cruzar 0,10.
+
+### D6.5/D6.6 como testes executáveis, não só como tipo
+
+- **D6.5**: `test_structural_falsifier_delta_body_cannot_spell_the_taker_metric` faz o mesmo
+  escaneamento por `ast` que `test_universe_at.py` já faz para `s3_inferred` — o corpo de
+  `delta()` nunca soletra `sum_taker_long_short_vol_ratio` como constante. Mais:
+  `test_taker_ratio_components_has_no_value_field_delta_could_reach_for` prova por
+  `dataclasses.fields` que `TakerRatioComponents` não tem `.value`.
+- **D6.6**: `test_d6_6_naive_resample_of_the_real_taker_series_refuses` pega 3 buckets reais de
+  5 min de `sum_taker_long_short_vol_ratio` (BTC, 2026-08-23) e prova que a recusa dispara
+  ANTES de qualquer aritmética — nunca devolve `3,1809`. `test_resample_taker_ratio_recomputes_from_sigma_buy_over_sigma_sell`
+  é `[INFERRED]` (sintético — este repositório não tem fixture real de `buy_vol`/`sell_vol`
+  ainda, item 6.10 entrega a FORMA, não uma captura REST): soma ingênua de 3 razões idênticas
+  de 1,50 dá 4,50; `Σbuy/Σsell` dá o 1,50 correto.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1307 passed**, cobertura total **97,63%**; por camada
+  (`ADR-009/D1`): domain **99,8%** (meta 90%), use_cases **100,0%** (meta 80%), infra **95,1%**
+  (meta 70%) — as 3 camadas declaradas, todas `[OK]`.
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 235 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (156 arquivos, 708 dependências).
+- `bash backend/scripts/natureza.sh` → **71 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados** (1 `[AVISO]` de docstring de
+  módulo multi-linha achado e corrigido antes deste commit — mesmo padrão de
+  `series_catalog.py`/`quarantine_terms.py`).
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **`label_shift`/`unit`/`denom`/`reduction` das quatro séries de L/S não são populados aqui**
+  — são território de `T-06.2` (tabela de shift), e de qualquer task futura que grave linhas
+  reais de `SeriesCatalogEntry` para estas quatro métricas; esta task fixa o VOCABULÁRIO e o
+  MECANISMO de recusa, não o catálogo de produção.
+- **Nenhuma ingestão REST de `takerlongshortRatio` existe.** `TakerRatioComponents` é a forma
+  que uma REST client futura preenche; `resample_bare_taker_ratio_refuses` é o comportamento
+  correto ENQUANTO ela não existe, não um placeholder morto.
+- **`SeriesKey.nature` continua com UM único membro `RATIO`.** A pergunta que `T-04.4`
+  registrou ("`nature` precisa de um sexto membro, ou `§5.11` precisa de um segundo termo?")
+  segue aberta para `/architect` — esta task resolve D6.5/D6.6 UMA CAMADA ACIMA de `SeriesKey`,
+  sem tocar a identidade de 15 termos.
