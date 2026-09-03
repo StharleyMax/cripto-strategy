@@ -3667,3 +3667,69 @@ pontos DIFERENTES e prova que a janela de cada lado nunca é igual à janela "s�
 - **`ZL-3`'s "distinguível de ausência em 100 ms" é uma propriedade de RENDERIZAÇÃO** (`charts`,
   fora da fronteira de `sentimento`) — este módulo entrega a metade que `domain` pode garantir:
   tipos estruturalmente diferentes (`value` vs `absence`), nunca a mesma forma.
+## 📎 2026-09-03 por `T-06.8` — campo ADITIVO desconhecido → quarentena + alarme; AUSENTE/RENOMEADO → reprova (`D6.14`)
+
+`SPEC-001` §5.5, `CA-F2-12`, plano `06` item **6.14** (`CST-52`), `depends_on = ["T-06.6"]`.
+Escopo: as DUAS reações opostas a uma mudança de schema no payload da fonte, sobre o mesmo
+par de conjuntos de campos — não a mesma checagem com o resultado invertido.
+
+### As duas peças
+
+[`domain/schema_change.py`](src/modules/sentimento/domain/schema_change.py) (**novo**): o
+predicado puro. `classify_schema_change(*, expected_fields, received_fields)` roda DOIS testes
+independentes sobre `frozenset[str]`, nesta ordem: primeiro "algo esperado sumiu"
+(`expected_fields - received_fields`), que **reprova** com `SchemaChangeRejectedError` — essa
+ordem é a enforcement de "rejeição vence": um campo renomeado (`q` → `quantity`) fica ausente
+sob o nome antigo E aditivo sob o novo, e reprovar é o que a SPEC chama de "renomeado", não
+duas leituras concorrentes. Só então o segundo teste roda — `received_fields - expected_fields`
+não vazio → `SchemaChangeVerdict.is_additive = True`, `absence = Absence.QUARANTINE` (reuso de
+`provenance.Absence`, handoff literal: "não invente um segundo enum de destino de
+quarentena") e `should_alarm = True`. Payload idêntico ao contrato → `absence = None`,
+`should_alarm = False`, nunca reprova.
+
+[`use_cases/classify_schema_change.py`](src/modules/sentimento/use_cases/classify_schema_change.py)
+(**novo**): `classify_and_alarm(*, subject, expected_fields, received_fields)` decide **QUANDO**
+alarmar (chama o domain, e se `should_alarm` for `True` emite `logger.warning`
+`"schema_change_additive_unknown"` com `subject` + `unknown_fields` em `extra`) — não decide
+**POR ONDE** o alarme sai. `T-07.11` (canal de alarme fora do browser) segue `blocked` em `Q3`
+nesta data; não há canal para chamar. Um `SchemaChangeRejectedError` do domain propaga SEM
+logar: reprovação é recusa do payload, não condição de alarme, e logar as duas juntas
+confundiria as duas reações que este módulo existe para manter separadas.
+
+### O fixture é o caso real, não um sintético
+
+`test_schema_change.py` usa os campos que `ADR-001` mediu, verbatim: contrato do dump S3 =
+`{T,a,f,l,m,p,q}` (7), payload REST que motivou a task = `{T,a,f,l,m,nq,p,q}` (8, com `nq`
+acrescentado) — `test_additive_unknown_field_quarantines_never_rejects` prova que ESTE payload
+real nunca levanta `SchemaChangeRejectedError`, que é exatamente o dia em que uma regra
+fail-closed ingênua teria parado a ingestão inteira (`CA-F2-12` `[MEDIDO]`).
+`test_renamed_field_rejects_even_though_the_new_name_looks_additive` planta o caso "rejeição
+vence" (`q` sumido, `quantity` aparecendo) e prova reprovação, não quarentena.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhum canal de alarme fora do log é construído.** `T-07.11` é quem decide o transporte
+  (`Q3`, aberta); esta task só decide o predicado (QUANDO) e registra a decisão como evento de
+  log estruturado — um flag que um consumidor futuro lê, não uma notificação entregue.
+- **Nenhum caller de produção chama `classify_and_alarm` ainda.** Esta task entrega o
+  mecanismo (`D6.14`); ligá-lo a um coletor real de `aggTrade` ou a qualquer outro endpoint é
+  trabalho de uma task de ingestão futura, não desta.
+- **`expected_fields` não é derivado automaticamente de nenhum schema declarado** (p.ex. de
+  `binance_aggtrade_payload.py`) — chega como argumento do caller, que é quem sabe qual
+  contrato está verificando; unificar isso é decisão de arquitetura fora do escopo de `D6.14`.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1416 passed**, cobertura total **97,71%**; por camada
+  (`ADR-009/D1`): domain **99,8%** (2807/2812, meta 90%), use_cases **100,0%** (594/594, meta
+  80%), infra **95,1%** (2208/2321, meta 70%) — as 3 camadas `[OK]`.
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 254 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (166 arquivos, 751
+  dependências).
+- `bash backend/scripts/natureza.sh` → **80 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados** no estado final (1 `[AVISO]`
+  `core.module-docstring-single-line` apareceu em `use_cases/classify_schema_change.py`
+  durante o desenvolvimento e foi corrigido antes deste commit — mesma forma de
+  `quarantine_terms.py`/`live_availability_write.py`: conteúdo movido para comentário `#`,
+  docstring de módulo em uma linha).
