@@ -141,6 +141,50 @@ A dívida chegou como *"acrescentar `*.sh` a `include_globs`?"*. **A pergunta é
 
 **⚠️ D1.3 é o critério que o `CA-F5-4` original não tinha.** Como estava escrito, *"re-declarar a lacuna com a contagem de arquivos"* era **desfecho aceito** ⇒ **o critério passava com o enforcement inalterado**. Um critério que passa sem que nada mude não testa nada.
 
+## Itens NOVOS — reabertura de 2026-09-03 (`deploy/`)
+
+**Autorização do owner:** `[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]` — opção escolhida: *"Sim — e um único ato cobre `A6` + `deploy/`"*. **Não é fala do owner:** ele escolheu uma opção de um menu que um agente redigiu, com o custo de cada uma declarado (`CLAUDE.md` §*"os dois rótulos de owner não são o mesmo ato"*).
+
+**Os termos da autorização, e são a condição dela:** **só item novo; nada em `done` é tocado; nenhum item nem DoD existente é reescrito.** A fase tem **7 de 7 tasks `done`** (`T-01.1`..`T-01.7`) `[MEDIDO 2026-09-03]` — `1.1`–`1.13` e `D1.1`–`D1.12` ficam **byte-idênticos**, e o `git diff` desta reabertura tem **0 deleções**.
+
+**A especificação não é reinventada aqui — ela é transportada de [`ADR-009` §`D6.7`](../../adr/ADR-009-reuso-da-forma-do-anything.md), onde nasceu com as medições e o falsificador.**
+
+| # | item | requisito | componente |
+|---|---|---|---|
+| 1.14 | **Cobertura de `deploy/` fechada, em três partes que só valem juntas** — mesma forma do item `1.4`, que fechou `frontend/`: **(a)** `code_paths.include_prefixes += "deploy/"`; **(b)** `include_globs += "*.yml"`, `"*.yaml"`; **(c)** **uma `[[rules.own]]` que ALCANCE YAML, nascida com corpus** — alvo: **segredo em compose**, porque a regra que existe para isso **não enxerga o arquivo**. **(a)+(b) sem (c) não fecha nada** (dá `classify → producao` com **zero mordida**, o defeito exato de `D1.4`), e **(c) sem (a)+(b) nunca é avaliada**. **O item CRIA `deploy/` com pelo menos um arquivo real e legítimo** — sem isso o DoD passa por vacuidade sobre caminho inexistente | `ADR-009`/D5, `ADR-009`/D6.7, `CA-F5-4` (a propriedade que `1.4` fechou para `frontend/`) | `infra` |
+
+### DoD do item novo — comando e universo
+
+| # | critério | ação | saída esperada |
+|---|---|---|---|
+| **D1.14** | **cobertura de `deploy/` FECHADA, medida por BLOQUEIO DEVOLVIDO — e o critério NÃO é `classify`** | **morde:** `harness rules --mode file --path deploy/<violador>` sobre um violador **efêmero** (segredo literal num compose), **fora da árvore versionada** · **cala:** o mesmo comando sobre o `deploy/<arquivo legítimo>` **real e versionado** que este item cria | **morde → BLOQUEIO nomeando a regra, `exit=2`** · **cala → saída vazia, `exit=0`**. **2 arquivos: 1 violador efêmero + 1 legítimo versionado.** **⚠️ Por que `classify` NÃO serve como critério, e é medição, não opinião:** `harness code-paths classify` **não confere existência** — `classify backend/src/api/routes/ingest_health.py` devolve **`producao`** para arquivo que **não existe** `[MEDIDO 2026-09-03]` ⇒ um DoD por `classify` fecharia sobre `deploy/` vazio. **⚠️ Por que o violador é EFÊMERO:** violador versionado deixa `harness rules --mode sweep` vermelho e o **`pre-push` recusa** — é o defeito herdado que `T-01.2` registrou (*"os falsificadores de `D1.3`/`D1.3b` não estão de pé, só existem como RECEITA"*), e por isso a metade **`cala`** é a que fica **versionada e reprodutível**. **O "antes" é inequívoco:** hoje `harness rules --mode file --path deploy/docker-compose.yml` → **saída vazia, `rc=0`**, e `ls -d deploy` → **inexistente** `[MEDIDO 2026-09-03]` |
+| **D1.14b** | **a regra própria é enforcement MEDIDO, não declarado — e isto REATIVA o item `1.8`** | `harness corpus verify --corpus <dir> --reference <cmd>` **e** `harness corpus mutate --corpus <dir> --reference <cmd>` | **igualdade de veredito** em `verify` **e** o corpus **DEFENDENDO** a regra em `mutate`. **`1.8` era um CONDICIONAL de antecedente FALSO** — *"com `ADR-011/D3` e `D4` a fase deixa de declarar regra própria ⇒ `1.8` não obriga nada. **Fica no plano, porque volta a morder se alguma task desta fase declarar uma**"*. **Este item declara uma ⇒ o antecedente vira VERDADEIRO e `1.8` obriga.** `D1.5` **não é reescrito**: ele registra o vácuo de 2026-08-28 e continua verdadeiro sobre aquele universo; **`D1.14b` é o sujeito que faltava**, do mesmo modo que `D5.13` deu sujeito a `D5.8` sem tocá-lo. **E esta seria a PRIMEIRA `[[rules.own]]` viva do repositório:** `harness rules list` → **10 regras, 5 `core` + 5 `web-fullstack`, ZERO própria**, e as **4** ocorrências de `[[rules.own]]` em `harness.toml` estão **todas em linha de comentário** (:386, :455, :461, :463) `[MEDIDO 2026-09-03]`. **`ADR-011/D4` não é contradito:** ele recusou regra própria **de TypeScript**, onde o ESLint já era o validador; **nenhum validador deste repositório lê YAML** |
+
+### Por que **(b)** e **(c)** não são acessórios de **(a)** — a cegueira a YAML é de hoje, não de um diretório futuro
+
+```bash
+harness code-paths classify deploy/docker-compose.yml   # nao-producao — "nenhum include_prefixes casa"   rc=1
+harness code-paths classify backend/src/config.yml      # nao-producao — "nenhum include_globs casa"        rc=1
+grep -hE '^(paths|target) *=' packs/{core,web-fullstack,hexagonal-layers,read-model-projection}/rules.toml | sort -u
+#   backend/**/*.py · frontend/src/** · **/*.py   (+ 2 `target` de path-presence)
+```
+
+`[MEDIDO 2026-09-03, n=10 regras / 4 packs]` — **um `.yml` sob um prefixo JÁ COBERTO continua `nao-producao`**, porque `include_globs` só lista extensões de código. E **zero** das 10 regras alcança `*.yml`, `*.yaml` ou `Dockerfile`: **`core.hardcoded-secret` — a regra que existe para segredo em código — declara `paths = ["**/*.py"]`** (`packs/core/rules.toml:50`) e **não veria uma senha num `docker-compose.yml`**. ⇒ **(a) sozinha move o veredito de `classify` e não acende regra nenhuma.**
+
+**⚠️ `[NÃO MEDIDO]`, escrito e não suposto: se `include_globs` aceita nome sem extensão (`Dockerfile`).** O comando que decide exige o ato de política: acrescentar `"Dockerfile"` a `include_globs` e rodar `harness code-paths classify deploy/Dockerfile`. **Enquanto não medido, `Dockerfile` fica FORA da cobertura**, e o item não finge o contrário.
+
+### O que este item NÃO faz, e o que ele deixa com dono
+
+- **Não materializa `A6`.** A mesma autorização cobre as duas metades, mas **como** `A6` entra continua sendo escolha do owner, e ela já está na mesa: **(i)** task sob o item **`1.13`**, que existe e **nunca teve task**, ou **(ii)** item novo `1.15`. **Não escolhi, e não escrevi item para ela.**
+- **Não põe `infra` no enum.** O componente deste item é **`infra`** — é o que os arquivos sob `deploy/` são, pela decisão de 2026-09-03 — e o rótulo **só existe depois** do ato de política que o item `9.6`/`T-09.4` registra. ⇒ **a task deste item depende de `T-09.4`**, e declarar a dependência é ato do `/tech-lead`. **Enquanto `T-09.4` não rodar, `harness tasks validate` acusa `infra` fora do enum — condição conhecida, datada e auto-resolúvel; consertá-la aqui seria consertar o sintoma.**
+- **Não constrói deploy.** Nada de compose de produção, TLS ou reverse proxy **funcionando**: o item fecha **cobertura**, e o arquivo legítimo que ele versiona existe para a metade **`cala`** ser reprodutível. **Construir o deploy é trabalho que hoje não tem casa em fase nenhuma** — `grep -niE 'deploy|vps|compose|systemd|reverse proxy|TLS'` sobre as **8** fases fora da `05` → **`0` linhas** `[MEDIDO 2026-09-03, n=8 arquivos]`, e **a ausência é o achado**: `ADR-009/D5` nomeou `deploy/` e nenhuma fase o adotou desde então.
+
+### Falsificador do item novo
+
+1. **`D1.14` fechando por `classify`.** `classify` não confere existência ⇒ o critério passaria sobre `deploy/` vazio, e o repositório trocaria um portão por um veredito. **Se o relatório de fecho citar `classify` no lugar de `rules --mode file` com `exit=2`, o item não fechou.**
+2. **A regra de (c) nascendo sem corpus, ou com corpus que não a defende.** `harness corpus mutate` existe para essa distinção: corpus que não morre quando a regra é mutada **não é rede, é decoração** — e uma `[[rules.own]]` sem rede é exatamente o que `1.8` foi escrito para impedir, no dia em que o antecedente dele virasse verdadeiro. **Hoje é esse dia.**
+3. **Contra o próprio item:** se, ao fim, `deploy/` contiver **só** o arquivo que o `cala` exige e nada mais — nenhum compose real, nenhum TLS —, então a cobertura foi fechada sobre um diretório-fantasma e o que se comprou foi **o direito de dizer que `infra` tem duas naturezas** (`ADR-009/F-D6-5b`), não enforcement. **O sinal a observar é `find deploy -type f | wc -l` estagnado em 1 depois da fase que construir o deploy de verdade.**
+
 ## Não faz
 
 Não escreve código de produção. **Não consolida ADR** (é `09`). Não decide arquitetura de dado. **Não altera o vocabulário fechado de componentes** — `1.7` é proposta ao owner.
