@@ -650,7 +650,7 @@ tracker = { provider = "jira", id = "CST-38", url = "https://conversationhub.atl
 id = "T-05.5"
 title = "[charts] 05 · Painel de Preco declara price_source E price_use; marcacao amarrada a serie de preco"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "05"
 depends_on = ["T-05.2"]
 refs = ["ADR-007/PS-1", "ADR-007/PS-3", "plano 05 item 5.7", "DoD D5.5", "serial com Q11 (T-08.9)"]
