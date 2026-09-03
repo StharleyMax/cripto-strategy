@@ -1155,7 +1155,7 @@ tracker = { provider = "jira", id = "CST-83", url = "https://conversationhub.atl
 id = "T-09.2"
 title = "[docs] 09 · env em {mainnet, testnet, demo, replay} em toda linha de ordem/fill, com chip no chrome"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "09"
 depends_on = ["T-04.2"]
 refs = ["CA-F5-3", "plano 09 item 9.3", "DoD D9.3"]
