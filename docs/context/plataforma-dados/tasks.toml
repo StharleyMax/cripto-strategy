@@ -1090,7 +1090,7 @@ tracker = { provider = "jira", id = "CST-77", url = "https://conversationhub.atl
 id = "T-08.10"
 title = "[charts] 08 · Primitivo swing_point em Anotacao — zero algoritmo, zero limiar, zero nivel"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-05.6"]
 refs = ["SPEC-001 §3.6", "plano 08 item 8.7", "Q20 NAO bloqueia: os dois vocabularios se apoiam no mesmo primitivo", "zone (OB/FVG/Fib) depende de Q20 e NAO entra aqui"]
