@@ -3136,3 +3136,72 @@ acima de `0,5` — a exceção não é apenas não testada na direção contrár
   a tabela de shift que alimentará `label_shift`/`verified_by` das linhas reais; escrever as
   linhas do catálogo com `key=SeriesKey(...)` completo é composição de tasks futuras
   (`T-06.3`/`T-06.5`/`T-06.9`), que esta não antecipa.
+## 📎 2026-09-03 por `T-06.5` — `reduction` populado: OI da Coinalyze = 4 linhas, Binance = 1
+
+`CA-F2-17`, plano `06` item **6.11** (`CST-49`). `T-06.1` já tinha construído o CONTRATO — o
+termo `reduction` na `SeriesKey`, o enum `Reduction` com os seis membros certos, e a recusa de
+default sobre qualquer termo de identidade (`test_series_identity.py`, escrito naquela task já
+citando esta medição). O que faltava era a POPULAÇÃO: as linhas reais de `series_catalog` para
+Open Interest das duas fontes — e é isso que esta task fecha.
+
+### A peça
+
+[`domain/open_interest_catalog.py`](src/modules/sentimento/domain/open_interest_catalog.py)
+(**novo**): três funções de produção, nenhuma delas uma cópia de fixture de teste.
+
+- `coinalyze_open_interest_key(reduction, *, instrument_id=...)` — `reduction` é parâmetro
+  **posicional obrigatório, sem default**. É o falsificador `D6.7` na própria assinatura:
+  chamar sem o argumento é `TypeError` nomeando `reduction`, nunca uma linha escolhida em
+  silêncio entre `OPEN`/`HIGH`/`LOW`/`CLOSE`.
+- `binance_open_interest_key(*, instrument_id=...)` — sempre `Reduction.POINT` /
+  `TsConvention.POINT_AT_BUCKET_END`, porque a Binance só publica UMA leitura por bucket.
+- `open_interest_catalog_entries(instrument_id=...)` — monta as **cinco** linhas (4 Coinalyze
+  `OHLC_OVER_BUCKET` + 1 Binance `POINT`) através de `build_series_catalog` (`T-06.1`), então a
+  invariante "UMA linha por `SeriesKey`" (`SPEC-001` §3.3) é validada na construção, não
+  apenas assumida por este módulo.
+
+`OPEN_INTEREST_LABEL_SHIFT_MS = 300_000` para as duas fontes — `SPEC-001` §2.1, literal: *"o
+`label_shift` da Coinalyze é `+interval`, na mesma direção do dump `metrics`, e não zero"*.
+`D6.8`, medido (`CST-4`, `[DOC: SPEC-001 §2.1]`): o `c` da Coinalyze casa com o
+`sumOpenInterest` da Binance no mesmo `create_time` a **1,86 bp de mediana / 9,46 bp de p99
+(n=1.706)**, enquanto `o(t) = c(t-300)` em só **6 de 2.141** pares — prova de que o `t` da
+Coinalyze é o INÍCIO do bucket, e de que as quatro leituras são identidades genuinamente
+distintas, não três mais uma repetida.
+
+### O falsificador — contra a população de PRODUÇÃO, não contra a fixture de `T-06.1`
+
+[`test_open_interest_catalog.py`](tests/sentimento/test_open_interest_catalog.py) (**novo**, 10
+testes) chama `open_interest_catalog.py` diretamente — nunca as fixtures locais de
+`test_series_identity.py`/`test_series_catalog.py`. Cobre: `D6.7` (chamar
+`coinalyze_open_interest_key()` sem `reduction` ⇒ `TypeError`), as cinco identidades
+distintas por `series_key_id()`, o catálogo de produção com exatamente 5 linhas (4
+`coinalyze` + 1 `binance`), busca de cada uma via `entry_for`, `label_shift` positivo e igual
+nas duas fontes, uma SEXTA linha duplicando um `reduction` existente reprovando por
+`DuplicateSeriesKeyError` através do `build_series_catalog` real (não uma cópia da regra), e
+`instrument_id` como parâmetro (não símbolo fixo).
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1289 passed**, cobertura total **97,62%**; por camada
+  (`ADR-009/D1`): domain **99,8%** (meta 90%), use_cases **100,0%** (meta 80%), infra **95,1%**
+  (meta 70%) — as 3 camadas declaradas, todas `[OK]`. `open_interest_catalog.py` em
+  **100% linha/branch** (`coverage.xml`).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 235 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (156 arquivos, 707 dependências).
+- `bash backend/scripts/natureza.sh` → **71 arquivo(s), 0 leitura(s) de relógio** (era 70 em
+  `T-06.1`; +1 pelo módulo novo).
+- `harness rules --mode sweep --changed-only` → **1 achado WARN** na primeira passada
+  (`core.module-docstring-single-line`, docstring de módulo multi-linha) — corrigido para
+  docstring de uma linha + comentário `#` (mesmo estilo de `series_catalog.py`/
+  `quarantine_terms.py`); segunda passada: **0 achados**. Nenhum achado de severidade `block`.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Sem persistência.** `open_interest_catalog_entries()` é lógica pura de `domain`
+  (`ADR-016`/`Natureza`) — nenhum store grava o resultado ainda.
+- **Sem quarentena/`available_at`.** O predicado de três termos (`T-06.6`) é quem decide se
+  estas cinco linhas nascem isoladas; esta task só declara a identidade e o `label_shift`.
+- **Não reconcilia automaticamente.** `D6.8` é uma medição publicada, não um mecanismo de
+  correção — a divergência Coinalyze×Binance continua visível como divergência, nunca
+  corrigida antes de gravar.
