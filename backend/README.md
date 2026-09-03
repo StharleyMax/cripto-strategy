@@ -3591,3 +3591,145 @@ o teste conta os 12 e falha se um só cruzar 0,10.
   registrou ("`nature` precisa de um sexto membro, ou `§5.11` precisa de um segundo termo?")
   segue aberta para `/architect` — esta task resolve D6.5/D6.6 UMA CAMADA ACIMA de `SeriesKey`,
   sem tocar a identidade de 15 termos.
+
+## 📎 2026-09-03 por `T-06.7` — `ZL-1`..`ZL-3`: zero do fornecedor não é zero legítimo
+
+`SPEC-001` §5.3, plano `06` item **6.13**, `CA-F3-10` ("tem de dizer que `pontos × intervalo`
+é POR LADO"), `D6.10`. Depende de `T-06.6` (predicado de três termos, mesclada).
+
+### A peça
+
+[`domain/liquidation_zero_legitimacy.py`](src/modules/sentimento/domain/liquidation_zero_legitimacy.py)
+(**novo**), os três falsificadores literais de `SPEC-001` §5.3:
+
+- **`LiquidationSide`** (`LONG="l"`/`SHORT="s"`): os valores SÃO os campos do fio da Coinalyze
+  (`docs/medicao-coinalyze.md` §2.1: `{t, l, s}`), não uma tradução — as duas sequências são
+  INDEPENDENTES, e nenhuma função deste módulo aceita as duas juntas.
+- **`classify_side_points`** (ZL-2/ZL-3): dado um `Sequence[SidePoint]` de UM lado, em ordem
+  estrita de `event_time`, converte todo zero ANTES do primeiro não-zero desse lado em
+  `Absence.NO_SOURCE` (ZL-2); todo zero DEPOIS permanece um valor legítimo,
+  `ClassifiedSidePoint(value=Decimal(0), absence=None)` (ZL-3) — nunca dobrado em `NO_SOURCE`.
+  `ClassifiedSidePoint` é OU valor OU ausência nomeada, nunca os dois nem nenhum
+  (`__post_init__` recusa as duas formas erradas), a mesma disciplina que `AsOfReading`
+  (`as_of_accessor.py`, `T-04.4`) já aplica do lado da leitura — aqui aplicada do lado da
+  ESCRITA/classificação, que é onde `D6.10` mediu o defeito.
+  `classify_side_points` NUNCA ordena a entrada: `NonMonotonicSidePointsError` recusa
+  `event_time` fora de ordem estrita (ou repetido), porque aceitar e ordenar escamotearia
+  exatamente o erro de ZL-1 — os dois lados sendo misturados numa chamada só.
+- **`retention_window_per_side`** (ZL-1, `CA-F3-10` recalculado): `pontos × intervalo`,
+  contando SÓ os pontos LEGÍTIMOS (`absence is None`) do `Sequence[ClassifiedSidePoint]` de UM
+  lado — nunca o array bruto do fio (que contaria buckets `NO_SOURCE` como se fossem
+  observações retidas, reintroduzindo o otimismo que ZL-2 existe para remover) e nunca os dois
+  lados somados antes de multiplicar. Não existe função neste módulo que aceite os dois lados
+  numa chamada só — "por LADO, não por série inteira" é propriedade do grafo de chamada, não
+  só comentário.
+
+### O falsificador — `D6.10` reproduzido em escala de fixture
+
+Terceiro-partido não versionado: a captura de 730 dias que mediu **361 buckets com `s = 0`
+literal** onde o `daily` reporta **289,65 / 154,53 / 4.547,61 BTC** é dado bruto de terceiro
+(`CLAUDE.md`, "Dado bruto não é versionado") e não vive neste repositório.
+[`test_liquidation_zero_legitimacy.py`](tests/sentimento/test_liquidation_zero_legitimacy.py)
+(**novo**, 18 testes) reproduz o MESMO PADRÃO — N zeros líderes antes do primeiro não-zero de
+um lado — em escala de lista literal, citando os três números de `D6.10` no valor dos pontos
+legítimos (`test_zl1_reproduces_d6_10_pattern_at_fixture_scale`). O falsificador de `ZL-1`
+(`test_zl1_retention_window_is_per_side_not_summed`) constrói dois lados com contagens de
+pontos DIFERENTES e prova que a janela de cada lado nunca é igual à janela "série inteira"
+(soma dos dois lados × intervalo) — a hipótese que o mecanismo errado produziria.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1425 passed** (era 1407; +18 novos), cobertura total
+  **97,73%**; por camada (`ADR-009/D1`): domain **99,8%** (meta 90%, 2848/2853), use_cases
+  **100,0%** (meta 80%, 585/585), infra **95,1%** (meta 70%, 2208/2321) — as 3 camadas
+  declaradas, todas `[OK]`. `liquidation_zero_legitimacy.py` isolado: **100%** (66/66 stmts,
+  18/18 branches).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 252 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (165 arquivos, 751 dependências).
+- `bash backend/scripts/natureza.sh` → **79 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados**. (1 achado corrigido durante o
+  desenvolvimento, antes deste commit: a string literal `as_of_accessor` numa prosa de
+  docstring disparava `test_as_of_is_the_single_reader.py`'s escaneamento por SUBSTRING — não
+  é um `[[rules.own]]`, é o próprio guard-rail de `T-04.4`; a docstring foi reformulada para
+  citar `AsOfReading` sem o nome do módulo.)
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhuma ingestão real de `/liquidation-history?interval=1min` existe neste repositório.**
+  `coinalyze_daily_series.py` só captura `interval=daily` (`T-02.2`); ligar
+  `classify_side_points`/`retention_window_per_side` a um cliente REST de 1 min (mesmo `{t, l,
+  s}` do fio, `docs/medicao-coinalyze.md` §2.1) é task futura — este módulo entrega a
+  CLASSIFICAÇÃO, não o coletor.
+- **Nenhum `SeriesRow`/`md.ingest_gap` é escrito por esta task.** `ClassifiedSidePoint` é a
+  DECISÃO (valor legítimo vs `SEM_FONTE`); persistir essa decisão como linha de série ou como
+  lacuna do painel é território de `write_series_row.py`/`T-04.4`, não tocado aqui.
+- **`ZL-3`'s "distinguível de ausência em 100 ms" é uma propriedade de RENDERIZAÇÃO** (`charts`,
+  fora da fronteira de `sentimento`) — este módulo entrega a metade que `domain` pode garantir:
+  tipos estruturalmente diferentes (`value` vs `absence`), nunca a mesma forma.
+## 📎 2026-09-03 por `T-06.8` — campo ADITIVO desconhecido → quarentena + alarme; AUSENTE/RENOMEADO → reprova (`D6.14`)
+
+`SPEC-001` §5.5, `CA-F2-12`, plano `06` item **6.14** (`CST-52`), `depends_on = ["T-06.6"]`.
+Escopo: as DUAS reações opostas a uma mudança de schema no payload da fonte, sobre o mesmo
+par de conjuntos de campos — não a mesma checagem com o resultado invertido.
+
+### As duas peças
+
+[`domain/schema_change.py`](src/modules/sentimento/domain/schema_change.py) (**novo**): o
+predicado puro. `classify_schema_change(*, expected_fields, received_fields)` roda DOIS testes
+independentes sobre `frozenset[str]`, nesta ordem: primeiro "algo esperado sumiu"
+(`expected_fields - received_fields`), que **reprova** com `SchemaChangeRejectedError` — essa
+ordem é a enforcement de "rejeição vence": um campo renomeado (`q` → `quantity`) fica ausente
+sob o nome antigo E aditivo sob o novo, e reprovar é o que a SPEC chama de "renomeado", não
+duas leituras concorrentes. Só então o segundo teste roda — `received_fields - expected_fields`
+não vazio → `SchemaChangeVerdict.is_additive = True`, `absence = Absence.QUARANTINE` (reuso de
+`provenance.Absence`, handoff literal: "não invente um segundo enum de destino de
+quarentena") e `should_alarm = True`. Payload idêntico ao contrato → `absence = None`,
+`should_alarm = False`, nunca reprova.
+
+[`use_cases/classify_schema_change.py`](src/modules/sentimento/use_cases/classify_schema_change.py)
+(**novo**): `classify_and_alarm(*, subject, expected_fields, received_fields)` decide **QUANDO**
+alarmar (chama o domain, e se `should_alarm` for `True` emite `logger.warning`
+`"schema_change_additive_unknown"` com `subject` + `unknown_fields` em `extra`) — não decide
+**POR ONDE** o alarme sai. `T-07.11` (canal de alarme fora do browser) segue `blocked` em `Q3`
+nesta data; não há canal para chamar. Um `SchemaChangeRejectedError` do domain propaga SEM
+logar: reprovação é recusa do payload, não condição de alarme, e logar as duas juntas
+confundiria as duas reações que este módulo existe para manter separadas.
+
+### O fixture é o caso real, não um sintético
+
+`test_schema_change.py` usa os campos que `ADR-001` mediu, verbatim: contrato do dump S3 =
+`{T,a,f,l,m,p,q}` (7), payload REST que motivou a task = `{T,a,f,l,m,nq,p,q}` (8, com `nq`
+acrescentado) — `test_additive_unknown_field_quarantines_never_rejects` prova que ESTE payload
+real nunca levanta `SchemaChangeRejectedError`, que é exatamente o dia em que uma regra
+fail-closed ingênua teria parado a ingestão inteira (`CA-F2-12` `[MEDIDO]`).
+`test_renamed_field_rejects_even_though_the_new_name_looks_additive` planta o caso "rejeição
+vence" (`q` sumido, `quantity` aparecendo) e prova reprovação, não quarentena.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhum canal de alarme fora do log é construído.** `T-07.11` é quem decide o transporte
+  (`Q3`, aberta); esta task só decide o predicado (QUANDO) e registra a decisão como evento de
+  log estruturado — um flag que um consumidor futuro lê, não uma notificação entregue.
+- **Nenhum caller de produção chama `classify_and_alarm` ainda.** Esta task entrega o
+  mecanismo (`D6.14`); ligá-lo a um coletor real de `aggTrade` ou a qualquer outro endpoint é
+  trabalho de uma task de ingestão futura, não desta.
+- **`expected_fields` não é derivado automaticamente de nenhum schema declarado** (p.ex. de
+  `binance_aggtrade_payload.py`) — chega como argumento do caller, que é quem sabe qual
+  contrato está verificando; unificar isso é decisão de arquitetura fora do escopo de `D6.14`.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1416 passed**, cobertura total **97,71%**; por camada
+  (`ADR-009/D1`): domain **99,8%** (2807/2812, meta 90%), use_cases **100,0%** (594/594, meta
+  80%), infra **95,1%** (2208/2321, meta 70%) — as 3 camadas `[OK]`.
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 254 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (166 arquivos, 751
+  dependências).
+- `bash backend/scripts/natureza.sh` → **80 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados** no estado final (1 `[AVISO]`
+  `core.module-docstring-single-line` apareceu em `use_cases/classify_schema_change.py`
+  durante o desenvolvimento e foi corrigido antes deste commit — mesma forma de
+  `quarantine_terms.py`/`live_availability_write.py`: conteúdo movido para comentário `#`,
+  docstring de módulo em uma linha).
