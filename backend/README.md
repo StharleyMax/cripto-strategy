@@ -3061,3 +3061,104 @@ para a mesma `SeriesKey`.
 - **Sem persistência.** Nenhum arquivo/DB grava `SeriesCatalog` ainda — é lógica pura de
   `domain`, por `ADR-016`/`Natureza`; se um dia houver um `infra/*_series_catalog_store.py`,
   ele mora naquela camada, não nesta.
+
+## 📎 2026-09-03 por `T-06.9` — preço por uso, `fee_schedule` datada, `cvd_source` com erro medido
+
+`ADR-007`, `SPEC-001` §3.4/§3.7, plano `06` itens **6.6 + 6.7 + 6.8 + 6.9** (`CST-53`), DoD
+`D6.9`/`D6.13`. Popula CONTEÚDO real sobre o contrato que `T-06.1` fixou
+(`series_catalog.py`, intocado) — a mesma relação que `T-06.2`/`T-06.3`/`T-06.4` têm com ele.
+
+### As três peças
+
+[`domain/price_source_catalog.py`](src/modules/sentimento/domain/price_source_catalog.py)
+(**novo**) — itens 6.6+6.7:
+
+- `PRICE_SOURCE_BY_USE` transcreve a tabela de decisão de `ADR-007` (`structure_detection`/
+  `execution` → `klines_last`; `liquidation_trigger`/`funding`/`cost` → `mark_price`,
+  cataloged como `price_mark_close`). **Não é um campo escalar por linha**:
+  `SeriesCatalogEntry.price_use` é `str | None` (`T-06.1`), e `mark_price` serve TRÊS usos —
+  uma linha por uso duplicaria a `SeriesKey` e `SeriesCatalog` recusaria
+  (`DuplicateSeriesKeyError`, corretamente: são a mesma série lida para propósitos
+  diferentes). A tabela é a única fonte da atribuição; a linha do catálogo só declara que a
+  série EXISTE.
+- `resolve_price_source(price_use)` é o mecanismo de `PS-1`: `None` levanta
+  `MissingPriceUseError`, fora do conjunto fechado levanta `InvalidPriceUseError` (reusado de
+  `series_catalog.py`) — nunca um default.
+- `build_klines_last_entry`/`build_price_mark_close_entry` materializam as duas linhas reais.
+  `price_mark_close` cataloga o conceito `mark_price` (`PS-2`) — `implied_avg_price`
+  permanece PROIBIDO (`series_key.py::FORBIDDEN_METRIC_NAMES`, `T-04.2`); este módulo prova a
+  recusa de novo com a MESMA forma de `SeriesKey` que suas próprias linhas usam, não só
+  confia no teste de `series_key.py`.
+
+[`domain/fee_schedule.py`](src/modules/sentimento/domain/fee_schedule.py) (**novo**) — item
+6.8: `FeeScheduleEntry(venue, market, tier, maker_bps, taker_bps, effective_from,
+evidence_url)` + `FeeScheduleCatalog.resolve(venue, market, tier, at)`, as-of, o mais recente
+`effective_from <= at` vence — mesma forma de `InstrumentAliasCatalog.resolve` (`T-07.9`).
+**Zero entradas reais** (`PRD-001`, literal: "`fee_schedule` é fato datado, e hoje não existe
+nenhum") — mesma postura de `instrument_alias.yaml`/`Q12`. `resolve` sem cobertura (data fora
+de toda janela, OU catálogo vazio) **RECUSA** com `NoFeeScheduleAsOfError`, nunca cai para o
+mais recente ou para zero — `D6.13`, literal. `exchangeInfo` não tem campo de taxa; a única é
+`liquidationFee` (penalidade de liquidação, outra grandeza) — nomeado em
+`EXCHANGE_INFO_LIQUIDATION_FEE_FIELD` para quem for procurar taxa ali antes de ler este
+módulo.
+
+[`domain/cvd_source_catalog.py`](src/modules/sentimento/domain/cvd_source_catalog.py)
+(**novo**) — item 6.9: registra as três fontes que o handoff nomeia.
+
+- `aggtrade_q`/`aggtrade_nq` são LEITURAS DIRETAS do stream de `aggTrade` (`ADR-001`/D2-D3),
+  distinguidas pelo termo de identidade `quantity_field` (Q/NQ) que `T-04.2` já criava para
+  isto — **não** carregam `reconstructed_from`/`published_error`. `QF-5` pede que as duas
+  publiquem `(mediana, p99, máx, n, data_da_medição)`; `ADR-001` só mede um ponto
+  (DOGEUSDT: déficit 80,56 bp, gap de `cvd_delta` 6,01%), não uma tripla agregada, e
+  sintetizar uma a partir de um ponto violaria "nenhum número sem o comando que o produziu" —
+  fica `[NÃO MEDIDO]`, nomeado no docstring do módulo, dono task futura ou `/quant-architect`.
+- `coinalyze_bv` É reconstrução: `reconstructed_from="aggtrade_q"`, `published_error` com os
+  números reais **`[MEDIDO 2026-08-24]`: mediana 0,0000 bp · p99 29,34 bp · máx 1.955,80 bp ·
+  n=699**. `CvdSourceMeasurement` (tipo novo deste módulo, não uma mudança em
+  `PublishedError` — `series_catalog.py`'s próprio docstring já reservava esse espaço para
+  "a task que popula") carrega `max_bp`/`measured_on`/`tail_cause` +
+  `refuted_hypotheses`: `tail_cause=NOT_DIAGNOSED`, e a hipótese "maker explica a cauda" é
+  registrada como `RefutedTailHypothesis(refuted_at_bp=2.584,87)` — **refutada, não
+  adotada como causa**.
+
+### O falsificador de `D6.9`, reproduzido com a forma real
+
+[`test_cvd_source_catalog.py::test_registering_a_cvd_source_reconstruction_without_published_error_is_refused`](tests/sentimento/test_cvd_source_catalog.py)
+constrói a MESMA `SeriesKey` que `build_coinalyze_bv_entry` usa, omite `published_error`, e
+prova `InvalidCatalogEntryError` — o mecanismo é o de `T-06.1`
+(`SeriesCatalogEntry.__post_init__`), não reimplementado aqui.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1319 passed** (era 1277; **+42 novos** — 13+13+16 em
+  `test_price_source_catalog.py`/`test_fee_schedule.py`/`test_cvd_source_catalog.py`),
+  cobertura total **97,63%**; por camada (`ADR-009/D1`): domain **99,8%** (2613/2618, meta
+  90%), use_cases **100,0%** (585/585, meta 80%), infra **95,1%** (2208/2321, meta 70%) — as 3
+  camadas `[OK]`. Os 3 módulos novos isolados: `fee_schedule.py`/`cvd_source_catalog.py`
+  100%, `price_source_catalog.py` 94% (1 linha não coberta — o `RuntimeError` de guarda do
+  invariante `PRICE_SOURCE_BY_USE`/`PRICE_USES`, inalcançável sem corromper o módulo em
+  runtime; substitui um `assert` que `ruff` (`S101`) recusa em código de produção).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 242 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (159 arquivos, 721
+  dependências).
+- `bash backend/scripts/natureza.sh` → **73 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados** (3 `[AVISO]`
+  `core.module-docstring-single-line` achados durante o desenvolvimento — os 3 módulos novos
+  abriam com docstring multi-linha — corrigidos antes deste commit: conteúdo movido para
+  comentário `#`, mesma forma de `series_catalog.py`/`quarantine_terms.py`).
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **`index_price`/`premium_index` sem linha de catálogo.** São membros de `PRICE_SOURCES`
+  (`SPEC-001` §3.7) mas `ADR-007` não atribui `price_use` a nenhum dos dois hoje — catalogar
+  uma série que ninguém lê ainda seria uma linha sem evidência atrás; o dia em que um
+  `price_use` precisar de um deles, é uma função a mais aqui, não um redesenho.
+- **`QF-5` de `aggtrade_q`/`aggtrade_nq` fica `[NÃO MEDIDO]`.** Só o ponto DOGEUSDT de
+  `ADR-001` existe; a tripla `(mediana, p99, máx, n, data)` agregada é medição futura.
+- **`fee_schedule` sem entrada real.** O mecanismo (schema + `resolve` as-of + recusa) está
+  completo e testado; curar uma linha real com `evidence_url` de verdade é task futura —
+  mesma postura de `instrument_alias.yaml`/`Q12`.
+- **`PS-3` (`<Anotacao>` carrega `price_source`+`price_use`) não é construído aqui.** Pertence
+  a `charts`/`backtest`/`web` (`provenance.py` já nomeia essa fronteira) — fora do componente
+  `sentimento` desta task.
