@@ -54,10 +54,32 @@ SERIES_KEY_TERMS: Final[tuple[str, ...]] = (
 )
 
 # `SPEC-001` §3.1, literal: "`implied_avg_price` esta PROIBIDO como nome. E `price_mark_close`".
-# The ban is here, in the identity, and not in a linter: a forbidden metric name that only a
+# `SPEC-001` §3.1/§5.11, `CA-F2-3` (`plan 06` items 6.3+6.10, `T-06.3`): "`ls_ratio` generico e
+# PROIBIDO" — the four Long/Short series (`count_long_short_ratio`,
+# `count_toptrader_long_short_ratio`, `sum_toptrader_long_short_ratio`,
+# `sum_taker_long_short_vol_ratio`) have autocorrelation lag-1 of 0,99+ for three of them and
+# 0,0955 for the fourth `[MEDIDO]` — a generic name would collapse four series that do not even
+# share a nature-of-ratio into one guarda-chuva column, which is the exact failure `F-2` names.
+#
+# Both bans live here, in the identity, and not in a linter: a forbidden metric name that only a
 # regex refuses can still be written by anything that does not go through the regex, and the
 # name is one of the fifteen terms that decide what the series IS.
-FORBIDDEN_METRIC_NAMES: Final[frozenset[str]] = frozenset({"implied_avg_price"})
+FORBIDDEN_METRIC_NAMES: Final[frozenset[str]] = frozenset({"implied_avg_price", "ls_ratio"})
+
+# One reason per forbidden name — `__post_init__` cites it verbatim, so a second entry in
+# `FORBIDDEN_METRIC_NAMES` can never inherit `implied_avg_price`'s own reason by accident (the
+# defect this dict prevents: a hardcoded message that was true for one name and false for two).
+_FORBIDDEN_METRIC_REASONS: Final[dict[str, str]] = {
+    "implied_avg_price": (
+        "SPEC-001 §3.1: the name is 'price_mark_close', and it is one of the four price series"
+    ),
+    "ls_ratio": (
+        "SPEC-001 §3.1/§5.11, CA-F2-3: it is a generic name standing in for FOUR series with "
+        "different autocorrelation (0,99+ for three of them, 0,0955 for the fourth) — use "
+        "'count_long_short_ratio', 'count_toptrader_long_short_ratio', "
+        "'sum_toptrader_long_short_ratio' or 'sum_taker_long_short_vol_ratio'"
+    ),
+}
 
 
 class Nature(Enum):
@@ -186,8 +208,7 @@ class SeriesKey:
                 )
         if self.metric in FORBIDDEN_METRIC_NAMES:
             raise IncompleteSeriesKeyError(
-                f"metric '{self.metric}' is forbidden by `SPEC-001` §3.1: it is "
-                f"'price_mark_close', and it is one of the four price series"
+                f"metric '{self.metric}' is forbidden by {_FORBIDDEN_METRIC_REASONS[self.metric]}"
             )
 
     def canonical_terms(self) -> dict[str, object]:

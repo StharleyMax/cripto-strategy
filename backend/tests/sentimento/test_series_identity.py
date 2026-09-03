@@ -222,6 +222,31 @@ def test_implied_avg_price_is_refused_as_a_metric_name() -> None:
         binance_oi_key(metric="implied_avg_price")
 
 
+def test_ls_ratio_is_refused_as_a_generic_metric_name() -> None:
+    """A guarda-chuva name for the four L/S series is banned by the identity.
+
+    `SPEC-001` §3.1/§5.11, `CA-F2-3` (`T-06.3`) — the same way `implied_avg_price` is banned,
+    not by a linter regex.
+    """
+    with pytest.raises(IncompleteSeriesKeyError, match="ls_ratio"):
+        binance_oi_key(metric="ls_ratio")
+
+
+@pytest.mark.parametrize(
+    "metric",
+    [
+        "count_long_short_ratio",
+        "count_toptrader_long_short_ratio",
+        "sum_toptrader_long_short_ratio",
+        "sum_taker_long_short_vol_ratio",
+    ],
+)
+def test_the_four_named_l_s_metrics_are_not_forbidden(metric: str) -> None:
+    """The four series `CA-F2-3` names build fine — only the guarda-chuva name is banned."""
+    key = binance_oi_key(metric=metric, nature=Nature.RATIO)
+    assert key.metric == metric
+
+
 def test_the_canonical_projection_is_the_wire_shape_and_its_order_is_the_spec_order() -> None:
     """Enums project as values; the key order is `SPEC-001` §2.1 and the `sha256` needs it."""
     projected = binance_oi_key().canonical_terms()
