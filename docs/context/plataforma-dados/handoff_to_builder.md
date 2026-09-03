@@ -311,3 +311,325 @@ harness pipeline scope plataforma-dados list
 `CST-1`. `CST-9` e `CST-11` atualizados. **Nenhuma task da feature está `local_only`.**
 O rótulo `bloqueada-q16` foi removido de `CST-9`, `CST-10` e `CST-35`
 `[MEDIDO depois da remoção: JQL do rótulo → total 0]`.
+
+---
+
+## 11. ADDENDUM 2026-09-03 — a SUPERFÍCIE SERVIDA: 9 tasks, a ordem, e as 3 armadilhas medidas
+
+**Papel de origem:** `/tech-lead` · **Narrativa aprovada pelo owner:**
+[`tasks_review-superficie-servida-2026-09-03.md`](tasks_review-superficie-servida-2026-09-03.md).
+**Estado do ledger:** `BUILD_AUTHORIZED` (`harness pipeline state plataforma-dados`) — task nova
+**não** exigiu transição.
+
+> ⛔ **Este addendum descreve trabalho; não o autoriza.** `build` e `advance DONE` são gates de
+> **owner** (`CLAUDE.md`, §*"O ledger é a identidade do estado"*).
+
+**⚠️ As §§1–10 acima são de 2026-08-25/28 e estão DESATUALIZADAS de propósito** — a contagem de
+81 tasks da §1 e o escopo da §7/§10.4 foram superados. Nada foi reescrito: o arquivo é cumulativo,
+e apagar a §1 esconderia que o número mudou.
+
+### 11.0 ⚠️ LEIA ANTES DE QUALQUER COISA — o validador está VERMELHO, e é ESPERADO
+
+```
+harness tasks validate plataforma-dados
+→ FALHOU: docs/context/plataforma-dados/tasks.toml — 2 ERROR, 4 WARN
+```
+
+**NÃO é seu para consertar.** Os 2 `ERROR` são `V-16 componente fora do enum: infra` em
+**`T-05.12`** e **`T-05.13`** (`docs/context/plataforma-dados/tasks.toml`), porque as duas declaram
+`components = ["docs","infra"]` e `harness policy --key components` ainda devolve **6**.
+**Zera quando a `T-09.4` executar** (enum 6 → 7). As **4 `WARN`** são pré-existentes, de
+`V-09`/`blocked_reason` em `T-02.4b`, `T-03.9`, `T-05.10` e `T-07.11` — **nenhuma task nova usa
+`blocked_reason`**, e usar uma faria 5.
+
+**⛔ NÃO conserte rebaixando `T-05.12`/`T-05.13` para `components = ["docs"]`.** Isso as poria a
+serem julgadas por um componente **sem `architect`** (`docs` está ausente de
+`harness policy --key agents.by_component`) — `docs/adr/ADR-003-fronteira-charts-web.md:11-13`.
+Seria verde **por mentir sobre quem julga**.
+
+**⛔ NÃO edite `harness.toml` para adiantar o enum.** Alterar o vocabulário fechado é **ato do
+owner** (`CLAUDE.md`, §*"Vocabulário fechado de componentes"*), e é o conteúdo da `T-09.4`.
+
+**`tasks validate` NÃO gateia `make verify` nem o `pre-push`**
+`[MEDIDO 2026-09-03: grep de 'tasks' em scripts/verify.sh e em .git/hooks/pre-push → 0 linhas]` —
+o vermelho não trava push, mas todo agente que validar vai vê-lo.
+
+### 11.1 A ORDEM OBRIGATÓRIA, e o motivo MEDIDO de cada aresta
+
+```
+T-09.4 ─┬─> T-01.8 ─┬─> T-01.9            (pode correr em paralelo com o resto)
+        │           ├─> T-05.11 ──┐
+        └─> T-05.12 ─> T-05.13    │
+                   └──────────────┴─> T-05.14 ─> T-05.15 ─> T-05.16
+```
+
+| # | task | Jira | por que vem aqui |
+|---|---|---|---|
+| 1 | **`T-09.4`** *(já existia `todo`)* | `CST-86` | **`V-16` em DOIS sítios** — ver 11.2 |
+| 2 | **`T-01.8`** | `CST-100` | `V-16`/`lib/policy.py:539-543` reprova `[agents.by_component.infra]` antes do enum |
+| 3 | **`T-01.9`** | `CST-101` | congela o que `T-01.8` escreveu; nada em `05` depende dela |
+| 4 | **`T-05.11`** | `CST-102` | **`D-3`**: o portão de tipo nasce ANTES de `T-05.15` apagar 209 linhas |
+| 5 | **`T-05.12`** | `CST-103` | precisa do enum (1) e do juiz (2) |
+| 6 | **`T-05.13`** | `CST-104` | o *cala* do contrato exige a camada de `T-05.12` na árvore |
+| 7 | **`T-05.14`** | `CST-105` | precisa da rota (5) e do portão de tipo (4) |
+| 8 | **`T-05.15`** | `CST-106` | só depois que o cliente fala com a rota real |
+| 9 | **`T-05.16`** | `CST-107` | a paridade de `D5.17(a)` roda sobre o que (7) e (8) deixaram |
+
+**A aresta `D-3` (`T-05.11` antes de `T-05.14`/`T-05.15`) é do `/tech-lead`, não do plano**, e o
+owner a aceitou `[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]`. Razão: sem
+ela, as duas tasks de transporte seriam escritas **sem `tsc --noEmit --strict` no `make`**, e o
+portão chegaria depois para julgar código que ninguém compilou com ele — o achado de `D1.7c`
+(`docs/plans/SPEC-001-plataforma-dados/01_governanca_gateante.md`).
+
+### 11.2 Por que `T-09.4` é PRIMEIRA — a medição, e ela corrige o que o despacho dizia
+
+`V-16` tem **dois sítios com o mesmo id de regra**, e só um estava citado nas fontes:
+
+| sítio | o que guarda |
+|---|---|
+| `lib/policy.py:539-543` (plugin 0.13.0) | **chave** de `agents.by_component` |
+| `scripts/tasks.sh:777-778` | **`components` de task** |
+
+Medido com sonda em arquivo avulso, **não inferido** — `harness tasks validate <arquivo>.toml` com
+`components = ["infra"]` devolveu `ERROR ... V-16 componente fora do enum: infra` e **`FALHOU`**
+`[MEDIDO 2026-09-03, n=1]`. **É `ERROR`, não `WARN`, e derruba o arquivo inteiro.**
+
+**`T-09.4` é executável hoje sem nenhuma edição:** `depends_on = ["T-01.4","T-02.4a"]` e as duas
+estão `done` `[MEDIDO 2026-09-03]`. Ela vive na fase `09` e roda **fora da ordem de fase** —
+antecipação explícita, registrada em `refs` e no comentário de `CST-86`.
+
+### 11.3 As 9 tasks: item, DoD, comando que prova, e o que reprova
+
+Fonte de cada linha: `docs/plans/SPEC-001-plataforma-dados/05_fatia_visivel.md` e
+`01_governanca_gateante.md`; o detalhe integral está em `refs` de cada task em
+`docs/context/plataforma-dados/tasks.toml`.
+
+---
+
+**`T-09.4` · `CST-86` · item `9.6` · DoD `D9.6` · `docs`**
+`harness policy --key components` de **6 para 7** com `infra`, e `ADR-009/D5` registrada
+**ADOTADA com o motivo** (`docs/adr/ADR-009-reuso-da-forma-do-anything.md` §`D6.5`).
+**Prova:** `harness policy --key components` devolve 7 · **Reprova:** decisão escrita numa direção
+só — `D9.6` exige *"adotado **ou** recusado, com o motivo — nunca ausente"*.
+**Não faz:** não declara o juiz (isso é `T-01.8`).
+
+---
+
+**`T-01.8` · `CST-100` · `A6` + `F-D6-6` · `docs`**
+**QUATRO superfícies**, e a quarta foi acrescentada porque a primeira redação tinha defeito real:
+1. `.claude/agents/infra-architect.md` — **criação**
+2. `.claude/agents/frontend-architect.md` — **criação** (o vizinho **não tem** arquiteto de front: o
+   `architect.agent.md` dele é *"Solutions Architect Sênior"*, genérico
+   `[MEDIDO 2026-09-03 em .github/agents/architect.agent.md:2]`)
+3. `.claude/agents/frontend-builder.md` + `frontend-qa.md` — **porte** (82 e 92 linhas)
+4. `harness.toml` `[agents.by_component]`: `web.architect` → `frontend-architect.md`;
+   `web.builder`/`web.qa` → a dupla portada; **`web.design_gate` FICA**; `infra.architect` →
+   `infra-architect.md`
+
+**Prova:** `harness policy --key agents.by_component` **+ `test -f`** — ver 11.4(c).
+**Reprova:** fechar com `harness validate --strict` só. **Não faz:** não congela nada.
+
+---
+
+**`T-01.9` · `CST-101` · item `1.13` · DoD `D1.12` · `docs`**
+Arquivo dourado de `agents.by_component` dentro de `make lint`.
+**Prova:** `make lint` `≠ 0` quando a política divergir; verde sobre a política de hoje.
+**Morde:** as **3 mutações** que hoje passam em `rc=0` — apagar `design_gate`, trocar
+`charts`↔`web`, esvaziar a seção (`docs/gate-de-design.md`).
+**⛔ Reprova se a asserção só cobrir presença de chave** — defeito de `D1.2`, satisfeito por
+`{"charts": {}}`. A saída tem **6 chaves** depois de `T-01.8` (`backtest, charts, convergencia,
+infra, sentimento, web`); **`docs` continua ausente e o dourado tem de congelar essa ausência.**
+
+---
+
+**`T-05.11` · `CST-102` · item `5.16` · DoD `D5.16`, `D5.16b` · `docs`,`web`**
+App Next real **sob `frontend/src/app/`** (ver 11.4(a)), `frontend/tsconfig.json`,
+`frontend/package.json`, e `typecheck` (`tsc --noEmit --strict`) **dentro de `make lint-frontend`**.
+**Morde:** erro de tipo plantado ⇒ `make lint` `≠ 0` nomeando arquivo e linha, **e
+`git push --dry-run` RECUSADO**. **Cala:** árvore limpa ⇒ `rc=0`.
+**Universo:** 35 módulos / 5.741 linhas + 3 `.tsx` / 409 linhas.
+**O "antes" é ZERO:** `ls frontend/tsconfig.json` → inexistente;
+`grep -cE 'typecheck|noEmit' frontend/package.json` → `0` `[MEDIDO 2026-09-03]`.
+**`[NÃO MEDIDO]`: quantos dos 35 passam hoje em `--strict` — medir é o PRIMEIRO ato da task.**
+**⛔ Baixar o `strict` para o portão "fechar" REPROVA.**
+`D5.16b`: os 3 `.tsx` importam `react` (hoje `grep -rn 'from "react"' frontend/src | wc -l` → `0`);
+**reprova se o app subir sem renderizar nenhum dos 3.**
+
+---
+
+**`T-05.12` · `CST-103` · item `5.13` · DoD `D5.13`, `D5.13b`, `D5.13c` · `docs`,`infra`**
+`backend/src/api/` + objeto de aplicação + **raiz de composição**, consumindo `use_cases` **por
+injeção**. Os diretórios **nascem aqui** (`find backend/src -maxdepth 2 -type d` → hoje só
+`modules/` e `modules/sentimento`).
+**Corpo, fixado por `ADR-005/D6.1`:** `{ query, n_runs, n_gaps, runs[], gaps[] }`, **15 colunas** de
+`ADR-008/D3` por `run`, **8** por `gap`, nome de fio **`class`** e nunca `gap_class`.
+**⛔ Servir as 17 de `IngestRun`** (`backend/src/modules/sentimento/domain/ingest_record.py:100-117`)
+**reprova** — `started_at`/`ended_at` são coluna de tabela, não de projeção.
+**`D5.13` — prova PELA REDE, nunca por subprocesso:** teste que **sobe o processo ASGI em loopback**
+e faz **`GET` real por `http.client`**. **Morde:** processo derrubado ⇒ reprova **por conexão
+recusada**, não por asserção de payload. **Cala:** `200` + zero campo de nível de tick.
+*Técnica já existe aqui:* `grep -rln 'TcpFakeServer\|HTTPServer\|socketserver\|bind(' backend/tests`
+→ **3 de 114**; `httpx`/`requests` **não** estão em `backend/pyproject.toml`.
+**`D5.13b`:** FastAPI + ASGI são as entradas **2 e 3** de `dependencies`, **com `==`**; faixa
+(`^`, `>=`) **reprova**.
+**`D5.13c` — restrição dura:** `grep -n 'ingest_health_query' <handler>` ⇒ **≥ 1**, e
+`grep -niE 'SELECT|FROM |psycopg|sqlite3' <handler>` ⇒ **`0`**. Ponto único:
+`backend/src/modules/sentimento/use_cases/ingest_health.py:32`.
+**`[NÃO SEI]` com dono `ADR-008/D4`:** se a regra própria de `DoD-1` alcança um *route handler*
+Python. **O instrumento não existe hoje** (`harness rules list` → 10 regras, **zero própria**) ⇒
+**este DoD prova por SÍTIO DE CHAMADA, não por regra.**
+
+---
+
+**`T-05.13` · `CST-104` · item `5.13`/`D5.13d` · `docs`,`infra`**
+Os **dois** contratos de `ADR-009/D6.3` em `backend/pyproject.toml`, rodados por `make boundaries`:
+**(3)** `layers = ["main", "api | jobs", "modules"]`, `containers = ["src"]` ·
+**(4)** `forbidden`, `source_modules = ["src.api","src.jobs"]`,
+`forbidden_modules = ["src.modules.sentimento.infra"]`.
+*Sintaxe conferida na ferramenta:* `_INDEPENDENT_LAYER_DELIMITER = "|"`
+(`backend/.venv/lib/python3.13/site-packages/importlinter/contracts/layers.py:20-21`, 2.14).
+**Morde:** 2 violadores, 1 por contrato ⇒ `make boundaries` `≠ 0` **nomeando o contrato**.
+**Cala:** sem eles ⇒ verde. **Universo hoje é ZERO ⇒ mede EROSÃO, não conquista.**
+**⛔ O sinal de erosão que REPROVA:** recortar `src.jobs` do contrato (4) para fechar o DoD —
+`ADR-009/F-D6-3`; o desfecho certo é a **raiz de composição**.
+**Os violadores são EFÊMEROS — ver 11.4(b).**
+
+---
+
+**`T-05.14` · `CST-105` · item `5.14` · DoD `D5.14` · `web`**
+`frontend/src/app/history-transport.ts` decodifica o envelope real. **Morrem** `SectionMarker`,
+`isHeaderLine` e `parseCanonicalProjection` (`:266-312`, 47 linhas) — mantê-los é **dois formatos
+para um contrato**. **Vivem 204 de 251 linhas reféns (81,3%).**
+**Cala:** `fingerprint` do TS **igual** ao de `IngestHealthReport.fingerprint()` sobre o mesmo
+fixture congelado. **Morde (i):** servidor ausente ⇒ reprova (o defeito com que `T-05.9` fechou).
+**Morde (ii), `F-D6-1`, OBRIGATÓRIO:** reordenar as 15 colunas **move** o `sha256`.
+**Morde (iii), `F-D6-2`:** campo dentro de `runs[]` **move**; campo no envelope **não move** —
+**comportamento igual nos dois prova que `D6.3` está violada.**
+*Por que funciona:* os dois lados **re-projetam** sobre a tupla do contrato
+(`ingest_record.py:181-200`; `ingest-health-query.ts:200-234`).
+
+---
+
+**`T-05.15` · `CST-106` · item `5.15` · DoD `D5.15` · `web`**
+**209 de 500 linhas (41,8%)** saem de
+`frontend/src/features/s1-console/ingest-health-query.ts` (`:313-470` + os 4 imports `node:` de
+`:74-77` = 162, mais as 47 de `:266-312`).
+**Prova:** `grep -rln 'from "node:' frontend/src --include='*.ts' | grep -v '\.test\.'` ⇒ **`rc=1`,
+zero arquivos**. Hoje **2 de 35**, e o segundo (`frontend/src/app/threshold-spec-bundle.ts`)
+**não tem subprocesso — é `createHash`, e NÃO é desta task.**
+**⛔ O arquivo não vira teste por decreto:** `harness code-paths classify` dele continua
+**`producao`**. **O item diz qual destino** — teste de contrato ou morte.
+**`[NÃO SEI]` com dono:** onde vive a testemunha cruzada Python×TS é **`A1`**, `quant-architect`.
+
+---
+
+**`T-05.16` · `CST-107` · item `5.17` · DoD `D5.17` · `web`**
+**(a)** a paridade de `F-D6-1` roda em **Python × Node**, fora do caminho de render.
+**(b) Morde:** um importador **DE VALOR** (não `import type`) plantado do bundle para dentro do
+módulo de canonicalização ⇒ o portão **reprova nomeando o arquivo**. **Cala:** **3 de 3
+`import type`, zero aresta de runtime** `[MEDIDO 2026-09-03 em 8c002e4, n=3]`.
+⇒ `fingerprint(): string` **permanece síncrona**; o `fingerprint` viaja no **`ETag`** (`D6.3`).
+**⛔ `[NÃO SEI]` DO OWNER, e é o motivo de esta task NÃO estar soldada à `T-05.15`:** *o operador
+VÊ o selo de integridade na tela?* Se **sim**, `crypto.subtle` é inevitável e **este DoD muda de
+forma**. Soldada, a resposta do owner bloquearia **em silêncio** a remoção das 209 linhas.
+
+### 11.4 AS TRÊS ARMADILHAS MEDIDAS HOJE — cada uma custa retrabalho se descoberta tarde
+
+**(a) O scaffold TEM de nascer em `frontend/src/app/`, nunca em `frontend/app/`.**
+
+```
+harness code-paths classify frontend/app/page.tsx
+→ nao-producao: nenhum include_prefixes casa ['backend/src/','backend/tests/','frontend/src/']
+harness policy --key code_paths
+→ include_prefixes: ["backend/src/","backend/tests/","frontend/src/"]
+```
+
+`[MEDIDO 2026-09-03]` — `include_prefixes` tem **`frontend/src/`**, não `frontend/`. Um app Next no
+default do Next 13+ (`frontend/app/`) nasce **fora de toda regra**: escapa do pack `web-fullstack`,
+do ESLint de `T-01.2` e do próprio `classify`. **`frontend/src/app/` já existe**
+(`routes.ts`, `history-transport.ts`) e o Next o suporta. Criar em `frontend/app/` **reprova
+`T-05.11` por COBERTURA, não por estilo.**
+
+**(b) Violador plantado é EFÊMERO e NÃO pode ser commitado.**
+`scripts/hooks/pre-push.pre-harness:63-64` roda **`make boundaries`** e `:70-71` roda
+`make natureza`, `:83-84` roda `make lint` `[MEDIDO 2026-09-03]` ⇒ um violador **versionado** deixa
+`make boundaries` vermelho e **o `pre-push` RECUSA o push**. Vale para os 2 violadores de `T-05.13`,
+para o erro de tipo de `D5.16` e para o importador de valor de `D5.17`: **planta, mede, remove** —
+a prova é a **saída do comando**, registrada no relatório do gate, não o arquivo na árvore.
+Precedente: `T-01.5` declarou a mesma propriedade em `docs/context/plataforma-dados/tasks.toml`.
+
+**(c) `test -f` sobre o VALOR LITERAL, porque `checa_ponteiro` é `fatal=False`.**
+`harness.toml:594-599` registra que a única exigência por papel é `checa_ponteiro`, e que
+**ponteiro que não resolve é AVISO, `fatal=False`** ⇒ `web.architect` apontando para arquivo
+**inexistente** sai com resmungo e **`rc=0`**. `harness validate --strict` **não basta**.
+⇒ `T-01.8` fecha com `test -f .claude/agents/frontend-architect.md`,
+`test -f .claude/agents/infra-architect.md` **e** `test -f` sobre o valor que
+`harness policy --key agents.by_component` devolve em `web.architect` e `infra.architect`.
+**Este foi um defeito REAL da primeira redação da `T-01.8`, achado e corrigido em 2026-09-03:** ela
+prometia o arquiteto de front e não o criava (`grep -rn 'frontend-architect' docs/ .claude/
+harness.toml` → **0**), e a asserção `web.architect != ui-designer.md` **passa com ponteiro
+pendurado**.
+
+### 11.5 O que NÃO é do builder
+
+| ato | dono | onde está escrito |
+|---|---|---|
+| `gate-record`, `approve`, `advance`, `advance DONE` | **⛔ owner** | `CLAUDE.md` §*"O ledger é a identidade do estado"* |
+| criar/editar **item de plano** | `/architect` | os itens `5.13`–`5.17`, `1.13` e `9.6` **já existem** |
+| alterar o **vocabulário fechado** fora da `T-09.4` | **⛔ owner** | `CLAUDE.md` §*"Vocabulário fechado"* |
+| decidir `A1`–`A3` (paridade dos 9 ports Python→TS) | `quant-architect` | gatilho de `ADR-003/D2` **já disparado** |
+| reabrir `5.11`/`T-05.10` (auth) | **⛔ owner** | rota **não** exposta à rede pública; continua REBAIXADO |
+| corrigir o enunciado de `D5.8` | **⛔ owner** | DoD já `done`; `D5.13` dá o **sujeito** sem reescrevê-lo |
+
+**⛔ A partição de `sentimento` está DECIDIDA: NÃO PARTIR**
+(`docs/decisoes-do-owner.md`, última seção, com o estudo em
+`gates/estudo-particao-sentimento-2026-09-03.md`, 858 linhas). O contexto é **ilha fechada**
+(0 arestas entrando/saindo), DAG, **0 ciclos**, profundidade 6, fan-in máx. **10**, 207 arestas /
+127 módulos, e **nenhuma partição abaixo de 10 contextos** põe o maior sob os 50 do `messages`
+⇒ **partir reduz governança, não tamanho.**
+
+**Três gatilhos revogam, e um deles DISPARA no seu trabalho:** `G1` `SCC > 1` (hoje 0 ciclos) ·
+`G2` fan-in > 15 (hoje 10) · **`G3` `src/api/` NASCER — que é exatamente o que a `T-05.12` faz.**
+**Isso é o gatilho FUNCIONANDO, não erro a consertar.** Não abra a partição; registre e siga.
+
+### 11.6 Os `[NÃO SEI]` VIVOS com dono — não os decida por omissão
+
+| # | pergunta | dono | onde |
+|---|---|---|---|
+| 1 | `A1`/`A2`/`A3` — fonte de verdade do domínio portado, *delisting badge*, `bigint`×`Decimal` | `quant-architect` | `gates/consulta-fronteira-web-2026-09-03.md` |
+| 2 | **o segmento de URL `"/painel"`** | **⛔ owner** | `CLAUDE.md`, **linha 12** da tabela de fronteira |
+| 3 | `include_globs` aceita nome **sem extensão** (`Dockerfile`)? | `/architect` | `docs/adr/ADR-009-...md:275` |
+| 4 | o handler FastAPI é "segunda definição" de `ADR-008/DoD-1`? | `ADR-008/D4` | `05_fatia_visivel.md`, `D5.13c` |
+| 5 | o operador **vê** o selo de integridade na tela? | **⛔ owner** | `D5.17`; muda a forma da `T-05.16` |
+| 6 | `T-03.12` **sem `tracker` e sem `local_only`** | **⛔ owner** | `tasks.toml` — ver abaixo |
+
+**⚠️ O nº 2 é o que MAIS provavelmente te morde, e ninguém o previu para o scaffold.**
+`frontend/src/app/routes.ts:15` é `panel: "/painel"` `[MEDIDO 2026-09-03]` — a **chave** já é
+inglês (`T-03.1`), mas o **segmento de URL continua português**, e `CLAUDE.md` linha 12 o marca
+**⏸ NÃO DECIDIDO, dono owner**. **O App Router do Next transforma segmento de URL em NOME DE
+DIRETÓRIO** ⇒ o scaffold de `T-05.11` materializaria `frontend/src/app/painel/` e **fecharia por
+omissão uma pergunta do owner**, criando ainda um segundo diretório português sob `frontend/src/`
+— o que **dispara o falsificador `CA-F1-6`** do próprio `CLAUDE.md` (hoje **1 em português,
+`painel`, e a fase `03` o renomeia**). **PERGUNTE AO OWNER antes de criar o diretório.**
+`CLAUDE.md`: *"a pergunta é barata agora e monotonicamente mais cara depois"*.
+
+**Sobre o nº 6 — e a distinção é a que este repositório existe para manter:** `T-03.12` é a
+**única** das 93 tasks sem `tracker` **e** sem `local_only`. Isso **não** é *"decidi não cardar"*
+(que seria `local_only = true` + `local_reason` com data e motivo); é **"não foi sincronizada"**, e
+está **sem marcação de propósito** — um marcador que colapse *decidi* e *esqueci* faria o segundo
+nunca chamar atenção.
+
+### 11.7 Estado dos artefatos ao fechar o dia
+
+| artefato | valor | comando |
+|---|---|---|
+| tasks | **93** (era 85) | `grep -c '^\[\[tasks\]\]' docs/context/plataforma-dados/tasks.toml` |
+| validador | **`FALHOU — 2 ERROR, 4 WARN`** (esperado, §11.0) | `harness tasks validate plataforma-dados` |
+| `done` | **64 antes, 64 depois** — nenhuma reaberta | — |
+| Jira | `CST-100`..`CST-107` novas; `CST-86` comentada | `CST-1` (fase `01`), `CST-3` (fase `05`) |
+| escopo | **21** prefixos (era 19; `+.claude/agents`, `+docs/INDEX.md`) | `harness pipeline scope plataforma-dados list` |
+| `harness.toml` | **INTOCADO** — o enum continua **6** | `git diff --numstat harness.toml` → vazio |
+| ledger | **INTOCADO** — `BUILD_AUTHORIZED` | `harness pipeline show plataforma-dados` |
+
+**Próximo passo: `/build`, e a primeira da fila é `T-09.4`** — sem ela o validador reprova as
+outras duas.
