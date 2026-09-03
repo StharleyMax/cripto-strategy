@@ -3305,3 +3305,103 @@ nas duas fontes, uma SEXTA linha duplicando um `reduction` existente reprovando 
 - **Não reconcilia automaticamente.** `D6.8` é uma medição publicada, não um mecanismo de
   correção — a divergência Coinalyze×Binance continua visível como divergência, nunca
   corrigida antes de gravar.
+
+## 📎 2026-09-03 por `T-06.4` — `funding_settled` ≠ `funding_estimado`: PK com `source`, `settlement_slot` por linha
+
+`SPEC-001` §3.4, `CA-F2-7`, `PRD-001` §5.6 (correção R1 · D-10), plano `06` item 6.4 (`CST-48`).
+
+### A peça
+
+[`domain/funding_settlement.py`](src/modules/sentimento/domain/funding_settlement.py)
+(**novo**): `FundingSource` (`SETTLED = "funding_settled"` / `ESTIMATED = "funding_estimado"`),
+`FundingRecord` e a PK de `PRD-001` §5.6, transcrita literal —
+`(instrument_id, settle_bucket, source, observed_at)`. Três peças:
+
+- **`compute_settlement_slot(observed_at_ms, interval_hours_declared)`** — o divisor é
+  `funding_interval_hours * 3_600_000` **DA PRÓPRIA LINHA**, nunca um valor global assumido
+  (`D6.11`). Piso de divisão de dois inteiros não-negativos nunca devolve resíduo negativo, o
+  que faz "nunca negativo" ser propriedade da aritmética, não uma checagem em separado.
+- **`FundingRecord.__post_init__`** recusa `instrument_id` em branco, `interval_hours_declared`
+  não-positivo e — o falsificador central de `D6.11` — um `settle_bucket` que não bate com
+  `compute_settlement_slot(observed_at, interval_hours_declared)`: um `settle_bucket`
+  construído à mão fora da grade (a forma exata do defeito antigo) reprova na fronteira do
+  próprio registro.
+- **`deduplicate_funding_records`** — colapsa por PK; a MESMA PK com o MESMO conteúdo vira uma
+  linha (`D6.12`), a MESMA PK com conteúdo DIFERENTE levanta `ConflictingFundingRecordError`
+  em vez de escolher uma em silêncio.
+
+Reusa `SeriesKey`/`SeriesCatalog` de `T-06.1` sem redefinir nada: `funding_settled` e
+`funding_estimado` são duas `SeriesCatalogEntry` diferindo só em `metric`, aceitas lado a lado
+pelo mesmo `build_series_catalog` que reprova colisão de `series_key_id` — a prova de que são
+identidades distintas, não uma série sobrescrita por uma flag.
+
+### Os falsificadores medidos
+
+[`test_funding_settlement.py`](tests/sentimento/test_funding_settlement.py) (**novo**, 16
+testes) roda `D6.11`/`D6.12` sobre o dump real `1000XECUSDT-fundingRate-2026-07.zip`
+(`md5 40e35f60a065aac30f2d08d7a47139bc`, `data/MANIFEST.md`):
+
+- **`D6.11`**: as **321** linhas do fixture, lidas com o intervalo **da própria linha**,
+  aterrissam em resíduo `[0, 12]` ms, nunca negativo. A MESMA base, sob a suposição **fixa**
+  de `8h` (a fórmula antiga), erra **228 de 321 = 71,0%** fora de `[0, 20]` ms — reproduzido
+  no fixture que esta task carrega, não só citado do plano.
+- **`D6.12`**: `1000XECUSDT` atravessa `8h → 1h` (índice 38, delta ≈1,0h) e `1h → 4h` (índice
+  267, delta exata 3,0h) dentro do arquivo — as **321** linhas ingeridas DUAS vezes (**642**
+  registros) colapsam de volta a **321** via `deduplicate_funding_records`, com as duas
+  transições sobrevivendo como linhas distintas.
+- **Duas séries nunca colidem**: mesmo `instrument_id`/`observed_at`/`interval_hours_declared`,
+  só `source` difere ⇒ duas PKs distintas, as duas sobrevivem ao dedupe.
+
+[`test_funding_next_funding_time_grid.py`](tests/sentimento/test_funding_next_funding_time_grid.py)
+(**novo**, 3 testes) — **`D6.16`**, com uma divergência de fixture declarada e não escondida:
+`data/MANIFEST.md:144` registra que `2026-08-25_fundingInfo.json` não tem `premiumIndex`
+companheiro ("não capturado nesta rodada"), então a tripla casada `exchangeInfo`+`fundingInfo`+
+`premiumIndex` que `D6.16` precisa **não existe** para `2026-08-25` — só para `2026-09-01`
+(`data/MANIFEST.md:143-148`). Este teste **RE-MEDE** a invariante nessa data, com o número
+carregando a data ao lado, em vez de transcrever a cifra `570`/`433` do plano que não é
+reproduzível a partir do fixture real: `[MEDIDO 2026-09-01]` **569** símbolos `TRADING`
+`PERPETUAL` comuns às três fontes, distribuição `{4h: 430, 8h: 136, 1h: 3}` — 4h continua sendo
+a regra, nunca 8h — e `nextFundingTime % (interval_hours × 3_600_000) == 0` em **569/569**, zero
+exceção.
+
+### ⚠️ Achado durante o desenvolvimento, corrigido antes do commit — `test_as_of_is_the_single_reader.py`
+
+`FundingRecord.observed_at` colide com o vocabulário que
+[`test_as_of_is_the_single_reader.py`](tests/sentimento/test_as_of_is_the_single_reader.py)
+varre (`READ_PATH_COLUMNS = {"observed_at", "available_at", "bucket_end"}`) — um scan por AST
+sobre `backend/src` inteiro, não um `grep` de nome de arquivo. `funding_settlement.py` foi
+adicionado a `DECLARED_TOUCHERS` com a mesma disciplina das três entradas anteriores: um
+parágrafo dizendo POR QUE `__post_init__`/`settlement_residual_ms`/`primary_key` não são um
+segundo leitor de série — `FundingRecord` é uma AGREGAÇÃO DIFERENTE (a PK de funding), nunca
+compara um valor contra um instante de decisão `t`, que é a única pergunta que `as_of` pode
+responder. O docstring do módulo (contagem de módulos e de "touchers") foi atualizado por
+adendo — **123** módulos, **5** touchers — sem reescrever a frase anterior que já registrava a
+mesma classe de deriva.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1296 passed** (era 1277 em `T-06.1`; +19 novos), cobertura
+  total **97,64%**; por camada (`ADR-009/D1`): domain **99,8%** (2558/2562, meta 90%), use_cases
+  **100,0%** (585/585, meta 80%), infra **95,1%** (2208/2321, meta 70%) — as 3 camadas `[OK]`.
+  `funding_settlement.py` isolado: **100%** (59/59 stmts, 16/16 branches).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 236 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (156 arquivos, 709 dependências).
+- `bash backend/scripts/natureza.sh` → **71 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados**.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhuma persistência.** `FundingRecord`/`deduplicate_funding_records` são `domain` puro
+  (`ADR-016`/`Natureza`) — sem `infra/*_funding_store.py`, sem ingestão de produção do
+  `monthly/fundingRate` real (`T-07.x`).
+- **`FundingSource.ESTIMATED` não tem produtor.** O tipo existe e a `SeriesCatalogEntry`
+  aceita, mas nenhum código lê `premiumIndex.lastFundingRate` em produção ainda — é o
+  `observed_at ≠ settle_bucket` que o módulo deixa em aberto por tipo, não por promessa.
+- **`unit`/`denom`/`native_grid` do catálogo de funding são `[INFERRED]` placeholders**
+  (`"rate"`/`"notional"`/`"event"`) no teste que prova as duas séries coexistindo — escolher os
+  valores reais do catálogo de funding é `T-06.9`'s escopo (preço/`cvd_source`/`fee_schedule`),
+  não desta task.
+- **`D6.16` não reproduz o número `570`/`433` de `2026-08-25` do plano** — a fixture que
+  permitiria isso (tripla casada naquela data) não existe; a divergência está declarada acima,
+  não escondida atrás de um número copiado.
