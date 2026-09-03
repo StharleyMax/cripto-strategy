@@ -3,6 +3,8 @@
 Append-only. Uma linha por artefato, na ordem em que foi produzido. O que manda é o
 **ledger** (`harness pipeline show <feature>`); este arquivo é o índice legível dele.
 
+- 2026-09-03 · `plataforma-dados` · T-08.10 (CST-78) · swing_point primitivo em `<Anotacao>` (zero algoritmo/limiar/nivel) · QA=APPROVED · REVIEW=COMPLIANT · `frontend/src/charts/s2-swing-point.ts`
+
 Criado em 2026-08-25 pelo `/pm`: o dashboard já apontava para `docs/INDEX.md`
 (`harness status`, linha de cabeçalho) e o arquivo não existia. As linhas anteriores à
 desta sessão foram reconstruídas do que está em disco e da data de modificação dos
