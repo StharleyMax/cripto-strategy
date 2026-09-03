@@ -3306,6 +3306,210 @@ nas duas fontes, uma SEXTA linha duplicando um `reduction` existente reprovando 
   correção — a divergência Coinalyze×Binance continua visível como divergência, nunca
   corrigida antes de gravar.
 
+## 📎 2026-09-03 por `T-06.4` — `funding_settled` ≠ `funding_estimado`: PK com `source`, `settlement_slot` por linha
+
+`SPEC-001` §3.4, `CA-F2-7`, `PRD-001` §5.6 (correção R1 · D-10), plano `06` item 6.4 (`CST-48`).
+
+### A peça
+
+[`domain/funding_settlement.py`](src/modules/sentimento/domain/funding_settlement.py)
+(**novo**): `FundingSource` (`SETTLED = "funding_settled"` / `ESTIMATED = "funding_estimado"`),
+`FundingRecord` e a PK de `PRD-001` §5.6, transcrita literal —
+`(instrument_id, settle_bucket, source, observed_at)`. Três peças:
+
+- **`compute_settlement_slot(observed_at_ms, interval_hours_declared)`** — o divisor é
+  `funding_interval_hours * 3_600_000` **DA PRÓPRIA LINHA**, nunca um valor global assumido
+  (`D6.11`). Piso de divisão de dois inteiros não-negativos nunca devolve resíduo negativo, o
+  que faz "nunca negativo" ser propriedade da aritmética, não uma checagem em separado.
+- **`FundingRecord.__post_init__`** recusa `instrument_id` em branco, `interval_hours_declared`
+  não-positivo e — o falsificador central de `D6.11` — um `settle_bucket` que não bate com
+  `compute_settlement_slot(observed_at, interval_hours_declared)`: um `settle_bucket`
+  construído à mão fora da grade (a forma exata do defeito antigo) reprova na fronteira do
+  próprio registro.
+- **`deduplicate_funding_records`** — colapsa por PK; a MESMA PK com o MESMO conteúdo vira uma
+  linha (`D6.12`), a MESMA PK com conteúdo DIFERENTE levanta `ConflictingFundingRecordError`
+  em vez de escolher uma em silêncio.
+
+Reusa `SeriesKey`/`SeriesCatalog` de `T-06.1` sem redefinir nada: `funding_settled` e
+`funding_estimado` são duas `SeriesCatalogEntry` diferindo só em `metric`, aceitas lado a lado
+pelo mesmo `build_series_catalog` que reprova colisão de `series_key_id` — a prova de que são
+identidades distintas, não uma série sobrescrita por uma flag.
+
+### Os falsificadores medidos
+
+[`test_funding_settlement.py`](tests/sentimento/test_funding_settlement.py) (**novo**, 16
+testes) roda `D6.11`/`D6.12` sobre o dump real `1000XECUSDT-fundingRate-2026-07.zip`
+(`md5 40e35f60a065aac30f2d08d7a47139bc`, `data/MANIFEST.md`):
+
+- **`D6.11`**: as **321** linhas do fixture, lidas com o intervalo **da própria linha**,
+  aterrissam em resíduo `[0, 12]` ms, nunca negativo. A MESMA base, sob a suposição **fixa**
+  de `8h` (a fórmula antiga), erra **228 de 321 = 71,0%** fora de `[0, 20]` ms — reproduzido
+  no fixture que esta task carrega, não só citado do plano.
+- **`D6.12`**: `1000XECUSDT` atravessa `8h → 1h` (índice 38, delta ≈1,0h) e `1h → 4h` (índice
+  267, delta exata 3,0h) dentro do arquivo — as **321** linhas ingeridas DUAS vezes (**642**
+  registros) colapsam de volta a **321** via `deduplicate_funding_records`, com as duas
+  transições sobrevivendo como linhas distintas.
+- **Duas séries nunca colidem**: mesmo `instrument_id`/`observed_at`/`interval_hours_declared`,
+  só `source` difere ⇒ duas PKs distintas, as duas sobrevivem ao dedupe.
+
+[`test_funding_next_funding_time_grid.py`](tests/sentimento/test_funding_next_funding_time_grid.py)
+(**novo**, 3 testes) — **`D6.16`**, com uma divergência de fixture declarada e não escondida:
+`data/MANIFEST.md:144` registra que `2026-08-25_fundingInfo.json` não tem `premiumIndex`
+companheiro ("não capturado nesta rodada"), então a tripla casada `exchangeInfo`+`fundingInfo`+
+`premiumIndex` que `D6.16` precisa **não existe** para `2026-08-25` — só para `2026-09-01`
+(`data/MANIFEST.md:143-148`). Este teste **RE-MEDE** a invariante nessa data, com o número
+carregando a data ao lado, em vez de transcrever a cifra `570`/`433` do plano que não é
+reproduzível a partir do fixture real: `[MEDIDO 2026-09-01]` **569** símbolos `TRADING`
+`PERPETUAL` comuns às três fontes, distribuição `{4h: 430, 8h: 136, 1h: 3}` — 4h continua sendo
+a regra, nunca 8h — e `nextFundingTime % (interval_hours × 3_600_000) == 0` em **569/569**, zero
+exceção.
+
+### ⚠️ Achado durante o desenvolvimento, corrigido antes do commit — `test_as_of_is_the_single_reader.py`
+
+`FundingRecord.observed_at` colide com o vocabulário que
+[`test_as_of_is_the_single_reader.py`](tests/sentimento/test_as_of_is_the_single_reader.py)
+varre (`READ_PATH_COLUMNS = {"observed_at", "available_at", "bucket_end"}`) — um scan por AST
+sobre `backend/src` inteiro, não um `grep` de nome de arquivo. `funding_settlement.py` foi
+adicionado a `DECLARED_TOUCHERS` com a mesma disciplina das três entradas anteriores: um
+parágrafo dizendo POR QUE `__post_init__`/`settlement_residual_ms`/`primary_key` não são um
+segundo leitor de série — `FundingRecord` é uma AGREGAÇÃO DIFERENTE (a PK de funding), nunca
+compara um valor contra um instante de decisão `t`, que é a única pergunta que `as_of` pode
+responder. O docstring do módulo (contagem de módulos e de "touchers") foi atualizado por
+adendo — **123** módulos, **5** touchers — sem reescrever a frase anterior que já registrava a
+mesma classe de deriva.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1366 passed** (rodado após reintegrar `T-06.2`/`T-06.5`/
+  `T-06.9`/`T-05.1`/`T-05.2`/`T-06.10`, mescladas em paralelo durante esta task; **+19 novos**
+  sobre a base rebaseada), cobertura total **97,68%**; por camada (`ADR-009/D1`): domain
+  **99,8%** (2715/2720, meta 90%), use_cases **100,0%** (585/585, meta 80%), infra **95,1%**
+  (2208/2321, meta 70%) — as 3 camadas `[OK]`. `funding_settlement.py` isolado: **100%**
+  (59/59 stmts, 16/16 branches).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 246 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (162 arquivos, 735 dependências).
+- `bash backend/scripts/natureza.sh` → **76 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados**.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhuma persistência.** `FundingRecord`/`deduplicate_funding_records` são `domain` puro
+  (`ADR-016`/`Natureza`) — sem `infra/*_funding_store.py`, sem ingestão de produção do
+  `monthly/fundingRate` real (`T-07.x`).
+- **`FundingSource.ESTIMATED` não tem produtor.** O tipo existe e a `SeriesCatalogEntry`
+  aceita, mas nenhum código lê `premiumIndex.lastFundingRate` em produção ainda — é o
+  `observed_at ≠ settle_bucket` que o módulo deixa em aberto por tipo, não por promessa.
+- **`unit`/`denom`/`native_grid` do catálogo de funding são `[INFERRED]` placeholders**
+  (`"rate"`/`"notional"`/`"event"`) no teste que prova as duas séries coexistindo — escolher os
+  valores reais do catálogo de funding é `T-06.9`'s escopo (preço/`cvd_source`/`fee_schedule`),
+  não desta task.
+- **`D6.16` não reproduz o número `570`/`433` de `2026-08-25` do plano** — a fixture que
+  permitiria isso (tripla casada naquela data) não existe; a divergência está declarada acima,
+  não escondida atrás de um número copiado.
+## 📎 2026-09-03 por `T-06.6` — quarentena generalizada sobre o catálogo inteiro (`D6.1`/`D6.2`) + regra de escrita `D6.3`
+
+`SPEC-001` §5.2, plano `06` item **6.12** (`CST-50`), `depends_on = ["T-06.1"]`. `T-06.7` e
+`T-06.8` dependem desta task. Escopo: generalizar o predicado de três termos de `T-02.2`
+(`COINALYZE_ONE_SHOT_TERMS`, aplicado à mão a uma fonte só) para rodar sobre `series_catalog`
+(`T-06.1`) inteiro, e fixar a regra de ESCRITA de `D6.3` — sem construir o mecanismo de
+promoção nem reimplementar `as_of` (fora do escopo, por instrução do handoff).
+
+### As duas peças
+
+[`domain/quarantine_terms.py`](src/modules/sentimento/domain/quarantine_terms.py)
+(**estendido**, `COINALYZE_ONE_SHOT_TERMS` intocado) ganha três funções:
+
+- `quarantine_terms_for_catalog_entry(entry, *, available_at_present)` — deriva
+  `label_shift_present`/`unit_present` de `entry.key` (nunca hardcoded a `True`): uma
+  `SeriesCatalogEntry` só existe se `SeriesKey.label_shift`/`unit` já estão presentes
+  (`__post_init__` de `series_key.py` recusa string em branco, e o campo `int` não aceita
+  `None`) — por isso os dois primeiros termos do predicado estão SEMPRE resolvidos para
+  qualquer linha que chegou ao catálogo, e `available_at_present` é o único termo que chega
+  como parâmetro (não é campo de `SeriesKey`; vem da tabela de defasagem, `Q19`/`T-03.6`).
+- `quarantine_drawer(catalog, *, available_at_present_by_key)` — a gaveta sobre o catálogo
+  inteiro (`D6.1`), tratando uma chave AUSENTE do mapa como não resolvida (silêncio não é
+  "ok", mesma regra de `LagSummaryRow`).
+- `readable_by_backtest(catalog, *, available_at_present_by_key)` — o complemento exato da
+  gaveta: "esta task decide QUAIS séries a leitura de backtest pode ver" (handoff, literal),
+  sem tocar `as_of_accessor.py`.
+
+[`domain/live_availability_write.py`](src/modules/sentimento/domain/live_availability_write.py)
+(**novo**): `resolve_unmeasured_endpoint_availability(*, lag_summary)` implementa `D6.3` —
+`SPEC-001` §5.2 literal: "endpoint sem `lag_ms` medido grava `available_at = NULL`,
+`availability_source = MODELED`... Nunca `event_time`, nunca `event_time + interval`" (o
+default **361x otimista**). O TIPO DE RETORNO é a proteção: `tuple[None, AvailabilitySource]`
+não tem ramo `int` nenhum, então nada passa `event_time_ms` por esta função mesmo por
+acidente. Um endpoint MEDIDO (`lag_summary.lag_n > 0`) é RECUSADO
+(`MeasuredLagCannotUseUnmeasuredPathError`) em vez de silenciosamente cair no ramo errado — a
+outra metade de `SPEC-001` §5.2 (fórmula MODELED arredondada à grade nativa) é computação
+diferente, fora do escopo desta task.
+
+### O falsificador `D6.2` — sobre a linha de PRODUÇÃO da Coinalyze, não uma fixture
+
+`master@fdb22aa` (`T-06.5`) mesclou `domain/open_interest_catalog.py` enquanto esta task já
+estava em progresso — ele POPULA as cinco linhas reais de OI (4 Coinalyze `OHLC_OVER_BUCKET` +
+1 Binance `POINT`). `test_quarantine_terms.py` foi reescrito para consumir essa população de
+produção diretamente (`open_interest_catalog_entries().entry_for(coinalyze_open_interest_key(
+Reduction.CLOSE))`) em vez de uma fixture própria: a 1ª versão desta task tinha adivinhado
+`label_shift=0` para a linha `CLOSE`, e a linha real de `T-06.5` prova esse palpite ERRADO —
+o valor medido é `label_shift=300_000` (`+interval`, `SPEC-001` §2.1). Corrigido no mesmo
+ciclo, antes do commit, ao mesclar `T-06.5`.
+
+`test_d6_2_the_third_term_alone_isolates_a_series_with_the_other_two_resolved` pega essa linha
+real (`unit="BTC"`, `label_shift=300_000`, ambos JÁ resolvidos por `T-06.5`) com
+`available_at_present=False` (o terceiro termo, que `Q19` não resolveu para a Coinalyze) e
+prova `is_quarantined is True` — os outros dois termos resolvidos não abrem a gaveta sozinhos.
+Os testes `D6.1` rodam sobre o catálogo real inteiro de `open_interest_catalog_entries()`
+(5 linhas): só a linha Binance é marcada disponível, a gaveta bate exatamente nas 4 linhas
+Coinalyze, e `test_readable_by_backtest_is_not_vacuously_empty` prova que a função devolve o
+catálogo INTEIRO quando nada está quarentenado (não apenas uma linha, por acidente de
+implementação).
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` (pós-merge com `origin/master@fdb22aa`, `T-06.5` incluída) →
+  **1300 passed**, cobertura total **97,63%**; por camada (`ADR-009/D1`): domain **99,8%**
+  (2536/2540, meta 90%), use_cases **100,0%** (585/585, meta 80%), infra **95,1%**
+  (2208/2321, meta 70%) — as 3 camadas `[OK]`. **+11 testes novos** desta task sobre os 1289
+  de `T-06.5` (5 em `test_quarantine_terms.py`, 11→16; 6 em `test_live_availability_write.py`,
+  novo, `[MEDIDO: pytest --collect-only -q]`).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 237 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (157 arquivos, 712
+  dependências).
+- `bash backend/scripts/natureza.sh` → **72 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados** no estado final (um `[AVISO]`
+  `core.module-docstring-single-line` apareceu durante o desenvolvimento em
+  `live_availability_write.py` e foi corrigido no mesmo ciclo, mesma forma de
+  `quarantine_terms.py`: conteúdo movido para comentário `#`, docstring de módulo em uma
+  linha).
+- Achado de ambiente, não desta task: uma rodada de `test.sh` sob contenção de CPU (6+
+  worktrees da fase 06 rodando `pytest` completo em paralelo na mesma máquina) reprovou
+  `test_ingest_record_crash_borders.py::test_concurrent_recorders_neither_lose_rows_nor_corrupt_the_file`
+  por estourar o timeout de 60s de um subprocesso — teste que não toca nenhum arquivo desta
+  task. Reproduzido em isolamento (`pytest tests/sentimento/test_ingest_record_crash_borders.py`,
+  sem contenção): **4 passed**. Não é defeito desta task nem do arquivo que ela testa.
+- Ciclo de correção: 1ª rodada de `test.sh` reprovou
+  `test_as_of_is_the_single_reader.py::test_no_production_module_imports_this_accessor_yet_and_that_is_recorded_not_claimed`
+  — o docstring de `quarantine_terms.py` citava literalmente `as_of_accessor.py` num
+  comentário (não um import), e o guard escaneia TEXTO de arquivo, não import real; reescrito
+  para citar "`T-04.4`'s decision-read module" sem a substring. Rodadas seguintes não
+  reproduzem.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **A Coinalyze continua em quarentena.** `Q19`/`T-03.6` respondeu o probe em geral, mas não
+  mediu `lag_ms` especificamente para os endpoints da Coinalyze — o terceiro termo permanece
+  `available_at_present=False` até essa medição existir, exatamente como `SPEC-001` §5.2 pede.
+- **Sem mecanismo de promoção.** Nenhuma linha muda de quarentenada para lida por `backtest`
+  aqui — isso é decisão de uma medição futura (`Q19` para a Coinalyze), não desta task.
+- **A fórmula MODELED do endpoint MEDIDO (grade nativa + `p99_lag` + margem) não é
+  implementada.** `D6.3` pede só o ramo NÃO medido; o outro ramo é
+  `MeasuredLagCannotUseUnmeasuredPathError`, recusado e nomeado, não aproximado.
+- **Nenhuma linha NOVA de produção do catálogo é escrita por esta task** — as cinco linhas de
+  OI que o falsificador `D6.2` consome já existiam, populadas por `T-06.5`; esta task só lê
+  esse catálogo pelo predicado, nunca o edita.
 ## 📎 2026-09-03 por `T-06.3` — as QUATRO séries de L/S; `ls_ratio` PROIBIDO; `delta()`/TF recusam o taker POR TIPO
 
 `SPEC-001` §3.1/§5.11, `CA-F2-3`, plano `06` itens **6.3 + 6.10** (`CST-47`). Depende de
@@ -3387,3 +3591,145 @@ o teste conta os 12 e falha se um só cruzar 0,10.
   registrou ("`nature` precisa de um sexto membro, ou `§5.11` precisa de um segundo termo?")
   segue aberta para `/architect` — esta task resolve D6.5/D6.6 UMA CAMADA ACIMA de `SeriesKey`,
   sem tocar a identidade de 15 termos.
+
+## 📎 2026-09-03 por `T-06.7` — `ZL-1`..`ZL-3`: zero do fornecedor não é zero legítimo
+
+`SPEC-001` §5.3, plano `06` item **6.13**, `CA-F3-10` ("tem de dizer que `pontos × intervalo`
+é POR LADO"), `D6.10`. Depende de `T-06.6` (predicado de três termos, mesclada).
+
+### A peça
+
+[`domain/liquidation_zero_legitimacy.py`](src/modules/sentimento/domain/liquidation_zero_legitimacy.py)
+(**novo**), os três falsificadores literais de `SPEC-001` §5.3:
+
+- **`LiquidationSide`** (`LONG="l"`/`SHORT="s"`): os valores SÃO os campos do fio da Coinalyze
+  (`docs/medicao-coinalyze.md` §2.1: `{t, l, s}`), não uma tradução — as duas sequências são
+  INDEPENDENTES, e nenhuma função deste módulo aceita as duas juntas.
+- **`classify_side_points`** (ZL-2/ZL-3): dado um `Sequence[SidePoint]` de UM lado, em ordem
+  estrita de `event_time`, converte todo zero ANTES do primeiro não-zero desse lado em
+  `Absence.NO_SOURCE` (ZL-2); todo zero DEPOIS permanece um valor legítimo,
+  `ClassifiedSidePoint(value=Decimal(0), absence=None)` (ZL-3) — nunca dobrado em `NO_SOURCE`.
+  `ClassifiedSidePoint` é OU valor OU ausência nomeada, nunca os dois nem nenhum
+  (`__post_init__` recusa as duas formas erradas), a mesma disciplina que `AsOfReading`
+  (`as_of_accessor.py`, `T-04.4`) já aplica do lado da leitura — aqui aplicada do lado da
+  ESCRITA/classificação, que é onde `D6.10` mediu o defeito.
+  `classify_side_points` NUNCA ordena a entrada: `NonMonotonicSidePointsError` recusa
+  `event_time` fora de ordem estrita (ou repetido), porque aceitar e ordenar escamotearia
+  exatamente o erro de ZL-1 — os dois lados sendo misturados numa chamada só.
+- **`retention_window_per_side`** (ZL-1, `CA-F3-10` recalculado): `pontos × intervalo`,
+  contando SÓ os pontos LEGÍTIMOS (`absence is None`) do `Sequence[ClassifiedSidePoint]` de UM
+  lado — nunca o array bruto do fio (que contaria buckets `NO_SOURCE` como se fossem
+  observações retidas, reintroduzindo o otimismo que ZL-2 existe para remover) e nunca os dois
+  lados somados antes de multiplicar. Não existe função neste módulo que aceite os dois lados
+  numa chamada só — "por LADO, não por série inteira" é propriedade do grafo de chamada, não
+  só comentário.
+
+### O falsificador — `D6.10` reproduzido em escala de fixture
+
+Terceiro-partido não versionado: a captura de 730 dias que mediu **361 buckets com `s = 0`
+literal** onde o `daily` reporta **289,65 / 154,53 / 4.547,61 BTC** é dado bruto de terceiro
+(`CLAUDE.md`, "Dado bruto não é versionado") e não vive neste repositório.
+[`test_liquidation_zero_legitimacy.py`](tests/sentimento/test_liquidation_zero_legitimacy.py)
+(**novo**, 18 testes) reproduz o MESMO PADRÃO — N zeros líderes antes do primeiro não-zero de
+um lado — em escala de lista literal, citando os três números de `D6.10` no valor dos pontos
+legítimos (`test_zl1_reproduces_d6_10_pattern_at_fixture_scale`). O falsificador de `ZL-1`
+(`test_zl1_retention_window_is_per_side_not_summed`) constrói dois lados com contagens de
+pontos DIFERENTES e prova que a janela de cada lado nunca é igual à janela "série inteira"
+(soma dos dois lados × intervalo) — a hipótese que o mecanismo errado produziria.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1425 passed** (era 1407; +18 novos), cobertura total
+  **97,73%**; por camada (`ADR-009/D1`): domain **99,8%** (meta 90%, 2848/2853), use_cases
+  **100,0%** (meta 80%, 585/585), infra **95,1%** (meta 70%, 2208/2321) — as 3 camadas
+  declaradas, todas `[OK]`. `liquidation_zero_legitimacy.py` isolado: **100%** (66/66 stmts,
+  18/18 branches).
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 252 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (165 arquivos, 751 dependências).
+- `bash backend/scripts/natureza.sh` → **79 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados**. (1 achado corrigido durante o
+  desenvolvimento, antes deste commit: a string literal `as_of_accessor` numa prosa de
+  docstring disparava `test_as_of_is_the_single_reader.py`'s escaneamento por SUBSTRING — não
+  é um `[[rules.own]]`, é o próprio guard-rail de `T-04.4`; a docstring foi reformulada para
+  citar `AsOfReading` sem o nome do módulo.)
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhuma ingestão real de `/liquidation-history?interval=1min` existe neste repositório.**
+  `coinalyze_daily_series.py` só captura `interval=daily` (`T-02.2`); ligar
+  `classify_side_points`/`retention_window_per_side` a um cliente REST de 1 min (mesmo `{t, l,
+  s}` do fio, `docs/medicao-coinalyze.md` §2.1) é task futura — este módulo entrega a
+  CLASSIFICAÇÃO, não o coletor.
+- **Nenhum `SeriesRow`/`md.ingest_gap` é escrito por esta task.** `ClassifiedSidePoint` é a
+  DECISÃO (valor legítimo vs `SEM_FONTE`); persistir essa decisão como linha de série ou como
+  lacuna do painel é território de `write_series_row.py`/`T-04.4`, não tocado aqui.
+- **`ZL-3`'s "distinguível de ausência em 100 ms" é uma propriedade de RENDERIZAÇÃO** (`charts`,
+  fora da fronteira de `sentimento`) — este módulo entrega a metade que `domain` pode garantir:
+  tipos estruturalmente diferentes (`value` vs `absence`), nunca a mesma forma.
+## 📎 2026-09-03 por `T-06.8` — campo ADITIVO desconhecido → quarentena + alarme; AUSENTE/RENOMEADO → reprova (`D6.14`)
+
+`SPEC-001` §5.5, `CA-F2-12`, plano `06` item **6.14** (`CST-52`), `depends_on = ["T-06.6"]`.
+Escopo: as DUAS reações opostas a uma mudança de schema no payload da fonte, sobre o mesmo
+par de conjuntos de campos — não a mesma checagem com o resultado invertido.
+
+### As duas peças
+
+[`domain/schema_change.py`](src/modules/sentimento/domain/schema_change.py) (**novo**): o
+predicado puro. `classify_schema_change(*, expected_fields, received_fields)` roda DOIS testes
+independentes sobre `frozenset[str]`, nesta ordem: primeiro "algo esperado sumiu"
+(`expected_fields - received_fields`), que **reprova** com `SchemaChangeRejectedError` — essa
+ordem é a enforcement de "rejeição vence": um campo renomeado (`q` → `quantity`) fica ausente
+sob o nome antigo E aditivo sob o novo, e reprovar é o que a SPEC chama de "renomeado", não
+duas leituras concorrentes. Só então o segundo teste roda — `received_fields - expected_fields`
+não vazio → `SchemaChangeVerdict.is_additive = True`, `absence = Absence.QUARANTINE` (reuso de
+`provenance.Absence`, handoff literal: "não invente um segundo enum de destino de
+quarentena") e `should_alarm = True`. Payload idêntico ao contrato → `absence = None`,
+`should_alarm = False`, nunca reprova.
+
+[`use_cases/classify_schema_change.py`](src/modules/sentimento/use_cases/classify_schema_change.py)
+(**novo**): `classify_and_alarm(*, subject, expected_fields, received_fields)` decide **QUANDO**
+alarmar (chama o domain, e se `should_alarm` for `True` emite `logger.warning`
+`"schema_change_additive_unknown"` com `subject` + `unknown_fields` em `extra`) — não decide
+**POR ONDE** o alarme sai. `T-07.11` (canal de alarme fora do browser) segue `blocked` em `Q3`
+nesta data; não há canal para chamar. Um `SchemaChangeRejectedError` do domain propaga SEM
+logar: reprovação é recusa do payload, não condição de alarme, e logar as duas juntas
+confundiria as duas reações que este módulo existe para manter separadas.
+
+### O fixture é o caso real, não um sintético
+
+`test_schema_change.py` usa os campos que `ADR-001` mediu, verbatim: contrato do dump S3 =
+`{T,a,f,l,m,p,q}` (7), payload REST que motivou a task = `{T,a,f,l,m,nq,p,q}` (8, com `nq`
+acrescentado) — `test_additive_unknown_field_quarantines_never_rejects` prova que ESTE payload
+real nunca levanta `SchemaChangeRejectedError`, que é exatamente o dia em que uma regra
+fail-closed ingênua teria parado a ingestão inteira (`CA-F2-12` `[MEDIDO]`).
+`test_renamed_field_rejects_even_though_the_new_name_looks_additive` planta o caso "rejeição
+vence" (`q` sumido, `quantity` aparecendo) e prova reprovação, não quarentena.
+
+### Escopo que esta task NÃO fecha, nomeado
+
+- **Nenhum canal de alarme fora do log é construído.** `T-07.11` é quem decide o transporte
+  (`Q3`, aberta); esta task só decide o predicado (QUANDO) e registra a decisão como evento de
+  log estruturado — um flag que um consumidor futuro lê, não uma notificação entregue.
+- **Nenhum caller de produção chama `classify_and_alarm` ainda.** Esta task entrega o
+  mecanismo (`D6.14`); ligá-lo a um coletor real de `aggTrade` ou a qualquer outro endpoint é
+  trabalho de uma task de ingestão futura, não desta.
+- **`expected_fields` não é derivado automaticamente de nenhum schema declarado** (p.ex. de
+  `binance_aggtrade_payload.py`) — chega como argumento do caller, que é quem sabe qual
+  contrato está verificando; unificar isso é decisão de arquitetura fora do escopo de `D6.14`.
+
+### Comandos rodados e resultado
+
+- `bash backend/scripts/test.sh` → **1416 passed**, cobertura total **97,71%**; por camada
+  (`ADR-009/D1`): domain **99,8%** (2807/2812, meta 90%), use_cases **100,0%** (594/594, meta
+  80%), infra **95,1%** (2208/2321, meta 70%) — as 3 camadas `[OK]`.
+- `bash backend/scripts/lint.sh` → `ruff check`/`ruff format --check`/`mypy --strict` **sem
+  achado**, 254 arquivos.
+- `bash backend/scripts/boundaries.sh` → **3 kept, 0 broken** (166 arquivos, 751
+  dependências).
+- `bash backend/scripts/natureza.sh` → **80 arquivo(s), 0 leitura(s) de relógio**.
+- `harness rules --mode sweep --changed-only` → **0 achados** no estado final (1 `[AVISO]`
+  `core.module-docstring-single-line` apareceu em `use_cases/classify_schema_change.py`
+  durante o desenvolvimento e foi corrigido antes deste commit — mesma forma de
+  `quarantine_terms.py`/`live_availability_write.py`: conteúdo movido para comentário `#`,
+  docstring de módulo em uma linha).

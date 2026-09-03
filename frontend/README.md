@@ -900,7 +900,237 @@ Este `README.md` — **atualizado**, `§11` nova (append-only). `docs/adr/ADR-00
 concluído antes desta implementação, veredito não revisitado (nenhum elemento visual novo
 apareceu, falsificador do próprio gate não disparou).
 
-## 13. `src/charts/color-tokens.ts` — cor como token nomeado por papel (`T-05.7`, 2026-09-03)
+## 13. `src/charts/s2-absence-policy.ts` — política de ausência por `nature` de `T-05.4` (2026-09-03)
+
+`T-05.4` (`CST-38`, componente `charts`) escreve o item `5.5` do plano `05` (`SPEC-001` §5.11,
+"Política de ausência por `nature`") mais os dois pedaços que o título da task nomeia
+explicitamente: o carimbo de idade do FECHO (`D5.1`) e a linha-guia apontando para trás
+(`D5.2`). Compõe sobre os painéis de `T-05.2` (`s2-panels.ts`, já em `master`) — não os
+reimplementa: toma `OiPanel.slots`/`CvdPanel.deltaSlots` (`ScalarSlot[]`, de
+`s2-scalar-grid.ts`) como entrada, igual a todo outro consumidor do diretório.
+
+**Escopo, declarado no cabeçalho do próprio arquivo:** §5.11 lista 6 `nature`s; este módulo
+resolve exatamente as 2 que têm painel real em `05_fatia_visivel.md` item `5.1` — `STOCK`
+(OI) e `FLOW` (CVD delta) —, não as 6. `RATIO`/`EVENT`/quarentena não têm consumidor nesta
+fase; escrevê-los agora seria política para um painel que não existe, o "amplia escopo" que
+o protocolo de despacho proíbe.
+
+### As três decisões de leitura que o SPEC não soletra em pseudocódigo
+
+1. **`D5.1` — o rótulo impresso é sempre o FECHO (`bucketStart + timeframe`), nunca o
+   bucket-start cru.** O falsificador do próprio plano é literal: o primeiro ponto de
+   `met/2026-08-23.csv` (bucket-start `00:00:00`) tem que ler `00:05:00Z` na tela — "três dos
+   quatro desenhos de UX imprimiram o rótulo cru", exatamente o defeito que a fase existe
+   para impedir. `formatCloseStamp`/`closeTimeMs` são o único lugar onde essa conversão
+   acontece; `formatHeldStockLabel` a consome, nunca a reimplementa.
+2. **`D5.2` — `STOCK` mantém (`held`) o último valor real, mas o trilho NUNCA passa de UM
+   bucket nativo.** OI publica 1 ponto a cada 5 min contra 1 candle de preço a cada 1 min
+   (`SPEC-001` §5.12: "1m → 0,2" pontos por barra) — 4 de cada 5 barras de 1 min não têm
+   ponto próprio de OI, e §5.11 manda ler isso como o valor mantido da última observação, em
+   tinta secundária, NUNCA como ausência (`resolveStockReading`, ramo `held`). O mesmo §5.11
+   proíbe "trilho maior que grade nativa": por isso a função olha para trás **exatamente um**
+   bucket nativo, nunca mais — provado contra o gap real de dia inteiro (`2026-08-22`, zero
+   arquivo `metrics`) em `s2-absence-policy.test.ts`: o primeiro bucket ausente do dia do
+   buraco ainda resolve `held` (1 bucket nativo de distância do último ponto real, `08-21
+   23:55`); o SEGUNDO já resolve `absent` — a prova de que o teto é honrado, não só afirmado
+   em prosa.
+3. **`D5.3` — `FLOW` nunca olha para um slot vizinho.** `LOCF` é proibido sem exceção para
+   `FLOW` (§5.11); `resolveFlowReading` faz uma única leitura no próprio instante — presente
+   (mesmo que um zero medido) ou ausente, nunca emprestado de outro bucket. Testado contra o
+   mesmo dia real ausente (`2026-08-22`, zero arquivo `aggTrades`) sem precisar ler os
+   milhões de linhas dos dias cobertos: a ausência de um dia inteiro no disco já é a prova, e
+   `assembleCvdDeltas` já reporta isso (`s2-cvd.ts`) sem reimplementação.
+
+**Geometria vs. texto — por que `guideLine`/`observedBucketStartMs` usam bucket-start
+enquanto o rótulo impresso usa FECHO:** o ponto real de OI já é plotado no eixo X em
+`slot.time` (bucket-start) por `lineSeriesLossless` (`s2-lightweight-adapter.ts`) — mudar
+essa posição para o FECHO quebraria o alinhamento com a grade canônica que `D5.9` prova
+bit-a-bit. A convenção do FECHO (`D5.1`) é só do TEXTO impresso; a geometria da linha-guia
+(`{fromMs, toMs}`, ambos bucket-start) continua na mesma posição que o resto do gráfico já
+usa.
+
+### Comandos rodados, literais
+
+```bash
+cd frontend
+npm run lint         # eslint src                        -> 0 erro, 0 aviso
+npm run test:charts  # node --test 'src/charts/*.test.ts' -> 79 pass (10 novos), 0 fail
+git add frontend/src/charts/s2-absence-policy.ts frontend/src/charts/s2-absence-policy.test.ts
+harness rules --mode sweep --changed-only
+  -> rc=0, 0 achado (nenhuma linha ndjson)
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (`harness policy --key test_cmd` só cobre `sentimento`,
+mesmo silêncio já registrado em `§8`/`§9`/`§10`/`§12` para `web`). Medição qualitativa: 10
+testes novos cobrem as 6 funções exportadas (`resolveStockReading`, `resolveFlowReading`,
+`closeTimeMs`, `formatCloseStamp`, `formatHeldStockLabel`, `formatFlowValue`), os 3 ramos de
+`StockReading` (`exact`/`held`/`absent`) inclusive o teto de UM bucket do trilho de
+vigência, os 2 ramos de `FlowReading` (`present`/`absent`, incluindo zero medido ≠ ausência),
+e os 2 erros de chamador (grade vazia; consulta `FLOW` desalinhada) — 4 dos 10 testes contra
+o fixture REAL (`data/binance/metrics/BTCUSDT-metrics-2026-08-{22,23}.csv` via
+`buildOiPanel`/`assembleCvdDeltas`, nenhum synthetic point onde um gap de verdade já existe).
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§13` nova (append-only). `docs/specs/SPEC-001-plataforma-
+dados.md` §5.11 — **sem mudança**: a tabela já fixa a política; esta task a implementa, não a
+emenda. `docs/adr/ADR-003-fronteira-charts-web.md` — **sem mudança**: nenhuma superfície nova
+cruza a fronteira `charts`⇄`web` (módulo puro, mesma disciplina FR-1 de todo o diretório).
+
+## 14. `src/charts/s2-price-source.ts` + `s2-annotation-price-binding.ts` — `price_source`/`price_use` do painel de Preço, `T-05.5` (2026-09-03)
+
+`T-05.5` (`CST-39`, componente `charts`) escreve o item `5.7` do plano `05` e `D5.5`:
+"o painel de Preço declara `price_source` E `price_use` na linha do painel; a marcação fica
+amarrada à série de preço" (`ADR-007`/`PS-1`, `PS-3`). Composto sobre `T-05.2` (`s2-panels.ts`,
+já em `master`) e sobre `T-05.4`'s `s2-annotation-identity.ts` (`D5.10`) — nenhum dos dois foi
+reimplementado, ambos foram importados/estendidos.
+
+### O que cada arquivo novo fecha
+
+- **`s2-price-source.ts`** — transcrição independente de `ADR-007`'s decision table na CAMADA
+  DE CONCEITO (`klines_last`/`mark_price`, pré-substituição), o mesmo movimento que
+  `canonical-grid.ts` já faz para a grade: não importa `backend/.../price_source_catalog.py`
+  (linguagem diferente) nem `frontend/src/features/s3-inspector/series-catalog.ts` (`web`; a
+  fronteira `D5.12` proíbe `charts`→`web` nos dois sentidos, `eslint-boundary.test.ts`).
+  `resolvePriceSource(priceUse: PriceUse | null)` recusa `null` (`MissingPriceUseError`) e
+  qualquer valor fora do conjunto fechado (`InvalidPriceUseError`) — `PS-1` como mecanismo, não
+  convenção: nenhuma assinatura permite ao chamador esquecer o argumento e receber um default.
+- **`s2-panels.ts`** (modificado) — `buildPricePanel` passa a exigir `priceUse: PriceUse` e
+  devolve `PricePanel { priceSource, priceUse, series }` em vez de um `ChartSeries` nu;
+  `S2Panels.price` e `S2RawInputs.priceUse` seguem o mesmo formato. `S2_PRICE_USE =
+  "structure_detection"` é a constante, documentada e exportada, que o painel S2-mínima usa —
+  visual/estrutura, não liquidação/funding/custo — e `ADR-007` resolve isso para
+  `price_source = klines_last`.
+- **`s2-annotation-price-binding.ts`** — `createPriceBoundAnnotation` COMPÕE
+  `createAnnotationIdentity` (`D5.10`, não tocado) com `resolvePriceSource`, produzindo
+  `PriceBoundAnnotation { principalId, createdAtMs, priceSource, priceUse }`.
+  `describeAnnotationOnReopen(annotation, currentPriceSource)` é o falsificador de `D5.5`
+  executável: devolve `{isSamePriceSeries, label}`, com `label = "marcada sobre outra série de
+  preço"` (`PRICE_SERIES_MISMATCH_LABEL`, o texto exato que `ADR-007`/`PS-3` nomeia) sempre que
+  `isSamePriceSeries` é `false`.
+
+### O teste negativo obrigatório (`D5.5`), literal
+
+`s2-annotation-price-binding.test.ts`: marca sob `structure_detection`
+(⇒ `price_source = klines_last`), reabre com `currentPriceSource = resolvePriceSource(
+"liquidation_trigger")` (⇒ `"mark_price"`) — `isSamePriceSeries === false` e
+`label === "marcada sobre outra série de preço"`. Controle positivo irmão (mesma fonte na
+reabertura ⇒ `label === null`) garante que o teste negativo não passaria por um comparador que
+sempre devolve `false`.
+
+### Comandos rodados, literais
+
+```bash
+npm --prefix frontend install     # node_modules é gitignored, ausente em worktree novo
+npm --prefix frontend run lint    # eslint src -> 0 erro, 0 aviso
+npm --prefix frontend run test:charts
+  # node --test 'src/charts/*.test.ts' -> 78 pass (8 novos: 3 s2-price-source.test.ts +
+  # 5 s2-annotation-price-binding.test.ts), 0 fail
+  # (requer data/binance/{klines,metrics,aggtrades}/ presente no worktree — ausente por
+  # padrão em worktree novo, data/ é gitignored; copiado do checkout principal só para
+  # rodar esta suíte, nunca versionado)
+harness rules --mode sweep --changed-only
+  -> 0 achado, rc=0
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (`harness policy --key test_cmd` só cobre `sentimento`).
+Medição qualitativa: as duas funções novas (`resolvePriceSource`,
+`describeAnnotationOnReopen`) e o construtor novo (`createPriceBoundAnnotation`) têm teste
+para cada ramo de decisão — as 5 entradas de `PRICE_USES`, os dois casos de recusa de `PS-1`
+(`null` e valor inválido), o falsificador `D5.5` e seu controle positivo, e a propagação da
+recusa de `D5.10` (`principalId` vazio) através do novo construtor.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§14` nova (append-only). `docs/adr/ADR-007-price-source-por-uso.md`
+— **sem mudança**: `PS-1`/`PS-3` já fixam a decisão; esta task consome (lado `charts`), não
+emenda. `frontend/src/charts/s2-annotation-identity.ts` — **sem mudança**: `D5.10`'s próprio
+construtor e recusa continuam intocados, reusados por composição.
+
+## 15. `src/charts/s2-pointer-mode.ts` — `pointer_mode ∈ {read, annotate}` declarado (`T-05.6`, 2026-09-03)
+
+`T-05.6` (`CST-40`, componente `charts`, plano `05_fatia_visivel.md` item `5.8`, `SPEC-001:284`):
+`pointer_mode` declarado com a camada de overlay reservada acima do plot e abaixo do crosshair,
+e o clique/Espaço travando o crosshair só em `read`. O título da task nomeia o objetivo: **"torna
+`Q11` decisão de horas, não de arquitetura"** — `Q11` (owner marca o corpus) continua **ABERTA**;
+o que este módulo entrega é a forma que sobrevive a qualquer resposta dela, para que respondê-la
+mais tarde custe preencher o comportamento de `annotate`, não desenhar a arquitetura de novo.
+
+**Escopo, e por que ele para exatamente aqui:** `s2-annotation-identity.ts` (`T-05.2`, `D5.10`) já
+citava esta task pelo número como a dona de `pointer_mode` e a deixava fora do próprio escopo.
+Simetricamente, `swing_point` (`SPEC-001` §3.6, "o primeiro primitivo de `<Anotacao>`") é `T-08.7`,
+não esta. `s2-pointer-mode.ts` declara **o quê** acontece quando um evento de ponteiro chega em
+cada modo — não desenha nada, não implementa marcação, não toca o DOM (`ADR-003` FR-1: zero
+`fetch`, zero listener, zero `node:fs`; toda entrada é argumento).
+
+**O que o módulo declara, e como cada peça fecha a frase de `SPEC-001:284`:**
+- `PointerMode = "read" | "annotate"` + `POINTER_MODES` (runtime) + `assertPointerMode` — recusa
+  qualquer valor fora do conjunto (mesmo padrão de recusa de `MissingPrincipalIdError` em
+  `s2-annotation-identity.ts`: um `pointer_mode` inválido cruzando a borda do event handler não
+  vira `"read"` por default silencioso).
+- `ChartLayer = "plot" | "overlay" | "crosshair"` + `LAYER_ORDER` (ordenado, baixo→alto) +
+  `assertOverlayIsSandwiched` — checa "overlay acima do plot e abaixo do crosshair" **por
+  posição**, não por nome, para que uma 4ª camada futura ou uma reordenação acidental trisque o
+  invariante em vez de desenhar marcação sob os candles em silêncio.
+- `resolvePointerAction(mode, input)` — a frase "clique/Espaço só significam travar crosshair em
+  `read`" tornada executável: em `read` devolve `{ kind: "lock_crosshair" }`; em `annotate` **nunca**
+  devolve isso — devolve `{ kind: "annotate_reserved", mode: "annotate" }`, o placeholder explícito
+  que `T-08.7`/`Q11` preenchem depois.
+- `PointerInputKind = "click" | "space"` + `assertPointerInputKind` — mesma disciplina de recusa,
+  simétrica à de `mode`.
+
+### Falsificadores rodados — não só "os testes passam"
+
+Cada proteção tem o caso que ela rejeita, no mesmo arquivo de teste:
+- `assertPointerMode`/`assertPointerInputKind` recusam valor fora do conjunto declarado (inclusive
+  variação de maiúscula: `"Read"` ≠ `"read"`).
+- `assertOverlayIsSandwiched` recusa `overlay` abaixo de `plot`, `overlay` acima de `crosshair`, e
+  um conjunto de camadas incompleto — três `RangeError` distintos, um por violação.
+- `resolvePointerAction("annotate", …)` é comparado por `notDeepEqual` contra `{ kind:
+  "lock_crosshair" }` — a garantia não é só "devolve outra coisa", é "nunca é igual à ação de
+  `read"`.
+- `resolvePointerAction` recusa um `mode`/`input` que contornou o tipo estático via `as unknown as`
+  (o caso de um valor vindo de fora da árvore TypeScript, ex. `JSON.parse` de um evento).
+
+### Comandos rodados, literais
+
+```bash
+npm --prefix frontend install    # node_modules não versionado, worktree novo
+npm --prefix frontend run lint   # eslint src -> 0 erro, 0 aviso
+npm --prefix frontend run test:charts
+  # node --test 'src/charts/*.test.ts' -> universo total 75 testes, 64 pass / 11 fail
+  # (re-executado isolado: `node --test 'src/charts/s2-pointer-mode.test.ts'` -> 14/14 pass,
+  # 0 fail — as 11 falhas do universo total são as ÚNICAS falhas e são PRE-EXISTENTES de
+  # `T-05.2`, não relacionadas a este módulo: 2 suites inteiras (canonical-grid-sha256-proof.test.ts,
+  # s2-axis-integration.test.ts) + 9 casos em s2-cvd.test.ts/s2-klines-loader.test.ts/
+  # s2-oi-loader.test.ts/s2-panels.test.ts — todas ENOENT/asserção sobre `data/binance/**`,
+  # que não existe neste worktree (dado bruto não é versionado, `.gitignore:51`).
+  # Confirmado: `ls data` -> "Arquivo ou diretório inexistente".
+git add frontend/src/charts/s2-pointer-mode.ts frontend/src/charts/s2-pointer-mode.test.ts
+harness rules --mode sweep --changed-only   # rc=0, nenhuma saída — 0 achado
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (mesmo motivo de `§8`–`§12`: `harness policy --key test_cmd` só
+cobre `sentimento`). Medição qualitativa: 14 testes cobrem 100% das funções/constantes exportadas
+(`POINTER_MODES`, `POINTER_INPUT_KINDS`, `LAYER_ORDER`, `assertPointerMode`,
+`assertPointerInputKind`, `assertOverlayIsSandwiched`, `resolvePointerAction`), com um caso positivo
+e ao menos um MORDE por proteção.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§15` nova (append-only). `docs/specs/SPEC-001-plataforma-dados.md`
+— **sem mudança**: `§3.6` já fixa a frase que este módulo torna executável; esta task consome, não
+emenda a SPEC. Gate de design — **não aplicável**: este item não introduz elemento visual novo (zero
+DOM, zero componente React) — é geometria/estado puro de `charts`, mesma classe de `s2-panels.ts`/
+`s2-lightweight-adapter.ts`, que também não passaram por gate de design.
+
+## 16. `src/charts/color-tokens.ts` — cor como token nomeado por papel (`T-05.7`, 2026-09-03)
 
 `T-05.7` (`CST-41`, componente `charts`, `depends_on = ["T-05.2"]`) escreve o item `5.9` do plano
 `05`: "Cor como token nomeado por papel; `critical` fora do canal de cor" (`CA-F4-10`,
@@ -965,7 +1195,6 @@ tipando limpo.
 ### Comandos rodados, literais
 
 ```bash
-cd frontend
 npm install                                    # node_modules não versionado, worktree novo
 npm run test:charts   # node --test 'src/charts/*.test.ts' -> 76 pass, 0 fail
 npm run lint          # eslint src                          -> 0 erro, 0 aviso
@@ -974,9 +1203,9 @@ node scripts/validate_palette.js
   -> exit 0, "medicoes executadas nesta rodada: 361"
 git add frontend/src/charts/color-tokens.ts frontend/src/charts/color-tokens.test.ts \
         frontend/src/charts/s2-headless-run.ts frontend/src/charts/s2-axis-integration.test.ts
-harness rules --mode sweep --changed-only
-  -> 0 achado, rc=0
 ```
+
+### Cobertura
 
 **⚠️ Correção do `/build`, ciclo de reinvocação (2026-09-03), sobre a linha acima:** a primeira
 redação desta seção dizia **"76 pass (10 novos)"**, e o parêntese não tinha o comando que o
@@ -1000,7 +1229,7 @@ acima) cobrem as 3 funções/constantes exportadas (`colorTokens`, `candlestickS
 
 ### Doc delta
 
-Este `README.md` — **atualizado**, `§13` nova (append-only). `docs/specs/SPEC-001-plataforma-dados.md`
+Este `README.md` — **atualizado**, `§16` nova (append-only). `docs/specs/SPEC-001-plataforma-dados.md`
 §6.2 e `docs/plans/SPEC-001-plataforma-dados/05_fatia_visivel.md` `D5.6` — **sem mudança**: já
 carregam a correção de citação de `ADR-010` (commit `452e1f8`, anterior a esta task); esta task
 consome os números publicados ali, não os emenda. `docs/context/plataforma-dados/tasks_review.md:307`
