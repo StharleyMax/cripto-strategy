@@ -220,9 +220,11 @@ Registrado a pedido do owner (*"commit e registre sua decisão, como seguir"*). 
 3. **Tasks destravadas:** `T-08.9` (`blocked` → `todo`). `T-05.6` (`pointer_mode`) ganha o sub-modo `review`; `T-08.10`
    (`swing_point`) ganha `provenance ∈ {HUMANO, DETECTOR}` + `review_verdict` (ADR-017/D2). Ajuste de escopo dessas duas é
    ato do `/tech-lead` na fase 08, não deste commit. **Dono: /tech-lead → /build.**
-4. **Baixar o histórico recomendado** (§3 do relatório do arquiteto): klines 1m/15m/1h BTCUSDT desde 2020-01 (164 MB zip) e
-   `metrics` 5 min desde 2020-09 (25 MB) — fica em `data/`, catalogado em `data/MANIFEST.md`, não versionado. **Dono: time.**
-   `aggTrades` (44 GB total; ~11,5 GB desde 2025-01) **espera decisão do owner**.
+4. **Baixar o histórico recomendado** (§3 do relatório do arquiteto), **na variante de menor pegada**: klines 1m/15m/1h
+   BTCUSDT desde 2020-01 (164 MB zip) e `metrics` 5 min desde 2020-09 (25 MB) — zipados, em **R2** (free tier já
+   provisionado, `premissas-de-infra-e-stack.md` §2.2), catalogados em `data/MANIFEST.md`, não versionados e **fora do disco
+   da VPS**. **Dono: time.** `aggTrades` em volume **NÃO entra** — ver §10; `side_source = taker_ls` do `metrics` é o
+   parâmetro já previsto na tabela §6.3 para o histórico longo.
 5. **Fixture de regressão do detector:** a porta Python `scripts/q11-swing-measure/break_by_measure.py` reproduz o piloto
    (37/20/17/16 · 5/3/2/5 · 22/11/11/14); quando `T-08.10` implementar o detector em produção, o teste de igualdade de conjunto
    é contra esse par (piloto ⇄ porta) e contra o JSON do owner. **Dono: /build + /qa.**
@@ -230,3 +232,32 @@ Registrado a pedido do owner (*"commit e registre sua decisão, como seguir"*). 
 
 **O que este commit NÃO faz:** não aprova ADR, não avança estado no ledger, não altera Jira além do que o owner mandou
 (desbloqueio), não versiona `out/marcador.html` nem `data/`.
+
+## 10. Correção do coordenador (2026-09-03) — premissas de infra que eu deixei de aplicar
+
+**Citação literal do owner:** *"lembre-se das premissas que estabelecomos no começo. Temos pouco recurso, sistema ira rodar em
+vps compartilhada. Estamos usando s3 free tier do cloudflare e por hora temos apenas o postgres na aplicação. Devemos usar ele
+como banco colunar muito provavelmente, se for a melhor opção. então ter gigas e giags e aggtrades n é muito bom e discutimos
+muito sobre isso já em sessões anteriores"* `[PREMISSA-OWNER: 2026-09-03]`.
+
+**O erro, nomeado:** no §9 item 4 e na mensagem ao owner eu apresentei *"quanto de `aggTrades` baixar (≈11,5 GB desde
+2025-01)"* como decisão aberta do owner. Isso **reabriu `Q9`**, que está `MORTA` desde R2 por aritmética de disco
+(`decisoes-do-owner.md:359`), e ignorou `premissas-de-infra-e-stack.md` §3.2 (VPS compartilhada, 6 serviços, disco sob pressão,
+R2 já provisionado) e `ADR-002` (motor de armazenamento; Postgres row-store eliminado para a série, D3; Timescale-na-instância
+e Parquet/R2+DuckDB entre os candidatos). O relatório do arquiteto **já trazia** a saída de menor pegada — linha
+*"mínimo utilizável 2023-01→: ~81 MB zip 1m + 15 MB metrics"* e `side_source = taker_ls` — e eu escolhi destacar a variante
+cara. O relatório do arquiteto (`gates/Q11-v1-validacao-quant-architect.md` §3) **não foi editado**; esta seção o corrige por
+cima, para não reescrever documento de terceiro.
+
+**O que vale a partir daqui, e é compatível com as premissas:**
+
+| item | pegada | onde mora | decisão |
+|---|---|---|---|
+| klines 1m/15m/1h BTCUSDT 2020-01→ | 164 MB zip | R2 (free tier 10 GB) | **entra** — estrutura e walk-forward |
+| `metrics` 5 min BTCUSDT 2020-09→ (OI, L/S, taker L/S) | 25 MB | R2 | **entra** — "dinheiro preso" e `side_source = taker_ls` |
+| `aggTrades` histórico (44 GB; 11,5 GB desde 2025-01) | GB | — | **NÃO entra.** `Q9` `MORTA`; CVD por tick só sobre os 4 dias já em disco (831 MB, `data/MANIFEST.md`) e, se um dia for requisito, captura ao vivo em janela curta com orçamento declarado — nunca backfill em massa |
+| motor de consulta sobre esses arquivos | 0 daemon novo | Postgres existente **ou** DuckDB embarcado lendo R2 | **é a `ADR-002`**, não este handoff; nenhuma recomendação aqui pode pressupor um serviço a mais na VPS |
+
+**Falsificador desta correção:** se alguma linha da tabela paramétrica (§6.3 do relatório) passar a exigir `aggTrades`
+histórico para ser testável fora da amostra, a linha é que muda de fonte (`taker_ls`, `metrics`) ou sai do v1 — o volume não
+sobe para acomodá-la.
