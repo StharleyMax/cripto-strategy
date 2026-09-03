@@ -39,6 +39,7 @@ import {
   FIVE_MINUTES_MS,
   RANGE_START_MS,
   RANGE_END_MS_EXCLUSIVE,
+  S2_PRICE_USE,
 } from "./s2-panels.ts";
 import { parseKlinesDays } from "./s2-klines-loader.ts";
 import { assembleOiPoints } from "./s2-oi-loader.ts";
@@ -89,7 +90,10 @@ const { deltas: cvdDeltas, missingDays: cvdMissingDays, coveredDays: cvdCoveredD
   cvdCsvTextByDay,
 );
 
-const price = buildPricePanel(candles);
+// `T-05.5`: `buildPricePanel` now returns a `PricePanel` (`{priceSource, priceUse, series}`)
+// — `price` here stays the plain `ChartSeries` every assertion below already expects
+// (`.slots`), by pulling `.series` out at the one call site instead of touching each one.
+const price = buildPricePanel(candles, S2_PRICE_USE).series;
 const oi = buildOiPanel(oiPoints, oiMissingDays);
 const cvd = buildCvdPanel(cvdDeltas, cvdMissingDays, cvdCoveredDays);
 

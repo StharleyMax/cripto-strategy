@@ -899,3 +899,75 @@ Este `README.md` — **atualizado**, `§11` nova (append-only). `docs/adr/ADR-00
 `docs/context/plataforma-dados/gates/T-08.11-design.md` — **sem mudança**: gate de design já
 concluído antes desta implementação, veredito não revisitado (nenhum elemento visual novo
 apareceu, falsificador do próprio gate não disparou).
+
+## 13. `src/charts/s2-price-source.ts` + `s2-annotation-price-binding.ts` — `price_source`/`price_use` do painel de Preço, `T-05.5` (2026-09-03)
+
+`T-05.5` (`CST-39`, componente `charts`) escreve o item `5.7` do plano `05` e `D5.5`:
+"o painel de Preço declara `price_source` E `price_use` na linha do painel; a marcação fica
+amarrada à série de preço" (`ADR-007`/`PS-1`, `PS-3`). Composto sobre `T-05.2` (`s2-panels.ts`,
+já em `master`) e sobre `T-05.4`'s `s2-annotation-identity.ts` (`D5.10`) — nenhum dos dois foi
+reimplementado, ambos foram importados/estendidos.
+
+### O que cada arquivo novo fecha
+
+- **`s2-price-source.ts`** — transcrição independente de `ADR-007`'s decision table na CAMADA
+  DE CONCEITO (`klines_last`/`mark_price`, pré-substituição), o mesmo movimento que
+  `canonical-grid.ts` já faz para a grade: não importa `backend/.../price_source_catalog.py`
+  (linguagem diferente) nem `frontend/src/features/s3-inspector/series-catalog.ts` (`web`; a
+  fronteira `D5.12` proíbe `charts`→`web` nos dois sentidos, `eslint-boundary.test.ts`).
+  `resolvePriceSource(priceUse: PriceUse | null)` recusa `null` (`MissingPriceUseError`) e
+  qualquer valor fora do conjunto fechado (`InvalidPriceUseError`) — `PS-1` como mecanismo, não
+  convenção: nenhuma assinatura permite ao chamador esquecer o argumento e receber um default.
+- **`s2-panels.ts`** (modificado) — `buildPricePanel` passa a exigir `priceUse: PriceUse` e
+  devolve `PricePanel { priceSource, priceUse, series }` em vez de um `ChartSeries` nu;
+  `S2Panels.price` e `S2RawInputs.priceUse` seguem o mesmo formato. `S2_PRICE_USE =
+  "structure_detection"` é a constante, documentada e exportada, que o painel S2-mínima usa —
+  visual/estrutura, não liquidação/funding/custo — e `ADR-007` resolve isso para
+  `price_source = klines_last`.
+- **`s2-annotation-price-binding.ts`** — `createPriceBoundAnnotation` COMPÕE
+  `createAnnotationIdentity` (`D5.10`, não tocado) com `resolvePriceSource`, produzindo
+  `PriceBoundAnnotation { principalId, createdAtMs, priceSource, priceUse }`.
+  `describeAnnotationOnReopen(annotation, currentPriceSource)` é o falsificador de `D5.5`
+  executável: devolve `{isSamePriceSeries, label}`, com `label = "marcada sobre outra série de
+  preço"` (`PRICE_SERIES_MISMATCH_LABEL`, o texto exato que `ADR-007`/`PS-3` nomeia) sempre que
+  `isSamePriceSeries` é `false`.
+
+### O teste negativo obrigatório (`D5.5`), literal
+
+`s2-annotation-price-binding.test.ts`: marca sob `structure_detection`
+(⇒ `price_source = klines_last`), reabre com `currentPriceSource = resolvePriceSource(
+"liquidation_trigger")` (⇒ `"mark_price"`) — `isSamePriceSeries === false` e
+`label === "marcada sobre outra série de preço"`. Controle positivo irmão (mesma fonte na
+reabertura ⇒ `label === null`) garante que o teste negativo não passaria por um comparador que
+sempre devolve `false`.
+
+### Comandos rodados, literais
+
+```bash
+npm --prefix frontend install     # node_modules é gitignored, ausente em worktree novo
+npm --prefix frontend run lint    # eslint src -> 0 erro, 0 aviso
+npm --prefix frontend run test:charts
+  # node --test 'src/charts/*.test.ts' -> 78 pass (8 novos: 3 s2-price-source.test.ts +
+  # 5 s2-annotation-price-binding.test.ts), 0 fail
+  # (requer data/binance/{klines,metrics,aggtrades}/ presente no worktree — ausente por
+  # padrão em worktree novo, data/ é gitignored; copiado do checkout principal só para
+  # rodar esta suíte, nunca versionado)
+harness rules --mode sweep --changed-only
+  -> 0 achado, rc=0
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (`harness policy --key test_cmd` só cobre `sentimento`).
+Medição qualitativa: as duas funções novas (`resolvePriceSource`,
+`describeAnnotationOnReopen`) e o construtor novo (`createPriceBoundAnnotation`) têm teste
+para cada ramo de decisão — as 5 entradas de `PRICE_USES`, os dois casos de recusa de `PS-1`
+(`null` e valor inválido), o falsificador `D5.5` e seu controle positivo, e a propagação da
+recusa de `D5.10` (`principalId` vazio) através do novo construtor.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§13` nova (append-only). `docs/adr/ADR-007-price-source-por-uso.md`
+— **sem mudança**: `PS-1`/`PS-3` já fixam a decisão; esta task consome (lado `charts`), não
+emenda. `frontend/src/charts/s2-annotation-identity.ts` — **sem mudança**: `D5.10`'s próprio
+construtor e recusa continuam intocados, reusados por composição.
