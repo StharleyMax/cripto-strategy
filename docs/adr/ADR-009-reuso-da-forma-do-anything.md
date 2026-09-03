@@ -291,3 +291,60 @@ grep -hE '^(paths|target) *=' packs/{core,web-fullstack,hexagonal-layers,read-mo
 | # | falsifica | comando | tem de ser |
 |---|---|---|---|
 | **F-D6-5b** | **substitui o RELÓGIO de `F-D6-5`, não o critério** — e a substituição é PAREADA com `D6.7`, que dá ao segundo natureza um item especificado e um DoD | ao fechar `9.6`/`T-09.4` (o registro da decisão de `infra`): contar as naturezas distintas que declaram `infra` | **≥ 2 naturezas** — a camada consumidora **e** ao menos uma de `deploy/`/backup/topologia. **Por que o relógio mudou, e por que isto NÃO é afrouxamento:** *"ao fim da fase `05`"* era um marco em que a resposta é **estruturalmente pré-determinada** — a `05` é a fatia visível, e `deploy/` **não tem item em nenhuma das 9 fases** ⇒ o critério mediria o escopo da fase, não a largura do rótulo. O novo marco é **mais tarde e mais duro**: é onde a decisão de `infra` é **registrada**, e chegar lá com uma natureza só significa que **`api` (opção `B`) era o nome certo**. **Mover este relógio SEM `D6.7` teria sido lavar o falsificador — por isso as duas metades estão na mesma seção** |
+
+### D6.8 · **O ATO DE POLÍTICA ACONTECEU** — `components` 6 → 7, e o que a medição de `D6.5` dizia caduca aqui · `T-09.4`/item `9.6` · 2026-09-03
+
+**Isto NÃO reescreve `D6.5`, e a razão é a mesma que fez `D6.1` não reescrever `D1`:** `D6.5` fechou com *"Nada foi escrito em `harness.toml` por esta emenda: `harness policy --key components` continua devolvendo **6** rótulos até o ato de política acontecer `[MEDIDO 2026-09-03]`"*. **Aquela frase continua verdadeira sobre aquela emenda** — ela era medição datada, e apagá-la esconderia que o documento esteve marcado como decidido antes de a política mudar, que é exatamente a classe de defeito que ela nomeia. **O ato é este parágrafo, e ele é auditável por comando:**
+
+```bash
+harness policy --key components
+# ANTES:  ["sentimento", "charts", "convergencia", "backtest", "web", "docs"]            (6)
+# DEPOIS: ["sentimento", "charts", "convergencia", "backtest", "web", "docs", "infra"]   (7)
+```
+
+`[MEDIDO 2026-09-03, n=1 chave de política]`. O motivo escrito vive em **duas** superfícies e as duas dizem a mesma coisa: `harness.toml` (comentário do enum, imediatamente acima de `components`) e esta seção.
+
+**A DECISÃO, NAS DUAS DIREÇÕES QUE `D9.6` EXIGE** — *"adotado **ou** recusado, com o motivo — **nunca ausente**"*. `[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]` — **não é fala do owner:** ele escolheu a opção `A` de um menu de três que o `/architect` redigiu, com o custo de cada uma declarado (`CLAUDE.md` §*"os dois rótulos de owner não são o mesmo ato"*).
+
+| direção | rótulo | o motivo, na redação do menu |
+|---|---|---|
+| **ADOTADO** | **`infra`** | custo aceito: *"põe o schema HTTP e o TLS/compose sob o mesmo juiz — duas classes de risco diferentes com um só dono"*. É o rótulo largo: cobre a camada consumidora (`src/api/`, `src/jobs/`) **e** `deploy/`/backup/topologia numa decisão só |
+| **RECUSADO** | `api` | *"nome preciso para a API, mas **mente para o worker** (`jobs/` não é API) e deixa `ADR-009/D5` aberto para `deploy/`/backup ⇒ **duas decisões em vez de uma**"* |
+| **RECUSADO** | **nenhum rótulo** | *"zero ato de política, mas cai em `ADR-003:11-13` (componente sem dono de julgamento) e faria `sentimento` rotular código que não é dele — **falso por construção**"* |
+
+**O que o ato mudou, medido — e é MENOS do que o rótulo sugere:** ele afeta **só** `components` + `[agents.by_component]` (`V-16`), ou seja **quem julga**. A consequência corrente e visível:
+
+```bash
+harness tasks validate plataforma-dados
+# ANTES:  FALHOU — 93 task(s), 2 ERROR, 4 WARN   (rc=1)   ERROR = V-16 em T-05.12 e T-05.13
+# DEPOIS: OK     — 93 task(s), 0 ERROR, 4 WARN   (rc=0)
+harness validate --strict   # politica valida: cripto-strategy (schema_version=1)  rc=0, antes e depois
+```
+
+`[MEDIDO 2026-09-03, universo: 93 tasks de `docs/context/plataforma-dados/tasks.toml`]`. **As 4 `WARN` são pré-existentes** (`V-09`/`blocked_reason` em `T-02.4b`, `T-03.9`, `T-05.10`, `T-07.11`) e **continuam** — este ato não as toca, e fingir que as zerou seria creditar a si uma limpeza que não fez.
+
+**⚠️ Verde não prova nada até uma mutação reprovar — a sonda, com os dois lados:** arquivo de tasks avulso com duas tasks, uma `components = ["infra"]` e outra `components = ["foo"]`.
+
+```bash
+harness tasks validate <sonda>.toml
+# MORDE: ERROR ...:T-99.2 V-16 componente fora do enum: foo (validos: sentimento, charts,
+#        convergencia, backtest, web, docs, infra)
+# CALA:  T-99.1 (components = ["infra"]) NAO produz nenhum V-16
+```
+
+`[MEDIDO 2026-09-03, n=2 tasks]` — ⇒ o enum **não** virou permissivo: ele passou a aceitar exatamente **um** rótulo a mais, e continua reprovando o que está fora. (O outro `ERROR` da sonda é `V-23`, cabeçalho sem `plan`, alheio a `V-16`; declarado para a saída não parecer mais limpa do que é.)
+
+**`F-D6-5b` AVALIADO NO MARCO QUE ELE MESMO ESCOLHEU — ele NÃO dispara, e a contagem é por comando.** O relógio é *"ao fechar `9.6`/`T-09.4`"*, que é agora:
+
+| natureza | quem a declara | comando |
+|---|---|---|
+| **camada consumidora** (`src/api/`, `src/jobs/`) | item `5.13` do plano `05` (componente-alvo `infra`, sem marca de forçamento) + tasks `T-05.12`, `T-05.13` (`components = ["docs","infra"]`) | `grep -n 'components = .*"infra"' docs/context/plataforma-dados/tasks.toml` → **2 tasks** |
+| **`deploy/`** (compose, reverse proxy, TLS) | item `1.14` do plano `01` (componente-alvo `infra`), criado pela reabertura de 2026-09-03 | `sed -n '154p' docs/plans/SPEC-001-plataforma-dados/01_governanca_gateante.md` |
+
+⇒ **2 naturezas distintas**, o mínimo que `F-D6-5b` exige `[MEDIDO 2026-09-03, n=2 itens de plano + 2 tasks]`. **E o falsificador continua vivo, não gasto:** se o item `1.14` for retirado ou nunca virar task, `infra` volta a rotular só a camada de API e **`api` (opção `B`) era o nome certo**. O sinal a observar está escrito no próprio plano `01` (*"`find deploy -type f | wc -l` estagnado em 1"*).
+
+**⛔ O QUE ESTE ATO NÃO FAZ, e nomear isto é a parte que impede o falso fechamento:**
+
+1. **Não declara o juiz.** `[agents.by_component.infra]` continua **ausente** — é `T-01.8`, e a ordem não é preferência: `V-16` (`lib/policy.py:539-543`) reprova chave de `agents.by_component` fora do enum, logo **enum primeiro, juiz depois**. ⇒ **`F-D6-6` está DISPARADO agora, por construção e por uma janela conhecida**: `infra` está no enum e ausente da tabela de juízes. **Condição datada, com dono (`T-01.8`/`CST-100`) e auto-resolúvel** — e é o preço da ordem que `V-16` impõe, não um descuido.
+2. **Não fecha `deploy/`.** **Rótulo não é cobertura:** `code_paths.include_prefixes` continua com **3** entradas e `ls -d deploy` continua **inexistente** `[MEDIDO 2026-09-03]`. Quem fecha é o item `1.14` (`D1.14`), em três partes que só valem juntas.
+3. **Não toca o ledger.** `gate-record`, `approve` e `advance` são atos de **owner** (`CLAUDE.md` §*"O ledger é a identidade do estado"*), e `T-09.4` permanece com o status que o tracker disser até o owner movê-lo.

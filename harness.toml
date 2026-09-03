@@ -29,9 +29,50 @@ schema_version = 1
 #   web          — frontend Next.js (dashboard, painéis sincronizados, presets).
 #   docs         — o que já existe hoje.
 #
+#   infra        — a camada consumidora (`src/api/`, `src/jobs/`) e o que serve o
+#                  processo: `deploy/` (compose, reverse proxy, TLS), backup e
+#                  topologia. ACRESCENTADO em 2026-09-03, 6 -> 7 — ver o bloco abaixo.
+#
 # Diferente do comparador-preco, nenhum módulo foi deixado de fora: a proposta (§1)
 # coloca os quatro como objeto do MESMO discovery, não como fases futuras.
-components = ["sentimento", "charts", "convergencia", "backtest", "web", "docs"]
+#
+# ── `infra`: O ATO DE POLÍTICA, E O MOTIVO ESCRITO ────────────────────────────────
+#
+# `[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]` — NÃO é fala
+# do owner: ele escolheu a opção `A` de um menu de três que o `/architect` redigiu,
+# com o custo de cada uma declarado (`CLAUDE.md` §"os dois rótulos de owner não são o
+# mesmo ato"). Alterar o vocabulário fechado é ato do owner, e este é o ato.
+#
+#   ADOTADO — `infra`. Custo aceito, na redação do menu: "põe o schema HTTP e o
+#   TLS/compose sob o mesmo juiz — duas classes de risco diferentes com um só dono".
+#
+#   RECUSADA — `api`: "nome preciso para a API, mas MENTE para o worker (`jobs/` não
+#   é API) e deixa `ADR-009/D5` aberto para `deploy/`/backup => duas decisões em vez
+#   de uma".
+#
+#   RECUSADA — nenhum rótulo: "zero ato de política, mas cai em `ADR-003:11-13`
+#   (componente sem dono de julgamento) e faria `sentimento` rotular código que não é
+#   dele — falso por construção".
+#
+# O que o rótulo faz, MEDIDO e menos do que a primeira redação da decisão afirmava:
+# afeta SÓ `components` + `[agents.by_component]` (`V-16`, `lib/policy.py:539-543`) —
+# ou seja, QUEM JULGA. `[code_paths]` e `require-code` não dependem dele
+# [MEDIDO 2026-09-03: `harness code-paths classify backend/src/api/...` já devolve
+# `producao` sem rótulo nenhum; `backend/src` é 1 dos 19 prefixos].
+#
+# ⛔ RÓTULO NÃO É COBERTURA: `infra` no enum NÃO faz `deploy/` ser medido por nada —
+# `code_paths.include_prefixes` tem 3 entradas e `ls -d deploy` é inexistente
+# [MEDIDO 2026-09-03]. Quem fecha isso é o item `1.14` do plano `01`, não este ato.
+#
+# ⛔ ESTE ATO NÃO DECLARA O JUIZ. `[agents.by_component.infra]` é `T-01.8`, e a ordem
+# não é preferência: `V-16` reprova componente fora do enum, logo `components` de 6
+# para 7 PRIMEIRO, juiz DEPOIS. `infra` no enum e ausente de `[agents.by_component]`
+# é a condição que `ADR-009/F-D6-6` existe para acusar — ela é CONHECIDA, DATADA e
+# fecha em `T-01.8`.
+#
+# Registro: `ADR-009` §D6.5 e §D6.8 · item `9.6` / DoD `D9.6` do plano `09` ·
+# `docs/decisoes-do-owner.md` §"2026-09-03 — o rótulo da camada de API".
+components = ["sentimento", "charts", "convergencia", "backtest", "web", "docs", "infra"]
 
 [repo]
 name = "cripto-strategy"
