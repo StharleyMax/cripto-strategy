@@ -725,7 +725,7 @@ tracker = { provider = "jira", id = "CST-44", url = "https://conversationhub.atl
 id = "T-06.1"
 title = "[sentimento] 06 · series_catalog como contrato lido pelos testes; unit e denom obrigatorios verbatim da fonte"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-04.2"]
 refs = ["SPEC-001 §3.3", "CA-F2-2", "CA-F2-11", "plano 06 itens 6.1+6.5+6.15"]
@@ -735,7 +735,7 @@ tracker = { provider = "jira", id = "CST-45", url = "https://conversationhub.atl
 id = "T-06.2"
 title = "[sentimento] 06 · Tabela de shift POR ENDPOINT: dump = REST -5 min, com takerlongshortRatio como excecao sem shift"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-06.1"]
 refs = ["CA-F2-1", "plano 06 item 6.2", "288 vs 288 e MAE = 0,000000 medidos"]
@@ -745,7 +745,7 @@ tracker = { provider = "jira", id = "CST-46", url = "https://conversationhub.atl
 id = "T-06.3"
 title = "[sentimento] 06 · As QUATRO series de L/S com colunas proprias; ls_ratio generico PROIBIDO"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-06.1"]
 refs = ["CA-F2-3", "SPEC-001 §5.11", "plano 06 itens 6.3+6.10", "DoD D6.4", "DoD D6.5", "DoD D6.6", "a doc do repositorio dizia TRES series e esta errada"]
@@ -755,7 +755,7 @@ tracker = { provider = "jira", id = "CST-47", url = "https://conversationhub.atl
 id = "T-06.4"
 title = "[sentimento] 06 · funding_settled != funding_estimado, series distintas com interval_hours_declared por linha"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-06.1"]
 refs = ["CA-F2-7", "SPEC-001 §3.4", "plano 06 item 6.4", "DoD D6.11", "DoD D6.12", "DoD D6.16", "4h e a regra (433 de 570), nao 8h"]
@@ -765,7 +765,7 @@ tracker = { provider = "jira", id = "CST-48", url = "https://conversationhub.atl
 id = "T-06.5"
 title = "[sentimento] 06 · reduction na SeriesKey: OI da Coinalyze = 4 linhas OHLC_OVER_BUCKET, Binance = 1 POINT"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-06.1"]
 refs = ["CA-F2-17", "plano 06 item 6.11", "DoD D6.7", "DoD D6.8", "sem este termo eram quatro series com a mesma identidade"]
@@ -775,7 +775,7 @@ tracker = { provider = "jira", id = "CST-49", url = "https://conversationhub.atl
 id = "T-06.6"
 title = "[sentimento] 06 · Quarentena pelo predicado de TRES termos; endpoint sem lag_ms grava available_at NULL + MODELED"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-06.1"]
 refs = ["CA-F2-2", "CA-F2-13", "SPEC-001 §5.2", "plano 06 item 6.12", "DoD D6.1", "DoD D6.2 (falsificador da fase)", "DoD D6.3", "a quarentena nao se abre aqui: abre com Q19 (T-03.6)"]
@@ -785,7 +785,7 @@ tracker = { provider = "jira", id = "CST-50", url = "https://conversationhub.atl
 id = "T-06.7"
 title = "[sentimento] 06 · ZL-1..ZL-3: zero devolvido pelo fornecedor nao e zero legitimo — converte em SEM_FONTE"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-06.6"]
 refs = ["SPEC-001 §5.3", "plano 06 item 6.13", "DoD D6.10", "CA-F3-10 tem de dizer que pontos x intervalo e POR LADO"]
@@ -795,7 +795,7 @@ tracker = { provider = "jira", id = "CST-51", url = "https://conversationhub.atl
 id = "T-06.8"
 title = "[sentimento] 06 · Campo aditivo desconhecido -> quarentena + alarme; campo ausente/renomeado -> reprova"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-06.6"]
 refs = ["CA-F2-12", "SPEC-001 §5.5", "plano 06 item 6.14", "DoD D6.14", "caso real: a Binance ADICIONOU nq ao aggTrades, e foi o que gerou CL-5"]
@@ -805,7 +805,7 @@ tracker = { provider = "jira", id = "CST-52", url = "https://conversationhub.atl
 id = "T-06.9"
 title = "[sentimento] 06 · As quatro series de preco, implied_avg_price PROIBIDO, fee_schedule datada, cvd_source com erro medido"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-06.1"]
 refs = ["ADR-007/PS-1", "ADR-007/PS-2", "CA-F2-14", "CA-F2-16", "ADR-001/5", "plano 06 itens 6.6+6.7+6.8+6.9", "DoD D6.9", "DoD D6.13"]
@@ -815,7 +815,7 @@ tracker = { provider = "jira", id = "CST-53", url = "https://conversationhub.atl
 id = "T-06.10"
 title = "[web] 06 · S3 inspetor de serie: catalogo filtravel + src_label_raw AO LADO de event_time na mesma linha"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T13:46:52Z @ e90266ad7c599e2f8f292890aa9a22ce7a880978
 phase = "06"
 depends_on = ["T-06.1", "T-05.8"]
 refs = ["SPEC-001 §6", "plano 06 item 6.16", "DoD D6.15", "nao reconcilia automaticamente: divergencia e exibida como divergencia"]
