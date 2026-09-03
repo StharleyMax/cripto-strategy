@@ -600,7 +600,7 @@ tracker = { provider = "jira", id = "CST-34", url = "https://conversationhub.atl
 id = "T-05.1"
 title = "[charts] 05 · Grade canonica como UMA funcao, dona de charts — o motor de backtest a importa, nunca reimplementa"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED (3 rodadas independentes) + REVIEW COMPLIANT em 2026-09-03T02:10Z @ 522b748 (PR #97)
 phase = "05"
 depends_on = ["T-01.2", "T-01.3", "T-04.4"]
 refs = [
