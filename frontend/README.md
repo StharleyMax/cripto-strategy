@@ -900,7 +900,86 @@ Este `README.md` — **atualizado**, `§11` nova (append-only). `docs/adr/ADR-00
 concluído antes desta implementação, veredito não revisitado (nenhum elemento visual novo
 apareceu, falsificador do próprio gate não disparou).
 
-## 13. `src/charts/s2-price-source.ts` + `s2-annotation-price-binding.ts` — `price_source`/`price_use` do painel de Preço, `T-05.5` (2026-09-03)
+## 13. `src/charts/s2-absence-policy.ts` — política de ausência por `nature` de `T-05.4` (2026-09-03)
+
+`T-05.4` (`CST-38`, componente `charts`) escreve o item `5.5` do plano `05` (`SPEC-001` §5.11,
+"Política de ausência por `nature`") mais os dois pedaços que o título da task nomeia
+explicitamente: o carimbo de idade do FECHO (`D5.1`) e a linha-guia apontando para trás
+(`D5.2`). Compõe sobre os painéis de `T-05.2` (`s2-panels.ts`, já em `master`) — não os
+reimplementa: toma `OiPanel.slots`/`CvdPanel.deltaSlots` (`ScalarSlot[]`, de
+`s2-scalar-grid.ts`) como entrada, igual a todo outro consumidor do diretório.
+
+**Escopo, declarado no cabeçalho do próprio arquivo:** §5.11 lista 6 `nature`s; este módulo
+resolve exatamente as 2 que têm painel real em `05_fatia_visivel.md` item `5.1` — `STOCK`
+(OI) e `FLOW` (CVD delta) —, não as 6. `RATIO`/`EVENT`/quarentena não têm consumidor nesta
+fase; escrevê-los agora seria política para um painel que não existe, o "amplia escopo" que
+o protocolo de despacho proíbe.
+
+### As três decisões de leitura que o SPEC não soletra em pseudocódigo
+
+1. **`D5.1` — o rótulo impresso é sempre o FECHO (`bucketStart + timeframe`), nunca o
+   bucket-start cru.** O falsificador do próprio plano é literal: o primeiro ponto de
+   `met/2026-08-23.csv` (bucket-start `00:00:00`) tem que ler `00:05:00Z` na tela — "três dos
+   quatro desenhos de UX imprimiram o rótulo cru", exatamente o defeito que a fase existe
+   para impedir. `formatCloseStamp`/`closeTimeMs` são o único lugar onde essa conversão
+   acontece; `formatHeldStockLabel` a consome, nunca a reimplementa.
+2. **`D5.2` — `STOCK` mantém (`held`) o último valor real, mas o trilho NUNCA passa de UM
+   bucket nativo.** OI publica 1 ponto a cada 5 min contra 1 candle de preço a cada 1 min
+   (`SPEC-001` §5.12: "1m → 0,2" pontos por barra) — 4 de cada 5 barras de 1 min não têm
+   ponto próprio de OI, e §5.11 manda ler isso como o valor mantido da última observação, em
+   tinta secundária, NUNCA como ausência (`resolveStockReading`, ramo `held`). O mesmo §5.11
+   proíbe "trilho maior que grade nativa": por isso a função olha para trás **exatamente um**
+   bucket nativo, nunca mais — provado contra o gap real de dia inteiro (`2026-08-22`, zero
+   arquivo `metrics`) em `s2-absence-policy.test.ts`: o primeiro bucket ausente do dia do
+   buraco ainda resolve `held` (1 bucket nativo de distância do último ponto real, `08-21
+   23:55`); o SEGUNDO já resolve `absent` — a prova de que o teto é honrado, não só afirmado
+   em prosa.
+3. **`D5.3` — `FLOW` nunca olha para um slot vizinho.** `LOCF` é proibido sem exceção para
+   `FLOW` (§5.11); `resolveFlowReading` faz uma única leitura no próprio instante — presente
+   (mesmo que um zero medido) ou ausente, nunca emprestado de outro bucket. Testado contra o
+   mesmo dia real ausente (`2026-08-22`, zero arquivo `aggTrades`) sem precisar ler os
+   milhões de linhas dos dias cobertos: a ausência de um dia inteiro no disco já é a prova, e
+   `assembleCvdDeltas` já reporta isso (`s2-cvd.ts`) sem reimplementação.
+
+**Geometria vs. texto — por que `guideLine`/`observedBucketStartMs` usam bucket-start
+enquanto o rótulo impresso usa FECHO:** o ponto real de OI já é plotado no eixo X em
+`slot.time` (bucket-start) por `lineSeriesLossless` (`s2-lightweight-adapter.ts`) — mudar
+essa posição para o FECHO quebraria o alinhamento com a grade canônica que `D5.9` prova
+bit-a-bit. A convenção do FECHO (`D5.1`) é só do TEXTO impresso; a geometria da linha-guia
+(`{fromMs, toMs}`, ambos bucket-start) continua na mesma posição que o resto do gráfico já
+usa.
+
+### Comandos rodados, literais
+
+```bash
+cd frontend
+npm run lint         # eslint src                        -> 0 erro, 0 aviso
+npm run test:charts  # node --test 'src/charts/*.test.ts' -> 79 pass (10 novos), 0 fail
+git add frontend/src/charts/s2-absence-policy.ts frontend/src/charts/s2-absence-policy.test.ts
+harness rules --mode sweep --changed-only
+  -> rc=0, 0 achado (nenhuma linha ndjson)
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (`harness policy --key test_cmd` só cobre `sentimento`,
+mesmo silêncio já registrado em `§8`/`§9`/`§10`/`§12` para `web`). Medição qualitativa: 10
+testes novos cobrem as 6 funções exportadas (`resolveStockReading`, `resolveFlowReading`,
+`closeTimeMs`, `formatCloseStamp`, `formatHeldStockLabel`, `formatFlowValue`), os 3 ramos de
+`StockReading` (`exact`/`held`/`absent`) inclusive o teto de UM bucket do trilho de
+vigência, os 2 ramos de `FlowReading` (`present`/`absent`, incluindo zero medido ≠ ausência),
+e os 2 erros de chamador (grade vazia; consulta `FLOW` desalinhada) — 4 dos 10 testes contra
+o fixture REAL (`data/binance/metrics/BTCUSDT-metrics-2026-08-{22,23}.csv` via
+`buildOiPanel`/`assembleCvdDeltas`, nenhum synthetic point onde um gap de verdade já existe).
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§13` nova (append-only). `docs/specs/SPEC-001-plataforma-
+dados.md` §5.11 — **sem mudança**: a tabela já fixa a política; esta task a implementa, não a
+emenda. `docs/adr/ADR-003-fronteira-charts-web.md` — **sem mudança**: nenhuma superfície nova
+cruza a fronteira `charts`⇄`web` (módulo puro, mesma disciplina FR-1 de todo o diretório).
+
+## 14. `src/charts/s2-price-source.ts` + `s2-annotation-price-binding.ts` — `price_source`/`price_use` do painel de Preço, `T-05.5` (2026-09-03)
 
 `T-05.5` (`CST-39`, componente `charts`) escreve o item `5.7` do plano `05` e `D5.5`:
 "o painel de Preço declara `price_source` E `price_use` na linha do painel; a marcação fica
@@ -967,7 +1046,7 @@ recusa de `D5.10` (`principalId` vazio) através do novo construtor.
 
 ### Doc delta
 
-Este `README.md` — **atualizado**, `§13` nova (append-only). `docs/adr/ADR-007-price-source-por-uso.md`
+Este `README.md` — **atualizado**, `§14` nova (append-only). `docs/adr/ADR-007-price-source-por-uso.md`
 — **sem mudança**: `PS-1`/`PS-3` já fixam a decisão; esta task consome (lado `charts`), não
 emenda. `frontend/src/charts/s2-annotation-identity.ts` — **sem mudança**: `D5.10`'s próprio
 construtor e recusa continuam intocados, reusados por composição.
