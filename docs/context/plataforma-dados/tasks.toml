@@ -640,7 +640,7 @@ tracker = { provider = "jira", id = "CST-37", url = "https://conversationhub.atl
 id = "T-05.4"
 title = "[charts] 05 · Politica de ausencia por nature; carimbo de idade do FECHO; linha-guia apontando para tras"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "05"
 depends_on = ["T-05.2"]
 refs = ["SPEC-001 §5.11", "plano 05 item 5.5", "DoD D5.1", "DoD D5.2", "DoD D5.3"]
