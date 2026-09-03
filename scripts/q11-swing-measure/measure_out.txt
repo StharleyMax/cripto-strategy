@@ -1,0 +1,52 @@
+
+======== 1. fractal swing counts, BTCUSDT tf2 1m 2026-08-16..23 ========
+bars_1m=11520 first_open=1786838400000 last_open=1787529540000
+tf,bars,N,swing_highs,swing_lows,tie_highs,tie_lows,confirm_delay_minutes
+1m,11520,2,1149,1177,1029,1004,2
+1m,11520,5,559,571,467,499,5
+1m,11520,10,323,305,258,249,10
+1m,11520,20,169,160,116,115,20
+5m,2304,2,309,286,63,52,10
+5m,2304,5,128,144,27,22,25
+5m,2304,10,71,64,12,10,50
+5m,2304,20,31,38,5,3,100
+15m,768,2,103,106,10,5,30
+15m,768,5,43,45,6,0,75
+15m,768,10,24,23,2,0,150
+15m,768,20,13,13,0,0,300
+1h,192,2,27,24,0,0,120
+1h,192,5,11,11,0,0,300
+1h,192,10,5,6,0,0,600
+1h,192,20,2,1,0,0,1200
+4h,48,2,6,6,0,0,480
+4h,48,5,2,1,0,0,1200
+4h,48,10,1,0,0,0,2400
+4h,48,20,0,0,0,0,4800
+
+======== 1b. does 15m N=5 swing sit inside a 1m N=k swing bucket? (nesting) ========
+15m_N5_swings=88 1m_N5_swings=1130 15m_swings_with_1m_swing_in_same_bucket=83 (94.3%)
+15m_N5_swings=88 1m_N10_swings=628 15m_swings_with_1m_swing_in_same_bucket=81 (92.0%)
+15m_N5_swings=88 1m_N20_swings=329 15m_swings_with_1m_swing_in_same_bucket=78 (88.6%)
+15m_N5_swings=88 1m_N40_swings=175 15m_swings_with_1m_swing_in_same_bucket=78 (88.6%)
+
+======== 2. swing timestamp agreement klines_last vs mark_price, 5m ========
+day,N,last_highs,mark_highs,same_ts_highs,last_lows,mark_lows,same_ts_lows,jaccard_all
+2026-08-23,2,42,42,37,39,44,37,0.802
+2026-08-23,3,28,31,24,25,28,23,0.719
+2026-08-23,5,17,18,13,18,21,16,0.644
+2026-08-23,10,8,9,6,7,7,5,0.550
+2026-08-21 (last=1m tf2 resampled),2,34,37,33,34,35,30,0.813
+2026-08-21 (last=1m tf2 resampled),3,26,27,25,27,28,25,0.860
+2026-08-21 (last=1m tf2 resampled),5,13,14,12,15,15,14,0.839
+2026-08-21 (last=1m tf2 resampled),10,8,8,8,7,8,7,0.938
+
+======== 3. trapped-money candidates: dOI_4h >= +1% AND price range_4h <= 1%, 5m grid, 2026-08-16..23 ========
+oi_points_in_window=2304 expected_5m_buckets=2304
+candidate_buckets=5 episodes=1
+episode,start_utc,end_utc,len_buckets,max_dOI_pct,range_hi,range_lo,exit_dir,oi_change_4h_after_exit_pct,bars_to_exit
+0,08-18 18:15,08-18 18:35,5,2.12,65057.9,64429.5,none,na,na
+
+======== 3b. dOI_4h distribution, BTCUSDT metrics 5m, 30 days (2026-07-25..08-23) ========
+oi_points_30d=8637 expected=8640 first=2026-07-25 00:00:00 last=2026-08-23 23:35:00
+dOI_4h n=8589 p50=-0.038% p90=1.350% p95=2.139% p99=4.026% max=6.662% min=-5.910%
+share dOI_4h>=+1%: 13.63%
