@@ -899,3 +899,80 @@ Este `README.md` — **atualizado**, `§11` nova (append-only). `docs/adr/ADR-00
 `docs/context/plataforma-dados/gates/T-08.11-design.md` — **sem mudança**: gate de design já
 concluído antes desta implementação, veredito não revisitado (nenhum elemento visual novo
 apareceu, falsificador do próprio gate não disparou).
+
+## 13. `src/charts/s2-pointer-mode.ts` — `pointer_mode ∈ {read, annotate}` declarado (`T-05.6`, 2026-09-03)
+
+`T-05.6` (`CST-40`, componente `charts`, plano `05_fatia_visivel.md` item `5.8`, `SPEC-001:284`):
+`pointer_mode` declarado com a camada de overlay reservada acima do plot e abaixo do crosshair,
+e o clique/Espaço travando o crosshair só em `read`. O título da task nomeia o objetivo: **"torna
+`Q11` decisão de horas, não de arquitetura"** — `Q11` (owner marca o corpus) continua **ABERTA**;
+o que este módulo entrega é a forma que sobrevive a qualquer resposta dela, para que respondê-la
+mais tarde custe preencher o comportamento de `annotate`, não desenhar a arquitetura de novo.
+
+**Escopo, e por que ele para exatamente aqui:** `s2-annotation-identity.ts` (`T-05.2`, `D5.10`) já
+citava esta task pelo número como a dona de `pointer_mode` e a deixava fora do próprio escopo.
+Simetricamente, `swing_point` (`SPEC-001` §3.6, "o primeiro primitivo de `<Anotacao>`") é `T-08.7`,
+não esta. `s2-pointer-mode.ts` declara **o quê** acontece quando um evento de ponteiro chega em
+cada modo — não desenha nada, não implementa marcação, não toca o DOM (`ADR-003` FR-1: zero
+`fetch`, zero listener, zero `node:fs`; toda entrada é argumento).
+
+**O que o módulo declara, e como cada peça fecha a frase de `SPEC-001:284`:**
+- `PointerMode = "read" | "annotate"` + `POINTER_MODES` (runtime) + `assertPointerMode` — recusa
+  qualquer valor fora do conjunto (mesmo padrão de recusa de `MissingPrincipalIdError` em
+  `s2-annotation-identity.ts`: um `pointer_mode` inválido cruzando a borda do event handler não
+  vira `"read"` por default silencioso).
+- `ChartLayer = "plot" | "overlay" | "crosshair"` + `LAYER_ORDER` (ordenado, baixo→alto) +
+  `assertOverlayIsSandwiched` — checa "overlay acima do plot e abaixo do crosshair" **por
+  posição**, não por nome, para que uma 4ª camada futura ou uma reordenação acidental trisque o
+  invariante em vez de desenhar marcação sob os candles em silêncio.
+- `resolvePointerAction(mode, input)` — a frase "clique/Espaço só significam travar crosshair em
+  `read`" tornada executável: em `read` devolve `{ kind: "lock_crosshair" }`; em `annotate` **nunca**
+  devolve isso — devolve `{ kind: "annotate_reserved", mode: "annotate" }`, o placeholder explícito
+  que `T-08.7`/`Q11` preenchem depois.
+- `PointerInputKind = "click" | "space"` + `assertPointerInputKind` — mesma disciplina de recusa,
+  simétrica à de `mode`.
+
+### Falsificadores rodados — não só "os testes passam"
+
+Cada proteção tem o caso que ela rejeita, no mesmo arquivo de teste:
+- `assertPointerMode`/`assertPointerInputKind` recusam valor fora do conjunto declarado (inclusive
+  variação de maiúscula: `"Read"` ≠ `"read"`).
+- `assertOverlayIsSandwiched` recusa `overlay` abaixo de `plot`, `overlay` acima de `crosshair`, e
+  um conjunto de camadas incompleto — três `RangeError` distintos, um por violação.
+- `resolvePointerAction("annotate", …)` é comparado por `notDeepEqual` contra `{ kind:
+  "lock_crosshair" }` — a garantia não é só "devolve outra coisa", é "nunca é igual à ação de
+  `read"`.
+- `resolvePointerAction` recusa um `mode`/`input` que contornou o tipo estático via `as unknown as`
+  (o caso de um valor vindo de fora da árvore TypeScript, ex. `JSON.parse` de um evento).
+
+### Comandos rodados, literais
+
+```bash
+npm --prefix frontend install    # node_modules não versionado, worktree novo
+npm --prefix frontend run lint   # eslint src -> 0 erro, 0 aviso
+npm --prefix frontend run test:charts
+  # node --test 'src/charts/*.test.ts' -> 15/15 nos 15 testes de s2-pointer-mode.test.ts (pass)
+  # 23 falhas PRE-EXISTENTES, não relacionadas: canonical-grid-sha256-proof.test.ts,
+  # s2-axis-integration.test.ts, s2-cvd.test.ts, s2-klines-loader.test.ts,
+  # s2-oi-loader.test.ts, s2-panels.test.ts — todas ENOENT/asserção sobre
+  # `data/binance/**`, que não existe neste worktree (dado bruto não é versionado,
+  # `.gitignore:51`). Confirmado: `ls data` -> "Arquivo ou diretório inexistente".
+git add frontend/src/charts/s2-pointer-mode.ts frontend/src/charts/s2-pointer-mode.test.ts
+harness rules --mode sweep --changed-only   # rc=0, nenhuma saída — 0 achado
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (mesmo motivo de `§8`–`§12`: `harness policy --key test_cmd` só
+cobre `sentimento`). Medição qualitativa: 15 testes cobrem 100% das funções/constantes exportadas
+(`POINTER_MODES`, `POINTER_INPUT_KINDS`, `LAYER_ORDER`, `assertPointerMode`,
+`assertPointerInputKind`, `assertOverlayIsSandwiched`, `resolvePointerAction`), com um caso positivo
+e ao menos um MORDE por proteção.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§13` nova (append-only). `docs/specs/SPEC-001-plataforma-dados.md`
+— **sem mudança**: `§3.6` já fixa a frase que este módulo torna executável; esta task consome, não
+emenda a SPEC. Gate de design — **não aplicável**: este item não introduz elemento visual novo (zero
+DOM, zero componente React) — é geometria/estado puro de `charts`, mesma classe de `s2-panels.ts`/
+`s2-lightweight-adapter.ts`, que também não passaram por gate de design.
