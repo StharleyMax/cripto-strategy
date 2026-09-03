@@ -24,6 +24,13 @@ export interface HeadlessSeriesSpec {
   readonly kind: "candlestick" | "line";
   /** Already time-in-UNIX-SECONDS shaped items — `CandlestickItem/LineItem/WhitespaceItem`. */
   readonly items: readonly Record<string, unknown>[];
+  /**
+   * Style options passed straight to `chart.addSeries(..., style)` — e.g.
+   * `candlestickSeriesColors(mode)` from `color-tokens.ts` (`T-05.7`). Optional and
+   * defaulted to `{}` (the library's own defaults) so every caller from before `T-05.7`
+   * keeps working unchanged.
+   */
+  readonly style?: Record<string, unknown>;
 }
 
 export interface HeadlessSeriesResult {
@@ -46,6 +53,14 @@ export interface HeadlessSeriesResult {
    * kept its axis position.
    */
   readonly dataLength: number;
+  /**
+   * `series.options()` read BACK from the real library, for `kind: "candlestick"` specs
+   * that passed a `style` (`T-05.7`) — `undefined` otherwise. Reading it back (rather than
+   * trusting that whatever `style` object was passed survives) is the same discipline this
+   * file already applies to `dataLength`: the library, not our own object, is the source of
+   * truth for what a real chart actually stored.
+   */
+  readonly appliedCandlestickColors?: { readonly upColor: string; readonly downColor: string };
 }
 
 export interface HeadlessRunHandle {
@@ -104,7 +119,9 @@ export async function runHeadlessChart(specs: readonly HeadlessSeriesSpec[]): Pr
   const seriesResults: HeadlessSeriesResult[] = [];
   for (const spec of specs) {
     const series =
-      spec.kind === "candlestick" ? chart.addSeries(charts.CandlestickSeries, {}) : chart.addSeries(charts.LineSeries, {});
+      spec.kind === "candlestick"
+        ? chart.addSeries(charts.CandlestickSeries, (spec.style ?? {}) as never)
+        : chart.addSeries(charts.LineSeries, {});
     // `as never`: the items here are already exactly the shape `lightweight-charts` expects
     // (built by `s2-lightweight-adapter.ts`, one place, ONE conversion — see that module's
     // docstring); this cast is the seam between "plain data we built" and the library's own
@@ -112,11 +129,19 @@ export async function runHeadlessChart(specs: readonly HeadlessSeriesSpec[]): Pr
     series.setData(spec.items as never);
     const stored = series.data();
     const whitespaceItemsSent = spec.items.filter((item) => isWhitespaceItem(item)).length;
+    const appliedCandlestickColors =
+      spec.kind === "candlestick" && spec.style !== undefined
+        ? {
+            upColor: (series.options() as { upColor: string }).upColor,
+            downColor: (series.options() as { downColor: string }).downColor,
+          }
+        : undefined;
     seriesResults.push({
       label: spec.label,
       itemsSent: spec.items.length,
       whitespaceItemsSent,
       dataLength: stored.length,
+      appliedCandlestickColors,
     });
     for (const item of spec.items) {
       distinctTimes.add(item.time as number);

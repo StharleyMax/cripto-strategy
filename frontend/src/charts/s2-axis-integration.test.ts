@@ -45,6 +45,7 @@ import { parseKlinesDays } from "./s2-klines-loader.ts";
 import { assembleOiPoints } from "./s2-oi-loader.ts";
 import { assembleCvdDeltas } from "./s2-cvd.ts";
 import { candlestickSeriesLossless, lineSeriesLossless, naiveDropGapsLine } from "./s2-lightweight-adapter.ts";
+import { candlestickSeriesColors } from "./color-tokens.ts";
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(THIS_DIR, "../../..");
@@ -130,8 +131,12 @@ test("D5.11 + null-gap survival, LOSSLESS: price + OI + CVD delta + CVD cumulati
   const cvdDeltaItems = lineSeriesLossless(cvd.deltaSlots);
   const cvdCumItems = lineSeriesLossless(cvd.cumulativeSlots);
 
+  // `T-05.7`: the price panel's candlestick series is styled from NAMED ADR-010 tokens, not
+  // the library's own defaults (`#26a69a`/`#ef5350`, unrelated to `#089981`/`#f23645`) — see
+  // `color-tokens.ts`'s module docstring for why these exact hexes and no others.
+  const priceColors = candlestickSeriesColors("dark");
   const handle = await runHeadlessChart([
-    { label: "price", kind: "candlestick", items: priceItems },
+    { label: "price", kind: "candlestick", items: priceItems, style: priceColors },
     { label: "oi", kind: "line", items: oiItems },
     { label: "cvd_delta", kind: "line", items: cvdDeltaItems },
     { label: "cvd_cum", kind: "line", items: cvdCumItems },
@@ -157,6 +162,14 @@ test("D5.11 + null-gap survival, LOSSLESS: price + OI + CVD delta + CVD cumulati
     assert.equal(byLabel.get("cvd_cum")?.whitespaceItemsSent, EXPECTED_MISSING_DAY_CVD_SLOTS);
     assert.equal(byLabel.get("cvd_cum")?.dataLength, EXPECTED_PRICE_SLOTS - EXPECTED_MISSING_DAY_CVD_SLOTS);
     process.stderr.write(`[T-05.2][lossless] sent vs data(): ${JSON.stringify(handle.seriesResults)}\n`);
+
+    // `T-05.7`: the color the REAL library stored for the price series is read back — not
+    // just the object we passed in — and it is the ADR-010 token, not the library default
+    // (`#26a69a`/`#ef5350`).
+    assert.deepEqual(byLabel.get("price")?.appliedCandlestickColors, {
+      upColor: priceColors.upColor,
+      downColor: priceColors.downColor,
+    });
 
     // ── (2) D5.11 ITSELF: coordinates of the REAL points against their own event_time ────
     const samples = [
