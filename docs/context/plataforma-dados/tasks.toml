@@ -630,7 +630,7 @@ tracker = { provider = "jira", id = "CST-36", url = "https://conversationhub.atl
 id = "T-05.3"
 title = "[charts] 05 · O selo de quatro campos visivel sem hover; icamento em tres niveis"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "05"
 depends_on = ["T-05.2"]
 refs = ["SPEC-001 §6.1", "CA-F4-14", "ADR-005/D3", "plano 05 itens 5.3+5.4", "icamento contratual: 519 B -> 54 B, 9,6x"]
