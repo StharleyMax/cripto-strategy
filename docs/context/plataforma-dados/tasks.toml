@@ -660,7 +660,7 @@ tracker = { provider = "jira", id = "CST-39", url = "https://conversationhub.atl
 id = "T-05.6"
 title = "[charts] 05 · pointer_mode em {read, annotate} declarado, com overlay acima do plot e abaixo do crosshair"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "05"
 depends_on = ["T-05.2"]
 refs = ["SPEC-001 §3.6", "plano 05 item 5.8", "torna Q11 decisao de quantas horas, nao de arquitetura"]
