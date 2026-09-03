@@ -34,7 +34,11 @@ interface HeadlessResult {
   unplacedCount: number;
 }
 
-function installGlobals(dom: JSDOM): void {
+// Exported (unchanged otherwise) so `s2-axis-integration.test.ts` (`T-05.2`) can bootstrap
+// its own jsdom + real-`lightweight-charts` instance for a DIFFERENT series combination
+// (candlestick + 2 line series, real BTCUSDT data) without duplicating this jsdom-shimming
+// logic. Behavior here is untouched; this is purely a visibility change.
+export function installGlobals(dom: JSDOM): void {
   const { window } = dom;
 
   const define = (key: string, value: unknown): void => {
@@ -184,8 +188,11 @@ export function assertViewportFitted(
   }
 }
 
-/** Lets the chart run its rAF-driven draw cycle, which is where the fit is applied. */
-async function flushFrames(dom: JSDOM, frames: number): Promise<void> {
+/**
+ * Lets the chart run its rAF-driven draw cycle, which is where the fit is applied.
+ * Exported for the same reason `installGlobals` is — see that export's comment.
+ */
+export async function flushFrames(dom: JSDOM, frames: number): Promise<void> {
   for (let index = 0; index < frames; index += 1) {
     await new Promise<void>((resolve) => {
       dom.window.requestAnimationFrame(() => resolve());
