@@ -951,12 +951,14 @@ Cada proteção tem o caso que ela rejeita, no mesmo arquivo de teste:
 npm --prefix frontend install    # node_modules não versionado, worktree novo
 npm --prefix frontend run lint   # eslint src -> 0 erro, 0 aviso
 npm --prefix frontend run test:charts
-  # node --test 'src/charts/*.test.ts' -> 15/15 nos 15 testes de s2-pointer-mode.test.ts (pass)
-  # 23 falhas PRE-EXISTENTES, não relacionadas: canonical-grid-sha256-proof.test.ts,
-  # s2-axis-integration.test.ts, s2-cvd.test.ts, s2-klines-loader.test.ts,
-  # s2-oi-loader.test.ts, s2-panels.test.ts — todas ENOENT/asserção sobre
-  # `data/binance/**`, que não existe neste worktree (dado bruto não é versionado,
-  # `.gitignore:51`). Confirmado: `ls data` -> "Arquivo ou diretório inexistente".
+  # node --test 'src/charts/*.test.ts' -> universo total 75 testes, 64 pass / 11 fail
+  # (re-executado isolado: `node --test 'src/charts/s2-pointer-mode.test.ts'` -> 14/14 pass,
+  # 0 fail — as 11 falhas do universo total são as ÚNICAS falhas e são PRE-EXISTENTES de
+  # `T-05.2`, não relacionadas a este módulo: 2 suites inteiras (canonical-grid-sha256-proof.test.ts,
+  # s2-axis-integration.test.ts) + 9 casos em s2-cvd.test.ts/s2-klines-loader.test.ts/
+  # s2-oi-loader.test.ts/s2-panels.test.ts — todas ENOENT/asserção sobre `data/binance/**`,
+  # que não existe neste worktree (dado bruto não é versionado, `.gitignore:51`).
+  # Confirmado: `ls data` -> "Arquivo ou diretório inexistente".
 git add frontend/src/charts/s2-pointer-mode.ts frontend/src/charts/s2-pointer-mode.test.ts
 harness rules --mode sweep --changed-only   # rc=0, nenhuma saída — 0 achado
 ```
@@ -964,7 +966,7 @@ harness rules --mode sweep --changed-only   # rc=0, nenhuma saída — 0 achado
 ### Cobertura
 
 Sem piso declarado para `charts` (mesmo motivo de `§8`–`§12`: `harness policy --key test_cmd` só
-cobre `sentimento`). Medição qualitativa: 15 testes cobrem 100% das funções/constantes exportadas
+cobre `sentimento`). Medição qualitativa: 14 testes cobrem 100% das funções/constantes exportadas
 (`POINTER_MODES`, `POINTER_INPUT_KINDS`, `LAYER_ORDER`, `assertPointerMode`,
 `assertPointerInputKind`, `assertOverlayIsSandwiched`, `resolvePointerAction`), com um caso positivo
 e ao menos um MORDE por proteção.
