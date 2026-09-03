@@ -826,7 +826,7 @@ tracker = { provider = "jira", id = "CST-54", url = "https://conversationhub.atl
 id = "T-07.1"
 title = "[sentimento] 07 · Paginador correto: janela [startTime, endTime] fechada e enumerada A PRIORI, nunca por cursor"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-01.1"]
 refs = [
@@ -840,7 +840,7 @@ tracker = { provider = "jira", id = "CST-55", url = "https://conversationhub.atl
 id = "T-07.2"
 title = "[sentimento] 07 · Survivorship na borda de ingestao: simbolo fora do exchangeInfo -> ACCEPTED_WITH_WARNING, nunca REJECTED"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-07.1"]
 refs = ["CA-F3-14", "SPEC-001 §5.6", "plano 07 item 7.3", "DoD D7.2", "DoD D7.6", "109 simbolos historicos invisiveis hoje; 21,6% do universo (727 -> 570)"]
@@ -850,7 +850,7 @@ tracker = { provider = "jira", id = "CST-56", url = "https://conversationhub.atl
 id = "T-07.3"
 title = "[sentimento] 07 · ETL com dedupe por hash de conteudo (byte-estavel verificado)"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-07.1"]
 refs = ["CA-F3-*", "plano 07 item 7.5", "nunca por nome de arquivo nem por timestamp de download"]
@@ -860,7 +860,7 @@ tracker = { provider = "jira", id = "CST-57", url = "https://conversationhub.atl
 id = "T-07.4"
 title = "[sentimento] 07 · Redis Streams + consumer group para todo consumidor com estado — nunca Pub/Sub"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-01.1"]
 refs = ["CA-F3-8", "ADR-009/D2", "plano 07 item 7.6", "DoD D7.10", "Redis Pub/Sub e at-most-once por doc"]
@@ -870,7 +870,7 @@ tracker = { provider = "jira", id = "CST-58", url = "https://conversationhub.atl
 id = "T-07.5"
 title = "[sentimento] 07 · Escritor unico consumindo a fila; backfill MODELADO nao sobrescreve captura OBSERVADA"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-07.4"]
 refs = ["ADR-002/D5", "CA-F3-12", "CA-F4-25", "plano 07 item 7.7", "DoD D7.16", "vale nos cinco candidatos de ADR-002"]
@@ -880,7 +880,7 @@ tracker = { provider = "jira", id = "CST-59", url = "https://conversationhub.atl
 id = "T-07.6"
 title = "[sentimento] 07 · Particionamento dimensionado contra a vazao medida"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-07.5"]
 refs = ["CA-F3-7", "plano 07 item 7.8", "DoD D7.11: p50 21 · p95 204 · p99 483 · p99.9 1.251 · max 3.224 msg/s"]
@@ -890,7 +890,7 @@ tracker = { provider = "jira", id = "CST-60", url = "https://conversationhub.atl
 id = "T-07.7"
 title = "[sentimento] 07 · Broker de cota com jitter e circuit breaker, contagem local — dois dos tres baldes sao cegos"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-03.7"]
 refs = ["CA-F3-9", "plano 07 item 7.9", "contagem local conservadora e o caso geral, nao adaptacao a um fornecedor pior"]
@@ -900,7 +900,7 @@ tracker = { provider = "jira", id = "CST-61", url = "https://conversationhub.atl
 id = "T-07.8"
 title = "[sentimento] 07 · universe_at(ts, filtro) com universe_source inadmissivel POR TIPO no caminho de decisao"
 components = ["sentimento"]
-status = "done"  # resolve: QA APPROVED + review COMPLIANT 2026-09-02T21:43:07Z @ c04d59a86c0c6a314fee1b2f35a5db0f67a281b2 (PR #88)
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-02.1", "T-07.2"]
 refs = ["CA-F3-4", "SPEC-001 §3.7", "plano 07 item 7.10", "DoD D7.7", "s3_inferred inadmissivel por tipo, nao por convencao"]
@@ -910,7 +910,7 @@ tracker = { provider = "jira", id = "CST-62", url = "https://conversationhub.atl
 id = "T-07.9"
 title = "[sentimento] 07 · instrument_alias como YAML versionado com evidence_url obrigatorio — sem tela"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-07.8"]
 refs = ["plano 07 item 7.11", "BLOQUEIO PARCIAL: Q12 — o mecanismo anda, o CONTEUDO (~5 linhas/ano) espera; e decisao de significado economico"]
@@ -920,7 +920,7 @@ tracker = { provider = "jira", id = "CST-63", url = "https://conversationhub.atl
 id = "T-07.10"
 title = "[sentimento] 07 · clock_skew_tolerance_ms CALIBRADO sobre a distribuicao que 03 acumulou"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-03.8"]
 refs = ["CA-F3-13", "plano 07 item 7.12", "DoD D7.18", "calibrado, nao adivinhado: depende de T-03.8 ter rodado 7 dias"]
@@ -930,7 +930,8 @@ tracker = { provider = "jira", id = "CST-64", url = "https://conversationhub.atl
 id = "T-07.11"
 title = "[sentimento] 07 · Detector de liveness por contiguidade + heartbeat, nunca taxa; e o canal de alarme fora do browser"
 components = ["sentimento"]
-status = "blocked"
+status = "blocked"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
+blocked_reason = "Q3 aberta (canal de alarme fora do browser), decisao do owner 2026-09-02 de manter blocked por hora - nao essencial na PoC"
 phase = "07"
 depends_on = ["T-03.4"]
 refs = [
@@ -945,7 +946,7 @@ tracker = { provider = "jira", id = "CST-65", url = "https://conversationhub.atl
 id = "T-07.12"
 title = "[web] 07 · S1 console: janela_de_perda como FORMULA por serie, fila de ETL, orcamento aritmetico, GB/dia"
 components = ["web"]
-status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T16:20:09Z @ c90442ee2a0496f41648474f9906c426b7bb6ca6 (PR #74; design com 2 rodadas de gate ux-ui-mastery independente)
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-02.3", "T-05.8"]
 refs = ["SPEC-001 §6", "plano 07 item 7.13", "DoD D7.12", "DoD D7.13", "DoD D7.14", "DoD D7.15", "S1 NAO e o canal de alarme"]
@@ -955,7 +956,7 @@ tracker = { provider = "jira", id = "CST-66", url = "https://conversationhub.atl
 id = "T-07.13"
 title = "[web] 07 · S1 le pela consulta nomeada ingest_health_query — a MESMA de 02"
 components = ["web"]
-status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T17:13:58Z @ b482d28ad7eac9698412d0a9fe7873db485e7d20 (PR #77; gatilho de reabertura ADR-008/D3 disparou, registrado e nao decidido)
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-02.3", "T-07.12"]
 refs = ["ADR-008/D3", "ADR-008/DoD-3", "plano 07 item 7.14", "DoD D7.17 (falsificador da fase)", "unico teste que expoe duplicacao silenciosa"]
@@ -965,7 +966,7 @@ tracker = { provider = "jira", id = "CST-67", url = "https://conversationhub.atl
 id = "T-07.14"
 title = "[web] 07 · S5 embutido: seletor por universe_at, badge de delisting de deliveryDate, universe_source carimbado"
 components = ["web"]
-status = "done"  # resolve: QA APPROVED por mutacao 2026-09-02T22:39:55Z @ e5b2b4b5aa2947055ca3d0782a711d43a6189934 (PR #91). gate-record recusou (rc=4, dependencia de fase 08 em estado nao-terminal, achado do proprio /qa, nao relacionado a esta task) — veredito durável em docs/context/plataforma-dados/gates/T-07.14-qa.md
+status = "done"  # resolve: QA APPROVED 2026-09-03T00:01:16Z @ cc057a663301cd5841e5bf8b240543dff67e7184
 phase = "07"
 depends_on = ["T-07.8"]
 refs = ["SPEC-001 §6", "plano 07 item 7.15", "caso-ancora: ICXUSDT/STORJUSDT/SCRTUSDT com deliveryDate 2026-08-26T09:00:00Z"]
