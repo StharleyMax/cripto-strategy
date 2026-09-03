@@ -1266,7 +1266,7 @@ tracker = { provider = "jira", id = "CST-76", url = "https://conversationhub.atl
 id = "T-08.9"
 title = "[charts] 08 · S2 completa: as-of com moldura impossivel de nao notar, marcacao de fixture com teclado obrigatorio"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-05.2", "T-08.5"]
 refs = [
@@ -1282,7 +1282,7 @@ tracker = { provider = "jira", id = "CST-77", url = "https://conversationhub.atl
 id = "T-08.10"
 title = "[charts] 08 · Primitivo swing_point em Anotacao — zero algoritmo, zero limiar, zero nivel"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-05.6"]
 refs = ["SPEC-001 §3.6", "plano 08 item 8.7", "Q20 NAO bloqueia: os dois vocabularios se apoiam no mesmo primitivo", "zone (OB/FVG/Fib) depende de Q20 e NAO entra aqui"]
@@ -1347,7 +1347,7 @@ tracker = { provider = "jira", id = "CST-83", url = "https://conversationhub.atl
 id = "T-09.2"
 title = "[docs] 09 · env em {mainnet, testnet, demo, replay} em toda linha de ordem/fill, com chip no chrome"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "09"
 depends_on = ["T-04.2"]
 refs = ["CA-F5-3", "plano 09 item 9.3", "DoD D9.3"]

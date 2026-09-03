@@ -1239,9 +1239,250 @@ evitar — meu escopo é `charts`, não `docs`. `scripts/validate_palette.js` �
 `docs`-owned (`ADR-010` header, "Componente alvo: `docs`"); esta task lê o texto dele
 (`color-tokens.test.ts`) e nunca o edita.
 
+## 17. `src/charts/s2-swing-point.ts` — `swing_point`, o primeiro primitivo de `<Anotacao>` (`T-08.10`, 2026-09-03)
+
+`T-08.10` (`CST-78`, componente `charts`, plano `08_superficie_e_reprodutibilidade.md` item
+`8.7`, `SPEC-001` §3.6): "`swing_point` em `<Anotacao>` — zero algoritmo, zero limiar, zero
+'nível'". `SPEC-001:282`, literal: "O primeiro primitivo de `<Anotacao>` é `swing_point`, não
+`zone`… pivô É uma definição de swing · âncora de Fibonacci É um par de swings · BOS/CHoCH É
+rompimento de swing · BSL/SSL É extremo de swing… um corpus de swings sobrevive a qualquer
+resposta [de `Q20`]; um corpus de zonas não." `Q20` (`SMC` × pivôs+Fibonacci) segue **ABERTA** e
+está deliberadamente fora do escopo desta task — o argumento da SPEC é exatamente que ambos os
+vocabulários se apoiam neste MESMO primitivo, então construí-lo aqui não presume a resposta.
+
+**Composto, não reimplementado** — mesma disciplina de `§14`/`§15`: `createSwingPoint` chama
+`createPriceBoundAnnotation` (`T-05.5`, `s2-annotation-price-binding.ts`) verbatim, que por sua
+vez já compõe `createAnnotationIdentity` (`T-05.2`, `D5.10`). Nenhum dos dois foi tocado.
+
+**O que o módulo entrega, e como cada peça fecha "zero algoritmo, zero limiar, zero nível":**
+- `SwingKind = "high" | "low"` + `SWING_KINDS` (runtime) + `assertSwingKind` — recusa qualquer
+  valor fora do par, mesmo padrão de `assertPointerMode` (`§15`): um `kind` inválido nunca vira
+  `"high"` por default silencioso.
+- `SwingPoint extends PriceBoundAnnotation` acrescenta exatamente 3 campos: `kind`,
+  `eventTimeMs` (mesmo conceito de `event_time` que `CellEnvelope`, `s2-badge.ts`, já usa para
+  uma célula de `<ValorDeMercado>` — um swing marca uma BARRA, não uma coordenada de clique
+  crua) e `price` (lido verbatim do que o humano marcou — nunca computado, nunca ajustado a um
+  "nível"). `primitive: "swing_point"` é discriminante literal, preparando (sem construir) uma
+  futura união `AnnotationPrimitive = SwingPoint | Zone`.
+- `createSwingPoint` recusa independentemente: `kind` fora do conjunto
+  (`InvalidSwingKindError`), `eventTimeMs` não finito ou negativo (`NonFiniteSwingEventTimeError`
+  — um swing não pousa em timestamp fabricado) e `price` não finito ou `<= 0`
+  (`NonFiniteSwingPriceError` — preço cripto nunca é zero/negativo).
+- **Zero algoritmo**: nenhuma comparação entre barras vizinhas, nenhuma janela de lookback —
+  a função registra um ponto já identificado (por humano; um `DETECTOR`, se algum dia existir,
+  é decisão de outra ADR, ver abaixo), nunca decide "isto é um swing".
+- **Zero limiar**: nenhum `ThresholdSpec` (`SPEC-001` §3.7), nenhum tamanho mínimo de movimento.
+- **Zero "nível"**: nenhuma razão de Fibonacci, nenhuma zona (OB/FVG), nenhum
+  `structure_definition` — exatamente o que a plan `08`'s seção "Não faz" nomeia ("não desenha
+  zona SMC, não detecta estrutura").
+
+### ⚠️ Conflito registrado com `ADR-017` (RASCUNHO, não aprovado) — resolvido a favor do escopo desta task
+
+`docs/adr/ADR-017-deteccao-autonoma-com-auditoria-por-excecao.md` (`Status: RASCUNHO — "aprovar
+é gate do owner"`, sem evento `approve` no ledger; o próprio commit que o introduziu se
+autodescreve como "(rascunho)") nomeia esta task, por número, em sua seção "Consequências":
+"`T-08.10`: campos `provenance`, `detector_key`, `review_verdict`; `structure_definition` com
+`break_by`, `ref_policy`, `impulse`." Esses campos **não foram construídos aqui.** Os `refs`
+desta task (`tasks.toml:1096`) citam `SPEC-001` §3.6 + plano item `8.7` + `Q20` — nenhum cita
+`ADR-017`. Construir os campos de um rascunho não ratificado seria exatamente o "amplie escopo"
+que este protocolo proíbe, e arriscaria divergir do que o owner de fato aprovar depois.
+`provenance = HUMANO` (a única linha que `SPEC-001` §3.6 já fixa, incondicional) já é coberto
+pela `AnnotationIdentity` que `createPriceBoundAnnotation` compõe — nada foi perdido do baseline
+aprovado. Se `ADR-017` for aprovado, seus campos são ADITIVOS a `SwingPoint`, não uma reescrita —
+mas essa decisão não é minha para tomar nesta task.
+
+### Falsificador rodado, não só "os testes passam"
+
+Cada recusa tem o caso que ela rejeita, no mesmo arquivo de teste (`kind` inválido, `eventTimeMs`
+`NaN`/negativo, `price` `Infinity`/zero/negativo — 6 casos de `MORDE`). Um falsificador
+estrutural adicional (`falsifier: SwingPoint carries ONLY the declared fields`) lista os 8 campos
+esperados e falha se qualquer campo fora dessa lista aparecer no objeto devolvido — um futuro
+`minMovePct`/`fibLevel` contrabandeado tropeça nele em vez de passar em silêncio.
+
+### Comandos rodados, literais
+
+```bash
+cp -r ../cripto-strategy/frontend/node_modules frontend/node_modules  # gitignored, ausente em worktree novo
+npm --prefix frontend run lint   # eslint src -> 0 erro, 0 aviso
+npm --prefix frontend run test:charts
+  # node --test 'src/charts/*.test.ts' -> universo total 147 testes, 114 pass / 33 fail
+  # (re-executado isolado: `node --test src/charts/s2-swing-point.test.ts` de dentro de
+  # frontend/ -> 12/12 pass, 0 fail — as 33 falhas do universo total são PRE-EXISTENTES,
+  # não relacionadas a este módulo: canonical-grid-sha256-proof.test.ts, s2-axis-integration.test.ts,
+  # s2-cvd.test.ts, s2-klines-loader.test.ts, s2-oi-loader.test.ts, s2-panels.test.ts — todas
+  # ENOENT/asserção sobre `data/binance/**`, ausente neste worktree (dado bruto não é
+  # versionado). Confirmado: `ls data` -> "Arquivo ou diretório inexistente".
+git add frontend/src/charts/s2-swing-point.ts frontend/src/charts/s2-swing-point.test.ts
+harness rules --mode sweep --changed-only   # rc=0, nenhuma saída — 0 achado
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (mesmo motivo de `§8`–`§16`: `harness policy --key test_cmd` só
+cobre `sentimento`). Medição qualitativa: 12 testes cobrem 100% das funções/constantes
+exportadas (`SWING_KINDS`, `assertSwingKind`, `createSwingPoint`), com um caso positivo por
+`kind`, um `MORDE` por recusa (6), a propagação das duas recusas já existentes em
+`s2-annotation-price-binding.ts`/`s2-annotation-identity.ts` através da composição, e o
+falsificador estrutural de campo fechado.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§17` nova (append-only). `docs/specs/SPEC-001-plataforma-dados.md`
+— **sem mudança**: `§3.6` já fixa a frase que este módulo torna executável; esta task consome,
+não emenda a SPEC. `docs/adr/ADR-017-deteccao-autonoma-com-auditoria-por-excecao.md` — **sem
+mudança**: é `RASCUNHO`, gate do owner; o conflito está registrado na seção acima, não resolvido
+por mim. `docs/INDEX.md` — **sem mudança, motivo explícito**: o padrão medido deste arquivo
+(`grep -oE` sobre os papéis, 73 linhas `/build` isoladas vs. entradas combinadas `/build`+`/qa`)
+é UMA linha por task escrita DEPOIS do ciclo completo build+QA+review (ex.: `T-05.6` linha 148,
+`T-05.1` linha 134 — que registra correção de uma auto-atribuição prematura do builder). Escrever
+a linha agora, antes do QA rodar, repetiria o defeito que aquela correção documenta. Gate de
+design — **não aplicável**: zero DOM, zero componente React, mesma classe de `§15`.
+
+## 18. `src/charts/s2-asof-frame.ts` + `s2-review-mode.ts` — `S2` completa: moldura de `as-of` e marcação com teclado obrigatório (`T-08.9`, 2026-09-03)
+
+`T-08.9` (`CST-77`, componente `charts`, plano `08_superficie_e_reprodutibilidade.md` item
+`8.6`, `SPEC-001` §6): "**S2 completa**: `as-of` com **moldura impossível de não notar**,
+**marcação de fixture com teclado obrigatório**, painéis restantes." Dois módulos, um por
+metade do título; "painéis restantes" **não** foi implementado aqui — ver "Bloqueado" abaixo.
+
+`ADR-017` é `RASCUNHO` (sem `approve` no ledger); esta task consome **só** o que os `refs`
+citam literalmente: `Q11` (RESPONDIDA, "pode aceitar o default"), `Q20` (RESPONDIDA,
+"coexistem"), `D2`, `D3`. Nenhum outro campo/decisão de `ADR-017` foi construído — mesma
+disciplina que `§17` já registrou para `T-08.10`.
+
+### `s2-asof-frame.ts` — a moldura
+
+`SessionEnvelope.mode` (`s2-badge.ts`, `§?` não numerada mas já existente desde `T-05.3`) é
+reaproveitado verbatim — `AO_VIVO` produz `{ active: false }`. `COMO_EM_T` produz uma moldura
+com DOIS canais redundantes (`ADR-010`/`D-2`: "o hue é acelerador, não portador" — o mesmo
+argumento aplicado a um terceiro tipo de marca, não preço nem procedência): `widthPx` = 4×
+`AMBIENT_BORDER_WIDTH_PX` (o `1px` que `STITCH_CONTEXT.md:225` documenta como a borda ambiente
+do sistema — "bordas 1px, zero sombra") e `label`, que carrega `"COMO EM T"` mais o
+`knowledgeTime` verbatim. **Nenhum `ColorRole` novo foi adicionado a `color-tokens.ts`** —
+`ADR-010`/`D-4` ("ação e procedência não consomem hue") é o argumento citado para não abrir o
+union fechado por uma cor que descreve "como você está olhando a tela", não um valor de dado.
+
+`assertFrameIsNoticeable` é o falsificador da própria frase do título: aceita uma moldura
+inativa trivialmente, mas recusa uma moldura ativa cuja largura não passe de 1px (indistinguível
+do chrome ambiente) ou cujo rótulo não contenha `"COMO EM T"` — os dois casos que
+`s2-asof-frame.test.ts` planta e mostra sendo rejeitados.
+
+`buildAsOfFrame` também recusa o sentido inverso: `AO_VIVO` com um rótulo sobrevivente
+(`AsOfLabelLeakedUnderLiveError`) — o mesmo `D5.4`/`D2` ("voltar para AGORA tem sintoma
+visível") que `knowledge-time-bundle.ts`'s `decodeBundle`/`returnToLive` já aplicam ao bundle,
+aqui aplicado à moldura.
+
+### `s2-review-mode.ts` — a marcação com teclado obrigatório
+
+`D2`, verbatim: "`pointer_mode = annotate` ganha o sub-modo `review`… `review_verdict ∈
+{accept, reject, add}`." `Q20`: "a tela de review nasce com swing E zona (OB) como
+candidatos." O módulo julga um `ReviewCandidate` (`candidateId` + `kind ∈ {swing, zone}`,
+opaco — nunca lê o payload) contra um `ReviewInput`, cujo **único** formato declarado carrega
+`source: "keyboard"` — não existe variante `"mouse"`/`"click"` para construir, e
+`assertKeyboardSourced` recusa em runtime qualquer valor que tenha escapado do tipo, mesma
+disciplina de `assertPointerMode`/`assertPointerInputKind` (`§15`).
+
+Teclas: `a`/`r` (aceitar/rejeitar o candidato corrente, qualquer `kind` — a resposta
+"coexistem" de `Q20` é honrada deixando `zone` julgado pelas mesmas duas teclas que `swing`) e
+`h`/`l` (adicionar um swing do zero, alto/baixo) — as quatro teclas do **piloto de referência**
+`scripts/pilot-swing-marker/build.mjs` (nomeado por `Q20`), reaproveitadas verbatim para que a
+memória muscular do owner atravesse. As demais teclas do piloto (`x`/`u`/`f`/`g`/`v`/`s`/
+navegação) são estado de UI de sessão (limpar/desfazer/filtro/navegar), não um
+`review_verdict`, e ficam fora deste módulo (`ADR-003` FR-1: `charts` não faz I/O, não tem
+DOM, não tem histórico de sessão) — decisão do que mantém, não do que falta.
+
+`add` é só-swing: `zone` (OB) não tem forma decidida por nenhum documento ratificado, mesmo
+motivo que `T-08.10` já registrou para não construir `Zone`.
+
+### Falsificador rodado, não só "os testes passam"
+
+`s2-review-mode.test.ts`: `MouseSourcedReviewInputError` provado ANTES de ler a tecla (um
+input `{source:"mouse", key:"a"}` smuggled é recusado sem chegar ao `switch`);
+`NoCurrentCandidateError` para `a`/`r` sem candidato; `UnboundReviewKeyError` para uma tecla
+fora das quatro (inclusive `"u"`, do piloto, deliberadamente fora de escopo); sensibilidade a
+maiúscula (`"A"` ≠ `"a"`). `s2-asof-frame.test.ts`: os dois casos de `assertFrameIsNoticeable`
+acima, mais o vazamento de rótulo sob `AO_VIVO`.
+
+### Comandos rodados, literais
+
+```bash
+npm --prefix frontend ci        # node_modules ausente no worktree novo (gitignored)
+npm --prefix frontend run lint  # eslint src -> 0 erro, 0 aviso (universo: toda a árvore frontend/src)
+npm --prefix frontend run test:charts
+  # node --test 'src/charts/*.test.ts' -> 156 testes, 140 pass / 16 fail
+  # baseline SEM os 2 módulos novos (arquivos movidos para fora de src/charts/ e restaurados
+  # depois), mesmo comando: 130 testes, 114 pass / 16 fail — as 16 falhas são IDÊNTICAS e
+  # PRE-EXISTENTES nos dois universos (canonical-grid-sha256-proof.test.ts,
+  # s2-axis-integration.test.ts, s2-cvd.test.ts, s2-oi-loader.test.ts, s2-panels.test.ts —
+  # todas ENOENT/asserção sobre `data/binance/**`, ausente neste worktree: `ls data` ->
+  # "Arquivo ou diretório inexistente", dado bruto não é versionado)
+node --test src/charts/s2-asof-frame.test.ts src/charts/s2-review-mode.test.ts
+  # isolado: 26/26 pass, 0 fail
+node --test src/charts/eslint-boundary.test.ts
+  # D5.12 MORDE+CALA (4 formas: estático, dynamic import, template literal, require) -> 4/4 pass
+  # com os 2 módulos novos presentes na árvore — a fronteira charts<->web continua íntegra
+git add frontend/src/charts/s2-asof-frame.ts frontend/src/charts/s2-asof-frame.test.ts \
+        frontend/src/charts/s2-review-mode.ts frontend/src/charts/s2-review-mode.test.ts
+harness rules --mode sweep --changed-only   # rc=0, nenhuma saída — 0 achado de nenhuma severidade
+```
+
+Rodada 2 (após a correção do `NaN`, comandos re-rodados no mesmo worktree):
+
+```bash
+node --test frontend/src/charts/s2-asof-frame.test.ts
+  # 11/11 pass, 0 fail — inclui o teste plantado pelo QA (linhas 87-90), agora verde
+npm --prefix frontend run test:charts
+  # 157 testes, 141 pass, 16 fail — as mesmas 16 pré-existentes de sempre (data/binance/**
+  # ausente); +1 pass em relação à rodada 1 (156/140/16) é exatamente o teste do QA virando verde
+npm --prefix frontend run lint   # eslint src -> rc=0, 0 erro/aviso
+harness rules --mode sweep --changed-only   # rc=0, nenhuma saída
+```
+
+### Cobertura
+
+Sem piso declarado para `charts` (mesmo motivo de `§8`–`§17`). Medição qualitativa: 26 testes
+cobrem 100% das funções/constantes exportadas dos 2 módulos — `buildAsOfFrame` (2 casos
+positivos × 2 modos + 3 `MORDE`), `assertFrameIsNoticeable` (2 `CALA` + 2 `MORDE`),
+`assertReviewCandidateKind` (2 positivos + 2 `MORDE`), `assertKeyboardSourced` (1 `CALA` + 2
+`MORDE`), `resolveReviewKey` (7 casos positivos incluindo o `zone` de `Q20`, 4 `MORDE`).
+
+### Bloqueado
+
+**"Painéis restantes"** (a terceira cláusula do título do item `8.6`) não foi implementado
+nesta task. Nenhum `ref` desta task (`tasks.toml:1080-1086`) nomeia QUAIS painéis nem cita um
+`DoD` específico para essa cláusula — a tabela de `DoD` do plano `08` (`D8.11`–`D8.20`, regras
+de renderização de painel) está explicitamente sob `T-08.12`/`T-08.13` nos `refs` dessas duas
+tasks, não sob `T-08.9`. Implementar "painéis restantes" aqui seria adivinhar escopo que a
+task não declara — exatamente o "amplie escopo" que este protocolo proíbe.
+
+### Rodada 2 — correção do achado QA (`NaN` em `widthPx`)
+
+`docs/context/plataforma-dados/gates/T-08.9-qa.md` (`NEEDS_FIX`): `assertFrameIsNoticeable`
+(`s2-asof-frame.ts:137`, antes da correção) comparava `frame.widthPx < AMBIENT_BORDER_WIDTH_PX
+* AS_OF_FRAME_MIN_MULTIPLIER` sem checar finitude — `NaN < 4` é `false` em JS por coerção, então
+`widthPx: NaN` (e igualmente `undefined`, ou uma string não numérica) escapava da checagem e
+`assertFrameIsNoticeable` aceitava silenciosamente uma moldura sem largura válida, o oposto de
+"impossível de não notar". Corrigido acrescentando `!Number.isFinite(frame.widthPx)` à guarda
+(`s2-asof-frame.ts:137-141`) — nenhum outro campo numérico do módulo tinha a mesma classe de
+lacuna (`widthPx` é o único número comparado por `<`; `label` é checado por `.includes`, que não
+sofre coerção numérica). O teste plantado pelo QA
+(`s2-asof-frame.test.ts:87-90`, "MORDE (achado QA, nao corrigido): ... rejects a NaN widthPx")
+não foi alterado — passa (verde) contra o código corrigido, ver comandos abaixo.
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§18` nova (append-only). `docs/specs/SPEC-001-plataforma-dados.md`
+— **sem mudança**: `§6` já descreve `S2` como "multi-painel, replay as-of, marcação"; esta task
+torna a frase executável, não emenda a SPEC. `docs/adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md`
+— **sem mudança**: `D-4` é citado, não estendido (nenhum `ColorRole` novo). `docs/adr/
+ADR-017-deteccao-autonoma-com-auditoria-por-excecao.md` — **sem mudança**: `RASCUNHO`, gate do
+owner; `D2`/`D3`/`Q11`/`Q20` são consumidos, não ratificados por este commit. `docs/INDEX.md` —
+**sem mudança, mesmo motivo registrado em `§17`**: uma linha por task é escrita depois do ciclo
+build+QA+review completo, não antes do QA rodar. Gate de design — **não aplicável**: zero DOM,
+zero componente React, mesma classe de `§15`/`§17`.
 ---
 
-## 17. `A4` — o `frontend/` deixa de ter caminho próprio para o dado, e o portão de fronteira estava CALADO (2026-09-03)
+## 19. `A4` — o `frontend/` deixa de ter caminho próprio para o dado, e o portão de fronteira estava CALADO (2026-09-03)
 
 **Isto não é task.** É o espelho, neste pacote, de uma decisão de owner registrada em
 [`docs/decisoes-do-owner.md`](../docs/decisoes-do-owner.md) §*"2026-09-03 · A4/A6/A7"*, mais **um
@@ -1333,7 +1574,7 @@ onde hoje há `node --test` sem `tsconfig.json` e **zero** `import` de `react`
 
 ### Doc delta
 
-Este `README.md` — **atualizado**, `§17` nova (append-only; `§5-bis` **intocada**, e o "quatro" dela
+Este `README.md` — **atualizado**, `§19` nova (append-only; `§5-bis` **intocada**, e o "quatro" dela
 continua correto para o universo dela). `docs/decisoes-do-owner.md` e `docs/INDEX.md` — já
 atualizados no registro das decisões. `docs/adr/ADR-005-*.md` — **em emenda pelo `quant-architect`**
 nesta data (`A4`/`A5`), **não tocada aqui**. `packs/web-fullstack/rules.toml` — **não tocado, de
