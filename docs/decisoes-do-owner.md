@@ -41,7 +41,7 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 | **Q8** | fuso de exibição e fronteira do dia | `INFERÍVEL` (F0–F2) / `ABERTA` (F4) | NÃO |
 | **Q9** | retenção de tick × disco | **`MORTA`** — ver o motivo | NÃO |
 | **Q10** | ordem: monitorar / pesquisar / executar | `ABERTA` | NÃO |
-| **Q11** | owner marca o corpus? quantas horas | `ABERTA` | NÃO |
+| **Q11** | owner marca o corpus? quantas horas | **`RESPONDIDA`** 2026-09-03 — *"pode aceitar o default"*; ver §Q11 | NÃO |
 | **Q12** | `MATIC→POL` / `RNDR→RENDER` | `ABERTA` | NÃO |
 | **Q13** | cor do candle | **`RESPONDIDA`** | NÃO — ver §Q13 (reconciliada com `SPEC-001:649` em 2026-08-28) |
 | **Q14** | idioma da UI | `INFERÍVEL` | NÃO |
@@ -50,9 +50,11 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 | **Q17** | spread: medir ou assumir | **`RESPONDIDA COM RESÍDUO`** | **SIM — capture-or-lose** |
 | **Q18** | profundidade do backfill de `metrics` | `ABERTA` | NÃO |
 | **Q19** | `availability_probe_set` | **`RESPONDIDA`** 2026-09-02 | **SIM — capture-or-lose, ver §Q19** |
-| **Q20** | SMC, pivôs+Fibonacci, ou os dois | **`ABERTA` (nova em R2)** | NÃO |
+| **Q20** | SMC, pivôs+Fibonacci, ou os dois | **`RESPONDIDA`** 2026-09-03 — *"coexistem"*; ver §Q20 | NÃO |
 
-**Contagem: 20 · 9 `ABERTA` · 3 `INFERÍVEL` · 5 `RESPONDIDA` · 2 `RESPONDIDA COM RESÍDUO` · 1 `MORTA`.**
+**Contagem: 20 · 7 `ABERTA` · 3 `INFERÍVEL` · 7 `RESPONDIDA` · 2 `RESPONDIDA COM RESÍDUO` · 1 `MORTA`.**
+*(Atualizada em 2026-09-03: `Q11` e `Q20` respondidas pelo owner na sessão do piloto de swing — ver as duas seções e
+[`ADR-017`](adr/ADR-017-deteccao-autonoma-com-auditoria-por-excecao.md), rascunho.)*
 *(Atualizada em 2026-09-02: `Q19` respondida pelo owner — destrava `T-03.6`; `T-03.9` segue `blocked` por
 `observer_region`/VPS, decisão explícita do owner de deixar a VPS fora por enquanto. Atualizada em
 2026-09-01: `Q1` respondida pelo owner — 8 tasks destravadas nas fases 02/03 de `plataforma-dados`.
@@ -387,7 +389,23 @@ absoluto, é adiamento deliberado.
 
 ---
 
-### Q11 · `ABERTA` · O owner vai marcar o corpus de fixtures à mão? Quantas horas por semana?
+### Q11 · **`RESPONDIDA` em 2026-09-03** · O owner vai marcar o corpus de fixtures à mão? Quantas horas por semana?
+
+**✅ RESPOSTA DO OWNER (2026-09-03). Declaração literal, na grafia dele:**
+
+> **"q11: pode aceitar o default, mas te passo o json caso ele seja importante"**
+
+`[PREMISSA-OWNER: 2026-09-03]`. **Leitura adotada (rótulo próprio):** nenhum compromisso de horas de marcação nem de
+auditoria recorrente. A pergunta mudou de forma antes de ser respondida — `ADR-017` (rascunho) separou **detecção**
+(sempre autônoma) de **verificação**, e a calibração humana virou sessão pontual por aceite/rejeição de candidatos. O que
+essa sessão produziu está em
+[`context/plataforma-dados/fixtures/swing-review-BTCUSDT-1b96c671-2026-09-03.json`](context/plataforma-dados/fixtures/swing-review-BTCUSDT-1b96c671-2026-09-03.json):
+15m/N=5 e 1h/N=10 escolhidos a olho `[PREMISSA-OWNER: 2026-09-02 — "15 + 5 e 1h + 10 funcinou legal"]`; 15 de 16 OBs não
+recusados em 7 s `[NÃO CALIBRADO: passagem de tecla, não julgamento]`. A pilha de verificação fica em invariantes, mutação,
+concordância cruzada com o Pine e backtest com walk-forward (`ADR-017/D3`, D3.3 opcional). `T-08.9` deixa de estar
+bloqueada por esta pergunta; o modo `review` de `pointer_mode` continua requisito de arquitetura, agora sem horas prometidas.
+
+**O texto abaixo é o estado ANTERIOR à resposta, mantido para rastreio.**
 
 **(a)** Compromisso declarado de tempo do owner para marcar estrutura sobre candles reais.
 
@@ -524,7 +542,22 @@ até `D1.3` fechar.
 
 ---
 
-### Q20 · **`ABERTA` — NOVA em R2** · A fase de estratégia detecta SMC, detecta pivôs + Fibonacci, ou os dois?
+### Q20 · **`RESPONDIDA` em 2026-09-03** · A fase de estratégia detecta SMC, detecta pivôs + Fibonacci, ou os dois?
+
+**✅ RESPOSTA DO OWNER (2026-09-03). Declaração literal:**
+
+> **"q20; coexistem"**
+
+`[PREMISSA-OWNER: 2026-09-03]`. **Os dois vocabulários entram.** O que já estava fixado sob qualquer resposta continua: o
+primitivo compartilhado é o **swing** (`ADR-017/D7`), os níveis de Fibonacci são aritmética sobre pares de swings, e o corpus
+de **zonas** (OB/FVG × retração/extensão) não se reaproveita entre os dois — o de swings, sim. Sinal anterior à resposta,
+mesma sessão: o owner nomeou *"OB, chock, bms"* e pediu BMS/CHoCH e OB no piloto `[PREMISSA-OWNER: 2026-09-02]`. Definições
+paramétricas de v1 e a divisão classe A (definição) / classe B (operação) estão em
+[`context/plataforma-dados/gates/Q11-v1-validacao-quant-architect.md`](context/plataforma-dados/gates/Q11-v1-validacao-quant-architect.md).
+**Resíduo, e é do time, não do owner:** absorção por tamanho de trade (que reabriria `aggTrade` cru, `Q9`) segue não decidida
+— `dinheiro preso` é evento de `convergencia` e depende de OI, não de tick.
+
+**O texto abaixo é o estado ANTERIOR à resposta, mantido para rastreio.**
 
 **(a)** Escolha: **(i)** SMC (OB, FVG, BSL/SSL, BOS/CHoCH) · **(ii)** pivôs + retração/extensão de Fibonacci + volume · **(iii)** os dois.
 

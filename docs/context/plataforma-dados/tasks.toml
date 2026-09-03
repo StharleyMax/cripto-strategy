@@ -32,6 +32,7 @@
 #
 # `blocked` = 15 tasks com bloqueio duro `[MEDIDO 2026-08-28: harness tasks list]`: 13 por
 # pergunta de owner em aberto (Q1 x8 · Q3 x2 · Q19 · Q11 · Q10) + 2 por NUMERO QUE FALTA
+# [2026-09-03: Q11 e Q20 RESPONDIDAS — T-08.9 passou a `todo`; ver docs/decisoes-do-owner.md §Q11/§Q20]
 # e nao por pergunta
 # (`T-03.9` regiao da VPS · `T-08.1` regiao + `free -m` + `df -h`). Os dois eixos ficam
 # separados de proposito: colapsar "esperando o owner" com "esperando um ssh" faz o segundo
@@ -1073,13 +1074,14 @@ tracker = { provider = "jira", id = "CST-76", url = "https://conversationhub.atl
 id = "T-08.9"
 title = "[charts] 08 · S2 completa: as-of com moldura impossivel de nao notar, marcacao de fixture com teclado obrigatorio"
 components = ["charts"]
-status = "blocked"
+status = "todo"
 phase = "08"
 depends_on = ["T-05.2", "T-08.5"]
 refs = [
     "SPEC-001 §6", "plano 08 item 8.6",
-    "BLOQUEADA: Q11 (owner marca o corpus, quantas horas) — ABERTA, relogio NAO. Se a resposta for 'nao vou marcar', a fase seguinte perde o unico plano de verificacao que tem.",
-    "RECOMENDACAO: a primeira tranche de horas deve ser marcacao de SWING — sobrevive a qualquer resposta de Q20",
+    "DESBLOQUEADA 2026-09-03: Q11 RESPONDIDA pelo owner ('pode aceitar o default'). O modo de marcacao vira modo REVIEW (ADR-017/D2: detector propoe, humano aceita/rejeita/acrescenta), sem horas prometidas; a pilha de verificacao e ADR-017/D3 com D3.3 opcional.",
+    "Q20 RESPONDIDA 2026-09-03 ('coexistem'): swing_point continua o primitivo compartilhado; a tela de review nasce com swing E zona (OB) como candidatos — piloto de referencia em scripts/pilot-swing-marker/",
+    "HISTORICO: era BLOQUEADA por Q11 (owner marca o corpus, quantas horas). Recomendacao antiga: primeira tranche = marcacao de SWING",
     "serial com Q8 (fuso) e com price_source (ordenacao de highs vizinhos inverte em 2,09%)",
 ]
 tracker = { provider = "jira", id = "CST-77", url = "https://conversationhub.atlassian.net/browse/CST-77" }
