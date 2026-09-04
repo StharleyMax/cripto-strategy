@@ -819,6 +819,7 @@ phase = "05"
 depends_on = ["T-01.8"]
 refs = [
     "SPEC-001 §6", "plano 05 item 5.16", "DoD D5.16", "DoD D5.16b", "index.md:72", "ADR-009/D3", "ADR-011/D4",
+    "ADR-018 (decisao produzida por esta task: scaffold Next, tsconfig estrito, tsc --noEmit --strict em make lint-frontend)",
     "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
     "ACHADO MEDIDO QUE NENHUMA FONTE DECLARA, E ELE DECIDE ONDE O SCAFFOLD NASCE: `harness code-paths classify frontend/app/page.tsx` -> `nao-producao: nenhum include_prefixes casa ['backend/src/','backend/tests/','frontend/src/']` [MEDIDO 2026-09-03]. Um app Next criado em `frontend/app/` (o default do Next 13+ sem src/) nasce FORA DE TODA REGRA — mesma classe de lacuna que `deploy/`, e pior, porque .tsx de producao que o harness chama nao-producao tambem escapa do pack `web-fullstack` e do ESLint que T-01.2 instalou. RESTRICAO DURA DESTA TASK: o app vive em `frontend/src/app/`, que o Next suporta e que JA EXISTE (frontend/src/app/routes.ts, history-transport.ts). Criar em `frontend/app/` REPROVA a task, e reprova por COBERTURA, nao por estilo.",
     "A OMISSAO ESTA DECLARADA NO PROPRIO CODIGO: `frontend/src/app/routes.ts:11-13` — 'the Next.js pages themselves belong to the `web` component and are NOT created by this task'.",
@@ -890,6 +891,7 @@ phase = "05"
 depends_on = ["T-05.12", "T-05.11"]
 refs = [
     "ADR-005/D6.0", "ADR-005/D6.1", "ADR-005/D6.2", "ADR-005/D6.3", "ADR-005/F-D6-1", "ADR-005/F-D6-2", "ADR-008/DoD-2", "A4",
+    "ADR-019 (decisao produzida por esta task: cliente HTTP de ingest_health e falsificador da paridade de fingerprint de ADR-008/DoD-2)",
     "plano 05 item 5.14", "DoD D5.14",
     "narrativa: docs/context/plataforma-dados/tasks_review-superficie-servida-2026-09-03.md secao 3",
     "O VACUO QUE ELA FECHA, DECLARADO PELO PROPRIO CODIGO: frontend/src/app/history-transport.ts:20-33 diz 'NAO cria servidor/endpoint algum ... sem assumir um schema de resposta que nenhuma ADR fixou ainda'. ADR-005/D6.0/D6.1 FIXARAM, e e por isso que a task existe agora e nao antes.",
@@ -1248,7 +1250,7 @@ components = ["backtest"]
 status = "done"
 phase = "08"
 depends_on = ["T-04.4", "T-08.1"]
-refs = ["CA-F4-25", "SPEC-001 §3.5", "plano 08 item 8.3", "DoD D8.9", "falsificador global F-4", "unica task de backtest: reprodutibilidade e requisito da plataforma, nao do motor de estrategia"]
+refs = ["CA-F4-25", "SPEC-001 §3.5", "plano 08 item 8.3", "DoD D8.9", "falsificador global F-4", "unica task de backtest: reprodutibilidade e requisito da plataforma, nao do motor de estrategia", "ADR-021 (decisao produzida por esta task: schema de run_registry, bundle_hash/knowledge_time, intrabar_decided_count campo separado)"]
 tracker = { provider = "jira", id = "CST-72", url = "https://conversationhub.atlassian.net/browse/CST-72" }
 
 [[tasks]]
@@ -1272,6 +1274,7 @@ refs = [
     "SPEC-001 §6", "plano 08 item 8.5", "DoD D8.1", "DoD D8.6", "DoD D8.7",
     "Q10 RESPONDIDA 2026-09-04 pelo owner ('pesquisar > monitorar > executar'). Nao bloqueia mais -- ver docs/decisoes-do-owner.md secao Q10.",
     "MANDATO: entregue a distribuicao; o limiar e parametro. Limiar absoluto e um filtro 'nao-BTC' disfarcado de sinal.",
+    "ADR-020 (decisao produzida por esta task: bordas de bin derivadas por (field, nature), overflow como bin de primeira classe, contrato motor<->renderizacao)",
 ]
 tracker = { provider = "jira", id = "CST-74", url = "https://conversationhub.atlassian.net/browse/CST-74" }
 
@@ -1282,7 +1285,7 @@ components = ["charts"]
 status = "done"
 phase = "08"
 depends_on = ["T-08.6"]
-refs = ["SPEC-001 §6", "plano 08 item 8.5 (metade estatistica)", "DoD D8.4", "DoD D8.5", "DoD D8.8", "caso concreto: rolling(2016, min_periods=576) nunca preencheu a janela nos alts e a conclusao publicada caiu"]
+refs = ["SPEC-001 §6", "plano 08 item 8.5 (metade estatistica)", "DoD D8.4", "DoD D8.5", "DoD D8.8", "caso concreto: rolling(2016, min_periods=576) nunca preencheu a janela nos alts e a conclusao publicada caiu", "ADR-022 (decisao produzida por esta task: min_obs devolve ausencia, n_obs efetivo por ponto, dispersao do z como telemetria)"]
 tracker = { provider = "jira", id = "CST-75", url = "https://conversationhub.atlassian.net/browse/CST-75" }
 
 [[tasks]]
@@ -1292,7 +1295,7 @@ components = ["charts"]
 status = "done"
 phase = "08"
 depends_on = ["T-08.6"]
-refs = ["SPEC-001 §6", "plano 08 item 8.5 (metade de honestidade)", "DoD D8.2", "OOS n=23: media 1,404%, max 12,847% = 12,8x o alvo"]
+refs = ["SPEC-001 §6", "plano 08 item 8.5 (metade de honestidade)", "DoD D8.2", "OOS n=23: media 1,404%, max 12,847% = 12,8x o alvo", "ADR-023 (decisao produzida por esta task: firing_rate in-sample tautologico, walk-forward OOS, particao de janelas e tipo)"]
 tracker = { provider = "jira", id = "CST-76", url = "https://conversationhub.atlassian.net/browse/CST-76" }
 
 [[tasks]]
@@ -1338,7 +1341,7 @@ components = ["charts"]
 status = "done"
 phase = "08"
 depends_on = ["T-08.2", "T-08.6"]
-refs = ["SPEC-001 §6", "plano 08 itens 8.5/8.9", "DoD D8.11", "DoD D8.12", "DoD D8.13", "DoD D8.14"]
+refs = ["SPEC-001 §6", "plano 08 itens 8.5/8.9", "DoD D8.11", "DoD D8.12", "DoD D8.13", "DoD D8.14", "ADR-026 (decisao produzida por esta task: habilitacao por multiplo da grade, colisao de disco em px, bucket em formacao, eixo Y unico)"]
 tracker = { provider = "jira", id = "CST-80", url = "https://conversationhub.atlassian.net/browse/CST-80" }
 
 [[tasks]]
@@ -1348,7 +1351,7 @@ components = ["charts"]
 status = "done"
 phase = "08"
 depends_on = ["T-08.6", "T-03.7"]
-refs = ["SPEC-001 §6", "ADR-006/D4", "plano 08 item 8.5", "DoD D8.15", "DoD D8.16", "DoD D8.17", "DoD D8.18", "DoD D8.20"]
+refs = ["SPEC-001 §6", "ADR-006/D4", "plano 08 item 8.5", "DoD D8.15", "DoD D8.16", "DoD D8.17", "DoD D8.18", "DoD D8.20", "ADR-024 (decisao produzida por esta task: honestidade de leitura -- borda, idade, denom verbatim, selecao cega, retrospectiva de S4)"]
 tracker = { provider = "jira", id = "CST-81", url = "https://conversationhub.atlassian.net/browse/CST-81" }
 
 [[tasks]]
@@ -1358,7 +1361,7 @@ components = ["charts"]
 status = "done"
 phase = "08"
 depends_on = ["T-05.1", "T-08.4"]
-refs = ["ADR-003/FR-3", "plano 08 item 8.9", "mudar a grade nao reinterpreta silenciosamente dado antigo"]
+refs = ["ADR-003/FR-3", "plano 08 item 8.9", "mudar a grade nao reinterpreta silenciosamente dado antigo", "ADR-025 (decisao produzida por esta task: grade canonica versionada junto com o dado derivado)"]
 tracker = { provider = "jira", id = "CST-82", url = "https://conversationhub.atlassian.net/browse/CST-82" }
 
 # ── 09 · Consolidacao de fronteira · CST-7 ───────────────────────────────────────
@@ -1367,7 +1370,7 @@ tracker = { provider = "jira", id = "CST-82", url = "https://conversationhub.atl
 id = "T-09.1"
 title = "[docs] 09 · Os ADRs desta rodada numerados e referenciados pelas fases, cada um com falsificador"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "09"
 depends_on = ["T-08.14"]
 refs = [
