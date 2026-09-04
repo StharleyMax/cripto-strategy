@@ -58,5 +58,11 @@ backend/coverage.xml
 # comando do proprio CLI, nunca versionado — mesma razao de `data/` acima.
 backend/.probe-evidence/
 
+# Spike T-08.1 — dado bruto e artefato construido pelos scripts do proprio spike (fetch_data.py,
+# write_parquet.py): reproduzivel do zero, mesma razao de `data/` acima.
+docs/spike/T-08.1-motor-armazenamento/raw/
+docs/spike/T-08.1-motor-armazenamento/built/
+docs/spike/T-08.1-motor-armazenamento/raw_source.tar.gz
+
 # frontend — dependencias de npm nao sao versionadas (T-01.2, ADR-011/D4)
 frontend/node_modules/

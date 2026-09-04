@@ -1,8 +1,9 @@
 # ADR-002 — Motor de armazenamento
 
-**Data:** 2026-08-25 · **Status:** `D4` decidido em 2026-09-04 pelo spike `T-08.1`/`CST-69` (ver emenda ao final) · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §2.5, §4.2
+**Data:** 2026-08-25 · **Status:** proposto, **com um finalista pendente de spike** · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §2.5, §4.2
 **Fase/Epic:** F4 · `CST-6` · **Componente alvo:** `docs` (a decisão) / `sentimento` (o escritor único)
 **Requisito de origem:** `CA-F4-24`
+**Atualização 2026-09-04:** `D4` decidido pelo spike `T-08.1`/`CST-69` (ver emenda ao final).
 
 ## Contexto — e a restrição que mais decide não é performance
 
@@ -55,6 +56,9 @@ Perfil OLAP; e o custo de manter a série na mesma instância que serve a aplica
 ### D4 · Finalista pendente de spike: candidato **4** contra candidato **5**
 
 **Não decidido, e a razão é honesta: nenhum dos cinco foi instalado nem medido, e três números faltam.** *"A ordem de preferência mudou com a tese"* é declaração de preferência, **não** resultado.
+
+**✅ Atualização 2026-09-04: decidido.** O spike `T-08.1`/`CST-69` rodou os cinco critérios abaixo e
+escolheu o candidato **4** — ver a seção "Emenda 2026-09-04" ao final desta ADR.
 
 **Critério do spike, declarado antes de rodar** (universo: as 8.637 linhas de `metrics` de BTCUSDT + 1 dia de `aggTrades` já em disco, `data/`):
 

@@ -13,7 +13,12 @@ import pyarrow.csv as pa_csv
 import pyarrow.parquet as pq
 
 IN_CSV = "built/dataset.csv"
-OUT_DIR = "built/parquet"
+# "_z19" no nome do diretorio nao e cosmetico: e o que distingue este build (zstd
+# nivel 19, explicito) do que o zstd *default* produziria (ver README, linha do
+# criterio de espaco) -- QA T-08.1 ciclo 1 achou os dois em desacordo: o parametro
+# compression_level estava ausente aqui e o GLOB de verify_duckdb.py ja apontava
+# para "_z19", entao o pipeline quebrava na etapa 3b se seguido ao pe da letra.
+OUT_DIR = "built/parquet_z19"
 
 
 def main():
@@ -35,6 +40,7 @@ def main():
         root_path=OUT_DIR,
         partition_cols=["symbol", "fonte"],
         compression="zstd",
+        compression_level=19,
     )
     print(f"rows written: {table.num_rows}")
 

@@ -121,3 +121,52 @@ timescale/timescaledb:2.17.2-pg15  sha256:d33b93c43b9db7a065f660847d4390d4a84ea1
 duckdb 1.5.5 · pyarrow 25.0.1 · psycopg 3.3.5 · Python 3.13.13
 curl -s ipinfo.io  ->  Curitiba, PR, BR, AS14868 LIGGA (este ambiente, NÃO a VPS)
 ```
+
+## Correção de reprodutibilidade — ciclo 2 (QA `T-08.1`, `NEEDS_FIX`)
+
+**Append, nada acima foi reescrito.** QA (`docs/context/plataforma-dados/gates/T-08.1-qa.md`)
+reproduziu este passo a passo do zero e achou dois bugs no candidato 5 — não na decisão, no
+**código que deveria produzir o número já documentado acima**:
+
+1. `write_parquet.py` chamava `pq.write_to_dataset(..., compression="zstd")` **sem
+   `compression_level`**. Rodado como estava commitado: `du -sb built/parquet` = 1.236.601 B
+   → 2,048× o zipado da fonte — **reprova** o critério ≤2×, não o 1,989×/PASS documentado
+   acima. Corrigido: `compression_level=19` explícito.
+2. `OUT_DIR` do mesmo script era `"built/parquet"`, mas `verify_duckdb.py:13` e o passo `du
+   -sb built/parquet_z19` deste README já usavam `built/parquet_z19` — seguido ao pé da
+   letra, `verify_duckdb.py` quebrava (`IOException: No files found`). Corrigido alinhando
+   `OUT_DIR = "built/parquet_z19"` (em vez de renomear os dois consumidores).
+
+**Reexecutado de ponta a ponta com o fix, dado novo (refetch da Binance em 2026-09-04, não
+o mesmo dado bit a bit do ciclo 1 — por isso os bytes variam no dígito menos significativo,
+não a razão):**
+
+```bash
+python3 fetch_data.py --symbols BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT --days 30 --out-dir ./raw
+# -> 8.624 linhas/símbolo × 4 = 34.496 linhas [MEDIDO 2026-09-04, ciclo 2]
+tar -czf raw_source.tar.gz raw/*.csv && du -sb raw_source.tar.gz
+# -> 603.709 B
+python3 build_dataset.py --raw-dir ./raw --out-dir ./built
+# -> 35.419 linhas (34.496 + 30 + 30 + 863)
+
+# candidato 4 (TimescaleDB) -- mesmos comandos do passo 3a acima
+# -> hypertable_size = 909.312 B (idêntico byte a byte ao ciclo 1) = 1,506×
+python3 verify_timescale.py
+# -> OVERALL: PASS, scan 0,0479s
+
+python3 write_parquet.py && du -sb built/parquet_z19
+# -> 1.200.765 B = 1,989× [MEDIDO 2026-09-04, ciclo 2] -- confirma o número da emenda
+python3 verify_duckdb.py
+# -> OVERALL: PASS, scan 0,0119s -- roda sem editar nada, GLOB e OUT_DIR já batem
+```
+
+**Confirmação do contraste com o default** (mesmo dataset, zstd sem `compression_level`):
+`du -sb built/parquet_default` → 1.233.261 B = **2,043×** — reprova o critério ≤2×, mesma
+direção do 2,061× já documentado acima (a diferença de 3ª casa decimal é o dado
+re-fetchado, não o motor).
+
+**Efeito na decisão:** nenhum. Os números da emenda de `ADR-002` (1,506× e 1,989×) são
+**confirmados reais** por esta reexecução — o defeito estava só no script não reproduzir o
+que já estava escrito, agora corrigido. `ADR-002` não foi tocado (`CLAUDE.md`: só se os
+números mudassem valeria emenda nova). Gate completo:
+`docs/context/plataforma-dados/gates/T-08.1-builder-ciclo2.md`.
