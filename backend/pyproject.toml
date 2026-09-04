@@ -208,6 +208,20 @@ include_external_packages = true
 # exatamente um contexto [MEDIDO 2026-08-28: `ls backend/src/modules/` -> `__init__.py`,
 # `sentimento`]. Quem criar o segundo contexto ACRESCENTA a linha aqui — e o contrato NAO o
 # cobre ate que ela exista, porque `exhaustive = false` nao inventa container.
+#
+# `T-08.6` (`ADR-020`) CRIA o segundo contexto — `src/modules/charts/` — e NAO acrescenta a
+# linha aqui, e o motivo e medido, no mesmo formato que `ADR-009/D6.6`/`D6.9` ja documentaram
+# para o contrato (4) abaixo: um contrato `type = "layers"` reprova com `rc=3` ("Missing layer
+# in container ... module ... does not exist") quando FALTA UMA das camadas declaradas em
+# QUALQUER container listado — e `charts` nasce com `domain/` e `use_cases/` apenas
+# (`ADR-020/D7`: a query SQL concreta contra TimescaleDB, em `charts/infra/`, e "fora de escopo
+# aqui — a PORTA e decisao deste ADR, a query SQL e do builder [de uma task futura]").
+# `[MEDIDO 2026-09-04: acrescentar "src.modules.charts" a `containers` sem `charts/infra/`
+# no disco -> `make boundaries` -> "Missing layer in container 'src.modules.charts': module
+# src.modules.charts.infra does not exist.", RECUSA rc=3, NAO MEDIU]`. A fronteira ENTRE
+# camadas de `charts` (contrato 3, `Natureza`, abaixo) ja cobre `domain`/`use_cases` hoje;
+# quando a task que cria `charts/infra/` existir, ELA acrescenta esta linha — mesmo gatilho
+# simetrico que `D6.9` fixou para `src.api`/`src.jobs`.
 [[tool.importlinter.contracts]]
 name = "Camadas por contexto: infra > use_cases > domain"
 type = "layers"
@@ -240,6 +254,22 @@ type = "forbidden"
 source_modules = ["src.modules.sentimento"]
 forbidden_modules = [
     "src.modules.charts",
+    "src.modules.convergencia",
+    "src.modules.backtest",
+]
+
+# `charts` E O SEGUNDO CONTEXTO (`T-08.6`, `ADR-020`), e este e o contrato que o paragrafo
+# acima pedia. ASSIMETRICO por desenho, e nao descuido: `sentimento` fica de fora de
+# `forbidden_modules` aqui — `ADR-020/D7` autoriza `charts` (motor Python) a importar
+# `Nature`/`SeriesKey` de `sentimento.domain` por reuso, o MESMO precedente que `ADR-003/FR-3`
+# ja usa para `backtest` importar de `charts` (frontend). `convergencia`/`backtest` continuam
+# proibidos: nenhum dos dois contextos existe ainda, e `charts` nao tem motivo declarado para
+# falar com nenhum dos dois.
+[[tool.importlinter.contracts]]
+name = "Fronteira de contexto: charts so importa sentimento (nunca convergencia/backtest)"
+type = "forbidden"
+source_modules = ["src.modules.charts"]
+forbidden_modules = [
     "src.modules.convergencia",
     "src.modules.backtest",
 ]
@@ -288,6 +318,11 @@ type = "forbidden"
 source_modules = [
     "src.modules.sentimento.domain",
     "src.modules.sentimento.use_cases",
+    # `T-08.6`/`ADR-020` acrescenta o segundo contexto a esta MESMA lista, em vez de abrir um
+    # contrato irmao: a invariante ("domain/use_cases nunca tocam transporte cru") nao muda de
+    # contexto para contexto, so o universo que ela cobre cresce.
+    "src.modules.charts.domain",
+    "src.modules.charts.use_cases",
 ]
 forbidden_modules = ["socket", "ssl"]
 

@@ -1265,7 +1265,7 @@ tracker = { provider = "jira", id = "CST-73", url = "https://conversationhub.atl
 id = "T-08.6"
 title = "[charts] 08 · S4 bancada: distribution / scan / firing_rate, bordas de bin por (field, nature) com overflow contado"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-08.2", "T-08.5"]
 refs = [
