@@ -13,6 +13,14 @@ already on file for the same triple, it never publishes a number under the appea
 nothing changed (falsifier G2's other side: it also never refuses when the value handed in is
 unchanged, which is what keeps a legitimate compaction — one that correctly reproduces the same
 hash — from being treated as new data).
+
+`ADR-025`/D4 amends this use case with a SECOND, distinct check: the triple proves the BYTES are
+unchanged, never that the canonical-grid ALGORITHM that turns them into bars is unchanged
+(`ADR-025`/D1). `grid_version` is a fourth reproducibility term, owned by `charts`
+(`ADR-025`/D3) — same triple, same `partitions_content_hash` (data identical, G1 does not fire),
+but a `grid_version` that differs from the one already on file (the ruler changed) is refused by
+`GridVersionDivergenceError` (falsifier G6), never by `RunRegistryDivergenceError`: mixing the
+two messages would erase the exact distinction `ADR-025` exists to create (`ADR-025`/H4).
 """
 
 from __future__ import annotations
@@ -32,6 +40,15 @@ class RunRegistryDivergenceError(Exception):
     `ADR-021`/D4: under append-only storage this must never happen; if it does, it is either
     corruption or a caller that failed to account for `ADR-002`/D6 correctly, and either way
     the correct response is refusal, not a published number.
+    """
+
+
+class GridVersionDivergenceError(Exception):
+    """The same triple and `partitions_content_hash`, but a different `grid_version` — G6.
+
+    `ADR-025`/D4: distinct from `RunRegistryDivergenceError` on purpose. G1 means the DATA
+    changed; this means the RULER (canonical-grid semantics) changed under identical data — a
+    different cause, and `ADR-025`/H4 names conflating the two messages as a defect in itself.
     """
 
 
@@ -64,13 +81,15 @@ def record_run(
     intrabar_convention: IntrabarConvention,
     intrabar_decided_count: int,
     principal_id: str,
+    grid_version: int,
 ) -> RunRegistryEntry:
     """Build, validate and persist one `run_registry` row for a finished backtest run.
 
     Order of operations follows `ADR-021`/D4 literally: `bundle_hash` and `knowledge_time` are
     derived first (never trusted from the caller as pre-computed for `knowledge_time`'s LIVE
     case), THEN the reproduction check (G1/G2) runs against whatever is already on file for
-    that triple, and only after both pass is the row constructed — `RunRegistryEntry`'s own
+    that triple, THEN the grid-version check (`ADR-025`/D4, G6) runs against the same existing
+    row, and only after all three pass is the row constructed — `RunRegistryEntry`'s own
     `__post_init__` is the last line of defense (G4/G5, types).
     """
     computed_bundle_hash = bundle_hash(bundle)
@@ -94,6 +113,15 @@ def record_run(
             f"{existing.partitions_content_hash} — refusing before publishing a number "
             f"(`ADR-021` G1)"
         )
+    if existing is not None and existing.grid_version != grid_version:
+        raise GridVersionDivergenceError(
+            f"reproduction of bundle_hash={computed_bundle_hash} "
+            f"window=({window_from_ms}, {window_to_ms}) knowledge_time={knowledge_time} "
+            f"was computed under grid_version={grid_version}, but run {existing.run_id} "
+            f"already on file for the same triple (identical partitions_content_hash) "
+            f"recorded grid_version={existing.grid_version} — the canonical grid's semantics "
+            f"changed under identical data, refusing before publishing a number (`ADR-025` G6)"
+        )
     entry = RunRegistryEntry(
         run_id=run_id,
         bundle_hash=computed_bundle_hash,
@@ -105,6 +133,7 @@ def record_run(
         intrabar_convention=intrabar_convention,
         intrabar_decided_count=intrabar_decided_count,
         principal_id=principal_id,
+        grid_version=grid_version,
     )
     store.record(entry)
     return entry

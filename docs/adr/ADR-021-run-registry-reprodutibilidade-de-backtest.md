@@ -210,3 +210,15 @@ G3 está fechada por teste que a PROVA sob reordenação de topo E aninhada
 (`test_field_order_does_not_change_the_hash`,
 `test_nested_dict_field_order_does_not_change_the_hash`), reexecutando também o teste
 originalmente vermelho de QA (`test_bundle_hash_determinism_qa.py`) — agora verde.
+
+## ✅ Emenda 2026-09-04 — `T-08.14`: `D2`/`D4` ganham um quarto termo, `grid_version`, distinto de `commit`
+
+`T-08.14`/`ADR-003`/FR-3 perguntou se `bundle_hash + window + knowledge_time` (`D8.9`) já cobre a
+garantia de "mudar a grade canônica não reinterpreta silenciosamente dado antigo". Medido contra
+`record_run.py:82-96`: **não cobre** — a única comparação de divergência hoje é
+`partitions_content_hash`; `commit` (`D2` acima) é gravado e nunca comparado. Decisão completa,
+com o número que a motiva e o falsificador novo (**G6**), em
+[`ADR-025`](ADR-025-grade-canonica-versionada-com-o-dado-derivado.md) — que **estende** esta ADR
+(nova coluna `grid_version INTEGER NOT NULL` em `D2`, nova causa de recusa em `D4`, exceção nova
+`GridVersionDivergenceError` distinta de `RunRegistryDivergenceError`) sem reabrir G1–G5 nem D1/D3/D5
+acima. Nenhuma linha deste documento foi apagada.

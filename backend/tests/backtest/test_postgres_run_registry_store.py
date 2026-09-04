@@ -107,6 +107,7 @@ def _entry(**overrides: object) -> RunRegistryEntry:
         "intrabar_convention": IntrabarConvention.PESSIMISTIC_STOP_FIRST,
         "intrabar_decided_count": 0,
         "principal_id": "stharley",
+        "grid_version": 1,
     }
     fields.update(overrides)
     return RunRegistryEntry(**fields)  # type: ignore[arg-type]
@@ -176,9 +177,9 @@ def test_the_window_check_constraint_bites_at_the_database(
         cursor.execute(
             "INSERT INTO backtest.run_registry (run_id, bundle_hash, window_from_ms, "
             "window_to_ms, knowledge_time, partitions_content_hash, commit, "
-            "intrabar_convention, intrabar_decided_count, principal_id) VALUES "
+            "intrabar_convention, intrabar_decided_count, principal_id, grid_version) VALUES "
             "('bad-window', %s, 2000, 1000, 2000, %s, 'deadbeef', "
-            "'pessimistic_stop_first', 0, 'stharley')",
+            "'pessimistic_stop_first', 0, 'stharley', 1)",
             ("a" * 64, "b" * 64),
         )
     postgres_connection.rollback()
@@ -194,9 +195,27 @@ def test_the_intrabar_convention_check_constraint_bites_at_the_database(
         cursor.execute(
             "INSERT INTO backtest.run_registry (run_id, bundle_hash, window_from_ms, "
             "window_to_ms, knowledge_time, partitions_content_hash, commit, "
-            "intrabar_convention, intrabar_decided_count, principal_id) VALUES "
+            "intrabar_convention, intrabar_decided_count, principal_id, grid_version) VALUES "
             "('bad-convention', %s, 0, 1000, 1000, %s, 'deadbeef', "
-            "'optimistic_target_first', 0, 'stharley')",
+            "'optimistic_target_first', 0, 'stharley', 1)",
+            ("a" * 64, "b" * 64),
+        )
+    postgres_connection.rollback()
+
+
+def test_the_grid_version_check_constraint_bites_at_the_database(
+    postgres_connection: psycopg.Connection,
+) -> None:
+    """A negative `grid_version` (`ADR-025`/D4) is refused by the database itself."""
+    store = PostgresRunRegistryStore(postgres_connection)
+    store.ensure_schema()
+    with postgres_connection.cursor() as cursor, pytest.raises(psycopg.errors.CheckViolation):
+        cursor.execute(
+            "INSERT INTO backtest.run_registry (run_id, bundle_hash, window_from_ms, "
+            "window_to_ms, knowledge_time, partitions_content_hash, commit, "
+            "intrabar_convention, intrabar_decided_count, principal_id, grid_version) VALUES "
+            "('bad-grid-version', %s, 0, 1000, 1000, %s, 'deadbeef', "
+            "'pessimistic_stop_first', 0, 'stharley', -1)",
             ("a" * 64, "b" * 64),
         )
     postgres_connection.rollback()

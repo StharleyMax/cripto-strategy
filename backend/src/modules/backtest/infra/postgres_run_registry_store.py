@@ -1,6 +1,7 @@
 """Postgres-backed `backtest.run_registry` — `ADR-021`/D1: Postgres, not `md.*`, not SQLite.
 
-Schema and column types are `ADR-021`/D2, transcribed 1:1 into DDL. `ensure_schema()` is
+Schema and column types are `ADR-021`/D2, transcribed 1:1 into DDL, plus `grid_version`
+(`ADR-025`/D4's amendment to `D2`). `ensure_schema()` is
 idempotent (`CREATE SCHEMA IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS`) rather than a
 migration-framework step: this is the first table this backend writes to Postgres, and
 `ADR-021` explicitly scopes "migracao SQL" as builder work, not a new tool to adopt.
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS backtest.run_registry (
     intrabar_convention TEXT NOT NULL CHECK (intrabar_convention IN ('pessimistic_stop_first')),
     intrabar_decided_count INTEGER NOT NULL CHECK (intrabar_decided_count >= 0),
     principal_id TEXT NOT NULL,
+    grid_version INTEGER NOT NULL CHECK (grid_version >= 0),
     CHECK (window_from_ms <= window_to_ms)
 );
 
@@ -46,7 +48,7 @@ CREATE INDEX IF NOT EXISTS run_registry_triple_idx
 _SELECT_BY_TRIPLE_SQL = (
     "SELECT run_id, bundle_hash, window_from_ms, window_to_ms, knowledge_time, "
     "partitions_content_hash, commit, intrabar_convention, intrabar_decided_count, "
-    "principal_id, created_at FROM backtest.run_registry "
+    "principal_id, grid_version, created_at FROM backtest.run_registry "
     "WHERE bundle_hash = %s AND window_from_ms = %s AND window_to_ms = %s "
     "AND knowledge_time = %s ORDER BY created_at ASC LIMIT 1"
 )
@@ -54,7 +56,7 @@ _SELECT_BY_TRIPLE_SQL = (
 _SELECT_BY_RUN_ID_SQL = (
     "SELECT run_id, bundle_hash, window_from_ms, window_to_ms, knowledge_time, "
     "partitions_content_hash, commit, intrabar_convention, intrabar_decided_count, "
-    "principal_id, created_at FROM backtest.run_registry WHERE run_id = %s"
+    "principal_id, grid_version, created_at FROM backtest.run_registry WHERE run_id = %s"
 )
 
 
@@ -84,6 +86,7 @@ def _row_to_entry(row: dict[str, object]) -> RunRegistryEntry:
         intrabar_convention=IntrabarConvention(str(row["intrabar_convention"])),
         intrabar_decided_count=int(row["intrabar_decided_count"]),  # type: ignore[call-overload]
         principal_id=str(row["principal_id"]),
+        grid_version=int(row["grid_version"]),  # type: ignore[call-overload]
     )
 
 
@@ -148,8 +151,8 @@ class PostgresRunRegistryStore:
             "INSERT INTO backtest.run_registry ("
             "run_id, bundle_hash, window_from_ms, window_to_ms, knowledge_time, "
             "partitions_content_hash, commit, intrabar_convention, intrabar_decided_count, "
-            "principal_id"
-            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            "principal_id, grid_version"
+            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
         )
         with self._connection.cursor() as cursor:
             cursor.execute(
@@ -165,6 +168,7 @@ class PostgresRunRegistryStore:
                     entry.intrabar_convention.value,
                     entry.intrabar_decided_count,
                     entry.principal_id,
+                    entry.grid_version,
                 ),
             )
         self._connection.commit()

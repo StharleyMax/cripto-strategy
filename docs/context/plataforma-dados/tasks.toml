@@ -1355,7 +1355,7 @@ tracker = { provider = "jira", id = "CST-81", url = "https://conversationhub.atl
 id = "T-08.14"
 title = "[charts] 08 · Grade canonica versionada junto com o dado derivado"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-05.1", "T-08.4"]
 refs = ["ADR-003/FR-3", "plano 08 item 8.9", "mudar a grade nao reinterpreta silenciosamente dado antigo"]

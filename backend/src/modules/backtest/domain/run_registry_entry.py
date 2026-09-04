@@ -1,6 +1,8 @@
 """One row of `backtest.run_registry` — the reproducibility log a backtest run writes.
 
 Columns and types are `ADR-021`/D2, transcribed from `SPEC-001` §3.5 with a type per column.
+`grid_version` is `ADR-025`/D4's amendment: a fourth reproducibility term, distinct from
+`commit`, that `record_run` compares to refuse a silent canonical-grid semantics change (G6).
 `created_at` is deliberately ABSENT from this dataclass: `ADR-021`/D2 makes it the one column
 that is "auditoria, nunca caminho de decisao" and gives it a database-side default
 (`TIMESTAMPTZ NOT NULL DEFAULT now()`) — nothing in `domain`/`use_cases` reads a clock
@@ -63,6 +65,7 @@ class RunRegistryEntry:
     intrabar_convention: IntrabarConvention
     intrabar_decided_count: int
     principal_id: str
+    grid_version: int
 
     def __post_init__(self) -> None:
         """Refuse a row that could not have come from an honest run (`ADR-021` G4/G5, D2)."""
@@ -84,4 +87,9 @@ class RunRegistryEntry:
             raise InvalidRunRegistryEntryError(
                 f"intrabar_decided_count must be >= 0, got {self.intrabar_decided_count} — it "
                 f"counts trades, and `ADR-021`/D5 names it a measure, never a signed adjustment"
+            )
+        if self.grid_version < 0:
+            raise InvalidRunRegistryEntryError(
+                f"grid_version must be >= 0, got {self.grid_version} — it is a monotonic counter "
+                f"owned by `charts` (`ADR-025`/D3), never a signed adjustment"
             )

@@ -27,18 +27,23 @@ _ROW: dict[str, object] = {
     "intrabar_convention": "pessimistic_stop_first",
     "intrabar_decided_count": 3,
     "principal_id": "stharley",
+    "grid_version": 2,
     "created_at": datetime(2026, 9, 4, 12, 0, 0, tzinfo=UTC),
 }
 
 
 def test_row_to_entry_maps_every_column() -> None:
-    """Every `ADR-021`/D2 column round-trips, including the enum conversion."""
+    """Every `ADR-021`/D2 column round-trips, including the enum conversion.
+
+    Also covers `grid_version` (`ADR-025`/D4's amendment to `D2`).
+    """
     entry = _row_to_entry(_ROW)
     assert entry.run_id == "run-1"
     assert entry.intrabar_convention is IntrabarConvention.PESSIMISTIC_STOP_FIRST
     assert entry.intrabar_decided_count == 3
     assert entry.window_from_ms == 0
     assert entry.window_to_ms == 1_000
+    assert entry.grid_version == 2
 
 
 def test_row_created_at_ms_converts_to_epoch_milliseconds() -> None:
