@@ -1335,7 +1335,7 @@ tracker = { provider = "jira", id = "CST-79", url = "https://conversationhub.atl
 id = "T-08.12"
 title = "[charts] 08 · Regras de renderizacao de painel: habilitacao por multiplo da grade, colisao de discos, nunca dois eixos Y"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-08.2", "T-08.6"]
 refs = ["SPEC-001 §6", "plano 08 itens 8.5/8.9", "DoD D8.11", "DoD D8.12", "DoD D8.13", "DoD D8.14"]
