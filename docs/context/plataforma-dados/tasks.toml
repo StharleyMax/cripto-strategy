@@ -1204,14 +1204,14 @@ tracker = { provider = "jira", id = "CST-68", url = "https://conversationhub.atl
 id = "T-08.1"
 title = "[docs] 08 · Spike do motor de armazenamento, com os 5 criterios declarados ANTES de rodar"
 components = ["docs"]
-status = "blocked"
+status = "todo"
 phase = "08"
 depends_on = ["T-01.1"]
 refs = [
     "ADR-002/D4", "CA-F4-24", "plano 08 item 8.1", "DoD D8.21 (os cinco criterios)",
-    "NUMERO QUE FALTA: RAM livre, [NAO MEDIDO]. Comando: free -m de dentro da VPS.",
-    "NUMERO QUE FALTA: disco livre, [NAO MEDIDO]. Comando: df -h de dentro da VPS. A VPS roda 6 servicos e esta sob pressao de disco documentada (KAN-86).",
-    "NUMERO QUE FALTA: regiao da VPS, [NAO MEDIDO]. Comando: curl -s ipinfo.io. Mesma lacuna de T-03.9, e ela vence ANTES de 08.",
+    "RAM: 7945 MB total, 5219 MB available [MEDIDO 2026-09-04, comando: free -m de dentro da VPS, root@179.197.69.111]",
+    "Disco: 99G total, 21G usado, 75G disponivel, 22% uso em / [MEDIDO 2026-09-04, comando: df -h de dentro da VPS]. A VPS roda 6 servicos e esta sob pressao de disco documentada (KAN-86) -- 22% de uso hoje, reavaliar sob carga real dos 6 servicos, nao so o numero absoluto.",
+    "Regiao: Sao Paulo [MEDIDO 2026-09-04, comando: curl -s ipinfo.io]. Mesma lacuna de T-03.9, resolvida pelo mesmo dado.",
     "finalistas: (4) TimescaleDB no postgres:15 ja de pe x (5) Parquet no R2 + DuckDB httpfs. ClickHouse eliminado como 7o container.",
 ]
 tracker = { provider = "jira", id = "CST-69", url = "https://conversationhub.atlassian.net/browse/CST-69" }
