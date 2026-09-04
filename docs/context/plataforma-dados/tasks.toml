@@ -1204,7 +1204,7 @@ tracker = { provider = "jira", id = "CST-68", url = "https://conversationhub.atl
 id = "T-08.1"
 title = "[docs] 08 · Spike do motor de armazenamento, com os 5 criterios declarados ANTES de rodar"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-01.1"]
 refs = [
