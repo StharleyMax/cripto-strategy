@@ -193,3 +193,159 @@ a escolha errada para uma série deste tamanho.
 **Doc delta desta emenda:** nenhum outro documento precisa mudar — `D8.21` já estava escrito
 com os cinco critérios corretos, e o que faltava era o experimento, agora registrado aqui e
 em `docs/spike/T-08.1-motor-armazenamento/`.
+
+---
+
+## ✅ Emenda 2026-09-04 — `D6` CONCRETIZADA para o candidato 4 (`T-08.3`/`CST-71`)
+
+**Acréscimo, nada acima foi reescrito.** `D6` foi escrita quando o finalista ainda estava aberto
+(candidato 4 × 5) e falava em termos de Parquet ("a unidade é o arquivo… compactar reescreve
+partição"). `D4` decidiu candidato 4 (`TimescaleDB` em `postgres:15`). Esta emenda torna `D6`
+executável para ESSE motor: o que `compaction_epoch` é, onde vive, a granularidade de "partição",
+e o algoritmo que fecha "a porta da manutenção" sem devolver número diferente em silêncio (`F-4`).
+
+### D6a · Mapeamento do vocabulário de `D6` para TimescaleDB
+
+| termo de `D6` (Parquet) | equivalente no candidato 4 |
+|---|---|
+| "arquivo" que compactação reescreve | **`chunk`** de hypertable (`show_chunks`) |
+| "compactar" | `compress_chunk` / `decompress_chunk` / `recompress_chunk` — operação **nativa, lossless**, muda **codificação física** (row→columnar), não deleta nem altera valor lógico de nenhuma linha |
+| hash de conteúdo mudando por rewrite físico | **não se aplica do mesmo jeito**: `content_hash` (abaixo) é definido sobre o RESULTADO LÓGICO de uma query, não sobre bytes de arquivo — então uma `compress_chunk` correta **não deveria** mudar o hash. `compaction_epoch` continua necessário como **rede de segurança e trilha de auditoria**, não porque o hash logicamente TENHA que mudar |
+
+**`[INFERRED]`** — decisão desta emenda, não citação de `D6`: dado que o hash agora é lógico
+(linha abaixo), o cenário que `D6` mais temia ("hash novo por reescrita física, indistinguível de
+dado novo") deixa de ser o caso comum. Ele continua possível por dois motivos que `compaction_epoch`
+cobre: (1) erro de implementação do hash (ex.: `string_agg` sem `ORDER BY` explícito, que pode
+reordenar entre um `compress_chunk` e outro por depender de ordem física de scan); (2) qualquer
+operação futura de "manutenção" que NÃO seja `compress_chunk` mas ainda reescreva o chunk
+fisicamente (`CLUSTER`, `pg_repack`, re-particionamento por mudança de `chunk_time_interval`).
+
+### D6b · Granularidade de "partição" — desacoplada de `chunk_time_interval`
+
+**Decisão: "partição", para fins de reprodutibilidade, é `(series_key_id, symbol, source,
+partition_key)`, com `partition_key` um bucket de calendário DECLARADO na aplicação — não o
+chunk físico do Timescale.** Motivo, com o fato que a própria emenda de `D4` já registrou: o
+spike reconfigurou `chunk_time_interval` de 1 dia para 45 dias **para resolver taxa de
+compressão**, e isso é "parâmetro de operação, não característica do motor" (texto da própria
+emenda `D4`, linha "Achado lateral"). Se "partição" == "chunk físico", a PRÓXIMA vez que alguém
+retunar `chunk_time_interval` (razão puramente de compressão) redefine em silêncio o que
+"partição" significa para todo `run_registry` já emitido — exatamente o modo de falha que `D6`
+existe para fechar, só que pela porta do *tuning* em vez da porta do *rewrite*.
+
+**Recomendação operacional (não é portão desta ADR):** escolher `chunk_time_interval` para
+COINCIDIR com o `partition_key` declarado (hoje: mês UTC), eliminando a necessidade de uma tabela
+de mapeamento chunk↔partição em regime normal. Se compressão exigir um chunk maior que o bucket de
+reprodutibilidade (como aconteceu no spike), o escritor único trata isso como **migração de
+esquema de partição** — registrada, com `compaction_epoch` de TODAS as partições afetadas
+incrementado no mesmo evento — nunca como `ALTER TABLE … SET (timescaledb.chunk_time_interval=…)`
+solto por um operador contra uma tabela com chunks já existentes.
+
+### D6c · Onde `compaction_epoch` e `content_hash` vivem
+
+**Tabela nova, catálogo (`md`, mesmo schema de `md.ingest_run`/`md.ingest_gap`), dona = `sentimento`
+(o escritor único, por `D5`):**
+
+```
+md.partition_registry ( series_key_id, symbol, source, partition_key,
+                         compaction_epoch, content_hash, row_count,
+                         last_compacted_at, last_written_at, updated_at )
+```
+
+- **`compaction_epoch`**: inteiro, começa em `0`, **incrementado em exatamente 1 pelo escritor
+  único** — nunca pelo Timescale, nunca por um job de manutenção fora do escritor — a cada
+  operação de classe compactação (`compress_chunk`/`decompress_chunk`/`recompress_chunk`, ou
+  migração de `chunk_time_interval` per `D6b`) que toque qualquer linha da partição. **Não é** o
+  `id` interno de `_timescaledb_catalog.chunk` (não estável sob `merge_chunks`/reparticionamento,
+  e é implementação interna do motor — usá-lo violaria `D5`: a invariante mora na aplicação).
+- **`content_hash`**: `sha256` sobre a projeção canônica das linhas da partição (as sete colunas
+  de procedência + colunas de valor), em ORDEM DETERMINÍSTICA explícita
+  (`ORDER BY event_time, observed_at, source, symbol` — nunca ordem de scan implícita),
+  recalculado pelo escritor único após todo write e após toda operação de compactação.
+- **Concorrência:** o escritor único serializa `(escrever, compactar)` por partição com lock
+  consultivo — nunca uma `compress_chunk` roda enquanto um write para a mesma partição está em
+  voo, porque isso é a única forma real de o `content_hash` capturar um estado inconsistente
+  (metade comprimido, metade não).
+
+### D6d · A regra de comparação — o que fecha `F-4` para este caso
+
+Dado um `run_registry` já gravado (`bundle_hash B`, `window W`, `knowledge_time K1`,
+`partitions_content_hash H1`, e — **novo nesta emenda** — o snapshot por partição de
+`compaction_epoch` no momento do run, em tabela de auditoria `run_registry_partition_snapshot
+(run_id, series_key_id, symbol, source, partition_key, compaction_epoch, content_hash)`,
+append-only, dona = `backtest`/`T-08.4`, populada A PARTIR de `md.partition_registry`):
+
+Uma tentativa de reprodução com o MESMO `(B, W)` recomputa `K2`/`H2` sobre as mesmas partições e
+segue esta árvore, **sem exceção**:
+
+| `K2` vs `K1` | `H2` vs `H1` | classificação | ação |
+|---|---|---|---|
+| igual | igual | reprodução válida | devolve o número, **bit-idêntico** (`D8.9`) |
+| igual | **diferente** | olhar `compaction_epoch` de cada partição tocada | ver abaixo — **nunca devolve número novo em silêncio** |
+| diferente | (qualquer) | dado novo (backfill dentro da janela) | comportamento já coberto por `D8.9`: RECUSA apontando divergência de `knowledge_time` |
+
+Para a linha do meio (`K` igual, `H` diferente — o caso que `D8.10` nomeia):
+
+- **Todas** as partições tocadas com `compaction_epoch` MAIOR que o snapshot registrado, e
+  nenhuma com `compaction_epoch` igual ⇒ classe = **`compaction`**. O sistema **ainda RECUSA** a
+  devolução silenciosa (mandato de `F-4`: "nunca número diferente em silêncio" não abre exceção
+  para compactação) — mas a mensagem de recusa **é distinta**: cita a classe, a lista de
+  `(partition_key, epoch_antigo → epoch_novo)`, e convida reconciliação explícita (novo
+  `run_registry` gravado com `H2`, ligado ao anterior por `superseded_by`), nunca sobrescrita in
+  place — `append-only` continua valendo aqui.
+- **Qualquer** partição com `compaction_epoch` **igual** ao snapshot mas `content_hash`
+  diferente ⇒ classe = **`anomalia`** (hash mudou sem compactação registrada E sem
+  `knowledge_time` novo). Isto é **mais grave** que o caso de compactação: RECUSA dura,
+  sem sugestão de reconciliação automática — é o sintoma de um bug no cálculo do hash, de uma
+  escrita fora do escritor único, ou de corrupção. `FA-3` desta ADR passa a ler EXATAMENTE este
+  caso.
+
+**`[INFERRED, extensão de D6]`**: o texto original de `D6` podia ser lido como "compactação
+classificada ⇒ aceitar H2 silenciosamente". Esta emenda fecha essa leitura porque o falsificador
+global da fase (`F-4`, plano `08`) é categórico — "nunca número diferente em silêncio" — sem
+exceção nomeada para compactação. Se o owner quiser a leitura permissiva (aceitar H2
+automaticamente quando a classe é `compaction`), isso é uma escolha de produto que reabre `F-4`,
+não uma leitura livre desta ADR.
+
+### D6e · Fora de escopo desta emenda, nomeado para não virar exceção por omissão
+
+**Retenção/expurgo físico de linhas (`drop_chunks` ou equivalente) NÃO é "compactação" e não é
+coberta por `compaction_epoch`.** Compressão é lossless (as linhas continuam lá, só a codificação
+muda); retenção DELETA linhas, o que destrói exatamente o histórico de `knowledge_time` de que a
+reprodutibilidade depende. Nenhuma política de retenção existe hoje para a série de mercado
+(`ADR-002` não propôs uma), e se uma vier a existir, ela precisa de ADR própria com o gatilho de
+"partição ainda referenciada por `run_registry`" tratado como bloqueio duro — não como o epoch
+incremental que esta emenda define. **Não é decidido aqui.**
+
+### Falsificador desta emenda (soma-se a `FA-3`)
+
+**FA-3b**: uma `compress_chunk` real (TimescaleDB, não simulada) sobre uma partição com N linhas
+produzindo `content_hash` diferente **quando calculado com `ORDER BY` explícito e determinístico**
+— isso derrubaria a premissa de `D6a` de que compactação lossless não deveria mexer no hash
+lógico, e forçaria tratar `compaction_epoch` como MAIS que rede de segurança.
+
+### Interface entre `sentimento` (esta emenda) e `backtest` (`T-08.4`)
+
+`sentimento` é dono de `md.partition_registry` (fonte da verdade de `compaction_epoch`/
+`content_hash` por partição) e do algoritmo de incremento (`D6c`). `backtest`/`T-08.4` é dono de
+`run_registry` e de `run_registry_partition_snapshot`, e consome `md.partition_registry` **por
+leitura**, no momento em que grava um run — nunca escreve nele. Esta é a fronteira de módulo:
+**quem produz a linha de série é o único que sabe se ela foi compactada; quem grava o registro de
+reprodutibilidade é o único que sabe quais partições um `window` tocou.**
+
+### Como o owner confere
+
+1. `D6a`/`D6b`/`D6c` são **decisão de arquitetura, rotulada como tal** (`[OPINIÃO/INFERRED:
+   quant-architect, 2026-09-04]`) — não há medição possível antes de `T-08.4` existir e rodar
+   contra TimescaleDB real.
+2. O falsificador `FA-3b` é executável hoje contra o ambiente do spike `T-08.1`
+   (`docs/spike/T-08.1-motor-armazenamento/`): rodar `compress_chunk` sobre uma partição de teste,
+   calcular `content_hash` com `ORDER BY` explícito antes/depois, comparar. **Isto é o teste de
+   regressão que `builder` de `T-08.3` deve escrever primeiro** — fixture de storage real, não
+   fixture de mercado, mas mesma disciplina: o owner confere o resultado do `compress_chunk`
+   contra `psql`, não contra a leitura deste texto.
+3. A árvore de decisão de `D6d` é a tabela contra a qual `D8.10` (DoD da fase `08`) deve ser
+   testado literalmente — três casos, três linhas de teste.
+
+**Doc delta desta emenda:** `run_registry` (`SPEC-001` §3.5) precisa ganhar uma referência a
+`run_registry_partition_snapshot` quando `T-08.4` for especificado — não alterado aqui porque
+`T-08.4` ainda está `todo` e é quem detém esse componente (`backtest`).

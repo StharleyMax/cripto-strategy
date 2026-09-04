@@ -1235,7 +1235,7 @@ tracker = { provider = "jira", id = "CST-70", url = "https://conversationhub.atl
 id = "T-08.3"
 title = "[sentimento] 08 · Regra de compactacao x knowledge_time: compaction_epoch por particao"
 components = ["sentimento"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-07.5", "T-08.1"]
 refs = ["ADR-002/D6", "plano 08 item 8.2", "DoD D8.10", "sem isso a reprodutibilidade se perde pela porta da manutencao, em silencio"]

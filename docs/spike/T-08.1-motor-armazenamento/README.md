@@ -170,3 +170,51 @@ re-fetchado, não o motor).
 que já estava escrito, agora corrigido. `ADR-002` não foi tocado (`CLAUDE.md`: só se os
 números mudassem valeria emenda nova). Gate completo:
 `docs/context/plataforma-dados/gates/T-08.1-builder-ciclo2.md`.
+
+## `FA-3b` executado de verdade — `T-08.3`/`CST-71`, `compress_chunk` real
+
+**Append, nada acima foi reescrito.** A emenda "`D6` CONCRETIZADA para o candidato 4" de
+`ADR-002` nomeia `FA-3b` — "uma `compress_chunk` real (TimescaleDB, não simulada) ... produzindo
+`content_hash` diferente quando calculado com `ORDER BY` explícito" — como o falsificador que o
+`builder` de `T-08.3` deve rodar primeiro, contra este mesmo ambiente de spike. Script:
+[`verify_compaction_epoch.py`](verify_compaction_epoch.py). Diferente do restante deste
+diretório, o dado é **sintético, rotulado como tal** — `FA-3b` mede uma propriedade do MOTOR
+(`compress_chunk` preserva um hash lógico ordenado explicitamente), não fidelidade de mercado, e
+essa propriedade não depende dos valores serem reais (ver o docstring do módulo do script para o
+argumento completo).
+
+**Por que é script avulso e não `pytest`:** `backend/scripts/test.sh` roda com `socket` amputado
+("ZERO REDE", cabeçalho do próprio script) — uma conexão Postgres real, mesmo a `127.0.0.1`, não
+roda dentro daquela suíte. Mesma forma de `verify_timescale.py` acima: rodado à mão, resultado
+transcrito aqui, nunca afirmado como portão automático.
+
+```bash
+python3 verify_compaction_epoch.py
+```
+
+**Resultado, `[MEDIDO 2026-09-04]`:** container `timescale/timescaledb:2.17.2-pg15` novo, 1.728
+linhas sintéticas (2 símbolos × 3 dias × 288 buckets de 5min), `content_hash` calculado pela
+função de produção `compute_content_hash` (`backend/src/modules/sentimento/domain/
+partition_registry.py`, importada diretamente pelo script — o falsificador testa o código
+publicado, não uma reimplementação):
+
+```
+[BEFORE] BTCUSDT: content_hash=38ecf5afc5d5e71f24961f79f61209e59f4731024ca5ca97e3bbf7bf9c7a6a6
+[BEFORE] ETHUSDT: content_hash=3bcdffc0611c50eeec936e1eed9cc74735370259f71f0b76811961e6636538
+[ACTION] compress_chunk executed on every chunk of market_series
+[PASS] BTCUSDT: content_hash UNCHANGED across compress_chunk
+[PASS] ETHUSDT: content_hash UNCHANGED across compress_chunk
+[ACTION] decompress_chunk executed on every chunk of market_series
+[PASS] BTCUSDT: content_hash UNCHANGED across compress+decompress: True
+[PASS] ETHUSDT: content_hash UNCHANGED across compress+decompress: True
+[PASS] row_count preserved (lossless, D6a): 1728 -> 1728
+OVERALL: PASS
+```
+
+**O que isto confirma, e o que não confirma:** confirma a premissa de `D6a` — uma
+`compress_chunk`/`decompress_chunk` correta, medida com `ORDER BY` explícito e determinístico,
+não move o `content_hash` — sobre ESTE dataset sintético, neste ambiente. Não confirma o
+inverso (`FA-3b` nomeia o que DERRUBARIA a premissa: um hash que MUDASSE aqui) — essa é a
+condição de falseamento que ficou sem disparar, não uma prova de que ela nunca dispara em
+produção com volumetria real. `compaction_epoch` continua necessário como rede de
+segurança/auditoria por esse motivo exato (`D6a`, `[INFERRED]`).
