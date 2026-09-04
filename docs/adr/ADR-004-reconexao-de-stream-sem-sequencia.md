@@ -66,3 +66,77 @@ O WebSocket da Binance **desconecta a cada 24 h por doc** `[DOC]` ⇒ **reconex�
 
 - **B3 torna a subcontagem um número publicado em vez de uma ressalva de rodapé.** Isso é o que permite `CA-F0-14` ser um critério e não uma curiosidade.
 - O registro consolidado desta decisão é `CST-7` (F5b); **a decisão em si precede a primeira linha do coletor de F0** — e é por isso que ela é gate.
+
+---
+
+## ✅ Registro consolidado — fase 09 (`T-09.3`/`CST-85`), 2026-09-04
+
+**Acréscimo, nada acima foi reescrito.** Este é o registro que o parágrafo anterior prometia
+(*"o registro consolidado desta decisão é `CST-7`"*) e que o item `9.4` do plano `09` pede: **o
+que das três classes desta ADR está implementado hoje, com arquivo e comando — não com
+preferência.** Componente desta task é `docs`; nenhuma linha de código foi escrita para produzir
+este registro, só lida e contada.
+
+### Classe B (`!forceOrder@arr`) — **completa**
+
+B1–B4 têm implementação e teste, todos citando `ADR-004` pelo nome no próprio código:
+
+| regra | arquivo |
+|---|---|
+| B1 (sobreposição obrigatória) | `backend/src/modules/sentimento/domain/force_order_reconnection_overlap.py` (`require_overlap`) + `backend/src/modules/sentimento/use_cases/reconnect_force_order_stream.py` (`perform_overlap_handoff`) |
+| B2 (chave natural declarada) | `backend/src/modules/sentimento/domain/force_order_natural_key.py` |
+| B3 (taxa de colisão publicada, viés escrito) | `backend/src/modules/sentimento/domain/force_order_collision_accounting.py` + `backend/src/modules/sentimento/infra/force_order_collision_report_cli.py` |
+| B4 (payload cru com nome do stream + data da doc) | `backend/src/modules/sentimento/infra/` (`T-03.2`, recorder citado pelo report CLI acima) |
+
+`grep -c "ADR-004" backend/tests/sentimento/test_force_order_reconnection.py` → **5** ocorrências
+sobre **25** funções de teste (`grep -c "def test_"`) `[MEDIDO 2026-09-04]`. `T-03.3` (`backend/README.md`
+§"Política de reconexão POR CLASSE de stream, Classe B") registra `bash backend/scripts/test.sh`:
+**897 passed**, cobertura **98,06%** `[DOC: backend/README.md:2234-2238]`. **Não construído: um
+daemon contínuo de reconexão** — decisão explícita do owner, deploy fora de escopo
+(`docs/decisoes-do-owner.md` §Q1; `backend/README.md:2246-2248`, *"ligar isso 24/7 é decisão de
+deploy"*).
+
+### Classe C (polling) — **satisfeita funcionalmente, sem citar esta ADR pelo nome**
+
+| regra | arquivo | evidência |
+|---|---|---|
+| C1 (janela fechada, enumerada a priori) | `backend/src/modules/sentimento/domain/oi_history_paginator.py` (`ClosedWindow`, `T-07.1`) | enumera `[start, end]` da aritmética, nunca do cursor da resposta |
+| C2 (nunca cursor derivado da resposta) | `backend/src/modules/sentimento/infra/binance_oi_history_client.py` | *"always with BOTH `startTime` and `endTime` set"* (docstring do arquivo) |
+
+**Observação, não bloqueio:** `grep -c "ADR-004" backend/src/modules/sentimento/domain/oi_history_paginator.py
+backend/src/modules/sentimento/infra/binance_oi_history_client.py` → **0 nos dois arquivos**
+`[MEDIDO 2026-09-04]`. A implementação chegou à mesma regra por rota independente — o docstring
+cita `SPEC-001 §5.7` e `D7.3`/`D7.4` (`T-07.1`), não esta ADR. Substância satisfeita; rastro
+textual entre as duas fontes da mesma regra, não.
+
+### Classe A (`aggTrade`) — **parcial: A2/A4 construídos e testados; A1/A3 sem implementação**
+
+| regra | status | evidência |
+|---|---|---|
+| A2 (buraco por contiguidade, nunca taxa) | **construído** | `backend/src/modules/sentimento/domain/aggtrade_contiguity.py` (`AggTradeTick`, `require_unique_agg_ids`), consumido por `infra/aggtrade_csv_reader.py` e `domain/aggtrade_bucket_aggregate.py` |
+| A4 (nunca `first`/`last trade_id` como invariante) | **construído** | mesmo módulo — `AggTradeTick` não carrega os dois campos, por desenho de tipo, não por convenção lida |
+| A1 (sobreposição deliberada na reconexão) | **NÃO construído** | `grep -rniE "reconnect.*aggtrade\|aggtrade.*reconnect" backend/src backend/tests` → **0 ocorrências reais** (a única linha que casa a regex é um comentário de teste sobre unicidade entre arquivos de dump, não reconexão ao vivo) `[MEDIDO 2026-09-04]` |
+| A3 (buraco vira linha em `md.ingest_gap`, reparado do dump) | **NÃO construído para `aggTrade`** | `md.ingest_gap` existe e é escrito por outros fluxos (`dump_survivorship.py`/`T-07.2`, símbolo ausente do universo — motivo diferente de A3), mas nenhum módulo liga a contiguidade de `agg_id` a uma escrita em `md.ingest_gap` |
+
+`grep -c "def test_" backend/tests/sentimento/test_aggtrade_contiguity.py
+backend/tests/sentimento/test_aggtrade_contiguity_fixtures.py` → **18 + 9 = 27** testes, contra
+dump real (`data/binance/aggtrades/BTCUSDT-aggTrades-2026-08-20.csv`) `[MEDIDO 2026-09-04]`.
+`grep -n "Classe A" docs/context/plataforma-dados/tasks.toml` → **0 ocorrências** fora deste
+registro `[MEDIDO 2026-09-04]`: **nenhuma task do plano constrói A1/A3.**
+
+### O que fica bloqueado, nomeado
+
+**A1 e A3 de Classe A não têm task no plano `03`–`08`.** Isto não é defeito desta task —
+componente `docs`, "não escreve código de produção" é a fronteira explícita da fase `09` — e é
+nomeado aqui para não virar dívida silenciosa: se o owner quiser fechar a reconexão ao vivo de
+`aggTrade`, é item de fase novo, sem dono hoje. **Isto não invalida o gate de `03`**: o gate era a
+*decisão* (a política por classe), não a integração contínua de nenhuma classe — nenhuma das três
+roda como daemon, por decisão do owner (`Q1`).
+
+### Conclusão do registro
+
+`ADR-004` está **registrada como decisão vigente desde a fase `03`**, com Classe B completa,
+Classe C funcionalmente satisfeita (rastro textual solto) e Classe A parcial (identidade/contiguidade
+sim, reconexão com sobreposição e reparo de buraco não). O header desta ADR (`Status: proposto`)
+não foi alterado — mesmo padrão que `ADR-002` mantém após seu `D4` ser decidido: o cabeçalho é
+`append-only` por convenção deste repositório, a atualização de estado vive nas emendas.
