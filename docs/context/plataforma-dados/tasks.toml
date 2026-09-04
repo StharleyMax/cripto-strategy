@@ -1367,13 +1367,13 @@ tracker = { provider = "jira", id = "CST-82", url = "https://conversationhub.atl
 id = "T-09.1"
 title = "[docs] 09 · Os ADRs desta rodada numerados e referenciados pelas fases, cada um com falsificador"
 components = ["docs"]
-status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
-blocked_reason = "aguarda T-08.14 (fase 08, trilha de outra sessao) — dependencia declarada, nao fila"
+status = "todo"
 phase = "09"
 depends_on = ["T-08.14"]
 refs = [
     "CA-F5-2", "plano 09 itens 9.1+9.2", "DoD D9.1", "DoD D9.2",
     "CONTAGEM OBSOLETA: o plano e tasks_review.md dizem 'os nove ADRs' e D9.1 fixa 9. Medido em 2026-08-25 (ls docs/adr/): 10 arquivos, ADR-001..ADR-010. ADR-010 nasceu depois da narrativa de review. Reconciliar AQUI, nao antes: corrigir DoD de plano aprovado sem o gate do owner e o defeito que ADR-010 §5 evita.",
+    "DESTRAVADA 2026-09-04: T-08.14 (dependencia declarada) fechou DONE (PR #131). blocked_reason antigo ('aguarda T-08.14, trilha de outra sessao') obsoleto -- ambas as trilhas convergiram nesta sessao. CONTAGEM AINDA MAIS OBSOLETA AGORA: esta mesma sessao criou ADR-020..ADR-026 (7 novas) durante a fase 08, entao o universo real de ADRs a numerar/referenciar cresceu de 10 para pelo menos 17 -- a task precisa reconciliar contra o numero atual, nao o de 2026-08-25.",
 ]
 tracker = { provider = "jira", id = "CST-83", url = "https://conversationhub.atlassian.net/browse/CST-83" }
 
@@ -1391,11 +1391,11 @@ tracker = { provider = "jira", id = "CST-84", url = "https://conversationhub.atl
 id = "T-09.3"
 title = "[docs] 09 · Registro consolidado de ADR-004 e do finalista do motor, com os numeros que o spike de 08 produziu"
 components = ["docs"]
-status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
-blocked_reason = "aguarda T-08.1 (fase 08, trilha de outra sessao) — dependencia declarada, nao fila"
+status = "todo"
 phase = "09"
 depends_on = ["T-03.3", "T-08.1"]
-refs = ["ADR-004", "ADR-002/D4", "plano 09 itens 9.4+9.5", "DoD D9.4", "registrado com numeros medidos, nao com preferencia"]
+refs = ["ADR-004", "ADR-002/D4", "plano 09 itens 9.4+9.5", "DoD D9.4", "registrado com numeros medidos, nao com preferencia",
+    "DESTRAVADA 2026-09-04: T-08.1 fechou DONE (PR #123), candidato 4 (TimescaleDB) decidido em ADR-002/D4 com os 5 criterios medidos. T-03.3 ja estava done. blocked_reason antigo obsoleto."]
 tracker = { provider = "jira", id = "CST-85", url = "https://conversationhub.atlassian.net/browse/CST-85" }
 
 [[tasks]]
