@@ -1435,9 +1435,9 @@ tracker = { provider = "jira", id = "CST-87", url = "https://conversationhub.atl
 id = "T-09.6"
 title = "[docs] 09 · docs/INDEX.md atualizado, append-only"
 components = ["docs"]
-status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
-blocked_reason = "aguarda T-09.1, que aguarda T-08.14 — cadeia presa na fase 08"
+status = "todo"
 phase = "09"
 depends_on = ["T-09.1"]
-refs = ["CLAUDE.md: registro de artefatos e append-only"]
+refs = ["CLAUDE.md: registro de artefatos e append-only",
+    "DESTRAVADA 2026-09-04: T-09.1 fechou DONE (PR #134). blocked_reason antigo ('aguarda T-09.1, que aguarda T-08.14 — cadeia presa na fase 08') obsoleto."]
 tracker = { provider = "jira", id = "CST-88", url = "https://conversationhub.atlassian.net/browse/CST-88" }
