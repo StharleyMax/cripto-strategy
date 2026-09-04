@@ -928,7 +928,7 @@ tracker = { provider = "jira", id = "CST-106", url = "https://conversationhub.at
 id = "T-05.16"
 title = "[web] 05 · A fronteira que mantem o falsificador de DoD-2 SINCRONO — importador de VALOR reprova"
 components = ["web"]
-status = "todo"
+status = "done"
 phase = "05"
 depends_on = ["T-05.14", "T-05.15"]
 refs = [

@@ -230,4 +230,68 @@ export default tseslint.config(
       ],
     },
   },
+
+  // ── `ADR-005/D6.3`+`D6.4`, made EXECUTABLE — `D5.17(b)` (`T-05.16`) ───────────────────────
+  //
+  // `D6.4` fixed `fingerprint()` (`s1-console/ingest-health-query.ts`) as the ONE synchronous
+  // canonicalization path — the alternative, `crypto.subtle.digest`, is `Promise`-returning
+  // BY SPEC in every runtime (Node or browser), so a SECOND production call site importing
+  // `fingerprint`/`canonicalProjection`/`canonicalLines` BY VALUE would force that same
+  // decision to be re-made somewhere else, on a `Promise`-returning instrument this time —
+  // not a hypothetical, it is the exact shape `05_fatia_visivel.md:91` names as "muda de
+  // forma". A TYPE-only import (`IngestHealthGapRow`, `IngestHealthProjection`, …) carries no
+  // such risk: no function body crosses with it, so it stays allowed.
+  //
+  // The instrument question this answers is `05_fatia_visivel.md:53`'s ("pode o contrato ser
+  // expresso sem que os dois lados sejam definidos por CAMINHO?"), and `T-05.16` HERITS the
+  // answer `T-05.1` already measured for `D5.12` rather than re-deciding it: the three named
+  // alternatives (`import/no-restricted-paths`, `project references`, a per-module manifest
+  // field) all needed infra that does not exist today, and `no-restricted-imports`'s `group`
+  // glob DOES read a path, but it never feeds `harness.toml`/`[agents.by_component]` — this
+  // file is not that artifact, so `ADR-003:46`'s objection (moving a file silently
+  // reassigning its architect) does not reach it.
+  //
+  // `@typescript-eslint/no-restricted-imports`, not the plain ESLint core rule used by the
+  // two blocks above, because ONLY the TypeScript-aware variant has an `allowTypeImports`
+  // option (verified against the rule's own source,
+  // `node_modules/@typescript-eslint/eslint-plugin/dist/rules/no-restricted-imports.js:23-26,
+  // 169-212`) — the base rule has no concept of `import type` at all, and would have to
+  // reject every match, type or not, which is a NARROWER boundary than `D5.17(b)`'s DoD asks
+  // for (that DoD's own `grep` explicitly crosses `import type` out before judging).
+  //
+  // `**/ingest-health-query.ts` matches the specifier regardless of how many `../` segments
+  // sit in front of it — verified against the plugin's OWN matcher (`ignore`, with
+  // `allowRelativePaths: true`, `no-restricted-imports.js:182-186`), which is the exact
+  // option that makes a leading `./`/`../` a valid input instead of throwing
+  // (`node_modules/ignore/index.js:397`, reproduced by hand against `./ingest-health-query.ts`
+  // and `../s1-console/ingest-health-query.ts`, both `-> true` once the option is set).
+  //
+  // `*.test.ts` is excluded from this block on purpose, mirroring `D5.17(b)`'s own `grep -v
+  // '\.test\.'`: `ingest-health-query.test.ts`/`ingest-health-query-http.test.ts` ARE consumer
+  // #1 (the module exercising its own exports), not a second production call site — the
+  // property this rule polices.
+  {
+    files: ["src/**/*.{ts,tsx,mts,cts}"],
+    ignores: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/ingest-health-query.ts"],
+              allowTypeImports: true,
+              message:
+                "ADR-005/D6.3+D6.4 (D5.17b): only `import type` from `ingest-health-query.ts` " +
+                "is allowed outside the module itself — a VALUE import drags `fingerprint()`'s " +
+                "dependency chain (`canonicalProjection`/`canonicalLines`/`sha256Hex`) into a " +
+                "second call site, and `ADR-005/D6.4` requires `fingerprint()` to stay the ONE " +
+                "synchronous canonicalization path (never `crypto.subtle.digest`, which is " +
+                "`Promise`-returning by spec in every runtime).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
