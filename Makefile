@@ -44,7 +44,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup venv lint lint-agents lint-backend lint-frontend test boundaries natureza build verify
+.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test boundaries natureza build verify
 
 # Argumentos repassados ao pytest: `make test ARGS="-k nome --no-cov"`.
 ARGS ?=
@@ -56,9 +56,11 @@ help:
 	  '  make setup           cria backend/.venv com Poetry e instala frontend/node_modules' \
 	  '                       (UNICO alvo que usa rede; chama backend/scripts/bootstrap.sh)' \
 	  '  make venv            imprime o comando de ativacao da venv — LEIA a nota do alvo' \
-	  '  make lint            lint-agents + lint-backend + lint-frontend' \
+	  '  make lint            lint-agents + lint-corpus + lint-backend + lint-frontend' \
 	  '  make lint-agents     a atribuicao de agents.by_component contra o arquivo dourado' \
 	  '                       (plano 01 item 1.13; scripts/check-agents-by-component.sh)' \
+	  '  make lint-corpus     corpus de regra propria (own.compose-hardcoded-secret) contra a' \
+	  '                       copia vendorizada: verify + mutate (plano 01 item 1.14, D1.14b)' \
 	  '  make lint-backend    ruff + ruff format --check + mypy --strict (backend/scripts/lint.sh)' \
 	  '  make lint-frontend   ESLint do PROJETO sobre frontend/src (ADR-011/D4)' \
 	  '  make test            suite + piso de cobertura POR CAMADA (backend/scripts/test.sh)' \
@@ -109,11 +111,28 @@ venv:
 # ── lint ───────────────────────────────────────────────────────────────────────────────
 # Tres lados, e os tres sao pre-requisitos: se qualquer um falhar, `make lint` falha.
 #
-# `lint-agents` vem PRIMEIRO de proposito, e nao por ordem alfabetica: e o unico dos tres que
-# nao precisa de `backend/.venv` nem de `frontend/node_modules`. Posto depois, ele nunca
-# rodaria num clone sem `make setup` — `lint-backend` recusaria com rc=3 antes, e a atribuicao
-# do owner deixaria de ser medida exatamente onde ninguem olharia.
-lint: lint-agents lint-backend lint-frontend
+# `lint-agents` e `lint-corpus` vem PRIMEIRO de proposito, e nao por ordem alfabetica: sao os
+# unicos dos quatro que nao precisam de `backend/.venv` nem de `frontend/node_modules`. Postos
+# depois, nunca rodariam num clone sem `make setup` — `lint-backend` recusaria com rc=3 antes.
+lint: lint-agents lint-corpus lint-backend lint-frontend
+
+# ── lint-corpus ────────────────────────────────────────────────────────────────────────
+# `T-01.10`, plano `01` item `1.14`, DoD `D1.14b`.
+#
+# A regra `own.compose-hardcoded-secret` existe em DUAS copias — `harness.toml` (a politica) e
+# `corpus/policy/harness.toml` (o fixture que o corpus mutation usa) — e nenhum outro portao as
+# mantem iguais. Isto ja divergiu num commit real: em `02149f4` a raiz tinha a allowlist
+# ANCORADA e o fixture do corpus tinha a ANTIGA, e `harness corpus verify` acusou (`rc=1`,
+# 2 casos `[DIFERE]`) no MESMO commit em que `make verify` saia VERDE — a janela durou minutos
+# porque uma sessao concorrente consertou, mas sem este alvo o `pre-push` teria deixado passar.
+#
+# `verify` confirma que o corpus dourado bate com a regra; `mutate` prova que o corpus MORDE
+# (estreitar o escopo da regra para `production` tem de reprovar um caso — senao a regra existe
+# sem nada que a defenda). MESMA forma que `boundaries`/`natureza`/`lint-agents`: comandos do
+# harness, sem script novo.
+lint-corpus:
+	harness corpus verify --corpus corpus --reference corpus/reference/compose_secret_reference.sh
+	harness corpus mutate --corpus corpus --reference corpus/reference/compose_secret_reference.sh
 
 # ── lint-agents ────────────────────────────────────────────────────────────────────────
 # `T-01.9`, plano `01` item `1.13`, DoD `D1.12`, `ADR-012/D5b`.
