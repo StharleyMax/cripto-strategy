@@ -1345,7 +1345,7 @@ tracker = { provider = "jira", id = "CST-80", url = "https://conversationhub.atl
 id = "T-08.13"
 title = "[charts] 08 · Honestidade de leitura: idade so na borda direita, denom verbatim, zero selecao e informacao, S4 retrospectiva"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-08.6", "T-03.7"]
 refs = ["SPEC-001 §6", "ADR-006/D4", "plano 08 item 8.5", "DoD D8.15", "DoD D8.16", "DoD D8.17", "DoD D8.18", "DoD D8.20"]
