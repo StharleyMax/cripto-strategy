@@ -14,6 +14,14 @@ untouched. It answers, for a GIVEN spec, how many of the eligible observations s
 `distribution` over the same population reports `max = 2,4017` — the two have to agree, because
 `2,4017 < 5.0` under every one of the four operators this module supports. `test_scan.py` pins
 that exact cross-check.
+
+`ADR-022` extends this module: `min_obs` is a property of the OBSERVATION, not the aggregate
+(`D2`). `Sequence[float]` could not express `n_obs`/`instrument_id` per point, which is exactly
+why a mixed population (BTC full-window, alts near-empty) never denounced itself under the
+aggregate-only check `T-08.6` shipped — the defect only appears per symbol, per point. `_fires`,
+`_compare`, `_median`, `_robust_z` and `_resolve_min_obs` are UNCHANGED by `ADR-022`: they still
+operate on raw `float` populations, now fed the `.value` of the observations that survive the
+per-point `min_obs` filter.
 """
 
 from __future__ import annotations
@@ -24,6 +32,13 @@ from dataclasses import dataclass
 from src.modules.charts.domain.field_identity import FieldIdentity
 from src.modules.charts.domain.histogram import UniverseInfo, percentile
 from src.modules.charts.domain.histogram_recipe import Interpolation
+from src.modules.charts.domain.observation import (
+    Fired,
+    Insufficient,
+    NotFired,
+    Observation,
+    ObservationVerdict,
+)
 from src.modules.charts.domain.threshold_spec import (
     AbsoluteSpec,
     PercentileSpec,
@@ -31,6 +46,10 @@ from src.modules.charts.domain.threshold_spec import (
     ThresholdSpec,
 )
 from src.modules.sentimento.domain.series_key import Nature
+
+#: `ADR-022/D8.5`, literal: dispersion needs at least this many surviving symbols to be an
+#: informative statistic rather than an IQR computed over 2 or 3 points fingindo ser dispersão.
+MIN_SYMBOLS_FOR_Z_DISPERSION = 4
 
 
 class EmptyScanInputError(Exception):
@@ -40,18 +59,53 @@ class EmptyScanInputError(Exception):
 class MinObsNotMetError(Exception):
     """`SPEC-001:304`: `min_obs` unmet returns ABSENCE, never a percentile over too few points.
 
-    `threshold-spec-bundle.ts`'s own comment names the failure this refuses: "rolling(2016,
-    min_periods=576) nunca preencheu a janela nos alts e a conclusão publicada caiu" — a
-    percentile or robust z-score computed over fewer than `min_obs` points is a number that
-    LOOKS calibrated and is not. `PercentileSpec`/`RobustZSpec` already refuse `min_obs >
-    window` at construction (`threshold_spec.py`); this is the runtime half, checked against
-    the ACTUAL population size `evaluate_scan` was handed.
+    `ADR-022/D2` moves the check from the AGGREGATE input to the POST-FILTER remainder: every
+    observation whose own `n_obs < min_obs` is pulled out first (as an `Insufficient` verdict,
+    never fed to `_fires`), and this error fires only when NOTHING survives that filter — a
+    population that had entries, but none of them individually carried enough real observations
+    to trust a percentile or robust z-score resolved from it. A population where at least one
+    observation survives is reported as a normal `ScanResult` with `n_excluded_min_obs` and
+    `per_observation` naming exactly what was dropped and why (`ADR-022`'s own falsifier: 1 of 2
+    observations surviving `min_obs=576` still produces a `ScanResult`, not a refusal).
     """
 
 
 @dataclass(frozen=True)
+class ZDispersionTelemetry:
+    """Dispersion of the robust z-score across surviving symbols — `ADR-022/D4`, telemetry only.
+
+    Never read by `_fires`/`_robust_z`/`_compare`: no function in this module accepts it as
+    input, by signature, not by promise in prose (`ADR-022/D4`'s own falsifier). `IQR` — not
+    standard deviation — for the same robustness reason `ADR-020` already chose a percentile
+    over a mean-based statistic: one symbol with an absurd `z` cannot dominate the number that
+    says "the others are dispersed". Below `MIN_SYMBOLS_FOR_Z_DISPERSION` symbols, `dispersion`
+    is `None` with the reason written (`D8.5`), never a number computed over 2 or 3 points.
+    """
+
+    n_symbols: int
+    dispersion: float | None
+    reason_null: str | None
+
+    def __post_init__(self) -> None:
+        """Refuse a telemetry where `dispersion`/`reason_null` do not disagree about which holds."""
+        if (self.dispersion is None) == (self.reason_null is None):
+            raise ValueError(
+                f"dispersion={self.dispersion!r} and reason_null={self.reason_null!r} must "
+                f"disagree about which is set: exactly one of the two describes this telemetry"
+            )
+
+
+@dataclass(frozen=True)
 class ScanResult:
-    """How many of `n_total` eligible observations satisfy `spec`, for one `(field, nature)`."""
+    """How many of `n_total` eligible observations satisfy `spec`, for one `(field, nature)`.
+
+    `ADR-022/D2`/`D8.8`: `n_total` is now the population that SURVIVED the per-observation
+    `min_obs` filter, not the raw input size; `n_excluded_min_obs` names how many were dropped,
+    a declared number rather than a silent shrink (same discipline `UniverseInfo` already
+    applies one layer up). `per_observation` is the discriminated verdict per input observation
+    (`ADR-022/D3`); `z_dispersion` is `None` for `Absolute`/`Percentile` — only `RobustZ`
+    computes a `z` to disperse (`ADR-022/D4`).
+    """
 
     field: FieldIdentity
     nature: Nature
@@ -59,6 +113,9 @@ class ScanResult:
     n_total: int
     n_fired: int
     universe: UniverseInfo
+    n_excluded_min_obs: int
+    per_observation: tuple[ObservationVerdict, ...]
+    z_dispersion: ZDispersionTelemetry | None
 
     def __post_init__(self) -> None:
         """Refuse a result where more observations fired than exist."""
@@ -134,8 +191,39 @@ def _fires(value: float, population: Sequence[float], spec: ThresholdSpec) -> bo
     raise AssertionError(f"unreachable: unknown ThresholdSpec variant {spec!r}")
 
 
+def _reportable_value(value: float, population: Sequence[float], spec: ThresholdSpec) -> float:
+    """Return the quantity a `Fired`/`NotFired` verdict reports (`ADR-022/D3`).
+
+    `Absolute`/`Percentile` compare the raw `value` against a literal or percentile-resolved
+    threshold, so the raw value is what a table row shows; `RobustZ` compares the z-score
+    itself, so THAT is what gets reported — the same statistic `_fires` used to decide, not
+    recomputed differently.
+    """
+    if isinstance(spec, RobustZSpec):
+        return _robust_z(value, population)
+    if isinstance(spec, AbsoluteSpec | PercentileSpec):
+        return value
+    raise AssertionError(f"unreachable: unknown ThresholdSpec variant {spec!r}")
+
+
+def _z_dispersion(z_values: Sequence[float]) -> ZDispersionTelemetry:
+    """IQR of `z_values` across surviving symbols, `null` + motivo below `D8.5`'s floor.
+
+    `ADR-022/D4`: this is a SIBLING field of `ScanResult`, computed from the SAME `R` that
+    already produced `n_fired`/`per_observation` — it never feeds back into a decision.
+    """
+    n_symbols = len(z_values)
+    if n_symbols < MIN_SYMBOLS_FOR_Z_DISPERSION:
+        return ZDispersionTelemetry(
+            n_symbols=n_symbols, dispersion=None, reason_null="n_symbols < 4"
+        )
+    q75 = percentile(z_values, 75.0, Interpolation.LINEAR)
+    q25 = percentile(z_values, 25.0, Interpolation.LINEAR)
+    return ZDispersionTelemetry(n_symbols=n_symbols, dispersion=q75 - q25, reason_null=None)
+
+
 def evaluate_scan(
-    values: Sequence[float],
+    observations: Sequence[Observation],
     *,
     field: FieldIdentity,
     nature: Nature,
@@ -143,36 +231,77 @@ def evaluate_scan(
     n_universe_resolved: int,
     spec: ThresholdSpec,
 ) -> ScanResult:
-    """Count how many of `values` satisfy `spec`.
+    """Count how many of `observations` satisfy `spec`.
 
-    `values` must already be `SPEC-001` §5.11-eligible — same contract as
-    `histogram.compute_histogram`. `Absolute` never checks `min_obs` — the mandate this ADR
-    opens with names it directly: "o limiar é parâmetro" for `Absolute` means a LITERAL
-    number, and a literal has no population
-    size to be under-observed against. `Percentile`/`RobustZ` both resolve a threshold FROM
-    `values`, so both are refused under `min_obs` (`MinObsNotMetError`) rather than computed
-    over too few points.
+    `observations` must already be `SPEC-001` §5.11-eligible — same contract as
+    `histogram.compute_histogram`. `ADR-022/D2`: before anything else, every observation whose
+    `n_obs < spec.min_obs` is pulled out as `Insufficient` (`Absolute` is exempt — a literal
+    threshold has no population to subsample, `_resolve_min_obs` returns `None` for it). `_fires`
+    only ever sees the SURVIVING remainder. `Percentile`/`RobustZ` both resolve a threshold FROM
+    the population, so both are subject to this filter; a population where NOTHING survives it
+    refuses (`MinObsNotMetError`) rather than computing anything from an empty remainder.
     """
-    n_total = len(values)
-    if n_total == 0:
+    if len(observations) == 0:
         raise EmptyScanInputError(
-            f"evaluate_scan received zero eligible observations for field={field!r} "
-            f"nature={nature!r}: refusing rather than reporting a fired_share for an empty "
-            f"population"
+            f"evaluate_scan received zero observations for field={field!r} nature={nature!r}: "
+            f"refusing rather than reporting a fired_share for an empty population"
         )
+
     min_obs = _resolve_min_obs(spec)
-    if min_obs is not None and n_total < min_obs:
+    insufficient: list[Insufficient]
+    if min_obs is None:
+        survivors = list(observations)
+        insufficient = []
+    else:
+        survivors = [obs for obs in observations if obs.n_obs >= min_obs]
+        insufficient = [
+            Insufficient(instrument_id=obs.instrument_id, n_obs=obs.n_obs, min_obs_required=min_obs)
+            for obs in observations
+            if obs.n_obs < min_obs
+        ]
+
+    if not survivors:
         raise MinObsNotMetError(
-            f"population has {n_total} eligible observation(s), below min_obs={min_obs} "
-            f"declared by {spec!r}: SPEC-001:304 requires ABSENCE here, never a threshold "
-            f"resolved from too few points"
+            f"all {len(insufficient)} observation(s) had n_obs below min_obs={min_obs} declared "
+            f"by {spec!r}: SPEC-001:304 requires ABSENCE here, never a threshold resolved from "
+            f"an empty post-filter population (ADR-022/D2)"
         )
-    n_fired = sum(1 for value in values if _fires(value, values, spec))
+
+    population = [obs.value for obs in survivors]
+    verdicts: list[ObservationVerdict] = list(insufficient)
+    z_values: list[float] = []
+    n_fired = 0
+    for obs in survivors:
+        fired = _fires(obs.value, population, spec)
+        reportable = _reportable_value(obs.value, population, spec)
+        if isinstance(spec, RobustZSpec):
+            z_values.append(reportable)
+        if fired:
+            n_fired += 1
+            verdicts.append(
+                Fired(
+                    instrument_id=obs.instrument_id,
+                    z_or_percentile_value=reportable,
+                    n_obs=obs.n_obs,
+                )
+            )
+        else:
+            verdicts.append(
+                NotFired(
+                    instrument_id=obs.instrument_id,
+                    z_or_percentile_value=reportable,
+                    n_obs=obs.n_obs,
+                )
+            )
+
     return ScanResult(
         field=field,
         nature=nature,
         spec=spec,
-        n_total=n_total,
+        n_total=len(survivors),
         n_fired=n_fired,
         universe=UniverseInfo(declared=universe_declared, n_resolved=n_universe_resolved),
+        n_excluded_min_obs=len(insufficient),
+        per_observation=tuple(verdicts),
+        z_dispersion=_z_dispersion(z_values) if isinstance(spec, RobustZSpec) else None,
     )

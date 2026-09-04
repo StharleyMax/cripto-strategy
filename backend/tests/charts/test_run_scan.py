@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from src.modules.charts.domain.field_identity import FieldIdentity
 from src.modules.charts.domain.firing_rate import Window
+from src.modules.charts.domain.observation import Observation
 from src.modules.charts.domain.threshold_spec import AbsoluteSpec
 from src.modules.charts.use_cases.run_scan import run_scan
 from src.modules.sentimento.domain.series_key import Nature
@@ -17,9 +18,12 @@ WINDOW = Window(start_ms=0, end_ms=86_400_000)
 
 @dataclass(frozen=True)
 class FakeObservationSource:
-    """Same shape as `test_compute_distribution.py`'s fake — the two use cases share a port."""
+    """Same shape as `test_compute_distribution.py`'s fake — the two use cases share a port.
 
-    values: Sequence[float]
+    `ADR-022/D1`: `values` is now `Sequence[Observation]`, not a bare `Sequence[float]`.
+    """
+
+    values: Sequence[Observation]
     n_resolved: int
 
     def observed_values(
@@ -29,7 +33,7 @@ class FakeObservationSource:
         universe: str,
         window: Window,
         knowledge_time_ms: int,
-    ) -> Sequence[float]:
+    ) -> Sequence[Observation]:
         """Return the fixed `values` this fake was built with."""
         return self.values
 
@@ -43,7 +47,12 @@ def test_run_scan_delegates_the_read_then_evaluates_the_spec() -> None:
 
     Same result `evaluate_scan` gives directly.
     """
-    source = FakeObservationSource(values=[float(v) for v in range(1, 11)], n_resolved=10)
+    source = FakeObservationSource(
+        values=[
+            Observation(instrument_id=f"SYM{v}", value=float(v), n_obs=1) for v in range(1, 11)
+        ],
+        n_resolved=10,
+    )
 
     result = run_scan(
         source,

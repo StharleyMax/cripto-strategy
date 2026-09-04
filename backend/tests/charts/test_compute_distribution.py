@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from src.modules.charts.domain.field_identity import FieldIdentity
 from src.modules.charts.domain.firing_rate import Window
 from src.modules.charts.domain.histogram_recipe import DEFAULT_HISTOGRAM_RECIPE
+from src.modules.charts.domain.observation import Observation
 from src.modules.charts.use_cases.compute_distribution import compute_distribution
 from src.modules.sentimento.domain.series_key import Nature
 
@@ -25,10 +26,12 @@ class FakeObservationSource:
     """An in-memory double of the read PORT.
 
     `ADR-020/D7`'s "não concretiza store", honored: this fake is not a store, it is a fixed
-    answer handed to the use case under test.
+    answer handed to the use case under test. `ADR-022/D1`: `values` is now
+    `Sequence[Observation]`, not a bare `Sequence[float]` — `compute_distribution` projects
+    `.value` off each one before calling `compute_histogram`.
     """
 
-    values: Sequence[float]
+    values: Sequence[Observation]
     n_resolved: int
     calls: list[tuple[str, str, int]] = field(default_factory=list)
 
@@ -39,7 +42,7 @@ class FakeObservationSource:
         universe: str,
         window: Window,
         knowledge_time_ms: int,
-    ) -> Sequence[float]:
+    ) -> Sequence[Observation]:
         """Record the call and return the fixed `values` this fake was built with."""
         self.calls.append(("observed_values", universe, knowledge_time_ms))
         return self.values
@@ -52,7 +55,13 @@ class FakeObservationSource:
 
 def test_compute_distribution_delegates_the_read_then_calls_the_domain_histogram() -> None:
     """The use case reads via the port and hands the result straight to `compute_histogram`."""
-    source = FakeObservationSource(values=[1.0, 2.0, 3.0, 4.0, 5.0], n_resolved=487)
+    source = FakeObservationSource(
+        values=[
+            Observation(instrument_id=f"SYM{i}", value=v, n_obs=1)
+            for i, v in enumerate([1.0, 2.0, 3.0, 4.0, 5.0])
+        ],
+        n_resolved=487,
+    )
 
     result = compute_distribution(
         source,
@@ -75,7 +84,13 @@ def test_compute_distribution_passes_the_declared_axes_to_the_port() -> None:
     Reproducibility (`SPEC-001` §7) depends on the read actually using the axes the caller
     declared.
     """
-    source = FakeObservationSource(values=[10.0, 20.0], n_resolved=2)
+    source = FakeObservationSource(
+        values=[
+            Observation(instrument_id="A", value=10.0, n_obs=1),
+            Observation(instrument_id="B", value=20.0, n_obs=1),
+        ],
+        n_resolved=2,
+    )
 
     compute_distribution(
         source,
