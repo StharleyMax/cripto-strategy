@@ -1,99 +1,32 @@
-// Testes de `T-07.13` — `ADR-008/DoD-3` sobre o transporte CLI, e o controle de `fingerprint`.
+// Testes de `T-07.13` — o controle de `fingerprint`, e o par MORDE/CALA de
+// `parseIngestHealthEnvelope`.
 //
 // Run with: npm --prefix frontend run test:s1 (ou node --test 'src/features/s1-console/*.test.ts')
 //
-// `T-05.14`/`ADR-019` moveu a cobertura de `DoD-2` (sha256 CLI x reconstrucao TS) e o
-// mapeamento para `CollectorRow`/`S1ViewModel` para `ingest-health-query-http.test.ts`, que os
-// exercita sobre a rota real (`GET /ingest-health`) em vez do parser NDJSON do CLI, que
+// `T-05.14`/`ADR-019` ja tinha movido a cobertura de `DoD-2` (sha256 servidor x reconstrucao
+// TS) e o mapeamento para `CollectorRow`/`S1ViewModel` para `ingest-health-query-http.test.ts`,
+// que os exercita sobre a rota real (`GET /ingest-health`) em vez do parser NDJSON do CLI, que
 // morreu com `ADR-005/D6.1` (`SectionMarker`/`isHeaderLine`/`parseCanonicalProjection`,
 // `fetchIngestHealthProjectionViaCli`/`IngestHealthQueryResult` — todos apagados por
-// `ADR-019/D1`). O que fica aqui e o que `ADR-019` explicitamente NAO reabre: `DoD-3` sobre o
-// CLI (consumidor #1, `runIngestHealthCli`, intocado por `T-05.14`) e o controle de
-// `fingerprint` sobre fixture pura, sem CLI nenhum. `DoD-3` sobre a rota HTTP (o consumidor #2
-// novo) fica fora do escopo desta task (`ADR-019`, "Nao fecha").
+// `ADR-019/D1`).
 //
-// O teste de DoD-3 abaixo RODA O CLI REAL (`backend/src/modules/sentimento/infra/
-// ingest_health_cli.py`) como subprocesso, contra um fixture SQLite construido por um script
-// Python embutido abaixo (nenhum arquivo sob `backend/` e criado ou editado — o script so
-// ESCREVE num `.sqlite3` temporario fora da arvore do backend). Precisa de `backend/.venv`
-// (`bash backend/scripts/bootstrap.sh`), e reprova alto se ele faltar — nunca cai
-// silenciosamente para um interprete do PATH.
+// `T-05.15` apaga o resto do transporte CLI (`runIngestHealthCli` e companhia — `spawnSync`
+// nao existe em browser, em nenhuma variante) e, com ele, o teste de `ADR-008/DoD-3` que
+// invocava o CLI como subprocesso a partir daqui. Esse `DoD-3` (um `verdict` inedito faz a
+// consulta reprovar) continua provado no lado Python
+// (`backend/tests/sentimento/test_ingest_health_query.py:312-360`); reabrir uma testemunha
+// cruzada Python x TS sobre a rota HTTP e pergunta de `A1`, dono `quant-architect`, nao desta
+// task (`docs/context/plataforma-dados/tasks.toml`, `T-05.15` refs).
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   fingerprint,
   INGEST_HEALTH_QUERY_NAME,
   parseIngestHealthEnvelope,
-  runIngestHealthCli,
   type IngestHealthProjection,
 } from "./ingest-health-query.ts";
-
-const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
-const BACKEND_ROOT = path.resolve(THIS_DIR, "../../../../backend");
-const PYTHON_BIN = path.join(BACKEND_ROOT, ".venv", "bin", "python3");
-
-// ── Fixture builder: escreve UM `.sqlite3` fora de `backend/`, via o `SqliteIngestRecordStore`
-// REAL importado do backend — nenhuma reimplementacao do schema aqui. Um unico run, com um
-// `verdict` que a consulta compartilhada nao conhece — o unico modo que o teste abaixo precisa.
-const FIXTURE_BUILDER_SCRIPT = `
-import sys
-from pathlib import Path
-from src.modules.sentimento.domain.ingest_record import IngestRun
-from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
-
-store_path = sys.argv[1]
-target = Path(store_path)
-if target.exists():
-    target.unlink()
-store = SqliteIngestRecordStore(target)
-store.initialise()
-store.record_run(IngestRun(
-    run_id="r1", source="binance-futures", endpoint="/fapi/v1/klines", window="w1",
-    n_expected=10, n_returned=10, n_written=10, verdict="JAMAIS_VISTO_T0713", api_code=200,
-    src_sha256="0" * 64, weight_used=1, observer_id="t0713-observer",
-    observer_region="sa-east-1", clock_skew_ms=7,
-    started_at="2026-08-01T00:00:00Z", ended_at="2026-08-01T00:00:00Z",
-))
-`;
-
-function buildUnknownVerdictFixtureStore(tmpDir: string): string {
-  const storePath = path.join(tmpDir, "unknown_verdict.sqlite3");
-  const result = spawnSync(PYTHON_BIN, ["-c", FIXTURE_BUILDER_SCRIPT, storePath], {
-    cwd: BACKEND_ROOT,
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0, `fixture builder falhou: ${result.stderr}`);
-  return storePath;
-}
-
-function withTmpDir<T>(run: (tmpDir: string) => T): T {
-  const tmpDir = mkdtempSync(path.join(tmpdir(), "t0713-"));
-  try {
-    return run(tmpDir);
-  } finally {
-    rmSync(tmpDir, { recursive: true, force: true });
-  }
-}
-
-// ── `ADR-008/DoD-3` sobre o CLI (consumidor #1) — o falsificador que T-05.14 nao reabre ──────
-
-test("DoD-3: um verdict inedito faz o CLI (consumidor #1) reprovar, sem gravar linha nenhuma no stdout", () => {
-  withTmpDir((tmpDir) => {
-    const storePath = buildUnknownVerdictFixtureStore(tmpDir);
-    const cli = runIngestHealthCli(storePath, { backendRoot: BACKEND_ROOT });
-    assert.notEqual(cli.exitCode, 0);
-    assert.equal(cli.stdout, "");
-    assert.match(cli.stderr, /UnknownVerdictError/);
-    assert.match(cli.stderr, /JAMAIS_VISTO_T0713/);
-  });
-});
 
 // ── `fingerprint`: controle positivo (mesmo estado) e negativo (estado diferente) ──────────
 
