@@ -287,7 +287,7 @@ id = "T-01.8"
 # `Makefile` -> nao-producao; include_prefixes = backend/src/, backend/tests/, frontend/src/].
 title = "[docs] 01 · A6 — web ganha architect proprio e a dupla builder/qa portada; infra ganha juiz NOVO (infra-architect)"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "01"
 # `T-09.4` E ARESTA DURA, nao cortesia: `V-16` reprova `[agents.by_component.infra]`
 # enquanto `infra` nao estiver em `components` (`lib/policy.py:539-543`).
@@ -311,7 +311,7 @@ tracker = { provider = "jira", id = "CST-100", url = "https://conversationhub.at
 id = "T-01.9"
 title = "[docs] 01 · A atribuicao de agents.by_component vira propriedade medida — arquivo dourado no make"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "01"
 depends_on = ["T-01.8"]
 refs = [
@@ -333,7 +333,7 @@ id = "T-01.10"
 # "docs FICA porque a task tambem escreve harness.toml"). V-26 exige o prefixo acompanhar.
 title = "[docs][infra] 01 · Cobertura de deploy/ fechada em tres partes: prefixo, globs YAML e a PRIMEIRA rules.own viva, com corpus"
 components = ["docs", "infra"]
-status = "todo"
+status = "done"
 phase = "01"
 # `T-01.8` cria `[agents.by_component.infra].architect`. Sem ela, esta task declara `infra`
 # e nasce SEM dono de julgamento (ADR-003:11-13). `T-01.2` e o precedente de FORMA — foi
