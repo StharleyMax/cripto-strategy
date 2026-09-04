@@ -681,8 +681,78 @@ architect = ".claude/agents/quant-architect.md"
 # Interacao — o gate que NAO responde ao arquiteto e que ele nao aprova.
 design_gate = "docs/gate-de-design.md"
 
+# ── `T-01.8` (2026-09-03): `A6` — `web` ganha arquiteto de front proprio ───────────
+#
+# `[DECISAO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]` — NAO e fala do
+# owner: ele escolheu opcao de um menu que um agente redigiu, com o custo de cada uma
+# declarado. Registro unico: `docs/decisoes-do-owner.md` §"A6 — `web` ganha arquiteto de
+# front proprio; o `ui-designer` volta a julgar so design".
+#
+# O DEFEITO QUE ISTO CORRIGE, e ele era medido: ate 2026-09-03 esta secao punha
+# `web.architect = ".claude/agents/ui-designer.md"` — um OPERADOR DE STITCH como dono de
+# julgamento do schema de transporte SSE (`ADR-005/D1`), do bundle enderecavel por
+# conteudo e de 7 modulos de dominio portado. O `ui-designer` decide UI/UX; ele nao decide
+# transporte.
+#
+# ⛔ `design_gate` FICA, E APAGA-LO DESFARIA A AUTONOMIA DELEGADA. O `CLAUDE.md` declara
+# desde 2026-08-25 que o `ui-designer` decide de UI/UX sem pedir permissao E que
+# `ux-ui-mastery` e o gate — "agente que gera e aprova o proprio trabalho nao tem gate".
+# `A6` tira do `ui-designer` o papel de `architect`, e SO ele. Ver `docs/gate-de-design.md`.
+#
+# O QUE `A6` NAO INVALIDA: a resposta de `Q16` (2026-08-28, `[PREMISSA-OWNER]`) foi
+# "charts -> quant-architect · web -> ui-designer". Ela NAO e apagada — era correta para o
+# universo daquele dia, em que `web` nao tinha modulo de dominio portado nem transporte.
+# `A6` SUCEDE `Q16` na chave `web.architect`; `charts` fica INTOCADO.
+#
+# `builder` e `qa` sao PORTE, nao invencao: `.github/agents/frontend_builder.agent.md`
+# (82 linhas) e `frontend_qa.agent.md` (92 linhas) do `anything_monorepo`, adaptados aos
+# portoes deste repositorio (`make verify`, `harness rules`, `node --test` hoje). O
+# `frontend-architect` e CRIACAO: o vizinho NAO TEM arquiteto de front — dos 12 agents
+# dele o unico `architect.agent.md` e generico, "Solutions Architect Senior. Valida PRDs"
+# [MEDIDO 2026-09-03, lido em .github/agents/architect.agent.md:2].
+#
+# ⚠️ E ESTE E O PRIMEIRO COMPONENTE EM QUE `by_component` DE FATO ROTEIA. O limite herdado
+# de `T-01.3` era que NENHUM comando do plugin le estas chaves; a metade dele CAI aqui:
+# `commands/build.md:36` e `commands/qa.md:19` rodam `harness policy --key agents` e agem
+# sobre os papeis `builder` e `qa` [MEDIDO 2026-08-29 sobre o plugin v0.13.0]. Com os dois
+# declarados, `web` passa a ser roteado de verdade. `architect` e `design_gate` continuam
+# DOUTRINA LEGIVEL, que e o que `V-16` diz existir para.
 [agents.by_component.web]
-# Superficie e interacao — o dono de julgamento que o owner nomeou.
-architect = ".claude/agents/ui-designer.md"
+# Superficie, transporte e contrato na borda — o dono de julgamento a partir de `A6`.
+architect = ".claude/agents/frontend-architect.md"
+# Porte do `anything`, adaptado. Estes DOIS sao os papeis que o plugin de fato roteia.
+builder = ".claude/agents/frontend-builder.md"
+qa = ".claude/agents/frontend-qa.md"
 # O gate da autonomia do `ui-designer`, declarado no `CLAUDE.md` em 2026-08-25.
+# ⛔ NAO APAGUE: e a condicao da delegacao de design, e nao depende de `A6`.
 design_gate = "docs/gate-de-design.md"
+
+# ── `T-01.8` (2026-09-03): o juiz de `infra`, e `F-D6-6` APAGA aqui ─────────────────
+#
+# `[DECISAO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]`. Registro:
+# `docs/decisoes-do-owner.md` §"como o vocabulario vira 7, e quem julga `infra`".
+#
+# A ORDEM NAO ERA PREFERENCIA: `V-16` (`lib/policy.py:539-543`) reprova componente fora do
+# enum ⇒ `components` de 6 para 7 PRIMEIRO (`T-09.4`, o bloco no topo deste arquivo), juiz
+# DEPOIS (esta linha). Entre os dois atos, `infra` esteve no enum e ausente desta tabela —
+# a condicao que `ADR-009/F-D6-6` existe para acusar, CONHECIDA e DATADA. Ela fecha AQUI.
+#
+# Custo aceito, na redacao do menu: "e CRIACAO, nao porte — o agent nasce aqui e sem
+# precedente medido". Universo: `ls .claude/agents/` -> 2 agents antes desta task, e
+# NENHUM dos 12 do `anything` e de infra [MEDIDO 2026-09-03].
+#
+# Recusadas, e o motivo e o que importa: acumular no `quant-architect` ("ele nao e dono de
+# TLS, `compose` nem fila — e o custo aceito realizado na pessoa errada"); declarar `infra`
+# SEM `architect` ("componente sem dono de julgamento, `ADR-003:11-13`"); owner por
+# documento como o `design_gate` ("honesto, mas `checa_ponteiro` exige que o caminho
+# exista").
+#
+# ⛔ RÓTULO NÃO É COBERTURA, e vale repetir onde o juiz nasce: declarar o dono NAO faz
+# `deploy/` ser medido por nada — `ls -d deploy` e inexistente e `code_paths.
+# include_prefixes` tem 3 entradas [MEDIDO 2026-09-03]. Quem fecha isso e o item `1.14` do
+# plano `01`, com a `[[rules.own]]` que alcance YAML. Sem ela, `infra` tem juiz e zero
+# mordida.
+[agents.by_component.infra]
+# `deploy/`, backup com restauracao provada, topologia do escritor unico, e a camada
+# consumidora (`src/api/`, `src/jobs/`) que o owner separou do bounded context.
+architect = ".claude/agents/infra-architect.md"

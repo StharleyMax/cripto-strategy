@@ -27,7 +27,21 @@ do outro"*). Apontar para ele mandaria quem lê a política encontrar a doutrina
 | componente | `architect` (dono de julgamento) | `design_gate` | o que cada um reprova |
 |---|---|---|---|
 | `charts` | [`quant-architect`](../.claude/agents/quant-architect.md) | `ux-ui-mastery` | **arquiteto:** o gráfico mente sobre o dado. **gate:** a tela é ilegível, inacessível ou engana pela interação |
-| `web` | [`ui-designer`](../.claude/agents/ui-designer.md) | `ux-ui-mastery` | **designer:** decide UI/UX sem pedir permissão. **gate:** a condição dessa autonomia |
+| `web` | [`frontend-architect`](../.claude/agents/frontend-architect.md) | `ux-ui-mastery` | **arquiteto:** transporte, contrato na borda e estrutura do app. **gate:** a tela engana pela interação. **E o [`ui-designer`](../.claude/agents/ui-designer.md) continua decidindo UI/UX sem pedir permissão — o `design_gate` é a condição dessa autonomia** |
+
+> **⚠️ TARJA 2026-09-03 — a linha de `web` MUDOU, e o que ela dizia antes fica registrado.**
+> Até esta data a coluna `architect` de `web` era **`ui-designer`**, e o `harness.toml` a
+> declarava assim (`:643-645`). **`A6`** — `[DECISÃO-OWNER: 2026-09-03, escolha entre
+> alternativas apresentadas]`, **não é fala do owner** — troca essa chave pelo
+> `frontend-architect`, criado por `T-01.8`/`CST-100`. **O defeito corrigido é medido:** um
+> operador de Stitch estava publicado como dono de julgamento do **schema de transporte SSE**
+> (`ADR-005/D1`), do bundle endereçável por conteúdo e de **7 módulos de domínio portado**.
+> ⛔ **O `design_gate` NÃO mudou e não pode mudar por este ato:** o `ui-designer` perdeu o papel
+> de `architect` e **só** ele. Apagar a chave `design_gate` desfaria a autonomia delegada que o
+> `CLAUDE.md` declara desde 2026-08-25. **A resposta de `Q16` (abaixo, `(a)`) não é apagada** —
+> era correta para o universo de 2026-08-28, quando `web` não tinha módulo de domínio portado
+> nem transporte; `A6` **sucede** `Q16` nessa chave e deixa `charts` **intocado**. Registro:
+> [`docs/decisoes-do-owner.md`](decisoes-do-owner.md) §`A6`.
 
 **⚠️ Duas frases, dois rótulos — e fundi-las foi o defeito que o `/review` reprovou aqui
 em 2026-08-28.** A fonte única é [`docs/decisoes-do-owner.md`](decisoes-do-owner.md) §`Q16`,
@@ -111,6 +125,14 @@ anterior em três dias, e é ela que sustenta o desenho.
 aprova o próprio trabalho não tem gate. O ciclo é **gera → critica → itera**"*. O
 `ui-designer` é o gerador; declarar `web` só com `architect = ui-designer` publicaria, na
 política, um gerador sem gate.
+
+**⚠️ E depois de `A6` esta base é a ÚNICA que sustenta a chave — leia antes de concluir o
+contrário.** Com o `ui-designer` fora de `web.architect`, quem só lesse o parágrafo acima
+poderia deduzir *"o gerador não é mais o `architect`, logo o `design_gate` perdeu objeto"*.
+**É a dedução errada, e o owner a bloqueou explicitamente.** `(c)` é anterior em três dias à
+`Q16` e **independente** dela: o `ui-designer` continua **decidindo** UI/UX sem pedir
+permissão, e é exatamente essa decisão que o gate condiciona. O que mudou foi **quem julga
+transporte e estrutura**, não quem julga design.
 
 ## Ordem de operação
 
