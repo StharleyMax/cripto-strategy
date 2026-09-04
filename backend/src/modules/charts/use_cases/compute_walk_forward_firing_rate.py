@@ -13,6 +13,13 @@ into the extended `WalkForwardFiringRate` (`D-WF5`).
 Two entry points, not one branching on argument shape — `D-WF6`'s own reasoning: giving
 `compute_firing_rate` a `source`/`recipe` it does not need today would change the signature of
 a caller already in production (`T-08.6`) for a branch it never exercises.
+
+`ADR-022/D1` (`T-08.7`): `ObservationSource.observed_values` now returns `Sequence[Observation]`,
+not a bare `Sequence[float]`. The calib side projects `.value` off each observation before
+`percentile` (same move `compute_distribution.py` makes — `percentile` never gained an
+`Observation`-aware overload); the eval side is handed to `evaluate_scan` UNPROJECTED, exactly
+like `run_scan.py`, because `min_obs` filtering (`ADR-022/D2`) needs the `n_obs` that only
+`Observation` carries.
 """
 
 from __future__ import annotations
@@ -51,10 +58,12 @@ def compute_walk_forward_firing_rate(
     1. Read `calib_values` over `fold(i).calib_window`, `knowledge_time_ms =
        fold(i).calib_window.end_ms` (`D-WF2`: as of the instant the eval side BEGINS, never
        "now"). Fewer than `recipe.min_obs_calib` -> fold EXCLUDED (`D-WF4`).
-    2. `threshold_value = percentile(calib_values, threshold.q, threshold.interpolation)`,
-       frozen into `AbsoluteSpec(pct=threshold_value, op=threshold.op)` — a LITERAL from here
-       on; `evaluate_scan` never recomputes a percentile for `AbsoluteSpec` (`scan.py`), which
-       is what makes the anti-tautology guarantee hold by type, not by discipline.
+    2. `threshold_value = percentile(calib_population, threshold.q, threshold.interpolation)`,
+       where `calib_population` is `.value` projected off each `calib_values` observation
+       (`ADR-022/D1`), frozen into `AbsoluteSpec(pct=threshold_value, op=threshold.op)` — a
+       LITERAL from here on; `evaluate_scan` never recomputes a percentile for `AbsoluteSpec`
+       (`scan.py`), which is what makes the anti-tautology guarantee hold by type, not by
+       discipline.
     3. Read `eval_values` over `fold(i).eval_window`, `knowledge_time_ms =
        fold(i).eval_window.end_ms`. Fewer than `recipe.min_obs_eval` -> fold EXCLUDED.
     4. `fold_result = evaluate_scan(eval_values, spec=frozen, ...)`; `fold_result.fired_share`
@@ -76,7 +85,8 @@ def compute_walk_forward_firing_rate(
             excluded_windows += 1
             continue
 
-        threshold_value = percentile(calib_values, threshold.q, threshold.interpolation)
+        calib_population = [observation.value for observation in calib_values]
+        threshold_value = percentile(calib_population, threshold.q, threshold.interpolation)
         frozen_spec = AbsoluteSpec(pct=threshold_value, op=threshold.op)
 
         eval_knowledge_time_ms = fold.eval_window.end_ms

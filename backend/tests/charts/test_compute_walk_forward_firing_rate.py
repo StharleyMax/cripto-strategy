@@ -21,6 +21,7 @@ import pytest
 from src.modules.charts.domain.field_identity import FieldIdentity
 from src.modules.charts.domain.firing_rate import Window
 from src.modules.charts.domain.histogram_recipe import Interpolation
+from src.modules.charts.domain.observation import Observation
 from src.modules.charts.domain.walk_forward import (
     InsufficientWindowForWalkForwardError,
     WalkForwardRecipe,
@@ -44,7 +45,7 @@ class FakeWalkForwardSource:
     test at all — this fake is keyed so each fold can be given its own calib/eval population.
     """
 
-    values_by_window: dict[tuple[int, int], Sequence[float]]
+    values_by_window: dict[tuple[int, int], Sequence[Observation]]
     n_resolved: int = 500
     calls: list[tuple[str, int, int, int]] = field(default_factory=list)
 
@@ -55,7 +56,7 @@ class FakeWalkForwardSource:
         universe: str,
         window: Window,
         knowledge_time_ms: int,
-    ) -> Sequence[float]:
+    ) -> Sequence[Observation]:
         """Record the call and return whatever `values_by_window` maps this window to."""
         self.calls.append(("observed_values", window.start_ms, window.end_ms, knowledge_time_ms))
         return self.values_by_window.get((window.start_ms, window.end_ms), ())
@@ -69,6 +70,18 @@ class FakeWalkForwardSource:
 
 
 THRESHOLD_Q99 = WalkForwardThresholdRecipe(q=99.0, interpolation=Interpolation.LINEAR, op=">=")
+
+
+def _observations(*values: float) -> tuple[Observation, ...]:
+    """Build `Observation`s from bare floats — `instrument_id` distinct, `n_obs=1` (atomic).
+
+    `ADR-022/D1`: the port returns `Sequence[Observation]`, not `Sequence[float]`; these tests
+    only ever care about `.value`, so `instrument_id`/`n_obs` are filler that satisfies
+    `Observation.__post_init__` without meaning anything beyond "a real reading".
+    """
+    return tuple(
+        Observation(instrument_id=f"SYM{i}", value=value, n_obs=1) for i, value in enumerate(values)
+    )
 
 
 def test_each_fold_reads_calib_and_eval_as_of_its_own_fold_boundary() -> None:
@@ -88,12 +101,12 @@ def test_each_fold_reads_calib_and_eval_as_of_its_own_fold_boundary() -> None:
     )
     source = FakeWalkForwardSource(
         values_by_window={
-            (0, 2): (1.0, 2.0),
-            (1, 3): (1.0, 2.0),
-            (2, 4): (1.0, 2.0),
-            (2, 3): (0.5,),
-            (3, 4): (0.5,),
-            (4, 5): (0.5,),
+            (0, 2): _observations(1.0, 2.0),
+            (1, 3): _observations(1.0, 2.0),
+            (2, 4): _observations(1.0, 2.0),
+            (2, 3): _observations(0.5),
+            (3, 4): _observations(0.5),
+            (4, 5): _observations(0.5),
         }
     )
 
@@ -136,11 +149,11 @@ def test_the_eval_side_is_scored_against_the_frozen_calib_threshold_not_recalibr
         min_obs_calib=1,
         min_obs_eval=1,
     )
-    calib_values = tuple(float(value) for value in range(1, 101))
+    calib_values = _observations(*(float(value) for value in range(1, 101)))
     source = FakeWalkForwardSource(
         values_by_window={
             (0, 7): calib_values,
-            (7, 8): (50.0, 150.0, 250.0),
+            (7, 8): _observations(50.0, 150.0, 250.0),
         }
     )
 
@@ -177,9 +190,9 @@ def test_a_fold_below_min_obs_calib_is_excluded_and_never_reads_its_eval_side() 
     )
     source = FakeWalkForwardSource(
         values_by_window={
-            (0, 2): (1.0, 2.0),  # fold 0 calib: 2 points, below min_obs_calib=3
-            (1, 3): (1.0, 2.0, 3.0),  # fold 1 calib: 3 points, meets the floor
-            (3, 4): (5.0,),  # fold 1 eval
+            (0, 2): _observations(1.0, 2.0),  # fold 0 calib: 2 points, below min_obs_calib=3
+            (1, 3): _observations(1.0, 2.0, 3.0),  # fold 1 calib: 3 points, meets the floor
+            (3, 4): _observations(5.0),  # fold 1 eval
         }
     )
 
@@ -215,8 +228,8 @@ def test_a_fold_below_min_obs_eval_is_excluded_after_its_calib_was_read() -> Non
     )
     source = FakeWalkForwardSource(
         values_by_window={
-            (0, 2): (1.0, 2.0),
-            (2, 3): (5.0,),  # eval: 1 point, below min_obs_eval=2
+            (0, 2): _observations(1.0, 2.0),
+            (2, 3): _observations(5.0),  # eval: 1 point, below min_obs_eval=2
         }
     )
 
@@ -242,7 +255,9 @@ def test_every_fold_excluded_refuses_rather_than_returning_an_empty_result() -> 
         min_obs_calib=1000,
         min_obs_eval=1,
     )
-    source = FakeWalkForwardSource(values_by_window={(0, 2): (1.0, 2.0), (2, 3): (5.0,)})
+    source = FakeWalkForwardSource(
+        values_by_window={(0, 2): _observations(1.0, 2.0), (2, 3): _observations(5.0)}
+    )
 
     with pytest.raises(InsufficientWindowForWalkForwardError):
         compute_walk_forward_firing_rate(
@@ -274,8 +289,8 @@ def test_the_partition_formula_reproduces_d8_2_s_n_23_end_to_end() -> None:
         min_obs_calib=1,
         min_obs_eval=1,
     )
-    calib_values = tuple(float(value) for value in range(1, 101))
-    eval_values = (250.0,)  # comfortably clears calib's frozen q=99 threshold (≈99.01) every fold
+    calib_values = _observations(*(float(value) for value in range(1, 101)))
+    eval_values = _observations(250.0)  # clears calib's frozen q=99 threshold (≈99.01) every fold
 
     class FlatSource:
         def observed_values(
@@ -285,7 +300,7 @@ def test_the_partition_formula_reproduces_d8_2_s_n_23_end_to_end() -> None:
             universe: str,
             window: Window,
             knowledge_time_ms: int,
-        ) -> Sequence[float]:
+        ) -> Sequence[Observation]:
             span = window.end_ms - window.start_ms
             return calib_values if span == recipe.calib_length_ms else eval_values
 
