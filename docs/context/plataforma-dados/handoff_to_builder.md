@@ -633,3 +633,46 @@ nunca chamar atenção.
 
 **Próximo passo: `/build`, e a primeira da fila é `T-09.4`** — sem ela o validador reprova as
 outras duas.
+
+---
+
+## 12 · Adendo 2026-09-04 — `T-07.15`/`T-07.16`/`T-07.17` (fiação de produção, `ADR-027`)
+
+**Não reabre nem edita nada acima.** Três tasks novas, aprovadas pelo owner na narrativa
+[`tasks_review-T-07.15-a-17-fiacao-producao.md`](tasks_review-T-07.15-a-17-fiacao-producao.md),
+materializadas em `tasks.toml` e cardadas no Jira nesta mesma sessão. Origem:
+[`ADR-027`](../../adr/ADR-027-topologia-de-processo-e-producao-real-do-escritor-unico.md) (`D1`/`D2`
+aprovadas pelo owner, 2026-09-04), a partir das candidatas do `/architect` em
+[`handoff/tasks-candidatas-fiacao-producao.md`](handoff/tasks-candidatas-fiacao-producao.md).
+
+| task | Jira | componente | depende de | o que fecha |
+|---|---|---|---|---|
+| `T-07.15` | `CST-110` | `sentimento` | `T-07.4`, `T-07.6` (ambas `done`) | produtor real: os 2 coletores 24/7 publicam no Redis Stream; dona do schema de wire de `SeriesRow` |
+| `T-07.16` | `CST-111` | `sentimento` | `T-07.5` (`done`), `T-07.15` | entrypoint de produção do escritor único, sink real sobre TimescaleDB (`ADR-002/D4`) |
+| `T-07.17` | `CST-109` | `infra` | `T-07.15`, `T-07.16` | `deploy/compose.yml` ganha `redis:7-alpine` dedicado (`ADR-027/D2`) |
+
+Todas nascem **`status = "todo"`**, sem `blocked_reason`. `T-07.16` depende também de `T-07.15` —
+aresta que o `/tech-lead` acrescentou além da candidata original do `/architect`, porque o teste de
+processo real do escritor exige produtor real publicando, não fake; o owner aprovou essa aresta
+explicitamente ao aprovar a narrativa.
+
+**Esta ADR NÃO desbloqueia `T-09.5`** (runbook, ainda `blocked` por `T-07.11`/`Q3`, canal de alarme
+fora do browser) — nenhuma das três tasks acima toca `Q3`. Ver `ADR-027` "O que esta ADR NÃO decide" e
+a narrativa §4.
+
+**Verificação:**
+
+```
+$ harness tasks validate plataforma-dados
+OK: docs/context/plataforma-dados/tasks.toml — 97 task(s), 0 ERROR, 5 WARN
+```
+`[MEDIDO 2026-09-04]` — eram **94 tasks, 0 ERROR, 6 WARN** antes desta materialização; os 5 `WARN`
+remanescentes são `V-09` pré-existentes (`blocked_reason` em `T-02.4b`/`T-03.9`/`T-05.10`/`T-07.11`/
+`T-09.5`), nenhum deles introduzido por `T-07.15`–`T-07.17`.
+
+**Escopo de caminhos:** nada declarado de novo — `backend/src` e `deploy` já estavam no escopo
+(`harness pipeline scope plataforma-dados list`, `[MEDIDO 2026-09-04]`), e as três tasks não tocam
+caminho fora dessas duas árvores.
+
+**Próximo passo desta fatia:** `/build` de `T-07.15` primeiro (as outras duas dependem dela, direta ou
+transitivamente).

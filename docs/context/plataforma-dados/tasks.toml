@@ -1200,6 +1200,55 @@ depends_on = ["T-07.8"]
 refs = ["SPEC-001 §6", "plano 07 item 7.15", "caso-ancora: ICXUSDT/STORJUSDT/SCRTUSDT com deliveryDate 2026-08-26T09:00:00Z"]
 tracker = { provider = "jira", id = "CST-68", url = "https://conversationhub.atlassian.net/browse/CST-68" }
 
+[[tasks]]
+id = "T-07.15"
+title = "[sentimento] 07 · Coletores 24/7 (forceOrder, premiumIndex) publicam no Redis Stream via RedisStreamPublisher — schema de wire documentado"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.4", "T-07.6"]
+refs = [
+    "ADR-027", "CA-F3-8", "ADR-009/D2 (Streams, nunca Pub/Sub)",
+    "narrativa: docs/context/plataforma-dados/tasks_review-T-07.15-a-17-fiacao-producao.md secao 3",
+    "esta task e a DONA do schema de wire (SeriesRow -> Mapping[str,str]), deixado em aberto por redis_series_write_queue.py:4-7",
+    "conferir se o schema de particao de T-07.6 ja assume layout de campo",
+    "DoD: import redis nos dois CLIs coletores (hoje 0, MEDIDO 2026-09-04); round-trip decode(encode(row))==row para os 4 valores de Provenance; teste de integracao real (matar produtor a meio de sessao, confirmar leitura via read_pending apos restart) — fecha o falsificador F3 de ADR-027",
+    "NAO decide a fila da API de leitura (ADR-005); NAO altera run_single_writer",
+]
+tracker = { provider = "jira", id = "CST-110", url = "https://conversationhub.atlassian.net/browse/CST-110" }
+
+[[tasks]]
+id = "T-07.16"
+title = "[sentimento] 07 · Entrypoint de producao do escritor unico (single_writer_cli) com sink real sobre TimescaleDB/postgres:15"
+components = ["sentimento"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.5", "T-07.15"]
+refs = [
+    "ADR-027", "ADR-002/D5", "CA-F3-12", "CA-F4-25", "ADR-002/D4 (finalista TimescaleDB, decidido — T-08.1 done, PR #123)",
+    "narrativa: docs/context/plataforma-dados/tasks_review-T-07.15-a-17-fiacao-producao.md secao 3",
+    "dependencia de T-07.15 ACRESCENTADA pelo /tech-lead alem da candidata do /architect: o teste de processo real precisa de produtor real publicando, nao fake",
+    "DoD: find backend/src -iname single_writer_cli.py -> existe; test_single_writer_call_sites.py continua com exatamente 1 call site de producao; teste de processo real (subir entrypoint, publicar via T-07.15, matar o escritor, reiniciar, confirmar zero mensagem perdida e zero duplicata aplicada)",
+    "NAO decide layout de particao alem do que T-07.6/T-07.8 ja fixaram",
+]
+tracker = { provider = "jira", id = "CST-111", url = "https://conversationhub.atlassian.net/browse/CST-111" }
+
+[[tasks]]
+id = "T-07.17"
+title = "[infra] 07 · deploy/compose.yml ganha redis:7-alpine dedicado + servico do escritor unico — so depois de T-07.15/T-07.16"
+components = ["infra"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.15", "T-07.16"]
+refs = [
+    "ADR-027/D1", "ADR-027/D2 (Redis DEDICADO, nao compartilhado com anything_monorepo)", "ADR-009/D5 (item 1.14)",
+    "narrativa: docs/context/plataforma-dados/tasks_review-T-07.15-a-17-fiacao-producao.md secao 3",
+    "DoD: own.compose-hardcoded-secret rc=0; find deploy -type f | wc -l > 1 pela primeira vez desde a fase que criou deploy/compose.yml (hoje: 1, MEDIDO 2026-09-04) — fecha o falsificador de 01_governanca_gateante.md:186; docker compose up local + produtor real de teste -> mensagem chegando ao Postgres, fim a fim",
+    "NAO sobe os coletores one-shot/diarios como servico de compose (viram cron/systemd timer); NAO decide TLS/reverse proxy",
+    "esta ADR NAO desbloqueia T-09.5 — T-09.5 depende de T-07.11, blocked por Q3 (canal de alarme), tema que nenhuma destas tres tasks toca",
+]
+tracker = { provider = "jira", id = "CST-109", url = "https://conversationhub.atlassian.net/browse/CST-109" }
+
 # ── 08 · Motor, S4, S2 completa, run_registry · CST-6 ────────────────────────────
 
 [[tasks]]
