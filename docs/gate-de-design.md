@@ -27,7 +27,21 @@ do outro"*). Apontar para ele mandaria quem lê a política encontrar a doutrina
 | componente | `architect` (dono de julgamento) | `design_gate` | o que cada um reprova |
 |---|---|---|---|
 | `charts` | [`quant-architect`](../.claude/agents/quant-architect.md) | `ux-ui-mastery` | **arquiteto:** o gráfico mente sobre o dado. **gate:** a tela é ilegível, inacessível ou engana pela interação |
-| `web` | [`ui-designer`](../.claude/agents/ui-designer.md) | `ux-ui-mastery` | **designer:** decide UI/UX sem pedir permissão. **gate:** a condição dessa autonomia |
+| `web` | [`frontend-architect`](../.claude/agents/frontend-architect.md) | `ux-ui-mastery` | **arquiteto:** transporte, contrato na borda e estrutura do app. **gate:** a tela engana pela interação. **E o [`ui-designer`](../.claude/agents/ui-designer.md) continua decidindo UI/UX sem pedir permissão — o `design_gate` é a condição dessa autonomia** |
+
+> **⚠️ TARJA 2026-09-03 — a linha de `web` MUDOU, e o que ela dizia antes fica registrado.**
+> Até esta data a coluna `architect` de `web` era **`ui-designer`**, e o `harness.toml` a
+> declarava assim (`:643-645`). **`A6`** — `[DECISÃO-OWNER: 2026-09-03, escolha entre
+> alternativas apresentadas]`, **não é fala do owner** — troca essa chave pelo
+> `frontend-architect`, criado por `T-01.8`/`CST-100`. **O defeito corrigido é medido:** um
+> operador de Stitch estava publicado como dono de julgamento do **schema de transporte SSE**
+> (`ADR-005/D1`), do bundle endereçável por conteúdo e de **7 módulos de domínio portado**.
+> ⛔ **O `design_gate` NÃO mudou e não pode mudar por este ato:** o `ui-designer` perdeu o papel
+> de `architect` e **só** ele. Apagar a chave `design_gate` desfaria a autonomia delegada que o
+> `CLAUDE.md` declara desde 2026-08-25. **A resposta de `Q16` (abaixo, `(a)`) não é apagada** —
+> era correta para o universo de 2026-08-28, quando `web` não tinha módulo de domínio portado
+> nem transporte; `A6` **sucede** `Q16` nessa chave e deixa `charts` **intocado**. Registro:
+> [`docs/decisoes-do-owner.md`](decisoes-do-owner.md) §`A6`.
 
 **⚠️ Duas frases, dois rótulos — e fundi-las foi o defeito que o `/review` reprovou aqui
 em 2026-08-28.** A fonte única é [`docs/decisoes-do-owner.md`](decisoes-do-owner.md) §`Q16`,
@@ -112,6 +126,14 @@ aprova o próprio trabalho não tem gate. O ciclo é **gera → critica → iter
 `ui-designer` é o gerador; declarar `web` só com `architect = ui-designer` publicaria, na
 política, um gerador sem gate.
 
+**⚠️ E depois de `A6` esta base é a ÚNICA que sustenta a chave — leia antes de concluir o
+contrário.** Com o `ui-designer` fora de `web.architect`, quem só lesse o parágrafo acima
+poderia deduzir *"o gerador não é mais o `architect`, logo o `design_gate` perdeu objeto"*.
+**É a dedução errada, e o owner a bloqueou explicitamente.** `(c)` é anterior em três dias à
+`Q16` e **independente** dela: o `ui-designer` continua **decidindo** UI/UX sem pedir
+permissão, e é exatamente essa decisão que o gate condiciona. O que mudou foi **quem julga
+transporte e estrutura**, não quem julga design.
+
 ## Ordem de operação
 
 1. O `architect` do componente decide o que decide — **sem pedir permissão**, dentro da sua
@@ -184,3 +206,62 @@ vocabulário fechado.
 e `web` na saída **não basta** — é preciso olhar **o que há dentro** de cada um. O que sobra
 contra tudo isto é a revisão humana e este parágrafo, e chamar isso de enforcement seria a
 mentira que o resto do repositório existe para evitar.
+
+### ✅ 2026-09-03 — o que "sobrava contra tudo isto" deixou de ser só revisão humana (`T-01.9`)
+
+⚠️ **As duas seções acima ficam como estão, e o parágrafo imediatamente anterior continua
+verdadeiro sobre o MECANISMO DO `harness`** — ele não ganhou portão nenhum. O que mudou é que
+existe agora um portão **fora** dele, no `make`, que é onde `ADR-012/D4` manda morar o que
+precisa morder e não é arquivo-fonte sob `code_paths`. Reescrever aquele parágrafo apagaria a
+medição que justifica este; ele é histórico e continua descrevendo o `harness`.
+
+| | |
+|---|---|
+| **o portão** | `make lint-agents`, pré-requisito de `make lint` (o **primeiro** dos três, porque é o único que não precisa de `backend/.venv` nem de `frontend/node_modules`) |
+| **o instrumento** | [`scripts/check-agents-by-component.sh`](../scripts/check-agents-by-component.sh) + [`scripts/check_agents_by_component.py`](../scripts/check_agents_by_component.py) |
+| **o arquivo dourado** | [`scripts/agents-by-component.golden.json`](../scripts/agents-by-component.golden.json) — **6 componentes, 10 papéis**, congelados sobre a atribuição de `T-01.8` |
+| **o que ele NÃO é** | roteamento (`ADR-012/D5a` recusa). Ele faz uma coisa: **desfazer a atribuição do owner passa a custar editar DUAS superfícies**, e a segunda aparece no diff |
+
+**A comparação é sobre o MAPA INTEIRO — componentes, papéis e o valor de cada papel — e isso é
+metade do critério, não detalhe de implementação:** uma asserção de **presença de chave** é
+satisfeita por `{"charts": {}}`, que é literalmente o defeito de `D1.2` medido na tabela acima.
+
+**MORDE — 5 de 5, `[MEDIDO 2026-09-03]`, cada mutação num `harness.toml` COPIADO em
+`/tmp` (o `harness.toml` do repositório não foi tocado; a cópia base é `git show HEAD:harness.toml`).**
+O dourado é resolvido pelo diretório do script e a política é lida do diretório corrente, então
+`cd <cópia> && bash <repo>/scripts/check-agents-by-component.sh` é a bancada inteira:
+
+| mutação | `check-agents-by-component.sh` | chave nomeada na saída |
+|---|---|---|
+| `design_gate` apagado das 2 entradas | **`rc=1`**, 2 pontos | `agents.by_component.charts.design_gate` · `…web.design_gate` — *PAPEL AUSENTE* |
+| donos **TROCADOS** `charts` ↔ `web` | **`rc=1`**, 6 pontos | `…charts.architect` esperado `quant-architect.md`, obtido `frontend-architect.md` (+5) |
+| `[agents.by_component.charts]` **vazia** | **`rc=1`**, 2 pontos | `…charts.architect` · `…charts.design_gate` — *PAPEL AUSENTE* |
+| **`docs` ganha juiz** (componente a mais) | **`rc=1`**, 1 ponto | `agents.by_component.docs` — *COMPONENTE INESPERADO* |
+| **seção inteira apagada** (política publica vazio) | **`rc=1`**, 6 pontos | os 6 componentes — *COMPONENTE AUSENTE* |
+
+A quarta linha é a que congela a **ausência** de `docs` em `agents.by_component`
+[MEDIDO 2026-09-03: `components` tem 7 entradas, `agents.by_component` tem 6] — sem ela o
+dourado mediria menos do que a política diz.
+
+**E o `harness` continua calado sobre as mesmas mutações, re-medido hoje e não herdado:**
+`harness validate --strict` → **`rc=0`**, e a última linha dele é
+`politica valida: cripto-strategy (schema_version=1) — 12 aviso(s) acima; nenhum reprova`,
+sobre a troca de donos e sobre o `design_gate` apagado `[MEDIDO 2026-09-03]`. ⚠️ Os `[aviso] V-16` de ponteiro que aparecem na
+bancada são **artefato do diretório de teste** (a cópia não tem `.claude/`) e saem para as
+entradas **não** mutadas também — **não** carregam sinal sobre a mutação, e citá-los como
+detecção seria número de universo errado.
+
+**CALA:** sobre a árvore real, `make lint-agents` → **`rc=0`**,
+`agents.by_component: bate com o dourado — 6 componente(s), 10 papel(is)` `[MEDIDO 2026-09-03]`.
+
+**A prova de ponta a ponta do `D1.12`, que é sobre `make lint` e não sobre o script:** numa
+bancada com `Makefile` + `scripts/` + o `harness.toml` da mutação "donos trocados",
+`make lint` → **`Erro 1` em `lint-agents`, `rc=2`**, e a saída nomeia as 6 chaves; com o
+`harness.toml` sem mutação, `rc=0` `[MEDIDO 2026-09-03]`.
+
+**⏸ O que este ato NÃO fecha, declarado em vez de escondido:** `scripts/verify.sh` **não** chama
+este portão. Ele roda os **seis** portões que o `CLAUDE.md` §"Higiene de contexto" nomeia por
+esse número, e acrescentar um sétimo tornaria aquela frase — e as linhas já fechadas do
+`docs/INDEX.md` que citam *"6 portões verdes"* — falsas no mesmo ato. **Consequência viva:
+`make verify` fica VERDE sobre uma atribuição divergente; quem quiser o veredito roda
+`make lint`.** Fechar isso é ato de quem puder editar o `CLAUDE.md` — o **owner**.

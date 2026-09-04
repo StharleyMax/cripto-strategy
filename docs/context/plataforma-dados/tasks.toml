@@ -287,7 +287,7 @@ id = "T-01.8"
 # `Makefile` -> nao-producao; include_prefixes = backend/src/, backend/tests/, frontend/src/].
 title = "[docs] 01 · A6 — web ganha architect proprio e a dupla builder/qa portada; infra ganha juiz NOVO (infra-architect)"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "01"
 # `T-09.4` E ARESTA DURA, nao cortesia: `V-16` reprova `[agents.by_component.infra]`
 # enquanto `infra` nao estiver em `components` (`lib/policy.py:539-543`).
@@ -311,7 +311,7 @@ tracker = { provider = "jira", id = "CST-100", url = "https://conversationhub.at
 id = "T-01.9"
 title = "[docs] 01 · A atribuicao de agents.by_component vira propriedade medida — arquivo dourado no make"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "01"
 depends_on = ["T-01.8"]
 refs = [
@@ -325,6 +325,38 @@ refs = [
     "DIVERGENCIA D-1 DA NARRATIVA, ACEITA PELO OWNER em 2026-09-03 [DECISAO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]: o despacho esbocava UMA task para o item 1.13; a quebra propos DUAS (T-01.8 atribuicao + T-01.9 congelamento) e o owner aceitou como recomendado. Razao: o dourado nasce UMA vez, sobre a atribuicao final, e T-01.9 pode correr em paralelo com as tasks de web — nada em 05 depende dela. Se algum dia for revertido, T-01.9 some e D1.12 entra em refs de T-01.8.",
 ]
 tracker = { provider = "jira", id = "CST-101", url = "https://conversationhub.atlassian.net/browse/CST-101" }
+
+[[tasks]]
+id = "T-01.10"
+# `[docs][infra]`: o item declara `infra`, e `docs` entra pela superficie `harness.toml`
+# — mesma forma de T-05.12/T-05.13 e o precedente de T-01.1 (`["docs","sentimento"]`,
+# "docs FICA porque a task tambem escreve harness.toml"). V-26 exige o prefixo acompanhar.
+title = "[docs][infra] 01 · Cobertura de deploy/ fechada em tres partes: prefixo, globs YAML e a PRIMEIRA rules.own viva, com corpus"
+components = ["docs", "infra"]
+status = "done"
+phase = "01"
+# `T-01.8` cria `[agents.by_component.infra].architect`. Sem ela, esta task declara `infra`
+# e nasce SEM dono de julgamento (ADR-003:11-13). `T-01.2` e o precedente de FORMA — foi
+# ela que fechou a mesma propriedade para `frontend/` pelo item 1.4.
+depends_on = ["T-01.2", "T-01.8"]
+refs = [
+    "plano 01 item 1.14", "DoD D1.14", "DoD D1.14b", "ADR-009/D5", "ADR-009/D6.7", "CA-F5-4",
+    "ESPECIFICACAO TRANSPORTADA, NAO REINVENTADA: ela nasceu em ADR-009 §D6.7 com as medicoes e o falsificador; o item 1.14 a transporta e esta task transporta o item. Nenhum item ou DoD existente foi reescrito.",
+    "AS TRES PARTES SO VALEM JUNTAS — mesma forma do item 1.4, que fechou `frontend/`: (a) `code_paths.include_prefixes += \"deploy/\"`; (b) `include_globs += \"*.yml\", \"*.yaml\"`; (c) uma `[[rules.own]]` que ALCANCE YAML, nascida com corpus, alvo SEGREDO EM COMPOSE. (a)+(b) SEM (c) NAO FECHA NADA — da `classify -> producao` com ZERO MORDIDA, que e o defeito exato de D1.4; e (c) sem (a)+(b) NUNCA E AVALIADA.",
+    "A LACUNA MEDIDA, e ela e MAIOR que 'falta prefixo': `harness code-paths classify deploy/docker-compose.yml` -> `nao-producao` ('nenhum include_prefixes casa'), e `classify backend/src/config.yml` -> `nao-producao` ('nenhum include_globs casa'). As 10 regras em vigor alcancam `.py` e `frontend/src/**`, e ZERO alcanca `*.yml`, `*.yaml` ou `Dockerfile` (n=10 regras, 4 packs). `core.hardcoded-secret` — a regra que EXISTE para segredo em codigo — declara `paths = [\"**/*.py\"]` (packs/core/rules.toml:50) e NAO VERIA uma senha num docker-compose.yml [MEDIDO 2026-09-03].",
+    "⛔ O ITEM CRIA `deploy/` COM PELO MENOS UM ARQUIVO REAL E LEGITIMO. Sem isso o DoD PASSA POR VACUIDADE sobre caminho inexistente. Hoje `ls -d deploy` -> INEXISTENTE [MEDIDO 2026-09-03].",
+    "⛔ DoD D1.14 — O CRITERIO NAO E `classify`, E ISSO E MEDICAO E NAO OPINIAO: `harness code-paths classify` NAO CONFERE EXISTENCIA — `classify backend/src/api/routes/ingest_health.py` devolve `producao` para arquivo que NAO EXISTE [MEDIDO 2026-09-03] => um DoD por `classify` fecharia sobre `deploy/` VAZIO, e o repositorio trocaria um portao por um veredito. O criterio e `D1.3` verbatim: `harness rules --mode file --path deploy/<violador>`. MORDE -> BLOQUEIO NOMEANDO A REGRA, `exit=2`. CALA -> saida vazia, `exit=0`, sobre o `deploy/<arquivo legitimo>` real e versionado que este item cria. 2 ARQUIVOS: 1 violador efemero + 1 legitimo versionado. REPROVA SE O RELATORIO DE FECHO CITAR `classify` NO LUGAR DE `rules --mode file` COM `exit=2` — e o modo de falha que o proprio plano 01 nomeia.",
+    "O 'ANTES' E INEQUIVOCO: hoje `harness rules --mode file --path deploy/docker-compose.yml` -> SAIDA VAZIA, `rc=0`, e `ls -d deploy` -> inexistente [MEDIDO 2026-09-03]. Logo o `rc=0` de hoje e indistinguivel entre 'nao ha segredo' e 'o instrumento nunca olhou' — que e a familia de cegueira que ADR-012 nomeia.",
+    "⛔ O VIOLADOR E EFEMERO E FORA DA ARVORE VERSIONADA, e o motivo e medido: violador VERSIONADO deixa `harness rules --mode sweep` vermelho e o `pre-push` RECUSA — `scripts/hooks/pre-push.pre-harness` roda `make boundaries` (:63-64), `make natureza` (:70-71) e `make lint` (:83-84) [MEDIDO 2026-09-03]. E o defeito herdado que T-01.2 registrou ('os falsificadores de D1.3/D1.3b nao estao de pe, so existem como RECEITA'). A metade CALA e a que fica VERSIONADA e reproduzivel; a metade MORDE e a saida do comando, registrada no relatorio do gate, nao um arquivo na arvore.",
+    "DoD D1.14b — A REGRA PROPRIA E ENFORCEMENT MEDIDO, NAO DECLARADO: `harness corpus verify --corpus <dir> --reference <cmd>` E `harness corpus mutate --corpus <dir> --reference <cmd>`. Esperado: IGUALDADE DE VEREDITO em `verify` E o corpus DEFENDENDO a regra em `mutate`. Uma sem a outra nao conta.",
+    "⚠️ ISTO REATIVA O ITEM 1.8, e a reativacao e o ponto: `1.8` era um CONDICIONAL DE ANTECEDENTE FALSO — 'com ADR-011/D3 e D4 a fase deixa de declarar regra propria => 1.8 nao obriga nada. Fica no plano, porque volta a morder se alguma task desta fase declarar uma'. ESTA TASK DECLARA UMA => o antecedente vira VERDADEIRO e 1.8 OBRIGA. `D1.5` NAO e reescrito: ele registra o vacuo de 2026-08-28 e continua verdadeiro sobre aquele universo; `D1.14b` e o SUJEITO que faltava, do mesmo modo que D5.13 deu sujeito a D5.8 sem toca-lo.",
+    "ESTA SERIA A PRIMEIRA `[[rules.own]]` VIVA DO REPOSITORIO: `harness rules list` -> 10 regras, 5 `core` + 5 `web-fullstack`, ZERO propria, e as 4 ocorrencias de `[[rules.own]]` em harness.toml estao TODAS em linha de comentario (:386, :455, :461, :463) [MEDIDO 2026-09-03].",
+    "⚠️ `ADR-011/D4` NAO E CONTRADITO, e a distincao e o que autoriza esta task: ele recusou regra propria DE TYPESCRIPT, onde o ESLint JA ERA o validador — regra propria ali seria segunda verdade. NENHUM VALIDADOR DESTE REPOSITORIO LE YAML. E `ADR-011/D1.10` proibe `[[rules.own]]` DE IDIOMA, que nao e o caso: o alvo aqui e SEGREDO EM COMPOSE, propriedade verificavel por conteudo.",
+    "[NAO MEDIDO], ESCRITO E NAO SUPOSTO: se `include_globs` aceita NOME SEM EXTENSAO (`Dockerfile`). O comando que decide EXIGE o ato de politica: acrescentar \"Dockerfile\" a `include_globs` e rodar `harness code-paths classify deploy/Dockerfile`. ENQUANTO NAO MEDIDO, `Dockerfile` FICA FORA DA COBERTURA e esta task NAO finge o contrario [DOC: ADR-009:275 e plano 01:174].",
+    "O QUE ESTA TASK CONSERTA ALEM DE SI MESMA: `ADR-009/F-D6-5` mede a LARGURA do rotulo `infra` e exige >= 2 NATUREZAS DISTINTAS ao fim da fase 05. Na quebra de 2026-09-03, `infra` era declarado por T-05.12 e T-05.13, as DUAS a camada consumidora — uma natureza so, e o falsificador dispararia SEM CONSERTO DISPONIVEL. Esta task e a SEGUNDA NATUREZA (deploy/topologia). Sem ela, F-D6-5 diz que a opcao `api` era o nome certo e que o rotulo largo comprou so ambiguidade de juiz.",
+    "V-16 NAO BLOQUEIA MAIS: `harness policy --key components` devolve 7 com `infra` desde que T-09.4/CST-86 mergeou [MEDIDO 2026-09-03: enum = sentimento, charts, convergencia, backtest, web, docs, infra]. `depends_on` inclui T-01.8 porque ela e quem cria `[agents.by_component.infra].architect` — declarar `infra` sem o juiz e ADR-003:11-13.",
+]
+tracker = { provider = "jira", id = "CST-108", url = "https://conversationhub.atlassian.net/browse/CST-108" }
 
 # ── 02 · Captura sem gate de host · CST-2 ──────────────────────────────────────────
 
@@ -1334,7 +1366,8 @@ tracker = { provider = "jira", id = "CST-82", url = "https://conversationhub.atl
 id = "T-09.1"
 title = "[docs] 09 · Os ADRs desta rodada numerados e referenciados pelas fases, cada um com falsificador"
 components = ["docs"]
-status = "todo"
+status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
+blocked_reason = "aguarda T-08.14 (fase 08, trilha de outra sessao) — dependencia declarada, nao fila"
 phase = "09"
 depends_on = ["T-08.14"]
 refs = [
@@ -1347,7 +1380,7 @@ tracker = { provider = "jira", id = "CST-83", url = "https://conversationhub.atl
 id = "T-09.2"
 title = "[docs] 09 · env em {mainnet, testnet, demo, replay} em toda linha de ordem/fill, com chip no chrome"
 components = ["docs"]
-status = "done"
+status = "done"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
 phase = "09"
 depends_on = ["T-04.2"]
 refs = ["CA-F5-3", "plano 09 item 9.3", "DoD D9.3"]
@@ -1357,7 +1390,8 @@ tracker = { provider = "jira", id = "CST-84", url = "https://conversationhub.atl
 id = "T-09.3"
 title = "[docs] 09 · Registro consolidado de ADR-004 e do finalista do motor, com os numeros que o spike de 08 produziu"
 components = ["docs"]
-status = "todo"
+status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
+blocked_reason = "aguarda T-08.1 (fase 08, trilha de outra sessao) — dependencia declarada, nao fila"
 phase = "09"
 depends_on = ["T-03.3", "T-08.1"]
 refs = ["ADR-004", "ADR-002/D4", "plano 09 itens 9.4+9.5", "DoD D9.4", "registrado com numeros medidos, nao com preferencia"]
@@ -1367,7 +1401,7 @@ tracker = { provider = "jira", id = "CST-85", url = "https://conversationhub.atl
 id = "T-09.4"
 title = "[docs] 09 · Decisao sobre o componente infra registrada — adotada ou recusada, com o motivo escrito"
 components = ["docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
 phase = "09"
 depends_on = ["T-01.4", "T-02.4a"]
 refs = [
@@ -1386,7 +1420,8 @@ tracker = { provider = "jira", id = "CST-86", url = "https://conversationhub.atl
 id = "T-09.5"
 title = "[docs] 09 · Runbook de uma pagina para coletor parado, e quem e notificado em segundo lugar"
 components = ["docs"]
-status = "blocked"
+status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
+blocked_reason = "aguarda T-07.11, que esta blocked — estado preservado, nao alterado por este resolve"
 phase = "09"
 depends_on = ["T-07.11"]
 refs = ["GAP G5", "plano 09 item 9.7", "DoD D9.5", "BLOQUEADA: Q3 — a unica task de 09 com gate", "operacao de um so, com SLO P1 de 24 h"]
@@ -1396,7 +1431,8 @@ tracker = { provider = "jira", id = "CST-87", url = "https://conversationhub.atl
 id = "T-09.6"
 title = "[docs] 09 · docs/INDEX.md atualizado, append-only"
 components = ["docs"]
-status = "todo"
+status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
+blocked_reason = "aguarda T-09.1, que aguarda T-08.14 — cadeia presa na fase 08"
 phase = "09"
 depends_on = ["T-09.1"]
 refs = ["CLAUDE.md: registro de artefatos e append-only"]

@@ -1,0 +1,5 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: hunter2_prod_master  # nota:${UNUSED}

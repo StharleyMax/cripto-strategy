@@ -1,0 +1,66 @@
+# Politica do repositorio-fixture do corpus de `own.compose-hardcoded-secret` (`T-01.10`).
+#
+# NAO e a politica deste repositorio: e a declaracao que o arnes materializa num repo
+# descartavel para julgar caso a caso. Ela reproduz as TRES partes do item `1.14` em
+# miniatura — prefixo `deploy/`, globs de YAML e a regra propria — porque uma regra de
+# conteudo so e avaliada depois de `Classifier.in_scope` (`lib/rules.py:148`), e um corpus
+# que declarasse escopo diferente do real mediria outra coisa.
+schema_version = 1
+
+components = ["infra", "docs"]
+
+[repo]
+name = "corpus-fixture-deploy"
+
+[plugin]
+repo = "https://github.com/stharley/harness-plugin"
+ref = "v0.13.0"
+
+[tracker]
+kind = "none"
+
+[code_paths]
+include_prefixes = ["deploy/"]
+include_globs = ["*.yml", "*.yaml"]
+exclude_globs = ["**/__pycache__/**"]
+# `deploy/tests/**` e CODIGO e NAO E PRODUCAO. Esta linha e a que da sujeito ao portao de
+# mutacao: sem um caminho de teste no fixture, estreitar `scope` de `code` para
+# `production` nao mudaria veredito nenhum e o mutante SOBREVIVERIA por vacuidade.
+test_globs = ["**/tests/**", "**/test_*"]
+
+[rules]
+# Nenhum pack: os 10 itens de `core`/`web-fullstack` alcancam `**/*.py` e `frontend/src/**`
+# e nao tocariam um so caso deste corpus. Liga-los inflaria a saida sem acrescentar
+# asserção.
+packs = []
+
+# ⚠️ COPIA FIEL da declaracao de `harness.toml` na raiz. Divergir aqui faria o corpus
+# defender uma regra que o repositorio nao tem — e o portao de mutacao muta ESTE arquivo
+# (`ci/scope_mutation_check.py:174`, regime externo).
+# `allowlist_regex` sincronizada em `T-01.10` rodada 2: a versao anterior (`\$\{` e a
+# lista de amostra soltas, sem ancora) calava com o segredo real fora da allowlist —
+# ver o comentario completo em `harness.toml`, acima de `allowlist_regex` da regra
+# original. Esquecer de sincronizar aqui faria ESTE fixture (nao o repositorio) reprovar
+# `corpus verify`/`corpus mutate` por uma divergencia que nao e da regra, e sim de copia
+# desatualizada — foi exatamente o que aconteceu ao rodar `corpus verify` antes deste
+# ajuste: os 2 casos novos vieram `referencia: [...]`/`runner: []` so porque este arquivo
+# ainda tinha a forma antiga `[MEDIDO 2026-09-03]`.
+# `allowlist_regex` sincronizada de novo em `T-01.10` rodada 3: prefixo `^(?:(?!#).)*`
+# em cada entrada, exigindo que nenhum `#` apareca antes do ponto de match — fecha os
+# casos 06/07 (decoy com separador extra DENTRO de comentario). Ver o comentario
+# completo (causa raiz + `[LIMITE CONHECIDO]` residual) em `harness.toml`, acima de
+# `allowlist_regex` da regra original. Mesmo aviso de sincronizacao do paragrafo acima
+# se aplica: esquecer de copiar aqui reprova `corpus verify` por copia desatualizada,
+# nao por defeito da regra — foi o que aconteceu ao rodar `corpus verify` desta rodada
+# antes deste ajuste (casos 06/07 vieram `referencia: [...]`/`runner: []`)
+# `[MEDIDO 2026-09-03]`.
+[[rules.own]]
+id = "own.compose-hardcoded-secret"
+form = "forbidden-regex-allowlist"
+modes = ["file", "sweep"]
+severity = "block"
+scope = "code"
+paths = ["**/*.yml", "**/*.yaml"]
+regex = "^\\s*-?\\s*[\"']?[A-Za-z0-9_.-]*(?i:password|passwd|secret|api[-_]?key|access[-_]?key|token|dsn|connection_string)[A-Za-z0-9_.-]*[\"']?\\s*[:=]\\s*[\"']?[^\\s\"'{}$]{6,}"
+allowlist_regex = ["^(?:(?!#).)*[:=]\\s*[\"']?\\$\\{", '^(?:(?!#).)*(?i:_file\s*[:=])', "^(?:(?!#).)*[:=]\\s*[\"']?/run/secrets/", "^(?:(?!#).)*[:=]\\s*[\"']?(?i:example|placeholder|changeme|dummy|redacted)"]
+message = "segredo literal em arquivo de compose: leia-o do ambiente (`${VAR}`) ou de `/run/secrets` — credencial versionada nao volta atras"

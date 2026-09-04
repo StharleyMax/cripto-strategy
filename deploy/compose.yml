@@ -1,0 +1,35 @@
+# Postgres for the sentiment platform — the single writer of ADR-009/D5.
+#
+# WHAT THIS FILE IS NOT: it is not the production deployment. No TLS, no reverse proxy,
+# no worker, no backup job. Building the deployment is work that has no phase yet
+# (`plano 01`, item 1.14, "O que este item NAO faz"), and writing it here would be the
+# speculative construction that `PRD-001` §12 forbids.
+#
+# WHY IT IS VERSIONED: it is the legitimate half of the `D1.14` falsifier. The biting
+# half is an ephemeral violator that never enters the tree — a versioned violator would
+# leave `harness rules --mode sweep` red and `pre-push` would refuse. The silent half has
+# to be real, reproducible and committed:
+#
+#     harness rules --mode file --path deploy/compose.yml   # empty output, exit 0
+#
+# EVERY credential is read from the environment. That is not style: it is the property
+# `own.compose-hardcoded-secret` enforces, and this file is the conforming case that
+# proves the rule does not bite the correct shape.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
