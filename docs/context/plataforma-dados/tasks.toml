@@ -1391,7 +1391,7 @@ tracker = { provider = "jira", id = "CST-84", url = "https://conversationhub.atl
 id = "T-09.3"
 title = "[docs] 09 · Registro consolidado de ADR-004 e do finalista do motor, com os numeros que o spike de 08 produziu"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "09"
 depends_on = ["T-03.3", "T-08.1"]
 refs = ["ADR-004", "ADR-002/D4", "plano 09 itens 9.4+9.5", "DoD D9.4", "registrado com numeros medidos, nao com preferencia",

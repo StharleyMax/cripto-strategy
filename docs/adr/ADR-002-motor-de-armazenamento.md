@@ -349,3 +349,39 @@ reprodutibilidade é o único que sabe quais partições um `window` tocou.**
 **Doc delta desta emenda:** `run_registry` (`SPEC-001` §3.5) precisa ganhar uma referência a
 `run_registry_partition_snapshot` quando `T-08.4` for especificado — não alterado aqui porque
 `T-08.4` ainda está `todo` e é quem detém esse componente (`backtest`).
+
+---
+
+## ✅ Verificação de fechamento — fase 09 (`T-09.3`/`CST-85`), 2026-09-04
+
+**Acréscimo, nada acima foi reescrito.** Item `9.5` do plano `09` pede o registro do finalista
+com os números do spike `08`; `D9.4` exige `free -m`, `df -h`, região e os cinco critérios,
+**todos com valor**, lido em "`ADR-002` atualizado". Este registro **não decide nada de novo** —
+`D4` já foi decidido por `T-08.1` (emenda 2026-09-04 acima); esta seção confere item por item, o
+que a fase `09` existe para fazer, e nomeia a única lacuna que não fecha.
+
+| exigência de `D9.4` | valor nesta ADR | com valor? |
+|---|---|---|
+| `free -m` (candidato 4) | RSS do container **153,8 MiB**; 5.219 MB RAM livre na VPS (`T-08.1`/refs) | ✅ |
+| `df -h` (candidato 4) | delta de disco **~900 KB**; 75 GB disco livre na VPS (`T-08.1`/refs) | ✅ |
+| espaço ≤ 2× zipado | **1,506×** | ✅ |
+| backtest ≤ 60s | **0,05–0,09s** | ✅ |
+| fixture 3 classes bit-idêntica | ✅ confirmado contra referência independente | ✅ |
+| **região da VPS** | **`[NÃO MEDIDO]`** | ❌ — ver abaixo |
+
+**A lacuna nomeada, não escondida:** região da VPS (`observer_region`) continua `[NÃO MEDIDO]`
+`[DOC: linha 21 desta ADR + docs/decisoes-do-owner.md §152-154 + `[GAP G7]`]`. **Isto não é um
+gap desta fase nem desta task** — o texto original de `D4`/"O número que falta" já classificava
+os três números em dois grupos: `free -m`/`df -h` são "teto declarável" e **não bloqueiam a
+SPEC**; região é **coluna de F0**, cuja janela "fecha quando o primeiro coletor liga", **não
+antes**. Medi-la exigiria `curl -s ipinfo.io` de dentro da VPS — fora do alcance de uma task
+`docs` e fora do alcance deste ambiente de execução `[MEDIDO 2026-09-04: mesma restrição que
+`T-08.1` já registrou — sem acesso à VPS]`. `D9.4`, lido junto com o texto que ele referencia
+(a própria seção "O número que falta" desta ADR), não torna região um critério de bloqueio do
+finalista de motor — torna-o um critério de `observer_region`, rastreado por `[GAP G7]`, com dono
+`T-03.9` (`🔒 Q3`, `tasks_review.md`), não `T-09.3`.
+
+**Veredito:** os cinco critérios do spike e os dois números de vizinhança (`free -m`/`df -h`)
+estão **todos com valor**; região está **`[NÃO MEDIDO]` por desenho declarado**, não por omissão
+desta task. `D9.4` fecha sobre o que é dele — o finalista de motor — sem fechar `[GAP G7]`, que
+não é seu escopo.
