@@ -1366,7 +1366,8 @@ tracker = { provider = "jira", id = "CST-82", url = "https://conversationhub.atl
 id = "T-09.1"
 title = "[docs] 09 · Os ADRs desta rodada numerados e referenciados pelas fases, cada um com falsificador"
 components = ["docs"]
-status = "todo"
+status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
+blocked_reason = "aguarda T-08.14 (fase 08, trilha de outra sessao) — dependencia declarada, nao fila"
 phase = "09"
 depends_on = ["T-08.14"]
 refs = [
@@ -1379,7 +1380,7 @@ tracker = { provider = "jira", id = "CST-83", url = "https://conversationhub.atl
 id = "T-09.2"
 title = "[docs] 09 · env em {mainnet, testnet, demo, replay} em toda linha de ordem/fill, com chip no chrome"
 components = ["docs"]
-status = "done"
+status = "done"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
 phase = "09"
 depends_on = ["T-04.2"]
 refs = ["CA-F5-3", "plano 09 item 9.3", "DoD D9.3"]
@@ -1389,7 +1390,8 @@ tracker = { provider = "jira", id = "CST-84", url = "https://conversationhub.atl
 id = "T-09.3"
 title = "[docs] 09 · Registro consolidado de ADR-004 e do finalista do motor, com os numeros que o spike de 08 produziu"
 components = ["docs"]
-status = "todo"
+status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
+blocked_reason = "aguarda T-08.1 (fase 08, trilha de outra sessao) — dependencia declarada, nao fila"
 phase = "09"
 depends_on = ["T-03.3", "T-08.1"]
 refs = ["ADR-004", "ADR-002/D4", "plano 09 itens 9.4+9.5", "DoD D9.4", "registrado com numeros medidos, nao com preferencia"]
@@ -1399,7 +1401,7 @@ tracker = { provider = "jira", id = "CST-85", url = "https://conversationhub.atl
 id = "T-09.4"
 title = "[docs] 09 · Decisao sobre o componente infra registrada — adotada ou recusada, com o motivo escrito"
 components = ["docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
 phase = "09"
 depends_on = ["T-01.4", "T-02.4a"]
 refs = [
@@ -1418,7 +1420,8 @@ tracker = { provider = "jira", id = "CST-86", url = "https://conversationhub.atl
 id = "T-09.5"
 title = "[docs] 09 · Runbook de uma pagina para coletor parado, e quem e notificado em segundo lugar"
 components = ["docs"]
-status = "blocked"
+status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
+blocked_reason = "aguarda T-07.11, que esta blocked — estado preservado, nao alterado por este resolve"
 phase = "09"
 depends_on = ["T-07.11"]
 refs = ["GAP G5", "plano 09 item 9.7", "DoD D9.5", "BLOQUEADA: Q3 — a unica task de 09 com gate", "operacao de um so, com SLO P1 de 24 h"]
@@ -1428,7 +1431,8 @@ tracker = { provider = "jira", id = "CST-87", url = "https://conversationhub.atl
 id = "T-09.6"
 title = "[docs] 09 · docs/INDEX.md atualizado, append-only"
 components = ["docs"]
-status = "todo"
+status = "blocked"  # resolve: QA APPROVED 2026-09-03T19:23:32Z @ fa4db7364611f13910dd48b4ea0ce3a5416a4473
+blocked_reason = "aguarda T-09.1, que aguarda T-08.14 — cadeia presa na fase 08"
 phase = "09"
 depends_on = ["T-09.1"]
 refs = ["CLAUDE.md: registro de artefatos e append-only"]
