@@ -72,6 +72,27 @@ kind = "violating"
 file = "own.compose-hardcoded-secret/violating/03_api_key_in_test_path.yml"
 repo_path = "deploy/tests/compose.fixture.yml"
 
+# `T-01.10` rodada 2 — Ataque 4(A) do QA (achado real, nao "calou corretamente"): segredo
+# LITERAL seguido de um `${UNUSED}` decorativo e morto na MESMA linha. A allowlist antiga
+# via `\$\{` em QUALQUER posicao da linha e calava a ocorrencia inteira; corrigida para
+# so calar quando a indirecao e o PROPRIO INICIO do valor (`harness.toml`, comentario
+# acima de `allowlist_regex`). Sem este caso, o fechamento nao tinha rede de mutacao.
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "violating"
+file = "own.compose-hardcoded-secret/violating/04_dollar_decoy_suffix.yml"
+repo_path = "deploy/compose.decoy-dollar.yml"
+
+# `T-01.10` rodada 2 — Ataque 4(B) do QA: segredo LITERAL com um comentario de fim de
+# linha que so MENCIONA uma palavra da allowlist (`changeme`); o valor em si nao e
+# amostra nenhuma. A allowlist antiga rodava sobre a linha inteira, comentario incluso;
+# corrigida para so calar quando a palavra de amostra e o INICIO do valor (mesma nota).
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "violating"
+file = "own.compose-hardcoded-secret/violating/05_allowlist_word_in_comment.yml"
+repo_path = "deploy/compose.decoy-comment.yml"
+
 # ── CONFORMES ────────────────────────────────────────────────────────────────────
 
 # A indirecao de ambiente — a forma CORRETA, e a que o arquivo real versionado usa.

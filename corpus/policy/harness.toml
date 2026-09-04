@@ -37,6 +37,14 @@ packs = []
 # ⚠️ COPIA FIEL da declaracao de `harness.toml` na raiz. Divergir aqui faria o corpus
 # defender uma regra que o repositorio nao tem — e o portao de mutacao muta ESTE arquivo
 # (`ci/scope_mutation_check.py:174`, regime externo).
+# `allowlist_regex` sincronizada em `T-01.10` rodada 2: a versao anterior (`\$\{` e a
+# lista de amostra soltas, sem ancora) calava com o segredo real fora da allowlist —
+# ver o comentario completo em `harness.toml`, acima de `allowlist_regex` da regra
+# original. Esquecer de sincronizar aqui faria ESTE fixture (nao o repositorio) reprovar
+# `corpus verify`/`corpus mutate` por uma divergencia que nao e da regra, e sim de copia
+# desatualizada — foi exatamente o que aconteceu ao rodar `corpus verify` antes deste
+# ajuste: os 2 casos novos vieram `referencia: [...]`/`runner: []` so porque este arquivo
+# ainda tinha a forma antiga `[MEDIDO 2026-09-03]`.
 [[rules.own]]
 id = "own.compose-hardcoded-secret"
 form = "forbidden-regex-allowlist"
@@ -45,5 +53,5 @@ severity = "block"
 scope = "code"
 paths = ["**/*.yml", "**/*.yaml"]
 regex = "^\\s*-?\\s*[\"']?[A-Za-z0-9_.-]*(?i:password|passwd|secret|api[-_]?key|access[-_]?key|token|dsn|connection_string)[A-Za-z0-9_.-]*[\"']?\\s*[:=]\\s*[\"']?[^\\s\"'{}$]{6,}"
-allowlist_regex = ['\$\{', '(?i)_file\s*[:=]', '/run/secrets/', '(?i)(example|placeholder|changeme|dummy|redacted)']
+allowlist_regex = ["[:=]\\s*[\"']?\\$\\{", '(?i)_file\s*[:=]', "[:=]\\s*[\"']?/run/secrets/", "[:=]\\s*[\"']?(?i:example|placeholder|changeme|dummy|redacted)"]
 message = "segredo literal em arquivo de compose: leia-o do ambiente (`${VAR}`) ou de `/run/secrets` — credencial versionada nao volta atras"
