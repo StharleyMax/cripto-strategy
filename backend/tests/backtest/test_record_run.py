@@ -1,4 +1,7 @@
-"""`record_run` — `ADR-021` falsifiers G1 (refuses) and G2 (does not falsely refuse)."""
+"""`record_run` — `ADR-021` falsifiers G1 (refuses) and G2 (does not falsely refuse).
+
+Also covers `ADR-025` falsifier G6 (`grid_version` divergence under identical data).
+"""
 
 from __future__ import annotations
 
@@ -6,7 +9,11 @@ import pytest
 
 from src.modules.backtest.domain.intrabar_convention import IntrabarConvention
 from src.modules.backtest.domain.knowledge_time import KnowledgeTimeMode
-from src.modules.backtest.use_cases.record_run import RunRegistryDivergenceError, record_run
+from src.modules.backtest.use_cases.record_run import (
+    GridVersionDivergenceError,
+    RunRegistryDivergenceError,
+    record_run,
+)
 from tests.helpers.fake_run_registry_store import FakeRunRegistryStore
 
 _BUNDLE = {"universe": ["BTCUSDT"], "window_days": 30}
@@ -15,7 +22,12 @@ _HASH_B = "b" * 64
 
 
 def _record(
-    store: FakeRunRegistryStore, *, run_id: str, partitions_content_hash: str, knowledge_time: int
+    store: FakeRunRegistryStore,
+    *,
+    run_id: str,
+    partitions_content_hash: str,
+    knowledge_time: int,
+    grid_version: int = 1,
 ) -> None:
     """Call `record_run` with one fixed bundle/window and only the interesting fields varying."""
     record_run(
@@ -32,6 +44,7 @@ def _record(
         intrabar_convention=IntrabarConvention.PESSIMISTIC_STOP_FIRST,
         intrabar_decided_count=0,
         principal_id="stharley",
+        grid_version=grid_version,
     )
 
 
@@ -102,5 +115,77 @@ def test_knowledge_time_is_derived_not_trusted_from_the_caller() -> None:
         intrabar_convention=IntrabarConvention.PESSIMISTIC_STOP_FIRST,
         intrabar_decided_count=0,
         principal_id="stharley",
+        grid_version=1,
     )
     assert entry.knowledge_time == 4_000
+
+
+def test_g6_reproducing_the_same_triple_with_a_different_grid_version_is_refused() -> None:
+    """G6 (`ADR-025`/D4): same triple, same `partitions_content_hash`, different `grid_version`.
+
+    G1 must NOT fire here (the data is identical) — only the grid-version check does, and it
+    must raise the DISTINCT `GridVersionDivergenceError`, never `RunRegistryDivergenceError`
+    (`ADR-025`/H4).
+    """
+    store = FakeRunRegistryStore()
+    _record(
+        store,
+        run_id="run-1",
+        partitions_content_hash=_HASH_A,
+        knowledge_time=5_000,
+        grid_version=1,
+    )
+    with pytest.raises(GridVersionDivergenceError, match="run-1"):
+        _record(
+            store,
+            run_id="run-2",
+            partitions_content_hash=_HASH_A,
+            knowledge_time=5_000,
+            grid_version=2,
+        )
+    assert len(store.rows) == 1, "the divergent second row must never reach the store"
+
+
+def test_g6_does_not_fire_when_grid_version_repeats() -> None:
+    """The other half of G6: reproduction under the same `grid_version` never raises."""
+    store = FakeRunRegistryStore()
+    _record(
+        store,
+        run_id="run-1",
+        partitions_content_hash=_HASH_A,
+        knowledge_time=5_000,
+        grid_version=1,
+    )
+    _record(
+        store,
+        run_id="run-2",
+        partitions_content_hash=_HASH_A,
+        knowledge_time=5_000,
+        grid_version=1,
+    )
+    assert len(store.rows) == 2
+
+
+def test_g1_takes_precedence_when_both_hash_and_grid_version_diverge() -> None:
+    """When the data ALSO diverged, G1 (`RunRegistryDivergenceError`) fires, not G6.
+
+    `record_run` checks `partitions_content_hash` first: a caller cannot mask a real data
+    divergence by also changing `grid_version` in the same call.
+    """
+    store = FakeRunRegistryStore()
+    _record(
+        store,
+        run_id="run-1",
+        partitions_content_hash=_HASH_A,
+        knowledge_time=5_000,
+        grid_version=1,
+    )
+    with pytest.raises(RunRegistryDivergenceError, match="run-1"):
+        _record(
+            store,
+            run_id="run-2",
+            partitions_content_hash=_HASH_B,
+            knowledge_time=5_000,
+            grid_version=2,
+        )
+    assert len(store.rows) == 1

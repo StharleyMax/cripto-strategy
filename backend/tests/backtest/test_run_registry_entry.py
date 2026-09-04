@@ -26,6 +26,7 @@ def _build(**overrides: object) -> RunRegistryEntry:
         "intrabar_convention": IntrabarConvention.PESSIMISTIC_STOP_FIRST,
         "intrabar_decided_count": 0,
         "principal_id": "stharley",
+        "grid_version": 1,
     }
     fields.update(overrides)
     return RunRegistryEntry(**fields)  # type: ignore[arg-type]
@@ -70,6 +71,12 @@ def test_negative_intrabar_decided_count_is_refused() -> None:
         _build(intrabar_decided_count=-1)
 
 
+def test_negative_grid_version_is_refused() -> None:
+    """`grid_version` is a monotonic counter owned by `charts` (`ADR-025`/D3) — never negative."""
+    with pytest.raises(InvalidRunRegistryEntryError):
+        _build(grid_version=-1)
+
+
 def test_omitting_intrabar_convention_cannot_construct_a_row_at_all() -> None:
     """G4: the convention/count pair travels together by TYPE, not by a runtime check.
 
@@ -88,6 +95,7 @@ def test_omitting_intrabar_convention_cannot_construct_a_row_at_all() -> None:
         "commit": "deadbeef",
         "intrabar_decided_count": 0,
         "principal_id": "stharley",
+        "grid_version": 1,
     }
     with pytest.raises(TypeError):
         RunRegistryEntry(**fields)  # type: ignore[arg-type]
