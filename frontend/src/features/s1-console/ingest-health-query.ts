@@ -81,17 +81,32 @@
  * to this module for that route, dropping the CLI-only parser (`SectionMarker`/`isHeaderLine`/
  * `parseCanonicalProjection`) and its single caller
  * (`fetchIngestHealthProjectionViaCli`/`IngestHealthQueryResult`) — the NDJSON shape they read
- * died with `ADR-005/D6.1`'s envelope. `runIngestHealthCli` and the rest of the subprocess
- * transport are UNCHANGED here: removing them outright is `T-05.15`, not this task.
+ * died with `ADR-005/D6.1`'s envelope.
+ *
+ * ── UPDATE, `T-05.15`: THE SUBPROCESS TRANSPORT ITSELF IS GONE ──────────────────────────────
+ *
+ * `runIngestHealthCli`, `IngestHealthCliOptions`/`IngestHealthCliResult`, `HOSTED_SCRIPT` and
+ * the `THIS_FILE_DIR`/`DEFAULT_BACKEND_ROOT` plumbing that located `backend/.venv` are DELETED
+ * here — `spawnSync` never exists in a browser, in any variant, and this module is
+ * `harness code-paths classify`d `producao` (`frontend/src/`), not a script. Their only caller
+ * (`fetchIngestHealthProjectionViaCli`) already died with `T-05.14`/`ADR-019` above, so this is
+ * dead code removal, not a behaviour change: `GET /ingest-health` (`fetchIngestHealthProjectionViaHttp`,
+ * below) has been the ONLY live transport since `T-05.14`. `ADR-008/DoD-3`'s CLI-side witness
+ * (an unheard-of `verdict` makes the CLI itself refuse) moves with it — it is still proven at
+ * the Python layer (`backend/tests/sentimento/test_ingest_health_query.py:312-360`); the
+ * TS-side cross-language witness that used to invoke the CLI as a subprocess is gone along
+ * with the subprocess, and reopening that witness (if ever wanted, e.g. over the HTTP route) is
+ * `A1`'s question, owned by `quant-architect`, not this task's (`docs/context/plataforma-dados/
+ * tasks.toml`, `T-05.15` refs).
+ *
+ * `fingerprint()` below also no longer imports `node:crypto`'s `createHash` — `sha256.ts`
+ * (this directory) carries a dependency-free, synchronous SHA-256 instead, so `DoD D5.15`
+ * (zero `node:`-prefixed imports left under `frontend/src`, `app/threshold-spec-bundle.ts`
+ * excepted) is met by THIS module without touching that unrelated file's own `createHash` use.
  */
 
-import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { assertNoTickLevelFields } from "../../app/history-transport.ts";
+import { sha256Hex } from "./sha256.ts";
 import {
   buildS1ViewModel,
   type S1ViewModel,
@@ -276,7 +291,7 @@ export function canonicalProjection(projection: IngestHealthProjection): string 
 
 /** Mirror of `IngestHealthReport.fingerprint()` — the identity `ADR-008/DoD-2` compares. */
 export function fingerprint(projection: IngestHealthProjection): string {
-  return createHash("sha256").update(canonicalProjection(projection), "utf8").digest("hex");
+  return sha256Hex(canonicalProjection(projection));
 }
 
 // ── PARSING THE HTTP ENVELOPE — `ADR-005/D6.1` + `ADR-019/D2` ───────────────────────────────
@@ -425,75 +440,12 @@ export function parseIngestHealthEnvelope(body: unknown): IngestHealthProjection
   return { runs, gaps };
 }
 
-const THIS_FILE_DIR = path.dirname(fileURLToPath(import.meta.url));
-
-/** `frontend/src/features/s1-console/` → repo root → `backend`. Overridable per call — the
- * test suite never relies on this default reaching outside its own worktree unexpectedly. */
-const DEFAULT_BACKEND_ROOT = path.resolve(THIS_FILE_DIR, "../../../../backend");
-
-export interface IngestHealthCliOptions {
-  /** Defaults to `<repo>/backend`. */
-  readonly backendRoot?: string;
-  /** Defaults to `<backendRoot>/.venv/bin/python3`. */
-  readonly pythonBin?: string;
-}
-
-export interface IngestHealthCliResult {
-  readonly exitCode: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-// The exact composition-root shape `backend/tests/sentimento/test_ingest_health_query.py`
-// itself uses to invoke the CLI as a subprocess (`test_the_product_never_leaks_onto_the_
-// diagnostic_stream`) — imported by its REAL dotted path, never run as `__main__`. Running it
-// as `__main__` renames the CLI's own logger to `"__main__"`, which collides with the
-// diagnostic logger `route_diagnostics_away_from_the_product_stream` installs and duplicates
-// every line onto both streams `[MEDIDO 2026-09-02, this task's own bench: `python3 -m
-// src.modules.sentimento.infra.ingest_health_cli <path>` prints every projection line TWICE,
-// once as bare JSON and once prefixed "INFO __main__ …"; importing `main` by its dotted path
-// instead, as below, reproduces the CLI's own test and leaves `stdout` byte-clean]`.
-const HOSTED_SCRIPT = [
-  "import sys",
-  "from src.modules.sentimento.infra.ingest_health_cli import main",
-  "raise SystemExit(main(sys.argv[1:]))",
-].join("\n");
-
-/**
- * Run `ingest_health_cli` as a read-only subprocess against `storePath` — consumer #1,
- * unmodified. Synchronous on purpose: this is a read adapter for proving `D7.17`, not a
- * request handler in a running server (none exists yet in `frontend/` — see module docstring).
- */
-export function runIngestHealthCli(
-  storePath: string,
-  options: IngestHealthCliOptions = {},
-): IngestHealthCliResult {
-  const backendRoot = options.backendRoot ?? DEFAULT_BACKEND_ROOT;
-  const pythonBin = options.pythonBin ?? path.join(backendRoot, ".venv", "bin", "python3");
-
-  if (!existsSync(pythonBin)) {
-    throw new Error(
-      `RECUSA: ${pythonBin} nao existe. Rode 'bash backend/scripts/bootstrap.sh' (precisa de ` +
-        "rede) ou reaproveite um .venv ja construido — cair para um interprete do PATH rodaria " +
-        "o falsificador de D7.17 num ambiente que o repositorio nao declarou.",
-    );
-  }
-
-  const result = spawnSync(pythonBin, ["-c", HOSTED_SCRIPT, storePath], {
-    cwd: backendRoot,
-    encoding: "utf8",
-  });
-  if (result.error) {
-    throw result.error;
-  }
-  return {
-    exitCode: result.status ?? -1,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
-}
-
 // ── THE HTTP TRANSPORT — `ADR-005/D6.1`/`D6.4`, `ADR-019/D3`/`D4` ───────────────────────────
+//
+// `T-05.15` deleted the CLI-subprocess transport that used to live here (`runIngestHealthCli`,
+// `IngestHealthCliOptions`/`IngestHealthCliResult`, `HOSTED_SCRIPT`, `THIS_FILE_DIR`/
+// `DEFAULT_BACKEND_ROOT`) — see the module docstring's "UPDATE, `T-05.15`" section. The HTTP
+// transport below is the ONLY transport this module carries now.
 
 export interface IngestHealthHttpOptions {
   /** Defaults to `process.env.INGEST_HEALTH_API_BASE_URL` — NEVER `NEXT_PUBLIC_*`

@@ -909,7 +909,7 @@ tracker = { provider = "jira", id = "CST-105", url = "https://conversationhub.at
 id = "T-05.15"
 title = "[web] 05 · O transporte por subprocesso sai do universo de producao — 209 de 500 linhas de ingest-health-query.ts"
 components = ["web"]
-status = "todo"
+status = "done"
 phase = "05"
 depends_on = ["T-05.14"]
 refs = [
