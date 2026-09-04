@@ -863,7 +863,8 @@ tracker = { provider = "jira", id = "CST-103", url = "https://conversationhub.at
 id = "T-05.13"
 title = "[docs][infra] 05 · Os dois contratos de import-linter da camada consumidora, com os 2 violadores plantados"
 components = ["docs", "infra"]
-status = "todo"
+status = "done"  # escopo reduzido por ADR-009/D6.9 (infra-architect): so o contrato forbidden;
+                 # contrato layers adiado ate src/jobs/ existir (D6.6). Ver gates/T-05.13-architect-decisao.md
 phase = "05"
 depends_on = ["T-05.12", "T-01.5"]
 refs = [

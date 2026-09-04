@@ -348,3 +348,28 @@ harness tasks validate <sonda>.toml
 1. **Não declara o juiz.** `[agents.by_component.infra]` continua **ausente** — é `T-01.8`, e a ordem não é preferência: `V-16` (`lib/policy.py:539-543`) reprova chave de `agents.by_component` fora do enum, logo **enum primeiro, juiz depois**. ⇒ **`F-D6-6` está DISPARADO agora, por construção e por uma janela conhecida**: `infra` está no enum e ausente da tabela de juízes. **Condição datada, com dono (`T-01.8`/`CST-100`) e auto-resolúvel** — e é o preço da ordem que `V-16` impõe, não um descuido.
 2. **Não fecha `deploy/`.** **Rótulo não é cobertura:** `code_paths.include_prefixes` continua com **3** entradas e `ls -d deploy` continua **inexistente** `[MEDIDO 2026-09-03]`. Quem fecha é o item `1.14` (`D1.14`), em três partes que só valem juntas.
 3. **Não toca o ledger.** `gate-record`, `approve` e `advance` são atos de **owner** (`CLAUDE.md` §*"O ledger é a identidade do estado"*), e `T-09.4` permanece com o status que o tracker disser até o owner movê-lo.
+
+### D6.9 · A ordem de `D6.6` se estende ao `source_modules` do contrato (4) — achado por `T-05.13`, rejeição de duas sintaxes adaptadas, não aceite delas · 2026-09-04
+
+**O gatilho:** `T-05.13` (que declara os dois contratos de `D6.3`) só depende de `T-05.12`, que criou `src/main/`+`src/api/` e **não** `src/jobs/` — `find backend/src -maxdepth 1 -type d` → `src/api`, `src/main`, `src/modules` `[MEDIDO 2026-09-04]`. O builder, para fechar o DoD sem esperar `src/jobs/` nascer, adaptou a sintaxe dos dois contratos: `layers = ["main", "api | (jobs)", "modules"]` (camada opcional) e `source_modules = ["src.api", "src.jobs.*"]` (wildcard também do lado `source_modules`). O QA (`gates/T-05.13-qa.md`) reproduziu ambas, mediu o efeito, e as devolveu para decisão de arquitetura — corretamente: nenhuma das duas é escolha de builder.
+
+**Contrato (3) `layers` — a sintaxe `(jobs)` é REJEITADA, não emendada.** `D6.6:244` já é explícita e "vinculante": (3) só pode ser declarado na mesma task que cria os três diretórios, precisamente porque `layers` **erra alto** (`rc≠0`, "module does not exist") quando um deles falta — esse `rc≠0` É o mecanismo que impede declaração antecipada. A sintaxe de camada opcional **preserva a semântica de cobertura** (QA mediu: sem falso-positivo nem falso-negativo, item 4 do gate) **mas suprime exatamente esse `rc≠0`** — logo declarar com ela é declarar adiantado com o alarme desligado, não uma leitura nova de `D6.6`. Nada mudou na razão original para justificar isso agora. **Decisão: contrato (3) continua vedado até `src/jobs/` existir de fato — sem exceção de sintaxe.**
+
+**Contrato (4) `forbidden` — o wildcard em `source_modules` também é REJEITADO, e por um motivo que `D6.6` não tinha medido.** `D6.6` autorizou wildcard **só** em `forbidden_modules`, contra um defeito específico (`KEPT` silencioso quando o alvo não existe). Nunca avaliou wildcard do lado `source_modules`. `T-05.13` mediu dois fatos novos:
+
+1. **`source_modules` referenciando módulo inexistente também erra ALTO, não em silêncio** — `source_modules = ["src.api", "src.jobs"]` (literal) com `src/jobs` ausente → `"Module 'src.jobs' does not exist."`, `rc=3` `[MEDIDO 2026-09-04, gates/T-05.13-qa.md item 1]`. É o mesmo mecanismo de proteção de `layers`, só que no contrato vizinho — `D6.6` não precisava tê-lo nomeado porque na data em que foi escrita nada sugeria testar esse lado.
+2. **O wildcard que rodeia esse erro tem cobertura pior que o literal, quando o literal é realizável:** `"src.jobs.*"` cala um import proibido plantado direto em `src/jobs/__init__.py` (sem submódulo) — `5 kept, 0 broken`, `rc=0`, **falso negativo confirmado** `[MEDIDO 2026-09-04, gates/T-05.13-qa.md item 3]`; o literal, uma vez que `src/jobs` exista, morde os dois casos (pacote e submódulo).
+
+**A alternativa correta, medida por mim:** quando o alvo simplesmente não existe ainda — nenhum arquivo em `src/jobs/`, não um caso de erosão de cobertura sobre código real — a forma certa é **omitir** o segmento, não adaptá-lo com wildcard nem forçar o literal contra um `rc=3`:
+
+```toml
+source_modules = ["src.api"]   # sem "src.jobs" nem "src.jobs.*", enquanto o diretorio nao existe
+```
+
+`bash backend/scripts/boundaries.sh` → `Contracts: 5 kept, 0 broken.`, `rc=0`; com um violador plantado em `src/api/` (`from src.modules.sentimento.infra import binance_stream_probe`) → `Contracts: 4 kept, 1 broken`, nomeando a linha `[MEDIDO 2026-09-04, worktree isolado, arquivo efêmero apagado depois]`. **Isto não é o caso de erosão que o DoD de `T-05.13` nomeia** (*"recortar `src.jobs` de `source_modules` para fechar o DoD... desliga metade do que o contrato existe para medir"*, `tasks.toml:877`) — aquele aviso pressupõe `src/jobs/` já ter arquivos reais e alguém estreitando o contrato para escapar de um achado; aqui não há nada em `src/jobs/` para se esconder de.
+
+**A regra geral que esta emenda declara, generalizando `D6.6` para o lado que ele não cobria:** nenhum dos dois contratos pode nomear `src.jobs` — literal ou por sintaxe adaptada — antes de `src/jobs/` existir de fato. Até lá, contrato (4) declara `source_modules = ["src.api"]` apenas; contrato (3) simplesmente não é declarado.
+
+| # | falsifica | comando | tem de ser |
+|---|---|---|---|
+| **F-D6-8** | a ordem, agora simétrica nos dois contratos — o dia em que `src/jobs/` nascer sem as duas metades juntas | na task que cria `src/jobs/`: `grep -n 'layers = \[' backend/pyproject.toml` (sem parênteses) **e** `grep -n 'source_modules = \["src.api", "src.jobs"\]' backend/pyproject.toml` (literal, sem wildcard) | **as duas presentes na MESMA task/commit.** Uma sem a outra repete, em forma nova, exatamente o defeito que esta emenda e `D6.6` nomeiam |

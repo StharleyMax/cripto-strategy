@@ -342,6 +342,47 @@ exista**. Não é obrigação desta task (`ADR-011/D3a` não a pede), e fazer po
 dentro de um script de portão é decisão de quem possui o vocabulário `[NÃO MEDIDO: nenhum
 experimento deste ciclo mediu o custo ou os falsos positivos desse cruzamento]`.
 
+### 📎 2026-09-04 por `T-05.13` — o contrato 4, a profundidade da camada consumidora (`ADR-009/D6.3`+`D6.6`+`D6.9`)
+
+`T-05.12` pôs `src/main/` e `src/api/` na árvore. `T-05.13` acrescenta **um** contrato — o de
+**profundidade** de `ADR-009/D6.3` (o (4) daquela seção) — **agora `4` contratos ao todo**.
+`src/jobs/` **não existe** hoje `[MEDIDO 2026-09-04: find backend/src/jobs → inexistente]`.
+
+**⚠️ Escopo reduzido na rodada 2, por decisão do `infra-architect`
+(`docs/context/plataforma-dados/gates/T-05.13-architect-decisao.md`, emenda
+`ADR-009/D6.9`):** a rodada 1 desta task tinha declarado **dois** contratos — este e o de
+**ordenação** (`layers`, o (3) de `D6.3`) — usando sintaxe adaptada do `import-linter`
+(camada opcional `"api | (jobs)"` e wildcard em `source_modules`) para contornar o fato de
+`src/jobs/` ainda não existir. O QA (`gates/T-05.13-qa.md`) mediu que as duas sintaxes
+funcionam tecnicamente (sem falso-positivo), mas são decisão de arquitetura fora da
+autoridade do builder — `D6.6:244` já é "vinculante": o contrato `layers` só pode ser
+declarado na mesma task que cria `src/main/`, `src/api/` **e** `src/jobs/`, porque `layers`
+erra ALTO (`rc≠0`, "module does not exist") quando falta um dos três, e é esse `rc≠0` que
+impede declaração antecipada — a sintaxe de camada opcional suprime justamente esse
+mecanismo. `D6.9` rejeitou as duas sintaxes (não as emendou): **o contrato `layers` sai
+inteiro desta task**, e `source_modules` do contrato abaixo **não cobre `src.jobs`**, nem
+literal nem wildcard — `source_modules = ["src.api"]` apenas.
+
+| contrato | morde | cala |
+|---|---|---|
+| `Consumidor nao importa infra de contexto: o adaptador vem por injecao` (`forbidden`) | `from src.modules.sentimento.infra import binance_stream_probe` plantado em `src/api/_qa_violator_forbidden.py`: `Contracts: 3 kept, 1 broken`, `rc=1`, nomeando `src.api._qa_violator_forbidden -> src.modules.sentimento.infra.binance_stream_probe (l.1)` `[MEDIDO 2026-09-04, arquivo efêmero criado e apagado]` | `Contracts: 4 kept, 0 broken.`, `rc=0`, `Analyzed 175 files, 778 dependencies` `[MEDIDO 2026-09-04]` |
+
+`forbidden_modules = ["src.modules.*.infra"]` já nasce com o WILDCARD que `ADR-009/D6.6`
+normatizou — nunca o nome literal `sentimento` — pelo mesmo motivo do contrato 2 acima:
+enumerar o contexto por nome faz o contrato virar fantasma (`KEPT`/`rc=0` em silêncio) no dia
+em que ele for particionado ou renomeado. `D6.6` autorizou esse wildcard **só** do lado
+`forbidden_modules` — nunca do lado `source_modules`, e `D6.9` generaliza essa mesma regra
+para lá: `source_modules` não aponta para um pacote (`src.jobs`) que ainda não existe, nem
+por literal (falha alto, `rc=3`, "Module does not exist") nem por wildcard (mede QA em
+`gates/T-05.13-qa.md` item 3: um violador plantado direto em `src/jobs/__init__.py`, sem
+submódulo, **escapava** — `Contracts: 5 kept, 0 broken`, `rc=0`, falso negativo).
+
+**Gatilho de fechamento, literal e agora simétrico nos dois contratos (`ADR-009/D6.9`,
+`F-D6-8`):** quando `src/jobs/` for criado, a MESMA task que o cria declara (i) o contrato
+`layers = ["main", "api | jobs", "modules"]`, sem parênteses, e (ii) estende este
+`source_modules` para `["src.api", "src.jobs"]`, literal, sem wildcard — as duas juntas, na
+mesma task/commit, senão o defeito que `D6.6`/`D6.9` nomeiam se repete em forma nova.
+
 ### As quatro mutações que o `/qa` acrescentou, re-rodadas aqui — verde não prova nada até algo reprovar
 
 O `/qa` de 2026-08-29 estendeu esta bancada em três pontos e achou um defeito de código num quarto.

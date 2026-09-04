@@ -290,3 +290,60 @@ source_modules = [
     "src.modules.sentimento.use_cases",
 ]
 forbidden_modules = ["socket", "ssl"]
+
+# ── CONTRATO 4 de 4 — PROFUNDIDADE: o consumidor fala com use_cases/domain, nunca com a ──
+#    infra de um contexto -- o adaptador vem por injecao (raiz de composicao) ────────────
+#
+# ACRESCENTADO por `T-05.13` a partir de `ADR-009/D6.3` (contrato (4) daquela secao), JA
+# NA FORMA CORRIGIDA por `ADR-009/D6.6` -- e a correcao muda o `forbidden_modules`, e isso
+# precisa ficar dito em voz alta porque diverge do texto literal que a task cita:
+#
+#   D6.3 original:  forbidden_modules = ["src.modules.sentimento.infra"]
+#   D6.6 (emenda,   forbidden_modules = ["src.modules.*.infra"]   -- WILDCARD
+#         horas depois, mesma data)
+#
+# O MOTIVO, medido por `ADR-009/D6.6`: `forbidden_modules` apontando para um modulo que nao
+# existe mais devolve KEPT/0 broken/rc=0 -- SEM aviso. Enumerar `sentimento` por nome faz
+# este contrato virar fantasma no dia em que o contexto for particionado ou renomeado (a
+# propria `ADR-009/D6.4` cita a particao de `sentimento` como pergunta em aberto, dono
+# owner+quant-architect): 11 modulos de `infra` sairiam da cobertura sem um byte de aviso.
+# `ADR-009/D6.6` e explicita -- "regra geral que esta emenda declara: contrato forbidden que
+# ENUMERA nome de contexto e contrato que caduca em silencio quando o contexto muda de
+# nome" -- e prova as tres pontas com `import-linter` 2.14 real (morde/cala/fantasma). Nascer
+# com o literal pre-emenda teria posto no mesmo commit o defeito que a propria ADR ja
+# corrigiu horas antes desta task existir.
+#
+# ⚠️ ESCOPO REDUZIDO NA RODADA 2, por decisao do `infra-architect`
+# (`gates/T-05.13-architect-decisao.md`, emenda `ADR-009/D6.9`): o contrato (3) `layers`
+# (a ordenacao `main` / `api | jobs` / `modules`) SAI desta task inteiro. `D6.6:244` e
+# explicita e "vinculante" -- (3) so pode ser declarado na MESMA task que cria `src/main/`,
+# `src/api/` E `src/jobs/`, porque `layers` erra ALTO (`rc!=0`, "module does not exist")
+# quando falta um dos tres, e esse `rc!=0` E o mecanismo que impede declaracao antecipada.
+# A sintaxe de camada opcional (`"api | (jobs)"`) que a rodada 1 usou preserva a cobertura
+# mas SUPRIME esse `rc!=0` -- e `D6.9` rejeitou a sintaxe, nao emendou `D6.6`: `T-05.13`
+# depende so de `T-05.12` (criou `main`+`api`, nao `jobs` [MEDIDO 2026-09-04: `find
+# backend/src/jobs` -> inexistente]), exatamente o cenario que `D6.6` ja vedava.
+#
+# `source_modules` TAMBEM NAO cobre `src.jobs` nesta rodada -- nem literal, nem wildcard.
+# A rodada 1 declarou `source_modules = ["src.api", "src.jobs.*"]` para nao perder a
+# cobertura futura, mas o QA (`gates/T-05.13-qa.md` item 3) mediu que o wildcard PERDE
+# cobertura real: um import proibido plantado direto em `src/jobs/__init__.py` (sem
+# submodulo) ESCAPA -- `Contracts: 5 kept, 0 broken`, `rc=0`, FALSO NEGATIVO confirmado;
+# so o literal `"src.jobs"` (quando o modulo existir) cobre pacote e submodulo por igual.
+# `D6.9` generaliza `D6.6` para este lado do contrato tambem: nenhum wildcard de
+# `source_modules` aponta para um pacote que nao existe so para simular cobertura futura --
+# ele nao mede nada hoje (universo zero: `src/jobs/` nunca existiu na arvore) e ainda assim
+# perde cobertura no dia em que existir. `source_modules = ["src.api"]` sozinho ja cala
+# limpo e MORDE nomeando a linha (ver tabela morde/cala do `README.md`).
+#
+# GATILHO DE FECHAMENTO, e e literal, e agora SIMETRICO nos dois contratos
+# (`ADR-009/D6.9`, `F-D6-8`): quando `src/jobs/` for criado, a MESMA task que o cria
+# declara (i) o contrato (3) `layers = ["main", "api | jobs", "modules"]`, SEM parenteses
+# (jobs deixa de ser opcional -- ja existe), e (ii) estende este `source_modules` para
+# `["src.api", "src.jobs"]`, LITERAL, sem wildcard. As duas juntas, na mesma task/commit --
+# uma sem a outra repete o defeito que `D6.6`/`D6.9` nomeiam.
+[[tool.importlinter.contracts]]
+name = "Consumidor nao importa infra de contexto: o adaptador vem por injecao"
+type = "forbidden"
+source_modules = ["src.api"]
+forbidden_modules = ["src.modules.*.infra"]
