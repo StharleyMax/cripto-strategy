@@ -178,20 +178,58 @@ class IngestHealthReport:
         """Return `sha256` of the canonical projection — the identity `ADR-008/DoD-2` compares."""
         return hashlib.sha256(self.canonical_projection().encode("utf-8")).hexdigest()
 
+    def to_envelope(self) -> dict[str, object]:
+        """Return the nested-object shape `ADR-005/D6.1` fixes for the HTTP consumer.
 
-def _project_run(run: IngestRun) -> str:
-    """Project one run onto the 15 columns `ADR-008/D3` fixed, in the order it fixed them."""
+        SAME PROJECTION, DIFFERENT WIRE FORMAT. `canonical_lines()` serializes the run/gap
+        columns to line-delimited JSON strings for the CLI (`ADR-008/DoD-2`'s byte contract);
+        this method reuses the exact same column-order dict builders (`_project_run_dict`,
+        `_project_gap_dict`) and nests them into one object instead — so the column set, the
+        column order, and the `class`/`gap_class` translation have exactly ONE place they are
+        decided, never two. Duplicating that decision across a CLI path and an HTTP path is
+        the same defect `ADR-008/DoD-1` exists to prevent for SQL, one level up the stack.
+        """
+        return {
+            "query": "ingest_health_query",
+            "n_runs": len(self.runs),
+            "n_gaps": len(self.gaps),
+            "runs": [_project_run_dict(run) for run in self.runs],
+            "gaps": [_project_gap_dict(gap) for gap in self.gaps],
+        }
+
+
+def _project_run_dict(run: IngestRun) -> dict[str, object]:
+    """Build the 15-column dict `ADR-008/D3` fixed, in the order it fixed them.
+
+    The SHARED step between the CLI's line-JSON (`_project_run`) and the HTTP envelope
+    (`IngestHealthReport.to_envelope`) — extracted so the column set and order are decided
+    exactly once, not once per wire format.
+    """
     payload: dict[str, object] = {}
     for column in INGEST_HEALTH_RUN_COLUMNS:
         if column == "janela_de_perda":
             payload[column] = LOSS_WINDOW_NOT_COMPUTED_IN_F0
         else:
             payload[column] = getattr(run, column)
-    return canonical_json(payload)
+    return payload
+
+
+def _project_gap_dict(gap: IngestGap) -> dict[str, object]:
+    """Build the `md.ingest_gap` column dict, keeping `class` as the wire name.
+
+    The SHARED step between the CLI's line-JSON (`_project_gap`) and the HTTP envelope
+    (`IngestHealthReport.to_envelope`) — same reason as `_project_run_dict`.
+    """
+    return {
+        column: getattr(gap, _GAP_FIELD_BY_COLUMN[column]) for column in INGEST_HEALTH_GAP_COLUMNS
+    }
+
+
+def _project_run(run: IngestRun) -> str:
+    """Project one run onto the 15 columns `ADR-008/D3` fixed, in the order it fixed them."""
+    return canonical_json(_project_run_dict(run))
 
 
 def _project_gap(gap: IngestGap) -> str:
     """Project one gap onto the `md.ingest_gap` columns, keeping `class` as the wire name."""
-    return canonical_json(
-        {column: getattr(gap, _GAP_FIELD_BY_COLUMN[column]) for column in INGEST_HEALTH_GAP_COLUMNS}
-    )
+    return canonical_json(_project_gap_dict(gap))
