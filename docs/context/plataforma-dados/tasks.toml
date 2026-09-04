@@ -1289,7 +1289,7 @@ tracker = { provider = "jira", id = "CST-75", url = "https://conversationhub.atl
 id = "T-08.8"
 title = "[charts] 08 · firing_rate in-sample declarado tautologico na propria celula; OOS walk-forward"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-08.6"]
 refs = ["SPEC-001 §6", "plano 08 item 8.5 (metade de honestidade)", "DoD D8.2", "OOS n=23: media 1,404%, max 12,847% = 12,8x o alvo"]
