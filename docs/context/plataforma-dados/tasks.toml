@@ -1279,7 +1279,7 @@ tracker = { provider = "jira", id = "CST-74", url = "https://conversationhub.atl
 id = "T-08.7"
 title = "[charts] 08 · Anti-overfit: min_obs devolve ausencia, n_obs efetivo POR PONTO, dispersao do z como telemetria"
 components = ["charts"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-08.6"]
 refs = ["SPEC-001 §6", "plano 08 item 8.5 (metade estatistica)", "DoD D8.4", "DoD D8.5", "DoD D8.8", "caso concreto: rolling(2016, min_periods=576) nunca preencheu a janela nos alts e a conclusao publicada caiu"]
