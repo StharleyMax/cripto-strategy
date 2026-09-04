@@ -51,7 +51,18 @@ requires-python = ">=3.13,<3.14"
 # gramatica real -- exatamente o debito tecnico que este repositorio recusa. Pin EXATO, pela
 # mesma razao de `[tool.poetry.group.dev.dependencies]` abaixo: reprodutibilidade sobre
 # conveniencia, e o `poetry.lock` versionado e o unico que segura o ambiente.
-dependencies = ["pyyaml (==6.0.3)", "fastapi (==0.141.1)", "uvicorn (==0.52.4)"]
+# `psycopg[binary]` ACRESCENTADO por `T-08.4` (`ADR-021`/D1, `ADR-002`/D1 e D4): a primeira
+# dependencia de runtime que fala com um servidor de banco de dados — `run_registry` mora em
+# Postgres, a instancia que `deploy/compose.yml` ja sobe. Extra `[binary]` traz o `libpq`
+# empacotado (roda sem exigir toolchain de compilacao/headers na VPS, a mesma logica de
+# "poucos recursos" que ja vale para o resto do repositorio). Pin exato, mesma disciplina das
+# outras dependencias deste arquivo — `poetry.lock` versionado e o que segura reprodutibilidade.
+dependencies = [
+    "pyyaml (==6.0.3)",
+    "fastapi (==0.141.1)",
+    "uvicorn (==0.52.4)",
+    "psycopg[binary] (==3.3.5)",
+]
 
 [tool.poetry]
 package-mode = false
@@ -222,11 +233,17 @@ include_external_packages = true
 # camadas de `charts` (contrato 3, `Natureza`, abaixo) ja cobre `domain`/`use_cases` hoje;
 # quando a task que cria `charts/infra/` existir, ELA acrescenta esta linha — mesmo gatilho
 # simetrico que `D6.9` fixou para `src.api`/`src.jobs`.
+#
+# `src.modules.backtest` ACRESCENTADO por `T-08.4` (`ADR-021`, "Consequencia para quem
+# implementar"): e o TERCEIRO contexto a nascer no disco (`run_registry`), e a propria ADR e
+# explicita que sem esta linha o contrato `infra > use_cases > domain` nao se aplica dentro
+# dele. `backtest` nasce com as 3 camadas completas (`domain`/`use_cases`/`infra`), entao nao
+# repete a lacuna de `charts` acima.
 [[tool.importlinter.contracts]]
 name = "Camadas por contexto: infra > use_cases > domain"
 type = "layers"
 layers = ["infra", "use_cases", "domain"]
-containers = ["src.modules.sentimento"]
+containers = ["src.modules.sentimento", "src.modules.backtest"]
 exhaustive = false
 
 # ── CONTRATO 2 de 2 — a fronteira ENTRE contextos, um contrato por componente ───────────
@@ -274,6 +291,46 @@ forbidden_modules = [
     "src.modules.backtest",
 ]
 
+# `backtest` NASCEU com `T-08.4` (`ADR-021`), e a direcao dele NAO e simetrica com a de cima:
+# `ADR-021/D3` exige que `backtest` importe `src.modules.sentimento.domain.canonical_json`
+# (reuso do serializador canonico) — essa e a direcao PERMITIDA pelo contrato acima (que so
+# proibe `sentimento -> backtest`, nunca o inverso). Este contrato novo so fecha o que falta:
+# `backtest` continua sem poder falar com os OUTROS dois contextos ainda inexistentes.
+[[tool.importlinter.contracts]]
+name = "Fronteira de contexto: backtest nao importa charts nem convergencia"
+type = "forbidden"
+source_modules = ["src.modules.backtest"]
+forbidden_modules = [
+    "src.modules.charts",
+    "src.modules.convergencia",
+]
+
+# ── CONTRATO NOVO — o motor de armazenamento nao vaza para fora de `infra` ──────────────
+#
+# `ADR-014/D1d` JA DECIDIU este contrato (texto literal citado abaixo), mas ele nunca tinha
+# sido escrito AQUI — nenhuma ocorrencia de `psycopg`/`sqlite3`/`asyncpg`/`duckdb`/
+# `sqlalchemy` existia neste arquivo antes de `T-08.4` [MEDIDO 2026-09-04:
+# `grep -n 'psycopg\|sqlite3\|asyncpg\|duckdb\|sqlalchemy' backend/pyproject.toml` -> vazio,
+# rc=1, na arvore anterior a esta task]. `T-08.4` introduz `psycopg` como a PRIMEIRA
+# dependencia de runtime que fala com um motor de armazenamento (`ADR-021`/D1, Postgres) — e
+# e o momento em que a promessa de `ADR-014/D1d` deixa de ser vacua: sem este contrato, nada
+# impediria `backtest.use_cases.record_run` de abrir a conexao ele mesmo em vez de receber
+# um `RunRegistryStore` por injecao.
+#
+# `sentimento.domain`/`sentimento.use_cases` ENTRAM na mesma lista: a decisao de `ADR-014/D1d`
+# nunca foi "so para o contexto que existia em 2026-08-29", foi "o motor nao sai de infra",
+# e deixar `sentimento` de fora aqui recriaria o mesmo vazio que esta task fecha para
+# `backtest`.
+[[tool.importlinter.contracts]]
+name = "O motor de armazenamento nao vaza para fora de infra (ADR-014/D1d)"
+type = "forbidden"
+source_modules = [
+    "src.modules.sentimento.domain",
+    "src.modules.sentimento.use_cases",
+    "src.modules.backtest.domain",
+    "src.modules.backtest.use_cases",
+]
+forbidden_modules = ["sqlite3", "psycopg", "psycopg2", "asyncpg", "duckdb", "sqlalchemy"]
 
 # ── CONTRATO 3 de 3 — a NATUREZA do que `domain` e `use_cases` podem tocar ──────────────
 #

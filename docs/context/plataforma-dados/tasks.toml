@@ -1245,7 +1245,7 @@ tracker = { provider = "jira", id = "CST-71", url = "https://conversationhub.atl
 id = "T-08.4"
 title = "[backtest] 08 · run_registry com bundle_hash, knowledge_time, intrabar_convention E intrabar_decided_count"
 components = ["backtest"]
-status = "todo"
+status = "done"
 phase = "08"
 depends_on = ["T-04.4", "T-08.1"]
 refs = ["CA-F4-25", "SPEC-001 §3.5", "plano 08 item 8.3", "DoD D8.9", "falsificador global F-4", "unica task de backtest: reprodutibilidade e requisito da plataforma, nao do motor de estrategia"]
