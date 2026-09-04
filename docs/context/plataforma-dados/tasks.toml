@@ -1484,7 +1484,7 @@ tracker = { provider = "jira", id = "CST-87", url = "https://conversationhub.atl
 id = "T-09.6"
 title = "[docs] 09 · docs/INDEX.md atualizado, append-only"
 components = ["docs"]
-status = "todo"
+status = "done"
 phase = "09"
 depends_on = ["T-09.1"]
 refs = ["CLAUDE.md: registro de artefatos e append-only",
