@@ -45,6 +45,15 @@ packs = []
 # desatualizada — foi exatamente o que aconteceu ao rodar `corpus verify` antes deste
 # ajuste: os 2 casos novos vieram `referencia: [...]`/`runner: []` so porque este arquivo
 # ainda tinha a forma antiga `[MEDIDO 2026-09-03]`.
+# `allowlist_regex` sincronizada de novo em `T-01.10` rodada 3: prefixo `^(?:(?!#).)*`
+# em cada entrada, exigindo que nenhum `#` apareca antes do ponto de match — fecha os
+# casos 06/07 (decoy com separador extra DENTRO de comentario). Ver o comentario
+# completo (causa raiz + `[LIMITE CONHECIDO]` residual) em `harness.toml`, acima de
+# `allowlist_regex` da regra original. Mesmo aviso de sincronizacao do paragrafo acima
+# se aplica: esquecer de copiar aqui reprova `corpus verify` por copia desatualizada,
+# nao por defeito da regra — foi o que aconteceu ao rodar `corpus verify` desta rodada
+# antes deste ajuste (casos 06/07 vieram `referencia: [...]`/`runner: []`)
+# `[MEDIDO 2026-09-03]`.
 [[rules.own]]
 id = "own.compose-hardcoded-secret"
 form = "forbidden-regex-allowlist"
@@ -53,5 +62,5 @@ severity = "block"
 scope = "code"
 paths = ["**/*.yml", "**/*.yaml"]
 regex = "^\\s*-?\\s*[\"']?[A-Za-z0-9_.-]*(?i:password|passwd|secret|api[-_]?key|access[-_]?key|token|dsn|connection_string)[A-Za-z0-9_.-]*[\"']?\\s*[:=]\\s*[\"']?[^\\s\"'{}$]{6,}"
-allowlist_regex = ["[:=]\\s*[\"']?\\$\\{", '(?i)_file\s*[:=]', "[:=]\\s*[\"']?/run/secrets/", "[:=]\\s*[\"']?(?i:example|placeholder|changeme|dummy|redacted)"]
+allowlist_regex = ["^(?:(?!#).)*[:=]\\s*[\"']?\\$\\{", '^(?:(?!#).)*(?i:_file\s*[:=])', "^(?:(?!#).)*[:=]\\s*[\"']?/run/secrets/", "^(?:(?!#).)*[:=]\\s*[\"']?(?i:example|placeholder|changeme|dummy|redacted)"]
 message = "segredo literal em arquivo de compose: leia-o do ambiente (`${VAR}`) ou de `/run/secrets` — credencial versionada nao volta atras"

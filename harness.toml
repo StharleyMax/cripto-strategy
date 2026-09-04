@@ -674,20 +674,54 @@ regex = "^\\s*-?\\s*[\"']?[A-Za-z0-9_.-]*(?i:password|passwd|secret|api[-_]?key|
 #   (B) `POSTGRES_PASSWORD: hunter2_prod_master  # changeme depois` — mesma causa: a palavra
 #       de amostra estava no COMENTÁRIO, não no valor, e a allowlist antiga não distinguia
 #       `[MEDIDO 2026-09-03, QA rodada 1, Ataque 4(B): idem, rc=0]`.
-# **A correção ancora cada allowlist de valor ao MESMO ponto de partida do valor que o regex
-# principal usa** (`[:=]\s*["']?`, o trecho logo após a chave) — então só calam quando o
-# padrão de exceção é, ele mesmo, o INÍCIO do valor, não um apêndice ou um comentário.
-# Reprova de regressão: as 3 linhas do corpus `conforming/` que dependiam de valor
-# (`01_env_interpolation.yml`, `02_docker_secrets_file.yml` via `_file` — inalterada —,
-# `03_secret_in_test_path.yml`) continuam calando; `harness corpus verify` abaixo é a prova.
-# Efeito colateral notado e aceito: a 1ª entrada (`\$\{`) fica, na prática, redundante para
-# valor 100% interpolado — a classe negada do regex principal (`[^\s"'{}$]{6,}`) já barra
-# esses casos ANTES de qualquer allowlist ser avaliada, porque o valor não tem 6 caracteres
-# literais para casar `[MEDIDO: harness corpus verify — `conforming/01` cala por
-# "main-no-match", não por entrar na allowlist]`. Ela permanece por defesa em profundidade
-# (mudança futura no regex principal) e porque removê-la não fecha nada a mais.
-allowlist_regex = ["[:=]\\s*[\"']?\\$\\{", '(?i)_file\s*[:=]', "[:=]\\s*[\"']?/run/secrets/", "[:=]\\s*[\"']?(?i:example|placeholder|changeme|dummy|redacted)"]
+#
+# **A CORREÇÃO DA RODADA 2 (prefixo `[:=]\s*["']?` antes de cada termo de exceção) NÃO
+# fez o que o comentário desta linha dizia até `T-01.10` rodada 3 — achado do QA, não
+# estilo.** A frase antiga ("ancora cada allowlist ao MESMO ponto de partida do valor que
+# o regex principal usa") é FALSA para o motor: `a.search(ln)` (`lib/rules.py:205-216`)
+# roda cada `allowlist_regex` sobre a LINHA INTEIRA de novo, procurando a subsequência em
+# QUALQUER posição — "ancorar ao valor" exigiria que o motor passasse a posição do match
+# do `regex` principal para cada `allow`, e ele não passa (não há back-reference de
+# posição entre os dois `re.compile` independentes). O prefixo `[:=]\s*["']?` só reduz
+# QUAL separador satisfaz o padrão de exceção — continua aceitando QUALQUER `:`/`=` da
+# linha, não o que separa a CHAVE de credencial do seu valor. Por isso a rodada 2 fechou
+# (A)/(B) (que não tinham um segundo separador) mas reabriu a MESMA classe por uma 4ª via
+# `[MEDIDO 2026-09-03, QA rodada 2, Ataque 4(D/E/F)]`:
+#   (D) `POSTGRES_PASSWORD: hunter2_prod_master  # ref:changeme` — o `:` de "ref:changeme"
+#       DENTRO do comentário satisfaz `[:=]\s*["']?(?i:changeme)`, mesmo o valor real
+#       (`hunter2_prod_master`) não tendo indireção nenhuma;
+#   (E) `POSTGRES_PASSWORD: hunter2_prod_master  # nota:${UNUSED}` — mesma causa, com o
+#       padrão `\$\{`;
+#   (F) `- POSTGRES_PASSWORD=hunter2_prod_master  # x=changeme` — mesma causa, com `=`.
+#
+# **A MITIGAÇÃO DESTA RODADA (3): prefixo `^(?:(?!#).)*` em cada `allowlist_regex`,
+# exigindo que NENHUM `#` apareça entre o início da linha e o ponto onde o padrão de
+# exceção casa.** É o idioma padrão para "não atravessar um caractere" com `re.search()`
+# simples: `(?:(?!#).)*` consome caractere a caractere, e a lookahead negativa `(?!#)`
+# recusa consumir um `#` — então o motor de backtracking só encontra o padrão de exceção
+# se ele existir ANTES de qualquer `#` na linha. Isto fecha (D)/(E)/(F) de verdade (o
+# decoy nos três está DENTRO do comentário, ou seja, depois do `#`) sem fingir fechar o
+# caso geral — ver `[LIMITE CONHECIDO]` abaixo do bloco. `[MEDIDO 2026-09-03, T-01.10
+# rodada 3: teste de regex isolado com os 3 ataques + os 4 conformantes + violador liso,
+# 0 regressão, 3/3 ataques D/E/F passam a bloquear]`.
+allowlist_regex = ["^(?:(?!#).)*[:=]\\s*[\"']?\\$\\{", '^(?:(?!#).)*(?i:_file\s*[:=])', "^(?:(?!#).)*[:=]\\s*[\"']?/run/secrets/", "^(?:(?!#).)*[:=]\\s*[\"']?(?i:example|placeholder|changeme|dummy|redacted)"]
 message = "segredo literal em arquivo de compose: leia-o do ambiente (`${VAR}`) ou de `/run/secrets` — credencial versionada nao volta atras"
+
+# **(D/E/F residual) `[LIMITE CONHECIDO]` — mesmo padrão do gap de `Dockerfile`/YAML
+# flow-style acima:** o prefixo `^(?:(?!#).)*` só barra o decoy quando ele está DEPOIS de
+# um `#` na linha. Um segundo `[:=]` seguido de palavra/padrão de exceção ANTES de
+# qualquer `#` — ou numa linha sem `#` nenhum — ainda escapa, porque a allowlist não
+# recebe a posição onde o `regex` principal casou o valor real (`lib/rules.py:205-216`:
+# `a.search(ln)` é chamado sobre a linha inteira, sem span do match principal). Exemplo
+# que AINDA escapa, `rc=0`, com segredo literal real na linha:
+#   `POSTGRES_PASSWORD: hunter2_prod_master extra_ref:${UNUSED}` (sem `#` nenhum)
+# `[MEDIDO 2026-09-03, T-01.10 rodada 3: teste de regex isolado, "residual_before_hash_no_
+# comment" -> bloqueado=False antes e depois da correção]`. Fechar isto exigiria mudar o
+# MOTOR do plugin (`lib/rules.py:205-216`) para passar o span do match do `regex`
+# principal a cada `allow.search()`/usar `pos=` a partir dali — o motor é vendorizado
+# (plugin `harness-plugin` em `~/.claude/plugins/cache/...`), fora do escopo deste
+# repositório e desta task. Fica como dívida com dono explícito: quem decide reescrever o
+# motor é quem mantém o plugin, não `own.compose-hardcoded-secret`.
 
 # **(C) YAML flow-style, `[NÃO MEDIDO]` — lacuna aberta, mesmo padrão do `Dockerfile` acima:**
 # `environment: {POSTGRES_PASSWORD: hunter2_prod_master}` nunca é avaliado. O `regex`

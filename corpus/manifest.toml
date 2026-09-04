@@ -93,6 +93,26 @@ kind = "violating"
 file = "own.compose-hardcoded-secret/violating/05_allowlist_word_in_comment.yml"
 repo_path = "deploy/compose.decoy-comment.yml"
 
+# `T-01.10` rodada 3 — Ataque 4(D) do QA (achado real da rodada 2, fechado nesta): o
+# prefixo `[:=]\s*["']?` da correção da rodada 2 nao amarra o separador ao que separa a
+# CHAVE de credencial do valor — aceita QUALQUER `:`/`=` da linha. Aqui o `:` de
+# "ref:changeme" esta DENTRO do comentario, e o valor real (`hunter2_prod_master`) nao
+# tem indirecao nenhuma. Fechado na rodada 3 com `^(?:(?!#).)*` como prefixo de cada
+# `allowlist_regex` (`harness.toml`, comentario acima de `allowlist_regex`).
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "violating"
+file = "own.compose-hardcoded-secret/violating/06_extra_colon_placeholder_in_comment.yml"
+repo_path = "deploy/compose.decoy-comment-colon.yml"
+
+# `T-01.10` rodada 3 — Ataque 4(E) do QA: mesma causa do caso `06`, com o padrao `\$\{`
+# em vez de palavra de amostra, tambem escondido depois do `:` de um comentario.
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "violating"
+file = "own.compose-hardcoded-secret/violating/07_extra_colon_dollar_in_comment.yml"
+repo_path = "deploy/compose.decoy-comment-dollar.yml"
+
 # ── CONFORMES ────────────────────────────────────────────────────────────────────
 
 # A indirecao de ambiente — a forma CORRETA, e a que o arquivo real versionado usa.
