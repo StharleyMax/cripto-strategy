@@ -1265,12 +1265,12 @@ tracker = { provider = "jira", id = "CST-73", url = "https://conversationhub.atl
 id = "T-08.6"
 title = "[charts] 08 · S4 bancada: distribution / scan / firing_rate, bordas de bin por (field, nature) com overflow contado"
 components = ["charts"]
-status = "blocked"
+status = "todo"
 phase = "08"
 depends_on = ["T-08.2", "T-08.5"]
 refs = [
     "SPEC-001 §6", "plano 08 item 8.5", "DoD D8.1", "DoD D8.6", "DoD D8.7",
-    "BLOQUEADA: Q10 (ordem monitorar/pesquisar/executar) — ABERTA, relogio NAO. Bloqueio parcial: decide teclado e densidade, nao a existencia.",
+    "Q10 RESPONDIDA 2026-09-04 pelo owner ('pesquisar > monitorar > executar'). Nao bloqueia mais -- ver docs/decisoes-do-owner.md secao Q10.",
     "MANDATO: entregue a distribuicao; o limiar e parametro. Limiar absoluto e um filtro 'nao-BTC' disfarcado de sinal.",
 ]
 tracker = { provider = "jira", id = "CST-74", url = "https://conversationhub.atlassian.net/browse/CST-74" }

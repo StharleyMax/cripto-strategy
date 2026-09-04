@@ -376,7 +376,7 @@ absoluto, é adiamento deliberado.
 
 ---
 
-### Q10 · `ABERTA` · Ordem dos três produtos: monitorar, pesquisar, executar
+### ✅ Q10 · `RESPONDIDA` 2026-09-04 · Ordem dos três produtos: monitorar, pesquisar, executar
 
 **(a)** Ranqueie os três.
 
@@ -386,6 +386,17 @@ absoluto, é adiamento deliberado.
 **(c) Trava:** o faseamento na ponta — e decide **qual superfície ganha teclado, densidade e atalhos aprendidos** (as outras são otimizadas para reconhecimento, não recall).
 
 **(d) RELÓGIO: NÃO.**
+
+**✅ RESPOSTA DO OWNER (2026-09-04). Citação literal:**
+
+> *"pesquisar > monitorar > executar pode seguir com isso, ta aprovado"*
+
+`[PREMISSA-OWNER: 2026-09-04]`
+
+**Ranking: `pesquisar` > `monitorar` > `executar`.** `pesquisar` (F1, já em construção) ganha teclado,
+densidade e atalhos aprendidos primeiro; `monitorar` (construível para 1h/4h via `R2`) vem depois;
+`executar` segue diferida, sem trabalho de superfície por enquanto. Destrava `T-08.6`
+(`docs/context/plataforma-dados/tasks.toml`).
 
 ---
 
