@@ -68,6 +68,21 @@
  * `uptimePercent`) and which are a deliberately narrow placeholder (`resilience` is always
  * `not_scored`; `retention` is `unmeasured` unless the query ever emits a non-null
  * `janela_de_perda`, which F0 never does — `ingest_record.py:91`, `LOSS_WINDOW_NOT_COMPUTED_IN_F0`).
+ *
+ * ── UPDATE, `T-05.14`/`ADR-019`: THE ROUTE THIS MODULE'S DOCSTRING ONCE SAID DID NOT EXIST ──
+ *
+ * The two paragraphs above are `T-07.13`'s ORIGINAL record — "backend has NO HTTP framework
+ * yet" was true when they were written and is kept verbatim because it is the reasoning that
+ * justified the CLI-subprocess transport at the time, not because it is still current. It is
+ * NOT current: `T-05.12` (`backend/src/api/routes/ingest_health.py`) added `GET
+ * /ingest-health`, the real HTTP consumer of the SAME `ingest_health_query`, served over a
+ * real socket (`backend/tests/api/test_ingest_health_route_over_the_network.py`). `ADR-019`
+ * is the decision that adds `fetchIngestHealthProjectionViaHttp`/`parseIngestHealthEnvelope`
+ * to this module for that route, dropping the CLI-only parser (`SectionMarker`/`isHeaderLine`/
+ * `parseCanonicalProjection`) and its single caller
+ * (`fetchIngestHealthProjectionViaCli`/`IngestHealthQueryResult`) — the NDJSON shape they read
+ * died with `ADR-005/D6.1`'s envelope. `runIngestHealthCli` and the rest of the subprocess
+ * transport are UNCHANGED here: removing them outright is `T-05.15`, not this task.
  */
 
 import { createHash } from "node:crypto";
@@ -76,6 +91,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { assertNoTickLevelFields } from "../../app/history-transport.ts";
 import {
   buildS1ViewModel,
   type S1ViewModel,
@@ -263,52 +279,149 @@ export function fingerprint(projection: IngestHealthProjection): string {
   return createHash("sha256").update(canonicalProjection(projection), "utf8").digest("hex");
 }
 
-type SectionMarker = { readonly section: "ingest_run" | "ingest_gap"; readonly n: number };
+// ── PARSING THE HTTP ENVELOPE — `ADR-005/D6.1` + `ADR-019/D2` ───────────────────────────────
+//
+// The envelope is a nested JSON object (`{ query, n_runs, n_gaps, runs[], gaps[] }`), not the
+// CLI's line-delimited NDJSON — the NDJSON parser this module used to carry (`SectionMarker`/
+// `isHeaderLine`/`parseCanonicalProjection`) is gone with it (`ADR-019/D1`). Permissive on an
+// UNKNOWN field, strict on a MISSING or MISTYPED one: `projectRun`/`projectGap` above already
+// read by column name, never by position, so an extra key never reaches the canonicalization
+// that feeds `fingerprint` — only a missing or mistyped one can.
 
-function isSectionMarker(value: unknown): value is SectionMarker {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "section" in value &&
-    (value as { section: unknown }).section !== undefined &&
-    !("query" in value)
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type EnvelopeFieldKind = "string" | "number" | "nullable-number";
+
+function assertEnvelopeFieldType(
+  value: unknown,
+  column: string,
+  kind: EnvelopeFieldKind,
+  context: string,
+): void {
+  if (kind === "string" && typeof value === "string") {
+    return;
+  }
+  if (kind === "number" && typeof value === "number") {
+    return;
+  }
+  if (kind === "nullable-number" && (value === null || typeof value === "number")) {
+    return;
+  }
+  throw new Error(
+    `${context}: column "${column}" has the wrong type (expected ${kind}, got ` +
+      `${value === null ? "null" : typeof value})`,
   );
 }
 
-function isHeaderLine(value: unknown): value is { readonly query: string } {
-  return typeof value === "object" && value !== null && "query" in value;
+const RUN_ROW_FIELD_KINDS: ReadonlyMap<string, EnvelopeFieldKind> = new Map([
+  ["run_id", "string"],
+  ["source", "string"],
+  ["endpoint", "string"],
+  ["window", "string"],
+  ["n_expected", "number"],
+  ["n_returned", "number"],
+  ["n_written", "number"],
+  ["verdict", "string"],
+  ["api_code", "nullable-number"],
+  ["src_sha256", "string"],
+  ["weight_used", "number"],
+  ["observer_id", "string"],
+  ["observer_region", "string"],
+  ["clock_skew_ms", "number"],
+  ["janela_de_perda", "nullable-number"],
+]);
+
+const GAP_ROW_FIELD_KINDS: ReadonlyMap<string, EnvelopeFieldKind> = new Map([
+  ["source", "string"],
+  ["symbol", "string"],
+  ["series_key_id", "string"],
+  ["from_ts", "string"],
+  ["to_ts", "string"],
+  ["n_missing", "number"],
+  ["class", "string"],
+  ["detected_at", "string"],
+]);
+
+function assertIngestHealthRunRow(
+  value: unknown,
+  index: number,
+): asserts value is IngestHealthRunRow {
+  if (!isPlainRecord(value)) {
+    throw new Error(`ingest_health_query envelope: runs[${index}] is not a plain object`);
+  }
+  for (const [column, kind] of RUN_ROW_FIELD_KINDS) {
+    if (!(column in value)) {
+      throw new Error(`ingest_health_query envelope: runs[${index}] is missing column "${column}"`);
+    }
+    assertEnvelopeFieldType(value[column], column, kind, `ingest_health_query envelope: runs[${index}]`);
+  }
+}
+
+function assertIngestHealthGapRow(
+  value: unknown,
+  index: number,
+): asserts value is IngestHealthGapRow {
+  if (!isPlainRecord(value)) {
+    throw new Error(`ingest_health_query envelope: gaps[${index}] is not a plain object`);
+  }
+  for (const [column, kind] of GAP_ROW_FIELD_KINDS) {
+    if (!(column in value)) {
+      throw new Error(`ingest_health_query envelope: gaps[${index}] is missing column "${column}"`);
+    }
+    assertEnvelopeFieldType(value[column], column, kind, `ingest_health_query envelope: gaps[${index}]`);
+  }
 }
 
 /**
- * Parse the CLI's canonical NDJSON `stdout` back into typed rows. This is the ONLY place this
- * module interprets the wire format — everything downstream (the fingerprint check, the
- * `CollectorRow` mapping) works off these typed rows, never off raw text again.
+ * Parse `GET /ingest-health`'s decoded JSON body into typed rows (`ADR-005/D6.1`'s envelope
+ * shape). Every element of `runs`/`gaps` has to carry the 15/8 named columns with the right
+ * type — a key BEYOND those is ignored, never rejected (`ADR-019/D2`), matching the postures
+ * `projectRun`/`projectGap` already have. `n_runs`/`n_gaps` have to agree with the arrays'
+ * `length` — a defensive check against a truncated response, since the header itself declares
+ * the count.
  */
-export function parseCanonicalProjection(stdout: string): IngestHealthProjection {
-  const runs: IngestHealthRunRow[] = [];
-  const gaps: IngestHealthGapRow[] = [];
-  let section: "ingest_run" | "ingest_gap" | null = null;
-
-  for (const line of stdout.split("\n")) {
-    if (line.length === 0) {
-      continue;
-    }
-    const parsed: unknown = JSON.parse(line);
-    if (isHeaderLine(parsed)) {
-      continue;
-    }
-    if (isSectionMarker(parsed)) {
-      section = parsed.section;
-      continue;
-    }
-    if (section === "ingest_run") {
-      runs.push(parsed as IngestHealthRunRow);
-    } else if (section === "ingest_gap") {
-      gaps.push(parsed as IngestHealthGapRow);
-    } else {
-      throw new Error(`linha de ingest_health_query fora de qualquer secao conhecida: ${line}`);
-    }
+export function parseIngestHealthEnvelope(body: unknown): IngestHealthProjection {
+  if (!isPlainRecord(body)) {
+    throw new Error("ingest_health_query envelope: response body is not a plain JSON object");
   }
+  if (body.query !== INGEST_HEALTH_QUERY_NAME) {
+    throw new Error(
+      `ingest_health_query envelope: "query" is ${JSON.stringify(body.query)}, expected ` +
+        `${JSON.stringify(INGEST_HEALTH_QUERY_NAME)}`,
+    );
+  }
+  if (!Array.isArray(body.runs)) {
+    throw new Error('ingest_health_query envelope: "runs" is missing or not an array');
+  }
+  if (!Array.isArray(body.gaps)) {
+    throw new Error('ingest_health_query envelope: "gaps" is missing or not an array');
+  }
+  if (body.n_runs !== body.runs.length) {
+    throw new Error(
+      `ingest_health_query envelope: "n_runs" (${JSON.stringify(body.n_runs)}) disagrees ` +
+        `with runs.length (${body.runs.length}) — this is exactly what a truncated response ` +
+        "looks like",
+    );
+  }
+  if (body.n_gaps !== body.gaps.length) {
+    throw new Error(
+      `ingest_health_query envelope: "n_gaps" (${JSON.stringify(body.n_gaps)}) disagrees ` +
+        `with gaps.length (${body.gaps.length}) — this is exactly what a truncated response ` +
+        "looks like",
+    );
+  }
+
+  const runs: IngestHealthRunRow[] = body.runs.map((run, index) => {
+    assertIngestHealthRunRow(run, index);
+    return run;
+  });
+  const gaps: IngestHealthGapRow[] = body.gaps.map((gap, index) => {
+    assertIngestHealthGapRow(gap, index);
+    return gap;
+  });
+
   return { runs, gaps };
 }
 
@@ -380,57 +493,66 @@ export function runIngestHealthCli(
   };
 }
 
-/** What `fetchIngestHealthProjectionViaCli` returns: the typed projection, plus both
- * fingerprints — so a caller (or a test) can assert equality instead of trusting the throw. */
-export interface IngestHealthQueryResult {
+// ── THE HTTP TRANSPORT — `ADR-005/D6.1`/`D6.4`, `ADR-019/D3`/`D4` ───────────────────────────
+
+export interface IngestHealthHttpOptions {
+  /** Defaults to `process.env.INGEST_HEALTH_API_BASE_URL` — NEVER `NEXT_PUBLIC_*`
+   * (`ADR-019/D4`: that family is inlined into the browser bundle, and this module has to
+   * stay server-only). Passing it explicitly is how tests point at a loopback server. */
+  readonly baseUrl?: string;
+  /** Injectable so a test can pass a real `fetch` bound to a test server, and so a future
+   * caller is never forced to depend on the ambient global. */
+  readonly fetchImpl?: typeof fetch;
+}
+
+/** What `fetchIngestHealthProjectionViaHttp` returns: the typed projection, plus the
+ * fingerprint this client computed over it — never one read off the wire (`ADR-019/D3`). */
+export interface IngestHealthHttpResult {
   readonly projection: IngestHealthProjection;
-  readonly cliFingerprint: string;
-  readonly reconstructedFingerprint: string;
+  readonly fingerprint: string;
+}
+
+function resolveIngestHealthBaseUrl(explicit: string | undefined): string {
+  const baseUrl = explicit ?? process.env.INGEST_HEALTH_API_BASE_URL;
+  if (baseUrl === undefined || baseUrl === "") {
+    throw new Error(
+      "fetchIngestHealthProjectionViaHttp: no base URL configured — pass options.baseUrl or " +
+        "set INGEST_HEALTH_API_BASE_URL. Never INGEST_HEALTH_API_BASE_URL prefixed with " +
+        "NEXT_PUBLIC_ (ADR-019/D4): that family is inlined into the browser bundle, and this " +
+        "module must stay server-only.",
+    );
+  }
+  return baseUrl;
 }
 
 /**
- * The `web` consumer of `ingest_health_query`, end to end: run the CLI (consumer #1's own
- * process), and — on success — parse and independently re-derive the canonical projection,
- * throwing if the two `sha256` values disagree (`ADR-008/DoD-2`). On CLI failure (an
- * unheard-of `verdict`, `ADR-008/DoD-3`), this throws too, propagating the SAME refusal rather
- * than returning a partial or silently-filtered projection — never a second implementation
- * that quietly disagrees with the first.
+ * The `web` HTTP consumer of `GET /ingest-health` (`ADR-005/D6.1`, `ADR-019`). Only the
+ * network round trip (`fetch` + `response.json()`) is asynchronous — from the decoded body
+ * onward, `parseIngestHealthEnvelope` → `fingerprint` is the SAME synchronous chain the CLI
+ * path already used (`ADR-005/D6.4`: the canonicalization/fingerprint instrument itself never
+ * becomes a `Promise`). `assertNoTickLevelFields` (`../../app/history-transport.ts`) runs
+ * over the raw decoded body first — `ADR-005`'s falsifier stays agnostic of this module's own
+ * schema, same as it already is for the historical transport.
  */
-export function fetchIngestHealthProjectionViaCli(
-  storePath: string,
-  options: IngestHealthCliOptions = {},
-): IngestHealthQueryResult {
-  const result = runIngestHealthCli(storePath, options);
-  if (result.exitCode !== 0) {
-    const lastStderrLine =
-      result.stderr
-        .trim()
-        .split("\n")
-        .filter((line) => line.length > 0)
-        .pop() ?? "(sem stderr)";
+export async function fetchIngestHealthProjectionViaHttp(
+  options: IngestHealthHttpOptions = {},
+): Promise<IngestHealthHttpResult> {
+  const baseUrl = resolveIngestHealthBaseUrl(options.baseUrl);
+  const doFetch = options.fetchImpl ?? fetch;
+  const url = new URL("/ingest-health", baseUrl);
+
+  const response = await doFetch(url);
+  if (!response.ok) {
     throw new Error(
-      `ingest_health_query reprovou (rc=${result.exitCode}) — os dois consumidores mudam ` +
-        `juntos (ADR-008/DoD-3): ${lastStderrLine}`,
+      `fetchIngestHealthProjectionViaHttp: GET ${url.toString()} answered ${response.status} ` +
+        `${response.statusText}`,
     );
   }
+  const body: unknown = await response.json();
+  assertNoTickLevelFields(body);
 
-  const cliProjectionText = result.stdout.endsWith("\n")
-    ? result.stdout.slice(0, -1)
-    : result.stdout;
-  const cliFingerprint = createHash("sha256").update(cliProjectionText, "utf8").digest("hex");
-
-  const projection = parseCanonicalProjection(result.stdout);
-  const reconstructedFingerprint = fingerprint(projection);
-
-  if (reconstructedFingerprint !== cliFingerprint) {
-    throw new Error(
-      "ADR-008/DoD-2 violado: a reconstrucao TS do consumidor S1 " +
-        `(sha256=${reconstructedFingerprint}) diverge da saida do CLI (sha256=${cliFingerprint}) ` +
-        "sobre o MESMO estado — duas implementacoes da mesma consulta.",
-    );
-  }
-
-  return { projection, cliFingerprint, reconstructedFingerprint };
+  const projection = parseIngestHealthEnvelope(body);
+  return { projection, fingerprint: fingerprint(projection) };
 }
 
 // ── MAPEAMENTO PARA `CollectorRow` — MÍNIMO E DELIBERADO, VER O DOCSTRING DO MÓDULO ─────────
