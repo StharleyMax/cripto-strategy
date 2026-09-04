@@ -835,7 +835,7 @@ tracker = { provider = "jira", id = "CST-102", url = "https://conversationhub.at
 id = "T-05.12"
 title = "[docs][infra] 05 · A porta de leitura como PROCESSO: src/api + src/main + raiz de composicao, provada PELA REDE"
 components = ["docs", "infra"]
-status = "todo"
+status = "done"
 phase = "05"
 # T-09.4 e aresta de VALIDADOR (V-16/tasks.sh:777-778, ERROR), T-01.8 e aresta de JUIZ
 # (F-D6-6), T-05.9 e a metade cliente que ja existe e que esta task deixa de deixar orfa.
