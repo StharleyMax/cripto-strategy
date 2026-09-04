@@ -122,7 +122,7 @@ export function installGlobals(dom: JSDOM): void {
       removeListener: () => undefined,
     });
   }
-  window.devicePixelRatio = 1;
+  (window as unknown as Record<string, unknown>).devicePixelRatio = 1;
 
   define("window", window);
   define("document", window.document);
@@ -245,8 +245,12 @@ export async function collectAxisCoordinates(
   const candleSeries = chart.addSeries(charts.CandlestickSeries, {});
   const pointSeries = chart.addSeries(charts.LineSeries, {});
 
-  candleSeries.setData(workload.candles);
-  pointSeries.setData(workload.points);
+  // `CandlePoint`/`LinePoint` carry a plain `number` for `time`; the library's
+  // `CandlestickData<Time>`/`LineData<Time>` expects the branded `Time` type. This is a
+  // mechanical cast, not a data change -- the numbers are already the UNIX seconds the
+  // library expects, and `Time`'s brand is a compile-time-only distinction.
+  candleSeries.setData(workload.candles as unknown as Parameters<typeof candleSeries.setData>[0]);
+  pointSeries.setData(workload.points as unknown as Parameters<typeof pointSeries.setData>[0]);
 
   const distinctTimes = new Set<number>();
   for (const candle of workload.candles) {

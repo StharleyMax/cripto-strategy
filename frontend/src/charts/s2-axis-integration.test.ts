@@ -135,11 +135,21 @@ test("D5.11 + null-gap survival, LOSSLESS: price + OI + CVD delta + CVD cumulati
   // the library's own defaults (`#26a69a`/`#ef5350`, unrelated to `#089981`/`#f23645`) — see
   // `color-tokens.ts`'s module docstring for why these exact hexes and no others.
   const priceColors = candlestickSeriesColors("dark");
+  // `HeadlessSeriesSpec.items` is `readonly Record<string, unknown>[]` (the shape
+  // `runHeadlessChart` forwards verbatim to `series.setData`); `*Lossless`'s items are the
+  // narrower `CandlestickItem | LineItem | WhitespaceItem` unions, which have no index
+  // signature. Mechanical cast, same shape already accepted at `spec.items as never` inside
+  // `s2-headless-run.ts:129`.
   const handle = await runHeadlessChart([
-    { label: "price", kind: "candlestick", items: priceItems, style: priceColors },
-    { label: "oi", kind: "line", items: oiItems },
-    { label: "cvd_delta", kind: "line", items: cvdDeltaItems },
-    { label: "cvd_cum", kind: "line", items: cvdCumItems },
+    {
+      label: "price",
+      kind: "candlestick",
+      items: priceItems as unknown as readonly Record<string, unknown>[],
+      style: priceColors,
+    },
+    { label: "oi", kind: "line", items: oiItems as unknown as readonly Record<string, unknown>[] },
+    { label: "cvd_delta", kind: "line", items: cvdDeltaItems as unknown as readonly Record<string, unknown>[] },
+    { label: "cvd_cum", kind: "line", items: cvdCumItems as unknown as readonly Record<string, unknown>[] },
   ]);
   try {
     // ── (1) WHAT WAS SENT vs WHAT `.data()` REPORTS BACK — the measured surprise ─────────
