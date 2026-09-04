@@ -1580,3 +1580,143 @@ atualizados no registro das decisões. `docs/adr/ADR-005-*.md` — **em emenda p
 nesta data (`A4`/`A5`), **não tocada aqui**. `packs/web-fullstack/rules.toml` — **não tocado, de
 propósito**: é do mecanismo. `tasks.toml`, ledger, `harness.toml` e Jira — **intocados**; o item de
 plano e as tasks são atos do `/architect` e do `/tech-lead`.
+
+---
+
+## 20. Scaffold Next real, `tsconfig.json` estrito, `tsc` em `make lint-frontend` (`T-05.11`, 2026-09-04)
+
+`T-05.11` (`CST-102`, componente `web`) fecha o que `§1` já anunciava como "a outra task": a `§1`
+dizia *"este diretório ainda não é a aplicação"* — **isso deixa de ser verdade a partir de agora**.
+Decisão estrutural do `architect`, validada AO VIVO e depois revertida antes do `/build`:
+[`ADR-018`](../docs/adr/ADR-018-scaffold-next-tipo-em-make-lint-frontend.md) +
+[`gates/T-05.11-architect.md`](../docs/context/plataforma-dados/gates/T-05.11-architect.md).
+
+### O que entrou
+
+- `next@16.3.4` / `react@19.2.8` / `react-dom@19.2.8` (dependencies), `@types/{node,react,react-dom,jsdom}`
+  (devDependencies) — `package.json`/`package-lock.json`.
+- `frontend/tsconfig.json` — conteúdo **exato** de `ADR-018` §D3: `allowImportingTsExtensions: true`
+  (sem ela, `TS5097` em 34 arquivos que importam `.ts` com extensão explícita — convenção viva de
+  `node --test 'src/**/*.test.ts'`) e `target: "ES2022"` (sem ele, `TS2737` nos literais `BigInt` de
+  `s2-cvd.ts`/`.test.ts`) são as duas linhas medidas, não de gosto.
+- `frontend/next.config.ts` — mínimo, **sem** `ignoreBuildErrors`/`ignoreDuringBuilds` (D5.16 depende
+  disso: um erro de tipo real tem de reprovar o build, não ser silenciado por config).
+- `frontend/src/app/layout.tsx` (Server Component) e `frontend/src/app/painel/page.tsx` (Client
+  Component, a rota `/painel` já fixada por `CA-F3-8`) — compõe os **3** `.tsx` de produção que já
+  existiam (`Filter`, `S1Console`, `S3Inspector`) via os view-model/fixture já publicados por
+  `T-07.12`/`T-06.10`. **Nenhum painel `S2`/`charts/` é montado** — a fronteira ESLint de `D5.12`
+  (`eslint.config.mjs:73-227`) proíbe `web ↔ charts` nas duas direções hoje; abrir é `T-05.2+`.
+- `package.json` scripts novos: `dev`/`build`/`start` (`next dev`/`next build`/`next start`) e
+  `typecheck` (`tsc -p tsconfig.json --noEmit --strict`). `lint` **intocado** — continua `eslint src`,
+  `ADR-011/D4` continua dono só disso.
+- `Makefile`, alvo `lint-frontend`: `+1` linha, `npm --prefix frontend run typecheck`, depois do
+  `npm --prefix frontend run lint` — duas linhas independentes (a última palavra de cada linha decide
+  o `rc`, `make` aborta na primeira que falhar), não um script `lint` que faça as duas coisas.
+- 7 erros de tipo pré-existentes, 2 arquivos de `src/charts/` (nenhum tocado pelo scaffold em si,
+  nenhuma mudança de comportamento — cast mecânico):
+  - `headless-chart.ts:125` — `TS2540` (`devicePixelRatio` é read-only em `Window`): trocado por
+    `(window as unknown as Record<string, unknown>).devicePixelRatio = 1`, o mesmo padrão que o
+    próprio arquivo já usa duas linhas acima para `ResizeObserver`/`matchMedia`.
+  - `headless-chart.ts:248-249` (agora ~250-254) — `TS2345` (`CandlePoint[]`/`LinePoint[]`, `time:
+    number`, não é atribuível a `CandlestickData<Time>[]`/`LineData<Time>[]`, `Time` é tipo com
+    marca): `as unknown as Parameters<typeof candleSeries.setData>[0]` / idem para `pointSeries`.
+  - `s2-axis-integration.test.ts:139-142` (agora ~144-153) — `TS2322` (mesmo choque de `Time`
+    alimentando `HeadlessSeriesSpec.items: readonly Record<string, unknown>[]`): `as unknown as
+    readonly Record<string, unknown>[]` em cada um dos 4 itens do array passado a
+    `runHeadlessChart`, o mesmo cast que `s2-headless-run.ts:129` já usa (`spec.items as never`)
+    internamente para o mesmo choque de tipo.
+
+### `D5.16` — falsificador rodado nos dois lados, e nos dois portões
+
+`[MEDIDO 2026-09-04]`. Plantado `useState<string>(1)` em `painel/page.tsx` (argumento `number` onde
+`string | (() => string)` é esperado):
+
+```
+$ make lint-frontend
+...
+src/app/painel/page.tsx(28,56): error TS2345: Argument of type 'number' is not assignable to
+  parameter of type 'string | (() => string)'.
+make: *** [Makefile:165: lint-frontend] Erro 2
+```
+
+`git push --dry-run` contra o remoto real (`git@github.com:...`) não deu sinal utilizável neste
+ambiente — falha de rede/autenticação do sandbox, sem `remote:` nenhum na saída. Repetido contra um
+`git init --bare` local (mesmo padrão de bancada do `ADR-018`, "remoto local `remoto.git`") **e**
+invocando `pre-push.pre-harness` diretamente (o sub-hook que roda `make boundaries` + `make lint`; o
+`pre-push` **gerado** que o invoca falha por um motivo ortogonal e sempre presente nesta worktree —
+"harness: mecanismo NAO RESOLVIVEL", puro registro de plugin por caminho `/tmp/...`, não relacionado
+a este scaffold, reproduzível mesmo com a árvore inteiramente limpa):
+
+| árvore | `pre-push.pre-harness` (direto) | mensagem |
+|---|---|---|
+| com o `useState<string>(1)` plantado | **`rc=1`** | `[pre-push.pre-harness] PUSH RECUSADO` |
+| removido | **`rc=0`** | silencioso |
+
+Removido o plantado, `make lint-frontend` volta a `rc=0` sobre os 80 arquivos do projeto
+(`tsc ... --listFiles` conta), o mesmo piso de `ADR-018` §D5.
+
+**`scripts/verify.sh` cabeado à parte, rodada 2 (`[BLOCKER]` do QA, corrigido).** A primeira versão
+desta task deixou `scripts/verify.sh:79` chamando `npm --prefix frontend run lint` direto — uma
+reimplementação paralela do alvo `lint-frontend` do `Makefile` que só rodava ESLint, nunca `tsc`. O
+`frontend-qa` provou por mutação ao vivo: erro de tipo plantado, `bash scripts/verify.sh` reportava
+`[OK] lint-frontend rc=0`, enquanto `make lint-frontend`/`pre-push` reprovavam corretamente — dois
+comandos com duas definições de "lint-frontend" `[DOC: docs/context/plataforma-dados/gates/T-05.11-qa.md
+Achado 1]`. Corrigido: `scripts/verify.sh` agora chama `npm run lint` e, só se ele passar, `npm run
+typecheck`, em dois `portao()` (`lint-frontend` + `lint-frontend-typecheck`) — não `make lint-frontend`
+direto, porque `make` colapsa qualquer falha de receita em `rc=2` (ver cabeçalho do `Makefile`), o que
+apagaria a distinção `rc=1` (reprovou) vs `rc=3` (recusou por `node_modules` ausente) que `verify.sh`
+promete manter. `[MEDIDO 2026-09-04]`: `boolean = s1ViewModel` (`S1ViewModel` não é `boolean`) plantado
+em `painel/page.tsx` → `bash scripts/verify.sh` nomeia `page.tsx(39,9): error TS2322` no portão
+`lint-frontend-typecheck`, `rc=2`; removido, `rc=0` de novo — mutação diferente da usada acima e da que
+o QA plantou.
+
+### `D5.16b` — renderiza, não só compila (repetido, não só citado do `ADR-018`)
+
+```
+$ npm run build            # sem ignoreBuildErrors
+✓ Compiled successfully
+$ npm run start -- -p 4321 &
+$ curl -s http://127.0.0.1:4321/painel | grep -c "<marcador>"
+"Filtro: any resultado serve"                    -> 1
+"Monitoramento de Coletores e Ingestão"          -> 1
+"Catálogo de Séries"                             -> 1
+```
+
+**MORDE (i)** — `<S3Inspector .../>` comentado na página: `next build` continua **verde**
+(`✓ Compiled successfully`), `curl | grep -c "Catálogo de Séries"` cai para **0**, os outros dois
+marcadores continuam em 1 — a prova de que compilar ≠ renderizar. **MORDE (ii)** — processo `next
+start` derrubado: `curl --max-time 2` → `http_code=000`, `rc=7` ("Failed to connect"), não payload
+vazio. Página restaurada ao original depois do experimento (`git diff` sobre `painel/page.tsx`
+confirma zero diferença residual).
+
+**Limitação declarada, não escondida, herdada de `ADR-018`:** `D5.16b` **não** tem portão de `make`
+nesta task — Vitest/Testing Library/Playwright são de outra task (`frontend_qa`, `A6`). Isto é prova
+manual com output real, mesmo precedente de `T-07.14` (`docs/INDEX.md:127`).
+
+### O que ficou de fora, declarado
+
+Tailwind/CSS (os `className` de `S1Console.tsx`/`S3Inspector.tsx` já existem como strings sem
+processador — renderiza sem estilo, e `D5.16b` só exige o texto no DOM); qualquer painel `S2`/`charts`
+na rota (fronteira ESLint ainda fechada); `make build` (alvo separado, `§`"build" continua recusando
+por outro motivo, e parte da justificativa dele fica desatualizada por esta task sem o alvo em si ser
+tocado). Os 3 testes pré-existentes que falham hoje (`src/app/universe-at.test.ts`,
+`src/charts/s2-panels.test.ts`, `src/features/s1-console/ingest-health-query.test.ts`) **não são desta
+task** — reproduzidos idênticos com as mudanças de `T-05.11` inteiramente removidas (`git stash -u`),
+nenhum arquivo tocado por este scaffold está no caminho deles.
+
+### Comandos rodados, literais
+
+```bash
+npm install next@16.3.4 react@19.2.8 react-dom@19.2.8 --save
+npm install -D @types/node@^24.13.3 @types/react@^19.2.18 @types/react-dom@^19.2.7 @types/jsdom@^30.0.0
+npm --prefix frontend run typecheck   # rc=0, 80 arquivos (tsc --listFiles)
+npm --prefix frontend run lint        # rc=0
+make lint-frontend                    # rc=0
+npm --prefix frontend run build       # next build, "✓ Compiled successfully"
+```
+
+### Doc delta
+
+Este `README.md` — **atualizado**, `§20` nova (append-only). `docs/INDEX.md` — linha nova acrescentada
+(append-only). `ADR-018` e o gate do `architect` — já existiam antes do `/build`, não editados por
+esta task.

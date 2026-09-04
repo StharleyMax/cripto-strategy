@@ -814,7 +814,7 @@ id = "T-05.11"
 # producao E superficie de docs. V-26 exige o prefixo acompanhar os DOIS.
 title = "[docs][web] 05 · Scaffold Next real sob frontend/src/app, tsconfig e typecheck --strict dentro de make lint-frontend"
 components = ["docs", "web"]
-status = "todo"
+status = "done"
 phase = "05"
 depends_on = ["T-01.8"]
 refs = [

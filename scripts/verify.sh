@@ -75,14 +75,24 @@ printf '[%-9s] lint-backend    rc=%s  %s\n' "$(rotulo $RC_LB)" "$RC_LB" "${N_LB:
 # deste script chamava só `backend/scripts/lint.sh` — omitindo-o EM SILÊNCIO, que é o defeito
 # "parecendo coberto" que este repositório nomeia. Sem `node_modules/` a resposta é rc=3
 # ("não mediu"), nunca verde: `node_modules/` é gitignored, então clone limpo não o tem.
+#
+# DUAS chamadas, ESLint e `tsc --noEmit --strict`, espelhando EXATAMENTE o alvo `lint-frontend`
+# do Makefile (`ADR-018`) — não `make lint-frontend` direto, porque `make` colapsa qualquer
+# falha em rc=2 (ver cabeçalho do `Makefile`), o que apagaria a distinção rc=1 (reprovou) vs
+# rc=3 (recusou por ambiente ausente) que este script promete. `[QA T-05.11 rodada 1, BLOCKER]`:
+# antes desta forma, só o ESLint rodava aqui — um erro de `tsc` plantado passava `[OK] rc=0`
+# neste portão mesmo com `make lint-frontend`/pre-push reprovando-o corretamente.
 if [ -d frontend/node_modules ]; then
     portao "lint-frontend" npm --prefix frontend run lint; RC_LF=$?
+    if [ "$RC_LF" -eq 0 ]; then
+        portao "lint-frontend-typecheck" npm --prefix frontend run typecheck; RC_LF=$?
+    fi
 else
     { echo; echo "########## lint-frontend :: RECUSA (frontend/node_modules ausente) ##########"; } >> "$LOG"
     RC_LF=3
 fi
 falhou $RC_LF
-[ "$RC_LF" -eq 3 ] && DET_LF="frontend/node_modules ausente — rode 'make setup'" || DET_LF="ESLint do projeto sobre frontend/src"
+[ "$RC_LF" -eq 3 ] && DET_LF="frontend/node_modules ausente — rode 'make setup'" || DET_LF="ESLint + tsc --noEmit --strict do projeto sobre frontend/src"
 printf '[%-9s] lint-frontend   rc=%s  %s\n' "$(rotulo $RC_LF)" "$RC_LF" "$DET_LF"
 
 # ── 2. suíte + piso de cobertura por camada ────────────────────────────────────────────

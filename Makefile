@@ -62,7 +62,7 @@ help:
 	  '  make lint-corpus     corpus de regra propria (own.compose-hardcoded-secret) contra a' \
 	  '                       copia vendorizada: verify + mutate (plano 01 item 1.14, D1.14b)' \
 	  '  make lint-backend    ruff + ruff format --check + mypy --strict (backend/scripts/lint.sh)' \
-	  '  make lint-frontend   ESLint do PROJETO sobre frontend/src (ADR-011/D4)' \
+	  '  make lint-frontend   ESLint do PROJETO (ADR-011/D4) + tsc --noEmit --strict (ADR-018)' \
 	  '  make test            suite + piso de cobertura POR CAMADA (backend/scripts/test.sh)' \
 	  '                       argumentos: make test ARGS="-k nome"' \
 	  '  make boundaries      fronteira de modulo por grafo de imports, via import-linter' \
@@ -162,6 +162,7 @@ lint-backend:
 lint-frontend:
 	@test -d frontend/node_modules || { printf '%s\n' "RECUSA: frontend/node_modules ausente — sem ele o ESLint do PROJETO nao roda." "        'node_modules/' e gitignored (ADR-011/D4), entao clone limpo nao o tem." "        Rode 'make setup' (precisa de rede)." >&2; exit 3; }
 	npm --prefix frontend run lint
+	npm --prefix frontend run typecheck
 
 # ── test ───────────────────────────────────────────────────────────────────────────────
 # UMA LINHA, UM COMANDO. Ver o cabecalho: encadear `pytest` e o piso com `;` devolveria o exit

@@ -2,9 +2,13 @@
   "name": "cripto-strategy-frontend",
   "private": true,
   "type": "module",
-  "description": "Browser side of cripto-strategy. Today it carries the enforcement surface (ADR-009/D3) and the project ESLint (ADR-011/D4); the Next.js application belongs to the `web` component.",
+  "description": "Browser side of cripto-strategy. Carries the enforcement surface (ADR-009/D3), the project ESLint (ADR-011/D4), and, since T-05.11 (ADR-018), the real Next.js scaffold under `src/app/`.",
   "scripts": {
     "lint": "eslint src",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc -p tsconfig.json --noEmit --strict",
     "spike:axis": "node src/charts/axis-spike.ts",
     "test:charts": "node --test 'src/charts/*.test.ts'",
     "test:app": "node --test 'src/app/*.test.ts'",
@@ -13,10 +17,19 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "eslint": "^10.9.1",
     "jsdom": "^29.1.1",
     "lightweight-charts": "^5.2.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.0"
+  },
+  "dependencies": {
+    "next": "^16.3.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   }
 }
