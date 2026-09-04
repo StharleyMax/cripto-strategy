@@ -1,6 +1,6 @@
 # ADR-002 — Motor de armazenamento
 
-**Data:** 2026-08-25 · **Status:** proposto, **com um finalista pendente de spike** · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §2.5, §4.2
+**Data:** 2026-08-25 · **Status:** `D4` decidido em 2026-09-04 pelo spike `T-08.1`/`CST-69` (ver emenda ao final) · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §2.5, §4.2
 **Fase/Epic:** F4 · `CST-6` · **Componente alvo:** `docs` (a decisão) / `sentimento` (o escritor único)
 **Requisito de origem:** `CA-F4-24`
 
@@ -124,3 +124,68 @@ curl -s ipinfo.io  # região/provedor       -> observer_region, COLUNA DE F0, im
 | **o custo da troca está travado por contrato, não por promessa** | `ADR-014/D1d` põe um terceiro contrato de `import-linter` que proíbe `sqlite3`/`psycopg`/`asyncpg`/`duckdb`/`sqlalchemy` em `domain` e `use_cases`, **rodado nas duas metades** (`rc=0` na árvore limpa; `rc=1` nomeando arquivo e linha sob mutante) `[MEDIDO 2026-08-29]` |
 
 **`D1` desta ADR continua sendo a decisão de destino. O que `ADR-014` decide é o caminho até lá, e a data de validade dele.**
+
+---
+
+## ✅ Emenda 2026-09-04 — `D4` DECIDIDO pelo spike `T-08.1`/`CST-69`: candidato 4
+
+**Acréscimo, nada acima foi reescrito.** Os cinco critérios do spike já estavam declarados
+nesta ADR (a tabela de `D4`, acima) e em `D8.21` (`docs/plans/SPEC-001-plataforma-dados/08_superficie_e_reprodutibilidade.md`)
+**antes** desta emenda ser escrita — o pré-registro que `T-08.1` pedia já existia; o que
+faltava era rodar o experimento. Comandos, script e a árvore de dado completa:
+[`docs/spike/T-08.1-motor-armazenamento/`](../spike/T-08.1-motor-armazenamento/README.md).
+
+**Decisão: candidato 4 (TimescaleDB em `postgres:15`).** É o único dos dois que passa nos
+**cinco** critérios como medidos neste ambiente — candidato 5 passa em quatro, e o quinto
+(latência de rede ao R2) ficou `[NÃO MEDIDO]` por falta de credencial e de acesso à VPS, não
+por falha do candidato. Ver a tabela completa e o raciocínio de cada linha no `README.md`
+citado acima; resumo aqui:
+
+| critério | candidato 4 | candidato 5 |
+|---|---|---|
+| espaço ≤ 2× zipado (30d × 4 símbolos) | **1,506×** ✅ | **1,989×** ✅, margem de 0,5% — com compressão *default* (não nível 19) dá **2,061× ❌** |
+| backtest ≤ 60s | **0,05–0,09s** ✅ | **0,01–0,02s** local — **sem a rede do R2**, que é justamente o critério seguinte |
+| fixture 3 classes (`SPEC-001` §5.1) | bit-idêntico à referência independente ✅ | bit-idêntico ✅ |
+| `free -m`/`df -h`, folga | folga **>99,9%** sobre o já-medido em `T-08.1`/refs ✅ | folga **>99,9%**, e disco na VPS é ~zero por desenho ✅ |
+| latência de rede (só candidato 5) | N/A | **`[NÃO MEDIDO]`** — falsificador `FA-2` desta ADR continua sem resposta |
+
+**Por que a decisão não espera o quinto número:** `FA-2` já nomeava esta lacuna como o risco
+central do candidato 5, e ela não fechou — abrir mão da decisão até medir a rede real
+deixaria `D4` pendente indefinidamente, e o custo de esperar (nenhum motor de série
+implementado, fases `08`+ bloqueadas) é maior que o custo de escolher o candidato que
+**já** passa em tudo o que dá para medir. **Isto não fecha a porta ao candidato 5**: se a
+medição de rede feita DA VPS contra o bucket real vier favorável, e o critério de espaço for
+revalidado com folga (não os 0,5% medidos aqui), `D4` pode ser reaberta — mas o ônus da prova
+passa a ser do candidato 5, não mais um empate a resolver.
+
+**O que NÃO foi medido, nomeado sem disfarce (detalhe completo no `README.md` do spike):**
+
+1. **latência de rede real ao R2** — sem `.env`/credencial e sem SSH à VPS neste ambiente
+   `[NÃO MEDIDO]`. Um proxy informativo (TLS handshake + TTFB ao domínio
+   `r2.cloudflarestorage.com`, **deste** ambiente — Curitiba/PR, não a VPS) deu 64–107 ms em
+   5 amostras `[MEDIDO 2026-09-04, ambiente ≠ VPS]` — não substitui a medição real;
+2. **o passo de instalar a extensão TimescaleDB dentro do container `postgres:15` que já
+   roda em produção** — o spike mediu contra a imagem oficial `timescale/timescaledb:2.17.2-pg15`
+   (Postgres 15.10 + extensão), funcionalmente idêntica para os cinco critérios, mas a
+   migração *in place* em cima de dados de produção existentes é tarefa de infra separada,
+   não testada aqui;
+3. **volumetria de `aggTrade`** (1,31–4,80 M linhas/dia/par, ordens de magnitude acima do que
+   este spike testou) — `D4` declarava universo "metrics de BTCUSDT + 1 dia de `aggTrades`",
+   e este spike ficou dentro dele (série tipo OI/metrics, 30d × 4 símbolos). Se o candidato 4
+   também precisar hospedar séries tipo `aggTrade`, **isso é um spike novo**, não coberto por
+   esta emenda.
+
+**Achado lateral, registrado porque quase produziu um número errado:** a primeira
+configuração do candidato 4 (chunk de 1 dia, `compress_segmentby = symbol`) comprimiu para
+**~4,8×** o zipado da fonte — reprovaria o critério. O motivo: com 35 mil linhas espalhadas
+em 31 chunks diários, cada segmento de compressão tem poucas linhas para amortizar o overhead
+colunar por segmento. Reconfigurado para chunk de 45 dias (praticamente 1 chunk) +
+`segmentby = symbol,fonte`, o resultado caiu para 1,506×. **Isto é parâmetro de operação,
+não característica do motor** — mas quem for implementar o candidato 4 em produção precisa
+saber que o `chunk_time_interval` importa tanto quanto a escolha do motor em si, e que o
+default "1 chunk por dia" (comum em tutoriais de TimescaleDB para séries de alto volume) é
+a escolha errada para uma série deste tamanho.
+
+**Doc delta desta emenda:** nenhum outro documento precisa mudar — `D8.21` já estava escrito
+com os cinco critérios corretos, e o que faltava era o experimento, agora registrado aqui e
+em `docs/spike/T-08.1-motor-armazenamento/`.
