@@ -103,6 +103,18 @@
  * (this directory) carries a dependency-free, synchronous SHA-256 instead, so `DoD D5.15`
  * (zero `node:`-prefixed imports left under `frontend/src`, `app/threshold-spec-bundle.ts`
  * excepted) is met by THIS module without touching that unrelated file's own `createHash` use.
+ *
+ * ── UPDATE, `T-05.16`/`D5.17(b)`: THE IMPORT GATE THAT KEEPS THIS `fingerprint` THE ONLY ONE ─
+ *
+ * `ADR-005/D6.4` fixed `fingerprint()` above as the ONE synchronous canonicalization path —
+ * `crypto.subtle.digest` is `Promise`-returning by spec in every runtime, so a SECOND
+ * production call site pulling this module's exports IN BY VALUE would eventually force that
+ * same decision to be re-made elsewhere. This module does not enforce that itself; the gate
+ * lives one layer up, in `../../eslint.config.mjs` (`@typescript-eslint/no-restricted-imports`,
+ * group glob matching this file's name, `allowTypeImports: true`) and is proven morde+cala in
+ * `fingerprint-sync-boundary.test.ts` (same directory). `import type` stays unrestricted —
+ * the 3 real consumers today (`s3-inspector/{fixtures,domain,view-model}.ts`) only need the
+ * row types, never the functions.
  */
 
 import { assertNoTickLevelFields } from "../../app/history-transport.ts";
