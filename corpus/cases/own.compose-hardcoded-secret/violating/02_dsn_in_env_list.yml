@@ -1,0 +1,5 @@
+services:
+  api:
+    image: alpine
+    environment:
+      - DATABASE_DSN=postgres://app:hunter2@db:5432/cripto

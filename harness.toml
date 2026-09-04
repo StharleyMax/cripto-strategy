@@ -58,7 +58,16 @@ schema_version = 1
 # afeta SÓ `components` + `[agents.by_component]` (`V-16`, `lib/policy.py:539-543`) —
 # ou seja, QUEM JULGA. `[code_paths]` e `require-code` não dependem dele
 # [MEDIDO 2026-09-03: `harness code-paths classify backend/src/api/...` já devolve
-# `producao` sem rótulo nenhum; `backend/src` é 1 dos 19 prefixos].
+# `producao` sem rótulo nenhum; `backend/src` é 1 dos 21 prefixos —
+# `harness pipeline scope plataforma-dados list | grep -c '^'`].
+#
+# ⚠️ A CARDINALIDADE ACIMA JÁ NASCEU VELHA UMA VEZ, e o registro fica: esta linha
+# dizia `19` quando foi escrita às 23:48Z, mas o escopo virou 21 às 22:51Z — ANTES
+# dela — quando o owner autorizou `scope add .claude/agents` e `add docs/INDEX.md`.
+# A conclusão sempre foi verdadeira (`require-code` responde "permitido (scope)");
+# só o número morreu. Achado pelo `/qa` da `T-09.4`. É a mesma família do defeito
+# que `boundaries.sh` carregava: número sem re-medição envelhecendo DENTRO de um
+# arquivo que é portão. Por isso o comando que o reproduz agora vem ao lado.
 #
 # ⛔ RÓTULO NÃO É COBERTURA: `infra` no enum NÃO faz `deploy/` ser medido por nada —
 # `code_paths.include_prefixes` tem 3 entradas e `ls -d deploy` é inexistente
@@ -337,7 +346,27 @@ bootstrap_docs = ["docs/proposta-discovery.md"]
 # vencida e `test_globs` tem de ganhar `**/*.test.*`.
 [code_paths]
 # `frontend/src/` entrou em 2026-08-28 (`T-01.2`), e é a parte (a) do item `1.4`.
-include_prefixes = ["backend/src/", "backend/tests/", "frontend/src/"]
+#
+# ── `deploy/` entrou em 2026-09-03 (`T-01.10`), e é a parte (a) do item `1.14` ──────
+#
+# **As três partes só valem juntas** — mesma forma do item `1.4`, e o motivo de cada
+# metade é medido, não estilístico:
+#   (a) este prefixo;
+#   (b) `*.yml`/`*.yaml` em `include_globs`, logo abaixo;
+#   (c) `[[rules.own]] own.compose-hardcoded-secret`, em `[rules]`.
+# **(a)+(b) SEM (c) dá `classify → producao` com ZERO mordida** — o defeito exato de
+# `D1.4` —, e **(c) sem (a)+(b) nunca é avaliada**, porque toda regra de conteúdo passa
+# antes por `Classifier.in_scope` (`lib/rules.py:148`).
+#
+# **O "antes" é inequívoco, e é o que torna o depois informativo**
+# `[MEDIDO 2026-09-03, antes desta edição]`:
+#   ls -d deploy                                          -> inexistente, rc=2
+#   harness code-paths classify deploy/docker-compose.yml -> "nao-producao: nenhum
+#                                                            include_prefixes casa", rc=1
+#   harness rules --mode file --path deploy/docker-compose.yml -> 0 byte, rc=0
+# O `rc=0` de então era indistinguível entre *"não há segredo"* e *"o instrumento nunca
+# olhou"* — a família de cegueira que `ADR-012` nomeia.
+include_prefixes = ["backend/src/", "backend/tests/", "frontend/src/", "deploy/"]
 # `*.ts` e `*.tsx` entraram em 2026-08-28 (`T-01.2`), e são a parte (b) do item `1.4`.
 # Sem eles o prefixo sozinho não basta: `explain()` responderia "nenhum include_globs
 # casa" e o `.tsx` continuaria fora do escopo `code` de toda regra.
@@ -389,7 +418,34 @@ include_prefixes = ["backend/src/", "backend/tests/", "frontend/src/"]
 # `frontend/src/` com qualquer uma destas extensões; se `harness rules --mode file
 # --path <ele> --surface ci` sair `rc=0` com 0 byte, esta lista voltou a decidir
 # enforcement por sufixo e a linha abaixo está errada.
-include_globs = ["*.py", "*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs"]
+#
+# ── `*.yml`/`*.yaml` entraram em 2026-09-03 (`T-01.10`), parte (b) do item `1.14` ──
+#
+# **Sem eles o prefixo `deploy/` sozinho não basta**, e isto é medido e não suposto: o
+# predicado de glob é consultado DEPOIS do de prefixo, então um `.yml` sob um prefixo JÁ
+# COBERTO continuava `nao-producao`
+# `[MEDIDO 2026-09-03: harness code-paths classify backend/src/config.yml -> "nao-producao:
+# nenhum include_globs casa", rc=1 — e `backend/src/` está em `include_prefixes` desde
+# 2026-08-22]`.
+#
+# **O alcance NÃO é só `deploy/`, e a consequência está declarada em vez de descoberta:**
+# a lista de globs é global, então todo `.yml`/`.yaml` sob QUALQUER `include_prefixes`
+# passa a ser código — hoje `backend/src/`, `backend/tests/`, `frontend/src/` e `deploy/`.
+# **Custo medido, e ele é zero hoje:** `git ls-files '*.yml' '*.yaml'` → **1** arquivo,
+# `backend/config/instrument_alias.yaml`, e `backend/config/` NÃO está sob
+# `include_prefixes` — o predicado de prefixo o recusa antes de a lista de globs ser
+# consultada `[MEDIDO 2026-09-03, n=1: harness code-paths classify
+# backend/config/instrument_alias.yaml -> "nao-producao: nenhum include_prefixes casa
+# ['backend/src/', 'backend/tests/', 'frontend/src/', 'deploy/']", rc=1]`. É o mesmo
+# fator (3) — *"fechar custa ZERO hoje"* — que a nota da família `.js*` acima usa.
+#
+# **⚠️ `[NÃO MEDIDO]`, e fica escrito em vez de suposto: se `include_globs` aceita nome
+# SEM EXTENSÃO (`Dockerfile`).** O comando que decide **exige o ato de política**, e por
+# isso não foi rodado aqui — acrescentar `"Dockerfile"` a esta lista e medir:
+#     harness code-paths classify deploy/Dockerfile
+# **Enquanto isso não for medido, `Dockerfile` fica FORA da cobertura, e esta task não
+# finge o contrário** `[DOC: ADR-009 §D6.7 e plano 01 item 1.14]`.
+include_globs = ["*.py", "*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.yml", "*.yaml"]
 exclude_globs = [
     "**/__pycache__/**",
     "**/.venv/**",
@@ -516,6 +572,144 @@ packs = ["core", "web-fullstack"]
 # Declará-la aqui seria escrever enforcement sem o corpus que o mede.
 # Continua valendo, e agora com código no disco: `backend/src/` é 4 módulos e 107 statements
 # — contagem pequena demais para justificar regra própria de arquitetura.
+#
+# ══════════════════════════════════════════════════════════════════════════════════
+# ── 2026-09-03, `T-01.10`: O TÍTULO ACIMA CADUCA AQUI, E NADA DELE FOI APAGADO ────
+# ══════════════════════════════════════════════════════════════════════════════════
+#
+# O bloco acima continua verdadeiro **sobre o universo dele**: em 2026-08-28 esta política
+# declarava ZERO `[[rules.own]]`, e `D1.5` foi satisfeito VACUAMENTE. Apagá-lo esconderia
+# que houve um dia em que o corpus não tinha sujeito — que é a informação. O que muda é o
+# universo: **esta é a PRIMEIRA `[[rules.own]]` viva deste repositório**
+# `[MEDIDO 2026-09-03, antes desta edição: harness rules list -> 10 regras, 5 `core` + 5
+# `web-fullstack`, ZERO própria; as 4 ocorrências de `[[rules.own]]` em `harness.toml`
+# estavam TODAS em linha de comentário]`.
+#
+# ⚠️ **E isto REATIVA o item `1.8` do plano `01`** — ele era um condicional de antecedente
+# FALSO (*"volta a morder se alguma task desta fase declarar uma"*). **Esta declara** ⇒ o
+# antecedente é verdadeiro e `1.8` obriga: a regra **nasce com corpus**, em `corpus/`, e o
+# portão de mutação a defende. `D1.5` **não é reescrito**; `D1.14b` é o sujeito que faltava.
+#
+# ── POR QUE UMA REGRA PRÓPRIA AQUI NÃO CONTRADIZ `ADR-011/D4`, e a distinção é o que
+#    autoriza esta declaração ───────────────────────────────────────────────────────
+#
+# `ADR-011/D4` recusou regra própria **de TypeScript**, e o motivo dele foi que **o ESLint
+# já era o validador** — regra própria ali seria segunda verdade sobre a mesma superfície.
+# **Nenhum validador deste repositório lê YAML** `[MEDIDO 2026-09-03: `make lint` é
+# `ruff` + `mypy` + ESLint; nenhum dos três abre `.yml`]`. E `ADR-011/D1.10` proíbe
+# `[[rules.own]]` **DE IDIOMA**, que não é o caso: o alvo aqui é **segredo literal em
+# compose**, propriedade verificável por conteúdo, sem o token curto que fez `ADR-013/D2`
+# recusar os três detectores de idioma.
+#
+# ── A LACUNA QUE ELA FECHA, MEDIDA — e ela é MAIOR que "falta uma regra" ──────────
+#
+# `[MEDIDO 2026-09-03, n=10 regras / 4 packs]`:
+#   grep -hE '^(paths|target) *=' packs/*/rules.toml | sort -u
+#   #  -> "backend/**/*.py" · "frontend/src/**" · "**/*.py"  (+ 2 `target` de path-presence)
+# ⇒ **ZERO das 10 regras em vigor alcança `*.yml` ou `*.yaml`.** E a que existiria para
+# este alvo — **`core.hardcoded-secret`** — declara `paths = ["**/*.py"]`
+# (`packs/core/rules.toml:50`) ⇒ **ela não veria uma senha num `docker-compose.yml`**.
+# Não é regra faltando por acaso: é a regra certa apontada para a extensão errada.
+#
+# ── AS ESCOLHAS DE CAMPO, uma a uma, com o que cada uma compra ────────────────────
+#
+# `form = "forbidden-regex-allowlist"` — **precedente de forma**: é a forma de
+#   `core.hardcoded-secret`, a regra da qual esta é a tradução para YAML. Sem allowlist a
+#   regra acusaria o padrão CORRETO do Docker (`*_FILE: /run/secrets/…`), e regra que morde
+#   o conserto ensina a desligá-la.
+# `scope = "code"` (e NÃO `production`) — **um segredo literal num compose de teste continua
+#   sendo um segredo vazado**. E o escopo amplo é o que o **portão de mutação** exercita:
+#   `harness corpus mutate` estreita `code` → `production` em cópia descartável e EXIGE que
+#   o corpus reprove; a regra só sobrevive se houver caso em caminho de teste que a defenda.
+#   `scope = "production"` passaria o portão por vacuidade — não haveria mutação a fazer.
+# `paths = ["**/*.yml", "**/*.yaml"]` (e NÃO `deploy/**`) — o predicado de escopo já confina
+#   a regra ao que `code_paths` declara; amarrá-la a `deploy/` deixaria um `.yml` com senha
+#   sob `backend/src/` fora da mordida **depois** de a parte (b) o ter tornado produção.
+# `severity = "block"` — segredo em compose não é aviso. É o mesmo peso de
+#   `core.hardcoded-secret`.
+# `modes = ["file", "sweep"]` — `file` é o que `D1.14` mede (`--mode file --path`), `sweep`
+#   é o que o `pre-push` roda. Declarar só um deixaria metade do portão fora do push.
+#
+# **Mensagem em português, e a escolha é declarada:** ela é **microcopy de operador**
+# (linha 8 da tabela de fronteira do `CLAUDE.md`) — o texto que sai no terminal ao lado dos
+# outros 10 `[BLOQUEIO]`, todos em português. Escrevê-la em inglês criaria uma saída
+# bilíngue numa mesma listagem. Sem acento, como as 10 do plugin.
+[[rules.own]]
+id = "own.compose-hardcoded-secret"
+form = "forbidden-regex-allowlist"
+modes = ["file", "sweep"]
+severity = "block"
+scope = "code"
+paths = ["**/*.yml", "**/*.yaml"]
+# Lê-se: início de linha, uma chave YAML (ou item de lista `- CHAVE=…`) cujo nome contém um
+# termo de credencial, seguida de `:` ou `=` e de um valor LITERAL de 6+ caracteres.
+# O `^` ancora na linha porque o motor avalia linha a linha (`lib/rules.py:198-200`), e a
+# âncora é o que impede o casamento de escorregar para dentro de `${VAR:?...}` — sem ela,
+# `POSTGRES_PASSWORD: ${DB_PASSWORD:?informe_a_senha}` casaria pelo SEGUNDO `PASSWORD` e a
+# indireção correta viraria violação.
+# A classe negada no regex abaixo (espaço, aspa dupla, aspa simples, chaves, cifrão)
+# recusa o valor interpolado: `$` e `{` fora dela = `${…}` não é literal. É o predicado
+# que separa "senha no arquivo" de "senha lida do ambiente".
+regex = "^\\s*-?\\s*[\"']?[A-Za-z0-9_.-]*(?i:password|passwd|secret|api[-_]?key|access[-_]?key|token|dsn|connection_string)[A-Za-z0-9_.-]*[\"']?\\s*[:=]\\s*[\"']?[^\\s\"'{}$]{6,}"
+# Cada entrada existe por um caso REAL de compose, e nenhuma delas é "menos rigor":
+#   `[:=]\s*["']?\$\{`          — interpolação de fato NO VALOR (logo após o `:`/`=`);
+#   `_file\s*[:=]`              — o padrão de segredo do Docker: `POSTGRES_PASSWORD_FILE:
+#                                 /run/secrets/db`. É o CONSERTO, e uma regra que morde o
+#                                 conserto ensina a desligá-la; é checagem de CHAVE, não de
+#                                 valor, então não sofre do defeito abaixo — já nasceu ancorada;
+#   `[:=]\s*["']?/run/secrets/` — o mesmo padrão pelo lado do valor;
+#   `[:=]\s*["']?(?i:example|placeholder|changeme|dummy|redacted)` — valor de amostra
+#                                 declarado como amostra.
+#
+# **As 3 entradas de VALOR (1ª, 3ª, 4ª) mudaram em `T-01.10` rodada 2 — achado real do QA,
+# não estilo.** Até então cada uma era `re.search()` sobre a LINHA INTEIRA
+# (`lib/rules.py:205-216`: o motor testa `allow.search(ln)` para a linha completa, sem
+# nenhum vínculo com o valor capturado pelo `regex` principal depois do `:`/`=`) — e isso
+# calava qualquer linha que tivesse a palavra da allowlist EM QUALQUER LUGAR, valor ou não:
+#   (A) `POSTGRES_PASSWORD: hunter2_prod_master${UNUSED}` — segredo LITERAL seguido de um
+#       `${...}` decorativo e morto; a allowlist antiga via o `${` no fim da linha e calava
+#       a ocorrência inteira, quando o valor real (`hunter2_prod_master`) não tinha indireção
+#       nenhuma `[MEDIDO 2026-09-03, QA rodada 1, Ataque 4(A): harness rules --mode file
+#       --path <efêmero> -> vazio, rc=0]`;
+#   (B) `POSTGRES_PASSWORD: hunter2_prod_master  # changeme depois` — mesma causa: a palavra
+#       de amostra estava no COMENTÁRIO, não no valor, e a allowlist antiga não distinguia
+#       `[MEDIDO 2026-09-03, QA rodada 1, Ataque 4(B): idem, rc=0]`.
+# **A correção ancora cada allowlist de valor ao MESMO ponto de partida do valor que o regex
+# principal usa** (`[:=]\s*["']?`, o trecho logo após a chave) — então só calam quando o
+# padrão de exceção é, ele mesmo, o INÍCIO do valor, não um apêndice ou um comentário.
+# Reprova de regressão: as 3 linhas do corpus `conforming/` que dependiam de valor
+# (`01_env_interpolation.yml`, `02_docker_secrets_file.yml` via `_file` — inalterada —,
+# `03_secret_in_test_path.yml`) continuam calando; `harness corpus verify` abaixo é a prova.
+# Efeito colateral notado e aceito: a 1ª entrada (`\$\{`) fica, na prática, redundante para
+# valor 100% interpolado — a classe negada do regex principal (`[^\s"'{}$]{6,}`) já barra
+# esses casos ANTES de qualquer allowlist ser avaliada, porque o valor não tem 6 caracteres
+# literais para casar `[MEDIDO: harness corpus verify — `conforming/01` cala por
+# "main-no-match", não por entrar na allowlist]`. Ela permanece por defesa em profundidade
+# (mudança futura no regex principal) e porque removê-la não fecha nada a mais.
+allowlist_regex = ["[:=]\\s*[\"']?\\$\\{", '(?i)_file\s*[:=]', "[:=]\\s*[\"']?/run/secrets/", "[:=]\\s*[\"']?(?i:example|placeholder|changeme|dummy|redacted)"]
+message = "segredo literal em arquivo de compose: leia-o do ambiente (`${VAR}`) ou de `/run/secrets` — credencial versionada nao volta atras"
+
+# **(C) YAML flow-style, `[NÃO MEDIDO]` — lacuna aberta, mesmo padrão do `Dockerfile` acima:**
+# `environment: {POSTGRES_PASSWORD: hunter2_prod_master}` nunca é avaliado. O `regex`
+# principal ancora em `^\s*-?\s*` (início de LINHA), e o motor avalia linha a linha
+# (`lib/rules.py:198-216`) sem entender YAML — uma chave dentro de `{...}` na MESMA linha
+# de outra chave (`environment:`) não começa a linha, então o `^` nunca casa com ela
+# `[MEDIDO 2026-09-03, QA rodada 1, Ataque 4(C): harness rules --mode file --path <efêmero>
+# -> vazio, rc=0]`. Estender o regex para casar flow-style exigiria reconhecer `{`/`}`
+# e múltiplos pares `chave: valor` separados por vírgula NA MESMA linha — o motor deste
+# `form` é `forbidden-regex-allowlist` avaliado por LINHA, não um parser YAML, e forçar
+# essa forma a entender estrutura aninhada é o tipo de regex frágil que o resto deste
+# arquivo evita (ver a nota de `\$\{` acima sobre "cinto e suspensório" que virou buraco).
+# **Custo aceito, e é zero hoje:** `git ls-files 'deploy/*.yml' 'deploy/*.yaml' | xargs
+# grep -nE '[^$]:[[:space:]]*\{'` → `rc=1`, nenhuma linha `[MEDIDO 2026-09-03]` — o padrão
+# exclui `$` imediatamente antes de `:` de propósito, porque um grep ingênuo
+# (`\{[^}]*:[^}]*\}`) SUBCONTA como flow-style a própria interpolação `${VAR:?msg}` já em
+# uso em `deploy/compose.yml:23-25` (`POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in
+# .env}`), que não é flow-style nenhum — é o mesmo subconto que a seção "Mensagem de
+# exceção" do `CLAUDE.md` já nomeou para regex de uma linha só. Enquanto o `rc=1` não
+# mudar, flow-style fica FORA da cobertura desta regra, e esta task não finge o
+# contrário — mesmo tratamento dado ao `Dockerfile` sem extensão (`harness.toml`, nota de
+# `include_globs` acima).
 
 # ── PONTEIRO DE PAPEL PRÓPRIO DO REPOSITÓRIO (V-16) ────────────────────────────────
 #

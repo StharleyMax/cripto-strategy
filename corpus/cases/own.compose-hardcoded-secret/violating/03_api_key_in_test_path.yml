@@ -1,0 +1,5 @@
+services:
+  collector:
+    image: alpine
+    environment:
+      COINALYZE_API_KEY: "ak_live_9f3b2c7d1e"

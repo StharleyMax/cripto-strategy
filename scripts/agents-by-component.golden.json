@@ -1,0 +1,24 @@
+{
+  "backtest": {
+    "architect": ".claude/agents/quant-architect.md"
+  },
+  "charts": {
+    "architect": ".claude/agents/quant-architect.md",
+    "design_gate": "docs/gate-de-design.md"
+  },
+  "convergencia": {
+    "architect": ".claude/agents/quant-architect.md"
+  },
+  "infra": {
+    "architect": ".claude/agents/infra-architect.md"
+  },
+  "sentimento": {
+    "architect": ".claude/agents/quant-architect.md"
+  },
+  "web": {
+    "architect": ".claude/agents/frontend-architect.md",
+    "builder": ".claude/agents/frontend-builder.md",
+    "design_gate": "docs/gate-de-design.md",
+    "qa": ".claude/agents/frontend-qa.md"
+  }
+}

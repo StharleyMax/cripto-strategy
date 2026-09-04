@@ -1,0 +1,107 @@
+# Manifesto do corpus de `own.compose-hardcoded-secret` — item `1.8` reativado, `D1.14b`.
+#
+# ── DUAS ASSERCOES, e a segunda existe para pegar o passe DEGENERADO ──────────────
+#
+# (1) IGUALDADE DE VEREDITO, arquivo a arquivo, entre a regra declarada em
+#     `harness.toml` e o classificador de referencia em `corpus/reference/`, que decide
+#     por outro mecanismo (`awk` por campo, nao regex ancorada).
+# (2) EXPECTATIVA DECLARADA: `violating` tem de disparar e `conforming` tem de calar.
+#     Sem ela, uma regra que nao dispara em lugar nenhum satisfaria (1) trivialmente.
+#
+# ── ONDE O CORPUS MORA, e por que nao sob `deploy/` ──────────────────────────────
+#
+# Em `corpus/`, na raiz, FORA de `code_paths` — os casos `violating` sao violadores por
+# construcao; sob `deploy/` eles deixariam `harness rules --mode sweep` vermelho e o
+# `pre-push` recusaria o push (`scripts/hooks/pre-push.pre-harness`). E o mesmo motivo
+# que o plano `01` registra para o corpus de `1.9'`.
+#
+# ── O CAMINHO DE CADA CASO E METADE DA ASSERCAO ─────────────────────────────────
+#
+# `repo_path` nao e enfeite: o escopo de caminho decide antes do conteudo. `03` de cada
+# lado mora em `deploy/tests/`, e e ESSE par que da sujeito ao portao de mutacao —
+# estreitar `scope` de `code` para `production` apaga o disparo de `03_violating` no
+# runner enquanto a referencia continua acusando, e a divergencia mata o mutante.
+schema_version = 1
+
+# ⛔ CHAVE DE TOPO VEM ANTES DE QUALQUER CABECALHO DE TABELA, e isto foi MEDIDO e nao
+# lembrado: escrita depois de `[[rule]]`, `reference_tags` vira campo DAQUELA tabela,
+# `load_reference_contract` (`corpus/harness.py:75-93`) nao a encontra e cai no default
+# `("[HR", "[anti-pattern]", ...)`. A referencia entao dispara e o arnes nao le a linha:
+# 3 violadores DIFEREM com `referencia: []` e o vermelho parece defeito da regra
+# [MEDIDO 2026-09-03, primeira execucao de `harness corpus verify` desta task].
+#
+# Como LER a saida da referencia: o arnes so olha STDERR e so linhas que comecem por uma
+# destas etiquetas; a `needle` de `[[reference_message]]` distingue a regra dentro da linha.
+reference_tags = ["[REF-COMPOSE]"]
+
+[[rule]]
+id = "own.compose-hardcoded-secret"
+form = "forbidden-regex-allowlist"
+modes = ["file", "sweep"]
+severity = "block"
+origin = "declaracao propria do repositorio (`harness.toml`, `T-01.10`, parte (c) do item 1.14)"
+
+[[reference_message]]
+needle = "segredo literal em compose"
+rule = "own.compose-hardcoded-secret"
+
+# ── VIOLADORES ───────────────────────────────────────────────────────────────────
+
+# Forma de mapeamento YAML, caminho de PRODUCAO.
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "violating"
+file = "own.compose-hardcoded-secret/violating/01_password_mapping.yml"
+repo_path = "deploy/compose.yml"
+
+# Forma de LISTA de ambiente (`- CHAVE=valor`) e credencial embutida numa URL de conexao.
+# Trocar a forma sintatica nao pode trocar o veredito — foi exatamente por essa via que o
+# violador de `T-01.2` escapava so por mudar de extensao.
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "violating"
+file = "own.compose-hardcoded-secret/violating/02_dsn_in_env_list.yml"
+repo_path = "deploy/compose.api.yml"
+
+# ⛔ O CASO QUE DEFENDE A REGRA NO PORTAO DE MUTACAO. Caminho de TESTE: e codigo e nao e
+# producao. Se este caso sair do corpus, `scope = "code"` passa a sobreviver a propria
+# mutacao e a regra fica sem rede — o defeito que o item `1.8` existe para impedir.
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "violating"
+file = "own.compose-hardcoded-secret/violating/03_api_key_in_test_path.yml"
+repo_path = "deploy/tests/compose.fixture.yml"
+
+# ── CONFORMES ────────────────────────────────────────────────────────────────────
+
+# A indirecao de ambiente — a forma CORRETA, e a que o arquivo real versionado usa.
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "conforming"
+file = "own.compose-hardcoded-secret/conforming/01_env_interpolation.yml"
+repo_path = "deploy/compose.postgres.yml"
+
+# O padrao de segredo do Docker (`*_FILE` + `/run/secrets/`). E o CONSERTO que a regra
+# recomenda: se ela mordesse aqui, ensinaria a desliga-la.
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "conforming"
+file = "own.compose-hardcoded-secret/conforming/02_docker_secrets_file.yml"
+repo_path = "deploy/compose.secrets.yml"
+
+# Legitimo em caminho de TESTE: o par de `03_violating`. Sem ele, "nao disparou no teste"
+# seria indistinguivel entre "esta certo" e "o escopo nem alcanca testes".
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "conforming"
+file = "own.compose-hardcoded-secret/conforming/03_secret_in_test_path.yml"
+repo_path = "deploy/tests/compose.env.yml"
+
+# ESCOPO DE CAMINHO, pelo lado de fora: o conteudo VIOLA, e mesmo assim tem de calar,
+# porque `backend/config/` nao esta sob `include_prefixes`. E o unico caso que separa
+# "a regra julgou e absolveu" de "a regra nunca foi consultada".
+[[case]]
+rule = "own.compose-hardcoded-secret"
+kind = "conforming"
+file = "own.compose-hardcoded-secret/conforming/04_out_of_scope_yaml.yml"
+repo_path = "backend/config/instrument_alias.yml"
