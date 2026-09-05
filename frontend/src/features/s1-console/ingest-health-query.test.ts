@@ -22,9 +22,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  fetchIngestHealthProjectionViaHttp,
   fingerprint,
   INGEST_HEALTH_QUERY_NAME,
   parseIngestHealthEnvelope,
+  TransportError,
   type IngestHealthProjection,
 } from "./ingest-health-query.ts";
 
@@ -204,4 +206,110 @@ test("MORDE: \"query\" com nome diferente do esperado reprova", () => {
   const body = validEnvelopeBody();
   body.query = "outra_consulta_qualquer";
   assert.throws(() => parseIngestHealthEnvelope(body), /"query" is/);
+});
+
+// ── `TransportErrorKind`/`etag` — o par MORDE/CALA que faltava (QA `T-01.1-qa.md` BLOCKER-1) ──
+//
+// Os testes acima (e `ingest-health-query-http.test.ts`) já cobrem `parseIngestHealthEnvelope`
+// e a paridade de fingerprint sobre um servidor real, mas nenhum deles alimenta
+// `fetchIngestHealthProjectionViaHttp` com um `fetchImpl` mockado e olha o `kind` que sai do
+// outro lado — os 4 `TransportErrorKind` (`missing_base_url`/`connection_refused`/`non_2xx`/
+// `malformed_envelope`) eram só documentação até aqui. Duas mutações independentes provaram o
+// buraco: trocar o literal `"connection_refused"` por `"malformed_envelope"` no `catch` do
+// `fetch`, e trocar `etag: null` por `etag: "should-not-matter"` no retorno — ambas passavam
+// 54/54 sem este bloco. Cada teste abaixo assert.equal o `kind`/`etag` exato, não só
+// `assert.rejects` genérico, para fechar as duas mutações.
+
+test("MORDE TransportErrorKind=missing_base_url: sem baseUrl e sem env, rejeita com o kind certo", async () => {
+  const previousBaseUrl = process.env.INGEST_HEALTH_API_BASE_URL;
+  delete process.env.INGEST_HEALTH_API_BASE_URL;
+  try {
+    await assert.rejects(
+      () => fetchIngestHealthProjectionViaHttp({}),
+      (error: unknown) => {
+        assert.ok(error instanceof TransportError, "erro nao e TransportError");
+        assert.equal(error.kind, "missing_base_url");
+        assert.equal(error.status, undefined);
+        return true;
+      },
+    );
+  } finally {
+    if (previousBaseUrl === undefined) {
+      delete process.env.INGEST_HEALTH_API_BASE_URL;
+    } else {
+      process.env.INGEST_HEALTH_API_BASE_URL = previousBaseUrl;
+    }
+  }
+});
+
+test("MORDE TransportErrorKind=connection_refused: fetchImpl rejeita ⇒ kind certo, nunca malformed_envelope", async () => {
+  const fetchImpl: typeof fetch = async () => {
+    throw new Error("ECONNREFUSED (mock)");
+  };
+  await assert.rejects(
+    () => fetchIngestHealthProjectionViaHttp({ baseUrl: "http://127.0.0.1:1", fetchImpl }),
+    (error: unknown) => {
+      assert.ok(error instanceof TransportError, "erro nao e TransportError");
+      assert.equal(error.kind, "connection_refused");
+      return true;
+    },
+  );
+});
+
+test("MORDE TransportErrorKind=non_2xx: resposta 500 ⇒ kind certo, com status preservado", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    new Response("erro interno", { status: 500, statusText: "Internal Server Error" });
+  await assert.rejects(
+    () => fetchIngestHealthProjectionViaHttp({ baseUrl: "http://127.0.0.1:1", fetchImpl }),
+    (error: unknown) => {
+      assert.ok(error instanceof TransportError, "erro nao e TransportError");
+      assert.equal(error.kind, "non_2xx");
+      assert.equal(error.status, 500);
+      return true;
+    },
+  );
+});
+
+test("MORDE TransportErrorKind=malformed_envelope (corpo nao-JSON): kind certo, status ausente", async () => {
+  const fetchImpl: typeof fetch = async () => new Response("isto nao e json", { status: 200 });
+  await assert.rejects(
+    () => fetchIngestHealthProjectionViaHttp({ baseUrl: "http://127.0.0.1:1", fetchImpl }),
+    (error: unknown) => {
+      assert.ok(error instanceof TransportError, "erro nao e TransportError");
+      assert.equal(error.kind, "malformed_envelope");
+      assert.equal(error.status, undefined);
+      return true;
+    },
+  );
+});
+
+test("MORDE TransportErrorKind=malformed_envelope (JSON valido, schema invalido): kind certo, distinto do caso de JSON quebrado", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    new Response(JSON.stringify({ runs: [], gaps: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  await assert.rejects(
+    () => fetchIngestHealthProjectionViaHttp({ baseUrl: "http://127.0.0.1:1", fetchImpl }),
+    (error: unknown) => {
+      assert.ok(error instanceof TransportError, "erro nao e TransportError");
+      assert.equal(error.kind, "malformed_envelope");
+      return true;
+    },
+  );
+});
+
+test("CALA: envelope bem formado via fetchImpl mockado ⇒ etag e SEMPRE null em F1 (F2/T-02.5 e quem preenche)", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    new Response(JSON.stringify(validEnvelopeBody()), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  const result = await fetchIngestHealthProjectionViaHttp({
+    baseUrl: "http://127.0.0.1:1",
+    fetchImpl,
+  });
+  assert.equal(result.etag, null);
+  assert.equal(result.projection.runs.length, 1);
+  assert.equal(result.projection.gaps.length, 1);
 });
