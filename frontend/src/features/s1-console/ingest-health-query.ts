@@ -1,4 +1,13 @@
+import "server-only";
+
 /**
+ * `ADR-028/D2` — this line has to stay the FIRST line of the module (before this very
+ * docstring, not after it): `server-only` throws on import outside the `react-server`
+ * condition, and `next build` walks the transitive module graph looking for exactly this
+ * import to reject any client bundle that reaches it — the property `D6.4` cares about (`no
+ * value-level import from browser-rendered code`) is enforced HERE, not by the ESLint rule one
+ * layer up (`../../eslint.config.mjs`, `T-01.2`), which is only the cheap local proxy.
+ *
  * `T-07.13` — the `web` CONSUMER of the ONE named query `ADR-008/D3` fixes:
  * `ingest_health_query` (`backend/src/modules/sentimento/use_cases/ingest_health.py:32`),
  * `INGEST_HEALTH_QUERY_NAME = "ingest_health_query"` (same file, line 21).
@@ -469,17 +478,52 @@ export interface IngestHealthHttpOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
+/**
+ * `SPEC-003` §3.2's discriminant for every way this transport can fail. `F1` produces all
+ * four; `F2` (`If-None-Match`/`304`, `T-02.5`) does not add a fifth — a `304` is success, not
+ * an error kind.
+ */
+export type TransportErrorKind =
+  | "missing_base_url"
+  | "connection_refused"
+  | "non_2xx"
+  | "malformed_envelope";
+
+/**
+ * The one error class `fetchIngestHealthProjectionViaHttp` throws — `kind` is what the caller
+ * (the Server Component, `T-01.4`) switches on to build `SourceState`; `status` is present only
+ * for `kind: "non_2xx"`. The message is English (`CLAUDE.md` §"mensagem de exceção"); the pt-BR
+ * text a person sees is built by the presentation layer from `kind`, never from this string.
+ */
+export class TransportError extends Error {
+  readonly kind: TransportErrorKind;
+  readonly status?: number;
+
+  constructor(kind: TransportErrorKind, message: string, status?: number) {
+    super(message);
+    this.name = "TransportError";
+    this.kind = kind;
+    if (status !== undefined) {
+      this.status = status;
+    }
+  }
+}
+
 /** What `fetchIngestHealthProjectionViaHttp` returns: the typed projection, plus the
- * fingerprint this client computed over it — never one read off the wire (`ADR-019/D3`). */
+ * fingerprint this client computed over it — never one read off the wire (`ADR-019/D3`).
+ * `etag` is always `null` in `F1` — `T-02.5` (`F2`) is the task that starts reading a real
+ * value off the response and reusing it across requests via `If-None-Match`. */
 export interface IngestHealthHttpResult {
   readonly projection: IngestHealthProjection;
   readonly fingerprint: string;
+  readonly etag: string | null;
 }
 
 function resolveIngestHealthBaseUrl(explicit: string | undefined): string {
   const baseUrl = explicit ?? process.env.INGEST_HEALTH_API_BASE_URL;
   if (baseUrl === undefined || baseUrl === "") {
-    throw new Error(
+    throw new TransportError(
+      "missing_base_url",
       "fetchIngestHealthProjectionViaHttp: no base URL configured — pass options.baseUrl or " +
         "set INGEST_HEALTH_API_BASE_URL. Never INGEST_HEALTH_API_BASE_URL prefixed with " +
         "NEXT_PUBLIC_ (ADR-019/D4): that family is inlined into the browser bundle, and this " +
@@ -487,6 +531,12 @@ function resolveIngestHealthBaseUrl(explicit: string | undefined): string {
     );
   }
   return baseUrl;
+}
+
+/** `cause instanceof Error ? cause.message : String(cause)` — how the raw `unknown` a `catch`
+ * hands back becomes a readable fragment inside a `TransportError` message. */
+function describeCause(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 /**
@@ -497,6 +547,17 @@ function resolveIngestHealthBaseUrl(explicit: string | undefined): string {
  * becomes a `Promise`). `assertNoTickLevelFields` (`../../app/history-transport.ts`) runs
  * over the raw decoded body first — `ADR-005`'s falsifier stays agnostic of this module's own
  * schema, same as it already is for the historical transport.
+ *
+ * `cache: "no-store"` is explicit (`SPEC-003` §3.2, `F1`) — this Server Component transport
+ * never wants Next's fetch cache to serve a stale run; `T-02.5` (`F2`) is the task that adds
+ * conditional revalidation (`If-None-Match`) on top of this, not this one.
+ *
+ * Every failure this function can produce throws `TransportError` with the matching `kind`:
+ * `missing_base_url` (no address configured, checked before any network call — `NEXT_PUBLIC_*`
+ * is deliberately never read here per `ADR-019/D4`), `connection_refused` (the `fetch` call
+ * itself never reached a server), `non_2xx` (a response came back, but not `2xx`), and
+ * `malformed_envelope` (a `2xx` body that is not valid JSON, or that fails
+ * `parseIngestHealthEnvelope`'s schema check).
  */
 export async function fetchIngestHealthProjectionViaHttp(
   options: IngestHealthHttpOptions = {},
@@ -505,18 +566,49 @@ export async function fetchIngestHealthProjectionViaHttp(
   const doFetch = options.fetchImpl ?? fetch;
   const url = new URL("/ingest-health", baseUrl);
 
-  const response = await doFetch(url);
-  if (!response.ok) {
-    throw new Error(
-      `fetchIngestHealthProjectionViaHttp: GET ${url.toString()} answered ${response.status} ` +
-        `${response.statusText}`,
+  let response: Response;
+  try {
+    response = await doFetch(url, { cache: "no-store" });
+  } catch (cause) {
+    throw new TransportError(
+      "connection_refused",
+      `fetchIngestHealthProjectionViaHttp: GET ${url.toString()} never reached a server ` +
+        `(${describeCause(cause)})`,
     );
   }
-  const body: unknown = await response.json();
+
+  if (!response.ok) {
+    throw new TransportError(
+      "non_2xx",
+      `fetchIngestHealthProjectionViaHttp: GET ${url.toString()} answered ${response.status} ` +
+        `${response.statusText}`,
+      response.status,
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (cause) {
+    throw new TransportError(
+      "malformed_envelope",
+      `fetchIngestHealthProjectionViaHttp: GET ${url.toString()} body is not valid JSON ` +
+        `(${describeCause(cause)})`,
+    );
+  }
   assertNoTickLevelFields(body);
 
-  const projection = parseIngestHealthEnvelope(body);
-  return { projection, fingerprint: fingerprint(projection) };
+  let projection: IngestHealthProjection;
+  try {
+    projection = parseIngestHealthEnvelope(body);
+  } catch (cause) {
+    throw new TransportError(
+      "malformed_envelope",
+      `fetchIngestHealthProjectionViaHttp: envelope failed validation (${describeCause(cause)})`,
+    );
+  }
+
+  return { projection, fingerprint: fingerprint(projection), etag: null };
 }
 
 // ── MAPEAMENTO PARA `CollectorRow` — MÍNIMO E DELIBERADO, VER O DOCSTRING DO MÓDULO ─────────
