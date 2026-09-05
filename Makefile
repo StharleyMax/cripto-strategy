@@ -44,7 +44,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test boundaries natureza build verify
+.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test boundaries natureza build verify api
 
 # Argumentos repassados ao pytest: `make test ARGS="-k nome --no-cov"`.
 ARGS ?=
@@ -72,6 +72,8 @@ help:
 	  '  make build           artefato distribuivel — hoje RECUSA com rc=3, e o alvo diz porque' \
 	  '  make verify          OS SEIS PORTOES numa chamada, veredito em ~10 linhas e a saida' \
 	  '                       bruta em arquivo (scripts/verify.sh). E o alvo para AGENTE rodar' \
+	  '  make api             sobe a API em processo, honrando .env (raiz) — dev por comando' \
+	  '                       versionado (T-01.7, ADR-029/D5). NAO entra em verify (M5)' \
 	  '' \
 	  'O make sai com 2 em qualquer receita que falhe: ele NAO propaga o rc=3 dos scripts.'
 
@@ -237,3 +239,20 @@ build:
 #   bash scripts/verify.sh
 verify:
 	bash scripts/verify.sh
+
+# ── api ────────────────────────────────────────────────────────────────────────────────
+# `T-01.7` (`SPEC-003` s3.4/s3.5, `ADR-029/D5`, plano `01` itens `1.7`/`1.8`). Sobe a API em
+# processo, honrando `.env` (raiz, gitignored — `.env.example` documenta o formato e os
+# defaults nao-secretos). O access log do uvicorn fica LIGADO por padrao
+# (`uvicorn.Config.access_log` default `True`; `src/main/__main__.py` nunca o desliga) — e o
+# instrumento de `CA-F1-1`: 1 linha por GET.
+#
+# MESMA recusa `rc=3` (venv ausente) que os outros alvos, mesma semantica: "nao mediu" != a
+# rc=2 de receita que falhou. `.env` e OPCIONAL — ausente, o processo cai nos defaults que
+# `src.main`/`__main__.py` ja tem hoje (`APP_PORT=8000`, store em `data/md/...`).
+#
+# NAO implanta (`RN-9`) e NAO entra em `verify` (M5, plano 01 item 1.8) — dev roda em primeiro
+# plano, `Ctrl-C` derruba.
+api:
+	@test -x backend/.venv/bin/python || { printf '%s\n' "RECUSA: backend/.venv nao existe. Rode 'make setup' (precisa de rede)." >&2; exit 3; }
+	set -a && { test -f .env && . ./.env || true; } && set +a && cd backend && exec .venv/bin/python -m src.main
