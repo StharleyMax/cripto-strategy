@@ -1720,3 +1720,18 @@ npm --prefix frontend run build       # next build, "✓ Compiled successfully"
 Este `README.md` — **atualizado**, `§20` nova (append-only). `docs/INDEX.md` — linha nova acrescentada
 (append-only). `ADR-018` e o gate do `architect` — já existiam antes do `/build`, não editados por
 esta task.
+
+---
+
+## 21. Como subir (dev) — `T-01.7`, `SPEC-003` s3.5, `ADR-029/D5`
+
+```bash
+cp ../.env.example ../.env        # so uma vez; ajuste se precisar (nenhum valor e secreto)
+make setup                         # so uma vez; precisa de rede
+make api                           # sobe a API (uvicorn, access log ligado) em 127.0.0.1:${APP_PORT}
+npm --prefix frontend run dev      # em outro terminal; le INGEST_HEALTH_API_BASE_URL do .env
+```
+
+`make api` **recusa** com `rc=3` se `backend/.venv` não existir (rode `make setup` antes). `.env` é
+opcional: ausente, a API cai nos defaults de `src.main`. Não implanta — é só o par de comandos que
+sobe os dois processos localmente.
