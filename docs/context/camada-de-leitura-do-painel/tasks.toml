@@ -18,6 +18,9 @@
 #   harness tasks list camada-de-leitura-do-painel   -> uncarded=25
 # Ao cardar: `tracker = { provider = "jira", id = "CST-NNN", url = "..." }` INLINE em cada
 # task, item pai candidato CST-5 (PRD-003 s6, INFERRED — ou Epic proprio, decisao do owner).
+# CARDADAS EM 2026-09-05 (MCP `atlassian` autenticado nesta sessao): 3 Epics PROPRIOS — CST-112 (F1),
+# CST-113 (F2), CST-114 (F3) — e 25 `Tarefa` CST-115..CST-139 (T-01.x -> 115-124, T-02.x -> 125-131,
+# T-03.x -> 132-139), `tracker` inline em cada task; `harness tasks list` deve dar uncarded=0.
 #
 # ── M1–M5 (ledger, `approve spec` 2026-09-05T12:53:22Z) ────────────────────────────
 #
@@ -55,6 +58,7 @@ refs = [
     "DoD: grep -c 'import \"server-only\"' frontend/src/features/s1-console/ingest-health-query.ts -> 1; npm --prefix frontend run test:s1 verde (universo ls frontend/src/features/s1-console/*.test.ts, inclui ingest-health-query-http.test.ts 8/8); mensagens de erro em ingles (CLAUDE.md s mensagem de excecao)",
     "NAO envia If-None-Match (e T-02.5); NAO reescreve o portao ESLint (e T-01.2)",
 ]
+tracker = { provider = "jira", id = "CST-115", url = "https://conversationhub.atlassian.net/browse/CST-115" }
 
 [[tasks]]
 id = "T-01.2"
@@ -71,6 +75,7 @@ refs = [
     "DoD: probe sem diretiva -> 0 problems (hoje 1 error); probe com diretiva -> 1 error nomeando ADR-005/D6.4; probe transitivo -> next build reprova nomeando server-only E eslint passa; git log --diff-filter=D -- frontend/src/features/s1-console/fingerprint-sync-boundary.test.ts VAZIO",
     "forma (i) regra local por diretiva ou (ii) *.client.tsx + glob — escolha do implementador, falsificadores iguais nas duas",
 ]
+tracker = { provider = "jira", id = "CST-116", url = "https://conversationhub.atlassian.net/browse/CST-116" }
 
 [[tasks]]
 id = "T-01.3"
@@ -87,6 +92,7 @@ refs = [
     "DoD: test -f docs/context/camada-de-leitura-do-painel/gates/F1-design.md e o arquivo contem veredito do validador CONCORDANDO; cada um dos 8 estados de s3.3 (loading, 4 erros, vazio, sem fonte, ok) tem forma + texto; contrato data-fact INTOCADO; docs/product/ atualizado",
     "NAO redesenha (NG-5); NAO redefine tokens; NAO escreve codigo de app",
 ]
+tracker = { provider = "jira", id = "CST-117", url = "https://conversationhub.atlassian.net/browse/CST-117" }
 
 [[tasks]]
 id = "T-01.4"
@@ -104,6 +110,7 @@ refs = [
     "DoD no chao (API 000): 0 <tr>, error_kind:connection_refused, access log NAO incrementa — linha renderizada com API no chao => 05_fatia_visivel.md:225 repetido",
     "NAO cria route.ts; NAO recalcula janela_de_perda; NAO inventa microcopy (vem de T-01.3); NAO distingue causa em error.tsx (ADR-028/D4)",
 ]
+tracker = { provider = "jira", id = "CST-118", url = "https://conversationhub.atlassian.net/browse/CST-118" }
 
 [[tasks]]
 id = "T-01.5"
@@ -119,6 +126,7 @@ refs = [
     "mecanismo: o que T-01.3 decidiu (I-8 Tailwind como default inferido); tokens NAO redefinidos (NG-5)",
     "DoD: find frontend -name '*.css' -not -path '*/node_modules/*' -not -path '*/.next/*' | wc -l >= 1 (hoje 0); e2e 01: stylesheets_applied >= 1 com href fora de __nextjs; glyph_font_families sem 'Times New Roman'; icone NAO renderiza o nome do glifo (PARADOstop_circle e o defeito, FB-playwright s4 #5)",
 ]
+tracker = { provider = "jira", id = "CST-119", url = "https://conversationhub.atlassian.net/browse/CST-119" }
 
 [[tasks]]
 id = "T-01.6"
@@ -135,6 +143,7 @@ refs = [
     "DoD: grep -rn 'features/panel/Filter' frontend/src/app | wc -l -> 0; e2e 01 document.title != '' e h1_count = 1; e2e 03 GET / -> 3xx para /painel e /nao-existe -> not-found pt-BR com link /painel; e2e 04 catalog_rows_after_nonmatching_filter = 0 e casante 1 <= n <= before; grep -c 'abrir' <main> -> 0 (M3)",
     "NAO renomeia /painel ([Q1], owner); NAO toca janela_de_perda como coluna (ADR-008/D3)",
 ]
+tracker = { provider = "jira", id = "CST-120", url = "https://conversationhub.atlassian.net/browse/CST-120" }
 
 [[tasks]]
 id = "T-01.7"
@@ -152,6 +161,7 @@ refs = [
     "LACUNA DECLARADA: make api com INGEST_HEALTH_STORE_PATH em diretorio inexistente AINDA SOBE em F1 — T-02.1 fecha",
     "NAO implanta; NAO altera scripts/verify.sh",
 ]
+tracker = { provider = "jira", id = "CST-121", url = "https://conversationhub.atlassian.net/browse/CST-121" }
 
 [[tasks]]
 id = "T-01.8"
@@ -168,6 +178,7 @@ refs = [
     "seed do store efemero versionado (>= 1 run, G >= 0 gaps) — nao usa data/ (nao versionado)",
     "NAO altera scripts/verify.sh; NAO implanta",
 ]
+tracker = { provider = "jira", id = "CST-122", url = "https://conversationhub.atlassian.net/browse/CST-122" }
 
 [[tasks]]
 id = "T-01.9"
@@ -185,6 +196,7 @@ refs = [
     "DoD no chao: make e2e => D1.3/D1.4/D1.6 REPROVAM e D1.5(b) PASSA — veredito DIFERENTE do de pe. Igual => a suite nao mede (falsificador da fase, 05_fatia_visivel.md:225)",
     "juiz: frontend-qa; NAO entra em verify (M5)",
 ]
+tracker = { provider = "jira", id = "CST-123", url = "https://conversationhub.atlassian.net/browse/CST-123" }
 
 [[tasks]]
 id = "T-01.10"
@@ -200,6 +212,7 @@ refs = [
     "DoD: grep -c 'aceito' no cabecalho de docs/adr/ADR-028-*.md e docs/adr/ADR-029-*.md -> >= 1 cada, citando a data/hora do approve spec; cabecalho de docs/specs/SPEC-003-*.md e de docs/plans/SPEC-003-camada-de-leitura-do-painel/index.md sem 'SPEC_DRAFT' como estado corrente; nenhuma decisao (D1-D6, M1-M5, Q1-Q11) reaberta; docs/INDEX.md so recebe linha nova (git log --diff-filter=D -- docs/INDEX.md vazio)",
     "NAO toca CLAUDE.md ([GAP G1] e do owner); NAO toca harness.toml",
 ]
+tracker = { provider = "jira", id = "CST-124", url = "https://conversationhub.atlassian.net/browse/CST-124" }
 
 # ═══════════════════════════════════════════════════════════════════════════════════
 # FASE 02 — A API e alcancavel e honesta (infra; web em T-02.5). Nenhuma implantacao.
@@ -221,6 +234,7 @@ refs = [
     "regras: core.silent-except (relanca com o caminho), core.print-statement (logger; evento novo em ingles)",
     "NAO muda _fetch do store nem o 200 vazio de /ingest-health (ADR-005/D6.1)",
 ]
+tracker = { provider = "jira", id = "CST-125", url = "https://conversationhub.atlassian.net/browse/CST-125" }
 
 [[tasks]]
 id = "T-02.2"
@@ -237,6 +251,7 @@ refs = [
     "DoD: grep -rn 'API_PREFIX' backend/src/main .env.example | wc -l >= 2; pytest API_PREFIX=/x => paths de openapi.json comecam por /x; curl $API/ingest-health (sem prefixo) -> 404; ausente => default /api/v1, nunca raiz",
     "NAO decide o segmento definitivo ([Q2], owner); NAO toca o Caddyfile (T-02.7)",
 ]
+tracker = { provider = "jira", id = "CST-126", url = "https://conversationhub.atlassian.net/browse/CST-126" }
 
 [[tasks]]
 id = "T-02.3"
@@ -253,6 +268,7 @@ refs = [
     "DoD no chao: curl -> 000; pytest reprova por CONEXAO recusada, nao por 503",
     "NAO e health de processo; NAO consulta Postgres; DatabaseError propaga (500) — core.silent-except",
 ]
+tracker = { provider = "jira", id = "CST-127", url = "https://conversationhub.atlassian.net/browse/CST-127" }
 
 [[tasks]]
 id = "T-02.4"
@@ -270,6 +286,7 @@ refs = [
     "FALSIFICADOR: igualdade so de um lado e ADR-005/D6 'DoD-2 comparando um numero consigo mesmo' — o lado TS e T-02.5",
     "NAO acrescenta campo em runs[] (NG-9); NAO muda o corpo do 200",
 ]
+tracker = { provider = "jira", id = "CST-128", url = "https://conversationhub.atlassian.net/browse/CST-128" }
 
 [[tasks]]
 id = "T-02.5"
@@ -287,6 +304,7 @@ refs = [
     "DoD no chao: error_kind:connection_refused, NAO a projecao reutilizada — cache de processo nunca substitui erro de transporte",
     "NAO cacheia no browser; NAO usa NEXT_PUBLIC_*",
 ]
+tracker = { provider = "jira", id = "CST-129", url = "https://conversationhub.atlassian.net/browse/CST-129" }
 
 [[tasks]]
 id = "T-02.6"
@@ -303,6 +321,7 @@ refs = [
     "DECLARADO: nao ha 'de pe' (RN-9). O inverso do escopo: docker compose -f deploy/compose.yml ps na VPS mostrando caddy => escopo violado",
     "NAO sobe nada (NG-1); NAO decide TLS/auth (owner); toda credencial ${VAR}",
 ]
+tracker = { provider = "jira", id = "CST-130", url = "https://conversationhub.atlassian.net/browse/CST-130" }
 
 [[tasks]]
 id = "T-02.7"
@@ -318,6 +337,7 @@ refs = [
     "DoD: caddy validate --config deploy/Caddyfile -> rc=0 (via docker run --rm -v ... caddy:2-alpine caddy validate se nao houver binario); grep -c 'reverse_proxy' deploy/Caddyfile -> 2; teste: API_PREFIX=/x => openapi.json paths /x/* E Caddyfile renderizado roteia /x/* (um mudar sem o outro => duas constantes); grep -rn 'CORSMiddleware' backend/src --include='*.py' | wc -l -> 0 (case-sensitive, [C1]); grep -rn 'API_PREFIX' backend/src/main deploy/ .env.example | wc -l >= 3",
     "NAO decide auth ([Q3]) nem TLS ([Q10]) — owner; NAO implanta; NAO adiciona CORS",
 ]
+tracker = { provider = "jira", id = "CST-131", url = "https://conversationhub.atlassian.net/browse/CST-131" }
 
 # ═══════════════════════════════════════════════════════════════════════════════════
 # FASE 03 — Os recursos baratos entram pelo caminho decidido (sentimento + infra + web)
@@ -329,10 +349,11 @@ refs = [
 id = "T-03.1"
 title = "[sentimento][docs] 03 · ADR do envelope agregado por serie (quant-architect, [Q7]) — formulas de status/uptimePercent/resilience/retention sobre IngestRecordSource.runs(), nome da rota, campos no fio; prazo 2026-09-11"
 components = ["sentimento", "docs"]
-status = "todo"
+status = "done"
 phase = "03"
 depends_on = []
 refs = [
+    "DONE 2026-09-05: ADR-030-agregado-por-serie-collector-status-formulas-sobre-runs-existentes.md escrita pelo quant-architect (autorizacao literal do owner: 'ja podemos fazer o adr tbm'). DoD medido: ls docs/adr/ADR-030-* -> 1 arquivo; grep -c ADR-030 docs/plans/SPEC-003-camada-de-leitura-do-painel/03_recursos_baratos.md -> 3 (linhas 4, 14, 38). T-03.2/T-03.4/T-03.6 destravadas.",
     "SPEC-003 s3.6 linha 'agregado por serie (US-10)' — TBD com data: ADR do quant-architect ate 2026-09-11 [INFERRED I-9]", "SPEC-003 s8 [Q7] (dono quant-architect) e I-10 (nome collector-status, 1 linha para trocar)", "SPEC-003 s0.3 (pedido do PRD fixado)",
     "PRD-003 US-10, [Q7]", "plano 03 cabecalho 'Depende de' e DoD D3.0 (dispatch builder recusado sem a ADR referenciada em 03_recursos_baratos.md)",
     "narrativa: tasks_review.md s3c T-03.1 e s7 decisao 1",
@@ -341,6 +362,7 @@ refs = [
     "PRAZO VENCIDO SEM ADR => sinal para o owner (T-03.2/T-03.4/T-03.6 ficam sem dispatch), nunca silencio",
     "NAO toca as 15 colunas nem to_envelope() (NG-9); NAO decide paginacao ([Q5])",
 ]
+tracker = { provider = "jira", id = "CST-132", url = "https://conversationhub.atlassian.net/browse/CST-132" }
 
 [[tasks]]
 id = "T-03.2"
@@ -357,6 +379,7 @@ refs = [
     "DoD: curl -s $API$PREFIX/series-catalog | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[\"n_entries\"],len(d[\"entries\"]))' -> 7 7 = grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test | wc -l; grep -rn 'SELECT' backend/src/api | wc -l -> 0; make boundaries verde (src.api nao importa src.modules.sentimento.infra direto)",
     "NAO calcula Completeness (4c, NG-3)",
 ]
+tracker = { provider = "jira", id = "CST-133", url = "https://conversationhub.atlassian.net/browse/CST-133" }
 
 [[tasks]]
 id = "T-03.3"
@@ -373,6 +396,7 @@ refs = [
     "DoD: teste TS com 1 campo removido por vez => parser reprova; e2e S3 catalog_rows = 7; grep -rn 'fixtures.ts' frontend/src/app frontend/src/features --include='*.tsx' | grep -v '\\.test\\.' | wc -l -> 0",
     "DoD no chao: error_kind:connection_refused e catalog_rows = 0; FIXTURE_CATALOG_ROWS visivel => REPROVA",
 ]
+tracker = { provider = "jira", id = "CST-134", url = "https://conversationhub.atlassian.net/browse/CST-134" }
 
 [[tasks]]
 id = "T-03.4"
@@ -389,6 +413,7 @@ refs = [
     "DoD: curl -s $API$PREFIX/series-quarantine | python3 -c 'import json,sys;r=json.load(sys.stdin)[\"rows\"];assert r==[] or \"points_json\" not in r[0]'; QUARANTINE_STORE_PATH=<x>/nao-existe/q.sqlite3 python -m src.main -> rc != 0; grep -rn 'SELECT' backend/src/api | wc -l -> 0",
     "NAO decide onde o store mora em prod ([Q8], ADR-002)",
 ]
+tracker = { provider = "jira", id = "CST-135", url = "https://conversationhub.atlassian.net/browse/CST-135" }
 
 [[tasks]]
 id = "T-03.5"
@@ -405,6 +430,7 @@ refs = [
     "DoD: grep -c FIXTURE_DIVERGENCES <main> -> 0 SEMPRE (de pe e no chao); teste TS campo ausente => reprova",
     "DoD no chao: gaveta mostra erro, nao a fixture",
 ]
+tracker = { provider = "jira", id = "CST-136", url = "https://conversationhub.atlassian.net/browse/CST-136" }
 
 [[tasks]]
 id = "T-03.6"
@@ -422,6 +448,7 @@ refs = [
     "FALSIFICADOR: sha256 de /ingest-health mudar => NG-9 violado",
     "NAO toca as 15 colunas nem to_envelope(); NAO acrescenta metodo a IngestRecordSource",
 ]
+tracker = { provider = "jira", id = "CST-137", url = "https://conversationhub.atlassian.net/browse/CST-137" }
 
 [[tasks]]
 id = "T-03.7"
@@ -439,6 +466,7 @@ refs = [
     "DoD no chao: S1 mostra erro, NAO o ultimo CollectorRow de cache nem fixture",
     "NAO recalcula janela_de_perda (RN-4)",
 ]
+tracker = { provider = "jira", id = "CST-138", url = "https://conversationhub.atlassian.net/browse/CST-138" }
 
 [[tasks]]
 id = "T-03.8"
@@ -456,3 +484,4 @@ refs = [
     "DECLARADO: so mede com dado real (D1.3) — por isso depende de T-03.3/T-03.7",
     "FALSIFICADOR: D3.5 passar renomeando a coluna em vez do rotulo => RN-8 violada e o sha256 de todo relatorio emitido moveu",
 ]
+tracker = { provider = "jira", id = "CST-139", url = "https://conversationhub.atlassian.net/browse/CST-139" }
