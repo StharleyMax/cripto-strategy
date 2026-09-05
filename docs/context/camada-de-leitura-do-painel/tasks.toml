@@ -1,0 +1,458 @@
+# Doc de tasks de `camada-de-leitura-do-painel` — o DADO DE MAQUINA da quebra.
+#
+# A narrativa e o racional vivem em `tasks_review.md` (mesmo diretorio). Os dois NAO se
+# sobrepoem: este arquivo nao argumenta, e aquele nao e lido por maquina.
+#
+# A chave da feature e o campo `feature` ABAIXO, nunca o nome do diretorio (ADR-013/D4).
+# Feature FILHA de `plataforma-dados` (`relate` no ledger). IDs `T-NN.k` sao locais a ESTE
+# arquivo — nao colidem com os da mae porque `depends_on` so resolve dentro do arquivo.
+#
+# ── TRACKER: NAO CARDADAS, SEM `local_only`, DE PROPOSITO ──────────────────────────
+#
+# `tracker.kind = jira` (CST). Nesta sessao o MCP `atlassian` estava NAO AUTENTICADO e a
+# REST anonima devolveu 401 [MEDIDO 2026-09-05: curl -s -o /dev/null -w '%{http_code}'
+# https://conversationhub.atlassian.net/rest/api/3/myself -> 401]. Isso e FALHA DE ACESSO,
+# nao decisao do owner — o owner disse "criar as taks" [PREMISSA-OWNER: 2026-09-05].
+# `local_only = true` significaria "decidiu-se nao cardar, NUNCA" e mentiria sobre a
+# intencao dele (mesmo precedente da mae: plataforma-dados/tasks.toml:217). Eixo correto:
+#   harness tasks list camada-de-leitura-do-painel   -> uncarded=25
+# Ao cardar: `tracker = { provider = "jira", id = "CST-NNN", url = "..." }` INLINE em cada
+# task, item pai candidato CST-5 (PRD-003 s6, INFERRED — ou Epic proprio, decisao do owner).
+#
+# ── M1–M5 (ledger, `approve spec` 2026-09-05T12:53:22Z) ────────────────────────────
+#
+# M1 = F1+F2+F3 (3 fases materializadas). M2 `/api/v1` (T-02.2). M3 `abrir` removido
+# (T-01.4). M4 `basic_auth` inerte por env (T-02.7). M5 e2e FORA de `verify` (T-01.8).
+#
+# ── F3 e a ADR do quant-architect ([Q7], prazo 2026-09-11) ─────────────────────────
+#
+# `03_recursos_baratos.md` D3.0: "dispatch builder desta fase e recusado sem a ADR". Isso
+# e a task T-03.1, e as tres tasks de ROTA de F3 (T-03.2, T-03.4, T-03.6) dependem dela
+# via `depends_on` — `blocked_reason` NAO e chave valida (V-09 a ignora). Recuperar:
+#   harness tasks json camada-de-leitura-do-painel | grep -B6 '"T-03.1"'
+
+schema_version = "1"
+feature = "camada-de-leitura-do-painel"
+spec   = "docs/specs/SPEC-003-camada-de-leitura-do-painel.md"
+plan   = "docs/plans/SPEC-003-camada-de-leitura-do-painel"
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 01 — A pagina diz a verdade (web; infra em T-01.7/T-01.8; docs em T-01.3/T-01.10)
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-01.1"
+title = "[web] 01 · Transporte server-only com erro tipado — import \"server-only\", TransportErrorKind, cache no-store, etag null, e --conditions=react-server nos scripts de teste"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "SPEC-003 s3.2", "ADR-028/D2", "ADR-028/F-028-4 (rebaselinado: 0 filtrando comentario)", "ADR-028/F-028-7",
+    "PRD-003 RF-1, RF-4, CA-F1-4", "plano 01 item 1.2; DoD D1.2 (metade server-only)",
+    "narrativa: docs/context/camada-de-leitura-do-painel/tasks_review.md s3 T-01.1",
+    "arquivo: frontend/src/features/s1-console/ingest-health-query.ts (1a linha); frontend/package.json (devDependency server-only; test:s1/test:app com --conditions=react-server)",
+    "DoD: grep -c 'import \"server-only\"' frontend/src/features/s1-console/ingest-health-query.ts -> 1; npm --prefix frontend run test:s1 verde (universo ls frontend/src/features/s1-console/*.test.ts, inclui ingest-health-query-http.test.ts 8/8); mensagens de erro em ingles (CLAUDE.md s mensagem de excecao)",
+    "NAO envia If-None-Match (e T-02.5); NAO reescreve o portao ESLint (e T-01.2)",
+]
+
+[[tasks]]
+id = "T-01.2"
+title = "[web] 01 · Portao ESLint D5.17b reescrito por diretiva \"use client\" e fingerprint-sync-boundary.test.ts REESCRITO, nao apagado"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1"]
+refs = [
+    "SPEC-003 s3.2 (ESLint) e s4", "ADR-028/D3", "ADR-028/F-028-3", "ADR-028/F-028-1'' (transitivo)", "ADR-028/F-028-8",
+    "PRD-003 RN-1, CA-F1-5", "plano 01 item 1.3; DoD D1.2 (metade ESLint)",
+    "narrativa: tasks_review.md s3 T-01.2",
+    "arquivo: frontend/eslint.config.mjs:273-292 (regra atual); frontend/src/features/s1-console/fingerprint-sync-boundary.test.ts",
+    "DoD: probe sem diretiva -> 0 problems (hoje 1 error); probe com diretiva -> 1 error nomeando ADR-005/D6.4; probe transitivo -> next build reprova nomeando server-only E eslint passa; git log --diff-filter=D -- frontend/src/features/s1-console/fingerprint-sync-boundary.test.ts VAZIO",
+    "forma (i) regra local por diretiva ou (ii) *.client.tsx + glob — escolha do implementador, falsificadores iguais nas duas",
+]
+
+[[tasks]]
+id = "T-01.3"
+title = "[web][docs] 01 · Gate de design de F1 — forma e microcopy dos estados de s3.3, e a decisao do mecanismo de estilo (I-8) sob veredito do ux-ui-mastery"
+components = ["web", "docs"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "SPEC-003 s3.3 (contrato de estado; forma pelo design_gate)", "SPEC-003 s0.2 [L1] e I-8 (Tailwind com tokens do DESIGN_SYSTEM.md)", "ADR-028 'O que esta ADR NAO decide' (forma e microcopy)",
+    "PRD-003 RF-12, [GAP G2]", "plano index R-E; plano 01 itens 1.4/1.5 ('forma e texto vem do gate')", "CLAUDE.md s Design (ui-designer decide; vale quando ux-ui-mastery concorda)",
+    "narrativa: tasks_review.md s3 T-01.3",
+    "juizes: ui-designer (forma/microcopy pt-BR), frontend-architect (mecanismo de estilo), ux-ui-mastery (validador)",
+    "DoD: test -f docs/context/camada-de-leitura-do-painel/gates/F1-design.md e o arquivo contem veredito do validador CONCORDANDO; cada um dos 8 estados de s3.3 (loading, 4 erros, vazio, sem fonte, ok) tem forma + texto; contrato data-fact INTOCADO; docs/product/ atualizado",
+    "NAO redesenha (NG-5); NAO redefine tokens; NAO escreve codigo de app",
+]
+
+[[tasks]]
+id = "T-01.4"
+title = "[web] 01 · page.tsx vira Server Component que le a API e renderiza estado de sistema — PainelClient, SourceState, loading/error, vazio, sem fonte, fixture fora, abrir removido (M3)"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.2", "T-01.3"]
+refs = [
+    "SPEC-003 s3.1 (tabela inteira) e s3.3 (data-fact)", "SPEC-003 s5 B1-B7", "ADR-028/D1, D4, D5", "ADR-028/F-028-2, F-028-5, F-028-6",
+    "PRD-003 US-1..US-3, RF-1..RF-4, RN-2, RN-3, CA-F1-1..CA-F1-3, CA-F1-6..CA-F1-11", "plano 01 itens 1.1 e 1.4; DoD D1.1, D1.3, D1.4, D1.5, D1.6, D1.7",
+    "narrativa: tasks_review.md s3 T-01.4 (por que 1.1 + 1.4 sao UMA task)",
+    "arquivos: frontend/src/app/painel/{page,PainelClient,loading,error}.tsx; frontend/src/features/{s1-console,s3-inspector}/fixtures.ts saem do grafo de producao",
+    "DoD de pe: curl -s localhost:3000/painel >/dev/null => access log da API +1 linha GET .*/ingest-health; rows:<N> com N = pares (source,endpoint) distintos; ui_state:ok; tres error_kind distintos SOB next start (env unset / porta sem listener / stub 500); stub sleep 2 => ui_state:loading antes de ok; store 0 runs => ui_state:empty, 0 <tr>, 0 error_kind; 5 blocos source:none; grep -c '1.6 GB\\|99.8%' <main> -> 0; grep -c '\"use client\"' page.tsx -> 0 e PainelClient.tsx -> 1; find frontend/src/app -name route.ts | wc -l -> 0; grep -rn 'fixtures.ts' frontend/src/app frontend/src/features --include='*.tsx' | grep -v '\\.test\\.' | wc -l -> 0 (hoje 2)",
+    "DoD no chao (API 000): 0 <tr>, error_kind:connection_refused, access log NAO incrementa — linha renderizada com API no chao => 05_fatia_visivel.md:225 repetido",
+    "NAO cria route.ts; NAO recalcula janela_de_perda; NAO inventa microcopy (vem de T-01.3); NAO distingue causa em error.tsx (ADR-028/D4)",
+]
+
+[[tasks]]
+id = "T-01.5"
+title = "[web] 01 · Pipeline de estilo — layout.tsx importa stylesheet global, tokens do DESIGN_SYSTEM.md chegam ao browser, glifo renderiza em fonte de icone"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.3"]
+refs = [
+    "SPEC-003 s3.3 'Estilo (RF-12, [L1])'", "SPEC-003 s0.2 [L1] (0 CSS = pipeline nunca configurado: layout.tsx:1-12 sem import; 0 tailwind em package.json; 0 postcss/tailwind config)",
+    "PRD-003 RF-12, CA-F1-15, [GAP G2]", "plano 01 item 1.5; DoD D1.8",
+    "narrativa: tasks_review.md s3 T-01.5",
+    "mecanismo: o que T-01.3 decidiu (I-8 Tailwind como default inferido); tokens NAO redefinidos (NG-5)",
+    "DoD: find frontend -name '*.css' -not -path '*/node_modules/*' -not -path '*/.next/*' | wc -l >= 1 (hoje 0); e2e 01: stylesheets_applied >= 1 com href fora de __nextjs; glyph_font_families sem 'Times New Roman'; icone NAO renderiza o nome do glifo (PARADOstop_circle e o defeito, FB-playwright s4 #5)",
+]
+
+[[tasks]]
+id = "T-01.6"
+title = "[web] 01 · Higiene de rota e controles honestos — Filter de bancada fora, title, 1 h1, / -> 3xx /painel, not-found pt-BR, filtro que filtra, rotulo 'Janela de perda' sem tocar a coluna"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.4"]
+refs = [
+    "SPEC-003 s3.1 (not-found, redirect) e s3.3 'Controles (RF-10, RN-5)' e s3.7 (rotulo linha 8 x coluna linha 11)", "SPEC-003 s5 B8, B9",
+    "PRD-003 RF-10, RN-5, RN-8, CA-F1-14, CA-F1-16", "plano 01 item 1.6; DoD D1.9",
+    "narrativa: tasks_review.md s3 T-01.6",
+    "arquivos: frontend/src/app/not-found.tsx; frontend/src/app/page.tsx ou next.config.ts (redirect); frontend/src/features/panel/Filter.tsx fora de src/app",
+    "DoD: grep -rn 'features/panel/Filter' frontend/src/app | wc -l -> 0; e2e 01 document.title != '' e h1_count = 1; e2e 03 GET / -> 3xx para /painel e /nao-existe -> not-found pt-BR com link /painel; e2e 04 catalog_rows_after_nonmatching_filter = 0 e casante 1 <= n <= before; grep -c 'abrir' <main> -> 0 (M3)",
+    "NAO renomeia /painel ([Q1], owner); NAO toca janela_de_perda como coluna (ADR-008/D3)",
+]
+
+[[tasks]]
+id = "T-01.7"
+title = "[infra] 01 · .env.example na raiz e alvo make api (uvicorn com access log ligado) — dev sobe por comando versionado"
+components = ["infra"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "SPEC-003 s3.4 'log de acesso' e s3.5 (.env.example: APP_PORT, API_PREFIX, INGEST_HEALTH_STORE_PATH, INGEST_HEALTH_API_BASE_URL; Makefile alvo api)", "ADR-029/D5",
+    "PRD-003 RF-5, CA-F1-12", "plano 01 itens 1.7 e 1.8 (metade make api); DoD D1.10",
+    "narrativa: tasks_review.md s3 T-01.7",
+    ".env.example NAO EXISTE hoje [MEDIDO 2026-09-05: test -f .env.example -> ausente]; so chaves e defaults nao-secretos (core.hardcoded-secret)",
+    "DoD: grep -c 'INGEST_HEALTH_API_BASE_URL\\|APP_PORT\\|API_PREFIX\\|INGEST_HEALTH_STORE_PATH' .env.example -> 4; make -n api imprime python -m src.main; access log do uvicorn emite 1 linha por GET (instrumento de CA-F1-1); frontend/README.md <= 10 linhas de 'como subir'",
+    "LACUNA DECLARADA: make api com INGEST_HEALTH_STORE_PATH em diretorio inexistente AINDA SOBE em F1 — T-02.1 fecha",
+    "NAO implanta; NAO altera scripts/verify.sh",
+]
+
+[[tasks]]
+id = "T-01.8"
+title = "[infra] 01 · Alvo make e2e — API de teste sobre store efemero com >= 1 run + next start + playwright test, derruba tudo; FORA de verify (M5)"
+components = ["infra"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.7"]
+refs = [
+    "SPEC-003 s3.5 (Makefile alvo e2e)", "SPEC-003 cabecalho M5 (nao entra em verify; +~35 s por verify se o owner ligar)", "SPEC-003 s5 convencao 'API de pe / API no chao / NEXT = next start'",
+    "PRD-003 RF-5, CA-F1-13, NG-10", "plano 01 item 1.8 (metade make e2e); DoD D1.10 e D1.11 (o alvo e o instrumento)",
+    "narrativa: tasks_review.md s3 T-01.8",
+    "DoD: make -n e2e imprime playwright test; rc do alvo = rc do Playwright; o alvo suporta os DOIS modos de D1.11 (API de pe / API deliberadamente no chao) porque a suite de T-01.9 precisa dos dois vereditos; git diff --stat scripts/verify.sh VAZIO",
+    "seed do store efemero versionado (>= 1 run, G >= 0 gaps) — nao usa data/ (nao versionado)",
+    "NAO altera scripts/verify.sh; NAO implanta",
+]
+
+[[tasks]]
+id = "T-01.9"
+title = "[web] 01 · Suite e2e reescrita para a arquitetura — specs 01-07 medem s5 B1-B9 (access log + data-fact, nao 'o browser chamou a API?'), facts.jsonl por spec, [Q11] explicado"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.4", "T-01.5", "T-01.6", "T-01.8"]
+refs = [
+    "SPEC-003 s5 B1-B9 (a tabela que o e2e executa) e RN-7 como clausula de toda linha", "SPEC-003 s0.1 #12 e [Q11] (15 test( estaticos x 16 do runner)", "ADR-028/F-028-2, F-028-6",
+    "PRD-003 US-4, RN-7, CA-F1-2, CA-F1-13, s1.4 (02:9 reprovaria a implementacao correta)", "plano 01 item 1.9; DoD D1.11 e falsificador da fase",
+    "narrativa: tasks_review.md s3 T-01.9",
+    "arquivos: frontend/e2e/01-painel-carrega, 02-rede-e-estados, 03-rotas, 04-interacoes, 05-a11y, 06-viewport, 07-locale .spec.ts + helpers.ts; stub HTTP (500 e sleep 2)",
+    "DoD de pe: make e2e => todos os specs de F1 verdes (universo grep -o 'test(' frontend/e2e/*.spec.ts | wc -l, hoje 15); [Q11] resolvido no relatorio em docs/context/camada-de-leitura-do-painel/gates/",
+    "DoD no chao: make e2e => D1.3/D1.4/D1.6 REPROVAM e D1.5(b) PASSA — veredito DIFERENTE do de pe. Igual => a suite nao mede (falsificador da fase, 05_fatia_visivel.md:225)",
+    "juiz: frontend-qa; NAO entra em verify (M5)",
+]
+
+[[tasks]]
+id = "T-01.10"
+title = "[docs] 01 · Status das ADR-028/ADR-029 e da SPEC-003 apontam para o ledger — 'proposto' vira 'aceito' citando o approve spec de 2026-09-05T12:53:22Z; DRAFT sai do cabecalho"
+components = ["docs"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "ADR-028 linha 3 e ADR-029 linha 3 ('Status: proposto ... vira aceito no approve spec do owner')", "SPEC-003 linha 3 (Status SPEC_DRAFT) e s10", "plano index.md cabecalho (SPEC_DRAFT)",
+    "CLAUDE.md 'O ledger e a identidade do estado, nao o texto do documento'", "harness pipeline show camada-de-leitura-do-painel (approve spec 2026-09-05T12:53:22Z)",
+    "narrativa: tasks_review.md s0 e s3 T-01.10",
+    "DoD: grep -c 'aceito' no cabecalho de docs/adr/ADR-028-*.md e docs/adr/ADR-029-*.md -> >= 1 cada, citando a data/hora do approve spec; cabecalho de docs/specs/SPEC-003-*.md e de docs/plans/SPEC-003-camada-de-leitura-do-painel/index.md sem 'SPEC_DRAFT' como estado corrente; nenhuma decisao (D1-D6, M1-M5, Q1-Q11) reaberta; docs/INDEX.md so recebe linha nova (git log --diff-filter=D -- docs/INDEX.md vazio)",
+    "NAO toca CLAUDE.md ([GAP G1] e do owner); NAO toca harness.toml",
+]
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 02 — A API e alcancavel e honesta (infra; web em T-02.5). Nenhuma implantacao.
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-02.1"
+title = "[infra] 02 · create_app recusa subir com diretorio-pai do store inexistente — rc != 0, mensagem em ingles nomeando o caminho, verificacao no composition root"
+components = ["infra"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.7"]
+refs = [
+    "SPEC-003 s3.4 'boot'", "SPEC-003 s5 B10", "ADR-029/D3 (linha 'diretorio-pai nao existe')", "ADR-029/F-029-1, F-029-3",
+    "PRD-003 RF-7, CA-F2-1, CA-F2-3", "plano 02 item 2.1; DoD D2.1 e D2.3",
+    "narrativa: tasks_review.md s3b T-02.1",
+    "arquivo: backend/src/main/__init__.py:41-52 (create_app); pytest novo em backend/tests/api/ (hoje 3 def test_ em 2 arquivos)",
+    "DoD: INGEST_HEALTH_STORE_PATH=<scratch>/nao-existe/ih.sqlite3 backend/.venv/bin/python -m src.main; echo $? -> != 0 e stderr nomeia o caminho (hoje sobe e devolve 200 n_runs:0 [MEDIDO: FB-infra s2]); /ingest-health sobre arquivo ausente / 0 byte CONTINUA 200 {n_runs:0}; cd frontend && node --conditions=react-server --test src/features/s1-console/ingest-health-query-http.test.ts -> 8/8",
+    "regras: core.silent-except (relanca com o caminho), core.print-statement (logger; evento novo em ingles)",
+    "NAO muda _fetch do store nem o 200 vazio de /ingest-health (ADR-005/D6.1)",
+]
+
+[[tasks]]
+id = "T-02.2"
+title = "[infra] 02 · API_PREFIX lido UMA vez em src.main (default /api/v1, M2) — todas as rotas sob ele, openapi.json reflete, sem prefixo -> 404"
+components = ["infra"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.7"]
+refs = [
+    "SPEC-003 s3.4 'API_PREFIX'", "SPEC-003 cabecalho M2 (custo de reverter: 2 linhas)", "ADR-029/D2", "ADR-029/F-029-7 (metade backend)",
+    "PRD-003 US-8, CA-F2-9", "plano 02 item 2.4; DoD D2.7 (metade backend)",
+    "narrativa: tasks_review.md s3b T-02.2",
+    "arquivos: backend/src/main/__init__.py (leitura unica); backend/src/api/routes/*; .env.example ja tem a chave (T-01.7)",
+    "DoD: grep -rn 'API_PREFIX' backend/src/main .env.example | wc -l >= 2; pytest API_PREFIX=/x => paths de openapi.json comecam por /x; curl $API/ingest-health (sem prefixo) -> 404; ausente => default /api/v1, nunca raiz",
+    "NAO decide o segmento definitivo ([Q2], owner); NAO toca o Caddyfile (T-02.7)",
+]
+
+[[tasks]]
+id = "T-02.3"
+title = "[infra] 02 · GET {API_PREFIX}/ready discrimina tres estados do store — 200/503 com corpo {store:{path,exists,schema_present}} e nada mais"
+components = ["infra"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.2"]
+refs = [
+    "SPEC-003 s3.4 'GET {API_PREFIX}/ready'", "SPEC-003 s5 B11", "ADR-029/D3 (tabela de 3 estados) e F-029-2",
+    "PRD-003 RF-7, CA-F2-2", "plano 02 item 2.2; DoD D2.2",
+    "narrativa: tasks_review.md s3b T-02.3",
+    "DoD: 3 execucoes de curl -s -w '%{http_code}' $API$PREFIX/ready — arquivo ausente => 503 + exists:false; 0 byte => 503 + schema_present:false; store valido => 200 + true,true; 200 <=> exists AND schema_present; nenhum outro campo",
+    "DoD no chao: curl -> 000; pytest reprova por CONEXAO recusada, nao por 503",
+    "NAO e health de processo; NAO consulta Postgres; DatabaseError propaga (500) — core.silent-except",
+]
+
+[[tasks]]
+id = "T-02.4"
+title = "[infra] 02 · ETag = IngestHealthReport.fingerprint() no handler de /ingest-health e 304 sem corpo a If-None-Match igual — igualdade provada do lado Python com controle negativo"
+components = ["infra"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.2"]
+refs = [
+    "SPEC-003 s3.4 'GET {API_PREFIX}/ingest-health' (header novo; corpo intocado)", "SPEC-003 s5 B12", "ADR-005/D6.1, D6.3 (ETag fora da regiao hasheada)", "ADR-029/D4 e F-029-4",
+    "PRD-003 RF-8, CA-F2-4, CA-F2-5", "plano 02 item 2.3 e metade pytest de 2.9; DoD D2.4 (lado Python), D2.5 e falsificador da fase",
+    "narrativa: tasks_review.md s3b T-02.4",
+    "valor: backend/src/modules/sentimento/domain/ingest_record.py:177 (fingerprint, sentimento, dono quant-architect — nenhum codigo de dominio novo); arquivo: backend/src/api/routes/ingest_health.py",
+    "DoD: curl -sD - -o /dev/null $API$PREFIX/ingest-health | grep -ci '^etag:' -> 1 (aspas fortes, sem W/); pytest header == IngestHealthReport.fingerprint() sobre o mesmo store; CONTROLE NEGATIVO: store com 1 run a mais => ETag muda; curl -H 'If-None-Match: <etag>' -o /dev/null -w '%{http_code}' -> 304 com corpo vazio e ETag repetido; ETag errado -> 200",
+    "FALSIFICADOR: igualdade so de um lado e ADR-005/D6 'DoD-2 comparando um numero consigo mesmo' — o lado TS e T-02.5",
+    "NAO acrescenta campo em runs[] (NG-9); NAO muda o corpo do 200",
+]
+
+[[tasks]]
+id = "T-02.5"
+title = "[web] 02 · Server Component envia If-None-Match e reutiliza a projecao no processo Next em 304 — igualdade etag == fingerprint(parseIngestHealthEnvelope(body)) provada do lado TS"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.4", "T-02.4"]
+refs = [
+    "SPEC-003 s3.2 'cache' (F2) e 'saida' (etag: string | null)", "ADR-029/D4 (mesma comparacao de dois lados de ADR-008/DoD-2, agora com o transporte no meio)", "ADR-029/F-029-4 (lado TS)",
+    "PRD-003 US-6, RF-8, RNF-1, CA-F2-4", "plano 02 item 2.5 e metade TS de 2.9; DoD D2.4 (lado TS) e D2.6",
+    "narrativa: tasks_review.md s3b T-02.5",
+    "arquivo: frontend/src/features/s1-console/ingest-health-query.ts (If-None-Match; 304 => projecao anterior do MESMO processo, nunca do browser)",
+    "DoD: teste TS etag == fingerprint(parseIngestHealthEnvelope(body)) contra a API de pe; 2o GET /painel => access log da API mostra 304 na 2a linha GET .*/ingest-health; <main> identico ao 1o (mesmo dado)",
+    "DoD no chao: error_kind:connection_refused, NAO a projecao reutilizada — cache de processo nunca substitui erro de transporte",
+    "NAO cacheia no browser; NAO usa NEXT_PUBLIC_*",
+]
+
+[[tasks]]
+id = "T-02.6"
+title = "[infra] 02 · deploy/compose.yml ganha api (sem ports), web e caddy ao lado do postgres — estruturado e validado por config -q, NAO implantado; .env.example ganha PUBLIC_HOST e PANEL_BASIC_AUTH_HASH"
+components = ["infra"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.7", "T-02.2"]
+refs = [
+    "SPEC-003 s3.5 (deploy/compose.yml servicos; .env.example PUBLIC_HOST, PANEL_BASIC_AUTH_HASH, variante http://api:${APP_PORT})", "SPEC-003 s5 B13", "ADR-029/D1, D5", "ADR-029/F-029-5, F-029-6", "ADR-027/D1 (mesma imagem Python; api e o processo (c))", "ADR-027:69 (log max-size 10m x max-file 3)",
+    "PRD-003 RF-6, RNF-3, RNF-5, RN-6, RN-9, CA-F2-6, CA-F2-8", "plano 02 itens 2.6 e 2.8; DoD D2.8 e D2.9", "plano index R-D (nenhuma implantacao)",
+    "narrativa: tasks_review.md s3b T-02.6",
+    "DoD: grep -cE '^  (api|web|caddy):' deploy/compose.yml -> 3; docker compose -f deploy/compose.yml config -q -> rc=0; grep -A12 '^  api:' deploy/compose.yml | grep -c 'ports:' -> 0; harness rules --mode file --path deploy/compose.yml -> vazio rc=0; MORDE: POSTGRES_PASSWORD: literal plantado => harness rules != 0 nomeando own.compose-hardcoded-secret (deploy/ em include_prefixes, harness.toml:369); volumes novos so caddy_data/caddy_config (KB, teto natural)",
+    "DECLARADO: nao ha 'de pe' (RN-9). O inverso do escopo: docker compose -f deploy/compose.yml ps na VPS mostrando caddy => escopo violado",
+    "NAO sobe nada (NG-1); NAO decide TLS/auth (owner); toda credencial ${VAR}",
+]
+
+[[tasks]]
+id = "T-02.7"
+title = "[infra] 02 · deploy/Caddyfile — um host {$PUBLIC_HOST}, {$API_PREFIX}/* -> api, resto -> web, basic_auth inerte sem PANEL_BASIC_AUTH_HASH (M4), TLS parametrizado; teste de que API_PREFIX move openapi.json e Caddyfile JUNTOS"
+components = ["infra"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.2", "T-02.6"]
+refs = [
+    "SPEC-003 s3.5 (deploy/Caddyfile)", "SPEC-003 cabecalho M4 (basic_auth reservado por env, inerte)", "SPEC-003 s5 B13", "ADR-029/D1, D2, D6", "ADR-029/F-029-5, F-029-7 (metade Caddy), F-029-8 (CORS = 0)",
+    "PRD-003 RF-6, CA-F2-7, CA-F2-9, NG-7", "plano 02 item 2.7 e metade 'prefixo' de 2.9; DoD D2.7 (metade Caddy), D2.8, D2.10",
+    "narrativa: tasks_review.md s3b T-02.7",
+    "DoD: caddy validate --config deploy/Caddyfile -> rc=0 (via docker run --rm -v ... caddy:2-alpine caddy validate se nao houver binario); grep -c 'reverse_proxy' deploy/Caddyfile -> 2; teste: API_PREFIX=/x => openapi.json paths /x/* E Caddyfile renderizado roteia /x/* (um mudar sem o outro => duas constantes); grep -rn 'CORSMiddleware' backend/src --include='*.py' | wc -l -> 0 (case-sensitive, [C1]); grep -rn 'API_PREFIX' backend/src/main deploy/ .env.example | wc -l >= 3",
+    "NAO decide auth ([Q3]) nem TLS ([Q10]) — owner; NAO implanta; NAO adiciona CORS",
+]
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 03 — Os recursos baratos entram pelo caminho decidido (sentimento + infra + web)
+# CONDICAO DE ENTRADA D3.0: a ADR do quant-architect (T-03.1) existe e esta citada em
+# 03_recursos_baratos.md, data <= 2026-09-11. Sem ela, dispatch builder da fase e recusado.
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-03.1"
+title = "[sentimento][docs] 03 · ADR do envelope agregado por serie (quant-architect, [Q7]) — formulas de status/uptimePercent/resilience/retention sobre IngestRecordSource.runs(), nome da rota, campos no fio; prazo 2026-09-11"
+components = ["sentimento", "docs"]
+status = "todo"
+phase = "03"
+depends_on = []
+refs = [
+    "SPEC-003 s3.6 linha 'agregado por serie (US-10)' — TBD com data: ADR do quant-architect ate 2026-09-11 [INFERRED I-9]", "SPEC-003 s8 [Q7] (dono quant-architect) e I-10 (nome collector-status, 1 linha para trocar)", "SPEC-003 s0.3 (pedido do PRD fixado)",
+    "PRD-003 US-10, [Q7]", "plano 03 cabecalho 'Depende de' e DoD D3.0 (dispatch builder recusado sem a ADR referenciada em 03_recursos_baratos.md)",
+    "narrativa: tasks_review.md s3c T-03.1 e s7 decisao 1",
+    "escreve: quant-architect (dono de sentimento, harness policy --key agents); porta: IngestRecordSource.runs() existente, SEM metodo novo; variantes de CollectorRow em frontend/src/features/s1-console/domain.ts:59-79",
+    "DoD: ls docs/adr/ADR-0NN-* existe com data <= 2026-09-11; grep -n 'ADR-0[0-9][0-9]' docs/plans/SPEC-003-camada-de-leitura-do-painel/03_recursos_baratos.md cita a ADR nova; a ADR declara o que NAO consegue julgar; falsificador por formula",
+    "PRAZO VENCIDO SEM ADR => sinal para o owner (T-03.2/T-03.4/T-03.6 ficam sem dispatch), nunca silencio",
+    "NAO toca as 15 colunas nem to_envelope() (NG-9); NAO decide paginacao ([Q5])",
+]
+
+[[tasks]]
+id = "T-03.2"
+title = "[sentimento][infra] 03 · Use case list_series_catalog() sobre as 7 constantes SeriesCatalogEntry e rota GET {API_PREFIX}/series-catalog — envelope series_catalog, 0 SQL no handler"
+components = ["sentimento", "infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1", "T-02.2"]
+refs = [
+    "SPEC-003 s3.6 linha 'catalogo' (fechado na forma; nomes de campo = TS series-catalog.ts:134; Completeness NAO vai no fio)", "SPEC-003 s5 B14", "SPEC-003 s0.1 #7 (7 SeriesCatalogEntry( em 3 modulos)", "ADR-005/D6.1 (familia de envelope)", "ADR-019/D2 (parser estrito em campo ausente)",
+    "PRD-003 US-9, RF-9, CA-F3-1, NG-3 (4c fora)", "plano 03 item 3.1; DoD D3.1", "plano 03 D3.0 (condicao de entrada da fase — por isso depends_on T-03.1)",
+    "narrativa: tasks_review.md s3c T-03.2",
+    "arquivos: use case em backend/src/modules/sentimento/...; rota em backend/src/api/routes/; DI em backend/src/api/dependencies.py; pytest em backend/tests/api/",
+    "DoD: curl -s $API$PREFIX/series-catalog | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[\"n_entries\"],len(d[\"entries\"]))' -> 7 7 = grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test | wc -l; grep -rn 'SELECT' backend/src/api | wc -l -> 0; make boundaries verde (src.api nao importa src.modules.sentimento.infra direto)",
+    "NAO calcula Completeness (4c, NG-3)",
+]
+
+[[tasks]]
+id = "T-03.3"
+title = "[web] 03 · parseCatalogEnvelope estrito e S3 exibe as 7 linhas vindas da API — FIXTURE_CATALOG_ROWS fora do grafo de producao"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.2", "T-01.4"]
+refs = [
+    "SPEC-003 s3.6 linha 'catalogo' (front preenche Completeness: unmeasured)", "SPEC-003 s5 B14 (no chao: S3 mostra erro, 0 linhas)", "ADR-019/D2", "ADR-028/D5 (fixture so em *.test.ts)",
+    "PRD-003 US-9, CA-F3-1, RN-3", "plano 03 item 3.2; DoD D3.1 (metade e2e) e D3.6",
+    "narrativa: tasks_review.md s3c T-03.3",
+    "arquivos: frontend/src/features/s3-inspector/series-catalog.ts (assertValidCatalogEntry), quarantine.ts (QuarantineTerms), S3Inspector.tsx; fixtures.ts sai do grafo",
+    "DoD: teste TS com 1 campo removido por vez => parser reprova; e2e S3 catalog_rows = 7; grep -rn 'fixtures.ts' frontend/src/app frontend/src/features --include='*.tsx' | grep -v '\\.test\\.' | wc -l -> 0",
+    "DoD no chao: error_kind:connection_refused e catalog_rows = 0; FIXTURE_CATALOG_ROWS visivel => REPROVA",
+]
+
+[[tasks]]
+id = "T-03.4"
+title = "[sentimento][infra] 03 · Porta list_all() da quarentena, QUARANTINE_STORE_PATH em src.main (ausente/pai inexistente => create_app recusa) e rota GET {API_PREFIX}/series-quarantine SEM points_json"
+components = ["sentimento", "infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1", "T-02.1", "T-02.2"]
+refs = [
+    "SPEC-003 s3.6 linha 'quarentena' (fechado na forma; terms = QuarantineTerms do TS quarantine.ts:15; points_json NUNCA vai por padrao)", "SPEC-003 s3.5 (QUARANTINE_STORE_PATH, default dev data/md/series_quarantine.sqlite3; prod [NAO SEI] [Q8])", "SPEC-003 s5 B15", "ADR-029/D3 (mesma regra de boot)",
+    "PRD-003 US-11, RF-9, CA-F3-4, [Q8]", "plano 03 item 3.3; DoD D3.2", "plano 03 D3.0 (condicao de entrada — depends_on T-03.1)",
+    "narrativa: tasks_review.md s3c T-03.4",
+    "arquivos: backend/src/modules/sentimento/.../sqlite_series_quarantine_store.py (list_all); backend/src/main/__init__.py (2a env de store); rota + DI; .env.example ganha QUARANTINE_STORE_PATH; pytest",
+    "DoD: curl -s $API$PREFIX/series-quarantine | python3 -c 'import json,sys;r=json.load(sys.stdin)[\"rows\"];assert r==[] or \"points_json\" not in r[0]'; QUARANTINE_STORE_PATH=<x>/nao-existe/q.sqlite3 python -m src.main -> rc != 0; grep -rn 'SELECT' backend/src/api | wc -l -> 0",
+    "NAO decide onde o store mora em prod ([Q8], ADR-002)",
+]
+
+[[tasks]]
+id = "T-03.5"
+title = "[web] 03 · Gaveta de quarentena le GET /series-quarantine com parser estrito — FIXTURE_DIVERGENCES fora do grafo de producao"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.4", "T-01.4"]
+refs = [
+    "SPEC-003 s3.6 linha 'quarentena'", "SPEC-003 s5 B15 (no chao: gaveta mostra erro, NAO FIXTURE_DIVERGENCES)", "ADR-019/D2", "ADR-028/D5",
+    "PRD-003 US-11, CA-F3-4, RN-3", "plano 03 item 3.4; DoD D3.2 (metade front) e D3.6",
+    "narrativa: tasks_review.md s3c T-03.5",
+    "arquivos: frontend/src/features/s3-inspector/quarantine.ts, S3Inspector.tsx; fixtures.ts so em *.test.ts",
+    "DoD: grep -c FIXTURE_DIVERGENCES <main> -> 0 SEMPRE (de pe e no chao); teste TS campo ausente => reprova",
+    "DoD no chao: gaveta mostra erro, nao a fixture",
+]
+
+[[tasks]]
+id = "T-03.6"
+title = "[sentimento][infra] 03 · Use case de agregacao por serie sobre IngestRecordSource.runs() e rota GET {API_PREFIX}/collector-status em envelope SEPARADO, formulas conforme a ADR de T-03.1 — sha256 de /ingest-health NAO muda (F-D6-2)"
+components = ["sentimento", "infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1", "T-02.2"]
+refs = [
+    "SPEC-003 s3.6 linha 'agregado por serie (US-10)' (envelope {query:collector_status,n_rows,rows:[CollectorRow]}; nome I-10)", "SPEC-003 s2 (campo novo em runs[] move o sha256 — por isso envelope SEPARADO)", "ADR-005/D6.1", "ADR-005 F-D6-2 (controle: sha256 de /ingest-health inalterado)",
+    "PRD-003 US-10, RF-9, CA-F3-2, NG-9", "plano 03 item 3.5; DoD D3.3 e falsificador da fase", "plano 03 D3.0 (condicao de entrada — depends_on T-03.1: as FORMULAS vem da ADR)",
+    "narrativa: tasks_review.md s3c T-03.6",
+    "arquivos: use case em backend/src/modules/sentimento/...; rota + DI; pytest",
+    "DoD: sha256 do corpo de /ingest-health IGUAL antes e depois da rota nova sobre o mesmo store (F-D6-2); curl -s $API$PREFIX/collector-status | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d[\"query\"]==\"collector_status\"'; grep -rn 'SELECT' backend/src/api | wc -l -> 0; make boundaries verde",
+    "FALSIFICADOR: sha256 de /ingest-health mudar => NG-9 violado",
+    "NAO toca as 15 colunas nem to_envelope(); NAO acrescenta metodo a IngestRecordSource",
+]
+
+[[tasks]]
+id = "T-03.7"
+title = "[web] 03 · Parser proprio do agregado (reprova campo ausente) e S1 passa a exibir o agregado por serie, nao o ultimo run — janela_de_perda exibida como veio"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.6", "T-01.4"]
+refs = [
+    "SPEC-003 s3.6 linha 'agregado por serie'", "SPEC-003 s3.7 (computeUniformWindowDays so em domain.ts/teste; tela exibe janela_de_perda como veio — RN-4)", "ADR-019/D2",
+    "PRD-003 US-10, CA-F3-2, RN-4", "plano 03 item 3.6; DoD D3.3 (metade front)",
+    "narrativa: tasks_review.md s3c T-03.7",
+    "arquivos: frontend/src/features/s1-console/{domain.ts:59-79 (6 variantes), view-model.ts, S1Console.tsx}; parser novo",
+    "DoD: teste TS com 1 campo removido por vez => parser reprova (universo = n de campos da ADR de T-03.1); e2e S1 com dado real do agregado",
+    "DoD no chao: S1 mostra erro, NAO o ultimo CollectorRow de cache nem fixture",
+    "NAO recalcula janela_de_perda (RN-4)",
+]
+
+[[tasks]]
+id = "T-03.8"
+title = "[web] 03 · Formatador unico Intl.NumberFormat('pt-BR') na apresentacao, 0 toLocaleString espalhado, fio com ponto decimal, cabecalho 'Janela de perda' sem tocar a coluna — e2e 07 de locale reescrito"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-01.9", "T-03.3", "T-03.7"]
+refs = [
+    "SPEC-003 s3.7 (locale, rotulo linha 8 x coluna linha 11 coexistem — RN-8)", "SPEC-003 s5 B16", "SPEC-001 s3.8 (numeral no fio com ponto decimal)", "CLAUDE.md tabela de fronteira linhas 8 e 11", "ADR-008/D3 (janela_de_perda alimenta o sha256 da projecao canonica — renomear e mudanca de contrato)",
+    "PRD-003 US-12, RF-11, RN-8, CA-F3-3", "plano 03 item 3.7; DoD D3.4 e D3.5 e falsificador 3 da fase",
+    "narrativa: tasks_review.md s3c T-03.8",
+    "arquivos: frontend/src/features/**/*.tsx (formatador), frontend/e2e/07-locale.spec.ts",
+    "DoD: e2e 07 comma_decimal_hits = 0 OU dot_decimal_hits = 0 (hoje 2 e 13); grep -rn toLocaleString frontend/src --include='*.tsx' | grep -v test | wc -l -> 0; curl ... | grep -cE '\"[a-z_]+\": *[0-9]+,[0-9]+' -> 0 (virgula decimal no fio); <th> contem 'Janela de perda', nao 'JANELA_DE_PERDA'; grep -c '\"janela_de_perda\"' backend/src/modules/sentimento/domain/ingest_record.py INALTERADO",
+    "DECLARADO: so mede com dado real (D1.3) — por isso depende de T-03.3/T-03.7",
+    "FALSIFICADOR: D3.5 passar renomeando a coluna em vez do rotulo => RN-8 violada e o sha256 de todo relatorio emitido moveu",
+]
