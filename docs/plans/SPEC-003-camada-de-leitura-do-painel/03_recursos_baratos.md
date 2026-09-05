@@ -1,7 +1,7 @@
 # Fase `03` — Os recursos baratos entram pelo caminho decidido
 
 **Componente alvo:** `sentimento` (use cases, forma dos envelopes) + `infra` (rotas, DI, 2ª env var de store) + `web` (parsers, formatador) · **SPEC:** `SPEC-003` §3.6–§3.7, §5 (B14–B16) · **PRD:** `US-9`..`US-12`; `RF-9`, `RF-11`; `RN-8`; `CA-F3-1`..`CA-F3-4`
-**Entra se** o `approve spec` disser *"F1+F2+F3"* (M1). **Depende de:** `02` (prefixo; `create_app` que recusa — a regra vale para `QUARANTINE_STORE_PATH`) **e** da **ADR do `quant-architect` sobre o envelope agregado por série** (`[Q7]`), prazo **2026-09-11** `[INFERRED I-9]` — **`dispatch builder` desta fase é recusado sem ela referenciada aqui**. **Juízes:** `quant-architect` (forma dos envelopes e fórmulas), `infra-architect` (rotas/DI), `frontend-architect` (parsers).
+**Entra se** o `approve spec` disser *"F1+F2+F3"* (M1). **Depende de:** `02` (prefixo; `create_app` que recusa — a regra vale para `QUARANTINE_STORE_PATH`) **e** da **[`ADR-030`](../../adr/ADR-030-agregado-por-serie-collector-status-formulas-sobre-runs-existentes.md) do `quant-architect` sobre o envelope agregado por série** (`[Q7]`, escrita em 2026-09-05, prazo era **2026-09-11** `[INFERRED I-9]`) — **`dispatch builder` desta fase é recusado sem ela referenciada aqui**. **Juízes:** `quant-architect` (forma dos envelopes e fórmulas), `infra-architect` (rotas/DI), `frontend-architect` (parsers).
 
 ## Itens
 
@@ -11,7 +11,7 @@
 | 3.2 | `parseCatalogEnvelope` no front compondo `assertValidCatalogEntry` + `QuarantineTerms` + `Completeness: unmeasured`; S3 exibe as 7 linhas; estrito em campo ausente (`ADR-019/D2`) | `US-9` | `web` | não usa `FIXTURE_CATALOG_ROWS` |
 | 3.3 | Porta `list_all()` no store de quarentena (`sqlite_series_quarantine_store.py`); `QUARANTINE_STORE_PATH` em `src.main` (ausente/pai inexistente ⇒ `create_app` recusa); rota `GET {API_PREFIX}/series-quarantine` com `rows` **sem `points_json`** | `US-11`, `RF-9` | `sentimento` (porta) + `infra` (rota, env) | não decide onde o store mora em prod (`[Q8]`, `ADR-002`) |
 | 3.4 | Gaveta de quarentena lê a rota; `FIXTURE_DIVERGENCES` fora do grafo de produção | `US-11` | `web` | — |
-| 3.5 | Use case de agregação por série sobre `IngestRecordSource.runs()` (porta existente, sem método novo); rota `GET {API_PREFIX}/collector-status` (`I-10`); envelope **separado** `{"query":"collector_status","n_rows":N,"rows":[CollectorRow…]}` — fórmulas de `status`/`uptimePercent`/`resilience`/`retention` **conforme a ADR do `quant-architect`** | `US-10`, `RF-9` | `sentimento` + `infra` | **não toca** as 15 colunas nem `to_envelope()` (`NG-9`) |
+| 3.5 | Use case de agregação por série sobre `IngestRecordSource.runs()` (porta existente, sem método novo); rota `GET {API_PREFIX}/collector-status` (`I-10`); envelope **separado** `{"query":"collector_status","n_rows":N,"rows":[CollectorRow…]}` — fórmulas de `status`/`uptimePercent`/`resilience`/`retention` **conforme `ADR-030` D1–D4** (`now` injetado; `liveness`/`age_s`/`window_hours` no fio) | `US-10`, `RF-9` | `sentimento` + `infra` | **não toca** as 15 colunas nem `to_envelope()` (`NG-9`) |
 | 3.6 | Parser próprio do agregado no front; S1 passa a exibir o agregado (não o último run); parser reprova campo ausente | `US-10` | `web` | não recalcula `janela_de_perda` (`RN-4`) |
 | 3.7 | Formatador único `Intl.NumberFormat("pt-BR")` na apresentação; **0** `toLocaleString` espalhado; fio com ponto decimal; cabeçalhos humanos (`Janela de perda`) sem tocar a coluna | `US-12`, `RF-11`, `RN-8` | `web` | não renomeia coluna de contrato (linha 11) |
 | 3.8 | Testes: pytest por rota (de pé; 0 SQL no handler; `points_json` ausente; `create_app` recusa sem `QUARANTINE_STORE_PATH`); TS por parser (campo ausente ⇒ reprova); e2e `07` (locale) e S3/S1 com dado real; `F-D6-2` (`sha256` de `/ingest-health` **não muda** com as rotas novas) | `CA-F3-1..4` | todos | — |
@@ -35,4 +35,4 @@
 
 ## O que esta fase NÃO faz
 
-Não entrega `2`, `3`, `4c`, `6` (`NG-3` — segunda feature filha, se o owner quiser) · não abre SSE (`NG-4`) · não decide store de quarentena em prod (`[Q8]`) · não decide as fórmulas do agregado (ADR do `quant-architect`) · não pagina (`[Q5]`) · não toca as 15 colunas · não implanta.
+Não entrega `2`, `3`, `4c`, `6` (`NG-3` — segunda feature filha, se o owner quiser) · não abre SSE (`NG-4`) · não decide store de quarentena em prod (`[Q8]`) · não decide as fórmulas do agregado (`ADR-030`) · não pagina (`[Q5]`) · não toca as 15 colunas · não implanta.

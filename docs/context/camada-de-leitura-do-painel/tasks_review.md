@@ -136,6 +136,9 @@ Caminho crítico de `F1`: `T-01.1 → T-01.2 → T-01.4 → T-01.6 → T-01.9` (
 
 **Instrução de cadastro (manual ou na próxima sessão com MCP autenticado):** 25 `Tarefa` em `CST`, item pai `CST-5` (ou Epic próprio, decisão do owner), título = campo `title` de `tasks.toml`, descrição = linha da tabela de §3 + link para o plano da fase; ao criar, preencher `tracker = { provider = "jira", id = "CST-NNN", url = "…" }` **inline** em cada task e re-rodar `harness tasks validate`. Ordem sugerida de criação: a de `T-01.1`..`T-03.8` (o `depends_on` vira link "blocks" no Jira).
 
+
+**Nota 2026-09-05 (posterior ao texto acima, que fica como registro):** o MCP `atlassian` autenticou nesta sessão e as 25 tasks **foram cardadas** — `uncarded=25` deixou de ser o estado. A alternativa *"Epic próprio"* foi a escolhida (owner: *"criar as taks"* / *"deixar tudo liberado"* `[PREMISSA-OWNER: 2026-09-05]`): 3 Epics em `CST` — `CST-112` (F1), `CST-113` (F2), `CST-114` (F3) — e 25 `Tarefa` `CST-115..CST-139` (`T-01.x → 115–124`, `T-02.x → 125–131`, `T-03.x → 132–139`), com `parent` = Epic da fase e labels `fase-NN`/`spec-003`/components. `tracker = { provider = "jira", id, url }` inline em cada `[[tasks]]` de `tasks.toml`; `harness tasks validate camada-de-leitura-do-painel` → OK e `harness tasks list camada-de-leitura-do-painel` → `linked=25 uncarded=0` `[MEDIDO 2026-09-05]`. O item pai candidato `CST-5` **não** foi usado.
+
 ---
 
 ## 6. Escopo de caminhos — e a colisão com a mãe, declarada antes de existir
