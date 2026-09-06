@@ -47,7 +47,7 @@ plan   = "docs/plans/SPEC-003-camada-de-leitura-do-painel"
 id = "T-01.1"
 title = "[web] 01 · Transporte server-only com erro tipado — import \"server-only\", TransportErrorKind, cache no-store, etag null, e --conditions=react-server nos scripts de teste"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = []
 refs = [
@@ -64,7 +64,7 @@ tracker = { provider = "jira", id = "CST-115", url = "https://conversationhub.at
 id = "T-01.2"
 title = "[web] 01 · Portao ESLint D5.17b reescrito por diretiva \"use client\" e fingerprint-sync-boundary.test.ts REESCRITO, nao apagado"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = ["T-01.1"]
 refs = [
@@ -81,7 +81,7 @@ tracker = { provider = "jira", id = "CST-116", url = "https://conversationhub.at
 id = "T-01.3"
 title = "[web][docs] 01 · Gate de design de F1 — forma e microcopy dos estados de s3.3, e a decisao do mecanismo de estilo (I-8) sob veredito do ux-ui-mastery"
 components = ["web", "docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = []
 refs = [
@@ -98,7 +98,7 @@ tracker = { provider = "jira", id = "CST-117", url = "https://conversationhub.at
 id = "T-01.4"
 title = "[web] 01 · page.tsx vira Server Component que le a API e renderiza estado de sistema — PainelClient, SourceState, loading/error, vazio, sem fonte, fixture fora, abrir removido (M3)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = ["T-01.2", "T-01.3"]
 refs = [
@@ -116,7 +116,7 @@ tracker = { provider = "jira", id = "CST-118", url = "https://conversationhub.at
 id = "T-01.5"
 title = "[web] 01 · Pipeline de estilo — layout.tsx importa stylesheet global, tokens do DESIGN_SYSTEM.md chegam ao browser, glifo renderiza em fonte de icone"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = ["T-01.3"]
 refs = [
@@ -132,7 +132,7 @@ tracker = { provider = "jira", id = "CST-119", url = "https://conversationhub.at
 id = "T-01.6"
 title = "[web] 01 · Higiene de rota e controles honestos — Filter de bancada fora, title, 1 h1, / -> 3xx /painel, not-found pt-BR, filtro que filtra, rotulo 'Janela de perda' sem tocar a coluna"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = ["T-01.4"]
 refs = [
@@ -149,7 +149,7 @@ tracker = { provider = "jira", id = "CST-120", url = "https://conversationhub.at
 id = "T-01.7"
 title = "[infra] 01 · .env.example na raiz e alvo make api (uvicorn com access log ligado) — dev sobe por comando versionado"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = []
 refs = [
@@ -167,7 +167,7 @@ tracker = { provider = "jira", id = "CST-121", url = "https://conversationhub.at
 id = "T-01.8"
 title = "[infra] 01 · Alvo make e2e — API de teste sobre store efemero com >= 1 run + next start + playwright test, derruba tudo; FORA de verify (M5)"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = ["T-01.7"]
 refs = [
@@ -184,7 +184,7 @@ tracker = { provider = "jira", id = "CST-122", url = "https://conversationhub.at
 id = "T-01.9"
 title = "[web] 01 · Suite e2e reescrita para a arquitetura — specs 01-07 medem s5 B1-B9 (access log + data-fact, nao 'o browser chamou a API?'), facts.jsonl por spec, [Q11] explicado"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = ["T-01.4", "T-01.5", "T-01.6", "T-01.8"]
 refs = [
@@ -202,7 +202,7 @@ tracker = { provider = "jira", id = "CST-123", url = "https://conversationhub.at
 id = "T-01.10"
 title = "[docs] 01 · Status das ADR-028/ADR-029 e da SPEC-003 apontam para o ledger — 'proposto' vira 'aceito' citando o approve spec de 2026-09-05T12:53:22Z; DRAFT sai do cabecalho"
 components = ["docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-06T20:36:20Z @ 669ddf00f2b8796d50bcdc19878173e34b495308
 phase = "01"
 depends_on = []
 refs = [
