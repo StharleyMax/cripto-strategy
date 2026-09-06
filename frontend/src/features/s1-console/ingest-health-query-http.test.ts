@@ -49,6 +49,19 @@ function assertPythonAvailable(): void {
   }
 }
 
+/** `env` for every subprocess this file spawns: `from src.main import create_app` (top of
+ * `SERVER_SCRIPT`) builds a MODULE-LEVEL `app` at import time from
+ * `INGEST_HEALTH_STORE_PATH`, or its default `data/md/...` (`T-02.1`, `ADR-029/D3`) — a parent
+ * directory that does not exist in a fresh checkout (`data/` is gitignored). Without an
+ * explicit `env` here, `spawn`/`spawnSync` inherit `process.env` as-is, and a run with that
+ * variable unset would fail the import before `main()`'s own `create_app(target)` (line
+ * ~218, storePath — the one this fixture actually serves) ever runs. `storePathForImport`
+ * only needs an EXISTING parent; it is never read as a real store outside `print-fingerprint`
+ * mode, which does not touch a store at all. */
+function pythonSubprocessEnv(storePathForImport: string): NodeJS.ProcessEnv {
+  return { ...process.env, INGEST_HEALTH_STORE_PATH: storePathForImport };
+}
+
 // ── ONE fixture (one run, one gap), built once in Python, reused by every mode ──────────────
 //
 // `ADR-019/D5`: the fingerprint a mode is compared against is always derived from these SAME
@@ -238,6 +251,7 @@ function printFingerprint(mode: MutationMode): string {
   const result = spawnSync(PYTHON_BIN, ["-c", SERVER_SCRIPT, "-", mode, "print-fingerprint"], {
     cwd: BACKEND_ROOT,
     encoding: "utf8",
+    env: pythonSubprocessEnv(path.join(tmpdir(), "t0514-print-fingerprint-unused.sqlite3")),
   });
   assert.equal(result.status, 0, `print-fingerprint (mode=${mode}) failed: ${result.stderr}`);
   const firstLine = result.stdout.trim().split("\n")[0] ?? "";
@@ -260,6 +274,7 @@ async function withServedFixture<T>(
   const storePath = path.join(tmpDir, `${mode}.sqlite3`);
   const child = spawn(PYTHON_BIN, ["-c", SERVER_SCRIPT, storePath, mode, "serve"], {
     cwd: BACKEND_ROOT,
+    env: pythonSubprocessEnv(storePath),
   });
 
   const served = await new Promise<ServedFixture>((resolve, reject) => {
