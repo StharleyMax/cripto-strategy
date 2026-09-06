@@ -44,10 +44,18 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test boundaries natureza build verify api
+.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test boundaries natureza build verify api e2e
 
 # Argumentos repassados ao pytest: `make test ARGS="-k nome --no-cov"`.
 ARGS ?=
+
+# `make e2e` (T-01.8): os DOIS modos de D1.11. `E2E_API_UP=0` deixa a API deliberadamente NO
+# CHAO (porta sem listener) — a suíte de T-01.9 precisa dos dois veredictos. As portas têm
+# default fixo, fora das que `make api`/`make dev` usam (8000/3000), para não colidir com um
+# dev server que já esteja de pé.
+E2E_API_UP ?= 1
+E2E_API_PORT ?= 8811
+E2E_NEXT_PORT ?= 4311
 
 help:
 	@printf '%s\n' \
@@ -74,6 +82,9 @@ help:
 	  '                       bruta em arquivo (scripts/verify.sh). E o alvo para AGENTE rodar' \
 	  '  make api             sobe a API em processo, honrando .env (raiz) — dev por comando' \
 	  '                       versionado (T-01.7, ADR-029/D5). NAO entra em verify (M5)' \
+	  '  make e2e             API de teste sobre store efemero (>=1 run) + next build/start +' \
+	  '                       playwright test, derruba tudo ao final (T-01.8). FORA de verify' \
+	  '                       (M5). E2E_API_UP=0 deixa a API deliberadamente NO CHAO (D1.11)' \
 	  '' \
 	  'O make sai com 2 em qualquer receita que falhe: ele NAO propaga o rc=3 dos scripts.'
 
@@ -256,3 +267,27 @@ verify:
 api:
 	@test -x backend/.venv/bin/python || { printf '%s\n' "RECUSA: backend/.venv nao existe. Rode 'make setup' (precisa de rede)." >&2; exit 3; }
 	set -a && { test -f .env && . ./.env || true; } && set +a && cd backend && exec .venv/bin/python -m src.main
+
+# ── e2e ────────────────────────────────────────────────────────────────────────────────
+# `T-01.8` (`SPEC-003` s3.5, plano `01` item `1.8`, `DoD D1.10`/`D1.11`). FORA de `verify`
+# (M5, cabecalho de `tasks.toml`: "+~35 s por verify se o owner ligar").
+#
+# `scripts/e2e-env.sh` faz o SETUP (seed do store efemero >= 1 run, `next build`, sobe a API
+# de teste e o `next start`) e o TEARDOWN — ele NUNCA chama Playwright. Quem chama e ESTA
+# receita, de proposito e a olho nu: `make -n e2e` tem de imprimir o `playwright test` literal
+# (DoD), porque e o comando cujo `rc` decide o do alvo. `ADR-011/D2` ("Makefile chama os .sh,
+# nao os absorve") aqui corta ao meio: o ORQUESTRADOR e absorvido no `.sh`, o EXECUTOR DO TESTE
+# fica na receita — a mesma separacao que faz o falsificador do alvo (rc = rc do Playwright)
+# verificavel por leitura, sem abrir script nenhum.
+#
+# `;` de proposito, MESMA excecao que `lint-frontend` ja usa: a ULTIMA PALAVRA e `exit "$$RC"`,
+# entao o teardown (que roda MESMO quando o Playwright reprova) nunca mascara o veredito.
+# `E2E_API_UP=0` e o modo "API deliberadamente no chao" de D1.11; `E2E_API_UP=1` (default) e
+# "API de pe" — os DOIS que a suite de `T-01.9` precisa.
+e2e:
+	@STATE_DIR="$$(bash scripts/e2e-env.sh up $(E2E_API_UP) $(E2E_API_PORT) $(E2E_NEXT_PORT))"; \
+	SETUP_RC=$$?; \
+	if [ $$SETUP_RC -ne 0 ]; then exit $$SETUP_RC; fi; \
+	E2E_BASE_URL="$$(cat "$$STATE_DIR/base_url")" frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts; RC=$$?; \
+	bash scripts/e2e-env.sh down "$$STATE_DIR"; \
+	exit $$RC
