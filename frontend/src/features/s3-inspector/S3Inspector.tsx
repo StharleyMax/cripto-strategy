@@ -114,10 +114,10 @@ export function S3Inspector({
                   >
                     <td className="py-2 pr-4 truncate">{row.label}</td>
                     <td className="py-2 px-4 text-provenance-strong">{row.provenance}</td>
-                    <td className="py-2 px-4 text-right text-provenance-weak">
+                    <td className="py-2 px-4 text-right text-provenance-weak truncate">
                       {row.completenessText}
                     </td>
-                    <td className="py-2 pl-4">
+                    <td className="py-2 pl-4 overflow-hidden">
                       {row.quarantineBadge.isQuarantined ? (
                         <span className={`flex items-center gap-1 font-label-caps text-label-caps ${INTEGRITY_INK_CLASS}`}>
                           <span

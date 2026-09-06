@@ -80,7 +80,7 @@ export function S1Console({ viewModel, budgetSourced, reconnectionsSourced }: S1
                     )}
                   </td>
                   <td className="py-2 px-4 text-right">{row.resilience}</td>
-                  <td className="py-2 pl-4 text-right flex items-center justify-end gap-2">
+                  <td className="py-2 pl-4 text-right flex items-center justify-end gap-2 overflow-hidden">
                     {row.statusCell.uptimeText !== null && (
                       <span className="text-provenance-weak">{row.statusCell.uptimeText}</span>
                     )}
