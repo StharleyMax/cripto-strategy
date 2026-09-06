@@ -40,6 +40,12 @@ _DEFAULT_STORE_PATH: Final[str] = "data/md/ingest_health.sqlite3"
 # route or a use case.
 _STORE_PATH_ENV_VAR: Final[str] = "INGEST_HEALTH_STORE_PATH"
 
+# `M2` (`ADR-029/D2`): every route this process serves lives under one prefix. Absent, this
+# process defaults here — it NEVER mounts a route at the root. `[Q2]` (the definitive segment)
+# stays open for the owner; reverting this default costs the two lines this constant and its
+# one caller are (`SPEC-003` s3.4 header).
+_DEFAULT_API_PREFIX: Final[str] = "/api/v1"
+
 
 class StoreParentDirectoryMissingError(RuntimeError):
     """Raised by `create_app` when `store_path`'s parent directory does not exist.
@@ -53,7 +59,12 @@ class StoreParentDirectoryMissingError(RuntimeError):
     """
 
 
-def create_app(store_path: Path) -> FastAPI:
+# The env var name a deployment overrides to move every route to a different prefix — the
+# Caddy side of `ADR-029/D2` reads the SAME name (`T-02.7`), so the two sides move together.
+_API_PREFIX_ENV_VAR: Final[str] = "API_PREFIX"
+
+
+def create_app(store_path: Path, api_prefix: str = _DEFAULT_API_PREFIX) -> FastAPI:
     """Build the FastAPI app, wiring the concrete `SqliteIngestRecordStore` at `store_path`.
 
     `store_path` is a PARAMETER, not read from the environment inside this function, so a
@@ -63,6 +74,10 @@ def create_app(store_path: Path) -> FastAPI:
     Raises `StoreParentDirectoryMissingError` when `store_path.parent` is not a directory —
     checked here, not inside the store, so the failure happens at boot (`rc != 0`) rather than
     on the first request (`ADR-029/D3`).
+
+    `api_prefix` is a PARAMETER for the same reason: `include_router(api_router, prefix=...)`
+    is the ONE place every route this process serves gets mounted, so `openapi.json` reflects
+    it for free and a request without the prefix matches no route (`404`), never the root.
     """
     parent = store_path.parent
     if not parent.is_dir():
@@ -71,7 +86,7 @@ def create_app(store_path: Path) -> FastAPI:
             f"ingest health store parent directory does not exist: {parent}"
         )
     app = FastAPI()
-    app.include_router(api_router)
+    app.include_router(api_router, prefix=api_prefix)
     store = SqliteIngestRecordStore(store_path)
     app.dependency_overrides[get_ingest_record_source] = lambda: store
     return app
@@ -82,4 +97,9 @@ def _store_path_from_environment() -> Path:
     return Path(os.environ.get(_STORE_PATH_ENV_VAR, _DEFAULT_STORE_PATH))
 
 
-app = create_app(_store_path_from_environment())
+def _api_prefix_from_environment() -> str:
+    """Return the prefix every route mounts under: `API_PREFIX`, or the default — never root."""
+    return os.environ.get(_API_PREFIX_ENV_VAR, _DEFAULT_API_PREFIX)
+
+
+app = create_app(_store_path_from_environment(), _api_prefix_from_environment())
