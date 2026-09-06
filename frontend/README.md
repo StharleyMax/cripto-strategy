@@ -1735,3 +1735,35 @@ npm --prefix frontend run dev      # em outro terminal; le INGEST_HEALTH_API_BAS
 `make api` **recusa** com `rc=3` se `backend/.venv` não existir (rode `make setup` antes). `.env` é
 opcional: ausente, a API cai nos defaults de `src.main`. Não implanta — é só o par de comandos que
 sobe os dois processos localmente.
+
+---
+
+## 22. `make e2e` — API de teste + `next start` + Playwright, os DOIS modos de `D1.11` (`T-01.8`, 2026-09-05)
+
+```bash
+make e2e                    # API de pé: seed do store efêmero, uvicorn de teste, next build+start,
+                             # playwright test, derruba tudo — rc do alvo = rc do Playwright
+make e2e E2E_API_UP=0        # API deliberadamente NO CHÃO: a porta da API fica sem listener;
+                             # o next start sobe do mesmo jeito (D1.11, o modo que T-01.9 também precisa)
+```
+
+`scripts/e2e-env.sh` faz o setup/teardown (nunca chama Playwright — `ADR-011/D2` aplicada pela metade:
+o orquestrador é absorvido no `.sh`, o executor do teste fica na receita do `Makefile`, à vista, porque
+`make -n e2e` tem de imprimir `playwright test` literal). `backend/scripts/seed_ephemeral_ingest_store.py`
+grava a run/gap deterministicamente em memória — nunca lê `backend/data/` (`CLAUDE.md`, "Dado bruto não
+é versionado"). Portas default `E2E_API_PORT=8811`/`E2E_NEXT_PORT=4311`, fora das de `make api`/`npm run
+dev` (8000/3000), para não colidir com um dev server já de pé.
+
+**Fora de `verify`** (M5, cabeçalho de `tasks.toml`) — mesma classe de `make api`, não implanta.
+
+**Medido, os dois modos, `2026-09-05`:**
+
+| modo | `GET /ingest-health` (API) | `playwright test` |
+|---|---|---|
+| `E2E_API_UP=1` (default) | `200` | `rc=1` (5 passed, 11 failed — specs `01`–`07` são o suíte HERDADO de `plataforma-dados`; reescrevê-los é `T-01.9`, não esta task) |
+| `E2E_API_UP=0` | `000` (conexão recusada — nada escuta) | roda do mesmo jeito, contra o mesmo `next start` |
+
+`make e2e` (via `make`) sai `rc=2` nos dois casos em que o Playwright reprova — mesma convenção de
+`make test`/`make boundaries` (o cabeçalho do `Makefile` já documenta: "o `rc` do `make` não é o do
+script"). Quem quer o `rc` exato do Playwright chama a receita fora do `make`, ou lê a mensagem
+`make: *** [Makefile:NNN: e2e] Erro N` — o `N` ali É o `rc` do Playwright.
