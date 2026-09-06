@@ -2,6 +2,13 @@
 
 **Data:** 2026-08-25 (**terceira** revisão do dia) · **Deriva de:** [`ADR-010`](../adr/ADR-010-governanca-de-cor-por-tipo-de-marca.md) · [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §6 · `CA-F4-10` · plano [`05`](../plans/SPEC-001-plataforma-dados/05_fatia_visivel.md) D5.6
 **Status:** **§1 REVISADO na 3ª rodada** — tritanopia MEDIDA, o violeta TROCADO nos dois modos, `--foco` declarado.
+**2026-09-05 (§9 novo, 3ª rodada de `T-01.3`, branch `tasks/T-01.3-gate-design-f1` recriado a partir de
+`origin/master` após o `NEEDS_FIX` de `86130ea`):** forma/microcopy dos 8 estados de `SPEC-003` §3.3 e a
+posição do `ui-designer` sobre o mecanismo `I-8`, com a discrepância `§6.1`×`§9.1` apontada pelo QA
+**reconciliada por medição** (§9.1-bis). **Continua NÃO fechando** o `DoD` completo de `tasks.toml`
+`T-01.3` — falta o veredito do `frontend-architect` sobre `I-8` e o arquivo
+`gates/F1-design.md` do `ux-ui-mastery`, e esta sessão segue sem `Task`/`Agent` para os despachar (ver
+§9.0, inalterado nesse ponto desde a rodada anterior).
 **6ª rodada (2026-08-28):** **nada de cor mudou de novo** — os 25 tokens e as 361 medições são os
 mesmos, `node scripts/validate_palette.js` continua `exit 0`. O que mudou é **ferramenta e estado**,
 e está em `STITCH_CONTEXT.md`: (a) a `S2` canônica passou a ser `8174234965cd4ffbacfb7b2a0a61a427`
@@ -1082,3 +1089,174 @@ pública**, com a notice do arquivo `NOTICE` e link para `tradingview.com`. `[ME
 | espaçamento, raio, elevação | não medidos. Densidade **analítica**: linha ~32px, secundário 12-13px, sem card espaçado, sem sombra. `[NÃO MEDIDO]` |
 | **o eixo aguenta 288 pontos + 1.440 candles?** | **MAIOR RISCO TÉCNICO da especificação.** Teste: coordenadas X contra os `event_time` originais, tolerância **0,5 px** |
 | **leitura do vazado/cheio por usuário real** | **`[NÃO MEDIDO]` e não mensurável com N=1.** É o falsificador de §1.6 |
+
+---
+
+## 9. `T-01.3` — forma/microcopy dos 8 estados de `SPEC-003` §3.3 + mecanismo de estilo (`I-8`)
+
+**Rodada:** 3ª (branch `tasks/T-01.3-gate-design-f1` **recriado a partir de `origin/master`** —
+`c348103` foi a 1ª rodada, reprovada por não existir `gates/F1-design.md`; `86130ea` foi a 2ª rodada
+(redo), e o `ux-ui-mastery` deu `NEEDS_FIX` de novo pelo **mesmo motivo estrutural**, mais um `WARNING`
+sobre `§6.1`×`§9.1` não reconciliados). **Papel desta sessão:** `ui-designer`, decidindo sob a autonomia
+de `CLAUDE.md` §Design (R9). **Escopo:** `[web][docs]` — fixa forma, microcopy pt-BR e o mecanismo de
+estilo em **documento**; nenhum código de app (`tasks.toml` `T-01.3`: *"NAO escreve codigo de app"*);
+`T-01.4`/`T-01.5` implementam.
+
+### 9.0 O que esta seção NÃO fecha — declarado aqui, não descoberto depois
+
+`tasks.toml` `T-01.3` (`CST-117`) nomeia **três** papéis sob o `DoD`: `ui-designer` (forma/microcopy),
+`frontend-architect` (mecanismo `I-8`), e o validador `ux-ui-mastery` sobre os dois. **Esta sessão só tem
+o toolset do `ui-designer`** — MCP `stitch`, MCP `shadcn`, `Read`/`Write`/`Edit`/`Bash` — **sem `Task` nem
+`Agent`**, logo sem capacidade de despachar uma instância separada de `frontend-architect` ou de
+`ux-ui-mastery`. Isto é **idêntico ao que a rodada anterior (`86130ea`) já declarou** — o "redo" pedido
+para esta 3ª rodada foi sobre o conteúdo (§9.2 estava `[OK]` no QA) e sobre a reconciliação de `§9.1`
+(abaixo), não sobre este limite estrutural, que nenhuma das duas rodadas anteriores tinha ferramenta
+para resolver e esta também não tem:
+
+1. **Este documento NÃO contém veredito do `frontend-architect` sobre `I-8`.** §9.1 abaixo é a posição do
+   `ui-designer` sobre o mecanismo — um insumo para aquela decisão, não um substituto dela.
+2. **Este documento NÃO é, e não se apresenta como, o arquivo `gates/F1-design.md`.** Registrar aqui o
+   próprio veredito do `ux-ui-mastery` dentro da sessão do `ui-designer` seria a redução de dois papéis a
+   um que `CLAUDE.md` nomeia como a razão de existir do gate (*"agente que gera e aprova o próprio
+   trabalho não tem gate"*) — a 1ª rodada (`c348103`) parece ter cometido exatamente essa redução (é o
+   que a nota de despacho desta task registra), e nem a 2ª nem esta a repetem. `[NÃO SEI]` quando uma
+   sessão genuinamente separada de `ux-ui-mastery` e de `frontend-architect` será despachada — isso é
+   decisão do coordenador/owner, não desta sessão.
+
+**O que esta seção FAZ fechar, dentro do que o `ui-designer` pode decidir e medir sozinho:** forma +
+microcopy pt-BR dos 8 estados (§9.2, sem mudança de conteúdo em relação a `86130ea`, que o QA já marcou
+`[OK]`), o mecanismo `I-8` com discovery reconciliado (§9.1/§9.1-bis), o contrato `data-fact` de
+`SPEC-003` §3.3 intocado, e a guarda de cor por severidade (`D17`) estendida aos 4 erros com o argumento,
+não só a conclusão (§9.3).
+
+### 9.1 Mecanismo de estilo (`I-8`) — posição do `ui-designer`, pendente ratificação do `frontend-architect`
+
+`SPEC-003` §0.2 já registra `[INFERRED I-8: Tailwind, porque é onde o DESIGN_SYSTEM.md já declara os
+tokens — custo de reversão: os tokens são W3C-agnósticos, 1 arquivo de config]`. O `ui-designer` concorda
+com essa inferência e a estende com discovery de componente:
+
+| item procurado | resultado (`mcp shadcn`, `2026-09-05`, 3ª medição — ver §9.1-bis para o modo de chamada) | decisão |
+|---|---|---|
+| `@shadcn/alert` | `registry:ui`, dependência `cn` (utilitário de merge de classe Tailwind); busca por `"alert"` devolve também `alert-destructive` (`registry:example`) — confirma que a variante `destructive` (vermelho) existe no primitivo | **candidato** para os 4 estados de erro — **com a variante `destructive` removida, não sobrescrita**, mesmo tratamento que `@shadcn/badge` já recebeu em §6.1 |
+| `@shadcn/skeleton` | `registry:ui`, dependência `cn` | **candidato** para o estado `loading` |
+| `@shadcn/badge` | já avaliado em §6.1 (`variantes de cor removidas`) | reusado, sem reabrir a decisão |
+
+Isso reafirma `I-8` (Tailwind + `shadcn/ui`, sem componente de gráfico — `charts` continua isolado por
+`ADR-003`, §6.1) e estende o precedente de §6.1 (variante removida-não-sobrescrita) aos dois primitivos
+novos. **Esta tabela não substitui o veredito do `frontend-architect`** — é o argumento que ele herda se
+concordar; se discordar, é dele que vem a mudança de rota, não de um segundo palpite deste documento.
+
+### 9.1-bis Reconciliação `§6.1`×`§9.1` — não é contradição, é MODO DE CHAMADA, medido nesta rodada
+
+O QA da 2ª rodada apontou, corretamente, que `§6.1` (2026-08-25) registra `components.json` ausente e
+discovery `shadcn` **vazio**, enquanto `§9.1` (2026-09-05) registrava resultado **positivo** para
+`@shadcn/alert`/`@shadcn/skeleton` sem reconciliar os dois. Medido agora, com os dois modos de chamada
+lado a lado, na mesma sessão:
+
+```
+mcp__shadcn__get_project_registries()                          -> "" (nenhum registro configurado)
+mcp__shadcn__search_items_in_registries(query="alert")          -> "No registries are configured.
+                                                                     Add registries to components.json..."
+mcp__shadcn__search_items_in_registries(query="alert",
+                                         registries=["@shadcn"]) -> 12 itens, incluindo `alert`
+                                                                     (registry:ui) e `alert-destructive`
+mcp__shadcn__search_items_in_registries(query="skeleton",
+                                         registries=["@shadcn"]) -> 3 itens, incluindo `skeleton`
+                                                                     (registry:ui)
+find <repo> -iname 'components.json' -not -path '*/node_modules/*'  -> vazio (nenhum arquivo)
+```
+
+**Os dois achados reproduzem, e nenhum dos dois estava errado — mediam perguntas diferentes.** Sem
+`components.json`, a chamada **sem** o parâmetro `registries` explícito (o que `§6.1` usou, e o que
+`get_project_registries` também confirma vazio) devolve **"No registries are configured"** — é isso que
+`§6.1` mediu, e continua verdadeiro hoje. Passar `registries: ["@shadcn"]` **explicitamente** (o que
+`§9.1` da rodada anterior fez, mesmo sem o registrar) contorna a ausência de `components.json` e consulta
+o registro público `@shadcn` diretamente — por isso "positivo". **A conclusão de produto não muda**:
+`components.json` continua ausente ⇒ **nada é instalável** até o `frontend-architect` decidir estrutura
+de projeto (`I-8`) e rodar `init`; o discovery aqui é **registro de intenção**, exatamente como `§6.1`
+já dizia, só que agora com a segunda metade do comando declarada (o parâmetro `registries` explícito é o
+que faz o discovery ENXERGAR o registro sem depender do `init`).
+
+### 9.2 Forma + microcopy dos 8 estados (`SPEC-003` §3.3)
+
+Fontes conferidas nesta sessão, linha por linha, no arquivo do plugin (não copiadas de citação anterior):
+
+```
+grep -n "Help Users Recognize\|Error messages must state" \
+  ~/.claude/plugins/cache/ux-ui-mastery-marketplace/ux-ui-mastery/3.0.0/skills/nng-ux-heuristics/SKILL.md
+  # 129,134 — casa: H9 exige causa + próximo passo, sem código
+grep -n "Skeleton screens" \
+  .../cognitive-psychology-ux/references/laws-of-ux-encyclopedia.md          # 223 — Doherty Threshold
+grep -n "render gray blocks" \
+  .../design-critique-case-studies/references/product-deep-dives.md         # 39 — skeleton espelha layout
+grep -n "Replace loading skeletons" \
+  .../accessibility-inclusive-design/references/neurodiversity-accommodations.md  # 327 — prefers-reduced-motion
+grep -n 'aria-live="assertive"' \
+  .../accessibility-inclusive-design/references/wcag-aria-patterns.md        # 577 — assertive só para falha urgente
+```
+
+| # | estado (`data-fact`) | componente (`shadcn`) | ícone `lucide` `[INFERRED, não confirmado contra o pacote instalado]` | título pt-BR | descrição pt-BR (causa + próximo passo, H9) | `role`/`aria-live` |
+|---|---|---|---|---|---|---|
+| 1 | `ui_state:loading` | `Skeleton` (blocos espelhando o layout de S1/S3 — `product-deep-dives.md:39`) | nenhum (skeleton não carrega ícone) | — (sem texto visível) | texto só para leitor de tela: *"Carregando dados do painel"* | `role="status" aria-live="polite"` — nunca `assertive` (não é falha, é espera dentro do limiar de Doherty) |
+| 2 | `error_kind:missing_base_url` | `Alert` (variante `destructive` removida) | `Settings` | *"Configuração ausente"* | *"O endereço da API de leitura não foi definido. Confirme `INGEST_HEALTH_API_BASE_URL` no ambiente e reinicie."* | `role="alert" aria-live="assertive"` (`wcag-aria-patterns.md:577`: falha de sistema é urgente) |
+| 3 | `error_kind:connection_refused` | `Alert` (idem) | `WifiOff` | *"API inacessível"* | *"Não foi possível conectar à API de leitura. Verifique se o processo está no ar na porta configurada."* | `role="alert" aria-live="assertive"` |
+| 4 | `error_kind:non_2xx` | `Alert` (idem) | `ServerCrash` | *"Resposta inesperada da API"* | *"A API respondeu com status `{status}`. Verifique os logs do processo da API para a causa."* — `{status}` é o único numeral desta linha, herdado do `data-fact` (`status:<N>`), não inventado | `role="alert" aria-live="assertive"` |
+| 5 | `error_kind:malformed_envelope` | `Alert` (idem) | `FileWarning` | *"Resposta em formato inválido"* | *"A API respondeu, mas o envelope não tem os campos esperados (`ADR-019/D2`). Verifique a versão da API."* | `role="alert" aria-live="assertive"` |
+| 6 | `ui_state:empty` | bloco de texto pt-BR (sem `Alert` — não é erro) | `Inbox` | *"Nenhuma coleta registrada ainda"* | *"O store não tem execuções. Nenhum número é exibido porque nenhum foi produzido."* | `role="status" aria-live="polite"` |
+| 7 | `source:none` | marcador inline (mesmo padrão de §2, "sem fonte") | `MinusCircle` | *"sem fonte"* | (sem descrição longa — é um marcador de célula, não um estado de página inteira) | nenhum (estático, não muda em runtime) |
+| 8 | `ui_state:ok` | render normal (tabela S1 + marcadores S3) | nenhum | n/a | n/a — é o estado de sucesso, sem microcopy de estado | nenhum |
+
+**Por que nenhum dos 4 erros usa `assertive` com `aria-atomic`/controle de foco além do `role="alert"`
+default:** os 4 são renderizados pelo **servidor** (`error.tsx` do App Router, não uma transição SPA —
+`ADR-028/D1`), então não há um estado anterior focado para devolver o foco; o `role="alert"` já move o
+ponto de anúncio do leitor de tela sem exigir gerência manual de foco em JS.
+
+**Redundância de forma, não só de cor (`D17` estendido):** os 4 erros são **distintos por ícone e por
+título**, nunca só por cor — a guarda que `D12`/§0.3 mede para o candle (cinza colapsa a **1,09**) vale
+igual aqui: se alguém tirar o ícone e o título e deixar só a cor, dois erros ficam indistinguíveis em
+escala de cinza. Nenhum destes 5 estados de alerta usa hue de erro (`#f23645`/`destructive`) — todos
+reusam **`--proc-forte`**/**`--proc-fraca`** (texto) e **`--acao-borda`** (borda), os mesmos tokens já
+medidos em §1 para procedência/ação, **sem inventar um quinto papel de cor** (`NG-5` respeitado).
+
+### 9.3 Falsificador — e a correção ao proxy incompleto que a rodada anterior encontrou
+
+```bash
+grep -rn 'destructive\|text-red-\|bg-red-\|border-red-\|f23645\|d03b3b' \
+  frontend/src/app/painel frontend/src/features --include='*.tsx'
+# esperado: 0 ocorrências, quando os arquivos de T-01.4/T-01.5 existirem
+```
+
+**Por que o grep ganhou os dois hex literais:** a 1ª rodada (`c348103`) mediu, por mutação (`printf |
+grep`), que o comando `grep -rn 'destructive\|text-red-\|bg-red-\|border-red-'` **morde**
+`variant="destructive"` mas **cala** em `bg-[#f23645]` — valor arbitrário do Tailwind que não casa com o
+padrão `*-red-*`. Este projeto já documentou esta EXATA classe de defeito duas vezes (`CLAUDE.md`
+§"Nenhum número sem comando": grep de uma linha subcontou 34 de 137 mensagens PT; e o falsificador de
+segmento de diretório que "nasce disparado" se a subtração não for exaustiva) — um falsificador que não
+pode disparar não mede erosão nenhuma. `f23645` é `--direcao-baixa-fill`; `d03b3b` é o vermelho que o
+Stitch tinha escolhido e que §1 já rejeitou por medição (`:280`). Nenhum dos dois deve aparecer em
+`frontend/src/app/painel` nem em `frontend/src/features` — o comando acima ainda não roda (os arquivos
+não existem em `F1` até `T-01.4`/`T-01.5`), mas fica registrado aqui para ser copiado, não redescoberto,
+quando esses arquivos existirem.
+
+### 9.4 Resíduo explícito (`R11` — marcado, não apagado)
+
+- Nomes de ícone `lucide` na tabela de §9.2 são `[INFERRED]`: não confirmados contra `package.json` do
+  `frontend` (o pacote `lucide-react` pode ou não estar instalado ainda — `T-01.5` decide o pipeline de
+  ícone). Se o nome não existir no pacote instalado, `T-01.4` substitui por um ícone da mesma família
+  semântica (config/rede/servidor/arquivo/caixa-vazia), sem reabrir a forma nem o texto.
+- Os 4 estados de erro dizem "verifique"/"confirme" mas não têm controle de retry — só recarregar a
+  página manualmente. É consistente com `M3`/`RN-5` (nenhum controle inerte: não há ação de cliente
+  definida nesta fase) — candidato de `F2`, não desta task.
+- `[NÃO SEI]` se `frontend-architect` vai concordar com `I-8` tal como registrado em §9.1, e `[NÃO SEI]`
+  quando o veredito real do `ux-ui-mastery` (arquivo `gates/F1-design.md`, dois juízes) será colhido —
+  ver §9.0. **Isto não fecha o `DoD` de `T-01.3` em `tasks.toml` sozinho, na 3ª rodada como nas duas
+  anteriores** — o que mudou nesta rodada é a reconciliação de §9.1-bis, não este limite.
+
+### Referências
+
+`SPEC-003` §3.3 (contrato de estado) · §0.2 `[L1]`/`I-8` (mecanismo) · `ADR-028` "O que esta ADR NAO
+decide" (forma e microcopy) · `DESIGN_SYSTEM.md` §1 (`D12`, `D17`) · §6.1 (precedente `@shadcn/badge` e
+a medição original de `components.json` ausente) · `tasks.toml` `T-01.3` (`CST-117`) ·
+`docs/plans/SPEC-003-camada-de-leitura-do-painel/01_pagina_diz_a_verdade.md` itens `1.4`/`1.5` ·
+QA gate da 2ª rodada (`origin/tasks/T-01.3-gate-design-f1` em `86130ea`, achados `[OK]`×5, `[WARNING]`
+`§6.1`×`§9.1`, `[FAIL]` `gates/F1-design.md` ausente).
