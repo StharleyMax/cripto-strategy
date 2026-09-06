@@ -78,7 +78,7 @@ def postgres_connection() -> Iterator[psycopg.Connection]:
         finally:
             connection.close()
     finally:
-        _run_docker("rm", "-f", name)
+        _run_docker("rm", "-f", "-v", name)
 
 
 def _wait_until_ready(conninfo: str) -> psycopg.Connection:
