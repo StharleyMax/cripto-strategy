@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 
-// Server Component, deliberately minimal -- ADR-018 D2. Styling/Tailwind
-// pipeline is out of scope for T-05.11 (frontend/README.md documents the
-// gap); this only has to be the root the App Router requires.
+import "./globals.css";
+
+// Server Component, deliberately minimal -- ADR-018 D2. Styling pipeline landed in `T-01.5`
+// (SPEC-003 s3.3, DoD D1.8): `./globals.css` is the >= 1 stylesheet the DoD counts, wired
+// with Tailwind v4 (`I-8`) and the two self-hosted fonts (data/label mono + icon glyphs).
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="pt-BR">

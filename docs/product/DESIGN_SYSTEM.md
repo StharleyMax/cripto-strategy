@@ -1085,8 +1085,8 @@ pública**, com a notice do arquivo `NOTICE` e link para `tradingview.com`. `[ME
 > usa, é defeito ativo na única tela que existe. **É uma pergunta de uma linha para o owner**, e está
 > registrada como tal em vez de eu estimar.
 | **o piso `ΔE >= 15`** | **continua sem procedência normativa.** Adotado pelo script, declarado no script. `D5.6` tem de fixar **script E piso** juntos — dívida carregada para a fase `05` |
-| tipografia | **parcialmente decidido:** `font-variant-numeric: tabular-nums` em fonte monoespaçada é **obrigatório** para todo numeral (§1.5 depende disso: o sinal em coluna fixa). Família e escala: **não escolhidas** |
-| espaçamento, raio, elevação | não medidos. Densidade **analítica**: linha ~32px, secundário 12-13px, sem card espaçado, sem sombra. `[NÃO MEDIDO]` |
+| tipografia | **parcialmente decidido:** `font-variant-numeric: tabular-nums` em fonte monoespaçada é **obrigatório** para todo numeral (§1.5 depende disso: o sinal em coluna fixa). Família e escala: **não escolhidas** — `T-01.5` (`DoD D1.8`) trouxe um valor mínimo de trabalho para o pipeline funcionar (JetBrains Mono self-hosted, escala `data-lg/md/sm`/`label-caps` em `frontend/src/app/globals.css` `@theme`), `[INFERRED: pipeline precisa de ALGUM valor concreto para emitir CSS real; não é a escala final]` — segue **não escolhida** como decisão de produto |
+| espaçamento, raio, elevação | não medidos. Densidade **analítica**: linha ~32px, secundário 12-13px, sem card espaçado, sem sombra. `[NÃO MEDIDO]` — `T-01.5` definiu `--spacing-margin-panel`/`--spacing-gutter` como placeholder mínimo do pipeline (mesmo motivo do item de tipografia acima), não como medição |
 | **o eixo aguenta 288 pontos + 1.440 candles?** | **MAIOR RISCO TÉCNICO da especificação.** Teste: coordenadas X contra os `event_time` originais, tolerância **0,5 px** |
 | **leitura do vazado/cheio por usuário real** | **`[NÃO MEDIDO]` e não mensurável com N=1.** É o falsificador de §1.6 |
 

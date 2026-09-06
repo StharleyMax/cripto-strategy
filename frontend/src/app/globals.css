@@ -1,0 +1,146 @@
+/*
+ * `T-01.5` -- the CSS pipeline `SPEC-003` s3.3 ("Estilo", `RF-12`, `[L1]`) requires and
+ * `DESIGN_SYSTEM.md` s0.2 measured as ABSENT (0 `*.css`, `layout.tsx` importing nothing).
+ * Mechanism: Tailwind v4 (`I-8`, `gates/F1-design.md` -- `ux-ui-mastery` "APROVADO COM
+ * CONDICAO", condition residual is the `frontend-architect` ratification, not a blocker of
+ * this DoD). `NG-5`: every color below is a value `DESIGN_SYSTEM.md` s1.2 already measured --
+ * none is redefined, none is a new hue.
+ */
+@import "tailwindcss";
+
+@theme {
+  /*
+   * `DESIGN_SYSTEM.md` s1.2 -- the 10 governed color roles, DARK values as the `@theme`
+   * default. Dark is the mode the approved screens were generated in
+   * (`STITCH_CONTEXT.md` item 9: "Gere no MODO ESCURO"); the light override lives in the
+   * `prefers-color-scheme: light` block below, same literal values from the same table.
+   */
+  --color-direction-up: #089981; /* --direcao-alta-fill, identical in both modes */
+  --color-direction-down: #f23645; /* --direcao-baixa-fill, identical in both modes */
+  --color-direction-on: #131722; /* --direcao-on, identical in both modes */
+  --color-integrity-ink: #e0aaff; /* --dado-quebrado-ink (dark) */
+  --color-provenance-strong: #e6e9ef; /* --proc-forte (dark) */
+  --color-provenance-weak: #8b949e; /* --proc-fraca (dark) */
+  --color-action-fill: #333846; /* --acao-fill (dark) */
+  --color-action-border: #8b949e; /* --acao-borda (dark) */
+  --color-action-on: #e6e9ef; /* --acao-on (dark) */
+  --color-focus-ring: #8b949e; /* --foco (dark) */
+  --color-surface-base: #131722; /* --sup-base (dark) */
+  --color-surface-chrome: #0d1017; /* --sup-chrome (dark) */
+  --color-surface-stripe: #222634; /* --sup-listra (dark) */
+
+  /*
+   * Aliases already consumed by production `.tsx` since `T-07.12` (`bg-primary-container`,
+   * `bg-surface-lowest`, `border-surface-border`, `text-on-surface`) -- same literal values
+   * as the canonical roles just above, not a second decision (`NG-5`). This is also the fix
+   * for the surface defect `docs/context/plataforma-dados/gates/T-07.12-design.md` s4 item 3
+   * measured (`bg-surface`/`bg-background` at an invented `#10131a`, contrast 1.038 against
+   * `#131722`, never one of the 3 canonical surfaces): these aliases point at the canonical
+   * hex, not an invented one.
+   */
+  --color-primary-container: #131722; /* = surface-base */
+  --color-surface-lowest: #0d1017; /* = surface-chrome */
+  --color-surface-border: #222634; /* = surface-stripe */
+  --color-on-surface: #e6e9ef; /* = provenance-strong */
+
+  /*
+   * Typography -- `DESIGN_SYSTEM.md` s8 marks family/scale "parcialmente decidido ... nao
+   * escolhidas" for everything except the `tabular-nums` mandate (s1.5). This pipeline needs
+   * SOME concrete value for `D1.8` (glyph must not fall back to the browser's serif default,
+   * `find … *.css` must exist); the sizes below are a minimal working scale, not a finished
+   * type system -- flagged `[INFERRED]` in the doc delta this task adds to
+   * `DESIGN_SYSTEM.md` s8. Family: JetBrains Mono (self-hosted below), matching
+   * `STITCH_CONTEXT.md`'s `labelFont: JETBRAINS_MONO` and the tabular-nums requirement.
+   */
+  --font-data-lg: "JetBrains Mono", ui-monospace, monospace;
+  --font-data-md: "JetBrains Mono", ui-monospace, monospace;
+  --font-data-sm: "JetBrains Mono", ui-monospace, monospace;
+  --font-label-caps: "JetBrains Mono", ui-monospace, monospace;
+  --text-data-lg: 1.125rem;
+  --text-data-lg--line-height: 1.4;
+  --text-data-md: 0.875rem;
+  --text-data-md--line-height: 1.5;
+  --text-data-sm: 0.75rem;
+  --text-data-sm--line-height: 1.5;
+  --text-label-caps: 0.6875rem;
+  --text-label-caps--line-height: 1.3;
+  --text-label-caps--letter-spacing: 0.04em;
+
+  /* Spacing -- same "no scale chosen yet" situation as typography; minimal working value. */
+  --spacing-margin-panel: 1rem;
+  --spacing-gutter: 0.75rem;
+}
+
+/* Light-mode override -- same table, claro column, same names, no new token. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-integrity-ink: #581c87;
+    --color-provenance-strong: #131722;
+    --color-provenance-weak: #57606a;
+    --color-action-fill: #131722;
+    --color-action-border: #131722; /* "(o proprio fill)" -- DESIGN_SYSTEM.md s1.2 claro */
+    --color-action-on: #ffffff;
+    --color-focus-ring: #131722;
+    --color-surface-base: #ffffff;
+    --color-surface-chrome: #f7f8fa;
+    --color-surface-stripe: #eff0f2;
+
+    --color-primary-container: #ffffff;
+    --color-surface-lowest: #f7f8fa;
+    --color-surface-border: #eff0f2;
+    --color-on-surface: #131722;
+  }
+}
+
+/*
+ * Self-hosted fonts -- no runtime request to a third party, deterministic under `next start`
+ * and `make e2e` without network. Fetched once from Google Fonts (`fonts.gstatic.com`),
+ * committed as static assets under `public/fonts/`.
+ */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
+}
+
+/*
+ * Icon font -- the mechanism for `D1.8`'s "icone NAO renderiza o nome do glifo": without
+ * this face, `.material-symbols-outlined` spans (`S1Console.tsx`, `S3Inspector.tsx`) fall
+ * back to the browser's default text font and literally print the glyph name
+ * (`stop_circle`, `diamond`) -- `FB-playwright s4 #5`, the defect this task closes.
+ * Declaration copied from Google's published CSS for the family (verified against the
+ * fetched `https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined` response).
+ */
+@font-face {
+  font-family: "Material Symbols Outlined";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("/fonts/material-symbols-outlined.woff2") format("woff2");
+}
+
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  background-color: var(--color-surface-base);
+  color: var(--color-provenance-strong);
+}
