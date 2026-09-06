@@ -288,6 +288,7 @@ e2e:
 	@STATE_DIR="$$(bash scripts/e2e-env.sh up $(E2E_API_UP) $(E2E_API_PORT) $(E2E_NEXT_PORT))"; \
 	SETUP_RC=$$?; \
 	if [ $$SETUP_RC -ne 0 ]; then exit $$SETUP_RC; fi; \
-	E2E_BASE_URL="$$(cat "$$STATE_DIR/base_url")" frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts; RC=$$?; \
+	E2E_BASE_URL="$$(cat "$$STATE_DIR/base_url")" E2E_API_LOG_PATH="$$STATE_DIR/api.log" \
+	  frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts; RC=$$?; \
 	bash scripts/e2e-env.sh down "$$STATE_DIR"; \
 	exit $$RC
