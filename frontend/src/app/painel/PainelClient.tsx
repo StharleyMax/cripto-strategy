@@ -17,20 +17,34 @@
  * render has no data (`ADR-028/D4`) — `S1Console`/`S3Inspector` are mounted UNCONDITIONALLY
  * (their own "sem fonte" blocks are static regardless of API health, `B7`'s "no chão idem"), and
  * only the banner above them switches on `sourceState.kind`.
+ *
+ * `T-01.6`: the bancada component that used to render a static "Filtro: any resultado serve"
+ * paragraph here (`D1.3b`'s ESLint-`any` payload, never product copy — lives under
+ * `src/features/panel/`, component named `Filter`, `.tsx` extension) is NOT imported by this
+ * file or by anything else under `src/app` anymore — `SPEC-003` §4 forbids that edge outright
+ * (spelled out instead of quoted verbatim so this docstring is never counted as a hit by the
+ * grep that enforces the ban, the same technique `page.tsx` uses for the `fixtures.ts`
+ * invariant). It stays on disk, linted, exactly as `D1.3b` needs it; this route just stops
+ * being its only caller. The real catalog filter bar already lives inside `S3Inspector.tsx`,
+ * and `filterText` below now actually re-filters `catalog` on every keystroke (`RN-5`: a
+ * control that never recomputes what it renders is not "wired", it is decoration).
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
-import { Filter } from "../../features/panel/Filter.tsx";
 import { S1Console } from "../../features/s1-console/S1Console.tsx";
 import type { S1ViewModel } from "../../features/s1-console/view-model.ts";
+import { EMPTY_CATALOG_FILTER, filterCatalogRows, type CatalogRow } from "../../features/s3-inspector/domain.ts";
 import { S3Inspector } from "../../features/s3-inspector/S3Inspector.tsx";
-import type { S3ViewModel } from "../../features/s3-inspector/view-model.ts";
+import { buildCatalogRowView, type S3ViewModel } from "../../features/s3-inspector/view-model.ts";
 import type { SourceState } from "./source-state.ts";
 
 export interface PainelClientProps {
   readonly s1: S1ViewModel;
   readonly s3: S3ViewModel;
+  /** Raw catalog, unfiltered — empty in `F1` (no `GET /series-catalog` yet, `T-03.2`), but
+   * carried by props so the filter bar has something real to re-filter once `F3` lands it. */
+  readonly catalog: readonly CatalogRow[];
   readonly sourceState: SourceState;
 }
 
@@ -88,19 +102,32 @@ function EmptyBanner() {
   );
 }
 
-export function PainelClient({ s1, s3, sourceState }: PainelClientProps) {
+export function PainelClient({ s1, s3, catalog, sourceState }: PainelClientProps) {
   const [filterText, setFilterText] = useState("");
+
+  // `T-01.6`, `RN-5`/`RF-10`: recomputed on every keystroke, over the RAW `catalog` prop, not
+  // over `s3.catalogRows` (which was built once, server-side, against `EMPTY_CATALOG_FILTER`).
+  // `catalog` is `[]` throughout `F1` (no `GET /series-catalog` until `T-03.2`), so this filters
+  // zero rows today — the wiring, not the data, is what this task closes.
+  const catalogRows = useMemo(
+    () => filterCatalogRows(catalog, { ...EMPTY_CATALOG_FILTER, text: filterText }).map(buildCatalogRowView),
+    [catalog, filterText],
+  );
 
   return (
     <main data-fact={sourceState.kind === "ok" ? "ui_state:ok" : undefined}>
-      <Filter />
+      <h1 className="sr-only">Painel de Observabilidade de Ingestão</h1>
       {sourceState.kind === "error" && <ErrorBanner sourceState={sourceState} />}
       {sourceState.kind === "empty" && <EmptyBanner />}
       {sourceState.kind === "ok" && (
         <span data-fact={`rows:${s1.rows.length}`} className="sr-only" />
       )}
       <S1Console viewModel={s1} budgetSourced={false} reconnectionsSourced={false} />
-      <S3Inspector viewModel={s3} filterText={filterText} onFilterTextChange={setFilterText} />
+      <S3Inspector
+        viewModel={{ ...s3, catalogRows }}
+        filterText={filterText}
+        onFilterTextChange={setFilterText}
+      />
     </main>
   );
 }

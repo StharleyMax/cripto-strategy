@@ -14,7 +14,13 @@
  * is met by this route never reading either module again. (Spelled out instead of quoted
  * verbatim in this docstring, so grepping for the literal filename never counts this comment
  * as a hit.)
+ *
+ * `T-01.6`, `CA-F1-14` — `metadata.title` lives here (Server Component export), the only tab
+ * text `next start` ever serves for this route (`e2e/01-painel-carrega.spec.ts`'s
+ * `document_title` fact).
  */
+
+import type { Metadata } from "next";
 
 import {
   buildS1ViewModelFromIngestHealthProjection,
@@ -22,14 +28,25 @@ import {
   TransportError,
   type IngestHealthProjection,
 } from "../../features/s1-console/ingest-health-query.ts";
+import type { CatalogRow } from "../../features/s3-inspector/domain.ts";
 import { EMPTY_CATALOG_FILTER, buildS3ViewModel } from "../../features/s3-inspector/view-model.ts";
 import { PainelClient } from "./PainelClient.tsx";
 import type { SourceState } from "./source-state.ts";
+
+export const metadata: Metadata = {
+  title: "cripto-strategy — Painel",
+};
 
 /** The shape `page.tsx` falls back to when the transport throws — 0 runs, 0 gaps, same as a
  * genuinely empty store. `sourceState.kind` (never this fallback's shape) is what the UI reads
  * to tell the two apart (`ADR-028/D4`). */
 const EMPTY_PROJECTION: IngestHealthProjection = { runs: [], gaps: [] };
+
+/** `GET /series-catalog` does not exist until `F3` (`T-03.2`) — an empty catalog is the only
+ * honest input this route can hand `PainelClient.tsx` today (same reasoning as `s3` below).
+ * Passed RAW (not pre-filtered) so the client can re-filter it on every keystroke (`T-01.6`,
+ * `RN-5`/`RF-10`: a filter control that never recomputes its rows is inert, not honest). */
+const EMPTY_CATALOG: readonly CatalogRow[] = [];
 
 export default async function PainelPage() {
   let sourceState: SourceState;
@@ -55,7 +72,7 @@ export default async function PainelPage() {
   const s1 = buildS1ViewModelFromIngestHealthProjection(projection, 0, [], []);
   // Catalog rows have no source either: `GET /series-catalog` does not exist until `F3`
   // (`T-03.2`) — an empty catalog is the only honest input `S3Inspector.tsx` can render today.
-  const s3 = buildS3ViewModel([], EMPTY_CATALOG_FILTER, null, [], []);
+  const s3 = buildS3ViewModel(EMPTY_CATALOG, EMPTY_CATALOG_FILTER, null, [], []);
 
-  return <PainelClient s1={s1} s3={s3} sourceState={sourceState} />;
+  return <PainelClient s1={s1} s3={s3} catalog={EMPTY_CATALOG} sourceState={sourceState} />;
 }

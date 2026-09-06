@@ -50,7 +50,11 @@ export function S1Console({ viewModel, budgetSourced, reconnectionsSourced }: S1
                   SÉRIE
                 </th>
                 <th className="py-2 px-4 font-label-caps text-label-caps text-provenance-weak font-normal text-right">
-                  JANELA_DE_PERDA
+                  {/* `T-01.6`, `SPEC-003` §3.7, `RN-8`: this is a UI LABEL, a surface separate
+                      from the contract column it displays (`CLAUDE.md` boundary table row 8 vs.
+                      row 11) — the column itself stays `janela_de_perda`, untouched, in
+                      `ingest-health-query.ts`. */}
+                  Janela de perda
                 </th>
                 <th className="py-2 px-4 font-label-caps text-label-caps text-provenance-weak font-normal text-right">
                   RESILIÊNCIA
