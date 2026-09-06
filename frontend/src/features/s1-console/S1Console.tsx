@@ -35,7 +35,7 @@ export interface S1ConsoleProps {
 
 export function S1Console({ viewModel, budgetSourced, reconnectionsSourced }: S1ConsoleProps) {
   return (
-    <div className="flex flex-1 min-h-0">
+    <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <section className="flex-1 bg-primary-container flex flex-col min-w-0">
         <header className="h-8 bg-surface-lowest flex items-center px-margin-panel border-b border-surface-border shrink-0">
           <h2 className="font-label-caps text-label-caps text-on-surface">
@@ -43,7 +43,8 @@ export function S1Console({ viewModel, budgetSourced, reconnectionsSourced }: S1
           </h2>
         </header>
         <div className="flex-1 overflow-auto p-margin-panel">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full table-fixed text-left border-collapse">
+            <caption className="sr-only">Monitoramento de coletores e ingestão</caption>
             <thead>
               <tr className="border-b border-surface-border">
                 <th className="py-2 pr-4 font-label-caps text-label-caps text-provenance-weak font-normal">
@@ -79,7 +80,7 @@ export function S1Console({ viewModel, budgetSourced, reconnectionsSourced }: S1
                     )}
                   </td>
                   <td className="py-2 px-4 text-right">{row.resilience}</td>
-                  <td className="py-2 pl-4 text-right flex items-center justify-end gap-2">
+                  <td className="py-2 pl-4 text-right flex items-center justify-end gap-2 overflow-hidden">
                     {row.statusCell.uptimeText !== null && (
                       <span className="text-provenance-weak">{row.statusCell.uptimeText}</span>
                     )}

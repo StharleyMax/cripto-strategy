@@ -62,7 +62,7 @@ export function S3Inspector({
   onFilterTextChange,
 }: S3InspectorProps) {
   return (
-    <div className="flex flex-1 min-h-0">
+    <div className="flex flex-col md:flex-row flex-1 min-h-0">
       <section className="flex-1 flex flex-col min-w-0 gap-gutter">
         {/* CAMADA 1 — catálogo filtrável */}
         <div className="bg-primary-container flex flex-col min-h-0">
@@ -77,11 +77,13 @@ export function S3Inspector({
               value={filterText}
               onChange={(event) => onFilterTextChange(event.target.value)}
               placeholder="filtrar por símbolo, métrica, fonte..."
+              aria-label="Filtrar catálogo de séries"
               className="w-full bg-transparent border border-surface-border px-2 py-1 font-data-md text-data-md text-on-surface outline-none focus:outline-2 focus:outline-offset-2 focus:outline-[#8b949e]"
             />
           </div>
           <div className="flex-1 overflow-auto p-margin-panel">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full table-fixed text-left border-collapse">
+              <caption className="sr-only">Catálogo de séries</caption>
               <thead>
                 <tr className="border-b border-surface-border">
                   <th className="py-2 pr-4 font-label-caps text-label-caps text-provenance-weak font-normal">
@@ -112,10 +114,10 @@ export function S3Inspector({
                   >
                     <td className="py-2 pr-4 truncate">{row.label}</td>
                     <td className="py-2 px-4 text-provenance-strong">{row.provenance}</td>
-                    <td className="py-2 px-4 text-right text-provenance-weak">
+                    <td className="py-2 px-4 text-right text-provenance-weak truncate">
                       {row.completenessText}
                     </td>
-                    <td className="py-2 pl-4">
+                    <td className="py-2 pl-4 overflow-hidden">
                       {row.quarantineBadge.isQuarantined ? (
                         <span className={`flex items-center gap-1 font-label-caps text-label-caps ${INTEGRITY_INK_CLASS}`}>
                           <span
@@ -155,7 +157,8 @@ export function S3Inspector({
               </h2>
             </header>
             <div className="flex-1 overflow-auto p-margin-panel">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full table-fixed text-left border-collapse">
+                <caption className="sr-only">Linhas cruas — {viewModel.selectedSeriesLabel}</caption>
                 <thead>
                   <tr className="border-b border-surface-border">
                     <th className="py-2 pr-4 font-label-caps text-label-caps text-provenance-weak font-normal">
