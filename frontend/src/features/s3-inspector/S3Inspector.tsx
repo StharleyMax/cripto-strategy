@@ -25,10 +25,17 @@
  *     in that order — never a filled area, never red.
  *   - Gap rows: neutral ink (`text-provenance-weak`), never red — incomplete data is OPERATIONAL
  *     severity, not integrity.
- *   - The "abrir" action per catalog row is plain text, not a colored button — action lives in
- *     luminance/border, never hue (`ADR-010`).
+ *
+ * `T-01.4` update (`M3` default, `tasks.toml` `T-01.4`): the per-row "abrir" action and the
+ * `onOpenSeries` callback that used to drive `Camada 2`'s selection are REMOVED — reopening the
+ * control costs one component when a real quarantine-drawer navigation exists (`tasks_review.md`
+ * §1). `Camada 2` therefore always renders `SourceNoneMarker` in this feature: there is no
+ * mechanism left to ever set `selectedSeriesLabel`, so the branch that used it as a real state
+ * is dead code the way it stood — kept as the `!== null` branch below in case a later task wires
+ * a selection mechanism again, but unreachable today.
  */
 
+import { SourceNoneMarker } from "../panel/SourceNoneMarker.tsx";
 import type { S3ViewModel } from "./view-model.ts";
 
 export interface S3InspectorProps {
@@ -36,7 +43,6 @@ export interface S3InspectorProps {
   /** Free text typed into the filter bar, echoed back so the input stays controlled. */
   readonly filterText: string;
   readonly onFilterTextChange: (text: string) => void;
-  readonly onOpenSeries: (seriesKeyId: string) => void;
 }
 
 /** The one glyph the quarantine channel uses — a LOSANGO VAZADO, never a triangle or a circle
@@ -54,7 +60,6 @@ export function S3Inspector({
   viewModel,
   filterText,
   onFilterTextChange,
-  onOpenSeries,
 }: S3InspectorProps) {
   return (
     <div className="flex flex-1 min-h-0">
@@ -86,13 +91,16 @@ export function S3Inspector({
                     PROCEDÊNCIA
                   </th>
                   <th className="py-2 px-4 font-label-caps text-label-caps text-provenance-weak font-normal text-right">
-                    COMPLETUDE
+                    <span className="flex items-center justify-end gap-2">
+                      COMPLETUDE
+                      {/* `SPEC-003` §3.6: `Completeness` never travels on the wire — the API
+                          fills it `unmeasured`, front-side, in every phase this feature ships.
+                          The marker is column-level, not per-row, because no row has one. */}
+                      <SourceNoneMarker />
+                    </span>
                   </th>
-                  <th className="py-2 px-4 font-label-caps text-label-caps text-provenance-weak font-normal">
+                  <th className="py-2 pl-4 font-label-caps text-label-caps text-provenance-weak font-normal">
                     INTEGRIDADE
-                  </th>
-                  <th className="py-2 pl-4 font-label-caps text-label-caps text-provenance-weak font-normal text-right">
-                    &nbsp;
                   </th>
                 </tr>
               </thead>
@@ -107,7 +115,7 @@ export function S3Inspector({
                     <td className="py-2 px-4 text-right text-provenance-weak">
                       {row.completenessText}
                     </td>
-                    <td className="py-2 px-4">
+                    <td className="py-2 pl-4">
                       {row.quarantineBadge.isQuarantined ? (
                         <span className={`flex items-center gap-1 font-label-caps text-label-caps ${INTEGRITY_INK_CLASS}`}>
                           <span
@@ -120,15 +128,6 @@ export function S3Inspector({
                         </span>
                       ) : null}
                     </td>
-                    <td className="py-2 pl-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => onOpenSeries(row.seriesKeyId)}
-                        className="font-label-caps text-label-caps text-provenance-weak hover:text-provenance-strong underline decoration-dotted focus:outline-2 focus:outline-offset-2 focus:outline-[#8b949e]"
-                      >
-                        abrir
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -136,8 +135,19 @@ export function S3Inspector({
           </div>
         </div>
 
-        {/* CAMADA 2 — inspeção de linhas cruas, D6.15: src_label_raw NA MESMA LINHA que event_time */}
-        {viewModel.selectedSeriesLabel !== null && (
+        {/* CAMADA 2 — inspeção de linhas cruas, D6.15: src_label_raw NA MESMA LINHA que event_time.
+            `selectedSeriesLabel` has no way to become non-null in this feature (M3 removed the
+            only control that set it) — see the module docstring's `T-01.4 update`. */}
+        {viewModel.selectedSeriesLabel === null ? (
+          <div className="bg-primary-container flex flex-col min-h-0">
+            <header className="h-8 bg-surface-lowest flex items-center px-margin-panel border-b border-surface-border shrink-0">
+              <h2 className="font-label-caps text-label-caps text-on-surface">Linhas Cruas</h2>
+            </header>
+            <div className="p-margin-panel">
+              <SourceNoneMarker />
+            </div>
+          </div>
+        ) : (
           <div className="bg-primary-container flex flex-col min-h-0 flex-1">
             <header className="h-8 bg-surface-lowest flex items-center px-margin-panel border-b border-surface-border shrink-0">
               <h2 className="font-label-caps text-label-caps text-on-surface truncate">
