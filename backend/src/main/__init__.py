@@ -17,6 +17,7 @@ fresh store answer correctly.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Final
@@ -26,6 +27,8 @@ from fastapi import FastAPI
 from src.api import router as api_router
 from src.api.dependencies import get_ingest_record_source
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
+
+logger = logging.getLogger(__name__)
 
 # Where the process reads `md.ingest_run` / `md.ingest_gap` from, absent an override. Nothing
 # in `docs/` fixes this path yet — the store itself lives under `data/`, this repository's
@@ -38,13 +41,35 @@ _DEFAULT_STORE_PATH: Final[str] = "data/md/ingest_health.sqlite3"
 _STORE_PATH_ENV_VAR: Final[str] = "INGEST_HEALTH_STORE_PATH"
 
 
+class StoreParentDirectoryMissingError(RuntimeError):
+    """Raised by `create_app` when `store_path`'s parent directory does not exist.
+
+    `ADR-029/D3`: a missing parent directory is a MISCONFIGURATION — whoever pointed this
+    process at a path nobody prepared — never "zero runs". It is caught here, at the
+    composition root, precisely so it is NOT caught anywhere downstream: `_fetch` keeps
+    treating an absent *file* (existing parent, missing leaf) as an empty record
+    (`ADR-005/D6.1`, untouched by this check), and `SqliteIngestRecordStore` is never asked to
+    tell the two situations apart.
+    """
+
+
 def create_app(store_path: Path) -> FastAPI:
     """Build the FastAPI app, wiring the concrete `SqliteIngestRecordStore` at `store_path`.
 
     `store_path` is a PARAMETER, not read from the environment inside this function, so a
     test can point a fresh app at a `tmp_path` store without touching `os.environ` — the
     module-level `app` below is the only caller that resolves the path from the environment.
+
+    Raises `StoreParentDirectoryMissingError` when `store_path.parent` is not a directory —
+    checked here, not inside the store, so the failure happens at boot (`rc != 0`) rather than
+    on the first request (`ADR-029/D3`).
     """
+    parent = store_path.parent
+    if not parent.is_dir():
+        logger.error("ingest_health_store_parent_missing", extra={"path": str(parent)})
+        raise StoreParentDirectoryMissingError(
+            f"ingest health store parent directory does not exist: {parent}"
+        )
     app = FastAPI()
     app.include_router(api_router)
     store = SqliteIngestRecordStore(store_path)
