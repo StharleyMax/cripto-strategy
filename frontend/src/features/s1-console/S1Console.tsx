@@ -17,13 +17,23 @@
  * `S1ViewModel` it is given.
  */
 
+import { SourceNoneMarker } from "../panel/SourceNoneMarker.tsx";
 import type { S1ViewModel } from "./view-model.ts";
 
 export interface S1ConsoleProps {
   readonly viewModel: S1ViewModel;
+  /**
+   * `T-01.4`, `SPEC-003` §3.1 — the ETL queue depth and the storage-budget lines have no data
+   * source in this feature (that pipeline is Redis Streams consumer-group depth, `plano 07`
+   * itens `7.6`/`7.7`, a DIFFERENT feature's scope): `false` renders `SourceNoneMarker` instead
+   * of the (otherwise always-zero) formatted figures.
+   */
+  readonly budgetSourced: boolean;
+  /** Same reasoning as `budgetSourced`, for the "Reconexões e Rotina" panel. */
+  readonly reconnectionsSourced: boolean;
 }
 
-export function S1Console({ viewModel }: S1ConsoleProps) {
+export function S1Console({ viewModel, budgetSourced, reconnectionsSourced }: S1ConsoleProps) {
   return (
     <div className="flex flex-1 min-h-0">
       <section className="flex-1 bg-primary-container flex flex-col min-w-0">
@@ -93,29 +103,41 @@ export function S1Console({ viewModel }: S1ConsoleProps) {
           <div className="p-margin-panel flex flex-col gap-4 overflow-auto">
             <div className="flex flex-col gap-1">
               <span className="font-label-caps text-label-caps text-provenance-weak">FILA ETL (PENDENTES)</span>
-              <span className="font-data-lg text-data-lg tabular-nums">
-                {viewModel.storageBudget.etlQueueDepthText}
-              </span>
+              {budgetSourced ? (
+                <span className="font-data-lg text-data-lg tabular-nums">
+                  {viewModel.storageBudget.etlQueueDepthText}
+                </span>
+              ) : (
+                <SourceNoneMarker />
+              )}
             </div>
             <div className="flex flex-col gap-1">
               <span className="font-label-caps text-label-caps text-provenance-weak">
                 ORÇAMENTO ARMAZENAMENTO (GB/DIA)
               </span>
-              {viewModel.storageBudget.lines.map((line) => (
-                <div
-                  key={line.label}
-                  className="flex justify-between items-center py-1 border-b border-surface-border"
-                >
-                  <span className="font-data-sm text-data-sm">{line.label}</span>
-                  <span className="font-data-sm text-data-sm tabular-nums text-provenance-weak">
-                    {line.valueText}
-                  </span>
-                </div>
-              ))}
-              <div className="flex justify-between items-center py-1 mt-2">
-                <span className="font-label-caps text-label-caps">TOTAL PREVISTO</span>
-                <span className="font-data-md text-data-md tabular-nums">{viewModel.storageBudget.totalText}</span>
-              </div>
+              {budgetSourced ? (
+                <>
+                  {viewModel.storageBudget.lines.map((line) => (
+                    <div
+                      key={line.label}
+                      className="flex justify-between items-center py-1 border-b border-surface-border"
+                    >
+                      <span className="font-data-sm text-data-sm">{line.label}</span>
+                      <span className="font-data-sm text-data-sm tabular-nums text-provenance-weak">
+                        {line.valueText}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between items-center py-1 mt-2">
+                    <span className="font-label-caps text-label-caps">TOTAL PREVISTO</span>
+                    <span className="font-data-md text-data-md tabular-nums">
+                      {viewModel.storageBudget.totalText}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <SourceNoneMarker />
+              )}
             </div>
           </div>
         </div>
@@ -124,15 +146,19 @@ export function S1Console({ viewModel }: S1ConsoleProps) {
             <h2 className="font-label-caps text-label-caps text-on-surface">Reconexões e Rotina</h2>
           </header>
           <div className="p-margin-panel overflow-auto bg-surface-lowest flex-1">
-            <ul className="font-data-sm text-data-sm tabular-nums text-provenance-weak flex flex-col gap-1">
-              {viewModel.reconnectionEvents.map((event) => (
-                <li key={`${event.time}-${event.description}`} className="flex gap-2">
-                  <span>[{event.time}]</span>
-                  <span>{event.description}</span>
-                  <span>Dur: {event.durationLabel}</span>
-                </li>
-              ))}
-            </ul>
+            {reconnectionsSourced ? (
+              <ul className="font-data-sm text-data-sm tabular-nums text-provenance-weak flex flex-col gap-1">
+                {viewModel.reconnectionEvents.map((event) => (
+                  <li key={`${event.time}-${event.description}`} className="flex gap-2">
+                    <span>[{event.time}]</span>
+                    <span>{event.description}</span>
+                    <span>Dur: {event.durationLabel}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <SourceNoneMarker />
+            )}
           </div>
         </div>
       </section>
