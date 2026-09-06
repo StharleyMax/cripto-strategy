@@ -1,7 +1,7 @@
 # Plano de execução — `SPEC-003` · Camada de leitura do `/painel`
 
-**SPEC:** [`SPEC-003`](../../specs/SPEC-003-camada-de-leitura-do-painel.md) (**`SPEC_DRAFT`** — o gate do owner ainda não aconteceu; `harness pipeline state camada-de-leitura-do-painel`)
-**ADRs:** [`ADR-028`](../../adr/ADR-028-leitura-do-painel-em-server-component-e-o-portao-de-d6-4-medido-pela-propriedade.md) (proposta; co-assinada pelo `quant-architect` em 2026-09-04) · [`ADR-029`](../../adr/ADR-029-topologia-da-camada-de-leitura-caddy-proprio-mesma-origem-por-caminho-e-readiness-que-discrimina.md) (proposta)
+**SPEC:** [`SPEC-003`](../../specs/SPEC-003-camada-de-leitura-do-painel.md) (**`SPEC_APPROVED`** — `approve spec` do owner em `2026-09-05T12:53:22Z`; ledger corrente sempre por `harness pipeline state camada-de-leitura-do-painel`)
+**ADRs:** [`ADR-028`](../../adr/ADR-028-leitura-do-painel-em-server-component-e-o-portao-de-d6-4-medido-pela-propriedade.md) (aceita; co-assinada pelo `quant-architect` em 2026-09-04) · [`ADR-029`](../../adr/ADR-029-topologia-da-camada-de-leitura-caddy-proprio-mesma-origem-por-caminho-e-readiness-que-discrimina.md) (aceita)
 **PRD:** [`PRD-003`](../../specs/PRD-003-camada-de-leitura-do-painel.md) · **Feature:** `camada-de-leitura-do-painel` (filha de `plataforma-dados`) · **Rev de ancoragem:** `master@c8e7193` · **Data:** 2026-09-04
 **Tracker:** `local_only` (MCP Atlassian não autenticado nesta sessão); UVs candidatas em `PRD-003` §6; materialização é ato do `/tech-lead` após `SPEC_APPROVED`.
 
