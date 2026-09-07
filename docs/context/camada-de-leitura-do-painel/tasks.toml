@@ -349,7 +349,7 @@ tracker = { provider = "jira", id = "CST-131", url = "https://conversationhub.at
 id = "T-03.1"
 title = "[sentimento][docs] 03 · ADR do envelope agregado por serie (quant-architect, [Q7]) — formulas de status/uptimePercent/resilience/retention sobre IngestRecordSource.runs(), nome da rota, campos no fio; prazo 2026-09-11"
 components = ["sentimento", "docs"]
-status = "done"
+status = "done"  # resolve: QA APPROVED 2026-09-07T17:24:26Z @ 2e80219a0a649d0f873ef6c5264c7944107dff0c
 phase = "03"
 depends_on = []
 refs = [
@@ -368,7 +368,7 @@ tracker = { provider = "jira", id = "CST-132", url = "https://conversationhub.at
 id = "T-03.2"
 title = "[sentimento][infra] 03 · Use case list_series_catalog() sobre as linhas reais de cvd_source_catalog/price_source_catalog/open_interest_catalog (3+2+5=10) e rota GET {API_PREFIX}/series-catalog — envelope series_catalog, 0 SQL no handler"
 components = ["sentimento", "infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T17:24:26Z @ 2e80219a0a649d0f873ef6c5264c7944107dff0c
 phase = "03"
 depends_on = ["T-03.1", "T-02.2"]
 refs = [
@@ -386,7 +386,7 @@ tracker = { provider = "jira", id = "CST-133", url = "https://conversationhub.at
 id = "T-03.3"
 title = "[web] 03 · parseCatalogEnvelope estrito e S3 exibe as 10 linhas vindas da API — FIXTURE_CATALOG_ROWS fora do grafo de producao"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T17:24:26Z @ 2e80219a0a649d0f873ef6c5264c7944107dff0c
 phase = "03"
 depends_on = ["T-03.2", "T-01.4"]
 refs = [
@@ -403,7 +403,7 @@ tracker = { provider = "jira", id = "CST-134", url = "https://conversationhub.at
 id = "T-03.4"
 title = "[sentimento][infra] 03 · Porta list_all() da quarentena, QUARANTINE_STORE_PATH em src.main (ausente/pai inexistente => create_app recusa) e rota GET {API_PREFIX}/series-quarantine SEM points_json"
 components = ["sentimento", "infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T17:24:26Z @ 2e80219a0a649d0f873ef6c5264c7944107dff0c
 phase = "03"
 depends_on = ["T-03.1", "T-02.1", "T-02.2"]
 refs = [
@@ -420,7 +420,7 @@ tracker = { provider = "jira", id = "CST-135", url = "https://conversationhub.at
 id = "T-03.5"
 title = "[web] 03 · Gaveta de quarentena le GET /series-quarantine com parser estrito — FIXTURE_DIVERGENCES fora do grafo de producao"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T17:24:26Z @ 2e80219a0a649d0f873ef6c5264c7944107dff0c
 phase = "03"
 depends_on = ["T-03.4", "T-01.4"]
 refs = [
@@ -437,7 +437,7 @@ tracker = { provider = "jira", id = "CST-136", url = "https://conversationhub.at
 id = "T-03.6"
 title = "[sentimento][infra] 03 · Use case de agregacao por serie sobre IngestRecordSource.runs() e rota GET {API_PREFIX}/collector-status em envelope SEPARADO, formulas conforme a ADR de T-03.1 — sha256 de /ingest-health NAO muda (F-D6-2)"
 components = ["sentimento", "infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T17:24:26Z @ 2e80219a0a649d0f873ef6c5264c7944107dff0c
 phase = "03"
 depends_on = ["T-03.1", "T-02.2"]
 refs = [
@@ -455,7 +455,7 @@ tracker = { provider = "jira", id = "CST-137", url = "https://conversationhub.at
 id = "T-03.7"
 title = "[web] 03 · Parser proprio do agregado (reprova campo ausente) e S1 passa a exibir o agregado por serie, nao o ultimo run — janela_de_perda exibida como veio"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T17:24:26Z @ 2e80219a0a649d0f873ef6c5264c7944107dff0c
 phase = "03"
 depends_on = ["T-03.6", "T-01.4"]
 refs = [
@@ -473,7 +473,7 @@ tracker = { provider = "jira", id = "CST-138", url = "https://conversationhub.at
 id = "T-03.8"
 title = "[web] 03 · Formatador unico Intl.NumberFormat('pt-BR') na apresentacao, 0 toLocaleString espalhado, fio com ponto decimal, cabecalho 'Janela de perda' sem tocar a coluna — e2e 07 de locale reescrito"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T17:24:26Z @ 2e80219a0a649d0f873ef6c5264c7944107dff0c
 phase = "03"
 depends_on = ["T-01.9", "T-03.3", "T-03.7"]
 refs = [
