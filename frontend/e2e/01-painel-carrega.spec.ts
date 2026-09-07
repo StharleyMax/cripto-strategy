@@ -100,4 +100,13 @@ test("B1: API de pé — GET /painel entrega >= 1 linha, incrementa o access log
   const rowsAttr = await rowsFact.getAttribute("data-fact");
   fact(SPEC, "rows_data_fact", rowsAttr);
   expect(rowsAttr).toMatch(/^rows:[1-9]\d*$/);
+
+  // `T-03.3`, `plano 03` `D3.1`: `GET /series-catalog` concatena os 3 módulos de catálogo já
+  // populados (`cvd_source_catalog` 3 + `price_source_catalog` 2 + `open_interest_catalog` 5),
+  // sempre 10 — não depende do store seedado (`series_catalog` é estático para `BTCUSDT`,
+  // diferente de `S1`'s `rows:N` acima).
+  const catalogRowsFact = page.locator('[data-fact^="catalog_rows:"]');
+  const catalogRowsAttr = await catalogRowsFact.getAttribute("data-fact");
+  fact(SPEC, "catalog_rows_data_fact", catalogRowsAttr);
+  expect(catalogRowsAttr).toBe("catalog_rows:10");
 });

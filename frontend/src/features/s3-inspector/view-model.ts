@@ -24,7 +24,7 @@ import {
   type QuarantineDrawer,
 } from "./domain.ts";
 import type { IngestHealthGapRow } from "../s1-console/ingest-health-query.ts";
-import { buildSeriesLabel } from "./series-catalog.ts";
+import { buildSeriesLabel, type SeriesKey } from "./series-catalog.ts";
 import { isQuarantined, openTerms as quarantineOpenTerms } from "./quarantine.ts";
 
 /** Render an epoch-ms instant as the `...Z` ISO shape the rest of this codebase already uses
@@ -35,13 +35,20 @@ export function formatEventTimeIso(eventTimeMs: number): string {
 }
 
 /** `STITCH_CONTEXT.md` §9 item 10, verbatim shape: grid series get `"N/M · k lacuna(s)"`; tick
- * series get `"contiguidade (N saltos)"` — never a denominator the series does not have. */
+ * series get `"contiguidade (N saltos)"` — never a denominator the series does not have.
+ * `unmeasured` (`T-03.3`, `domain.ts`'s own note on the type) gets a THIRD, distinct text —
+ * "não medido" — never one of the other two shapes with invented numbers: the column already
+ * carries a `data-fact="source:none"` marker at the header (`S3Inspector.tsx`), and this text is
+ * the per-row echo of that same absence, not a second, silently-numeric reading of it. */
 export function completenessText(completeness: Completeness): string {
   if (completeness.kind === "grid") {
     const gapWord = completeness.gaps === 1 ? "lacuna" : "lacunas";
     return `${completeness.present}/${completeness.expected} · ${completeness.gaps} ${gapWord}`;
   }
-  return `contiguidade (${completeness.jumps} saltos)`;
+  if (completeness.kind === "tick") {
+    return `contiguidade (${completeness.jumps} saltos)`;
+  }
+  return "não medido";
 }
 
 /** The catalog badge for quarantine — text is `null` when the series is NOT quarantined (the
@@ -78,11 +85,48 @@ export interface CatalogRowView {
   readonly quarantineBadge: QuarantineBadgeText;
 }
 
+/**
+ * `T-03.3` fixed this to join ALL 15 `SeriesKey` terms, not the 6 this function used to pick
+ * (`provider`/`venue`/`instrumentId`/`metric`/`reduction`/`interval`). Measured LIVE against the
+ * real 10-row catalog (`T-03.3`'s own DoD): `cvd_source_catalog.py` builds TWO `binance` `cvd_source`
+ * rows that share those exact 6 fields (`SUM`/`1m`) and differ ONLY in `quantityField`
+ * (`q` vs `nq` — `ADR-001`'s whole reason that term is IN the identity at all, `series_key.py`'s
+ * own module docstring). The 6-field string collided for those two rows, which is a real React
+ * key collision (`unique ids: 9 of 10`, measured with a scratch script against the live API),
+ * and a duplicate `<tr key>` is exactly the kind of defect that can render one row's DOM node
+ * with another row's props after a list reflow (observed: filtering to the 5 `sum_open_interest`
+ * rows also kept a stale `cvd_source` row visible — 6 `<tr>`, not 5). Backend's own
+ * `SeriesKey.series_key_id()` (`series_key.py`) computes a `sha256` over all FIFTEEN terms for
+ * exactly this reason ("two keys that differ in any ONE term get different ids"); this function
+ * does not need a hash, only uniqueness, so it joins all 15 raw values instead of hashing them —
+ * cheaper, and any future collision is a `SeriesKey` bug (two truly identical series), not a
+ * `seriesKeyId` one.
+ */
+function fullSeriesKeyId(key: SeriesKey): string {
+  return [
+    key.provider,
+    key.venue,
+    key.instrumentId,
+    key.metric,
+    key.cohort,
+    key.interval,
+    key.unit,
+    key.denom,
+    key.nature,
+    key.tsConvention,
+    key.reduction,
+    key.quantityField,
+    key.labelShift,
+    key.aggregationScope,
+    key.verifiedBy,
+  ].join(":");
+}
+
 export function buildCatalogRowView(row: CatalogRow): CatalogRowView {
   return {
     // No wire `series_key_id` (`sha256`) is computed here — this feature reads a fixture/store
     // catalog, it does not identify series; a stable per-row string suffices for React `key`s.
-    seriesKeyId: `${row.entry.key.provider}:${row.entry.key.venue}:${row.entry.key.instrumentId}:${row.entry.key.metric}:${row.entry.key.reduction}:${row.entry.key.interval}`,
+    seriesKeyId: fullSeriesKeyId(row.entry.key),
     label: buildSeriesLabel(row.entry),
     instrumentId: row.entry.key.instrumentId,
     provider: row.entry.key.provider,

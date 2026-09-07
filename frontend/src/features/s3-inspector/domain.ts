@@ -11,10 +11,12 @@
  *
  * ── SCOPE: headless data/formula module, same tier as `s1-console/domain.ts` ──────────────────
  *
- * No Next.js application exists yet in `frontend/` (`frontend/README.md` §1,
- * `src/app/routes.ts`) — this module and `fixtures.ts` are FIXTURE/SYNTHETIC data, never read
- * from a store. `S3Inspector.tsx` follows the same lint-only presentational tier `S1Console.tsx`
- * established.
+ * At `T-06.10` (when this module was written) no Next.js application existed yet in `frontend/`,
+ * so this module and `fixtures.ts` were both fixture/synthetic data, never read from a store.
+ * `T-03.3` changes that for `CatalogRow`: `page.tsx` now builds it from the REAL
+ * `GET /series-catalog` response (`series-catalog-query.ts`) — `fixtures.ts` remains
+ * fixture/synthetic, test-only (`ADR-028/D5`), never imported by production code. `S3Inspector.tsx`
+ * still follows the same lint-only presentational tier `S1Console.tsx` established.
  *
  * `Provenance` here reuses the SPEC's own Portuguese VALUES (`OBSERVADO`/`DERIVADO`/`MODELADO`/
  * `HUMANO`) verbatim from `backend/.../provenance.py::Provenance` — contract data crossing to a
@@ -34,11 +36,19 @@ export type Provenance = "OBSERVADO" | "DERIVADO" | "MODELADO" | "HUMANO";
 /**
  * `STITCH_CONTEXT.md` §9 item 10, "completude" field: a GRID series (Coinalyze/Binance grade
  * series) has an EXPECTED denominator; a TICK series does not, and inventing one is a defect.
- * Mirrors the two branches the source text names, no third invented here.
+ * Mirrors the two branches the source text names, no third invented here — EXCEPT `unmeasured`
+ * (`T-03.3`), which is not a third READING of the source data but the honest absence of one:
+ * `SPEC-003` §3.4 fixes `Completeness` as a field `GET /series-catalog` never puts on the wire
+ * ("não vai no fio — o front preenche `unmeasured`"), so every `CatalogRow` this feature builds
+ * from the real endpoint (`series-catalog-query.ts`) carries this variant, never a fabricated
+ * `grid`/`tick` reading. `grid`/`tick` stay reachable for `fixtures.ts` (test-only, `ADR-028/D5`)
+ * and for a FUTURE task that wires a real completeness source, if one is ever built (`NG-3`
+ * explicitly defers that; `4c` names the "sixth requirement" this feature does not deliver).
  */
 export type Completeness =
   | { readonly kind: "grid"; readonly present: number; readonly expected: number; readonly gaps: number }
-  | { readonly kind: "tick"; readonly contiguous: number; readonly jumps: number };
+  | { readonly kind: "tick"; readonly contiguous: number; readonly jumps: number }
+  | { readonly kind: "unmeasured" };
 
 /** One row of the S3 catalog panel (Camada 1) — `SeriesCatalogEntry` plus the two facts the
  * catalog table needs that are not columns of the entry itself: completeness and quarantine. */

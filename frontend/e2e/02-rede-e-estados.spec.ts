@@ -96,6 +96,15 @@ for (const cause of CAUSES) {
       const banner = page.locator(`[data-fact="${cause.expectedFact}"]`);
       fact(SPEC, cause.name, await banner.count());
       await expect(banner).toHaveCount(1);
+
+      // `T-03.3`, `plano 03` `D3.1`, coluna "servidor ausente": as duas causas acima também
+      // derrubam `GET /series-catalog` (mesmo host, mesma falta de listener/base URL) —
+      // `catalog_rows:0`, nunca `FIXTURE_CATALOG_ROWS`.
+      const catalogRowsFact = page.locator('[data-fact^="catalog_rows:"]');
+      const catalogRowsAttr = await catalogRowsFact.getAttribute("data-fact");
+      fact(SPEC, `${cause.name}_catalog_rows`, catalogRowsAttr);
+      expect(catalogRowsAttr).toBe("catalog_rows:0");
+
       await page.close();
     } finally {
       await instance.close();
