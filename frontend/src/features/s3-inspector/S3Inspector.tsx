@@ -52,9 +52,21 @@ export interface S3InspectorProps {
  * the same family `S1Console.tsx` uses for `stop_circle`). */
 const INTEGRITY_DIAMOND_GLYPH = "diamond";
 
-/** `#e0aaff` — `--dado-quebrado-ink`, dark mode (`DESIGN_SYSTEM.md` §1.4-bis). The ONLY place
- * this component uses this hex: the glyph and the word beside it, both `ink`, never a fill. */
-const INTEGRITY_INK_CLASS = "text-[#e0aaff]";
+/** `--dado-quebrado-ink` (`DESIGN_SYSTEM.md` §1.4-bis) — the glyph and the word beside it, both
+ * `ink`, never a fill. `T-03.3` fixed this to the theme-aware `text-integrity-ink` utility
+ * (`globals.css`'s `@theme` maps `--color-integrity-ink`, dark `#e0aaff` / light `#581c87` under
+ * `prefers-color-scheme`): the previous hardcoded `text-[#e0aaff]` arbitrary value bypassed that
+ * switch entirely, always painting the DARK-mode hex — invisible in `F1`/`F2` because this badge
+ * never actually rendered (the catalog was `[]` until this task), and caught for the first time
+ * by a REAL axe-core run once `T-03.3` wired 10 real, all-quarantined rows: `#e0aaff` on the
+ * LIGHT surface (`prefers-color-scheme: light`, this project's e2e default) fails WCAG AA
+ * color-contrast (`serious`, `nodes: 20`, measured live via `make e2e`'s `05-a11y.spec.ts`) —
+ * exactly what `text-integrity-ink` already avoids, since it resolves to the light value
+ * (`#581c87`) DESIGN_SYSTEM.md's own table already measured passing (§1.4-bis: 9,54 light /
+ * 8,15 dark). No new color, no new decision — the token existed and every OTHER class in this
+ * component already uses its theme-aware form (`text-provenance-weak`, `text-on-surface`, …);
+ * this one line had not been migrated to it. */
+const INTEGRITY_INK_CLASS = "text-integrity-ink";
 
 export function S3Inspector({
   viewModel,

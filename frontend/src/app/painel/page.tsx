@@ -26,6 +26,16 @@
  * `T-01.6`, `CA-F1-14` — `metadata.title` lives here (Server Component export), the only tab
  * text `next start` ever serves for this route (`e2e/01-painel-carrega.spec.ts`'s
  * `document_title` fact).
+ *
+ * `T-03.3`, `SPEC-003` §3.4: `S3`'s catalog gained a SECOND network call, independent of `S1`'s
+ * — `GET /series-catalog` (`series-catalog-query.ts`, built by `T-03.2`'s backend). The two
+ * calls are caught SEPARATELY: a failure of the catalog fetch never overwrites an `"ok"`
+ * `sourceState` that `S1`'s own call already established (a genuine partial-failure would show
+ * `S1` populated and `S3`'s catalog empty, which is the honest reading of "only one of two
+ * routes is unreachable" — not a case this task's DoD exercises, since both routes live on the
+ * SAME FastAPI process and go up/down together in practice). When `S1`'s call itself throws,
+ * `sourceState` is already `"error"` before the catalog fetch runs, and the catalog's own
+ * failure just leaves it at the empty fallback — `catalog_rows:0`, never `FIXTURE_CATALOG_ROWS`.
  */
 
 import type { Metadata } from "next";
@@ -37,6 +47,10 @@ import {
   type CollectorStatusProjection,
 } from "../../features/s1-console/collector-status-query.ts";
 import type { CatalogRow } from "../../features/s3-inspector/domain.ts";
+import {
+  catalogRowsFromSeriesCatalogProjection,
+  fetchSeriesCatalogProjectionViaHttp,
+} from "../../features/s3-inspector/series-catalog-query.ts";
 import { EMPTY_CATALOG_FILTER, buildS3ViewModel } from "../../features/s3-inspector/view-model.ts";
 import { PainelClient } from "./PainelClient.tsx";
 import type { SourceState } from "./source-state.ts";
@@ -50,8 +64,8 @@ export const metadata: Metadata = {
  * the two apart (`ADR-028/D4`). */
 const EMPTY_PROJECTION: CollectorStatusProjection = { as_of: "", window_hours: 24, rows: [] };
 
-/** `GET /series-catalog` does not exist until `F3` (`T-03.2`) — an empty catalog is the only
- * honest input this route can hand `PainelClient.tsx` today (same reasoning as `s3` below).
+/** The shape this route falls back to when `GET /series-catalog` throws — same reasoning as
+ * `EMPTY_PROJECTION` above, applied to the catalog transport instead of the aggregate one.
  * Passed RAW (not pre-filtered) so the client can re-filter it on every keystroke (`T-01.6`,
  * `RN-5`/`RF-10`: a filter control that never recomputes its rows is inert, not honest). */
 const EMPTY_CATALOG: readonly CatalogRow[] = [];
@@ -71,15 +85,23 @@ export default async function PainelPage() {
     sourceState = { kind: "error", error: cause.kind, status: cause.status };
   }
 
+  let catalog: readonly CatalogRow[];
+  try {
+    catalog = catalogRowsFromSeriesCatalogProjection(await fetchSeriesCatalogProjectionViaHttp());
+  } catch (cause) {
+    if (!(cause instanceof TransportError)) {
+      throw cause;
+    }
+    catalog = EMPTY_CATALOG;
+  }
+
   // `etlQueueDepthPending`/`storageBudgetLines`/`reconnectionEvents`: no data source exists yet
   // for any of the three in this feature (Redis Streams consumer-group depth, `plano 07` itens
   // `7.6`/`7.7` — a DIFFERENT feature's scope) — `PainelClient.tsx` renders `SourceNoneMarker`
   // for all three regardless of these placeholders' value (`budgetSourced`/`reconnectionsSourced`
   // are hard-`false`, not derived from them).
   const s1 = buildS1ViewModelFromCollectorStatusProjection(projection, 0, [], []);
-  // Catalog rows have no source either: `GET /series-catalog` does not exist until `F3`
-  // (`T-03.2`) — an empty catalog is the only honest input `S3Inspector.tsx` can render today.
-  const s3 = buildS3ViewModel(EMPTY_CATALOG, EMPTY_CATALOG_FILTER, null, [], []);
+  const s3 = buildS3ViewModel(catalog, EMPTY_CATALOG_FILTER, null, [], []);
 
-  return <PainelClient s1={s1} s3={s3} catalog={EMPTY_CATALOG} sourceState={sourceState} />;
+  return <PainelClient s1={s1} s3={s3} catalog={catalog} sourceState={sourceState} />;
 }

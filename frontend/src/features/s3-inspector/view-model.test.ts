@@ -45,6 +45,12 @@ test("completenessText de série de tick usa contiguidade (N saltos), nunca um d
   assert.ok(!text.includes("/"), "série de tick não tem denominador esperado — inventar um é defeito");
 });
 
+test("completenessText de série unmeasured (T-03.3, Completeness não vai no fio) é 'não medido', nunca um número inventado", () => {
+  const text = completenessText({ kind: "unmeasured" });
+  assert.equal(text, "não medido");
+  assert.ok(!/\d/.test(text), "unmeasured não pode carregar dígito nenhum — não há medição a mostrar");
+});
+
 // ── Quarentena: losango + palavra + violeta, NUNCA vermelho — a cor é o TERCEIRO canal ──────
 
 test("quarantineBadgeText de série resolvida não produz badge (ausência, não falso)", () => {
@@ -64,6 +70,55 @@ test("buildCatalogRowView nunca introduz uma cor no texto — só strings, o com
   const view = buildCatalogRowView(FIXTURE_CATALOG_ROWS[1]!); // coinalyze, quarentena
   assert.equal(view.label, "open_interest · grade 1m · BTCUSDT · coinalyze");
   assert.equal(view.quarantineBadge.word, "QUARENTENA");
+});
+
+test("buildCatalogRowView: seriesKeyId usa os 15 termos, não só 6 — duas linhas iguais em provider/venue/instrumentId/metric/reduction/interval (T-03.3, medido ao vivo contra a API real: cvd_source binance q/nq) precisam de seriesKeyId DIFERENTE", () => {
+  const shared = {
+    provider: "binance",
+    venue: "usdm_futures",
+    instrumentId: "BTCUSDT",
+    metric: "cvd_source",
+    cohort: "ALL",
+    interval: "1m",
+    unit: "BTC",
+    denom: "NA",
+    nature: "FLOW" as const,
+    tsConvention: "AGGREGATE_OVER_BUCKET" as const,
+    reduction: "SUM" as const,
+    labelShift: 0,
+    aggregationScope: "Symbol",
+  };
+  const rowQ = buildCatalogRowView({
+    entry: {
+      key: { ...shared, quantityField: "q", verifiedBy: "test_a" },
+      nativeGrid: "1m",
+      maxStalenessMs: 60_000,
+      priceUse: null,
+      reconstructedFrom: null,
+      publishedError: null,
+    },
+    provenance: "OBSERVADO",
+    completeness: { kind: "unmeasured" },
+    quarantine: { labelShiftPresent: true, unitPresent: true, availableAtPresent: false },
+  });
+  const rowNq = buildCatalogRowView({
+    entry: {
+      key: { ...shared, quantityField: "nq", verifiedBy: "test_b" },
+      nativeGrid: "1m",
+      maxStalenessMs: 60_000,
+      priceUse: null,
+      reconstructedFrom: null,
+      publishedError: null,
+    },
+    provenance: "OBSERVADO",
+    completeness: { kind: "unmeasured" },
+    quarantine: { labelShiftPresent: true, unitPresent: true, availableAtPresent: false },
+  });
+  assert.notEqual(
+    rowQ.seriesKeyId,
+    rowNq.seriesKeyId,
+    "q e nq são SÉRIES DIFERENTES (ADR-001) — um seriesKeyId igual é uma colisão de key do React",
+  );
 });
 
 // ── D6.15: linha de dado carrega src_label_raw ao lado de event_time; linha de lacuna é

@@ -23,11 +23,21 @@
  * `src/features/panel/`, component named `Filter`, `.tsx` extension) is NOT imported by this
  * file or by anything else under `src/app` anymore — `SPEC-003` §4 forbids that edge outright
  * (spelled out instead of quoted verbatim so this docstring is never counted as a hit by the
- * grep that enforces the ban, the same technique `page.tsx` uses for the `fixtures.ts`
- * invariant). It stays on disk, linted, exactly as `D1.3b` needs it; this route just stops
+ * grep that enforces the ban, the same technique `page.tsx` uses for the `fixtures` + the TS
+ * extension invariant — `T-03.3` fixed THIS line too: it used to spell the literal filename out
+ * in full, which made it a false hit of that very grep). It stays on disk, linted, exactly as
+ * `D1.3b` needs it; this route just stops
  * being its only caller. The real catalog filter bar already lives inside `S3Inspector.tsx`,
  * and `filterText` below now actually re-filters `catalog` on every keystroke (`RN-5`: a
  * control that never recomputes what it renders is not "wired", it is decoration).
+ *
+ * `T-03.3`, plan `03` item `3.2`'s DoD: `catalog` is no longer always `[]` — `page.tsx` now
+ * fetches `GET /series-catalog` and hands the real rows down by props. The `catalog_rows:${N}`
+ * marker below is this task's own falsifier surface: `10` "de pé" (`D3.1`), `0` "no chão"
+ * (transport failure ⇒ `page.tsx`'s `EMPTY_CATALOG` fallback), and it renders regardless of
+ * `sourceState.kind` — unlike `rows:${s1.rows.length}` (gated to `"ok"`), the catalog count is
+ * not gated on `S1`'s OWN transport succeeding, since `T-03.3`'s DoD reads it independently of
+ * whichever of the two calls actually failed (`page.tsx`'s own docstring names the reasoning).
  */
 
 import { useMemo, useState } from "react";
@@ -42,8 +52,9 @@ import type { SourceState } from "./source-state.ts";
 export interface PainelClientProps {
   readonly s1: S1ViewModel;
   readonly s3: S3ViewModel;
-  /** Raw catalog, unfiltered — empty in `F1` (no `GET /series-catalog` yet, `T-03.2`), but
-   * carried by props so the filter bar has something real to re-filter once `F3` lands it. */
+  /** Raw catalog, unfiltered — the real 10 rows `page.tsx` fetches from `GET /series-catalog`
+   * (`T-03.3`), or `[]` when that transport throws. Carried by props so the filter bar re-filters
+   * something real on every keystroke (`RN-5`/`RF-10`). */
   readonly catalog: readonly CatalogRow[];
   readonly sourceState: SourceState;
 }
@@ -107,8 +118,8 @@ export function PainelClient({ s1, s3, catalog, sourceState }: PainelClientProps
 
   // `T-01.6`, `RN-5`/`RF-10`: recomputed on every keystroke, over the RAW `catalog` prop, not
   // over `s3.catalogRows` (which was built once, server-side, against `EMPTY_CATALOG_FILTER`).
-  // `catalog` is `[]` throughout `F1` (no `GET /series-catalog` until `T-03.2`), so this filters
-  // zero rows today — the wiring, not the data, is what this task closes.
+  // `T-03.3`: `catalog` is now the real 10 rows `page.tsx` fetches from `GET /series-catalog`
+  // (`0` "no chão" — transport failure, never `FIXTURE_CATALOG_ROWS`).
   const catalogRows = useMemo(
     () => filterCatalogRows(catalog, { ...EMPTY_CATALOG_FILTER, text: filterText }).map(buildCatalogRowView),
     [catalog, filterText],
@@ -122,6 +133,11 @@ export function PainelClient({ s1, s3, catalog, sourceState }: PainelClientProps
       {sourceState.kind === "ok" && (
         <span data-fact={`rows:${s1.rows.length}`} className="sr-only" />
       )}
+      {/* `T-03.3`: unlike `rows:${N}` above, this is NOT gated to `sourceState.kind === "ok"` —
+          the catalog fetch is caught independently of `S1`'s own call (`page.tsx`), so its count
+          is meaningful ("de pé" = 10, "no chão" = 0, `plano 03` `D3.1`) regardless of which of
+          the two transports produced whichever `sourceState` this render has. */}
+      <span data-fact={`catalog_rows:${catalogRows.length}`} className="sr-only" />
       <S1Console viewModel={s1} budgetSourced={false} reconnectionsSourced={false} />
       <S3Inspector
         viewModel={{ ...s3, catalogRows }}
