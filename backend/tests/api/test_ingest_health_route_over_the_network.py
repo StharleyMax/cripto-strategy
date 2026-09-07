@@ -99,7 +99,7 @@ def test_get_ingest_health_serves_the_fixed_envelope_when_the_process_is_up(
 
     with _served(create_app(store_path=store_path)) as port:
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        connection.request("GET", "/ingest-health")
+        connection.request("GET", "/api/v1/ingest-health")
         response = connection.getresponse()
         body = json.loads(response.read())
         connection.close()
