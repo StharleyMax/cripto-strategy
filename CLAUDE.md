@@ -78,7 +78,7 @@ turnos que faltam.
 276,7M de contexto em 868 turnos; 45 subagentes 822,2M em 6.746 turnos]`. `/compact` não os
 alcança — cada um nasce em 30,7k e constrói os próprios milhões dentro da própria vida.
 
-Vinculante para o loop principal e para todo subagente — R1–R7 em
+Vinculante para o loop principal e para todo subagente — R1–R9 em
 [`docs/protocolo-de-despacho.md`](docs/protocolo-de-despacho.md):
 
 - **Subagente devolve no máximo 15 linhas** — veredito, números com o comando que os produziu, e o
@@ -91,12 +91,31 @@ Vinculante para o loop principal e para todo subagente — R1–R7 em
 - **Verificação é `make verify`** — os seis portões numa chamada, ~10 linhas, saída bruta em
   arquivo. Nunca os seis comandos soltos: eles custaram ~397k tokens de saída bruta em 1.320
   chamadas `[MEDIDO 2026-08-29 sobre 105 transcripts de subagente]`.
-- **O subagente morre cedo.** Passando de ~150 turnos, escreva o estado em
-  `docs/context/<feature>/handoff/<TASK>.md` e devolva — o workflow invoca o próximo. O custo é
-  **quadrático** nos turnos: 376 turnos custaram 93M; 188 custariam ~22M.
+- **O subagente morre cedo — e desde 2026-09-07 isto é PORTÃO, não doutrina.** Passando de ~150
+  turnos, escreva o estado em `docs/context/<feature>/handoff/<TASK>.md` e devolva — o workflow
+  invoca o próximo. O custo é **quadrático** nos turnos: 376 turnos custaram 93M; 188 custariam
+  ~22M. Quem cobra é [`scripts/claude-hooks/subagent-turn-cap.sh`](scripts/claude-hooks/subagent-turn-cap.sh)
+  (hook `PostToolUse`): passando de 150 turnos ele injeta o aviso de handoff no contexto do
+  subagente, e repete só a cada 50. **Ele avisa, não bloqueia** — bloquear no meio da task
+  deixaria trabalho pela metade sem handoff escrito. Só vale para subagente: o loop principal
+  roda milhares de turnos legitimamente. **Registre com
+  `bash scripts/install-claude-hooks.sh`** (idempotente) — e isto **não é opcional**:
+  `.claude/settings.json` é gitignored (`.gitignore:21`), então num clone limpo o script existe
+  e **o portão não**, sem nada avisar. Mesma classe de quebra que `core.hooksPath` acima.
+- **Suíte inteira é portão, não laço de desenvolvimento (R8).** Durante o desenvolvimento use
+  `make test-fast K=<filtro>` — **2,19s** contra **37,5s** da suíte, ~17×. ⛔ Ele **não** roda
+  cobertura nem o piso por camada: verde ali **não é verde de portão**, que continua sendo
+  `make test`/`make verify`. `[MEDIDO 2026-09-07: suíte inteira rodada 1.138×, 11,86h, 22% de
+  todo o wall-clock de ferramenta]`.
+- **Não faça polling; peça notificação (R9).** `Bash` com `run_in_background` e a notificação de
+  conclusão, ou o `Monitor` — nunca `until … sleep … done` por hábito. `[MEDIDO 2026-09-07: 114
+  laços de espera, 3,68h, 116,4s cada]`.
 
-**Nada disto é portão** — é doutrina, e `agents/qa.md` já mediu que prosa sem portão tem 0% de adesão.
-Por isso o documento carrega um falsificador que o manda sair se não pagar o que custa.
+**R1–R5 e R7–R9 não são portão** — são doutrina, e `agents/qa.md` já mediu que prosa sem portão tem
+0% de adesão. Por isso o documento carrega um falsificador que o manda sair se não pagar o que custa
+— e ele **foi rodado em 2026-09-07**: contexto médio por subagente caiu de **18,3M para 12,1M**
+(`n=614`), então o documento fica. **R6 deixou de ser doutrina** e virou o hook acima; o falsificador
+DELE é o `max` de turnos por subagente (hoje **528**) — se não cair, o hook sai.
 
 ## Dado bruto não é versionado
 

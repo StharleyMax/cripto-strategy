@@ -44,7 +44,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test boundaries natureza build verify api e2e
+.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test test-fast boundaries natureza build verify api e2e
 
 # Argumentos repassados ao pytest: `make test ARGS="-k nome --no-cov"`.
 ARGS ?=
@@ -186,6 +186,27 @@ lint-frontend:
 # la dentro, INALTERADAS pela migracao para Poetry — sao o ativo mais caro desta trilha (`D1.8`).
 test:
 	bash backend/scripts/test.sh $(ARGS)
+
+# ── test-fast ──────────────────────────────────────────────────────────────────────────
+# O LACO DE DESENVOLVIMENTO, nao o portao. `[MEDIDO 2026-09-07 sobre 543 transcripts JSONL,
+# n=34.763 chamadas de ferramenta]`: a suite INTEIRA foi rodada 1.138 vezes a 37,5s = 11,86h,
+# que e 22% de todo o wall-clock de ferramenta (53,33h); as 641 execucoes ALVO custaram 6,2s
+# cada. O caminho barato ja existia (`make test ARGS="-k nome --no-cov"`, cabecalho deste
+# arquivo) — o que faltava era ele ser tao facil de digitar quanto o caro. E o principio de R7
+# em `docs/protocolo-de-despacho.md`: regra que se paga sozinha nao depende de ninguem lembrar.
+#
+# ⛔ NAO E VERIFICACAO E NAO SUBSTITUI `make verify`: aqui NAO roda cobertura, logo NAO roda o
+# piso por camada (`check-coverage-layers.sh`) — as duas recusas rc=3 que sao "o ativo mais caro
+# desta trilha" ficam de fora por construcao. Verde aqui NAO e verde de portao.
+#
+# A recusa sem filtro e deliberada e e rc=3 pela mesma semantica dos scripts do backend: sem
+# `K=`, isto seria a suite inteira sem cobertura — o comando CARO vestido com o nome do barato,
+# e ainda por cima sem o piso. "Nao mediu" tem de ser distinguivel de "mediu e passou".
+#
+# `$(if $(K),...)`: sem `K`, NADA e passado e o script recusa com rc=3. Passar `-k ""` seria
+# pior que nao passar nada — no pytest, uma expressao `-k` vazia casa com a suite INTEIRA.
+test-fast:
+	bash backend/scripts/test-fast.sh $(if $(K),-k "$(K)")
 
 # ── boundaries ─────────────────────────────────────────────────────────────────────────
 # PREENCHIDO POR `T-01.5` (`ADR-011/D3a`, plano 01 item 1.9'). `T-01.6` declarou o alvo e o
