@@ -8,25 +8,30 @@ import { test } from "node:test";
 import { COLLECTOR_ROWS, ETL_QUEUE_DEPTH_PENDING, RECONNECTION_EVENTS, STORAGE_BUDGET_LINES } from "./fixtures.ts";
 import {
   buildS1ViewModel,
-  formatPtBrDecimal,
-  formatPtBrThousands,
+  formatPtBrNumber,
   resilienceCellText,
   retentionCellText,
 } from "./view-model.ts";
 
-// ── formatadores: deterministicos, sem depender de locale de runtime (Q14) ──────────────
+// ── formatador único: deterministico mesmo com locale EXPLICITO (T-03.8, Q14) ───────────
 
-test("formatPtBrThousands agrupa milhares com ponto, como '2.206' e '14.204' na tela aprovada", () => {
-  assert.equal(formatPtBrThousands(2206), "2.206");
-  assert.equal(formatPtBrThousands(14204), "14.204");
-  assert.equal(formatPtBrThousands(999), "999");
-  assert.equal(formatPtBrThousands(-1500), "-1.500");
+test("formatPtBrNumber agrupa milhares com ponto, como '2.206' e '14.204' na tela aprovada", () => {
+  assert.equal(formatPtBrNumber(2206, 0), "2.206");
+  assert.equal(formatPtBrNumber(14204, 0), "14.204");
+  assert.equal(formatPtBrNumber(999, 0), "999");
+  assert.equal(formatPtBrNumber(-1500, 0), "-1.500");
 });
 
-test("formatPtBrDecimal usa virgula decimal, como '1,5' e '7,0' na coluna JANELA_DE_PERDA", () => {
-  assert.equal(formatPtBrDecimal(1.5319444, 1), "1,5");
-  assert.equal(formatPtBrDecimal(7, 1), "7,0");
-  assert.equal(formatPtBrDecimal(8, 0), "8");
+test("formatPtBrNumber usa virgula decimal, como '1,5' e '7,0' na coluna JANELA_DE_PERDA", () => {
+  assert.equal(formatPtBrNumber(1.5319444, 1), "1,5");
+  assert.equal(formatPtBrNumber(7, 1), "7,0");
+  assert.equal(formatPtBrNumber(8, 0), "8");
+});
+
+test("formatPtBrNumber: MESMO formatador tambem cobre uptime%/GB-dia — nao ha mais split de marca decimal (T-03.8)", () => {
+  assert.equal(formatPtBrNumber(99.8, 1), "99,8");
+  assert.equal(formatPtBrNumber(4.7, 1), "4,7");
+  assert.equal(formatPtBrNumber(1.2, 1), "1,2");
 });
 
 // ── D7.12: celula de retencao, por variante de RetentionWindow ──────────────────────────
@@ -62,9 +67,9 @@ test("retentionCellText: doc_only / unmeasured / not_applicable nunca inventam n
 
 // ── D7.13: celula de resiliencia ─────────────────────────────────────────────────────────
 
-test("resilienceCellText: slo_multiplier produz o texto EXATO 'T1m / SLO ~4.7x'", () => {
-  assert.equal(resilienceCellText({ kind: "slo_multiplier", grade: "T1m", multiplier: 4.7 }), "T1m / SLO ~4.7x");
-  assert.equal(resilienceCellText({ kind: "slo_multiplier", grade: "T5m", multiplier: 4.7 }), "T5m / SLO ~4.7x");
+test("resilienceCellText: slo_multiplier produz o texto EXATO 'T1m / SLO ~4,7x' — virgula, unico formatador (T-03.8)", () => {
+  assert.equal(resilienceCellText({ kind: "slo_multiplier", grade: "T1m", multiplier: 4.7 }), "T1m / SLO ~4,7x");
+  assert.equal(resilienceCellText({ kind: "slo_multiplier", grade: "T5m", multiplier: 4.7 }), "T5m / SLO ~4,7x");
 });
 
 test("resilienceCellText: os tres outros casos batem com os rotulos da tela aprovada", () => {
@@ -95,9 +100,9 @@ test("buildS1ViewModel: todas as 6 linhas usam a MESMA classe de badge neutra �
   assert.equal(vm.rows.length, 6);
 });
 
-test("buildS1ViewModel: orcamento total bate com a soma das linhas e com o '1.6 GB' aprovado", () => {
+test("buildS1ViewModel: orcamento total bate com a soma das linhas e com '1,6 GB' — virgula, unico formatador (T-03.8)", () => {
   const vm = buildS1ViewModel(COLLECTOR_ROWS, ETL_QUEUE_DEPTH_PENDING, STORAGE_BUDGET_LINES, RECONNECTION_EVENTS);
-  assert.equal(vm.storageBudget.totalText, "1.6 GB");
+  assert.equal(vm.storageBudget.totalText, "1,6 GB");
   assert.equal(vm.storageBudget.lines.length, 3);
   const parado = vm.storageBudget.lines.find((line) => line.label === "/futures/data/*");
   assert.equal(parado?.valueText, "PARADO", "coletor parado nao soma um GB/dia silencioso");
