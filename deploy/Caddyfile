@@ -1,0 +1,45 @@
+# Single reverse proxy for one public host (`ADR-029/D1`, `D2`) — `{$API_PREFIX}/*` goes to
+# the API, everything else goes to the Next reader; `T-02.7` (`SPEC-003` §3.5, plano `02` item
+# 2.7). NEVER deployed from here (`RN-9`, `NG-1`): `caddy validate --config deploy/Caddyfile`
+# is the ceiling this feature runs. The inverse of the scope is the falsifier: `docker compose
+# -f deploy/compose.yml ps` on the VPS showing `caddy` means this scope was violated.
+#
+# `{$VAR}`/`{$VAR:default}` below is Caddy's OWN environment substitution — plain text,
+# resolved when the Caddyfile is adapted to JSON, no templating engine, no second source of
+# truth. The defaults exist ONLY so `caddy validate` stays `rc=0` with no `.env` present (this
+# file is never brought up for real); they mirror the values `src.main`/`__main__.py` already
+# default to (`/api/v1`, `8000`) so validating here and running `python -m src.main` agree.
+{$PUBLIC_HOST:localhost} {
+	# `M4` (`ADR-029/D6`) — reserved by env, INERT without a value. `@authEnabled` is a
+	# request-time expression matcher reading the process environment directly
+	# (`{env.VAR}`, not the load-time `{$VAR}` above): empty/absent `PANEL_BASIC_AUTH_HASH`
+	# ⇒ the expression is always false ⇒ `basic_auth` never runs, 0 code to flip once the
+	# owner decides `[Q3]` — set the env var and this block turns itself on. The
+	# `:disabled` fallback exists only so the credential pair still parses when the var is
+	# absent (Caddy refuses `basic_auth` with an empty hash outright); it is never reached
+	# at request time because the matcher above already gates it out.
+	@authEnabled expression {env.PANEL_BASIC_AUTH_HASH} != ""
+	basic_auth @authEnabled {
+		admin {$PANEL_BASIC_AUTH_HASH:disabled}
+	}
+
+	# TLS `[Q10]`, owner — NOT decided here. Caddy's automatic HTTPS (ACME) is already the
+	# default for a real domain in `{$PUBLIC_HOST}` above and needs no directive; picking a
+	# different mode (an existing wildcard cert, or `tls internal` for local-only) is a
+	# single `tls` line inserted here once the owner answers `[Q10]` — reserving the line
+	# itself is not possible without a value (Caddy rejects a bare `tls` with nothing after
+	# it), so the reservation is this comment, not inert code.
+
+	# `D2` — `API_PREFIX` is ONE constant, fed to `src.main` and to this file by the SAME
+	# env var. Moving it moves `openapi.json`'s paths (`backend/tests/api/test_api_prefix.py`)
+	# and this route TOGETHER — one without the other is `F-029-7`.
+	handle {$API_PREFIX:/api/v1}/* {
+		reverse_proxy api:{$APP_PORT:8000}
+	}
+
+	# Everything else — the Next.js reader (`ADR-028/D1`). No `CORSMiddleware` needed on
+	# either side (`ADR-029/D2`, `NG-7`): same origin, same host, split only by path.
+	handle {
+		reverse_proxy web:3000
+	}
+}
