@@ -31,7 +31,7 @@ $ find backend/src -iname 'single_writer_cli.py'
 
 `ADR-027` (aprovada pelo owner em 2026-09-04, D1/D2 decididos) e as tasks `T-07.15` (produtor real,
 `CST-110`), `T-07.16` (entrypoint do escritor, `CST-111`), `T-07.17` (`deploy/compose.yml` ganha
-`redis:7-alpine`, `CST-112`) já existem em `tasks.toml` — **materializadas, não construídas**. O
+`redis:7-alpine`, `CST-109` — corrigido em 2026-09-07: `CST-112` é o Epic F1 da `camada-de-leitura-do-painel`; o `tasks.toml` da mãe aponta `CST-109`) já existem em `tasks.toml` — **materializadas, não construídas**. O
 dashboard (`harness status plataforma-dados`) já lista as 3 como as únicas tasks reais em aberto da
 mãe, exigindo `override` para não bloquear a filha (decisão do owner em 2026-09-05, "atuar 100% na
 filha agora").
