@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from src.api.dependencies import get_ingest_record_source, get_store_readiness_source
+from src.api.dependencies import (
+    get_ingest_record_source,
+    get_series_catalog_source,
+    get_store_readiness_source,
+)
 
 
 def test_get_ingest_record_source_raises_when_never_overridden() -> None:
@@ -24,3 +28,9 @@ def test_get_store_readiness_source_raises_when_never_overridden() -> None:
     """Same falsifier, for `/ready`'s port: unreachable in a correctly wired app."""
     with pytest.raises(NotImplementedError):
         get_store_readiness_source()
+
+
+def test_get_series_catalog_source_raises_when_never_overridden() -> None:
+    """Same falsifier, for `/series-catalog`'s port: unreachable in a correctly wired app."""
+    with pytest.raises(NotImplementedError):
+        get_series_catalog_source()

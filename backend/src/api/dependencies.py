@@ -22,6 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.use_cases.ingest_health import IngestRecordSource
 
 
@@ -65,5 +66,22 @@ def get_store_readiness_source() -> StoreReadinessSource:
     """
     raise NotImplementedError(
         "get_store_readiness_source has no default adapter; src.main.create_app must override "
+        "it via app.dependency_overrides before serving a request."
+    )
+
+
+def get_series_catalog_source() -> SeriesCatalog:
+    """Return the `SeriesCatalog` `/series-catalog` reads — overridden by `src.main.create_app`.
+
+    Unlike `get_ingest_record_source`, what `src.main` wires here has no persistence and no
+    per-environment variation — `list_series_catalog()` is a pure function of the domain
+    constants `T-06.x` already populated. The stub still RAISES rather than calling that
+    function itself, for the same reason every other function in this module does: a route
+    that reached this body would mean the app was served without going through the composition
+    root, and a test overriding this one dependency can inject a small catalog to exercise the
+    route's envelope shape without depending on the real, ten-row production catalog.
+    """
+    raise NotImplementedError(
+        "get_series_catalog_source has no default catalog; src.main.create_app must override "
         "it via app.dependency_overrides before serving a request."
     )
