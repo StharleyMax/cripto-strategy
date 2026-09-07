@@ -1,20 +1,28 @@
-# Postgres for the sentiment platform — the single writer of ADR-009/D5.
+# Read layer of the `/painel` dashboard — Postgres (ADR-009/D5), the API (ADR-027/D1
+# process (c)), the Next.js reader (ADR-028) and a single-origin Caddy (ADR-029/D1)
+# in front of both. Structured and validated by `config -q` (T-02.6, plano `02` item
+# 2.6) — NOT a deployment: nothing here is ever brought up on a real host (RN-9). The
+# inverse of the scope is the falsifier: `docker compose -f deploy/compose.yml ps`
+# showing `caddy` on the VPS means this scope was violated.
 #
-# WHAT THIS FILE IS NOT: it is not the production deployment. No TLS, no reverse proxy,
-# no worker, no backup job. Building the deployment is work that has no phase yet
-# (`plano 01`, item 1.14, "O que este item NAO faz"), and writing it here would be the
-# speculative construction that `PRD-001` §12 forbids.
+# WHAT THIS FILE IS NOT: it does not decide auth mechanism or TLS (`[Q3]`/`[Q10]`,
+# owner) — `caddy`'s `basic_auth` block stays inert until `PANEL_BASIC_AUTH_HASH` is
+# set (ADR-029/D6), and `deploy/Caddyfile` (routing itself) is T-02.7, not this file.
 #
-# WHY IT IS VERSIONED: it is the legitimate half of the `D1.14` falsifier. The biting
-# half is an ephemeral violator that never enters the tree — a versioned violator would
-# leave `harness rules --mode sweep` red and `pre-push` would refuse. The silent half has
-# to be real, reproducible and committed:
+# WHY IT IS VERSIONED: it is the legitimate half of the `D1.14`/`F-029-6` falsifier.
+# The biting half is an ephemeral violator that never enters the tree — a versioned
+# violator would leave `harness rules --mode sweep` red and `pre-push` would refuse.
+# The silent half has to be real, reproducible and committed:
 #
 #     harness rules --mode file --path deploy/compose.yml   # empty output, exit 0
 #
 # EVERY credential is read from the environment. That is not style: it is the property
 # `own.compose-hardcoded-secret` enforces, and this file is the conforming case that
 # proves the rule does not bite the correct shape.
+#
+# `api` never publishes a port (ADR-029/D5, RNF-5) — `web` and `caddy` reach it only
+# by service name on the compose network (`http://api:${APP_PORT}`); the Next server
+# reads the same address from `INGEST_HEALTH_API_BASE_URL` (`.env.example`).
 services:
   postgres:
     image: postgres:16-alpine
@@ -31,5 +39,57 @@ services:
       timeout: 5s
       retries: 5
 
+  # Process (c) of ADR-027/D1 — "already exists (`src.main`)". Same Python image as the
+  # rest of the backend; command overrides whatever the image's default entrypoint is.
+  # No `ports:` (ADR-029/D5): reachable only as `api:${APP_PORT}` on this network.
+  api:
+    build:
+      context: ../backend
+    command: python -m src.main
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    depends_on:
+      - postgres
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Next.js server (`ADR-028/D1`, Server Component reads the API). No `ports:` either
+  # — `caddy` is the only service exposed, and it proxies the rest of the host to here.
+  web:
+    build:
+      context: ../frontend
+    command: npm start
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    depends_on:
+      - api
+
+  # Single reverse proxy, own to this project (ADR-029/D1) — routes `${API_PREFIX}/*`
+  # to `api` and everything else to `web`, both by service name, same origin (D2). The
+  # routing itself (`deploy/Caddyfile`) is T-02.7; this only wires it into the compose
+  # network. `PUBLIC_HOST`/`PANEL_BASIC_AUTH_HASH` come from `.env` — never a literal.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file:
+      - ../.env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
