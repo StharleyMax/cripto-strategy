@@ -24,7 +24,9 @@ from pathlib import Path
 from typing import Final, cast
 
 from src.modules.sentimento.domain.coinalyze_daily_series import SeriesKind
+from src.modules.sentimento.domain.quarantine_terms import QuarantineTerms
 from src.modules.sentimento.domain.quarantined_series_entry import QuarantinedSeriesEntry
+from src.modules.sentimento.domain.series_quarantine_report import QuarantineRow
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,22 @@ _SELECT_PROMOTED: Final[str] = (
     "ORDER BY received_at, run_id"
 )
 
+# `T-03.4`'s `GET /series-quarantine`: every row of the table, for the gaveta view — and the
+# ONE guarantee `D3.2` asks for lives HERE, in the query, not in a projection step downstream
+# that might forget to drop a field. `points_json` is not named in the `SELECT` list, so no
+# caller of `list_all()` can leak it by omission; a route built on this method is incapable of
+# emitting it, the same class of guarantee `INGEST_HEALTH_RUN_COLUMNS` gives the ingest report
+# by never including `agg_id`/`price`/`qty` in the first place. Ordered by the table's own
+# PRIMARY KEY (`source, series_kind, binance_symbol`) rather than `received_at`: a table DUMP
+# needs a deterministic order that does not depend on write order, unlike `_SELECT_PROMOTED`
+# and `_SELECT_LATEST_QUARANTINED`, which are keyed lookups for one `(series_kind, symbol)`.
+_SELECT_ALL: Final[str] = (
+    "SELECT source, series_kind, binance_symbol, coinalyze_symbol, n_points, "
+    "       label_shift_present, unit_present, available_at, received_at "
+    "FROM series_quarantine "
+    "ORDER BY source, series_kind, binance_symbol"
+)
+
 # `T-03.11`'s reconciliation reads the quarantine DIRECTLY — the handoff is explicit this is a
 # DIFFERENT path from `read_promoted`: "lê da quarentena diretamente... não é o mesmo caminho que
 # `backtest` usaria... não tente 'promover' a série aqui". No `available_at` filter, on purpose:
@@ -87,6 +105,10 @@ _SELECT_LATEST_QUARANTINED: Final[str] = (
 )
 
 _RowTuple = tuple[str, str, str, str, str, int, str, str, str]
+
+# `list_all()`'s own row shape — no `points_json`, no `run_id`: `_SELECT_ALL` never selects
+# either, so this tuple's 9 positions are exactly what it returns, in order.
+_ListAllRowTuple = tuple[str, str, str, str, int, int, int, str | None, str]
 
 
 class SqliteSeriesQuarantineStore:
@@ -173,6 +195,16 @@ class SqliteSeriesQuarantineStore:
         rows = self._fetch(_SELECT_LATEST_QUARANTINED, (series_kind.value, binance_symbol))
         return cast(_RowTuple, rows[0]) if rows else None
 
+    def list_all(self) -> tuple[QuarantineRow, ...]:
+        """Return every row of the table, `points_json` NEVER among them (`D3.2`).
+
+        This is the porta `GET /series-quarantine` reads through `series_quarantine_query`
+        (`use_cases/series_quarantine.py`) — a store that never ran reads as `()`, the same
+        "absence is empty, not a crash" contract `_fetch` already gives every other read here.
+        """
+        rows = self._fetch(_SELECT_ALL, ())
+        return tuple(_row_to_quarantine_row(cast(_ListAllRowTuple, row)) for row in rows)
+
     def _fetch(self, statement: str, parameters: tuple[object, ...]) -> list[tuple[object, ...]]:
         """Run a read statement, treating a store that never ran as zero rows, not a crash.
 
@@ -187,3 +219,38 @@ class SqliteSeriesQuarantineStore:
             if connection.execute(_SELECT_TABLE_PRESENCE, (_TABLE,)).fetchone() is None:
                 return []
             return list(connection.execute(statement, parameters).fetchall())
+
+
+def _row_to_quarantine_row(row: _ListAllRowTuple) -> QuarantineRow:
+    """Convert one `_SELECT_ALL` row into the typed read model `list_all()` returns.
+
+    The two SQLite `INTEGER` columns (`label_shift_present`, `unit_present`) are `0`/`1`, never
+    `NULL` (the `_DDL` marks both `NOT NULL`) — `bool(...)` is a safe, total conversion.
+    `available_at_present` is NOT a stored column: it is derived from `available_at IS NOT
+    NULL`, the exact same reading `QuarantinedSeriesEntry.available_at` and `_SELECT_PROMOTED`
+    already give that column everywhere else in this module.
+    """
+    (
+        source,
+        series_kind,
+        binance_symbol,
+        coinalyze_symbol,
+        n_points,
+        label_shift_present,
+        unit_present,
+        available_at,
+        received_at,
+    ) = row
+    return QuarantineRow(
+        source=source,
+        series_kind=SeriesKind(series_kind),
+        binance_symbol=binance_symbol,
+        coinalyze_symbol=coinalyze_symbol,
+        n_points=n_points,
+        terms=QuarantineTerms(
+            label_shift_present=bool(label_shift_present),
+            unit_present=bool(unit_present),
+            available_at_present=available_at is not None,
+        ),
+        recorded_at=received_at,
+    )

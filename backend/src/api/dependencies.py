@@ -24,6 +24,7 @@ from typing import Protocol
 
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.use_cases.ingest_health import IngestRecordSource
+from src.modules.sentimento.use_cases.series_quarantine import QuarantineSource
 
 
 def get_ingest_record_source() -> IngestRecordSource:
@@ -84,4 +85,19 @@ def get_series_catalog_source() -> SeriesCatalog:
     raise NotImplementedError(
         "get_series_catalog_source has no default catalog; src.main.create_app must override "
         "it via app.dependency_overrides before serving a request."
+    )
+
+
+def get_series_quarantine_source() -> QuarantineSource:
+    """Return the `QuarantineSource` the route reads — overridden by `src.main.create_app`.
+
+    Raises:
+        NotImplementedError: always, unless `src.main` has already replaced this callable via
+            `app.dependency_overrides[get_series_quarantine_source]`. A request that reaches
+            this body means the app was served without going through the composition root.
+
+    """
+    raise NotImplementedError(
+        "get_series_quarantine_source has no default adapter; src.main.create_app must "
+        "override it via app.dependency_overrides before serving a request."
     )
