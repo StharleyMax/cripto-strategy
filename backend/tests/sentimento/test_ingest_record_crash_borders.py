@@ -113,6 +113,48 @@ def test_a_corrupted_store_file_keeps_failing_loudly(tmp_path: Path) -> None:
         SqliteIngestRecordStore(path).runs()
 
 
+def test_describe_readiness_over_an_absent_file_reports_neither_flag(tmp_path: Path) -> None:
+    """`GET /ready`'s state 1/3, at the Python level: no leaf file, `(False, False)`."""
+    path = tmp_path / "record.sqlite3"
+
+    assert SqliteIngestRecordStore(path).describe_readiness() == (False, False)
+
+
+def test_describe_readiness_over_a_store_left_by_a_crash_reports_exists_without_schema(
+    tmp_path: Path,
+) -> None:
+    """`GET /ready`'s state 2/3: the crash-before-first-commit border, `(True, False)`."""
+    path = _store_left_by_a_crash_before_the_first_commit(tmp_path / "record.sqlite3")
+
+    assert SqliteIngestRecordStore(path).describe_readiness() == (True, False)
+
+
+def test_describe_readiness_over_an_initialised_store_reports_both_flags(tmp_path: Path) -> None:
+    """`GET /ready`'s state 3/3: a store that ran `initialise()`, `(True, True)`."""
+    path = tmp_path / "record.sqlite3"
+    SqliteIngestRecordStore(path).initialise()
+
+    assert SqliteIngestRecordStore(path).describe_readiness() == (True, True)
+
+
+def test_describe_readiness_over_a_corrupted_store_keeps_failing_loudly(tmp_path: Path) -> None:
+    """The SAME control as the `runs()` test above, now over `describe_readiness()`.
+
+    `describe_readiness()` reuses `_SELECT_TABLE_PRESENCE`, not a fresh `except`, so corruption
+    propagates through it exactly like it does through `_fetch` — proved here rather than
+    assumed.
+    """
+    path = tmp_path / "record.sqlite3"
+    store = SqliteIngestRecordStore(path)
+    store.initialise()
+    store.record_run(build_run(0))
+    raw = path.read_bytes()
+    path.write_bytes(raw[: len(raw) // 2] + b"\x00" * 16)
+
+    with pytest.raises(sqlite3.DatabaseError):
+        SqliteIngestRecordStore(path).describe_readiness()
+
+
 def test_concurrent_recorders_neither_lose_rows_nor_corrupt_the_file(tmp_path: Path) -> None:
     """Two collectors on one record file: no `database is locked`, no lost row, no corruption.
 

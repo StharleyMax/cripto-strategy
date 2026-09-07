@@ -236,6 +236,33 @@ class SqliteIngestRecordStore:
             connection.commit()
         logger.debug("ingest_gap_persisted", extra={"source": gap.source, "symbol": gap.symbol})
 
+    def describe_readiness(self) -> tuple[bool, bool]:
+        """Return `(exists, schema_present)` — the two facts `GET /ready` needs, no row read.
+
+        Reuses the EXACT guard `_fetch` already runs (`_SELECT_TABLE_PRESENCE` against
+        `sqlite_master`), so this is a second CALL, not a second IMPLEMENTATION of the check
+        that tells a half-born store from a ready one (`ADR-029/D3`). A file that does not
+        exist yet answers `(False, False)` — the collector has never run, which is a legitimate
+        F0 state, not readiness. A file that exists but holds neither table (the crash-before-
+        commit border `test_ingest_record_crash_borders.py` measures) answers
+        `(True, False)`. Both tables have to be present for `schema_present` to be `True`,
+        because `initialise()` creates them together and a store with only one is exactly as
+        half-born as a store with zero.
+
+        `sqlite3.DatabaseError` on a CORRUPTED file is not caught here either — it propagates,
+        same as `_fetch` (`core.silent-except` forbids trading a loud crash for a silent lie).
+        """
+        if not self._path.exists():
+            return False, False
+        with closing(sqlite3.connect(self._path)) as connection:
+            run_present = (
+                connection.execute(_SELECT_TABLE_PRESENCE, (_RUN_TABLE,)).fetchone() is not None
+            )
+            gap_present = (
+                connection.execute(_SELECT_TABLE_PRESENCE, (_GAP_TABLE,)).fetchone() is not None
+            )
+        return True, run_present and gap_present
+
     def runs(self) -> tuple[IngestRun, ...]:
         """Return every persisted run, in a total and therefore reproducible order."""
         rows = self._fetch(_SELECT_RUNS, _RUN_TABLE)
