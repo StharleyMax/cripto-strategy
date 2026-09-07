@@ -188,15 +188,27 @@ export interface QuarantineDrawer {
   readonly isEmpty: boolean;
 }
 
-export function buildQuarantineDrawer(
-  rows: readonly CatalogRow[],
-  labelFor: (row: CatalogRow) => string,
-): QuarantineDrawer {
-  const quarantined = rows.filter((row) => isQuarantined(row.quarantine));
+/**
+ * One row of the REAL quarantine source — `GET /series-quarantine` (`T-03.4`/`T-03.5`), read
+ * through `series-quarantine-query.ts::quarantineSourceRowsFromProjection`. Deliberately NOT
+ * `CatalogRow`: before `T-03.5`, the drawer derived its rows from `CatalogRow.quarantine`
+ * (`series-catalog-query.ts`'s own docstring names the gap this closed — `availableAtPresent`
+ * was always `false` there, because `GET /series-catalog` carries no availability-lag term at
+ * all). This type is the drawer's OWN read, already carrying a display label — the catalog and
+ * the quarantine table are two different endpoints with two different row shapes, and a fixture
+ * or test can still build one of these directly without going through the HTTP layer.
+ */
+export interface QuarantineSourceRow {
+  readonly seriesLabel: string;
+  readonly terms: QuarantineTerms;
+}
+
+export function buildQuarantineDrawer(rows: readonly QuarantineSourceRow[]): QuarantineDrawer {
+  const quarantined = rows.filter((row) => isQuarantined(row.terms));
   return {
     rows: quarantined.map((row) => ({
-      seriesLabel: labelFor(row),
-      openTerms: openTerms(row.quarantine),
+      seriesLabel: row.seriesLabel,
+      openTerms: openTerms(row.terms),
     })),
     isEmpty: quarantined.length === 0,
   };

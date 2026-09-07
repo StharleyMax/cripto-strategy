@@ -24,9 +24,16 @@ import {
   formatEventTimeIso,
   quarantineBadgeText,
 } from "./view-model.ts";
-import { buildQuarantineDrawer } from "./domain.ts";
+import { buildQuarantineDrawer, type QuarantineSourceRow } from "./domain.ts";
 import { buildSeriesLabel } from "./series-catalog.ts";
 import { COINALYZE_ONE_SHOT_TERMS, FULLY_RESOLVED_TERMS } from "./quarantine.ts";
+
+/** A `QuarantineSourceRow` fixture — `T-03.5`'s drawer reads THIS shape now (`GET
+ * /series-quarantine`), not `CatalogRow.quarantine` — see `domain.ts::QuarantineSourceRow`'s own
+ * docstring for why the two are deliberately different types. */
+const FIXTURE_QUARANTINE_ROWS: readonly QuarantineSourceRow[] = [
+  { seriesLabel: "BTCUSDT · open_interest · coinalyze (BTCUSDT_PERP.A)", terms: COINALYZE_ONE_SHOT_TERMS },
+];
 
 test("formatEventTimeIso é determinístico e usa o formato ...Z, sem milissegundos", () => {
   assert.equal(formatEventTimeIso(Date.UTC(2026, 7, 12, 11, 45, 0)), "2026-08-12T11:45:00Z");
@@ -162,7 +169,7 @@ test("buildDivergenceRowView preserva TODAS as leituras — nenhuma é descartad
 // ── Gaveta de quarentena formatada: vazia é texto explícito, não ausência de painel ─────────
 
 test("buildQuarantineDrawerView produz o texto de estado vazio exigido pelo handoff", () => {
-  const emptyDrawer = buildQuarantineDrawer([], () => "");
+  const emptyDrawer = buildQuarantineDrawer([]);
   const view = buildQuarantineDrawerView(emptyDrawer);
   assert.equal(view.isEmpty, true);
   assert.equal(view.emptyStateText, "nenhuma série em quarentena no momento");
@@ -180,11 +187,25 @@ test("buildS3ViewModel monta o estado completo da tela a partir do catálogo + s
     selected,
     merged,
     FIXTURE_DIVERGENCES,
+    FIXTURE_QUARANTINE_ROWS,
   );
   assert.equal(viewModel.catalogRows.length, FIXTURE_CATALOG_ROWS.length);
   assert.equal(viewModel.selectedSeriesLabel, buildSeriesLabel(selected.entry));
   assert.equal(viewModel.inspectorRows.length, merged.length);
-  assert.equal(viewModel.quarantineDrawer.isEmpty, false, "a fixture tem uma série coinalyze em quarentena");
+  assert.equal(
+    viewModel.quarantineDrawer.isEmpty,
+    false,
+    "FIXTURE_QUARANTINE_ROWS tem uma linha em quarentena (T-03.5: a gaveta lê /series-quarantine, não o catálogo)",
+  );
+});
+
+test("buildS3ViewModel sem quarantineRows (parâmetro omitido) devolve a gaveta vazia — nunca deriva do catálogo", () => {
+  const viewModel = buildS3ViewModel(FIXTURE_CATALOG_ROWS, EMPTY_CATALOG_FILTER, null, [], []);
+  assert.equal(
+    viewModel.quarantineDrawer.isEmpty,
+    true,
+    "FIXTURE_CATALOG_ROWS[1] está em quarentena, mas essa fonte não alimenta mais a gaveta (T-03.5)",
+  );
 });
 
 test("buildS3ViewModel com nenhuma série selecionada devolve selectedSeriesLabel=null", () => {

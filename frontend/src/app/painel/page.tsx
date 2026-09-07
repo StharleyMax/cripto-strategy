@@ -46,11 +46,15 @@ import {
   TransportError,
   type CollectorStatusProjection,
 } from "../../features/s1-console/collector-status-query.ts";
-import type { CatalogRow } from "../../features/s3-inspector/domain.ts";
+import type { CatalogRow, QuarantineSourceRow } from "../../features/s3-inspector/domain.ts";
 import {
   catalogRowsFromSeriesCatalogProjection,
   fetchSeriesCatalogProjectionViaHttp,
 } from "../../features/s3-inspector/series-catalog-query.ts";
+import {
+  fetchSeriesQuarantineProjectionViaHttp,
+  quarantineSourceRowsFromProjection,
+} from "../../features/s3-inspector/series-quarantine-query.ts";
 import { EMPTY_CATALOG_FILTER, buildS3ViewModel } from "../../features/s3-inspector/view-model.ts";
 import { PainelClient } from "./PainelClient.tsx";
 import type { SourceState } from "./source-state.ts";
@@ -69,6 +73,12 @@ const EMPTY_PROJECTION: CollectorStatusProjection = { as_of: "", window_hours: 2
  * Passed RAW (not pre-filtered) so the client can re-filter it on every keystroke (`T-01.6`,
  * `RN-5`/`RF-10`: a filter control that never recomputes its rows is inert, not honest). */
 const EMPTY_CATALOG: readonly CatalogRow[] = [];
+
+/** The shape this route falls back to when `GET /series-quarantine` throws — same reasoning as
+ * `EMPTY_CATALOG` above. `quarantineOk` (computed alongside it below) is what tells the drawer
+ * apart from a genuinely empty quarantine table (`T-03.5`'s DoD: "gaveta mostra erro, não a
+ * fixture" — `[]` alone cannot distinguish the two, the same reason `sourceState` exists at all). */
+const EMPTY_QUARANTINE: readonly QuarantineSourceRow[] = [];
 
 export default async function PainelPage() {
   let sourceState: SourceState;
@@ -95,13 +105,40 @@ export default async function PainelPage() {
     catalog = EMPTY_CATALOG;
   }
 
+  // `T-03.5`: the quarantine drawer gained its OWN network call, independent of `S1`'s and of
+  // the catalog's — `GET /series-quarantine` (`series-quarantine-query.ts`, built by `T-03.4`'s
+  // backend). Caught separately, same reasoning as the catalog fetch above: a failure here never
+  // overwrites `sourceState`, and `quarantineOk=false` is the ONE signal the drawer needs to show
+  // an error instead of silently reading as "nenhuma série em quarentena" (`[]` is ambiguous
+  // between the two; `quarantineOk` is not).
+  let quarantineRows: readonly QuarantineSourceRow[];
+  let quarantineOk: boolean;
+  try {
+    quarantineRows = quarantineSourceRowsFromProjection(await fetchSeriesQuarantineProjectionViaHttp());
+    quarantineOk = true;
+  } catch (cause) {
+    if (!(cause instanceof TransportError)) {
+      throw cause;
+    }
+    quarantineRows = EMPTY_QUARANTINE;
+    quarantineOk = false;
+  }
+
   // `etlQueueDepthPending`/`storageBudgetLines`/`reconnectionEvents`: no data source exists yet
   // for any of the three in this feature (Redis Streams consumer-group depth, `plano 07` itens
   // `7.6`/`7.7` — a DIFFERENT feature's scope) — `PainelClient.tsx` renders `SourceNoneMarker`
   // for all three regardless of these placeholders' value (`budgetSourced`/`reconnectionsSourced`
   // are hard-`false`, not derived from them).
   const s1 = buildS1ViewModelFromCollectorStatusProjection(projection, 0, [], []);
-  const s3 = buildS3ViewModel(catalog, EMPTY_CATALOG_FILTER, null, [], []);
+  const s3 = buildS3ViewModel(catalog, EMPTY_CATALOG_FILTER, null, [], [], quarantineRows);
 
-  return <PainelClient s1={s1} s3={s3} catalog={catalog} sourceState={sourceState} />;
+  return (
+    <PainelClient
+      s1={s1}
+      s3={s3}
+      catalog={catalog}
+      sourceState={sourceState}
+      quarantineOk={quarantineOk}
+    />
+  );
 }
