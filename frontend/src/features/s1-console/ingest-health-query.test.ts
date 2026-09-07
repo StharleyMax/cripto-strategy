@@ -299,7 +299,7 @@ test("MORDE TransportErrorKind=malformed_envelope (JSON valido, schema invalido)
   );
 });
 
-test("CALA: envelope bem formado via fetchImpl mockado ⇒ etag e SEMPRE null em F1 (F2/T-02.5 e quem preenche)", async () => {
+test("CALA: envelope bem formado via fetchImpl mockado, SEM cabecalho ETag ⇒ etag e null", async () => {
   const fetchImpl: typeof fetch = async () =>
     new Response(JSON.stringify(validEnvelopeBody()), {
       status: 200,
@@ -312,4 +312,90 @@ test("CALA: envelope bem formado via fetchImpl mockado ⇒ etag e SEMPRE null em
   assert.equal(result.etag, null);
   assert.equal(result.projection.runs.length, 1);
   assert.equal(result.projection.gaps.length, 1);
+});
+
+// ── `T-02.5`/`ADR-029/D4` — `ETag` dequotado e cache de processo, com `fetchImpl` mockado ────
+//
+// Cada teste abaixo usa um `baseUrl` distinto (porta fictícia diferente) para nunca colidir
+// com uma entrada que outro teste deste arquivo já tenha deixado em `processCacheByBaseUrl` —
+// o cache é `module`-scope e sobrevive por toda a vida do processo `node --test`.
+
+test("CALA: ETag do header (com aspas) vira etag SEM aspas em IngestHealthHttpResult", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    new Response(JSON.stringify(validEnvelopeBody()), {
+      status: 200,
+      headers: { "content-type": "application/json", etag: '"deadbeef"' },
+    });
+  const result = await fetchIngestHealthProjectionViaHttp({
+    baseUrl: "http://127.0.0.1:2",
+    fetchImpl,
+  });
+  assert.equal(result.etag, "deadbeef");
+});
+
+test("CALA: segunda chamada com etag conhecido envia If-None-Match (com aspas); 304 reutiliza a mesma projecao", async () => {
+  const baseUrl = "http://127.0.0.1:3";
+  let calls = 0;
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response(JSON.stringify(validEnvelopeBody()), {
+        status: 200,
+        headers: { "content-type": "application/json", etag: '"cafe"' },
+      });
+    }
+    const headers = new Headers(init?.headers);
+    assert.equal(
+      headers.get("if-none-match"),
+      '"cafe"',
+      "a segunda requisicao tem de reenviar o ETag COM aspas, igual ao que o servidor mandou",
+    );
+    return new Response(null, { status: 304, headers: { etag: '"cafe"' } });
+  };
+
+  const first = await fetchIngestHealthProjectionViaHttp({ baseUrl, fetchImpl });
+  const second = await fetchIngestHealthProjectionViaHttp({ baseUrl, fetchImpl });
+  assert.equal(calls, 2);
+  assert.equal(second.etag, first.etag);
+  assert.equal(second.fingerprint, first.fingerprint);
+  assert.deepEqual(second.projection, first.projection);
+});
+
+test("MORDE: 304 sem cache previo para este baseUrl reprova (nao ha o que reutilizar)", async () => {
+  const fetchImpl: typeof fetch = async () => new Response(null, { status: 304, headers: { etag: '"x"' } });
+  await assert.rejects(
+    () => fetchIngestHealthProjectionViaHttp({ baseUrl: "http://127.0.0.1:4", fetchImpl }),
+    (error: unknown) => {
+      assert.ok(error instanceof TransportError, "erro nao e TransportError");
+      assert.equal(error.kind, "malformed_envelope");
+      return true;
+    },
+  );
+});
+
+test("MORDE: cache de processo NUNCA substitui erro de transporte (fetch falha apos etag conhecido)", async () => {
+  const baseUrl = "http://127.0.0.1:5";
+  let calls = 0;
+  const fetchImpl: typeof fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response(JSON.stringify(validEnvelopeBody()), {
+        status: 200,
+        headers: { "content-type": "application/json", etag: '"warm"' },
+      });
+    }
+    throw new Error("ECONNREFUSED (mock)");
+  };
+
+  const first = await fetchIngestHealthProjectionViaHttp({ baseUrl, fetchImpl });
+  assert.equal(first.etag, "warm");
+
+  await assert.rejects(
+    () => fetchIngestHealthProjectionViaHttp({ baseUrl, fetchImpl }),
+    (error: unknown) => {
+      assert.ok(error instanceof TransportError, "erro nao e TransportError");
+      assert.equal(error.kind, "connection_refused");
+      return true;
+    },
+  );
 });
