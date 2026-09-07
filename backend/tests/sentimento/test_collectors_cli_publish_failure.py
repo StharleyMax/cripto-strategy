@@ -162,9 +162,7 @@ def test_force_order_collector_rejects_the_session_on_a_real_xadd_failure(
     recorded: list[IngestRun] = []
     source_holder: list[MessageSource | None] = [None]
 
-    def _to_rows(
-        _received_at: int, _observation: ForceOrderKeyObservation
-    ) -> Iterable[SeriesRow]:
+    def _to_rows(_received_at: int, _observation: ForceOrderKeyObservation) -> Iterable[SeriesRow]:
         return (_row(),)
 
     collectors_cli._run_force_order_collector(
