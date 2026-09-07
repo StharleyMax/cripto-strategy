@@ -69,9 +69,13 @@ test("estrutura sempre presente: título, CSS, ícones, h1 único, sem vazamento
   expect(sourceNoneCount).toBe(5);
 
   // `B7`: no fixture numeral survives (`fixtures.ts` is out of the production graph, `T-01.4`).
+  // `T-03.8` moved the single formatter to `Intl.NumberFormat("pt-BR")` (comma decimal): the
+  // fixture's own canonical figures ("1.6 GB"/"99.8%" before) would now leak as "1,6 GB"/
+  // "99,8%" — the pattern below is updated for the SAME reason it exists at all, so a leak
+  // does not silently stop matching just because the decimal mark moved.
   const fixtureLeakage = await page
     .locator("main")
-    .evaluate((main) => (main.textContent ?? "").match(/1\.6 GB|99\.8%/g)?.length ?? 0);
+    .evaluate((main) => (main.textContent ?? "").match(/1,6 GB|99,8%/g)?.length ?? 0);
   fact(SPEC, "fixture_numbers_visible", fixtureLeakage);
   expect(fixtureLeakage).toBe(0);
 

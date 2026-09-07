@@ -10,10 +10,19 @@
  * boundary: everything it returns is a string meant for a label, never fed back into a
  * calculation or a comparison.
  *
- * The formatters below do NOT use `toLocaleString`/`Intl`: those read the RUNTIME locale,
- * which makes output depend on where the code executes rather than on the number itself —
- * the same class of non-determinism `Q14` flags for a data path, and there is no reason a
- * label should be allowed to drift by host environment either.
+ * `T-03.8`, `SPEC-003` §3.7: **one** formatter, `Intl.NumberFormat("pt-BR")`, for every
+ * on-screen numeral this feature renders — replacing the three hand-rolled functions
+ * (`formatPtBrThousands`/`formatPtBrDecimal`/`formatDotDecimal`) this module used to carry,
+ * which reproduced a real split in the approved canonical HTML (retention days in `,`,
+ * uptime-%/GB-dia in `.` — `[MEDIDO 2026-09-02]`, registered in the previous revision of this
+ * docstring as "out of scope"; this task is the scope that closes it). The previous revision
+ * also argued `toLocaleString`/`Intl` should be avoided because they "read the RUNTIME
+ * locale" — true for a LOCALE-LESS call (`value.toLocaleString()`, `Intl.NumberFormat()`
+ * with no argument), which resolves against the HOST's default locale and is exactly the
+ * non-determinism `Q14` flags. It does NOT hold for `new Intl.NumberFormat("pt-BR", …)`: an
+ * EXPLICIT locale argument pins the output to that locale regardless of where the code runs —
+ * deterministic in the same sense the hand-rolled functions were, just built on the platform's
+ * own formatter instead of reimplementing grouping/rounding by hand.
  */
 
 import {
@@ -30,39 +39,19 @@ import {
   type StorageBudgetLine,
 } from "./domain.ts";
 
-/** Groups digits with `.` every three places — pt-BR thousands separator, deterministic. */
-export function formatPtBrThousands(value: number): string {
-  const sign = value < 0 ? "-" : "";
-  const digits = Math.trunc(Math.abs(value)).toString();
-  const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `${sign}${grouped}`;
-}
-
 /**
- * `fractionDigits` decimals with `,` as the decimal mark and `.` as the thousands separator —
- * the format the retention-day column uses on the approved screen ("1,5 dia", "7,0 dias").
+ * THE single locale formatter this feature uses on any presented numeral (`SPEC-003` §3.7):
+ * `,` decimal mark, `.` thousands separator, `fractionDigits` decimals exactly (padded with
+ * trailing zeros — `formatPtBrNumber(7, 1)` reads `"7,0"`, matching the approved screen's own
+ * rounding, never a bare `"7"`). Built on `Intl.NumberFormat("pt-BR", …)` with the locale
+ * argument ALWAYS explicit — see this module's docstring for why that is deterministic where
+ * a locale-less call would not be.
  */
-export function formatPtBrDecimal(value: number, fractionDigits: number): string {
-  const sign = value < 0 ? "-" : "";
-  const fixed = Math.abs(value).toFixed(fractionDigits);
-  const separatorIndex = fixed.indexOf(".");
-  const intPart = separatorIndex === -1 ? fixed : fixed.slice(0, separatorIndex);
-  const fracPart = separatorIndex === -1 ? "" : fixed.slice(separatorIndex + 1);
-  const groupedInt = formatPtBrThousands(Number(intPart));
-  return fracPart ? `${sign}${groupedInt},${fracPart}` : `${sign}${groupedInt}`;
-}
-
-/**
- * ⚠️ Registered, not fixed: the approved canonical HTML itself mixes decimal marks — the
- * retention-day column uses `,` ("1,5 dia") while the uptime-% and GB/dia columns use `.`
- * ("99.8%", "1.2") `[MEDIDO 2026-09-02, grep on the downloaded Rev. B HTML —
- * see the builder gate report]`. This module reproduces that split faithfully rather than
- * silently normalizing it: `formatPtBrDecimal` (comma) is used only for retention days;
- * this function (dot) is used for uptime% and GB/dia, matching the canonical screen exactly.
- * Fixing the inconsistency is a design-system decision, out of this task's DoD (`D7.12`-`D7.15`).
- */
-function formatDotDecimal(value: number, fractionDigits: number): string {
-  return value.toFixed(fractionDigits);
+export function formatPtBrNumber(value: number, fractionDigits: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
 }
 
 /** The two-line retention cell the screen shows: a primary value, and — only for the sparse
@@ -76,21 +65,21 @@ export function retentionCellText(window: RetentionWindow): RetentionCellText {
   switch (window.kind) {
     case "computed_uniform":
       return {
-        primary: `${formatPtBrThousands(window.points)} pts × ${window.intervalMinutes}m ≈ ${formatPtBrDecimal(window.days, 1)} ${window.days < 2 ? "dia" : "dias"}`,
+        primary: `${formatPtBrNumber(window.points, 0)} pts × ${window.intervalMinutes}m ≈ ${formatPtBrNumber(window.days, 1)} ${window.days < 2 ? "dia" : "dias"}`,
         secondary: null,
       };
     case "measured_sparse":
-      // `formatPtBrDecimal(…, 0)` rather than `formatPtBrThousands`: a declared/measured
+      // `formatPtBrNumber(…, 0)` rather than an integer truncation: a declared/measured
       // window is not guaranteed to be a whole number, and truncating would silently drop a
-      // fraction instead of rounding it — `toFixed(0)` rounds.
+      // fraction instead of rounding it — `Intl.NumberFormat` with `fractionDigits: 0` rounds.
       return {
-        primary: `${formatPtBrThousands(window.points)} pts × ${window.intervalMinutes}m ≈ ${formatPtBrDecimal(window.days, 0)} ${window.days < 2 ? "dia" : "dias"}`,
+        primary: `${formatPtBrNumber(window.points, 0)} pts × ${window.intervalMinutes}m ≈ ${formatPtBrNumber(window.days, 0)} ${window.days < 2 ? "dia" : "dias"}`,
         secondary: window.regimeNote,
       };
     case "doc_only":
       return { primary: "[DOC-ONLY]", secondary: null };
     case "declared_constant":
-      return { primary: `${formatPtBrDecimal(window.days, 0)} dias`, secondary: null };
+      return { primary: `${formatPtBrNumber(window.days, 0)} dias`, secondary: null };
     case "unmeasured":
       return { primary: "NÃO MEDIDA", secondary: null };
     case "not_applicable":
@@ -101,7 +90,7 @@ export function retentionCellText(window: RetentionWindow): RetentionCellText {
 export function resilienceCellText(resilience: ResilienceLabel): string {
   switch (resilience.kind) {
     case "slo_multiplier":
-      return `${resilience.grade} / SLO ~${formatDotDecimal(resilience.multiplier, 1)}x`;
+      return `${resilience.grade} / SLO ~${formatPtBrNumber(resilience.multiplier, 1)}x`;
     case "unavailable":
       return "-";
     case "not_scored":
@@ -112,8 +101,8 @@ export function resilienceCellText(resilience: ResilienceLabel): string {
 }
 
 /** The status cell: badge text/class, the optional glyph (`D17`: position + glyph, never
- * color), the optional free-form detail, and uptime formatted with the screen's own dot
- * decimal (`formatDotDecimal`, not the comma formatter above — see that function's note). */
+ * color), the optional free-form detail, and uptime formatted with the ONE formatter this
+ * module exposes (`formatPtBrNumber` — `SPEC-003` §3.7, `T-03.8`). */
 export interface StatusCellText {
   readonly status: CollectorStatus;
   readonly badgeClass: string;
@@ -128,7 +117,7 @@ export function statusCellText(row: CollectorRow): StatusCellText {
     badgeClass: badgeClassForStatus(row.status),
     glyph: row.status === "PARADO" ? STOPPED_STATUS_GLYPH : null,
     detailText: row.statusDetail,
-    uptimeText: row.uptimePercent === null ? null : `${formatDotDecimal(row.uptimePercent, 1)}%`,
+    uptimeText: row.uptimePercent === null ? null : `${formatPtBrNumber(row.uptimePercent, 1)}%`,
   };
 }
 
@@ -172,13 +161,13 @@ export function buildStorageBudgetView(
 ): StorageBudgetView {
   const totalGbPerDay = totalStorageBudgetGbPerDay(lines);
   return {
-    etlQueueDepthText: formatPtBrThousands(etlQueueDepthPending),
+    etlQueueDepthText: formatPtBrNumber(etlQueueDepthPending, 0),
     lines: lines.map((line) => ({
       label: line.label,
-      valueText: line.gbPerDay === null ? "PARADO" : formatDotDecimal(line.gbPerDay, 1),
+      valueText: line.gbPerDay === null ? "PARADO" : formatPtBrNumber(line.gbPerDay, 1),
     })),
     totalGbPerDay,
-    totalText: `${formatDotDecimal(totalGbPerDay, 1)} GB`,
+    totalText: `${formatPtBrNumber(totalGbPerDay, 1)} GB`,
   };
 }
 
