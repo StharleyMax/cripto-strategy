@@ -136,12 +136,73 @@ E **não releia o que já leu**: foram medidos **62 casos** de um mesmo arquivo 
 **dentro do mesmo agente** — `PRD-001` **15×**, `CLAUDE.md` 9×. Leia uma vez; o que
 interessa vai para o arquivo de trabalho da task.
 
+## O outro eixo: WALL-CLOCK — e ele está separado porque NÃO é contexto
+
+R1–R7 tratam de token. Estas duas tratam de **tempo de parede**, que é uma conta diferente e não
+deve ser somada à outra. `[MEDIDO 2026-09-07 por `python3 scripts/analysis/session-cost.py`,
+n=34.763 chamadas de ferramenta em 543 transcripts: **53,33h**]`.
+
+> **O aparo não é cosmético, é a diferença entre medir e mentir:** a medição descarta chamadas
+> acima de **1800s**, que são artefato de sessão interrompida e retomada, não execução. Sem
+> aparar, o total vai a **85,3h** — e **3 chamadas sozinhas** respondem por **23,7h** desse
+> número. Um total que 3 chamadas dominam não descreve nenhum gargalo.
+
+### R8 — Suíte inteira é PORTÃO, não laço de desenvolvimento
+
+| invocação | n | tempo | por chamada |
+|---|---|---|---|
+| `pytest` **suíte inteira** | 1.138 | **11,86h** — 22% de todo o wall-clock | 37,5s |
+| `pytest` **alvo** (`-k`/arquivo) | 641 | 1,13h | 6,2s |
+
+**A regra:** durante o desenvolvimento, `make test-fast K=<filtro>`
+(`backend/scripts/test-fast.sh`) — **2,19s medidos** contra os 37,5s da suíte, ~17×. A suíte
+completa fica onde ela decide alguma coisa: `make test` e `make verify`.
+
+⛔ **`test-fast` NÃO roda cobertura e NÃO chama `check-coverage-layers.sh`.** As duas recusas
+`rc=3` daquele script continuam existindo em `test.sh`, onde o portão mora. **Verde no
+`test-fast` não é verde de portão** — e o script recusa com `rc=3` se chamado sem filtro,
+porque sem filtro ele seria a suíte inteira sem cobertura: o comando caro vestido com o nome do
+barato. `-k ""` cai na mesma recusa, já que filtro vazio casa com a suíte toda no `pytest`.
+
+### R9 — Não faça polling; peça notificação
+
+`[MEDIDO 2026-09-07: **114 chamadas** de `until`/`while` com `sleep`, **3,68h**, **116,4s** por
+chamada — 6,9% do wall-clock]`. Um laço de `sleep` **paga tempo de parede e não devolve nada**:
+ele não mede mais rápido, só ocupa o turno esperando.
+
+**Em vez disso:** `Bash` com `run_in_background` e a notificação de conclusão, ou o `Monitor`
+para acompanhar um processo. O custo de esperar passa a ser **zero** — o turno termina e a
+notificação acorda quem precisa. Polling só se justifica contra estado que o harness não
+observa (CI remoto, fila externa), e aí o intervalo se escolhe pela velocidade do estado, não
+por hábito.
+
 ## O limite que este documento admite
 
 `agents/qa.md` já registrou a lição que vale aqui: *"prosa aqui mediu 0% de adesão — quem cobra
-de verdade é o portão do `gate-record`"*. **R1–R6 não são portão** — são doutrina, e doutrina
-sem portão é adesão voluntária. O portão correspondente (um teto de turnos ou de bytes cobrado
-na notificação de subagente) **não existe no mecanismo** e seria mudança no plugin, não aqui.
+de verdade é o portão do `gate-record`"*. **R1–R5 não são portão** — são doutrina, e doutrina
+sem portão é adesão voluntária.
+
+> **⚠️ ESTE PARÁGRAFO ESTAVA ERRADO E FOI CORRIGIDO EM 2026-09-07.** Ele dizia: *"o portão
+> correspondente (um teto de turnos ou de bytes cobrado na notificação de subagente) **não
+> existe no mecanismo** e seria mudança no plugin, não aqui"*. **Existe, e não é mudança no
+> plugin: é um hook `PostToolUse`** — [`scripts/claude-hooks/subagent-turn-cap.sh`](../scripts/claude-hooks/subagent-turn-cap.sh),
+> registrado em `.claude/settings.json`. **R6 deixou de ser doutrina e virou mecanismo.**
+
+**R6 agora tem portão.** O hook conta os turnos do transcript do subagente e, ao passar de
+**150**, injeta o aviso de handoff no contexto dele — e repete só a cada 50 turnos, para o
+próprio aviso não virar o gasto que ele combate. Três propriedades deliberadas:
+
+- **Ele avisa, não bloqueia.** Bloquear no meio de uma task deixaria trabalho pela metade **sem
+  handoff escrito**, que é pior que o custo evitado. Quem decide devolver continua sendo o
+  agente — mas deixou de ser o único a saber que a conta está correndo.
+- **Ele só fala com subagente.** O loop principal roda milhares de turnos legitimamente
+  (**2.843** na maior sessão medida) e é discriminado pelo `/subagents/` no caminho do
+  transcript `[MEDIDO 2026-09-07: transcript de 2.843 turnos do loop principal → 0 bytes de
+  saída; subagente de 493 turnos → avisa]`.
+- **Ele fala com a cauda, não com o corpo.** A mediana de turnos por subagente **já obedece** a
+  doutrina — 66 a 86 nas sessões recentes, contra a base de 137. Quem paga são os máximos de
+  **528, 483 e 404**: os 19% que passam de 150 turnos consomem **65%** de todo o contexto de
+  subagente `[MEDIDO 2026-09-07, n=614 subagentes de 14 sessões]`.
 
 **R7 é a exceção, e é por isso que ela é a mais forte da lista:** `scripts/verify.sh` não pede
 adesão — ele **é** mais barato de rodar do que os seis comandos que substitui. Regra que se
@@ -162,3 +223,27 @@ subagente, porque é onde estão 74%**:
 
 **Se o contexto médio por subagente não cair abaixo de `18,3M`, estas regras não pagam o que
 custam e este documento sai** — não fica como boa intenção não medida.
+
+### ✅ O falsificador FOI RODADO em 2026-09-07, e o documento sobrevive
+
+`[MEDIDO 2026-09-07, n=614 subagentes em 14 sessões, 543 transcripts, 322MB]` — pelo comando
+`python3 scripts/analysis/dispatch-falsifier.py`, que é o falsificador desta seção virado
+script para não depender de ninguém reescrevê-lo:
+
+| | base (`b227a990`, n=45) | agora (n=614) | |
+|---|---|---|---|
+| contexto médio por subagente | 18,3M | **12,1M** | **−34%**, o documento se paga |
+| turnos por subagente, `p50` | 137 | **66 a 86** nas sessões recentes | o corpo obedece |
+| turnos por subagente, `max` | 376 | **528 · 483 · 404** | **a cauda piorou** |
+| loop principal, contexto/turno `p50` | 275k | 291,7k (`p90` 597,8k) | praticamente parado |
+
+**A leitura honesta é que a média melhorou e a cauda não** — e as duas coisas não se anulam,
+porque a cauda é justamente onde está o dinheiro: os subagentes que passam de 150 turnos são
+**19% do universo e 65% do contexto de subagente**. Duas sessões ficam **acima** da base:
+`b5929a28` (20,3M, 112 subagentes, `max` 528) e `80881c8a` (22,6M, mas `n=2`, amostra pequena
+demais para concluir). É esse retrato que o portão de R6 passa a cobrar, e é por ele que a
+próxima medição deve ser julgada: **se o `max` de turnos não cair depois do hook, o hook sai.**
+
+Correção de escala, para o número não ser citado errado: a frase acima diz *"é onde estão
+74%"*. Medido agora, subagente é **64%** do fluxo de tokens (6,3G de 9,8G), contra 36% do loop
+principal. A ordem de grandeza se manteve; o número exato, não.
