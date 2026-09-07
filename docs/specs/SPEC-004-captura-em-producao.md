@@ -1,6 +1,6 @@
 # SPEC-004 — Captura em produção: coletores 24/7 → Redis Stream → escritor único → Postgres, subindo por `compose` em dois alvos
 
-**Status:** `SPEC_DRAFT` — o estado corrente **é sempre** `harness pipeline state captura-em-producao`; `SPEC_APPROVED` exige `approve spec` do **owner**, e este cabeçalho não o substitui.
+**Status:** `SPEC_APPROVED` — `approve spec` do **owner** em `2026-09-07T18:23:31Z`, `P1–P10` nos defaults do cabeçalho (`harness pipeline show captura-em-producao`); o estado corrente **é sempre** `harness pipeline state captura-em-producao`, e este texto não o substitui.
 **Feature:** `captura-em-producao` (**filha** de `plataforma-dados`, `relate` no ledger) · **Data:** 2026-09-07 · **Componentes:** `sentimento` (produtor, wire, escritor, registro) · `infra` (Dockerfiles, compose, composição em `src.main`, serviços) · `docs`. **`web` não é tocado.**
 **Ledger ao escrever:** `PRD_VALIDATED` — `approve prd` (architect) + `advance PRD_VALIDATED` em 2026-09-07, após a Gap Analysis em [`gates/PRD-004-architect.md`](../context/captura-em-producao/gates/PRD-004-architect.md) · **Rev de ancoragem de TODA medição:** `master@0acf947` (a mesma do `PRD-004`).
 **Insumos:** [`PRD-004`](PRD-004-captura-em-producao.md) · [`handoff_to_architect.md`](../context/captura-em-producao/handoff_to_architect.md) · [`handoff/PRD.md`](../context/captura-em-producao/handoff/PRD.md) (fala literal do owner) · `ADR-027`, `ADR-029`, `ADR-030`, `ADR-002` (D1/D4/D5 + emendas), `ADR-014` (D1e/D1f), `ADR-009/D2` · código: `redis_stream_bus.py`, `redis_series_write_queue.py`, `run_single_writer.py`, `ingest_record.py`, `provenance.py`, `sqlite_ingest_record_store.py`, `src/main/__init__.py`, `postgres_run_registry_store.py`, `deploy/compose.yml`, `.env.example` (via `git show HEAD:`).
@@ -228,3 +228,5 @@ Se, com `F1`+`F2`+`F3` fechadas por seus DoDs, **`CA-E2E-1` reprovar** — alvo 
 ## 10. Ledger
 
 `PRD_VALIDATED` → **`harness pipeline advance captura-em-producao SPEC_DRAFT`** após gravar este arquivo, as duas ADRs e o plano. **`SPEC_APPROVED` é do owner** (`approve spec`), lendo o cabeçalho `P1–P10`. Próximo passo após a aprovação: `/tech-lead` sobre [`docs/plans/SPEC-004-captura-em-producao/index.md`](../plans/SPEC-004-captura-em-producao/index.md).
+
+**Ocorrido:** `approve spec` do owner em `2026-09-07T18:23:31Z` → `SPEC_APPROVED`; `P1–P10` nos defaults do cabeçalho (`harness pipeline show captura-em-producao`). O `/tech-lead` já correu sobre o plano acima e o ledger avançou até `BUILD_AUTHORIZED` (`harness pipeline state captura-em-producao`) — este parágrafo fica como registro histórico do procedimento, não como estado corrente.
