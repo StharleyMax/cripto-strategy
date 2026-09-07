@@ -15,6 +15,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from src.api.routes.ingest_health import router as ingest_health_router
+from src.api.routes.ready import router as ready_router
 
 router = APIRouter()
 router.include_router(ingest_health_router)
+router.include_router(ready_router)

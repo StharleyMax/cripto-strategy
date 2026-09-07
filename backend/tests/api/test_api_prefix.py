@@ -76,7 +76,8 @@ def test_default_prefix_is_api_v1_and_the_bare_path_404s(tmp_path: Path) -> None
         openapi_status, openapi_body = _get(port, "/openapi.json")
         assert openapi_status == 200
         paths = json.loads(openapi_body)["paths"]
-        assert set(paths) == {"/api/v1/ingest-health"}
+        # `/ready` (`T-02.3`/`ADR-029/D3`) joined `/ingest-health` under the same prefix.
+        assert set(paths) == {"/api/v1/ingest-health", "/api/v1/ready"}
 
 
 def test_api_prefix_env_var_moves_every_openapi_path(
@@ -99,7 +100,7 @@ def test_api_prefix_env_var_moves_every_openapi_path(
         openapi_status, openapi_body = _get(port, "/openapi.json")
         assert openapi_status == 200
         paths = json.loads(openapi_body)["paths"]
-        assert set(paths) == {"/x/ingest-health"}
+        assert set(paths) == {"/x/ingest-health", "/x/ready"}
         assert all(path.startswith("/x") for path in paths)
 
 

@@ -10,9 +10,17 @@ the bounded context itself (`T-05.13`'s `forbidden` contract (4): `source_module
 
 Every function here RAISES if `src.main` never overrode it — a route that somehow ran without
 composition would fail LOUD, not read from a `None` store in silence.
+
+`StoreReadinessSource` is a SEPARATE port from `IngestRecordSource`, deliberately: `GET /ready`
+(`ADR-029/D3`) answers about the store's READINESS, never its rows, so its port names no
+`runs()`/`gaps()` at all — a handler that only has this port physically cannot read a row, which
+is the same shape of guarantee `IngestRecordSource` gives `/ingest-health` the other way round.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+from typing import Protocol
 
 from src.modules.sentimento.use_cases.ingest_health import IngestRecordSource
 
@@ -28,5 +36,34 @@ def get_ingest_record_source() -> IngestRecordSource:
     """
     raise NotImplementedError(
         "get_ingest_record_source has no default adapter; src.main.create_app must override "
+        "it via app.dependency_overrides before serving a request."
+    )
+
+
+class StoreReadinessSource(Protocol):
+    """Read port over the store's READINESS — `GET /ready`'s only dependency (`ADR-029/D3`).
+
+    `SqliteIngestRecordStore` already satisfies this structurally (`path` property,
+    `describe_readiness()` method) — no adapter class is written for it, the same way no
+    adapter class exists solely to satisfy `IngestRecordSource`.
+    """
+
+    @property
+    def path(self) -> Path: ...  # noqa: D102
+
+    def describe_readiness(self) -> tuple[bool, bool]: ...  # noqa: D102
+
+
+def get_store_readiness_source() -> StoreReadinessSource:
+    """Return the `StoreReadinessSource` `/ready` reads — overridden by `src.main.create_app`.
+
+    Raises:
+        NotImplementedError: always, unless `src.main` has already replaced this callable via
+            `app.dependency_overrides[get_store_readiness_source]`. A request that reaches this
+            body means the app was served without going through the composition root.
+
+    """
+    raise NotImplementedError(
+        "get_store_readiness_source has no default adapter; src.main.create_app must override "
         "it via app.dependency_overrides before serving a request."
     )

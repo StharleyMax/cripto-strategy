@@ -25,7 +25,7 @@ from typing import Final
 from fastapi import FastAPI
 
 from src.api import router as api_router
-from src.api.dependencies import get_ingest_record_source
+from src.api.dependencies import get_ingest_record_source, get_store_readiness_source
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
 
 logger = logging.getLogger(__name__)
@@ -89,6 +89,7 @@ def create_app(store_path: Path, api_prefix: str = _DEFAULT_API_PREFIX) -> FastA
     app.include_router(api_router, prefix=api_prefix)
     store = SqliteIngestRecordStore(store_path)
     app.dependency_overrides[get_ingest_record_source] = lambda: store
+    app.dependency_overrides[get_store_readiness_source] = lambda: store
     return app
 
 
