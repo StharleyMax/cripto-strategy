@@ -366,24 +366,25 @@ tracker = { provider = "jira", id = "CST-132", url = "https://conversationhub.at
 
 [[tasks]]
 id = "T-03.2"
-title = "[sentimento][infra] 03 · Use case list_series_catalog() sobre as 7 constantes SeriesCatalogEntry e rota GET {API_PREFIX}/series-catalog — envelope series_catalog, 0 SQL no handler"
+title = "[sentimento][infra] 03 · Use case list_series_catalog() sobre as linhas reais de cvd_source_catalog/price_source_catalog/open_interest_catalog (3+2+5=10) e rota GET {API_PREFIX}/series-catalog — envelope series_catalog, 0 SQL no handler"
 components = ["sentimento", "infra"]
 status = "todo"
 phase = "03"
 depends_on = ["T-03.1", "T-02.2"]
 refs = [
-    "SPEC-003 s3.6 linha 'catalogo' (fechado na forma; nomes de campo = TS series-catalog.ts:134; Completeness NAO vai no fio)", "SPEC-003 s5 B14", "SPEC-003 s0.1 #7 (7 SeriesCatalogEntry( em 3 modulos)", "ADR-005/D6.1 (familia de envelope)", "ADR-019/D2 (parser estrito em campo ausente)",
+    "SPEC-003 s3.6 linha 'catalogo' (fechado na forma; nomes de campo = TS series-catalog.ts:134; Completeness NAO vai no fio)", "SPEC-003 s5 B14", "SPEC-003 s0.1 #7 (7 e contagem de call-sites de SeriesCatalogEntry( em 3 modulos, NAO de linhas do catalogo)", "ADR-005/D6.1 (familia de envelope)", "ADR-019/D2 (parser estrito em campo ausente)",
     "PRD-003 US-9, RF-9, CA-F3-1, NG-3 (4c fora)", "plano 03 item 3.1; DoD D3.1", "plano 03 D3.0 (condicao de entrada da fase — por isso depends_on T-03.1)",
     "narrativa: tasks_review.md s3c T-03.2",
+    "CORRIGIDO em 2026-09-07 apos QA NEEDS_FIX (ver docs/context/camada-de-leitura-do-painel/gates/T-03.2-build.md): DoD original escrevia 'catalogo = 7', confundindo contagem de call-site com contagem de linha. open_interest_catalog.py builda 5 linhas (CA-F2-17: 4 reducoes da Coinalyze + 1 ponto da Binance, nunca colapsadas) a partir de menos call-sites; 3 cvd + 2 price + 5 oi = 10, medido ao vivo via servidor real, nao 7. SPEC-003 s3.6/s5 B14, plano 03 item 3.1/D3.1 e este bloco corrigidos juntos, todos com [MEDIDO 2026-09-07] e o comando que produziu o numero.",
     "arquivos: use case em backend/src/modules/sentimento/...; rota em backend/src/api/routes/; DI em backend/src/api/dependencies.py; pytest em backend/tests/api/",
-    "DoD: curl -s $API$PREFIX/series-catalog | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[\"n_entries\"],len(d[\"entries\"]))' -> 7 7 = grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test | wc -l; grep -rn 'SELECT' backend/src/api | wc -l -> 0; make boundaries verde (src.api nao importa src.modules.sentimento.infra direto)",
+    "DoD: curl -s $API$PREFIX/series-catalog | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[\"n_entries\"],len(d[\"entries\"]))' -> 10 10 (n_entries = len(entries), computado); grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test | wc -l -> 7 (call-sites, NAO igual a n_entries — open_interest_catalog expande 1 call-site em 5 linhas); grep -rn 'SELECT' backend/src/api | wc -l -> 0; make boundaries verde (src.api nao importa src.modules.sentimento.infra direto)",
     "NAO calcula Completeness (4c, NG-3)",
 ]
 tracker = { provider = "jira", id = "CST-133", url = "https://conversationhub.atlassian.net/browse/CST-133" }
 
 [[tasks]]
 id = "T-03.3"
-title = "[web] 03 · parseCatalogEnvelope estrito e S3 exibe as 7 linhas vindas da API — FIXTURE_CATALOG_ROWS fora do grafo de producao"
+title = "[web] 03 · parseCatalogEnvelope estrito e S3 exibe as 10 linhas vindas da API — FIXTURE_CATALOG_ROWS fora do grafo de producao"
 components = ["web"]
 status = "todo"
 phase = "03"
@@ -393,7 +394,7 @@ refs = [
     "PRD-003 US-9, CA-F3-1, RN-3", "plano 03 item 3.2; DoD D3.1 (metade e2e) e D3.6",
     "narrativa: tasks_review.md s3c T-03.3",
     "arquivos: frontend/src/features/s3-inspector/series-catalog.ts (assertValidCatalogEntry), quarantine.ts (QuarantineTerms), S3Inspector.tsx; fixtures.ts sai do grafo",
-    "DoD: teste TS com 1 campo removido por vez => parser reprova; e2e S3 catalog_rows = 7; grep -rn 'fixtures.ts' frontend/src/app frontend/src/features --include='*.tsx' | grep -v '\\.test\\.' | wc -l -> 0",
+    "DoD: teste TS com 1 campo removido por vez => parser reprova; e2e S3 catalog_rows = 10 (corrigido de 7 em 2026-09-07 junto com T-03.2, ver refs la); grep -rn 'fixtures.ts' frontend/src/app frontend/src/features --include='*.tsx' | grep -v '\\.test\\.' | wc -l -> 0",
     "DoD no chao: error_kind:connection_refused e catalog_rows = 0; FIXTURE_CATALOG_ROWS visivel => REPROVA",
 ]
 tracker = { provider = "jira", id = "CST-134", url = "https://conversationhub.atlassian.net/browse/CST-134" }
