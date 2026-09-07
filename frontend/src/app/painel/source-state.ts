@@ -16,9 +16,15 @@
  * This module carries only the TYPE, so a `"use client"` file can `import type` it without
  * ever touching `ingest-health-query.ts`'s value exports (`D6.4`, the same boundary
  * `frontend/eslint.config.mjs`'s `local/use-client-fingerprint-boundary` enforces).
+ *
+ * `T-03.7`: `page.tsx`'s one network call moved from `fetchIngestHealthProjectionViaHttp` to
+ * `fetchCollectorStatusProjectionViaHttp` (`collector-status-query.ts`) — `TransportErrorKind`
+ * is imported from THAT module now, which re-exports the identical type `ingest-health-query.ts`
+ * defines (both transports throw the same `TransportError` class); this file's own contract
+ * (`SourceState`) is unchanged.
  */
 
-import type { TransportErrorKind } from "../../features/s1-console/ingest-health-query.ts";
+import type { TransportErrorKind } from "../../features/s1-console/collector-status-query.ts";
 
 export type SourceState =
   | { readonly kind: "ok" }

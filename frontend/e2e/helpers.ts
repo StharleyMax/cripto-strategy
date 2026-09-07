@@ -53,13 +53,17 @@ export function captureConsole(page: Page): ConsoleCapture {
 export const PANEL_PATH = "/painel";
 
 /** Hosts that are NOT the Next server under test. `SPEC-003` §3.1/`ADR-028/D1`: since `T-01.4`,
- * `/painel` is a Server Component — the ONE network call to `GET /ingest-health` happens on
+ * `/painel` is a Server Component — the ONE network call (`GET /ingest-health` before `T-03.7`,
+ * `GET /collector-status` since — `S1` now reads the per-series aggregate, `ADR-030`) happens on
  * the Next server process, never in the browser. A hit here is therefore evidence the ROUTE
  * REGRESSED to a client-side fetch, the exact opposite of what the suite this file replaced
- * (`plataforma-dados`'s `02-rede-e-estados.spec.ts`) used to require. */
+ * (`plataforma-dados`'s `02-rede-e-estados.spec.ts`) used to require. Both path shapes stay in
+ * the pattern: this file's stub server (`startStubCollectorStatusApi` below) answers on the
+ * ROOT path regardless of what was requested (same `_request` ignored as before `T-03.7`), so
+ * neither literal is load-bearing — `/api/` alone would already catch the real route. */
 export function isApiLike(url: string): boolean {
   const parsed = new URL(url);
-  return /ingest-health|\/api\//.test(parsed.pathname);
+  return /ingest-health|collector-status|\/api\//.test(parsed.pathname);
 }
 
 // ── ACCESS LOG DA API — B1 (`SPEC-003` §5): a prova de que a REQUISIÇÃO aconteceu, não mais
@@ -68,16 +72,20 @@ export function isApiLike(url: string): boolean {
 /** `scripts/e2e-env.sh` grava o stdout/stderr do `uvicorn` (access log ligado, `T-01.7`) em
  * `$STATE_DIR/api.log`; o `Makefile` (`T-01.9`) repassa o caminho por esta variável. Ausente
  * (ou arquivo inexistente, o caso do modo "API no chão" — `T-01.8` nunca sobe o processo) ⇒
- * `countIngestHealthAccessLogHits` devolve `0`, nunca lança. */
+ * `countCollectorStatusAccessLogHits` devolve `0`, nunca lança. */
 export const API_LOG_PATH = process.env.E2E_API_LOG_PATH;
 
-export function countIngestHealthAccessLogHits(): number {
+/** `T-03.7`: `page.tsx`'s one call moved to `GET /collector-status` (`ADR-030`) — renamed from
+ * `countIngestHealthAccessLogHits` so the function name never lies about which route `B1` is
+ * actually proving got hit. */
+export function countCollectorStatusAccessLogHits(): number {
   if (!API_LOG_PATH || !fs.existsSync(API_LOG_PATH)) return 0;
   const content = fs.readFileSync(API_LOG_PATH, "utf8");
-  // Same pattern the plan's own DoD names literally (`01_pagina_diz_a_verdade.md`, `D1.3`):
-  // `grep -c 'GET .*/ingest-health' <access log>` — uvicorn's default access formatter quotes
-  // the request line (`"GET /ingest-health HTTP/1.1"`), but this regex does not depend on that.
-  return (content.match(/GET .*\/ingest-health/g) ?? []).length;
+  // Same pattern the plan's own DoD named literally for `/ingest-health`
+  // (`01_pagina_diz_a_verdade.md`, `D1.3`), now over the route `S1` actually reads since
+  // `T-03.7` — uvicorn's default access formatter quotes the request line
+  // (`"GET /collector-status HTTP/1.1"`), but this regex does not depend on that.
+  return (content.match(/GET .*\/collector-status/g) ?? []).length;
 }
 
 // ── UM SEGUNDO `next start`, e um STUB HTTP — B3/B4/B5/B6/D1.5(b) (`SPEC-003` §5) ────────────
@@ -85,7 +93,8 @@ export function countIngestHealthAccessLogHits(): number {
 // `scripts/e2e-env.sh` só sobe DOIS mundos: a API real (semeada, ≥ 1 run) OU nada (porta
 // deliberadamente livre) — o suficiente para B1/B2, mas nenhum dos dois pode responder `500`,
 // esperar 2 s, ou devolver um envelope com 0 runs sem tocar `backend/` (fora do escopo `web`
-// desta task). O que os une é `ingest-health-query.ts:523` (`resolveIngestHealthBaseUrl`): a
+// desta task). O que os une é `resolveCollectorStatusBaseUrl` (`collector-status-query.ts`,
+// mesmo `INGEST_HEALTH_API_BASE_URL` que `resolveIngestHealthBaseUrl` já lia): a
 // URL é lida de `process.env` a CADA chamada, nunca inlinada em `next build` — então uma
 // SEGUNDA instância de `next start`, apontando `INGEST_HEALTH_API_BASE_URL` para um endereço
 // diferente, reaproveita o MESMO `.next` que `scripts/e2e-env.sh` já compilou (nenhum rebuild),
@@ -131,47 +140,58 @@ export interface StubHandle {
   close(): Promise<void>;
 }
 
-/** Uma linha minimamente válida do envelope (`ingest-health-query.ts` `RUN_ROW_FIELD_KINDS`),
- * as 15 colunas de `ADR-008/D3` — `janela_de_perda` sempre `null` (F0 nunca a computa,
- * `ingest_record.py:91`), como o backend real também sempre devolve nesta fase. */
-function stubRunRow(index: number): Record<string, unknown> {
+/** Uma linha minimamente válida do envelope `/collector-status` (`ADR-030` D5's 15 campos,
+ * `collector-status-query.ts`'s `ROW_FIELD_KINDS`) — `T-03.7`: `S1` lê este envelope agora, não
+ * mais `/ingest-health`'s runs. `status: "ATIVO"` e `liveness.kind: "judged"` são o caso comum a
+ * tela mostra; nada aqui tenta cobrir as outras variantes (`PARADO`/`not_judged`), que já têm
+ * cobertura própria em `collector-status-query.test.ts`. */
+function stubCollectorStatusRow(index: number): Record<string, unknown> {
   return {
-    run_id: `stub-run-${index}`,
+    series: `binance-futures · /fapi/v1/openInterestHist-${index}`,
     source: "binance-futures",
-    endpoint: "/fapi/v1/openInterestHist",
-    window: "2026-08-01T00:00:00Z/2026-08-01T01:00:00Z",
-    n_expected: 12,
-    n_returned: 12,
-    n_written: 12,
-    verdict: "ACCEPTED",
-    api_code: null,
-    src_sha256: `${index}`.padStart(64, "0"),
-    weight_used: 1,
-    observer_id: "observer-stub",
-    observer_region: "sa-east-1",
-    clock_skew_ms: 0,
-    janela_de_perda: null,
+    endpoint: `/fapi/v1/openInterestHist-${index}`,
+    status: "ATIVO",
+    uptimePercent: 100,
+    statusDetail: null,
+    retention: { kind: "unmeasured" },
+    resilience: { kind: "not_scored" },
+    n_runs_total: 12,
+    n_runs_in_window: 12,
+    last_run_id: `stub-run-${index}`,
+    last_verdict: "ACCEPTED",
+    last_ended_at: "2026-08-01T01:00:00.000Z",
+    age_s: 60,
+    liveness: { kind: "judged", period_s: 300, stale_after_s: 900 },
   };
 }
 
-/** Envelope de `GET /ingest-health` (`ADR-005/D6.1`), com `n` runs stub e nenhum gap. */
-function stubEnvelope(runCount: number): Record<string, unknown> {
-  const runs = Array.from({ length: runCount }, (_unused, index) => stubRunRow(index));
-  return { query: "ingest_health_query", n_runs: runs.length, n_gaps: 0, runs, gaps: [] };
+/** Envelope de `GET /collector-status` (`ADR-030` D5), com `n` linhas stub. */
+function stubCollectorStatusEnvelope(rowCount: number): Record<string, unknown> {
+  const rows = Array.from({ length: rowCount }, (_unused, index) => stubCollectorStatusRow(index));
+  return {
+    query: "collector_status",
+    as_of: "2026-08-01T01:00:00.000Z",
+    window_hours: 24,
+    n_rows: rows.length,
+    rows,
+  };
 }
 
-/** Um servidor HTTP mínimo, dedicado, que fica no lugar do `GET /ingest-health` real — B4
- * (`status`), B6 (`delayMs`), B5 (`runCount: 0`). Nunca a query de verdade: só o suficiente
- * para exercitar o transporte (`fetchIngestHealthProjectionViaHttp`) do outro lado. */
-export async function startStubIngestHealthApi(options: {
+/** Um servidor HTTP mínimo, dedicado, que fica no lugar do `GET /collector-status` real — B4
+ * (`status`), B6 (`delayMs`), B5 (`rowCount: 0`). Nunca a query de verdade: só o suficiente
+ * para exercitar o transporte (`fetchCollectorStatusProjectionViaHttp`) do outro lado.
+ * Renomeado de `startStubIngestHealthApi` (`T-03.7`): `S1`'s one call moved to
+ * `/collector-status`, and this stub answers on the root path regardless of the request's own
+ * `.url`, same as before — the shape of the body is what changed, not the serving mechanics. */
+export async function startStubCollectorStatusApi(options: {
   readonly status: number;
   readonly delayMs?: number;
-  readonly runCount?: number;
+  readonly rowCount?: number;
 }): Promise<StubHandle> {
   const port = await getFreePort();
   const server = http.createServer((_request, response) => {
     const respond = () => {
-      const body = JSON.stringify(stubEnvelope(options.runCount ?? 1));
+      const body = JSON.stringify(stubCollectorStatusEnvelope(options.rowCount ?? 1));
       response.writeHead(options.status, { "content-type": "application/json" });
       response.end(body);
     };
