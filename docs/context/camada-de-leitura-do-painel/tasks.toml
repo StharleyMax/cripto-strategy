@@ -222,7 +222,7 @@ tracker = { provider = "jira", id = "CST-124", url = "https://conversationhub.at
 id = "T-02.1"
 title = "[infra] 02 · create_app recusa subir com diretorio-pai do store inexistente — rc != 0, mensagem em ingles nomeando o caminho, verificacao no composition root"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T05:26:18Z @ 992e70fe9d6d658ecfb7c3c92bbcc6aff180b6e0
 phase = "02"
 depends_on = ["T-01.7"]
 refs = [
@@ -240,7 +240,7 @@ tracker = { provider = "jira", id = "CST-125", url = "https://conversationhub.at
 id = "T-02.2"
 title = "[infra] 02 · API_PREFIX lido UMA vez em src.main (default /api/v1, M2) — todas as rotas sob ele, openapi.json reflete, sem prefixo -> 404"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T05:26:18Z @ 992e70fe9d6d658ecfb7c3c92bbcc6aff180b6e0
 phase = "02"
 depends_on = ["T-01.7"]
 refs = [
@@ -257,7 +257,7 @@ tracker = { provider = "jira", id = "CST-126", url = "https://conversationhub.at
 id = "T-02.3"
 title = "[infra] 02 · GET {API_PREFIX}/ready discrimina tres estados do store — 200/503 com corpo {store:{path,exists,schema_present}} e nada mais"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T05:26:18Z @ 992e70fe9d6d658ecfb7c3c92bbcc6aff180b6e0
 phase = "02"
 depends_on = ["T-02.2"]
 refs = [
@@ -274,7 +274,7 @@ tracker = { provider = "jira", id = "CST-127", url = "https://conversationhub.at
 id = "T-02.4"
 title = "[infra] 02 · ETag = IngestHealthReport.fingerprint() no handler de /ingest-health e 304 sem corpo a If-None-Match igual — igualdade provada do lado Python com controle negativo"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T05:26:18Z @ 992e70fe9d6d658ecfb7c3c92bbcc6aff180b6e0
 phase = "02"
 depends_on = ["T-02.2"]
 refs = [
@@ -292,7 +292,7 @@ tracker = { provider = "jira", id = "CST-128", url = "https://conversationhub.at
 id = "T-02.5"
 title = "[web] 02 · Server Component envia If-None-Match e reutiliza a projecao no processo Next em 304 — igualdade etag == fingerprint(parseIngestHealthEnvelope(body)) provada do lado TS"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T05:26:18Z @ 992e70fe9d6d658ecfb7c3c92bbcc6aff180b6e0
 phase = "02"
 depends_on = ["T-01.4", "T-02.4"]
 refs = [
@@ -310,7 +310,7 @@ tracker = { provider = "jira", id = "CST-129", url = "https://conversationhub.at
 id = "T-02.6"
 title = "[infra] 02 · deploy/compose.yml ganha api (sem ports), web e caddy ao lado do postgres — estruturado e validado por config -q, NAO implantado; .env.example ganha PUBLIC_HOST e PANEL_BASIC_AUTH_HASH"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T05:26:18Z @ 992e70fe9d6d658ecfb7c3c92bbcc6aff180b6e0
 phase = "02"
 depends_on = ["T-01.7", "T-02.2"]
 refs = [
@@ -327,7 +327,7 @@ tracker = { provider = "jira", id = "CST-130", url = "https://conversationhub.at
 id = "T-02.7"
 title = "[infra] 02 · deploy/Caddyfile — um host {$PUBLIC_HOST}, {$API_PREFIX}/* -> api, resto -> web, basic_auth inerte sem PANEL_BASIC_AUTH_HASH (M4), TLS parametrizado; teste de que API_PREFIX move openapi.json e Caddyfile JUNTOS"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-07T05:26:18Z @ 992e70fe9d6d658ecfb7c3c92bbcc6aff180b6e0
 phase = "02"
 depends_on = ["T-02.2", "T-02.6"]
 refs = [
