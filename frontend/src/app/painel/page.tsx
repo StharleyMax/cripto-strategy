@@ -5,6 +5,14 @@
  * value handed to `PainelClient.tsx` by props (`ADR-028/D4`: the CAUSE lives in this value, not
  * in `error.tsx`, which stays a generic last-resort boundary for anything unexpected).
  *
+ * `T-03.7`, `ADR-030`, `SPEC-003` §3.6 (plano 03 item 3.6): `S1`'s ONE network call moved from
+ * `GET /ingest-health` to `GET /collector-status` — `S1` now shows the per-series AGGREGATE
+ * `ADR-030` computes (`status` calibrated by the series' own cadence, `uptimePercent` over a
+ * trailing 24h window), not the most recent `md.ingest_run` row (`ingest-health-query.ts`'s
+ * `collectorRowsFromIngestHealthProjection`, the reading this route no longer uses). `RN-4`:
+ * `janela_de_perda` is never read by this path at all — `ADR-030`'s formulas are defined over
+ * `runs()` alone, so there is nothing to recompute here.
+ *
  * No chart (`S2`, `charts/`) is mounted here — the ESLint boundary (`eslint.config.mjs`)
  * forbids `web -> charts` in either direction today; opening it is a decision for a later task.
  *
@@ -23,11 +31,11 @@
 import type { Metadata } from "next";
 
 import {
-  buildS1ViewModelFromIngestHealthProjection,
-  fetchIngestHealthProjectionViaHttp,
+  buildS1ViewModelFromCollectorStatusProjection,
+  fetchCollectorStatusProjectionViaHttp,
   TransportError,
-  type IngestHealthProjection,
-} from "../../features/s1-console/ingest-health-query.ts";
+  type CollectorStatusProjection,
+} from "../../features/s1-console/collector-status-query.ts";
 import type { CatalogRow } from "../../features/s3-inspector/domain.ts";
 import { EMPTY_CATALOG_FILTER, buildS3ViewModel } from "../../features/s3-inspector/view-model.ts";
 import { PainelClient } from "./PainelClient.tsx";
@@ -37,10 +45,10 @@ export const metadata: Metadata = {
   title: "cripto-strategy — Painel",
 };
 
-/** The shape `page.tsx` falls back to when the transport throws — 0 runs, 0 gaps, same as a
- * genuinely empty store. `sourceState.kind` (never this fallback's shape) is what the UI reads
- * to tell the two apart (`ADR-028/D4`). */
-const EMPTY_PROJECTION: IngestHealthProjection = { runs: [], gaps: [] };
+/** The shape `page.tsx` falls back to when the transport throws — 0 rows, same as a genuinely
+ * empty store. `sourceState.kind` (never this fallback's shape) is what the UI reads to tell
+ * the two apart (`ADR-028/D4`). */
+const EMPTY_PROJECTION: CollectorStatusProjection = { as_of: "", window_hours: 24, rows: [] };
 
 /** `GET /series-catalog` does not exist until `F3` (`T-03.2`) — an empty catalog is the only
  * honest input this route can hand `PainelClient.tsx` today (same reasoning as `s3` below).
@@ -50,12 +58,11 @@ const EMPTY_CATALOG: readonly CatalogRow[] = [];
 
 export default async function PainelPage() {
   let sourceState: SourceState;
-  let projection: IngestHealthProjection;
+  let projection: CollectorStatusProjection;
 
   try {
-    const result = await fetchIngestHealthProjectionViaHttp();
-    projection = result.projection;
-    sourceState = projection.runs.length === 0 ? { kind: "empty" } : { kind: "ok" };
+    projection = await fetchCollectorStatusProjectionViaHttp();
+    sourceState = projection.rows.length === 0 ? { kind: "empty" } : { kind: "ok" };
   } catch (cause) {
     if (!(cause instanceof TransportError)) {
       throw cause;
@@ -69,7 +76,7 @@ export default async function PainelPage() {
   // `7.6`/`7.7` — a DIFFERENT feature's scope) — `PainelClient.tsx` renders `SourceNoneMarker`
   // for all three regardless of these placeholders' value (`budgetSourced`/`reconnectionsSourced`
   // are hard-`false`, not derived from them).
-  const s1 = buildS1ViewModelFromIngestHealthProjection(projection, 0, [], []);
+  const s1 = buildS1ViewModelFromCollectorStatusProjection(projection, 0, [], []);
   // Catalog rows have no source either: `GET /series-catalog` does not exist until `F3`
   // (`T-03.2`) — an empty catalog is the only honest input `S3Inspector.tsx` can render today.
   const s3 = buildS3ViewModel(EMPTY_CATALOG, EMPTY_CATALOG_FILTER, null, [], []);

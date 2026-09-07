@@ -2,16 +2,26 @@ import { createHash } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
-import { PANEL_PATH, fact, isApiLike, shot, startSecondaryNextInstance, startStubIngestHealthApi } from "./helpers.ts";
+import {
+  PANEL_PATH,
+  fact,
+  isApiLike,
+  shot,
+  startSecondaryNextInstance,
+  startStubCollectorStatusApi,
+} from "./helpers.ts";
 
 const SPEC = "02-rede-e-estados";
 
 /**
- * `T-01.9`, `SPEC-003` §5. Three different mechanisms, one file:
+ * `T-01.9`, `SPEC-003` §5. `T-03.7`: `S1`'s one call moved from `GET /ingest-health` to
+ * `GET /collector-status` (`ADR-030`) — every stub below now answers the collector-status
+ * envelope shape; the mechanisms this file proves are unchanged. Three different mechanisms,
+ * one file:
  *
- * 1. The browser must make ZERO requests toward anything `ingest-health`-shaped — the exact
- *    INVERSE of what the suite this file replaces asked for (`ADR-028/D1`: the read moved
- *    server-side; a browser-side hit would mean the route regressed).
+ * 1. The browser must make ZERO requests toward anything API-shaped — the exact INVERSE of
+ *    what the suite this file replaces asked for (`ADR-028/D1`: the read moved server-side; a
+ *    browser-side hit would mean the route regressed).
  * 2. `B2`: `<main>`'s bytes/sha256 are recorded as facts (not compared in-process — the
  *    falsifier is EXTERNAL, a diff between this run's `facts.jsonl` and a second `make e2e`
  *    invocation with the other `E2E_API_UP` value, same as `D1.4`'s own "servidor ausente"
@@ -38,7 +48,7 @@ test("o browser nunca fala com a API — toda leitura acontece no servidor (ADR-
   fact(SPEC, "requests_total", requests.length);
   fact(SPEC, "requests_to_api_like_paths", apiRequests);
   fact(SPEC, "websockets", websockets);
-  expect(apiRequests, "the browser itself reached an ingest-health-shaped path").toEqual([]);
+  expect(apiRequests, "the browser itself reached an API-shaped path").toEqual([]);
   expect(websockets, "no websocket transport exists in F1").toEqual([]);
 });
 
@@ -94,7 +104,7 @@ for (const cause of CAUSES) {
 }
 
 test("B4: stub HTTP 500 ⇒ error_kind:non_2xx, status:500", async ({ browser }) => {
-  const stub = await startStubIngestHealthApi({ status: 500 });
+  const stub = await startStubCollectorStatusApi({ status: 500 });
   const instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: stub.url });
   try {
     const page = await browser.newPage({ baseURL: instance.baseUrl });
@@ -113,7 +123,7 @@ test("B4: stub HTTP 500 ⇒ error_kind:non_2xx, status:500", async ({ browser })
 });
 
 test("B5: store com 0 runs (stub 200 vazio) ⇒ ui_state:empty, 0 <tr>, 0 error_kind", async ({ browser }) => {
-  const stub = await startStubIngestHealthApi({ status: 200, runCount: 0 });
+  const stub = await startStubCollectorStatusApi({ status: 200, rowCount: 0 });
   const instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: stub.url });
   try {
     const page = await browser.newPage({ baseURL: instance.baseUrl });
@@ -136,7 +146,7 @@ test("B5: store com 0 runs (stub 200 vazio) ⇒ ui_state:empty, 0 <tr>, 0 error_
 
 test("B6: stub responde após 2 s ⇒ ui_state:loading visível antes de ui_state:ok", async ({ browser }) => {
   test.setTimeout(60_000);
-  const stub = await startStubIngestHealthApi({ status: 200, delayMs: 2_000, runCount: 1 });
+  const stub = await startStubCollectorStatusApi({ status: 200, delayMs: 2_000, rowCount: 1 });
   const instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: stub.url });
   try {
     const page = await browser.newPage({ baseURL: instance.baseUrl });

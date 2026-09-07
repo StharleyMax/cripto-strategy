@@ -4,7 +4,7 @@ import {
   API_LOG_PATH,
   PANEL_PATH,
   captureConsole,
-  countIngestHealthAccessLogHits,
+  countCollectorStatusAccessLogHits,
   fact,
   shot,
 } from "./helpers.ts";
@@ -81,13 +81,13 @@ test("estrutura sempre presente: título, CSS, ícones, h1 único, sem vazamento
 test("B1: API de pé — GET /painel entrega >= 1 linha, incrementa o access log da API, e ui_state:ok", async ({
   page,
 }) => {
-  const before = countIngestHealthAccessLogHits();
+  const before = countCollectorStatusAccessLogHits();
   await page.goto(PANEL_PATH, { waitUntil: "networkidle" });
-  const after = countIngestHealthAccessLogHits();
+  const after = countCollectorStatusAccessLogHits();
 
   fact(SPEC, "api_log_path", API_LOG_PATH ?? null);
-  fact(SPEC, "ingest_health_access_log_hits_before", before);
-  fact(SPEC, "ingest_health_access_log_hits_after", after);
+  fact(SPEC, "collector_status_access_log_hits_before", before);
+  fact(SPEC, "collector_status_access_log_hits_after", after);
   // `E2E_API_UP=0` (`T-01.8`): no `api.log` file exists at all, `before === after === 0` — this
   // assertion is EXPECTED to fail in that mode; that flip is the falsifier `D1.11` measures.
   expect(after, "GET /painel never reached the API's own access log (uvicorn, --log)").toBeGreaterThan(before);
