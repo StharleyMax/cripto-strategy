@@ -511,12 +511,54 @@ export class TransportError extends Error {
 
 /** What `fetchIngestHealthProjectionViaHttp` returns: the typed projection, plus the
  * fingerprint this client computed over it — never one read off the wire (`ADR-019/D3`).
- * `etag` is always `null` in `F1` — `T-02.5` (`F2`) is the task that starts reading a real
- * value off the response and reusing it across requests via `If-None-Match`. */
+ * `etag`, since `T-02.5` (`F2`), is the `ETag` response header **dequoted** (the bare hex
+ * digest, `dequoteStrongEtag` below) — the same value `fingerprint(projection)` produces when
+ * the server and this client agree, so a caller can compare the two directly. `null` only when
+ * the response carried no `ETag` header at all. */
 export interface IngestHealthHttpResult {
   readonly projection: IngestHealthProjection;
   readonly fingerprint: string;
   readonly etag: string | null;
+}
+
+// ── `T-02.5`/`ADR-029/D4`: PROCESS-LEVEL CONDITIONAL REVALIDATION ───────────────────────────
+//
+// `SPEC-003` §3.2 (`F2`): "envia `If-None-Match: <etag conhecido>` quando houver; `304` ⇒
+// reutiliza a projeção anterior **do mesmo processo** (nunca do browser)." The cache below is
+// exactly that and nothing more: a plain module-scope `Map`, alive for as long as this Node.js
+// process is (the Next.js server process rendering `/painel`, `T-01.4`'s `page.tsx`) — never
+// serialized to the browser, never written to disk, never shared across processes. Keyed by
+// `baseUrl` (not a single slot) so two different targets — e.g. two loopback test servers on
+// different ports in the same `node --test` run — never cross-contaminate each other's cached
+// projection.
+//
+// This is deliberately NOT Next's own `fetch` cache (`cache: "no-store"` stays explicit below,
+// unchanged from `F1`) — Next's cache is keyed and invalidated by rules this module does not
+// control, and `RNF-1` wants the conditional-revalidation behaviour to be an explicit, readable
+// property of THIS module, provable by a test that never depends on Next's cache internals.
+
+interface CachedIngestHealthResponse {
+  /** The `ETag` header exactly as the server sent it (quoted, `'"<hex>"'`) — echoed back
+   * verbatim as `If-None-Match` on the next request, because the backend's comparison
+   * (`ingest_health.py`: `request.headers.get("if-none-match") == etag`) is a STRING equality
+   * against that same quoted form; sending the dequoted hex would never match. */
+  readonly etagHeader: string;
+  /** The dequoted hex digest — what this module hands the caller as `IngestHealthHttpResult.etag`. */
+  readonly etag: string;
+  readonly projection: IngestHealthProjection;
+  readonly fingerprint: string;
+}
+
+const processCacheByBaseUrl = new Map<string, CachedIngestHealthResponse>();
+
+/** `ETag` is a STRONG validator per `ADR-029/D4` (`'"<hex>"'`, never `W/"..."`) — this strips
+ * the one pair of enclosing quotes RFC 7232 §2.3 puts there. A header value that is not quoted
+ * this way is returned unchanged rather than mangled, so an unexpected server shape shows up as
+ * a mismatching `etag` in a test, not as a silently corrupted string. */
+function dequoteStrongEtag(headerValue: string): string {
+  return headerValue.length >= 2 && headerValue.startsWith('"') && headerValue.endsWith('"')
+    ? headerValue.slice(1, -1)
+    : headerValue;
 }
 
 function resolveIngestHealthBaseUrl(explicit: string | undefined): string {
@@ -548,16 +590,28 @@ function describeCause(cause: unknown): string {
  * over the raw decoded body first — `ADR-005`'s falsifier stays agnostic of this module's own
  * schema, same as it already is for the historical transport.
  *
- * `cache: "no-store"` is explicit (`SPEC-003` §3.2, `F1`) — this Server Component transport
- * never wants Next's fetch cache to serve a stale run; `T-02.5` (`F2`) is the task that adds
- * conditional revalidation (`If-None-Match`) on top of this, not this one.
+ * `cache: "no-store"` is explicit (`SPEC-003` §3.2) — this Server Component transport never
+ * wants Next's own fetch cache to serve a stale run; conditional revalidation is handled
+ * explicitly instead, below, via `If-None-Match`/`304` and `processCacheByBaseUrl`.
+ *
+ * Since `T-02.5` (`F2`, `ADR-029/D4`): when this process has already cached an `ETag` for this
+ * exact `baseUrl`, the request carries `If-None-Match: <that ETag>`. A `304` response means the
+ * server's data has not moved since — this function reuses the CACHED projection/fingerprint
+ * instead of re-parsing an (empty) body, and returns the SAME `etag`. A `304` with no prior
+ * cache entry (this process never saw this `baseUrl` succeed before) is treated as
+ * `malformed_envelope`: there is nothing to revalidate against, so trusting it would mean
+ * inventing data. Critically, this cache is consulted ONLY after a successful round trip — a
+ * `fetch` failure (`connection_refused`) or a non-2xx response is never intercepted here and
+ * papered over with a stale cached projection; the transport error propagates exactly as it
+ * would with no cache at all (`SPEC-003` §3.2's "cache de processo nunca substitui erro de
+ * transporte").
  *
  * Every failure this function can produce throws `TransportError` with the matching `kind`:
  * `missing_base_url` (no address configured, checked before any network call — `NEXT_PUBLIC_*`
  * is deliberately never read here per `ADR-019/D4`), `connection_refused` (the `fetch` call
  * itself never reached a server), `non_2xx` (a response came back, but not `2xx`), and
- * `malformed_envelope` (a `2xx` body that is not valid JSON, or that fails
- * `parseIngestHealthEnvelope`'s schema check).
+ * `malformed_envelope` (a `2xx` body that is not valid JSON, that fails
+ * `parseIngestHealthEnvelope`'s schema check, or a `304` this process cannot revalidate).
  */
 export async function fetchIngestHealthProjectionViaHttp(
   options: IngestHealthHttpOptions = {},
@@ -565,16 +619,31 @@ export async function fetchIngestHealthProjectionViaHttp(
   const baseUrl = resolveIngestHealthBaseUrl(options.baseUrl);
   const doFetch = options.fetchImpl ?? fetch;
   const url = new URL("/ingest-health", baseUrl);
+  const cached = processCacheByBaseUrl.get(baseUrl);
 
   let response: Response;
   try {
-    response = await doFetch(url, { cache: "no-store" });
+    response = await doFetch(url, {
+      cache: "no-store",
+      headers: cached === undefined ? undefined : { "If-None-Match": cached.etagHeader },
+    });
   } catch (cause) {
     throw new TransportError(
       "connection_refused",
       `fetchIngestHealthProjectionViaHttp: GET ${url.toString()} never reached a server ` +
         `(${describeCause(cause)})`,
     );
+  }
+
+  if (response.status === 304) {
+    if (cached === undefined) {
+      throw new TransportError(
+        "malformed_envelope",
+        `fetchIngestHealthProjectionViaHttp: GET ${url.toString()} answered 304, but this ` +
+          "process never cached an ETag for this base URL to revalidate against",
+      );
+    }
+    return { projection: cached.projection, fingerprint: cached.fingerprint, etag: cached.etag };
   }
 
   if (!response.ok) {
@@ -608,7 +677,14 @@ export async function fetchIngestHealthProjectionViaHttp(
     );
   }
 
-  return { projection, fingerprint: fingerprint(projection), etag: null };
+  const computedFingerprint = fingerprint(projection);
+  const etagHeader = response.headers.get("etag");
+  if (etagHeader === null) {
+    return { projection, fingerprint: computedFingerprint, etag: null };
+  }
+  const etag = dequoteStrongEtag(etagHeader);
+  processCacheByBaseUrl.set(baseUrl, { etagHeader, etag, projection, fingerprint: computedFingerprint });
+  return { projection, fingerprint: computedFingerprint, etag };
 }
 
 // ── MAPEAMENTO PARA `CollectorRow` — MÍNIMO E DELIBERADO, VER O DOCSTRING DO MÓDULO ─────────

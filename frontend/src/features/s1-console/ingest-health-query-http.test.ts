@@ -33,6 +33,7 @@ import {
   buildS1ViewModelFromIngestHealthProjection,
   collectorRowsFromIngestHealthProjection,
   fetchIngestHealthProjectionViaHttp,
+  TransportError,
 } from "./ingest-health-query.ts";
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -228,7 +229,12 @@ def main():
     # Computed from the SAME "runs"/"gaps" tuples that seeded the store — never read back.
     expected_fingerprint = IngestHealthReport(runs=runs, gaps=gaps).fingerprint()
 
-    app = create_app(target)
+    # T-02.2 (ADR-029/D2) mounts every route under API_PREFIX (default "/api/v1") -- this
+    # fixture predates that and talks to bare "/ingest-health" at process root, which is
+    # exactly what it still means to test here (the transport module's own path construction,
+    # not API_PREFIX routing -- that contract is T-02.7's DoD, not this file's). An empty
+    # prefix keeps this fixture mounting at root instead of silently 404ing under "/api/v1".
+    app = create_app(target, api_prefix="")
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
@@ -553,3 +559,78 @@ test("MORDE D5.14(i): servidor cai NO MEIO do fetch ⇒ a promise REJEITA, nunca
     await closeServerOnce();
   }
 });
+
+// ── `T-02.5`/`ADR-029/D4` — `ETag`/`If-None-Match`/`304` sobre a rota REAL, dois lados ──────
+//
+// `D2.4`: `etag` (dequotado) tem de bater com `fingerprint()` calculado independentemente em
+// Python (`printFingerprint`, já usado pelos testes acima) — igualdade dos DOIS lados, não um
+// número comparado consigo mesmo (`ADR-005/D6`). `D2.5`/`D2.6`: a SEGUNDA chamada, com o etag
+// já conhecido por este processo, tem de receber um `304` REAL do servidor (não fingido) e
+// devolver a MESMA projeção/fingerprint — provado aqui com um `fetchImpl` que ENVOLVE o
+// `fetch` global real e apenas espiona `response.status`, então o `304` observado é o que o
+// servidor de verdade respondeu, não um mock.
+
+test(
+  "CALA T-02.5 (D2.4+D2.5+D2.6): etag TS == fingerprint() dos dois lados; 2a chamada recebe " +
+    "304 REAL do servidor (espiado, nao mockado) e reutiliza a MESMA projecao/fingerprint",
+  async () => {
+    await withTmpDir(async (tmpDir) =>
+      withServedFixture("original", tmpDir, async ({ port, fingerprint: expectedFingerprint }) => {
+        const baseUrl = `http://127.0.0.1:${port}`;
+        const statuses: number[] = [];
+        const spyFetch: typeof fetch = async (input, init) => {
+          const response = await fetch(input, init);
+          statuses.push(response.status);
+          return response;
+        };
+
+        const first = await fetchIngestHealthProjectionViaHttp({ baseUrl, fetchImpl: spyFetch });
+        assert.equal(
+          first.etag,
+          expectedFingerprint,
+          "D2.4: etag (dequotado, sem aspas) tem de bater com fingerprint() do lado Python",
+        );
+        assert.equal(first.fingerprint, expectedFingerprint);
+
+        const second = await fetchIngestHealthProjectionViaHttp({ baseUrl, fetchImpl: spyFetch });
+        assert.deepEqual(
+          statuses,
+          [200, 304],
+          "1a resposta HTTP e 200; a 2a, com If-None-Match reenviando o etag conhecido, e um 304 real",
+        );
+        assert.equal(second.etag, first.etag);
+        assert.equal(second.fingerprint, first.fingerprint);
+        assert.deepEqual(second.projection, first.projection);
+      }),
+    );
+  },
+);
+
+test(
+  "MORDE D2.6 'cache de processo nunca substitui erro de transporte': servidor cai apos a " +
+    "1a chamada esquentar o cache; a 2a chamada, mesmo baseUrl, REJEITA com connection_refused",
+  async () => {
+    let baseUrl: string | undefined;
+
+    await withTmpDir(async (tmpDir) =>
+      withServedFixture("original", tmpDir, async ({ port }) => {
+        baseUrl = `http://127.0.0.1:${port}`;
+        const warm = await fetchIngestHealthProjectionViaHttp({ baseUrl });
+        assert.ok(warm.etag, "etag tem de estar presente para o cache deste processo esquentar");
+      }),
+    );
+    // `withServedFixture` ja matou o processo do servidor no seu `finally` — a mesma porta nao
+    // tem mais ninguem escutando, mas `processCacheByBaseUrl` (module-scope, dentro de
+    // `ingest-health-query.ts`) ainda guarda o etag/projecao desta `baseUrl`.
+    assert.ok(baseUrl, "baseUrl precisa ter sido capturado dentro do fixture");
+
+    await assert.rejects(
+      () => fetchIngestHealthProjectionViaHttp({ baseUrl }),
+      (error: unknown) => {
+        assert.ok(error instanceof TransportError, "erro nao e TransportError");
+        assert.equal(error.kind, "connection_refused");
+        return true;
+      },
+    );
+  },
+);
