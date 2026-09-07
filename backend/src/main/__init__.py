@@ -25,8 +25,13 @@ from typing import Final
 from fastapi import FastAPI
 
 from src.api import router as api_router
-from src.api.dependencies import get_ingest_record_source, get_store_readiness_source
+from src.api.dependencies import (
+    get_ingest_record_source,
+    get_series_catalog_source,
+    get_store_readiness_source,
+)
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
+from src.modules.sentimento.use_cases.series_catalog import list_series_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +95,11 @@ def create_app(store_path: Path, api_prefix: str = _DEFAULT_API_PREFIX) -> FastA
     store = SqliteIngestRecordStore(store_path)
     app.dependency_overrides[get_ingest_record_source] = lambda: store
     app.dependency_overrides[get_store_readiness_source] = lambda: store
+    # Built ONCE here, not inside the lambda: `list_series_catalog()` is a pure function of
+    # domain constants (`T-06.x`), so there is no per-request reason to rebuild it — same
+    # reasoning as `store` above, just without the I/O `SqliteIngestRecordStore.__init__` skips.
+    catalog = list_series_catalog()
+    app.dependency_overrides[get_series_catalog_source] = lambda: catalog
     return app
 
 
