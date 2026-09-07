@@ -97,6 +97,14 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     "modules/sentimento/domain/funding_settlement.py": frozenset(
         {"__post_init__", "settlement_residual_ms", "primary_key"}
     ),
+    # `T-01.2`: SERIALIZATION, same category as `write_series_row.py` above. `encode()` projects
+    # an already-built `SeriesRow` into the flat `str -> str` wire mapping that
+    # `RedisStreamPublisher.publish` sends (`SPEC-004` §3.2) — it reads `row.bucket_end`,
+    # `row.available_at` and `row.observed_at` only to `str()` them into that mapping, never
+    # comparing any of the three against a decision instant `t`. `decode()` does not appear here:
+    # it builds the field mapping by KEYWORD NAME (`bucket_end=_decode_int("bucket_end", ...)`),
+    # never as `.attr` on a `SeriesRow` instance, so `ast.Attribute` has nothing to see there.
+    "modules/sentimento/infra/series_row_wire.py": frozenset({"encode"}),
 }
 
 
