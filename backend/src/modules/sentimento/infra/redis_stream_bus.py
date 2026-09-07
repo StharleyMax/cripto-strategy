@@ -34,6 +34,11 @@ _NEW_ENTRIES: Final[str] = ">"
 _PENDING_FROM_START: Final[str] = "0"
 _BUSYGROUP_MARKER: Final[str] = "BUSYGROUP"
 
+# `SPEC-004 §3.2`/`ADR-032/D4`: the cap `RedisStreamPublisher.publish` passes to `XADD MAXLEN ~ N`
+# when the caller does not override it. `REDIS_STREAM_MAXLEN` in `.env.example` carries the same
+# default; `CA-F1-5` measures 24h throughput and may move both numbers together (`ADR-032/F6`).
+DEFAULT_STREAM_MAXLEN: Final[int] = 100_000
+
 
 class UnexpectedStreamReplyError(Exception):
     """`XREADGROUP`/`XADD` answered with a shape this client's contract does not model."""
@@ -50,10 +55,21 @@ class StreamMessage:
 class RedisStreamPublisher:
     """`XADD` only — publishing a Stream entry never needs a consumer group."""
 
-    def __init__(self, connection: RespConnection, stream: str) -> None:
-        """Bind to one already-open `connection` and the one `stream` this publisher writes."""
+    def __init__(
+        self,
+        connection: RespConnection,
+        stream: str,
+        max_len: int = DEFAULT_STREAM_MAXLEN,
+    ) -> None:
+        """Bind to one already-open `connection` and the one `stream` this publisher writes.
+
+        `max_len` becomes the approximate (`~`) `MAXLEN` every `publish` call passes to `XADD`
+        (`RNF-2`, `P5`, `ADR-032/D4`): the queue trims itself so a producer outliving its
+        consumers grows `redis`'s memory bounded by this cap rather than without limit.
+        """
         self._connection = connection
         self._stream = stream
+        self._max_len = max_len
 
     def publish(self, fields: Mapping[str, str]) -> bytes:
         """Append one entry with a server-minted id (`*`) and return that id.
@@ -61,8 +77,17 @@ class RedisStreamPublisher:
         `fields` becomes the flat `field value field value ...` tail `XADD` expects; order is
         preserved from the mapping's own iteration order, which for a `dict` literal is
         insertion order — so a caller that cares about field order controls it the same way.
+        `MAXLEN ~ self._max_len` asks the server to trim approximately, not exactly — the cheap
+        form `ADR-032/D4` calls for, since an exact trim costs an extra scan per `XADD`.
         """
-        args: list[str] = ["XADD", self._stream, "*"]
+        args: list[str] = [
+            "XADD",
+            self._stream,
+            "MAXLEN",
+            "~",
+            str(self._max_len),
+            "*",
+        ]
         for key, value in fields.items():
             args.extend((key, value))
         entry_id = self._connection.command(*args)
