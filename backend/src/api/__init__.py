@@ -18,9 +18,11 @@ from src.api.routes.collector_status import router as collector_status_router
 from src.api.routes.ingest_health import router as ingest_health_router
 from src.api.routes.ready import router as ready_router
 from src.api.routes.series_catalog import router as series_catalog_router
+from src.api.routes.series_quarantine import router as series_quarantine_router
 
 router = APIRouter()
 router.include_router(collector_status_router)
 router.include_router(ingest_health_router)
 router.include_router(ready_router)
 router.include_router(series_catalog_router)
+router.include_router(series_quarantine_router)

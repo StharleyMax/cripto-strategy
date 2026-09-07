@@ -22,8 +22,9 @@ from src.modules.sentimento.domain.coinalyze_daily_series import (
     SeriesKind,
     evaluate_series_requirement,
 )
-from src.modules.sentimento.domain.quarantine_terms import COINALYZE_ONE_SHOT_TERMS
+from src.modules.sentimento.domain.quarantine_terms import COINALYZE_ONE_SHOT_TERMS, QuarantineTerms
 from src.modules.sentimento.domain.quarantined_series_entry import QuarantinedSeriesEntry
+from src.modules.sentimento.domain.series_quarantine_report import QuarantineRow
 from src.modules.sentimento.infra.sqlite_series_quarantine_store import (
     SqliteSeriesQuarantineStore,
 )
@@ -221,3 +222,102 @@ def test_read_latest_prefers_the_most_recently_received_row(tmp_path: Path) -> N
 
     assert row is not None
     assert row[7] == _RECEIVED_AT  # the newer, record()-written row wins
+
+
+def test_list_all_returns_empty_when_the_store_never_ran(tmp_path: Path) -> None:
+    """`T-03.4`: same "absence is empty, not a crash" contract as every other read here."""
+    store = SqliteSeriesQuarantineStore(tmp_path / "quarantine.sqlite3")
+
+    assert store.list_all() == ()
+
+
+def test_list_all_never_carries_points_json_the_d3_2_falsifier(tmp_path: Path) -> None:
+    """`D3.2`'s own falsifier: `list_all()` cannot leak `points_json`.
+
+    `QuarantineRow` has no such field, so this is CALA over a row with a large `points_json`
+    actually persisted.
+    """
+    store = SqliteSeriesQuarantineStore(tmp_path / "quarantine.sqlite3")
+    store.initialise()
+    store.record(_entry("BTCUSDT", SeriesKind.OPEN_INTEREST, n_points=2500))
+
+    rows = store.list_all()
+
+    assert len(rows) == 1
+    assert not hasattr(rows[0], "points_json")
+    assert "points_json" not in vars(rows[0])
+
+
+def test_list_all_returns_the_typed_row_with_every_field_round_tripped(tmp_path: Path) -> None:
+    """A round trip through `record()` -> `list_all()`.
+
+    The store keeps what the entry gave it, projected onto `QuarantineRow`
+    (`COINALYZE_ONE_SHOT_TERMS`: label_shift/unit present, available_at absent).
+    """
+    store = SqliteSeriesQuarantineStore(tmp_path / "quarantine.sqlite3")
+    store.initialise()
+    store.record(_entry("BTCUSDT", SeriesKind.OPEN_INTEREST, n_points=2500))
+
+    rows = store.list_all()
+
+    assert rows == (
+        QuarantineRow(
+            source="coinalyze",
+            series_kind=SeriesKind.OPEN_INTEREST,
+            binance_symbol="BTCUSDT",
+            coinalyze_symbol="BTCUSDT_PERP.A",
+            n_points=2500,
+            terms=QuarantineTerms(
+                label_shift_present=True,
+                unit_present=True,
+                available_at_present=False,
+            ),
+            recorded_at=_RECEIVED_AT,
+        ),
+    )
+
+
+def test_list_all_reflects_available_at_present_when_a_row_is_promoted(tmp_path: Path) -> None:
+    """A row with `available_at` set reads `availableAtPresent=True`.
+
+    The third term is NOT a stored flag, it is derived from the column being non-`NULL` (same
+    reading `_SELECT_PROMOTED` already gives it).
+    """
+    store = SqliteSeriesQuarantineStore(tmp_path / "quarantine.sqlite3")
+    store.initialise()
+    with sqlite3.connect(store.path) as connection:
+        connection.execute(
+            "INSERT INTO series_quarantine "
+            "(source, series_kind, binance_symbol, coinalyze_symbol, points_json, n_points, "
+            " first_point_date, requirement_met, label_shift_present, unit_present, "
+            " available_at, received_at, run_id) "
+            "VALUES ('coinalyze', 'open_interest', 'ETHUSDT', 'ETHUSDT_PERP.A', '[]', 0, "
+            "        NULL, 1, 1, 1, '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', 'promoted-run')"
+        )
+        connection.commit()
+
+    rows = store.list_all()
+
+    assert len(rows) == 1
+    assert rows[0].terms.available_at_present is True
+
+
+def test_list_all_orders_by_the_primary_key_not_write_order(tmp_path: Path) -> None:
+    """A dump needs a deterministic order independent of insertion order.
+
+    `ORDER BY source, series_kind, binance_symbol` (the table's own `PRIMARY KEY`), not
+    `received_at`.
+    """
+    store = SqliteSeriesQuarantineStore(tmp_path / "quarantine.sqlite3")
+    store.initialise()
+    store.record(_entry("ETHUSDT", SeriesKind.OPEN_INTEREST))
+    store.record(_entry("BTCUSDT", SeriesKind.LIQUIDATION))
+    store.record(_entry("BTCUSDT", SeriesKind.OPEN_INTEREST))
+
+    rows = store.list_all()
+
+    assert [(row.series_kind, row.binance_symbol) for row in rows] == [
+        (SeriesKind.LIQUIDATION, "BTCUSDT"),
+        (SeriesKind.OPEN_INTEREST, "BTCUSDT"),
+        (SeriesKind.OPEN_INTEREST, "ETHUSDT"),
+    ]
