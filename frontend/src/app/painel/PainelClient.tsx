@@ -57,6 +57,12 @@ export interface PainelClientProps {
    * something real on every keystroke (`RN-5`/`RF-10`). */
   readonly catalog: readonly CatalogRow[];
   readonly sourceState: SourceState;
+  /** `T-03.5`: whether `GET /series-quarantine` answered — `false` means the drawer shows an
+   * error, never the divergence fixture module (spelled out instead of quoted verbatim, same
+   * technique `page.tsx`'s own docstring uses, so this comment is never counted as a hit by the
+   * grep that enforces the ban) nor a silently-empty read (`page.tsx`'s own docstring on why `[]`
+   * alone cannot carry this distinction). */
+  readonly quarantineOk: boolean;
 }
 
 /** `DESIGN_SYSTEM.md` §9.2 rows 2-5 — the titles are static pt-BR from the `T-01.3` design
@@ -113,7 +119,7 @@ function EmptyBanner() {
   );
 }
 
-export function PainelClient({ s1, s3, catalog, sourceState }: PainelClientProps) {
+export function PainelClient({ s1, s3, catalog, sourceState, quarantineOk }: PainelClientProps) {
   const [filterText, setFilterText] = useState("");
 
   // `T-01.6`, `RN-5`/`RF-10`: recomputed on every keystroke, over the RAW `catalog` prop, not
@@ -143,6 +149,7 @@ export function PainelClient({ s1, s3, catalog, sourceState }: PainelClientProps
         viewModel={{ ...s3, catalogRows }}
         filterText={filterText}
         onFilterTextChange={setFilterText}
+        quarantineOk={quarantineOk}
       />
     </main>
   );

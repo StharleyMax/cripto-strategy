@@ -22,6 +22,7 @@ import {
   type InspectorRow,
   type Provenance,
   type QuarantineDrawer,
+  type QuarantineSourceRow,
 } from "./domain.ts";
 import type { IngestHealthGapRow } from "../s1-console/ingest-health-query.ts";
 import { buildSeriesLabel, type SeriesKey } from "./series-catalog.ts";
@@ -225,12 +226,21 @@ export interface S3ViewModel {
   readonly quarantineDrawer: QuarantineDrawerView;
 }
 
+/**
+ * `T-03.5`: `quarantineRows` is the drawer's OWN read (`GET /series-quarantine`, via
+ * `series-quarantine-query.ts::quarantineSourceRowsFromProjection`) — NOT derived from `catalog`
+ * anymore. Before this task, the drawer folded `CatalogRow.quarantine` (whose third term,
+ * `availableAtPresent`, was always `false` — that endpoint carries no availability-lag data);
+ * passing `[]` here (`page.tsx`'s fallback on transport failure) is exactly as honest as
+ * `EMPTY_CATALOG`/`EMPTY_PROJECTION` are for the other two sources.
+ */
 export function buildS3ViewModel(
   catalog: readonly CatalogRow[],
   filter: CatalogFilter,
   selectedSeries: CatalogRow | null,
   selectedSeriesRawRows: readonly InspectorRow[],
   divergences: readonly DivergenceRow[],
+  quarantineRows: readonly QuarantineSourceRow[] = [],
 ): S3ViewModel {
   return {
     filter,
@@ -238,9 +248,7 @@ export function buildS3ViewModel(
     selectedSeriesLabel: selectedSeries === null ? null : buildSeriesLabel(selectedSeries.entry),
     inspectorRows: buildInspectorRowViews(selectedSeriesRawRows),
     divergences: divergences.map(buildDivergenceRowView),
-    quarantineDrawer: buildQuarantineDrawerView(
-      buildQuarantineDrawer(catalog, (row) => buildSeriesLabel(row.entry)),
-    ),
+    quarantineDrawer: buildQuarantineDrawerView(buildQuarantineDrawer(quarantineRows)),
   };
 }
 

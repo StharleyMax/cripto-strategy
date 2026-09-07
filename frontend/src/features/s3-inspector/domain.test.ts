@@ -12,6 +12,7 @@ import {
   filterCatalogRows,
   mergeRawAndGapRows,
   type CatalogRow,
+  type QuarantineSourceRow,
 } from "./domain.ts";
 import {
   FIXTURE_CATALOG_ROWS,
@@ -19,6 +20,13 @@ import {
   FIXTURE_RAW_ROWS,
 } from "./fixtures.ts";
 import { buildSeriesLabel } from "./series-catalog.ts";
+
+/** `T-03.5`: `buildQuarantineDrawer` now reads `QuarantineSourceRow[]` (the drawer's OWN source,
+ * `GET /series-quarantine`), not `CatalogRow[]` — built here from the same fixture entries so
+ * these two tests keep exercising the identical predicate/label pair they always did. */
+function quarantineSourceRowsFromCatalog(rows: readonly CatalogRow[]): readonly QuarantineSourceRow[] {
+  return rows.map((row) => ({ seriesLabel: buildSeriesLabel(row.entry), terms: row.quarantine }));
+}
 
 // ── D6.15: abrir linhas cruas mostra src_label_raw NA MESMA LINHA que event_time, e a lacuna
 //    de md.ingest_gap aparece intercalada, nunca numa tabela separada ───────────────────────
@@ -81,17 +89,17 @@ test("filterCatalogRows por provenance recusa série de outra procedência", () 
 // ── Gaveta de quarentena: vazia é ESTADO VÁLIDO, distinto de "dado quebrado" ────────────────
 
 test("buildQuarantineDrawer conta exatamente as séries em quarentena, com os termos em aberto", () => {
-  const drawer = buildQuarantineDrawer(FIXTURE_CATALOG_ROWS, (row) => buildSeriesLabel(row.entry));
+  const drawer = buildQuarantineDrawer(quarantineSourceRowsFromCatalog(FIXTURE_CATALOG_ROWS));
   assert.equal(drawer.isEmpty, false);
   assert.equal(drawer.rows.length, 1);
   assert.deepEqual(drawer.rows[0]?.openTerms, ["available_at"]);
 });
 
-test("buildQuarantineDrawer com catálogo sem quarentena marca isEmpty=true explicitamente", () => {
+test("buildQuarantineDrawer com fonte sem quarentena marca isEmpty=true explicitamente", () => {
   const noneQuarantined: readonly CatalogRow[] = FIXTURE_CATALOG_ROWS.filter(
     (row) => row.entry.key.provider !== "coinalyze",
   );
-  const drawer = buildQuarantineDrawer(noneQuarantined, (row) => buildSeriesLabel(row.entry));
+  const drawer = buildQuarantineDrawer(quarantineSourceRowsFromCatalog(noneQuarantined));
   assert.equal(drawer.isEmpty, true);
   assert.deepEqual(drawer.rows, []);
 });

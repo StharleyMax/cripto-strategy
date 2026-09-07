@@ -43,6 +43,11 @@ export interface S3InspectorProps {
   /** Free text typed into the filter bar, echoed back so the input stays controlled. */
   readonly filterText: string;
   readonly onFilterTextChange: (text: string) => void;
+  /** `T-03.5` — whether `GET /series-quarantine` answered. `false` swaps the drawer's body for
+   * an explicit error paragraph, distinct from `viewModel.quarantineDrawer.isEmpty`'s "nenhuma
+   * série em quarentena" text: a transport failure and a genuinely empty table are two different
+   * facts, and collapsing them would silently read a real outage as "tudo resolvido". */
+  readonly quarantineOk: boolean;
 }
 
 /** The one glyph the quarantine channel uses — a LOSANGO VAZADO, never a triangle or a circle
@@ -72,6 +77,7 @@ export function S3Inspector({
   viewModel,
   filterText,
   onFilterTextChange,
+  quarantineOk,
 }: S3InspectorProps) {
   return (
     <div className="flex flex-col md:flex-row flex-1 min-h-0">
@@ -248,8 +254,14 @@ export function S3Inspector({
         <header className="h-8 bg-surface-lowest flex items-center px-margin-panel border-b border-surface-border shrink-0">
           <h2 className="font-label-caps text-label-caps text-on-surface">Quarentena</h2>
         </header>
-        <div className="p-margin-panel overflow-auto flex-1">
-          {viewModel.quarantineDrawer.isEmpty ? (
+        <div className="p-margin-panel overflow-auto flex-1" data-fact={`quarantine_ok:${quarantineOk}`}>
+          {!quarantineOk ? (
+            // `T-03.5` DoD: "gaveta mostra erro, não a fixture" — a transport failure is a
+            // DIFFERENT fact from an empty table (`isEmpty`, below), never collapsed into it.
+            <p role="alert" className="font-data-sm text-data-sm text-provenance-weak">
+              Não foi possível carregar a quarentena. Verifique se a API de leitura está no ar.
+            </p>
+          ) : viewModel.quarantineDrawer.isEmpty ? (
             <p className="font-data-sm text-data-sm text-provenance-weak">
               {viewModel.quarantineDrawer.emptyStateText}
             </p>
