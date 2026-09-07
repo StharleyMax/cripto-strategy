@@ -1204,10 +1204,11 @@ tracker = { provider = "jira", id = "CST-68", url = "https://conversationhub.atl
 id = "T-07.15"
 title = "[sentimento] 07 · Coletores 24/7 (forceOrder, premiumIndex) publicam no Redis Stream via RedisStreamPublisher — schema de wire documentado"
 components = ["sentimento"]
-status = "todo"
+status = "blocked"  # resolve: superseded por captura-em-producao T-01.2/T-01.4/T-01.5/T-01.7 (CST-144/146/147/149) — owner 2026-09-07 @ b7f9fdb60a6ecb4d631ac2767554be0b0a5304f5
 phase = "07"
 depends_on = ["T-07.4", "T-07.6"]
 refs = [
+    "SUPERSEDED 2026-09-07: conteudo migrado para captura-em-producao T-01.2/T-01.4/T-01.5/T-01.7 (CST-144/146/147/149), ledger proprio (SPEC-004) por decisao do owner ('podemos puxar essa de captura em producao em um ladger novo e limpo'). Esta task NAO sera construida sob a mae; comentario registrado no card Jira.",
     "ADR-027", "CA-F3-8", "ADR-009/D2 (Streams, nunca Pub/Sub)",
     "narrativa: docs/context/plataforma-dados/tasks_review-T-07.15-a-17-fiacao-producao.md secao 3",
     "esta task e a DONA do schema de wire (SeriesRow -> Mapping[str,str]), deixado em aberto por redis_series_write_queue.py:4-7",
@@ -1221,10 +1222,11 @@ tracker = { provider = "jira", id = "CST-110", url = "https://conversationhub.at
 id = "T-07.16"
 title = "[sentimento] 07 · Entrypoint de producao do escritor unico (single_writer_cli) com sink real sobre TimescaleDB/postgres:15"
 components = ["sentimento"]
-status = "todo"
+status = "blocked"  # resolve: superseded por captura-em-producao T-02.2/T-02.5/T-02.7 (CST-153/156/158) — owner 2026-09-07 @ b7f9fdb60a6ecb4d631ac2767554be0b0a5304f5
 phase = "07"
 depends_on = ["T-07.5", "T-07.15"]
 refs = [
+    "SUPERSEDED 2026-09-07: conteudo migrado para captura-em-producao T-02.2/T-02.5/T-02.7 (CST-153/156/158), ledger proprio (SPEC-004) por decisao do owner ('podemos puxar essa de captura em producao em um ladger novo e limpo'). Esta task NAO sera construida sob a mae; comentario registrado no card Jira.",
     "ADR-027", "ADR-002/D5", "CA-F3-12", "CA-F4-25", "ADR-002/D4 (finalista TimescaleDB, decidido — T-08.1 done, PR #123)",
     "narrativa: docs/context/plataforma-dados/tasks_review-T-07.15-a-17-fiacao-producao.md secao 3",
     "dependencia de T-07.15 ACRESCENTADA pelo /tech-lead alem da candidata do /architect: o teste de processo real precisa de produtor real publicando, nao fake",
@@ -1237,10 +1239,11 @@ tracker = { provider = "jira", id = "CST-111", url = "https://conversationhub.at
 id = "T-07.17"
 title = "[infra] 07 · deploy/compose.yml ganha redis:7-alpine dedicado + servico do escritor unico — so depois de T-07.15/T-07.16"
 components = ["infra"]
-status = "todo"
+status = "blocked"  # resolve: superseded por captura-em-producao T-03.4/T-03.5/T-03.8 (CST-163/164/167) — owner 2026-09-07 @ b7f9fdb60a6ecb4d631ac2767554be0b0a5304f5
 phase = "07"
 depends_on = ["T-07.15", "T-07.16"]
 refs = [
+    "SUPERSEDED 2026-09-07: conteudo migrado para captura-em-producao T-03.4/T-03.5/T-03.8 (CST-163/164/167), ledger proprio (SPEC-004) por decisao do owner ('podemos puxar essa de captura em producao em um ladger novo e limpo'). Esta task NAO sera construida sob a mae; comentario registrado no card Jira.",
     "ADR-027/D1", "ADR-027/D2 (Redis DEDICADO, nao compartilhado com anything_monorepo)", "ADR-009/D5 (item 1.14)",
     "narrativa: docs/context/plataforma-dados/tasks_review-T-07.15-a-17-fiacao-producao.md secao 3",
     "DoD: own.compose-hardcoded-secret rc=0; find deploy -type f | wc -l > 1 pela primeira vez desde a fase que criou deploy/compose.yml (hoje: 1, MEDIDO 2026-09-04) — fecha o falsificador de 01_governanca_gateante.md:186; docker compose up local + produtor real de teste -> mensagem chegando ao Postgres, fim a fim",

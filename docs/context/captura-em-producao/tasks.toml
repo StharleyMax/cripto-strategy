@@ -1,0 +1,491 @@
+# Doc de tasks de `captura-em-producao` — o DADO DE MAQUINA da quebra.
+#
+# A narrativa e o racional vivem em `tasks_review.md` (mesmo diretorio). Os dois NAO se
+# sobrepoem: este arquivo nao argumenta, e aquele nao e lido por maquina.
+#
+# A chave da feature e o campo `feature` ABAIXO, nunca o nome do diretorio (ADR-013/D4).
+# Feature FILHA de `plataforma-dados` (`relate` no ledger). IDs `T-NN.k` sao locais a ESTE
+# arquivo — nao colidem com os da mae porque `depends_on` so resolve dentro do arquivo.
+#
+# ── TRACKER: CARDADAS EM 2026-09-07 (MCP `atlassian` autenticado nesta sessao) ─────────
+#
+# `tracker.kind = jira` (CST, board 36, Epic -> Tarefa). 3 Epics PROPRIOS da filha —
+# CST-140 (F1), CST-141 (F2), CST-142 (F3) — e 25 `Tarefa` CST-143..CST-167
+# (T-01.x -> 143-151, T-02.x -> 152-159, T-03.x -> 160-167), `tracker` inline em cada task;
+# `harness tasks list captura-em-producao` deve dar uncarded=0. Nenhuma `local_only`: nao
+# houve decisao de nao cardar. Epic pai CST-5 (PRD-004 s6, INFERRED I-4) recusado em favor
+# de Epics proprios — tasks_review.md s5.
+#
+# ── P1–P10 (ledger, `approve spec` 2026-09-07T18:23:31Z) ──────────────────────────────
+#
+# SPEC-004 integral, P1-P10 nos defaults do cabecalho. P7 (definicao de run) = T-01.1, gate
+# do quant-architect, `depends_on` de T-01.6/T-01.8/T-03.3 — a fase 01 NAO fecha sem ela
+# (D1.6). P9 decidido dentro de T-01.1. P8 decidido em T-03.6 (gate do infra-architect).
+# P10 (destino de T-07.15/16/17 da mae) NAO e deste arquivo — proposta em tasks_review.md s7.
+#
+# ── Ordem de fases (RN-1) ─────────────────────────────────────────────────────────────
+#
+# F1 -> F2 -> F3 e portao de fase do workflow (QA por fase), nao aresta fabricada. Arestas
+# ENTRE fases sao de codigo: T-02.4->T-01.5, T-02.5->T-01.2, T-02.7->T-01.4, T-02.8->T-01.6,
+# T-03.3->T-01.1. `blocked_reason` NAO e chave valida (V-09 a ignora): pre-condicoes de gate
+# sao tasks (T-01.1, T-02.1, T-03.6) referidas por `depends_on`.
+
+schema_version = "1"
+feature = "captura-em-producao"
+spec   = "docs/specs/SPEC-004-captura-em-producao.md"
+plan   = "docs/plans/SPEC-004-captura-em-producao"
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 01 — O coletor publica e se registra (sentimento; docs em T-01.1/T-01.8/T-01.9)
+# Epic CST-140. Juiz: quant-architect. Pre-condicao de fechamento: T-01.1 (D1.6).
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-01.1"
+title = "[sentimento][docs] 01 · Gate Q3 do quant-architect — definicao de run (stream e ciclo), literais source/endpoint (Q11), window/src_sha256/weight_used/clock_skew_ms/observer_*, cadencia Q2 e gravacao crua P9, em gates/Q3-run-definition.md"
+components = ["sentimento", "docs"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "SPEC-004 s3.3 (a)-(i), s8 [Q1] [Q2] [Q3] [Q11], cabecalho P7 e P9", "ADR-031/D3 (quem grava o run); co-assinatura do quant-architect em ADR-031",
+    "PRD-004 US-3, RF-4, I-3 (s12, provisorio)", "plano 01 item 1.6; DoD D1.6 — PRE-CONDICAO de fechamento da fase 01",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3 T-01.1",
+    "arquivo: docs/context/captura-em-producao/gates/Q3-run-definition.md (novo)",
+    "DoD: test -f <gate> && grep -c 'quant-architect' <gate> -> >= 1; fixa endpoint literais (proposta !forceOrder@arr e /fapi/v1/premiumIndex), source literal (Q11 — com o store do owner, ou [NAO SEI] declarado), n_expected para stream, valor de PREMIUM_INDEX_CYCLE_INTERVAL_S (Q2), decisao de P9 (gravacao crua); morde: ausente -> fase nao fecha",
+    "NAO reabre ADR-030; NAO decide Q10 (e T-02.1, F2)",
+]
+tracker = { provider = "jira", id = "CST-143", url = "https://conversationhub.atlassian.net/browse/CST-143" }
+
+[[tasks]]
+id = "T-01.2"
+title = "[sentimento] 01 · series_row_wire.py — encode/decode dos 15 campos de SeriesRow, dono unico do wire, excecao tipada em ingles, round-trip 4 Provenance x 15 campos"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "SPEC-004 s3.2 (modulo, campos, propriedade)", "ADR-009/D2",
+    "PRD-004 RF-2, RN-2, CA-F1-2 (corrigido C3: 15 campos, nao 12)", "plano 01 item 1.1; DoD D1.1, D1.2",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3 T-01.2",
+    "arquivos: backend/src/modules/sentimento/infra/series_row_wire.py (novo); backend/tests/sentimento/test_series_row_wire.py (novo)",
+    "DoD: grep -rln 'def decode' backend/src/modules/sentimento/infra | wc -l -> 1; cd backend && .venv/bin/pytest tests/sentimento -k 'wire and round_trip' -q passa, parametrizado sobre 4 Provenance x 15 campos (n >= 4); morde: mutante que troca a ordem de 2 campos ou apaga is_final reprova nomeando o campo",
+    "chave = nome do campo; ints em decimal ASCII; enums pelo .name; bools '0'/'1'; None nao existe no wire; campo ausente/extra/nao parseavel -> excecao tipada em ingles, nunca None silencioso",
+    "NAO muda SeriesRow nem domain/; NAO decide destino de mensagem envenenada (Q10)",
+]
+tracker = { provider = "jira", id = "CST-144", url = "https://conversationhub.atlassian.net/browse/CST-144" }
+
+[[tasks]]
+id = "T-01.3"
+title = "[sentimento] 01 · RedisStreamPublisher.publish ganha MAXLEN ~ REDIS_STREAM_MAXLEN (default 100000) — continua o unico XADD do repositorio"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "SPEC-004 s3.2 (teto), cabecalho P5", "ADR-032/D4 (teto no produtor)",
+    "PRD-004 RNF-2, RN-5, CA-F3-9 (metade backend)", "plano 01 item 1.2; DoD D1.3",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3 T-01.3",
+    "arquivo: backend/src/modules/sentimento/infra/redis_stream_bus.py:58 (o unico lugar onde XADD e montado)",
+    "DoD: grep -c 'MAXLEN' backend/src/modules/sentimento/infra/redis_stream_bus.py -> >= 1 (hoje 0); grep -rn 'xadd|XADD' -E backend/src --include='*.py' | grep -v redis_stream_bus.py | wc -l -> 0; teste com fakeredis afirma o argumento MAXLEN ~ N",
+    "NAO muda RedisStreamConsumerGroup; NAO adiciona trim por MINID",
+]
+tracker = { provider = "jira", id = "CST-145", url = "https://conversationhub.atlassian.net/browse/CST-145" }
+
+[[tasks]]
+id = "T-01.4"
+title = "[sentimento] 01 · Porta de publicacao dos dois coletores — adaptador Sink em infra que faz encode(row) -> publish para premiumIndex (PremiumIndexSink) e forceOrder, sem mudar assinaturas"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.2", "T-01.3"]
+refs = [
+    "SPEC-004 s3.1 (publicacao), s4 (limites de camada)", "ADR-009/D2",
+    "PRD-004 RF-1, US-1, CA-F1-1", "plano 01 item 1.4; DoD D1.4 (metade: RedisStreamPublisher( fora do bus >= 1)",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3 T-01.4",
+    "arquivo: backend/src/modules/sentimento/infra/redis_stream_series_sink.py (novo, nome sugerido) + testes com fakeredis",
+    "DoD: grep -rn 'RedisStreamPublisher(' backend/src --include='*.py' | grep -v redis_stream_bus.py | wc -l -> >= 1 (hoje 0); XADD fora do bus -> 0; falha de XADD PROPAGA excecao (core.silent-except: nenhum except vazio)",
+    "NAO muda a assinatura das portas existentes (PremiumIndexSink.write e a do forceOrder); NAO abre socket fora do composition root (conexao injetada)",
+]
+tracker = { provider = "jira", id = "CST-146", url = "https://conversationhub.atlassian.net/browse/CST-146" }
+
+[[tasks]]
+id = "T-01.5"
+title = "[sentimento] 01 · collectors_cli — 1 processo, 2 threads (forceOrder via reconnect_and_key; premiumIndex via collect_premium_index_once), boot fail-fast nomeando a variavel, SIGTERM rc=0, XADD falho encerra a sessao com REJECTED e sai rc!=0"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.4"]
+refs = [
+    "SPEC-004 s3.1 (entrypoint, boot, parada, falha do Redis em regime), s3.7 (collector_boot_refused{variable}), s5 B1, B2, B8, B14", "ADR-027/D1", "ADR-029/D3",
+    "PRD-004 RF-1, RN-4, US-1, CA-F1-1", "plano 01 item 1.3 (+ evento de 1.9); DoD D1.4 (metade fail-fast), D1.8",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3 T-01.5",
+    "arquivo: backend/src/modules/sentimento/infra/collectors_cli.py (novo); entrypoint python -m src.modules.sentimento.infra.collectors_cli",
+    "env: REDIS_HOST/REDIS_PORT/REDIS_STREAM/REDIS_STREAM_MAXLEN, INGEST_RECORD_BACKEND (sqlite nesta fase; composicao unica chega em T-02.4), PREMIUM_INDEX_CYCLE_INTERVAL_S",
+    "DoD: REDIS_HOST=nao-existe python -m src.modules.sentimento.infra.collectors_cli -> rc != 0 em <= 5 s, saida contem REDIS_HOST; teste de processo: SIGTERM -> rc=0 e 1 run com ended_at finito; SIGKILL -> nenhum run novo (afirmado); morde: subir sem Redis = repetiu o defeito de hoje",
+    "NAO altera os CLIs de probe alem de reaproveitar funcoes; NAO abre Postgres fora do composition root; NAO renomeia os 4 eventos PT",
+]
+tracker = { provider = "jira", id = "CST-147", url = "https://conversationhub.atlassian.net/browse/CST-147" }
+
+[[tasks]]
+id = "T-01.6"
+title = "[sentimento] 01 · Registro por sessao/ciclo — mapeamento para os 16 campos de IngestRun conforme Q3, record_run pelo store configurado, n_written=0, verdict em KNOWN_VERDICTS, eventos collector_session_closed/collector_cycle_completed"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1", "T-01.5"]
+refs = [
+    "SPEC-004 s3.3 (a)-(i), s3.7", "ADR-031/D3",
+    "PRD-004 RF-4, US-3, CA-F1-4 (corrigido C4: 16 campos)", "plano 01 item 1.5 (+ eventos de 1.9); DoD D1.5",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3 T-01.6",
+    "arquivo: backend/src/modules/sentimento/infra/collector_run_mapping.py (novo, nome sugerido) + testes; o modulo CITA gates/Q3-run-definition.md",
+    "DoD: apos 1 sessao curta + 1 ciclo, sqlite3 $INGEST_HEALTH_STORE_PATH 'select source,endpoint,count(*) from ingest_run group by 1,2' -> >= 2 pares alem de /fapi/v1/time; select count(*) where verdict not in (ACCEPTED, ACCEPTED_WITH_WARNING, REJECTED) -> 0; morde: antes de rodar -> so /fapi/v1/time",
+    "invariante: n_returned = publicados; n_written = 0 no coletor; run_id uuid4; started_at/ended_at ISO-8601 UTC finitos",
+    "NAO inventa source (usa o literal de Q11); NAO renomeia os 4 eventos PT",
+]
+tracker = { provider = "jira", id = "CST-148", url = "https://conversationhub.atlassian.net/browse/CST-148" }
+
+[[tasks]]
+id = "T-01.7"
+title = "[sentimento] 01 · Teste de integracao com listener real — publicar 10, kill -9 do produtor apos a 5a, subir consumidor, read_pending -> 5 na PEL, 0 perdidas (falsificador F3 de ADR-027)"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.4", "T-01.5"]
+refs = [
+    "SPEC-004 s5 B3", "ADR-027/F3", "ADR-009/D2",
+    "PRD-004 RF-3, US-2, CA-F1-3", "plano 01 item 1.7; DoD D1.7",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3 T-01.7",
+    "arquivo: backend/tests/sentimento/test_collector_producer_killed_pending.py (novo); listener fakeredis.TcpFakeServer ou redis:7-alpine local",
+    "DoD: cd backend && .venv/bin/pytest tests/sentimento -k 'producer_killed and pending' -q -> 5 em PEL, 0 perdidas; morde: XREAD sem grupo -> 0 em PEL",
+    "FORA de make verify ate o owner decidir (R-G do plano)",
+    "NAO usa XREAD sem grupo; NAO usa fake do publisher",
+]
+tracker = { provider = "jira", id = "CST-149", url = "https://conversationhub.atlassian.net/browse/CST-149" }
+
+[[tasks]]
+id = "T-01.8"
+title = "[sentimento][docs] 01 · Medicao de vazao por 24 h — XLEN e count(*) em t e t+24h, medicoes/CA-F1-5-vazao-24h.md com comando, n e rotulo; insumo para P5/M4 e ADR-032/F6"
+components = ["sentimento", "docs"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.5", "T-01.6"]
+refs = [
+    "SPEC-004 s3.7 (medicoes), s8 [Q1]", "ADR-032/D4, F6",
+    "PRD-004 CA-F1-5, RNF-3", "plano 01 item 1.8; DoD D1.9",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3 T-01.8",
+    "arquivo: docs/context/captura-em-producao/medicoes/CA-F1-5-vazao-24h.md (novo)",
+    "DoD: test -f <arquivo> && grep -cE '\\[MEDIDO' <arquivo> -> >= 2; XLEN <stream> e select count(*) em t e t+24h, com comando e n; morde: se enche 100000 entradas em < 1 h de escritor fora -> ADR-032/F6 dispara: ESCALAR, nao ajustar o teto aqui",
+    "NAO dimensiona M4 — so mede; NAO implanta (Redis local)",
+]
+tracker = { provider = "jira", id = "CST-150", url = "https://conversationhub.atlassian.net/browse/CST-150" }
+
+[[tasks]]
+id = "T-01.9"
+title = "[docs] 01 · Residuo textual pos-approve — SPEC-004 e index.md do plano apontam o ledger (SPEC_APPROVED 2026-09-07), ADR-031 status aceita com co-assinatura do quant-architect, linha append-only em docs/INDEX.md"
+components = ["docs"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1"]
+refs = [
+    "SPEC-004 linha 3 (Status) e s10 (Ledger); docs/plans/SPEC-004-captura-em-producao/index.md linha 3; ADR-031 cabecalho (Status: proposta)",
+    "CLAUDE.md s'O ledger e a identidade do estado'; ledger: approve spec 2026-09-07T18:23:31Z, P1-P10 nos defaults",
+    "sem item de plano: residuo textual que o approve spec deixa (mesmo padrao de T-01.10 da irma camada-de-leitura-do-painel)",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3 T-01.9",
+    "DoD: grep -c 'SPEC_DRAFT' nos cabecalhos de SPEC-004 e index.md -> 0 salvo citacao historica; grep -c 'aceita' docs/adr/ADR-031-*.md -> >= 1; harness pipeline show captura-em-producao INALTERADO (docs nao mexem no ledger)",
+    "NAO toca ADR-032 (e T-03.6, gate do infra-architect); NAO reescreve linha existente de docs/INDEX.md (append-only)",
+]
+tracker = { provider = "jira", id = "CST-151", url = "https://conversationhub.atlassian.net/browse/CST-151" }
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 02 — O escritor vira processo e o registro vira um so (sentimento; infra em
+# T-02.6/T-02.8; docs em T-02.1). Epic CST-141. Juizes: quant-architect, infra-architect.
+# Pre-condicao de fechamento: T-02.1 (D2.2). Postgres de pe = timescale/timescaledb:2.17.2-pg15
+# EFEMERO (nao compose — compose e 03).
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-02.1"
+title = "[sentimento][docs] 02 · Gate DDL da serie + Q10 (quant-architect) — gates/F2-series-ddl.md: tabela, hypertable por bucket_end, chave de unicidade, provenance como coluna, compaction_epoch/content_hash; ingest_gap e mensagem envenenada"
+components = ["sentimento", "docs"]
+status = "todo"
+phase = "02"
+depends_on = []
+refs = [
+    "SPEC-004 s3.4 (tabela da serie: requisitos), s5 B7, s8 [Q10]", "ADR-002/D4, D6 emenda (compaction_epoch/content_hash)", "ADR-031 (co-assinatura do quant-architect)",
+    "plano 02 itens 2.1, 2.9; DoD D2.2 — PRE-CONDICAO de fechamento da fase 02 (a chave de D2.4 nao existe sem ela)",
+    "layout de particao de T-07.6/T-07.8 da mae respeitado",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3b T-02.1",
+    "arquivo: docs/context/captura-em-producao/gates/F2-series-ddl.md (novo)",
+    "DoD: test -f <gate> && grep -cE 'unique|UNIQUE|chave' <gate> -> >= 1; [Q10] registrado (o escritor grava md.ingest_gap por reconexao? destino final da mensagem envenenada de B7?); morde: ausente -> fase nao fecha",
+    "NAO reabre ADR-002/D4; NAO implementa alarme (NG-7)",
+]
+tracker = { provider = "jira", id = "CST-152", url = "https://conversationhub.atlassian.net/browse/CST-152" }
+
+[[tasks]]
+id = "T-02.2"
+title = "[sentimento] 02 · PostgresSeriesSink (porta SeriesSink) com commit dentro de write_series_row e upsert-noop para reentrega identica, e PostgresObservedLookup (porta ObservedLookup) — conexao injetada, psycopg so em infra"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.1"]
+refs = [
+    "SPEC-004 s3.4 (composicao; run_single_writer nao muda; idempotencia), s5 B4-B6", "ADR-002/D5 (predicado no use case)", "ADR-031/F5 (psycopg so em infra)",
+    "PRD-004 RF-6, CA-F2-2, CA-F2-3", "plano 02 item 2.2; DoD D2.3 (com T-02.7), D2.9 (lint-imports)",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3b T-02.2",
+    "arquivo: backend/src/modules/sentimento/infra/postgres_series_sink.py (novo) + testes contra timescale/timescaledb:2.17.2-pg15 efemero (padrao tests/backtest/test_postgres_run_registry_store.py:74-90)",
+    "DoD: write_series_row 2x com a mesma linha OBSERVED -> 1 linha; commit visivel por outra conexao ANTES do retorno (o ack acontece depois); cd backend && .venv/bin/lint-imports verde; morde: psycopg em use_cases -> lint-imports reprova",
+    "NAO move o predicado de D5 para o sink; NAO altera run_single_writer",
+]
+tracker = { provider = "jira", id = "CST-153", url = "https://conversationhub.atlassian.net/browse/CST-153" }
+
+[[tasks]]
+id = "T-02.3"
+title = "[sentimento] 02 · PostgresIngestRecordStore — superficie de SqliteIngestRecordStore, initialise() idempotente (md.ingest_run 16 col., md.ingest_gap 8), RAW sem coercao; teste de equivalencia: fingerprint() igual nos dois motores"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = []
+refs = [
+    "SPEC-004 s3.5", "ADR-031/D1 (adaptador, conexao injetada, schema 16/8, RAW), F1 (falsificador: fingerprint diferente)", "ADR-008/DoD-2 (o sha256 e o juiz)",
+    "PRD-004 RF-10, RN-3, US-7", "plano 02 itens 2.4, 2.5; DoD D2.6",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3b T-02.3",
+    "arquivos: backend/src/modules/sentimento/infra/postgres_ingest_record_store.py (novo); backend/tests/sentimento/test_ingest_record_store_fingerprint.py (novo)",
+    "superficie: initialise(), record_run(IngestRun), record_gap(IngestGap), describe_readiness() -> (bool, bool), runs(), gaps() — a mesma de sqlite_ingest_record_store.py:176-271",
+    "DoD: cd backend && .venv/bin/pytest tests/sentimento -k 'ingest_record_store and fingerprint' -q passa sobre >= 3 runs + >= 1 gap; morde: coercao plantada (api_code None -> 0) -> fingerprints diferem",
+    "NAO muda IngestRecordSource nem ingest_health_query; NAO abre conexao (injetada pelo composition root)",
+]
+tracker = { provider = "jira", id = "CST-154", url = "https://conversationhub.atlassian.net/browse/CST-154" }
+
+[[tasks]]
+id = "T-02.4"
+title = "[sentimento] 02 · Composicao unica do store por INGEST_RECORD_BACKEND (sqlite|postgres, default sqlite; POSTGRES_HOST/PORT) — usada por collectors_cli e single_writer_cli; invalido ou inalcancavel recusa nomeando a variavel"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.3", "T-01.5"]
+refs = [
+    "SPEC-004 s3.5 (tres composition roots: src.main, single_writer_cli, collectors_cli), s5 B9", "ADR-031/D1 (escolha explicita por configuracao), D3", "ADR-029/D3",
+    "PRD-004 RF-7, RF-10, RN-4", "plano 02 item 2.7; DoD D2.5 (metade coletor)",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3b T-02.4",
+    "arquivo: backend/src/modules/sentimento/infra/ingest_record_store_composition.py (novo, nome sugerido); POSTGRES_HOST/POSTGRES_PORT novos (defaults postgres/5432); POSTGRES_DB/USER/PASSWORD ja exigidos pelo compose",
+    "dependencia de T-01.5 = retrofit: collectors_cli passa a compor o store por esta funcao",
+    "DoD: INGEST_RECORD_BACKEND=foo -> rc != 0 em ingles nomeando INGEST_RECORD_BACKEND; postgres + INGEST_HEALTH_STORE_PATH presente NAO e erro (ADR-031 consequencias); morde: retry infinito -> timeout 10 devolve 124",
+    "NAO abre conexao em use_cases; NAO muda a superficie dos stores",
+]
+tracker = { provider = "jira", id = "CST-155", url = "https://conversationhub.atlassian.net/browse/CST-155" }
+
+[[tasks]]
+id = "T-02.5"
+title = "[sentimento] 02 · single_writer_cli — unico call site de run_single_writer: consumer group + RedisSeriesWriteQueue(decode) + PostgresSeriesSink/Lookup; WRITER_BATCH_SIZE, WRITER_POLL_INTERVAL_MS; boot fail-fast; eventos writer_*; B7 na PEL"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.2", "T-02.4", "T-01.2"]
+refs = [
+    "SPEC-004 s3.4 (entrypoint, composicao, boot), s3.7 (writer_boot_refused{variable}, writer_batch_acked{n_accepted,n_rejected}, writer_message_rejected{entry_id,reason}), s5 B7, B9", "ADR-027/D1",
+    "PRD-004 RF-5, RF-7, US-4, US-6, CA-F2-1, CA-F2-4", "plano 02 item 2.3; DoD D2.1, D2.5",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3b T-02.5",
+    "arquivo: backend/src/modules/sentimento/infra/single_writer_cli.py (novo); entrypoint python -m src.modules.sentimento.infra.single_writer_cli",
+    "composicao: connect_resp2 -> RedisStreamConsumerGroup(connection, stream, group, consumer) -> ensure_group() -> RedisSeriesWriteQueue(group, decode) -> run_single_writer(queue, lookup, sink, batch_size=WRITER_BATCH_SIZE); fila vazia dorme WRITER_POLL_INTERVAL_MS; grava ingest_gap SO se Q10 (T-02.1) disser",
+    "DoD: find backend/src -iname 'single_writer_cli.py' | wc -l -> 1; cd backend && .venv/bin/pytest tests/sentimento/test_single_writer_call_sites.py -q passa (1 call site); REDIS_HOST=nao-existe python -m ... -> rc != 0 em <= 5 s, saida contem REDIS_HOST; idem POSTGRES_HOST; B7: mensagem invalida -> writer_message_rejected, fica na PEL, o processo segue; morde: 2o call site -> o teste AST reprova; retry infinito -> timeout 10 da 124",
+    "NAO altera run_single_writer; NAO ack antes do commit",
+]
+tracker = { provider = "jira", id = "CST-156", url = "https://conversationhub.atlassian.net/browse/CST-156" }
+
+[[tasks]]
+id = "T-02.6"
+title = "[infra] 02 · src.main escolhe o store por INGEST_RECORD_BACKEND via a composicao de T-02.4 — create_app recusa valor invalido/Postgres inalcancavel nomeando a variavel; /ready mantem a forma de SPEC-003 s3.4 com path = DSN sem senha"
+components = ["infra"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.4"]
+refs = [
+    "SPEC-004 s3.5, s4 (src/main pode escolher o store e abrir a conexao; nao pode mudar rota/envelope/API_PREFIX), s5 B9, B10", "ADR-031/D1 (/ready: path = postgresql://<user>@<host>:<port>/<db>, exists = conexao aceita, schema_present = as duas tabelas existem)", "ADR-029/D3", "SPEC-003 s3.4 (forma de /ready)",
+    "PRD-004 US-7, RN-4", "plano 02 item 2.6; DoD D2.7",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3b T-02.6",
+    "arquivo: backend/src/main/__init__.py:144 (hoje SqliteIngestRecordStore(INGEST_HEALTH_STORE_PATH) fixo)",
+    "DoD: INGEST_RECORD_BACKEND=postgres POSTGRES_HOST=<efemero> ... curl -s :$APP_PORT/ready | jq '.store.schema_present' -> true; jq -r .store.path | grep -c $POSTGRES_PASSWORD -> 0; morde: INGEST_RECORD_BACKEND=foo -> processo nao sobe, saida contem INGEST_RECORD_BACKEND",
+    "NAO muda rota, envelope, API_PREFIX; NAO toca backend/src/api/routes/collector_status.py (CA-E2E-3)",
+]
+tracker = { provider = "jira", id = "CST-157", url = "https://conversationhub.atlassian.net/browse/CST-157" }
+
+[[tasks]]
+id = "T-02.7"
+title = "[sentimento] 02 · Teste de processo real do escritor — subir single_writer_cli, publicar N=100 pela porta de F1, kill -9 a meio, reiniciar: count 100 e 0 duplicatas; OBSERVED depois MODELED na mesma chave -> OBSERVED permanece"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.5", "T-01.4"]
+refs = [
+    "SPEC-004 s5 B4 (morre entre commit e ack), B5 (entre read e commit), B6 (MODELED depois de OBSERVED)", "ADR-002/D5", "ADR-027/F3",
+    "PRD-004 US-5, CA-F2-2, CA-F2-3", "plano 02 item 2.8; DoD D2.3, D2.4",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3b T-02.7",
+    "arquivo: backend/tests/sentimento/test_single_writer_process_restart.py (novo); Postgres efemero timescale/timescaledb:2.17.2-pg15",
+    "DoD: select count(*) -> 100; select count(*) from (select <chave> from <tabela> group by <chave> having count(*) > 1) d -> 0; publicar 1 OBSERVED + 1 MODELED mesma chave, select provenance -> OBSERVED; morde: ack antes do commit -> < 100; sem upsert-noop -> duplicatas > 0; entrypoint chamando o sink direto -> MODELED",
+    "FORA de make verify ate o owner decidir (R-G do plano)",
+    "NAO usa fake do sink; NAO usa fake do publisher",
+]
+tracker = { provider = "jira", id = "CST-158", url = "https://conversationhub.atlassian.net/browse/CST-158" }
+
+[[tasks]]
+id = "T-02.8"
+title = "[sentimento][infra] 02 · Prova de registro unico — collectors_cli e API ambos em postgres sobre o mesmo container efemero: apos 1 sessao + 1 ciclo, GET {API_PREFIX}/collector-status n_rows >= 2 (ADR-031/F2)"
+components = ["sentimento", "infra"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.4", "T-02.6", "T-01.6"]
+refs = [
+    "SPEC-004 s1.1 propriedade 3, s3.5 (propriedade: API e registro leem o mesmo motor)", "ADR-031/F2 (falsificador: n_rows nao cresce)",
+    "PRD-004 US-7, CA-F2-5 (precursor: >= 3 e o CA-E2E-1 em 03, com o probe NTP)", "plano 02 DoD D2.8 (sem item proprio: e a prova que liga 2.6 e 2.7)",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3b T-02.8",
+    "artefato: docs/context/captura-em-producao/gates/D2.8-registro-unico.md (relatorio com comando e n) + teste em backend/tests/sentimento se couber",
+    "DoD: coletor (collectors_cli) e API (create_app) em INGEST_RECORD_BACKEND=postgres sobre o mesmo container efemero; apos 1 sessao + 1 ciclo, curl -s http://127.0.0.1:$APP_PORT$API_PREFIX/collector-status | jq .n_rows -> >= 2; morde: API em sqlite -> 0 ou 1",
+    "NAO usa compose (e 03); NAO muda envelope (NG-8)",
+]
+tracker = { provider = "jira", id = "CST-159", url = "https://conversationhub.atlassian.net/browse/CST-159" }
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 03 — Sobe por compose em dois alvos (infra; docs em T-03.6/T-03.7). Epic CST-142.
+# Juiz: infra-architect (T-03.6). NENHUMA implantacao (R-E, P6). Convencao dos DoDs:
+# D = docker compose --env-file .env -f deploy/compose.yml ; L = D -f deploy/compose.local.yml
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-03.1"
+title = "[infra] 03 · backend/Dockerfile (python:3.13-slim, uma imagem, sem ENTRYPOINT logico) + backend/.dockerignore (.venv, tests/, data/, .env*, __pycache__) — imagem <= 400 MB e sem .env"
+components = ["infra"]
+status = "todo"
+phase = "03"
+depends_on = []
+refs = [
+    "SPEC-004 s3.6 (Dockerfiles)", "ADR-032/D2 (uma imagem; api/writer/collector = mesma imagem com command diferente), F4 (imagem com .env), F5 (> 400 MB)", "ADR-027/D1",
+    "PRD-004 RF-8, GAP G1, RNF-5", "plano 03 item 3.1; DoD D3.2 (metade), D3.6 (metade), D3.8",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3c T-03.1",
+    "arquivos: backend/Dockerfile (novo), backend/.dockerignore (novo)",
+    "DoD: docker build -f backend/Dockerfile backend -> rc=0; docker run --rm <img> sh -c 'find / -name .env* -not -path */node_modules/* 2>/dev/null | wc -l' -> 0; docker image ls <img> <= 400 MB; harness rules --mode file --path backend/Dockerfile -> vazio, rc=0; morde: .dockerignore sem .env* -> >= 1",
+    "NAO cria 3 imagens; NAO copia .env; NAO implanta (R-E)",
+]
+tracker = { provider = "jira", id = "CST-160", url = "https://conversationhub.atlassian.net/browse/CST-160" }
+
+[[tasks]]
+id = "T-03.2"
+title = "[infra] 03 · frontend/Dockerfile (node:22-alpine, npm ci && npm run build, command npm start) + frontend/.dockerignore (node_modules, .next, .env*) — constroi de arvore limpa (PR #166 s1); nenhuma linha em frontend/src"
+components = ["infra"]
+status = "todo"
+phase = "03"
+depends_on = []
+refs = [
+    "SPEC-004 s3.6 (Dockerfiles), s3.6.1 linha 4 (cache .next desatualizado: o Dockerfile constroi de arvore limpa)", "ADR-032/D2, F4",
+    "PRD-004 RF-8, GAP G1", "plano 03 item 3.2; DoD D3.2 (metade), D3.6 (metade)",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3c T-03.2",
+    "arquivos: frontend/Dockerfile (novo), frontend/.dockerignore (novo) — os UNICOS caminhos de frontend/ no escopo desta feature (harness pipeline scope)",
+    "DoD: docker build -f frontend/Dockerfile frontend -> rc=0; imagem sem .env* -> 0; morde: mv frontend/Dockerfile /tmp && $D build -> reprova nomeando web",
+    "NAO altera frontend/src (R-D, CA-E2E-3); NAO cria frontend/.env.local",
+]
+tracker = { provider = "jira", id = "CST-161", url = "https://conversationhub.atlassian.net/browse/CST-161" }
+
+[[tasks]]
+id = "T-03.3"
+title = "[infra] 03 · .env.example — os 15 nomes de SPEC-004 s3.6 (POSTGRES_* incl. G9, REDIS_*, INGEST_RECORD_BACKEND, WRITER_*, PREMIUM_INDEX_CYCLE_INTERVAL_S), comentario por variavel; frontend/.env.local so para next dev sem docker"
+components = ["infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-01.1"]
+refs = [
+    "SPEC-004 s3.6 (.env.example — fonte unica de nomes), s3.6.1 linhas 1-2", "ADR-032/D3", "gates/PRD-004-architect.md C2 (GAP G9: POSTGRES_* ausentes)",
+    "PRD-004 RF-12, RF-9", "plano 03 item 3.5; DoD D3.10, D3.16 (comentario)",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3c T-03.3",
+    "dependencia de T-01.1 = valor de PREMIUM_INDEX_CYCLE_INTERVAL_S vem de Q2/Q3",
+    "ATENCAO: a SPEC diz '6 + 13' mas lista 15 nomes [MEDIDO 2026-09-07: contagem manual em s3.6]. O DoD que manda e D3.10, nao a aritmetica: POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST=postgres, POSTGRES_PORT=5432, REDIS_HOST=redis, REDIS_PORT=6379, REDIS_STREAM=md.series.write, REDIS_STREAM_GROUP=single_writer, REDIS_STREAM_MAXLEN=100000, REDIS_MAXMEMORY=64mb, INGEST_RECORD_BACKEND=postgres (comentario: sqlite para dev sem compose), WRITER_BATCH_SIZE=100, WRITER_POLL_INTERVAL_MS=500, PREMIUM_INDEX_CYCLE_INTERVAL_S=<Q3>",
+    "DoD: for v in $(grep -oE '\\$\\{[A-Z_]+' deploy/compose.yml deploy/compose.local.yml | tr -d '${' | sort -u); do grep -q ^$v= .env.example || echo MISSING $v; done -> nada (hoje 3 POSTGRES_*); harness rules --mode file --path .env.example -> vazio; PANEL_BASIC_AUTH_HASH continua vazio; morde: remover 1 linha -> MISSING",
+    "NAO cria .env.local como 2o arquivo de verdade (comentario, nao arquivo); nenhum valor real",
+]
+tracker = { provider = "jira", id = "CST-162", url = "https://conversationhub.atlassian.net/browse/CST-162" }
+
+[[tasks]]
+id = "T-03.4"
+title = "[infra] 03 · deploy/compose.yml para 7 servicos — postgres timescale/timescaledb:2.17.2-pg15; redis:7-alpine com appendonly/maxmemory/noeviction; writer e collector (mesma imagem, service_healthy, logging); sem ports em api"
+components = ["infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1", "T-03.2", "T-03.3"]
+refs = [
+    "SPEC-004 s3.6 (tabela dos 7 servicos), s5 B12, B13", "ADR-032/D1 (base completo, sem profiles), D4 (redis com teto: --appendonly yes --maxmemory ${REDIS_MAXMEMORY} --maxmemory-policy noeviction, healthcheck redis-cli ping, volume redis_data, sem ports), D5 (restart + fail-fast + depends_on service_healthy), F1", "ADR-031/D2 (imagem)", "ADR-029/D5 (api sem ports no deploy)", "ADR-027/D1, D2",
+    "PRD-004 RF-8 (estendido, nao recriado), RF-11 (one-shots NAO viram servico), RNF-4 (logging 10m x 3), RN-5, US-8, CA-F3-1, CA-F3-2, CA-F3-5, CA-F3-6, CA-F3-7, CA-F3-9", "plano 03 item 3.3; DoD D3.1, D3.2, D3.4, D3.8, D3.9",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3c T-03.4",
+    "arquivo: deploy/compose.yml (hoje 4 servicos: postgres api web caddy; postgres:16-alpine em :28) — comentario de cabecalho atualizado",
+    "DoD: $D config -q -> rc=0; $D build -> rc=0; $D config --services | sort | tr '\\n' ' ' -> 'api caddy collector postgres redis web writer'; $D config | grep -c max-size -> >= 4; $D config | grep -cE 'appendonly|maxmemory' -> >= 2; harness rules --mode file --path deploy/compose.yml -> vazio; morde: sem --env-file/.env -> erro de interpolacao POSTGRES_PASSWORD (B12, DESEJADO); one-shot -> 8; profiles no base -> 6",
+    "NAO adiciona ports a api; NAO adiciona servico one-shot (NG-6); NAO adiciona profiles ao base; NAO implanta (R-E)",
+]
+tracker = { provider = "jira", id = "CST-163", url = "https://conversationhub.atlassian.net/browse/CST-163" }
+
+[[tasks]]
+id = "T-03.5"
+title = "[infra] 03 · deploy/compose.local.yml (overlay: caddy profiles deploy-only, api.ports e web.ports em 127.0.0.1, INGEST_HEALTH_API_BASE_URL no web para D3.16) e alvos make compose-deploy/compose-local (so concatenam flags)"
+components = ["infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.4"]
+refs = [
+    "SPEC-004 s3.6 (comandos canonicos), s3.6.1 linha 1 (frontend/.env.local ausente -> o compose injeta INGEST_HEALTH_API_BASE_URL no web)", "ADR-032/D1 (overlay faz SO tres coisas; nome compose.local.yml, NUNCA compose.override.yml), D3 (--env-file .env da raiz), F2, F3",
+    "PRD-004 RF-9, US-9, CA-F3-3", "plano 03 itens 3.4, 3.6; DoD D3.3, D3.5, D3.16 (metade config)",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3c T-03.5",
+    "arquivos: deploy/compose.local.yml (novo); Makefile (alvos compose-deploy e compose-local, aceitam ARGS, NAO entram em verify)",
+    "onde INGEST_HEALTH_API_BASE_URL vive (overlay web.environment vs base) e decisao do infra-architect no gate (T-03.6) — D3.5 (exatamente 3 servicos no overlay) vale nos dois casos",
+    "DoD: $L config --services | sort | tr '\\n' ' ' -> 'api collector postgres redis web writer' (6, sem caddy); $L build -> rc=0; $L config | grep -c 'host_ip: 127.0.0.1' -> 2; grep -cE '^  [a-z_-]+:$' deploy/compose.local.yml -> 3, cada um existe no base; $L config | grep -c INGEST_HEALTH_API_BASE_URL -> >= 1; make compose-local ARGS='config -q' -> rc=0; morde: $D config --services sozinho contem caddy (os alvos TEM de diferir); 4o servico -> ADR-032/F3",
+    "NAO define servico ausente do base; NAO se chama compose.override.yml; NAO implanta",
+]
+tracker = { provider = "jira", id = "CST-164", url = "https://conversationhub.atlassian.net/browse/CST-164" }
+
+[[tasks]]
+id = "T-03.6"
+title = "[infra][docs] 03 · Gate do infra-architect sobre F3 — co-assina ADR-032 (status aceita) e ADR-031/D2; decide P8/Q6: healthcheck por comando em writer/collector ou deixa declarado em ADR-032/D5; veredito em gates/F3-infra-architect.md"
+components = ["infra", "docs"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.4", "T-03.5"]
+refs = [
+    "SPEC-004 cabecalho P8, s8 [Q6]", "ADR-032/D5 (liveness minima: restart + fail-fast + depends_on service_healthy; healthcheck por comando declarado, nao implementado), F7", "ADR-031/D2 (imagem — co-assinatura do infra-architect recomendada no cabecalho)",
+    "plano 03 item 3.9; index.md 'Juizes por fase'",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3c T-03.6",
+    "arquivo: docs/context/captura-em-producao/gates/F3-infra-architect.md (novo); docs/adr/ADR-032-*.md (Status: proposta -> aceita)",
+    "DoD: test -f <gate> && grep -c 'infra-architect' <gate> -> >= 1; ADR-032 status atualizado; SE implementou healthcheck: $D config | grep -c healthcheck -> >= 4 (postgres, redis, writer, collector), custo = 1 bloco por servico; SE NAO: motivo escrito no gate",
+    "NAO inventa endpoint HTTP nos processos writer/collector; NAO implanta (R-E)",
+]
+tracker = { provider = "jira", id = "CST-165", url = "https://conversationhub.atlassian.net/browse/CST-165" }
+
+[[tasks]]
+id = "T-03.7"
+title = "[infra][docs] 03 · Medicao de pegada — docker stats apos 10 min de up local + docker image ls em medicoes/CA-F3-8-pegada.md; RSS api+writer+collector+redis <= 176 MB, imagem backend <= 400 MB, collector com Postgres <= +10 MB"
+components = ["infra", "docs"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.5"]
+refs = [
+    "SPEC-004 s3.7 (medicoes em docs/context/captura-em-producao/medicoes/)", "ADR-027/F2 (2 x 88 MB)", "ADR-031/F3 (collector com conexao Postgres > +10 MB RSS sobre 23,2 MB reabre 'via Stream')", "ADR-032/F5 (imagem backend > 400 MB)",
+    "PRD-004 CA-F3-8, RNF-1, RNF-5", "plano 03 item 3.7; DoD D3.11",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3c T-03.7",
+    "arquivo: docs/context/captura-em-producao/medicoes/CA-F3-8-pegada.md (novo)",
+    "DoD: test -f <arquivo> && grep -cE '\\[MEDIDO' <arquivo> -> >= 2; docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' apos 10 min de up local; docker image ls das 2 imagens; soma RSS dos 4 (api, writer, collector, redis) <= 176 MB; imagem backend <= 400 MB; morde: acima -> falsificador dispara, ESCALAR ao /architect (nao ajustar o teto)",
+    "NAO reprojeta — mede; NAO implanta (R-E)",
+]
+tracker = { provider = "jira", id = "CST-166", url = "https://conversationhub.atlassian.net/browse/CST-166" }
+
+[[tasks]]
+id = "T-03.8"
+title = "[infra] 03 · Ponta a ponta local — up >= 1 sessao + 1 ciclo: /collector-status 200 com n_rows >= 3 e os 2 endpoint de Q3, /ready schema_present, OBSERVED crescendo, stop collector writer -> PARADO apos stale_after_s, /painel sem .env.local"
+components = ["infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.5"]
+refs = [
+    "SPEC-004 s1.1 (cinco propriedades), s5 B10, B11, s9 (falsificador da SPEC), s3.6.1 (D3.16: /painel sem frontend/.env.local)", "ADR-030/D1 (PARADO por stale_after_s)", "ADR-031/F2",
+    "PRD-004 US-10, CA-F3-4, CA-E2E-1, CA-E2E-2, CA-E2E-3", "plano 03 item 3.8; DoD D3.7, D3.12, D3.13, D3.14, D3.16 (metade curl)",
+    "narrativa: docs/context/captura-em-producao/tasks_review.md s3c T-03.8",
+    "artefato: docs/context/captura-em-producao/gates/CA-E2E-local.md (relatorio com comando e n); script opcional (make e2e-captura) FORA de verify",
+    "DoD: $L up -d && sleep 20 && curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$APP_PORT$API_PREFIX/collector-status -> 200; curl .../ready | jq .store.schema_present -> true; apos >= 1 sessao + 1 ciclo: jq '.n_rows' -> >= 3 e jq '[.rows[].series]' contem os 2 endpoint de Q3; $L exec -T postgres psql ... 'select count(*) from <tabela> where provenance=OBSERVED' -> > 0 e cresce entre 2 leituras; $L stop collector writer + repetir -> n_rows igual; apos stale_after_s -> status das 2 series = PARADO; ls frontend/.env.local | wc -l -> 0 e curl -s http://127.0.0.1:$APP_PORT/painel | grep -cE 'n_rows|ATIVO|PARADO' -> >= 1; git diff --stat <base>..HEAD -- backend/src/api/routes/collector_status.py backend/src/modules/sentimento/domain/collector_status.py frontend/src -> vazio",
+    "morde: n_rows < 3 com F1+F2+F3 fechadas -> FALSIFICADOR DA SPEC (s9): defeito de desenho (s3.3/s3.5), escalar ao /architect; api em sqlite efemero -> 0 ou 1",
+    "NAO toca web/frontend/src (nenhuma linha); NAO implanta (R-E)",
+]
+tracker = { provider = "jira", id = "CST-167", url = "https://conversationhub.atlassian.net/browse/CST-167" }
