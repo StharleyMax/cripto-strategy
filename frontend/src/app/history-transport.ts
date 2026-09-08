@@ -30,13 +30,18 @@
  * ainda (o içamento de D3 é payload de `charts`, fora deste componente).
  *
  * Mesmo padrão de `T-05.8` (`./knowledge-time-bundle.ts`): módulo TypeScript puro em
- * `src/app/`, sem tela, testado com `node --test`, sem chamada de rede real em teste. E
- * mesmo vocabulário — `Window` é importado de lá, não redefinido, seguindo a recomendação do
- * `ui-designer` (`docs/context/plataforma-dados/gates/T-05.9-design.md`): "usar
- * `knowledge_time`/`bundle`/`SeriesKey` (nomes já em vigor)… em vez de abreviação nova."
+ * `src/app/`, sem tela, testado com `node --test`, sem chamada de rede real em teste.
+ *
+ * `T-01.5` (`pagina-de-grafico-s2`) — CORREÇÃO: este módulo nasceu (`T-05.9`) ANTES de
+ * `ADR-034` fixar o wire real de `GET {API_PREFIX}/series-history` (`T-01.3`), e chutou
+ * `camelCase`/ISO-8601 (`seriesKeyId`, `window: {from, to}`, `knowledgeTime`). A rota real
+ * (`backend/src/api/routes/series_history.py`) serve `snake_case`/epoch-ms:
+ * `series_key_id`, `symbol`, `interval`, `window_start_ms`, `window_end_ms`,
+ * `knowledge_time_ms`, `bar_policy` — sem nível `window` aninhado, sem `Window` de
+ * `knowledge-time-bundle.ts`. Esta correção troca a forma da CHAVE para a forma REAL; os dois
+ * portões do falsificador (`assertNoTickLevelFields`/`assertBucketSpacingWithinInterval`) e o
+ * cache endereçável por conteúdo continuam agnósticos de schema, logo intactos.
  */
-
-import type { Window } from "./knowledge-time-bundle.ts";
 
 /**
  * Mirror de `BarPolicy` (`as_of_accessor.py:54-70`) — os dois valores, verbatim. Este módulo
@@ -53,31 +58,36 @@ export type BarPolicy = "final_only" | "intrabar";
 export type Absence = "SEM_PONTO" | "NAO_LIDO" | "QUARENTENA" | "SEM_FONTE";
 
 /**
- * A chave endereçável por conteúdo do `ADR-005/D1`, seis termos, nesta ordem canônica —
- * estável, para que a mesma chave produza sempre a mesma URL/endereço de cache (o mesmo
- * motivo que `PARAM_ORDER` documenta em `knowledge-time-bundle.ts`).
+ * A chave endereçável por conteúdo do `ADR-005/D1`, sete termos, nesta ordem canônica —
+ * estável, para que a mesma chave produza sempre a mesma URL/endereço de cache. Nomes e tipos
+ * são os REAIS de `GET {API_PREFIX}/series-history` (`ADR-034`, `backend/src/api/routes/
+ * series_history.py`) — `snake_case`, epoch-ms, sem nível `window` aninhado.
  */
 export interface HistoryRequestKey {
-  readonly seriesKeyId: string;
+  readonly series_key_id: string;
   readonly symbol: string;
   /** O rótulo nativo da grade, na grafia da fonte (`"1m"`, `"5m"`…) — nunca parseado aqui;
    * a grade canônica é dona de `charts` (`T-05.1`, item 5.2 do plano `05`). */
   readonly interval: string;
-  readonly window: Window;
-  /** Instante ISO 8601 UTC, fixo. É este campo que faz a resposta imutável — `D1`. */
-  readonly knowledgeTime: string;
+  /** Início da janela, epoch milissegundos (inclusive). */
+  readonly window_start_ms: number;
+  /** Fim da janela, epoch milissegundos (inclusive) — `window_start_ms === window_end_ms` é
+   * uma janela válida de um único instante (`ADR-034/D9`, `use_cases/series_history.py`). */
+  readonly window_end_ms: number;
+  /** Epoch milissegundos, fixo. É este campo que faz a resposta imutável — `D1`. */
+  readonly knowledge_time_ms: number;
   /** OBRIGATÓRIO, sem valor default em função nenhuma deste módulo — `D4`. */
-  readonly barPolicy: BarPolicy;
+  readonly bar_policy: BarPolicy;
 }
 
 const PARAM_ORDER = [
-  "seriesKeyId",
+  "series_key_id",
   "symbol",
   "interval",
-  "from",
-  "to",
-  "knowledgeTime",
-  "barPolicy",
+  "window_start_ms",
+  "window_end_ms",
+  "knowledge_time_ms",
+  "bar_policy",
 ] as const;
 
 function assertNonEmpty(value: string, field: string): void {
@@ -86,16 +96,18 @@ function assertNonEmpty(value: string, field: string): void {
   }
 }
 
-function assertIsoInstant(value: string, field: string): void {
-  if (value === "" || Number.isNaN(Date.parse(value))) {
-    throw new Error(`chave de historico invalida: campo "${field}" nao e um instante ISO 8601: "${value}"`);
+function assertEpochMs(value: number, field: string): void {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(
+      `chave de historico invalida: campo "${field}" tem de ser um epoch-ms inteiro nao negativo, recebi ${value}`,
+    );
   }
 }
 
 function assertBarPolicyValue(value: string): asserts value is BarPolicy {
   if (value !== "final_only" && value !== "intrabar") {
     throw new Error(
-      `chave de historico invalida: "barPolicy" tem de ser "final_only" ou "intrabar" ` +
+      `chave de historico invalida: "bar_policy" tem de ser "final_only" ou "intrabar" ` +
         `(ADR-005/D4: declarado pelo consumidor, nunca default), recebi ${JSON.stringify(value)}`,
     );
   }
@@ -103,38 +115,37 @@ function assertBarPolicyValue(value: string): asserts value is BarPolicy {
 
 /**
  * Valida uma `HistoryRequestKey` antes de ela virar URL/endereço de cache. Reprova em vez de
- * aceitar um estado ambíguo, pelo mesmo motivo de `assertValidBundle` em
- * `knowledge-time-bundle.ts`: falhar aqui é mais barato que falhar do lado do servidor.
+ * aceitar um estado ambíguo: falhar aqui é mais barato que falhar do lado do servidor (`422`).
  */
 export function assertValidHistoryRequestKey(key: HistoryRequestKey): void {
-  assertNonEmpty(key.seriesKeyId, "seriesKeyId");
+  assertNonEmpty(key.series_key_id, "series_key_id");
   assertNonEmpty(key.symbol, "symbol");
   assertNonEmpty(key.interval, "interval");
-  assertIsoInstant(key.window.from, "window.from");
-  assertIsoInstant(key.window.to, "window.to");
-  if (Date.parse(key.window.from) >= Date.parse(key.window.to)) {
+  assertEpochMs(key.window_start_ms, "window_start_ms");
+  assertEpochMs(key.window_end_ms, "window_end_ms");
+  if (key.window_start_ms > key.window_end_ms) {
     throw new Error(
-      `chave de historico invalida: window.from (${key.window.from}) nao e anterior a window.to (${key.window.to})`,
+      `chave de historico invalida: window_start_ms (${key.window_start_ms}) nao pode ser ` +
+        `posterior a window_end_ms (${key.window_end_ms})`,
     );
   }
-  assertIsoInstant(key.knowledgeTime, "knowledgeTime");
-  assertBarPolicyValue(key.barPolicy);
+  assertEpochMs(key.knowledge_time_ms, "knowledge_time_ms");
+  assertBarPolicyValue(key.bar_policy);
 }
 
 /**
- * A chave vira parâmetros de URL, campo a campo — mesma escolha de `encodeBundle`: legível e
- * linkável, não um blob serializado.
+ * A chave vira parâmetros de URL, campo a campo — legível e linkável, não um blob serializado.
  */
 export function encodeHistoryRequest(key: HistoryRequestKey): URLSearchParams {
   assertValidHistoryRequestKey(key);
   const raw: Record<(typeof PARAM_ORDER)[number], string> = {
-    seriesKeyId: key.seriesKeyId,
+    series_key_id: key.series_key_id,
     symbol: key.symbol,
     interval: key.interval,
-    from: key.window.from,
-    to: key.window.to,
-    knowledgeTime: key.knowledgeTime,
-    barPolicy: key.barPolicy,
+    window_start_ms: String(key.window_start_ms),
+    window_end_ms: String(key.window_end_ms),
+    knowledge_time_ms: String(key.knowledge_time_ms),
+    bar_policy: key.bar_policy,
   };
   const params = new URLSearchParams();
   for (const field of PARAM_ORDER) {
@@ -143,42 +154,51 @@ export function encodeHistoryRequest(key: HistoryRequestKey): URLSearchParams {
   return params;
 }
 
+function parseEpochMs(raw: string, field: string): number {
+  const value = Number(raw);
+  assertEpochMs(value, field);
+  return value;
+}
+
 /**
- * O inverso de `encodeHistoryRequest`. `barPolicy` é lido e validado sem NENHUM fallback — se
+ * O inverso de `encodeHistoryRequest`. `bar_policy` é lido e validado sem NENHUM fallback — se
  * o parâmetro estiver ausente ou fora do conjunto fechado, a leitura é RECUSADA, nunca
  * silenciosamente default para `final_only`. Essa recusa é o mecanismo de `D4` do lado do
  * cliente: "intrabar nunca é default" só vale se "nenhum valor" também nunca vira default.
  */
 export function decodeHistoryRequest(params: URLSearchParams): HistoryRequestKey {
-  const seriesKeyId = params.get("seriesKeyId");
+  const seriesKeyId = params.get("series_key_id");
   const symbol = params.get("symbol");
   const interval = params.get("interval");
-  const from = params.get("from");
-  const to = params.get("to");
-  const knowledgeTime = params.get("knowledgeTime");
-  const barPolicy = params.get("barPolicy");
+  const windowStartMs = params.get("window_start_ms");
+  const windowEndMs = params.get("window_end_ms");
+  const knowledgeTimeMs = params.get("knowledge_time_ms");
+  const barPolicy = params.get("bar_policy");
 
-  if (seriesKeyId === null) throw new Error('chave de historico invalida: parametro "seriesKeyId" ausente');
+  if (seriesKeyId === null) throw new Error('chave de historico invalida: parametro "series_key_id" ausente');
   if (symbol === null) throw new Error('chave de historico invalida: parametro "symbol" ausente');
   if (interval === null) throw new Error('chave de historico invalida: parametro "interval" ausente');
-  if (from === null) throw new Error('chave de historico invalida: parametro "from" ausente');
-  if (to === null) throw new Error('chave de historico invalida: parametro "to" ausente');
-  if (knowledgeTime === null) throw new Error('chave de historico invalida: parametro "knowledgeTime" ausente');
+  if (windowStartMs === null) throw new Error('chave de historico invalida: parametro "window_start_ms" ausente');
+  if (windowEndMs === null) throw new Error('chave de historico invalida: parametro "window_end_ms" ausente');
+  if (knowledgeTimeMs === null) {
+    throw new Error('chave de historico invalida: parametro "knowledge_time_ms" ausente');
+  }
   if (barPolicy === null) {
     throw new Error(
-      'chave de historico invalida: parametro "barPolicy" ausente — ADR-005/D4 exige que seja ' +
+      'chave de historico invalida: parametro "bar_policy" ausente — ADR-005/D4 exige que seja ' +
         "declarado pelo consumidor; este modulo nao assume final_only nem nenhum outro default",
     );
   }
   assertBarPolicyValue(barPolicy);
 
   const key: HistoryRequestKey = {
-    seriesKeyId,
+    series_key_id: seriesKeyId,
     symbol,
     interval,
-    window: { from, to },
-    knowledgeTime,
-    barPolicy,
+    window_start_ms: parseEpochMs(windowStartMs, "window_start_ms"),
+    window_end_ms: parseEpochMs(windowEndMs, "window_end_ms"),
+    knowledge_time_ms: parseEpochMs(knowledgeTimeMs, "knowledge_time_ms"),
+    bar_policy: barPolicy,
   };
   assertValidHistoryRequestKey(key);
   return key;
@@ -193,9 +213,10 @@ export function historyRequestUrl(base: URL | string, key: HistoryRequestKey): U
 
 /**
  * O endereço de conteúdo canônico — a string estável que `D1` chama de cache. "O cache É o
- * `knowledge_time`": como a chave inteira (incluindo `knowledgeTime`) participa do endereço,
- * duas requisições com a MESMA chave produzem sempre o MESMO endereço, e uma requisição com
- * `knowledgeTime` diferente (mesmo que só isso mude) produz um endereço diferente — nunca
+ * `knowledge_time`": como a chave inteira (incluindo `knowledge_time_ms`) participa do
+ * endereço, duas requisições com a MESMA chave produzem sempre o MESMO endereço, e uma
+ * requisição com `knowledge_time_ms` diferente (mesmo que só isso mude) produz um endereço
+ * diferente — nunca
  * colide com uma janela de conhecimento distinta.
  */
 export function contentAddress(key: HistoryRequestKey): string {

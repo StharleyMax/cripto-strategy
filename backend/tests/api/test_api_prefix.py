@@ -77,7 +77,8 @@ def test_default_prefix_is_api_v1_and_the_bare_path_404s(tmp_path: Path) -> None
         assert openapi_status == 200
         paths = json.loads(openapi_body)["paths"]
         # `/ready` (`T-02.3`/`ADR-029/D3`), `/collector-status` (`T-03.6`/`ADR-030`),
-        # `/series-catalog` (`T-03.2`) and `/series-quarantine` (`T-03.4`) joined
+        # `/series-catalog` (`T-03.2`), `/series-quarantine` (`T-03.4`), and — `T-01.3`/`T-01.4`
+        # (`pagina-de-grafico-s2`, `ADR-034`) — `/series-history` and `/series-live` joined
         # `/ingest-health` under the same prefix.
         assert set(paths) == {
             "/api/v1/ingest-health",
@@ -85,6 +86,8 @@ def test_default_prefix_is_api_v1_and_the_bare_path_404s(tmp_path: Path) -> None
             "/api/v1/collector-status",
             "/api/v1/series-catalog",
             "/api/v1/series-quarantine",
+            "/api/v1/series-history",
+            "/api/v1/series-live",
         }
 
 
@@ -114,6 +117,8 @@ def test_api_prefix_env_var_moves_every_openapi_path(
             "/x/collector-status",
             "/x/series-catalog",
             "/x/series-quarantine",
+            "/x/series-history",
+            "/x/series-live",
         }
         assert all(path.startswith("/x") for path in paths)
 

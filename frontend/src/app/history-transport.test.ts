@@ -20,68 +20,82 @@ import type { HistoryRequestKey } from "./history-transport.ts";
 // (mesmo precedente de knowledge-time-bundle.test.ts).
 const TEST_BASE_URL = "https://painel.local/historico";
 
-const WINDOW = { from: "2026-08-20T00:00:00Z", to: "2026-08-24T00:00:00Z" };
+const WINDOW_START_MS = 1_787_184_000_000; // 2026-08-20T00:00:00Z
+const WINDOW_END_MS = 1_787_529_600_000; // 2026-08-24T00:00:00Z
 
 const KEY_FINAL_ONLY: HistoryRequestKey = {
-  seriesKeyId: "BTCUSDT.oi.5m",
+  series_key_id: "BTCUSDT.oi.5m",
   symbol: "BTCUSDT",
   interval: "5m",
-  window: WINDOW,
-  knowledgeTime: "2026-08-24T00:00:00Z",
-  barPolicy: "final_only",
+  window_start_ms: WINDOW_START_MS,
+  window_end_ms: WINDOW_END_MS,
+  knowledge_time_ms: WINDOW_END_MS,
+  bar_policy: "final_only",
 };
 
-const KEY_INTRABAR: HistoryRequestKey = { ...KEY_FINAL_ONLY, barPolicy: "intrabar" };
+const KEY_INTRABAR: HistoryRequestKey = { ...KEY_FINAL_ONLY, bar_policy: "intrabar" };
 
 // ── Chave endereçável por conteúdo (ADR-005/D1) ─────────────────────────────────────────────
 
 test("encodeHistoryRequest/decodeHistoryRequest fazem round-trip para final_only", () => {
   const params = encodeHistoryRequest(KEY_FINAL_ONLY);
-  assert.equal(params.get("barPolicy"), "final_only");
+  assert.equal(params.get("bar_policy"), "final_only");
   assert.deepEqual(decodeHistoryRequest(params), KEY_FINAL_ONLY);
 });
 
 test("encodeHistoryRequest/decodeHistoryRequest fazem round-trip para intrabar", () => {
   const params = encodeHistoryRequest(KEY_INTRABAR);
-  assert.equal(params.get("barPolicy"), "intrabar");
+  assert.equal(params.get("bar_policy"), "intrabar");
   assert.deepEqual(decodeHistoryRequest(params), KEY_INTRABAR);
 });
 
-test("historyRequestUrl carrega os seis termos da chave de ADR-005/D1 na URL", () => {
+test("historyRequestUrl carrega os sete termos da chave de ADR-005/D1 na URL, nomes reais de ADR-034", () => {
   const url = historyRequestUrl(TEST_BASE_URL, KEY_FINAL_ONLY);
-  assert.match(url.toString(), /seriesKeyId=BTCUSDT\.oi\.5m/);
+  assert.match(url.toString(), /series_key_id=BTCUSDT\.oi\.5m/);
   assert.match(url.toString(), /symbol=BTCUSDT/);
   assert.match(url.toString(), /interval=5m/);
-  assert.match(url.toString(), /knowledgeTime=2026-08-24T00%3A00%3A00Z/);
-  assert.match(url.toString(), /barPolicy=final_only/);
+  assert.match(url.toString(), new RegExp(`window_start_ms=${WINDOW_START_MS}`));
+  assert.match(url.toString(), new RegExp(`window_end_ms=${WINDOW_END_MS}`));
+  assert.match(url.toString(), new RegExp(`knowledge_time_ms=${WINDOW_END_MS}`));
+  assert.match(url.toString(), /bar_policy=final_only/);
 });
 
 test("assertValidHistoryRequestKey recusa window invertida", () => {
   const invalid: HistoryRequestKey = {
     ...KEY_FINAL_ONLY,
-    window: { from: "2026-08-24T00:00:00Z", to: "2026-08-20T00:00:00Z" },
+    window_start_ms: WINDOW_END_MS,
+    window_end_ms: WINDOW_START_MS,
   };
-  assert.throws(() => assertValidHistoryRequestKey(invalid), /nao e anterior a/);
+  assert.throws(() => assertValidHistoryRequestKey(invalid), /nao pode ser posterior a/);
 });
 
-test("assertValidHistoryRequestKey recusa seriesKeyId vazio", () => {
+test("assertValidHistoryRequestKey aceita window de um unico instante (start === end)", () => {
+  const singleInstant: HistoryRequestKey = {
+    ...KEY_FINAL_ONLY,
+    window_start_ms: WINDOW_START_MS,
+    window_end_ms: WINDOW_START_MS,
+  };
+  assert.doesNotThrow(() => assertValidHistoryRequestKey(singleInstant));
+});
+
+test("assertValidHistoryRequestKey recusa series_key_id vazio", () => {
   assert.throws(
-    () => assertValidHistoryRequestKey({ ...KEY_FINAL_ONLY, seriesKeyId: "  " }),
-    /seriesKeyId.*vazio/,
+    () => assertValidHistoryRequestKey({ ...KEY_FINAL_ONLY, series_key_id: "  " }),
+    /series_key_id.*vazio/,
   );
 });
 
 // ── D4: bar_policy é declarado pelo consumidor, NUNCA default (falsificador obrigatório) ───
 
-test("decodeHistoryRequest RECUSA quando barPolicy esta ausente da URL — nao ha default", () => {
+test("decodeHistoryRequest RECUSA quando bar_policy esta ausente da URL — nao ha default", () => {
   const params = encodeHistoryRequest(KEY_FINAL_ONLY);
-  params.delete("barPolicy");
-  assert.throws(() => decodeHistoryRequest(params), /barPolicy.*ausente/);
+  params.delete("bar_policy");
+  assert.throws(() => decodeHistoryRequest(params), /bar_policy.*ausente/);
 });
 
-test("decodeHistoryRequest RECUSA um barPolicy fora do conjunto fechado", () => {
+test("decodeHistoryRequest RECUSA um bar_policy fora do conjunto fechado", () => {
   const params = encodeHistoryRequest(KEY_FINAL_ONLY);
-  params.set("barPolicy", "intrabar_secreto");
+  params.set("bar_policy", "intrabar_secreto");
   assert.throws(() => decodeHistoryRequest(params), /final_only.*ou.*intrabar/);
 });
 
@@ -91,12 +105,12 @@ test("contentAddress e determinístico: a mesma chave produz sempre o mesmo ende
   assert.equal(contentAddress(KEY_FINAL_ONLY), contentAddress({ ...KEY_FINAL_ONLY }));
 });
 
-test("contentAddress muda quando SÓ knowledgeTime muda — a janela de conhecimento discrimina", () => {
-  const other = { ...KEY_FINAL_ONLY, knowledgeTime: "2026-08-24T00:05:00Z" };
+test("contentAddress muda quando SÓ knowledge_time_ms muda — a janela de conhecimento discrimina", () => {
+  const other = { ...KEY_FINAL_ONLY, knowledge_time_ms: WINDOW_END_MS + 300_000 };
   assert.notEqual(contentAddress(KEY_FINAL_ONLY), contentAddress(other));
 });
 
-test("contentAddress muda quando SÓ barPolicy muda — final_only e intrabar nao colidem", () => {
+test("contentAddress muda quando SÓ bar_policy muda — final_only e intrabar nao colidem", () => {
   assert.notEqual(contentAddress(KEY_FINAL_ONLY), contentAddress(KEY_INTRABAR));
 });
 

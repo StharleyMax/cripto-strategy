@@ -184,6 +184,20 @@ class SeriesCatalog:
                 return entry
         return None
 
+    def entry_for_id(self, series_key_id: str) -> SeriesCatalogEntry | None:
+        """Return the one row whose `key.series_key_id()` equals `series_key_id`, or `None`.
+
+        The reverse of `entry_for`: a wire caller (`GET /series-history`, `T-01.3`) holds only
+        the opaque `sha256` string, never the fifteen-term `SeriesKey` it was built from — the
+        hash is one-way by construction (`series_key.py`), so there is no arithmetic shortcut
+        back to the key. This is the linear scan `entry_for` already performs internally,
+        exposed for a caller that starts from the id instead of the key.
+        """
+        for entry in self.entries:
+            if entry.key.series_key_id() == series_key_id:
+                return entry
+        return None
+
 
 def build_series_catalog(entries: Sequence[SeriesCatalogEntry]) -> SeriesCatalog:
     """Build a `SeriesCatalog` from `entries`, validating uniqueness on the way in.

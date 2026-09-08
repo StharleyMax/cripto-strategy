@@ -22,14 +22,11 @@ import type {
 
 const TEST_BASE_URL = "https://painel.local/ao-vivo";
 
-const REQUEST_INTRABAR: LiveStreamOpenRequest = {
-  seriesKeyId: "BTCUSDT.cvd.5m",
+const REQUEST: LiveStreamOpenRequest = {
+  series_key_id: "BTCUSDT.cvd.5m",
   symbol: "BTCUSDT",
   interval: "5m",
-  barPolicy: "intrabar",
 };
-
-const REQUEST_FINAL_ONLY: LiveStreamOpenRequest = { ...REQUEST_INTRABAR, barPolicy: "final_only" };
 
 const IN_PROGRESS_ENVELOPE: InProgressBucketEnvelope = {
   bucket_open_ts: "2026-09-02T00:00:00Z",
@@ -42,47 +39,43 @@ const IN_PROGRESS_ENVELOPE: InProgressBucketEnvelope = {
 
 const FINAL_ENVELOPE: FinalBucketEnvelope = { ...IN_PROGRESS_ENVELOPE, is_final: true };
 
-// ── The stream-open request (D1 + D4: bar_policy declared by the consumer) ─────────────────
+// ── The stream-open request (D1) ────────────────────────────────────────────────────────────
+//
+// `T-01.5` correction: `ADR-034`/`series_live.py` never accepts `bar_policy` on this route — the
+// live envelope is structurally always in formation. The open request carries only
+// `series_key_id`/`symbol`/`interval`, real `snake_case` names.
 
-test("encodeLiveStreamOpenRequest/decodeLiveStreamOpenRequest round-trip for intrabar", () => {
-  const params = encodeLiveStreamOpenRequest(REQUEST_INTRABAR);
-  assert.equal(params.get("barPolicy"), "intrabar");
-  assert.deepEqual(decodeLiveStreamOpenRequest(params), REQUEST_INTRABAR);
+test("encodeLiveStreamOpenRequest/decodeLiveStreamOpenRequest round-trip", () => {
+  const params = encodeLiveStreamOpenRequest(REQUEST);
+  assert.equal(params.get("series_key_id"), "BTCUSDT.cvd.5m");
+  assert.deepEqual(decodeLiveStreamOpenRequest(params), REQUEST);
 });
 
-test("encodeLiveStreamOpenRequest/decodeLiveStreamOpenRequest round-trip for final_only", () => {
-  const params = encodeLiveStreamOpenRequest(REQUEST_FINAL_ONLY);
-  assert.equal(params.get("barPolicy"), "final_only");
-  assert.deepEqual(decodeLiveStreamOpenRequest(params), REQUEST_FINAL_ONLY);
-});
-
-test("liveStreamUrl carries the four open-request terms in the URL", () => {
-  const url = liveStreamUrl(TEST_BASE_URL, REQUEST_INTRABAR);
-  assert.match(url.toString(), /seriesKeyId=BTCUSDT\.cvd\.5m/);
+test("liveStreamUrl carries the three open-request terms in the URL, real snake_case names", () => {
+  const url = liveStreamUrl(TEST_BASE_URL, REQUEST);
+  assert.match(url.toString(), /series_key_id=BTCUSDT\.cvd\.5m/);
   assert.match(url.toString(), /symbol=BTCUSDT/);
   assert.match(url.toString(), /interval=5m/);
-  assert.match(url.toString(), /barPolicy=intrabar/);
+  assert.doesNotMatch(url.toString(), /bar_policy/);
 });
 
-test("assertValidLiveStreamOpenRequest rejects an empty seriesKeyId", () => {
+test("assertValidLiveStreamOpenRequest rejects an empty series_key_id", () => {
   assert.throws(
-    () => assertValidLiveStreamOpenRequest({ ...REQUEST_INTRABAR, seriesKeyId: "  " }),
-    /seriesKeyId/,
+    () => assertValidLiveStreamOpenRequest({ ...REQUEST, series_key_id: "  " }),
+    /series_key_id/,
   );
 });
 
-// D4 falsifier: bar_policy is mandatory, never defaulted — especially never to "intrabar".
-
-test("decodeLiveStreamOpenRequest REFUSES a request with barPolicy missing from the URL — no default", () => {
-  const params = encodeLiveStreamOpenRequest(REQUEST_INTRABAR);
-  params.delete("barPolicy");
-  assert.throws(() => decodeLiveStreamOpenRequest(params), /barPolicy.*missing/);
+test("decodeLiveStreamOpenRequest REFUSES a request with series_key_id missing from the URL", () => {
+  const params = encodeLiveStreamOpenRequest(REQUEST);
+  params.delete("series_key_id");
+  assert.throws(() => decodeLiveStreamOpenRequest(params), /series_key_id.*missing/);
 });
 
-test("decodeLiveStreamOpenRequest REFUSES a barPolicy outside the closed set", () => {
-  const params = encodeLiveStreamOpenRequest(REQUEST_INTRABAR);
-  params.set("barPolicy", "secret_intrabar");
-  assert.throws(() => decodeLiveStreamOpenRequest(params), /final_only.*or.*intrabar/);
+test("LiveStreamOpenRequest carries no bar_policy field — ADR-034 drops it for the live route", () => {
+  const request: Record<string, unknown> = { ...REQUEST };
+  assert.equal("bar_policy" in request, false);
+  assert.equal("barPolicy" in request, false);
 });
 
 // ── The bucket envelope (D2) ─────────────────────────────────────────────────────────────────
