@@ -32,6 +32,13 @@ in `DECLARED_TOUCHERS` for why it is not a second reader) and the module count h
 
     python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"
     # 123                                       [MEASURED 2026-09-03, T-06.4]
+
+`T-02.2` (`captura-em-producao`) adds a SIXTH toucher (`postgres_series_sink.py` — see its entry
+in `DECLARED_TOUCHERS` for why neither of its two functions is a second reader) and the module
+count has grown again, same drift named above rather than hidden:
+
+    python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"
+    # 185                                       [MEASURED 2026-09-08, T-02.2 captura-em-producao]
 """
 
 from __future__ import annotations
@@ -105,6 +112,17 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # it builds the field mapping by KEYWORD NAME (`bucket_end=_decode_int("bucket_end", ...)`),
     # never as `.attr` on a `SeriesRow` instance, so `ast.Attribute` has nothing to see there.
     "modules/sentimento/infra/series_row_wire.py": frozenset({"encode"}),
+    # `T-02.2` (`captura-em-producao`, not the `plataforma-dados` task of the same id cited
+    # above): a write path, same category as `sqlite_series_quarantine_store.record` and
+    # `series_row_wire.encode` above. `observed_already_present` reads `row.bucket_end` only
+    # to key `D7.16`'s presence predicate ("does this BUCKET already have an OBSERVADO row"),
+    # never against a decision instant `t`; `accept` persists an already-cleared `SeriesRow` into
+    # `md.series` (`row.bucket_end`/`row.available_at`/`row.observed_at` all travel into the
+    # `INSERT` tuple), the same "write it down" category as the two precedents above, never a
+    # value read back out "as of" anything.
+    "modules/sentimento/infra/postgres_series_sink.py": frozenset(
+        {"observed_already_present", "accept"}
+    ),
 }
 
 
