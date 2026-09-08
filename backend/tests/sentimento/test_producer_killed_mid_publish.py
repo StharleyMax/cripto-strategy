@@ -7,7 +7,11 @@ them. `ADR-027/F3` is why this lives as its own process-crossing test, out of `m
 the owner opts it in (`docs/plans/SPEC-004-captura-em-producao/index.md` `R-G`): unlike
 `test_redis_stream_bus.py` (same module, in-process fakes), the producer here is a SEPARATE OS
 process this test actually signals, matching what `B3` means by "the producer dies" — an
-in-process object going out of scope is not a producer crash.
+in-process object going out of scope is not a producer crash. The exclusion is mechanical, not
+aspirational: the test below carries `@pytest.mark.process_real`, and `scripts/verify.sh`
+deselects that marker by default when it runs `backend/scripts/test.sh` — the DoD's own direct
+`pytest -k` invocation (`tasks.toml:160`) is untouched by that, since it never goes through
+`verify.sh`.
 
 `test_plain_xread_without_a_group_never_populates_the_pending_entries_list` is the morde
 companion the `D1.7` row names ("`XREAD` sem grupo ⇒ 0 na `PEL`"): it proves the main test's "5 na
@@ -71,6 +75,7 @@ def _connection(address: tuple[str, int]) -> RespConnection:
     return connect_resp2(open_tcp_socket(host, port))
 
 
+@pytest.mark.process_real
 def test_producer_killed_mid_publish_leaves_five_pending_and_nothing_lost(
     redis_address: tuple[str, int],
 ) -> None:

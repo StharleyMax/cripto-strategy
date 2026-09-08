@@ -96,7 +96,13 @@ falhou $RC_LF
 printf '[%-9s] lint-frontend   rc=%s  %s\n' "$(rotulo $RC_LF)" "$RC_LF" "$DET_LF"
 
 # ── 2. suíte + piso de cobertura por camada ────────────────────────────────────────────
-portao "test" bash backend/scripts/test.sh; RC_T=$?; falhou $RC_T
+# `R-G` (`docs/plans/SPEC-004-captura-em-producao/index.md`): "verificação é `make verify`
+# … testes de processo real declarados por fase fora de `verify` até o owner decidir". O
+# `-m 'not process_real'` abaixo É essa exclusão — sem ela o teste marcado roda dentro deste
+# portão por padrão, que foi o `[BLOCKER]` que o `/review` de `T-01.7` achou (a alegação de
+# "fora de verify" no plano/commit não tinha mecanismo real). Reverter (trazer para dentro do
+# portão) custa a linha abaixo (`tasks_review.md` §8) — ato do owner: apague o `-m …`.
+portao "test" bash backend/scripts/test.sh -m "not process_real"; RC_T=$?; falhou $RC_T
 N_T="$(extrai '[0-9]+ (passed|failed)')"
 N_C="$(extrai 'Total coverage: [0-9.]+%')"
 printf '[%-9s] test            rc=%s  %s · %s\n' "$(rotulo $RC_T)" "$RC_T" "${N_T:-(n não extraído)}" "${N_C:-(cobertura não extraída)}"
