@@ -11,22 +11,44 @@
 # ── OUTPUT: ONE JSON LINE ON `stdout`, DIAGNOSTICS ON `stderr` ─────────────────────────────
 #
 # Same contract as `infra/ingest_health_cli.py` and `infra/quota_ramp_cli.py`.
+#
+# ── THE STORE ENGINE IS `INGEST_RECORD_BACKEND`, NOT `--store` (`T-03.8`, `ADR-031/D1`) ────
+#
+# `_compose_store` reads the SAME variable every other composition root in this package reads
+# (`ingest_record_store_composition.compose_ingest_record_store`) — `sqlite` (the default)
+# keeps this CLI's original behaviour (`--store`'s path, untouched); `postgres` composes
+# against the SAME engine `deploy/compose.yml`'s `api`/`writer`/`collector` use, so a run of
+# this probe against the `postgres` target lands where `/collector-status` actually reads —
+# `[MEDIDO 2026-09-08, T-03.8]`: before this, `main()` built a `SqliteIngestRecordStore`
+# unconditionally, so a probe run under `INGEST_RECORD_BACKEND=postgres` wrote a file the API
+# never opens, and the third `(source, endpoint)` `CA-E2E-1` needs to reach `n_rows >= 3`
+# never arrived.
 
 from __future__ import annotations
 
 import argparse
 import json
 import logging
+import os
 import sys
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
+
+import psycopg
 
 from src.modules.sentimento.infra.binance_server_time_probe import BinanceServerTimeProbe
 from src.modules.sentimento.infra.ingest_health_cli import (
     build_stdout_handler,
     route_diagnostics_away_from_the_product_stream,
+)
+from src.modules.sentimento.infra.ingest_record_store_composition import (
+    DEFAULT_INGEST_RECORD_BACKEND,
+    INGEST_RECORD_BACKEND_VAR,
+    IngestRecordStore,
+    compose_ingest_record_store,
 )
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
 from src.modules.sentimento.infra.system_wall_clock import SystemWallClock
@@ -55,6 +77,10 @@ def build_parser() -> argparse.ArgumentParser:
     """Declare the command line.
 
     `--store` is required: a measurement that is not persisted is not what `D3.10` asks for.
+    It still names a SQLite path even when `INGEST_RECORD_BACKEND=postgres` picks the engine
+    (`_compose_store` below) — the flag's job is "refuse to even parse a destination-less
+    invocation", not "select the engine"; the engine is `INGEST_RECORD_BACKEND`, same as every
+    other composition root in this package (`ADR-031/D1`).
     """
     parser = argparse.ArgumentParser(
         prog="ntp_skew_probe_cli",
@@ -64,10 +90,43 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--store", type=Path, required=True, help="caminho do arquivo SQLite de md.ingest_run"
+        "--store",
+        type=Path,
+        required=True,
+        help=(
+            "caminho do arquivo SQLite de md.ingest_run — usado quando INGEST_RECORD_BACKEND "
+            "e 'sqlite' (o default); ignorado quando e 'postgres' (T-03.8, ADR-031/D1)"
+        ),
     )
     parser.add_argument("--run-id", default=None, help="default: um uuid4 novo por chamada")
     return parser
+
+
+def _compose_store(
+    args: argparse.Namespace,
+    environ: Mapping[str, str],
+    *,
+    connect: Callable[[str], psycopg.Connection[Any]] = psycopg.connect,
+) -> IngestRecordStore:
+    """Pick the SAME engine every other composition root in this package picks (`ADR-031/D1`).
+
+    `T-02.4`'s `compose_ingest_record_store` is the ONE function `collectors_cli`,
+    `single_writer_cli` and `src.main` already call — this probe was the fourth composition
+    root `ingest_record_store_composition.py`'s own docstring names as the risk ("a fourth
+    composition root reading INGEST_RECORD_BACKEND slightly differently"): it read `--store`
+    unconditionally and could only ever write `sqlite`, so a probe run against the `postgres`
+    target (`deploy/compose.yml`, F3) landed in a file the API never reads — `T-03.8` measured
+    exactly that (`docs/context/captura-em-producao/gates/CA-E2E-local.md`). `ADR-031`'s own
+    text already assumed this was fixed: "o probe NTP (`ntp_skew_probe_cli.py:120`) **ja**
+    grava o mesmo registro por um terceiro processo" — this function is what makes that true.
+
+    `sqlite` (unset, or explicit) keeps the ORIGINAL, unchanged behaviour: `--store`'s path,
+    nothing else touched — every existing test that calls `run()` directly is unaffected.
+    """
+    backend = environ.get(INGEST_RECORD_BACKEND_VAR, DEFAULT_INGEST_RECORD_BACKEND)
+    if backend == DEFAULT_INGEST_RECORD_BACKEND:  # "sqlite" — this CLI's original, sole engine
+        return SqliteIngestRecordStore(Path(args.store))
+    return compose_ingest_record_store(environ, connect=connect)
 
 
 def run(
@@ -110,14 +169,16 @@ def main(argv: Sequence[str]) -> int:
 
     This is the composition root, and the order matters: diagnostics are pushed off `stdout`
     BEFORE anything can log, and only then does the product logger take `stdout` over
-    (`infra/ingest_health_cli.py` documents the defect this order fixes).
+    (`infra/ingest_health_cli.py` documents the defect this order fixes). The store is picked
+    by `_compose_store` — `INGEST_RECORD_BACKEND` (`sqlite`|`postgres`), same variable and same
+    default every other composition root in this package reads (`ADR-031/D1`).
     """
     args = build_parser().parse_args(list(argv))
     route_diagnostics_away_from_the_product_stream()
     logger.setLevel(logging.INFO)
     logger.addHandler(build_stdout_handler())
     logger.propagate = False
-    store = SqliteIngestRecordStore(Path(args.store))
+    store = _compose_store(args, os.environ)
     store.initialise()
     run(args, BinanceServerTimeProbe(), SystemWallClock(), store)
     return 0

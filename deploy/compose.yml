@@ -85,6 +85,20 @@ services:
     restart: unless-stopped
     env_file:
       - ../.env
+    # `T-03.8` (`CA-E2E-1`) measured this: `create_app` ALWAYS wires a
+    # `SqliteSeriesQuarantineStore` at `QUARANTINE_STORE_PATH` (default
+    # `data/md/series_quarantine.sqlite3`, `src/main/__init__.py:64/240`) regardless of
+    # `INGEST_RECORD_BACKEND` — there is no `postgres` variant of that store. `backend/.dockerignore`
+    # excludes `data/` from the image (`T-03.1`, `D3.6`'s falsifier needs that), so the parent
+    # directory never exists at boot and `_require_parent_directory` refuses with
+    # `StoreParentDirectoryMissingError` before uvicorn ever binds a socket — `api` crash-loops on
+    # every `$D up`/`$L up` without this volume (`[MEDIDO 2026-09-08]`: `docker logs` showed
+    # `store_parent_missing ... series quarantine store parent directory does not exist: data/md`
+    # on every restart). A named volume at the exact mount path makes Docker create the full
+    # directory chain — same pattern `postgres_data`/`redis_data` already use below — and gives the
+    # quarantine data the SAME persistence-across-restart guarantee those two already have.
+    volumes:
+      - api_data:/app/data/md
     depends_on:
       postgres:
         condition: service_healthy
@@ -176,3 +190,4 @@ volumes:
   redis_data:
   caddy_data:
   caddy_config:
+  api_data:
