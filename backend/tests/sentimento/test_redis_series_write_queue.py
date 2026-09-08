@@ -28,6 +28,7 @@ from src.modules.sentimento.infra.redis_stream_bus import (
     RedisStreamConsumerGroup,
     RedisStreamPublisher,
 )
+from src.modules.sentimento.infra.series_row_wire import SeriesRowWireError
 
 STREAM = "series-candidates"
 GROUP = "single-writer"
@@ -175,3 +176,73 @@ def test_ack_refuses_an_entry_id_that_is_not_bytes(redis_address: tuple[str, int
     queue = _queue(redis_address)
     with pytest.raises(UnexpectedEntryIdTypeError):
         queue.ack("not-bytes")
+
+
+# ── `B7` (`SPEC-004` §5): a message that will never decode stays in the PEL, unreported ─────
+# to `run_single_writer` — dropped from the returned tuple rather than raised, so it never
+# stops the batch, and reported to a caller-supplied `on_rejected` instead of a fixed logger.
+
+
+def _decode_rejecting_poison(fields: Mapping[bytes, bytes]) -> SeriesRow:
+    """Like `_decode`, but a `symbol` of `POISON` raises the typed wire error `B7` expects."""
+    if fields[b"symbol"] == b"POISON":
+        raise SeriesRowWireError("field 'symbol' carries the poison sentinel")
+    return _decode(fields)
+
+
+def test_a_message_that_raises_series_row_wire_error_is_dropped_from_read_new(
+    redis_address: tuple[str, int],
+) -> None:
+    """The poisoned entry never reaches the caller as a `QueuedSeriesRow` — `read_new` omits it."""
+    host, port = redis_address
+    connection = connect_resp2(open_tcp_socket(host, port))
+    group = RedisStreamConsumerGroup(connection, STREAM, GROUP, CONSUMER)
+    group.ensure_group()
+    rejected: list[tuple[bytes, SeriesRowWireError]] = []
+    queue = RedisSeriesWriteQueue(
+        group,
+        _decode_rejecting_poison,
+        on_rejected=lambda entry_id, error: rejected.append((entry_id, error)),
+    )
+    publisher = RedisStreamPublisher(connect_resp2(open_tcp_socket(host, port)), STREAM)
+    poison_id = publisher.publish({"symbol": "POISON"})
+
+    delivered = queue.read_new(10)
+
+    assert delivered == ()
+    assert [entry_id for entry_id, _error in rejected] == [poison_id]
+    assert isinstance(rejected[0][1], SeriesRowWireError)
+
+
+def test_a_good_message_survives_in_the_same_batch_as_a_poisoned_one(
+    redis_address: tuple[str, int],
+) -> None:
+    """One poisoned entry does not drop the GOOD entries decoded around it out of the batch."""
+    host, port = redis_address
+    connection = connect_resp2(open_tcp_socket(host, port))
+    group = RedisStreamConsumerGroup(connection, STREAM, GROUP, CONSUMER)
+    group.ensure_group()
+    queue = RedisSeriesWriteQueue(group, _decode_rejecting_poison)
+    publisher = RedisStreamPublisher(connect_resp2(open_tcp_socket(host, port)), STREAM)
+    publisher.publish({"symbol": "POISON"})
+    good_id = publisher.publish({"symbol": "ETHUSDT"})
+
+    delivered = queue.read_new(10)
+
+    assert [item.entry_id for item in delivered] == [good_id]
+    assert delivered[0].row.symbol == "ETHUSDT"
+
+
+def test_the_default_on_rejected_is_a_silent_no_op(redis_address: tuple[str, int]) -> None:
+    """A caller that does not supply `on_rejected` still gets B7's drop-and-continue behaviour."""
+    host, port = redis_address
+    connection = connect_resp2(open_tcp_socket(host, port))
+    group = RedisStreamConsumerGroup(connection, STREAM, GROUP, CONSUMER)
+    group.ensure_group()
+    queue = RedisSeriesWriteQueue(group, _decode_rejecting_poison)
+    publisher = RedisStreamPublisher(connect_resp2(open_tcp_socket(host, port)), STREAM)
+    publisher.publish({"symbol": "POISON"})
+
+    delivered = queue.read_new(10)
+
+    assert delivered == ()
