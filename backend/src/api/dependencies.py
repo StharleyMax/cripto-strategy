@@ -48,10 +48,17 @@ class StoreReadinessSource(Protocol):
     `SqliteIngestRecordStore` already satisfies this structurally (`path` property,
     `describe_readiness()` method) — no adapter class is written for it, the same way no
     adapter class exists solely to satisfy `IngestRecordSource`.
+
+    `path` is typed `Path | str`, not `Path` alone: `src.main` (`T-02.6`) wires a `postgres`
+    engine here through a small adapter (`_PostgresReadiness`) whose `path` is a masked DSN
+    string (`postgresql://<user>@<host>:<port>/<db>`, never the password), and routing that
+    string through `pathlib.Path` would silently collapse its `//` right after the scheme
+    (`Path("a://b")` -> `PosixPath('a:/b')`) — corrupting the one part of a DSN that cannot be
+    lost. `ready.py`'s `str(source.path)` already handles both members identically.
     """
 
     @property
-    def path(self) -> Path: ...  # noqa: D102
+    def path(self) -> Path | str: ...  # noqa: D102
 
     def describe_readiness(self) -> tuple[bool, bool]: ...  # noqa: D102
 
