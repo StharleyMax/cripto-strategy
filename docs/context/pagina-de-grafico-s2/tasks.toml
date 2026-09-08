@@ -261,3 +261,43 @@ phase = "03"
 depends_on = ["T-03.1"]
 refs = ["ADR-034/D3", "RF-6", "CA-F3-3", "plano 03 item 3.5"]
 tracker = { provider = "jira", id = "CST-188", url = "https://conversationhub.atlassian.net/browse/CST-188" }
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 04 — fast-follow: /symbol nao serve dado real em producao. Epic: nenhum (bug,
+# achado em validacao live do owner apos F0-F3 mergeadas). Juiz: quant-architect
+# (price_source_catalog.py) + frontend-architect (contrato consumido por /symbol).
+#
+# QA desta fase E OBRIGATORIA via Playwright contra a app REAL rodando (localhost:3000,
+# deploy-web-1 + deploy-api-1 + deploy-postgres-1) — nao mockar transporte, nao validar
+# so status HTTP. Falsificador: screenshot/assert do DOM mostrando numero real nos 3
+# paineis (Preco/OI/CVD), nao a mensagem "sem dado real neste painel".
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-04.1"
+title = "[sentimento] 04 · src/main conecta get_series_window_reader_source a PostgresSeriesWindowReader real"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = []
+refs = ["ADR-034/D9 item 1", "ADR-029/D3 (refuse-at-boot)", "CST-190"]
+tracker = { provider = "jira", id = "CST-190", url = "https://conversationhub.atlassian.net/browse/CST-190" }
+
+[[tasks]]
+id = "T-04.2"
+title = "[sentimento] 04 · price_source_catalog.py atribui price_use aos entries de klines_last/price_mark_close"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = []
+refs = ["ADR-007", "CST-191"]
+tracker = { provider = "jira", id = "CST-191", url = "https://conversationhub.atlassian.net/browse/CST-191" }
+
+[[tasks]]
+id = "T-04.3"
+title = "[web] 04 · e2e Playwright prova dado real nos 3 paineis de /symbol (nao so 200/500)"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.1", "T-04.2"]
+refs = ["docs/context/pagina-de-grafico-s2/gates/F2-review.md WARNING (eslint-boundary flaky, fora de escopo aqui)", "PREMISSA-OWNER: QA de feature com frontend usa Playwright contra app real, valida dado, nao so status"]
