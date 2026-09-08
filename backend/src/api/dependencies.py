@@ -24,6 +24,8 @@ from typing import Protocol
 
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.use_cases.ingest_health import IngestRecordSource
+from src.modules.sentimento.use_cases.series_history import SeriesWindowReader
+from src.modules.sentimento.use_cases.series_live import LiveBucketSource
 from src.modules.sentimento.use_cases.series_quarantine import QuarantineSource
 
 
@@ -107,4 +109,43 @@ def get_series_quarantine_source() -> QuarantineSource:
     raise NotImplementedError(
         "get_series_quarantine_source has no default adapter; src.main.create_app must "
         "override it via app.dependency_overrides before serving a request."
+    )
+
+
+def get_series_window_reader_source() -> SeriesWindowReader:
+    """Return the `SeriesWindowReader` `/series-history` reads — overridden by `src.main`.
+
+    `ADR-034/D9`'s leitor de janela: `infra/postgres_series_window_reader.py` is the one real
+    adapter, and wiring it into `src.main.create_app` is composition-root work for a later task
+    (`md.series` has no `sqlite` fallback, unlike the ingest-record store, so there is no
+    default engine to fall back to here). A request that reaches this body means the app was
+    served without that composition — the same contract every other stub in this module states.
+
+    Raises:
+        NotImplementedError: always, until `src.main` overrides it via
+            `app.dependency_overrides[get_series_window_reader_source]`.
+
+    """
+    raise NotImplementedError(
+        "get_series_window_reader_source has no default adapter; src.main.create_app must "
+        "override it via app.dependency_overrides before serving a request."
+    )
+
+
+def get_live_bucket_source() -> LiveBucketSource:
+    """Return the `LiveBucketSource` `/series-live` reads — overridden by `src.main`.
+
+    No real adapter exists yet (`use_cases/series_live.py`'s own docstring: `ADR-034/D9` names
+    only the history read path as new for F1) — this stub raises until a future task builds the
+    trade-stream producer and wires it here, the same "declared port, no adapter yet" shape
+    `get_series_catalog_source` used before `T-06.x` populated a real catalog.
+
+    Raises:
+        NotImplementedError: always, until `src.main` overrides it via
+            `app.dependency_overrides[get_live_bucket_source]`.
+
+    """
+    raise NotImplementedError(
+        "get_live_bucket_source has no default adapter; src.main.create_app must override it "
+        "via app.dependency_overrides before serving a request."
     )

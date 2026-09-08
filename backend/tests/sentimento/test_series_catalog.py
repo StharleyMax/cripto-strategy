@@ -273,3 +273,24 @@ def test_entry_for_returns_none_for_a_series_with_no_catalog_row() -> None:
 
     absent = binance_oi_key(metric="sum_open_interest_value", unit="USDT", denom="quote")
     assert catalog.entry_for(absent) is None
+
+
+# ── `entry_for_id` — the reverse lookup `T-01.2`/`T-01.3` need (opaque id -> full `SeriesKey`) ──
+
+
+def test_entry_for_id_finds_the_row_by_its_own_series_key_id() -> None:
+    """The round-trip `entry.key.series_key_id() -> entry_for_id(...) -> entry` holds."""
+    catalog = build_series_catalog([binance_oi_entry()])
+    key_id = binance_oi_key().series_key_id()
+
+    found = catalog.entry_for_id(key_id)
+
+    assert found is not None
+    assert found.key.series_key_id() == key_id
+
+
+def test_entry_for_id_returns_none_for_an_unknown_id() -> None:
+    """An id nothing in the catalog ever produced returns `None`, never a fabricated row."""
+    catalog = build_series_catalog([binance_oi_entry()])
+
+    assert catalog.entry_for_id("sha256-of-nothing-that-exists") is None

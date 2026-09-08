@@ -30,43 +30,50 @@
  * boundary `history-transport.ts` drew for `fetch`. There is still no HTTP/SSE framework in
  * `backend/` (`[MEDIDO]` by `T-05.9`: zero `fastapi`/`flask`/`uvicorn`), so a real stream to
  * connect to does not exist yet, and inventing a server is out of a `web`-component task.
- * What this module owns is the CONTRACT: the request that opens a stream (`bar_policy`
- * mandatory, D4), the envelope shape a message on that stream carries (D2), and the two gates
- * that make the ADR's falsifier executable on any payload/sequence a real stream will someday
- * produce — zero tick-level field, and rate never finer than `max(1 Hz, 1/TF)`.
+ * What this module owns is the CONTRACT: the request that opens a stream, the envelope shape a
+ * message on that stream carries (D2), and the two gates that make the ADR's falsifier
+ * executable on any payload/sequence a real stream will someday produce — zero tick-level
+ * field, and rate never finer than `max(1 Hz, 1/TF)`. `T-01.5` below corrects the open request
+ * to match the REAL route (`ADR-034`), which never accepts `bar_policy`.
  *
- * Reuse, not reinvention: `BarPolicy`, `assertNoTickLevelFields` and
- * `assertBucketSpacingWithinInterval` are imported from `./history-transport.ts` rather than
- * redeclared — the falsifier is the SAME ADR for both routes, and a second implementation of
- * either gate would be exactly the class of drift `D1`'s two-route split does not license.
+ * Reuse, not reinvention: `assertNoTickLevelFields` and `assertBucketSpacingWithinInterval` are
+ * imported from `./history-transport.ts` rather than redeclared — the falsifier is the SAME ADR
+ * for both routes, and a second implementation of either gate would be exactly the class of
+ * drift `D1`'s two-route split does not license.
+ *
+ * `T-01.5` (`pagina-de-grafico-s2`) — CORRECTION: this module was written (`T-08.11`) BEFORE
+ * `ADR-034` fixed the real wire of `GET {API_PREFIX}/series-live` (`T-01.4`), and guessed
+ * `camelCase` plus a `bar_policy` field that route never accepts
+ * (`backend/src/api/routes/series_live.py`: `series_key_id`, `symbol`, `interval` — no
+ * `bar_policy`, because the live edge's partial-bucket envelope is "always in formation, live"
+ * and there is no policy for a consumer to declare). This correction renames the open-request
+ * fields to the real, `snake_case` ones and DROPS `bar_policy`/`BarPolicy` from the open
+ * request entirely; the bucket envelope below (`ADR-005/D2`) is untouched — it was already
+ * `snake_case` and unchanged by `ADR-034`.
  */
 
 import {
   assertBucketSpacingWithinInterval,
   assertNoTickLevelFields,
 } from "./history-transport.ts";
-import type { BarPolicy } from "./history-transport.ts";
 
-// ── The request that opens a live stream (D1 + D4) ──────────────────────────────────────────
+// ── The request that opens a live stream (D1) ───────────────────────────────────────────────
 
 /**
- * What a consumer sends to open the one SSE stream for a series. There is no `knowledgeTime`
- * here (unlike `HistoryRequestKey`) — the live edge has no fixed instant to key a cache by, its
- * horizon is "now".
+ * What a consumer sends to open the one SSE stream for a series. There is no
+ * `knowledge_time_ms` here (unlike `HistoryRequestKey`) — the live edge has no fixed instant to
+ * key a cache by, its horizon is "now". There is also no `bar_policy`: `ADR-034`/
+ * `series_live.py` never accepts one — the live envelope is structurally always in formation.
  */
 export interface LiveStreamOpenRequest {
-  readonly seriesKeyId: string;
+  readonly series_key_id: string;
   readonly symbol: string;
   /** The grid's native label (`"1m"`, `"5m"`…), never parsed here — same boundary
    * `HistoryRequestKey.interval` draws; the canonical grid belongs to `charts` (`T-05.1`). */
   readonly interval: string;
-  /** MANDATORY, no default anywhere in this module — `D4`: "o transporte NÃO escolhe… intrabar
-   * nunca é default." A consumer that wants only finalized buckets asks for `"final_only"`
-   * explicitly; nothing here silently prefers one policy over the other. */
-  readonly barPolicy: BarPolicy;
 }
 
-const OPEN_REQUEST_PARAM_ORDER = ["seriesKeyId", "symbol", "interval", "barPolicy"] as const;
+const OPEN_REQUEST_PARAM_ORDER = ["series_key_id", "symbol", "interval"] as const;
 
 function assertNonEmpty(value: string, field: string): void {
   if (value.trim() === "") {
@@ -74,22 +81,12 @@ function assertNonEmpty(value: string, field: string): void {
   }
 }
 
-function assertBarPolicyValue(value: string): asserts value is BarPolicy {
-  if (value !== "final_only" && value !== "intrabar") {
-    throw new Error(
-      `invalid live stream request: "barPolicy" must be "final_only" or "intrabar" ` +
-        `(ADR-005/D4: declared by the consumer, never defaulted), got ${JSON.stringify(value)}`,
-    );
-  }
-}
-
 /** Validates a `LiveStreamOpenRequest` before it becomes a URL/subscription. Rejects rather
  * than accepts an ambiguous state — same posture as `assertValidHistoryRequestKey`. */
 export function assertValidLiveStreamOpenRequest(request: LiveStreamOpenRequest): void {
-  assertNonEmpty(request.seriesKeyId, "seriesKeyId");
+  assertNonEmpty(request.series_key_id, "series_key_id");
   assertNonEmpty(request.symbol, "symbol");
   assertNonEmpty(request.interval, "interval");
-  assertBarPolicyValue(request.barPolicy);
 }
 
 /** The request becomes URL parameters, field by field — legible and linkable, not a
@@ -104,30 +101,19 @@ export function encodeLiveStreamOpenRequest(request: LiveStreamOpenRequest): URL
 }
 
 /**
- * The inverse of `encodeLiveStreamOpenRequest`. `barPolicy` is read and validated with NO
- * fallback whatsoever — if the parameter is absent or outside the closed set, the read is
- * REFUSED, never silently defaulted to `"final_only"` (or, worse, `"intrabar"`). This refusal
- * is the client-side half of `D4`: "intrabar nunca é default" only holds if "no value" also
- * never becomes a default.
+ * The inverse of `encodeLiveStreamOpenRequest`. No field here has a fallback — a missing
+ * `series_key_id`/`symbol`/`interval` is REFUSED, never silently defaulted.
  */
 export function decodeLiveStreamOpenRequest(params: URLSearchParams): LiveStreamOpenRequest {
-  const seriesKeyId = params.get("seriesKeyId");
+  const seriesKeyId = params.get("series_key_id");
   const symbol = params.get("symbol");
   const interval = params.get("interval");
-  const barPolicy = params.get("barPolicy");
 
-  if (seriesKeyId === null) throw new Error('invalid live stream request: parameter "seriesKeyId" is missing');
+  if (seriesKeyId === null) throw new Error('invalid live stream request: parameter "series_key_id" is missing');
   if (symbol === null) throw new Error('invalid live stream request: parameter "symbol" is missing');
   if (interval === null) throw new Error('invalid live stream request: parameter "interval" is missing');
-  if (barPolicy === null) {
-    throw new Error(
-      'invalid live stream request: parameter "barPolicy" is missing — ADR-005/D4 requires it ' +
-        "to be declared by the consumer; this module assumes no default, not even final_only",
-    );
-  }
-  assertBarPolicyValue(barPolicy);
 
-  const request: LiveStreamOpenRequest = { seriesKeyId, symbol, interval, barPolicy };
+  const request: LiveStreamOpenRequest = { series_key_id: seriesKeyId, symbol, interval };
   assertValidLiveStreamOpenRequest(request);
   return request;
 }
@@ -156,24 +142,28 @@ interface BucketEnvelopeFields {
 }
 
 /**
- * The bucket is still open — `D4`'s "`intrabar` recebe com `is_final = false`". `is_final` is
- * typed as the LITERAL `false` here, not `boolean`: a caller cannot construct an in-progress
- * envelope and merely forget to set the flag, because there is no other value the type
- * accepts. This is the "nunca omitido/implícito" requirement enforced at the type level, not
- * only at the runtime check `decodeBucketEnvelope` also performs.
+ * The bucket is still open. `is_final` is typed as the LITERAL `false` here, not `boolean`: a
+ * caller cannot construct an in-progress envelope and merely forget to set the flag, because
+ * there is no other value the type accepts. This is the "nunca omitido/implícito" requirement
+ * enforced at the type level, not only at the runtime check `decodeBucketEnvelope` also
+ * performs.
+ *
+ * `T-01.5` correction: `D4`'s original design ("`bar_policy` filters which variant a consumer
+ * receives") assumed the open request carried a `bar_policy` — `ADR-034`/`series_live.py`
+ * drops that field for F1 (`LiveStreamOpenRequest` above has none), so BOTH variants can arrive
+ * on the same stream today; filtering by `is_final`, if a consumer wants only closed buckets,
+ * is the CALLER's job, not this transport's.
  */
 export interface InProgressBucketEnvelope extends BucketEnvelopeFields {
   readonly is_final: false;
 }
 
-/** The bucket closed. A consumer that requested `barPolicy: "final_only"` receives ONLY this
- * variant — `D4`: "não recebe o bucket em formação." */
+/** The bucket closed. */
 export interface FinalBucketEnvelope extends BucketEnvelopeFields {
   readonly is_final: true;
 }
 
-/** Discriminated on `is_final`, same shape of union `history-transport.ts` uses for
- * `BarPolicy`/`Absence` — a switch over `envelope.is_final` narrows exhaustively. */
+/** Discriminated on `is_final` — a switch over `envelope.is_final` narrows exhaustively. */
 export type LiveBucketEnvelope = InProgressBucketEnvelope | FinalBucketEnvelope;
 
 function assertNonEmptyEnvelopeField(value: string, field: string): void {

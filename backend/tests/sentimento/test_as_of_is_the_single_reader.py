@@ -6,11 +6,14 @@ answers are both plausible. So this file does not assert "I looked and found not
 `backend/src` and pins the exact, measured set of places that touch a read-path column, so a
 second reader appearing anywhere in the tree turns a green suite red.
 
-⚠️ WHAT THIS FILE DOES NOT PROVE, SAID OUT LOUD BECAUSE `ADR-012` NAMES THE TRAP. There is no
-store in this repository yet and no consumer of this module, so the "nobody else imports it"
-half is VACUOUS today — and `rc=0` over an empty universe is indistinguishable from `rc=0` over
-a universe that was checked. The `morde` side of the column scan is therefore NOT vacuous and is
-what carries the weight: `backend/src` has 116 modules, FOUR of which legitimately touch a
+⚠️ WHAT THIS FILE DOES NOT PROVE, SAID OUT LOUD BECAUSE `ADR-012` NAMES THE TRAP. Until `T-01.2`
+(`pagina-de-grafico-s2`) there was no store in this repository and no consumer of this module, so
+the "nobody else imports it" half was VACUOUS — `rc=0` over an empty universe is indistinguishable
+from `rc=0` over a universe that was checked. `T-01.2` ends the vacuity: `DECLARED_IMPORTERS` now
+pins a non-empty, measured set (`use_cases/series_history.py` calling `as_of()`, plus three
+type-only importers), so a fifth importer turns a green suite red the same way a second toucher
+already does. The `morde` side of the column scan carries the same weight it always did:
+`backend/src` has 116 modules, FOUR of which legitimately touch a
 read-path column (`as_of_accessor.py`, `provenance.py`, `sqlite_series_quarantine_store.py` and
 `write_series_row.py`, all named in `DECLARED_TOUCHERS` below), and the scan finds exactly those
 four — no more, no fewer.
@@ -39,6 +42,14 @@ count has grown again, same drift named above rather than hidden:
 
     python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"
     # 185                                       [MEASURED 2026-09-08, T-02.2 captura-em-producao]
+
+`T-01.2` (`pagina-de-grafico-s2`) adds a SEVENTH toucher (`series_history_report.py` — see its
+entry in `DECLARED_TOUCHERS` for why `SeriesHistoryRow.to_wire` is not a second reader) and is
+also the FIRST real importer of this module (`DECLARED_IMPORTERS` below), same drift named above
+rather than hidden:
+
+    python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"
+    # 196                                       [MEASURED 2026-09-08, T-01.2 pagina-de-grafico-s2]
 """
 
 from __future__ import annotations
@@ -123,6 +134,15 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     "modules/sentimento/infra/postgres_series_sink.py": frozenset(
         {"observed_already_present", "accept"}
     ),
+    # `T-01.2` (`pagina-de-grafico-s2`): SERIALIZATION, same category as `write_series_row.py`
+    # and `series_row_wire.py` above — `SeriesHistoryRow` is a NEW dataclass (its OWN
+    # `available_at`, not `SeriesRow`'s), and `to_wire()` only projects an already-computed
+    # field into the `SPEC-006 §5.2` row mapping. It never compares against a decision instant
+    # `t` — the ONE comparison against `t` in this whole feature happens inside `as_of()`
+    # itself, in `use_cases/series_history.py`, which reads the answer back out through
+    # `AsOfReading.projection()` (a dict, not an attribute) precisely so it never needs an
+    # entry here.
+    "modules/sentimento/domain/series_history_report.py": frozenset({"to_wire"}),
 }
 
 
@@ -205,11 +225,28 @@ def test_exactly_one_public_callable_in_the_module_produces_a_reading() -> None:
     assert producers == ["as_of"]
 
 
-def test_no_production_module_imports_this_accessor_yet_and_that_is_recorded_not_claimed() -> None:
-    """Today's importer set is EMPTY, which is a fact about the tree and not a proof of safety.
+DECLARED_IMPORTERS = frozenset(
+    {
+        # `T-01.2` (`pagina-de-grafico-s2`): the FIRST real consumer this test's docstring
+        # predicted — `build_series_history_report` calls `as_of()` once per grid instant.
+        "modules/sentimento/use_cases/series_history.py",
+        # The three modules below import only TYPES from `as_of_accessor`
+        # (`BarPolicy`/`Observation`/`DecisionReadRefusedError`) to speak the same vocabulary
+        # as the use case above — none of them calls `as_of()` itself, so none becomes a
+        # second reader; that claim is what `DECLARED_TOUCHERS` above still polices.
+        "modules/sentimento/domain/series_history_report.py",
+        "modules/sentimento/infra/postgres_series_window_reader.py",
+        "api/routes/series_history.py",
+    }
+)
 
-    It is pinned so that the first consumer — `T-05.1`'s canonical grid is the likely one — is
-    forced to notice this file and extend it, rather than quietly becoming importer number one.
+
+def test_the_set_of_modules_importing_this_accessor_is_exactly_the_declared_one() -> None:
+    """The importer set is no longer empty — `T-01.2` is the first real consumer.
+
+    A new importer outside `DECLARED_IMPORTERS` fails here, same "notice and extend" contract
+    the previous, vacuous version of this test named: nobody becomes importer number five
+    quietly.
     """
     importers = set()
     for path in SRC_ROOT.rglob("*.py"):
@@ -217,4 +254,4 @@ def test_no_production_module_imports_this_accessor_yet_and_that_is_recorded_not
             continue
         if "as_of_accessor" in path.read_text(encoding="utf-8"):
             importers.add(path.relative_to(SRC_ROOT).as_posix())
-    assert importers == set()
+    assert importers == set(DECLARED_IMPORTERS)
