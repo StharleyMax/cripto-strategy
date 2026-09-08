@@ -505,7 +505,7 @@ def _run_force_order_collector(
     record_run: Callable[[IngestRun], None],
     source_holder: list[MessageSource | None],
 ) -> None:
-    """Read `!forceOrder@arr` until told to stop, recording one `IngestRun` per SESSION close.
+    """Read `forceOrder` until told to stop, recording one `IngestRun` per SESSION close.
 
     `source_holder[0]` always names the currently-open source, so `run()`'s `SIGTERM` handler
     can force it closed from the main thread — that is what unblocks a read that is sitting in a
@@ -516,8 +516,20 @@ def _run_force_order_collector(
     one's read loop. A read that FAILS for any other reason is `SPEC-004` §3.1's "falha ... em
     regime": the session closes `REJECTED`, the OTHER thread is told to stop too, and
     `exit_code[0] = 1`.
+
+    `endpoint` — the value every `IngestRun`/log line below names — is read off `source.path`
+    when `open_source()` returns something that declares it (`WebSocketMessageSource` does,
+    real or faked), falling back to the legacy `FORCE_ORDER_ENDPOINT` literal for a double that
+    does not (`docs/context/captura-em-producao/gates/forceorder-fix-qa.md`: recording the
+    hardcoded literal regardless of what `open_source` actually opened is the defect this reads
+    fixes — a `!forceOrder@arr` label surviving the move to a combined per-symbol stream would
+    make `collector_status.py`'s dashboard, and a future incident's own log line, lie about
+    which stream is connected). Computed ONCE, from the FIRST source: every reconnect
+    (`reconnect_and_key`, below) opens a new socket through the SAME `open_source` factory, so
+    the endpoint identity does not change mid-session.
     """
     source = open_source()
+    endpoint: str = getattr(source, "path", FORCE_ORDER_ENDPOINT)
     source_holder[0] = source
     source.open()
     started_at = _iso_now()
@@ -549,9 +561,9 @@ def _run_force_order_collector(
     except _PUBLISH_FAILURE_EXCEPTIONS as failure:
         logger.error(
             "collector_session_closed %s: %s",
-            FORCE_ORDER_ENDPOINT,
+            endpoint,
             failure,
-            extra={"endpoint": FORCE_ORDER_ENDPOINT, "verdict": "REJECTED"},
+            extra={"endpoint": endpoint, "verdict": "REJECTED"},
             exc_info=True,
         )
         verdict = "REJECTED"
@@ -560,12 +572,12 @@ def _run_force_order_collector(
     finally:
         source.close()
         ended_at = _iso_now()
-        run = build_force_order_run(started_at, ended_at, n_published, verdict, digest)
+        run = build_force_order_run(started_at, ended_at, n_published, verdict, digest, endpoint)
         record_run(run)
         logger.info(
             "collector_session_closed",
             extra={
-                "endpoint": FORCE_ORDER_ENDPOINT,
+                "endpoint": endpoint,
                 "n_published": n_published,
                 "verdict": verdict,
                 "run_id": run.run_id,

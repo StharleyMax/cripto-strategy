@@ -64,8 +64,9 @@ def build_force_order_run(
     n_published: int,
     verdict: KnownVerdict,
     digest: hashlib._Hash,
+    endpoint: str = FORCE_ORDER_ENDPOINT,
 ) -> IngestRun:
-    """Build the `IngestRun` for one `!forceOrder@arr` SESSION close (`Q3` §1.1, §3).
+    """Build the `IngestRun` for one `forceOrder` SESSION close (`Q3` §1.1, §3).
 
     `n_expected = n_returned = n_published`: `Q3` §3 (c) — there is no independent oracle for
     how many liquidations SHOULD have arrived, so inventing one would be exactly the number
@@ -73,11 +74,20 @@ def build_force_order_run(
     running `sha256`, updated by the caller with every raw message's bytes as it arrives
     (`Q3` §3: an incremental hash avoids holding hours of messages in memory just to hash them
     at close).
+
+    `endpoint` defaults to `FORCE_ORDER_ENDPOINT` (`Q3` §2.1's literal, `"!forceOrder@arr"`) so
+    every caller that predates the combined-stream switch keeps recording the SAME value without
+    passing anything new. `docs/context/captura-em-producao/gates/forceorder-fix-qa.md` is why
+    the parameter exists at all: the LIVE collector's real source moved to a per-symbol combined
+    stream (`collectors_cli._default_force_order_source`), and `IngestRun.endpoint` — read by
+    `collector_status.py`'s dashboard label (`ADR-030`) and by whoever diagnoses the next
+    incident from this same log line — must name WHAT WAS ACTUALLY CONNECTED, never a literal
+    baked in here regardless of the caller's real socket.
     """
     return IngestRun(
         run_id=str(uuid4()),
         source=SOURCE,
-        endpoint=FORCE_ORDER_ENDPOINT,
+        endpoint=endpoint,
         window=f"{started_at}/{ended_at}",
         n_expected=n_published,
         n_returned=n_published,

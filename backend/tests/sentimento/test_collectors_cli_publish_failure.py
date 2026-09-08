@@ -114,12 +114,21 @@ class _OneFrameThenIdleSource:
     Mirrors `collectors_cli_driver.py`'s `_BlockingForceOrderSource`: nothing beyond the one
     scripted frame should ever be read — the block only matters if a regression kept the read
     loop running past the publish failure this test forces.
+
+    `path` declares, explicitly, which endpoint this double models — the RAW `!forceOrder@arr`
+    shape (`FRAME_A` below is unenveloped), never the combined per-symbol stream
+    `_default_force_order_source` moved to (`docs/context/captura-em-producao/gates/
+    forceorder-fix-qa.md`). `_run_force_order_collector` reads this attribute (falling back to
+    `FORCE_ORDER_ENDPOINT` for a double that has none) to name `IngestRun.endpoint` after WHAT
+    WAS ACTUALLY CONNECTED — this test's assertion below now exercises that same mechanism
+    instead of coinciding with a hardcoded literal by accident.
     """
 
     def __init__(self, frames: list[str]) -> None:
         """Script the frames to replay; nothing has closed this source yet."""
         self._frames = list(frames)
         self._closed = threading.Event()
+        self.path = FORCE_ORDER_ENDPOINT
 
     def open(self) -> None:
         """No transport to open — this fake has none."""
