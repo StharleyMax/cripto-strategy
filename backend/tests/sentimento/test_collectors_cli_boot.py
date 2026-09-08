@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
+import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fakeredis import TcpFakeServer
 
 from src.modules.sentimento.infra import collectors_cli
 from src.modules.sentimento.infra.redis_resp_client import SocketLike
@@ -71,12 +75,31 @@ def test_an_unparseable_numeric_variable_names_itself_in_the_error(variable: str
     assert variable in str(excinfo.value)
 
 
-def test_an_unsupported_backend_refuses_to_boot_naming_the_variable() -> None:
-    """`INGEST_RECORD_BACKEND=postgres` is refused in F1 — the composition arrives in `T-02.4`."""
+def test_postgres_backend_is_now_accepted_t02_4() -> None:
+    """`T-02.4`: the shared composition arrived — `postgres` parses, it is no longer refused."""
+    config = collectors_cli.resolve_boot_config({"INGEST_RECORD_BACKEND": "postgres"})
+    assert config.ingest_record_backend == "postgres"
+
+
+def test_an_unknown_backend_refuses_to_boot_naming_the_variable() -> None:
+    """A value outside `{sqlite, postgres}` is still refused, always naming the variable."""
     with pytest.raises(collectors_cli.CollectorBootConfigurationError) as excinfo:
-        collectors_cli.resolve_boot_config({"INGEST_RECORD_BACKEND": "postgres"})
+        collectors_cli.resolve_boot_config({"INGEST_RECORD_BACKEND": "foo"})
     assert excinfo.value.variable == "INGEST_RECORD_BACKEND"
     assert "INGEST_RECORD_BACKEND" in str(excinfo.value)
+
+
+def test_postgres_with_ingest_health_store_path_set_is_not_an_error() -> None:
+    """`ADR-031` consequences: `postgres` + a present `INGEST_HEALTH_STORE_PATH` is NOT refused.
+
+    The var is inherited unconditionally from `.env.example` (`SPEC-003`); every compose target
+    sets `INGEST_RECORD_BACKEND=postgres` without deleting it first, so the boot config parse
+    (the half this module owns) must resolve cleanly with both present at once.
+    """
+    config = collectors_cli.resolve_boot_config(
+        {"INGEST_RECORD_BACKEND": "postgres", "INGEST_HEALTH_STORE_PATH": "/some/sqlite/path"}
+    )
+    assert config.ingest_record_backend == "postgres"
 
 
 # ── `connect_redis` — the falsifier morde: refuses fast, and always names `REDIS_HOST` ──────
@@ -181,3 +204,121 @@ def test_process_refuses_to_boot_against_an_unreachable_redis_host_within_5s() -
     assert completed.returncode != 0, "an unreachable REDIS_HOST must not boot successfully"
     output = completed.stdout + completed.stderr
     assert "REDIS_HOST" in output, f"the failure must name the variable; got: {output!r}"
+
+
+def test_process_refuses_to_boot_with_an_unknown_backend_within_5s() -> None:
+    """`T-02.4`/`D2.5` (metade coletor): `INGEST_RECORD_BACKEND=foo` -> `rc != 0` in <= 5 s.
+
+    This value is refused by `resolve_boot_config` BEFORE `connect_redis` opens a socket
+    (module docstring), so the failure names `INGEST_RECORD_BACKEND` regardless of whether
+    Redis is reachable in the environment running this test — the ordering itself is what the
+    unit-level `resolve_boot_config` tests above cannot prove, only a real subprocess can.
+    Morde: an implementation that validated the backend AFTER dialling Redis would report
+    `REDIS_HOST` instead whenever Redis is absent — exactly the drift this ordering prevents.
+    """
+    environment = dict(os.environ, PYTHONPATH=str(BACKEND_ROOT), INGEST_RECORD_BACKEND="foo")
+    started = time.monotonic()
+    completed = subprocess.run(
+        [sys.executable, "-m", CLI_MODULE],
+        cwd=str(BACKEND_ROOT),
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=BOOT_DEADLINE_S,
+    )
+    elapsed = time.monotonic() - started
+    assert elapsed <= BOOT_DEADLINE_S, f"boot took {elapsed:.2f}s, over the {BOOT_DEADLINE_S}s cap"
+    assert completed.returncode != 0, "INGEST_RECORD_BACKEND=foo must not boot successfully"
+    output = completed.stdout + completed.stderr
+    assert "INGEST_RECORD_BACKEND" in output, f"failure must name the variable; got: {output!r}"
+
+
+# ── `T-02.4`: a real subprocess reaching `compose_ingest_record_store`, `postgres` refused ──
+
+
+@pytest.fixture
+def _fake_redis_address() -> Iterator[tuple[str, int]]:
+    """Start a real, loopback-only `fakeredis` server so boot clears the Redis stage.
+
+    `compose_ingest_record_store` (`T-02.4`) is only ever reached AFTER `connect_redis`
+    succeeds — this real `fakeredis.TcpFakeServer` (same convention
+    `test_redis_stream_series_sink.py` and `collectors_cli_driver.py` already use) is what lets
+    the subprocess below get there without a live, unreachable Redis on the wire.
+    """
+    server = TcpFakeServer(("127.0.0.1", 0), server_type="redis")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.socket.getsockname()
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+def _closed_loopback_port() -> int:
+    """Return a `127.0.0.1` port nothing listens on — bind, then close without `listen()`.
+
+    A closed port refuses a connection immediately (`ECONNREFUSED`), never blocking for a
+    timeout — which is what keeps this falsifier fast instead of racing `BOOT_DEADLINE_S`.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.bind(("127.0.0.1", 0))
+    port = int(probe.getsockname()[1])
+    probe.close()
+    return port
+
+
+def test_process_refuses_to_boot_against_an_unreachable_postgres_within_5s(
+    _fake_redis_address: tuple[str, int],
+) -> None:
+    """`T-02.4`/`D2.5`: `INGEST_RECORD_BACKEND=postgres` + unreachable `POSTGRES_HOST` -> `rc != 0`.
+
+    Mirrors the two falsifiers above, one stage deeper: Redis is real (the fixture) so boot
+    clears `connect_redis` and actually reaches `compose_ingest_record_store` — the ONLY way to
+    exercise the `try`/`except` this test exists to protect
+    (`collectors_cli.py`, `store = compose_ingest_record_store(os.environ)`).
+
+    Morde, and this IS the mutant the reviewer produced: erasing that `try`/`except` still
+    exits `rc != 0` (an uncaught `IngestRecordStoreConnectionError` crashes the process the same
+    way) AND the crash traceback still happens to print `POSTGRES_HOST` (it is inside the
+    exception's own message) — so `rc != 0` plus "names the variable" alone does NOT kill it,
+    exactly what let the mutant pass all 25 tests of this scope. What the `try`/`except` alone
+    produces is the STRUCTURED refusal line `collector_boot_refused POSTGRES_HOST: ...` on
+    `stdout` (`main()`'s `logger.error("collector_boot_refused %s: %s", ...)`) — a bare Python
+    traceback never contains that event name. Asserting it is what actually distinguishes "boot
+    refused cleanly" from "boot crashed uncaught".
+    """
+    redis_host, redis_port = _fake_redis_address
+    environment = {
+        **os.environ,
+        "PYTHONPATH": str(BACKEND_ROOT),
+        "REDIS_HOST": redis_host,
+        "REDIS_PORT": str(redis_port),
+        "INGEST_RECORD_BACKEND": "postgres",
+        "POSTGRES_HOST": "127.0.0.1",
+        "POSTGRES_PORT": str(_closed_loopback_port()),
+        "POSTGRES_DB": "test",
+        "POSTGRES_USER": "test",
+        "POSTGRES_PASSWORD": "test",
+    }
+    started = time.monotonic()
+    completed = subprocess.run(
+        [sys.executable, "-m", CLI_MODULE],
+        cwd=str(BACKEND_ROOT),
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=BOOT_DEADLINE_S,
+    )
+    elapsed = time.monotonic() - started
+    assert elapsed <= BOOT_DEADLINE_S, f"boot took {elapsed:.2f}s, over the {BOOT_DEADLINE_S}s cap"
+    assert completed.returncode != 0, "an unreachable POSTGRES_HOST must not boot successfully"
+    output = completed.stdout + completed.stderr
+    assert "POSTGRES_HOST" in output, f"the failure must name the variable; got: {output!r}"
+    assert "Traceback" not in output, (
+        f"boot must refuse cleanly (logged, rc != 0), never crash uncaught; got: {output!r}"
+    )
+    assert "collector_boot_refused" in completed.stdout, (
+        "the refusal must be the SAME structured log event every other boot failure in this "
+        f"module uses, not a bare exception surfacing by accident; got stdout: {completed.stdout!r}"
+    )
