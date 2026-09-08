@@ -101,6 +101,16 @@ function useLightweightChart(containerRef: RefObject<HTMLDivElement | null>, bui
   }, [containerRef]);
 }
 
+/** `T-04.3` (`CA-F4-3`): a "leitura atual" readout for Preço, same shape `OiPane` already has
+ * for OI — the falsifier this fase exists for needs a REAL NUMBER in the DOM, not only the
+ * chart canvas (`lightweight-charts` draws to `<canvas>`, opaque to a DOM assertion). No new
+ * absence policy: `panels.price.series.slots` (`GridSlot[]`, `candle: RawCandle | null`) is
+ * mapped onto the exact `{ time, value }` shape `resolveStockReading` already takes for OI —
+ * the SAME pure function, reused, not a price-specific reimplementation. `nativeTimeframeMs =
+ * ONE_MINUTE_MS` because price's own native grid IS 1 minute (unlike OI's 5), so this always
+ * resolves `"exact"` or `"absent"`, never `"held"` — there is no coarser native grid to hold
+ * across for this panel.
+ */
 function PricePane({ panels, status }: { readonly panels: S2Panels; readonly status: PanelStatus }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, (chart) => {
@@ -108,12 +118,26 @@ function PricePane({ panels, status }: { readonly panels: S2Panels; readonly sta
     const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style);
     series.setData(candlestickSeriesLossless(panels.price.series.slots) as never);
   });
+  const closeSlots = panels.price.series.slots.map((slot) => ({
+    time: slot.time,
+    value: slot.candle === null ? null : slot.candle.close,
+  }));
+  const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, LAST_INSTANT_MS);
+  const readingText =
+    reading.kind === "absent"
+      ? "SEM_PONTO"
+      : reading.kind === "held"
+        ? `${reading.value} (${formatHeldStockLabel(reading)})`
+        : String(reading.value);
   return (
     <section aria-label="Preço">
       <h2 className="font-label-caps text-label-caps text-on-surface">
         Preço ({panels.price.priceSource}, {panels.price.priceUse})
       </h2>
       <div ref={containerRef} data-fact={`price_slots:${panels.price.series.slots.length}`} />
+      <p data-fact={`price_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
+        Leitura atual: {readingText}
+      </p>
       <AbsenceNote status={status} />
     </section>
   );

@@ -116,10 +116,12 @@ def get_series_window_reader_source() -> SeriesWindowReader:
     """Return the `SeriesWindowReader` `/series-history` reads — overridden by `src.main`.
 
     `ADR-034/D9`'s leitor de janela: `infra/postgres_series_window_reader.py` is the one real
-    adapter, and wiring it into `src.main.create_app` is composition-root work for a later task
-    (`md.series` has no `sqlite` fallback, unlike the ingest-record store, so there is no
-    default engine to fall back to here). A request that reaches this body means the app was
-    served without that composition — the same contract every other stub in this module states.
+    adapter, wired by `src.main.create_app` (`T-04.1`, `CST-190`) whenever the `postgres` engine
+    is actually composed (`md.series` has no `sqlite` fallback, unlike the ingest-record store,
+    so there is no default engine to fall back to when the process runs `sqlite`). A request
+    that reaches this body means the app was served without that composition — either the
+    `sqlite` engine (no adapter exists for it) or a boot that skipped `src.main` entirely — the
+    same contract every other stub in this module states.
 
     Raises:
         NotImplementedError: always, until `src.main` overrides it via

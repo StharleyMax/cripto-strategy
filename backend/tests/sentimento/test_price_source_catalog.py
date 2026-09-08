@@ -96,6 +96,7 @@ def test_price_mark_close_entry_builds_as_a_real_catalog_row() -> None:
     assert entry.key.ts_convention is TsConvention.POINT_AT_BUCKET_END
     assert entry.key.quantity_field is QuantityField.NA
     assert entry.native_grid == "5min"
+    assert entry.price_use == "liquidation_trigger"
 
 
 def test_klines_last_entry_builds_as_a_real_catalog_row() -> None:
@@ -104,6 +105,7 @@ def test_klines_last_entry_builds_as_a_real_catalog_row() -> None:
 
     assert entry.key.metric == "klines_last"
     assert entry.key.reduction is Reduction.LAST
+    assert entry.price_use == "structure_detection"
 
 
 def test_implied_avg_price_is_still_forbidden_here() -> None:
