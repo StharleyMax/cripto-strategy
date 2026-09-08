@@ -76,6 +76,17 @@ from src.modules.sentimento.infra.ingest_health_cli import (
     build_stdout_handler,
     route_diagnostics_away_from_the_product_stream,
 )
+from src.modules.sentimento.infra.ingest_record_store_composition import (
+    DEFAULT_INGEST_HEALTH_STORE_PATH,
+    DEFAULT_INGEST_RECORD_BACKEND,
+    INGEST_HEALTH_STORE_PATH_VAR,
+    INGEST_RECORD_BACKEND_VAR,
+    KNOWN_INGEST_RECORD_BACKENDS,
+    IngestRecordStore,
+    IngestRecordStoreConfigurationError,
+    IngestRecordStoreConnectionError,
+    compose_ingest_record_store,
+)
 from src.modules.sentimento.infra.premium_index_http_client import PremiumIndexHttpClient
 from src.modules.sentimento.infra.redis_resp_client import (
     RedisCommandError,
@@ -91,7 +102,6 @@ from src.modules.sentimento.infra.redis_stream_series_sink import (
     RedisPremiumIndexSink,
     RedisStreamSeriesSink,
 )
-from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
 from src.modules.sentimento.use_cases.collect_premium_index import (
     PremiumIndexCycleStage,
     PremiumIndexFetcher,
@@ -117,17 +127,15 @@ _REDIS_HOST_VAR: Final[str] = "REDIS_HOST"
 _REDIS_PORT_VAR: Final[str] = "REDIS_PORT"
 _REDIS_STREAM_VAR: Final[str] = "REDIS_STREAM"
 _REDIS_STREAM_MAXLEN_VAR: Final[str] = "REDIS_STREAM_MAXLEN"
-_INGEST_RECORD_BACKEND_VAR: Final[str] = "INGEST_RECORD_BACKEND"
-_INGEST_HEALTH_STORE_PATH_VAR: Final[str] = "INGEST_HEALTH_STORE_PATH"
+# `INGEST_RECORD_BACKEND_VAR`/`INGEST_HEALTH_STORE_PATH_VAR` are imported (not redefined) from
+# `ingest_record_store_composition` above — `T-02.4`'s whole point is that the var names and
+# the closed `sqlite`|`postgres` set live in exactly one place, shared by every composition
+# root this phase has (this module, `single_writer_cli` in `T-02.5`, `src.main` in `T-02.6`).
 _PREMIUM_INDEX_CYCLE_INTERVAL_S_VAR: Final[str] = "PREMIUM_INDEX_CYCLE_INTERVAL_S"
 
 _DEFAULT_REDIS_HOST: Final[str] = "localhost"
 _DEFAULT_REDIS_PORT: Final[int] = 6379
 _DEFAULT_REDIS_STREAM: Final[str] = "md.series.write"
-_DEFAULT_INGEST_RECORD_BACKEND: Final[str] = "sqlite"
-# Same default `src/main/__init__.py` uses for the same store — one composition root's default
-# path is not a second decision, it is the same decision read twice.
-_DEFAULT_INGEST_HEALTH_STORE_PATH: Final[str] = "data/md/ingest_health.sqlite3"
 # `gates/Q3-run-definition.md` §4, `[Q2]`: "Decisao: 60 segundos."
 _DEFAULT_PREMIUM_INDEX_CYCLE_INTERVAL_S: Final[float] = 60.0
 
@@ -230,18 +238,21 @@ def _parse_float(environ: Mapping[str, str], variable: str, default: float) -> f
 def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
     """Resolve every boot value `SPEC-004` §3.1 names, or raise naming the offending variable.
 
-    `INGEST_RECORD_BACKEND` is checked against the closed set THIS PHASE supports — `postgres`
-    arrives with the shared composition of `T-02.4`, which this module does not anticipate
-    (plan `01` item 1.3, "nao abre Postgres fora do composition root": there is no Postgres
-    composition here to open).
+    `INGEST_RECORD_BACKEND` is checked HERE, eagerly, against the shared closed set
+    (`KNOWN_INGEST_RECORD_BACKENDS`) — BEFORE `connect_redis` ever opens a socket. That
+    ordering is the point: `D2.5`'s falsifier sets `INGEST_RECORD_BACKEND=foo` with no
+    guarantee Redis is reachable either, and the failure has to name `INGEST_RECORD_BACKEND`,
+    never `REDIS_HOST`, regardless of what else in the environment is broken. The actual store
+    (which DOES touch the network for `postgres`) is composed later, in `main()`, via
+    `compose_ingest_record_store` — the shared function `T-02.4` introduces so this module,
+    `single_writer_cli` (`T-02.5`) and `src.main` (`T-02.6`) never re-derive the same decision.
     """
-    backend = environ.get(_INGEST_RECORD_BACKEND_VAR, _DEFAULT_INGEST_RECORD_BACKEND)
-    if backend != "sqlite":
+    backend = environ.get(INGEST_RECORD_BACKEND_VAR, DEFAULT_INGEST_RECORD_BACKEND)
+    if backend not in KNOWN_INGEST_RECORD_BACKENDS:
         raise CollectorBootConfigurationError(
-            _INGEST_RECORD_BACKEND_VAR,
-            f"{_INGEST_RECORD_BACKEND_VAR}={backend!r} is not supported in phase F1 (only "
-            "'sqlite' — the shared 'sqlite'|'postgres' composition arrives in T-02.4); refusing "
-            "to boot rather than silently falling back",
+            INGEST_RECORD_BACKEND_VAR,
+            f"{INGEST_RECORD_BACKEND_VAR}={backend!r} is not one of "
+            f"{sorted(KNOWN_INGEST_RECORD_BACKENDS)}",
         )
     return BootConfig(
         redis_host=environ.get(_REDIS_HOST_VAR, _DEFAULT_REDIS_HOST),
@@ -250,7 +261,7 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
         redis_stream_maxlen=_parse_int(environ, _REDIS_STREAM_MAXLEN_VAR, DEFAULT_STREAM_MAXLEN),
         ingest_record_backend=backend,
         ingest_health_store_path=Path(
-            environ.get(_INGEST_HEALTH_STORE_PATH_VAR, _DEFAULT_INGEST_HEALTH_STORE_PATH)
+            environ.get(INGEST_HEALTH_STORE_PATH_VAR, DEFAULT_INGEST_HEALTH_STORE_PATH)
         ),
         premium_index_cycle_interval_s=_parse_float(
             environ,
@@ -538,7 +549,7 @@ def run(
     *,
     config: BootConfig,
     connection: RespConnection,
-    store: SqliteIngestRecordStore,
+    store: IngestRecordStore,
     force_order_source_factory: Callable[[], MessageSource] | None = None,
     premium_index_fetcher_factory: Callable[[], PremiumIndexFetcher] | None = None,
     premium_index_to_rows: PremiumIndexReadingToRows | None = None,
@@ -658,7 +669,21 @@ def main(argv: Sequence[str]) -> int:
             extra={"variable": error.variable},
         )
         return 1
-    store = SqliteIngestRecordStore(config.ingest_health_store_path)
+    try:
+        # Shared with `single_writer_cli` (`T-02.5`) and `src.main` (`T-02.6`) — `T-02.4`'s
+        # whole point. `config.ingest_record_backend` was already validated above (membership
+        # in `KNOWN_INGEST_RECORD_BACKENDS`, before `connect_redis` ever opened a socket); this
+        # second read of `os.environ` is what actually builds the engine, and for `postgres` is
+        # the ONE place this process opens a network connection to it.
+        store = compose_ingest_record_store(os.environ)
+    except (IngestRecordStoreConfigurationError, IngestRecordStoreConnectionError) as error:
+        logger.error(
+            "collector_boot_refused %s: %s",
+            error.variable,
+            error,
+            extra={"variable": error.variable},
+        )
+        return 1
     store.initialise()
     store.describe_readiness()
     return run(config=config, connection=connection, store=store)
