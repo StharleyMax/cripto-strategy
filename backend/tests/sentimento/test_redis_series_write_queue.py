@@ -71,6 +71,7 @@ def _decode(fields: Mapping[bytes, bytes]) -> SeriesRow:
         observer_id="vps-01",
         observer_region=UNKNOWN_OBSERVER_REGION,
         is_final=True,
+        value_raw="1.0",
     )
 
 

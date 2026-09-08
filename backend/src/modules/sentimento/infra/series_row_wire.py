@@ -10,9 +10,9 @@ second `decode` for this row shape — `D1.1` measures exactly that:
 WHY A DEDICATED WIRE MODULE INSTEAD OF `dataclasses.asdict`: `asdict` emits Python values —
 `int`, `bool`, `Enum` members, `None` — into a `dict[str, Any]`, and `XADD`
 (`RedisStreamPublisher.publish`) requires `Mapping[str, str]`, every value ASCII text. This
-module is the one place that owns the string encoding for each of the 15 `SeriesRow` columns,
-so a producer and a consumer written against the same stream never each invent their own
-parsing of it.
+module is the one place that owns the string encoding for each of the 16 `SeriesRow` columns
+(`value_raw` joined the 15 in `ADR-034/D7`), so a producer and a consumer written against the
+same stream never each invent their own parsing of it.
 
 THE `None` SENTINEL (`_ABSENT`, below): `SPEC-004` §3.2 is explicit that `None` does not exist
 on the wire, and that an optional field becomes the empty string only if the dataclass itself
@@ -39,7 +39,8 @@ from src.modules.sentimento.domain.provenance import AvailabilitySource, Provena
 # Declaration order of `SeriesRow` (`provenance.py`), transcribed rather than computed from
 # `dataclasses.fields(SeriesRow)` at import time — a future reorder of the dataclass then shows
 # up as a diff HERE, in the one place that is supposed to notice, instead of silently following
-# along. `SPEC-004` §3.2 counts the same 15 names, in the same order.
+# along. `SPEC-004` §3.2 counted 15 names in the same order; `value_raw` is the 16th,
+# `ADR-034/D7`'s addition, placed at the same position it holds in the dataclass.
 FIELD_NAMES: Final[tuple[str, ...]] = (
     "series_key_id",
     "symbol",
@@ -55,11 +56,13 @@ FIELD_NAMES: Final[tuple[str, ...]] = (
     "observer_id",
     "observer_region",
     "is_final",
+    "value_raw",
     "principal_id",
 )
-# SPEC-004 §3.2 fixes SeriesRow at 15 wire columns — `test_series_row_wire.py` pins the count
-# (no `assert` here: `S101` forbids it in production code, and a wrong count would already fail
-# every round-trip test, so a runtime check would only duplicate what the test already catches).
+# SPEC-004 §3.2 fixed SeriesRow at 15 wire columns; ADR-034/D7 makes it 16 —
+# `test_series_row_wire.py` pins the count (no `assert` here: `S101` forbids it in production
+# code, and a wrong count would already fail every round-trip test, so a runtime check would
+# only duplicate what the test already catches).
 
 _FIELD_NAME_SET: Final[frozenset[str]] = frozenset(FIELD_NAMES)
 
@@ -81,11 +84,11 @@ class SeriesRowWireError(Exception):
 
 
 class MissingWireFieldError(SeriesRowWireError):
-    """`decode` was handed a mapping missing one of the 15 required `SeriesRow` columns."""
+    """`decode` was handed a mapping missing one of the 16 required `SeriesRow` columns."""
 
 
 class UnexpectedWireFieldError(SeriesRowWireError):
-    """`decode` was handed a mapping carrying a key none of the 15 columns owns."""
+    """`decode` was handed a mapping carrying a key none of the 16 columns owns."""
 
 
 class InvalidWireFieldValueError(SeriesRowWireError):
@@ -115,6 +118,7 @@ def encode(row: SeriesRow) -> Mapping[str, str]:
         "observer_id": row.observer_id,
         "observer_region": row.observer_region,
         "is_final": _encode_optional_bool(row.is_final),
+        "value_raw": row.value_raw,
         "principal_id": _encode_optional_text(row.principal_id),
     }
 
@@ -123,7 +127,7 @@ def decode(fields: Mapping[str, str]) -> SeriesRow:
     """Recover the `SeriesRow` that `encode` produced — or raise, naming the field.
 
     `SPEC-004` §3.2's property is `decode(encode(row)) == row` for every `Provenance`; a field
-    missing, a field none of the 15 owns, or a value that will not parse each raise a distinct,
+    missing, a field none of the 16 owns, or a value that will not parse each raise a distinct,
     typed, English exception rather than a silently wrong or partial row.
     """
     _reject_field_set_mismatch(fields)
@@ -142,6 +146,7 @@ def decode(fields: Mapping[str, str]) -> SeriesRow:
         observer_id=_decode_text("observer_id", fields),
         observer_region=_decode_text("observer_region", fields),
         is_final=_decode_optional_bool("is_final", fields),
+        value_raw=_decode_text("value_raw", fields),
         principal_id=_decode_optional_text("principal_id", fields),
     )
 
@@ -151,14 +156,14 @@ def _reject_field_set_mismatch(fields: Mapping[str, str]) -> None:
     missing = _FIELD_NAME_SET - present
     if missing:
         raise MissingWireFieldError(
-            f"wire mapping is missing field(s) {sorted(missing)!r} of the 15 `SeriesRow` "
-            f"columns `SPEC-004` §3.2 fixes"
+            f"wire mapping is missing field(s) {sorted(missing)!r} of the 16 `SeriesRow` "
+            f"columns `SPEC-004` §3.2 / `ADR-034/D7` fix"
         )
     extra = present - _FIELD_NAME_SET
     if extra:
         raise UnexpectedWireFieldError(
             f"wire mapping carries field(s) {sorted(extra)!r} that no `SeriesRow` column "
-            f"owns (`SPEC-004` §3.2 names exactly 15)"
+            f"owns (`SPEC-004` §3.2 / `ADR-034/D7` name exactly 16)"
         )
 
 

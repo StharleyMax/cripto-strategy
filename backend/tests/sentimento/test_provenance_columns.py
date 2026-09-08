@@ -55,6 +55,7 @@ def row(**overrides: Any) -> SeriesRow:
         "observer_id": "vps-01",
         "observer_region": UNKNOWN_OBSERVER_REGION,
         "is_final": True,
+        "value_raw": "78249.60000000",
     }
     columns.update(overrides)
     return SeriesRow(**columns)
@@ -99,6 +100,26 @@ def test_observer_region_unknown_is_a_value_and_blank_is_refused() -> None:
     assert row().observer_region == "unknown"
     with pytest.raises(InvalidSeriesRowError, match="observer_region"):
         row(observer_region="")
+
+
+# ── `value_raw`: THE COLUMN `ADR-034/D7` ADDED — `CA-F0-2` ────────────────────────────────
+
+
+def test_value_raw_is_accepted_as_the_raw_source_string() -> None:
+    """The positive case: any non-blank raw string is a legitimate `value_raw`."""
+    assert row(value_raw="12.50200000").value_raw == "12.50200000"
+
+
+def test_a_blank_value_raw_is_refused() -> None:
+    """`CA-F0-2`'s falsifier, literal: `SeriesRow(..., value_raw="")` raises, naming the column."""
+    with pytest.raises(InvalidSeriesRowError, match="value_raw"):
+        row(value_raw="")
+
+
+def test_a_whitespace_only_value_raw_is_refused() -> None:
+    """Blank is missing, the same rule `SPEC-001` §3.2 already applies to the other columns."""
+    with pytest.raises(InvalidSeriesRowError, match="value_raw"):
+        row(value_raw="   ")
 
 
 def test_provenance_observed_and_availability_source_observed_are_different_words() -> None:

@@ -136,6 +136,7 @@ def _observation_from_live_bucket(key: SeriesKey) -> Observation:
         observer_id="vps-1",
         observer_region=UNKNOWN_OBSERVER_REGION,
         is_final=None,
+        value_raw=str(value),
     )
     return Observation(row=row, value=value)
 

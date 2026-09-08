@@ -23,13 +23,18 @@ threads apply — no OTHER symbol from the batch/stream ever reaches a `SeriesRo
 
 ── WHAT `SeriesRow` DOES AND DOES NOT CARRY, AND WHY THAT SHRINKS THIS DECISION ────────────────
 
-`domain/provenance.py`'s `SeriesRow` has NO numeric value column (`infra/postgres_series_sink.py`
-§`SCHEMA_SQL` confirms: `md.series` stores identity + provenance + timing, never a price or a
-rate). Building the mapping below is therefore a decision about WHICH `SeriesKey`(s) exist and
-WHEN they were observed, never about what number to publish — the raw bytes stay exactly where
-`ADR-004`/`force_order_raw_recorder.py` and `infra/premium_index_jsonl_sink.py` already put them,
-untouched by this module. That is what keeps this a `quant-architect` catalog decision instead of
-a numeric-modeling one.
+`domain/provenance.py`'s `SeriesRow` had NO numeric value column when this module was written
+(`infra/postgres_series_sink.py` §`SCHEMA_SQL` confirmed: `md.series` stored identity +
+provenance + timing, never a price or a rate). `ADR-034/D7` (plan `00`) closed that gap with
+`value_raw TEXT NOT NULL` — a straight PASS-THROUGH of the raw string the reading/observation
+already carries for the metric, never a value this module computes or models. Building the
+mapping below is still a decision about WHICH `SeriesKey`(s) exist and WHEN they were observed;
+which RAW FIELD backs `value_raw` for each metric is the same 1:1 correspondence (`mark_price`
+name, `mark_price_raw` field) as every other producer in this module, not a new numeric-modeling
+decision — the raw bytes stay exactly where `ADR-004`/`force_order_raw_recorder.py` and
+`infra/premium_index_jsonl_sink.py` already put them, this module only points `value_raw` at the
+same string. That is what keeps this a `quant-architect` catalog decision instead of a
+numeric-modeling one.
 
 ── THREE METRICS, EACH WITH A NAMED PRECEDENT — NOT FOUR, NOT ZERO ─────────────────────────────
 
@@ -54,10 +59,11 @@ evidence behind it."
 
 `!forceOrder@arr` gets ONE metric, `"liquidation"` (`Nature.EVENT`, `Reduction.POINT` — "one
 reading, stamped at the close of the window" degenerates correctly to one instant when the window
-has zero width): a raw liquidation carries `price`/`orig_qty` (`ForceOrderNaturalKey`), but
-`SeriesRow` has nowhere to put a notional value even if this module computed one, so it does not
-— the row records only that a liquidation for this symbol happened AT `trade_time`, exactly the
-information `md.series` can hold.
+has zero width): a raw liquidation carries `price`/`orig_qty` (`ForceOrderNaturalKey`). Since
+`ADR-034/D7` (plan `00`), `value_raw` holds `observation.key.price` — the natural-key's own raw
+price string, unchanged — never `orig_qty` or a notional this module would have to compute; this
+module still records no size/notional, only that a liquidation for this symbol happened AT
+`trade_time`, at the price the source published.
 
 ── THE OPEN QUESTION THIS MODULE DOES NOT CLOSE, NAMED RATHER THAN HIDDEN ──────────────────────
 
@@ -191,13 +197,20 @@ def _build_row(
     instant_ms: int,
     received_at: int,
     observer_id: str,
+    value_raw: str,
 ) -> SeriesRow:
-    """Build the one `SeriesRow` every builder above shares — `Provenance.OBSERVED`, no value.
+    """Build the one `SeriesRow` every builder above shares — `Provenance.OBSERVED`.
 
     `instant_ms` is the SOURCE's own clock (`reading.source_time`/`observation.key.trade_time`),
     kept as `event_time`/`bucket_end`; `received_at` is THIS collector's clock, kept as
     `available_at`/`ingested_at`/`observed_at` — the two are never collapsed into one instant
     (module docstring's "THE OPEN QUESTION").
+
+    `value_raw` (`ADR-034/D7`, `md.series` column this module's docstring predates) is the raw
+    string the SAME reading/observation already carries for the metric `key` names — never a
+    value this module computes: `mark_price` reads `reading.mark_price_raw`, `funding_estimado`
+    reads `reading.last_funding_rate_raw`, `liquidation` reads `observation.key.price`, each the
+    one field the caller already has for the metric it names.
     """
     return SeriesRow(
         series_key_id=key.series_key_id(),
@@ -214,6 +227,7 @@ def _build_row(
         observer_id=observer_id,
         observer_region=UNKNOWN_OBSERVER_REGION,
         is_final=None,
+        value_raw=value_raw,
     )
 
 
@@ -243,6 +257,7 @@ def build_premium_index_to_rows(
                 instant_ms=reading.source_time,
                 received_at=received_at,
                 observer_id=PREMIUM_INDEX_OBSERVER_ID,
+                value_raw=reading.mark_price_raw,
             ),
             _build_row(
                 _funding_estimado_key(reading.symbol, interval),
@@ -251,6 +266,7 @@ def build_premium_index_to_rows(
                 instant_ms=reading.source_time,
                 received_at=received_at,
                 observer_id=PREMIUM_INDEX_OBSERVER_ID,
+                value_raw=reading.last_funding_rate_raw,
             ),
         )
 
@@ -281,6 +297,7 @@ def build_force_order_to_rows(
                 instant_ms=observation.key.trade_time,
                 received_at=received_at,
                 observer_id=FORCE_ORDER_OBSERVER_ID,
+                value_raw=observation.key.price,
             ),
         )
 

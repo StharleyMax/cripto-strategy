@@ -5,6 +5,10 @@ than `decoded == row`, so a mutant that swaps two fields' values or drops one fr
 fails NAMING the field that diverged, not just "rows differ" (`SPEC-004` §3.2, plan `01` D1.2).
 The other tests exercise the three named failure modes — field missing, field extra, field
 unparsable — each raising the typed English exception `series_row_wire` declares for it.
+
+`CA-F0-1` (`ADR-034/D7`, plan `00`): the round-trip now covers 16 fields, not 15 — `value_raw`
+joined the wire shape, and the falsifier is unchanged in kind: removing it from `decode` (or
+from `FIELD_NAMES`) must turn this file red.
 """
 
 from __future__ import annotations
@@ -50,13 +54,14 @@ def row(**overrides: Any) -> SeriesRow:
         "observer_id": "vps-01",
         "observer_region": UNKNOWN_OBSERVER_REGION,
         "is_final": True,
+        "value_raw": "78249.60000000",
     }
     columns.update(overrides)
     return SeriesRow(**columns)
 
 
 def _assert_rows_equal_field_by_field(expected: SeriesRow, actual: SeriesRow) -> None:
-    """Compare every one of the 15 fields on its own, naming whichever one first diverges."""
+    """Compare every one of the 16 fields on its own, naming whichever one first diverges."""
     for field in dataclasses.fields(SeriesRow):
         expected_value = getattr(expected, field.name)
         actual_value = getattr(actual, field.name)
@@ -83,12 +88,20 @@ def test_round_trip_preserves_every_field(original: SeriesRow) -> None:
     _assert_rows_equal_field_by_field(original, decoded)
 
 
-def test_encode_produces_exactly_the_15_named_string_keys() -> None:
-    """`encode`'s output has exactly `FIELD_NAMES`' 15 keys, and every value is `str`."""
+def test_encode_produces_exactly_the_16_named_string_keys() -> None:
+    """`encode`'s output has exactly `FIELD_NAMES`' 16 keys, and every value is `str`."""
     encoded = encode(row())
     assert set(encoded.keys()) == set(FIELD_NAMES)
-    assert len(encoded) == 15
+    assert len(encoded) == 16
     assert all(isinstance(value, str) for value in encoded.values())
+
+
+def test_value_raw_is_never_the_empty_string_on_the_wire() -> None:
+    """`value_raw` travels as plain text (never the `_ABSENT` sentinel — it has no `None` case)."""
+    encoded = encode(row(value_raw="12.50200000"))
+    assert encoded["value_raw"] == "12.50200000"
+    decoded = decode(encoded)
+    assert decoded.value_raw == "12.50200000"
 
 
 def test_optional_fields_round_trip_as_none() -> None:
@@ -111,8 +124,16 @@ def test_decode_missing_field_names_it() -> None:
         decode(encoded)
 
 
+def test_decode_missing_value_raw_names_it() -> None:
+    """`CA-F0-1`'s falsifier, direct: dropping `value_raw` must turn `decode` red, naming it."""
+    encoded = dict(encode(row()))
+    del encoded["value_raw"]
+    with pytest.raises(MissingWireFieldError, match="value_raw"):
+        decode(encoded)
+
+
 def test_decode_extra_field_names_it() -> None:
-    """A key none of the 15 columns owns raises `UnexpectedWireFieldError` naming it."""
+    """A key none of the 16 columns owns raises `UnexpectedWireFieldError` naming it."""
     encoded = dict(encode(row()))
     encoded["not_a_series_row_column"] = "x"
     with pytest.raises(UnexpectedWireFieldError, match="not_a_series_row_column"):
