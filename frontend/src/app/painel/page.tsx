@@ -63,6 +63,26 @@ export const metadata: Metadata = {
   title: "cripto-strategy — Painel",
 };
 
+/**
+ * `CA-E2E-local` §4 (2026-09-08, achado 4, escalated to `frontend-architect`): without this
+ * export, Next's App Router treats this `async` Server Component as eligible for static
+ * optimization the moment its FIRST render throws before reaching any fetch call — which is
+ * exactly what happens during `npm run build` (`frontend/Dockerfile`), because
+ * `INGEST_HEALTH_API_BASE_URL` only exists at `docker run` time (`docker-compose environment:`),
+ * never at `docker build` time. `resolveCollectorStatusBaseUrl` throws `TransportError` on the
+ * undefined env var SYNCHRONOUSLY, before `fetch({cache: "no-store"})` ever runs, so Next never
+ * observes a dynamic API call during the build's static-analysis pass and bakes the resulting
+ * "missing_base_url" error page into `.next/` with `Cache-Control: s-maxage=31536000` — a page
+ * that then never re-executes, no matter what the running container's environment says
+ * afterwards. `force-dynamic` is the explicit, no-tradeoff fix: it does not depend on which
+ * branch a given render happens to take, unlike relying solely on `fetch`'s own
+ * `cache: "no-store"` (which only disables Next's data cache for calls that are actually
+ * reached, and does nothing for this route's synchronous-throw-before-fetch shape). No
+ * `NEXT_PUBLIC_*` alternative was considered: `ADR-019/D4` already forbids exposing
+ * `INGEST_HEALTH_API_BASE_URL` to the browser bundle.
+ */
+export const dynamic = "force-dynamic";
+
 /** The shape `page.tsx` falls back to when the transport throws — 0 rows, same as a genuinely
  * empty store. `sourceState.kind` (never this fallback's shape) is what the UI reads to tell
  * the two apart (`ADR-028/D4`). */

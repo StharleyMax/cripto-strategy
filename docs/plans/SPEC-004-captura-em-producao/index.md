@@ -1,6 +1,6 @@
 # Plano de execução — `SPEC-004` · Captura em produção
 
-**SPEC:** [`SPEC-004`](../../specs/SPEC-004-captura-em-producao.md) (**`SPEC_DRAFT`** — estado corrente sempre por `harness pipeline state captura-em-producao`; `approve spec` do owner fecha `P1–P10` do cabeçalho)
+**SPEC:** [`SPEC-004`](../../specs/SPEC-004-captura-em-producao.md) (**`SPEC_APPROVED`** — `approve spec` do owner em `2026-09-07T18:23:31Z`, `P1–P10` nos defaults do cabeçalho; estado corrente sempre por `harness pipeline state captura-em-producao`)
 **ADRs:** [`ADR-031`](../../adr/ADR-031-motor-do-registro-em-producao-postgres-por-adaptador-e-a-imagem-do-candidato-4.md) (proposta; co-assinatura `quant-architect` + `infra-architect`) · [`ADR-032`](../../adr/ADR-032-dois-alvos-de-compose-um-arquivo-de-deploy-e-um-overlay-local-explicito.md) (proposta; co-assinatura `infra-architect`)
 **PRD:** [`PRD-004`](../../specs/PRD-004-captura-em-producao.md) · **Feature:** `captura-em-producao` (filha de `plataforma-dados`) · **Rev de ancoragem:** `master@0acf947` · **Data:** 2026-09-07
 **Tracker:** MCP `atlassian` autenticado (leitura); UVs candidatas em `PRD-004 §6` (Epic pai `CST-5` `[INFERRED I-4]`); materialização é ato do `/tech-lead` após `SPEC_APPROVED`. Destino de `T-07.15/16/17` da mãe: `P10` (`M1`).

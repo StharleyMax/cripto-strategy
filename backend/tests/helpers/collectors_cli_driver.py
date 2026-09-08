@@ -1,0 +1,214 @@
+"""Subprocess driver for `T-01.5`'s `D1.8` process test: `collectors_cli.run()`, fakes injected.
+
+`D1.8` needs a REAL process to signal (`SIGTERM`, `SIGKILL`) — the same shape
+`ingest_record_driver.py` already uses for `D2.9`. It calls `collectors_cli.run()` directly
+rather than `main()`/`python -m ... collectors_cli`, so every network port is a fake and the
+"ZERO REDE" rule of `backend/scripts/test.sh` still holds: the Redis side is a REAL, loopback-only
+`fakeredis.TcpFakeServer` (same convention `test_redis_stream_series_sink.py` already uses), and
+the `!forceOrder@arr`/`premiumIndex` sides are fakes that never touch a socket.
+
+`argv[1] == "force-publish-failure"` (added for `T-01.5` QA `NEEDS_FIX`, round 2) is a SECOND
+mode this same driver can run in: the stream key is clobbered with `SET` before `run()` ever
+connects, exactly like `test_collectors_cli_publish_failure.py`'s `clobbered_sink` fixture, so
+every `XADD` this process attempts comes back a genuine `WRONGTYPE` `RedisCommandError`. That
+test calls `_run_premium_index_collector`/`_run_force_order_collector` directly, never
+`run()` — so `run()`'s own `return exit_code[0]` (`collectors_cli.py:627`) had no test proving it
+reaches the REAL OS `returncode` a shell/systemd/supervisor observes. This mode makes that
+reachable through a real subprocess: `test_collectors_cli_run_exit_code_subprocess.py` is the
+caller.
+"""
+
+from __future__ import annotations
+
+import sys
+import threading
+from collections.abc import Iterable
+from pathlib import Path
+
+from fakeredis import TcpFakeServer
+
+from src.modules.sentimento.domain.force_order_collision_accounting import (
+    ForceOrderKeyObservation,
+)
+from src.modules.sentimento.domain.premium_index_batch import PremiumIndexReading
+from src.modules.sentimento.domain.provenance import (
+    UNKNOWN_OBSERVER_REGION,
+    AvailabilitySource,
+    Provenance,
+    SeriesRow,
+)
+from src.modules.sentimento.infra import collectors_cli
+from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
+from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
+from src.modules.sentimento.use_cases.collect_premium_index import (
+    PremiumIndexFetcher,
+    RawPremiumIndexFetch,
+)
+
+_BUCKET_END_MS = 1_787_443_499_999
+_EVENT_TIME_MS = 1_787_443_500_000
+
+# One valid, single-symbol premiumIndex batch (mirrors
+# `test_collectors_cli_publish_failure.py`'s `_VALID_PREMIUM_INDEX_BODY`) — enough for
+# `collect_premium_index_once` to reach `WRITTEN` and call the (clobbered) sink.
+_VALID_PREMIUM_INDEX_BODY = (
+    b'[{"symbol":"BTCUSDT","markPrice":"1","indexPrice":"1","estimatedSettlePrice":"1",'
+    b'"lastFundingRate":"0.0001","interestRate":"0.0001","nextFundingTime":1,"time":1}]'
+)
+
+
+class _BlockingForceOrderSource:
+    """A `MessageSource` fake that blocks until `close()` is called, then ends the read.
+
+    Models a live `!forceOrder@arr` connection sitting idle: nothing to read, until `SIGTERM`
+    forces the socket closed (`run()`'s handler calls `close()` on whatever `source_holder[0]`
+    names), which is exactly what should unblock a real blocking `recv` too.
+    """
+
+    def __init__(self) -> None:
+        """Start open (nothing has closed it yet)."""
+        self._closed = threading.Event()
+
+    def open(self) -> None:
+        """No transport to open — this fake has none."""
+
+    def close(self) -> None:
+        """Signal the blocked reader to give up and end the iteration."""
+        self._closed.set()
+
+    def messages(self) -> _BlockingForceOrderSource:
+        """Return self — this fake IS its own iterator."""
+        return self
+
+    def __iter__(self) -> _BlockingForceOrderSource:
+        """Return self, so `next()` on the result of `messages()` reaches `__next__` below."""
+        return self
+
+    def __next__(self) -> str:
+        """Block in short increments until `close()` runs, then end the iteration."""
+        while not self._closed.wait(0.05):
+            pass
+        raise StopIteration
+
+
+class _EmptyBatchFetcher:
+    """A `PremiumIndexFetcher` fake that always answers one empty, valid batch."""
+
+    def fetch(self) -> RawPremiumIndexFetch:
+        """Return `status=200` and `body=b"[]"` — a valid, symbol-less batch."""
+        return RawPremiumIndexFetch(status=200, headers={}, body=b"[]")
+
+
+class _OneShotPremiumIndexFetcher:
+    """A `PremiumIndexFetcher` fake that answers one scripted, non-empty valid batch.
+
+    Only used in `force-publish-failure` mode: the empty batch `_EmptyBatchFetcher` returns
+    never reaches `WRITTEN`, so it would never call the (clobbered) sink at all.
+    """
+
+    def __init__(self, body: bytes) -> None:
+        """Bind the single response body this fetcher will hand back."""
+        self._body = body
+
+    def fetch(self) -> RawPremiumIndexFetch:
+        """Return `status=200` with the scripted body."""
+        return RawPremiumIndexFetch(status=200, body=self._body, headers={})
+
+
+def _never_maps(
+    _received_at: int, _observation: ForceOrderKeyObservation | object
+) -> Iterable[SeriesRow]:
+    """Return no rows — this scenario never derives a real one, but the port must exist."""
+    return ()
+
+
+def _one_row_premium_index_mapping(
+    _received_at: int, _reading: PremiumIndexReading
+) -> Iterable[SeriesRow]:
+    """Return exactly one valid row — enough for `RedisPremiumIndexSink` to call `sink.accept`.
+
+    Only used in `force-publish-failure` mode, where the sink's stream key is clobbered: this
+    is what makes the (otherwise never-exercised) `XADD` call happen at all.
+    """
+    return (
+        SeriesRow(
+            series_key_id="a" * 64,
+            symbol="BTCUSDT",
+            source="binance_premium_index",
+            bucket_end=_BUCKET_END_MS,
+            event_time=_EVENT_TIME_MS,
+            available_at=_EVENT_TIME_MS + 30_000,
+            availability_source=AvailabilitySource.OBSERVED,
+            ingested_at=_EVENT_TIME_MS + 45_000,
+            observed_at=_EVENT_TIME_MS + 46_000,
+            provenance=Provenance.OBSERVED,
+            src_label_raw="premiumIndex",
+            observer_id="vps-01",
+            observer_region=UNKNOWN_OBSERVER_REGION,
+            is_final=True,
+        ),
+    )
+
+
+def main(argv: list[str]) -> int:
+    """Run the real `collectors_cli` composition with every network-touching port faked.
+
+    `argv[1] == "force-publish-failure"` clobbers the stream key with `SET` BEFORE `run()`
+    connects, so every `XADD` this process attempts comes back a genuine `WRONGTYPE` — the
+    premium-index thread reaches it (its cycle fires once immediately) since it is now fed a
+    real batch and a real row mapping instead of the empty/never-maps pair the clean-shutdown
+    scenario uses.
+    """
+    store_path = Path(argv[0])
+    force_publish_failure = len(argv) > 1 and argv[1] == "force-publish-failure"
+    server = TcpFakeServer(("127.0.0.1", 0), server_type="redis")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.socket.getsockname()
+
+    stream_name = "md.series.write"
+    config = collectors_cli.BootConfig(
+        redis_host=host,
+        redis_port=port,
+        redis_stream=stream_name,
+        redis_stream_maxlen=100_000,
+        ingest_record_backend="sqlite",
+        ingest_health_store_path=store_path,
+        # Large on purpose: the premium-index thread fires once at start, then must NOT fire
+        # again before this driver's caller sends its signal.
+        premium_index_cycle_interval_s=999_999.0,
+    )
+    if force_publish_failure:
+        # Same real-server technique `test_collectors_cli_publish_failure.py`'s `clobbered_sink`
+        # fixture uses: `SET` the stream key to a plain string BEFORE anything publishes, so the
+        # (real, loopback-only) fake server answers every `XADD` against it with `WRONGTYPE`.
+        setup = connect_resp2(open_tcp_socket(host, port))
+        setup.command("SET", stream_name, "not-a-stream")
+    connection = connect_resp2(open_tcp_socket(host, port))
+    store = SqliteIngestRecordStore(store_path)
+    store.initialise()
+
+    def _fetcher_factory() -> PremiumIndexFetcher:
+        if force_publish_failure:
+            return _OneShotPremiumIndexFetcher(_VALID_PREMIUM_INDEX_BODY)
+        return _EmptyBatchFetcher()
+
+    premium_index_to_rows = _one_row_premium_index_mapping if force_publish_failure else _never_maps
+
+    try:
+        return collectors_cli.run(
+            config=config,
+            connection=connection,
+            store=store,
+            force_order_source_factory=_BlockingForceOrderSource,
+            premium_index_fetcher_factory=_fetcher_factory,
+            premium_index_to_rows=premium_index_to_rows,
+            force_order_to_rows=_never_maps,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -28,8 +28,13 @@ from decimal import Decimal
 import pytest
 from fakeredis import TcpFakeServer
 
-from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
+from src.modules.sentimento.infra.redis_resp_client import (
+    SocketLike,
+    connect_resp2,
+    open_tcp_socket,
+)
 from src.modules.sentimento.infra.redis_stream_bus import (
+    DEFAULT_STREAM_MAXLEN,
     RedisStreamConsumerGroup,
     RedisStreamPublisher,
     StreamMessage,
@@ -198,3 +203,65 @@ def test_publish_returns_a_distinct_id_per_call(redis_address: tuple[str, int]) 
     second_id = publisher.publish({"value": "2"})
     assert first_id != second_id
     assert first_id < second_id
+
+
+class _RecordingSocket:
+    """Forwards every call to a real socket while keeping a copy of every `sendall` payload.
+
+    This is how `D1.3`'s falsifier — "`MAXLEN` absent ⇒ `RN-5`" — gets to inspect the literal
+    bytes `RedisStreamPublisher.publish` puts on the wire, instead of only observing Redis's
+    resulting behaviour (which `~` approximate trimming makes too fuzzy to assert on directly).
+    """
+
+    def __init__(self, inner: SocketLike) -> None:
+        self._inner = inner
+        self.sent: list[bytes] = []
+
+    def sendall(self, data: bytes) -> None:
+        self.sent.append(data)
+        self._inner.sendall(data)
+
+    def recv(self, bufsize: int) -> bytes:
+        return self._inner.recv(bufsize)
+
+    def settimeout(self, value: float | None) -> None:
+        self._inner.settimeout(value)
+
+    def close(self) -> None:
+        self._inner.close()
+
+
+def test_publish_sends_maxlen_with_the_configured_cap(redis_address: tuple[str, int]) -> None:
+    """`XADD` carries `MAXLEN ~ <max_len>` — the literal argument `D1.3` requires present.
+
+    Constructing with `max_len=42` and reading back the raw bytes `publish` sent is what makes
+    this test MORDE a regression that drops the clause entirely, not merely one that gets the
+    number wrong: both the marker and the configured value must appear together.
+    """
+    host, port = redis_address
+    recording = _RecordingSocket(open_tcp_socket(host, port))
+    connection = connect_resp2(recording)
+    recording.sent.clear()  # drop the `HELLO 2` handshake `connect_resp2` already sent
+    publisher = RedisStreamPublisher(connection, STREAM, max_len=42)
+
+    publisher.publish({"value": "1"})
+
+    assert len(recording.sent) == 1
+    sent = recording.sent[0]
+    assert b"MAXLEN" in sent
+    assert b"~" in sent
+    assert b"42" in sent
+
+
+def test_publish_defaults_max_len_to_the_spec_constant(redis_address: tuple[str, int]) -> None:
+    """Omitting `max_len` still caps the stream — at `DEFAULT_STREAM_MAXLEN` (`100_000`, `P5`)."""
+    host, port = redis_address
+    recording = _RecordingSocket(open_tcp_socket(host, port))
+    connection = connect_resp2(recording)
+    recording.sent.clear()
+    publisher = RedisStreamPublisher(connection, STREAM)
+
+    publisher.publish({"value": "1"})
+
+    assert len(recording.sent) == 1
+    assert str(DEFAULT_STREAM_MAXLEN).encode("ascii") in recording.sent[0]

@@ -44,7 +44,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test boundaries natureza build verify api e2e
+.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test test-fast boundaries natureza build verify api e2e compose-deploy compose-local
 
 # Argumentos repassados ao pytest: `make test ARGS="-k nome --no-cov"`.
 ARGS ?=
@@ -85,6 +85,11 @@ help:
 	  '  make e2e             API de teste sobre store efemero (>=1 run) + next build/start +' \
 	  '                       playwright test, derruba tudo ao final (T-01.8). FORA de verify' \
 	  '                       (M5). E2E_API_UP=0 deixa a API deliberadamente NO CHAO (D1.11)' \
+	  '  make compose-deploy  docker compose do alvo de deploy (7 servicos, so' \
+	  '                       deploy/compose.yml). So concatena a flag; aceita ARGS' \
+	  '                       (T-03.5, ADR-032/D1). FORA de verify (nao implanta nada, R-E)' \
+	  '  make compose-local   idem, alvo local (+ deploy/compose.local.yml, sem caddy).' \
+	  '                       Ex.: make compose-local ARGS="config --services"' \
 	  '' \
 	  'O make sai com 2 em qualquer receita que falhe: ele NAO propaga o rc=3 dos scripts.'
 
@@ -186,6 +191,27 @@ lint-frontend:
 # la dentro, INALTERADAS pela migracao para Poetry — sao o ativo mais caro desta trilha (`D1.8`).
 test:
 	bash backend/scripts/test.sh $(ARGS)
+
+# ── test-fast ──────────────────────────────────────────────────────────────────────────
+# O LACO DE DESENVOLVIMENTO, nao o portao. `[MEDIDO 2026-09-07 sobre 543 transcripts JSONL,
+# n=34.763 chamadas de ferramenta]`: a suite INTEIRA foi rodada 1.138 vezes a 37,5s = 11,86h,
+# que e 22% de todo o wall-clock de ferramenta (53,33h); as 641 execucoes ALVO custaram 6,2s
+# cada. O caminho barato ja existia (`make test ARGS="-k nome --no-cov"`, cabecalho deste
+# arquivo) — o que faltava era ele ser tao facil de digitar quanto o caro. E o principio de R7
+# em `docs/protocolo-de-despacho.md`: regra que se paga sozinha nao depende de ninguem lembrar.
+#
+# ⛔ NAO E VERIFICACAO E NAO SUBSTITUI `make verify`: aqui NAO roda cobertura, logo NAO roda o
+# piso por camada (`check-coverage-layers.sh`) — as duas recusas rc=3 que sao "o ativo mais caro
+# desta trilha" ficam de fora por construcao. Verde aqui NAO e verde de portao.
+#
+# A recusa sem filtro e deliberada e e rc=3 pela mesma semantica dos scripts do backend: sem
+# `K=`, isto seria a suite inteira sem cobertura — o comando CARO vestido com o nome do barato,
+# e ainda por cima sem o piso. "Nao mediu" tem de ser distinguivel de "mediu e passou".
+#
+# `$(if $(K),...)`: sem `K`, NADA e passado e o script recusa com rc=3. Passar `-k ""` seria
+# pior que nao passar nada — no pytest, uma expressao `-k` vazia casa com a suite INTEIRA.
+test-fast:
+	bash backend/scripts/test-fast.sh $(if $(K),-k "$(K)")
 
 # ── boundaries ─────────────────────────────────────────────────────────────────────────
 # PREENCHIDO POR `T-01.5` (`ADR-011/D3a`, plano 01 item 1.9'). `T-01.6` declarou o alvo e o
@@ -292,3 +318,26 @@ e2e:
 	  frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts; RC=$$?; \
 	bash scripts/e2e-env.sh down "$$STATE_DIR"; \
 	exit $$RC
+
+# ── compose-deploy / compose-local ────────────────────────────────────────────────────
+# `T-03.5` (`ADR-032/D1`, `SPEC-004 §3.6`). The two `make` targets that `ADR-032/D1` says
+# exist so "a forma canonica fica escrita num lugar" — they do ONLY that, concatenating
+# `--env-file .env -f …` from the repo root and forwarding `$(ARGS)` verbatim. The DoD
+# commands (`D3.3`–`D3.16`) run `docker compose` directly, never through `make` — these
+# targets are convenience, not the instrument the gate measures.
+#
+# NEITHER enters `verify`: `docker compose … up` would be a real deployment attempt, and
+# `RN-9`/`R-E` forbid that unconditionally in this repository — no automated portal ever
+# brings a service up. `ARGS` is the same repassing variable `test` already uses; used
+# alone per-target, sharing the name causes no collision.
+#
+# Deploy = `deploy/compose.yml` alone (7 services, no `caddy` profile — `NG-6`).
+compose-deploy:
+	docker compose --env-file .env -f deploy/compose.yml $(ARGS)
+
+# Local = deploy base + the overlay (`deploy/compose.local.yml`), IN THIS ORDER — the
+# overlay alone is not a valid target (`ADR-032/D1`: "sempre explícitos", never merged
+# implicitly). Drops `caddy` (`profiles: ["deploy-only"]`) and publishes `api`/`web` on
+# loopback for direct local access.
+compose-local:
+	docker compose --env-file .env -f deploy/compose.yml -f deploy/compose.local.yml $(ARGS)

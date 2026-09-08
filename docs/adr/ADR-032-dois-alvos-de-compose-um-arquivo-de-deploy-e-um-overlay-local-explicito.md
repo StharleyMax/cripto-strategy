@@ -1,6 +1,6 @@
 # ADR-032 — Dois alvos de compose: `deploy/compose.yml` (deploy, completo) + `deploy/compose.local.yml` (overlay explícito, sem `caddy`); Dockerfiles como entregável; um `.env` para os dois
 
-**Data:** 2026-09-07 · **Status:** **proposta** pelo `/architect` — nasce com a `SPEC-004` (`SPEC_DRAFT`); vale quando o owner der `approve spec`. **Co-assinatura recomendada:** `infra-architect` (juiz de `infra`; `[Q6]`/`[Q8]` do PRD eram dele e esta ADR adota defaults `[INFERRED]` que ele pode trocar no gate).
+**Data:** 2026-09-07 · **Status:** **aceita** — o owner deu `approve spec` em `captura-em-producao` (`2026-09-07T18:23:31Z`, `harness pipeline show captura-em-producao`) e a co-assinatura do `infra-architect` está satisfeita por `T-03.6` ([`gates/F3-infra-architect.md`](../context/captura-em-producao/gates/F3-infra-architect.md)) — o juiz de `infra` confirmou `D1`–`D4` como implementados por `T-03.1`–`T-03.5` sem desvio e decidiu `D5`/`[Q6]`/`P8` (liveness de `writer`/`collector`: mantém o mínimo já declarado, não implementa `healthcheck` por comando — motivo em `gates/F3-infra-architect.md` §3). **Flip formal de `Status` executado por `T-03.6`** (fase `03`, `docs`).
 **Feature:** `captura-em-producao` · **Fecha:** `PRD-004` `[Q7]`/`NG-11` (forma dos dois alvos), `[Q8]` (`.env`), `[Q6]` (liveness — default mínimo), `[GAP G1]` (Dockerfiles), `[GAP G9]` (`.env.example` sem `POSTGRES_*`, `gates/PRD-004-architect.md` C2), `M4` (teto da fila, default) · **Herda sem reabrir:** `ADR-027/D1-D2`, `ADR-029/D1/D5`, `ADR-009/D2` · **Rev:** `master@0acf947`.
 **Requisito não negociável:** `[PREMISSA-OWNER: 2026-09-07]` *"tem q ter os composer para build em deploy e local"*.
 
@@ -45,6 +45,14 @@ Restrições herdadas: `deploy/compose.yml` é o alvo de deploy e deve ser **est
 ### D5 · Liveness de `writer`/`collector` (`[Q6]`) — o mínimo que já mede, sem `healthcheck` inventado
 
 `restart: unless-stopped` + **fail-fast no boot** (`PRD-004 RN-4`, `ADR-029/D3`) + `depends_on` com `condition: service_healthy` para `postgres` (já tem `healthcheck`) e `redis` (`D4`). O instrumento de vida é o que **já existe**: `/collector-status` marca a série `PARADO` após `stale_after_s` (`ADR-030/D1`). Um `healthcheck` por comando para processos sem HTTP fica **declarado e não implementado** — `infra-architect` decide no gate se o quer, e o custo é 1 bloco por serviço.
+
+**Decisão final (`infra-architect`, `T-03.6`, [`gates/F3-infra-architect.md`](../context/captura-em-producao/gates/F3-infra-architect.md) §3): NÃO implementar.** O default acima fica como está — `deploy/compose.yml` não ganha `healthcheck:` em `writer`/`collector`. Motivo, resumido (a versão completa está no gate):
+
+1. Nenhum serviço tem `depends_on: … condition: service_healthy` sobre `writer`/`collector` — o único efeito observável de adicionar o bloco seria cosmético em `docker ps`/`docker inspect`, porque este é `docker compose` puro (v2.19.1), não Swarm/Kubernetes: um container `unhealthy` não é reiniciado nem removido do tráfego sozinho.
+2. O único comando executável sem tocar código (`pgrep -f <module>`, já que os dois processos não falam HTTP) prova só que o processo-mestre não morreu — exatamente o que `restart: unless-stopped` mais boot fail-fast já tornam visível via o estado do container (`Restarting`/`Exited`). Não prova que a thread de trabalho não travou (Redis bloqueado, `XREADGROUP` pendurado) — um `healthcheck` que reporta `healthy` nesse cenário é o mesmo "sinal indistinguível" que este `CLAUDE.md` nomeia para `rc=0` ambíguo: falsa confiança pior do que a ausência do sinal.
+3. Um `healthcheck` que de fato medisse atraso (consultar `/collector-status`, o único lugar que já calcula `stale_after_s`) exigiria `curl` na imagem `python:3.13-slim` (`backend/Dockerfile`, fora do escopo declarado desta task) e uma atribuição por série que um container sozinho não tem (a `verdict` agregada mistura sinais de `writer` e `collector`) — custo novo sem consumidor (mesmo argumento de "construção especulativa" que `ADR-027` já recusa em `P9`/`[Q10]`, `gates/F2-series-ddl.md` §7).
+
+**Gatilho de reabertura, nomeado:** se `writer`/`collector` ganharem um heartbeat de processo (arquivo ou chave Redis tocada a cada ciclo, como instrumento novo de uma task futura), o `healthcheck` de compose passa a ter algo real para checar — revisitar `D5` nesse momento, não antes.
 
 ## Alternativas recusadas — com o custo
 
