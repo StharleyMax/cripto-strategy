@@ -47,6 +47,18 @@ _DOGEUSDT_FRAME = (
     '"p":"0.40","ap":"0.40","X":"FILLED","l":"1000","z":"1000","T":1788869519500}}'
 )
 
+# Same `BTCUSDT` liquidation as `_BTCUSDT_FRAME`, wrapped in the combined-stream envelope
+# `/stream?streams=btcusdt@forceOrder/...` sends (`{"stream": ..., "data": {...}}`) — the shape
+# `collectors_cli._default_force_order_source` now reads LIVE, per
+# `docs/context/captura-em-producao/gates/forceorder-fix-quant-architect.md`. This is the
+# regression that pins `extract_force_order_natural_key`'s envelope unwrap end to end, not just
+# at the unit level.
+_BTCUSDT_COMBINED_ENVELOPE_FRAME = (
+    '{"stream":"btcusdt@forceOrder","data":{"e":"forceOrder","E":0,"o":{"s":"BTCUSDT",'
+    '"S":"SELL","o":"LIMIT","f":"IOC","q":"0.010","p":"78000.00","ap":"78006.30","X":"FILLED",'
+    '"l":"0.010","z":"0.010","T":1788869519500}}}'
+)
+
 # Real `premiumIndex` batch bodies (`[MEDIDO 2026-09-08]`, quoted in
 # `test_collector_series_mapping.py`'s module docstring) — one in-universe symbol, one not.
 _BTCUSDT_BATCH_BODY = (
@@ -155,6 +167,25 @@ def test_a_liquidation_for_an_in_universe_symbol_really_publishes_via_the_real_m
     )
 
     assert exit_code == [0], "the real mapping must not raise for an in-universe symbol"
+    assert not failure_event.is_set()
+    assert recorded[0].verdict == "ACCEPTED"
+    assert _read_published_symbols(redis_address) == ("BTCUSDT",)
+
+
+def test_a_liquidation_in_the_combined_stream_envelope_shape_also_publishes(
+    redis_address: tuple[str, int],
+) -> None:
+    """The SAME `BTCUSDT` liquidation, wrapped in `{"stream": ..., "data": {...}}`, still keys.
+
+    Pins the fix: the LIVE collector reads a per-symbol combined stream now (never
+    `!forceOrder@arr`, which delivered zero events in production — see the gate doc cited next
+    to `_BTCUSDT_COMBINED_ENVELOPE_FRAME`), and that endpoint wraps every event in this envelope.
+    """
+    exit_code, failure_event, recorded = _run_force_order_session_to_completion(
+        redis_address, frame=_BTCUSDT_COMBINED_ENVELOPE_FRAME
+    )
+
+    assert exit_code == [0], "the combined-stream envelope must not raise"
     assert not failure_event.is_set()
     assert recorded[0].verdict == "ACCEPTED"
     assert _read_published_symbols(redis_address) == ("BTCUSDT",)
