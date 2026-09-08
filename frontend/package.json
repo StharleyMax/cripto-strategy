@@ -2,6 +2,7 @@
   "name": "cripto-strategy-frontend",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "description": "Browser side of cripto-strategy. Carries the enforcement surface (ADR-009/D3), the project ESLint (ADR-011/D4), and, since T-05.11 (ADR-018), the real Next.js scaffold under `src/app/`.",
   "scripts": {
     "lint": "eslint src",
@@ -11,7 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --strict",
     "spike:axis": "node src/charts/axis-spike.ts",
     "test:charts": "node --test 'src/charts/*.test.ts'",
-    "test:app": "node --conditions=react-server --test 'src/app/*.test.ts'",
+    "test:app": "node --conditions=react-server --test 'src/app/**/*.test.ts'",
     "test:s1": "node --conditions=react-server --test 'src/features/s1-console/*.test.ts'",
     "test:s3": "node --conditions=react-server --test 'src/features/s3-inspector/*.test.ts'",
     "test:e2e": "playwright test"

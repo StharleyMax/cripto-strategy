@@ -1,0 +1,89 @@
+/**
+ * `charts/index.ts` — the ONE sanctioned crossing point from `web` into `charts`
+ * (`ADR-034/D8`, plan `02` item `2.1`). Before this file, `eslint.config.mjs` forbade EVERY
+ * `web -> charts` import (`ADR-003/D5.12`) — correctly, because nothing under `src/app/`
+ * mounted a chart yet (`T-05.2`'s own handoff: "no actual chart rendering"). `T-02.4` is that
+ * first mount, and `ADR-034/D8` carves the exception NARROWLY: one file, re-exporting exactly
+ * the five surfaces a page needs to assemble the S2-mínima screen, nothing wider.
+ *
+ * SO REEXPORTAÇÃO — zero função nova de geometria (plan `02` item `2.1`, literal). Every name
+ * below is defined and already tested in its own sibling module; this file adds no behavior,
+ * only a single, narrow doorway to it. `eslint.config.mjs`'s new block (`files:
+ * ["src/app/symbol/**"]`) is what actually enforces "only this file, never a deep
+ * `charts/s2-*` import" — `eslint-boundary.test.ts` proves both halves (morde on the deep
+ * import, cala on this one) in the same run.
+ *
+ * THE FIVE CATEGORIES `ADR-034/D8` NAMES, one `export *`/named block per category:
+ *
+ *   1. execução headless S2       — `s2-headless-run.ts` (`runHeadlessChart` + its types).
+ *      Not a browser-mount API — a jsdom-backed `lightweight-charts` runner. Its production
+ *      consumer is a TEST under `src/app/symbol/` (`CA-F2-5`, axis fidelity at full 4-day/
+ *      1-minute density) that lives OUTSIDE `src/charts/` and therefore has to cross this
+ *      same boundary, same as `page.tsx` does for the rest.
+ *   2. composição de painéis       — `s2-panels.ts` (`buildS2Panels` and the panel shapes/
+ *      constants it is built from: `SYMBOL`, `DAYS`, the range/timeframe constants).
+ *   3. adaptador lightweight       — `s2-lightweight-adapter.ts`'s LOSSLESS mappings only
+ *      (`candlestickSeriesLossless`/`lineSeriesLossless`). `naiveDropGapsLine` is
+ *      DELIBERATELY NOT re-exported: that module's own docstring names it "the WRONG mapping
+ *      ... dead code from production's point of view", kept only as `charts`' own internal
+ *      negative control (`s2-axis-integration.test.ts`) — sanctioning it here would hand a
+ *      `web` caller the one function whose entire purpose is to demonstrate a bug.
+ *   4. tokens de cor               — `color-tokens.ts` (`colorTokens`/`candlestickSeriesColors`
+ *      and the guard `assertNoForbiddenColorRoles`/`FORBIDDEN_COLOR_ROLE_SUBSTRINGS`).
+ *   5. tipos de política de ausência — `s2-absence-policy.ts` (`resolveStockReading`/
+ *      `resolveFlowReading` and their formatters) — `D5.2`/`D5.3`'s STOCK-held/FLOW-absent
+ *      rules, exercised by `T-02.4` on real (or really-absent) OI/CVD data for the first time.
+ */
+
+// ── 1. execução headless S2 ─────────────────────────────────────────────────────────────────
+export { runHeadlessChart } from "./s2-headless-run.ts";
+export type {
+  HeadlessSeriesSpec,
+  HeadlessSeriesResult,
+  HeadlessRunHandle,
+} from "./s2-headless-run.ts";
+
+// ── 2. composição de painéis ─────────────────────────────────────────────────────────────────
+export {
+  SYMBOL,
+  DAYS,
+  RANGE_START_MS,
+  RANGE_END_MS_EXCLUSIVE,
+  ONE_MINUTE_MS,
+  FIVE_MINUTES_MS,
+  S2_PRICE_USE,
+  buildPricePanel,
+  buildOiPanel,
+  buildCvdPanel,
+  buildS2Panels,
+} from "./s2-panels.ts";
+export type { OiPanel, CvdPanel, PricePanel, S2Panels, S2RawInputs } from "./s2-panels.ts";
+
+// ── 3. adaptador lightweight (LOSSLESS mappings only — see module docstring above) ───────────
+export { candlestickSeriesLossless, lineSeriesLossless } from "./s2-lightweight-adapter.ts";
+export type {
+  UnixSeconds,
+  CandlestickItem,
+  LineItem,
+  WhitespaceItem,
+} from "./s2-lightweight-adapter.ts";
+
+// ── 4. tokens de cor ─────────────────────────────────────────────────────────────────────────
+export {
+  colorTokens,
+  candlestickSeriesColors,
+  assertNoForbiddenColorRoles,
+  FORBIDDEN_COLOR_ROLE_SUBSTRINGS,
+} from "./color-tokens.ts";
+export type { ColorMode, ColorRole, ColorTokens } from "./color-tokens.ts";
+
+// ── 5. tipos de política de ausência ─────────────────────────────────────────────────────────
+export {
+  resolveStockReading,
+  resolveFlowReading,
+  closeTimeMs,
+  formatCloseStamp,
+  formatHeldStockLabel,
+  formatFlowValue,
+} from "./s2-absence-policy.ts";
+export type { SeriesNature, StockReading, FlowReading } from "./s2-absence-policy.ts";
