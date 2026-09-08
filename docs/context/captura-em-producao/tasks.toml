@@ -44,7 +44,7 @@ plan   = "docs/plans/SPEC-004-captura-em-producao"
 id = "T-01.1"
 title = "[sentimento][docs] 01 · Gate Q3 do quant-architect — definicao de run (stream e ciclo), literais source/endpoint (Q11), window/src_sha256/weight_used/clock_skew_ms/observer_*, cadencia Q2 e gravacao crua P9, em gates/Q3-run-definition.md"
 components = ["sentimento", "docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T03:59:05Z @ b616c1a72fa08464fcc43e57150bcc84099975f4
 phase = "01"
 depends_on = []
 refs = [
@@ -61,7 +61,7 @@ tracker = { provider = "jira", id = "CST-143", url = "https://conversationhub.at
 id = "T-01.2"
 title = "[sentimento] 01 · series_row_wire.py — encode/decode dos 15 campos de SeriesRow, dono unico do wire, excecao tipada em ingles, round-trip 4 Provenance x 15 campos"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T03:59:05Z @ b616c1a72fa08464fcc43e57150bcc84099975f4
 phase = "01"
 depends_on = []
 refs = [
@@ -79,7 +79,7 @@ tracker = { provider = "jira", id = "CST-144", url = "https://conversationhub.at
 id = "T-01.3"
 title = "[sentimento] 01 · RedisStreamPublisher.publish ganha MAXLEN ~ REDIS_STREAM_MAXLEN (default 100000) — continua o unico XADD do repositorio"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T03:59:05Z @ b616c1a72fa08464fcc43e57150bcc84099975f4
 phase = "01"
 depends_on = []
 refs = [
@@ -96,7 +96,7 @@ tracker = { provider = "jira", id = "CST-145", url = "https://conversationhub.at
 id = "T-01.4"
 title = "[sentimento] 01 · Porta de publicacao dos dois coletores — adaptador Sink em infra que faz encode(row) -> publish para premiumIndex (PremiumIndexSink) e forceOrder, sem mudar assinaturas"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T03:59:05Z @ b616c1a72fa08464fcc43e57150bcc84099975f4
 phase = "01"
 depends_on = ["T-01.2", "T-01.3"]
 refs = [
@@ -113,7 +113,7 @@ tracker = { provider = "jira", id = "CST-146", url = "https://conversationhub.at
 id = "T-01.5"
 title = "[sentimento] 01 · collectors_cli — 1 processo, 2 threads (forceOrder via reconnect_and_key; premiumIndex via collect_premium_index_once), boot fail-fast nomeando a variavel, SIGTERM rc=0, XADD falho encerra a sessao com REJECTED e sai rc!=0"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T03:59:05Z @ b616c1a72fa08464fcc43e57150bcc84099975f4
 phase = "01"
 depends_on = ["T-01.4"]
 refs = [
@@ -131,7 +131,7 @@ tracker = { provider = "jira", id = "CST-147", url = "https://conversationhub.at
 id = "T-01.6"
 title = "[sentimento] 01 · Registro por sessao/ciclo — mapeamento para os 16 campos de IngestRun conforme Q3, record_run pelo store configurado, n_written=0, verdict em KNOWN_VERDICTS, eventos collector_session_closed/collector_cycle_completed"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T03:59:05Z @ b616c1a72fa08464fcc43e57150bcc84099975f4
 phase = "01"
 depends_on = ["T-01.1", "T-01.5"]
 refs = [
@@ -149,7 +149,7 @@ tracker = { provider = "jira", id = "CST-148", url = "https://conversationhub.at
 id = "T-01.7"
 title = "[sentimento] 01 · Teste de integracao com listener real — publicar 10, kill -9 do produtor apos a 5a, subir consumidor, read_pending -> 5 na PEL, 0 perdidas (falsificador F3 de ADR-027)"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T03:59:05Z @ b616c1a72fa08464fcc43e57150bcc84099975f4
 phase = "01"
 depends_on = ["T-01.4", "T-01.5"]
 refs = [
@@ -167,7 +167,7 @@ tracker = { provider = "jira", id = "CST-149", url = "https://conversationhub.at
 id = "T-01.8"
 title = "[sentimento][docs] 01 · Medicao de vazao por 24 h — XLEN e count(*) em t e t+24h, medicoes/CA-F1-5-vazao-24h.md com comando, n e rotulo; insumo para P5/M4 e ADR-032/F6"
 components = ["sentimento", "docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T03:59:05Z @ b616c1a72fa08464fcc43e57150bcc84099975f4
 phase = "01"
 depends_on = ["T-01.5", "T-01.6"]
 refs = [
@@ -184,7 +184,7 @@ tracker = { provider = "jira", id = "CST-150", url = "https://conversationhub.at
 id = "T-01.9"
 title = "[docs] 01 · Residuo textual pos-approve — SPEC-004 e index.md do plano apontam o ledger (SPEC_APPROVED 2026-09-07), ADR-031 status aceita com co-assinatura do quant-architect, linha append-only em docs/INDEX.md"
 components = ["docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T03:59:05Z @ b616c1a72fa08464fcc43e57150bcc84099975f4
 phase = "01"
 depends_on = ["T-01.1"]
 refs = [
@@ -208,7 +208,7 @@ tracker = { provider = "jira", id = "CST-151", url = "https://conversationhub.at
 id = "T-02.1"
 title = "[sentimento][docs] 02 · Gate DDL da serie + Q10 (quant-architect) — gates/F2-series-ddl.md: tabela, hypertable por bucket_end, chave de unicidade, provenance como coluna, compaction_epoch/content_hash; ingest_gap e mensagem envenenada"
 components = ["sentimento", "docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T08:14:58Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "02"
 depends_on = []
 refs = [
@@ -226,7 +226,7 @@ tracker = { provider = "jira", id = "CST-152", url = "https://conversationhub.at
 id = "T-02.2"
 title = "[sentimento] 02 · PostgresSeriesSink (porta SeriesSink) com commit dentro de write_series_row e upsert-noop para reentrega identica, e PostgresObservedLookup (porta ObservedLookup) — conexao injetada, psycopg so em infra"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T08:14:58Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "02"
 depends_on = ["T-02.1"]
 refs = [
@@ -243,7 +243,7 @@ tracker = { provider = "jira", id = "CST-153", url = "https://conversationhub.at
 id = "T-02.3"
 title = "[sentimento] 02 · PostgresIngestRecordStore — superficie de SqliteIngestRecordStore, initialise() idempotente (md.ingest_run 16 col., md.ingest_gap 8), RAW sem coercao; teste de equivalencia: fingerprint() igual nos dois motores"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T08:14:58Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "02"
 depends_on = []
 refs = [
@@ -261,7 +261,7 @@ tracker = { provider = "jira", id = "CST-154", url = "https://conversationhub.at
 id = "T-02.4"
 title = "[sentimento] 02 · Composicao unica do store por INGEST_RECORD_BACKEND (sqlite|postgres, default sqlite; POSTGRES_HOST/PORT) — usada por collectors_cli e single_writer_cli; invalido ou inalcancavel recusa nomeando a variavel"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T08:14:58Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "02"
 depends_on = ["T-02.3", "T-01.5"]
 refs = [
@@ -279,7 +279,7 @@ tracker = { provider = "jira", id = "CST-155", url = "https://conversationhub.at
 id = "T-02.5"
 title = "[sentimento] 02 · single_writer_cli — unico call site de run_single_writer: consumer group + RedisSeriesWriteQueue(decode) + PostgresSeriesSink/Lookup; WRITER_BATCH_SIZE, WRITER_POLL_INTERVAL_MS; boot fail-fast; eventos writer_*; B7 na PEL"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T08:14:58Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "02"
 depends_on = ["T-02.2", "T-02.4", "T-01.2"]
 refs = [
@@ -297,7 +297,7 @@ tracker = { provider = "jira", id = "CST-156", url = "https://conversationhub.at
 id = "T-02.6"
 title = "[infra] 02 · src.main escolhe o store por INGEST_RECORD_BACKEND via a composicao de T-02.4 — create_app recusa valor invalido/Postgres inalcancavel nomeando a variavel; /ready mantem a forma de SPEC-003 s3.4 com path = DSN sem senha"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T08:14:58Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "02"
 depends_on = ["T-02.4"]
 refs = [
@@ -314,7 +314,7 @@ tracker = { provider = "jira", id = "CST-157", url = "https://conversationhub.at
 id = "T-02.7"
 title = "[sentimento] 02 · Teste de processo real do escritor — subir single_writer_cli, publicar N=100 pela porta de F1, kill -9 a meio, reiniciar: count 100 e 0 duplicatas; OBSERVED depois MODELED na mesma chave -> OBSERVED permanece"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T08:14:58Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "02"
 depends_on = ["T-02.5", "T-01.4"]
 refs = [
@@ -332,7 +332,7 @@ tracker = { provider = "jira", id = "CST-158", url = "https://conversationhub.at
 id = "T-02.8"
 title = "[sentimento][infra] 02 · Prova de registro unico — collectors_cli e API ambos em postgres sobre o mesmo container efemero: apos 1 sessao + 1 ciclo, GET {API_PREFIX}/collector-status n_rows >= 2 (ADR-031/F2)"
 components = ["sentimento", "infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T08:14:58Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "02"
 depends_on = ["T-02.4", "T-02.6", "T-01.6"]
 refs = [
@@ -355,7 +355,7 @@ tracker = { provider = "jira", id = "CST-159", url = "https://conversationhub.at
 id = "T-03.1"
 title = "[infra] 03 · backend/Dockerfile (python:3.13-slim, uma imagem, sem ENTRYPOINT logico) + backend/.dockerignore (.venv, tests/, data/, .env*, __pycache__) — imagem <= 400 MB e sem .env"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T10:44:59Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "03"
 depends_on = []
 refs = [
@@ -372,7 +372,7 @@ tracker = { provider = "jira", id = "CST-160", url = "https://conversationhub.at
 id = "T-03.2"
 title = "[infra] 03 · frontend/Dockerfile (node:22-alpine, npm ci && npm run build, command npm start) + frontend/.dockerignore (node_modules, .next, .env*) — constroi de arvore limpa (PR #166 s1); nenhuma linha em frontend/src"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T10:44:59Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "03"
 depends_on = []
 refs = [
@@ -389,7 +389,7 @@ tracker = { provider = "jira", id = "CST-161", url = "https://conversationhub.at
 id = "T-03.3"
 title = "[infra] 03 · .env.example — os 15 nomes de SPEC-004 s3.6 (POSTGRES_* incl. G9, REDIS_*, INGEST_RECORD_BACKEND, WRITER_*, PREMIUM_INDEX_CYCLE_INTERVAL_S), comentario por variavel; frontend/.env.local so para next dev sem docker"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T10:44:59Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "03"
 depends_on = ["T-01.1"]
 refs = [
@@ -407,7 +407,7 @@ tracker = { provider = "jira", id = "CST-162", url = "https://conversationhub.at
 id = "T-03.4"
 title = "[infra] 03 · deploy/compose.yml para 7 servicos — postgres timescale/timescaledb:2.17.2-pg15; redis:7-alpine com appendonly/maxmemory/noeviction; writer e collector (mesma imagem, service_healthy, logging); sem ports em api"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T10:44:59Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "03"
 depends_on = ["T-03.1", "T-03.2", "T-03.3"]
 refs = [
@@ -424,7 +424,7 @@ tracker = { provider = "jira", id = "CST-163", url = "https://conversationhub.at
 id = "T-03.5"
 title = "[infra] 03 · deploy/compose.local.yml (overlay: caddy profiles deploy-only, api.ports e web.ports em 127.0.0.1, INGEST_HEALTH_API_BASE_URL no web para D3.16) e alvos make compose-deploy/compose-local (so concatenam flags)"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T10:44:59Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "03"
 depends_on = ["T-03.4"]
 refs = [
@@ -442,7 +442,7 @@ tracker = { provider = "jira", id = "CST-164", url = "https://conversationhub.at
 id = "T-03.6"
 title = "[infra][docs] 03 · Gate do infra-architect sobre F3 — co-assina ADR-032 (status aceita) e ADR-031/D2; decide P8/Q6: healthcheck por comando em writer/collector ou deixa declarado em ADR-032/D5; veredito em gates/F3-infra-architect.md"
 components = ["infra", "docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T10:44:59Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "03"
 depends_on = ["T-03.4", "T-03.5"]
 refs = [
@@ -459,7 +459,7 @@ tracker = { provider = "jira", id = "CST-165", url = "https://conversationhub.at
 id = "T-03.7"
 title = "[infra][docs] 03 · Medicao de pegada — docker stats apos 10 min de up local + docker image ls em medicoes/CA-F3-8-pegada.md; RSS api+writer+collector+redis <= 176 MB, imagem backend <= 400 MB, collector com Postgres <= +10 MB"
 components = ["infra", "docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T10:44:59Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "03"
 depends_on = ["T-03.5"]
 refs = [
@@ -476,7 +476,7 @@ tracker = { provider = "jira", id = "CST-166", url = "https://conversationhub.at
 id = "T-03.8"
 title = "[infra] 03 · Ponta a ponta local — up >= 1 sessao + 1 ciclo: /collector-status 200 com n_rows >= 3 e os 2 endpoint de Q3, /ready schema_present, OBSERVED crescendo, stop collector writer -> PARADO apos stale_after_s, /painel sem .env.local"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T10:44:59Z @ 164bc1c9d2f7cb1acba6ebb15ee8a591852dc02c
 phase = "03"
 depends_on = ["T-03.5"]
 refs = [
