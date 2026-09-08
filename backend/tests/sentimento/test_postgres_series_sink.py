@@ -249,6 +249,84 @@ def test_observed_lookup_ignores_a_modeled_row_for_the_same_bucket(
     assert lookup.observed_already_present(_row()) is False
 
 
+_ALL_COLUMNS_SQL = (
+    "SELECT series_key_id, symbol, source, bucket_end, event_time, available_at, "
+    "availability_source, ingested_at, observed_at, provenance, src_label_raw, "
+    "observer_id, observer_region, is_final, principal_id FROM md.series "
+    "WHERE series_key_id = %s AND symbol = %s AND source = %s AND bucket_end = %s "
+    "AND observed_at = %s"
+)
+
+
+def test_accept_lands_every_one_of_the_15_columns_at_the_right_position(
+    postgres_connection: psycopg.Connection,
+) -> None:
+    """Round-trip ALL 15 columns of `md.series`, not just the 5 that make up the key.
+
+    The other tests in this file only assert via `count(*)` or via the key columns
+    (`series_key_id, symbol, source, bucket_end, observed_at`) — none of them reads back and
+    compares the remaining 10 fields (`event_time`, `available_at`, `availability_source`,
+    `ingested_at`, `src_label_raw`, `observer_id`, `observer_region`, `is_final`,
+    `principal_id`). A future refactor that reorders the `_INSERT_SQL` tuple in
+    `PostgresSeriesSink.accept` (e.g. swapping `event_time`/`available_at`) would corrupt those
+    columns silently — `T-01.6`/`ingest_health` and the future `T-07.12/13` consumer both read
+    `event_time`/`available_at` from this table — while every other test here still passes.
+    """
+    ensure_schema(postgres_connection)
+    sink = PostgresSeriesSink(postgres_connection)
+    candidate = _row(is_final=False)
+
+    sink.accept(candidate)
+
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            _ALL_COLUMNS_SQL,
+            (
+                candidate.series_key_id,
+                candidate.symbol,
+                candidate.source,
+                candidate.bucket_end,
+                candidate.observed_at,
+            ),
+        )
+        row = cursor.fetchone()
+
+    assert row is not None
+    (
+        series_key_id,
+        symbol,
+        source,
+        bucket_end,
+        event_time,
+        available_at,
+        availability_source,
+        ingested_at,
+        observed_at,
+        provenance,
+        src_label_raw,
+        observer_id,
+        observer_region,
+        is_final,
+        principal_id,
+    ) = row
+
+    assert series_key_id == candidate.series_key_id
+    assert symbol == candidate.symbol
+    assert source == candidate.source
+    assert bucket_end == candidate.bucket_end
+    assert event_time == candidate.event_time
+    assert available_at == candidate.available_at
+    assert availability_source == candidate.availability_source.value
+    assert ingested_at == candidate.ingested_at
+    assert observed_at == candidate.observed_at
+    assert provenance == candidate.provenance.value
+    assert src_label_raw == candidate.src_label_raw
+    assert observer_id == candidate.observer_id
+    assert observer_region == candidate.observer_region
+    assert is_final == candidate.is_final
+    assert principal_id == candidate.principal_id
+
+
 def test_the_provenance_check_constraint_bites_at_the_database(
     postgres_connection: psycopg.Connection,
 ) -> None:
