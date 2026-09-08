@@ -38,6 +38,7 @@ def row(**overrides: object) -> SeriesRow:
         "observer_id": "vps-01",
         "observer_region": UNKNOWN_OBSERVER_REGION,
         "is_final": True,
+        "value_raw": "1.0",
     }
     columns.update(overrides)
     return SeriesRow(**columns)  # type: ignore[arg-type]

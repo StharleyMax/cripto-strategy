@@ -136,6 +136,7 @@ def _row(**overrides: object) -> SeriesRow:
         "observer_id": "vps-01",
         "observer_region": UNKNOWN_OBSERVER_REGION,
         "is_final": True,
+        "value_raw": "78249.60000000",
     }
     columns.update(overrides)
     return SeriesRow(**columns)  # type: ignore[arg-type]
@@ -252,22 +253,23 @@ def test_observed_lookup_ignores_a_modeled_row_for_the_same_bucket(
 _ALL_COLUMNS_SQL = (
     "SELECT series_key_id, symbol, source, bucket_end, event_time, available_at, "
     "availability_source, ingested_at, observed_at, provenance, src_label_raw, "
-    "observer_id, observer_region, is_final, principal_id FROM md.series "
+    "observer_id, observer_region, is_final, principal_id, value_raw FROM md.series "
     "WHERE series_key_id = %s AND symbol = %s AND source = %s AND bucket_end = %s "
     "AND observed_at = %s"
 )
 
 
-def test_accept_lands_every_one_of_the_15_columns_at_the_right_position(
+def test_accept_lands_every_one_of_the_16_columns_at_the_right_position(
     postgres_connection: psycopg.Connection,
 ) -> None:
-    """Round-trip ALL 15 columns of `md.series`, not just the 5 that make up the key.
+    """Round-trip ALL 16 columns of `md.series`, not just the 5 that make up the key.
 
-    The other tests in this file only assert via `count(*)` or via the key columns
+    `ADR-034/D7` added `value_raw` as the 16th. The other tests in this file only assert via
+    `count(*)` or via the key columns
     (`series_key_id, symbol, source, bucket_end, observed_at`) — none of them reads back and
-    compares the remaining 10 fields (`event_time`, `available_at`, `availability_source`,
+    compares the remaining 11 fields (`event_time`, `available_at`, `availability_source`,
     `ingested_at`, `src_label_raw`, `observer_id`, `observer_region`, `is_final`,
-    `principal_id`). A future refactor that reorders the `_INSERT_SQL` tuple in
+    `principal_id`, `value_raw`). A future refactor that reorders the `_INSERT_SQL` tuple in
     `PostgresSeriesSink.accept` (e.g. swapping `event_time`/`available_at`) would corrupt those
     columns silently — `T-01.6`/`ingest_health` and the future `T-07.12/13` consumer both read
     `event_time`/`available_at` from this table — while every other test here still passes.
@@ -308,6 +310,7 @@ def test_accept_lands_every_one_of_the_15_columns_at_the_right_position(
         observer_region,
         is_final,
         principal_id,
+        value_raw,
     ) = row
 
     assert series_key_id == candidate.series_key_id
@@ -325,6 +328,7 @@ def test_accept_lands_every_one_of_the_15_columns_at_the_right_position(
     assert observer_region == candidate.observer_region
     assert is_final == candidate.is_final
     assert principal_id == candidate.principal_id
+    assert value_raw == candidate.value_raw
 
 
 def test_the_provenance_check_constraint_bites_at_the_database(
@@ -343,9 +347,9 @@ def test_the_provenance_check_constraint_bites_at_the_database(
         cursor.execute(
             "INSERT INTO md.series (series_key_id, symbol, source, bucket_end, event_time, "
             "available_at, availability_source, ingested_at, observed_at, provenance, "
-            "src_label_raw, observer_id, observer_region, is_final, principal_id) VALUES "
-            "('k', 'BTCUSDT', 'src', 1, 1, 1, 'OBSERVED', 1, 1, 'INVALIDO', 'lbl', 'vps-01', "
-            "'unknown', true, NULL)"
+            "src_label_raw, observer_id, observer_region, is_final, principal_id, value_raw) "
+            "VALUES ('k', 'BTCUSDT', 'src', 1, 1, 1, 'OBSERVED', 1, 1, 'INVALIDO', 'lbl', "
+            "'vps-01', 'unknown', true, NULL, '1.0')"
         )
     postgres_connection.rollback()
 
@@ -366,8 +370,32 @@ def test_a_human_row_without_principal_id_is_refused_by_the_database(
         cursor.execute(
             "INSERT INTO md.series (series_key_id, symbol, source, bucket_end, event_time, "
             "available_at, availability_source, ingested_at, observed_at, provenance, "
-            "src_label_raw, observer_id, observer_region, is_final, principal_id) VALUES "
-            "('k', 'BTCUSDT', 'src', 1, 1, 1, 'OBSERVED', 1, 1, 'HUMANO', 'lbl', 'vps-01', "
-            "'unknown', true, NULL)"
+            "src_label_raw, observer_id, observer_region, is_final, principal_id, value_raw) "
+            "VALUES ('k', 'BTCUSDT', 'src', 1, 1, 1, 'OBSERVED', 1, 1, 'HUMANO', 'lbl', "
+            "'vps-01', 'unknown', true, NULL, '1.0')"
+        )
+    postgres_connection.rollback()
+
+
+def test_a_null_value_raw_is_refused_by_the_database(
+    postgres_connection: psycopg.Connection,
+) -> None:
+    """`CA-F0-3`: `ADR-034/D7`'s `value_raw TEXT NOT NULL` bites at the database.
+
+    A defence at the boundary, the same reasoning `test_the_provenance_check_constraint_bites_
+    at_the_database` already applies to `provenance` — a row inserted by something other than
+    `PostgresSeriesSink`/`SeriesRow` cannot land without a value.
+    """
+    ensure_schema(postgres_connection)
+    with (
+        postgres_connection.cursor() as cursor,
+        pytest.raises(psycopg.errors.NotNullViolation),
+    ):
+        cursor.execute(
+            "INSERT INTO md.series (series_key_id, symbol, source, bucket_end, event_time, "
+            "available_at, availability_source, ingested_at, observed_at, provenance, "
+            "src_label_raw, observer_id, observer_region, is_final, principal_id, value_raw) "
+            "VALUES ('k', 'BTCUSDT', 'src', 1, 1, 1, 'OBSERVED', 1, 1, 'OBSERVADO', 'lbl', "
+            "'vps-01', 'unknown', true, NULL, NULL)"
         )
     postgres_connection.rollback()

@@ -159,6 +159,14 @@ class SeriesRow:
     (`SPEC-001` §4.4, `T-04.7`), and `__post_init__` below refuses a `HUMANO` row that omits it
     or leaves it blank. Nothing in this module ever supplies a default for it: the one caller
     that builds a `HUMANO` row is the one that must say who acted.
+
+    `value_raw` (`ADR-034/D7`) is the column that used to be missing entirely: the RAW STRING
+    the source published for whatever this row's `SeriesKey.metric` measures — never `float`,
+    same discipline `SPEC-001` §2.6 already applies to the quantity field. It is REQUIRED, not
+    optional (`__post_init__` refuses a blank one the same way it refuses a blank
+    `src_label_raw`): a `NOT NULL` database column with no dataclass-level default would only
+    push the missing-value failure from construction time to insert time, and later, silently.
+    One column, never four (OHLC) — `ADR-034/D7` names the alternative and the cost it recused.
     """
 
     series_key_id: str
@@ -175,6 +183,7 @@ class SeriesRow:
     observer_id: str
     observer_region: str
     is_final: bool | None
+    value_raw: str
     principal_id: str | None = None
 
     def __post_init__(self) -> None:
@@ -194,6 +203,11 @@ class SeriesRow:
             raise InvalidSeriesRowError(
                 "column 'observer_region' is blank: `SPEC-001` §2.2 says the value is "
                 f"'{UNKNOWN_OBSERVER_REGION}' until it is measured — a VALUE, never absent"
+            )
+        if not self.value_raw.strip():
+            raise InvalidSeriesRowError(
+                "column 'value_raw' is blank: `ADR-034/D7` makes it a required raw-string "
+                "column, `NOT NULL` at the database, and blank is the same failure as missing"
             )
         if self.provenance is Provenance.HUMAN and not (self.principal_id or "").strip():
             raise InvalidSeriesRowError(

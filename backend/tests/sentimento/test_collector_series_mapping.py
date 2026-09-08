@@ -113,6 +113,20 @@ def test_a_reading_for_a_universe_symbol_yields_mark_price_and_funding_estimado(
     )
 
 
+def test_value_raw_is_the_matching_raw_field_per_metric_never_a_computed_number() -> None:
+    """`ADR-034/D7`: `value_raw` is a straight pass-through of the READING's own raw string.
+
+    `mark_price` gets `mark_price_raw`; `funding_estimado` gets `last_funding_rate_raw` — never
+    the other one's field, and never a value this module derives.
+    """
+    mark_price, funding_estimado = build_premium_index_to_rows(interval_s=60.0)(
+        RECEIVED_AT_MS, _BTCUSDT_READING
+    )
+
+    assert mark_price.value_raw == _BTCUSDT_READING.mark_price_raw
+    assert funding_estimado.value_raw == _BTCUSDT_READING.last_funding_rate_raw
+
+
 def test_a_reading_for_a_non_universe_symbol_yields_no_rows() -> None:
     """`DOGEUSDT` is not one of the four owner-declared symbols: zero rows, no crash."""
     to_rows = build_premium_index_to_rows(interval_s=60.0)
@@ -192,6 +206,9 @@ def test_a_liquidation_for_a_universe_symbol_yields_one_liquidation_row() -> Non
     assert row.available_at == RECEIVED_AT_MS
     assert row.is_final is None
     assert row.principal_id is None
+    assert row.value_raw == _BTCUSDT_LIQUIDATION.key.price, (
+        "`ADR-034/D7`: liquidation's `value_raw` is the natural key's own raw price string"
+    )
 
 
 def test_a_liquidation_for_a_non_universe_symbol_yields_no_rows() -> None:

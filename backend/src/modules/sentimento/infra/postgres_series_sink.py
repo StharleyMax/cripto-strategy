@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS md.series (
     observer_region     TEXT   NOT NULL,
     is_final            BOOLEAN,
     principal_id        TEXT,
+    value_raw           TEXT   NOT NULL,
     CHECK (provenance <> 'HUMANO' OR (principal_id IS NOT NULL AND btrim(principal_id) <> '')),
     PRIMARY KEY (series_key_id, symbol, source, bucket_end, observed_at)
 );
@@ -69,8 +70,8 @@ _INSERT_SQL = (
     "INSERT INTO md.series ("
     "series_key_id, symbol, source, bucket_end, event_time, available_at, "
     "availability_source, ingested_at, observed_at, provenance, src_label_raw, "
-    "observer_id, observer_region, is_final, principal_id"
-    ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+    "observer_id, observer_region, is_final, principal_id, value_raw"
+    ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
     "ON CONFLICT (series_key_id, symbol, source, bucket_end, observed_at) DO NOTHING"
 )
 
@@ -162,6 +163,7 @@ class PostgresSeriesSink:
                     row.observer_region,
                     row.is_final,
                     row.principal_id,
+                    row.value_raw,
                 ),
             )
         self._connection.commit()

@@ -1,0 +1,23 @@
+-- `ADR-034/D7` (`SPEC-006` §5.1, plan `00` item 0.4): `md.series` gains `value_raw TEXT NOT NULL`.
+--
+-- WHO NEEDS THIS FILE: an environment where `md.series` was created BEFORE this ADR landed. A
+-- fresh database never runs this — `ensure_schema()` (`postgres_series_sink.py`, `SCHEMA_SQL`)
+-- already declares the column in `CREATE TABLE IF NOT EXISTS`, so a database that has never seen
+-- `md.series` gets it for free the first time `ensure_schema()` runs.
+--
+-- WHY NOT NULL WITH NO DEFAULT, ON PURPOSE: `ADR-034/D7` named and REJECTED a NULLable column as
+-- an alternative — "esconde silenciosamente a mesma ambiguidade que D5 existe para proibir: uma
+-- linha com value_raw IS NULL seria indistinguível entre 'ainda não migrada' e 'fonte não
+-- publicou'". This statement therefore adds the column exactly as `SCHEMA_SQL` declares it,
+-- with NO `DEFAULT` clause. Against a `md.series` that still holds rows without a value, Postgres
+-- refuses the whole statement (`ERROR: column "value_raw" contains null values`) rather than
+-- silently backfilling every existing row with an invented number — a loud, named failure is the
+-- correct outcome there, not a bug in this script.
+--
+-- WHAT THIS FILE DOES NOT DECIDE: who runs it, when, or how to migrate rows that predate
+-- `value_raw` if any exist — `SPEC-006` §12/`M3` is where that decision belongs, and `M3` (`SPEC-006`
+-- §12, `[MEDIDO 2026-09-08]`) already measured the owner's local environment as EMPTY
+-- (`TRUNCATE md.series;` ran before this ADR shipped, cost of re-ingestion = zero there). This
+-- script runs clean, unattended, against that environment; a different environment with real rows
+-- is a different `M3` conversation, not a reason to change this statement.
+ALTER TABLE md.series ADD COLUMN value_raw TEXT NOT NULL;

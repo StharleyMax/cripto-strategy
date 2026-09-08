@@ -125,6 +125,7 @@ def _observation(
         observer_id="vps-1",
         observer_region=UNKNOWN_OBSERVER_REGION,
         is_final=is_final,
+        value_raw=value,
     )
     return Observation(row=row, value=Decimal(value))
 

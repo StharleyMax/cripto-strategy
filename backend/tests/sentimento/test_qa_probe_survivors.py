@@ -97,6 +97,7 @@ def _row(
         observer_id="vps-1",
         observer_region=UNKNOWN_OBSERVER_REGION,
         is_final=None,
+        value_raw="1.0",
     )
 
 
