@@ -216,7 +216,7 @@ tracker = { provider = "jira", id = "CST-183", url = "https://conversationhub.at
 id = "T-03.1"
 title = "[web] 03 · frontend/src/app/painel/ -> frontend/src/app/console/"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T17:15:29Z @ 3f923b6d2b6a30d6cd665e04c9f2e77722e68e8b
 phase = "03"
 depends_on = []
 refs = ["ADR-034/D2", "plano 03 item 3.1"]
@@ -226,7 +226,7 @@ tracker = { provider = "jira", id = "CST-184", url = "https://conversationhub.at
 id = "T-03.2"
 title = "[web] 03 · routes.ts — ROUTES.panel aponta para /console"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T17:15:29Z @ 3f923b6d2b6a30d6cd665e04c9f2e77722e68e8b
 phase = "03"
 depends_on = ["T-03.1"]
 refs = ["RF-5", "CA-F3-2", "plano 03 item 3.2"]
@@ -236,7 +236,7 @@ tracker = { provider = "jira", id = "CST-185", url = "https://conversationhub.at
 id = "T-03.3"
 title = "[web] 03 · not-found.tsx e referentes a /painel atualizados"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T17:15:29Z @ 3f923b6d2b6a30d6cd665e04c9f2e77722e68e8b
 phase = "03"
 depends_on = ["T-03.2"]
 refs = ["RF-5", "plano 03 item 3.3"]
@@ -246,7 +246,7 @@ tracker = { provider = "jira", id = "CST-186", url = "https://conversationhub.at
 id = "T-03.4"
 title = "[web] 03 · e2e migrado para /console; falsificador CLAUDE.md"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T17:15:29Z @ 3f923b6d2b6a30d6cd665e04c9f2e77722e68e8b
 phase = "03"
 depends_on = ["T-03.1", "T-03.2", "T-03.3"]
 refs = ["RF-5", "CA-F3-1", "CA-F3-4", "CLAUDE.md linha 12", "plano 03 item 3.4"]
@@ -256,7 +256,7 @@ tracker = { provider = "jira", id = "CST-187", url = "https://conversationhub.at
 id = "T-03.5"
 title = "[web] 03 · next.config.ts — redirect 308 /painel -> /console"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T17:15:29Z @ 3f923b6d2b6a30d6cd665e04c9f2e77722e68e8b
 phase = "03"
 depends_on = ["T-03.1"]
 refs = ["ADR-034/D3", "RF-6", "CA-F3-3", "plano 03 item 3.5"]
