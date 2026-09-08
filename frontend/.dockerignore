@@ -1,0 +1,5 @@
+# T-03.2 (ADR-032/D2). Build context must stay clean and secret-free: no local
+# dependency tree, no stale build cache, no environment file.
+node_modules
+.next
+.env*
