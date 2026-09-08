@@ -6,9 +6,10 @@
 **Depende de (código, não gate):** `T-03.4` (`deploy/compose.yml`), `T-03.5`
 (`deploy/compose.local.yml`, alvos `make`) — ambos mergeados em `master` antes desta task.
 
-**Veredito resumido: PARCIAL, com 3 achados reais de "peças que não se ligam" — 2 corrigidos
-nesta task (infra, sem tradeoff de desenho), 1 escalado (decisão do owner).** Nenhum deles foi
-inventado: cada um tem log, comando e `rc` capturados abaixo, com o arquivo:linha exato.
+**Veredito resumido: PARCIAL, com 4 achados reais de "peças que não se ligam" — 2 corrigidos
+nesta task (infra, sem tradeoff de desenho), 2 escalados (1 decisão de owner, 1 fora do
+alcance de `infra` — toca `frontend/src`).** Nenhum deles foi inventado: cada um tem log,
+comando e `rc` capturados abaixo, com o arquivo:linha exato.
 
 ---
 
@@ -210,7 +211,56 @@ comando literal.** As duas ressalvas que seguem em §4 são sobre as OUTRAS meta
 
 ---
 
-## 4. O que continua bloqueado — Achado independente, NÃO desta task (catálogo `SeriesKey`)
+## 4. Achado 4 (ESCALADO — toca `frontend/src`, fora do que `T-03.8` pode tocar) — `/painel` nunca vê o env injetado pelo compose
+
+**Sintoma medido `[MEDIDO 2026-09-08]`**, `web` de pé (sem `api`/coletor rodando — irrelevante
+para este achado), `INGEST_HEALTH_API_BASE_URL=http://api:18000` CONFIRMADO presente no
+ambiente do container (`docker exec t038e2e-web-1 printenv | grep INGEST_HEALTH_API_BASE_URL`
+→ `INGEST_HEALTH_API_BASE_URL=http://api:18000`):
+
+```bash
+docker exec t038e2e-web-1 wget -S -qO- http://localhost:3000/painel
+```
+```
+HTTP/1.1 200 OK
+x-nextjs-cache: HIT
+x-nextjs-prerender: 1
+Cache-Control: s-maxage=31536000
+...
+<div role="alert" ... data-fact="error_kind:missing_base_url">
+  <h2>Configuração ausente</h2>
+  <p>O endereço da API de leitura não foi definido. Confirme INGEST_HEALTH_API_BASE_URL...</p>
+```
+
+**Causa:** `frontend/src/app/painel/page.tsx` não declara `export const dynamic =
+"force-dynamic"` — sem essa marca, o Next.js (App Router) trata um Server Component `async`
+sem API dinâmica DETECTADA como estático e o **PRÉ-RENDERIZA em `npm run build`**
+(`frontend/Dockerfile`, `T-03.2`). Nesse momento, dentro do `docker build`, NENHUMA variável de
+ambiente de `docker-compose environment:`/`env_file:` existe ainda — só chega no `docker run`.
+`collector-status-query.ts:319` lê `process.env.INGEST_HEALTH_API_BASE_URL`, encontra
+`undefined` durante o build, e o caminho de erro (`"missing_base_url"`) roda ANTES de qualquer
+`fetch({cache: "no-store"})` acontecer — como nenhuma API dinâmica chega a ser CHAMADA nessa
+passada, o Next não tem como saber que a rota deveria ser dinâmica, e baked-in o HTML de erro
+com `Cache-Control: s-maxage=31536000` (1 ano). Definir a variável em tempo de container
+(`docker-compose environment:`, o mecanismo que `T-03.5`/`D3.16` construíram) **não tem
+nenhum efeito**: a página estática já existe em `.next/`, servida do cache, e nunca
+re-executa aquele código.
+
+**Isto é a MESMA classe de "peça que não se liga" dos Achados 1-3, aplicada à premissa
+inteira de `D3.16`/`PR #166 §1`** ("compose injeta a variável, ninguém precisa de
+`frontend/.env.local`") — a premissa presume uma página SSR por requisição; a página real é
+estática desde antes de `T-03.5` existir.
+
+**Por que NÃO foi corrigido aqui:** o arquivo é `frontend/src/app/painel/page.tsx` —
+exatamente a superfície que `T-03.8` está proibida de tocar ("NAO toca web/frontend/src,
+nenhuma linha", tabela `03`, item `3.8`; `CA-E2E-3`). Uma correção real (`export const dynamic
+= "force-dynamic"`, ou mover a leitura do env var para antes de qualquer branch condicional
+usando `unstable_noStore()`) é trabalho de `web`, não de `infra`. **Escalado ao
+`/architect`/`frontend-architect`**, junto aos Achados 2 e da parte pendente de `D3.13`.
+
+---
+
+## 5. O que continua bloqueado — Achado independente, NÃO desta task (catálogo `SeriesKey`)
 
 `D3.12` (verdict `ACCEPTED`/liveness `ATIVO`) e `D3.13` (`OBSERVED` > 0 e crescendo) continuam
 vermelhos, por uma causa **anterior e separada** dos 3 achados acima, já `[NÃO SEI]` desde
@@ -238,7 +288,7 @@ escalado, junto com o Achado 2, ao `/architect`.
 
 ---
 
-## 5. Portões
+## 6. Portões
 
 | comando | resultado |
 |---|---|
@@ -253,13 +303,15 @@ escalado, junto com o Achado 2, ao `/architect`.
 
 ---
 
-## 6. O que esta task NÃO decide
+## 7. O que esta task NÃO decide
 
 - Não resolve o catálogo `SeriesKey` (`premium_index_to_rows`/`force_order_to_rows`) — `[NÃO
   SEI]` de `T-01.4`, dono é `quant-architect`.
 - Não altera `backend/src/main/__main__.py` — `[DECISAO-OWNER: 2026-09-03]`, reabertura é do
   owner ou de uma ADR (`ADR-029`).
+- Não altera `frontend/src/app/painel/page.tsx` (Achado 4) — fora do escopo de `infra`
+  (`CA-E2E-3`), dono é `frontend-architect`.
 - Não decide `T-03.9` (`healthcheck` por comando) — gate do `infra-architect`, `T-03.6`.
-- Não toca `web`/`frontend/src` (nenhuma linha) — confirmado em §5.
+- Não toca `web`/`frontend/src` (nenhuma linha) — confirmado em §6.
 - Não implanta nada real (`R-E`) — todos os containers foram efêmeros, isolados por
   `-p t038e2e`, e removidos ao final (§0).
