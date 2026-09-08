@@ -21,22 +21,26 @@ mapping itself — the two builders and the sentinels — lives in
 calls at session/cycle close, so the mapping and this module's own tests share exactly one
 construction, never two.
 
-── WHAT THIS MODULE DELIBERATELY DOES NOT DECIDE, NAMED RATHER THAN HIDDEN ────────────────────
+── THE `SeriesKey` MAPPING, AND WHERE IT NOW LIVES ─────────────────────────────────────────────
 
 Turning ONE raw `!forceOrder@arr` liquidation or ONE `PremiumIndexReading` into the `SeriesRow`(s)
-it becomes is a `SeriesKey` catalog decision — and `infra/redis_stream_series_sink.py`'s own
-docstring already refuses to make it for the premiumIndex side ("no catalog for these two
-producers exists yet ... Fixing that mapping here ... would be exactly the decision from premise
-... already refuses"); `domain/price_source_catalog.py` independently confirms it, listing
-`premium_index`/`index_price` in `PRICE_SOURCES` while explicitly NOT building catalog rows for
-either ("cataloguing a series nobody reads yet would be a row with no evidence behind it"). This
-module is the composition root, not the catalog owner: `premium_index_to_rows` and
-`force_order_to_rows` are REQUIRED, INJECTED callables with NO real default. Left unsupplied,
-`main()` wires `_mapping_not_decided_yet` (below), which raises loud, typed and immediately the
-first time either thread would need to build a row — a misconfigured boot fails fast instead of
-publishing a `SeriesRow` built from a guess. The offline suite exercises every other line of this
-module (boot, threads, `SIGTERM`, run recording, the failure path) by injecting a trivial fake
-mapping instead, exactly like `redis_stream_series_sink.py`'s own tests inject `to_rows`.
+it becomes is a `SeriesKey` catalog decision. `infra/redis_stream_series_sink.py` and
+`domain/price_source_catalog.py` both refused to make it at `T-01.4` ("no catalog for these two
+producers exists yet ... this task's dependencies do not resolve it") — correctly, at the time:
+no run-shape, no symbol universe and no consumer existed yet. That refusal outlived its own
+justification: `main()` shipped with `premium_index_to_rows`/`force_order_to_rows` REQUIRED but
+UNSUPPLIED, so every real boot fell through to `_mapping_not_decided_yet` (below) on the first
+non-empty read — `[MEDIDO 2026-09-08]`, `docker inspect deploy-collector-1 --format
+'{{.RestartCount}}'` -> 55 restarts in ~10 min
+(`docs/context/captura-em-producao/medicoes/CA-F3-8-pegada.md` §1.1). `main()` now supplies the
+REAL mapping — `use_cases/collector_series_mapping.py` (`quant-architect`, `T-05.3`), covering the
+owner's declared four-symbol initial universe (`INITIAL_SYMBOLS` there) over the metrics that
+module names a precedent for. `run()` keeps both parameters INJECTABLE (not hardcoded) so the
+offline suite still exercises every other line of this module (boot, threads, `SIGTERM`, run
+recording, the failure path) against a trivial fake mapping, exactly like
+`redis_stream_series_sink.py`'s own tests inject `to_rows` — `_mapping_not_decided_yet` stays the
+default `run()` falls back to when a CALLER (a test, or a future composition root) omits both,
+so a misconfigured boot still fails loud rather than publishing a `SeriesRow` built from a guess.
 """
 
 from __future__ import annotations
@@ -113,6 +117,10 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     KnownVerdict,
     build_force_order_run,
     build_premium_index_run,
+)
+from src.modules.sentimento.use_cases.collector_series_mapping import (
+    build_force_order_to_rows,
+    build_premium_index_to_rows,
 )
 from src.modules.sentimento.use_cases.probe_stream_quantity_fields import (
     MessageSource,
@@ -643,7 +651,10 @@ def main(argv: Sequence[str]) -> int:
 
     `argv` is accepted (unused) for the same reason every CLI in this package takes it: a
     uniform `main(argv) -> int` signature the suite calls directly, without `sys.exit` escaping
-    a test process.
+    a test process. `run()` is called with the REAL `SeriesKey` mapping
+    (`use_cases/collector_series_mapping.py`) — see this module's own docstring for why that
+    default changed, and `test_collectors_cli_boot.py`'s `test_main_wires_the_real_series_mapping`
+    for the regression pinning it.
     """
     route_diagnostics_away_from_the_product_stream()
     logger.setLevel(logging.INFO)
@@ -686,7 +697,15 @@ def main(argv: Sequence[str]) -> int:
         return 1
     store.initialise()
     store.describe_readiness()
-    return run(config=config, connection=connection, store=store)
+    return run(
+        config=config,
+        connection=connection,
+        store=store,
+        premium_index_to_rows=build_premium_index_to_rows(
+            interval_s=config.premium_index_cycle_interval_s
+        ),
+        force_order_to_rows=build_force_order_to_rows(),
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - composition root, exercised by subprocess
