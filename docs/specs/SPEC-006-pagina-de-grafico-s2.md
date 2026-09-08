@@ -238,7 +238,7 @@ fica para quando um seletor de timeframe entrar no escopo de alguma feature (`AD
 |---|---|---|
 | Reagregação de CVD para `interval`≠`1m` | baixa (fora do escopo declarado) | `quant-architect`, gatilho: seletor de timeframe |
 | `RNF-2` (eixo sob carga real) ainda não medido com dado real | média, herdado do PRD (`G4`) | `frontend-architect`, medir em F2 |
-| Custo de re-ingestão se `captura-em-producao` já gravou em produção sem `value_raw` | alta se já houver dado; zero se não | owner (§14, `M3`) |
+| ~~Custo de re-ingestão se `captura-em-producao` já gravou em produção sem `value_raw`~~ | ~~alta se já houver dado; zero se não~~ | **RESPONDIDA 2026-09-08, ver §12 `M3`** |
 
 ---
 
@@ -254,7 +254,34 @@ Ver §7.
 |---|---|---|---|
 | **M1** (herdado, `PRD §14`) | destino de `T-05.2`/`T-08.9` na mãe | `superseded`, `refs` para as tasks desta filha | histórico preservado; transições de tracker |
 | **M2** (herdado) | — resolvida: bookmark é redirect 308 (`ADR-034/D3`) | — | — |
-| **M3** (novo) | `captura-em-producao` já gravou dado em produção sem `value_raw`? Se sim, quem paga a re-ingestão e quando | `[NÃO SEI]` — owner decide antes de F0 fechar | se assumido "não" e for "sim", `F0` fecha com dado órfão silencioso |
+| **M3** (novo) | `captura-em-producao` já gravou dado em produção sem `value_raw`? Se sim, quem paga a re-ingestão e quando | **RESPONDIDA 2026-09-08 — ver abaixo** | — |
+
+### ✅ M3 — RESPONDIDA em 2026-09-08, medida ao vivo antes de fechar
+
+`ADR-029/D1` já apontava "NÃO implantado" como evidência indireta de que não havia produção real —
+mas isso não media o ambiente local em si, que é onde `captura-em-producao` estava rodando desde o
+merge de `deploy-collector-1`. Medido diretamente contra o Postgres do `docker compose` local do
+owner:
+
+```
+docker exec -e PGPASSWORD=*** deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -c \
+  "SELECT source, symbol, count(*), min(ingested_at), max(ingested_at) FROM md.series GROUP BY source, symbol;"
+```
+
+`[MEDIDO 2026-09-08]`: **3.608 linhas reais** em `md.series` (902 por símbolo × 4 símbolos, todas de
+`/fapi/v1/premiumIndex`, janela `2026-09-08T14:00Z`–`15:47Z`, ~1h45 de coleta local). Zero linhas de
+`forceOrder` — coerente com o crash-loop corrigido em `PR #203`, que nunca publicou nada antes do fix.
+Como `md.series` não tem NENHUMA coluna de valor hoje (confirmado via `\d md.series`), toda linha
+existente já nasceu sem o que `F0` vai adicionar — exatamente o "dado órfão" que este gap nomeava.
+
+`[PREMISSA-OWNER: 2026-09-08]` — literal: *"Caso tenha dados inválidos/anteriores a correção, vamos
+somente deletar eles. Se for preciso podemos limpar a base, n é nenhum problema, vide que rodamos
+apenas local."* Ação tomada, com o dado já contado acima: `TRUNCATE md.series;` → 3.608 → **0 linhas**.
+`md.ingest_run` (925 linhas, log de execução, sem coluna de valor) não foi tocado — fora do escopo do
+gap.
+
+**Resposta final:** custo de re-ingestão = **zero** — a base está vazia, e `deploy-collector-1` está
+de pé (sem crash-loop, `PR #203`) gravando do zero assim que `F0` subir `value_raw`.
 
 ---
 
