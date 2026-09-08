@@ -11,11 +11,14 @@ import argparse
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
+import psycopg
 import pytest
 
 from src.modules.sentimento.domain.clock_skew import ServerTimeObservation
 from src.modules.sentimento.infra import ntp_skew_probe_cli
+from src.modules.sentimento.infra.postgres_ingest_record_store import PostgresIngestRecordStore
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
 
 
@@ -103,6 +106,59 @@ def test_run_generates_a_distinct_run_id_when_none_is_given(tmp_path: Path) -> N
 
     assert first["run_id"] != second["run_id"]
     assert len(store.runs()) == 2
+
+
+def _fake_postgres_connection() -> psycopg.Connection[Any]:
+    """Trivial double — `compose_ingest_record_store` never calls a method on it (T-02.4)."""
+    return object()  # type: ignore[return-value]
+
+
+def test_compose_store_defaults_to_sqlite_at_the_store_flag_path(tmp_path: Path) -> None:
+    """Unset `INGEST_RECORD_BACKEND` keeps this CLI's ORIGINAL behaviour, unchanged (`T-03.8`)."""
+    args = _args(tmp_path)
+
+    store = ntp_skew_probe_cli._compose_store(args, {})
+
+    assert isinstance(store, SqliteIngestRecordStore)
+    assert store.path == Path(args.store)
+
+
+def test_compose_store_honours_explicit_sqlite_backend_too(tmp_path: Path) -> None:
+    """`INGEST_RECORD_BACKEND=sqlite` (explicit) is the SAME path as unset (`ADR-031/D1`)."""
+    args = _args(tmp_path)
+
+    store = ntp_skew_probe_cli._compose_store(args, {"INGEST_RECORD_BACKEND": "sqlite"})
+
+    assert isinstance(store, SqliteIngestRecordStore)
+    assert store.path == Path(args.store)
+
+
+def test_compose_store_picks_postgres_and_ignores_the_store_flag(tmp_path: Path) -> None:
+    """`T-03.8`: `postgres` composes the SAME engine `deploy/compose.yml` wires — not sqlite.
+
+    `--store` is still required to parse (`build_parser`'s own contract, "refuse to even
+    parse"), but its VALUE is irrelevant here — the falsifier for this test is a store built
+    at `args.store` instead of `PostgresIngestRecordStore`, which is exactly the defect
+    `docs/context/captura-em-producao/gates/CA-E2E-local.md` measured before this fix.
+    """
+    seen_conninfo: list[str] = []
+
+    def _connect(conninfo: str) -> psycopg.Connection[Any]:
+        seen_conninfo.append(conninfo)
+        return _fake_postgres_connection()
+
+    args = _args(tmp_path)
+    environ = {
+        "INGEST_RECORD_BACKEND": "postgres",
+        "POSTGRES_DB": "test",
+        "POSTGRES_USER": "test",
+        "POSTGRES_PASSWORD": "test",
+    }
+
+    store = ntp_skew_probe_cli._compose_store(args, environ, connect=_connect)
+
+    assert isinstance(store, PostgresIngestRecordStore)
+    assert len(seen_conninfo) == 1, "postgres composition must open exactly one connection"
 
 
 def test_run_logs_exactly_one_json_line_with_the_summary(
