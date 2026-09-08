@@ -167,7 +167,7 @@ tracker = { provider = "jira", id = "CST-189", url = "https://conversationhub.at
 id = "T-02.1"
 title = "[charts] 02 · frontend/src/charts/index.ts — barrel único"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T20:21:50Z @ d3bd556726bdda5d3f89e839adeba9191b4180fc
 phase = "02"
 depends_on = []
 refs = ["ADR-034/D8", "plano 02 item 2.1"]
@@ -177,7 +177,7 @@ tracker = { provider = "jira", id = "CST-180", url = "https://conversationhub.at
 id = "T-02.2"
 title = "[web] 02 · Bloco de ESLint escopado a src/app/symbol/**"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T20:21:50Z @ d3bd556726bdda5d3f89e839adeba9191b4180fc
 phase = "02"
 depends_on = []
 refs = ["ADR-034/D8", "plano 02 item 2.2"]
@@ -187,7 +187,7 @@ tracker = { provider = "jira", id = "CST-181", url = "https://conversationhub.at
 id = "T-02.3"
 title = "[charts] 02 · eslint-boundary.test.ts — 3 casos novos"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T20:21:50Z @ d3bd556726bdda5d3f89e839adeba9191b4180fc
 phase = "02"
 depends_on = ["T-02.1", "T-02.2"]
 refs = ["ADR-034/D8", "CA-F2-4", "plano 02 item 2.3"]
@@ -197,7 +197,7 @@ tracker = { provider = "jira", id = "CST-182", url = "https://conversationhub.at
 id = "T-02.4"
 title = "[web] 02 · Página /symbol (Server Component) — S2-mínima"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T20:21:50Z @ d3bd556726bdda5d3f89e839adeba9191b4180fc
 phase = "02"
 depends_on = ["T-02.1", "T-01.3", "T-01.4"]
 refs = [
@@ -277,7 +277,7 @@ tracker = { provider = "jira", id = "CST-188", url = "https://conversationhub.at
 id = "T-04.1"
 title = "[sentimento] 04 · src/main conecta get_series_window_reader_source a PostgresSeriesWindowReader real"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T21:59:05Z @ 1e108d6f5df89b45362f77f9b207060918ad8391
 phase = "04"
 depends_on = []
 refs = ["ADR-034/D9 item 1", "ADR-029/D3 (refuse-at-boot)", "CST-190"]
@@ -287,7 +287,7 @@ tracker = { provider = "jira", id = "CST-190", url = "https://conversationhub.at
 id = "T-04.2"
 title = "[sentimento] 04 · price_source_catalog.py atribui price_use aos entries de klines_last/price_mark_close"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T21:59:05Z @ 1e108d6f5df89b45362f77f9b207060918ad8391
 phase = "04"
 depends_on = []
 refs = ["ADR-007", "CST-191"]
@@ -297,7 +297,7 @@ tracker = { provider = "jira", id = "CST-191", url = "https://conversationhub.at
 id = "T-04.3"
 title = "[web] 04 · e2e Playwright prova dado real nos 3 paineis de /symbol (nao so 200/500)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T21:59:05Z @ 1e108d6f5df89b45362f77f9b207060918ad8391
 phase = "04"
 depends_on = ["T-04.1", "T-04.2"]
 refs = ["docs/context/pagina-de-grafico-s2/gates/F2-review.md WARNING (eslint-boundary flaky, fora de escopo aqui)", "PREMISSA-OWNER: QA de feature com frontend usa Playwright contra app real, valida dado, nao so status"]
