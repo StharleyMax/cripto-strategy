@@ -11,7 +11,7 @@
  * aria-live="polite"` — never `assertive` (waiting inside Doherty's threshold is not a failure).
  * Zero `<tr>` — a skeleton renders no data row of any kind.
  */
-export default function PainelLoading() {
+export default function ConsoleLoading() {
   return (
     <main data-fact="ui_state:loading" role="status" aria-live="polite">
       <span className="sr-only">Carregando dados do painel</span>

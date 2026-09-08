@@ -526,7 +526,7 @@ export interface IngestHealthHttpResult {
 // `SPEC-003` §3.2 (`F2`): "envia `If-None-Match: <etag conhecido>` quando houver; `304` ⇒
 // reutiliza a projeção anterior **do mesmo processo** (nunca do browser)." The cache below is
 // exactly that and nothing more: a plain module-scope `Map`, alive for as long as this Node.js
-// process is (the Next.js server process rendering `/painel`, `T-01.4`'s `page.tsx`) — never
+// process is (the Next.js server process rendering `/console`, `T-01.4`'s `page.tsx`) — never
 // serialized to the browser, never written to disk, never shared across processes. Keyed by
 // `baseUrl` (not a single slot) so two different targets — e.g. two loopback test servers on
 // different ports in the same `node --test` run — never cross-contaminate each other's cached

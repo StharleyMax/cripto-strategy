@@ -308,7 +308,7 @@ export function buildS1ViewModelFromCollectorStatusProjection(
 // "base URL que o servidor Next usa"), not an ingest-health-specific address — `/collector-status`
 // is served by the SAME FastAPI process, over the SAME `API_PREFIX`, so reusing the variable
 // name is not a scope stretch: introducing a second base-URL env var for the identical host
-// would be the actual invented scope. `PainelClient.tsx`'s `missing_base_url` microcopy already
+// would be the actual invented scope. `ConsoleClient.tsx`'s `missing_base_url` microcopy already
 // names this exact variable and stays correct unchanged.
 //
 // `API_PREFIX` (`ADR-029/D2`, `T-02.2`, `backend/src/main/__init__.py:47,103`): EVERY route —

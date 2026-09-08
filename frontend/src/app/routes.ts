@@ -10,9 +10,15 @@
  *
  * The Next.js pages themselves belong to the `web` component and are NOT created by
  * this task: scaffolding an application here would be scope this task does not own.
+ *
+ * `SPEC-006` plan `03`, `ADR-034/D2`: the key and value used to be `panel: "/painel"` —
+ * `CLAUDE.md`'s language-boundary table row 12 (`[PREMISSA-OWNER: 2026-09-08]`, "rotas em
+ * ingles") migrates it, retroactively, to `console: "/console"`. `frontend/next.config.ts`'s
+ * `redirects()` keeps the old path reachable (`308`, `ADR-034/D3`) for anyone with `/painel`
+ * bookmarked.
  */
 export const ROUTES = {
-  panel: "/painel",
+  console: "/console",
 } as const;
 
 export type Route = (typeof ROUTES)[keyof typeof ROUTES];

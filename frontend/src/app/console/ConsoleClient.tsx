@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * `T-01.4`, `ADR-028/D1` — the Client Component half of `/painel`. `page.tsx` (Server Component,
+ * `T-01.4`, `ADR-028/D1` — the Client Component half of `/console` (`/painel` before `SPEC-006`
+ * plan `03`, `ADR-034/D2`). `page.tsx` (Server Component,
  * `async`) does the ONE network call and hands this component `{ s1, s3, sourceState }` by
  * props, all JSON-serializable (`S1ViewModel`/`S3ViewModel` are plain data, `SourceState` is a
  * plain discriminated union) — no function, no class instance, no `Date` crosses the RSC
@@ -49,7 +50,7 @@ import { S3Inspector } from "../../features/s3-inspector/S3Inspector.tsx";
 import { buildCatalogRowView, type S3ViewModel } from "../../features/s3-inspector/view-model.ts";
 import type { SourceState } from "./source-state.ts";
 
-export interface PainelClientProps {
+export interface ConsoleClientProps {
   readonly s1: S1ViewModel;
   readonly s3: S3ViewModel;
   /** Raw catalog, unfiltered — the real 10 rows `page.tsx` fetches from `GET /series-catalog`
@@ -119,7 +120,7 @@ function EmptyBanner() {
   );
 }
 
-export function PainelClient({ s1, s3, catalog, sourceState, quarantineOk }: PainelClientProps) {
+export function ConsoleClient({ s1, s3, catalog, sourceState, quarantineOk }: ConsoleClientProps) {
   const [filterText, setFilterText] = useState("");
 
   // `T-01.6`, `RN-5`/`RF-10`: recomputed on every keystroke, over the RAW `catalog` prop, not

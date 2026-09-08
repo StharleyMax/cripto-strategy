@@ -3,7 +3,8 @@ import path from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";
 
-// E2E surface of `/painel` (REVISAO-FB, 2026-09-04). This config owns NO web server:
+// E2E surface of `/console` (`/painel` before `SPEC-006` plan `03`, `ADR-034/D2`; REVISAO-FB,
+// 2026-09-04). This config owns NO web server:
 // the Next dev server is the owner's process (`http://localhost:3000`) and the FastAPI
 // process is started by hand (`uvicorn src.main:app --port 8765`) — see
 // `docs/context/plataforma-dados/gates/REVISAO-FB-playwright.md` for the run recipe.

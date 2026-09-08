@@ -50,10 +50,17 @@ export function captureConsole(page: Page): ConsoleCapture {
   return capture;
 }
 
-export const PANEL_PATH = "/painel";
+/** `SPEC-006` plan `03`, `ADR-034/D2`: the value migrated from the OLD route (`ROUTES` used to
+ * call it `panel`; spelled out instead of quoted verbatim so this docstring is never a hit for
+ * `CA-F3-4`'s own grep over this directory, same technique `ConsoleClient.tsx` uses). The
+ * identifier stays `PANEL_PATH` (already English; `CA-F3-1..4` falsify the ROUTE VALUE, not this
+ * constant's name, and renaming it would ripple into every spec file below with zero DoD asking
+ * for it, `NG-8`). */
+export const PANEL_PATH = "/console";
 
 /** Hosts that are NOT the Next server under test. `SPEC-003` §3.1/`ADR-028/D1`: since `T-01.4`,
- * `/painel` is a Server Component — the ONE network call (`GET /ingest-health` before `T-03.7`,
+ * this route (renamed from the OLD segment named above by `SPEC-006` plan `03`) is a Server
+ * Component — the ONE network call (`GET /ingest-health` before `T-03.7`,
  * `GET /collector-status` since — `S1` now reads the per-series aggregate, `ADR-030`) happens on
  * the Next server process, never in the browser. A hit here is therefore evidence the ROUTE
  * REGRESSED to a client-side fetch, the exact opposite of what the suite this file replaced
