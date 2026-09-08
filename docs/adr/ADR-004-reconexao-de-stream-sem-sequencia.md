@@ -140,3 +140,149 @@ Classe C funcionalmente satisfeita (rastro textual solto) e Classe A parcial (id
 sim, reconexão com sobreposição e reparo de buraco não). O header desta ADR (`Status: proposto`)
 não foi alterado — mesmo padrão que `ADR-002` mantém após seu `D4` ser decidido: o cabeçalho é
 `append-only` por convenção deste repositório, a atualização de estado vive nas emendas.
+
+---
+
+## ✅ Emenda D5/D6 — pong real, morte por SILÊNCIO DE QUALQUER FRAME (não por mensagem de
+## domínio) e B1 sem bloqueio para produtor esparso (2026-09-08)
+
+**Fecha:** `docs/context/captura-em-producao/handoff/forceorder-arr-crash-loop.md` +
+`docs/context/captura-em-producao/gates/forceorder-fix-quant-architect.md` §2 (que nomeou isto
+"NÃO feito, e é decisão deliberada" e citou o achado colateral de `pong`, sem decidir os dois).
+**Gatilho:** `[MEDIDO 2026-09-08 em produção local, docker inspect deploy-collector-1]` — o
+container reiniciou de novo às 15:52:19, ~900s de silêncio real em `forceOrder`, o teto que o
+remendo anterior escolheu "confortavelmente acima do SLA da Binance" continua sendo o ÚNICO
+instrumento de detecção de vida, e ele erra pelo lado caro: espera o pior caso inteiro antes de
+agir.
+
+**Isto NÃO reabre a Decisão (1)/Classe B em si** (B1–B4 continuam válidas em substância — sobreposição
+obrigatória, chave natural B2, colisão publicada B3, payload cru com data da doc B4). O que muda é
+**qual evento conta como "prova de vida" e qual evento conta como "a nova conexão provou-se"** — os
+dois pontos que o remendo anterior deixou presos a "recebeu uma MENSAGEM de domínio", presunção que
+nunca foi verdadeira para um produtor esparso e que este projeto não tinha, até agora, nomeado como
+o defeito raiz.
+
+### O raciocínio, com o documento da Binance citado
+
+*"the websocket server will send a ping frame every 3 minutes"*; *"When you receive a ping, you
+must send a pong with a copy of ping's payload as soon as possible"*; *"if the ... server does not
+receive a pong frame back ... within a 10 minute period, the connection will be disconnected"*
+(Binance Developer Docs, USDⓈ-M Futures WebSocket API General Info,
+`https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-api-general-info`,
+lido 2026-09-08) `[DOC]`.
+
+`rfc6455_client.py:149-150`'s `iter_text_messages` faz `continue` em `OPCODE_PING`/`OPCODE_PONG` —
+**nunca responde**. Isso não é neutro: pela própria doc, o cliente **deve** responder, e um cliente
+que não responde é, do ponto de vista do servidor, indistinguível de um cliente morto — a Binance
+vai fechar a conexão por conta própria, algures entre o primeiro `ping` (~3 min) e a janela de
+`pong` (~10 min), **mesmo que a rede e o mercado estejam perfeitamente saudáveis**. Isso é
+autopunição: o coletor se desconecta pelas próprias mãos, com uma cadência que o próprio protocolo
+documenta, e o remendo anterior (900s) só tornou o SINTOMA mais lento, não removeu a CAUSA.
+
+**E há uma segunda causa, distinta, que responder `pong` não resolve:** um caminho de rede
+genuinamente morto (NAT/LB que derruba conexão ociosa, RST engolido, meio-termo silencioso) não
+entrega nem `ping` nem `pong` — nada chega, de nenhum tipo. Contra ISSO, a única defesa é medir
+**silêncio de QUALQUER frame**, não silêncio de mensagem de domínio: `forceOrder` combinado (4
+símbolos) é esparso mesmo saudável — `docs/context/captura-em-producao/handoff/forceorder-arr-crash-loop.md`
+já mediu **>300s sem uma única liquidação, incluindo um controle garantido de 1 msg/s** — mas um
+`ping` a cada 3 min chega de qualquer forma, **se** a conexão está viva. Um limiar de silêncio
+calibrado no ciclo de `ping` da própria Binance separa as duas hipóteses que o timeout de 900s
+confundia: "mercado quieto" (chegam `ping`s, nunca chega `forceOrder`) e "conexão morta de verdade"
+(não chega nem `ping`).
+
+### D5 — dois timeouts com papéis diferentes, nunca um só fazendo os dois trabalhos
+
+| papel | valor proposto | por quê |
+|---|---|---|
+| granularidade de leitura (`recv()` por chamada) | **pequeno**, ordem de dezenas de segundos (proposta: 20s) | não é veredito de morte — só devolve o controle ao loop de leitura com frequência, para o contador de silêncio avançar e para o `SIGTERM` (`B14`) não ficar preso atrás de um timeout gigante |
+| morte declarada por silêncio de QUALQUER frame | **~300s (5 min)**, acumulado em `recv()`s sucessivos | `[INFERRED: 2× o ciclo de `ping` documentado (3 min) + margem para jitter, folgado abaixo da janela de 10 min em que a própria Binance mataria a conexão — o coletor NUNCA é mais lento que a Binance para perceber a própria morte]` |
+
+Os dois valores acima são **proposta de arquitetura, não medição** — rotulados `[INFERRED]` de
+propósito. `infra-architect`/builder confirmam com um soak test real antes de fixar em código; o
+falsificador abaixo é o critério de aceite.
+
+**O `pong` deve ser real**, não um `continue`: ecoar o payload do `ping` recebido, moldado
+(`masked`) como todo frame cliente→servidor exige (RFC 6455 §5.1) — a doc da Binance pede
+explicitamente *"a copy of ping's payload"*, não um pong vazio.
+
+### D6 — B1 redesenhado: "a nova conexão provou-se" deixa de exigir uma MENSAGEM
+
+**O defeito nomeado no gate anterior:** `perform_overlap_handoff` bloqueia em
+`next(new_source.messages())` — a primeira MENSAGEM DE DOMÍNIO da nova conexão — antes de fechar a
+antiga. Isso foi desenhado (o comentário do próprio módulo diz) pensando num produtor de alta
+frequência; em `forceOrder`, mesmo combinado, a próxima liquidação pode não vir por minutos, e
+bloquear nisso é reintroduzir o mesmo travamento que este documento existe para eliminar — **para
+as DUAS causas de reconexão**: o `StopIteration` de hoje (fechamento limpo) E o novo timeout de
+ociosidade de D5.
+
+**A correção:** o critério de "a nova conexão provou-se" passa de *"recebeu uma mensagem"* para
+*"completou o handshake RFC 6455"* (`new_source.open()` sem erro). Isto não enfraquece a garantia
+de B1 — **fortalece a leitura dela**: o handshake completo já é o instante a partir do qual a nova
+conexão está tão viva quanto a antiga (Binance começa a empurrar frames pelo endpoint combinado
+assim que o upgrade termina, sem `SUBSCRIBE` explícito); exigir também uma mensagem de domínio não
+fecha gap nenhum a mais — só adiciona um bloqueio proporcional à raridade do stream, que para
+`forceOrder` pode ser arbitrariamente longo.
+
+**Efeito colateral que simplifica, não que arrisca:** com o critério mudando para handshake, a
+"primeira mensagem" deixa de precisar ser capturada dentro da função de handoff — ela é lida
+normalmente pelo laço principal, no próximo `next(messages)`, e passa pelo MESMO caminho de
+publicação/keying B2 que qualquer outra mensagem (`_publish_raw_force_order_message`). Isto elimina
+a necessidade de `reconnect_and_key` manter um caminho de keying especial paralelo ao caminho
+normal — os dois caminhos colapsam em um.
+
+**O que fica genuinamente em aberto, e é nomeado para não virar dívida silenciosa:** trocar a prova
+de "mensagem" por "handshake" resolve o bloqueio, mas reabre uma pergunta que B1 original respondia
+por construção: no caminho de `StopIteration` a conexão antiga está CONFIRMADA morta (recebeu
+`OPCODE_CLOSE`), então parar de lê-la não perde nada; no caminho NOVO (timeout de ociosidade de D5)
+a conexão antiga está apenas **suspeita**, nunca confirmada — abandonar a leitura dela sem
+confirmação é, em espírito, o "buraco irreversível" que B1 chama de inaceitável ("duplicata é
+reparável" — mas B1 nunca disse "buraco é aceitável"). **Mitigação recomendada, não implementada
+aqui:** o próprio acúmulo de silêncio em `recv()`s curtos (20s) já funciona como uma re-checagem
+natural — a morte só é declarada no primeiro tick de 20s que cruza os 300s acumulados, então o
+"benefício da dúvida" já está embutido na granularidade pequena, sem precisar de um segundo
+temporizador dedicado. Isto é suficiente para reduzir o risco a um nível comparável ao que B1 já
+tolera (a Binance também poderia, em teoria, atrasar um `ping` além do próprio SLA documentado) —
+não elimina o risco a zero. Se o `infra-architect` quiser zero, a alternativa é um `select()`/leitura
+não bloqueante de curtíssima duração sobre a conexão antiga IMEDIATAMENTE antes de fechá-la, como
+último cheque; isto NÃO está decidido aqui — é opção nomeada, dono é quem implementa.
+
+### Reclassificação de exceção — o que continua fatal, o que passa a reconectar
+
+| evento | hoje | depois desta emenda |
+|---|---|---|
+| `StopIteration` (fechamento limpo, `OPCODE_CLOSE`) | reconecta (`reconnect_and_key`) | **sem mudança** |
+| timeout de leitura numa conexão JÁ ABERTA, acumulado ≥ D5 (~300s sem QUALQUER frame) | fatal, `StreamTransportError` em `_PUBLISH_FAILURE_EXCEPTIONS` → `REJECTED` | **reconecta pela MESMA rota de `StopIteration`** — precisa de um sinal distinguível (novo tipo de exceção ou retorno, não o `StreamTransportError(FRAME, "timeout: ...")` genérico de hoje, que colide com falhas reais de socket) |
+| falha ao ABRIR a conexão substituta (DNS/TCP/TLS/`HTTP_UPGRADE`) | fatal | **sem mudança — continua fatal.** Se nem a substituta consegue conectar, isso é incapacidade real de coletar, não uma política de timeout errada; `REJECTED` continua sendo o veredito certo |
+
+`_FORCE_ORDER_READ_TIMEOUT_S = 900.0` (o remendo anterior) fica **superado, não deletado por
+decreto**: o soquete continua precisando de ALGUM `settimeout()`, só que pequeno (papel de
+granularidade, tabela acima) — o número 900 não governa mais nenhuma decisão de vida ou morte.
+
+### Falsificador desta emenda — como o owner confere sem confiar no arquiteto
+
+**Fixture offline (regressão, roda em `backend/scripts/test.sh`, zero rede):**
+1. Um `ByteChannel` fake que entrega **um `OPCODE_PING` com payload arbitrário e nunca mais nada**
+   por um tempo simulado > D5 (via injeção de relógio, não `sleep` real) — assert: o cliente envia
+   de volta um frame `OPCODE_PONG`, **mascarado**, com o MESMO payload do `ping`; assert:
+   **nenhuma** reconexão/erro é disparada só por causa disso (mercado quieto ≠ morte).
+2. O mesmo fake, agora **sem nenhum frame de nenhum tipo** por > D5 simulado — assert: dispara a
+   MESMA rota de reconexão que `StopIteration` dispara hoje (não `_PUBLISH_FAILURE_EXCEPTIONS`).
+3. Um `new_source` fake cujo `.open()` retorna imediatamente mas cujo `.messages()` nunca produz
+   nada (bloquearia para sempre no design antigo) — assert: o handoff completa e `old_source.close()`
+   é chamado, sem esperar por `next(new_source.messages())`.
+
+**Produção, pós-deploy (o critério que faz esta decisão errada se estiver errada):** soak de 24h
+(a janela de reconexão mandatória que a própria ADR já documenta no topo deste arquivo) sem NENHUM
+restart do `deploy-collector-1` atribuível a `forceOrder`/`FRAME: timeout` — restarts pela
+reconexão diária mandatória da Binance são esperados e não contam contra este critério.
+`docker inspect deploy-collector-1 --format '{{.RestartCount}}'` antes/depois da janela, cruzado
+com `docker logs --since <início> | grep -c 'FRAME: timeout'`. **Se restart por este motivo
+continuar ocorrendo, esta emenda está incompleta ou os valores de D5 estão errados — volta à mesa,
+não se aumenta o timeout de novo.**
+
+### O que esta emenda NÃO decide
+
+Os arquivos concretos a editar (`rfc6455_client.py`, `binance_stream_probe.py`,
+`reconnect_force_order_stream.py`, `force_order_reconnection_overlap.py`, `collectors_cli.py`) e os
+valores finais de D5 são **plano de implementação**, dono `infra-architect`/builder — ver
+`docs/context/captura-em-producao/gates/forceorder-liveness-quant-architect.md`.

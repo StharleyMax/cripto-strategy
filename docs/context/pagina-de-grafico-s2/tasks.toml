@@ -1,0 +1,263 @@
+# Doc de tasks de `pagina-de-grafico-s2` — o DADO DE MAQUINA da quebra.
+#
+# A narrativa e o racional vivem em `tasks_review.md` (mesmo diretorio). Os dois NAO se
+# sobrepoem: este arquivo nao argumenta, e aquele nao e lido por maquina.
+#
+# A chave da feature e o campo `feature` ABAIXO, nunca o nome do diretorio (ADR-013/D4).
+# Feature FILHA de `plataforma-dados` (`relate` no ledger). IDs `T-NN.k` sao locais a ESTE
+# arquivo.
+#
+# ── TRACKER: CARDADAS EM 2026-09-08 (MCP `atlassian` autenticado nesta sessao) ─────────
+#
+# `tracker.kind = jira` (CST, board 36, Epic -> Tarefa, id 10054). 4 Epics PROPRIOS —
+# CST-168 (F0), CST-169 (F1), CST-170 (F2), CST-171 (F3) — e 18 `Tarefa` CST-172..CST-189
+# (T-00.x -> 172-175, T-01.x -> 176-179+189, T-02.x -> 180-183, T-03.x -> 184-188),
+# `tracker` inline em cada task. Nenhuma `local_only`: nao houve decisao de nao cardar.
+#
+# ── T-01.5, achado do coordenador pos-aprovacao da narrativa ───────────────────────────
+#
+# history-transport.ts/live-transport.ts (T-05.9, anteriores a ADR-034) codificam o request
+# de historico em camelCase/ISO-8601; SPEC-006 s5.2/ADR-034/D1 fixam snake_case/epoch-ms.
+# T-01.5 corrige os dois modulos + testes no mesmo commit. Ver tasks_review.md s4.
+#
+# ── Orquestracao de PR (owner, na aprovacao) ────────────────────────────────────────────
+#
+# 1 PR por FASE, nao por task (4 PRs: F0/F1/F2/F3) — mesmo padrao de captura-em-producao.
+# Nao muda este arquivo: depends_on continua por task, e' orquestracao de branch/PR do
+# coordenador no dispatch dos builders.
+#
+# ── Prioridade do owner — F0 isolada ────────────────────────────────────────────────────
+#
+# F0 nao depende de nada e destrava deploy-collector-1 a gravar dado real. Nenhuma task de
+# F0 tem aresta para F1/F2/F3; a ordem F0->F1->F2 e F3 em paralelo (fecha por ultimo) e
+# portao de fase do workflow (RN-1 do plano), nao aresta fabricada.
+#
+# ── M1 (destino de T-05.2/T-08.9 da mae) — PROPOSTO, NAO EXECUTADO ─────────────────────
+#
+# tasks_review.md s7: apos TASKS_APPROVED, coordenador marca T-05.2/CST-36 e T-08.9/CST-77
+# (mae plataforma-dados) como status=blocked, comentario "resolve: superseded por
+# pagina-de-grafico-s2 T-02.4 (CST-183)" — mesmo mecanismo de T-07.15/16/17 em
+# captura-em-producao. NAO executado por este arquivo nem por esta sessao.
+
+schema_version = "1"
+feature = "pagina-de-grafico-s2"
+spec   = "docs/specs/SPEC-006-pagina-de-grafico-s2.md"
+plan   = "docs/plans/SPEC-006-pagina-de-grafico-s2"
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 00 — A coluna de valor que faltava (sentimento). Epic CST-168. Juiz: quant-architect.
+# Isolada: nenhuma aresta para 01/02/03. Prioridade explicita do owner: primeiro, sozinha.
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-00.1"
+title = "[sentimento] 00 · value_raw TEXT NOT NULL no CREATE TABLE de postgres_series_sink.py"
+components = ["sentimento"]
+status = "todo"
+phase = "00"
+depends_on = []
+refs = ["ADR-034/D7", "SPEC-006 §5.1", "CA-F0-3", "plano 00 item 0.1"]
+tracker = { provider = "jira", id = "CST-172", url = "https://conversationhub.atlassian.net/browse/CST-172" }
+
+[[tasks]]
+id = "T-00.2"
+title = "[sentimento] 00 · SeriesRow.value_raw: str em provenance.py, recusa string vazia"
+components = ["sentimento"]
+status = "todo"
+phase = "00"
+depends_on = []
+refs = ["ADR-034/D7", "SPEC-006 §5.1", "CA-F0-2", "plano 00 item 0.2"]
+tracker = { provider = "jira", id = "CST-173", url = "https://conversationhub.atlassian.net/browse/CST-173" }
+
+[[tasks]]
+id = "T-00.3"
+title = "[sentimento] 00 · series_row_wire.py — FIELD_NAMES ganha value_raw, round-trip 4x16"
+components = ["sentimento"]
+status = "todo"
+phase = "00"
+depends_on = ["T-00.2"]
+refs = ["ADR-034/D7", "SPEC-006 §5.1", "CA-F0-1", "plano 00 item 0.3"]
+tracker = { provider = "jira", id = "CST-174", url = "https://conversationhub.atlassian.net/browse/CST-174" }
+
+[[tasks]]
+id = "T-00.4"
+title = "[sentimento][docs] 00 · Migração de schema — ALTER TABLE md.series ADD COLUMN value_raw"
+components = ["sentimento", "docs"]
+status = "todo"
+phase = "00"
+depends_on = ["T-00.1"]
+refs = [
+    "SPEC-006 §5.1", "M3 (respondida: base local truncada, custo de re-ingestão zero)",
+    "plano 00 item 0.4", "não decide QUEM roda em produção nem QUANDO — owner",
+]
+tracker = { provider = "jira", id = "CST-175", url = "https://conversationhub.atlassian.net/browse/CST-175" }
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 01 — As duas rotas de ADR-005/D1 (sentimento; web). Epic CST-169.
+# Juizes: quant-architect (schema/leitura), frontend-architect (contrato de rota).
+# Depende de 00 (aresta real so em T-01.3 -> T-00.3).
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-01.1"
+title = "[sentimento] 01 · Leitor de janela (infra) sobre md.series"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = ["ADR-034/D9", "plano 01 item 1.1"]
+tracker = { provider = "jira", id = "CST-176", url = "https://conversationhub.atlassian.net/browse/CST-176" }
+
+[[tasks]]
+id = "T-01.2"
+title = "[sentimento] 01 · Use-case de leitura — as_of() por grade, par discriminado, recusa mal-formado"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1"]
+refs = ["ADR-034/D5", "ADR-034/D9", "CA-F1-5 (metade)", "RN-9", "plano 01 itens 1.2+1.6"]
+tracker = { provider = "jira", id = "CST-177", url = "https://conversationhub.atlassian.net/browse/CST-177" }
+
+[[tasks]]
+id = "T-01.3"
+title = "[web] 01 · GET {API_PREFIX}/series-history"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.2", "T-00.3"]
+refs = [
+    "ADR-034/D1", "ADR-034/D4", "ADR-034/D6", "SPEC-006 §5.2",
+    "CA-F1-1", "CA-F1-2", "CA-F1-3", "CA-F1-5 (metade)", "CA-F1-6", "CA-F1-7", "RN-7", "RN-8",
+    "plano 01 itens 1.3+1.5",
+]
+tracker = { provider = "jira", id = "CST-178", url = "https://conversationhub.atlassian.net/browse/CST-178" }
+
+[[tasks]]
+id = "T-01.4"
+title = "[web] 01 · GET {API_PREFIX}/series-live (SSE)"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = ["ADR-005/D2", "ADR-034/D1", "ADR-034/D4", "CA-F1-4", "CA-F1-6", "plano 01 item 1.4"]
+tracker = { provider = "jira", id = "CST-179", url = "https://conversationhub.atlassian.net/browse/CST-179" }
+
+[[tasks]]
+id = "T-01.5"
+title = "[web] 01 · Corrige history-transport.ts/live-transport.ts para os nomes/tipos de SPEC-006 §5.2"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "SPEC-006 §5.2", "ADR-034/D1",
+    "ACHADO DO COORDENADOR, pos-aprovacao da narrativa, antes da materializacao: history-transport.ts/live-transport.ts (T-05.9, anteriores a ADR-034) codificam seriesKeyId/from-to-ISO/knowledgeTime/barPolicy (camelCase); SPEC-006/ADR-034 fixam series_key_id/window_start_ms-window_end_ms/knowledge_time_ms/bar_policy (snake_case, epoch-ms). Fonte de verdade e' a SPEC/ADR, mais nova.",
+    "atualiza history-transport.test.ts e live-transport.test.ts no mesmo commit",
+    "T-02.4 herda a correcao de graca pela ordem de fase — nenhuma aresta nova la",
+]
+tracker = { provider = "jira", id = "CST-189", url = "https://conversationhub.atlassian.net/browse/CST-189" }
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 02 — A pagina /symbol (charts; web). Epic CST-170.
+# Juizes: frontend-architect (fronteira charts<->web) + ux-ui-mastery (gate de design).
+# Depende de 01.
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-02.1"
+title = "[charts] 02 · frontend/src/charts/index.ts — barrel único"
+components = ["charts"]
+status = "todo"
+phase = "02"
+depends_on = []
+refs = ["ADR-034/D8", "plano 02 item 2.1"]
+tracker = { provider = "jira", id = "CST-180", url = "https://conversationhub.atlassian.net/browse/CST-180" }
+
+[[tasks]]
+id = "T-02.2"
+title = "[web] 02 · Bloco de ESLint escopado a src/app/symbol/**"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = []
+refs = ["ADR-034/D8", "plano 02 item 2.2"]
+tracker = { provider = "jira", id = "CST-181", url = "https://conversationhub.atlassian.net/browse/CST-181" }
+
+[[tasks]]
+id = "T-02.3"
+title = "[charts] 02 · eslint-boundary.test.ts — 3 casos novos"
+components = ["charts"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.1", "T-02.2"]
+refs = ["ADR-034/D8", "CA-F2-4", "plano 02 item 2.3"]
+tracker = { provider = "jira", id = "CST-182", url = "https://conversationhub.atlassian.net/browse/CST-182" }
+
+[[tasks]]
+id = "T-02.4"
+title = "[web] 02 · Página /symbol (Server Component) — S2-mínima"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.1", "T-01.3", "T-01.4"]
+refs = [
+    "RF-4", "US-4", "US-5", "US-6", "CA-F2-1", "CA-F2-2", "CA-F2-3", "CA-F2-5",
+    "plano 02 itens 2.4+2.5",
+    "consome history-transport.ts/live-transport.ts corrigidos por T-01.5 (herdado por ordem de fase, sem aresta nova)",
+]
+tracker = { provider = "jira", id = "CST-183", url = "https://conversationhub.atlassian.net/browse/CST-183" }
+
+# ═══════════════════════════════════════════════════════════════════════════════════
+# FASE 03 — /painel -> /console (web). Epic CST-171. Juiz: frontend-architect.
+# Independente de 01/02, mas fecha por ultimo (I-3 do PRD).
+# ═══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-03.1"
+title = "[web] 03 · frontend/src/app/painel/ -> frontend/src/app/console/"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = []
+refs = ["ADR-034/D2", "plano 03 item 3.1"]
+tracker = { provider = "jira", id = "CST-184", url = "https://conversationhub.atlassian.net/browse/CST-184" }
+
+[[tasks]]
+id = "T-03.2"
+title = "[web] 03 · routes.ts — ROUTES.panel aponta para /console"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = ["RF-5", "CA-F3-2", "plano 03 item 3.2"]
+tracker = { provider = "jira", id = "CST-185", url = "https://conversationhub.atlassian.net/browse/CST-185" }
+
+[[tasks]]
+id = "T-03.3"
+title = "[web] 03 · not-found.tsx e referentes a /painel atualizados"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.2"]
+refs = ["RF-5", "plano 03 item 3.3"]
+tracker = { provider = "jira", id = "CST-186", url = "https://conversationhub.atlassian.net/browse/CST-186" }
+
+[[tasks]]
+id = "T-03.4"
+title = "[web] 03 · e2e migrado para /console; falsificador CLAUDE.md"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1", "T-03.2", "T-03.3"]
+refs = ["RF-5", "CA-F3-1", "CA-F3-4", "CLAUDE.md linha 12", "plano 03 item 3.4"]
+tracker = { provider = "jira", id = "CST-187", url = "https://conversationhub.atlassian.net/browse/CST-187" }
+
+[[tasks]]
+id = "T-03.5"
+title = "[web] 03 · next.config.ts — redirect 308 /painel -> /console"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = ["ADR-034/D3", "RF-6", "CA-F3-3", "plano 03 item 3.5"]
+tracker = { provider = "jira", id = "CST-188", url = "https://conversationhub.atlassian.net/browse/CST-188" }
