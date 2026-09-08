@@ -232,6 +232,89 @@ export default tseslint.config(
     },
   },
 
+  // ── `ADR-034/D8`, made EXECUTABLE — the ONE sanctioned crossing point, `src/app/symbol/**`
+  //    only (`T-02.2`) ──────────────────────────────────────────────────────────────────────
+  //
+  // The `web` block right above forbids `web -> charts` OUTRIGHT (`ADR-003/D5.12`) — correct
+  // for every route except the one this block narrows: `T-02.4`'s `src/app/symbol/page.tsx`
+  // needs to import the sanctioned barrel, `src/charts/index.ts` (`ADR-034/D8`, plan `02` item
+  // `2.1`). Flat config resolves this by ORDER, not by precedence keyword: "the last block
+  // that matches file+rule wins" (`ADR-034/D8`, literal) — this block comes AFTER the general
+  // `web` block and re-declares BOTH `no-restricted-imports` and `no-restricted-syntax` for
+  // the narrower `files` glob below, so for a file under `src/app/symbol/**` these settings
+  // REPLACE the general ones entirely rather than adding to them.
+  //
+  // The exception is as narrow as `ADR-034/D8` writes it: `no-restricted-imports.patterns[].
+  // group` keeps the general `"**/charts/**"` prohibition and ADDS three negations for
+  // exactly the barrel's own three possible specifiers (extension-less, `.ts`, `.tsx`) — a
+  // deep import like `charts/s2-cvd` is UNCHANGED here, still forbidden, because none of the
+  // three negations match it. The three `no-restricted-syntax` selectors (dynamic import,
+  // bare template literal, `require`) get the SAME narrowing, applied as a single negative
+  // lookahead on the regex instead of three positive negations (an `esquery` `source.value`
+  // pattern has no `group`-style array to negate against) — `/(^|\/)charts(\/|$)/` (matches
+  // `.../charts` OR `.../charts/anything`) becomes `/(^|\/)charts\/(?!index(\.tsx?)?$)/`
+  // (still requires a `/` after `charts`, i.e. still never matches the bare `charts` barrel
+  // directory import itself — the SAME thing the general rule already refused, and still not
+  // sanctioned — but now ALSO excepts `charts/index`, `charts/index.ts`, `charts/index.tsx`
+  // specifically via the `(?!...)` negative lookahead, and refuses every other
+  // `charts/<anything>` exactly as before).
+  //
+  // `eslint-boundary.test.ts`'s 3 new cases (`T-02.3`, `ADR-034/D8`'s own falsifier table)
+  // prove this narrowing MORDE+CALA, not merely typecheck clean: a deep import planted INSIDE
+  // `src/app/symbol/**` still bites (morde-1); the SAME barrel import planted OUTSIDE this
+  // glob, in `src/app/console/**`, still bites too (morde-2, scope containment — the general
+  // `web` block above is what catches it, unchanged); and the barrel import in the real
+  // `src/app/symbol/page.tsx` stays green (cala).
+  {
+    files: ["src/app/symbol/**/*.{ts,tsx,mts,cts}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/charts/**", "!**/charts/index", "!**/charts/index.ts", "!**/charts/index.tsx"],
+              message:
+                "ADR-034/D8: `src/app/symbol/**` may import ONLY the sanctioned barrel " +
+                "(`charts/index.ts`) — a deep import (e.g. `charts/s2-cvd`) is still forbidden " +
+                "even inside this route; go through the barrel instead.",
+            },
+          ],
+        },
+      ],
+      // Mirrors the general `web` block's 3 `no-restricted-syntax` selectors (dynamic
+      // `import()`, bare template literal, `require`) with the SAME narrowing the
+      // `no-restricted-imports` patterns above apply — see this block's own header comment
+      // for the exact regex change and why a negative lookahead replaces the `group`
+      // negations here (an `esquery` string-value selector has no array to negate against).
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "ImportExpression[source.value=/(^|\\/)charts\\/(?!index(\\.tsx?)?$)/]",
+          message:
+            "ADR-034/D8 (dynamic form): `src/app/symbol/**` may dynamically import ONLY the " +
+            "sanctioned barrel (`charts/index.ts`) — a deep dynamic import is still forbidden.",
+        },
+        {
+          selector:
+            "ImportExpression[source.type='TemplateLiteral'][source.expressions.length=0]" +
+            "[source.quasis.0.value.cooked=/(^|\\/)charts\\/(?!index(\\.tsx?)?$)/]",
+          message:
+            "ADR-034/D8 (dynamic form, bare template literal): `src/app/symbol/**` may " +
+            "dynamically import ONLY the sanctioned barrel (`charts/index.ts`) via a " +
+            "non-interpolated template literal — a deep import is still forbidden.",
+        },
+        {
+          selector:
+            "CallExpression[callee.name='require'][arguments.0.value=/(^|\\/)charts\\/(?!index(\\.tsx?)?$)/]",
+          message:
+            "ADR-034/D8 (require form): `src/app/symbol/**` may `require` ONLY the sanctioned " +
+            "barrel (`charts/index.ts`) — a deep `require` is still forbidden.",
+        },
+      ],
+    },
+  },
+
   // ── `ADR-005/D6.3`+`D6.4`, made EXECUTABLE — `D5.17(b)`, REWRITTEN BY DIRECTIVE (`T-01.2`,
   //    `ADR-028/D3`; born `T-05.16`, superseded here) ────────────────────────────────────────
   //

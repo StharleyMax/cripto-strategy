@@ -126,6 +126,105 @@ function removeEphemeralViolators(): void {
   }
 }
 
+// ── `ADR-034/D8` (`T-02.3`): the narrow `src/app/symbol/**` exception, 3 cases from that
+//    ADR's own falsifier table — morde-1 (deep import, INSIDE the exempted route), morde-2
+//    (the SAME barrel import, OUTSIDE the exempted route — scope containment), cala (the
+//    barrel, inside the exempted route). All 3 have to run together: a rule that "morde" on
+//    the wrong case (or "cala"s on both) is not the narrow exception `ADR-034/D8` decided.
+const SYMBOL_DEEP_IMPORT_VIOLATOR = path.join(
+  FRONTEND_ROOT,
+  "src/app/symbol/_ephemeral-morde-symbol-deep-import.ts",
+);
+const CONSOLE_BARREL_LEAK_VIOLATOR = path.join(
+  FRONTEND_ROOT,
+  "src/app/console/_ephemeral-morde-console-barrel-leak.ts",
+);
+const SYMBOL_BARREL_CALA_PROBE = path.join(
+  FRONTEND_ROOT,
+  "src/app/symbol/_ephemeral-cala-symbol-barrel.ts",
+);
+
+function removeAdr034D8Probes(): void {
+  for (const filePath of [SYMBOL_DEEP_IMPORT_VIOLATOR, CONSOLE_BARREL_LEAK_VIOLATOR, SYMBOL_BARREL_CALA_PROBE]) {
+    if (existsSync(filePath)) {
+      rmSync(filePath);
+    }
+  }
+}
+
+test("ADR-034/D8 MORDE+MORDE+CALA: `src/app/symbol/**` may import only the charts barrel, and only there", () => {
+  assert.equal(
+    existsSync(SYMBOL_DEEP_IMPORT_VIOLATOR),
+    false,
+    "a stale ADR-034/D8 probe was left behind — remove it before re-running",
+  );
+  assert.equal(
+    existsSync(CONSOLE_BARREL_LEAK_VIOLATOR),
+    false,
+    "a stale ADR-034/D8 probe was left behind — remove it before re-running",
+  );
+  assert.equal(
+    existsSync(SYMBOL_BARREL_CALA_PROBE),
+    false,
+    "a stale ADR-034/D8 probe was left behind — remove it before re-running",
+  );
+
+  try {
+    // ── MORDE-1: a DEEP import (`charts/s2-lightweight-adapter`, not the barrel) planted
+    // INSIDE the exempted route — the exception is "only the barrel", not "anything in
+    // charts", so this must still bite.
+    writeFileSync(
+      SYMBOL_DEEP_IMPORT_VIOLATOR,
+      'import { candlestickSeriesLossless } from "../../charts/s2-lightweight-adapter.ts";\n' +
+        "export const probe = candlestickSeriesLossless;\n",
+    );
+    // ── MORDE-2: the barrel import that IS sanctioned inside `symbol/**`, planted OUTSIDE
+    // it (`src/app/console/**`) — scope containment: the general `web` block (unchanged)
+    // still refuses it there.
+    writeFileSync(
+      CONSOLE_BARREL_LEAK_VIOLATOR,
+      'import { colorTokens } from "../../charts/index.ts";\nexport const probe = colorTokens;\n',
+    );
+
+    const bitten = runEslint();
+    assert.notEqual(
+      bitten.status,
+      0,
+      "eslint accepted a real ADR-034/D8 violator (deep import in symbol/, or barrel leak into console/) — the narrow exception has no teeth",
+    );
+    assert.deepEqual(
+      ruleIdsFor(bitten.json, SYMBOL_DEEP_IMPORT_VIOLATOR),
+      ["no-restricted-imports"],
+      "a deep charts/* import inside src/app/symbol/** must still be named by the boundary rule",
+    );
+    assert.deepEqual(
+      ruleIdsFor(bitten.json, CONSOLE_BARREL_LEAK_VIOLATOR),
+      ["no-restricted-imports"],
+      "the barrel import must still be refused outside src/app/symbol/** (scope containment)",
+    );
+  } finally {
+    removeAdr034D8Probes();
+  }
+
+  // ── CALA: the SAME barrel import that morde-2 just proved refused elsewhere, planted
+  // INSIDE the exempted route, has to be accepted — together with the real `symbol/page.tsx`
+  // (`T-02.4`) that makes exactly this import for real.
+  try {
+    writeFileSync(
+      SYMBOL_BARREL_CALA_PROBE,
+      'import { colorTokens } from "../../charts/index.ts";\nexport const probe = colorTokens;\n',
+    );
+    const clean = runEslint();
+    assert.equal(
+      clean.status,
+      0,
+      `eslint refused the sanctioned barrel import inside src/app/symbol/**: ${JSON.stringify(clean.json)}`,
+    );
+  } finally {
+    removeAdr034D8Probes();
+  }
+});
+
 test("D5.12 MORDE+CALA: the charts<->web import boundary bites both directions and stays green on real code", () => {
   // Precondition, re-measured here rather than assumed (the `T-05.1` handoff's own
   // warning: "o universo REAL, nao o de 2026-08-28"): no ephemeral probe survived a
