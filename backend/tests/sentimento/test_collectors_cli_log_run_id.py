@@ -93,12 +93,20 @@ class _OneFrameThenClosedSource:
     Closed by ITSELF rather than by the caller pre-setting the flag: pre-setting it would make
     `_run_force_order_collector`'s `if stop_event.is_set(): break` discard the frame BEFORE
     publishing it, undercounting `n_published`.
+
+    `path` declares this double models the RAW `!forceOrder@arr` shape (`FRAME_A` below is
+    unenveloped) — never the combined per-symbol stream `_default_force_order_source` moved to
+    (`docs/context/captura-em-producao/gates/forceorder-fix-qa.md`). `_run_force_order_collector`
+    reads it (falling back to `FORCE_ORDER_ENDPOINT` for a double without one) to log/record the
+    endpoint that was ACTUALLY connected, so this file's `endpoint` assertion below now exercises
+    that mechanism instead of a hardcoded literal it never touched.
     """
 
     def __init__(self, frames: list[str], stop_event: threading.Event) -> None:
         """Script the frames to replay; hold the SAME `stop_event` the collector loop reads."""
         self._frames = list(frames)
         self._stop_event = stop_event
+        self.path = FORCE_ORDER_ENDPOINT
 
     def open(self) -> None:
         """No transport to open."""

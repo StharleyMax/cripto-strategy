@@ -1,13 +1,22 @@
-"""ADR-004 B2 — the DECLARED dedupe key for `!forceOrder@arr`, never presumed."""
+"""ADR-004 B2 — the DECLARED dedupe key for a `forceOrder` message, never presumed."""
 #
-# `!forceOrder@arr` carries no sequence identifier (`ADR-004`, table in "Contexto"): there is no
-# `agg_id`-equivalent a reconnection can key on. B2 fixes the key instead of leaving it to
+# A liquidation order carries no sequence identifier (`ADR-004`, table in "Contexto"): there is
+# no `agg_id`-equivalent a reconnection can key on. B2 fixes the key instead of leaving it to
 # whatever a caller happens to hash: `(symbol, side, price, orig_qty, trade_time)`, read from the
-# `o` object of the raw envelope. This module is the ONLY place that reads those five fields out
-# of the raw text — the recorder (`force_order_raw_recorder.py`, `T-03.2`) never parses a single
-# field of the payload, and this module does not change that: it reads the SAME untouched `raw`
-# string for the reconnect policy's dedupe key alone, and returns a key, never a normalized
-# liquidation event.
+# `o` object. This module is the ONLY place that reads those five fields out of the raw text —
+# the recorder (`force_order_raw_recorder.py`, `T-03.2`) never parses a single field of the
+# payload, and this module does not change that: it reads the SAME untouched `raw` string for the
+# reconnect policy's dedupe key alone, and returns a key, never a normalized liquidation event.
+#
+# TWO envelope shapes carry the SAME `o` object, and this module accepts BOTH. The raw
+# single-stream endpoint (`/ws/!forceOrder@arr`, what the `T-03.2` probe still targets) sends
+# `{"e": "forceOrder", ..., "o": {...}}` directly; the combined per-symbol endpoint
+# (`/stream?streams=<symbol>@forceOrder/...`, what the LIVE collector reads since
+# `docs/context/captura-em-producao/gates/forceorder-fix-quant-architect.md` — `!forceOrder@arr`
+# never delivered one event to that host in >300s combined, including a guaranteed 1msg/s control
+# that also silenced) wraps it as `{"stream": "...", "data": {"e": "forceOrder", ..., "o": {...}}}`.
+# `payload.get("data", payload)` is the SAME unwrap `probe_stream_quantity_fields._decode` already
+# applies for `aggTrade`'s combined stream — one rule, not two shapes drifting apart.
 
 from __future__ import annotations
 
@@ -57,14 +66,21 @@ class ForceOrderKeyExtractionError(ValueError):
 
 
 def extract_force_order_natural_key(raw: str) -> ForceOrderNaturalKey:
-    """Parse ONLY the five ADR-004 B2 fields out of one raw `!forceOrder@arr` message.
+    """Parse ONLY the five ADR-004 B2 fields out of one raw `forceOrder` message.
+
+    Accepts both the raw `!forceOrder@arr` shape and the combined-stream envelope shape — see
+    the module docstring for which producer sends which. `isinstance` guards the unwrap so a
+    non-dict JSON value (a bare number, a list) falls straight into the exception below instead
+    of raising `AttributeError` first, which this function's declared exception set does not
+    name.
 
     Raises `ForceOrderKeyExtractionError`, chained from whatever stdlib exception the malformed
     text produced, so the caller sees both "this could not be keyed" and the specific reason.
     """
     try:
         payload = json.loads(raw)
-        order = payload["o"]
+        event = payload.get("data", payload) if isinstance(payload, dict) else payload
+        order = event["o"]
         return ForceOrderNaturalKey(
             symbol=str(order["s"]),
             side=str(order["S"]),
@@ -74,8 +90,9 @@ def extract_force_order_natural_key(raw: str) -> ForceOrderNaturalKey:
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as failure:
         raise ForceOrderKeyExtractionError(
-            "raw !forceOrder@arr message does not have the five natural-key B2 fields "
-            f"(symbol/side/price/orig_qty/trade_time) declared in ADR-004: {failure!r}"
+            "raw forceOrder message (raw !forceOrder@arr OR combined-stream envelope) does not "
+            "have the five natural-key B2 fields (symbol/side/price/orig_qty/trade_time) "
+            f"declared in ADR-004: {failure!r}"
         ) from failure
 
 

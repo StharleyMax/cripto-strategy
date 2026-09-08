@@ -74,6 +74,7 @@ from src.modules.sentimento.domain.quota_bucket import USED_WEIGHT_HEADER
 from src.modules.sentimento.infra.binance_stream_probe import (
     BINANCE_FUTURES_STREAM_HOST,
     WebSocketMessageSource,
+    combined_stream_path,
     connect_tls,
 )
 from src.modules.sentimento.infra.ingest_health_cli import (
@@ -119,6 +120,7 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     build_premium_index_run,
 )
 from src.modules.sentimento.use_cases.collector_series_mapping import (
+    INITIAL_SYMBOLS,
     build_force_order_to_rows,
     build_premium_index_to_rows,
 )
@@ -158,6 +160,27 @@ _REDIS_CONNECT_TIMEOUT_S: Final[float] = 3.0
 
 _JOIN_TIMEOUT_S: Final[float] = 30.0
 _MAIN_LOOP_POLL_S: Final[float] = 0.05
+
+# `[MEDIDO 2026-09-08]`, `docker inspect deploy-collector-1`: 53 restarts/11min, every cycle
+# `collector_session_closed !forceOrder@arr: FRAME: timeout: The read operation timed out` —
+# `docs/context/captura-em-producao/handoff/forceorder-arr-crash-loop.md` traced this to TWO
+# compounding facts, and this constant + `_default_force_order_source` below fix the one that is
+# this module's to fix (the other, `_PUBLISH_FAILURE_EXCEPTIONS` treating every read timeout as
+# fatal, is DEFERRED — see `docs/context/captura-em-producao/gates/
+# forceorder-fix-quant-architect.md` §"O que fica em aberto" for why reusing `reconnect_and_key`
+# for a timeout is NOT a safe drop-in fix). `!forceOrder@arr` (the whole-market `@arr` array
+# stream) delivered ZERO events to this host across >300s combined, INCLUDING a guaranteed
+# 1msg/s control stream that also silenced — re-measured live in the same handoff. Per-symbol
+# combined streams on the SAME host delivered immediately. `_FORCE_ORDER_READ_TIMEOUT_S` sits
+# comfortably above Binance's OWN documented contract for how long a market-data WS connection
+# may go unanswered before BINANCE itself calls it dead: "the websocket server will send a ping
+# frame every 3 minutes... if the... server does not receive a pong frame back... within a 10
+# minute period, the connection will be disconnected"
+# (https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-api-general-info,
+# read 2026-09-08). A read timeout past 900s can therefore only mean Binance's own SLA was
+# already violated — never "no liquidation happened in the last few seconds" for a stream that
+# is genuinely sparse even across the whole 4-symbol universe.
+_FORCE_ORDER_READ_TIMEOUT_S: Final[float] = 900.0
 
 
 class CollectorBootConfigurationError(RuntimeError):
@@ -482,7 +505,7 @@ def _run_force_order_collector(
     record_run: Callable[[IngestRun], None],
     source_holder: list[MessageSource | None],
 ) -> None:
-    """Read `!forceOrder@arr` until told to stop, recording one `IngestRun` per SESSION close.
+    """Read `forceOrder` until told to stop, recording one `IngestRun` per SESSION close.
 
     `source_holder[0]` always names the currently-open source, so `run()`'s `SIGTERM` handler
     can force it closed from the main thread — that is what unblocks a read that is sitting in a
@@ -493,8 +516,20 @@ def _run_force_order_collector(
     one's read loop. A read that FAILS for any other reason is `SPEC-004` §3.1's "falha ... em
     regime": the session closes `REJECTED`, the OTHER thread is told to stop too, and
     `exit_code[0] = 1`.
+
+    `endpoint` — the value every `IngestRun`/log line below names — is read off `source.path`
+    when `open_source()` returns something that declares it (`WebSocketMessageSource` does,
+    real or faked), falling back to the legacy `FORCE_ORDER_ENDPOINT` literal for a double that
+    does not (`docs/context/captura-em-producao/gates/forceorder-fix-qa.md`: recording the
+    hardcoded literal regardless of what `open_source` actually opened is the defect this reads
+    fixes — a `!forceOrder@arr` label surviving the move to a combined per-symbol stream would
+    make `collector_status.py`'s dashboard, and a future incident's own log line, lie about
+    which stream is connected). Computed ONCE, from the FIRST source: every reconnect
+    (`reconnect_and_key`, below) opens a new socket through the SAME `open_source` factory, so
+    the endpoint identity does not change mid-session.
     """
     source = open_source()
+    endpoint: str = getattr(source, "path", FORCE_ORDER_ENDPOINT)
     source_holder[0] = source
     source.open()
     started_at = _iso_now()
@@ -526,9 +561,9 @@ def _run_force_order_collector(
     except _PUBLISH_FAILURE_EXCEPTIONS as failure:
         logger.error(
             "collector_session_closed %s: %s",
-            FORCE_ORDER_ENDPOINT,
+            endpoint,
             failure,
-            extra={"endpoint": FORCE_ORDER_ENDPOINT, "verdict": "REJECTED"},
+            extra={"endpoint": endpoint, "verdict": "REJECTED"},
             exc_info=True,
         )
         verdict = "REJECTED"
@@ -537,12 +572,12 @@ def _run_force_order_collector(
     finally:
         source.close()
         ended_at = _iso_now()
-        run = build_force_order_run(started_at, ended_at, n_published, verdict, digest)
+        run = build_force_order_run(started_at, ended_at, n_published, verdict, digest, endpoint)
         record_run(run)
         logger.info(
             "collector_session_closed",
             extra={
-                "endpoint": FORCE_ORDER_ENDPOINT,
+                "endpoint": endpoint,
                 "n_published": n_published,
                 "verdict": verdict,
                 "run_id": run.run_id,
@@ -551,6 +586,22 @@ def _run_force_order_collector(
 
 
 # ── THE COMPOSITION ITSELF ──────────────────────────────────────────────────────────────────
+
+
+def _default_force_order_source() -> MessageSource:
+    """Build the LIVE `forceOrder` source: per-symbol combined stream, never `!forceOrder@arr`.
+
+    `combined_stream_path` is the SAME function `aggtrade_nq_probe_cli.py` already proved live
+    over a real handshake (`T-03.1`) — one connection for the whole `INITIAL_SYMBOLS` universe,
+    not one per symbol, and `sorted()` only pins the connection path deterministic for tests; it
+    carries no ordering meaning for a combined stream. See `_FORCE_ORDER_READ_TIMEOUT_S`'s
+    comment for why the socket timeout is 900s and not the probe's 10s default.
+    """
+    return WebSocketMessageSource(
+        BINANCE_FUTURES_STREAM_HOST,
+        combined_stream_path(sorted(INITIAL_SYMBOLS), stream="forceOrder"),
+        lambda: connect_tls(BINANCE_FUTURES_STREAM_HOST, timeout=_FORCE_ORDER_READ_TIMEOUT_S),
+    )
 
 
 def run(
@@ -567,17 +618,12 @@ def run(
     """Start both collector threads, install `SIGTERM`, and wait for a clean or a failed exit.
 
     Every network-touching default is injectable, matching every other CLI in this package —
-    left to default, `force_order_source_factory` opens a real `!forceOrder@arr` WebSocket and
+    left to default, `force_order_source_factory` opens a real per-symbol combined `forceOrder`
+    WebSocket (`_default_force_order_source`, NOT `!forceOrder@arr` — see its docstring) and
     `premium_index_fetcher_factory` opens a real HTTPS client; the offline suite injects fakes
     for both, exactly like `premium_index_probe_cli.py`/`force_order_collector_cli.py` already do.
     """
-    open_force_order_source = force_order_source_factory or (
-        lambda: WebSocketMessageSource(
-            BINANCE_FUTURES_STREAM_HOST,
-            "/ws/!forceOrder@arr",
-            lambda: connect_tls(BINANCE_FUTURES_STREAM_HOST),
-        )
-    )
+    open_force_order_source = force_order_source_factory or _default_force_order_source
     build_premium_index_fetcher = premium_index_fetcher_factory or PremiumIndexHttpClient
     premium_to_rows = premium_index_to_rows or _mapping_not_decided_yet
     force_order_to_rows_ = force_order_to_rows or _mapping_not_decided_yet

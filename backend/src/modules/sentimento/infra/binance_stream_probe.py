@@ -85,9 +85,18 @@ class WebSocketMessageSource:
     """A `MessageSource` speaking RFC 6455 over an injected byte channel."""
 
     def __init__(self, host: str, path: str, connect: Callable[[], ByteChannel]) -> None:
-        """Bind the source to a host, a stream path and a way to obtain a channel."""
+        """Bind the source to a host, a stream path and a way to obtain a channel.
+
+        `path` is ALSO exposed publicly (unprefixed), not just kept as `self._host`'s private
+        counterpart: it is the one thing this object knows about WHICH stream it actually
+        connects to, and a caller building provenance (`collectors_cli.py`'s
+        `_run_force_order_collector`, after `docs/context/captura-em-producao/gates/
+        forceorder-fix-qa.md`) reads it to record the REAL endpoint instead of a hardcoded
+        literal that can drift from whatever `open_source` was actually wired to.
+        """
         self._host = host
         self._path = path
+        self.path = path
         self._connect = connect
         self._channel: ByteChannel | None = None
         # Sobra do handshake. `recv(4096)` NAO respeita fronteira de mensagem: o mesmo pacote
