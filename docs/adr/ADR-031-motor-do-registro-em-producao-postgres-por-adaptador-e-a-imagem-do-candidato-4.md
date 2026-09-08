@@ -1,6 +1,6 @@
 # ADR-031 — Motor do registro `md.ingest_run`/`md.ingest_gap` em produção: Postgres por adaptador, escrito por quem observa; e a imagem que carrega o candidato 4
 
-**Data:** 2026-09-07 · **Status:** **aceita** — o owner deu `approve spec` em `captura-em-producao` (`2026-09-07T18:23:31Z`, `harness pipeline show captura-em-producao`) e a co-assinatura do `quant-architect` está satisfeita — [`gates/Q3-run-definition.md`](../context/captura-em-producao/gates/Q3-run-definition.md) (§7) decide o que `D3` grava. **Flip formal de `Status` executado por `T-01.9`** (fase `01`, `docs`), conforme este parágrafo previa. **Co-assinatura do `infra-architect`** (a imagem e o serviço `postgres` são `infra`) segue com `T-03.6` — gate de `F3` que decide `[Q6]`/`P8`; não bloqueia esta transição porque `D1`/`D3` (motor e escritor) são do `quant-architect`, e `D2` (imagem) já está ancorada em `ADR-002/D4`.
+**Data:** 2026-09-07 · **Status:** **aceita** — o owner deu `approve spec` em `captura-em-producao` (`2026-09-07T18:23:31Z`, `harness pipeline show captura-em-producao`) e a co-assinatura do `quant-architect` está satisfeita — [`gates/Q3-run-definition.md`](../context/captura-em-producao/gates/Q3-run-definition.md) (§7) decide o que `D3` grava. **Flip formal de `Status` executado por `T-01.9`** (fase `01`, `docs`), conforme este parágrafo previa. **Co-assinatura do `infra-architect` satisfeita por `T-03.6`** — [`gates/F3-infra-architect.md`](../context/captura-em-producao/gates/F3-infra-architect.md) §1 confirma `D2` sem alteração: `timescale/timescaledb:2.17.2-pg15` é a imagem que os dois alvos de compose (`deploy/compose.yml`, `T-03.4`) já usam.
 **Feature:** `captura-em-producao` (filha de `plataforma-dados`) · **Fecha:** `PRD-004` `RN-3`/`M2`/`[GAP G4]` (motor do registro) e `[Q5]`/`[GAP G3]` (imagem) · **Emenda de:** `ADR-014/D1` (SQLite provisório em F0 — os gatilhos `G-A` e `G-B` de `D1e` disparados) e `ADR-002/D1` (aplicação, não reabertura) · **Rev de ancoragem:** `master@0acf947`.
 **Componentes:** `sentimento` (adaptador, composição dos CLIs) · `infra` (composição em `src.main`, imagem do serviço `postgres`).
 
@@ -26,11 +26,13 @@
 - **Propriedade de equivalência (o teste que prova que o adaptador não inventa):** para o mesmo conjunto de `IngestRun`/`IngestGap` gravado nos dois stores, `ingest_health_query(postgres).fingerprint() == ingest_health_query(sqlite).fingerprint()` — o `sha256` de `ADR-008/DoD-2` é o juiz, e ele **não muda** com o motor.
 - **`/ready` mantém a forma de `SPEC-003 §3.4`:** `{"store":{"path":…,"exists":…,"schema_present":…}}`; com Postgres, `path` é a DSN **sem senha** (`postgresql://<user>@<host>:<port>/<db>`), `exists` = conexão aceita, `schema_present` = as duas tabelas existem. **Segredo nunca aparece no corpo** (`core.hardcoded-secret` não alcança respostas HTTP — a garantia aqui é de desenho, e o DoD a mede).
 
-### D2 · A imagem do serviço `postgres`, nos dois alvos, é `timescale/timescaledb:2.17.2-pg15` — `[INFERRED]`, pendente de `approve spec`
+### D2 · A imagem do serviço `postgres`, nos dois alvos, é `timescale/timescaledb:2.17.2-pg15` — co-assinada pelo `infra-architect` em `T-03.6`
 
 É a **única** imagem contra a qual os cinco critérios de `ADR-002/D4` foram medidos (`ADR-002:172`); `postgres:16-alpine` (hoje) não carrega a extensão que o sink da série exige em F2, e `postgres:15` puro também não. **Custo de reverter:** 1 linha em `deploy/compose.yml` + recriar o volume `postgres_data` — **zero hoje** (nada implantado, volume vazio; `NG-1`), **não-zero após `M3`** (diretório de dados pg16 ≠ pg15).
 
 O que **não** decide: se a VPS usará o `postgres` do compose ou a *"instância que já está de pé"* de `ADR-002/D1` `[NÃO SEI]` — isso é implantação (`M3`, owner); se for a instância compartilhada, instalar a extensão nela é a *"tarefa de infra separada"* que a emenda `D4` já nomeia (item 2).
+
+**Confirmado pelo `infra-architect` (`T-03.6`, [`gates/F3-infra-architect.md`](../context/captura-em-producao/gates/F3-infra-architect.md) §1):** `deploy/compose.yml:42` já usa `timescale/timescaledb:2.17.2-pg15` — a decisão acima foi implementada sem desvio, nada a trocar `[MEDIDO 2026-09-08: grep -n 'image:' deploy/compose.yml → linha 42]`.
 
 ### D3 · Quem grava `md.ingest_run` é **quem observa** — o processo coletor, direto no registro, não via Stream
 
