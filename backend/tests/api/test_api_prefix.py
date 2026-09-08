@@ -8,7 +8,7 @@ so `fastapi.testclient.TestClient` is not importable here anyway.
 Three DoDs, three tests: the default prefix is `/api/v1` and a bare path 404s (never the root);
 `API_PREFIX` moves `openapi.json`'s paths, proved through `_api_prefix_from_environment`, the
 ONE function this module reads the env var through (`src.main` mirrors
-`_store_path_from_environment`'s pattern); and absent the var, the default wins.
+`_quarantine_store_path_from_environment`'s pattern); and absent the var, the default wins.
 """
 
 from __future__ import annotations
