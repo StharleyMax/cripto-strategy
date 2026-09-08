@@ -10,12 +10,22 @@ import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
 from fakeredis import TcpFakeServer
 
+from src.modules.sentimento.domain.force_order_collision_accounting import (
+    ForceOrderKeyObservation,
+)
+from src.modules.sentimento.domain.force_order_natural_key import ForceOrderNaturalKey
+from src.modules.sentimento.domain.premium_index_batch import PremiumIndexReading
 from src.modules.sentimento.infra import collectors_cli
 from src.modules.sentimento.infra.redis_resp_client import SocketLike
+from src.modules.sentimento.use_cases.collector_series_mapping import (
+    ForceOrderObservationToRows,
+    PremiumIndexReadingToRows,
+)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 CLI_MODULE = "src.modules.sentimento.infra.collectors_cli"
@@ -321,4 +331,93 @@ def test_process_refuses_to_boot_against_an_unreachable_postgres_within_5s(
     assert "collector_boot_refused" in completed.stdout, (
         "the refusal must be the SAME structured log event every other boot failure in this "
         f"module uses, not a bare exception surfacing by accident; got stdout: {completed.stdout!r}"
+    )
+
+
+# ── `T-05.3`: `main()` wires the REAL `SeriesKey` mapping, never the raising placeholder ──────
+
+
+def test_main_wires_the_real_series_mapping(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression for the crash loop `[MEDIDO 2026-09-08]`: 55 restarts/10min.
+
+    `main()` called `run()` with NEITHER `premium_index_to_rows` NOR `force_order_to_rows`
+    supplied, so every non-empty read fell through to `_mapping_not_decided_yet`
+    (`docs/context/captura-em-producao/medicoes/CA-F3-8-pegada.md` §1.1).
+
+    `run()` is monkeypatched to a fake that only RECORDS the kwargs it received — no thread ever
+    starts, no network is touched, and `main()` still runs its real boot (a real loopback
+    `fakeredis` server, a real `sqlite` store under `tmp_path`) up to the point it calls `run()`.
+    Checking the two callables are merely non-`None` would NOT catch the regression:
+    `_mapping_not_decided_yet` is itself a non-`None` callable. This test actually CALLS both
+    with the same fixtures `test_collector_series_mapping.py` pins, so a revert back to the
+    unsupplied default fails here by raising `SeriesRowMappingNotDecidedError`, not by a
+    silent `None`.
+    """
+    server = TcpFakeServer(("127.0.0.1", 0), server_type="redis")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.socket.getsockname()
+    recorded: dict[str, object] = {}
+
+    def _fake_run(**kwargs: object) -> int:
+        recorded.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(collectors_cli, "run", _fake_run)
+    monkeypatch.setenv("REDIS_HOST", host)
+    monkeypatch.setenv("REDIS_PORT", str(port))
+    monkeypatch.setenv("INGEST_HEALTH_STORE_PATH", str(tmp_path / "store.sqlite3"))
+
+    try:
+        return_code = collectors_cli.main([])
+    finally:
+        server.shutdown()
+        thread.join(timeout=2.0)
+
+    assert return_code == 0
+
+    premium_index_to_rows = cast(PremiumIndexReadingToRows, recorded["premium_index_to_rows"])
+    force_order_to_rows = cast(ForceOrderObservationToRows, recorded["force_order_to_rows"])
+
+    btcusdt_reading = PremiumIndexReading(
+        symbol="BTCUSDT",
+        mark_price_raw="78249.60000000",
+        index_price_raw="78274.40021739",
+        estimated_settle_price_raw="78379.99641129",
+        last_funding_rate_raw="0.00009992",
+        interest_rate_raw="0.00010000",
+        next_funding_time=1_788_883_200_000,
+        source_time=1_788_869_519_000,
+    )
+    dogeusdt_reading = PremiumIndexReading(
+        symbol="DOGEUSDT",
+        mark_price_raw="0.40000000",
+        index_price_raw="0.40010000",
+        estimated_settle_price_raw="0.40005000",
+        last_funding_rate_raw="0.00010000",
+        interest_rate_raw="0.00010000",
+        next_funding_time=1_788_883_200_000,
+        source_time=1_788_869_519_000,
+    )
+    btcusdt_liquidation = ForceOrderKeyObservation(
+        key=ForceOrderNaturalKey(
+            symbol="BTCUSDT",
+            side="SELL",
+            price="78000.00",
+            orig_qty="0.010",
+            trade_time=1_788_869_519_500,
+        ),
+        day="2026-09-08",
+    )
+
+    assert len(premium_index_to_rows(1_788_869_520_000, btcusdt_reading)) == 2, (
+        "a BTCUSDT (in-universe) premiumIndex reading must yield real rows, never raise"
+    )
+    assert premium_index_to_rows(1_788_869_520_000, dogeusdt_reading) == (), (
+        "a non-universe symbol must yield zero rows, never raise"
+    )
+    assert len(force_order_to_rows(1_788_869_520_000, btcusdt_liquidation)) == 1, (
+        "a BTCUSDT (in-universe) liquidation must yield a real row, never raise"
     )
