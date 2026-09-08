@@ -1,13 +1,24 @@
-# Read layer of the `/painel` dashboard — Postgres (ADR-009/D5), the API (ADR-027/D1
-# process (c)), the Next.js reader (ADR-028) and a single-origin Caddy (ADR-029/D1)
-# in front of both. Structured and validated by `config -q` (T-02.6, plano `02` item
-# 2.6) — NOT a deployment: nothing here is ever brought up on a real host (RN-9). The
-# inverse of the scope is the falsifier: `docker compose -f deploy/compose.yml ps`
-# showing `caddy` on the VPS means this scope was violated.
+# Read-and-write layer of the `/painel` dashboard — extended by F3 (`captura-em-producao`,
+# SPEC-004 §3.6) to carry the write side end-to-end. Exactly 7 services, no more
+# (`ADR-032/D1`, `CA-F3-5`): Postgres (`ADR-031/D2` — `timescale/timescaledb:2.17.2-pg15`,
+# the same image `ADR-002/D4` measured), Redis as the wire (`ADR-032/D4`), the `api`
+# process (c) (`ADR-027/D1`), `writer` and `collector` — the SAME backend image, only the
+# `command:` differs (`ADR-027/D1`, literal: "mesma imagem, comando diferente") — the
+# Next.js reader (`ADR-028`) and a single-origin Caddy (`ADR-029/D1`) in front of both.
+# Structured and validated by `config -q` (`D3.1`) — NOT a deployment: nothing here is
+# ever brought up on a real host (`RN-9`/`R-E`). The inverse of the scope is the
+# falsifier: `docker compose -f deploy/compose.yml ps` showing any of these 7 services
+# on the VPS means this scope was violated.
+#
+# No `profiles:` in this file (`NG-6`, `D3.4`'s falsifier) — that lives only in the local
+# overlay (`deploy/compose.local.yml`, `T-03.5`), which this file does not reference.
 #
 # WHAT THIS FILE IS NOT: it does not decide auth mechanism or TLS (`[Q3]`/`[Q10]`,
 # owner) — `caddy`'s `basic_auth` block stays inert until `PANEL_BASIC_AUTH_HASH` is
 # set (ADR-029/D6), and `deploy/Caddyfile` (routing itself) is T-02.7, not this file.
+# Liveness of `writer`/`collector` is fail-fast on boot plus `/collector-status` turning
+# `PARADO` after `stale_after_s` (`ADR-032/D5`, `ADR-030/D1`) — a command `healthcheck:`
+# for those two is declared, not implemented, pending `T-03.6`'s gate (`[Q6]`).
 #
 # WHY IT IS VERSIONED: it is the legitimate half of the `D1.14`/`F-029-6` falsifier.
 # The biting half is an ephemeral violator that never enters the tree — a versioned
@@ -24,8 +35,11 @@
 # by service name on the compose network (`http://api:${APP_PORT}`); the Next server
 # reads the same address from `INGEST_HEALTH_API_BASE_URL` (`.env.example`).
 services:
+  # `ADR-031/D2` — the same `timescale/timescaledb:2.17.2-pg15` image `ADR-002/D4` measured
+  # against its 5 criteria (`F4`'s falsifier). Postgres-compatible: `pg_isready` and every
+  # existing client keep working unmodified.
   postgres:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:2.17.2-pg15
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
@@ -39,6 +53,28 @@ services:
       timeout: 5s
       retries: 5
 
+  # The wire between `collector` and `writer` (`ADR-032/D4`) — `REDIS_STREAM_MAXLEN` caps
+  # the stream (`XADD … MAXLEN ~`, `redis_stream_bus.py`) and `maxmemory-policy noeviction`
+  # means a full buffer fails the write loudly instead of silently dropping (`M4(a)`).
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: >-
+      redis-server --appendonly yes --maxmemory ${REDIS_MAXMEMORY}
+      --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # Process (c) of ADR-027/D1 — "already exists (`src.main`)". Same Python image as the
   # rest of the backend; command overrides whatever the image's default entrypoint is.
   # No `ports:` (ADR-029/D5): reachable only as `api:${APP_PORT}` on this network.
@@ -50,7 +86,53 @@ services:
     env_file:
       - ../.env
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # The single writer (`ADR-009/D2`) — the ONLY process ever holding an open write
+  # connection to the ingest tables (`ADR-009/D3`). SAME image as `api`; only `command:`
+  # differs (`ADR-027/D1`). `depends_on: … service_healthy` only proves Redis/Postgres are
+  # reachable before this starts — a stalled writer after boot is caught by
+  # `/collector-status` turning `PARADO` (`ADR-030/D1`), not by a `healthcheck:` here
+  # (`ADR-032/D5`, `[Q6]` decided by `T-03.6`).
+  writer:
+    build:
+      context: ../backend
+    command: python -m src.modules.sentimento.infra.single_writer_cli
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Publishes to the Redis stream `writer` drains, and validates `INGEST_RECORD_BACKEND`
+  # against Postgres via the same shared composition (`compose_ingest_record_store`,
+  # `collectors_cli.py`) — hence `depends_on` both. SAME image as `api`/`writer`.
+  collector:
+    build:
+      context: ../backend
+    command: python -m src.modules.sentimento.infra.collectors_cli
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     logging:
       driver: json-file
       options:
@@ -91,5 +173,6 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   caddy_data:
   caddy_config:
