@@ -102,7 +102,7 @@ tracker = { provider = "jira", id = "CST-175", url = "https://conversationhub.at
 id = "T-01.1"
 title = "[sentimento] 01 · Leitor de janela (infra) sobre md.series"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T19:19:57Z @ 4c330a1f499b2ef29c9486cfba1b465421946087
 phase = "01"
 depends_on = []
 refs = ["ADR-034/D9", "plano 01 item 1.1"]
@@ -112,7 +112,7 @@ tracker = { provider = "jira", id = "CST-176", url = "https://conversationhub.at
 id = "T-01.2"
 title = "[sentimento] 01 · Use-case de leitura — as_of() por grade, par discriminado, recusa mal-formado"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T19:19:57Z @ 4c330a1f499b2ef29c9486cfba1b465421946087
 phase = "01"
 depends_on = ["T-01.1"]
 refs = ["ADR-034/D5", "ADR-034/D9", "CA-F1-5 (metade)", "RN-9", "plano 01 itens 1.2+1.6"]
@@ -122,7 +122,7 @@ tracker = { provider = "jira", id = "CST-177", url = "https://conversationhub.at
 id = "T-01.3"
 title = "[web] 01 · GET {API_PREFIX}/series-history"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T19:19:57Z @ 4c330a1f499b2ef29c9486cfba1b465421946087
 phase = "01"
 depends_on = ["T-01.2", "T-00.3"]
 refs = [
@@ -136,7 +136,7 @@ tracker = { provider = "jira", id = "CST-178", url = "https://conversationhub.at
 id = "T-01.4"
 title = "[web] 01 · GET {API_PREFIX}/series-live (SSE)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T19:19:57Z @ 4c330a1f499b2ef29c9486cfba1b465421946087
 phase = "01"
 depends_on = []
 refs = ["ADR-005/D2", "ADR-034/D1", "ADR-034/D4", "CA-F1-4", "CA-F1-6", "plano 01 item 1.4"]
@@ -146,7 +146,7 @@ tracker = { provider = "jira", id = "CST-179", url = "https://conversationhub.at
 id = "T-01.5"
 title = "[web] 01 · Corrige history-transport.ts/live-transport.ts para os nomes/tipos de SPEC-006 §5.2"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T19:19:57Z @ 4c330a1f499b2ef29c9486cfba1b465421946087
 phase = "01"
 depends_on = []
 refs = [
