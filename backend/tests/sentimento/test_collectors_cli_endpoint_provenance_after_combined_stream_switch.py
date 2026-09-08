@@ -83,8 +83,20 @@ class _FakeCombinedStreamSource:
     like `test_collectors_cli_publish_failure.py`'s `_OneFrameThenIdleSource`.
     """
 
-    def __init__(self, host: str, path: str, connect: Callable[[], object]) -> None:
-        """Record the combined-stream path this source was actually built with."""
+    def __init__(
+        self,
+        host: str,
+        path: str,
+        connect: Callable[[], object],
+        *,
+        idle_timeout_s: float | None = None,
+    ) -> None:
+        """Record the combined-stream path this source was actually built with.
+
+        `idle_timeout_s` (`ADR-004` Emenda D5) is accepted and ignored — this fake has no idle
+        clock of its own, it only stands in for the constructor shape `_default_force_order_
+        source` calls.
+        """
         self.path = path
         self._closed = threading.Event()
 

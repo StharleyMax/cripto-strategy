@@ -40,6 +40,7 @@ from src.modules.sentimento.infra.aggtrade_nq_probe_cli import (
 )
 from src.modules.sentimento.infra.binance_stream_probe import (
     RecordingMessageSource,
+    StreamIdleTimeoutError,
     WebSocketMessageSource,
     combined_stream_path,
 )
@@ -367,6 +368,10 @@ def _reader(data: bytes) -> object:
     return read_exact
 
 
+def _no_reply(_payload: bytes) -> None:
+    """Discard the payload — stands in for `send` when a test doesn't care about the reply."""
+
+
 @pytest.mark.parametrize("size", [10, 200, 70000])
 def test_every_payload_length_encoding_is_read(size: int) -> None:
     """7-bit, 16-bit and 64-bit lengths all round-trip."""
@@ -386,7 +391,7 @@ def test_a_masked_server_frame_is_refused() -> None:
 def test_a_message_split_across_continuation_frames_is_reassembled() -> None:
     """A fragmented text message arrives as one string."""
     data = _server_frame(b'{"a":', fin=False) + _server_frame(b"1}", opcode=0x0)
-    assert next(iter_text_messages(_reader(data))) == '{"a":1}'  # type: ignore[arg-type]
+    assert next(iter_text_messages(_reader(data), _no_reply)) == '{"a":1}'  # type: ignore[arg-type]
 
 
 def test_control_frames_are_skipped_and_close_ends_the_stream() -> None:
@@ -396,7 +401,31 @@ def test_control_frames_are_skipped_and_close_ends_the_stream() -> None:
     message would have turned an empty stream into a false `ABSENT` verdict.
     """
     data = _server_frame(b"1788015862624", opcode=0x9) + _server_frame(b"", opcode=0x8)
-    assert list(iter_text_messages(_reader(data))) == []  # type: ignore[arg-type]
+    assert list(iter_text_messages(_reader(data), _no_reply)) == []  # type: ignore[arg-type]
+
+
+def test_a_ping_receives_a_masked_pong_echoing_the_same_payload() -> None:
+    """`ADR-004` D5 falsifier item 1: a PING is answered with a MASKED PONG, SAME payload.
+
+    Binance's own contract (USDⓈ-M Futures WebSocket API General Info, read 2026-09-08): "When
+    you receive a ping, you must send a pong with a copy of ping's payload as soon as possible."
+    A ping is "mercado quieto", never a death verdict — it still yields no text message, but it
+    is no longer a silent `continue`: something is written back, and it echoes the exact bytes.
+    """
+    payload = b"1788015862624"
+    data = _server_frame(payload, opcode=0x9) + _server_frame(b"", opcode=0x8)
+    sent: list[bytes] = []
+    assert list(iter_text_messages(_reader(data), sent.append)) == []  # type: ignore[arg-type]
+
+    assert len(sent) == 1
+    frame = sent[0]
+    assert frame[0] == 0x8A  # FIN=1 (0x80) | opcode PONG (0xA)
+    assert frame[1] & 0x80  # every client->server frame MUST be masked (RFC 6455 5.1)
+    length = frame[1] & 0x7F
+    assert length == len(payload)
+    key, masked_payload = frame[2:6], frame[6:]
+    unmasked = bytes(byte ^ key[index % 4] for index, byte in enumerate(masked_payload))
+    assert unmasked == payload
 
 
 # ── Control 6: the live transport, driven over a fake channel ────────────────────────────────
@@ -605,26 +634,167 @@ def test_a_frame_cut_in_half_fails_at_frame_not_as_a_missing_field() -> None:
     assert raised.value.stage is ProbeStage.FRAME
 
 
-def test_a_read_timeout_is_a_frame_failure() -> None:
-    """A socket timeout is reported at `FRAME`, never as an empty payload."""
+class _TimingOutChannel(FakeChannel):
+    """A channel whose `recv` times out forever once its scripted bytes are exhausted."""
 
-    class TimingOutChannel(FakeChannel):
-        def recv(self, size: int, /) -> bytes:
-            if self.script:
-                return super().recv(size)
-            raise TimeoutError("the read operation timed out")
+    def recv(self, size: int, /) -> bytes:
+        """Serve scripted bytes first, then time out on every call — no real delay involved."""
+        if self.script:
+            return super().recv(size)
+        raise TimeoutError("the read operation timed out")
 
-    source = WebSocketMessageSource("exemplo.com", "/ws/x", lambda: TimingOutChannel(b""))
+
+def test_a_single_recv_timeout_is_not_a_verdict_it_keeps_retrying_below_idle_threshold() -> None:
+    """`ADR-004` D5: read GRANULARITY is not death; only ACCUMULATED silence is.
+
+    A socket timing out once, twice, must not raise while the injected clock has not yet
+    crossed `idle_timeout_s`; the loop keeps retrying instead.
+    """
+    ticks = iter([0.0, 0.0, 1.0, 2.0, 4.9, 6.0])  # crosses idle_timeout_s=5.0 only on the LAST tick
+    source = WebSocketMessageSource(
+        "exemplo.com",
+        "/ws/x",
+        lambda: _TimingOutChannel(b""),
+        now=lambda: next(ticks),
+        idle_timeout_s=5.0,
+    )
     source.open()
-    with pytest.raises(StreamTransportError) as raised:
+    with pytest.raises(StreamIdleTimeoutError) as raised:
         next(source.messages())
     assert raised.value.stage is ProbeStage.FRAME
+    with pytest.raises(StopIteration):
+        next(ticks)  # every scripted tick was consumed — the raise happened on the LAST one
+
+
+def test_idle_silence_past_d5_raises_a_distinct_type_from_the_generic_frame_failure() -> None:
+    """`ADR-004` D5 falsifier item 2: silence past the threshold raises a distinct type.
+
+    `StreamIdleTimeoutError` is what `collectors_cli.py` routes to reconnection — never the
+    generic `StreamTransportError` a truncated or masked frame raises. Judged by an INJECTED
+    clock, never a real `sleep` (`ADR-004` D5's falsifier demands exactly this).
+    """
+    ticks = iter([0.0, 0.0, 10.0])  # opens at t=0, first recv() timeout already 10s of silence
+    source = WebSocketMessageSource(
+        "exemplo.com",
+        "/ws/x",
+        lambda: _TimingOutChannel(b""),
+        now=lambda: next(ticks),
+        idle_timeout_s=5.0,
+    )
+    source.open()
+    with pytest.raises(StreamIdleTimeoutError) as raised:
+        next(source.messages())
+    assert raised.value.stage is ProbeStage.FRAME
+    assert isinstance(raised.value, StreamTransportError)  # still a StreamTransportError, by type
+
+
+class _RepeatedPingsChannel:
+    """Answers the handshake, then serves ONLY `PING` frames, timing out on every OTHER `recv()`.
+
+    Models a real, sparse-but-alive connection: a `recv()` granularity tick returns nothing (one
+    D5 tick of silence), then a `PING` arrives, over and over — proving the ACCUMULATED-silence
+    clock resets on every frame of ANY kind, not just on a domain message. Every write AFTER the
+    handshake (the `PONG`s D5 requires) is recorded here instead of being re-parsed as a new
+    handshake request, which is what reusing `FakeChannel.sendall` for this would have done.
+    """
+
+    def __init__(self, frames: bytes) -> None:
+        """Script the frames served AFTER the handshake head, kept in a SEPARATE buffer.
+
+        The head must be returned whole, on the FIRST `recv()`, with no leftover — `_read_header`
+        makes exactly one `recv(4096)` call and treats a `TimeoutError` there as fatal (no D5
+        retry logic applies to the handshake). Queuing the frames together with the head, the
+        way `FakeChannel` does, would hand them ALL to `_read_header` in one shot (nothing left
+        for `_read_exact`'s injected-clock loop to ever call `recv()` for), which would make this
+        fixture unable to exercise the very thing it exists to prove.
+        """
+        self._frames = bytearray(frames)
+        self._pending_head = b""
+        self._handshake_answered = False
+        self.sent_after_handshake: list[bytes] = []
+        self._timeout_next = True
+
+    def sendall(self, data: bytes, /) -> None:
+        """Answer the handshake once; record every later write (a `PONG`) without parsing it."""
+        if not self._handshake_answered:
+            self._handshake_answered = True
+            key = data.decode().split("Sec-WebSocket-Key: ")[1].split("\r\n")[0]
+            self._pending_head = (
+                f"HTTP/1.1 101 Switching Protocols\r\n"
+                f"Sec-WebSocket-Accept: {expected_accept(key)}\r\n\r\n"
+            ).encode()
+            return
+        self.sent_after_handshake.append(data)
+
+    def recv(self, size: int, /) -> bytes:
+        """Serve the handshake head whole; afterwards, time out on every other call."""
+        if self._pending_head:
+            head, self._pending_head = self._pending_head, b""
+            return head
+        if self._timeout_next:
+            self._timeout_next = False
+            raise TimeoutError("the read operation timed out")
+        self._timeout_next = True
+        chunk = bytes(self._frames[:size])
+        del self._frames[:size]
+        return chunk
+
+    def close(self) -> None:
+        """Nothing to release — no real socket involved."""
+
+
+def test_pings_across_time_past_d5_are_answered_and_never_declared_dead() -> None:
+    """`ADR-004` D5 falsifier item 1: a `PING`-only channel is never declared dead.
+
+    A channel that ONLY ever delivers `PING` frames, across a simulated span that comfortably
+    exceeds `idle_timeout_s`, must (a) get a `PONG` echoing each `PING`'s own payload and (b)
+    never raise `StreamIdleTimeoutError` — "mercado quieto" (a `ping` keeps arriving) is not
+    "conexão morta" (nothing arrives, of any kind).
+
+    `test_a_ping_receives_a_masked_pong_echoing_the_same_payload` proves the PONG-echo shape but
+    drives `iter_text_messages` directly, over a plain byte reader with no clock and no idle-
+    timeout concept at all — it cannot, by construction, exercise the claim that a PING resets
+    the accumulated-silence clock. This test drives `WebSocketMessageSource` itself, the only
+    place that clock lives, with an INJECTED clock (`ADR-004` D5 demands no real `sleep`) whose
+    TOTAL span (~10s) is 2x `idle_timeout_s` (5.0s) while no SINGLE gap between frames ever
+    crosses it — the exact shape "market quiet" must produce.
+    """
+    payload_1, payload_2 = b"ping-1", b"ping-2-is-longer"
+    frames = (
+        _server_frame(payload_1, opcode=0x9)
+        + _server_frame(payload_2, opcode=0x9)
+        + _server_frame(b"", opcode=0x8)
+    )
+    channel = _RepeatedPingsChannel(frames)
+    # 2 `now()` calls per `_exactly` attempt (one on the timeout, one on the success that
+    # follows) x 2 `_exactly` calls per PING (header, payload) x 2 PINGs, + 2 for the final
+    # CLOSE frame's header-only read, + 1 for `__init__` + 1 for `open()`.
+    ticks = iter([0.0, 0.0, 3.0, 3.1, 3.2, 3.3, 7.0, 7.1, 7.2, 7.3, 10.0, 10.1])
+    source = WebSocketMessageSource(
+        "exemplo.com",
+        "/ws/x",
+        lambda: channel,
+        now=lambda: next(ticks),
+        idle_timeout_s=5.0,
+    )
+    source.open()
+
+    assert list(source.messages()) == []  # a PING never becomes a domain message
+
+    assert len(channel.sent_after_handshake) == 2, "one PONG per PING, none skipped or batched"
+    for sent, payload in zip(channel.sent_after_handshake, (payload_1, payload_2), strict=True):
+        assert sent[0] == 0x8A  # FIN=1 (0x80) | opcode PONG (0xA)
+        assert sent[1] & 0x80  # every client->server frame MUST be masked (RFC 6455 5.1)
+        length = sent[1] & 0x7F
+        assert length == len(payload)
+        key, masked = sent[2:6], sent[6:]
+        assert bytes(byte ^ key[index % 4] for index, byte in enumerate(masked)) == payload
 
 
 def test_a_binary_frame_is_reassembled_but_not_yielded_as_text() -> None:
     """A binary message is consumed without being reported as a text payload."""
     data = _server_frame(b"\x00\x01", opcode=0x2) + _server_frame(b"depois")
-    stream = iter_text_messages(_reader(data))  # type: ignore[arg-type]
+    stream = iter_text_messages(_reader(data), _no_reply)  # type: ignore[arg-type]
     assert next(stream) == "depois"
 
 
@@ -790,7 +960,7 @@ def test_a_socket_error_during_the_handshake_fails_at_http_upgrade() -> None:
 def test_consecutive_text_messages_are_yielded_one_after_the_other() -> None:
     """The reader resets its buffer between messages instead of concatenating them."""
     data = _server_frame(b'{"n":1}') + _server_frame(b'{"n":2}')
-    stream = iter_text_messages(_reader(data))  # type: ignore[arg-type]
+    stream = iter_text_messages(_reader(data), _no_reply)  # type: ignore[arg-type]
     assert [next(stream), next(stream)] == ['{"n":1}', '{"n":2}']
 
 
@@ -855,6 +1025,6 @@ def test_a_reserved_opcode_does_not_deliver_half_a_message() -> None:
     """
     data = _server_frame(b'{"e":"agg', fin=False) + _server_frame(b"", opcode=0xB)
     with pytest.raises(StreamTransportError) as raised:
-        next(iter_text_messages(_reader(data)))  # type: ignore[arg-type]
+        next(iter_text_messages(_reader(data), _no_reply))  # type: ignore[arg-type]
     assert raised.value.stage is ProbeStage.FRAME
     assert "reserved opcode" in raised.value.detail

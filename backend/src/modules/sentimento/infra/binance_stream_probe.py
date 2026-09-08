@@ -13,9 +13,10 @@ import json
 import logging
 import socket
 import ssl
+import time
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
-from typing import Protocol
+from typing import Final, Protocol
 
 from src.modules.sentimento.domain.stream_probe_outcome import ProbeStage
 from src.modules.sentimento.infra.rfc6455_client import (
@@ -33,6 +34,26 @@ logger = logging.getLogger(__name__)
 
 BINANCE_FUTURES_STREAM_HOST = "fstream.binance.com"
 _HEADER_TERMINATOR = b"\r\n\r\n"
+
+# `ADR-004` Emenda D5: the library-wide default for "how long can EVERY frame type stay silent
+# before the connection is presumed dead". ~2x Binance's documented 3-minute ping cadence, with
+# margin, comfortably below the 10-minute window in which BINANCE itself would close the socket —
+# so this class never trails Binance's own liveness verdict. A caller with a sparser producer
+# (`collectors_cli.py`'s live `forceOrder` collector) names its OWN constant instead of leaning on
+# this default, so the value stays traceable to the incident that picked it.
+_DEFAULT_IDLE_TIMEOUT_S: Final[float] = 300.0
+
+
+class StreamIdleTimeoutError(StreamTransportError):
+    """No frame of ANY kind arrived within the idle window — the connection is presumed dead.
+
+    A DISTINCT type from the base `StreamTransportError`, so a caller can route it to
+    reconnection (`ADR-004` Emenda D5/D6: idle silence reconnects the SAME way a clean
+    `StopIteration` does) instead of treating it as the generic `FRAME` failure a truncated read
+    or a masked server frame would be. Failing to OPEN the substitute connection still raises the
+    base `StreamTransportError` and stays fatal — this type only ever comes from a connection that
+    was already open and had gone quiet.
+    """
 
 
 class ByteChannel(Protocol):
@@ -84,7 +105,15 @@ def connect_tls(host: str, port: int = 443, timeout: float = 10.0) -> ByteChanne
 class WebSocketMessageSource:
     """A `MessageSource` speaking RFC 6455 over an injected byte channel."""
 
-    def __init__(self, host: str, path: str, connect: Callable[[], ByteChannel]) -> None:
+    def __init__(
+        self,
+        host: str,
+        path: str,
+        connect: Callable[[], ByteChannel],
+        *,
+        now: Callable[[], float] = time.monotonic,
+        idle_timeout_s: float = _DEFAULT_IDLE_TIMEOUT_S,
+    ) -> None:
         """Bind the source to a host, a stream path and a way to obtain a channel.
 
         `path` is ALSO exposed publicly (unprefixed), not just kept as `self._host`'s private
@@ -93,17 +122,27 @@ class WebSocketMessageSource:
         `_run_force_order_collector`, after `docs/context/captura-em-producao/gates/
         forceorder-fix-qa.md`) reads it to record the REAL endpoint instead of a hardcoded
         literal that can drift from whatever `open_source` was actually wired to.
+
+        `now`/`idle_timeout_s` implement `ADR-004` Emenda D5: death is judged by silence of ANY
+        frame, accumulated across repeated short `recv()` timeouts — never by a single one. The
+        per-`recv()` granularity is the channel's OWN `settimeout`, set by whatever `connect`
+        closure the caller injected; this class never reads that value, it only measures how much
+        wall-clock time passed since the last byte of ANY kind arrived. `now` is injectable so the
+        offline suite proves the threshold with a fake clock, never a real `sleep`.
         """
         self._host = host
         self._path = path
         self.path = path
         self._connect = connect
+        self._now = now
+        self._idle_timeout_s = idle_timeout_s
         self._channel: ByteChannel | None = None
         # Sobra do handshake. `recv(4096)` NAO respeita fronteira de mensagem: o mesmo pacote
         # pode trazer o fim do cabecalho HTTP e o inicio do primeiro frame. Descartar essa
         # sobra perde a PRIMEIRA mensagem — e perder a primeira mensagem de uma sonda cuja
         # pergunta e "o campo veio?" e perder exatamente a evidencia que ela existe para colher.
         self._pending = bytearray()
+        self._last_activity_at = now()
 
     def open(self) -> None:
         """Connect and complete the upgrade, or raise with the failing stage."""
@@ -117,6 +156,9 @@ class WebSocketMessageSource:
             self._pending = bytearray(leftover)
         except OSError as error:
             raise StreamTransportError(ProbeStage.HTTP_UPGRADE, str(error)) from error
+        # The handshake completing IS activity — resets the idle clock so a slow-to-arrive first
+        # frame is not measured against a baseline set before the socket even connected.
+        self._last_activity_at = self._now()
 
     @staticmethod
     def _read_header(channel: ByteChannel) -> tuple[bytes, bytes]:
@@ -133,7 +175,13 @@ class WebSocketMessageSource:
         return head, rest
 
     def _read_exact(self, size: int) -> bytes:
-        """Read exactly `size` bytes, failing at `FRAME` on close or timeout."""
+        """Read exactly `size` bytes, failing at `FRAME` on close, or at idle death on silence.
+
+        A single `recv()` timeout is NOT a verdict — it is the granularity tick `ADR-004` D5
+        names (small on purpose, so control returns often). Only once the accumulated silence
+        SINCE THE LAST BYTE OF ANY KIND crosses `idle_timeout_s` does this raise
+        `StreamIdleTimeoutError`; until then it keeps retrying the same read.
+        """
         channel = self._channel
         if channel is None:
             raise StreamTransportError(ProbeStage.FRAME, "channel not open")
@@ -146,15 +194,30 @@ class WebSocketMessageSource:
             try:
                 chunk = channel.recv(size - len(buffer))
             except TimeoutError as error:
-                raise StreamTransportError(ProbeStage.FRAME, f"timeout: {error}") from error
+                silence_s = self._now() - self._last_activity_at
+                if silence_s >= self._idle_timeout_s:
+                    raise StreamIdleTimeoutError(
+                        ProbeStage.FRAME,
+                        f"no frame of any kind for {silence_s:.1f}s "
+                        f"(>= idle timeout {self._idle_timeout_s:.1f}s): {error}",
+                    ) from error
+                continue
             if not chunk:
                 raise StreamTransportError(ProbeStage.FRAME, "connection closed mid-frame")
             buffer.extend(chunk)
+            self._last_activity_at = self._now()
         return bytes(buffer)
 
+    def _send_frame(self, data: bytes) -> None:
+        """Write a client frame (a PONG, today) straight to the channel."""
+        channel = self._channel
+        if channel is None:
+            raise StreamTransportError(ProbeStage.FRAME, "channel not open")
+        channel.sendall(data)
+
     def messages(self) -> Iterator[str]:
-        """Yield complete text messages from the stream."""
-        return iter_text_messages(self._read_exact)
+        """Yield complete text messages from the stream, answering every PING with a PONG."""
+        return iter_text_messages(self._read_exact, self._send_frame)
 
     def close(self) -> None:
         """Close the channel if one was ever opened. Safe after a failed `open`."""

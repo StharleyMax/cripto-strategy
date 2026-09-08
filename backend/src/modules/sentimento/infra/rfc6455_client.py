@@ -138,15 +138,57 @@ def read_frame(read_exact: Callable[[int], bytes]) -> tuple[bool, int, bytes]:
     return fin, opcode, _exactly(read_exact, length, "frame body") if length else b""
 
 
-def iter_text_messages(read_exact: Callable[[int], bytes]) -> Iterator[str]:
-    """Yield complete text messages, reassembling continuations and skipping control frames."""
+def _mask(payload: bytes, key: bytes) -> bytes:
+    """XOR `payload` against the 4-byte `key`, repeating it (RFC 6455 §5.3)."""
+    return bytes(byte ^ key[index % 4] for index, byte in enumerate(payload))
+
+
+def build_pong_frame(payload: bytes) -> bytes:
+    """Build a MASKED client PONG frame echoing `payload` verbatim (RFC 6455 §5.5.3, ADR-004 D5).
+
+    Binance's own contract is explicit: *"When you receive a ping, you must send a pong with a
+    copy of ping's payload as soon as possible."* A pong that does not carry the SAME payload
+    answers a question the server never asked. Every client-to-server frame MUST be masked (RFC
+    6455 §5.1) — the mask key is fresh per frame (`secrets.token_bytes`), matching
+    `new_client_key`'s use of a CSPRNG for the same reason the handshake key is: this is a
+    protocol-shape requirement, not a security boundary, so `usedforsecurity` does not apply here.
+    """
+    header = bytearray([0x80 | OPCODE_PONG])
+    length = len(payload)
+    if length <= 125:
+        header.append(0x80 | length)
+    elif length <= 0xFFFF:
+        header.append(0x80 | _LEN_16BIT)
+        header.extend(length.to_bytes(2, "big"))
+    else:
+        header.append(0x80 | _LEN_64BIT)
+        header.extend(length.to_bytes(8, "big"))
+    key = secrets.token_bytes(4)
+    header.extend(key)
+    return bytes(header) + _mask(payload, key)
+
+
+def iter_text_messages(
+    read_exact: Callable[[int], bytes], send: Callable[[bytes], None]
+) -> Iterator[str]:
+    """Yield complete text messages, answering every PING with a real PONG (`ADR-004` D5).
+
+    `send` is how this generator talks back to the peer. Before D5, a PING was only `continue`d
+    — never answered — which is not neutral: Binance's own SLA says the connection gets closed,
+    by the SERVER, if a PONG never arrives, even on a perfectly healthy link. Answering turns a
+    self-inflicted disconnect into a no-op; a received PONG (this client never sends an
+    unsolicited PING) still carries no reply.
+    """
     buffer = bytearray()
     pending_text = False
     while True:
         fin, opcode, payload = read_frame(read_exact)
         if opcode == OPCODE_CLOSE:
             return
-        if opcode in (OPCODE_PING, OPCODE_PONG):
+        if opcode == OPCODE_PING:
+            send(build_pong_frame(payload))
+            continue
+        if opcode == OPCODE_PONG:
             continue
         if opcode in (OPCODE_TEXT, OPCODE_BINARY):
             buffer = bytearray(payload)
