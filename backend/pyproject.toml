@@ -101,6 +101,15 @@ fakeredis = "2.37.1"
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "--strict-markers --strict-config -q"
+# `process_real` is NOT excluded here via `addopts -m`: the literal DoD command for `T-01.7`
+# (`pytest tests/sentimento -k 'producer_killed and pending' -q`, `tasks.toml:160`) runs this
+# suite directly, with no `-m` override, so a global exclusion in `addopts` would silently
+# deselect the very test the DoD asks for. `R-G` (`docs/plans/SPEC-004-captura-em-producao/index.md`)
+# says verification is `make verify`, not raw pytest, so the exclusion lives one layer up, in
+# `scripts/verify.sh`'s invocation of `backend/scripts/test.sh` — see the comment there.
+markers = [
+    "process_real: crosses real OS process boundaries (subprocess + signal), not an in-process fake; excluded from `make verify` by default until the owner opts back in (`SPEC-004 R-G`).",
+]
 
 [tool.coverage.run]
 source = ["src"]
