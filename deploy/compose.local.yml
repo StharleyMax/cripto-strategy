@@ -1,0 +1,41 @@
+# Local overlay — extends `deploy/compose.yml`, never stands alone (`ADR-032/D1`). Always
+# invoked with BOTH files, in this order (`T-03.5`, `SPEC-004 §3.6`):
+#
+#     docker compose --env-file .env -f deploy/compose.yml -f deploy/compose.local.yml …
+#
+# Exactly 3 service blocks below (`D3.5`'s falsifier: `grep -cE '^  [a-z_-]+:$' … → 3`), and
+# every one of them already exists in the base file — a service named here that the base
+# does not define would be two truths about the same topology (`ADR-032/D1`).
+#
+# Named `compose.local.yml`, never `compose.override.yml`: an override file auto-merges
+# whenever the cwd happens to be `deploy/`, which would make the topology depend on where
+# the command runs from — the exact silent-failure shape `CLAUDE.md` names for
+# `core.hooksPath` (a gate that turns itself off with nothing pointing at why).
+services:
+  # `caddy` is the ONE thing this overlay removes from the local topology (`ADR-032/D1`,
+  # measured E3: the profile drops `caddy` from `config --services` without touching the
+  # base file). Nothing in `deploy/compose.yml` ever references this profile — the base
+  # stays `profiles:`-free (`NG-6`), so the deploy target is never one flag away from being
+  # incomplete.
+  caddy:
+    profiles: ["deploy-only"]
+
+  # `api` never publishes a port under the deploy target (`ADR-029/D5`) — only here, and
+  # bound to loopback so nothing but this host can reach it directly.
+  api:
+    ports:
+      - "127.0.0.1:${APP_PORT}:${APP_PORT}"
+
+  # Same loopback binding as `api`, plus the fix for the gap PR #166 §1 measured: without
+  # `caddy` in front, `web` (a container on the compose network, not the host) cannot reach
+  # `api` at the `INGEST_HEALTH_API_BASE_URL` value `.env.example` ships for the no-docker
+  # `next dev` case (`http://127.0.0.1:8000` — loopback INSIDE the `web` container, which is
+  # not where `api` listens). The override below is the service-name variant
+  # `.env.example` already documents for compose (`http://api:${APP_PORT}`), injected here
+  # so no second file of truth (`frontend/.env.local`) is ever needed to bring the local
+  # target up (`SPEC-004 §3.6.1`, `D3.16`).
+  web:
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      INGEST_HEALTH_API_BASE_URL: http://api:${APP_PORT}

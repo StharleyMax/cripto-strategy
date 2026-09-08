@@ -44,7 +44,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test test-fast boundaries natureza build verify api e2e
+.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test test-fast boundaries natureza build verify api e2e compose-deploy compose-local
 
 # Argumentos repassados ao pytest: `make test ARGS="-k nome --no-cov"`.
 ARGS ?=
@@ -85,6 +85,11 @@ help:
 	  '  make e2e             API de teste sobre store efemero (>=1 run) + next build/start +' \
 	  '                       playwright test, derruba tudo ao final (T-01.8). FORA de verify' \
 	  '                       (M5). E2E_API_UP=0 deixa a API deliberadamente NO CHAO (D1.11)' \
+	  '  make compose-deploy  docker compose do alvo de deploy (7 servicos, so' \
+	  '                       deploy/compose.yml). So concatena a flag; aceita ARGS' \
+	  '                       (T-03.5, ADR-032/D1). FORA de verify (nao implanta nada, R-E)' \
+	  '  make compose-local   idem, alvo local (+ deploy/compose.local.yml, sem caddy).' \
+	  '                       Ex.: make compose-local ARGS="config --services"' \
 	  '' \
 	  'O make sai com 2 em qualquer receita que falhe: ele NAO propaga o rc=3 dos scripts.'
 
@@ -313,3 +318,26 @@ e2e:
 	  frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts; RC=$$?; \
 	bash scripts/e2e-env.sh down "$$STATE_DIR"; \
 	exit $$RC
+
+# ── compose-deploy / compose-local ────────────────────────────────────────────────────
+# `T-03.5` (`ADR-032/D1`, `SPEC-004 §3.6`). The two `make` targets that `ADR-032/D1` says
+# exist so "a forma canonica fica escrita num lugar" — they do ONLY that, concatenating
+# `--env-file .env -f …` from the repo root and forwarding `$(ARGS)` verbatim. The DoD
+# commands (`D3.3`–`D3.16`) run `docker compose` directly, never through `make` — these
+# targets are convenience, not the instrument the gate measures.
+#
+# NEITHER enters `verify`: `docker compose … up` would be a real deployment attempt, and
+# `RN-9`/`R-E` forbid that unconditionally in this repository — no automated portal ever
+# brings a service up. `ARGS` is the same repassing variable `test` already uses; used
+# alone per-target, sharing the name causes no collision.
+#
+# Deploy = `deploy/compose.yml` alone (7 services, no `caddy` profile — `NG-6`).
+compose-deploy:
+	docker compose --env-file .env -f deploy/compose.yml $(ARGS)
+
+# Local = deploy base + the overlay (`deploy/compose.local.yml`), IN THIS ORDER — the
+# overlay alone is not a valid target (`ADR-032/D1`: "sempre explícitos", never merged
+# implicitly). Drops `caddy` (`profiles: ["deploy-only"]`) and publishes `api`/`web` on
+# loopback for direct local access.
+compose-local:
+	docker compose --env-file .env -f deploy/compose.yml -f deploy/compose.local.yml $(ARGS)
