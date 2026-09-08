@@ -249,7 +249,11 @@ def test_envelope_over_a_hand_built_single_entry_catalog_projects_every_field() 
 
 
 def test_envelope_over_a_price_use_entry_carries_the_price_use_string() -> None:
-    """`price_use` is the one optional field none of the ten real rows sets — covered here."""
+    """`price_use` on a hand-built entry, independent of the real catalog.
+
+    The real catalog's own two rows (`price_source_catalog.py`'s `klines_last`/
+    `price_mark_close`, `T-04.2`) now set it too.
+    """
     key = SeriesKey(
         provider="binance",
         venue="usdm_futures",

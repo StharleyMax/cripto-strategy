@@ -189,7 +189,27 @@ def build_klines_last_entry(instrument_id: str, *, verified_by: str) -> SeriesCa
         aggregation_scope="Symbol",
         verified_by=verified_by,
     )
-    return SeriesCatalogEntry(key=key, native_grid="5min", max_staleness_ms=600_000)
+    # `price_use` is a SCALAR on `SeriesCatalogEntry` (`series_catalog.py`), and `klines_last`
+    # is the `price_source` `PRICE_SOURCE_BY_USE` assigns to TWO uses (`structure_detection`,
+    # `execution`) — one row cannot carry both without widening that field's type. `T-04.2`
+    # (`CST-191`, `quant-architect` consulted) picks `structure_detection` as the PRIMARY use to
+    # publish here: it is the use `ADR-007` itself motivates this source with (swing/BOS/CHoCH
+    # need the negotiated price, not the 1 Hz-sampled mark) and the one `CA-F4-2`'s falsifier
+    # fixes as the expected value. `execution` stays implicit — a documented, accepted loss, not
+    # an oversight: this catalog field is METADATA today (`resolvePriceSource`,
+    # `frontend/src/charts/s2-price-source.ts`, keeps its OWN static copy of
+    # `PRICE_SOURCE_BY_USE` and never reads `entry.priceUse` to route anything), so widening the
+    # type now would reformat a field nothing consumes for routing, at the cost of the wire
+    # shape (`use_cases/series_catalog.py`) and the frontend type (`string | null`,
+    # `series-catalog.ts:138`). Re-open this the day a consumer starts READING `entry.priceUse`
+    # to decide routing — that is the moment `klines_last`/`price_mark_close` serving 2-3 uses
+    # each stops being a cosmetic gap and `price_use` needs a collection type.
+    return SeriesCatalogEntry(
+        key=key,
+        native_grid="5min",
+        max_staleness_ms=600_000,
+        price_use="structure_detection",
+    )
 
 
 def build_price_mark_close_entry(instrument_id: str, *, verified_by: str) -> SeriesCatalogEntry:
@@ -224,7 +244,19 @@ def build_price_mark_close_entry(instrument_id: str, *, verified_by: str) -> Ser
         aggregation_scope="Symbol",
         verified_by=verified_by,
     )
-    return SeriesCatalogEntry(key=key, native_grid="5min", max_staleness_ms=600_000)
+    # Same scalar-vs-3-uses gap `build_klines_last_entry` documents above, `T-04.2`
+    # (`CST-191`, `quant-architect` consulted): `price_mark_close` is `PRICE_SOURCE_BY_USE`'s
+    # source for THREE uses (`liquidation_trigger`, `funding`, `cost`). `liquidation_trigger` is
+    # the PRIMARY use published here — first in `ADR-007`'s decision table and the highest-cost
+    # one to get wrong (a mismodeled liquidation is real money, not a display glitch).
+    # `funding`/`cost` stay implicit, same accepted-loss reasoning and the same reopening
+    # trigger (a consumer starting to READ `entry.priceUse` for routing).
+    return SeriesCatalogEntry(
+        key=key,
+        native_grid="5min",
+        max_staleness_ms=600_000,
+        price_use="liquidation_trigger",
+    )
 
 
 def build_price_series_entries(

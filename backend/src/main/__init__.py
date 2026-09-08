@@ -34,6 +34,7 @@ from src.api.dependencies import (
     get_ingest_record_source,
     get_series_catalog_source,
     get_series_quarantine_source,
+    get_series_window_reader_source,
     get_store_readiness_source,
 )
 from src.modules.sentimento.infra.ingest_record_store_composition import (
@@ -48,8 +49,10 @@ from src.modules.sentimento.infra.ingest_record_store_composition import (
     POSTGRES_PORT_VAR,
     POSTGRES_USER_VAR,
     compose_ingest_record_store,
+    compose_postgres_connection,
 )
 from src.modules.sentimento.infra.postgres_ingest_record_store import PostgresIngestRecordStore
+from src.modules.sentimento.infra.postgres_series_window_reader import PostgresSeriesWindowReader
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
 from src.modules.sentimento.infra.sqlite_series_quarantine_store import (
     SqliteSeriesQuarantineStore,
@@ -206,6 +209,13 @@ def create_app(
     """
     ingest_store: SqliteIngestRecordStore | PostgresIngestRecordStore
     readiness_source: StoreReadinessSource
+    # `md.series` has no `sqlite` fallback (`ADR-034/D9`, `get_series_window_reader_source`'s own
+    # docstring) — `window_reader` stays `None` (the stub keeps raising `NotImplementedError` for
+    # `/series-history`) unless the `postgres` engine is actually composed below. An explicit
+    # `store_path` (every test written before `T-04.1`) always builds a `SqliteIngestRecordStore`
+    # directly, never reaching `compose_ingest_record_store`, so it is UNAFFECTED by this — same
+    # as today.
+    window_reader: PostgresSeriesWindowReader | None = None
     if store_path is not None:
         _require_parent_directory(store_path, kind="ingest health")
         ingest_store = SqliteIngestRecordStore(store_path)
@@ -229,6 +239,14 @@ def create_app(
         ingest_store = cast("SqliteIngestRecordStore | PostgresIngestRecordStore", composed)
         if isinstance(ingest_store, PostgresIngestRecordStore):
             readiness_source = _PostgresReadiness(ingest_store, _masked_postgres_dsn(os.environ))
+            # `T-04.1` (`ADR-034/D9` item 1, `CST-190`): a SECOND, dedicated connection to the
+            # SAME Postgres — reusing `ingest_store`'s connection would mean reaching into its
+            # private `_connection` (`postgres_ingest_record_store.py`), which stays unexposed on
+            # purpose (`compose_postgres_connection`'s own docstring). Refuses at boot
+            # (`ADR-029/D3`), same as `ingest_store`'s own connection just above: an unreachable
+            # Postgres must fail `rc != 0` here, never on the first `/series-history` request.
+            window_connection = compose_postgres_connection(os.environ)
+            window_reader = PostgresSeriesWindowReader(window_connection)
         else:
             readiness_source = ingest_store
 
@@ -249,6 +267,8 @@ def create_app(
     app.dependency_overrides[get_series_catalog_source] = lambda: catalog
     quarantine_store = SqliteSeriesQuarantineStore(resolved_quarantine_path)
     app.dependency_overrides[get_series_quarantine_source] = lambda: quarantine_store
+    if window_reader is not None:
+        app.dependency_overrides[get_series_window_reader_source] = lambda: window_reader
     return app
 
 

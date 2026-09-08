@@ -180,22 +180,41 @@ def _postgres_conninfo(environ: Mapping[str, str]) -> str:
     )
 
 
-def _compose_postgres_store(
+def compose_postgres_connection(
     environ: Mapping[str, str],
-    connect: Callable[[str], psycopg.Connection[Any]],
-) -> PostgresIngestRecordStore:
-    """Resolve every Postgres var, then make the ONE `connect` call — no loop, no retry."""
+    *,
+    connect: Callable[[str], psycopg.Connection[Any]] = psycopg.connect,
+) -> psycopg.Connection[Any]:
+    """Open ONE `psycopg` connection to the Postgres this process's env vars name.
+
+    `T-04.1` (`ADR-034/D9` item 1): `md.series` has no `sqlite` fallback, so
+    `src.main.create_app`'s `PostgresSeriesWindowReader` wiring needs its OWN connection to the
+    same Postgres `compose_ingest_record_store`'s `postgres` path already resolves — reusing
+    `PostgresIngestRecordStore`'s connection would mean reaching into that class's private
+    `_connection` (`postgres_ingest_record_store.py`), which stays unexposed on purpose. This
+    function is the extracted primitive so a second consumer opens a SECOND, independent
+    connection through the exact same conninfo (`_postgres_conninfo`) and the exact same
+    "one attempt, no retry" contract, rather than duplicating either.
+    """
     host = environ.get(POSTGRES_HOST_VAR, DEFAULT_POSTGRES_HOST)
     port = environ.get(POSTGRES_PORT_VAR, str(DEFAULT_POSTGRES_PORT))
     conninfo = _postgres_conninfo(environ)
     try:
-        connection = connect(conninfo)
+        return connect(conninfo)
     except psycopg.OperationalError as error:
         raise IngestRecordStoreConnectionError(
             POSTGRES_HOST_VAR,
             f"cannot connect to Postgres at {POSTGRES_HOST_VAR}={host!r} "
             f"{POSTGRES_PORT_VAR}={port!r}: {error}",
         ) from error
+
+
+def _compose_postgres_store(
+    environ: Mapping[str, str],
+    connect: Callable[[str], psycopg.Connection[Any]],
+) -> PostgresIngestRecordStore:
+    """Resolve every Postgres var, then make the ONE `connect` call — no loop, no retry."""
+    connection = compose_postgres_connection(environ, connect=connect)
     return PostgresIngestRecordStore(connection)
 
 
