@@ -15,11 +15,11 @@ synchronous, without `asyncio`.
 `docs/context/captura-em-producao/gates/Q3-run-definition.md` (signed 2026-09-07,
 `quant-architect`) is the run-shape decision this module executes: §1 fixes what "one run" means
 per producer (a stream SESSION, a poll CYCLE); §3 fixes the 16 `IngestRun` fields, including the
-two physically-impossible sentinels (`CLOCK_SKEW_NOT_MEASURED_MS`, weight-not-readable) THIS TASK
-implements per that gate's §8 ("Implementacao dos sentinelas ... T-01.5"). `T-01.6` is a SEPARATE
-task (a dedicated, tested `collector_run_mapping.py`) that extracts and hardens this same mapping
-against `D1.5`'s two-pair falsifier — this module already satisfies the shape `T-01.6` builds on,
-it does not anticipate that task's own DoD.
+two physically-impossible sentinels (`CLOCK_SKEW_NOT_MEASURED_MS`, weight-not-readable). The
+mapping itself — the two builders and the sentinels — lives in
+`use_cases/collector_run_mapping.py` (`T-01.6`): a dedicated, tested module this composition root
+calls at session/cycle close, so the mapping and this module's own tests share exactly one
+construction, never two.
 
 ── WHAT THIS MODULE DELIBERATELY DOES NOT DECIDE, NAMED RATHER THAN HIDDEN ────────────────────
 
@@ -54,7 +54,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType
 from typing import Final
-from uuid import uuid4
 
 from src.modules.sentimento.domain.force_order_collision_accounting import (
     ForceOrderKeyObservation,
@@ -66,7 +65,7 @@ from src.modules.sentimento.domain.force_order_natural_key import (
 )
 from src.modules.sentimento.domain.ingest_record import IngestRun
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
-from src.modules.sentimento.domain.provenance import UNKNOWN_OBSERVER_REGION, SeriesRow
+from src.modules.sentimento.domain.provenance import SeriesRow
 from src.modules.sentimento.domain.quota_bucket import USED_WEIGHT_HEADER
 from src.modules.sentimento.infra.binance_stream_probe import (
     BINANCE_FUTURES_STREAM_HOST,
@@ -99,7 +98,12 @@ from src.modules.sentimento.use_cases.collect_premium_index import (
     RawPremiumIndexFetch,
     collect_premium_index_once,
 )
-from src.modules.sentimento.use_cases.persist_ntp_skew_run import SOURCE
+from src.modules.sentimento.use_cases.collector_run_mapping import (
+    FORCE_ORDER_ENDPOINT,
+    KnownVerdict,
+    build_force_order_run,
+    build_premium_index_run,
+)
 from src.modules.sentimento.use_cases.probe_stream_quantity_fields import (
     MessageSource,
     StreamTransportError,
@@ -132,17 +136,9 @@ _DEFAULT_PREMIUM_INDEX_CYCLE_INTERVAL_S: Final[float] = 60.0
 # resolves but nothing answers, so boot never blocks past the falsifier's window.
 _REDIS_CONNECT_TIMEOUT_S: Final[float] = 3.0
 
-# `Q3` §3: the WS collector spends no REST weight — a FACT (`0`), never a guess.
-FORCE_ORDER_WEIGHT_USED: Final[int] = 0
-# `Q3` §3: physically impossible for a real skew measurement (24+ days off), so it can never be
-# confused with one; the production collectors do not measure skew per session/cycle.
-CLOCK_SKEW_NOT_MEASURED_MS: Final[int] = -2_147_483_648
-# `Q3` §3: weight is always >= 0 for a real measurement, so `-1` can never collide with one.
-WEIGHT_NOT_READABLE: Final[int] = -1
-# `Q3` §3: literal `endpoint`/`observer_id` per producer, distinct from the diagnostic probes.
-FORCE_ORDER_ENDPOINT: Final[str] = "!forceOrder@arr"
-FORCE_ORDER_OBSERVER_ID: Final[str] = "forceorder-collector"
-PREMIUM_INDEX_OBSERVER_ID: Final[str] = "premiumindex-collector"
+# `FORCE_ORDER_ENDPOINT` is imported (not redefined) from `collector_run_mapping` above — this
+# module names the same `!forceOrder@arr` literal `_run_force_order_collector`'s log events use,
+# and a second definition here would be the exact drift `T-01.6`'s extraction exists to prevent.
 
 _JOIN_TIMEOUT_S: Final[float] = 30.0
 _MAIN_LOOP_POLL_S: Final[float] = 0.05
@@ -325,63 +321,6 @@ def _mapping_not_decided_yet(*_args: object, **_kwargs: object) -> Iterable[Seri
 ForceOrderObservationToRows = Callable[[int, ForceOrderKeyObservation], Iterable[SeriesRow]]
 
 
-# ── RUN RECORDING — `gates/Q3-run-definition.md` §1 and §3, executed ───────────────────────
-
-
-def _build_force_order_run(
-    started_at: str, ended_at: str, n_published: int, verdict: str, digest: hashlib._Hash
-) -> IngestRun:
-    """Build the `IngestRun` for one `!forceOrder@arr` SESSION close (`Q3` §1.1, §3)."""
-    return IngestRun(
-        run_id=str(uuid4()),
-        source=SOURCE,
-        endpoint=FORCE_ORDER_ENDPOINT,
-        window=f"{started_at}/{ended_at}",
-        n_expected=n_published,
-        n_returned=n_published,
-        n_written=0,
-        verdict=verdict,
-        api_code=None,
-        src_sha256=digest.hexdigest(),
-        weight_used=FORCE_ORDER_WEIGHT_USED,
-        observer_id=FORCE_ORDER_OBSERVER_ID,
-        observer_region=UNKNOWN_OBSERVER_REGION,
-        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
-        started_at=started_at,
-        ended_at=ended_at,
-    )
-
-
-def _build_premium_index_run(
-    started_at: str,
-    ended_at: str,
-    n_symbols: int,
-    status: int | None,
-    weight_used: int | None,
-    verdict: str,
-    src_sha256: str,
-) -> IngestRun:
-    """Build the `IngestRun` for one `premiumIndex` poll CYCLE (`Q3` §1.2, §3)."""
-    return IngestRun(
-        run_id=str(uuid4()),
-        source=SOURCE,
-        endpoint=PREMIUM_INDEX_ENDPOINT,
-        window=f"{started_at}/{ended_at}",
-        n_expected=n_symbols,
-        n_returned=n_symbols,
-        n_written=0,
-        verdict=verdict,
-        api_code=status,
-        src_sha256=src_sha256,
-        weight_used=weight_used if weight_used is not None else WEIGHT_NOT_READABLE,
-        observer_id=PREMIUM_INDEX_OBSERVER_ID,
-        observer_region=UNKNOWN_OBSERVER_REGION,
-        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
-        started_at=started_at,
-        ended_at=ended_at,
-    )
-
-
 class _CapturingPremiumIndexFetcher:
     """Wrap a `PremiumIndexFetcher`, remembering the last raw body — without changing its port.
 
@@ -435,51 +374,54 @@ def _run_premium_index_collector(
             )
         except _PUBLISH_FAILURE_EXCEPTIONS as failure:
             ended_at = _iso_now()
+            run = build_premium_index_run(
+                started_at,
+                ended_at,
+                n_symbols=0,
+                status=None,
+                weight_used=None,
+                verdict="REJECTED",
+                src_sha256=hashlib.sha256(capturing.last_body or b"").hexdigest(),
+            )
+            record_run(run)
             logger.error(
                 "collector_cycle_completed %s: %s",
                 PREMIUM_INDEX_ENDPOINT,
                 failure,
-                extra={"endpoint": PREMIUM_INDEX_ENDPOINT, "verdict": "REJECTED"},
+                extra={
+                    "endpoint": PREMIUM_INDEX_ENDPOINT,
+                    "n_published": 0,
+                    "verdict": "REJECTED",
+                    "run_id": run.run_id,
+                },
                 exc_info=True,
-            )
-            record_run(
-                _build_premium_index_run(
-                    started_at,
-                    ended_at,
-                    n_symbols=0,
-                    status=None,
-                    weight_used=None,
-                    verdict="REJECTED",
-                    src_sha256=hashlib.sha256(capturing.last_body or b"").hexdigest(),
-                )
             )
             exit_code[0] = 1
             failure_event.set()
             return
         ended_at = _iso_now()
-        verdict = (
+        verdict: KnownVerdict = (
             "ACCEPTED"
             if result.stage == PremiumIndexCycleStage.WRITTEN
-            else ("ACCEPTED_WITH_WARNING")
+            else "ACCEPTED_WITH_WARNING"
         )
-        record_run(
-            _build_premium_index_run(
-                started_at,
-                ended_at,
-                n_symbols=result.n_symbols,
-                status=result.status,
-                weight_used=result.weight_used,
-                verdict=verdict,
-                src_sha256=hashlib.sha256(capturing.last_body or b"").hexdigest(),
-            )
+        run = build_premium_index_run(
+            started_at,
+            ended_at,
+            n_symbols=result.n_symbols,
+            status=result.status,
+            weight_used=result.weight_used,
+            verdict=verdict,
+            src_sha256=hashlib.sha256(capturing.last_body or b"").hexdigest(),
         )
+        record_run(run)
         logger.info(
             "collector_cycle_completed",
             extra={
                 "endpoint": PREMIUM_INDEX_ENDPOINT,
                 "n_published": result.n_symbols,
                 "verdict": verdict,
-                "run_id": None,
+                "run_id": run.run_id,
             },
         )
         stop_event.wait(interval_s)
@@ -539,7 +481,7 @@ def _run_force_order_collector(
     started_at = _iso_now()
     digest = hashlib.sha256()
     n_published = 0
-    verdict = "ACCEPTED"
+    verdict: KnownVerdict = "ACCEPTED"
     messages = source.messages()
     try:
         while True:
@@ -576,14 +518,15 @@ def _run_force_order_collector(
     finally:
         source.close()
         ended_at = _iso_now()
-        record_run(_build_force_order_run(started_at, ended_at, n_published, verdict, digest))
+        run = build_force_order_run(started_at, ended_at, n_published, verdict, digest)
+        record_run(run)
         logger.info(
             "collector_session_closed",
             extra={
                 "endpoint": FORCE_ORDER_ENDPOINT,
                 "n_published": n_published,
                 "verdict": verdict,
-                "run_id": None,
+                "run_id": run.run_id,
             },
         )
 
