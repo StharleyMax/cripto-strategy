@@ -53,7 +53,7 @@ plan   = "docs/plans/SPEC-006-pagina-de-grafico-s2"
 id = "T-00.1"
 title = "[sentimento] 00 · value_raw TEXT NOT NULL no CREATE TABLE de postgres_series_sink.py"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T17:29:40Z @ 85e785839819f9588a49d42d6ac7be25e4b1c3f0
 phase = "00"
 depends_on = []
 refs = ["ADR-034/D7", "SPEC-006 §5.1", "CA-F0-3", "plano 00 item 0.1"]
@@ -63,7 +63,7 @@ tracker = { provider = "jira", id = "CST-172", url = "https://conversationhub.at
 id = "T-00.2"
 title = "[sentimento] 00 · SeriesRow.value_raw: str em provenance.py, recusa string vazia"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T17:29:40Z @ 85e785839819f9588a49d42d6ac7be25e4b1c3f0
 phase = "00"
 depends_on = []
 refs = ["ADR-034/D7", "SPEC-006 §5.1", "CA-F0-2", "plano 00 item 0.2"]
@@ -73,7 +73,7 @@ tracker = { provider = "jira", id = "CST-173", url = "https://conversationhub.at
 id = "T-00.3"
 title = "[sentimento] 00 · series_row_wire.py — FIELD_NAMES ganha value_raw, round-trip 4x16"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T17:29:40Z @ 85e785839819f9588a49d42d6ac7be25e4b1c3f0
 phase = "00"
 depends_on = ["T-00.2"]
 refs = ["ADR-034/D7", "SPEC-006 §5.1", "CA-F0-1", "plano 00 item 0.3"]
@@ -83,7 +83,7 @@ tracker = { provider = "jira", id = "CST-174", url = "https://conversationhub.at
 id = "T-00.4"
 title = "[sentimento][docs] 00 · Migração de schema — ALTER TABLE md.series ADD COLUMN value_raw"
 components = ["sentimento", "docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-08T17:29:40Z @ 85e785839819f9588a49d42d6ac7be25e4b1c3f0
 phase = "00"
 depends_on = ["T-00.1"]
 refs = [
