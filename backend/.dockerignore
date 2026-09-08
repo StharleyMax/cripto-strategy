@@ -1,0 +1,22 @@
+# backend/.dockerignore — T-03.1 (SPEC-004 s3.6, ADR-032/D2)
+#
+# The five entries the plan names, literally: `.venv`, `tests/`, `data/`, `.env*`,
+# `__pycache__`. `.env*` is the one D3.6/D3.8 morde on — without it, a secret placed at
+# `backend/.env` during a local build would be COPYable into the image.
+.venv
+tests/
+data/
+.env*
+__pycache__
+
+# Housekeeping — build artifacts and VCS metadata that add nothing to a Python image and
+# were never named in the Dockerfile's COPY list anyway, but keeping them out of the build
+# context also keeps it small and avoids ever tempting a future broad `COPY . .`.
+.git
+.mypy_cache
+.pytest_cache
+.ruff_cache
+htmlcov
+.coverage
+**/__pycache__
+**/*.pyc
