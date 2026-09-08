@@ -303,40 +303,89 @@ def test_d3_6_universe_met_requires_both_thresholds_at_once() -> None:
 # ══════════════════════════════ Domain: B1 overlap invariant ═══════════════════════════════════
 
 
-def test_require_overlap_accepts_the_old_source_closing_after_the_new_first_message() -> None:
-    """Old closing strictly AFTER is the declared-good shape — no raise."""
-    require_overlap(ReconnectionHandoff(new_first_message_at=5.0, old_source_closed_at=6.0))
+def test_require_overlap_accepts_the_old_source_closing_after_the_new_source_is_ready() -> None:
+    """Old closing strictly AFTER is the declared-good shape — no raise.
+
+    `ADR-004` Emenda D6: "ready" is the RFC 6455 handshake completing, not a domain message.
+    """
+    require_overlap(ReconnectionHandoff(new_source_ready_at=5.0, old_source_closed_at=6.0))
 
 
 def test_require_overlap_accepts_the_boundary_of_equal_instants() -> None:
     """Equal instants are NOT a gap — this is `<`, never `<=`."""
-    require_overlap(ReconnectionHandoff(new_first_message_at=5.0, old_source_closed_at=5.0))
+    require_overlap(ReconnectionHandoff(new_source_ready_at=5.0, old_source_closed_at=5.0))
 
 
 def test_require_overlap_rejects_the_old_source_closing_first() -> None:
-    """THE falsifier: old closing BEFORE the new source's first message raises, naming B1."""
+    """THE falsifier: old closing BEFORE the new source became ready raises, naming B1."""
     with pytest.raises(ReconnectionGapError, match="ADR-004 B1"):
-        require_overlap(ReconnectionHandoff(new_first_message_at=5.0, old_source_closed_at=4.9))
+        require_overlap(ReconnectionHandoff(new_source_ready_at=5.0, old_source_closed_at=4.9))
 
 
 # ══════════════════════════ Use case: the B1 handoff mechanic itself ═══════════════════════════
 
 
-def test_the_new_source_opens_and_is_read_before_the_old_source_closes() -> None:
-    """THE ordering B1 requires, observed as a sequence of events, not just asserted in prose."""
+def test_the_new_source_opens_before_the_old_source_closes_without_reading_a_message() -> None:
+    """THE ordering B1 requires, observed as a sequence of events, not just asserted in prose.
+
+    `ADR-004` Emenda D6: "the new source proved itself" is the handshake (`open()`) completing —
+    `perform_overlap_handoff` never calls `new.messages()`, so a scripted frame on `new` is left
+    UNREAD here on purpose: reading it is now the caller's own loop's job, through the ordinary
+    per-message path, not this function's.
+    """
     events: list[str] = []
     old = FakeSource([], events=events, name="old")
     new = FakeSource([FRAME_A], events=events, name="new")
     old.open()  # the caller's pre-existing connection, already open before any handoff decision
 
     ticks = iter([1.0, 2.0])
-    record = perform_overlap_handoff(old, new, now=lambda: next(ticks))
+    handoff = perform_overlap_handoff(old, new, now=lambda: next(ticks))
 
-    assert events == ["old_opened", "new_opened", "new_message_read", "old_closed"]
+    assert events == ["old_opened", "new_opened", "old_closed"]
     assert old.closed
-    assert record.first_new_message == FRAME_A
-    assert record.handoff.new_first_message_at == 1.0
-    assert record.handoff.old_source_closed_at == 2.0
+    assert handoff.new_source_ready_at == 1.0
+    assert handoff.old_source_closed_at == 2.0
+
+
+class _NeverYieldsSource:
+    """A `MessageSource` whose `messages()` must NEVER be called.
+
+    `open()` returns immediately; calling `messages()` raises, standing in for "would have
+    blocked forever" (pre-D6 design).
+    """
+
+    def __init__(self) -> None:
+        """Start unopened, so the assertion below actually exercises `open()`."""
+        self.opened = False
+
+    def open(self) -> None:
+        """Record that the handshake happened — this is ALL D6 requires to call it 'ready'."""
+        self.opened = True
+
+    def close(self) -> None:
+        """Never called on the new source by `perform_overlap_handoff` — present for the type."""
+
+    def messages(self) -> Iterator[str]:
+        """Refuse to be called: this is the ADR-004 falsifier for D6's non-blocking guarantee."""
+        raise AssertionError("messages() must never be called by perform_overlap_handoff (D6)")
+
+
+def test_perform_overlap_handoff_never_touches_a_new_source_that_would_block_forever() -> None:
+    """ADR-004 falsifier item 3: a mute `new_source` must not hang the handoff.
+
+    A `new_source` whose `.messages()` never yields must not hang the handoff — because, since
+    Emenda D6, `perform_overlap_handoff` never calls it at all.
+    """
+    old = FakeSource([])
+    old.open()
+    new = _NeverYieldsSource()
+
+    handoff = perform_overlap_handoff(old, new, now=lambda: 1.0)
+
+    assert new.opened
+    assert old.closed
+    assert handoff.new_source_ready_at == 1.0
+    assert handoff.old_source_closed_at == 1.0
 
 
 # ══════════════════════ Use case: reconnect + key, the full simulated overlap ══════════════════
@@ -345,35 +394,51 @@ def test_the_new_source_opens_and_is_read_before_the_old_source_closes() -> None
 def test_reconnect_and_key_feeds_the_overlap_into_a_detectable_collision() -> None:
     """END TO END, SIMULATED: a known overlap duplicate becomes ONE B3 collision, not two totals.
 
-    `overlap_window_tail` plays the old connection's LAST message before the handoff (`FRAME_A`);
-    the new connection's FIRST message (`FRAME_A_DUP`) is the SAME liquidation, re-served during
-    the overlap window B1 mandates. Feeding both into `count_daily_collisions` must land on ONE
-    bucket with `total_events=1, collisions=1` — the mechanics D3.6 asks to be provable offline.
+    `overlap_window_tail` plays the old connection's LAST message before the handoff (`FRAME_A`).
+    Since `ADR-004` Emenda D6, `reconnect_and_key` no longer reads (or keys) the new connection's
+    first message itself — `perform_overlap_handoff` proves the new source only by its handshake,
+    so the new connection's messages come through the CALLER's own loop, the same path as every
+    other message (`collectors_cli.py`'s `_publish_raw_force_order_message`). This test proves
+    both halves: `reconnect_and_key` keys ONLY the tail, and combining that with what the caller's
+    own read of the new source's first message (`FRAME_A_DUP`, the SAME liquidation re-served
+    during the overlap window) would produce still lands on ONE B3 bucket with
+    `total_events=1, collisions=1` — the collapse of the two keying paths loses no detection.
     """
     old = FakeSource([])
     new = FakeSource([FRAME_A_DUP])
     outcome = reconnect_and_key(old, new, overlap_window_tail=[FRAME_A], now=lambda: 0.0)
 
     assert outcome.unkeyable_raw == ()
-    assert len(outcome.observations) == 2
-    assert {observation.key for observation in outcome.observations} == {
-        extract_force_order_natural_key(FRAME_A)
-    }
+    assert len(outcome.observations) == 1
+    assert outcome.observations[0].key == extract_force_order_natural_key(FRAME_A)
 
-    counts = count_daily_collisions(outcome.observations)
+    # The caller's own read loop takes it from here — same `next(messages)` path as any message.
+    first_new_message = next(new.messages())
+    assert first_new_message == FRAME_A_DUP
+    new_key = extract_force_order_natural_key(first_new_message)
+    all_observations = (
+        *outcome.observations,
+        ForceOrderKeyObservation(key=new_key, day=trade_time_utc_date(new_key.trade_time)),
+    )
+    counts = count_daily_collisions(all_observations)
     assert counts == (
         DailyCollisionCount(symbol="BTCUSDT", day="1970-01-01", total_events=1, collisions=1),
     )
 
 
 def test_reconnect_and_key_counts_but_never_drops_an_unkeyable_message() -> None:
-    """A malformed raw line is reported in `unkeyable_raw`, never silently absent from the count."""
+    """A malformed raw line in `overlap_window_tail` is reported in `unkeyable_raw`, never dropped.
+
+    `new` carries a scripted message (`FRAME_B`) that is left UNREAD here — since `ADR-004`
+    Emenda D6, `reconnect_and_key` never reads the new source's messages, only
+    `overlap_window_tail`.
+    """
     old = FakeSource([])
     new = FakeSource([FRAME_B])
-    outcome = reconnect_and_key(old, new, overlap_window_tail=[NOT_JSON], now=lambda: 0.0)
+    outcome = reconnect_and_key(old, new, overlap_window_tail=[NOT_JSON, FRAME_A], now=lambda: 0.0)
     assert outcome.unkeyable_raw == (NOT_JSON,)
     assert len(outcome.observations) == 1
-    assert outcome.observations[0].key == extract_force_order_natural_key(FRAME_B)
+    assert outcome.observations[0].key == extract_force_order_natural_key(FRAME_A)
 
 
 # ═══════════════════════════════ Infra: the published report and summary ═══════════════════════

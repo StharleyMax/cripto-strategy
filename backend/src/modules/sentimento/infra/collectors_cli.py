@@ -73,6 +73,7 @@ from src.modules.sentimento.domain.provenance import SeriesRow
 from src.modules.sentimento.domain.quota_bucket import USED_WEIGHT_HEADER
 from src.modules.sentimento.infra.binance_stream_probe import (
     BINANCE_FUTURES_STREAM_HOST,
+    StreamIdleTimeoutError,
     WebSocketMessageSource,
     combined_stream_path,
     connect_tls,
@@ -164,23 +165,37 @@ _MAIN_LOOP_POLL_S: Final[float] = 0.05
 # `[MEDIDO 2026-09-08]`, `docker inspect deploy-collector-1`: 53 restarts/11min, every cycle
 # `collector_session_closed !forceOrder@arr: FRAME: timeout: The read operation timed out` —
 # `docs/context/captura-em-producao/handoff/forceorder-arr-crash-loop.md` traced this to TWO
-# compounding facts, and this constant + `_default_force_order_source` below fix the one that is
-# this module's to fix (the other, `_PUBLISH_FAILURE_EXCEPTIONS` treating every read timeout as
-# fatal, is DEFERRED — see `docs/context/captura-em-producao/gates/
-# forceorder-fix-quant-architect.md` §"O que fica em aberto" for why reusing `reconnect_and_key`
-# for a timeout is NOT a safe drop-in fix). `!forceOrder@arr` (the whole-market `@arr` array
-# stream) delivered ZERO events to this host across >300s combined, INCLUDING a guaranteed
-# 1msg/s control stream that also silenced — re-measured live in the same handoff. Per-symbol
-# combined streams on the SAME host delivered immediately. `_FORCE_ORDER_READ_TIMEOUT_S` sits
-# comfortably above Binance's OWN documented contract for how long a market-data WS connection
-# may go unanswered before BINANCE itself calls it dead: "the websocket server will send a ping
+# compounding facts, and the ORIGINAL `_FORCE_ORDER_READ_TIMEOUT_S = 900.0` here fixed only the
+# first (the per-symbol combined stream, in `_default_force_order_source` below). The second —
+# `_PUBLISH_FAILURE_EXCEPTIONS` treating every read timeout as fatal `REJECTED` — is what `ADR-004`
+# Emenda D5/D6 (2026-09-08) fixes: a single 900s socket timeout was doing TWO jobs (read
+# granularity AND the life-or-death verdict) with ONE number, and the fix is `docs/context/
+# captura-em-producao/gates/forceorder-fix-quant-architect.md` §"O que fica em aberto" already
+# named — two numbers, two jobs. `!forceOrder@arr` (the whole-market `@arr` array stream)
+# delivered ZERO events to this host across >300s combined, INCLUDING a guaranteed 1msg/s control
+# stream that also silenced — re-measured live in the same handoff; even the per-symbol combined
+# stream this module uses instead is sparse enough that blocking a read on it for minutes is
+# normal, healthy behaviour, not a sign of death.
+#
+# `_FORCE_ORDER_RECV_GRANULARITY_S` is the socket's OWN `settimeout()` — how often a blocking
+# `recv()` call returns control to `WebSocketMessageSource._read_exact`'s retry loop so the idle
+# clock below can advance and `SIGTERM` (`B14`) is never stuck behind a giant timeout. It is NOT
+# a verdict: a single expiry just means "try again", per `ADR-004` D5's table.
+_FORCE_ORDER_RECV_GRANULARITY_S: Final[float] = 20.0
+
+# `_FORCE_ORDER_IDLE_TIMEOUT_S` IS the verdict: accumulated silence of ANY frame (not just a
+# domain message — a `PING` answered by `rfc6455_client.build_pong_frame` counts as activity)
+# across repeated `_FORCE_ORDER_RECV_GRANULARITY_S` ticks. `[INFERRED: ADR-004 D5]` — 2x
+# Binance's documented 3-minute `ping` cadence, with margin, comfortably below the 10-minute
+# window in which Binance itself would close the socket: "the websocket server will send a ping
 # frame every 3 minutes... if the... server does not receive a pong frame back... within a 10
 # minute period, the connection will be disconnected"
 # (https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-api-general-info,
-# read 2026-09-08). A read timeout past 900s can therefore only mean Binance's own SLA was
-# already violated — never "no liquidation happened in the last few seconds" for a stream that
-# is genuinely sparse even across the whole 4-symbol universe.
-_FORCE_ORDER_READ_TIMEOUT_S: Final[float] = 900.0
+# read 2026-09-08). Crossing this raises `StreamIdleTimeoutError`, a DISTINCT type from the
+# generic `StreamTransportError` `_PUBLISH_FAILURE_EXCEPTIONS` still treats as fatal — see
+# `_run_force_order_collector`'s read loop, which routes it through the SAME reconnection path as
+# a clean `StopIteration`, never through `_PUBLISH_FAILURE_EXCEPTIONS`.
+_FORCE_ORDER_IDLE_TIMEOUT_S: Final[float] = 300.0
 
 
 class CollectorBootConfigurationError(RuntimeError):
@@ -511,11 +526,14 @@ def _run_force_order_collector(
     can force it closed from the main thread — that is what unblocks a read that is sitting in a
     blocking `recv` when the signal arrives (`B14`).
 
-    A read that ends (`StopIteration`) while `stop_event` is NOT set is an unrequested
-    disconnect: `reconnect_and_key` (`B1`, `ADR-004`) opens the next session before closing this
-    one's read loop. A read that FAILS for any other reason is `SPEC-004` §3.1's "falha ... em
-    regime": the session closes `REJECTED`, the OTHER thread is told to stop too, and
-    `exit_code[0] = 1`.
+    A read that ends (`StopIteration`, clean `OPCODE_CLOSE`) OR that times out from idle silence
+    of ANY frame (`StreamIdleTimeoutError`, `ADR-004` Emenda D5) while `stop_event` is NOT set is
+    an unrequested disconnect: `reconnect_and_key` (`B1`, `ADR-004`) opens the next session before
+    closing this one's read loop, in BOTH cases, by the SAME route — Emenda D6 named this
+    explicitly: idle silence is not a fatal timeout, it reconnects exactly like a clean close. A
+    read that FAILS for any other reason (including failing to OPEN the substitute connection —
+    unchanged, still fatal) is `SPEC-004` §3.1's "falha ... em regime": the session closes
+    `REJECTED`, the OTHER thread is told to stop too, and `exit_code[0] = 1`.
 
     `endpoint` — the value every `IngestRun`/log line below names — is read off `source.path`
     when `open_source()` returns something that declares it (`WebSocketMessageSource` does,
@@ -541,7 +559,7 @@ def _run_force_order_collector(
         while True:
             try:
                 raw = next(messages)
-            except StopIteration:
+            except (StopIteration, StreamIdleTimeoutError):
                 if stop_event.is_set():
                     break
                 new_source = open_source()
@@ -594,13 +612,17 @@ def _default_force_order_source() -> MessageSource:
     `combined_stream_path` is the SAME function `aggtrade_nq_probe_cli.py` already proved live
     over a real handshake (`T-03.1`) — one connection for the whole `INITIAL_SYMBOLS` universe,
     not one per symbol, and `sorted()` only pins the connection path deterministic for tests; it
-    carries no ordering meaning for a combined stream. See `_FORCE_ORDER_READ_TIMEOUT_S`'s
-    comment for why the socket timeout is 900s and not the probe's 10s default.
+    carries no ordering meaning for a combined stream. `ADR-004` Emenda D5: the socket's own
+    `settimeout()` is `_FORCE_ORDER_RECV_GRANULARITY_S` (small — a read granularity, not a
+    verdict); `idle_timeout_s=_FORCE_ORDER_IDLE_TIMEOUT_S` is the accumulated-silence threshold
+    that actually declares the connection dead. See both constants' comments for why they are two
+    numbers now, not the one `_FORCE_ORDER_READ_TIMEOUT_S` (900s) used to be.
     """
     return WebSocketMessageSource(
         BINANCE_FUTURES_STREAM_HOST,
         combined_stream_path(sorted(INITIAL_SYMBOLS), stream="forceOrder"),
-        lambda: connect_tls(BINANCE_FUTURES_STREAM_HOST, timeout=_FORCE_ORDER_READ_TIMEOUT_S),
+        lambda: connect_tls(BINANCE_FUTURES_STREAM_HOST, timeout=_FORCE_ORDER_RECV_GRANULARITY_S),
+        idle_timeout_s=_FORCE_ORDER_IDLE_TIMEOUT_S,
     )
 
 
