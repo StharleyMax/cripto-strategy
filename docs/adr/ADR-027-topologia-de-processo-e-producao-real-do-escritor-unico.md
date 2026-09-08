@@ -1,6 +1,6 @@
 # ADR-027 — Topologia de processo e produção real do escritor único
 
-**Data:** 2026-09-04 · **Status:** aprovado pelo owner (D1 e D2, 2026-09-04) · **SPEC:** [`SPEC-001`](../plans/SPEC-001-plataforma-dados) (nenhuma seção específica — ver "Por que não é emenda de outra ADR" abaixo)
+**Data:** 2026-09-04 · **Status:** aprovado pelo owner (D1 e D2, 2026-09-04); **Emenda D1a em 2026-09-08** (reabertura pedida sobre `coinalyze_one_shot_cli` — classificação FICA, item novo aberto sem decisão) · **SPEC:** [`SPEC-001`](../plans/SPEC-001-plataforma-dados) (nenhuma seção específica — ver "Por que não é emenda de outra ADR" abaixo)
 **Fase/Epic:** amplia a fase `07` (`CST-5`) — proposta de plano em anexo; materialização é ato do `/tech-lead`
 **Componente alvo:** `infra` (topologia, `deploy/compose.yml`, entrypoints) e `sentimento` (produtores reais dos coletores 24/7)
 **Requisito de origem:** `CA-F3-8`, `CA-F3-12`, `CA-F4-25`, `ADR-002/D5`, `ADR-009/D6`, `[GAP G5]`
@@ -133,6 +133,67 @@ nascer sem depender de uma leitura de `free -m`/`df -h` da VPS.
 | **F2** | RSS medido em produção real, com os 3 processos de vida longa de pé por ≥ 24 h, excede **2×** a projeção de 40–70 MB sem explicação nova | **D1** — o dimensionamento, não a forma |
 | **F3** | um teste de restart do escritor único **em produção**, com um produtor real publicando, perder mensagem | **`ADR-002/D5`** por trás desta ADR — a garantia que a lógica prova em teste não se sustenta com produtor real |
 | **F4** | o Redis compartilhado (opção B de `D2`, se escolhida) sofrer um restart do `anything_monorepo` que derrube o consumer group deste projeto | a escolha de compartilhar, não a ADR — mas é o cenário que a opção A existe para evitar |
+
+## Emenda D1a · 2026-09-08 — reabertura pedida sobre `coinalyze_one_shot_cli`, e por que a classificação de `D1` FICA
+
+**Gatilho:** owner declarou querer confirmação SMC×CVD×OI "quase em tempo real"
+`[PREMISSA-OWNER: 2026-09-08]`, o que motivou reabrir se `coinalyze_one_shot_cli` deveria sair do
+grupo "one-shot/cron" de `D1` e virar processo de vida longa (mesmo padrão do coletor (a)).
+
+**Achado, com o comando que o produziu — o CLI nomeado NÃO é o mecanismo do requisito:**
+`coinalyze_one_shot_cli` chama `capture_one_shot`/`capture_coinalyze_daily_series.py`, cujo
+`SeriesKind` é `{OPEN_INTEREST, LIQUIDATION}` com **`interval` fixo em `daily`** — "this task never
+asks for any other granularity" `[DOC: backend/src/modules/sentimento/domain/coinalyze_daily_series.py:39-40]`.
+É backfill de histórico diário (piso `>=2400 pontos OI` / `>=700 pontos liquidação`,
+`docs/medicao-coinalyze.md §1.2`), não um poll de resolução intradiária. Rodar este CLI a cada
+30s ou 10s não produz informação nova dentro do mesmo dia — **é a granularidade do dado, não a
+cadência de invocação, que o desqualifica** para confirmação de rompimento SMC.
+
+**A aritmética que confirmaria um poller de vida longa, SE a série fosse a certa (registrada aqui
+por já ter sido pedida, não porque autoriza o CLI atual):** 4 símbolos (`BTCUSDT`/`ETHUSDT`/
+`SOLUSDT`/`LINKUSDT`) × 2 `SeriesKind` = **8 chamadas/sweep**. Contra o balde Coinalyze — `40
+chamadas/min, BLIND` (`domain/quota_bucket.py`, nunca confirmado por header) — o piso matemático é
+`período >= 12 s` (`8 × 60/12 = 40`, 100% do balde, sem margem); aplicando a MESMA margem
+conservadora que `AVAILABILITY_PROBE_SET` já adota para este balde cego (40% de uso, não 100%),
+o período sustentável é **30 s → 16 chamadas/min**
+`[MEDIDO: backend/src/modules/sentimento/domain/availability_probe_set.py:196-206, mesma fórmula]`.
+Isto mostra que a COTA não é o fator limitante — a granularidade do dado é.
+
+**Decisão desta emenda: `D1` de `ADR-027` FICA como está para `coinalyze_one_shot_cli` — ele
+continua one-shot/cron.** Nenhuma classificação muda para o CLI nomeado no pedido de reabertura.
+
+**O que a emenda ABRE, como item novo, não decidido aqui:** o requisito real do owner (confirmação
+quase-tempo-real de rompimento SMC via CVD/OI) exige um **poller de OI intradiário** que **não
+existe em código hoje** — `SeriesKind` está fechado em 2 valores com o comentário explícito "a
+third needs its own requirement" (`coinalyze_daily_series.py:33`), e nenhuma resolução abaixo de
+`daily` foi modelada para a Coinalyze. CVD, à parte, já não depende da Coinalyze — vem de
+`aggTrade`/`force_order_collector_cli` (lado agressor), que já é um dos dois coletores 24/7 do
+grupo (a) de `D1`.
+
+**Isto é reabertura de `D1`, mas para um componente que ainda não existe — não para
+`coinalyze_one_shot_cli`.** Se e quando esse poller de OI intradiário for especificado (endpoint,
+resolução-alvo, símbolos, se via Coinalyze intradiária ou via `/futures/data/openInterestHist` da
+Binance — que já está dentro do sweep de 5 endpoints/10s do grupo (a) candidato hoje pela
+`AVAILABILITY_PROBE_SET`), ele se qualifica para o grupo (a) de `D1` pelo MESMO critério que já
+justifica os dois coletores atuais: dado que perde valor de decisão se não capturado perto do
+evento. **Essa decisão exige co-assinatura do `infra-architect` sobre RSS/topologia do processo
+(a) — mesmo padrão de `ADR-031`/`ADR-033`** — porque adicionar uma terceira thread ao processo (a)
+reabre o próprio `F1`/`F2` desta ADR (contenção medida, RSS acima da projeção). Não é decisão que
+esta emenda fecha sozinha.
+
+**Dono do próximo passo:** o requisito precisa antes de uma decisão de PRD/SPEC sobre qual série
+intradiária (Coinalyze 1min/5min OI, com a janela de retenção curta medida em
+`docs/medicao-coinalyze.md` — ~1,5 dia para OI 1min, ~7 dias para OI 5min — versus o OI da própria
+Binance) serve ao gatilho de convergência do Módulo C antes que haja topologia para co-assinar.
+
+**Fechamento do item novo, 2026-09-08:** `quant-architect` avaliou (dispatch registrado em
+`docs/INDEX.md`, relatório completo em
+[`context/coinalyze-fora-da-quarentena/gates/oi-source-v0-necessidade-quant-architect.md`](../context/coinalyze-fora-da-quarentena/gates/oi-source-v0-necessidade-quant-architect.md))
+e confirmou que o poller intradiário **não tem consumidor hoje** — `convergencia` ainda não existe
+no código (`[MEDIDO 2026-09-08]`). Owner decidiu postergar (`[PREMISSA-OWNER: 2026-09-08]`: *"podemos
+… seguir com f3 postergada"* — referente a `PRD-005 §18`). Este item novo permanece aberto, sem
+topologia nem fonte decidida, com o mesmo gatilho de reabertura já nomeado acima: SPEC de
+`convergencia` definindo o contrato de entrada de OI.
 
 ## O que esta ADR NÃO decide
 
