@@ -33,7 +33,11 @@
 #
 # `api` never publishes a port (ADR-029/D5, RNF-5) — `web` and `caddy` reach it only
 # by service name on the compose network (`http://api:${APP_PORT}`); the Next server
-# reads the same address from `INGEST_HEALTH_API_BASE_URL` (`.env.example`).
+# reads the same address from `INGEST_HEALTH_API_BASE_URL` (`.env.example`). Reaching it
+# by service name needs `api` to LISTEN on more than its own container's loopback —
+# `[DECISAO-OWNER: 2026-09-08]` (`backend/src/main/__main__.py`'s own docstring), the `api`
+# service below sets `APP_HOST=0.0.0.0`. `writer`/`collector` never call `uvicorn.run`, so
+# neither one carries this variable.
 services:
   # `ADR-031/D2` — the same `timescale/timescaledb:2.17.2-pg15` image `ADR-002/D4` measured
   # against its 5 criteria (`F4`'s falsifier). Postgres-compatible: `pg_isready` and every
@@ -85,6 +89,13 @@ services:
     restart: unless-stopped
     env_file:
       - ../.env
+    # `APP_HOST` overrides `__main__.py`'s `"127.0.0.1"` default so `web`/`caddy` can reach
+    # this process by service name (`[DECISAO-OWNER: 2026-09-08]`, comment above). `env_file`
+    # above still supplies every OTHER variable (`APP_PORT` included) — this is the ONE
+    # variable this service pins regardless of what `.env` says, because it is a topology
+    # fact of running under compose, not an operator-tunable setting.
+    environment:
+      APP_HOST: "0.0.0.0"
     # `T-03.8` (`CA-E2E-1`) measured this: `create_app` ALWAYS wires a
     # `SqliteSeriesQuarantineStore` at `QUARANTINE_STORE_PATH` (default
     # `data/md/series_quarantine.sqlite3`, `src/main/__init__.py:64/240`) regardless of
