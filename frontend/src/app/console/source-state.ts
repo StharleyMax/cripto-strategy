@@ -1,6 +1,6 @@
 /**
  * `T-01.4` — the one discriminant `page.tsx` (Server Component, `ADR-028/D1`) computes and
- * hands to `PainelClient.tsx` (`"use client"`) by props. `SPEC-003` §3.1:
+ * hands to `ConsoleClient.tsx` (`"use client"`) by props. `SPEC-003` §3.1:
  *
  *   `SourceState` = `{ kind: "ok" } | { kind: "empty" } | { kind: "error"; error: TransportErrorKind }`
  *

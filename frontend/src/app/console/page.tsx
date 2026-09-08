@@ -1,9 +1,10 @@
 /**
- * `T-01.4`, `ADR-028/D1` — the `/painel` route is now a Server Component (`async`, no `"use
- * client"`): it calls the transport ONCE per render (`SPEC-003` §3.1), catches the ONE error
- * class the transport throws, and turns the outcome into `SourceState` — a plain, serializable
- * value handed to `PainelClient.tsx` by props (`ADR-028/D4`: the CAUSE lives in this value, not
- * in `error.tsx`, which stays a generic last-resort boundary for anything unexpected).
+ * `T-01.4`, `ADR-028/D1` — the `/console` route (`/painel` before `SPEC-006` plan `03`,
+ * `ADR-034/D2`) is a Server Component (`async`, no `"use client"`): it calls the transport ONCE
+ * per render (`SPEC-003` §3.1), catches the ONE error class the transport throws, and turns the
+ * outcome into `SourceState` — a plain, serializable value handed to `ConsoleClient.tsx` by
+ * props (`ADR-028/D4`: the CAUSE lives in this value, not in `error.tsx`, which stays a generic
+ * last-resort boundary for anything unexpected).
  *
  * `T-03.7`, `ADR-030`, `SPEC-003` §3.6 (plano 03 item 3.6): `S1`'s ONE network call moved from
  * `GET /ingest-health` to `GET /collector-status` — `S1` now shows the per-series AGGREGATE
@@ -17,14 +18,14 @@
  * forbids `web -> charts` in either direction today; opening it is a decision for a later task.
  *
  * Neither feature's synthetic fixture module (`s1-console`/`s3-inspector`, each named
- * `fixtures` + the TS extension) is imported here or by `PainelClient.tsx` — `SPEC-003`'s
+ * `fixtures` + the TS extension) is imported here or by `ConsoleClient.tsx` — `SPEC-003`'s
  * invariant on that filename substring across non-test `.tsx` under `src/app`/`src/features`
  * is met by this route never reading either module again. (Spelled out instead of quoted
  * verbatim in this docstring, so grepping for the literal filename never counts this comment
  * as a hit.)
  *
  * `T-01.6`, `CA-F1-14` — `metadata.title` lives here (Server Component export), the only tab
- * text `next start` ever serves for this route (`e2e/01-painel-carrega.spec.ts`'s
+ * text `next start` ever serves for this route (`e2e/01-console-carrega.spec.ts`'s
  * `document_title` fact).
  *
  * `T-03.3`, `SPEC-003` §3.4: `S3`'s catalog gained a SECOND network call, independent of `S1`'s
@@ -56,7 +57,7 @@ import {
   quarantineSourceRowsFromProjection,
 } from "../../features/s3-inspector/series-quarantine-query.ts";
 import { EMPTY_CATALOG_FILTER, buildS3ViewModel } from "../../features/s3-inspector/view-model.ts";
-import { PainelClient } from "./PainelClient.tsx";
+import { ConsoleClient } from "./ConsoleClient.tsx";
 import type { SourceState } from "./source-state.ts";
 
 export const metadata: Metadata = {
@@ -100,7 +101,7 @@ const EMPTY_CATALOG: readonly CatalogRow[] = [];
  * fixture" — `[]` alone cannot distinguish the two, the same reason `sourceState` exists at all). */
 const EMPTY_QUARANTINE: readonly QuarantineSourceRow[] = [];
 
-export default async function PainelPage() {
+export default async function ConsolePage() {
   let sourceState: SourceState;
   let projection: CollectorStatusProjection;
 
@@ -146,14 +147,14 @@ export default async function PainelPage() {
 
   // `etlQueueDepthPending`/`storageBudgetLines`/`reconnectionEvents`: no data source exists yet
   // for any of the three in this feature (Redis Streams consumer-group depth, `plano 07` itens
-  // `7.6`/`7.7` — a DIFFERENT feature's scope) — `PainelClient.tsx` renders `SourceNoneMarker`
+  // `7.6`/`7.7` — a DIFFERENT feature's scope) — `ConsoleClient.tsx` renders `SourceNoneMarker`
   // for all three regardless of these placeholders' value (`budgetSourced`/`reconnectionsSourced`
   // are hard-`false`, not derived from them).
   const s1 = buildS1ViewModelFromCollectorStatusProjection(projection, 0, [], []);
   const s3 = buildS3ViewModel(catalog, EMPTY_CATALOG_FILTER, null, [], [], quarantineRows);
 
   return (
-    <PainelClient
+    <ConsoleClient
       s1={s1}
       s3={s3}
       catalog={catalog}

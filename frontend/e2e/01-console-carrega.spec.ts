@@ -9,7 +9,7 @@ import {
   shot,
 } from "./helpers.ts";
 
-const SPEC = "01-painel-carrega";
+const SPEC = "01-console-carrega";
 
 /**
  * `T-01.9`, `SPEC-003` §5 — this file no longer asks "did the browser call the API?" (`ADR-028/
@@ -79,10 +79,10 @@ test("estrutura sempre presente: título, CSS, ícones, h1 único, sem vazamento
   fact(SPEC, "fixture_numbers_visible", fixtureLeakage);
   expect(fixtureLeakage).toBe(0);
 
-  await shot(page, "01-painel-1280-padrao");
+  await shot(page, "01-console-1280-padrao");
 });
 
-test("B1: API de pé — GET /painel entrega >= 1 linha, incrementa o access log da API, e ui_state:ok", async ({
+test("B1: API de pé — GET /console entrega >= 1 linha, incrementa o access log da API, e ui_state:ok", async ({
   page,
 }) => {
   const before = countCollectorStatusAccessLogHits();
@@ -94,7 +94,7 @@ test("B1: API de pé — GET /painel entrega >= 1 linha, incrementa o access log
   fact(SPEC, "collector_status_access_log_hits_after", after);
   // `E2E_API_UP=0` (`T-01.8`): no `api.log` file exists at all, `before === after === 0` — this
   // assertion is EXPECTED to fail in that mode; that flip is the falsifier `D1.11` measures.
-  expect(after, "GET /painel never reached the API's own access log (uvicorn, --log)").toBeGreaterThan(before);
+  expect(after, "GET /console never reached the API's own access log (uvicorn, --log)").toBeGreaterThan(before);
 
   const stateOk = page.locator('main[data-fact="ui_state:ok"]');
   fact(SPEC, "ui_state_ok_present", await stateOk.count());

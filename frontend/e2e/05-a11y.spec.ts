@@ -9,7 +9,7 @@ const SPEC = "05-a11y";
 // keyboard path a single-page operator console is expected to have. Ambient-independent —
 // `S1Console`/`S3Inspector` mount unconditionally (`SPEC-003` §3.3), only the banner above
 // them switches on `sourceState.kind`.
-test("axe-core: violações A/AA no /painel", async ({ page }) => {
+test("axe-core: violações A/AA no /console", async ({ page }) => {
   await page.goto(PANEL_PATH, { waitUntil: "networkidle" });
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
   const summary = results.violations.map((violation) => ({
