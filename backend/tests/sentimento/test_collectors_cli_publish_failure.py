@@ -43,6 +43,7 @@ from src.modules.sentimento.infra import collectors_cli
 from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
 from src.modules.sentimento.infra.redis_stream_series_sink import RedisStreamSeriesSink
 from src.modules.sentimento.use_cases.collect_premium_index import RawPremiumIndexFetch
+from src.modules.sentimento.use_cases.collector_run_mapping import FORCE_ORDER_ENDPOINT
 from src.modules.sentimento.use_cases.probe_stream_quantity_fields import MessageSource
 
 STREAM = "md.series.write"
@@ -180,7 +181,7 @@ def test_force_order_collector_rejects_the_session_on_a_real_xadd_failure(
     assert failure_event.is_set(), "a real XADD failure must signal the OTHER thread to stop too"
     assert len(recorded) == 1, f"expected exactly one IngestRun recorded, got {len(recorded)}"
     assert recorded[0].verdict == "REJECTED", "XADD failure must record verdict=REJECTED"
-    assert recorded[0].endpoint == collectors_cli.FORCE_ORDER_ENDPOINT
+    assert recorded[0].endpoint == FORCE_ORDER_ENDPOINT
 
 
 def test_premium_index_collector_rejects_the_cycle_on_a_real_xadd_failure(

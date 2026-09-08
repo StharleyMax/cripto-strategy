@@ -13,8 +13,8 @@ from datetime import datetime
 from pathlib import Path
 
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
-from src.modules.sentimento.infra import collectors_cli
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
+from src.modules.sentimento.use_cases.collector_run_mapping import FORCE_ORDER_ENDPOINT
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DRIVER = BACKEND_ROOT / "tests" / "helpers" / "collectors_cli_driver.py"
@@ -65,7 +65,7 @@ def test_sigterm_closes_the_session_and_exits_zero_with_a_run_recorded(tmp_path:
     assert process.returncode == 0, f"SIGTERM must exit 0, got {process.returncode}"
 
     runs = SqliteIngestRecordStore(store_path).runs()
-    force_order_runs = [run for run in runs if run.endpoint == collectors_cli.FORCE_ORDER_ENDPOINT]
+    force_order_runs = [run for run in runs if run.endpoint == FORCE_ORDER_ENDPOINT]
     assert len(force_order_runs) == 1, (
         f"expected exactly one !forceOrder@arr session closed by SIGTERM, "
         f"got {len(force_order_runs)}"
