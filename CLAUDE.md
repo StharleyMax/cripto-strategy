@@ -208,7 +208,7 @@ por `SPEC-002` §6.1 e a **linha 12** deliberadamente em aberto por `SPEC-002` �
 | 9 | **vocabulário fechado de componentes** (`sentimento` · `charts` · `convergencia` · `backtest` · `web` · `docs`) **e os caminhos que dele derivam** (`backend/src/modules/sentimento/`, `backend/tests/sentimento/`) | **português — EXCEÇÃO DECLARADA** | `[DECISÃO-OWNER: 2026-08-29, escolha entre alternativas apresentadas]` — ver a exceção literal acima | `PRD-002` §3.3 |
 | 10 | **nome de EVENTO DE LOG** (a string em `logger.info("…")`) e **as chaves de `extra={}`** | **inglês, PROSPECTIVAMENTE** — todo evento e toda chave **novos** nascem em inglês | `[INFERRED: aplicação de ADR-013/D3 linha 1 a superfície não enumerada — a string em `logger.info("…")` é escrita em código, por quem escreve o código]` | `SPEC-002` §6.1 |
 | 11 | **nome de COLUNA DE CONTRATO** (`janela_de_perda`, `window`, `class`) | **português — EXCEÇÃO, já declarada em código de produção** | `[DOC: backend/src/modules/sentimento/domain/ingest_record.py:87-89]` — herança de `ADR-008/D3`; reabri-la é ato daquela ADR, não desta feature | `PRD-002` §3.4 |
-| 12 | **segmento de URL / rota** (`"/painel"` em `ROTAS`) | **⏸ NÃO DECIDIDO** | `[NÃO SEI]` — `[Q2]`, e **quem decide é o owner** | `PRD-002` §3.1 / `SPEC-002` §7 |
+| 12 | **segmento de URL / rota** (`"/painel"` em `ROTAS`) | **inglês — RESPONDIDA 2026-09-08** | `[DECISÃO-OWNER: 2026-09-08, escolha entre alternativas apresentadas]` — ver resolução abaixo | `PRD-002` §3.1 / `SPEC-002` §7 |
 
 **Linha 10 — o que ela NÃO faz, e a omissão é deliberada:** os **4 eventos existentes em português**
 (`etl_item_publicado`, `etl_item_concluido`, `etl_drenagem_concluida`, `checkpoint_cauda_truncada`) e as
@@ -244,6 +244,26 @@ exceção logo abaixo: `CA-F1-1` congela a tabela em **12**, e uma 13ª reprovar
 **Linha 12 — o custo de deixar em aberto, escrito para não ser esquecido:** hoje é **1 rota**. Na fase
 `05` de `SPEC-001` são muitas, e trocar URL depois quebra bookmark e link. **A pergunta é barata agora e
 monotonicamente mais cara depois** — mas não bloqueia nada. Dono: **owner**.
+
+### ✅ Linha 12 — RESPONDIDA em 2026-09-08, era a pergunta em aberto desta tabela
+
+Reaberta pelo motivo que o parágrafo acima já previa: a feature filha `pagina-de-grafico-s2` (nova rota
+de gráfico S2, `plataforma-dados`) tornou a pergunta concreta antes da fase `05` acumular "muitas".
+
+**Decisão do owner:** rotas nascem **em inglês**, e isto vale tanto para a rota nova quanto para a
+existente. Literal: *"rotas em ingles, inclusive o que tiver de rotas em ptbr pode ser migrado para
+ingles"* `[PREMISSA-OWNER: 2026-09-08]`.
+
+**O que isto NÃO é: não é o mesmo padrão da linha 10 (evento de log).** Lá a decisão foi
+"prospectivo apenas" — o passivo de 4 eventos em português fica, só o crescimento para. Aqui o owner
+pediu migração retroativa explícita, não só regra prospectiva — `/painel` (a única rota hoje,
+`frontend/src/app/painel/page.tsx`) também migra.
+
+**O que esta linha do `CLAUDE.md` NÃO decide sozinha:** o nome exato da rota nova (`/symbol/[symbol]`
+ou outro segmento — decisão de `/architect`/`frontend-architect` da feature filha) nem o plano de
+migração de `/painel` (link/bookmark quebra — quem escreve o plano é a mesma feature ou uma task
+dedicada, não este arquivo). Isto fecha a REGRA de idioma; a EXECUÇÃO da migração é ato de código,
+com seu próprio gate.
 
 ### ✅ Mensagem de exceção — RESPONDIDA em 2026-09-02, era a lacuna conhecida desta tabela
 
