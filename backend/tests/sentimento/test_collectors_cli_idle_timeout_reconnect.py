@@ -12,9 +12,12 @@ in `_PUBLISH_FAILURE_EXCEPTIONS`) would have passed unnoticed.
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Iterable, Iterator
 from typing import Any
+
+import pytest
 
 from src.modules.sentimento.domain.force_order_collision_accounting import (
     ForceOrderKeyObservation,
@@ -56,6 +59,7 @@ def _row(**overrides: Any) -> SeriesRow:
         "observer_id": "vps-01",
         "observer_region": UNKNOWN_OBSERVER_REGION,
         "is_final": True,
+        "value_raw": "1.0",
     }
     columns.update(overrides)
     return SeriesRow(**columns)
@@ -182,3 +186,62 @@ def test_idle_silence_reconnects_through_the_stopiteration_route_never_rejected(
     assert len(sink.accepted) == 1, (
         "the new source's own frame must publish through the normal path"
     )
+
+
+def test_idle_reconnect_and_receipt_are_observable_via_logs_under_one_session_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A reconnect and the frame that follows it must be traceable from `docker logs` alone.
+
+    Before this test, `_run_force_order_collector`'s happy path was silent end to end: a
+    reconnect triggered no log line at all, and a successfully keyed message logged nothing
+    either — "is `forceOrder` really receiving data" could only be answered with an ad hoc
+    raw-frame probe against the live container, never with `docker logs`. This pins the fix: one
+    `session_id`, generated once per thread lifetime, threads through the reconnect log AND the
+    message-received/published logs that follow it in the SAME session.
+    """
+    stop_event = threading.Event()
+    failure_event = threading.Event()
+    exit_code: list[int] = [0]
+    recorded: list[IngestRun] = []
+    source_holder: list[MessageSource | None] = [None]
+    sink = _RecordingSink()
+
+    old = _IdleThenGoneSource()
+    new = _OneFrameThenCleanCloseSource(FRAME_A, stop_event)
+    opened: list[object] = []
+
+    def _open_source() -> MessageSource:
+        source = old if not opened else new
+        opened.append(source)
+        return source
+
+    def _to_rows(_received_at: int, _observation: ForceOrderKeyObservation) -> Iterable[SeriesRow]:
+        return (_row(),)
+
+    with caplog.at_level(logging.INFO, logger=collectors_cli.logger.name):
+        collectors_cli._run_force_order_collector(
+            stop_event=stop_event,
+            failure_event=failure_event,
+            exit_code=exit_code,
+            open_source=_open_source,
+            sink=sink,  # type: ignore[arg-type]
+            to_rows=_to_rows,
+            record_run=recorded.append,
+            source_holder=source_holder,
+        )
+
+    by_event = {record.message: record for record in caplog.records}
+    for event in (
+        "force_order_session_reconnect",
+        "force_order_message_received",
+        "force_order_message_published",
+        "collector_session_closed",
+    ):
+        assert event in by_event, f"expected a {event} log line, got {list(by_event)}"
+
+    session_ids = {record.session_id for record in caplog.records}  # type: ignore[attr-defined]
+    assert len(session_ids) == 1, (
+        f"reconnect and message logs must share ONE session_id, got {session_ids}"
+    )
+    assert by_event["force_order_session_reconnect"].reason == "StreamIdleTimeoutError"  # type: ignore[attr-defined]
