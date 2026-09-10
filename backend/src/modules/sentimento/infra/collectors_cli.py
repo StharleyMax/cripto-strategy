@@ -52,6 +52,7 @@ import signal
 import sys
 import threading
 import time
+import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -489,23 +490,38 @@ def _publish_raw_force_order_message(
     sink: RedisStreamSeriesSink,
     to_rows: ForceOrderObservationToRows,
     digest: hashlib._Hash,
+    session_id: str,
 ) -> int:
     """Key one raw message, build its row(s) and publish them; return how many were published.
 
     An unkeyable message (`ForceOrderKeyExtractionError`) is logged and skipped — `B2` names
     keying failure as a data problem with the raw line, never a reason to stop the session.
+    Every message that reaches this function (keyable or not) is logged at receipt — the happy
+    path used to be silent end to end, which is why "is `forceOrder` really receiving data" could
+    only be answered by an ad hoc raw-frame probe instead of `docker logs`.
     """
+    logger.info(
+        "force_order_message_received",
+        extra={"session_id": session_id, "raw_preview": raw[:120]},
+    )
     digest.update(raw.encode("utf-8"))
     try:
         key = extract_force_order_natural_key(raw)
     except ForceOrderKeyExtractionError:
-        logger.warning("force_order_message_unkeyable", extra={"raw_preview": raw[:120]})
+        logger.warning(
+            "force_order_message_unkeyable",
+            extra={"session_id": session_id, "raw_preview": raw[:120]},
+        )
         return 0
     observation = ForceOrderKeyObservation(key=key, day=trade_time_utc_date(key.trade_time))
     published = 0
     for row in to_rows(_epoch_ms(), observation):
         sink.accept(row)
         published += 1
+    logger.info(
+        "force_order_message_published",
+        extra={"session_id": session_id, "n_published": published},
+    )
     return published
 
 
@@ -546,6 +562,7 @@ def _run_force_order_collector(
     (`reconnect_and_key`, below) opens a new socket through the SAME `open_source` factory, so
     the endpoint identity does not change mid-session.
     """
+    session_id = uuid.uuid4().hex[:12]
     source = open_source()
     endpoint: str = getattr(source, "path", FORCE_ORDER_ENDPOINT)
     source_holder[0] = source
@@ -559,9 +576,18 @@ def _run_force_order_collector(
         while True:
             try:
                 raw = next(messages)
-            except (StopIteration, StreamIdleTimeoutError):
+            except (StopIteration, StreamIdleTimeoutError) as disconnect:
                 if stop_event.is_set():
                     break
+                logger.info(
+                    "force_order_session_reconnect",
+                    extra={
+                        "session_id": session_id,
+                        "endpoint": endpoint,
+                        "reason": type(disconnect).__name__,
+                        "n_published_so_far": n_published,
+                    },
+                )
                 new_source = open_source()
                 outcome = reconnect_and_key(source, new_source, (), time.monotonic)
                 source = new_source
@@ -575,13 +601,13 @@ def _run_force_order_collector(
                 continue
             if stop_event.is_set():
                 break
-            n_published += _publish_raw_force_order_message(raw, sink, to_rows, digest)
+            n_published += _publish_raw_force_order_message(raw, sink, to_rows, digest, session_id)
     except _PUBLISH_FAILURE_EXCEPTIONS as failure:
         logger.error(
             "collector_session_closed %s: %s",
             endpoint,
             failure,
-            extra={"endpoint": endpoint, "verdict": "REJECTED"},
+            extra={"session_id": session_id, "endpoint": endpoint, "verdict": "REJECTED"},
             exc_info=True,
         )
         verdict = "REJECTED"
@@ -595,6 +621,7 @@ def _run_force_order_collector(
         logger.info(
             "collector_session_closed",
             extra={
+                "session_id": session_id,
                 "endpoint": endpoint,
                 "n_published": n_published,
                 "verdict": verdict,
