@@ -332,3 +332,67 @@ onde dá `5,01:1` e `4,59:1`. Medi contra a referência errada. A paleta escura 
 ⇒ o domínio **Mobile Experience** sai do universo da revisão de design enquanto durar o piloto;
 uma nota baixa ali **não reprova** e não deve ser reportada como dívida. O alvo é desktop.
 Reabre quando o owner declarar, não por iniciativa de agente.
+
+---
+
+## D15 · Marco zero: limpar `md.series` e reingerir — **depois** de `E1`, nunca antes
+
+`[DECISÃO-OWNER: 2026-09-11, escolha entre alternativas apresentadas]` — o owner escolheu a
+**opção B** do menu `E6` em [`../OPCOES-E1-E5.md`](../OPCOES-E1-E5.md), literal: *"podemos seguir
+com a recomendação, opção B já está aprovado"*.
+
+**A sequência é a decisão, não um detalhe dela:** `E1` decidido → catálogo das 8 órfãs decidido →
+`TRUNCATE` → reingestão com o carimbo certo desde a primeira linha.
+
+**Por que a ordem é o conteúdo:** `[MEDIDO 2026-09-11]`, só leitura,
+`count(*) filter (where available_at - bucket_end <= 60000)` sobre `md.series` → **4.116 de
+125.160** linhas de klines legíveis (**3,3%**). Limpar **não** toca nessa causa ⇒ opção A
+(limpar antes) reproduz os mesmos 3,3% em ~24 h e foi recusada por isso: é o único caminho que
+gasta sem comprar nada.
+
+**O que a medição derrubou, e é a favor da pergunta do owner:** `select count(*) from md.series
+where src_label_raw ilike '%stream%' or src_label_raw ilike '%forceorder%'` → **0**. **Não existe
+uma linha da era do WebSocket na base.** O stream deixou 5 runs em `md.ingest_run`, os 5 nunca
+fechados, e nenhuma linha. O marco zero que a pergunta temia já havia acontecido sozinho.
+
+**Custo de limpar: zero em dado permanente, verificado e não presumido.**
+`fapi/v1/klines` responde **2019-09-09** e `fapi/v1/premiumIndexKlines` responde **1 min de
+~1 ano atrás** (`curl`, REST público, só leitura) ⇒ toda linha é re-obtenível. O que se perde é
+**tempo de reingestão**. Isso tira a limpeza da classe *decisão de risco* e a põe na classe
+*decisão de quando*.
+
+**⛔ A amarração que NÃO pode ser afrouxada:** as **8 séries de `premiumIndex` são as únicas
+100% legíveis da base** (34.592 de 34.592) **e são exatamente as 8 órfãs** que
+[`ACHADO-CATALOGO-SEM-MARK-PRICE-E-FUNDING.md`](ACHADO-CATALOGO-SEM-MARK-PRICE-E-FUNDING.md)
+escalou — nenhum catálogo as serve. Limpar sem decidir o catálogo delas **destrói o único dado
+legível da base para recriá-lo igualmente ilegível**. ⇒ `E1` e as 8 órfãs são **um ato só**, não
+uma sequência.
+
+**Falsificador de `D15`** — o mesmo número, medido igual, antes e depois: se após `E1` +
+reingestão a fração legível de klines **não** subir de **3,3%** para perto de 100%, a causa
+diagnosticada estava errada, `E1` não era o conserto, e a limpeza foi gasto puro.
+
+## D16 · `E1` = opção **2**: `available_at` do backfill é reconstruído e carimbado `MODELED`
+
+`[DECISÃO-OWNER: 2026-09-11, escolha entre alternativas apresentadas]` — decorre de *"podemos
+seguir com a recomendação"* na mesma fala; `E6`/B **exige** `E1` decidido, e a recomendação do
+`/architect` para `E1` era a opção **2**.
+
+`available_at = bucket_end + atraso de publicação MEDIDO daquele endpoint`, com
+`availability_source = MODELED`; o instante da busca continua em `ingested_at`/`observed_at`, que
+já o guardam. **Mecanismo já construído e hoje inerte:** `MODELED` tem **0 de 117.740** linhas.
+
+**Pré-condição declarada, herdada do menu e NÃO dispensada por `D15`:** o atraso tem de ser
+**medido por endpoint** antes de qualquer linha — `SPEC-001` §5.2 proíbe `event_time + interval`
+(default **361× otimista**). Medido hoje para klines ao vivo: `min 0 s`, `max 279 s`
+(`n = 37.148`); premiumIndex ao vivo: `max 1 s` (`n = 34.592`).
+
+**O que `D15` barateia em `D16`, e é o motivo de terem sido decididas juntas:** o custo (c) da
+opção 2 era reescrever **80.592** linhas já gravadas — migração de dado com risco de falha no
+meio deixando base mista. **Com base limpa esse custo deixa de existir:** 0 linha a reescrever,
+1 só classe de `availability_source` desde a primeira linha, nenhuma janela em que o consumidor
+vê `OBSERVED` e `MODELED` misturados sem saber por quê.
+
+**O que `D16` fecha e não volta atrás:** `md.series` passa a conter linhas cujo `available_at` é
+**calculado**. A partir daí **todo** consumidor tem de ler `availability_source`, e **todo**
+relatório de backtest tem de declarar o modelo de atraso — não basta a coluna.
