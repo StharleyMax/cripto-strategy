@@ -508,6 +508,47 @@ def test_the_service_handler_is_taken_by_exactly_the_declared_service_processes(
     assert _modules_installing_the_service_handler(SRC_ROOT) == DECLARED_SERVICE_PROCESSES
 
 
+def _builders_installed_on_a_logger(tree: ast.Module) -> list[tuple[int, str]]:
+    """`(line, builder name)` for every `<logger>.addHandler(<builder>())` in the module."""
+    installed: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "addHandler" or not node.args:
+            continue
+        argument = node.args[0]
+        if isinstance(argument, ast.Call) and isinstance(argument.func, ast.Name):
+            installed.append((node.lineno, argument.func.id))
+    return sorted(installed)
+
+
+def test_every_handler_a_service_process_installs_is_built_by_a_service_builder() -> None:
+    """WHICH LOGGER GOT IT, not merely that the name was called somewhere in the file.
+
+    The check above asks whether the module IMPORTS and CALLS a service builder. That pair is
+    enough to kill the promotion-done-by-half mutant, and it was measured killing it
+    `[MEDIDO 2026-09-11: mutante M4 replantado nos dois processos de servico, rc=1, killer
+     unico `test_the_service_handler_is_taken_by_exactly_the_declared_service_processes`]`.
+    What it cannot see is a call whose RESULT goes nowhere: a service process that calls
+    `build_service_stdout_handler()` on a throwaway logger while its own logger takes the
+    projection builder passes the pair and still ships a `stdout` that cannot print a counter —
+    measured as a SURVIVING mutant in the same gate `[MEDIDO 2026-09-11: mutante M4d,
+    `logging.getLogger('nowhere').addHandler(build_service_stdout_handler())` ao lado de
+    `logger.addHandler(build_stdout_handler())` em `collectors_cli.py`, rc=0, 0 killers]`.
+
+    So this asserts the destination: every handler either service process installs on a logger
+    comes from a SERVICE builder, and there is at least one — an empty list would pass
+    vacuously, which is the `rc=0` `ADR-012` names.
+    """
+    importers = _modules_importing_the_shared_builders(SRC_ROOT)
+
+    for service in sorted(DECLARED_SERVICE_PROCESSES):
+        installed = _builders_installed_on_a_logger(importers[service])
+        assert installed, service
+        for line, builder in installed:
+            assert builder in SERVICE_HANDLER_BUILDERS, f"{service}:{line} installs {builder}"
+
+
 def test_the_service_handler_sweep_bites_a_projection_cli_that_takes_it(tmp_path: Path) -> None:
     """MORDE for the check above — a green that cannot turn red is the `rc=0` of `ADR-012`.
 
