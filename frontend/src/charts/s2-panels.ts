@@ -12,21 +12,27 @@
  * (`s2-panels.test.ts`, `s2-axis-integration.test.ts`), which now build the raw inputs below
  * and pass them in.
  *
- * ── THE WINDOW, AND WHY IT IS THESE 4 DAYS (decision made HERE, not in the handoff) ──────
+ * ── THE WINDOW IS AN ARGUMENT NOW — it used to be three constants, and that was a DEFECT ──
  *
- * `[MEDIDO 2026-09-03]`:
- *   - klines (`data/binance/klines/tf2`): 1m and 15m present and gapless for ALL of
- *     08-20..08-23 (`wc -l BTCUSDT-1m-2026-08-{20,21,22,23}.csv` → 1441 each, 1440 candles).
- *   - OI (`data/binance/metrics`): complete (288/288, sorted, zero duplicates) for 08-20,
- *     08-21, 08-23. NO FILE for 08-22 — a real, whole-day gap.
- *   - aggTrades (`data/binance/aggtrades`): present for 08-20, 08-21, 08-23 (+08-24, outside
- *     this window). NO FILE for 08-22 — the SAME real gap as OI.
+ * This module used to EXPORT the window as `DAYS` (`2026-08-20..08-23`), `RANGE_START_MS` and
+ * `RANGE_END_MS_EXCLUSIVE`, chosen in `T-05.2` because those were the four days of
+ * `data/binance/*` CSV fixtures on disk `[MEDIDO 2026-09-03]`. Correct while the only caller
+ * was a fixture-driven test; a defect the moment `T-02.4` pointed the live `/symbol` route at
+ * it, because `klines_volume` only exists from `2026-09-04` on
+ * (`min(bucket_end) = 1788486120000`, `md.series` `[MEDIDO 2026-09-11,
+ * ACHADO-SERIES-HISTORY-SEM-PONTO.md]`) — the route asked for a window that PRECEDES every row
+ * that exists, and the screen stayed empty with every link in the chain working.
  *
- * Choosing `08-20T00:00Z .. 08-24T00:00Z` (4 calendar days, exclusive end) means: price has
- * zero gaps (full coverage all 4 days), while OI and CVD share exactly ONE real gap — the
- * whole of 08-22 — instead of a synthetic one. Per the handoff ("não fabrique um gap
- * sintetico se ja existe um de verdade"), this is used as-is for the D5.11/null-gap proof
- * rather than manufacturing a second, made-up hole.
+ * Every builder below therefore takes an `S2Window` (`s2-window.ts`) EXPLICITLY, with no
+ * default — the same `PS-1` discipline `priceUse` already gets here: a silent default window
+ * is exactly how the frozen one survived four tasks without anybody reading it. Production
+ * derives that window from the clock (`resolveTrailingWindow`); the fixture-driven tests in
+ * this directory use `S2_FIXTURE_WINDOW` (`s2-fixture-window.ts`), which is NOT re-exported by
+ * the barrel and so cannot be reached from `web` at all.
+ *
+ * The four fixture days are still exactly the right choice FOR THOSE TESTS, and the reason is
+ * kept where it belongs, in `s2-fixture-window.ts`: price has zero gaps across all four, while
+ * OI and CVD share exactly ONE real, whole-day gap (08-22) instead of a synthetic one.
  */
 
 import { buildChartSeries } from "./canonical-grid-chart-consumer.ts";
@@ -38,11 +44,9 @@ import { cvdCumulativeScaled, unscale, CVD_BUCKET_WIDTH_MS } from "./s2-cvd.ts";
 import type { ScaledCvdDelta } from "./s2-cvd.ts";
 import { resolvePriceSource } from "./s2-price-source.ts";
 import type { PriceSource, PriceUse } from "./s2-price-source.ts";
+import type { S2Window } from "./s2-window.ts";
 
 export const SYMBOL = "BTCUSDT";
-export const DAYS = ["2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23"] as const;
-export const RANGE_START_MS = Date.UTC(2026, 7, 20, 0, 0, 0);
-export const RANGE_END_MS_EXCLUSIVE = Date.UTC(2026, 7, 24, 0, 0, 0);
 
 export const ONE_MINUTE_MS = 60_000;
 export const FIVE_MINUTES_MS = 5 * 60_000;
@@ -102,17 +106,25 @@ export interface S2Panels {
  * names the use explicitly (`S2_PRICE_USE` for this task's own call site), and
  * `resolvePriceSource` is what turns that into the `price_source` the panel declares.
  */
-export function buildPricePanel(candles: readonly RawCandle[], priceUse: PriceUse): PricePanel {
+export function buildPricePanel(
+  candles: readonly RawCandle[],
+  priceUse: PriceUse,
+  window: S2Window,
+): PricePanel {
   return {
     priceSource: resolvePriceSource(priceUse),
     priceUse,
-    series: buildChartSeries(candles, ONE_MINUTE_MS, RANGE_START_MS, RANGE_END_MS_EXCLUSIVE),
+    series: buildChartSeries(candles, ONE_MINUTE_MS, window.startMs, window.endMsExclusive),
   };
 }
 
 /** `points`/`missingDays` — already assembled (`assembleOiPoints`), never read from disk here. */
-export function buildOiPanel(points: readonly ScalarPoint[], missingDays: readonly string[]): OiPanel {
-  const series = buildScalarSeries(points, FIVE_MINUTES_MS, RANGE_START_MS, RANGE_END_MS_EXCLUSIVE);
+export function buildOiPanel(
+  points: readonly ScalarPoint[],
+  missingDays: readonly string[],
+  window: S2Window,
+): OiPanel {
+  const series = buildScalarSeries(points, FIVE_MINUTES_MS, window.startMs, window.endMsExclusive);
   return { timeframeMs: FIVE_MINUTES_MS, slots: series.slots, missingDays };
 }
 
@@ -120,17 +132,20 @@ export function buildOiPanel(points: readonly ScalarPoint[], missingDays: readon
  * `deltas`/`missingDays`/`coveredDays` — already assembled (`assembleCvdDeltas`), never read
  * from disk here.
  *
- * `anchorMs` defaults to the window start — a chart-display choice (where the visible
+ * `anchorMs` defaults to the window's own start — a chart-display choice (where the visible
  * cumulative curve starts counting from), independent of `<Anotacao>`'s own `cvd_anchor`
  * field (which records what anchor was in effect when a MARK was made, `PRD-001:360`, out
  * of this task's scope). Declared here as a parameter, not hardcoded, so a future caller
  * (e.g. a "reset to AGORA" control) can pick a different one without touching this module.
+ * Unlike the WINDOW, this default is safe: it cannot point outside the data, because it is
+ * read off the window the caller just passed in.
  */
 export function buildCvdPanel(
   deltas: readonly ScaledCvdDelta[],
   missingDays: readonly string[],
   coveredDays: readonly string[],
-  anchorMs: number = RANGE_START_MS,
+  window: S2Window,
+  anchorMs: number = window.startMs,
 ): CvdPanel {
   const cumulative = cvdCumulativeScaled(deltas, anchorMs);
 
@@ -141,14 +156,14 @@ export function buildCvdPanel(
   const deltaSeries = buildScalarSeries(
     deltas.map((fact) => ({ timeMs: fact.bucketStartMs, value: unscale(fact.valueScaled) })),
     CVD_BUCKET_WIDTH_MS,
-    RANGE_START_MS,
-    RANGE_END_MS_EXCLUSIVE,
+    window.startMs,
+    window.endMsExclusive,
   );
   const cumulativeSeries = buildScalarSeries(
     cumulative.map((point) => ({ timeMs: point.bucketStartMs, value: unscale(point.valueScaled) })),
     CVD_BUCKET_WIDTH_MS,
-    RANGE_START_MS,
-    RANGE_END_MS_EXCLUSIVE,
+    window.startMs,
+    window.endMsExclusive,
   );
   return {
     timeframeMs: CVD_BUCKET_WIDTH_MS,
@@ -168,6 +183,10 @@ export function buildCvdPanel(
  * this task's own caller passes `S2_PRICE_USE`.
  */
 export interface S2RawInputs {
+  /** The window every panel is built over — DERIVED by the caller (`resolveTrailingWindow`),
+   * never a constant of this module. See this file's header for the defect that made it a
+   * required field instead of three exported constants. */
+  readonly window: S2Window;
   readonly candles: readonly RawCandle[];
   readonly priceUse: PriceUse;
   readonly oiPoints: readonly ScalarPoint[];
@@ -181,11 +200,17 @@ export interface S2RawInputs {
 export function buildS2Panels(inputs: S2RawInputs): S2Panels {
   return {
     symbol: SYMBOL,
-    rangeStartMs: RANGE_START_MS,
-    rangeEndMsExclusive: RANGE_END_MS_EXCLUSIVE,
-    price: buildPricePanel(inputs.candles, inputs.priceUse),
-    oi: buildOiPanel(inputs.oiPoints, inputs.oiMissingDays),
-    cvd: buildCvdPanel(inputs.cvdDeltas, inputs.cvdMissingDays, inputs.cvdCoveredDays, inputs.cvdAnchorMs),
+    rangeStartMs: inputs.window.startMs,
+    rangeEndMsExclusive: inputs.window.endMsExclusive,
+    price: buildPricePanel(inputs.candles, inputs.priceUse, inputs.window),
+    oi: buildOiPanel(inputs.oiPoints, inputs.oiMissingDays, inputs.window),
+    cvd: buildCvdPanel(
+      inputs.cvdDeltas,
+      inputs.cvdMissingDays,
+      inputs.cvdCoveredDays,
+      inputs.window,
+      inputs.cvdAnchorMs,
+    ),
   };
 }
 

@@ -34,18 +34,24 @@ import {
   buildOiPanel,
   buildCvdPanel,
   SYMBOL,
-  DAYS,
   ONE_MINUTE_MS,
   FIVE_MINUTES_MS,
-  RANGE_START_MS,
-  RANGE_END_MS_EXCLUSIVE,
   S2_PRICE_USE,
 } from "./s2-panels.ts";
+import { S2_FIXTURE_WINDOW } from "./s2-fixture-window.ts";
 import { parseKlinesDays } from "./s2-klines-loader.ts";
 import { assembleOiPoints } from "./s2-oi-loader.ts";
 import { assembleCvdDeltas } from "./s2-cvd.ts";
 import { candlestickSeriesLossless, lineSeriesLossless, naiveDropGapsLine } from "./s2-lightweight-adapter.ts";
 import { candlestickSeriesColors } from "./color-tokens.ts";
+
+// The 4 days of CSV fixtures on disk, as a window (`s2-fixture-window.ts`) — they used to be
+// three exported constants of `s2-panels.ts`, which is what let the live `/symbol` route
+// inherit a frozen window (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, second defect). The names
+// below are kept so every assertion in this file reads exactly as it did.
+const DAYS = S2_FIXTURE_WINDOW.days;
+const RANGE_START_MS = S2_FIXTURE_WINDOW.startMs;
+const RANGE_END_MS_EXCLUSIVE = S2_FIXTURE_WINDOW.endMsExclusive;
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(THIS_DIR, "../../..");
@@ -94,9 +100,9 @@ const { deltas: cvdDeltas, missingDays: cvdMissingDays, coveredDays: cvdCoveredD
 // `T-05.5`: `buildPricePanel` now returns a `PricePanel` (`{priceSource, priceUse, series}`)
 // — `price` here stays the plain `ChartSeries` every assertion below already expects
 // (`.slots`), by pulling `.series` out at the one call site instead of touching each one.
-const price = buildPricePanel(candles, S2_PRICE_USE).series;
-const oi = buildOiPanel(oiPoints, oiMissingDays);
-const cvd = buildCvdPanel(cvdDeltas, cvdMissingDays, cvdCoveredDays);
+const price = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW).series;
+const oi = buildOiPanel(oiPoints, oiMissingDays, S2_FIXTURE_WINDOW);
+const cvd = buildCvdPanel(cvdDeltas, cvdMissingDays, cvdCoveredDays, S2_FIXTURE_WINDOW);
 
 test("fixture precondition: exactly one real gap day (08-22), shared by OI and CVD, price gapless", () => {
   assert.deepEqual(oi.missingDays, ["2026-08-22"]);

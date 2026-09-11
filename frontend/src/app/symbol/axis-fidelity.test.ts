@@ -20,9 +20,14 @@
 // instead — every one of the real 4-day/1-minute grid's 5,760 instants present, none
 // fabricated as a value (a synthetic input, not a synthetic RESULT: the coordinates measured
 // below are the library's own real output for that input) — at the EXACT SAME density and
-// window the real page requests (`RANGE_START_MS`/`RANGE_END_MS_EXCLUSIVE`/`ONE_MINUTE_MS`,
-// the barrel's own constants), so the axis is exercised under the real load this falsifier
-// names, even though the VALUES are synthetic.
+// SPAN the real page requests (`resolveRouteWindow`, `request-window.ts`), so the axis is
+// exercised under the real load this falsifier names, even though the VALUES are synthetic.
+//
+// The window is built HERE from a fixed clock reading instead of imported as a constant: the
+// three constants this file used to import (`DAYS`/`RANGE_START_MS`/`RANGE_END_MS_EXCLUSIVE`)
+// are gone, because a live route inheriting them asked `/series-history` for four days of
+// 2026-08 while the data starts at 2026-09-04 (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, second
+// defect). A test may pin its clock; production may not pin its window.
 //
 // Run with: npm --prefix frontend run test:app
 
@@ -33,15 +38,27 @@ import {
   buildS2Panels,
   candlestickSeriesColors,
   candlestickSeriesLossless,
-  DAYS,
+  FIVE_MINUTES_MS,
   ONE_MINUTE_MS,
-  RANGE_END_MS_EXCLUSIVE,
-  RANGE_START_MS,
+  resolveTrailingWindow,
   runHeadlessChart,
   S2_PRICE_USE,
+  S2_WINDOW_SPAN_MS,
   type CandlestickItem,
   type WhitespaceItem,
 } from "../../charts/index.ts";
+
+/** The same 4-day span the route asks for, over a pinned clock reading — see this file's
+ * header for why the window is derived here instead of imported. */
+const WINDOW = resolveTrailingWindow({
+  nowMs: Date.UTC(2026, 7, 24, 0, 0, 0),
+  lagMs: 0,
+  spanMs: S2_WINDOW_SPAN_MS,
+  alignmentMs: FIVE_MINUTES_MS,
+});
+const DAYS = WINDOW.days;
+const RANGE_START_MS = WINDOW.startMs;
+const RANGE_END_MS_EXCLUSIVE = WINDOW.endMsExclusive;
 
 const TOLERANCE_PX = 0.5;
 
@@ -85,6 +102,7 @@ test("CA-F2-5: X coordinates for real event_time instants stay within 0.5px acro
   assert.equal(candles.length, expectedSlotCount, `full coverage means exactly ${expectedSlotCount} candles, one per grid minute`);
 
   const pricePanel = buildS2Panels({
+    window: WINDOW,
     candles,
     priceUse: S2_PRICE_USE,
     oiPoints: [],
