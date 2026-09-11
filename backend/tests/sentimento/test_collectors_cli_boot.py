@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import socket
 import subprocess
@@ -46,6 +47,7 @@ def test_defaults_apply_when_every_variable_is_absent() -> None:
     assert config.ingest_record_backend == "sqlite"
     assert config.premium_index_cycle_interval_s == 60.0
     assert config.klines_cycle_interval_s == 60.0
+    assert config.klines_cycle_offset_s == 2.0
     assert config.klines_backfill_days == 7
 
 
@@ -62,6 +64,7 @@ def test_every_variable_is_read_when_present(tmp_path: Path) -> None:
             "INGEST_HEALTH_STORE_PATH": str(store_path),
             "PREMIUM_INDEX_CYCLE_INTERVAL_S": "12.5",
             "KLINES_CYCLE_INTERVAL_S": "300",
+            "KLINES_CYCLE_OFFSET_S": "4.5",
             "KLINES_BACKFILL_DAYS": "3",
         }
     )
@@ -74,6 +77,7 @@ def test_every_variable_is_read_when_present(tmp_path: Path) -> None:
     # `RS-3.5`: the klines cadence and backfill depth are CONFIGURATION. Morde: hardcode
     # either one and adjusting the only variable that pays quota becomes a release.
     assert config.klines_cycle_interval_s == 300.0
+    assert config.klines_cycle_offset_s == 4.5
     assert config.klines_backfill_days == 3
 
 
@@ -438,8 +442,12 @@ def test_main_wires_the_real_series_mapping(
     [
         ("KLINES_CYCLE_INTERVAL_S", "0"),
         ("KLINES_CYCLE_INTERVAL_S", "-1"),
+        ("KLINES_CYCLE_INTERVAL_S", "nan"),
         ("KLINES_BACKFILL_DAYS", "0"),
         ("KLINES_BACKFILL_DAYS", "-7"),
+        ("KLINES_CYCLE_OFFSET_S", "-0.5"),
+        ("KLINES_CYCLE_OFFSET_S", "60"),
+        ("KLINES_CYCLE_OFFSET_S", "600"),
     ],
 )
 def test_a_non_positive_klines_cadence_is_refused_at_boot(variable: str, raw: str) -> None:
@@ -450,8 +458,99 @@ def test_a_non_positive_klines_cadence_is_refused_at_boot(variable: str, raw: st
     minutes later, as an HTTP `418`, far from the character that caused it. Accept `0` for
     `KLINES_BACKFILL_DAYS` and the boot backfill silently does nothing, which `DoD-1`
     (`>= 10.000` rows) would fail hours later with no line naming the cause.
+
+    `KLINES_CYCLE_OFFSET_S` joins the same fail-fast because it has the same shape of silent
+    failure, in both directions. A NEGATIVE offset polls before `bucket_end`, and the
+    anti-lookahead cut (`is_closed_bucket`) then drops the bar — a collector that looks healthy
+    and publishes nothing. An offset of a whole cadence or more moves the poll onto a DIFFERENT
+    bucket while every log line still reads "aligned". `60` is refused and `59,9` is not,
+    because the interval is exclusive: `[0, interval_s)`.
     """
     with pytest.raises(collectors_cli.CollectorBootConfigurationError) as excinfo:
         collectors_cli.resolve_boot_config({variable: raw})
     assert excinfo.value.variable == variable
     assert variable in str(excinfo.value)
+
+
+@pytest.mark.parametrize("raw", ["0", "0.0", "-1", "-0.5", "nan", "NaN", "-nan"])
+def test_a_non_positive_premium_index_cadence_is_refused_at_boot(raw: str) -> None:
+    """`PREMIUM_INDEX_CYCLE_INTERVAL_S` joins the same `RN-4` fail-fast as the klines cadence.
+
+    It did NOT until this commit: `resolve_boot_config` parsed it with `_parse_float`, with no
+    positivity guard at all, so `PREMIUM_INDEX_CYCLE_INTERVAL_S=0` BOOTED and
+    `_run_premium_index_collector` closed its cycle with `stop_event.wait(0.0)` — the tight loop
+    against `/fapi/v1/premiumIndex` that `_positive_float` was written to forbid, reaching the
+    operator only as an HTTP `418` minutes later.
+
+    `nan` is in this list because the OBVIOUS spelling of the guard does not catch it: `nan <= 0`
+    is `False`, so `if value <= 0` would accept `nan`, and `threading.Event().wait(nan)` returns
+    immediately (measured: `1,0e-5` s) — the same tight loop, reached through the one comparison
+    that silently answers `False` to everything. The guard is spelled `not value > 0` for this.
+    """
+    with pytest.raises(collectors_cli.CollectorBootConfigurationError) as excinfo:
+        collectors_cli.resolve_boot_config({"PREMIUM_INDEX_CYCLE_INTERVAL_S": raw})
+    assert excinfo.value.variable == "PREMIUM_INDEX_CYCLE_INTERVAL_S"
+    assert "PREMIUM_INDEX_CYCLE_INTERVAL_S" in str(excinfo.value)
+
+
+def test_a_positive_premium_index_cadence_still_boots() -> None:
+    """The guard must refuse the typo without narrowing what a real operator may configure."""
+    assert (
+        collectors_cli.resolve_boot_config(
+            {"PREMIUM_INDEX_CYCLE_INTERVAL_S": "0.5"}
+        ).premium_index_cycle_interval_s
+        == 0.5
+    )
+    assert collectors_cli.resolve_boot_config({}).premium_index_cycle_interval_s == 60.0
+
+
+@pytest.mark.parametrize(
+    "variable", ["KLINES_CYCLE_INTERVAL_S", "PREMIUM_INDEX_CYCLE_INTERVAL_S"]
+)
+@pytest.mark.parametrize("raw", ["inf", "Infinity", "1e400", "-inf"])
+def test_a_non_finite_cadence_is_refused_at_boot(variable: str, raw: str) -> None:
+    """A cadence of `inf` is refused at BOOT, on BOTH cycles — it is not a "safe" failure.
+
+    Morde: before the `math.isfinite` half of the guard, `inf`, `Infinity` and `1e400` (which
+    `float()` widens to `inf`) all BOOTED on both variables — measured, both spellings:
+    `resolve_boot_config({'KLINES_CYCLE_INTERVAL_S': 'inf'}) -> BOOTOU -> inf`. `not inf > 0` is
+    `False`, so the positivity guard alone lets every non-finite POSITIVE value through; only
+    `-inf` was already refused by it, and it is in this list to keep that direction covered.
+
+    Why "it would just block forever, which is safe" is FALSE, and it was measured, not assumed:
+    `threading.Event().wait(inf)` does not block — on CPython/Linux it raises
+    `OverflowError: timestamp out of range for platform time_t` in `2,1e-05` s. That raise
+    happens at the `stop_event.wait(interval_s)` that CLOSES each cycle, which sits OUTSIDE the
+    `try` that guards the publish, and `OverflowError` is not in `_PUBLISH_FAILURE_EXCEPTIONS`.
+    So the collector thread dies at the end of its FIRST cycle without `failure_event.set()` and
+    without `exit_code[0] = 1`; the supervisor waits on `stop|failure` and never learns. Process
+    alive, `rc=0`, collector dead — the ambiguous `rc=0` of `ADR-012`, with a `threading`
+    excepthook traceback as the only notice. Refusing at boot is the only place that speaks.
+    """
+    with pytest.raises(collectors_cli.CollectorBootConfigurationError) as excinfo:
+        collectors_cli.resolve_boot_config({variable: raw})
+    assert excinfo.value.variable == variable
+    assert variable in str(excinfo.value)
+
+
+def test_the_sink_of_a_non_finite_cadence_dies_uncaught() -> None:
+    """The boot guard above is the ONLY guard: the cycle-closing wait raises, and nobody catches.
+
+    This is the falsifier of the claim the guard rests on, and it asserts the two halves that
+    make the failure silent rather than loud:
+
+    1. `Event().wait(inf)` RAISES instead of blocking — so "it would hang harmlessly" is false;
+    2. `OverflowError` is not caught by `_PUBLISH_FAILURE_EXCEPTIONS`, the only `except` in the
+       collector loop — so the raise is not converted into `verdict=REJECTED` +
+       `failure_event.set()` + `exit_code[0] = 1` the way a real publish failure is.
+
+    If a later commit ADDS `OverflowError` to `_PUBLISH_FAILURE_EXCEPTIONS`, this assertion
+    fails on purpose: the boot guard's docstring claims to be the only line standing between an
+    operator typo and a silently dead thread, and that claim would have stopped being true.
+    """
+    with pytest.raises(OverflowError):
+        threading.Event().wait(math.inf)
+    assert not issubclass(OverflowError, collectors_cli._PUBLISH_FAILURE_EXCEPTIONS), (
+        "the cycle-closing wait's OverflowError must stay OUTSIDE the caught set for the boot "
+        "guard to be load-bearing; if it is added here, re-measure the boot guard's rationale"
+    )

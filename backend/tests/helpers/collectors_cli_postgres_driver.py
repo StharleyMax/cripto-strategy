@@ -66,6 +66,10 @@ def main(_argv: list[str]) -> int:
         # Same reasoning for the klines thread (`T-01.3`): one empty boot pass, then
         # nothing before `SIGTERM`.
         klines_cycle_interval_s=999_999.0,
+        # The aligned poll's PHASE (`O4`): zero here because these drivers never assert on
+        # cadence — the alignment property is proved with an injected clock in
+        # `test_grid_aligned_ticker.py`, not by a driver that really waits.
+        klines_cycle_offset_s=0.0,
         klines_backfill_days=1,
     )
     connection = connect_resp2(open_tcp_socket(host, port))
