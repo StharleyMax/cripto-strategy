@@ -361,12 +361,22 @@ fechados, e nenhuma linha. O marco zero que a pergunta temia já havia acontecid
 **tempo de reingestão**. Isso tira a limpeza da classe *decisão de risco* e a põe na classe
 *decisão de quando*.
 
-**⛔ A amarração que NÃO pode ser afrouxada:** as **8 séries de `premiumIndex` são as únicas
-100% legíveis da base** (34.592 de 34.592) **e são exatamente as 8 órfãs** que
+**⛔ A amarração que NÃO pode ser afrouxada:** as **8 séries de `premiumIndex` são o dado mais
+legível da base** (o filtro `available_at - bucket_end <= 60000` aceita 34.592 de 34.592) **e são
+exatamente as 8 órfãs** que
 [`ACHADO-CATALOGO-SEM-MARK-PRICE-E-FUNDING.md`](ACHADO-CATALOGO-SEM-MARK-PRICE-E-FUNDING.md)
-escalou — nenhum catálogo as serve. Limpar sem decidir o catálogo delas **destrói o único dado
+escalou — nenhum catálogo as serve. Limpar sem decidir o catálogo delas **destrói o dado mais
 legível da base para recriá-lo igualmente ilegível**. ⇒ `E1` e as 8 órfãs são **um ato só**, não
 uma sequência.
+
+> ⚠️ **CORREÇÃO, 2026-09-11 — "100% legíveis" era afirmação FALSA e foi removida.** O
+> `/quant-architect` mediu que **424 de 34.760** linhas têm `available_at < bucket_end` (mínimo
+> **−100 ms**): disponíveis *antes* do bucket fechar, o que `SPEC-001` §3.2 declara inválido. O
+> filtro `<= 60000` **não olha para baixo** e por isso as aceita — ele mede atraso excessivo, não
+> validade. A invariante nunca foi checada em produção: `build_series_row`, que a aplicaria, tem
+> **0 chamador**. ⇒ o argumento de `D15` **continua de pé** (é o dado mais legível, e limpar sem
+> decidir o catálogo o desperdiça), mas o número "100%" não era o que eu pensava que media.
+> Achado escalado, **não decidido**, em `OPCOES-CATALOGO-PREMIUM-INDEX.md`.
 
 **Falsificador de `D15`** — o mesmo número, medido igual, antes e depois: se após `E1` +
 reingestão a fração legível de klines **não** subir de **3,3%** para perto de 100%, a causa
