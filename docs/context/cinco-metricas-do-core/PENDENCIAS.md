@@ -74,24 +74,46 @@ task própria. **Não estava em nenhum documento antes desta medição.**
 
 ---
 
-## D · Dívida de contabilidade (do orquestrador, não dos builders)
+## D · Contabilidade — o que é dívida e o que NÃO é
 
-1. **50 de 50 tasks ainda `status = "todo"`** em `tasks.toml` — **6 estão feitas**
-   (`T-01.1`..`T-01.6`). O `harness resolve` é **atômico por fase**: exige listar toda task da
-   fase numa chamada, não só as que faltam.
-2. **Nenhum `gate-record`** para a fatia `01` — `harness status` diz *"sem veredito"*. Nenhum QA
-   rodou ainda sobre a fatia; os builders entregaram QA Gate Context Block, que **não é** veredito
-   de QA.
-3. **`docs/INDEX.md` sem a linha da fatia `01`.** Os builders deixaram deliberadamente para o
-   orquestrador — duas worktrees paralelas na cauda de um arquivo append-only conflitam.
-4. **8 worktrees vivas**; 4 branches `worktree-agent-*` de **2026-09-02** (feature
-   `plataforma-dados`, tasks `T-05.8`/`T-05.9`/`T-07.12`/`T-07.13`) aparecem com commits fora do
-   master. ✅ **Não é trabalho perdido** — verifiquei que o conteúdo **está no master** (mergeadas
-   por squash, SHA diferente). São resíduo e podem ser apagadas.
-5. **Container órfão** `t-01-1-series-window-reader-test-965ff045` (`timescaledb`), **up 2 dias**,
-   de uma task antiga. Consome recurso numa VPS que a premissa de infra diz ser escassa.
+> ⛔ **Correção de 2026-09-11.** A primeira versão desta seção listava três itens como dívida do
+> orquestrador. **Dois deles não são dívida — são o estado correto de uma fase incompleta**, e
+> tentar "consertá-los" seria forçar o mecanismo a mentir.
 
----
+### D1 · ❌ NÃO é dívida — as 50 tasks em `status = "todo"`
+
+`harness tasks resolve` é **tudo-ou-nada por fase** (`CA-4`). Tentativa real:
+
+    harness tasks resolve cinco-metricas-do-core 01 T-01.1=done … T-01.6=done
+    → RECUSADO: tarefa(s) da fase 01 SEM desfecho declarado: T-01.7, T-01.8,
+      T-01.9, T-01.10, T-01.11 — faltando uma, NADA e escrito, nem as demais
+
+⇒ **Não há como registrar as 6 feitas enquanto 5 não tiverem desfecho.** O registro de que elas
+existem são os `gates/T-01.*.md` e a PR #211. `[MEDIDO 2026-09-11]`
+
+### D2 · ❌ NÃO é dívida — "sem veredito" em `harness status`
+
+**Nenhum QA rodou sobre a fatia `01`**, então a ausência de `gate-record` é o estado verdadeiro.
+⚠️ O que os builders entregaram é **QA Gate Context Block**, que é *insumo para o QA* — **não é
+veredito de QA**. Confundir os dois faria a fase parecer validada sem nunca ter sido.
+
+### D3 · ⏳ Devido só no fechamento — a linha em `docs/INDEX.md`
+
+Os builders deixaram deliberadamente para o orquestrador: duas worktrees paralelas na cauda de um
+arquivo append-only conflitam. **A fase não fechou**, então ainda não é devido.
+
+### D4 · ✅ Limpeza real, segura, não feita
+
+4 branches `worktree-agent-*` de **2026-09-02** (`plataforma-dados`: `T-05.8`, `T-05.9`,
+`T-07.12`, `T-07.13`) aparecem com 1–3 commits fora do master. **Verifiquei: o conteúdo ESTÁ no
+master** (mergeadas por squash, SHA diferente) ⇒ é resíduo, não trabalho perdido, e podem ser
+apagadas. Há **8 worktrees vivas** ao todo.
+
+### D5 · ✅ Limpeza real, não feita — container órfão
+
+`t-01-1-series-window-reader-test-965ff045` (`timescale/timescaledb:2.17.2-pg15`), **up há 2
+dias**, de uma task antiga. Consome recurso numa VPS que a premissa de infra declara escassa.
+**Não removi por conta própria** — é o ambiente do owner.
 
 ## E · Operacional
 
