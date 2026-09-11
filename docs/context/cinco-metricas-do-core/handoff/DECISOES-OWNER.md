@@ -183,3 +183,60 @@ o cliente REST de `/fapi/v1/klines` que `02 CVD` reusa; `05 liquidações` é in
 do zero. O paralelismo real está **dentro** de cada fatia (tasks independentes da mesma fase),
 não entre fatias. Se o `/tech-lead` achar que fatias podem correr em paralelo, precisa
 justificar contra essa dependência — não assumir.
+
+---
+
+## D9–D12 · As quatro pendências de arquitetura, escolhidas em 2026-09-11
+
+Menu, custos e alternativas recusadas: [`OPCOES-B1-B4.md`](../OPCOES-B1-B4.md). As quatro são
+`[DECISÃO-OWNER: 2026-09-11, escolha entre alternativas apresentadas]` — o owner escolheu de um
+menu que o `/architect` redigiu, com o custo de cada opção declarado. **Não são fala do owner.**
+
+### D9 · `B1` — o handler de serviço E a varredura AST, com hierarquia declarada
+
+Instalar `build_service_stdout_handler` **e manter** a varredura AST. `ADR-035/D3` é emendada para
+**acrescentar**, não para relaxar: o handler é a **garantia**, a varredura é o **falsificador dela**,
+e a emenda tem de dizer **qual manda** se divergirem.
+
+**Recusadas:** a opção 1 pura (apagaria uma guarda com 4 mutantes mortos para instalar outra sem
+histórico); a opção 2 (fecharia o precedente *"não negociável = negociável se der trabalho"* por uma
+causa que já não existe — `single_writer_cli.py` está livre desde `696707c`).
+
+### D10 · `B2` — emendar o texto do mecanismo, mantendo a decisão
+
+A **decisão** de `ADR-035/D2` está provada em produção (557/558 runs de klines fechados); só o
+**mecanismo escrito** está errado. Emendar `ADR-035/D2` **e** `SPEC-007`/`GA-4` registrando os dois
+números que falsificaram o texto anterior — **16 campos** sobrescritos pelo `ON CONFLICT`, e lote de
+**100** contra run de **10.080** exigindo crédito aditivo. Zero código.
+
+A emenda **tem de admitir que a economia declarada em `GA-4` não se realizou, e dizer por quê.**
+Coluna TABLE-only não é precedente novo: `domain/ingest_record.py:16-19` já documenta o mesmo split.
+
+### D11 · `B3` — invariante + remissão, em vez da contagem
+
+`SPEC-004` §3.1 passa a declarar o **invariante** — *um processo, uma thread por superfície de coleta
+declarada* — e **remete a contagem** ao catálogo de séries de `SPEC-007`. **Recusada** a troca de
+"duas" por "três": `ADR-036/D2,D3,D5` trazem coletores novos nas fatias `03`–`05` ⇒ seria a mesma
+emenda três vezes, numa SPEC de outra feature.
+
+### D12 · `B4` — `uptimePercent` mede RUNS FECHADOS, não linhas
+
+`n_expected` **fica como está** (preserva a legibilidade do corte anti-lookahead, argumento já
+medido em `collector_run_mapping.py:221-228`). `uptimePercent` passa a medir **% dos runs FECHADOS
+da janela com `n_written > 0`**. Medido em 2026-09-11: klines **563/563**, premiumIndex **574/574**.
+
+⛔ **Vai como TASK PRÓPRIA, não como resíduo da fatia `01`:** o defeito é anterior à fatia (o
+`premiumIndex` sempre teve `n_expected = 900` símbolos contra 8 linhas) e as fatias `02`–`05`
+herdam o mesmo em cada coletor novo ⇒ **consertar agora custa 1; depois, 5.**
+
+⚠️ **Urgência medida:** o item 4 do `DoD-VERTICAL` está verde por causa de **um** run — o backfill,
+`n_expected = 40.320`, que **sai da janela de 24 h em `2026-09-12T01:40:39Z`**. Sem ele os outros 563
+runs dão **34,22%**. `T-01.11` não pode fechar a fatia sobre esse número.
+
+#### A objeção do `forceOrder` foi levantada e RETIRADA — e o motivo fica registrado
+
+Eu objetei que, sob `D12`, o `forceOrder` (3 runs, **0 fechados**) daria denominador zero ⇒ resultado
+**indefinido** em vez de `0%`, e o socket morto deixaria de gritar. **O owner apontou que isso já
+estava decidido:** `ADR-036/D4` tirou o `!forceOrder@arr` do caminho crítico e `D6` põe liquidações
+na Coinalyze. **A objeção pesava sobre um coletor que já foi decidido remover — não é insumo desta
+decisão.** Registrado para que não volte à mesa uma terceira vez.
