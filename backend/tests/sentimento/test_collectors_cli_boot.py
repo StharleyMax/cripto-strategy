@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import socket
 import subprocess
@@ -501,3 +502,55 @@ def test_a_positive_premium_index_cadence_still_boots() -> None:
         == 0.5
     )
     assert collectors_cli.resolve_boot_config({}).premium_index_cycle_interval_s == 60.0
+
+
+@pytest.mark.parametrize(
+    "variable", ["KLINES_CYCLE_INTERVAL_S", "PREMIUM_INDEX_CYCLE_INTERVAL_S"]
+)
+@pytest.mark.parametrize("raw", ["inf", "Infinity", "1e400", "-inf"])
+def test_a_non_finite_cadence_is_refused_at_boot(variable: str, raw: str) -> None:
+    """A cadence of `inf` is refused at BOOT, on BOTH cycles — it is not a "safe" failure.
+
+    Morde: before the `math.isfinite` half of the guard, `inf`, `Infinity` and `1e400` (which
+    `float()` widens to `inf`) all BOOTED on both variables — measured, both spellings:
+    `resolve_boot_config({'KLINES_CYCLE_INTERVAL_S': 'inf'}) -> BOOTOU -> inf`. `not inf > 0` is
+    `False`, so the positivity guard alone lets every non-finite POSITIVE value through; only
+    `-inf` was already refused by it, and it is in this list to keep that direction covered.
+
+    Why "it would just block forever, which is safe" is FALSE, and it was measured, not assumed:
+    `threading.Event().wait(inf)` does not block — on CPython/Linux it raises
+    `OverflowError: timestamp out of range for platform time_t` in `2,1e-05` s. That raise
+    happens at the `stop_event.wait(interval_s)` that CLOSES each cycle, which sits OUTSIDE the
+    `try` that guards the publish, and `OverflowError` is not in `_PUBLISH_FAILURE_EXCEPTIONS`.
+    So the collector thread dies at the end of its FIRST cycle without `failure_event.set()` and
+    without `exit_code[0] = 1`; the supervisor waits on `stop|failure` and never learns. Process
+    alive, `rc=0`, collector dead — the ambiguous `rc=0` of `ADR-012`, with a `threading`
+    excepthook traceback as the only notice. Refusing at boot is the only place that speaks.
+    """
+    with pytest.raises(collectors_cli.CollectorBootConfigurationError) as excinfo:
+        collectors_cli.resolve_boot_config({variable: raw})
+    assert excinfo.value.variable == variable
+    assert variable in str(excinfo.value)
+
+
+def test_the_sink_of_a_non_finite_cadence_dies_uncaught() -> None:
+    """The boot guard above is the ONLY guard: the cycle-closing wait raises, and nobody catches.
+
+    This is the falsifier of the claim the guard rests on, and it asserts the two halves that
+    make the failure silent rather than loud:
+
+    1. `Event().wait(inf)` RAISES instead of blocking — so "it would hang harmlessly" is false;
+    2. `OverflowError` is not caught by `_PUBLISH_FAILURE_EXCEPTIONS`, the only `except` in the
+       collector loop — so the raise is not converted into `verdict=REJECTED` +
+       `failure_event.set()` + `exit_code[0] = 1` the way a real publish failure is.
+
+    If a later commit ADDS `OverflowError` to `_PUBLISH_FAILURE_EXCEPTIONS`, this assertion
+    fails on purpose: the boot guard's docstring claims to be the only line standing between an
+    operator typo and a silently dead thread, and that claim would have stopped being true.
+    """
+    with pytest.raises(OverflowError):
+        threading.Event().wait(math.inf)
+    assert not issubclass(OverflowError, collectors_cli._PUBLISH_FAILURE_EXCEPTIONS), (
+        "the cycle-closing wait's OverflowError must stay OUTSIDE the caught set for the boot "
+        "guard to be load-bearing; if it is added here, re-measure the boot guard's rationale"
+    )

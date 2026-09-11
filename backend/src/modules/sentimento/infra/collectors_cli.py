@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import os
 import signal
 import sys
@@ -369,14 +370,30 @@ def _positive_float(environ: Mapping[str, str], variable: str, default: float) -
     banned by it — a failure that surfaces minutes later, far from the typo that caused
     it, and only as an HTTP `418`. Refusing here names the variable while the process is still
     in its first five seconds (`SPEC-004` §3.1).
+
+    `inf` is refused by the SAME guard, and it is NOT the harmless opposite of `0`. Measured,
+    not assumed: `threading.Event().wait(inf)` does not block — it raises
+    `OverflowError: timestamp out of range for platform time_t` in `2,1e-05` s (CPython 3.13,
+    Linux 6.1). That raise happens at the `stop_event.wait(interval_s)` that CLOSES each cycle,
+    which sits OUTSIDE the `try` guarding the publish, and `OverflowError` is not in
+    `_PUBLISH_FAILURE_EXCEPTIONS`. So the collector thread would die at the end of its FIRST
+    cycle with no `failure_event.set()` and no `exit_code[0] = 1`, while the supervisor waits on
+    `stop|failure` and never learns: process alive, `rc=0`, collector dead — the ambiguous `rc=0`
+    of `ADR-012`. This boot refusal is the only place that speaks, which is why the test
+    `test_the_sink_of_a_non_finite_cadence_dies_uncaught` pins that the raise stays uncaught.
     """
     value = _parse_float(environ, variable, default)
-    # `not value > 0` and not `value <= 0`: `nan <= 0` is False, so the second spelling ACCEPTS
-    # `nan`, and `threading.Event().wait(nan)` returns immediately — measured at `1,0e-5` s, the
-    # very tight loop this guard exists to forbid. `not (nan > 0)` is True, so `nan` is refused.
-    if not value > 0:
+    # Two comparisons, two different escapes, and neither subsumes the other:
+    # * `not value > 0` and not `value <= 0`: `nan <= 0` is False, so the second spelling ACCEPTS
+    #   `nan`, and `threading.Event().wait(nan)` returns immediately — measured at `1,0e-5` s,
+    #   the very tight loop this guard forbids. `not (nan > 0)` is True, so `nan` is refused.
+    # * `math.isfinite`: `inf > 0` is True, so positivity alone lets `inf`, `Infinity` and
+    #   `1e400` (which `float()` widens to `inf`) BOOT — measured, both cadences. `isfinite`
+    #   also re-refuses `nan`, so it is deliberately redundant on that value and load-bearing
+    #   only on the infinities; keeping both spellings keeps each escape named where it is read.
+    if not value > 0 or not math.isfinite(value):
         raise CollectorBootConfigurationError(
-            variable, f"{variable} must be greater than zero, got {value!r}"
+            variable, f"{variable} must be a finite number greater than zero, got {value!r}"
         )
     return value
 
