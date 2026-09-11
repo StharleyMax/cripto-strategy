@@ -227,3 +227,35 @@ dias**, de uma task antiga. Consome recurso numa VPS que a premissa de infra dec
 6. **Falsificador de `ADR-036/D4`**, a pagar na fase `05`: se a retenção da Coinalyze para
    liquidação for menor que a janela típica de indisponibilidade, a recuperabilidade que
    justificou tirar o `forceOrder` do caminho crítico é **teórica**.
+
+---
+
+## G · Acrescentado em 2026-09-11 pelo `/tech-lead`, ao quebrar `D9`/`D12` em tasks
+
+### G1 · ⚠️ ACHADO ESCALADO ao `/architect` — duas superfícies calculam `uptimePercent`, e uma não pode ser consertada
+
+```ts
+// frontend/src/features/s1-console/ingest-health-query.ts:709
+uptimePercent: run.n_expected > 0 ? (run.n_written / run.n_expected) * 100 : null,
+```
+
+O console S1, quando lê `/ingest-health` (as 15 colunas), **recalcula a fórmula antiga no browser**
+— e é **estruturalmente incapaz** de aplicar a nova: `writer_accounted_at` é TABLE-only e nunca
+entra na projeção canônica, por decisão de **`ADR-008/D3`**, que não é desta feature.
+
+⇒ depois que `T-06.2` mergear, **a mesma métrica terá dois valores conforme a rota que a serviu**:
+`/api/v1/collector-status` (fórmula nova) e `/api/v1/ingest-health` + cálculo local (fórmula
+antiga). É a classe de sinal ambíguo que `ADR-012` nomeia, e ela nasceria **da própria correção**.
+
+**Por que não entrou no escopo de `T-06.2`:** seria componente `web`, colidiria com os hot files
+da fatia `01` (`T-01.7`), e a decisão de o que a projeção canônica expõe pertence a `ADR-008/D3`.
+**Dono: `/architect`.** As opções aparentes (não decididas aqui): (a) o console S1 deixa de
+calcular e passa a ler `uptimePercent` do envelope de `collector-status`; (b) o campo calculado
+localmente é renomeado para deixar explícito que é outra métrica; (c) declara-se a divergência.
+
+### G2 · ⚠️ `PLANO-PARALELISMO.md` está desatualizado na onda de `T-01.10`
+
+`T-01.10` ganhou `depends_on += ["T-06.1", "T-06.2"]` em 2026-09-11
+([`tasks_review_06.md`](tasks_review_06.md) §4). O plano de ondas foi construído sobre o DAG
+anterior e **não** foi regerado. `T-06.1` + `T-06.2` formam **um lote de 2** (teto de `D8`), sem
+colisão de arquivo entre si, e entram **antes** da onda de `T-01.10`.

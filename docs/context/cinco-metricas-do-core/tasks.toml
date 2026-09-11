@@ -236,9 +236,11 @@ title = "[infra] 01 · Coletor de klines em PRODUCAO: medir DoD-1/DoD-4 e o `upt
 components = ["infra"]
 status = "todo"
 phase = "01"
-depends_on = ["T-01.3", "T-01.4", "T-01.5"]
+depends_on = ["T-01.3", "T-01.4", "T-01.5", "T-06.1", "T-06.2"]
 refs = [
     "plano 01 item 1.12 + DoD 1/4/6 da fase", "RS-1.a", "D2 (owner)",
+    "⛔ ARESTA ACRESCENTADA EM 2026-09-11 pelo /tech-lead (tasks_review_06.md §4) — UNICA alteracao em task ja aprovada, e ela e intencional. Esta e a UNICA task da fatia 01 que paga PRODUCAO, e ela carrega RS-1.a (uptimePercent ANTES e DEPOIS). SEM T-06.2 o 'DEPOIS' seria 0,36 — numero que a emenda ao DoD-2 de ADR-035 declara 'literalmente satisfeito e substantivamente nao', e T-01.11 fecharia a fatia sobre ele. SEM T-06.1 a troca de handler exigiria reconstruir os containers DEPOIS da medicao => medir producao DUAS VEZES, que e a parte cara. Alternativa recusada: escrever 'bloqueia' so em prosa — CLAUDE.md ja mediu que prosa sem portao tem 0% de adesao, e o unico portao de ordem aqui e depends_on. Custo aceito: PLANO-PARALELISMO.md fica desatualizado na onda desta task.",
+    "⚠️ O item 6 do DoD desta fase ('uptimePercent deixa de ser 0.0') e aferido SOB A FORMULA EMENDADA em ADR-035/D1, nunca pela leitura literal: hoje ele vale 0,36 — deixou de ser 0.0 e CONTINUA mentindo sobre um coletor saudavel (582/582 runs fechados escreveram linha). Um DoD-2 aferido pela formula antiga e o sinal ambiguo que ADR-012 nomeia.",
     "TASK QUE O PLANO NAO NUMEROU COMO TAL, e ela existe porque D2 exige count(*) no Postgres REAL: alguem tem de subir o coletor no servico `collector` (deploy/compose.yml:149 [MEDIDO 2026-09-10]), esperar a grade encher, e MEDIR. Isso nao acontece por um pytest verde.",
     "DoD-1: count(*) de md.series para a series_key_id de `klines_volume` >= 10.000 (7 dias de grade de 1min = 10.080 barras por simbolo). HOJE: 0 [MEDIDO 2026-09-10, n=23.512 linhas, nenhuma do CORE].",
     "DoD-4: GET /api/v1/ingest-health -> >= 1 run FECHADO de /fapi/v1/klines com n_written > 0, E `S n_written` dos runs fechados IGUAL ao count(*) do DoD-1 no mesmo intervalo. HOJE: 0 de 2.910 runs tem n_written > 0 [MEDIDO 2026-09-10].",
@@ -947,3 +949,72 @@ refs = [
 ]
 local_only = true
 local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 06 · CORRECAO DE INSTRUMENTACAO — as duas tasks de CODIGO de D9 e D12 (owner, 2026-09-11)
+#
+# ⚠️ ESTA FASE NAO E FATIA VERTICAL, e a excecao e DECLARADA. D1 (owner) fixou fase =
+# fatia vertical ate o pixel; esta nao tem pixel — ela conserta o que a fatia 01 MEDE.
+# Precedente da mesma classe: SPEC-006/04_correcao_composicao.md (fast-follow de correcao
+# aberto depois de F0-F3 mergeadas).
+#
+# ⛔ POR QUE FASE PROPRIA E NAO RESIDUO DA 01: `harness tasks resolve` e TUDO-OU-NADA por
+# fase (CA-4) — recusa real medida em PENDENCIAS.md §D1. Na 01, seriam 13 tasks precisando
+# de desfecho na MESMA chamada, amarrando duas correcoes de instrumentacao ao veredito de
+# design (T-01.8) e ao e2e de Playwright (T-01.9). E D12 (owner) diz literalmente: "vai
+# como TASK PROPRIA, nao como residuo da fatia 01".
+#
+# ⚠️ `06` E IDENTIDADE DE RESOLVE, NAO POSICAO NA FILA. O validador exige NN de dois
+# digitos (scripts/tasks.sh:823) e V-24 exige NN_*.md no plano (:897): `01b` e
+# inexprimivel, e `01-correcao` COLAPSARIA para a chave `01` na reconciliacao de gates
+# (lib/reconcile.py:24). Quem ordena e o DAG: T-01.10 depende desta fase => ela roda ANTES
+# da 02. Narrativa e alternativas recusadas em tasks_review_06.md.
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-06.1"
+title = "[infra] 06 · ADR-035/D3 emendada: `build_service_stdout_handler` instalado pelos processos de SERVICO, e a varredura AST continua sendo o falsificador"
+components = ["infra"]
+status = "todo"
+phase = "06"
+depends_on = []
+refs = [
+    "D9 (owner, 2026-09-11)", "ADR-035/D3 emenda 2026-09-11", "gates/EMENDAS-B1-B4-architect.md §1", "plano 06 item 6.1",
+    "⛔ A EMENDA ACRESCENTA, NAO RELAXA: nenhuma restricao de ADR-035/D3 cai. Em particular a marcada NAO NEGOCIAVEL — stdout de CLI de PROJECAO nao pode ser contaminado, porque alimenta o sha256 que ADR-008/DoD-2 compara dos dois lados justamente para provar que sao iguais.",
+    "ESCOPO: `build_service_stdout_handler` (com ExtraRenderingFormatter) nasce em infra/ingest_health_cli.py e e instalado por infra/single_writer_cli.py:514 e infra/collectors_cli.py:1186. `build_stdout_handler` (:134) e `build_stream_handler` (:127) voltam a logging.Formatter puro. Os arquivos de servico estao LIVRES desde 696707c — a proibicao do lote 1B caiu.",
+    "⛔ O ACHADO QUE DECIDE O DoD, e sem ele a emenda nasce furada: a varredura AST descobre seu universo por NOME DE BUILDER IMPORTADO — `SHARED_HANDLER_BUILDERS = frozenset({'build_stdout_handler','build_stream_handler'})` (backend/tests/sentimento/test_ingest_health_extra_rendering.py:266). Se o nome novo ficar FORA desse conjunto, um modulo que importe so ele fica FORA do universo da guarda, e o teste de universo (que e `==` e nao `>=`) passa verde sobre universo encolhido. E EXATAMENTE a erosao que a emenda item 2 nomeia. => `build_service_stdout_handler` ENTRA em SHARED_HANDLER_BUILDERS.",
+    "⛔ A VARREDURA AST FICA. Ela e o FALSIFICADOR do handler, nao redundancia: responde 'a separacao continua sendo a razao do verde, ou alguem comecou a emitir extra do lado errado?'. 4 mutantes plantados, 4 mortos [DOC: gates/T-01.5-builder.md §7]. Apagar ou afrouxar qualquer um dos dois lados REPROVA.",
+    "HIERARQUIA, as 3 regras de ADR-035/D3 emenda item 3: (a) divergencia e SEMPRE reprovacao — verde de uma camada nunca dispensa vermelho da outra; (b) sobre COMPORTAMENTO manda o handler; (c) sobre CONSERTO manda o handler tambem — CLI de projecao que precise de extra e PROMOVIDA a processo de servico (entra em DECLARED_SERVICE_PROCESSES E passa a instalar o handler de servico). ⛔ Acrescentar nome a lista de isencao SEM trocar o handler daquele modulo e PROIBIDO: e bypass com aparencia de manutencao.",
+    "UNIVERSO MEDIDO: 9 modulos — 8 importadores + o proprio [MEDIDO 2026-09-11: grep -rl 'from src.modules.sentimento.infra.ingest_health_cli import' backend/src --include='*.py' | wc -l -> 8]. 2 de servico (single_writer_cli, collectors_cli), 7 de projecao (ingest_health_cli, force_order_collector_cli, force_order_collision_report_cli, aggtrade_nq_probe_cli, ntp_skew_probe_cli, premium_index_probe_cli, clock_skew_tolerance_cli). ⚠️ clock_skew_tolerance_cli:42 define o PROPRIO build_stdout_handler sobre build_stream_handler — herda o formatador puro, e isso e o desejado; confirmar, nao assumir.",
+    "PERGUNTA DE DESENHO QUE ESTA TASK DECIDE, com criterio e sem resposta pronta: build_stream_handler tem DOIS chamadores de destino oposto — stdout de projecao (:136) e STDERR DE DIAGNOSTICO (:177, _DIAGNOSTIC_FORMAT). Torna-lo puro apaga extra tambem do diagnostico, que NAO e projecao, NAO e hasheado e e lido por humano. O eixo e DESTINO DO STDOUT: manter ou apagar extra no stderr sao ambos permitidos; o que REPROVA e a escolha ficar implicita. Registrar no PR.",
+    "CONSEQUENCIA, nao regressao: `_render` dos testes de rendering usa build_stream_handler (test_ingest_health_extra_rendering.py:289) para provar que extra SAI impresso — com o builder puro esses testes passam a exercitar o builder de SERVICO, senao provam o oposto do que o nome deles diz.",
+    "CUSTO ACEITO E DECLARADO (ADR-035/D3 emenda): a troca de handler EXIGE reconstruir os containers para reverificar o DoD-3, que hoje esta VERDE medido em producao. [NAO MEDIDO] quanto custa esse rebuild — nao foi cronometrado.",
+    "DoD: (1) `grep -rn 'build_service_stdout_handler' backend/src --include='*.py'` -> exatamente 3 arquivos (CA-F6-1); (2) o nome novo em SHARED_HANDLER_BUILDERS e o teste de universo segue `==` (CA-F6-2); (3) teste que empurra registro com extra= pelo handler de PROJECAO e afirma saida byte-identica a logging.Formatter (CA-F6-3); (4) make verify verde.",
+    "NAO REABRE NG-3 (programa de observabilidade) nem NG-5 (renomear os 4 eventos PT). Evento e chave NOVOS nascem em ingles (CLAUDE.md linha 10, prospectiva).",
+]
+local_only = true
+local_reason = "2026-09-11: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review_06.md §6."
+
+[[tasks]]
+id = "T-06.2"
+title = "[sentimento] 06 · ADR-035/D1 emendada: `uptimePercent` mede RUNS FECHADOS com `n_written > 0`, e o denominador ZERO ganha forma distinguivel"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = []
+refs = [
+    "D12 (owner, 2026-09-11)", "ADR-035/D1 emenda 2026-09-11 + emenda ao DoD-2", "SPEC-007 RS-1/RS-1.a", "gates/EMENDAS-B1-B4-architect.md §4", "plano 06 item 6.2",
+    "⛔ TASK PROPRIA, NAO RESIDUO DA FATIA 01 — D12 literal: o defeito e ANTERIOR a fatia (premiumIndex sempre teve n_expected = 900 simbolos contra 8 linhas) e as fatias 02-05 herdam o mesmo em cada coletor novo => consertar agora custa 1; depois, 5.",
+    "O DEFEITO, na linha exata: use_cases/collector_status.py:117-121 faz 100 * S n_written / S n_expected. Numerador em LINHAS, denominador em SIMBOLOS (premiumIndex: n_expected = 900, collector_run_mapping.py:186) ou em BARRAS RELIDAS (klines: n_returned = 12, :242) => tetos estruturais de 0,89% e 33,3% para coletores SAUDAVEIS.",
+    "A FORMULA NOVA: uptime_percent = % dos runs FECHADOS da janela (UPTIME_WINDOW_HOURS = 24) cujo n_written > 0. FECHADO e observavel desde T-01.4: writer_accounted_at IS NOT NULL. ⛔ Run ABERTO nao entra em NENHUM dos dois lados — nem numerador, nem denominador.",
+    "⛔ n_expected NAO MUDA (D12, alternativa A recusada): collector_run_mapping.py:221-228 guarda n_expected = n_returned para que o tamanho do corte anti-lookahead fique LEGIVEL — e anti-lookahead e exatamente a superficie onde este repositorio ja se queimou (regra INVERTIDA propagada por dois documentos, CLAUDE.md).",
+    "⛔ O OBSTACULO ESTRUTURAL E O RISCO REAL: writer_accounted_at e TABLE-only (postgres_ingest_record_store.py:65,123), NAO e campo de IngestRun, e a unica leitura hoje e store.writer_accounted_at(run_id) — UMA CONSULTA POR RUN (:290). O use case le por IngestRecordSource.runs() e se orgulha POR ESCRITO de nao acrescentar metodo ao port (collector_status.py:1-9). A task DECIDE por onde 'fechado' entra: (a) campo novo em IngestRun — o split TABLE-only/QUERY-only ja existe (domain/ingest_record.py:16-19) e e o caminho barato; (b) metodo novo no port — caro, contradiz a abertura do use case; (c) uma consulta por run — RECUSADA DE SAIDA: n = 2.006 runs na janela [MEDIDO 2026-09-11T11:26Z] => 2.006 idas ao banco por request.",
+    "⛔ FALSIFICADOR DE ESCOPO QUE ABORTA A TASK: se o diff tocar INGEST_HEALTH_RUN_COLUMNS ou fizer writer_accounted_at aparecer em canonical_projection(), o sha256 de ADR-008/DoD-2 muda e dois lados que comparam JUSTAMENTE para provar que sao iguais passam a divergir sem que nada aponte a causa (RS-2, NG-6, CLAUDE.md linha 11). Ja existe teste mordendo: test_postgres_ingest_record_store_credits_the_run.py:310-319.",
+    "O [NAO MEDIDO] DA EMENDA, RESOLVIDO — e a resposta NAO precisa de campo novo (D7: 'sem campo novo e sem versao de rota'): (1) a forma ja existe — uptime_percent: float | None (domain/collector_status.py:148), hoje None quando n_expected = 0, e o front ja renderiza (view-model.ts:120) => o TIPO do contrato nao muda; (2) o que estava indefinido era a DESAMBIGUACAO: sob a formula nova, null cobriria 'nenhum run na janela' (mudo) E 'ha runs, nenhum fechado' (escritor nao credita) — e n_runs_in_window, JA SERVIDO, separa os dois; (3) o MOTIVO vai em statusDetail, campo EXISTENTE hoje sempre None (:149), que o front ja valida como nullable-string (collector-status-query.ts:170) e JA RENDERIZA (view-model.ts:119 -> detailText) => chega na tela SEM uma linha de frontend/.",
+    "⚠️ DECISAO DO /tech-lead, CONTESTAVEL, declarada em tasks_review_06.md §3.3: status_detail deixa de ser o literal None e passa a str | None. Nao e campo novo (D7 recusou DUPLICAR a metrica — uptimePercentReal ao lado do antigo —, nao recusou usar campo ja no envelope), mas E mudanca de tipo. Alternativa recusada: tipo-soma como Liveness/Retention (UptimeMeasured | UptimeNotMeasurable) — custo: muda a FORMA de uptimePercent e D7 inteiro cai. O texto de statusDetail e MICROCOPY DE OPERADOR => pt-BR (SPEC-001 §3.8, CLAUDE.md linha 8).",
+    "⚠️ ACHADO ESCALADO, NAO ESCOPO DESTA TASK: frontend/src/features/s1-console/ingest-health-query.ts:709 RECALCULA a formula antiga no browser a partir de /ingest-health, e e ESTRUTURALMENTE INCAPAZ de aplicar a nova (writer_accounted_at nunca entra na projecao, por decisao de ADR-008/D3, que nao e desta feature) => depois desta fase a mesma metrica tera DOIS valores conforme a rota. Nao e escopo (seria `web`, colidiria com os hot files da fatia 01), mas calar-se deixaria nascer o sinal ambiguo que esta fase existe para matar. Endereçado a /architect em PENDENCIAS.md.",
+    "URGENCIA MEDIDA, e e o que justifica a aresta nova no DAG: o item 4 do DoD-VERTICAL esta verde por causa de UM run — o backfill, n_expected = 40.320, que SAI da janela de 24 h em 2026-09-12T01:40:39Z. Sem ele os outros 563 runs dao 34,22% [MEDIDO 2026-09-11]. T-01.11 nao pode fechar a fatia sobre esse numero.",
+    "DoD: (1) SQL de ADR-035/D1 emenda contra a stack viva, ANTES e DEPOIS, no gate (CA-F6-4) — hoje klines 571/571 e premiumIndex 582/582 fechados com n_written > 0, contra 90,45% e 0,36% da formula de hoje [MEDIDO 2026-09-11T11:26Z, n = 2.006 runs]; (2) forceOrder (3 runs, 0 fechados) devolve uptimePercent null COM statusDetail nao-nulo dizendo o motivo, e n_runs_in_window separando os dois nulos (CA-F6-5); (3) make verify verde.",
+]
+local_only = true
+local_reason = "2026-09-11: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review_06.md §6."
