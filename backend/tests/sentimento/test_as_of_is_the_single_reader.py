@@ -134,6 +134,21 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     "modules/sentimento/infra/postgres_series_sink.py": frozenset(
         {"observed_already_present", "accept"}
     ),
+    # `T-01.3` (`cinco-metricas-do-core`): PRODUCER BOOKKEEPING, and it is the same category as
+    # `write_series_row.py` above rather than a new one. `_publish_klines_page` reads
+    # `row.bucket_end` off the rows it JUST BUILT, to advance the klines collector's in-process
+    # watermark ("the newest bar already published for this symbol") so the next cycle's
+    # overlapping page does not republish it. Three properties make it not a second reader, and
+    # each is checkable rather than asserted: (a) there is no decision instant `t` in the
+    # function — the only other timestamp it has is `_epoch_ms()`, the collector's own clock at
+    # publication, not an `as_of` argument; (b) it never consults a SECOND row to choose a
+    # winner, it takes a `max()` over rows it is publishing in the same breath; (c) it returns a
+    # COUNT, never a value, so no caller can mistake its answer for "what was this series worth
+    # at `t`". The alternative — advancing the watermark off `row.event_time`, which is the same
+    # instant for these rows and is NOT in `READ_PATH_COLUMNS` — was rejected on purpose: it
+    # would have kept this file out of this registry by picking a synonym, which is a bypass of
+    # the gate, not a compliance with it.
+    "modules/sentimento/infra/collectors_cli.py": frozenset({"_publish_klines_page"}),
     # `T-01.2` (`pagina-de-grafico-s2`): SERIALIZATION, same category as `write_series_row.py`
     # and `series_row_wire.py` above — `SeriesHistoryRow` is a NEW dataclass (its OWN
     # `available_at`, not `SeriesRow`'s), and `to_wire()` only projects an already-computed

@@ -6,10 +6,15 @@ that shape is built.
 
 `ADR-016`: composing an `IngestRun` from already-observed values is NOT a capability — nothing
 here touches a socket, a clock or a database. `infra/collectors_cli.py` is the composition root
-that calls these two builders at session/cycle close and hands the result to `record_run` on the
-store it wired; this module is the ONE place the 16-field shape is decided, so the composition
-root and this module's own tests share exactly one construction, never two (the defect
-`ADR-008/DoD-3` names for the read side, applied here to the WRITE side).
+that calls these builders at session/cycle/pass close and hands the result to `record_run` on
+the store it wired; this module is the ONE place the 16-field shape is decided, so the
+composition root and this module's own tests share exactly one construction, never two (the
+defect `ADR-008/DoD-3` names for the read side, applied here to the WRITE side).
+
+There are THREE builders since `T-01.3` (`SPEC-007` phase `01`): the `forceOrder` session, the
+`premiumIndex` cycle, and the `/fapi/v1/klines` pass. `Q3` predates the third and fixes only the
+first two, so `build_klines_run`'s own docstring carries the argument for what "one run" means
+for a producer that PAGES — the one shape `Q3` never had to answer.
 
 `gates/Q3-run-definition.md` §3 fixes the two sentinels below as PHYSICALLY IMPOSSIBLE values
 for the quantity they stand in for, so neither can ever collide with something actually
@@ -53,6 +58,14 @@ from src.modules.sentimento.use_cases.persist_ntp_skew_run import SOURCE
 # ── Q3 §2.1 — THE LITERAL `endpoint` PER PRODUCER, DISTINCT BY CONSTRUCTION ────────────────
 FORCE_ORDER_ENDPOINT: Final[str] = "!forceOrder@arr"
 
+# The THIRD producer (`T-01.3`, `SPEC-007` phase `01`). The string is the REST path, matching
+# `infra/binance_klines_client.KLINES_PATH` byte for byte — it is spelled again here instead of
+# imported because `use_cases` may not import `infra` (the `layers` contract of
+# `backend/pyproject.toml` `[tool.importlinter]`), and the drift that duplication risks is the
+# one `test_collector_run_mapping.py::test_the_klines_endpoint_literal_matches_the_client_path`
+# makes executable rather than trusted.
+KLINES_ENDPOINT: Final[str] = "/fapi/v1/klines"
+
 # ── Q3 §3 — THE SENTINELS AND THE OBSERVER LITERALS, NONE OF THEM A GUESS ──────────────────
 # The WS collector spends no REST weight — a FACT (`0`), never a guess.
 FORCE_ORDER_WEIGHT_USED: Final[int] = 0
@@ -68,6 +81,16 @@ N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS: Final[int] = 0
 # Names the PRODUCTION collector, distinct from the diagnostic probes (`Q3` §3).
 FORCE_ORDER_OBSERVER_ID: Final[str] = "forceorder-collector"
 PREMIUM_INDEX_OBSERVER_ID: Final[str] = "premiumindex-collector"
+KLINES_OBSERVER_ID: Final[str] = "klines-collector"
+
+# `/fapi/v1/klines` costs weight 1 per call of up to 1500 candles — a FACT of this endpoint,
+# like `FORCE_ORDER_WEIGHT_USED = 0` is a fact of a WebSocket, and not a guess:
+# `[MEDIDO 2026-09-10: sequencia 31->32->33 do header `x-mbx-used-weight-1m` sobre tres
+# chamadas consecutivas]`. So a klines run's `weight_used` is `KLINES_WEIGHT_PER_CALL *
+# n_calls`, DERIVED from a measured constant and a counted quantity — never
+# `WEIGHT_NOT_READABLE`, which stands for "the provider answered without a readable header on
+# a call this collector had no other way to price".
+KLINES_WEIGHT_PER_CALL: Final[int] = 1
 
 # ── THE CLOSED SET, RESTATED AS A `Literal` FOR THE ONE CALLER THAT MANUFACTURES RUNS ──────
 #
@@ -168,6 +191,62 @@ def build_premium_index_run(
         src_sha256=src_sha256,
         weight_used=weight_used if weight_used is not None else WEIGHT_NOT_READABLE,
         observer_id=PREMIUM_INDEX_OBSERVER_ID,
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
+        started_at=started_at,
+        ended_at=ended_at,
+    )
+
+
+def build_klines_run(
+    *,
+    started_at: str,
+    ended_at: str,
+    n_returned: int,
+    n_calls: int,
+    api_code: int | None,
+    verdict: KnownVerdict,
+    src_sha256: str,
+    run_id: str | None = None,
+) -> IngestRun:
+    """Build the `IngestRun` for one `/fapi/v1/klines` pass (`T-01.3`, `SPEC-007` phase `01`).
+
+    A "pass" is one sweep over the configured symbol universe — the boot backfill is one such
+    pass (many pages per symbol), and every periodic cycle after it is another. That is the
+    SAME unit `Q3` §1.2 fixes for `premiumIndex` ("one poll CYCLE"), applied to a producer that
+    happens to page: the run is the thing the operator schedules, not the HTTP call, and
+    recording one run per page would multiply `/api/v1/ingest-health` by 1500-bar pages for no
+    added fact — `n_calls` carries the paging, `weight_used` prices it.
+
+    `n_expected = n_returned`, and it is the same refusal `build_force_order_run` documents:
+    there is no independent oracle for how many bars the exchange SHOULD have had for a window
+    (a symbol listed mid-window legitimately has fewer), so inventing `backfill_days * 1440`
+    would be a number with no command behind it. The count of bars this collector actually
+    PUBLISHED is smaller still — the in-progress bucket is cut (`RS-3.4`) — and that difference
+    is deliberately NOT folded in here: `n_returned` is what the source returned, and the
+    published count is the log line's `n_published`, so the size of the anti-lookahead cut stays
+    readable instead of being silently absorbed into the run record.
+
+    `weight_used` is `KLINES_WEIGHT_PER_CALL * n_calls` — see that constant for why this
+    endpoint is the one case where a derived weight is a measurement and not a guess.
+
+    `n_written` stays `N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS`: this collector OPENS the run and
+    the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
+    parameter here and is minted at pass OPEN by the composition root.
+    """
+    return IngestRun(
+        run_id=run_id if run_id is not None else str(uuid4()),
+        source=SOURCE,
+        endpoint=KLINES_ENDPOINT,
+        window=f"{started_at}/{ended_at}",
+        n_expected=n_returned,
+        n_returned=n_returned,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+        verdict=verdict,
+        api_code=api_code,
+        src_sha256=src_sha256,
+        weight_used=KLINES_WEIGHT_PER_CALL * n_calls,
+        observer_id=KLINES_OBSERVER_ID,
         observer_region=UNKNOWN_OBSERVER_REGION,
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,

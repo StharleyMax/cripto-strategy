@@ -76,9 +76,21 @@ class RedisStreamSeriesSink:
         """Bind one `RedisStreamPublisher` to `connection`/`stream`; nothing is sent yet."""
         self._publisher = RedisStreamPublisher(connection, stream, max_len)
 
-    def accept(self, row: SeriesRow) -> None:
-        """Encode `row` (`series_row_wire.encode`) and `XADD` it. A failed `XADD` propagates."""
-        self._publisher.publish(encode(row))
+    def accept(self, row: SeriesRow, *, run_id: str | None = None) -> None:
+        """Encode `row` (`series_row_wire.encode`) and `XADD` it. A failed `XADD` propagates.
+
+        `run_id` is the `ADR-035/D2` envelope field: the id of the collector run that produced
+        this row, minted at cycle/session/pass OPEN by the composition root
+        (`infra/collectors_cli.py`) and carried through the queue so the SINGLE WRITER can
+        credit `n_written` back onto the run the collector opened. It is a KEYWORD with a
+        `None` default because it is a property of the PRODUCER's bookkeeping, not of the row:
+        `T-01.4` built the whole transport for it (`series_row_wire.encode(row, run_id=...)`,
+        `decode_run_id`, `single_writer_cli._PendingRunCredits`) and left this one call
+        deliberately unconnected, which is why `uptimePercent` read `0.0` structurally and
+        `100%` of `2.910` runs read `n_written = 0` `[MEDIDO 2026-09-10, DIAGNOSTICO.md]`. A
+        caller that passes nothing still publishes exactly the 16 wire fields it always did.
+        """
+        self._publisher.publish(encode(row, run_id=run_id))
 
 
 # `to_rows` turns ONE poll's `received_at` plus ONE `PremiumIndexReading` into however many
@@ -100,10 +112,25 @@ class RedisPremiumIndexSink:
     row-level sink above plus the injected `to_rows` mapping.
     """
 
-    def __init__(self, sink: RedisStreamSeriesSink, to_rows: PremiumIndexReadingToRows) -> None:
-        """Bind to an already-constructed row sink and the reading-to-rows mapping to apply."""
+    def __init__(
+        self,
+        sink: RedisStreamSeriesSink,
+        to_rows: PremiumIndexReadingToRows,
+        run_id: str | None = None,
+    ) -> None:
+        """Bind to an already-constructed row sink, the mapping, and this CYCLE's `run_id`.
+
+        `run_id` belongs to ONE cycle (`Q3` §1.2: "one run" for this producer IS one poll
+        cycle), and `PremiumIndexSink.write(received_at, readings)` is a port whose signature
+        this class may not change (`T-01.4` plan item 1.4: "NAO muda a assinatura das portas
+        existentes"). So the id is bound at CONSTRUCTION and the composition root builds one
+        of these per cycle — which is also what makes the binding impossible to get wrong:
+        there is no mutable field a second cycle could forget to update, and no cycle can
+        publish under another cycle's id.
+        """
         self._sink = sink
         self._to_rows = to_rows
+        self._run_id = run_id
 
     def write(self, received_at: int, readings: tuple[PremiumIndexReading, ...]) -> None:
         """Map every reading of one cycle to its row(s) and publish each, in order.
@@ -116,4 +143,4 @@ class RedisPremiumIndexSink:
         """
         for reading in readings:
             for row in self._to_rows(received_at, reading):
-                self._sink.accept(row)
+                self._sink.accept(row, run_id=self._run_id)
