@@ -347,7 +347,21 @@ resolver() {
         printf '%s\n' "$HARNESS_MECHANISM"
         return 0
     fi
-    "$HARNESS_PYTHON" - "$ROOT" <<'PY'
+    # Numa git worktree, $ROOT e a raiz DA WORKTREE, que nenhum `projectPath` reivindica:
+    # a via 3 recusava (rc=3, "nao mediu") e o `pre-push` reprovava um push correto. O
+    # `--git-common-dir` aponta para o `.git` do checkout PRINCIPAL em qualquer worktree
+    # (e para o proprio `.git` fora de uma), entao o pai dele e a raiz que o registro
+    # conhece. Vazio quando `git` nao resolve — o Python ignora argumento vazio.
+    local principal=""
+    principal="$(git -C "$ROOT" rev-parse --git-common-dir 2>/dev/null || true)"
+    if [ -n "$principal" ]; then
+        case "$principal" in
+            /*) : ;;
+            *) principal="$ROOT/$principal" ;;
+        esac
+        principal="$(cd -P "$principal/.." 2>/dev/null && pwd || true)"
+    fi
+    "$HARNESS_PYTHON" - "$ROOT" "$principal" <<'PY'
 import json, os, sys, tomllib
 
 root = sys.argv[1]
@@ -370,14 +384,18 @@ try:
 except (OSError, json.JSONDecodeError):
     raise SystemExit(3)
 
-alvo_real = os.path.realpath(root)
+# A raiz corrente E a raiz do checkout principal (argv[2], vazio fora de uma worktree ou
+# quando `git` nao resolve). Reivindicar o principal reivindica suas worktrees: elas sao o
+# MESMO repositorio, nao outro projeto — e `installed_plugins.json` registra projeto, nao
+# layout de disco.
+alvos_reais = {os.path.realpath(a) for a in sys.argv[1:] if a}
 for chave, entradas in (dados.get("plugins") or {}).items():
     if chave.split("@", 1)[0] != "harness-plugin":
         continue
     for e in entradas or []:
         projeto = e.get("projectPath")
         reivindica = e.get("scope") == "user" or (
-            projeto and os.path.realpath(projeto) == alvo_real)
+            projeto and os.path.realpath(projeto) in alvos_reais)
         if not reivindica:
             continue
         binario = os.path.join(e.get("installPath") or "", "bin", "harness")
