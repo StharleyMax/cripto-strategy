@@ -206,8 +206,18 @@ causa que já não existe — `single_writer_cli.py` está livre desde `696707c`
 
 A **decisão** de `ADR-035/D2` está provada em produção (557/558 runs de klines fechados); só o
 **mecanismo escrito** está errado. Emendar `ADR-035/D2` **e** `SPEC-007`/`GA-4` registrando os dois
-números que falsificaram o texto anterior — **16 campos** sobrescritos pelo `ON CONFLICT`, e lote de
-**100** contra run de **10.080** exigindo crédito aditivo. Zero código.
+números que falsificaram o texto anterior. Zero código.
+
+⚠️ **Os dois números que eu escrevi aqui primeiro estavam errados; estes são os medidos**
+`[MEDIDO 2026-09-11, contando as cláusulas de `postgres_ingest_record_store.py:147-170`]`:
+
+| eu escrevi | o medido | por quê |
+|---|---|---|
+| "16 campos sobrescritos" | **16 carregados, 15 sobrescritos** | `run_id` é a chave do `ON CONFLICT` ⇒ não entra no `SET` |
+| "run de 10.080" | **run de 40.320** | 10.080 é a contagem **por símbolo** (7 d × 1440); o run é dos 4 |
+
+⇒ contra `_DEFAULT_WRITER_BATCH_SIZE = 100` (`single_writer_cli.py:141`), são **≥404 lotes** contra
+um run. As conclusões não mudam — **ficam mais fortes**.
 
 A emenda **tem de admitir que a economia declarada em `GA-4` não se realizou, e dizer por quê.**
 Coluna TABLE-only não é precedente novo: `domain/ingest_record.py:16-19` já documenta o mesmo split.

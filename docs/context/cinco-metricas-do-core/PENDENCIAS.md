@@ -65,6 +65,29 @@ outros 563 runs dão **34,22%** (`Σexp = 6.744`, `Σwr = 2.308`).
 
 ## B · Decisões que exigem o `/architect` (nenhuma é minha)
 
+> ## ✅ `B1`–`B4` DECIDIDAS pelo owner em `2026-09-11`, e as emendas de documento estão EXECUTADAS
+>
+> Escolhas em [`handoff/DECISOES-OWNER.md`](handoff/DECISOES-OWNER.md) §D9–D12; menu em
+> [`OPCOES-B1-B4.md`](OPCOES-B1-B4.md). **Tudo abaixo em `B1`–`B4` é o registro do problema, não o
+> estado corrente.** O que ficou emendado, e onde:
+>
+> | pendência | escolha | emenda executada em |
+> |---|---|---|
+> | `B1` | opção **3** — handler = garantia, varredura AST = falsificador, com hierarquia declarada | `ADR-035/D3` (emenda `2026-09-11`) |
+> | `B2` | opção **1** — emendar o texto do mecanismo, decisão intacta | `ADR-035/D2` + `SPEC-007`/`GA-4` |
+> | `B3` | opção **2** — invariante + remissão ao catálogo de `SPEC-007` §4 | `SPEC-004` §3.1 |
+> | `B4` | opção **B** — `uptimePercent` = % dos runs **fechados** com `n_written > 0`; `n_expected` não muda | `ADR-035/D1` + nota ao `DoD-2` + `SPEC-007`/`RS-1.a` |
+>
+> **Restam CÓDIGO, e são duas tasks do `/tech-lead`, nenhuma escrita aqui:** (i) instalar
+> `build_service_stdout_handler` mantendo a varredura AST (`D9`); (ii) a fórmula nova de
+> `uptimePercent` em `collector_status.py` — **task própria, não resíduo da fatia `01`** (`D12`).
+> Relatório: [`gates/EMENDAS-B1-B4-architect.md`](gates/EMENDAS-B1-B4-architect.md).
+>
+> ⚠️ **Números desta seção `B` remedidos em `2026-09-11T11:26Z`** e alguns já não valem: klines
+> `uptimePercent` **90,45** (34,21 sem o run de backfill, que sai da janela em `2026-09-12T01:40:39Z`),
+> premiumIndex **0,36**, `n=2.006` runs na janela de 24 h.
+
+
 ### B1 · Desvio de `ADR-035/D3` — handler × registro
 `DESVIO-T-01.5.md`. A ADR marca como **"não negociável"** que a troca é *"no handler do processo
 de serviço … nunca no handler de projeção"*. Foi implementada no **registro**, com guarda AST

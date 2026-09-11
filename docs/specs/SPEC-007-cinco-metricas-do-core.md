@@ -98,6 +98,37 @@ consome da fila Redis. Nenhum dos dois vê o número do outro.
 exige schema novo, método novo, nem tocar `INGEST_HEALTH_RUN_COLUMNS`.** O que falta é o `run_id`
 viajar com o lote. Decidido em [`ADR-035`](../adr/ADR-035-contabilidade-de-n-written-o-escritor-fecha-o-run-que-o-coletor-abriu.md).
 
+#### ⛔ Emenda `2026-09-11` (`D10`/`B2`) — **a economia declarada acima NÃO se realizou**, e os dois números que a falsificaram
+
+`[DECISÃO-OWNER: 2026-09-11, escolha entre 3 alternativas apresentadas]` — opção 1. Menu em
+[`OPCOES-B1-B4.md`](../context/cinco-metricas-do-core/OPCOES-B1-B4.md) §B2; escolha em
+[`DECISOES-OWNER.md`](../context/cinco-metricas-do-core/handoff/DECISOES-OWNER.md) §D10. **Zero código.**
+
+| o que `GA-4` afirmou | veredito | o que a fatia `01` entregou |
+|---|---|---|
+| *"não exige schema novo"* | ❌ **caiu** | coluna nova `writer_accounted_at`, **TABLE-only** |
+| *"não exige método novo"* | ❌ **caiu** | método novo na porta: `credit_written` |
+| *"não exige tocar `INGEST_HEALTH_RUN_COLUMNS`"* | ✅ **de pé** | intocada ⇒ `sha256` da projeção canônica (`ADR-008/DoD-2`) byte-idêntico, nenhuma rota muda de forma |
+
+**Os dois números que falsificaram o mecanismo** (detalhe, comandos e universo na emenda de `ADR-035/D2`):
+
+1. o `ON CONFLICT (run_id) DO UPDATE SET` de `_UPSERT_RUN` sobrescreve **15** das **16** colunas de
+   `IngestRun` — todas menos a chave do conflito
+   `[MEDIDO 2026-09-11: `sed -n '/^_UPSERT_RUN = /,/^"""$/p' postgres_ingest_record_store.py | grep -c '= EXCLUDED\.'` → 15; AST sobre o dataclass → 16]`.
+   Entre as 15 estão `window`, `src_sha256`, `weight_used` e `observer_id` — os 4 que um escritor não pode
+   inventar ⇒ o `DoD-4` de `ADR-035` é **insatisfazível por aquela porta**;
+2. o crédito precisa ser **aditivo**: `WRITER_BATCH_SIZE` default **100** (`single_writer_cli.py:141`)
+   contra o run de backfill medido com `n_returned = 40.320` (10.080 por símbolo × 4 símbolos)
+   `[MEDIDO 2026-09-11T11:26Z em `md.ingest_run`, `run_id 932c37fc…`]` ⇒ **≥ 404 lotes por run**, e
+   `SET n_written = EXCLUDED.n_written` guardaria só o último.
+
+**Por que a leitura falhou, em uma frase:** `GA-4` leu *"`record_run` já é upsert"* como *"já é a porta do
+escritor"* — e não é: o upsert é **de registro inteiro e substitutivo**; o escritor precisa de **parcial e
+aditivo**. **A decisão de `ADR-035/D2` continua de pé e provada em produção** (571/572 runs de klines e
+582 de premiumIndex fechados na janela de 24 h `[MEDIDO 2026-09-11T11:26Z, n=2.006 runs]`); o que caiu foi
+o mecanismo escrito. Coluna TABLE-only **não é precedente novo** —
+`backend/src/modules/sentimento/domain/ingest_record.py:16-19` já documenta o mesmo split.
+
 ### GA-5 · ⛔ `DEF-3` está **misdiagnosticado**: o `extra={}` existe; o que o descarta é o **formatador**
 
 `PRD-007` §8/`DEF-3` e `DIAGNOSTICO.md` §*"Log sem número"* afirmam que `writer_batch_acked` e
@@ -465,6 +496,16 @@ de `/collector-status` (`collector_status.py:119-121`, `100 × Σn_written / Σn
 **1.429 runs** na janela e veredito `ACCEPTED` `[MEDIDO 2026-09-10T20:10Z, DOC: PRD-007 §8/DEF-1]`.
 ⇒ **`RS-1.a`: a fase 01 tem de exibir o valor de `uptimePercent` antes e depois**, porque um número que
 sai de 0 para 97 sem aviso parece regressão para quem só vê o painel.
+
+> ⚠️ **Emenda `2026-09-11` (`D12`/`B4`) — a previsão deste parágrafo foi falsificada, e `RS-1.a` não
+> muda.** O `uptimePercent` do `premiumIndex` **não** saiu de `0.0` para *"o valor real"*: saiu para
+> **`0,36`** `[MEDIDO 2026-09-11T11:26Z, n=1.431 runs na janela de 24 h]`, com **582/582** runs fechados
+> tendo escrito linha. A causa é que **numerador e denominador estão em unidades diferentes** —
+> `n_expected` é `n_symbols` (900), `n_written` é linha (8). ⇒ a **fórmula** de `uptimePercent` passa a
+> ser *% dos runs FECHADOS da janela com `n_written > 0`*, emendada em `ADR-035/D1` (`2026-09-11`), e
+> `n_expected` **não muda**. `RS-1.a` continua valendo **sob a fórmula nova**: é ela que a fase exibe
+> antes e depois. **Esta SPEC não decide isso** — quem decide é `ADR-035/D1`; aqui é **remissão**, para
+> não criar duas verdades sobre a mesma superfície.
 
 **`RS-2` (identidade congelada):** `INGEST_HEALTH_RUN_COLUMNS` — 15 colunas, ordem alimenta o `sha256`
 da projeção canônica (`ADR-008/D3`, `ADR-008/DoD-2`) — **não** é tocada. Preencher campo é permitido;
