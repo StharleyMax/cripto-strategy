@@ -63,9 +63,21 @@ Relatório completo: [`gates/PRD-004-architect.md`](../context/captura-em-produc
 
 ### 3.1 O processo coletor — `collectors_cli` (`sentimento`, `F1`)
 
+> **Emenda `2026-09-11`, `[DECISÃO-OWNER: 2026-09-11, escolha entre 3 alternativas apresentadas]`** —
+> `D11`/`B3` em [`DECISOES-OWNER.md`](../context/cinco-metricas-do-core/handoff/DECISOES-OWNER.md), menu em
+> [`OPCOES-B1-B4.md`](../context/cinco-metricas-do-core/OPCOES-B1-B4.md) §B3. **O que mudou: a linha
+> `entrypoint` dizia "duas threads" e eram três** — `forceOrder`, `premiumIndex` e `klines`
+> `[MEDIDO 2026-09-11: `grep -c 'threading.Thread(' backend/src/modules/sentimento/infra/collectors_cli.py`
+> → **3**, linhas `1108,1122,1136`]`. **Recusada** a emenda mínima ("duas"→"três"): `ADR-036/D2`,`D3`,`D5`
+> trazem coletores novos nas fatias `02`–`05` ⇒ seria a mesma emenda três vezes, numa SPEC de **outra**
+> feature. Adotada a **remissão** — mesmo padrão que a linha 8 da tabela de fronteira de `CLAUDE.md` usa
+> para não criar duas verdades sobre a mesma superfície. ⚠️ **`SPEC-004` deixa de ser a fonte do número**;
+> o estado do ledger desta feature (`SPEC_APPROVED`, `2026-09-07T18:23:31Z`) **não é tocado** por esta
+> emenda — é correção de texto falsificado, não reabertura de decisão.
+
 | aspecto | contrato |
 |---|---|
-| **entrypoint** | `python -m src.modules.sentimento.infra.collectors_cli` — **um** processo, **duas** threads (`forceOrder` stream; `premiumIndex` poll), `ADR-027/D1`. Os CLIs de probe existentes continuam existindo para diagnóstico; o processo de produção é este |
+| **entrypoint** | `python -m src.modules.sentimento.infra.collectors_cli` — **um** processo, **uma thread por superfície de coleta declarada** (`ADR-027/D1`). ⚠️ **Emenda `2026-09-11`: esta linha declara o INVARIANTE e NÃO carrega mais a contagem.** A contagem vigente é a do **catálogo de séries de [`SPEC-007`](SPEC-007-cinco-metricas-do-core.md) §4** (tabela normativa de identidade por métrica) mais os coletores que `ADR-036/D2`,`D3`,`D5` introduzem nas fatias `02`–`05`; quem quiser o número de hoje mede no código: `grep -n 'threading.Thread' backend/src/modules/sentimento/infra/collectors_cli.py`. Os CLIs de probe existentes continuam existindo para diagnóstico; o processo de produção é este |
 | **boot (fail-fast, `RN-4`)** | resolve `REDIS_HOST`/`REDIS_PORT`/`REDIS_STREAM`/`REDIS_STREAM_MAXLEN`, `INGEST_RECORD_BACKEND` (+ `POSTGRES_*` se `postgres`), `PREMIUM_INDEX_CYCLE_INTERVAL_S`; abre a conexão RESP (`connect_resp2`) e faz `PING`; `describe_readiness()` do registro. Qualquer falha ⇒ `rc ≠ 0` em **≤ 5 s**, mensagem em inglês **nomeando a variável**; nenhum retry infinito no boot |
 | **publicação** | por evento (`forceOrder`) e por leitura (`premiumIndex`): `encode(row)` (§3.2) → `RedisStreamPublisher.publish(fields)`; **nenhum outro `XADD`** (`RN-2`) |
 | **registro** | ao fechar uma sessão (fechamento/reconexão/`SIGTERM`) e ao terminar um ciclo: `record_run(IngestRun)` pelo adaptador de §3.5 (`ADR-031/D3`) |

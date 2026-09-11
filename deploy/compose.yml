@@ -146,6 +146,30 @@ services:
   # Publishes to the Redis stream `writer` drains, and validates `INGEST_RECORD_BACKEND`
   # against Postgres via the same shared composition (`compose_ingest_record_store`,
   # `collectors_cli.py`) — hence `depends_on` both. SAME image as `api`/`writer`.
+  #
+  # THREE threads since `T-01.3` (`SPEC-007` phase `01`): `forceOrder` (stream), `premiumIndex`
+  # (poll) and `/fapi/v1/klines` (poll + a one-off backfill at boot). The three CADENCE
+  # variables live in `../.env`, which `env_file:` below supplies — NOT in an `environment:`
+  # block here, and that is deliberate: `environment:` takes precedence over `env_file:`, so
+  # pinning a default here would SILENTLY override whatever the operator wrote in `.env`. The
+  # one variable this file does pin that way is `api`'s `APP_HOST`, and its comment says why
+  # (a topology fact of running under compose, not an operator-tunable setting). Cadence is
+  # the opposite — `RS-3.5`: *"e a unica variavel que paga cota, e grava-la em codigo
+  # transforma ajuste de configuracao em release"*.
+  #
+  #   PREMIUM_INDEX_CYCLE_INTERVAL_S   default 60      seconds between premiumIndex polls
+  #   KLINES_CYCLE_INTERVAL_S          default 60      seconds between klines polls; the series
+  #                                                    is 1-minute, so below 60 buys only quota
+  #   KLINES_BACKFILL_DAYS             default 7       days read once at boot (7 x 1440 = 10.080
+  #                                                    bars per symbol = 7 calls of 1500)
+  #
+  # Quota, so the numbers are not adjectives: weight 1 per klines call against 2400 weight/min
+  # per IP `[MEDIDO 2026-09-10: sequencia 31->32->33]` — four symbols at 60 s spend 4 of 2400.
+  # The boot backfill publishes `7 x 1440 x |symbols|` entries onto the Redis stream, under the
+  # `REDIS_STREAM_MAXLEN` cap (default 100.000, `redis_stream_bus.py`); with the four-symbol
+  # universe that peak is 40.320, i.e. 40% of the cap. An operator who raises
+  # `KLINES_BACKFILL_DAYS` past ~17 days on four symbols must raise `REDIS_STREAM_MAXLEN` with
+  # it, or `XADD ... MAXLEN ~` will trim entries the writer has not drained yet.
   collector:
     build:
       context: ../backend
