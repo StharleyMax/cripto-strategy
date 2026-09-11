@@ -38,6 +38,7 @@ from src.modules.sentimento.domain.provenance import (
     SeriesRow,
 )
 from src.modules.sentimento.infra import collectors_cli
+from src.modules.sentimento.infra.binance_klines_client import KlinesPageResponse
 from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
 from src.modules.sentimento.use_cases.collect_premium_index import (
@@ -97,6 +98,28 @@ class _EmptyBatchFetcher:
     def fetch(self) -> RawPremiumIndexFetch:
         """Return `status=200` and `body=b"[]"` — a valid, symbol-less batch."""
         return RawPremiumIndexFetch(status=200, headers={}, body=b"[]")
+
+
+class _EmptyKlinesClient:
+    """A `KlinesClient` fake that always answers one empty, successful page.
+
+    The klines thread (`T-01.3`) is the THIRD thread `run()` starts, and it would otherwise
+    reach `fapi.binance.com` from inside the offline suite — `backend/scripts/test.sh`'s "ZERO
+    REDE" rule. An empty page ends both the boot backfill walk and the periodic cycle
+    immediately, which is what keeps these shutdown/exit-code scenarios about the thing they
+    were written to measure.
+    """
+
+    def klines(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int,
+        start_time_ms: int | None = None,
+        end_time_ms: int | None = None,
+    ) -> KlinesPageResponse:
+        """Return `status=200` with no rows and no API error code."""
+        return KlinesPageResponse(status=200, api_code=None, rows=())
 
 
 class _OneShotPremiumIndexFetcher:
@@ -178,6 +201,10 @@ def main(argv: list[str]) -> int:
         # Large on purpose: the premium-index thread fires once at start, then must NOT fire
         # again before this driver's caller sends its signal.
         premium_index_cycle_interval_s=999_999.0,
+        # Same reasoning for the klines thread: one boot pass (empty, see
+        # `_EmptyKlinesClient`) and then never again before the signal arrives.
+        klines_cycle_interval_s=999_999.0,
+        klines_backfill_days=1,
     )
     if force_publish_failure:
         # Same real-server technique `test_collectors_cli_publish_failure.py`'s `clobbered_sink`
@@ -203,6 +230,7 @@ def main(argv: list[str]) -> int:
             store=store,
             force_order_source_factory=_BlockingForceOrderSource,
             premium_index_fetcher_factory=_fetcher_factory,
+            klines_client_factory=_EmptyKlinesClient,
             premium_index_to_rows=premium_index_to_rows,
             force_order_to_rows=_never_maps,
         )

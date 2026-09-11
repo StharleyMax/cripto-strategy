@@ -13,7 +13,7 @@ import hashlib
 
 import pytest
 
-from src.modules.sentimento.domain.ingest_record import KNOWN_VERDICTS
+from src.modules.sentimento.domain.ingest_record import KNOWN_VERDICTS, IngestRun
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
 from src.modules.sentimento.domain.provenance import UNKNOWN_OBSERVER_REGION
 from src.modules.sentimento.use_cases.collector_run_mapping import (
@@ -21,12 +21,16 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_ENDPOINT,
     FORCE_ORDER_OBSERVER_ID,
     FORCE_ORDER_WEIGHT_USED,
+    KLINES_ENDPOINT,
+    KLINES_OBSERVER_ID,
+    KLINES_WEIGHT_PER_CALL,
     KNOWN_VERDICT_LITERALS,
     N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
     PREMIUM_INDEX_OBSERVER_ID,
     WEIGHT_NOT_READABLE,
     KnownVerdict,
     build_force_order_run,
+    build_klines_run,
     build_premium_index_run,
 )
 from src.modules.sentimento.use_cases.persist_ntp_skew_run import SOURCE
@@ -263,3 +267,102 @@ def test_the_opening_n_written_is_zero_and_that_zero_is_named() -> None:
     `writer_accounted_at` instead, and that is what this constant's name says out loud.
     """
     assert N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS == 0
+
+
+# ── `T-01.3`: THE THIRD BUILDER, `/fapi/v1/klines` ─────────────────────────────────────────
+
+
+def _klines_run(**overrides: object) -> IngestRun:
+    """One klines run with the fields every test below starts from."""
+    fields: dict[str, object] = {
+        "started_at": "2026-09-10T20:00:00Z",
+        "ended_at": "2026-09-10T20:00:04Z",
+        "n_returned": 10_080,
+        "n_calls": 7,
+        "api_code": None,
+        "verdict": "ACCEPTED",
+        "src_sha256": "e" * 64,
+    }
+    fields.update(overrides)
+    return build_klines_run(**fields)  # type: ignore[arg-type]
+
+
+def test_the_klines_endpoint_literal_matches_the_client_path() -> None:
+    """The `use_cases` spelling and the `infra` client's own path are the SAME string.
+
+    They are two literals because `use_cases` may not import `infra` (`[tool.importlinter]`'s
+    `layers` contract) — so the drift that duplication risks is made executable here rather
+    than trusted. Morde: change either spelling and this fails, naming both.
+
+    A drift would be SILENT in the worst way: `IngestRun.endpoint` is what
+    `/api/v1/ingest-health` and `collector_status.py`'s dashboard group by, so the runs would
+    file themselves under a producer name that matches nothing the client ever called.
+    """
+    from src.modules.sentimento.infra.binance_klines_client import KLINES_PATH
+
+    assert KLINES_ENDPOINT == KLINES_PATH
+
+
+def test_a_klines_run_names_the_endpoint_and_the_observer_of_its_own_producer() -> None:
+    """Distinct `endpoint`/`observer_id` from the other two producers, by construction."""
+    run = _klines_run()
+    assert run.endpoint == KLINES_ENDPOINT
+    assert run.observer_id == KLINES_OBSERVER_ID
+    assert run.observer_id not in {FORCE_ORDER_OBSERVER_ID, PREMIUM_INDEX_OBSERVER_ID}
+    assert run.source == SOURCE
+    assert run.observer_region == UNKNOWN_OBSERVER_REGION
+    assert run.clock_skew_ms == CLOCK_SKEW_NOT_MEASURED_MS
+
+
+def test_the_weight_is_derived_from_the_calls_and_is_never_the_unreadable_sentinel() -> None:
+    """`weight_used = KLINES_WEIGHT_PER_CALL * n_calls` — measured, not guessed, not absent.
+
+    `WEIGHT_NOT_READABLE` (`-1`) means "the provider answered without a readable header on a
+    call this collector had no other way to price". `/fapi/v1/klines` IS priceable — weight 1
+    per call `[MEDIDO 2026-09-10: sequencia 31->32->33]` — so recording `-1` here would throw
+    away a fact. Morde: substitute the sentinel and this fails on both assertions.
+    """
+    assert _klines_run(n_calls=7).weight_used == 7 * KLINES_WEIGHT_PER_CALL
+    assert _klines_run(n_calls=7).weight_used != WEIGHT_NOT_READABLE
+    assert _klines_run(n_calls=1).weight_used == KLINES_WEIGHT_PER_CALL
+
+
+def test_n_expected_equals_n_returned_because_there_is_no_independent_oracle() -> None:
+    """No invented `backfill_days * 1440`: a symbol listed mid-window has fewer bars, legally.
+
+    Morde: compute `n_expected` from the window and every young symbol reports a permanent
+    shortfall in `/api/v1/ingest-health` that no data loss ever caused.
+    """
+    run = _klines_run(n_returned=9_999)
+    assert run.n_expected == run.n_returned == 9_999
+
+
+def test_the_klines_run_leaves_n_written_for_the_writer() -> None:
+    """`ADR-035/D2` again: the collector opens, the writer closes."""
+    assert _klines_run().n_written == N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS
+
+
+def test_the_run_id_is_a_parameter_so_the_rows_can_carry_it() -> None:
+    """A caller that opened the pass with an id passes that SAME id here."""
+    assert _klines_run(run_id="the-pass-id").run_id == "the-pass-id"
+
+
+def test_two_klines_runs_without_an_explicit_id_do_not_collide() -> None:
+    """Omitting `run_id` still mints a fresh one — `md.ingest_run`'s key would collide."""
+    assert _klines_run().run_id != _klines_run().run_id
+
+
+def test_the_window_is_the_started_ended_pair_the_caller_measured() -> None:
+    """`window` is built from the two instants, never from a clock this module reads."""
+    run = _klines_run(started_at="2026-09-10T20:00:00Z", ended_at="2026-09-10T20:00:04Z")
+    assert run.window == "2026-09-10T20:00:00Z/2026-09-10T20:00:04Z"
+
+
+@pytest.mark.parametrize("verdict", KNOWN_VERDICT_LITERALS)
+def test_the_klines_builder_accepts_every_known_verdict_and_only_those(
+    verdict: KnownVerdict,
+) -> None:
+    """The three spellings the closed set fixes, and the api code travels when there is one."""
+    run = _klines_run(verdict=verdict, api_code=-1121)
+    assert run.verdict in KNOWN_VERDICTS
+    assert run.api_code == -1121

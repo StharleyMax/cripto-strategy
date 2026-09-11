@@ -18,8 +18,16 @@ foi definir os simbolos q iam rodar inicialmente. (BTCUSDT, SOLUSDT, EHTUSDT, LI
 `EHTUSDT` is corrected to `ETHUSDT` below — `[MEDIDO 2026-09-08]`:
 `curl -s https://fapi.binance.com/fapi/v1/exchangeInfo` lists `ETHUSDT` among USDⓈ-M Futures
 symbols and does not list `EHTUSDT` at all; `EHTUSDT` is not a tradable pair on any Binance
-market. This module is where that four-symbol universe becomes the actual filter both collector
-threads apply — no OTHER symbol from the batch/stream ever reaches a `SeriesRow` today.
+market. This module is where that four-symbol universe becomes the actual filter every collector
+thread applies — no OTHER symbol from the batch/stream/page ever reaches a `SeriesRow` today.
+
+── THE THIRD PRODUCER, ADDED BY `T-01.3` ───────────────────────────────────────────────────────
+
+`/fapi/v1/klines` -> `klines_volume` (M1, `SPEC-007` §4.1) joins the two above at the bottom of
+this file. It differs from them in one way that is worth naming up here rather than burying in
+the builder: it is the only producer whose source hands back a bucket that has NOT HAPPENED YET
+in full — the minute currently in progress — so this module is where `RS-3.4`'s anti-lookahead
+cut is applied, and `is_closed_bucket` is where the SIGN of that cut is written down.
 
 ── WHAT `SeriesRow` DOES AND DOES NOT CARRY, AND WHY THAT SHRINKS THIS DECISION ────────────────
 
@@ -79,12 +87,14 @@ because nothing else in the codebase does either.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import Final, Protocol
 
 from src.modules.sentimento.domain.force_order_collision_accounting import (
     ForceOrderKeyObservation,
 )
 from src.modules.sentimento.domain.funding_settlement import FundingSource
+from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
 from src.modules.sentimento.domain.premium_index_batch import (
     PREMIUM_INDEX_ENDPOINT,
     PremiumIndexReading,
@@ -105,6 +115,8 @@ from src.modules.sentimento.domain.series_key import (
 from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_ENDPOINT,
     FORCE_ORDER_OBSERVER_ID,
+    KLINES_ENDPOINT,
+    KLINES_OBSERVER_ID,
     PREMIUM_INDEX_OBSERVER_ID,
 )
 
@@ -299,6 +311,177 @@ def build_force_order_to_rows(
                 observer_id=FORCE_ORDER_OBSERVER_ID,
                 value_raw=observation.key.price,
             ),
+        )
+
+    return _to_rows
+
+
+# ── `klines_volume` (M1) — THE THIRD PRODUCER, AND THE ANTI-LOOKAHEAD CUT ───────────────────
+#
+# `T-01.3` / `SPEC-007` phase `01` items 1.3 + 1.4, `RS-3.4`, `RNF-3`.
+#
+# ⛔ `_KLINES_VOLUME_VERIFIED_BY` IS A CROSS-TASK CONTRACT, NOT A LOCAL STYLE CHOICE.
+# `verified_by` is the fifteenth term of `SeriesKey` and the `sha256` of the canonical
+# projection of all fifteen IS the `series_key_id` (`series_key.py:226-234`). The rows this
+# module publishes have to land under the SAME `series_key_id` the SERVED catalog
+# (`use_cases/series_catalog.py::list_series_catalog`, `T-01.6`) registers, or
+# `/api/v1/series-history` answers `422 UnknownSeriesKeyIdError` for a `md.series` that is full
+# of rows — the worst shape of this failure, because both halves look healthy in isolation.
+# `T-01.1` created the identity and named its test; `T-01.6`'s own task text says to reuse
+# "o nome do teste que T-01.1 criou, nao um nome inventado", and that name is the value below.
+# `test_collector_klines_mapping.py` pins the whole triple (`instrument_id`, `unit`,
+# `verified_by`) by rebuilding the entry and comparing `series_key_id`, so a divergence fails a
+# test instead of emptying a chart.
+_KLINES_VOLUME_VERIFIED_BY: Final[str] = "test_klines_volume_catalog.py"
+
+# The quote asset every symbol of `INITIAL_SYMBOLS` is denominated in. `klines_volume` carries
+# `denom="base"` (`domain/klines_volume_catalog.py`), so `unit` must be the instrument's OWN
+# base asset — `BTC` for `BTCUSDT`, `ETH` for `ETHUSDT` — and that module's docstring is
+# explicit that a hardcoded `"BTC"` "would silently mislabel every non-`BTC` instrument".
+_USDT_QUOTE: Final[str] = "USDT"
+
+# One minute, in milliseconds: the width of the `interval="1m"` bucket this series is built on,
+# and the step `use_cases/series_history.py` walks its grid with (`_GRID_STEP_MS` there).
+KLINES_BUCKET_WIDTH_MS: Final[int] = 60_000
+
+
+class SymbolNotQuotedInUsdtError(ValueError):
+    """A symbol's base asset cannot be read off its name because it is not a `…USDT` pair."""
+
+
+class KlineLike(Protocol):
+    """The three things this mapping reads off one kline array.
+
+    Structural, not an import: `infra/binance_klines_client.KlineRow` satisfies this, and
+    `use_cases` may not import `infra` (`[tool.importlinter]`'s `layers` contract). The same
+    shape `SeriesWindowReader`/`IngestRecordSource` already use to name a port in a use case
+    and wire the adapter at composition.
+    """
+
+    @property
+    def open_time_ms(self) -> int:
+        """Return the bucket's opening instant, epoch milliseconds."""
+        ...
+
+    @property
+    def close_time_ms(self) -> int:
+        """Return the bucket's closing instant, epoch milliseconds (Binance: open + 59999)."""
+        ...
+
+    @property
+    def volume(self) -> str:
+        """Return index `[5]`, base-asset volume, as the exact decimal string the source sent."""
+        ...
+
+
+KlinesToRows = Callable[[int, str, Sequence[KlineLike]], tuple[SeriesRow, ...]]
+
+
+def klines_base_asset(symbol: str) -> str:
+    """Return the BASE asset of a USDⓈ-M symbol — `BTCUSDT` -> `BTC`.
+
+    Every member of `INITIAL_SYMBOLS` is a `…USDT` pair, and on USDⓈ-M futures the quote asset
+    IS the margin asset, so stripping the suffix is a reading of the venue's own naming rule
+    rather than a table this module would have to keep in sync by hand. A symbol that does not
+    end in `USDT` is REFUSED rather than guessed at: a wrong `unit` is a wrong
+    `series_key_id`, which is a silently different series, and `SeriesKey` has no way to notice.
+    """
+    if not symbol.endswith(_USDT_QUOTE) or len(symbol) <= len(_USDT_QUOTE):
+        raise SymbolNotQuotedInUsdtError(
+            f"cannot read the base asset off {symbol!r}: this mapping only knows USD-M pairs "
+            f"quoted in {_USDT_QUOTE!r}, and guessing the unit would change the series_key_id"
+        )
+    return symbol[: -len(_USDT_QUOTE)]
+
+
+def is_closed_bucket(kline: KlineLike, observed_at_ms: int) -> bool:
+    """Say whether `kline`'s bucket had ALREADY CLOSED at `observed_at_ms` — `RS-3.4`.
+
+    ⛔ THE SIGN OF THIS COMPARISON IS THE WHOLE ANTI-LOOKAHEAD RULE, and `CLAUDE.md` records
+    that an anti-lookahead rule of this project has already been INVERTED once and propagated
+    through two documents before anyone noticed. So the falsifier is written against the SIGN,
+    not against the existence of a flag:
+    `test_collector_klines_mapping.py::test_the_in_progress_bucket_is_the_one_dropped_not_the_ones_around_it`
+    pins WHICH buckets survive, so swapping `<` for `>` (or for `<=` on a boundary tick) fails.
+
+    `/fapi/v1/klines` ALWAYS returns the bucket currently in progress as its newest element,
+    with a partial `volume` that keeps growing until the minute ends — `[MEDIDO 2026-09-10:
+    `v=4,413` no bucket mais novo contra `10`–`44` nos vizinhos, defasagem de ~58 s]`. Storing
+    it as a fact understates the traded volume of that minute by whatever had not traded yet,
+    which is the textbook lookahead defect in reverse: a number that a decision taken AT that
+    minute could not have seen, recorded as if it had settled.
+
+    `close_time_ms` is the LAST millisecond that belongs to the bucket, not the first
+    millisecond after it, so the bucket is closed exactly when the observation instant is
+    strictly greater than it. `close_time_ms == observed_at_ms` is the boundary tick and counts
+    as STILL OPEN: that millisecond is still inside the bucket.
+    """
+    return kline.close_time_ms < observed_at_ms
+
+
+def build_klines_to_rows(
+    *,
+    symbols: frozenset[str] = INITIAL_SYMBOLS,
+) -> KlinesToRows:
+    """Build the `klines` -> `SeriesRow` mapping the klines collector publishes through.
+
+    The returned callable takes the collector's own clock (`received_at`), the symbol the page
+    was requested for, and the page's klines; it answers ONLY the rows for buckets that had
+    already closed at `received_at` (`is_closed_bucket`). A symbol outside `symbols` yields no
+    rows, the same filter the other two producers in this module already apply.
+
+    ⛔ THE IN-PROGRESS BUCKET IS DROPPED, NOT FLAGGED, and the two options are not equivalent
+    here. `is_final=False` would also be honest — the `as_of` accessor refuses such a row
+    outright, in its `_is_closed_bucket` predicate (`row.bucket_end <= t and row.is_final is
+    not False`; the module is named without its filename here on purpose, because
+    `test_as_of_is_the_single_reader.py` polices that name by TEXT SEARCH and a prose citation
+    would register this module as a fifth importer of an accessor it never imports) — but
+    `md.series` is APPEND-ONLY, so a 60-second cycle over four symbols would append four rows
+    per minute (`5.760/day`) that no read path can ever admit, on a host whose own premise is
+    scarce resources. Dropping costs nothing and leaves nothing to explain later; the rows that
+    ARE published carry `is_final=True`, which is the source genuinely DECLARING finality —
+    the case `SeriesRow.is_final`'s own docstring reserves the column for.
+
+    `bucket_end` is `open_time_ms + KLINES_BUCKET_WIDTH_MS`, i.e. `close_time_ms + 1`: whole
+    minute instants, because `use_cases/series_history.py` states that "`md.series.bucket_end`
+    values are stamped on the whole-minute grid" and walks its X axis on exactly that step. The
+    source's own `...59999` would still be admitted by `as_of` (`bucket_end <= t`), but it
+    would put every volume bar one millisecond off the grid every other series is stamped on.
+
+    `event_time` is the SOURCE's instant (the bucket boundary) while `available_at`/
+    `ingested_at`/`observed_at` are THIS collector's clock — the same separation `_build_row`
+    documents for the other two producers, and the reason the ~58-second publication lag of
+    this endpoint is visible in the data instead of being flattened away.
+    """
+
+    def _to_rows(
+        received_at: int, symbol: str, klines: Sequence[KlineLike]
+    ) -> tuple[SeriesRow, ...]:
+        if symbol not in symbols:
+            return ()
+        key = build_klines_volume_entry(
+            symbol, unit=klines_base_asset(symbol), verified_by=_KLINES_VOLUME_VERIFIED_BY
+        ).key
+        return tuple(
+            SeriesRow(
+                series_key_id=key.series_key_id(),
+                symbol=symbol,
+                source=KLINES_ENDPOINT,
+                bucket_end=kline.open_time_ms + KLINES_BUCKET_WIDTH_MS,
+                event_time=kline.open_time_ms + KLINES_BUCKET_WIDTH_MS,
+                available_at=received_at,
+                availability_source=AvailabilitySource.OBSERVED,
+                ingested_at=received_at,
+                observed_at=received_at,
+                provenance=Provenance.OBSERVED,
+                src_label_raw=KLINES_ENDPOINT,
+                observer_id=KLINES_OBSERVER_ID,
+                observer_region=UNKNOWN_OBSERVER_REGION,
+                is_final=True,
+                value_raw=kline.volume,
+            )
+            for kline in klines
+            if is_closed_bucket(kline, received_at)
         )
 
     return _to_rows
