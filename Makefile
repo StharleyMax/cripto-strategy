@@ -310,11 +310,19 @@ api:
 # entao o teardown (que roda MESMO quando o Playwright reprova) nunca mascara o veredito.
 # `E2E_API_UP=0` e o modo "API deliberadamente no chao" de D1.11; `E2E_API_UP=1` (default) e
 # "API de pe" — os DOIS que a suite de `T-01.9` precisa.
+#
+# AS DUAS VARIAVEIS SAO AS DUAS PONTAS DA MESMA ORIGEM (`BLOCKER-2`, gate da wave `03` de
+# `cinco-metricas-do-core`): `E2E_BASE_URL` e a app sob teste, `E2E_SENTIMENTO_API_BASE_URL` e a
+# API que a app le — e as duas saem do MESMO `STATE_DIR`, escrito por `e2e-env.sh`, que e o unico
+# lugar onde a porta da API aparece. Enquanto o spec `08` tinha `?? "http://localhost:8000"`, o
+# teste lia a API de PRODUCAO e a pagina lia a efemera: `916` contra `0`, impossivel de conciliar.
+
 e2e:
 	@STATE_DIR="$$(bash scripts/e2e-env.sh up $(E2E_API_UP) $(E2E_API_PORT) $(E2E_NEXT_PORT))"; \
 	SETUP_RC=$$?; \
 	if [ $$SETUP_RC -ne 0 ]; then exit $$SETUP_RC; fi; \
 	E2E_BASE_URL="$$(cat "$$STATE_DIR/base_url")" E2E_API_LOG_PATH="$$STATE_DIR/api.log" \
+	  E2E_SENTIMENTO_API_BASE_URL="$$(cat "$$STATE_DIR/api_base_url")" \
 	  frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts; RC=$$?; \
 	bash scripts/e2e-env.sh down "$$STATE_DIR"; \
 	exit $$RC

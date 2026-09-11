@@ -81,16 +81,61 @@ test("the WCAG formula reproduces its own published anchors", () => {
 
 // ── 1. the surface constant is the same number the app actually paints ───────────────────────
 
-test("SURFACE_BASE equals --color-surface-base in globals.css (the two citations have not drifted)", () => {
-  const css = readFileSync(GLOBALS_CSS, "utf8");
-  // The `@theme` declaration, i.e. the dark default — NOT one nested in a media query.
-  const declared = /^ {2}--color-surface-base:\s*(#[0-9a-fA-F]{6});/m.exec(css);
-  assert.ok(declared !== null, "could not find `  --color-surface-base: #......;` in globals.css — has it moved?");
-  assert.equal(
-    declared[1].toLowerCase(),
-    SURFACE_BASE,
-    "color-tokens.ts's SURFACE_BASE and globals.css's --color-surface-base disagree — `charts` may not read " +
-      "the DOM (ADR-003 FR-1), so this literal is the only link between them and it has to be kept true",
+// WHY THIS TEST WAS REWRITTEN (wave `03` QA, `BLOCKER-1`): the previous version matched
+// `/^ {2}--color-surface-base:/m` — anchored at TWO spaces, with the comment "NOT one nested in a
+// media query". `globals.css` then held the token TWICE: `#131722` at indent 2 (`@theme`) and
+// `#ffffff` at indent 4, inside `@media (prefers-color-scheme: light)`. The anchor excluded the
+// second BY CONSTRUCTION, so this gate read 8/8 green while a browser in light mode painted the
+// OI line at 1,22:1 on `#ffffff` — the very defect `D13` exists to kill, surviving in the one
+// surface `charts/` cannot see (`ADR-003/FR-1`: `charts` may not read the DOM).
+//
+// The rule now: the app paints ONE surface and this constant names it. Three assertions, and the
+// second and third are the ones that would have caught it — n = every declaration in the file, at
+// any indentation, inside any block.
+
+/** The CSS a browser would parse: comments removed, because prose ABOUT the deleted light block
+ * (and there is a paragraph of it in `globals.css` now) is not a declaration, and counting it
+ * would make this gate fire on its own explanation — a false positive that gets a real gate
+ * disabled. Only code is measured; `/* … *\/` is not code. */
+function cssWithoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+test("globals.css declares --color-surface-base EXACTLY ONCE, and it is SURFACE_BASE", () => {
+  const css = cssWithoutComments(readFileSync(GLOBALS_CSS, "utf8"));
+  // Any indentation, any nesting — deliberately NOT anchored, because the anchor was the bug.
+  const declarations = [...css.matchAll(/--color-surface-base:\s*(#[0-9a-fA-F]{6})\s*;/g)].map((match) =>
+    match[1]!.toLowerCase(),
+  );
+  assert.deepEqual(
+    declarations,
+    [SURFACE_BASE],
+    `globals.css declares --color-surface-base ${declarations.length}x (${declarations.join(", ") || "none"}), and ` +
+      `this gate can only measure ONE surface (SURFACE_BASE = ${SURFACE_BASE}). A second declaration is a second ` +
+      "surface the app really paints and the contrast floor never sees — exactly how the light palette survived D13.",
+  );
+});
+
+test("globals.css carries NO prefers-color-scheme block — D13 left one palette, not a default", () => {
+  const css = cssWithoutComments(readFileSync(GLOBALS_CSS, "utf8"));
+  const mediaQueries = [...css.matchAll(/@media[^{]*prefers-color-scheme[^{]*/g)].map((match) => match[0].trim());
+  assert.deepEqual(
+    mediaQueries,
+    [],
+    `globals.css reintroduced a color-scheme media query (${mediaQueries.join(" | ")}). D13 deleted the theme ` +
+      "PARAMETER from charts/; a media query is the same parameter re-expressed in CSS, and it repaints the very " +
+      "surface every ratio below is measured against.",
+  );
+});
+
+test("globals.css declares color-scheme: dark, so the browser's own widgets follow", () => {
+  const css = cssWithoutComments(readFileSync(GLOBALS_CSS, "utf8"));
+  assert.match(
+    css,
+    /:root\s*\{[^}]*\bcolor-scheme:\s*dark\s*;/,
+    "globals.css has no `:root { color-scheme: dark; }` — without it a user agent in light mode still paints " +
+      "scrollbar, form controls and the pre-paint canvas from the LIGHT system palette, on top of a #131722 page. " +
+      "Deleting the light block is necessary; this declaration is what makes it sufficient.",
   );
 });
 

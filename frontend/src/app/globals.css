@@ -10,10 +10,17 @@
 
 @theme {
   /*
-   * `DESIGN_SYSTEM.md` s1.2 -- the 10 governed color roles, DARK values as the `@theme`
-   * default. Dark is the mode the approved screens were generated in
-   * (`STITCH_CONTEXT.md` item 9: "Gere no MODO ESCURO"); the light override lives in the
-   * `prefers-color-scheme: light` block below, same literal values from the same table.
+   * `DESIGN_SYSTEM.md` s1.2 -- the 10 governed color roles. DARK IS THE ONLY PALETTE, not a
+   * default with an override: `D13` deleted the theme parameter from `charts/` and wave `03`'s
+   * QA measured that the light half had survived HERE, in a `@media (prefers-color-scheme:
+   * light)` block that repainted `--color-surface-base` to `#ffffff`. On that surface the OI
+   * line (`provenanceStrong`) reads 1,22:1 and `dataBrokenInk` 1,85:1, both under the 3,0 floor
+   * this wave instituted -- i.e. the invisible-line defect, reintroduced by CSS instead of by
+   * parameter. `[MEDIDO 2026-09-11: `contrastRatio` de `charts/contrast.ts` sobre os 6 papeis de
+   * `colorTokens()`, n=6; 2 abaixo de 3,0 contra `#ffffff` (provenanceStrong 1,22 ·
+   * dataBrokenInk 1,85), 0 abaixo contra `#131722` -- `npm --prefix frontend run test:charts`]`
+   * The block is gone; `color-scheme: dark` below tells the browser the same thing for the
+   * widgets CSS does not paint. `color-contrast.test.ts` now FAILS if either comes back.
    */
   --color-direction-up: #089981; /* --direcao-alta-fill, identical in both modes */
   --color-direction-down: #f23645; /* --direcao-baixa-fill, identical in both modes */
@@ -71,25 +78,18 @@
   --spacing-gutter: 0.75rem;
 }
 
-/* Light-mode override -- same table, claro column, same names, no new token. */
-@media (prefers-color-scheme: light) {
-  :root {
-    --color-integrity-ink: #581c87;
-    --color-provenance-strong: #131722;
-    --color-provenance-weak: #57606a;
-    --color-action-fill: #131722;
-    --color-action-border: #131722; /* "(o proprio fill)" -- DESIGN_SYSTEM.md s1.2 claro */
-    --color-action-on: #ffffff;
-    --color-focus-ring: #131722;
-    --color-surface-base: #ffffff;
-    --color-surface-chrome: #f7f8fa;
-    --color-surface-stripe: #eff0f2;
-
-    --color-primary-container: #ffffff;
-    --color-surface-lowest: #f7f8fa;
-    --color-surface-border: #eff0f2;
-    --color-on-surface: #131722;
-  }
+/*
+ * ONE MODE, DECLARED TO THE BROWSER TOO (`D13`, wave `03`).
+ *
+ * Deleting the light block is necessary and NOT sufficient: without `color-scheme`, a user agent
+ * in light mode still paints what CSS does not -- scrollbar, `<select>` popup, form control,
+ * spellcheck underline, the canvas before first paint -- from the LIGHT system palette, over a
+ * `#131722` page. `color-scheme: dark` is the only declaration that reaches those widgets; it is
+ * the same statement the `@theme` block above makes about the tokens, addressed to the one
+ * painter that does not read them.
+ */
+:root {
+  color-scheme: dark;
 }
 
 /*

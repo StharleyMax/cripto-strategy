@@ -272,6 +272,39 @@ são **deletados**. O app fica com **um** tema, o escuro.
 ⇒ o app **já era** escuro-apenas; só as 4 chamadas do gráfico pediam claro. Escuro custa 4 sítios;
 claro custaria reescrever a paleta inteira e a aparência de toda página.
 
+### ⚠️ Correção de 2026-09-11 — a tabela acima tem um universo VICIADO e um número que não se reproduz
+
+Pago pelo lote de conserto do gate da wave `03`, sobre o achado `BLOCKER-1` do QA. Duas coisas,
+e a primeira é a que importa:
+
+**1. O qualificador *"sem media query"* removia do universo justamente o contraexemplo.** Contado
+sem ele, `globals.css` tinha **2** declarações de `--color-surface-base` — `#131722` no `@theme` e
+`#ffffff` dentro de `@media (prefers-color-scheme: light)` (linhas 75-93 daquela versão) ⇒ a
+conclusão *"o app já era escuro-apenas"* valia para o TypeScript e **não** para o CSS, que é o que
+o browser pinta. Sobre `#ffffff` a linha de OI dava **1,22:1** e `--dado-quebrado-ink` **1,85:1**,
+abaixo do piso 3,0 desta wave. O bloco foi removido, `:root` ganhou `color-scheme: dark`, e o teste
+passou a exigir declaração única + zero `prefers-color-scheme`.
+
+```bash
+grep -c -- '--color-surface-base:' frontend/src/app/globals.css   # antes: 2 · hoje: 1
+grep -c 'prefers-color-scheme' frontend/src/app/globals.css       # hoje: 1, e é PROSA (o teste ignora comentário)
+npm --prefix frontend run test:charts                             # 189/189 (n=6 papéis medidos)
+```
+
+**2. As `4` chamadas em produção não se reproduzem; o número verificável é `3`.**
+
+```bash
+git grep -n 'colorTokens("light")' master -- frontend/src        # 6 ocorrências / 3 arquivos
+#   SymbolClient.tsx:226,264,290  (produção)  -> 3
+#   volume-subaxis-dom-contract.test.ts:1 + color-tokens.test.ts:2 (teste) -> 3
+```
+
+⇒ **3 sítios de produção, todos em `SymbolClient.tsx`** (o `4` provavelmente somou o contract
+test). A DECISÃO não muda — 3 ou 4 sítios contra "reescrever a paleta inteira" dá o mesmo
+veredito —, mas o número registrado fica corrigido em vez de propagado.
+
+`[MEDIDO 2026-09-11: os três comandos acima, nesta árvore, branch `wave/03-producao-e-janela-deslizante`]`
+
 **O que a troca conserta, medido contra `--color-surface-base = #131722`:**
 
 | série | com `"light"` (hoje) | com a paleta escura |

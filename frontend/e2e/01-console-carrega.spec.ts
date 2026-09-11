@@ -6,6 +6,7 @@ import {
   captureConsole,
   countCollectorStatusAccessLogHits,
   fact,
+  seriesCatalogEntryCount,
   shot,
 } from "./helpers.ts";
 
@@ -105,12 +106,21 @@ test("B1: API de pé — GET /console entrega >= 1 linha, incrementa o access lo
   fact(SPEC, "rows_data_fact", rowsAttr);
   expect(rowsAttr).toMatch(/^rows:[1-9]\d*$/);
 
-  // `T-03.3`, `plano 03` `D3.1`: `GET /series-catalog` concatena os 3 módulos de catálogo já
-  // populados (`cvd_source_catalog` 3 + `price_source_catalog` 2 + `open_interest_catalog` 5),
-  // sempre 10 — não depende do store seedado (`series_catalog` é estático para `BTCUSDT`,
+  // `T-03.3`, `plano 03` `D3.1`: `GET /series-catalog` concatena os módulos de catálogo já
+  // populados — não depende do store seedado (`series_catalog` é estático para `BTCUSDT`,
   // diferente de `S1`'s `rows:N` acima).
+  //
+  // O NÚMERO VEM DA API, não de um literal: este teste dizia `catalog_rows:10` (os 3
+  // `cvd_source` + 2 price + 5 `sum_open_interest` de `T-03.3`) e ficou VERMELHO quando `T-01.6`
+  // acrescentou a 11ª linha (`klines_volume`, `series_catalog.py:128` — "APPENDS `klines_volume`
+  // … as the eleventh row"), sem que nada do que este teste mede tivesse mudado
+  // `[MEDIDO 2026-09-11: GET /api/v1/series-catalog → n_entries=11; `git diff --name-only
+  // master..HEAD -- backend/src` → 0 arquivos, ou seja o 11º já estava em master]`. A asserção
+  // forte é a MESMA de sempre e agora não envelhece: a tela mostra o que a API publica.
+  const expectedCatalogRows = await seriesCatalogEntryCount();
+  fact(SPEC, "series_catalog_n_entries", expectedCatalogRows);
   const catalogRowsFact = page.locator('[data-fact^="catalog_rows:"]');
   const catalogRowsAttr = await catalogRowsFact.getAttribute("data-fact");
   fact(SPEC, "catalog_rows_data_fact", catalogRowsAttr);
-  expect(catalogRowsAttr).toBe("catalog_rows:10");
+  expect(catalogRowsAttr).toBe(`catalog_rows:${expectedCatalogRows}`);
 });

@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl } from "./helpers.ts";
 
 /**
  * `T-04.3` (`SPEC-006` plan `04`, `CA-F4-3`) — the falsifier this fase exists for, REPAIRED by
@@ -66,7 +66,21 @@ const SPEC = "08-symbol-dado-real";
 const SYMBOL_PATH = "/symbol";
 const SYMBOL = "BTCUSDT";
 
-const API_BASE_URL = process.env.E2E_SENTIMENTO_API_BASE_URL ?? "http://localhost:8000/api/v1";
+/**
+ * THE READ API THIS SPEC COMPARES THE DOM AGAINST — the SAME one the page under test reads.
+ *
+ * It used to be a CONSTANT in this file: `process.env.E2E_SENTIMENTO_API_BASE_URL ??
+ * "http://localhost:8000/api/v1"`, with nothing anywhere setting that variable (`grep -c
+ * E2E_SENTIMENTO_API_BASE_URL scripts/e2e-env.sh Makefile` → `0` e `0`) ⇒ under `make e2e` this
+ * file asked the owner's PRODUCTION API while the page answered from the ephemeral fixture API:
+ * `volume_api_rows_with_value=916` against `volume_dom_present_points=0`, two surfaces that
+ * cannot agree by construction, deterministic over 2 runs (`BLOCKER-2` do gate da wave `03`).
+ * The resolver now lives in `helpers.ts`, next to `E2E_BASE_URL`'s consumers, so the address of
+ * the app and the address of its API come from the same `STATE_DIR` and no spec can redefault
+ * either. It THROWS when undeclared, lazily (module scope would take the collection to
+ * `Total: 0 tests`, the signal this file's header says cost 21 tests).
+ */
+const apiBaseUrl = sentimentoApiBaseUrl;
 
 /** `SymbolClient.tsx`'s stable anchors. Spelled out here, not imported: importing
  * `../src/app/symbol/request-window.ts` would pull `charts/index.ts`, whose barrel evaluates
@@ -116,8 +130,28 @@ function requiredNumberAttribute(value: string | null, name: string): number {
   return parsed;
 }
 
+/**
+ * `fetch` with ONE retry on a transport error, and on nothing else.
+ *
+ * Not flakiness tolerance: `undici` keeps the connection alive between requests, and a uvicorn
+ * worker that just answered `500` closes it, so the NEXT request on that socket loses the race
+ * and throws `TypeError: fetch failed [cause: ECONNRESET]` before any status exists to judge
+ * `[MEDIDO 2026-09-11: falha no 2º painel do laço (d), sempre depois de um 500, contra a API
+ * efêmera]`. The retry opens a new connection; an HTTP answer of ANY status is returned
+ * untouched, so no assertion below is softened — only the socket is.
+ */
+async function fetchWithOneRetry(url: string): Promise<Response> {
+  try {
+    return await fetch(url);
+  } catch {
+    // Deliberately NOT swallowed: a second transport failure propagates with its own cause and
+    // fails the test — one retry, never a loop.
+    return await fetch(url);
+  }
+}
+
 async function fetchCatalogEntries(): Promise<readonly CatalogEntryWire[]> {
-  const response = await fetch(`${API_BASE_URL}/series-catalog`);
+  const response = await fetchWithOneRetry(`${apiBaseUrl()}/series-catalog`);
   if (!response.ok) {
     throw new Error(`GET /series-catalog: HTTP ${response.status}`);
   }
@@ -138,9 +172,53 @@ async function fetchSeriesHistory(
     knowledge_time_ms: String(request.knowledgeTimeMs),
     bar_policy: "final_only",
   });
-  const response = await fetch(`${API_BASE_URL}/series-history?${query.toString()}`);
-  const body = (await response.json()) as { rows?: readonly HistoryRow[] };
-  return { status: response.status, rows: body.rows ?? [] };
+  const response = await fetchWithOneRetry(`${apiBaseUrl()}/series-history?${query.toString()}`);
+  // The body is read as TEXT first: a route that refuses answers `Internal Server Error`, which
+  // `response.json()` turns into `SyntaxError: Unexpected token 'I'` — an exception that hides
+  // the status code the caller needs to judge. Returning `rows: []` is NOT "treat an error as
+  // no data": every caller below branches on `status` (and on the reader capability) before it
+  // reads `rows`.
+  const raw = await response.text();
+  let rows: readonly HistoryRow[];
+  try {
+    rows = (JSON.parse(raw) as { rows?: readonly HistoryRow[] }).rows ?? [];
+  } catch {
+    rows = [];
+  }
+  return { status: response.status, rows };
+}
+
+/**
+ * Does the read API under test have an `md.series` WINDOW READER at all?
+ *
+ * Asked to the API ITSELF, never to an env var — an env var here would be an allowlist in
+ * disguise ("entrada de allowlist é indistinguível de bypass", `CLAUDE.md`): anyone could
+ * silence the strong branch without changing what the deployment IS. `/ready` publishes
+ * `store.path` (`backend/src/api/routes/ready.py`), which is the sqlite FILE for the sqlite
+ * engine and a masked DSN for Postgres, and `ADR-034/D9` gives `md.series` NO sqlite fallback:
+ * `create_app` only builds `PostgresSeriesWindowReader` when the composed ingest store is
+ * Postgres (`backend/src/main/__init__.py:238-247`). So `store.path` ending in `.sqlite3` is the
+ * API declaring, about itself, that `/series-history` cannot be served here.
+ *
+ * WHY THIS EXISTS: `make e2e`'s harness composes a sqlite store over an ephemeral seed
+ * (`scripts/e2e-env.sh`), so under the canonical gate `/series-history` answers `500` —
+ * `[MEDIDO 2026-09-11: GET http://127.0.0.1:8811/api/v1/series-history?... → 500 "Internal
+ * Server Error"; GET /ready → store.path=/tmp/cripto-strategy-e2e.<rand>/ingest_health.sqlite3]`.
+ * Asserting `200` there would measure the HARNESS, not the app. What is asserted instead is the
+ * property that survives the difference and is the one `RN-1` is about: facing a backend that
+ * cannot answer, the page prints `SEM_PONTO` and NEVER a fabricated number. The universe is
+ * published as `series_window_reader_present` on every run, so no reader of the output can
+ * mistake the weak universe for the strong one.
+ */
+async function seriesWindowReaderPresent(): Promise<boolean> {
+  const response = await fetchWithOneRetry(`${apiBaseUrl()}/ready`);
+  // `/ready` answers 200 or 503 with the SAME shape (`ready.py`) — both are readable.
+  const body = (await response.json()) as { store?: { path?: string } };
+  const storePath = body.store?.path;
+  if (typeof storePath !== "string") {
+    throw new Error(`GET /ready did not publish store.path — cannot tell which engine this API composed: ${body}`);
+  }
+  return !storePath.endsWith(".sqlite3");
 }
 
 function findEntry(
@@ -209,9 +287,21 @@ test(`GET /series-history responde 200 sobre a MESMA janela que a página pediu 
   const priceEntry = findEntry(entries, (entry) => entry.priceUse === "structure_detection");
   const { status, rows } = await fetchSeriesHistory(seriesKeyIdOf(priceEntry), request);
   const withValue = rows.filter((row) => row.value !== null);
+  const readerPresent = await seriesWindowReaderPresent();
+  fact(SPEC, "series_window_reader_present", readerPresent);
   fact(SPEC, "price_series_history_status", status);
   fact(SPEC, "price_series_history_rows", rows.length);
   fact(SPEC, "price_series_history_rows_with_value", withValue.length);
+
+  if (!readerPresent) {
+    // The API just declared it composed the sqlite engine, which `ADR-034/D9` gives no
+    // `md.series` reader. The assertion that MEANS something here is the opposite one: it must
+    // refuse loudly instead of answering `200` with an invented grid — a `200` in this universe
+    // would be fabricated data, the exact defect `RN-1` forbids one layer down.
+    expect(status, "sem window reader a rota tem de RECUSAR, nunca responder 200 com grade inventada").toBe(500);
+    expect(rows).toHaveLength(0);
+    return;
+  }
 
   expect(status).toBe(200);
   // One row per 1-minute grid instant of the window, present or absent — `rows.length` alone is
@@ -228,9 +318,16 @@ test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunc
 
   const entries = await fetchCatalogEntries();
   const volumeEntry = findEntry(entries, (entry) => entry.key.metric === "klines_volume");
-  const { rows } = await fetchSeriesHistory(seriesKeyIdOf(volumeEntry), request);
+  const { status, rows } = await fetchSeriesHistory(seriesKeyIdOf(volumeEntry), request);
   const apiPresent = rows.filter((row) => row.value !== null);
   const apiLast = rows.find((row) => row.event_time === request.windowEndMsInclusive);
+  // THE FOUR ASSERTIONS BELOW ARE TOTAL OVER THE TWO UNIVERSES, which is why this test has no
+  // branch of its own: with a window reader, `apiPresent` is the API's real points and the
+  // screen has to show exactly them; without one, the API serves NOTHING and the screen has to
+  // say `SEM_PONTO` — never `0`, never a leftover number. The universe is published so the run
+  // output states which one it measured instead of leaving the reader to guess.
+  fact(SPEC, "series_window_reader_present", await seriesWindowReaderPresent());
+  fact(SPEC, "volume_series_history_status", status);
   fact(SPEC, "volume_api_rows_with_value", apiPresent.length);
   fact(SPEC, "volume_api_last_instant_value", apiLast?.value ?? null);
 
