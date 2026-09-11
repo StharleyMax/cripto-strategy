@@ -10,13 +10,16 @@ sides compare precisely to prove they are equal (`ADR-008/DoD-2`). So this file 
 2. a record WITH `extra=` — the writer's real `writer_batch_acked` shape — renders its
    counters, in an order that does not depend on which branch built the dict;
 3. no PROJECTION CLI hands `extra=` to its module logger, scanned by AST over every importer
-   of these builders minus a DECLARED list of service processes.
+   of these builders minus a DECLARED list of service processes;
+4. only the DECLARED service processes import the service handler, and every one of them does.
 
-⚠️ (3) IS THE ONE THAT MATTERS LATER. `ADR-035/D3` asked for a second handler installed by the
-service processes; `T-01.5` may not edit `single_writer_cli.py` or `collectors_cli.py`, so the
-distinction moved onto the RECORD. The cost of that move is exactly one regression path — a
-projection CLI that later grows an `extra=` would start printing it into hashed bytes — and (3)
-is the guard that makes the path loud instead of silent.
+⚠️ (3) AND (4) ARE TWO LAYERS, NOT ONE CHECK WRITTEN TWICE — `ADR-035/D3`'s amendment of
+`2026-09-11` (`D9`, owner) says which is which. (4) pins the GUARANTEE: since `T-06.1` the
+projection handler is `logging.Formatter` and a projection CLI cannot print a pair even if
+somebody writes `extra=` in it. (3) is the FALSIFIER of that guarantee, and it STAYS, because it
+answers what the handler cannot — "is the separation still the REASON the projection is clean,
+or did somebody start emitting `extra` from the wrong side?". A divergence between them is
+ALWAYS a rejection: one green never excuses the other red (amendment item 3a).
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ import ast
 import hashlib
 import io
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -38,7 +42,22 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = BACKEND_ROOT / "src"
 
 CLI_MODULE_NAME = "src.modules.sentimento.infra.ingest_health_cli"
-SHARED_HANDLER_BUILDERS = frozenset({"build_stdout_handler", "build_stream_handler"})
+
+# The builders whose handler RENDERS `extra` — the service side of `ADR-035/D3`'s amendment.
+SERVICE_HANDLER_BUILDERS = frozenset(
+    {"build_service_stdout_handler", "build_service_stream_handler"}
+)
+
+# ⛔ EVERY handler builder the CLI exports belongs in this set, the service ones INCLUDED, and
+# that is why `T-06.1` could not merely add a function. The sweep below discovers its universe
+# by the NAME of the builder a module imports: a name missing here is a door a tenth module
+# walks through WITHOUT ever being asked "projection or service?" — and
+# `test_the_universe_of_importers_is_the_one_this_guard_believes_it_is` would stay green over a
+# universe that quietly shrank. Green over a shrunken universe is the allowlist erosion
+# `CLAUDE.md` names and `ADR-035/D3`'s amendment (item 2) forbids.
+SHARED_HANDLER_BUILDERS = (
+    frozenset({"build_stdout_handler", "build_stream_handler"}) | SERVICE_HANDLER_BUILDERS
+)
 LOGGING_METHODS = frozenset(
     {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
 )
@@ -63,15 +82,32 @@ DECLARED_SERVICE_PROCESSES = frozenset(
 )
 
 
-def _render(log_format: str, message: str, extra: dict[str, object] | None) -> str:
+def _render_through(
+    builder: Callable[[io.StringIO, str], logging.Handler],
+    log_format: str,
+    message: str,
+    extra: dict[str, object] | None,
+) -> str:
     """Push one record through a handler built exactly as production builds it."""
     stream = io.StringIO()
     logger = logging.getLogger(f"test_extra_rendering.{id(stream)}")
     logger.setLevel(logging.INFO)
     logger.propagate = False
-    logger.handlers = [ingest_health_cli.build_stream_handler(stream, log_format)]
+    logger.handlers = [builder(stream, log_format)]
     logger.info(message, extra=extra)
     return stream.getvalue().rstrip("\n")
+
+
+def _render_service(log_format: str, message: str, extra: dict[str, object] | None) -> str:
+    """Render through the SERVICE handler — the one whose formatter renders `extra={}`."""
+    return _render_through(
+        ingest_health_cli.build_service_stream_handler, log_format, message, extra
+    )
+
+
+def _render_projection(log_format: str, message: str, extra: dict[str, object] | None) -> str:
+    """Render through the PROJECTION handler — the one that CANNOT render `extra={}` at all."""
+    return _render_through(ingest_health_cli.build_stream_handler, log_format, message, extra)
 
 
 # ── 1. THE PROJECTION SIDE: THE BYTES DID NOT MOVE ────────────────────────────────────────
@@ -91,11 +127,62 @@ def test_a_record_without_extra_is_byte_identical_to_the_plain_formatter(message
     Compared against `logging.Formatter` itself rather than against a transcribed expectation:
     a hand-written expected string would keep passing if BOTH sides drifted, which is the
     failure mode `ADR-008/DoD-2` cares about.
+
+    Rendered through the SERVICE handler on purpose: since `T-06.1` the projection handler IS
+    `logging.Formatter`, so asking it this question would compare a thing with itself. The claim
+    worth keeping is the one about the decorating formatter — that with no `extra=` it still
+    produces the byte-identical line.
     """
     record = logging.LogRecord("projection", logging.INFO, __file__, 0, message, None, None)
     plain = logging.Formatter(ingest_health_cli._STABLE_FORMAT).format(record)
 
-    assert _render(ingest_health_cli._STABLE_FORMAT, message, None) == plain
+    assert _render_service(ingest_health_cli._STABLE_FORMAT, message, None) == plain
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        '{"n_runs":0,"n_gaps":0}',
+        '{"run_id":"a","verdict":"ACCEPTED","janela_de_perda":null}',
+        "",
+    ],
+)
+def test_the_projection_handler_swallows_extra_and_stays_byte_identical(message: str) -> None:
+    """`CA-F6-3`: a record WITH `extra=` renders on the projection handler exactly as plain.
+
+    THIS IS THE STRUCTURAL GUARANTEE OF `ADR-035/D3`'s amendment, stated as the only thing that
+    could ever be observed about it: the bytes. Before `T-06.1` this same record would have come
+    back decorated with ` n_rows=7 run_id=r-1`, and those bytes feed the `sha256` two sides
+    compare precisely to prove they are equal (`ADR-008/DoD-2`). A projection CLI that grows an
+    `extra=` tomorrow is no longer a corruption path — the handler it installs has no code that
+    could render a pair, which is why the guarantee is structural and not a promise.
+    """
+    record = logging.LogRecord("projection", logging.INFO, __file__, 0, message, None, None)
+    plain = logging.Formatter(ingest_health_cli._STABLE_FORMAT).format(record)
+
+    rendered = _render_projection(
+        ingest_health_cli._STABLE_FORMAT, message, {"n_accepted": 7, "writer_shard": "r-1"}
+    )
+
+    # The key names are deliberately absent from every parametrised message, so these two
+    # assertions cannot be satisfied by the message's own text — `run_id` would have been.
+    assert rendered == plain
+    assert "n_accepted" not in rendered
+    assert "writer_shard" not in rendered
+
+
+def test_the_projection_stdout_builder_is_the_pure_formatter_not_the_decorating_one() -> None:
+    """`CA-F6-3`, from the other side: the class installed on `stdout` is the plain one.
+
+    The byte test above proves the OUTPUT; this proves the WIRING that produces it, so a future
+    edit that reintroduces `ExtraRenderingFormatter` on the projection path fails here with the
+    cause named instead of failing wherever a hash happens to be compared.
+    """
+    projection = ingest_health_cli.build_stdout_handler(io.StringIO())
+    service = ingest_health_cli.build_service_stdout_handler(io.StringIO())
+
+    assert type(projection.formatter) is logging.Formatter
+    assert type(service.formatter) is ingest_health_cli.ExtraRenderingFormatter
 
 
 def test_the_canonical_projection_still_hashes_to_the_reports_fingerprint(
@@ -141,7 +228,7 @@ def test_the_writers_batch_event_renders_its_counters() -> None:
      grep -v collector_cycle_completed` -> 0 linhas]` — the event was on `stdout` with the
     counters attached to the record and absent from the bytes.
     """
-    rendered = _render(
+    rendered = _render_service(
         ingest_health_cli._STABLE_FORMAT,
         "writer_batch_acked",
         {"n_accepted": 3, "n_rejected": 1},
@@ -152,7 +239,7 @@ def test_the_writers_batch_event_renders_its_counters() -> None:
 
 def test_the_collectors_cycle_event_renders_all_four_of_its_fields() -> None:
     """The other emitter `ADR-035/D3` names — four keys, so ordering is observable."""
-    rendered = _render(
+    rendered = _render_service(
         ingest_health_cli._STABLE_FORMAT,
         "collector_cycle_completed",
         {
@@ -171,8 +258,8 @@ def test_the_collectors_cycle_event_renders_all_four_of_its_fields() -> None:
 
 def test_the_key_order_does_not_follow_the_order_the_dict_was_built_in() -> None:
     """Two branches building the same event must produce the same line — `grep` depends on it."""
-    forwards = _render(ingest_health_cli._STABLE_FORMAT, "e", {"a": 1, "b": 2, "c": 3})
-    backwards = _render(ingest_health_cli._STABLE_FORMAT, "e", {"c": 3, "b": 2, "a": 1})
+    forwards = _render_service(ingest_health_cli._STABLE_FORMAT, "e", {"a": 1, "b": 2, "c": 3})
+    backwards = _render_service(ingest_health_cli._STABLE_FORMAT, "e", {"c": 3, "b": 2, "a": 1})
 
     assert forwards == backwards == "e a=1 b=2 c=3"
 
@@ -184,7 +271,7 @@ def test_no_internal_logrecord_attribute_leaks_into_the_line() -> None:
     line would carry `pathname`, `msecs` and two dozen more, and the "stable format" would be
     a paragraph.
     """
-    rendered = _render(ingest_health_cli._STABLE_FORMAT, "event", {"n_accepted": 1})
+    rendered = _render_service(ingest_health_cli._STABLE_FORMAT, "event", {"n_accepted": 1})
 
     assert rendered == "event n_accepted=1"
     for reserved in ("pathname", "levelname", "msecs", "process", "name=", "lineno"):
@@ -197,11 +284,35 @@ def test_the_diagnostic_handler_renders_extra_too() -> None:
     Nothing hashes `stderr` (`route_diagnostics_away_from_the_product_stream` exists precisely
     so the hashed stream is `stdout` ALONE), so there is no contract to protect here — only an
     operator to inform.
+
+    ⚠️ THIS IS THE CHOICE `T-06.1` WAS REQUIRED TO MAKE EXPLICIT (`plano 06` item 6.1). Making
+    `build_stream_handler` pure would have silenced `extra` on the diagnostic `stderr` too —
+    permitted by `ADR-035/D3`, since the axis is the destination of `stdout` and `stderr` feeds
+    no projection. CHOSEN: keep it, because those counters are the operator's only view of a
+    long-running process. The choice is enforced, not merely written: the assertion below fails
+    if `route_diagnostics_away_from_the_product_stream` ever swaps back to the pure builder.
     """
-    rendered = _render(ingest_health_cli._DIAGNOSTIC_FORMAT, "queue_drained", {"n_items": 7})
+    rendered = _render_service(
+        ingest_health_cli._DIAGNOSTIC_FORMAT, "queue_drained", {"n_items": 7}
+    )
 
     assert rendered.endswith("queue_drained n_items=7")
     assert rendered.startswith("INFO ")
+
+
+def test_the_diagnostic_stream_is_wired_to_the_handler_that_renders_extra() -> None:
+    """The wiring behind the choice above — `stderr` gets the decorating formatter, on purpose."""
+    application = logging.getLogger(ingest_health_cli._APPLICATION_LOGGER)
+    before = list(application.handlers)
+    propagate = application.propagate
+    try:
+        ingest_health_cli.route_diagnostics_away_from_the_product_stream()
+        installed = [handler for handler in application.handlers if handler not in before]
+        assert len(installed) == 1
+        assert type(installed[0].formatter) is ingest_health_cli.ExtraRenderingFormatter
+    finally:
+        application.handlers = before
+        application.propagate = propagate
 
 
 # ── 3. THE STRUCTURAL GUARD: PROJECTION AND SERVICE ARE DISTINGUISHABLE BY MACHINE ────────
@@ -330,3 +441,142 @@ def test_the_projection_sweep_bites_a_planted_extra(tmp_path: Path) -> None:
     }
 
     assert list(offenders) == ["src/modules/sentimento/infra/planted_projection_cli.py"]
+
+
+# ── 4. THE GUARANTEE: THE HANDLER, AND THE EXEMPTION LIST THAT CANNOT DRIFT FROM IT ───────
+
+
+def _handler_builders_imported_from_the_cli(tree: ast.Module) -> frozenset[str]:
+    """Every handler-builder name this module takes FROM `ingest_health_cli`, by AST.
+
+    Same parse, same measured reason as the universe sweep above: every importer in this tree
+    spells the import parenthesised across several lines, so a one-line regex sees none of them.
+    """
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or node.module != CLI_MODULE_NAME:
+            continue
+        imported.update(alias.name for alias in node.names if alias.name in SHARED_HANDLER_BUILDERS)
+    return frozenset(imported)
+
+
+def _service_handler_calls(tree: ast.Module) -> list[int]:
+    """Line numbers where this module CALLS a service handler builder by bare name."""
+    return sorted(
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in SERVICE_HANDLER_BUILDERS
+    )
+
+
+def _modules_installing_the_service_handler(root: Path) -> frozenset[str]:
+    """Return the modules that both IMPORT and CALL a builder whose handler renders `extra`.
+
+    ⛔ BOTH HALVES, AND THE `and` IS THE POINT. An import alone is not an installation: a module
+    could take the name and keep calling `build_stdout_handler`, which is `ADR-035/D3`'s
+    promotion done by half — and a guard that only read imports would call that module a service
+    process while its `stdout` stayed a projection. Measured: that exact mutant SURVIVED the
+    import-only version of this helper `[MEDIDO 2026-09-11, T-06.1 mutante M4]`.
+
+    `ingest_health_cli.py` is excluded by the import half: it DEFINES these builders and calls
+    them internally, but imports none of them — which is correct, because it is itself a
+    projection CLI whose `stdout` `ADR-008/DoD-2` hashes.
+    """
+    return frozenset(
+        relative
+        for relative, tree in _modules_importing_the_shared_builders(root).items()
+        if _handler_builders_imported_from_the_cli(tree) & SERVICE_HANDLER_BUILDERS
+        and _service_handler_calls(tree)
+    )
+
+
+def test_the_service_handler_is_taken_by_exactly_the_declared_service_processes() -> None:
+    """`CA-F6-1`: the exemption list and the installed handler are ONE fact, checked as one.
+
+    `ADR-035/D3`'s amendment, rule (c): a CLI that genuinely needs `extra` is PROMOTED — it
+    enters `DECLARED_SERVICE_PROCESSES` *and* installs `build_service_stdout_handler`. Adding
+    the name without switching that module's handler is a bypass wearing the clothes of
+    maintenance, and this `==` is what stops it landing: the two edits fail separately and pass
+    only together.
+
+    `ingest_health_cli.py` DEFINES the builders and imports none of them, so it is correctly
+    absent from both sides — it is itself a projection CLI, and `ADR-008/DoD-2` hashes exactly
+    its `stdout`.
+    """
+    assert _modules_installing_the_service_handler(SRC_ROOT) == DECLARED_SERVICE_PROCESSES
+
+
+def _builders_installed_on_a_logger(tree: ast.Module) -> list[tuple[int, str]]:
+    """`(line, builder name)` for every `<logger>.addHandler(<builder>())` in the module."""
+    installed: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "addHandler" or not node.args:
+            continue
+        argument = node.args[0]
+        if isinstance(argument, ast.Call) and isinstance(argument.func, ast.Name):
+            installed.append((node.lineno, argument.func.id))
+    return sorted(installed)
+
+
+def test_every_handler_a_service_process_installs_is_built_by_a_service_builder() -> None:
+    """WHICH LOGGER GOT IT, not merely that the name was called somewhere in the file.
+
+    The check above asks whether the module IMPORTS and CALLS a service builder. That pair is
+    enough to kill the promotion-done-by-half mutant, and it was measured killing it
+    `[MEDIDO 2026-09-11: mutante M4 replantado nos dois processos de servico, rc=1, killer
+     unico `test_the_service_handler_is_taken_by_exactly_the_declared_service_processes`]`.
+    What it cannot see is a call whose RESULT goes nowhere: a service process that calls
+    `build_service_stdout_handler()` on a throwaway logger while its own logger takes the
+    projection builder passes the pair and still ships a `stdout` that cannot print a counter —
+    measured as a SURVIVING mutant in the same gate `[MEDIDO 2026-09-11: mutante M4d,
+    `logging.getLogger('nowhere').addHandler(build_service_stdout_handler())` ao lado de
+    `logger.addHandler(build_stdout_handler())` em `collectors_cli.py`, rc=0, 0 killers]`.
+
+    So this asserts the destination: every handler either service process installs on a logger
+    comes from a SERVICE builder, and there is at least one — an empty list would pass
+    vacuously, which is the `rc=0` `ADR-012` names.
+    """
+    importers = _modules_importing_the_shared_builders(SRC_ROOT)
+
+    for service in sorted(DECLARED_SERVICE_PROCESSES):
+        installed = _builders_installed_on_a_logger(importers[service])
+        assert installed, service
+        for line, builder in installed:
+            assert builder in SERVICE_HANDLER_BUILDERS, f"{service}:{line} installs {builder}"
+
+
+def test_the_service_handler_sweep_bites_a_projection_cli_that_takes_it(tmp_path: Path) -> None:
+    """MORDE for the check above — a green that cannot turn red is the `rc=0` of `ADR-012`.
+
+    The planted module is the falsifier `ADR-035/D3`'s amendment names in writing: something
+    whose `stdout` is a projection and which nonetheless installs the service handler. If one
+    ever appears for real, the guarantee was hung on the wrong axis (a list of processes instead
+    of the destination of `stdout`), and `DECLARED_SERVICE_PROCESSES` stops being the right
+    question to ask.
+    """
+    planted = tmp_path / "src" / "modules" / "sentimento" / "infra"
+    planted.mkdir(parents=True)
+    (planted / "planted_service_handler_cli.py").write_text(
+        '"""A projection CLI taking the SERVICE handler — the promotion done by half."""\n'
+        "\n"
+        "import logging\n"
+        "\n"
+        f"from {CLI_MODULE_NAME} import build_service_stdout_handler\n"
+        "\n"
+        "logger = logging.getLogger(__name__)\n"
+        "\n\n"
+        "def report() -> None:\n"
+        '    """Emit the canonical line through a handler that is able to decorate it."""\n'
+        "    logger.addHandler(build_service_stdout_handler())\n"
+        '    logger.info("{}")\n',
+        encoding="utf-8",
+    )
+
+    taking = _modules_installing_the_service_handler(tmp_path / "src")
+
+    assert taking == frozenset({"src/modules/sentimento/infra/planted_service_handler_cli.py"})
+    assert not taking <= DECLARED_SERVICE_PROCESSES

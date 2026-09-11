@@ -32,6 +32,7 @@ import subprocess
 import time
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import psycopg
@@ -45,6 +46,7 @@ from src.modules.sentimento.infra.postgres_ingest_record_store import (
     NegativeWrittenCreditError,
     PostgresIngestRecordStore,
 )
+from src.modules.sentimento.use_cases.collector_status import collector_status_query
 from src.modules.sentimento.use_cases.ingest_health import ingest_health_query
 
 pytestmark = pytest.mark.skipif(
@@ -274,6 +276,66 @@ def test_an_open_run_and_a_run_settled_at_zero_are_distinguishable(
     assert store.writer_accounted_at("run-settled-at-zero") == _ACCOUNTED_AT
     by_id = {run.run_id: run for run in store.runs()}
     assert by_id["run-open"].n_written == by_id["run-settled-at-zero"].n_written == 0
+
+
+def test_the_writer_stamp_reaches_the_domain_object_the_uptime_formula_reads(
+    postgres_connection: psycopg.Connection,
+) -> None:
+    """`_SELECT_RUNS`'s 17th column arrives, in the right slot — the READ side of `ADR-035/D2`.
+
+    THE ONLY PRODUCTION PATH THAT CARRIES "closed" INTO `uptime_percent` IS THIS ONE, and until
+    this test existed nothing exercised it: `store.writer_accounted_at(run_id)` is a different
+    statement, the SQLite engine has no such column at all, and every `collector_status` test
+    hands the use case a fake source it builds by hand. Measured as a surviving mutant during
+    the `T-06.1`/`T-06.2` gate: replacing the column in `_SELECT_RUNS` with
+    `NULL AS writer_accounted_at` left the whole suite green
+    `[MEDIDO 2026-09-11: mutante N5, rc=0 sobre 4 arquivos de teste, 0 killers]` — and in
+    production that mutant reads EVERY run as open, so `uptimePercent` serves `null` for every
+    collector and the fix delivers nothing while the gate stays green.
+
+    `_ACCOUNTED_AT` differs from both timestamps of `_an_open_run`, so a column read out of
+    POSITION — the other way this `cast`-checked tuple can lie — cannot pass this assertion by
+    coincidence either.
+    """
+    store = _store(postgres_connection)
+    store.record_run(_an_open_run("run-open"))
+    store.record_run(_an_open_run("run-closed"))
+    store.credit_written("run-closed", 42, _ACCOUNTED_AT)
+
+    by_id = {run.run_id: run for run in store.runs()}
+
+    assert by_id["run-open"].writer_accounted_at is None
+    assert by_id["run-closed"].writer_accounted_at == _ACCOUNTED_AT
+    assert by_id["run-closed"].started_at == _an_open_run().started_at
+    assert by_id["run-closed"].ended_at == _an_open_run().ended_at
+
+
+def test_uptime_over_a_real_postgres_counts_the_closed_run_and_ignores_the_open_one(
+    postgres_connection: psycopg.Connection,
+) -> None:
+    """`ADR-035/D1` amendment, end to end over the engine production actually runs.
+
+    The formula is unit-tested against a fake source; what a fake source cannot prove is that
+    the "closed" it reads is the one the DATABASE stored. Here the writer credits one of two
+    runs of the same series and the percentage is `100.0` — the open run entering neither side —
+    which is the same shape measured against the live stack
+    `[MEDIDO 2026-09-11T12:55Z: premiumIndex 670/670 fechados com n_written > 0 -> 100,00,
+      contra 0,42 da formula antiga, n = 1.431 runs na janela]`.
+    """
+    store = _store(postgres_connection)
+    store.record_run(_an_open_run("run-open"))
+    store.record_run(_an_open_run("run-closed"))
+    store.credit_written("run-closed", 42, _ACCOUNTED_AT)
+
+    row = (
+        collector_status_query(store, now=datetime(2026, 9, 10, 21, 0, tzinfo=UTC))
+        .rows[0]
+        .to_dict()
+    )
+
+    assert row["uptimePercent"] == 100.0
+    assert row["n_runs_in_window"] == 2
+    assert row["statusDetail"] is None
 
 
 def test_a_negative_credit_is_refused_instead_of_silently_subtracting(
