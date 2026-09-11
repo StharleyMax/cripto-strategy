@@ -31,10 +31,10 @@ logger = logging.getLogger(__name__)
 # S1. A formatter carrying a timestamp would make the two fingerprints diverge every second,
 # and the falsifier of the whole ADR would become clock noise.
 #
-# `ADR-035/D3` did NOT relax that: the format string is untouched and a record with no `extra=`
-# still renders to exactly `%(message)s`. What changed is `ExtraRenderingFormatter` below, and
-# only for records the CALLER decorated — see the block above it for why the distinction lives
-# on the record rather than on a second handler.
+# `ADR-035/D3` did NOT relax that: the format string is untouched, and since the amendment of
+# `2026-09-11` the PROJECTION handler cannot render `extra` at all — `ExtraRenderingFormatter`
+# below reaches `stdout` only through `build_service_stdout_handler`, which no projection CLI
+# installs. See the block above that formatter for the hierarchy between the two layers.
 _STABLE_FORMAT: Final[str] = "%(message)s"
 
 # Diagnostics get the OPPOSITE treatment on purpose: they are for a human reading a terminal,
@@ -63,28 +63,42 @@ _USAGE: Final[str] = "uso: ingest_health_cli <caminho-do-store>"
 # concluded the counters did not exist; `ADR-035/D3` read the code and found they did. Both
 # observations were true — the instrumentation was there, the rendering was not.
 #
-# ⚠️ WHY THIS IS A PER-RECORD RULE AND NOT A SECOND HANDLER — a deviation from the LITERAL
-#    wording of `ADR-035/D3`, declared here instead of being quiet about it:
+# ⚠️ TWO LAYERS SINCE THE `2026-09-11` AMENDMENT OF `ADR-035/D3` (`D9`, owner), AND THE
+#    HIERARCHY BETWEEN THEM IS DECLARED RATHER THAN LEFT TO BE GUESSED:
 #
-# `ADR-035/D3` says "a troca e no handler do processo de servico (escritor, coletor), nunca no
-# handler de projecao". A SEPARATE handler only helps if the service processes are edited to
-# install it, and `single_writer_cli.py` / `collectors_cli.py` are owned by sibling tasks
-# running in parallel — the one thing `T-01.5` is forbidden to touch. So the distinction is
-# drawn where it CAN be drawn from here: on the RECORD, not on the handler.
+# `T-01.5` was forbidden to edit `single_writer_cli.py` / `collectors_cli.py`, so it drew the
+# projection/service line on the RECORD (pairs render only when the CALLER passed `extra=`)
+# instead of on the handler `ADR-035/D3` literally asked for, and declared the deviation here.
+# The amendment closes it WITHOUT deleting the guard that deviation bought:
 #
-# It is the same distinction seen from the other side. A projection line is
-# `logger.info(canonical_json_line)` with NO `extra=`; a service event is
-# `logger.info("event_name", extra={...})`. For a record with no caller-supplied attribute this
-# formatter returns EXACTLY what `logging.Formatter` returned, byte for byte, so the `sha256`
-# that `ADR-008/DoD-2` compares on both sides CANNOT move. The projection is not "probably
-# unaffected" — it is unaffected by construction.
+#   GUARANTEE = THE HANDLER. `build_service_stdout_handler` (this formatter) is installed by the
+#     declared service processes and by nobody else; `build_stdout_handler` and
+#     `build_stream_handler` are `logging.Formatter` and nothing more. A projection CLI is now
+#     STRUCTURALLY unable to put a pair on the hashed `stdout` — even if somebody writes
+#     `extra=` in it — because its handler holds no code that could render one.
 #
-# THE RISK THIS TRADES FOR, NAMED RATHER THAN HIDDEN: a separate handler would keep a PROJECTION
-# CLI silent even if it later grew an `extra=`; this one would print it and corrupt the hashed
-# bytes. That is a real regression path, so it gets a real guard —
-# `backend/tests/sentimento/test_ingest_health_extra_rendering.py` walks the AST of every module
-# importing these builders, subtracts the DECLARED service processes, and fails if any of the
-# rest hands `extra=` to its module logger.
+#   FALSIFIER = THE AST SWEEP, AND IT STAYS. `test_ingest_health_extra_rendering.py` walks every
+#     module importing these builders, subtracts the DECLARED service processes, and fails if
+#     any of the rest hands `extra=` to its module logger. It answers what the handler cannot:
+#     "is the separation still the REASON the projection is clean, or did somebody start
+#     emitting `extra` from the wrong side?" Its universe assertion is `==`, never `>=`, so a
+#     tenth module cannot be born outside the question — the allowlist erosion `CLAUDE.md`
+#     names. Deleting or loosening EITHER layer is a failure, not a simplification.
+#
+#   WHEN THEY DISAGREE (amendment item 3): (a) a divergence is ALWAYS a rejection — one layer
+#     green never excuses the other red; (b) about BEHAVIOUR the handler decides, because the
+#     bytes on `stdout` are what `ADR-008/DoD-2` hashes; (c) about the FIX the handler decides
+#     too, inverted — a projection CLI that genuinely needs `extra` is PROMOTED to a service
+#     process, entering `DECLARED_SERVICE_PROCESSES` *and* installing
+#     `build_service_stdout_handler`. Adding a name to the exemption list without switching that
+#     module's handler is forbidden: it is a bypass wearing the clothes of maintenance.
+#
+# THE AXIS IS THE DESTINATION OF `stdout`, NOT THE NAME OF THE PROCESS — and `T-06.1` had to
+# make the `stderr` half of that choice EXPLICIT instead of leaving it implicit (`plano 06`
+# item 6.1). CHOSEN: `route_diagnostics_away_from_the_product_stream` keeps rendering `extra`,
+# because `stderr` feeds no projection, is hashed by nobody, and is read by the operator this
+# whole decision exists to inform. What may never render a pair is a `stdout` whose bytes feed
+# the `sha256` of `ADR-008/DoD-2`.
 _EXTRA_SEPARATOR: Final[str] = " "
 
 # The attribute names `logging` itself owns, DERIVED from a throwaway record instead of typed
@@ -125,15 +139,45 @@ class ExtraRenderingFormatter(logging.Formatter):
 
 
 def build_stream_handler(stream: TextIO, log_format: str) -> logging.StreamHandler[TextIO]:
-    """Build a handler on `stream` with an explicit format — no global state touched."""
+    """Build a PURE handler on `stream` with an explicit format — no global state touched.
+
+    Pure means `logging.Formatter` and nothing else: a record the caller decorated with
+    `extra={}` renders here EXACTLY as it did before `ExtraRenderingFormatter` was written. That
+    is the structural half of `ADR-035/D3`'s `2026-09-11` amendment — the projection side cannot
+    leak a pair into hashed bytes because it holds no code that could produce one.
+    """
+    handler: logging.StreamHandler[TextIO] = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter(log_format))
+    return handler
+
+
+def build_service_stream_handler(stream: TextIO, log_format: str) -> logging.StreamHandler[TextIO]:
+    """Build a handler on `stream` that RENDERS the caller's `extra={}` — the service side.
+
+    Used for the two destinations that feed no projection: the `stdout` of a declared service
+    process (through `build_service_stdout_handler`) and the `stderr` of diagnostics.
+    """
     handler: logging.StreamHandler[TextIO] = logging.StreamHandler(stream)
     handler.setFormatter(ExtraRenderingFormatter(log_format))
     return handler
 
 
 def build_stdout_handler(stream: TextIO | None = None) -> logging.StreamHandler[TextIO]:
-    """Build the handler that puts the product output on `stdout` with the stable format."""
+    """Build the PROJECTION handler: the stable format on `stdout`, `extra` never rendered."""
     return build_stream_handler(stream or sys.stdout, _STABLE_FORMAT)
+
+
+def build_service_stdout_handler(stream: TextIO | None = None) -> logging.StreamHandler[TextIO]:
+    """Build the SERVICE handler: the same stable format on `stdout`, with `extra` rendered.
+
+    ⛔ INSTALLING THIS IS WHAT MAKES A MODULE A SERVICE PROCESS — the two acts are one act.
+    A module that installs it must also be listed in `DECLARED_SERVICE_PROCESSES`
+    (`test_ingest_health_extra_rendering.py`), and a module listed there must install it; the
+    sweep checks both directions, because a list only one side looks at is a list that only
+    grows. Nothing whose `stdout` is consumed by another program — hashed, `jq`-ed, diffed —
+    may install it: that module is a projection CLI whatever its process lifetime looks like.
+    """
+    return build_service_stream_handler(stream or sys.stdout, _STABLE_FORMAT)
 
 
 def route_diagnostics_away_from_the_product_stream() -> None:
@@ -174,7 +218,7 @@ def route_diagnostics_away_from_the_product_stream() -> None:
     this module changes no logger at all.
     """
     application = logging.getLogger(_APPLICATION_LOGGER)
-    application.addHandler(build_stream_handler(sys.stderr, _DIAGNOSTIC_FORMAT))
+    application.addHandler(build_service_stream_handler(sys.stderr, _DIAGNOSTIC_FORMAT))
     application.propagate = False
 
 

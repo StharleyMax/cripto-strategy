@@ -49,8 +49,15 @@ def _a_run(
     n_written: int = 1,
     source: str = "binance-futures",
     endpoint: str = "/fapi/v1/time",
+    closed: bool = True,
 ) -> IngestRun:
-    """Build one `IngestRun`, varying only the fields each `ADR-030` example turns on."""
+    """Build one `IngestRun`, varying only the fields each `ADR-030` example turns on.
+
+    `closed` is `ADR-035/D2`'s notion, and it defaults to `True` so that every example written
+    before the `2026-09-11` amendment keeps describing what it was written to describe: a run the
+    writer accounted for. `closed=False` is the OPEN run — the one that enters neither side of
+    `uptimePercent`.
+    """
     return IngestRun(
         run_id=run_id,
         source=source,
@@ -68,6 +75,7 @@ def _a_run(
         clock_skew_ms=0,
         started_at=ended_at,
         ended_at=ended_at,
+        writer_accounted_at=ended_at if closed else None,
     )
 
 
@@ -164,11 +172,23 @@ def test_f4_falsifier_no_status_outside_the_two_emitted_values() -> None:
         assert row["status"] in {"ATIVO", "PARADO"}
 
 
-# ── D2 — uptimePercent over the trailing 24h window, not the last run ──────────────────────
+# ── D2 — uptimePercent over the trailing 24h window, AMENDED BY `ADR-035/D1` (2026-09-11) ──
+#
+# The amendment (`D12`, owner) replaced `100 · Σ n_written / Σ n_expected` with "the percentage
+# of the window's CLOSED runs whose `n_written > 0`". Everything `ADR-030` D2 said about the
+# WINDOW survives untouched — it is the ratio inside the window that changed, because the old
+# numerator and denominator were in different units (rows against symbols, or against re-read
+# bars) and gave healthy collectors structural ceilings of 0,89% and 33,3%.
 
 
-def test_d2_example_uptime_over_the_window_differs_from_the_last_run_alone() -> None:
-    """`ADR-030` D2 example: 23 `ACCEPTED` (1/1) + 1 `REJECTED` (0/1) in 24h -> 95.83, not 100."""
+def test_d2_amended_uptime_is_the_share_of_closed_runs_that_persisted_rows() -> None:
+    """`ADR-035/D1` amendment: 23 closed runs with rows + 1 closed with none -> 95.83.
+
+    Deliberately the SAME 95,83 the pre-amendment example produced, from a different arithmetic:
+    under the old formula it was `23/24` of ROWS over EXPECTATIONS; here it is `23/24` of closed
+    runs that persisted anything. Reusing the number keeps this test comparable to the `ADR-030`
+    D2 example it descends from.
+    """
     runs = tuple(
         _a_run(run_id=f"run-{i:04d}", ended_at=f"2026-09-05T{i:02d}:00:00.000Z", verdict="ACCEPTED")
         for i in range(23)
@@ -187,10 +207,69 @@ def test_d2_example_uptime_over_the_window_differs_from_the_last_run_alone() -> 
     row = collector_status_query(_FakeSource(runs), now=now).rows[0].to_dict()
     assert row["uptimePercent"] == pytest.approx(95.83)
     assert row["n_runs_in_window"] == 24
+    assert row["statusDetail"] is None
+
+
+def test_d2_amended_a_healthy_collector_whose_n_expected_counts_symbols_reads_100() -> None:
+    """THE DEFECT THIS TASK EXISTS FOR, as an assertion instead of a paragraph.
+
+    `premiumIndex` records `n_expected = 900` (symbols asked for) against 8 rows persisted
+    (`collector_run_mapping.py:186`), so the old formula reported `0,89%` for a collector doing
+    exactly what it is supposed to do `[MEDIDO 2026-09-11T11:26Z contra a stack viva: 0,36 sobre
+    n = 582 runs fechados de premiumIndex]`. The amended formula reads the run as CLOSED and
+    HAVING PERSISTED, which is the question an operator was asking all along.
+
+    It also pins that `n_expected` is not read at all any more: `9_000` here would move any
+    formula that touched it, and moves nothing.
+    """
+    runs = tuple(
+        _a_run(
+            run_id=f"run-{i:04d}",
+            ended_at=f"2026-09-05T{i:02d}:00:00.000Z",
+            n_expected=9_000,
+            n_written=8,
+        )
+        for i in range(3)
+    )
+    row = collector_status_query(_FakeSource(runs), now=_NOW).rows[0].to_dict()
+    assert row["uptimePercent"] == 100.0
+
+
+def test_d2_amended_a_closed_run_that_persisted_nothing_lowers_the_percentage() -> None:
+    """MORDE: the formula must be able to report less than 100, or it measures nothing.
+
+    The falsifier `plano 06` writes for this item is a HEALTHY collector reading below 100 with
+    no closed-and-empty run to explain it. This is the other side: a closed run with
+    `n_written = 0` is exactly what must pull the number down, and it does — `50.0` over two
+    closed runs.
+    """
+    runs = (
+        _a_run(run_id="run-0000", ended_at="2026-09-05T10:00:00.000Z", n_written=0),
+        _a_run(run_id="run-0001", ended_at="2026-09-05T12:00:00.000Z", n_written=4),
+    )
+    row = collector_status_query(_FakeSource(runs), now=_NOW).rows[0].to_dict()
+    assert row["uptimePercent"] == 50.0
+
+
+def test_d2_amended_an_open_run_enters_neither_side_of_the_percentage() -> None:
+    """`ADR-035/D1` amendment, literal: "Run aberto nao entra em nenhum dos dois lados".
+
+    Two runs in the window, only one closed and that one persisted rows. Counting the open run
+    as a failure would blame the collector for the writer's lag (50.0); counting it as a success
+    would credit rows nobody persisted. Both are wrong; it is simply not part of the question.
+    """
+    runs = (
+        _a_run(run_id="run-closed", ended_at="2026-09-05T10:00:00.000Z", n_written=4),
+        _a_run(run_id="run-open", ended_at="2026-09-05T12:00:00.000Z", n_written=0, closed=False),
+    )
+    row = collector_status_query(_FakeSource(runs), now=_NOW).rows[0].to_dict()
+    assert row["uptimePercent"] == 100.0
+    assert row["n_runs_in_window"] == 2
+    assert row["statusDetail"] is None
 
 
 def test_f6_falsifier_uptime_is_not_just_the_last_runs_ratio() -> None:
-    """`ADR-030` F-6: >=2 runs of distinct ratios in the window -> uptime != the last run ratio."""
+    """`ADR-030` F-6: >=2 runs of distinct outcomes in the window -> uptime != the last run's."""
     runs = (
         _a_run(
             run_id="run-0000",
@@ -206,21 +285,58 @@ def test_f6_falsifier_uptime_is_not_just_the_last_runs_ratio() -> None:
     assert row["uptimePercent"] != last_run_ratio
 
 
-def test_d2_no_runs_in_window_yields_null_not_zero() -> None:
-    """`ADR-030` D2: nothing expected in the window -> `null`, never a fabricated `0`."""
+# ── D2 — THE TWO ZEROS OF THE DENOMINATOR, AND THEY ARE DIFFERENT FACTS ───────────────────
+
+
+def test_d2_no_runs_in_window_yields_null_with_the_mute_collector_detail() -> None:
+    """`ADR-030` D2: nothing in the window -> `null`, never a fabricated `0` — plus the reason."""
     old_run = _a_run(run_id="run-old", ended_at="2026-08-01T00:00:00.000Z")
     row = collector_status_query(_FakeSource((old_run,)), now=_NOW).rows[0].to_dict()
     assert row["n_runs_in_window"] == 0
     assert row["uptimePercent"] is None
+    assert row["statusDetail"] == "Nenhum run encerrado nas últimas 24 h."
 
 
-def test_d2_no_clamp_above_100_is_a_visible_store_defect() -> None:
-    """`ADR-030` D2: `n_written > n_expected` yields `> 100`, unclamped — a store defect shown."""
+def test_d2_runs_in_window_but_none_closed_is_distinguishable_from_a_mute_collector() -> None:
+    """`CA-F6-5`: the two `null`s are told apart by fields ALREADY on the wire (`D7`).
+
+    This is `forceOrder` today — 3 runs in the window, 0 closed
+    `[MEDIDO 2026-09-11T11:26Z contra a stack viva]`. Without the detail, this row and the mute
+    collector above would both serve a bare `null`, which trades one ambiguous `rc=0` for another
+    (`ADR-012`). The pair of assertions below is the whole disambiguation: `n_runs_in_window`
+    separates the two states, `statusDetail` names which one this is, and NEITHER is a new field.
+    """
+    runs = tuple(
+        _a_run(
+            run_id=f"run-{i:04d}",
+            ended_at=f"2026-09-05T1{i}:00:00.000Z",
+            n_written=0,
+            closed=False,
+        )
+        for i in range(3)
+    )
+    row = collector_status_query(_FakeSource(runs), now=_NOW).rows[0].to_dict()
+    assert row["uptimePercent"] is None
+    assert row["n_runs_in_window"] == 3
+    assert row["statusDetail"] == (
+        "3 run(s) na janela, nenhum fechado pelo escritor: uptime não medível."
+    )
+
+
+def test_d2_the_percentage_is_bounded_because_it_counts_runs_and_not_rows() -> None:
+    """What the amendment REMOVED: `n_written > n_expected` can no longer inflate the metric.
+
+    `ADR-030` D2 deliberately left the old ratio unclamped, so a store defect showed as `200.0`.
+    Under the amended formula that observation is impossible BY CONSTRUCTION — the numerator is a
+    subset of the denominator — so the test that pinned it is replaced rather than deleted: the
+    same input now reads `100.0`, and the "rows against expectation" question moved to
+    `n_returned`/`n_written`, which stay in the canonical projection (`ADR-008/D3`).
+    """
     over_written = _a_run(
         run_id="run-over", ended_at="2026-09-05T12:00:00.000Z", n_expected=1, n_written=2
     )
     row = collector_status_query(_FakeSource((over_written,)), now=_NOW).rows[0].to_dict()
-    assert row["uptimePercent"] == 200.0
+    assert row["uptimePercent"] == 100.0
 
 
 # ── D3/D4 — retention/resilience, gated only by status ─────────────────────────────────────

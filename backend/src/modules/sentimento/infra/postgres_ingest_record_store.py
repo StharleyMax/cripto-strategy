@@ -91,8 +91,27 @@ from src.modules.sentimento.domain.ingest_record import IngestGap, IngestRun
 # `_SELECT_GAPS` ASSERT the query produces, and the single `cast` per row (`runs`/`gaps` below)
 # makes `mypy` check the ARITY and the ORDER against the dataclass constructor — same idiom as
 # `sqlite_ingest_record_store.py:21-24`.
+# The 17th member is `writer_accounted_at` (`ADR-035/D2`), TABLE-only and nullable: `_SELECT_RUNS`
+# reads it LAST so this positional `cast` keeps matching `IngestRun`'s field order, and
+# `_UPSERT_RUN` still does not name it — the column is written by `credit_written` alone.
 _RunRow = tuple[
-    str, str, str, str, int, int, int, str, int | None, str, int, str, str, int, str, str
+    str,
+    str,
+    str,
+    str,
+    int,
+    int,
+    int,
+    str,
+    int | None,
+    str,
+    int,
+    str,
+    str,
+    int,
+    str,
+    str,
+    str | None,
 ]
 _GapRow = tuple[str, str, str, str, str, int, str, str]
 
@@ -197,7 +216,7 @@ _UPSERT_GAP = """
 _SELECT_RUNS = """
     SELECT run_id, source, endpoint, "window", n_expected, n_returned, n_written, verdict,
            api_code, src_sha256, weight_used, observer_id, observer_region, clock_skew_ms,
-           started_at, ended_at
+           started_at, ended_at, writer_accounted_at
     FROM md.ingest_run ORDER BY started_at, run_id
 """
 

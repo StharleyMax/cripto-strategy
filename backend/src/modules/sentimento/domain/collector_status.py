@@ -146,7 +146,15 @@ class CollectorStatusRow:
     endpoint: str
     status: CollectorStatus
     uptime_percent: float | None
-    status_detail: None
+    # `str | None` since `T-06.2`, and the widening is deliberate rather than incidental: under
+    # `ADR-035/D1`'s amendment a `null` `uptime_percent` covers two unrelated facts — no run at
+    # all in the window, or runs that the writer closed none of — and a `null` that means two
+    # things is the ambiguous `rc=0` of `ADR-012` wearing a different type. `n_runs_in_window`
+    # (below, already served) separates them; this field carries the REASON, in pt-BR, because
+    # it is operator microcopy (`SPEC-001` §3.8). It is NOT a new field — `D7` refused
+    # DUPLICATING the metric, not using a field that is already in the envelope, already
+    # validated as a nullable string by the front and already rendered by it.
+    status_detail: str | None
     retention: Retention
     resilience: Resilience
     n_runs_total: int

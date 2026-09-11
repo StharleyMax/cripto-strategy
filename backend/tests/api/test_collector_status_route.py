@@ -19,6 +19,8 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -88,6 +90,39 @@ def test_get_collector_status_serves_the_adr_030_envelope_over_the_wire(tmp_path
     # `ADR-030` D5: the 6 `CollectorRow`-verbatim fields never leak an `IngestRun`-only column.
     assert "started_at" not in row
     assert "ended_at" not in row
+
+
+def test_the_two_null_uptimes_are_told_apart_on_the_wire(tmp_path: Path) -> None:
+    """`CA-F6-5`: `uptimePercent: null` never arrives mute — over HTTP, not in a unit test.
+
+    THE SQLITE ENGINE HAS NO `writer_accounted_at` COLUMN AND NO WRITER CREDITING IT, so every
+    run it serves is OPEN by `ADR-035/D2`'s definition. That is not a gap in this test, it is
+    exactly the state `forceOrder` is in against the live stack — 3 runs in the window, 0 closed
+    `[MEDIDO 2026-09-11T11:26Z]` — reachable here without a Postgres.
+
+    What must reach the operator is WHICH null it is, and it does so through two fields that
+    were already on the wire before this task (`D7`: "sem campo novo e sem versao de rota"):
+    `n_runs_in_window` separates "mute collector" from "nothing closed", and `statusDetail`
+    names it in pt-BR (`SPEC-001` §3.8). A bare null for both would be `ADR-012`'s ambiguous
+    `rc=0` wearing a percentage.
+    """
+    store_path = tmp_path / "ingest.sqlite3"
+    store = SqliteIngestRecordStore(store_path)
+    store.initialise()
+    recent = datetime.now(UTC) - timedelta(minutes=5)
+    stamp = recent.strftime("%Y-%m-%dT%H:%M:%S.") + f"{recent.microsecond // 1000:03d}Z"
+    store.record_run(replace(build_run(0), started_at=stamp, ended_at=stamp))
+
+    with _served(create_app(store_path=store_path)) as port:
+        status, raw = _get(port, "/api/v1/collector-status")
+
+    assert status == 200
+    row = json.loads(raw)["rows"][0]
+    assert row["uptimePercent"] is None
+    assert row["n_runs_in_window"] == 1
+    assert row["statusDetail"] == (
+        "1 run(s) na janela, nenhum fechado pelo escritor: uptime não medível."
+    )
 
 
 def test_get_collector_status_refuses_the_connection_when_the_process_is_down(

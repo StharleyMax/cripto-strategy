@@ -21,9 +21,11 @@ from pathlib import Path
 import pytest
 
 from src.modules.sentimento.domain.ingest_record import (
+    INGEST_HEALTH_RUN_COLUMNS,
     KNOWN_VERDICTS,
     VERDICTS_SPELLED_IN_THE_SPEC,
     IngestGap,
+    IngestHealthReport,
 )
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
 from src.modules.sentimento.use_cases.ingest_health import (
@@ -405,3 +407,37 @@ def test_importing_the_cli_module_hijacks_nobody_s_logging() -> None:
     )
 
     assert completed.stdout.strip() == "0 True []"
+
+
+# ── 5. `T-06.2`: A FIELD ON `IngestRun` IS NOT A COLUMN OF THE PROJECTION ──────────────────
+
+
+def test_the_writer_accounting_field_never_reaches_the_canonical_projection() -> None:
+    """`RS-2`/`NG-6`: `writer_accounted_at` moves no `sha256` — engine-free, so it always runs.
+
+    `T-06.2` had to make "closed" (`ADR-035/D2`) readable by `collector_status_query` without a
+    query per run, and put it on `IngestRun` as a TABLE-only field. The falsifier that ABORTS
+    that task is this one: if the field reached `canonical_projection()`, the fingerprint of
+    every report ever emitted would change, and the two sides that compare `sha256` PRECISELY to
+    prove they are equal (`ADR-008/DoD-2`) would start disagreeing with nothing naming the cause.
+
+    Why this exists next to `test_postgres_ingest_record_store_credits_the_run.py`'s sibling: the
+    sibling needs a live Postgres, so it is not what a developer runs. This one is a dataclass
+    and a hash, so it bites in the ordinary suite — and the property it defends is a property of
+    `_project_run_dict` (which walks `INGEST_HEALTH_RUN_COLUMNS`, never `fields(IngestRun)`),
+    not of any engine.
+    """
+    open_run = build_run(0)
+    closed_run = replace(open_run, writer_accounted_at="2026-09-11T11:26:00.000Z")
+
+    open_report = IngestHealthReport(runs=(open_run,), gaps=())
+    closed_report = IngestHealthReport(runs=(closed_run,), gaps=())
+
+    assert open_run.writer_accounted_at is None
+    assert closed_report.fingerprint() == open_report.fingerprint()
+    assert "writer_accounted_at" not in closed_report.canonical_projection()
+    assert "writer_accounted_at" not in INGEST_HEALTH_RUN_COLUMNS
+    assert len(INGEST_HEALTH_RUN_COLUMNS) == 15
+    projected_runs = closed_report.to_envelope()["runs"]
+    assert isinstance(projected_runs, list)
+    assert set(projected_runs[0]) == set(INGEST_HEALTH_RUN_COLUMNS)
