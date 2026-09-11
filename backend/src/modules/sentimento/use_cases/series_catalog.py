@@ -57,9 +57,11 @@ content may change here, form may not).
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Final
 
 from src.modules.sentimento.domain.cvd_source_catalog import build_cvd_source_catalog_entries
+from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
 from src.modules.sentimento.domain.open_interest_catalog import open_interest_catalog_entries
 from src.modules.sentimento.domain.price_source_catalog import build_price_series_entries
@@ -70,6 +72,7 @@ from src.modules.sentimento.domain.series_catalog import (
     build_series_catalog,
 )
 from src.modules.sentimento.domain.series_key import SeriesKey
+from src.modules.sentimento.use_cases.collector_series_mapping import INITIAL_SYMBOLS
 
 logger = logging.getLogger(__name__)
 
@@ -77,22 +80,56 @@ logger = logging.getLogger(__name__)
 # `SPEC-003` §3.4 fixes it as the `"query"` field's value.
 SERIES_CATALOG_QUERY_NAME: Final[str] = "series_catalog"
 
-# The one instrument every catalog-builder module already populates rows for
-# (`open_interest_catalog.py`'s own default, `"BTCUSDT"`) — no second instrument exists in this
-# codebase yet, so this use case names it explicitly rather than re-guessing a default.
+# The instrument every catalog-builder module already defaults to (`open_interest_catalog.py`'s
+# own default). It is NOT "the universe" — it is the head of `PILOT_INSTRUMENT_IDS` below, kept
+# as the single-instrument default of `list_series_catalog` so that function stays exactly what
+# its tests call it: a pure function of ONE `instrument_id`.
 _INSTRUMENT_ID: Final[str] = "BTCUSDT"
 
-# The base-asset unit for `_INSTRUMENT_ID` — `cvd_source_catalog`'s builders require it as an
-# explicit argument, never a hardcoded default inside that module (`ADR-001`: the summed
-# quantity is denominated in the instrument's OWN base asset, and a hardcoded `"BTC"` there
-# would silently mislabel a future non-BTC instrument). `open_interest_catalog.py` hardcodes the
-# same value, `"BTC"`, for the same instrument, internally.
+# ── THE SERVED CATALOG COVERED 1 INSTRUMENT WHILE THE WRITER WROTE 4 ────────────────────────
 #
-# RENAMED from `_CVD_UNIT` by `T-01.6`: it now feeds a SECOND builder,
-# `build_klines_volume_entry`, whose row is `denom="base"` for the same reason — so a name that
-# said "CVD" would mislabel half its own call sites. The VALUE is unchanged, so no
-# `series_key_id` moves: a rename of a module-private constant is invisible on the wire.
-_BASE_ASSET_UNIT: Final[str] = "BTC"
+# `INITIAL_SYMBOLS` (`collector_series_mapping.py`) is the set the COLLECTOR writes rows for,
+# and `md.series` in production carries exactly those four
+# `[MEDIDO 2026-09-11: docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy
+# -At -c "select count(distinct symbol) from md.series;" -> 4; symbols BTCUSDT, ETHUSDT,
+# LINKUSDT, SOLUSDT, n=4]`. The served catalog was built by `list_series_catalog()` with its
+# single-instrument default, so THREE of the four symbols had no catalog row at all, and
+# `/api/v1/series-history` answered `422 UnknownSeriesKeyIdError` for `series_key_id`s whose
+# rows were sitting in the table — the failure `collector_series_mapping.py`'s own
+# `_KLINES_VOLUME_VERIFIED_BY` comment names, arriving through the instrument term instead of
+# through `verified_by`.
+#
+# This is CONFIGURATION, not an architecture choice: the universe was already declared twice —
+# by the owner (`SPEC-007` §0.1, literal: "no piloto estamos rodando 4 symbols, quando virar n
+# vamos chegar a 10" `[PREMISSA-OWNER: 2026-09-10]`) and, in code, by `INITIAL_SYMBOLS`. So the
+# reader REUSES the writer's own set rather than declaring a second list that could drift from
+# it: one list means the two sides cannot disagree about which instruments exist.
+#
+# ORDER IS FORM, and `RS-1` forbids changing form here: `_INSTRUMENT_ID` stays FIRST and the
+# rest follow sorted, so every row that already had an index in `"entries"` keeps it and the
+# new instruments are APPENDED — the same reasoning `T-01.6` used to append `klines_volume`
+# instead of inserting it.
+PILOT_INSTRUMENT_IDS: Final[tuple[str, ...]] = (
+    _INSTRUMENT_ID,
+    *sorted(INITIAL_SYMBOLS - {_INSTRUMENT_ID}),
+)
+
+# ── `_BASE_ASSET_UNIT` IS GONE, AND THE LITERAL IT HELD WAS A DEFECT ────────────────────────
+#
+# It read `_BASE_ASSET_UNIT: Final[str] = "BTC"` and was passed to
+# `build_cvd_source_catalog_entries` and `build_klines_volume_entry` for WHATEVER
+# `instrument_id` this function was called with. Both builders require `unit` from the caller
+# precisely so it is never hardcoded — `cvd_source_catalog.py:190` ("the summed quantity is in
+# the instrument's OWN base asset") and `klines_volume_catalog.py` ("the base asset of
+# `ETHUSDT` is `ETH`, and a hardcoded `"BTC"` would silently mislabel every non-`BTC`
+# instrument"). This module reintroduced the literal one layer above them, so
+# `list_series_catalog("ETHUSDT")` published ETH volume and ETH CVD labelled `unit="BTC"`.
+#
+# The unit is now DERIVED from the instrument, by the same `domain/instrument.py::base_asset`
+# the WRITER uses (`collector_series_mapping.build_klines_to_rows`) — which is what makes the
+# two sides land on the same `series_key_id` instead of on two that merely look alike. For
+# `BTCUSDT` the derived value is `"BTC"`, byte-identical to the old literal, so no existing
+# row's `series_key_id` moves.
 
 # `verified_by` names the test that empirically backs a `SeriesKey` (`SPEC-001` §2.1's fifteenth
 # term) — the same convention `open_interest_catalog.py` already hardcodes in PRODUCTION code
@@ -135,18 +172,47 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
     """
     entries: list[SeriesCatalogEntry] = [
         *build_cvd_source_catalog_entries(
-            instrument_id, unit=_BASE_ASSET_UNIT, verified_by=_CVD_VERIFIED_BY
+            instrument_id, unit=base_asset(instrument_id), verified_by=_CVD_VERIFIED_BY
         ),
         *build_price_series_entries(instrument_id, verified_by=_PRICE_VERIFIED_BY),
         *open_interest_catalog_entries(instrument_id).entries,
         build_klines_volume_entry(
-            instrument_id, unit=_BASE_ASSET_UNIT, verified_by=_KLINES_VOLUME_VERIFIED_BY
+            instrument_id, unit=base_asset(instrument_id), verified_by=_KLINES_VOLUME_VERIFIED_BY
         ),
     ]
     # DEBUG, not INFO — same reasoning `ingest_health_query` already documents: this read path
     # is not a byte contract of its own, but a library that logs at INFO by default imposes its
     # volume on every host regardless of whether anyone asked.
     logger.debug("series_catalog_query_read", extra={"n_entries": len(entries)})
+    return build_series_catalog(entries)
+
+
+def list_pilot_series_catalog(
+    instrument_ids: Sequence[str] = PILOT_INSTRUMENT_IDS,
+) -> SeriesCatalog:
+    """Concatenate `list_series_catalog` over the PILOT universe — the catalog the API serves.
+
+    This is the function `src/main` wires, and the reason it exists is measured above: the
+    collector writes `md.series` rows for four instruments and the served catalog described
+    one, so three quarters of what was on disk was unaddressable by `series_key_id`.
+
+    `build_series_catalog` re-validates "UMA linha por `SeriesKey`" (`SPEC-001` §3.3) over the
+    CONCATENATION, not merely inside each instrument's own catalog: two instruments cannot
+    collide (`instrument_id` is a term of the key), but a repeated entry in `instrument_ids`
+    would, and it raises `DuplicateSeriesKeyError` here instead of publishing the row twice.
+
+    The unit of each row is derived per instrument by `list_series_catalog`, so `ETHUSDT`'s
+    volume and CVD rows carry `unit="ETH"` — never the old hardcoded `"BTC"`.
+    """
+    entries: list[SeriesCatalogEntry] = [
+        entry
+        for instrument_id in instrument_ids
+        for entry in list_series_catalog(instrument_id).entries
+    ]
+    logger.debug(
+        "series_catalog_pilot_read",
+        extra={"n_entries": len(entries), "n_instruments": len(tuple(instrument_ids))},
+    )
     return build_series_catalog(entries)
 
 

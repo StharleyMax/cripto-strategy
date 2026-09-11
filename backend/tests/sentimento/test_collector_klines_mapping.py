@@ -19,8 +19,6 @@ taken at that minute could have seen, filed as though it had settled.
 
 from __future__ import annotations
 
-import pytest
-
 from src.modules.sentimento.domain.klines_volume_catalog import (
     KLINES_VOLUME_METRIC,
     build_klines_volume_entry,
@@ -33,12 +31,9 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     KLINES_OBSERVER_ID,
 )
 from src.modules.sentimento.use_cases.collector_series_mapping import (
-    INITIAL_SYMBOLS,
     KLINES_BUCKET_WIDTH_MS,
-    SymbolNotQuotedInUsdtError,
     build_klines_to_rows,
     is_closed_bucket,
-    klines_base_asset,
 )
 
 # The `verified_by` `use_cases/series_catalog.py` (`T-01.6`) has to register the SERVED entry
@@ -281,29 +276,3 @@ def test_the_universe_is_a_parameter_so_an_operator_can_narrow_it() -> None:
     now = _now_with_the_last_bucket_still_open()
     assert to_rows(now, "BTCUSDT", _measured_page())
     assert to_rows(now, "ETHUSDT", _measured_page()) == ()
-
-
-@pytest.mark.parametrize(
-    ("symbol", "base"),
-    [("BTCUSDT", "BTC"), ("ETHUSDT", "ETH"), ("SOLUSDT", "SOL"), ("LINKUSDT", "LINK")],
-)
-def test_the_base_asset_is_read_off_the_usd_m_naming_rule(symbol: str, base: str) -> None:
-    """Every member of `INITIAL_SYMBOLS` resolves to its own base asset."""
-    assert klines_base_asset(symbol) == base
-
-
-def test_every_symbol_of_the_initial_universe_has_a_readable_base_asset() -> None:
-    """No member of the declared universe can reach the mapping and blow up on `unit`."""
-    assert all(klines_base_asset(symbol) for symbol in INITIAL_SYMBOLS)
-
-
-@pytest.mark.parametrize("symbol", ["BTCBUSD", "USDT", "", "BTC"])
-def test_a_symbol_whose_base_asset_cannot_be_read_is_refused_not_guessed(symbol: str) -> None:
-    """Refusal, never a guess: a wrong `unit` is a silently DIFFERENT `series_key_id`.
-
-    Morde: fall back to `"BTC"` (or to the symbol itself) and a `BTCBUSD` page would be
-    published under an identity nobody declared, discoverable only by someone noticing a chart
-    with two markets summed into it.
-    """
-    with pytest.raises(SymbolNotQuotedInUsdtError):
-        klines_base_asset(symbol)
