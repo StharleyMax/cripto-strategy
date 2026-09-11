@@ -8,6 +8,14 @@ expected to raise on a poison message. `T-02.5` is the task that wires the first
 writer, must stay unacked in the Pending Entries List (`ADR-002/D5`'s single writer keeps
 running), and the caller decides how to REPORT that (`on_rejected`) — this adapter only decides
 that it must not propagate and stop the batch.
+
+`ADR-035/D2` adds a SECOND injected reader, `decode_run_id`, for the same reason the row decoder
+is injected: this module still names no wire schema. It is separate from `Decoder` rather than
+folded into it so that the run accounting is OPTIONAL by construction — a caller that does not
+inject it gets `run_id=None` on every entry and the writer credits nothing, which is exactly
+what a deployment whose producers are not yet wired to `ADR-035` should observe. A `run_id` that
+will not decode is the SAME poison as a row that will not decode (`B7`): the whole entry is
+dropped from the batch and stays in the PEL, never half-accepted with the run silently missing.
 """
 
 from __future__ import annotations
@@ -20,11 +28,17 @@ from src.modules.sentimento.infra.series_row_wire import SeriesRowWireError
 from src.modules.sentimento.use_cases.run_single_writer import QueuedSeriesRow
 
 Decoder = Callable[[Mapping[bytes, bytes]], SeriesRow]
+RunIdDecoder = Callable[[Mapping[bytes, bytes]], str | None]
 RejectedMessageHandler = Callable[[bytes, SeriesRowWireError], None]
 
 
 def _ignore_rejected_message(_entry_id: bytes, _error: SeriesRowWireError) -> None:
     """Default `on_rejected`: a caller that cares about poison messages injects its own."""
+
+
+def _no_run_id(_fields: Mapping[bytes, bytes]) -> None:
+    """Default `decode_run_id`: no producer is wired to `ADR-035/D2` unless a caller says so."""
+    return None
 
 
 class UnexpectedEntryIdTypeError(TypeError):
@@ -59,6 +73,7 @@ class RedisSeriesWriteQueue:
         group: RedisStreamConsumerGroup,
         decode: Decoder,
         *,
+        decode_run_id: RunIdDecoder = _no_run_id,
         on_rejected: RejectedMessageHandler = _ignore_rejected_message,
     ) -> None:
         """Bind to an already-constructed consumer group, the row decoder, and a rejection sink.
@@ -70,6 +85,7 @@ class RedisSeriesWriteQueue:
         """
         self._group = group
         self._decode = decode
+        self._decode_run_id = decode_run_id
         self._on_rejected = on_rejected
 
     def read_pending(self, count: int) -> tuple[QueuedSeriesRow, ...]:
@@ -94,8 +110,9 @@ class RedisSeriesWriteQueue:
         for message in messages:
             try:
                 row = self._decode(message.fields)
+                run_id = self._decode_run_id(message.fields)
             except SeriesRowWireError as error:
                 self._on_rejected(message.entry_id, error)
                 continue
-            decoded.append(QueuedSeriesRow(entry_id=message.entry_id, row=row))
+            decoded.append(QueuedSeriesRow(entry_id=message.entry_id, row=row, run_id=run_id))
         return tuple(decoded)

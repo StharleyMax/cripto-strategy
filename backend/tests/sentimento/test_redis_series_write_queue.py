@@ -3,6 +3,11 @@
 Reuses `test_redis_stream_bus.py`'s transport (`fakeredis.TcpFakeServer`, loopback TCP, real
 RESP2 protocol) so this test proves the adapter against the same server the transport itself is
 proven against, rather than a second, hand-rolled double of Redis.
+
+`ADR-035/D2`: the last three tests cover the second injected reader, `decode_run_id`. The
+property they pin is that the run id crosses the SAME real transport the row does — the
+falsifier of `ADR-035` is "the run id did not survive the transport", and this is the only
+place in the stack where an actual Redis Stream is in the middle.
 """
 
 from __future__ import annotations
@@ -247,3 +252,76 @@ def test_the_default_on_rejected_is_a_silent_no_op(redis_address: tuple[str, int
     delivered = queue.read_new(10)
 
     assert delivered == ()
+
+
+def _decode_run_id(fields: Mapping[bytes, bytes]) -> str | None:
+    """Read the envelope run id off the raw byte fields, as `single_writer_cli` does."""
+    raw = fields.get(b"run_id")
+    return None if raw is None else raw.decode("ascii")
+
+
+def test_the_run_id_survives_the_real_stream_and_reaches_the_queued_row(
+    redis_address: tuple[str, int],
+) -> None:
+    """`ADR-035/D2`'s transport half, end to end over a real RESP2 Streams server."""
+    host, port = redis_address
+    _queue(redis_address)  # provisions the consumer group; the adapter under test is below
+    publisher = RedisStreamPublisher(connect_resp2(open_tcp_socket(host, port)), STREAM)
+    publisher.publish({"symbol": "BTCUSDT", "run_id": "run-0001"})
+
+    connection = connect_resp2(open_tcp_socket(host, port))
+    group = RedisStreamConsumerGroup(connection, STREAM, GROUP, CONSUMER)
+    queue = RedisSeriesWriteQueue(group, _decode, decode_run_id=_decode_run_id)
+
+    (queued,) = queue.read_new(10)
+    assert queued.run_id == "run-0001"
+
+
+def test_an_entry_published_without_a_run_id_arrives_with_none(
+    redis_address: tuple[str, int],
+) -> None:
+    """A producer not yet wired reports "no run", never a fabricated one."""
+    host, port = redis_address
+    _queue(redis_address)
+    publisher = RedisStreamPublisher(connect_resp2(open_tcp_socket(host, port)), STREAM)
+    publisher.publish({"symbol": "BTCUSDT"})
+
+    connection = connect_resp2(open_tcp_socket(host, port))
+    group = RedisStreamConsumerGroup(connection, STREAM, GROUP, CONSUMER)
+    queue = RedisSeriesWriteQueue(group, _decode, decode_run_id=_decode_run_id)
+
+    (queued,) = queue.read_new(10)
+    assert queued.run_id is None
+
+
+def test_an_adapter_built_without_a_run_id_decoder_reports_no_run_at_all(
+    redis_address: tuple[str, int],
+) -> None:
+    """The default is honest silence, not a partial accounting nobody asked for."""
+    host, port = redis_address
+    queue = _queue(redis_address)
+    publisher = RedisStreamPublisher(connect_resp2(open_tcp_socket(host, port)), STREAM)
+    publisher.publish({"symbol": "BTCUSDT", "run_id": "run-0001"})
+
+    (queued,) = queue.read_new(10)
+    assert queued.run_id is None
+
+
+def test_a_run_id_that_will_not_decode_poisons_the_whole_entry(
+    redis_address: tuple[str, int],
+) -> None:
+    """`B7` applies to the envelope too: half an entry is never handed to the writer."""
+
+    def _refusing_run_id(_fields: Mapping[bytes, bytes]) -> str | None:
+        raise SeriesRowWireError("run_id will never decode")
+
+    host, port = redis_address
+    _queue(redis_address)
+    publisher = RedisStreamPublisher(connect_resp2(open_tcp_socket(host, port)), STREAM)
+    publisher.publish({"symbol": "BTCUSDT", "run_id": "run-0001"})
+
+    connection = connect_resp2(open_tcp_socket(host, port))
+    group = RedisStreamConsumerGroup(connection, STREAM, GROUP, CONSUMER)
+    queue = RedisSeriesWriteQueue(group, _decode, decode_run_id=_refusing_run_id)
+
+    assert queue.read_new(10) == ()

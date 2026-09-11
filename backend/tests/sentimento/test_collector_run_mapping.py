@@ -22,6 +22,7 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_OBSERVER_ID,
     FORCE_ORDER_WEIGHT_USED,
     KNOWN_VERDICT_LITERALS,
+    N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
     PREMIUM_INDEX_OBSERVER_ID,
     WEIGHT_NOT_READABLE,
     KnownVerdict,
@@ -204,3 +205,61 @@ def test_premium_index_run_id_is_a_fresh_uuid4_every_call() -> None:
     first = build_premium_index_run(_STARTED_AT, _ENDED_AT, 1, 200, 10, "ACCEPTED", "d" * 64)
     second = build_premium_index_run(_STARTED_AT, _ENDED_AT, 1, 200, 10, "ACCEPTED", "d" * 64)
     assert first.run_id != second.run_id
+
+
+def test_both_builders_accept_the_run_id_the_collector_opened_the_cycle_with() -> None:
+    """`ADR-035/D2`: minting the id at CLOSE makes it impossible for the rows to carry it."""
+    opened = "9f1c1f8e-0a4b-4c2e-8f2a-1b3c4d5e6f70"
+    force_order = build_force_order_run(
+        started_at="2026-09-10T20:00:00Z",
+        ended_at="2026-09-10T20:01:00Z",
+        n_published=3,
+        verdict="ACCEPTED",
+        digest=hashlib.sha256(b"raw"),
+        run_id=opened,
+    )
+    premium_index = build_premium_index_run(
+        started_at="2026-09-10T20:00:00Z",
+        ended_at="2026-09-10T20:01:00Z",
+        n_symbols=3,
+        status=200,
+        weight_used=1,
+        verdict="ACCEPTED",
+        src_sha256="d" * 64,
+        run_id=opened,
+    )
+    assert force_order.run_id == premium_index.run_id == opened
+
+
+def test_omitting_the_run_id_still_mints_a_distinct_one_per_call() -> None:
+    """Every caller that predates `ADR-035/D2` keeps the exact behaviour it had."""
+    first = build_premium_index_run(
+        started_at="2026-09-10T20:00:00Z",
+        ended_at="2026-09-10T20:01:00Z",
+        n_symbols=1,
+        status=200,
+        weight_used=1,
+        verdict="ACCEPTED",
+        src_sha256="d" * 64,
+    )
+    second = build_premium_index_run(
+        started_at="2026-09-10T20:00:00Z",
+        ended_at="2026-09-10T20:01:00Z",
+        n_symbols=1,
+        status=200,
+        weight_used=1,
+        verdict="ACCEPTED",
+        src_sha256="d" * 64,
+    )
+    assert first.run_id != second.run_id
+
+
+def test_the_opening_n_written_is_zero_and_that_zero_is_named() -> None:
+    """`ADR-035/D2`: `0` here means "not accounted yet", and a NEGATIVE sentinel is refused.
+
+    The value has to stay `0` — `collector_status.uptime_percent` sums `n_written` over the
+    window (`collector_status.py:119-121`), so a `-1` sentinel would serve a NEGATIVE percentage
+    on a route that already exists (`RS-1`). The distinction the number cannot express lives in
+    `writer_accounted_at` instead, and that is what this constant's name says out loud.
+    """
+    assert N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS == 0

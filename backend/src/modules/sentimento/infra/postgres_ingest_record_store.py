@@ -21,9 +21,10 @@ guard bites: coerce `None` to `0` here and the two engines' `fingerprint()` stop
 SCHEMA-QUALIFIED, NOT A NEW SCHEMA PER MODULE — `md` is the logical name `ADR-008/D3` already
 uses for the projection; SQLite has no named schema and flattens it into the `md_ingest_run`
 table prefix, and Postgres has schemas so `initialise()` uses the real one: `CREATE SCHEMA IF
-NOT EXISTS md`, then `md.ingest_run` (16 columns, PK `run_id`) and `md.ingest_gap` (8 columns,
-composite PK). Both statements are `IF NOT EXISTS` — `initialise()` is idempotent by
-construction, safe to call on every process boot, same contract as the SQLite sibling.
+NOT EXISTS md`, then `md.ingest_run` (17 columns, PK `run_id` — the 16 `IngestRun` fields plus
+the TABLE-only `writer_accounted_at` of `ADR-035/D2`) and `md.ingest_gap` (8 columns, composite
+PK). Every statement is `IF NOT EXISTS` — `initialise()` is idempotent by construction, safe to
+call on every process boot, same contract as the SQLite sibling.
 
 UPSERT ON THE SAME KEY THE SQLite SIDE USES — `INSERT ... ON CONFLICT ... DO UPDATE` mirrors
 `INSERT OR REPLACE` there: a collector that re-records the same `run_id` (or the same gap key)
@@ -37,6 +38,39 @@ depends on engine internals would make two reads of the SAME state hash differen
 real reason. Both `SELECT`s end on a key that cannot tie, and it is the SAME tie-break the
 SQLite module uses — that is what makes the two engines' output byte-identical, not just
 value-identical.
+
+── `ADR-035/D2`: THE WRITER CLOSES THE RUN THE COLLECTOR OPENED ──────────────────────────
+
+`n_written` is "rows the WRITER persisted" (`ADR-035/D1`), and the writer is a different process
+from the collector that opens the run. `credit_written` below is the writer's ONE door, and it
+is deliberately NOT `record_run`:
+
+  * `record_run` takes a whole 16-field `IngestRun` and its `ON CONFLICT DO UPDATE` overwrites
+    all sixteen. A writer calling it would have to SUPPLY `window`, `src_sha256`, `weight_used`
+    and `observer_id` — the four fields `ADR-035`'s own rejected-alternative table says a writer
+    cannot honestly invent — and would overwrite the collector's measurements with them. The
+    ADR's `DoD-4` ("prove the writer overwrites no field it did not measure") is unsatisfiable
+    through that door; `credit_written` satisfies it STRUCTURALLY, by naming two columns in an
+    `UPDATE` and being unable to name a third.
+  * the accounting is ADDITIVE, and an upsert's `SET` cannot be. One collector cycle's rows
+    reach the writer over SEVERAL batches (`WRITER_BATCH_SIZE` defaults to 100; one
+    `premiumIndex` cycle publishes one row per symbol, and the phase `01` backfill publishes
+    10.080), so `n_written = EXCLUDED.n_written` would keep only the LAST batch and under-report
+    every run bigger than one batch.
+  * the writer usually reaches a run's rows BEFORE the collector records the run at cycle close.
+    `credit_written` therefore reports whether it found the row (`False` = not recorded yet) and
+    changes nothing when it did not, so the caller can retry rather than INSERT a run nobody
+    opened.
+
+`writer_accounted_at` is a TABLE-only column — see the "TABLE only / QUERY only" split in
+`domain/ingest_record.py`, which this column joins on the TABLE side. It is not in
+`INGEST_HEALTH_RUN_COLUMNS` (`ADR-008/D3`, `RS-2`), so the canonical projection and its `sha256`
+(`ADR-008/DoD-2`) are byte-identical before and after this change, and no served route changes
+shape. It exists to answer the ONE question `n_written` alone cannot (`ADR-035/D2`, plan item
+1.6): `NULL` means the writer has never accounted for this run (OPEN), a timestamp with
+`n_written = 0` means the writer accounted for it and persisted NOTHING. Collapsing those two
+into the same `0` would trade one ambiguous `rc=0` for another, which is the failure mode
+`ADR-012` names.
 
 THIS MODULE IS THE ONLY PLACE IN `sentimento.infra` ALLOWED TO IMPORT `psycopg` FOR THE
 RECORD — the import-linter contract "O motor de armazenamento nao vaza para fora de infra
@@ -85,9 +119,15 @@ _DDL: tuple[str, ...] = (
         observer_region TEXT NOT NULL,
         clock_skew_ms   INTEGER NOT NULL,
         started_at      TEXT NOT NULL,
-        ended_at        TEXT NOT NULL
+        ended_at        TEXT NOT NULL,
+        writer_accounted_at TEXT
     )
     """,
+    # `CREATE TABLE IF NOT EXISTS` is a no-op on a database that already has the table, so a
+    # column added after the first deployment needs its own idempotent statement — without this
+    # line the production table (created before `ADR-035`) would silently keep 16 columns and
+    # every `credit_written` would fail on an unknown column.
+    "ALTER TABLE md.ingest_run ADD COLUMN IF NOT EXISTS writer_accounted_at TEXT",
     """
     CREATE TABLE IF NOT EXISTS md.ingest_gap (
         source        TEXT NOT NULL,
@@ -127,6 +167,20 @@ _UPSERT_RUN = """
         ended_at = EXCLUDED.ended_at
 """
 
+# `ADR-035/D2`. TWO columns in the SET clause and no third — that is the whole guarantee of
+# `DoD-4`: this statement CANNOT overwrite `weight_used` (the collector's, `RNF-3`), `verdict`,
+# `n_expected` or anything else, because it does not name them. `n_written + %s` is additive on
+# purpose (see the module docstring), and the `WHERE` makes the statement a no-op — reported to
+# the caller through `rowcount` — when the collector has not recorded the run yet.
+_CREDIT_RUN_WRITTEN = """
+    UPDATE md.ingest_run
+       SET n_written = n_written + %s,
+           writer_accounted_at = %s
+     WHERE run_id = %s
+"""
+
+_SELECT_WRITER_ACCOUNTED_AT = "SELECT writer_accounted_at FROM md.ingest_run WHERE run_id = %s"
+
 _UPSERT_GAP = """
     INSERT INTO md.ingest_gap
         (source, symbol, series_key_id, from_ts, to_ts, n_missing, gap_class, detected_at)
@@ -157,6 +211,10 @@ _SELECT_SCHEMA_PRESENCE = "SELECT 1 FROM information_schema.schemata WHERE schem
 _SELECT_TABLE_PRESENCE = (
     "SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s"
 )
+
+
+class NegativeWrittenCreditError(ValueError):
+    """`credit_written` was handed a negative count — a bug upstream, never a real measurement."""
 
 
 class PostgresIngestRecordStore:
@@ -204,6 +262,45 @@ class PostgresIngestRecordStore:
                 ),
             )
         self._connection.commit()
+
+    def credit_written(self, run_id: str, n_written: int, accounted_at: str) -> bool:
+        """Add `n_written` rows to the run the collector opened, and stamp the accounting.
+
+        Returns `True` when the run row was found and credited, `False` when no run with that
+        `run_id` exists YET — the ordinary case in production, because the writer drains the
+        queue while the collector's cycle is still running and the run is only recorded at
+        cycle close. `False` is a fact for the caller to retry on, never an error and never a
+        reason to insert a run this process did not open (`ADR-035/D2`).
+
+        Refuses a negative credit: `n_written` counts rows this process persisted, so a
+        negative would be a bug upstream, and silently adding it would corrupt the one number
+        `DoD-4` reads.
+        """
+        if n_written < 0:
+            raise NegativeWrittenCreditError(
+                f"credit_written received n_written={n_written} for run_id={run_id!r}: a credit "
+                f"counts rows this writer persisted and can never be negative"
+            )
+        with self._connection.cursor() as cursor:
+            cursor.execute(_CREDIT_RUN_WRITTEN, (n_written, accounted_at, run_id))
+            credited = cursor.rowcount == 1
+        self._connection.commit()
+        return credited
+
+    def writer_accounted_at(self, run_id: str) -> str | None:
+        """Return when the writer last accounted for `run_id`, or `None` if it never has.
+
+        `None` for a run that EXISTS is `ADR-035/D2`'s "open" — the distinction from a run the
+        writer settled at zero, which no amount of reading `n_written` can make. A `run_id` that
+        does not exist at all also reads `None`; the caller that needs to tell those two apart
+        reads `runs()`, which is the method that answers "does this run exist".
+        """
+        with self._connection.cursor() as cursor:
+            cursor.execute(_SELECT_WRITER_ACCOUNTED_AT, (run_id,))
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        return cast(str | None, row[0])
 
     def record_gap(self, gap: IngestGap) -> None:
         """Persist one `md.ingest_gap` row, RAW, and COMMIT before returning."""

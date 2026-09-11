@@ -17,6 +17,26 @@ measured: `CLOCK_SKEW_NOT_MEASURED_MS` is a skew no real clock is off by (24+ da
 REST weight no real response header ever carries (weight is always `>= 0`). Both are documented
 by name rather than left as bare literals, matching `domain/ingest_record.py`'s own
 `LOSS_WINDOW_NOT_COMPUTED_IN_F0` precedent for "a value, never absent, never a guess".
+
+── `ADR-035/D2`: THE RUN IS OPENED HERE AND CLOSED BY THE WRITER ─────────────────────────
+
+`n_written` was a bare `0` in both builders, and `0` was carrying two different meanings at
+once: "the writer persisted nothing" and "nobody has counted yet". `100%` of `2.910` runs read
+`0` while `md.series` held `23.512` rows `[MEDIDO 2026-09-10, DIAGNOSTICO.md]`, so in practice
+it only ever meant the second. `N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS` names the one meaning the
+collector can honestly express, and the value stays `0` ON PURPOSE — a negative sentinel would
+be summed by `collector_status.uptime_percent` (`collector_status.py:119-121`) into a NEGATIVE
+percentage on a route that is already served (`RS-1`). The distinction the number cannot make
+is made by the writer's `writer_accounted_at` stamp instead
+(`infra/postgres_ingest_record_store.py`, plan item 1.6).
+
+`run_id` is now a PARAMETER, defaulting to a fresh `uuid4` so every existing caller is
+unchanged. It is a parameter because `ADR-035/D2` needs the id to exist BEFORE the cycle's rows
+are published — minting it at cycle CLOSE, as this module used to, makes it impossible for the
+rows to carry the run they belong to, and the writer then has nothing to close. Which process
+mints it and when is the composition root's decision (`infra/collectors_cli.py`), not this
+module's: composing an `IngestRun` from already-observed values is not a capability (`ADR-016`),
+and neither is choosing when a cycle begins.
 """
 
 from __future__ import annotations
@@ -41,6 +61,10 @@ FORCE_ORDER_WEIGHT_USED: Final[int] = 0
 CLOCK_SKEW_NOT_MEASURED_MS: Final[int] = -2_147_483_648
 # A real REST weight is always `>= 0`, so `-1` can never collide with one (`Q3` §3).
 WEIGHT_NOT_READABLE: Final[int] = -1
+# `ADR-035/D2`. The collector OPENS the run; the writer that persists the rows CLOSES it. Zero
+# is what the collector honestly knows at that moment — see the module docstring for why this
+# is `0` and not a negative sentinel, and for what distinguishes it from "settled at zero".
+N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS: Final[int] = 0
 # Names the PRODUCTION collector, distinct from the diagnostic probes (`Q3` §3).
 FORCE_ORDER_OBSERVER_ID: Final[str] = "forceorder-collector"
 PREMIUM_INDEX_OBSERVER_ID: Final[str] = "premiumindex-collector"
@@ -65,6 +89,7 @@ def build_force_order_run(
     verdict: KnownVerdict,
     digest: hashlib._Hash,
     endpoint: str = FORCE_ORDER_ENDPOINT,
+    run_id: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `forceOrder` SESSION close (`Q3` §1.1, §3).
 
@@ -83,15 +108,19 @@ def build_force_order_run(
     `collector_status.py`'s dashboard label (`ADR-030`) and by whoever diagnoses the next
     incident from this same log line — must name WHAT WAS ACTUALLY CONNECTED, never a literal
     baked in here regardless of the caller's real socket.
+
+    `run_id` defaults to a fresh `uuid4` — the behaviour this function always had. A caller that
+    opened the session with an id of its own (so the published rows could carry it, `ADR-035/D2`)
+    passes that SAME id here, and the run the writer closes is then the run the collector opened.
     """
     return IngestRun(
-        run_id=str(uuid4()),
+        run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
         endpoint=endpoint,
         window=f"{started_at}/{ended_at}",
         n_expected=n_published,
         n_returned=n_published,
-        n_written=0,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
         verdict=verdict,
         api_code=None,
         src_sha256=digest.hexdigest(),
@@ -112,6 +141,7 @@ def build_premium_index_run(
     weight_used: int | None,
     verdict: KnownVerdict,
     src_sha256: str,
+    run_id: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `premiumIndex` poll CYCLE (`Q3` §1.2, §3).
 
@@ -120,15 +150,19 @@ def build_premium_index_run(
     `Q3` §3 (i): a 24/7 collector cannot end the run over one missing metadata header on a poll
     that otherwise published successfully, unlike the one-shot probe `persist_ntp_skew_run.py`
     refuses for.
+
+    `run_id` defaults to a fresh `uuid4` — the behaviour this function always had. A caller that
+    opened the cycle with an id of its own (so the published rows could carry it, `ADR-035/D2`)
+    passes that SAME id here, and the run the writer closes is then the run the collector opened.
     """
     return IngestRun(
-        run_id=str(uuid4()),
+        run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
         endpoint=PREMIUM_INDEX_ENDPOINT,
         window=f"{started_at}/{ended_at}",
         n_expected=n_symbols,
         n_returned=n_symbols,
-        n_written=0,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
         verdict=verdict,
         api_code=status,
         src_sha256=src_sha256,

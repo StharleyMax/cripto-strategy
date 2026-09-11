@@ -4,6 +4,12 @@
 recovery order: a consumer that read `new` before `pending` would have delivered entries out of
 the order a real restart requires, and this test watches the READ CALLS themselves, not just the
 final tally, so a reordering fails here even if the totals happened to still add up.
+
+`ADR-035/D2` adds `on_outcome`, and the two tests at the bottom of this file are what make it
+trustworthy: the hook has to see the ENTRY (so the caller can read `run_id` off it) paired with
+what happened to that entry, and it must never fire for an entry that did not reach `ack` —
+otherwise the writer would credit a row `read_pending` is about to redeliver, and the count
+would climb on every restart.
 """
 
 from __future__ import annotations
@@ -152,3 +158,63 @@ def test_an_empty_queue_produces_no_outcomes_and_no_acks() -> None:
     outcomes = run_single_writer(queue, FakeObservedLookup(), FakeSeriesSink(), batch_size=10)
     assert outcomes == ()
     assert queue.acked == []
+
+
+def test_on_outcome_sees_every_entry_paired_with_what_happened_to_it() -> None:
+    """`ADR-035/D2`: the run accounting needs the PAIR, and position-matching would be a lie."""
+    accepted_candidate = QueuedSeriesRow(
+        entry_id=b"accepted", row=row(provenance=Provenance.OBSERVED), run_id="run-a"
+    )
+    rejected_candidate = QueuedSeriesRow(
+        entry_id=b"rejected", row=row(provenance=Provenance.MODELED), run_id="run-b"
+    )
+    queue = FakeQueue(pending=(), new=(accepted_candidate, rejected_candidate))
+    seen: list[tuple[str | None, WriteOutcome]] = []
+
+    run_single_writer(
+        queue,
+        FakeObservedLookup(answer=True),
+        FakeSeriesSink(),
+        batch_size=10,
+        on_outcome=lambda item, outcome: seen.append((item.run_id, outcome)),
+    )
+
+    assert seen == [
+        ("run-a", WriteOutcome.ACCEPTED),
+        ("run-b", WriteOutcome.REJECTED_MODELED_OVER_OBSERVED),
+    ]
+
+
+def test_on_outcome_never_fires_for_an_entry_that_did_not_reach_ack() -> None:
+    """An observer that counted an unacked row would overcount it on the next redelivery."""
+
+    class ExplodingQueue(FakeQueue):
+        """Acks nothing: `ack` raises, exactly like a Redis connection lost mid-batch."""
+
+        def ack(self, entry_id: object) -> None:
+            """Raise instead of acking."""
+            raise RuntimeError("redis is down")
+
+    queue = ExplodingQueue(
+        pending=(),
+        new=(QueuedSeriesRow(entry_id=b"1", row=row(provenance=Provenance.OBSERVED)),),
+    )
+    seen: list[object] = []
+    try:
+        run_single_writer(
+            queue,
+            FakeObservedLookup(),
+            FakeSeriesSink(),
+            batch_size=10,
+            on_outcome=lambda item, outcome: seen.append(item),
+        )
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("expected the queue's RuntimeError to propagate")
+    assert seen == []
+
+
+def test_a_queued_row_without_a_run_id_is_the_default_not_an_error() -> None:
+    """Every producer that predates `ADR-035/D2` keeps building entries with two arguments."""
+    assert QueuedSeriesRow(entry_id=b"1", row=row()).run_id is None

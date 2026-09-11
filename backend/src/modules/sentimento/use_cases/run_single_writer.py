@@ -9,6 +9,7 @@ different function inside it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -28,10 +29,18 @@ class QueuedSeriesRow:
     `entry_id` is opaque here — this module never compares or parses it, only hands it back to
     `queue.ack`. `RedisStreamConsumerGroup.entry_id` (`T-07.4`) is `bytes`; nothing about this
     dataclass assumes that shape beyond "whatever `ack` accepts".
+
+    `run_id` (`ADR-035/D2`) names the collector cycle that produced this row, so the process
+    that PERSISTS the row can close the run the collector OPENED — the collector cannot count
+    what it never wrote, and the writer is a different process. It defaults to `None` and this
+    module never reads it: "which run this row belongs to" is transport metadata that travels
+    THROUGH the drain loop, not an input to the write decision. `None` means the producer of
+    that entry is not wired to run accounting, which is a fact to report, never an error.
     """
 
     entry_id: object
     row: SeriesRow
+    run_id: str | None = None
 
 
 class SeriesWriteQueue(Protocol):
@@ -49,8 +58,20 @@ class SeriesWriteQueue(Protocol):
     def ack(self, entry_id: object) -> None: ...  # noqa: D102
 
 
+# Called once per entry, AFTER `ack`, with the entry and what happened to it. It exists because
+# `ADR-035/D2`'s accounting needs the PAIR (`run_id`, outcome) and nothing downstream of this
+# loop can reconstruct it: `run_single_writer` returns outcomes in order, but an outcome carries
+# no identity, and pairing them back up by position would be a coupling no test could see break.
+OutcomeObserver = Callable[["QueuedSeriesRow", WriteOutcome], None]
+
+
 def run_single_writer(
-    queue: SeriesWriteQueue, lookup: ObservedLookup, sink: SeriesSink, *, batch_size: int
+    queue: SeriesWriteQueue,
+    lookup: ObservedLookup,
+    sink: SeriesSink,
+    *,
+    batch_size: int,
+    on_outcome: OutcomeObserver | None = None,
 ) -> tuple[WriteOutcome, ...]:
     """Drain pending entries, then new ones, writing each through the ONE writer; return outcomes.
 
@@ -63,11 +84,20 @@ def run_single_writer(
     next run: this function does not swallow such an exception, it lets it propagate and stop
     the batch, so the failed entry (and everything still queued behind it) stays pending rather
     than being acked on a guess.
+
+    `on_outcome` is called AFTER `ack`, once per entry, and never for an entry that did not
+    reach `ack`: an observer that counted a row whose `ack` raised would credit a write the
+    next `read_pending` is about to redeliver, and the count would drift upward on every
+    restart. Ordering it after `ack` makes the observer's number an UNDERCOUNT in the crash
+    window instead of an overcount — and an undercount is the direction `ADR-035`'s falsifier
+    can still see ("run closed with `n_written = 0` while `md.series` gained rows").
     """
     outcomes: list[WriteOutcome] = []
     for batch in (queue.read_pending(batch_size), queue.read_new(batch_size)):
         for item in batch:
             outcome = write_series_row(item.row, lookup=lookup, sink=sink)
             queue.ack(item.entry_id)
+            if on_outcome is not None:
+                on_outcome(item, outcome)
             outcomes.append(outcome)
     return tuple(outcomes)
