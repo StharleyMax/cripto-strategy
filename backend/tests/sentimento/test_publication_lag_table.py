@@ -438,3 +438,154 @@ def test_window_hours_measures_the_span_it_claims() -> None:
     assert _record(window_start_ms=0, window_end_ms=13 * 60 * 60 * 1000).window_hours == 13.0
     assert ENDPOINT_PUBLICATION_LAG[KLINES].window_hours == pytest.approx(17.9, abs=0.05)
     assert ENDPOINT_PUBLICATION_LAG[PREMIUM_INDEX].window_hours == pytest.approx(72.9, abs=0.05)
+
+
+# ── the grid invariant: a MODELED stamp must stay INSIDE the bucket's own native grid ────────
+#
+# `QA 2026-09-11`. `SPEC-001` §5.2 writes the MODELED stamp as
+#
+#     available_at_MODELED = proximo ponto da grade nativa >= (bucket_end + p99_lag + margem)
+#
+# so the lag does not merely have to be measured, it has to FIT: the moment
+# `lag_p99_ms + margin` reaches one native grid step, the stamp rounds up to the SECOND grid
+# point after `bucket_end` instead of the first, and every MODELED row is born one whole bucket
+# late — unreadable at the decision instant of its own grid slot under `final_only`
+# (`as_of_accessor` R-1 `available_at <= t` plus R-2 `bucket_end <= t`). That is the very defect
+# `D16` exists to remove, reintroduced by the fix. The table declares `59_361` against a `60_000`
+# grid, which is `639` ms of headroom, and NOTHING in the module named that as an invariant.
+#
+# The bound below is the SERIES' NATIVE GRID, deliberately not `record.poll_resolution_ms`:
+# the poll period is a mutable field of the same record an editor is editing, so binding the
+# invariant to it lets a coherent edit (`poll_resolution_ms = 120_000` alongside a bigger lag)
+# satisfy the check while breaking the stamp.
+#
+# `[MEDIDO 2026-09-11, read-only against deploy-postgres-1, frozen window bucket_end <
+# 1789155360000]` — the klines grid is exactly one minute, with no second value:
+#
+#     with d as (select bucket_end - lag(bucket_end) over (partition by series_key_id
+#                order by bucket_end) step from md.series
+#                where bucket_end < 1789155360000 and source = '/fapi/v1/klines')
+#     select count(*), count(*) filter (where step = 60000), count(distinct step)
+#       from d where step is not null and step <> 0;   -- 44612 | 44612 | 1
+
+NATIVE_GRID_MS: dict[str, int] = {
+    KLINES: 60_000,
+    # `premiumIndex` is a SNAPSHOT series: its `bucket_end` is the observation instant, so the
+    # step is 60_000 only modally (`59_998`..`61_000` measured). The poll cadence is the grid a
+    # consumer would round to, and the invariant is slack here by 58 s either way.
+    PREMIUM_INDEX: 60_000,
+}
+
+
+def _modeled_available_at(
+    record: MeasuredPublicationLag, *, bucket_end: int, margin_ms: int
+) -> int:
+    """Return `SPEC-001` §5.2's MODELED stamp: the next native grid point at or after the lag."""
+    grid = NATIVE_GRID_MS[record.endpoint]
+    earliest = bucket_end + record.lag_p99_ms + margin_ms
+    return math.ceil(earliest / grid) * grid
+
+
+@pytest.mark.parametrize("endpoint", [KLINES, PREMIUM_INDEX])
+def test_the_modeled_stamp_lands_on_the_first_grid_point_after_its_own_bucket(
+    endpoint: str,
+) -> None:
+    """The stamp must be `bucket_end + one grid`, never `bucket_end + two`.
+
+    Two grid steps means the row is not yet knowable at the decision instant of its own slot,
+    and a backfilled history whose every row arrives a bucket late is a different series from
+    the live one it claims to reproduce.
+    """
+    record = ENDPOINT_PUBLICATION_LAG[endpoint]
+    grid = NATIVE_GRID_MS[endpoint]
+    bucket_end = 1_789_090_860_000
+    assert _modeled_available_at(record, bucket_end=bucket_end, margin_ms=0) == bucket_end + grid
+
+
+@pytest.mark.parametrize("endpoint", [KLINES, PREMIUM_INDEX])
+def test_the_lag_keeps_declared_headroom_against_the_native_grid(endpoint: str) -> None:
+    """The invariant nobody had written: `lag_p99_ms` strictly under one native grid step.
+
+    Bound to the GRID, not to `poll_resolution_ms` — see this section's header for why the
+    record's own field is not an acceptable bound.
+    """
+    record = ENDPOINT_PUBLICATION_LAG[endpoint]
+    assert record.lag_p99_ms < NATIVE_GRID_MS[endpoint]
+
+
+def test_a_lag_that_crosses_the_grid_is_caught_by_this_guard() -> None:
+    """The falsifier of the guard above, EXECUTED: one ms over the grid must change the stamp.
+
+    `lag = grid` exactly is already the boundary — it lands ON the next grid point, legible only
+    under a convention that reads AT the grid instant and never a millisecond before it, and any
+    positive `margem` in `SPEC-001` §5.2's formula pushes it over. One ms past is unambiguous.
+    """
+    record = ENDPOINT_PUBLICATION_LAG[KLINES]
+    grid = NATIVE_GRID_MS[KLINES]
+    bucket_end = 1_789_090_860_000
+    crossed = MeasuredPublicationLag(
+        endpoint=record.endpoint,
+        lag_p99_ms=grid + 1,
+        lag_min_ms=record.lag_min_ms,
+        lag_max_ms=grid + 2,
+        sample_n=record.sample_n,
+        poll_resolution_ms=record.poll_resolution_ms,
+        window_start_ms=record.window_start_ms,
+        window_end_ms=record.window_end_ms,
+        symbols=record.symbols,
+        measured_on=record.measured_on,
+    )
+    assert not crossed.lag_p99_ms < NATIVE_GRID_MS[KLINES]
+    stamp = _modeled_available_at(crossed, bucket_end=bucket_end, margin_ms=0)
+    assert stamp == bucket_end + 2 * grid
+
+
+# ── the population: `nb = 1` right-censors the live lag at exactly one poll period ────────────
+#
+# `QA 2026-09-11`. The fan-out separator is not circular in FORM — it never reads the lag — but
+# it is censoring in EFFECT, and the censoring lands exactly on the grid the invariant above
+# needs headroom against: a poll that ran late enough to reveal TWO newly closed buckets becomes
+# `nb = 2` and leaves the population, so no reading at or past one poll period can survive it.
+# `lag_max_ms = 59_999 < 60_000` is therefore a property of the FILTER, not of the endpoint.
+#
+# The `nb = 2` rows are not the "ambiguous middle" the module's docstring calls them — they are
+# provably LATE LIVE POLLS, measured `[MEDIDO 2026-09-11, read-only, same frozen window]`:
+# all `105` groups span exactly `60_000` ms (two consecutive buckets) and the older reading is
+# the younger plus exactly one grid step (`12` -> `60_012`, `27_855` -> `87_855`). Every backfill
+# group measured spans `1_079`-`1_500` buckets; no path produces a two-bucket request.
+#
+#     ... and g.nb = 2 -> grp(span, lag_old, lag_new)
+#     select span, count(*), min(lag_old), max(lag_old), min(lag_new), max(lag_new) from grp ...
+#     # 60000 | 105 | 60012 | 87855 | 12 | 27855
+#
+# Uncensored live population for klines (`nb <= 2`): `n = 4.289`, `105` readings at or past the
+# grid, and the top `k = 4289 - ceil(0.99 * 4289) + 1 = 43` readings are below.
+
+# `n = 4.289` -> `ceil(0.99 * 4289) = 4247` -> `k = 4289 - 4247 + 1 = 43`.
+KLINES_UNCENSORED_LAG_TAIL_MS: tuple[int, ...] = (
+    60_936, 60_964, 61_002, 61_023, 61_032, 61_081, 61_082, 61_110,
+    61_113, 61_116, 61_147, 61_174, 61_211, 61_214, 61_216, 61_233,
+    61_240, 61_244, 61_251, 61_276, 61_279, 61_281, 61_282, 61_301,
+    61_307, 61_317, 61_322, 61_369, 61_451, 61_471, 61_486, 61_490,
+    61_557, 61_583, 61_622, 61_625, 61_648, 61_757, 65_190, 71_471,
+    84_924, 87_535, 87_855,
+)  # fmt: skip
+
+KLINES_UNCENSORED_SAMPLE_N: int = 4_289
+
+
+def test_the_live_lag_holds_the_grid_when_the_late_polls_are_not_censored_away() -> None:
+    """The `p99` of the LIVE population, late polls included, must still fit the native grid.
+
+    This is the same question `test_the_lag_keeps_declared_headroom_against_the_native_grid`
+    asks, over the population that `nb = 1` removes. If it fails, the declared `59_361` and its
+    `639` ms of headroom are artefacts of the filter: the endpoint really does publish past the
+    grid, and `D16` cannot stamp a MODELED row on the first grid point.
+    """
+    tail = KLINES_UNCENSORED_LAG_TAIL_MS
+    rank = math.ceil(0.99 * KLINES_UNCENSORED_SAMPLE_N)
+    assert len(tail) == KLINES_UNCENSORED_SAMPLE_N - rank + 1
+    sample = (ENDPOINT_PUBLICATION_LAG[KLINES].lag_min_ms,) * (
+        KLINES_UNCENSORED_SAMPLE_N - len(tail)
+    ) + tail
+    assert p99(sample) < NATIVE_GRID_MS[KLINES]
