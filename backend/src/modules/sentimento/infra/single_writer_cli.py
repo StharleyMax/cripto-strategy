@@ -22,9 +22,29 @@ returning is what makes that ordering durable across a `kill -9` (`D2.3`/`D2.4`,
 
 `gates/F2-series-ddl.md` §7.1 decided the writer records no `IngestGap` in `F2` — reconnection
 is a COLLECTOR-side event (`F1`, closed) this process structurally never observes, it only ever
-sees `SeriesRow` candidates arriving on the queue. Consequently this module never touches
-`INGEST_RECORD_BACKEND`/`compose_ingest_record_store` (`T-02.4`) at all — `SPEC-004` §3.5 names
-that composition as used by `single_writer_cli` "so se gravar gaps", and this task does not.
+sees `SeriesRow` candidates arriving on the queue. That decision is about GAPS and still holds:
+nothing below records an `IngestGap`.
+
+── `ADR-035/D2`: THIS PROCESS NOW CLOSES THE RUN THE COLLECTOR OPENED ───────────────────────
+
+What `[Q10]` above does NOT cover, and `ADR-035/D2` decides: `n_written` means "rows the WRITER
+persisted" (`ADR-035/D1`), so the only process that can supply it is this one. `100%` of `2.910`
+runs read `n_written = 0` while `md.series` held `23.512` rows `[MEDIDO 2026-09-10,
+DIAGNOSTICO.md]` precisely because nobody ever wrote the number back. This module therefore does
+touch `md.ingest_run` — through `PostgresIngestRecordStore.credit_written`, which names two
+columns and cannot name a third, so it can never overwrite `weight_used` or any other field the
+collector measured (`ADR-035`'s own `DoD-4`; `RNF-3`).
+
+The accounting is DEFERRED and RETRIED, and both properties are load-bearing:
+
+  * DEFERRED to the end of the batch: one Postgres round trip per `run_id` per batch instead of
+    one per row, and the credit is additive so a batch boundary never loses a row.
+  * RETRIED across batches: the writer normally reaches a cycle's rows BEFORE the collector
+    records the run at cycle close, so `credit_written` finds no row and reports `False`. The
+    credit stays in `_PendingRunCredits` and is re-attempted on every later batch. Dropping it
+    instead would reproduce exactly the defect this decision exists to remove.
+  * a row whose producer sent no `run_id` is counted separately and reported, never silently
+    ignored: "no producer is wired yet" and "the wiring broke" have to be different signals.
 
 ── B7: A MESSAGE THAT WILL NEVER DECODE STAYS IN THE PEL, THE PROCESS KEEPS RUNNING ─────────
 
@@ -47,8 +67,9 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from typing import Any, Final
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any, Final, Protocol
 
 import psycopg
 
@@ -66,6 +87,7 @@ from src.modules.sentimento.infra.ingest_record_store_composition import (
     POSTGRES_PORT_VAR,
     POSTGRES_USER_VAR,
 )
+from src.modules.sentimento.infra.postgres_ingest_record_store import PostgresIngestRecordStore
 from src.modules.sentimento.infra.postgres_series_sink import (
     PostgresObservedLookup,
     PostgresSeriesSink,
@@ -85,7 +107,12 @@ from src.modules.sentimento.infra.series_row_wire import (
     SeriesRowWireError,
 )
 from src.modules.sentimento.infra.series_row_wire import decode as decode_wire_fields
-from src.modules.sentimento.use_cases.run_single_writer import SeriesWriteQueue, run_single_writer
+from src.modules.sentimento.infra.series_row_wire import decode_run_id as decode_wire_run_id
+from src.modules.sentimento.use_cases.run_single_writer import (
+    QueuedSeriesRow,
+    SeriesWriteQueue,
+    run_single_writer,
+)
 from src.modules.sentimento.use_cases.write_series_row import (
     ObservedLookup,
     SeriesSink,
@@ -311,6 +338,74 @@ def _reject_message(entry_id: bytes, error: SeriesRowWireError) -> None:
     )
 
 
+def _decode_wire_run_id(fields: Mapping[bytes, bytes]) -> str | None:
+    """Adapt raw byte fields to `series_row_wire.decode_run_id`'s `Mapping[str, str]` contract.
+
+    Same UTF-8 refusal as `_decode_wire_fields`, and for the same reason: a field that is not
+    valid UTF-8 is a poison message, and it has to arrive at `RedisSeriesWriteQueue._decode_all`
+    as the ONE exception family that means "this will never decode".
+    """
+    try:
+        text_fields = {
+            name.decode("utf-8"): value.decode("utf-8") for name, value in fields.items()
+        }
+    except UnicodeDecodeError as error:
+        raise InvalidWireFieldValueError(
+            f"wire mapping carries a field that is not valid UTF-8: {error}"
+        ) from error
+    return decode_wire_run_id(text_fields)
+
+
+class RunWrittenCreditor(Protocol):
+    """The ONE thing this loop needs from the record store: credit a run with rows written.
+
+    Narrow on purpose (`ADR-035/D2`): the writer must be structurally unable to touch any other
+    field of `md.ingest_run`, and a port with one method is a stronger statement of that than a
+    docstring on a port with six. `PostgresIngestRecordStore.credit_written` satisfies it.
+    """
+
+    def credit_written(  # noqa: D102
+        self, run_id: str, n_written: int, accounted_at: str
+    ) -> bool: ...
+
+
+@dataclass
+class _PendingRunCredits:
+    """Rows persisted per `run_id` that Postgres has not accepted yet, plus the unattributed.
+
+    Two counters, never merged. `by_run` is a credit waiting for the collector to record the
+    run it belongs to — a NORMAL state, retried on the next batch. `unattributed` counts rows
+    whose producer sent no `run_id` at all; those can never be credited to anything, and the
+    only honest thing to do with them is report the number instead of letting it look like
+    zero rows were written.
+    """
+
+    by_run: dict[str, int] = field(default_factory=dict)
+    unattributed: int = 0
+
+    def record(self, item: QueuedSeriesRow, outcome: WriteOutcome) -> None:
+        """Count one written row against the run that produced it (`run_single_writer` hook)."""
+        if outcome is not WriteOutcome.ACCEPTED:
+            return
+        if item.run_id is None:
+            self.unattributed += 1
+            return
+        self.by_run[item.run_id] = self.by_run.get(item.run_id, 0) + 1
+
+    def flush(self, creditor: RunWrittenCreditor, accounted_at: str) -> tuple[str, ...]:
+        """Credit every pending run; keep the ones whose run row does not exist yet.
+
+        Returns the ids actually credited. A run that `credit_written` reports as absent keeps
+        its full count — the credit is additive, so re-attempting it later adds it exactly once.
+        """
+        credited: list[str] = []
+        for run_id, n_written in list(self.by_run.items()):
+            if creditor.credit_written(run_id, n_written, accounted_at):
+                credited.append(run_id)
+                del self.by_run[run_id]
+        return tuple(credited)
+
+
 def build_queue(config: BootConfig, connection: RespConnection) -> RedisSeriesWriteQueue:
     """Build the queue: `RedisStreamConsumerGroup` -> `ensure_group()` -> `RedisSeriesWriteQueue`.
 
@@ -321,7 +416,17 @@ def build_queue(config: BootConfig, connection: RespConnection) -> RedisSeriesWr
         connection, config.redis_stream, config.redis_stream_group, config.redis_stream_consumer
     )
     group.ensure_group()
-    return RedisSeriesWriteQueue(group, _decode_wire_fields, on_rejected=_reject_message)
+    return RedisSeriesWriteQueue(
+        group,
+        _decode_wire_fields,
+        decode_run_id=_decode_wire_run_id,
+        on_rejected=_reject_message,
+    )
+
+
+def _utc_now_iso() -> str:
+    """`ADR-035/D2`'s accounting stamp, in the same `Z`-suffixed shape the runs already use."""
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def run(
@@ -331,8 +436,10 @@ def run(
     sink: SeriesSink,
     batch_size: int,
     poll_interval_s: float,
+    creditor: RunWrittenCreditor | None = None,
     stop_event: threading.Event | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], str] = _utc_now_iso,
 ) -> int:
     """Drain the queue forever: one `run_single_writer` batch per iteration, then sleep if empty.
 
@@ -346,10 +453,18 @@ def run(
     write this process makes is already durable by the time it is `ack`ed, `D2.3`/`D2.4`, so an
     unhandled `SIGKILL`/`SIGTERM` loses nothing `T-02.7`'s restart test does not already cover);
     left `None`, the loop runs until the process is killed, exactly like a production writer.
+
+    `creditor` left `None` keeps the loop EXACTLY as it was before `ADR-035/D2`: rows are
+    written and no run is ever closed. That is the shape the offline tests of the drain loop
+    use, and it is also the honest behaviour for any composition that has no record store —
+    never a silent partial accounting.
     """
     stop = stop_event or threading.Event()
+    credits = _PendingRunCredits()
     while not stop.is_set():
-        outcomes = run_single_writer(queue, lookup, sink, batch_size=batch_size)
+        outcomes = run_single_writer(
+            queue, lookup, sink, batch_size=batch_size, on_outcome=credits.record
+        )
         if not outcomes:
             sleep(poll_interval_s)
             continue
@@ -359,7 +474,32 @@ def run(
             "writer_batch_acked",
             extra={"n_accepted": n_accepted, "n_rejected": n_rejected},
         )
+        if creditor is not None:
+            _credit_runs(credits, creditor, now())
     return 0
+
+
+def _credit_runs(
+    credits: _PendingRunCredits, creditor: RunWrittenCreditor, accounted_at: str
+) -> None:
+    """Flush what this batch wrote into `md.ingest_run`, and SAY what could not be flushed.
+
+    `writer_run_credited` is the positive signal `ADR-035`'s falsifier reads. The two negative
+    ones are logged separately and only when non-zero, because "the collector has not recorded
+    this run yet" (ordinary, resolves itself) and "these rows belong to no run at all" (a
+    producer is not wired) are different problems with different owners.
+    """
+    unattributed = credits.unattributed
+    credits.unattributed = 0
+    for run_id in credits.flush(creditor, accounted_at):
+        logger.info("writer_run_credited", extra={"run_id": run_id})
+    if credits.by_run:
+        logger.info(
+            "writer_run_credit_deferred",
+            extra={"n_runs": len(credits.by_run), "n_rows": sum(credits.by_run.values())},
+        )
+    if unattributed:
+        logger.warning("writer_rows_without_run_id", extra={"n_rows": unattributed})
 
 
 def main(argv: Sequence[str]) -> int:
@@ -404,6 +544,11 @@ def main(argv: Sequence[str]) -> int:
         )
         return 1
     ensure_schema(postgres_connection)
+    # `ADR-035/D2`. Idempotent, and it is what adds `writer_accounted_at` to a `md.ingest_run`
+    # that was created before this decision existed — without it the first `credit_written`
+    # would fail on an unknown column against every already-deployed database.
+    record_store = PostgresIngestRecordStore(postgres_connection)
+    record_store.initialise()
     queue = build_queue(config, connection)
     sink = PostgresSeriesSink(postgres_connection)
     lookup = PostgresObservedLookup(postgres_connection)
@@ -413,6 +558,7 @@ def main(argv: Sequence[str]) -> int:
         sink=sink,
         batch_size=config.writer_batch_size,
         poll_interval_s=config.writer_poll_interval_ms / 1000,
+        creditor=record_store,
     )
 
 
