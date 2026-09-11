@@ -68,14 +68,23 @@ def _get_series_catalog(port: int) -> tuple[int, dict[str, object]]:
     return response.status, body
 
 
-def test_get_series_catalog_serves_the_real_ten_row_catalog_when_the_process_is_up(
+def test_get_series_catalog_serves_the_real_eleven_row_catalog_when_the_process_is_up(
     tmp_path: Path,
 ) -> None:
-    """CALA: process up -> `200`, `n_entries == len(entries) == 10` — the REAL total.
+    """CALA: process up -> `200`, `n_entries == len(entries) == 11` — the REAL total.
 
     `store_path` here is `/ingest-health`'s dependency, irrelevant to this route (`0` SQL in the
     handler, `D5.13c`'s sibling restriction) — a fresh, uninitialised store still serves this
     route correctly, proving the catalog carries no coupling to the ingest-health store.
+
+    Was `10` until `T-01.6` registered `klines_volume` (`SPEC-007` §4.5, `RF-2`). This is the
+    HTTP-level half of that task's DoD — "`GET /api/v1/series-catalog` lista a entrada" — and
+    it is asserted over a real socket against the real `create_app`, not against
+    `list_series_catalog` directly, because the composition in `src/main/__init__.py:266` is
+    itself a place the row could be lost.
+
+    `RS-1` is checked in the same breath: the three top-level fields and the entry field names
+    below are unchanged, so this task moved CONTENT (one more row) and not FORM.
     """
     store_path = tmp_path / "ih.sqlite3"
 
@@ -85,10 +94,14 @@ def test_get_series_catalog_serves_the_real_ten_row_catalog_when_the_process_is_
     assert status == 200
     assert set(body) == {"query", "n_entries", "entries"}
     assert body["query"] == "series_catalog"
-    assert body["n_entries"] == 10
+    assert body["n_entries"] == 11
     entries = body["entries"]
     assert isinstance(entries, list)
-    assert len(entries) == 10
+    assert len(entries) == 11
+
+    served_metrics = [e["key"]["metric"] for e in entries]
+    assert served_metrics.count("klines_volume") == 1
+    assert served_metrics[-1] == "klines_volume"
 
     entry = entries[0]
     assert set(entry) == {

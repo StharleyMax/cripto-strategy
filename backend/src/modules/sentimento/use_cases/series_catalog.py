@@ -43,6 +43,15 @@ against `SPEC-003`'s illustrative envelope and `tasks.toml`'s DoD equation is na
 QA gate report for `docs/plans/SPEC-003-camada-de-leitura-do-painel/03_recursos_baratos.md`'s own
 owners to reconcile — not resolved here by quietly shipping a catalog with fewer real series than
 the source modules already, deliberately, populate.
+
+── `T-01.6` (`SPEC-007` §4.5, `RF-2`): THE COUNT IS 11, AND IT IS STILL COMPUTED ────────────
+
+`klines_volume` (`domain/klines_volume_catalog.py`, built by `T-01.1`) is appended as the
+eleventh row. The number above moves from 10 to 11 for the same reason it was never a literal:
+`n_entries = len(catalog.entries)`, so the count follows the list and the list follows the
+builders. A FOURTH source module now feeds this function, which is the only structural change —
+the envelope, the field names and the order of the ten pre-existing rows are untouched (`RS-1`:
+content may change here, form may not).
 """
 
 from __future__ import annotations
@@ -51,6 +60,7 @@ import logging
 from typing import Final
 
 from src.modules.sentimento.domain.cvd_source_catalog import build_cvd_source_catalog_entries
+from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
 from src.modules.sentimento.domain.open_interest_catalog import open_interest_catalog_entries
 from src.modules.sentimento.domain.price_source_catalog import build_price_series_entries
 from src.modules.sentimento.domain.series_catalog import (
@@ -77,7 +87,12 @@ _INSTRUMENT_ID: Final[str] = "BTCUSDT"
 # quantity is denominated in the instrument's OWN base asset, and a hardcoded `"BTC"` there
 # would silently mislabel a future non-BTC instrument). `open_interest_catalog.py` hardcodes the
 # same value, `"BTC"`, for the same instrument, internally.
-_CVD_UNIT: Final[str] = "BTC"
+#
+# RENAMED from `_CVD_UNIT` by `T-01.6`: it now feeds a SECOND builder,
+# `build_klines_volume_entry`, whose row is `denom="base"` for the same reason — so a name that
+# said "CVD" would mislabel half its own call sites. The VALUE is unchanged, so no
+# `series_key_id` moves: a rename of a module-private constant is invisible on the wire.
+_BASE_ASSET_UNIT: Final[str] = "BTC"
 
 # `verified_by` names the test that empirically backs a `SeriesKey` (`SPEC-001` §2.1's fifteenth
 # term) — the same convention `open_interest_catalog.py` already hardcodes in PRODUCTION code
@@ -90,6 +105,17 @@ _CVD_UNIT: Final[str] = "BTC"
 _CVD_VERIFIED_BY: Final[str] = "test_cvd_source_catalog.py"
 _PRICE_VERIFIED_BY: Final[str] = "test_price_source_catalog.py"
 
+# `T-01.6`, and this one is LOAD-BEARING BEYOND THIS FILE. `verified_by` is the fifteenth term
+# of `SeriesKey`, so it enters `series_key_id()`'s `sha256` (`series_key.py:226-234`): the
+# `klines_volume` row SERVED here and the `klines_volume` row the collector WRITES to
+# `md.series` are the same series only while both carry this exact string. `T-01.1` created the
+# test and the name (`backend/tests/sentimento/test_klines_volume_catalog.py`); the writer side
+# (`T-01.3`, `collector_series_mapping.py`) has to quote THIS constant's value, not re-invent
+# one. If the two ever diverge, `/api/v1/series-history` answers `200` with `n_points = 0` for
+# a series whose rows are sitting in the table under a different id — a `rc=0` that means
+# "nothing here", which is the silent-break class `ADR-012` names, not a `422` anyone would see.
+_KLINES_VOLUME_VERIFIED_BY: Final[str] = "test_klines_volume_catalog.py"
+
 
 def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
     """Build `series_catalog` from the three modules `T-06.x` already populated, for one instrument.
@@ -98,13 +124,24 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
     `SeriesKey`" over the COMBINED tuple, not merely trusting each source module's own internal
     check — a real cross-source collision would raise `DuplicateSeriesKeyError` here rather than
     silently keep one of the two rows.
+
+    `T-01.6` APPENDS `klines_volume` (`SPEC-007` §4, row M1) as the eleventh row. Appended, not
+    inserted: `RS-1` lets this task change the catalog's CONTENT and forbids changing its FORM,
+    and the ORDER of `"entries"` is form — appending leaves all ten pre-existing rows at the
+    indices they already had. Registering it here is what `SPEC-007` §4.5 means by "reusar não é
+    não fazer nada": the identity `T-01.1` built lives in `domain/`, and until this line exists
+    `/api/v1/series-history` refuses its `series_key_id` with `422 UnknownSeriesKeyIdError`
+    (`series_history.py:119-121` → `catalog.entry_for_id` returns `None`).
     """
     entries: list[SeriesCatalogEntry] = [
         *build_cvd_source_catalog_entries(
-            instrument_id, unit=_CVD_UNIT, verified_by=_CVD_VERIFIED_BY
+            instrument_id, unit=_BASE_ASSET_UNIT, verified_by=_CVD_VERIFIED_BY
         ),
         *build_price_series_entries(instrument_id, verified_by=_PRICE_VERIFIED_BY),
         *open_interest_catalog_entries(instrument_id).entries,
+        build_klines_volume_entry(
+            instrument_id, unit=_BASE_ASSET_UNIT, verified_by=_KLINES_VOLUME_VERIFIED_BY
+        ),
     ]
     # DEBUG, not INFO — same reasoning `ingest_health_query` already documents: this read path
     # is not a byte contract of its own, but a library that logs at INFO by default imposes its
