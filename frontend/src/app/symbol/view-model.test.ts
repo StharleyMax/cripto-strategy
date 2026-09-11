@@ -15,6 +15,9 @@ import { test } from "node:test";
 
 import {
   buildS2Panels,
+  resolveTrailingWindow,
+  S2_WINDOW_SPAN_MS,
+  FIVE_MINUTES_MS,
   candlestickSeriesLossless,
   lineSeriesLossless,
   resolveFlowReading,
@@ -40,10 +43,20 @@ import {
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 
 const ONE_MINUTE_MS = 60_000;
-// Deliberately the SAME instant as `charts/s2-panels.ts::RANGE_START_MS` (not imported — this
-// fixture only needs 3 minutes of it, not the full 4-day window) — so the 3 rows below land on
-// REAL grid instants of the barrel's own price panel, built with its real constants below.
-const RANGE_START_MS = Date.UTC(2026, 7, 20, 0, 0, 0);
+// The window every panel below is built over, DERIVED exactly like the real route derives its
+// own (`request-window.ts`). It used to be three constants of `charts/s2-panels.ts`, and the
+// route that inherited them asked `/series-history` for four days of 2026-08 while
+// `klines_volume` starts at 2026-09-04 (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, second defect).
+// `lagMs: 0` because this fixture's clock reading IS the window's exclusive end — a test
+// supplies its own clock and has no publication lag to wait out.
+const FIXTURE_WINDOW = resolveTrailingWindow({
+  nowMs: Date.UTC(2026, 7, 24, 0, 0, 0),
+  lagMs: 0,
+  spanMs: S2_WINDOW_SPAN_MS,
+  alignmentMs: FIVE_MINUTES_MS,
+});
+// The 3 rows below land on REAL grid instants of the price panel built over that window.
+const RANGE_START_MS = FIXTURE_WINDOW.startMs;
 
 function rowsWithOneAbsentMinute(): readonly SeriesHistoryRow[] {
   return [
@@ -60,6 +73,7 @@ test("CA-F2-3 (price/OI/CVD, end to end): a SEM_PONTO row becomes a bare Whitesp
   const candles = rawCandlesFromHistoryRows(rows);
   assert.equal(candles.length, 2, "the absent row must NOT become a candle");
   const pricePanel = buildS2Panels({
+    window: FIXTURE_WINDOW,
     candles,
     priceUse: S2_PRICE_USE,
     oiPoints: [],
@@ -88,7 +102,9 @@ test("CA-F2-3 (price/OI/CVD, end to end): a SEM_PONTO row becomes a bare Whitesp
   // ── OI (line, scalar) ──────────────────────────────────────────────────────────────────
   const oiPoints = scalarPointsFromHistoryRows(rows, ONE_MINUTE_MS);
   assert.equal(oiPoints.length, 2, "the absent row must NOT become a scalar point");
-  const { missingDays: oiMissingDays } = daysWithPresence(rows, ["2026-08-20"]);
+  // The day list comes off the window too — a literal here would be the same defect in
+  // miniature: it would keep asserting about 2026-08-20 after the window moved on.
+  const { missingDays: oiMissingDays } = daysWithPresence(rows, [FIXTURE_WINDOW.days[0]!]);
   assert.deepEqual(oiMissingDays, [], "a day WITH at least one present row is not a missing day");
 
   // ── CVD delta (line, scalar, SIGNED) ───────────────────────────────────────────────────

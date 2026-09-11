@@ -49,7 +49,6 @@ import {
   formatHeldStockLabel,
   lineSeriesLossless,
   ONE_MINUTE_MS,
-  RANGE_END_MS_EXCLUSIVE,
   resolveFlowReading,
   resolveStockReading,
   type FlowReading,
@@ -102,9 +101,16 @@ function AbsenceNote({ status }: { readonly status: PanelStatus }) {
   );
 }
 
-/** The window's own last grid instant — used only to give the "leitura atual" readouts a fixed,
- * deterministic instant to query, the same one `page.tsx` requests as `window_end_ms`. */
-const LAST_INSTANT_MS = RANGE_END_MS_EXCLUSIVE - ONE_MINUTE_MS;
+/** The window's own last grid instant — the one the "leitura atual" readouts query, and the
+ * same one `page.tsx` sends as `window_end_ms`.
+ *
+ * READ OFF THE PANELS, not off a constant: the window is derived per request now
+ * (`request-window.ts`), so a module-level constant here would drift away from the data the
+ * server actually fetched — which is the very shape of the defect this replaced
+ * (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, second defect: a frozen window outliving its data). */
+function lastInstantMs(panels: S2Panels): number {
+  return panels.rangeEndMsExclusive - ONE_MINUTE_MS;
+}
 
 function useLightweightChart(containerRef: RefObject<HTMLDivElement | null>, build: (chart: IChartApi) => void): void {
   useEffect(() => {
@@ -236,7 +242,7 @@ function PricePane({
     time: slot.time,
     value: slot.candle === null ? null : slot.candle.close,
   }));
-  const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, LAST_INSTANT_MS);
+  const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
       ? "SEM_PONTO"
@@ -265,7 +271,7 @@ function OiPane({ panels, status }: { readonly panels: S2Panels; readonly status
     const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
     series.setData(lineSeriesLossless(panels.oi.slots) as never);
   });
-  const reading = resolveStockReading(panels.oi.slots, panels.oi.timeframeMs, LAST_INSTANT_MS);
+  const reading = resolveStockReading(panels.oi.slots, panels.oi.timeframeMs, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
       ? "SEM_PONTO"
@@ -293,7 +299,7 @@ function CvdPane({ panels, status }: { readonly panels: S2Panels; readonly statu
     const cumulativeSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, { color: tokens.provenanceWeak });
     cumulativeSeries.setData(lineSeriesLossless(panels.cvd.cumulativeSlots) as never);
   });
-  const deltaReading = resolveFlowReading(panels.cvd.deltaSlots, panels.cvd.timeframeMs, LAST_INSTANT_MS);
+  const deltaReading = resolveFlowReading(panels.cvd.deltaSlots, panels.cvd.timeframeMs, lastInstantMs(panels));
   return (
     <section aria-label="CVD">
       <h2 className="font-label-caps text-label-caps text-on-surface">CVD (delta e acumulado)</h2>

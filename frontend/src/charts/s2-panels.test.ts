@@ -20,13 +20,11 @@ import {
   buildPricePanel,
   buildOiPanel,
   SYMBOL,
-  DAYS,
-  RANGE_START_MS,
-  RANGE_END_MS_EXCLUSIVE,
   ONE_MINUTE_MS,
   FIVE_MINUTES_MS,
   S2_PRICE_USE,
 } from "./s2-panels.ts";
+import { S2_FIXTURE_WINDOW } from "./s2-fixture-window.ts";
 import { parseKlinesDays } from "./s2-klines-loader.ts";
 import { assembleOiPoints } from "./s2-oi-loader.ts";
 
@@ -34,12 +32,20 @@ const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(THIS_DIR, "../../..");
 const DATA_ROOT = path.join(REPO_ROOT, "data");
 const KLINES_DIR = path.join(DATA_ROOT, "binance/klines/tf2");
+
+// The 4 days of CSV fixtures on disk, as a window (`s2-fixture-window.ts`) — they used to be
+// three exported constants of `s2-panels.ts`, which is what let the live `/symbol` route
+// inherit a frozen window (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, second defect). The names
+// below are kept so every assertion in this file reads exactly as it did.
+const DAYS = S2_FIXTURE_WINDOW.days;
+const RANGE_START_MS = S2_FIXTURE_WINDOW.startMs;
+const RANGE_END_MS_EXCLUSIVE = S2_FIXTURE_WINDOW.endMsExclusive;
 const METRICS_DIR = path.join(DATA_ROOT, "binance/metrics");
 
 test("buildPricePanel: 4 gapless days at 1-minute resolution, BTCUSDT", () => {
   const csvTexts = DAYS.map((day) => readFileSync(path.join(KLINES_DIR, `${SYMBOL}-1m-${day}.csv`), "utf8"));
   const candles = parseKlinesDays(csvTexts);
-  const panel = buildPricePanel(candles, S2_PRICE_USE);
+  const panel = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW);
   assert.equal(panel.series.timeframeMs, ONE_MINUTE_MS);
   assert.equal(panel.series.slots.length, (RANGE_END_MS_EXCLUSIVE - RANGE_START_MS) / ONE_MINUTE_MS);
   assert.ok(panel.series.slots.every((slot) => slot.candle !== null));
@@ -48,7 +54,7 @@ test("buildPricePanel: 4 gapless days at 1-minute resolution, BTCUSDT", () => {
 test("T-05.5/5.7: the price panel declares price_source AND price_use on the panel row", () => {
   const csvTexts = DAYS.map((day) => readFileSync(path.join(KLINES_DIR, `${SYMBOL}-1m-${day}.csv`), "utf8"));
   const candles = parseKlinesDays(csvTexts);
-  const panel = buildPricePanel(candles, S2_PRICE_USE);
+  const panel = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW);
   assert.equal(panel.priceUse, "structure_detection");
   // ADR-007's table: structure_detection -> klines_last (negotiated price, not the 1 Hz mark).
   assert.equal(panel.priceSource, "klines_last");
@@ -65,7 +71,7 @@ test("buildOiPanel: 08-22 is reported as the missing day, slots explicit null th
     }
   }
   const { points, missingDays } = assembleOiPoints(DAYS, csvTextByDay);
-  const panel = buildOiPanel(points, missingDays);
+  const panel = buildOiPanel(points, missingDays, S2_FIXTURE_WINDOW);
   assert.deepEqual(panel.missingDays, ["2026-08-22"]);
   assert.equal(panel.timeframeMs, FIVE_MINUTES_MS);
   const gapDayStartMs = Date.UTC(2026, 7, 22, 0, 0, 0);

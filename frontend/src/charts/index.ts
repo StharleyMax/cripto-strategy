@@ -21,7 +21,8 @@
  *      1-minute density) that lives OUTSIDE `src/charts/` and therefore has to cross this
  *      same boundary, same as `page.tsx` does for the rest.
  *   2. composição de painéis       — `s2-panels.ts` (`buildS2Panels` and the panel shapes/
- *      constants it is built from: `SYMBOL`, `DAYS`, the range/timeframe constants).
+ *      constants it is built from: `SYMBOL` and the timeframe constants), mais a janela
+ *      (`s2-window.ts`, categoria `2b` abaixo), que deixou de ser constante deste módulo.
  *   3. adaptador lightweight       — `s2-lightweight-adapter.ts`'s LOSSLESS mappings only
  *      (`candlestickSeriesLossless`/`lineSeriesLossless`). `naiveDropGapsLine` is
  *      DELIBERATELY NOT re-exported: that module's own docstring names it "the WRONG mapping
@@ -46,9 +47,6 @@ export type {
 // ── 2. composição de painéis ─────────────────────────────────────────────────────────────────
 export {
   SYMBOL,
-  DAYS,
-  RANGE_START_MS,
-  RANGE_END_MS_EXCLUSIVE,
   ONE_MINUTE_MS,
   FIVE_MINUTES_MS,
   S2_PRICE_USE,
@@ -58,6 +56,16 @@ export {
   buildS2Panels,
 } from "./s2-panels.ts";
 export type { OiPanel, CvdPanel, PricePanel, S2Panels, S2RawInputs } from "./s2-panels.ts";
+
+// ── 2b. janela (`s2-window.ts`) — a geometria da janela que os painéis cobrem ────────────────
+//
+// `web` deriva a janela por esta função e NÃO a calcula: "série→geometria é `charts`"
+// (`ADR-003` FR-2). O que `web` fornece é a leitura do relógio, que é I/O e por isso é dele.
+// ⛔ `s2-fixture-window.ts` (a janela das 4 dias de CSV em disco) NÃO é reexportada aqui, de
+// propósito — ver o docstring daquele módulo: é o que impede uma rota de voltar a ler uma
+// janela congelada (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, segundo defeito).
+export { ONE_DAY_MS, S2_WINDOW_SPAN_MS, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
+export type { S2Window, TrailingWindowRequest } from "./s2-window.ts";
 
 // ── 3. adaptador lightweight (LOSSLESS mappings only — see module docstring above) ───────────
 export { candlestickSeriesLossless, lineSeriesLossless } from "./s2-lightweight-adapter.ts";

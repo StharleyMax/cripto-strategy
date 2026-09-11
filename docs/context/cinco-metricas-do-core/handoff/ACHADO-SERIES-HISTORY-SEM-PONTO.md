@@ -45,6 +45,19 @@ A rota `/symbol` usa **janela FIXA `2026-08-20..24`** (`frontend/src/charts/s2-p
 de `klines_volume` **só começa em 2026-09-04** `[MEDIDO: min(bucket_end)=1788486120000]`. Mesmo com o
 defeito acima corrigido, a tela continuaria vazia. **São dois, não um.**
 
+### ✅ CORRIGIDO em 2026-09-11 — a janela passou a ser derivada do relógio
+
+`charts/s2-window.ts::resolveTrailingWindow` (puro) + `app/symbol/request-window.ts` (fornece
+`Date.now()`): `[floor(now − 5min) − 4 dias, floor(now − 5min))`. As três constantes
+(`DAYS`/`RANGE_START_MS`/`RANGE_END_MS_EXCLUSIVE`) **deixaram de existir**; os 4 dias de CSV viraram
+`s2-fixture-window.ts`, **fora do barril**, portanto inalcançável por `web`.
+
+**Medido contra a API de produção, mesma chave, mesmo vão, mesmo minuto:** janela congelada →
+**0** linhas com valor; janela derivada → **745** de 5.760 `[MEDIDO 2026-09-11, n=2 janelas]`.
+Relatório: [`gates/F01-janela-fixa-build.md`](../gates/F01-janela-fixa-build.md) — que também
+escala um achado: o **último** instante da janela pode estar legitimamente ausente (buraco real da
+série), e `DoD-3` tem de ser contado por `N ≥ 30` pontos distintos, não pelo readout da borda.
+
 ## Terceiro achado, menor
 
 O catálogo servido tem **1** entrada de `klines_volume` (**BTCUSDT só**), enquanto `md.series` tem
