@@ -15,6 +15,9 @@ import { test } from "node:test";
 
 import {
   buildS2Panels,
+  resolveTrailingWindow,
+  S2_WINDOW_SPAN_MS,
+  FIVE_MINUTES_MS,
   candlestickSeriesLossless,
   lineSeriesLossless,
   resolveFlowReading,
@@ -27,6 +30,7 @@ import type { SeriesHistoryRow } from "./series-history-client.ts";
 import {
   computeSeriesKeyId,
   countPresentSlots,
+  firstPresentSlotMs,
   daysWithPresence,
   InvalidSeriesValueError,
   keyMatchesSymbol,
@@ -40,10 +44,20 @@ import {
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 
 const ONE_MINUTE_MS = 60_000;
-// Deliberately the SAME instant as `charts/s2-panels.ts::RANGE_START_MS` (not imported — this
-// fixture only needs 3 minutes of it, not the full 4-day window) — so the 3 rows below land on
-// REAL grid instants of the barrel's own price panel, built with its real constants below.
-const RANGE_START_MS = Date.UTC(2026, 7, 20, 0, 0, 0);
+// The window every panel below is built over, DERIVED exactly like the real route derives its
+// own (`request-window.ts`). It used to be three constants of `charts/s2-panels.ts`, and the
+// route that inherited them asked `/series-history` for four days of 2026-08 while
+// `klines_volume` starts at 2026-09-04 (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, second defect).
+// `lagMs: 0` because this fixture's clock reading IS the window's exclusive end — a test
+// supplies its own clock and has no publication lag to wait out.
+const FIXTURE_WINDOW = resolveTrailingWindow({
+  nowMs: Date.UTC(2026, 7, 24, 0, 0, 0),
+  lagMs: 0,
+  spanMs: S2_WINDOW_SPAN_MS,
+  alignmentMs: FIVE_MINUTES_MS,
+});
+// The 3 rows below land on REAL grid instants of the price panel built over that window.
+const RANGE_START_MS = FIXTURE_WINDOW.startMs;
 
 function rowsWithOneAbsentMinute(): readonly SeriesHistoryRow[] {
   return [
@@ -60,6 +74,7 @@ test("CA-F2-3 (price/OI/CVD, end to end): a SEM_PONTO row becomes a bare Whitesp
   const candles = rawCandlesFromHistoryRows(rows);
   assert.equal(candles.length, 2, "the absent row must NOT become a candle");
   const pricePanel = buildS2Panels({
+    window: FIXTURE_WINDOW,
     candles,
     priceUse: S2_PRICE_USE,
     oiPoints: [],
@@ -88,7 +103,9 @@ test("CA-F2-3 (price/OI/CVD, end to end): a SEM_PONTO row becomes a bare Whitesp
   // ── OI (line, scalar) ──────────────────────────────────────────────────────────────────
   const oiPoints = scalarPointsFromHistoryRows(rows, ONE_MINUTE_MS);
   assert.equal(oiPoints.length, 2, "the absent row must NOT become a scalar point");
-  const { missingDays: oiMissingDays } = daysWithPresence(rows, ["2026-08-20"]);
+  // The day list comes off the window too — a literal here would be the same defect in
+  // miniature: it would keep asserting about 2026-08-20 after the window moved on.
+  const { missingDays: oiMissingDays } = daysWithPresence(rows, [FIXTURE_WINDOW.days[0]!]);
   assert.deepEqual(oiMissingDays, [], "a day WITH at least one present row is not a missing day");
 
   // ── CVD delta (line, scalar, SIGNED) ───────────────────────────────────────────────────
@@ -211,6 +228,32 @@ test("countPresentSlots counts REAL buckets only — the number DoD-3/RN-S2 chec
   // §4.1), so no slot repeats a neighbour's bar and present slots ARE distinct native bars.
   // Applying the divisor here would undercount by 5×, which is why the rule is stated, not assumed.
   assert.equal(countPresentSlots(slots), slots.filter((slot) => slot.value !== null).length);
+});
+
+test("firstPresentSlotMs: the LEFT end of the readable horizon, scanned forward and never guessed", () => {
+  const slots = volumeSlotsFromHistoryRows(rowsWithOneAbsentMinute());
+  assert.equal(firstPresentSlotMs(slots), slots[0]!.time, "the first present slot is the horizon");
+  assert.equal(firstPresentSlotMs([]), null, "no slots, no horizon — and it says null rather than 0");
+  assert.equal(
+    firstPresentSlotMs(slots.map((slot) => ({ ...slot, value: null }))),
+    null,
+    "a window where NOTHING is readable answers null — `0` here would name the epoch as the horizon",
+  );
+
+  // The shape the live window actually has `[MEDIDO 2026-09-11: 769 de 5.761 grades com valor, o
+  // primeiro no indice 4.971, ACHADO-BACKFILL-INVISIVEL-AO-AS-OF.md]`: a long absent prefix and
+  // then data. The horizon must be the FIRST present instant, not the window's own left edge —
+  // reporting the left edge is exactly the claim ("temos dado desde aqui") the screen must not
+  // make.
+  const leading = [
+    { time: 1_000, value: null },
+    { time: 61_000, value: null },
+    { time: 121_000, value: 3.5 },
+    { time: 181_000, value: null },
+    { time: 241_000, value: 4.5 },
+  ];
+  assert.equal(firstPresentSlotMs(leading), 121_000);
+  assert.notEqual(firstPresentSlotMs(leading), leading[0]!.time, "the window's left edge is NOT the horizon");
 });
 
 test("resolveVolumeReading: a real bucket answers its own number, and absence never borrows a neighbour's", () => {

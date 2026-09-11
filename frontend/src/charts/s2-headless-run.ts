@@ -26,7 +26,7 @@ export interface HeadlessSeriesSpec {
   readonly items: readonly Record<string, unknown>[];
   /**
    * Style options passed straight to `chart.addSeries(..., style)` — e.g.
-   * `candlestickSeriesColors(mode)` from `color-tokens.ts` (`T-05.7`). Optional and
+   * `candlestickSeriesColors()` from `color-tokens.ts` (`T-05.7`). Optional and
    * defaulted to `{}` (the library's own defaults) so every caller from before `T-05.7`
    * keeps working unchanged.
    */

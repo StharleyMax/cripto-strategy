@@ -396,6 +396,56 @@ não só ao candle.
 
 `[MEDIDO: node scripts/validate_palette.js — 361 medições, exit 0]`
 
+> **⚠️ Tarja de 2026-09-11 (`D13`): o APP passou a ter UM tema, o escuro — a tabela acima NÃO foi
+> reduzida, e a diferença entre as duas coisas é o ponto.**
+>
+> `[DECISÃO-OWNER: 2026-09-11, escolha entre alternativas apresentadas]` — `D13` em
+> [`docs/context/cinco-metricas-do-core/handoff/DECISOES-OWNER.md`](../context/cinco-metricas-do-core/handoff/DECISOES-OWNER.md).
+> `colorTokens()` perdeu o parâmetro `mode`; `ColorMode`, `TOKENS_BY_MODE` e a paleta **clara**
+> foram **deletados** de `frontend/src/charts/color-tokens.ts`. A coluna **claro** desta tabela e o
+> bloco `PAPEIS.claro` de `scripts/validate_palette.js` **ficam**: eles são a aritmética de
+> `ADR-010` sob dicromacia, e o que `D13` aposentou foi o tema do **app**, não o da ADR.
+>
+> **O defeito que a decisão fechou** `[MEDIDO 2026-09-11 — comandos e universo abaixo]`: as chamadas de produção do gráfico
+> pediam `"light"` sobre um fundo escuro ⇒ o volume (`--proc-fraca` claro, `#57606a`) dava
+> **2,80:1** e a linha de OI (`--proc-forte` claro, `#131722`) dava **1,00:1** contra
+> `--sup-base` (`#131722`) — *invisível, igual ao fundo*, em produção. Depois: **5,82:1** e
+> **14,72:1**.
+>
+> **Os comandos e o `n` de cada número acima** — esta tarja trazia `[MEDIDO 2026-09-11]` sem
+> nenhum dos dois, que é exatamente o que o `CLAUDE.md` §*"Nenhum número sem o comando"* proíbe;
+> pago em 2026-09-11 pelo lote de conserto do gate da wave `03`:
+>
+> | número | comando literal | universo |
+> |---|---|---|
+> | `2,80` · `1,00` · `5,82` · `14,72` | `npm --prefix frontend run test:charts` → **189/189**, teste *"the measured ratios are the ones D13 recorded, to 2 decimals"* (`color-contrast.test.ts`), aritmética de `contrastRatio` (`frontend/src/charts/contrast.ts`, WCAG 2.x) | **n=6 papéis** de `CONTRAST_BACKDROP` — `colorTokens()` publica 6, e o teste *"every token declares a backdrop"* reprova se os dois conjuntos divergirem |
+> | chamadas com `"light"` no gráfico | `git grep -n 'colorTokens("light")' master -- frontend/src` → **6 ocorrências**, das quais **3 em produção** (`SymbolClient.tsx:226,264,290`) e 3 em teste | **n=6 ocorrências / 3 arquivos** — ⚠️ **o `4` que `D13` registrou não se reproduz por esta contagem**; o número verificável hoje é 3 sítios de produção em 1 arquivo |
+> | superfícies realmente pintadas | `grep -c -- '--color-surface-base:' frontend/src/app/globals.css` → **1** (era **2**: `#131722` no `@theme` e `#ffffff` dentro de `@media (prefers-color-scheme: light)`) | **n=1 arquivo CSS** |
+>
+> **⚠️ O que esta tarja OMITIA e o QA da wave `03` achou:** apagar a paleta clara do TypeScript
+> **não** a apagou do CSS. `globals.css` manteve um bloco `@media (prefers-color-scheme: light)`
+> com `--color-surface-base: #ffffff` até 2026-09-11, e sobre `#ffffff` a linha de OI
+> (`provenanceStrong`) dá **1,22:1** e `--dado-quebrado-ink` dá **1,85:1** — abaixo do piso 3,0,
+> isto é, o mesmo defeito reintroduzido por CSS `[MEDIDO 2026-09-11: `contrastRatio` sobre os 6
+> papéis contra `#ffffff`, n=6, 2 abaixo do piso]`. O bloco foi **removido** e `:root` passou a
+> declarar `color-scheme: dark` (para scrollbar e widget que o CSS não pinta). O portão deixou de
+> ser cego a isso: `color-contrast.test.ts` agora exige `--color-surface-base` declarado
+> **exatamente 1 vez, com qualquer indentação**, e **nenhum** bloco `prefers-color-scheme` no
+> arquivo — o regex antigo estava ancorado em 2 espaços e a 2ª declaração tinha 4, então ele
+> capturava só a escura e ficava verde.
+>
+> **O portão que impede a volta:** `frontend/src/charts/color-contrast.test.ts` reprova qualquer
+> token de série abaixo de **3,0:1** (WCAG 1.4.11) contra `--sup-base`. A exceção de `--direcao-on`
+> é **estrutural, não allowlist**: `CONTRAST_BACKDROP` é `Record<ColorRole, …>` e cada papel
+> **declara** contra o que é medido — `--direcao-on` declara os dois fills, que é exatamente o que
+> a linha dele nesta tabela já dizia (**5,01** sobre o verde · **4,59** sobre o vermelho).
+>
+> ⚠️ **Por que o `5,82` do portão não conflita com o `4,89` da coluna escuro:** a tabela mede o
+> **pior caso de superfície** (`--sup-listra`, `#222634`); o portão mede contra o fundo em que a
+> carta é realmente desenhada (`--sup-base`, `#131722`). Referências diferentes, ambas verdadeiras
+> — e a lição que este próprio `§1.2` escreve 10 linhas acima da tabela vale aqui inteira:
+> *"Superfície não declarada é superfície não medida"*.
+
 > **⚠️ Tarja de 2026-08-25 (3ª revisão): `--dado-quebrado-ink` TROCOU nos dois modos.**
 >
 > | | era | é | motivo |

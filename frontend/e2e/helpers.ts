@@ -95,6 +95,51 @@ export function countCollectorStatusAccessLogHits(): number {
   return (content.match(/GET .*\/collector-status/g) ?? []).length;
 }
 
+// ── A API DE LEITURA SOB TESTE — UMA ORIGEM, DECLARADA NUM LUGAR SÓ ──────────────────────────
+//
+// `BLOCKER-2` do gate da wave `03` de `cinco-metricas-do-core`: `08-symbol-dado-real.spec.ts`
+// tinha `process.env.E2E_SENTIMENTO_API_BASE_URL ?? "http://localhost:8000/api/v1"` e NADA
+// definia a variável (`grep -c E2E_SENTIMENTO_API_BASE_URL scripts/e2e-env.sh Makefile` → `0` e
+// `0`) ⇒ sob `make e2e` o TESTE lia a API de produção do owner e a PÁGINA lia a API efêmera de
+// fixture: `volume_api_rows_with_value=916` contra `volume_dom_present_points=0`, dois lados que
+// não podem concordar por construção. Agora a origem sai do mesmo `STATE_DIR` que dá o
+// `INGEST_HEALTH_API_BASE_URL` ao `next start` (`scripts/e2e-env.sh`), e mora AQUI para que
+// nenhum spec precise reinventar (nem redefaultar) o endereço.
+
+/** A base da API de leitura — com prefixo (`/api/v1`), sem barra final. LANÇA se não declarada:
+ * um default silencioso apontando para outro deployment é pior que nenhum, porque transforma
+ * "o número na tela é o número da API" numa comparação entre dois aplicativos diferentes. */
+export function sentimentoApiBaseUrl(): string {
+  const declared = process.env.E2E_SENTIMENTO_API_BASE_URL;
+  if (declared === undefined || declared === "") {
+    throw new Error(
+      "E2E_SENTIMENTO_API_BASE_URL is not set — a spec that compares the DOM against the read API has to be told " +
+        "WHICH API the app under test reads. `make e2e` exports it from the same STATE_DIR that gives the page its " +
+        "INGEST_HEALTH_API_BASE_URL (scripts/e2e-env.sh). Running Playwright by hand: export it pointing at the " +
+        "same backend `next start` was given, prefix included (e.g. http://127.0.0.1:8811/api/v1).",
+    );
+  }
+  return declared.replace(/\/+$/, "");
+}
+
+/** `GET /series-catalog`'s own `n_entries`, from the API the page under test reads.
+ *
+ * Specs ask the API instead of hard-coding a total on purpose: `catalog_rows:10` was typed in by
+ * `T-03.3` and `T-01.6` appended an eleventh row (`klines_volume`, `series_catalog.py:128`),
+ * which turned two green specs red without either of them touching the subject they test. This
+ * feature adds metrics by design, so a literal here is a scheduled false failure. */
+export async function seriesCatalogEntryCount(): Promise<number> {
+  const response = await fetch(`${sentimentoApiBaseUrl()}/series-catalog`);
+  if (!response.ok) {
+    throw new Error(`GET /series-catalog: HTTP ${response.status} — the read API under test did not answer`);
+  }
+  const body = (await response.json()) as { n_entries?: number };
+  if (typeof body.n_entries !== "number") {
+    throw new Error('GET /series-catalog answered without a numeric "n_entries" — the wire contract changed');
+  }
+  return body.n_entries;
+}
+
 // ── UM SEGUNDO `next start`, e um STUB HTTP — B3/B4/B5/B6/D1.5(b) (`SPEC-003` §5) ────────────
 //
 // `scripts/e2e-env.sh` só sobe DOIS mundos: a API real (semeada, ≥ 1 run) OU nada (porta

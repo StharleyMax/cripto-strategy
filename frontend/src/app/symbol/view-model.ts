@@ -38,11 +38,14 @@
  * needs no change, honoring the phase's "no new charts geometry" non-goal.]`
  */
 
-import { createHash } from "node:crypto";
-
 import { ONE_MINUTE_MS, resolveFlowReading, type FlowReading, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
+
+// Re-exported, not re-implemented: `computeSeriesKeyId` moved to its own module so a Playwright
+// spec can import it without evaluating the `charts` barrel (and, through it, `jsdom`). Every
+// caller of `view-model.ts` keeps working unchanged — see `series-key-id.ts` for the full why.
+export { computeSeriesKeyId } from "./series-key-id.ts";
 
 /** `RawCandle`'s shape, read off the barrel's own `S2RawInputs.candles` element type rather
  * than importing `canonical-grid.ts` directly — `charts/index.ts` (`ADR-034/D8`) re-exports
@@ -205,6 +208,23 @@ export function countPresentSlots(slots: readonly ScalarSlotShape[]): number {
 }
 
 /**
+ * The instant of the FIRST slot carrying a real value, or `null` when none does — the left end
+ * of the readable horizon the screen declares (`SymbolClient.tsx::ReadableHorizon`).
+ *
+ * Scanning FORWARD is the whole point and is not an implementation detail: over the derived
+ * window the first present slot sits at index `4.971/5.761` `[MEDIDO 2026-09-11,
+ * ACHADO-BACKFILL-INVISIVEL-AO-AS-OF.md]`, because rows imported by backfill carry
+ * `available_at = the instant we fetched them` and `R-1` refuses them at their own grid
+ * instant. This function reports that boundary; it does NOT move it, fill anything before it,
+ * or shorten the window to start there — `RN-1`'s absence stays absence, and the span stays
+ * `PRD-006 §2`/item `5.1`'s.
+ */
+export function firstPresentSlotMs(slots: readonly ScalarSlotShape[]): number | null {
+  const found = slots.find((slot) => slot.value !== null);
+  return found === undefined ? null : found.time;
+}
+
+/**
  * The volume reading at one instant, `FLOW` semantics (`resolveFlowReading`, reused from
  * `charts` — no second absence policy is written here).
  *
@@ -267,58 +287,3 @@ export function keyMatchesSymbol(key: SeriesKey, symbol: string): boolean {
   return key.instrumentId === symbol;
 }
 
-// ── `series_key_id` — computed client-side, not read off the wire ──────────────────────────
-//
-// `GET /series-catalog`'s envelope (`series_catalog.py::_entry_to_wire`) carries the 15 RAW
-// terms of a `SeriesKey` (`key`) but never the `sha256` id itself — `/series-history`'s own
-// query parameter — so `web` cannot look an id up, it has to RECOMPUTE the same hash the
-// backend computes, from the same 15 terms `/series-catalog` already hands it.
-// `series_key.py::SeriesKey.series_key_id()`, transcribed here field-for-field:
-//
-//   sha256(json.dumps({term: key[term] for term in SERIES_KEY_TERMS}, ensure_ascii=True,
-//                     separators=(",", ":"), sort_keys=False)).hexdigest()
-//
-// `canonical_json.py`'s own docstring: "insertion order IS the field order" — `SERIES_KEY_
-// TERMS`'s order (`provider, venue, instrument_id, metric, cohort, interval, unit, denom,
-// nature, ts_convention, reduction, quantity_field, label_shift, aggregation_scope,
-// verified_by`) is reproduced below as insertion order into a plain object, which
-// `JSON.stringify` preserves for non-integer-like string keys (every key here is) — and
-// `JSON.stringify`'s default output already carries no whitespace, matching Python's
-// `separators=(",", ":")` byte-for-byte for the ASCII field values this catalog only ever
-// carries (symbol/metric/etc. are all plain ASCII, so `ensure_ascii=True`'s escaping is a
-// no-op here). `SeriesKey.nature`/`.tsConvention`/`.reduction`/`.quantityField` are ALREADY
-// the enum's string VALUE on the wire (`series-catalog-query.ts`'s own
-// `NATURE_VALUES`/`TS_CONVENTION_VALUES`/etc. sets, checked against those exact strings) — no
-// `.value` projection is needed here, unlike the Python `Enum` member `canonical_terms()`
-// unwraps on its own side.
-const SERIES_KEY_BACKEND_TERM_ORDER: ReadonlyArray<readonly [keyof SeriesKey, string]> = [
-  ["provider", "provider"],
-  ["venue", "venue"],
-  ["instrumentId", "instrument_id"],
-  ["metric", "metric"],
-  ["cohort", "cohort"],
-  ["interval", "interval"],
-  ["unit", "unit"],
-  ["denom", "denom"],
-  ["nature", "nature"],
-  ["tsConvention", "ts_convention"],
-  ["reduction", "reduction"],
-  ["quantityField", "quantity_field"],
-  ["labelShift", "label_shift"],
-  ["aggregationScope", "aggregation_scope"],
-  ["verifiedBy", "verified_by"],
-];
-
-/**
- * Recomputes `SeriesKey.series_key_id()` (`series_key.py`) client-side, from the 15 raw terms
- * `GET /series-catalog` already serves — see the module-level comment above for the exact
- * mirroring and why it is necessary (the wire carries no id of its own).
- */
-export function computeSeriesKeyId(key: SeriesKey): string {
-  const projected: Record<string, string | number> = {};
-  for (const [tsField, backendTerm] of SERIES_KEY_BACKEND_TERM_ORDER) {
-    projected[backendTerm] = key[tsField] as string | number;
-  }
-  const canonical = JSON.stringify(projected);
-  return createHash("sha256").update(canonical, "utf8").digest("hex");
-}

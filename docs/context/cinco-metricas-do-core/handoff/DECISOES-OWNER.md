@@ -250,3 +250,85 @@ Eu objetei que, sob `D12`, o `forceOrder` (3 runs, **0 fechados**) daria denomin
 estava decidido:** `ADR-036/D4` tirou o `!forceOrder@arr` do caminho crítico e `D6` põe liquidações
 na Coinalyze. **A objeção pesava sobre um coletor que já foi decidido remover — não é insumo desta
 decisão.** Registrado para que não volte à mesa uma terceira vez.
+
+---
+
+## D13 · Tema único e escuro; o parâmetro de tema é APAGADO
+
+`[DECISÃO-OWNER: 2026-09-11, escolha entre alternativas apresentadas]` — literal do owner:
+*"pode registar a oção b"*, sobre um menu de 3 opções com custo declarado. **Não é fala dele**;
+a frase que É fala dele está no `D14`.
+
+**O que foi escolhido:** `colorTokens()` perde o parâmetro `mode`; `ColorMode` e a paleta clara
+são **deletados**. O app fica com **um** tema, o escuro.
+
+**O número que decidiu** `[MEDIDO 2026-09-11]`:
+
+| | tema claro | tema escuro |
+|---|---:|---:|
+| tokens em `frontend/src/app/globals.css` (`@theme`, sem media query) | **0** | **10** |
+| chamadas no código de produção do gráfico | 4 | 0 |
+
+⇒ o app **já era** escuro-apenas; só as 4 chamadas do gráfico pediam claro. Escuro custa 4 sítios;
+claro custaria reescrever a paleta inteira e a aparência de toda página.
+
+### ⚠️ Correção de 2026-09-11 — a tabela acima tem um universo VICIADO e um número que não se reproduz
+
+Pago pelo lote de conserto do gate da wave `03`, sobre o achado `BLOCKER-1` do QA. Duas coisas,
+e a primeira é a que importa:
+
+**1. O qualificador *"sem media query"* removia do universo justamente o contraexemplo.** Contado
+sem ele, `globals.css` tinha **2** declarações de `--color-surface-base` — `#131722` no `@theme` e
+`#ffffff` dentro de `@media (prefers-color-scheme: light)` (linhas 75-93 daquela versão) ⇒ a
+conclusão *"o app já era escuro-apenas"* valia para o TypeScript e **não** para o CSS, que é o que
+o browser pinta. Sobre `#ffffff` a linha de OI dava **1,22:1** e `--dado-quebrado-ink` **1,85:1**,
+abaixo do piso 3,0 desta wave. O bloco foi removido, `:root` ganhou `color-scheme: dark`, e o teste
+passou a exigir declaração única + zero `prefers-color-scheme`.
+
+```bash
+grep -c -- '--color-surface-base:' frontend/src/app/globals.css   # antes: 2 · hoje: 1
+grep -c 'prefers-color-scheme' frontend/src/app/globals.css       # hoje: 1, e é PROSA (o teste ignora comentário)
+npm --prefix frontend run test:charts                             # 189/189 (n=6 papéis medidos)
+```
+
+**2. As `4` chamadas em produção não se reproduzem; o número verificável é `3`.**
+
+```bash
+git grep -n 'colorTokens("light")' master -- frontend/src        # 6 ocorrências / 3 arquivos
+#   SymbolClient.tsx:226,264,290  (produção)  -> 3
+#   volume-subaxis-dom-contract.test.ts:1 + color-tokens.test.ts:2 (teste) -> 3
+```
+
+⇒ **3 sítios de produção, todos em `SymbolClient.tsx`** (o `4` provavelmente somou o contract
+test). A DECISÃO não muda — 3 ou 4 sítios contra "reescrever a paleta inteira" dá o mesmo
+veredito —, mas o número registrado fica corrigido em vez de propagado.
+
+`[MEDIDO 2026-09-11: os três comandos acima, nesta árvore, branch `wave/03-producao-e-janela-deslizante`]`
+
+**O que a troca conserta, medido contra `--color-surface-base = #131722`:**
+
+| série | com `"light"` (hoje) | com a paleta escura |
+|---|---:|---:|
+| volume (`provenanceWeak`) | **2,80:1** ⛔ reprova WCAG 1.4.11 | **5,82:1** |
+| linha de OI (`provenanceStrong`) | **1,00:1** — *invisível, igual ao fundo* | **14,72:1** |
+
+**Alternativas recusadas:** (A) trocar `"light"`→`"dark"` nos 4 sítios — deixa a armadilha armada,
+e ela **já disparou duas vezes no mesmo arquivo** (`SymbolClient.tsx:296` e `:334`); (C) derivar
+das CSS custom properties em runtime — faria `charts` depender do DOM, contra a pureza que
+`ADR-003` exige.
+
+⛔ **Acompanha um PORTÃO, e ele não é opcional:** nenhum token de série pode ficar abaixo de
+**3,0:1** contra `--color-surface-base`. Sem ele isto volta — e a prova é que a linha de OI está
+invisível em produção **agora**, sem que nenhum dos 6 portões do `make verify` tenha visto.
+
+⚠️ **Correção de uma afirmação minha:** na revisão de design marquei `directionOn` (`#131722`,
+`1,00:1` contra o fundo) como defeito. **Não é** — é a cor desenhada **sobre o corpo da vela**,
+onde dá `5,01:1` e `4,59:1`. Medi contra a referência errada. A paleta escura está inteira sã.
+
+## D14 · Mobile fica FORA do piloto
+
+`[PREMISSA-OWNER: 2026-09-11]` — literal: *"sem mobile no piloto"*.
+
+⇒ o domínio **Mobile Experience** sai do universo da revisão de design enquanto durar o piloto;
+uma nota baixa ali **não reprova** e não deve ser reportada como dívida. O alvo é desktop.
+Reabre quando o owner declarar, não por iniciativa de agente.

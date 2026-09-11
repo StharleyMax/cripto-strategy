@@ -103,6 +103,21 @@ cmd_up() {
         return 3
     fi
 
+    # ── A ORIGEM DA API, DECLARADA UMA VEZ SO ─────────────────────────────────────────────
+    # `BLOCKER-2` do gate da wave 03 de `cinco-metricas-do-core`: `08-symbol-dado-real.spec.ts`
+    # caia em `http://localhost:8000` (a API de PRODUCAO do owner) enquanto a PAGINA falava com
+    # esta API efemera — `grep -c E2E_SENTIMENTO_API_BASE_URL scripts/e2e-env.sh Makefile` -> 0 e
+    # 0. O teste comparava o DOM de uma pagina servida por uma API contra os numeros de OUTRA
+    # (916 vs 0), e os dois lados NUNCA podiam concordar. Agora existe UMA string: esta. O
+    # `next build`/`next start` a recebem como `INGEST_HEALTH_API_BASE_URL`, e o Playwright a
+    # recebe (com o prefixo) como `E2E_SENTIMENTO_API_BASE_URL`, lida do arquivo escrito abaixo.
+    local api_base_url="http://127.0.0.1:$api_port"
+    # Espelha `backend/src/main/__init__.py:47,103` e `collector-status-query.ts`'s
+    # `resolveApiPrefix()` — mesma variavel, mesmo default, e a API abaixo herda este mesmo
+    # ambiente, entao os tres concordam por construcao e nao por coincidencia.
+    local api_prefix="${API_PREFIX:-/api/v1}"
+    printf '%s%s\n' "$api_base_url" "$api_prefix" >"$state_dir/api_base_url"
+
     # ── API de teste (modo D1.11 "de pe") ────────────────────────────────────────────────
     local api_pid=""
     if [ "$api_up" = "1" ]; then
@@ -111,7 +126,14 @@ cmd_up() {
             rm -rf "$state_dir"
             return 3
         fi
+        # `QUARANTINE_STORE_PATH` vai para o MESMO diretorio efemero do store de ingest health:
+        # sem ele o default e `data/md/series_quarantine.sqlite3`
+        # (`backend/src/main/__init__.py:67`), `data/` e gitignored, e num clone limpo a API
+        # reprova no boot com `StoreParentDirectoryMissingError` — `make e2e` morria no setup com
+        # rc=3 antes de rodar um teste `[MEDIDO 2026-09-11: "RECUSA: API de teste nao respondeu
+        # em 45s" + "series quarantine store parent directory does not exist: data/md"]`.
         ( cd "$BACKEND" && INGEST_HEALTH_STORE_PATH="$store_path" APP_PORT="$api_port" \
+            QUARANTINE_STORE_PATH="$state_dir/series_quarantine.sqlite3" \
             exec "$PY" -m src.main ) >>"$state_dir/api.log" 2>&1 &
         api_pid=$!
         echo "$api_pid" >"$state_dir/api.pid"
@@ -130,7 +152,21 @@ cmd_up() {
     fi
 
     # ── next build + next start (a app SOBE sempre, com API de pe ou no chao) ───────────
-    if ! ( cd "$FRONTEND" && INGEST_HEALTH_API_BASE_URL="http://127.0.0.1:$api_port" \
+    # A PORTA DO NEXT E CHECADA COM O MESMO RIGOR DA PORTA DA API, e o motivo e medido: sem esta
+    # checagem, um `next start` ORFAO na porta (havia um, PID 3528580, de 2026-09-11 12:59,
+    # apontado para a API de producao) faz `_espera` responder "pronto" e a suite inteira roda
+    # contra um servidor QUE NAO E O BUILD SOB TESTE — `/symbol` respondia
+    # `data-volume-present-points="926"` com a API efemera sem NENHUM `series-history` no
+    # `api.log` (n=1 request, e era o meu `curl`). `next start` so escreve o EADDRINUSE em
+    # `next.log`, que ninguem le quando o alvo fica verde: mesma classe de cegueira do
+    # `BLOCKER-2` acima, um lado medindo coisa diferente do outro.
+    if ! _porta_livre "$next_port"; then
+        _log "RECUSA: porta $next_port (next start) ja tem algo escutando — mate o processo orfao"
+        _log "        ou escolha outra via E2E_NEXT_PORT. Rodar assim mediria OUTRO servidor."
+        cmd_down "$state_dir" >/dev/null 2>&1
+        return 3
+    fi
+    if ! ( cd "$FRONTEND" && INGEST_HEALTH_API_BASE_URL="$api_base_url" \
             timeout "$_TIMEOUT_BUILD_S" node_modules/.bin/next build ) >>"$state_dir/next-build.log" 2>&1
     then
         _log "RECUSA: 'next build' falhou — ver $state_dir/next-build.log"
@@ -140,7 +176,7 @@ cmd_up() {
         return 3
     fi
 
-    ( cd "$FRONTEND" && INGEST_HEALTH_API_BASE_URL="http://127.0.0.1:$api_port" \
+    ( cd "$FRONTEND" && INGEST_HEALTH_API_BASE_URL="$api_base_url" \
         exec node_modules/.bin/next start -p "$next_port" ) >>"$state_dir/next.log" 2>&1 &
     local next_pid=$!
     echo "$next_pid" >"$state_dir/next.pid"

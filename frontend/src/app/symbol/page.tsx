@@ -13,9 +13,15 @@
  *      `SPEC-007 §3.6` — `klines_volume`, `1m`, cataloged by `T-01.6`), find the ONE catalog
  *      entry that matches (symbol + a per-series selector, below), recompute its `series_key_id`
  *      (`view-model.ts::computeSeriesKeyId`), and fetch `GET /series-history` for it
- *      (`series-history-client.ts`) over the fixed 4-day window `charts/index.ts` names
- *      (`RANGE_START_MS`/`RANGE_END_MS_EXCLUSIVE`, `s2-panels.ts`'s own decision, `ADR-034/D8`
- *      re-exports it — this route does not invent a second window).
+ *      (`series-history-client.ts`) over the TRAILING 4-day window `resolveRouteWindow`
+ *      derives from this request's own clock reading (`request-window.ts`; the geometry itself
+ *      is `charts`' `resolveTrailingWindow`, reached through the `ADR-034/D8` barrel — this
+ *      route neither invents a second window nor computes a bucket boundary).
+ *
+ *      ⛔ It used to be a FIXED window (`RANGE_START_MS`/`RANGE_END_MS_EXCLUSIVE`, four days of
+ *      2026-08). That was the second defect of `ACHADO-SERIES-HISTORY-SEM-PONTO.md`: the data
+ *      starts at 2026-09-04, so the route asked for a window that precedes every row that
+ *      exists and the page rendered nothing while every link in the chain worked.
  *   3. Map the rows into `RawCandle[]`/`ScalarPoint[]`/`ScaledCvdDeltaInput[]`
  *      (`view-model.ts`) and call `buildS2Panels` (the barrel) to get the 3 panels; volume is
  *      mapped separately (`volumeSlotsFromHistoryRows`) because it is a sub-axis, not a panel.
@@ -38,10 +44,10 @@
  *   - the catalog fetch itself throws `TransportError` — every panel degrades together.
  *
  * In every case the panel's raw inputs become empty arrays and `missingDays` becomes the FULL
- * `DAYS` list — `buildS2Panels`'s own grid-alignment machinery (untouched, `plan 02`'s "no new
- * charts geometry" non-goal) then renders every slot as an explicit gap, which
- * `s2-lightweight-adapter.ts`'s LOSSLESS mappings turn into `WhitespaceItem`s on screen. No
- * branch anywhere in this pipeline substitutes a `0` for "I could not get a real number".
+ * day list of the window — `buildS2Panels`'s own grid-alignment machinery (untouched,
+ * `plan 02`'s "no new charts geometry" non-goal) then renders every slot as an explicit gap,
+ * which `s2-lightweight-adapter.ts`'s LOSSLESS mappings turn into `WhitespaceItem`s on screen.
+ * No branch anywhere in this pipeline substitutes a `0` for "I could not get a real number".
  *
  * `dynamic = "force-dynamic"`: same reasoning `console/page.tsx` documents in full — this
  * route's transports throw synchronously on a missing `INGEST_HEALTH_API_BASE_URL` BEFORE any
@@ -52,11 +58,7 @@ import type { Metadata } from "next";
 
 import {
   buildS2Panels,
-  DAYS,
   FIVE_MINUTES_MS,
-  ONE_MINUTE_MS,
-  RANGE_END_MS_EXCLUSIVE,
-  RANGE_START_MS,
   S2_PRICE_USE,
   SYMBOL,
   type S2Panels,
@@ -75,10 +77,12 @@ import {
   type SeriesHistoryRow,
 } from "./series-history-client.ts";
 import type { PanelStatus } from "./panel-status.ts";
+import { resolveRouteWindow, type RouteWindow } from "./request-window.ts";
 import { SymbolClient, type VolumeSubAxisData } from "./SymbolClient.tsx";
 import {
   computeSeriesKeyId,
   countPresentSlots,
+  firstPresentSlotMs,
   daysWithPresence,
   keyMatchesSymbol,
   rawCandlesFromHistoryRows,
@@ -94,11 +98,6 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const WINDOW_END_MS_INCLUSIVE = RANGE_END_MS_EXCLUSIVE - ONE_MINUTE_MS;
-/** Fixed, in-the-past instant (the window's own exclusive end) — never `Date.now()`: keeps this
- * route's `knowledge_time_ms` deterministic and clear of any server-clock-skew `422`
- * (`knowledge_time_ms` must never exceed the backend's own `server_now_ms`). */
-const KNOWLEDGE_TIME_MS = RANGE_END_MS_EXCLUSIVE;
 const BAR_POLICY: BarPolicy = "final_only";
 const OI_METRIC = "sum_open_interest";
 /** `[INFERRED]`: no catalog builder in `backend/src/modules/sentimento/domain/` produces this
@@ -121,8 +120,12 @@ function findCatalogEntry(
   return catalog.entries.find((entry) => keyMatchesSymbol(entry.key, SYMBOL) && predicate(entry));
 }
 
+/** `routeWindow` is PASSED IN, not read from a module constant: one clock reading serves the
+ * whole render, so the four panels are guaranteed to be asking about the same window even if
+ * the request straddles a bucket boundary. */
 async function fetchPanelRows(
   entry: SeriesCatalogEntry | undefined,
+  routeWindow: RouteWindow,
 ): Promise<{ readonly rows: readonly SeriesHistoryRow[]; readonly status: PanelStatus }> {
   if (entry === undefined) {
     return { rows: [], status: { kind: "absent", reason: "not_in_catalog" } };
@@ -131,9 +134,9 @@ async function fetchPanelRows(
     series_key_id: computeSeriesKeyId(entry.key),
     symbol: SYMBOL,
     interval: "1m",
-    window_start_ms: RANGE_START_MS,
-    window_end_ms: WINDOW_END_MS_INCLUSIVE,
-    knowledge_time_ms: KNOWLEDGE_TIME_MS,
+    window_start_ms: routeWindow.window.startMs,
+    window_end_ms: routeWindow.windowEndMsInclusive,
+    knowledge_time_ms: routeWindow.knowledgeTimeMs,
     bar_policy: BAR_POLICY,
   };
   try {
@@ -165,6 +168,11 @@ function buildLiveUrl(baseUrl: string, entry: SeriesCatalogEntry | undefined): s
 }
 
 export default async function SymbolPage() {
+  // The ONE clock reading of this render. `Date.now()` is I/O and therefore lives here, in
+  // `web`, and nowhere else — `request-window.ts`/`resolveTrailingWindow` take it as an
+  // argument precisely so the window stays falsifiable at every instant.
+  const routeWindow = resolveRouteWindow(Date.now());
+
   let catalog: SeriesCatalogProjection;
   let catalogStatus: PanelStatus = { kind: "ok" };
   try {
@@ -187,16 +195,19 @@ export default async function SymbolPage() {
     catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.key.metric === VOLUME_METRIC) : undefined;
 
   const [priceResult, oiResult, cvdResult, volumeResult] = await Promise.all([
-    fetchPanelRows(priceEntry),
-    fetchPanelRows(oiEntry),
-    fetchPanelRows(cvdEntry),
-    fetchPanelRows(volumeEntry),
+    fetchPanelRows(priceEntry, routeWindow),
+    fetchPanelRows(oiEntry, routeWindow),
+    fetchPanelRows(cvdEntry, routeWindow),
+    fetchPanelRows(volumeEntry, routeWindow),
   ]);
 
-  const oiPresence = daysWithPresence(oiResult.rows, DAYS);
-  const cvdPresence = daysWithPresence(cvdResult.rows, DAYS);
+  // The day list is the window's own (`utcDaysCovered`, derived in `charts`), never a literal.
+  const days = routeWindow.window.days;
+  const oiPresence = daysWithPresence(oiResult.rows, days);
+  const cvdPresence = daysWithPresence(cvdResult.rows, days);
 
   const rawInputs: S2RawInputs = {
+    window: routeWindow.window,
     candles: rawCandlesFromHistoryRows(priceResult.rows),
     priceUse: S2_PRICE_USE,
     oiPoints: scalarPointsFromHistoryRows(oiResult.rows, FIVE_MINUTES_MS),
@@ -206,7 +217,7 @@ export default async function SymbolPage() {
     cvdCoveredDays: cvdPresence.coveredDays,
   };
 
-  // Each field of `rawInputs` above ALREADY degrades to `[]`/full-`DAYS`-missing independently
+  // Each field of `rawInputs` above ALREADY degrades to `[]`/every-day-missing independently
   // per panel (`fetchPanelRows` returns `rows: []` on its own failure) — no further collapsing
   // needed here even when every panel failed; `rawInputs` and `EMPTY_PANELS_INPUT` would be
   // equivalent in that case anyway. `buildS2Panels` never sees a mix that hides one panel's
@@ -229,9 +240,13 @@ export default async function SymbolPage() {
   const volume: VolumeSubAxisData = {
     slots: volumeSlots,
     presentPoints: countPresentSlots(volumeSlots),
-    // `WINDOW_END_MS_INCLUSIVE` is the same instant `SymbolClient.tsx` names `LAST_INSTANT_MS`
+    // The left end of the readable horizon, DECLARED on screen rather than left to look like a
+    // dead market (`quant-architect`, wave `03`, C4). Derived from the same slots the sub-axis
+    // draws, so the number the screen prints and the bars it draws cannot disagree.
+    firstPresentMs: firstPresentSlotMs(volumeSlots),
+    // `windowEndMsInclusive` is the same instant `SymbolClient.tsx` derives as `lastInstantMs`
     // for the other three readouts — one instant for the whole page, not a fourth one.
-    reading: resolveVolumeReading(volumeSlots, WINDOW_END_MS_INCLUSIVE),
+    reading: resolveVolumeReading(volumeSlots, routeWindow.windowEndMsInclusive),
   };
 
   const baseUrl = process.env.INGEST_HEALTH_API_BASE_URL;
@@ -254,6 +269,7 @@ export default async function SymbolPage() {
         cvd: cvdResult.status,
         volume: volumeResult.status,
       }}
+      knowledgeTimeMs={routeWindow.knowledgeTimeMs}
       liveUrls={liveUrls}
     />
   );
