@@ -9,15 +9,17 @@
  *      the SAME query `/console` already makes; not duplicated here) — its wire carries the
  *      15 raw `SeriesKey` terms for every cataloged series, BTCUSDT included, but no
  *      `series_key_id` of its own (`view-model.ts`'s own comment on `computeSeriesKeyId`).
- *   2. For each of the 3 panels, find the ONE catalog entry that matches (symbol + a
- *      panel-specific selector, below), recompute its `series_key_id`
+ *   2. For each of the 3 panels PLUS the volume sub-axis of the price panel (`T-01.7`,
+ *      `SPEC-007 §3.6` — `klines_volume`, `1m`, cataloged by `T-01.6`), find the ONE catalog
+ *      entry that matches (symbol + a per-series selector, below), recompute its `series_key_id`
  *      (`view-model.ts::computeSeriesKeyId`), and fetch `GET /series-history` for it
  *      (`series-history-client.ts`) over the fixed 4-day window `charts/index.ts` names
  *      (`RANGE_START_MS`/`RANGE_END_MS_EXCLUSIVE`, `s2-panels.ts`'s own decision, `ADR-034/D8`
  *      re-exports it — this route does not invent a second window).
  *   3. Map the rows into `RawCandle[]`/`ScalarPoint[]`/`ScaledCvdDeltaInput[]`
- *      (`view-model.ts`) and call `buildS2Panels` (the barrel) to get the 3 panels.
- *   4. Hand `{ panels, panelStatus, liveUrls }` to `SymbolClient.tsx` by props.
+ *      (`view-model.ts`) and call `buildS2Panels` (the barrel) to get the 3 panels; volume is
+ *      mapped separately (`volumeSlotsFromHistoryRows`) because it is a sub-axis, not a panel.
+ *   4. Hand `{ panels, volume, panelStatus, liveUrls }` to `SymbolClient.tsx` by props.
  *
  * ── WHY EVERY FAILURE DEGRADES TO ABSENCE, NEVER A THROWN PAGE (`CA-F2-3`) ──────────────────
  *
@@ -73,14 +75,17 @@ import {
   type SeriesHistoryRow,
 } from "./series-history-client.ts";
 import type { PanelStatus } from "./panel-status.ts";
-import { SymbolClient } from "./SymbolClient.tsx";
+import { SymbolClient, type VolumeSubAxisData } from "./SymbolClient.tsx";
 import {
   computeSeriesKeyId,
+  countPresentSlots,
   daysWithPresence,
   keyMatchesSymbol,
   rawCandlesFromHistoryRows,
+  resolveVolumeReading,
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
+  volumeSlotsFromHistoryRows,
 } from "./view-model.ts";
 
 export const metadata: Metadata = {
@@ -102,6 +107,12 @@ const OI_METRIC = "sum_open_interest";
  * the forward-compatible selector so this panel starts reading real data the day `sentimento`
  * ships one, instead of a second code path this page would need later. */
 const CVD_METRIC = "cvd_delta";
+/** `T-01.7` / `SPEC-007 §4`, row M1 — the volume SUB-AXIS of the price panel (§3.6), whose
+ * catalog entry `T-01.6` registered (`domain/klines_volume_catalog.py`, `metric` transcribed
+ * here, not re-derived). Its `interval` is `1m` (§4.1), the grid `/series-history` serves
+ * natively, so this request asks for exactly the same `interval` the other three do while the
+ * series behind it is the only one of the four with no ladder. */
+const VOLUME_METRIC = "klines_volume";
 
 function findCatalogEntry(
   catalog: SeriesCatalogProjection,
@@ -172,11 +183,14 @@ export default async function SymbolPage() {
     catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.key.metric === OI_METRIC) : undefined;
   const cvdEntry =
     catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.key.metric === CVD_METRIC) : undefined;
+  const volumeEntry =
+    catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.key.metric === VOLUME_METRIC) : undefined;
 
-  const [priceResult, oiResult, cvdResult] = await Promise.all([
+  const [priceResult, oiResult, cvdResult, volumeResult] = await Promise.all([
     fetchPanelRows(priceEntry),
     fetchPanelRows(oiEntry),
     fetchPanelRows(cvdEntry),
+    fetchPanelRows(volumeEntry),
   ]);
 
   const oiPresence = daysWithPresence(oiResult.rows, DAYS);
@@ -199,6 +213,27 @@ export default async function SymbolPage() {
   // real data because a SIBLING panel's fetch failed.
   const panels: S2Panels = buildS2Panels(rawInputs);
 
+  // ── The volume sub-axis (`T-01.7`) ────────────────────────────────────────────────────────
+  //
+  // NOT part of `S2RawInputs`/`buildS2Panels`: `SPEC-007 §3.6` makes volume a SUB-AXIS of the
+  // price panel, and widening `charts`' panel composition for it would be a change to a
+  // component this task does not own (`ADR-003`; this task is `components = ["web"]`). The
+  // slots are the route's OWN 1-minute grid, transcribed — see `view-model.ts`'s section on
+  // `klines_volume` for why that is transcription and not a second grid implementation.
+  //
+  // Every failure degrades exactly like the three panels above: `volumeResult.rows` is `[]`, so
+  // `slots` is `[]`, `presentPoints` is `0` and the reading is `absent` — which the sub-axis
+  // prints as `SEM_PONTO`. No branch anywhere here substitutes a `0` for a missing number, and
+  // for this `FLOW` series that is a rule of TYPE, not of taste (`RN-1`).
+  const volumeSlots = volumeSlotsFromHistoryRows(volumeResult.rows);
+  const volume: VolumeSubAxisData = {
+    slots: volumeSlots,
+    presentPoints: countPresentSlots(volumeSlots),
+    // `WINDOW_END_MS_INCLUSIVE` is the same instant `SymbolClient.tsx` names `LAST_INSTANT_MS`
+    // for the other three readouts — one instant for the whole page, not a fourth one.
+    reading: resolveVolumeReading(volumeSlots, WINDOW_END_MS_INCLUSIVE),
+  };
+
   const baseUrl = process.env.INGEST_HEALTH_API_BASE_URL;
   const liveUrls =
     baseUrl === undefined
@@ -212,7 +247,13 @@ export default async function SymbolPage() {
   return (
     <SymbolClient
       panels={panels}
-      panelStatus={{ price: priceResult.status, oi: oiResult.status, cvd: cvdResult.status }}
+      volume={volume}
+      panelStatus={{
+        price: priceResult.status,
+        oi: oiResult.status,
+        cvd: cvdResult.status,
+        volume: volumeResult.status,
+      }}
       liveUrls={liveUrls}
     />
   );

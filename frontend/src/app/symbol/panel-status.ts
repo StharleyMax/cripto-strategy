@@ -17,3 +17,22 @@ export type PanelStatus =
       readonly kind: "absent";
       readonly reason: "not_in_catalog" | "missing_base_url" | "connection_refused" | "non_2xx" | "malformed_envelope";
     };
+
+/**
+ * `T-01.7` — the four statuses `/symbol` computes today, named once so `page.tsx` and
+ * `SymbolClient.tsx` cannot drift on the set.
+ *
+ * `volume` is a FOURTH status for a THIRD chart surface, and that is not a contradiction: it is
+ * the sub-axis of the price panel (`SPEC-007 §3.6`), not a panel of its own, but it is fetched
+ * from its OWN `series_key_id` (`klines_volume`, `SPEC-007 §4`) and therefore fails and degrades
+ * on its own — price can be present while volume is absent, and the operator has to be able to
+ * tell which of the two is missing. `PanelStatus`'s existing five reasons cover it unchanged;
+ * `not_in_catalog` is the live one until `T-01.6`'s catalog entry reaches the environment being
+ * looked at.
+ */
+export interface SymbolPanelStatuses {
+  readonly price: PanelStatus;
+  readonly oi: PanelStatus;
+  readonly cvd: PanelStatus;
+  readonly volume: PanelStatus;
+}

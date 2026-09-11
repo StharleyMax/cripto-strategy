@@ -16,19 +16,26 @@ import { test } from "node:test";
 import {
   buildS2Panels,
   candlestickSeriesLossless,
+  lineSeriesLossless,
+  resolveFlowReading,
   S2_PRICE_USE,
   type CandlestickItem,
+  type LineItem,
   type WhitespaceItem,
 } from "../../charts/index.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import {
   computeSeriesKeyId,
+  countPresentSlots,
   daysWithPresence,
+  InvalidSeriesValueError,
   keyMatchesSymbol,
   parseSignedDecimalToScaled,
   rawCandlesFromHistoryRows,
+  resolveVolumeReading,
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
+  volumeSlotsFromHistoryRows,
 } from "./view-model.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 
@@ -157,4 +164,81 @@ test("keyMatchesSymbol / computeSeriesKeyId: deterministic, sensitive to every t
 
   const changedVerifiedBy = computeSeriesKeyId({ ...base, verifiedBy: "T-06.6" });
   assert.notEqual(id1, changedVerifiedBy, "verified_by is inside the identity — a change must re-identify the series");
+});
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// `T-01.7` — the volume sub-axis (`klines_volume`, M1, `SPEC-007` §3.6/§4.1)
+//
+// The falsifier of this task is `RN-1`: absence is `SEM_PONTO`, NEVER zero — and for a `FLOW`
+// series a fabricated zero is an error of TYPE, not of UX. Each test below names the defect
+// shape it catches, and the MORDE cases show the falsifiers are not vacuous.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+test("RN-1 (volume, end to end): an absent 1m row becomes a bare WhitespaceItem — never a zero bar", () => {
+  const slots = volumeSlotsFromHistoryRows(rowsWithOneAbsentMinute());
+  assert.equal(slots.length, 3, "one slot per wire row — the route already walks the 1m grid");
+  assert.equal(slots[1]!.value, null, "the absent minute must be an explicit gap, not a number");
+
+  // Through the REAL adapter `SymbolClient.tsx` feeds the histogram series with.
+  const items = lineSeriesLossless(slots);
+  const middle = items.find((item) => item.time === (RANGE_START_MS + ONE_MINUTE_MS) / 1000);
+  assert.ok(middle !== undefined, "the absent minute must still occupy the axis");
+  assert.ok(
+    !("value" in (middle as LineItem | WhitespaceItem)),
+    `the absent minute must be a bare {time} WhitespaceItem — got ${JSON.stringify(middle)}`,
+  );
+  const first = items.find((item) => item.time === RANGE_START_MS / 1000) as LineItem;
+  assert.equal(first.value, 111.5, "a present bucket's real volume must survive unchanged");
+});
+
+test("MORDE (negative control): the zero-fabricating mapping RN-1 forbids IS distinguishable from the real one", () => {
+  const rows = rowsWithOneAbsentMinute();
+  // The exact defect shape `RN-1` names, kept next to the real mapping so the assert is
+  // provably NOT vacuous: the two disagree at the absent minute, and this test fails the day
+  // `volumeSlotsFromHistoryRows` is ever "simplified" into it.
+  const fabricated = rows.map((row) => ({ time: row.event_time, value: Number(row.value ?? 0) }));
+  assert.equal(fabricated[1]!.value, 0, "sanity: this IS what the forbidden mapping produces");
+  const real = volumeSlotsFromHistoryRows(rows);
+  assert.notEqual(real[1]!.value, fabricated[1]!.value, "the real mapping must NOT agree with the fabricated one");
+  assert.equal(real[1]!.value, null);
+});
+
+test("countPresentSlots counts REAL buckets only — the number DoD-3/RN-S2 checks against N >= 30", () => {
+  const slots = volumeSlotsFromHistoryRows(rowsWithOneAbsentMinute());
+  assert.equal(countPresentSlots(slots), 2, "the absent minute must not be counted as a point");
+  assert.equal(countPresentSlots([]), 0, "an empty sub-axis has zero points, and says so");
+  // `RN-S1`'s `/5` divisor does NOT apply to M1: `klines_volume` is `1m` native (`SPEC-007`
+  // §4.1), so no slot repeats a neighbour's bar and present slots ARE distinct native bars.
+  // Applying the divisor here would undercount by 5×, which is why the rule is stated, not assumed.
+  assert.equal(countPresentSlots(slots), slots.filter((slot) => slot.value !== null).length);
+});
+
+test("resolveVolumeReading: a real bucket answers its own number, and absence never borrows a neighbour's", () => {
+  const slots = volumeSlotsFromHistoryRows(rowsWithOneAbsentMinute());
+  assert.deepEqual(resolveVolumeReading(slots, RANGE_START_MS), { kind: "present", value: 111.5 });
+  // FLOW never carries forward: the absent minute stays absent even though the minute before it
+  // has a real number (`resolveFlowReading`, reused from `charts` — no LOCF, ever).
+  assert.deepEqual(resolveVolumeReading(slots, RANGE_START_MS + ONE_MINUTE_MS), { kind: "absent", value: null });
+});
+
+test("resolveVolumeReading on an EMPTY sub-axis answers absent instead of throwing — the /symbol crash guard", () => {
+  assert.deepEqual(resolveVolumeReading([], RANGE_START_MS), { kind: "absent", value: null });
+  // MORDE, and it is what makes the guard load-bearing rather than decorative: the `charts`
+  // function this delegates to DOES throw on an empty grid, and empty is the NORMAL state of
+  // this sub-axis whenever the panel degraded (no catalog row, transport down, nothing ingested
+  // yet). Without the guard, `/symbol` would crash on an absence it is designed to render.
+  assert.throws(() => resolveFlowReading([], ONE_MINUTE_MS, RANGE_START_MS), { name: "RangeError" });
+});
+
+test("volumeSlotsFromHistoryRows refuses a malformed value instead of hiding it as absence", () => {
+  const notANumber: readonly SeriesHistoryRow[] = [
+    { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "not-a-number", absence: null },
+  ];
+  assert.throws(() => volumeSlotsFromHistoryRows(notANumber), InvalidSeriesValueError);
+  // A negative traded volume is a contract break too (`nature=FLOW`, `reduction=SUM`,
+  // `denom=base`): refused loudly rather than drawn as a downward bar nobody could explain.
+  const negative: readonly SeriesHistoryRow[] = [
+    { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "-1", absence: null },
+  ];
+  assert.throws(() => volumeSlotsFromHistoryRows(negative), InvalidSeriesValueError);
 });
