@@ -306,3 +306,137 @@ Não decide, não emenda `ADR-006`/`ADR-008`/`ADR-030`/`ADR-035`/`SPEC-001`, nã
 não cria task, não altera código e **não tocou `frontend/`**. Nenhum gate de owner foi executado:
 a SPEC desta feature continua onde o ledger diz que está (`harness pipeline state
 cinco-metricas-do-core` → `BUILD_AUTHORIZED`).
+
+---
+
+# `E6` · Marco zero — limpar `md.series` e reingerir, e o que isso muda no custo de `E1`
+
+**Levantado em 2026-09-11 a pedido do owner**, literal:
+
+> *"antes da virada para essa feature estávamos capturando alguns dados pelo WS e ele n tinha
+> todos os dados que precisaria para os candles e talz. Ele foram importados muito antes de
+> várias definições. limpar essa base inteira e ter esse marco zero ou que já tinha na base n
+> gera impacto?"* `[PREMISSA-OWNER: 2026-09-11]`
+
+⛔ **Nada decidido aqui.** Este bloco existe porque a resposta medida **muda o custo de `E1`**, e
+decidir `E1` sem ela é decidir com o preço errado.
+
+## 0 · O que foi medido, e com qual comando
+
+Todos `[MEDIDO 2026-09-11T~19:20Z]`, contra a stack de produção viva, **só leitura, nenhuma
+escrita, nenhum seed**.
+
+```bash
+# (1) existe alguma linha da era do WebSocket?
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -c \
+ "select count(*) from md.series
+   where src_label_raw ilike '%stream%' or src_label_raw ilike '%forceorder%'
+      or source ilike '%stream%';"
+# → 0
+
+# (2) o inventario inteiro, por serie
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' -c \
+ "select src_label_raw, count(*),
+         to_char(to_timestamp(min(ingested_at)/1000),'MM-DD HH24:MI'),
+         to_char(to_timestamp(max(ingested_at)/1000),'MM-DD HH24:MI')
+    from md.series group by 1;"
+# → /fapi/v1/klines       |125156| escrito 09-11 01:40 -> 09-11 19:14
+# → /fapi/v1/premiumIndex | 34592| escrito 09-08 18:40 -> 09-11 19:14
+
+# (3) quanto da base e LEGIVEL ao as_of (available_at no proprio instante de grade)
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' -c \
+ "select src_label_raw, count(*),
+         count(*) filter (where available_at - bucket_end <= 60000),
+         round(100.0*count(*) filter (where available_at - bucket_end <= 60000)/count(*),1)
+    from md.series group by 1;"
+# → klines       |125160|4116 | 3.3%
+# → premiumIndex | 34592|34592|100.0%
+
+# (4) o historico de runs — a era do WS deixou o que?
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' -c \
+ "select endpoint, count(*), min(started_at), max(started_at),
+         count(*) filter (where writer_accounted_at is null)
+    from md.ingest_run group by 1 order by 2 desc;"
+# → premiumIndex |4295| 09-08 -> 09-11 | 3247 nunca fechados
+# → klines       |1030| 09-11 -> 09-11 |    1 nunca fechado
+# → /stream?…forceOrder | 5 | 09-08 -> 09-11 | 5 nunca fechados
+
+# (5) o dado e re-obtenivel? (REST publico, so leitura)
+curl -s "https://fapi.binance.com/fapi/v1/premiumIndexKlines?symbol=BTCUSDT&interval=1m&startTime=1757289600000&limit=3"
+# → devolve 1m de ~1 ano atras
+curl -s "https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1d&startTime=1568000000000&limit=2"
+# → devolve 2019-09-09
+```
+
+## 1 · A premissa da pergunta não se sustenta — e isso é a favor do owner
+
+**Não há uma única linha da era do WebSocket em `md.series`** (`n=0`, comando `(1)`). O stream
+aparece em `md.ingest_run` com **5 runs, os 5 nunca fechados**, e nenhum produziu linha.
+
+⇒ **O "marco zero" que a pergunta propõe já aconteceu**, involuntariamente. Não existe passivo
+pré-definições para limpar: o que a pergunta teme já não está lá.
+
+E o resto da base é **novo, não histórico**: as 125.156 linhas de klines foram **escritas hoje**
+(`ingested_at` 09-11 01:40→19:14, comando `(2)`). É um backfill de algumas horas, não acervo.
+
+## 2 · O custo de limpar é ZERO em dado permanente — verificado, não presumido
+
+Comando `(5)`: `klines` responde 2019 e `premiumIndexKlines` responde 1m de um ano atrás. **Toda
+linha da base é re-obtenível do REST da Binance.** Os 842 MB de `data/` são de terceiro,
+gitignored e catalogados em `data/MANIFEST.md` — não são a base e não estão em risco.
+
+⚠️ **O que se perde é TEMPO de reingestão, não dado.** Isto é o que tira a limpeza da classe
+"decisão de risco" e a põe na classe "decisão de quando".
+
+## 3 · Por que limpar sozinho NÃO conserta nada
+
+Comando `(3)`: **96,7% de klines é invisível ao leitor** (4.116 legíveis de 125.160). A causa é
+`E1` — `available_at` é a hora da busca. **Limpar não toca nessa causa:** o próximo backfill
+reproduz os mesmos 3,3% no dia seguinte, e o owner terá pago a limpeza para ter a mesma base
+quebrada, só mais nova.
+
+⇒ **Limpeza antes de `E1` é reset cosmético.** Limpeza depois de `E1` é marco zero de verdade.
+
+## 4 · E o que isso muda no custo de `E1`, que é o motivo deste bloco existir
+
+A opção 2 de `E1` (reconstruir `available_at` com `availability_source = MODELED`) foi orçada
+**com 121.044 linhas legadas a migrar**. Com base limpa, essa metade do custo **deixa de existir**:
+não há retrofit, não há duas classes de linha convivendo, não há janela em que o consumidor vê
+`OBSERVED` e `MODELED` misturados sem saber por quê.
+
+| | `E1` sobre a base atual | `E1` depois de `E6` |
+|---|---|---|
+| linhas a reescrever | **121.044** | 0 |
+| classes de `availability_source` convivendo | 2 | 1 desde a 1ª linha |
+| risco de migração parcial | real (falha no meio ⇒ base mista) | inexistente |
+| custo que sobra | reingestão + código | **só código** |
+
+## 5 · As opções
+
+**Opção A — limpar agora, decidir `E1` depois.** ⛔ **Não recomendada.** Paga a reingestão e
+reproduz os 3,3% em ~24 h. É o único caminho que gasta sem comprar nada.
+
+**Opção B — decidir `E1` (+ as 8 órfãs), depois limpar e reingerir. ✅ RECOMENDADA.**
+Sequência: `E1` → catálogo das 8 órfãs → `TRUNCATE` → reingestão com o carimbo certo desde a
+primeira linha. **O que ela fecha:** a base passa a ter uma só proveniência e nenhuma linha
+anterior às definições — e isso **não volta atrás**, porque reingerir de novo depois custa o
+mesmo tempo outra vez.
+
+**Opção C — não limpar; migrar `available_at` no lugar.** Mantém a base, paga os 121.044 de
+retrofit. **Vantagem:** não há janela sem dado. **Desvantagem:** compra o risco de migração
+parcial para preservar linhas que, medidas, ninguém consegue ler hoje (3,3%).
+
+## 6 · A interação que o owner precisa ver antes de escolher
+
+As **8 séries de `premiumIndex` são 100% legíveis** (comando `(3)`) **e são exatamente as 8
+órfãs** que `handoff/ACHADO-CATALOGO-SEM-MARK-PRICE-E-FUNDING.md` escalou: nenhum catálogo as
+serve. ⇒ **é o único dado perfeito da base, e ninguém consegue lê-lo.** Limpar sem decidir o
+catálogo delas destrói dado legível para recriá-lo igualmente ilegível.
+
+⇒ **`E6` opção B exige a decisão das 8 órfãs junto**, não depois. As duas são um ato só.
+
+## 7 · Falsificador de `E6`
+
+Se, depois de `E1` + reingestão, o comando `(3)` **não** subir de **3,3%** para perto de 100% em
+klines, então a causa diagnosticada estava errada e `E1` não era o conserto — e a limpeza terá
+sido gasto puro. **Rode o comando `(3)` antes e depois; ele é o mesmo número, medido igual.**
