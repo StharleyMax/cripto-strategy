@@ -57,7 +57,7 @@ from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngest
 from src.modules.sentimento.infra.sqlite_series_quarantine_store import (
     SqliteSeriesQuarantineStore,
 )
-from src.modules.sentimento.use_cases.series_catalog import list_series_catalog
+from src.modules.sentimento.use_cases.series_catalog import list_pilot_series_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -260,10 +260,15 @@ def create_app(
     app.include_router(api_router, prefix=api_prefix)
     app.dependency_overrides[get_ingest_record_source] = lambda: ingest_store
     app.dependency_overrides[get_store_readiness_source] = lambda: readiness_source
-    # Built ONCE here, not inside the lambda: `list_series_catalog()` is a pure function of
-    # domain constants (`T-06.x`), so there is no per-request reason to rebuild it — same
-    # reasoning as `ingest_store` above, just without the I/O the `sqlite` engine skips.
-    catalog = list_series_catalog()
+    # Built ONCE here, not inside the lambda: the catalog is a pure function of domain
+    # constants (`T-06.x`), so there is no per-request reason to rebuild it — same reasoning
+    # as `ingest_store` above, just without the I/O the `sqlite` engine skips.
+    #
+    # `list_pilot_series_catalog`, NOT `list_series_catalog()`: the single-instrument default
+    # described `BTCUSDT` only, while the collector writes `md.series` for the four pilot
+    # instruments, so `/api/v1/series-history` refused with `422` the very `series_key_id`s
+    # whose rows were on disk (the measurement is in `series_catalog.py`'s own comment).
+    catalog = list_pilot_series_catalog()
     app.dependency_overrides[get_series_catalog_source] = lambda: catalog
     quarantine_store = SqliteSeriesQuarantineStore(resolved_quarantine_path)
     app.dependency_overrides[get_series_quarantine_source] = lambda: quarantine_store

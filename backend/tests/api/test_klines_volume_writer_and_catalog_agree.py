@@ -49,6 +49,7 @@ from src.modules.sentimento.domain.series_key import (
 )
 from src.modules.sentimento.infra.binance_klines_client import KlineRow
 from src.modules.sentimento.use_cases.collector_series_mapping import (
+    INITIAL_SYMBOLS,
     KLINES_BUCKET_WIDTH_MS,
     build_klines_to_rows,
 )
@@ -56,9 +57,12 @@ from src.modules.sentimento.use_cases.collector_series_mapping import (
 _STARTUP_POLL_S = 0.005
 _JOIN_TIMEOUT_S = 5.0
 
-# `use_cases/series_catalog.list_series_catalog` serves ONE instrument today (`_INSTRUMENT_ID`),
-# and it is this one — so this is the symbol on which the two sides can be compared at all.
-_SERVED_INSTRUMENT = "BTCUSDT"
+# The served catalog used to describe ONE instrument while the collector wrote four, so this
+# file could only ever compare the two sides on `BTCUSDT`. `create_app` now wires
+# `list_pilot_series_catalog()`, so the comparison runs over the WHOLE pilot universe — which
+# is the universe `md.series` actually carries
+# `[MEDIDO 2026-09-11: select count(distinct symbol) from md.series -> 4]`.
+_SERVED_INSTRUMENTS = tuple(sorted(INITIAL_SYMBOLS))
 
 _T0 = 1_788_000_000_000
 
@@ -118,7 +122,7 @@ def _key_from_wire(wire: dict[str, Any]) -> SeriesKey:
     )
 
 
-def _one_written_row_series_key_id() -> str:
+def _one_written_row_series_key_id(instrument_id: str) -> str:
     """Return the `series_key_id` the COLLECTOR stamps on a `klines_volume` row it publishes.
 
     Produced by running the real mapping over a real, long-settled `KlineRow` — not by calling
@@ -140,50 +144,68 @@ def _one_written_row_series_key_id() -> str:
             "0",
         )
     )
-    rows = build_klines_to_rows()(_T0 + 10 * KLINES_BUCKET_WIDTH_MS, _SERVED_INSTRUMENT, (settled,))
+    rows = build_klines_to_rows()(_T0 + 10 * KLINES_BUCKET_WIDTH_MS, instrument_id, (settled,))
     assert len(rows) == 1, "the fixture bar is long settled, so the mapping must publish it"
     return rows[0].series_key_id
 
 
 def test_the_id_the_collector_writes_is_the_id_the_catalog_route_publishes() -> None:
-    """`series-catalog`'s `klines_volume` row and `md.series`' rows are ONE series.
+    """`series-catalog`'s `klines_volume` rows and `md.series`' rows are ONE series, per symbol.
 
-    Morde: change `_KLINES_VOLUME_VERIFIED_BY` on EITHER side (or the `unit`, or the
-    `instrument_id`) and this fails with the two ids side by side. Without it, that same
-    change ships green and `/api/v1/series-history` starts answering `200`/`n_points = 0` for
-    a series whose rows are in the table under an id nobody is asking for.
+    Morde, twice over:
+      * change `_KLINES_VOLUME_VERIFIED_BY` on EITHER side (or the `unit`) and this fails with
+        the two ids side by side — the drift that ships green and makes
+        `/api/v1/series-history` answer `200`/`n_points = 0`;
+      * serve fewer instruments than the collector writes and the `len` assertion below fails
+        by name, which is exactly the state this file documented as a limitation until now: one
+        served row against four written symbols.
     """
     with _served(create_app()) as port:
         entries = _published_entries(port)
     klines_rows = [entry for entry in entries if entry["key"]["metric"] == KLINES_VOLUME_METRIC]
-    assert len(klines_rows) == 1, (
-        f"the served catalog must publish exactly one {KLINES_VOLUME_METRIC!r} row "
-        f"(`T-01.6`), found {len(klines_rows)}"
+    assert len(klines_rows) == len(_SERVED_INSTRUMENTS), (
+        f"the served catalog must publish one {KLINES_VOLUME_METRIC!r} row per pilot "
+        f"instrument, found {len(klines_rows)} for {len(_SERVED_INSTRUMENTS)} instruments"
     )
-    served_id = _key_from_wire(klines_rows[0]["key"]).series_key_id()
-    written_id = _one_written_row_series_key_id()
-    assert written_id == served_id, (
-        "the klines collector writes md.series rows under a series_key_id the served catalog "
-        f"does not publish: written={written_id!r} served={served_id!r}. The two sides name "
-        "`verified_by` independently (`collector_series_mapping.py` and `series_catalog.py`) "
-        "and one of them has drifted — /api/v1/series-history will answer 200 with n_points=0."
-    )
+    served_by_instrument = {
+        row["key"]["instrumentId"]: _key_from_wire(row["key"]).series_key_id()
+        for row in klines_rows
+    }
+    assert set(served_by_instrument) == set(_SERVED_INSTRUMENTS)
+
+    for instrument_id in _SERVED_INSTRUMENTS:
+        served_id = served_by_instrument[instrument_id]
+        written_id = _one_written_row_series_key_id(instrument_id)
+        assert written_id == served_id, (
+            f"for {instrument_id} the klines collector writes md.series rows under a "
+            f"series_key_id the served catalog does not publish: written={written_id!r} "
+            f"served={served_id!r}. The two sides derive `verified_by` and `unit` "
+            "independently (`collector_series_mapping.py` and `series_catalog.py`) and one of "
+            "them has drifted — /api/v1/series-history will answer 200 with n_points=0."
+        )
 
 
 def test_the_served_row_is_the_instrument_and_unit_the_collector_publishes_for() -> None:
     """The agreement is on the WHOLE identity, not only on `verified_by`.
 
-    `unit` is the other term the two sides derive separately — the catalog hardcodes the base
-    asset for its single instrument, the collector reads it off the symbol name — so it is
-    named here explicitly rather than left to the `sha256` to summarise.
+    `unit` is the other term the two sides used to derive DIFFERENTLY: the catalog hardcoded
+    `"BTC"` for whatever instrument it was asked about, the collector read the base asset off
+    the symbol name. Both now call `domain/instrument.py::base_asset`, so `ETHUSDT` is served
+    as `ETH` — and this asserts the unit per instrument rather than a single literal, because
+    a literal is precisely what was wrong.
     """
     with _served(create_app()) as port:
         entries = _published_entries(port)
-    served = next(
-        entry["key"] for entry in entries if entry["key"]["metric"] == KLINES_VOLUME_METRIC
-    )
-    assert served["instrumentId"] == _SERVED_INSTRUMENT
-    assert served["unit"] == "BTC"
+    served_rows = {
+        entry["key"]["instrumentId"]: entry["key"]
+        for entry in entries
+        if entry["key"]["metric"] == KLINES_VOLUME_METRIC
+    }
+    assert {
+        instrument_id: served_rows[instrument_id]["unit"] for instrument_id in _SERVED_INSTRUMENTS
+    } == {"BTCUSDT": "BTC", "ETHUSDT": "ETH", "LINKUSDT": "LINK", "SOLUSDT": "SOL"}
+
+    served = served_rows["BTCUSDT"]
     assert served["denom"] == "base"
     assert served["interval"] == "1m"
     assert served["nature"] == Nature.FLOW.value

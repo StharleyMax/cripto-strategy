@@ -68,23 +68,30 @@ def _get_series_catalog(port: int) -> tuple[int, dict[str, object]]:
     return response.status, body
 
 
-def test_get_series_catalog_serves_the_real_eleven_row_catalog_when_the_process_is_up(
+def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_up(
     tmp_path: Path,
 ) -> None:
-    """CALA: process up -> `200`, `n_entries == len(entries) == 11` — the REAL total.
+    """CALA: process up -> `200`, `n_entries == len(entries) == 44` — the REAL total.
 
     `store_path` here is `/ingest-health`'s dependency, irrelevant to this route (`0` SQL in the
     handler, `D5.13c`'s sibling restriction) — a fresh, uninitialised store still serves this
     route correctly, proving the catalog carries no coupling to the ingest-health store.
 
-    Was `10` until `T-01.6` registered `klines_volume` (`SPEC-007` §4.5, `RF-2`). This is the
-    HTTP-level half of that task's DoD — "`GET /api/v1/series-catalog` lista a entrada" — and
-    it is asserted over a real socket against the real `create_app`, not against
-    `list_series_catalog` directly, because the composition in `src/main/__init__.py:266` is
-    itself a place the row could be lost.
+    Was `10` until `T-01.6` registered `klines_volume`, then `11`, and is now `11 x 4 = 44`:
+    `create_app` wires `list_pilot_series_catalog()`, covering the four instruments the
+    collector actually writes `md.series` rows for. Serving one of them was the finding — the
+    other three answered `422 UnknownSeriesKeyIdError` with their rows already on disk
+    `[MEDIDO 2026-09-11: 12 series_key_id distintos em md.series, 4 deles de klines; o
+    catalogo servido resolvia 1]`.
+
+    This is the HTTP-level half of that DoD — "`GET /api/v1/series-catalog` lista a entrada" —
+    asserted over a real socket against the real `create_app`, not against the use case
+    directly, because the composition in `src/main/__init__.py` is itself a place the wiring
+    could be lost.
 
     `RS-1` is checked in the same breath: the three top-level fields and the entry field names
-    below are unchanged, so this task moved CONTENT (one more row) and not FORM.
+    below are unchanged, and the eleven `BTCUSDT` rows keep their indices — this moved
+    CONTENT (more rows, appended) and not FORM.
     """
     store_path = tmp_path / "ih.sqlite3"
 
@@ -94,14 +101,28 @@ def test_get_series_catalog_serves_the_real_eleven_row_catalog_when_the_process_
     assert status == 200
     assert set(body) == {"query", "n_entries", "entries"}
     assert body["query"] == "series_catalog"
-    assert body["n_entries"] == 11
+    assert body["n_entries"] == 44
     entries = body["entries"]
     assert isinstance(entries, list)
-    assert len(entries) == 11
+    assert len(entries) == 44
 
     served_metrics = [e["key"]["metric"] for e in entries]
-    assert served_metrics.count("klines_volume") == 1
+    assert served_metrics.count("klines_volume") == 4
+    assert served_metrics[10] == "klines_volume"
     assert served_metrics[-1] == "klines_volume"
+
+    served_instruments = [e["key"]["instrumentId"] for e in entries]
+    assert set(served_instruments) == {"BTCUSDT", "ETHUSDT", "LINKUSDT", "SOLUSDT"}
+    assert set(served_instruments[:11]) == {"BTCUSDT"}
+
+    # A1 at the wire: a `denom="base"` row carries the INSTRUMENT's base asset, so the served
+    # `ETHUSDT` volume is `ETH` and never the `"BTC"` the old module-level literal published.
+    eth_base_units = {
+        e["key"]["unit"]
+        for e in entries
+        if e["key"]["instrumentId"] == "ETHUSDT" and e["key"]["denom"] == "base"
+    }
+    assert eth_base_units == {"ETH"}
 
     entry = entries[0]
     assert set(entry) == {
