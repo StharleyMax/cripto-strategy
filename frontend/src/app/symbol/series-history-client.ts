@@ -8,8 +8,9 @@ import "server-only";
  * with `cache: "no-store"`, and turns every failure into the SAME `TransportError` class the
  * other two `web` transports already throw (`kind` values `missing_base_url` /
  * `connection_refused` / `non_2xx` / `malformed_envelope`) — reused, not reinvented, so
- * `page.tsx` has ONE error vocabulary to switch on across all four HTTP calls it makes
- * (catalog + 3× history).
+ * `page.tsx` has ONE error vocabulary to switch on across all five HTTP calls it makes
+ * (catalog + 4× history — the 3 panels plus `T-01.7`'s `klines_volume` sub-axis, `SPEC-007
+ * §3.6`; the request shape is identical for it, so this module needs no change of its own).
  *
  * `assertNoTickLevelFields`/`assertBucketSpacingWithinInterval` are IMPORTED from
  * `../history-transport.ts`, not reimplemented — same discipline `../live-transport.ts`

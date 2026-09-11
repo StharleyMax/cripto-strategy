@@ -7,9 +7,14 @@
  * are plain discriminated values/strings) — same RSC-boundary discipline `ConsoleClient.tsx`
  * documents for its own props.
  *
+ * `T-01.7` (`SPEC-007 §3.6`) adds a VOLUME SUB-AXIS to the Price pane — `klines_volume`, `1m`,
+ * a histogram on its own price scale INSIDE the price chart, not a fourth pane. It arrives here
+ * as one more prop (`volume`), computed server-side like every other, and it degrades on its
+ * own (`panelStatus.volume`): price present with volume absent is a real, expected state.
+ *
  * Mounts `lightweight-charts` directly (the library this repo already depends on,
- * `package.json`) for 3 panes — Price (candlestick), OI (line), CVD (two lines: delta and
- * cumulative) — feeding each one the LOSSLESS mapping (`candlestickSeriesLossless`/
+ * `package.json`) for 3 panes — Price (candlestick + volume histogram), OI (line), CVD (two
+ * lines: delta and cumulative) — feeding each one the LOSSLESS mapping (`candlestickSeriesLossless`/
  * `lineSeriesLossless`, the barrel's "adaptador lightweight" category): an absent grid slot
  * becomes a bare `{time}` `WhitespaceItem`, which the library places on the axis and draws
  * NOTHING for — never a `0` (`CA-F2-3`).
@@ -27,8 +32,14 @@
  */
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { CandlestickSeriesOptions, IChartApi, LineSeriesOptions, ISeriesApi } from "lightweight-charts";
-import { CandlestickSeries, createChart, LineSeries } from "lightweight-charts";
+import type {
+  CandlestickSeriesOptions,
+  HistogramSeriesOptions,
+  IChartApi,
+  LineSeriesOptions,
+  ISeriesApi,
+} from "lightweight-charts";
+import { CandlestickSeries, createChart, HistogramSeries, LineSeries } from "lightweight-charts";
 
 import {
   candlestickSeriesColors,
@@ -41,14 +52,33 @@ import {
   RANGE_END_MS_EXCLUSIVE,
   resolveFlowReading,
   resolveStockReading,
+  type FlowReading,
   type S2Panels,
 } from "../../charts/index.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
-import type { PanelStatus } from "./panel-status.ts";
+import type { PanelStatus, SymbolPanelStatuses } from "./panel-status.ts";
+
+/** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
+ * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
+ * `node:crypto`, and `web-fullstack.browser-imports-server` is a BLOQUEIO). */
+type VolumeSlot = S2Panels["oi"]["slots"][number];
+
+/**
+ * `T-01.7` — everything the volume sub-axis needs, computed server-side (`page.tsx` +
+ * `view-model.ts`) and handed over as plain, JSON-serializable data, same RSC-boundary
+ * discipline as `panels`/`panelStatus`. This component draws it; it decides nothing about it.
+ */
+export interface VolumeSubAxisData {
+  readonly slots: readonly VolumeSlot[];
+  /** Slots carrying a real value — the number `DoD-3`/`RN-S2` count against `N >= 30`. */
+  readonly presentPoints: number;
+  readonly reading: FlowReading;
+}
 
 export interface SymbolClientProps {
   readonly panels: S2Panels;
-  readonly panelStatus: { readonly price: PanelStatus; readonly oi: PanelStatus; readonly cvd: PanelStatus };
+  readonly volume: VolumeSubAxisData;
+  readonly panelStatus: SymbolPanelStatuses;
   readonly liveUrls: { readonly price: string | null; readonly oi: string | null; readonly cvd: string | null };
 }
 
@@ -111,12 +141,96 @@ function useLightweightChart(containerRef: RefObject<HTMLDivElement | null>, bui
  * resolves `"exact"` or `"absent"`, never `"held"` — there is no coarser native grid to hold
  * across for this panel.
  */
-function PricePane({ panels, status }: { readonly panels: S2Panels; readonly status: PanelStatus }) {
+// ── The volume sub-axis (`T-01.7`, `SPEC-007 §3.6`) ─────────────────────────────────────────
+//
+// ⛔ THE STABLE SELECTOR. `T-01.9`'s e2e finds the sub-axis by THIS string and reads
+// `data-volume-present-points` off it. It is a CONTRACT, not styling: the `design_gate`
+// (`T-01.8`) may change height, scale, color and how absence LOOKS without touching it, which
+// is exactly what makes the two tasks parallelizable — a `NEEDS_FIX` about form must not be
+// able to break an assert about data.
+const VOLUME_SUBAXIS_TESTID = "price-pane-volume-subaxis";
+
+/** `RN-1`'s literal token: absence is `SEM_PONTO`, and for a `FLOW` series rendering it as `0`
+ * is an error of TYPE, not of taste. `formatFlowValue`'s `"—"` (`D5.3`) is the CVD readout's
+ * own wording and is deliberately NOT reused here — `SEM_PONTO` is the string `DoD-3` asserts
+ * the absence of, and the price/OI readouts above already print it. */
+const ABSENCE_TOKEN = "SEM_PONTO";
+
+// ⛔ FORM, NOT CONTRACT — every constant in this block belongs to the `ui-designer` WITH the
+// `ux-ui-mastery` verdict (`T-01.8`, `CLAUDE.md` §"Design — autonomia delegada, com gate de
+// validação"). What is here is the sober, functional placeholder a builder is allowed to write
+// so the data can be seen at all; it is NOT a design decision and must not be read as one.
+// `priceScaleId` is a scale of its OWN, separate from price's — that part IS structural
+// (`SPEC-007 §3.6`: a SUB-AXIS of `PricePane`), since sharing price's scale would flatten one
+// of the two series into nothing.
+const VOLUME_PRICE_SCALE_ID = "volume";
+const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 } as const;
+
+/**
+ * The sub-axis' DOM anchor. The bars themselves are drawn on the price panel's own `<canvas>`
+ * (`lightweight-charts`), which a DOM assertion cannot see — so this element carries the facts
+ * about them: `data-volume-present-points` (how many 1-minute buckets have a real number) and
+ * the "leitura atual" readout, which prints `SEM_PONTO` when the last instant has nothing.
+ *
+ * For M1 the present-slot count IS the count of distinct native bars — no `RN-S1` `/5` divisor,
+ * because `klines_volume` is `1m` native and nothing here is a ladder (`view-model.ts`
+ * `countPresentSlots`).
+ */
+function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData; readonly status: PanelStatus }) {
+  const readingText =
+    volume.reading.kind === "absent" || volume.reading.value === null ? ABSENCE_TOKEN : String(volume.reading.value);
+  return (
+    <div
+      role="group"
+      aria-label="Volume (sub-eixo de Preço)"
+      data-testid={VOLUME_SUBAXIS_TESTID}
+      data-volume-present-points={volume.presentPoints}
+    >
+      <h3 className="font-label-caps text-label-caps text-on-surface">Volume (1m)</h3>
+      <p data-fact={`volume_last_reading:${volume.reading.kind}`} className="text-sm text-provenance-weak">
+        Leitura atual: {readingText}
+      </p>
+      <AbsenceNote status={status} />
+    </div>
+  );
+}
+
+function PricePane({
+  panels,
+  status,
+  volume,
+  volumeStatus,
+}: {
+  readonly panels: S2Panels;
+  readonly status: PanelStatus;
+  readonly volume: VolumeSubAxisData;
+  readonly volumeStatus: PanelStatus;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, (chart) => {
     const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors("light");
     const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style);
     series.setData(candlestickSeriesLossless(panels.price.series.slots) as never);
+
+    // The volume sub-axis, on the SAME chart as price (`SPEC-007 §3.6`) and on its own price
+    // scale. `lineSeriesLossless` is REUSED, not copied: it already maps a `value: null` slot
+    // to a bare `{time}` `WhitespaceItem`, which a histogram series renders as NO BAR — never
+    // a zero-height bar at zero, which is what `RN-1` forbids. A histogram accepts the same
+    // `{time, value}` / `{time}` items a line does.
+    //
+    // ⚠️ The two series on this panel run on DIFFERENT native grids, and that is deliberate and
+    // visible (`SPEC-007 §4.1`): price is `klines_last` at `5m` served on the `1m` grid — a
+    // ladder — while volume is `klines_volume` at `1m` native. The `design_gate` of `T-01.8` is
+    // meant to see it, so nothing here hides it.
+    const volumeStyle: Partial<HistogramSeriesOptions> = {
+      color: colorTokens("light").provenanceWeak,
+      priceScaleId: VOLUME_PRICE_SCALE_ID,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    };
+    const volumeSeries: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, volumeStyle);
+    volumeSeries.priceScale().applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS });
+    volumeSeries.setData(lineSeriesLossless(volume.slots) as never);
   });
   const closeSlots = panels.price.series.slots.map((slot) => ({
     time: slot.time,
@@ -139,6 +253,7 @@ function PricePane({ panels, status }: { readonly panels: S2Panels; readonly sta
         Leitura atual: {readingText}
       </p>
       <AbsenceNote status={status} />
+      <VolumeSubAxis volume={volume} status={volumeStatus} />
     </section>
   );
 }
@@ -236,11 +351,11 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
   );
 }
 
-export function SymbolClient({ panels, panelStatus, liveUrls }: SymbolClientProps) {
+export function SymbolClient({ panels, volume, panelStatus, liveUrls }: SymbolClientProps) {
   return (
     <main>
-      <h1 className="sr-only">{panels.symbol} — Preço, Open Interest e CVD</h1>
-      <PricePane panels={panels} status={panelStatus.price} />
+      <h1 className="sr-only">{panels.symbol} — Preço (com volume), Open Interest e CVD</h1>
+      <PricePane panels={panels} status={panelStatus.price} volume={volume} volumeStatus={panelStatus.volume} />
       <OiPane panels={panels} status={panelStatus.oi} />
       <CvdPane panels={panels} status={panelStatus.cvd} />
       <section aria-label="Ao vivo">
