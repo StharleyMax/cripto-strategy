@@ -114,3 +114,55 @@ teste que amarra `SURFACE_BASE` ao CSS. É o bloqueio inteiro.
 
 **Estratégico** — a `T-01.8` decide forma e microcopy do horizonte legível; o texto de hoje é
 placeholder declarado como tal em `SymbolClient.tsx:225-230`.
+
+---
+
+# 2ª passada — re-validação de `ff15921`
+
+`ux-ui-mastery:design-review` · 2026-09-11 · o bloqueio desta seção era o desta mesma página.
+
+## Veredito: ✅ APPROVED, com uma limpeza exigida antes do merge
+
+### O bloqueio caiu — verificado, não aceito por alegação
+
+```bash
+grep -c 'prefers-color-scheme' frontend/src/app/globals.css   # 1, e é COMENTÁRIO (:15)
+grep -cn -- '--color-surface-base:' frontend/src/app/globals.css   # 1
+grep -n 'color-scheme' frontend/src/app/globals.css   # :92  color-scheme: dark;  em :root
+```
+
+`n=1` superfície, e é a que o portão afere. Todos os 5 papéis medidos contra `#131722` ficam em
+**4,59:1 ou acima**, o menor sendo `directionDownFill`; nenhum fundo alternativo sobrou para o SO
+do operador escolher.
+
+E `color-scheme: dark` **não é redundante com apagar o bloco** — é a única declaração que alcança
+scrollbar, `<select>` e controle de formulário, que não leem token nenhum. O arquivo declara isso
+em `:84-89`. Apagar sem ela teria deixado cromo claro numa página escura.
+
+## ⚠️ Limpeza exigida — prosa de produção que virou mentira
+
+`frontend/src/features/s3-inspector/S3Inspector.tsx:60-70` descreve, em docstring de produção, um
+mecanismo que **este commit deletou**:
+
+> *"`globals.css`'s `@theme` maps `--color-integrity-ink`, dark `#e0aaff` / **light `#581c87` under
+> `prefers-color-scheme`**"* … *"`#e0aaff` on the LIGHT surface (`prefers-color-scheme: light`,
+> **this project's e2e default**)"*
+
+Nada disso é verdade depois de `ff15921`: não há `@media`, não há valor claro, e o e2e não roda
+mais no claro. **Funcionalmente inócuo** — `#e0aaff` sobre `#131722` mede **9,68:1** e o
+`make e2e` passa 24/24. Mas é exatamente a classe de texto que este repositório trata como defeito:
+o próximo leitor acredita num seletor de tema que não existe e mede contra um fundo que a
+aplicação não pinta mais.
+
+**Não reprova o design** — reprova a frase. Corrigir antes da PR, no mesmo commit.
+
+## Domínios que mudaram desde a 1ª passada
+
+| domínio | antes | agora | por quê |
+|---|---|---|---|
+| Visual Design | 5 | **8** | uma verdade só sobre o fundo |
+| Accessibility | 4 | **8** | 5 de 5 papéis acima de 3,0:1; `color-scheme` alcança o cromo |
+| System Architecture | 6 | **8** | CSS e TS agora se falam: o portão lê o arquivo, não uma constante que o CSS podia contradizer |
+
+**Nota geral: 64 → 78/100.** Mobile segue **fora de escopo** por `D14`
+`[PREMISSA-OWNER: 2026-09-11]` — *"sem mobile no piloto"*.

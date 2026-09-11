@@ -101,12 +101,46 @@ function cssWithoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
+/** `#fff`, `#FFFFFF`, `rgb(255 255 255)` and `rgba(255, 255, 255, 1)` are ONE color, and this says
+ * so. A notation this function cannot read is returned verbatim (lowercased): it will not equal
+ * `SURFACE_BASE`, so the count assertion fails LOUDLY — which is the honest answer to "I cannot
+ * read this value", and the opposite of the silence that `AVISO-1` found. */
+function normalizeCssColor(value: string): string {
+  const raw = value.trim().toLowerCase();
+  const shortHex = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(raw);
+  if (shortHex) {
+    return `#${shortHex[1]!}${shortHex[1]!}${shortHex[2]!}${shortHex[2]!}${shortHex[3]!}${shortHex[3]!}`;
+  }
+  if (/^#[0-9a-f]{6}$/.test(raw)) return raw;
+  const functional = /^rgba?\(([^)]*)\)$/.exec(raw);
+  if (functional) {
+    const channels = functional[1]!.split(/[\s,/]+/).filter((part) => part !== "");
+    const rgb = channels.slice(0, 3).map((part) => Number(part));
+    if (rgb.length === 3 && rgb.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+      return `#${rgb.map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+    }
+  }
+  return raw;
+}
+
+/** Every `--color-surface-base` VALUE the CSS declares, normalized to `#rrggbb`.
+ *
+ * WHY IT READS THE VALUE WHOLE (`[^;{}]+`) INSTEAD OF A HEX-6 PATTERN — wave `03` QA, `AVISO-1`:
+ * the first version of this gate matched `#[0-9a-fA-F]{6}` only, so a second surface written
+ * `#fff` or `rgb(255 255 255)` OUTSIDE a media query was not merely allowed, it was never SEEN by
+ * the count (2 of 8 mutations scored `fail 0`). A gate that cannot read the notation cannot count
+ * the declaration, and CSS spells one color many ways. So the value is read whole and then
+ * normalized: notation becomes a detail of writing instead of a hole in the measurement. The pair
+ * that proves it is two tests below — one that MORDE, one that CALA. */
+function surfaceBaseDeclarations(css: string): readonly string[] {
+  return [...css.matchAll(/--color-surface-base:\s*([^;{}]+);/g)].map((match) => normalizeCssColor(match[1]!));
+}
+
 test("globals.css declares --color-surface-base EXACTLY ONCE, and it is SURFACE_BASE", () => {
   const css = cssWithoutComments(readFileSync(GLOBALS_CSS, "utf8"));
-  // Any indentation, any nesting — deliberately NOT anchored, because the anchor was the bug.
-  const declarations = [...css.matchAll(/--color-surface-base:\s*(#[0-9a-fA-F]{6})\s*;/g)].map((match) =>
-    match[1]!.toLowerCase(),
-  );
+  // Any indentation, any nesting, ANY NOTATION — deliberately NOT anchored, because the anchor was
+  // the bug, and deliberately not hex-only, because the notation was the leftover hole.
+  const declarations = [...surfaceBaseDeclarations(css)];
   assert.deepEqual(
     declarations,
     [SURFACE_BASE],
@@ -114,6 +148,33 @@ test("globals.css declares --color-surface-base EXACTLY ONCE, and it is SURFACE_
       `this gate can only measure ONE surface (SURFACE_BASE = ${SURFACE_BASE}). A second declaration is a second ` +
       "surface the app really paints and the contrast floor never sees — exactly how the light palette survived D13.",
   );
+});
+
+test("the count SEES `#fff` and `rgb()` outside a media query — notation is not a way out (MORDE)", () => {
+  // The two mutations that scored `fail 0` before `AVISO-1` was paid, plus the case variants of
+  // each. Each string below is a SECOND surface the browser would really paint.
+  for (const second of ["#fff", "#FFF", "rgb(255 255 255)", "rgba(255, 255, 255, 1)", "RGB(255,255,255)"]) {
+    const mutated = `@theme { --color-surface-base: ${SURFACE_BASE}; }\n.light-theme { --color-surface-base: ${second}; }`;
+    assert.deepEqual(
+      surfaceBaseDeclarations(mutated),
+      [SURFACE_BASE, "#ffffff"],
+      `a second surface written \`${second}\` outside any media query has to be COUNTED — the hex-6 pattern ` +
+        "this gate first shipped with could not even see it, which is the hole `AVISO-1` named",
+    );
+  }
+});
+
+test("...and it CALA over ONE surface re-spelled — a gate that fires on correct CSS gets deleted", () => {
+  // The other half of the pair, and the reason the fix normalizes instead of just widening the
+  // regex: re-writing the SAME color in another notation is a style choice, not a second surface.
+  for (const spelling of ["#131722", "#131722  ", "#131722\n", "rgb(19 23 34)", "RGB(19, 23, 34)"]) {
+    assert.deepEqual(
+      surfaceBaseDeclarations(`@theme { --color-surface-base: ${spelling}; }`),
+      [SURFACE_BASE],
+      `\`${spelling}\` is SURFACE_BASE written differently — counting it as a second surface would make this ` +
+        "gate fire on correct CSS, and a gate that cries wolf is a gate someone turns off",
+    );
+  }
 });
 
 test("globals.css carries NO prefers-color-scheme block — D13 left one palette, not a default", () => {

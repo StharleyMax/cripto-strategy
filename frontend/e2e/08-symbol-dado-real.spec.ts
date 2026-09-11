@@ -339,7 +339,25 @@ test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunc
   // surfaces.
   const subAxis = page.locator(`[data-testid="${VOLUME_SUBAXIS_TESTID}"]`);
   await expect(subAxis).toHaveCount(1);
-  const domPresentPoints = Number(await subAxis.getAttribute("data-volume-present-points"));
+  // THE ATTRIBUTE HAS TO EXIST BEFORE IT IS A NUMBER (wave `03` QA, `BLOCKER-3`): `Number(null)`
+  // is `0`, and under `make e2e` the API also serves `0` (sqlite, no `md.series` reader), so
+  // deleting `data-volume-present-points` from the page left this assertion reading `0 === 0` and
+  // the canonical gate GREEN — `rc=0, 24 passed` — with the contract absent from the DOM. The
+  // mutation only failed in the strong universe (`Expected: 965 · Received: 0`), which no gate
+  // runs. Asserting non-null makes the morde exist in the universe the gate CAN run: the page
+  // publishing nothing is now distinguishable from the window holding nothing.
+  const rawPresentPoints = await subAxis.getAttribute("data-volume-present-points");
+  expect(
+    rawPresentPoints,
+    "a página parou de publicar `data-volume-present-points` — sem o atributo não há o que comparar " +
+      "com a API, e `Number(null) === 0` faria esta asserção passar sobre um DOM sem contrato",
+  ).not.toBeNull();
+  // ...and an EMPTY attribute is not a count either — `Number("")` is `0` by the same rule.
+  expect(
+    rawPresentPoints ?? "",
+    "`data-volume-present-points` tem de ser uma contagem em dígitos; vazio vira 0 em `Number()`",
+  ).toMatch(/^\d+$/);
+  const domPresentPoints = Number(rawPresentPoints);
   fact(SPEC, "volume_dom_present_points", domPresentPoints);
   expect(domPresentPoints).toBe(apiPresent.length);
 
