@@ -96,6 +96,7 @@ from src.modules.sentimento.infra.binance_stream_probe import (
     combined_stream_path,
     connect_tls,
 )
+from src.modules.sentimento.infra.grid_aligned_ticker import GridAlignedTicker
 from src.modules.sentimento.infra.ingest_health_cli import (
     build_service_stdout_handler,
     route_diagnostics_away_from_the_product_stream,
@@ -177,6 +178,7 @@ _PREMIUM_INDEX_CYCLE_INTERVAL_S_VAR: Final[str] = "PREMIUM_INDEX_CYCLE_INTERVAL_
 # `collector` service, and the operator sets them in `.env` (which `env_file:` supplies), the
 # same route every other collector variable already takes.
 _KLINES_CYCLE_INTERVAL_S_VAR: Final[str] = "KLINES_CYCLE_INTERVAL_S"
+_KLINES_CYCLE_OFFSET_S_VAR: Final[str] = "KLINES_CYCLE_OFFSET_S"
 _KLINES_BACKFILL_DAYS_VAR: Final[str] = "KLINES_BACKFILL_DAYS"
 
 _DEFAULT_REDIS_HOST: Final[str] = "localhost"
@@ -191,6 +193,20 @@ _DEFAULT_PREMIUM_INDEX_CYCLE_INTERVAL_S: Final[float] = 60.0
 # 1 per call against 2400 weight/min per IP `[MEDIDO 2026-09-10: sequencia 31->32->33]`, so
 # four symbols at 60 s spend `4` of `2400`.
 _DEFAULT_KLINES_CYCLE_INTERVAL_S: Final[float] = 60.0
+
+# The PHASE of the aligned poll: how far past `bucket_end` the cycle fires. It is not zero, and
+# it is not a guess about Binance's latency — it is margin against the two ways the poll can be
+# EARLY. (a) Clock skew: our `available_at`/`received_at` come from OUR clock, and the anti-
+# lookahead cut (`is_closed_bucket`, `collector_series_mapping.py:401`) compares the venue's
+# `close_time_ms` against it; a clock running fast would let us ask for a bar the venue has not
+# closed. (b) The venue's own publication delay, measured at `<= 12 ms` on this endpoint
+# `[MEDIDO 2026-09-11: the 12 smallest observed lags over n=4.289 were 12..183 ms, OPCOES-D16 F3]`.
+# Two seconds is ~167x that measured delay while costing 2 s of the 60 s grid, leaving ~58 s of
+# margin before a reading could reach the SECOND grid point — against the 28 ms of margin the
+# unaligned scheduler had. ⚠️ It is a BOUND with a declared basis, not a measured optimum: the
+# remeasurement command and its acceptance criterion are in
+# `docs/context/cinco-metricas-do-core/handoff/REMEDICAO-ATRASO-APOS-ALINHAMENTO.md`.
+_DEFAULT_KLINES_CYCLE_OFFSET_S: Final[float] = 2.0
 
 # `T-01.3`: *"backfill_dias = 7, uma vez, no boot: 7 x 1440 = 10.080 barras = 7 chamadas de
 # 1500. Da 672 candles de 15min e 42 de 4h — a menor e a maior unidade de operacao declarada
@@ -314,6 +330,7 @@ class BootConfig:
     ingest_health_store_path: Path
     premium_index_cycle_interval_s: float
     klines_cycle_interval_s: float
+    klines_cycle_offset_s: float
     klines_backfill_days: int
 
 
@@ -360,6 +377,25 @@ def _positive_float(environ: Mapping[str, str], variable: str, default: float) -
     return value
 
 
+def _grid_offset(
+    environ: Mapping[str, str], variable: str, default: float, *, interval_s: float
+) -> float:
+    """Parse `variable` as the aligned poll's phase, refused at BOOT unless in `[0, interval_s)`.
+
+    Same `RN-4` fail-fast as `_positive_float`, and the same reason it is checked HERE and not
+    where it is used: `GridAlignedTicker` also refuses an out-of-range offset, but it does so
+    inside the collector THREAD, minutes into a run, where the only symptom an operator sees is
+    a thread that died. A negative offset polls BEFORE the bucket closes, which the anti-
+    lookahead cut then drops — the collector would look healthy and publish nothing.
+    """
+    value = _parse_float(environ, variable, default)
+    if not 0.0 <= value < interval_s:
+        raise CollectorBootConfigurationError(
+            variable, f"{variable} must be in [0, {interval_s!r}), got {value!r}"
+        )
+    return value
+
+
 def _positive_int(environ: Mapping[str, str], variable: str, default: int) -> int:
     """Parse `variable` as an integer that must be `> 0` — same `RN-4` reasoning as above.
 
@@ -395,6 +431,9 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
             f"{INGEST_RECORD_BACKEND_VAR}={backend!r} is not one of "
             f"{sorted(KNOWN_INGEST_RECORD_BACKENDS)}",
         )
+    klines_cycle_interval_s = _positive_float(
+        environ, _KLINES_CYCLE_INTERVAL_S_VAR, _DEFAULT_KLINES_CYCLE_INTERVAL_S
+    )
     return BootConfig(
         redis_host=environ.get(_REDIS_HOST_VAR, _DEFAULT_REDIS_HOST),
         redis_port=_parse_int(environ, _REDIS_PORT_VAR, _DEFAULT_REDIS_PORT),
@@ -409,8 +448,12 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
             _PREMIUM_INDEX_CYCLE_INTERVAL_S_VAR,
             _DEFAULT_PREMIUM_INDEX_CYCLE_INTERVAL_S,
         ),
-        klines_cycle_interval_s=_positive_float(
-            environ, _KLINES_CYCLE_INTERVAL_S_VAR, _DEFAULT_KLINES_CYCLE_INTERVAL_S
+        klines_cycle_interval_s=klines_cycle_interval_s,
+        klines_cycle_offset_s=_grid_offset(
+            environ,
+            _KLINES_CYCLE_OFFSET_S_VAR,
+            _DEFAULT_KLINES_CYCLE_OFFSET_S,
+            interval_s=klines_cycle_interval_s,
         ),
         klines_backfill_days=_positive_int(
             environ, _KLINES_BACKFILL_DAYS_VAR, _DEFAULT_KLINES_BACKFILL_DAYS
@@ -925,8 +968,10 @@ def _run_klines_collector(
     symbols: Sequence[str],
     interval_s: float,
     backfill_days: int,
+    offset_s: float = 0.0,
+    wall_clock_s: Callable[[], float] = time.time,
 ) -> None:
-    """Backfill `backfill_days` once at boot, then poll the tail every `interval_s`.
+    """Backfill `backfill_days` once at boot, then poll the tail ON the `interval_s` grid.
 
     ONE `IngestRun` PER PASS over the whole symbol universe, matching what `Q3` §1.2 fixes for
     the other polling producer — see `build_klines_run` for why a run is not a page. The boot
@@ -940,6 +985,17 @@ def _run_klines_collector(
     requirement ("backfill_dias = 7, uma vez, no boot"); the read path is unaffected, because
     `as_of` returns `argmin(observed_at)`, which is the ORIGINAL observation, not the re-read.
 
+    THE CADENCE IS ANCHORED TO THE GRID, NOT TO THE END OF THE LAST CYCLE, and that is a
+    correction, not a preference. This loop used to close with `stop_event.wait(interval_s)`
+    after the work, making the real period `interval_s + work_duration`; the phase slid forward
+    every turn until the poll landed a whole bucket late. `105` of `4.289` live klines readings
+    reached the database `>= 60.000 ms` after `bucket_end` because of it, at a steady `4..8` per
+    hour for `18 h` `[MEDIDO 2026-09-11: OPCOES-D16-ESTATISTICA-CONTRA-A-GRADE.md F0/F2]`.
+    `GridAlignedTicker` sleeps UNTIL `bucket_end + offset_s` instead, so the period is
+    `interval_s` no matter what the work cost. `wall_clock_s` is injectable for exactly one
+    reason: the suite proves the alignment with a fake clock, because proving it by really
+    waiting minutes would be slow, flaky, and green for the wrong reason.
+
     A publish failure is `SPEC-004` §3.1's "falha do Redis em regime": the pass closes
     `REJECTED`, the other threads are told to stop, and `exit_code[0] = 1`. A page the SOURCE
     refused (an error envelope, `api_code`) is not that — it closes `ACCEPTED_WITH_WARNING`,
@@ -947,6 +1003,12 @@ def _run_klines_collector(
     at Binance and trouble writing to our own queue.
     """
     watermark: dict[str, int] = {}
+    ticker = GridAlignedTicker(
+        interval_s=interval_s,
+        offset_s=offset_s,
+        endpoint=KLINES_ENDPOINT,
+        wall_clock_s=wall_clock_s,
+    )
     tail_limit = _tail_limit(interval_s)
     backfill_from_ms: int | None = _epoch_ms() - backfill_days * _MS_PER_DAY
     while not stop_event.is_set():
@@ -1023,7 +1085,7 @@ def _run_klines_collector(
             },
         )
         backfill_from_ms = None
-        stop_event.wait(interval_s)
+        ticker.wait(stop_event)
 
 
 # ── THE COMPOSITION ITSELF ──────────────────────────────────────────────────────────────────
@@ -1146,6 +1208,7 @@ def run(
             "record_run": store.record_run,
             "symbols": klines_symbols_,
             "interval_s": config.klines_cycle_interval_s,
+            "offset_s": config.klines_cycle_offset_s,
             "backfill_days": config.klines_backfill_days,
         },
     )

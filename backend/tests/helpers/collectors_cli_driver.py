@@ -204,6 +204,10 @@ def main(argv: list[str]) -> int:
         # Same reasoning for the klines thread: one boot pass (empty, see
         # `_EmptyKlinesClient`) and then never again before the signal arrives.
         klines_cycle_interval_s=999_999.0,
+        # The aligned poll's PHASE (`O4`): zero here because these drivers never assert on
+        # cadence — the alignment property is proved with an injected clock in
+        # `test_grid_aligned_ticker.py`, not by a driver that really waits.
+        klines_cycle_offset_s=0.0,
         klines_backfill_days=1,
     )
     if force_publish_failure:

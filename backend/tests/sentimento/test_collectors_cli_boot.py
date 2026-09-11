@@ -46,6 +46,7 @@ def test_defaults_apply_when_every_variable_is_absent() -> None:
     assert config.ingest_record_backend == "sqlite"
     assert config.premium_index_cycle_interval_s == 60.0
     assert config.klines_cycle_interval_s == 60.0
+    assert config.klines_cycle_offset_s == 2.0
     assert config.klines_backfill_days == 7
 
 
@@ -62,6 +63,7 @@ def test_every_variable_is_read_when_present(tmp_path: Path) -> None:
             "INGEST_HEALTH_STORE_PATH": str(store_path),
             "PREMIUM_INDEX_CYCLE_INTERVAL_S": "12.5",
             "KLINES_CYCLE_INTERVAL_S": "300",
+            "KLINES_CYCLE_OFFSET_S": "4.5",
             "KLINES_BACKFILL_DAYS": "3",
         }
     )
@@ -74,6 +76,7 @@ def test_every_variable_is_read_when_present(tmp_path: Path) -> None:
     # `RS-3.5`: the klines cadence and backfill depth are CONFIGURATION. Morde: hardcode
     # either one and adjusting the only variable that pays quota becomes a release.
     assert config.klines_cycle_interval_s == 300.0
+    assert config.klines_cycle_offset_s == 4.5
     assert config.klines_backfill_days == 3
 
 
@@ -440,6 +443,9 @@ def test_main_wires_the_real_series_mapping(
         ("KLINES_CYCLE_INTERVAL_S", "-1"),
         ("KLINES_BACKFILL_DAYS", "0"),
         ("KLINES_BACKFILL_DAYS", "-7"),
+        ("KLINES_CYCLE_OFFSET_S", "-0.5"),
+        ("KLINES_CYCLE_OFFSET_S", "60"),
+        ("KLINES_CYCLE_OFFSET_S", "600"),
     ],
 )
 def test_a_non_positive_klines_cadence_is_refused_at_boot(variable: str, raw: str) -> None:
@@ -450,6 +456,13 @@ def test_a_non_positive_klines_cadence_is_refused_at_boot(variable: str, raw: st
     minutes later, as an HTTP `418`, far from the character that caused it. Accept `0` for
     `KLINES_BACKFILL_DAYS` and the boot backfill silently does nothing, which `DoD-1`
     (`>= 10.000` rows) would fail hours later with no line naming the cause.
+
+    `KLINES_CYCLE_OFFSET_S` joins the same fail-fast because it has the same shape of silent
+    failure, in both directions. A NEGATIVE offset polls before `bucket_end`, and the
+    anti-lookahead cut (`is_closed_bucket`) then drops the bar — a collector that looks healthy
+    and publishes nothing. An offset of a whole cadence or more moves the poll onto a DIFFERENT
+    bucket while every log line still reads "aligned". `60` is refused and `59,9` is not,
+    because the interval is exclusive: `[0, interval_s)`.
     """
     with pytest.raises(collectors_cli.CollectorBootConfigurationError) as excinfo:
         collectors_cli.resolve_boot_config({variable: raw})

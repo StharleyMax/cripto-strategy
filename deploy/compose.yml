@@ -160,6 +160,16 @@ services:
   #   PREMIUM_INDEX_CYCLE_INTERVAL_S   default 60      seconds between premiumIndex polls
   #   KLINES_CYCLE_INTERVAL_S          default 60      seconds between klines polls; the series
   #                                                    is 1-minute, so below 60 buys only quota
+  #   KLINES_CYCLE_OFFSET_S            default 2       seconds PAST each grid point at which the
+  #                                                    aligned poll fires; must be in
+  #                                                    [0, KLINES_CYCLE_INTERVAL_S). It is the
+  #                                                    PHASE, not a cadence: the cycle sleeps
+  #                                                    until `bucket_end + offset`, so the
+  #                                                    period stays the cadence no matter how
+  #                                                    long the work took. Lowering it toward 0
+  #                                                    risks asking for a bar the venue has not
+  #                                                    closed (clock skew), which the
+  #                                                    anti-lookahead cut then drops
   #   KLINES_BACKFILL_DAYS             default 7       days read once at boot (7 x 1440 = 10.080
   #                                                    bars per symbol = 7 calls of 1500)
   #
