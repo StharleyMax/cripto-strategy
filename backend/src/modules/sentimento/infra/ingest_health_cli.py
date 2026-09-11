@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 # `ADR-008/DoD-2` compares the `sha256` of what leaves here against the `sha256` of what feeds
 # S1. A formatter carrying a timestamp would make the two fingerprints diverge every second,
 # and the falsifier of the whole ADR would become clock noise.
+#
+# `ADR-035/D3` did NOT relax that: the format string is untouched and a record with no `extra=`
+# still renders to exactly `%(message)s`. What changed is `ExtraRenderingFormatter` below, and
+# only for records the CALLER decorated — see the block above it for why the distinction lives
+# on the record rather than on a second handler.
 _STABLE_FORMAT: Final[str] = "%(message)s"
 
 # Diagnostics get the OPPOSITE treatment on purpose: they are for a human reading a terminal,
@@ -46,10 +51,83 @@ _APPLICATION_LOGGER: Final[str] = __name__.split(".")[0]
 _USAGE: Final[str] = "uso: ingest_health_cli <caminho-do-store>"
 
 
+# ── `ADR-035/D3`: THE COUNTERS ALREADY EXISTED AND THE FORMATTER ATE THEM ──────────────────
+#
+# `logging` puts every key of `extra={}` straight onto the `LogRecord` as an attribute and then
+# renders the record through the handler's format string. `"%(message)s"` names none of those
+# attributes, so `extra={"n_accepted": 3}` was ATTACHED and NEVER PRINTED: the writer's
+# `writer_batch_acked` (`single_writer_cli.py`) and the collector's `collector_cycle_completed`
+# (`collectors_cli.py`) have carried counters since before this change, and `docker logs` showed
+# the bare event string `[MEDIDO 2026-09-10: `docker logs deploy-collector-1 --since 2h |
+# grep -v collector_cycle_completed` -> 0 linhas]`. `PRD-007`/`DEF-3` read that output and
+# concluded the counters did not exist; `ADR-035/D3` read the code and found they did. Both
+# observations were true — the instrumentation was there, the rendering was not.
+#
+# ⚠️ WHY THIS IS A PER-RECORD RULE AND NOT A SECOND HANDLER — a deviation from the LITERAL
+#    wording of `ADR-035/D3`, declared here instead of being quiet about it:
+#
+# `ADR-035/D3` says "a troca e no handler do processo de servico (escritor, coletor), nunca no
+# handler de projecao". A SEPARATE handler only helps if the service processes are edited to
+# install it, and `single_writer_cli.py` / `collectors_cli.py` are owned by sibling tasks
+# running in parallel — the one thing `T-01.5` is forbidden to touch. So the distinction is
+# drawn where it CAN be drawn from here: on the RECORD, not on the handler.
+#
+# It is the same distinction seen from the other side. A projection line is
+# `logger.info(canonical_json_line)` with NO `extra=`; a service event is
+# `logger.info("event_name", extra={...})`. For a record with no caller-supplied attribute this
+# formatter returns EXACTLY what `logging.Formatter` returned, byte for byte, so the `sha256`
+# that `ADR-008/DoD-2` compares on both sides CANNOT move. The projection is not "probably
+# unaffected" — it is unaffected by construction.
+#
+# THE RISK THIS TRADES FOR, NAMED RATHER THAN HIDDEN: a separate handler would keep a PROJECTION
+# CLI silent even if it later grew an `extra=`; this one would print it and corrupt the hashed
+# bytes. That is a real regression path, so it gets a real guard —
+# `backend/tests/sentimento/test_ingest_health_extra_rendering.py` walks the AST of every module
+# importing these builders, subtracts the DECLARED service processes, and fails if any of the
+# rest hands `extra=` to its module logger.
+_EXTRA_SEPARATOR: Final[str] = " "
+
+# The attribute names `logging` itself owns, DERIVED from a throwaway record instead of typed
+# out, for the same reason `_APPLICATION_LOGGER` is derived: a hand-copied list rots silently
+# against the standard library (`taskName` only exists from Python 3.12), and a rotted list here
+# would print an internal field as if the caller had asked for it. `message` and `asctime` are
+# added because `logging.Formatter.format` writes them ONTO the record while rendering it, so
+# they are absent from a fresh record and present by the time this code looks at one.
+_RESERVED_RECORD_ATTRIBUTES: Final[frozenset[str]] = frozenset(
+    logging.LogRecord("", logging.NOTSET, "", 0, "", None, None).__dict__
+) | {"message", "asctime", "taskName"}
+
+
+class ExtraRenderingFormatter(logging.Formatter):
+    """Render `log_format`, then append the caller's `extra={}` — and nothing else.
+
+    A record carrying no caller-supplied attribute comes back IDENTICAL to what
+    `logging.Formatter` produces. That is the entire safety argument of `ADR-035/D3` as it is
+    implemented here, and it is why the canonical projection of `ADR-008/DoD-2` keeps its
+    `sha256`: the projection never passes `extra=`.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Append ` key=value` pairs, ordered by key, for every attribute the caller added."""
+        rendered = super().format(record)
+        extra = {
+            name: value
+            for name, value in record.__dict__.items()
+            if name not in _RESERVED_RECORD_ATTRIBUTES
+        }
+        if not extra:
+            return rendered
+        # Sorted, because `docker logs` is read by a human comparing two lines and by a `grep`
+        # written once: an order following dict insertion would render the same event
+        # differently depending on which branch happened to build the `extra={}`.
+        pairs = _EXTRA_SEPARATOR.join(f"{name}={extra[name]}" for name in sorted(extra))
+        return f"{rendered}{_EXTRA_SEPARATOR}{pairs}"
+
+
 def build_stream_handler(stream: TextIO, log_format: str) -> logging.StreamHandler[TextIO]:
     """Build a handler on `stream` with an explicit format — no global state touched."""
     handler: logging.StreamHandler[TextIO] = logging.StreamHandler(stream)
-    handler.setFormatter(logging.Formatter(log_format))
+    handler.setFormatter(ExtraRenderingFormatter(log_format))
     return handler
 
 

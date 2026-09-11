@@ -26,6 +26,29 @@ no field on a `SeriesRow` is ever produced by a process that embeds a NUL (`seri
 hex digest, `symbol`/`source`/`observer_id` are short exchange/operator tokens, `src_label_raw`
 is a source-supplied label, `observer_region` defaults to `UNKNOWN_OBSERVER_REGION`), so `_ABSENT`
 cannot collide with a real value the dataclass allows.
+
+── THE `run_id` ENVELOPE FIELD (`ADR-035/D2`), AND WHY IT IS NOT A 17th COLUMN ──────────────
+
+`ADR-035/D2` needs the `run_id` of the collector cycle that produced a row to reach the writer,
+so the writer can close the run the collector opened. `run_id` is NOT a `SeriesRow` column and
+must never become one: `md.series` has no such column, and a 17th name in `FIELD_NAMES` would
+change the row shape that `SPEC-004` §3.2 and `ADR-034/D7` fix. It travels as an ENVELOPE key
+alongside the 16 — the transport carries it, the row never does.
+
+Consequences, all deliberate:
+
+  * `encode(row)` with no `run_id` produces the SAME 16 keys it always produced, byte for byte.
+    A producer that has not been wired to `ADR-035` yet publishes exactly what it published
+    before, and its entries still decode.
+  * `decode` tolerates the envelope key and IGNORES it — it returns a `SeriesRow`, and a
+    `SeriesRow` has no run. `decode_run_id` is the separate reader, so a caller that does not
+    care about run accounting cannot accidentally couple to it.
+  * every OTHER unexpected key is still rejected (`UnexpectedWireFieldError`). Tolerating one
+    named envelope field is not the same as tolerating anything, and the difference is what
+    keeps a typo in a producer from being silently swallowed.
+  * an EMPTY `run_id` is rejected, not read as "no run": a blank id would credit no run at all
+    while looking like the producer had been wired, which is precisely the `rc=0` ambiguity
+    (`ADR-012`) `ADR-035` exists to remove.
 """
 
 from __future__ import annotations
@@ -72,6 +95,11 @@ _FALSE: Final[str] = "0"
 # not the empty string.
 _ABSENT: Final[str] = "\x00"
 
+# The ONE envelope key (`ADR-035/D2`): transport metadata, never a `SeriesRow` column. Kept
+# OUT of `FIELD_NAMES` on purpose — see the module docstring's "THE `run_id` ENVELOPE FIELD".
+RUN_ID_FIELD: Final[str] = "run_id"
+_ENVELOPE_FIELD_SET: Final[frozenset[str]] = frozenset({RUN_ID_FIELD})
+
 
 class SeriesRowWireError(Exception):
     """Base of every error `decode` raises.
@@ -95,15 +123,21 @@ class InvalidWireFieldValueError(SeriesRowWireError):
     """`decode` was handed a value that does not parse as the named field's encoded type."""
 
 
-def encode(row: SeriesRow) -> Mapping[str, str]:
+def encode(row: SeriesRow, *, run_id: str | None = None) -> Mapping[str, str]:
     """Project `row` into the flat `str -> str` mapping `RedisStreamPublisher.publish` sends.
 
     One key per column, named exactly as the `SeriesRow` field (`SPEC-004` §3.2: "chave = nome
     do campo"). Dict-literal order is `FIELD_NAMES` order, and `RedisStreamPublisher.publish`
     iterates a mapping in its own order (`redis_stream_bus.py`), so the field order on the wire
     is stable and matches this module's declared order.
+
+    `run_id` (`ADR-035/D2`) is the id of the collector cycle that produced this row, and it is
+    KEYWORD-ONLY and OPTIONAL for one reason: omitted, this function emits the same 16 keys it
+    emitted before `ADR-035` existed, so wiring a producer to run accounting is a change at
+    that producer and nowhere else. Given, it is appended as a 17th ENVELOPE key — never a 17th
+    column (see the module docstring).
     """
-    return {
+    fields = {
         "series_key_id": row.series_key_id,
         "symbol": row.symbol,
         "source": row.source,
@@ -121,6 +155,9 @@ def encode(row: SeriesRow) -> Mapping[str, str]:
         "value_raw": row.value_raw,
         "principal_id": _encode_optional_text(row.principal_id),
     }
+    if run_id is not None:
+        fields[RUN_ID_FIELD] = _encode_run_id(run_id)
+    return fields
 
 
 def decode(fields: Mapping[str, str]) -> SeriesRow:
@@ -129,6 +166,9 @@ def decode(fields: Mapping[str, str]) -> SeriesRow:
     `SPEC-004` §3.2's property is `decode(encode(row)) == row` for every `Provenance`; a field
     missing, a field none of the 16 owns, or a value that will not parse each raise a distinct,
     typed, English exception rather than a silently wrong or partial row.
+
+    The `ADR-035/D2` envelope key is tolerated and DROPPED here: `decode(encode(row, run_id=x))
+    == decode(encode(row)) == row`, because a `SeriesRow` has no run. `decode_run_id` reads it.
     """
     _reject_field_set_mismatch(fields)
     return SeriesRow(
@@ -151,6 +191,38 @@ def decode(fields: Mapping[str, str]) -> SeriesRow:
     )
 
 
+def decode_run_id(fields: Mapping[str, str]) -> str | None:
+    """Read the `ADR-035/D2` envelope `run_id`, or `None` when the producer sent none.
+
+    `None` means "this producer is not wired to run accounting" — a fact, not a failure: the
+    writer simply has no run to close for that row, and says so by crediting nothing. An
+    envelope key that IS present but blank is a different thing entirely and raises, because a
+    blank id would look wired and credit nothing, which is the `rc=0` ambiguity `ADR-012`
+    names and `ADR-035` exists to remove.
+
+    Deliberately SEPARATE from `decode`: run accounting is transport concern, and a caller that
+    only wants the row must not be able to pick up a coupling to it by accident.
+    """
+    raw = fields.get(RUN_ID_FIELD)
+    if raw is None:
+        return None
+    if not raw:
+        raise InvalidWireFieldValueError(
+            f"envelope field {RUN_ID_FIELD!r} is present but empty — a blank run id credits no "
+            f"run while looking like the producer was wired to `ADR-035/D2`"
+        )
+    return raw
+
+
+def _encode_run_id(run_id: str) -> str:
+    if not run_id:
+        raise InvalidWireFieldValueError(
+            f"cannot encode an empty {RUN_ID_FIELD!r}: pass None for 'this producer opens no "
+            f"run', never the empty string (`ADR-035/D2`)"
+        )
+    return run_id
+
+
 def _reject_field_set_mismatch(fields: Mapping[str, str]) -> None:
     present = frozenset(fields.keys())
     missing = _FIELD_NAME_SET - present
@@ -159,11 +231,12 @@ def _reject_field_set_mismatch(fields: Mapping[str, str]) -> None:
             f"wire mapping is missing field(s) {sorted(missing)!r} of the 16 `SeriesRow` "
             f"columns `SPEC-004` §3.2 / `ADR-034/D7` fix"
         )
-    extra = present - _FIELD_NAME_SET
+    extra = present - _FIELD_NAME_SET - _ENVELOPE_FIELD_SET
     if extra:
         raise UnexpectedWireFieldError(
             f"wire mapping carries field(s) {sorted(extra)!r} that no `SeriesRow` column "
-            f"owns (`SPEC-004` §3.2 / `ADR-034/D7` name exactly 16)"
+            f"owns (`SPEC-004` §3.2 / `ADR-034/D7` name exactly 16, plus the "
+            f"`ADR-035/D2` envelope field {RUN_ID_FIELD!r})"
         )
 
 

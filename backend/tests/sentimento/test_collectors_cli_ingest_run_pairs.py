@@ -22,7 +22,10 @@ from pathlib import Path
 from src.modules.sentimento.domain.ingest_record import KNOWN_VERDICTS
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
-from src.modules.sentimento.use_cases.collector_run_mapping import FORCE_ORDER_ENDPOINT
+from src.modules.sentimento.use_cases.collector_run_mapping import (
+    FORCE_ORDER_ENDPOINT,
+    KLINES_ENDPOINT,
+)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DRIVER = BACKEND_ROOT / "tests" / "helpers" / "collectors_cli_driver.py"
@@ -83,8 +86,11 @@ def test_one_session_plus_one_cycle_group_by_source_endpoint_gives_at_least_two_
     pairs = [line for line in output.splitlines() if line.strip()]
     assert len(pairs) >= 2, f"D1.5 wants >= 2 (source,endpoint) pairs, sqlite3 returned: {pairs!r}"
     endpoints = {line.split("|")[1] for line in pairs}
-    assert endpoints == {FORCE_ORDER_ENDPOINT, PREMIUM_INDEX_ENDPOINT}, (
-        f"expected exactly the two producer endpoints, got {endpoints!r}"
+    # THREE producers since `T-01.3`, and the assertion stays an EQUALITY rather than
+    # loosening to `>=`: a fourth endpoint appearing here would mean a producer started
+    # recording runs that no task declared, which is exactly what this shape is for.
+    assert endpoints == {FORCE_ORDER_ENDPOINT, PREMIUM_INDEX_ENDPOINT, KLINES_ENDPOINT}, (
+        f"expected exactly the three producer endpoints, got {endpoints!r}"
     )
 
     # `D1.5`'s second half, same literal shape: zero rows outside `KNOWN_VERDICTS`.

@@ -71,10 +71,12 @@ class _RecordingSink:
     def __init__(self) -> None:
         """Start with no rows accepted."""
         self.accepted: list[SeriesRow] = []
+        self.run_ids: list[str | None] = []
 
-    def accept(self, row: SeriesRow) -> None:
-        """Record the row; never raises."""
+    def accept(self, row: SeriesRow, *, run_id: str | None = None) -> None:
+        """Record the row AND the `ADR-035/D2` run id it was published under; never raises."""
         self.accepted.append(row)
+        self.run_ids.append(run_id)
 
 
 class _IdleThenGoneSource:

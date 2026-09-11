@@ -45,6 +45,8 @@ def test_defaults_apply_when_every_variable_is_absent() -> None:
     assert config.redis_stream_maxlen == 100_000
     assert config.ingest_record_backend == "sqlite"
     assert config.premium_index_cycle_interval_s == 60.0
+    assert config.klines_cycle_interval_s == 60.0
+    assert config.klines_backfill_days == 7
 
 
 def test_every_variable_is_read_when_present(tmp_path: Path) -> None:
@@ -59,6 +61,8 @@ def test_every_variable_is_read_when_present(tmp_path: Path) -> None:
             "INGEST_RECORD_BACKEND": "sqlite",
             "INGEST_HEALTH_STORE_PATH": str(store_path),
             "PREMIUM_INDEX_CYCLE_INTERVAL_S": "12.5",
+            "KLINES_CYCLE_INTERVAL_S": "300",
+            "KLINES_BACKFILL_DAYS": "3",
         }
     )
     assert config.redis_host == "redis.internal"
@@ -67,6 +71,10 @@ def test_every_variable_is_read_when_present(tmp_path: Path) -> None:
     assert config.redis_stream_maxlen == 42
     assert config.ingest_health_store_path == store_path
     assert config.premium_index_cycle_interval_s == 12.5
+    # `RS-3.5`: the klines cadence and backfill depth are CONFIGURATION. Morde: hardcode
+    # either one and adjusting the only variable that pays quota becomes a release.
+    assert config.klines_cycle_interval_s == 300.0
+    assert config.klines_backfill_days == 3
 
 
 @pytest.mark.parametrize(
@@ -75,6 +83,8 @@ def test_every_variable_is_read_when_present(tmp_path: Path) -> None:
         ("REDIS_PORT", "not-a-port"),
         ("REDIS_STREAM_MAXLEN", "many"),
         ("PREMIUM_INDEX_CYCLE_INTERVAL_S", "soon"),
+        ("KLINES_CYCLE_INTERVAL_S", "often"),
+        ("KLINES_BACKFILL_DAYS", "a week"),
     ],
 )
 def test_an_unparseable_numeric_variable_names_itself_in_the_error(variable: str, raw: str) -> None:
@@ -421,3 +431,27 @@ def test_main_wires_the_real_series_mapping(
     assert len(force_order_to_rows(1_788_869_520_000, btcusdt_liquidation)) == 1, (
         "a BTCUSDT (in-universe) liquidation must yield a real row, never raise"
     )
+
+
+@pytest.mark.parametrize(
+    ("variable", "raw"),
+    [
+        ("KLINES_CYCLE_INTERVAL_S", "0"),
+        ("KLINES_CYCLE_INTERVAL_S", "-1"),
+        ("KLINES_BACKFILL_DAYS", "0"),
+        ("KLINES_BACKFILL_DAYS", "-7"),
+    ],
+)
+def test_a_non_positive_klines_cadence_is_refused_at_boot(variable: str, raw: str) -> None:
+    """`RN-4` fail-fast: a cadence of zero is a typo, and it is refused in the first seconds.
+
+    Morde: accept `0` and `stop_event.wait(0)` returns instantly, so the collector calls
+    `/fapi/v1/klines` in a tight loop until Binance bans the IP — a failure that surfaces
+    minutes later, as an HTTP `418`, far from the character that caused it. Accept `0` for
+    `KLINES_BACKFILL_DAYS` and the boot backfill silently does nothing, which `DoD-1`
+    (`>= 10.000` rows) would fail hours later with no line naming the cause.
+    """
+    with pytest.raises(collectors_cli.CollectorBootConfigurationError) as excinfo:
+        collectors_cli.resolve_boot_config({variable: raw})
+    assert excinfo.value.variable == variable
+    assert variable in str(excinfo.value)

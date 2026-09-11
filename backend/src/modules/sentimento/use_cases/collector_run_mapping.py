@@ -6,10 +6,15 @@ that shape is built.
 
 `ADR-016`: composing an `IngestRun` from already-observed values is NOT a capability — nothing
 here touches a socket, a clock or a database. `infra/collectors_cli.py` is the composition root
-that calls these two builders at session/cycle close and hands the result to `record_run` on the
-store it wired; this module is the ONE place the 16-field shape is decided, so the composition
-root and this module's own tests share exactly one construction, never two (the defect
-`ADR-008/DoD-3` names for the read side, applied here to the WRITE side).
+that calls these builders at session/cycle/pass close and hands the result to `record_run` on
+the store it wired; this module is the ONE place the 16-field shape is decided, so the
+composition root and this module's own tests share exactly one construction, never two (the
+defect `ADR-008/DoD-3` names for the read side, applied here to the WRITE side).
+
+There are THREE builders since `T-01.3` (`SPEC-007` phase `01`): the `forceOrder` session, the
+`premiumIndex` cycle, and the `/fapi/v1/klines` pass. `Q3` predates the third and fixes only the
+first two, so `build_klines_run`'s own docstring carries the argument for what "one run" means
+for a producer that PAGES — the one shape `Q3` never had to answer.
 
 `gates/Q3-run-definition.md` §3 fixes the two sentinels below as PHYSICALLY IMPOSSIBLE values
 for the quantity they stand in for, so neither can ever collide with something actually
@@ -17,6 +22,26 @@ measured: `CLOCK_SKEW_NOT_MEASURED_MS` is a skew no real clock is off by (24+ da
 REST weight no real response header ever carries (weight is always `>= 0`). Both are documented
 by name rather than left as bare literals, matching `domain/ingest_record.py`'s own
 `LOSS_WINDOW_NOT_COMPUTED_IN_F0` precedent for "a value, never absent, never a guess".
+
+── `ADR-035/D2`: THE RUN IS OPENED HERE AND CLOSED BY THE WRITER ─────────────────────────
+
+`n_written` was a bare `0` in both builders, and `0` was carrying two different meanings at
+once: "the writer persisted nothing" and "nobody has counted yet". `100%` of `2.910` runs read
+`0` while `md.series` held `23.512` rows `[MEDIDO 2026-09-10, DIAGNOSTICO.md]`, so in practice
+it only ever meant the second. `N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS` names the one meaning the
+collector can honestly express, and the value stays `0` ON PURPOSE — a negative sentinel would
+be summed by `collector_status.uptime_percent` (`collector_status.py:119-121`) into a NEGATIVE
+percentage on a route that is already served (`RS-1`). The distinction the number cannot make
+is made by the writer's `writer_accounted_at` stamp instead
+(`infra/postgres_ingest_record_store.py`, plan item 1.6).
+
+`run_id` is now a PARAMETER, defaulting to a fresh `uuid4` so every existing caller is
+unchanged. It is a parameter because `ADR-035/D2` needs the id to exist BEFORE the cycle's rows
+are published — minting it at cycle CLOSE, as this module used to, makes it impossible for the
+rows to carry the run they belong to, and the writer then has nothing to close. Which process
+mints it and when is the composition root's decision (`infra/collectors_cli.py`), not this
+module's: composing an `IngestRun` from already-observed values is not a capability (`ADR-016`),
+and neither is choosing when a cycle begins.
 """
 
 from __future__ import annotations
@@ -33,6 +58,14 @@ from src.modules.sentimento.use_cases.persist_ntp_skew_run import SOURCE
 # ── Q3 §2.1 — THE LITERAL `endpoint` PER PRODUCER, DISTINCT BY CONSTRUCTION ────────────────
 FORCE_ORDER_ENDPOINT: Final[str] = "!forceOrder@arr"
 
+# The THIRD producer (`T-01.3`, `SPEC-007` phase `01`). The string is the REST path, matching
+# `infra/binance_klines_client.KLINES_PATH` byte for byte — it is spelled again here instead of
+# imported because `use_cases` may not import `infra` (the `layers` contract of
+# `backend/pyproject.toml` `[tool.importlinter]`), and the drift that duplication risks is the
+# one `test_collector_run_mapping.py::test_the_klines_endpoint_literal_matches_the_client_path`
+# makes executable rather than trusted.
+KLINES_ENDPOINT: Final[str] = "/fapi/v1/klines"
+
 # ── Q3 §3 — THE SENTINELS AND THE OBSERVER LITERALS, NONE OF THEM A GUESS ──────────────────
 # The WS collector spends no REST weight — a FACT (`0`), never a guess.
 FORCE_ORDER_WEIGHT_USED: Final[int] = 0
@@ -41,9 +74,23 @@ FORCE_ORDER_WEIGHT_USED: Final[int] = 0
 CLOCK_SKEW_NOT_MEASURED_MS: Final[int] = -2_147_483_648
 # A real REST weight is always `>= 0`, so `-1` can never collide with one (`Q3` §3).
 WEIGHT_NOT_READABLE: Final[int] = -1
+# `ADR-035/D2`. The collector OPENS the run; the writer that persists the rows CLOSES it. Zero
+# is what the collector honestly knows at that moment — see the module docstring for why this
+# is `0` and not a negative sentinel, and for what distinguishes it from "settled at zero".
+N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS: Final[int] = 0
 # Names the PRODUCTION collector, distinct from the diagnostic probes (`Q3` §3).
 FORCE_ORDER_OBSERVER_ID: Final[str] = "forceorder-collector"
 PREMIUM_INDEX_OBSERVER_ID: Final[str] = "premiumindex-collector"
+KLINES_OBSERVER_ID: Final[str] = "klines-collector"
+
+# `/fapi/v1/klines` costs weight 1 per call of up to 1500 candles — a FACT of this endpoint,
+# like `FORCE_ORDER_WEIGHT_USED = 0` is a fact of a WebSocket, and not a guess:
+# `[MEDIDO 2026-09-10: sequencia 31->32->33 do header `x-mbx-used-weight-1m` sobre tres
+# chamadas consecutivas]`. So a klines run's `weight_used` is `KLINES_WEIGHT_PER_CALL *
+# n_calls`, DERIVED from a measured constant and a counted quantity — never
+# `WEIGHT_NOT_READABLE`, which stands for "the provider answered without a readable header on
+# a call this collector had no other way to price".
+KLINES_WEIGHT_PER_CALL: Final[int] = 1
 
 # ── THE CLOSED SET, RESTATED AS A `Literal` FOR THE ONE CALLER THAT MANUFACTURES RUNS ──────
 #
@@ -65,6 +112,7 @@ def build_force_order_run(
     verdict: KnownVerdict,
     digest: hashlib._Hash,
     endpoint: str = FORCE_ORDER_ENDPOINT,
+    run_id: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `forceOrder` SESSION close (`Q3` §1.1, §3).
 
@@ -83,15 +131,19 @@ def build_force_order_run(
     `collector_status.py`'s dashboard label (`ADR-030`) and by whoever diagnoses the next
     incident from this same log line — must name WHAT WAS ACTUALLY CONNECTED, never a literal
     baked in here regardless of the caller's real socket.
+
+    `run_id` defaults to a fresh `uuid4` — the behaviour this function always had. A caller that
+    opened the session with an id of its own (so the published rows could carry it, `ADR-035/D2`)
+    passes that SAME id here, and the run the writer closes is then the run the collector opened.
     """
     return IngestRun(
-        run_id=str(uuid4()),
+        run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
         endpoint=endpoint,
         window=f"{started_at}/{ended_at}",
         n_expected=n_published,
         n_returned=n_published,
-        n_written=0,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
         verdict=verdict,
         api_code=None,
         src_sha256=digest.hexdigest(),
@@ -112,6 +164,7 @@ def build_premium_index_run(
     weight_used: int | None,
     verdict: KnownVerdict,
     src_sha256: str,
+    run_id: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `premiumIndex` poll CYCLE (`Q3` §1.2, §3).
 
@@ -120,20 +173,80 @@ def build_premium_index_run(
     `Q3` §3 (i): a 24/7 collector cannot end the run over one missing metadata header on a poll
     that otherwise published successfully, unlike the one-shot probe `persist_ntp_skew_run.py`
     refuses for.
+
+    `run_id` defaults to a fresh `uuid4` — the behaviour this function always had. A caller that
+    opened the cycle with an id of its own (so the published rows could carry it, `ADR-035/D2`)
+    passes that SAME id here, and the run the writer closes is then the run the collector opened.
     """
     return IngestRun(
-        run_id=str(uuid4()),
+        run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
         endpoint=PREMIUM_INDEX_ENDPOINT,
         window=f"{started_at}/{ended_at}",
         n_expected=n_symbols,
         n_returned=n_symbols,
-        n_written=0,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
         verdict=verdict,
         api_code=status,
         src_sha256=src_sha256,
         weight_used=weight_used if weight_used is not None else WEIGHT_NOT_READABLE,
         observer_id=PREMIUM_INDEX_OBSERVER_ID,
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
+        started_at=started_at,
+        ended_at=ended_at,
+    )
+
+
+def build_klines_run(
+    *,
+    started_at: str,
+    ended_at: str,
+    n_returned: int,
+    n_calls: int,
+    api_code: int | None,
+    verdict: KnownVerdict,
+    src_sha256: str,
+    run_id: str | None = None,
+) -> IngestRun:
+    """Build the `IngestRun` for one `/fapi/v1/klines` pass (`T-01.3`, `SPEC-007` phase `01`).
+
+    A "pass" is one sweep over the configured symbol universe — the boot backfill is one such
+    pass (many pages per symbol), and every periodic cycle after it is another. That is the
+    SAME unit `Q3` §1.2 fixes for `premiumIndex` ("one poll CYCLE"), applied to a producer that
+    happens to page: the run is the thing the operator schedules, not the HTTP call, and
+    recording one run per page would multiply `/api/v1/ingest-health` by 1500-bar pages for no
+    added fact — `n_calls` carries the paging, `weight_used` prices it.
+
+    `n_expected = n_returned`, and it is the same refusal `build_force_order_run` documents:
+    there is no independent oracle for how many bars the exchange SHOULD have had for a window
+    (a symbol listed mid-window legitimately has fewer), so inventing `backfill_days * 1440`
+    would be a number with no command behind it. The count of bars this collector actually
+    PUBLISHED is smaller still — the in-progress bucket is cut (`RS-3.4`) — and that difference
+    is deliberately NOT folded in here: `n_returned` is what the source returned, and the
+    published count is the log line's `n_published`, so the size of the anti-lookahead cut stays
+    readable instead of being silently absorbed into the run record.
+
+    `weight_used` is `KLINES_WEIGHT_PER_CALL * n_calls` — see that constant for why this
+    endpoint is the one case where a derived weight is a measurement and not a guess.
+
+    `n_written` stays `N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS`: this collector OPENS the run and
+    the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
+    parameter here and is minted at pass OPEN by the composition root.
+    """
+    return IngestRun(
+        run_id=run_id if run_id is not None else str(uuid4()),
+        source=SOURCE,
+        endpoint=KLINES_ENDPOINT,
+        window=f"{started_at}/{ended_at}",
+        n_expected=n_returned,
+        n_returned=n_returned,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+        verdict=verdict,
+        api_code=api_code,
+        src_sha256=src_sha256,
+        weight_used=KLINES_WEIGHT_PER_CALL * n_calls,
+        observer_id=KLINES_OBSERVER_ID,
         observer_region=UNKNOWN_OBSERVER_REGION,
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
