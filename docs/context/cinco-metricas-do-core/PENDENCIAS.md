@@ -74,6 +74,25 @@ task própria. **Não estava em nenhum documento antes desta medição.**
 
 ---
 
+### C0 · ⚠️ Armadilha no merge da PR #211 — o `master` LOCAL está 13 commits à frente do remoto
+
+    git rev-list --left-right --count master...origin/master   → 13   0   (ahead, behind)
+
+**Isto NÃO é trabalho não-enviado.** Os 6 merges de task foram feitos no `master` local e a branch da
+PR nasceu dali ⇒ `master` é **ancestral** da branch da PR:
+
+    git merge-base --is-ancestor master task/cinco-metricas-do-core-f01-volume  → rc=0
+
+⇒ **os 13 commits estão todos dentro da PR #211** (16 commits, `+11.124/-65`). `[MEDIDO 2026-09-11]`
+
+⛔ **A armadilha:** ao mergear a PR por *squash*, `origin/master` ganha **um SHA novo** que não é
+descendente do `master` local ⇒ o local **diverge** e um `git pull` seguinte tenta mesclar 13 commits
+que já estão lá, em duplicata. **Depois de mergear a #211:**
+
+    git checkout master && git fetch origin && git reset --hard origin/master
+
+⛔ **E não faça `git push origin master`** — empurrar direto contorna a PR e o review.
+
 ## D · Contabilidade — o que é dívida e o que NÃO é
 
 > ⛔ **Correção de 2026-09-11.** A primeira versão desta seção listava três itens como dívida do
