@@ -94,6 +94,7 @@ from src.modules.sentimento.domain.force_order_collision_accounting import (
     ForceOrderKeyObservation,
 )
 from src.modules.sentimento.domain.funding_settlement import FundingSource
+from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
 from src.modules.sentimento.domain.premium_index_batch import (
     PREMIUM_INDEX_ENDPOINT,
@@ -334,19 +335,17 @@ def build_force_order_to_rows(
 # test instead of emptying a chart.
 _KLINES_VOLUME_VERIFIED_BY: Final[str] = "test_klines_volume_catalog.py"
 
-# The quote asset every symbol of `INITIAL_SYMBOLS` is denominated in. `klines_volume` carries
-# `denom="base"` (`domain/klines_volume_catalog.py`), so `unit` must be the instrument's OWN
-# base asset — `BTC` for `BTCUSDT`, `ETH` for `ETHUSDT` — and that module's docstring is
-# explicit that a hardcoded `"BTC"` "would silently mislabel every non-`BTC` instrument".
-_USDT_QUOTE: Final[str] = "USDT"
+# `klines_volume` carries `denom="base"` (`domain/klines_volume_catalog.py`), so `unit` must be
+# the instrument's OWN base asset — `BTC` for `BTCUSDT`, `ETH` for `ETHUSDT`. The READING of
+# that base asset off the symbol MOVED to `domain/instrument.py::base_asset`: it is a fact
+# about the instrument, not about this collector mapping, and `domain/open_interest_catalog.py`
+# needs the same reading while being structurally forbidden from importing a use case
+# (`[tool.importlinter]`'s `layers` contract). `SymbolNotQuotedInUsdtError` moved with it, so
+# the refusal this module already made is the one the whole domain now makes.
 
 # One minute, in milliseconds: the width of the `interval="1m"` bucket this series is built on,
 # and the step `use_cases/series_history.py` walks its grid with (`_GRID_STEP_MS` there).
 KLINES_BUCKET_WIDTH_MS: Final[int] = 60_000
-
-
-class SymbolNotQuotedInUsdtError(ValueError):
-    """A symbol's base asset cannot be read off its name because it is not a `…USDT` pair."""
 
 
 class KlineLike(Protocol):
@@ -375,23 +374,6 @@ class KlineLike(Protocol):
 
 
 KlinesToRows = Callable[[int, str, Sequence[KlineLike]], tuple[SeriesRow, ...]]
-
-
-def klines_base_asset(symbol: str) -> str:
-    """Return the BASE asset of a USDⓈ-M symbol — `BTCUSDT` -> `BTC`.
-
-    Every member of `INITIAL_SYMBOLS` is a `…USDT` pair, and on USDⓈ-M futures the quote asset
-    IS the margin asset, so stripping the suffix is a reading of the venue's own naming rule
-    rather than a table this module would have to keep in sync by hand. A symbol that does not
-    end in `USDT` is REFUSED rather than guessed at: a wrong `unit` is a wrong
-    `series_key_id`, which is a silently different series, and `SeriesKey` has no way to notice.
-    """
-    if not symbol.endswith(_USDT_QUOTE) or len(symbol) <= len(_USDT_QUOTE):
-        raise SymbolNotQuotedInUsdtError(
-            f"cannot read the base asset off {symbol!r}: this mapping only knows USD-M pairs "
-            f"quoted in {_USDT_QUOTE!r}, and guessing the unit would change the series_key_id"
-        )
-    return symbol[: -len(_USDT_QUOTE)]
 
 
 def is_closed_bucket(kline: KlineLike, observed_at_ms: int) -> bool:
@@ -460,7 +442,7 @@ def build_klines_to_rows(
         if symbol not in symbols:
             return ()
         key = build_klines_volume_entry(
-            symbol, unit=klines_base_asset(symbol), verified_by=_KLINES_VOLUME_VERIFIED_BY
+            symbol, unit=base_asset(symbol), verified_by=_KLINES_VOLUME_VERIFIED_BY
         ).key
         return tuple(
             SeriesRow(

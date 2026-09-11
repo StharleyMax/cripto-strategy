@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -31,6 +32,7 @@ from src.modules.sentimento.domain.klines_volume_catalog import (
     KLINES_VOLUME_NATIVE_GRID,
 )
 from src.modules.sentimento.domain.series_catalog import (
+    DuplicateSeriesKeyError,
     PublishedError,
     SeriesCatalog,
     SeriesCatalogEntry,
@@ -42,8 +44,11 @@ from src.modules.sentimento.domain.series_key import (
     SeriesKey,
     TsConvention,
 )
+from src.modules.sentimento.use_cases.collector_series_mapping import INITIAL_SYMBOLS
 from src.modules.sentimento.use_cases.series_catalog import (
+    PILOT_INSTRUMENT_IDS,
     SERIES_CATALOG_QUERY_NAME,
+    list_pilot_series_catalog,
     list_series_catalog,
     series_catalog_envelope,
 )
@@ -538,3 +543,140 @@ def test_the_envelope_serves_eleven_entries_without_changing_its_three_top_level
     assert isinstance(entries, list)
     served_metrics = [entry["key"]["metric"] for entry in entries]
     assert served_metrics.count(KLINES_VOLUME_METRIC) == 1
+
+
+# ── A1: `unit` IS DERIVED FROM THE INSTRUMENT, NOT A LITERAL `"BTC"` ────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("instrument_id", "expected_unit"),
+    [("BTCUSDT", "BTC"), ("ETHUSDT", "ETH"), ("SOLUSDT", "SOL"), ("LINKUSDT", "LINK")],
+)
+def test_base_denominated_rows_carry_the_instruments_own_base_asset(
+    instrument_id: str, expected_unit: str
+) -> None:
+    """MORDE the defect this fix removes: `_BASE_ASSET_UNIT = "BTC"`, passed to every caller.
+
+    Every row this catalog builds with `denom="base"` — the three `cvd_source`, the five
+    `sum_open_interest` and `klines_volume` — is denominated in the INSTRUMENT's base asset.
+    With the old module-level literal, `list_series_catalog("ETHUSDT")` returned nine rows
+    labelled `unit="BTC"`, and because `unit` is the seventh term of `SeriesKey` those rows
+    were not mislabelled, they were a DIFFERENT `series_key_id` — one nothing writes to.
+
+    Restoring the literal fails this test for the three non-`BTC` instruments and passes for
+    `BTCUSDT`, which is exactly why the assertion is parametrized over the pilot universe and
+    not written against `BTCUSDT` alone.
+    """
+    catalog = list_series_catalog(instrument_id)
+
+    base_rows = [entry for entry in catalog.entries if entry.key.denom == "base"]
+    assert len(base_rows) == 9
+    assert {entry.key.unit for entry in base_rows} == {expected_unit}
+
+
+def test_quote_denominated_rows_are_untouched_by_the_derivation() -> None:
+    """The two price rows stay `USDT` for every instrument — `denom="quote"`, not base.
+
+    CALA: a derivation applied too widely would relabel `klines_last`/`price_mark_close` and
+    move two `series_key_id`s that no defect asked to move.
+    """
+    for instrument_id in PILOT_INSTRUMENT_IDS:
+        quote_rows = [
+            entry
+            for entry in list_series_catalog(instrument_id).entries
+            if entry.key.denom == "quote"
+        ]
+        assert len(quote_rows) == 2
+        assert {entry.key.unit for entry in quote_rows} == {"USDT"}
+
+
+# The `klines_volume` `series_key_id`s that PRODUCTION `md.series` actually carries, one per
+# pilot instrument, transcribed from the database — not recomputed from the code under test,
+# which would make the assertion compare the code to itself:
+#
+#   docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' \
+#     -c "select distinct series_key_id, symbol, source from md.series order by 2,3;"
+#   -> 12 rows, n=12; the four below are the `/fapi/v1/klines` ones
+#   `[MEDIDO 2026-09-11]`
+_PRODUCTION_KLINES_VOLUME_IDS: Final[dict[str, str]] = {
+    "BTCUSDT": "ef3033e6ad5a487330c9e669dd1ed3105a7a40ba274b78302b4d3eb624244e42",
+    "ETHUSDT": "0d9f2632abaf2bd386b1a01a0b773cde2af43e97295ec6dd5ddca594da785435",
+    "LINKUSDT": "24b0fc0624fd42bed59f07774d8069a2ec33dc9fc41fa15138590471d82a2ed7",
+    "SOLUSDT": "9967eba05ce9cd2b76d03ff937b599ef637c26e115eb1e4acfe46579086871b6",
+}
+
+
+def test_the_btcusdt_row_keeps_the_series_key_id_production_already_wrote() -> None:
+    """The derivation must be a NO-OP on `BTCUSDT`: `base_asset("BTCUSDT") == "BTC"`.
+
+    This is the anti-regression half of A1. `BTCUSDT`'s `klines_volume` rows are ALREADY on
+    disk under the id below, written before this change; if deriving the unit moved it, every
+    chart that resolves today would start answering `422` with the data still sitting there.
+    """
+    volume_rows = [
+        entry
+        for entry in list_series_catalog("BTCUSDT").entries
+        if entry.key.metric == KLINES_VOLUME_METRIC
+    ]
+
+    assert len(volume_rows) == 1
+    assert volume_rows[0].key.series_key_id() == _PRODUCTION_KLINES_VOLUME_IDS["BTCUSDT"]
+
+
+def test_the_served_catalog_resolves_every_klines_volume_id_on_disk() -> None:
+    """A2, measured against production: 1 of these 4 resolved before the fix, 4 after.
+
+    MORDE, and it is the whole point of the finding: `entry_for_id` returning `None` is what
+    `/api/v1/series-history` turns into `422 UnknownSeriesKeyIdError` — for rows that ARE in
+    `md.series`. Revert `list_pilot_series_catalog` to the single-instrument catalog and the
+    three non-`BTC` assertions below fail, which is the shape the production bug had.
+    """
+    catalog = list_pilot_series_catalog()
+
+    for instrument_id, series_key_id in _PRODUCTION_KLINES_VOLUME_IDS.items():
+        entry = catalog.entry_for_id(series_key_id)
+        assert entry is not None, f"{instrument_id} is on disk and unaddressable in the catalog"
+        assert entry.key.instrument_id == instrument_id
+
+
+# ── A2: THE SERVED CATALOG COVERS THE PILOT UNIVERSE, NOT ONE INSTRUMENT ────────────────────
+
+
+def test_the_pilot_universe_is_the_four_symbols_the_collector_writes() -> None:
+    """`PILOT_INSTRUMENT_IDS` is not a second list — it is the writer's own `INITIAL_SYMBOLS`.
+
+    MORDE: declare the reader's universe by hand and the two sides drift the day a symbol is
+    added to the collector, with the symptom being a chart that is simply absent.
+    """
+    assert set(PILOT_INSTRUMENT_IDS) == set(INITIAL_SYMBOLS)
+    assert len(PILOT_INSTRUMENT_IDS) == len(INITIAL_SYMBOLS) == 4
+    assert PILOT_INSTRUMENT_IDS[0] == "BTCUSDT"
+
+
+def test_the_served_catalog_has_eleven_rows_per_pilot_instrument() -> None:
+    """`11 x 4 = 44`, every id distinct — `instrument_id` is a term of the key."""
+    catalog = list_pilot_series_catalog()
+
+    assert len(catalog.entries) == 44
+    ids = [entry.key.series_key_id() for entry in catalog.entries]
+    assert len(set(ids)) == 44
+    assert {entry.key.instrument_id for entry in catalog.entries} == set(PILOT_INSTRUMENT_IDS)
+
+
+def test_the_pilot_catalog_appends_and_never_reorders_the_btcusdt_prefix() -> None:
+    """`RS-1`: order is FORM. The eleven `BTCUSDT` rows keep the indices they already had."""
+    served = [entry.key.series_key_id() for entry in list_pilot_series_catalog().entries]
+    btcusdt = [entry.key.series_key_id() for entry in list_series_catalog("BTCUSDT").entries]
+
+    assert served[: len(btcusdt)] == btcusdt
+
+
+def test_a_repeated_instrument_is_refused_instead_of_publishing_the_row_twice() -> None:
+    """MORDE: concatenating without re-validating would serve two rows under one id.
+
+    `build_series_catalog` re-checks `SPEC-001` §3.3 over the CONCATENATION, so the duplicate
+    surfaces as a raise at construction rather than as an envelope whose `n_entries` counts
+    the same series twice.
+    """
+    with pytest.raises(DuplicateSeriesKeyError):
+        list_pilot_series_catalog(("BTCUSDT", "BTCUSDT"))

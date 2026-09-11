@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from typing import Final
 
+from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.series_catalog import (
     SeriesCatalog,
     SeriesCatalogEntry,
@@ -77,6 +78,17 @@ _VERIFIED_BY: Final[str] = (
 )
 
 
+# ── `unit` IS DERIVED, NOT `"BTC"` ─────────────────────────────────────────────────────────
+#
+# Both key builders below take `instrument_id` as a free argument and used to pair it with a
+# hardcoded `unit="BTC"`. Open interest here is `denom="base"`, so the unit is the
+# instrument's OWN base asset: `open_interest_catalog_entries("ETHUSDT")` published ETH open
+# interest labelled `BTC`. It was invisible while `use_cases/series_catalog.py` only ever
+# asked for `BTCUSDT`; serving the four pilot instruments makes it a published row, so it is
+# derived from the symbol — by `domain/instrument.py::base_asset`, the same reading the writer
+# uses. `BTCUSDT` still yields `"BTC"`, so no existing `series_key_id` moves.
+
+
 def coinalyze_open_interest_key(
     reduction: Reduction, *, instrument_id: str = "BTCUSDT"
 ) -> SeriesKey:
@@ -92,7 +104,7 @@ def coinalyze_open_interest_key(
         metric="sum_open_interest",
         cohort="all",
         interval=_INTERVAL,
-        unit="BTC",
+        unit=base_asset(instrument_id),
         denom="base",
         nature=Nature.STOCK,
         ts_convention=TsConvention.OHLC_OVER_BUCKET,
@@ -113,7 +125,7 @@ def binance_open_interest_key(*, instrument_id: str = "BTCUSDT") -> SeriesKey:
         metric="sum_open_interest",
         cohort="all",
         interval=_INTERVAL,
-        unit="BTC",
+        unit=base_asset(instrument_id),
         denom="base",
         nature=Nature.STOCK,
         ts_convention=TsConvention.POINT_AT_BUCKET_END,
