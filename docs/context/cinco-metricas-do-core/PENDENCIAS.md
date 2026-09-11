@@ -31,10 +31,35 @@ do owner após a onda 3 da fatia `01`. PR **#211** aberta com 13 commits.
 | 1 · `count(*) > 0` em `md.series` | ✅ 26.253 linhas de `/fapi/v1/klines` |
 | 2 · `series-history` com linhas | ✅ `rows = 10.081` (BTCUSDT) |
 | 3 · **Playwright, ponto no DOM** | ⛔ **NÃO PAGO** — falta `T-01.7`/`T-01.9` |
-| 4 · `n_written > 0` | ✅ 40.324 creditadas, `uptimePercent` 99,95% |
+| 4 · `n_written > 0` | ⚠️ **verde que EXPIRA** — ver A2-bis |
 
 ⇒ **O dado chegou ao banco e à API, não à tela.** Era exatamente o item que o owner impôs para
 a fase não poder passar sem pixel.
+
+#### A2-bis · ⛔ O item 4 estava verde por causa de UM run que sai da janela em ~14 h
+
+A versão anterior desta tabela dizia *"✅ 40.324 creditadas, `uptimePercent` 99,95%"*. **É falso
+hoje.** `[MEDIDO 2026-09-11T11:4xZ]`, contra `md.ingest_run` no `deploy-postgres-1`:
+
+    SELECT endpoint, count(*),
+           count(*) FILTER (WHERE writer_accounted_at IS NOT NULL AND n_written>0),
+           sum(n_expected), sum(n_written),
+           round(100.0*sum(n_written)/NULLIF(sum(n_expected),0),2)
+    FROM md.ingest_run WHERE ended_at::timestamptz > now() - interval '24 hours'
+    GROUP BY endpoint;
+
+| endpoint | runs | fechados c/ linha | Σ`n_expected` | Σ`n_written` | **% por LINHA** | **% por RUN** |
+|---|---:|---:|---:|---:|---:|---:|
+| `/fapi/v1/klines` | 564 | 563 | 47.064 | 42.624 | **90,57%** | 100,00% |
+| `/fapi/v1/premiumIndex` | 1.431 | 574 | 1.287.000 | 4.592 | **0,36%** | 100,00% |
+| `…@forceOrder` | 3 | 0 | 0 | 0 | — | **indefinido** |
+
+**O `90,57%` é um único run**: o backfill, `n_expected = 40.320` / `n_written = 40.316`, encerrado
+em `2026-09-11T01:40:39Z`. Ele **sai da janela de 24 h em `2026-09-12T01:40:39Z`**. Sem ele, os
+outros 563 runs dão **34,22%** (`Σexp = 6.744`, `Σwr = 2.308`).
+
+⇒ **Se `T-01.11` fechar a fatia sobre este número, fecha sobre um número morto.** A causa está em
+`B4`, reaberto abaixo.
 
 ---
 
@@ -56,10 +81,25 @@ Saídas: (1) task de acompanhamento que instala o handler; (2) emendar `D3`. **R
 ### B3 · `SPEC-004` §3.1 diz "duas threads" — agora são três
 `T-01.3` acrescentou o coletor de klines. Emenda de SPEC é ato do `/architect`.
 
-### B4 · `premiumIndex` segue com `uptimePercent: 0,0%` — achado novo
-`[MEDIDO 2026-09-11]` com **1.431 runs na janela**. O conserto de `n_written` é **por caminho**, e
-só o de klines foi ligado. `[NÃO SEI]` se ligar o do `premiumIndex` é resíduo da fatia `01` ou
-task própria. **Não estava em nenhum documento antes desta medição.**
+### B4 · `uptimePercent` mede LINHAS sobre um denominador que não são linhas
+
+> ⛔ **Esta seção afirmava duas coisas falsas, agora removidas:** que `premiumIndex` seguia em
+> `0,0%`, e que *"o conserto de `n_written` é por caminho, e só o de klines foi ligado"*.
+
+**O wiring de `premiumIndex` ESTÁ deployado e creditando:** **574 de 574** runs fechados na janela
+têm `n_written > 0`. O que sobra não é wiring — é **unidade**:
+
+| endpoint | `n_expected` conta… | `n_written` conta… | teto estrutural |
+|---|---|---|---:|
+| `premiumIndex` | **900 símbolos** que a Binance devolve (`collector_run_mapping.py:186`) | **8 linhas** (4 símbolos × 2 séries) | **0,89%** |
+| `klines` | **12 barras**, com re-leitura sobreposta deliberada (`:242`) | **4 linhas** (o escritor deduplica) | **33,3%** |
+| `forceOrder` | `n_published` (`:144`) — **já é unidade de linha** | linhas | 100% |
+
+⇒ `ADR-035/DoD-2` (*"o `uptimePercent` do `premiumIndex` deixa de ser `0.0`"*) está **literalmente
+satisfeito** (`0,36`) e **substantivamente não**: o painel mostra `0,36%` e `34%` para coletores
+**saudáveis**. É a mentira que `D7` do owner mandou trocar por verdade — trocada por outra.
+
+**Opções, custos e recomendação:** `OPCOES-B1-B4.md` §B4. **Decisão do owner, pendente.**
 
 ---
 
