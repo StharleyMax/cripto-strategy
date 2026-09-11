@@ -17,6 +17,7 @@ only visible over many turns.
 
 from __future__ import annotations
 
+import math
 import threading
 
 import pytest
@@ -327,3 +328,136 @@ def test_an_offset_of_a_whole_cadence_or_more_is_refused() -> None:
         GridAlignedTicker(interval_s=_INTERVAL_S, offset_s=_INTERVAL_S, endpoint="/x")
     with pytest.raises(ValueError, match=r"offset_s must be in \[0, 60.0\)"):
         GridAlignedTicker(interval_s=_INTERVAL_S, offset_s=-0.1, endpoint="/x")
+
+
+def test_an_ntp_step_backwards_still_sleeps_forward_and_resumes_on_the_grid() -> None:
+    """The module docstring's NTP claim, PROVED instead of asserted in prose.
+
+    `grid_aligned_ticker.py` chooses the wall clock over `time.monotonic()` and pays for it with
+    this sentence: "an NTP step shifts the phase; that shift is a one-off of the size of the step,
+    it self-corrects on the next tick". Nothing tested it. The step BACKWARDS is the dangerous
+    direction, because a scheduler that remembered `last_target + interval_s` would then be
+    aiming at an instant already an hour in the past — a negative duration, which `Event.wait`
+    treats as zero, which is the tight loop against `/fapi/v1/klines` this whole module exists to
+    forbid.
+
+    Morde, and the mutation was RUN rather than imagined: replace `next_grid_instant_s(now_s, ...)`
+    with `self._last_target_s + self._interval_s` and this test reports a sleep of `3.660` s —
+    the collector goes an hour without polling, because the remembered target is now an hour
+    ahead of a clock that moved back. No other test in this file catches it: none of them ever
+    moves the clock backwards, and a sleep that is too LONG is invisible to every assertion that
+    only forbids sleeps `<= 0`.
+    """
+    clock = _FakeWallClock(_START_S)
+    stop = _ClockAdvancingStopEvent(clock)
+    ticker = GridAlignedTicker(
+        interval_s=_INTERVAL_S, offset_s=_OFFSET_S, endpoint="/x", wall_clock_s=clock
+    )
+    ticker.wait(stop)
+    ticker.wait(stop)
+    clock.advance(-3600.0)  # the NTP step: an hour backwards, mid-run
+    after_step = ticker.wait(stop)
+    recovered = ticker.wait(stop)
+
+    assert all(slept > 0.0 for slept in stop.slept_s), (
+        f"a sleep of {stop.slept_s} contains a non-positive duration after an NTP step "
+        "backwards: the target is being derived from the last target instead of from the "
+        "clock as it reads NOW, which is a tight loop against the venue"
+    )
+    for tick in (after_step, recovered):
+        offset_on_grid = (tick.target_s - _OFFSET_S) % _INTERVAL_S
+        assert min(offset_on_grid, _INTERVAL_S - offset_on_grid) < _TOLERANCE_S, (
+            f"the wake instant {tick.target_s} is off the grid by {offset_on_grid} s: an NTP "
+            "step must cost a one-off shift, not a permanently displaced phase"
+        )
+    for label, tick in (("the tick that saw the step", after_step), ("the next one", recovered)):
+        assert tick.slept_s <= _INTERVAL_S, (
+            f"{label} slept {tick.slept_s} s, more than the {_INTERVAL_S} s cadence. That is "
+            "what 'self-corrects on the next tick' has to mean: an NTP step costs a one-off "
+            "shift of the PHASE, never a wait of the SIZE of the step. A scheduler aiming at "
+            "`last_target + interval_s` sleeps the whole hour here and polls nothing."
+        )
+
+
+def test_a_clock_stepped_backwards_reports_no_skipped_ticks_rather_than_a_negative_count() -> None:
+    """`skipped_ticks` counts grid points LOST, and a clock going backwards loses none.
+
+    `round((target_s - last_target_s) / interval_s) - 1` is negative when the clock steps back,
+    and a negative count would be published into `collector_tick_skipped`'s `extra={}` — a log
+    consumer outside this repository reading "-60 ticks skipped". The `max(0, ...)` is what
+    forbids it; this is the test that notices if it is ever removed.
+
+    Morde: drop the `max(0, ...)` and this fails with a negative count, while the existing
+    skip test still passes — it only ever moves the clock forward.
+    """
+    clock = _FakeWallClock(_START_S)
+    stop = _ClockAdvancingStopEvent(clock)
+    ticker = GridAlignedTicker(
+        interval_s=_INTERVAL_S, offset_s=_OFFSET_S, endpoint="/x", wall_clock_s=clock
+    )
+    ticker.wait(stop)
+    clock.advance(-3600.0)
+    after_step = ticker.wait(stop)
+
+    assert after_step.skipped_ticks == 0, (
+        f"a clock stepped backwards reported {after_step.skipped_ticks} skipped grid points; "
+        "a count of points LOST cannot be negative, and it cannot be a number a log consumer "
+        "would read as an hour of missed polls"
+    )
+
+
+@pytest.mark.parametrize(
+    ("interval_s", "offset_s"),
+    [
+        (60.0, 0.0),
+        (60.0, 2.0),
+        (60.0, 59.999999),
+        (1.0, 0.5),
+        (0.1, 0.05),  # a cadence not representable in binary
+        (0.3, 0.2999999),  # ditto, with the offset one ULP-ish under the cadence
+        (900.0, 2.0),
+        (86400.0, 2.0),
+    ],
+)
+def test_no_cadence_or_offset_in_this_repository_can_round_the_sleep_down_to_zero(
+    interval_s: float, offset_s: float
+) -> None:
+    """`floor(...) + 1` is strictly ahead in REAL arithmetic; this asks whether IEEE 754 agrees.
+
+    The whole cure rests on the answer being `> now_s`, but the answer is computed as
+    `offset_s + (periods + 1) * interval_s` in binary floating point, at an epoch magnitude near
+    `1.79e9` where one ULP is about `2.4e-7` s. If that expression ever rounds back onto or below
+    `now_s`, the sleep is zero or negative and `Event.wait` returns at once — the exact tight loop
+    the docstring promises is impossible. Prose cannot settle this; only a sweep can.
+
+    The sweep walks every grid point in a window and its immediate floating-point neighbours,
+    which is where a rounding collapse would live if it lived anywhere.
+
+    Morde: change `periods_elapsed + 1` to `periods_elapsed` and every case fails at the instants
+    that sit exactly on a grid point.
+    """
+    ticker = GridAlignedTicker(
+        interval_s=interval_s, offset_s=offset_s, endpoint="/x", wall_clock_s=lambda: 0.0
+    )
+    assert ticker is not None  # the constructor accepts this pair; the sweep is the real subject
+    first_period = math.floor((_GRID_ORIGIN_S - offset_s) / interval_s)
+    smallest_sleep_s = math.inf
+    checked = 0
+    for step in range(-200, 200):
+        grid_point_s = offset_s + (first_period + step) * interval_s
+        neighbours = (
+            grid_point_s,
+            math.nextafter(grid_point_s, math.inf),
+            math.nextafter(grid_point_s, -math.inf),
+            math.nextafter(math.nextafter(grid_point_s, math.inf), math.inf),
+            math.nextafter(math.nextafter(grid_point_s, -math.inf), -math.inf),
+        )
+        for now_s in neighbours:
+            checked += 1
+            sleep_s = next_grid_instant_s(now_s, interval_s, offset_s) - now_s
+            smallest_sleep_s = min(smallest_sleep_s, sleep_s)
+    assert smallest_sleep_s > 0.0, (
+        f"over {checked} instants at cadence {interval_s} s and offset {offset_s} s the shortest "
+        f"sleep was {smallest_sleep_s} s: floating-point rounding collapsed the strictly-ahead "
+        "guarantee, and a sleep of zero is a tight loop against the venue"
+    )
