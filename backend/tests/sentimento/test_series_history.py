@@ -292,3 +292,249 @@ def test_refuses_a_window_that_is_not_strictly_increasing() -> None:
             knowledge_time_ms=BUCKET_END + 100_000,
             bar_policy=BarPolicy.FINAL_ONLY,
         )
+
+
+# ── PUBLICATION LAG: the fixture property every test above is missing ──────────────────────
+#
+# Every fixture above stamps `available_at == bucket_end` — a bucket readable AT THE VERY
+# INSTANT it closes. No stored row is ever like that, and `SeriesReadPolicy.bucket_interval_ms`
+# (`as_of_accessor.py`) says so in as many words: "a bucket becomes readable one lag AFTER it
+# closes". The lag is what the tests below put back.
+#
+# `[MEDIDO 2026-09-11, docker exec -i deploy-postgres-1 psql -At -c "SELECT available_at -
+# bucket_end FROM md.series WHERE series_key_id='ef3033e6...4e42' ORDER BY bucket_end DESC
+# LIMIT 6"]` -> 47_183 / 48_461 / 49_772 / 51_082 / 52_376 / 53_677 ms (n=6). 50_000 is inside
+# that spread and is the round number the fixtures use.
+PUBLICATION_LAG_MS = 50_000
+
+
+def _volume_key(**overrides: object) -> SeriesKey:
+    """Build the `FLOW` series the defect was found on: `klines_volume`, BTCUSDT, 1m.
+
+    Transcribed from the served catalog entry `[MEDIDO 2026-09-11, GET /api/v1/series-catalog]`,
+    whose `series_key_id` is the one `md.series` holds 10.706 rows for.
+    """
+    terms: dict[str, object] = {
+        "provider": "binance",
+        "venue": "usdm_futures",
+        "instrument_id": "BTCUSDT",
+        "metric": "klines_volume",
+        "cohort": "all",
+        "interval": "1m",
+        "unit": "BTC",
+        "denom": "base",
+        "nature": Nature.FLOW,
+        "ts_convention": TsConvention.AGGREGATE_OVER_BUCKET,
+        "reduction": Reduction.SUM,
+        "quantity_field": QuantityField.NA,
+        "label_shift": 0,
+        "aggregation_scope": "Symbol",
+        "verified_by": "test_series_history.py",
+    }
+    terms.update(overrides)
+    return SeriesKey(**terms)  # type: ignore[arg-type]
+
+
+def _catalog_for(key: SeriesKey, *, max_staleness_ms: int = 120_000) -> SeriesCatalog:
+    """Build a one-entry catalog for `key` (`120_000` is the served `maxStalenessMs` of both)."""
+    return SeriesCatalog(
+        (SeriesCatalogEntry(key=key, native_grid="1min", max_staleness_ms=max_staleness_ms),)
+    )
+
+
+def _lagged_row(
+    key: SeriesKey,
+    *,
+    bucket_end: int,
+    value_raw: str,
+    lag_ms: int = PUBLICATION_LAG_MS,
+    is_final: bool | None = True,
+) -> SeriesRow:
+    """One row of `key`, readable `lag_ms` after its bucket closed — the real stored shape."""
+    return SeriesRow(
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        source="binance",
+        bucket_end=bucket_end,
+        event_time=bucket_end,
+        available_at=bucket_end + lag_ms,
+        availability_source=AvailabilitySource.OBSERVED,
+        ingested_at=bucket_end + lag_ms,
+        observed_at=bucket_end + lag_ms,
+        provenance=Provenance.OBSERVED,
+        src_label_raw="volume",
+        observer_id="test",
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        is_final=is_final,
+        value_raw=value_raw,
+    )
+
+
+def _observations(*rows: SeriesRow) -> tuple[Observation, ...]:
+    return tuple(Observation(row=row, value=Decimal(row.value_raw)) for row in rows)
+
+
+def test_a_flow_series_with_publication_lag_serves_a_value_at_every_grid_instant() -> None:
+    """THE REPRODUCER of `ACHADO-SERIES-HISTORY-SEM-PONTO.md`: 100% `SEM_PONTO` on a `FLOW`.
+
+    Production served `180` rows, `0` with a value, `100%` `absence=SEM_PONTO`, while
+    `md.series` held `10.706` complete rows for the same `series_key_id` `[MEDIDO 2026-09-11,
+    GET /api/v1/series-history?series_key_id=ef3033e6...4e42&interval=1m]`. Two buckets and a
+    real publication lag are the whole reproduction: a `FLOW` carries nothing forward
+    (`CARRY_FORWARD_BY_NATURE[FLOW] is False`), so a bucket first reachable one grid step after
+    it closed is already `age_ms >= bucket_interval_ms` — `SEM_PONTO`, every row, for ever.
+    """
+    key = _volume_key()
+    first, second = BUCKET_END, BUCKET_END + GRID_MS
+    reader = _FakeReader(
+        _observations(
+            _lagged_row(key, bucket_end=first, value_raw="72.068"),
+            _lagged_row(key, bucket_end=second, value_raw="30.537"),
+        )
+    )
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=first,
+        window_end_ms=second,
+        knowledge_time_ms=second + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert [row.event_time for row in report.rows] == [first, second]
+    assert [row.value for row in report.rows] == ["72.068", "30.537"]
+    assert [row.absence for row in report.rows] == [None, None]
+
+
+def test_a_stock_series_with_publication_lag_is_not_shifted_one_bucket_late() -> None:
+    """The same root cause, silent instead of visible, on a carry-forward nature.
+
+    `STOCK` carries forward, so the chart SHOWS a number — the PREVIOUS bucket's, drawn one
+    whole minute late on every point, and an empty first point. Only a fixture with two
+    DIFFERENT values can tell that apart from a correct chart, which is why each grid instant's
+    value is asserted and not merely its presence.
+    """
+    key = _oi_key()
+    first, second = BUCKET_END, BUCKET_END + GRID_MS
+    reader = _FakeReader(
+        _observations(
+            _lagged_row(key, bucket_end=first, value_raw="10"),
+            _lagged_row(key, bucket_end=second, value_raw="20"),
+        )
+    )
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=first,
+        window_end_ms=second,
+        knowledge_time_ms=second + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert [row.value for row in report.rows] == ["10", "20"]
+    assert [row.available_at for row in report.rows] == [
+        first + PUBLICATION_LAG_MS,
+        second + PUBLICATION_LAG_MS,
+    ]
+
+
+def test_a_bucket_that_closes_after_the_grid_instant_is_never_served_at_it() -> None:
+    """The anti-lookahead bound of the fix: reaching one WHOLE step forward is a defect.
+
+    The next bucket is stamped with ZERO lag here on purpose — `available_at == bucket_end` is
+    the one fixture shape R-1 cannot reject, so `bucket_end <= t` (R-2) is the single predicate
+    left holding the line. A read instant of `grid + GRID_MS` instead of `grid + GRID_MS - 1`
+    would serve `999` at `first`, which is data from AFTER `first`.
+    """
+    key = _volume_key()
+    first, second = BUCKET_END, BUCKET_END + GRID_MS
+    reader = _FakeReader(
+        _observations(
+            _lagged_row(key, bucket_end=first, value_raw="72.068"),
+            _lagged_row(key, bucket_end=second, value_raw="999", lag_ms=0),
+        )
+    )
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=first,
+        window_end_ms=first,
+        knowledge_time_ms=second + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert [row.value for row in report.rows] == ["72.068"]
+
+
+def test_the_knowledge_horizon_still_excludes_a_row_observed_after_it() -> None:
+    """`CA-F4-25` is on `knowledge_time`, and widening the READ instant must not widen it.
+
+    `knowledge_time_ms = first` is a caller asking "what did we know when this bucket closed?".
+    The bucket's own row was observed one publication lag later, so the honest answer is an
+    absence — and it stays an absence however far into the grid cell the read instant reaches,
+    because `observed_at <= knowledge_time` does not mention `t`.
+    """
+    key = _volume_key()
+    first = BUCKET_END
+    reader = _FakeReader(_observations(_lagged_row(key, bucket_end=first, value_raw="72.068")))
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=first,
+        window_end_ms=first,
+        knowledge_time_ms=first,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.rows[0].value is None
+    assert report.rows[0].absence == Absence.NO_POINT.value
+
+
+def test_intrabar_reads_at_the_grid_instant_and_never_the_next_bucket_partial() -> None:
+    """`intrabar` keeps reading AT the grid instant, and the asymmetry is the point.
+
+    Under `final_only` R-2 (`bucket_end <= t`) caps the winner at the bucket closing at the
+    grid instant, so the read may safely reach the end of the grid cell. Under `intrabar` R-2 is
+    WAIVED (`_r2_admits` returns `True`), so that same reach would let a PARTIAL of the bucket
+    closing one step LATER win and be labelled with the earlier grid instant — data from after
+    `t` drawn at `t`, the inversion `SPEC-001` §2.4 exists to stop.
+    """
+    key = _volume_key()
+    first, second = BUCKET_END, BUCKET_END + GRID_MS
+    reader = _FakeReader(
+        _observations(
+            _lagged_row(key, bucket_end=first, value_raw="60.0", lag_ms=-10_000, is_final=False),
+            _lagged_row(key, bucket_end=first, value_raw="72.068"),
+            _lagged_row(key, bucket_end=second, value_raw="999", lag_ms=-30_000, is_final=False),
+        )
+    )
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=first,
+        window_end_ms=first,
+        knowledge_time_ms=second + 10 * GRID_MS,
+        bar_policy=BarPolicy.INTRABAR,
+    )
+
+    assert [row.value for row in report.rows] == ["60.0"]

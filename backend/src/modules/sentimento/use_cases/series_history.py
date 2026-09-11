@@ -84,6 +84,50 @@ def _first_grid_instant(window_start_ms: int) -> int:
     return -(-window_start_ms // _GRID_STEP_MS) * _GRID_STEP_MS
 
 
+def _read_instant(grid_instant: int, *, bar_policy: BarPolicy) -> int:
+    """Return the `t` to ask `as_of` for the row REPORTED at `grid_instant`.
+
+    THE GRID INSTANT IS AN X COORDINATE; `t` IS A DECISION INSTANT. They are not the same
+    number, and reading them as if they were is the defect this function exists to name.
+
+    The bar a chart draws at `grid_instant` is the bucket that CLOSED at it (`bucket_end ==
+    event_time` in every stored row `[MEDIDO 2026-09-11 over `md.series`, n=6 newest rows of
+    `series_key_id=ef3033e6…4e42`: `bucket_end % 60000 = 0` and `event_time == bucket_end`]`).
+    A bucket only becomes READABLE one publication lag after it closes — `SeriesReadPolicy.
+    bucket_interval_ms` (`as_of_accessor.py`) states it outright: "a bucket becomes readable one
+    lag AFTER it closes". So `as_of(t=grid_instant)` can NEVER return that bucket: R-1
+    (`available_at <= t`) rejects it for exactly the lag, which is ~50 s on this series
+    `[MEDIDO 2026-09-11: available_at - bucket_end in 47_183..53_677 ms, n=6]`.
+
+    What it returns instead depends only on the nature, and BOTH answers are wrong:
+
+    - `FLOW`/`RATIO`/`EVENT`/`TICK` — no carry-forward, so the previous bucket is already
+      `age_ms == 60_000 >= bucket_interval_ms` and the read is `SEM_PONTO`. **Every row, for
+      ever**: `180` rows, `0` values, `100%` `SEM_PONTO` on `klines_volume`
+      `[MEDIDO 2026-09-11, `ACHADO-SERIES-HISTORY-SEM-PONTO.md`]`.
+    - `STOCK` — carry-forward, so the PREVIOUS bucket's value is drawn at `grid_instant`. The
+      chart is one whole minute late and nothing says so. That is the silent half of the same
+      defect, and it is why the visible half went unnoticed on the series that had a test.
+
+    `as_of` is not wrong and is not touched: `[grid, grid + step)` IS the interval during which
+    the bucket closing at `grid` is the newest closed one, and this function returns its LAST
+    instant — the only point in that interval derivable from the grid alone, without knowing a
+    per-row lag. R-2 (`bucket_end <= t`) is what makes reaching that far safe: buckets are
+    stamped on the `_GRID_STEP_MS` grid, so the greatest admissible `bucket_end` is still
+    `grid_instant` itself. Reaching one millisecond further would admit the NEXT bucket.
+
+    `intrabar` is the exception, and the reason is R-2: `_r2_admits` returns `True` outright
+    under that policy, so the cap that makes the reach safe is gone. Reaching to the end of the
+    cell would let a PARTIAL of the bucket closing one step later win and be labelled with the
+    earlier grid instant — data from after `t` drawn at `t`, the inversion `SPEC-001` §2.4
+    exists to stop. Under `intrabar` the bar "so far" at `grid_instant` is what is asked for,
+    and `grid_instant` is exactly where to ask for it.
+    """
+    if bar_policy is BarPolicy.INTRABAR:
+        return grid_instant
+    return grid_instant + _GRID_STEP_MS - 1
+
+
 def build_series_history_report(
     catalog: SeriesCatalog,
     reader: SeriesWindowReader,
@@ -150,7 +194,7 @@ def build_series_history_report(
         reading = as_of(
             series=entry.key,
             symbol=symbol,
-            t=grid_instant,
+            t=_read_instant(grid_instant, bar_policy=bar_policy),
             observations=observations,
             policy=policy,
             bar_policy=bar_policy,
