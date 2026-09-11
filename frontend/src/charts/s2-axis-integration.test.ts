@@ -140,7 +140,7 @@ test("D5.11 + null-gap survival, LOSSLESS: price + OI + CVD delta + CVD cumulati
   // `T-05.7`: the price panel's candlestick series is styled from NAMED ADR-010 tokens, not
   // the library's own defaults (`#26a69a`/`#ef5350`, unrelated to `#089981`/`#f23645`) — see
   // `color-tokens.ts`'s module docstring for why these exact hexes and no others.
-  const priceColors = candlestickSeriesColors("dark");
+  const priceColors = candlestickSeriesColors();
   // `HeadlessSeriesSpec.items` is `readonly Record<string, unknown>[]` (the shape
   // `runHeadlessChart` forwards verbatim to `series.setData`); `*Lossless`'s items are the
   // narrower `CandlestickItem | LineItem | WhitespaceItem` unions, which have no index

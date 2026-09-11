@@ -278,7 +278,7 @@ function PricePane({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, (chart) => {
-    const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors("light");
+    const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors();
     const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style);
     series.setData(candlestickSeriesLossless(panels.price.series.slots) as never);
 
@@ -293,7 +293,7 @@ function PricePane({
     // ladder — while volume is `klines_volume` at `1m` native. The `design_gate` of `T-01.8` is
     // meant to see it, so nothing here hides it.
     const volumeStyle: Partial<HistogramSeriesOptions> = {
-      color: colorTokens("light").provenanceWeak,
+      color: colorTokens().provenanceWeak,
       priceScaleId: VOLUME_PRICE_SCALE_ID,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -331,7 +331,7 @@ function PricePane({
 function OiPane({ panels, status }: { readonly panels: S2Panels; readonly status: PanelStatus }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, (chart) => {
-    const style: Partial<LineSeriesOptions> = { color: colorTokens("light").provenanceStrong };
+    const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
     const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
     series.setData(lineSeriesLossless(panels.oi.slots) as never);
   });
@@ -357,7 +357,7 @@ function OiPane({ panels, status }: { readonly panels: S2Panels; readonly status
 function CvdPane({ panels, status }: { readonly panels: S2Panels; readonly status: PanelStatus }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, (chart) => {
-    const tokens = colorTokens("light");
+    const tokens = colorTokens();
     const deltaSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, { color: tokens.provenanceStrong });
     deltaSeries.setData(lineSeriesLossless(panels.cvd.deltaSlots) as never);
     const cumulativeSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, { color: tokens.provenanceWeak });

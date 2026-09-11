@@ -85,8 +85,11 @@ export {
   candlestickSeriesColors,
   assertNoForbiddenColorRoles,
   FORBIDDEN_COLOR_ROLE_SUBSTRINGS,
+  CONTRAST_BACKDROP,
+  SURFACE_BASE,
 } from "./color-tokens.ts";
-export type { ColorMode, ColorRole, ColorTokens } from "./color-tokens.ts";
+export type { ColorRole, ColorTokens, ContrastBackdrop } from "./color-tokens.ts";
+export { relativeLuminance, contrastRatio } from "./contrast.ts";
 
 // ── 5. tipos de política de ausência ─────────────────────────────────────────────────────────
 export {

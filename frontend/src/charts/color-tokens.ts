@@ -36,13 +36,29 @@
  * is no `"critical"` / `"severidade"` member — `ADR-010/D-5` is explicit that operational
  * severity ("coletor PAROU", `S1`, phase `07`) is NOT this role and carries NO color token,
  * ever. The absence is enforced twice: statically (the union simply has no such member, so
- * `colorTokens(mode).critical` is a compile error) and at runtime
+ * `colorTokens().critical` is a compile error) and at runtime
  * (`FORBIDDEN_COLOR_ROLE_SUBSTRINGS` + `assertNoForbiddenColorRoles`, exercised in
  * `color-tokens.test.ts` against a real violator so the guard is shown REJECTING something,
  * not just typechecking clean).
+ *
+ * ONE THEME, AND THE PARAMETER IS DELETED — `D13` of
+ * `docs/context/cinco-metricas-do-core/handoff/DECISOES-OWNER.md`. This module used to take a
+ * `mode: ColorMode` and carry a second, LIGHT palette. It no longer does: the app has one theme,
+ * the dark one. The parameter was DELETED rather than re-pointed at `"dark"` — alternative `A`
+ * ("trocar `light`->`dark` nos 4 sítios") was refused BY NAME because it leaves the trap armed,
+ * and that trap had already sprung twice inside one file (`SymbolClient.tsx:296` and `:334`,
+ * where the OI line was drawn `#131722` on a `#131722` surface: `1,00:1`, invisible in
+ * production). With no parameter, that defect stops being a wrong argument and becomes
+ * INEXPRESSIBLE.
+ *
+ * AND THE PALETTE NOW DECLARES WHAT EACH TOKEN IS MEASURED AGAINST: `CONTRAST_BACKDROP` below
+ * pairs every role with the surface its contrast is computed on and the floor it must clear;
+ * `color-contrast.test.ts` is the gate that reads it. That declaration — not a list of role
+ * names a test agreed to skip — is what makes `directionOn` legitimately exempt from the surface
+ * floor: it is ink drawn ON a candle body, so it is measured against the fills. A name-based
+ * allowlist would have been the erosion pattern `CLAUDE.md` names ("entrada de allowlist é
+ * indistinguível de bypass").
  */
-
-export type ColorMode = "light" | "dark";
 
 export type ColorRole =
   | "directionUpFill"
@@ -84,16 +100,16 @@ export function assertNoForbiddenColorRoles(roles: readonly string[]): void {
   }
 }
 
-const LIGHT: ColorTokens = {
-  directionUpFill: "#089981",
-  directionDownFill: "#f23645",
-  directionOn: "#131722",
-  dataBrokenInk: "#581c87",
-  provenanceStrong: "#131722",
-  provenanceWeak: "#57606a",
-};
-
-const DARK: ColorTokens = {
+/**
+ * The one palette. Every hex is `ADR-010`'s `escuro` column, cross-checked hex for hex against
+ * `scripts/validate_palette.js`'s `PAPEIS.escuro` in `color-tokens.test.ts`.
+ *
+ * ⚠️ `validate_palette.js` still carries a `claro` block, and that is CORRECT rather than
+ * leftover: it is the `docs`-owned instrument for `ADR-010`'s dicromacia arithmetic, and `D13`
+ * retired the light theme from the APP, not from the ADR. This module simply stopped citing
+ * that column.
+ */
+const TOKENS: ColorTokens = {
   directionUpFill: "#089981",
   directionDownFill: "#f23645",
   directionOn: "#131722",
@@ -102,11 +118,59 @@ const DARK: ColorTokens = {
   provenanceWeak: "#8b949e",
 };
 
-const TOKENS_BY_MODE: Readonly<Record<ColorMode, ColorTokens>> = { light: LIGHT, dark: DARK };
+/**
+ * `--color-surface-base` of `frontend/src/app/globals.css`, cited here as a literal because
+ * `charts` may not read the DOM (`ADR-003` FR-1 — the same purity that made `D13` refuse
+ * alternative `C`, "derivar das CSS custom properties em runtime"). This is the SECOND citation
+ * of that value, and `color-contrast.test.ts` reads `globals.css` as TEXT to prove the two have
+ * not drifted — the same "two call sites, one number must match" discipline this file already
+ * uses against `validate_palette.js` for the palette itself.
+ */
+export const SURFACE_BASE = "#131722";
 
-/** The named tokens for `mode` — the only way this module exposes a color to a caller. */
-export function colorTokens(mode: ColorMode): ColorTokens {
-  return TOKENS_BY_MODE[mode];
+/**
+ * What a token is DRAWN ON, and therefore what its contrast must be measured against.
+ *
+ *   - `kind: "surface"` — painted straight onto `SURFACE_BASE` (the chart background).
+ *   - `kind: "roles"` — painted ON TOP of another token's fill; measured against EVERY role
+ *     listed, and the WORST of those ratios is the one that has to clear `minRatio`.
+ */
+export type ContrastBackdrop =
+  | { readonly kind: "surface"; readonly minRatio: number }
+  | { readonly kind: "roles"; readonly roles: readonly ColorRole[]; readonly minRatio: number };
+
+/**
+ * THE GATE'S INPUT (`D13`), and the reason it is a `Record<ColorRole, ...>` rather than an
+ * allowlist: a member added to `ColorRole` without a line here is a TYPE ERROR, so no token can
+ * enter this palette without its author stating what it is painted on. `directionOn`'s exemption
+ * from the surface floor is therefore STRUCTURAL — it is not "skip this name", it is "this ink
+ * sits on a candle body, so the candle body IS the backdrop".
+ *
+ * The floors, and where each comes from:
+ *   - `3.0` against the surface — WCAG 1.4.11 (non-text contrast); `D13` made it a gate: no
+ *     series token may sit below it against `--color-surface-base`.
+ *   - `4.5` for `directionOn` — `ADR-010`'s `ON` type ("piso 4.5:1 against the fill it sits on"),
+ *     already quoted in this file's module docstring. Stricter floor, different backdrop.
+ *
+ * ⚠️ `directionOn` measures `1,00:1` against the surface, and that is NOT a defect: it was
+ * reported as one in design review and RETRACTED in `D13` ("Medi contra a referência errada").
+ * Against the fills it is `5,01:1` (up) and `4,59:1` (down).
+ */
+export const CONTRAST_BACKDROP: Readonly<Record<ColorRole, ContrastBackdrop>> = {
+  directionUpFill: { kind: "surface", minRatio: 3.0 },
+  directionDownFill: { kind: "surface", minRatio: 3.0 },
+  directionOn: { kind: "roles", roles: ["directionUpFill", "directionDownFill"], minRatio: 4.5 },
+  dataBrokenInk: { kind: "surface", minRatio: 3.0 },
+  provenanceStrong: { kind: "surface", minRatio: 3.0 },
+  provenanceWeak: { kind: "surface", minRatio: 3.0 },
+};
+
+/**
+ * The named tokens — the only way this module exposes a color to a caller. Takes NO argument:
+ * `D13` left exactly one theme, so there is nothing left to select.
+ */
+export function colorTokens(): ColorTokens {
+  return TOKENS;
 }
 
 /**
@@ -122,7 +186,7 @@ export function colorTokens(mode: ColorMode): ColorTokens {
  * filled body is a separate, later concern; see this file's module docstring for why it is
  * out of scope here).
  */
-export function candlestickSeriesColors(mode: ColorMode): {
+export function candlestickSeriesColors(): {
   readonly upColor: string;
   readonly downColor: string;
   readonly borderUpColor: string;
@@ -130,7 +194,7 @@ export function candlestickSeriesColors(mode: ColorMode): {
   readonly wickUpColor: string;
   readonly wickDownColor: string;
 } {
-  const tokens = colorTokens(mode);
+  const tokens = colorTokens();
   return {
     upColor: tokens.directionUpFill,
     downColor: tokens.directionDownFill,

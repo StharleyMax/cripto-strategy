@@ -125,7 +125,7 @@ test("CA-F2-5: X coordinates for real event_time instants stay within 0.5px acro
       label: "price",
       kind: "candlestick",
       items: items as unknown as readonly Record<string, unknown>[],
-      style: candlestickSeriesColors("light"),
+      style: candlestickSeriesColors(),
     },
   ]);
   try {

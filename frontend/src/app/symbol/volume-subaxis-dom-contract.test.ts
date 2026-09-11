@@ -162,7 +162,7 @@ test("CALA: a design_gate NEEDS_FIX about colour, height or scale leaves the con
   // Exactly the kind of edit `T-01.8` is allowed to make without coordinating with `T-01.9`.
   const restyled = source
     .replace(/const VOLUME_SCALE_MARGINS = \{ top: 0\.8, bottom: 0 \} as const;/, "const VOLUME_SCALE_MARGINS = { top: 0.55, bottom: 0.05 } as const;")
-    .replace(/color: colorTokens\("light"\)\.provenanceWeak,/, 'color: colorTokens("light").provenanceStrong,');
+    .replace(/color: colorTokens\(\)\.provenanceWeak,/, "color: colorTokens().provenanceStrong,");
   assert.notEqual(restyled, source, "the form constants moved — re-anchor this CALA rather than dropping it");
   assert.equal(TESTID_DECLARATION.exec(restyled)?.[1], EXPECTED_TESTID);
   assert.equal(ABSENCE_TOKEN_DECLARATION.exec(restyled)?.[1], EXPECTED_ABSENCE_TOKEN);
