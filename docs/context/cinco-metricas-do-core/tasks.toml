@@ -1,0 +1,949 @@
+# Doc de tasks de `cinco-metricas-do-core` — o DADO DE MAQUINA da quebra.
+#
+# A narrativa e o racional vivem em `tasks_review.md`. O plano de execucao paralela vive em
+# `PLANO-PARALELISMO.md` (`D8`, owner). Os tres NAO se sobrepoem: este arquivo nao argumenta
+# e nao agenda; aquele nao e lido por maquina.
+#
+# A chave da feature e o campo `feature` ABAIXO, nunca o nome do diretorio (ADR-013/D4).
+#
+# ── A UNIDADE DE FASE E A FATIA VERTICAL (D1, owner) ───────────────────────────────
+#
+# coletor -> escritor -> md.series -> /api/v1/series-history -> painel com ponto visivel.
+# Elo ausente => fase incompleta, mesmo com os outros quatro verdes. Toda fase paga os
+# quatro itens do DoD-VERTICAL (D2, owner) e reprova se qualquer um der 0:
+#   DoD-1 count(*) de md.series > 0 (Postgres REAL)
+#   DoD-2 GET /api/v1/series-history -> n_points > 0
+#   DoD-3 Playwright contra o app REAL: N >= 30 pontos distintos e NAO `SEM_PONTO` (RN-S2)
+#   DoD-4 GET /api/v1/ingest-health -> run FECHADO com n_written > 0 (ADR-035)
+# Emenda RN-S1: serie de 5m servida na grade de 1m conta BARRAS NATIVAS distintas
+# (pontos_no_DOM / 5), nunca linhas da escada. Vale para as fases 03 e 04.
+#
+# ── TRACKER: DELIBERADO, NAO ESQUECIDO ─────────────────────────────────────────────
+#
+# `harness policy --key tracker` -> {kind=jira, project=CST, board_id=36} [MEDIDO 2026-09-10].
+# NAO e `kind = none`: o destino esta declarado e identificado. O que falhou foi o ALCANCE —
+# o servidor MCP atlassian exige OAuth e esta sessao e nao-interativa.
+#
+# Por isso as 50 tasks nascem `local_only = true` com `local_reason` DATADO. Nao e o
+# marcador de "esqueci": nos sabemos exatamente que elas nao estao cardadas e por que.
+# Um marcador que colapse "decidi" com "esqueci" faz o segundo nunca chamar atencao.
+# Reversao: cada task troca local_only/local_reason por
+# `tracker = { provider = "jira", id = "CST-nnn", url = "..." }` na MESMA edicao — o
+# validador PROIBE os dois juntos (V-20), entao a troca nao pode ficar pela metade em silencio.
+#
+# ── TRILHA DO TOTAL: 43 -> 39 -> 50 ────────────────────────────────────────────────
+#
+# 43 itens numerados no plano; 39 tasks derivadas deles (7 fusoes, 1 cisao em `4.2`, 2
+# reparticoes); +11 tasks que o plano exige e nao numerou (5 de `deploy`, 5 de `fechamento
+# vertical`, mais `T-05.8`). Trilha item a item em `tasks_review.md` §1 e §7.
+#
+# ── O QUE NAO EXISTE AQUI, E CADA AUSENCIA E DECISAO ───────────────────────────────
+#
+# * conserto do `!forceOrder@arr` — D6 (owner) RECUSOU exigir data. Dono: plataforma-dados/T-07.11
+# * renomear os 4 eventos de log em portugues — NG-5; CLAUDE.md linha 10 e PROSPECTIVA
+# * tocar INGEST_HEALTH_RUN_COLUMNS — RS-2, NG-6, CLAUDE.md linha 11 (sha256 de ADR-008/DoD-2)
+# * versionar /api/v1/collector-status — D7 (owner): muda de VALOR, nao de forma
+# * qualquer [[rules.own]] / alvo de make / allowlist DE IDIOMA — RN-4, ADR-011/D1.10: REPROVA a fase
+# * historia profunda / backfill de meses — NG-8; dono e o /architect do `backtest`
+# * segunda testemunha do CVD na Coinalyze — ADR-036/D5.a RECUSADA (116/120 exatos)
+
+schema_version = "1"
+feature = "cinco-metricas-do-core"
+spec = "docs/specs/SPEC-007-cinco-metricas-do-core.md"
+plan = "docs/plans/SPEC-007-cinco-metricas-do-core"
+review = "docs/context/cinco-metricas-do-core/tasks_review.md"
+untracked_note = "2026-09-10: nenhuma task foi cardada em CST — o destino no Jira esta identificado (kind=jira, project=CST, board_id=36) e a integracao MCP atlassian exige OAuth numa sessao nao-interativa. Decisao DELIBERADA, nao esquecimento: as 50 tasks carregam local_only=true com local_reason datado, e o cadastro manual esta instruido em tasks_review.md §6. A evidencia de cada fase vive no gate QA correspondente, em docs/context/cinco-metricas-do-core/gates/."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 01 · VOLUME — a fatia que paga ADR-035 uma vez para as cinco
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-01.1"
+title = "[sentimento] 01 · Identidade `klines_volume` como entrada de catalogo, com teste nomeado em `verified_by`"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 item 1.1", "SPEC-007 §4/§4.1", "RF-2",
+    "metric=`klines_volume`, provider=`binance`, interval=`1m`, native_grid=`1min`, nature=FLOW, reduction=SUM, denom=`base`. A tabela normativa e SPEC-007 §4 e ela e o contrato desta task.",
+    "POR QUE `klines_volume` e NAO `sum_traded_volume`: `sum_...` neste repositorio e TRANSCRICAO de nome de campo da Binance (`sumOpenInterest`, `sumTakerLongShortVolRatio`, dos endpoints /futures/data/). `/fapi/v1/klines` NAO tem campo com esse prefixo — usa-lo inventaria uma proveniencia. `klines_volume` segue a forma do irmao que ja vive no mesmo modulo (`klines_last` = <endpoint>_<campo/reducao>).",
+    "ALTERNATIVA RECUSADA: reusar `klines_last` com outro `quantity_field`. `quantity_field` e 'which aggTrade quantity the series is built from' (series_key.py:138) e klines NAO deriva de aggTrade => o valor correto e NA para as duas, e o termo nao as distingue.",
+    "interval=`1m` e decisao com razao DUPLA (SPEC-007 §4.1): (i) e a grade que /api/v1/series-history serve nativamente (ADR-034/D6), entao M1 nao paga a escada de GA-2; (ii) a 1min o front compoe qualquer unidade de 15min..4h, e o inverso e impossivel.",
+    "CUSTO DECLARADO: M1 fica com grade DIFERENTE do vizinho de painel `klines_last` (5m) => preco e escada e volume nao, no MESMO painel. O design_gate tem de ver isso antes de a fase 01 fechar (SPEC-007 §8.2).",
+    "GA-1: nenhuma metrica de volume existe em catalogo nenhum. Os 4 nomes de metric que existem sao `sum_open_interest`, `klines_last`, `price_mark_close`, `cvd_source` [MEDIDO 2026-09-10, n=5 sitios]. Esta task CRIA identidade, nao herda.",
+    "DoD: teste nomeado existe e o nome dele entra no termo `verified_by` da SeriesKey — series_key_id() e o sha256 da projecao canonica dos 15 termos (series_key.py:226-234), entao o nome do teste FAZ PARTE da identidade.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.2"
+title = "[sentimento] 01 · Cliente REST de `/fapi/v1/klines` que PRESERVA os 12 campos do array"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 itens 1.2 + 1.4b", "SPEC-007 §4.1, GA-7", "ADR-036/D5", "RF-1",
+    "NAO EXISTE NENHUM HOJE: infra de klines = 0 [DOC: INVENTARIO-POR-METRICA.md].",
+    "⛔ O CLIENTE NAO DESCARTA O ARRAY CRU. A fase 02 (CVD) le o indice [9] (`takerBuyBaseVol`) da MESMA resposta que da o [5] (`volume`). Um cliente que projete so o [5] obriga a 02 a refazer a chamada — e a 02 existe justamente por nao precisar (DoD-7 dela: 'nenhuma chamada HTTP nova').",
+    "DoD (item 7 da fase): teste que prova que os 12 campos do array sobrevivem a camada de parsing, nomeando o indice [9]. E o que impede a fase 02 de virar uma segunda integracao por descuido.",
+    "Teto: 1500 barras por chamada [DOC: documentacao publica da Binance; NAO MEDIDO neste repositorio]. Weight 1 por chamada de 1500 velas contra teto de 2400 weight/min por IP [MEDIDO 2026-09-10: sequencia 31->32->33].",
+    "Profundidade da fonte: desde 2019-09-08 (~7 anos) [MEDIDO 2026-09-10, SPEC-007 §9.2] — e a fonte PROFUNDA das cinco.",
+    "Camada (SPEC-007 §5): o cliente vive em `infra/`; ele fala HTTP e publica na fila. NAO decide identidade de serie (isso e `domain/`) e NAO escreve em md.series (RN-6, escritor unico).",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.3"
+title = "[sentimento] 01 · Coletor de klines: ciclo periodico, backfill de 7 dias no boot, e o bucket em curso NAO gravado como final"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1", "T-01.2", "T-01.4"]
+refs = [
+    "plano 01 itens 1.3 + 1.4", "SPEC-007 §3.7 [Q7], RS-3.4", "RF-1", "RNF-3",
+    "backfill_dias = 7, uma vez, no boot: 7 x 1440 = 10.080 barras = 7 chamadas de 1500. Da 672 candles de 15min e 42 de 4h — a menor e a maior unidade de operacao declarada (D5, owner) tem forma na tela. [INFERRED: 7 e o menor inteiro que da >= 40 candles na MAIOR unidade declarada; com 1 dia seriam 6 candles de 4h, que nao e grafico].",
+    "⛔ [P-seed] NAO e violado, e a razao dissolve a pergunta (SPEC-007 §3.7): backfill LIDO DA ORIGEM nao e dado de teste. [P-seed] proibe SEMEAR dado sintetico no Postgres compartilhado; uma leitura historica de /fapi/v1/klines e dado real de producao pelo caminho de producao.",
+    "RS-3.4 (anti-lookahead): o bucket EM CURSO nao e gravado como final. Marcar is_final=false ou descartar. Gravar o minuto em curso subestima o volume e viola a regra anti-lookahead.",
+    "FALSIFICADOR DA REGRA ANTI-LOOKAHEAD: CLAUDE.md registra que uma regra anti-lookahead deste projeto ja esteve INVERTIDA e propagada por dois documentos. Escreva o teste que prova o sinal, nao a existencia da flag.",
+    "Cadencia em CONFIGURACAO, nunca constante em codigo (RS-3.5): e a unica variavel que paga cota, e grava-la em codigo transforma ajuste de configuracao em release.",
+    "COLISAO: toca H1 `infra/collectors_cli.py` (807 linhas [MEDIDO 2026-09-10], um `_run_*_collector` por fonte: :406 premiumIndex, :528 forceOrder) e H3 `use_cases/collector_series_mapping.py`. Ver PLANO-PARALELISMO §1.",
+    "depends_on T-01.4 e DELIBERADO e a ordem NAO e a obvia: o mecanismo de ADR-035 e provavel contra o premiumIndex, que ja tem 1.429 runs na janela [MEDIDO 2026-09-10T20:10Z] — ele nao precisa esperar o coletor de klines existir, e o coletor novo ja nasce fechando run.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.4"
+title = "[sentimento][infra] 01 · ADR-035/D2: o `run_id` viaja com o lote e o ESCRITOR fecha o run que o coletor abriu"
+components = ["sentimento", "infra"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 itens 1.5 + 1.6", "ADR-035/D1, ADR-035/D2", "SPEC-007 §3.5 [Q5], GA-4, GA-6", "RF-4", "DEF-1", "D7 (owner)",
+    "A CONCESSAO HORIZONTAL DA FEATURE, paga UMA VEZ para as cinco (PRD-007 §8/DEF-1). Sem ela DoD-4 e insatisfazivel por construcao e o gate de D2 degrada para 3 itens EM SILENCIO.",
+    "SEMANTICA (ADR-035/D1): n_written = linhas efetivamente PERSISTIDAS pelo escritor. NUNCA 'itens publicados pelo coletor' — `n_returned` ja carrega isso (collector_run_mapping.py:91-93 faz n_expected = n_returned = n_published). Definir n_written como a mesma coisa tornaria DoD-4 TAUTOLOGICO: ele passaria com md.series vazia, que e o estado de hoje (n_returned somando 2.616.300 com 0 linhas do CORE) [DOC: DIAGNOSTICO.md]. Um gate que passa no estado que ele existe para reprovar nao e gate.",
+    "MECANISMO BARATO, e o achado e de GA-4: `PostgresIngestRecordStore.record_run` JA e upsert por run_id e n_written JA esta no DO UPDATE SET (postgres_ingest_record_store.py:106-128, `ON CONFLICT (run_id) DO UPDATE SET ... n_written = EXCLUDED.n_written`). => fechar o run depois NAO exige schema novo, metodo novo, nem tocar INGEST_HEALTH_RUN_COLUMNS. O que falta e o run_id VIAJAR com o lote.",
+    "SEGUNDA METADE (item 1.6), e ela nao e cosmetica: distinguir run ABERTO de run que ESCREVEU ZERO. Sem isso trocamos um rc=0 por outro — o modo de falha que ADR-012 nomeia, sinal indistinguivel entre 'nada aconteceu' e 'o instrumento nunca foi capaz de distinguir'.",
+    "EFEITO COLATERAL DECLARADO (RS-1): `uptime_percent` de /collector-status (collector_status.py:119-121, 100 x Sn_written / Sn_expected) sai de 0.0 ESTRUTURAL para o valor real. D7 (owner): sem campo novo e sem versao de rota — 'trocar mentira por verdade nao e quebra de contrato'.",
+    "ARQUIVOS: infra/series_row_wire.py, infra/redis_series_write_queue.py, infra/single_writer_cli.py, use_cases/collector_run_mapping.py, infra/postgres_ingest_record_store.py.",
+    "ALTERNATIVA RECUSADA: fatiar em 'envelope' + 'escritor'. As duas metades so sao falsificaveis JUNTAS — o falsificador de ADR-035 e exatamente 'run fechado com n_written=0 enquanto md.series ganhou linha daquele series_key_id na mesma janela'.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.5"
+title = "[infra] 01 · ADR-035/D3: o formatador do processo de servico passa a IMPRIMIR `extra` — e o stdout de CLI de projecao nao e contaminado"
+components = ["infra"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 item 1.7", "ADR-035/D3", "SPEC-007 GA-5, GA-6", "DEF-3 REDEFINIDO",
+    "⛔ DEF-3 ESTAVA MISDIAGNOSTICADO e o custo tabelado no PRD estava precificado contra o trabalho errado. PRD-007 §8/DEF-3 e DIAGNOSTICO.md afirmam que `writer_batch_acked` e `collector_cycle_completed` sao emitidos SEM extra={}. NO CODIGO EM 0f4ee55 OS DOIS TEM extra={} COM CONTADOR: single_writer_cli.py:357-360 e collectors_cli.py:477-480 [MEDIDO 2026-09-10].",
+    "A CAUSA E UMA LINHA: `_STABLE_FORMAT: Final[str] = \"%(message)s\"` (ingest_health_cli.py:33), usado por `build_stdout_handler` (:56-58) que single_writer_cli.main instala. Um formatador de %(message)s ANEXA extra ao LogRecord e NUNCA o imprime => docker logs mostra a string nua e o contador existe, invisivel.",
+    "GA-6: `n_accepted = sum(1 for outcome in outcomes if outcome is WriteOutcome.ACCEPTED)` (single_writer_cli.py:355-356) JA e calculado a cada lote. RF-4 e problema de ROTEAMENTO de um numero existente, nao de medicao nova.",
+    "⛔ RESTRICAO DE ESCOPO, NAO DESCRICAO: esta task altera `infra/ingest_health_cli.py` e o teste que PINA o formato. Ela NAO edita `single_writer_cli.py` — esse arquivo e de T-01.4, e a restricao e o que permite as duas correrem no mesmo lote (PLANO-PARALELISMO, Lote 1B). Se o builder precisar toca-lo, ABORTA o lote.",
+    "SEGUNDA METADE, e ela e o risco real: stdout de CLI de PROJECAO nao pode ser contaminado. A saida canonica alimenta o sha256 que ADR-008/DoD-2 compara dos dois lados justamente para provar que sao iguais — sujar o stdout quebraria a comparacao sem que nada apontasse a causa.",
+    "NAO REABRE NG-3 (programa de observabilidade por log) nem NG-5 (renomear os 4 eventos PT). Evento e chave NOVOS nascem em ingles, prospectivamente (CLAUDE.md linha 10).",
+    "DoD (item 5 da fase): `docker logs` do escritor mostra a linha `writer_batch_acked` COM n_accepted/n_rejected.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.6"
+title = "[sentimento] 01 · `klines_volume` REGISTRADA no `SeriesCatalog` servido por `/api/v1/series-catalog`"
+components = ["sentimento"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1"]
+refs = [
+    "plano 01 item 1.8", "SPEC-007 §4.5", "RF-2",
+    "⛔ 'REUSAR NAO E NAO FAZER NADA' (SPEC-007 §4.5): uma entrada que existe em domain/ mas NAO esta na lista de `list_series_catalog()` faz /api/v1/series-history devolver 422 UnknownSeriesKeyIdError (series_history.py -> catalog.entry_for_id). Isto e ELO DA FATIA, nao pressuposto.",
+    "SITIO UNICO DE REGISTRO: `use_cases/series_catalog.py::list_series_catalog()` (:94-113) — a lista literal de `entries` que a rota publica. E o hot file H2, tocado pelas CINCO fases (PLANO-PARALELISMO §1).",
+    "`verified_by` e argumento OBRIGATORIO do caller neste modulo (ver _CVD_VERIFIED_BY/_PRICE_VERIFIED_BY, :91-92) e ele ENTRA NA IDENTIDADE — usar o nome do teste que T-01.1 criou, nao um nome inventado.",
+    "DoD: GET /api/v1/series-catalog lista a entrada, e GET /api/v1/series-history com aquele series_key_id NAO devolve 422.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.7"
+title = "[web] 01 · Sub-eixo de volume no `PricePane`, com `SEM_PONTO` na ausencia e `data-testid` estavel"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.6"]
+refs = [
+    "plano 01 item 1.9", "SPEC-007 §3.6 [Q6], §7", "RF-3", "RN-1",
+    "DECISAO DE ESTRUTURA (SPEC-007 §3.6): sub-eixo do PricePane, NAO painel proprio. (i) INF-2 mantem DoD-3 sobre a rota /symbol existente e um painel novo multiplicaria o wiring que a fase 04 de pagina-de-grafico-s2 mostrou fragil; (ii) volume sob o eixo de preco e a convencao universal de grafico de mercado; (iii) PricePane ja existe (SymbolClient.tsx:114).",
+    "⛔ A FORMA NAO E DESTA TASK: altura do sub-eixo, escala, cor e comportamento em SEM_PONTO sao do ui-designer COM veredito do gate (T-01.8). CLAUDE.md §Design: nenhuma decisao de design vale antes de o ux-ui-mastery concordar.",
+    "RN-1: ausencia e `SEM_PONTO`, NUNCA zero. Para uma serie FLOW renderizar ausencia como zero e ERRO DE TIPO, nao de UX (series_key.py: 'LOCF over it is a type error, never UX').",
+    "⛔ ENTREGAVEL QUE O PLANO NAO PEDE E ESTA QUEBRA EXIGE: um `data-testid` ESTAVEL no sub-eixo, para o e2e de T-01.9 selecionar por ele. E o que torna T-01.8 e T-01.9 paralelizaveis — um NEEDS_FIX de cor/altura/escala nao pode quebrar o assert de N >= 30. Decisao do /tech-lead, declarada como contestavel em tasks_review.md §8.3.",
+    "CUSTO VISIVEL NA TELA (SPEC-007 §4.1): preco e escada (5m servido na grade de 1m) e volume NAO e (1m nativo), no MESMO painel. O design_gate tem de ver isso.",
+    "ARQUIVOS: frontend/src/app/symbol/{SymbolClient.tsx,view-model.ts,view-model.test.ts,panel-status.ts,series-history-client.ts} — hot file H4.",
+    "LIMITE DE CAMADA (SPEC-007 §5): `web` consome o contrato publicado e NAO importa do servidor (web-fullstack.browser-imports-server, BLOQUEIO).",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.8"
+title = "[web] 01 · Veredito do `ux-ui-mastery` sobre o sub-eixo de volume — a autonomia do design e CONDICIONADA ao gate"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.7"]
+refs = [
+    "plano 01 item 1.10", "CLAUDE.md §'Design — autonomia delegada, com gate de validacao'", "SPEC-007 §3.6",
+    "⛔ TASK PROPRIA, NUNCA CHECKBOX DENTRO DA TASK DE PAINEL. CLAUDE.md: 'agente que gera e aprova o proprio trabalho nao tem gate. O ciclo e gera -> critica -> itera'. O veredito precisa de PR proprio e resultado registrado.",
+    "SILENCIO DO OWNER NAO E APROVACAO — aprovacao e o veredito do validador. O owner intervem POR EXCECAO.",
+    "A obrigacao de prestar contas AUMENTA com a delegacao: argumento, fonte lida com arquivo citado, falsificador, e [NAO SEI] explicito.",
+    "⛔ NUNCA FIGMA, em nenhuma hipotese. Todo design e no Stitch (ui-designer, docs/product/STITCH_CONTEXT.md).",
+    "DoD: veredito registrado em docs/context/cinco-metricas-do-core/gates/design-01.md. Se NEEDS_FIX tocar SymbolClient.tsx, o lote com T-01.9 e QUEBRADO (PLANO-PARALELISMO, Lote 4A).",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.9"
+title = "[web] 01 · e2e Playwright contra o APP REAL: N >= 30 pontos distintos no sub-eixo, sem semear o Postgres compartilhado"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.7"]
+refs = [
+    "plano 01 item 1.11", "D2 item 3 (owner)", "RN-S2", "[P-seed]", "DoD-3",
+    "⛔ O LIMIAR E N >= 30 PONTOS DISTINTOS, nao N > 0 (RN-S2). Um ponto unico nao distingue 'o cano funcionou' de 'caiu um ponto por acaso', e D2 existe para acabar com sinal indistinguivel.",
+    "⛔ REPROVA SEMPRE: DoD-3 contra MOCK em vez do app real; assert so de status HTTP sem dado no DOM. A alternativa 'DoD so-de-API' foi RECUSADA pelo owner COM NUMERO: a fase 02 de pagina-de-grafico-s2 passou exatamente assim e o dado nao chegava na tela; quem achou o bug de wiring foi a fase 04, EM USO AO VIVO PELO OWNER.",
+    "⛔ NUNCA SEMEAR TESTE NO POSTGRES COMPARTILHADO — dado sintetico de e2e ja vazou para a tela real do owner. Usar valor obvio e limpar no mesmo gate. E o backfill de T-01.3 ja fornece ponto legitimo: leitura da origem NAO e dado de teste (SPEC-007 §3.7).",
+    "Seleciona por `data-testid` estavel fixado em T-01.7 — e o que desacopla este assert do veredito de design.",
+    "Arquivo: frontend/e2e/09-volume-dado-real.spec.ts (novo), no padrao de frontend/e2e/08-symbol-dado-real.spec.ts.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.10"
+title = "[infra] 01 · Coletor de klines em PRODUCAO: medir DoD-1/DoD-4 e o `uptimePercent` do `premiumIndex` ANTES e DEPOIS"
+components = ["infra"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.3", "T-01.4", "T-01.5"]
+refs = [
+    "plano 01 item 1.12 + DoD 1/4/6 da fase", "RS-1.a", "D2 (owner)",
+    "TASK QUE O PLANO NAO NUMEROU COMO TAL, e ela existe porque D2 exige count(*) no Postgres REAL: alguem tem de subir o coletor no servico `collector` (deploy/compose.yml:149 [MEDIDO 2026-09-10]), esperar a grade encher, e MEDIR. Isso nao acontece por um pytest verde.",
+    "DoD-1: count(*) de md.series para a series_key_id de `klines_volume` >= 10.000 (7 dias de grade de 1min = 10.080 barras por simbolo). HOJE: 0 [MEDIDO 2026-09-10, n=23.512 linhas, nenhuma do CORE].",
+    "DoD-4: GET /api/v1/ingest-health -> >= 1 run FECHADO de /fapi/v1/klines com n_written > 0, E `S n_written` dos runs fechados IGUAL ao count(*) do DoD-1 no mesmo intervalo. HOJE: 0 de 2.910 runs tem n_written > 0 [MEDIDO 2026-09-10].",
+    "RS-1.a: exibir `uptimePercent` do premiumIndex ANTES e DEPOIS, no gate. Um numero que sai de 0 para 97 sem aviso PARECE REGRESSAO para quem so ve o painel. Hoje: uptimePercent 0.0 com 1.429 runs na janela e veredito ACCEPTED [MEDIDO 2026-09-10T20:10Z].",
+    "FALSIFICADOR DA FASE, e e esta task que o roda: um run FECHADO com n_written = 0 enquanto md.series ganhou linhas daquele series_key_id na MESMA janela => o run_id nao sobreviveu ao transporte e ADR-035/D2 escolheu o caminho errado.",
+    "[AMBIENTE] Unica task da onda 3 que fala com producao. Nunca duas por lote.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-01.11"
+title = "[sentimento][infra][web] 01 · Fechamento vertical da fatia de volume — a CONJUNCAO dos 4 DoD, com comando e universo"
+components = ["sentimento", "infra", "web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.8", "T-01.9", "T-01.10"]
+refs = [
+    "plano 01 DoD 1-8", "D1, D2 (owner)", "SPEC-007 §8.1, §8.3",
+    "⛔ CONJUNCAO. Qualquer item em 0 REPROVA (RN-3). E por isso que esta task e SEPARADA de T-01.10: fundi-las faria a medicao parcial parecer fechamento, e um DoD-3 que nunca rodou ficaria invisivel dentro de um PR que 'passou'.",
+    "Os 8 itens do DoD da fase 01, cada um com o comando e o n, escritos em docs/context/cinco-metricas-do-core/gates/: (1) count(*) >= 10.000; (2) series-history n_points > 0; (3) Playwright N >= 30 e nao SEM_PONTO; (4) run fechado com n_written > 0 e soma igual ao (1); (5) docker logs mostra n_accepted/n_rejected; (6) uptimePercent deixa de ser 0.0; (7) os 12 campos do array de klines preservados; (8) make verify verde.",
+    "⛔ VERIFICACAO E `make verify` — os seis portoes numa chamada, saida bruta em arquivo. NUNCA os seis comandos soltos: custaram ~397k tokens em 1.320 chamadas [MEDIDO 2026-08-29 sobre 105 transcripts].",
+    "Durante o desenvolvimento use `make test-fast K=<filtro>` (2,19s contra 37,5s, ~17x) — mas verde ali NAO e verde de portao: ele nao roda cobertura nem o piso por camada (R8).",
+    "NENHUM NUMERO SEM O COMANDO QUE O PRODUZIU: todo item leva comando, universo (n) e rotulo de forca.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 02 · CVD — mais um indice da MESMA resposta. Capacidade nova introduzida: NENHUMA
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-02.1"
+title = "[sentimento] 02 · Falsificador de `reconstructed_from` RODADO ANTES de gravar a identidade"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.2"]
+refs = [
+    "plano 02 item 2.3 + DoD 6", "SPEC-007 §4.4", "D6.9",
+    "⛔ A ORDEM E O CONTEUDO DESTA TASK: rodar ANTES, nao depois. `series_key_id()` e o sha256 da projecao canonica dos 15 termos (series_key.py:226-234) — dois SeriesKey que diferem em QUALQUER termo sao series DIFERENTES. Gravar a identidade e mudar `reconstructed_from` depois nao corrige: RE-IDENTIFICA a serie. Corrigir depois e MIGRACAO; medir antes custa um script.",
+    "O TESTE: comparar `2 x takerBuy - volume` do klines contra `cvd_delta` do `aggtrade_q`, numa janela em que os dois existam. Se divergirem alem do que a agregacao de bucket explica, a entrada E reconstrucao e EXIGE `published_error` (SeriesCatalogEntry.__post_init__, D6.9), como `build_coinalyze_bv_entry` ja faz (cvd_source_catalog.py:271-277).",
+    "[INFERRED: reconstructed_from=None para a entrada de klines, porque o campo nomeia a serie que foi RECONSTRUIDA, e nada aqui foi reconstruido — o dado e LIDO da origem, no bucket que a origem publica]. Esta task existe para falsificar esse INFERRED, nao para confirma-lo.",
+    "DoD: o resultado, com n e comando, escrito em docs/context/cinco-metricas-do-core/gates/ ANTES de T-02.2 comecar.",
+    "Concorrencia 1 por OBRIGACAO, nao por teto (PLANO-PARALELISMO §4).",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-02.2"
+title = "[sentimento] 02 · Quarta entrada do `cvd_source_catalog` (`provider=\"binance\"`), com teste nomeado e a invariante `takerBuy <= volume`"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.1"]
+refs = [
+    "plano 02 itens 2.2 + 2.4", "SPEC-007 §4/§4.4", "RF-2",
+    "O `metric` EXISTE, a ENTRADA nao. `cvd_source_catalog.py` e literalmente um catalogo de FONTES de CVD e hoje tem tres: build_aggtrade_q_entry (provider=binance, quantity_field=Q), build_aggtrade_nq_entry (NQ) e build_coinalyze_bv_entry (provider=coinalyze, NA) [MEDIDO 2026-09-10: :181,:214,:244]. NENHUMA e a de klines.",
+    "A QUARTA: metric=CVD_SOURCE_METRIC, provider=`binance`, interval=`1m`, quantity_field=NA (nao deriva de aggTrade), nature=FLOW, reduction=SUM, denom=`base`.",
+    "`reconstructed_from` conforme o veredito de T-02.1 — e SO conforme ele.",
+    "INVARIANTE TESTADA (item 2.4): `takerBuy <= volume`. A analoga `bv <= v` deu 30/30 na Coinalyze. DoD 5 da fase: verdadeira em 100% da janela de backfill, com o universo declarado no gate.",
+    "Teste nomeado entra em `verified_by` e portanto NA IDENTIDADE.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-02.3"
+title = "[sentimento] 02 · `delta_cvd = 2 x takerBuyBaseVol - volume` a partir do indice [9] — e o teste que prova ZERO chamada de rede nova"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.2", "T-01.3"]
+refs = [
+    "plano 02 item 2.1 + DoD 7", "SPEC-007 GA-7", "ADR-036/D5 revisada", "RF-1", "ACHADO-KLINES-CVD.md",
+    "A FORMULA: delta_cvd = 2 x takerBuyBaseVol - volume, IDENTICA a 2xbv - v [MEDIDO 2026-09-10, BTCUSDT 1m: v=29,757 / takerBuy=2,626 / delta=-24,505].",
+    "O CRUZAMENTO QUE DERRUBOU ADR-036/D5: takerBuy x bv bate EXATO em 116 de 120 buckets, p95 = 0,00 bp, max 38,52 bp [MEDIDO 2026-09-10, BTCUSDT, 2h, n=120 buckets comuns]. O `bv` da Coinalyze E o `takerBuyBaseVol` da Binance.",
+    "⚠️ O QUE O NUMERO NAO E: prova de CONCORDANCIA, nao de correcao, sobre 1 simbolo, 2h, n=120. Ele NAO refuta a cauda de agosto (docs/medicao-coinalyze.md §4: p99 29 bp, max 1.956 bp), que compara contra o dump canonico S3 — outro corpus, outra referencia. As duas podem estar certas.",
+    "⛔ DoD 7 DA FASE, e e o teste que impede a fase de virar uma segunda integracao por descuido: NENHUMA chamada HTTP nova em relacao a fase 01. O diff de rede e ZERO.",
+    "⛔ A ARMADILHA DESTA FASE E O QUE ELA NAO DEVE FAZER: por ser marginal, e tentador entrega-la DENTRO da fase 01 — mesmo endpoint, mesma resposta, mesmo coletor. D1 (owner) diz que UMA FASE E UMA METRICA, e o DoD-VERTICAL e por metrica. Duas metricas numa fase reintroduz o acoplamento que a feature existe para desfazer, E APAGA A EVIDENCIA de que uma segunda identidade CONSEGUE pegar carona num coletor existente — que e a capacidade de que a fase 04 depende.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-02.4"
+title = "[sentimento] 02 · Entrada de CVD/binance registrada no `SeriesCatalog` servido"
+components = ["sentimento"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.2", "T-01.6"]
+refs = [
+    "plano 02 item 2.5", "SPEC-007 §4.5", "RF-2",
+    "Mesmo sitio unico de T-01.6: `use_cases/series_catalog.py::list_series_catalog()` (hot file H2).",
+    "depends_on T-01.6 NAO e dependencia logica — e SERIALIZACAO DELIBERADA do mesmo arquivo, para que duas worktrees nunca reescrevam a lista de `entries` em paralelo (PLANO-PARALELISMO §1). Colisao ali resolve com aparencia limpa e uma entrada some em silencio.",
+    "DoD: /api/v1/series-history com o novo series_key_id nao devolve 422 UnknownSeriesKeyIdError.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-02.5"
+title = "[web] 02 · `CvdPane` recebe dado, `SEM_PONTO` honesto na ausencia, e `data-testid` estavel"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.4", "T-01.7"]
+refs = [
+    "plano 02 item 2.6", "RF-3", "RN-1",
+    "O painel JA EXISTE: CvdPane em SymbolClient.tsx:172, com deltaSeries e cumulativeSeries. Esta task da dado a ele, nao o cria.",
+    "⛔ PARA UMA SERIE `FLOW`, RENDERIZAR AUSENCIA COMO ZERO E ERRO DE TIPO, NAO DE UX — series_key.py: 'LOCF over it is a type error, never UX'. Ausencia e SEM_PONTO.",
+    "depends_on T-01.7 e serializacao do hot file H4 (SymbolClient.tsx + view-model.ts), nao dependencia logica.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-02.6"
+title = "[web] 02 · e2e Playwright contra o app real: `CvdPane` com N >= 30 pontos distintos"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.5", "T-02.7"]
+refs = [
+    "plano 02 item 2.7 + DoD 3", "RN-S2", "DoD-3", "[P-seed]",
+    "N >= 30 pontos DISTINTOS, nao N > 0. Nao ha divisor de RN-S1 aqui: a serie e nativa de 1m.",
+    "depends_on T-02.7 porque o assert precisa do dado que o deploy produziu — [AMBIENTE], nao teto de D8.",
+    "Arquivo: frontend/e2e/10-cvd-dado-real.spec.ts (novo). Seleciona por data-testid, nunca por texto de UI.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-02.7"
+title = "[infra] 02 · CVD em PRODUCAO: medir DoD-1 e DoD-4 da fatia de CVD"
+components = ["infra"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.3", "T-02.4"]
+refs = [
+    "plano 02 DoD 1/2/4", "D2 (owner)",
+    "DoD-1: count(*) de md.series para a series_key_id de cvd_source/binance > 0. HOJE: 0 [MEDIDO 2026-09-10, n=23.512 linhas, nenhuma do CORE].",
+    "DoD-2: GET /api/v1/series-history -> n_points > 0. DoD-4: run FECHADO da fonte com n_written > 0 (possivel desde a fase 01, ADR-035).",
+    "⛔ NENHUM SERVICO NOVO no compose: o dado vem do coletor de klines que a fase 01 ja subiu. Se esta task precisar de um servico novo, DoD 7 da fase (zero rede nova) foi violado em algum lugar.",
+    "[AMBIENTE] fala com producao.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-02.8"
+title = "[sentimento][infra][web] 02 · Fechamento vertical da fatia de CVD — os 8 itens do DoD, com comando e universo"
+components = ["sentimento", "infra", "web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.6", "T-02.7"]
+refs = [
+    "plano 02 DoD 1-8", "D2 (owner)", "SPEC-007 §8.1, §8.4",
+    "CONJUNCAO: qualquer item em 0 reprova (RN-3). Inclui o item 6 (falsificador de reconstructed_from rodado ANTES, com n e resultado) e o item 7 (zero chamada HTTP nova).",
+    "MARCO A DECLARAR NO GATE: ao fim da fase 03, /symbol fica 3/3 paineis com ponto, contra 0/3 hoje [MEDIDO 2026-09-10, PRD-007 §1.4]. Ao fim desta fase sao 2/3.",
+    "make verify verde.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 03 · OPEN INTEREST — o cliente de /futures/data/ e a PRIMEIRA serie de 5m
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-03.1"
+title = "[sentimento] 03 · Abrir os 3 arquivos de `infra` que citam open interest e declarar o que e PROBE e o que e REUSAVEL"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = []
+refs = [
+    "plano 03 item 3.1",
+    "⛔ O INVENTARIO CONTA CITACAO, NAO FUNCIONALIDADE, e a propria tabela dele pede que se abram os arquivos antes de estimar [DOC: INVENTARIO-POR-METRICA.md]. O que existe hoje e um PROBE de openInterestHist, nao coletor de producao.",
+    "Candidatos a ler: infra/binance_oi_history_client.py, domain/oi_history_paginator.py, infra/coinalyze_one_shot_cli.py (confirmar os tres com `grep -rln 'open_interest\\|openInterest' backend/src/modules/sentimento/infra`).",
+    "TASK DE LEITURA, ZERO CODIGO DE PRODUCAO. Custo: uma task que nao entrega feature. Alternativa RECUSADA: embutir a leitura em T-03.2 — recusada porque entao o achado nao tem onde ser registrado e a proxima fase o refaz.",
+    "DoD: gates/inventario-oi-infra.md declara, arquivo a arquivo, probe x reusavel, com numero de linhas e o que sobrevive.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-03.2"
+title = "[sentimento] 03 · Cliente de `/futures/data/`: MEDIR o limite real de rate e DECLARAR a profundidade de ~30 dias"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = [
+    "plano 03 itens 3.3 + 3.3b", "SPEC-007 §6.3, §9.2", "ADR-036/D2", "RNF-3", "RF-1",
+    "⛔ O LIMITE DE /futures/data/ E HOJE `[NAO MEDIDO]` NESTE REPOSITORIO (SPEC-007 §6.3, ADR-036/D2). Esta task o MEDE, com comando e n, e registra no gate. Nao herda o teto de 2.400 weight/min do /fapi/, que e outro caminho.",
+    "PROFUNDIDADE: /futures/data/* CORTA EM ~30 DIAS — startTime de -60d devolve HTTP 400 [MEDIDO 2026-09-10]. Boa para operar a 15min..4h, INSUFICIENTE para backtest longo.",
+    "⛔ POR QUE DECLARAR A PROFUNDIDADE E ITEM DE DoD, e nao nota de rodape: e o que impede o componente `backtest` de descobrir a ASSIMETRIA por acidente. As profundidades NAO sao iguais — klines desde 2019-09-08 (~7 anos), /futures/data/ ~30 dias, Coinalyze ~1,5 dia a 1min. Um backtest sobre as 5 metricas juntas esta limitado pela MAIS RASA (SPEC-007 §9.2). Fora desta feature por NG-8; registrado aqui para nao virar descoberta.",
+    "CAPACIDADE NOVA #1 da fase (a #2 e a primeira serie de 5m). A fase 04 REUSA este cliente — nao o construa acoplado a open interest.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-03.3"
+title = "[sentimento] 03 · Coletor de `/futures/data/openInterestHist`, com cadencia em CONFIGURACAO e bucket em curso nao-final"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.2", "T-01.4"]
+refs = [
+    "plano 03 item 3.2", "RS-3.4, RS-3.5", "RF-1", "RNF-3",
+    "O que existe hoje e PROBE (ver T-03.1). Esta task faz o coletor de PRODUCAO.",
+    "RS-3.5: cadencia e PARAMETRO DE CONFIGURACAO, nunca constante em codigo — grava-la em codigo transforma um ajuste de configuracao em release.",
+    "RS-3.4: o bucket mais novo e PARCIAL e nao pode ser gravado como final (anti-lookahead).",
+    "depends_on T-01.4 e por DoD-4: o run so fecha com n_written > 0 depois de ADR-035.",
+    "COLISAO: toca H1 collectors_cli.py e H3 collector_series_mapping.py. Concorrencia 1 nesta onda (PLANO-PARALELISMO, Lote 3-3A).",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-03.4"
+title = "[sentimento] 03 · `sum_open_interest` REGISTRADA no catalogo servido, com providers coerentes com `ADR-036`"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-01.6"]
+refs = [
+    "plano 03 item 3.4", "SPEC-007 §4.5", "ADR-036/D2", "RF-2",
+    "⛔ E A UNICA DAS CINCO QUE REUSA UMA ENTRADA PRONTA — e 'reusar nao e nao fazer nada'. A entrada JA EXISTE em open_interest_catalog.py:92,113 com interval=`5m`, native_grid=`5min`, max_staleness_ms = 2 x 300_000 [MEDIDO 2026-09-10: :53-72], e ja ha entrada para os providers `binance` e `coinalyze`.",
+    "O QUE FALTA: estar registrada no SeriesCatalog SERVIDO. `open_interest_catalog_entries()` ja e chamada em use_cases/series_catalog.py:108 — CONFIRMAR que a entrada de provider=`binance` sai na resposta de /api/v1/series-catalog e que /api/v1/series-history NAO devolve 422 para o series_key_id dela.",
+    "ADR-036/D2: a fonte e a Binance (a origem). Se a entrada de provider=`coinalyze` tambem for servida, o painel tem de saber qual esta lendo — RS-5 (rotulo de terceiro) so vale para a serie de terceiro.",
+    "depends_on T-01.6: serializacao do hot file H2.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-03.5"
+title = "[web] 03 · `OiPane` recebe dado, e `RNF-2`: o painel nao exibe dado mais velho que a periodicidade sem DIZER que e velho"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.4", "T-01.7"]
+refs = [
+    "plano 03 itens 3.5 + 3.6", "RF-3", "RN-1", "RNF-2",
+    "OiPane JA EXISTE (SymbolClient.tsx:146). Esta task da dado a ele.",
+    "RNF-2 REUSA `liveness.stale_after_s` JA SERVIDO — nao inventar campo novo nem versionar rota (RF-5: nenhuma das 6 rotas servidas muda de FORMA).",
+    "⚠️ PRIMEIRA SERIE DE 5m NA GRADE DE 1m: a rota NAO reagrega, ela caminha uma grade de 1min e pergunta `as_of` a cada instante (use_cases/series_history.py:132-152), com policy.bucket_interval_ms = 60_000 e max_staleness_ms vindo do catalogo. Uma serie de 5m com max_staleness = 600_000 e servida como FUNCAO ESCADA: a MESMA BARRA REPETIDA 5x. Isso nao e bug — e GA-2, e o painel tem de exibir a escada sem mentir sobre frescor.",
+    "data-testid estavel para o e2e de T-03.6.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-03.6"
+title = "[web] 03 · e2e Playwright com o DIVISOR de `RN-S1`: N >= 30 BARRAS NATIVAS distintas, `pontos_no_DOM / 5`"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.5", "T-03.7"]
+refs = [
+    "plano 03 item 3.7 + DoD 3", "RN-S1", "RN-S2", "SPEC-007 §8.2, GA-2", "DoD-3",
+    "⛔ O COMANDO NOMEIA O DIVISOR: `pontos_no_DOM / 5`. Sem ele, 1 barra real e 5 linhas repetidas 'passariam' com N = 5.",
+    "FALSIFICADOR DA FASE, e e este e2e que o expoe: se DoD-3 contar 150 pontos onde DoD-1 tem 30 linhas, e ninguem notar, entao RN-S1 nao foi aplicado e a fase MEDIU A ESCADA EM VEZ DO DADO.",
+    "Arquivo: frontend/e2e/11-oi-dado-real.spec.ts (novo).",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-03.7"
+title = "[infra] 03 · Coletor de open interest em PRODUCAO: medir DoD-1 e DoD-4"
+components = ["infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.3"]
+refs = [
+    "plano 03 DoD 1/2/4", "D2 (owner)",
+    "DoD-1: count(*) de md.series para `sum_open_interest` > 0. HOJE: 0 [MEDIDO 2026-09-10].",
+    "DoD-4: run fechado da fonte com n_written > 0 (possivel desde a fase 01).",
+    "[AMBIENTE] fala com producao. Servico `collector` em deploy/compose.yml:149.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-03.8"
+title = "[sentimento][infra][web] 03 · Fechamento vertical de open interest — e o marco 3/3 paineis com ponto"
+components = ["sentimento", "infra", "web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.6", "T-03.7"]
+refs = [
+    "plano 03 DoD 1-7", "D2 (owner)", "SPEC-007 §8.1, §8.5",
+    "CONJUNCAO dos 4 DoD mais: limite de /futures/data/ MEDIDO com comando e n (item 5); profundidade de ~30 dias DECLARADA com o comando que devolve o 400 (item 6); make verify verde (item 7).",
+    "⛔ MARCO DA FEATURE, e vale declarar no gate: ao fim desta fase /symbol fica 3/3 PAINEIS COM PONTO, contra 0/3 hoje [MEDIDO 2026-09-10, PRD-007 §1.4]. E a resposta direta a queixa que abriu a feature — 'um painel que entrega nada'.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 04 · LONG/SHORT — escolher QUAL DAS QUATRO, e o PRIMEIRO painel novo
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-04.1"
+title = "[sentimento] 04 · Testar contra a Binance o `[INFERRED]` de que o teto de `5min` e DELA — ANTES de gravar a identidade"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-03.2"]
+refs = [
+    "plano 04 item 4.2 (metade do falsificador) + DoD 6", "SPEC-007 §8.6", "ADR-036/D3", "MEDICAO-COINALYZE-TEMPO-REAL.md §2.2",
+    "O `[INFERRED]` a falsificar: 'o teto de 5min da Coinalyze E o teto da Binance' (MEDICAO §2.2). Se for FALSO — se a Binance publicar long/short a 1min — entao interval=`5m` na identidade esta ERRADO.",
+    "⛔ POR QUE ANTES: corrigir `interval` DEPOIS RE-IDENTIFICA a serie (series_key.py:226). E migracao, nao correcao.",
+    "DoD 6 da fase: o [INFERRED] testado contra a Binance, com o comando e o n, no gate.",
+    "ADR-036/DoD-6 agora exige que toda decisao de fonte CITE O PAYLOAD por indice/campo, medido — a licao de GA-7, onde uma premissa falsa sobreviveu a redacao da propria regra que ela violava porque ninguem tinha lido o payload da origem.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-04.2"
+title = "[sentimento] 04 · Identidade `count_long_short_ratio` (`RATIO`, `5m`) com teste nomeado — e `RATIO` de fluxo NAO e agregavel por soma"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.1"]
+refs = [
+    "plano 04 itens 4.1 + 4.3", "SPEC-007 §4/§4.2, GA-3", "RF-2", "RN-1", "SPEC-001 §3.1/§5.11",
+    "⛔ M3 NAO E UMA SERIE, SAO QUATRO, e a camada de identidade REPROVA a leitura contraria EM TEMPO DE CONSTRUCAO: `FORBIDDEN_METRIC_NAMES` (series_key.py:67) recusa `ls_ratio` dentro de SeriesKey.__post_init__. O motivo esta citado verbatim em :78-83 — o nome generico cobre count_long_short_ratio, count_toptrader_long_short_ratio, sum_toptrader_long_short_ratio e sum_taker_long_short_vol_ratio.",
+    "ESCOLHA DA SPEC: `count_long_short_ratio` — e o que a expressao do owner nomeia em uso comum, e o que a Coinalyze espelha no campo `r`.",
+    "⚠️ CUSTO MEDIDO E DECLARADO: tres das quatro tem autocorrelacao lag-1 de 0,99+ e so `sum_taker_long_short_vol_ratio` tem 0,0955 [DOC: series_key.py:60-62, CA-F2-3]. UMA SERIE COM AUTOCORRELACAO 0,99+ DESENHA UMA RETA. O falsificador vive em T-04.9.",
+    "ITEM 4.3, e ele e contrato, nao observacao: `RATIO` de fluxo NAO e agregavel por soma — SPEC-001 §3.1 mediu 3,3x de inflacao ao somar 3 buckets de 5 min. A recomposicao, SE houver, e `Sbuy/Ssell`. Teste que prova a recusa da soma.",
+    "Teste nomeado entra em `verified_by` e portanto na identidade.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-04.3"
+title = "[sentimento] 04 · Coletor de long/short REUSANDO o cliente de `/futures/data/` da fase 03 — nao e integracao nova"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2", "T-03.3"]
+refs = [
+    "plano 04 item 4.2 (metade do coletor)", "ADR-036/D3", "RF-1", "RS-3.5",
+    "⛔ LITERAL DO PLANO: 'reusa o cliente que a fase 03 construiu, NAO E INTEGRACAO NOVA'. Se esta task escrever um segundo cliente HTTP para /futures/data/, a propriedade que a ordem das fases tem — cada fase introduz EXATAMENTE UMA capacidade nova — foi quebrada, e a fase 03 pagou por nada.",
+    "⛔ E E ESTA A EVIDENCIA QUE A FASE 02 EXISTIU PARA PRODUZIR: que uma segunda identidade CONSEGUE pegar carona num coletor/cliente existente. Se aqui isso falhar, a ordem das fatias (SPEC-007 §3.1) tem uma premissa a menos.",
+    "Cadencia em configuracao (RS-3.5).",
+    "COLISAO: H1 collectors_cli.py + H3 collector_series_mapping.py.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-04.4"
+title = "[sentimento] 04 · `count_long_short_ratio` registrada no catalogo servido"
+components = ["sentimento"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2", "T-03.4"]
+refs = [
+    "plano 04 item 4.4", "SPEC-007 §4.5", "RF-2",
+    "Hot file H2: use_cases/series_catalog.py::list_series_catalog(). depends_on T-03.4 e serializacao do arquivo.",
+    "DoD: /api/v1/series-history com o series_key_id nao devolve 422.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-04.5"
+title = "[web] 04 · PAINEL NOVO de long/short em `/symbol`, com `SEM_PONTO` honesto e `data-testid` estavel"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.4"]
+refs = [
+    "plano 04 item 4.5", "RF-3", "RN-1", "SPEC-007 §8.6",
+    "⛔ PRIMEIRO PAINEL NOVO DA FEATURE. Muda a lista de paineis em SymbolClient.tsx:239-246 E o tipo `S2Panels` em view-model.ts.",
+    "⚠️ E E EXATAMENTE POR ISSO QUE A FASE 05 NAO PODE CORRER EM PARALELO COM ESTA: T-05.9 tambem cria painel novo, no MESMO record de tipo. Duas worktrees, um `S2Panels` — conflito garantido (PLANO-PARALELISMO §4, Lote 4-4A).",
+    "RN-1: ausencia e SEM_PONTO, nunca zero.",
+    "A FORMA e do ui-designer com veredito do gate (T-04.6) — esta task entrega ESTRUTURA e o data-testid.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-04.6"
+title = "[web] 04 · `ui-designer` desenha o painel novo e o `ux-ui-mastery` emite veredito ANTES de a fase fechar"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.5"]
+refs = [
+    "plano 04 item 4.6 + DoD 5", "CLAUDE.md §Design", "SPEC-007 §3.6, §8.6",
+    "DoD 5 da fase, literal: veredito APPROVED do ux-ui-mastery sobre o painel novo, REGISTRADO — 'silencio do owner nao e aprovacao; aprovacao e o veredito do validador'.",
+    "O ciclo e gera -> critica -> itera. Quem gera (ui-designer) nao aprova.",
+    "⛔ NUNCA FIGMA, em nenhuma hipotese. Stitch, sempre. Consultar docs/product/STITCH_CONTEXT.md e o registro shadcn antes de implementar UI.",
+    "Registro: gates/design-04.md.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-04.7"
+title = "[web] 04 · e2e Playwright com o divisor de `RN-S1` no painel novo de long/short"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.5", "T-04.8"]
+refs = [
+    "plano 04 item 4.7 + DoD 3", "RN-S1", "RN-S2", "DoD-3",
+    "N >= 30 BARRAS NATIVAS distintas: `pontos_no_DOM / 5`, porque a serie e de 5m servida numa grade de 1m.",
+    "Arquivo: frontend/e2e/12-long-short-dado-real.spec.ts (novo). Seleciona por data-testid de T-04.5 — e o que desacopla este assert do veredito de T-04.6.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-04.8"
+title = "[infra] 04 · Coletor de long/short em PRODUCAO: medir DoD-1 e DoD-4"
+components = ["infra"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.3"]
+refs = [
+    "plano 04 DoD 1/2/4", "D2 (owner)",
+    "DoD-1: count(*) de md.series para `count_long_short_ratio` > 0. HOJE: 0 [MEDIDO 2026-09-10].",
+    "[AMBIENTE] fala com producao.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-04.9"
+title = "[sentimento][infra][web] 04 · Fechamento vertical de long/short — e o FALSIFICADOR DA RETA (autocorrelacao 0,99+)"
+components = ["sentimento", "infra", "web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.6", "T-04.7", "T-04.8"]
+refs = [
+    "plano 04 DoD 1-7 + falsificador da fase", "SPEC-007 §4.2", "D2 (owner)",
+    "CONJUNCAO dos 4 DoD, mais o veredito APPROVED do ux-ui-mastery (item 5), mais o [INFERRED] do teto de 5min testado (item 6, feito em T-04.1), mais make verify verde.",
+    "⛔ O FALSIFICADOR DA ESCOLHA DE SERIE, e ele e VISUAL: se o painel de `count_long_short_ratio` for uma linha VISUALMENTE PLANA no timeframe de operacao (15min..4h), a fatia ACRESCENTA `sum_taker_long_short_vol_ratio` (autocorrelacao 0,0955) como SEGUNDA serie do MESMO painel.",
+    "E REVERSIVEL DENTRO DA FASE porque e outra entrada de catalogo e outra chamada, NAO outro cano. Se virar fase nova, a decomposicao errou.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 05 · LIQUIDACOES — a UNICA integracao de terceiro, e ela e DO ZERO
+# ══════════════════════════════════════════════════════════════════════════════════
+#
+# ⚠️ A fase ficou MAIS CARA, nao mais barata. A primeira versao do plano dizia que a 05
+# reusaria o coletor Coinalyze construido na fase de CVD: "um endpoint a mais num coletor
+# que ja funciona". ESSE COLETOR DEIXOU DE EXISTIR quando GA-7 tirou o CVD da Coinalyze.
+# Dimensionada como INTEGRACAO COMPLETA — 14 tasks, RS-3.1..RS-3.7 inteiros.
+
+[[tasks]]
+id = "T-05.1"
+title = "[sentimento] 05 · Falsificador de `denom` ANTES de gravar a identidade: comparar `liquidation-history` com o payload de `!forceOrder@arr`"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "plano 05 item 5.1", "SPEC-007 §4.3", "RF-2",
+    "[INFERRED: denom=\"quote\" (nocional em USD) — e o que `l`/`s` da Coinalyze publicam, e e a unidade em que as duas fontes podem ser comparadas; a perna da Binance traz preco e quantidade, entao o nocional e derivavel, o inverso nao e].",
+    "⛔ NAO MEDIDO: a unidade EXATA de `l`/`s`. Esta task mede. Se as ordens de grandeza nao baterem, `denom` muda — e mudar DEPOIS re-identifica a serie (series_key.py:226), o que e migracao, nao correcao.",
+    "[COTA] fala com a Coinalyze: teto de 40 unidades por janela DESLIZANTE de 60 s [MEDIDO 2026-09-10, n=41 requisicoes]. NAO rodar em paralelo com T-05.2 — dois medidores na mesma chave se envenenam e o 429 de um vira ruido na medicao do outro (PLANO-PARALELISMO §5).",
+    "A chave so como $COINALYZE_API_KEY, de .env — NENHUMA CHAVE EM DOCUMENTO, NUNCA.",
+    "DoD: resultado com n e comando em gates/falsificador-denom-liquidacao.md, ANTES de T-05.3.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.2"
+title = "[sentimento] 05 · MEDIR a retencao real de `liquidation-history` — e o falsificador de `ADR-036/D4`"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "plano 05 item 5.7 + DoD 6", "ADR-036 falsificador (:158-160)", "D6 (owner)", "SPEC-007 §9.2",
+    "⛔ O FALSIFICADOR DA DECISAO DO OWNER: se a retencao real de `liquidation-history` for MENOR que o tempo entre uma queda de coletor e o alarme de liveness, entao a RECUPERABILIDADE que justificou ADR-036/D4 e TEORICA — e a decisao de tirar o socket do caminho critico tem de ser REABERTA.",
+    "O argumento que D4 comprou nao foi cota, foi recuperabilidade: como o custo de uma requisicao INDEPENDE da janela pedida [MEDIDO 2026-09-10, MEDICAO §4.2.3-§4.2.5: 4 chamadas de 1.800 buckets custaram as mesmas 40 unidades que 4 de 5 buckets], um coletor REST 3h fora recupera tudo em UMA requisicao por simbolo-endpoint. O !forceOrder@arr ficou ~46h mudo e, sendo WebSocket, AQUELE DADO ESTA PERDIDO PARA SEMPRE [DOC: ACHADO-FORCEORDER.md, n=2 runs].",
+    "Baseline documental a confirmar ou refutar: ~1,5 dia a 1min, ~7 dias a 5min (teto por CONTAGEM de pontos, ~2.000) [DOC: MEDICAO §5, docs/medicao-coinalyze.md §1.2/§1.3].",
+    "[COTA] SOZINHA no lote (PLANO-PARALELISMO, Lote 5-1B). A medicao precisa possuir a janela de 60 s inteira, senao ela mede duas coisas somadas achando que mede uma.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.3"
+title = "[sentimento] 05 · Identidade `sum_liquidation` com `cohort in {long, short}` — DUAS linhas por instrumento, e somar apagaria o sinal"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.1"]
+refs = [
+    "plano 05 item 5.2", "SPEC-007 §4/§4.3", "ADR-036/D4", "RF-2",
+    "metric=`sum_liquidation`, provider=`coinalyze`, interval=`1m`, native_grid=`1min`, nature=FLOW, reduction=SUM, denom conforme o veredito de T-05.1.",
+    "⛔ DUAS LINHAS DE CATALOGO POR INSTRUMENTO: cohort=`long` e cohort=`short`. `cohort` JA e termo de identidade (cohort=`all` nas series existentes). Liquidacao tem DUAS PERNAS e as duas fontes as separam: liquidation-history devolve `l` e `s` (MEDICAO §2) e !forceOrder@arr traz o lado na ordem. SOMA-LAS NUMA SO APAGARIA O SINAL QUE A METRICA EXISTE PARA DAR.",
+    "Teste nomeado em `verified_by`, e ele entra na identidade.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.4"
+title = "[infra] 05 · A key da Coinalyze so como `$COINALYZE_API_KEY`, de `.env` — nenhuma chave em documento ou codigo"
+components = ["infra"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "plano 05 item 5.3b", "RNF-4", "CLAUDE.md §'Dado bruto nao e versionado'",
+    "LITERAL DE CLAUDE.md: 'Nenhuma chave em documento, nunca. A key da Coinalyze vive em .env (perms 600, gitignored) e os comandos a referenciam so como $COINALYZE_API_KEY'.",
+    "Superficies: .env.example (o NOME, nunca o valor), deploy/compose.yml (passagem por env, nao literal), e o codigo do cliente (leitura de os.environ, sem default).",
+    "DoD: um grep que MORDE — chave literal em qualquer arquivo versionado REPROVA — e que CALA na arvore de hoje, com o comando e o n no gate. Sem o par morde/cala, o rc=0 e indistinguivel entre 'nao ha chave' e 'o instrumento nao sabe procurar' (ADR-012).",
+    "ZERO REDE: e por isso que esta task pareia com T-05.1 no Lote 5-1A sem colisao de [COTA].",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.5"
+title = "[sentimento] 05 · Coletor Coinalyze de PRODUCAO, do zero: `RS-3.1..RS-3.7` inteiros, cada um com teste"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.3", "T-05.4", "T-01.4"]
+refs = [
+    "plano 05 itens 5.3 + 5.4 (metade backend)", "SPEC-007 §6.2, §6.3, §7, §9.3", "RF-1", "RNF-3", "ADR-036/D4",
+    "⛔ A TASK MAIS LARGA DO PLANO. Se passar de ~150 turnos, ESCREVA O HANDOFF em docs/context/cinco-metricas-do-core/handoff/T-05.5.md e devolva — o custo e QUADRATICO nos turnos (376 turnos custaram 93M; 188 custariam ~22M).",
+    "RS-3.1 contador de cota PROPRIO, no lado do coletor — a origem NAO publica cota em 200 (sem header; so o proprio 429). REUSA `infra/https_quota_probe.py` e `domain/quota_bucket.py`, NAO REINVENTA [DOC: MEDICAO §6].",
+    "RS-3.2 recuo obedece o `Retry-After` DA RESPOSTA, com piso; PROIBIDO recuo fixo cego — um recuo fixo de 60s quando a origem diz 49s desperdica ~18% da janela [MEDIDO: MEDICAO §3; Retry-After observados: 49,1s / 56,8s / 59,0s].",
+    "RS-3.3 retentativa e POR (simbolo x endpoint) QUE FALHOU, NUNCA do ciclo inteiro — um ciclo N=10 custa 10 u; reta-lo inteiro dentro da mesma janela estoura a cota por construcao (D4, owner).",
+    "RS-3.4 o bucket mais novo e PARCIAL e nao pode ser gravado como final — defasagem de 58s, medido v=4,413 contra 10-44 nos vizinhos [MEDIDO: MEDICAO §5]. Grava-lo viola a regra anti-lookahead.",
+    "RS-3.5 cadencia em CONFIGURACAO. Adotada: 5 min => 2 u/min a N=10, 5% do teto (SPEC-007 §6.3). A 15min..4h isso da 3 atualizacoes por candle de 15min, com resolucao de 1 min PRESERVADA (a janela e gratis).",
+    "RS-3.6 requisicoes ESPALHADAS ao longo da cadencia, NUNCA em rajada. ⛔ MEDIA NAO E PICO: a janela e deslizante de 60s; um ciclo disparado de uma vez ocupa a janela inteira e a proxima retentativa toma 429 mesmo com o orcamento medio em 20%. 'A folga nao e convite'.",
+    "RS-3.7 simbolo PEDIDO e NAO DEVOLVIDO vira `IngestGap` (record_gap ja existe, postgres_ingest_record_store.py:208). Uma chamada de 20 simbolos devolveu 19 e uma de 40 devolveu 38 [MEDICAO §3.1] — o numero de series devolvidas pode ser menor que o de pedidas, SILENCIOSAMENTE, e sem isso um simbolo some do painel sem que nada acuse.",
+    "Borda (SPEC-007 §7): duplicado e idempotente pela identidade (mesma series_key_id/symbol/event_time => upsert); fora de ordem se ordena na LEITURA; lacuna vira IngestGap, NUNCA interpolacao.",
+    "⛔ NAO CONSERTA O !forceOrder@arr. D6 (owner) RECUSOU exigir data. O coletor morto permanece de pe gravando REJECTED. Dono: plataforma-dados/T-07.11.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.6"
+title = "[sentimento] 05 · `RF-6`/`RS-4`: veredito `REJECTED` registra o MOTIVO — `api_code` e/ou `notes` nao-nulos, sempre"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.5"]
+refs = [
+    "plano 05 item 5.6 + DoD 5", "RF-6", "RS-4", "DEF-2", "ADR-012",
+    "⛔ `core.silent-except` E BLOQUEIO, e foi ele que PRODUZIU DEF-2. Todo except no caminho de coleta ou RELANCA COM CONTEXTO, ou registra motivo em notes/api_code. Nenhum passa mudo.",
+    "DoD 5 da fase: NENHUM veredito REJECTED com api_code E notes ambos nulos, na fonte desta fase. Universo: todos os runs da janela. HOJE, no !forceOrder@arr: 2 de 2 VIOLAM [MEDIDO 2026-09-10].",
+    "Um veredito sem motivo e o rc=0 de ADR-012 — sinal indistinguivel entre 'falhou por X' e 'o instrumento nunca soube dizer por que'.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.7"
+title = "[sentimento] 05 · Liveness por CONTIGUIDADE e HEARTBEAT, nunca por taxa — herda `T-07.11`, agora medindo a fonte REST"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.5"]
+refs = [
+    "plano 05 item 5.5", "SPEC-007 §3.3, §8.7", "ACHADO-FORCEORDER.md",
+    "⛔ NUNCA POR TAXA. Serie ESPARSA: evento esparso NAO DISTINGUE CONSERTO DE AUSENCIA. Zero liquidacao num minuto e um fato legitimo; zero liquidacao porque o cano morreu e um defeito. Um detector por taxa da o mesmo numero nos dois casos — e foi exatamente assim que o !forceOrder@arr ficou ~46h mudo sem que nada acusasse.",
+    "HERDA `T-07.11` de plataforma-dados (docs/context/plataforma-dados/tasks.toml:1161, hoje `blocked`) POR `refs`, NUNCA por depends_on: o grafo do validador e INTRA-FEATURE (V-13) e uma aresta para fora reprovaria. Esta feature NAO desbloqueia aquela task.",
+    "O ALVO MUDOU: T-07.11 media o socket; aqui o detector mede a FONTE PRIMARIA REST, que ADR-036/D4 colocou no caminho critico no lugar dele.",
+    "E O DETECTOR, NAO A TAXA, QUE PROVA QUE O CANO ESTA VIVO — DoD 3 da fase depende disso para nao confundir janela sem liquidacao com coletor morto.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.8"
+title = "[sentimento] 05 · As DUAS coortes de `sum_liquidation` registradas no catalogo servido, com o contrato de serie ESPARSA"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.3", "T-04.4"]
+refs = [
+    "plano 05 item 5.4 (metade backend do registro)", "SPEC-007 §4.5", "RF-2", "RN-1",
+    "TASK QUE O PLANO NAO NUMEROU: ele numerou o registro no catalogo servido nas fases 02, 03 e 04 e esqueceu na 05. Sem ela, /api/v1/series-history devolve 422 UnknownSeriesKeyIdError e DoD-2 e insatisfazivel.",
+    "DUAS entradas — cohort=`long` e cohort=`short` — e o DoD-2 da fase exige n_points > 0 PARA AS DUAS, separadamente.",
+    "Contrato de serie ESPARSA no backend: ausencia e ausencia, nunca zero. Teste que prova que a projecao nao preenche buraco.",
+    "Hot file H2. depends_on T-04.4 e serializacao do arquivo.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.9"
+title = "[web] 05 · PAINEL NOVO de liquidacoes, com o rotulo de `RS-5` (`published_error`) e ausencia que NUNCA vira zero"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.8", "T-04.5"]
+refs = [
+    "plano 05 itens 5.3c + 5.4 (metade web) + 5.8 (metade painel)", "RF-3", "RN-1", "RS-5", "SPEC-007 §7",
+    "⛔ RS-5: TODA serie de TERCEIRO ou de RECONSTRUCAO que chega a tela e ROTULADA COMO TAL, com o `published_error` que o catalogo ja obriga a existir quando reconstructed_from esta preenchido (cvd_source_catalog.py:271-277). O operador NAO PODE LER DADO DE TERCEIRO SEM SABER QUE E DE TERCEIRO.",
+    "Depois de GA-7, M4 e a UNICA serie de terceiro da feature — entao este e o unico painel que carrega o rotulo.",
+    "SERIE ESPARSA: ausencia e SEM_PONTO, NUNCA zero. Para FLOW isso e erro de TIPO, nao de UX.",
+    "SEGUNDO painel novo: muda de novo SymbolClient.tsx:239-246 e o tipo S2Panels. depends_on T-04.5 e serializacao do hot file H4, e e a razao pela qual as fases 04 e 05 nao correm em paralelo.",
+    "data-testid estavel para T-05.11.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.10"
+title = "[web] 05 · `ui-designer` desenha o painel de liquidacoes e o `ux-ui-mastery` emite veredito ANTES de a fase fechar"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.9"]
+refs = [
+    "plano 05 item 5.8 (metade gate) + DoD 7", "CLAUDE.md §Design", "SPEC-007 §8.7",
+    "DoD 7 da fase: veredito APPROVED do ux-ui-mastery sobre o painel novo.",
+    "⚠️ O DESAFIO DE DESIGN ESPECIFICO DESTE PAINEL: serie ESPARSA com DUAS COORTES (long/short) e rotulo de terceiro. 'Sem liquidacao neste minuto' tem de ser visualmente distinto de 'sem dado' — sao dois estados diferentes e renderiza-los igual reintroduz a ambiguidade que RN-1 existe para matar.",
+    "⛔ NUNCA FIGMA. Stitch, sempre. Registro: gates/design-05.md.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.11"
+title = "[web] 05 · e2e Playwright numa janela em que HOUVE liquidacao — porque evento esparso nao distingue conserto de ausencia"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.9", "T-05.12"]
+refs = [
+    "plano 05 item 5.9 + DoD 3", "RN-S2", "DoD-3", "ACHADO-FORCEORDER.md", "[P-seed]",
+    "N >= 30 pontos distintos, nao SEM_PONTO. Serie de 1m nativa: sem divisor de RN-S1.",
+    "⛔ A ARMADILHA DESTE e2e, e ela e propria desta fase: a serie e ESPARSA. O teste escolhe uma janela em que houve liquidacao — e EVENTO ESPARSO NAO DISTINGUE CONSERTO DE AUSENCIA, que e precisamente o alerta de ACHADO-FORCEORDER.md. Quem prova que o cano esta vivo e o detector de liveness (T-05.7), NAO a taxa.",
+    "⛔ NUNCA SEMEAR O POSTGRES COMPARTILHADO para forcar a janela. Dado sintetico de e2e ja vazou para a tela real do owner.",
+    "Arquivo: frontend/e2e/13-liquidacoes-dado-real.spec.ts (novo). As DUAS coortes.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.12"
+title = "[infra] 05 · Coletor Coinalyze em PRODUCAO: DoD-1/DoD-4 e o consumo de cota MEDIDO em <= 5% do teto a N=10"
+components = ["infra"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.5", "T-05.6"]
+refs = [
+    "plano 05 DoD 1/2/4/6b", "SPEC-007 §6.3", "D4 (owner)",
+    "DoD-1: count(*) de md.series para `sum_liquidation`, AS DUAS COORTES, > 0. HOJE: 0 [MEDIDO 2026-09-10], e o coletor vivo acumulou 2 runs, ambos REJECTED, n_returned = 0.",
+    "DoD-2: n_points > 0 para cohort=`long` E cohort=`short`.",
+    "DoD-6b, e sao duas provas diferentes: (a) TESTE com fonte injetada prova que o coletor RECUSA ultrapassar 40 unidades/60s e que um ciclo N=10 NAO dispara em rajada; (b) consumo MEDIDO EM PRODUCAO <= 5% do teto a N=10, cadencia 5 min. Teste nao substitui medicao e medicao nao substitui teste.",
+    "Parametros do owner (D4): N_piloto = 4, N_alvo = 10.",
+    "[AMBIENTE] + [COTA]. Unica task do lote que fala com producao.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.13"
+title = "[sentimento] 05 · ESCALONAMENTO ao `quant-architect` por fidelidade — a unica serie de terceiro, e a unica SEM ORACULO"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.2", "T-05.12"]
+refs = [
+    "plano 05 DoD 6c", "ADR-036/D6", "SPEC-007 §9.1", "D5 (owner)",
+    "⛔ O QUE SE PERDEU COM GA-7, e e por isso que o escalonamento MUDOU DE ALVO: enquanto o CVD vinha da Coinalyze, o volume da Binance servia de ORACULO GRATIS sobre ela, no mesmo bucket, continuamente. Tirando o CVD, a unica superficie Coinalyze e M4 — E ELA NAO TEM ORACULO: a Binance nao tem REST de liquidacao, e o !forceOrder@arr, que seria a unica comparacao, e o que ADR-036/D4 tirou do caminho critico.",
+    "ENTRADA 1 para o quant-architect: a cauda contra o dump canonico — p99 = 29 bp, max = 1.956 bp [DOC: docs/medicao-coinalyze.md §4]. NAO DIAGNOSTICADA. D5 (owner) NAO a resolve: e risco de FIDELIDADE, nao de granularidade.",
+    "ENTRADA 2, e ela e o achado estranho: `volume` (v x [5]) diverge MAIS que `takerBuy` (bv x [9]) — max 566 bp e 104/120 exatos, contra max 38,52 bp e 116/120 [MEDIDO 2026-09-10, n=120, 1 simbolo]. Um bucket que concorda num campo DEVERIA concordar no outro. ⛔ [NAO SEI] a causa. Hipotese BARATA e NAO TESTADA: alinhamento de bucket.",
+    "NAO BLOQUEIA a fase: RS-5 obriga o rotulo na tela (T-05.9). O escalonamento decide se o `published_error` precisa ser atualizado e se liquidation-history herda a mesma suspeita de alinhamento.",
+    "depends_on T-05.2 porque a retencao medida entra no pacote, e T-05.12 porque o consumo real entra tambem.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
+
+[[tasks]]
+id = "T-05.14"
+title = "[sentimento][infra][web] 05 · Fechamento vertical de liquidacoes — e o fechamento das CINCO metricas do CORE"
+components = ["sentimento", "infra", "web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.7", "T-05.10", "T-05.11", "T-05.13"]
+refs = [
+    "plano 05 DoD 1-8", "D2 (owner)", "SPEC-007 §8.1, §8.7",
+    "CONJUNCAO dos 8 itens: as duas coortes em md.series; series-history para as duas; Playwright N >= 30 em janela com liquidacao; run fechado com n_written > 0; ZERO veredito REJECTED com api_code e notes ambos nulos (hoje 2 de 2 violam); retencao medida; cota <= 5% do teto; veredito APPROVED do ux-ui-mastery; make verify verde.",
+    "⛔ O FALSIFICADOR DA FASE, e ele pode REABRIR UMA DECISAO DO OWNER: se a retencao real de liquidation-history for MENOR que a janela de indisponibilidade tipica, a recuperabilidade que justificou ADR-036/D4 e teorica, e a decisao de tirar o socket do caminho critico volta a mesa. Registrar o veredito explicitamente, nao por omissao.",
+    "MARCO FINAL: 5/5 metricas do CORE com ponto na tela. A queixa que abriu a feature foi 'um painel que entrega nada' [PREMISSA-OWNER: 2026-09-10] — este gate e onde ela deixa de ser verdade, ou onde se declara que ainda e.",
+    "⛔ `advance DONE` e gate do OWNER. Nem esta task nem o /build o executam.",
+]
+local_only = true
+local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
