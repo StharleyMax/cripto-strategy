@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ONE_DAY_MS, S2_WINDOW_SPAN_MS, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
+import { ONE_DAY_MS, S2_WINDOW_SPAN_MS, lastGridInstant, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
 import { FIVE_MINUTES_MS, ONE_MINUTE_MS } from "./s2-panels.ts";
 
 /** The literal window this defect was made of — kept here, and ONLY here, as the negative
@@ -106,7 +106,59 @@ test("resolveTrailingWindow REFUSES a non-finite clock reading instead of produc
   assert.throws(() => trailing(Number.NaN), { name: "RangeError" });
 });
 
-test("S2_WINDOW_SPAN_MS is the 4 days `ADR-034/D8` names — the SPAN survived, only WHICH days changed", () => {
+test("S2_WINDOW_SPAN_MS is the 4 days `PRD-006 §2`/item `5.1` names — the SPAN survived, only WHICH days changed", () => {
+  // ⚠️ The citation, not the number, is what changed here: this test and the module docstring
+  // both used to attribute the span to `ADR-034/D8`, which is the `charts`↔`web` BOUNDARY
+  // (`ADR-034:177`). The span is `PRD-006 §2`/item `5.1`, quoted inside `ADR-034:127` ("4 dias,
+  // painéis Preço+OI+CVD"). A wrong citation is a broken audit trail, and it cost the
+  // `quant-architect` gate of wave `03` (C4) a lookup to find out.
   assert.equal(S2_WINDOW_SPAN_MS, 4 * ONE_DAY_MS);
   assert.equal(FROZEN_END_MS_EXCLUSIVE - FROZEN_START_MS, S2_WINDOW_SPAN_MS);
+});
+
+// ── `lastGridInstant` (wave `03`, C3) ───────────────────────────────────────────────────────
+//
+// The half-open→inclusive conversion `window_end_ms` needs, brought back into `charts` from the
+// TWO copies of `endMsExclusive - ONE_MINUTE_MS` that had grown under `src/app/symbol/`
+// (`ADR-003` FR-2: "web não calcula geometria … impede a segunda implementação da grade").
+
+test("lastGridInstant: the last instant is a function of the PAIR (window, grid), not of the window alone", () => {
+  const window = trailing(MEASURED_NOW_MS);
+
+  // THE FALSIFIER FOR THE REJECTED DESIGN: an `endMsInclusive` FIELD on `S2Window` could only
+  // be derived from `alignmentMs` (5 min here), so it would answer the 5-minute instant for a
+  // route that queries at `1m` — a request that stays valid and comes back FOUR MINUTES SHORT.
+  // These two values differing by exactly that much is why the field was refused.
+  assert.equal(lastGridInstant(window, ONE_MINUTE_MS), window.endMsExclusive - ONE_MINUTE_MS);
+  assert.equal(lastGridInstant(window, FIVE_MINUTES_MS), window.endMsExclusive - FIVE_MINUTES_MS);
+  assert.equal(
+    lastGridInstant(window, FIVE_MINUTES_MS) + 4 * ONE_MINUTE_MS,
+    lastGridInstant(window, ONE_MINUTE_MS),
+    "the two answers differ by 4 minutes — the silent shortfall a single field would have shipped",
+  );
+});
+
+test("lastGridInstant: the answer is INSIDE the window and on the grid, at every clock reading", () => {
+  for (let minute = 0; minute < 240; minute += 7) {
+    const window = trailing(MEASURED_NOW_MS + minute * ONE_MINUTE_MS);
+    const instant = lastGridInstant(window, ONE_MINUTE_MS);
+    assert.ok(instant >= window.startMs && instant < window.endMsExclusive, `instant outside the window at +${minute}m`);
+    assert.equal((instant - window.startMs) % ONE_MINUTE_MS, 0, `instant off the grid at +${minute}m`);
+  }
+});
+
+test("lastGridInstant REFUSES a grid that does not divide the window instead of answering off-grid", () => {
+  const window = trailing(MEASURED_NOW_MS);
+  // 7 minutes does not divide 4 days: there IS no last instant of this window on that grid, and
+  // answering with one off it is exactly the tela-vs-motor disagreement FR-2 forbids. Same
+  // posture as `resolveTrailingWindow`'s `spanMs % alignmentMs` — refuse, never re-floor.
+  assert.throws(() => lastGridInstant(window, 7 * ONE_MINUTE_MS), { name: "RangeError" });
+  assert.throws(() => lastGridInstant(window, 0), { name: "RangeError" });
+  assert.throws(() => lastGridInstant(window, -ONE_MINUTE_MS), { name: "RangeError" });
+  assert.throws(() => lastGridInstant(window, Number.NaN), { name: "RangeError" });
+  assert.throws(
+    () => lastGridInstant({ startMs: 10, endMsExclusive: 10, days: [] }, ONE_MINUTE_MS),
+    { name: "RangeError" },
+    "an empty window has no last instant either",
+  );
 });

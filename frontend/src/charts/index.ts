@@ -61,10 +61,13 @@ export type { OiPanel, CvdPanel, PricePanel, S2Panels, S2RawInputs } from "./s2-
 //
 // `web` deriva a janela por esta função e NÃO a calcula: "série→geometria é `charts`"
 // (`ADR-003` FR-2). O que `web` fornece é a leitura do relógio, que é I/O e por isso é dele.
+// `lastGridInstant(window, gridMs)` entra aqui pelo mesmo motivo (wave `03`, C3 do
+// `quant-architect`): a conversão meia-aberta→inclusiva é aritmética de bucket, e ela estava
+// escrita DUAS VEZES sob `src/app/symbol/` — a segunda implementação da grade que FR-2 nomeia.
 // ⛔ `s2-fixture-window.ts` (a janela das 4 dias de CSV em disco) NÃO é reexportada aqui, de
 // propósito — ver o docstring daquele módulo: é o que impede uma rota de voltar a ler uma
 // janela congelada (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, segundo defeito).
-export { ONE_DAY_MS, S2_WINDOW_SPAN_MS, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
+export { ONE_DAY_MS, S2_WINDOW_SPAN_MS, lastGridInstant, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
 export type { S2Window, TrailingWindowRequest } from "./s2-window.ts";
 
 // ── 3. adaptador lightweight (LOSSLESS mappings only — see module docstring above) ───────────

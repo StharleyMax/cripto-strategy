@@ -82,6 +82,7 @@ import { SymbolClient, type VolumeSubAxisData } from "./SymbolClient.tsx";
 import {
   computeSeriesKeyId,
   countPresentSlots,
+  firstPresentSlotMs,
   daysWithPresence,
   keyMatchesSymbol,
   rawCandlesFromHistoryRows,
@@ -239,6 +240,10 @@ export default async function SymbolPage() {
   const volume: VolumeSubAxisData = {
     slots: volumeSlots,
     presentPoints: countPresentSlots(volumeSlots),
+    // The left end of the readable horizon, DECLARED on screen rather than left to look like a
+    // dead market (`quant-architect`, wave `03`, C4). Derived from the same slots the sub-axis
+    // draws, so the number the screen prints and the bars it draws cannot disagree.
+    firstPresentMs: firstPresentSlotMs(volumeSlots),
     // `windowEndMsInclusive` is the same instant `SymbolClient.tsx` derives as `lastInstantMs`
     // for the other three readouts — one instant for the whole page, not a fourth one.
     reading: resolveVolumeReading(volumeSlots, routeWindow.windowEndMsInclusive),
@@ -264,6 +269,7 @@ export default async function SymbolPage() {
         cvd: cvdResult.status,
         volume: volumeResult.status,
       }}
+      knowledgeTimeMs={routeWindow.knowledgeTimeMs}
       liveUrls={liveUrls}
     />
   );

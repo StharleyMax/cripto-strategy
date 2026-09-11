@@ -1,79 +1,120 @@
-import { execFileSync } from "node:child_process";
-
+import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
-import { computeSeriesKeyId } from "../src/app/symbol/view-model.ts";
-// Imported from `s2-panels.ts` DIRECTLY, not the `charts/index.ts` barrel: the barrel also
-// re-exports `runHeadlessChart` (`s2-headless-run.ts`), which pulls in `jsdom` at module-eval
-// time — fine for the app/build, but `jsdom`'s ESM/CJS interop breaks under Playwright's own
-// module loader in this environment ("module is not linked", `html-encoding-sniffer`). Going
-// straight to the source module these four constants live in avoids the barrel's wider
-// evaluation graph entirely.
-import { RANGE_END_MS_EXCLUSIVE, RANGE_START_MS, S2_PRICE_USE, SYMBOL } from "../src/charts/s2-panels.ts";
+import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact } from "./helpers.ts";
 
 /**
- * `T-04.3` (`SPEC-006` plan `04`, `CA-F4-3`) — the falsifier this fase exists for.
+ * `T-04.3` (`SPEC-006` plan `04`, `CA-F4-3`) — the falsifier this fase exists for, REPAIRED by
+ * wave `03` of `cinco-metricas-do-core` on two counts, both of them measured.
  *
- * `01`/`02`'s own gates measured `rc=0`/`200` only against a `TestClient`/fixture, never the
- * REAL composed app (`docs/context/pagina-de-grafico-s2/handoff/T-04.md`) — that is exactly how
- * `GET /series-history` shipped `500`/`NotImplementedError` in production while every prior
- * gate stayed green. This spec closes that gap the SAME way: real `docker compose` stack
- * (`deploy-web-1`/`deploy-api-1`/`deploy-postgres-1`), real Postgres, and an assertion of a
- * NUMBER in the DOM — not merely the absence of a `500`, which is the exact under-specification
- * that let the bug through once already.
+ * ── 1. IT NO LONGER IMPORTS A WINDOW THAT DOES NOT EXIST (the QA bloqueio of wave `03`) ───────
  *
- * `/symbol` reads a FIXED historical window (`RANGE_START_MS`..`RANGE_END_MS_EXCLUSIVE`,
- * `charts/s2-panels.ts`) that no collector this repository runs today has ever populated for
- * `klines_last`/`sum_open_interest` (`docs/context/pagina-de-grafico-s2/handoff/T-04.md`: "hoje
- * não existe coletor real de klines/OI escrito, só o poll de premiumIndex") — so this spec
- * seeds ONE real row per panel directly into `md.series` (the exact table
- * `PostgresSeriesWindowReader` reads, `T-04.1`) before asserting, the same way
- * `backend/tests/main/test_create_app_wires_series_window_reader.py` seeds its own MORDE case.
- * This is not a fixture standing in for the backend: the row lands in the SAME Postgres the
- * `api` container reads from, through `docker exec ... psql`, and `/series-history` computes
- * every number the DOM ends up showing from it — no shortcut through `page.route`/mocking.
+ * This spec used to import `RANGE_START_MS`/`RANGE_END_MS_EXCLUSIVE` from
+ * `../src/charts/s2-panels.ts`. Wave `03` deleted those two constants — correctly: they were
+ * four days of 2026-08 typed in once, and the route asked `/series-history` for a window that
+ * PRECEDES every row that exists (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`). The import survived the
+ * deletion, and a spec that fails to LOAD takes the whole collection down with it:
+ *
+ *     $ npx playwright test --list               => Total: 0 tests in 0 files
+ *     $ npx playwright test --list e2e/0[1-7]*   => Total: 21 tests in 7 files
+ *
+ * 21 passing tests became unreachable and nothing in `make verify` could see it (`lint-frontend`
+ * is `eslint src` + `tsc -p tsconfig.json`, and `frontend/e2e/` is outside both). The window is
+ * now READ OFF THE PAGE ITSELF (`data-window-start-ms` / `data-window-end-ms-inclusive` /
+ * `data-knowledge-time-ms`, `SymbolClient.tsx`), which is stronger than importing it: the spec
+ * checks the API over EXACTLY the window the server used for THAT render, with no clock race
+ * between the two processes and no constant to go stale a second time.
+ *
+ * ── 2. IT NO LONGER SEEDS THE SHARED POSTGRES (`[P-seed]`, `tasks.toml:226`) ──────────────────
+ *
+ * The previous version `INSERT`ed two synthetic rows (`65432.5`, `543210.75`) into `md.series`
+ * through `docker exec psql`, because when it was written no collector produced Preço/OI. That
+ * is forbidden in this repository and for a reason that already happened: synthetic e2e data
+ * leaked into the owner's real screen. Removed entirely: the only mentions of `INSERT`, `psql`
+ * and `docker` left in this file are the ones in THIS paragraph — no statement, no invocation,
+ * no child process. `grep -n 'INSERT\\|psql\\|docker' e2e/08-symbol-dado-real.spec.ts` lands
+ * only here.
+ *
+ * ── SO WHAT DOES IT ASSERT, IF IT CANNOT PLANT THE NUMBER IT WANTS TO FIND? ───────────────────
+ *
+ * The DOM has to agree with the read API over the same window. That is the wiring falsifier
+ * `CA-F4-1`/fase `04` was actually about (the route served no real data while every gate stayed
+ * green), and it does not need a planted row: it needs the two surfaces to be compared. What is
+ * live today, measured read-only against the running stack
+ * `[MEDIDO 2026-09-11, GET /api/v1/series-history sobre a janela derivada, n=11 séries BTCUSDT]`:
+ *
+ *     klines_volume      200   5.760 grades   799 com valor   1º valor 2026-09-11T01:40Z
+ *     klines_last        200   5.760 grades     0 com valor
+ *     sum_open_interest  200   5.760 grades     0 com valor
+ *     cvd_source         200   5.760 grades     0 com valor
+ *
+ * ⇒ asserting "um número real de Preço no DOM" today would assert about a collector that does
+ * not exist yet, and the only way to make it pass would be the seed that was just removed. What
+ * IS assertable, and is asserted below: the page's numbers are the API's numbers, its absences
+ * are the API's absences, and absence prints `SEM_PONTO` rather than a fabricated `0` (`RN-1`).
+ * When the Preço/OI collectors land, THE SAME ASSERTIONS start proving the number on screen —
+ * they are written against the API's answer, not against a constant.
+ *
+ * ⛔ NOT the `DoD-3` of `T-01.9`: that one counts `N >= 30` DISTINCT points on the volume
+ * sub-axis and gets its own spec (`09-volume-dado-real.spec.ts`). This one is about agreement
+ * between the two surfaces, at whatever density the collectors have reached.
  */
 
 const SPEC = "08-symbol-dado-real";
 const SYMBOL_PATH = "/symbol";
+const SYMBOL = "BTCUSDT";
 
 const API_BASE_URL = process.env.E2E_SENTIMENTO_API_BASE_URL ?? "http://localhost:8000/api/v1";
-const POSTGRES_CONTAINER = process.env.E2E_POSTGRES_CONTAINER ?? "deploy-postgres-1";
-const POSTGRES_DB = process.env.E2E_POSTGRES_DB ?? "cripto_strategy";
-const POSTGRES_USER = process.env.E2E_POSTGRES_USER ?? "cripto_strategy";
 
-const PRICE_VALUE_RAW = "65432.5";
-const OI_VALUE_RAW = "543210.75";
-const ONE_MINUTE_MS = 60_000;
-const FIVE_MINUTES_MS = 5 * ONE_MINUTE_MS;
-/** The window's own last 1-minute grid instant — the ONE instant `SymbolClient.tsx`'s "leitura
- * atual" readouts query (`LAST_INSTANT_MS`, mirrored here rather than imported: that constant
- * lives in a client component module this Node-side test setup should not import). Price's
- * native grid IS 1 minute, so seeding exactly here makes `resolveStockReading` return `"exact"`. */
-const LAST_INSTANT_MS = RANGE_END_MS_EXCLUSIVE - ONE_MINUTE_MS;
-const PRICE_BUCKET_END_MS = LAST_INSTANT_MS;
-/** OI's native grid is 5 minutes (`FIVE_MINUTES_MS`, `s2-panels.ts::buildOiPanel`) and
- * `resolveStockReading` holds back AT MOST one native bucket-width (§5.11) — so the seeded row
- * has to land on the 5-minute-aligned instant AT OR BEFORE `LAST_INSTANT_MS`, the same floor
- * `alignToTimeframeStart` computes, or the "leitura atual" readout stays `"absent"` even with a
- * real row sitting one grid step too early. */
-const OI_BUCKET_END_MS = Math.floor(LAST_INSTANT_MS / FIVE_MINUTES_MS) * FIVE_MINUTES_MS;
+/** `SymbolClient.tsx`'s stable anchors. Spelled out here, not imported: importing
+ * `../src/app/symbol/request-window.ts` would pull `charts/index.ts`, whose barrel evaluates
+ * `s2-headless-run.ts` and therefore `jsdom`, which breaks under Playwright's module loader in
+ * this environment ("module is not linked", `html-encoding-sniffer`). Duplicating a SELECTOR is
+ * also the right posture for a contract with another module — see
+ * `volume-subaxis-dom-contract.test.ts`, which guards the same strings from the other side. */
+const VOLUME_SUBAXIS_TESTID = "price-pane-volume-subaxis";
+const ABSENCE_TOKEN = "SEM_PONTO";
 
 interface CatalogEntryWire {
   readonly key: SeriesKey;
   readonly priceUse: string | null;
 }
 
-let dockerAvailable = true;
-try {
-  execFileSync("docker", ["--version"], { stdio: "ignore" });
-} catch {
-  dockerAvailable = false;
+/** `series_key_id` is NOT on the wire (`GET /series-catalog` publishes the KEY, n=11 entries):
+ * it is the `sha256` of the canonical key, and `view-model.ts` is the one place this repository
+ * computes it. Imported rather than re-implemented — a second hashing of the same key is the
+ * class of duplicate that goes wrong silently, since a wrong id answers `200` with an empty
+ * grid instead of failing. */
+function seriesKeyIdOf(entry: CatalogEntryWire): string {
+  return computeSeriesKeyId(entry.key);
 }
 
-test.skip(!dockerAvailable, "docker not on PATH — this spec needs the real compose stack");
+interface HistoryRow {
+  readonly event_time: number;
+  readonly value: string | null;
+  readonly absence: string | null;
+}
+
+/** The three instants of the request the SERVER built this render from — read off the rendered
+ * page, so the API is asked the same question the page asked, not a similar one. */
+interface RenderedRequest {
+  readonly windowStartMs: number;
+  readonly windowEndMsInclusive: number;
+  readonly knowledgeTimeMs: number;
+}
+
+function requiredNumberAttribute(value: string | null, name: string): number {
+  if (value === null) {
+    throw new Error(`the page did not declare ${name} — SymbolClient.tsx stopped publishing its own request`);
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${name} is ${JSON.stringify(value)}, not a finite epoch-ms instant`);
+  }
+  return parsed;
+}
 
 async function fetchCatalogEntries(): Promise<readonly CatalogEntryWire[]> {
   const response = await fetch(`${API_BASE_URL}/series-catalog`);
@@ -84,65 +125,17 @@ async function fetchCatalogEntries(): Promise<readonly CatalogEntryWire[]> {
   return body.entries;
 }
 
-function findEntry(
-  entries: readonly CatalogEntryWire[],
-  predicate: (entry: CatalogEntryWire) => boolean,
-): CatalogEntryWire {
-  const entry = entries.find((candidate) => candidate.key.instrumentId === SYMBOL && predicate(candidate));
-  if (entry === undefined) {
-    throw new Error(`no BTCUSDT catalog entry matched the predicate — catalog drifted?`);
-  }
-  return entry;
-}
-
-/** Escapes a value for a single-quoted SQL literal — every value here is one of this file's
- * own constants (never user input), so this only needs to survive the one apostrophe risk. */
-function sqlString(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
-function seedSeriesRow(args: {
-  readonly seriesKeyId: string;
-  readonly source: string;
-  readonly valueRaw: string;
-  readonly srcLabelRaw: string;
-  readonly bucketEndMs: number;
-}): void {
-  const sql = `
-    INSERT INTO md.series (
-      series_key_id, symbol, source, bucket_end, event_time, available_at,
-      availability_source, ingested_at, observed_at, provenance, src_label_raw,
-      observer_id, observer_region, is_final, principal_id, value_raw
-    ) VALUES (
-      ${sqlString(args.seriesKeyId)}, ${sqlString(SYMBOL)}, ${sqlString(args.source)},
-      ${args.bucketEndMs}, ${args.bucketEndMs}, ${args.bucketEndMs},
-      'OBSERVED', ${args.bucketEndMs}, ${args.bucketEndMs},
-      'OBSERVADO', ${sqlString(args.srcLabelRaw)}, 'e2e-seed', 'unknown', true, NULL,
-      ${sqlString(args.valueRaw)}
-    )
-    ON CONFLICT (series_key_id, symbol, source, bucket_end, observed_at) DO NOTHING;
-  `;
-  execFileSync(
-    "docker",
-    ["exec", "-i", POSTGRES_CONTAINER, "psql", "-v", "ON_ERROR_STOP=1", "-U", POSTGRES_USER, "-d", POSTGRES_DB, "-c", sql],
-    { stdio: "pipe" },
-  );
-}
-
-interface HistoryRow {
-  readonly event_time: number;
-  readonly value: string | null;
-  readonly absence: string | null;
-}
-
-async function fetchSeriesHistory(seriesKeyId: string): Promise<{ readonly status: number; readonly rows: readonly HistoryRow[] }> {
+async function fetchSeriesHistory(
+  seriesKeyId: string,
+  request: RenderedRequest,
+): Promise<{ readonly status: number; readonly rows: readonly HistoryRow[] }> {
   const query = new URLSearchParams({
     series_key_id: seriesKeyId,
     symbol: SYMBOL,
     interval: "1m",
-    window_start_ms: String(RANGE_START_MS),
-    window_end_ms: String(LAST_INSTANT_MS),
-    knowledge_time_ms: String(RANGE_END_MS_EXCLUSIVE),
+    window_start_ms: String(request.windowStartMs),
+    window_end_ms: String(request.windowEndMsInclusive),
+    knowledge_time_ms: String(request.knowledgeTimeMs),
     bar_policy: "final_only",
   });
   const response = await fetch(`${API_BASE_URL}/series-history?${query.toString()}`);
@@ -150,89 +143,157 @@ async function fetchSeriesHistory(seriesKeyId: string): Promise<{ readonly statu
   return { status: response.status, rows: body.rows ?? [] };
 }
 
-let priceSeriesKeyId: string;
-let oiSeriesKeyId: string;
+function findEntry(
+  entries: readonly CatalogEntryWire[],
+  predicate: (entry: CatalogEntryWire) => boolean,
+): CatalogEntryWire {
+  const entry = entries.find((candidate) => candidate.key.instrumentId === SYMBOL && predicate(candidate));
+  if (entry === undefined) {
+    throw new Error(`no ${SYMBOL} catalog entry matched the predicate — catalog drifted?`);
+  }
+  return entry;
+}
 
-test.beforeAll(async () => {
-  const entries = await fetchCatalogEntries();
-  const priceEntry = findEntry(entries, (entry) => entry.priceUse === S2_PRICE_USE);
-  const oiEntry = findEntry(entries, (entry) => entry.key.metric === "sum_open_interest");
-  priceSeriesKeyId = computeSeriesKeyId(priceEntry.key);
-  oiSeriesKeyId = computeSeriesKeyId(oiEntry.key);
-
-  seedSeriesRow({
-    seriesKeyId: priceSeriesKeyId,
-    source: priceEntry.key.provider,
-    valueRaw: PRICE_VALUE_RAW,
-    srcLabelRaw: "klines",
-    bucketEndMs: PRICE_BUCKET_END_MS,
-  });
-  seedSeriesRow({
-    seriesKeyId: oiSeriesKeyId,
-    source: oiEntry.key.provider,
-    valueRaw: OI_VALUE_RAW,
-    srcLabelRaw: "sumOpenInterest",
-    bucketEndMs: OI_BUCKET_END_MS,
-  });
-});
-
-// `CA-F4-1`'s falsifier, restated for the EXACT query `/symbol` issues for Preço: `500` here is
-// the regression this whole fase exists to catch, and it is checked independently of the DOM
-// (the browser never sees this request — `page.tsx` is a Server Component, `ADR-028/D1`) so a
-// server-side-only regression still fails this spec even if a stale client bundle hid it.
-//
-// `rows.length > 0` alone is NOT the falsifier: `build_series_history_report` walks every
-// 1-minute grid instant across the WHOLE requested window and returns one row per instant
-// regardless of data (`absence` filled for a gap) — for `/symbol`'s own multi-day window that
-// is thousands of rows even with ZERO real data, so a length check alone would pass on the
-// pre-fix `500` bug's sibling failure mode (200, all absent) just as easily as on real data.
-// The row with a non-null `value` is the one this fase's fix is actually responsible for.
-test(`GET /series-history responde 200 com um valor real para o series_key_id de Preço (${SPEC})`, async () => {
-  const { status, rows } = await fetchSeriesHistory(priceSeriesKeyId);
-  const withValue = rows.filter((row) => row.value !== null);
-  fact(SPEC, "price_series_history_status", status);
-  fact(SPEC, "price_series_history_rows", rows.length);
-  fact(SPEC, "price_series_history_rows_with_value", withValue.length);
-  expect(status).toBe(200);
-  expect(rows.length).toBeGreaterThan(0);
-  expect(withValue.length).toBeGreaterThan(0);
-  expect(withValue.some((row) => row.value === PRICE_VALUE_RAW)).toBe(true);
-});
-
-test(`/symbol mostra valor numérico real (não a string de ausência) em Preço e OI (${SPEC})`, async ({ page }) => {
+/**
+ * Loads `/symbol` and reads the three instants the SERVER declared for that render.
+ *
+ * WARNING: if this fails with "the page does not declare its own request", the app being pointed
+ * at is a BUILD OLDER than wave `03` of `cinco-metricas-do-core` — those attributes are emitted
+ * by `SymbolClient.tsx`'s root element. That is a real failure and is deliberately NOT
+ * downgraded to a `skip`: a spec that quietly skips when the deployment is stale is the
+ * "0 tests" signal in another costume, and this file exists because that signal cost 21 tests.
+ */
+async function loadRenderedRequest(page: Page): Promise<RenderedRequest> {
   const response = await page.goto(SYMBOL_PATH, { waitUntil: "networkidle" });
   fact(SPEC, "http_status", response?.status() ?? null);
   expect(response?.status()).toBe(200);
 
-  const priceAbsence = page.locator('section[aria-label="Preço"] [data-fact^="panel_absent:"]');
-  await expect(priceAbsence, "Preço não pode mostrar o banner de ausência com dado real seeded").toHaveCount(0);
+  const main = page.locator("main[data-window-start-ms]");
+  await expect(
+    main,
+    "a página não declara o próprio request (data-window-start-ms) — build anterior a esta wave?",
+  ).toHaveCount(1);
+  return {
+    windowStartMs: requiredNumberAttribute(await main.getAttribute("data-window-start-ms"), "data-window-start-ms"),
+    windowEndMsInclusive: requiredNumberAttribute(
+      await main.getAttribute("data-window-end-ms-inclusive"),
+      "data-window-end-ms-inclusive",
+    ),
+    knowledgeTimeMs: requiredNumberAttribute(await main.getAttribute("data-knowledge-time-ms"), "data-knowledge-time-ms"),
+  };
+}
 
-  const priceReading = page.locator('section[aria-label="Preço"] [data-fact^="price_last_reading:"]');
-  const priceReadingFact = await priceReading.getAttribute("data-fact");
-  fact(SPEC, "price_last_reading_fact", priceReadingFact);
-  expect(priceReadingFact).not.toBeNull();
-  expect(priceReadingFact).not.toContain("absent");
-  const priceReadingText = (await priceReading.textContent())?.trim() ?? "";
-  fact(SPEC, "price_last_reading_text", priceReadingText);
-  expect(priceReadingText).not.toContain("SEM_PONTO");
-  expect(priceReadingText).toMatch(/[0-9]/);
-  // The degenerate candle's close (`view-model.ts`'s "honest degenerate candle") is the raw
-  // value seeded above, verbatim — the falsifier this test would catch if the wiring silently
-  // fed the wrong row: any OTHER number here proves a mismatch between what was seeded and
-  // what `/series-history` actually returned for THIS `series_key_id`.
-  expect(priceReadingText).toContain(PRICE_VALUE_RAW);
+test(`/symbol declara a janela que pediu, e ela ACOMPANHA o relógio (${SPEC})`, async ({ page }) => {
+  const request = await loadRenderedRequest(page);
+  fact(SPEC, "window_start_ms", request.windowStartMs);
+  fact(SPEC, "window_end_ms_inclusive", request.windowEndMsInclusive);
+  fact(SPEC, "knowledge_time_ms", request.knowledgeTimeMs);
 
-  const oiAbsence = page.locator('section[aria-label="Open Interest"] [data-fact^="panel_absent:"]');
-  await expect(oiAbsence, "OI não pode mostrar o banner de ausência com dado real seeded").toHaveCount(0);
+  // THE DEFECT, RESTATED AS A FALSIFIER: the window used to be `2026-08-20..08-24`, four days
+  // that precede every row `md.series` holds. A window that does not reach the last hour cannot
+  // be the derived one, whatever the constants say.
+  const fourDaysMs = 4 * 24 * 60 * 60_000;
+  expect(request.windowEndMsInclusive - request.windowStartMs).toBe(fourDaysMs - 60_000);
+  expect(request.windowEndMsInclusive).toBeGreaterThan(Date.now() - 60 * 60_000);
+  // And it never asks about the future — that is a `422` against the backend's `server_now_ms`.
+  expect(request.knowledgeTimeMs).toBeLessThan(Date.now());
+});
 
-  const oiReading = page.locator('section[aria-label="Open Interest"] [data-fact^="oi_last_reading:"]');
-  const oiReadingFact = await oiReading.getAttribute("data-fact");
-  fact(SPEC, "oi_last_reading_fact", oiReadingFact);
-  expect(oiReadingFact).not.toBeNull();
-  expect(oiReadingFact).not.toContain("absent");
-  const oiReadingText = (await oiReading.textContent())?.trim() ?? "";
-  fact(SPEC, "oi_last_reading_text", oiReadingText);
-  expect(oiReadingText).not.toContain("SEM_PONTO");
-  expect(oiReadingText).toMatch(/[0-9]/);
-  expect(oiReadingText).toContain(OI_VALUE_RAW);
+test(`GET /series-history responde 200 sobre a MESMA janela que a página pediu (${SPEC})`, async ({ page }) => {
+  // `500`/`NotImplementedError` on this exact query is the regression the whole fase exists to
+  // catch, and it is checked independently of the DOM (the browser never issues it — `page.tsx`
+  // is a Server Component, `ADR-028/D1`), so a server-side-only regression still fails here.
+  const request = await loadRenderedRequest(page);
+
+  const entries = await fetchCatalogEntries();
+  const priceEntry = findEntry(entries, (entry) => entry.priceUse === "structure_detection");
+  const { status, rows } = await fetchSeriesHistory(seriesKeyIdOf(priceEntry), request);
+  const withValue = rows.filter((row) => row.value !== null);
+  fact(SPEC, "price_series_history_status", status);
+  fact(SPEC, "price_series_history_rows", rows.length);
+  fact(SPEC, "price_series_history_rows_with_value", withValue.length);
+
+  expect(status).toBe(200);
+  // One row per 1-minute grid instant of the window, present or absent — `rows.length` alone is
+  // therefore NOT evidence of data (`build_series_history_report` walks the whole grid,
+  // `use_cases/series_history.py:193`); it is evidence that the grid the route asked for is the
+  // grid it got back. The data question is the next test's, and it is asked against the DOM.
+  expect(rows.length).toBe((request.windowEndMsInclusive - request.windowStartMs) / 60_000 + 1);
+  // Absence is DECLARED, never implied: every value-less row must name its absence reason.
+  expect(rows.filter((row) => row.value === null && row.absence === null)).toHaveLength(0);
+});
+
+test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunca 0 (${SPEC})`, async ({ page }) => {
+  const request = await loadRenderedRequest(page);
+
+  const entries = await fetchCatalogEntries();
+  const volumeEntry = findEntry(entries, (entry) => entry.key.metric === "klines_volume");
+  const { rows } = await fetchSeriesHistory(seriesKeyIdOf(volumeEntry), request);
+  const apiPresent = rows.filter((row) => row.value !== null);
+  const apiLast = rows.find((row) => row.event_time === request.windowEndMsInclusive);
+  fact(SPEC, "volume_api_rows_with_value", apiPresent.length);
+  fact(SPEC, "volume_api_last_instant_value", apiLast?.value ?? null);
+
+  // ── (a) the COUNT on screen is the API's count, exactly ────────────────────────────────────
+  //
+  // Exact, not approximate: both sides were computed from the same declared window, so a
+  // mismatch is a wiring defect and not a race. This is the assertion fase `04` of
+  // `pagina-de-grafico-s2` had to find IN PRODUCTION, by hand, because no test compared the two
+  // surfaces.
+  const subAxis = page.locator(`[data-testid="${VOLUME_SUBAXIS_TESTID}"]`);
+  await expect(subAxis).toHaveCount(1);
+  const domPresentPoints = Number(await subAxis.getAttribute("data-volume-present-points"));
+  fact(SPEC, "volume_dom_present_points", domPresentPoints);
+  expect(domPresentPoints).toBe(apiPresent.length);
+
+  // ── (b) the READOUT agrees with the API at the window's last grid instant ───────────────────
+  const readout = subAxis.locator('[data-fact^="volume_last_reading:"]');
+  const readoutText = (await readout.textContent())?.trim() ?? "";
+  fact(SPEC, "volume_last_reading_text", readoutText);
+  if (apiLast?.value == null) {
+    // Real absence — the publication tail can exceed one grid step (max medido 267 s, n=804),
+    // so this branch is NORMAL, not a failure. What `RN-1` forbids is what it must NOT say.
+    expect(readoutText).toContain(ABSENCE_TOKEN);
+    expect(readoutText).not.toMatch(/\d/);
+  } else {
+    expect(readoutText).not.toContain(ABSENCE_TOKEN);
+    expect(readoutText).toContain(String(Number(apiLast.value)));
+  }
+
+  // ── (c) the readable horizon is DECLARED, and it is the API's first present instant ─────────
+  //
+  // `[MEDIDO 2026-09-11]` only `799/5.760` grades of this window carry a value and the first sits
+  // ~86% into it: backfilled rows carry `available_at = when we FETCHED them`, which `R-1`
+  // refuses at their own grid instant. The screen has to name that, or a structurally empty left
+  // edge reads as "o mercado não teve dado" (`quant-architect`, wave `03`, C4).
+  const horizon = subAxis.locator('[data-fact^="volume_readable_horizon:"]');
+  await expect(horizon).toHaveCount(1);
+  const horizonFact = await horizon.getAttribute("data-fact");
+  fact(SPEC, "volume_readable_horizon_fact", horizonFact);
+  expect(horizonFact).toBe(`volume_readable_horizon:${apiPresent.length}/${rows.length}`);
+  const sinceMs = await horizon.getAttribute("data-readable-since-ms");
+  fact(SPEC, "volume_readable_since_ms", sinceMs);
+  expect(sinceMs).toBe(apiPresent.length === 0 ? "" : String(apiPresent[0]!.event_time));
+
+  // ── (d) no panel prints a fabricated zero where the API has nothing ─────────────────────────
+  for (const [label, metric] of [
+    ["Preço", "klines_last"],
+    ["Open Interest", "sum_open_interest"],
+  ] as const) {
+    const entry = findEntry(entries, (candidate) => candidate.key.metric === metric);
+    const panelRows = (await fetchSeriesHistory(seriesKeyIdOf(entry), request)).rows;
+    const panelHasValue = panelRows.some((row) => row.value !== null);
+    const readingText =
+      (await page.locator(`section[aria-label="${label}"] [data-fact$="_last_reading:absent"], ` +
+        `section[aria-label="${label}"] [data-fact*="_last_reading:"]`).first().textContent())?.trim() ?? "";
+    fact(SPEC, `${metric}_api_has_value`, panelHasValue);
+    fact(SPEC, `${metric}_dom_reading_text`, readingText);
+    if (!panelHasValue) {
+      // THE `RN-1` FALSIFIER, and the one that would have caught a fabricated zero: with no data
+      // at all in the API, the only honest readouts are `SEM_PONTO` — a `0` here is an error of
+      // TYPE, not of taste.
+      expect(readingText).toContain(ABSENCE_TOKEN);
+      expect(readingText).not.toMatch(/\d/);
+    }
+  }
 });

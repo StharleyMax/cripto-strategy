@@ -87,6 +87,56 @@ test("RN-1 at the RENDERING layer: absence prints SEM_PONTO, and the token is ne
   );
 });
 
+// ── C4: the readable horizon is DECLARED on screen, not left to look like a dead market ──────
+//
+// `[MEDIDO 2026-09-11, ACHADO-BACKFILL-INVISIVEL-AO-AS-OF.md]`: only `769/5.761` grades of the
+// derived window carry a value, and the first sits at index `4.971` — the leftmost 86% of the
+// chart is structurally empty because `R-1` correctly refuses backfilled rows at their own grid
+// instant. That absence is REAL, so the chart does not lie; but "sabíamos nada ainda" and "o
+// mercado não teve dado" look identical to an operator, and telling two kinds of absence apart
+// is what `RN-1` is for. So the number is printed (`quant-architect`, wave `03`, C4).
+
+test("C4: the screen declares the readable horizon — first readable instant AND how many grades", () => {
+  assert.match(
+    source,
+    /data-fact=\{`volume_readable_horizon:\$\{volume\.presentPoints\}\/\$\{gridSlots\}`\}/,
+    "the horizon fact must carry BOTH numbers — a bare count cannot say 769 OF WHAT",
+  );
+  assert.match(
+    source,
+    /data-readable-since-ms=\{volume\.firstPresentMs \?\? ""\}/,
+    "the first readable instant must reach the DOM as a machine-readable attribute",
+  );
+  // `null` is absence of a horizon and must READ as absence, never as the epoch (`0`).
+  assert.match(
+    source,
+    /volume\.firstPresentMs === null\s*\n?\s*\? "Nenhuma grade legível no período"/,
+    "no readable grade must print a sentence, not a date derived from 0",
+  );
+  // ⛔ AND THE SPAN IS NOT SHRUNK TO FIT: C4 item 2. The window is `PRD-006 §2`/item `5.1`'s, and
+  // a chart that narrows itself to hide its own hole is worse than one that names the hole. The
+  // client never names the span at all — it draws the window it was handed.
+  assert.ok(
+    !source.includes("S2_WINDOW_SPAN_MS"),
+    "the rendering layer must not reach for the span — re-cutting it around the data hides the gap",
+  );
+  // And the denominator is the slot array it was handed, whole — not a re-sliced sub-range.
+  assert.match(source, /const gridSlots = volume\.slots\.length;/);
+});
+
+test("C4: the request this render was built from is on the root element, so the screen is auditable", () => {
+  // What makes `e2e/08` able to cross-check the DOM against `/series-history` over EXACTLY the
+  // window the server used — instead of re-deriving it from the spec's own clock, which races,
+  // or seeding Postgres, which `[P-seed]` forbids.
+  for (const attribute of [
+    /data-window-start-ms=\{panels\.window\.startMs\}/,
+    /data-window-end-ms-inclusive=\{lastInstantMs\(panels\)\}/,
+    /data-knowledge-time-ms=\{knowledgeTimeMs\}/,
+  ]) {
+    assert.match(source, attribute, `the root element must declare ${attribute}`);
+  }
+});
+
 // ── MORDE: the three mutations that were GREEN before this file existed ──────────────────────
 
 test("MORDE: each of the 3 DOM-contract mutations that used to pass green is now caught", () => {

@@ -16,7 +16,12 @@ import { test } from "node:test";
 
 import { ONE_MINUTE_MS } from "../../charts/index.ts";
 import { assertValidHistoryRequestKey, type HistoryRequestKey } from "../history-transport.ts";
-import { KNOWLEDGE_TIME_LAG_MS, RIGHT_EDGE_LAG_MS, resolveRouteWindow } from "./request-window.ts";
+import {
+  KNOWLEDGE_TIME_LAG_MS,
+  LIVE_PUBLICATION_LAG_MAX_MS,
+  RIGHT_EDGE_LAG_MS,
+  resolveRouteWindow,
+} from "./request-window.ts";
 
 /** The literal window the defect was made of — the negative control, and the ONLY place in
  * this tree those four days still appear as a hardcoded pair. */
@@ -26,9 +31,21 @@ const FROZEN_END_MS_EXCLUSIVE = Date.UTC(2026, 7, 24, 0, 0, 0);
 /** The instant the defect was measured at (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, 11:58Z). */
 const MEASURED_NOW_MS = Date.UTC(2026, 8, 11, 11, 58, 17);
 
-/** `available_at - event_time` measured on three real `klines_volume` rows: 10.434s, 12.034s,
- * 13.591s (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, n=3). The worst of the three, rounded up. */
-const MEASURED_PUBLICATION_LAG_MS = 14_000;
+/** ⛔ THIS CONSTANT IS NOT DECLARED HERE ANY MORE, and that is the point.
+ *
+ * It used to be `14_000` — the worst of THREE rows (10.434s / 12.034s / 13.591s,
+ * `ACHADO-SERIES-HISTORY-SEM-PONTO.md`, n=3) — written out as a second literal next to the
+ * constant it was supposed to hold to account. A test whose expected value is a copy of the
+ * same sample the code was sized from PASSES BY CONSTRUCTION: it cannot fail unless someone
+ * edits both, which is the definition of a test that measures nothing (`quant-architect`, wave
+ * `03`, C2 item 3).
+ *
+ * Imported instead from the module under test, where it is `267_000` — the MAXIMUM of the live
+ * class, `n=804` (`ACHADO-BACKFILL-INVISIVEL-AO-AS-OF.md`, SQL in the module docstring). That
+ * makes the assertions below a real constraint on `KNOWLEDGE_TIME_LAG_MS`: at the old value of
+ * `1 min` the first of them FAILS (120s of tolerance against a 267s tail), which is the
+ * mutation that proves it bites. */
+const MEASURED_PUBLICATION_LAG_MS = LIVE_PUBLICATION_LAG_MAX_MS;
 
 test("REPRO: the frozen window misses the data, the derived window does not", () => {
   // The row that existed when the defect was measured (`event_time = 1789117860000`).
@@ -66,18 +83,35 @@ test("the route never asks for the future — every instant it sends is behind t
   );
 });
 
-test("the last instant the page READS OUT is knowable as-of — otherwise DoD-3 sees a fabricated SEM_PONTO", () => {
-  // `SymbolClient.tsx` prints the "leitura atual" at the window's last grid instant. If
-  // `knowledge_time_ms` were earlier than that bar's own `available_at`, the backend would
-  // correctly answer `SEM_PONTO` for it and the panel would print absence for a bar that
-  // exists — absence caused by the REQUEST, not by the data. `RN-1` is about real absence.
+test("the as-of margin covers the LIVE publication tail (n=804), not the n=3 sample it was sized from", () => {
+  // `observed_at <= knowledge_time` (`as_of_accessor.py:310`) is the predicate this constant
+  // moves. The bar the page reads out closes at `windowEndMsInclusive`, so the tolerance the
+  // request grants it is `knowledgeTimeMs - windowEndMsInclusive`. Against `n=804` that has to
+  // cover 267s; at the previous `KNOWLEDGE_TIME_LAG_MS = 1 min` it was 120s and did not.
   const { knowledgeTimeMs, windowEndMsInclusive } = resolveRouteWindow(MEASURED_NOW_MS);
+  const toleranceMs = knowledgeTimeMs - windowEndMsInclusive;
 
   assert.ok(
-    windowEndMsInclusive + MEASURED_PUBLICATION_LAG_MS <= knowledgeTimeMs,
-    "the last read-out bar must already be published at the as-of instant",
+    toleranceMs >= MEASURED_PUBLICATION_LAG_MS,
+    `tolerance ${toleranceMs}ms must cover the worst live lag ${MEASURED_PUBLICATION_LAG_MS}ms (n=804)`,
   );
-  assert.ok(KNOWLEDGE_TIME_LAG_MS >= MEASURED_PUBLICATION_LAG_MS, "the as-of margin must cover the measured lag");
+  assert.equal(toleranceMs, 300_000, "300s against 267s — the margin this request actually has, 1,12x");
+});
+
+test("MORDE: the as-of margin cannot be widened past the right-edge lag — that would ask about the present", () => {
+  // The ceiling is structural, not stylistic: `knowledgeTimeMs = endMsExclusive + K` and
+  // `endMsExclusive <= nowMs - RIGHT_EDGE_LAG_MS`, so `K >= RIGHT_EDGE_LAG_MS` puts the as-of
+  // instant AT or AFTER the clock reading whenever that reading is already aligned — a `422`
+  // against the backend's `server_now_ms`. This is why the `>= 300_000` the gate suggested was
+  // not taken literally; `4 min` is the largest value that keeps the invariant with headroom.
+  assert.ok(KNOWLEDGE_TIME_LAG_MS < RIGHT_EDGE_LAG_MS, "as-of margin must stay under the right-edge lag");
+
+  // The worst case is a clock reading EXACTLY on the alignment boundary, where the floor takes
+  // nothing away — the one instant a test picked at random would miss.
+  const alignedNowMs = Date.UTC(2026, 8, 11, 12, 0, 0) + RIGHT_EDGE_LAG_MS;
+  const { knowledgeTimeMs } = resolveRouteWindow(alignedNowMs);
+  assert.ok(knowledgeTimeMs < alignedNowMs, "even at a perfectly aligned clock reading, the as-of stays in the past");
+  assert.equal(alignedNowMs - knowledgeTimeMs, RIGHT_EDGE_LAG_MS - KNOWLEDGE_TIME_LAG_MS, "60s of skew headroom");
 });
 
 test("the derived window builds a request key the transport ACCEPTS", () => {

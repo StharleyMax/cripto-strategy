@@ -30,6 +30,7 @@ import type { SeriesHistoryRow } from "./series-history-client.ts";
 import {
   computeSeriesKeyId,
   countPresentSlots,
+  firstPresentSlotMs,
   daysWithPresence,
   InvalidSeriesValueError,
   keyMatchesSymbol,
@@ -227,6 +228,32 @@ test("countPresentSlots counts REAL buckets only — the number DoD-3/RN-S2 chec
   // §4.1), so no slot repeats a neighbour's bar and present slots ARE distinct native bars.
   // Applying the divisor here would undercount by 5×, which is why the rule is stated, not assumed.
   assert.equal(countPresentSlots(slots), slots.filter((slot) => slot.value !== null).length);
+});
+
+test("firstPresentSlotMs: the LEFT end of the readable horizon, scanned forward and never guessed", () => {
+  const slots = volumeSlotsFromHistoryRows(rowsWithOneAbsentMinute());
+  assert.equal(firstPresentSlotMs(slots), slots[0]!.time, "the first present slot is the horizon");
+  assert.equal(firstPresentSlotMs([]), null, "no slots, no horizon — and it says null rather than 0");
+  assert.equal(
+    firstPresentSlotMs(slots.map((slot) => ({ ...slot, value: null }))),
+    null,
+    "a window where NOTHING is readable answers null — `0` here would name the epoch as the horizon",
+  );
+
+  // The shape the live window actually has `[MEDIDO 2026-09-11: 769 de 5.761 grades com valor, o
+  // primeiro no indice 4.971, ACHADO-BACKFILL-INVISIVEL-AO-AS-OF.md]`: a long absent prefix and
+  // then data. The horizon must be the FIRST present instant, not the window's own left edge —
+  // reporting the left edge is exactly the claim ("temos dado desde aqui") the screen must not
+  // make.
+  const leading = [
+    { time: 1_000, value: null },
+    { time: 61_000, value: null },
+    { time: 121_000, value: 3.5 },
+    { time: 181_000, value: null },
+    { time: 241_000, value: 4.5 },
+  ];
+  assert.equal(firstPresentSlotMs(leading), 121_000);
+  assert.notEqual(firstPresentSlotMs(leading), leading[0]!.time, "the window's left edge is NOT the horizon");
 });
 
 test("resolveVolumeReading: a real bucket answers its own number, and absence never borrows a neighbour's", () => {

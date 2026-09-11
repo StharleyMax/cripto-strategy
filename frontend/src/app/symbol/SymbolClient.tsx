@@ -47,6 +47,7 @@ import {
   colorTokens,
   formatFlowValue,
   formatHeldStockLabel,
+  lastGridInstant,
   lineSeriesLossless,
   ONE_MINUTE_MS,
   resolveFlowReading,
@@ -71,6 +72,20 @@ export interface VolumeSubAxisData {
   readonly slots: readonly VolumeSlot[];
   /** Slots carrying a real value — the number `DoD-3`/`RN-S2` count against `N >= 30`. */
   readonly presentPoints: number;
+  /** The FIRST grid instant of the window that carries a real value, or `null` when none does.
+   *
+   * Exists because of a measured fact about this screen, not for decoration: over the derived
+   * 4-day window only `769/5.761` grades carry a value and the first one sits at index
+   * `4.971/5.761` `[MEDIDO 2026-09-11, ACHADO-BACKFILL-INVISIVEL-AO-AS-OF.md]` — the leftmost
+   * 86% of the chart is structurally empty because backfilled rows carry `available_at = the
+   * instant we FETCHED them`, which `R-1` correctly refuses at their own grid instant. That
+   * absence is REAL (we did not know it then), so the chart is not lying — but an operator
+   * cannot tell it apart from "o mercado não teve dado", and `RN-1` is exactly about not
+   * letting one kind of absence pass for another. So the screen DECLARES the horizon as a
+   * measured fact (`quant-architect`, wave `03`, C4). ⛔ The span is NOT shrunk to fit the data:
+   * it is `PRD-006 §2`/item `5.1`'s, and a window that shrinks to hide its own hole is worse
+   * than one that names it. */
+  readonly firstPresentMs: number | null;
   readonly reading: FlowReading;
 }
 
@@ -78,6 +93,11 @@ export interface SymbolClientProps {
   readonly panels: S2Panels;
   readonly volume: VolumeSubAxisData;
   readonly panelStatus: SymbolPanelStatuses;
+  /** `knowledge_time_ms` of the request this render was built from (`request-window.ts`). Shown
+   * nowhere; carried to the DOM as a `data-` attribute so the screen can be AUDITED against the
+   * read API over exactly the window the server used — which is what lets `e2e/08` cross-check
+   * DOM against `/series-history` without seeding anything (`[P-seed]`). */
+  readonly knowledgeTimeMs: number;
   readonly liveUrls: { readonly price: string | null; readonly oi: string | null; readonly cvd: string | null };
 }
 
@@ -107,9 +127,17 @@ function AbsenceNote({ status }: { readonly status: PanelStatus }) {
  * READ OFF THE PANELS, not off a constant: the window is derived per request now
  * (`request-window.ts`), so a module-level constant here would drift away from the data the
  * server actually fetched — which is the very shape of the defect this replaced
- * (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, second defect: a frozen window outliving its data). */
+ * (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, second defect: a frozen window outliving its data).
+ *
+ * ⛔ AND IT IS NOT COMPUTED HERE. Subtracting one minute from the exclusive edge used to be
+ * written out in this file AND in `request-window.ts` — two copies of the same half-open →
+ * inclusive bucket conversion inside `web`, which is literally the "segunda implementação da
+ * grade canônica"
+ * `ADR-003` FR-2 names as the failure mode where the screen and the engine disagree about what
+ * happened. `lastGridInstant` is that conversion, living in `charts` where geometry belongs
+ * (`quant-architect`, wave `03`, C3). */
 function lastInstantMs(panels: S2Panels): number {
-  return panels.rangeEndMsExclusive - ONE_MINUTE_MS;
+  return lastGridInstant(panels.window, ONE_MINUTE_MS);
 }
 
 function useLightweightChart(containerRef: RefObject<HTMLDivElement | null>, build: (chart: IChartApi) => void): void {
@@ -182,6 +210,41 @@ const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 } as const;
  * because `klines_volume` is `1m` native and nothing here is a ladder (`view-model.ts`
  * `countPresentSlots`).
  */
+/** `YYYY-MM-DD HH:MM UTC`, built off the epoch instant with no locale in the path: this string
+ * is a FACT about the data (which instant), not a presentation choice, and a locale-dependent
+ * rendering of it would make the same screen say different things to different readers. */
+function formatUtcMinute(instantMs: number): string {
+  return `${new Date(instantMs).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/** The readable horizon, DECLARED rather than left to be inferred from a flat left edge — see
+ * `VolumeSubAxisData.firstPresentMs` for the measurement that made this necessary. It reports
+ * two numbers and one instant, all of them the route's own; it never hides, shortens or
+ * fabricates anything.
+ *
+ * ⛔ THE WORDING AND THE PLACEMENT ARE FORM, AND FORM IS THE `ui-designer`'S WITH THE
+ * `ux-ui-mastery` VERDICT (`CLAUDE.md` §"Design — autonomia delegada, com gate de validação").
+ * What a builder is allowed to decide, and all that is decided here, is that the FACT is on
+ * screen and machine-readable — the sentence itself is a sober placeholder, submitted to
+ * `T-01.8`, not a design decision. The `data-fact`/`data-readable-since-ms` pair is the CONTRACT
+ * half and must survive any restyling, same split the volume sub-axis already declares. */
+function ReadableHorizon({ volume }: { readonly volume: VolumeSubAxisData }) {
+  const gridSlots = volume.slots.length;
+  const sinceText =
+    volume.firstPresentMs === null
+      ? "Nenhuma grade legível no período"
+      : `Dado legível desde ${formatUtcMinute(volume.firstPresentMs)}`;
+  return (
+    <p
+      data-fact={`volume_readable_horizon:${volume.presentPoints}/${gridSlots}`}
+      data-readable-since-ms={volume.firstPresentMs ?? ""}
+      className="text-sm text-provenance-weak"
+    >
+      {sinceText} — {volume.presentPoints}/{gridSlots} grades de 1 min na janela.
+    </p>
+  );
+}
+
 function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData; readonly status: PanelStatus }) {
   const readingText =
     volume.reading.kind === "absent" || volume.reading.value === null ? ABSENCE_TOKEN : String(volume.reading.value);
@@ -196,6 +259,7 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
       <p data-fact={`volume_last_reading:${volume.reading.kind}`} className="text-sm text-provenance-weak">
         Leitura atual: {readingText}
       </p>
+      <ReadableHorizon volume={volume} />
       <AbsenceNote status={status} />
     </div>
   );
@@ -357,9 +421,16 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
   );
 }
 
-export function SymbolClient({ panels, volume, panelStatus, liveUrls }: SymbolClientProps) {
+export function SymbolClient({ panels, volume, panelStatus, knowledgeTimeMs, liveUrls }: SymbolClientProps) {
   return (
-    <main>
+    // The three instants of the request this render was built from, on the root element: the
+    // screen declares WHAT IT ASKED, so an assertion (or an operator) can re-issue exactly that
+    // query against the read API instead of guessing the window from its own clock.
+    <main
+      data-window-start-ms={panels.window.startMs}
+      data-window-end-ms-inclusive={lastInstantMs(panels)}
+      data-knowledge-time-ms={knowledgeTimeMs}
+    >
       <h1 className="sr-only">{panels.symbol} — Preço (com volume), Open Interest e CVD</h1>
       <PricePane panels={panels} status={panelStatus.price} volume={volume} volumeStatus={panelStatus.volume} />
       <OiPane panels={panels} status={panelStatus.oi} />

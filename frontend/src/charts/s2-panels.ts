@@ -92,8 +92,16 @@ export interface PricePanel {
 
 export interface S2Panels {
   readonly symbol: string;
-  readonly rangeStartMs: number;
-  readonly rangeEndMsExclusive: number;
+  /** The window the three panels were built over, WHOLE — not `rangeStartMs`/
+   * `rangeEndMsExclusive` as two loose numbers, which is what it used to be.
+   *
+   * Carrying the object is what removes the second bucket-arithmetic site by CONSTRUCTION:
+   * `SymbolClient.tsx` needed the window's last 1-minute instant and, with only the exclusive
+   * edge in hand, wrote `- ONE_MINUTE_MS` itself — a copy of the same conversion `web` already
+   * did in `request-window.ts`, i.e. the second implementation of the canonical grid `ADR-003`
+   * FR-2 forbids. With the window here, that consumer calls `lastGridInstant(panels.window,
+   * ONE_MINUTE_MS)` and no arithmetic crosses the boundary (wave `03`, C3). */
+  readonly window: S2Window;
   readonly price: PricePanel;
   readonly oi: OiPanel;
   readonly cvd: CvdPanel;
@@ -200,8 +208,7 @@ export interface S2RawInputs {
 export function buildS2Panels(inputs: S2RawInputs): S2Panels {
   return {
     symbol: SYMBOL,
-    rangeStartMs: inputs.window.startMs,
-    rangeEndMsExclusive: inputs.window.endMsExclusive,
+    window: inputs.window,
     price: buildPricePanel(inputs.candles, inputs.priceUse, inputs.window),
     oi: buildOiPanel(inputs.oiPoints, inputs.oiMissingDays, inputs.window),
     cvd: buildCvdPanel(
