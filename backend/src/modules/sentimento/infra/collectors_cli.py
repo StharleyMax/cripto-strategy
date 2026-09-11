@@ -363,14 +363,18 @@ def _parse_float(environ: Mapping[str, str], variable: str, default: float) -> f
 def _positive_float(environ: Mapping[str, str], variable: str, default: float) -> float:
     """Parse `variable` as a float that must be `> 0`, refusing at BOOT rather than at use.
 
-    `RN-4` fail-fast: a cadence of `0` (or a negative one) makes `stop_event.wait(interval)`
-    return immediately, so the collector would hammer `/fapi/v1/klines` in a tight loop and be
-    banned by the venue — a failure that surfaces minutes later, far from the typo that caused
+    `RN-4` fail-fast: a cadence of `0` (or a negative one, or `nan`) makes
+    `stop_event.wait(interval)` return immediately, so the collector would hammer the venue
+    endpoint (`/fapi/v1/klines`, `/fapi/v1/premiumIndex`) in a tight loop and be
+    banned by it — a failure that surfaces minutes later, far from the typo that caused
     it, and only as an HTTP `418`. Refusing here names the variable while the process is still
     in its first five seconds (`SPEC-004` §3.1).
     """
     value = _parse_float(environ, variable, default)
-    if value <= 0:
+    # `not value > 0` and not `value <= 0`: `nan <= 0` is False, so the second spelling ACCEPTS
+    # `nan`, and `threading.Event().wait(nan)` returns immediately — measured at `1,0e-5` s, the
+    # very tight loop this guard exists to forbid. `not (nan > 0)` is True, so `nan` is refused.
+    if not value > 0:
         raise CollectorBootConfigurationError(
             variable, f"{variable} must be greater than zero, got {value!r}"
         )
@@ -443,7 +447,7 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
         ingest_health_store_path=Path(
             environ.get(INGEST_HEALTH_STORE_PATH_VAR, DEFAULT_INGEST_HEALTH_STORE_PATH)
         ),
-        premium_index_cycle_interval_s=_parse_float(
+        premium_index_cycle_interval_s=_positive_float(
             environ,
             _PREMIUM_INDEX_CYCLE_INTERVAL_S_VAR,
             _DEFAULT_PREMIUM_INDEX_CYCLE_INTERVAL_S,

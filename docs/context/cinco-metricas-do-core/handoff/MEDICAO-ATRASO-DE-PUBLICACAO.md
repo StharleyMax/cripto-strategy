@@ -175,12 +175,18 @@ implementação.
 
 **Mutações rodadas** (`make test-fast K=publication_lag`, 41 testes):
 
-| mutação | resultado |
-|---|---|
-| `lag_p99_ms` de klines `59_361 → 59_000` | **3 reprovam** |
-| `lag_p99_ms` de `premiumIndex` `1_758 → 1_800` | **2 reprovam** |
-| constante **e** cabeça da cauda, juntas, `59_361 → 59_000` | **2 reprovam** (`p99` fora da faixa por símbolo) |
-| nenhuma | 41 passam |
+⚠️ **Contagem corrigida em 2026-09-11.** A tabela abaixo (e o corpo do commit `43e726b`, que a
+história não reescreve) declarava **3** e **2**; o QA remediu e achou **4** e **3**
+`[MEDIDO 2026-09-11, `make test-fast K=publication_lag`, `docs/context/cinco-metricas-do-core/gates/QA-D16-atraso-de-publicacao.md` §4]`.
+O erro é **para baixo** — o falsificador é mais forte que o anunciado —, mas número que não
+reproduz é defeito de evidência do mesmo jeito.
+
+| mutação | declarado em `43e726b` | **medido (vale este)** |
+|---|---|---|
+| `lag_p99_ms` de klines `59_361 → 59_000` | 3 reprovam | **4 reprovam** (`forged_p99`, `recomputed[klines]`, `tail_slice[klines]`, `per_symbol_range[klines]`) |
+| `lag_p99_ms` de `premiumIndex` `1_758 → 1_800` | 2 reprovam | **3 reprovam** (`recomputed`, `tail_slice`, `per_symbol_range` — `premiumIndex`) |
+| constante **e** cabeça da cauda, juntas, `59_361 → 59_000` | 2 reprovam (`p99` fora da faixa por símbolo) | `[NÃO REMEDIDO — o QA não repetiu esta mutação; o número da coluna à esquerda é o único que existe]` |
+| nenhuma | 41 passam | ⚠️ a suíte cresceu desde então; o denominador de hoje sai do comando, não desta linha |
 
 **O que a suíte NÃO alcança, dito explicitamente:** uma edição coordenada de constante + cauda
 que fique **dentro** da faixa por símbolo (283 ms em klines, **34 ms** em `premiumIndex`) passa.

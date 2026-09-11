@@ -581,6 +581,20 @@ def test_the_live_lag_holds_the_grid_when_the_late_polls_are_not_censored_away()
     asks, over the population that `nb = 1` removes. If it fails, the declared `59_361` and its
     `639` ms of headroom are artefacts of the filter: the endpoint really does publish past the
     grid, and `D16` cannot stamp a MODELED row on the first grid point.
+
+    ⛔ THIS TEST IS RED ON PURPOSE, AND THAT IS THE DECLARED STATE OF THE GATE — NOT A REGRESSION.
+    It fails with `assert 60936 < 60000`, and it is the executable record of the defect `D16`
+    exists to close: the uncensored live tail of the PRE-ALIGNMENT regime overshoots the native
+    `60_000` ms grid. It failed identically before and after the grid-alignment commit
+    (`418f47b`; the file is byte-identical to its parent `967368f`), so `make verify` returning
+    `rc=1` here is expected until the data changes, not until the test does.
+
+    WHAT TURNS IT GREEN, and nothing else does: the post-deploy remeasurement written in
+    `docs/context/cinco-metricas-do-core/handoff/REMEDICAO-ATRASO-APOS-ALINHAMENTO.md`, whose
+    four acceptance criteria are `ge60k = 0`, `p99 <= 5_000` ms, `mn >= 0` and `n >= 4_000`. Only
+    then are `KLINES_UNCENSORED_LAG_TAIL_MS` and `KLINES_UNCENSORED_SAMPLE_N` replaced by the new
+    measurement. DO NOT relax the assertion: `NATIVE_GRID_MS[KLINES]` is the venue's measured
+    grid (`44_612` non-zero steps, all `60_000`, 1 distinct value), not a negotiable target.
     """
     tail = KLINES_UNCENSORED_LAG_TAIL_MS
     rank = math.ceil(0.99 * KLINES_UNCENSORED_SAMPLE_N)

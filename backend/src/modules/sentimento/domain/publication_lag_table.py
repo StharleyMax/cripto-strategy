@@ -116,10 +116,26 @@
 # optimistic than our own capture — lookahead measured against ourselves. Erring late is the
 # direction `SPEC-001` §5.2 mandates ("o erro e sempre pessimista").
 #
-# `premiumIndex` is the opposite regime, and `lag_min_ms = -100` ms is why it is worth naming:
-# that collector polls ON the grid point instead of after a bucket closes, so `424` of `34.752`
-# rows (`1,22%`) carry `available_at` a few tens of ms BEFORE `bucket_end`. Negative is recorded,
-# not clamped — clamping would hide a real scheduling fact behind a zero.
+# `premiumIndex` reads as the opposite regime — `3,1%` of poll phase against `96,7%` — and the
+# reason is NOT that its collector is aligned to the grid. It is not aligned: it closes its cycle
+# with the same post-work `stop_event.wait(interval_s)` (`infra/collectors_cli.py`), and the drift
+# is measurable from this very table — `34.752` rows at `8` rows per cycle is `4.344` cycles over
+# a `262.496` s window, i.e. `60,441` s per cycle against a declared cadence of `60,0` s.
+#
+# The phase does not show up here because the STATISTIC CANNOT CARRY IT, not because it is absent.
+# For this endpoint `_build_row` stamps `bucket_end = reading.source_time`
+# (`use_cases/collector_series_mapping.py:232`), so `available_at - bucket_end` collapses to
+# `received_at - source_time` — the network round trip, and nothing else. Our poll phase is
+# ALGEBRAICALLY absent from the column: this number would be identical under a perfect scheduler
+# and under one drifting an hour a day. That is absence of instrument, not absence of evidence.
+# In klines `bucket_end` comes from the VENUE's grid (`close_time_ms`), which is why the phase
+# does appear there.
+#
+# `lag_min_ms = -100` ms (`424` of `34.752` rows, `1,22%`) therefore has one possible cause, and
+# it is not the poll schedule: `bucket_end` is Binance's clock when it answered, `available_at` is
+# ours when we received, and reception is always LATER than the stamp. A negative value can only
+# be SKEW between the two clocks. Negative is recorded, not clamped — clamping would hide a real
+# clock fact behind a zero.
 
 from __future__ import annotations
 

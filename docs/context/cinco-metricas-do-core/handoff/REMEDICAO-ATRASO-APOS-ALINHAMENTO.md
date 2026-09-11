@@ -84,7 +84,54 @@ de quem rodar o comando acima e tiver o número.
 
 `_run_premium_index_collector` (`collectors_cli.py:636`) fecha o laço com **o mesmo**
 `stop_event.wait(interval_s)` pós-trabalho e **não foi alterado** — está fora do escopo desta
-task, que é o defeito de klines. `OPCOES-D16` §4(c) registra que o `premiumIndex` **não** exibe a
-assinatura do defeito na medição (`p99 = 1.758 ms`, `min = -100 ms`, `n = 34.752`), mas a
-**forma do código é idêntica**, e "não aparece na medição" não é "não existe". Fica como achado
-nomeado, não como conserto pela metade.
+task, que é o defeito de klines.
+
+⚠️ **Corrigido em 2026-09-11 — a versão anterior desta seção dizia que o `premiumIndex` "não exibe
+a assinatura do defeito na medição", e o enunciado forte é outro:**
+
+1. **A deriva EXISTE no `premiumIndex`, e sai dos números da própria tabela.**
+   `build_premium_index_to_rows` emite 2 linhas por símbolo por ciclo sobre 4 símbolos ⇒ 8
+   linhas/ciclo. Com `sample_n = 34.752` e janela `window_end_ms − window_start_ms = 262.496 s`:
+   `34.752 ÷ 8 = 4.344` ciclos e `262.496 ÷ (4.344 − 1) = 60,441 s/ciclo` contra os `60,0 s`
+   declarados `[MEDIDO 2026-09-11 sobre os campos de `domain/publication_lag_table.py`]`.
+2. **A medição é INCAPAZ de exibir a fase do poll, por construção.** `_build_row` grava
+   `bucket_end = reading.source_time` (`use_cases/collector_series_mapping.py:232`), logo
+   `available_at − bucket_end = received_at − source_time` — ida-e-volta de rede e nada mais. A
+   fase do nosso poll é **algebricamente ausente da coluna**: o `p99 = 1.758 ms` seria idêntico
+   sob um escalonador perfeito e sob um que derivasse uma hora por dia. Em klines o `bucket_end`
+   vem da grade do venue (`close_time_ms`), e por isso lá a fase aparece.
+   ⇒ Não é *"ausência de evidência"*; é **ausência de instrumento**.
+3. **O `min = −100 ms` não pode vir do horário do poll.** `bucket_end` é o relógio da Binance ao
+   responder e `available_at` é o nosso ao receber; recebemos sempre **depois** de eles carimbarem.
+   Valor negativo só pode ser **desvio entre os dois relógios**.
+
+Fica como achado nomeado, não como conserto pela metade — e agora nomeado com o motivo certo.
+
+## ⛔ O portão está VERMELHO, e o vermelho é ESPERADO — leia antes de concluir regressão
+
+`make verify` devolve **`rc=1`**, e a única falha é
+`backend/tests/sentimento/test_publication_lag_table.py::test_the_live_lag_holds_the_grid_when_the_late_polls_are_not_censored_away`
+(`assert 60936 < 60000`).
+
+**Esse teste é o DOCUMENTO EXECUTÁVEL do defeito que este handoff existe para fechar**, não uma
+regressão: ele mede o `p99` da população ao vivo **não censurada** do regime **anterior** ao
+alinhamento (`60.936 ms`, estourando a grade nativa de `60.000 ms`) — o mesmo `105/4.289` que
+motivou `O4`. Ele reprovava **antes** de `418f47b` e reprova **depois**, byte-idêntico
+`[MEDIDO 2026-09-11: mesma falha no commit pai `967368f`, worktree detached e limpo]`.
+
+**Quem o fecha é a remedição descrita neste documento — e só ela.** Rodar o comando da seção
+anterior sobre a janela pós-deploy e substituir a cauda medida é o único ato que muda a cor. Os
+critérios que decidem são os **quatro da tabela acima**, sem emenda:
+
+| critério | valor exigido |
+|---|---:|
+| `ge60k` | **`0`** |
+| `p99` | **`<= 5.000 ms`** |
+| `mn` | **`>= 0`** |
+| `n` | **`>= 4.000`** |
+
+⚠️ **Enquanto os quatro não forem satisfeitos com dado novo, `make verify` continua `rc=1` e isso
+é o estado correto.** Um portão vermelho **sem declaração** é indistinguível de regressão — é o
+modo de falha que `ADR-012` nomeia para o `rc=0` ambíguo, com o sinal trocado. Esta seção é a
+declaração. ⛔ **Não "conserte" o teste afrouxando a asserção**: o teto `60.000` é a grade nativa
+medida (`44.612` passos, `44.612` iguais a `60.000`, 1 valor distinto), não um alvo negociável.

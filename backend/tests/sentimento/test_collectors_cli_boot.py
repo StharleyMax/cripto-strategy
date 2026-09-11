@@ -441,6 +441,7 @@ def test_main_wires_the_real_series_mapping(
     [
         ("KLINES_CYCLE_INTERVAL_S", "0"),
         ("KLINES_CYCLE_INTERVAL_S", "-1"),
+        ("KLINES_CYCLE_INTERVAL_S", "nan"),
         ("KLINES_BACKFILL_DAYS", "0"),
         ("KLINES_BACKFILL_DAYS", "-7"),
         ("KLINES_CYCLE_OFFSET_S", "-0.5"),
@@ -468,3 +469,35 @@ def test_a_non_positive_klines_cadence_is_refused_at_boot(variable: str, raw: st
         collectors_cli.resolve_boot_config({variable: raw})
     assert excinfo.value.variable == variable
     assert variable in str(excinfo.value)
+
+
+@pytest.mark.parametrize("raw", ["0", "0.0", "-1", "-0.5", "nan", "NaN", "-nan"])
+def test_a_non_positive_premium_index_cadence_is_refused_at_boot(raw: str) -> None:
+    """`PREMIUM_INDEX_CYCLE_INTERVAL_S` joins the same `RN-4` fail-fast as the klines cadence.
+
+    It did NOT until this commit: `resolve_boot_config` parsed it with `_parse_float`, with no
+    positivity guard at all, so `PREMIUM_INDEX_CYCLE_INTERVAL_S=0` BOOTED and
+    `_run_premium_index_collector` closed its cycle with `stop_event.wait(0.0)` — the tight loop
+    against `/fapi/v1/premiumIndex` that `_positive_float` was written to forbid, reaching the
+    operator only as an HTTP `418` minutes later.
+
+    `nan` is in this list because the OBVIOUS spelling of the guard does not catch it: `nan <= 0`
+    is `False`, so `if value <= 0` would accept `nan`, and `threading.Event().wait(nan)` returns
+    immediately (measured: `1,0e-5` s) — the same tight loop, reached through the one comparison
+    that silently answers `False` to everything. The guard is spelled `not value > 0` for this.
+    """
+    with pytest.raises(collectors_cli.CollectorBootConfigurationError) as excinfo:
+        collectors_cli.resolve_boot_config({"PREMIUM_INDEX_CYCLE_INTERVAL_S": raw})
+    assert excinfo.value.variable == "PREMIUM_INDEX_CYCLE_INTERVAL_S"
+    assert "PREMIUM_INDEX_CYCLE_INTERVAL_S" in str(excinfo.value)
+
+
+def test_a_positive_premium_index_cadence_still_boots() -> None:
+    """The guard must refuse the typo without narrowing what a real operator may configure."""
+    assert (
+        collectors_cli.resolve_boot_config(
+            {"PREMIUM_INDEX_CYCLE_INTERVAL_S": "0.5"}
+        ).premium_index_cycle_interval_s
+        == 0.5
+    )
+    assert collectors_cli.resolve_boot_config({}).premium_index_cycle_interval_s == 60.0
