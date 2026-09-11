@@ -97,7 +97,7 @@ from src.modules.sentimento.infra.binance_stream_probe import (
     connect_tls,
 )
 from src.modules.sentimento.infra.ingest_health_cli import (
-    build_stdout_handler,
+    build_service_stdout_handler,
     route_diagnostics_away_from_the_product_stream,
 )
 from src.modules.sentimento.infra.ingest_record_store_composition import (
@@ -1183,7 +1183,10 @@ def main(argv: Sequence[str]) -> int:
     """
     route_diagnostics_away_from_the_product_stream()
     logger.setLevel(logging.INFO)
-    logger.addHandler(build_stdout_handler())
+    # `ADR-035/D3` amendment of `2026-09-11` (`D9`): this is a DECLARED service process,
+    # so its `stdout` is `docker logs` read by a human and renders `extra={}`. The
+    # projection builder (`build_stdout_handler`) cannot render a pair at all.
+    logger.addHandler(build_service_stdout_handler())
     logger.propagate = False
     try:
         config = resolve_boot_config(os.environ)

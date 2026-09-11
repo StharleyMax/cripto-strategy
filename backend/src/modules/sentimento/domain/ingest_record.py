@@ -116,6 +116,26 @@ class IngestRun:
     started_at: str
     ended_at: str
 
+    # ── `ADR-035/D2`'s "closed", READ-ONLY AND OUT OF THE PROJECTION BY CONSTRUCTION ───────
+    #
+    # TABLE only, like `started_at`/`ended_at` above and for the same reason: the 15 columns of
+    # `INGEST_HEALTH_RUN_COLUMNS` are a contract whose ORDER feeds the `sha256` of
+    # `ADR-008/DoD-2`, and `_project_run_dict` builds that dict by walking THAT tuple — never
+    # `dataclasses.fields(IngestRun)`. So a field added here cannot reach the projection: the
+    # fingerprint of every report already emitted stays exactly what it was. `T-06.2` pins that
+    # with a test rather than with this paragraph.
+    #
+    # WRITTEN BY THE WRITER, NOT BY THE RECORDER. `_UPSERT_RUN` does not name this column, so
+    # recording a run never sets or clears it; only `credit_written` does (`ADR-035/D2`). It
+    # therefore defaults to `None` on every run built in memory, and on every engine that has
+    # no such column (`SqliteIngestRecordStore`, which no writer credits).
+    #
+    # `None` FOR A RUN THAT EXISTS MEANS "OPEN" — the writer has not accounted for it. That is
+    # the distinction no amount of reading `n_written` can make, and it is the whole input of
+    # `uptime_percent` since `ADR-035/D1`'s amendment of `2026-09-11`: an open run enters
+    # NEITHER side of that percentage.
+    writer_accounted_at: str | None = None
+
 
 @dataclass(frozen=True)
 class IngestGap:

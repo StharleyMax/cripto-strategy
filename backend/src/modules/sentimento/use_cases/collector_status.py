@@ -115,13 +115,36 @@ def _row_for_series(
         for run, ended_at in zip(series_runs, ended_ats, strict=True)
         if window_start < ended_at <= now
     ]
-    n_expected_in_window = sum(run.n_expected for run in runs_in_window)
-    n_written_in_window = sum(run.n_written for run in runs_in_window)
+    # ── `ADR-035/D1`, EMENDA `2026-09-11` (`D12`, owner): THE UNITS USED NOT TO MATCH ──────
+    #
+    # Until this line changed, `uptime_percent` was `100 · Σ n_written / Σ n_expected` — a
+    # numerator in ROWS over a denominator that is not rows at all. `n_expected` is `n_symbols`
+    # (900) for `premiumIndex` and `n_returned` (12 deliberately overlapping bars) for `klines`
+    # (`collector_run_mapping.py:186,242`), against 8 and 4 rows actually persisted, so a
+    # PERFECTLY HEALTHY collector carried structural ceilings of 0,89% and 33,3%
+    # `[MEDIDO 2026-09-11T11:26Z contra a stack viva, n = 2.006 runs: klines 90,45 e
+    #  premiumIndex 0,36 pela formula antiga; 100,00 e 100,00 por esta]`.
+    #
+    # What the metric BECOMES is availability of cycle: of the runs the writer CLOSED in the
+    # window, how many persisted at least one row. What it stops being able to answer — declared
+    # here rather than discovered later — is "how much of the source's data became rows"; that
+    # question now needs `n_returned` and `n_written`, which stay in the canonical projection and
+    # do not change shape.
+    #
+    # ⛔ AN OPEN RUN ENTERS NEITHER SIDE. `writer_accounted_at is None` means the writer has not
+    # accounted for the run (`ADR-035/D2`): counting it as a failure would blame the collector
+    # for the writer's lag, and counting it as a success would credit rows nobody persisted.
+    # `n_expected` is neither touched nor even READ here (`D12` refused alternative A —
+    # `collector_run_mapping.py:221-228` keeps `n_expected = n_returned` so the size of the
+    # anti-lookahead cut stays legible, and anti-lookahead is precisely where this repository
+    # has burned itself before).
+    closed_runs_in_window = [run for run in runs_in_window if run.writer_accounted_at is not None]
+    n_closed_in_window = len(closed_runs_in_window)
+    n_closed_with_rows = sum(1 for run in closed_runs_in_window if run.n_written > 0)
     uptime_percent = (
-        round(100 * n_written_in_window / n_expected_in_window, 2)
-        if n_expected_in_window > 0
-        else None
+        round(100 * n_closed_with_rows / n_closed_in_window, 2) if n_closed_in_window > 0 else None
     )
+    status_detail = _uptime_detail(len(runs_in_window), n_closed_in_window)
 
     retention = RetentionNotApplicable() if status == "PARADO" else RetentionUnmeasured()
     resilience = ResilienceUnavailable() if status == "PARADO" else ResilienceNotScored()
@@ -132,7 +155,7 @@ def _row_for_series(
         endpoint=endpoint,
         status=status,
         uptime_percent=uptime_percent,
-        status_detail=None,
+        status_detail=status_detail,
         retention=retention,
         resilience=resilience,
         n_runs_total=n_runs_total,
@@ -143,6 +166,34 @@ def _row_for_series(
         age_s=round(age_s_raw),
         liveness=liveness,
     )
+
+
+def _uptime_detail(n_runs_in_window: int, n_closed_in_window: int) -> str | None:
+    """Say WHY `uptimePercent` is `null`, so that one `null` is not two different facts.
+
+    `ADR-012`'s failure mode, applied to a percentage instead of an exit code: under the amended
+    formula a bare `null` would cover two unrelated states — "no run at all in the window" (a
+    mute collector) and "runs exist, the writer closed none of them" (credit is not arriving).
+    Trading an ambiguous `rc=0` for an ambiguous `null` would be no progress at all.
+
+    THE DISAMBIGUATION COSTS NO NEW FIELD, WHICH IS `D7` TO THE LETTER ("sem campo novo e sem
+    versao de rota"). `n_runs_in_window` is already served and already separates the two states;
+    `status_detail` is already in the envelope, already validated as a nullable string by the
+    front (`collector-status-query.ts:170`) and already rendered (`view-model.ts:119`), so the
+    reason reaches the operator's screen without one line of `frontend/`.
+
+    pt-BR IS NOT AN OVERSIGHT HERE: this string is operator microcopy, which `SPEC-001` §3.8 and
+    `CLAUDE.md` line 8 reserve for Portuguese while every identifier around it stays English.
+
+    Returns `None` when the percentage IS measurable — a detail explaining a number that is
+    right there would be noise, and `CollectorStatusRow.status_detail` was literally the `None`
+    type until this function existed.
+    """
+    if n_closed_in_window > 0:
+        return None
+    if n_runs_in_window == 0:
+        return f"Nenhum run encerrado nas últimas {UPTIME_WINDOW_HOURS} h."
+    return f"{n_runs_in_window} run(s) na janela, nenhum fechado pelo escritor: uptime não medível."
 
 
 def _parse_timestamp(value: str) -> datetime:
