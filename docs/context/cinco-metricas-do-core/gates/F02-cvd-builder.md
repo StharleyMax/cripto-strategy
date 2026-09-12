@@ -49,7 +49,7 @@ corridas, zero resíduos, total diário idêntico ao milésimo de BTC nos três 
 | 5 | `takerBuy ≤ volume` em **100%** da janela de backfill | ✅ | §5 |
 | 6 | falsificador de `reconstructed_from` rodado **antes** | ✅ | §2 |
 | 7 | **nenhuma chamada HTTP nova** | ✅ | §5 |
-| 8 | `make verify` verde | ⚠️ **EM VOO ao fechar este gate** | §10 |
+| 8 | `make verify` verde | ⚠️ **6/6 portões OK, veredito `INDETERMINADO`** — ver §10 | §10 |
 
 ## 4. `DoD 1`/`2`/`4` — o mecanismo, medido com dado REAL; a produção é de `T-02.7`
 
@@ -185,12 +185,34 @@ mudar. Lista permutada é a falha que **nenhum campo da resposta reporta**. Ent�
 **anexado ao fim** por `list_series_catalog`, exatamente onde `T-01.6` anexou `klines_volume`.
 
 
-## 10. `make verify` — o que foi medido, e o que ficou em voo
+## 10. `make verify` — o veredito, e por que ele saiu `INDETERMINADO` sem nada estar quebrado
 
-⚠️ **Não afirmo `make verify` verde**, porque a execução autoritativa (`20260912T133617Z`) ainda
-não tinha terminado quando este gate foi escrito — a máquina está com **7 processos `pytest`
-simultâneos** de outros agentes e a suíte passou de 12 min (`C3` das pendências já registra
-`532 s` sem causa identificada). O que **está** medido:
+**Execução autoritativa `20260912T133617Z`, sobre a árvore commitada (`diff: sem mudança
+não-commitada`):**
+
+```
+[OK       ] lint-backend    rc=0  417 source files
+[NÃO MEDIU] lint-frontend   rc=3  frontend/node_modules ausente — rode 'make setup'
+[OK       ] test            rc=0  2159 passed · Total coverage: 96.98%
+[OK       ] boundaries      rc=0  7 kept, 0 broken
+[OK       ] regras          rc=0  0 bloqueio(s), 67 aviso(s)
+[OK       ] política        rc=0
+veredito: INDETERMINADO — algum portão RECUSOU medir (rc=3). Não é o mesmo que passar.
+```
+
+⚠️ **`INDETERMINADO` aqui é ARTEFATO DE AMBIENTE DESTA WORKTREE, e o rótulo fica assim mesmo:**
+`frontend/node_modules` não existia quando essa execução começou (worktree recém-criada; o
+`npm --prefix frontend install` terminou depois). Rodado depois, à mão:
+`npm --prefix frontend run lint` → `eslint src`, **sem achado, `rc=0`**. ⇒ os **seis** portões
+passam, mas **não vou reescrever o veredito da ferramenta com uma costura minha**: `ADR-012`
+nomeia exatamente esse modo de falha, e `rc=3` ("não mediu") tem de continuar distinguível de
+`rc=0` ("mediu e passou"). Quem rodar o QA deve reexecutar `make verify` numa árvore com
+`make setup` feito e ler o veredito de lá.
+
+## 10.1 A corrida anterior, e o erro ambiental que ela pegou
+
+A corrida `20260912T132650Z` (anterior à acima) reprovou `test` com **1 ERROR**, e ele é
+**ambiental, nomeado, não silenciado**. O resumo dos portões medidos ao longo da fase:
 
 | portão | comando | resultado |
 |---|---|---|
@@ -199,7 +221,8 @@ simultâneos** de outros agentes e a suíte passou de 12 min (`C3` das pendênci
 | `regras` | `rules --mode sweep` | ✅ **0 bloqueio(s)**, 67 avisos (todos pré-existentes, `core.module-docstring-single-line`) |
 | `política` | dentro de `verify` | ✅ `rc=0` |
 | suíte alvo | `bash backend/scripts/test-fast.sh -k "kline_cvd or cvd_source_catalog or collector_klines_mapping or klines_collector or series_catalog or writer_and_catalog_agree or publishes_the_run_id"` | ✅ **140 passed** |
-| suíte inteira, corrida anterior | `make verify` (`20260912T132650Z`) | **2.157 passed, 1 ERROR**, cobertura total **96,92%** |
+| suíte inteira | `make verify` (`20260912T133617Z`) | ✅ **2.159 passed**, cobertura **96,98%** |
+| `lint-frontend` | `npm --prefix frontend run lint` | ✅ `eslint src`, sem achado, `rc=0` |
 
 **O `1 ERROR` daquela corrida é AMBIENTAL e nomeado, não silenciado:**
 `test_postgres_series_window_reader.py::test_read_window_excludes_a_row_after_the_window_end`,
@@ -209,4 +232,4 @@ meu próprio container de `measure_cvd_vertical.py` mais quatro `verify` concorr
 Não toca nenhum arquivo desta fase.
 
 ⇒ **quem for rodar o QA precisa reexecutar `make verify` e ler o veredito**, não herdar este
-parágrafo. `INDETERMINADO` não é `verde`.
+parágrafo.
