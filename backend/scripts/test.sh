@@ -10,6 +10,16 @@
 # e o grep pega a si mesmo — ver `backend/README.md`, "Zero rede, zero chave"): e rodar a suite
 # com `socket` amputado por um `sitecustomize.py`, que alcanca tambem o subprocesso do driver.
 #
+# ⛔ ATE 2026-09-12 ESSA FRASE ERA SO UMA FRASE: o arquivo prometido NAO EXISTIA na arvore
+# (`find . -name 'sitecustomize*'` -> 0 resultados fora de `.venv`)
+# `[MEDIDO 2026-09-12, QA da fase 05 §5]`. Promessa de portao inexistente e pior que nenhuma
+# promessa — o leitor acredita e para de checar. O arquivo agora existe, em
+# `scripts/nonet/sitecustomize.py`, e o `PYTHONPATH` abaixo e o unico lugar que o liga.
+#
+# O DIRETORIO PROPRIO NAO E ARRUMACAO: `sitecustomize` e importado por QUALQUER interpretador
+# que o ache no `sys.path`. Em `backend/` ele amputaria o socket do coletor de PRODUCAO, cujo
+# trabalho inteiro e falar com a Binance e a Coinalyze. Isolado, so chega aqui.
+#
 # ── O RELATORIO E INVALIDADO ANTES DE MEDIR (conserto do `/review` de 2026-08-28, item B) ──
 #
 # Este script repassa `"$@"` ao pytest, e portanto aceita `--no-cov`, `-k`, `--deselect`. Ate
@@ -38,5 +48,6 @@ fi
 
 cd "$BACKEND"
 rm -f "$BACKEND/coverage.xml"
+export PYTHONPATH="$BACKEND/scripts/nonet${PYTHONPATH:+:$PYTHONPATH}"
 "$PY" -m pytest --cov=src --cov-report=xml:coverage.xml --cov-report=term-missing "$@"
 bash "$BACKEND/scripts/check-coverage-layers.sh"

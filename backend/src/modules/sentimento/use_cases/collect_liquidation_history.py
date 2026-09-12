@@ -66,6 +66,23 @@ DEFAULT_CYCLE_SECONDS: float = 300.0
 # arrive settled.
 DEFAULT_LOOKBACK_SECONDS: int = 3 * 60 * 60
 
+# `RS-3.6`, THE SHUTDOWN HALF — how much of a requested pause must actually elapse for the pause
+# to count as SERVED. The injected clock of `infra/collectors_cli._SystemCollectorClock` sleeps
+# with `stop_event.wait(seconds)`, deliberately, so a `SIGTERM` arriving inside a minutes-long
+# recoil does not hold the process hostage (`SPEC-004` 3.1). The other half of that choice is
+# paid HERE: once the flag is up every pause returns instantly, and a cycle that kept iterating
+# would fire its whole remaining universe in one instant — the burst `RS-3.6` exists to forbid.
+#
+# ⛔ AND THE RISK SURVIVES THE PROCESS THAT DIES, WHICH IS WHY A COMFORT PAUSE IT IS NOT:
+# `SlidingQuotaWindow` lives in memory, so the container that replaces this one starts counting
+# at ZERO while the provider — the only side that counts — is still holding the departing
+# burst inside the same 60 s window.
+#
+# The tolerance is a FRACTION and not an equality because a real `Event.wait` may return a few
+# microseconds early on timer granularity alone. Half the pause is the line: a spread that got
+# half of its pause is still a spread, and a spread that got none is a burst wearing its name.
+SERVED_PAUSE_FRACTION: float = 0.5
+
 
 @dataclass(frozen=True)
 class LiquidationFetch:
@@ -153,6 +170,25 @@ class LiquidationCycleResult:
     unanswered: tuple[str, ...] = ()
     notes: str | None = None
     src_sha256: str = hashlib.sha256(b"").hexdigest()
+    n_answered: int = 0
+    """How many of the symbols this pass ASKED about the provider actually named back.
+
+    ⛔ THIS IS NOT A RATE, AND THE DISTINCTION IS THE WHOLE OF `domain/liquidation_liveness.py`:
+    it counts SYMBOLS MENTIONED, never points returned. A symbol answered with an empty history
+    counts here — the provider looked and had nothing, which is 79,8% of healthy minutes
+    `[MEDIDO 2026-09-12, n=14.344 buckets, 2.900 preenchidos]`. It exists so the composition
+    root can decide whether a cycle COVERED its window (`CycleHeartbeat.succeeded`) without
+    reading `n_returned`, which would rebuild the rate detector `T-05.7` was written to refuse.
+    """
+
+    n_attempted: int = 0
+    """How many symbols this pass got to before it stopped — `< len(symbols)` only on shutdown.
+
+    `unanswered` is computed over THESE, not over the whole universe: a symbol the cycle never
+    asked about was not "asked for and not answered" (`RS-3.7`), and filing an
+    `UNANSWERED_SYMBOL` gap for it would blame the provider for our own `SIGTERM`. The
+    truncation itself is never silent — it is named in `notes`.
+    """
 
 
 @dataclass
@@ -279,6 +315,26 @@ def _spend_one_call(
     return source.fetch(path)
 
 
+def _serve_the_spread(clock: CollectorClock, pause: float) -> bool:
+    """Pay the `RS-3.6` pause and report whether the clock ACTUALLY served it.
+
+    The cycle cannot see the stop flag — it holds no `threading.Event` and must not, because
+    `provenance.py` keeps every ambient fact in this package an injected port. What it CAN see
+    is the clock refusing to advance: `_SystemCollectorClock.sleep` is `stop_event.wait`, so a
+    pause that returns with the monotonic reading unmoved IS the shutdown signal, observed
+    through the one port the cycle already owns.
+
+    Reading the answer from the clock rather than from a new flag keeps one source of truth for
+    "time passed" and leaves a fake clock — which is the only clock the tests have — able to
+    reproduce the shutdown exactly, with no second mechanism to keep in sync.
+    """
+    if pause <= 0:
+        return True
+    before = clock.monotonic()
+    clock.sleep(pause)
+    return clock.monotonic() - before >= pause * SERVED_PAUSE_FRACTION
+
+
 def _collect_one_symbol(
     *,
     binance_symbol: str,
@@ -322,13 +378,27 @@ def _collect_one_symbol(
             continue
         digest.update(fetch.body)
         try:
+            # `RS-3.7`: whether the provider mentioned THIS symbol — a different question from
+            # whether it mentioned SOMETHING (see `answered_symbols`), and a different one
+            # again from whether it had any liquidation to report.
+            named = answered_symbols(fetch.body)
             points = parse_daily_points(fetch.body)
-            # `RS-3.7`: whether the provider MENTIONED this symbol, which is a different
-            # question from whether it had any liquidation to report — see `answered_symbols`.
-            outcome.answered = len(answered_symbols(fetch.body)) > 0
         except MalformedCoinalizeResponseError as failure:
             outcome.note = f"{binance_symbol}: malformed body: {failure}"
             continue
+        outcome.answered = coinalyze_symbol in named
+        if named and not outcome.answered:
+            # ⛔ THE BODY IS ABOUT ANOTHER INSTRUMENT. Counting entries instead of comparing
+            # names published those points UNDER THE REQUESTED SYMBOL — `parse_daily_points`
+            # reads `history` and never looks at `symbol` — and recorded this symbol as
+            # answered, so no `IngestGap` was filed for the one that really did not come.
+            # Two wrong facts from one missing comparison, both silent. Not a retry: the
+            # response is well formed and a second call would spend another blind-bucket unit
+            # to ask the same question. `answered = False` already routes it to the gap.
+            outcome.note = (
+                f"{binance_symbol}: body named {','.join(named)}, not {coinalyze_symbol}"
+            )
+            return outcome
         outcome.n_returned = len(points)
         outcome.n_published = _publish_settled_points(
             binance_symbol=binance_symbol,
@@ -372,9 +442,20 @@ def collect_liquidation_history_once(
     answered: list[str] = []
     notes: list[str] = []
     totals = LiquidationCycleResult()
+    attempted: list[str] = []
     for index, symbol in enumerate(symbols):
-        if index > 0:
-            clock.sleep(pause)
+        if index > 0 and not _serve_the_spread(clock, pause):
+            # `RS-3.6` under shutdown: the clock cut the spread, so the remaining symbols would
+            # leave together. Stopping is one of the two answers the requirement allows (the
+            # other is to keep pacing on the way out) and it is the cheaper one — a process
+            # being torn down should not spend more of a budget the replacement will inherit
+            # blind. Never silent: the truncation names itself in the run's `notes`.
+            notes.append(
+                f"cycle stopped after {index} of {len(symbols)} symbols: the clock cut the "
+                f"RS-3.6 spread short (shutdown); the rest were not asked for"
+            )
+            break
+        attempted.append(symbol)
         outcome = _collect_one_symbol(
             binance_symbol=symbol,
             state=state,
@@ -397,7 +478,7 @@ def collect_liquidation_history_once(
             n_throttled=totals.n_throttled + outcome.n_throttled,
             api_code=totals.api_code if totals.api_code is not None else outcome.api_code,
         )
-    unanswered = unanswered_symbols(symbols, answered)
+    unanswered = unanswered_symbols(attempted, answered)
     if unanswered:
         # `RS-3.7`. NOT a log line: a symbol asked for and not answered is an absence with a
         # shape, and `md.ingest_gap` is where an absence with a shape belongs. The provider
@@ -413,4 +494,6 @@ def collect_liquidation_history_once(
         unanswered=unanswered,
         notes="; ".join(notes) if notes else None,
         src_sha256=digest.hexdigest(),
+        n_answered=len(answered),
+        n_attempted=len(attempted),
     )

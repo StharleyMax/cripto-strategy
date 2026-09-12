@@ -77,6 +77,7 @@ import sys
 import threading
 import time
 import uuid
+from collections import deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -98,6 +99,11 @@ from src.modules.sentimento.domain.liquidation_catalog import (
     coinalyze_liquidation_key,
 )
 from src.modules.sentimento.domain.liquidation_collection import RetryLedger
+from src.modules.sentimento.domain.liquidation_liveness import (
+    CycleHeartbeat,
+    LivenessKind,
+    assess_liquidation_liveness,
+)
 from src.modules.sentimento.domain.long_short_catalog import LONG_SHORT_INTERVAL
 from src.modules.sentimento.domain.oi_history_paginator import (
     ClosedWindow,
@@ -1887,6 +1893,59 @@ _LIQUIDATION_RECOIL: Final[RecoilPolicy] = RecoilPolicy(
 # cause, and the record is the only place the difference survives.
 UNANSWERED_SYMBOL_GAP_CLASS: Final[str] = "UNANSWERED_SYMBOL"
 
+# `T-05.7`, THE CALLER. `domain/liquidation_liveness.py` is a pure function over a sequence of
+# closed cycles, and a detector nobody feeds and nobody asks cannot accuse anything — it is the
+# `!forceOrder@arr` failure a second time, one layer up: that socket stayed mute for ~46 h with
+# nothing raising a hand (`ACHADO-FORCEORDER.md`), and a liveness module with zero production
+# callers would sit exactly as quiet while the REST pipe did the same.
+#
+# HOW MANY CYCLES ARE KEPT, and why a bound at all: the verdict needs enough history to see a
+# hole in the covered span, not the whole life of the process. 256 cycles at the 5-minute
+# default is ~21 h of coverage, more than the `DEFAULT_LOOKBACK_SECONDS` window any single cycle
+# asks for, and the deque is what stops a long-lived process from growing a list forever.
+_LIVENESS_HISTORY_CYCLES: Final[int] = 256
+
+
+def _assess_and_report_liveness(
+    heartbeats: Sequence[CycleHeartbeat], *, now_ms: int, cadence_ms: int
+) -> str | None:
+    """Ask the `T-05.7` detector how the pipe is, log the answer, and return it as a note.
+
+    Returns `None` when the pipe is `ALIVE` or when there are too few cycles to judge — those
+    are the two answers that are not news. `SILENT` and `GAPPED` come back as a string so the
+    caller can put them in `md.ingest_run.notes`, which is the durable half: a log line rotates
+    away, and the verdict an operator needs is the one still readable a week later.
+
+    ⛔ NO POINT COUNT CROSSES THIS BOUNDARY. The detector's whole argument is that 79,8% of
+    healthy minutes look exactly like a dead pipe `[MEDIDO 2026-09-12, n=14.344 buckets, 2.900
+    preenchidos]`, so what it is handed is WHEN cycles closed and WHAT SPAN they asked about —
+    never how much came back.
+    """
+    verdict = assess_liquidation_liveness(heartbeats, now_ms=now_ms, cadence_ms=cadence_ms)
+    extra = {
+        "endpoint": LIQUIDATION_HISTORY_ENDPOINT,
+        "liveness": verdict.kind.value,
+        "silent_for_ms": verdict.silent_for_ms,
+        "stale_after_ms": verdict.stale_after_ms,
+        "n_uncovered": len(verdict.uncovered),
+        "n_cycles": verdict.n_cycles,
+    }
+    if verdict.kind is LivenessKind.SILENT:
+        logger.error("collector_liveness_assessed", extra=extra)
+        return (
+            f"liveness SILENT: no successful cycle for {verdict.silent_for_ms} ms, "
+            f"stale after {verdict.stale_after_ms} ms"
+        )
+    if verdict.kind is LivenessKind.GAPPED:
+        logger.warning("collector_liveness_assessed", extra=extra)
+        uncovered_ms = sum(span.duration_ms for span in verdict.uncovered)
+        return (
+            f"liveness GAPPED: {len(verdict.uncovered)} span(s) nobody covered, "
+            f"{uncovered_ms} ms in total"
+        )
+    logger.info("collector_liveness_assessed", extra=extra)
+    return None
+
 
 def _iso_from_epoch_ms(epoch_ms: int) -> str:
     """Render epoch milliseconds as the same UTC ISO spelling `_iso_now` produces."""
@@ -1986,13 +2045,28 @@ def _run_liquidation_collector(
     `notes` both null, so this thread cannot produce the record that
     `[MEDIDO 2026-09-12, n=6 runs REJECTED]` found 6 of 6 of in production -- not because the
     author remembered, but because the builder does.
+
+    AND THIS IS WHERE `T-05.7` IS PLUGGED IN. Every closed pass appends a `CycleHeartbeat` and
+    asks `assess_liquidation_liveness` how the pipe is; a `SILENT` or `GAPPED` answer lands in
+    the run's `notes` and turns the pass into `ACCEPTED_WITH_WARNING`. Before this, the
+    detector had ZERO production callers and nothing anywhere constructed a heartbeat -- a
+    watchdog built to catch a pipe dying in silence, itself dead in silence.
+
+    ⚠️ The `REJECTED` path above returns WITHOUT a heartbeat, and that is deliberate rather
+    than forgotten: it fires only on a Redis failure in regime, which stops every collector
+    thread and sets `exit_code[0] = 1`. The process is going down; there is no next cycle to
+    read the history, and the operator's signal is the exit code, not a verdict about a pipe
+    that no longer has anyone watching it.
     """
     state = LiquidationCollectorState()
     ledger = RetryLedger()
     clock = _SystemCollectorClock(stop_event)
+    heartbeats: deque[CycleHeartbeat] = deque(maxlen=_LIVENESS_HISTORY_CYCLES)
+    cadence_ms = int(interval_s * 1000)
     while not stop_event.is_set():
         run_id = str(uuid.uuid4())
         started_at = _iso_now()
+        cycle_started_monotonic = time.monotonic()
         published: list[str] = []
 
         def _publish(
@@ -2009,7 +2083,13 @@ def _run_liquidation_collector(
             )
             _published.append(symbol)
 
-        cycle_from_ms = _epoch_ms() - (DEFAULT_LOOKBACK_SECONDS * 1000)
+        # The span this cycle is about to ASK the provider for — read once, before the first
+        # call, so the heartbeat below records the window that was requested and not the one
+        # that happened to answer. `liquidation_liveness.CycleHeartbeat` is literal that the
+        # difference is the whole design: recording the answered span would rebuild the rate
+        # detector with extra steps.
+        cycle_to_ms = _epoch_ms()
+        cycle_from_ms = cycle_to_ms - (DEFAULT_LOOKBACK_SECONDS * 1000)
         try:
             result = collect_liquidation_history_once(
                 symbols=symbols,
@@ -2049,8 +2129,25 @@ def _run_liquidation_collector(
             exit_code[0] = 1
             failure_event.set()
             return
-        ended_at = _iso_now()
-        verdict: KnownVerdict = "ACCEPTED" if result.notes is None else "ACCEPTED_WITH_WARNING"
+        ended_at_ms = _epoch_ms()
+        ended_at = _iso_from_epoch_ms(ended_at_ms)
+        # `T-05.7`: a cycle SUCCEEDED when the provider named at least one symbol back — it
+        # looked, and it answered about the span. `n_answered` and NOT `n_returned`: a symbol
+        # answered with an empty history covered its window, and judging coverage by point
+        # count is precisely the rate detector `liquidation_liveness.py` refuses to be.
+        heartbeats.append(
+            CycleHeartbeat(
+                ended_at_ms=ended_at_ms,
+                covered_from_ms=cycle_from_ms,
+                covered_to_ms=cycle_to_ms,
+                succeeded=result.n_answered > 0,
+            )
+        )
+        liveness_note = _assess_and_report_liveness(
+            tuple(heartbeats), now_ms=ended_at_ms, cadence_ms=cadence_ms
+        )
+        notes = "; ".join(note for note in (result.notes, liveness_note) if note is not None)
+        verdict: KnownVerdict = "ACCEPTED" if not notes else "ACCEPTED_WITH_WARNING"
         run = build_liquidation_history_run(
             started_at=started_at,
             ended_at=ended_at,
@@ -2060,7 +2157,7 @@ def _run_liquidation_collector(
             verdict=verdict,
             src_sha256=result.src_sha256,
             run_id=run_id,
-            notes=result.notes,
+            notes=notes or None,
         )
         record_run(run)
         _record_unanswered_gaps(
@@ -2077,11 +2174,36 @@ def _run_liquidation_collector(
                 "n_returned": result.n_returned,
                 "n_calls": result.n_calls,
                 "n_unanswered": len(result.unanswered),
+                # The DENOMINATOR of `n_unanswered`, and it is not `len(symbols)` whenever a
+                # shutdown cut the cycle short. Without it, "2 unanswered" is unreadable: the
+                # operator cannot tell a provider that dropped two symbols from a `SIGTERM`
+                # that stopped us before we asked about them.
+                "n_attempted": result.n_attempted,
+                "n_answered": result.n_answered,
                 "verdict": verdict,
                 "run_id": run.run_id,
             },
         )
-        stop_event.wait(interval_s)
+        # `RS-3.5`: THE CONFIGURED CADENCE IS THE PERIOD, so the wait pays only what the cycle
+        # did not already spend. Waiting the full `interval_s` on top of a cycle that spread
+        # itself ACROSS `interval_s` made the real period `1,75x` the configured one at `N=4`
+        # and `1,90x` at `N=10` `[MEDIDO 2026-09-12, QA da fase 05 §3.4]`. That is not merely a
+        # slower schedule: `assess_liquidation_liveness` above is handed `cadence_ms` from the
+        # SAME configured number, and a healthy collector running at 1,9x its declared cadence
+        # would sit 1,58 real cycles from being called `SILENT` — the detector would be right
+        # about the arithmetic and wrong about the pipe.
+        remaining_s = interval_s - (time.monotonic() - cycle_started_monotonic)
+        if remaining_s < 0:
+            logger.warning(
+                "collector_cycle_overran_cadence",
+                extra={
+                    "endpoint": LIQUIDATION_HISTORY_ENDPOINT,
+                    "interval_s": interval_s,
+                    "overrun_s": -remaining_s,
+                    "run_id": run.run_id,
+                },
+            )
+        stop_event.wait(max(0.0, remaining_s))
 
 
 def run(
