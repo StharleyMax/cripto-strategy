@@ -406,3 +406,52 @@ vê `OBSERVED` e `MODELED` misturados sem saber por quê.
 **O que `D16` fecha e não volta atrás:** `md.series` passa a conter linhas cujo `available_at` é
 **calculado**. A partir daí **todo** consumidor tem de ler `availability_source`, e **todo**
 relatório de backtest tem de declarar o modelo de atraso — não basta a coluna.
+
+---
+
+## D17 · Inverter a prioridade: LARGURA antes de profundidade — as 4 métricas que faltam vêm primeiro
+
+`[DECISÃO-OWNER: 2026-09-12, escolha entre alternativas apresentadas]` — literal: *"ok, pode
+registrar e podemos dar sequenciar nas waves paralelas. Já podemos voltar a executar, a ideia é
+conseguir concluir todas as tasks e fases, vamos registrar as pendencias q depois de tudo no ar
+vamos avaliar cada item."*
+
+**A medição que motivou** `[MEDIDO 2026-09-12]`, `select src_label_raw, count(distinct
+series_key_id), count(*) from md.series group by 1`:
+
+```
+/fapi/v1/klines        4 séries   125.316 linhas
+/fapi/v1/premiumIndex  8 séries    34.904 linhas
+```
+
+**1 das 5 métricas do CORE está fluindo.** Open interest tem código
+(`domain/open_interest_catalog.py`) e **0 linhas**. Liquidações têm código (`force_order_*.py`,
+`liquidation_reconciliation.py`) e **0 linhas** — os 5 runs de WS nunca fecharam. Long/short
+ratio não tem coletor. E **2026-09-11 inteiro não acrescentou nenhuma métrica nova**: 29 commits,
+6 PRs, todos em profundidade sobre volume.
+
+**O padrão diagnosticado, e ele não era círculo — era descida recursiva:** cada camada de
+verificação achava um defeito uma camada abaixo, e todos eram reais. *"Cada achado é real"* não é
+o mesmo que *"cada achado é a próxima coisa mais valiosa"*. A fila de escalações **cresceu** ao
+longo do dia.
+
+**O argumento que fecha:** `D15` decidiu que a base será **truncada e reingerida**, e mediu que
+tudo é re-obtenível. ⇒ **polir a legibilidade de uma métrica que será truncada é trabalho que
+será jogado fora**, enquanto quatro métricas não têm coletor para chegar dado nenhum.
+
+**A ordem, então:**
+1. **Largura** — fases `02` (CVD), `03` (open interest), `04` (long/short), `05` (liquidações)
+   até haver dado das 5 métricas.
+2. **`E1` uma vez só, sobre todas** — em vez de repetir o ciclo de descida 4×.
+3. **`TRUNCATE` + reingestão únicos** (`D15`).
+
+**Teto de paralelismo: 3 tasks simultâneas** `[PREMISSA-OWNER: 2026-09-12]` — literal: *"Podemos
+executar até 3 tasks paralelas"*. Substitui o teto de 2 vigente desde 2026-09-10.
+
+**⛔ O que esta decisão NÃO faz:** não cancela nenhuma pendência. Elas ficam **registradas para
+avaliação depois de tudo no ar** — é decisão explícita do owner na mesma fala. A lista viva está
+em `PENDENCIAS-PARA-AVALIAR-DEPOIS.md`.
+
+**Falsificador de `D17`:** se ao fim das fases `02`–`05` o comando acima não mostrar **5 famílias
+de `src_label_raw`** com linhas > 0, a inversão de prioridade não entregou o que prometeu e a
+decisão estava errada.
