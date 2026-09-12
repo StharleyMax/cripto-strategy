@@ -9,11 +9,15 @@ the quantities `SPEC-007` phase `01`'s `DoD-1`/`DoD-4` are read off.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 
+import pytest
+
 from src.modules.sentimento.domain.ingest_record import IngestRun
 from src.modules.sentimento.domain.provenance import SeriesRow
+from src.modules.sentimento.infra import collectors_cli
 from src.modules.sentimento.infra.binance_klines_client import (
     MAX_LIMIT,
     KlineRow,
@@ -260,8 +264,11 @@ def test_a_bar_already_published_is_not_published_again_by_the_next_cycle() -> N
         backfill_days=1,
     )
 
-    assert len(sink.rows) == 1, "three passes over the same bar publish it exactly once"
-    assert sink.rows[0].bucket_end == _T0 + KLINES_BUCKET_WIDTH_MS
+    assert {row.bucket_end for row in sink.rows} == {_T0 + KLINES_BUCKET_WIDTH_MS}, (
+        "three passes over the same bar publish that bucket exactly once"
+    )
+    assert len(sink.rows) == 2, "one bar is TWO rows since T-02.3 — volume and CVD"
+    assert len({row.series_key_id for row in sink.rows}) == 2, "two identities, not one twice"
     assert [run.n_returned for run in runs] == [1, 1, 1], "the source still RETURNED it thrice"
 
 
@@ -275,7 +282,9 @@ def test_the_watermark_is_per_symbol_so_one_symbol_does_not_mask_another() -> No
     sink = _RecordingSink()
     _run_one_pass(client, sink, symbols=("BTCUSDT", "ETHUSDT"))
     assert {row.symbol for row in sink.rows} == {"BTCUSDT", "ETHUSDT"}
-    assert len({row.series_key_id for row in sink.rows}) == 2
+    # Four ids: two instruments x two identities (`klines_volume`, `cvd_source`) since `T-02.3`.
+    assert len({row.series_key_id for row in sink.rows}) == 4
+    assert len({(row.symbol, row.series_key_id) for row in sink.rows}) == 4
 
 
 # ── THE `IngestRun` THIS PRODUCER OPENS (`ADR-035/D2`) ─────────────────────────────────────
@@ -328,8 +337,10 @@ def test_the_anti_lookahead_cut_stays_visible_in_the_gap_between_returned_and_pu
     sink = _RecordingSink()
     runs, _ = _run_one_pass(client, sink)
     assert runs[0].n_returned == 2
-    assert len(sink.rows) == 1
-    assert sink.rows[0].bucket_end == _T0 + KLINES_BUCKET_WIDTH_MS
+    # `n_returned` and the log's `n_published` both count BARS, so the subtraction keeps
+    # meaning "the size of the cut" now that one bar publishes two rows (`T-02.3`).
+    assert {row.bucket_end for row in sink.rows} == {_T0 + KLINES_BUCKET_WIDTH_MS}
+    assert len(sink.rows) == 2
 
 
 def test_a_page_the_source_refused_closes_the_pass_with_a_warning_not_a_rejection() -> None:
@@ -388,3 +399,107 @@ def test_the_tail_window_widens_with_the_configured_cadence() -> None:
     assert _tail_limit(60.0) == 3
     assert _tail_limit(600.0) == 12
     assert _tail_limit(10 * 86_400.0) == MAX_LIMIT, "never above the endpoint's own ceiling"
+
+
+# ── `DoD 7` OF PHASE `02`: THE NETWORK DIFF OF CVD IS **ZERO** ─────────────────────────────
+#
+# This is the assertion that stops the phase from turning into a second integration by
+# accident. It is deliberately written TWICE, behaviourally and structurally, because each
+# half misses what the other catches: counting calls cannot see a fetch added inside a helper
+# that the fixture never reaches, and reading imports cannot see a second call to the client
+# the collector was already given.
+
+
+def test_both_identities_are_published_from_the_very_same_single_http_call() -> None:
+    """One page in, TWO series out, and `len(client.calls)` stays at what phase `01` spent.
+
+    `volume` (index `[5]`) and `takerBuyBaseVol` (index `[9]`) arrive in the same 12-field
+    array, which is exactly why `T-01.2` refused to project that array down.
+
+    Morde: fetch anything for the CVD row — a second `klines` page, a Coinalyze
+    `ohlcv-history`, anything — and `len(client.calls)` goes to 2 while the two published
+    identities stay the same. That is the defect this test exists for, and no other assertion
+    in this file would notice it.
+    """
+    client = _ScriptedKlinesClient([_page((_kline(_T0),))])
+    sink = _RecordingSink()
+    runs, _ = _run_one_pass(client, sink)
+
+    assert len(client.calls) == 1, "the CVD identity must cost ZERO additional requests"
+    assert len({row.series_key_id for row in sink.rows}) == 2, "two identities were published"
+    assert runs[0].weight_used == KLINES_WEIGHT_PER_CALL, "and the quota spent is one call's"
+
+
+def test_the_cvd_mapping_reaches_no_transport_at_all() -> None:
+    """Neither the mapping nor the CVD arithmetic may import a socket, a client or `infra`.
+
+    The behavioural test above proves the collector did not spend a second call ON THIS PATH;
+    this one proves there is no path at all. `[tool.importlinter]`'s `layers` contract already
+    forbids `use_cases` -> `infra`, but it says nothing about `http.client`/`urllib`/`socket`
+    or `requests`, and `domain/` is not the layer anyone would think to check.
+
+    Morde: add `import urllib.request` to either module — the way a "just fetch the missing
+    field" fix would arrive — and this names the module and the offending import.
+    """
+    import ast
+    import pathlib
+
+    forbidden = {"http", "urllib", "socket", "ssl", "requests", "httpx", "redis"}
+    modules = (
+        "backend/src/modules/sentimento/domain/kline_cvd.py",
+        "backend/src/modules/sentimento/use_cases/collector_series_mapping.py",
+    )
+    repo_root = pathlib.Path(__file__).resolve().parents[3]
+
+    for module in modules:
+        tree = ast.parse((repo_root / module).read_text())
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".")[0])
+                if node.module.startswith("src.modules.sentimento.infra"):
+                    raise AssertionError(f"{module} imports infra: {node.module}")
+        assert not (imported & forbidden), f"{module} imports a transport: {imported & forbidden}"
+
+
+def test_n_published_counts_bars_not_rows_so_the_cut_size_stays_readable(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The log's `n_published` is in the SAME unit as `n_returned` — bars — and must stay so.
+
+    `n_returned - n_published` is the size of the `RS-3.4` anti-lookahead cut, and
+    `/api/v1/ingest-health` plus the collector log are where an operator reads it. Since
+    `T-02.3` one bar publishes TWO rows, so a row-counting `n_published` makes that subtraction
+    NEGATIVE for a page with nothing cut — an operator would read "the cut is -1 bars".
+
+    ⚠️ THIS TEST EXISTS BECAUSE A MUTATION FOUND ITS ABSENCE. `_publish_klines_page` was changed
+    to `return len(rows)` and the whole klines suite stayed green `[MEDIDO 2026-09-12: 14 passed]`
+    — `n_published` never reaches the `IngestRun`, it only reaches the log record, and nothing
+    read the log record. The prose in `_KlinesPassTotals` asserting the invariant had never been
+    run.
+
+    Morde: `return len(rows)` and this reads `n_published == 2` for one settled bar.
+    """
+    settled = _kline(_T0)
+    in_progress = _kline(_T0 + 200 * 365 * 86_400_000)  # far in the future: still open
+    client = _ScriptedKlinesClient([_page((settled, in_progress))])
+    sink = _RecordingSink()
+
+    with caplog.at_level(logging.INFO, logger=collectors_cli.logger.name):
+        runs, _ = _run_one_pass(client, sink)
+
+    completed = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "collector_cycle_completed"
+        and getattr(record, "endpoint", None) == KLINES_ENDPOINT
+    ]
+    assert completed, "the pass logged its completion"
+    assert completed[-1].n_returned == 2  # type: ignore[attr-defined]
+    assert completed[-1].n_published == 1, (  # type: ignore[attr-defined]
+        "one settled bar is ONE published bar, even though it is two rows"
+    )
+    assert len(sink.rows) == 2, "and the two rows really were written"
+    assert runs[0].n_returned - completed[-1].n_published == 1  # type: ignore[attr-defined]

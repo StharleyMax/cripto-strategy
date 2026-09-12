@@ -15,6 +15,7 @@ Cada item traz o endereço e o comando que o reproduz — quem for avaliar não 
 | A2 | `E3` — `ADR-030/F-5` morto pela emenda `D12` | [`OPCOES-E1-E5.md`](OPCOES-E1-E5.md) §E3 | marcar ADR como SUPERSEDED é ato de quem a governa |
 | A3 | `E4` — duas superfícies calculam `uptimePercent`, e uma **não pode** calcular a nova | `OPCOES-E1-E5.md` §E4 | escolher qual superfície mente é decisão de produto |
 | A4 | `E5` — universo do `DoD-4` (`n_written` × `count(*)`) | `OPCOES-E1-E5.md` §E5 | ⚠️ a premissa original **não se reproduz**; a divergência real é premiumIndex com 1.797 de 5.050 runs nunca fechados |
+| A6 | **8,5% dos buckets divergem na ATRIBUIÇÃO DE BORDA** entre o CVD de `klines` e o de `aggTrade` — `[MEDIDO 2026-09-12, T-02.1: 4.320 buckets BTCUSDT/3 dias, 276 corridas divergentes, ZERO com resíduo, total diário idêntico ao milésimo de BTC]` | `gates/T-02.1-falsificador-reconstructed-from.md` §6 | **não é erro de reconstrução** (nada a reconstruir — o falsificador provou leitura direta) e **não vira `published_error`**. É propriedade real da série: quem comparar as duas fontes bucket a bucket vai ver, e é esperado. Registrado para não ser redescoberto como defeito |
 | A5 | `D16` **suspenso** — `p99` de klines (60.936 ms) excede a grade | [`OPCOES-D16-ESTATISTICA-CONTRA-A-GRADE.md`](OPCOES-D16-ESTATISTICA-CONTRA-A-GRADE.md) | depende de **remedir** com o escalonador consertado; amostra atual é insuficiente para fixar contrato |
 
 ## B · Defeitos localizados, não consertados

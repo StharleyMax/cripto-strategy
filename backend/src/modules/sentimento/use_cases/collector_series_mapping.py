@@ -90,11 +90,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Final, Protocol
 
+from src.modules.sentimento.domain.cvd_source_catalog import build_kline_takerbuy_entry
 from src.modules.sentimento.domain.force_order_collision_accounting import (
     ForceOrderKeyObservation,
 )
 from src.modules.sentimento.domain.funding_settlement import FundingSource
 from src.modules.sentimento.domain.instrument import base_asset
+from src.modules.sentimento.domain.kline_cvd import kline_cvd_delta
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
 from src.modules.sentimento.domain.open_interest_catalog import binance_open_interest_key
 from src.modules.sentimento.domain.premium_index_batch import (
@@ -352,12 +354,16 @@ KLINES_BUCKET_WIDTH_MS: Final[int] = 60_000
 
 
 class KlineLike(Protocol):
-    """The three things this mapping reads off one kline array.
+    """The four things this mapping reads off one kline array.
 
     Structural, not an import: `infra/binance_klines_client.KlineRow` satisfies this, and
     `use_cases` may not import `infra` (`[tool.importlinter]`'s `layers` contract). The same
     shape `SeriesWindowReader`/`IngestRecordSource` already use to name a port in a use case
     and wire the adapter at composition.
+
+    `taker_buy_base_volume` was added by `T-02.3` and it is THE whole network cost of phase
+    `02`: index `[9]` was already in the array `T-01.2` refused to project away, so reading it
+    here adds a field to a protocol, not a request to the exchange.
     """
 
     @property
@@ -373,6 +379,11 @@ class KlineLike(Protocol):
     @property
     def volume(self) -> str:
         """Return index `[5]`, base-asset volume, as the exact decimal string the source sent."""
+        ...
+
+    @property
+    def taker_buy_base_volume(self) -> str:
+        """Return index `[9]`, the aggressor-buy share of `volume`, as the source's own string."""
         ...
 
 
@@ -415,6 +426,33 @@ def build_klines_to_rows(
     already closed at `received_at` (`is_closed_bucket`). A symbol outside `symbols` yields no
     rows, the same filter the other two producers in this module already apply.
 
+    ── TWO ROWS PER CLOSED BAR SINCE `T-02.3`, AND THE SECOND ONE COSTS NO REQUEST ──────────
+
+    `klines_volume` (index `[5]`) and `cvd_source`/`kline_takerbuy` (`2 * takerBuy[9] - volume`,
+    `domain/kline_cvd.kline_cvd_delta`) are TWO IDENTITIES OFF ONE ARRAY. That is the capability
+    phase `02` exists to demonstrate and the reason it is a phase of its own rather than a line
+    inside phase `01`: a second metric riding an existing collector, with a diff of ZERO network
+    calls (`DoD 7`) — `T-01.2` already refused to project the 12-field array down, precisely so
+    this moment would cost a field read instead of a second integration.
+
+    The two rows share `bucket_end`, `event_time` and every provenance field, because they are
+    two readings OF THE SAME OBSERVATION; they differ only in `series_key_id` and `value_raw`.
+    They are built by iterating a pair of `(series_key_id, value_raw)` tuples rather than by a
+    closure defined inside the loop — there is no late-binding hazard either way (a closure
+    called in the same iteration reads the current value), and a mutation test confirmed that:
+    removing a default-argument binding written to "protect" against it killed NO test, because
+    there was nothing to protect against. The pair loop is what the code actually needs, and it
+    keeps the sixteen provenance fields written once instead of twice.
+
+    ⚠️ `series_key_id()` is computed ONCE PER PAGE, above the loop, not once per row: it is a
+    `sha256` over the canonical projection of fifteen terms, and a seven-day backfill is 10.080
+    bars per symbol — 20.160 hashes per symbol per restart if it were recomputed per row.
+
+    The CVD delta is computed through the domain function, never inline here, so the invariant
+    `0 <= takerBuy <= volume` (item 2.4) is enforced on every bar the collector publishes: an
+    impossible pair raises `TakerBuyExceedsVolumeError` and the pass closes `REJECTED` instead
+    of writing a delta larger than the bucket it came from.
+
     ⛔ THE IN-PROGRESS BUCKET IS DROPPED, NOT FLAGGED, and the two options are not equivalent
     here. `is_final=False` would also be honest — the `as_of` accessor refuses such a row
     outright, in its `_is_closed_bucket` predicate (`row.bucket_end <= t and row.is_final is
@@ -444,30 +482,45 @@ def build_klines_to_rows(
     ) -> tuple[SeriesRow, ...]:
         if symbol not in symbols:
             return ()
-        key = build_klines_volume_entry(
-            symbol, unit=base_asset(symbol), verified_by=_KLINES_VOLUME_VERIFIED_BY
+        unit = base_asset(symbol)
+        volume_key = build_klines_volume_entry(
+            symbol, unit=unit, verified_by=_KLINES_VOLUME_VERIFIED_BY
         ).key
-        return tuple(
-            SeriesRow(
-                series_key_id=key.series_key_id(),
-                symbol=symbol,
-                source=KLINES_ENDPOINT,
-                bucket_end=kline.open_time_ms + KLINES_BUCKET_WIDTH_MS,
-                event_time=kline.open_time_ms + KLINES_BUCKET_WIDTH_MS,
-                available_at=received_at,
-                availability_source=AvailabilitySource.OBSERVED,
-                ingested_at=received_at,
-                observed_at=received_at,
-                provenance=Provenance.OBSERVED,
-                src_label_raw=KLINES_ENDPOINT,
-                observer_id=KLINES_OBSERVER_ID,
-                observer_region=UNKNOWN_OBSERVER_REGION,
-                is_final=True,
-                value_raw=kline.volume,
+        cvd_key = build_kline_takerbuy_entry(symbol, unit=unit).key
+        volume_key_id = volume_key.series_key_id()
+        cvd_key_id = cvd_key.series_key_id()
+        rows: list[SeriesRow] = []
+        for kline in klines:
+            if not is_closed_bucket(kline, received_at):
+                continue
+            bucket_end = kline.open_time_ms + KLINES_BUCKET_WIDTH_MS
+            delta = kline_cvd_delta(
+                volume=kline.volume, taker_buy_base_volume=kline.taker_buy_base_volume
             )
-            for kline in klines
-            if is_closed_bucket(kline, received_at)
-        )
+            for series_key_id, value_raw in (
+                (volume_key_id, kline.volume),
+                (cvd_key_id, str(delta)),
+            ):
+                rows.append(
+                    SeriesRow(
+                        series_key_id=series_key_id,
+                        symbol=symbol,
+                        source=KLINES_ENDPOINT,
+                        bucket_end=bucket_end,
+                        event_time=bucket_end,
+                        available_at=received_at,
+                        availability_source=AvailabilitySource.OBSERVED,
+                        ingested_at=received_at,
+                        observed_at=received_at,
+                        provenance=Provenance.OBSERVED,
+                        src_label_raw=KLINES_ENDPOINT,
+                        observer_id=KLINES_OBSERVER_ID,
+                        observer_region=UNKNOWN_OBSERVER_REGION,
+                        is_final=True,
+                        value_raw=value_raw,
+                    )
+                )
+        return tuple(rows)
 
     return _to_rows
 
