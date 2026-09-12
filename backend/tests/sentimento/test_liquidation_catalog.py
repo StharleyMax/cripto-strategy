@@ -102,8 +102,11 @@ def test_the_grid_and_the_staleness_bound_are_the_native_minute() -> None:
 
 
 def test_published_error_is_absent_because_this_series_has_no_oracle() -> None:
-    """`DoD 6c`: the only third-party series of the feature, and the only one without a second
-    source. An invented `(median, p99, n)` would publish a fidelity nobody measured."""
+    """The series has no oracle, so a published fidelity would be invented.
+
+    `DoD 6c`: the only third-party series of the feature, and the only one without a second
+    source. An invented `(median, p99, n)` would publish a fidelity nobody measured.
+    """
     catalog = liquidation_catalog_entries("BTCUSDT")
     assert all(entry.published_error is None for entry in catalog.entries)
 

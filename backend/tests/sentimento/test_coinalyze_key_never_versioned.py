@@ -146,6 +146,23 @@ def test_a_missing_key_reads_as_absent_and_never_as_an_empty_default() -> None:
 # ── THE STAYING-SILENT HALF, OVER THE REAL TREE ────────────────────────────────────────────
 
 
+def test_a_declared_placeholder_value_is_not_a_credential() -> None:
+    """`.env.example` may carry a stand-in that SAYS it is one, and that must not bite.
+
+    The allowlist here is keyed on the VALUE, never on the FILE: every member is a word that
+    announces "no key here". A real key matches none of them, because a real key is a UUID —
+    which is what keeps this from being a per-file bypass.
+    """
+    assert find_leaks(".env.example", "COINALYZE_API_KEY=changeme-dev-only") == []
+    assert find_leaks(".env.example", "COINALYZE_API_KEY=your-key-here") == []
+    assert find_leaks("docs/exemplo.md", "COINALYZE_API_KEY=PLACEHOLDER") == []
+    # And the negative that proves the allowlist is narrow: a value that merely LOOKS harmless
+    # but announces nothing is still flagged.
+    assert [leak.rule for leak in find_leaks(".env.example", "COINALYZE_API_KEY=a1b2c3d4e5f6")] == [
+        "coinalyze-api-key-assigned-a-literal"
+    ]
+
+
 def test_the_indirection_forms_are_not_flagged() -> None:
     """`${VAR}`, `$VAR` and an EMPTY value are the CORRECT forms and must not bite."""
     assert find_leaks("deploy/compose.yml", "      COINALYZE_API_KEY: ${COINALYZE_API_KEY}") == []
