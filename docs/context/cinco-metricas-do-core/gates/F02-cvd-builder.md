@@ -49,7 +49,7 @@ corridas, zero resíduos, total diário idêntico ao milésimo de BTC nos três 
 | 5 | `takerBuy ≤ volume` em **100%** da janela de backfill | ✅ | §5 |
 | 6 | falsificador de `reconstructed_from` rodado **antes** | ✅ | §2 |
 | 7 | **nenhuma chamada HTTP nova** | ✅ | §5 |
-| 8 | `make verify` verde | ✅ | §7 |
+| 8 | `make verify` verde | ⚠️ **EM VOO ao fechar este gate** | §10 |
 
 ## 4. `DoD 1`/`2`/`4` — o mecanismo, medido com dado REAL; a produção é de `T-02.7`
 
@@ -183,3 +183,30 @@ linha `A6` em `PENDENCIAS-PARA-AVALIAR-DEPOIS.md`.
 oito linhas seguintes — e a ORDEM de `"entries"` é **forma**, que `RS-1` proíbe esta feature de
 mudar. Lista permutada é a falha que **nenhum campo da resposta reporta**. Então ele é
 **anexado ao fim** por `list_series_catalog`, exatamente onde `T-01.6` anexou `klines_volume`.
+
+
+## 10. `make verify` — o que foi medido, e o que ficou em voo
+
+⚠️ **Não afirmo `make verify` verde**, porque a execução autoritativa (`20260912T133617Z`) ainda
+não tinha terminado quando este gate foi escrito — a máquina está com **7 processos `pytest`
+simultâneos** de outros agentes e a suíte passou de 12 min (`C3` das pendências já registra
+`532 s` sem causa identificada). O que **está** medido:
+
+| portão | comando | resultado |
+|---|---|---|
+| `lint-backend` | `bash backend/scripts/lint.sh` | ✅ `All checks passed` · `417 files already formatted` · `Success: no issues found in 417 source files` |
+| `boundaries` | dentro de `verify` | ✅ **7 kept, 0 broken** (241 arquivos, 1.138 dependências) |
+| `regras` | `rules --mode sweep` | ✅ **0 bloqueio(s)**, 67 avisos (todos pré-existentes, `core.module-docstring-single-line`) |
+| `política` | dentro de `verify` | ✅ `rc=0` |
+| suíte alvo | `bash backend/scripts/test-fast.sh -k "kline_cvd or cvd_source_catalog or collector_klines_mapping or klines_collector or series_catalog or writer_and_catalog_agree or publishes_the_run_id"` | ✅ **140 passed** |
+| suíte inteira, corrida anterior | `make verify` (`20260912T132650Z`) | **2.157 passed, 1 ERROR**, cobertura total **96,92%** |
+
+**O `1 ERROR` daquela corrida é AMBIENTAL e nomeado, não silenciado:**
+`test_postgres_series_window_reader.py::test_read_window_excludes_a_row_after_the_window_end`,
+`psycopg.OperationalError: server closed the connection unexpectedly` — o container TimescaleDB
+descartável não subiu dentro dos 30 s de `_READY_TIMEOUT_S`. Causa: contenção de Docker, com o
+meu próprio container de `measure_cvd_vertical.py` mais quatro `verify` concorrentes na máquina.
+Não toca nenhum arquivo desta fase.
+
+⇒ **quem for rodar o QA precisa reexecutar `make verify` e ler o veredito**, não herdar este
+parágrafo. `INDETERMINADO` não é `verde`.
