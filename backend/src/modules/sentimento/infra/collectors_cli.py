@@ -92,7 +92,12 @@ from src.modules.sentimento.domain.force_order_natural_key import (
     extract_force_order_natural_key,
     trade_time_utc_date,
 )
-from src.modules.sentimento.domain.ingest_record import IngestRun
+from src.modules.sentimento.domain.ingest_record import IngestGap, IngestRun
+from src.modules.sentimento.domain.liquidation_catalog import (
+    COHORTS,
+    coinalyze_liquidation_key,
+)
+from src.modules.sentimento.domain.liquidation_collection import RetryLedger
 from src.modules.sentimento.domain.long_short_catalog import LONG_SHORT_INTERVAL
 from src.modules.sentimento.domain.oi_history_paginator import (
     ClosedWindow,
@@ -103,6 +108,7 @@ from src.modules.sentimento.domain.oi_history_paginator import (
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
 from src.modules.sentimento.domain.provenance import SeriesRow
 from src.modules.sentimento.domain.quota_bucket import USED_WEIGHT_HEADER
+from src.modules.sentimento.domain.recoil_policy import RecoilPolicy
 from src.modules.sentimento.infra.binance_futures_data_client import (
     MAX_LIMIT as FUTURES_DATA_MAX_LIMIT,
 )
@@ -123,6 +129,7 @@ from src.modules.sentimento.infra.binance_stream_probe import (
     combined_stream_path,
     connect_tls,
 )
+from src.modules.sentimento.infra.coinalyze_history_client import CoinalizeHistoryClient
 from src.modules.sentimento.infra.ingest_health_cli import (
     build_service_stdout_handler,
     route_diagnostics_away_from_the_product_stream,
@@ -153,6 +160,13 @@ from src.modules.sentimento.infra.redis_stream_series_sink import (
     RedisPremiumIndexSink,
     RedisStreamSeriesSink,
 )
+from src.modules.sentimento.use_cases.collect_liquidation_history import (
+    DEFAULT_LOOKBACK_SECONDS,
+    LiquidationCollectorState,
+    LiquidationFetch,
+    LiquidationHistorySource,
+    collect_liquidation_history_once,
+)
 from src.modules.sentimento.use_cases.collect_premium_index import (
     PremiumIndexCycleStage,
     PremiumIndexFetcher,
@@ -160,14 +174,17 @@ from src.modules.sentimento.use_cases.collect_premium_index import (
     collect_premium_index_once,
 )
 from src.modules.sentimento.use_cases.collector_run_mapping import (
+    COINALYZE_SOURCE,
     FORCE_ORDER_ENDPOINT,
     KLINES_ENDPOINT,
+    LIQUIDATION_HISTORY_ENDPOINT,
     LONG_SHORT_DATA_ENDPOINT,
     LONG_SHORT_ENDPOINT,
     OPEN_INTEREST_HIST_ENDPOINT,
     KnownVerdict,
     build_force_order_run,
     build_klines_run,
+    build_liquidation_history_run,
     build_long_short_run,
     build_open_interest_run,
     build_premium_index_run,
@@ -177,10 +194,12 @@ from src.modules.sentimento.use_cases.collector_series_mapping import (
     KLINES_BUCKET_WIDTH_MS,
     OPEN_INTEREST_BUCKET_WIDTH_MS,
     KlinesToRows,
+    LiquidationPointToRow,
     LongShortToRows,
     OpenInterestToRows,
     build_force_order_to_rows,
     build_klines_to_rows,
+    build_liquidation_history_to_row,
     build_long_short_to_rows,
     build_open_interest_to_rows,
     build_premium_index_to_rows,
@@ -229,6 +248,7 @@ _OPEN_INTEREST_BACKFILL_DAYS_VAR: Final[str] = "OPEN_INTEREST_BACKFILL_DAYS"
 # on the tail call — its whole history knob is `limit`, and `limit` is pinned at the
 # endpoint's own ceiling (`FUTURES_DATA_MAX_LIMIT`), a fact of the provider, not a setting.
 _LONG_SHORT_CYCLE_INTERVAL_S_VAR: Final[str] = "LONG_SHORT_CYCLE_INTERVAL_S"
+_LIQUIDATION_CYCLE_INTERVAL_S_VAR: Final[str] = "LIQUIDATION_CYCLE_INTERVAL_S"
 
 _DEFAULT_REDIS_HOST: Final[str] = "localhost"
 _DEFAULT_REDIS_PORT: Final[int] = 6379
@@ -279,6 +299,17 @@ _DEFAULT_OPEN_INTEREST_BACKFILL_DAYS: Final[int] = 7
 # and the newest bucket waits a full extra period. Polling faster than the grid costs almost
 # nothing here (the watermark drops what it has already seen) and removes that failure mode.
 _DEFAULT_LONG_SHORT_CYCLE_INTERVAL_S: Final[float] = 60.0
+
+# `RS-3.5`: THE CADENCE IS CONFIGURATION, and this is the value `SPEC-007` 6.3 adopted --
+# 5 minutes, which at `N = 10` spends `2 u/min`, 5% of the ceiling measured on 2026-09-10
+# (`n=41 requisicoes`). At the served `15min .. 4h` horizons that is 3 refreshes per 15-min
+# candle with the native 1-minute resolution PRESERVED, because the width of the window a
+# request asks for is free and only the cadence spends anything.
+#
+# It is read from the environment like every other cadence here, so an operator can slow it
+# down without a deploy -- and `_positive_float` refuses `0` at BOOT (`RN-4`), which on this
+# bucket would not merely be a tight loop but a `429` inside the first second.
+_DEFAULT_LIQUIDATION_CYCLE_INTERVAL_S: Final[float] = 300.0
 
 # `SPEC-007` §4.2 / `T-04.1`, MEASURED against the origin: `period=1m` and `period=3m` answer
 # `HTTP 200` with `[]`, `period=5m` answers 500 points. This string is BOTH the `period` query
@@ -432,6 +463,7 @@ class BootConfig:
     open_interest_cycle_interval_s: float = _DEFAULT_OPEN_INTEREST_CYCLE_INTERVAL_S
     open_interest_backfill_days: int = _DEFAULT_OPEN_INTEREST_BACKFILL_DAYS
     long_short_cycle_interval_s: float = _DEFAULT_LONG_SHORT_CYCLE_INTERVAL_S
+    liquidation_cycle_interval_s: float = _DEFAULT_LIQUIDATION_CYCLE_INTERVAL_S
 
 
 def _parse_int(environ: Mapping[str, str], variable: str, default: int) -> int:
@@ -543,6 +575,11 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
         long_short_cycle_interval_s=_positive_float(
             environ, _LONG_SHORT_CYCLE_INTERVAL_S_VAR, _DEFAULT_LONG_SHORT_CYCLE_INTERVAL_S
         ),
+        liquidation_cycle_interval_s=_positive_float(
+            environ,
+            _LIQUIDATION_CYCLE_INTERVAL_S_VAR,
+            _DEFAULT_LIQUIDATION_CYCLE_INTERVAL_S,
+        ),
     )
 
 
@@ -583,6 +620,26 @@ def connect_redis(config: BootConfig, open_socket: SocketFactory | None = None) 
 def _epoch_ms() -> int:
     """Return the current instant as epoch milliseconds — the unit `SeriesRow` fields use."""
     return int(time.time() * 1000)
+
+
+def _failure_note(failure: BaseException) -> str:
+    """Render the exception that rejected a run into the `notes` the record will carry.
+
+    `T-05.6` / `RF-6` / `RS-4`. Every `REJECTED` verdict in this module is raised by an
+    `except _PUBLISH_FAILURE_EXCEPTIONS as failure` — a failure to write to OUR OWN queue, not a
+    refusal from the provider. There is therefore no `api_code` to record (Binance said nothing;
+    Redis did), and before `T-05.6` the run was written with BOTH reason fields null, which is
+    exactly the state `[MEDIDO 2026-09-12, n=6 runs REJECTED]` found in production: 6 of 6.
+    The `logger.error` above each of those sites ALREADY had this string — it went to stderr and
+    never to the record, so an operator reading `md.ingest_run` a week later saw a rejection with
+    no cause while the cause had been printed and rotated away.
+
+    The type name travels with the message because `ConnectionResetError: ` and
+    `RedisProtocolError: ` are different diagnoses and `str(failure)` is empty on several of
+    these exceptions — a note that reads `""` would satisfy the DoD query and tell nobody
+    anything, which is the failure mode `require_rejection_reason` refuses a default for.
+    """
+    return f"{type(failure).__name__}: {failure}"
 
 
 def _iso_now() -> str:
@@ -673,6 +730,7 @@ def _run_premium_index_collector(
                 status=None,
                 weight_used=None,
                 verdict="REJECTED",
+                notes=_failure_note(failure),
                 src_sha256=hashlib.sha256(capturing.last_body or b"").hexdigest(),
                 run_id=run_id,
             )
@@ -818,6 +876,9 @@ def _run_force_order_collector(
     digest = hashlib.sha256()
     n_published = 0
     verdict: KnownVerdict = "ACCEPTED"
+    # `T-05.6`: the reason a session closes `REJECTED` is known in the `except` and recorded in
+    # the `finally`, so it has to outlive the handler — a local set there and read here.
+    notes: str | None = None
     messages = source.messages()
     try:
         while True:
@@ -860,13 +921,14 @@ def _run_force_order_collector(
             exc_info=True,
         )
         verdict = "REJECTED"
+        notes = _failure_note(failure)
         exit_code[0] = 1
         failure_event.set()
     finally:
         source.close()
         ended_at = _iso_now()
         run = build_force_order_run(
-            started_at, ended_at, n_published, verdict, digest, endpoint, run_id
+            started_at, ended_at, n_published, verdict, digest, endpoint, run_id, notes
         )
         record_run(run)
         logger.info(
@@ -1121,6 +1183,7 @@ def _run_klines_collector(
                 n_calls=totals.n_calls,
                 api_code=totals.api_code,
                 verdict="REJECTED",
+                notes=_failure_note(failure),
                 src_sha256=digest.hexdigest(),
                 run_id=run_id,
             )
@@ -1397,6 +1460,7 @@ def _run_open_interest_collector(
                 n_calls=totals.n_calls,
                 api_code=totals.api_code,
                 verdict="REJECTED",
+                notes=_failure_note(failure),
                 src_sha256=digest.hexdigest(),
                 run_id=run_id,
             )
@@ -1607,6 +1671,7 @@ def _run_long_short_collector(
                 n_calls=totals.n_calls,
                 api_code=totals.api_code,
                 verdict="REJECTED",
+                notes=_failure_note(failure),
                 src_sha256=digest.hexdigest(),
                 run_id=run_id,
             )
@@ -1751,6 +1816,274 @@ def _supervised(
     return _guarded
 
 
+class _CoinalizeLiquidationSource:
+    """Adapts the existing `CoinalizeHistoryClient` to the cycle's `LiquidationHistorySource`.
+
+    `T-05.5` says REUSE and not REINVENT, and this class is the whole of the reuse: the
+    keep-alive connection, the auth header built from `$COINALYZE_API_KEY` via
+    `https_quota_probe.authentication_headers`, and the `OSError` -> `transport_error`
+    conversion are all that client's, unchanged. The only thing added here is the SHAPE the
+    use case expects -- and the shape differs for one reason: the cycle needs `Retry-After`,
+    which the client now carries (`headers`) because `RS-3.2` forbids a blind back-off.
+
+    The API KEY IS NEVER TOUCHED HERE. It reaches the client as `os.environ`, read by that
+    client with no default, and it appears in no argument, no log line and no file
+    (`CLAUDE.md`: "Nenhuma chave em documento, nunca" -- and this repository is PUBLIC).
+    """
+
+    def __init__(self, client: CoinalizeHistoryClient) -> None:
+        """Bind the adapter to one live client, whose connection it reuses across the sweep."""
+        self._client = client
+
+    def fetch(self, path: str) -> LiquidationFetch:
+        """Issue one GET and translate the response into the cycle's own vocabulary."""
+        response = self._client.fetch(path)
+        if response.transport_error is not None:
+            return LiquidationFetch(transport_error=response.transport_error)
+        return LiquidationFetch(
+            status=response.status,
+            body=response.body,
+            retry_after=response.header("Retry-After"),
+        )
+
+
+def _default_liquidation_source() -> LiquidationHistorySource:
+    """Open the real Coinalyze client, authenticated from the process environment.
+
+    `os.environ` and no default: `authentication_headers` refuses a missing
+    `COINALYZE_API_KEY` rather than sending an unauthenticated request that would come back
+    `401` and look like a provider outage.
+    """
+    return _CoinalizeLiquidationSource(CoinalizeHistoryClient(os.environ))
+
+
+# -- THE SIXTH COLLECTOR: Coinalyze `/v1/liquidation-history` (`T-05.5`, `ADR-036/D4`) -------
+#
+# The FIRST producer in this process that is not Binance, and the only third-party integration
+# of `SPEC-007`. `ADR-036/D4` put it on the critical path in place of `!forceOrder@arr`, whose
+# collector stays standing and keeps recording `REJECTED` (`5` runs, `n_written = 0`
+# `[MEDIDO 2026-09-12 em md.ingest_run]`) -- `D6` (owner) REFUSED to make fixing it a condition
+# of this data arriving, and its owner is `plataforma-dados`/`T-07.11`.
+#
+# AND ITS BUDGET IS NOT BINANCE'S. Every other thread here spends against a bucket that
+# publishes weight headers or costs nothing. This one spends against a BLIND bucket with a
+# ceiling of 40 calls per SLIDING 60 s `[MEDIDO 2026-09-10, n=41 requisicoes]`, and the whole of
+# `domain/liquidation_collection.SlidingQuotaWindow` exists because there is no header to read
+# back. The window is built ONCE, outside the loop, in `LiquidationCollectorState` -- a window
+# re-created per cycle would forget the calls the previous cycle made in the last 60 seconds,
+# which is precisely the tumbling counter that lets 80 calls land inside one real minute.
+
+# `RS-3.2`'s fallback, and ONLY the fallback: `RecoilPolicy.decide` prefers the provider's own
+# `Retry-After` whenever it is present and longer. These three numbers are what this collector
+# waits when the header is ABSENT, and the cap is what bounds a single sleep so an operator can
+# predict the longest block (`recoil_policy.py`'s own argument for having one).
+_LIQUIDATION_RECOIL: Final[RecoilPolicy] = RecoilPolicy(
+    base_seconds=30.0, factor=2.0, cap_seconds=300.0
+)
+
+# `md.ingest_gap.gap_class` for `RS-3.7`. A vocabulary member of its own, not `SOURCE_GAP` and
+# not `SURVIVORSHIP_GAP`: those two describe data the source never had, and this one describes a
+# symbol the source never MENTIONED while we were asking about it. Same absence, different
+# cause, and the record is the only place the difference survives.
+UNANSWERED_SYMBOL_GAP_CLASS: Final[str] = "UNANSWERED_SYMBOL"
+
+
+def _iso_from_epoch_ms(epoch_ms: int) -> str:
+    """Render epoch milliseconds as the same UTC ISO spelling `_iso_now` produces."""
+    return (
+        datetime.fromtimestamp(epoch_ms / 1000.0, tz=UTC)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+class _SystemCollectorClock:
+    """The real clock for one liquidation thread -- the only place this collector reads time.
+
+    `stop_event.wait(seconds)` and not `time.sleep(seconds)`: every pause this collector takes
+    (the spread between symbols, the quota wait, the `429` recoil) can be MINUTES long, and a
+    `SIGTERM` arriving mid-pause must not be held hostage by it. `SPEC-004` 3.1 promises the
+    process closes cleanly on `SIGTERM`, and a thread asleep in `time.sleep(56.8)` inside a
+    recoil breaks that promise for up to a minute at a time.
+    """
+
+    def __init__(self, stop_event: threading.Event) -> None:
+        """Bind the clock to the stop flag that may cut any of its sleeps short."""
+        self._stop_event = stop_event
+
+    def monotonic(self) -> float:
+        """Return a monotonic reading, for the sliding quota window's own accounting."""
+        return time.monotonic()
+
+    def epoch_ms(self) -> int:
+        """Return wall-clock epoch milliseconds -- what the rows and the window request use."""
+        return _epoch_ms()
+
+    def sleep(self, seconds: float) -> None:
+        """Pause, waking early if the process was asked to stop."""
+        if seconds > 0:
+            self._stop_event.wait(seconds)
+
+
+def _record_unanswered_gaps(
+    *,
+    record_gap: Callable[[IngestGap], None],
+    unanswered: Sequence[str],
+    from_ts: str,
+    to_ts: str,
+) -> None:
+    """File one `md.ingest_gap` per (unanswered symbol, cohort) -- `RS-3.7`.
+
+    A symbol asked for and not answered is an ABSENCE WITH A SHAPE, and the provider signals
+    nothing: a call for 20 symbols came back with 19 and one for 40 came back with 38
+    `[DOC: MEDICAO 3.1]`. `record_gap` already existed
+    (`postgres_ingest_record_store.py`); a log line would rotate away and the symbol would
+    vanish from the panel with nothing anywhere saying so.
+
+    BOTH cohorts get a gap: they are two independent series (`ZL-1`), and filing against one of
+    them would leave the other silently unaccounted for.
+    """
+    for symbol in unanswered:
+        for cohort in COHORTS:
+            record_gap(
+                IngestGap(
+                    source=COINALYZE_SOURCE,
+                    symbol=symbol,
+                    series_key_id=coinalyze_liquidation_key(
+                        cohort, instrument_id=symbol
+                    ).series_key_id(),
+                    from_ts=from_ts,
+                    to_ts=to_ts,
+                    n_missing=0,
+                    gap_class=UNANSWERED_SYMBOL_GAP_CLASS,
+                    detected_at=to_ts,
+                )
+            )
+
+
+def _run_liquidation_collector(
+    *,
+    stop_event: threading.Event,
+    failure_event: threading.Event,
+    exit_code: list[int],
+    source: LiquidationHistorySource,
+    sink: RedisStreamSeriesSink,
+    to_row: LiquidationPointToRow,
+    record_run: Callable[[IngestRun], None],
+    record_gap: Callable[[IngestGap], None],
+    symbols: Sequence[str],
+    interval_s: float,
+) -> None:
+    """One `IngestRun` per pass over the symbol universe, spread across the cadence.
+
+    A publish failure is `SPEC-004` 3.1's "falha do Redis em regime": the pass closes
+    `REJECTED`, the other threads are told to stop, `exit_code[0] = 1`. Trouble at the PROVIDER
+    is not that -- a `429`, a `5xx` or a malformed body closes `ACCEPTED_WITH_WARNING` with the
+    reason in `notes`, the same distinction the three REST Binance collectors already draw.
+
+    AND EVERY ONE OF THOSE CLOSES NAMES A REASON (`RS-4`, `T-05.6`).
+    `build_liquidation_history_run` REFUSES to construct a `REJECTED` run with `api_code` and
+    `notes` both null, so this thread cannot produce the record that
+    `[MEDIDO 2026-09-12, n=6 runs REJECTED]` found 6 of 6 of in production -- not because the
+    author remembered, but because the builder does.
+    """
+    state = LiquidationCollectorState()
+    ledger = RetryLedger()
+    clock = _SystemCollectorClock(stop_event)
+    while not stop_event.is_set():
+        run_id = str(uuid.uuid4())
+        started_at = _iso_now()
+        published: list[str] = []
+
+        def _publish(
+            symbol: str,
+            cohort: str,
+            bucket_start_seconds: int,
+            value_raw: str,
+            _run_id: str = run_id,
+            _published: list[str] = published,
+        ) -> None:
+            sink.accept(
+                to_row(_epoch_ms(), symbol, cohort, bucket_start_seconds, value_raw),
+                run_id=_run_id,
+            )
+            _published.append(symbol)
+
+        cycle_from_ms = _epoch_ms() - (DEFAULT_LOOKBACK_SECONDS * 1000)
+        try:
+            result = collect_liquidation_history_once(
+                symbols=symbols,
+                source=source,
+                clock=clock,
+                state=state,
+                recoil=_LIQUIDATION_RECOIL,
+                publish=_publish,
+                ledger=ledger,
+                cycle_seconds=interval_s,
+            )
+        except _PUBLISH_FAILURE_EXCEPTIONS as failure:
+            run = build_liquidation_history_run(
+                started_at=started_at,
+                ended_at=_iso_now(),
+                n_returned=0,
+                n_calls=0,
+                api_code=None,
+                verdict="REJECTED",
+                src_sha256=hashlib.sha256(b"").hexdigest(),
+                run_id=run_id,
+                notes=_failure_note(failure),
+            )
+            record_run(run)
+            logger.error(
+                "collector_cycle_completed %s: %s",
+                LIQUIDATION_HISTORY_ENDPOINT,
+                failure,
+                extra={
+                    "endpoint": LIQUIDATION_HISTORY_ENDPOINT,
+                    "n_published": len(published),
+                    "verdict": "REJECTED",
+                    "run_id": run.run_id,
+                },
+                exc_info=True,
+            )
+            exit_code[0] = 1
+            failure_event.set()
+            return
+        ended_at = _iso_now()
+        verdict: KnownVerdict = "ACCEPTED" if result.notes is None else "ACCEPTED_WITH_WARNING"
+        run = build_liquidation_history_run(
+            started_at=started_at,
+            ended_at=ended_at,
+            n_returned=result.n_returned,
+            n_calls=result.n_calls,
+            api_code=result.api_code,
+            verdict=verdict,
+            src_sha256=result.src_sha256,
+            run_id=run_id,
+            notes=result.notes,
+        )
+        record_run(run)
+        _record_unanswered_gaps(
+            record_gap=record_gap,
+            unanswered=result.unanswered,
+            from_ts=_iso_from_epoch_ms(cycle_from_ms),
+            to_ts=ended_at,
+        )
+        logger.info(
+            "collector_cycle_completed",
+            extra={
+                "endpoint": LIQUIDATION_HISTORY_ENDPOINT,
+                "n_published": result.n_published,
+                "n_returned": result.n_returned,
+                "n_calls": result.n_calls,
+                "n_unanswered": len(result.unanswered),
+                "verdict": verdict,
+                "run_id": run.run_id,
+            },
+        )
+        stop_event.wait(interval_s)
+
+
 def run(
     *,
     config: BootConfig,
@@ -1761,16 +2094,19 @@ def run(
     klines_client_factory: Callable[[], KlinesClient] | None = None,
     open_interest_client_factory: Callable[[], OpenInterestHistoryClient] | None = None,
     long_short_client_factory: Callable[[], LongShortClient] | None = None,
+    liquidation_source_factory: Callable[[], LiquidationHistorySource] | None = None,
     premium_index_to_rows: PremiumIndexReadingToRows | None = None,
     force_order_to_rows: ForceOrderObservationToRows | None = None,
     klines_to_rows: KlinesToRows | None = None,
     open_interest_to_rows: OpenInterestToRows | None = None,
     long_short_to_rows: LongShortToRows | None = None,
+    liquidation_to_row: LiquidationPointToRow | None = None,
     klines_symbols: Sequence[str] | None = None,
     long_short_symbols: Sequence[str] | None = None,
+    liquidation_symbols: Sequence[str] | None = None,
     stop_event: threading.Event | None = None,
 ) -> int:
-    """Start the FIVE collector threads, install `SIGTERM`, and wait for a clean/failed exit.
+    """Start the SIX collector threads, install `SIGTERM`, and wait for a clean/failed exit.
 
     Every network-touching default is injectable, matching every other CLI in this package —
     left to default, `force_order_source_factory` opens a real per-symbol combined `forceOrder`
@@ -1801,9 +2137,17 @@ def run(
     # (`domain/long_short_catalog.py`, `T-04.2`) and there is exactly one construction of it,
     # so there is nothing for `_mapping_not_decided_yet` to protect against here.
     long_short_to_rows_ = long_short_to_rows or build_long_short_to_rows()
+    # Same asymmetry again: `domain/liquidation_catalog.py` (`T-05.3`) decided the identity,
+    # including the `cohort` term it refuses to default, so there is nothing here for
+    # `_mapping_not_decided_yet` to protect against.
+    liquidation_to_row_ = liquidation_to_row or build_liquidation_history_to_row()
+    build_liquidation_source = liquidation_source_factory or _default_liquidation_source
     klines_symbols_ = sorted(INITIAL_SYMBOLS) if klines_symbols is None else klines_symbols
     long_short_symbols_ = (
         sorted(INITIAL_SYMBOLS) if long_short_symbols is None else long_short_symbols
+    )
+    liquidation_symbols_ = (
+        sorted(INITIAL_SYMBOLS) if liquidation_symbols is None else liquidation_symbols
     )
 
     sink = RedisStreamSeriesSink(connection, config.redis_stream, config.redis_stream_maxlen)
@@ -1922,12 +2266,34 @@ def run(
             "interval_s": config.long_short_cycle_interval_s,
         },
     )
+    liquidation_thread = threading.Thread(
+        target=_supervised(
+            _run_liquidation_collector,
+            thread_name="collector-liquidation",
+            failure_event=failure,
+            exit_code=exit_code,
+        ),
+        name="collector-liquidation",
+        kwargs={
+            "stop_event": stop,
+            "failure_event": failure,
+            "exit_code": exit_code,
+            "source": build_liquidation_source(),
+            "sink": sink,
+            "to_row": liquidation_to_row_,
+            "record_run": store.record_run,
+            "record_gap": store.record_gap,
+            "symbols": liquidation_symbols_,
+            "interval_s": config.liquidation_cycle_interval_s,
+        },
+    )
     try:
         force_order_thread.start()
         premium_index_thread.start()
         klines_thread.start()
         open_interest_thread.start()
         long_short_thread.start()
+        liquidation_thread.start()
         while not stop.is_set() and not failure.is_set():
             time.sleep(_MAIN_LOOP_POLL_S)
         if failure.is_set() and not stop.is_set():
@@ -1943,6 +2309,7 @@ def run(
         klines_thread.join(timeout=_JOIN_TIMEOUT_S)
         open_interest_thread.join(timeout=_JOIN_TIMEOUT_S)
         long_short_thread.join(timeout=_JOIN_TIMEOUT_S)
+        liquidation_thread.join(timeout=_JOIN_TIMEOUT_S)
     finally:
         signal.signal(signal.SIGTERM, previous_handler)
     return exit_code[0]

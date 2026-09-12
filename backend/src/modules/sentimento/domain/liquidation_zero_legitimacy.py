@@ -153,8 +153,25 @@ def _parse_quantity(point: SidePoint) -> Decimal:
     return quantity
 
 
-def classify_side_points(points: Sequence[SidePoint]) -> tuple[ClassifiedSidePoint, ...]:
+def classify_side_points(
+    points: Sequence[SidePoint], *, seen_nonzero: bool = False
+) -> tuple[ClassifiedSidePoint, ...]:
     """ZL-2/ZL-3: convert zero-before-the-first-non-zero into `NO_SOURCE`; leave later zeros alone.
+
+    `seen_nonzero` carries what THIS SIDE already proved BEFORE the window in `points`, and it
+    exists for `T-05.5`'s regime collector (`use_cases/collect_liquidation_history.py`), which
+    calls this once per cycle over a short trailing window rather than once over the whole
+    history. Without it, "this side has never been observed operating" would be re-decided from
+    scratch every five minutes: a side that reported a real non-zero an hour ago and is quiet
+    now would have its legitimate ZL-3 zeros demoted back to `NO_SOURCE` on every cycle, and the
+    same bucket would be a value or an absence depending only on where the window happened to
+    start. Defaulting to `False` keeps every existing caller — which does see the whole
+    sequence — reading exactly as before.
+
+    ⚠️ IT ONLY EVER PROMOTES. Passing `True` cannot turn a value into an absence; it can only
+    let a zero be the legitimate zero ZL-3 already describes. The caller owes the truth of the
+    flag, and `T-05.5` gets it from the one place that can know: whether THIS PROCESS has
+    published a non-zero for this `(symbol, side)` since it started.
 
     `points` MUST already be in strictly increasing `event_time` order FOR THIS SIDE — this
     function never sorts, because sorting would silently accept two sides' points merged into
@@ -172,7 +189,6 @@ def classify_side_points(points: Sequence[SidePoint]) -> tuple[ClassifiedSidePoi
       happened in this bucket" and must be carried as a value, never folded into `NO_SOURCE`.
     """
     classified: list[ClassifiedSidePoint] = []
-    seen_nonzero = False
     previous_time: int | None = None
     for point in points:
         if previous_time is not None and point.event_time <= previous_time:

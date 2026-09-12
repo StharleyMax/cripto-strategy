@@ -105,6 +105,8 @@ from src.modules.sentimento.domain.funding_settlement import FundingSource
 from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.kline_cvd import kline_cvd_delta
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
+from src.modules.sentimento.domain.liquidation_catalog import coinalyze_liquidation_key
+from src.modules.sentimento.domain.liquidation_collection import LIQUIDATION_BUCKET_MS
 from src.modules.sentimento.domain.long_short_catalog import count_long_short_ratio_key
 from src.modules.sentimento.domain.open_interest_catalog import binance_open_interest_key
 from src.modules.sentimento.domain.premium_index_batch import (
@@ -129,6 +131,8 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_OBSERVER_ID,
     KLINES_ENDPOINT,
     KLINES_OBSERVER_ID,
+    LIQUIDATION_HISTORY_ENDPOINT,
+    LIQUIDATION_OBSERVER_ID,
     LONG_SHORT_ENDPOINT,
     LONG_SHORT_OBSERVER_ID,
     OPEN_INTEREST_HIST_ENDPOINT,
@@ -837,3 +841,74 @@ def build_long_short_to_rows(
         return tuple(rows)
 
     return _to_rows
+
+
+# ── THE SIXTH PRODUCER: Coinalyze `liquidation-history`, TWO ROWS PER BUCKET (`T-05.5`) ─────
+
+# One `SeriesRow` from one settled bucket of one cohort. `cohort` travels as an argument and not
+# as two separate builders because it is a TERM OF THE IDENTITY (`coinalyze_liquidation_key`
+# refuses to default it), and a caller that picked the wrong builder would be indistinguishable
+# from one that picked the right one.
+LiquidationPointToRow = Callable[[int, str, str, int, str], SeriesRow]
+
+
+class UnknownLiquidationSymbolError(Exception):
+    """A row was asked for a symbol outside the configured universe (`T-05.5`)."""
+
+
+def build_liquidation_history_to_row(
+    *,
+    symbols: frozenset[str] = INITIAL_SYMBOLS,
+) -> LiquidationPointToRow:
+    """Build the mapper from one settled `(symbol, cohort, bucket start, raw value)` to a row.
+
+    ── `bucket_end = (t + 60 s)`, AND `label_shift` IS NOT APPLIED HERE ───────────────────
+
+    Coinalyze's `t` is the bucket's START — measured, not assumed: at 14:14Z the `daily` series
+    already carried `t = 2026-09-12T00:00:00Z` for a day that had not ended, and a bucket-END
+    convention cannot emit a label for a bucket that has not closed
+    `[MEDIDO 2026-09-12, gates/retencao-liquidation-history.md, n=5 intervalos]`. The canonical
+    grid is end-labelled, so the writer adds the bucket width to reach it — exactly what
+    `klines_volume` does with its own `openTime`, and exactly what `open_interest_bucket_end`'s
+    warning says a writer must NOT confuse with `SeriesKey.label_shift`, which is a term of the
+    fifteen-term identity `sha256` and never a transform any writer runs.
+
+    ── `is_final=True`, AND IT IS EARNED BY THE CALLER, NOT ASSUMED HERE ──────────────────
+
+    Only SETTLED buckets reach this function (`RS-3.4`, `is_settled_bucket`): the newest bucket
+    of every response is partial by construction and is dropped before this point. So a row
+    built here is final — and the assertion is safe only because the refusal happens upstream,
+    which is why that refusal has its own falsifier rather than living in a comment.
+
+    A symbol outside `symbols` returns nothing to publish — same guard the other builders carry,
+    so a universe change is one constant and not five call sites.
+    """
+
+    def _to_row(
+        received_at: int, symbol: str, cohort: str, bucket_start_seconds: int, value_raw: str
+    ) -> SeriesRow:
+        if symbol not in symbols:
+            raise UnknownLiquidationSymbolError(
+                f"symbol {symbol!r} is outside the configured universe {sorted(symbols)!r}: a "
+                f"row built for it would carry an identity nothing in the catalog serves"
+            )
+        bucket_end = (bucket_start_seconds * 1000) + LIQUIDATION_BUCKET_MS
+        return SeriesRow(
+            series_key_id=coinalyze_liquidation_key(cohort, instrument_id=symbol).series_key_id(),
+            symbol=symbol,
+            source=LIQUIDATION_HISTORY_ENDPOINT,
+            bucket_end=bucket_end,
+            event_time=bucket_end,
+            available_at=received_at,
+            availability_source=AvailabilitySource.OBSERVED,
+            ingested_at=received_at,
+            observed_at=received_at,
+            provenance=Provenance.OBSERVED,
+            src_label_raw=LIQUIDATION_HISTORY_ENDPOINT,
+            observer_id=LIQUIDATION_OBSERVER_ID,
+            observer_region=UNKNOWN_OBSERVER_REGION,
+            is_final=True,
+            value_raw=value_raw,
+        )
+
+    return _to_row
