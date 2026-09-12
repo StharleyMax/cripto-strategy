@@ -129,15 +129,52 @@ export function sentimentoApiBaseUrl(): string {
  * which turned two green specs red without either of them touching the subject they test. This
  * feature adds metrics by design, so a literal here is a scheduled false failure. */
 export async function seriesCatalogEntryCount(): Promise<number> {
+  return (await fetchSeriesCatalog()).n_entries;
+}
+
+/** One `GET /series-catalog`, parsed and shape-checked once, for the two helpers above/below.
+ *
+ * `entries` is validated here and not only `n_entries` because the second helper COUNTS over
+ * it: an envelope that still carries a numeric `n_entries` but no array would otherwise make
+ * `seriesCatalogMetricRowCount` answer `0` — a number that reads like a measurement and is in
+ * fact the absence of one. */
+async function fetchSeriesCatalog(): Promise<SeriesCatalogEnvelope> {
   const response = await fetch(`${sentimentoApiBaseUrl()}/series-catalog`);
   if (!response.ok) {
     throw new Error(`GET /series-catalog: HTTP ${response.status} — the read API under test did not answer`);
   }
-  const body = (await response.json()) as { n_entries?: number };
+  const body = (await response.json()) as { n_entries?: unknown; entries?: unknown };
   if (typeof body.n_entries !== "number") {
     throw new Error('GET /series-catalog answered without a numeric "n_entries" — the wire contract changed');
   }
-  return body.n_entries;
+  if (!Array.isArray(body.entries)) {
+    throw new Error('GET /series-catalog answered without an "entries" array — the wire contract changed');
+  }
+  return { n_entries: body.n_entries, entries: body.entries as SeriesCatalogWireEntry[] };
+}
+
+interface SeriesCatalogWireEntry {
+  readonly key?: { readonly metric?: unknown };
+}
+
+interface SeriesCatalogEnvelope {
+  readonly n_entries: number;
+  readonly entries: readonly SeriesCatalogWireEntry[];
+}
+
+/** How many rows `GET /series-catalog` publishes for ONE `key.metric` — the subtotal a filter
+ * spec needs, measured from the same envelope the page under test renders.
+ *
+ * ⚠️ WHY THIS EXISTS, and it is the same lesson `seriesCatalogEntryCount` above already paid
+ * for, one axis over: `04-interacoes.spec.ts` kept the TOTAL derived from the API and left the
+ * MATCHING subtotal typed in as `5`. That literal was true while the served catalog described
+ * ONE instrument; `list_pilot_series_catalog` (`series_catalog.py`) now concatenates FOUR
+ * (`INITIAL_SYMBOLS`), so the same five open-interest rows are served four times over and the
+ * spec asked for a quarter of what exists. A filter spec must not carry the catalog's SIZE in
+ * it — neither the total nor any subtotal of it. */
+export async function seriesCatalogMetricRowCount(metric: string): Promise<number> {
+  const { entries } = await fetchSeriesCatalog();
+  return entries.filter((entry) => entry.key?.metric === metric).length;
 }
 
 // ── UM SEGUNDO `next start`, e um STUB HTTP — B3/B4/B5/B6/D1.5(b) (`SPEC-003` §5) ────────────
