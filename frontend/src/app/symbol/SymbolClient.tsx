@@ -73,7 +73,7 @@ import {
 } from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
-import type { PanelStatus, SymbolPanelStatuses } from "./panel-status.ts";
+import type { FreshnessVerdict, PanelStatus, SymbolPanelStatuses } from "./panel-status.ts";
 
 /** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
  * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
@@ -129,10 +129,48 @@ export interface CvdPaneData {
   readonly anchorMs: number;
 }
 
+/**
+ * `T-03.5` — everything the OI pane DECLARES about itself beyond `panels.oi`, computed
+ * server-side (`page.tsx`) and handed over as plain data, same RSC-boundary discipline as
+ * `volume`/`cvd`. This component draws it; it decides nothing about it.
+ */
+export interface OiPaneData {
+  /** ⛔ NATIVE 5-MINUTE BUCKETS carrying a real value — the number `DoD-3` counts against
+   * `N >= 30`, and the `RN-S1` divisor paid in the TYPE instead of in a `/5`.
+   *
+   * `page.tsx` derives it from `panels.oi.slots`, which is the 5-minute canonical grid
+   * (`buildOiPanel`, `FIVE_MINUTES_MS`) — one slot per native bucket. It is NOT the count of
+   * readable wire rows: the route serves this `5m` series on the `1m` grid (`GA-2`), so one
+   * native bucket appears as up to five rows and that count runs ~5x high. */
+  readonly nativeBars: number;
+  /** The STAIRCASE count — readable rows on the `1m` wire grid, i.e. the number `nativeBars`
+   * would have been if nobody applied `RN-S1`. On screen beside it, and never quoted as the
+   * amount of data: it is here so the ratio is visible and so `e2e/12-oi-dado-real.spec.ts` can
+   * assert that the pane publishes the OTHER one. A falsifier needs both figures. */
+  readonly wirePoints: number;
+  /** Left end of the readable horizon (first native bucket with a value), `null` when none —
+   * same measured reason as `VolumeSubAxisData.firstPresentMs`, and OI has it worse: over the
+   * 4-day window the backfilled rows carry `available_at = the instant we fetched them`, so
+   * `as_of` correctly refuses them at their own grid instant
+   * (`ACHADO-BACKFILL-INVISIVEL-AO-AS-OF.md`). ⛔ The span is NOT shrunk to fit the data. */
+  readonly firstPresentMs: number | null;
+  /** Right end of the same horizon — the input of the `RNF-2` verdict below, on screen so the
+   * age the pane claims can be recomputed from the instant it was computed against. */
+  readonly lastPresentMs: number | null;
+  /** `RNF-2`'s ceiling: the catalog's OWN `max_staleness_ms` for this series (`600_000` = 2 x
+   * the `5m` native bucket), already served in every `GET /series-catalog` row. `null` when the
+   * panel resolved no entry. */
+  readonly maxStalenessMs: number | null;
+  /** `RNF-2` — whether the newest readable point is past that ceiling. The pane must not show a
+   * number older than the series' own periodicity without SAYING it is old. */
+  readonly freshness: FreshnessVerdict;
+}
+
 export interface SymbolClientProps {
   readonly panels: S2Panels;
   readonly volume: VolumeSubAxisData;
   readonly cvd: CvdPaneData;
+  readonly oi: OiPaneData;
   readonly panelStatus: SymbolPanelStatuses;
   /** `knowledge_time_ms` of the request this render was built from (`request-window.ts`). Shown
    * nowhere; carried to the DOM as a `data-` attribute so the screen can be AUDITED against the
@@ -144,6 +182,10 @@ export interface SymbolClientProps {
 
 const ABSENCE_REASON_LABEL: Record<Exclude<PanelStatus, { kind: "ok" }>["reason"], string> = {
   not_in_catalog: "sem série cadastrada no catálogo",
+  // `T-03.5`: the catalog answered with MORE THAN ONE candidate and the route refuses to choose
+  // by position. Said on screen because the alternative — drawing whichever row came first — is
+  // the defect that put this panel on an empty series for a whole phase.
+  ambiguous_in_catalog: "o catálogo tem mais de uma série candidata e a escolha seria por posição",
   missing_base_url: "configuração de API ausente",
   connection_refused: "API de leitura inacessível",
   non_2xx: "API respondeu com erro",
@@ -241,6 +283,12 @@ const VOLUME_SUBAXIS_TESTID = "price-pane-volume-subaxis";
 // without touching either string. `section[aria-label="CVD"]` is NOT used as the handle: the
 // label is user-visible pt-BR microcopy, and selecting by text of UI is what `T-02.6` forbids.
 const CVD_PANE_TESTID = "cvd-pane";
+
+// ⛔ AND THE SAME CONTRACT FOR THE OI PANE (`T-03.5`): `e2e/12-oi-dado-real.spec.ts` finds it by
+// THIS string. `section[aria-label="Open Interest"]` is NOT the handle — that label is
+// user-visible pt-BR microcopy the `design_gate` may restyle or reword, and selecting a DATA
+// assertion by the TEXT OF UI is what makes a form change break a data test.
+const OI_PANE_TESTID = "oi-pane";
 
 /** `RN-1`'s literal token: absence is `SEM_PONTO`, and for a `FLOW` series rendering it as `0`
  * is an error of TYPE, not of taste. `DoD-3` asserts this exact string's ABSENCE from the CVD
@@ -414,7 +462,90 @@ function PricePane({
   );
 }
 
-function OiPane({ panels, status }: { readonly panels: S2Panels; readonly status: PanelStatus }) {
+/** The readable horizon of the OI pane — the same two numbers and one instant the other two
+ * panes declare, over the OI pane's own NATIVE 5-minute grid.
+ *
+ * ⛔ THE DENOMINATOR IS THE NATIVE GRID, NOT THE WIRE GRID, and the difference is the whole
+ * `RN-S1` point: `panels.oi.slots` has one slot per 5-minute bucket of the window (1.152 over 4
+ * days), while the route answered 5.761 rows on the 1-minute grid. Writing `N/5761` here would
+ * be the staircase wearing the costume of a measurement.
+ *
+ * Written out rather than shared with `ReadableHorizon`/`CvdReadableHorizon` for the reason that
+ * one already states in full: the literal `data-fact` expressions are pinned, character for
+ * character, by three different contract tests, and merging them into one parameterized
+ * component is how a refactor silently re-points somebody else's falsifier. */
+function OiReadableHorizon({ oi, gridSlots }: { readonly oi: OiPaneData; readonly gridSlots: number }) {
+  const sinceText =
+    oi.firstPresentMs === null
+      ? "Nenhuma grade legível no período"
+      : `Dado legível desde ${formatUtcMinute(oi.firstPresentMs)}`;
+  return (
+    <p
+      data-fact={`oi_readable_horizon:${oi.nativeBars}/${gridSlots}`}
+      data-readable-since-ms={oi.firstPresentMs ?? ""}
+      className="text-sm text-provenance-weak"
+    >
+      {sinceText} — {oi.nativeBars}/{gridSlots} barras nativas de 5 min na janela.
+    </p>
+  );
+}
+
+/**
+ * `RNF-2` — THE PANE DOES NOT SHOW A NUMBER OLDER THAN THE SERIES' OWN PERIODICITY WITHOUT
+ * SAYING SO.
+ *
+ * The ceiling is `max_staleness_ms` from the catalog row this panel resolved (`600_000` for open
+ * interest = 2 x the `5m` native bucket) — already served, not invented, and the SAME number
+ * `as_of` applied server-side. No route changed form for this (`RF-5`).
+ *
+ * ⚠️ WHY THIS IS NOT REDUNDANT WITH `formatHeldStockLabel` ON THE READOUT ABOVE IT, which also
+ * says "held since": that label only exists while `resolveStockReading` still HAS a value to
+ * hold — at most one native bucket back (`s2-absence-policy.ts` §5.11). Past that the readout
+ * goes to `SEM_PONTO` and says nothing at all about WHEN the data stopped. This line covers the
+ * whole range, including the state the readout cannot describe: "a última leitura desta série é
+ * de 6 horas atrás", which is exactly the thing an operator must not have to infer from a flat
+ * line. `unknown` prints as ignorance, never as freshness.
+ *
+ * ⛔ WORDING AND PLACEMENT ARE FORM — the `ui-designer`'s, with the `ux-ui-mastery` verdict
+ * (`CLAUDE.md` §"Design — autonomia delegada, com gate de validação"). What a builder decides,
+ * and all that is decided here, is that the FACT is on screen and machine-readable.
+ */
+function OiFreshness({ oi }: { readonly oi: OiPaneData }) {
+  const { freshness } = oi;
+  const text =
+    freshness.kind === "unknown"
+      ? "Frescor não avaliável — nenhuma leitura nesta janela."
+      : `Última leitura há ${formatMinutes(freshness.ageMs)} (teto desta série: ${formatMinutes(freshness.ceilingMs)}).` +
+        (freshness.kind === "stale" ? " ⚠️ Mais velha que o teto — o valor acima é DADO VELHO." : "");
+  return (
+    <p
+      role={freshness.kind === "stale" ? "status" : undefined}
+      data-fact={`oi_freshness:${freshness.kind}`}
+      data-freshness-age-ms={freshness.ageMs ?? ""}
+      data-freshness-ceiling-ms={freshness.ceilingMs ?? ""}
+      data-freshness-observed-ms={freshness.observedMs ?? ""}
+      className="text-sm text-provenance-weak"
+    >
+      {text}
+    </p>
+  );
+}
+
+/** Whole minutes, pt-BR, from a millisecond span — presentation of a number this component was
+ * handed, never a recomputation of it (the `data-` attributes beside it carry the raw ms). */
+function formatMinutes(spanMs: number): string {
+  return `${Math.round(spanMs / 60_000)} min`;
+}
+
+function OiPane({
+  panels,
+  status,
+  oi,
+}: {
+  readonly panels: S2Panels;
+  readonly status: PanelStatus;
+  readonly oi: OiPaneData;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, (chart) => {
     const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
@@ -424,17 +555,32 @@ function OiPane({ panels, status }: { readonly panels: S2Panels; readonly status
   const reading = resolveStockReading(panels.oi.slots, panels.oi.timeframeMs, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
-      ? "SEM_PONTO"
+      ? ABSENCE_TOKEN
       : reading.kind === "held"
         ? `${reading.value} (${formatHeldStockLabel(reading)})`
         : String(reading.value);
   return (
-    <section aria-label="Open Interest">
-      <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest</h2>
+    <section
+      aria-label="Open Interest"
+      // ⛔ THE STABLE SELECTOR (`T-03.5`), and the same KIND of contract `VOLUME_SUBAXIS_TESTID`
+      // and `CVD_PANE_TESTID` already are: `e2e/12-oi-dado-real.spec.ts` finds this pane by THIS
+      // string and reads `data-oi-native-bars` off it. Form may change without touching either.
+      data-testid={OI_PANE_TESTID}
+      // ⛔ THE TWO NUMBERS, SIDE BY SIDE, AND ONLY ONE OF THEM IS "QUANTO DADO EXISTE".
+      // `data-oi-native-bars` is the count of 5-minute NATIVE buckets with a value — `DoD-3`'s
+      // `N >= 30`. `data-oi-wire-points` is the staircase: readable rows on the 1-minute grid the
+      // route serves (`GA-2`), ~5x larger for the same data. Both are published so the ratio is
+      // checkable from outside; the e2e asserts the pane's headline number is the FIRST one.
+      data-oi-native-bars={oi.nativeBars}
+      data-oi-wire-points={oi.wirePoints}
+    >
+      <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest (5m)</h2>
       <div ref={containerRef} data-fact={`oi_slots:${panels.oi.slots.length}`} />
       <p data-fact={`oi_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
         Leitura atual: {readingText}
       </p>
+      <OiFreshness oi={oi} />
+      <OiReadableHorizon oi={oi} gridSlots={panels.oi.slots.length} />
       <AbsenceNote status={status} />
     </section>
   );
@@ -643,7 +789,7 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
   );
 }
 
-export function SymbolClient({ panels, volume, cvd, panelStatus, knowledgeTimeMs, liveUrls }: SymbolClientProps) {
+export function SymbolClient({ panels, volume, cvd, oi, panelStatus, knowledgeTimeMs, liveUrls }: SymbolClientProps) {
   return (
     // The three instants of the request this render was built from, on the root element: the
     // screen declares WHAT IT ASKED, so an assertion (or an operator) can re-issue exactly that
@@ -655,7 +801,7 @@ export function SymbolClient({ panels, volume, cvd, panelStatus, knowledgeTimeMs
     >
       <h1 className="sr-only">{panels.symbol} — Preço (com volume), Open Interest e CVD</h1>
       <PricePane panels={panels} status={panelStatus.price} volume={volume} volumeStatus={panelStatus.volume} />
-      <OiPane panels={panels} status={panelStatus.oi} />
+      <OiPane panels={panels} status={panelStatus.oi} oi={oi} />
       <CvdPane panels={panels} status={panelStatus.cvd} cvd={cvd} />
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>

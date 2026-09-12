@@ -34,8 +34,10 @@ import {
   daysWithPresence,
   InvalidSeriesValueError,
   keyMatchesSymbol,
+  lastPresentSlotMs,
   parseSignedDecimalToScaled,
   rawCandlesFromHistoryRows,
+  resolveFreshnessVerdict,
   resolveVolumeReading,
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
@@ -284,4 +286,130 @@ test("volumeSlotsFromHistoryRows refuses a malformed value instead of hiding it 
     { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "-1", absence: null },
   ];
   assert.throws(() => volumeSlotsFromHistoryRows(negative), InvalidSeriesValueError);
+});
+
+// ── `T-03.5` — THE `RN-S1` DIVISOR, AND `RNF-2` ─────────────────────────────────────────────
+//
+// `GA-2`: `/series-history` serves this `5m` series on the `1m` grid — it walks the minute grid
+// and asks `as_of` at each instant (`series_history.py`, `grid_instant += _GRID_STEP_MS`), so ONE
+// native bucket comes back as up to FIVE readable rows. The staircase is not a bug; counting it
+// as data is.
+
+/** `n` native 5-minute buckets, each one appearing as the FIVE consecutive 1-minute rows the
+ * route really serves — the staircase, built from a single value per native bucket so the two
+ * countings (wire rows vs native buckets) are unambiguous by construction. */
+function ladderRows(nativeBars: number, startMs: number): readonly SeriesHistoryRow[] {
+  const rows: SeriesHistoryRow[] = [];
+  for (let bar = 0; bar < nativeBars; bar += 1) {
+    const bucketStartMs = startMs + bar * FIVE_MINUTES_MS;
+    for (let step = 0; step < 5; step += 1) {
+      rows.push({
+        event_time: bucketStartMs + step * ONE_MINUTE_MS,
+        available_at: bucketStartMs,
+        // The SAME value five times: that is what a held reading of one observation IS.
+        value: String(1000 + bar),
+        absence: null,
+      });
+    }
+  }
+  return rows;
+}
+
+test("RN-S1: 30 native buckets arrive as 150 readable rows, and the OI panel counts 30", () => {
+  const nativeBars = 30;
+  const rows = ladderRows(nativeBars, RANGE_START_MS);
+  // The number `DoD-3` would have read if nobody applied the divisor — five times the data.
+  assert.equal(rows.filter((row) => row.value !== null).length, 150, "sanity: the wire carries the staircase");
+
+  // ⛔ NO `/5` IS WRITTEN ANYWHERE. `scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS)` keeps
+  // only the rows landing ON the 5-minute grid, and `buildOiPanel` aligns them to a 5-minute
+  // canonical grid — so the panel's slots ARE native buckets and counting them is exact.
+  const points = scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS);
+  assert.equal(points.length, nativeBars, "one point per native bucket, not per wire row");
+
+  const panels = buildS2Panels({
+    window: FIXTURE_WINDOW,
+    candles: [],
+    priceUse: S2_PRICE_USE,
+    oiPoints: points,
+    oiMissingDays: [],
+    cvdDeltas: [],
+    cvdMissingDays: [],
+    cvdCoveredDays: [],
+  });
+  assert.equal(countPresentSlots(panels.oi.slots), nativeBars, "`DoD-3`'s N is the native count");
+  // MORDE — the forbidden reading, computed here so the two numbers can be compared instead of
+  // asserted apart in prose: reading `N` off the wire rows says 150 where the data is 30. A pane
+  // that published THAT number would pass `N >= 30` with six real buckets.
+  const staircaseCount = rows.filter((row) => row.value !== null).length;
+  assert.equal(staircaseCount, 5 * nativeBars);
+  assert.notEqual(countPresentSlots(panels.oi.slots), staircaseCount);
+});
+
+test("RN-S1: two ADJACENT native buckets carrying the SAME value are TWO buckets, not one", () => {
+  // The failure mode of the "count distinct consecutive values" shortcut, which is the other
+  // tempting way to undo the staircase. Open interest is a STOCK: it genuinely repeats.
+  const rows: readonly SeriesHistoryRow[] = [
+    { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "70000", absence: null },
+    { event_time: RANGE_START_MS + FIVE_MINUTES_MS, available_at: RANGE_START_MS, value: "70000", absence: null },
+  ];
+  const points = scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS);
+  assert.equal(points.length, 2, "identical values at two grid instants are two observations");
+  const distinctValues = new Set(points.map((point) => point.value)).size;
+  assert.equal(distinctValues, 1, "sanity: the shortcut would answer 1 here");
+});
+
+test("lastPresentSlotMs: the RIGHT end of the readable horizon, and null when nothing is readable", () => {
+  const slots = [
+    { time: RANGE_START_MS, value: 1 },
+    { time: RANGE_START_MS + FIVE_MINUTES_MS, value: null },
+    { time: RANGE_START_MS + 2 * FIVE_MINUTES_MS, value: 3 },
+    { time: RANGE_START_MS + 3 * FIVE_MINUTES_MS, value: null },
+  ];
+  assert.equal(lastPresentSlotMs(slots), RANGE_START_MS + 2 * FIVE_MINUTES_MS, "trailing gaps do not move it");
+  assert.equal(lastPresentSlotMs([]), null);
+  assert.equal(
+    lastPresentSlotMs(slots.map((slot) => ({ ...slot, value: null }))),
+    null,
+    "nothing readable answers null — `0` would name the epoch as the last reading",
+  );
+});
+
+test("RNF-2: a reading older than the series' own ceiling is called STALE, and the ceiling is the served one", () => {
+  const ceilingMs = 600_000; // `max_staleness_ms` of open interest — 2 x the 5m native bucket.
+  const slots = [
+    { time: RANGE_START_MS, value: 70_000 },
+    { time: RANGE_START_MS + FIVE_MINUTES_MS, value: null },
+  ];
+  const fresh = resolveFreshnessVerdict(slots, RANGE_START_MS + 4 * ONE_MINUTE_MS, ceilingMs);
+  assert.equal(fresh.kind, "fresh", "4 min is grid rounding on a 5m series, not staleness");
+  assert.equal(fresh.ageMs, 4 * ONE_MINUTE_MS);
+
+  // Exactly AT the ceiling is still fresh; one millisecond past it is not. Stated as two asserts
+  // because "> vs >=" is precisely the kind of boundary a rewrite flips without noticing.
+  assert.equal(resolveFreshnessVerdict(slots, RANGE_START_MS + ceilingMs, ceilingMs).kind, "fresh");
+  const stale = resolveFreshnessVerdict(slots, RANGE_START_MS + ceilingMs + 1, ceilingMs);
+  assert.equal(stale.kind, "stale");
+  assert.equal(stale.observedMs, RANGE_START_MS, "the verdict carries the instant it judged");
+  assert.equal(stale.ceilingMs, ceilingMs, "and the ceiling it judged against — both auditable");
+
+  // Six hours old: the state `formatHeldStockLabel` CANNOT describe (`resolveStockReading` holds
+  // at most one native bucket and then says `SEM_PONTO`, saying nothing about WHEN). This is the
+  // gap `RNF-2` exists to close.
+  assert.equal(resolveFreshnessVerdict(slots, RANGE_START_MS + 6 * 3_600_000, ceilingMs).kind, "stale");
+});
+
+test("RNF-2: ignorance is never rendered as freshness — no point and no ceiling both answer unknown", () => {
+  const ceilingMs = 600_000;
+  assert.equal(resolveFreshnessVerdict([], RANGE_START_MS, ceilingMs).kind, "unknown", "no readable point");
+  assert.equal(
+    resolveFreshnessVerdict([{ time: RANGE_START_MS, value: null }], RANGE_START_MS, ceilingMs).kind,
+    "unknown",
+    "a window of pure absence is ignorance, not a fresh zero",
+  );
+  // No entry resolved ⇒ no ceiling published ⇒ the panel may not claim the data is current. A
+  // `?? 600_000` default here would be a freshness claim invented by the renderer.
+  const noCeiling = resolveFreshnessVerdict([{ time: RANGE_START_MS, value: 1 }], RANGE_START_MS, null);
+  assert.equal(noCeiling.kind, "unknown");
+  assert.equal(noCeiling.ageMs, null, "and it publishes no age either — there is nothing to compare");
 });
