@@ -395,9 +395,7 @@ def _collect_one_symbol(
             # Two wrong facts from one missing comparison, both silent. Not a retry: the
             # response is well formed and a second call would spend another blind-bucket unit
             # to ask the same question. `answered = False` already routes it to the gap.
-            outcome.note = (
-                f"{binance_symbol}: body named {','.join(named)}, not {coinalyze_symbol}"
-            )
+            outcome.note = f"{binance_symbol}: body named {','.join(named)}, not {coinalyze_symbol}"
             return outcome
         outcome.n_returned = len(points)
         outcome.n_published = _publish_settled_points(
