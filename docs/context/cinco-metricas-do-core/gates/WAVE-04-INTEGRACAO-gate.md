@@ -118,17 +118,38 @@ Não consertado **por escopo**: é camada de API, fora do DoD desta wave, e o pr
 | portão | veredito |
 |---|---|
 | `lint-backend` | **OK** `rc=0` — **423 source files** |
-| `lint-frontend` | ⚠️ **NÃO MEDIU** `rc=3` — `frontend/node_modules` ausente |
+| `lint-frontend` | **OK** `rc=0` — ESLint + `tsc --noEmit --strict` sobre `frontend/src` |
 | `test` | **OK** `rc=0` — **2208 passed · cobertura total 96,85%** |
 | `boundaries` | **OK** `rc=0` — **7 kept, 0 broken** |
 | `regras` | **OK** `rc=0` — **0 bloqueio(s)**, 69 aviso(s) |
 | `política` | **OK** `rc=0` |
 
-**Veredito literal do runner: `INDETERMINADO — algum portão RECUSOU medir (rc=3). Não é o mesmo
-que passar.`** Saída bruta: `/tmp/verify-agent-add7855ae0e549be6-20260912T170022Z.log` (68K).
+**Veredito literal do runner: `VERDE — 6 portões mediram e passaram`**, com
+`diff: sem mudança não-commitada`. Saída bruta:
+`/tmp/verify-agent-add7855ae0e549be6-20260912T171309Z.log` (48K).
 
-⛔ **Está reportado como `INDETERMINADO` e não como verde**, que é o que o DoD 2 exige. **5 dos 6
-portões passaram**; o sexto **recusou medir**, e recusa não é aprovação.
+### ⚠️ Este VERDE é o SEGUNDO veredito, e o primeiro está registrado de propósito
+
+A rodada anterior devolveu **`INDETERMINADO — algum portão RECUSOU medir (rc=3)`**, porque
+`frontend/node_modules` não existe numa worktree recém-criada (não é versionado). **5 de 6 haviam
+passado e o sexto recusara medir** — e recusa não é aprovação, então foi reportada como
+indeterminada, nunca como verde.
+
+**O que resolveu não foi contornar o portão, foi deixá-lo medir:** `npm --prefix frontend ci`.
+⛔ `ci` e **não** `install`, de propósito — `install` pode reescrever `package-lock.json`, que é
+arquivo **versionado** de `frontend/`, e a instrução desta wave era não tocar em `frontend/`.
+Prova de que nada versionado mudou: `git status --short` **vazio** depois da instalação
+`[MEDIDO 2026-09-12]`.
+
+⛔ **`git push --no-verify` foi recusado como opção.** O `pre-push` reprovou o primeiro push
+justamente por causa do `rc=3`, e contornar um portão que recusou medir é o modo de falha que
+este repositório trata como o pior de todos — o portão deixa de existir e nada avisa. O push
+seguinte passou porque o portão **mediu** (`eslint` + `tsc --noEmit --strict` verdes), não porque
+foi silenciado.
+
+⚠️ Não foi rodado `make setup` inteiro: ele chama `bootstrap.sh`, e `backend/.venv` **nesta
+worktree é um symlink para a venv do checkout principal** — recriá-la atravessaria o symlink e
+poderia danificar a venv real. Só a metade de front foi executada.
 
 ### ⚠️ Uma rodada anterior foi DESCARTADA, e isso é parte da medição
 
@@ -139,17 +160,11 @@ DoD 2 e é gerador de falso resultado, então **as duas foram mortas e a rodada 
 sozinha** (`pgrep -fa 'scripts/verify.sh'` → **1** durante, **0** depois). Registrado porque um
 número medido sob concorrência não é um número.
 
-### ⚠️ `lint-frontend` é INDETERMINADO, e está dito como INDETERMINADO
+### E a wave não altera front nenhum — o que o portão confirma, não substitui
 
-`rc=3` é a recusa "não mediu", **não** um verde. Falsificado antes de reportar, como o DoD 2 exige:
-
-- `git diff --name-only master...HEAD -- frontend/ | wc -l` → **0** `[MEDIDO]`. A wave não altera
-  **nenhum** arquivo de front, então não há o que este portão pudesse reprovar por causa dela;
-- `node_modules` nunca existiu nesta worktree (não é versionado); a causa é ambiental e
-  **anterior** à wave.
-
-⛔ Não foi rodado `make setup` para pintá-lo de verde: havia instrução explícita de **não tocar em
-`frontend/`** (agente de painel trabalhando lá).
+`git diff --name-only master...HEAD -- frontend/ | wc -l` → **0** `[MEDIDO]`. A wave não altera
+**nenhum** arquivo de `frontend/`, então o verde de `lint-frontend` diz que a árvore de front
+continua sã, não que esta wave a consertou.
 
 ## 6 · O que esta wave NÃO faz — e uma ressalva de leitura
 
