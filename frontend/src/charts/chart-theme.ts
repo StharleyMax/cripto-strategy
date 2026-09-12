@@ -22,14 +22,22 @@
  * the other two cannot see:
  *
  *   1. `color-contrast.test.ts` no longer measures against `SURFACE_BASE` directly: its
- *      `kind: "surface"` backdrop is `chartSurfaceTheme().backgroundColor`, i.e. THIS module's
- *      value, the one handed to `createChart`. If the chart background ever moves off the page
- *      surface, every series ratio is recomputed against the new value and the floor bites.
- *      Its NEGATIVE CONTROL replants `#FFFFFF` here and reproduces `1,22:1` exactly.
- *   2. `chart-construction.test.ts` (in `web`, where the call sites are) scans every
- *      `createChart(` in `frontend/src` and REJECTS any whose options do not come from
- *      `chartConstructorOptions()`. That is the instrument that covers a pane written next
- *      month in a file that does not exist yet.
+ *      `kind: "surface"` backdrop is `chartSurfaceTheme().backgroundColor` — THIS module's
+ *      value. If the chart surface ever moves off the page surface, every series ratio is
+ *      recomputed against the new value and the floor bites. Its NEGATIVE CONTROL replants
+ *      `#FFFFFF` here and reproduces `1,22:1` exactly.
+ *      ⚠️ AND THAT IS ALL IT PROVES — `DR-11` of the design review, measured: delete the whole
+ *      `layout` block from `chart-options.ts` and this suite stays green (`pass 16 · fail 0`),
+ *      because it measures ONE LINK ABOVE `createChart`. `charts` may not import `web`
+ *      (`ADR-003`/`D5.12`), so it structurally cannot see the call. It proves the ARITHMETIC.
+ *   2. `chart-construction.test.ts` (in `web`, where the call sites are) closes the link this
+ *      module cannot reach, twice over: it BUILDS `chartConstructorOptions(1, 1)` and compares
+ *      `layout.background.color` to `chartSurfaceTheme().backgroundColor` as VALUES, and it
+ *      scans every `createChart(` in `frontend/src`, rejecting any whose options do not come
+ *      from `chartConstructorOptions()` — including the one that spreads the builder and then
+ *      re-spells a key the builder owns, which is how the reviewer put `#FFFFFF` back with both
+ *      source gates green. That is also the instrument that covers a pane written next month in
+ *      a file that does not exist yet.
  *   3. `e2e/11-canvas-fundo.spec.ts` reads the PIXELS of the real `<canvas>` in a real browser
  *      and asserts the modal color is this background. Source scans prove what is written;
  *      only that one proves what was painted.

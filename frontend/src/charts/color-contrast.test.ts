@@ -44,9 +44,18 @@ const GLOBALS_CSS = path.resolve(THIS_DIR, "../app/globals.css");
 // `1,22:1` on the screen. The gate was green and the screen was wrong, which is `ADR-012`'s
 // `rc=0` that cannot tell "nada erodiu" from "o instrumento mede a referência errada".
 //
-// So the backdrop is now `theme.backgroundColor`, i.e. THE VALUE `createChart` RECEIVES
-// (`chartSurfaceTheme()` -> `chartConstructorOptions()` -> `createChart`, with
-// `chart-construction.test.ts` forbidding a call site from bypassing that chain). Taking the
+// So the backdrop is now `theme.backgroundColor` — the head of the chain
+// `chartSurfaceTheme()` -> `chartConstructorOptions()` -> `createChart`.
+//
+// ⚠️ AND NOT THE VALUE `createChart` RECEIVES — an earlier version of this comment said it was,
+// and `DR-11` of the design review falsified the claim by deleting the `layout` block from
+// `chart-options.ts`: this suite stayed at `pass 16 · fail 0` while the canvas went back to
+// `#FFFFFF` `[MEASURED 2026-09-12 by the reviewer, n=1 mutant]`. It could not be otherwise —
+// `charts` may not import `web` (`ADR-003`/`D5.12`), so the call site is out of reach from here
+// BY DESIGN. What this file owns is the ARITHMETIC over whatever backdrop it is handed. The two
+// remaining links are owned where they are visible: `chart-construction.test.ts` builds the
+// options and compares the colors as values, and `e2e/11-canvas-fundo.spec.ts` reads the pixels.
+// Taking the
 // theme as a PARAMETER rather than reading it inside is what lets the negative controls below
 // replant `#FFFFFF` and watch this gate produce `1,22:1` and REJECT — the defect reproduced, not
 // described.

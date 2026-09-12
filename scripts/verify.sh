@@ -14,8 +14,25 @@
 # centenas de vezes até o agente morrer `[MEDIDO 2026-08-29: 93.561.215 / 72.756 = 1.286×]`.
 #
 # Este script não mede nada de novo e não decide nada: ele chama EXATAMENTE os mesmos
-# portões (os SEIS: lint-backend, lint-frontend, test, boundaries, regras, política) e
-# devolve o veredito em ~12 linhas, deixando a saída bruta em disco.
+# portões (os OITO: lint-backend, lint-frontend, test, test-frontend, boundaries, regras,
+# política, e2e) e devolve o veredito em ~14 linhas, deixando a saída bruta em disco.
+#
+# ── POR QUE OITO E NÃO SEIS, e as duas razões são achados MEDIDOS ──────────────────────
+#
+# `test-frontend` (`C1`) — `grep -rn 'node --test' scripts/verify.sh Makefile .git/hooks/pre-push`
+# devolvia **0 linha** `[MEDIDO 2026-09-03, reconfirmado 2026-09-12]`: as quatro suítes do
+# front (`test:app` 181 · `test:charts` 195 · `test:s1` 105 · `test:s3` 111, n=592 testes)
+# **não estavam em portão nenhum** e só protegiam quem lembrasse de rodá-las. Dois agentes
+# levantaram isso em ciclos diferentes antes de alguém pagar.
+#
+# `e2e` (`DR-11`) — o design-review de `c7e17fc` demonstrou o vão, não o supôs: ele replantou
+# `#FFFFFF` no `<canvas>` por uma porta que os DOIS portões de fonte sancionavam, e
+# `color-contrast.test.ts` (pass 16 · fail 0) e `chart-construction.test.ts` (pass 7 · fail 0)
+# ficaram **verdes com o defeito na tela**. Só `e2e/11-canvas-fundo.spec.ts` — que lê o PIXEL —
+# reprovou (`Expected: "#131722"` · `Received: "#ffffff"`, n=12 canvases). Ele estava FORA
+# daqui, por custo. Um instrumento que é o único capaz de ver a classe inteira de defeito, e
+# que roda só por lembrança, não é portão — é hábito. Custo medido de trazê-lo:
+# `[MEDIDO 2026-09-12: make e2e → rc=0, 49 s de relógio, 27 specs]`.
 #
 # ── O QUE ELE NÃO FAZ ──────────────────────────────────────────────────────────────────
 #
@@ -95,6 +112,56 @@ falhou $RC_LF
 [ "$RC_LF" -eq 3 ] && DET_LF="frontend/node_modules ausente — rode 'make setup'" || DET_LF="ESLint + tsc --noEmit --strict do projeto sobre frontend/src"
 printf '[%-9s] lint-frontend   rc=%s  %s\n' "$(rotulo $RC_LF)" "$RC_LF" "$DET_LF"
 
+# ── 1c. suítes do frontend (`node --test`) ─────────────────────────────────────────────
+# `C1`. As quatro suítes que `frontend/package.json` declara, todas, sem lista de exclusão.
+#
+# ⚠️ A PRECONDIÇÃO É VERIFICADA ANTES, E A RECUSA É rc=3 — NÃO rc=1. Nove arquivos de teste
+# leem o corpus NÃO-VERSIONADO de `data/` (`grep -rln 'data/binance\|data/snapshots' frontend/src
+# --include='*.test.ts'` → 9), que é gitignored por desenho (`CLAUDE.md` §"Dado bruto não é
+# versionado"). Sem ele, `test:charts` reprova 16 e `test:app` 1, **por ambiente**. Promover
+# uma suíte que já reprova por ambiente é o defeito `C5`: um portão vermelho por motivo
+# conhecido, atrás do qual uma regressão de verdade fica escondida — e `ADR-012` já nomeia
+# esse sinal indistinguível. Aqui a ausência do corpus diz "NÃO MEDIU", que não é passar.
+#
+# ⛔ `test:s1` NÃO é excluída, e a exclusão foi considerada e RECUSADA. Ela dava 97/105 por
+# `store_parent_missing`: `create_app` exige DOIS diretórios-pai e a fixture pinava só um
+# (`INGEST_HEALTH_STORE_PATH`), deixando `QUARANTINE_STORE_PATH` no default `data/md/` — que
+# não existe em checkout nenhum. Consertado na fixture (`ingest-health-query-http.test.ts`),
+# não contornado aqui: `[MEDIDO 2026-09-12: 97/105 antes → 105/105 depois]`. Exclusão teria
+# congelado o defeito com um motivo escrito ao lado.
+FRONTEND_FIXTURE_ROOTS="data/binance data/snapshots"
+FRONTEND_SUITES="app charts s1 s3"
+if [ ! -d frontend/node_modules ]; then
+    { echo; echo "########## test-frontend :: RECUSA (frontend/node_modules ausente) ##########"; } >> "$LOG"
+    RC_TF=3; DET_TF="frontend/node_modules ausente — rode 'make setup'"
+else
+    FALTANDO=""
+    for raiz in $FRONTEND_FIXTURE_ROOTS; do
+        [ -d "$raiz" ] || FALTANDO="$FALTANDO $raiz"
+    done
+    if [ -n "$FALTANDO" ]; then
+        { echo; echo "########## test-frontend :: RECUSA (corpus ausente:$FALTANDO) ##########"; } >> "$LOG"
+        RC_TF=3; DET_TF="corpus não-versionado ausente:$FALTANDO — ver data/MANIFEST.md"
+    else
+        RC_TF=0
+        for suite in $FRONTEND_SUITES; do
+            portao "test-frontend-$suite" npm --prefix frontend run "test:$suite"; RC_SUITE=$?
+            [ "$RC_SUITE" -ne 0 ] && RC_TF=1
+        done
+        # Soma pass/fail SÓ dentro das seções `test-frontend-*` — um `pass`/`fail` do ESLint ou
+        # do pytest noutra seção inflaria o número, e este script existe para não mentir número.
+        # ⚠️ O padrão NÃO ancora o prefixo: `node --test` escreve `ℹ pass 181`, e o `ℹ` é
+        # multibyte — um `^.?` casa UM byte e falha em silêncio, imprimindo `0 pass, 0 fail`
+        # (medido na primeira versão deste bloco, com as suítes REPROVANDO ao lado).
+        DET_TF="$(awk '/^########## test-frontend-/{f=1;next} /^########## /{f=0}
+                       f && / pass [0-9]+$/{p+=$NF}
+                       f && / fail [0-9]+$/{q+=$NF}
+                       END{printf "%d pass, %d fail em 4 suítes (app/charts/s1/s3)", p, q}' "$LOG")"
+    fi
+fi
+falhou $RC_TF
+printf '[%-9s] test-frontend   rc=%s  %s\n' "$(rotulo $RC_TF)" "$RC_TF" "$DET_TF"
+
 # ── 2. suíte + piso de cobertura por camada ────────────────────────────────────────────
 # `R-G` (`docs/plans/SPEC-004-captura-em-producao/index.md`): "verificação é `make verify`
 # … testes de processo real declarados por fase fora de `verify` até o owner decidir". O
@@ -127,7 +194,59 @@ printf '[%-9s] regras          rc=%s  %s bloqueio(s), %s aviso(s)\n' "$(rotulo $
 portao "validate" bash .harness/mechanism validate --strict; RC_V=$?; falhou $RC_V
 printf '[%-9s] política        rc=%s\n' "$(rotulo $RC_V)" "$RC_V"
 
-# ── 6. o diff, como FORMA e não como conteúdo ──────────────────────────────────────────
+# ── 6. e2e: o único portão que mede o que foi PINTADO ──────────────────────────────────
+# `DR-11`. Os outros sete portões leem TEXTO-FONTE ou rodam lógica sem tela; este abre um
+# browser de verdade contra a app de verdade e lê os pixels do `<canvas>`. A diferença não é
+# de grau: o design-review de `c7e17fc` replantou `#FFFFFF` no fundo do gráfico por uma porta
+# que os dois portões de fonte sancionavam, e **os dois ficaram verdes**. Só
+# `e2e/11-canvas-fundo.spec.ts` reprovou.
+#
+# CHAMA `make e2e` E NÃO O `playwright` DIRETO, de propósito: o setup/teardown (seed do store
+# efêmero, `next build`, `next start`, API de teste, e derrubar tudo) mora em
+# `scripts/e2e-env.sh` orquestrado pela receita, e duplicá-lo aqui criaria uma segunda verdade
+# sobre como o e2e sobe. O `make` colapsa qualquer falha em rc=2 — por isso o rc é traduzido
+# logo abaixo, e a tradução é CONSERVADORA: rc≠0 que não seja a recusa de ambiente vira 1
+# ("mediu e reprovou"), nunca 3.
+#
+# ⚠️ O CUSTO ESTÁ DECLARADO, PORQUE ELE É O ARGUMENTO QUE MANTINHA ISTO FORA:
+# `[MEDIDO 2026-09-12: make e2e → rc=0, 49 s de relógio, 27 specs, 12 canvases]`. O comentário
+# do alvo `e2e` no `Makefile` dizia "+~35 s por verify"; o número real é ~49 s, e ele é o preço
+# de o portão de pixel deixar de depender de alguém lembrar.
+#
+# ⛔ SEM VARIÁVEL DE PULO. "Entrada de allowlist é indistinguível de bypass" (`CLAUDE.md`), e um
+# `SKIP_E2E=1` seria exatamente a porta que `DR-11` acabou de fechar, reaberta no nível do
+# portão. Ambiente ausente responde rc=3 ("NÃO MEDIU"), que não é passar.
+if [ ! -d frontend/node_modules ] || [ ! -x backend/.venv/bin/python ]; then
+    { echo; echo "########## e2e :: RECUSA (frontend/node_modules ou backend/.venv ausente) ##########"; } >> "$LOG"
+    RC_E=3; DET_E="frontend/node_modules ou backend/.venv ausente — rode 'make setup'"
+else
+    portao "e2e" make e2e; RC_MAKE_E2E=$?
+    # `e2e-env.sh` imprime `RECUSA:` e devolve 3 quando o ambiente não permite medir (porta
+    # ocupada, `next build` que não roda, venv incompleta). Isso NÃO é o Playwright reprovando,
+    # e colapsar os dois em "FALHA" perderia a distinção que este script promete — ainda mais
+    # aqui, onde o `make` já apagou o rc original transformando tudo em 2.
+    N_RECUSA_E2E="$(awk '/^########## e2e ::/{f=1;next} /^########## /{f=0} f' "$LOG" | grep -ac '^RECUSA:' || true)"
+    if [ "$RC_MAKE_E2E" -eq 0 ]; then
+        RC_E=0
+    elif [ "${N_RECUSA_E2E:-0}" -gt 0 ]; then
+        RC_E=3
+    else
+        RC_E=1
+    fi
+    # O `passed` do Playwright vem com o tempo entre parênteses (`26 passed (33.2s)`) e o
+    # `failed` vem sozinho (`1 failed`) — os DOIS são impressos, porque "26 passed" ao lado de
+    # um `[FALHA]` é exatamente o resumo que faz alguém ler verde num portão vermelho.
+    N_E_PASS="$(awk '/^########## e2e ::/{f=1;next} /^########## /{f=0} f' "$LOG" \
+                  | grep -aoE '[0-9]+ passed \([0-9.]+m?s\)' | tail -1)"
+    N_E_FAIL="$(awk '/^########## e2e ::/{f=1;next} /^########## /{f=0} f' "$LOG" \
+                  | grep -aoE '^ *[0-9]+ failed' | tail -1 | tr -s ' ')"
+    DET_E="${N_E_PASS:-(número não extraído)}${N_E_FAIL:+, $N_E_FAIL}"
+    [ "$RC_E" -eq 3 ] && DET_E="ambiente recusou medir — grep '^RECUSA:' no log"
+fi
+falhou $RC_E
+printf '[%-9s] e2e             rc=%s  %s\n' "$(rotulo $RC_E)" "$RC_E" "$DET_E"
+
+# ── 7. o diff, como FORMA e não como conteúdo ──────────────────────────────────────────
 # `git diff` sozinho custou ~201k tokens nos 105 subagentes medidos, e quase sempre a
 # pergunta era "o que mudou", não "mostre cada linha". `--stat` responde a primeira; quem
 # precisar da segunda abre o log.
@@ -136,8 +255,12 @@ portao "diff-completo" git --no-pager diff HEAD; :
 D_STAT="$(git --no-pager diff --shortstat HEAD 2>/dev/null)"
 printf '[%-9s] diff            %s\n' "----" "${D_STAT:-sem mudança não-commitada}"
 
+# O número de portões é CONTADO, não escrito: a versão anterior dizia "6" numa string literal e
+# continuaria dizendo 6 depois de `test-frontend` e `e2e` entrarem — um veredito que mente sobre
+# quantas coisas ele cobre é a forma mais barata de esconder um portão que caiu.
+N_PORTOES=8
 case "$PIOR" in
-    0) echo "veredito: VERDE — 6 portões mediram e passaram";;
+    0) echo "veredito: VERDE — $N_PORTOES portões mediram e passaram";;
     1) echo "veredito: VERMELHO — algum portão mediu e REPROVOU";;
     3) echo "veredito: INDETERMINADO — algum portão RECUSOU medir (rc=3). Não é o mesmo que passar.";;
 esac

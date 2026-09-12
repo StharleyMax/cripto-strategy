@@ -40,6 +40,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { chartSurfaceTheme } from "../../charts/index.ts";
+
+import { chartConstructorOptions } from "./chart-options.ts";
+
 /** This test file names `createChart(` in prose and in its own negative controls; scanning itself
  * would make the gate fire on its own explanation — the false positive that gets a real gate
  * disabled (same reason `color-contrast.test.ts` strips CSS comments before counting). */
@@ -109,22 +113,70 @@ function callArguments(source: string, openParenIndex: number): string {
 }
 
 /**
- * Every `createChart(` in `source` whose arguments do NOT come from the named builder, reported
- * as `line: text`. Pure over a string so the negative controls below can feed it the real
- * `74d59a4` defect instead of a paraphrase of it.
+ * The keys `chartConstructorOptions` itself writes, READ OFF THE BUILDER at runtime rather than
+ * typed out here — `["width", "height", "layout", "grid", "timeScale"]` today.
+ *
+ * ⛔ `DR-11`: THIS IS THE DOOR THE FIRST VERSION OF THIS GATE LEFT OPEN, and the design review
+ * walked through it. The rule was "the arguments mention `chartConstructorOptions(`", and
+ * `{ ...chartConstructorOptions(600, 220), layout: { background: … "#FFFFFF" } }` mentions it —
+ * so the reviewer replanted `DR-1` WHOLE, in a real file, and BOTH source gates stayed green
+ * (`color-contrast.test.ts` pass 16 · fail 0, `chart-construction.test.ts` pass 7 · fail 0)
+ * `[MEASURED 2026-09-12 by the reviewer, n=1 planted site]`. The spread is not a hypothetical
+ * shape either: it is the exact form the `DR-4` fix (`autoSize`) tends to use, and this file's
+ * own CALA test sanctions it.
+ *
+ * DERIVED, NOT LISTED, because a list is a second statement about what the builder owns and this
+ * whole file exists because two statements about one thing drift. Add a key to
+ * `chartConstructorOptions` and it becomes un-overridable at the call site on the same commit.
  */
-export function bareCreateChartCalls(source: string): readonly string[] {
+const BUILDER_OWNED_KEYS: readonly string[] = Object.keys(chartConstructorOptions(1, 1));
+
+/**
+ * `args` with every `chartConstructorOptions(…)` call — parentheses and all — cut out, so what
+ * remains is only what the CALL SITE itself spelled.
+ *
+ * Needed because the builder's own arguments legitimately contain identifiers
+ * (`chartConstructorOptions(measureWidth(container), CHART_HEIGHT_PX)`), and a scan for
+ * `width:`/`height:` over the whole argument list could not tell the builder's input from a
+ * call-site override of the builder's output.
+ */
+function withoutBuilderCalls(args: string): string {
+  let remaining = args;
+  for (;;) {
+    const at = remaining.indexOf(REQUIRED_OPTIONS_BUILDER);
+    if (at === -1) return remaining;
+    const openParen = at + REQUIRED_OPTIONS_BUILDER.length - 1;
+    const inner = callArguments(remaining, openParen);
+    remaining =
+      remaining.slice(0, at) + remaining.slice(openParen + 1 + inner.length + 1);
+  }
+}
+
+/**
+ * Every `createChart(` in `source` that does not take its options from the named builder — either
+ * because it never mentions the builder at all, or because it spreads the builder and then
+ * OVERRIDES one of the keys the builder owns. Reported as `line: text`. Pure over a string so the
+ * negative controls below can feed it the real `74d59a4` defect, and the reviewer's `DR-11`
+ * bypass, instead of a paraphrase of either.
+ */
+export function bareCreateChartCalls(
+  source: string,
+  ownedKeys: readonly string[] = BUILDER_OWNED_KEYS,
+): readonly string[] {
   const violations: string[] = [];
+  const overrides = new RegExp(`(^|[^.\\w])(${ownedKeys.join("|")})\\s*:`);
   let cursor = 0;
   for (;;) {
     const at = source.indexOf(CHART_FACTORY, cursor);
     if (at === -1) return violations;
     const openParen = at + CHART_FACTORY.length - 1;
     const args = callArguments(source, openParen);
-    if (!args.includes(REQUIRED_OPTIONS_BUILDER)) {
+    const report = (): void => {
       const line = source.slice(0, at).split("\n").length;
       violations.push(`line ${line}: createChart(${args.replace(/\s+/g, " ").trim()})`);
-    }
+    };
+    if (!args.includes(REQUIRED_OPTIONS_BUILDER)) report();
+    else if (overrides.test(withoutBuilderCalls(args))) report();
     cursor = at + CHART_FACTORY.length;
   }
 }
@@ -211,6 +263,42 @@ test("DR-1: every createChart OUTSIDE the mounting half really is headless — t
   );
 });
 
+/**
+ * `DR-11`, the OTHER half: the link `chartSurfaceTheme() -> chartConstructorOptions()` was
+ * asserted by `assert.match` over the TEXT of `chart-options.ts`, while three docstrings
+ * (`chart-theme.ts`, `color-contrast.test.ts`, this file) said the gate measured "the value
+ * `createChart` receives". The reviewer deleted the whole `layout` block and showed what the
+ * failure actually reads:
+ *
+ *     The input did not match the regular expression /background: \{ type: ColorType\.Solid, … \}/
+ *
+ * — no `Received: "#ffffff"` anywhere in it, because no value was ever computed
+ * `[MEASURED 2026-09-12 by the reviewer, n=1 mutant]`. An instrument that declares it measures X
+ * and measures Y is the very class of defect that produced `DR-1`. So the value is BUILT here and
+ * compared, and the regex over the source is gone: it cannot be a weaker statement of the same
+ * thing, because a weaker statement is what got believed.
+ */
+test("DR-11: the options handed to createChart carry chartSurfaceTheme's VALUES, built and compared", () => {
+  const built = chartConstructorOptions(1, 1);
+  const theme = chartSurfaceTheme();
+
+  const background = built.layout?.background;
+  assert.ok(
+    background !== undefined && "color" in background,
+    "chartConstructorOptions() returned no `layout.background` at all — which is exactly `DR-1` as it shipped: " +
+      "`createChart` then keeps the library default #FFFFFF, inside a #131722 page.",
+  );
+  assert.equal(
+    background.color,
+    theme.backgroundColor,
+    "the color the canvas is cleared to and the color `color-contrast.test.ts` measures every series ratio " +
+      "against have to be ONE value read twice, never two that agree today",
+  );
+  assert.equal(built.layout?.textColor, theme.textColor);
+  assert.equal(built.grid?.vertLines?.color, theme.gridLineColor);
+  assert.equal(built.grid?.horzLines?.color, theme.gridLineColor);
+});
+
 test("DR-1: chart-options.ts derives the background from chartSurfaceTheme, never from a literal", () => {
   const source = readFileSync(path.join(HERE, "chart-options.ts"), "utf8");
   assert.match(
@@ -219,10 +307,10 @@ test("DR-1: chart-options.ts derives the background from chartSurfaceTheme, neve
     "the options builder must READ the theme `charts` owns — a hex typed here would be a third citation of the " +
       "surface, and three citations of one color is two chances to drift",
   );
-  assert.match(source, /background: \{ type: ColorType\.Solid, color: theme\.backgroundColor \}/);
-  assert.match(source, /textColor: theme\.textColor/);
   // No bare hex anywhere in the builder. `#FFFFFF` arriving here as a "temporary" value is the
   // defect itself, and a hex that happens to be right today is still a second source of truth.
+  // This one STAYS a source scan on purpose: it is a statement about PROVENANCE ("no literal was
+  // typed"), which no built value can answer — a hex copied from the theme builds identical.
   const hexes = source.replace(/\/\*[\s\S]*?\*\//g, "").match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
   assert.deepEqual(hexes, [], `chart-options.ts spells raw colors: ${hexes.join(", ")}`);
 });
@@ -264,6 +352,40 @@ test("MORDE: the barest form — no options at all — is rejected", () => {
 });
 
 // ── CALA: correct code must not fire, in any of the shapes a builder may legitimately write ──
+
+test("MORDE DR-11: the spread that re-plants #FFFFFF over the builder is REJECTED", () => {
+  // Character for character the site the design reviewer planted in `probe-pane.tsx` at
+  // `c7e17fc` — it mentions `chartConstructorOptions(`, so the first version of this gate passed
+  // it (pass 7 · fail 0) with the whole of `DR-1` back on the screen.
+  const bypass = `createChart(container, {
+  ...chartConstructorOptions(600, 220),
+  layout: { background: { type: "solid", color: "#FFFFFF" }, textColor: "#191919" },
+});`;
+  const violations = bareCreateChartCalls(bypass);
+  assert.equal(violations.length, 1, "the DR-11 bypass has to be caught, once");
+  assert.match(violations[0]!, /^line 1:/);
+
+  // ...and it is not about the hue: a spread that re-spells `layout` with the RIGHT color is
+  // rejected too, for the same reason the inline-correct-options MORDE above is.
+  assert.equal(
+    bareCreateChartCalls(`createChart(el, { ...chartConstructorOptions(1, 1), layout: { textColor: theme.textColor } });`).length,
+    1,
+  );
+  // Every key the builder owns, not just `layout` — `grid` and `timeScale` are theme too, and
+  // `width`/`height` are the builder's own arguments, so re-setting them at the call site means
+  // the number the caller measured and the number the chart got are two statements again.
+  for (const key of BUILDER_OWNED_KEYS) {
+    assert.equal(
+      bareCreateChartCalls(`createChart(el, { ...chartConstructorOptions(1, 1), ${key}: x });`).length,
+      1,
+      `overriding the builder-owned key \`${key}\` at the call site is not caught`,
+    );
+  }
+  // The derived list is the builder's, not a copy of it — if `chartConstructorOptions` ever stops
+  // writing `layout`, this gate must not keep protecting a key nobody sets (that is a green that
+  // means nothing, `ADR-012`'s rc=0).
+  assert.ok(BUILDER_OWNED_KEYS.includes("layout"), "the builder no longer writes `layout` — re-anchor DR-11");
+});
 
 test("CALA: the sanctioned call passes, and so do its legitimate variants", () => {
   assert.deepEqual(

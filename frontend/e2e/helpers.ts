@@ -10,9 +10,25 @@ import type { Page } from "@playwright/test";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-/** Curated screenshots live next to this feature's own gate report, not the sibling
- * feature's (`plataforma-dados`) that the previous suite used before `T-01.9` rewrote it. */
-export const SHOTS_DIR = path.resolve(HERE, "../../docs/context/camada-de-leitura-do-painel/gates/e2e-shots");
+/**
+ * Where `shot()` writes. EPHEMERAL BY DEFAULT, curated only when someone asks for it by name —
+ * `E2E_SHOTS_DIR=docs/context/<feature>/gates/e2e-shots make e2e`.
+ *
+ * ⚠️ IT USED TO DEFAULT TO A VERSIONED DIRECTORY
+ * (`docs/context/camada-de-leitura-do-painel/gates/e2e-shots`), and that stopped being tenable
+ * on 2026-09-12, when `e2e` entered `scripts/verify.sh` as a portão (`DR-11`). A gate that
+ * REWRITES COMMITTED FILES every time it runs leaves `git status` dirty after a clean green
+ * run — measured on the first gated run: 4 PNGs modified, 1 new, none of them anybody's change
+ * `[MEDIDO 2026-09-12]`. Dirt that appears by itself is dirt that gets committed by accident,
+ * and it is also noise in the `diff` line `verify.sh` prints as its last portão.
+ *
+ * Same shape, and for the same reason, as `FACTS_FILE` right below: default to `os.tmpdir()`,
+ * let an env var name a real destination when a gate report needs the images. The curated
+ * screenshots already committed are NOT deleted by this — they simply stop being overwritten by
+ * a run nobody asked to curate.
+ */
+export const SHOTS_DIR =
+  process.env.E2E_SHOTS_DIR ?? path.join(os.tmpdir(), "cripto-strategy-e2e", "shots");
 
 /** Every measured number the specs produce is appended here as one JSON line, so the report
  * can quote `n` with the spec that produced it instead of a hand-typed figure. One file for
