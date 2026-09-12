@@ -30,6 +30,15 @@ mergeada não está no container, então medir o container mediria o código ant
 distingue *"a correção falhou"* de *"não há o que ler"*. O único termo que varia entre as duas
 colunas é `bucket_interval_ms`.
 
+⛔ **E o `knowledge_time_ms` da tabela abaixo é `now` — NÃO o `max(bucket_end)` da âncora, e sem
+isso a tabela não se reproduz.** Isto está escrito porque foi RE-MEDIDO, não lido do script: o
+`probe_window.py` original não ficou em disco, e a coluna que o denuncia é a de controle, que só
+devolve `1` sob `kt ≥ max(available_at)`. São dois eixos independentes, e confundi-los apaga
+justamente a linha de controle: a janela diz *quais buckets entram*, o `knowledge_time` diz
+*o que já era sabível*.
+Cada linha de `md.series` fica legível só a partir do próprio `available_at`, que é posterior ao
+`bucket_end` dela, então `kt = max(bucket_end)` esconde o último bucket de cada série.
+
 ```bash
 cd backend && PYTHONDONTWRITEBYTECODE=1 ../backend/.venv/bin/python <probe_window.py>
 # janela de 180 min terminando no ultimo bucket_end de cada serie, BTCUSDT, bar_policy=final_only
@@ -50,9 +59,29 @@ cd backend && PYTHONDONTWRITEBYTECODE=1 ../backend/.venv/bin/python <probe_windo
    → `115:    Nature.RATIO: False,`. As saídas (A)/(B)/(C) do `D2` continuam desnecessárias.
 2. **CALA.** Injetar `60_000` de volta devolve **exatamente `0`**. A largura errada é veto
    absoluto, não degradação.
-3. **Controle negativo.** A linha `STOCK` é **invariante** sob a largura (`1 → 1`): o
+3. **Controle negativo — e o `1` dele tem um dono nomeado: `knowledge_time_ms ≥
+   max(available_at)`.** A linha `STOCK` é **invariante** sob a largura (`1 → 1`): o
    `and not CARRY_FORWARD_BY_NATURE[...]` pula a cláusula inteira. A mudança **não** alcançou o
    caminho de carry-forward, que o `ADR-037` não autoriza tocar.
+
+   ⚠️ **Com `kt = max(bucket_end)` este controle daria `0 → 0`, e um controle que dá zero nos
+   dois lados não controla nada** — seria indistinguível de *"a série também morreu"*, que é
+   exatamente a hipótese que ele existe para excluir. A razão é o atraso de publicação, e ele é
+   medido: o último bucket do `STOCK` fecha em `1789219800000` e só fica sabível em
+   `1789219834532` — **34,5 s depois**. Ancorar `kt` no `bucket_end` corta o único bucket que a
+   janela tinha. A matriz completa, os três `kt` × as duas larguras:
+
+   | série | `kt = max(bucket_end)` | `kt = max(available_at)` | `kt = now` |
+   |---|---:|---:|---:|
+   | `count_long_short_ratio` · RATIO | `4 → 0` | `4 → 0` | `4 → 0` |
+   | `sum_open_interest` · STOCK | **`0 → 0`** | `1 → 1` | `1 → 1` |
+
+   `[MEDIDO 2026-09-12 contra deploy-postgres-1, universo: 1.000 + 2.016 linhas de `md.series`]`
+
+   A leitura do RATIO **não** depende do `kt` (`4 → 0` nos três), porque a janela de 180 min lhe
+   dá muitos buckets já publicados; quem depende é o controle, que tem **um** bucket. Então o
+   MORDE/CALA da tabela acima seria o mesmo com qualquer `kt` — **só a linha de controle é que
+   precisava do `kt` certo para existir.**
 
 ### O falsificador de longo prazo de `ADR-037`/M4 — a célula que tinha de deixar de ser vazia
 
@@ -153,6 +182,41 @@ ser REPORTADA"*, a `#218`), então ela liga a thread de long/short com
 para essa thread**, a classe de falha de **18 h 45 min** que a `#218` fechou para as outras
 quatro — thread morta de uma exceção não listada, `run()` ainda dormindo, `docker inspect`
 reportando `running=true`. A thread passa a nascer sob `_supervised(...)`, como as outras quatro.
+
+⛔ **CORREÇÃO PÓS-QA — o portão que prova o parágrafo acima estava CEGO no merge, e a cegueira
+vinha da thread nova.** `tests/helpers/collectors_cli_thread_kill_driver.py` — o irmão do
+`collectors_cli_driver.py` citado em §4.4, e o arquivo que a linha daquela tabela NÃO cobre —
+listava **4 de 5** threads em `THREAD_NAMES` e, pior, não injetava `long_short_client_factory`.
+Sem injeção, `run()` cai em `build_long_short_client = long_short_client_factory or
+BinanceFuturesDataClient`: **o cliente REAL da Binance, dentro da suíte**.
+
+O efeito não é "um teste a menos" — é o portão dos 18 h 45 min **deixando de discriminar para as
+cinco threads**. Offline, o cliente real morre, a thread de long/short é supervisionada, e o
+processo sai não-zero **sozinho**; a asserção `returncode != 0` então passa qualquer que seja o
+estado do `_supervised` das outras. Medido com um mutante — `_supervised` removido **só** do
+sítio de `collector-klines` em `collectors_cli.run()`:
+
+| | `getaddrinfo('fapi.binance.com')` | mutante `collector-klines` sem `_supervised` |
+|---|---:|---|
+| merge (`6ee33cc`) | **1** | `rc=1` ⇒ o teste **PASSA** — mutante sobrevive, portão cego |
+| com a correção | **0** | `rc=124` (processo VIVO aos 40 s) ⇒ o teste **REPROVA** |
+
+`[MEDIDO 2026-09-12 em 6ee33cc; universo: 1 processo do driver, `collector-klines`, DNS de
+`binance.com` contado e bloqueado por um `sitecustomize` de sonda]`
+
+⚠️ **E o pior da cegueira é que ela era INTERMITENTE.** Com a rede REALMENTE disponível o mesmo
+mutante em `6ee33cc` REPROVA (`rc=124`): a Binance responde, a thread de long/short não morre, e
+o `collector-klines` sem `_supervised` volta a ser a única causa possível de saída. Ou seja, no
+merge o veredito deste portão dependia de a Binance estar alcançável **na hora em que a suíte
+rodou** — verde e vermelho pela rede, não pelo código. Depois da correção o driver não resolve
+nome nenhum (`getaddrinfo = 0`), e as duas execuções — com e sem rede — dão o MESMO resultado.
+
+A correção é **só-de-teste** (`+29/−2`): `LONG_SHORT` entra em `THREAD_NAMES` (o teste passa de
+4 para **5** casos), `_DyingLongShortClient` é o alvo do mutante, e `_EmptyFuturesDataClient` —
+o fake que §4.4 já dava por ligado — passa a ser injetado nos outros quatro casos. **Nenhuma
+linha de produção mudou**, e é esse o ponto: o defeito era o portão não medir, não o código
+medido estar errado. Sem a correção, a frase *"a suíte continua ZERO REDE"* em §4.4 valia para
+`collectors_cli_driver.py` e **não** para o irmão dele.
 
 ### 4.4 · Os demais, um por um
 

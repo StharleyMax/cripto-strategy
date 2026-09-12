@@ -14,9 +14,19 @@ already published and that `SPEC-003` cites by line number, not the stale claim 
 
 `SPEC-003` §0.1#7, the plan's D3.1 and `tasks.toml`'s own DoD all write the SAME equation:
 `n_entries = 7 = grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test |
-wc -l`. That grep counts literal CALL SITES across `cvd_source_catalog.py` (3),
-`price_source_catalog.py` (2) and `open_interest_catalog.py` (2) — and it is still 7 today
-(re-measured building this task). But a call SITE is not a ROW: `open_interest_catalog_entries`
+wc -l`. That grep counts literal CALL SITES, and the equation was already wrong when it was
+written. It is wrong by a DIFFERENT amount today: re-measured at this SHA the same command
+answers **11**, not 7 — `cvd_source_catalog.py` (4), `price_source_catalog.py` (2),
+`open_interest_catalog.py` (2), `long_short_catalog.py` (1), `liquidation_catalog.py` (1),
+`klines_volume_catalog.py` (1). Three source modules became six as `SPEC-007` added rows:
+
+    grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test | wc -l  # 11
+
+11 is not the row count either, and that is the point — the catalog this module returns has
+**13** rows at this SHA (`len(list_series_catalog('BTCUSDT').entries)`), so the grep now
+UNDERCOUNTS by two where it once overcounted. A call SITE is not a ROW in either direction:
+`build_cvd_source_catalog_entries` still yields 3 rows from 4 call sites (the fourth, line 356,
+belongs to `T-02.2`'s separate `kline_takerbuy` builder), while `open_interest_catalog_entries`
 (`T-06.5`, `CA-F2-17`) builds FOUR of its five rows from ONE list-comprehension call site — its
 own module docstring, unchanged since 2026-09-03 (two days before `SPEC-003` was written): "five
 rows, never a collapsed one". Concatenating the three modules' own catalog-builder functions in
