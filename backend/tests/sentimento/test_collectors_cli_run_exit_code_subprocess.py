@@ -74,3 +74,55 @@ def test_a_real_xadd_failure_propagates_to_the_process_returncode(tmp_path: Path
     assert premium_index_runs[0].verdict == "REJECTED", (
         "the real XADD failure must have closed the cycle REJECTED"
     )
+
+
+def test_a_thread_that_dies_unhandled_takes_the_whole_process_down(tmp_path: Path) -> None:
+    """A collector thread killed by an UNHANDLED exception must exit the process `rc != 0`.
+
+    This is the `2026-09-11T19:53` outage, made executable. Postgres shut down
+    (`AdminShutdown`), the next `record_run` raised `psycopg.OperationalError: the connection
+    is closed` inside `collector-klines` and `collector-premium-index`, and because
+    `OperationalError` is neither an `OSError` nor a `ValueError` it is NOT in
+    `collectors_cli._PUBLISH_FAILURE_EXCEPTIONS` — so it escaped every `except` the runners
+    have. Python's default `threading.excepthook` printed `Exception in thread
+    collector-klines` and the thread died; `run()`'s main loop, which only watches
+    `stop`/`failure`, kept sleeping. `docker inspect` reported `running=true`, `exit=0`,
+    `restarts=0` for 18 h 45 min of collecting nothing, and `restart: unless-stopped` never
+    fired because nothing ever exited.
+
+    The assertion that matters is as much about TERMINATING as about the code: in the unfixed
+    tree this subprocess never exits at all, so a `TimeoutExpired` here IS the defect
+    reproducing, not flakiness — which is why the timeout is asserted explicitly instead of
+    being allowed to raise as an error.
+
+    Falsifier this test makes executable: delete the `failure_event.set()` / `exit_code[0] = 1`
+    pair from `collectors_cli._supervised` and this test goes back to hanging until
+    `_TIMEOUT_S` and then failing. It is the mutation that 18 h 45 min of silence could not
+    detect.
+    """
+    store_path = tmp_path / "record.sqlite3"
+    environment = dict(os.environ, PYTHONPATH=str(BACKEND_ROOT))
+    process = subprocess.Popen(
+        [sys.executable, str(DRIVER), str(store_path), "thread-dies-unhandled"],
+        cwd=str(BACKEND_ROOT),
+        env=environment,
+    )
+    timed_out = False
+    try:
+        process.wait(timeout=_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=_TIMEOUT_S)
+
+    assert not timed_out, (
+        "a collector thread died of an unhandled psycopg.OperationalError and the process was "
+        f"STILL ALIVE after {_TIMEOUT_S}s — this is the 18h45 outage: the thread dies, the "
+        "process stays up, and `restart: unless-stopped` never fires"
+    )
+    assert process.returncode != 0, (
+        "a collector thread killed by an unhandled exception must take the process down with a "
+        f"non-zero code so the restart policy fires, got {process.returncode}"
+    )

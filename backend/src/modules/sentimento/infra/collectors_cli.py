@@ -1410,6 +1410,66 @@ def _default_force_order_source() -> MessageSource:
     )
 
 
+def _supervised(
+    target: Callable[..., None],
+    *,
+    thread_name: str,
+    failure_event: threading.Event,
+    exit_code: list[int],
+) -> Callable[..., None]:
+    """Wrap a collector runner so that ANY unhandled exception takes the PROCESS down.
+
+    The defect this exists to make impossible, measured: on `2026-09-11T19:53` Postgres shut
+    down (`AdminShutdown`) and the next `record_run` raised `psycopg.OperationalError: the
+    connection is closed` inside `collector-klines` and `collector-premium-index`, 2 of 2.
+    `OperationalError` descends from `psycopg.Error` -> `Exception`, so it is neither an
+    `OSError` nor a `ValueError` and is NOT in `_PUBLISH_FAILURE_EXCEPTIONS` — it escaped every
+    `except` the runners have. Python's default `threading.excepthook` printed `Exception in
+    thread collector-klines`, the thread died, and `run()`'s main loop (which watches only
+    `stop`/`failure`) kept sleeping: `docker inspect` reported `running=true`, `exit=0`,
+    `restarts=0` for **18 h 45 min** of collecting nothing, and `restart: unless-stopped` never
+    fired because nothing ever exited.
+
+    ⛔ The fix is deliberately NOT "add `psycopg.OperationalError` to
+    `_PUBLISH_FAILURE_EXCEPTIONS`". That trades one silent death for the next unlisted
+    exception type and keeps the failure mode alive; this wrapper makes the CLASS impossible
+    by catching everything a thread can die of. `_PUBLISH_FAILURE_EXCEPTIONS` keeps its own,
+    narrower job: deciding which failures close an `IngestRun` as `REJECTED` with a recorded
+    verdict. This is the last resort BELOW that — no run to record, nothing left to do but
+    tell the supervisor.
+
+    `BaseException` and not `Exception` on purpose: a thread that dies of `SystemExit` or of a
+    `MemoryError` leaves exactly the same 18-hour silence as one that dies of
+    `OperationalError`, and the whole point is that the reason does not matter. The exception
+    is logged (`exc_info=True`) rather than re-raised, because re-raising would only reach the
+    default `excepthook` that already proved it cannot stop anything.
+
+    Same contract as the `except` branches it backstops: `exit_code[0] = 1` then
+    `failure_event.set()`, which breaks `run()`'s main loop, stops the sibling threads and
+    makes `run()` return non-zero — so the process exits non-zero and the restart policy fires.
+    """
+
+    def _guarded(**kwargs: object) -> None:
+        try:
+            target(**kwargs)
+        except BaseException:  # noqa: BLE001 — see docstring: the reason must not matter
+            logger.critical(
+                "collector_thread_died",
+                # `collector_thread`, NOT `thread`: `thread` is a RESERVED `LogRecord`
+                # attribute, and `logging.makeRecord` answers a reserved key in `extra` with
+                # `KeyError: Attempt to overwrite 'thread' in LogRecord`. Raised from inside
+                # THIS handler, that would have been a brand-new silent death — the last-resort
+                # net dying of its own log line. Caught by
+                # `test_a_thread_that_dies_unhandled_takes_the_whole_process_down`.
+                extra={"collector_thread": thread_name},
+                exc_info=True,
+            )
+            exit_code[0] = 1
+            failure_event.set()
+
+    return _guarded
+
+
 def run(
     *,
     config: BootConfig,
@@ -1471,7 +1531,12 @@ def run(
 
     previous_handler = signal.signal(signal.SIGTERM, _handle_sigterm)
     force_order_thread = threading.Thread(
-        target=_run_force_order_collector,
+        target=_supervised(
+            _run_force_order_collector,
+            thread_name="collector-force-order",
+            failure_event=failure,
+            exit_code=exit_code,
+        ),
         name="collector-force-order",
         kwargs={
             "stop_event": stop,
@@ -1485,7 +1550,12 @@ def run(
         },
     )
     premium_index_thread = threading.Thread(
-        target=_run_premium_index_collector,
+        target=_supervised(
+            _run_premium_index_collector,
+            thread_name="collector-premium-index",
+            failure_event=failure,
+            exit_code=exit_code,
+        ),
         name="collector-premium-index",
         kwargs={
             "stop_event": stop,
@@ -1499,7 +1569,12 @@ def run(
         },
     )
     klines_thread = threading.Thread(
-        target=_run_klines_collector,
+        target=_supervised(
+            _run_klines_collector,
+            thread_name="collector-klines",
+            failure_event=failure,
+            exit_code=exit_code,
+        ),
         name="collector-klines",
         kwargs={
             "stop_event": stop,
@@ -1515,7 +1590,12 @@ def run(
         },
     )
     open_interest_thread = threading.Thread(
-        target=_run_open_interest_collector,
+        target=_supervised(
+            _run_open_interest_collector,
+            thread_name="collector-open-interest",
+            failure_event=failure,
+            exit_code=exit_code,
+        ),
         name="collector-open-interest",
         kwargs={
             "stop_event": stop,
