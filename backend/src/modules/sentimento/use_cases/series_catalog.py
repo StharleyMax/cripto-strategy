@@ -52,6 +52,21 @@ eleventh row. The number above moves from 10 to 11 for the same reason it was ne
 builders. A FOURTH source module now feeds this function, which is the only structural change —
 the envelope, the field names and the order of the ten pre-existing rows are untouched (`RS-1`:
 content may change here, form may not).
+
+── `T-04.4` (`SPEC-007` §4.5, `RF-2`): THE COUNT IS 12, AND IT IS STILL COMPUTED ────────────
+
+`count_long_short_ratio` (`domain/long_short_catalog.py`, built by `T-04.2`) is APPENDED as the
+twelfth row, by the same rule and for the same reason `klines_volume` was appended as the
+eleventh: order is form, `RS-1` forbids changing form here, and appending leaves every row that
+already had an index in `"entries"` at that index.
+
+It is the row that makes `/api/v1/series-history` answer for M3 at all — until this line existed,
+the identity lived in `domain/` and the endpoint refused its `series_key_id` with
+`422 UnknownSeriesKeyIdError` (`series_history.py:119-121` -> `catalog.entry_for_id` returns
+`None`), no matter how many rows the collector had written. Unlike the four builders above it,
+this one takes NO `verified_by` argument: `long_short_catalog.py` hardcodes it, so the writer
+(`collector_series_mapping.build_long_short_to_rows`) and this reader call the SAME key builder
+and cannot land on two `series_key_id`s that merely look alike.
 """
 
 from __future__ import annotations
@@ -63,6 +78,7 @@ from typing import Final
 from src.modules.sentimento.domain.cvd_source_catalog import build_cvd_source_catalog_entries
 from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
+from src.modules.sentimento.domain.long_short_catalog import build_count_long_short_ratio_entry
 from src.modules.sentimento.domain.open_interest_catalog import open_interest_catalog_entries
 from src.modules.sentimento.domain.price_source_catalog import build_price_series_entries
 from src.modules.sentimento.domain.series_catalog import (
@@ -179,6 +195,7 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
         build_klines_volume_entry(
             instrument_id, unit=base_asset(instrument_id), verified_by=_KLINES_VOLUME_VERIFIED_BY
         ),
+        build_count_long_short_ratio_entry(instrument_id),
     ]
     # DEBUG, not INFO — same reasoning `ingest_health_query` already documents: this read path
     # is not a byte contract of its own, but a library that logs at INFO by default imposes its

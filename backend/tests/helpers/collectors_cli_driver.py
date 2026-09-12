@@ -38,6 +38,7 @@ from src.modules.sentimento.domain.provenance import (
     SeriesRow,
 )
 from src.modules.sentimento.infra import collectors_cli
+from src.modules.sentimento.infra.binance_futures_data_client import FuturesDataPageResponse
 from src.modules.sentimento.infra.binance_klines_client import KlinesPageResponse
 from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
@@ -120,6 +121,23 @@ class _EmptyKlinesClient:
     ) -> KlinesPageResponse:
         """Return `status=200` with no rows and no API error code."""
         return KlinesPageResponse(status=200, api_code=None, rows=())
+
+
+class _EmptyFuturesDataClient:
+    """A `LongShortClient` fake that always answers one empty, successful page.
+
+    The long/short thread (`T-04.3`) is the FOURTH thread `run()` starts, and it would otherwise
+    reach `fapi.binance.com/futures/data/` from inside the offline suite —
+    `backend/scripts/test.sh`'s "ZERO REDE" rule. An empty page is the SAME shape the real
+    endpoint answers for an unsupported `period` (`[MEDIDO 2026-09-12]`: `HTTP 200` with `[]`),
+    so this fake is not a shape the source could never produce.
+    """
+
+    def history(
+        self, endpoint: str, symbol: str, period: str, limit: int
+    ) -> FuturesDataPageResponse:
+        """Return `status=200` with no points and no API error code."""
+        return FuturesDataPageResponse(status=200, api_code=None, points=())
 
 
 class _OneShotPremiumIndexFetcher:
@@ -205,6 +223,7 @@ def main(argv: list[str]) -> int:
         # `_EmptyKlinesClient`) and then never again before the signal arrives.
         klines_cycle_interval_s=999_999.0,
         klines_backfill_days=1,
+        long_short_cycle_interval_s=60.0,
     )
     if force_publish_failure:
         # Same real-server technique `test_collectors_cli_publish_failure.py`'s `clobbered_sink`
@@ -231,6 +250,7 @@ def main(argv: list[str]) -> int:
             force_order_source_factory=_BlockingForceOrderSource,
             premium_index_fetcher_factory=_fetcher_factory,
             klines_client_factory=_EmptyKlinesClient,
+            long_short_client_factory=_EmptyFuturesDataClient,
             premium_index_to_rows=premium_index_to_rows,
             force_order_to_rows=_never_maps,
         )

@@ -149,9 +149,10 @@ services:
   # against Postgres via the same shared composition (`compose_ingest_record_store`,
   # `collectors_cli.py`) — hence `depends_on` both. SAME image as `api`/`writer`.
   #
-  # THREE threads since `T-01.3` (`SPEC-007` phase `01`): `forceOrder` (stream), `premiumIndex`
-  # (poll) and `/fapi/v1/klines` (poll + a one-off backfill at boot). The three CADENCE
-  # variables live in `../.env`, which `env_file:` below supplies — NOT in an `environment:`
+  # FOUR threads since `T-04.3` (`SPEC-007` phase `04`): `forceOrder` (stream), `premiumIndex`
+  # (poll), `/fapi/v1/klines` (poll + a one-off backfill at boot) and
+  # `/futures/data/globalLongShortAccountRatio` (poll + a one-off full page at boot). The four
+  # CADENCE variables live in `../.env`, which `env_file:` below supplies — NOT in an `environment:`
   # block here, and that is deliberate: `environment:` takes precedence over `env_file:`, so
   # pinning a default here would SILENTLY override whatever the operator wrote in `.env`. The
   # one variable this file does pin that way is `api`'s `APP_HOST`, and its comment says why
@@ -164,9 +165,21 @@ services:
   #                                                    is 1-minute, so below 60 buys only quota
   #   KLINES_BACKFILL_DAYS             default 7       days read once at boot (7 x 1440 = 10.080
   #                                                    bars per symbol = 7 calls of 1500)
+  #   LONG_SHORT_CYCLE_INTERVAL_S      default 60      seconds between long/short polls; the
+  #                                                    series is 5-minute and the SOURCE grid is
+  #                                                    5 min too `[MEDIDO 2026-09-12, n=499
+  #                                                    gaps: inter-chegada == 300.000 ms exatos]`,
+  #                                                    so below 60 buys nothing. There is NO
+  #                                                    backfill-days twin: `/futures/data/*`
+  #                                                    takes no window on the tail call, and the
+  #                                                    boot pass asks the endpoint's own ceiling
+  #                                                    (limit=500 = ~41,7 h per symbol).
   #
   # Quota, so the numbers are not adjectives: weight 1 per klines call against 2400 weight/min
   # per IP `[MEDIDO 2026-09-10: sequencia 31->32->33]` — four symbols at 60 s spend 4 of 2400.
+  # The long/short thread spends 4 calls/min on `/futures/data/*`, a family that answers `200`
+  # with ZERO `x-mbx-*` headers (`domain/clock_skew.py`, `T-03.7`) — so its weight is UNREADABLE
+  # rather than zero, and its runs carry `WEIGHT_NOT_READABLE` instead of a derived number.
   # The boot backfill publishes `7 x 1440 x |symbols|` entries onto the Redis stream, under the
   # `REDIS_STREAM_MAXLEN` cap (default 100.000, `redis_stream_bus.py`); with the four-symbol
   # universe that peak is 40.320, i.e. 40% of the cap. An operator who raises

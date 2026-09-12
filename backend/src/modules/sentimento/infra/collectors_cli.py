@@ -1,4 +1,4 @@
-"""`collectors_cli`: ONE process, THREE threads, boot fail-fast, `SIGTERM` closes cleanly.
+"""`collectors_cli`: ONE process, FOUR threads, boot fail-fast, `SIGTERM` closes cleanly.
 
 `SPEC-004` §3.1, literal, is the contract this composition root implements: *"um processo, duas
 threads (`forceOrder` stream; `premiumIndex` poll) ... boot (fail-fast, `RN-4`): resolve
@@ -12,17 +12,22 @@ o `IngestRun` dela ... sai `rc=0`"*.
 only "capture-or-lose" surfaces (liquidation events, premium/funding polls), and today's code is
 synchronous, without `asyncio`.
 
-── THE THIRD THREAD, AND WHY `SPEC-004`'s "duas threads" STILL HOLDS ───────────────────────────
+── THE THIRD AND FOURTH THREADS, AND WHY `SPEC-004`'s "duas threads" STILL HOLDS ───────────────
 
-`T-01.3` (`SPEC-007` phase `01`) adds `_run_klines_collector`, so the sentence above reads TWO
-and the process now runs THREE. That is not a contradiction being papered over: `SPEC-004` §3.1
+`T-01.3` (`SPEC-007` phase `01`) adds `_run_klines_collector` and `T-04.3` (phase `04`) adds
+`_run_long_short_collector`, so the sentence above reads TWO and the process now runs FOUR. The
+count is written out here, and not left at "three", because a stale number in the FIRST line of
+this docstring is the one place a reader checks before trusting the rest of it. That is not a
+contradiction being papered over: `SPEC-004` §3.1
 enumerated the producers that EXISTED when it was written, and `ADR-027/D1`'s actual decision —
-one synchronous process, one thread per capture surface, no `asyncio` — is what a third producer
-extends rather than violates. `/fapi/v1/klines` is NOT a capture-or-lose surface (it is a REST
-history, deep since 2019-09-08 `[MEDIDO 2026-09-10, SPEC-007 §9.2]`, re-readable at will), which
-is exactly why it can afford to share a process with two surfaces that are. The alternative — a
-fourth container for a poll that spends `4` of `2400` weight per minute — is the cost `ADR-027/D1`
-already refused for the other two.
+one synchronous process, one thread per capture surface, no `asyncio` — is what a third and a
+fourth producer extend rather than violate. Neither `/fapi/v1/klines` nor
+`/futures/data/globalLongShortAccountRatio` is a capture-or-lose surface: the first is a REST
+history, deep since 2019-09-08 `[MEDIDO 2026-09-10, SPEC-007 §9.2]`, and the second answers up to
+`500` past points per call `[MEDIDO 2026-09-12]` — both re-readable at will, which is exactly why
+they can afford to share a process with two surfaces that are not. The alternative — one more
+container per poll, for a poll that spends `4` of `2400` weight per minute — is the cost
+`ADR-027/D1` already refused for the other two.
 
 `docs/context/captura-em-producao/gates/Q3-run-definition.md` (signed 2026-09-07,
 `quant-architect`) is the run-shape decision this module executes: §1 fixes what "one run" means
@@ -81,9 +86,17 @@ from src.modules.sentimento.domain.force_order_natural_key import (
     trade_time_utc_date,
 )
 from src.modules.sentimento.domain.ingest_record import IngestRun
+from src.modules.sentimento.domain.long_short_catalog import LONG_SHORT_INTERVAL
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
 from src.modules.sentimento.domain.provenance import SeriesRow
 from src.modules.sentimento.domain.quota_bucket import USED_WEIGHT_HEADER
+from src.modules.sentimento.infra.binance_futures_data_client import (
+    MAX_LIMIT as FUTURES_DATA_MAX_LIMIT,
+)
+from src.modules.sentimento.infra.binance_futures_data_client import (
+    BinanceFuturesDataClient,
+    FuturesDataPageResponse,
+)
 from src.modules.sentimento.infra.binance_klines_client import (
     MAX_LIMIT,
     BinanceKlinesClient,
@@ -135,17 +148,22 @@ from src.modules.sentimento.use_cases.collect_premium_index import (
 from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_ENDPOINT,
     KLINES_ENDPOINT,
+    LONG_SHORT_DATA_ENDPOINT,
+    LONG_SHORT_ENDPOINT,
     KnownVerdict,
     build_force_order_run,
     build_klines_run,
+    build_long_short_run,
     build_premium_index_run,
 )
 from src.modules.sentimento.use_cases.collector_series_mapping import (
     INITIAL_SYMBOLS,
     KLINES_BUCKET_WIDTH_MS,
     KlinesToRows,
+    LongShortToRows,
     build_force_order_to_rows,
     build_klines_to_rows,
+    build_long_short_to_rows,
     build_premium_index_to_rows,
 )
 from src.modules.sentimento.use_cases.probe_stream_quantity_fields import (
@@ -179,6 +197,12 @@ _PREMIUM_INDEX_CYCLE_INTERVAL_S_VAR: Final[str] = "PREMIUM_INDEX_CYCLE_INTERVAL_
 _KLINES_CYCLE_INTERVAL_S_VAR: Final[str] = "KLINES_CYCLE_INTERVAL_S"
 _KLINES_BACKFILL_DAYS_VAR: Final[str] = "KLINES_BACKFILL_DAYS"
 
+# Same `RS-3.5` reasoning, applied to the fourth producer (`T-04.3`). One variable and not two:
+# this collector has no "backfill days" knob because `/futures/data/*` takes no window on the
+# tail call — its whole history knob is `limit`, and `limit` is pinned at the endpoint's own
+# ceiling (`FUTURES_DATA_MAX_LIMIT`), which is a fact of the provider and not a setting.
+_LONG_SHORT_CYCLE_INTERVAL_S_VAR: Final[str] = "LONG_SHORT_CYCLE_INTERVAL_S"
+
 _DEFAULT_REDIS_HOST: Final[str] = "localhost"
 _DEFAULT_REDIS_PORT: Final[int] = 6379
 _DEFAULT_REDIS_STREAM: Final[str] = "md.series.write"
@@ -196,6 +220,38 @@ _DEFAULT_KLINES_CYCLE_INTERVAL_S: Final[float] = 60.0
 # 1500. Da 672 candles de 15min e 42 de 4h — a menor e a maior unidade de operacao declarada
 # (D5, owner) tem forma na tela."*
 _DEFAULT_KLINES_BACKFILL_DAYS: Final[int] = 7
+
+# ── THE FOURTH COLLECTOR'S TWO NUMBERS ─────────────────────────────────────────────────────
+#
+# `[MEDIDO 2026-09-12, n=499 gaps sobre limit=500]`: `globalLongShortAccountRatio` publishes on a
+# grid whose inter-arrival is EXACTLY `300_000` ms, and `[MEDIDO 2026-09-12, poll de 10 s, n=2]`
+# a point becomes visible 9,6 s / 70,8 s after the instant it is stamped with. So a 60-second
+# cadence sees every bucket within about a minute of it existing, and spends 4 calls/min for four
+# symbols on an endpoint family that publishes no weight header at all.
+#
+# ⚠️ A cadence EQUAL to the 300 s grid would be the tempting "one call per bucket" — and it is
+# the wrong choice: any drift between the two periods parks the poll just before publication and
+# the newest bucket waits a full extra period. Polling faster than the grid costs almost nothing
+# here (the watermark drops what it has already seen) and removes that failure mode entirely.
+_DEFAULT_LONG_SHORT_CYCLE_INTERVAL_S: Final[float] = 60.0
+
+# `SPEC-007` §4.2 / `T-04.1`, MEASURED against the origin: `period=1m` and `period=3m` answer
+# `HTTP 200` with `[]`, `period=5m` answers 500 points. This string is BOTH the `period` query
+# parameter and the `interval` term of the `SeriesKey` — `long_short_catalog.LONG_SHORT_INTERVAL`
+# is the one home for it, imported rather than respelled.
+_LONG_SHORT_PERIOD: Final[str] = LONG_SHORT_INTERVAL
+
+# The boot pass asks for the endpoint's whole ceiling — 500 points of 5 min is ~41,7 h, which is
+# `DoD-3`'s "N >= 30 barras nativas" many times over on the FIRST pass, without a paging loop and
+# without a window contract. Every pass after it asks for the tail the cadence can have closed.
+_LONG_SHORT_BOOT_LIMIT: Final[int] = FUTURES_DATA_MAX_LIMIT
+
+# Two extra buckets beyond what the configured cadence can have closed — same self-healing
+# argument as `_KLINES_TAIL_MARGIN_BARS`, and the same watermark makes the overlap free.
+_LONG_SHORT_TAIL_MARGIN_POINTS: Final[int] = 2
+
+# The width of one bucket of this series, in milliseconds — the measured inter-arrival above.
+_LONG_SHORT_BUCKET_WIDTH_MS: Final[int] = 300_000
 
 _MS_PER_DAY: Final[int] = 86_400_000
 
@@ -315,6 +371,7 @@ class BootConfig:
     premium_index_cycle_interval_s: float
     klines_cycle_interval_s: float
     klines_backfill_days: int
+    long_short_cycle_interval_s: float
 
 
 def _parse_int(environ: Mapping[str, str], variable: str, default: int) -> int:
@@ -414,6 +471,9 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
         ),
         klines_backfill_days=_positive_int(
             environ, _KLINES_BACKFILL_DAYS_VAR, _DEFAULT_KLINES_BACKFILL_DAYS
+        ),
+        long_short_cycle_interval_s=_positive_float(
+            environ, _LONG_SHORT_CYCLE_INTERVAL_S_VAR, _DEFAULT_LONG_SHORT_CYCLE_INTERVAL_S
         ),
     )
 
@@ -1026,6 +1086,216 @@ def _run_klines_collector(
         stop_event.wait(interval_s)
 
 
+# ── THE FOURTH COLLECTOR: `/futures/data/globalLongShortAccountRatio` (`T-04.3`) ─────────────
+
+
+class LongShortClient(Protocol):
+    """The one call `_run_long_short_collector` makes — `BinanceFuturesDataClient` satisfies it.
+
+    A `Protocol` for the same reason every other transport in this module is injectable: the
+    offline suite (`backend/scripts/test.sh`'s "ZERO REDE") substitutes a fake that answers
+    scripted pages, and production gets the real client. The ENDPOINT is a parameter of the
+    call rather than of the client, which is what makes this the shared `/futures/data/*`
+    client the task asked for instead of a second one welded to one path.
+    """
+
+    def history(
+        self, endpoint: str, symbol: str, period: str, limit: int
+    ) -> FuturesDataPageResponse:
+        """Return the newest `limit` points of `/futures/data/{endpoint}` for `symbol`."""
+        ...
+
+
+@dataclass(frozen=True)
+class _LongShortPassTotals:
+    """What one pass over the symbol universe measured — the operands of `build_long_short_run`.
+
+    `n_returned` and `n_published` stay SEPARATE for the reason `_KlinesPassTotals` states: their
+    difference is the size of the watermark's and the settlement cut's refusals together, and
+    collapsing them would make both invisible in the record an operator consults.
+    """
+
+    n_returned: int = 0
+    n_published: int = 0
+    n_calls: int = 0
+    api_code: int | None = None
+
+    def plus(self, other: _LongShortPassTotals) -> _LongShortPassTotals:
+        """Fold another symbol's totals in; the FIRST `api_code` seen is the one kept."""
+        return _LongShortPassTotals(
+            n_returned=self.n_returned + other.n_returned,
+            n_published=self.n_published + other.n_published,
+            n_calls=self.n_calls + other.n_calls,
+            api_code=self.api_code if self.api_code is not None else other.api_code,
+        )
+
+
+def _long_short_tail_limit(interval_s: float) -> int:
+    """How many of the newest buckets one periodic cycle asks for — cadence plus a fixed margin.
+
+    Derived from the CONFIGURED cadence (`RS-3.5`), never fixed in code: raising
+    `LONG_SHORT_CYCLE_INTERVAL_S` to an hour must widen the page to cover the twelve buckets that
+    closed meanwhile, or the collector would publish one bucket in twelve and call it a gap.
+    Capped at the endpoint's own ceiling, which is a fact of the provider and not a setting.
+    """
+    buckets_per_cycle = int(interval_s // (_LONG_SHORT_BUCKET_WIDTH_MS / 1000))
+    return min(FUTURES_DATA_MAX_LIMIT, buckets_per_cycle + _LONG_SHORT_TAIL_MARGIN_POINTS)
+
+
+def _collect_long_short_for_symbol(
+    *,
+    client: LongShortClient,
+    sink: RedisStreamSeriesSink,
+    to_rows: LongShortToRows,
+    digest: hashlib._Hash,
+    symbol: str,
+    run_id: str,
+    watermark: dict[str, int],
+    limit: int,
+) -> _LongShortPassTotals:
+    """Collect one symbol for one pass — ONE call, never a paging loop.
+
+    `/futures/data/*` answers the newest `limit` points when no window is sent, and `limit` is
+    already at the endpoint's ceiling on the boot pass, so there is nothing to page THROUGH: the
+    deeper history this endpoint holds (~30 days, `[MEDIDO 2026-09-10]`) is reached with
+    `startTime`/`endTime`, which is `BinanceOiHistoryClient`'s windowed contract and a different
+    task. Asking for it here would silently turn a live tail into a backfill.
+
+    `digest` is fed the VERBATIM point objects, the same incremental shape the other two REST
+    collectors use — never the whole pass held in memory to hash it at the end.
+    """
+    page = client.history(LONG_SHORT_DATA_ENDPOINT, symbol, _LONG_SHORT_PERIOD, limit)
+    totals = _LongShortPassTotals(n_returned=len(page.points), n_calls=1, api_code=page.api_code)
+    if page.api_code is not None:
+        logger.warning(
+            "long_short_page_refused",
+            extra={
+                "endpoint": LONG_SHORT_ENDPOINT,
+                "symbol": symbol,
+                "api_code": page.api_code,
+                "status": page.status,
+            },
+        )
+        return totals
+    for point in page.points:
+        digest.update(repr(sorted(point.items())).encode("utf-8"))
+    seen = watermark.get(symbol)
+    rows = to_rows(_epoch_ms(), symbol, page.points)
+    fresh = tuple(row for row in rows if seen is None or row.bucket_end > seen)
+    for row in fresh:
+        sink.accept(row, run_id=run_id)
+    if fresh:
+        watermark[symbol] = max(row.bucket_end for row in fresh)
+    return totals.plus(_LongShortPassTotals(n_published=len(fresh)))
+
+
+def _run_long_short_collector(
+    *,
+    stop_event: threading.Event,
+    failure_event: threading.Event,
+    exit_code: list[int],
+    client: LongShortClient,
+    sink: RedisStreamSeriesSink,
+    to_rows: LongShortToRows,
+    record_run: Callable[[IngestRun], None],
+    symbols: Sequence[str],
+    interval_s: float,
+) -> None:
+    """Ask for the endpoint's whole ceiling once at boot, then poll the tail every `interval_s`.
+
+    ONE `IngestRun` PER PASS over the whole symbol universe — the same unit `_run_klines_
+    collector` uses and `build_long_short_run` documents.
+
+    The WATERMARK (`{symbol: newest published bucket_end}`) lives for the life of the process and
+    is what makes the overlap between pages free. Like the klines one it is deliberately NOT
+    persisted: `md.series`'s primary key includes `observed_at`, so a re-read after a restart
+    appends rather than conflicts, and `as_of` returns `argmin(observed_at)` — the ORIGINAL
+    observation, never the re-read.
+
+    A publish failure is `SPEC-004` §3.1's "falha do Redis em regime": the pass closes `REJECTED`,
+    the other threads are told to stop, `exit_code[0] = 1`. A page the SOURCE refused (an error
+    envelope) is NOT that — it closes `ACCEPTED_WITH_WARNING`, the same distinction the other two
+    REST collectors already draw between trouble upstream at Binance and trouble writing to our
+    own queue.
+    """
+    watermark: dict[str, int] = {}
+    tail_limit = _long_short_tail_limit(interval_s)
+    limit = _LONG_SHORT_BOOT_LIMIT
+    while not stop_event.is_set():
+        run_id = str(uuid.uuid4())
+        started_at = _iso_now()
+        digest = hashlib.sha256()
+        totals = _LongShortPassTotals()
+        try:
+            for symbol in symbols:
+                if stop_event.is_set():
+                    break
+                totals = totals.plus(
+                    _collect_long_short_for_symbol(
+                        client=client,
+                        sink=sink,
+                        to_rows=to_rows,
+                        digest=digest,
+                        symbol=symbol,
+                        run_id=run_id,
+                        watermark=watermark,
+                        limit=limit,
+                    )
+                )
+        except _PUBLISH_FAILURE_EXCEPTIONS as failure:
+            run = build_long_short_run(
+                started_at=started_at,
+                ended_at=_iso_now(),
+                n_returned=totals.n_returned,
+                n_calls=totals.n_calls,
+                api_code=totals.api_code,
+                verdict="REJECTED",
+                src_sha256=digest.hexdigest(),
+                run_id=run_id,
+            )
+            record_run(run)
+            logger.error(
+                "collector_cycle_completed %s: %s",
+                LONG_SHORT_ENDPOINT,
+                failure,
+                extra={
+                    "endpoint": LONG_SHORT_ENDPOINT,
+                    "n_published": totals.n_published,
+                    "verdict": "REJECTED",
+                    "run_id": run.run_id,
+                },
+                exc_info=True,
+            )
+            exit_code[0] = 1
+            failure_event.set()
+            return
+        verdict: KnownVerdict = "ACCEPTED" if totals.api_code is None else "ACCEPTED_WITH_WARNING"
+        run = build_long_short_run(
+            started_at=started_at,
+            ended_at=_iso_now(),
+            n_returned=totals.n_returned,
+            n_calls=totals.n_calls,
+            api_code=totals.api_code,
+            verdict=verdict,
+            src_sha256=digest.hexdigest(),
+            run_id=run_id,
+        )
+        record_run(run)
+        logger.info(
+            "collector_cycle_completed",
+            extra={
+                "endpoint": LONG_SHORT_ENDPOINT,
+                "n_published": totals.n_published,
+                "n_returned": totals.n_returned,
+                "boot_pass": limit == _LONG_SHORT_BOOT_LIMIT,
+                "verdict": verdict,
+                "run_id": run.run_id,
+            },
+        )
+        limit = tail_limit
+        stop_event.wait(interval_s)
+
+
 # ── THE COMPOSITION ITSELF ──────────────────────────────────────────────────────────────────
 
 
@@ -1057,13 +1327,16 @@ def run(
     force_order_source_factory: Callable[[], MessageSource] | None = None,
     premium_index_fetcher_factory: Callable[[], PremiumIndexFetcher] | None = None,
     klines_client_factory: Callable[[], KlinesClient] | None = None,
+    long_short_client_factory: Callable[[], LongShortClient] | None = None,
     premium_index_to_rows: PremiumIndexReadingToRows | None = None,
     force_order_to_rows: ForceOrderObservationToRows | None = None,
     klines_to_rows: KlinesToRows | None = None,
+    long_short_to_rows: LongShortToRows | None = None,
     klines_symbols: Sequence[str] | None = None,
+    long_short_symbols: Sequence[str] | None = None,
     stop_event: threading.Event | None = None,
 ) -> int:
-    """Start the THREE collector threads, install `SIGTERM`, and wait for a clean/failed exit.
+    """Start the FOUR collector threads, install `SIGTERM`, and wait for a clean/failed exit.
 
     Every network-touching default is injectable, matching every other CLI in this package —
     left to default, `force_order_source_factory` opens a real per-symbol combined `forceOrder`
@@ -1084,10 +1357,18 @@ def run(
     open_force_order_source = force_order_source_factory or _default_force_order_source
     build_premium_index_fetcher = premium_index_fetcher_factory or PremiumIndexHttpClient
     build_klines_client = klines_client_factory or BinanceKlinesClient
+    build_long_short_client = long_short_client_factory or BinanceFuturesDataClient
     premium_to_rows = premium_index_to_rows or _mapping_not_decided_yet
     force_order_to_rows_ = force_order_to_rows or _mapping_not_decided_yet
     klines_to_rows_ = klines_to_rows or build_klines_to_rows()
+    # Same asymmetry, same reason as `klines_to_rows` above: the identity is DECIDED
+    # (`domain/long_short_catalog.py`, `T-04.2`) and there is exactly one construction of it, so
+    # there is nothing for `_mapping_not_decided_yet` to protect against here.
+    long_short_to_rows_ = long_short_to_rows or build_long_short_to_rows()
     klines_symbols_ = sorted(INITIAL_SYMBOLS) if klines_symbols is None else klines_symbols
+    long_short_symbols_ = (
+        sorted(INITIAL_SYMBOLS) if long_short_symbols is None else long_short_symbols
+    )
 
     sink = RedisStreamSeriesSink(connection, config.redis_stream, config.redis_stream_maxlen)
     stop = stop_event or threading.Event()
@@ -1149,10 +1430,26 @@ def run(
             "backfill_days": config.klines_backfill_days,
         },
     )
+    long_short_thread = threading.Thread(
+        target=_run_long_short_collector,
+        name="collector-long-short",
+        kwargs={
+            "stop_event": stop,
+            "failure_event": failure,
+            "exit_code": exit_code,
+            "client": build_long_short_client(),
+            "sink": sink,
+            "to_rows": long_short_to_rows_,
+            "record_run": store.record_run,
+            "symbols": long_short_symbols_,
+            "interval_s": config.long_short_cycle_interval_s,
+        },
+    )
     try:
         force_order_thread.start()
         premium_index_thread.start()
         klines_thread.start()
+        long_short_thread.start()
         while not stop.is_set() and not failure.is_set():
             time.sleep(_MAIN_LOOP_POLL_S)
         if failure.is_set() and not stop.is_set():
@@ -1166,6 +1463,7 @@ def run(
         force_order_thread.join(timeout=_JOIN_TIMEOUT_S)
         premium_index_thread.join(timeout=_JOIN_TIMEOUT_S)
         klines_thread.join(timeout=_JOIN_TIMEOUT_S)
+        long_short_thread.join(timeout=_JOIN_TIMEOUT_S)
     finally:
         signal.signal(signal.SIGTERM, previous_handler)
     return exit_code[0]
