@@ -148,7 +148,20 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # instant for these rows and is NOT in `READ_PATH_COLUMNS` — was rejected on purpose: it
     # would have kept this file out of this registry by picking a synonym, which is a bypass of
     # the gate, not a compliance with it.
-    "modules/sentimento/infra/collectors_cli.py": frozenset({"_publish_klines_page"}),
+    #
+    # `T-03.3` (`cinco-metricas-do-core`, phase `03`) adds `_publish_open_interest_page` to the
+    # SAME entry, for the SAME three reasons and with one extra: it reads `row.bucket_end` off
+    # rows it just built (to advance the open-interest watermark) AND calls
+    # `open_interest_bucket_end(point)` on RAW PAYLOAD POINTS — mappings straight off the wire,
+    # not `SeriesRow` instances — to compare them against that watermark. Neither touch is a
+    # read "as of" a decision instant: (a) there is no `t` in the function, only `_epoch_ms()`;
+    # (b) the comparison is against this process's own high-water mark, never a second row
+    # competing to be the answer; (c) it returns a COUNT. The anti-lookahead comparison that
+    # DOES involve an instant lives in `use_cases/collector_series_mapping`, and it compares
+    # against the collector's observation clock rather than against a caller's `t`.
+    "modules/sentimento/infra/collectors_cli.py": frozenset(
+        {"_publish_klines_page", "_publish_open_interest_page"}
+    ),
     # `T-01.2` (`pagina-de-grafico-s2`): SERIALIZATION, same category as `write_series_row.py`
     # and `series_row_wire.py` above — `SeriesHistoryRow` is a NEW dataclass (its OWN
     # `available_at`, not `SeriesRow`'s), and `to_wire()` only projects an already-computed

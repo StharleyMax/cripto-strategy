@@ -1,4 +1,4 @@
-"""`collectors_cli`: ONE process, THREE threads, boot fail-fast, `SIGTERM` closes cleanly.
+"""`collectors_cli`: ONE process, FOUR threads, boot fail-fast, `SIGTERM` closes cleanly.
 
 `SPEC-004` §3.1, literal, is the contract this composition root implements: *"um processo, duas
 threads (`forceOrder` stream; `premiumIndex` poll) ... boot (fail-fast, `RN-4`): resolve
@@ -23,6 +23,18 @@ history, deep since 2019-09-08 `[MEDIDO 2026-09-10, SPEC-007 §9.2]`, re-readabl
 is exactly why it can afford to share a process with two surfaces that are. The alternative — a
 fourth container for a poll that spends `4` of `2400` weight per minute — is the cost `ADR-027/D1`
 already refused for the other two.
+
+── THE FOURTH THREAD, AND IT COSTS THE ARGUMENT ABOVE NOTHING NEW ──────────────────────────────
+
+`T-03.3` (`SPEC-007` phase `03`) adds `_run_open_interest_collector`, so the process now runs
+FOUR. The argument is the klines one, unchanged: `/futures/data/openInterestHist` is a REST
+history, NOT a capture-or-lose surface — it retains ~30 days and is re-readable at will
+`[MEDIDO 2026-09-12: startTime de -30d -> HTTP 200; -35d -> HTTP 400 code -1130]`. Two things
+make it CHEAPER than klines rather than a new class of cost: its grid is 5 minutes instead of 1
+(a fifth of the rows), and its window width is free — a page of 500 points costs the same call
+as a page of 12, so only the CADENCE spends anything
+`[MEDIDO 2026-09-12: 60 chamadas consecutivas em 22,5 s -> 60x HTTP 200, zero 429/418, e ZERO
+header `x-mbx-*` para precificar]`.
 
 `docs/context/captura-em-producao/gates/Q3-run-definition.md` (signed 2026-09-07,
 `quant-architect`) is the run-shape decision this module executes: §1 fixes what "one run" means
@@ -81,6 +93,12 @@ from src.modules.sentimento.domain.force_order_natural_key import (
     trade_time_utc_date,
 )
 from src.modules.sentimento.domain.ingest_record import IngestRun
+from src.modules.sentimento.domain.oi_history_paginator import (
+    ClosedWindow,
+    OiHistoryPageResponse,
+    classify_page,
+    enumerate_history_pages,
+)
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
 from src.modules.sentimento.domain.provenance import SeriesRow
 from src.modules.sentimento.domain.quota_bucket import USED_WEIGHT_HEADER
@@ -89,6 +107,7 @@ from src.modules.sentimento.infra.binance_klines_client import (
     BinanceKlinesClient,
     KlinesPageResponse,
 )
+from src.modules.sentimento.infra.binance_oi_history_client import BinanceOiHistoryClient
 from src.modules.sentimento.infra.binance_stream_probe import (
     BINANCE_FUTURES_STREAM_HOST,
     StreamIdleTimeoutError,
@@ -135,18 +154,24 @@ from src.modules.sentimento.use_cases.collect_premium_index import (
 from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_ENDPOINT,
     KLINES_ENDPOINT,
+    OPEN_INTEREST_HIST_ENDPOINT,
     KnownVerdict,
     build_force_order_run,
     build_klines_run,
+    build_open_interest_run,
     build_premium_index_run,
 )
 from src.modules.sentimento.use_cases.collector_series_mapping import (
     INITIAL_SYMBOLS,
     KLINES_BUCKET_WIDTH_MS,
+    OPEN_INTEREST_BUCKET_WIDTH_MS,
     KlinesToRows,
+    OpenInterestToRows,
     build_force_order_to_rows,
     build_klines_to_rows,
+    build_open_interest_to_rows,
     build_premium_index_to_rows,
+    open_interest_bucket_end,
 )
 from src.modules.sentimento.use_cases.probe_stream_quantity_fields import (
     MessageSource,
@@ -179,6 +204,13 @@ _PREMIUM_INDEX_CYCLE_INTERVAL_S_VAR: Final[str] = "PREMIUM_INDEX_CYCLE_INTERVAL_
 _KLINES_CYCLE_INTERVAL_S_VAR: Final[str] = "KLINES_CYCLE_INTERVAL_S"
 _KLINES_BACKFILL_DAYS_VAR: Final[str] = "KLINES_BACKFILL_DAYS"
 
+# `RS-3.5` again, for the FOURTH producer (`T-03.3`). Same two knobs, same route through
+# `deploy/compose.yml` + `.env`, and for this endpoint the cadence is the ONLY thing that
+# costs anything: the window width is free (a page of 500 points costs the same call as a
+# page of 12), so widening the tail is not a quota decision while shortening the cycle is.
+_OPEN_INTEREST_CYCLE_INTERVAL_S_VAR: Final[str] = "OPEN_INTEREST_CYCLE_INTERVAL_S"
+_OPEN_INTEREST_BACKFILL_DAYS_VAR: Final[str] = "OPEN_INTEREST_BACKFILL_DAYS"
+
 _DEFAULT_REDIS_HOST: Final[str] = "localhost"
 _DEFAULT_REDIS_PORT: Final[int] = 6379
 _DEFAULT_REDIS_STREAM: Final[str] = "md.series.write"
@@ -197,6 +229,24 @@ _DEFAULT_KLINES_CYCLE_INTERVAL_S: Final[float] = 60.0
 # (D5, owner) tem forma na tela."*
 _DEFAULT_KLINES_BACKFILL_DAYS: Final[int] = 7
 
+# One minute, the same cadence the other two pollers run at, and deliberately SHORTER than
+# the 5-minute bucket it collects: the point labelled `T` is published ~6 s after `T`
+# `[MEDIDO 2026-09-12: ts=1789218300000 visto em now=1789218306231]`, so a 5-minute cycle
+# would leave a fresh reading unpublished for up to a bucket while a 60-second one picks it
+# up on the next turn. The watermark makes the four-fold overlap free in rows, and the
+# endpoint publishes no weight header to spend against `[MEDIDO 2026-09-12: 60 chamadas
+# consecutivas -> 60x HTTP 200, nenhum 429/418]`.
+_DEFAULT_OPEN_INTEREST_CYCLE_INTERVAL_S: Final[float] = 60.0
+
+# Seven days = `7 x 288 = 2.016` points per symbol = 5 pages of 500, and it is bounded ABOVE
+# by the endpoint's own retention: `/futures/data/*` cuts at ~30 days
+# `[MEDIDO 2026-09-12: startTime de -30d -> HTTP 200 com 12 pontos; -35d e -60d -> HTTP 400
+# `{"msg":"parameter 'startTime' is invalid.","code":-1130}`]`. Seven matches
+# `_DEFAULT_KLINES_BACKFILL_DAYS` so the two series that share a panel share a horizon; an
+# operator who sets more than ~30 gets `-1130`, which `classify_page` already reads as END
+# OF HISTORY rather than as a transient error to retry.
+_DEFAULT_OPEN_INTEREST_BACKFILL_DAYS: Final[int] = 7
+
 _MS_PER_DAY: Final[int] = 86_400_000
 
 # `SPEC-007` §4.1's normative row for M1 — the `interval` term of the `SeriesKey`, and the
@@ -209,6 +259,18 @@ _KLINES_INTERVAL: Final[str] = "1m"
 # costs nothing and buys self-healing: a cycle the process slept through, or a bar the source
 # published late, is picked up by the next one instead of leaving a permanent hole.
 _KLINES_TAIL_MARGIN_BARS: Final[int] = 2
+
+# `SPEC-007` §4.2's normative row for M2 — the `period` query parameter of
+# `/futures/data/openInterestHist`, and the `interval` term of the `SeriesKey`
+# `domain/open_interest_catalog.py` already fixed (`_INTERVAL = "5m"`). The two are the
+# same string because M2, like M1, is collected on the grid the source itself publishes
+# (`native_grid = "5min"`).
+_OPEN_INTEREST_PERIOD: Final[str] = "5m"
+
+# The documented maximum for this endpoint. `D7.5` measured the source ANSWERING 501 points
+# to a `limit=500` request and `classify_page` deliberately applies no length cap to what it
+# accepts — so this constant sizes the REQUEST and never trims the RESPONSE.
+_OPEN_INTEREST_PAGE_LIMIT: Final[int] = 500
 
 # `D1.4`: `REDIS_HOST=nao-existe` has to produce `rc != 0` in <= 5 s. DNS failure against a
 # nonexistent host resolves near-instantly; this timeout only bounds the case the address
@@ -315,6 +377,8 @@ class BootConfig:
     premium_index_cycle_interval_s: float
     klines_cycle_interval_s: float
     klines_backfill_days: int
+    open_interest_cycle_interval_s: float = _DEFAULT_OPEN_INTEREST_CYCLE_INTERVAL_S
+    open_interest_backfill_days: int = _DEFAULT_OPEN_INTEREST_BACKFILL_DAYS
 
 
 def _parse_int(environ: Mapping[str, str], variable: str, default: int) -> int:
@@ -414,6 +478,14 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
         ),
         klines_backfill_days=_positive_int(
             environ, _KLINES_BACKFILL_DAYS_VAR, _DEFAULT_KLINES_BACKFILL_DAYS
+        ),
+        open_interest_cycle_interval_s=_positive_float(
+            environ,
+            _OPEN_INTEREST_CYCLE_INTERVAL_S_VAR,
+            _DEFAULT_OPEN_INTEREST_CYCLE_INTERVAL_S,
+        ),
+        open_interest_backfill_days=_positive_int(
+            environ, _OPEN_INTEREST_BACKFILL_DAYS_VAR, _DEFAULT_OPEN_INTEREST_BACKFILL_DAYS
         ),
     )
 
@@ -1026,6 +1098,282 @@ def _run_klines_collector(
         stop_event.wait(interval_s)
 
 
+# ── THE FOURTH COLLECTOR: `/futures/data/openInterestHist` (`T-03.3`) ───────────────────────
+
+
+class OpenInterestHistoryClient(Protocol):
+    """The one call `_run_open_interest_collector` makes — `BinanceOiHistoryClient` satisfies it.
+
+    Named as a `Protocol` for the same reason `KlinesClient` above is: the offline suite
+    (`backend/scripts/test.sh`'s "ZERO REDE") substitutes a fake that answers scripted pages,
+    and production gets the real client.
+    """
+
+    def open_interest_history(
+        self, symbol: str, period: str, window: ClosedWindow, limit: int
+    ) -> OiHistoryPageResponse:
+        """Return one page of open-interest readings for `symbol` over the CLOSED `window`."""
+        ...
+
+
+@dataclass(frozen=True)
+class _OpenInterestPassTotals:
+    """What one pass over the symbol universe measured — the operands of `build_open_interest_run`.
+
+    Same shape and same reasoning as `_KlinesPassTotals`: `n_returned` and `n_published` stay
+    SEPARATE so the size of the `RS-3.4` cut plus the watermark stays readable in the log
+    instead of being absorbed into the run record.
+    """
+
+    n_returned: int = 0
+    n_published: int = 0
+    n_calls: int = 0
+    api_code: int | None = None
+
+    def plus(self, other: _OpenInterestPassTotals) -> _OpenInterestPassTotals:
+        """Fold another page's totals in; the FIRST `api_code` seen is the one kept."""
+        return _OpenInterestPassTotals(
+            n_returned=self.n_returned + other.n_returned,
+            n_published=self.n_published + other.n_published,
+            n_calls=self.n_calls + other.n_calls,
+            api_code=self.api_code if self.api_code is not None else other.api_code,
+        )
+
+
+def _open_interest_tail_span_ms(interval_s: float) -> int:
+    """How far back one periodic cycle asks — the configured cadence plus a fixed margin.
+
+    Derived from the cadence rather than fixed in code (`RS-3.5`), the same rule `_tail_limit`
+    applies to klines, but expressed as a WINDOW WIDTH instead of a row count because this
+    endpoint is paid per CALL and not per point: a page of 500 points costs exactly what a page
+    of 12 costs `[MEDIDO 2026-09-12: nenhum header `x-mbx-*` na resposta; 60 chamadas
+    consecutivas sem 429]`. So widening the tail is free and buys self-healing — a cycle the
+    process slept through is picked up by the next one instead of leaving a permanent hole —
+    while shortening the CYCLE is the only knob that spends anything.
+
+    The margin is two native buckets, matching `_KLINES_TAIL_MARGIN_BARS`'s two bars.
+    """
+    return int(interval_s * 1000) + 2 * OPEN_INTEREST_BUCKET_WIDTH_MS
+
+
+def _publish_open_interest_page(
+    *,
+    points: Sequence[Mapping[str, object]],
+    sink: RedisStreamSeriesSink,
+    to_rows: OpenInterestToRows,
+    digest: hashlib._Hash,
+    symbol: str,
+    run_id: str,
+    watermark: dict[str, int],
+) -> int:
+    """Publish the settled, not-yet-seen readings of one page; return how many reached the stream.
+
+    The `RS-3.4` cut is NOT made here — it lives in
+    `use_cases/collector_series_mapping.is_settled_open_interest_point`, where its SIGN is under
+    test. This function applies the second, independent filter: the WATERMARK, the newest
+    instant already published for `symbol` in this process. The two refusals are different and
+    neither implies the other — the watermark stops a duplicate, the settlement cut stops a row
+    stamped at an instant that has not happened yet.
+
+    `digest` is fed the VERBATIM points the client parsed out of the body, the same incremental
+    shape `_publish_klines_page` uses, so a 7-day backfill is never held in memory to be hashed.
+    """
+    for point in points:
+        digest.update(repr(sorted(point.items())).encode("utf-8"))
+    seen = watermark.get(symbol)
+    fresh = tuple(
+        point for point in points if seen is None or open_interest_bucket_end(point) > seen
+    )
+    rows = to_rows(_epoch_ms(), symbol, fresh)
+    for row in rows:
+        sink.accept(row, run_id=run_id)
+    if rows:
+        watermark[symbol] = max(row.bucket_end for row in rows)
+    return len(rows)
+
+
+def _collect_open_interest_for_symbol(
+    *,
+    client: OpenInterestHistoryClient,
+    sink: RedisStreamSeriesSink,
+    to_rows: OpenInterestToRows,
+    digest: hashlib._Hash,
+    symbol: str,
+    run_id: str,
+    watermark: dict[str, int],
+    stop_event: threading.Event,
+    windows: Sequence[ClosedWindow],
+) -> _OpenInterestPassTotals:
+    """Walk `windows` for one symbol, page by page, refusing any page `classify_page` rejects.
+
+    ⛔ `windows` IS ENUMERATED BY THE CALLER, FROM ARITHMETIC ALONE
+    (`domain/oi_history_paginator.enumerate_history_pages`), and NOTHING in this function reads
+    a response to decide what comes next. That is `SPEC-001` §5.7 / `CA-F3-2`, and the reason
+    is measured rather than stylistic: `openInterestHist` called with `startTime` ALONE answers
+    the tail of TODAY at `HTTP 200`, so a cursor loop shaped `next_start = last_timestamp +
+    period` never advances past that reply and stamps today's value with a timestamp from weeks
+    ago. There is no "next start" here for a response to corrupt.
+
+    `classify_page` is the second, independent half (`D7.4`): a page whose points fall outside
+    the window it was requested for is REJECTED and writes zero rows, `HTTP 200` or not. Its
+    verdict is honoured here rather than re-derived — this module builds no invariant of its own.
+    """
+    totals = _OpenInterestPassTotals()
+    for window in windows:
+        if stop_event.is_set():
+            break
+        page = client.open_interest_history(
+            symbol, _OPEN_INTEREST_PERIOD, window, _OPEN_INTEREST_PAGE_LIMIT
+        )
+        totals = totals.plus(
+            _OpenInterestPassTotals(n_returned=len(page.points), n_calls=1, api_code=page.api_code)
+        )
+        verdict = classify_page(window, page)
+        if verdict.verdict == "REJECTED":
+            logger.warning(
+                "open_interest_page_refused",
+                extra={
+                    "endpoint": OPEN_INTEREST_HIST_ENDPOINT,
+                    "symbol": symbol,
+                    "reason": verdict.reason,
+                    "api_code": verdict.api_code,
+                    "status": page.status,
+                    "window": f"{window.start_time_ms}/{window.end_time_ms}",
+                },
+            )
+            break
+        published = _publish_open_interest_page(
+            points=verdict.points_to_write,
+            sink=sink,
+            to_rows=to_rows,
+            digest=digest,
+            symbol=symbol,
+            run_id=run_id,
+            watermark=watermark,
+        )
+        totals = totals.plus(_OpenInterestPassTotals(n_published=published))
+    return totals
+
+
+def _run_open_interest_collector(
+    *,
+    stop_event: threading.Event,
+    failure_event: threading.Event,
+    exit_code: list[int],
+    client: OpenInterestHistoryClient,
+    sink: RedisStreamSeriesSink,
+    to_rows: OpenInterestToRows,
+    record_run: Callable[[IngestRun], None],
+    symbols: Sequence[str],
+    interval_s: float,
+    backfill_days: int,
+) -> None:
+    """Backfill `backfill_days` once at boot, then poll the tail every `interval_s`.
+
+    ONE `IngestRun` PER PASS over the whole symbol universe — the same unit
+    `_run_klines_collector` records, for the same reason `build_open_interest_run` documents.
+
+    The WATERMARK (`{symbol: newest published instant}`) lives for the life of the process and
+    is what makes the deliberate tail overlap free. Like the klines one it is NOT persisted: on
+    restart the boot backfill re-reads the same seven days, `md.series`'s primary key includes
+    `observed_at` so those re-reads append rather than conflict, and `as_of` returns
+    `argmin(observed_at)` — the ORIGINAL observation — so the read path is unaffected.
+
+    A publish failure is `SPEC-004` §3.1's "falha do Redis em regime": the pass closes
+    `REJECTED`, the other threads are told to stop, and `exit_code[0] = 1`. A page the SOURCE
+    refused — an error envelope, or `classify_page`'s window invariant — is NOT that: it closes
+    `ACCEPTED_WITH_WARNING`, the same line every other collector in this module draws between
+    trouble upstream at Binance and trouble writing to our own queue.
+    """
+    watermark: dict[str, int] = {}
+    backfill_days_left: int | None = backfill_days
+    while not stop_event.is_set():
+        run_id = str(uuid.uuid4())
+        started_at = _iso_now()
+        digest = hashlib.sha256()
+        totals = _OpenInterestPassTotals()
+        now_ms = _epoch_ms()
+        span_ms = (
+            backfill_days_left * _MS_PER_DAY
+            if backfill_days_left is not None
+            else _open_interest_tail_span_ms(interval_s)
+        )
+        windows = enumerate_history_pages(
+            ClosedWindow(start_time_ms=now_ms - span_ms, end_time_ms=now_ms),
+            OPEN_INTEREST_BUCKET_WIDTH_MS,
+            _OPEN_INTEREST_PAGE_LIMIT,
+        )
+        try:
+            for symbol in symbols:
+                if stop_event.is_set():
+                    break
+                totals = totals.plus(
+                    _collect_open_interest_for_symbol(
+                        client=client,
+                        sink=sink,
+                        to_rows=to_rows,
+                        digest=digest,
+                        symbol=symbol,
+                        run_id=run_id,
+                        watermark=watermark,
+                        stop_event=stop_event,
+                        windows=windows,
+                    )
+                )
+        except _PUBLISH_FAILURE_EXCEPTIONS as failure:
+            run = build_open_interest_run(
+                started_at=started_at,
+                ended_at=_iso_now(),
+                n_returned=totals.n_returned,
+                n_calls=totals.n_calls,
+                api_code=totals.api_code,
+                verdict="REJECTED",
+                src_sha256=digest.hexdigest(),
+                run_id=run_id,
+            )
+            record_run(run)
+            logger.error(
+                "collector_cycle_completed %s: %s",
+                OPEN_INTEREST_HIST_ENDPOINT,
+                failure,
+                extra={
+                    "endpoint": OPEN_INTEREST_HIST_ENDPOINT,
+                    "n_published": totals.n_published,
+                    "verdict": "REJECTED",
+                    "run_id": run.run_id,
+                },
+                exc_info=True,
+            )
+            exit_code[0] = 1
+            failure_event.set()
+            return
+        verdict: KnownVerdict = "ACCEPTED" if totals.api_code is None else "ACCEPTED_WITH_WARNING"
+        run = build_open_interest_run(
+            started_at=started_at,
+            ended_at=_iso_now(),
+            n_returned=totals.n_returned,
+            n_calls=totals.n_calls,
+            api_code=totals.api_code,
+            verdict=verdict,
+            src_sha256=digest.hexdigest(),
+            run_id=run_id,
+        )
+        record_run(run)
+        logger.info(
+            "collector_cycle_completed",
+            extra={
+                "endpoint": OPEN_INTEREST_HIST_ENDPOINT,
+                "n_published": totals.n_published,
+                "n_returned": totals.n_returned,
+                "backfill": backfill_days_left is not None,
+                "verdict": verdict,
+                "run_id": run.run_id,
+            },
+        )
+        backfill_days_left = None
+        stop_event.wait(interval_s)
+
+
 # ── THE COMPOSITION ITSELF ──────────────────────────────────────────────────────────────────
 
 
@@ -1057,13 +1405,15 @@ def run(
     force_order_source_factory: Callable[[], MessageSource] | None = None,
     premium_index_fetcher_factory: Callable[[], PremiumIndexFetcher] | None = None,
     klines_client_factory: Callable[[], KlinesClient] | None = None,
+    open_interest_client_factory: Callable[[], OpenInterestHistoryClient] | None = None,
     premium_index_to_rows: PremiumIndexReadingToRows | None = None,
     force_order_to_rows: ForceOrderObservationToRows | None = None,
     klines_to_rows: KlinesToRows | None = None,
+    open_interest_to_rows: OpenInterestToRows | None = None,
     klines_symbols: Sequence[str] | None = None,
     stop_event: threading.Event | None = None,
 ) -> int:
-    """Start the THREE collector threads, install `SIGTERM`, and wait for a clean/failed exit.
+    """Start the FOUR collector threads, install `SIGTERM`, and wait for a clean/failed exit.
 
     Every network-touching default is injectable, matching every other CLI in this package —
     left to default, `force_order_source_factory` opens a real per-symbol combined `forceOrder`
@@ -1086,7 +1436,9 @@ def run(
     build_klines_client = klines_client_factory or BinanceKlinesClient
     premium_to_rows = premium_index_to_rows or _mapping_not_decided_yet
     force_order_to_rows_ = force_order_to_rows or _mapping_not_decided_yet
+    build_open_interest_client = open_interest_client_factory or BinanceOiHistoryClient
     klines_to_rows_ = klines_to_rows or build_klines_to_rows()
+    open_interest_to_rows_ = open_interest_to_rows or build_open_interest_to_rows()
     klines_symbols_ = sorted(INITIAL_SYMBOLS) if klines_symbols is None else klines_symbols
 
     sink = RedisStreamSeriesSink(connection, config.redis_stream, config.redis_stream_maxlen)
@@ -1149,10 +1501,27 @@ def run(
             "backfill_days": config.klines_backfill_days,
         },
     )
+    open_interest_thread = threading.Thread(
+        target=_run_open_interest_collector,
+        name="collector-open-interest",
+        kwargs={
+            "stop_event": stop,
+            "failure_event": failure,
+            "exit_code": exit_code,
+            "client": build_open_interest_client(),
+            "sink": sink,
+            "to_rows": open_interest_to_rows_,
+            "record_run": store.record_run,
+            "symbols": klines_symbols_,
+            "interval_s": config.open_interest_cycle_interval_s,
+            "backfill_days": config.open_interest_backfill_days,
+        },
+    )
     try:
         force_order_thread.start()
         premium_index_thread.start()
         klines_thread.start()
+        open_interest_thread.start()
         while not stop.is_set() and not failure.is_set():
             time.sleep(_MAIN_LOOP_POLL_S)
         if failure.is_set() and not stop.is_set():
@@ -1166,6 +1535,7 @@ def run(
         force_order_thread.join(timeout=_JOIN_TIMEOUT_S)
         premium_index_thread.join(timeout=_JOIN_TIMEOUT_S)
         klines_thread.join(timeout=_JOIN_TIMEOUT_S)
+        open_interest_thread.join(timeout=_JOIN_TIMEOUT_S)
     finally:
         signal.signal(signal.SIGTERM, previous_handler)
     return exit_code[0]

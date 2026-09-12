@@ -26,11 +26,14 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     KLINES_WEIGHT_PER_CALL,
     KNOWN_VERDICT_LITERALS,
     N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+    OPEN_INTEREST_HIST_ENDPOINT,
+    OPEN_INTEREST_OBSERVER_ID,
     PREMIUM_INDEX_OBSERVER_ID,
     WEIGHT_NOT_READABLE,
     KnownVerdict,
     build_force_order_run,
     build_klines_run,
+    build_open_interest_run,
     build_premium_index_run,
 )
 from src.modules.sentimento.use_cases.persist_ntp_skew_run import SOURCE
@@ -366,3 +369,86 @@ def test_the_klines_builder_accepts_every_known_verdict_and_only_those(
     run = _klines_run(verdict=verdict, api_code=-1121)
     assert run.verdict in KNOWN_VERDICTS
     assert run.api_code == -1121
+
+
+# ── `T-03.3`: THE FOURTH PRODUCER'S RUN ─────────────────────────────────────────────────────
+
+
+def _open_interest_run(
+    *,
+    n_returned: int = 288,
+    n_calls: int = 5,
+    api_code: int | None = None,
+    verdict: KnownVerdict = "ACCEPTED",
+) -> IngestRun:
+    """Build one open-interest pass run with the arguments a real pass would supply."""
+    return build_open_interest_run(
+        started_at=_STARTED_AT,
+        ended_at=_ENDED_AT,
+        n_returned=n_returned,
+        n_calls=n_calls,
+        api_code=api_code,
+        verdict=verdict,
+        src_sha256="0" * 64,
+    )
+
+
+def test_the_open_interest_endpoint_literal_matches_the_client_path() -> None:
+    """The `use_cases` spelling and the `infra` client's own path are the SAME string.
+
+    Same reasoning as the klines twin above, and the same silent failure it prevents: a drift
+    would file every open-interest run under a producer name matching nothing the client ever
+    called, on the route `/api/v1/ingest-health` groups by.
+    """
+    from src.modules.sentimento.infra.binance_oi_history_client import OPEN_INTEREST_HIST_PATH
+
+    assert OPEN_INTEREST_HIST_ENDPOINT == OPEN_INTEREST_HIST_PATH
+
+
+def test_an_open_interest_run_names_the_endpoint_and_the_observer_of_its_own_producer() -> None:
+    """Distinct `endpoint`/`observer_id` from the other three producers, by construction."""
+    run = _open_interest_run()
+
+    assert run.endpoint == OPEN_INTEREST_HIST_ENDPOINT
+    assert run.observer_id == OPEN_INTEREST_OBSERVER_ID
+    assert run.observer_id not in {
+        FORCE_ORDER_OBSERVER_ID,
+        PREMIUM_INDEX_OBSERVER_ID,
+        KLINES_OBSERVER_ID,
+    }
+
+
+def test_the_open_interest_weight_is_the_sentinel_and_never_a_derived_number() -> None:
+    """⛔ `/futures/data/` PUBLISHES NO `x-mbx-*` HEADER, so no weight can honestly be derived.
+
+    `[MEDIDO 2026-09-12: GET /futures/data/openInterestHist?symbol=BTCUSDT&period=5m -> HTTP 200
+    com ZERO header casando `weight`/`used`; n=1 resposta, todos os headers inspecionados]`.
+
+    Morde: the obvious "improvement" here is to copy `build_klines_run` and write
+    `KLINES_WEIGHT_PER_CALL * n_calls` (or any `k * n_calls`), which would be a weight with no
+    command behind it. This asserts the value is the SENTINEL and that it does NOT move with
+    `n_calls`, so any per-call derivation fails.
+    """
+    assert _open_interest_run(n_calls=5).weight_used == WEIGHT_NOT_READABLE
+    assert _open_interest_run(n_calls=1).weight_used == WEIGHT_NOT_READABLE
+    assert _open_interest_run(n_calls=500).weight_used == WEIGHT_NOT_READABLE
+    assert _open_interest_run(n_calls=5).weight_used != KLINES_WEIGHT_PER_CALL * 5
+
+
+def test_the_open_interest_run_opens_with_n_written_zero_for_the_writer_to_close() -> None:
+    """`ADR-035/D2`: the collector OPENS the run, the single writer CLOSES it."""
+    assert _open_interest_run().n_written == N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS
+
+
+def test_the_open_interest_run_refuses_to_invent_an_expectation() -> None:
+    """`n_expected == n_returned` — there is no oracle for how many points SHOULD have come."""
+    run = _open_interest_run(n_returned=137)
+    assert (run.n_expected, run.n_returned) == (137, 137)
+
+
+def test_an_open_interest_run_carries_the_api_code_it_was_given() -> None:
+    """`-1130` (END OF HISTORY, ~30 days) reaches `/api/v1/ingest-health` instead of vanishing."""
+    run = _open_interest_run(api_code=-1130, verdict="ACCEPTED_WITH_WARNING")
+    assert run.api_code == -1130
+    assert run.verdict == "ACCEPTED_WITH_WARNING"
+    assert run.source == SOURCE
