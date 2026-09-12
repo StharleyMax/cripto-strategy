@@ -27,19 +27,32 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 # slow and noisy. Everything else `git ls-files` reports is read.
 _SKIPPED_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".pdf"})
 
-# ── THE ONE STRUCTURAL EXCLUSION, AND IT IS NOT A BYPASS ───────────────────────────────────
+# ── THE EXCLUSION FOR FILES THAT EXIST TO CARRY VIOLATIONS ────────────────────────────────
 #
-# `corpus/cases/<rule>/violating/` is the rule engine's fixture set: every file under it EXISTS
-# to be a violation, and `harness` reads them to prove its own rules still bite. Flagging them
-# would make this test permanently red over files whose redness is the point.
+# Two kinds of file in this tree contain credential-shaped strings ON PURPOSE:
 #
-# The exclusion is keyed on the CORPUS CONTRACT (a path shape the harness defines), never on a
-# filename someone found inconvenient — and it is not silent: `test_the_sweep_still_bites_
-# inside_the_corpus` asserts those files ARE flagged when handed to the detector directly. So
-# the exclusion narrows the SWEEP and never the DETECTOR, which is the distinction that keeps
-# an allowlist from being indistinguishable from a switch-off (`ADR-012`).
+#   1. `corpus/cases/<rule>/violating/` — the rule engine's fixture set. `harness` reads them
+#      to prove its own rules still bite.
+#   2. THIS FILE — the biting half above is a row of synthetic leaks, and they have to look
+#      like leaks or they prove nothing.
+#
+# ⚠️ THE SECOND ONE WAS FOUND THE HARD WAY, AND THE WAY IT HID IS THE LESSON. Running
+# `-k coinalyze_key_never_versioned` on an UNCOMMITTED file passed: `git ls-files` lists only
+# TRACKED files, so the sweep could not see its own fixtures yet. The very next full run, after
+# the commit, went red on lines 88/96/102/161 — of this file
+# `[MEDIDO 2026-09-12: 1 failed, 2152 passed]`. It is the same self-reference
+# `backend/scripts/test.sh` already names for its own "ZERO REDE" grep ("o grep pega a si
+# mesmo"), and a green that depends on a file being untracked is not a green.
+#
+# THE EXCLUSION NARROWS THE SWEEP AND NEVER THE DETECTOR, which is the whole distinction
+# between "scope" and "switching the rule off" (`ADR-012`). Both members are keyed on a
+# STRUCTURAL fact — a corpus path shape the harness defines, and this module's own filename,
+# resolved from `__file__` rather than typed as a string someone could point elsewhere — and
+# neither is silent: `test_the_sweep_still_bites_the_files_it_excludes` asserts BOTH are still
+# flagged when handed to the detector directly.
 _CORPUS_VIOLATING_PREFIX = "corpus/cases/"
 _CORPUS_VIOLATING_SEGMENT = "/violating/"
+_THIS_FILE = str(Path(__file__).resolve().relative_to(Path(__file__).resolve().parents[3]))
 
 
 def _is_corpus_violating_fixture(relative_path: str) -> bool:
@@ -47,6 +60,11 @@ def _is_corpus_violating_fixture(relative_path: str) -> bool:
     return relative_path.startswith(_CORPUS_VIOLATING_PREFIX) and (
         _CORPUS_VIOLATING_SEGMENT in relative_path
     )
+
+
+def _is_declared_violation_fixture(relative_path: str) -> bool:
+    """Return whether a file exists precisely to carry credential-shaped strings."""
+    return _is_corpus_violating_fixture(relative_path) or relative_path == _THIS_FILE
 
 
 def _versioned_files() -> list[Path]:
@@ -64,12 +82,12 @@ def _versioned_files() -> list[Path]:
     ]
 
 
-def _readable_versioned_files(include_corpus: bool = False) -> list[tuple[str, str]]:
+def _readable_versioned_files(include_fixtures: bool = False) -> list[tuple[str, str]]:
     """Pair each versioned file with its text, skipping the ones that are not text."""
     pairs: list[tuple[str, str]] = []
     for path in _versioned_files():
         relative = str(path.relative_to(REPOSITORY_ROOT))
-        if not include_corpus and _is_corpus_violating_fixture(relative):
+        if not include_fixtures and _is_declared_violation_fixture(relative):
             continue
         try:
             pairs.append((relative, path.read_text("utf-8")))
@@ -170,22 +188,30 @@ def test_the_indirection_forms_are_not_flagged() -> None:
     assert find_leaks(".env.example", "COINALYZE_API_KEY=") == []
 
 
-def test_the_sweep_still_bites_inside_the_corpus_it_excludes() -> None:
+def test_the_sweep_still_bites_the_files_it_excludes() -> None:
     """The exclusion narrows the SWEEP, never the DETECTOR — and here is the proof.
 
-    `own.compose-hardcoded-secret`'s own violating fixture is an INDEPENDENT cross-check: a
-    detector written here, from `RNF-4`, flags exactly what the repository's own rule was
-    written to flag. If this ever stops biting, the exclusion above turned into a blind spot.
+    Both excluded kinds are checked, because an exclusion nobody re-tests is a blind spot:
+
+      * `own.compose-hardcoded-secret`'s violating fixture is an INDEPENDENT cross-check — a
+        detector written here, from `RNF-4`, flags exactly what the repository's own rule was
+        written to flag.
+      * THIS FILE's own synthetic leaks must still be caught, or the biting half above has
+        quietly stopped biting and every "no leak found" becomes meaningless.
     """
-    corpus = [
+    fixtures = [
         pair
-        for pair in _readable_versioned_files(include_corpus=True)
-        if _is_corpus_violating_fixture(pair[0])
+        for pair in _readable_versioned_files(include_fixtures=True)
+        if _is_declared_violation_fixture(pair[0])
     ]
-    assert corpus, "the rule corpus is empty: the cross-check below proves nothing"
-    flagged = scan_files(corpus)
+    assert fixtures, "no declared-violation fixture found: this cross-check proves nothing"
+    flagged = scan_files(fixtures)
     assert any(leak.path.endswith("03_api_key_in_test_path.yml") for leak in flagged), (
         f"the corpus fixture for a hardcoded api key was NOT flagged; found {flagged}"
+    )
+    assert any(leak.path == _THIS_FILE for leak in flagged), (
+        "this file's OWN synthetic leaks were not flagged — the detector stopped biting, "
+        "and the sweep's silence elsewhere no longer means anything"
     )
 
 
@@ -214,8 +240,11 @@ def test_the_live_key_from_the_environment_is_in_no_versioned_file() -> None:
     secret = coinalyze_key_from(environment)
     if secret is None:
         pytest.skip("COINALYZE_API_KEY is not set: the exact-value half cannot run here")
-    pairs = _readable_versioned_files()
-    leaks = scan_files(pairs, secret=secret)
+    # `include_fixtures=True`: the shape exclusion above does NOT apply to the live key. A
+    # fixture may legitimately hold a credential-SHAPED string; none may hold the REAL one,
+    # and "it was in the test file" is not a defence for a key that is actually live.
+    pairs = _readable_versioned_files(include_fixtures=True)
+    leaks = [leak for leak in scan_files(pairs, secret=secret) if leak.rule == "live-key-verbatim"]
     assert leaks == [], f"credencial VIVA versionada em: {[(k.path, k.line_number) for k in leaks]}"
 
 
