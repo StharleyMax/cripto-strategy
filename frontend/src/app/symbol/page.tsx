@@ -41,6 +41,12 @@
  *     array phase `01` already fetches) and this route selects THAT row
  *     (`view-model.ts::matchesKlineTakerBuyCvd`). The failure MODE stays real for any panel —
  *     a catalog that does not carry a selector's row still degrades to absence here;
+ *   - the catalog carries MORE THAN ONE row a panel's selector matches (`T-03.5`). This one is
+ *     NEW as a rendered state and OLD as a defect: it used to resolve, silently, to whichever
+ *     row came first — which is how the OI panel spent this phase pointed at `coinalyze`/`OPEN`,
+ *     a series with zero rows, while `binance`/`POINT` had 8.064
+ *     (`handoff/T-03.5-T-03.6-FRONT.md` §2). `resolveCatalogEntry` now refuses to choose and the
+ *     panel says `ambiguous_in_catalog` on screen;
  *   - `GET /series-history` throws `TransportError` (missing base URL, connection refused,
  *     non-2xx, malformed envelope) — the SAME four kinds `/console` already handles;
  *   - the catalog fetch itself throws `TransportError` — every panel degrades together.
@@ -80,15 +86,18 @@ import {
 } from "./series-history-client.ts";
 import type { PanelStatus } from "./panel-status.ts";
 import { resolveRouteWindow, type RouteWindow } from "./request-window.ts";
-import { SymbolClient, type CvdPaneData, type VolumeSubAxisData } from "./SymbolClient.tsx";
+import { SymbolClient, type CvdPaneData, type OiPaneData, type VolumeSubAxisData } from "./SymbolClient.tsx";
 import {
   computeSeriesKeyId,
   countPresentSlots,
   firstPresentSlotMs,
   daysWithPresence,
   keyMatchesSymbol,
+  lastPresentSlotMs,
+  matchesBinanceOpenInterest,
   matchesKlineTakerBuyCvd,
   rawCandlesFromHistoryRows,
+  resolveFreshnessVerdict,
   resolveVolumeReading,
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
@@ -102,7 +111,11 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 const BAR_POLICY: BarPolicy = "final_only";
-const OI_METRIC = "sum_open_interest";
+// ⛔ `const OI_METRIC = "sum_open_interest"` USED TO LIVE HERE, AND IT WAS THE WHOLE SELECTOR.
+// `T-03.5` retired it: the metric is one of THREE terms now and all three live in
+// `view-model.ts::matchesBinanceOpenInterest`, where a `node --test` suite can execute them
+// against a fixture that carries all five rows of this metric. Leaving the constant here would
+// leave a second, weaker way to spell the same selection one import away.
 /** `T-01.7` / `SPEC-007 §4`, row M1 — the volume SUB-AXIS of the price panel (§3.6), whose
  * catalog entry `T-01.6` registered (`domain/klines_volume_catalog.py`, `metric` transcribed
  * here, not re-derived). Its `interval` is `1m` (§4.1), the grid `/series-history` serves
@@ -110,23 +123,80 @@ const OI_METRIC = "sum_open_interest";
  * series behind it is the only one of the four with no ladder. */
 const VOLUME_METRIC = "klines_volume";
 
-function findCatalogEntry(
+/** What the catalog answered for ONE panel's selector — never a bare entry.
+ *
+ * `"ambiguous"` is the member that did not exist and had to (`T-03.5`), see below. */
+type CatalogResolution =
+  | { readonly kind: "found"; readonly entry: SeriesCatalogEntry }
+  | { readonly kind: "none" }
+  | { readonly kind: "ambiguous"; readonly matches: number };
+
+/**
+ * ⛔ `Array.prototype.find` IS GONE FROM THIS ROUTE, AND THAT IS THE FIX OF `T-03.5` — not the
+ * three-term OI predicate one line below, which is only what makes THIS metric unambiguous.
+ *
+ * The measured defect (`handoff/T-03.5-T-03.6-FRONT.md` §2): the OI panel asked for
+ * `metric === "sum_open_interest"`, the served catalog carries FIVE rows of that metric per
+ * instrument, `find` answered the FIRST — `coinalyze`/`OPEN`, a series with `0` rows in
+ * `md.series` while the Binance one has `8.064`. The route answered `200`, the panel drew an
+ * all-absent grid, and NOTHING in the response, the logs or the gates could tell that apart from
+ * a market with no data.
+ *
+ * The same shape had already been paid for once on CVD (`view-model.ts`'s `cvd_source` section:
+ * `metric` alone silently selects `aggtrade_q`, also empty). Twice is a class, not an accident —
+ * so the fix is structural and applies to ALL FOUR selectors of this route: a selector that
+ * matches more than one row RESOLVES TO NOTHING, with the count carried out, instead of
+ * resolving to whichever row the catalog happens to list first.
+ *
+ * ⚠️ WHY THE SET IS SCANNED WHOLE INSTEAD OF SHORT-CIRCUITING: the cost of `filter` over `find`
+ * here is one pass over 44 entries (`GET /series-catalog` `n_entries` at this SHA, 4 pilot
+ * instruments x 11..13 rows), and the whole point is to KNOW there was a second match. A
+ * short-circuit is precisely the optimization that made the defect unobservable.
+ *
+ * Measured over the catalog this route reads `[MEDIDO 2026-09-12: GET /api/v1/series-catalog,
+ * n=13 linhas para BTCUSDT]` — the four selectors of this route match, respectively:
+ * price `1` (`priceUse === "structure_detection"`), OI `1` (three terms; `metric` alone would be
+ * `5`), CVD `1` (three terms; `metric` alone would be `4`), volume `1` (`klines_volume` is a
+ * single row today). Every one of them is unique, and now that is ENFORCED rather than assumed.
+ */
+function resolveCatalogEntry(
   catalog: SeriesCatalogProjection,
   predicate: (entry: SeriesCatalogEntry) => boolean,
-): SeriesCatalogEntry | undefined {
-  return catalog.entries.find((entry) => keyMatchesSymbol(entry.key, SYMBOL) && predicate(entry));
+): CatalogResolution {
+  const matches = catalog.entries.filter((entry) => keyMatchesSymbol(entry.key, SYMBOL) && predicate(entry));
+  if (matches.length === 1) {
+    return { kind: "found", entry: matches[0]! };
+  }
+  return matches.length === 0 ? { kind: "none" } : { kind: "ambiguous", matches: matches.length };
+}
+
+/** The catalog fetch itself failed ⇒ every panel degrades together, and none of them may claim
+ * "not in catalog": there is no catalog to have been absent from. */
+const CATALOG_UNAVAILABLE: CatalogResolution = { kind: "none" };
+
+/** The entry a panel resolved, or `undefined` — for the two consumers that only need the key
+ * (`buildLiveUrl` and the OI pane's own `maxStalenessMs`). Absence and ambiguity collapse here
+ * on purpose: neither yields a series to open a stream for or to publish a ceiling from. */
+function resolvedEntry(resolution: CatalogResolution): SeriesCatalogEntry | undefined {
+  return resolution.kind === "found" ? resolution.entry : undefined;
 }
 
 /** `routeWindow` is PASSED IN, not read from a module constant: one clock reading serves the
  * whole render, so the four panels are guaranteed to be asking about the same window even if
  * the request straddles a bucket boundary. */
 async function fetchPanelRows(
-  entry: SeriesCatalogEntry | undefined,
+  resolution: CatalogResolution,
   routeWindow: RouteWindow,
 ): Promise<{ readonly rows: readonly SeriesHistoryRow[]; readonly status: PanelStatus }> {
-  if (entry === undefined) {
+  if (resolution.kind === "none") {
     return { rows: [], status: { kind: "absent", reason: "not_in_catalog" } };
   }
+  if (resolution.kind === "ambiguous") {
+    // ⛔ NO REQUEST IS ISSUED. Picking one of the matches to ask about would be `Array.find` with
+    // extra steps — the panel says it cannot identify its own series, and the screen shows that.
+    return { rows: [], status: { kind: "absent", reason: "ambiguous_in_catalog" } };
+  }
+  const entry = resolution.entry;
   const key: HistoryRequestKey = {
     series_key_id: computeSeriesKeyId(entry.key),
     symbol: SYMBOL,
@@ -182,25 +252,37 @@ export default async function SymbolPage() {
     catalogStatus = { kind: "absent", reason: cause.kind };
   }
 
-  const priceEntry =
-    catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.priceUse === S2_PRICE_USE) : undefined;
-  const oiEntry =
-    catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.key.metric === OI_METRIC) : undefined;
+  const priceResolution =
+    catalogStatus.kind === "ok"
+      ? resolveCatalogEntry(catalog, (entry) => entry.priceUse === S2_PRICE_USE)
+      : CATALOG_UNAVAILABLE;
+  // `T-03.5` — the predicate is `view-model.ts`'s (three terms, each one named there with the
+  // sibling row it excludes and the one that is redundant today said out loud). ⛔ It used to be
+  // `entry.key.metric === OI_METRIC`, which matches FIVE rows and whose first match has zero rows
+  // in `md.series`: the measured defect of `handoff/T-03.5-T-03.6-FRONT.md` §2.
+  const oiResolution =
+    catalogStatus.kind === "ok"
+      ? resolveCatalogEntry(catalog, (entry) => matchesBinanceOpenInterest(entry.key))
+      : CATALOG_UNAVAILABLE;
   // `T-02.5` — the CVD panel now reads a series that EXISTS: `cvd_source`/`binance`/`NA`, the
   // `kline_takerbuy` row `T-02.3`'s collector publishes off the same `/fapi/v1/klines` array
   // phase `01` already fetches. The predicate is `view-model.ts`'s (three terms, each one
   // load-bearing — see the section there for which sibling row each term excludes and why
   // `metric === "cvd_source"` alone silently selects `aggtrade_q`, a series with no rows).
-  const cvdEntry =
-    catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => matchesKlineTakerBuyCvd(entry.key)) : undefined;
-  const volumeEntry =
-    catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.key.metric === VOLUME_METRIC) : undefined;
+  const cvdResolution =
+    catalogStatus.kind === "ok"
+      ? resolveCatalogEntry(catalog, (entry) => matchesKlineTakerBuyCvd(entry.key))
+      : CATALOG_UNAVAILABLE;
+  const volumeResolution =
+    catalogStatus.kind === "ok"
+      ? resolveCatalogEntry(catalog, (entry) => entry.key.metric === VOLUME_METRIC)
+      : CATALOG_UNAVAILABLE;
 
   const [priceResult, oiResult, cvdResult, volumeResult] = await Promise.all([
-    fetchPanelRows(priceEntry, routeWindow),
-    fetchPanelRows(oiEntry, routeWindow),
-    fetchPanelRows(cvdEntry, routeWindow),
-    fetchPanelRows(volumeEntry, routeWindow),
+    fetchPanelRows(priceResolution, routeWindow),
+    fetchPanelRows(oiResolution, routeWindow),
+    fetchPanelRows(cvdResolution, routeWindow),
+    fetchPanelRows(volumeResolution, routeWindow),
   ]);
 
   // The day list is the window's own (`utcDaysCovered`, derived in `charts`), never a literal.
@@ -276,14 +358,50 @@ export default async function SymbolPage() {
     anchorMs: routeWindow.window.startMs,
   };
 
+  // ── The OI pane's own declared facts (`T-03.5`) ───────────────────────────────────────────
+  //
+  // ⛔ `nativeBars` IS THE `RN-S1` DIVISOR, PAID IN THE TYPE INSTEAD OF IN A `/5`. The route
+  // serves a `5m` series on a `1m` grid (`series_history.py` steps `_GRID_STEP_MS`, `GA-2`), so
+  // ONE native bucket appears as up to FIVE wire rows — a staircase, not five observations. The
+  // naive count of readable wire rows therefore overstates the data by ~5x, and `DoD-3`'s
+  // "`N >= 30`" read off it would pass with SIX real buckets.
+  //
+  // This code does not divide, and does not have to: `scalarPointsFromHistoryRows(rows,
+  // FIVE_MINUTES_MS)` already keeps only the rows landing ON the 5-minute grid
+  // (`event_time % 300_000 === 0`) and `buildOiPanel` aligns them to a 5-minute canonical grid,
+  // so `panels.oi.slots` carries ONE SLOT PER NATIVE BUCKET and `countPresentSlots` over it is a
+  // count of native buckets — exact, with no heuristic about repeated values (two adjacent
+  // buckets carrying the SAME open interest are two buckets, and a "distinct consecutive values"
+  // rule would silently merge them).
+  //
+  // ⚠️ `wirePoints` IS PUBLISHED BESIDE IT ON PURPOSE, and it is the number nobody should quote:
+  // it is the staircase count, kept on screen so the ratio is VISIBLE and so `e2e/12` can assert
+  // that the pane's own number is NOT that one. A falsifier needs both figures to compare, and
+  // the phase's stated failure mode is exactly "contar 150 pontos onde há 30 barras".
+  const oiGridSlots = panels.oi.slots;
+  const oiEntry = resolvedEntry(oiResolution);
+  const oi: OiPaneData = {
+    nativeBars: countPresentSlots(oiGridSlots),
+    wirePoints: oiResult.rows.filter((row) => row.value !== null).length,
+    firstPresentMs: firstPresentSlotMs(oiGridSlots),
+    lastPresentMs: lastPresentSlotMs(oiGridSlots),
+    // `RNF-2`: the ceiling is the catalog's OWN `max_staleness_ms` for this series, read off the
+    // entry this panel resolved — no new field, no route re-versioned (`RF-5`), and the same
+    // number `as_of` enforced server-side. `null` when no entry resolved: a panel that could not
+    // identify its series has no ceiling to be judged against, and inventing one would be a
+    // freshness claim made out of ignorance.
+    maxStalenessMs: oiEntry?.maxStalenessMs ?? null,
+    freshness: resolveFreshnessVerdict(oiGridSlots, routeWindow.windowEndMsInclusive, oiEntry?.maxStalenessMs ?? null),
+  };
+
   const baseUrl = process.env.INGEST_HEALTH_API_BASE_URL;
   const liveUrls =
     baseUrl === undefined
       ? { price: null, oi: null, cvd: null }
       : {
-          price: buildLiveUrl(baseUrl, priceEntry),
-          oi: buildLiveUrl(baseUrl, oiEntry),
-          cvd: buildLiveUrl(baseUrl, cvdEntry),
+          price: buildLiveUrl(baseUrl, resolvedEntry(priceResolution)),
+          oi: buildLiveUrl(baseUrl, resolvedEntry(oiResolution)),
+          cvd: buildLiveUrl(baseUrl, resolvedEntry(cvdResolution)),
         };
 
   return (
@@ -291,6 +409,7 @@ export default async function SymbolPage() {
       panels={panels}
       volume={volume}
       cvd={cvd}
+      oi={oi}
       panelStatus={{
         price: priceResult.status,
         oi: oiResult.status,
