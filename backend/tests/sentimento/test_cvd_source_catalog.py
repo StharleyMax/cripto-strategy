@@ -185,6 +185,7 @@ def test_registering_a_cvd_source_reconstruction_without_published_error_is_refu
         SeriesCatalogEntry(
             key=key,
             native_grid="1min",
+            native_grid_ms=60_000,
             max_staleness_ms=120_000,
             reconstructed_from="aggtrade_q",
         )

@@ -208,7 +208,9 @@ def build_aggtrade_q_entry(
         aggregation_scope="Symbol",
         verified_by=verified_by,
     )
-    return SeriesCatalogEntry(key=key, native_grid="1min", max_staleness_ms=120_000)
+    return SeriesCatalogEntry(
+        key=key, native_grid="1min", native_grid_ms=60_000, max_staleness_ms=120_000
+    )
 
 
 def build_aggtrade_nq_entry(
@@ -238,7 +240,9 @@ def build_aggtrade_nq_entry(
         aggregation_scope="Symbol",
         verified_by=verified_by,
     )
-    return SeriesCatalogEntry(key=key, native_grid="1min", max_staleness_ms=120_000)
+    return SeriesCatalogEntry(
+        key=key, native_grid="1min", native_grid_ms=60_000, max_staleness_ms=120_000
+    )
 
 
 def build_coinalyze_bv_entry(
@@ -274,6 +278,7 @@ def build_coinalyze_bv_entry(
     return SeriesCatalogEntry(
         key=key,
         native_grid="1min",
+        native_grid_ms=60_000,
         max_staleness_ms=120_000,
         reconstructed_from="aggtrade_q",
         published_error=COINALYZE_BV_MEASUREMENT.published_error,

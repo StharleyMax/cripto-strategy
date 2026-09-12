@@ -20,10 +20,15 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.responses import JSONResponse
 
-from src.api.dependencies import get_series_catalog_source, get_series_window_reader_source
+from src.api.dependencies import (
+    get_grid_multiple_classifier,
+    get_series_catalog_source,
+    get_series_window_reader_source,
+)
 from src.modules.sentimento.domain.as_of_accessor import BarPolicy, DecisionReadRefusedError
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.use_cases.series_history import (
+    GridMultipleClassifier,
     InvalidWindowError,
     SeriesWindowReader,
     UnknownSeriesKeyIdError,
@@ -55,6 +60,7 @@ def get_series_history(
     bar_policy: Literal["final_only", "intrabar"],
     catalog: SeriesCatalog = Depends(get_series_catalog_source),
     reader: SeriesWindowReader = Depends(get_series_window_reader_source),
+    classify_grid: GridMultipleClassifier = Depends(get_grid_multiple_classifier),
 ) -> JSONResponse:
     """Serve one `SeriesHistoryReport` envelope, or a named `422`/`500` (`SPEC-006 §5.2`).
 
@@ -76,6 +82,7 @@ def get_series_history(
         report = build_series_history_report(
             catalog,
             reader,
+            classify_grid,
             series_key_id=series_key_id,
             symbol=symbol,
             interval=interval,

@@ -197,7 +197,11 @@ def test_the_dependency_override_is_genuinely_substitutable(tmp_path: Path) -> N
         verified_by="test_series_catalog_route.py",
     )
     fixture_catalog = SeriesCatalog(
-        (SeriesCatalogEntry(key=key, native_grid="5min", max_staleness_ms=600_000),)
+        (
+            SeriesCatalogEntry(
+                key=key, native_grid="5min", native_grid_ms=300_000, max_staleness_ms=600_000
+            ),
+        )
     )
     app.dependency_overrides[get_series_catalog_source] = lambda: fixture_catalog
 

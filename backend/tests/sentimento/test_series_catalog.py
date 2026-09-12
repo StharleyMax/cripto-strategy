@@ -66,6 +66,7 @@ def binance_oi_entry(**key_overrides: Any) -> SeriesCatalogEntry:
     return SeriesCatalogEntry(
         key=binance_oi_key(**key_overrides),
         native_grid="5min",
+        native_grid_ms=300_000,
         max_staleness_ms=600_000,
     )
 
@@ -114,14 +115,24 @@ def test_catalog_row_refuses_a_key_with_no_label_shift_witness() -> None:
 def test_catalog_row_refuses_a_blank_native_grid() -> None:
     """`CA-F2-11`: `native_grid` is a required per-row field, and blank is not a grid."""
     with pytest.raises(InvalidCatalogEntryError, match="native_grid"):
-        SeriesCatalogEntry(key=binance_oi_key(), native_grid="  ", max_staleness_ms=600_000)
+        SeriesCatalogEntry(
+            key=binance_oi_key(),
+            native_grid="  ",
+            native_grid_ms=300_000,
+            max_staleness_ms=600_000,
+        )
 
 
 @pytest.mark.parametrize("bad_staleness", [0, -1])
 def test_catalog_row_refuses_a_non_positive_max_staleness_ms(bad_staleness: int) -> None:
     """`max_staleness_ms` gates how far a reader may `LOCF`; zero or negative reads nothing."""
     with pytest.raises(InvalidCatalogEntryError, match="max_staleness_ms"):
-        SeriesCatalogEntry(key=binance_oi_key(), native_grid="5min", max_staleness_ms=bad_staleness)
+        SeriesCatalogEntry(
+            key=binance_oi_key(),
+            native_grid="5min",
+            native_grid_ms=300_000,
+            max_staleness_ms=bad_staleness,
+        )
 
 
 def test_native_grid_is_a_per_row_field_not_a_shared_constant() -> None:
@@ -134,6 +145,7 @@ def test_native_grid_is_a_per_row_field_not_a_shared_constant() -> None:
     coinalyze_entry = SeriesCatalogEntry(
         key=binance_oi_key(provider="coinalyze", ts_convention=TsConvention.OHLC_OVER_BUCKET),
         native_grid="1min",
+        native_grid_ms=60_000,
         max_staleness_ms=120_000,
     )
     binance_entry = binance_oi_entry()
@@ -156,6 +168,7 @@ def test_price_use_accepts_every_member_of_the_closed_set(use: str) -> None:
     entry = SeriesCatalogEntry(
         key=binance_oi_key(metric="price_mark_close"),
         native_grid="5min",
+        native_grid_ms=300_000,
         max_staleness_ms=600_000,
         price_use=use,
     )
@@ -168,6 +181,7 @@ def test_price_use_outside_the_closed_set_is_refused() -> None:
         SeriesCatalogEntry(
             key=binance_oi_key(metric="price_mark_close"),
             native_grid="5min",
+            native_grid_ms=300_000,
             max_staleness_ms=600_000,
             price_use="unknown_use",
         )
@@ -187,6 +201,7 @@ def test_reconstruction_without_published_error_is_refused() -> None:
         SeriesCatalogEntry(
             key=binance_oi_key(metric="cvd_source", nature=Nature.FLOW),
             native_grid="5min",
+            native_grid_ms=300_000,
             max_staleness_ms=600_000,
             reconstructed_from="aggtrade_q",
         )
@@ -198,6 +213,7 @@ def test_reconstruction_with_a_blank_origin_name_is_refused() -> None:
         SeriesCatalogEntry(
             key=binance_oi_key(metric="cvd_source", nature=Nature.FLOW),
             native_grid="5min",
+            native_grid_ms=300_000,
             max_staleness_ms=600_000,
             reconstructed_from="   ",
             published_error=PublishedError(median_bp=Decimal("0"), p99_bp=Decimal("29.34"), n=699),
@@ -210,6 +226,7 @@ def test_published_error_without_a_declared_reconstruction_is_refused() -> None:
         SeriesCatalogEntry(
             key=binance_oi_key(),
             native_grid="5min",
+            native_grid_ms=300_000,
             max_staleness_ms=600_000,
             published_error=PublishedError(median_bp=Decimal("0"), p99_bp=Decimal("29.34"), n=699),
         )
@@ -220,6 +237,7 @@ def test_a_reconstruction_with_its_published_error_builds() -> None:
     entry = SeriesCatalogEntry(
         key=binance_oi_key(metric="cvd_source", provider="coinalyze", nature=Nature.FLOW),
         native_grid="1min",
+        native_grid_ms=60_000,
         max_staleness_ms=120_000,
         reconstructed_from="aggtrade_q",
         published_error=PublishedError(median_bp=Decimal("0"), p99_bp=Decimal("29.34"), n=699),

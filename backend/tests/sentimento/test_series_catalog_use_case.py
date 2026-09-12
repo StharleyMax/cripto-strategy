@@ -25,6 +25,7 @@ from typing import Final
 
 import pytest
 
+from src.modules.charts.domain.panel_grid_enablement import classify_grid_multiple
 from src.modules.sentimento.domain.as_of_accessor import BarPolicy, Observation
 from src.modules.sentimento.domain.klines_volume_catalog import (
     KLINES_VOLUME_MAX_STALENESS_MS,
@@ -37,6 +38,7 @@ from src.modules.sentimento.domain.series_catalog import (
     SeriesCatalog,
     SeriesCatalogEntry,
 )
+from src.modules.sentimento.domain.series_history_report import PanelGridVerdict
 from src.modules.sentimento.domain.series_key import (
     Nature,
     QuantityField,
@@ -56,6 +58,17 @@ from src.modules.sentimento.use_cases.series_history import (
     UnknownSeriesKeyIdError,
     build_series_history_report,
 )
+
+
+def _classify_panel_grid(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGridVerdict:
+    """Satisfy the `GridMultipleClassifier` port with the REAL `charts` rule (`ADR-037/D4`)."""
+    verdict = classify_grid_multiple(panel_grid_ms, native_grid_ms)
+    return PanelGridVerdict(
+        native_grid_ms=verdict.native_grid_ms,
+        enabled=verdict.enabled,
+        reason=verdict.reason.value,
+        multiple=verdict.multiple,
+    )
 
 
 def test_the_real_catalog_has_eleven_rows_not_seven() -> None:
@@ -242,7 +255,9 @@ def _one_entry() -> SeriesCatalogEntry:
         aggregation_scope="Symbol",
         verified_by="test_series_catalog_use_case.py",
     )
-    return SeriesCatalogEntry(key=key, native_grid="5min", max_staleness_ms=600_000)
+    return SeriesCatalogEntry(
+        key=key, native_grid="5min", native_grid_ms=300_000, max_staleness_ms=600_000
+    )
 
 
 def test_envelope_over_a_hand_built_single_entry_catalog_projects_every_field() -> None:
@@ -307,7 +322,11 @@ def test_envelope_over_a_price_use_entry_carries_the_price_use_string() -> None:
         verified_by="test_series_catalog_use_case.py",
     )
     entry = SeriesCatalogEntry(
-        key=key, native_grid="5min", max_staleness_ms=600_000, price_use="execution"
+        key=key,
+        native_grid="5min",
+        native_grid_ms=300_000,
+        max_staleness_ms=600_000,
+        price_use="execution",
     )
     catalog = SeriesCatalog((entry,))
 
@@ -338,6 +357,7 @@ def test_published_error_projection_matches_the_decimal_value_as_float() -> None
     entry = SeriesCatalogEntry(
         key=key,
         native_grid="1min",
+        native_grid_ms=60_000,
         max_staleness_ms=120_000,
         reconstructed_from="aggtrade_q",
         published_error=PublishedError(median_bp=Decimal("1.86"), p99_bp=Decimal("9.46"), n=1706),
@@ -420,6 +440,7 @@ def test_series_history_no_longer_refuses_the_klines_volume_id_with_unknown_seri
     report = build_series_history_report(
         catalog,
         _EmptyWindowReader(),
+        _classify_panel_grid,
         series_key_id=series_key_id,
         symbol="BTCUSDT",
         interval="1m",
@@ -447,6 +468,7 @@ def test_an_unregistered_id_still_raises_unknown_series_key_id_error() -> None:
         build_series_history_report(
             catalog,
             _EmptyWindowReader(),
+            _classify_panel_grid,
             series_key_id="0" * 64,
             symbol="BTCUSDT",
             interval="1m",
