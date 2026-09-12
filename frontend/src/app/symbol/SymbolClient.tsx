@@ -7,6 +7,12 @@
  * are plain discriminated values/strings) — same RSC-boundary discipline `ConsoleClient.tsx`
  * documents for its own props.
  *
+ * `T-02.5` (`SPEC-007` plan `02` item `2.6`) gives the CVD pane REAL DATA: the route now selects
+ * the `cvd_source`/`binance`/`NA` catalog row (`kline_takerbuy`) instead of a `cvd_delta` metric
+ * no backend builder ever produced, and this component gains one more plain prop (`cvd`) with
+ * what the pane DECLARES about itself — how many grades of the window are readable, since when,
+ * and which instant the cumulative curve is anchored at.
+ *
  * `T-01.7` (`SPEC-007 §3.6`) adds a VOLUME SUB-AXIS to the Price pane — `klines_volume`, `1m`,
  * a histogram on its own price scale INSIDE the price chart, not a fourth pane. It arrives here
  * as one more prop (`volume`), computed server-side like every other, and it degrades on its
@@ -45,7 +51,6 @@ import {
   candlestickSeriesColors,
   candlestickSeriesLossless,
   colorTokens,
-  formatFlowValue,
   formatHeldStockLabel,
   lastGridInstant,
   lineSeriesLossless,
@@ -89,9 +94,33 @@ export interface VolumeSubAxisData {
   readonly reading: FlowReading;
 }
 
+/**
+ * `T-02.5` — everything the CVD pane DECLARES about itself that is not already in
+ * `panels.cvd`, computed server-side (`page.tsx`) and handed over as plain data, same
+ * RSC-boundary discipline as `volume`. This component draws it; it decides nothing about it.
+ */
+export interface CvdPaneData {
+  /** Delta slots carrying a real value — the number `DoD-3` counts against `N >= 30`. For a
+   * `1m`-NATIVE series this is also the count of DISTINCT native bars, with no `RN-S1` `/5`
+   * divisor (`view-model.ts::countPresentSlots`, same argument it gives for M1). */
+  readonly presentPoints: number;
+  /** The FIRST grid instant of the window whose delta is readable, or `null` when none is —
+   * the left end of the readable horizon, DECLARED instead of left to look like a dead market.
+   * Same measured reason as `VolumeSubAxisData.firstPresentMs`, and CVD inherits it exactly:
+   * it is the same collector, the same row, the same `available_at`
+   * (`handoff/ACHADO-BACKFILL-INVISIVEL-AO-AS-OF.md`). ⛔ The span is NOT shrunk to fit. */
+  readonly firstPresentMs: number | null;
+  /** WHERE THE CUMULATIVE CURVE STARTS COUNTING FROM, chosen by the route and printed on
+   * screen. `delta` is anchor-free; `cumulativo` is a VIEW whose every point depends on this
+   * instant, and three anchors over the SAME deltas invert the sign of the total (`D4.7`) — so
+   * an anchor inherited in silence is a chart that cannot be read. */
+  readonly anchorMs: number;
+}
+
 export interface SymbolClientProps {
   readonly panels: S2Panels;
   readonly volume: VolumeSubAxisData;
+  readonly cvd: CvdPaneData;
   readonly panelStatus: SymbolPanelStatuses;
   /** `knowledge_time_ms` of the request this render was built from (`request-window.ts`). Shown
    * nowhere; carried to the DOM as a `data-` attribute so the screen can be AUDITED against the
@@ -184,10 +213,28 @@ function useLightweightChart(containerRef: RefObject<HTMLDivElement | null>, bui
 // able to break an assert about data.
 const VOLUME_SUBAXIS_TESTID = "price-pane-volume-subaxis";
 
+// ⛔ THE STABLE SELECTOR OF THE CVD PANE (`T-02.5`), and it is the same KIND of contract the
+// line above is for `T-01.9`: `e2e/10-cvd-dado-real.spec.ts` finds this pane by THIS string and
+// reads `data-cvd-present-points` off it. Form — colour, height, where the readout sits, how
+// absence LOOKS — belongs to the `ui-designer` with the `ux-ui-mastery` verdict and may change
+// without touching either string. `section[aria-label="CVD"]` is NOT used as the handle: the
+// label is user-visible pt-BR microcopy, and selecting by text of UI is what `T-02.6` forbids.
+const CVD_PANE_TESTID = "cvd-pane";
+
 /** `RN-1`'s literal token: absence is `SEM_PONTO`, and for a `FLOW` series rendering it as `0`
- * is an error of TYPE, not of taste. `formatFlowValue`'s `"—"` (`D5.3`) is the CVD readout's
- * own wording and is deliberately NOT reused here — `SEM_PONTO` is the string `DoD-3` asserts
- * the absence of, and the price/OI readouts above already print it. */
+ * is an error of TYPE, not of taste. `DoD-3` asserts this exact string's ABSENCE from the CVD
+ * pane once data is present, so it is as load-bearing as a testid.
+ *
+ * ⚠️ `T-02.5` MADE THE CVD READOUT USE IT TOO, and the previous version of this comment said the
+ * opposite ("`formatFlowValue`'s `—` is the CVD readout's own wording and is deliberately NOT
+ * reused here"). Why it changed: `formatFlowValue` (`D5.3`) is the CROSSHAIR wording and stays
+ * exactly as it is inside `charts` — but on THIS screen it made CVD the only one of four
+ * readouts spelling absence differently from the other three (Preço, OI and o sub-eixo de Volume
+ * all print `SEM_PONTO`), and `DoD-3`'s "não diz `SEM_PONTO`" is unfalsifiable against a pane
+ * that could never say it: a test that passes whether or not the data arrived proves nothing.
+ * One token, four readouts, one thing for an operator to learn. ⛔ FORM SUBMITTED TO THE
+ * `design_gate`, not decided here — `CLAUDE.md` §"Design — autonomia delegada, com gate de
+ * validação"; what a builder decides is that absence is DISTINGUISHABLE and machine-readable. */
 const ABSENCE_TOKEN = "SEM_PONTO";
 
 // ⛔ FORM, NOT CONTRACT — every constant in this block belongs to the `ui-designer` WITH the
@@ -354,7 +401,43 @@ function OiPane({ panels, status }: { readonly panels: S2Panels; readonly status
   );
 }
 
-function CvdPane({ panels, status }: { readonly panels: S2Panels; readonly status: PanelStatus }) {
+/** The readable horizon of the CVD pane — the SAME two numbers and one instant `ReadableHorizon`
+ * declares for the volume sub-axis, over the CVD pane's own slots.
+ *
+ * ⛔ WRITTEN OUT RATHER THAN SHARED WITH `ReadableHorizon`, ON PURPOSE. Generalizing that
+ * component would rewrite the literal expressions
+ * `volume_readable_horizon:${volume.presentPoints}/${gridSlots}` and
+ * `const gridSlots = volume.slots.length`, and those two are PINNED, character for character, BY
+ * ANOTHER TASK'S CONTRACT TEST (`volume-subaxis-dom-contract.test.ts`, `T-01.7`/`T-01.9`, in
+ * flight in a parallel worktree). Merging two contracts into one parameterized component is how a
+ * refactor silently re-points somebody else's falsifier; the duplication is ~12 lines and each
+ * copy is guarded from its own side. Same reasoning `08-symbol-dado-real.spec.ts` gives for
+ * duplicating a selector instead of importing it. */
+function CvdReadableHorizon({ cvd, gridSlots }: { readonly cvd: CvdPaneData; readonly gridSlots: number }) {
+  const sinceText =
+    cvd.firstPresentMs === null
+      ? "Nenhuma grade legível no período"
+      : `Dado legível desde ${formatUtcMinute(cvd.firstPresentMs)}`;
+  return (
+    <p
+      data-fact={`cvd_readable_horizon:${cvd.presentPoints}/${gridSlots}`}
+      data-readable-since-ms={cvd.firstPresentMs ?? ""}
+      className="text-sm text-provenance-weak"
+    >
+      {sinceText} — {cvd.presentPoints}/{gridSlots} grades de 1 min na janela.
+    </p>
+  );
+}
+
+function CvdPane({
+  panels,
+  status,
+  cvd,
+}: {
+  readonly panels: S2Panels;
+  readonly status: PanelStatus;
+  readonly cvd: CvdPaneData;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, (chart) => {
     const tokens = colorTokens();
@@ -364,12 +447,31 @@ function CvdPane({ panels, status }: { readonly panels: S2Panels; readonly statu
     cumulativeSeries.setData(lineSeriesLossless(panels.cvd.cumulativeSlots) as never);
   });
   const deltaReading = resolveFlowReading(panels.cvd.deltaSlots, panels.cvd.timeframeMs, lastInstantMs(panels));
+  // `RN-1` at the RENDERING layer, and for this series it is a rule of TYPE: a `FLOW` bucket with
+  // no observation is NOT a bucket where buyers and sellers balanced out. A `0` there would be an
+  // ASSERTION about the market ("não houve desequilíbrio comprador/vendedor neste minuto") made
+  // out of ignorance — `series_key.py`: "LOCF over it is a type error, never UX".
+  const readingText =
+    deltaReading.kind === "absent" || deltaReading.value === null ? ABSENCE_TOKEN : String(deltaReading.value);
+  const gridSlots = panels.cvd.deltaSlots.length;
   return (
-    <section aria-label="CVD">
+    <section
+      aria-label="CVD"
+      data-testid={CVD_PANE_TESTID}
+      data-cvd-present-points={cvd.presentPoints}
+    >
       <h2 className="font-label-caps text-label-caps text-on-surface">CVD (delta e acumulado)</h2>
       <div ref={containerRef} data-fact={`cvd_slots:${panels.cvd.deltaSlots.length}`} />
       <p data-fact={`cvd_last_reading:${deltaReading.kind}`} className="text-sm text-provenance-weak">
-        Delta atual: {formatFlowValue(deltaReading)}
+        Delta atual: {readingText}
+      </p>
+      <CvdReadableHorizon cvd={cvd} gridSlots={gridSlots} />
+      {/* The anchor of the CUMULATIVE curve, named on screen. The delta line above needs none;
+          the cumulative one is unreadable without this instant, and `page.tsx` chooses it
+          EXPLICITLY (`cvdAnchorMs`) instead of letting `buildCvdPanel`'s default decide in
+          silence — three anchors over the same deltas invert the sign of the total (`D4.7`). */}
+      <p data-fact={`cvd_cumulative_anchor:${cvd.anchorMs}`} className="text-sm text-provenance-weak">
+        Acumulado ancorado em {formatUtcMinute(cvd.anchorMs)}.
       </p>
       <AbsenceNote status={status} />
     </section>
@@ -421,7 +523,7 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
   );
 }
 
-export function SymbolClient({ panels, volume, panelStatus, knowledgeTimeMs, liveUrls }: SymbolClientProps) {
+export function SymbolClient({ panels, volume, cvd, panelStatus, knowledgeTimeMs, liveUrls }: SymbolClientProps) {
   return (
     // The three instants of the request this render was built from, on the root element: the
     // screen declares WHAT IT ASKED, so an assertion (or an operator) can re-issue exactly that
@@ -434,7 +536,7 @@ export function SymbolClient({ panels, volume, panelStatus, knowledgeTimeMs, liv
       <h1 className="sr-only">{panels.symbol} — Preço (com volume), Open Interest e CVD</h1>
       <PricePane panels={panels} status={panelStatus.price} volume={volume} volumeStatus={panelStatus.volume} />
       <OiPane panels={panels} status={panelStatus.oi} />
-      <CvdPane panels={panels} status={panelStatus.cvd} />
+      <CvdPane panels={panels} status={panelStatus.cvd} cvd={cvd} />
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>
         <ul>

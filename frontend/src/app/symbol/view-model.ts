@@ -287,3 +287,55 @@ export function keyMatchesSymbol(key: SeriesKey, symbol: string): boolean {
   return key.instrumentId === symbol;
 }
 
+
+// ── `T-02.5` — WHICH `cvd_source` ROW THE CVD PANEL READS, AND WHY IT TAKES THREE TERMS ──────
+//
+// `GET /series-catalog` serves FOUR rows whose `metric` is `cvd_source` for each instrument
+// (`domain/cvd_source_catalog.py`), and they are four different SERIES, not four spellings of
+// one:
+//
+//   provider    quantity_field  builder                    what it is
+//   binance     q               build_aggtrade_q_entry     CVD from the `aggTrade` `q` field
+//   binance     nq              build_aggtrade_nq_entry    CVD from the `aggTrade` `nq` field
+//   coinalyze   NA              build_coinalyze_bv_entry   a RECONSTRUCTION (reconstructed_from
+//                                                          = "aggtrade_q", published_error set)
+//   binance     NA              build_kline_takerbuy_entry `2*takerBuy[9] - volume[5]`, the row
+//                                                          `T-02.3` publishes off the SAME
+//                                                          `/fapi/v1/klines` array phase `01`
+//                                                          already fetches
+//
+// ⛔ SO `metric === "cvd_source"` ALONE PICKS THE WRONG SERIES, and it does it SILENTLY: the
+// catalog is ordered, `Array.prototype.find` answers the FIRST match, and the first match for
+// BTCUSDT today is `aggtrade_q` — a series this repository publishes NO rows for, which would
+// render an all-absent panel while every link in the chain reported success. That is the exact
+// failure fase `04` of `pagina-de-grafico-s2` had to find IN PRODUCTION, by hand.
+//
+// The three terms below are the minimum that separates the intended row from the other three,
+// and each one is load-bearing: `quantityField` alone also matches `coinalyze_bv`; `provider`
+// alone also matches `aggtrade_q`/`aggtrade_nq`. ⛔ POSITION IS NOT USED: the row sits at index
+// 11 of each instrument's block of 12 TODAY (`use_cases/series_catalog.py`), and indexing by
+// position would re-point this panel at another metric the day a row is appended.
+
+/** `metric` of every CVD source row (`cvd_source_catalog.py::CVD_SOURCE_METRIC`). */
+export const CVD_SOURCE_METRIC = "cvd_source";
+/** The ORIGIN, not a third party — `coinalyze_bv` is the row this term excludes. */
+export const CVD_KLINE_PROVIDER = "binance";
+/** `QuantityField.NA`: nothing in `2*takerBuy - volume` derives from an `aggTrade` quantity —
+ * this is what excludes `aggtrade_q` (`q`) and `aggtrade_nq` (`nq`). */
+export const CVD_KLINE_QUANTITY_FIELD = "NA";
+
+/**
+ * Is this the `kline_takerbuy` `cvd_source` row — the one `T-02.3`'s collector writes?
+ *
+ * Exported from `view-model.ts` rather than written inline in `page.tsx` so a `node --test`
+ * suite can run it against a catalog fixture: `page.tsx` cannot be imported by a test (it is a
+ * Next Server Component with route-level side effects), and a selector that can only be checked
+ * by reading it is exactly the class of defect this one exists to avoid.
+ */
+export function matchesKlineTakerBuyCvd(key: SeriesKey): boolean {
+  return (
+    key.metric === CVD_SOURCE_METRIC &&
+    key.provider === CVD_KLINE_PROVIDER &&
+    key.quantityField === CVD_KLINE_QUANTITY_FIELD
+  );
+}
