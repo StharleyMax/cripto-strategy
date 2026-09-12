@@ -51,12 +51,14 @@ from src.modules.sentimento.infra.binance_futures_data_client import FuturesData
 from src.modules.sentimento.infra.binance_klines_client import KlinesPageResponse
 from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
+from src.modules.sentimento.use_cases.collect_liquidation_history import LiquidationFetch
 from src.modules.sentimento.use_cases.collect_premium_index import RawPremiumIndexFetch
 from tests.helpers.collectors_cli_driver import (
     _BlockingForceOrderSource,
     _EmptyBatchFetcher,
     _EmptyFuturesDataClient,
     _EmptyKlinesClient,
+    _EmptyLiquidationSource,
     _EmptyOpenInterestClient,
 )
 
@@ -65,7 +67,18 @@ PREMIUM_INDEX = "collector-premium-index"
 KLINES = "collector-klines"
 OPEN_INTEREST = "collector-open-interest"
 LONG_SHORT = "collector-long-short"
-THREAD_NAMES = (FORCE_ORDER, PREMIUM_INDEX, KLINES, OPEN_INTEREST, LONG_SHORT)
+# The SIXTH thread (`T-05.5`). It joins this tuple rather than being left out, because the
+# tuple is what makes the guarantee COMPLETE: `_supervised` is a class of protection, and a
+# thread missing from here would be a thread nobody ever proved brings the process down.
+LIQUIDATION = "collector-liquidation"
+THREAD_NAMES = (
+    FORCE_ORDER,
+    PREMIUM_INDEX,
+    KLINES,
+    OPEN_INTEREST,
+    LONG_SHORT,
+    LIQUIDATION,
+)
 
 _OUTAGE = "the connection is closed"
 
@@ -197,10 +210,19 @@ def main(argv: list[str]) -> int:
         open_interest_cycle_interval_s=999_999.0,
         open_interest_backfill_days=1,
         long_short_cycle_interval_s=999_999.0,
+        liquidation_cycle_interval_s=999_999.0,
     )
     connection = connect_resp2(open_tcp_socket(host, port))
     store = SqliteIngestRecordStore(store_path)
     store.initialise()
+
+    class _DyingLiquidationSource:
+        """A liquidation source whose one port raises the rigged exception."""
+
+        def fetch(self, path: str) -> LiquidationFetch:
+            """Die the way a dead connection does, from inside the collector thread."""
+            _boom()
+            raise AssertionError("unreachable: _boom always raises")
 
     def _force_order_factory() -> object:
         if target == FORCE_ORDER:
@@ -223,10 +245,14 @@ def main(argv: list[str]) -> int:
             long_short_client_factory=(
                 _DyingLongShortClient if target == LONG_SHORT else _EmptyFuturesDataClient
             ),
+            liquidation_source_factory=(
+                _DyingLiquidationSource if target == LIQUIDATION else _EmptyLiquidationSource
+            ),
             premium_index_to_rows=_never_maps,
             force_order_to_rows=_never_maps,
             long_short_to_rows=_never_maps_long_short,
             long_short_symbols=("BTCUSDT",),
+            liquidation_symbols=("BTCUSDT",),
         )
     finally:
         server.shutdown()

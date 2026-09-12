@@ -1,0 +1,25 @@
+-- `T-05.6` (`RF-6` / `RS-4`, plan `05` item 5.6 and its `DoD 5`): `md.ingest_run` gains
+-- `notes TEXT`, NULLable.
+--
+-- WHO NEEDS THIS FILE: an environment where `md.ingest_run` was created before `T-05.6`. Which
+-- is EVERY environment that exists today — `information_schema.columns` for `md.ingest_run`
+-- listed 17 names and none of them was `notes` `[MEDIDO 2026-09-12]`. A fresh database never
+-- runs this: `PostgresIngestRecordStore._DDL` already declares the column inside its
+-- `CREATE TABLE IF NOT EXISTS`, and carries an idempotent `ADD COLUMN IF NOT EXISTS` of its own
+-- for exactly the environment this file addresses. The file exists so the change is also
+-- reviewable and runnable as a migration, next to `0001`.
+--
+-- WHY NULLable, AND WHY THAT IS NOT THE AMBIGUITY `0001` REFUSED: there, `value_raw IS NULL`
+-- would have been indistinguishable between "not migrated yet" and "the source published
+-- nothing". Here NULL has ONE meaning and it is a legitimate one: this run has no note. The
+-- pair `(api_code, notes)` is what carries the reason, and `RS-4`'s rule is about the PAIR —
+-- a `REJECTED` run with BOTH nulls is the defect, not a null on its own. An `ACCEPTED` run
+-- normally has nothing to say, and forcing it to say something would produce prose nobody
+-- wrote, which is worse than silence.
+--
+-- WHAT THIS DOES NOT TOUCH: `INGEST_HEALTH_RUN_COLUMNS`. The 15-column projection whose ORDER
+-- feeds the `sha256` of `ADR-008/DoD-2` does not name `notes`, `_project_run_dict` walks that
+-- tuple and never `dataclasses.fields(IngestRun)`, and so the fingerprint of every report
+-- already emitted is byte-identical after this migration. `writer_accounted_at` (`ADR-035/D2`)
+-- is the precedent, and it is the reason this column could be added without a contract change.
+ALTER TABLE md.ingest_run ADD COLUMN IF NOT EXISTS notes TEXT;
