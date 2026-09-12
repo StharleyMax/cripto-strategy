@@ -78,13 +78,15 @@ help:
 	  '  make natureza        natureza por USO (scanner de AST): domain/use_cases nao leem' \
 	  '                       relogio (ADR-016/D4; backend/scripts/natureza.sh)' \
 	  '  make build           artefato distribuivel — hoje RECUSA com rc=3, e o alvo diz porque' \
-	  '  make verify          OS SEIS PORTOES numa chamada, veredito em ~10 linhas e a saida' \
+	  '  make verify          OS OITO PORTOES numa chamada, veredito em ~14 linhas e a saida' \
 	  '                       bruta em arquivo (scripts/verify.sh). E o alvo para AGENTE rodar' \
+	  '                       (inclui as 4 suites node --test do front e o e2e de pixel)' \
 	  '  make api             sobe a API em processo, honrando .env (raiz) — dev por comando' \
 	  '                       versionado (T-01.7, ADR-029/D5). NAO entra em verify (M5)' \
 	  '  make e2e             API de teste sobre store efemero (>=1 run) + next build/start +' \
-	  '                       playwright test, derruba tudo ao final (T-01.8). FORA de verify' \
-	  '                       (M5). E2E_API_UP=0 deixa a API deliberadamente NO CHAO (D1.11)' \
+	  '                       playwright test, derruba tudo ao final (T-01.8). DENTRO de verify' \
+	  '                       desde 2026-09-12 (DR-11: e o unico portao que le PIXEL, ~49 s).' \
+	  '                       E2E_API_UP=0 deixa a API deliberadamente NO CHAO (D1.11)' \
 	  '  make compose-deploy  docker compose do alvo de deploy (7 servicos, so' \
 	  '                       deploy/compose.yml). So concatena a flag; aceita ARGS' \
 	  '                       (T-03.5, ADR-032/D1). FORA de verify (nao implanta nada, R-E)' \
@@ -257,7 +259,7 @@ build:
 	@exit 3
 
 # ── verify ─────────────────────────────────────────────────────────────────────────────
-# Os cinco portoes numa chamada, veredito compacto, saida bruta em arquivo.
+# Os OITO portoes numa chamada, veredito compacto, saida bruta em arquivo.
 #
 # EXISTE POR UM NUMERO, e o numero e de consumo e nao de gosto: `[MEDIDO 2026-08-29 sobre
 # 105 transcripts de subagente deste projeto, n=1.320 chamadas]` os comandos de verificacao
@@ -295,8 +297,18 @@ api:
 	set -a && { test -f .env && . ./.env || true; } && set +a && cd backend && exec .venv/bin/python -m src.main
 
 # ── e2e ────────────────────────────────────────────────────────────────────────────────
-# `T-01.8` (`SPEC-003` s3.5, plano `01` item `1.8`, `DoD D1.10`/`D1.11`). FORA de `verify`
-# (M5, cabecalho de `tasks.toml`: "+~35 s por verify se o owner ligar").
+# `T-01.8` (`SPEC-003` s3.5, plano `01` item `1.8`, `DoD D1.10`/`D1.11`).
+#
+# ⚠️ ESTAVA FORA DE `verify` (M5, cabecalho de `tasks.toml`: "+~35 s por verify se o owner
+# ligar"), E ENTROU EM 2026-09-12 — `scripts/verify.sh` portao 6. O motivo nao e gosto: o
+# design-review de `c7e17fc` (`DR-11`) replantou `#FFFFFF` no fundo do `<canvas>` por uma porta
+# que os DOIS portoes de fonte sancionavam, e os dois ficaram VERDES com o defeito na tela. Só
+# `e2e/11-canvas-fundo.spec.ts` reprovou, lendo o pixel (`Expected "#131722"` ·
+# `Received "#ffffff"`, n=12 canvases). O custo real, medido, e ~49 s e nao ~35 s
+# `[MEDIDO 2026-09-12: make e2e -> rc=0, 49 s de relogio, 27 specs]`.
+#
+# O alvo continua chamavel sozinho, e e assim que `verify` o chama (`make e2e`) — uma verdade
+# so sobre como o e2e sobe.
 #
 # `scripts/e2e-env.sh` faz o SETUP (seed do store efemero >= 1 run, `next build`, sobe a API
 # de teste e o `next start`) e o TEARDOWN — ele NUNCA chama Playwright. Quem chama e ESTA
