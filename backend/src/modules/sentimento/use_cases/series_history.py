@@ -25,6 +25,7 @@ from src.modules.sentimento.domain.as_of_accessor import (
 )
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.domain.series_history_report import (
+    PanelGridVerdict,
     SeriesHistoryReport,
     SeriesHistoryRow,
 )
@@ -71,6 +72,26 @@ class SeriesWindowReader(Protocol):
         window_end_ms: int,
         lookback_ms: int,
     ) -> tuple[Observation, ...]: ...
+
+
+class GridMultipleClassifier(Protocol):
+    """Port over `ADR-026/D1`'s `classify_grid_multiple`, which lives in the OTHER context.
+
+    `backend/pyproject.toml`'s "Fronteira de contexto" contract forbids
+    `src.modules.sentimento` from importing `src.modules.charts`, and `ADR-037/D4` nonetheless
+    requires this report to carry that verdict — so the verdict arrives by INJECTION, exactly
+    the shape `SeriesWindowReader` above already uses for the store. The adapter that calls
+    `classify_grid_multiple` and projects its `reason` enum onto a string is the composition
+    root (`src.main`), the one layer that may see both contexts.
+
+    It has no default. `ADR-037/D4` makes the verdict part of the answer, and a use case that
+    silently produced `enabled=True` when nobody wired a classifier would serve a claim about
+    the grid that no `charts` rule ever made.
+    """
+
+    def __call__(  # noqa: D102
+        self, *, panel_grid_ms: int, native_grid_ms: int
+    ) -> PanelGridVerdict: ...
 
 
 def _first_grid_instant(window_start_ms: int) -> int:
@@ -131,6 +152,7 @@ def _read_instant(grid_instant: int, *, bar_policy: BarPolicy) -> int:
 def build_series_history_report(
     catalog: SeriesCatalog,
     reader: SeriesWindowReader,
+    classify_grid: GridMultipleClassifier,
     *,
     series_key_id: str,
     symbol: str,
@@ -176,10 +198,25 @@ def build_series_history_report(
     policy = SeriesReadPolicy(
         asof_max_staleness_ms=staleness_ms,
         render_max_staleness_ms=staleness_ms,
-        bucket_interval_ms=_GRID_STEP_MS,
+        # `ADR-037/D1`: the series' NATIVE grid, never `_GRID_STEP_MS`. The two are different
+        # grandezas that happened to share a value for every series cataloged before `ADR-037`
+        # (`M4`: 44 of 44 entries were either `1min` — where the report's step coincides with
+        # the native one — or carry-forward `STOCK`, where `D4.11`'s clause is skipped entirely
+        # and the width is never read). For a non-carry-forward series on a wider grid, feeding
+        # the report's step here makes `as_of`'s `age_ms >= policy.bucket_interval_ms` ask "has
+        # a whole bucket gone by?" against one FIFTH of the bucket, and the readable window
+        # `[bucket_end + lag, bucket_end + bucket_interval_ms)` collapses to empty: `ADR-037`/M3
+        # measured 0 of 61 grid slots against 4 of 61 with the native width, same data, same
+        # `CARRY_FORWARD_BY_NATURE`, the width as the ONLY varying term.
+        bucket_interval_ms=entry.native_grid_ms,
         first_capture_at=None,
     )
-    lookback_ms = max(_GRID_STEP_MS, staleness_ms)
+    # The window the reader has to cover backwards has to reach at least ONE NATIVE BUCKET, not
+    # one report step: on a 5-minute series a 60_000 ms lookback could exclude the very bucket
+    # whose staircase the first grid instants render. `max_staleness_ms` is >= the native grid
+    # for every entry cataloged today, so this is a no-op on current data and a guard against
+    # the next entry whose staleness is tighter than its grid.
+    lookback_ms = max(_GRID_STEP_MS, entry.native_grid_ms, staleness_ms)
     observations = reader.read_window(
         series_key_id=series_key_id,
         symbol=symbol,
@@ -229,6 +266,11 @@ def build_series_history_report(
         panel_source=entry.key.provider,
         panel_nature=entry.key.nature.value,
         panel_unit=entry.key.unit,
+        # `ADR-037/D4`: `classify_grid_multiple`'s FIRST production caller, reached through the
+        # injected port. `_GRID_STEP_MS` is the panel grid because `ADR-034/D6` serves only
+        # `interval=1m`; the moment a second interval is served, the panel grid stops being a
+        # constant and this argument becomes the one that carries it.
+        panel_grid=classify_grid(panel_grid_ms=_GRID_STEP_MS, native_grid_ms=entry.native_grid_ms),
         rows=tuple(rows),
         knowledge_time=knowledge_time_ms,
         bar_policy=bar_policy,

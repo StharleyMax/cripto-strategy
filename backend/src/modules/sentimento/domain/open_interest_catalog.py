@@ -67,6 +67,12 @@ OPEN_INTEREST_LABEL_SHIFT_MS: Final[int] = _INTERVAL_MS
 # `openInterestHist` publishes on the same 5-minute grid.
 _NATIVE_GRID: Final[str] = "5min"
 
+# The same fact as the label above, in milliseconds, DECLARED beside it and never parsed from
+# it (`ADR-037/D3`). It is written as a literal rather than as `_INTERVAL_MS` so the PAIR
+# (`"5min"`, `300_000`) is greppable on one screen — the table
+# `tests/sentimento/test_native_grid_ms_pairs.py` enumerates is what refuses a divergent pair.
+_NATIVE_GRID_MS: Final[int] = 300_000
+
 # Twice the native grid: a reader may `LOCF` at most one missed bucket before the row is stale
 # (`SPEC-001` §3.2). Neither source's retention table (`docs/medicao-coinalyze.md`) suggests a
 # looser bound is warranted for Open Interest specifically.
@@ -148,6 +154,7 @@ def open_interest_catalog_entries(instrument_id: str = "BTCUSDT") -> SeriesCatal
         SeriesCatalogEntry(
             key=coinalyze_open_interest_key(reduction, instrument_id=instrument_id),
             native_grid=_NATIVE_GRID,
+            native_grid_ms=_NATIVE_GRID_MS,
             max_staleness_ms=_MAX_STALENESS_MS,
         )
         for reduction in (Reduction.OPEN, Reduction.HIGH, Reduction.LOW, Reduction.CLOSE)
@@ -156,6 +163,7 @@ def open_interest_catalog_entries(instrument_id: str = "BTCUSDT") -> SeriesCatal
         SeriesCatalogEntry(
             key=binance_open_interest_key(instrument_id=instrument_id),
             native_grid=_NATIVE_GRID,
+            native_grid_ms=_NATIVE_GRID_MS,
             max_staleness_ms=_MAX_STALENESS_MS,
         )
     )

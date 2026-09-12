@@ -224,7 +224,9 @@ def build_aggtrade_q_entry(
         aggregation_scope="Symbol",
         verified_by=verified_by,
     )
-    return SeriesCatalogEntry(key=key, native_grid="1min", max_staleness_ms=120_000)
+    return SeriesCatalogEntry(
+        key=key, native_grid="1min", native_grid_ms=60_000, max_staleness_ms=120_000
+    )
 
 
 def build_aggtrade_nq_entry(
@@ -254,7 +256,9 @@ def build_aggtrade_nq_entry(
         aggregation_scope="Symbol",
         verified_by=verified_by,
     )
-    return SeriesCatalogEntry(key=key, native_grid="1min", max_staleness_ms=120_000)
+    return SeriesCatalogEntry(
+        key=key, native_grid="1min", native_grid_ms=60_000, max_staleness_ms=120_000
+    )
 
 
 def build_coinalyze_bv_entry(
@@ -290,6 +294,7 @@ def build_coinalyze_bv_entry(
     return SeriesCatalogEntry(
         key=key,
         native_grid="1min",
+        native_grid_ms=60_000,
         max_staleness_ms=120_000,
         reconstructed_from="aggtrade_q",
         published_error=COINALYZE_BV_MEASUREMENT.published_error,
@@ -348,7 +353,9 @@ def build_kline_takerbuy_entry(instrument_id: str, *, unit: str) -> SeriesCatalo
         aggregation_scope="Symbol",
         verified_by=KLINE_TAKERBUY_VERIFIED_BY,
     )
-    return SeriesCatalogEntry(key=key, native_grid="1min", max_staleness_ms=120_000)
+    return SeriesCatalogEntry(
+        key=key, native_grid="1min", native_grid_ms=60_000, max_staleness_ms=120_000
+    )
 
 
 def build_cvd_source_catalog_entries(

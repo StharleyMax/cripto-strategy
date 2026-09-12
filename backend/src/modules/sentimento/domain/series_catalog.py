@@ -8,6 +8,19 @@
 #                          publishes `1min` and Binance's `daily/metrics` publishes `5min`: a
 #                          constant here would silently mislabel whichever source is not the
 #                          one the constant was written for.
+#   * `native_grid_ms`   — THE SAME FACT AS `native_grid`, in milliseconds, DECLARED beside the
+#                          label and never parsed from it (`ADR-037/D3`). It exists because the
+#                          read path needs an integer: `SeriesReadPolicy.bucket_interval_ms` is
+#                          "the native grid of this series, in milliseconds", and until
+#                          `ADR-037` the one caller that fills it injected the REPORT's 1-minute
+#                          step instead — which vetoes every slot of a non-carry-forward series
+#                          whose native grid is wider than a minute (`ADR-037`/M3: 0 of 61).
+#                          ⚠️ Parsing `"5min"` here would be the SECOND grid-label parser
+#                          `ADR-003`/FR-3 reserves to `charts`' canonical grid, which is why
+#                          this is a declaration: whoever writes `native_grid="5min"` writes
+#                          `native_grid_ms=300_000` on the next line. The two can diverge, and
+#                          what closes that is `tests/sentimento/test_native_grid_ms_pairs.py`,
+#                          which enumerates every SERVED entry against one declared table.
 #   * `max_staleness_ms` — how far a reader may `LOCF` this row on read (`SPEC-001` §3.2);
 #                          required on every row, never inferred.
 #   * `price_use`        — required only when the row is a price series (`SPEC-001` §3.7);
@@ -114,6 +127,7 @@ class SeriesCatalogEntry:
 
     key: SeriesKey
     native_grid: str
+    native_grid_ms: int
     max_staleness_ms: int
     price_use: str | None = None
     reconstructed_from: str | None = None
@@ -125,6 +139,12 @@ class SeriesCatalogEntry:
             raise InvalidCatalogEntryError(
                 "native_grid is blank: `CA-F2-11` requires it resolved from the source on "
                 "every row, and a blank value is indistinguishable from 'never resolved'"
+            )
+        if self.native_grid_ms <= 0:
+            raise InvalidCatalogEntryError(
+                f"native_grid_ms = {self.native_grid_ms} is not a positive width: `ADR-037/D3` "
+                f"makes it the value the READ PATH injects as `bucket_interval_ms`, and a grid "
+                f"does not exist at zero or negative width"
             )
         if self.max_staleness_ms <= 0:
             raise InvalidCatalogEntryError(
