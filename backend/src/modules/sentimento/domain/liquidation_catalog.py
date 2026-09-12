@@ -54,6 +54,13 @@ _INTERVAL_MS: Final[int] = 60_000
 # in its own `interval` parameter — the same string `coinalyze_daily_series.py` already uses.
 NATIVE_GRID: Final[str] = "1min"
 
+# THE SAME FACT AS `NATIVE_GRID`, in milliseconds, DECLARED here instead of parsed from the
+# label (`ADR-037/D3`): the read path injects this as `bucket_interval_ms`, and a second
+# grid-label parser is what `ADR-003`/FR-3 reserves to `charts`' canonical grid. The pair is
+# enumerated over every SERVED row by `tests/sentimento/test_native_grid_ms_pairs.py`, which is
+# what refuses a divergent declaration.
+NATIVE_GRID_MS: Final[int] = 60_000
+
 # ── `label_shift = +interval`, AND IT IS MEASURED HERE RATHER THAN BORROWED ────────────────
 #
 # `SPEC-001` §2.1 states Coinalyze's `label_shift` is `+interval`, and `D6.8` PROVED it for
@@ -156,6 +163,7 @@ def liquidation_catalog_entries(instrument_id: str = "BTCUSDT") -> SeriesCatalog
             SeriesCatalogEntry(
                 key=coinalyze_liquidation_key(cohort, instrument_id=instrument_id),
                 native_grid=NATIVE_GRID,
+                native_grid_ms=NATIVE_GRID_MS,
                 max_staleness_ms=MAX_STALENESS_MS,
             )
             for cohort in COHORTS

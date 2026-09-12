@@ -159,8 +159,26 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # competing to be the answer; (c) it returns a COUNT. The anti-lookahead comparison that
     # DOES involve an instant lives in `use_cases/collector_series_mapping`, and it compares
     # against the collector's observation clock rather than against a caller's `t`.
+    #
+    # `T-04.3` (phase `04`) adds `_collect_long_short_for_symbol` — the THIRD function of this
+    # same file, and the SAME category as the two above rather than a new one: producer
+    # bookkeeping, not a second reader. It reads `row.bucket_end` off the rows the mapping JUST
+    # BUILT, to advance the long/short collector's in-process watermark ("the newest bucket
+    # already published for this symbol") so the next cycle's overlapping page does not
+    # republish it. The three checkable properties hold unchanged: (a) there is no decision
+    # instant `t` in the function — its only other timestamp is `_epoch_ms()`, the collector's
+    # own clock at publication, not an `as_of` argument; (b) it never consults a SECOND row to
+    # choose a winner, it takes a `max()` over rows it is publishing in the same breath; (c) it
+    # returns totals, never a value. And the same alternative was rejected for the same reason:
+    # `row.event_time` is the SAME instant for these rows (`label_shift = 0`) and is NOT in
+    # `READ_PATH_COLUMNS`, so keying the watermark off it would have kept this function out of
+    # this registry by picking a synonym — a bypass of the gate, not a compliance with it.
     "modules/sentimento/infra/collectors_cli.py": frozenset(
-        {"_publish_klines_page", "_publish_open_interest_page"}
+        {
+            "_publish_klines_page",
+            "_publish_open_interest_page",
+            "_collect_long_short_for_symbol",
+        }
     ),
     # `T-01.2` (`pagina-de-grafico-s2`): SERIALIZATION, same category as `write_series_row.py`
     # and `series_row_wire.py` above — `SeriesHistoryRow` is a NEW dataclass (its OWN

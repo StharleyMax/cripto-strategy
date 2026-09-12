@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from src.modules.charts.domain.panel_grid_enablement import classify_grid_multiple
 from src.modules.sentimento.domain.as_of_accessor import BarPolicy, Observation
 from src.modules.sentimento.domain.provenance import (
     UNKNOWN_OBSERVER_REGION,
@@ -15,6 +16,7 @@ from src.modules.sentimento.domain.provenance import (
     SeriesRow,
 )
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog, SeriesCatalogEntry
+from src.modules.sentimento.domain.series_history_report import PanelGridVerdict
 from src.modules.sentimento.domain.series_key import (
     Nature,
     QuantityField,
@@ -33,6 +35,23 @@ GRID_MS = 60_000
 """1-minute native grid — `ADR-034/D6`, the only one F1 serves."""
 
 SYMBOL = "BTCUSDT"
+
+
+def classify_panel_grid(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGridVerdict:
+    """Satisfy the `GridMultipleClassifier` port with the REAL `charts` rule (`ADR-037/D4`).
+
+    Not a stub returning a constant: `src.main._classify_panel_grid` is this same projection,
+    and a test double that invented its own verdict would let the envelope say `upsampling`
+    while `ADR-026/D1` said something else.
+    """
+    verdict = classify_grid_multiple(panel_grid_ms, native_grid_ms)
+    return PanelGridVerdict(
+        native_grid_ms=verdict.native_grid_ms,
+        enabled=verdict.enabled,
+        reason=verdict.reason.value,
+        multiple=verdict.multiple,
+    )
+
 
 BUCKET_END = 1_620_000_000_000
 """A `bucket_end` ALIGNED to `GRID_MS` (`1_620_000_000_000 / 60_000 = 27_000_000`, exact) — real
@@ -66,7 +85,14 @@ def _oi_key(**overrides: object) -> SeriesKey:
 
 def _catalog_with_one_entry(*, max_staleness_ms: int = 120_000) -> SeriesCatalog:
     return SeriesCatalog(
-        (SeriesCatalogEntry(key=_oi_key(), native_grid="1min", max_staleness_ms=max_staleness_ms),)
+        (
+            SeriesCatalogEntry(
+                key=_oi_key(),
+                native_grid="1min",
+                native_grid_ms=60_000,
+                max_staleness_ms=max_staleness_ms,
+            ),
+        )
     )
 
 
@@ -130,6 +156,7 @@ def test_reports_one_row_per_grid_instant_with_a_value_present() -> None:
     report = build_series_history_report(
         catalog,
         reader,
+        classify_panel_grid,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -155,6 +182,7 @@ def test_reports_absence_for_a_grid_instant_with_no_admitted_observation() -> No
     report = build_series_history_report(
         catalog,
         reader,
+        classify_panel_grid,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -178,6 +206,7 @@ def test_panel_fields_come_from_the_catalog_entry() -> None:
     report = build_series_history_report(
         catalog,
         reader,
+        classify_panel_grid,
         series_key_id=key_id,
         symbol=SYMBOL,
         interval="1m",
@@ -209,8 +238,8 @@ def test_calling_twice_with_the_same_key_produces_byte_identical_envelopes() -> 
         "bar_policy": BarPolicy.FINAL_ONLY,
     }
 
-    first = build_series_history_report(catalog, reader, **kwargs)  # type: ignore[arg-type]
-    second = build_series_history_report(catalog, reader, **kwargs)  # type: ignore[arg-type]
+    first = build_series_history_report(catalog, reader, classify_panel_grid, **kwargs)  # type: ignore[arg-type]
+    second = build_series_history_report(catalog, reader, classify_panel_grid, **kwargs)  # type: ignore[arg-type]
 
     assert first.to_envelope(principal_id=None, server_now_ms=0) == second.to_envelope(
         principal_id=None, server_now_ms=0
@@ -225,6 +254,7 @@ def test_lookback_ms_passed_to_the_reader_is_at_least_the_grid_and_the_staleness
     build_series_history_report(
         catalog,
         reader,
+        classify_panel_grid,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -246,6 +276,7 @@ def test_refuses_an_interval_other_than_1m() -> None:
         build_series_history_report(
             catalog,
             reader,
+            classify_panel_grid,
             series_key_id=_oi_key().series_key_id(),
             symbol=SYMBOL,
             interval="5m",
@@ -265,6 +296,7 @@ def test_refuses_an_unknown_series_key_id() -> None:
         build_series_history_report(
             catalog,
             reader,
+            classify_panel_grid,
             series_key_id="does-not-exist",
             symbol=SYMBOL,
             interval="1m",
@@ -284,6 +316,7 @@ def test_refuses_a_window_that_is_not_strictly_increasing() -> None:
         build_series_history_report(
             catalog,
             reader,
+            classify_panel_grid,
             series_key_id=_oi_key().series_key_id(),
             symbol=SYMBOL,
             interval="1m",
@@ -338,7 +371,14 @@ def _volume_key(**overrides: object) -> SeriesKey:
 def _catalog_for(key: SeriesKey, *, max_staleness_ms: int = 120_000) -> SeriesCatalog:
     """Build a one-entry catalog for `key` (`120_000` is the served `maxStalenessMs` of both)."""
     return SeriesCatalog(
-        (SeriesCatalogEntry(key=key, native_grid="1min", max_staleness_ms=max_staleness_ms),)
+        (
+            SeriesCatalogEntry(
+                key=key,
+                native_grid="1min",
+                native_grid_ms=60_000,
+                max_staleness_ms=max_staleness_ms,
+            ),
+        )
     )
 
 
@@ -396,6 +436,7 @@ def test_a_flow_series_with_publication_lag_serves_a_value_at_every_grid_instant
     report = build_series_history_report(
         _catalog_for(key),
         reader,
+        classify_panel_grid,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -430,6 +471,7 @@ def test_a_stock_series_with_publication_lag_is_not_shifted_one_bucket_late() ->
     report = build_series_history_report(
         _catalog_for(key),
         reader,
+        classify_panel_grid,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -466,6 +508,7 @@ def test_a_bucket_that_closes_after_the_grid_instant_is_never_served_at_it() -> 
     report = build_series_history_report(
         _catalog_for(key),
         reader,
+        classify_panel_grid,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -493,6 +536,7 @@ def test_the_knowledge_horizon_still_excludes_a_row_observed_after_it() -> None:
     report = build_series_history_report(
         _catalog_for(key),
         reader,
+        classify_panel_grid,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -528,6 +572,7 @@ def test_intrabar_reads_at_the_grid_instant_and_never_the_next_bucket_partial() 
     report = build_series_history_report(
         _catalog_for(key),
         reader,
+        classify_panel_grid,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -538,3 +583,188 @@ def test_intrabar_reads_at_the_grid_instant_and_never_the_next_bucket_partial() 
     )
 
     assert [row.value for row in report.rows] == ["60.0"]
+
+
+# ── `ADR-037` — `bucket_interval_ms` is the NATIVE grid, not the report step ────────────────
+#
+# The matrix over `as_of` itself lives in `test_series_history_native_grid.py`. What follows
+# exercises the SAME decision one layer up, through the real use case, because that is the
+# layer where the defect actually lived (`series_history.py:179`): a test that only measured
+# `as_of` would stay green while the caller injected the wrong argument forever.
+
+RATIO_LAG_MS = 66_712
+"""`ADR-037`/M1: the minimum publication lag of `globalLongShortAccountRatio`, n=4.000 rows."""
+
+FIVE_MINUTE_GRID_MS = 300_000
+"""`ADR-037`/M2: the native grid of the 5-minute series, `p50 == max`, n=1.000 rows/symbol."""
+
+
+def _ratio_key() -> SeriesKey:
+    """Build a 5-minute series of a nature that is NOT carried forward (`False` in the table)."""
+    return _oi_key(metric="count_long_short_ratio", nature=Nature.RATIO, unit="ratio", denom="none")
+
+
+def _ratio_catalog(*, native_grid_ms: int) -> SeriesCatalog:
+    """Build a one-row catalog whose declared width is the ONLY term these two tests vary."""
+    return SeriesCatalog(
+        (
+            SeriesCatalogEntry(
+                key=_ratio_key(),
+                native_grid="5min",
+                native_grid_ms=native_grid_ms,
+                max_staleness_ms=600_000,
+            ),
+        )
+    )
+
+
+def _ratio_reader(*, window_end_ms: int) -> _FakeReader:
+    """One LIVE bucket published `RATIO_LAG_MS` after it closed; every other row backfill.
+
+    `ADR-037`/M5 measured exactly this: at most two buckets per symbol collected live, all the
+    rest a backfill batch stamped long after the window and therefore invisible to `as_of`
+    until `E1`/`D16` exists in code.
+    """
+    live_bucket = window_end_ms - FIVE_MINUTE_GRID_MS
+    backfill_at = window_end_ms + 10 * GRID_MS
+    key = _ratio_key()
+    observations = []
+    for index in range(16):
+        bucket_end = window_end_ms - index * FIVE_MINUTE_GRID_MS
+        available_at = bucket_end + RATIO_LAG_MS if bucket_end == live_bucket else backfill_at
+        observations.append(
+            Observation(
+                row=SeriesRow(
+                    series_key_id=key.series_key_id(),
+                    symbol=SYMBOL,
+                    source="binance",
+                    bucket_end=bucket_end,
+                    event_time=bucket_end,
+                    available_at=available_at,
+                    availability_source=AvailabilitySource.OBSERVED,
+                    ingested_at=available_at,
+                    observed_at=available_at,
+                    provenance=Provenance.OBSERVED,
+                    src_label_raw="longShortRatio",
+                    observer_id="test",
+                    observer_region=UNKNOWN_OBSERVER_REGION,
+                    is_final=None,
+                    value_raw="1.2345",
+                ),
+                value=Decimal("1.2345"),
+            )
+        )
+    return _FakeReader(tuple(observations))
+
+
+def _count_points(*, native_grid_ms: int) -> int:
+    window_end_ms = BUCKET_END + 60 * GRID_MS
+    window_start_ms = window_end_ms - 60 * GRID_MS
+    report = build_series_history_report(
+        _ratio_catalog(native_grid_ms=native_grid_ms),
+        _ratio_reader(window_end_ms=window_end_ms),
+        classify_panel_grid,
+        series_key_id=_ratio_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=window_start_ms,
+        window_end_ms=window_end_ms,
+        knowledge_time_ms=window_end_ms + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+    assert len(report.rows) == 61, "the window is the 61-slot hour ADR-037/M3 measured"
+    return sum(1 for row in report.rows if row.value is not None)
+
+
+def test_a_five_minute_non_carried_series_renders_through_the_real_use_case() -> None:
+    """MORDE (`ADR-037` falsifier item 1): 4 of 61 slots carry a value, `RATIO` untouched.
+
+    Four, not one: the readable window of a non-carry-forward bucket is
+    `[bucket_end + lag, bucket_end + native_grid)` — 233.288 ms wide here, which covers four
+    1-minute slots. This is `ADR-037`/M3's `4 / 61` cell, reproduced through
+    `build_series_history_report` rather than through a direct `as_of` call.
+    """
+    assert _count_points(native_grid_ms=FIVE_MINUTE_GRID_MS) == 4
+
+
+def test_injecting_the_report_step_as_the_width_vetoes_every_slot() -> None:
+    """CALA (`ADR-037` falsifier item 2): the OLD value gives EXACTLY zero, on the same data.
+
+    This is the mutation, written as a test instead of as a promise: `60_000` is precisely what
+    `series_history.py:179` injected before `ADR-037`, and with it the series is unreadable at
+    every one of the 61 slots — `HTTP 200` with `n_points = 0`, the `rc=0` silence `ADR-012`
+    names. A change that put `_GRID_STEP_MS` back would make the test above fail; a test that
+    passed under both widths would not be measuring this decision at all.
+    """
+    assert _count_points(native_grid_ms=GRID_MS) == 0
+
+
+def test_the_one_minute_control_is_invariant_under_this_change() -> None:
+    """THE CONTROL: `klines_volume` renders, and it renders for the same reason it always did.
+
+    `ADR-037`/M4 is why this matters — of the 44 served catalog rows, 16 are `1min`/`FLOW`,
+    where the report step COINCIDES with the native grid. For those rows `ADR-037` changes the
+    argument's PROVENANCE and not its value, and the whole class had to stay byte-identical.
+    The sibling `test_a_flow_series_with_publication_lag_serves_a_value_at_every_grid_instant`
+    is the behavioural half of this control; this one pins the arithmetic premise it rests on.
+    """
+    entry = SeriesCatalogEntry(
+        key=_volume_key(),
+        native_grid="1min",
+        native_grid_ms=60_000,
+        max_staleness_ms=120_000,
+    )
+    assert entry.native_grid_ms == GRID_MS
+
+
+def test_the_report_names_upsampling_when_the_native_grid_is_wider_than_the_panel() -> None:
+    """`ADR-037/D4`: the envelope QUALIFIES the staircase instead of serving it unnamed.
+
+    `classify_grid_multiple` had zero production callers when `ADR-037` was written
+    (`M6`); this is the verdict reaching the wire through the injected port.
+    """
+    window_end_ms = BUCKET_END + 60 * GRID_MS
+    report = build_series_history_report(
+        _ratio_catalog(native_grid_ms=FIVE_MINUTE_GRID_MS),
+        _ratio_reader(window_end_ms=window_end_ms),
+        classify_panel_grid,
+        series_key_id=_ratio_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=window_end_ms,
+        window_end_ms=window_end_ms,
+        knowledge_time_ms=window_end_ms + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    panel = report.to_envelope(principal_id=None, server_now_ms=window_end_ms)["panel"]
+    assert panel["native_grid_ms"] == FIVE_MINUTE_GRID_MS  # type: ignore[index]
+    assert panel["grid_multiple"] == {  # type: ignore[index]
+        "enabled": False,
+        "reason": "upsampling",
+        "multiple": None,
+    }
+
+
+def test_a_series_whose_native_grid_equals_the_panel_grid_is_not_upsampling() -> None:
+    """The other side of `ADR-037/D4`: a 1-minute series is a multiple of itself, `multiple=1`."""
+    catalog = _catalog_with_one_entry()
+    report = build_series_history_report(
+        catalog,
+        _FakeReader(()),
+        classify_panel_grid,
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=BUCKET_END,
+        window_end_ms=BUCKET_END,
+        knowledge_time_ms=BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    panel = report.to_envelope(principal_id=None, server_now_ms=BUCKET_END)["panel"]
+    assert panel["grid_multiple"] == {  # type: ignore[index]
+        "enabled": True,
+        "reason": "multiple_of_native",
+        "multiple": 1,
+    }

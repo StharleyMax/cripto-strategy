@@ -14,9 +14,19 @@ already published and that `SPEC-003` cites by line number, not the stale claim 
 
 `SPEC-003` §0.1#7, the plan's D3.1 and `tasks.toml`'s own DoD all write the SAME equation:
 `n_entries = 7 = grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test |
-wc -l`. That grep counts literal CALL SITES across `cvd_source_catalog.py` (3),
-`price_source_catalog.py` (2) and `open_interest_catalog.py` (2) — and it is still 7 today
-(re-measured building this task). But a call SITE is not a ROW: `open_interest_catalog_entries`
+wc -l`. That grep counts literal CALL SITES, and the equation was already wrong when it was
+written. It is wrong by a DIFFERENT amount today: re-measured at this SHA the same command
+answers **11**, not 7 — `cvd_source_catalog.py` (4), `price_source_catalog.py` (2),
+`open_interest_catalog.py` (2), `long_short_catalog.py` (1), `liquidation_catalog.py` (1),
+`klines_volume_catalog.py` (1). Three source modules became six as `SPEC-007` added rows:
+
+    grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test | wc -l  # 11
+
+11 is not the row count either, and that is the point — the catalog this module returns has
+**13** rows at this SHA (`len(list_series_catalog('BTCUSDT').entries)`), so the grep now
+UNDERCOUNTS by two where it once overcounted. A call SITE is not a ROW in either direction:
+`build_cvd_source_catalog_entries` still yields 3 rows from 4 call sites (the fourth, line 356,
+belongs to `T-02.2`'s separate `kline_takerbuy` builder), while `open_interest_catalog_entries`
 (`T-06.5`, `CA-F2-17`) builds FOUR of its five rows from ONE list-comprehension call site — its
 own module docstring, unchanged since 2026-09-03 (two days before `SPEC-003` was written): "five
 rows, never a collapsed one". Concatenating the three modules' own catalog-builder functions in
@@ -62,9 +72,33 @@ would shift the eight rows that follow, and `RS-1` lets this feature change the 
 CONTENT while forbidding it to change the FORM — the ORDER of `"entries"` being form. A permuted
 list is the failure mode no field of the response reports.
 
-So the two `SPEC-007` rows sit at the tail in the order the phases added them: `klines_volume`
-at index 10 (`T-01.6`), `kline_takerbuy` at index 11 (`T-02.4`). `n_entries` follows
-`len(entries)`, as it always has.
+── `T-04.4` (`SPEC-007` §4.5, `RF-2`): THE COUNT IS 13, AND IT IS STILL COMPUTED ────────────
+
+`count_long_short_ratio` (`domain/long_short_catalog.py`, built by `T-04.2`) is APPENDED as the
+thirteenth row, by the same rule and for the same reason the two rows above it were appended:
+order is form, `RS-1` forbids changing form here, and appending leaves every row that already
+had an index in `"entries"` at that index.
+
+It is the row that makes `/api/v1/series-history` answer for M3 at all — until this line existed,
+the identity lived in `domain/` and the endpoint refused its `series_key_id` with
+`422 UnknownSeriesKeyIdError` (`series_history.py:119-121` -> `catalog.entry_for_id` returns
+`None`), no matter how many rows the collector had written. Unlike the four builders above it,
+this one takes NO `verified_by` argument: `long_short_catalog.py` hardcodes it, so the writer
+(`collector_series_mapping.build_long_short_to_rows`) and this reader call the SAME key builder
+and cannot land on two `series_key_id`s that merely look alike.
+
+── WHY PHASES `02` AND `04` BOTH WROTE "THE COUNT IS 12" AND THE ANSWER IS 13 ────────────────
+
+The two phases forked from the same `ff18811`, where the count was 11, and each appended ONE row
+believing it was the twelfth. Resolving that by keeping one of the two would DROP a real series:
+`/api/v1/series-history` answers `422` for a `series_key_id` whose rows are sitting in
+`md.series`, and the panel empties with `rc=0` — the silent-break class `ADR-012` names. The two
+rows are kept in the order the phases added them and `n_entries` follows `len(entries)`, which
+is exactly why no literal had to be edited here for the number to be right.
+
+So the three `SPEC-007` rows sit at the tail in the order the phases added them: `klines_volume`
+at index 10 (`T-01.6`), `kline_takerbuy` at index 11 (`T-02.4`) and `count_long_short_ratio` at
+index 12 (`T-04.4`). `n_entries` follows `len(entries)`, as it always has.
 """
 
 from __future__ import annotations
@@ -79,6 +113,7 @@ from src.modules.sentimento.domain.cvd_source_catalog import (
 )
 from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
+from src.modules.sentimento.domain.long_short_catalog import build_count_long_short_ratio_entry
 from src.modules.sentimento.domain.open_interest_catalog import open_interest_catalog_entries
 from src.modules.sentimento.domain.price_source_catalog import build_price_series_entries
 from src.modules.sentimento.domain.series_catalog import (
@@ -199,6 +234,7 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
             instrument_id, unit=base_asset(instrument_id), verified_by=_KLINES_VOLUME_VERIFIED_BY
         ),
         build_kline_takerbuy_entry(instrument_id, unit=base_asset(instrument_id)),
+        build_count_long_short_ratio_entry(instrument_id),
     ]
     # DEBUG, not INFO — same reasoning `ingest_health_query` already documents: this read path
     # is not a byte contract of its own, but a library that logs at INFO by default imposes its

@@ -44,6 +44,7 @@ from src.modules.sentimento.domain.provenance import (
     SeriesRow,
 )
 from src.modules.sentimento.infra import collectors_cli
+from src.modules.sentimento.infra.binance_futures_data_client import FuturesDataPageResponse
 from src.modules.sentimento.infra.binance_klines_client import KlinesPageResponse
 from src.modules.sentimento.infra.ingest_record_store_composition import IngestRecordStore
 from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
@@ -144,6 +145,23 @@ class _EmptyOpenInterestClient:
     ) -> OiHistoryPageResponse:
         """Return `status=200` with no points and no API error code."""
         return OiHistoryPageResponse(status=200, api_code=None, points=())
+
+
+class _EmptyFuturesDataClient:
+    """A `LongShortClient` fake that always answers one empty, successful page.
+
+    The long/short thread (`T-04.3`) is the FIFTH thread `run()` starts, and it would otherwise
+    reach `fapi.binance.com/futures/data/` from inside the offline suite —
+    `backend/scripts/test.sh`'s "ZERO REDE" rule. An empty page is the SAME shape the real
+    endpoint answers for an unsupported `period` (`[MEDIDO 2026-09-12]`: `HTTP 200` with `[]`),
+    so this fake is not a shape the source could never produce.
+    """
+
+    def history(
+        self, endpoint: str, symbol: str, period: str, limit: int
+    ) -> FuturesDataPageResponse:
+        """Return `status=200` with no points and no API error code."""
+        return FuturesDataPageResponse(status=200, api_code=None, points=())
 
 
 class _OneShotPremiumIndexFetcher:
@@ -282,6 +300,9 @@ def main(argv: list[str]) -> int:
         # see `_EmptyOpenInterestClient`) and then never again before the signal arrives.
         open_interest_cycle_interval_s=999_999.0,
         open_interest_backfill_days=1,
+        # And again for the long/short thread (`T-04.3`): one boot pass against
+        # `_EmptyFuturesDataClient`, then a cadence no scenario here waits out.
+        long_short_cycle_interval_s=999_999.0,
     )
     if force_publish_failure:
         # Same real-server technique `test_collectors_cli_publish_failure.py`'s `clobbered_sink`
@@ -311,6 +332,7 @@ def main(argv: list[str]) -> int:
             premium_index_fetcher_factory=_fetcher_factory,
             klines_client_factory=_EmptyKlinesClient,
             open_interest_client_factory=_EmptyOpenInterestClient,
+            long_short_client_factory=_EmptyFuturesDataClient,
             premium_index_to_rows=premium_index_to_rows,
             force_order_to_rows=_never_maps,
         )

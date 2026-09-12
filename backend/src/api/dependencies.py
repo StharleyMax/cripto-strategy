@@ -24,7 +24,10 @@ from typing import Protocol
 
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.use_cases.ingest_health import IngestRecordSource
-from src.modules.sentimento.use_cases.series_history import SeriesWindowReader
+from src.modules.sentimento.use_cases.series_history import (
+    GridMultipleClassifier,
+    SeriesWindowReader,
+)
 from src.modules.sentimento.use_cases.series_live import LiveBucketSource
 from src.modules.sentimento.use_cases.series_quarantine import QuarantineSource
 
@@ -130,6 +133,33 @@ def get_series_window_reader_source() -> SeriesWindowReader:
     """
     raise NotImplementedError(
         "get_series_window_reader_source has no default adapter; src.main.create_app must "
+        "override it via app.dependency_overrides before serving a request."
+    )
+
+
+def get_grid_multiple_classifier() -> GridMultipleClassifier:
+    """Return the `GridMultipleClassifier` `/series-history` uses — overridden by `src.main`.
+
+    `ADR-037/D4` puts `ADR-026/D1`'s grid-multiple verdict in the `/series-history` envelope,
+    and `classify_grid_multiple` lives in `src.modules.charts` — the context
+    `src.modules.sentimento` may not import (`backend/pyproject.toml`, "Fronteira de contexto").
+    So the verdict crosses the boundary the way every other cross-layer fact in this module
+    does: a port named here, an adapter wired by the composition root, which is the only layer
+    that may see both contexts.
+
+    Unlike `get_series_window_reader_source`, what `src.main` wires here has no connection and
+    no per-environment variation — it is a pure function of two integers (`ADR-003/FR-1`). The
+    stub still RAISES, for the reason every stub in this module does: a route that reached this
+    body would mean the app was served without going through the composition root, and serving
+    an unqualified staircase is precisely the silent failure `ADR-037/D4` exists to close.
+
+    Raises:
+        NotImplementedError: always, until `src.main` overrides it via
+            `app.dependency_overrides[get_grid_multiple_classifier]`.
+
+    """
+    raise NotImplementedError(
+        "get_grid_multiple_classifier has no default adapter; src.main.create_app must "
         "override it via app.dependency_overrides before serving a request."
     )
 

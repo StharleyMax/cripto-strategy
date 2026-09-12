@@ -25,6 +25,7 @@ from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngest
 from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_ENDPOINT,
     KLINES_ENDPOINT,
+    LONG_SHORT_ENDPOINT,
     OPEN_INTEREST_HIST_ENDPOINT,
 )
 
@@ -87,14 +88,16 @@ def test_one_session_plus_one_cycle_group_by_source_endpoint_gives_at_least_two_
     pairs = [line for line in output.splitlines() if line.strip()]
     assert len(pairs) >= 2, f"D1.5 wants >= 2 (source,endpoint) pairs, sqlite3 returned: {pairs!r}"
     endpoints = {line.split("|")[1] for line in pairs}
-    # FOUR producers since `T-03.3` (`SPEC-007` phase `03` added
-    # `/futures/data/openInterestHist`), and the assertion stays an EQUALITY rather than
+    # FIVE producers since `T-04.3` (`SPEC-007` phase `03` added
+    # `/futures/data/openInterestHist` and phase `04` added
+    # `/futures/data/globalLongShortAccountRatio`), and the assertion stays an EQUALITY rather than
     # loosening to `>=`: a FIFTH endpoint appearing here would mean a producer started
     # recording runs that no task declared, which is exactly what this shape is for.
     assert endpoints == {
         FORCE_ORDER_ENDPOINT,
         PREMIUM_INDEX_ENDPOINT,
         KLINES_ENDPOINT,
+        LONG_SHORT_ENDPOINT,
         OPEN_INTEREST_HIST_ENDPOINT,
     }, f"expected exactly the four producer endpoints, got {endpoints!r}"
 
