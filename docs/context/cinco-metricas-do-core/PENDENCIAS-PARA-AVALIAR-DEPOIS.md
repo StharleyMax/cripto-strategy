@@ -54,6 +54,21 @@ Cada item traz o endereço e o comando que o reproduz — quem for avaliar não 
 | D3 | `.env.example` é **rastreado** (`git ls-files` → 1). Se valor real foi commitado, é **rotação de segredo**, não `git revert` |
 | D4 | container órfão `t-01-1-series-window-reader-test-*` |
 
+## F · Achados de PRODUÇÃO da fase `04` (2026-09-12) — nenhum causado por ela
+
+Todos `[MEDIDO 2026-09-12]` durante a medição do `DoD-VERTICAL` da fase `04`, contra a stack viva.
+
+| # | item | comando que mostra | efeito |
+|---|---|---|---|
+| F1 | **`deploy-collector-1` não escreve `klines` nem `premiumIndex` há ~18 h** — o container está `Up 19 hours`, mas a linha mais nova das duas fontes é de `1789156454743` | `select src_label_raw, max(available_at) from md.series group by 1;` -> klines `1789156454743`, premiumIndex `1789156450022`, contra `now = 1789222282764` | o painel de volume está em `SEM_PONTO` na última hora **em produção**, e `Up` não distingue "vivo" de "parado há 18 h" |
+| F2 | **`deploy-api-1` vaza sessões `idle in transaction`** — 2 sessões de `172.18.0.4` com transação aberta há **29 e 34 min** | `select pid, client_addr, now()-state_change from pg_stat_activity where state='idle in transaction';` | segura lock em `md.ingest_run` ⇒ **`store.initialise()` de qualquer coletor/writer TRAVA no boot** (`ALTER TABLE md.ingest_run ADD COLUMN IF NOT EXISTS writer_accounted_at`). Medido ao vivo: o `ALTER` enfileirou e bloqueou **todo leitor** de `md.ingest_run` até ser cancelado. ⚠️ um redeploy do coletor **hoje** não sobe |
+| F3 | `DoD-2` da fase `04` é **zero por construção** enquanto `CARRY_FORWARD_BY_NATURE[Nature.RATIO]` for `False` | ver [`handoff/BLOQUEIO-F04-RATIO-NAO-CARREGA.md`](handoff/BLOQUEIO-F04-RATIO-NAO-CARREGA.md) | **não é pendência para depois — é bloqueio da fase**, com dono nomeado (`/architect`) e janela barata declarada |
+
+⚠️ `F1` e `F2` **não** foram causados pela fase `04` e **não** foram corrigidos por ela (`D17`:
+largura antes de profundidade). `F2` foi **agravado por 2 min** por uma medição desta fase — o
+`store.initialise()` do passe de medição enfileirou o `ALTER` e ele foi **cancelado**
+(`pg_cancel_backend`) assim que o convoy foi visto; a fila estava limpa na verificação seguinte.
+
 ## E · O que NÃO está aqui, e por quê
 
 `E1`/`E2` (backfill invisível ao `as_of`; `FLOW` com atraso ≥ grade) **não** são pendência: são

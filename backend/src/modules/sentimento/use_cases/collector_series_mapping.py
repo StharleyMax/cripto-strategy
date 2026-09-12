@@ -29,6 +29,13 @@ the builder: it is the only producer whose source hands back a bucket that has N
 in full — the minute currently in progress — so this module is where `RS-3.4`'s anti-lookahead
 cut is applied, and `is_closed_bucket` is where the SIGN of that cut is written down.
 
+── THE FOURTH PRODUCER, ADDED BY `T-04.3` ──────────────────────────────────────────────────────
+
+`/futures/data/globalLongShortAccountRatio` -> `count_long_short_ratio` (M3, `SPEC-007` §4.2,
+`ADR-036/D3`) is at the very bottom of this file. It is the first producer on a `5m` grid, and the
+first whose points arrive as RAW JSON objects rather than a parsed row type — see the section
+header there for why the payload's two field names live in this module and nowhere else.
+
 ── WHAT `SeriesRow` DOES AND DOES NOT CARRY, AND WHY THAT SHRINKS THIS DECISION ────────────────
 
 `domain/provenance.py`'s `SeriesRow` had NO numeric value column when this module was written
@@ -98,6 +105,7 @@ from src.modules.sentimento.domain.funding_settlement import FundingSource
 from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.kline_cvd import kline_cvd_delta
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
+from src.modules.sentimento.domain.long_short_catalog import count_long_short_ratio_key
 from src.modules.sentimento.domain.open_interest_catalog import binance_open_interest_key
 from src.modules.sentimento.domain.premium_index_batch import (
     PREMIUM_INDEX_ENDPOINT,
@@ -121,6 +129,8 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_OBSERVER_ID,
     KLINES_ENDPOINT,
     KLINES_OBSERVER_ID,
+    LONG_SHORT_ENDPOINT,
+    LONG_SHORT_OBSERVER_ID,
     OPEN_INTEREST_HIST_ENDPOINT,
     OPEN_INTEREST_OBSERVER_ID,
     PREMIUM_INDEX_OBSERVER_ID,
@@ -684,5 +694,146 @@ def build_open_interest_to_rows(
             for point in points
             if is_settled_open_interest_point(point, received_at)
         )
+
+    return _to_rows
+
+
+# ── `count_long_short_ratio` (M3) — THE FOURTH PRODUCER ─────────────────────────────────────
+#
+# `T-04.3` / `SPEC-007` phase `04` items 4.2 + 4.3, `RF-1`, `ADR-036/D3`.
+#
+# THE POINTS ARRIVE AS RAW JSON OBJECTS, ON PURPOSE. `infra/binance_futures_data_client.py`
+# hands back the list the endpoint sent, untouched, because WHICH FIELD of which object becomes
+# `value_raw` is a mapping decision and this module is where mapping decisions live. So the two
+# field names below are the only place in the codebase that knows the payload's shape, and
+# `test_collector_long_short_mapping.py` pins them against a fixture copied from a real body.
+#
+# ⛔ THE FOUR SERIES ARE STILL FOUR. This builder publishes exactly ONE of them —
+# `count_long_short_ratio`, from `/futures/data/globalLongShortAccountRatio`. Adding
+# `sum_taker_long_short_vol_ratio` later is another catalog entry and another call, NOT another
+# pipe (plan `04`'s own falsifier says so) — and it would need a DIFFERENT builder, because that
+# series is a RATIO of FLOW and `long_short_ratio_series.py` refuses to coarsen it from the bare
+# quotient BY TYPE (`resample_bare_taker_ratio_refuses`). Nothing here may be generalised into
+# "the long/short mapping" without reopening that refusal.
+
+# The two keys this mapping reads off one point of the payload. Binance spells them in camelCase
+# and they are the SOURCE's own spelling, exactly like `QuantityField`'s `q`/`nq` values — the
+# constant names are English, the VALUES are a third party's field names and are not translated.
+_LONG_SHORT_TIMESTAMP_FIELD: Final[str] = "timestamp"
+_LONG_SHORT_RATIO_FIELD: Final[str] = "longShortRatio"
+
+LongShortToRows = Callable[[int, str, Sequence[Mapping[str, object]]], tuple[SeriesRow, ...]]
+
+
+class MalformedLongShortPointError(Exception):
+    """A `/futures/data/globalLongShortAccountRatio` point missing a field this mapping needs.
+
+    It raises instead of skipping the point: a silently dropped observation is a gap that no run
+    record and no log line would ever account for, and `md.series` cannot tell "the source did
+    not publish this bucket" from "we could not read what it published" after the fact.
+    """
+
+
+def is_settled_point(timestamp_ms: int, observed_at_ms: int) -> bool:
+    """Say whether a point's own instant had ALREADY PASSED when it was observed — `RS-3.4`.
+
+    ⛔ THE SIGN OF THIS COMPARISON IS AN ANTI-LOOKAHEAD RULE, and `CLAUDE.md` records that an
+    anti-lookahead rule of this project was already INVERTED once and propagated through two
+    documents. So the falsifier is written against the SIGN:
+    `test_collector_long_short_mapping.py::test_a_point_stamped_in_the_future_is_the_one_dropped`
+    pins WHICH points survive, so swapping `<=` for `>=` fails.
+
+    `[MEDIDO 2026-09-12, poll de 10 s, n=2 fronteiras]` the endpoint publishes a point 9,6 s and
+    70,8 s AFTER the instant it is stamped with, so in normal operation EVERY point comes back
+    already settled and this cut removes nothing. That is exactly why it is written down
+    rather than left implicit: a cut that never fires in the happy path is invisible until the
+    day a clock disagrees, and `value_raw` for a future instant is a number no decision taken at
+    that instant could have seen.
+
+    `timestamp_ms == observed_at_ms` counts as SETTLED: the reading is OF that instant, and
+    `POINT_AT_BUCKET_END` means the instant itself belongs to the observation.
+    """
+    return timestamp_ms <= observed_at_ms
+
+
+def _long_short_point_fields(point: Mapping[str, object]) -> tuple[int, str]:
+    """Read `(timestamp_ms, ratio_raw)` off one payload object, refusing anything else.
+
+    `timestamp` is accepted only as an `int` and `longShortRatio` only as a `str`: those are the
+    types a real body carries (`[MEDIDO 2026-09-12]`), and coercing a surprise into one of them
+    would turn a changed contract into a plausible-looking number.
+    """
+    timestamp = point.get(_LONG_SHORT_TIMESTAMP_FIELD)
+    ratio_raw = point.get(_LONG_SHORT_RATIO_FIELD)
+    if not isinstance(timestamp, int) or isinstance(timestamp, bool):
+        raise MalformedLongShortPointError(
+            f"point has no integer {_LONG_SHORT_TIMESTAMP_FIELD!r}: {point!r}"
+        )
+    if not isinstance(ratio_raw, str) or not ratio_raw.strip():
+        raise MalformedLongShortPointError(
+            f"point has no non-blank string {_LONG_SHORT_RATIO_FIELD!r}: {point!r}"
+        )
+    return timestamp, ratio_raw
+
+
+def build_long_short_to_rows(
+    *,
+    symbols: frozenset[str] = INITIAL_SYMBOLS,
+) -> LongShortToRows:
+    """Build the `globalLongShortAccountRatio` -> `SeriesRow` mapping the fourth collector uses.
+
+    The returned callable takes the collector's own clock (`received_at`), the symbol the page
+    was requested for, and the raw points; it answers the rows for the points that had already
+    settled at `received_at` (`is_settled_point`). A symbol outside `symbols` yields no rows —
+    the same filter the other three producers in this module apply.
+
+    `bucket_end == event_time == timestamp`, with NO shift applied, and that is measured rather
+    than assumed: `long_short_catalog.LONG_SHORT_LABEL_SHIFT_MS` is an explicit `0` because the
+    endpoint publishes a point 9,6 s / 70,8 s AFTER the instant it stamps it with (`n=2`), never
+    the ~300 s a bucket-START label would imply, so the stamp is already the end of its window.
+    The open-interest rows carry `+interval` for the OPPOSITE reason (the Coinalyze `t` is a
+    bucket START), and copying that number here would have applied one source's labelling
+    measurement to another source.
+
+    `is_final=True`: the point is a settled snapshot of a closed bucket, which is the case
+    `SeriesRow.is_final` reserves the column for — the source genuinely declaring finality, not
+    this mapping guessing it.
+
+    The key comes from `count_long_short_ratio_key`, the SAME builder
+    `use_cases/series_catalog.py` registers, so writer and served catalog land on one
+    `series_key_id` by construction instead of by two hardcoded strings agreeing.
+    """
+
+    def _to_rows(
+        received_at: int, symbol: str, points: Sequence[Mapping[str, object]]
+    ) -> tuple[SeriesRow, ...]:
+        if symbol not in symbols:
+            return ()
+        key_id = count_long_short_ratio_key(symbol).series_key_id()
+        rows: list[SeriesRow] = []
+        for point in points:
+            timestamp_ms, ratio_raw = _long_short_point_fields(point)
+            if not is_settled_point(timestamp_ms, received_at):
+                continue
+            rows.append(
+                SeriesRow(
+                    series_key_id=key_id,
+                    symbol=symbol,
+                    source=LONG_SHORT_ENDPOINT,
+                    bucket_end=timestamp_ms,
+                    event_time=timestamp_ms,
+                    available_at=received_at,
+                    availability_source=AvailabilitySource.OBSERVED,
+                    ingested_at=received_at,
+                    observed_at=received_at,
+                    provenance=Provenance.OBSERVED,
+                    src_label_raw=LONG_SHORT_ENDPOINT,
+                    observer_id=LONG_SHORT_OBSERVER_ID,
+                    observer_region=UNKNOWN_OBSERVER_REGION,
+                    is_final=True,
+                    value_raw=ratio_raw,
+                )
+            )
+        return tuple(rows)
 
     return _to_rows

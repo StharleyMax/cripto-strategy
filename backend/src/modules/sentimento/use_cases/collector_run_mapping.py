@@ -11,12 +11,14 @@ the store it wired; this module is the ONE place the 16-field shape is decided, 
 composition root and this module's own tests share exactly one construction, never two (the
 defect `ADR-008/DoD-3` names for the read side, applied here to the WRITE side).
 
-There are FOUR builders since `T-03.3` (`SPEC-007` phase `03`): the `forceOrder` session, the
-`premiumIndex` cycle, the `/fapi/v1/klines` pass and the `/futures/data/openInterestHist` pass.
-`Q3` predates the last two and fixes only the first two, so `build_klines_run`'s own docstring
-carries the argument for what "one run" means for a producer that PAGES — the one shape `Q3`
-never had to answer — and `build_open_interest_run` inherits that argument rather than re-making
-it, differing from it in exactly one measured respect: `weight_used`.
+There are FIVE builders since `T-04.3` (`SPEC-007` phase `04`, which added the fifth to the
+four `T-03.3` left): the `forceOrder` session, the `premiumIndex` cycle, the `/fapi/v1/klines`
+pass, the `/futures/data/openInterestHist` pass and the
+`/futures/data/globalLongShortAccountRatio` pass. `Q3` predates the last three and fixes only
+the first two, so `build_klines_run`'s own docstring carries the argument for what "one run"
+means for a producer that PAGES — the one shape `Q3` never had to answer — and both
+`/futures/data/` builders inherit that argument rather than re-making it, differing from it in
+exactly one measured respect: `weight_used`, which that endpoint family does not publish.
 
 `gates/Q3-run-definition.md` §3 fixes the two sentinels below as PHYSICALLY IMPOSSIBLE values
 for the quantity they stand in for, so neither can ever collide with something actually
@@ -75,6 +77,14 @@ KLINES_ENDPOINT: Final[str] = "/fapi/v1/klines"
 # makes that executable instead of trusted, because `use_cases` may not import `infra`.
 OPEN_INTEREST_HIST_ENDPOINT: Final[str] = "/futures/data/openInterestHist"
 
+# The FIFTH producer (`T-04.3`, `SPEC-007` phase `04`, `ADR-036/D3`). Split in two constants
+# because the infra client takes the endpoint NAME and composes the path from its own
+# `FUTURES_DATA_PATH_PREFIX` — so the name below is the one thing crossing the layer boundary,
+# and `test_collector_run_mapping.py::test_the_long_short_endpoint_literal_matches_the_client_path`
+# makes the composition executable instead of trusted, the same way the klines line above does.
+LONG_SHORT_DATA_ENDPOINT: Final[str] = "globalLongShortAccountRatio"
+LONG_SHORT_ENDPOINT: Final[str] = f"/futures/data/{LONG_SHORT_DATA_ENDPOINT}"
+
 # ── Q3 §3 — THE SENTINELS AND THE OBSERVER LITERALS, NONE OF THEM A GUESS ──────────────────
 # The WS collector spends no REST weight — a FACT (`0`), never a guess.
 FORCE_ORDER_WEIGHT_USED: Final[int] = 0
@@ -92,6 +102,7 @@ FORCE_ORDER_OBSERVER_ID: Final[str] = "forceorder-collector"
 PREMIUM_INDEX_OBSERVER_ID: Final[str] = "premiumindex-collector"
 KLINES_OBSERVER_ID: Final[str] = "klines-collector"
 OPEN_INTEREST_OBSERVER_ID: Final[str] = "openinterest-collector"
+LONG_SHORT_OBSERVER_ID: Final[str] = "longshort-collector"
 
 # ── `/futures/data/` ANSWERS WITH **NO** `x-mbx-*` HEADER AT ALL, AND THAT IS MEASURED ─────
 #
@@ -326,6 +337,59 @@ def build_open_interest_run(
         src_sha256=src_sha256,
         weight_used=WEIGHT_NOT_READABLE,
         observer_id=OPEN_INTEREST_OBSERVER_ID,
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
+        started_at=started_at,
+        ended_at=ended_at,
+    )
+
+
+def build_long_short_run(
+    *,
+    started_at: str,
+    ended_at: str,
+    n_returned: int,
+    n_calls: int,
+    api_code: int | None,
+    verdict: KnownVerdict,
+    src_sha256: str,
+    run_id: str | None = None,
+) -> IngestRun:
+    """Build the `IngestRun` for one `/futures/data/globalLongShortAccountRatio` pass (`T-04.3`).
+
+    Same UNIT as `build_klines_run`: a pass is one sweep over the configured symbol universe, not
+    one HTTP call — `n_calls` carries how many requests the sweep spent. `Q3` §1.2's reasoning is
+    unchanged by the endpoint, so it is not re-argued here.
+
+    `weight_used` is `WEIGHT_NOT_READABLE`, and that is a MEASUREMENT rather than a shrug:
+    `/futures/data/*` answers `200` with ZERO `x-mbx-*` headers (`domain/clock_skew.py`,
+    `T-03.7`), so this collector genuinely has no way to price its own calls. It is the exact
+    case that sentinel's own comment reserves it for — deriving a number the way
+    `KLINES_WEIGHT_PER_CALL` does would require a measured per-call weight, and this endpoint
+    family publishes none to measure. It is the same fact `build_open_interest_run` above rests
+    on, for the same endpoint FAMILY — measured once, in `OPEN_INTEREST_OBSERVER_ID`'s
+    neighbouring comment, and not re-measured per endpoint.
+
+    `n_expected = n_returned` for the reason `build_klines_run` already states: there is no
+    independent oracle for how many buckets the exchange SHOULD have had for a window.
+
+    `n_written` stays `N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS` — this collector OPENS the run and
+    the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
+    parameter here and is minted at pass OPEN by the composition root.
+    """
+    return IngestRun(
+        run_id=run_id if run_id is not None else str(uuid4()),
+        source=SOURCE,
+        endpoint=LONG_SHORT_ENDPOINT,
+        window=f"{started_at}/{ended_at}",
+        n_expected=n_returned,
+        n_returned=n_returned,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+        verdict=verdict,
+        api_code=api_code,
+        src_sha256=src_sha256,
+        weight_used=WEIGHT_NOT_READABLE,
+        observer_id=LONG_SHORT_OBSERVER_ID,
         observer_region=UNKNOWN_OBSERVER_REGION,
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,

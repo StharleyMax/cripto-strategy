@@ -25,6 +25,9 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     KLINES_OBSERVER_ID,
     KLINES_WEIGHT_PER_CALL,
     KNOWN_VERDICT_LITERALS,
+    LONG_SHORT_DATA_ENDPOINT,
+    LONG_SHORT_ENDPOINT,
+    LONG_SHORT_OBSERVER_ID,
     N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
     OPEN_INTEREST_HIST_ENDPOINT,
     OPEN_INTEREST_OBSERVER_ID,
@@ -33,6 +36,7 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     KnownVerdict,
     build_force_order_run,
     build_klines_run,
+    build_long_short_run,
     build_open_interest_run,
     build_premium_index_run,
 )
@@ -304,6 +308,48 @@ def test_the_klines_endpoint_literal_matches_the_client_path() -> None:
     from src.modules.sentimento.infra.binance_klines_client import KLINES_PATH
 
     assert KLINES_ENDPOINT == KLINES_PATH
+
+
+def test_the_long_short_endpoint_literal_matches_the_client_path() -> None:
+    """The FULL path this run files itself under is the prefix + the name the client is given.
+
+    Same argument as the klines test above, one layer more specific: the infra client is GENERIC
+    over `/futures/data/*`, so what crosses the boundary is the endpoint NAME
+    (`LONG_SHORT_DATA_ENDPOINT`) and the client composes the path from its own
+    `FUTURES_DATA_PATH_PREFIX`. This asserts the composition, so a change to either half fails
+    here instead of filing runs under a producer name no HTTP call ever used.
+    """
+    from src.modules.sentimento.infra.binance_futures_data_client import (
+        FUTURES_DATA_PATH_PREFIX,
+    )
+
+    assert LONG_SHORT_ENDPOINT == f"{FUTURES_DATA_PATH_PREFIX}{LONG_SHORT_DATA_ENDPOINT}"
+    assert LONG_SHORT_ENDPOINT == "/futures/data/globalLongShortAccountRatio"
+
+
+def test_the_long_short_run_prices_no_weight_because_the_endpoint_publishes_none() -> None:
+    """`WEIGHT_NOT_READABLE`, and it is MEASURED — `/futures/data/*` sends no `x-mbx-*` header.
+
+    MORDE: a derived weight here (the shape `build_klines_run` legitimately uses) would be a
+    number with no command behind it, and `collector_status.py` would report a quota spend this
+    repository never measured. `domain/clock_skew.py` (`T-03.7`) is where the zero-header fact
+    is recorded.
+    """
+    run = build_long_short_run(
+        started_at="2026-09-12T00:00:00Z",
+        ended_at="2026-09-12T00:00:01Z",
+        n_returned=500,
+        n_calls=4,
+        api_code=None,
+        verdict="ACCEPTED",
+        src_sha256="0" * 64,
+    )
+
+    assert run.weight_used == WEIGHT_NOT_READABLE
+    assert run.endpoint == LONG_SHORT_ENDPOINT
+    assert run.observer_id == LONG_SHORT_OBSERVER_ID
+    assert run.n_expected == run.n_returned == 500
+    assert run.n_written == N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS
 
 
 def test_a_klines_run_names_the_endpoint_and_the_observer_of_its_own_producer() -> None:

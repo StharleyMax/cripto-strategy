@@ -36,6 +36,7 @@ from src.modules.sentimento.domain.klines_volume_catalog import (
     KLINES_VOLUME_METRIC,
     KLINES_VOLUME_NATIVE_GRID,
 )
+from src.modules.sentimento.domain.long_short_ratio_series import COUNT_LONG_SHORT_RATIO
 from src.modules.sentimento.domain.series_catalog import (
     DuplicateSeriesKeyError,
     PublishedError,
@@ -79,11 +80,14 @@ def _classify_panel_grid(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGri
     )
 
 
-def test_the_real_catalog_has_twelve_rows_not_seven() -> None:
-    """The measured, honest total: `3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines = 12`.
+def test_the_real_catalog_has_thirteen_rows_not_seven() -> None:
+    """The honest total: `3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines + 1 L/S = 13`.
 
-    Was `10` until `T-01.6` appended `klines_volume` and `11` until `T-02.4` appended
-    `cvd_source`/`kline_takerbuy` (`SPEC-007` §4, rows M1 and M5). The reasoning
+    Was `10` until `T-01.6` appended `klines_volume`, `11` until `T-02.4` appended
+    `cvd_source`/`kline_takerbuy` and `12` until `T-04.4` appended `count_long_short_ratio`
+    (`SPEC-007` §4, rows M1, M5 and M3). Phases `02` and `04` forked from the same tree and each
+    wrote "the count is 12"; keeping only one of the two would DROP a real series, so the
+    integration keeps both and the number is 13. The reasoning
     below is unchanged — the point of the test was never the digit, it is that `n_entries`
     counts what the route SERVES rather than what a grep of call sites suggests.
 
@@ -98,7 +102,7 @@ def test_the_real_catalog_has_twelve_rows_not_seven() -> None:
     """
     catalog = list_series_catalog()
 
-    assert len(catalog.entries) == 12
+    assert len(catalog.entries) == 13
     oi_reductions = {
         entry.key.reduction
         for entry in catalog.entries
@@ -225,16 +229,17 @@ def test_reconstructed_entry_projects_a_non_null_published_error_as_numbers() ->
 
 
 def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
-    """Every OTHER row — 11 of the 12 — carries `reconstructedFrom: null, publishedError: null`.
+    """Every OTHER row — 12 of the 13 — carries `reconstructedFrom: null, publishedError: null`.
 
-    Was 9 of 10 until `T-01.6` and 10 of 11 until `T-02.4`. Both `SPEC-007` rows join this side
-    of the split rather than the reconstructed one, and for BOTH that is a claim rather than
-    bookkeeping: the value is READ from the bucket `/fapi/v1/klines` publishes, so there is
-    nothing reconstructed and no `(median, p99, n)` to declare (`D6.9`). For `kline_takerbuy` the
-    claim was FALSIFIED before it was written — `T-02.1`, `n=4.320` buckets against the canonical
-    `aggTrade` dump, zero divergent runs with a residual. A row that shipped a `publishedError`
-    here would be asserting a reconstruction error for a number nobody reconstructed; `coinalyze_bv`
-    stays the single row on the other side, and it is the one that really does reconstruct.
+    Was 9 of 10 until `T-01.6`, 10 of 11 until `T-02.4` and 11 of 12 until `T-04.4`. All three
+    `SPEC-007` rows join this side of the split rather than the reconstructed one, and for each
+    that is a claim rather than bookkeeping: the value is READ from the bucket its own endpoint
+    publishes, so there is nothing reconstructed and no `(median, p99, n)` to declare (`D6.9`).
+    For `kline_takerbuy` the claim was FALSIFIED before it was written — `T-02.1`, `n=4.320`
+    buckets against the canonical `aggTrade` dump, zero divergent runs with a residual. A row
+    that shipped a `publishedError` here would be asserting a reconstruction error for a number
+    nobody reconstructed; `coinalyze_bv` stays the single row on the other side, and it is the
+    one that really does reconstruct.
     """
     catalog = list_series_catalog()
 
@@ -243,7 +248,7 @@ def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
     assert isinstance(entries, list)
     not_reconstructed = [e for e in entries if e["reconstructedFrom"] is None]
 
-    assert len(not_reconstructed) == 11
+    assert len(not_reconstructed) == 12
     for entry in not_reconstructed:
         assert entry["publishedError"] is None
 
@@ -539,20 +544,22 @@ def test_klines_volume_and_klines_last_are_served_as_two_rows_not_one() -> None:
     assert (last[0].key.nature, last[0].key.reduction) == (Nature.STOCK, Reduction.LAST)
 
 
-def test_registering_klines_volume_appended_and_did_not_reorder_the_pre_existing_rows() -> None:
+def test_registering_the_new_rows_appended_and_did_not_reorder_the_pre_existing_ones() -> None:
     """`RS-1` falsifier: content changed, FORM did not — the ten old rows kept their indices.
 
     `RS-1` lets this task add an entry and forbids it from touching the envelope, the field
-    names or the ORDER. Inserting `klines_volume` anywhere but the tail would shift every row
-    after it, which no field of the response would report — the list would simply come back
-    permuted. Pinning the tail position is what makes that permutation fail a test instead of
-    silently reaching a consumer that reads by index.
+    names or the ORDER. Inserting `klines_volume` (`T-01.6`) or `count_long_short_ratio`
+    (`T-04.4`) anywhere but the tail would shift every row after it, which no field of the
+    response would report — the list would simply come back permuted. Pinning BOTH tail
+    positions is what makes that permutation fail a test instead of silently reaching a consumer
+    that reads by index.
     """
     catalog = list_series_catalog()
     metrics = [entry.key.metric for entry in catalog.entries]
 
     assert metrics[10] == KLINES_VOLUME_METRIC
-    assert metrics[-1] == CVD_SOURCE_METRIC
+    assert metrics[11] == CVD_SOURCE_METRIC
+    assert metrics[-1] == COUNT_LONG_SHORT_RATIO
     assert metrics[:10] == [
         "cvd_source",
         "cvd_source",
@@ -567,17 +574,18 @@ def test_registering_klines_volume_appended_and_did_not_reorder_the_pre_existing
     ]
 
 
-def test_the_envelope_serves_twelve_entries_without_changing_its_three_top_level_fields() -> None:
-    """`RS-1` again, at the wire: `n_entries` moved 10 -> 11 -> 12 and nothing else moved."""
+def test_the_envelope_serves_thirteen_entries_without_changing_its_top_level_fields() -> None:
+    """`RS-1` again, at the wire: `n_entries` moved 10 -> 11 -> 12 -> 13, nothing else did."""
     envelope = series_catalog_envelope(list_series_catalog())
 
     assert list(envelope.keys()) == ["query", "n_entries", "entries"]
     assert envelope["query"] == "series_catalog"
-    assert envelope["n_entries"] == 12
+    assert envelope["n_entries"] == 13
     entries = envelope["entries"]
     assert isinstance(entries, list)
     served_metrics = [entry["key"]["metric"] for entry in entries]
     assert served_metrics.count(KLINES_VOLUME_METRIC) == 1
+    assert served_metrics.count(COUNT_LONG_SHORT_RATIO) == 1
 
 
 # ── A1: `unit` IS DERIVED FROM THE INSTRUMENT, NOT A LITERAL `"BTC"` ────────────────────────
@@ -688,18 +696,18 @@ def test_the_pilot_universe_is_the_four_symbols_the_collector_writes() -> None:
     assert PILOT_INSTRUMENT_IDS[0] == "BTCUSDT"
 
 
-def test_the_served_catalog_has_twelve_rows_per_pilot_instrument() -> None:
-    """`12 x 4 = 48`, every id distinct — `instrument_id` is a term of the key."""
+def test_the_served_catalog_has_thirteen_rows_per_pilot_instrument() -> None:
+    """`13 x 4 = 52`, every id distinct — `instrument_id` is a term of the key."""
     catalog = list_pilot_series_catalog()
 
-    assert len(catalog.entries) == 48
+    assert len(catalog.entries) == 52
     ids = [entry.key.series_key_id() for entry in catalog.entries]
-    assert len(set(ids)) == 48
+    assert len(set(ids)) == 52
     assert {entry.key.instrument_id for entry in catalog.entries} == set(PILOT_INSTRUMENT_IDS)
 
 
 def test_the_pilot_catalog_appends_and_never_reorders_the_btcusdt_prefix() -> None:
-    """`RS-1`: order is FORM. The twelve `BTCUSDT` rows keep the indices they already had."""
+    """`RS-1`: order is FORM. The thirteen `BTCUSDT` rows keep the indices they already had."""
     served = [entry.key.series_key_id() for entry in list_pilot_series_catalog().entries]
     btcusdt = [entry.key.series_key_id() for entry in list_series_catalog("BTCUSDT").entries]
 
