@@ -71,7 +71,7 @@ def _get_series_catalog(port: int) -> tuple[int, dict[str, object]]:
 def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_up(
     tmp_path: Path,
 ) -> None:
-    """CALA: process up -> `200`, `n_entries == len(entries) == 44` — the REAL total.
+    """CALA: process up -> `200`, `n_entries == len(entries) == 48` — the REAL total.
 
     `store_path` here is `/ingest-health`'s dependency, irrelevant to this route (`0` SQL in the
     handler, `D5.13c`'s sibling restriction) — a fresh, uninitialised store still serves this
@@ -101,15 +101,25 @@ def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_
     assert status == 200
     assert set(body) == {"query", "n_entries", "entries"}
     assert body["query"] == "series_catalog"
-    assert body["n_entries"] == 44
+    assert body["n_entries"] == 48
     entries = body["entries"]
     assert isinstance(entries, list)
-    assert len(entries) == 44
+    assert len(entries) == 48
 
     served_metrics = [e["key"]["metric"] for e in entries]
     assert served_metrics.count("klines_volume") == 4
+    # `T-02.4` appends the klines-borne `cvd_source` row AFTER `klines_volume`, so within each
+    # instrument's block of twelve the volume row is at offset 10 and the CVD row at offset 11.
+    # Asserting the OFFSETS, not only the counts, is what makes a reordering fail here.
     assert served_metrics[10] == "klines_volume"
-    assert served_metrics[-1] == "klines_volume"
+    assert served_metrics[11] == "cvd_source"
+    assert served_metrics[-1] == "cvd_source"
+    assert [index % 12 for index, m in enumerate(served_metrics) if m == "klines_volume"] == [
+        10,
+        10,
+        10,
+        10,
+    ]
 
     served_instruments = [e["key"]["instrumentId"] for e in entries]
     assert set(served_instruments) == {"BTCUSDT", "ETHUSDT", "LINKUSDT", "SOLUSDT"}

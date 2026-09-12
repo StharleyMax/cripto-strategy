@@ -26,6 +26,10 @@ from typing import Final
 import pytest
 
 from src.modules.sentimento.domain.as_of_accessor import BarPolicy, Observation
+from src.modules.sentimento.domain.cvd_source_catalog import (
+    CVD_SOURCE_METRIC,
+    build_kline_takerbuy_entry,
+)
 from src.modules.sentimento.domain.klines_volume_catalog import (
     KLINES_VOLUME_MAX_STALENESS_MS,
     KLINES_VOLUME_METRIC,
@@ -44,7 +48,11 @@ from src.modules.sentimento.domain.series_key import (
     SeriesKey,
     TsConvention,
 )
-from src.modules.sentimento.use_cases.collector_series_mapping import INITIAL_SYMBOLS
+from src.modules.sentimento.infra.binance_klines_client import KlineRow
+from src.modules.sentimento.use_cases.collector_series_mapping import (
+    INITIAL_SYMBOLS,
+    build_klines_to_rows,
+)
 from src.modules.sentimento.use_cases.series_catalog import (
     PILOT_INSTRUMENT_IDS,
     SERIES_CATALOG_QUERY_NAME,
@@ -58,10 +66,11 @@ from src.modules.sentimento.use_cases.series_history import (
 )
 
 
-def test_the_real_catalog_has_eleven_rows_not_seven() -> None:
-    """The measured, honest total: `3 (cvd) + 2 (price) + 5 (oi) + 1 (klines_volume) = 11`.
+def test_the_real_catalog_has_twelve_rows_not_seven() -> None:
+    """The measured, honest total: `3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines = 12`.
 
-    Was `10` until `T-01.6` appended `klines_volume` (`SPEC-007` §4, row M1). The reasoning
+    Was `10` until `T-01.6` appended `klines_volume` and `11` until `T-02.4` appended
+    `cvd_source`/`kline_takerbuy` (`SPEC-007` §4, rows M1 and M5). The reasoning
     below is unchanged — the point of the test was never the digit, it is that `n_entries`
     counts what the route SERVES rather than what a grep of call sites suggests.
 
@@ -76,7 +85,7 @@ def test_the_real_catalog_has_eleven_rows_not_seven() -> None:
     """
     catalog = list_series_catalog()
 
-    assert len(catalog.entries) == 11
+    assert len(catalog.entries) == 12
     oi_reductions = {
         entry.key.reduction
         for entry in catalog.entries
@@ -203,13 +212,16 @@ def test_reconstructed_entry_projects_a_non_null_published_error_as_numbers() ->
 
 
 def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
-    """Every OTHER row — 10 of the 11 — carries `reconstructedFrom: null, publishedError: null`.
+    """Every OTHER row — 11 of the 12 — carries `reconstructedFrom: null, publishedError: null`.
 
-    Was 9 of 10 until `T-01.6`. `klines_volume` joins this side of the split rather than the
-    reconstructed one, and that is a claim, not bookkeeping: the value is READ from the bucket
-    `/fapi/v1/klines` publishes, so there is nothing reconstructed and no `(median, p99, n)` to
-    declare (`D6.9`). A row that shipped a `publishedError` here would be asserting a
-    reconstruction error for a number nobody reconstructed.
+    Was 9 of 10 until `T-01.6` and 10 of 11 until `T-02.4`. Both `SPEC-007` rows join this side
+    of the split rather than the reconstructed one, and for BOTH that is a claim rather than
+    bookkeeping: the value is READ from the bucket `/fapi/v1/klines` publishes, so there is
+    nothing reconstructed and no `(median, p99, n)` to declare (`D6.9`). For `kline_takerbuy` the
+    claim was FALSIFIED before it was written — `T-02.1`, `n=4.320` buckets against the canonical
+    `aggTrade` dump, zero divergent runs with a residual. A row that shipped a `publishedError`
+    here would be asserting a reconstruction error for a number nobody reconstructed; `coinalyze_bv`
+    stays the single row on the other side, and it is the one that really does reconstruct.
     """
     catalog = list_series_catalog()
 
@@ -218,7 +230,7 @@ def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
     assert isinstance(entries, list)
     not_reconstructed = [e for e in entries if e["reconstructedFrom"] is None]
 
-    assert len(not_reconstructed) == 10
+    assert len(not_reconstructed) == 11
     for entry in not_reconstructed:
         assert entry["publishedError"] is None
 
@@ -517,7 +529,8 @@ def test_registering_klines_volume_appended_and_did_not_reorder_the_pre_existing
     catalog = list_series_catalog()
     metrics = [entry.key.metric for entry in catalog.entries]
 
-    assert metrics[-1] == KLINES_VOLUME_METRIC
+    assert metrics[10] == KLINES_VOLUME_METRIC
+    assert metrics[-1] == CVD_SOURCE_METRIC
     assert metrics[:10] == [
         "cvd_source",
         "cvd_source",
@@ -532,13 +545,13 @@ def test_registering_klines_volume_appended_and_did_not_reorder_the_pre_existing
     ]
 
 
-def test_the_envelope_serves_eleven_entries_without_changing_its_three_top_level_fields() -> None:
-    """`RS-1` again, at the wire: `n_entries` moved from 10 to 11 and nothing else moved."""
+def test_the_envelope_serves_twelve_entries_without_changing_its_three_top_level_fields() -> None:
+    """`RS-1` again, at the wire: `n_entries` moved 10 -> 11 -> 12 and nothing else moved."""
     envelope = series_catalog_envelope(list_series_catalog())
 
     assert list(envelope.keys()) == ["query", "n_entries", "entries"]
     assert envelope["query"] == "series_catalog"
-    assert envelope["n_entries"] == 11
+    assert envelope["n_entries"] == 12
     entries = envelope["entries"]
     assert isinstance(entries, list)
     served_metrics = [entry["key"]["metric"] for entry in entries]
@@ -570,7 +583,7 @@ def test_base_denominated_rows_carry_the_instruments_own_base_asset(
     catalog = list_series_catalog(instrument_id)
 
     base_rows = [entry for entry in catalog.entries if entry.key.denom == "base"]
-    assert len(base_rows) == 9
+    assert len(base_rows) == 10
     assert {entry.key.unit for entry in base_rows} == {expected_unit}
 
 
@@ -653,18 +666,18 @@ def test_the_pilot_universe_is_the_four_symbols_the_collector_writes() -> None:
     assert PILOT_INSTRUMENT_IDS[0] == "BTCUSDT"
 
 
-def test_the_served_catalog_has_eleven_rows_per_pilot_instrument() -> None:
-    """`11 x 4 = 44`, every id distinct — `instrument_id` is a term of the key."""
+def test_the_served_catalog_has_twelve_rows_per_pilot_instrument() -> None:
+    """`12 x 4 = 48`, every id distinct — `instrument_id` is a term of the key."""
     catalog = list_pilot_series_catalog()
 
-    assert len(catalog.entries) == 44
+    assert len(catalog.entries) == 48
     ids = [entry.key.series_key_id() for entry in catalog.entries]
-    assert len(set(ids)) == 44
+    assert len(set(ids)) == 48
     assert {entry.key.instrument_id for entry in catalog.entries} == set(PILOT_INSTRUMENT_IDS)
 
 
 def test_the_pilot_catalog_appends_and_never_reorders_the_btcusdt_prefix() -> None:
-    """`RS-1`: order is FORM. The eleven `BTCUSDT` rows keep the indices they already had."""
+    """`RS-1`: order is FORM. The twelve `BTCUSDT` rows keep the indices they already had."""
     served = [entry.key.series_key_id() for entry in list_pilot_series_catalog().entries]
     btcusdt = [entry.key.series_key_id() for entry in list_series_catalog("BTCUSDT").entries]
 
@@ -680,3 +693,82 @@ def test_a_repeated_instrument_is_refused_instead_of_publishing_the_row_twice() 
     """
     with pytest.raises(DuplicateSeriesKeyError):
         list_pilot_series_catalog(("BTCUSDT", "BTCUSDT"))
+
+
+# ── `T-02.4` (`SPEC-007` §4.5, `RF-2`): THE CVD ROW IS SERVED, NOT MERELY BUILT ────────────
+
+
+def test_kline_takerbuy_is_registered_in_the_catalog_the_route_serves() -> None:
+    """The row `T-02.2` built reaches the SERVED catalog, which is a different claim.
+
+    A `SeriesCatalogEntry` that exists in `domain/` and is never concatenated here is
+    unaddressable: `/api/v1/series-history` answers `422 UnknownSeriesKeyIdError` for its id
+    while the collector happily writes its rows to `md.series`. This test is what makes
+    `SPEC-007` §4.5's "reusar nao e nao fazer nada" a measurement instead of a slogan.
+    """
+    catalog = list_series_catalog()
+    expected = build_kline_takerbuy_entry("BTCUSDT", unit="BTC")
+
+    assert catalog.entry_for_id(expected.key.series_key_id()) == expected
+
+
+def test_series_history_no_longer_refuses_the_kline_takerbuy_id() -> None:
+    """`DoD 2`'s precondition, asserted at the function that actually raises the `422`.
+
+    Morde: drop the append in `list_series_catalog` and this raises `UnknownSeriesKeyIdError`
+    — which the route maps to `422`, and which a front end sees as an empty `CvdPane` with no
+    explanation of why. `test_an_unregistered_id_still_raises_unknown_series_key_id_error`
+    above is what keeps this from passing because the guard was deleted rather than satisfied.
+    """
+    catalog = list_series_catalog()
+    series_key_id = build_kline_takerbuy_entry("BTCUSDT", unit="BTC").key.series_key_id()
+
+    report = build_series_history_report(
+        catalog,
+        _EmptyWindowReader(),
+        series_key_id=series_key_id,
+        symbol="BTCUSDT",
+        interval="1m",
+        window_start_ms=1_700_000_000_000,
+        window_end_ms=1_700_000_060_000,
+        knowledge_time_ms=1_700_000_120_000,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.panel_series_key_id == series_key_id
+    assert report.panel_nature == Nature.FLOW.value
+
+
+def test_the_served_cvd_row_is_the_one_the_collector_writes_under() -> None:
+    """Served id == written id, for all four pilot instruments — not only for `BTCUSDT`.
+
+    `unit` is a term of the key and the writer derives it from the instrument (`base_asset`),
+    so a served catalog that hardcoded one unit would resolve `BTCUSDT` and silently strand the
+    other three — the failure `PILOT_INSTRUMENT_IDS` exists to have fixed, re-checked here for
+    the identity phase `02` adds.
+    """
+    served = {entry.key.series_key_id() for entry in list_pilot_series_catalog().entries}
+    bucket_open_ms = 1_700_000_000_000
+    page = (
+        KlineRow(
+            raw=(
+                bucket_open_ms,
+                "1",
+                "1",
+                "1",
+                "1",
+                "10.0",
+                bucket_open_ms + 59_999,
+                "1",
+                1,
+                "7.5",
+                "1",
+                "0",
+            )
+        ),
+    )
+
+    for symbol in sorted(INITIAL_SYMBOLS):
+        rows = build_klines_to_rows()(bucket_open_ms + 120_000, symbol, page)
+        assert len(rows) == 2
+        assert {row.series_key_id for row in rows} <= served

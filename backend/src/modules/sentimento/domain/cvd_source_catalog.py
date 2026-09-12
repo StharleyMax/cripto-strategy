@@ -77,12 +77,28 @@ CVD_SOURCES: Final[frozenset[str]] = frozenset(
     }
 )
 
-# The subset THIS task registers (`T-06.9`, plan 06 item 6.9). The other three
-# (`kline_takerbuy`, `rest_taker_vol`, `metrics_ratio`) have no measured `published_error` in
-# this repository yet — `[NÃO MEDIDO]`, a future task's rows, not this one's to fabricate.
+# The subset registered so far. `T-06.9` (plan 06 item 6.9) registered the first three;
+# `T-02.2` (`SPEC-007` phase `02`) adds `kline_takerbuy`, and the reason it can join is NOT that
+# a `published_error` was finally measured for it — it is that the falsifier found it needs
+# none: `T-02.1` proved the row is a DIRECT READ, not a reconstruction (see
+# `build_kline_takerbuy_entry`). The two that remain out (`rest_taker_vol`, `metrics_ratio`) are
+# still `[NÃO MEDIDO]`, a future task's rows and not this one's to fabricate.
 REGISTERED_CVD_SOURCES: Final[frozenset[str]] = frozenset(
-    {"aggtrade_q", "aggtrade_nq", "coinalyze_bv"}
+    {"aggtrade_q", "aggtrade_nq", "coinalyze_bv", "kline_takerbuy"}
 )
+
+# ⛔ `verified_by` IS A CROSS-MODULE CONTRACT HERE, SO IT HAS EXACTLY ONE HOME.
+#
+# `verified_by` is the fifteenth term of `SeriesKey` and therefore enters `series_key_id()`'s
+# `sha256` (`series_key.py:226-234`). This row has TWO producers that must land on the same id:
+# the SERVED catalog (`use_cases/series_catalog.py`) and the WRITER
+# (`use_cases/collector_series_mapping.py`). `klines_volume` solved the same problem by having
+# each side quote its own copy of the string, and its own comment calls that a cross-task
+# contract; this row does not repeat the duplication — `build_kline_takerbuy_entry` hardcodes
+# the constant (the shape `open_interest_catalog.py` already uses in production code) so there
+# is no second copy to drift from. The divergence this prevents is the silent one: `200` with
+# `n_points = 0` for a series whose rows are sitting in `md.series` under another id.
+KLINE_TAKERBUY_VERIFIED_BY: Final[str] = "test_cvd_source_catalog.py"
 
 # The metric name `T-06.1` already fixed in its own fixtures for a `cvd_source` catalog row
 # (`test_series_catalog.py`'s `metric="cvd_source"`) — kept identical here so this module's
@@ -280,14 +296,77 @@ def build_coinalyze_bv_entry(
     )
 
 
+def build_kline_takerbuy_entry(instrument_id: str, *, unit: str) -> SeriesCatalogEntry:
+    """Build the `kline_takerbuy` `cvd_source` row: CVD read off `/fapi/v1/klines` (`T-02.2`).
+
+    THE FOURTH SOURCE, AND THE ONE THAT COSTS NO NEW REQUEST. `volume` (index `[5]`) and
+    `takerBuyBaseVol` (index `[9]`) arrive in the SAME 12-field array phase `01` already fetches
+    for `klines_volume`, so `delta = 2 * takerBuy - volume` (`domain/kline_cvd.py`) is a second
+    identity riding an existing collector: zero new endpoint, zero new quota, zero third party.
+    That is the capability this phase exists to demonstrate, and `DoD 7` is the test that keeps
+    it true.
+
+    ⛔ `reconstructed_from=None`, AND IT IS A MEASUREMENT, NOT AN ASSUMPTION. `T-02.1` ran the
+    falsifier BEFORE this row existed, because changing the field afterwards does not correct a
+    row — it re-identifies the series. Comparing this expression against
+    `cvd.cvd_delta_by_bucket` of the canonical `aggTrade` dump over `n=4.320` buckets (BTCUSDT,
+    3 UTC days) found `276` maximal runs of divergent buckets and **zero** with a residual, with
+    the day total identical to the thousandth of a BTC on each day `[MEDIDO 2026-09-12,
+    `docs/context/cinco-metricas-do-core/gates/T-02.1-falsificador-reconstructed-from.md`]`.
+    Every divergence merely MOVES a boundary trade between two adjacent minutes; nothing is
+    approximated. So this is a DIRECT READ of the bucket the origin publishes, `published_error`
+    stays `None` with it (`__post_init__`/`D6.9` enforces the pairing in both directions), and
+    the row that WOULD need a published error is `coinalyze_bv` — the one that really does
+    reconstruct.
+
+    WHAT DISTINGUISHES THIS ROW FROM THE OTHER THREE, term by term: `quantity_field=NA` (nothing
+    here derives from an `aggTrade` quantity, the same reading `coinalyze_bv` makes) together
+    with `provider="binance"` (the origin, where `coinalyze_bv` is a third party). Against
+    `aggtrade_q`/`aggtrade_nq`, `quantity_field` alone already separates it. No two of the four
+    agree on all fifteen terms, which is what `build_series_catalog`'s duplicate check re-proves
+    over the combined tuple rather than trusting this paragraph.
+
+    `unit` is REQUIRED and never defaulted to `"BTC"`, for the reason `build_aggtrade_q_entry`
+    states: the summed quantity is in the instrument's own BASE asset, and a hardcoded default
+    would silently mislabel every non-`BTC` instrument. `verified_by` is NOT a parameter here —
+    see `KLINE_TAKERBUY_VERIFIED_BY` for why this row keeps exactly one copy of that string.
+    """
+    key = SeriesKey(
+        provider="binance",
+        venue="usdm_futures",
+        instrument_id=instrument_id,
+        metric=CVD_SOURCE_METRIC,
+        cohort="all",
+        interval="1m",
+        unit=unit,
+        denom="base",
+        nature=Nature.FLOW,
+        ts_convention=TsConvention.AGGREGATE_OVER_BUCKET,
+        reduction=Reduction.SUM,
+        quantity_field=QuantityField.NA,
+        label_shift=0,
+        aggregation_scope="Symbol",
+        verified_by=KLINE_TAKERBUY_VERIFIED_BY,
+    )
+    return SeriesCatalogEntry(key=key, native_grid="1min", max_staleness_ms=120_000)
+
+
 def build_cvd_source_catalog_entries(
     instrument_id: str, *, unit: str, verified_by: str
 ) -> tuple[SeriesCatalogEntry, ...]:
-    """Build every `cvd_source` catalog row this task registers, for one `instrument_id`.
+    """Build the three `cvd_source` rows `T-06.9` registers, for one `instrument_id`.
 
-    `REGISTERED_CVD_SOURCES` names the three (`aggtrade_q`, `aggtrade_nq`, `coinalyze_bv`);
-    the other three members of `CVD_SOURCES` are `[NÃO MEDIDO]` and not built here (see the
-    module docstring).
+    ⛔ `kline_takerbuy` IS DELIBERATELY NOT IN THIS TUPLE, AND THE REASON IS `RS-1`, NOT TASTE.
+    It is the fourth registered source (`REGISTERED_CVD_SOURCES`), so grouping it with its three
+    siblings here would be the tidier modelling — and it would INSERT a row at index 3 of the
+    served catalog, shifting the eight rows that follow. The order of `"entries"` is FORM, which
+    `RS-1` forbids this feature from changing, and a permuted list is the failure no field of
+    the response reports: it simply comes back in a different order. So `T-02.2`'s row is
+    APPENDED at the tail by `use_cases/series_catalog.py::list_series_catalog`, exactly where
+    `T-01.6` appended `klines_volume` and for exactly the same reason.
+
+    The other two members of `CVD_SOURCES` (`rest_taker_vol`, `metrics_ratio`) are `[NÃO
+    MEDIDO]` and are not built anywhere (see the module docstring).
     """
     return (
         build_aggtrade_q_entry(instrument_id, unit=unit, verified_by=verified_by),

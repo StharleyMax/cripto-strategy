@@ -25,10 +25,16 @@ import threading
 from collections.abc import Iterable
 from pathlib import Path
 
+import psycopg
 from fakeredis import TcpFakeServer
 
 from src.modules.sentimento.domain.force_order_collision_accounting import (
     ForceOrderKeyObservation,
+)
+from src.modules.sentimento.domain.ingest_record import IngestGap, IngestRun
+from src.modules.sentimento.domain.oi_history_paginator import (
+    ClosedWindow,
+    OiHistoryPageResponse,
 )
 from src.modules.sentimento.domain.premium_index_batch import PremiumIndexReading
 from src.modules.sentimento.domain.provenance import (
@@ -39,6 +45,7 @@ from src.modules.sentimento.domain.provenance import (
 )
 from src.modules.sentimento.infra import collectors_cli
 from src.modules.sentimento.infra.binance_klines_client import KlinesPageResponse
+from src.modules.sentimento.infra.ingest_record_store_composition import IngestRecordStore
 from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
 from src.modules.sentimento.use_cases.collect_premium_index import (
@@ -122,6 +129,23 @@ class _EmptyKlinesClient:
         return KlinesPageResponse(status=200, api_code=None, rows=())
 
 
+class _EmptyOpenInterestClient:
+    """An `OpenInterestHistoryClient` fake that always answers one empty, successful page.
+
+    The open-interest thread (`T-03.3`) is the FOURTH thread `run()` starts, and it would
+    otherwise reach `fapi.binance.com` from inside the offline suite — `backend/scripts/test.sh`'s
+    "ZERO REDE" rule. An empty page is ACCEPTED by `classify_page` (no `api_code`, no point
+    outside the window) and publishes nothing, which is what keeps these shutdown/exit-code
+    scenarios about the thing they were written to measure.
+    """
+
+    def open_interest_history(
+        self, symbol: str, period: str, window: ClosedWindow, limit: int
+    ) -> OiHistoryPageResponse:
+        """Return `status=200` with no points and no API error code."""
+        return OiHistoryPageResponse(status=200, api_code=None, points=())
+
+
 class _OneShotPremiumIndexFetcher:
     """A `PremiumIndexFetcher` fake that answers one scripted, non-empty valid batch.
 
@@ -174,6 +198,54 @@ def _one_row_premium_index_mapping(
     )
 
 
+class _RecordRunRaisesOperationalError:
+    """An ingest-record store whose `record_run` raises what PRODUCTION actually raised.
+
+    Models the `2026-09-11T19:53` outage literally: Postgres went down (`AdminShutdown`), and
+    the next `record_run` raised `psycopg.OperationalError: the connection is closed` from
+    inside a collector thread. `OperationalError` descends from `psycopg.Error` -> `Exception`
+    and is NEITHER an `OSError` NOR a `ValueError`, so it is not in
+    `collectors_cli._PUBLISH_FAILURE_EXCEPTIONS` and escapes every `except` a collector runner
+    has. Before the supervisor wrapper this driver's `thread-dies-unhandled` mode exists to
+    pin, that killed the THREAD and left the PROCESS alive: `docker inspect` reported
+    `running=true`, `exit=0`, `restarts=0` for 18 h 45 min while nothing was collected.
+
+    Everything except `record_run` delegates to a real `SqliteIngestRecordStore`, so boot
+    (`initialise`) still behaves exactly as it does in the other modes. All SIX methods of
+    `IngestRecordStore` (`ADR-031/D1`) are delegated, not just the two this scenario calls:
+    the Protocol is satisfied STRUCTURALLY, so a partial surface would be a `mypy` error here
+    rather than a runtime surprise later.
+    """
+
+    def __init__(self, delegate: SqliteIngestRecordStore) -> None:
+        """Bind the real store every non-raising call is forwarded to."""
+        self._delegate = delegate
+
+    def initialise(self) -> None:
+        """Delegate — boot must succeed, so the failure happens in a THREAD, not at boot."""
+        self._delegate.initialise()
+
+    def record_run(self, run: IngestRun) -> None:
+        """Raise the real production exception instead of recording the run."""
+        raise psycopg.OperationalError("the connection is closed")
+
+    def record_gap(self, gap: IngestGap) -> None:
+        """Delegate — this scenario never records a gap, but the Protocol requires the method."""
+        self._delegate.record_gap(gap)
+
+    def describe_readiness(self) -> tuple[bool, bool]:
+        """Delegate — boot reads this, and it must answer exactly as the real store does."""
+        return self._delegate.describe_readiness()
+
+    def runs(self) -> tuple[IngestRun, ...]:
+        """Delegate — the caller reads recorded runs through a separate, real store."""
+        return self._delegate.runs()
+
+    def gaps(self) -> tuple[IngestGap, ...]:
+        """Delegate — present for the Protocol; this scenario never reads gaps."""
+        return self._delegate.gaps()
+
+
 def main(argv: list[str]) -> int:
     """Run the real `collectors_cli` composition with every network-touching port faked.
 
@@ -185,6 +257,7 @@ def main(argv: list[str]) -> int:
     """
     store_path = Path(argv[0])
     force_publish_failure = len(argv) > 1 and argv[1] == "force-publish-failure"
+    thread_dies_unhandled = len(argv) > 1 and argv[1] == "thread-dies-unhandled"
     server = TcpFakeServer(("127.0.0.1", 0), server_type="redis")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -205,6 +278,10 @@ def main(argv: list[str]) -> int:
         # `_EmptyKlinesClient`) and then never again before the signal arrives.
         klines_cycle_interval_s=999_999.0,
         klines_backfill_days=1,
+        # Same reasoning again for the open-interest thread (`T-03.3`): one boot pass (empty,
+        # see `_EmptyOpenInterestClient`) and then never again before the signal arrives.
+        open_interest_cycle_interval_s=999_999.0,
+        open_interest_backfill_days=1,
     )
     if force_publish_failure:
         # Same real-server technique `test_collectors_cli_publish_failure.py`'s `clobbered_sink`
@@ -213,7 +290,9 @@ def main(argv: list[str]) -> int:
         setup = connect_resp2(open_tcp_socket(host, port))
         setup.command("SET", stream_name, "not-a-stream")
     connection = connect_resp2(open_tcp_socket(host, port))
-    store = SqliteIngestRecordStore(store_path)
+    store: IngestRecordStore = SqliteIngestRecordStore(store_path)
+    if thread_dies_unhandled:
+        store = _RecordRunRaisesOperationalError(SqliteIngestRecordStore(store_path))
     store.initialise()
 
     def _fetcher_factory() -> PremiumIndexFetcher:
@@ -231,6 +310,7 @@ def main(argv: list[str]) -> int:
             force_order_source_factory=_BlockingForceOrderSource,
             premium_index_fetcher_factory=_fetcher_factory,
             klines_client_factory=_EmptyKlinesClient,
+            open_interest_client_factory=_EmptyOpenInterestClient,
             premium_index_to_rows=premium_index_to_rows,
             force_order_to_rows=_never_maps,
         )

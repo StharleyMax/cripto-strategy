@@ -87,15 +87,18 @@ because nothing else in the codebase does either.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Final, Protocol
 
+from src.modules.sentimento.domain.cvd_source_catalog import build_kline_takerbuy_entry
 from src.modules.sentimento.domain.force_order_collision_accounting import (
     ForceOrderKeyObservation,
 )
 from src.modules.sentimento.domain.funding_settlement import FundingSource
 from src.modules.sentimento.domain.instrument import base_asset
+from src.modules.sentimento.domain.kline_cvd import kline_cvd_delta
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
+from src.modules.sentimento.domain.open_interest_catalog import binance_open_interest_key
 from src.modules.sentimento.domain.premium_index_batch import (
     PREMIUM_INDEX_ENDPOINT,
     PremiumIndexReading,
@@ -118,6 +121,8 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_OBSERVER_ID,
     KLINES_ENDPOINT,
     KLINES_OBSERVER_ID,
+    OPEN_INTEREST_HIST_ENDPOINT,
+    OPEN_INTEREST_OBSERVER_ID,
     PREMIUM_INDEX_OBSERVER_ID,
 )
 
@@ -349,12 +354,16 @@ KLINES_BUCKET_WIDTH_MS: Final[int] = 60_000
 
 
 class KlineLike(Protocol):
-    """The three things this mapping reads off one kline array.
+    """The four things this mapping reads off one kline array.
 
     Structural, not an import: `infra/binance_klines_client.KlineRow` satisfies this, and
     `use_cases` may not import `infra` (`[tool.importlinter]`'s `layers` contract). The same
     shape `SeriesWindowReader`/`IngestRecordSource` already use to name a port in a use case
     and wire the adapter at composition.
+
+    `taker_buy_base_volume` was added by `T-02.3` and it is THE whole network cost of phase
+    `02`: index `[9]` was already in the array `T-01.2` refused to project away, so reading it
+    here adds a field to a protocol, not a request to the exchange.
     """
 
     @property
@@ -370,6 +379,11 @@ class KlineLike(Protocol):
     @property
     def volume(self) -> str:
         """Return index `[5]`, base-asset volume, as the exact decimal string the source sent."""
+        ...
+
+    @property
+    def taker_buy_base_volume(self) -> str:
+        """Return index `[9]`, the aggressor-buy share of `volume`, as the source's own string."""
         ...
 
 
@@ -412,6 +426,33 @@ def build_klines_to_rows(
     already closed at `received_at` (`is_closed_bucket`). A symbol outside `symbols` yields no
     rows, the same filter the other two producers in this module already apply.
 
+    ── TWO ROWS PER CLOSED BAR SINCE `T-02.3`, AND THE SECOND ONE COSTS NO REQUEST ──────────
+
+    `klines_volume` (index `[5]`) and `cvd_source`/`kline_takerbuy` (`2 * takerBuy[9] - volume`,
+    `domain/kline_cvd.kline_cvd_delta`) are TWO IDENTITIES OFF ONE ARRAY. That is the capability
+    phase `02` exists to demonstrate and the reason it is a phase of its own rather than a line
+    inside phase `01`: a second metric riding an existing collector, with a diff of ZERO network
+    calls (`DoD 7`) — `T-01.2` already refused to project the 12-field array down, precisely so
+    this moment would cost a field read instead of a second integration.
+
+    The two rows share `bucket_end`, `event_time` and every provenance field, because they are
+    two readings OF THE SAME OBSERVATION; they differ only in `series_key_id` and `value_raw`.
+    They are built by iterating a pair of `(series_key_id, value_raw)` tuples rather than by a
+    closure defined inside the loop — there is no late-binding hazard either way (a closure
+    called in the same iteration reads the current value), and a mutation test confirmed that:
+    removing a default-argument binding written to "protect" against it killed NO test, because
+    there was nothing to protect against. The pair loop is what the code actually needs, and it
+    keeps the sixteen provenance fields written once instead of twice.
+
+    ⚠️ `series_key_id()` is computed ONCE PER PAGE, above the loop, not once per row: it is a
+    `sha256` over the canonical projection of fifteen terms, and a seven-day backfill is 10.080
+    bars per symbol — 20.160 hashes per symbol per restart if it were recomputed per row.
+
+    The CVD delta is computed through the domain function, never inline here, so the invariant
+    `0 <= takerBuy <= volume` (item 2.4) is enforced on every bar the collector publishes: an
+    impossible pair raises `TakerBuyExceedsVolumeError` and the pass closes `REJECTED` instead
+    of writing a delta larger than the bucket it came from.
+
     ⛔ THE IN-PROGRESS BUCKET IS DROPPED, NOT FLAGGED, and the two options are not equivalent
     here. `is_final=False` would also be honest — the `as_of` accessor refuses such a row
     outright, in its `_is_closed_bucket` predicate (`row.bucket_end <= t and row.is_final is
@@ -441,29 +482,207 @@ def build_klines_to_rows(
     ) -> tuple[SeriesRow, ...]:
         if symbol not in symbols:
             return ()
-        key = build_klines_volume_entry(
-            symbol, unit=base_asset(symbol), verified_by=_KLINES_VOLUME_VERIFIED_BY
+        unit = base_asset(symbol)
+        volume_key = build_klines_volume_entry(
+            symbol, unit=unit, verified_by=_KLINES_VOLUME_VERIFIED_BY
         ).key
+        cvd_key = build_kline_takerbuy_entry(symbol, unit=unit).key
+        volume_key_id = volume_key.series_key_id()
+        cvd_key_id = cvd_key.series_key_id()
+        rows: list[SeriesRow] = []
+        for kline in klines:
+            if not is_closed_bucket(kline, received_at):
+                continue
+            bucket_end = kline.open_time_ms + KLINES_BUCKET_WIDTH_MS
+            delta = kline_cvd_delta(
+                volume=kline.volume, taker_buy_base_volume=kline.taker_buy_base_volume
+            )
+            for series_key_id, value_raw in (
+                (volume_key_id, kline.volume),
+                (cvd_key_id, str(delta)),
+            ):
+                rows.append(
+                    SeriesRow(
+                        series_key_id=series_key_id,
+                        symbol=symbol,
+                        source=KLINES_ENDPOINT,
+                        bucket_end=bucket_end,
+                        event_time=bucket_end,
+                        available_at=received_at,
+                        availability_source=AvailabilitySource.OBSERVED,
+                        ingested_at=received_at,
+                        observed_at=received_at,
+                        provenance=Provenance.OBSERVED,
+                        src_label_raw=KLINES_ENDPOINT,
+                        observer_id=KLINES_OBSERVER_ID,
+                        observer_region=UNKNOWN_OBSERVER_REGION,
+                        is_final=True,
+                        value_raw=value_raw,
+                    )
+                )
+        return tuple(rows)
+
+    return _to_rows
+
+
+# ── `sum_open_interest` (M2) — THE FOURTH PRODUCER, AND WHY ITS CUT IS A DIFFERENT CUT ──────
+#
+# `T-03.3` / `SPEC-007` phase `03` items 3.2 + 3.3, `RS-3.4`, `RF-1`.
+#
+# ⛔ THE IDENTITY IS NOT BUILT HERE, IT IS IMPORTED — and that is the same cross-task contract
+# `_KLINES_VOLUME_VERIFIED_BY` above exists for, paid in a cheaper currency. `klines_volume`
+# has to quote a `verified_by` STRING because its builder takes one; open interest does not,
+# because `domain/open_interest_catalog.binance_open_interest_key` hardcodes its own
+# `_VERIFIED_BY` and is the ONE construction of that key in this codebase. So the writer below
+# and the SERVED catalog (`use_cases/series_catalog.list_series_catalog`, which already calls
+# `open_interest_catalog_entries` for every pilot instrument) land on the same
+# `series_key_id` because they call the same function, not because two strings were kept in
+# step by hand. `test_collector_open_interest_mapping.py` pins that anyway, by rebuilding the
+# key and comparing ids — a `422 UnknownSeriesKeyIdError` over a full `md.series` is the
+# failure whose two halves both look healthy in isolation.
+#
+# ── THE CUT IS `bucket_end <= observed_at`, AND IT IS **NOT** `is_closed_bucket` ────────────
+#
+# `klines_volume` is a `FLOW` aggregated OVER a bucket, so its newest element is genuinely
+# PARTIAL and grows until the minute ends — `is_closed_bucket` drops it. Open interest is a
+# `STOCK`: `/futures/data/openInterestHist` publishes ONE INSTANT READING per 5-minute grid
+# point, not an aggregate, and the reading is complete the moment it appears.
+# `[MEDIDO 2026-09-12, polling de 10 s sobre `openInterestHist?symbol=BTCUSDT&period=5m`: o
+# ponto rotulado `timestamp=1789218300000` APARECEU em `now=1789218306231`, isto e
+# `now - timestamp = 6.231 ms` — SEIS SEGUNDOS depois do proprio rotulo. Um agregado sobre
+# `[T, T+300.000)` nao pode existir 6 s dentro dele; a leitura e um INSTANTE em `T`. Deltas
+# entre `timestamp` consecutivos = {300000} e `timestamp % 300000 == 0` para todos,
+# n=12 pontos]`.
+#
+# So the thing this cut refuses is NOT a partial aggregate — it is a row stamped at an instant
+# that has not happened yet on THIS collector's clock. That is the residual lookahead risk of a
+# snapshot producer: the two clocks are different (`available_at`/`observed_at` are ours,
+# `bucket_end` is Binance's), and a skew, a badly-built window, or a future `period` would put
+# `bucket_end` ahead of `observed_at`. `as_of` admits a row on `bucket_end <= t`, so such a row
+# would be drawn at an instant the collector could not have observed. The cut is written
+# against the SIGN for the same reason `is_closed_bucket`'s is: `CLAUDE.md` records an
+# anti-lookahead rule of this project that was already INVERTED once and propagated through two
+# documents before anyone noticed.
+OPEN_INTEREST_BUCKET_WIDTH_MS: Final[int] = 300_000
+
+# The two fields this mapping reads off one raw point of the page. Named rather than inlined so
+# the payload's own spelling is greppable — `[MEDIDO 2026-09-12: as chaves de um ponto real sao
+# `['CMCCirculatingSupply', 'sumOpenInterest', 'sumOpenInterestValue', 'symbol', 'timestamp']`,
+# n=1 resposta de 12 pontos]`. `sumOpenInterestValue` is the notional in USDT and is NOT what
+# this series carries: `binance_open_interest_key` declares `denom="base"`, so the raw string
+# that backs `value_raw` is the base-asset quantity, `sumOpenInterest`.
+OPEN_INTEREST_TIMESTAMP_FIELD: Final[str] = "timestamp"
+OPEN_INTEREST_VALUE_FIELD: Final[str] = "sumOpenInterest"
+
+OpenInterestPoint = Mapping[str, object]
+OpenInterestToRows = Callable[[int, str, Sequence[OpenInterestPoint]], tuple[SeriesRow, ...]]
+
+
+class MalformedOpenInterestPointError(Exception):
+    """A returned point lacks an integer `timestamp` or a string `sumOpenInterest`."""
+
+
+def open_interest_bucket_end(point: OpenInterestPoint) -> int:
+    """Return the instant this reading belongs to — the source's own `timestamp`, unshifted.
+
+    `binance_open_interest_key` declares `ts_convention = POINT_AT_BUCKET_END`, and this is the
+    function that says what that resolves to on the wire: the point labelled `T` is the reading
+    at `T`, so `bucket_end = T`. The measurement in this section's header is what forces that
+    reading rather than `T + OPEN_INTEREST_BUCKET_WIDTH_MS` — a point labelled `T` is already
+    published ~1 minute after `T`, so `T` cannot be the START of a bucket whose aggregate the
+    point reports, and stamping it `T + 300_000` would publish a row for an instant five
+    minutes in the future of the only instant the source ever measured.
+
+    ⚠️ `SeriesKey.label_shift` is NOT applied here, and that is not an oversight: it is a TERM
+    OF IDENTITY (`series_key.py`, the fifteen-term `sha256`), never a transform any writer in
+    this package runs — `klines_volume` carries `label_shift=0` and still adds a bucket width
+    to its own source label. Whether `label_shift=300_000` describes the Binance row as
+    accurately as it describes the Coinalyze one is a question for `ADR-036`/`SPEC-001` §2.1,
+    and reopening it RE-IDENTIFIES the series (a different `series_key_id`, a migration, not a
+    fix); it is registered in `PENDENCIAS-PARA-AVALIAR-DEPOIS.md` instead of settled here.
+    """
+    raw = point.get(OPEN_INTEREST_TIMESTAMP_FIELD)
+    if not isinstance(raw, int):
+        raise MalformedOpenInterestPointError(
+            f"point has no integer {OPEN_INTEREST_TIMESTAMP_FIELD!r} field to stamp a row "
+            f"with: {point!r}"
+        )
+    return raw
+
+
+def open_interest_value_raw(point: OpenInterestPoint) -> str:
+    """Return `sumOpenInterest` as the EXACT decimal string the source sent (`ADR-034/D7`)."""
+    raw = point.get(OPEN_INTEREST_VALUE_FIELD)
+    if not isinstance(raw, str) or not raw.strip():
+        raise MalformedOpenInterestPointError(
+            f"point has no non-blank string {OPEN_INTEREST_VALUE_FIELD!r} field to carry as "
+            f"`value_raw`: {point!r}"
+        )
+    return raw
+
+
+def is_settled_open_interest_point(point: OpenInterestPoint, observed_at_ms: int) -> bool:
+    """Say whether `point`'s instant had ALREADY PASSED at `observed_at_ms` — `RS-3.4`.
+
+    ⛔ THE SIGN IS THE RULE. A reading stamped exactly AT `observed_at_ms` is admitted:
+    `bucket_end == observed_at_ms` means the instant has arrived, and `as_of` admits a row on
+    `bucket_end <= t` with the same boundary. A reading stamped AFTER it is refused — that is
+    the only lookahead this snapshot producer can commit, and the falsifier
+    `test_collector_open_interest_mapping.py::test_a_point_stamped_after_the_observation_instant_is_the_one_dropped`
+    pins WHICH points survive, so flipping the comparison fails a test instead of a chart.
+    """
+    return open_interest_bucket_end(point) <= observed_at_ms
+
+
+def build_open_interest_to_rows(
+    *,
+    symbols: frozenset[str] = INITIAL_SYMBOLS,
+) -> OpenInterestToRows:
+    """Build the `openInterestHist` -> `SeriesRow` mapping the open-interest collector uses.
+
+    The returned callable takes the collector's own clock (`received_at`), the symbol the page
+    was requested for, and the page's raw points; it answers ONLY the rows whose instant had
+    already arrived at `received_at`. A symbol outside `symbols` yields no rows — the same
+    four-symbol filter (`INITIAL_SYMBOLS`) every other producer in this module applies.
+
+    `is_final=True`, and it is the source genuinely declaring finality rather than this module
+    hoping: a `STOCK` snapshot at an instant that has passed cannot still be growing, which is
+    exactly what the measurement in this section's header established and what separates it
+    from `klines_volume`'s in-progress bar.
+
+    `event_time`/`bucket_end` are the SOURCE's instant while `available_at`/`ingested_at`/
+    `observed_at` are THIS collector's clock — the same separation `_build_row` documents, and
+    the reason the publication lag of this endpoint stays visible in the data instead of being
+    flattened away.
+    """
+
+    def _to_rows(
+        received_at: int, symbol: str, points: Sequence[OpenInterestPoint]
+    ) -> tuple[SeriesRow, ...]:
+        if symbol not in symbols:
+            return ()
+        key = binance_open_interest_key(instrument_id=symbol)
+        series_key_id = key.series_key_id()
         return tuple(
             SeriesRow(
-                series_key_id=key.series_key_id(),
+                series_key_id=series_key_id,
                 symbol=symbol,
-                source=KLINES_ENDPOINT,
-                bucket_end=kline.open_time_ms + KLINES_BUCKET_WIDTH_MS,
-                event_time=kline.open_time_ms + KLINES_BUCKET_WIDTH_MS,
+                source=OPEN_INTEREST_HIST_ENDPOINT,
+                bucket_end=open_interest_bucket_end(point),
+                event_time=open_interest_bucket_end(point),
                 available_at=received_at,
                 availability_source=AvailabilitySource.OBSERVED,
                 ingested_at=received_at,
                 observed_at=received_at,
                 provenance=Provenance.OBSERVED,
-                src_label_raw=KLINES_ENDPOINT,
-                observer_id=KLINES_OBSERVER_ID,
+                src_label_raw=OPEN_INTEREST_HIST_ENDPOINT,
+                observer_id=OPEN_INTEREST_OBSERVER_ID,
                 observer_region=UNKNOWN_OBSERVER_REGION,
                 is_final=True,
-                value_raw=kline.volume,
+                value_raw=open_interest_value_raw(point),
             )
-            for kline in klines
-            if is_closed_bucket(kline, received_at)
+            for point in points
+            if is_settled_open_interest_point(point, received_at)
         )
 
     return _to_rows
