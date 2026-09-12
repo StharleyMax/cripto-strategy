@@ -49,7 +49,7 @@ corridas, zero resíduos, total diário idêntico ao milésimo de BTC nos três 
 | 5 | `takerBuy ≤ volume` em **100%** da janela de backfill | ✅ | §5 |
 | 6 | falsificador de `reconstructed_from` rodado **antes** | ✅ | §2 |
 | 7 | **nenhuma chamada HTTP nova** | ✅ | §5 |
-| 8 | `make verify` verde | ⚠️ **6/6 portões OK, veredito `INDETERMINADO`** — ver §10 | §10 |
+| 8 | `make verify` verde | ✅ **`VERDE` — 6 portões mediram e passaram** (`20260912T135110Z`) | §10 |
 
 ## 4. `DoD 1`/`2`/`4` — o mecanismo, medido com dado REAL; a produção é de `T-02.7`
 
@@ -185,31 +185,39 @@ mudar. Lista permutada é a falha que **nenhum campo da resposta reporta**. Ent�
 **anexado ao fim** por `list_series_catalog`, exatamente onde `T-01.6` anexou `klines_volume`.
 
 
-## 10. `make verify` — o veredito, e por que ele saiu `INDETERMINADO` sem nada estar quebrado
+## 10. `make verify` — o veredito
 
-**Execução autoritativa `20260912T133617Z`, sobre a árvore commitada (`diff: sem mudança
+**Execução autoritativa `20260912T135110Z`, sobre a árvore commitada (`diff: sem mudança
 não-commitada`):**
 
 ```
 [OK       ] lint-backend    rc=0  417 source files
-[NÃO MEDIU] lint-frontend   rc=3  frontend/node_modules ausente — rode 'make setup'
+[OK       ] lint-frontend   rc=0  ESLint + tsc --noEmit --strict do projeto sobre frontend/src
 [OK       ] test            rc=0  2159 passed · Total coverage: 96.98%
 [OK       ] boundaries      rc=0  7 kept, 0 broken
 [OK       ] regras          rc=0  0 bloqueio(s), 67 aviso(s)
 [OK       ] política        rc=0
-veredito: INDETERMINADO — algum portão RECUSOU medir (rc=3). Não é o mesmo que passar.
+veredito: VERDE — 6 portões mediram e passaram
 ```
 
-⚠️ **`INDETERMINADO` aqui é ARTEFATO DE AMBIENTE DESTA WORKTREE, e o rótulo fica assim mesmo:**
-`frontend/node_modules` não existia quando essa execução começou (worktree recém-criada; o
-`npm --prefix frontend install` terminou depois). Rodado depois, à mão:
-`npm --prefix frontend run lint` → `eslint src`, **sem achado, `rc=0`**. ⇒ os **seis** portões
-passam, mas **não vou reescrever o veredito da ferramenta com uma costura minha**: `ADR-012`
-nomeia exatamente esse modo de falha, e `rc=3` ("não mediu") tem de continuar distinguível de
-`rc=0` ("mediu e passou"). Quem rodar o QA deve reexecutar `make verify` numa árvore com
-`make setup` feito e ler o veredito de lá.
+Log bruto: `/tmp/verify-agent-a714e16e185cbef5f-20260912T135110Z.log` (48K) — **não leia
+inteiro**, grep o que precisar.
 
-## 10.1 A corrida anterior, e o erro ambiental que ela pegou
+### 10.0 A corrida anterior saiu `INDETERMINADO`, e isso fica registrado
+
+A execução `20260912T133617Z` — mesma árvore commitada, mesmos seis portões — devolveu
+`[NÃO MEDIU] lint-frontend rc=3  frontend/node_modules ausente`, e com isso
+`veredito: INDETERMINADO — algum portão RECUSOU medir (rc=3). Não é o mesmo que passar.`
+Causa: worktree recém-criada; o `npm --prefix frontend install` terminou **depois** daquela
+corrida começar. **Não reescrevi o veredito daquela corrida com uma costura minha** — `ADR-012`
+nomeia exatamente esse modo de falha, e `rc=3` ("não mediu") tem de continuar distinguível de
+`rc=0` ("mediu e passou"). O que fiz foi instalar as dependências e **reexecutar a ferramenta**,
+que é a única forma de um `INDETERMINADO` virar `VERDE`: o veredito acima é da ferramenta, não meu.
+
+⚠️ **Nenhum arquivo de produção mudou entre as duas corridas** — mesmo `HEAD`, mesmo
+`diff: sem mudança não-commitada`. A diferença é só `frontend/node_modules` existir.
+
+## 10.1 A corrida que reprovou por ambiente, e o que ela pegou
 
 A corrida `20260912T132650Z` (anterior à acima) reprovou `test` com **1 ERROR**, e ele é
 **ambiental, nomeado, não silenciado**. O resumo dos portões medidos ao longo da fase:
@@ -221,8 +229,8 @@ A corrida `20260912T132650Z` (anterior à acima) reprovou `test` com **1 ERROR**
 | `regras` | `rules --mode sweep` | ✅ **0 bloqueio(s)**, 67 avisos (todos pré-existentes, `core.module-docstring-single-line`) |
 | `política` | dentro de `verify` | ✅ `rc=0` |
 | suíte alvo | `bash backend/scripts/test-fast.sh -k "kline_cvd or cvd_source_catalog or collector_klines_mapping or klines_collector or series_catalog or writer_and_catalog_agree or publishes_the_run_id"` | ✅ **140 passed** |
-| suíte inteira | `make verify` (`20260912T133617Z`) | ✅ **2.159 passed**, cobertura **96,98%** |
-| `lint-frontend` | `npm --prefix frontend run lint` | ✅ `eslint src`, sem achado, `rc=0` |
+| suíte inteira | `make verify` (`20260912T135110Z`) | ✅ **2.159 passed**, cobertura **96,98%** |
+| `lint-frontend` | dentro de `verify` (`20260912T135110Z`) | ✅ `rc=0` — ESLint + `tsc --noEmit --strict` sobre `frontend/src` |
 
 **O `1 ERROR` daquela corrida é AMBIENTAL e nomeado, não silenciado:**
 `test_postgres_series_window_reader.py::test_read_window_excludes_a_row_after_the_window_end`,
