@@ -22,6 +22,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { chartSurfaceTheme, CHART_GRID_LINE } from "./chart-theme.ts";
+import type { ChartSurfaceTheme } from "./chart-theme.ts";
 import { colorTokens, CONTRAST_BACKDROP, SURFACE_BASE } from "./color-tokens.ts";
 import type { ColorRole, ColorTokens, ContrastBackdrop } from "./color-tokens.ts";
 import { contrastRatio, relativeLuminance } from "./contrast.ts";
@@ -29,21 +31,45 @@ import { contrastRatio, relativeLuminance } from "./contrast.ts";
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const GLOBALS_CSS = path.resolve(THIS_DIR, "../app/globals.css");
 
-/**
- * The worst ratio a role achieves against everything it is drawn on, plus the floor it owes.
- * Total over the two `ContrastBackdrop` shapes — a third shape would have no branch here and
- * would THROW rather than silently pass, which is the failure mode this gate exists to refuse.
- */
+// The worst ratio a role achieves against everything it is drawn on, plus the floor it owes.
+// Total over the two `ContrastBackdrop` shapes — a third shape would have no branch here and
+// would THROW rather than silently pass, which is the failure mode this gate exists to refuse.
+//
+// ⛔ AND THE REPAIR OF `DR-1` LIVES IN THIS SIGNATURE.
+//
+// `kind: "surface"` NO LONGER MEANS `SURFACE_BASE`. The series ink is not laid on the PAGE, it is
+// laid on the `<canvas>`, and at `74d59a4` those were two different colors: `createChart` was
+// called with no `layout`, so the canvas kept the library default `#FFFFFF` while this function
+// measured against `#131722`. `provenanceStrong` — the CVD delta line — read `14,72:1` here and
+// `1,22:1` on the screen. The gate was green and the screen was wrong, which is `ADR-012`'s
+// `rc=0` that cannot tell "nada erodiu" from "o instrumento mede a referência errada".
+//
+// So the backdrop is now `theme.backgroundColor` — the head of the chain
+// `chartSurfaceTheme()` -> `chartConstructorOptions()` -> `createChart`.
+//
+// ⚠️ AND NOT THE VALUE `createChart` RECEIVES — an earlier version of this comment said it was,
+// and `DR-11` of the design review falsified the claim by deleting the `layout` block from
+// `chart-options.ts`: this suite stayed at `pass 16 · fail 0` while the canvas went back to
+// `#FFFFFF` `[MEASURED 2026-09-12 by the reviewer, n=1 mutant]`. It could not be otherwise —
+// `charts` may not import `web` (`ADR-003`/`D5.12`), so the call site is out of reach from here
+// BY DESIGN. What this file owns is the ARITHMETIC over whatever backdrop it is handed. The two
+// remaining links are owned where they are visible: `chart-construction.test.ts` builds the
+// options and compares the colors as values, and `e2e/11-canvas-fundo.spec.ts` reads the pixels.
+// Taking the
+// theme as a PARAMETER rather than reading it inside is what lets the negative controls below
+// replant `#FFFFFF` and watch this gate produce `1,22:1` and REJECT — the defect reproduced, not
+// described.
 function measure(
   role: ColorRole,
   tokens: ColorTokens,
   backdrop: ContrastBackdrop,
+  theme: ChartSurfaceTheme = chartSurfaceTheme(),
 ): { readonly ratio: number; readonly floor: number; readonly against: string } {
   if (backdrop.kind === "surface") {
     return {
-      ratio: contrastRatio(tokens[role], SURFACE_BASE),
+      ratio: contrastRatio(tokens[role], theme.backgroundColor),
       floor: backdrop.minRatio,
-      against: `surface ${SURFACE_BASE}`,
+      against: `chart background ${theme.backgroundColor}`,
     };
   }
   if (backdrop.kind === "roles") {
@@ -197,6 +223,105 @@ test("globals.css declares color-scheme: dark, so the browser's own widgets foll
     "globals.css has no `:root { color-scheme: dark; }` — without it a user agent in light mode still paints " +
       "scrollbar, form controls and the pre-paint canvas from the LIGHT system palette, on top of a #131722 page. " +
       "Deleting the light block is necessary; this declaration is what makes it sufficient.",
+  );
+});
+
+// ── 1b. THE CANVAS IS THE SAME SURFACE AS THE PAGE — `DR-1` ──────────────────────────────────
+//
+// Section 1 above proves the PAGE paints one surface and that `SURFACE_BASE` names it. That was
+// never the whole chain: the series are painted on a `<canvas>`, and at `74d59a4` the canvas was
+// `#FFFFFF` while this file measured `#131722` — one true statement about CSS, one true statement
+// about the palette, and a screen that was wrong between them. These three assertions close the
+// gap, each measuring a different link.
+
+test("DR-1: the chart background IS the page surface — one value, not two that agree today", () => {
+  const theme = chartSurfaceTheme();
+  assert.equal(
+    theme.backgroundColor,
+    SURFACE_BASE,
+    "the color handed to `createChart` and the color every series ratio is measured against have to be the SAME " +
+      "value. At 74d59a4 they were #FFFFFF and #131722, the CVD delta line read 1,22:1 on screen against 14,72:1 " +
+      "in this gate, and every one of the six gates of `make verify` stayed green.",
+  );
+  // ...and the page agrees, read from the CSS as text (the assertion of section 1, re-tied here
+  // so the THREE-way identity is stated in one place: CSS == SURFACE_BASE == canvas).
+  const css = cssWithoutComments(readFileSync(GLOBALS_CSS, "utf8"));
+  assert.deepEqual(surfaceBaseDeclarations(css), [theme.backgroundColor]);
+});
+
+test("DR-1: the grid line is the SECOND citation of --color-surface-stripe, and it has not drifted", () => {
+  // `charts` may not read the DOM (`ADR-003` FR-1), so the value is a literal here — and a
+  // literal cited twice is a literal that can drift. This is the same guard `SURFACE_BASE`
+  // already carries, for the same reason.
+  const css = cssWithoutComments(readFileSync(GLOBALS_CSS, "utf8"));
+  const declared = [...css.matchAll(/--color-surface-stripe:\s*([^;{}]+);/g)].map((match) =>
+    normalizeCssColor(match[1]!),
+  );
+  assert.deepEqual(
+    declared,
+    [CHART_GRID_LINE.toLowerCase()],
+    `globals.css and chart-theme.ts disagree about the grid line (${declared.join(", ") || "none"} vs ` +
+      `${CHART_GRID_LINE}). The library default is #D6DCDE — a LIGHT-theme grid, and what the canvas would fall ` +
+      "back to the moment this citation stops being wired.",
+  );
+});
+
+test("DR-1: axis text clears WCAG 1.4.3 against the canvas it is drawn on", () => {
+  // `textColor` is TEXT, so its floor is 4,5:1, not 1.4.11's 3,0:1 — and the library default is
+  // `#191919`, which against `#131722` measures 1,02:1: the ruptura the review saw in the
+  // canvas' own frame. Measured here rather than asserted as a hex, so a future palette move is
+  // caught by arithmetic instead of by a string comparison.
+  const theme = chartSurfaceTheme();
+  const ratio = contrastRatio(theme.textColor, theme.backgroundColor);
+  assert.ok(
+    ratio >= 4.5,
+    `axis/crosshair text ${theme.textColor} on ${theme.backgroundColor} is ${ratio.toFixed(2)}:1, below WCAG 1.4.3`,
+  );
+  assert.equal(Number(ratio.toFixed(2)), 5.82, "`[MEDIDO 2026-09-12]` provenanceWeak on the chart surface");
+  // The library default, for the record and as the contrast to the number above.
+  assert.equal(Number(contrastRatio("#191919", SURFACE_BASE).toFixed(2)), 1.02);
+});
+
+// ── 1c. THE NEGATIVE CONTROL THAT REPRODUCES `DR-1`, ratio for ratio ──────────────────────────
+
+test("MORDE: a #FFFFFF canvas reproduces the DR-1 table and makes this gate REJECT the CVD delta line", () => {
+  // `#FFFFFF` is not an invented poison: it is `lightweight-charts`' published default, the exact
+  // background `74d59a4` shipped with, read out of the installed bundle —
+  //   grep -oE 'background:\{type:"?[a-zA-Z]+"?,color:"#[0-9a-fA-F]{3,6}"\}' \
+  //     frontend/node_modules/lightweight-charts/dist/lightweight-charts.production.mjs | head -1
+  //   -> background:{type:"solid",color:"#FFFFFF"}
+  const whiteCanvas: ChartSurfaceTheme = { ...chartSurfaceTheme(), backgroundColor: "#ffffff" };
+  const tokens = colorTokens();
+
+  // The five rows of the design review's table, `[MEDIDO 2026-09-12, n=5 papéis de cor]`. If this
+  // gate had been measuring the canvas instead of the page, these are the numbers it would have
+  // printed — and two of them are below the floor.
+  const onWhite = Object.fromEntries(
+    (Object.keys(CONTRAST_BACKDROP) as ColorRole[])
+      .filter((role) => CONTRAST_BACKDROP[role].kind === "surface")
+      .map((role) => [role, Number(measure(role, tokens, CONTRAST_BACKDROP[role], whiteCanvas).ratio.toFixed(2))]),
+  );
+  assert.deepEqual(onWhite, {
+    directionUpFill: 3.57,
+    directionDownFill: 3.9,
+    dataBrokenInk: 1.85,
+    provenanceStrong: 1.22,
+    provenanceWeak: 3.08,
+  });
+
+  // And the gate BITES on it — this is the assertion that makes the fix non-falsifiable. A future
+  // author who moves the chart background off the page surface does not get a green gate and a
+  // wrong screen; they get these two names.
+  const failures: string[] = [];
+  for (const role of Object.keys(CONTRAST_BACKDROP) as ColorRole[]) {
+    const { ratio, floor } = measure(role, tokens, CONTRAST_BACKDROP[role], whiteCanvas);
+    if (ratio < floor) failures.push(role);
+  }
+  assert.deepEqual(
+    failures.sort(),
+    ["dataBrokenInk", "provenanceStrong"],
+    "on the library's default canvas the CVD delta line (provenanceStrong, 1,22:1) and the integrity ink " +
+      "(1,85:1) are below WCAG 1.4.11's 3,0:1 — the gate has to name them, not shrug",
   );
 });
 

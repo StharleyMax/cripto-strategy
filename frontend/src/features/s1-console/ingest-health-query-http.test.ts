@@ -58,9 +58,27 @@ function assertPythonAvailable(): void {
  * variable unset would fail the import before `main()`'s own `create_app(target)` (line
  * ~218, storePath — the one this fixture actually serves) ever runs. `storePathForImport`
  * only needs an EXISTING parent; it is never read as a real store outside `print-fingerprint`
- * mode, which does not touch a store at all. */
+ * mode, which does not touch a store at all.
+ *
+ * ⚠️ `QUARANTINE_STORE_PATH` IS THE SECOND ONE, AND IT WAS THE MISSING HALF. `create_app` calls
+ * `_require_parent_directory` TWICE (`backend/src/main/__init__.py:261`), and the second call
+ * resolves `QUARANTINE_STORE_PATH` — default `data/md/series_quarantine.sqlite3` (`T-03.4`,
+ * added AFTER this fixture was written). Pinning only the ingest path left the quarantine path
+ * on its `data/md/` default, so every spawn here died at import with `store_parent_missing`:
+ * **8 fail / 105** on any checkout without `data/md/`, which is EVERY checkout, the main one
+ * included (`ls data/md` → does not exist)
+ * `[MEASURED 2026-09-12: npm --prefix frontend run test:s1 → pass 97 · fail 8]`.
+ *
+ * That is the failure this repository refuses to promote to a gate — `C5`'s shape: a gate red
+ * for a known ambient reason, behind which a real regression hides. It is fixed HERE rather
+ * than excluded THERE: the two variables are the two parents `create_app` demands, and both
+ * now name a directory that exists. */
 function pythonSubprocessEnv(storePathForImport: string): NodeJS.ProcessEnv {
-  return { ...process.env, INGEST_HEALTH_STORE_PATH: storePathForImport };
+  return {
+    ...process.env,
+    INGEST_HEALTH_STORE_PATH: storePathForImport,
+    QUARANTINE_STORE_PATH: path.join(path.dirname(storePathForImport), "series_quarantine.sqlite3"),
+  };
 }
 
 // ── ONE fixture (one run, one gap), built once in Python, reused by every mode ──────────────
