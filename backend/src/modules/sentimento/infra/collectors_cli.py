@@ -1453,6 +1453,23 @@ def _supervised(
         try:
             target(**kwargs)
         except BaseException:  # noqa: BLE001 — see docstring: the reason must not matter
+            # ORDER IS LOAD-BEARING: arm the net BEFORE reporting it, never after.
+            # These two lines ARE the safety net; `logger.critical` is only its report. While
+            # the log came first, ANY raise from inside logging left the net UNARMED and put
+            # the process straight back into the 18h45m state this wrapper exists to make
+            # impossible — thread dead, `run()` still sleeping, `docker inspect` still
+            # `running=true`. That is not hypothetical: it happened during construction, with
+            # `KeyError: Attempt to overwrite 'thread' in LogRecord` raised by
+            # `logging.makeRecord` from inside this very handler (see the `extra` comment
+            # below). And a logging call can raise for reasons this module does not own: a
+            # handler whose stream is already closed, an operator's own filter/formatter, a
+            # `queue.Full` on a `QueueHandler`. With the mutation first, such a raise still
+            # escapes to the default `excepthook` — deliberately NOT swallowed, because a net
+            # that fails must be loud — but the process ALREADY exits non-zero and the restart
+            # policy still fires.
+            # Proven by `test_the_process_still_exits_when_the_critical_log_itself_raises`.
+            exit_code[0] = 1
+            failure_event.set()
             logger.critical(
                 "collector_thread_died",
                 # `collector_thread`, NOT `thread`: `thread` is a RESERVED `LogRecord`
@@ -1464,8 +1481,6 @@ def _supervised(
                 extra={"collector_thread": thread_name},
                 exc_info=True,
             )
-            exit_code[0] = 1
-            failure_event.set()
 
     return _guarded
 

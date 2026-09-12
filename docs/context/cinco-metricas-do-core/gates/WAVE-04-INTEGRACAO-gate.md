@@ -39,10 +39,22 @@ exatamente o caso em que uma união se perde **em silêncio** — `git` não avi
 
 | família | linhas | fase que a trouxe |
 |---|---|---|
-| `cvd_source` (3 + `kline_takerbuy`) | 4 | **02** |
-| `sum_open_interest` (4 OHLC Coinalyze + 1 ponto Binance) | 5 | **03** |
+| `cvd_source` (3) | 3 | pré-existente |
+| `kline_takerbuy` | 1 | **02** |
+| `sum_open_interest` (4 OHLC Coinalyze + 1 ponto Binance) | 5 | pré-existente |
 | `klines_last` + `price_mark_close` | 2 | pré-existente |
 | `klines_volume` | 1 | pré-existente |
+
+> ⚠️ **A coluna "fase que a trouxe" acima foi CORRIGIDA depois do gate de QA — a versão original
+> deste relatório creditava `cvd_source`×4 à fase 02 e `sum_open_interest`×5 à fase 03.** Medido
+> reconstruindo o catálogo a partir de **cada commit-pai** e comparando **conjuntos de
+> `series_key_id`** (não contagens): `026b845` (master) **11**, `b18e333` (f05) **11**, `ae24e23`
+> (f03) **11**, `e9d0f8f` (f02) **12**, merge **12**; `LOST=[]`, `EXTRA=[]`
+> `[MEDIDO 2026-09-12, n=5 árvores — `gates/WAVE-04-INTEGRACAO-QA.md` §1]`. Ou seja: o `master`
+> **já tinha** 3 `cvd_source` + 5 `sum_open_interest`; da **fase 02** veio **1** linha
+> (`kline_takerbuy`) e a **fase 03** trouxe o **coletor**, nenhuma linha de catálogo. **O total
+> (12) e a união sempre estiveram certos; a procedência, não** — e procedência errada num
+> relatório de merge é o que faz o próximo leitor procurar uma perda de linha no lugar errado.
 
 E as **4 threads** de coletor sobreviveram ao merge — `collector-force-order`,
 `collector-premium-index`, `collector-klines`, `collector-open-interest`
