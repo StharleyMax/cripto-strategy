@@ -307,6 +307,47 @@ test(`o número de pontos do CvdPane é o da API, sobre a MESMA janela (${SPEC})
   fact(SPEC, "cvd_cumulative_anchor_fact", anchorFact);
   expect(anchorFact).toBe(`cvd_cumulative_anchor:${request.windowStartMs}`);
 
+  // ── (d2) `DR-3`: o ACUMULADO tem leitura numérica, e ela é do mesmo TIPO que a do delta ────
+  //
+  // O design-review de 2026-09-12 bloqueou o painel por isto: ele desenhava DUAS séries e lia
+  // exatamente UMA. A tela declarava a âncora do acumulado (`D4.7`, logo acima) e nunca dizia
+  // qual valor tinha sido ancorado — "há uma série renderizada sem nenhum falsificador de DOM
+  // sobre o seu valor".
+  //
+  // ⛔ E A ASSERÇÃO É DE ACORDO ENTRE OS DOIS READOUTS, não "existe um <p>". `cvdCumulativeScaled`
+  // (`charts/s2-cvd.ts:176-193`) acumula SÓ sobre bucket presente, a partir de `anchorMs`, e a
+  // âncora é `window.startMs` ⇒ o slot do acumulado é presente **se e somente se** o do delta é.
+  // Logo os dois `kind` têm de ser o MESMO, nos dois universos. Um acumulado que diga um número
+  // onde o delta diz `SEM_PONTO` é uma soma corrida inventada sobre um bucket sem observação,
+  // que é o defeito de `RN-1` uma série ao lado.
+  const cumulativeReadout = pane.locator('[data-fact^="cvd_cumulative_last_reading:"]');
+  await expect(
+    cumulativeReadout,
+    "o acumulado do CVD tem de ter leitura numérica no DOM — sem ela a tela declara a âncora e nunca diz o valor " +
+      "ancorado (DR-3 do design-review de 2026-09-12)",
+  ).toHaveCount(1);
+  const cumulativeKind = (await cumulativeReadout.getAttribute("data-fact"))?.split(":")[1] ?? "";
+  const deltaKind = (await pane.locator('[data-fact^="cvd_last_reading:"]').getAttribute("data-fact"))?.split(":")[1] ?? "";
+  const cumulativeText = (await cumulativeReadout.textContent())?.trim() ?? "";
+  fact(SPEC, "cvd_cumulative_last_reading_kind", cumulativeKind);
+  fact(SPEC, "cvd_cumulative_last_reading_text", cumulativeText);
+  expect(cumulativeKind).toBe(deltaKind);
+  if (cumulativeKind === "absent") {
+    expect(cumulativeText).toContain(ABSENCE_TOKEN);
+    expect(cumulativeText).not.toMatch(/\d/);
+  } else {
+    expect(cumulativeText).not.toContain(ABSENCE_TOKEN);
+    expect(cumulativeText).toMatch(/\d/);
+  }
+
+  // ── (d3) `DR-3`/WCAG 1.4.1: as duas linhas são NOMEADAS, não distinguidas só por cor ───────
+  const legend = pane.locator('[data-fact="cvd_legend:2"]');
+  await expect(legend).toHaveCount(1);
+  const legendText = (await legend.textContent())?.trim() ?? "";
+  fact(SPEC, "cvd_legend_text", legendText);
+  expect(legendText).toContain("Delta");
+  expect(legendText).toContain("Acumulado");
+
   // ── (e) o veredito por universo ────────────────────────────────────────────────────────────
   if (!readerPresent) {
     // A API acabou de declarar, sobre si mesma, que compôs o engine sqlite — que `ADR-034/D9` não

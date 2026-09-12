@@ -69,6 +69,18 @@ const CVD_ABSENT_BRANCH =
  * constant, same duplication-on-purpose rule as the testid above. */
 const PRESENT_POINTS_ATTRIBUTE = /data-cvd-present-points=\{cvd\.presentPoints\}/;
 const PAGE_ANCHOR_CHOICE = /cvdAnchorMs: routeWindow\.window\.startMs,/;
+/** `DR-2`: the cumulative curve on a price scale of its OWN. The delta keeps the default right
+ * scale; sharing it flattens one of the two into nothing, because `max|cum| >= max|delta|` holds
+ * BY CONSTRUCTION (the cumulative is the running sum of the very deltas beside it, anchored
+ * before the first plotted point). Spelled out rather than imported, same duplication-on-purpose
+ * rule as the testid. */
+const CUMULATIVE_OWN_SCALE = /priceScaleId: CVD_CUMULATIVE_PRICE_SCALE_ID,/;
+const CUMULATIVE_SCALE_DECLARATION = /const CVD_CUMULATIVE_PRICE_SCALE_ID = "([^"]*)";/;
+/** `DR-3`: the absent branch of the CUMULATIVE readout, which did not exist before — the pane
+ * drew two series and read exactly one. */
+const CVD_CUMULATIVE_ABSENT_BRANCH =
+  /cumulativeReading\.kind === "absent" \|\| cumulativeReading\.value === null\s*\n?\s*\? ABSENCE_TOKEN/;
+const CVD_CUMULATIVE_READOUT_FACT = /data-fact=\{`cvd_cumulative_last_reading:\$\{cumulativeReading\.kind\}`\}/;
 
 test("T-02.6 contract: the CVD pane carries the STABLE testid, spelled exactly", () => {
   const declaration = TESTID_DECLARATION.exec(source);
@@ -190,6 +202,70 @@ test("the CVD panel selects the kline_takerbuy row by TERM, never by metric alon
   );
 });
 
+// ── DR-2 / DR-3: what the design_gate REJECTED, guarded so it cannot come back ────────────────
+//
+// `gates/design-review-painel-cvd.md` blocked this pane on three findings. `DR-1` (the white
+// canvas) is guarded by `chart-construction.test.ts` + `color-contrast.test.ts` +
+// `e2e/11-canvas-fundo.spec.ts`. The two below are guarded here, because they are properties of
+// what this file already scans.
+//
+// ⛔ AND THESE ARE NOT FORM. The `CALA` test at the bottom of this file says colour and wording
+// are the `ui-designer`'s to change without touching a single assert — that stays true. A shared
+// price scale is not a colour choice: it is `max|delta| / max|cum|` of the panel's height for one
+// of the two series, arithmetic, and the file itself already argued so for the volume sub-axis
+// 200 lines above the place where it then did the opposite. Likewise, "which line is which"
+// carried ONLY by hue is WCAG 1.4.1, a failure with a number attached, not a taste.
+
+test("DR-2: the cumulative curve gets a price scale of its OWN — a shared scale flattens one series", () => {
+  const declaration = CUMULATIVE_SCALE_DECLARATION.exec(source);
+  assert.ok(declaration !== null, "CVD_CUMULATIVE_PRICE_SCALE_ID declaration not found — the anchor moved");
+  assert.notEqual(
+    declaration[1],
+    "",
+    'an empty priceScaleId is the DEFAULT right scale spelled differently — that is the defect, not the fix',
+  );
+  assert.match(source, CUMULATIVE_OWN_SCALE, "the cumulative series must declare its own priceScaleId");
+  // ...and it must actually get margins, like the volume sub-axis does — an overlay scale with
+  // the default margins sits on top of the delta instead of beside it.
+  assert.match(source, /cumulativeSeries\.priceScale\(\)\.applyOptions\(\{ scaleMargins: CVD_CUMULATIVE_SCALE_MARGINS \}\)/);
+  assert.match(source, /deltaSeries\.priceScale\(\)\.applyOptions\(\{ scaleMargins: CVD_DELTA_SCALE_MARGINS \}\)/);
+});
+
+test("DR-3/WCAG 1.4.1: the two lines are distinguished by MORE than colour, and both are named", () => {
+  // Channel 1 — inside the canvas, where no legend reaches: dash vs solid.
+  assert.match(source, /lineStyle: LineStyle\.Solid,/, "the delta line must declare its style explicitly");
+  assert.match(source, /lineStyle: LineStyle\.Dashed,/, "the cumulative line must not differ from the delta by hue alone");
+  // Channel 2 — the words. A legend that only shows swatches is colour-only with extra steps.
+  assert.match(source, /Delta \(linha cheia\)/);
+  assert.match(source, /Acumulado \(linha tracejada\)/);
+  assert.match(source, /<CvdLegend \/>/, "the legend must be RENDERED, not merely declared");
+});
+
+test("DR-3: the cumulative curve has a NUMBER in the DOM, with the same absence token as the delta", () => {
+  // The screen went to the trouble of naming the anchor of this curve (`D4.7`) and then never
+  // said what value the anchor produced. One token, now five readouts — the reasoning of
+  // `ABSENCE_TOKEN`'s own comment ("um token, quatro readouts") applied to the fifth.
+  assert.match(source, CVD_CUMULATIVE_READOUT_FACT, "the cumulative reading needs a machine-readable data-fact");
+  assert.match(source, /Acumulado atual: \{cumulativeReadingText\}/);
+  assert.match(
+    source,
+    CVD_CUMULATIVE_ABSENT_BRANCH,
+    "absence of a cumulative value must resolve to ABSENCE_TOKEN — a running sum with a missing bucket is a " +
+      "missing sum, and a `0` there would be the RN-1 defect one series over",
+  );
+  // ...and it is resolved with the FLOW policy, never the STOCK one: carrying the previous total
+  // forward would be LOCF over a series whose absences are real gaps in observation.
+  assert.match(source, /const cumulativeReading = resolveFlowReading\(/);
+});
+
+test("DR-6: the canvas host is hidden from the accessibility tree, with the readouts as its alternative", () => {
+  // `lightweight-charts` paints into a `<canvas>` with no accessible name; a screen reader used
+  // to find a nameless empty node. This does not make the SERIES accessible (that is DR-10, a
+  // keyboard-navigable table, strategic) — it stops the tree from carrying a node that says
+  // nothing, next to readouts that say the last instant.
+  assert.match(source, /ref=\{containerRef\}\s*\n\s*aria-hidden="true"/);
+});
+
 // ── MORDE: the four mutations that were GREEN before this file existed ────────────────────────
 
 test("MORDE: each of the 4 CVD DOM-contract mutations that used to pass green is now caught", () => {
@@ -220,14 +296,24 @@ test("MORDE: each of the 4 CVD DOM-contract mutations that used to pass green is
 // ── CALA: form is the `ui-designer`'s to change, and changing it must not touch any assert ────
 
 test("CALA: a design_gate NEEDS_FIX about colour or wording leaves the CVD contract intact", () => {
+  // ⚠️ RE-ANCHORED after the `design_gate` of 2026-09-12: the delta series no longer reads
+  // `{ color: tokens.provenanceStrong }` on one line — `DR-2`/`DR-3` gave it a `lineStyle` and a
+  // `scaleMargins` call. The CALA is re-pointed rather than dropped, exactly as its own message
+  // demands ("re-anchor this CALA rather than dropping it"); what it proves is unchanged, and it
+  // now also proves that moving the LEGEND's wording touches no contract either.
   const restyled = source
-    .replace(/const deltaSeries: ISeriesApi<"Line"> = chart\.addSeries\(LineSeries, \{ color: tokens\.provenanceStrong \}\);/, 'const deltaSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, { color: tokens.provenanceWeak });')
+    .replace(/color: tokens\.provenanceStrong,/, "color: tokens.provenanceWeak,")
     .replace(/CVD \(delta e acumulado\)/, "CVD — fluxo agressor (delta e acumulado)")
-    .replace(/Delta atual: \{readingText\}/, "Delta do último minuto: {readingText}");
+    .replace(/Delta atual: \{readingText\}/, "Delta do último minuto: {readingText}")
+    .replace(/Acumulado \(linha tracejada\)/, "Soma corrida (tracejada)");
   assert.notEqual(restyled, source, "the form constants moved — re-anchor this CALA rather than dropping it");
   assert.equal(TESTID_DECLARATION.exec(restyled)?.[1], EXPECTED_TESTID);
   assert.equal(ABSENCE_TOKEN_DECLARATION.exec(restyled)?.[1], EXPECTED_ABSENCE_TOKEN);
   assert.match(restyled, PRESENT_POINTS_ATTRIBUTE);
   assert.match(restyled, CVD_ABSENT_BRANCH);
   assert.match(restyled, /data-testid=\{CVD_PANE_TESTID\}/);
+  // The two contracts `DR-2`/`DR-3` added survive a restyle too — otherwise the next design pass
+  // would have to choose between good wording and a guarded pane.
+  assert.match(restyled, CUMULATIVE_OWN_SCALE);
+  assert.match(restyled, CVD_CUMULATIVE_READOUT_FACT);
 });

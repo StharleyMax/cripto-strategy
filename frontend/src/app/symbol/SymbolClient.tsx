@@ -25,6 +25,17 @@
  * becomes a bare `{time}` `WhitespaceItem`, which the library places on the axis and draws
  * NOTHING for — never a `0` (`CA-F2-3`).
  *
+ * ⛔ THE `design_gate` OF 2026-09-12 BLOCKED THIS FILE ON THREE FINDINGS, and the three are paid
+ * here (`docs/context/cinco-metricas-do-core/gates/design-review-painel-cvd.md`):
+ *   - `DR-1` — `createChart` had no `layout`, so every canvas kept the library default `#FFFFFF`
+ *     inside a `#131722` page and the CVD delta line measured 1,22:1 ON SCREEN against 14,72:1 in
+ *     the contrast gate. Options now come from `chartConstructorOptions()`, and three instruments
+ *     make the divergence detectable instead of silent — see that module's docstring.
+ *   - `DR-2` — delta and cumulative shared the default price scale, which flattens one of the two
+ *     by construction (`max|cum| >= max|delta|`). The cumulative got a scale of its own.
+ *   - `DR-3` — the two lines were distinguished ONLY by hue (WCAG 1.4.1) and the cumulative had no
+ *     number anywhere in the DOM. Dash pattern + legend + `Acumulado atual:` readout.
+ *
  * Below each chart, a small "leitura atual" readout exercises the barrel's absence-policy
  * functions (`resolveStockReading`/`resolveFlowReading`) at the window's own last instant —
  * `D5.2`/`D5.3`'s STOCK-held/FLOW-absent rules, genuinely read here, not merely imported.
@@ -45,7 +56,7 @@ import type {
   LineSeriesOptions,
   ISeriesApi,
 } from "lightweight-charts";
-import { CandlestickSeries, createChart, HistogramSeries, LineSeries } from "lightweight-charts";
+import { CandlestickSeries, createChart, HistogramSeries, LineSeries, LineStyle } from "lightweight-charts";
 
 import {
   candlestickSeriesColors,
@@ -60,6 +71,7 @@ import {
   type FlowReading,
   type S2Panels,
 } from "../../charts/index.ts";
+import { chartConstructorOptions } from "./chart-options.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type { PanelStatus, SymbolPanelStatuses } from "./panel-status.ts";
 
@@ -169,17 +181,26 @@ function lastInstantMs(panels: S2Panels): number {
   return lastGridInstant(panels.window, ONE_MINUTE_MS);
 }
 
+/** ⛔ FORM, submitted to the `design_gate` — `DR-4` of `gates/design-review-painel-cvd.md` asks
+ * for a `ResizeObserver`/`autoSize` on top of this, and that is a MEDIUM item of that report's
+ * roadmap, not one of the three blockers this pass exists to clear. Named as a constant here so
+ * the next pass has one place to change instead of a literal inside a call. */
+const CHART_HEIGHT_PX = 220;
+
 function useLightweightChart(containerRef: RefObject<HTMLDivElement | null>, build: (chart: IChartApi) => void): void {
   useEffect(() => {
     const container = containerRef.current;
     if (container === null) {
       return;
     }
-    const chart = createChart(container, {
-      width: container.clientWidth || 600,
-      height: 220,
-      timeScale: { timeVisible: true, secondsVisible: false },
-    });
+    // ⛔ THE OPTIONS ARE NOT SPELLED HERE, AND THAT IS THE FIX — `DR-1` of
+    // `gates/design-review-painel-cvd.md`. This call used to pass `width`/`height`/`timeScale`
+    // only, so the canvas kept the library default `#FFFFFF` background inside a `#131722`
+    // page and the CVD delta line measured `1,22:1` on screen while `color-contrast.test.ts`
+    // read `14,72:1` against a surface nothing was painted on. Building the options here
+    // instead of naming them would have fixed THIS pane and left the next one free to do it
+    // again: `chart-construction.test.ts` can only require a NAME.
+    const chart = createChart(container, chartConstructorOptions(container.clientWidth || 600, CHART_HEIGHT_PX));
     build(chart);
     chart.timeScale().fitContent();
     return () => {
@@ -246,6 +267,24 @@ const ABSENCE_TOKEN = "SEM_PONTO";
 // of the two series into nothing.
 const VOLUME_PRICE_SCALE_ID = "volume";
 const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 } as const;
+
+// ⛔ AND THE SAME ARGUMENT, APPLIED WHERE IT IS STRONGER — `DR-2` of
+// `gates/design-review-painel-cvd.md`. The two CVD series used to share the default right
+// scale, in the same commit that wrote the sentence four lines above. The review's point is
+// arithmetic, not taste: the cumulative IS the running sum of the very deltas plotted beside
+// it, anchored at `window.startMs` (`page.tsx`, `cvdAnchorMs`), i.e. BEFORE the first plotted
+// point — so `max|cum| >= max|delta|` BY CONSTRUCTION, with equality only in the degenerate
+// single-bucket case. On a shared scale the axis reads in units of cumulative and the delta
+// gets `max|delta| / max|cum|` of the panel's height. That is the flattening the volume
+// sub-axis already refuses.
+//
+// So: delta keeps the default right scale (it is the series the readout and `DoD-3` are about,
+// and it is the one that gets axis labels), and the cumulative goes to a scale of its own,
+// stacked under it — the same `priceScaleId` + `scaleMargins` idiom as the volume sub-axis.
+// ⛔ The MARGINS are form (`ui-designer` + `ux-ui-mastery`); the SEPARATION is structural.
+const CVD_CUMULATIVE_PRICE_SCALE_ID = "cvd_cumulative";
+const CVD_DELTA_SCALE_MARGINS = { top: 0.05, bottom: 0.55 } as const;
+const CVD_CUMULATIVE_SCALE_MARGINS = { top: 0.55, bottom: 0.05 } as const;
 
 /**
  * The sub-axis' DOM anchor. The bars themselves are drawn on the price panel's own `<canvas>`
@@ -429,6 +468,42 @@ function CvdReadableHorizon({ cvd, gridSlots }: { readonly cvd: CvdPaneData; rea
   );
 }
 
+/** `DR-3`/WCAG 1.4.1 — the pane's two lines, named. Before this, the ONLY thing on screen that
+ * mentioned them was the `<h2>` ("CVD (delta e acumulado)"); which line was which could be
+ * discovered by trial and error and nothing else, and with `DR-1` unfixed the operator did not
+ * even see two lines.
+ *
+ * Three channels carry the same distinction, on purpose, so no single loss erases it: the COLOR
+ * (`provenanceStrong`/`provenanceWeak`), the DASH PATTERN (`LineStyle.Solid`/`Dashed`, drawn in
+ * the canvas), and this TEXT. `aria-hidden` on the swatch is deliberate — it is the redundant
+ * copy of information the adjacent words already carry, and announcing "▬" adds nothing.
+ *
+ * The swatch's color comes from `colorTokens()`, the SAME call the series style comes from, so a
+ * legend that lies about a series colour is not expressible here.
+ *
+ * ⛔ WORDING AND PLACEMENT ARE FORM — the `ui-designer`'s with the `ux-ui-mastery` verdict
+ * (`CLAUDE.md` §"Design — autonomia delegada, com gate de validação"). What a builder decides is
+ * that the encoding is not colour-only. */
+function CvdLegend() {
+  const tokens = colorTokens();
+  return (
+    <ul className="flex gap-4 text-sm text-provenance-weak" data-fact="cvd_legend:2">
+      <li>
+        <span aria-hidden="true" style={{ color: tokens.provenanceStrong }}>
+          ▬
+        </span>{" "}
+        Delta (linha cheia)
+      </li>
+      <li>
+        <span aria-hidden="true" style={{ color: tokens.provenanceWeak }}>
+          ▬ ▬
+        </span>{" "}
+        Acumulado (linha tracejada)
+      </li>
+    </ul>
+  );
+}
+
 function CvdPane({
   panels,
   status,
@@ -441,18 +516,49 @@ function CvdPane({
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, (chart) => {
     const tokens = colorTokens();
-    const deltaSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, { color: tokens.provenanceStrong });
+    // ⛔ `LineStyle.Dashed` is NOT decoration — it is `DR-3`/WCAG 1.4.1 (Use of Color) inside the
+    // canvas, where no legend reaches: with two lines distinguished ONLY by hue, a dicromata or a
+    // monochrome screenshot carries no way to tell delta from cumulative. Dash vs solid is a
+    // SECOND channel, and the legend below repeats it in words, so the information survives the
+    // loss of any one of the three.
+    const deltaSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, {
+      color: tokens.provenanceStrong,
+      lineStyle: LineStyle.Solid,
+    });
+    deltaSeries.priceScale().applyOptions({ scaleMargins: CVD_DELTA_SCALE_MARGINS });
     deltaSeries.setData(lineSeriesLossless(panels.cvd.deltaSlots) as never);
-    const cumulativeSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, { color: tokens.provenanceWeak });
+    const cumulativeSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, {
+      color: tokens.provenanceWeak,
+      lineStyle: LineStyle.Dashed,
+      priceScaleId: CVD_CUMULATIVE_PRICE_SCALE_ID,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    cumulativeSeries.priceScale().applyOptions({ scaleMargins: CVD_CUMULATIVE_SCALE_MARGINS });
     cumulativeSeries.setData(lineSeriesLossless(panels.cvd.cumulativeSlots) as never);
   });
   const deltaReading = resolveFlowReading(panels.cvd.deltaSlots, panels.cvd.timeframeMs, lastInstantMs(panels));
+  // `DR-3`, second half: the pane drew TWO series and read exactly ONE. The screen went to the
+  // trouble of naming the anchor of the cumulative curve (`D4.7`) and then never said what value
+  // that anchor produced. Same function, same absence policy, same token as the delta — the
+  // cumulative is a running sum of `FLOW` buckets, so a missing bucket is a missing sum, never a
+  // `0`. (`resolveFlowReading`, not `resolveStockReading`: carrying the previous total forward
+  // would be LOCF over a series whose absences are real gaps in observation.)
+  const cumulativeReading = resolveFlowReading(
+    panels.cvd.cumulativeSlots,
+    panels.cvd.timeframeMs,
+    lastInstantMs(panels),
+  );
   // `RN-1` at the RENDERING layer, and for this series it is a rule of TYPE: a `FLOW` bucket with
   // no observation is NOT a bucket where buyers and sellers balanced out. A `0` there would be an
   // ASSERTION about the market ("não houve desequilíbrio comprador/vendedor neste minuto") made
   // out of ignorance — `series_key.py`: "LOCF over it is a type error, never UX".
   const readingText =
     deltaReading.kind === "absent" || deltaReading.value === null ? ABSENCE_TOKEN : String(deltaReading.value);
+  const cumulativeReadingText =
+    cumulativeReading.kind === "absent" || cumulativeReading.value === null
+      ? ABSENCE_TOKEN
+      : String(cumulativeReading.value);
   const gridSlots = panels.cvd.deltaSlots.length;
   return (
     <section
@@ -461,9 +567,23 @@ function CvdPane({
       data-cvd-present-points={cvd.presentPoints}
     >
       <h2 className="font-label-caps text-label-caps text-on-surface">CVD (delta e acumulado)</h2>
-      <div ref={containerRef} data-fact={`cvd_slots:${panels.cvd.deltaSlots.length}`} />
+      <CvdLegend />
+      {/* ⛔ `aria-hidden` on the canvas host — `DR-6`. `lightweight-charts` paints into a
+          `<canvas>` with no accessible name, so a screen reader finds an empty node here and a
+          user cannot tell an empty chart from an unlabelled one. The readouts below ARE the
+          declared textual alternative for the last instant; hiding the host says so instead of
+          leaving a nameless node in the tree. A per-point alternative (a keyboard-navigable
+          table) is `DR-10`, strategic, not this pass. */}
+      <div
+        ref={containerRef}
+        aria-hidden="true"
+        data-fact={`cvd_slots:${panels.cvd.deltaSlots.length}`}
+      />
       <p data-fact={`cvd_last_reading:${deltaReading.kind}`} className="text-sm text-provenance-weak">
         Delta atual: {readingText}
+      </p>
+      <p data-fact={`cvd_cumulative_last_reading:${cumulativeReading.kind}`} className="text-sm text-provenance-weak">
+        Acumulado atual: {cumulativeReadingText}
       </p>
       <CvdReadableHorizon cvd={cvd} gridSlots={gridSlots} />
       {/* The anchor of the CUMULATIVE curve, named on screen. The delta line above needs none;
