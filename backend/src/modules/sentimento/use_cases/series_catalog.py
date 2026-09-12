@@ -52,6 +52,19 @@ eleventh row. The number above moves from 10 to 11 for the same reason it was ne
 builders. A FOURTH source module now feeds this function, which is the only structural change —
 the envelope, the field names and the order of the ten pre-existing rows are untouched (`RS-1`:
 content may change here, form may not).
+
+── `T-02.4` (`SPEC-007` §4.5, `RF-2`): THE COUNT IS 12, AND THE NEW ROW GOES AT THE TAIL ─────
+
+`cvd_source`/`kline_takerbuy` (`T-02.2`, CVD off the SAME `/fapi/v1/klines` array as M1) is the
+twelfth row, appended AFTER `klines_volume`. Appended and not grouped with the three other
+`cvd_source` rows, which is the tidier place for it and the wrong one: inserting at index 3
+would shift the eight rows that follow, and `RS-1` lets this feature change the catalog's
+CONTENT while forbidding it to change the FORM — the ORDER of `"entries"` being form. A permuted
+list is the failure mode no field of the response reports.
+
+So the two `SPEC-007` rows sit at the tail in the order the phases added them: `klines_volume`
+at index 10 (`T-01.6`), `kline_takerbuy` at index 11 (`T-02.4`). `n_entries` follows
+`len(entries)`, as it always has.
 """
 
 from __future__ import annotations
@@ -60,7 +73,10 @@ import logging
 from collections.abc import Sequence
 from typing import Final
 
-from src.modules.sentimento.domain.cvd_source_catalog import build_cvd_source_catalog_entries
+from src.modules.sentimento.domain.cvd_source_catalog import (
+    build_cvd_source_catalog_entries,
+    build_kline_takerbuy_entry,
+)
 from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
 from src.modules.sentimento.domain.open_interest_catalog import open_interest_catalog_entries
@@ -162,6 +178,9 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
     check — a real cross-source collision would raise `DuplicateSeriesKeyError` here rather than
     silently keep one of the two rows.
 
+    `T-02.4` APPENDS `cvd_source`/`kline_takerbuy` after it, at index 11, for the same `RS-1`
+    reason and NOT beside its three `cvd_source` siblings — see this module's docstring.
+
     `T-01.6` APPENDS `klines_volume` (`SPEC-007` §4, row M1) as the eleventh row. Appended, not
     inserted: `RS-1` lets this task change the catalog's CONTENT and forbids changing its FORM,
     and the ORDER of `"entries"` is form — appending leaves all ten pre-existing rows at the
@@ -179,6 +198,7 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
         build_klines_volume_entry(
             instrument_id, unit=base_asset(instrument_id), verified_by=_KLINES_VOLUME_VERIFIED_BY
         ),
+        build_kline_takerbuy_entry(instrument_id, unit=base_asset(instrument_id)),
     ]
     # DEBUG, not INFO — same reasoning `ingest_health_query` already documents: this read path
     # is not a byte contract of its own, but a library that logs at INFO by default imposes its

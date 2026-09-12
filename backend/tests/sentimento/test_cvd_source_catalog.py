@@ -16,6 +16,7 @@ from src.modules.sentimento.domain.cvd_source_catalog import (
     COINALYZE_BV_MEASUREMENT,
     CVD_SOURCE_METRIC,
     CVD_SOURCES,
+    KLINE_TAKERBUY_VERIFIED_BY,
     REGISTERED_CVD_SOURCES,
     CvdSourceMeasurement,
     InvalidCvdSourceMeasurementError,
@@ -25,6 +26,7 @@ from src.modules.sentimento.domain.cvd_source_catalog import (
     build_aggtrade_q_entry,
     build_coinalyze_bv_entry,
     build_cvd_source_catalog_entries,
+    build_kline_takerbuy_entry,
 )
 from src.modules.sentimento.domain.series_catalog import (
     InvalidCatalogEntryError,
@@ -57,10 +59,18 @@ def test_cvd_sources_is_spec_001_section_3_7_closed_set() -> None:
     )
 
 
-def test_registered_cvd_sources_is_the_three_this_task_populates() -> None:
-    """`T-06.9` registers exactly `aggtrade_q`, `aggtrade_nq`, `coinalyze_bv` — no more."""
-    assert REGISTERED_CVD_SOURCES == frozenset({"aggtrade_q", "aggtrade_nq", "coinalyze_bv"})
+def test_registered_cvd_sources_is_the_four_populated_so_far() -> None:
+    """`T-06.9` registered three; `T-02.2` adds `kline_takerbuy`. The other two stay OUT.
+
+    `rest_taker_vol` and `metrics_ratio` are still `[NAO MEDIDO]` — this assertion is what
+    stops a future task from quietly registering a row for a source nobody measured.
+    """
+    assert REGISTERED_CVD_SOURCES == frozenset(
+        {"aggtrade_q", "aggtrade_nq", "coinalyze_bv", "kline_takerbuy"}
+    )
     assert REGISTERED_CVD_SOURCES <= CVD_SOURCES
+    assert "rest_taker_vol" not in REGISTERED_CVD_SOURCES
+    assert "metrics_ratio" not in REGISTERED_CVD_SOURCES
 
 
 # ── `aggtrade_q` / `aggtrade_nq` — direct reads, NOT reconstructions ────────────────────────
@@ -144,13 +154,116 @@ def test_coinalyze_bv_measurement_records_the_refuted_maker_hypothesis_without_a
     assert "maker" in hypotheses[0].description.lower()
 
 
-def test_build_cvd_source_catalog_entries_returns_the_three_registered_sources() -> None:
-    """The three rows coexist in one catalog without a `DuplicateSeriesKeyError`."""
+def test_build_cvd_source_catalog_entries_returns_the_three_rows_t_06_9_registered() -> None:
+    """The three rows coexist in one catalog without a `DuplicateSeriesKeyError`.
+
+    ⛔ THE FOURTH SOURCE IS DELIBERATELY ABSENT FROM THIS TUPLE, and that is not an oversight:
+    grouping `kline_takerbuy` with its three siblings would INSERT it at index 3 of the served
+    catalog and shift the eight rows that follow. `RS-1` forbids this feature from changing the
+    FORM of `"entries"`, and the order is form — so `T-02.4` appends it at the TAIL, in
+    `use_cases/series_catalog.py`. The test that it is served lives there, next to the append.
+    """
     entries = build_cvd_source_catalog_entries("BTCUSDT", unit="BTC", verified_by=_VERIFIED_BY)
 
     assert len(entries) == 3
     catalog = build_series_catalog(entries)
     assert len(catalog.entries) == 3
+
+
+def test_the_fourth_source_coexists_with_the_three_without_colliding_with_any() -> None:
+    """All four `cvd_source` rows live in ONE catalog — no two agree on all fifteen terms.
+
+    This is the assertion the count cannot make: `build_series_catalog` re-validates
+    `SPEC-001` §3.3's "UMA linha por `SeriesKey`" over the combined tuple, so a fourth row that
+    accidentally collided would raise here instead of silently replacing one of the three.
+
+    Morde: give `build_kline_takerbuy_entry` `quantity_field=Q` and it collides with
+    `aggtrade_q`; give it `provider="coinalyze"` and it collides with `coinalyze_bv`. Either
+    mutation raises `DuplicateSeriesKeyError` on the line below.
+    """
+    entries = (
+        *build_cvd_source_catalog_entries("BTCUSDT", unit="BTC", verified_by=_VERIFIED_BY),
+        build_kline_takerbuy_entry("BTCUSDT", unit="BTC"),
+    )
+
+    catalog = build_series_catalog(entries)
+    assert len(catalog.entries) == 4
+    assert len({entry.key.series_key_id() for entry in entries}) == 4
+
+
+# ── `kline_takerbuy` (`T-02.2`) — the fourth source, and the one that is NOT a reconstruction
+
+
+def test_kline_takerbuy_is_not_a_reconstruction_because_the_falsifier_said_so() -> None:
+    """`reconstructed_from` and `published_error` are BOTH `None` — `T-02.1`'s verdict.
+
+    This is not an omission dressed as a decision: the falsifier
+    (`scripts/cvd-klines-falsifier/falsify_reconstructed_from.py`) compared the expression
+    against `cvd.cvd_delta_by_bucket` of the canonical `aggTrade` dump over `n=4.320` buckets
+    and found 276 runs of divergent buckets, ZERO with a residual `[MEDIDO 2026-09-12,
+    `gates/T-02.1-falsificador-reconstructed-from.md`]`.
+
+    Morde: declare `reconstructed_from="aggtrade_q"` here and `SeriesCatalogEntry.__post_init__`
+    (`D6.9`) refuses the row outright for lacking a `published_error` — which is exactly the
+    guard that makes this pair of `None`s a claim rather than a default.
+    """
+    entry = build_kline_takerbuy_entry("BTCUSDT", unit="BTC")
+
+    assert entry.reconstructed_from is None
+    assert entry.published_error is None
+
+
+def test_kline_takerbuy_reads_from_the_origin_and_not_from_an_aggtrade_quantity() -> None:
+    """`provider="binance"` with `quantity_field=NA` — the pair that makes it the fourth row.
+
+    Against `aggtrade_q`/`aggtrade_nq` it is `quantity_field`; against `coinalyze_bv` it is
+    `provider`. No single term separates it from all three, which is why both are asserted.
+    """
+    entry = build_kline_takerbuy_entry("BTCUSDT", unit="BTC")
+    key = entry.key
+
+    assert key.provider == "binance"
+    assert key.quantity_field is QuantityField.NA
+    assert key.metric == CVD_SOURCE_METRIC
+    assert key.interval == "1m"
+    assert key.denom == "base"
+    assert key.nature is Nature.FLOW
+    assert key.reduction is Reduction.SUM
+    assert key.ts_convention is TsConvention.AGGREGATE_OVER_BUCKET
+    assert entry.native_grid == "1min"
+    assert entry.price_use is None
+
+
+def test_kline_takerbuy_carries_the_instruments_own_base_asset_never_a_default() -> None:
+    """`unit` is required; `ETHUSDT` is denominated in `ETH`, and the ids differ because of it.
+
+    Morde: default `unit` to `"BTC"` in the builder and the two ids below collapse into one,
+    merging two markets into a single series.
+    """
+    btc = build_kline_takerbuy_entry("BTCUSDT", unit="BTC").key
+    eth = build_kline_takerbuy_entry("ETHUSDT", unit="ETH").key
+
+    assert btc.unit == "BTC"
+    assert eth.unit == "ETH"
+    assert btc.series_key_id() != eth.series_key_id()
+
+
+def test_the_verified_by_of_this_row_has_exactly_one_home() -> None:
+    """The writer and the served catalog cannot drift, because neither one spells the string.
+
+    `verified_by` is the fifteenth term of `SeriesKey`, so it enters `series_key_id()`. Two
+    copies of it (the shape `klines_volume` took) can diverge and the failure is SILENT: `200`
+    with `n_points = 0`. Here the builder hardcodes the constant and no caller may override it.
+
+    Morde: add a `verified_by` parameter to the builder and this test stops compiling the
+    guarantee it names — the id would then depend on a caller nobody can enumerate.
+    """
+    entry = build_kline_takerbuy_entry("BTCUSDT", unit="BTC")
+
+    assert entry.key.verified_by == KLINE_TAKERBUY_VERIFIED_BY
+    assert KLINE_TAKERBUY_VERIFIED_BY == "test_cvd_source_catalog.py"
+    with pytest.raises(TypeError):
+        build_kline_takerbuy_entry("BTCUSDT", unit="BTC", verified_by="other")  # type: ignore[call-arg]
 
 
 # ── `D6.9` itself, reproduced against THIS module's row shape ──────────────────────────────

@@ -784,6 +784,10 @@ class _KlinesPassTotals:
     the `RS-3.4` anti-lookahead cut plus whatever the watermark already had, and collapsing
     them would make the cut invisible in exactly the record an operator would consult to ask
     whether it is happening at all.
+
+    Both count BARS, and they have to keep counting bars for that subtraction to mean anything:
+    since `T-02.3` one bar becomes two `SeriesRow`s (see `_publish_klines_page`), so a
+    row-counting `n_published` would exceed `n_returned` and turn the cut's size negative.
     """
 
     n_returned: int = 0
@@ -823,7 +827,16 @@ def _publish_klines_page(
     run_id: str,
     watermark: dict[str, int],
 ) -> int:
-    """Publish the CLOSED, not-yet-seen bars of one page; return how many reached the stream.
+    """Publish the CLOSED, not-yet-seen bars of one page; return how many BARS reached the stream.
+
+    ⛔ BARS, NOT ROWS, AND SINCE `T-02.3` THOSE ARE DIFFERENT NUMBERS. `build_klines_to_rows`
+    now emits TWO rows per closed bar (`klines_volume` and `cvd_source`/`kline_takerbuy`, two
+    identities off one array). Returning `len(rows)` would double `n_published` and silently
+    destroy the one reading `_KlinesPassTotals` promises for it — that `n_returned -
+    n_published` is the size of the `RS-3.4` anti-lookahead cut plus the watermark. Counting
+    DISTINCT `bucket_end`s keeps that difference meaning what it says, and keeps meaning it when
+    phase `04` hangs a third identity off the same page. The count of ROWS is not lost: it is
+    `n_written`, measured by the single writer that actually puts them in `md.series`.
 
     The `RS-3.4` cut itself is NOT made here — it lives in
     `use_cases/collector_series_mapping.is_closed_bucket`, where its sign is under test. This
@@ -845,7 +858,7 @@ def _publish_klines_page(
         sink.accept(row, run_id=run_id)
     if rows:
         watermark[symbol] = max(row.bucket_end for row in rows) - KLINES_BUCKET_WIDTH_MS
-    return len(rows)
+    return len({row.bucket_end for row in rows})
 
 
 def _collect_klines_for_symbol(

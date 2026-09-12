@@ -39,6 +39,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from src.main import create_app
+from src.modules.sentimento.domain.cvd_source_catalog import CVD_SOURCE_METRIC
 from src.modules.sentimento.domain.klines_volume_catalog import KLINES_VOLUME_METRIC
 from src.modules.sentimento.domain.series_key import (
     Nature,
@@ -122,11 +123,32 @@ def _key_from_wire(wire: dict[str, Any]) -> SeriesKey:
     )
 
 
-def _one_written_row_series_key_id(instrument_id: str) -> str:
-    """Return the `series_key_id` the COLLECTOR stamps on a `klines_volume` row it publishes.
+def _is_klines_borne(key_wire: dict[str, object]) -> bool:
+    """Say whether a served key is one of the TWO identities `/fapi/v1/klines` feeds.
+
+    `klines_volume` (`T-01.1`) and `cvd_source` with `provider="binance"`/`quantityField="NA"`
+    (`kline_takerbuy`, `T-02.2`). The `cvd_source` predicate needs both terms: `quantityField`
+    alone would also match Coinalyze's reconstruction, and `provider` alone would also match
+    `aggtrade_q`/`aggtrade_nq` — the two rows this one must NOT be confused with.
+    """
+    if key_wire["metric"] == KLINES_VOLUME_METRIC:
+        return True
+    return (
+        key_wire["metric"] == CVD_SOURCE_METRIC
+        and key_wire["provider"] == "binance"
+        and key_wire["quantityField"] == QuantityField.NA.value
+    )
+
+
+def _written_row_series_key_ids(instrument_id: str) -> frozenset[str]:
+    """Return the `series_key_id`s the COLLECTOR stamps on the rows of ONE settled bar.
 
     Produced by running the real mapping over a real, long-settled `KlineRow` — not by calling
-    `build_klines_volume_entry` with arguments this test chose, which would test this test.
+    the catalog builders with arguments this test chose, which would test this test.
+
+    Since `T-02.3` one bar is TWO rows (volume and CVD), and the `== 2` below is load-bearing:
+    it is what stops this file from silently going back to checking a single identity the day
+    someone drops the CVD append.
     """
     settled = KlineRow(
         raw=(
@@ -145,8 +167,8 @@ def _one_written_row_series_key_id(instrument_id: str) -> str:
         )
     )
     rows = build_klines_to_rows()(_T0 + 10 * KLINES_BUCKET_WIDTH_MS, instrument_id, (settled,))
-    assert len(rows) == 1, "the fixture bar is long settled, so the mapping must publish it"
-    return rows[0].series_key_id
+    assert len(rows) == 2, "the settled bar must publish BOTH identities: volume and CVD"
+    return frozenset(row.series_key_id for row in rows)
 
 
 def test_the_id_the_collector_writes_is_the_id_the_catalog_route_publishes() -> None:
@@ -162,24 +184,26 @@ def test_the_id_the_collector_writes_is_the_id_the_catalog_route_publishes() -> 
     """
     with _served(create_app()) as port:
         entries = _published_entries(port)
-    klines_rows = [entry for entry in entries if entry["key"]["metric"] == KLINES_VOLUME_METRIC]
-    assert len(klines_rows) == len(_SERVED_INSTRUMENTS), (
-        f"the served catalog must publish one {KLINES_VOLUME_METRIC!r} row per pilot "
-        f"instrument, found {len(klines_rows)} for {len(_SERVED_INSTRUMENTS)} instruments"
+    klines_rows = [entry for entry in entries if _is_klines_borne(entry["key"])]
+    assert len(klines_rows) == 2 * len(_SERVED_INSTRUMENTS), (
+        f"the served catalog must publish TWO klines-borne rows ({KLINES_VOLUME_METRIC!r} and "
+        f"{CVD_SOURCE_METRIC!r}) per pilot instrument, found {len(klines_rows)} for "
+        f"{len(_SERVED_INSTRUMENTS)} instruments"
     )
-    served_by_instrument = {
-        row["key"]["instrumentId"]: _key_from_wire(row["key"]).series_key_id()
-        for row in klines_rows
-    }
+    served_by_instrument: dict[str, set[str]] = {}
+    for row in klines_rows:
+        served_by_instrument.setdefault(row["key"]["instrumentId"], set()).add(
+            _key_from_wire(row["key"]).series_key_id()
+        )
     assert set(served_by_instrument) == set(_SERVED_INSTRUMENTS)
 
     for instrument_id in _SERVED_INSTRUMENTS:
-        served_id = served_by_instrument[instrument_id]
-        written_id = _one_written_row_series_key_id(instrument_id)
-        assert written_id == served_id, (
-            f"for {instrument_id} the klines collector writes md.series rows under a "
-            f"series_key_id the served catalog does not publish: written={written_id!r} "
-            f"served={served_id!r}. The two sides derive `verified_by` and `unit` "
+        served_ids = served_by_instrument[instrument_id]
+        written_ids = set(_written_row_series_key_ids(instrument_id))
+        assert written_ids == served_ids, (
+            f"for {instrument_id} the klines collector writes md.series rows under "
+            f"series_key_id(s) the served catalog does not publish: written={written_ids!r} "
+            f"served={served_ids!r}. The two sides derive `verified_by` and `unit` "
             "independently (`collector_series_mapping.py` and `series_catalog.py`) and one of "
             "them has drifted — /api/v1/series-history will answer 200 with n_points=0."
         )
