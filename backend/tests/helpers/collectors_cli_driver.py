@@ -30,6 +30,10 @@ from fakeredis import TcpFakeServer
 from src.modules.sentimento.domain.force_order_collision_accounting import (
     ForceOrderKeyObservation,
 )
+from src.modules.sentimento.domain.oi_history_paginator import (
+    ClosedWindow,
+    OiHistoryPageResponse,
+)
 from src.modules.sentimento.domain.premium_index_batch import PremiumIndexReading
 from src.modules.sentimento.domain.provenance import (
     UNKNOWN_OBSERVER_REGION,
@@ -122,6 +126,23 @@ class _EmptyKlinesClient:
         return KlinesPageResponse(status=200, api_code=None, rows=())
 
 
+class _EmptyOpenInterestClient:
+    """An `OpenInterestHistoryClient` fake that always answers one empty, successful page.
+
+    The open-interest thread (`T-03.3`) is the FOURTH thread `run()` starts, and it would
+    otherwise reach `fapi.binance.com` from inside the offline suite — `backend/scripts/test.sh`'s
+    "ZERO REDE" rule. An empty page is ACCEPTED by `classify_page` (no `api_code`, no point
+    outside the window) and publishes nothing, which is what keeps these shutdown/exit-code
+    scenarios about the thing they were written to measure.
+    """
+
+    def open_interest_history(
+        self, symbol: str, period: str, window: ClosedWindow, limit: int
+    ) -> OiHistoryPageResponse:
+        """Return `status=200` with no points and no API error code."""
+        return OiHistoryPageResponse(status=200, api_code=None, points=())
+
+
 class _OneShotPremiumIndexFetcher:
     """A `PremiumIndexFetcher` fake that answers one scripted, non-empty valid batch.
 
@@ -205,6 +226,10 @@ def main(argv: list[str]) -> int:
         # `_EmptyKlinesClient`) and then never again before the signal arrives.
         klines_cycle_interval_s=999_999.0,
         klines_backfill_days=1,
+        # Same reasoning again for the open-interest thread (`T-03.3`): one boot pass (empty,
+        # see `_EmptyOpenInterestClient`) and then never again before the signal arrives.
+        open_interest_cycle_interval_s=999_999.0,
+        open_interest_backfill_days=1,
     )
     if force_publish_failure:
         # Same real-server technique `test_collectors_cli_publish_failure.py`'s `clobbered_sink`
@@ -231,6 +256,7 @@ def main(argv: list[str]) -> int:
             force_order_source_factory=_BlockingForceOrderSource,
             premium_index_fetcher_factory=_fetcher_factory,
             klines_client_factory=_EmptyKlinesClient,
+            open_interest_client_factory=_EmptyOpenInterestClient,
             premium_index_to_rows=premium_index_to_rows,
             force_order_to_rows=_never_maps,
         )

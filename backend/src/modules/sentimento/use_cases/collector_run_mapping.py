@@ -11,10 +11,12 @@ the store it wired; this module is the ONE place the 16-field shape is decided, 
 composition root and this module's own tests share exactly one construction, never two (the
 defect `ADR-008/DoD-3` names for the read side, applied here to the WRITE side).
 
-There are THREE builders since `T-01.3` (`SPEC-007` phase `01`): the `forceOrder` session, the
-`premiumIndex` cycle, and the `/fapi/v1/klines` pass. `Q3` predates the third and fixes only the
-first two, so `build_klines_run`'s own docstring carries the argument for what "one run" means
-for a producer that PAGES — the one shape `Q3` never had to answer.
+There are FOUR builders since `T-03.3` (`SPEC-007` phase `03`): the `forceOrder` session, the
+`premiumIndex` cycle, the `/fapi/v1/klines` pass and the `/futures/data/openInterestHist` pass.
+`Q3` predates the last two and fixes only the first two, so `build_klines_run`'s own docstring
+carries the argument for what "one run" means for a producer that PAGES — the one shape `Q3`
+never had to answer — and `build_open_interest_run` inherits that argument rather than re-making
+it, differing from it in exactly one measured respect: `weight_used`.
 
 `gates/Q3-run-definition.md` §3 fixes the two sentinels below as PHYSICALLY IMPOSSIBLE values
 for the quantity they stand in for, so neither can ever collide with something actually
@@ -66,6 +68,13 @@ FORCE_ORDER_ENDPOINT: Final[str] = "!forceOrder@arr"
 # makes executable rather than trusted.
 KLINES_ENDPOINT: Final[str] = "/fapi/v1/klines"
 
+# The FOURTH producer (`T-03.3`, `SPEC-007` phase `03`, M2). Same duplication-with-a-test
+# discipline `KLINES_ENDPOINT` above documents: the literal matches
+# `infra/binance_oi_history_client.OPEN_INTEREST_HIST_PATH` byte for byte, and
+# `test_collector_run_mapping.py::test_the_open_interest_endpoint_literal_matches_the_client_path`
+# makes that executable instead of trusted, because `use_cases` may not import `infra`.
+OPEN_INTEREST_HIST_ENDPOINT: Final[str] = "/futures/data/openInterestHist"
+
 # ── Q3 §3 — THE SENTINELS AND THE OBSERVER LITERALS, NONE OF THEM A GUESS ──────────────────
 # The WS collector spends no REST weight — a FACT (`0`), never a guess.
 FORCE_ORDER_WEIGHT_USED: Final[int] = 0
@@ -82,6 +91,23 @@ N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS: Final[int] = 0
 FORCE_ORDER_OBSERVER_ID: Final[str] = "forceorder-collector"
 PREMIUM_INDEX_OBSERVER_ID: Final[str] = "premiumindex-collector"
 KLINES_OBSERVER_ID: Final[str] = "klines-collector"
+OPEN_INTEREST_OBSERVER_ID: Final[str] = "openinterest-collector"
+
+# ── `/futures/data/` ANSWERS WITH **NO** `x-mbx-*` HEADER AT ALL, AND THAT IS MEASURED ─────
+#
+# `KLINES_WEIGHT_PER_CALL` below exists because `/fapi/v1/klines` DOES publish
+# `x-mbx-used-weight-1m`, so its per-call price could be read off a real sequence. The
+# `/futures/data/` family publishes nothing of the kind:
+# `[MEDIDO 2026-09-12: GET /futures/data/openInterestHist?symbol=BTCUSDT&period=5m -> HTTP 200
+# com ZERO header casando `weight`/`used` (n=1 resposta, todos os headers inspecionados);
+# 60 chamadas consecutivas sem pausa -> 60x HTTP 200, nenhum 429/418]`.
+#
+# So an open-interest run's `weight_used` is `WEIGHT_NOT_READABLE` — the sentinel that means
+# exactly "the provider answered without a readable header on a call this collector had no
+# other way to price". Deriving a number here (`1 * n_calls`, say) would be a weight with no
+# command behind it, which is the one thing this module's own header forbids. There is
+# deliberately NO `OPEN_INTEREST_WEIGHT_PER_CALL` constant to go with this paragraph: a
+# constant is an answer, and this endpoint did not give one.
 
 # `/fapi/v1/klines` costs weight 1 per call of up to 1500 candles — a FACT of this endpoint,
 # like `FORCE_ORDER_WEIGHT_USED = 0` is a fact of a WebSocket, and not a guess:
@@ -247,6 +273,59 @@ def build_klines_run(
         src_sha256=src_sha256,
         weight_used=KLINES_WEIGHT_PER_CALL * n_calls,
         observer_id=KLINES_OBSERVER_ID,
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
+        started_at=started_at,
+        ended_at=ended_at,
+    )
+
+
+def build_open_interest_run(
+    *,
+    started_at: str,
+    ended_at: str,
+    n_returned: int,
+    n_calls: int,
+    api_code: int | None,
+    verdict: KnownVerdict,
+    src_sha256: str,
+    run_id: str | None = None,
+) -> IngestRun:
+    """Build the `IngestRun` for one `/futures/data/openInterestHist` pass (`T-03.3`, phase `03`).
+
+    A "pass" is one sweep over the configured symbol universe — the boot backfill is one such
+    pass (many pages per symbol, enumerated a priori by `domain/oi_history_paginator.py`), and
+    every periodic cycle after it is another. That is the SAME unit `build_klines_run` already
+    argues for, and the argument is not re-made here: the run is what the operator schedules,
+    not the HTTP call, and `n_calls` is what carries the paging.
+
+    `n_expected = n_returned`, the same refusal both builders above document: this endpoint
+    retains ~30 days and publishes one point per 5-minute bucket, but a symbol listed
+    mid-window legitimately has fewer, so `backfill_days * 288` would be an oracle nobody
+    measured.
+
+    `weight_used` is `WEIGHT_NOT_READABLE`, and unlike `build_premium_index_run`'s *fallback*
+    use of that sentinel this is the ONLY value this endpoint can ever produce — see
+    `OPEN_INTEREST_OBSERVER_ID`'s neighbouring comment for the measurement
+    (`/futures/data/` answers with no `x-mbx-*` header at all).
+
+    `n_written` stays `N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS`: this collector OPENS the run and
+    the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
+    parameter here and is minted at pass OPEN by the composition root.
+    """
+    return IngestRun(
+        run_id=run_id if run_id is not None else str(uuid4()),
+        source=SOURCE,
+        endpoint=OPEN_INTEREST_HIST_ENDPOINT,
+        window=f"{started_at}/{ended_at}",
+        n_expected=n_returned,
+        n_returned=n_returned,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+        verdict=verdict,
+        api_code=api_code,
+        src_sha256=src_sha256,
+        weight_used=WEIGHT_NOT_READABLE,
+        observer_id=OPEN_INTEREST_OBSERVER_ID,
         observer_region=UNKNOWN_OBSERVER_REGION,
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
