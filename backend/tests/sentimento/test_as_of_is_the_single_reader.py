@@ -50,6 +50,15 @@ rather than hidden:
 
     python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"
     # 196                                       [MEASURED 2026-09-08, T-01.2 pagina-de-grafico-s2]
+
+`ADR-038`/`D1` (`cinco-metricas-do-core`) adds a FIFTH importer
+(`domain/modeled_availability.py`) and it is the first one on the WRITE path — see its entry in
+`DECLARED_IMPORTERS` for why importing `CARRY_FORWARD_BY_NATURE` is the point rather than a
+concession, and why it is still not a second reader. So "a fifth importer turns a green suite
+red" above now reads "a SIXTH", which is the same drift this docstring names rather than hides:
+
+    python3 -c "from pathlib import Path; print(len(list(Path('backend/src').rglob('*.py'))))"
+    # 208                                       [MEASURED 2026-09-12, ADR-038/D1]
 """
 
 from __future__ import annotations
@@ -283,6 +292,23 @@ DECLARED_IMPORTERS = frozenset(
         "modules/sentimento/domain/series_history_report.py",
         "modules/sentimento/infra/postgres_series_window_reader.py",
         "api/routes/series_history.py",
+        # `ADR-038`/`D1`: imports ONE CONSTANT — `CARRY_FORWARD_BY_NATURE` — and never calls
+        # `as_of()`, never sees an `Observation`, never touches a row. It is on the WRITE path
+        # (`use_cases/collector_series_mapping.py` imports it to stamp `available_at`), and it
+        # needs that table because whether a nature carries forward is precisely what decides
+        # whether a MODELED stamp of one native grid is readable at all: `as_of` vetoes
+        # `age_ms >= bucket_interval_ms` for a nature that does not, and a stamp of exactly one
+        # grid makes that condition hold at every readable instant (`0/61` measured for
+        # `Nature.RATIO`, against `61/61` for `Nature.STOCK` —
+        # `docs/context/cinco-metricas-do-core/gates/ADR-038-D1-builder.md` §2).
+        #
+        # ⚠️ IMPORTING IS THE POINT, NOT A CONCESSION. Re-declaring the carry-forward table on
+        # the write side would be two truths about one fact, and they would diverge silently:
+        # the writer would keep stamping rows the reader had started vetoing, and both files
+        # would still read correctly alone. `DECLARED_TOUCHERS` above is what still polices the
+        # claim that this module is not a second reader — it touches none of the three
+        # read-path columns of anything it did not itself construct.
+        "modules/sentimento/domain/modeled_availability.py",
     }
 )
 

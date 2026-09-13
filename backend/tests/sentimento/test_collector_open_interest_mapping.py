@@ -145,18 +145,19 @@ def test_a_symbol_outside_the_pilot_universe_yields_no_rows() -> None:
 
 
 def test_the_provenance_columns_separate_the_two_clocks() -> None:
-    """`bucket_end`/`event_time` are the SOURCE's instant; the rest are this collector's."""
+    """`bucket_end`/`event_time` are the SOURCE's; `ingested_at`/`observed_at` are ours.
+
+    `available_at` is now NEITHER (`ADR-038`/`D1`): it is COMPUTED from the bucket and the
+    native grid, which is why it carries `MODELED` and the other two still carry `received_at`.
+    """
     received_at = _GRID_INSTANT_MS + 6_231
     rows = build_open_interest_to_rows()(received_at, "BTCUSDT", [_point(_GRID_INSTANT_MS)])
 
     row = rows[0]
     assert (row.bucket_end, row.event_time) == (_GRID_INSTANT_MS, _GRID_INSTANT_MS)
-    assert (row.available_at, row.ingested_at, row.observed_at) == (
-        received_at,
-        received_at,
-        received_at,
-    )
-    assert row.availability_source is AvailabilitySource.OBSERVED
+    assert (row.ingested_at, row.observed_at) == (received_at, received_at)
+    assert row.available_at == _GRID_INSTANT_MS + OPEN_INTEREST_BUCKET_WIDTH_MS
+    assert row.availability_source is AvailabilitySource.MODELED
     assert row.provenance is Provenance.OBSERVED
     assert row.src_label_raw == OPEN_INTEREST_HIST_ENDPOINT
     assert row.source == OPEN_INTEREST_HIST_ENDPOINT
@@ -164,6 +165,48 @@ def test_the_provenance_columns_separate_the_two_clocks() -> None:
     # The source DOES declare finality here, unlike `klines_volume`'s in-progress bar:
     # `[MEDIDO 2026-09-12: valor estavel por 240 s depois de publicado, ate o proximo ponto]`.
     assert row.is_final is True
+
+
+def test_a_backfill_row_is_not_stamped_with_the_instant_our_request_ran() -> None:
+    """⛔ THE FALSIFIER OF `ADR-038`/`D1`, AND IT IS THE CASE THAT EMPTIED THE PANEL.
+
+    `99,85 %` of the open-interest rows in `md.series` are backfill — `8.052` of `8.064`, with
+    `available_at - bucket_end` reaching `604.539.911 ms ~ 7,0 d` `[MEDIDO 2026-09-12, ADR-038
+    §1.1b]`. Under the OLD rule those rows were stamped with the instant OUR request ran, and
+    `as_of` admits a row on `available_at <= t`, so a bucket from seven days ago was invisible
+    at every instant it describes: `1/61` slots legible.
+
+    Reverting the mapping to `available_at=received_at` makes THIS assertion fail with a value
+    seven days too late — the mutation is caught here rather than in a chart that renders empty
+    with `rc=0`.
+    """
+    seven_days_ms = 7 * 24 * 60 * 60 * 1_000
+    received_at = _GRID_INSTANT_MS + seven_days_ms
+
+    row = build_open_interest_to_rows()(received_at, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+
+    assert row.available_at == _GRID_INSTANT_MS + OPEN_INTEREST_BUCKET_WIDTH_MS
+    assert row.available_at != received_at
+    assert row.available_at - row.bucket_end == OPEN_INTEREST_BUCKET_WIDTH_MS
+    # The instant of the search is NOT lost — `D16` keeps it, and `ADR-038` §7.1 (which would
+    # move `observed_at` onto the stamp) is the OWNER's pending call, deliberately not taken.
+    assert row.observed_at == received_at
+    assert row.ingested_at == received_at
+
+
+def test_the_modeled_stamp_does_not_move_when_the_collector_is_early_or_late() -> None:
+    """The stamp is a function of the BUCKET, never of when we happened to ask.
+
+    Two passes over the same point — one 6 s after the bucket, one seven days after — must
+    produce the same `available_at`. That is what makes the reconstructed history and the live
+    capture land on one timeline instead of two.
+    """
+    to_rows = build_open_interest_to_rows()
+    early = to_rows(_GRID_INSTANT_MS + 6_231, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+    late = to_rows(_GRID_INSTANT_MS + 604_539_911, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+
+    assert early.available_at == late.available_at
+    assert early.availability_source is late.availability_source is AvailabilitySource.MODELED
 
 
 def test_a_point_without_an_integer_timestamp_is_refused_and_names_the_field() -> None:

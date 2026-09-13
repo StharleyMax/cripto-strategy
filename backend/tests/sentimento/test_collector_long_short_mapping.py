@@ -19,8 +19,16 @@ from collections.abc import Mapping
 import pytest
 
 from src.modules.sentimento.domain.long_short_catalog import (
+    LONG_SHORT_NATIVE_GRID_MS,
     build_count_long_short_ratio_entry,
     count_long_short_ratio_key,
+)
+from src.modules.sentimento.domain.modeled_availability import (
+    GRID_INVARIANT_ENDPOINTS,
+    EndpointHasNoGridInvariantStampError,
+    GridInvariantEndpoint,
+    InvalidGridInvariantEndpointError,
+    modeled_available_at_for_endpoint,
 )
 from src.modules.sentimento.domain.provenance import AvailabilitySource, Provenance
 from src.modules.sentimento.use_cases.collector_run_mapping import (
@@ -91,6 +99,37 @@ def test_the_collectors_clock_is_kept_separate_from_the_sources() -> None:
     assert (row.available_at, row.ingested_at, row.observed_at) == (received_at,) * 3
     assert row.event_time == _T0
     assert row.available_at - row.event_time == 70_800
+
+
+def test_this_endpoint_is_deliberately_outside_adr_038_d1_and_the_domain_enforces_it() -> None:
+    """⛔ `ADR-038` §3 NAMES THIS ENDPOINT FOR `D1`, AND THE MEASUREMENT REFUSES IT.
+
+    `count_long_short_ratio` is `Nature.RATIO`, which does not carry forward, so `as_of` vetoes
+    `age_ms >= bucket_interval_ms`. `D1`'s stamp (`bucket_end + 300_000`) makes that condition
+    hold at every instant the row is readable, by arithmetic: `4/61` slots today becomes `0/61`
+    `[MEDIDO 2026-09-12, este mapper + o `as_of` real sobre o store real, n=1.000 linhas, 61
+    slots de 1 min, kt=agora; controles C0=0/61 e C1=61/61]`.
+
+    So this test pins BOTH halves of the refusal — the mapper still stamps `OBSERVED`, and the
+    domain table cannot be edited to include this endpoint. Adding it there raises, which is why
+    a future "let's finish `D1`" commit fails here instead of emptying the panel with `rc=0`.
+    """
+    row = build_long_short_to_rows()(_T0 + 70_800, _SYMBOL, [_point(_T0)])[0]
+    assert row.availability_source is AvailabilitySource.OBSERVED
+
+    assert LONG_SHORT_ENDPOINT not in GRID_INVARIANT_ENDPOINTS
+    with pytest.raises(EndpointHasNoGridInvariantStampError):
+        modeled_available_at_for_endpoint(endpoint=LONG_SHORT_ENDPOINT, bucket_end_ms=_T0)
+
+    with pytest.raises(InvalidGridInvariantEndpointError) as excinfo:
+        GridInvariantEndpoint(
+            endpoint=LONG_SHORT_ENDPOINT,
+            native_grid_ms=LONG_SHORT_NATIVE_GRID_MS,
+            lag_upper_bound_ms=LONG_SHORT_NATIVE_GRID_MS,
+            nature=count_long_short_ratio_key(_SYMBOL).nature,
+            evidence="ADR-038 §3",
+        )
+    assert "carry forward" in str(excinfo.value)
 
 
 def test_a_point_stamped_in_the_future_is_the_one_dropped() -> None:
