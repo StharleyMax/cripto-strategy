@@ -599,8 +599,9 @@ def test_the_live_lag_holds_the_grid_when_the_late_polls_are_not_censored_away()
     regime. The window must be dated from the DATA (`min`/`max` of `bucket_end`), never from
     `docker inspect .State.StartedAt`, which the unauthorized deploy of `2026-09-12T23:41:13Z`
     reset. Only then are `KLINES_UNCENSORED_LAG_TAIL_MS` and `KLINES_UNCENSORED_SAMPLE_N`
-    replaced by the new measurement. DO NOT relax the assertion: `NATIVE_GRID_MS[KLINES]` is the venue's measured
-    grid (`44_612` non-zero steps, all `60_000`, 1 distinct value), not a negotiable target.
+    replaced by the new measurement. DO NOT relax the assertion: `NATIVE_GRID_MS[KLINES]` is
+    the venue's measured grid (`44_612` non-zero steps, all `60_000`, 1 distinct value), not a
+    negotiable target.
     """
     tail = KLINES_UNCENSORED_LAG_TAIL_MS
     rank = math.ceil(0.99 * KLINES_UNCENSORED_SAMPLE_N)

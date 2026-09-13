@@ -206,6 +206,9 @@ def main(argv: list[str]) -> int:
         ingest_health_store_path=store_path,
         premium_index_cycle_interval_s=999_999.0,
         klines_cycle_interval_s=999_999.0,
+        # Required since the grid-alignment commit; the driver never reaches a real grid wait
+        # (the cadences above are 999_999 s), so the value only has to be a valid offset.
+        klines_cycle_offset_s=2.0,
         klines_backfill_days=1,
         open_interest_cycle_interval_s=999_999.0,
         open_interest_backfill_days=1,
