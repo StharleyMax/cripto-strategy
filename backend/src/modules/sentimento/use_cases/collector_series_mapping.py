@@ -680,8 +680,17 @@ def build_open_interest_to_rows(
     §1.1b, n=8.064 linhas, 8.052 delas backfill]`. `as_of` admits a row on `available_at <= t`,
     so every one of those rows was invisible at the instant it describes. Measured on the real
     store with the real `as_of`: `1/61` slots legible before, `61/61` after `[MEDIDO
-    2026-09-12, ADR-038 §1.2 e a remedicao de ADR-038-remedicao-e1.py, universo de 61 slots,
-    kt=agora, controles C0=0/61 e C1=61/61]`.
+    2026-09-12T23:20Z-2026-09-13T00:05Z, ADR-038 §1.2 e a remedicao de ADR-038-remedicao-e1.py,
+    universo de 61 slots, kt=agora, controles C0=0/61 e C1=61/61]`.
+
+    ⚠️ THE HOUR IS PART OF THAT MEASUREMENT, not decoration. Production went live at
+    `2026-09-12T23:41Z` and the open-interest collector has polled every ~5 min since
+    `23:45:29Z`, so the STARTING point moved while the ceiling did not: re-measured at
+    `2026-09-13T00:19Z` the same harness reads `40/61 -> 61/61` on the 1-min grid and
+    `9/61 -> 61/61` on the 5-min grid the panel draws `[MEDIDO 2026-09-13T00:19Z, n=4.040
+    linhas OI, mesmo arnes]`. The GAIN is unchanged and still maximal (`61/61`); what expired
+    is the sentence "`1/61`", which described a store with no live rows in it. A date without
+    an hour is ambiguous across three different populations today (`1` -> `34` -> `58` runs).
 
     So `available_at` is now the next NATIVE GRID point after the bucket
     (`modeled_available_at_for_endpoint`, `SPEC-001` §5.2 rounded up), stamped `MODELED`
@@ -691,7 +700,29 @@ def build_open_interest_to_rows(
     ⛔ `observed_at` and `ingested_at` STAY `received_at`, and that is a boundary, not an
     oversight. Moving `observed_at` onto the stamp is `ADR-038` §7.1, which amends a sentence
     of `D16` ("o instante da busca continua em `ingested_at`/`observed_at`") and is therefore
-    the OWNER's call, still pending. The measured consequence of leaving it here is that the
+    the OWNER's call, still pending.
+
+    ── THIS STAMP IS WHY `F-1` READS `observed_at`, AND IT IS DECLARED, NOT SILENT ──────────
+
+    Stamping `MODELED` on EVERY row — including a live poll `4,4 s` after the bucket, which
+    `test_the_modeled_stamp_does_not_move_when_the_collector_is_early_or_late` pins on purpose
+    — means this producer NEVER writes `availability_source = 'OBSERVED'` again. `ADR-038` §5
+    designates `F-1` as the falsifier OF `D1`, so a version of `F-1` that filtered on
+    `OBSERVED` would have had its universe frozen at the legacy rows and, after `D15`
+    (TRUNCATE + reingest), would have returned `rc=0` with ZERO lines: the falsifier of this
+    very decision, switched off by this very decision, with the ambiguous signal `ADR-012`
+    names. That is a consequence to declare, not to discover later.
+
+    The real fetch delay is NOT lost, and this line is what keeps it: `observed_at` stays
+    `received_at`, so `observed_at - bucket_end` reproduces it. `ADR-038` §5/`F-1` was amended
+    to read exactly that, per poll (`group by observed_at`, `min(...)`) rather than per row,
+    because one `STOCK` poll writes many buckets by carry-forward. Measured on production:
+    `n_polls = 52`, `p99 = 85.187 ms`, range `4.417`-`85.187 ms`, every one inside
+    `(0, 300.000]` `[MEDIDO 2026-09-13T00:36Z, deploy-postgres-1 read-only]`.
+
+    ⛔ CHANGING `observed_at` HERE BREAKS `F-1`. `docs/context/cinco-metricas-do-core/gates/
+    QA-ADR-038-D1-F1-probe.py` and `test_observed_at_keeps_the_fetch_instant_so_f_1_stays_
+    computable` both fail if it moves. The measured consequence of leaving it here is that the
     BACKTEST horizon (`knowledge_time = t`) still reads `1/61` while the live panel
     (`knowledge_time = agora`) reads `61/61` — `ADR-038` §2. That split is exactly what
     `ADR-038`'s falsifier `F-2` watches, and a `61/61` at `knowledge_time = t` today would mean

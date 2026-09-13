@@ -126,6 +126,14 @@ grep -n 'def _run_.*collector' backend/src/modules/sentimento/infra/collectors_c
 `binance_oi_history_client.py`. Esperar `150 min` produz **zero** linhas novas. ⇒ o `DoD-3` da fase
 `03` **não** se fecha com tempo de relógio; ele se fecha com `E1` ou com um coletor que não existe.
 
+> ⚠️ **EMENDA `2026-09-13T00:39Z` — a medição acima CADUCOU, e a hora é o que separa as duas.** Ela é
+> verdadeira **às `2026-09-12T~22:55Z`** e falsa desde **`23:41Z`**, quando o deploy de produção subiu
+> e os dois endpoints passaram a coletar ao vivo: `1` run → **`34`** (`23:45:29Z`) → **`58`/`59`**
+> (`00:39Z`). O comando e os números estão em `§7.3`. A frase *"não existe coletor de open interest"*
+> **não deve mais ser citada como fato corrente** — nem aqui, nem em `§7.3`, nem no corpo da PR #222.
+> A conclusão sobre a PR #222 (*"é tempo, não código"* era falso **naquela hora**) fica de pé como
+> registro histórico; o que muda é que hoje **também** há coletor.
+
 ### 1.2 · A matriz de `ADR-037`/M3 — reproduzida NÚMERO A NÚMERO, no mesmo universo
 
 Universo **literal** de `M3`: `61` slots de **1 min**, `t = slot + 59.999`, `knowledge_time = agora`,
@@ -228,22 +236,49 @@ e está **fora** da faixa; klines continua sendo `D16`/`O1`/`O4`, e o `§7.3` di
 ## 5 · FALSIFICADORES
 
 **`F-1` — o falsificador de `D1`, e ele é a observação que mostra que o carimbo era lookahead.**
-Quando existir um coletor ao vivo de `/futures/data/openInterestHist` com `n ≥ 1.000` instantes de
-busca distintos, rode:
+O coletor ao vivo de `/futures/data/openInterestHist` **existe desde `2026-09-12T23:41Z`** (`§7.3`,
+emendado). Rode:
 
 ```bash
-docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -c "
- select count(distinct available_at) n_polls,
-        percentile_disc(0.99) within group (order by available_at-bucket_end) p99
-   from md.series
-  where src_label_raw='/futures/data/openInterestHist' and availability_source='OBSERVED'
-    and available_at-bucket_end <= 900000;"
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' -c "
+ with polls as (
+   select observed_at, min(observed_at-bucket_end) lag_ms
+     from md.series
+    where src_label_raw='/futures/data/openInterestHist'
+      and observed_at-bucket_end between 0 and 900000
+    group by observed_at)
+ select count(*) n_polls,
+        percentile_disc(0.99) within group (order by lag_ms) p99,
+        min(lag_ms) lo, max(lag_ms) hi
+   from polls;"
 ```
 
 Se `p99 > 300.000` com `n_polls >= 1.000`, **`D1` estava errado**: o carimbo `+1 grade` afirmou
-conhecimento que não tivemos, e toda linha `MODELED` de OI tem de ser recarimbada. Hoje o mesmo
-comando devolve `n_polls = 4` — **e é por isso que `F-1` ainda não é computável, o que está dito
-aqui em vez de escondido**. `[NÃO MEDIDO: p99 de OI]`
+conhecimento que não tivemos, e toda linha `MODELED` de OI tem de ser recarimbada.
+
+⛔ **`n_polls = 0` NÃO é "passou" — é `F-1` NÃO COMPUTÁVEL**, e quem roda tem de dizer qual dos dois
+leu. Esta distinção é o `rc=0` ambíguo de `ADR-012`, e ela é a razão das DUAS emendas abaixo.
+
+**Emenda 1 — o filtro era `availability_source='OBSERVED'`, e `D1` o teria matado.** Depois de `D1`
+o único escritor de linha de OI carimba `MODELED` **sempre**, inclusive numa busca ao vivo de
+`4,4 s`. Um `F-1` que filtra `OBSERVED` teria universo **congelado** no passivo legado e, depois do
+`D15` (TRUNCATE + reingestão), **zero linhas** — o falsificador de `D1` desligado pelo próprio `D1`.
+O atraso real **não se perde**: `observed_at` continua sendo o instante da busca, por decisão
+explícita do mapper (`collector_series_mapping.py`, `build_open_interest_to_rows`), e é dele que
+`F-1` passa a ler. `[MEDIDO 2026-09-13T00:35Z, prova em
+docs/context/cinco-metricas-do-core/gates/QA-ADR-038-D1-F1-probe.py]`
+
+**Emenda 2 — a agregação era POR LINHA, e isso inflava o `p99` em 8×.** Uma busca de `STOCK` escreve
+**várias** linhas (carry-forward sobre os buckets que ela cobre), então `observed_at-bucket_end` por
+linha mede a **idade do bucket carregado**, não o atraso da busca. Medido hoje sobre o mesmo
+universo: por linha `p99 = 685.187 ms` (**acima** do limiar de `300.000`, um falso positivo à espera
+de `n`), por busca `p99 = 85.187 ms`. Por isso o `group by observed_at` + `min(...)`.
+
+**Partida medida, e com HORA porque a população se moveu 3× hoje:** `n_polls = 52`,
+`p99 = 85.187 ms`, faixa `4.417`–`85.187 ms` — **todas as 52 dentro de `(0, 300.000]`**, ou seja a
+banda que `D1` supõe agora tem evidência direta, e não só a observação única de `34.532 ms`.
+`[MEDIDO 2026-09-13T00:36Z, n = 52 buscas, deploy-postgres-1 somente leitura]` ⇒ `F-1` **é
+computável hoje** e **ainda não dispara** (`52 < 1.000`); o que falta é `n`, não instrumento.
 
 **`F-2` — o falsificador de `§2`, e ele é barato.** Depois de `E1` em código, rodar o arnês de
 `§1.2` com `knowledge_time = t` sobre OI tem de devolver **`61/61`**. Se devolver `1/61`, então
@@ -302,12 +337,37 @@ buckets de klines ao vivo chegam com atraso `≥ 1` grade (`16/696`), degradando
 só o backtest. Custo de mergear: um ciclo de QA + deploy, e **a janela de medição de klines volta a
 zero** (`OPCOES-D16`/`O4`) — o `p99` de klines fica indisponível pelo tempo da nova coleta.
 
-### 7.3 · Coletor ao vivo de open interest e de long/short — não existe, e `D17` conta com ele
+### 7.3 · ~~Coletor ao vivo de open interest e de long/short — não existe~~ — ✅ NASCEU em `2026-09-12T23:41Z`
 
-`§1.1c`: `1` run para cada, nenhum laço no CLI. `D17` decidiu largura-antes-de-profundidade e seu
-falsificador exige **5 famílias com linhas > 0** ao fim das fases `02`–`05`. Hoje são **4**
-famílias, mas **duas delas não coletam** — têm um backfill parado. Isto é trabalho de fase, com
-dono, e é também o que torna `F-1` computável um dia. **Não bloqueia `D1`; bloqueia `F-1`.**
+⚠️ **EMENDA `2026-09-13T00:39Z`. A frase original desta seção — e a de `§1.1c`, que ela cita — foram
+FALSIFICADAS PELA PRODUÇÃO, e o commit de `D1` (`00:05:14Z`) já era posterior ao fato.** Elas diziam
+*"`1` run para cada, nenhum laço no CLI"* e *"não existe coletor ao vivo"*. O deploy de produção
+subiu às `23:41Z` e as 5 métricas coletam ao vivo desde então:
+
+```bash
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' -c \
+ "select endpoint, count(*) n, min(started_at)::text, max(started_at)::text from md.ingest_run
+   where endpoint in ('/futures/data/openInterestHist','/futures/data/globalLongShortAccountRatio')
+   group by 1 order by 1;"
+# /futures/data/globalLongShortAccountRatio|59|2026-09-12T14:06:06Z|2026-09-13T00:39:24Z
+# /futures/data/openInterestHist           |58|2026-09-12T13:30:32Z|2026-09-13T00:38:44Z
+```
+
+`md.ingest_run` foi de **`1` run por endpoint** (o que `§1.1c` mediu) para **`34`** às `23:45:29Z`, e
+para **`58`/`59`** às `00:39Z` — **três populações diferentes no mesmo dia**. ⇒ toda medição deste
+documento tem de ser lida com a **HORA**, não só com a data; `[MEDIDO 2026-09-12]` sem hora é
+ambíguo a partir de hoje.
+
+⛔ **A correção FORTALECE `D1`, não o enfraquece** — e é importante que isto esteja escrito, porque a
+premissa falsificada era a de que `p99_lag` é *"uma grandeza que não conseguimos medir"*. Conseguimos:
+são **52 buscas ao vivo**, `4.417`–`85.187 ms`, **todas dentro de `(0, 300.000]`** — a banda em que
+`§3` mostra que **qualquer** `p99` dá o mesmo carimbo `+300.000`. A decisão `D1` continua a mesma,
+agora com evidência direta em vez de uma observação única de `34.532 ms`.
+`[MEDIDO 2026-09-13T00:36Z–00:39Z, n = 52 buscas / 58 runs, deploy-postgres-1 somente leitura]`
+
+**O que continua valendo desta seção:** `D17` exige **5 famílias com linhas > 0**, e `F-1` exige
+`n_polls >= 1.000` — hoje `52`. **`F-1` é computável** (`§5`, emendado) e **ainda não dispara**: o que
+falta é `n`, não instrumento. **Não bloqueia `D1`.**
 
 ### 7.4 · O que ISTO destrava, se `A` for escolhida
 

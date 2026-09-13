@@ -209,6 +209,41 @@ def test_the_modeled_stamp_does_not_move_when_the_collector_is_early_or_late() -
     assert early.availability_source is late.availability_source is AvailabilitySource.MODELED
 
 
+def test_observed_at_keeps_the_fetch_instant_so_f_1_stays_computable() -> None:
+    """`ADR-038` §5/`F-1` must keep a NON-EMPTY universe after `D1` — this pins the column.
+
+    `D1` stamps `MODELED` on every open-interest row, so an `F-1` filtering
+    `availability_source = 'OBSERVED'` would freeze at the legacy rows and, after `D15`
+    (TRUNCATE + reingest), return `rc=0` over ZERO lines — the falsifier OF `D1` switched off
+    BY `D1`, the ambiguous signal `ADR-012` names. `F-1` was amended to read
+    `observed_at - bucket_end` instead, which only works while `observed_at` stays the fetch
+    instant. Moving it onto the stamp is `ADR-038` §7.1 and is the OWNER's call; this test is
+    what makes that move fail loudly instead of silently emptying the falsifier.
+
+    The four lags are real: production measured `n_polls = 52`, `p99 = 85.187 ms`, range
+    `4.417`-`85.187 ms` `[MEDIDO 2026-09-13T00:36Z, deploy-postgres-1 read-only]`.
+    """
+    to_rows = build_open_interest_to_rows()
+    for lag_ms in (4_417, 29_735, 58_692, 85_187):
+        row = to_rows(_GRID_INSTANT_MS + lag_ms, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+
+        assert row.observed_at - row.bucket_end == lag_ms
+        assert row.availability_source is AvailabilitySource.MODELED
+
+
+def test_the_measured_fetch_lags_all_sit_inside_the_band_d1_assumes() -> None:
+    """`D1` supposes `p99_lag` in `(0, 300.000]`; the live polls are direct evidence of it.
+
+    `ADR-038` §3 shows every percentile inside that band yields the same `+300.000` stamp, so
+    a lag outside it would mean `D1` needs RE-DECIDING, not re-measuring.
+    """
+    to_rows = build_open_interest_to_rows()
+    for lag_ms in (4_417, 85_187):
+        row = to_rows(_GRID_INSTANT_MS + lag_ms, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+
+        assert 0 < row.observed_at - row.bucket_end <= 300_000
+
+
 def test_a_point_without_an_integer_timestamp_is_refused_and_names_the_field() -> None:
     """A malformed point raises rather than being stamped at a guessed instant."""
     with pytest.raises(MalformedOpenInterestPointError, match="timestamp"):

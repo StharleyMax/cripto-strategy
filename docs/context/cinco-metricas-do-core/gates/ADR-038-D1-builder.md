@@ -93,8 +93,31 @@ construídas pelos mappers reais; `n = 2.016` OI / `1.000` RATIO; controles `C0`
 > `CLAUDE.md` manda declarar.** Entre a primeira rodada e a segunda, uma **nova passada de
 > backfill** rodou em produção — `md.series` foi de **`8.064` para `16.128`** linhas de OI e de
 > `4.000` para `6.000` de RATIO; `count(distinct available_at)` foi de `4` para **`40`** (OI) e de
-> `8` para **`12`** (RATIO) `[MEDIDO 2026-09-12, `psql` agrupando por `src_label_raw`]`. Continua
-> **tudo backfill**: nenhum coletor ao vivo nasceu (`ADR-038` §7.3 segue de pé).
+> `8` para **`12`** (RATIO) `[MEDIDO 2026-09-12T~23:30Z, `psql` agrupando por `src_label_raw`]`.
+>
+> ⛔ **CORREÇÃO `2026-09-13T00:39Z` — a frase que estava aqui era FALSA QUANDO FOI ESCRITA.** Ela
+> dizia: *"Continua **tudo backfill**: nenhum coletor ao vivo nasceu (`ADR-038` §7.3 segue de pé)"*.
+> O deploy de produção subiu às **`23:41Z`** e os dois coletores começaram a passar a cada ~5 min a
+> partir de **`23:45:29Z`** — **antes** do commit desta PR (`00:05:14Z`). `md.ingest_run` foi de `1`
+> run por endpoint para **`34`** (`23:45:29Z`) e para **`58`/`59`** (`00:39Z`):
+>
+> ```bash
+> docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' -c \
+>  "select endpoint, count(*) n, min(started_at)::text, max(started_at)::text from md.ingest_run
+>    where endpoint in ('/futures/data/openInterestHist','/futures/data/globalLongShortAccountRatio')
+>    group by 1 order by 1;"
+> # /futures/data/globalLongShortAccountRatio|59|2026-09-12T14:06:06Z|2026-09-13T00:39:24Z
+> # /futures/data/openInterestHist           |58|2026-09-12T13:30:32Z|2026-09-13T00:38:44Z
+> ```
+>
+> ⚠️ **A correção FORTALECE `D1`.** A premissa que ela derruba é a de que `p99_lag` é *"uma grandeza
+> que não conseguimos medir"*. Conseguimos: **52 buscas ao vivo**, `4.417`–`85.187 ms` (`p99 =
+> 85.187`), **todas dentro de `(0, 300.000]`** — a banda em que `ADR-038` §3 mostra que **qualquer**
+> percentil dá o mesmo carimbo `+300.000`. A decisão não muda; o que muda é que ela deixa de repousar
+> numa observação única de `34.532 ms` e passa a ter evidência direta.
+> `[MEDIDO 2026-09-13T00:36Z–00:39Z, n = 52 buscas / 58 runs, deploy-postgres-1 somente leitura]`
+>
+> **`ADR-038` §1.1c e §7.3 foram emendados** com a mesma correção, no commit que traz esta.
 >
 > **A varredura foi refeita sobre a população NOVA, do caminho já commitado, e devolveu a tabela
 > ACIMA célula a célula** — `n = 4.032` OI / `1.500` RATIO. ⇒ o achado **não é artefato do
@@ -280,7 +303,17 @@ Duas correções, e a distinção entre elas é o ponto:
 
 `§1`, `§2.2`, `§3` e `§4` são `[MEDIDO 2026-09-12]`, cada um com o comando e o `n`, contra
 `deploy-postgres-1` **somente leitura**. O mecanismo do `§2.1` é `[DOC:
-as_of_accessor.py:112-118,326-329]` — leitura de código com linha citada, não medição. O `p99`
-real de `openInterestHist` continua `[NÃO MEDIDO]` (`ADR-038` §7.3: não existe coletor ao vivo), e
-a varredura do `§2.2` é o que mostra que, para `STOCK`, o valor dele não muda o resultado.
+as_of_accessor.py:112-118,326-329]` — leitura de código com linha citada, não medição.
+
+⛔ **CORREÇÃO `2026-09-13T00:39Z`, mesmo defeito do `§2.2`.** A frase que estava aqui dizia que *"o
+`p99` real de `openInterestHist` continua `[NÃO MEDIDO]` (`ADR-038` §7.3: não existe coletor ao
+vivo)"* — **falsa desde `23:41Z`**, antes do commit. O `p99` real **É MEDIDO** hoje, por busca:
+**`85.187 ms`** sobre `n = 52` buscas, faixa `4.417`–`85.187 ms`
+`[MEDIDO 2026-09-13T00:36Z, deploy-postgres-1 somente leitura, consulta em ADR-038 §5/F-1]`.
+A varredura do `§2.2` continua sendo o que mostra que, para `STOCK`, o valor dele **não muda o
+resultado** — e agora isso é uma constatação sobre um `p99` medido, não sobre um desconhecido.
+
+⚠️ **Toda data deste relatório deve ser lida com HORA.** A população se moveu **três vezes** em
+2026-09-12/13 (`1` → `34` → `58` runs por endpoint), então `[MEDIDO 2026-09-12]` sem hora é ambíguo
+entre regimes diferentes. É o que o `§2.2` corrigido declara.
 As três saídas do `§2.4` são **opções enumeradas, não escolha** — a escolha é do autor do `ADR-038`.
