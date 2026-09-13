@@ -81,6 +81,12 @@ KLINES_VOLUME_METRIC: Final[str] = "klines_volume"
 # and for M1 they agree — which is precisely why M1 does not pay `GA-2`'s staircase.
 KLINES_VOLUME_NATIVE_GRID: Final[str] = "1min"
 
+# The same fact as the label above, in milliseconds, DECLARED here rather than parsed from it
+# (`ADR-037/D3`) — it is what the read path injects as `SeriesReadPolicy.bucket_interval_ms`.
+# For M1 it EQUALS the report's own 1-minute step, which is exactly why this series rendered
+# while the defect `ADR-037` fixes was live: the wrong value coincided with the right one.
+KLINES_VOLUME_NATIVE_GRID_MS: Final[int] = 60_000
+
 # Twice the native grid, the same ratio the other series in this domain use (`5m` rows carry
 # `600_000`; the `1m` `cvd_source` rows carry `120_000`). It bounds how far a `LOCF` may reach
 # on read (`SPEC-001` §3.2) — one missed bar is tolerated as latency, two are a gap, and a gap
@@ -132,5 +138,6 @@ def build_klines_volume_entry(
     return SeriesCatalogEntry(
         key=key,
         native_grid=KLINES_VOLUME_NATIVE_GRID,
+        native_grid_ms=KLINES_VOLUME_NATIVE_GRID_MS,
         max_staleness_ms=KLINES_VOLUME_MAX_STALENESS_MS,
     )

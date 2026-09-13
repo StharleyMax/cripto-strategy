@@ -361,11 +361,13 @@ def test_funding_settled_and_funding_estimado_are_two_catalog_entries() -> None:
             SeriesCatalogEntry(
                 key=_funding_series_key(FundingSource.SETTLED.value),
                 native_grid="event",
+                native_grid_ms=28_800_000,
                 max_staleness_ms=60_000,
             ),
             SeriesCatalogEntry(
                 key=_funding_series_key(FundingSource.ESTIMATED.value),
                 native_grid="event",
+                native_grid_ms=28_800_000,
                 max_staleness_ms=60_000,
             ),
         ]

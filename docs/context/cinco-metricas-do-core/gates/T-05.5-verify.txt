@@ -1,0 +1,28 @@
+# make verify — saida bruta, T-05.5/T-05.6/T-05.7
+# worktree: agent-aac3c074df80aa81f
+# comando: PYTHONDONTWRITEBYTECODE=1 make verify
+#
+# RODADA 1 (20260912T210751Z) — REPROVOU, e a reprovacao e o achado:
+#   [FALHA] test rc=1  2354 passed
+#   FAILED tests/sentimento/test_collectors_cli_ingest_run_pairs.py::
+#          test_one_session_plus_one_cycle_group_by_source_endpoint_gives_at_least_two_pairs
+#   assert {'!forceOrder...tion-history'} == {'!forceOrder...InterestHist'}
+#   Causa: a SEXTA thread (T-05.5) grava um run em /v1/liquidation-history, e aquele
+#   teste afirma o conjunto de endpoints por IGUALDADE, de proposito. Ele mordeu —
+#   um produtor novo e OBRIGADO a chegar ali, numa lista declarada.
+#
+# RODADA 2 (20260912T211833Z), depois de declarar o endpoint naquele conjunto:
+
+bash scripts/verify.sh
+=== verify · agent-aac3c074df80aa81f · 20260912T211833Z (UTC) ===
+[OK       ] lint-backend    rc=0  443 source files
+[NÃO MEDIU] lint-frontend   rc=3  frontend/node_modules ausente — rode 'make setup'
+[OK       ] test            rc=0  2355 passed · Total coverage: 96.66%
+[OK       ] boundaries      rc=0  7 kept, 0 broken
+[OK       ] regras          rc=0  0 bloqueio(s), 72 aviso(s)
+[OK       ] política        rc=0
+[----     ] diff             1 file changed, 10 insertions(+), 6 deletions(-)
+veredito: INDETERMINADO — algum portão RECUSOU medir (rc=3). Não é o mesmo que passar.
+saída completa: /tmp/verify-agent-aac3c074df80aa81f-20260912T211833Z.log (52K)
+NÃO leia o log inteiro: grep o que precisar. Ele existe para ficar FORA do contexto.
+make: *** [Makefile:278: verify] Erro 3

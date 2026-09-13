@@ -19,11 +19,22 @@ taken at that minute could have seen, filed as though it had settled.
 
 from __future__ import annotations
 
+import pytest
+
+from src.modules.sentimento.domain.cvd_source_catalog import (
+    CVD_SOURCE_METRIC,
+    build_kline_takerbuy_entry,
+)
+from src.modules.sentimento.domain.kline_cvd import TakerBuyExceedsVolumeError
 from src.modules.sentimento.domain.klines_volume_catalog import (
     KLINES_VOLUME_METRIC,
     build_klines_volume_entry,
 )
-from src.modules.sentimento.domain.provenance import AvailabilitySource, Provenance
+from src.modules.sentimento.domain.provenance import (
+    AvailabilitySource,
+    Provenance,
+    SeriesRow,
+)
 from src.modules.sentimento.domain.series_key import Nature
 from src.modules.sentimento.infra.binance_klines_client import KlineRow
 from src.modules.sentimento.use_cases.collector_run_mapping import (
@@ -47,7 +58,7 @@ _T0 = 1_788_000_000_000
 _CLOSE_OFFSET_MS = KLINES_BUCKET_WIDTH_MS - 1  # Binance: closeTime = openTime + 59999
 
 
-def _kline(open_time_ms: int, volume: str) -> KlineRow:
+def _kline(open_time_ms: int, volume: str, taker_buy: str = "5.0") -> KlineRow:
     """Build a REAL `KlineRow` (not a stand-in) with the 12 fields the endpoint returns.
 
     Using the production type is what proves `KlineLike` — the structural `Protocol` the
@@ -65,7 +76,7 @@ def _kline(open_time_ms: int, volume: str) -> KlineRow:
             open_time_ms + _CLOSE_OFFSET_MS,
             "1000.0",
             42,
-            "5.0",
+            taker_buy,
             "500.0",
             "0",
         )
@@ -90,6 +101,23 @@ def _now_with_the_last_bucket_still_open() -> int:
     return _T0 + 3 * KLINES_BUCKET_WIDTH_MS + 2_000
 
 
+def _volume_id(instrument_id: str = "BTCUSDT", unit: str = "BTC") -> str:
+    """Return the `series_key_id` of the M1 volume identity — phase `01`'s row."""
+    return build_klines_volume_entry(
+        instrument_id, unit=unit, verified_by=_CATALOG_VERIFIED_BY
+    ).key.series_key_id()
+
+
+def _cvd_id(instrument_id: str = "BTCUSDT", unit: str = "BTC") -> str:
+    """Return the M5 CVD identity's `series_key_id` — phase `02`'s row, same page, no request."""
+    return build_kline_takerbuy_entry(instrument_id, unit=unit).key.series_key_id()
+
+
+def _values_of(rows: tuple[SeriesRow, ...], series_key_id: str) -> tuple[str, ...]:
+    """Project the `value_raw`s of ONE identity out of a page that now carries two."""
+    return tuple(row.value_raw for row in rows if row.series_key_id == series_key_id)
+
+
 # ── THE ANTI-LOOKAHEAD CUT: WHICH BUCKETS SURVIVE, BY VALUE ────────────────────────────────
 
 
@@ -102,7 +130,7 @@ def test_the_in_progress_bucket_is_the_one_dropped_not_the_ones_around_it() -> N
     """
     to_rows = build_klines_to_rows()
     rows = to_rows(_now_with_the_last_bucket_still_open(), "BTCUSDT", _measured_page())
-    assert tuple(row.value_raw for row in rows) == _SETTLED_VOLUMES
+    assert _values_of(rows, _volume_id()) == _SETTLED_VOLUMES
     assert _PARTIAL_VOLUME not in {row.value_raw for row in rows}
 
 
@@ -177,7 +205,7 @@ def test_the_published_series_key_id_is_the_one_the_served_catalog_registers() -
         _now_with_the_last_bucket_still_open(), "BTCUSDT", _measured_page()
     )
     assert rows
-    assert {row.series_key_id for row in rows} == {expected.series_key_id()}
+    assert {row.series_key_id for row in rows} == {expected.series_key_id(), _cvd_id()}
     assert expected.metric == KLINES_VOLUME_METRIC
     assert expected.nature is Nature.FLOW
 
@@ -194,13 +222,11 @@ def test_the_unit_follows_the_instrument_so_eth_is_not_labelled_in_btc() -> None
     eth = build_klines_to_rows()(now, "ETHUSDT", page)
     btc = build_klines_to_rows()(now, "BTCUSDT", page)
     assert eth and btc
-    assert eth[0].series_key_id != btc[0].series_key_id
-    assert (
-        eth[0].series_key_id
-        == build_klines_volume_entry(
-            "ETHUSDT", unit="ETH", verified_by=_CATALOG_VERIFIED_BY
-        ).key.series_key_id()
-    )
+    assert {row.series_key_id for row in eth}.isdisjoint({row.series_key_id for row in btc})
+    assert {row.series_key_id for row in eth} == {
+        _volume_id("ETHUSDT", "ETH"),
+        _cvd_id("ETHUSDT", "ETH"),
+    }
 
 
 # ── GRID, PROVENANCE AND THE RAW STRING ────────────────────────────────────────────────────
@@ -247,7 +273,7 @@ def test_value_raw_is_the_exact_decimal_string_never_a_float_round_trip() -> Non
     rows = build_klines_to_rows()(
         _now_with_the_last_bucket_still_open(), "BTCUSDT", _measured_page()
     )
-    assert [row.value_raw for row in rows] == list(_SETTLED_VOLUMES)
+    assert _values_of(rows, _volume_id()) == _SETTLED_VOLUMES
 
 
 def test_the_source_column_names_the_endpoint_the_rows_came_from() -> None:
@@ -276,3 +302,129 @@ def test_the_universe_is_a_parameter_so_an_operator_can_narrow_it() -> None:
     now = _now_with_the_last_bucket_still_open()
     assert to_rows(now, "BTCUSDT", _measured_page())
     assert to_rows(now, "ETHUSDT", _measured_page()) == ()
+
+
+# ── PHASE `02` (`T-02.3`): THE SECOND IDENTITY THAT RIDES THE SAME PAGE ────────────────────
+
+
+def test_one_closed_bar_publishes_both_the_volume_row_and_the_cvd_row() -> None:
+    """Each settled bar becomes TWO rows — `klines_volume` and `cvd_source`/`kline_takerbuy`.
+
+    This is the capability phase `02` exists to demonstrate (`plano 02`, "a evidencia de que
+    uma segunda identidade CONSEGUE pegar carona num coletor existente"), and it is asserted by
+    IDENTITY rather than by count: `len(rows) == 6` would also pass if the mapping emitted the
+    volume row twice.
+
+    Morde: drop the CVD append and the two projections below come back `()` and `3`.
+    """
+    rows = build_klines_to_rows()(
+        _now_with_the_last_bucket_still_open(), "BTCUSDT", _measured_page()
+    )
+    assert len(_values_of(rows, _volume_id())) == len(_SETTLED_VOLUMES)
+    assert len(_values_of(rows, _cvd_id())) == len(_SETTLED_VOLUMES)
+    assert _volume_id() != _cvd_id()
+
+
+def test_the_cvd_value_is_two_times_takerbuy_minus_volume_as_an_exact_string() -> None:
+    """`delta = 2 * takerBuy[9] - volume[5]`, byte-exact, never a `float` round trip.
+
+    The numbers are the MEASURED ones `[MEDIDO 2026-09-10, BTCUSDT 1m: v=29,757 /
+    takerBuy=2,626 / delta=-24,505]`, so the expected string below is the one the finding
+    published rather than one recomputed to match whatever the code does.
+
+    Morde: write the formula as `takerBuy - volume` (the sign error that looks right) and this
+    reads `-27.131`; write it with `float` and it reads `-24.505000000000003`.
+    """
+    page = (_kline(_T0, "29.757", taker_buy="2.626"),)
+    rows = build_klines_to_rows()(_T0 + 2 * KLINES_BUCKET_WIDTH_MS, "BTCUSDT", page)
+    assert _values_of(rows, _cvd_id()) == ("-24.505",)
+    assert _values_of(rows, _volume_id()) == ("29.757",)
+
+
+def test_an_all_aggressor_buy_bucket_gives_a_delta_equal_to_its_own_volume() -> None:
+    """`takerBuy == volume` -> `delta == +volume`; `takerBuy == 0` -> `delta == -volume`.
+
+    The two extremes of the invariant, which pin the SCALE of the formula and not only its
+    sign: a `delta` derived as `takerBuy - volume/2` would satisfy neither end.
+    """
+    now = _T0 + 2 * KLINES_BUCKET_WIDTH_MS
+    all_buy = build_klines_to_rows()(now, "BTCUSDT", (_kline(_T0, "8.5", taker_buy="8.5"),))
+    all_sell = build_klines_to_rows()(now, "BTCUSDT", (_kline(_T0, "8.5", taker_buy="0"),))
+    assert _values_of(all_buy, _cvd_id()) == ("8.5",)
+    assert _values_of(all_sell, _cvd_id()) == ("-8.5",)
+
+
+def test_a_taker_buy_above_the_buckets_own_volume_is_refused_not_published() -> None:
+    """Item 2.4's invariant, enforced on every bar the collector publishes.
+
+    `takerBuy` is a PART of `volume`, so `takerBuy > volume` is a payload with no reading. Left
+    unchecked it publishes a `delta` LARGER than the bucket's volume — a number that looks like
+    strong signal and is not.
+
+    Morde: delete the guard in `domain/kline_cvd.py` and this bar publishes `"11.0"` as the
+    delta of a bucket whose whole traded volume was `1.0`.
+    """
+    page = (_kline(_T0, "1.0", taker_buy="6.0"),)
+    with pytest.raises(TakerBuyExceedsVolumeError):
+        build_klines_to_rows()(_T0 + 2 * KLINES_BUCKET_WIDTH_MS, "BTCUSDT", page)
+
+
+def test_the_two_rows_of_a_bar_differ_only_in_identity_and_value() -> None:
+    """Two readings OF THE SAME OBSERVATION: same bucket, same clocks, same provenance.
+
+    Morde: hoist `bucket_end` out of the loop (compute it once from the newest bar, the shape
+    a "small optimisation" arrives in) and every row of the page carries the LAST bucket's
+    instant — which a single-bar fixture could never see, so the page below deliberately has
+    three bars and asserts the SET of buckets, not only the count.
+
+    ⚠️ A PREVIOUS VERSION OF THIS DOCSTRING CLAIMED TO FALSIFY A LATE-BINDING DEFECT, AND THAT
+    CLAIM WAS FALSE. The production code bound `bucket_end` as a default argument of an inner
+    closure "against late binding"; removing that binding killed NO test, because the closure
+    was called in the same iteration and therefore read the current value. The mutation is what
+    found it — the claim was prose that had never been run.
+    """
+    now = _now_with_the_last_bucket_still_open()
+    rows = build_klines_to_rows()(now, "BTCUSDT", _measured_page())
+    by_bucket: dict[int, list[SeriesRow]] = {}
+    for row in rows:
+        by_bucket.setdefault(row.bucket_end, []).append(row)
+    assert sorted(by_bucket) == [_T0 + index * KLINES_BUCKET_WIDTH_MS for index in range(1, 4)]
+    for pair in by_bucket.values():
+        volume_row, cvd_row = pair
+        assert {volume_row.series_key_id, cvd_row.series_key_id} == {_volume_id(), _cvd_id()}
+        assert volume_row.value_raw != cvd_row.value_raw
+        assert volume_row.bucket_end == cvd_row.bucket_end
+        assert volume_row.event_time == cvd_row.event_time
+        assert volume_row.observed_at == cvd_row.observed_at == now
+        assert volume_row.is_final is cvd_row.is_final is True
+
+
+def test_the_cvd_row_is_absent_for_the_in_progress_bucket_too() -> None:
+    """`RS-3.4` cuts BOTH identities — a partial CVD is as much a lie as a partial volume.
+
+    Morde: apply the finality cut only to the volume row and the newest, still-open bar
+    publishes a CVD built from a `takerBuy` that is still growing.
+    """
+    rows = build_klines_to_rows()(
+        _now_with_the_last_bucket_still_open(), "BTCUSDT", _measured_page()
+    )
+    partial_bucket_end = _T0 + 4 * KLINES_BUCKET_WIDTH_MS
+    assert partial_bucket_end not in {row.bucket_end for row in rows}
+    assert len(_values_of(rows, _cvd_id())) == len(_SETTLED_VOLUMES)
+
+
+def test_the_cvd_identity_is_the_one_the_served_catalog_registers() -> None:
+    """The writer's CVD id is the SERVED catalog's — the elo that fails silently if it breaks.
+
+    Same failure shape `_KLINES_VOLUME_VERIFIED_BY` documents: a divergence answers `200` with
+    `n_points = 0` for a series whose rows are in the table under another id.
+    """
+    entry = build_kline_takerbuy_entry("BTCUSDT", unit="BTC")
+    rows = build_klines_to_rows()(
+        _now_with_the_last_bucket_still_open(), "BTCUSDT", _measured_page()
+    )
+    assert entry.key.series_key_id() in {row.series_key_id for row in rows}
+    assert entry.key.metric == CVD_SOURCE_METRIC
+    assert entry.key.nature is Nature.FLOW
+    assert entry.reconstructed_from is None
+    assert entry.published_error is None

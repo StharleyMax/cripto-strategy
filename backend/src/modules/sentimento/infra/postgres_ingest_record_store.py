@@ -112,6 +112,7 @@ _RunRow = tuple[
     str,
     str,
     str | None,
+    str | None,
 ]
 _GapRow = tuple[str, str, str, str, str, int, str, str]
 
@@ -139,7 +140,8 @@ _DDL: tuple[str, ...] = (
         clock_skew_ms   INTEGER NOT NULL,
         started_at      TEXT NOT NULL,
         ended_at        TEXT NOT NULL,
-        writer_accounted_at TEXT
+        writer_accounted_at TEXT,
+        notes               TEXT
     )
     """,
     # `CREATE TABLE IF NOT EXISTS` is a no-op on a database that already has the table, so a
@@ -147,6 +149,13 @@ _DDL: tuple[str, ...] = (
     # line the production table (created before `ADR-035`) would silently keep 16 columns and
     # every `credit_written` would fail on an unknown column.
     "ALTER TABLE md.ingest_run ADD COLUMN IF NOT EXISTS writer_accounted_at TEXT",
+    # `T-05.6`. Same idempotent-`ALTER` reason as the line above, and it is not
+    # theoretical here: the production table was created before this column existed
+    # (`information_schema.columns` listed 17 names, none of them `notes`
+    # `[MEDIDO 2026-09-12]`), so without this statement every `record_run` carrying a
+    # reason would fail on an unknown column — or, worse, the column would quietly stay
+    # absent and `DoD 5` would keep being unsatisfiable while looking satisfied.
+    "ALTER TABLE md.ingest_run ADD COLUMN IF NOT EXISTS notes TEXT",
     """
     CREATE TABLE IF NOT EXISTS md.ingest_gap (
         source        TEXT NOT NULL,
@@ -166,8 +175,8 @@ _UPSERT_RUN = """
     INSERT INTO md.ingest_run
         (run_id, source, endpoint, "window", n_expected, n_returned, n_written, verdict,
          api_code, src_sha256, weight_used, observer_id, observer_region, clock_skew_ms,
-         started_at, ended_at)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+         started_at, ended_at, notes)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (run_id) DO UPDATE SET
         source = EXCLUDED.source,
         endpoint = EXCLUDED.endpoint,
@@ -183,7 +192,8 @@ _UPSERT_RUN = """
         observer_region = EXCLUDED.observer_region,
         clock_skew_ms = EXCLUDED.clock_skew_ms,
         started_at = EXCLUDED.started_at,
-        ended_at = EXCLUDED.ended_at
+        ended_at = EXCLUDED.ended_at,
+        notes = EXCLUDED.notes
 """
 
 # `ADR-035/D2`. TWO columns in the SET clause and no third — that is the whole guarantee of
@@ -216,7 +226,7 @@ _UPSERT_GAP = """
 _SELECT_RUNS = """
     SELECT run_id, source, endpoint, "window", n_expected, n_returned, n_written, verdict,
            api_code, src_sha256, weight_used, observer_id, observer_region, clock_skew_ms,
-           started_at, ended_at, writer_accounted_at
+           started_at, ended_at, writer_accounted_at, notes
     FROM md.ingest_run ORDER BY started_at, run_id
 """
 
@@ -278,6 +288,7 @@ class PostgresIngestRecordStore:
                     run.clock_skew_ms,
                     run.started_at,
                     run.ended_at,
+                    run.notes,
                 ),
             )
         self._connection.commit()

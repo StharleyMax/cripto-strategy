@@ -14,9 +14,21 @@ already published and that `SPEC-003` cites by line number, not the stale claim 
 
 `SPEC-003` §0.1#7, the plan's D3.1 and `tasks.toml`'s own DoD all write the SAME equation:
 `n_entries = 7 = grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test |
-wc -l`. That grep counts literal CALL SITES across `cvd_source_catalog.py` (3),
-`price_source_catalog.py` (2) and `open_interest_catalog.py` (2) — and it is still 7 today
-(re-measured building this task). But a call SITE is not a ROW: `open_interest_catalog_entries`
+wc -l`. That grep counts literal CALL SITES, and the equation was already wrong when it was
+written. It is wrong by a DIFFERENT amount today: re-measured at this SHA the same command
+answers **11**, not 7 — `cvd_source_catalog.py` (4), `price_source_catalog.py` (2),
+`open_interest_catalog.py` (2), `long_short_catalog.py` (1), `liquidation_catalog.py` (1),
+`klines_volume_catalog.py` (1). Three source modules became six as `SPEC-007` added rows:
+
+    grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test | wc -l  # 11
+
+11 is not the row count either, and that is the point — the catalog this module returns has
+**15** rows at this SHA (`len(list_series_catalog('BTCUSDT').entries)`), so the grep now
+UNDERCOUNTS by four where it once overcounted (`liquidation_catalog.py`'s single call site
+builds BOTH cohorts, in a comprehension over `COHORTS`). A call SITE is not a ROW in either
+direction:
+`build_cvd_source_catalog_entries` still yields 3 rows from 4 call sites (the fourth, line 356,
+belongs to `T-02.2`'s separate `kline_takerbuy` builder), while `open_interest_catalog_entries`
 (`T-06.5`, `CA-F2-17`) builds FOUR of its five rows from ONE list-comprehension call site — its
 own module docstring, unchanged since 2026-09-03 (two days before `SPEC-003` was written): "five
 rows, never a collapsed one". Concatenating the three modules' own catalog-builder functions in
@@ -52,6 +64,86 @@ eleventh row. The number above moves from 10 to 11 for the same reason it was ne
 builders. A FOURTH source module now feeds this function, which is the only structural change —
 the envelope, the field names and the order of the ten pre-existing rows are untouched (`RS-1`:
 content may change here, form may not).
+
+── `T-02.4` (`SPEC-007` §4.5, `RF-2`): THE COUNT IS 12, AND THE NEW ROW GOES AT THE TAIL ─────
+
+`cvd_source`/`kline_takerbuy` (`T-02.2`, CVD off the SAME `/fapi/v1/klines` array as M1) is the
+twelfth row, appended AFTER `klines_volume`. Appended and not grouped with the three other
+`cvd_source` rows, which is the tidier place for it and the wrong one: inserting at index 3
+would shift the eight rows that follow, and `RS-1` lets this feature change the catalog's
+CONTENT while forbidding it to change the FORM — the ORDER of `"entries"` being form. A permuted
+list is the failure mode no field of the response reports.
+
+── `T-04.4` (`SPEC-007` §4.5, `RF-2`): THE COUNT IS 13, AND IT IS STILL COMPUTED ────────────
+
+`count_long_short_ratio` (`domain/long_short_catalog.py`, built by `T-04.2`) is APPENDED as the
+thirteenth row, by the same rule and for the same reason the two rows above it were appended:
+order is form, `RS-1` forbids changing form here, and appending leaves every row that already
+had an index in `"entries"` at that index.
+
+It is the row that makes `/api/v1/series-history` answer for M3 at all — until this line existed,
+the identity lived in `domain/` and the endpoint refused its `series_key_id` with
+`422 UnknownSeriesKeyIdError` (`series_history.py:119-121` -> `catalog.entry_for_id` returns
+`None`), no matter how many rows the collector had written. Unlike the four builders above it,
+this one takes NO `verified_by` argument: `long_short_catalog.py` hardcodes it, so the writer
+(`collector_series_mapping.build_long_short_to_rows`) and this reader call the SAME key builder
+and cannot land on two `series_key_id`s that merely look alike.
+
+── WHY PHASES `02` AND `04` BOTH WROTE "THE COUNT IS 12" AND THE ANSWER IS 13 ────────────────
+
+The two phases forked from the same `ff18811`, where the count was 11, and each appended ONE row
+believing it was the twelfth. Resolving that by keeping one of the two would DROP a real series:
+`/api/v1/series-history` answers `422` for a `series_key_id` whose rows are sitting in
+`md.series`, and the panel empties with `rc=0` — the silent-break class `ADR-012` names. The two
+rows are kept in the order the phases added them and `n_entries` follows `len(entries)`, which
+is exactly why no literal had to be edited here for the number to be right.
+
+So the three `SPEC-007` rows sit at the tail in the order the phases added them: `klines_volume`
+at index 10 (`T-01.6`), `kline_takerbuy` at index 11 (`T-02.4`) and `count_long_short_ratio` at
+index 12 (`T-04.4`). `n_entries` follows `len(entries)`, as it always has.
+
+── `T-05.8` (`SPEC-007` §4.5, `RF-2`, plan `05` item 5.4): THE COUNT IS 15 — TWO ROWS, NOT ONE ─
+
+`sum_liquidation` (`domain/liquidation_catalog.py`, built by `T-05.3`) is APPENDED as the
+fourteenth AND fifteenth rows — `cohort="long"` at index 13 and `cohort="short"` at index 14,
+in the order `liquidation_catalog.COHORTS` declares them. Appended for the same `RS-1` reason
+as the three rows above: order is form, and every row that already had an index keeps it.
+
+TWO rows is the requirement, not an implementation detail. A long liquidation is forced selling
+and a short liquidation is forced buying, so their sum moves identically whether the market
+flushed longs, flushed shorts or both — which is exactly the discrimination the metric exists
+to provide (`RF-2`, and `liquidation_catalog.py`'s own docstring). `DoD-2` of plan `05` asks
+`n_points > 0` for `cohort="long"` AND `cohort="short"` SEPARATELY, and one netted row could
+not answer that question at all, in either direction.
+
+THE PLAN NUMBERED THIS REGISTRATION IN `02`, `03` AND `04` AND SKIPPED IT IN `05`, and the
+omission is not cosmetic: until these two entries exist, `/api/v1/series-history` answers
+`422 UnknownSeriesKeyIdError` for BOTH ids (`series_history.py:119-121` ->
+`catalog.entry_for_id` returns `None`) no matter how many rows the collector wrote, so `DoD-2`
+is unsatisfiable by construction rather than merely unmet.
+
+Like `count_long_short_ratio`, this builder takes NO `verified_by` argument:
+`liquidation_catalog.py` hardcodes `_VERIFIED_BY`, so the WRITER
+(`collector_series_mapping.build_liquidation_history_to_row`, which calls
+`coinalyze_liquidation_key`) and this reader go through the SAME key builder and cannot land on
+two `series_key_id`s that merely look alike.
+
+THE SERIES IS SPARSE, AND THE READ PATH ALREADY HONOURS IT — registering the row is what makes
+that observable. `nature=FLOW` means `CARRY_FORWARD_BY_NATURE[Nature.FLOW] is False`
+(the as-of accessor's own table in `domain/`, and this module does NOT import it — spelling the
+accessor's file name here would make this file the fifth entry of
+`tests/sentimento/test_as_of_is_the_single_reader.py`'s declared-importer set, which reads the
+TEXT of every file under `src/`), so a grid instant with no bucket comes back as the named
+absence
+`SEM_PONTO` and NEVER as `0`. Absence being the COMMON case here is measured, not feared: only
+20,2% of 1-minute buckets carry a liquidation at all `[MEDIDO 2026-09-12, n=14.344 buckets
+possiveis, 2.900 preenchidos]`. `tests/sentimento/test_series_history_sparse_liquidation.py` is
+the falsifier that a hole stays a hole through the real `build_series_history_report`.
+
+`native_grid_ms` is DECLARED (`liquidation_catalog.NATIVE_GRID_MS = 60_000`), never parsed from
+the `"1min"` label (`ADR-037/D3`, `ADR-003`/FR-3) — and the moment these rows are served they
+enter the universe of `tests/sentimento/test_native_grid_ms_pairs.py`, which enumerates every
+SERVED row and refuses a width that contradicts its label.
 """
 
 from __future__ import annotations
@@ -60,9 +152,14 @@ import logging
 from collections.abc import Sequence
 from typing import Final
 
-from src.modules.sentimento.domain.cvd_source_catalog import build_cvd_source_catalog_entries
+from src.modules.sentimento.domain.cvd_source_catalog import (
+    build_cvd_source_catalog_entries,
+    build_kline_takerbuy_entry,
+)
 from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
+from src.modules.sentimento.domain.liquidation_catalog import liquidation_catalog_entries
+from src.modules.sentimento.domain.long_short_catalog import build_count_long_short_ratio_entry
 from src.modules.sentimento.domain.open_interest_catalog import open_interest_catalog_entries
 from src.modules.sentimento.domain.price_source_catalog import build_price_series_entries
 from src.modules.sentimento.domain.series_catalog import (
@@ -162,6 +259,15 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
     check — a real cross-source collision would raise `DuplicateSeriesKeyError` here rather than
     silently keep one of the two rows.
 
+    `T-02.4` APPENDS `cvd_source`/`kline_takerbuy` after it, at index 11, for the same `RS-1`
+    reason and NOT beside its three `cvd_source` siblings — see this module's docstring.
+
+    `T-05.8` APPENDS BOTH `sum_liquidation` rows (`long` at index 13, `short` at index 14) —
+    two rows and never their sum, because the sum erases which leg was flushed (`RF-2`). They
+    are what makes `/api/v1/series-history` answer for M4 at all: `DoD-2` of plan `05` asks
+    `n_points > 0` for each cohort separately, and an unregistered id cannot answer `n_points`
+    at all — it answers `422`.
+
     `T-01.6` APPENDS `klines_volume` (`SPEC-007` §4, row M1) as the eleventh row. Appended, not
     inserted: `RS-1` lets this task change the catalog's CONTENT and forbids changing its FORM,
     and the ORDER of `"entries"` is form — appending leaves all ten pre-existing rows at the
@@ -179,6 +285,9 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
         build_klines_volume_entry(
             instrument_id, unit=base_asset(instrument_id), verified_by=_KLINES_VOLUME_VERIFIED_BY
         ),
+        build_kline_takerbuy_entry(instrument_id, unit=base_asset(instrument_id)),
+        build_count_long_short_ratio_entry(instrument_id),
+        *liquidation_catalog_entries(instrument_id).entries,
     ]
     # DEBUG, not INFO — same reasoning `ingest_health_query` already documents: this read path
     # is not a byte contract of its own, but a library that logs at INFO by default imposes its

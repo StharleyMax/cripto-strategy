@@ -122,6 +122,7 @@ def test_a_sixth_row_reusing_an_existing_coinalyze_reduction_is_refused_as_a_dup
     duplicate_entry = SeriesCatalogEntry(
         key=coinalyze_open_interest_key(Reduction.CLOSE),
         native_grid="5min",
+        native_grid_ms=300_000,
         max_staleness_ms=600_000,
     )
 

@@ -47,6 +47,40 @@ class SeriesHistoryRow:
 
 
 @dataclass(frozen=True)
+class PanelGridVerdict:
+    """How the REPORT's grid relates to the series' NATIVE grid — `ADR-037/D4`, on the wire.
+
+    `ADR-026/D1` owns the classification itself (`charts`' `classify_grid_multiple`), and this
+    module deliberately does NOT import it: `backend/pyproject.toml`'s "Fronteira de contexto"
+    contract forbids `src.modules.sentimento` from importing `src.modules.charts`. This type is
+    the PORT's return shape — the three fields `GridMultipleVerdict` publishes, with `reason`
+    already projected onto its string value — so the verdict crosses the context boundary as a
+    published contract instead of an import. The adapter that builds one is the composition
+    root (`src.main`), which is the layer allowed to see both contexts.
+
+    ⚠️ IT IS NOT A SECOND CLASSIFIER. No branch of `ADR-026/D1`'s rule is re-expressed here:
+    this carries a verdict someone else computed. A second `if panel_grid_ms < native_grid_ms`
+    in this file would be the duplication the boundary exists to prevent, not this dataclass.
+
+    Why the response needs it at all (`ADR-037/D4`): `/series-history` serves a fixed 1-minute
+    report grid (`ADR-034/D6`), so a series whose native grid is 5 minutes comes back as a
+    STAIRCASE — 4 of every 5 slots repeat one observation (`ADR-037`/M3: 48 of 61). `SPEC-007`
+    §8.2/`RN-S1` instructs the DoD to divide the DOM's point count by 5 because of exactly
+    this; without the verdict in the envelope, the API serves a number it does not qualify, and
+    "1 real bar and 5 repeated lines" passes a `N>=5` check that `RN-S1` itself fears.
+    """
+
+    native_grid_ms: int
+    enabled: bool
+    reason: str
+    multiple: int | None
+
+    def to_wire(self) -> dict[str, object]:
+        """Project onto the `panel.grid_multiple` object, `reason` as its string value."""
+        return {"enabled": self.enabled, "reason": self.reason, "multiple": self.multiple}
+
+
+@dataclass(frozen=True)
 class SeriesHistoryReport:
     """Everything `GET /series-history` needs to answer one request (`SPEC-006 §5.2`).
 
@@ -59,6 +93,7 @@ class SeriesHistoryReport:
     panel_source: str
     panel_nature: str
     panel_unit: str
+    panel_grid: PanelGridVerdict
     rows: tuple[SeriesHistoryRow, ...]
     knowledge_time: int
     bar_policy: BarPolicy
@@ -78,6 +113,13 @@ class SeriesHistoryReport:
                 "source": self.panel_source,
                 "nature": self.panel_nature,
                 "unit": self.panel_unit,
+                # `ADR-037/D4`: the report's grid is fixed at 1 minute (`ADR-034/D6`) while the
+                # series' own grid is a catalog fact, so the two have to be READABLE APART on
+                # the wire. `native_grid_ms` is the width the read path injected as
+                # `bucket_interval_ms`; `grid_multiple` says what that implies for the rows —
+                # `upsampling` is the named state for "4 of every 5 slots repeat one bucket".
+                "native_grid_ms": self.panel_grid.native_grid_ms,
+                "grid_multiple": self.panel_grid.to_wire(),
             },
             "rows": [row.to_wire() for row in self.rows],
             "knowledge_time": self.knowledge_time,

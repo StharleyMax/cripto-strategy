@@ -990,6 +990,49 @@ pelo desenhista. Não medi qual fração de barras de 15m do corpus cai nesse re
 
 ---
 
+### 1.10 ⛔ A SUPERFÍCIE DO `<canvas>` é um token, não um default — e agora ela é MEDIDA em pixel
+
+**O buraco que esta seção fecha, e ele esteve aberto o tempo todo:** todo número de §1.2 é uma razão
+de contraste **contra uma superfície**, e até 2026-09-12 este documento só dizia qual superfície a
+**PÁGINA** pinta. O plot não é pintado na página — é pintado num `<canvas>`, e `lightweight-charts`
+limpa esse canvas com o **default publicado dele**, não com o nosso token.
+
+**Medido:** em `74d59a4`, `createChart` era chamado com `width`/`height`/`timeScale` e mais nada ⇒ os
+três painéis de `/symbol` eram `background {type:"solid", color:"#FFFFFF"}` dentro de uma página
+`#131722`. A linha de **delta do CVD** (`--proc-forte`, `#e6e9ef`) media **14,72:1 no portão e
+1,22:1 na tela**; `--dado-quebrado` media **1,85:1**
+`[MEDIDO 2026-09-12, n=5 papéis, fórmula de `frontend/src/charts/contrast.ts:25-42`;
+comando: `npm --prefix frontend run test:charts`]`. O texto de eixo da biblioteca (`#191919`) contra
+a página escura media **1,02:1**.
+
+**É o mesmo modo de falha de §1.8 e do `D13`, pelo lado oposto** — lá a tinta era igual ao fundo
+(1,00:1), aqui o fundo é que era outro. E nos dois casos os **6 portões de `make verify` ficaram
+verdes**, porque o instrumento media a referência errada (`ADR-012`: `rc=0` indistinguível entre
+"nada erodiu" e "nunca foi capaz de distinguir").
+
+**A regra, normativa a partir daqui:**
+
+> **O `<canvas>` e a página são a MESMA superfície.** Nenhum gráfico é construído com o default de
+> cor da biblioteca; todo `createChart` recebe `layout`/`grid` derivados dos tokens.
+
+| token novo | valor | de onde vem | o que o mede |
+|---|---|---|---|
+| fundo do canvas | `#131722` | **é** `SURFACE_BASE` (`--color-surface-base`), importado, não redigitado | `color-contrast.test.ts` — todo papel `kind:"surface"` afere contra **este** valor |
+| texto de eixo/crosshair | `#8b949e` (`--proc-fraca`) | token, não default | **5,82:1** ≥ 4,5:1 (WCAG 1.4.3), asserido por aritmética |
+| linha de grade | `#222634` | 2ª citação de `--color-surface-stripe`, com teste de deriva contra o CSS | ⛔ **não é `ColorRole`** — é cromo, não dado; um piso de 3,0:1 faria a grade gritar por cima da série |
+
+**E ela deixou de ser falsificável em três níveis** (`frontend/src/charts/chart-theme.ts`,
+`frontend/src/app/symbol/chart-construction.test.ts`, `frontend/e2e/11-canvas-fundo.spec.ts`):
+aritmética, o que está escrito, e o **pixel** — `make e2e` mede **12 canvases, 12 com cor modal
+`#131722`**, fração 0,857–1,000 `[MEDIDO 2026-09-12]`. Falsificador rodado, não descrito: removido o
+`layout`, o spec reprova com `Expected: "#131722" · Received: "#ffffff"`.
+
+⚠️ **Isto NÃO resolve o `[NÃO MEDIDO]` de `forced-colors: active`** da §8 — continua verdade que HCM
+sobrescreve CSS e **não** toca bitmap de canvas. O que mudou é que agora existe **um** lugar por onde
+a paleta entra no canvas, que é exatamente o gancho que aquela caixa diz ser necessário.
+
+---
+
 ## 2. O selo — 4 campos, e nenhum numeral renderiza sem ele
 
 **Visível sem hover. Tooltip não conta.** `[SPEC-001 §6.1]`

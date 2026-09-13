@@ -33,6 +33,7 @@ from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_t
 from tests.helpers.collectors_cli_driver import (
     _BlockingForceOrderSource,
     _EmptyBatchFetcher,
+    _EmptyFuturesDataClient,
     _EmptyKlinesClient,
     _never_maps,
 )
@@ -71,6 +72,7 @@ def main(_argv: list[str]) -> int:
         # `test_grid_aligned_ticker.py`, not by a driver that really waits.
         klines_cycle_offset_s=0.0,
         klines_backfill_days=1,
+        long_short_cycle_interval_s=60.0,
     )
     connection = connect_resp2(open_tcp_socket(host, port))
     store = compose_ingest_record_store(os.environ)
@@ -84,6 +86,7 @@ def main(_argv: list[str]) -> int:
             force_order_source_factory=_BlockingForceOrderSource,
             premium_index_fetcher_factory=_EmptyBatchFetcher,
             klines_client_factory=_EmptyKlinesClient,
+            long_short_client_factory=_EmptyFuturesDataClient,
             premium_index_to_rows=_never_maps,
             force_order_to_rows=_never_maps,
         )

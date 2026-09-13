@@ -67,7 +67,11 @@ def _oi_key() -> SeriesKey:
 
 def _catalog() -> SeriesCatalog:
     return SeriesCatalog(
-        (SeriesCatalogEntry(key=_oi_key(), native_grid="1min", max_staleness_ms=120_000),)
+        (
+            SeriesCatalogEntry(
+                key=_oi_key(), native_grid="1min", native_grid_ms=60_000, max_staleness_ms=120_000
+            ),
+        )
     )
 
 
@@ -184,7 +188,17 @@ def test_get_series_history_serves_the_3_level_envelope(tmp_path: Path) -> None:
     envelope = json.loads(body)
     assert set(envelope) == {"session", "panel", "rows", "knowledge_time", "bar_policy"}
     assert set(envelope["session"]) == {"principal_id", "server_now_ms"}
-    assert set(envelope["panel"]) == {"series_key_id", "source", "nature", "unit"}
+    # `native_grid_ms`/`grid_multiple` joined the panel level with `ADR-037/D4`: the report
+    # grid is fixed at 1 minute, so a series on a wider grid comes back as a staircase and the
+    # envelope has to SAY so rather than let the consumer count repeated slots as bars.
+    assert set(envelope["panel"]) == {
+        "series_key_id",
+        "source",
+        "nature",
+        "unit",
+        "native_grid_ms",
+        "grid_multiple",
+    }
     assert envelope["bar_policy"] == "final_only"
     assert len(envelope["rows"]) == 1
     row_wire = envelope["rows"][0]
@@ -280,3 +294,32 @@ def test_a_malformed_read_is_refused_with_a_named_500_never_served(tmp_path: Pat
 
     assert status == 500
     assert b"simulated malformed read" in body
+
+
+def test_the_served_envelope_carries_the_grid_verdict_from_the_real_charts_rule(
+    tmp_path: Path,
+) -> None:
+    """`ADR-037/D4`, end to end: `classify_grid_multiple` reaches the wire through `create_app`.
+
+    `ADR-037`/M6 measured `classify_grid_multiple` with ZERO production callers — built, tested
+    and never consulted. The adapter that gives it its first one lives in `src.main`
+    (`_classify_panel_grid`), wired unconditionally into `app.dependency_overrides`, and this
+    test exercises exactly that wiring: nothing here overrides the classifier, so a `200` whose
+    panel carries `multiple_of_native` is proof the composition root wired it. Had it not, the
+    stub in `src.api.dependencies` would raise and the route would answer `500`.
+    """
+    row = _row()
+    reader = _FakeReader((Observation(row=row, value=Decimal(row.value_raw)),))
+    app = _app_with_reader(tmp_path, reader)
+
+    with _served(app) as port:
+        status, body = _get(port, _valid_query())
+
+    assert status == 200
+    panel = json.loads(body)["panel"]
+    assert panel["native_grid_ms"] == 60_000
+    assert panel["grid_multiple"] == {
+        "enabled": True,
+        "reason": "multiple_of_native",
+        "multiple": 1,
+    }

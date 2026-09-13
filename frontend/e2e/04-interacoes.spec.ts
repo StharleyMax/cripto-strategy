@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-import { PANEL_PATH, fact, seriesCatalogEntryCount } from "./helpers.ts";
+import {
+  PANEL_PATH,
+  fact,
+  seriesCatalogEntryCount,
+  seriesCatalogMetricRowCount,
+} from "./helpers.ts";
 
 const SPEC = "04-interacoes";
 
@@ -28,10 +33,16 @@ test("filtro do catálogo (S3) é controlado e recomputa — as linhas reais da 
 
   // O TOTAL VEM DA API, não de um literal: este teste fixava `10` (`T-03.3`) e ficou vermelho
   // quando `T-01.6` acrescentou a 11ª linha (`klines_volume`, `series_catalog.py:128`), sem que
-  // o FILTRO — o que ele de fato mede — tivesse mudado `[MEDIDO 2026-09-11: n_entries=11;
-  // `git diff --name-only master..HEAD -- backend/src` → 0 arquivos]`. O subtotal de 5 abaixo
-  // continua literal de propósito: ele é a prova de que o filtro REDUZ, e é medido contra o
-  // total que a API acabou de declarar.
+  // o FILTRO — o que ele de fato mede — tivesse mudado.
+  //
+  // ⚠️ E O SUBTOTAL TAMBÉM VEM DA API DESDE 2026-09-12, pelo motivo que a versão anterior
+  // desta frase não previu. Ela dizia que o `5` de `sum_open_interest` "continua literal de
+  // propósito"; o literal morreu quando o catálogo servido deixou de descrever UM instrumento
+  // e passou a concatenar QUATRO (`list_pilot_series_catalog`, `INITIAL_SYMBOLS` =
+  // BTCUSDT/ETHUSDT/LINKUSDT/SOLUSDT) — as mesmas 5 linhas de open interest são publicadas 4
+  // vezes `[MEDIDO 2026-09-12: n_entries=48, sum_open_interest=20]`. O que prova que o filtro
+  // REDUZ não é o número `5`: é `0 < casadas < total`, asserido abaixo sobre dois números que
+  // a API acabou de declarar. Um literal aqui é falha agendada, exatamente como o `10` era.
   const expectedRows = await seriesCatalogEntryCount();
   fact(SPEC, "series_catalog_n_entries", expectedRows);
   const catalogRows = page.locator("table").nth(1).locator("tbody tr");
@@ -39,16 +50,33 @@ test("filtro do catálogo (S3) é controlado e recomputa — as linhas reais da 
   fact(SPEC, "catalog_rows_before_filter", before);
   expect(before, "a tabela tem de mostrar exatamente as linhas que GET /series-catalog publica").toBe(expectedRows);
 
-  // `"sum_open_interest"` (`open_interest_catalog.py`) matches EXACTLY 5 of the rows — the
-  // genuine "casante" half of `D1.9` (`1 <= n <= before`, and strictly less, proving the filter
-  // actually REDUCES rather than merely echoing the input): `RN-5` requires this on every
-  // keystroke, `catalogRowMatchesText` (`domain.ts`) matches on `metric` among other fields.
+  // `"sum_open_interest"` (`open_interest_catalog.py`) is a `key.metric` value, and HOW MANY
+  // rows carry it is asked of the API — the genuine "casante" half of `D1.9`
+  // (`1 <= n < before`, strictly less, proving the filter actually REDUCES rather than merely
+  // echoing the input): `RN-5` requires this on every keystroke, and `catalogRowMatchesText`
+  // (`domain.ts`) matches on `metric` among other fields. The expectation is computed from
+  // `key.metric` ALONE, never by re-implementing that predicate here — a test that re-derives
+  // the production filter agrees with it even when both are wrong.
+  const expectedMatches = await seriesCatalogMetricRowCount("sum_open_interest");
+  fact(SPEC, "series_catalog_n_sum_open_interest", expectedMatches);
+  expect(
+    expectedMatches,
+    "a API tem de publicar ALGUMA linha de open interest — sem ela o filtro nao e testavel",
+  ).toBeGreaterThan(0);
+  expect(
+    expectedMatches,
+    "o filtro so prova que REDUZ se o subtotal casado for menor que o total publicado",
+  ).toBeLessThan(expectedRows);
+
   await input.fill("sum_open_interest");
   await expect(input).toHaveValue("sum_open_interest"); // controlled input echoes — RN-5
   await page.waitForTimeout(300);
   const afterMatch = await catalogRows.count();
   fact(SPEC, "catalog_rows_after_matching_filter", afterMatch);
-  expect(afterMatch, "'sum_open_interest' casa as 5 linhas de open interest, nao o total que a API publica").toBe(5);
+  expect(
+    afterMatch,
+    "'sum_open_interest' casa as linhas de open interest que a API publica, nao o total dela",
+  ).toBe(expectedMatches);
 
   await input.fill("zzz-nenhuma-serie-casa");
   await expect(input).toHaveValue("zzz-nenhuma-serie-casa");

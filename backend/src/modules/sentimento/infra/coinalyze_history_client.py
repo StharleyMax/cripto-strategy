@@ -14,13 +14,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.modules.sentimento.domain.quota_bucket import COINALYZE
 from src.modules.sentimento.infra.https_quota_probe import (
     ConnectionFactory,
     HttpConnection,
     authentication_headers,
+    flatten_headers,
     open_https_connection,
 )
 
@@ -39,6 +40,34 @@ class CoinalizeHistoryResponse:
     status: int | None = None
     body: bytes = b""
     transport_error: str | None = None
+
+    # ── `T-05.5` / `RS-3.2`: THE RESPONSE HEADERS, BECAUSE THE RECOIL IS NOT OURS TO INVENT ──
+    #
+    # Empty by default, so every caller written before `T-05.5` reads exactly as it did. What
+    # needs them is the regime collector: `RS-3.2` obeys `Retry-After` FROM THE RESPONSE and
+    # forbids a fixed blind back-off, and the waste of guessing is measured — observed values
+    # were 49,1 s / 56,8 s / 59,0 s `[DOC: MEDICAO §3]`, so a flat 60 s throws away ~18% of the
+    # window against the first of them.
+    #
+    # ⚠️ A `200` FROM THIS PROVIDER STILL CARRIES NO QUOTA (`quota_bucket.COINALYZE` is BLIND):
+    # this field does NOT turn the bucket sighted, and `SlidingQuotaWindow`'s local count stays
+    # the only accounting there is. The only header this collector ever reads is the one that
+    # rides a `429`.
+    headers: Mapping[str, str] = field(default_factory=dict)
+
+    def header(self, name: str) -> str | None:
+        """Read a header case-insensitively, returning `None` when it is absent.
+
+        `RFC 9110` field names are case-insensitive and providers do vary; a caller matching
+        `"Retry-After"` exactly against a `retry-after` key would fall through to
+        `POLICY_NO_RETRY_AFTER` and guess a pause the provider had actually specified — a
+        defect that looks exactly like a provider that sent no header.
+        """
+        wanted = name.lower()
+        for key, value in self.headers.items():
+            if key.lower() == wanted:
+                return value
+        return None
 
     def __post_init__(self) -> None:
         """Reject a response that is neither a dispatch nor a failure to dispatch."""
@@ -94,11 +123,15 @@ class CoinalizeHistoryClient:
             connection.request("GET", path, headers=headers)
             response = connection.getresponse()
             status = response.status
+            # `flatten_headers` and not a dict comprehension: it lower-cases the keys and
+            # JOINS legal repeats instead of dropping all but the last, which is the same
+            # reading `HttpsQuotaProbe` already does over this very connection.
+            headers = flatten_headers(response.getheaders())
             body = response.read()
         except OSError as failure:
             self._drop()
             return CoinalizeHistoryResponse(transport_error=f"{type(failure).__name__}: {failure}")
-        return CoinalizeHistoryResponse(status=status, body=body)
+        return CoinalizeHistoryResponse(status=status, body=body, headers=headers)
 
     def close(self) -> None:
         """Close the connection, if one was ever opened."""

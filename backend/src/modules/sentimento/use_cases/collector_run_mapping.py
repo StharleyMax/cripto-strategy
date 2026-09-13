@@ -11,10 +11,14 @@ the store it wired; this module is the ONE place the 16-field shape is decided, 
 composition root and this module's own tests share exactly one construction, never two (the
 defect `ADR-008/DoD-3` names for the read side, applied here to the WRITE side).
 
-There are THREE builders since `T-01.3` (`SPEC-007` phase `01`): the `forceOrder` session, the
-`premiumIndex` cycle, and the `/fapi/v1/klines` pass. `Q3` predates the third and fixes only the
-first two, so `build_klines_run`'s own docstring carries the argument for what "one run" means
-for a producer that PAGES — the one shape `Q3` never had to answer.
+There are FIVE builders since `T-04.3` (`SPEC-007` phase `04`, which added the fifth to the
+four `T-03.3` left): the `forceOrder` session, the `premiumIndex` cycle, the `/fapi/v1/klines`
+pass, the `/futures/data/openInterestHist` pass and the
+`/futures/data/globalLongShortAccountRatio` pass. `Q3` predates the last three and fixes only
+the first two, so `build_klines_run`'s own docstring carries the argument for what "one run"
+means for a producer that PAGES — the one shape `Q3` never had to answer — and both
+`/futures/data/` builders inherit that argument rather than re-making it, differing from it in
+exactly one measured respect: `weight_used`, which that endpoint family does not publish.
 
 `gates/Q3-run-definition.md` §3 fixes the two sentinels below as PHYSICALLY IMPOSSIBLE values
 for the quantity they stand in for, so neither can ever collide with something actually
@@ -66,6 +70,38 @@ FORCE_ORDER_ENDPOINT: Final[str] = "!forceOrder@arr"
 # makes executable rather than trusted.
 KLINES_ENDPOINT: Final[str] = "/fapi/v1/klines"
 
+# The FOURTH producer (`T-03.3`, `SPEC-007` phase `03`, M2). Same duplication-with-a-test
+# discipline `KLINES_ENDPOINT` above documents: the literal matches
+# `infra/binance_oi_history_client.OPEN_INTEREST_HIST_PATH` byte for byte, and
+# `test_collector_run_mapping.py::test_the_open_interest_endpoint_literal_matches_the_client_path`
+# makes that executable instead of trusted, because `use_cases` may not import `infra`.
+OPEN_INTEREST_HIST_ENDPOINT: Final[str] = "/futures/data/openInterestHist"
+
+# The FIFTH producer (`T-04.3`, `SPEC-007` phase `04`, `ADR-036/D3`). Split in two constants
+# because the infra client takes the endpoint NAME and composes the path from its own
+# `FUTURES_DATA_PATH_PREFIX` — so the name below is the one thing crossing the layer boundary,
+# and `test_collector_run_mapping.py::test_the_long_short_endpoint_literal_matches_the_client_path`
+# makes the composition executable instead of trusted, the same way the klines line above does.
+LONG_SHORT_DATA_ENDPOINT: Final[str] = "globalLongShortAccountRatio"
+LONG_SHORT_ENDPOINT: Final[str] = f"/futures/data/{LONG_SHORT_DATA_ENDPOINT}"
+
+# The SIXTH producer (`T-05.5`, `SPEC-007` phase `05`, M4, `ADR-036/D4`) — and the FIRST one
+# that is not Binance. Same duplication-with-a-test discipline as the lines above: the literal
+# matches `domain/liquidation_collection.LIQUIDATION_HISTORY_PATH`, and
+# `test_collector_run_mapping.py::test_the_liquidation_endpoint_literal_matches_the_collection_path`
+# makes the pairing executable.
+LIQUIDATION_HISTORY_ENDPOINT: Final[str] = "/v1/liquidation-history"
+
+# ⛔ AND `source` IS NOT `binance-futures` FOR THIS ONE. Every run in `md.ingest_run` today
+# carries one single source — `[MEDIDO 2026-09-12, n=5.406 runs: uma unica source,
+# `binance-futures`]` — because every producer until now WAS Binance. Recording a Coinalyze run
+# under that source would put a third party's numbers under an exchange's name in the one table
+# an operator consults to ask "where did this come from", and `ADR-030`'s dashboard groups by
+# exactly this field. The provider is also already spelled `coinalyze` by
+# `domain/quota_bucket.COINALYZE.identifier` and by `SeriesKey.provider`, so this literal joins
+# a vocabulary rather than inventing one.
+COINALYZE_SOURCE: Final[str] = "coinalyze"
+
 # ── Q3 §3 — THE SENTINELS AND THE OBSERVER LITERALS, NONE OF THEM A GUESS ──────────────────
 # The WS collector spends no REST weight — a FACT (`0`), never a guess.
 FORCE_ORDER_WEIGHT_USED: Final[int] = 0
@@ -82,6 +118,25 @@ N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS: Final[int] = 0
 FORCE_ORDER_OBSERVER_ID: Final[str] = "forceorder-collector"
 PREMIUM_INDEX_OBSERVER_ID: Final[str] = "premiumindex-collector"
 KLINES_OBSERVER_ID: Final[str] = "klines-collector"
+OPEN_INTEREST_OBSERVER_ID: Final[str] = "openinterest-collector"
+LONG_SHORT_OBSERVER_ID: Final[str] = "longshort-collector"
+LIQUIDATION_OBSERVER_ID: Final[str] = "liquidation-collector"
+
+# ── `/futures/data/` ANSWERS WITH **NO** `x-mbx-*` HEADER AT ALL, AND THAT IS MEASURED ─────
+#
+# `KLINES_WEIGHT_PER_CALL` below exists because `/fapi/v1/klines` DOES publish
+# `x-mbx-used-weight-1m`, so its per-call price could be read off a real sequence. The
+# `/futures/data/` family publishes nothing of the kind:
+# `[MEDIDO 2026-09-12: GET /futures/data/openInterestHist?symbol=BTCUSDT&period=5m -> HTTP 200
+# com ZERO header casando `weight`/`used` (n=1 resposta, todos os headers inspecionados);
+# 60 chamadas consecutivas sem pausa -> 60x HTTP 200, nenhum 429/418]`.
+#
+# So an open-interest run's `weight_used` is `WEIGHT_NOT_READABLE` — the sentinel that means
+# exactly "the provider answered without a readable header on a call this collector had no
+# other way to price". Deriving a number here (`1 * n_calls`, say) would be a weight with no
+# command behind it, which is the one thing this module's own header forbids. There is
+# deliberately NO `OPEN_INTEREST_WEIGHT_PER_CALL` constant to go with this paragraph: a
+# constant is an answer, and this endpoint did not give one.
 
 # `/fapi/v1/klines` costs weight 1 per call of up to 1500 candles — a FACT of this endpoint,
 # like `FORCE_ORDER_WEIGHT_USED = 0` is a fact of a WebSocket, and not a guess:
@@ -105,6 +160,52 @@ KnownVerdict = Literal["ACCEPTED", "ACCEPTED_WITH_WARNING", "REJECTED"]
 KNOWN_VERDICT_LITERALS: Final[tuple[str, ...]] = get_args(KnownVerdict)
 
 
+# ── `T-05.6` / `RF-6` / `RS-4`: A `REJECTED` RUN WITHOUT A REASON CANNOT BE BUILT ──────────
+#
+# `DoD 5` of plan `05`: "NENHUM veredito `REJECTED` com `api_code` E `notes` ambos nulos".
+# The measurement that motivated it is not a projection — it is the state of the database:
+#
+#     select run_id, endpoint, verdict, coalesce(api_code::text,'NULL'), n_written, started_at
+#       from md.ingest_run where verdict='REJECTED' order by started_at;
+#     -> `[MEDIDO 2026-09-12, n=6 runs REJECTED]`: 6 of 6 with `api_code` NULL
+#        (5 from `!forceOrder@arr`, 1 from `/fapi/v1/klines` at 2026-09-11T01:40Z)
+#
+# The entry handoff said "2 de 2". It had grown to 6 of 6 while the phase was being planned:
+# the debt was GROWING, not sitting still — which is what a rule enforced by prose does.
+#
+# So the rule is enforced HERE, at the one controlled construction site `Q3` describes, and it
+# is enforced by REFUSING TO BUILD rather than by reviewing. A run that reaches `record_run`
+# already satisfies `RS-4` or it never existed. The falsifier is a mutation and it is executable:
+# `test_collector_run_mapping.py::test_a_rejected_run_without_api_code_or_notes_is_refused`
+# passes `verdict="REJECTED"` with both nulls to every builder and requires this error.
+#
+# ⚠️ WHY THIS RAISES INSTEAD OF FILLING IN A DEFAULT NOTE. A default ("rejected") would satisfy
+# the DoD query and satisfy nothing else — it is `ADR-012`'s `rc=0` wearing a string: a reason
+# column that always has a value and never has information. The caller knows why the run
+# failed; this module does not, and it must not pretend to.
+class RejectionWithoutReasonError(ValueError):
+    """A `REJECTED` run was built with `api_code` and `notes` both `None` (`RF-6`, `RS-4`)."""
+
+
+def require_rejection_reason(
+    verdict: KnownVerdict, api_code: int | None, notes: str | None
+) -> None:
+    """Refuse a `REJECTED` run that names no reason — the ONE place `RS-4` is enforced.
+
+    Silent on every other verdict: an `ACCEPTED` run normally has nothing to explain, and
+    demanding prose there would manufacture text nobody wrote. The rule is about the PAIR,
+    so EITHER field satisfies it — `api_code` when the provider refused and gave a number,
+    `notes` when the run died on our side, where there IS no provider code and `NULL` is the
+    honest value for `api_code`. That second case is precisely the one that produced `DEF-2`.
+    """
+    if verdict == "REJECTED" and api_code is None and notes is None:
+        raise RejectionWithoutReasonError(
+            "a REJECTED run must carry api_code or notes: a verdict without a reason is "
+            "indistinguishable between 'it failed for X' and 'this collector never knew how "
+            "to say why' (RF-6, RS-4, ADR-012)"
+        )
+
+
 def build_force_order_run(
     started_at: str,
     ended_at: str,
@@ -113,6 +214,7 @@ def build_force_order_run(
     digest: hashlib._Hash,
     endpoint: str = FORCE_ORDER_ENDPOINT,
     run_id: str | None = None,
+    notes: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `forceOrder` SESSION close (`Q3` §1.1, §3).
 
@@ -136,6 +238,7 @@ def build_force_order_run(
     opened the session with an id of its own (so the published rows could carry it, `ADR-035/D2`)
     passes that SAME id here, and the run the writer closes is then the run the collector opened.
     """
+    require_rejection_reason(verdict, None, notes)
     return IngestRun(
         run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
@@ -153,6 +256,7 @@ def build_force_order_run(
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
         ended_at=ended_at,
+        notes=notes,
     )
 
 
@@ -165,6 +269,7 @@ def build_premium_index_run(
     verdict: KnownVerdict,
     src_sha256: str,
     run_id: str | None = None,
+    notes: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `premiumIndex` poll CYCLE (`Q3` §1.2, §3).
 
@@ -178,6 +283,7 @@ def build_premium_index_run(
     opened the cycle with an id of its own (so the published rows could carry it, `ADR-035/D2`)
     passes that SAME id here, and the run the writer closes is then the run the collector opened.
     """
+    require_rejection_reason(verdict, status, notes)
     return IngestRun(
         run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
@@ -195,6 +301,7 @@ def build_premium_index_run(
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
         ended_at=ended_at,
+        notes=notes,
     )
 
 
@@ -208,6 +315,7 @@ def build_klines_run(
     verdict: KnownVerdict,
     src_sha256: str,
     run_id: str | None = None,
+    notes: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `/fapi/v1/klines` pass (`T-01.3`, `SPEC-007` phase `01`).
 
@@ -234,6 +342,7 @@ def build_klines_run(
     the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
     parameter here and is minted at pass OPEN by the composition root.
     """
+    require_rejection_reason(verdict, api_code, notes)
     return IngestRun(
         run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
@@ -251,4 +360,182 @@ def build_klines_run(
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
         ended_at=ended_at,
+        notes=notes,
+    )
+
+
+def build_open_interest_run(
+    *,
+    started_at: str,
+    ended_at: str,
+    n_returned: int,
+    n_calls: int,
+    api_code: int | None,
+    verdict: KnownVerdict,
+    src_sha256: str,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> IngestRun:
+    """Build the `IngestRun` for one `/futures/data/openInterestHist` pass (`T-03.3`, phase `03`).
+
+    A "pass" is one sweep over the configured symbol universe — the boot backfill is one such
+    pass (many pages per symbol, enumerated a priori by `domain/oi_history_paginator.py`), and
+    every periodic cycle after it is another. That is the SAME unit `build_klines_run` already
+    argues for, and the argument is not re-made here: the run is what the operator schedules,
+    not the HTTP call, and `n_calls` is what carries the paging.
+
+    `n_expected = n_returned`, the same refusal both builders above document: this endpoint
+    retains ~30 days and publishes one point per 5-minute bucket, but a symbol listed
+    mid-window legitimately has fewer, so `backfill_days * 288` would be an oracle nobody
+    measured.
+
+    `weight_used` is `WEIGHT_NOT_READABLE`, and unlike `build_premium_index_run`'s *fallback*
+    use of that sentinel this is the ONLY value this endpoint can ever produce — see
+    `OPEN_INTEREST_OBSERVER_ID`'s neighbouring comment for the measurement
+    (`/futures/data/` answers with no `x-mbx-*` header at all).
+
+    `n_written` stays `N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS`: this collector OPENS the run and
+    the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
+    parameter here and is minted at pass OPEN by the composition root.
+    """
+    require_rejection_reason(verdict, api_code, notes)
+    return IngestRun(
+        run_id=run_id if run_id is not None else str(uuid4()),
+        source=SOURCE,
+        endpoint=OPEN_INTEREST_HIST_ENDPOINT,
+        window=f"{started_at}/{ended_at}",
+        n_expected=n_returned,
+        n_returned=n_returned,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+        verdict=verdict,
+        api_code=api_code,
+        src_sha256=src_sha256,
+        weight_used=WEIGHT_NOT_READABLE,
+        observer_id=OPEN_INTEREST_OBSERVER_ID,
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
+        started_at=started_at,
+        ended_at=ended_at,
+        notes=notes,
+    )
+
+
+def build_long_short_run(
+    *,
+    started_at: str,
+    ended_at: str,
+    n_returned: int,
+    n_calls: int,
+    api_code: int | None,
+    verdict: KnownVerdict,
+    src_sha256: str,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> IngestRun:
+    """Build the `IngestRun` for one `/futures/data/globalLongShortAccountRatio` pass (`T-04.3`).
+
+    Same UNIT as `build_klines_run`: a pass is one sweep over the configured symbol universe, not
+    one HTTP call — `n_calls` carries how many requests the sweep spent. `Q3` §1.2's reasoning is
+    unchanged by the endpoint, so it is not re-argued here.
+
+    `weight_used` is `WEIGHT_NOT_READABLE`, and that is a MEASUREMENT rather than a shrug:
+    `/futures/data/*` answers `200` with ZERO `x-mbx-*` headers (`domain/clock_skew.py`,
+    `T-03.7`), so this collector genuinely has no way to price its own calls. It is the exact
+    case that sentinel's own comment reserves it for — deriving a number the way
+    `KLINES_WEIGHT_PER_CALL` does would require a measured per-call weight, and this endpoint
+    family publishes none to measure. It is the same fact `build_open_interest_run` above rests
+    on, for the same endpoint FAMILY — measured once, in `OPEN_INTEREST_OBSERVER_ID`'s
+    neighbouring comment, and not re-measured per endpoint.
+
+    `n_expected = n_returned` for the reason `build_klines_run` already states: there is no
+    independent oracle for how many buckets the exchange SHOULD have had for a window.
+
+    `n_written` stays `N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS` — this collector OPENS the run and
+    the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
+    parameter here and is minted at pass OPEN by the composition root.
+    """
+    require_rejection_reason(verdict, api_code, notes)
+    return IngestRun(
+        run_id=run_id if run_id is not None else str(uuid4()),
+        source=SOURCE,
+        endpoint=LONG_SHORT_ENDPOINT,
+        window=f"{started_at}/{ended_at}",
+        n_expected=n_returned,
+        n_returned=n_returned,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+        verdict=verdict,
+        api_code=api_code,
+        src_sha256=src_sha256,
+        weight_used=WEIGHT_NOT_READABLE,
+        observer_id=LONG_SHORT_OBSERVER_ID,
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
+        started_at=started_at,
+        ended_at=ended_at,
+        notes=notes,
+    )
+
+
+def build_liquidation_history_run(
+    *,
+    started_at: str,
+    ended_at: str,
+    n_returned: int,
+    n_calls: int,
+    api_code: int | None,
+    verdict: KnownVerdict,
+    src_sha256: str,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> IngestRun:
+    """Build the `IngestRun` for one Coinalyze `liquidation-history` CYCLE (`T-05.5`).
+
+    Same UNIT as `build_klines_run`: one pass over the configured symbol universe, with
+    `n_calls` carrying how many requests it spent. `Q3` §1.2's reasoning does not change with
+    the provider, so it is not re-argued here.
+
+    ── `weight_used = n_calls`, AND WHY THAT IS NOT `WEIGHT_NOT_READABLE` ─────────────────
+
+    The sentinel means "the provider answered without a readable header on a call this
+    collector had NO OTHER WAY to price", and that is not this endpoint's situation. Coinalyze
+    publishes no header either (`quota_bucket.COINALYZE` is `BLIND`) — but its ceiling is
+    denominated IN CALLS: 40 per sliding 60 s `[MEDIDO 2026-09-10, n=41 requisicoes: a 41a
+    tomou 429]`. The price of one call is therefore one unit BY THE DEFINITION OF THE UNIT, not
+    by a derivation, and the count is this collector's own (`SlidingQuotaWindow` keeps it,
+    because a blind bucket leaves local counting as the only accounting there is).
+
+    That is the same standard `KLINES_WEIGHT_PER_CALL` meets — a measured per-call price times
+    a counted quantity — reached by a different route, and it is what lets `RNF-3`'s budget
+    claim ("<= 5% do teto a N=10, cadencia 5 min") be checked against the record instead of
+    against a log line.
+
+    `n_expected = n_returned`: there is no oracle for how many buckets a SPARSE series should
+    have had. Only 20,2% of 1-minute buckets carry any liquidation at all
+    `[MEDIDO 2026-09-12, n=14.344 buckets possiveis, 2.900 preenchidos]`, so an "expected" count
+    derived from the window width would declare a 79,8% shortfall on a perfectly healthy cycle —
+    which is precisely the rate-shaped reasoning `T-05.7` exists to keep out of this series.
+
+    `notes` is `RS-4`'s second reason field and it is REQUIRED whenever the verdict is
+    `REJECTED` and no `api_code` came — `require_rejection_reason` enforces it rather than
+    trusting the caller.
+    """
+    require_rejection_reason(verdict, api_code, notes)
+    return IngestRun(
+        run_id=run_id if run_id is not None else str(uuid4()),
+        source=COINALYZE_SOURCE,
+        endpoint=LIQUIDATION_HISTORY_ENDPOINT,
+        window=f"{started_at}/{ended_at}",
+        n_expected=n_returned,
+        n_returned=n_returned,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+        verdict=verdict,
+        api_code=api_code,
+        src_sha256=src_sha256,
+        weight_used=n_calls,
+        observer_id=LIQUIDATION_OBSERVER_ID,
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
+        started_at=started_at,
+        ended_at=ended_at,
+        notes=notes,
     )

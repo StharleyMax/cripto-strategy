@@ -207,6 +207,7 @@ def build_klines_last_entry(instrument_id: str, *, verified_by: str) -> SeriesCa
     return SeriesCatalogEntry(
         key=key,
         native_grid="5min",
+        native_grid_ms=300_000,
         max_staleness_ms=600_000,
         price_use="structure_detection",
     )
@@ -254,6 +255,7 @@ def build_price_mark_close_entry(instrument_id: str, *, verified_by: str) -> Ser
     return SeriesCatalogEntry(
         key=key,
         native_grid="5min",
+        native_grid_ms=300_000,
         max_staleness_ms=600_000,
         price_use="liquidation_trigger",
     )

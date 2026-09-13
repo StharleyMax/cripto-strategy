@@ -30,7 +30,11 @@
  *      negative control (`s2-axis-integration.test.ts`) — sanctioning it here would hand a
  *      `web` caller the one function whose entire purpose is to demonstrate a bug.
  *   4. tokens de cor               — `color-tokens.ts` (`colorTokens`/`candlestickSeriesColors`
- *      and the guard `assertNoForbiddenColorRoles`/`FORBIDDEN_COLOR_ROLE_SUBSTRINGS`).
+ *      and the guard `assertNoForbiddenColorRoles`/`FORBIDDEN_COLOR_ROLE_SUBSTRINGS`), mais o
+ *      SUPORTE em que essa tinta é aplicada (`chart-theme.ts`: `chartSurfaceTheme`). Os dois
+ *      andam juntos de propósito — `DR-1` mediu o que acontece quando só a tinta é governada e
+ *      o fundo fica no default da biblioteca (`#FFFFFF`): a linha de delta do CVD a `1,22:1`
+ *      numa página `#131722`, com o portão de contraste verde o tempo todo.
  *   5. tipos de política de ausência — `s2-absence-policy.ts` (`resolveStockReading`/
  *      `resolveFlowReading` and their formatters) — `D5.2`/`D5.3`'s STOCK-held/FLOW-absent
  *      rules, exercised by `T-02.4` on real (or really-absent) OI/CVD data for the first time.
@@ -90,6 +94,11 @@ export {
 } from "./color-tokens.ts";
 export type { ColorRole, ColorTokens, ContrastBackdrop } from "./color-tokens.ts";
 export { relativeLuminance, contrastRatio } from "./contrast.ts";
+// The surface the canvas is CLEARED to — the value `createChart` receives and the value every
+// `kind: "surface"` contrast ratio is measured against, so the two cannot be different things
+// (`DR-1` of `gates/design-review-painel-cvd.md`).
+export { chartSurfaceTheme, CHART_GRID_LINE } from "./chart-theme.ts";
+export type { ChartSurfaceTheme } from "./chart-theme.ts";
 
 // ── 5. tipos de política de ausência ─────────────────────────────────────────────────────────
 export {

@@ -71,13 +71,16 @@ def _get_series_catalog(port: int) -> tuple[int, dict[str, object]]:
 def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_up(
     tmp_path: Path,
 ) -> None:
-    """CALA: process up -> `200`, `n_entries == len(entries) == 44` — the REAL total.
+    """CALA: process up -> `200`, `n_entries == len(entries) == 52` — the REAL total.
 
     `store_path` here is `/ingest-health`'s dependency, irrelevant to this route (`0` SQL in the
     handler, `D5.13c`'s sibling restriction) — a fresh, uninitialised store still serves this
     route correctly, proving the catalog carries no coupling to the ingest-health store.
 
-    Was `10` until `T-01.6` registered `klines_volume`, then `11`, and is now `11 x 4 = 44`:
+    Was `10` until `T-01.6` registered `klines_volume`, then `11`, then `11 x 4 = 44` when the
+    pilot universe landed, `13 x 4 = 52` after `T-02.4`/`T-04.4`, and is now `15 x 4 = 60`
+    after `T-05.8` registered BOTH `sum_liquidation` cohorts (`SPEC-007` §4.5, row M4 — two
+    rows per instrument, because their sum would erase which leg was flushed):
     `create_app` wires `list_pilot_series_catalog()`, covering the four instruments the
     collector actually writes `md.series` rows for. Serving one of them was the finding — the
     other three answered `422 UnknownSeriesKeyIdError` with their rows already on disk
@@ -90,7 +93,7 @@ def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_
     could be lost.
 
     `RS-1` is checked in the same breath: the three top-level fields and the entry field names
-    below are unchanged, and the eleven `BTCUSDT` rows keep their indices — this moved
+    below are unchanged, and the fifteen `BTCUSDT` rows keep their indices — this moved
     CONTENT (more rows, appended) and not FORM.
     """
     store_path = tmp_path / "ih.sqlite3"
@@ -101,19 +104,47 @@ def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_
     assert status == 200
     assert set(body) == {"query", "n_entries", "entries"}
     assert body["query"] == "series_catalog"
-    assert body["n_entries"] == 44
+    assert body["n_entries"] == 60
     entries = body["entries"]
     assert isinstance(entries, list)
-    assert len(entries) == 44
+    assert len(entries) == 60
 
     served_metrics = [e["key"]["metric"] for e in entries]
     assert served_metrics.count("klines_volume") == 4
+    # `T-02.4` appends the klines-borne `cvd_source` row AFTER `klines_volume`, so within each
+    # instrument's block of fifteen the volume row is at offset 10, the CVD row at 11, the
+    # long/short row at 12 and the two `sum_liquidation` cohorts at 13 (`long`) and 14
+    # (`short`) — `T-05.8`.
+    # Asserting the OFFSETS, not only the counts, is what makes a reordering fail here.
     assert served_metrics[10] == "klines_volume"
-    assert served_metrics[-1] == "klines_volume"
+    assert served_metrics[11] == "cvd_source"
+    assert served_metrics[12] == "count_long_short_ratio"
+    assert served_metrics[13] == served_metrics[14] == "sum_liquidation"
+    assert served_metrics[-1] == "sum_liquidation"
+    assert served_metrics.count("count_long_short_ratio") == 4
+    assert served_metrics.count("sum_liquidation") == 8
+    assert [index % 15 for index, m in enumerate(served_metrics) if m == "klines_volume"] == [
+        10,
+        10,
+        10,
+        10,
+    ]
+    # `T-05.8`: the TWO cohorts are served per instrument, never one netted row — the
+    # discrimination `RF-2` exists for, asserted over the real HTTP response.
+    served_liquidation_cohorts = [
+        (e["key"]["instrumentId"], e["key"]["cohort"])
+        for e in entries
+        if e["key"]["metric"] == "sum_liquidation"
+    ]
+    assert sorted(served_liquidation_cohorts) == sorted(
+        (instrument, cohort)
+        for instrument in ("BTCUSDT", "ETHUSDT", "LINKUSDT", "SOLUSDT")
+        for cohort in ("long", "short")
+    )
 
     served_instruments = [e["key"]["instrumentId"] for e in entries]
     assert set(served_instruments) == {"BTCUSDT", "ETHUSDT", "LINKUSDT", "SOLUSDT"}
-    assert set(served_instruments[:11]) == {"BTCUSDT"}
+    assert set(served_instruments[:15]) == {"BTCUSDT"}
 
     # A1 at the wire: a `denom="base"` row carries the INSTRUMENT's base asset, so the served
     # `ETHUSDT` volume is `ETH` and never the `"BTC"` the old module-level literal published.
@@ -197,7 +228,11 @@ def test_the_dependency_override_is_genuinely_substitutable(tmp_path: Path) -> N
         verified_by="test_series_catalog_route.py",
     )
     fixture_catalog = SeriesCatalog(
-        (SeriesCatalogEntry(key=key, native_grid="5min", max_staleness_ms=600_000),)
+        (
+            SeriesCatalogEntry(
+                key=key, native_grid="5min", native_grid_ms=300_000, max_staleness_ms=600_000
+            ),
+        )
     )
     app.dependency_overrides[get_series_catalog_source] = lambda: fixture_catalog
 

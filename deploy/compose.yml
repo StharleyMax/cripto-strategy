@@ -51,6 +51,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -147,8 +149,11 @@ services:
   # against Postgres via the same shared composition (`compose_ingest_record_store`,
   # `collectors_cli.py`) — hence `depends_on` both. SAME image as `api`/`writer`.
   #
-  # THREE threads since `T-01.3` (`SPEC-007` phase `01`): `forceOrder` (stream), `premiumIndex`
-  # (poll) and `/fapi/v1/klines` (poll + a one-off backfill at boot). The three CADENCE
+  # FIVE threads since `T-04.3` (`SPEC-007` phase `04`, which added the fifth to the four
+  # `T-03.3` left): `forceOrder` (stream), `premiumIndex` (poll), `/fapi/v1/klines` and
+  # `/futures/data/openInterestHist` (both poll + a one-off backfill at boot) and
+  # `/futures/data/globalLongShortAccountRatio` (poll + a one-off full page at boot). The six
+  # CADENCE
   # variables live in `../.env`, which `env_file:` below supplies — NOT in an `environment:`
   # block here, and that is deliberate: `environment:` takes precedence over `env_file:`, so
   # pinning a default here would SILENTLY override whatever the operator wrote in `.env`. The
@@ -172,14 +177,47 @@ services:
   #                                                    anti-lookahead cut then drops
   #   KLINES_BACKFILL_DAYS             default 7       days read once at boot (7 x 1440 = 10.080
   #                                                    bars per symbol = 7 calls of 1500)
+  #   OPEN_INTEREST_CYCLE_INTERVAL_S   default 60      seconds between openInterestHist polls;
+  #                                                    the series is 5-minute but the point is
+  #                                                    published ~6 s after its own label
+  #                                                    `[MEDIDO 2026-09-12]`, so a 60 s cycle
+  #                                                    picks it up on the next turn
+  #   OPEN_INTEREST_BACKFILL_DAYS      default 7       days read once at boot (7 x 288 = 2.016
+  #                                                    points per symbol = 5 calls of 500).
+  #                                                    ⛔ TETO DA FONTE: `/futures/data/*` corta
+  #                                                    em ~30 dias — `startTime` de -35 d
+  #                                                    devolve HTTP 400 `code:-1130`
+  #                                                    `[MEDIDO 2026-09-12]`. Acima disso o
+  #                                                    backfill fecha como END OF HISTORY sem
+  #                                                    escrever linha.
+  #   LONG_SHORT_CYCLE_INTERVAL_S      default 60      seconds between long/short polls; the
+  #                                                    series is 5-minute and the SOURCE grid is
+  #                                                    5 min too `[MEDIDO 2026-09-12, n=499
+  #                                                    gaps: inter-chegada == 300.000 ms exatos]`,
+  #                                                    so below 60 buys nothing. There is NO
+  #                                                    backfill-days twin: `/futures/data/*`
+  #                                                    takes no window on the tail call, and the
+  #                                                    boot pass asks the endpoint's own ceiling
+  #                                                    (limit=500 = ~41,7 h per symbol).
   #
   # Quota, so the numbers are not adjectives: weight 1 per klines call against 2400 weight/min
   # per IP `[MEDIDO 2026-09-10: sequencia 31->32->33]` — four symbols at 60 s spend 4 of 2400.
+  # The long/short thread spends 4 calls/min on `/futures/data/*`, a family that answers `200`
+  # with ZERO `x-mbx-*` headers (`domain/clock_skew.py`, `T-03.7`) — so its weight is UNREADABLE
+  # rather than zero, and its runs carry `WEIGHT_NOT_READABLE` instead of a derived number.
   # The boot backfill publishes `7 x 1440 x |symbols|` entries onto the Redis stream, under the
   # `REDIS_STREAM_MAXLEN` cap (default 100.000, `redis_stream_bus.py`); with the four-symbol
   # universe that peak is 40.320, i.e. 40% of the cap. An operator who raises
   # `KLINES_BACKFILL_DAYS` past ~17 days on four symbols must raise `REDIS_STREAM_MAXLEN` with
   # it, or `XADD ... MAXLEN ~` will trim entries the writer has not drained yet.
+  #
+  # Open interest is CHEAP against that cap by a factor of five (5-minute grid, not 1-minute):
+  # `7 x 288 x 4 = 8.064` entries at boot, 8% of the default cap, and 4 entries per 60 s cycle.
+  # Its quota cost cannot be priced the same way because `/futures/data/` publishes NO
+  # `x-mbx-*` header at all — what IS measured is that the limit was not reached:
+  # `[MEDIDO 2026-09-12: 60 chamadas consecutivas em 22,5 s (2,67 req/s) -> 60x HTTP 200, zero
+  # 429/418]`, against a production cadence of 4 chamadas / 60 s = 0,067 req/s, 40x abaixo da
+  # taxa sondada que nao disparou.
   collector:
     build:
       context: ../backend

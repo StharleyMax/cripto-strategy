@@ -25,20 +25,22 @@
  *   3. Map the rows into `RawCandle[]`/`ScalarPoint[]`/`ScaledCvdDeltaInput[]`
  *      (`view-model.ts`) and call `buildS2Panels` (the barrel) to get the 3 panels; volume is
  *      mapped separately (`volumeSlotsFromHistoryRows`) because it is a sub-axis, not a panel.
- *   4. Hand `{ panels, volume, panelStatus, liveUrls }` to `SymbolClient.tsx` by props.
+ *   4. Hand `{ panels, volume, cvd, panelStatus, liveUrls }` to `SymbolClient.tsx` by props.
  *
  * ── WHY EVERY FAILURE DEGRADES TO ABSENCE, NEVER A THROWN PAGE (`CA-F2-3`) ──────────────────
  *
  * Three independent, NAMED failure modes exist today, and all three render as absence, exactly
  * like a real `SEM_PONTO` row would (`view-model.ts`'s own docstring on the central rule):
  *
- *   - the catalog has NO entry for a panel's selector (measured today for CVD: the only CVD
- *     catalog metric this codebase's backend builds is `cvd_source`, nature `FLOW`
- *     — `cvd_source_catalog.py` — a raw-quantity-source CHARACTERIZATION, not a materialized
- *     per-bucket delta series `/series-history` could serve; there is no producer of a
- *     `cvd_delta`-shaped catalog row yet. This is a genuine, current gap in what `sentimento`
- *     ingests — NOT something this `web`-scope task can or should fabricate — named here so it
- *     is not silently mistaken for a bug in this page);
+ *   - the catalog has NO entry for a panel's selector. ⚠️ THIS BULLET USED TO NAME CVD AS THE
+ *     MEASURED EXAMPLE, and `T-02.5` retired that example rather than leaving it to rot: the
+ *     panel asked for `metric === "cvd_delta"`, a metric no builder in
+ *     `backend/src/modules/sentimento/domain/` ever produced, so the selector could not match
+ *     and the panel was absent BY CONSTRUCTION. Since `T-02.3` the collector publishes
+ *     `cvd_source`/`binance`/`NA` (`2*takerBuy[9] - volume[5]`, off the same `/fapi/v1/klines`
+ *     array phase `01` already fetches) and this route selects THAT row
+ *     (`view-model.ts::matchesKlineTakerBuyCvd`). The failure MODE stays real for any panel —
+ *     a catalog that does not carry a selector's row still degrades to absence here;
  *   - `GET /series-history` throws `TransportError` (missing base URL, connection refused,
  *     non-2xx, malformed envelope) — the SAME four kinds `/console` already handles;
  *   - the catalog fetch itself throws `TransportError` — every panel degrades together.
@@ -78,13 +80,14 @@ import {
 } from "./series-history-client.ts";
 import type { PanelStatus } from "./panel-status.ts";
 import { resolveRouteWindow, type RouteWindow } from "./request-window.ts";
-import { SymbolClient, type VolumeSubAxisData } from "./SymbolClient.tsx";
+import { SymbolClient, type CvdPaneData, type VolumeSubAxisData } from "./SymbolClient.tsx";
 import {
   computeSeriesKeyId,
   countPresentSlots,
   firstPresentSlotMs,
   daysWithPresence,
   keyMatchesSymbol,
+  matchesKlineTakerBuyCvd,
   rawCandlesFromHistoryRows,
   resolveVolumeReading,
   scalarPointsFromHistoryRows,
@@ -100,12 +103,6 @@ export const dynamic = "force-dynamic";
 
 const BAR_POLICY: BarPolicy = "final_only";
 const OI_METRIC = "sum_open_interest";
-/** `[INFERRED]`: no catalog builder in `backend/src/modules/sentimento/domain/` produces this
- * metric today (`cvd_source_catalog.py` only builds `cvd_source`, the raw-quantity-source
- * characterization — a materialized per-bucket CVD delta series does not exist yet). Kept as
- * the forward-compatible selector so this panel starts reading real data the day `sentimento`
- * ships one, instead of a second code path this page would need later. */
-const CVD_METRIC = "cvd_delta";
 /** `T-01.7` / `SPEC-007 §4`, row M1 — the volume SUB-AXIS of the price panel (§3.6), whose
  * catalog entry `T-01.6` registered (`domain/klines_volume_catalog.py`, `metric` transcribed
  * here, not re-derived). Its `interval` is `1m` (§4.1), the grid `/series-history` serves
@@ -189,8 +186,13 @@ export default async function SymbolPage() {
     catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.priceUse === S2_PRICE_USE) : undefined;
   const oiEntry =
     catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.key.metric === OI_METRIC) : undefined;
+  // `T-02.5` — the CVD panel now reads a series that EXISTS: `cvd_source`/`binance`/`NA`, the
+  // `kline_takerbuy` row `T-02.3`'s collector publishes off the same `/fapi/v1/klines` array
+  // phase `01` already fetches. The predicate is `view-model.ts`'s (three terms, each one
+  // load-bearing — see the section there for which sibling row each term excludes and why
+  // `metric === "cvd_source"` alone silently selects `aggtrade_q`, a series with no rows).
   const cvdEntry =
-    catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.key.metric === CVD_METRIC) : undefined;
+    catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => matchesKlineTakerBuyCvd(entry.key)) : undefined;
   const volumeEntry =
     catalogStatus.kind === "ok" ? findCatalogEntry(catalog, (entry) => entry.key.metric === VOLUME_METRIC) : undefined;
 
@@ -215,6 +217,16 @@ export default async function SymbolPage() {
     cvdDeltas: scaledCvdDeltasFromHistoryRows(cvdResult.rows),
     cvdMissingDays: cvdPresence.missingDays,
     cvdCoveredDays: cvdPresence.coveredDays,
+    // ⛔ THE ANCHOR IS CHOSEN HERE, EXPLICITLY, AND SHOWN ON SCREEN — never inherited in
+    // silence. `delta` is anchor-free (one signed value per bucket); `cumulativo` is a VIEW over
+    // it whose every point depends on where the sum starts, and three different anchors over the
+    // SAME deltas invert the sign of the total (`domain/cvd.py::cvd_cum`, `D4.7`). Passing
+    // `undefined` would land on `buildCvdPanel`'s own default — the same window start this line
+    // names — but it would land there WITHOUT the route ever stating which anchor it chose, and
+    // `SymbolClient.tsx` prints `panels.window.startMs` as the anchor the curve counts from.
+    // Writing it out is what keeps that printed claim true by construction rather than by
+    // coincidence of a default two modules away (`cvd-pane-dom-contract.test.ts` pins the pair).
+    cvdAnchorMs: routeWindow.window.startMs,
   };
 
   // Each field of `rawInputs` above ALREADY degrades to `[]`/every-day-missing independently
@@ -249,6 +261,21 @@ export default async function SymbolPage() {
     reading: resolveVolumeReading(volumeSlots, routeWindow.windowEndMsInclusive),
   };
 
+  // ── The CVD panel's own declared facts (`T-02.5`) ─────────────────────────────────────────
+  //
+  // Derived from the slots `buildCvdPanel` just produced — the SAME array `CvdPane` draws — so
+  // the count the screen prints and the line it plots cannot disagree. `countPresentSlots` and
+  // `firstPresentSlotMs` are REUSED from the volume sub-axis (`T-01.7`), not re-written: both
+  // take a `ScalarSlot[]`, and `deltaSlots` is one. For a `1m`-native series the present-slot
+  // count IS the count of distinct native bars — no `RN-S1` `/5` divisor (`SPEC-007 §4.1`), the
+  // same reasoning `countPresentSlots`'s own docstring gives for M1.
+  const cvdDeltaSlots = panels.cvd.deltaSlots;
+  const cvd: CvdPaneData = {
+    presentPoints: countPresentSlots(cvdDeltaSlots),
+    firstPresentMs: firstPresentSlotMs(cvdDeltaSlots),
+    anchorMs: routeWindow.window.startMs,
+  };
+
   const baseUrl = process.env.INGEST_HEALTH_API_BASE_URL;
   const liveUrls =
     baseUrl === undefined
@@ -263,6 +290,7 @@ export default async function SymbolPage() {
     <SymbolClient
       panels={panels}
       volume={volume}
+      cvd={cvd}
       panelStatus={{
         price: priceResult.status,
         oi: oiResult.status,

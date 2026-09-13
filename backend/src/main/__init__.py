@@ -31,12 +31,15 @@ from fastapi import FastAPI
 from src.api import router as api_router
 from src.api.dependencies import (
     StoreReadinessSource,
+    get_grid_multiple_classifier,
     get_ingest_record_source,
     get_series_catalog_source,
     get_series_quarantine_source,
     get_series_window_reader_source,
     get_store_readiness_source,
 )
+from src.modules.charts.domain.panel_grid_enablement import classify_grid_multiple
+from src.modules.sentimento.domain.series_history_report import PanelGridVerdict
 from src.modules.sentimento.infra.ingest_record_store_composition import (
     DEFAULT_INGEST_HEALTH_STORE_PATH,
     DEFAULT_INGEST_RECORD_BACKEND,
@@ -274,7 +277,38 @@ def create_app(
     app.dependency_overrides[get_series_quarantine_source] = lambda: quarantine_store
     if window_reader is not None:
         app.dependency_overrides[get_series_window_reader_source] = lambda: window_reader
+    # `ADR-037/D4`: the ONE place `classify_grid_multiple` (`src.modules.charts`) meets
+    # `sentimento`'s read path. Unconditional, unlike `window_reader` above — the adapter is a
+    # pure function of two integers, so there is no engine whose absence could leave it unwired.
+    app.dependency_overrides[get_grid_multiple_classifier] = lambda: _classify_panel_grid
     return app
+
+
+def _classify_panel_grid(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGridVerdict:
+    """Adapt `charts`' `classify_grid_multiple` to the port `use_cases/series_history` names.
+
+    THIS FUNCTION IS THE CONTEXT BOUNDARY, and it is the whole of it: `ADR-037/D4` requires the
+    `/series-history` envelope to carry `ADR-026/D1`'s verdict, while
+    `backend/pyproject.toml`'s "Fronteira de contexto" contract forbids
+    `src.modules.sentimento` from importing `src.modules.charts`. `src.main` is the composition
+    root — the one layer above `api` in the `layers` contract (`ADR-009/D6.3`) — so it is where
+    the two contexts are allowed to meet.
+
+    It RE-EXPRESSES NO RULE: every branch of the classification stays in `charts`. All that
+    happens here is projecting `GridMultipleReason` onto its string value, because the port's
+    return type (`PanelGridVerdict`) is a `sentimento` type and may not name a `charts` enum.
+
+    `ADR-037`/M6 measured `classify_grid_multiple` with ZERO production callers — tested but
+    never consulted, the same "built and inert" shape `D16` recorded for `MODELED`. This is the
+    first one.
+    """
+    verdict = classify_grid_multiple(panel_grid_ms, native_grid_ms)
+    return PanelGridVerdict(
+        native_grid_ms=verdict.native_grid_ms,
+        enabled=verdict.enabled,
+        reason=verdict.reason.value,
+        multiple=verdict.multiple,
+    )
 
 
 def _quarantine_store_path_from_environment() -> Path:

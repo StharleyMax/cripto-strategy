@@ -332,3 +332,126 @@ onde dá `5,01:1` e `4,59:1`. Medi contra a referência errada. A paleta escura 
 ⇒ o domínio **Mobile Experience** sai do universo da revisão de design enquanto durar o piloto;
 uma nota baixa ali **não reprova** e não deve ser reportada como dívida. O alvo é desktop.
 Reabre quando o owner declarar, não por iniciativa de agente.
+
+---
+
+## D15 · Marco zero: limpar `md.series` e reingerir — **depois** de `E1`, nunca antes
+
+`[DECISÃO-OWNER: 2026-09-11, escolha entre alternativas apresentadas]` — o owner escolheu a
+**opção B** do menu `E6` em [`../OPCOES-E1-E5.md`](../OPCOES-E1-E5.md), literal: *"podemos seguir
+com a recomendação, opção B já está aprovado"*.
+
+**A sequência é a decisão, não um detalhe dela:** `E1` decidido → catálogo das 8 órfãs decidido →
+`TRUNCATE` → reingestão com o carimbo certo desde a primeira linha.
+
+**Por que a ordem é o conteúdo:** `[MEDIDO 2026-09-11]`, só leitura,
+`count(*) filter (where available_at - bucket_end <= 60000)` sobre `md.series` → **4.116 de
+125.160** linhas de klines legíveis (**3,3%**). Limpar **não** toca nessa causa ⇒ opção A
+(limpar antes) reproduz os mesmos 3,3% em ~24 h e foi recusada por isso: é o único caminho que
+gasta sem comprar nada.
+
+**O que a medição derrubou, e é a favor da pergunta do owner:** `select count(*) from md.series
+where src_label_raw ilike '%stream%' or src_label_raw ilike '%forceorder%'` → **0**. **Não existe
+uma linha da era do WebSocket na base.** O stream deixou 5 runs em `md.ingest_run`, os 5 nunca
+fechados, e nenhuma linha. O marco zero que a pergunta temia já havia acontecido sozinho.
+
+**Custo de limpar: zero em dado permanente, verificado e não presumido.**
+`fapi/v1/klines` responde **2019-09-09** e `fapi/v1/premiumIndexKlines` responde **1 min de
+~1 ano atrás** (`curl`, REST público, só leitura) ⇒ toda linha é re-obtenível. O que se perde é
+**tempo de reingestão**. Isso tira a limpeza da classe *decisão de risco* e a põe na classe
+*decisão de quando*.
+
+**⛔ A amarração que NÃO pode ser afrouxada:** as **8 séries de `premiumIndex` são o dado mais
+legível da base** (o filtro `available_at - bucket_end <= 60000` aceita 34.592 de 34.592) **e são
+exatamente as 8 órfãs** que
+[`ACHADO-CATALOGO-SEM-MARK-PRICE-E-FUNDING.md`](ACHADO-CATALOGO-SEM-MARK-PRICE-E-FUNDING.md)
+escalou — nenhum catálogo as serve. Limpar sem decidir o catálogo delas **destrói o dado mais
+legível da base para recriá-lo igualmente ilegível**. ⇒ `E1` e as 8 órfãs são **um ato só**, não
+uma sequência.
+
+> ⚠️ **CORREÇÃO, 2026-09-11 — "100% legíveis" era afirmação FALSA e foi removida.** O
+> `/quant-architect` mediu que **424 de 34.760** linhas têm `available_at < bucket_end` (mínimo
+> **−100 ms**): disponíveis *antes* do bucket fechar, o que `SPEC-001` §3.2 declara inválido. O
+> filtro `<= 60000` **não olha para baixo** e por isso as aceita — ele mede atraso excessivo, não
+> validade. A invariante nunca foi checada em produção: `build_series_row`, que a aplicaria, tem
+> **0 chamador**. ⇒ o argumento de `D15` **continua de pé** (é o dado mais legível, e limpar sem
+> decidir o catálogo o desperdiça), mas o número "100%" não era o que eu pensava que media.
+> Achado escalado, **não decidido**, em `OPCOES-CATALOGO-PREMIUM-INDEX.md`.
+
+**Falsificador de `D15`** — o mesmo número, medido igual, antes e depois: se após `E1` +
+reingestão a fração legível de klines **não** subir de **3,3%** para perto de 100%, a causa
+diagnosticada estava errada, `E1` não era o conserto, e a limpeza foi gasto puro.
+
+## D16 · `E1` = opção **2**: `available_at` do backfill é reconstruído e carimbado `MODELED`
+
+`[DECISÃO-OWNER: 2026-09-11, escolha entre alternativas apresentadas]` — decorre de *"podemos
+seguir com a recomendação"* na mesma fala; `E6`/B **exige** `E1` decidido, e a recomendação do
+`/architect` para `E1` era a opção **2**.
+
+`available_at = bucket_end + atraso de publicação MEDIDO daquele endpoint`, com
+`availability_source = MODELED`; o instante da busca continua em `ingested_at`/`observed_at`, que
+já o guardam. **Mecanismo já construído e hoje inerte:** `MODELED` tem **0 de 117.740** linhas.
+
+**Pré-condição declarada, herdada do menu e NÃO dispensada por `D15`:** o atraso tem de ser
+**medido por endpoint** antes de qualquer linha — `SPEC-001` §5.2 proíbe `event_time + interval`
+(default **361× otimista**). Medido hoje para klines ao vivo: `min 0 s`, `max 279 s`
+(`n = 37.148`); premiumIndex ao vivo: `max 1 s` (`n = 34.592`).
+
+**O que `D15` barateia em `D16`, e é o motivo de terem sido decididas juntas:** o custo (c) da
+opção 2 era reescrever **80.592** linhas já gravadas — migração de dado com risco de falha no
+meio deixando base mista. **Com base limpa esse custo deixa de existir:** 0 linha a reescrever,
+1 só classe de `availability_source` desde a primeira linha, nenhuma janela em que o consumidor
+vê `OBSERVED` e `MODELED` misturados sem saber por quê.
+
+**O que `D16` fecha e não volta atrás:** `md.series` passa a conter linhas cujo `available_at` é
+**calculado**. A partir daí **todo** consumidor tem de ler `availability_source`, e **todo**
+relatório de backtest tem de declarar o modelo de atraso — não basta a coluna.
+
+---
+
+## D17 · Inverter a prioridade: LARGURA antes de profundidade — as 4 métricas que faltam vêm primeiro
+
+`[DECISÃO-OWNER: 2026-09-12, escolha entre alternativas apresentadas]` — literal: *"ok, pode
+registrar e podemos dar sequenciar nas waves paralelas. Já podemos voltar a executar, a ideia é
+conseguir concluir todas as tasks e fases, vamos registrar as pendencias q depois de tudo no ar
+vamos avaliar cada item."*
+
+**A medição que motivou** `[MEDIDO 2026-09-12]`, `select src_label_raw, count(distinct
+series_key_id), count(*) from md.series group by 1`:
+
+```
+/fapi/v1/klines        4 séries   125.316 linhas
+/fapi/v1/premiumIndex  8 séries    34.904 linhas
+```
+
+**1 das 5 métricas do CORE está fluindo.** Open interest tem código
+(`domain/open_interest_catalog.py`) e **0 linhas**. Liquidações têm código (`force_order_*.py`,
+`liquidation_reconciliation.py`) e **0 linhas** — os 5 runs de WS nunca fecharam. Long/short
+ratio não tem coletor. E **2026-09-11 inteiro não acrescentou nenhuma métrica nova**: 29 commits,
+6 PRs, todos em profundidade sobre volume.
+
+**O padrão diagnosticado, e ele não era círculo — era descida recursiva:** cada camada de
+verificação achava um defeito uma camada abaixo, e todos eram reais. *"Cada achado é real"* não é
+o mesmo que *"cada achado é a próxima coisa mais valiosa"*. A fila de escalações **cresceu** ao
+longo do dia.
+
+**O argumento que fecha:** `D15` decidiu que a base será **truncada e reingerida**, e mediu que
+tudo é re-obtenível. ⇒ **polir a legibilidade de uma métrica que será truncada é trabalho que
+será jogado fora**, enquanto quatro métricas não têm coletor para chegar dado nenhum.
+
+**A ordem, então:**
+1. **Largura** — fases `02` (CVD), `03` (open interest), `04` (long/short), `05` (liquidações)
+   até haver dado das 5 métricas.
+2. **`E1` uma vez só, sobre todas** — em vez de repetir o ciclo de descida 4×.
+3. **`TRUNCATE` + reingestão únicos** (`D15`).
+
+**Teto de paralelismo: 3 tasks simultâneas** `[PREMISSA-OWNER: 2026-09-12]` — literal: *"Podemos
+executar até 3 tasks paralelas"*. Substitui o teto de 2 vigente desde 2026-09-10.
+
+**⛔ O que esta decisão NÃO faz:** não cancela nenhuma pendência. Elas ficam **registradas para
+avaliação depois de tudo no ar** — é decisão explícita do owner na mesma fala. A lista viva está
+em `PENDENCIAS-PARA-AVALIAR-DEPOIS.md`.
+
+**Falsificador de `D17`:** se ao fim das fases `02`–`05` o comando acima não mostrar **5 famílias
+de `src_label_raw`** com linhas > 0, a inversão de prioridade não entregou o que prometeu e a
+decisão estava errada.

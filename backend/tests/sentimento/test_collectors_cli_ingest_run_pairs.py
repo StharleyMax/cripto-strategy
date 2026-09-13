@@ -25,6 +25,9 @@ from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngest
 from src.modules.sentimento.use_cases.collector_run_mapping import (
     FORCE_ORDER_ENDPOINT,
     KLINES_ENDPOINT,
+    LIQUIDATION_HISTORY_ENDPOINT,
+    LONG_SHORT_ENDPOINT,
+    OPEN_INTEREST_HIST_ENDPOINT,
 )
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -86,12 +89,21 @@ def test_one_session_plus_one_cycle_group_by_source_endpoint_gives_at_least_two_
     pairs = [line for line in output.splitlines() if line.strip()]
     assert len(pairs) >= 2, f"D1.5 wants >= 2 (source,endpoint) pairs, sqlite3 returned: {pairs!r}"
     endpoints = {line.split("|")[1] for line in pairs}
-    # THREE producers since `T-01.3`, and the assertion stays an EQUALITY rather than
-    # loosening to `>=`: a fourth endpoint appearing here would mean a producer started
-    # recording runs that no task declared, which is exactly what this shape is for.
-    assert endpoints == {FORCE_ORDER_ENDPOINT, PREMIUM_INDEX_ENDPOINT, KLINES_ENDPOINT}, (
-        f"expected exactly the three producer endpoints, got {endpoints!r}"
-    )
+    # SIX producers since `T-05.5`, which added `/v1/liquidation-history` (`SPEC-001` phase
+    # `05`); the five before it came from `T-04.3` and `SPEC-007` phases `03`/`04`. The
+    # assertion stays an EQUALITY rather than loosening to `>=`, and this run is the reason to
+    # keep it that way: the SIXTH endpoint made this test FAIL, and the failure is the whole
+    # point — a producer that starts recording runs is forced to arrive here, in a declared
+    # list, instead of slipping in unnoticed. Loosening to `>=` would have accepted it in
+    # silence, and then it would accept the next one too, including one no task declared.
+    assert endpoints == {
+        FORCE_ORDER_ENDPOINT,
+        PREMIUM_INDEX_ENDPOINT,
+        KLINES_ENDPOINT,
+        LONG_SHORT_ENDPOINT,
+        OPEN_INTEREST_HIST_ENDPOINT,
+        LIQUIDATION_HISTORY_ENDPOINT,
+    }, f"expected exactly the six declared producer endpoints, got {endpoints!r}"
 
     # `D1.5`'s second half, same literal shape: zero rows outside `KNOWN_VERDICTS`.
     # `KNOWN_VERDICTS` is this repository's own closed, hardcoded frozenset — never external
