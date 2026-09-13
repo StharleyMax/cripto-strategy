@@ -267,3 +267,198 @@ tocar em klines. `D1` para `STOCK` está **certo, medido e com mutação que mor
 contra `deploy-postgres-1` **somente leitura** (zero `insert`/`update`/`delete`/`truncate`, nada
 semeado) e contra a worktree da PR. `§6.1` é `[MEDIDO]` no teste que reprova + `[DOC:
 ADR-038 §5]`. Nenhuma alteração de código de produção; `advance`/`approve` não foram tocados.
+
+---
+---
+
+# ↺ REVALIDAÇÃO — PR #223 em `2f1fd0c` (o veredito acima, de `a5f0c64`, fica intacto)
+
+**Data:** 2026-09-13 · **Janela: `01:19:21Z`–`01:35:08Z`** (hora declarada porque ela move os
+números — produção subiu `23:41:13Z` e as 5 métricas coletam ao vivo desde então; toda estatística
+abaixo é de **UMA** população, a de depois do corte). **`master` no gate:** `169442c` ·
+**worktree medida:** `agent-aa184f6702223255e` @ `2f1fd0c`, `git status --porcelain` **vazio**.
+
+> **Veredito da revalidação: `NEEDS_FIX`.** As **duas ações que eu tinha pedido foram feitas e eu as
+> verifiquei uma a uma** — `F-1` voltou a ser computável **e o universo dele CRESCE** (medido por mim
+> duas vezes), e a premissa falsificada foi corrigida no sentido que **fortalece** `D1`. O código
+> continua certo, `make verify` deu **VERDE nos 8 portões com a máquina ociosa**, e as mutações
+> mordem. O que reprova é **um achado NOVO, introduzido por este próprio commit de correção**:
+> **`F-2`, o falsificador de `§2`, perdeu o poder de discriminar sobre o store real**, e a docstring
+> de produção afirma como regra de inferência uma frase que eu **falsifiquei medindo**.
+
+## R1 · O `[FAIL]` principal — `F-1` está consertado, e eu confirmei a propriedade que importa
+
+**O conserto é no falsificador, não no carimbo — e isto eu provei, não aceitei:** rodei a **minha**
+probe original (o blob de `master`, `34c0363`) contra `2f1fd0c` e ela **continua reprovando**:
+
+```bash
+cd backend && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest <probe original de master> -q --no-cov
+# 1 failed  —  AssertionError: lag 4417 ms was OBSERVED in production, but the writer stamps MODELED
+cd backend && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest ../docs/.../QA-ADR-038-D1-F1-probe.py -q --no-cov
+# 3 passed in 0.07s
+```
+
+⇒ o carimbo **não se mexeu** (era o risco: consertar o falsificador movendo o que ele mede). O
+`1 failed → 3 passed` que o autor declara **reproduz**, e o `1 failed` sobrevive como controle
+negativo executável dentro do novo arquivo.
+
+**✅ O universo CRESCE — medido por MIM, duas vezes, com o comando literal de `ADR-038` §5:**
+
+| hora (UTC) | `n_polls` | `p99` | faixa | quem mediu |
+|---|---:|---:|---|---|
+| `00:36Z` | `52` | `85.187 ms` | `4.417`–`85.187` | autor `[DOC]` |
+| `00:49Z` | `60` | `85.187 ms` | — | autor `[DOC]` |
+| **`01:19:41Z`** | **`84`** | **`123.542 ms`** | `4.417`–`123.542` | **QA `[MEDIDO]`** |
+| **`01:34:40Z`** | **`96`** | **`123.542 ms`** | `4.417`–`123.542` | **QA `[MEDIDO]`** |
+
+`+12 buscas em 15 min` dentro da minha própria janela ⇒ **o conserto não é cosmético**: o `n ≥ 1.000`
+que `F-1` exige chega por tempo de relógio. **Todas as 96 dentro de `(0, 300.000]`** ⇒ a banda de
+`D1` tem evidência direta. ⚠️ **Mas o `p99` subiu `85.187 → 123.542 ms` em 1 h** (`+45%`): não
+falsifica nada hoje (`123.542 ≪ 300.000`, e `96 ≪ 1.000`), e **é justamente por isso que `F-1`
+precisava voltar a ser computável.** Fica registrado como número a reler, não como veredito.
+
+**A emenda 2 (por busca, não por linha) confere, e o número dela é o meu:**
+
+```bash
+# por LINHA (a agregação antiga):  p99 = 682.770 ms  — ACIMA do limiar de 300.000 ⇒ falso positivo
+# por BUSCA (`group by observed_at`, `min(...)`):  p99 = 123.542 ms
+```
+
+⇒ `682.770 > 300.000` confirma célula a célula a tese do autor (ele mediu `685.187` às `00:36Z`; a
+população andou). **Uma busca de `STOCK` escreve mesmo várias linhas**: `84` buscas produzem `100`
+linhas dentro da faixa de `900 s` `[MEDIDO 2026-09-13T01:19Z]`.
+
+## R2 · A premissa corrigida — confere, com hora
+
+`md.ingest_run` **`98`/`98`** às `01:19:43Z` (era `1`/`1` em `§1.1c`, `34` às `23:45Z`, `58`/`59` às
+`00:39Z`) ⇒ **quatro** populações no mesmo dia. As correções de `§1.1c`, `§5`, `§7.3` do ADR e de
+`§2.2`/`§7` do relatório do construtor estão no diff e dizem o que eu pedi que dissessem, **com
+hora**. `docs/INDEX.md` é **append-only** verificado: `git diff e4b91cb 2f1fd0c -- docs/INDEX.md`
+→ **+2 linhas, −0**.
+
+## R3 · 🔴 O ACHADO NOVO — `F-2` deixou de discriminar, e a docstring afirma o contrário
+
+**A frase, escrita NESTE commit de correção** (`collector_series_mapping.py:726-729`):
+
+> *"the BACKTEST horizon (`knowledge_time = t`) still reads `1/61` … and a `61/61` at
+> `knowledge_time = t` today would mean someone shipped §7.1 without the owner."*
+
+**Falsifiquei as duas metades, medindo.** Meu arnês (`QA-ADR-038-D1-arnes.py`, linhas **reais** do
+store, `observed_at` **real** de cada busca), `2026-09-13T01:21:41Z`:
+
+```
+F2 OI com carimbo D1, 1min                     -> 61/61     (a docstring diz "1/61")
+F2 CONTRAPROVA: se o §7.1 tivesse entrado      -> 61/61     (indistinguivel)
+```
+
+⛔ **E o `§7.1` NÃO entrou** — quatro provas independentes: (1) `observed_at == observed_at` do store
+em **100%** das `4.052` linhas; (2) minha probe original **ainda reprova** (`R1`); (3) mutação `M4`
+(`observed_at := carimbo`, que É o `§7.1`) **reprova 4 testes**; (4) o controle de população abaixo.
+
+**A causa é COBERTURA, não `§7.1` — e o controle isola as duas** (`gates/QA-ADR-038-F2-populacao-controle.py`, mesmo store, mesmo
+`as_of`, só o recorte de `observed_at` muda):
+
+| população | `kt=agora` 1 min | `F-2` (`kt=t`) 1 min | contraprova `§7.1` |
+|---|---:|---:|---:|
+| **só backfill** (a de `23:41Z`, `n=4.036`) | `20/61` → **`61/61`** | **`20/61`** | `61/61` ✅ discrimina |
+| **hoje** (com coletor ao vivo, `n=4.052`) | `61/61` → `61/61` | **`61/61`** | `61/61` ❌ **não discrimina** |
+
+⇒ com coleta ao vivo contínua, uma linha de `STOCK` buscada `~60 s` depois do bucket **é legítimamente
+conhecível em `kt=t`**, e o carry-forward cobre todos os slots. **`F-2` satura, e um falsificador
+saturado acusa inocente.**
+
+**Por que o instrumento do autor devolve `1/61` e o meu `61/61` — e ele é o problema, não a
+discrepância:** `ADR-038-D1-pos-implementacao.py:37` colapsa **todo** `observed_at` num único
+instante (`received_at = max(observed_at)`, comentado como *"the single backfill pass instant"*).
+Isso mede um store **sintético** — *"como se tudo tivesse vindo de UMA passada de backfill"* — que
+**é exatamente a produção que deixou de existir às `23:45:29Z`**. Sobre ele `1/61` é verdade **por
+construção**. `ADR-038` §5/`F-2` manda rodar *"o arnês de `§1.2`"*, que lê o **store real** — e lá o
+resultado é `61/61`.
+
+⚠️ **Esta é a MESMA classe do achado `§6.1` da rodada anterior**, agora em `F-2`: o falsificador de
+uma decisão deixado sem poder de disparo, sem que nada avise. E é **pior** que número caducado: um
+número caduco carrega a hora e o leitor o desconta; uma **regra de inferência** sem universo
+declarado **não expira** — ela dispara para sempre, e o que ela dispara é a acusação de que alguém
+enviou o `§7.1` sem o owner.
+
+⚠️ **Consequência decisória, e é ela que tira isto de cosmético:** a docstring e o corpo da PR dizem
+ao **owner** — que tem o `§7.1` na mesa — que *"o backtest continua com o teto"*. Sobre dado **ao
+vivo** ele **não** continua: `kt=t` já lê `61/61` **sem** o `§7.1`. O teto era artefato do backfill.
+Quem decide o `§7.1` merece esse número antes de decidir.
+
+## R4 · Sem lookahead — confirmado sobre a população nova
+
+| propriedade | medido |
+|---|---|
+| linhas de **OI** com `available_at < bucket_end` | **`0` de `16.216`** (era `0` de `16.160`) |
+| offsets distintos emitidos pelo carimbo | **`[300000]`**, todos múltiplos de `300.000` |
+| `availability_source` distintos | **`['MODELED']`** |
+| menor atraso real de busca | `4.417 ms` ⇒ carimbo `+300.000` é **pessimista**, nunca otimista |
+
+ℹ️ **Fora do escopo desta PR, mas medido e declarado em vez de calado:** varrendo `md.series`
+**inteira** (`312.753` linhas) aparecem **`466`** linhas com `available_at < bucket_end`, **todas em
+`/fapi/v1/premiumIndex`** (pior caso `−100 ms`); `klines`, `RATIO`, `liquidation-history` e `OI` têm
+**`0`**. Não é regressão desta PR (`premiumIndex` não é tocado por `D1`) — é achado para o dono do
+`ADR-038`/`SPEC-001` §5.2. `[MEDIDO 2026-09-13T01:23:14Z]`
+
+## R5 · Mutações — o instrumento NOVO morde (rodadas por mim, revertidas)
+
+| # | mutação em produção | reprovou? | quem pegou |
+|---|---|---|---|
+| `M4` | `observed_at := carimbo` (**é o `§7.1`**) | ✅ **4** | probe `…f_1_stays_computable`, `…provenance_columns_separate_the_two_clocks`, `…backfill_row_is_not_stamped…`, `test_observed_at_keeps_the_fetch_instant…` |
+| `M5` | `observed_at := received_at + 400_000` (fora da banda) | ✅ **6** | as 4 acima **+** os dois testes de banda (`…measured_lags_are_inside_the_band…`, `…measured_fetch_lags_all_sit_inside…`) |
+
+⚠️ **Nota de qualidade, não bloqueante:** sob `M4` os **dois testes de banda calam** (o carimbo dá
+`300.000`, que satisfaz `<= 300_000`). Eles só mordem sob `M5`. São registro de premissa, não
+detector — quem carrega o invariante é `…keeps_the_fetch_instant…`, e esse morde.
+
+⛔ `sha256` de `collector_series_mapping.py` **idêntico** antes/depois
+(`a2f81851ea51d040…`); `git status --porcelain` **vazio**. Nenhuma linha de produção alterada.
+
+## R6 · `make verify` — VERDE nos 8 portões, máquina OCIOSA
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 E2E_API_PORT=8894 E2E_NEXT_PORT=4394 make verify   # rc=0, 01:23:29Z–01:34:25Z
+```
+
+`load average 1,42` e **zero** `pytest`/`vitest`/`playwright` de terceiros no início. ⚠️
+`frontend/node_modules` **conferido como diretório real** (`drwxr-xr-x 141`, não symlink) — o modo de
+falha avisado no despacho **não** ocorreu, e a prova é que `test-frontend` e `e2e` **mediram**:
+
+`lint-backend` **447 arquivos** · `lint-frontend` OK · `test-frontend` **592 pass, 0 fail** ·
+`test` **2.384 passed, cobertura 96,60 %** (piso `70,0 %`) · `boundaries` **7 kept, 0 broken** ·
+`regras` **0 bloqueio, 72 avisos** · `política` OK · `e2e` **27 passed (34,3 s)** ⇒
+**`veredito: VERDE — 8 portões mediram e passaram`**. ⛔ Nenhum `INDETERMINADO`, nenhum `rc=3`.
+
+As **8 regras bloqueantes** de `harness rules list --severity block` são as mesmas que o portão
+`regras` varre; `0 bloqueio` é o veredito delas sobre a árvore de `2f1fd0c`.
+
+## R7 · Ação para sair do `NEEDS_FIX` — UMA, e não toca lógica de produção
+
+1. **Declarar o universo de `F-2` e corrigir a frase que ele sustenta**, em três lugares que hoje
+   dizem a mesma coisa falsa: `collector_series_mapping.py:726-729` (docstring), corpo da PR #223
+   (*"com `kt = t` o OI lê `0/61`–`1/61`, nunca `61/61`"*) e a moldura de `ADR-038` §2/§7.1.
+   O texto tem de dizer **sobre qual população** o `1/61` vale: `1/61` é o que
+   `ADR-038-D1-pos-implementacao.py` mede **colapsando todo `observed_at` num único instante de
+   backfill** (`:37`); sobre o **store real**, desde `2026-09-12T23:45:29Z`, `F-2` lê **`61/61` sem o
+   `§7.1`** `[MEDIDO 2026-09-13T01:21:41Z, n=4.052 linhas OI]`, com o controle de população que
+   separa cobertura de `§7.1` (**só-backfill: `20/61` vs contraprova `61/61`**). E dizer a
+   consequência para quem decide: **o teto do backtest era artefato do backfill**.
+2. *(devolver ao autor do `ADR-038`, não bloqueia esta PR)* — `F-2` precisa de universo ou de
+   critério novo, pela mesma razão que `F-1` precisou: um falsificador que não distingue não é
+   falsificador. Sugestão medida, não imposta: restringir o universo aos slots **anteriores** ao
+   nascimento do coletor, ou comparar `D1` contra a contraprova `§7.1` em vez de contra um limiar.
+
+⚠️ **O que NÃO está sendo pedido, de novo:** mudar o carimbo, aplicar `D1` ao RATIO, implementar o
+`§7.1`, tocar klines ou mexer em produção. **`D1` para `STOCK` está certo, medido, e as mutações
+mordem.** O achado é de **instrumento e de frase**, e é o terceiro falsificador desta ADR a precisar
+de reparo — o que é, em si, o sinal mais útil desta revalidação.
+
+## R8 · Rótulos de força
+
+`R1`–`R6` são `[MEDIDO 2026-09-13T01:19:21Z–01:35:08Z]`, cada um com o comando e o `n`, contra
+`deploy-postgres-1` **somente leitura** (zero `insert`/`update`/`delete`/`truncate`, nada semeado) e
+contra a worktree `2f1fd0c`. `R3` é `[MEDIDO]` no arnês + `[DOC: ADR-038-D1-pos-implementacao.py:37]`
+para a leitura de código. **Sem deploy.** `PYTHONDONTWRITEBYTECODE=1` em toda invocação e
+`__pycache__` purgado antes de medir. Nenhum `advance`, nenhum `approve`. **Nenhuma anomalia**: toda
+checagem produziu veredito.
