@@ -49,3 +49,55 @@ Aprovados os dois: `make verify` (8 portões) e **merge**. Grave o `gate-record`
 - Todo número com o comando, o universo (`n`) e o rótulo de força.
 - Passando de ~150 turnos, escreva o estado aqui e devolva. **Devolva no máximo 15 linhas.**
 - **Commite antes de devolver** — seu relatório é insumo do próximo, e ele nasce em worktree.
+
+---
+
+## Estado em 2026-09-13T15:35Z — a PR NÃO foi mergeada, e o motivo é novo
+
+`[MEDIDO 2026-09-13, sessão de fechamento da #222]`
+
+**Feito:**
+- Merge de `origin/master` (`3db99bd`, não mais `7b7fd20`) publicado: cabeça da PR em `717bd45`,
+  `mergeStateStatus` saiu de `CONFLICTING`. Conflito único em `docs/INDEX.md`, resolvido por
+  **união cronológica** — 10 entradas, `git diff origin/master -- docs/INDEX.md | grep -c '^-[^-]'`
+  = **0 linhas removidas**.
+- **code-review `COMPLIANT`** — `0/8` regras bloqueantes violadas sobre `11/11` arquivos.
+  `gates/T-03.5-T-03.6-code-review.md`, commit `75c0aea`.
+- **design-review `NEEDS_FIX`** (era `APPROVED` na 1ª rodada; adendo appendado, `0f16d0f` intacto).
+  `gates/T-03.5-T-03.6-design-review.md`, commit `717bd45`.
+- Ledger: `harness gate-record cinco-metricas-do-core 03 REVIEW NEEDS_FIX`, gravado.
+
+**Por que não mergeou — e NÃO é o `E1` nem os 2 WARNING que este handoff isentou.** É o `W-4`,
+achado pelo code-review e adjudicado pelo design gate (só ele julga `RNF-2`; `RNF-2` não é
+`[[rules.own]]`, então o code-review estruturalmente não podia reprová-lo):
+
+`ageMs` é medido contra `windowEndMsInclusive`, que **trilha o relógio em `360.000–600.000 ms`**
+`[MEDIDO n=1440 com o resolveRouteWindow real: min=360000 max=600000 mean=480000]`, contra um teto
+de `600.000 ms`. Logo o painel imprime **`fresh` até 20 min (4,0× a periodicidade de 5 min) no pior
+caso e 16 min (3,2×) no MELHOR** ⇒ **não existe leitura de relógio em que `stale` dispare na faixa
+que `RNF-2` nomeia**. O aviso está correto, legível e **inalcançável** — é um `CALA` vacuoso na tela,
+a mesma classe de defeito que `ADR-012` nomeia para o `rc=0`.
+
+**Os 2 bloqueios, e qualquer um deles sem o outro NÃO libera o merge:**
+1. **`A-4.1`** — nomear o referencial na frase (*"há N em relação ao fecho da janela (HH:MM UTC)"*)
+   e declarar o termo de 6–10 min na docstring. **Test-safe**: o validador mediu que a correção
+   passa em `L138`/`L139`/`fact`.
+2. **`A-4.2`** — decisão **ESCRITA** do limiar: (i) orçar a geometria, (ii) subir
+   `_MAX_STALENESS_MS` e **dizer** que é 4×, ou (iii) adiar com dono e data. **Dono: `/architect`
+   + `quant-architect`.** Bloqueia a **ausência** de decisão, não a escolha — qualquer uma serve.
+
+⛔ **A correção óbvia está VETADA:** trocar o referencial por `Date.now()` viola
+`STITCH_CONTEXT.md:1773-1776` (proíbe o relógio de parede em caixa alta) e, com replay as-of, faria
+**todo histórico** imprimir `stale`. Medir contra o fecho da janela está **certo** — o defeito é que
+o referencial é **secreto** e um teto autorado como **orçamento de relógio** é comparado contra uma
+idade que **não é de relógio**. É erro de **unidade**, não de constante.
+
+**Não-bloqueio, mas registrado:** `W-3` — a guarda de `oi-pane-dom-contract.test.ts:138-139` protege
+o **texto, não o requisito** (`2/2` asserts quebram se a microcopy for reescrita; o `data-fact`
+sobrevive às 3 versões). Adote a opção **(a)** (afrouxar para estrutura); a (b) foi rejeitada porque
+declara imutável uma microcopy que não é do builder.
+
+**Armadilha de ambiente desta worktree, para o próximo não repetir:** `data/` é gitignored e **não
+existe na worktree** ⇒ `make verify` devolve `test-frontend rc=3 NÃO MEDIU` (que **também recusa** o
+push). O conserto é `ln -s <checkout principal>/data data`. E o disco raiz encheu (`100%`, 178M
+livres) durante o `make setup`; liberado com `uv cache clean` + `npm cache clean --force` → **6,8G**.
