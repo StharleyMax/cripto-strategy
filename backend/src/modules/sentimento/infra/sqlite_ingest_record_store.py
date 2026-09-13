@@ -18,8 +18,30 @@ logger = logging.getLogger(__name__)
 # ARITY and the order against the dataclass constructor. Twenty-four per-field casts would do
 # the same job worse: each would be a separate assertion and none of them would count the
 # columns. If the `SELECT` changes shape without these tuples changing, `mypy` fails.
+# `writer_accounted_at` is selected as a literal `NULL` on this engine — no writer credits a
+# run here (`ADR-035/D2`), so the column does not exist and the `SELECT` supplies the same
+# `None` the dataclass default would. It is named in the projection anyway because `notes`
+# comes AFTER it in `IngestRun`'s field order, and a positional cast that skipped it would
+# quietly load a run's reason into the writer's timestamp.
 _RunRow = tuple[
-    str, str, str, str, int, int, int, str, int | None, str, int, str, str, int, str, str
+    str,
+    str,
+    str,
+    str,
+    int,
+    int,
+    int,
+    str,
+    int | None,
+    str,
+    int,
+    str,
+    str,
+    int,
+    str,
+    str,
+    str | None,
+    str | None,
 ]
 _GapRow = tuple[str, str, str, str, str, int, str, str]
 
@@ -101,7 +123,8 @@ _DDL: Final[tuple[str, ...]] = (
         observer_region TEXT NOT NULL,
         clock_skew_ms   INTEGER NOT NULL,
         started_at      TEXT NOT NULL,
-        ended_at        TEXT NOT NULL
+        ended_at        TEXT NOT NULL,
+        notes           TEXT
     )
     """,
     """
@@ -123,8 +146,8 @@ _INSERT_RUN: Final[str] = (
     "INSERT OR REPLACE INTO md_ingest_run "
     '(run_id, source, endpoint, "window", n_expected, n_returned, n_written, verdict, '
     " api_code, src_sha256, weight_used, observer_id, observer_region, clock_skew_ms, "
-    " started_at, ended_at) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    " started_at, ended_at, notes) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 _INSERT_GAP: Final[str] = (
@@ -142,7 +165,7 @@ _INSERT_GAP: Final[str] = (
 _SELECT_RUNS: Final[str] = (
     'SELECT run_id, source, endpoint, "window", n_expected, n_returned, n_written, verdict, '
     "       api_code, src_sha256, weight_used, observer_id, observer_region, clock_skew_ms, "
-    "       started_at, ended_at "
+    "       started_at, ended_at, NULL AS writer_accounted_at, notes "
     "FROM md_ingest_run ORDER BY started_at, run_id"
 )
 
@@ -212,6 +235,7 @@ class SqliteIngestRecordStore:
                     run.clock_skew_ms,
                     run.started_at,
                     run.ended_at,
+                    run.notes,
                 ),
             )
             connection.commit()

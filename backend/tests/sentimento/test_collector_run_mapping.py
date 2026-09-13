@@ -85,6 +85,11 @@ def test_force_order_run_verdict_is_always_a_known_one(verdict: KnownVerdict) ->
         n_published=3,
         verdict=verdict,
         digest=_digest("a", "b", "c"),
+        # `T-05.6`: this builder's `api_code` is ALWAYS `None` (a WebSocket has no HTTP code),
+        # so a `REJECTED` session is exactly the case `RS-4` requires a note for — and before
+        # `T-05.6` this test passed WITHOUT one, which is how 5 of the 6 reasonless rejections
+        # in production were built `[MEDIDO 2026-09-12, n=6 runs REJECTED, todos api_code NULL]`.
+        notes="ConnectionResetError: the queue went away mid-session",
     )
     assert run.verdict in KNOWN_VERDICTS
 

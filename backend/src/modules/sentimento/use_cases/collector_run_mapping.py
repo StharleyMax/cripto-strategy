@@ -85,6 +85,23 @@ OPEN_INTEREST_HIST_ENDPOINT: Final[str] = "/futures/data/openInterestHist"
 LONG_SHORT_DATA_ENDPOINT: Final[str] = "globalLongShortAccountRatio"
 LONG_SHORT_ENDPOINT: Final[str] = f"/futures/data/{LONG_SHORT_DATA_ENDPOINT}"
 
+# The SIXTH producer (`T-05.5`, `SPEC-007` phase `05`, M4, `ADR-036/D4`) — and the FIRST one
+# that is not Binance. Same duplication-with-a-test discipline as the lines above: the literal
+# matches `domain/liquidation_collection.LIQUIDATION_HISTORY_PATH`, and
+# `test_collector_run_mapping.py::test_the_liquidation_endpoint_literal_matches_the_collection_path`
+# makes the pairing executable.
+LIQUIDATION_HISTORY_ENDPOINT: Final[str] = "/v1/liquidation-history"
+
+# ⛔ AND `source` IS NOT `binance-futures` FOR THIS ONE. Every run in `md.ingest_run` today
+# carries one single source — `[MEDIDO 2026-09-12, n=5.406 runs: uma unica source,
+# `binance-futures`]` — because every producer until now WAS Binance. Recording a Coinalyze run
+# under that source would put a third party's numbers under an exchange's name in the one table
+# an operator consults to ask "where did this come from", and `ADR-030`'s dashboard groups by
+# exactly this field. The provider is also already spelled `coinalyze` by
+# `domain/quota_bucket.COINALYZE.identifier` and by `SeriesKey.provider`, so this literal joins
+# a vocabulary rather than inventing one.
+COINALYZE_SOURCE: Final[str] = "coinalyze"
+
 # ── Q3 §3 — THE SENTINELS AND THE OBSERVER LITERALS, NONE OF THEM A GUESS ──────────────────
 # The WS collector spends no REST weight — a FACT (`0`), never a guess.
 FORCE_ORDER_WEIGHT_USED: Final[int] = 0
@@ -103,6 +120,7 @@ PREMIUM_INDEX_OBSERVER_ID: Final[str] = "premiumindex-collector"
 KLINES_OBSERVER_ID: Final[str] = "klines-collector"
 OPEN_INTEREST_OBSERVER_ID: Final[str] = "openinterest-collector"
 LONG_SHORT_OBSERVER_ID: Final[str] = "longshort-collector"
+LIQUIDATION_OBSERVER_ID: Final[str] = "liquidation-collector"
 
 # ── `/futures/data/` ANSWERS WITH **NO** `x-mbx-*` HEADER AT ALL, AND THAT IS MEASURED ─────
 #
@@ -142,6 +160,52 @@ KnownVerdict = Literal["ACCEPTED", "ACCEPTED_WITH_WARNING", "REJECTED"]
 KNOWN_VERDICT_LITERALS: Final[tuple[str, ...]] = get_args(KnownVerdict)
 
 
+# ── `T-05.6` / `RF-6` / `RS-4`: A `REJECTED` RUN WITHOUT A REASON CANNOT BE BUILT ──────────
+#
+# `DoD 5` of plan `05`: "NENHUM veredito `REJECTED` com `api_code` E `notes` ambos nulos".
+# The measurement that motivated it is not a projection — it is the state of the database:
+#
+#     select run_id, endpoint, verdict, coalesce(api_code::text,'NULL'), n_written, started_at
+#       from md.ingest_run where verdict='REJECTED' order by started_at;
+#     -> `[MEDIDO 2026-09-12, n=6 runs REJECTED]`: 6 of 6 with `api_code` NULL
+#        (5 from `!forceOrder@arr`, 1 from `/fapi/v1/klines` at 2026-09-11T01:40Z)
+#
+# The entry handoff said "2 de 2". It had grown to 6 of 6 while the phase was being planned:
+# the debt was GROWING, not sitting still — which is what a rule enforced by prose does.
+#
+# So the rule is enforced HERE, at the one controlled construction site `Q3` describes, and it
+# is enforced by REFUSING TO BUILD rather than by reviewing. A run that reaches `record_run`
+# already satisfies `RS-4` or it never existed. The falsifier is a mutation and it is executable:
+# `test_collector_run_mapping.py::test_a_rejected_run_without_api_code_or_notes_is_refused`
+# passes `verdict="REJECTED"` with both nulls to every builder and requires this error.
+#
+# ⚠️ WHY THIS RAISES INSTEAD OF FILLING IN A DEFAULT NOTE. A default ("rejected") would satisfy
+# the DoD query and satisfy nothing else — it is `ADR-012`'s `rc=0` wearing a string: a reason
+# column that always has a value and never has information. The caller knows why the run
+# failed; this module does not, and it must not pretend to.
+class RejectionWithoutReasonError(ValueError):
+    """A `REJECTED` run was built with `api_code` and `notes` both `None` (`RF-6`, `RS-4`)."""
+
+
+def require_rejection_reason(
+    verdict: KnownVerdict, api_code: int | None, notes: str | None
+) -> None:
+    """Refuse a `REJECTED` run that names no reason — the ONE place `RS-4` is enforced.
+
+    Silent on every other verdict: an `ACCEPTED` run normally has nothing to explain, and
+    demanding prose there would manufacture text nobody wrote. The rule is about the PAIR,
+    so EITHER field satisfies it — `api_code` when the provider refused and gave a number,
+    `notes` when the run died on our side, where there IS no provider code and `NULL` is the
+    honest value for `api_code`. That second case is precisely the one that produced `DEF-2`.
+    """
+    if verdict == "REJECTED" and api_code is None and notes is None:
+        raise RejectionWithoutReasonError(
+            "a REJECTED run must carry api_code or notes: a verdict without a reason is "
+            "indistinguishable between 'it failed for X' and 'this collector never knew how "
+            "to say why' (RF-6, RS-4, ADR-012)"
+        )
+
+
 def build_force_order_run(
     started_at: str,
     ended_at: str,
@@ -150,6 +214,7 @@ def build_force_order_run(
     digest: hashlib._Hash,
     endpoint: str = FORCE_ORDER_ENDPOINT,
     run_id: str | None = None,
+    notes: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `forceOrder` SESSION close (`Q3` §1.1, §3).
 
@@ -173,6 +238,7 @@ def build_force_order_run(
     opened the session with an id of its own (so the published rows could carry it, `ADR-035/D2`)
     passes that SAME id here, and the run the writer closes is then the run the collector opened.
     """
+    require_rejection_reason(verdict, None, notes)
     return IngestRun(
         run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
@@ -190,6 +256,7 @@ def build_force_order_run(
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
         ended_at=ended_at,
+        notes=notes,
     )
 
 
@@ -202,6 +269,7 @@ def build_premium_index_run(
     verdict: KnownVerdict,
     src_sha256: str,
     run_id: str | None = None,
+    notes: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `premiumIndex` poll CYCLE (`Q3` §1.2, §3).
 
@@ -215,6 +283,7 @@ def build_premium_index_run(
     opened the cycle with an id of its own (so the published rows could carry it, `ADR-035/D2`)
     passes that SAME id here, and the run the writer closes is then the run the collector opened.
     """
+    require_rejection_reason(verdict, status, notes)
     return IngestRun(
         run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
@@ -232,6 +301,7 @@ def build_premium_index_run(
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
         ended_at=ended_at,
+        notes=notes,
     )
 
 
@@ -245,6 +315,7 @@ def build_klines_run(
     verdict: KnownVerdict,
     src_sha256: str,
     run_id: str | None = None,
+    notes: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `/fapi/v1/klines` pass (`T-01.3`, `SPEC-007` phase `01`).
 
@@ -271,6 +342,7 @@ def build_klines_run(
     the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
     parameter here and is minted at pass OPEN by the composition root.
     """
+    require_rejection_reason(verdict, api_code, notes)
     return IngestRun(
         run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
@@ -288,6 +360,7 @@ def build_klines_run(
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
         ended_at=ended_at,
+        notes=notes,
     )
 
 
@@ -301,6 +374,7 @@ def build_open_interest_run(
     verdict: KnownVerdict,
     src_sha256: str,
     run_id: str | None = None,
+    notes: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `/futures/data/openInterestHist` pass (`T-03.3`, phase `03`).
 
@@ -324,6 +398,7 @@ def build_open_interest_run(
     the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
     parameter here and is minted at pass OPEN by the composition root.
     """
+    require_rejection_reason(verdict, api_code, notes)
     return IngestRun(
         run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
@@ -341,6 +416,7 @@ def build_open_interest_run(
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
         ended_at=ended_at,
+        notes=notes,
     )
 
 
@@ -354,6 +430,7 @@ def build_long_short_run(
     verdict: KnownVerdict,
     src_sha256: str,
     run_id: str | None = None,
+    notes: str | None = None,
 ) -> IngestRun:
     """Build the `IngestRun` for one `/futures/data/globalLongShortAccountRatio` pass (`T-04.3`).
 
@@ -377,6 +454,7 @@ def build_long_short_run(
     the single writer CLOSES it (`ADR-035/D2`), which is only possible because `run_id` is a
     parameter here and is minted at pass OPEN by the composition root.
     """
+    require_rejection_reason(verdict, api_code, notes)
     return IngestRun(
         run_id=run_id if run_id is not None else str(uuid4()),
         source=SOURCE,
@@ -394,4 +472,70 @@ def build_long_short_run(
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,
         ended_at=ended_at,
+        notes=notes,
+    )
+
+
+def build_liquidation_history_run(
+    *,
+    started_at: str,
+    ended_at: str,
+    n_returned: int,
+    n_calls: int,
+    api_code: int | None,
+    verdict: KnownVerdict,
+    src_sha256: str,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> IngestRun:
+    """Build the `IngestRun` for one Coinalyze `liquidation-history` CYCLE (`T-05.5`).
+
+    Same UNIT as `build_klines_run`: one pass over the configured symbol universe, with
+    `n_calls` carrying how many requests it spent. `Q3` §1.2's reasoning does not change with
+    the provider, so it is not re-argued here.
+
+    ── `weight_used = n_calls`, AND WHY THAT IS NOT `WEIGHT_NOT_READABLE` ─────────────────
+
+    The sentinel means "the provider answered without a readable header on a call this
+    collector had NO OTHER WAY to price", and that is not this endpoint's situation. Coinalyze
+    publishes no header either (`quota_bucket.COINALYZE` is `BLIND`) — but its ceiling is
+    denominated IN CALLS: 40 per sliding 60 s `[MEDIDO 2026-09-10, n=41 requisicoes: a 41a
+    tomou 429]`. The price of one call is therefore one unit BY THE DEFINITION OF THE UNIT, not
+    by a derivation, and the count is this collector's own (`SlidingQuotaWindow` keeps it,
+    because a blind bucket leaves local counting as the only accounting there is).
+
+    That is the same standard `KLINES_WEIGHT_PER_CALL` meets — a measured per-call price times
+    a counted quantity — reached by a different route, and it is what lets `RNF-3`'s budget
+    claim ("<= 5% do teto a N=10, cadencia 5 min") be checked against the record instead of
+    against a log line.
+
+    `n_expected = n_returned`: there is no oracle for how many buckets a SPARSE series should
+    have had. Only 20,2% of 1-minute buckets carry any liquidation at all
+    `[MEDIDO 2026-09-12, n=14.344 buckets possiveis, 2.900 preenchidos]`, so an "expected" count
+    derived from the window width would declare a 79,8% shortfall on a perfectly healthy cycle —
+    which is precisely the rate-shaped reasoning `T-05.7` exists to keep out of this series.
+
+    `notes` is `RS-4`'s second reason field and it is REQUIRED whenever the verdict is
+    `REJECTED` and no `api_code` came — `require_rejection_reason` enforces it rather than
+    trusting the caller.
+    """
+    require_rejection_reason(verdict, api_code, notes)
+    return IngestRun(
+        run_id=run_id if run_id is not None else str(uuid4()),
+        source=COINALYZE_SOURCE,
+        endpoint=LIQUIDATION_HISTORY_ENDPOINT,
+        window=f"{started_at}/{ended_at}",
+        n_expected=n_returned,
+        n_returned=n_returned,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+        verdict=verdict,
+        api_code=api_code,
+        src_sha256=src_sha256,
+        weight_used=n_calls,
+        observer_id=LIQUIDATION_OBSERVER_ID,
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
+        started_at=started_at,
+        ended_at=ended_at,
+        notes=notes,
     )

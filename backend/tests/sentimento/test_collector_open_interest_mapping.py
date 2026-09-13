@@ -145,18 +145,19 @@ def test_a_symbol_outside_the_pilot_universe_yields_no_rows() -> None:
 
 
 def test_the_provenance_columns_separate_the_two_clocks() -> None:
-    """`bucket_end`/`event_time` are the SOURCE's instant; the rest are this collector's."""
+    """`bucket_end`/`event_time` are the SOURCE's; `ingested_at`/`observed_at` are ours.
+
+    `available_at` is now NEITHER (`ADR-038`/`D1`): it is COMPUTED from the bucket and the
+    native grid, which is why it carries `MODELED` and the other two still carry `received_at`.
+    """
     received_at = _GRID_INSTANT_MS + 6_231
     rows = build_open_interest_to_rows()(received_at, "BTCUSDT", [_point(_GRID_INSTANT_MS)])
 
     row = rows[0]
     assert (row.bucket_end, row.event_time) == (_GRID_INSTANT_MS, _GRID_INSTANT_MS)
-    assert (row.available_at, row.ingested_at, row.observed_at) == (
-        received_at,
-        received_at,
-        received_at,
-    )
-    assert row.availability_source is AvailabilitySource.OBSERVED
+    assert (row.ingested_at, row.observed_at) == (received_at, received_at)
+    assert row.available_at == _GRID_INSTANT_MS + OPEN_INTEREST_BUCKET_WIDTH_MS
+    assert row.availability_source is AvailabilitySource.MODELED
     assert row.provenance is Provenance.OBSERVED
     assert row.src_label_raw == OPEN_INTEREST_HIST_ENDPOINT
     assert row.source == OPEN_INTEREST_HIST_ENDPOINT
@@ -164,6 +165,83 @@ def test_the_provenance_columns_separate_the_two_clocks() -> None:
     # The source DOES declare finality here, unlike `klines_volume`'s in-progress bar:
     # `[MEDIDO 2026-09-12: valor estavel por 240 s depois de publicado, ate o proximo ponto]`.
     assert row.is_final is True
+
+
+def test_a_backfill_row_is_not_stamped_with_the_instant_our_request_ran() -> None:
+    """⛔ THE FALSIFIER OF `ADR-038`/`D1`, AND IT IS THE CASE THAT EMPTIED THE PANEL.
+
+    `99,85 %` of the open-interest rows in `md.series` are backfill — `8.052` of `8.064`, with
+    `available_at - bucket_end` reaching `604.539.911 ms ~ 7,0 d` `[MEDIDO 2026-09-12, ADR-038
+    §1.1b]`. Under the OLD rule those rows were stamped with the instant OUR request ran, and
+    `as_of` admits a row on `available_at <= t`, so a bucket from seven days ago was invisible
+    at every instant it describes: `1/61` slots legible.
+
+    Reverting the mapping to `available_at=received_at` makes THIS assertion fail with a value
+    seven days too late — the mutation is caught here rather than in a chart that renders empty
+    with `rc=0`.
+    """
+    seven_days_ms = 7 * 24 * 60 * 60 * 1_000
+    received_at = _GRID_INSTANT_MS + seven_days_ms
+
+    row = build_open_interest_to_rows()(received_at, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+
+    assert row.available_at == _GRID_INSTANT_MS + OPEN_INTEREST_BUCKET_WIDTH_MS
+    assert row.available_at != received_at
+    assert row.available_at - row.bucket_end == OPEN_INTEREST_BUCKET_WIDTH_MS
+    # The instant of the search is NOT lost — `D16` keeps it, and `ADR-038` §7.1 (which would
+    # move `observed_at` onto the stamp) is the OWNER's pending call, deliberately not taken.
+    assert row.observed_at == received_at
+    assert row.ingested_at == received_at
+
+
+def test_the_modeled_stamp_does_not_move_when_the_collector_is_early_or_late() -> None:
+    """The stamp is a function of the BUCKET, never of when we happened to ask.
+
+    Two passes over the same point — one 6 s after the bucket, one seven days after — must
+    produce the same `available_at`. That is what makes the reconstructed history and the live
+    capture land on one timeline instead of two.
+    """
+    to_rows = build_open_interest_to_rows()
+    early = to_rows(_GRID_INSTANT_MS + 6_231, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+    late = to_rows(_GRID_INSTANT_MS + 604_539_911, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+
+    assert early.available_at == late.available_at
+    assert early.availability_source is late.availability_source is AvailabilitySource.MODELED
+
+
+def test_observed_at_keeps_the_fetch_instant_so_f_1_stays_computable() -> None:
+    """`ADR-038` §5/`F-1` must keep a NON-EMPTY universe after `D1` — this pins the column.
+
+    `D1` stamps `MODELED` on every open-interest row, so an `F-1` filtering
+    `availability_source = 'OBSERVED'` would freeze at the legacy rows and, after `D15`
+    (TRUNCATE + reingest), return `rc=0` over ZERO lines — the falsifier OF `D1` switched off
+    BY `D1`, the ambiguous signal `ADR-012` names. `F-1` was amended to read
+    `observed_at - bucket_end` instead, which only works while `observed_at` stays the fetch
+    instant. Moving it onto the stamp is `ADR-038` §7.1 and is the OWNER's call; this test is
+    what makes that move fail loudly instead of silently emptying the falsifier.
+
+    The four lags are real: production measured `n_polls = 52`, `p99 = 85.187 ms`, range
+    `4.417`-`85.187 ms` `[MEDIDO 2026-09-13T00:36Z, deploy-postgres-1 read-only]`.
+    """
+    to_rows = build_open_interest_to_rows()
+    for lag_ms in (4_417, 29_735, 58_692, 85_187):
+        row = to_rows(_GRID_INSTANT_MS + lag_ms, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+
+        assert row.observed_at - row.bucket_end == lag_ms
+        assert row.availability_source is AvailabilitySource.MODELED
+
+
+def test_the_measured_fetch_lags_all_sit_inside_the_band_d1_assumes() -> None:
+    """`D1` supposes `p99_lag` in `(0, 300.000]`; the live polls are direct evidence of it.
+
+    `ADR-038` §3 shows every percentile inside that band yields the same `+300.000` stamp, so
+    a lag outside it would mean `D1` needs RE-DECIDING, not re-measuring.
+    """
+    to_rows = build_open_interest_to_rows()
+    for lag_ms in (4_417, 85_187):
+        row = to_rows(_GRID_INSTANT_MS + lag_ms, "BTCUSDT", [_point(_GRID_INSTANT_MS)])[0]
+
+        assert 0 < row.observed_at - row.bucket_end <= 300_000
 
 
 def test_a_point_without_an_integer_timestamp_is_refused_and_names_the_field() -> None:

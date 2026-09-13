@@ -49,6 +49,7 @@ from src.modules.sentimento.infra.binance_klines_client import KlinesPageRespons
 from src.modules.sentimento.infra.ingest_record_store_composition import IngestRecordStore
 from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
 from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
+from src.modules.sentimento.use_cases.collect_liquidation_history import LiquidationFetch
 from src.modules.sentimento.use_cases.collect_premium_index import (
     PremiumIndexFetcher,
     RawPremiumIndexFetch,
@@ -162,6 +163,25 @@ class _EmptyFuturesDataClient:
     ) -> FuturesDataPageResponse:
         """Return `status=200` with no points and no API error code."""
         return FuturesDataPageResponse(status=200, api_code=None, points=())
+
+
+class _EmptyLiquidationSource:
+    """A `LiquidationHistorySource` fake that always answers one empty, successful body.
+
+    The liquidation thread (`T-05.5`) is the SIXTH thread `run()` starts, and it is the only one
+    whose real default reaches a THIRD PARTY — `api.coinalyze.net` — from inside the offline
+    suite, which `backend/scripts/test.sh`'s "ZERO REDE" rule forbids. Worse than slow: it would
+    spend real quota on a blind bucket with a 40-per-sliding-minute ceiling, from a test run.
+
+    `[]` is the SAME body the real endpoint returns for a symbol it does not recognise, so this
+    is not a shape the source could never produce. It makes every symbol "unanswered"
+    (`RS-3.7`), which is exactly what this driver wants: the cycle closes
+    `ACCEPTED_WITH_WARNING` with a reason, writes nothing, and never blocks.
+    """
+
+    def fetch(self, path: str) -> LiquidationFetch:
+        """Return `status=200` with an empty array, whatever was asked for."""
+        return LiquidationFetch(status=200, body=b"[]")
 
 
 class _OneShotPremiumIndexFetcher:
@@ -303,6 +323,11 @@ def main(argv: list[str]) -> int:
         # And again for the long/short thread (`T-04.3`): one boot pass against
         # `_EmptyFuturesDataClient`, then a cadence no scenario here waits out.
         long_short_cycle_interval_s=999_999.0,
+        # And once more for the liquidation thread (`T-05.5`): one pass against
+        # `_EmptyLiquidationSource`, then a cadence no scenario here waits out. The cadence
+        # is ALSO what spreads the calls (`RS-3.6`), so a small value here would make the
+        # driver sleep between symbols for no reason.
+        liquidation_cycle_interval_s=999_999.0,
     )
     if force_publish_failure:
         # Same real-server technique `test_collectors_cli_publish_failure.py`'s `clobbered_sink`
@@ -333,6 +358,7 @@ def main(argv: list[str]) -> int:
             klines_client_factory=_EmptyKlinesClient,
             open_interest_client_factory=_EmptyOpenInterestClient,
             long_short_client_factory=_EmptyFuturesDataClient,
+            liquidation_source_factory=_EmptyLiquidationSource,
             premium_index_to_rows=premium_index_to_rows,
             force_order_to_rows=_never_maps,
         )

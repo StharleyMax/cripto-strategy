@@ -1,0 +1,86 @@
+diff --git a/backend/tests/helpers/collectors_cli_thread_kill_driver.py b/backend/tests/helpers/collectors_cli_thread_kill_driver.py
+index 3f1fe00..2fa173a 100644
+--- a/backend/tests/helpers/collectors_cli_thread_kill_driver.py
++++ b/backend/tests/helpers/collectors_cli_thread_kill_driver.py
+@@ -20,7 +20,7 @@ from __future__ import annotations
+ import logging
+ import sys
+ import threading
+-from collections.abc import Callable, Iterable
++from collections.abc import Callable, Iterable, Mapping, Sequence
+ from pathlib import Path
+ 
+ import psycopg
+@@ -32,6 +32,7 @@ from src.modules.sentimento.domain.oi_history_paginator import (
+ )
+ from src.modules.sentimento.domain.provenance import SeriesRow
+ from src.modules.sentimento.infra import collectors_cli
++from src.modules.sentimento.infra.binance_futures_data_client import FuturesDataPageResponse
+ from src.modules.sentimento.infra.binance_klines_client import KlinesPageResponse
+ from src.modules.sentimento.infra.redis_resp_client import connect_resp2, open_tcp_socket
+ from src.modules.sentimento.infra.sqlite_ingest_record_store import SqliteIngestRecordStore
+@@ -39,6 +40,7 @@ from src.modules.sentimento.use_cases.collect_premium_index import RawPremiumInd
+ from tests.helpers.collectors_cli_driver import (
+     _BlockingForceOrderSource,
+     _EmptyBatchFetcher,
++    _EmptyFuturesDataClient,
+     _EmptyKlinesClient,
+     _EmptyOpenInterestClient,
+ )
+@@ -47,7 +49,8 @@ FORCE_ORDER = "collector-force-order"
+ PREMIUM_INDEX = "collector-premium-index"
+ KLINES = "collector-klines"
+ OPEN_INTEREST = "collector-open-interest"
+-THREAD_NAMES = (FORCE_ORDER, PREMIUM_INDEX, KLINES, OPEN_INTEREST)
++LONG_SHORT = "collector-long-short"
++THREAD_NAMES = (FORCE_ORDER, PREMIUM_INDEX, KLINES, OPEN_INTEREST, LONG_SHORT)
+ 
+ _OUTAGE = "the connection is closed"
+ 
+@@ -127,6 +130,24 @@ class _DyingOpenInterestClient:
+         raise AssertionError("unreachable")
+ 
+ 
++class _DyingLongShortClient:
++    """A `LongShortClient` whose in-thread `history` dies of an exception no runner lists."""
++
++    def history(
++        self, endpoint: str, symbol: str, period: str, limit: int
++    ) -> FuturesDataPageResponse:
++        """Raise instead of answering a page."""
++        _boom()
++        raise AssertionError("unreachable")
++
++
++def _never_maps_long_short(
++    _n: int, _symbol: str, _points: Sequence[Mapping[str, object]]
++) -> tuple[SeriesRow, ...]:
++    """Return no rows — the long/short thread here exists only to be killed or to idle."""
++    return ()
++
++
+ def _never_maps(*_args: object, **_kwargs: object) -> Iterable[SeriesRow]:
+     """Return no rows — no scenario here derives one."""
+     return ()
+@@ -160,6 +181,7 @@ def main(argv: list[str]) -> int:
+         klines_backfill_days=1,
+         open_interest_cycle_interval_s=999_999.0,
+         open_interest_backfill_days=1,
++        long_short_cycle_interval_s=999_999.0,
+     )
+     connection = connect_resp2(open_tcp_socket(host, port))
+     store = SqliteIngestRecordStore(store_path)
+@@ -183,8 +205,13 @@ def main(argv: list[str]) -> int:
+             open_interest_client_factory=(
+                 _DyingOpenInterestClient if target == OPEN_INTEREST else _EmptyOpenInterestClient
+             ),
++            long_short_client_factory=(
++                _DyingLongShortClient if target == LONG_SHORT else _EmptyFuturesDataClient
++            ),
+             premium_index_to_rows=_never_maps,
+             force_order_to_rows=_never_maps,
++            long_short_to_rows=_never_maps_long_short,
++            long_short_symbols=("BTCUSDT",),
+         )
+     finally:
+         server.shutdown()

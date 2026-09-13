@@ -136,6 +136,31 @@ class IngestRun:
     # NEITHER side of that percentage.
     writer_accounted_at: str | None = None
 
+    # ── `T-05.6` / `RF-6` / `RS-4`: THE REASON A RUN WAS `REJECTED`, WHEN THERE IS NO CODE ──
+    #
+    # TABLE-only, exactly like `writer_accounted_at` above and for the identical reason: the 15
+    # columns of `INGEST_HEALTH_RUN_COLUMNS` are a contract whose ORDER feeds the `sha256` of
+    # `ADR-008/DoD-2`, and `_project_run_dict` walks THAT tuple — never
+    # `dataclasses.fields(IngestRun)`. So this field cannot reach the projection and the
+    # fingerprint of every report already emitted stays byte-identical.
+    # `test_ingest_record_notes.py::test_adding_notes_does_not_move_the_canonical_fingerprint`
+    # pins that with a measurement instead of with this paragraph.
+    #
+    # ⛔ WHY THE FIELD HAD TO EXIST AT ALL. Plan `05`'s `DoD 5` reads "`api_code` E/OU `notes`
+    # nao-nulos" — and before this field there was no `notes` ANYWHERE: not a column, not a
+    # dataclass field, not a write `[MEDIDO 2026-09-12: `information_schema.columns` para
+    # `md.ingest_run` devolve 17 nomes, nenhum `notes`; `grep -n notes` em `ingest_record.py` e
+    # `postgres_ingest_record_store.py` -> rc=1]`. Half of that DoD was unsatisfiable BY
+    # CONSTRUCTION, which is worse than unmet: nothing could ever have failed it.
+    #
+    # `api_code` answers "the provider refused, and here is its number". `notes` answers the
+    # case that produced `DEF-2`: the run died on OUR side (a publish failure, a malformed
+    # body, a dead socket) where there IS no provider code — and `api_code = NULL` there is
+    # honest, not lazy. Without a second field the only honest record is a run that says
+    # nothing, which is `ADR-012`'s `rc=0`: indistinguishable between "failed for X" and "the
+    # instrument never knew how to say why".
+    notes: str | None = None
+
 
 @dataclass(frozen=True)
 class IngestGap:
