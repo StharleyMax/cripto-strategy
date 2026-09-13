@@ -36,6 +36,15 @@ from src.modules.sentimento.domain.klines_volume_catalog import (
     KLINES_VOLUME_METRIC,
     KLINES_VOLUME_NATIVE_GRID,
 )
+from src.modules.sentimento.domain.liquidation_catalog import (
+    COHORTS,
+    LONG,
+    MAX_STALENESS_MS,
+    NATIVE_GRID,
+    NATIVE_GRID_MS,
+    SHORT,
+    coinalyze_liquidation_key,
+)
 from src.modules.sentimento.domain.long_short_ratio_series import COUNT_LONG_SHORT_RATIO
 from src.modules.sentimento.domain.series_catalog import (
     DuplicateSeriesKeyError,
@@ -55,6 +64,7 @@ from src.modules.sentimento.infra.binance_klines_client import KlineRow
 from src.modules.sentimento.use_cases.collector_series_mapping import (
     INITIAL_SYMBOLS,
     build_klines_to_rows,
+    build_liquidation_history_to_row,
 )
 from src.modules.sentimento.use_cases.series_catalog import (
     PILOT_INSTRUMENT_IDS,
@@ -68,6 +78,15 @@ from src.modules.sentimento.use_cases.series_history import (
     build_series_history_report,
 )
 
+LIQUIDATION_METRIC: Final[str] = "sum_liquidation"
+"""`T-05.8`: the metric string the two served liquidation rows carry.
+
+Spelled here rather than imported because `liquidation_catalog.py` writes it as a literal
+inside `coinalyze_liquidation_key`, and the IDENTITY itself (that literal, term by term) is
+already pinned by `test_liquidation_catalog.py`. This constant is about REGISTRATION — which
+rows the served catalog contains — so a test that imported the same expression it is checking
+would agree with production by construction, including when production is wrong."""
+
 
 def _classify_panel_grid(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGridVerdict:
     """Satisfy the `GridMultipleClassifier` port with the REAL `charts` rule (`ADR-037/D4`)."""
@@ -80,14 +99,16 @@ def _classify_panel_grid(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGri
     )
 
 
-def test_the_real_catalog_has_thirteen_rows_not_seven() -> None:
-    """The honest total: `3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines + 1 L/S = 13`.
+def test_the_real_catalog_has_fifteen_rows_not_seven() -> None:
+    """The honest total: `3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines + 1 L/S + 2 liq`.
 
     Was `10` until `T-01.6` appended `klines_volume`, `11` until `T-02.4` appended
-    `cvd_source`/`kline_takerbuy` and `12` until `T-04.4` appended `count_long_short_ratio`
-    (`SPEC-007` §4, rows M1, M5 and M3). Phases `02` and `04` forked from the same tree and each
+    `cvd_source`/`kline_takerbuy`, `12` until `T-04.4` appended `count_long_short_ratio` and
+    `13` until `T-05.8` appended BOTH `sum_liquidation` cohorts (`SPEC-007` §4, rows M1, M5, M3
+    and M4). M4 moves the count by TWO because the two legs are two series and their sum would
+    erase which leg was flushed. Phases `02` and `04` forked from the same tree and each
     wrote "the count is 12"; keeping only one of the two would DROP a real series, so the
-    integration keeps both and the number is 13. The reasoning
+    integration keeps both and the number is 15. The reasoning
     below is unchanged — the point of the test was never the digit, it is that `n_entries`
     counts what the route SERVES rather than what a grep of call sites suggests.
 
@@ -102,7 +123,7 @@ def test_the_real_catalog_has_thirteen_rows_not_seven() -> None:
     """
     catalog = list_series_catalog()
 
-    assert len(catalog.entries) == 13
+    assert len(catalog.entries) == 15
     oi_reductions = {
         entry.key.reduction
         for entry in catalog.entries
@@ -229,12 +250,19 @@ def test_reconstructed_entry_projects_a_non_null_published_error_as_numbers() ->
 
 
 def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
-    """Every OTHER row — 12 of the 13 — carries `reconstructedFrom: null, publishedError: null`.
+    """Every OTHER row — 14 of the 15 — carries `reconstructedFrom: null, publishedError: null`.
 
-    Was 9 of 10 until `T-01.6`, 10 of 11 until `T-02.4` and 11 of 12 until `T-04.4`. All three
-    `SPEC-007` rows join this side of the split rather than the reconstructed one, and for each
-    that is a claim rather than bookkeeping: the value is READ from the bucket its own endpoint
-    publishes, so there is nothing reconstructed and no `(median, p99, n)` to declare (`D6.9`).
+    Was 9 of 10 until `T-01.6`, 10 of 11 until `T-02.4`, 11 of 12 until `T-04.4` and 12 of 13
+    until `T-05.8` added BOTH `sum_liquidation` cohorts. All five `SPEC-007` rows join this side
+    of the split rather than the reconstructed one, and for each that is a claim rather than
+    bookkeeping: the value is READ from the bucket its own endpoint publishes, so there is
+    nothing reconstructed and no `(median, p99, n)` to declare (`D6.9`).
+
+    For M4 the claim is SHARPER, and the sharpening is measured: `DoD 6c` of plan `05` records
+    that liquidation is the only third-party series of the feature and the only one WITHOUT an
+    oracle — Binance has no REST liquidation endpoint. So its emptiness is not "nothing to
+    reconstruct" but "nothing anyone has measured", and inventing a `(median, p99, n)` there
+    would publish a fidelity that does not exist (`ADR-036/D6` escalates the question).
     For `kline_takerbuy` the claim was FALSIFIED before it was written — `T-02.1`, `n=4.320`
     buckets against the canonical `aggTrade` dump, zero divergent runs with a residual. A row
     that shipped a `publishedError` here would be asserting a reconstruction error for a number
@@ -248,7 +276,7 @@ def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
     assert isinstance(entries, list)
     not_reconstructed = [e for e in entries if e["reconstructedFrom"] is None]
 
-    assert len(not_reconstructed) == 12
+    assert len(not_reconstructed) == 14
     for entry in not_reconstructed:
         assert entry["publishedError"] is None
 
@@ -548,18 +576,23 @@ def test_registering_the_new_rows_appended_and_did_not_reorder_the_pre_existing_
     """`RS-1` falsifier: content changed, FORM did not — the ten old rows kept their indices.
 
     `RS-1` lets this task add an entry and forbids it from touching the envelope, the field
-    names or the ORDER. Inserting `klines_volume` (`T-01.6`) or `count_long_short_ratio`
-    (`T-04.4`) anywhere but the tail would shift every row after it, which no field of the
-    response would report — the list would simply come back permuted. Pinning BOTH tail
-    positions is what makes that permutation fail a test instead of silently reaching a consumer
-    that reads by index.
+    names or the ORDER. Inserting `klines_volume` (`T-01.6`), `count_long_short_ratio`
+    (`T-04.4`) or either `sum_liquidation` cohort (`T-05.8`) anywhere but the tail would shift
+    every row after it, which no field of the response would report — the list would simply come
+    back permuted. Pinning EVERY tail position is what makes that permutation fail a test
+    instead of silently reaching a consumer that reads by index.
+
+    The two liquidation rows are pinned in the order `COHORTS` declares them (`long`, then
+    `short`), not merely as a set: swapping the pair is a permutation too.
     """
     catalog = list_series_catalog()
     metrics = [entry.key.metric for entry in catalog.entries]
 
     assert metrics[10] == KLINES_VOLUME_METRIC
     assert metrics[11] == CVD_SOURCE_METRIC
-    assert metrics[-1] == COUNT_LONG_SHORT_RATIO
+    assert metrics[12] == COUNT_LONG_SHORT_RATIO
+    assert metrics[13] == metrics[14] == LIQUIDATION_METRIC
+    assert [entry.key.cohort for entry in catalog.entries[13:]] == list(COHORTS)
     assert metrics[:10] == [
         "cvd_source",
         "cvd_source",
@@ -574,18 +607,19 @@ def test_registering_the_new_rows_appended_and_did_not_reorder_the_pre_existing_
     ]
 
 
-def test_the_envelope_serves_thirteen_entries_without_changing_its_top_level_fields() -> None:
-    """`RS-1` again, at the wire: `n_entries` moved 10 -> 11 -> 12 -> 13, nothing else did."""
+def test_the_envelope_serves_fifteen_entries_without_changing_its_top_level_fields() -> None:
+    """`RS-1` again, at the wire: `n_entries` moved 10 -> 11 -> 12 -> 13 -> 15, nothing else."""
     envelope = series_catalog_envelope(list_series_catalog())
 
     assert list(envelope.keys()) == ["query", "n_entries", "entries"]
     assert envelope["query"] == "series_catalog"
-    assert envelope["n_entries"] == 13
+    assert envelope["n_entries"] == 15
     entries = envelope["entries"]
     assert isinstance(entries, list)
     served_metrics = [entry["key"]["metric"] for entry in entries]
     assert served_metrics.count(KLINES_VOLUME_METRIC) == 1
     assert served_metrics.count(COUNT_LONG_SHORT_RATIO) == 1
+    assert served_metrics.count(LIQUIDATION_METRIC) == 2
 
 
 # ── A1: `unit` IS DERIVED FROM THE INSTRUMENT, NOT A LITERAL `"BTC"` ────────────────────────
@@ -622,15 +656,30 @@ def test_quote_denominated_rows_are_untouched_by_the_derivation() -> None:
 
     CALA: a derivation applied too widely would relabel `klines_last`/`price_mark_close` and
     move two `series_key_id`s that no defect asked to move.
+
+    ⚠️ `denom="quote"` DOES NOT MEAN `unit="USDT"`, and `T-05.8` is where the two stop being
+    interchangeable: the two `sum_liquidation` rows are quote-denominated with `unit="USD"`,
+    because Coinalyze's `convert_to_usd=true` publishes USD and this repository does not restate
+    a third party's unit as something it did not say (`liquidation_catalog.py`'s own comment).
+    Asserting `{"USDT"}` over ALL quote rows would therefore have failed for a correct catalog —
+    the assertion is split by metric so that it still bites on the two PRICE rows it was written
+    for.
     """
+    price_metrics = {"klines_last", "price_mark_close"}
     for instrument_id in PILOT_INSTRUMENT_IDS:
         quote_rows = [
             entry
             for entry in list_series_catalog(instrument_id).entries
             if entry.key.denom == "quote"
         ]
-        assert len(quote_rows) == 2
-        assert {entry.key.unit for entry in quote_rows} == {"USDT"}
+        price_rows = [entry for entry in quote_rows if entry.key.metric in price_metrics]
+        liquidation_rows = [entry for entry in quote_rows if entry.key.metric not in price_metrics]
+
+        assert len(quote_rows) == 4
+        assert len(price_rows) == 2
+        assert {entry.key.unit for entry in price_rows} == {"USDT"}
+        assert {entry.key.metric for entry in liquidation_rows} == {LIQUIDATION_METRIC}
+        assert {entry.key.unit for entry in liquidation_rows} == {"USD"}
 
 
 # The `klines_volume` `series_key_id`s that PRODUCTION `md.series` actually carries, one per
@@ -696,18 +745,18 @@ def test_the_pilot_universe_is_the_four_symbols_the_collector_writes() -> None:
     assert PILOT_INSTRUMENT_IDS[0] == "BTCUSDT"
 
 
-def test_the_served_catalog_has_thirteen_rows_per_pilot_instrument() -> None:
-    """`13 x 4 = 52`, every id distinct — `instrument_id` is a term of the key."""
+def test_the_served_catalog_has_fifteen_rows_per_pilot_instrument() -> None:
+    """`15 x 4 = 60`, every id distinct — `instrument_id` is a term of the key."""
     catalog = list_pilot_series_catalog()
 
-    assert len(catalog.entries) == 52
+    assert len(catalog.entries) == 60
     ids = [entry.key.series_key_id() for entry in catalog.entries]
-    assert len(set(ids)) == 52
+    assert len(set(ids)) == 60
     assert {entry.key.instrument_id for entry in catalog.entries} == set(PILOT_INSTRUMENT_IDS)
 
 
 def test_the_pilot_catalog_appends_and_never_reorders_the_btcusdt_prefix() -> None:
-    """`RS-1`: order is FORM. The thirteen `BTCUSDT` rows keep the indices they already had."""
+    """`RS-1`: order is FORM. The fifteen `BTCUSDT` rows keep the indices they already had."""
     served = [entry.key.series_key_id() for entry in list_pilot_series_catalog().entries]
     btcusdt = [entry.key.series_key_id() for entry in list_series_catalog("BTCUSDT").entries]
 
@@ -803,3 +852,117 @@ def test_the_served_cvd_row_is_the_one_the_collector_writes_under() -> None:
         rows = build_klines_to_rows()(bucket_open_ms + 120_000, symbol, page)
         assert len(rows) == 2
         assert {row.series_key_id for row in rows} <= served
+
+
+# ── `T-05.8` — as DUAS coortes de `sum_liquidation` no catálogo SERVIDO (`SPEC-007` §4.5) ────
+#
+# `T-05.3` already proves the identity term by term (`test_liquidation_catalog.py`). What this
+# block proves is what the plan forgot to number: that BOTH rows reach the list the ROUTE
+# serves, separately, and that `/api/v1/series-history` therefore stops answering
+# `422 UnknownSeriesKeyIdError` for each of the two ids — the precondition `DoD-2` of plan `05`
+# needs before `n_points` is a question anyone can ask at all.
+
+
+def _liquidation_entries_of(catalog: SeriesCatalog) -> list[SeriesCatalogEntry]:
+    """Return the served `sum_liquidation` rows, in served order, failing if there are not two.
+
+    "Exactly two" is the assertion, not a convenience: ONE row would mean someone collapsed the
+    legs into a net (the defect `liquidation_catalog.py`'s own docstring names), and three would
+    mean a cohort nobody declared reached the catalog.
+    """
+    rows = [entry for entry in catalog.entries if entry.key.metric == LIQUIDATION_METRIC]
+    assert len(rows) == 2, f"expected exactly two {LIQUIDATION_METRIC} rows, got {len(rows)}"
+    return rows
+
+
+def test_both_liquidation_cohorts_are_registered_in_the_catalog_the_route_serves() -> None:
+    """`RF-2`: TWO rows, `long` and `short`, never one netted row.
+
+    Summing the legs would produce a number that moves identically whether the market flushed
+    longs, flushed shorts or both — exactly the discrimination the metric exists to provide. A
+    single-row registration would still make the route answer `200`, which is why this asserts
+    the COHORTS and not merely that "the metric is present".
+    """
+    entries = _liquidation_entries_of(list_series_catalog())
+
+    assert [entry.key.cohort for entry in entries] == [LONG, SHORT] == list(COHORTS)
+    for entry in entries:
+        assert entry.key.provider == "coinalyze"
+        assert entry.key.venue == "usdm_futures"
+        assert entry.key.instrument_id == "BTCUSDT"
+        assert entry.key.interval == "1m"
+        assert entry.key.nature is Nature.FLOW
+        assert entry.native_grid == NATIVE_GRID
+        assert entry.native_grid_ms == NATIVE_GRID_MS
+        assert entry.max_staleness_ms == MAX_STALENESS_MS
+    assert entries[0].key.series_key_id() != entries[1].key.series_key_id()
+
+
+@pytest.mark.parametrize("cohort", COHORTS)
+def test_series_history_no_longer_refuses_either_liquidation_id(cohort: str) -> None:
+    """`DoD-2` asks for the two cohorts SEPARATELY, so the refusal is tested SEPARATELY.
+
+    Parametrized rather than looped inside one test on purpose: with a loop, registering only
+    `long` would fail one assertion and report one failure, and the report would not say which
+    leg is missing. `pytest` names the cohort in the test id.
+
+    Asserted at `build_series_history_report`, the function that actually raises the `422`
+    (`series_history.py:119-121`) — `entry_for_id is not None` would only test `entry_for_id`.
+    """
+    catalog = list_series_catalog()
+    series_key_id = coinalyze_liquidation_key(cohort).series_key_id()
+
+    report = build_series_history_report(
+        catalog,
+        _EmptyWindowReader(),
+        _classify_panel_grid,
+        series_key_id=series_key_id,
+        symbol="BTCUSDT",
+        interval="1m",
+        window_start_ms=1_700_000_000_000,
+        window_end_ms=1_700_000_060_000,
+        knowledge_time_ms=1_700_000_120_000,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.panel_series_key_id == series_key_id
+    assert report.panel_nature == Nature.FLOW.value
+    assert report.panel_source == "coinalyze"
+    assert report.panel_unit == "USD"
+
+
+def test_the_served_liquidation_rows_are_the_ones_the_collector_writes_under() -> None:
+    """Served id == written id, for every pilot instrument and BOTH cohorts.
+
+    The two sides go through the SAME key builder (`coinalyze_liquidation_key`), which is what
+    makes this checkable at all — but "they call the same function" is a claim about today's
+    source, and this is the assertion that survives someone changing one side. A drift here does
+    not answer `422`: it answers `200` with `n_points = 0` while the rows sit in `md.series`
+    under another id — the `rc=0` silent break `ADR-012` names.
+    """
+    served = {entry.key.series_key_id() for entry in list_pilot_series_catalog().entries}
+    to_row = build_liquidation_history_to_row()
+    bucket_start_seconds = 1_700_000_000
+
+    for symbol in sorted(INITIAL_SYMBOLS):
+        for cohort in COHORTS:
+            row = to_row(
+                (bucket_start_seconds * 1000) + 300_000, symbol, cohort, bucket_start_seconds, "1.5"
+            )
+            assert row.series_key_id in served, (
+                f"the collector writes {symbol}/{cohort} under an id the served catalog does "
+                f"not carry: `/api/v1/series-history` would answer 422 for rows on disk"
+            )
+
+
+def test_the_two_served_liquidation_rows_publish_no_fidelity_nobody_measured() -> None:
+    """`published_error is None` and `reconstructed_from is None` — the measured refusal.
+
+    `SPEC-001` §3.3 gates publication of a RECONSTRUCTION on `(median, p99, n)`, and `DoD 6c` of
+    plan `05` records that this series has NO oracle to measure against. Registering the row is
+    exactly the moment an invented `(median, p99, n)` would reach the wire, so the emptiness is
+    asserted here and not only in the domain module's own suite.
+    """
+    for entry in _liquidation_entries_of(list_series_catalog()):
+        assert entry.published_error is None
+        assert entry.reconstructed_from is None
