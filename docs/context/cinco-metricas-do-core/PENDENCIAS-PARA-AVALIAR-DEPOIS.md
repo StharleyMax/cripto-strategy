@@ -70,6 +70,17 @@ largura antes de profundidade). `F2` foi **agravado por 2 min** por uma mediçã
 `store.initialise()` do passe de medição enfileirou o `ALTER` e ele foi **cancelado**
 (`pg_cancel_backend`) assim que o convoy foi visto; a fila estava limpa na verificação seguinte.
 
+## G · Achado lateral da revalidação da PR #223 (`2026-09-13`) — LOOKAHEAD em `premiumIndex`
+
+| # | item | comando que mostra | dono | efeito |
+|---|---|---|---|---|
+| G1 | **`466` linhas com `available_at < bucket_end`** — ou seja, o store afirma que o dado estava disponível **antes de o bucket fechar**. **Todas** em `/fapi/v1/premiumIndex`; pior caso **`−100 ms`**. `klines`, `RATIO`, `liquidation-history` e open interest têm **`0`** | `select src_label_raw, count(*), min(available_at-bucket_end) from md.series where available_at < bucket_end group by 1;` → `/fapi/v1/premiumIndex\|466\|-100`, sobre `314.259` linhas `[MEDIDO 2026-09-13T01:48Z, deploy-postgres-1 somente leitura]` | **dono do `ADR-038`/`SPEC-001` §5.2** (`/architect`) | `SPEC-001` §5.2 exige carimbo **pessimista, nunca otimista**. `−100 ms` é pequeno o bastante para não mover a decisão ao vivo e grande o bastante para o backtest **ler um bucket antes de ele existir** — a direção exata que a spec proíbe. ⚠️ **`100 ms` é suspeito de arredondamento de grade/relógio, não de vazamento de futuro** — mas isso é hipótese, não medição |
+
+⛔ **NÃO é regressão da PR #223 e NÃO foi corrigido por ela:** `premiumIndex` não é tocado por
+`ADR-038`/`D1`, que carimba **só** open interest — e o open interest tem `0` linhas na condição.
+Registrado aqui, com dono, em vez de calado no gate: quem avaliar não precisa redescobrir.
+`[MEDIDO 2026-09-13T01:23Z pelo QA da PR #223, reconferido às `01:48Z`]`
+
 ## E · O que NÃO está aqui, e por quê
 
 `E1`/`E2` (backfill invisível ao `as_of`; `FLOW` com atraso ≥ grade) **não** são pendência: são

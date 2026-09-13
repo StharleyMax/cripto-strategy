@@ -108,6 +108,10 @@ from src.modules.sentimento.domain.klines_volume_catalog import build_klines_vol
 from src.modules.sentimento.domain.liquidation_catalog import coinalyze_liquidation_key
 from src.modules.sentimento.domain.liquidation_collection import LIQUIDATION_BUCKET_MS
 from src.modules.sentimento.domain.long_short_catalog import count_long_short_ratio_key
+from src.modules.sentimento.domain.modeled_availability import (
+    MODELED_AVAILABILITY_SOURCE,
+    modeled_available_at_for_endpoint,
+)
 from src.modules.sentimento.domain.open_interest_catalog import binance_open_interest_key
 from src.modules.sentimento.domain.premium_index_batch import (
     PREMIUM_INDEX_ENDPOINT,
@@ -664,10 +668,95 @@ def build_open_interest_to_rows(
     exactly what the measurement in this section's header established and what separates it
     from `klines_volume`'s in-progress bar.
 
-    `event_time`/`bucket_end` are the SOURCE's instant while `available_at`/`ingested_at`/
-    `observed_at` are THIS collector's clock — the same separation `_build_row` documents, and
-    the reason the publication lag of this endpoint stays visible in the data instead of being
-    flattened away.
+    `event_time`/`bucket_end` are the SOURCE's instant while `ingested_at`/`observed_at` are
+    THIS collector's clock — the same separation `_build_row` documents.
+
+    ── `available_at` IS MODELED HERE, AND IT IS `ADR-038`/`D1` ────────────────────────────
+
+    `available_at` USED to be `received_at` stamped `OBSERVED`, and that was wrong for this
+    endpoint in a way that emptied the panel: `99,85 %` of the `8.064` open-interest rows in
+    `md.series` came from ONE backfill pass, so `received_at` is the instant OUR request ran —
+    up to `604.539.911 ms ~ 7,0 d` after the bucket it labels `[MEDIDO 2026-09-12, ADR-038
+    §1.1b, n=8.064 linhas, 8.052 delas backfill]`. `as_of` admits a row on `available_at <= t`,
+    so every one of those rows was invisible at the instant it describes. Measured on the real
+    store with the real `as_of`: `1/61` slots legible before, `61/61` after `[MEDIDO
+    2026-09-12T23:20Z-2026-09-13T00:05Z, ADR-038 §1.2 e a remedicao de ADR-038-remedicao-e1.py,
+    universo de 61 slots, kt=agora, controles C0=0/61 e C1=61/61]`.
+
+    ⚠️ THE HOUR IS PART OF THAT MEASUREMENT, not decoration. Production went live at
+    `2026-09-12T23:41Z` and the open-interest collector has polled every ~5 min since
+    `23:45:29Z`, so the STARTING point moved while the ceiling did not: re-measured at
+    `2026-09-13T00:19Z` the same harness reads `40/61 -> 61/61` on the 1-min grid and
+    `9/61 -> 61/61` on the 5-min grid the panel draws `[MEDIDO 2026-09-13T00:19Z, n=4.040
+    linhas OI, mesmo arnes]`. The GAIN is unchanged and still maximal (`61/61`); what expired
+    is the sentence "`1/61`", which described a store with no live rows in it. A date without
+    an hour is ambiguous across three different populations today (`1` -> `34` -> `58` runs).
+
+    So `available_at` is now the next NATIVE GRID point after the bucket
+    (`modeled_available_at_for_endpoint`, `SPEC-001` §5.2 rounded up), stamped `MODELED`
+    because it is COMPUTED — the consequence `D16` already declared and the reason every
+    consumer of these rows must read `availability_source`.
+
+    ⛔ `observed_at` and `ingested_at` STAY `received_at`, and that is a boundary, not an
+    oversight. Moving `observed_at` onto the stamp is `ADR-038` §7.1, which amends a sentence
+    of `D16` ("o instante da busca continua em `ingested_at`/`observed_at`") and is therefore
+    the OWNER's call, still pending.
+
+    ── THIS STAMP IS WHY `F-1` READS `observed_at`, AND IT IS DECLARED, NOT SILENT ──────────
+
+    Stamping `MODELED` on EVERY row — including a live poll `4,4 s` after the bucket, which
+    `test_the_modeled_stamp_does_not_move_when_the_collector_is_early_or_late` pins on purpose
+    — means this producer NEVER writes `availability_source = 'OBSERVED'` again. `ADR-038` §5
+    designates `F-1` as the falsifier OF `D1`, so a version of `F-1` that filtered on
+    `OBSERVED` would have had its universe frozen at the legacy rows and, after `D15`
+    (TRUNCATE + reingest), would have returned `rc=0` with ZERO lines: the falsifier of this
+    very decision, switched off by this very decision, with the ambiguous signal `ADR-012`
+    names. That is a consequence to declare, not to discover later.
+
+    The real fetch delay is NOT lost, and this line is what keeps it: `observed_at` stays
+    `received_at`, so `observed_at - bucket_end` reproduces it. `ADR-038` §5/`F-1` was amended
+    to read exactly that, per poll (`group by observed_at`, `min(...)`) rather than per row,
+    because one `STOCK` poll writes many buckets by carry-forward. Measured on production:
+    `n_polls = 52`, `p99 = 85.187 ms`, range `4.417`-`85.187 ms`, every one inside
+    `(0, 300.000]` `[MEDIDO 2026-09-13T00:36Z, deploy-postgres-1 read-only]`.
+
+    ⛔ CHANGING `observed_at` HERE BREAKS `F-1`. `docs/context/cinco-metricas-do-core/gates/
+    QA-ADR-038-D1-F1-probe.py` and `test_observed_at_keeps_the_fetch_instant_so_f_1_stays_
+    computable` both fail if it moves.
+
+    ── THE CONSEQUENCE FOR THE BACKTEST, AND ITS UNIVERSE IS DECLARED ──────────────────────
+
+    ⛔ CORRECTION `2026-09-13T01:47Z`. The previous version of this paragraph said the backtest
+    horizon "still reads `1/61`" and that "a `61/61` at `knowledge_time = t` today would mean
+    someone shipped §7.1 without the owner". BOTH HALVES WERE FALSIFIED BY MEASUREMENT, and the
+    sentence was WRITTEN IN THE VERY COMMIT THAT FIXED `F-1` — a rule of inference with no
+    universe attached, which is the failure mode `F-1` had just been repaired for.
+
+    `1/61` is what `gates/ADR-038-D1-pos-implementacao.py:37` measures, and that harness
+    COLLAPSES every `observed_at` onto one instant (`received_at = max(observed_at)`, "the
+    single backfill pass instant"): it measures a SYNTHETIC store, the production that stopped
+    existing at `2026-09-12T23:45:29Z`. Over the REAL store the answer depends on the WINDOW,
+    and here it is, both arms on the same rows, the counterproof arm being `§7.1` itself
+    (`observed_at := the stamp`) `[MEDIDO 2026-09-13T01:45Z, n=4.057 linhas OI, BTCUSDT,
+    gates/ADR-038-F2-universo-historico.py, deploy-postgres-1 read-only]`:
+
+    | 61 slots ending at            | grid  | this code | `§7.1` counterproof |
+    |-------------------------------|-------|-----------|---------------------|
+    | newest bucket (live-covered)  | 1 min | `61/61`   | `61/61` — SATURATED |
+    | newest bucket                 | 5 min | `26/61`   | `61/61`             |
+    | last bucket before `23:41:13Z`| 1 min | ` 0/61`   | `61/61`             |
+    | last bucket before `23:41:13Z`| 5 min | ` 1/61`   | `61/61`             |
+
+    ⇒ on slots the live collector COVERED, a `STOCK` row fetched ~60 s after its bucket is
+    legitimately knowable at `knowledge_time = t`, so this code ALREADY reads `61/61` there and
+    `§7.1` buys NOTHING. On slots older than the collector, `observed_at` still bars the read
+    and `§7.1` buys ALL of them. The backtest ceiling is real but SCOPED TO HISTORY — which is
+    exactly what `ADR-036/D5` (klines since `2019-09-08`) was bought for — and it retreats by
+    clock time as live coverage accumulates.
+
+    ⇒ `61/61` at `knowledge_time = t` is therefore NOT evidence that anyone shipped `§7.1`. The
+    evidence is the DIFFERENTIAL between the two arms over the HISTORICAL window, which is how
+    `ADR-038` §5/`F-2` was amended to read. `§7.1` remains the OWNER's call, still pending.
     """
 
     def _to_rows(
@@ -677,27 +766,33 @@ def build_open_interest_to_rows(
             return ()
         key = binance_open_interest_key(instrument_id=symbol)
         series_key_id = key.series_key_id()
-        return tuple(
-            SeriesRow(
-                series_key_id=series_key_id,
-                symbol=symbol,
-                source=OPEN_INTEREST_HIST_ENDPOINT,
-                bucket_end=open_interest_bucket_end(point),
-                event_time=open_interest_bucket_end(point),
-                available_at=received_at,
-                availability_source=AvailabilitySource.OBSERVED,
-                ingested_at=received_at,
-                observed_at=received_at,
-                provenance=Provenance.OBSERVED,
-                src_label_raw=OPEN_INTEREST_HIST_ENDPOINT,
-                observer_id=OPEN_INTEREST_OBSERVER_ID,
-                observer_region=UNKNOWN_OBSERVER_REGION,
-                is_final=True,
-                value_raw=open_interest_value_raw(point),
+        rows: list[SeriesRow] = []
+        for point in points:
+            if not is_settled_open_interest_point(point, received_at):
+                continue
+            bucket_end = open_interest_bucket_end(point)
+            rows.append(
+                SeriesRow(
+                    series_key_id=series_key_id,
+                    symbol=symbol,
+                    source=OPEN_INTEREST_HIST_ENDPOINT,
+                    bucket_end=bucket_end,
+                    event_time=bucket_end,
+                    available_at=modeled_available_at_for_endpoint(
+                        endpoint=OPEN_INTEREST_HIST_ENDPOINT, bucket_end_ms=bucket_end
+                    ),
+                    availability_source=MODELED_AVAILABILITY_SOURCE,
+                    ingested_at=received_at,
+                    observed_at=received_at,
+                    provenance=Provenance.OBSERVED,
+                    src_label_raw=OPEN_INTEREST_HIST_ENDPOINT,
+                    observer_id=OPEN_INTEREST_OBSERVER_ID,
+                    observer_region=UNKNOWN_OBSERVER_REGION,
+                    is_final=True,
+                    value_raw=open_interest_value_raw(point),
+                )
             )
-            for point in points
-            if is_settled_open_interest_point(point, received_at)
-        )
+        return tuple(rows)
 
     return _to_rows
 
@@ -806,6 +901,28 @@ def build_long_short_to_rows(
     The key comes from `count_long_short_ratio_key`, the SAME builder
     `use_cases/series_catalog.py` registers, so writer and served catalog land on one
     `series_key_id` by construction instead of by two hardcoded strings agreeing.
+
+    ⛔ `available_at` IS **NOT** MODELED HERE, AND `ADR-038`/`D1` SAYS IT SHOULD BE ────────
+
+    `ADR-038` §3 extends `D1` to this endpoint on the grounds that it shares open interest's
+    `300_000 ms` native grid. The grid is shared; the NATURE is not. `count_long_short_ratio` is
+    `Nature.RATIO`, and `CARRY_FORWARD_BY_NATURE[Nature.RATIO]` is `False`, so
+    the `as_of` accessor vetoes any read whose `age_ms >= bucket_interval_ms`. A row stamped
+    `available_at = bucket_end + 300_000` is admissible only from `bucket_end + 300_000` onward,
+    where `age_ms >= 300_000` ALWAYS — so the veto fires at every readable instant, by
+    arithmetic rather than by data.
+
+    Measured, driving THIS mapper and the real `as_of` over the real store, `61` slots of 1 min
+    at `knowledge_time = agora`, BTCUSDT `[MEDIDO 2026-09-12, n=1.000 linhas; C0=0/61, C1=61/61]`:
+    offset `34.532` -> `61/61`; `66.712` -> `48/61` (the value `ADR-038` §1.2 row `F` reports);
+    `299.999` -> `12/61`; **`300.000` -> `0/61`**. `D1`'s round-up produces exactly the last one,
+    and the endpoint reads `4/61` today — so applying `D1` here is a measured REGRESSION, and
+    `ADR-038` §1.2 never measured its own decision for this endpoint (it simulated the RAW lag,
+    which rounding up does not emit).
+
+    `domain/modeled_availability.py` refuses the entry in its constructor rather than leaving
+    this as a comment, and the question is back with `ADR-038`'s author —
+    `docs/context/cinco-metricas-do-core/gates/ADR-038-D1-builder.md`.
     """
 
     def _to_rows(
