@@ -179,6 +179,39 @@ busca continua em `ingested_at`/`observed_at`, que já o guardam"* ⇒ numa linh
 cara, a que `OPCOES-E1-E5` §E1 usou para recusar a opção 3 (*"não resolve `ADR-036`"*). O argumento
 que elegeu a opção 2 vale, mas **só** se `observed_at` acompanhar. `[MEDIDO 2026-09-12]`
 
+### ⛔ CORREÇÃO `2026-09-13T01:47Z` — a tabela acima não tem UNIVERSO, e sem ele ela virou falsa
+
+**A frase *"o backtest continua `1/61`"* é verdadeira sobre a população que a mediu e falsa sobre a
+de hoje** — e a diferença não é detalhe, porque é o número que `§7.1` põe na mesa do owner.
+
+O `1/61` sai de `gates/ADR-038-D1-pos-implementacao.py:37`, que **colapsa todo `observed_at` num
+único instante** (`received_at = max(observed_at)`, comentado como *"the single backfill pass
+instant"*). Isso mede um store **sintético** — *"como se tudo tivesse vindo de UMA passada de
+backfill"* — **e essa produção deixou de existir às `2026-09-12T23:45:29Z`**, quando o coletor ao
+vivo de open interest nasceu (`§7.3`). Sobre o store **real**, a resposta depende da **JANELA**:
+
+| 61 slots terminando em | grade | `D1` (este código) | contraprova `§7.1` | veredito |
+|---|---|---:|---:|---|
+| bucket mais novo (coberto ao vivo) | 1 min | `61/61` | `61/61` | **SATURA — não discrimina** |
+| bucket mais novo | 5 min | `26/61` | `61/61` | discrimina |
+| último bucket antes de `23:41:13Z` | 1 min | **`0/61`** | **`61/61`** | discrimina (Δ `61`) |
+| último bucket antes de `23:41:13Z` | 5 min | `1/61` | `61/61` | discrimina (Δ `60`) |
+
+`[MEDIDO 2026-09-13T01:45Z, n = 4.057 linhas OI, BTCUSDT, ambos os braços sobre AS MESMAS linhas,
+`docs/context/cinco-metricas-do-core/gates/ADR-038-F2-universo-historico.py`, `deploy-postgres-1`
+somente leitura]`
+
+**O mecanismo, e ele explica as quatro linhas de uma vez:** uma busca ao vivo carimba `observed_at`
+`~4,4`–`123,5 s` depois do `bucket_end`, logo o horizonte `observed_at <= knowledge_time` **não**
+barra a leitura em `kt = t`. `61` slots de 1 min cobrem `61 min`, e a cobertura ao vivo já passa
+disso ⇒ a janela inteira cai na região viva e **os dois braços empatam**. `61` slots de 5 min cobrem
+`305 min` e ainda alcançam o histórico ⇒ o `Δ` reaparece.
+
+⇒ **O teto do backtest é REAL, mas tem escopo: ele é do HISTÓRICO**, não do dado ao vivo — e o
+histórico é exatamente o que `ADR-036/D5` (klines desde `2019-09-08`) foi comprada para dar. **Onde o
+coletor cobre, `D1` sozinho já entrega `61/61` em `kt = t` e `§7.1` não compra nada.** A fronteira
+anda sozinha com o relógio.
+
 ---
 
 ## 3 · `D1` — O carimbo `MODELED` é `bucket_end + 1 grade nativa`, e ele NÃO precisa de percentil
@@ -287,10 +320,47 @@ O mesmo comando, rodado verbatim deste documento: **`52` buscas às `00:36Z`** e
 ⇒ o `n >= 1.000` que `F-1` exige é alcançável por **tempo de relógio**, e não por trabalho novo —
 o oposto exato do universo congelado que a versão anterior de `F-1` teria deixado.
 
-**`F-2` — o falsificador de `§2`, e ele é barato.** Depois de `E1` em código, rodar o arnês de
+**`F-2` — o falsificador de `§2`, e ele é barato.** ~~Depois de `E1` em código, rodar o arnês de
 `§1.2` com `knowledge_time = t` sobre OI tem de devolver **`61/61`**. Se devolver `1/61`, então
-`observed_at` ficou com o instante da busca e `E1` comprou só o pixel — exatamente o que `§2` mede
-hoje, e o backtest continua com o teto que `ADR-036/D5` foi comprada para remover.
+`observed_at` ficou com o instante da busca e `E1` comprou só o pixel~~ — **EMENDADO
+`2026-09-13T01:47Z`: este enunciado SATUROU e parou de distinguir.** Ele comparava contra um
+**limiar**, sobre um universo que nunca foi declarado. Com o coletor ao vivo (`§7.3`), uma linha de
+`STOCK` buscada `~60 s` depois do bucket **é legitimamente conhecível em `kt = t`** ⇒ sobre a janela
+de 1 min do bucket mais novo **os dois braços dão `61/61`** e `F-2` acusa inocente: foi o que o QA da
+PR #223 mediu, com o `§7.1` **comprovadamente fora da árvore** (4 provas independentes).
+
+⛔ **É a mesma classe da Emenda 1 de `F-1` — falsificador desligado sem que nada avise — e o conserto
+tem a mesma forma: não afrouxar a asserção, e sim dar-lhe o universo certo.** `F-1` trocou a unidade
+de agregação (por **busca**, não por linha); `F-2` troca a **janela** e o **critério**:
+
+> **`F-2`, enunciado vigente.** Universo: os **`61` slots que terminam no último `bucket_end`
+> anterior à primeira busca ao vivo** (`2026-09-12T23:41:13Z`, o deploy de produção — constante
+> **declarada**, e que vive **fora** da coluna que `§7.1` reescreveria). Critério: **diferencial**,
+> não limiar — rode os **dois** braços sobre **as mesmas linhas**, o braço `D1` e a **contraprova
+> `§7.1`** (`observed_at := o carimbo`). `F-2` **falsifica `§2`** se o braço `D1` empatar com a
+> contraprova **nesse** universo, porque aí `observed_at` deixou de ser a segunda barreira.
+>
+> ```bash
+> PYTHONDONTWRITEBYTECODE=1 BACKEND_DIR=<worktree>/backend backend/.venv/bin/python \
+>   docs/context/cinco-metricas-do-core/gates/ADR-038-F2-universo-historico.py
+> ```
+>
+> ⛔ **Contraprova abaixo de `61/61` NÃO é "passou" — é `F-2` NÃO COMPUTÁVEL** (universo vazio ou
+> curto demais), o `rc=0` ambíguo de `ADR-012`, e quem roda tem de dizer qual dos dois leu.
+
+**Partida medida:** braço `D1` **`0/61`** contra contraprova **`61/61`** na grade de 1 min (Δ `61`),
+e `1/61` contra `61/61` na de 5 min (Δ `60`) ⇒ **`F-2` discrimina no máximo possível, e `§2` não é
+falsificado hoje**. `[MEDIDO 2026-09-13T01:45Z, n = 4.057 linhas OI, BTCUSDT, `deploy-postgres-1`
+somente leitura]`
+
+✅ **E este universo NÃO congela — que é a propriedade que a Emenda 1 de `F-1` ensinou a exigir.** Um
+bucket do passado só pode ter sido aprendido **depois** do fato, então `observed_at > bucket_end ≈ t`
+para **toda** linha dele, **qualquer que tenha sido a hora do backfill**. Depois do `D15` (TRUNCATE +
+reingestão) o histórico é **reescrito com `observed_at` do instante da reingestão** e o braço `D1`
+continua lendo `0/61` — ao contrário do recorte por `observed_at < 23:45Z` (o controle do QA), que
+**vai a zero linhas** e reproduziria exatamente o universo congelado que `F-1` acabou de perder.
+⇒ o único jeito de o braço `D1` subir nesse universo é `observed_at` mudar de significado, **que é
+`§7.1`**.
 
 **`F-3` — o falsificador do `§0`, e ele é uma linha.** `grep -n 'stop_event.wait(interval_s)'` sobre
 `collectors_cli.py` em `master` tem de continuar devolvendo `1026:` **enquanto** o `p99` de klines
@@ -336,6 +406,58 @@ guardam"*. `§2` mede que essa cláusula custa o backtest. As duas saídas:
 **Recomendação do `/architect`, rotulada como opinião e não como decisão: `A`.** `B` paga o preço
 inteiro de `E1` (carimbo calculado, todo consumidor obrigado a ler `availability_source`) e recebe
 metade do benefício.
+
+---
+
+### 🔴 CORREÇÃO `2026-09-13T01:47Z` — ⚠️ OWNER: O CUSTO DA OPÇÃO `B` MUDOU. LEIA ANTES DE DECIDIR.
+
+**A tabela logo acima continua no lugar de propósito — ela não foi reescrita em silêncio.** O que
+segue a corrige, e a correção é do **número que decide**, não de uma vírgula.
+
+**O que a tabela diz hoje:** `B` ⇒ *"`1/61` em `kt = t`; o backtest continua com o teto"*, e a
+palavra que a acompanha em `§7.4` é **"inalcançável"**.
+
+**⛔ Esse `1/61` é ARTEFATO DO BACKFILL.** Ele vem de `gates/ADR-038-D1-pos-implementacao.py:37`, que
+colapsa **todo** `observed_at` num único instante de backfill — um store **sintético**, e a produção
+que ele descreve **deixou de existir às `2026-09-12T23:45:29Z`**. Medido sobre o store **real**, com
+os dois braços sobre **as mesmas linhas** `[MEDIDO 2026-09-13T01:45Z, n = 4.057 linhas OI, BTCUSDT,
+`gates/ADR-038-F2-universo-historico.py`, `deploy-postgres-1` somente leitura]`:
+
+| janela de `61` slots, `kt = t` | grade | `B` (manter `D16`) | `A` (`§7.1`) | o que `A` compra |
+|---|---|---:|---:|---|
+| **onde o coletor ao vivo cobre** | 1 min | **`61/61`** | `61/61` | **NADA** |
+| onde o coletor cobre | 5 min | `26/61` | `61/61` | os slots ainda históricos da janela |
+| **histórico** (antes de `23:41:13Z`) | 1 min | **`0/61`** | **`61/61`** | **tudo** |
+| histórico | 5 min | `1/61` | `61/61` | **tudo** |
+
+**A comparação mudou de forma, e em duas direções opostas — por isso ela vai inteira, e não só a
+metade que favorece uma opção:**
+
+1. **`B` é MENOS cara do que o menu dizia.** *"Backtest inalcançável"* era verdade sobre um store só
+   de backfill. Onde o coletor cobre — e a cobertura **cresce sozinha, a cada 5 min** — `B` já lê
+   `61/61` em `kt = t`. O painel ao vivo **e** o backtest da janela viva funcionam **sem** emenda
+   nenhuma a `D16`.
+2. **`A` é MAIS nítida do que o menu dizia — e o que ela compra é o PASSADO.** No histórico o teto
+   não é `1/61`, é **`0/61`**: sem `§7.1`, um backtest sobre qualquer janela anterior a
+   `2026-09-12T23:41:13Z` lê **zero**. E é exatamente aí que mora `ADR-036/D5` (klines desde
+   `2019-09-08`), que foi comprada para dar **anos** de histórico.
+
+⇒ **A pergunta que o owner está de fato respondendo não é *"painel ou backtest"*, é *"o backtest
+precisa do PASSADO ou só da janela que já estamos coletando?"***. Se a resposta for *"só da janela
+viva"*, `B` custa **zero** e a emenda a `D16` pode esperar. Se o backtest tem de alcançar o histórico
+— e `ADR-036/D5` diz que tem — então `A` não é *"metade do benefício"*: é a **única** que o alcança,
+e o custo dela continua sendo o que a tabela original declarou (emendar uma frase de `D16`, escrever
+o desempate de `argmin(observed_at)` em `D4.13`).
+
+⚠️ **Nada aqui recomenda mudar a recomendação `A`** — ela fica de pé, e por um motivo **mais forte**
+do que o escrito antes. O que muda é **o preço de `B`**, que caiu, e **a razão de `A`**, que deixou
+de ser *"o backtest não funciona"* e passou a ser *"o backtest não alcança o passado"*.
+
+⚠️ **E o que NÃO mudou:** `§7.1` continua **do owner**, continua **pendente**, e **nada nesta PR o
+implementa** — `observed_at` segue sendo o instante da busca
+(`collector_series_mapping.py`, `build_open_interest_to_rows`), pinado por
+`test_observed_at_keeps_the_fetch_instant_so_f_1_stays_computable` e pelo diferencial de `F-2`
+(`§5`, emendado).
 
 ### 7.2 · Mergear `418f47b` (o `GridAlignedTicker`), sim ou não
 

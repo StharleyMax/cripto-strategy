@@ -722,11 +722,41 @@ def build_open_interest_to_rows(
 
     ⛔ CHANGING `observed_at` HERE BREAKS `F-1`. `docs/context/cinco-metricas-do-core/gates/
     QA-ADR-038-D1-F1-probe.py` and `test_observed_at_keeps_the_fetch_instant_so_f_1_stays_
-    computable` both fail if it moves. The measured consequence of leaving it here is that the
-    BACKTEST horizon (`knowledge_time = t`) still reads `1/61` while the live panel
-    (`knowledge_time = agora`) reads `61/61` — `ADR-038` §2. That split is exactly what
-    `ADR-038`'s falsifier `F-2` watches, and a `61/61` at `knowledge_time = t` today would mean
-    someone shipped §7.1 without the owner.
+    computable` both fail if it moves.
+
+    ── THE CONSEQUENCE FOR THE BACKTEST, AND ITS UNIVERSE IS DECLARED ──────────────────────
+
+    ⛔ CORRECTION `2026-09-13T01:47Z`. The previous version of this paragraph said the backtest
+    horizon "still reads `1/61`" and that "a `61/61` at `knowledge_time = t` today would mean
+    someone shipped §7.1 without the owner". BOTH HALVES WERE FALSIFIED BY MEASUREMENT, and the
+    sentence was WRITTEN IN THE VERY COMMIT THAT FIXED `F-1` — a rule of inference with no
+    universe attached, which is the failure mode `F-1` had just been repaired for.
+
+    `1/61` is what `gates/ADR-038-D1-pos-implementacao.py:37` measures, and that harness
+    COLLAPSES every `observed_at` onto one instant (`received_at = max(observed_at)`, "the
+    single backfill pass instant"): it measures a SYNTHETIC store, the production that stopped
+    existing at `2026-09-12T23:45:29Z`. Over the REAL store the answer depends on the WINDOW,
+    and here it is, both arms on the same rows, the counterproof arm being `§7.1` itself
+    (`observed_at := the stamp`) `[MEDIDO 2026-09-13T01:45Z, n=4.057 linhas OI, BTCUSDT,
+    gates/ADR-038-F2-universo-historico.py, deploy-postgres-1 read-only]`:
+
+    | 61 slots ending at            | grid  | this code | `§7.1` counterproof |
+    |-------------------------------|-------|-----------|---------------------|
+    | newest bucket (live-covered)  | 1 min | `61/61`   | `61/61` — SATURATED |
+    | newest bucket                 | 5 min | `26/61`   | `61/61`             |
+    | last bucket before `23:41:13Z`| 1 min | ` 0/61`   | `61/61`             |
+    | last bucket before `23:41:13Z`| 5 min | ` 1/61`   | `61/61`             |
+
+    ⇒ on slots the live collector COVERED, a `STOCK` row fetched ~60 s after its bucket is
+    legitimately knowable at `knowledge_time = t`, so this code ALREADY reads `61/61` there and
+    `§7.1` buys NOTHING. On slots older than the collector, `observed_at` still bars the read
+    and `§7.1` buys ALL of them. The backtest ceiling is real but SCOPED TO HISTORY — which is
+    exactly what `ADR-036/D5` (klines since `2019-09-08`) was bought for — and it retreats by
+    clock time as live coverage accumulates.
+
+    ⇒ `61/61` at `knowledge_time = t` is therefore NOT evidence that anyone shipped `§7.1`. The
+    evidence is the DIFFERENTIAL between the two arms over the HISTORICAL window, which is how
+    `ADR-038` §5/`F-2` was amended to read. `§7.1` remains the OWNER's call, still pending.
     """
 
     def _to_rows(
