@@ -93,11 +93,18 @@ vizinhos de `infra/`), com o destino de cada `nan` **medido**, não inferido:
 | `system_probe_clock.py:26` / `system_ramp_clock.py:28` (`< 0`) | sim | `time.sleep(nan)` → `ValueError: Invalid value NaN` | OK (alto e claro) |
 | `premium_index_probe_cli.py:139` (`wait(float(args.interval_seconds))`, **sem guarda nenhuma**) | sim | `time.sleep(nan)` → `ValueError`; e o laço é limitado por `--cycles` | OK (pré-existente, não é a armadilha) |
 
-⇒ **`threading.Event.wait` é o ÚNICO sumidouro que aceita `nan` em silêncio** entre todos os
-medidos; todos os outros levantam. E **todo caminho de configuração que chega a um
-`Event.wait`** passa hoje por `_positive_float`. **Nenhuma armadilha sobrou** — o resíduo das
-linhas `76`/`109` é a grafia, não a consequência, e está registrado aqui para quem mexer no
-módulo não recriar o furo ao mudar a ordem das guardas.
+⇒ **`threading.Event.wait` é o ÚNICO sumidouro que aceita `nan` em silêncio** entre os
+medidos; todos os outros levantam. O resíduo das linhas `76`/`109` é a grafia, não a
+consequência, e está registrado aqui para quem mexer no módulo não recriar o furo ao mudar a
+ordem das guardas.
+
+⚠️ **O universo desta varredura é `n=2` cadências** (`KLINES_CYCLE_INTERVAL_S`,
+`PREMIUM_INDEX_CYCLE_INTERVAL_S`) — as que existiam em 2026-09-11 `[MEDIDO 2026-09-11]`. **Ela
+NÃO é exaustiva sobre o processo de hoje**, que subiu para **6** coletores
+(`grep -c 'target=_supervised(' backend/src/modules/sentimento/infra/collectors_cli.py` → **6**
+`[MEDIDO 2026-09-13]`). Sumidouros que esta varredura **nunca viu**: `long_short`
+(`collectors_cli.py:1807`) e `liquidation` (`:2067`, `:2289`). Quem precisar da afirmação
+exaustiva tem de refazer a varredura sobre os **6** — ela não está feita aqui.
 
 ## ⛔ O achado que reprova — `inf` NÃO é "direção segura", e a frase é NOVA deste commit
 
@@ -116,21 +123,36 @@ GridAlignedTicker(interval_s=inf).wait(...) -> OverflowError
 `[MEDIDO 2026-09-11]`
 
 **Primeiro:** a hipótese *"bloqueia para sempre"* está **falsificada** — em CPython/Linux ele não
-dorme, ele levanta. **Segundo, e é o defeito:** o `OverflowError` é levantado em
-`collectors_cli.py:640`, **FORA** do `try` (que vai de `:581` a `:611`), e `OverflowError` **não
-está** em `_PUBLISH_FAILURE_EXCEPTIONS` (`RedisCommandError`, `RedisProtocolError`, `OSError`,
-`ValueError`, `StreamTransportError`, `SeriesRowMappingNotDecidedError`). Logo:
+dorme, ele levanta. **Segundo, e era o defeito:** o `OverflowError` é levantado no
+`stop_event.wait(interval_s)` que fecha o ciclo de `_run_premium_index_collector`, **FORA** do
+`try` do ciclo, e `OverflowError` **não está** em `_PUBLISH_FAILURE_EXCEPTIONS`
+(`RedisCommandError`, `RedisProtocolError`, `OSError`, `ValueError`, `StreamTransportError`,
+`SeriesRowMappingNotDecidedError`). Logo, **como estava em 2026-09-11**:
 
-> a thread do coletor **morre ao fim do primeiro ciclo**, sem `failure_event.set()` e sem
-> `exit_code[0] = 1`; o supervisor em `:1222` gira em `while not stop.is_set() and not
-> failure.is_set()` e **não percebe**. O processo segue vivo, o `rc` segue `0`, e o coletor está
-> morto. É o `rc=0` ambíguo de `ADR-012`, com um traceback de `threading.excepthook` como único
-> aviso.
+> a thread do coletor **morria ao fim do primeiro ciclo**, sem `failure_event.set()` e sem
+> `exit_code[0] = 1`; o laço supervisor de `run()` girava em `while not stop.is_set() and not
+> failure.is_set()` e **não percebia**. O processo seguia vivo, o `rc` seguia `0`, e o coletor
+> estava morto. Era o `rc=0` ambíguo de `ADR-012`, com um traceback de `threading.excepthook`
+> como único aviso. `[MEDIDO 2026-09-11]`
 
-⇒ a resposta à pergunta do despacho é: **não bloqueia para sempre — é pior, morre e nada avisa.**
+✅ **FECHADO NA MASTER — as duas metades, e nenhuma delas é ação desta PR.**
 
-**Prova executável** (roda hoje, `6 failed, 1 passed`; fica FORA de `backend/tests/` de propósito,
-para o portão manter **um** vermelho declarado — cole junto com o conserto):
+1. **A classe inteira** ("thread morre por exceção não listada") deixou de ser silenciosa:
+   `_supervised` envolve **6 de 6** threads, captura `BaseException`, arma `failure_event`,
+   escreve `logger.critical("collector_thread_died")` e faz o processo sair `rc != 0`
+   (`grep -c 'target=_supervised(' …collectors_cli.py` → **6** `[MEDIDO 2026-09-13]`).
+2. **A porta de entrada** deixou de aceitar o valor: `_positive_float` recusa no boot com
+   `if not value > 0 or not math.isfinite(value):` — exatamente a linha que a "Ação única" abaixo
+   pedia `[MEDIDO 2026-09-13: `grep -n 'math.isfinite' backend/src/modules/sentimento/infra/collectors_cli.py`
+   → **2** linhas, `:545` (o comentário que nomeia o escape) e `:549` (a guarda viva); `n=2`]`.
+
+⇒ a resposta à pergunta do despacho, **para a árvore de 2026-09-11**, foi: não bloqueia para
+sempre — morre e nada avisa. **Na árvore de hoje nem morre nem cala:** o boot recusa, e se
+morresse o supervisor derrubaria o processo.
+
+**Prova executável** — em 2026-09-11 ela dava `6 failed, 1 passed` `[MEDIDO 2026-09-11]`, e era
+esse o vermelho declarado. **Contra a master de hoje os seis passam**, porque `math.isfinite`
+entrou em `_positive_float`; ela vale agora como regressão, não como falsificador:
 
 ```python
 @pytest.mark.parametrize("variable", ["KLINES_CYCLE_INTERVAL_S", "PREMIUM_INDEX_CYCLE_INTERVAL_S"])
@@ -196,8 +218,9 @@ veredito: VERMELHO
 
 ## Ação única para fechar
 
-1. ⛔ **Recusar cadência não-finita em `_positive_float`** — a guarda que este commit já tocou,
-   uma linha (`if not value > 0 or not math.isfinite(value):`, ou `math.isfinite` explícito), com
-   os dois testes acima colados em `test_collectors_cli_boot.py`. **E corrigir a frase
+1. ✅ **FEITA NA MASTER, não é mais ação em aberto.** Recusar cadência não-finita em
+   `_positive_float` — a linha pedida aqui (`if not value > 0 or not math.isfinite(value):`) está
+   **idêntica** em `collectors_cli.py`, com o comentário que nomeia cada escape
+   `[MEDIDO 2026-09-13]`. **Este gate não tem mais ação em aberto** — não peça o que já existe. **E corrigir a frase
    *"falha na direção segura"*** em `O4-correcoes-pos-qa-builder.md`: pelo que está medido acima,
    a direção é *thread morta, `failure_event` limpo, `rc=0`*.

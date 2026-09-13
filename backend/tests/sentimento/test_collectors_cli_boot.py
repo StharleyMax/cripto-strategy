@@ -504,9 +504,7 @@ def test_a_positive_premium_index_cadence_still_boots() -> None:
     assert collectors_cli.resolve_boot_config({}).premium_index_cycle_interval_s == 60.0
 
 
-@pytest.mark.parametrize(
-    "variable", ["KLINES_CYCLE_INTERVAL_S", "PREMIUM_INDEX_CYCLE_INTERVAL_S"]
-)
+@pytest.mark.parametrize("variable", ["KLINES_CYCLE_INTERVAL_S", "PREMIUM_INDEX_CYCLE_INTERVAL_S"])
 @pytest.mark.parametrize("raw", ["inf", "Infinity", "1e400", "-inf"])
 def test_a_non_finite_cadence_is_refused_at_boot(variable: str, raw: str) -> None:
     """A cadence of `inf` is refused at BOOT, on BOTH cycles — it is not a "safe" failure.

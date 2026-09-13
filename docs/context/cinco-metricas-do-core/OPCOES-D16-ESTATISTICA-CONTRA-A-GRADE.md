@@ -118,7 +118,8 @@ amostra.** Os `30.979 ms` de mediana e os `60.936 ms` de `p99` são **a fase e a
 escalonador**, não um fato sobre a Binance.
 
 **E a causa está em uma linha de código, legível:**
-`backend/src/modules/sentimento/infra/collectors_cli.py:1026` fecha o laço do coletor de klines com
+`_run_klines_collector`, em `backend/src/modules/sentimento/infra/collectors_cli.py`, **fechava**
+o laço do coletor de klines com (grafia de 2026-09-11, **antes** do alinhamento que esta PR entregou)
 
 ```python
         stop_event.wait(interval_s)
@@ -132,9 +133,16 @@ cada volta completa, **pula um bucket** — que é exatamente o `nb = 2` com `sp
 símbolos. `[INFERRED: a aritmética fecha; não instrumentei o processo para medir o período do ciclo
 diretamente — ver §4, item de verificação]`
 
-⚠️ **Isto não é só um problema do carimbo `MODELED`.** Hoje, **ao vivo e em produção**, `2,448%`
-dos buckets de klines de 1 min chegam ao banco com `available_at` **um minuto inteiro** depois do
-fechamento. O `available_at` deles é `OBSERVED` e está **correto** — a plataforma soube tarde
+⚠️ **Isto não é só um problema do carimbo `MODELED`.** Na janela medida — **`17,9 h` de klines ao vivo,
+encerrada em `2026-09-11T19:4xZ`, `n = 4.289` buckets não censurados**
+`[DOC: handoff/MEDICAO-ATRASO-DE-PUBLICACAO.md:20,24]` — `2,448%` dos buckets de klines de 1 min chegavam ao
+banco com `available_at` **um minuto inteiro** depois do fechamento `[MEDIDO 2026-09-11]`.
+
+⛔ **Esse número NÃO descreve a produção de hoje, e não pode ser citado como se descrevesse.** A
+população que ele mede está extinta por dois eventos posteriores: o **apagão de 18 h 45 min**
+iniciado em `2026-09-11T19:53Z` (duas threads mortas, processo vivo, `rc=0`) e o **deploy de
+`2026-09-12T23:41:13Z`**. Qualquer afirmação sobre o regime atual exige **remedição**, nos termos de
+`handoff/REMEDICAO-ATRASO-APOS-ALINHAMENTO.md`. O `available_at` deles é `OBSERVED` e está **correto** — a plataforma soube tarde
 mesmo. O defeito não é do carimbo; é do escalonador.
 
 ---
@@ -177,7 +185,8 @@ mesmo. O defeito não é do carimbo; é do escalonador.
 
 | | |
 |---|---|
-| **o que é** | trocar o sono fixo pós-trabalho (`collectors_cli.py:1026`) por agendamento **alinhado ao ponto da grade** (disparar em `bucket_end + offset`, com `offset` medido). Com o atraso do endpoint **≤ 12 ms** (F3), o `p99` do atraso observado cairia de `60.936 ms` para a ordem do `offset` + jitter — folga contra a grade da ordem de **57–59 s**, não de **28 ms** |
+| **o que é** | trocar o sono fixo pós-trabalho (o `stop_event.wait(interval_s)` que fechava
+`_run_klines_collector`) por agendamento **alinhado ao ponto da grade** (disparar em `bucket_end + offset`, com `offset` medido). Com o atraso do endpoint **≤ 12 ms** (F3), o `p99` do atraso observado cairia de `60.936 ms` para a ordem do `offset` + jitter — folga contra a grade da ordem de **57–59 s**, não de **28 ms** |
 | **vantagem** | **é a única opção que remove o dilema em vez de escolher um lado dele.** Com folga de dezenas de segundos, `p99` (a estatística da SPEC, sem emenda) cabe na grade com margem confortável, o carimbo `MODELED` cai em `+60.000` **sem** lookahead, e backtest e produção passam a concordar em ~100% dos buckets. **E conserta um defeito de produção que existe independentemente de `D16`:** hoje `2,448%` dos buckets ao vivo chegam 1 min atrasados, e isso degrada a decisão ao vivo, não só o backtest |
 | **desvantagem** | **invalida a medição atual como base de contrato.** O `p99` de klines da `publication_lag_table.py` passa a descrever um regime que deixou de existir ⇒ **é preciso remedir depois do deploy**, e a janela de klines volta a **zero horas**. `D16` fica bloqueado pelo tempo da nova coleta |
 | **custo declarado** | 1 task em `sentimento` (escalonador + teste que prove alinhamento), 1 deploy, e **espera de coleta**. Risco a declarar: polling perto demais de `bucket_end` pode pegar o bucket **antes** de fechar — o `offset` tem de ser medido, não chutado, e o invariante `is_final` tem de ser testado. **⛔ Eu não decido o `offset`, nem o desenho do escalonador — isso é `/architect` + builder** |
@@ -240,7 +249,7 @@ CONTRATO.** Os três motivos, com número:
    `[DOC: MEDICAO §Q2]`. Para klines esse teste **ainda não é computável**.
 3. **🔴 O motivo decisivo: a amostra mede o ESCALONADOR, não o endpoint (F3).** Fixar contrato sobre
    `p99 = 60.936` é fixar contrato sobre um número que **uma mudança de uma linha de código
-   (`collectors_cli.py:1026`) faz cair ~60×**. Contrato que muda quando se conserta um bug não é
+   (o sono pós-trabalho de `_run_klines_collector`) faz cair ~60×**. Contrato que muda quando se conserta um bug não é
    contrato — é a fotografia de um defeito.
 
 **Recomendação sobre a espera, separada da recomendação de opção:** a decisão **não deve ser tomada
@@ -285,7 +294,7 @@ backtest**, e o tamanho da espera depende de quantos dias de nova coleta ele ace
    em `docs/specs/SPEC-001-plataforma-dados.md:405-407`.
 3. **F2 (regime, não incidente)**: o segundo bloco de §F2 devolve a contagem por hora e por símbolo.
 4. **F3 (o endpoint não atrasa)**: `... order by 1 limit 12` na mesma CTE devolve os 12 mínimos; e
-   `collectors_cli.py:1026` é uma linha, legível sem contexto.
+   o sono pós-trabalho de `_run_klines_collector` é uma linha, legível sem contexto.
 5. **A garantia de pessimismo que `O2` gastaria**: `SPEC-001` §5.2, o parágrafo *"Arredondamento
    sempre PARA CIMA"*.
 6. **O que `ADR-036/D5` decide de fato**: `docs/adr/ADR-036-…:116-159`, e `:158-159` para a frase do

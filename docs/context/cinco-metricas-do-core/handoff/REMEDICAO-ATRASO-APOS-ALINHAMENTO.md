@@ -28,6 +28,21 @@ docker inspect -f '{{.State.StartedAt}}' deploy-collector-1
    medição que achou o defeito (`n = 4.289`, `~60` polls/h/símbolo × 4 símbolos × 17,9 h), e é o
    que dá um `n` comparável. Menos que isso e a comparação antes/depois não é entre iguais.
 
+   ⛔ **`.State.StartedAt` NÃO é suficiente para datar a janela, e confiar nele aqui dá número
+   errado.** Dois eventos posteriores à escrita deste handoff quebraram a premissa de que "o
+   container subiu uma vez e coletou desde então":
+
+   - o **apagão de 18 h 45 min** iniciado em `2026-09-11T19:53Z` — duas threads mortas por
+     `psycopg.OperationalError`, **processo vivo**, `rc=0`, `restarts=0`. `StartedAt` não se
+     move num apagão desses: o container nunca reiniciou, e ainda assim **não havia coleta**;
+   - o **deploy não autorizado de `2026-09-12T23:41:13Z`**, que **reseta `StartedAt`** e portanto
+     apaga qualquer janela anterior a ele.
+
+   ⇒ **Date a janela pelo DADO, não pelo container:** tome `min`/`max` de `bucket_end` das linhas
+   de klines efetivamente gravadas e exija que a contagem por hora seja densa em todas as horas do
+   intervalo. Um `StartedAt` antigo com buraco de 18 h no meio satisfaz "18 h desde o deploy" e
+   **mede o regime errado**.
+
 ## O comando (⛔ SOMENTE LEITURA — nenhum `insert`/`update`/`delete`, nenhum seed)
 
 Mesma CTE da medição original (`OPCOES-D16` §F0): separador de fan-out **não circular**
@@ -60,7 +75,7 @@ select count(*) n,
 | A-1 | `ge60k` | **`0`** | é o defeito, contado direto: `105` de `4.289` antes `[MEDIDO 2026-09-11]`. Qualquer valor `> 0` significa que o alinhamento não alcançou o caso |
 | A-2 | `p99` | **`<= 5.000 ms`** | teto **de aceite**, não previsão. O esperado é `offset (2.000) + trabalho do ciclo dos 4 símbolos + atraso do endpoint (`<= 12 ms`)`; `5.000` dá margem de folga sem deixar passar o regime velho, cujo `p99` era `60.936 ms`. ⚠️ Se der entre `5.000` e `60.000`, o conserto **funcionou** (a grade deixou de ser estourada) mas o `offset` está mal dimensionado ou o ciclo demora mais do que se supunha — **não** é motivo para reabrir `D16`, é motivo para medir o tempo de ciclo |
 | A-3 | `mn` | **`>= 0`** | um mínimo negativo é leitura **antes** de `bucket_end`, i.e. lookahead real entrando pelo poll. Se aparecer, `KLINES_CYCLE_OFFSET_S` está baixo demais contra o skew de relógio |
-| A-4 | `n` | **`>= 4.000`** | sem `n` comparável ao `4.289` da medição original, o `p99` não é comparável. `n` baixo = janela curta ou coletor caindo, e aí o número mede outra coisa |
+| A-4 | `n` | **`>= 4.000`** **e** janela sem buraco | sem `n` comparável ao `4.289` da medição original, o `p99` não é comparável. ⛔ **`n >= 4.000` sozinho NÃO discrimina** "janela curta" de "coletor caiu no meio": o apagão de `18 h 45 min` de `2026-09-11T19:53Z` deixou o processo **vivo** com `rc=0`, e uma janela longa o bastante com um buraco desse tamanho ainda entrega `n >= 4.000` e passa neste critério medindo outro regime. **Cláusula explícita de exclusão de gap, obrigatória:** agrupe por hora sobre o intervalo `[min(bucket_end), max(bucket_end)]` e **exija que toda hora do intervalo tenha `>= 200` linhas** (`~60` polls/h/símbolo × 4 símbolos, com folga). Qualquer hora abaixo disso é gap ⇒ **refaça a janela depois do gap**, não some os dois lados |
 
 **O alvo que o despacho nomeou, literal:** *"o `p99` tem de cair para perto dos `<= 12 ms` do
 endpoint"*. Ele **não cai para `12 ms`** e não deveria: `12 ms` é o atraso do **endpoint**, e o que
@@ -82,7 +97,9 @@ de quem rodar o comando acima e tiver o número.
 
 ## Bloqueio nomeado, para não ficar silencioso
 
-`_run_premium_index_collector` (`collectors_cli.py:636`) fecha o laço com **o mesmo**
+`_run_premium_index_collector` (em `backend/src/modules/sentimento/infra/collectors_cli.py`;
+âncora por símbolo de propósito — a de linha derivava e já apontou para código sem relação)
+fecha o laço com **o mesmo**
 `stop_event.wait(interval_s)` pós-trabalho e **não foi alterado** — está fora do escopo desta
 task, que é o defeito de klines.
 

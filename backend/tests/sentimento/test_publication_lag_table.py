@@ -591,9 +591,15 @@ def test_the_live_lag_holds_the_grid_when_the_late_polls_are_not_censored_away()
 
     WHAT TURNS IT GREEN, and nothing else does: the post-deploy remeasurement written in
     `docs/context/cinco-metricas-do-core/handoff/REMEDICAO-ATRASO-APOS-ALINHAMENTO.md`, whose
-    four acceptance criteria are `ge60k = 0`, `p99 <= 5_000` ms, `mn >= 0` and `n >= 4_000`. Only
-    then are `KLINES_UNCENSORED_LAG_TAIL_MS` and `KLINES_UNCENSORED_SAMPLE_N` replaced by the new
-    measurement. DO NOT relax the assertion: `NATIVE_GRID_MS[KLINES]` is the venue's measured
+    four acceptance criteria are `ge60k = 0`, `p99 <= 5_000` ms, `mn >= 0` and `n >= 4_000` OVER A
+    WINDOW WITH NO COLLECTION GAP. That last clause is load-bearing and was added on 2026-09-13:
+    `n >= 4_000` alone does NOT separate "short window" from "collector died mid-window", because
+    the `18 h 45 min` outage of `2026-09-11T19:53Z` left the process ALIVE with `rc=0`, so a long
+    enough window containing that hole still clears `n >= 4_000` while measuring a different
+    regime. The window must be dated from the DATA (`min`/`max` of `bucket_end`), never from
+    `docker inspect .State.StartedAt`, which the unauthorized deploy of `2026-09-12T23:41:13Z`
+    reset. Only then are `KLINES_UNCENSORED_LAG_TAIL_MS` and `KLINES_UNCENSORED_SAMPLE_N`
+    replaced by the new measurement. DO NOT relax the assertion: `NATIVE_GRID_MS[KLINES]` is the venue's measured
     grid (`44_612` non-zero steps, all `60_000`, 1 distinct value), not a negotiable target.
     """
     tail = KLINES_UNCENSORED_LAG_TAIL_MS

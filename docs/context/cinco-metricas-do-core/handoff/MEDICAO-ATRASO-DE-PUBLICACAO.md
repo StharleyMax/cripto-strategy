@@ -198,11 +198,13 @@ relevante".
 
 ## 5 · O que fica em aberto para quem escrever a escrita (fase seguinte)
 
-1. **O arredondamento para a grade** (`SPEC-001` §5.2: *"próximo ponto da grade nativa >=
-   bucket_end + p99 + margem"*, sempre **para cima**) **não está implementado aqui** — esta task
-   entrega só o termo `p99_lag`. Com grade de 60 s e os dois `p99` medidos, os dois endpoints
-   caem em `bucket_end + 60 s`; quem implementar precisa decidir a **margem** e provar o
-   arredondamento com um caso que reprove.
+1. ✅ **O arredondamento para a grade** (`SPEC-001` §5.2: *"próximo ponto da grade nativa >=
+   bucket_end + p99 + margem"*, sempre **para cima**) — **esta task entregou só o termo
+   `p99_lag`**, e o arredondamento **já foi implementado depois, por `ADR-038/D1`**, em
+   `backend/src/modules/sentimento/domain/modeled_availability.py`
+   (`modeled_available_at`, `modeled_available_at_for_endpoint`, `stamps_over_band`)
+   `[MEDIDO 2026-09-13: `grep -n 'def ' …/modeled_availability.py`]`. **Não é mais item em
+   aberto; quem for implementar deve LER aquele módulo, não reimplementá-lo.**
 2. **A migração das 80.592 linhas de backfill já gravadas** — `E1` opção 2 já declarou o custo:
    *"ou elas ficam como estão e a fronteira é uma data"*. Decisão pendente, não desta task.
 3. **`CA-F3-12`** (backfill MODELADO não sobrescreve captura OBSERVADA) tem de ser exercido pelo
