@@ -280,6 +280,13 @@ banda que `D1` supõe agora tem evidência direta, e não só a observação ún
 `[MEDIDO 2026-09-13T00:36Z, n = 52 buscas, deploy-postgres-1 somente leitura]` ⇒ `F-1` **é
 computável hoje** e **ainda não dispara** (`52 < 1.000`); o que falta é `n`, não instrumento.
 
+✅ **E o universo CRESCE — que é a propriedade inteira desta emenda, e ela foi medida duas vezes.**
+O mesmo comando, rodado verbatim deste documento: **`52` buscas às `00:36Z`** e **`60` às `00:49Z`**
+— `+8` em `13 min`, a cadência de ~5 min do coletor. `p99` estável em `85.187 ms` nas duas.
+`[MEDIDO 2026-09-13T00:36Z e 00:49Z, mesmo comando, deploy-postgres-1 somente leitura]`
+⇒ o `n >= 1.000` que `F-1` exige é alcançável por **tempo de relógio**, e não por trabalho novo —
+o oposto exato do universo congelado que a versão anterior de `F-1` teria deixado.
+
 **`F-2` — o falsificador de `§2`, e ele é barato.** Depois de `E1` em código, rodar o arnês de
 `§1.2` com `knowledge_time = t` sobre OI tem de devolver **`61/61`**. Se devolver `1/61`, então
 `observed_at` ficou com o instante da busca e `E1` comprou só o pixel — exatamente o que `§2` mede
