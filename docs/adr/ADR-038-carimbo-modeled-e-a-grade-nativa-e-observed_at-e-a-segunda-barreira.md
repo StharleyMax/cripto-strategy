@@ -8,6 +8,9 @@ que nenhum agente pode responder no lugar dele. Nada foi escrito no ledger por e
 **Origem:** `E1` de [`OPCOES-E1-E5.md`](../context/cinco-metricas-do-core/OPCOES-E1-E5.md), decidido
 pelo owner como `D16` e **adiado por ele esperando remedição depois do conserto do escalonador**.
 **Relação:** aplica `ADR-006`/`SPEC-001` §5.2 · **confirma** `ADR-037`/M3 número a número ·
+⛔ **EMENDADO em 2026-09-12 pelo `§9`**, que refuta a última frase do `§3` por medição: `D1`
+vale **só** para o OI, e o carimbo do RATIO **não é decidível hoje**. Leia o `§9` antes de
+citar o `§3` ·
 **corrige** um termo de `D16` · desbloqueia (ou não) o `DoD-3` da fase `03` / PR #222.
 
 ---
@@ -245,10 +248,14 @@ HONESTA no que ela não alcança:** ela existe para impedir o default `event_tim
 **calculado** — a consequência que `D16` já declarou. A partir daí todo consumidor lê
 `availability_source`, e todo relatório de backtest declara o modelo de atraso.
 
-**`D1` vale para `/futures/data/openInterestHist` e para `/futures/data/globalLongShortAccountRatio`
-(mesma grade nativa de `300.000 ms`, mesmo padrão de uma-passada-só: `1` run, `8` instantes de busca
-para `4.000` linhas). Não vale para klines** — lá a grade é `60.000`, o `p99` medido hoje é `61.071`
-e está **fora** da faixa; klines continua sendo `D16`/`O1`/`O4`, e o `§7.3` diz o que falta.
+~~**`D1` vale para `/futures/data/openInterestHist` e para
+`/futures/data/globalLongShortAccountRatio`** (mesma grade nativa de `300.000 ms`, mesmo padrão de
+uma-passada-só).~~ ⛔ **ESTA FRASE ESTÁ ERRADA e foi REFUTADA POR MEDIÇÃO — ver `§9`.** Ela vale
+**só** para `/futures/data/openInterestHist`. Para o RATIO, o carimbo que ela prescreve mede
+`0/61`, e nenhum outro carimbo é decidível hoje: `§9`.
+
+**Não vale para klines** — lá a grade é `60.000`, o `p99` medido hoje é `61.071` e está **fora** da
+faixa; klines continua sendo `D16`/`O1`/`O4`, e o `§7.3` diz o que falta.
 
 ---
 
@@ -510,9 +517,238 @@ factualmente errada (`§1.1c`).
 
 ## 8 · Rótulos de força deste documento
 
+O `§9` é a **emenda de 2026-09-12** que refuta a última frase do `§3`: `§9.1`, `§9.2`, `§9.4` e
+`§9.5` são `[MEDIDO 2026-09-12]` com o comando e o `n` ao lado, contra `deploy-postgres-1` **somente
+leitura**; o mecanismo do `§9.2` é `[DOC: series_history.py:38,149,211,255]`; o `p99` do RATIO é
+`[NÃO MEDIDO]` e `§9.4` mede **por que** ele não é mensurável em vez de herdar a conclusão do OI; a
+recomendação de `§9.7/O-A` é **opinião de arquitetura**, rotulada como tal.
+
 `§0`, `§1`, `§2` e as tabelas de `§3` são `[MEDIDO 2026-09-12]`, cada uma com o comando ao lado, `n`
 declarado, contra `deploy-postgres-1` **somente leitura** — nenhum `insert`/`update`/`delete`,
 nada semeado. A leitura de `SPEC-001` §5.2, de `ADR-036/D5`, de `ADR-037`/M3, de `D15`/`D16`/`D17` e
 dos 15 termos de `SeriesKey` é `[DOC]` com linha citada. A recomendação de `§7.1` é **opinião de
 arquitetura**, rotulada como tal. O `p99` real de `openInterestHist` é `[NÃO MEDIDO]` e `§3`
 argumenta por que ele não muda o resultado — o argumento é verificável, não é dispensa.
+
+---
+
+## 9 · ⛔ EMENDA (2026-09-12, mesmo dia) — `D1` NÃO se estende ao RATIO, e o carimbo dele NÃO é decidível hoje
+
+**O que emenda:** a última frase do `§3` deste documento, tachada acima. **O que NÃO emenda:** nada
+do `§7.1` — aquela pergunta continua pendente do owner e esta emenda não a toca. **Quem escreve:**
+o autor do `ADR-038`, sobre a refutação de
+[`gates/ADR-038-D1-builder.md`](../context/cinco-metricas-do-core/gates/ADR-038-D1-builder.md) `§2`.
+**Nada foi escrito no ledger, nenhum código de produção foi tocado por esta emenda.**
+
+### 9.0 · A decisão, em três linhas
+
+> 1. **`D1` vale para `/futures/data/openInterestHist` e para mais nada.** Para
+>    `/futures/data/globalLongShortAccountRatio` ele é uma **regressão medida**, e a recusa que o
+>    builder pôs em `GridInvariantEndpoint.__post_init__` está **certa e fica**.
+> 2. **O RATIO NÃO recebe carimbo `MODELED` agora.** Continua `OBSERVED`. Não porque o carimbo seja
+>    indesejável, mas porque **nenhum valor dele é defensável com o que hoje é mensurável** — e
+>    isto é o oposto do que vale para o OI, pelo motivo do `§9.2`.
+> 3. **`D1` deixa de ser uma lista de endpoints e passa a ser uma regra com pré-condição escrita**
+>    (`§9.3`). A lista era o defeito: ela escondia que o argumento do `§3` depende de uma
+>    propriedade que nem todo endpoint tem.
+
+### 9.1 · ⚠️ Janela e universo, declarados antes dos números — porque a população se moveu DUAS vezes
+
+A população de `md.series` **dobrou no meio da medição do builder** (`8.064 → 16.128` linhas de OI) e
+**voltou a andar durante a minha** (`1.506 → 1.507` linhas de RATIO de BTCUSDT entre duas rodadas
+minutos depois uma da outra). Por isso **todo número abaixo traz o universo junto**, e por isso a
+conclusão se apoia na **varredura de offset** — que é aritmética e o builder já provou estável sobre
+uma população dobrada — e **não** na linha-base, que se move.
+
+**Universo desta emenda** `[MEDIDO 2026-09-12, `deploy-postgres-1`, somente leitura, nenhum
+`insert`/`update`/`delete`, nada semeado]` — toda linha de `md.series`, sem filtro de tempo:
+
+```bash
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' -c \
+ "select src_label_raw, count(*) n, count(distinct available_at) n_polls,
+         count(*) filter (where available_at-bucket_end <= 900000) n_aovivo,
+         min(available_at-bucket_end), max(available_at-bucket_end)
+    from md.series group by 1 order by 1;"
+# /fapi/v1/klines                           |248168|6144|6625|12       |604749985
+# /fapi/v1/premiumIndex                     | 38472|4809|38472|-100    |     2123
+# /futures/data/globalLongShortAccountRatio |  6022|  34|  54|   21770 |150076685
+# /futures/data/openInterestHist            | 16148|  60|  44|   29735 |604583112
+```
+
+### 9.2 · 🔴 O mecanismo — e o erro do `§1.2` é mais fundo do que "simulei o atraso cru"
+
+O builder está certo no veredito e o diagnóstico dele (`as_of_accessor.py:328` veta
+`age_ms >= bucket_interval_ms` para natureza sem carry-forward) é exato. **Mas a causa não para aí, e
+o que falta é o que decide a saída.**
+
+**O caminho de leitura de PRODUÇÃO não sonda na grade nativa. Ele sonda a cada `60.000 ms`**
+`[DOC: backend/src/modules/sentimento/use_cases/series_history.py:38,149,255 + :211]`:
+
+| linha | o que diz |
+|---|---|
+| `:38` | `_GRID_STEP_MS = 60_000` — o passo do relatório, **constante de módulo**, não por série |
+| `:149` | `return grid_instant + _GRID_STEP_MS - 1` — o instante sondado é `grade + 59.999` |
+| `:255` | `grid_instant += _GRID_STEP_MS` — 61 sondagens de 1 min |
+| `:211` | `bucket_interval_ms=entry.native_grid_ms` — a **política** usa `300.000`, e o comentário ao lado explica por quê (`ADR-037/D1`) |
+
+⇒ a janela de legibilidade `[bucket_end + Δ, bucket_end + 300.000)` **é amostrada em passos de
+60.000**. A leitura não é uma função contínua de `Δ`: é uma **escada de degraus de `60.000 ms`**.
+Medida por mim, na forma de produção (passo `60.000`, política `300.000`), não na forma de 5 min que
+o `§1.2` usou:
+
+```bash
+# varredura propria (somente leitura), mesma construcao do builder, offsets que decidem:
+PYTHONDONTWRITEBYTECODE=1 backend/.venv/bin/python \
+  docs/context/cinco-metricas-do-core/gates/ADR-038-emenda-varredura-architect.py
+# a linha-base do R1 (forma de producao, available_at REAL do banco):
+PYTHONDONTWRITEBYTECODE=1 backend/.venv/bin/python \
+  docs/context/cinco-metricas-do-core/gates/ADR-038-emenda-baseline-architect.py
+```
+
+| `offset Δ` | `openInterestHist` (`STOCK`) | **`globalLongShortAccountRatio` (`RATIO`)** |
+|---:|---:|---:|
+| `0` | `61/61` | `61/61` |
+| `34.532` | `61/61` | `61/61` |
+| **`59.999`** | `61/61` | **`61/61`** ← último ponto do primeiro degrau |
+| **`60.000`** | `61/61` | **`48/61`** ← o degrau cai aqui, **não** em `300.000` |
+| `76.685` · `119.999` | `61/61` | `48/61` |
+| `120.000` · `179.999` | `61/61` | `36/61` |
+| `180.000` | `61/61` | `24/61` |
+| `299.999` | `61/61` | `12/61` |
+| **`300.000`** (o que `D1` emite) | **`61/61`** | **`0/61`** |
+
+`[MEDIDO 2026-09-12, 61 slots de 1 min, `t = slot + 59.999`, `kt = agora`, BTCUSDT, `as_of` real,
+`bar_policy=FINAL_ONLY`, `purpose=RENDERING`; `n = 4.038` linhas OI / `1.506` RATIO; controles `C0`
+universo vazio `0/61` e `C1` `premiumIndex` ao vivo `61/61`]`
+
+⇒ **a invariância que o `§3` provou é real, mas a largura dela não é `300.000` — é `60.000`.** Para o
+OI (carry-forward) ela cobre a faixa inteira e o `p99` não medido **não muda o resultado**. Para o
+RATIO ela cobre **um degrau**, e o `p99` não medido **escolhe entre `48/61` e `0/61`**. É a MESMA
+grandeza não medida com consequência oposta, e é exatamente por isso que `D1` não se transporta.
+
+### 9.3 · `D1`, na forma corrigida — regra com pré-condição, não lista de endpoints
+
+> **`D1'`** — `available_at_MODELED = bucket_end + 1 grade nativa` é decidível **sem** medir
+> `p99_lag` **se e somente se** a leitura for invariante sobre toda a faixa plausível do atraso.
+> Ela é invariante quando `CARRY_FORWARD_BY_NATURE[nature]` é `True` (a janela é
+> `[bucket_end+Δ, bucket_end+staleness)`, e `staleness = 600.000` para o OI — medido: `61/61` de
+> `Δ=0` a `Δ=300.000`, e `0/61` em `600.000`, que é a fronteira e mostra que o instrumento morde).
+> Quando é `False`, a janela é `[bucket_end+Δ, bucket_end+grade_nativa)` amostrada em passos de
+> `_GRID_STEP_MS`, ⇒ `D1` exige **`p99_lag + margem ≤ _GRID_STEP_MS − 1`** conhecido. **Não sabendo,
+> não carimba.**
+
+### 9.4 · `p99_lag` do RATIO é mensurável hoje? **NÃO — e eu medi, não herdei do OI**
+
+`n_polls = 34` sobre `6.022` linhas, **todas de backfill** — ~~nenhum coletor ao vivo nasceu (`§7.3`
+segue de pé)~~. Mas a resposta não é *"poucos polls"*: é que as três medições possíveis **divergem**.
+
+> ⛔ **EMENDA `2026-09-13T01:50Z` — a cláusula riscada acima foi falsificada pela produção, e `§7.3`
+> NÃO segue de pé.** O coletor ao vivo de `/futures/data/globalLongShortAccountRatio` **nasceu às
+> `2026-09-12T23:41Z`** (`§7.3`, emendado): `md.ingest_run` foi de `1` run para `59` às `00:39Z`.
+> **O que a medição abaixo afirma continua válido sobre o universo que ela mediu** — `34` buscas,
+> todas de backfill, às `2026-09-12` — e o veredito `[NÃO MEDIDO: p99 do RATIO]` **também**, porque
+> ele não repousava em *"poucos polls"* e sim na divergência de `(i)`/`(ii)`/`(iii)`. **O que muda é
+> que `n` agora cresce sozinho**, e `F-5` (`§9.6`) deixou de depender de trabalho novo. Esta emenda
+> **não** reabre a decisão do `§9.3`: ela corrige uma cláusula de premissa que virou falsa, pelo
+> mesmo motivo — e no mesmo dia — que `§1.1c` e `§7.3` foram corrigidas.
+
+**(i) Limite SUPERIOR por bucket** — o menor `available_at` já visto para cada bucket é um teto do
+atraso dele. `n = 2.486` buckets, `52` com teto `≤ 900.000`: `min = 21.770`, **`p50 = 182.911`**,
+`max = 677.419` — e `677.419 > 2 grades nativas`.
+
+**(ii) Limite INFERIOR, e ele é uma PROVA, não uma estimativa.** `4` dos `34` polls encontraram o
+bucket corrente **ausente**, e o mesmo bucket aparece na tabela depois — logo ele **não estava
+publicado** naquele instante:
+
+```bash
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' -c "
+with polls as (select symbol, available_at, min(available_at-bucket_end) a from md.series
+   where src_label_raw='/futures/data/globalLongShortAccountRatio' group by 1,2)
+select symbol, a-300000 as idade_do_bucket_ausente, available_at
+  from polls where a > 300000 order by 2 desc;"
+# ETHUSDT|76685   BTCUSDT|76167   LINKUSDT|67417   ETHUSDT|67074      -> 4 de 34 polls
+```
+
+e os quatro **existem** depois (`exists(...)` → `t` nos quatro), vistos pela primeira vez em
+`138.231`, `199.089`, `482.911` e `483.290` ms após o fechamento. ⇒ **o atraso do RATIO passa de
+`67.074 ms` em `4/34 = 11,8 %` dos instantes de busca.**
+
+**(iii) O controle que impede a leitura preguiçosa** — *"a requisição não alcança o bucket mais
+novo"* seria a explicação alternativa, e ela está **refutada**: `3` dos `34` polls têm
+`age_newest < 60.000` (o bucket corrente presente em menos de um minuto). A requisição alcança
+quando o dado existe.
+
+⇒ **VEREDITO: `p99_lag('/futures/data/globalLongShortAccountRatio')` NÃO é mensurável hoje, em
+nenhum `n`** — pelo mesmo motivo estrutural do OI (`§1.1a`: instantes de busca, não distribuição de
+atraso), e com um agravante próprio: o pouco que é mensurável prova que o atraso **atravessa o
+degrau de `60.000`** e **nada** o limita abaixo de `300.000`. Todos os degraus da escada do `§9.2`
+continuam vivos. `[MEDIDO 2026-09-12]` · `[NÃO MEDIDO: p99 do RATIO]`
+
+### 9.5 · Alternativas RECUSADAS, cada uma com o custo medido
+
+| # | saída | cobertura medida | por que foi recusada |
+|---|---|---:|---|
+| **R1** | **manter `OBSERVED`, sem carimbo** — a saída ESCOLHIDA | `20/61` hoje na forma de produção (OI: `30/61`); `7/61` na forma de 5 min, contra os `4/61` que o builder mediu ~2 h antes | **não é gratuita e o custo está aqui:** o backfill com até `150.076.685 ms ≈ 1,7 d` de atraso fica ilegível, e o número que o painel mostra **depende de quando a última passada de backfill rodou** — é instável por construção. Escolhida assim mesmo: é a única que não afirma conhecimento que não tivemos |
+| **R2** | carimbar `bucket_end + 120.000` (o menor múltiplo de `_GRID_STEP_MS` acima do maior atraso **provado**, `76.685`) | `48/61`, **estável** | **De onde vem o número? De um `max` sobre `n = 34`** — e o `§9.4(i)` mede tetos de até `677.419 ms`. Nenhuma medição escolhe o degrau: `48/61`, `36/61`, `24/61` e `12/61` são todos compatíveis com os dados. Carimbar aqui é **apostar num degrau** e chamar a aposta de modelo. ⚠️ **E é aqui que a pergunta "por que percentil é diferente aqui" se responde: não é diferente — é PIOR.** No OI eu não recusei o percentil, eu **dissolvi** a pré-condição mostrando que o valor não muda o resultado. No RATIO ele muda o resultado por `4×`, então a dissolução não está disponível e a pré-condição de `D16` (*"atraso medido por endpoint"*) fica **de pé, intacta e binding**. Recusá-la aqui seria usar o argumento do OI onde a premissa dele é falsa |
+| **R3** | carimbar `bucket_end + 59.999` (**o único offset que dá `61/61`**) | `61/61` | **lookahead MEDIDO, não suposto:** `§9.4(ii)` prova `4` buckets publicados depois de `67.074`–`76.685 ms`. O carimbo afirmaria conhecimento `≥ 7 ms` antes do dado existir, em `11,8 %` dos casos medidos. Viola a garantia de `SPEC-001` §5.2 (*"o erro é sempre pessimista … nunca mais cedo"*), que foi comprada com número (`21,96 %` de inversão de sinal, `n = 8.629`). **Recusada com número** |
+| **R4** | `CARRY_FORWARD_BY_NATURE[Nature.RATIO] = True` | `61/61` | reverte uma decisão que tem número **contra**: somar 3 buckets de 5 min de `sum_taker_long_short_vol_ratio` dá `p50 = 3,1809` onde o verdadeiro é `~0,9707` — **3,3× inflado sob um título honesto** `[DOC: as_of_accessor.py:105-118 citando SPEC-001 §5.11]`. A tabela é chaveada por `nature`, então a troca atinge **as 4 séries long/short juntas**, incluindo a de volume taker que produziu aquele número. E compraria `61/61` **desenhando o bucket anterior** — a classe *"a um minuto de atraso e nada diz"* que `series_history.py:130` nomeia. **Recusada** |
+| **R5** | mudar a `nature` do endpoint (`RATIO → STOCK`, ou o 6º membro que `as_of_accessor.py:111` já nomeia como pergunta em aberto) | `61/61` | **⚠️ ISTO É MIGRAÇÃO, NÃO CORREÇÃO, E VAI NA CARA:** `nature` é **1 dos 15 termos de `SeriesKey`** `[DOC: series_key.py:15-29]` ⇒ `series_key_id` muda ⇒ o `sha256` da **projeção canônica de `ADR-008`** muda para toda série long/short. Sob `D15` (TRUNCATE + reingestão) o custo em **linhas** é zero; o custo em **identidade** não é, e todo documento que cita um `series_key_id` de long/short passa a citar um id morto. **Não é decisão minha — é do owner** (`§9.7/O-B`) |
+| **R6** | o passo do relatório deixa de ser `_GRID_STEP_MS` fixo e passa a ser a grade nativa para série de grade larga | `61/61` a **qualquer** carimbo `≤ 299.999` (medido: `59.999`, `120.000`, `299.999` → `61/61`; `300.000` → `0/61`) | **é a única saída que ataca a causa** do `§9.2` em vez do sintoma — e **não é minha nem do owner**: o passo de `60.000` é `ADR-034/D6` (*"serves only"*, citado em `series_history.py:270`). Custo: a cadência do fio de `/series-history` passa a ser **por série**, e o painel desenha `12` pontos onde hoje desenha `61`. Vai para `ADR-034` como pergunta com dono, não é decidida aqui |
+| **R7** | afrouxar o `DoD-3` para o RATIO | — | mesma recusa de `A6`: o portão pararia de medir a propriedade e passaria a medir a si mesmo |
+
+### 9.6 · FALSIFICADORES desta emenda
+
+**`F-5` — o falsificador da decisão, e ele é a observação que me mostra errado.** Quando existir
+coletor ao vivo de `/futures/data/globalLongShortAccountRatio` com `n_polls ≥ 1.000` distintos e
+`availability_source='OBSERVED'`:
+
+```bash
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -c "
+ select count(distinct available_at) n_polls,
+        percentile_disc(0.99) within group (order by available_at-bucket_end) p99
+   from md.series where src_label_raw='/futures/data/globalLongShortAccountRatio'
+    and availability_source='OBSERVED' and available_at-bucket_end <= 900000;"
+```
+
+Se `p99 + margem <= 59.999` com `n_polls >= 1.000`, **esta emenda estava errada**: `D1'` autoriza o
+carimbo, ele rende `61/61`, e o `§9.5/R3` deixa de ser lookahead. Se `p99 > 59.999`, a emenda está
+certa **e o ganho nunca poderá vir do carimbo** — o teto honesto é o degrau em que `p99` cair, e o
+`61/61` só existe por `R5` ou `R6`. Hoje o comando devolve `n_polls = 34` e **`F-5` não é
+computável**, o que está dito aqui em vez de escondido. `[NÃO MEDIDO: p99 do RATIO]`
+
+**`F-6` — o falsificador do MECANISMO, e ele é uma linha.** Toda esta emenda depende de o passo do
+relatório ser uma constante de `60.000`:
+
+```bash
+grep -n '_GRID_STEP_MS = ' backend/src/modules/sentimento/use_cases/series_history.py   # 38:_GRID_STEP_MS = 60_000
+```
+
+No dia em que isso deixar de devolver `60_000` — ou em que o passo virar per-série (`R6`) — a escada
+do `§9.2` muda de lugar e **`§9.3`/`D1'` tem de ser remedida antes de ser citada**. Uma emenda que
+não diz o que a invalida é doutrina.
+
+**`F-7` — o falsificador da recusa em código.** A recusa do builder em
+`GridInvariantEndpoint.__post_init__` tem de continuar reprovando uma entrada cuja `Nature` não faz
+carry-forward. Se um commit futuro a remover e a suíte continuar verde, o portão sumiu: são os testes
+`test_a_nature_that_does_not_carry_forward_is_refused...` e
+`test_this_endpoint_is_deliberately_outside_adr_038_d1...` que o `M3` do builder já provou que mordem.
+
+### 9.7 · O que é MINHA decisão e o que EXIGE o owner
+
+**Minha, e não pede caneta de ninguém:** `§9.0` inteiro — `D1` restrito ao OI, o RATIO sem carimbo,
+`D1'` com pré-condição escrita, e as recusas `R2`/`R3`/`R4`/`R7` com o número de cada uma. A recusa
+que o builder pôs no construtor **fica**, e `§3` deste documento está corrigido acima.
+
+**Do owner — menu com custo, não pergunta aberta.** ⚠️ **Isto NÃO é o `§7.1`**, que continua pendente
+e intocado por esta emenda.
+
+| opção | o que decide | custo, medido |
+|---|---|---|
+| **`O-A`** — **recomendada pelo `/architect`** (opinião, não decisão) | esperar o coletor ao vivo de RATIO do `§7.3` — que **já é trabalho com dono** — e só então decidir o carimbo com `F-5` na mão | o RATIO renderiza de forma **instável** até lá (`20/61` hoje, `7/61` no passo de 5 min, e o número muda a cada passada de backfill). **Zero emenda, zero migração, zero caneta.** O atraso é de ~1 dia de coleta depois que o coletor subir |
+| **`O-B`** | pagar a migração de `nature` agora (`R5`) | `61/61` estável hoje. Custo: `series_key_id` de **toda série long/short** muda ⇒ o `sha256` da projeção canônica de `ADR-008` muda; sob `D15` são **zero linhas** a reescrever, mas **todo id citado em documento morre**. E é `ADR-008` que decide se aceita, não esta ADR |
+| **`O-C`** | mandar reabrir `ADR-034/D6` agora (`R6`) — o owner não decide o passo, decide se a pergunta abre já | `61/61` sem migração e sem carimbo. Custo: contrato de fio por série, e o painel desenha `12` pontos onde desenha `61` — é decisão de produto sobre a densidade do gráfico, por isso passa por ele antes de virar task |
+
+**O que NÃO fazer enquanto ele não responde:** carimbar o RATIO com qualquer offset. `R2` parece
+barato e é a única saída desta lista que **afirma um número que a medição não sustenta**.
+
+---
