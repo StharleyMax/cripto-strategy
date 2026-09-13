@@ -86,3 +86,17 @@ Registrado aqui, com dono, em vez de calado no gate: quem avaliar não precisa r
 `E1`/`E2` (backfill invisível ao `as_of`; `FLOW` com atraso ≥ grade) **não** são pendência: são
 **caminho crítico** de `D15`/`D16`, a executar **uma vez só sobre as 5 métricas** depois da
 largura (`D17`), nunca 4× em descida.
+
+## F · Rotação de credenciais — ADIADA PELO OWNER, e a exposição segue ativa
+
+`[PREMISSA-OWNER: 2026-09-13]` — *"Sobre o token da coinalyze, depois eu troco, n é problema
+agora"*.
+
+**Decisão registrada, não discutida de novo.** Fica escrito o que ela deixa de pé, para que a
+retomada não precise redescobrir: o repositório é **público** (`gh repo view` →
+`"visibility":"PUBLIC"`), os valores saíram do HEAD em `90f18fa`/#218 mas **o histórico
+permanece público — remover do HEAD não desvaza**, e a chave da Coinalyze está **em uso agora**
+pelo coletor de liquidações (`/v1/liquidation-history`, `43.425` linhas em `md.series`
+`[MEDIDO 2026-09-13T02:40Z]`). Na mesma condição: `POSTGRES_PASSWORD` e `PANEL_BASIC_AUTH_HASH`.
+
+Dono: **owner**. Não bloqueia nenhuma task.
