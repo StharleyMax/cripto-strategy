@@ -218,3 +218,165 @@ Veredito: NEEDS_FIX
    universo FORTE. Escalado para o dono de `pagina-de-grafico-s2`/fase `03`; não bloqueia a `01`.
 
 **`gate-record` NÃO gravado e `advance` NÃO rodado — por instrução explícita do despacho.**
+
+---
+
+# APÊNDICE A — REVALIDAÇÃO em `cb714e0` (2026-09-15, pós `T-01.9` e `T-01.8`)
+
+⚠️ **Append-only: o veredito `NEEDS_FIX` de `1a81c5b` acima fica INTACTO.** Ele era correto no
+commit em que foi medido; o que segue mede **outra cabeça**. `__pycache__` purgado,
+`PYTHONDONTWRITEBYTECODE=1`, Postgres **somente leitura**, nada semeado, sem deploy.
+
+**Denominador:** `master` em `cb714e0`, árvore limpa. Entraram desde o laudo: `b6f407d` (`T-01.9`,
+`frontend/e2e/09-volume-dado-real.spec.ts`, 472 linhas), `388ec1a` (**produção**: `SymbolClient.tsx`,
+`s2-lightweight-adapter.ts`, `charts/index.ts` + 2 arquivos de teste), `cb714e0` (`design-01.md`).
+
+## A1. ⛔ O app medido NÃO é o container de produção — e a diferença importa
+
+`docker inspect deploy-web-1 --format '{{.State.StartedAt}}'` → **`2026-09-15T22:28:35Z`**, e
+`388ec1a` é de **`2026-09-15T23:13:30Z`** ⇒ **o container não tem o conserto de design.** Medir
+`DoD-3` contra ele mediria o commit errado. Tudo abaixo foi medido contra um
+`next start -p 3997` do **HEAD atual**, lendo a **API de produção** (`:8000`) — processo local, não
+deploy, e nenhuma escrita. ⚠️ **Ressalva com dono externo:** o pixel corrigido por `388ec1a`
+**ainda não está no ar**; quem publica é o owner.
+
+## A2. `DoD-3` — **FECHA**, e o verde deixou de ser vacuoso
+
+### CALA — duas rodadas, contra o app real
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:3997 E2E_SENTIMENTO_API_BASE_URL=http://127.0.0.1:8000/api/v1 \
+  npx playwright test e2e/09-volume-dado-real.spec.ts        # rc=0, 3 passed
+```
+
+| rodada | `series_window_reader_present` | `volume_api_rows_with_value` | `volume_dom_present_points` | leitura |
+|---|---|---:|---:|---|
+| 1 (pré-mutação) | `true` | **3.483** | **3.483** | `20.193` = `volume_api_last_instant_value` |
+| 2 (pós-revert) | `true` | **3.488** | **3.488** | `91.306` |
+
+Igualdade **exata** `DOM == API` nas duas, e os números **mudaram entre elas** (3.483 → 3.488) ⇒ a
+série está viva; não é um par congelado que casaria por construção. **3.488 ≫ 30.**
+
+### MORDE — replantado por mim, e ISOLANDO o piso
+
+O risco real não era *"o piso não falha nunca"*, era *"o piso é redundante com `DOM == API`"*. A
+mutação foi escolhida para **manter `DOM == API` verdadeiro** e ainda assim derrubar o `DoD-3` —
+uma regressão de janela, que é o defeito que chega à tela sem quebrar a igualdade:
+
+```
+frontend/src/charts/s2-window.ts:65
+-  export const S2_WINDOW_SPAN_MS = 4 * ONE_DAY_MS;
++  export const S2_WINDOW_SPAN_MS = 20 * 60 * 1000;      (mutação, `npm run build`, revertida)
+```
+
+```
+volume_api_rows_with_value = 20 · volume_dom_present_points = 20 · volume_window_grid_slots = 20
+  → (b) `DOM == API` PASSA (20 === 20), como previsto
+  ✗ 09-volume-dado-real.spec.ts:447
+    Error: DoD-3 pede N >= 30 pontos distintos no sub-eixo de Volume; a tela declara 20 em 20 grades de 1 min
+    Expected: >= 30
+    Received:    20
+  1 failed · 2 passed
+```
+
+⇒ **o piso MORDE onde `DOM == API` CALA.** É exatamente o vão pelo qual, no laudo acima,
+`volume_dom_present_points=0` convivia com `e2e rc=0 30 passed`.
+
+**Reversão provada, não afirmada:** arquivo restaurado por cópia do backup,
+`git status --porcelain` → **vazio**, `S2_WINDOW_SPAN_MS = 4 * ONE_DAY_MS` de volta, `next build`
+refeito e a **rodada 2** acima é justamente a confirmação pós-revert.
+
+### O piso também tem falsificador DENTRO do portão
+
+`09:307` roda nos dois universos e não depende de DOM: `morde_empty_window_present=0`,
+`morde_just_below_present=**29**` (reprova), `cala_at_floor_present=**30**` (passa),
+`cala_measured_live_present=3.374`. ⚠️ É prova do **predicado**, não da **tela** — quem prova a tela
+é a mutação de A2.
+
+### E a lição do §5 do laudo virou asserção
+
+`09:293-294` exige `interval="1m"` **e** `nativeGrid="1min"` do catálogo servido — medido no portão:
+`catalog_volume_interval="1m"`, `catalog_volume_native_grid="1min"`, `catalog_volume_rows_for_symbol=1`.
+O falso negativo que `08:169` produz em série de 5 min **não pode se repetir aqui sem reprovar**.
+
+## A3. DoD 1, 2, 4, 5, 6, 7, 8 — remedidos na cabeça atual, nenhum regrediu
+
+| # | antes (`1a81c5b`) | agora (`cb714e0`) | comando |
+|---|---|---|---|
+| 1 | 95.275 linhas / 17.044 buckets | **105.450 / 17.140** ✅ | `psql … count(*), count(distinct event_time) from md.series where series_key_id='ef3033e6…'` |
+| 2 | 351 com valor / 350 distintos | **352 / 352** de `rows=360` ✅ | `GET /api/v1/series-history`, janela de 6 h |
+| 4 | 0 de 29 fechados com `n_written=0` | **0 de 30** ✅ (controle `30 > 0`) | `psql … md.ingest_run … ended_at::timestamptz > now()-interval '30 minutes'` |
+| 5 | 997 `writer_batch_acked` | **199** em 30 min ✅ (writer reiniciado às 22:28Z) | `docker logs deploy-writer-1 --since 30m \| grep -c` |
+| 6 | `premiumIndex` 100,0% | **100,0%**, 1.431 runs ✅ | `GET /api/v1/collector-status` |
+| 7 | teste dos 12 campos | inalterado ✅ | `test_binance_klines_client.py:146`, dentro do portão `test` |
+| 8 | VERDE, 8 portões | **VERDE, 8 portões** ✅ | ver A4 |
+
+## A4. `make verify` — **VERDE, 8 portões**
+
+```
+[OK] lint-backend rc=0  452 · [OK] lint-frontend rc=0 · [OK] test-frontend rc=0  628 pass, 0 fail
+[OK] test rc=0  2482 passed · Total coverage: 96.65% · [OK] boundaries rc=0  7 kept, 0 broken
+[OK] regras rc=0  0 bloqueio(s), 73 aviso(s) · [OK] política rc=0 · [OK] e2e rc=0  33 passed (35.6s)
+veredito: VERDE — 8 portões mediram e passaram
+```
+`[MEDIDO 2026-09-15T23:20:56Z]` · log `/tmp/verify-cripto-strategy-20260915T232056Z.log`.
+**+3 e2e** (30 → 33, os três de `09`) e **+14 front** (614 → 628, a geometria de `388ec1a`).
+`regras`: **8 de 8** bloqueantes, **0 violação**; os 73 avisos são `hardcoded-url` em `*.test.ts`,
+pré-existentes.
+
+## A5. As duas cegueiras declaradas — **confirmadas como RESSALVA, não como bloqueio**
+
+1. **Universo FRACO fica antes do piso.** Medido no log do portão: `series_window_reader_present=false`
+   ⇒ `09:430` retorna antes de `09:443`. ✅ **Mas o ramo fraco NÃO é vacuoso** — e isso é o que o
+   separa do `08`: ele asserta o oposto e o assert é forte. Medido: `volume_series_history_status=**500**`
+   (a rota RECUSA, não inventa grade `200`), `volume_api_rows_with_value=0`,
+   `volume_last_reading_text="Leitura atual: **SEM_PONTO**"`, sem dígito. ⇒ o portão que roda em CI
+   não prova `N >= 30`, e **também não passa por omissão**.
+2. **`harness rules --changed-only` não olhou.** `harness code-paths classify frontend/e2e/09-volume-dado-real.spec.ts`
+   → **`nao-producao: nenhum include_prefixes casa ['backend/src/','backend/tests/','frontend/src/','deploy/']`**
+   ⇒ o `rc=0` vazio do sweep sobre este arquivo significa **"não olhou"**, não **"aprovou"**. Quem
+   mediu foi a mutação de A2. ✅ Declarado pelos entregadores antes de eu perguntar — registrado
+   como tal.
+
+## A6. O que AINDA falta para a FASE fechar — 1 task, não 3
+
+`T-01.9` ✅ (`b6f407d`) · `T-01.8` ✅ (`cb714e0`, readjudicação `APPROVED` em §A8 do `design-01.md`,
+após 2 `BLOCKER` reais consertados em `388ec1a` — e os dois viraram teste com controle negativo em
+`volume-subaxis-geometry.test.ts:235,252,270,280,303`, dentro do portão).
+
+⛔ **`T-01.11` continua sem artefato** — `grep -rln 'T-01.11' docs/context/cinco-metricas-do-core/gates/`
+devolve só plano, `tasks.toml`, `MEDICAO-PRODUCAO-F01.md`, `T-01.10-infra.md` e **este laudo**.
+A **substância** dela (os 8 itens com comando e `n`) está medida duas vezes aqui, por QA; o
+**artefato de fechamento com PR própria**, não. ⚠️ **Não o escrevo como se fosse a task:** `T-01.11`
+é de build, e QA redigir o fechamento que QA depois aprova é o ciclo sem gate que o `CLAUDE.md`
+proíbe. **Decisão de governança, do coordenador/`tech-lead`:** despachar `T-01.11` citando A3/A4,
+ou resolvê-la como `done` citando este apêndice como evidência.
+
+⛔ **`tasks.toml` segue com as 11 tasks em `todo`** — o portão do `gate-record` RECUSA (exit 4) o
+próximo veredito com fase aprovada e task aberta. `harness tasks resolve cinco-metricas-do-core 01`
+com **as 11 numa chamada** (atômico por fase) antes de qualquer `APPROVED`.
+
+## A7. Veredito da revalidação
+
+```
+## QA Gate — Fase 01 [sentimento · infra · web] · REVALIDAÇÃO em cb714e0
+- [OK]   DoD-3 — N >= 30 no app real: 3.488 == 3.488 (DOM == API), 2 rodadas
+- [OK]   ...e o piso MORDE: mutação de janela mantém DOM == API (20 == 20) e o piso
+         reprova sozinho em 09:447 (`Expected: >= 30 · Received: 20`); revertida, árvore limpa
+- [OK]   DoD 1, 2, 4, 5, 6, 7 — remedidos, nenhum regrediu (A3)
+- [OK]   DoD-8 — make verify VERDE, 8 portões (2.482 backend 96,65% · 628 front · 33 e2e)
+- [OK]   8 de 8 regras bloqueantes — portão `regras` rc=0, 0 bloqueio
+- [ressalva] universo FRACO não alcança o piso (mas asserta 500 + SEM_PONTO, não é vacuoso)
+- [ressalva] `frontend/e2e/` fora de `include_prefixes` ⇒ sweep "não olhou, não aprovou"
+- [ressalva] `deploy-web-1` iniciou ANTES de 388ec1a ⇒ o pixel corrigido não está no ar
+- [FAIL] T-01.11 sem artefato · tasks.toml com as 11 em `todo`
+Veredito: o DoD-3 que eu reprovei está PAGO; a FASE ainda é NEEDS_FIX por 1 task e pelo resolve.
+```
+
+### Ações (2, ambas de governança — nenhuma de código)
+
+1. **`T-01.11`** — despachar (citando A3/A4) **ou** resolver como `done` citando este apêndice.
+2. **`harness tasks resolve cinco-metricas-do-core 01 <as 11 numa chamada>`** + `harness tasks validate`,
+   antes do `gate-record`.
+
+**`gate-record` NÃO gravado e `advance` NÃO rodado — por instrução explícita do coordenador.**
