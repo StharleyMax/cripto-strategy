@@ -228,3 +228,147 @@ Acoes: 1. xfail(strict=True) no teste declarado-vermelho, docstring intacto.
        2. Corrigir a frase de publication_lag_table.py:51 e registrar o p99 60_936 ao lado de
           lag_p99_ms=59_361.
 ```
+
+---
+
+# APÊNDICE — reconfirmação em `6f54b1e` (2026-09-15). `APPROVED`
+
+Append-only: nada acima foi reescrito. O bloco anterior descreve a cabeça `7dab8a9`; este descreve
+`6f54b1e` (`f526cc8` as 2 ações + `7c29eda` as 2 prosas sinalizadas + `6f54b1e` o code-review).
+Tudo abaixo foi **medido por mim nesta cabeça**, nada herdado do laudo do builder.
+
+## 1 · Ação 1 — `xfail(strict=True)`, os DOIS lados, medidos por mim
+
+```
+# LADO A — hoje, com o dado real (nenhuma edicao):
+cd backend && .venv/bin/python -m pytest tests/sentimento/test_publication_lag_table.py \
+  --no-cov -p no:randomly -q
+# ...........................................x                             [100%]      rc=0
+
+# LADO B — MUTACAO DE DADO: toda a cauda de KLINES_UNCENSORED_LAG_TAIL_MS trazida para dentro
+#          da grade (6x_xxx/7x_xxx/8x_xxx -> 4x_xxx), que e o que a remedicao pos-deploy fara:
+# ...........................................F                             [100%]      rc=1
+# [XPASS(strict)] D16: uncensored live p99 overshoots the native grid
+# FAILED …test_the_live_lag_holds_the_grid_when_the_late_polls_are_not_censored_away
+```
+
+Arquivo restaurado por cópia; `sha256sum -c` → `tests/sentimento/test_publication_lag_table.py:
+SUCESSO`; `git status --porcelain` vazio. **O registro executável continua mordendo, e morde do
+lado certo.**
+
+**Nada neutraliza o `strict`, e conferi os três caminhos que poderiam:**
+
+```
+grep -nE "xfail|addopts|runxfail" backend/pyproject.toml
+# 103: addopts = "--strict-markers --strict-config -q"      <- sem --runxfail
+grep -rn "runxfail|xfail_strict" backend/ --include='*.toml' --include='*.ini' \
+     --include='*.cfg' --include='conftest.py'      # nenhuma linha
+```
+
+Não há `xfail_strict` no ini (e seria irrelevante: `strict=True` explícito no marcador vence o
+ini), não há `--runxfail` em `addopts`, não há `conftest.py` mexendo nisso. `--strict-markers`
+ainda garante que o marcador não é um typo silencioso.
+
+## 2 · Ação 2 — a frase falsa saiu, e o `60_936` está no módulo de PRODUÇÃO
+
+`publication_lag_table.py:63-66` — o que era *"is the ambiguous middle"* agora é:
+
+> `nb = 2` (`210` rows, `4,9%` of the `4.289` uncensored live rows) is **NOT** an "ambiguous
+> middle" — an earlier version of this comment called it that, and the measurement REFUTED it.
+> Those rows are provably LATE LIVE POLLS …
+
+e `:290-306`, imediatamente acima de `ENDPOINT_PUBLICATION_LAG`, mais `:309` na própria constante:
+
+> ⛔ READ BEFORE TRUSTING `lag_p99_ms` … Over the UNCENSORED live population (`nb <= 2`,
+> `n = 4.289`) the `p99` is `60_936` ms — ABOVE the native `60_000` ms grid … whether `D16` may
+> stamp a MODELED row on the FIRST grid point is a DECISION OF THE OWNER that has not been made
+
+```
+grep -c "60_936" backend/src/modules/sentimento/domain/publication_lag_table.py   # 2
+```
+
+A ação 1 do [`QA-D16-atraso-de-publicacao.md`](QA-D16-atraso-de-publicacao.md) §7 sai de "aberta e
+invisível" para "aberta e declarada no ponto onde o consumidor tropeça". **Nenhuma constante foi
+movida** — e isso é o certo: mover `59_361` sem remedição pós-deploy seria inventar número.
+
+## 3 · Os dois números que mudaram — FALSIFICADOS por mim, contra o banco, somente leitura
+
+⚠️ Não herdei nenhum dos dois. Rodei a query do próprio comentário, `select` puro, nada escrito:
+
+```
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -F'|' -c "
+with g as (select series_key_id, available_at, count(*) nb from md.series group by 1,2)
+select s.source, g.nb, count(*) from md.series s
+  join g on g.series_key_id = s.series_key_id and g.available_at = s.available_at
+ where s.bucket_end < 1789155360000 and s.source = '/fapi/v1/klines' group by 1,2 order by 2;"
+# /fapi/v1/klines|1|4079        <- CONFIRMA 4.079, e REFUTA os 4.075 que o comentario carregava
+# /fapi/v1/klines|2|210
+# /fapi/v1/klines|1079|9711
+# /fapi/v1/klines|1080|3240
+# /fapi/v1/klines|1500|343588   -> 9.711 + 3.240 + 343.588 = 356.539, e nao 120.951
+```
+
+`[MEDIDO 2026-09-15, read-only, janela congelada `bucket_end < 1789155360000`]`
+
+**A tentativa de falsificar a alegação "nenhuma constante se move" FALHOU — a alegação resistiu.**
+Rodei a medição original inteira e a não-censurada:
+
+```
+# populacao nb = 1 (a que o p99 le):
+# /fapi/v1/klines      |4079 |1789090860000|1789155300000|1353|59361|59999
+# /fapi/v1/premiumIndex|34752|1788892807000|1789155303000|-100| 1758| 1895
+# populacao nao-censurada nb <= 2, klines:
+# 4289|60936|87855
+```
+
+Campo a campo contra `ENDPOINT_PUBLICATION_LAG` (`:307-331`): `sample_n` `4.079`/`34.752`,
+`window_start_ms` `1_789_090_860_000`/`1_788_892_807_000`, `window_end_ms`
+`1_789_155_300_000`/`1_789_155_303_000`, `lag_min_ms` `1.353`/`−100`, `lag_p99_ms`
+`59.361`/`1.758`, `lag_max_ms` `59.999`/`1.895` — **12 de 12 reproduzem exato**. E o lado
+não-censurado devolve `n = 4.289` = `KLINES_UNCENSORED_SAMPLE_N`, `p99 = 60.936` = o primeiro
+elemento de `KLINES_UNCENSORED_LAG_TAIL_MS`, `max = 87.855` = o último. Também fecha a aritmética
+que o `4.075` quebrava: `4.079 + 210 = 4.289`.
+
+**Por que o crescimento do backfill de fato não move nada:** ele vive inteiro em `nb ∈ {1079,
+1080, 1500}`, e o `p99` lê `nb = 1`. As duas populações `nb = 1` e `nb = 2` devolvem hoje
+exatamente os mesmos `4.079` e `210` de 2026-09-11 — a janela é congelada por `bucket_end` e o
+backfill só acrescenta linhas de fan-out alto. Deixar a contagem de backfill datada em vez de
+persegui-la é a escolha certa, e agora está escrita como snapshot, não como alegação viva.
+
+## 4 · O portão — VERDE nos 8
+
+```
+bash scripts/verify.sh
+=== verify · agent-aa54689fa3978517c · 20260915T180832Z (UTC) ===
+[OK] lint-backend rc=0  452 source files      [OK] boundaries rc=0  7 kept, 0 broken
+[OK] lint-frontend rc=0                       [OK] regras     rc=0  0 bloqueio(s), 73 aviso(s)
+[OK] test-frontend rc=0  592 pass, 0 fail     [OK] política   rc=0
+[OK] test          rc=0  2481 passed · 96.63% [OK] e2e        rc=0  27 passed (36.1s)
+[----] diff  sem mudança não-commitada
+veredito: VERDE — 8 portões mediram e passaram
+```
+
+- `grep -c '^FAILED'` no log bruto: **`0`**. `2481 passed, 1 skipped, 3 deselected, 1 xfailed,
+  5 warnings in 567.73s` — o `1 xfailed` é o registro do `D16`, no lugar.
+- **A anomalia do bloco anterior morreu sozinha:** com a suíte verde o `test.sh` alcança a linha
+  `53` e o piso por camada agora é medido **pelo próprio portão**, não por mim à parte —
+  `domain 99,7% (meta 90)` · `use_cases 99,7% (meta 80)` · `infra 93,0% (meta 70)`,
+  `universo: 3 camada(s) medida(s) de 3 declarada(s)` (log, linhas 945-949).
+- **Regras bloqueantes: 8 de 8**, `0` bloqueio.
+
+## Veredito
+
+```
+## QA Gate — PR #217 [sentimento] — reconfirmação
+- [OK] 8 de 8 regras bloqueantes — portão `regras` rc=0, 0 bloqueio(s)
+- [OK] Ação 1 — xfail(strict=True): lado A rc=0 (`x`), lado B rc=1 (`[XPASS(strict)]`), medidos
+       por mim; nada neutraliza o strict (sem --runxfail, sem xfail_strict, --strict-markers on)
+- [OK] Ação 2 — "ambiguous middle" fora da produção; `60_936` presente 2x no módulo, com a
+       decisão do owner declarada como AINDA ABERTA
+- [OK] Os 2 números conferidos contra o banco, somente leitura: nb=1 = 4.079 (refuta 4.075),
+       backfill = 9.711+3.240+343.588 = 356.539 (refuta 120.951); 12 de 12 constantes exatas
+- [OK] `make verify` VERDE nos 8 portões — 0 FAILED, 1 xfailed, 96,63%, 3 camadas acima do piso
+- [OK] Os 6 testes do apagão e as 6 threads sob `_supervised` — inalterados desde o bloco acima
+       (o diff 7dab8a9..HEAD não toca `collectors_cli.py`)
+Veredito: APPROVED
+```
