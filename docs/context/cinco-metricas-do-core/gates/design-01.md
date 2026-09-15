@@ -357,3 +357,237 @@ conflito num *hot file* (`H4`).
 ---
 
 ⛔ **Este gate NÃO escreve no ledger.** `gate-record`, `approve` e `advance` são atos de **owner**.
+
+---
+---
+
+# APÊNDICE A — READJUDICAÇÃO em `388ec1a` · **`APPROVED`**
+
+> **Acrescentado em 2026-09-15, a pedido do coordenador. O veredito `NEEDS_FIX` das §§0-8 fica
+> INTACTO** — ele foi correto no que mediu e **errado por baixo** no quanto mediu (§A1). `R11`: erro
+> não se apaga, se tarja.
+
+**Base medida:** `master` em `388ec1a`, árvore limpa · **Veredito: `APPROVED`** — os 2 `BLOCKER`
+estão pagos, medidos por instrumento **meu**, não herdado.
+
+---
+
+## A1. ⛔ TARJA — **o builder me corrigiu, e ele está certo: eu subestimei o defeito**
+
+> **~~"altura útil do sub-eixo = 220 × 0,20 = 44,0 px"~~** (§1) · **~~"barra mediana 0,72px"~~** ·
+> **~~"894/1.404 (63,7%) abaixo de 1px"~~** (§2)
+
+**A banda útil real é `37,40px`, não `44,0px`.** Os `44,0px` eram **nominais**: `CHART_HEIGHT_PX=220`
+menos o que o eixo de tempo come (~33px) dá ~187px de área de plotagem, e **20% disso é 37,4px**. Eu
+calculei geometria de pixel a partir de uma constante de configuração em vez de medir contra a
+biblioteca — **exatamente o erro de método que este repositório existe para não cometer**.
+
+**Medido por mim agora, contra `lightweight-charts@5.2.1` real em jsdom, com o MESMO dado de 24h do
+gate original** (`n=1.404` grades presentes) e a escala **linear** replantada como controle:
+
+| | eu (§2, derivado de constante) | **medido contra a biblioteca** |
+|---|---|---|
+| banda útil | 44,0 px | **37,40 px** |
+| barra mediana | 0,72 px | **0,62 px** |
+| `< 1px` | 894/1.404 · 63,7% | **954/1.404 · 67,9%** |
+
+⇒ **o defeito era PIOR do que aquilo por que eu reprovei.** A direção do `BLOCKER-1` estava certa; a
+magnitude, subestimada em 4,2 pontos percentuais. **Confirmo a correção do builder, número por número.**
+
+---
+
+## A2. `BLOCKER-1` — **PAGO**. Medido por instrumento próprio, não herdado
+
+**Instrumento:** harness meu, que **lê as constantes do fonte de produção** (`CHART_HEIGHT_PX`,
+`VOLUME_SCALE_MARGINS`, `VOLUME_LOG_BASE`, `ABSENCE_MARK_PX`, `ZERO_MARK_PX` extraídas por regex de
+`SymbolClient.tsx` — uma âncora que não casa **aborta** o harness em vez de medir com valor digitado),
+monta o **mesmo** grafo que `PricePane` monta e lê altura por `priceToCoordinate`.
+
+```
+cd frontend && node <scratchpad>/regate.ts     # constantes lidas do fonte; n=1.404 de 24h real
+```
+
+| | valor |
+|---|---|
+| constantes lidas do fonte | `CHART_HEIGHT_PX=220` · `top=0.8` · `LOG_BASE=1` · `ABSENCE_MARK_PX=2` · `ZERO_MARK_PX=6` · `mode: PriceScaleMode.Logarithmic` **presente** · `positiveValueSeriesLossless` **em uso** |
+| **banda útil MEDIDA** | **37,40 px** |
+| **mediana** | **19,34 px** (era 0,62) |
+| menor barra · maior barra | **10,39 px** · 37,40 px |
+| **`< 1px`** | **0/1.404 · 0,0%** |
+| `< 2px` | **0/1.404** |
+| **CONTROLE (mesma série, escala linear)** | mediana **0,62px**, **954/1.404 · 67,9%** `< 1px` |
+
+`[MEDIDO 2026-09-15 em `388ec1a`, n=1.404]`
+
+✅ **Reproduz os números declarados pelo builder.** ⚠️ **Uma diferença, e é imaterial:** ele declarou
+`0/1403`, eu meço `0/1404` — denominador 1 menor no dele; **o numerador é `0` nos dois**, então nada
+muda. Registro porque um número que não bate merece linha, não silêncio.
+
+✅ **A escolha de `PriceScaleMode` e não de transformação do dado PROCEDE, e é a decisão certa** — é a
+fronteira de `ADR-003` FR-2 aplicada a uma escala: o modo move a **geometria**; `log10(v)` dentro da
+série contaminaria crosshair, `priceFormat` e todo rótulo futuro. **O clip no `p95` não foi
+ressuscitado**, como o laudo exigia.
+
+✅ **O rótulo de eixo que eu cobrei como condição existe** — `VolumeScaleNote` (`data-fact=
+"volume_scale:log10"`), em **DOM e não em canvas**, o que é melhor do que eu pedi: alcança leitor de
+tela e é asserível. A frase nomeia o risco certo (*"cada degrau de altura é uma ordem de grandeza, não
+uma diferença absoluta"*).
+
+---
+
+## A3. `BLOCKER-2` — **PAGO**, com uma correção de RÓTULO DE FORÇA na alegação
+
+**Ordenação estrita, medida por mim** (zero real não existe no dado — `zeros_exatos=0` —, então
+injetei **3 zeros sintéticos** nos índices 100/500/900 **como fixture de medição**; ⛔ nada foi semeado
+em Postgres, nada tocou produção):
+
+| marca | altura medida |
+|---|---|
+| **ausência** | **1,70 px** |
+| **zero legítimo** | **5,10 px** |
+| **menor barra presente** | **10,39 px** |
+
+**ordenação estrita `ausência < zero < menor barra`: SIM** · **separação mínima entre estados: 3,40 px**
+`[MEDIDO 2026-09-15]`
+
+✅ **E a PARTIÇÃO é exaustiva e disjunta — achado do meu harness, que o builder não declarou:**
+`barras 1402 + ausência 35 + zero 3 = 1440` sobre os 1.440 slots. Cada slot cai em **exatamente uma**
+das três séries: nenhum desenhado duas vezes, nenhum perdido. **É esta a prova forte de que os três
+estados são três**, mais forte que a ordenação de alturas.
+
+### ⚠️ A alegação *"a colisão deixou de ser expressável"* está **meio grau alta**, e eu refuto essa metade
+
+Plantei **eu mesmo**, no arquivo de produção, `ABSENCE_MARK_PX = 2` → `6` (igual a `ZERO_MARK_PX`).
+**O código compila e roda.** ⇒ a colisão **É expressável**; o que a mata é um **teste**, não a
+construção. Medido: `211 pass / 1 FAIL`.
+
+**O que de fato ficou inexpressável, e isso procede:** a colisão **por acidente** — não há `if` de cor
+que um refactor apague em silêncio, porque são duas funções e duas séries. **Colisão deliberada via
+constantes continua alcançável, e é o teste que a pega.** Distinção que este repositório cobra em
+todo lugar; não muda o veredito, muda o rótulo.
+
+### As 3 mutações — replantadas **por mim**, no arquivo de produção, e revertidas
+
+| # | mutação | resultado |
+|---|---|---|
+| `M-A` | `ABSENCE_MARK_PX = ZERO_MARK_PX` (a colisão do `BLOCKER-2`) | **211 pass / 1 FAIL** ⛔ |
+| `M-B` | `mode: PriceScaleMode.Logarithmic` removido (volta ao `BLOCKER-1`) | **209 / 3 FAIL** ⛔ |
+| `M-C` | série de ausência esvaziada (volta à ausência sem marca) | **210 / 2 FAIL** ⛔ |
+
+`[MEDIDO 2026-09-15, `perl -0pi` + `npm run test:app`, cada uma isolada e revertida com
+`git checkout --`; `git status --porcelain -- frontend/src/` **vazio** ao fim]`
+
+Suítes em `388ec1a` **sem** mutação: `test:charts` **200 pass / 0 fail** · `test:app` **212 / 0**.
+
+---
+
+## A4. WCAG **1.4.11** — **passa agora**, e o piso é a marca de ausência
+
+Eu reprovei aqui, e o argumento era: *"nenhum contraste torna perceptível uma marca de 0,62 px"*.
+**Ele caiu**, porque o objeto mudou de tamanho:
+
+| objeto gráfico | altura | contraste vs `surface-base` | veredito |
+|---|---|---|---|
+| barra (mediana) | **19,34 px** | 5,82:1 (`provenanceWeak`) | ✅ |
+| menor barra | **10,39 px** | 5,82:1 | ✅ |
+| marca de zero | **5,10 px** | **14,72:1** (`provenanceStrong`) | ✅ |
+| **marca de ausência** | **1,70 px** | 5,82:1 | ✅ **no limite** |
+
+**`1.4.11` não fixa tamanho mínimo** — fixa 3:1 para objeto gráfico necessário ao entendimento, e os
+quatro passam com folga. A minha reprovação era sobre **perceptibilidade**, não sobre razão, e 1,70px
+a 5,82:1 é uma hairline legível (em tela HiDPI, 3,4 pixels de dispositivo). ⇒ **Nível AA restaurado.**
+
+✅ **E a distinção não repousa em cor, que é o que `ADR-010` cobra:** ausência↔zero viaja em **três**
+canais — **altura** (1,70 vs 5,10), **luminância** (`provenanceWeak` vs `provenanceStrong`, hue zero
+nas duas, rampa de procedência) e **palavra** (`VolumeMarksLegend`, *"não sabemos"* vs *"sabemos: foi
+zero"*). Sobrevive a escala de cinza e a `forced-colors`. **A atribuição semântica está certa**: o que
+não se sabe recebe tinta fraca; o fato observado, tinta forte.
+
+---
+
+## A5. `ux-ui-mastery` como validador — reexecutado sobre `388ec1a`
+
+| dimensão | antes | **agora** | o que mudou |
+|---|---|---|---|
+| Clarity | 3 | **8** | mediana de 0,62px → 19,34px; a escala é declarada em texto |
+| Hierarchy | 4 | **7** | a banda ganhou leitura; segue com 37,4px |
+| Accessibility | 5 | **8** | `1.4.11` passa; legenda em palavras alcança leitor de tela |
+| Cognitive Load | 4 | **7** | o operador não precisa mais do contador para saber se uma região é lacuna |
+| Polish | 4 | **7** | falta a unidade (`W-1`) e o separador (`W-3`) |
+| Error Resilience | 6 | **6** | `W-2` intocado, como combinado |
+
+`accessibility-check` (WCAG 2.2 AA): **AA** — `1.1.1` ✅ (alternativa textual **reforçada** pela
+legenda) · `1.3.1` ✅ · `1.4.1` ✅ (três canais) · `1.4.3` ✅ · **`1.4.11` ✅** · `2.1.1/2.4.7`
+não aplicável · `forced-colors` ✅. **1 menor** remanescente: a `<div>` do canvas segue sem
+`aria-hidden`. ⚠️ **`aria-hidden="true"` nos glifos `▁`/`▃` da legenda está correto** — são cópia
+redundante das palavras ao lado.
+
+⚠️ **A mesma ressalva estrutural da §6 continua valendo e não melhorou**: gerador e validador são o
+mesmo agente. O que sustenta este `APPROVED` não é a minha opinião — são **três mutações que eu
+plantei no arquivo de produção** e um harness que **aborta se as âncoras do fonte mudarem**.
+
+---
+
+## A6. `W-1` · `W-2` · `W-3` — nenhum virou bloqueio
+
+| | estado em `388ec1a` |
+|---|---|
+| **`W-1`** unidade ausente | **aberto, segue `WARNING`.** Piorou de leve: `VolumeScaleNote` diz *"base 1"* sem dizer **1 do quê** (o catálogo diz `unit: BTC`). Correção de uma palavra |
+| **`W-2`** `page.tsx:228` fora de `try/catch` | **aberto, inalterado, e NÃO agravado.** O fix acrescenta dois `throw` novos (`positiveValueSeriesLossless` em negativo, `assertDrawableMark`), mas ambos no **cliente**, e `volumeSlotsFromHistoryRows` já rejeita negativo **antes**, no servidor `[DOC: T-01.7-qa.md §4]` ⇒ defesa em profundidade, não exposição nova |
+| **`W-3`** banda sem separador | **melhorou, segue aberto.** As marcas de linha de base dão um piso visual que não existia; segue sem separador declarado entre velas e banda. E a banda é **37,4px**, não 44 |
+
+⚠️ **E um item da §2 que ninguém pagou, porque ninguém devia:** a segunda dimensão — **5.761 grades
+em ~1.200px = 0,21px de LARGURA por barra** na janela real da rota. Era `Explore`, não `BLOCKER`, e
+**continua aberto**. O `log10` conserta a **altura**; a **largura** é reamostragem que ninguém
+declarou. `[NÃO MEDIDO nesta readjudicação]` — meu harness rodou sobre 1.440 slots, não 5.761, porque
+a janela de 4 dias segue estourando em `/series-history` (§1).
+
+---
+
+## A7. Falsificador — o meu, da §7, continua de pé e **não** foi satisfeito
+
+O falsificador que escrevi exige **bitmap de navegador** em `clientWidth ≥ 1200`. O que rodei foi
+**jsdom + `priceToCoordinate`**, que é a geometria que a biblioteca *calcula* — **não** os pixels que
+um navegador *pintou*. É instrumento forte (é a biblioteca real, não um modelo dela) e **mais forte do
+que o que produziu o `NEEDS_FIX`** (aritmética sobre constante), mas **não é o bitmap**.
+
+> **O que ainda derruba este `APPROVED`:** um screenshot de `/symbol` em que a barra mediana do
+> sub-eixo meça `< 2px`, **ou** em que a marca de ausência seja indistinguível da de zero. Enquanto
+> `/symbol` não responder (§1, dono externo), esse instrumento não existe para ninguém — e isto fica
+> dito, não escondido atrás de um verde.
+
+⚠️ **Ruído do instrumento, declarado:** o harness emite `RangeError: Incorrect locale information
+provided` do formatador de tickmark do eixo de tempo (ICU do jsdom). Não toca `priceToCoordinate` —
+todas as medidas saíram —, mas é ruído, não silêncio.
+
+---
+
+## A8. Veredito da readjudicação
+
+```
+## Design Gate — Fase 01 · T-01.8 · READJUDICAÇÃO em 388ec1a
+- [OK]   BLOCKER-1 PAGO — mediana 0,62px -> 19,34px; <1px 67,9% -> 0,0% (0/1404), banda 37,40px
+- [OK]   CONTROLE NEGATIVO — a mesma serie na escala linear: 954/1404 (67,9%) <1px
+- [OK]   BLOCKER-2 PAGO — ausencia 1,70px < zero 5,10px < menor barra 10,39px, separacao min 3,40px
+- [OK]   Particao exaustiva e disjunta: 1402 barras + 35 ausencia + 3 zero = 1440 slots
+- [OK]   3 mutacoes replantadas POR MIM no arquivo de producao: 1, 3 e 2 FAIL — a guarda morde
+- [OK]   WCAG 1.4.11 PASSA — 4 objetos graficos, o menor a 1,70px / 5,82:1; AA restaurado
+- [OK]   Rotulo de escala existe, em DOM (melhor que o exigido); clip no p95 nao ressuscitado
+- [OK]   Suites verdes em 388ec1a — test:charts 200/0, test:app 212/0
+- [TARJA] Eu subestimei o defeito: 44,0px eram NOMINAIS, a banda e 37,40px (§A1)
+- [WARN] "a colisao deixou de ser expressavel" e meio grau alta — e teste, nao construcao (§A3)
+- [WARN] W-1, W-2, W-3 abertos; nenhum virou bloqueio. Largura (0,21px/barra) segue Explore
+- [N/M]  O bitmap de navegador — o falsificador da §7 nao foi satisfeito; /symbol nao responde
+
+Veredito: APPROVED
+```
+
+**Por que `APPROVED` e não "aprovado com ressalvas":** as duas reprovações eram **aritméticas**, e a
+aritmética virou. Os três `WARNING` que sobram já eram `WARNING` antes, têm dono e **nenhum deles
+impede o operador de ler volume na tela** — que era a pergunta deste gate. O builder **conferiu o meu
+número antes de obedecer a ele e me corrigiu para pior**: é o comportamento que este repositório pede,
+e registrá-lo é parte do veredito.
+
+⛔ **Este gate NÃO escreve no ledger.** `gate-record`, `approve` e `advance` são atos de **owner**.
+⛔ Nenhum Figma. Postgres **somente leitura**, sem deploy, **código de produção intocado** (3 mutações
+plantadas e revertidas; `git status --porcelain -- frontend/src/` vazio ao fim).
