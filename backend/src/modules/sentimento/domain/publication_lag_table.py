@@ -40,14 +40,33 @@
 #
 # The non-circular separator is the FAN-OUT of a single `available_at` instant over one
 # `series_key_id`. A live poll reveals exactly ONE newly closed bucket; a backfill request stamps
-# the same fetch instant onto every bucket it returns. Measured, over all `159.984` rows:
+# the same fetch instant onto every bucket it returns. Measured over all `159.984` rows
+# `[MEDIDO 2026-09-11]`, with the fan-out counts re-measured against the live database
+# `[MEDIDO 2026-09-15, read-only, same frozen window `bucket_end < 1789155360000`]`:
 #
-#     # ... select s.source, g.nb, count(*) from md.series s join g on ... group by 1,2
-#     # /fapi/v1/klines        nb=1 -> 4.075   nb=2 -> 210   nb=1079/1080/1500 -> 120.951
+#     docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -c "
+#     with g as (select series_key_id, available_at, count(*) nb from md.series group by 1,2)
+#     select s.source, g.nb, count(*) from md.series s
+#       join g on g.series_key_id = s.series_key_id and g.available_at = s.available_at
+#      where s.bucket_end < 1789155360000 and s.source = '/fapi/v1/klines'
+#      group by 1,2 order by 2;"
+#     # /fapi/v1/klines        nb=1 -> 4.079   nb=2 -> 210   nb=1079/1080/1500 -> see below
 #     # /fapi/v1/premiumIndex  nb=1 -> 34.752  (no other fan-out exists: this endpoint has no
 #     #                                         history path, so 100% of its rows are live)
 #
-# `nb = 1` keeps the klines live rows and drops `120.951` backfill rows without ever looking at
+# ⚠️ `nb = 1` is `4.079`, NOT the `4.075` this comment carried until 2026-09-15. The wrong figure
+# was a transcription error, and it contradicted `sample_n = 4_079` twelve lines below AND the
+# `4.289 = 4.079 + 210` the uncensored population depends on — `4.075` fits neither.
+#
+# ⚠️ The LIVE counts (`nb = 1`, `nb = 2`) reproduce EXACTLY today; the BACKFILL counts do not, and
+# are a frozen snapshot rather than a live claim: the same query now returns `9.711`/`3.240`/
+# `343.588` for `nb = 1079/1080/1500` (`356.539`, not `120.951`), because backfill passes kept
+# importing history into the same window after 2026-09-11. That growth cannot move `p99`, which
+# reads the `nb = 1` population only — which is precisely why the live counts are the ones pinned
+# by tests and the backfill counts are left dated instead of chased.
+#
+# `nb = 1` keeps the klines live rows and drops EVERY backfill row (`120.951` of them on
+# 2026-09-11, `356.539` today — the count grows, the filter does not) without ever looking at
 # the lag. `nb = 2` (`210` rows, `4,9%` of the `4.289` uncensored live rows) is NOT an "ambiguous
 # middle" — an earlier version of this comment called it that, and the measurement REFUTED it.
 # Those rows are provably LATE LIVE POLLS, never two-bucket backfills: all `105` groups span

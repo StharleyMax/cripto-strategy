@@ -583,12 +583,23 @@ def test_the_live_lag_holds_the_grid_when_the_late_polls_are_not_censored_away()
     `639` ms of headroom are artefacts of the filter: the endpoint really does publish past the
     grid, and `D16` cannot stamp a MODELED row on the first grid point.
 
-    ⛔ THIS TEST IS RED ON PURPOSE, AND THAT IS THE DECLARED STATE OF THE GATE — NOT A REGRESSION.
-    It fails with `assert 60936 < 60000`, and it is the executable record of the defect `D16`
-    exists to close: the uncensored live tail of the PRE-ALIGNMENT regime overshoots the native
-    `60_000` ms grid. It failed identically before and after the grid-alignment commit
-    (`418f47b`; the file is byte-identical to its parent `967368f`), so `make verify` returning
-    `rc=1` here is expected until the data changes, not until the test does.
+    ⛔ THIS TEST ASSERTS SOMETHING FALSE ON PURPOSE, AND THAT IS THE DECLARED STATE OF THE GATE —
+    NOT A REGRESSION. Its assertion is `assert 60936 < 60000`, and it is the executable record of
+    the defect `D16` exists to close: the uncensored live tail of the PRE-ALIGNMENT regime
+    overshoots the native `60_000` ms grid. It asserted falsely and identically before and after
+    the grid-alignment commit (`418f47b`; the file is byte-identical to its parent `967368f`), so
+    the red belongs to the DATA and changes when the data changes, never when the test does.
+
+    HOW THAT RED IS CARRIED, since 2026-09-15: by `xfail(strict=True)`, not by a failing gate.
+    This test is new, so leaving it failing would have made the master permanently red, and a
+    permanently red master makes every future `rc=1` indistinguishable from a real regression —
+    the ambiguous-`rc` failure mode of `ADR-012`, installed on purpose. Under the marker the file
+    reports `xfailed` and `make verify` returns `rc=0`, with the record still in the suite.
+    `strict` is the whole point and is NOT decorative: the day the data improves, the assertion
+    starts holding, pytest turns the unexpected pass into `[XPASS(strict)]` and the gate returns
+    `rc=1`. So the test still bites, and it bites from the correct side — it forces the constants
+    below to be replaced rather than going quiet. A non-strict `xfail` would return `rc=0` on both
+    sides of that event and the protection would be worthless.
 
     WHAT TURNS IT GREEN, and nothing else does: the post-deploy remeasurement written in
     `docs/context/cinco-metricas-do-core/handoff/REMEDICAO-ATRASO-APOS-ALINHAMENTO.md`, whose

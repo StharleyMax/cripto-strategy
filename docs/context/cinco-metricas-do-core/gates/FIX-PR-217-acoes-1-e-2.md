@@ -146,3 +146,81 @@ Declaradas em vez de silenciadas, e nenhuma delas bloqueia:
    literal; sinalizo porque é a mesma classe de defeito da Ação 2 (prosa que o instrumento refuta),
    e quem decidir emendar a frase decide contra uma instrução explícita — por isso não decidi
    sozinho.
+
+---
+
+# APÊNDICE — as 2 observações declaradas acima, corrigidas (2026-09-15, 2º ciclo)
+
+O coordenador mandou corrigir as duas, pelo motivo certo: **são a mesma classe de defeito da Ação
+2 — prosa provada falsa**. A Obs. 2 existia porque *"docstring intacto"* foi lido ao literal; o
+coordenador esclareceu que queria preservar o **raciocínio**, não uma afirmação que o próprio
+conserto acabou de falsificar.
+
+## Obs. 1 — `:46` dizia `nb=1 -> 4.075`, e o número certo é `4.079`
+
+**Medido, não deduzido** (Postgres **somente leitura**, mesma janela congelada do laudo):
+
+```
+docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -At -c "
+with g as (select series_key_id, available_at, count(*) nb from md.series group by 1,2)
+select s.source, g.nb, count(*) from md.series s
+  join g on g.series_key_id = s.series_key_id and g.available_at = s.available_at
+ where s.bucket_end < 1789155360000 and s.source = '/fapi/v1/klines'
+ group by 1,2 order by 2;"
+# /fapi/v1/klines|1|4079      <- 4.079, NAO 4.075
+# /fapi/v1/klines|2|210
+# /fapi/v1/klines|1079|9711
+# /fapi/v1/klines|1080|3240
+# /fapi/v1/klines|1500|343588
+```
+
+`[MEDIDO 2026-09-15, read-only; universo: todas as linhas klines com `bucket_end < 1789155360000`]`
+
+`4.075` era **erro de transcrição**: contradizia `sample_n = 4_079` doze linhas abaixo **e** o
+`4.289 = 4.079 + 210` de que a população não-censurada depende — `4.075` não fecha com nenhum dos
+dois. O comando foi colocado **ao lado do número**, no próprio módulo.
+
+### 🔴 A medição achou um SEGUNDO número caducado, e ele está corrigido em vez de calado
+
+As linhas de **backfill** também mudaram: `nb = 1079/1080/1500` somam **`356.539`** hoje, não os
+`120.951` que o comentário afirmava — passadas de backfill continuaram importando história para
+dentro da mesma janela depois de 2026-09-11. **As linhas LIVE (`nb = 1`, `nb = 2`) reproduzem
+EXATAMENTE** (`4.079`/`210`), que é o que importa: o `p99` lê **só** a população `nb = 1`, então o
+crescimento do backfill não move nenhuma constante. O comentário agora **data** o snapshot e diz
+qual metade reproduz e qual não — em vez de afirmar `120.951` como verdade corrente.
+
+## Obs. 2 — o docstring afirmava `rc=1`, e a Ação 1 tornou isso falso
+
+`:586-591` dizia: *"`make verify` returning `rc=1` here is expected until the data changes"*.
+Depois do `xfail(strict=True)` o portão devolve **`rc=0`**. A frase foi **substituída**, não
+ressalvada, e o raciocínio foi **preservado e ampliado**:
+
+- o registro do defeito continua: a asserção `assert 60936 < 60000` é falsa de propósito, e falhava
+  idêntica antes e depois de `418f47b` ⇒ **o vermelho é do DADO**, não do teste;
+- passa a dizer **como** esse vermelho é carregado desde 2026-09-15 (`xfail(strict=True)`, arquivo
+  `xfailed`, `make verify` `rc=0`) e **por que** (o teste é novo; deixá-lo falhando deixaria a
+  master permanentemente vermelha e todo `rc=1` futuro indistinguível de regressão — o `rc`
+  ambíguo de `ADR-012`);
+- e diz o que `strict` compra: no dia em que o dado melhorar, a asserção passa a valer, o `pytest`
+  converte o passe inesperado em `[XPASS(strict)]` e o portão volta a `rc=1` ⇒ **o teste morde do
+  lado certo**, forçando a troca das constantes. Um `xfail` não-estrito daria `rc=0` dos dois lados
+  e a proteção seria inútil.
+
+## Portão — reconferido, não presumido
+
+```
+make verify      # 20260915T174859Z, __pycache__ purgado, PYTHONDONTWRITEBYTECODE=1
+[OK] lint-backend 452 source files · [OK] lint-frontend · [OK] test-frontend 592 pass, 0 fail
+[OK] test rc=0  2481 passed · Total coverage: 96.63%
+[OK] boundaries 7 kept, 0 broken · [OK] regras 0 bloqueio(s), 73 aviso(s) · [OK] política
+[OK] e2e 27 passed (33.1s)
+veredito: VERDE — 8 portões mediram e passaram
+```
+
+Idêntico ao 1º ciclo em todo portão (`2481 passed`, `96.63%`) — as duas correções são **comentário
+e docstring**, zero linha executável. Diff do ciclo: `2 files changed, 40 insertions(+), 10
+deletions(-)`.
+
+**Nenhuma observação aberta restou.** As duas que eu havia declarado estão fechadas com medição; a
+terceira (backfill `120.951 → 356.539`) foi achada **por causa** da medição da primeira e está
+corrigida no mesmo ato.
