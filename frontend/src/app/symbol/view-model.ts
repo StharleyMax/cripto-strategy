@@ -39,8 +39,14 @@
  */
 
 import { ONE_MINUTE_MS, resolveFlowReading, type FlowReading, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
+import type { FreshnessVerdict } from "./panel-status.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
+
+// Re-exported so the server-side callers of `resolveFreshnessVerdict` get the function and its
+// return type from ONE import; the type itself is DECLARED in `panel-status.ts`, which is the
+// only module both sides of the RSC boundary may import (see its own docstring for why).
+export type { FreshnessVerdict };
 
 // Re-exported, not re-implemented: `computeSeriesKeyId` moved to its own module so a Playwright
 // spec can import it without evaluating the `charts` barrel (and, through it, `jsdom`). Every
@@ -338,4 +344,203 @@ export function matchesKlineTakerBuyCvd(key: SeriesKey): boolean {
     key.provider === CVD_KLINE_PROVIDER &&
     key.quantityField === CVD_KLINE_QUANTITY_FIELD
   );
+}
+
+
+// ── `T-03.5` — WHICH `sum_open_interest` ROW THE OI PANEL READS, AND WHY IT TAKES THREE TERMS ─
+//
+// The SAME defect the block above documents for CVD, found a second time, in production, on a
+// different metric — `handoff/T-03.5-T-03.6-FRONT.md` §2. `page.tsx` selected
+// `metric === "sum_open_interest"` alone, `findCatalogEntry` answered with
+// `Array.prototype.find`, and `GET /series-catalog` serves FIVE rows of that metric per
+// instrument (`domain/open_interest_catalog.py`, `CA-F2-17`), the four Coinalyze ones FIRST:
+//
+//   index  provider    reduction  ts_convention          rows in `md.series`
+//   5      coinalyze   OPEN       OHLC_OVER_BUCKET       0      <- what `find` answered
+//   6      coinalyze   HIGH       OHLC_OVER_BUCKET       0
+//   7      coinalyze   LOW        OHLC_OVER_BUCKET       0
+//   8      coinalyze   CLOSE      OHLC_OVER_BUCKET       0
+//   9      binance     POINT      POINT_AT_BUCKET_END    8.064  <- the one `ADR-036/D2` names
+//
+// `[MEDIDO 2026-09-12: GET /api/v1/series-catalog -> 13 linhas para BTCUSDT, 5 delas com
+// metric="sum_open_interest"; `select count(*) from md.series where
+// src_label_raw='/futures/data/openInterestHist'` -> 8.064]`.
+//
+// ⛔ SO THE ONE-TERM SELECTOR PICKED A SERIES WITH ZERO ROWS AND THE ROUTE ANSWERED `200`: every
+// slot rendered `SEM_PONTO`, which on screen is indistinguishable from "o mercado não teve
+// dado". The `rc=0`-that-means-nothing failure `ADR-012` names.
+//
+// ⚠️ AND THE FIX IS NOT "TAKE INDEX 9" NOR "TAKE THE LAST MATCH". The order of `"entries"` is
+// FORM (`RS-1`), stable BY APPEND — depending on it would turn "acrescentar uma linha ao
+// catálogo" into a silent re-pointing of this panel, the same class of defect one level up. The
+// fix is IDENTITY: name the terms that distinguish the series from its siblings, and REFUSE
+// ambiguity instead of resolving it by position (`page.tsx::findUniqueCatalogEntry`).
+//
+// THE THREE TERMS, and what each is for — stated honestly, including the one redundant TODAY:
+//
+//   `metric`     narrows to the five rows above. ALONE IT MATCHES 5 (measured).
+//   `provider`   `ADR-036/D2` fixes Binance (the ORIGIN) as the source of M2; `RS-5`'s
+//                third-party label would only apply to a third-party series. Excludes the four
+//                Coinalyze rows — `metric + provider` matches exactly 1 today.
+//   `reduction`  REDUNDANT AGAINST TODAY'S CATALOG, and deliberate: this is the metric the
+//                catalog ALREADY publishes under four reductions, so "which reading of the
+//                bucket" is not a hypothetical axis here — it is the axis this metric is keyed
+//                by (`coinalyze_open_interest_key` makes `reduction` a required, defaultless
+//                argument for exactly that reason, `D6.7`). A Binance OHLC row would make
+//                `metric + provider` ambiguous; with this term the panel keeps pointing at the
+//                bucket-close reading it draws today.
+//
+// ⛔ REDUNDANCY IS NOT FREE, SO THE COST IS NAMED: a third term is a third way for the backend to
+// make this panel go dark by renaming something. What keeps that from being SILENT is
+// `findUniqueCatalogEntry` — zero matches is a named absence on screen
+// (`panel_absent:not_in_catalog`), never a wrong row. The trade this file takes: a loud nothing
+// over a quiet something.
+
+/** `metric` of every open-interest row (`open_interest_catalog.py`, both key builders). */
+export const OPEN_INTEREST_METRIC = "sum_open_interest";
+/** The ORIGIN, not the third party — `ADR-036/D2`. Excludes the four Coinalyze OHLC rows. */
+export const OPEN_INTEREST_PROVIDER = "binance";
+/** `Reduction.POINT`: ONE reading per bucket, at its close (`ts_convention =
+ * POINT_AT_BUCKET_END`) — never `OPEN`/`HIGH`/`LOW`/`CLOSE` over a bucket. */
+export const OPEN_INTEREST_REDUCTION = "POINT";
+
+/**
+ * Is this the Binance `openInterestHist` row — the one `T-03.3`'s collector writes?
+ *
+ * Exported from `view-model.ts` rather than written inline in `page.tsx` for the same reason
+ * `matchesKlineTakerBuyCvd` is: `page.tsx` cannot be imported by a `node --test` suite, and a
+ * selector that can only be checked by reading it is exactly the class of defect it exists to
+ * avoid (`oi-series-selector.test.ts` runs this one against a fixture carrying all five rows).
+ */
+export function matchesBinanceOpenInterest(key: SeriesKey): boolean {
+  return (
+    key.metric === OPEN_INTEREST_METRIC &&
+    key.provider === OPEN_INTEREST_PROVIDER &&
+    key.reduction === OPEN_INTEREST_REDUCTION
+  );
+}
+
+/**
+ * The instant of the LAST slot carrying a real value, or `null` when none does — the mirror of
+ * `firstPresentSlotMs`, and the input `RNF-2`'s freshness verdict is computed from.
+ *
+ * Scanning BACKWARD (`findLast`) rather than filtering the whole array: the answer wanted is the
+ * RIGHT end of the readable horizon, and on this screen the array is the window's full grid
+ * (1.152 slots for OI over 4 days), mostly empty.
+ */
+export function lastPresentSlotMs(slots: readonly ScalarSlotShape[]): number | null {
+  const found = slots.findLast((slot) => slot.value !== null);
+  return found === undefined ? null : found.time;
+}
+
+/**
+ * The `available_at` of the NEWEST READABLE row — the instant the right-edge reading became
+ * knowable, and the minuend of `RNF-2`'s age (`T - available_at`, `STITCH_CONTEXT.md:1774`).
+ *
+ * ⛔ THE NEWEST ROW, NOT `Math.max` OVER `available_at`, and the two diverge exactly in the case
+ * that matters: under backfill an OLD row receives a RECENT `available_at`, and `max` would pick
+ * precisely the row that rejuvenates the screen. `STITCH_CONTEXT.md:1777` scopes the age field to
+ * the RIGHT EDGE of time, so the row is chosen by `event_time` and the timestamp is then read off
+ * THAT row.
+ *
+ * Chosen by greatest `event_time` rather than by array position (`findLast`): row order is a
+ * server convention this module never asserts. The two answers agree whenever the wire is ordered,
+ * and only this one is right when it is not.
+ *
+ * `available_at` is `null` exactly when `value` is (`CA-F1-5`, asserted at the point the wire is
+ * trusted in `series-history-client.ts`), so a readable row always carries one — the `?? null` is
+ * the type system's price, not a case this contract permits.
+ */
+export function lastReadableAvailableAtMs(rows: readonly SeriesHistoryRow[]): number | null {
+  let newest: SeriesHistoryRow | null = null;
+  for (const row of rows) {
+    if (row.value === null) {
+      continue;
+    }
+    if (newest === null || row.event_time > newest.event_time) {
+      newest = row;
+    }
+  }
+  return newest?.available_at ?? null;
+}
+
+/**
+ * `RNF-2` — HOW OLD the newest readable point of a panel is, and whether that age is past the
+ * ceiling the catalog itself publishes for the series.
+ *
+ * ⛔ THE CEILING IS NOT INVENTED HERE AND NO ROUTE CHANGES FORM (`RF-5`): it is
+ * `SeriesCatalogEntry.maxStalenessMs`, already served in every row of `GET /series-catalog`
+ * (`600_000` for open interest — twice the `5m` native bucket, `open_interest_catalog.py`
+ * `_MAX_STALENESS_MS`). `page.tsx` reads it off the SAME entry it resolved the `series_key_id`
+ * from, so the ceiling on screen and the ceiling `as_of` applied server-side
+ * (`series_history.py`: `staleness_ms = entry.max_staleness_ms`) are one number by construction,
+ * not by coincidence.
+ *
+ * [INFERRED: `tasks.toml`'s own ref names `liveness.stale_after_s` as the field to reuse. That
+ * one is served by `GET /collector-status` (`ADR-030`) — a route `/symbol` does not call, and a
+ * per-ENDPOINT judgement, not a per-series one; reaching for it would add a second network call
+ * to this render to learn a number the entry already in hand carries. `maxStalenessMs` is taken
+ * instead, on the ref's OWN rule ("reusa o que JÁ é servido, não inventa campo novo"), and the
+ * divergence is declared here instead of left for a reader to discover.]
+ *
+ * ⚠️ WHAT `ageMs` MEASURES — and `A-4.2` CHANGED IT, so read this before quoting the number:
+ * `T - available_at`, the distance from the window's last grid instant to the instant the newest
+ * readable row BECAME KNOWABLE. That is the literal definition in `STITCH_CONTEXT.md:1774`, and
+ * it is PUBLICATION LAG plus window trailing — not a distance between grid instants.
+ *
+ * ⛔ WHAT IT USED TO MEASURE, and why that was a defect and not a naming quibble: `T -
+ * lastPresentSlotMs`, the distance to the last grid instant the SERVER MANAGED TO FILL. Open
+ * interest is `Nature.STOCK` ⇒ the server carries the last observation forward up to the SAME
+ * `max_staleness_ms` this line then compares against (`as_of_accessor.py:112-113,330`;
+ * `series_history.py:197-200` feeds it `entry.max_staleness_ms`), so the ceiling was SPENT on the
+ * server and CHARGED AGAIN here. Measured budget of the old rule: `540_000 ms` of server LOCF on
+ * the `1m` grid plus `600_000 ms` of client ceiling = `1_140_000 ms`, i.e. the panel printed
+ * `fresh` over a reading `25,0-30,0 min` old — `5,0x-6,0x` the `5m` cadence, and `ageMs` read `0`
+ * for every reading the server still had budget to carry
+ * [MEDIDO 2026-09-15, `gates/T-03.5-T-03.6-A-4.2-decisao-limiar.md` §1 e §2.3].
+ *
+ * ⛔ AND THE REFERENCE INSTANT IS NOT THE WALL CLOCK. `instantMs` is the caller's
+ * `windowEndMsInclusive`, and the route's window end TRAILS the wall clock by
+ * `360_000-659_999 ms` [MEDIDO 2026-09-15 over the real `resolveRouteWindow`, n=300000 — one whole
+ * `5 min` cycle at millisecond resolution: min=360000 max=659999 mean=509999.5. The
+ * `max=600000 mean=480000 (n=1440)` this docstring carried before was an artefact of sampling on
+ * MINUTE boundaries; in closed form `trailing = 360_000 + (nowMs mod 300_000)`, whose supremum is
+ * `659_999`, ibid. §2.1]. So a `fresh` verdict still tolerates that much WALL-CLOCK age on top of
+ * the ceiling — for open interest the last `fresh` now sits at a reading `15,0-20,0 min` old,
+ * `3,0x-4,0x` the `5m` cadence (ibid. §2.3), against `5,0x-6,0x` before.
+ *
+ * That residual is NOT fixable by swapping in `Date.now()`: `STITCH_CONTEXT.md:1773-1776` bans the
+ * wall clock as the reference ("o carimbo e do FECHO da janela"), and under as-of replay
+ * `Date.now()` would print `stale` for ALL history. It is `R-1` of that decision — declared, with
+ * owner (owner) and date (2026-10-15), in its §8.
+ *
+ * ⚠️ `ageMs` CAN BE SLIGHTLY NEGATIVE, and it is left raw instead of clamped: the server reads
+ * `as_of` at `t = grid_instant + 59_999` (`series_history.py:149`), so a row landing on the last
+ * grid instant may carry an `available_at` up to `59_999 ms` PAST `instantMs`. The comparison is
+ * unaffected (`ageMs > ceilingMs` stays false) and the renderer floors the display at zero;
+ * clamping here would hide, in the attribute, a real property of the read.
+ */
+export function resolveFreshnessVerdict(
+  rows: readonly SeriesHistoryRow[],
+  instantMs: number,
+  ceilingMs: number | null,
+): FreshnessVerdict {
+  const observedMs = lastReadableAvailableAtMs(rows);
+  // TWO DIFFERENT IGNORANCES, deliberately collapsed into one verdict and never into "fresh": no
+  // readable point at all, and no ceiling published for the series (the panel degraded before it
+  // ever had a catalog entry). Neither licenses the screen to say the data is current.
+  if (observedMs === null || ceilingMs === null) {
+    return { kind: "unknown", ageMs: null, observedMs: null, referenceMs: instantMs, ceilingMs };
+  }
+  const ageMs = instantMs - observedMs;
+  // `referenceMs` travels WITH the age so the renderer can name the instant the age is counted
+  // back from. Handing the number over beats letting the view recompute `observedMs + ageMs`:
+  // the view would then own a second model of the same subtraction.
+  //
+  // ⚠️ `observedMs` IS A PUBLICATION INSTANT (`available_at`), not a grid instant — since `A-4.2`.
+  // Whoever reads `data-freshness-observed-ms` off the DOM must not expect it to land on the
+  // native grid; `e2e/12-oi-dado-real.spec.ts` asserted exactly that and was corrected with this.
+  return ageMs > ceilingMs
+    ? { kind: "stale", ageMs, observedMs, referenceMs: instantMs, ceilingMs }
+    : { kind: "fresh", ageMs, observedMs, referenceMs: instantMs, ceilingMs };
 }
