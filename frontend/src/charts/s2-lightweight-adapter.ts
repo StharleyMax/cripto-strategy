@@ -84,6 +84,98 @@ export function lineSeriesLossless(slots: readonly ScalarSlot[]): readonly (Line
 }
 
 /**
+ * The lossless mapping a LOGARITHMIC price scale can actually consume: one item per canonical
+ * slot, `{time, value}` only for a STRICTLY POSITIVE value, `{time}` (whitespace) for an absent
+ * slot AND for a legitimate `0`.
+ *
+ * ⛔ WHY `0` IS ROUTED OUT OF THE BAR SERIES RATHER THAN DRAWN AS A ZERO-HEIGHT BAR — and this
+ * is NOT the same decision `lineSeriesLossless` makes. `log10(0)` has no coordinate, so a `0`
+ * fed to a log-scale series is a value the scale cannot place; and a zero-height bar at the
+ * baseline is, pixel for pixel, the SAME MARK as "nothing was drawn here", which is exactly the
+ * collision `STITCH_CONTEXT.md:1821-1825` forbids ("'Não houve liquidação' e 'não sabemos' não
+ * são a mesma afirmação"). The legitimate zero does not vanish: it is drawn by
+ * `zeroMarkSeries` below, with a mark of its own, and the absent slot by `absenceMarkSeries`.
+ * Three states, three distinct marks — which is the whole point.
+ *
+ * A NEGATIVE value throws, and deliberately: this mapping exists for a non-negative `FLOW`
+ * series (traded volume), a negative there is a broken contract upstream, and silently sorting
+ * it into one of the three buckets would be this module inventing a meaning for it. Same
+ * posture — and same `RangeError` — `toUnixSeconds` already takes for a fractional second.
+ */
+export function positiveValueSeriesLossless(
+  slots: readonly ScalarSlot[],
+): readonly (LineItem | WhitespaceItem)[] {
+  return slots.map((slot) => {
+    const time = toUnixSeconds(slot.time);
+    if (slot.value === null || slot.value === 0) {
+      return { time };
+    }
+    if (slot.value < 0) {
+      throw new RangeError(
+        `slot at ${slot.time} carries the negative value ${slot.value} — this mapping is for a ` +
+          `non-negative FLOW series and a logarithmic scale has no coordinate for it`,
+      );
+    }
+    return { time, value: slot.value };
+  });
+}
+
+/** Every mark series below draws a FIXED-HEIGHT mark, so a mark value of `0` (or of anything
+ * non-finite) would draw nothing at all while still looking like a configured mark — the
+ * failure this guard exists to make impossible to express. */
+function assertDrawableMark(markValue: number): void {
+  if (!Number.isFinite(markValue) || markValue <= 0) {
+    throw new RangeError(
+      `mark value ${markValue} draws no mark — a mark that is not strictly positive is ` +
+        `indistinguishable from the absence it is supposed to make visible`,
+    );
+  }
+}
+
+/**
+ * THE INVERSE of `positiveValueSeriesLossless` for ABSENT slots: `{time, value: markValue}`
+ * exactly where the slot carries NO value, `{time}` (whitespace) everywhere else.
+ *
+ * Fed to a histogram on a fixed-range price scale, this is `D5.3`'s "lacuna de `FLOW` como
+ * traço na linha de base" — the third channel of `STITCH_CONTEXT.md:1821-1825`, which a bare
+ * `WhitespaceItem` satisfies only two thirds of: it does not interpolate and it does not zero,
+ * but it draws NO MARK, so "não sabemos" and "houve pouquíssimo volume" land on the same
+ * pixels (none). `markValue` is the caller's, in the units of whatever fixed range that scale
+ * declares — geometry here, form there (`ADR-003` FR-1/FR-2).
+ */
+export function absenceMarkSeries(
+  slots: readonly ScalarSlot[],
+  markValue: number,
+): readonly (LineItem | WhitespaceItem)[] {
+  assertDrawableMark(markValue);
+  return slots.map((slot) => {
+    const time = toUnixSeconds(slot.time);
+    return slot.value === null ? { time, value: markValue } : { time };
+  });
+}
+
+/**
+ * The same shape for a LEGITIMATE ZERO — `{time, value: markValue}` exactly where the provider
+ * reported `0`, whitespace everywhere else. The caller gives it a mark DISTINCT from the one it
+ * gives `absenceMarkSeries`; keeping them two functions, rather than one with a predicate, is
+ * what makes "the two marks are the same" a thing a reader can see rather than a default a
+ * refactor can reach by accident.
+ *
+ * ⚠️ `0` is matched by `===`, so `-0` matches too (`-0 === 0`), and that is correct: a provider
+ * that reports `-0` reported zero.
+ */
+export function zeroMarkSeries(
+  slots: readonly ScalarSlot[],
+  markValue: number,
+): readonly (LineItem | WhitespaceItem)[] {
+  assertDrawableMark(markValue);
+  return slots.map((slot) => {
+    const time = toUnixSeconds(slot.time);
+    return slot.value === 0 ? { time, value: markValue } : { time };
+  });
+}
+
+/**
  * THE NEGATIVE CONTROL — filters out gap slots instead of emitting whitespace for them.
  * See the module docstring: this exists only to be fed to a chart and shown to fail D5.11,
  * not to be used by any real caller.

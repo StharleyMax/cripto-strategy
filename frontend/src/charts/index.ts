@@ -42,6 +42,15 @@
 
 // ── 1. execução headless S2 ─────────────────────────────────────────────────────────────────
 export { runHeadlessChart } from "./s2-headless-run.ts";
+// ⛔ `T-01.8` acrescenta a esta MESMA categoria o shim de jsdom em que `runHeadlessChart` já é
+// construído, e pelo MOTIVO QUE A CATEGORIA 1 JÁ DECLARA acima, palavra por palavra: o consumidor
+// de produção dela é um TESTE sob `src/app/symbol/` que vive FORA de `src/charts/` e por isso tem
+// de cruzar esta mesma porta. `volume-subaxis-geometry.test.ts` mede a altura EM PIXEL das barras
+// do sub-eixo contra a biblioteca real, com as constantes lidas do próprio `SymbolClient.tsx` — e
+// `runHeadlessChart` não serve: ele fixa `height = 600`, monta só `candlestick`/`line` e não expõe
+// `priceToCoordinate`, que é justamente a medida. Reexportar o shim é a alternativa mais estreita
+// que existe; a outra era duplicar ~60 linhas de proxy de `CanvasRenderingContext2D` em `web`.
+export { installGlobals, flushFrames } from "./headless-chart.ts";
 export type {
   HeadlessSeriesSpec,
   HeadlessSeriesResult,
@@ -75,7 +84,20 @@ export { ONE_DAY_MS, S2_WINDOW_SPAN_MS, lastGridInstant, resolveTrailingWindow, 
 export type { S2Window, TrailingWindowRequest } from "./s2-window.ts";
 
 // ── 3. adaptador lightweight (LOSSLESS mappings only — see module docstring above) ───────────
-export { candlestickSeriesLossless, lineSeriesLossless } from "./s2-lightweight-adapter.ts";
+// `T-01.8` (design_gate da fase `01`) acrescenta TRÊS mapeamentos a esta MESMA categoria — e
+// eles não alargam a porta: continuam sendo `ScalarSlot[] -> (LineItem|WhitespaceItem)[]`, a
+// assinatura exata que `lineSeriesLossless` já expõe. São a geometria que os dois `BLOCKER` do
+// laudo exigem: `positiveValueSeriesLossless` (o que uma escala log10 consegue posicionar) e o
+// par `absenceMarkSeries`/`zeroMarkSeries` (a MARCA que distingue "não sabemos" de "foi zero",
+// `STITCH_CONTEXT.md:1821-1825`). ⛔ Nenhum deles decide ALTURA, COR ou ESCALA: o valor da marca
+// é argumento do chamador, porque isso é forma e forma é de `web` (`ADR-003` FR-1).
+export {
+  candlestickSeriesLossless,
+  lineSeriesLossless,
+  positiveValueSeriesLossless,
+  absenceMarkSeries,
+  zeroMarkSeries,
+} from "./s2-lightweight-adapter.ts";
 export type {
   UnixSeconds,
   CandlestickItem,
