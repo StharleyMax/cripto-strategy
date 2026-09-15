@@ -48,9 +48,23 @@
 #     #                                         history path, so 100% of its rows are live)
 #
 # `nb = 1` keeps the klines live rows and drops `120.951` backfill rows without ever looking at
-# the lag. `nb = 2` (210 rows) is the ambiguous middle — a live poll that caught up after a gap,
-# or a two-bucket backfill — and it is EXCLUDED rather than guessed at, the same way
-# `availability_lag.classify_transitions` refuses to count a first read as a sample.
+# the lag. `nb = 2` (`210` rows, `4,9%` of the `4.289` uncensored live rows) is NOT an "ambiguous
+# middle" — an earlier version of this comment called it that, and the measurement REFUTED it.
+# Those rows are provably LATE LIVE POLLS, never two-bucket backfills: all `105` groups span
+# exactly `60_000` ms (two consecutive buckets) and the older reading is the younger plus exactly
+# one grid step (`12` -> `60_012`, `27_855` -> `87_855`), while every backfill group measured
+# spans `1_079`-`1_500` buckets, so no path produces a two-bucket request
+# `[MEDIDO 2026-09-11, read-only, same frozen window]`:
+#
+#     ... and g.nb = 2 -> grp(span, lag_old, lag_new)
+#     select span, count(*), min(lag_old), max(lag_old), min(lag_new), max(lag_new) from grp ...
+#     # 60000 | 105 | 60012 | 87855 | 12 | 27855
+#
+# So `nb = 1` is a CENSORING filter, not a neutral one, and it censors exactly where the grid is:
+# a poll late enough to reveal TWO newly closed buckets leaves the population, so no reading at or
+# past one poll period can survive it. `lag_max_ms = 59_999 < 60_000` is therefore a property of
+# the FILTER, not of the endpoint — see the note on `lag_p99_ms` in `ENDPOINT_PUBLICATION_LAG`
+# below for what that costs the `D16` stamp.
 #
 # ## Q1 — why `p99`, and not `p50`, `p95` or `max`
 #
@@ -254,9 +268,26 @@ class MeasuredPublicationLag:
 
 # Keyed by `md.series.source` — the same string the ingest path already writes and the same one
 # every measurement above groups by, so a consumer joins on a column it already holds.
+#
+# ⛔ READ BEFORE TRUSTING `lag_p99_ms` FOR THE `D16` STAMP — the klines reading is CENSORED.
+# `59_361` is the `p99` over the `nb = 1` population (`sample_n = 4_079`), and `nb = 1` drops the
+# late live polls the comment above proves are live. Over the UNCENSORED live population
+# (`nb <= 2`, `n = 4.289`) the `p99` is `60_936` ms — ABOVE the native `60_000` ms grid, not
+# below it `[MEDIDO 2026-09-11, read-only, same frozen window]`. The `639` ms of headroom that
+# `59_361` seems to leave against the grid is an artefact of the filter.
+#
+# CONSEQUENCE, and it is still OPEN: whether `D16` may stamp a MODELED row on the FIRST grid
+# point (`bucket_end + 60 s`) is a DECISION OF THE OWNER that has not been made — the uncensored
+# reading says the endpoint does publish past that point. Do not read the choice of `59_361` as
+# settling it. The executable record of the defect is the `xfail(strict=True)` test
+# `tests/sentimento/test_publication_lag_table.py::
+#  test_the_live_lag_holds_the_grid_when_the_late_polls_are_not_censored_away`, which is `strict`
+# precisely so it REPROVES — rather than silently passing — the day a post-deploy remeasurement
+# brings the tail inside the grid and these constants must be replaced.
 ENDPOINT_PUBLICATION_LAG: Final[dict[str, MeasuredPublicationLag]] = {
     "/fapi/v1/klines": MeasuredPublicationLag(
         endpoint="/fapi/v1/klines",
+        # CENSORED (`nb = 1`). Uncensored (`nb <= 2`, `n = 4.289`) the `p99` is `60_936` > grid.
         lag_p99_ms=59_361,
         lag_min_ms=1_353,
         lag_max_ms=59_999,
