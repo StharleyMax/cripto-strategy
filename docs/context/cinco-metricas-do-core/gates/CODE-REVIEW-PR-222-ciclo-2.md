@@ -141,3 +141,75 @@ pelo teste `FR-2` — e a forma estiver na lista `MORDE` do próprio arquivo.
 **Este review é read-only:** nenhuma linha de código foi alterada, nenhum teste criado; as 3
 mutações foram revertidas e `git status --porcelain` devolveu vazio após cada uma. Nenhuma escrita
 no ledger além do `gate-record` deste veredito.
+
+---
+
+# APÊNDICE — reauditoria do `[BLOCKER-1]` em `a86b09b` (2026-09-15)
+
+**Veredito desta reauditoria: COMPLIANT.** `[BLOCKER-1]` **FECHADO**. O veredito do corpo acima
+fica como registro do que era verdade em `c35caa5`; ele **não foi reescrito**.
+
+Universo: `git diff 06a1b42..a86b09b` → **1 arquivo**, `bucket-arithmetic-boundary.test.ts` (82+/27−).
+
+## 🔴 ERRO MEU, e ele é o achado mais importante deste apêndice
+
+**O builder recusou a minha regex e ele está CERTO. A regex que publiquei no `[BLOCKER-1]` NÃO é a
+que eu medi** — e eu a rotulei *"validada por este review"*, que é exatamente a falta que o
+`CLAUDE.md` nomeia em *"Nenhum número sem o comando que o produziu"*.
+
+O que eu MEDI no rascunho foi um predicado NUMÉRICO (extrair o literal, comparar `>= 60_000` em JS).
+O que eu ESCREVI no laudo foi um esboço de regex pura, `(?:[6-9]\d|\d{3,})[\d_]*`, **nunca rodado**.
+A alternativa `[6-9]\d` casa o `60` nu de `Math.floor(totalSeconds / 60)`.
+
+**`[MEDIDO 2026-09-15]`, substituindo a MINHA regex no 3º braço e rodando sobre a produção LIMPA:**
+
+```
+npm --prefix frontend run test:app   →  pass 201 / fail 2
+  SymbolClient.tsx:563  const minutes = Math.floor(totalSeconds / 60);
+  SymbolClient.tsx:568  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+```
+
+Reproduz **exatamente** o que o builder alegou — mesmo arquivo, mesmas 2 linhas, mesma contagem,
+ambas de `formatSpan`. O meu 3º braço teria nascido **DISPARADO sobre código correto**, que é o
+modo de falha que o próprio `CLAUDE.md` descreve para o falsificador que nasce vermelho.
+A regex dele conta **dígitos ignorando `_`** (`\d(?:_?\d){5,}` ou `[6-9](?:_?\d){4}(?!_?\d)`) e é
+**silenciosa** sobre as 4 linhas. **A dele vale; a minha não.**
+
+## As 4 mutações, replantadas por MIM em módulo de produção e revertidas
+
+`frontend/src/app/symbol/panel-status.ts`, `npm --prefix frontend run test:app`, baseline da cabeça
+`a86b09b` = `pass 203 / fail 0` com `FR-2` verde:
+
+| mutação | resultado | antes |
+|---|---|---|
+| duas etapas `/ 300_000` (**a do `[BLOCKER-1]`**) | `pass 202 / fail 1`, FR-2 reprova | era `203 / 0` — **o furo fechou** |
+| duas etapas `/ 60000` sem separador | `pass 202 / fail 1`, FR-2 reprova | — |
+| uma linha, multiply-back | `pass 202 / fail 1`, FR-2 reprova | já mordia |
+| duas etapas, largura NOMEADA (`_MS`) | `pass 202 / fail 1`, FR-2 reprova | já mordia |
+
+**4 de 4 `rc=1`.** `git status --porcelain` vazio após cada uma.
+
+## CALA, teste de braços, e portão
+
+- **CALA:** sobre a produção intacta em `a86b09b`, `FR-2` → **0 ofensor**, `pass 203 / fail 0`. As 4
+  linhas de `formatSpan` estão na lista `CALA` do arquivo e nenhum braço as pega.
+- **1 braço por caso discriminante — confirmado, e é mais forte que a versão de 2 braços**
+  (`:161-187`): `assert.equal(matching, 1, …)` sobre **3** casos, mais `arms[index]` obrigando que
+  seja **aquele** braço. Não basta "algum braço pega": um braço novo que duplicasse outro reprovaria.
+- **A forma do furo entrou na lista `MORDE`** (`:148`, `:151`) — era a ausência dela que deixara o
+  falsificador do commit anterior não ver o buraco. `[INFO-2]` do corpo também foi atendido: o
+  `assert.equal(arms.length, …)` foi reancorado de `2` para `3` (`:174`).
+- **`make verify` → `VERDE — 8 portões mediram e passaram`** `[MEDIDO 2026-09-15T18:57:03Z, rc=0]`:
+  `lint-backend` 452 arquivos · `lint-frontend` OK · `test-frontend` **614 pass, 0 fail** ·
+  `test` **2481 passed, cobertura 96,63%** · `boundaries` 7 kept / 0 broken ·
+  `regras` **0 bloqueio**, 73 avisos · `política` OK · `e2e` **30 passed (35,7 s)** ·
+  `diff` sem mudança não-commitada.
+
+## Denominador
+
+**8** regras bloqueantes em vigor, **8** avaliadas, **0** violadas. Varredura desta reauditoria:
+1 arquivo de código alterado (`harness rules --mode file --path …` → 0 violação), mais **5**
+mutações replantadas e revertidas (as 4 acima + a substituição da minha regex), todas com a árvore
+devolvida limpa. `[WARNING-1]` do corpo é inalterado — segue sendo AVISO herdado do merge da master.
+
+**Read-only mantido:** nenhuma alteração de código sobreviveu a este apêndice; nenhum teste criado.
