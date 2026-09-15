@@ -433,15 +433,49 @@ test(`o número de barras do OiPane é o da API, sobre a MESMA janela (${SPEC})`
       `(${domWirePoints} degraus na grade de 1 min)`,
   ).toBeGreaterThanOrEqual(MINIMUM_NATIVE_BARS);
 
-  // A leitura atual, amarrada à API nos dois sentidos. ⚠️ Ancorada em `observed_ms` — o instante
-  // que a TELA diz ter lido — e não no fim da janela: a cauda de publicação desta série passa de
-  // um passo de grade, e exigir número no último minuto reprovaria a implementação correta.
+  // A leitura atual, amarrada à API nos dois sentidos — e ancorada na ÚLTIMA BARRA NATIVA LEGÍVEL,
+  // que é a linha de que o readout sai, não no fim da janela: a cauda de publicação desta série
+  // passa de um passo de grade, e exigir número no último minuto reprovaria a implementação correta.
+  //
+  // ⛔ ESTA ÂNCORA JÁ FOI `observedRaw`, E ISSO VIROU DEFEITO QUANDO `A-4.2` TROCOU A GRANDEZA.
+  // `data-freshness-observed-ms` deixou de ser um slot de grade e passou a ser o `available_at` da
+  // leitura da borda direita — um instante de PUBLICAÇÃO (ver a asserção de (c) acima, que é o
+  // outro leitor do mesmo atributo). `rows.find(row => row.event_time === Number(observedRaw))`
+  // então não casa nada: um `available_at` cai num instante da grade de 1 min com probabilidade
+  // ~1/60.000, e o `!` que vinha depois transformava a divergência em `TypeError` ANTES do
+  // `expect` — a amarra "o número da tela é o número da API" parava de ASSERIR em vez de reprovar.
+  // Medido pelo `frontend-qa` em 2/2 rodadas do universo FORTE, `rc=1`
+  // (`gates/T-03.5-T-03.6-qa-remedicao.md` §A5).
+  //
+  // A âncora correta é a que a PRÓPRIA TELA usa: o readout é `resolveStockReading(panels.oi.slots,
+  // …)`, e `panels.oi.slots` são as linhas da grade NATIVA (`event_time % 300_000 === 0`, o mesmo
+  // filtro de `countRows`), de onde `lastPresentSlotMs` tira o último slot com valor. Recalculada
+  // aqui a partir da resposta da API — o lado de fora do processo — para que a asserção continue
+  // amarrando DOIS lados, e não a tela a si mesma.
   if (readingKind === "absent") {
     expect(readoutText).toContain(ABSENCE_TOKEN);
     expect(readoutText).not.toMatch(/\d/);
   } else {
-    const apiValue = rows.find((row) => row.event_time === Number(observedRaw))!.value!;
+    const nativeReadable = rows.filter((row) => row.value !== null && row.event_time % NATIVE_GRID_MS === 0);
+    // ⛔ A CONTRADIÇÃO, NOMEADA — e é por isto que não há mais `!` nesta linha. Um `!` sobre um
+    // `find` que não achou nada reprova com `TypeError: Cannot read properties of undefined`, que
+    // não distingue "a tela e a API divergiram" de "o teste quebrou"; e, pior, reprova ANTES de
+    // chegar ao `expect`, matando a asserção seguinte junto.
+    expect(
+      nativeReadable.length,
+      `a tela imprimiu a leitura ${JSON.stringify(readoutText)} e a API não devolveu NENHUMA linha ` +
+        "legível na grade nativa desta mesma janela — os dois lados se contradizem sobre a mesma pergunta",
+    ).toBeGreaterThan(0);
+    const lastNativeReading = nativeReadable.reduce((newest, row) =>
+      row.event_time > newest.event_time ? row : newest,
+    );
+    fact(SPEC, "oi_last_native_reading_ms", lastNativeReading.event_time);
+    fact(SPEC, "oi_last_native_reading_value", lastNativeReading.value);
     expect(readoutText).not.toContain(ABSENCE_TOKEN);
-    expect(readoutText).toContain(String(Number(apiValue)));
+    expect(
+      readoutText,
+      `o readout tem de imprimir o valor da última barra nativa que a API serve nesta janela ` +
+        `(${String(lastNativeReading.value)} no slot ${lastNativeReading.event_time})`,
+    ).toContain(String(Number(lastNativeReading.value)));
   }
 });
