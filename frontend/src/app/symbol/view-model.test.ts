@@ -375,20 +375,36 @@ test("lastPresentSlotMs: the RIGHT end of the readable horizon, and null when no
   );
 });
 
+/** `max_staleness_ms` of open interest — 2 x the 5m native bucket (`open_interest_catalog.py`). */
+const OI_CEILING_MS = 600_000;
+
+/** A readable wire row, with the publication instant spelled out — `A-4.2` made `available_at`
+ * the minuend of the age, so a fixture that leaves it implicit no longer describes the input. */
+function readableRow(eventTimeMs: number, availableAtMs: number): SeriesHistoryRow {
+  return { event_time: eventTimeMs, available_at: availableAtMs, value: "70000", absence: null };
+}
+
+/** An absent row — `available_at` is `null` exactly when `value` is (`CA-F1-5`). */
+function absentRow(eventTimeMs: number): SeriesHistoryRow {
+  return { event_time: eventTimeMs, available_at: null, value: null, absence: "SEM_PONTO" };
+}
+
 test("RNF-2: a reading older than the series' own ceiling is called STALE, and the ceiling is the served one", () => {
-  const ceilingMs = 600_000; // `max_staleness_ms` of open interest — 2 x the 5m native bucket.
-  const slots = [
-    { time: RANGE_START_MS, value: 70_000 },
-    { time: RANGE_START_MS + FIVE_MINUTES_MS, value: null },
+  const ceilingMs = OI_CEILING_MS;
+  // Publication lag zero in this fixture, so the arithmetic below is about the THRESHOLD and not
+  // about the lag; the lag gets its own cases further down.
+  const rows: readonly SeriesHistoryRow[] = [
+    readableRow(RANGE_START_MS, RANGE_START_MS),
+    absentRow(RANGE_START_MS + FIVE_MINUTES_MS),
   ];
-  const fresh = resolveFreshnessVerdict(slots, RANGE_START_MS + 4 * ONE_MINUTE_MS, ceilingMs);
+  const fresh = resolveFreshnessVerdict(rows, RANGE_START_MS + 4 * ONE_MINUTE_MS, ceilingMs);
   assert.equal(fresh.kind, "fresh", "4 min is grid rounding on a 5m series, not staleness");
   assert.equal(fresh.ageMs, 4 * ONE_MINUTE_MS);
 
   // Exactly AT the ceiling is still fresh; one millisecond past it is not. Stated as two asserts
   // because "> vs >=" is precisely the kind of boundary a rewrite flips without noticing.
-  assert.equal(resolveFreshnessVerdict(slots, RANGE_START_MS + ceilingMs, ceilingMs).kind, "fresh");
-  const stale = resolveFreshnessVerdict(slots, RANGE_START_MS + ceilingMs + 1, ceilingMs);
+  assert.equal(resolveFreshnessVerdict(rows, RANGE_START_MS + ceilingMs, ceilingMs).kind, "fresh");
+  const stale = resolveFreshnessVerdict(rows, RANGE_START_MS + ceilingMs + 1, ceilingMs);
   assert.equal(stale.kind, "stale");
   assert.equal(stale.observedMs, RANGE_START_MS, "the verdict carries the instant it judged");
   assert.equal(stale.ceilingMs, ceilingMs, "and the ceiling it judged against — both auditable");
@@ -396,20 +412,68 @@ test("RNF-2: a reading older than the series' own ceiling is called STALE, and t
   // Six hours old: the state `formatHeldStockLabel` CANNOT describe (`resolveStockReading` holds
   // at most one native bucket and then says `SEM_PONTO`, saying nothing about WHEN). This is the
   // gap `RNF-2` exists to close.
-  assert.equal(resolveFreshnessVerdict(slots, RANGE_START_MS + 6 * 3_600_000, ceilingMs).kind, "stale");
+  assert.equal(resolveFreshnessVerdict(rows, RANGE_START_MS + 6 * 3_600_000, ceilingMs).kind, "stale");
+});
+
+test("A-4.2 regression: a 25-minute-old reading is STALE even when the server carried it to the window edge", () => {
+  // THE DEFECT THIS FIXTURE EXISTS TO KEEP DEAD, and it is the shape of a REAL wire response, not
+  // an invented one: open interest is `Nature.STOCK`, so `as_of` carries the last observation
+  // forward across the `1m` grid up to `max_staleness_ms` (`as_of_accessor.py:112-113,330`). Every
+  // grid row from the observation onward therefore comes back PRESENT, with the SAME `available_at`
+  // as the observation — including the row that lands on the window's last grid instant.
+  //
+  // MORDE: with the old grandeza (`T - event_time` of the last present row, which is what
+  // `lastPresentSlotMs` gave) this case scores `ageMs = 0` and the panel prints `fresh` over a
+  // reading 25 minutes old — the ceiling spent once on the server and charged again on the client.
+  // CALA: `T - available_at` scores `1_500_000 > 600_000` and the panel says `stale`, which is the
+  // verdict `SPEC-001` §3.2 authored the ceiling to produce ("more than one missed bucket").
+  const windowEndMs = RANGE_START_MS + 60 * ONE_MINUTE_MS;
+  const publishedAtMs = windowEndMs - 25 * ONE_MINUTE_MS;
+  const carriedForward: readonly SeriesHistoryRow[] = Array.from({ length: 26 }, (_unused, index) =>
+    readableRow(publishedAtMs + index * ONE_MINUTE_MS, publishedAtMs),
+  );
+  assert.equal(
+    carriedForward.at(-1)!.event_time,
+    windowEndMs,
+    "sanity: the LOCF staircase really does reach the window edge — otherwise this case proves nothing",
+  );
+
+  const verdict = resolveFreshnessVerdict(carriedForward, windowEndMs, OI_CEILING_MS);
+  assert.equal(verdict.kind, "stale", "25 min of publication age against a 10 min ceiling is STALE");
+  assert.equal(verdict.ageMs, 25 * ONE_MINUTE_MS, "and the age is T - available_at, not T - last filled slot");
+  assert.equal(verdict.observedMs, publishedAtMs, "the instant judged is the PUBLICATION instant");
+  assert.equal(verdict.referenceMs, windowEndMs, "counted back from the window close, never from the wall clock");
+});
+
+test("A-4.2: the age comes off the RIGHT-EDGE row, not off the newest available_at in the window", () => {
+  // Backfill: an OLD row is (re)published NOW. `Math.max` over `available_at` would pick exactly
+  // the row that rejuvenates the screen, and the panel would call a 40-minute-old right edge
+  // fresh. `STITCH_CONTEXT.md:1777` scopes the field to the RIGHT EDGE of time.
+  const windowEndMs = RANGE_START_MS + 60 * ONE_MINUTE_MS;
+  const rows: readonly SeriesHistoryRow[] = [
+    readableRow(RANGE_START_MS, windowEndMs), // backfilled: ancient event, brand-new publication
+    readableRow(windowEndMs - 40 * ONE_MINUTE_MS, windowEndMs - 40 * ONE_MINUTE_MS),
+  ];
+  const verdict = resolveFreshnessVerdict(rows, windowEndMs, OI_CEILING_MS);
+  assert.equal(verdict.kind, "stale", "a fresh backfill of old history does not refresh the right edge");
+  assert.equal(verdict.ageMs, 40 * ONE_MINUTE_MS);
+
+  // And the choice does not depend on the order the wire happened to use.
+  const reversed = resolveFreshnessVerdict([...rows].reverse(), windowEndMs, OI_CEILING_MS);
+  assert.deepEqual(reversed, verdict, "row order is a server convention; the verdict must not ride on it");
 });
 
 test("RNF-2: ignorance is never rendered as freshness — no point and no ceiling both answer unknown", () => {
-  const ceilingMs = 600_000;
+  const ceilingMs = OI_CEILING_MS;
   assert.equal(resolveFreshnessVerdict([], RANGE_START_MS, ceilingMs).kind, "unknown", "no readable point");
   assert.equal(
-    resolveFreshnessVerdict([{ time: RANGE_START_MS, value: null }], RANGE_START_MS, ceilingMs).kind,
+    resolveFreshnessVerdict([absentRow(RANGE_START_MS)], RANGE_START_MS, ceilingMs).kind,
     "unknown",
     "a window of pure absence is ignorance, not a fresh zero",
   );
   // No entry resolved ⇒ no ceiling published ⇒ the panel may not claim the data is current. A
   // `?? 600_000` default here would be a freshness claim invented by the renderer.
-  const noCeiling = resolveFreshnessVerdict([{ time: RANGE_START_MS, value: 1 }], RANGE_START_MS, null);
+  const noCeiling = resolveFreshnessVerdict([readableRow(RANGE_START_MS, RANGE_START_MS)], RANGE_START_MS, null);
   assert.equal(noCeiling.kind, "unknown");
   assert.equal(noCeiling.ageMs, null, "and it publishes no age either — there is nothing to compare");
 });

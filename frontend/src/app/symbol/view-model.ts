@@ -434,6 +434,37 @@ export function lastPresentSlotMs(slots: readonly ScalarSlotShape[]): number | n
 }
 
 /**
+ * The `available_at` of the NEWEST READABLE row — the instant the right-edge reading became
+ * knowable, and the minuend of `RNF-2`'s age (`T - available_at`, `STITCH_CONTEXT.md:1774`).
+ *
+ * ⛔ THE NEWEST ROW, NOT `Math.max` OVER `available_at`, and the two diverge exactly in the case
+ * that matters: under backfill an OLD row receives a RECENT `available_at`, and `max` would pick
+ * precisely the row that rejuvenates the screen. `STITCH_CONTEXT.md:1777` scopes the age field to
+ * the RIGHT EDGE of time, so the row is chosen by `event_time` and the timestamp is then read off
+ * THAT row.
+ *
+ * Chosen by greatest `event_time` rather than by array position (`findLast`): row order is a
+ * server convention this module never asserts. The two answers agree whenever the wire is ordered,
+ * and only this one is right when it is not.
+ *
+ * `available_at` is `null` exactly when `value` is (`CA-F1-5`, asserted at the point the wire is
+ * trusted in `series-history-client.ts`), so a readable row always carries one — the `?? null` is
+ * the type system's price, not a case this contract permits.
+ */
+export function lastReadableAvailableAtMs(rows: readonly SeriesHistoryRow[]): number | null {
+  let newest: SeriesHistoryRow | null = null;
+  for (const row of rows) {
+    if (row.value === null) {
+      continue;
+    }
+    if (newest === null || row.event_time > newest.event_time) {
+      newest = row;
+    }
+  }
+  return newest?.available_at ?? null;
+}
+
+/**
  * `RNF-2` — HOW OLD the newest readable point of a panel is, and whether that age is past the
  * ceiling the catalog itself publishes for the series.
  *
@@ -452,25 +483,64 @@ export function lastPresentSlotMs(slots: readonly ScalarSlotShape[]): number | n
  * instead, on the ref's OWN rule ("reusa o que JÁ é servido, não inventa campo novo"), and the
  * divergence is declared here instead of left for a reader to discover.]
  *
- * ⚠️ WHAT `ageMs` MEASURES, exactly, so nobody reads it as publication lag: the distance between
- * the window's LAST GRID INSTANT and the last grid instant this panel can read. For a `5m` series
- * queried on a `1m` grid it is up to 4 minutes even with a perfectly fresh collector — which is
- * why the ceiling it is compared against is `2 x` the native bucket and not the bucket itself.
+ * ⚠️ WHAT `ageMs` MEASURES — and `A-4.2` CHANGED IT, so read this before quoting the number:
+ * `T - available_at`, the distance from the window's last grid instant to the instant the newest
+ * readable row BECAME KNOWABLE. That is the literal definition in `STITCH_CONTEXT.md:1774`, and
+ * it is PUBLICATION LAG plus window trailing — not a distance between grid instants.
+ *
+ * ⛔ WHAT IT USED TO MEASURE, and why that was a defect and not a naming quibble: `T -
+ * lastPresentSlotMs`, the distance to the last grid instant the SERVER MANAGED TO FILL. Open
+ * interest is `Nature.STOCK` ⇒ the server carries the last observation forward up to the SAME
+ * `max_staleness_ms` this line then compares against (`as_of_accessor.py:112-113,330`;
+ * `series_history.py:197-200` feeds it `entry.max_staleness_ms`), so the ceiling was SPENT on the
+ * server and CHARGED AGAIN here. Measured budget of the old rule: `540_000 ms` of server LOCF on
+ * the `1m` grid plus `600_000 ms` of client ceiling = `1_140_000 ms`, i.e. the panel printed
+ * `fresh` over a reading `25,0-30,0 min` old — `5,0x-6,0x` the `5m` cadence, and `ageMs` read `0`
+ * for every reading the server still had budget to carry
+ * [MEDIDO 2026-09-15, `gates/T-03.5-T-03.6-A-4.2-decisao-limiar.md` §1 e §2.3].
+ *
+ * ⛔ AND THE REFERENCE INSTANT IS NOT THE WALL CLOCK. `instantMs` is the caller's
+ * `windowEndMsInclusive`, and the route's window end TRAILS the wall clock by
+ * `360_000-659_999 ms` [MEDIDO 2026-09-15 over the real `resolveRouteWindow`, n=300000 — one whole
+ * `5 min` cycle at millisecond resolution: min=360000 max=659999 mean=509999.5. The
+ * `max=600000 mean=480000 (n=1440)` this docstring carried before was an artefact of sampling on
+ * MINUTE boundaries; in closed form `trailing = 360_000 + (nowMs mod 300_000)`, whose supremum is
+ * `659_999`, ibid. §2.1]. So a `fresh` verdict still tolerates that much WALL-CLOCK age on top of
+ * the ceiling — for open interest the last `fresh` now sits at a reading `15,0-20,0 min` old,
+ * `3,0x-4,0x` the `5m` cadence (ibid. §2.3), against `5,0x-6,0x` before.
+ *
+ * That residual is NOT fixable by swapping in `Date.now()`: `STITCH_CONTEXT.md:1773-1776` bans the
+ * wall clock as the reference ("o carimbo e do FECHO da janela"), and under as-of replay
+ * `Date.now()` would print `stale` for ALL history. It is `R-1` of that decision — declared, with
+ * owner (owner) and date (2026-10-15), in its §8.
+ *
+ * ⚠️ `ageMs` CAN BE SLIGHTLY NEGATIVE, and it is left raw instead of clamped: the server reads
+ * `as_of` at `t = grid_instant + 59_999` (`series_history.py:149`), so a row landing on the last
+ * grid instant may carry an `available_at` up to `59_999 ms` PAST `instantMs`. The comparison is
+ * unaffected (`ageMs > ceilingMs` stays false) and the renderer floors the display at zero;
+ * clamping here would hide, in the attribute, a real property of the read.
  */
 export function resolveFreshnessVerdict(
-  slots: readonly ScalarSlotShape[],
+  rows: readonly SeriesHistoryRow[],
   instantMs: number,
   ceilingMs: number | null,
 ): FreshnessVerdict {
-  const observedMs = lastPresentSlotMs(slots);
+  const observedMs = lastReadableAvailableAtMs(rows);
   // TWO DIFFERENT IGNORANCES, deliberately collapsed into one verdict and never into "fresh": no
   // readable point at all, and no ceiling published for the series (the panel degraded before it
   // ever had a catalog entry). Neither licenses the screen to say the data is current.
   if (observedMs === null || ceilingMs === null) {
-    return { kind: "unknown", ageMs: null, observedMs: null, ceilingMs };
+    return { kind: "unknown", ageMs: null, observedMs: null, referenceMs: instantMs, ceilingMs };
   }
   const ageMs = instantMs - observedMs;
+  // `referenceMs` travels WITH the age so the renderer can name the instant the age is counted
+  // back from. Handing the number over beats letting the view recompute `observedMs + ageMs`:
+  // the view would then own a second model of the same subtraction.
+  //
+  // ⚠️ `observedMs` IS A PUBLICATION INSTANT (`available_at`), not a grid instant — since `A-4.2`.
+  // Whoever reads `data-freshness-observed-ms` off the DOM must not expect it to land on the
+  // native grid; `e2e/12-oi-dado-real.spec.ts` asserted exactly that and was corrected with this.
   return ageMs > ceilingMs
-    ? { kind: "stale", ageMs, observedMs, ceilingMs }
-    : { kind: "fresh", ageMs, observedMs, ceilingMs };
+    ? { kind: "stale", ageMs, observedMs, referenceMs: instantMs, ceilingMs }
+    : { kind: "fresh", ageMs, observedMs, referenceMs: instantMs, ceilingMs };
 }

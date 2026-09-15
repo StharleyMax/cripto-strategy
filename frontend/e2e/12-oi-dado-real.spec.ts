@@ -99,6 +99,9 @@ interface CatalogEntryWire {
 
 interface HistoryRow {
   readonly event_time: number;
+  /** `A-4.2`: o instante em que a leitura ficou CONHECÍVEL — o minuendo da idade que o painel
+   * publica (`T − available_at`, `STITCH_CONTEXT.md:1774`). `null` exatamente quando `value` é. */
+  readonly available_at: number | null;
   readonly value: string | null;
   readonly absence: string | null;
 }
@@ -353,12 +356,21 @@ test(`o número de barras do OiPane é o da API, sobre a MESMA janela (${SPEC})`
     // E o veredito é consistente com os números que ele mesmo publica: `stale` se e somente se a
     // idade passou do teto. Um "fresh" com idade acima do teto seria a mentira que `RNF-2` proíbe.
     expect(freshnessKind === "stale").toBe(Number(ageRaw) > Number(ceilingRaw));
-    // A idade é medida contra o instante que a tela declarou, e o instante observado é uma grade
-    // NATIVA — se fosse um instante qualquer da escada, a idade seria menor do que a verdade.
-    expect(Number(observedRaw) % NATIVE_GRID_MS).toBe(0);
+    // ⚠️ `A-4.2` MUDOU O QUE ESTE ATRIBUTO SIGNIFICA, e esta asserção diz isso em voz alta:
+    // `data-freshness-observed-ms` é o `available_at` da leitura mais à direita — um instante de
+    // PUBLICAÇÃO —, não mais o último slot de grade que o LOCF do servidor conseguiu preencher.
+    // A asserção anterior (`observed % NATIVE_GRID_MS === 0`) era verdadeira só porque a grandeza
+    // era de grade; mantê-la agora reprovaria o comportamento correto.
+    const readable = rows.filter((row) => row.value !== null);
+    const rightEdge = readable.reduce<HistoryRow | null>(
+      (newest, row) => (newest === null || row.event_time > newest.event_time ? row : newest),
+      null,
+    );
+    expect(rightEdge, "a API declarou barras nativas mas nenhuma linha legível — contradição dela, não da tela").not
+      .toBeNull();
+    expect(Number(observedRaw)).toBe(rightEdge!.available_at);
+    // E a idade é a subtração declarada, contra o instante que a própria tela publicou.
     expect(Number(ageRaw)).toBe(request.windowEndMsInclusive - Number(observedRaw));
-    // ...e a API concorda que existe leitura NAQUELE instante.
-    expect(rows.find((row) => row.event_time === Number(observedRaw))?.value ?? null).not.toBeNull();
   }
 
   const readoutText = (await pane.locator('[data-fact^="oi_last_reading:"]').textContent())?.trim() ?? "";

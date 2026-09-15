@@ -511,11 +511,17 @@ function OiReadableHorizon({ oi, gridSlots }: { readonly oi: OiPaneData; readonl
  * and all that is decided here, is that the FACT is on screen and machine-readable.
  */
 function OiFreshness({ oi }: { readonly oi: OiPaneData }) {
+  // ⚠️ `A-4.2` (2026-09-15): `freshness.observedMs`, published below as
+  // `data-freshness-observed-ms`, is the `available_at` of the right-edge reading — a PUBLICATION
+  // instant, no longer the last grid slot the server's carry-forward managed to fill. The
+  // attribute NAME did not change and its MEANING did; the out-of-process reader
+  // (`e2e/12-oi-dado-real.spec.ts`) was corrected in the same commit.
   const { freshness } = oi;
   const text =
     freshness.kind === "unknown"
       ? "Frescor não avaliável — nenhuma leitura nesta janela."
-      : `Última leitura há ${formatMinutes(freshness.ageMs)} (teto desta série: ${formatMinutes(freshness.ceilingMs)}).` +
+      : `Última leitura há ${formatSpan(freshness.ageMs)} em relação ao fecho da janela ` +
+        `(${formatUtcMinute(freshness.referenceMs)} UTC) — teto desta série: ${formatSpan(freshness.ceilingMs)}.` +
         (freshness.kind === "stale" ? " ⚠️ Mais velha que o teto — o valor acima é DADO VELHO." : "");
   return (
     <p
@@ -524,6 +530,7 @@ function OiFreshness({ oi }: { readonly oi: OiPaneData }) {
       data-freshness-age-ms={freshness.ageMs ?? ""}
       data-freshness-ceiling-ms={freshness.ceilingMs ?? ""}
       data-freshness-observed-ms={freshness.observedMs ?? ""}
+      data-freshness-reference-ms={freshness.referenceMs}
       className="text-sm text-provenance-weak"
     >
       {text}
@@ -531,10 +538,31 @@ function OiFreshness({ oi }: { readonly oi: OiPaneData }) {
   );
 }
 
-/** Whole minutes, pt-BR, from a millisecond span — presentation of a number this component was
- * handed, never a recomputation of it (the `data-` attributes beside it carry the raw ms). */
-function formatMinutes(spanMs: number): string {
-  return `${Math.round(spanMs / 60_000)} min`;
+/**
+ * A millisecond span as a UNIT LADDER, pt-BR — presentation of a number this component was handed,
+ * never a recomputation of it (the `data-` attributes beside it carry the raw ms).
+ *
+ * ⛔ FLOOR, NOT ROUND, and the difference is the whole point (`design-review` `QW-1`): the `stale`
+ * verdict asserts `ageMs > ceilingMs`, and `Math.round` printed BOTH sides of that inequality as
+ * `10 min` for every age in `(600_000, 630_000)` ms — the screen contradicting its own sentence in
+ * the same line. Flooring plus a seconds term makes the two numerals differ exactly when the
+ * verdict says they differ.
+ *
+ * And the hour rung is not decoration: the largest age actually measured on this series is
+ * `31_740_000 ms` [DOC: gates/T-03.5-T-03.6-builder.md], which the old function printed as
+ * `529 min` — making the operator divide by 60 in his head on the very screen where he is deciding
+ * whether to trust the number.
+ */
+function formatSpan(spanMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(spanMs / 1_000));
+  if (totalSeconds < 3_600) {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds} s`;
+  }
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
 }
 
 function OiPane({

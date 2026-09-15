@@ -391,7 +391,12 @@ export default async function SymbolPage() {
     // identify its series has no ceiling to be judged against, and inventing one would be a
     // freshness claim made out of ignorance.
     maxStalenessMs: oiEntry?.maxStalenessMs ?? null,
-    freshness: resolveFreshnessVerdict(oiGridSlots, routeWindow.windowEndMsInclusive, oiEntry?.maxStalenessMs ?? null),
+    // ⛔ `oiResult.rows`, NEVER `oiGridSlots` — `A-4.2`. The grid slots are what the server's LOCF
+    // produced, so measuring age against them charges `max_staleness_ms` a second time after the
+    // server already spent it; the age the screen owes the operator is `T - available_at`, and
+    // only the wire rows carry `available_at`. See
+    // `docs/context/cinco-metricas-do-core/gates/T-03.5-T-03.6-A-4.2-decisao-limiar.md`.
+    freshness: resolveFreshnessVerdict(oiResult.rows, routeWindow.windowEndMsInclusive, oiEntry?.maxStalenessMs ?? null),
   };
 
   const baseUrl = process.env.INGEST_HEALTH_API_BASE_URL;

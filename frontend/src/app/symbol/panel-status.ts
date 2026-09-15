@@ -53,11 +53,42 @@ export type PanelStatus =
  * `unknown` is not "fresh with a missing number": it is the verdict for two different
  * ignorances — no readable point at all, and no ceiling published — and neither one licenses the
  * screen to claim the data is current.
+ *
+ * `observedMs` is the `available_at` of the newest READABLE row — a PUBLICATION instant, not a
+ * grid instant (`A-4.2`, 2026-09-15). `ageMs` is therefore `referenceMs - observedMs =
+ * T - available_at`, the definition `STITCH_CONTEXT.md:1774` writes down. It used to be the last
+ * grid instant the server managed to fill, which made the age read `0` for every reading the
+ * server still had carry-forward budget for — the ceiling spent twice, once per side.
+ *
+ * `referenceMs` is the INSTANT `ageMs` is counted back from, carried across the boundary so the
+ * renderer can NAME it on screen instead of recomputing `observedMs + ageMs`. It is present on
+ * all three kinds — including `unknown`, where the reference is known even though the age is not.
+ * `RNF-2` asks the screen to SAY the data is old; an age whose origin is secret cannot be
+ * checked by the operator, and a reader who assumes the origin is the wall clock reads the number
+ * wrong by 6-10 minutes (`design-review` `A-4.1`).
  */
 export type FreshnessVerdict =
-  | { readonly kind: "fresh"; readonly ageMs: number; readonly observedMs: number; readonly ceilingMs: number }
-  | { readonly kind: "stale"; readonly ageMs: number; readonly observedMs: number; readonly ceilingMs: number }
-  | { readonly kind: "unknown"; readonly ageMs: null; readonly observedMs: null; readonly ceilingMs: number | null };
+  | {
+      readonly kind: "fresh";
+      readonly ageMs: number;
+      readonly observedMs: number;
+      readonly referenceMs: number;
+      readonly ceilingMs: number;
+    }
+  | {
+      readonly kind: "stale";
+      readonly ageMs: number;
+      readonly observedMs: number;
+      readonly referenceMs: number;
+      readonly ceilingMs: number;
+    }
+  | {
+      readonly kind: "unknown";
+      readonly ageMs: null;
+      readonly observedMs: null;
+      readonly referenceMs: number;
+      readonly ceilingMs: number | null;
+    };
 
 /**
  * `T-01.7` — the four statuses `/symbol` computes today, named once so `page.tsx` and

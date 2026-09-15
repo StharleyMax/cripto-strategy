@@ -135,13 +135,37 @@ test("RNF-2: the pane says HOW OLD its newest reading is, against the ceiling th
   assert.match(source, /data-freshness-age-ms=\{freshness\.ageMs \?\? ""\}/);
   assert.match(source, /data-freshness-ceiling-ms=\{freshness\.ceilingMs \?\? ""\}/);
   // The three kinds are rendered as three different things, and `unknown` is never freshness.
-  assert.match(source, /freshness\.kind === "unknown"\s*\n?\s*\? "Frescor não avaliável/);
-  assert.match(source, /freshness\.kind === "stale" \? " ⚠️ Mais velha que o teto/);
+  //
+  // ⛔ STRUCTURE, NOT WORDING — option (a) of `design-review` `A-4.3`/`W-3`. The earlier version of
+  // these two lines pinned the microcopy character by character, which made them guard the TEXT and
+  // not the requirement: any rewording broke them, and the `ui-designer` owns the wording
+  // (`CLAUDE.md` §"Design — autonomia delegada"). What `RNF-2` actually demands is that the three
+  // verdicts be three different renderings and that `unknown` never be dressed as freshness.
+  const unknownBranch = source.match(/freshness\.kind === "unknown"\s*\n?\s*\?\s*("[^"]*"|`[^`]*`)/);
+  assert.ok(unknownBranch, "`unknown` must have its own rendering branch");
+  assert.doesNotMatch(
+    unknownBranch[1],
+    /\$\{/,
+    "`unknown` is ignorance: its branch interpolates NO number, or it is freshness wearing a hedge",
+  );
+  assert.match(source, /freshness\.kind === "stale" \?/, "`stale` must have a third branch of its own");
+  // `A-4.1`: the age is meaningless without the instant it counts back from, so the instant is on
+  // screen AND machine-readable. This is the requirement, not the sentence that carries it.
+  assert.match(source, /data-freshness-reference-ms=\{freshness\.referenceMs\}/);
+  assert.match(source, /formatUtcMinute\(freshness\.referenceMs\)/, "the reference instant is NAMED in the line");
 
   // Route side: the ceiling is the catalog entry's OWN `max_staleness_ms` — no new field, no
   // route re-versioned (`RF-5`), and the same number `as_of` applied server-side.
   assert.match(pageCode, PAGE_CEILING);
-  assert.match(pageCode, /resolveFreshnessVerdict\(oiGridSlots, routeWindow\.windowEndMsInclusive,/);
+  // `A-4.2`: the verdict is computed over the WIRE ROWS, because only they carry `available_at` —
+  // the age `STITCH_CONTEXT.md:1774` defines is `T - available_at`, not the distance to the last
+  // grid slot the server's LOCF managed to fill.
+  assert.match(pageCode, /resolveFreshnessVerdict\(oiResult\.rows, routeWindow\.windowEndMsInclusive,/);
+  assert.doesNotMatch(
+    pageCode,
+    /resolveFreshnessVerdict\(oiGridSlots\b/,
+    "the grid slots are the server's carry-forward output — measuring age against them charges max_staleness_ms twice",
+  );
   // ⛔ AND NO INVENTED DEFAULT. `?? 600_000` here would be a freshness claim manufactured by the
   // renderer for a panel that never resolved a series.
   assert.doesNotMatch(pageCode, /\?\? 600_000/);

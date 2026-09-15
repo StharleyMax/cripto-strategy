@@ -45,15 +45,36 @@ function productionSources(): readonly { readonly file: string; readonly source:
 /**
  * The shapes of bucket arithmetic, each with the reason it is geometry and therefore `charts`'.
  *
- * `- ONE_MINUTE_MS` / `- FIVE_MINUTES_MS` are the literal pair the gate found. `Math.floor(`
- * and `alignToTimeframeStart` are the flooring the QA of this wave measured as already absent
- * ("`grep` → `rc=1`, nenhuma linha"), pinned here so "already absent" stays a fact rather than
- * a snapshot.
+ * `- ONE_MINUTE_MS` / `- FIVE_MINUTES_MS` are the literal pair the gate found.
+ * `alignToTimeframeStart` is `charts`' own flooring, pinned so "already absent" stays a fact
+ * rather than a snapshot.
+ *
+ * ⚠️ THE FLOOR PATTERN WAS SHARPENED ON 2026-09-15, AND IT WAS NOT LOOSENED INTO A HOLE — read
+ * the two replacements before judging. It used to be the bare `Math.floor\s*\(`, which forbids a
+ * WORD rather than the operation this file exists to forbid. `A-4.1` then wrote `formatSpan`
+ * (`SymbolClient.tsx`), which decomposes a DURATION into `h`/`min`/`s` — `Math.floor(spanMs /
+ * 1_000)`, `Math.floor(totalSeconds / 60)`. That is unit decomposition of a SPAN: it takes no
+ * instant and it produces no instant, so `ADR-003`'s "segunda implementação da grade canônica" is
+ * structurally out of reach for it — and the bare pattern flagged all four of its lines
+ * [MEDIDO 2026-09-15: `npm --prefix frontend run test:app` → 4 offenders, all in `formatSpan`].
+ *
+ * What FR-2 actually forbids is flooring an INSTANT ONTO A GRID, and that operation cannot be
+ * written without leaving one of two fingerprints: the grid width is NAMED (a `*_MS` constant), or
+ * the quotient is MULTIPLIED BACK to land on the boundary. Those two are the patterns below, and
+ * the `MORDE` test carries a case for each arm — including a bucket floor written with a NUMERIC
+ * literal, which the old single pattern caught by accident and these two catch on purpose.
  */
 const FORBIDDEN_ARITHMETIC: readonly { readonly pattern: RegExp; readonly why: string }[] = [
   { pattern: /-\s*ONE_MINUTE_MS/, why: "half-open→inclusive conversion: use lastGridInstant(window, ONE_MINUTE_MS)" },
   { pattern: /-\s*FIVE_MINUTES_MS/, why: "same conversion at the coarse grid: use lastGridInstant(window, FIVE_MINUTES_MS)" },
-  { pattern: /Math\.floor\s*\(/, why: "flooring onto a bucket boundary is alignToTimeframeStart's job, in charts" },
+  {
+    pattern: /Math\.floor\s*\([^\n]*_MS\b/,
+    why: "flooring by a NAMED grid width is alignToTimeframeStart's job, in charts",
+  },
+  {
+    pattern: /Math\.floor\s*\([^\n]*\)\s*\*/,
+    why: "flooring and multiplying back lands an instant ON a bucket boundary — charts' geometry",
+  },
   { pattern: /alignToTimeframeStart/, why: "charts' own flooring, reached only through the barrel and never re-implemented" },
 ];
 
@@ -78,6 +99,12 @@ test("MORDE: the exact two lines the gate found would fail this test if replante
     "    windowEndMsInclusive: window.endMsExclusive - ONE_MINUTE_MS,",
     "  return panels.rangeEndMsExclusive - ONE_MINUTE_MS;",
     "  const bucket = Math.floor(instantMs / FIVE_MINUTES_MS) * FIVE_MINUTES_MS;",
+    // One case per ARM of the sharpened floor guard (2026-09-15), because a two-pattern rule whose
+    // cases all trip both patterns proves only that one of them works:
+    //   named grid width, no multiply-back — caught by the `_MS` arm alone;
+    "  const bucketIndex = Math.floor((instantMs - originMs) / FIVE_MINUTES_MS);",
+    //   numeric literal, multiplied back — caught by the multiply-back arm alone.
+    "  const bucket = Math.floor(instantMs / 300_000) * 300_000;",
   ];
   for (const line of replanted) {
     assert.ok(
@@ -87,11 +114,37 @@ test("MORDE: the exact two lines the gate found would fail this test if replante
   }
 });
 
+test("both arms of the floor guard are load-bearing — neither is decoration the other already covers", () => {
+  // A two-pattern rule whose cases all trip BOTH patterns proves only that one of them works.
+  // These two assertions are what stops a future cleanup from deleting one arm as "redundant".
+  const namedWidthOnly = "  const bucketIndex = Math.floor((instantMs - originMs) / FIVE_MINUTES_MS);";
+  const multiplyBackOnly = "  const bucket = Math.floor(instantMs / 300_000) * 300_000;";
+  const arms = FORBIDDEN_ARITHMETIC.filter(({ pattern }) => pattern.source.includes("Math"));
+  assert.equal(arms.length, 2, "the floor guard is two arms — re-anchor this test if that changes");
+  const [namedWidthArm, multiplyBackArm] = arms;
+  assert.ok(namedWidthArm.pattern.test(namedWidthOnly), "the `_MS` arm must catch a bucket INDEX (no multiply-back)");
+  assert.ok(
+    !multiplyBackArm.pattern.test(namedWidthOnly),
+    "…and the multiply-back arm must NOT, or this case proves nothing about the first",
+  );
+  assert.ok(multiplyBackArm.pattern.test(multiplyBackOnly), "the multiply-back arm must catch a LITERAL bucket width");
+  assert.ok(
+    !namedWidthArm.pattern.test(multiplyBackOnly),
+    "…and the `_MS` arm must NOT, or this case proves nothing about the second",
+  );
+});
+
 test("CALA: the sanctioned call does NOT trip the guard — otherwise the fix itself would be unwritable", () => {
   const sanctioned = [
     "    windowEndMsInclusive: lastGridInstant(window, ONE_MINUTE_MS),",
     "  return lastGridInstant(panels.window, ONE_MINUTE_MS);",
     "    alignmentMs: FIVE_MINUTES_MS,",
+    // `A-4.1`'s `formatSpan`, verbatim: decomposing a SPAN into h/min/s takes no instant and
+    // produces no instant. The bare `Math.floor\s*\(` flagged all four of these.
+    "    const totalSeconds = Math.max(0, Math.floor(spanMs / 1_000));",
+    "    const minutes = Math.floor(totalSeconds / 60);",
+    "    const hours = Math.floor(totalSeconds / 3_600);",
+    "    const minutes = Math.floor((totalSeconds % 3_600) / 60);",
   ];
   for (const line of sanctioned) {
     assert.ok(
