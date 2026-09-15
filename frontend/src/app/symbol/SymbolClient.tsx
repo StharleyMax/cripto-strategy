@@ -521,7 +521,11 @@ function OiFreshness({ oi }: { readonly oi: OiPaneData }) {
     freshness.kind === "unknown"
       ? "Frescor não avaliável — nenhuma leitura nesta janela."
       : `Última leitura há ${formatSpan(freshness.ageMs)} em relação ao fecho da janela ` +
-        `(${formatUtcMinute(freshness.referenceMs)} UTC) — teto desta série: ${formatSpan(freshness.ceilingMs)}.` +
+        // ⚠️ NO ` UTC` HERE: `formatUtcMinute` already ends in it (`:351`). The literal that used to
+        // sit after this call printed `UTC UTC` on screen, in 8 of 8 renderings — `design-review`
+        // `V-1`. The other four call sites (`:370`, `:481`, `:636`, `:771`) never repeated it; this
+        // one did — which is why the fix is HERE and not in the formatter.
+        `(${formatUtcMinute(freshness.referenceMs)}) — teto desta série: ${formatSpan(freshness.ceilingMs)}.` +
         (freshness.kind === "stale" ? " ⚠️ Mais velha que o teto — o valor acima é DADO VELHO." : "");
   return (
     <p

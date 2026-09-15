@@ -171,6 +171,55 @@ test("RNF-2: the pane says HOW OLD its newest reading is, against the ceiling th
   assert.doesNotMatch(pageCode, /\?\? 600_000/);
 });
 
+/** `formatUtcMinute` OWNS the suffix: its return ends in `` UTC` ``. */
+const UTC_SUFFIX_OWNED_BY_FORMATTER = /function formatUtcMinute\([^)]*\): string \{\s*\n\s*return `[^`]*\bUTC`;/;
+/** A call site that appends its own — `{formatUtcMinute(x)} UTC` — prints `UTC UTC`. Covers both
+ * spellings the file uses: `${…}` inside a template and `{…}` inside JSX. */
+const UTC_SUFFIX_REPEATED_AT_CALL_SITE = /formatUtcMinute\([^)]*\)\}[^\n]{0,3}UTC/;
+
+test("V-1: the ` UTC` suffix is printed ONCE — the formatter owns it, no call site repeats it", () => {
+  // The defect this guards against was NOT hypothetical: `design-review` `V-1` read `UTC UTC` off
+  // the freshness line in 8 of 8 renderings, because `:351` already appended the suffix and the
+  // call site appended it again. The fix belongs at the REPEATER — the formatter is right, and
+  // its other three call sites were right, so moving the suffix out of it would have broken them.
+  assert.match(
+    source,
+    UTC_SUFFIX_OWNED_BY_FORMATTER,
+    "the timezone marker lives in ONE place; if it left the formatter, every call site now owes it",
+  );
+  assert.doesNotMatch(
+    source,
+    UTC_SUFFIX_REPEATED_AT_CALL_SITE,
+    "a call site appending ` UTC` after a formatter that already appends it prints `UTC UTC` to the operator",
+  );
+  // Sanity on the universe: this assert is worth something only if there ARE call sites to scan.
+  assert.equal(
+    (source.match(/formatUtcMinute\(/g) ?? []).length,
+    6,
+    "one declaration + FIVE call sites (`:370`, `:481`, `:527`, `:636`, `:771`) — if the count " +
+      "moved, re-anchor this guard rather than trusting it",
+  );
+
+  // MORDE, by replanting the exact duplicator that shipped: with it back, this test is rc=1.
+  const mutated = source.replace(
+    "`(${formatUtcMinute(freshness.referenceMs)})",
+    "`(${formatUtcMinute(freshness.referenceMs)} UTC)",
+  );
+  assert.notEqual(mutated, source, "the duplicator found no anchor — update this test, do not delete it");
+  assert.match(
+    mutated,
+    UTC_SUFFIX_REPEATED_AT_CALL_SITE,
+    "the replanted `UTC UTC` is NOT detected by the assert above — the guard is vacuous",
+  );
+  // CALA: rewording around the instant is the `ui-designer`'s, and must not trip the guard.
+  const reworded = source.replace(
+    "`(${formatUtcMinute(freshness.referenceMs)})",
+    "`(fecho em ${formatUtcMinute(freshness.referenceMs)})",
+  );
+  assert.notEqual(reworded, source, "re-anchor this CALA rather than dropping it");
+  assert.doesNotMatch(reworded, UTC_SUFFIX_REPEATED_AT_CALL_SITE);
+});
+
 test("the selector defect is GONE from the route, both halves of it", () => {
   // Half one: the predicate the route calls is the three-term one.
   assert.match(pageCode, PAGE_OI_SELECTOR, "the OI panel must select by identity, not by metric alone");
