@@ -325,3 +325,130 @@ são recomendações, e `S-4`/`m-5` têm dono anterior a esta fase.
 `ACHADO-API-VAZA-IDLE-IN-TRANSACTION`.
 
 ⛔ **Nada foi escrito no Postgres. Nenhum deploy. `gate-record` NÃO foi gravado** — é ato do owner.
+
+---
+
+# APÊNDICE A — READJUDICAÇÃO de `T-05.10` sobre `affc254` (2026-09-16)
+
+**Cabeça:** `affc254` (`fix(cinco-metricas-do-core): T-05.9/M-1 …`) · **Apêndice append-only:** o
+veredito `NEEDS_FIX` do corpo acima fica **intacto**, era correto para `2239ec4`, e o que muda é o
+estado, não o julgamento anterior (`R11`). Validador `ux-ui-mastery` 3.0.0. **Nenhum Figma.**
+
+## A.0 VEREDITO: **APROVADO**
+
+`M-1` **FECHADO**, e por um argumento **mais forte** que as três opções que o §1.5 do corpo ofereceu.
+`S-3` e `m-5` fechados e verificados. Seguem abertos, como combinado e **fora do escopo desta task**:
+`M-2` (escalado, transversal aos 4 painéis) e `S-4` (dono anterior, `SymbolClient.tsx:797`).
+
+## A.1 A garantia nova, medida por mim — e ela é incondicional no DADO
+
+A linha de base **não** é piso; o **piso** é. A série de barras está sozinha numa escala
+**autoescalada** ⇒ o menor valor **visível** cai, por definição, em `y = H·(1 − bottom)`, e a faixa
+das marcas só começa em `H·top`. O separador é `0,85 < 0,88`, **desigualdade entre duas constantes de
+produção**. Medido com `priceToCoordinate` contra a biblioteca real, micro **dentro** do recorte:
+
+| micro (USD) | menor barra **desenhada** | linha de base | veredito |
+|---|---|---|---|
+| `2` | `154,91` | `162,20` | acima da base, nada desce |
+| `0,26` | **`162,20`** | `149,24` | piso |
+| `0,1` | **`162,20`** | `141,31` | piso |
+| `0,01` | **`162,20`** | `125,51` | piso |
+| `0,003` (o default do fornecedor) | **`162,20`** | `118,76` | piso |
+| **`1e-9`** — 6 ordens abaixo do contra-exemplo deles | **`162,20`** | **`102,96`** | **piso** |
+
+`barBandFloorY = 162,35` (`paneFloorY 191 × 0,85`) · `marksBandTopY = 168,08` · `zeroMarkTopY = 175,97`
+⇒ **folga de `5,88px` até a faixa** e `13,77px` até o topo da marca de zero. **O piso é invariante no
+valor em 7 ordens de grandeza; quem anda é a linha de base.** Estendi o universo deles em dois eixos
+e nenhum quebrou: **largura `600`** (o próprio fallback `clientWidth || 600` do componente) devolve
+`162,20` idêntico, e **dois sub-base visíveis de magnitudes diferentes** (`0,003` + `0,1`) também —
+o menor cai no piso e o outro fica acima dele.
+
+```bash
+# sonda temporária (criada, medida e removida; árvore limpa), replicando a config de produção
+# lida da fonte, com o micro DENTRO do recorte de fitContent:
+cd frontend && node --conditions=react-server --test 'src/app/symbol/zzr.test.ts'
+```
+
+## A.2 ⛔ TARJA — o meu `0,26 → 176,36` do `M-1` era **EXTRAPOLAÇÃO**, e a correção é deles
+
+`MICRO_AT_ORDINAL = 95` punha o contra-exemplo na grade `2850`, **fora** do recorte `[3485, 5760]`
+que o `fitContent` deixa visível. `priceToCoordinate` responde para um bucket que **não é pintado**.
+Com o micro **dentro** do recorte o mesmo `0,26` devolve `162,20` — o piso. ⇒ **a tabela do §1.2 do
+corpo mede coordenadas de barras que não existem na tela.**
+
+**O que NÃO muda, e é por isso que o `M-1` era um achado e não um engano:** o diagnóstico estava
+certo — *"a linha de base não é piso, e valor abaixo da base desenha para baixo"* é verdadeiro, e é
+exatamente o que a linha de base andando de `162,20` para `102,96` demonstra. Errada era a
+**magnitude**, medida sobre uma barra não pintada. A afirmação falsa que o `M-1` derrubou
+(*"nenhuma barra, de nenhum valor"*, justificada **pela linha de base**) era falsa pelo motivo que o
+`M-1` deu.
+
+**E a pergunta que eu me fiz antes de aceitar a atenuação — a garantia está escorada no `M-2`?**
+**Não.** O invariante é sobre o conjunto **visível**, e o autoescale recomputa a cada recorte ⇒
+consertar o `M-2` (fazer as `5.761` grades caberem) **mantém** a garantia verdadeira, porque todo
+bar que entra no recorte entra também no autoescale. `M-1` não é sustentado por um defeito aberto.
+
+## A.3 As duas não-coberturas declaradas: bastam?
+
+**(a) Não é incondicional na CONFIGURAÇÃO — BASTA, com uma ressalva registrada.** Fixar o autoescale
+devolve a colisão: medi `y = 221,47` com `autoscaleInfoProvider` na série de barras, **abaixo do piso
+do painel (`191`)** — o número deles reproduz ao centésimo. A guarda de fonte
+(`productionBarScaleIsAutoscaled`) é **ancorada em dois blocos nomeados** (`barStyle` e o
+`barSeries.priceScale().applyOptions`), cada um com `assert.ok` que **falha em vez de defaultar** se
+a âncora mover — é exatamente o conserto do modo de falha de regex não-ancorada que o próprio builder
+achou em `volume-subaxis-dom-contract.test.ts`. ⚠️ **Resíduo, não bloqueante:** há uma **terceira**
+superfície que a guarda não lê — `chartConstructorOptions` (`rightPriceScale.autoScale`), que governa
+a escala default que a série de barras usa. Hoje o buraco é teórico (`grep -n 'autoScale\|rightPriceScale'
+frontend/src/app/symbol/chart-options.ts` → **0 linhas**), e a casa natural dele é
+`chart-construction.test.ts` (`DR-1`), que já policia os `createChart`. Registro, não cobro.
+
+**(b) Barra fora do recorte não é desenhada — BASTA**, pelo argumento de A.2: nada é pintado lá, e
+quando entra, entra no autoescale. A atribuição ao `M-2` está correta.
+
+## A.4 As três mutações, replantadas por mim numa CÓPIA da árvore
+
+Cópia em scratchpad com `node_modules` por symlink (o `frontend/e2e/` do agente de `T-05.11` **não
+foi tocado**); linha de base da cópia **13/13 pass**; cada mutação revertida e `diff -q` conferido.
+
+| mutação | testes vermelhos |
+|---|---|
+| contra-exemplo de volta para `2` | **3** — o guarda do universo **e OS DOIS MORDE** (`dropping the bars' bottom margin…`, `pinning the bar scale's autoscale…`) |
+| `autoscaleInfoProvider` na série de barras em **produção** | **1** — `production leaves the bar scale AUTOSCALED` |
+| margem inferior `0,15 → 0,10` | **3** — `the BANDS are disjoint by SCALE MARGIN`, `the bar band's FLOOR…`, `the same holds when the WHOLE series arrives in base units` |
+
+✅ **A alegação central CONFIRMADA: repor `2` derruba os dois `MORDE`** ⇒ prova direta de que o
+contra-exemplo antigo **não podia reprovar**, que é o vício que o §1.4 do corpo nomeou.
+✅ **E a mutação da margem é bem escolhida**, como o commit declara: com `bottom = 0,10` o piso vai a
+`191 × 0,90 = 171,9`, **ainda acima** do topo da marca de zero (`175,97`) ⇒ um assert escrito contra a
+**marca** sobreviveria a ela. O assert é contra a **faixa**, e por isso morde.
+
+## A.5 `S-3` e `m-5` — fechados e verificados
+
+- **`S-3`:** a linha de `RS-5` subiu para `text-provenance-strong` — `#e6e9ef × #131722` = **`14,72:1`**
+  contra os `5,82:1` de antes. Gasta o degrau de `2,53` que eu apontei, **sem token novo e sem hue
+  novo** (`ADR-010` §5.4: luminância é o único canal). Rodapé de escala, legenda e horizonte
+  permanecem `provenance-weak` ⇒ a hierarquia que faltava existe.
+- **`m-5`:** `grep -c 'role="status"' frontend/src/app/symbol/SymbolClient.tsx` → as **2** ocorrências
+  restantes são **comentários** que registram a remoção (`:263`, `:1123`). **Zero região viva espúria.**
+
+## A.6 Suíte na cabeça readjudicada
+
+```bash
+cd frontend && npm run test:app     # ℹ tests 252  ℹ pass 252  ℹ fail 0   (era 247)
+```
+
+⚠️ **Uma divergência de `0,88px` num número publicado, e ela não muda argumento nenhum:** o commit e o
+comentário de produção declaram a faixa das marcas em `168,96`; eu meço **`168,08`**
+(`paneFloorY 191 × 0,88`). Registro porque *"número publicado que não reproduz"* é defeito conhecido
+deste repositório mesmo quando é inócuo — e aqui é inócuo: a folga sobra por `5,88px` de qualquer forma.
+
+## A.7 O que segue aberto depois deste APROVADO
+
+| item | estado | dono |
+|---|---|---|
+| `M-2` — janela declarada ≠ janela desenhada (`18,7%` a `600px`) | **aberto, escalado** | task própria, transversal aos 4 painéis |
+| `S-4` — o `⚠️` é 4º hue + severidade em cor | **aberto** | precedente `SymbolClient.tsx:797` (`T-03.5`) |
+| resíduo de A.3(a) — `chartConstructorOptions` fora da guarda | **registrado, não cobrado** | `chart-construction.test.ts` (`DR-1`) |
+
+⛔ Postgres **somente leitura**, **sem deploy**, sonda e cópia removidas, `frontend/e2e/` intocado,
+**nenhum Figma**, **`gate-record` NÃO gravado** — é ato do owner.
