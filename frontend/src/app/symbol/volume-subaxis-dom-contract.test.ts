@@ -166,7 +166,14 @@ test("MORDE: each of the 3 DOM-contract mutations that used to pass green is now
 // called in the component, and the scan does not see a pixel.
 
 const VOLUME_SETDATA = /volumeSeries\.setData\(positiveValueSeriesLossless\(volume\.slots\) as never\);/;
-const LOG_MODE = /mode: PriceScaleMode\.Logarithmic,/;
+/** ⛔ ANCHORED TO `volumeSeries`, AND IT WAS NOT UNTIL `T-05.9` — the bare
+ * `/mode: PriceScaleMode\.Logarithmic,/` was correct while this file was the only logarithmic scale
+ * in `SymbolClient.tsx`, and went VACUOUS the moment a second one arrived (the liquidation pane):
+ * the mutation below deletes the FIRST occurrence, the second one kept the assert green, and the
+ * `MORDE` test caught exactly that. The guard now names the series whose scale it is about, which
+ * is what makes it survive a third chart too. */
+const LOG_MODE =
+  /volumeSeries\.priceScale\(\)\.applyOptions\(\{\s*scaleMargins: VOLUME_SCALE_MARGINS,\s*mode: PriceScaleMode\.Logarithmic,/;
 const ABSENCE_SETDATA = /absenceSeries\.setData\(absenceMarkSeries\(volume\.slots, ABSENCE_MARK_PX\) as never\);/;
 const ZERO_SETDATA = /zeroSeries\.setData\(zeroMarkSeries\(volume\.slots, ZERO_MARK_PX\) as never\);/;
 const ABSENCE_ROLE = /const ABSENCE_MARK_COLOR_ROLE = "(\w+)" as const;/;
@@ -214,7 +221,11 @@ test("MORDE: each of the 4 regressions of the two BLOCKERs is caught by an asser
       name: "back to lineSeriesLossless (zero becomes a zero-height bar)",
       mutate: (s) => s.replace(VOLUME_SETDATA, "volumeSeries.setData(lineSeriesLossless(volume.slots) as never);"),
     },
-    { name: "scale back to linear", mutate: (s) => s.replace(LOG_MODE, "") },
+    {
+      name: "scale back to linear",
+      mutate: (s) =>
+        s.replace(LOG_MODE, "volumeSeries.priceScale().applyOptions({\n      scaleMargins: VOLUME_SCALE_MARGINS,"),
+    },
     { name: "the absence mark disappears", mutate: (s) => s.replace(ABSENCE_SETDATA, "") },
     {
       name: "both marks start using the SAME ink",

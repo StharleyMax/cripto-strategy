@@ -39,14 +39,14 @@
  */
 
 import { ONE_MINUTE_MS, resolveFlowReading, type FlowReading, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
-import type { FreshnessVerdict } from "./panel-status.ts";
+import type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance } from "./panel-status.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 
 // Re-exported so the server-side callers of `resolveFreshnessVerdict` get the function and its
 // return type from ONE import; the type itself is DECLARED in `panel-status.ts`, which is the
 // only module both sides of the RSC boundary may import (see its own docstring for why).
-export type { FreshnessVerdict };
+export type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance };
 
 // Re-exported, not re-implemented: `computeSeriesKeyId` moved to its own module so a Playwright
 // spec can import it without evaluating the `charts` barrel (and, through it, `jsdom`). Every
@@ -171,16 +171,25 @@ export type ScalarSlotShape = S2Panels["oi"]["slots"][number];
 export class InvalidSeriesValueError extends Error {}
 
 /**
- * Maps `/series-history` rows for `klines_volume` into the `ScalarSlot[]` the lossless
- * lightweight adapter takes (`lineSeriesLossless`) — ONE SLOT PER ROW, in wire order.
+ * Maps `/series-history` rows for a NON-NEGATIVE `FLOW` series into the `ScalarSlot[]` the
+ * lossless lightweight adapter takes (`lineSeriesLossless`/`positiveValueSeriesLossless`) — ONE
+ * SLOT PER ROW, in wire order.
  *
  * `RN-1`, the rule this function exists for: a row with `absence !== null` (⇒ `value === null`,
  * `CA-F1-5`) becomes `value: null`, which `lineSeriesLossless` turns into a bare `{time}`
  * `WhitespaceItem` — a real gap on screen. It is NEVER `0`. For a `FLOW` series that is an
  * error of TYPE, not of taste (`series_key.py`: *"LOCF over it is a type error, never UX"*), so
  * there is no rendering option, no toggle and no default that could turn it into a zero bar.
+ *
+ * ⚠️ IT WAS CALLED `volumeSlotsFromHistoryRows` UNTIL `T-05.9`, and the rename is not cosmetic.
+ * `sum_liquidation` needs the SAME mapping — `1m` native, `nature=FLOW`, `reduction=SUM`, a value
+ * that is never negative (`liquidation_catalog.py`) — and the two honest options were "call a
+ * function named `volume…` on liquidation rows" or "write a second copy of the `RN-1` rule". The
+ * first lies at the call site; the second is two implementations of the one rule this route
+ * exists to keep. So the function keeps its single body and takes the name of its CONTRACT:
+ * a summed, non-negative flow quantity, whatever the metric.
  */
-export function volumeSlotsFromHistoryRows(rows: readonly SeriesHistoryRow[]): readonly ScalarSlotShape[] {
+export function nonNegativeFlowSlotsFromHistoryRows(rows: readonly SeriesHistoryRow[]): readonly ScalarSlotShape[] {
   return rows.map((row) => {
     if (row.value === null) {
       return { time: row.event_time, value: null };
@@ -190,11 +199,12 @@ export function volumeSlotsFromHistoryRows(rows: readonly SeriesHistoryRow[]): r
       throw new InvalidSeriesValueError(`value ${JSON.stringify(row.value)} at event_time ${row.event_time} is not a finite number`);
     }
     if (parsed < 0) {
-      // `klines_volume` is `nature=FLOW`, `reduction=SUM`, `denom=base` (`SPEC-007 §4`): a sum
-      // of traded base quantity over a bucket is never negative. Refused rather than drawn —
-      // the same posture `charts/s2-cvd.ts::parseQuantityToScaled` takes for its own
-      // never-negative quantity, and the opposite of a downward bar nobody could explain.
-      throw new InvalidSeriesValueError(`volume ${parsed} at event_time ${row.event_time} is negative — a summed traded quantity never is`);
+      // `klines_volume` is `nature=FLOW`, `reduction=SUM`, `denom=base` and `sum_liquidation` is
+      // `nature=FLOW`, `reduction=SUM`, `denom=quote` (`SPEC-007 §4`): a sum of traded base
+      // quantity — or of liquidated USD notional — over a bucket is never negative. Refused
+      // rather than drawn — the same posture `charts/s2-cvd.ts::parseQuantityToScaled` takes for
+      // its own never-negative quantity, and the opposite of a downward bar nobody could explain.
+      throw new InvalidSeriesValueError(`flow value ${parsed} at event_time ${row.event_time} is negative — a summed traded quantity never is`);
     }
     return { time: row.event_time, value: parsed };
   });
@@ -211,6 +221,28 @@ export function volumeSlotsFromHistoryRows(rows: readonly SeriesHistoryRow[]): r
  */
 export function countPresentSlots(slots: readonly ScalarSlotShape[]): number {
   return slots.filter((slot) => slot.value !== null).length;
+}
+
+/**
+ * How many of the PRESENT slots carry a LEGITIMATE ZERO — an observation whose value is `0`,
+ * which is a completely different fact from an absent slot (`ZL-3` of
+ * `domain/liquidation_zero_legitimacy.py`: *"a LEGITIMATE zero … is a real observation and must be
+ * represented as one — a `Decimal(0)` value, `absence=None` — distinguishable from `NO_SOURCE` by
+ * TYPE, not by convention"*).
+ *
+ * ⛔ THIS IS NOT A DECORATIVE SECOND NUMBER, AND THE MEASUREMENT IS WHY. Over the 4-day window the
+ * route actually asks for, the long cohort answers `191` present slots of `5.761` — and `62` of
+ * those `191` are legitimate zeros `[MEDIDO 2026-09-16, `GET /api/v1/series-history`,
+ * `series_key_id=23e4332…`, `bar_policy=final_only`, n=5.761 grades]`. A pane publishing only
+ * "191 observações" would let a reader take all `191` for liquidation events, overstating by
+ * `1,5x`. The two counts side by side are the same discipline `T-03.5` applied to OI's native bars
+ * versus its wire staircase: a falsifier needs both figures.
+ *
+ * `-0` counts as zero (`-0 === 0`), the same call `zeroMarkSeries` makes, and for the same reason:
+ * a provider that reported `-0` reported zero.
+ */
+export function countZeroSlots(slots: readonly ScalarSlotShape[]): number {
+  return slots.filter((slot) => slot.value === 0).length;
 }
 
 /**
@@ -231,18 +263,20 @@ export function firstPresentSlotMs(slots: readonly ScalarSlotShape[]): number | 
 }
 
 /**
- * The volume reading at one instant, `FLOW` semantics (`resolveFlowReading`, reused from
- * `charts` — no second absence policy is written here).
+ * The reading of a `FLOW` series at one instant, `FLOW` semantics (`resolveFlowReading`, reused
+ * from `charts` — no second absence policy is written here). Used by the volume sub-axis and, since
+ * `T-05.9`, by both liquidation cohorts; renamed off `resolveVolumeReading` for the reason
+ * `nonNegativeFlowSlotsFromHistoryRows` states in full.
  *
  * The GUARD this function exists for: `resolveFlowReading` throws `RangeError` on an empty slot
  * array (*"an empty grid has no extent to query"*), and an empty array is the NORMAL state of
- * this sub-axis whenever the panel degraded — catalog without the series, transport down, or
+ * such a surface whenever the panel degraded — catalog without the series, transport down, or
  * simply nothing ingested yet. A throw there would crash the whole `/symbol` route over an
  * absence the page is designed to render, which is the failure class fase `04` of
  * `pagina-de-grafico-s2` already paid for once. Absence answers `absent`; it never throws and
  * it never becomes `0`.
  */
-export function resolveVolumeReading(slots: readonly ScalarSlotShape[], instantMs: number): FlowReading {
+export function resolveFlowReadingOrAbsent(slots: readonly ScalarSlotShape[], instantMs: number): FlowReading {
   if (slots.length === 0) {
     return { kind: "absent", value: null };
   }
@@ -418,6 +452,117 @@ export function matchesBinanceOpenInterest(key: SeriesKey): boolean {
     key.provider === OPEN_INTEREST_PROVIDER &&
     key.reduction === OPEN_INTEREST_REDUCTION
   );
+}
+
+
+// ── `T-05.9` — WHICH `sum_liquidation` ROWS THE LIQUIDATION PANE READS, AND WHY THERE ARE TWO ─
+//
+// ⛔ TWO SERIES, NEVER ONE. `cohort` is a term of IDENTITY (`SPEC-001` §2.1), and
+// `domain/liquidation_catalog.py` builds one catalog row per leg on purpose, with the argument
+// written out there: *"a long liquidation is forced selling and a short liquidation is forced
+// buying. Their sum is a 'liquidation volume' that moves identically whether the market just
+// flushed longs, flushed shorts, or flushed both — which is precisely the discrimination the
+// metric exists to provide (`RF-2`)."* So this route resolves TWO entries, fetches TWO
+// `series_key_id`s and draws TWO surfaces; nothing in `web` adds them.
+//
+// THE SELECTOR TAKES THREE TERMS, the same discipline `matchesBinanceOpenInterest` and
+// `matchesKlineTakerBuyCvd` above earned the hard way — and here the third is not redundant, it
+// IS the discriminator:
+//
+//   `metric`    narrows to the liquidation rows. ALONE IT MATCHES 2 per instrument (measured).
+//   `provider`  `coinalyze` is the ONLY source of this metric today (`ADR-036/D4` keeps
+//               `!forceOrder@arr` off the critical path, and it has written nothing). Named
+//               anyway: the day a second provider publishes the metric, this pane must go to a
+//               NAMED ambiguity instead of to whichever row the catalog lists first.
+//   `cohort`    the leg. WITHOUT IT THE SELECTOR IS AMBIGUOUS BY CONSTRUCTION — and that is the
+//               good outcome, not the bad one: `resolveCatalogEntry` refuses two matches, so the
+//               failure mode of forgetting this term is an empty pane that says why, never a
+//               pane that silently draws longs under a name a reader takes for "the liquidations".
+//
+// `[MEDIDO 2026-09-16: GET /api/v1/series-catalog -> n_entries=60, 8 linhas com
+//  metric="sum_liquidation" (4 instrumentos x 2 coortes), 2 delas para BTCUSDT — uma por coorte,
+//  cada seletor de 3 termos casando EXATAMENTE 1]`.
+
+/** `metric` of both liquidation rows (`liquidation_catalog.py::coinalyze_liquidation_key`). */
+export const LIQUIDATION_METRIC = "sum_liquidation";
+/** The only publisher of this metric today — and a THIRD PARTY, which is what `RS-5` is about. */
+export const LIQUIDATION_PROVIDER = "coinalyze";
+
+/** The two legs, transcribed from `liquidation_catalog.py::COHORTS`. Closed on purpose there —
+ * *"a third cohort would be a third series with its own requirement, not a value someone may pass
+ * in"* — and closed here for the same reason: the tuple is the TYPE, so a pane cannot ask for a
+ * leg the sources do not publish. */
+export const LIQUIDATION_COHORTS = ["long", "short"] as const;
+export type LiquidationCohort = (typeof LIQUIDATION_COHORTS)[number];
+
+/**
+ * Is this the Coinalyze `sum_liquidation` row of ONE cohort — one of the two `T-05.5`'s collector
+ * writes?
+ *
+ * Exported from `view-model.ts` rather than written inline in `page.tsx` for the same reason the
+ * two selectors above are: `page.tsx` cannot be imported by a `node --test` suite, and a selector
+ * that can only be checked by reading it is exactly the class of defect it exists to avoid
+ * (`liquidation-series-selector.test.ts` runs this one against a fixture carrying both legs plus
+ * the sibling metrics).
+ */
+export function matchesLiquidationCohort(key: SeriesKey, cohort: LiquidationCohort): boolean {
+  return (
+    key.metric === LIQUIDATION_METRIC && key.provider === LIQUIDATION_PROVIDER && key.cohort === cohort
+  );
+}
+
+
+// ── `T-05.9`/`RS-5` — WHOSE MEASUREMENT IS ON SCREEN, DECIDED BY RULE AND NOT BY MEMORY ───────
+//
+// `SPEC-007` §7, literal: *"toda série de terceiro ou de reconstrução que chega à tela é rotulada
+// como tal, com o `published_error` … O operador não pode ler dado de terceiro sem saber que é de
+// terceiro."* `sum_liquidation` is, after `GA-7`, the ONLY third-party series of this feature.
+//
+// ⛔ THE RULE IS "WHO PUBLISHED IT", NOT "IS THE PROVIDER STRING COINALYZE". A hardcoded
+// `provider === "coinalyze"` test would satisfy `RS-5` for today's catalog and silently fail for
+// the next third party, which is the exact shape of the defect `RS-5` exists to prevent. So the
+// rule is stated from the other side: a series is ORIGIN only when the venue's OWN publisher
+// published it AND it is not a reconstruction. Everything else is DECLARED.
+
+/** Who the ORIGIN publisher of each venue is — the exchange that ran the matching engine.
+ *
+ * ⛔ A VENUE MISSING FROM THIS MAP RESOLVES TO `declared`, NEVER TO `origin`, and the asymmetry is
+ * the whole design: an unknown venue is a venue whose origin this repository cannot prove, and
+ * `RS-5`'s failure mode is a third party read as first-party data. Erring toward the label costs
+ * one sentence on screen; erring away from it costs the operator's trust in a number. */
+export const ORIGIN_PROVIDER_BY_VENUE: ReadonlyMap<string, string> = new Map([["usdm_futures", "binance"]]);
+
+/** The catalog fields `resolveSeriesProvenance` reads — declared structurally so a test can build
+ * one without importing the whole `SeriesCatalogEntry` and so this function cannot quietly start
+ * depending on a field nobody passed it. */
+export interface ProvenanceSourceEntry {
+  readonly key: Pick<SeriesKey, "provider" | "venue">;
+  readonly reconstructedFrom: string | null;
+  readonly publishedError: PublishedErrorFact | null;
+}
+
+/**
+ * `RS-5` as a FUNCTION over the catalog row, so the pane renders the label by TYPE instead of by
+ * a developer remembering the rule — see `panel-status.ts::SeriesProvenance` for why the three
+ * kinds are what makes "third party without a label" inexpressible.
+ *
+ * `undefined` (no entry resolved) answers `unresolved`, never `origin`: "we could not identify the
+ * series" and "this is first-party data" are opposite claims and only one of them is a reassurance.
+ */
+export function resolveSeriesProvenance(entry: ProvenanceSourceEntry | undefined): SeriesProvenance {
+  if (entry === undefined) {
+    return { kind: "unresolved" };
+  }
+  const origin = ORIGIN_PROVIDER_BY_VENUE.get(entry.key.venue);
+  if (origin === entry.key.provider && entry.reconstructedFrom === null) {
+    return { kind: "origin", provider: entry.key.provider };
+  }
+  return {
+    kind: "declared",
+    provider: entry.key.provider,
+    reconstructedFrom: entry.reconstructedFrom,
+    publishedError: entry.publishedError,
+  };
 }
 
 /**

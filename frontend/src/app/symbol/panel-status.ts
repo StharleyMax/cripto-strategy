@@ -90,8 +90,58 @@ export type FreshnessVerdict =
       readonly ceilingMs: number | null;
     };
 
+/** `(median, p99, n)` a published fidelity carries — mirrors `series_catalog.py::PublishedError`
+ * and `features/s3-inspector/series-catalog.ts::PublishedError`.
+ *
+ * ⛔ RE-DECLARED HERE RATHER THAN IMPORTED, and for the same structural reason `FreshnessVerdict`
+ * lives in this module: `SymbolClient.tsx` is `"use client"` and this shape has to cross the RSC
+ * boundary inside `SeriesProvenance`. `series-catalog.ts` itself is plain data and would be safe,
+ * but it is reached, in this route, only through modules that are not — and a type-only import is
+ * not a defence `web-fullstack.browser-imports-server` (a BLOQUEIO) can be asked to understand.
+ * `series-catalog.test.ts`'s own transcription discipline applies: the shape is three numbers and
+ * `liquidation-series-selector.test.ts` compares the two declarations. */
+export interface PublishedErrorFact {
+  readonly medianBp: number;
+  readonly p99Bp: number;
+  readonly n: number;
+}
+
 /**
- * `T-01.7` — the four statuses `/symbol` computes today, named once so `page.tsx` and
+ * `T-05.9`/`RS-5` — WHOSE MEASUREMENT THE OPERATOR IS LOOKING AT, as a TYPE rather than as a
+ * sentence somebody remembered to write.
+ *
+ * `SPEC-007` §7, literal: *"toda série de terceiro ou de reconstrução que chega à tela é rotulada
+ * como tal, com o `published_error` … O operador não pode ler dado de terceiro sem saber que é de
+ * terceiro."*
+ *
+ * ⛔ THE THREE KINDS ARE NOT THREE LABELS — they are what makes the rule impossible to forget.
+ * A pane renders the label exactly when `kind === "declared"`, so "third party without a label" is
+ * not a state this component tree can express; the alternative (a boolean prop the renderer may
+ * simply not read) is how `RS-5` would have been satisfied on paper and violated on screen.
+ *
+ *   - `unresolved` — no catalog entry resolved, so there is no provenance to declare. NEVER
+ *     collapsed into `origin`: "we could not identify the series" and "this is first-party data"
+ *     are opposite claims, and only one of them is a reassurance.
+ *   - `origin`     — the venue's OWN publisher, and not a reconstruction. No label owed.
+ *   - `declared`   — a THIRD PARTY (`provider` is not the venue's origin) and/or a RECONSTRUCTION
+ *     (`reconstructedFrom !== null`). The label is owed, and `publishedError` travels with it —
+ *     including when it is `null`, which for M4 is a MEASURED REFUSAL and not an oversight
+ *     (`liquidation_catalog.py`: Binance has no REST liquidation endpoint, so there is no oracle
+ *     to measure a fidelity against, and `ADR-036/D6` escalates the question to the
+ *     `quant-architect`). An absent fidelity said out loud beats a fidelity nobody measured.
+ */
+export type SeriesProvenance =
+  | { readonly kind: "unresolved" }
+  | { readonly kind: "origin"; readonly provider: string }
+  | {
+      readonly kind: "declared";
+      readonly provider: string;
+      readonly reconstructedFrom: string | null;
+      readonly publishedError: PublishedErrorFact | null;
+    };
+
+/**
+ * `T-01.7` — the statuses `/symbol` computes today, named once so `page.tsx` and
  * `SymbolClient.tsx` cannot drift on the set.
  *
  * `volume` is a FOURTH status for a THIRD chart surface, and that is not a contradiction: it is
@@ -101,10 +151,19 @@ export type FreshnessVerdict =
  * tell which of the two is missing. `PanelStatus`'s existing five reasons cover it unchanged;
  * `not_in_catalog` is the live one until `T-01.6`'s catalog entry reaches the environment being
  * looked at.
+ *
+ * ⛔ `T-05.9` ADDS TWO MORE, ONE PER LIQUIDATION COHORT, AND THEY ARE DELIBERATELY NOT ONE.
+ * `sum_liquidation` is TWO series (`liquidation_catalog.py`: *"a long liquidation is forced
+ * selling and a short liquidation is forced buying … their sum moves identically whether the
+ * market just flushed longs, flushed shorts, or flushed both"*), fetched under two different
+ * `series_key_id`s, so they fail independently — and a single shared status would let a live
+ * cohort vouch for a dead one.
  */
 export interface SymbolPanelStatuses {
   readonly price: PanelStatus;
   readonly oi: PanelStatus;
   readonly cvd: PanelStatus;
   readonly volume: PanelStatus;
+  readonly liquidationLong: PanelStatus;
+  readonly liquidationShort: PanelStatus;
 }

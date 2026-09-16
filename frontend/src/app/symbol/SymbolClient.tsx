@@ -83,7 +83,7 @@ import {
 } from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
-import type { FreshnessVerdict, PanelStatus, SymbolPanelStatuses } from "./panel-status.ts";
+import type { FreshnessVerdict, PanelStatus, SeriesProvenance, SymbolPanelStatuses } from "./panel-status.ts";
 
 /** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
  * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
@@ -176,11 +176,64 @@ export interface OiPaneData {
   readonly freshness: FreshnessVerdict;
 }
 
+/**
+ * `T-05.9` — ONE COHORT of `sum_liquidation` (M4), computed server-side (`page.tsx` +
+ * `view-model.ts`) and handed over as plain, JSON-serializable data, same RSC-boundary discipline
+ * as `volume`/`cvd`/`oi`. This component draws it; it decides nothing about it.
+ *
+ * ⛔ TWO OF THESE, NEVER ONE SUMMED — `liquidation_catalog.py`'s own argument, quoted in
+ * `view-model.ts`'s selector section: long liquidation is forced SELLING and short liquidation is
+ * forced BUYING, and their sum moves identically whether the market flushed longs, flushed shorts
+ * or flushed both, erasing the discrimination the metric exists to provide (`RF-2`).
+ */
+export interface LiquidationCohortData {
+  readonly slots: readonly VolumeSlot[];
+  /** Slots carrying a real OBSERVATION — a value, possibly the legitimate zero of `ZL-3`. The
+   * number `DoD-3` counts against `N >= 30`. `1m` native, so no `RN-S1` `/5` divisor. */
+  readonly presentPoints: number;
+  /** How many of those observations are a LEGITIMATE ZERO. Published beside `presentPoints` and
+   * never folded into it: over the route's own 4-day window the long cohort answers `191` present
+   * of `5.761`, and `62` of the `191` are zeros `[MEDIDO 2026-09-16]` — a pane quoting only the
+   * first number lets a reader take all `191` for liquidation events, overstating by `1,5x`. Same
+   * "a falsifier needs both figures" discipline `OiPaneData.wirePoints` already applies. */
+  readonly zeroPoints: number;
+  /** The FIRST grid instant carrying an observation, or `null` when none does — the left end of
+   * the readable horizon, DECLARED rather than left to look like a market with no liquidations.
+   * ⛔ The span is NOT shrunk to fit the data; same rule as `VolumeSubAxisData.firstPresentMs`. */
+  readonly firstPresentMs: number | null;
+  readonly reading: FlowReading;
+}
+
+/**
+ * `T-05.9` — the liquidation pane as a whole: both legs plus the ONE fact that belongs to the
+ * series rather than to a cohort, `RS-5`'s provenance.
+ *
+ * `provenance` is resolved from the LONG entry and applies to both: the two rows differ only in
+ * `cohort`, so `provider`/`venue`/`reconstructed_from`/`published_error` are identical by
+ * construction (`liquidation_catalog.py` builds both from one comprehension over `COHORTS`).
+ * `page.tsx` states that out loud at the call site rather than leaving it implied here.
+ */
+export interface LiquidationPaneData {
+  readonly long: LiquidationCohortData;
+  readonly short: LiquidationCohortData;
+  readonly provenance: SeriesProvenance;
+  /** The `unit` term of the series' own identity (`USD` for M4), read off the resolved catalog
+   * entry and printed beside the numeral — `null` when no entry resolved, in which case there is
+   * no number on screen to give a unit to either.
+   *
+   * Carried instead of spelled as a literal here because of `W-1` of `gates/design-01.md`: the
+   * volume sub-axis shipped a numeral with no unit and the ambiguity was five orders of magnitude.
+   * A literal `"USD"` in this file would say the same thing while being free to drift away from
+   * the identity the backend actually published. */
+  readonly unit: string | null;
+}
+
 export interface SymbolClientProps {
   readonly panels: S2Panels;
   readonly volume: VolumeSubAxisData;
   readonly cvd: CvdPaneData;
   readonly oi: OiPaneData;
+  readonly liquidation: LiquidationPaneData;
   readonly panelStatus: SymbolPanelStatuses;
   /** `knowledge_time_ms` of the request this render was built from (`request-window.ts`). Shown
    * nowhere; carried to the DOM as a `data-` attribute so the screen can be AUDITED against the
@@ -396,6 +449,74 @@ const ZERO_MARK_COLOR_ROLE = "provenanceStrong" as const;
 const CVD_CUMULATIVE_PRICE_SCALE_ID = "cvd_cumulative";
 const CVD_DELTA_SCALE_MARGINS = { top: 0.05, bottom: 0.55 } as const;
 const CVD_CUMULATIVE_SCALE_MARGINS = { top: 0.55, bottom: 0.05 } as const;
+
+// ── `T-05.9` — O PAINEL DE LIQUIDAÇÕES (M4), E A SÉRIE MAIS ESPARSA DA TELA ───────────────────
+//
+// ⛔ A ESTABILIDADE DOS SELETORES, primeiro: `e2e/13-liquidacoes-dado-real.spec.ts` (`T-05.11`)
+// encontra o painel por ESTAS strings e lê `data-liquidation-present-points` de cada coorte. São
+// CONTRATO, não estilo — o `design_gate` (`T-05.10`) pode mudar altura, cor, palavra e ordem sem
+// tocar em nenhuma delas, que é o que torna as duas tasks paralelizáveis. `section[aria-label=
+// "Liquidações"]` NÃO é o gancho: rótulo é microcopy pt-BR que o `ui-designer` pode reescrever, e
+// prender um assert de DADO ao TEXTO DA UI é como uma mudança de forma quebra um teste de dado.
+const LIQUIDATION_PANE_TESTID = "liquidation-pane";
+/** Um testid por COORTE, derivado do nome da coorte — as duas legs são duas séries e o e2e tem de
+ * poder afirmar sobre cada uma. Derivar em vez de enumerar mantém o par colado ao `cohort` que o
+ * catálogo publica (`liquidation_catalog.py::COHORTS`), então uma terceira leg não poderia nascer
+ * sem gancho. */
+function liquidationCohortTestId(cohort: string): string {
+  return `liquidation-cohort-${cohort}`;
+}
+
+// ⛔ AS TRÊS ESCALAS DESTE PAINEL, E A SEPARAÇÃO É GEOMÉTRICA — NÃO É CUIDADO, É IMPOSSIBILIDADE.
+//
+// A lição da fase `01` é literal (`gates/design-01.md` §A3, `BLOCKER-2`): a distinção entre "não
+// sabemos" e "foi zero" tem de viajar em SÉRIES SEPARADAS, nunca num `if` de cor — *"duas séries
+// fazem a colisão deixar de ser expressável"*. Aqui a forma é reusada E ENDURECIDA, porque nesta
+// série a colisão não é estrutural-mas-adormecida como era no volume (`zeros_exatos = 0` lá): ela
+// está VIVA HOJE. Na janela de 4 dias que a rota pede, a coorte `long` responde `191` observações
+// em `5.761` grades, e `62` delas são ZERO LEGÍTIMO; a `short`, `50` zeros em `76` observações em
+// 24 h `[MEDIDO 2026-09-16, GET /api/v1/series-history, bar_policy=final_only]`. Zero legítimo é
+// um fato de tipo aqui: `ZL-3` de `domain/liquidation_zero_legitimacy.py`.
+//
+// O QUE A FASE `01` DEIXOU EM ABERTO E ESTE PAINEL FECHA: lá a ordenação ausência < zero < menor
+// barra foi MEDIDA sobre um universo sintético — verdadeira para aquele dado, não garantida para
+// todo dado. Uma liquidação de 2 USD desenharia, numa escala log de base `1`, uma barra mais baixa
+// que a marca de zero, e voltaria a colidir. Aqui as duas faixas são DISJUNTAS por margem de
+// escala: as marcas vivem nos 12% de baixo do painel e a linha de base das barras começa aos 15%.
+// Nenhuma barra, de nenhum valor, alcança a faixa das marcas — a colisão deixa de depender do dado.
+const LIQUIDATION_BAR_SCALE_MARGINS = { top: 0.05, bottom: 0.15 } as const;
+const LIQUIDATION_MARKS_PRICE_SCALE_ID = "liquidation_marks";
+const LIQUIDATION_MARKS_SCALE_MARGINS = { top: 0.88, bottom: 0 } as const;
+const LIQUIDATION_MARKS_BAND_PX = CHART_HEIGHT_PX * (1 - LIQUIDATION_MARKS_SCALE_MARGINS.top);
+
+// ⛔ ESCALA `log10`, PELO MESMO ARGUMENTO ARITMÉTICO DO `BLOCKER-1` DA FASE `01` — e aqui ele é
+// MAIS FORTE, não menos: o volume de 1 min tinha `max/p50 = 60,8x` e já punha 67,9% das barras
+// abaixo de 1 px; a liquidação tem `max/p50 = 443,8x` (`min 75,62 · p50 6.489,82 · max
+// 2.880.132,45`) `[MEDIDO 2026-09-16, n=191 grades presentes em 4 dias de dado real]`. Numa escala
+// linear ancorada no máximo, a barra MEDIANA desta série ficaria abaixo de meio pixel.
+// `PriceScaleMode.Logarithmic` move a GEOMETRIA e deixa o número intacto (`ADR-003` FR-2 aplicada a
+// uma escala); transformar o DADO poria `log10(v)` dentro da série e de lá sairia toda leitura que
+// a biblioteca faz dela.
+//
+// Base `1` pelo mesmo motivo do sub-eixo de volume: âncora ABSOLUTA na unidade da série (USD), de
+// modo que a mesma altura significa o mesmo valor em qualquer janela.
+const LIQUIDATION_LOG_BASE = 1;
+
+// As duas marcas da faixa de baixo, em "pixels nominais da faixa". A razão 3:1 entre elas é a mesma
+// ordem de grandeza que a fase `01` mediu como suficiente para separar as duas afirmações; o que
+// prova a separação em pixels REAIS, contra a biblioteca, é `liquidation-geometry.test.ts`.
+const LIQUIDATION_ABSENCE_MARK_PX = 6;
+const LIQUIDATION_ZERO_MARK_PX = 18;
+// ⛔ `ADR-010` GOVERNA A TINTA, e a atribuição aqui segue a SEMÂNTICA da rampa de procedência
+// (`D-4`: luminância, hue zero), não o gosto: ausência é o que NÃO se sabe ⇒ tinta FRACA; zero
+// legítimo e barra presente são OBSERVAÇÕES ⇒ tinta FORTE, e o que as separa é a altura, que é
+// justamente a grandeza que difere entre elas. Nem verde/vermelho (são `fill` de DIREÇÃO de preço,
+// e `long`/`short` aqui são COORTES de liquidação, não direção de vela — pintar de vermelho a
+// liquidação de comprados convidaria a ler a coorte como direção do mercado) nem violeta
+// (`dataBrokenInk` é INTEGRIDADE do dado, e uma lacuna de grade não é dado quebrado).
+const LIQUIDATION_ABSENCE_MARK_COLOR_ROLE = "provenanceWeak" as const;
+const LIQUIDATION_ZERO_MARK_COLOR_ROLE = "provenanceStrong" as const;
+const LIQUIDATION_BAR_COLOR_ROLE = "provenanceStrong" as const;
 
 /**
  * The sub-axis' DOM anchor. The bars themselves are drawn on the price panel's own `<canvas>`
@@ -923,6 +1044,293 @@ function CvdPane({
   );
 }
 
+/** ⛔ `RS-5`, PAGO AQUI — E O QUE O TORNA DIFÍCIL DE ESQUECER É O TIPO, NÃO ESTA FUNÇÃO.
+ * `SeriesProvenance` (`panel-status.ts`) tem três membros, e só o membro `declared` carrega
+ * `provider`/`reconstructedFrom`/`publishedError`: um painel de série de TERCEIRO sem rótulo não é
+ * um estado que esta árvore de componentes consiga expressar. A alternativa — uma prop booleana que
+ * o renderizador pode simplesmente não ler — é como `RS-5` seria satisfeita no papel e violada na
+ * tela.
+ *
+ * ⚠️ E O `published_error` AUSENTE É DITO, NÃO OMITIDO. Para M4 ele é `null`, e isso é uma RECUSA
+ * MEDIDA, não um esquecimento: `liquidation_catalog.py` escreve o motivo — a Binance não tem
+ * endpoint REST de liquidação e `!forceOrder@arr`, a única comparação possível, está fora do
+ * caminho crítico por `ADR-036/D4` e não escreveu nada (`5` runs, todos `REJECTED`, `n_written=0`
+ * `[MEDIDO 2026-09-12 em md.ingest_run]`). *"Inventar um `(median, p99, n)` aqui publicaria uma
+ * fidelidade que ninguém mediu, o que é pior do que não publicar nenhuma."* Uma tela que some com o
+ * campo faz o operador ler ausência de erro como ausência de dúvida.
+ *
+ * ⛔ PALAVRA E POSIÇÃO SÃO FORMA — do `ui-designer` com o veredito do `ux-ui-mastery` (`T-05.10`,
+ * `CLAUDE.md` §"Design — autonomia delegada, com gate de validação"). O que um builder decide, e
+ * tudo o que está decidido aqui, é que o FATO está na tela e é legível por máquina. */
+function LiquidationProvenance({ provenance }: { readonly provenance: SeriesProvenance }) {
+  if (provenance.kind === "unresolved") {
+    return (
+      <p data-fact="liquidation_provenance:unresolved" className="text-sm text-provenance-weak">
+        Procedência não declarada — nenhuma série foi identificada no catálogo para este painel.
+      </p>
+    );
+  }
+  if (provenance.kind === "origin") {
+    return (
+      <p data-fact={`liquidation_provenance:origin:${provenance.provider}`} className="text-sm text-provenance-weak">
+        Dado da própria fonte ({provenance.provider}).
+      </p>
+    );
+  }
+  const { publishedError } = provenance;
+  return (
+    <p
+      role="status"
+      data-fact={`liquidation_provenance:declared:${provenance.provider}`}
+      data-reconstructed-from={provenance.reconstructedFrom ?? ""}
+      data-published-error={
+        publishedError === null
+          ? "none"
+          : `median_bp=${publishedError.medianBp};p99_bp=${publishedError.p99Bp};n=${publishedError.n}`
+      }
+      className="text-sm text-provenance-weak"
+    >
+      ⚠️ Dado de TERCEIRO ({provenance.provider}), não da corretora de origem
+      {provenance.reconstructedFrom === null
+        ? ""
+        : ` — reconstruído a partir de ${provenance.reconstructedFrom}`}
+      .{" "}
+      {publishedError === null
+        ? "Erro publicado: NENHUM — não há segunda fonte para medir a fidelidade contra, e publicar um número que ninguém mediu seria pior do que não publicar."
+        : `Erro publicado: mediana ${publishedError.medianBp} bp, p99 ${publishedError.p99Bp} bp, n = ${publishedError.n}.`}
+    </p>
+  );
+}
+
+/** O rótulo que a escala `log10` exige, pelo mesmo motivo literal do laudo da fase `01`: *"um eixo
+ * logarítmico não rotulado é pior que um linear ilegível"* — quem lê uma barra com o dobro da altura
+ * como o dobro do valor está lendo o quadrado dele. A escala do painel não desenha rótulo numérico
+ * no canvas, então ele só pode existir aqui, no DOM; e aqui ele é texto, alcança leitor de tela e é
+ * asserível. */
+function LiquidationScaleNote() {
+  return (
+    <p data-fact="liquidation_scale:log10" className="text-sm text-provenance-weak">
+      Altura da barra em escala log10 (base {LIQUIDATION_LOG_BASE}) — cada degrau de altura é uma
+      ordem de grandeza, não uma diferença absoluta.
+    </p>
+  );
+}
+
+/** Os TRÊS estados, nomeados em palavras — o terceiro canal, pelo mesmo motivo que `CvdLegend` e
+ * `VolumeMarksLegend` existem: dentro do `<canvas>` nenhuma legenda alcança, e uma distinção que só
+ * vive em pixels morre num screenshot monocromático ou num leitor de tela. Aqui ela viaja em
+ * palavras, e as palavras dizem a diferença que `RN-1` cobra: *"não houve"* ≠ *"não sabemos"*.
+ *
+ * A tinta sai de `colorTokens()`, a MESMA chamada de onde sai a das séries, então uma legenda que
+ * minta sobre a cor da marca não é expressável. `aria-hidden` no glifo é deliberado: ele é a cópia
+ * redundante do que as palavras ao lado já carregam. */
+function LiquidationMarksLegend() {
+  const tokens = colorTokens();
+  return (
+    <ul className="flex gap-4 text-sm text-provenance-weak" data-fact="liquidation_marks_legend:3">
+      <li>
+        <span aria-hidden="true" style={{ color: tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE] }}>
+          ▁
+        </span>{" "}
+        Sem ponto — traço baixo e apagado (não sabemos se houve liquidação neste minuto)
+      </li>
+      <li>
+        <span aria-hidden="true" style={{ color: tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE] }}>
+          ▃
+        </span>{" "}
+        Zero do fornecedor — traço médio e claro (sabemos: não houve liquidação)
+      </li>
+      <li>
+        <span aria-hidden="true" style={{ color: tokens[LIQUIDATION_BAR_COLOR_ROLE] }}>
+          ▇
+        </span>{" "}
+        Liquidação — barra acima da faixa das marcas, altura em ordem de grandeza
+      </li>
+    </ul>
+  );
+}
+
+/** O horizonte legível de UMA coorte — os mesmos dois números e um instante que os outros painéis
+ * declaram, mais a fração que só esta série precisa: quantas das observações são ZERO LEGÍTIMO.
+ *
+ * Escrito por extenso em vez de compartilhado com `ReadableHorizon`/`CvdReadableHorizon` pelo motivo
+ * que aquele já declara em full: as expressões literais de `data-fact` estão presas, caractere a
+ * caractere, por testes de contrato diferentes, e fundir dois contratos num componente
+ * parametrizado é como um refactor re-aponta, em silêncio, o falsificador de outra task. */
+function LiquidationReadableHorizon({
+  cohort,
+  data,
+}: {
+  readonly cohort: string;
+  readonly data: LiquidationCohortData;
+}) {
+  const gridSlots = data.slots.length;
+  const sinceText =
+    data.firstPresentMs === null
+      ? "Nenhuma grade legível no período"
+      : `Dado legível desde ${formatUtcMinute(data.firstPresentMs)}`;
+  return (
+    <p
+      data-fact={`liquidation_readable_horizon:${cohort}:${data.presentPoints}/${gridSlots}`}
+      data-readable-since-ms={data.firstPresentMs ?? ""}
+      className="text-sm text-provenance-weak"
+    >
+      {sinceText} — {data.presentPoints}/{gridSlots} grades de 1 min observadas, das quais{" "}
+      {data.zeroPoints} são zero do fornecedor.
+    </p>
+  );
+}
+
+/**
+ * UMA coorte: um gráfico, três séries, e a colisão zero↔ausência tornada geometricamente
+ * impossível — ver o bloco de constantes `LIQUIDATION_*` para o argumento inteiro.
+ *
+ * ⛔ AS TRÊS SÉRIES NÃO SÃO TRÊS CORES DE UMA. `positiveValueSeriesLossless` manda para whitespace
+ * tanto a ausência quanto o zero (numa escala log, `log10(0)` não tem coordenada, e uma barra de
+ * altura zero na linha de base é, pixel a pixel, a marca de "nada foi desenhado aqui"), e então
+ * `absenceMarkSeries` e `zeroMarkSeries` desenham cada um dos dois estados com marca própria. Um
+ * `if` de cor resolveria a aparência e deixaria a distinção presa a um ramo que um refactor apaga
+ * sem que nada reprove.
+ */
+function LiquidationCohortSurface({
+  cohort,
+  label,
+  data,
+  unit,
+  status,
+}: {
+  readonly cohort: string;
+  readonly label: string;
+  readonly data: LiquidationCohortData;
+  readonly unit: string | null;
+  readonly status: PanelStatus;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useLightweightChart(containerRef, (chart) => {
+    const tokens = colorTokens();
+    const barStyle: Partial<HistogramSeriesOptions> = {
+      color: tokens[LIQUIDATION_BAR_COLOR_ROLE],
+      base: LIQUIDATION_LOG_BASE,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    };
+    const barSeries: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, barStyle);
+    barSeries.priceScale().applyOptions({
+      scaleMargins: LIQUIDATION_BAR_SCALE_MARGINS,
+      mode: PriceScaleMode.Logarithmic,
+    });
+    barSeries.setData(positiveValueSeriesLossless(data.slots) as never);
+
+    const markStyle = (color: string): Partial<HistogramSeriesOptions> => ({
+      color,
+      priceScaleId: LIQUIDATION_MARKS_PRICE_SCALE_ID,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      // A faixa fixa: a altura da marca é a da própria marca, nunca a do dado ao lado dela.
+      autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: LIQUIDATION_MARKS_BAND_PX } }),
+    });
+    const absenceSeries: ISeriesApi<"Histogram"> = chart.addSeries(
+      HistogramSeries,
+      markStyle(tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE]),
+    );
+    // ⛔ A MARGEM É O QUE SEPARA AS DUAS FAIXAS, e ela é aplicada na escala das MARCAS: com
+    // `top: 0.88` elas ocupam os 12% de baixo do painel, enquanto a linha de base das barras fica
+    // aos 15%. Nenhuma barra alcança a faixa das marcas — para NENHUM valor, não só para os que
+    // este dado calhou de ter.
+    absenceSeries.priceScale().applyOptions({ scaleMargins: LIQUIDATION_MARKS_SCALE_MARGINS });
+    absenceSeries.setData(absenceMarkSeries(data.slots, LIQUIDATION_ABSENCE_MARK_PX) as never);
+    const zeroSeries: ISeriesApi<"Histogram"> = chart.addSeries(
+      HistogramSeries,
+      markStyle(tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE]),
+    );
+    zeroSeries.setData(zeroMarkSeries(data.slots, LIQUIDATION_ZERO_MARK_PX) as never);
+  });
+  // `RN-1` na camada de renderização, e para esta série é regra de TIPO: um bucket de `FLOW` sem
+  // observação NÃO é um bucket em que ninguém foi liquidado. Um `0` ali seria uma AFIRMAÇÃO sobre o
+  // mercado feita a partir de ignorância — e ela é a mais cara desta tela, porque `77` de `1.440`
+  // grades carregam ponto: se ausência e zero colidissem, o painel mentiria na maior parte da
+  // janela.
+  const readingText =
+    data.reading.kind === "absent" || data.reading.value === null
+      ? ABSENCE_TOKEN
+      : unit === null
+        ? String(data.reading.value)
+        : `${data.reading.value} ${unit}`;
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      data-testid={liquidationCohortTestId(cohort)}
+      data-liquidation-present-points={data.presentPoints}
+      data-liquidation-zero-points={data.zeroPoints}
+    >
+      <h3 className="font-label-caps text-label-caps text-on-surface">{label}</h3>
+      {/* ⛔ `aria-hidden` no hospedeiro do canvas — mesmo critério de `CvdPane`/`DR-6`:
+          `lightweight-charts` pinta num `<canvas>` sem nome acessível, e as leituras abaixo SÃO a
+          alternativa textual declarada. */}
+      <div
+        ref={containerRef}
+        aria-hidden="true"
+        data-fact={`liquidation_slots:${cohort}:${data.slots.length}`}
+      />
+      <p data-fact={`liquidation_last_reading:${cohort}:${data.reading.kind}`} className="text-sm text-provenance-weak">
+        Leitura atual: {readingText}
+      </p>
+      <LiquidationReadableHorizon cohort={cohort} data={data} />
+      <AbsenceNote status={status} />
+    </div>
+  );
+}
+
+/**
+ * `T-05.9` — o painel de liquidações: DUAS coortes, o rótulo de `RS-5` e a ausência que nunca vira
+ * zero.
+ *
+ * ⛔ AS DUAS LEGS NÃO SÃO UMA SÓ SÉRIE COM DUAS CORES, e a razão não é de UX: somá-las apaga
+ * exatamente a discriminação que a métrica existe para dar (`liquidation_catalog.py`, literal —
+ * *"a long liquidation is forced selling and a short liquidation is forced buying"*). Duas
+ * superfícies, dois `series_key_id`, dois status que degradam sozinhos.
+ *
+ * E as duas ficam em GRÁFICOS separados, com título próprio, em vez de duas cores num gráfico só:
+ * assim a distinção entre as coortes não depende de hue nenhum (WCAG 1.4.1) e as marcas de ausência
+ * de uma leg não se sobrepõem às da outra — o que importa quando `94,7%` das grades são ausentes em
+ * ambas `[MEDIDO 2026-09-16: 1.365 ausentes de 1.441 grades em 24 h, por coorte]`.
+ */
+function LiquidationPane({
+  liquidation,
+  longStatus,
+  shortStatus,
+}: {
+  readonly liquidation: LiquidationPaneData;
+  readonly longStatus: PanelStatus;
+  readonly shortStatus: PanelStatus;
+}) {
+  return (
+    <section aria-label="Liquidações" data-testid={LIQUIDATION_PANE_TESTID}>
+      <h2 className="font-label-caps text-label-caps text-on-surface">
+        Liquidações (1m{liquidation.unit === null ? "" : `, ${liquidation.unit}`})
+      </h2>
+      <LiquidationProvenance provenance={liquidation.provenance} />
+      <LiquidationScaleNote />
+      <LiquidationMarksLegend />
+      <LiquidationCohortSurface
+        cohort="long"
+        label="Liquidação de posições compradas (long)"
+        data={liquidation.long}
+        unit={liquidation.unit}
+        status={longStatus}
+      />
+      <LiquidationCohortSurface
+        cohort="short"
+        label="Liquidação de posições vendidas (short)"
+        data={liquidation.short}
+        unit={liquidation.unit}
+        status={shortStatus}
+      />
+    </section>
+  );
+}
+
 /** One `EventSource`, decoded through `../live-transport.ts` — see this module's own docstring
  * for why this reads "ao vivo indisponível" in this phase (no real producer wired yet). */
 function useLiveReadout(url: string | null): string {
@@ -968,7 +1376,16 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
   );
 }
 
-export function SymbolClient({ panels, volume, cvd, oi, panelStatus, knowledgeTimeMs, liveUrls }: SymbolClientProps) {
+export function SymbolClient({
+  panels,
+  volume,
+  cvd,
+  oi,
+  liquidation,
+  panelStatus,
+  knowledgeTimeMs,
+  liveUrls,
+}: SymbolClientProps) {
   return (
     // The three instants of the request this render was built from, on the root element: the
     // screen declares WHAT IT ASKED, so an assertion (or an operator) can re-issue exactly that
@@ -978,10 +1395,15 @@ export function SymbolClient({ panels, volume, cvd, oi, panelStatus, knowledgeTi
       data-window-end-ms-inclusive={lastInstantMs(panels)}
       data-knowledge-time-ms={knowledgeTimeMs}
     >
-      <h1 className="sr-only">{panels.symbol} — Preço (com volume), Open Interest e CVD</h1>
+      <h1 className="sr-only">{panels.symbol} — Preço (com volume), Open Interest, CVD e Liquidações</h1>
       <PricePane panels={panels} status={panelStatus.price} volume={volume} volumeStatus={panelStatus.volume} />
       <OiPane panels={panels} status={panelStatus.oi} oi={oi} />
       <CvdPane panels={panels} status={panelStatus.cvd} cvd={cvd} />
+      <LiquidationPane
+        liquidation={liquidation}
+        longStatus={panelStatus.liquidationLong}
+        shortStatus={panelStatus.liquidationShort}
+      />
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>
         <ul>

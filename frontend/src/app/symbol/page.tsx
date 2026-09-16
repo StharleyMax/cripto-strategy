@@ -86,22 +86,32 @@ import {
 } from "./series-history-client.ts";
 import type { PanelStatus } from "./panel-status.ts";
 import { resolveRouteWindow, type RouteWindow } from "./request-window.ts";
-import { SymbolClient, type CvdPaneData, type OiPaneData, type VolumeSubAxisData } from "./SymbolClient.tsx";
+import {
+  SymbolClient,
+  type CvdPaneData,
+  type LiquidationCohortData,
+  type LiquidationPaneData,
+  type OiPaneData,
+  type VolumeSubAxisData,
+} from "./SymbolClient.tsx";
 import {
   computeSeriesKeyId,
   countPresentSlots,
+  countZeroSlots,
   firstPresentSlotMs,
   daysWithPresence,
   keyMatchesSymbol,
   lastPresentSlotMs,
   matchesBinanceOpenInterest,
   matchesKlineTakerBuyCvd,
+  matchesLiquidationCohort,
+  nonNegativeFlowSlotsFromHistoryRows,
   rawCandlesFromHistoryRows,
+  resolveFlowReadingOrAbsent,
   resolveFreshnessVerdict,
-  resolveVolumeReading,
+  resolveSeriesProvenance,
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
-  volumeSlotsFromHistoryRows,
 } from "./view-model.ts";
 
 export const metadata: Metadata = {
@@ -277,13 +287,29 @@ export default async function SymbolPage() {
     catalogStatus.kind === "ok"
       ? resolveCatalogEntry(catalog, (entry) => entry.key.metric === VOLUME_METRIC)
       : CATALOG_UNAVAILABLE;
+  // `T-05.9` — TWO resolutions, one per leg, and NEVER one that sums them. `cohort` is a term of
+  // identity (`SPEC-001` §2.1) and `liquidation_catalog.py` publishes one row per leg on purpose:
+  // long liquidation is forced SELLING, short liquidation is forced BUYING, and the sum of the two
+  // moves identically whether the market flushed longs, flushed shorts or flushed both. The
+  // predicate is `view-model.ts`'s (three terms, each named there with the sibling row it excludes).
+  const liquidationLongResolution =
+    catalogStatus.kind === "ok"
+      ? resolveCatalogEntry(catalog, (entry) => matchesLiquidationCohort(entry.key, "long"))
+      : CATALOG_UNAVAILABLE;
+  const liquidationShortResolution =
+    catalogStatus.kind === "ok"
+      ? resolveCatalogEntry(catalog, (entry) => matchesLiquidationCohort(entry.key, "short"))
+      : CATALOG_UNAVAILABLE;
 
-  const [priceResult, oiResult, cvdResult, volumeResult] = await Promise.all([
-    fetchPanelRows(priceResolution, routeWindow),
-    fetchPanelRows(oiResolution, routeWindow),
-    fetchPanelRows(cvdResolution, routeWindow),
-    fetchPanelRows(volumeResolution, routeWindow),
-  ]);
+  const [priceResult, oiResult, cvdResult, volumeResult, liquidationLongResult, liquidationShortResult] =
+    await Promise.all([
+      fetchPanelRows(priceResolution, routeWindow),
+      fetchPanelRows(oiResolution, routeWindow),
+      fetchPanelRows(cvdResolution, routeWindow),
+      fetchPanelRows(volumeResolution, routeWindow),
+      fetchPanelRows(liquidationLongResolution, routeWindow),
+      fetchPanelRows(liquidationShortResolution, routeWindow),
+    ]);
 
   // The day list is the window's own (`utcDaysCovered`, derived in `charts`), never a literal.
   const days = routeWindow.window.days;
@@ -330,7 +356,7 @@ export default async function SymbolPage() {
   // `slots` is `[]`, `presentPoints` is `0` and the reading is `absent` — which the sub-axis
   // prints as `SEM_PONTO`. No branch anywhere here substitutes a `0` for a missing number, and
   // for this `FLOW` series that is a rule of TYPE, not of taste (`RN-1`).
-  const volumeSlots = volumeSlotsFromHistoryRows(volumeResult.rows);
+  const volumeSlots = nonNegativeFlowSlotsFromHistoryRows(volumeResult.rows);
   const volume: VolumeSubAxisData = {
     slots: volumeSlots,
     presentPoints: countPresentSlots(volumeSlots),
@@ -340,7 +366,7 @@ export default async function SymbolPage() {
     firstPresentMs: firstPresentSlotMs(volumeSlots),
     // `windowEndMsInclusive` is the same instant `SymbolClient.tsx` derives as `lastInstantMs`
     // for the other three readouts — one instant for the whole page, not a fourth one.
-    reading: resolveVolumeReading(volumeSlots, routeWindow.windowEndMsInclusive),
+    reading: resolveFlowReadingOrAbsent(volumeSlots, routeWindow.windowEndMsInclusive),
   };
 
   // ── The CVD panel's own declared facts (`T-02.5`) ─────────────────────────────────────────
@@ -399,6 +425,54 @@ export default async function SymbolPage() {
     freshness: resolveFreshnessVerdict(oiResult.rows, routeWindow.windowEndMsInclusive, oiEntry?.maxStalenessMs ?? null),
   };
 
+  // ── The liquidation pane (`T-05.9`, M4) ───────────────────────────────────────────────────
+  //
+  // NOT part of `S2RawInputs`/`buildS2Panels`, for the same reason the volume sub-axis is not:
+  // widening `charts`' panel composition is a change to a component this task does not own
+  // (`ADR-003`; this task is `components = ["web"]`). The slots are the route's own 1-minute grid,
+  // transcribed — `sum_liquidation` is `interval="1m"` NATIVE (`liquidation_catalog.py`), which IS
+  // the grid `/series-history` serves, so there is no re-gridding and no `RN-S1` divisor.
+  //
+  // ⛔ AND THE MAPPER IS THE VOLUME SUB-AXIS'S OWN, NOT A COPY OF IT. Both are non-negative `FLOW`
+  // sums on the native grid, so `nonNegativeFlowSlotsFromHistoryRows` (renamed off
+  // `volumeSlotsFromHistoryRows` by this task, see its docstring) serves both: `RN-1` is written
+  // ONCE. A row with `absence !== null` becomes `value: null`, which the three-series rendering in
+  // `SymbolClient.tsx` draws as the ABSENCE MARK — never as a zero bar, and never as the same mark
+  // the legitimate zero of `ZL-3` gets. That distinction is the whole reason this pane is hard:
+  // over the route's window, `5.570` of `5.761` grades carry no point at all.
+  const liquidationCohortData = (rows: readonly SeriesHistoryRow[]): LiquidationCohortData => {
+    const slots = nonNegativeFlowSlotsFromHistoryRows(rows);
+    return {
+      slots,
+      presentPoints: countPresentSlots(slots),
+      zeroPoints: countZeroSlots(slots),
+      firstPresentMs: firstPresentSlotMs(slots),
+      // `windowEndMsInclusive` — the SAME instant every other readout on this page uses. One
+      // instant for the whole render, never a seventh one computed here.
+      reading: resolveFlowReadingOrAbsent(slots, routeWindow.windowEndMsInclusive),
+    };
+  };
+  // ⛔ `RS-5` IS RESOLVED FROM THE CATALOG ROW, NEVER SPELLED AS A LITERAL. A hardcoded "dado de
+  // terceiro" sentence in the view would be true today and free to stay true after the series
+  // stopped being third-party — `resolveSeriesProvenance` states the rule (origin = the venue's own
+  // publisher AND not a reconstruction; everything else is DECLARED) and the type carries the
+  // verdict across the boundary.
+  //
+  // The LONG entry answers for both legs: the two rows are built from one comprehension over
+  // `COHORTS` (`liquidation_catalog.py`) and differ ONLY in `cohort`, so `provider`, `venue`,
+  // `reconstructed_from`, `published_error` and `unit` are identical by construction. Said here
+  // rather than left implied — if that ever stops holding, this line is where it breaks.
+  const liquidationEntry = resolvedEntry(liquidationLongResolution);
+  const liquidation: LiquidationPaneData = {
+    long: liquidationCohortData(liquidationLongResult.rows),
+    short: liquidationCohortData(liquidationShortResult.rows),
+    provenance: resolveSeriesProvenance(liquidationEntry),
+    // The `unit` term of the series' OWN identity (`USD`), printed beside the numeral — `W-1` of
+    // `gates/design-01.md` failed the volume sub-axis for a numeral with no unit, and a literal
+    // here would say the same thing while being free to drift from what the backend published.
+    unit: liquidationEntry?.key.unit ?? null,
+  };
+
   const baseUrl = process.env.INGEST_HEALTH_API_BASE_URL;
   const liveUrls =
     baseUrl === undefined
@@ -415,11 +489,14 @@ export default async function SymbolPage() {
       volume={volume}
       cvd={cvd}
       oi={oi}
+      liquidation={liquidation}
       panelStatus={{
         price: priceResult.status,
         oi: oiResult.status,
         cvd: cvdResult.status,
         volume: volumeResult.status,
+        liquidationLong: liquidationLongResult.status,
+        liquidationShort: liquidationShortResult.status,
       }}
       knowledgeTimeMs={routeWindow.knowledgeTimeMs}
       liveUrls={liveUrls}

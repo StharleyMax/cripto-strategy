@@ -38,10 +38,10 @@ import {
   parseSignedDecimalToScaled,
   rawCandlesFromHistoryRows,
   resolveFreshnessVerdict,
-  resolveVolumeReading,
+  resolveFlowReadingOrAbsent,
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
-  volumeSlotsFromHistoryRows,
+  nonNegativeFlowSlotsFromHistoryRows,
 } from "./view-model.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 
@@ -194,7 +194,7 @@ test("keyMatchesSymbol / computeSeriesKeyId: deterministic, sensitive to every t
 // ════════════════════════════════════════════════════════════════════════════════════════════
 
 test("RN-1 (volume, end to end): an absent 1m row becomes a bare WhitespaceItem — never a zero bar", () => {
-  const slots = volumeSlotsFromHistoryRows(rowsWithOneAbsentMinute());
+  const slots = nonNegativeFlowSlotsFromHistoryRows(rowsWithOneAbsentMinute());
   assert.equal(slots.length, 3, "one slot per wire row — the route already walks the 1m grid");
   assert.equal(slots[1]!.value, null, "the absent minute must be an explicit gap, not a number");
 
@@ -214,16 +214,16 @@ test("MORDE (negative control): the zero-fabricating mapping RN-1 forbids IS dis
   const rows = rowsWithOneAbsentMinute();
   // The exact defect shape `RN-1` names, kept next to the real mapping so the assert is
   // provably NOT vacuous: the two disagree at the absent minute, and this test fails the day
-  // `volumeSlotsFromHistoryRows` is ever "simplified" into it.
+  // `nonNegativeFlowSlotsFromHistoryRows` is ever "simplified" into it.
   const fabricated = rows.map((row) => ({ time: row.event_time, value: Number(row.value ?? 0) }));
   assert.equal(fabricated[1]!.value, 0, "sanity: this IS what the forbidden mapping produces");
-  const real = volumeSlotsFromHistoryRows(rows);
+  const real = nonNegativeFlowSlotsFromHistoryRows(rows);
   assert.notEqual(real[1]!.value, fabricated[1]!.value, "the real mapping must NOT agree with the fabricated one");
   assert.equal(real[1]!.value, null);
 });
 
 test("countPresentSlots counts REAL buckets only — the number DoD-3/RN-S2 checks against N >= 30", () => {
-  const slots = volumeSlotsFromHistoryRows(rowsWithOneAbsentMinute());
+  const slots = nonNegativeFlowSlotsFromHistoryRows(rowsWithOneAbsentMinute());
   assert.equal(countPresentSlots(slots), 2, "the absent minute must not be counted as a point");
   assert.equal(countPresentSlots([]), 0, "an empty sub-axis has zero points, and says so");
   // `RN-S1`'s `/5` divisor does NOT apply to M1: `klines_volume` is `1m` native (`SPEC-007`
@@ -233,7 +233,7 @@ test("countPresentSlots counts REAL buckets only — the number DoD-3/RN-S2 chec
 });
 
 test("firstPresentSlotMs: the LEFT end of the readable horizon, scanned forward and never guessed", () => {
-  const slots = volumeSlotsFromHistoryRows(rowsWithOneAbsentMinute());
+  const slots = nonNegativeFlowSlotsFromHistoryRows(rowsWithOneAbsentMinute());
   assert.equal(firstPresentSlotMs(slots), slots[0]!.time, "the first present slot is the horizon");
   assert.equal(firstPresentSlotMs([]), null, "no slots, no horizon — and it says null rather than 0");
   assert.equal(
@@ -258,16 +258,16 @@ test("firstPresentSlotMs: the LEFT end of the readable horizon, scanned forward 
   assert.notEqual(firstPresentSlotMs(leading), leading[0]!.time, "the window's left edge is NOT the horizon");
 });
 
-test("resolveVolumeReading: a real bucket answers its own number, and absence never borrows a neighbour's", () => {
-  const slots = volumeSlotsFromHistoryRows(rowsWithOneAbsentMinute());
-  assert.deepEqual(resolveVolumeReading(slots, RANGE_START_MS), { kind: "present", value: 111.5 });
+test("resolveFlowReadingOrAbsent: a real bucket answers its own number, and absence never borrows a neighbour's", () => {
+  const slots = nonNegativeFlowSlotsFromHistoryRows(rowsWithOneAbsentMinute());
+  assert.deepEqual(resolveFlowReadingOrAbsent(slots, RANGE_START_MS), { kind: "present", value: 111.5 });
   // FLOW never carries forward: the absent minute stays absent even though the minute before it
   // has a real number (`resolveFlowReading`, reused from `charts` — no LOCF, ever).
-  assert.deepEqual(resolveVolumeReading(slots, RANGE_START_MS + ONE_MINUTE_MS), { kind: "absent", value: null });
+  assert.deepEqual(resolveFlowReadingOrAbsent(slots, RANGE_START_MS + ONE_MINUTE_MS), { kind: "absent", value: null });
 });
 
-test("resolveVolumeReading on an EMPTY sub-axis answers absent instead of throwing — the /symbol crash guard", () => {
-  assert.deepEqual(resolveVolumeReading([], RANGE_START_MS), { kind: "absent", value: null });
+test("resolveFlowReadingOrAbsent on an EMPTY sub-axis answers absent instead of throwing — the /symbol crash guard", () => {
+  assert.deepEqual(resolveFlowReadingOrAbsent([], RANGE_START_MS), { kind: "absent", value: null });
   // MORDE, and it is what makes the guard load-bearing rather than decorative: the `charts`
   // function this delegates to DOES throw on an empty grid, and empty is the NORMAL state of
   // this sub-axis whenever the panel degraded (no catalog row, transport down, nothing ingested
@@ -275,17 +275,17 @@ test("resolveVolumeReading on an EMPTY sub-axis answers absent instead of throwi
   assert.throws(() => resolveFlowReading([], ONE_MINUTE_MS, RANGE_START_MS), { name: "RangeError" });
 });
 
-test("volumeSlotsFromHistoryRows refuses a malformed value instead of hiding it as absence", () => {
+test("nonNegativeFlowSlotsFromHistoryRows refuses a malformed value instead of hiding it as absence", () => {
   const notANumber: readonly SeriesHistoryRow[] = [
     { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "not-a-number", absence: null },
   ];
-  assert.throws(() => volumeSlotsFromHistoryRows(notANumber), InvalidSeriesValueError);
+  assert.throws(() => nonNegativeFlowSlotsFromHistoryRows(notANumber), InvalidSeriesValueError);
   // A negative traded volume is a contract break too (`nature=FLOW`, `reduction=SUM`,
   // `denom=base`): refused loudly rather than drawn as a downward bar nobody could explain.
   const negative: readonly SeriesHistoryRow[] = [
     { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "-1", absence: null },
   ];
-  assert.throws(() => volumeSlotsFromHistoryRows(negative), InvalidSeriesValueError);
+  assert.throws(() => nonNegativeFlowSlotsFromHistoryRows(negative), InvalidSeriesValueError);
 });
 
 // ── `T-03.5` — THE `RN-S1` DIVISOR, AND `RNF-2` ─────────────────────────────────────────────
