@@ -260,7 +260,12 @@ function AbsenceNote({ status }: { readonly status: PanelStatus }) {
     return null;
   }
   return (
-    <p role="status" data-fact={`panel_absent:${status.reason}`} className="text-sm text-provenance-weak">
+    // ⛔ SEM `role="status"`, e a remoção é o achado `m-5` de `T-05.10`. Uma região viva
+    // (`aria-live="polite"`) anuncia MUDANÇA; esta nota existe no primeiro paint (o `status` vem do
+    // servidor, por requisição) e nunca muta no cliente. Região viva presente no carregamento não é
+    // anunciada por leitor de tela ⇒ o papel não comprava nada e deixava uma região viva espúria
+    // competindo com as que de fato mudam. O texto continua alcançável: é um `<p>` no fluxo.
+    <p data-fact={`panel_absent:${status.reason}`} className="text-sm text-provenance-weak">
       Sem dado real neste painel — {ABSENCE_REASON_LABEL[status.reason]}. Nenhum número é mostrado no lugar
       (nunca um zero fabricado).
     </p>
@@ -480,10 +485,38 @@ function liquidationCohortTestId(cohort: string): string {
 //
 // O QUE A FASE `01` DEIXOU EM ABERTO E ESTE PAINEL FECHA: lá a ordenação ausência < zero < menor
 // barra foi MEDIDA sobre um universo sintético — verdadeira para aquele dado, não garantida para
-// todo dado. Uma liquidação de 2 USD desenharia, numa escala log de base `1`, uma barra mais baixa
-// que a marca de zero, e voltaria a colidir. Aqui as duas faixas são DISJUNTAS por margem de
-// escala: as marcas vivem nos 12% de baixo do painel e a linha de base das barras começa aos 15%.
-// Nenhuma barra, de nenhum valor, alcança a faixa das marcas — a colisão deixa de depender do dado.
+// todo dado. Aqui as duas faixas são DISJUNTAS por MARGEM DE ESCALA, e o que as separa é uma
+// desigualdade entre duas constantes desta seção, não uma propriedade do dado:
+//
+//     1 - LIQUIDATION_BAR_SCALE_MARGINS.bottom  <  LIQUIDATION_MARKS_SCALE_MARGINS.top
+//                        0,85                   <              0,88
+//
+// A GARANTIA, na forma exata em que ela é verdadeira: **toda barra DESENHADA termina no PISO da
+// faixa das barras**, `y = H·(1 - bottom)`, e a faixa das marcas só começa em `H·top`. O piso é
+// invariante no valor porque a escala das barras é AUTOESCALADA e a série de barras é a ÚNICA
+// pendurada nela: o menor valor visível é, por definição, quem cai no piso.
+// `[MEDIDO 2026-09-16, liquidation-geometry.test.ts contra a biblioteca real: para micro ∈ {2 ·
+//  0,26 · 0,1 · 0,01 · 0,003} a barra mais baixa desenhada fica em `y = 162,20` nas quatro abaixo
+//  da base, contra topo da faixa das marcas em `168,96` e topo da marca de zero em `175,97`]`.
+//
+// ⛔ O QUE NÃO É A GARANTIA, E A VERSÃO ANTERIOR DESTA SEÇÃO AFIRMAVA: *"nenhuma barra, de nenhum
+// valor, alcança a faixa das marcas, porque a LINHA DE BASE das barras fica acima do topo das
+// marcas"*. A frase foi REMOVIDA por ser FALSA, e o `design_gate` de `T-05.10` (`M-1`,
+// `gates/design-05.md`) a falsificou com número: a linha de base NÃO é um piso. Num histograma com
+// `base = 1`, um valor ABAIXO da base desenha PARA BAIXO a partir dela — e quem se move quando o
+// dado encolhe é a linha de base (de `y = 162,20` para `118,76` com uma barra de `0,003`; para
+// `74,88` se a série inteira vier em unidade BASE), nunca o piso. O piso é o que fecha a colisão.
+//
+// ⚠️ E ELA NÃO É INCONDICIONAL NA CONFIGURAÇÃO — só no DADO. Duas coisas a sustentam, e as duas são
+// testadas por mutação em `liquidation-geometry.test.ts`: (1) a desigualdade acima; (2) o autoescale
+// da escala das barras. Fixar o autoescale (um `autoscaleInfoProvider` na série de barras) devolve
+// a colisão na hora: com ele, a barra de `0,003` vai para `y = 221,47`, ABAIXO do piso do painel
+// (`191`) `[MEDIDO 2026-09-16, MORDE do teste]`.
+//
+// ⚠️ O QUE ELA NÃO COBRE: barra FORA da janela visível. `priceToCoordinate` extrapola para ela
+// (`0,26 → 176,36`, dentro da faixa do zero), mas nada é pintado — ela não está no recorte. Quando
+// entra, o autoescale a inclui e ela cai no piso. Que a janela DECLARADA não seja a DESENHADA é o
+// `M-2` do mesmo laudo, escalado: é transversal aos 4 painéis e não se resolve aqui.
 const LIQUIDATION_BAR_SCALE_MARGINS = { top: 0.05, bottom: 0.15 } as const;
 const LIQUIDATION_MARKS_PRICE_SCALE_ID = "liquidation_marks";
 const LIQUIDATION_MARKS_SCALE_MARGINS = { top: 0.88, bottom: 0 } as const;
@@ -1079,8 +1112,18 @@ function LiquidationProvenance({ provenance }: { readonly provenance: SeriesProv
   }
   const { publishedError } = provenance;
   return (
+    // ⛔ `provenanceStrong` AQUI E `provenanceWeak` NO RESTO DO PAINEL — é HIERARQUIA, não
+    // legibilidade: `#8b949e` sobre `#131722` mede `5,82:1` e já passa AA. O achado `S-3` de
+    // `T-05.10` contou `7` nós no tom fraco contra `2` no forte, e o aviso de `RS-5` (o que
+    // `SPEC-007` §7 define como o que o operador NÃO pode deixar de ver) estava no mesmo peso do
+    // rodapé da escala. `ADR-010` §5.4 deixa a LUMINÂNCIA como único canal de ênfase — três hues, e
+    // nenhum disponível para isto — e havia um degrau de `2,53` (`5,82` → `14,72`) não gasto.
+    // Rodapé, legenda e horizonte continuam fracos: se tudo subir, nada sobe.
+    //
+    // ⛔ SEM `role="status"` (`m-5` do mesmo laudo): região viva anuncia MUDANÇA, e esta linha vem
+    // do servidor no primeiro paint e nunca muta no cliente. `aria-live` presente no carregamento
+    // não é anunciado — o papel não comprava nada e competia com as regiões que de fato mudam.
     <p
-      role="status"
       data-fact={`liquidation_provenance:declared:${provenance.provider}`}
       data-reconstructed-from={provenance.reconstructedFrom ?? ""}
       data-published-error={
@@ -1088,7 +1131,7 @@ function LiquidationProvenance({ provenance }: { readonly provenance: SeriesProv
           ? "none"
           : `median_bp=${publishedError.medianBp};p99_bp=${publishedError.p99Bp};n=${publishedError.n}`
       }
-      className="text-sm text-provenance-weak"
+      className="text-sm text-provenance-strong"
     >
       ⚠️ Dado de TERCEIRO ({provenance.provider}), não da corretora de origem
       {provenance.reconstructedFrom === null
@@ -1234,9 +1277,9 @@ function LiquidationCohortSurface({
       markStyle(tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE]),
     );
     // ⛔ A MARGEM É O QUE SEPARA AS DUAS FAIXAS, e ela é aplicada na escala das MARCAS: com
-    // `top: 0.88` elas ocupam os 12% de baixo do painel, enquanto a linha de base das barras fica
-    // aos 15%. Nenhuma barra alcança a faixa das marcas — para NENHUM valor, não só para os que
-    // este dado calhou de ter.
+    // `top: 0.88` elas ocupam os 12% de baixo do painel, e o PISO da faixa das barras fica aos 85%
+    // (`1 - bottom`). Nenhuma barra DESENHADA passa do piso, para nenhum valor — ver o bloco de
+    // constantes `LIQUIDATION_*` para a garantia inteira, o que ela pressupõe e o que ela não cobre.
     absenceSeries.priceScale().applyOptions({ scaleMargins: LIQUIDATION_MARKS_SCALE_MARGINS });
     absenceSeries.setData(absenceMarkSeries(data.slots, LIQUIDATION_ABSENCE_MARK_PX) as never);
     const zeroSeries: ISeriesApi<"Histogram"> = chart.addSeries(

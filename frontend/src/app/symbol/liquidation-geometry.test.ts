@@ -16,12 +16,33 @@
  * ── WHAT THIS FILE PROVES THAT `T-01.8`'s DID NOT, AND THE DIFFERENCE IS THE POINT ───────────
  *
  * There the ordering `ausência < zero < menor barra presente` was MEASURED over one universe: true
- * for that data, not guaranteed for all data. A liquidation of `2 USD` on a `log10` scale anchored
- * at base `1` would draw a bar shorter than the zero mark and re-create the very collision
- * `BLOCKER-2` closed. Here the two bands are DISJOINT BY SCALE MARGIN — the marks live in the
- * bottom `1 - top` of the pane and the bar baseline sits at `bottom`, with `bottom > 1 - top` — so
- * no bar of ANY value reaches the marks band. The universe below deliberately contains a value far
- * below anything ever observed on this series, precisely so the claim is tested and not assumed.
+ * for that data, not guaranteed for all data. Here the two bands are DISJOINT BY SCALE MARGIN, and
+ * the separation is an inequality between two production constants:
+ *
+ *     1 - LIQUIDATION_BAR_SCALE_MARGINS.bottom  <  LIQUIDATION_MARKS_SCALE_MARGINS.top
+ *
+ * ⛔ AND THE CLAIM IS ABOUT THE BAND'S **FLOOR**, NOT ABOUT THE BAR'S BASELINE — which is the
+ * correction this file carries after `T-05.10`'s `design_gate` FALSIFIED its previous wording
+ * (`M-1` of `docs/context/cinco-metricas-do-core/gates/design-05.md`). What it used to say was
+ * *"the bar baseline sits above the top of the tallest mark, so no bar of ANY value reaches the
+ * marks band"*, and the second half does not follow from the first: on a histogram with `base = 1`
+ * a value BELOW the base draws DOWNWARD from the baseline, so the baseline is a starting point and
+ * never a floor. Measured: with the micro value outside the visible range, `priceToCoordinate`
+ * extrapolates `0,26 → y = 176,36`, inside the zero mark's own height (`175,97`).
+ *
+ * WHAT IS TRUE, AND IT IS UNCONDITIONAL ON THE DATA: every bar that is actually DRAWN ends at or
+ * above the FLOOR of the bar band, `y = H·(1 - bottom)`, because the bar series is ALONE on an
+ * AUTOSCALED price scale — the smallest visible value is, by definition, the one that lands on the
+ * floor. The floor does not move with the data; the BASELINE does. The sweep below measures both
+ * across five decades, and three mutations show what breaks the guarantee.
+ *
+ * ⚠️ NOT unconditional on the CONFIGURATION, and the two preconditions are mutation-tested here:
+ * the inequality above, and the bar scale's autoscale. Pinning the latter puts a `0,003` bar at
+ * `y = 221,47`, below the pane floor itself.
+ *
+ * ⚠️ WHAT IT DOES NOT COVER: a bar OUTSIDE the visible range is not drawn at all, so the claim says
+ * nothing about it — and that the declared window is not the drawn one is `M-2` of the same gate,
+ * escalated because it is transversal to the four panes.
  *
  * THE UNIVERSE: the shape MEASURED on the real 4-day window the route asks for
  * `[MEDIDO 2026-09-16, GET /api/v1/series-history, series_key_id=23e4332… (BTCUSDT/long),
@@ -80,6 +101,28 @@ function productionBarScaleMode(): string | null {
   return match === null ? null : match[1]!;
 }
 
+/**
+ * ⛔ THE SECOND PRECONDITION OF THE DISJOINTNESS GUARANTEE, READ OFF PRODUCTION.
+ *
+ * The bar band's FLOOR only holds still because the bar scale AUTOSCALES: the smallest visible
+ * value is the one that lands on `H·(1 - bottom)`. Pin that scale — an `autoscaleInfoProvider` on
+ * the bar series, or `autoScale: false` — and a value below the base walks straight out of the band
+ * and off the pane (the `MORDE` below measures `y = 221,47` against a pane floor of `191`).
+ *
+ * The marks series DO pin theirs, deliberately and for the opposite reason (their height must be
+ * the mark's, never the data's) — so this check is anchored to `barStyle` and to the bar scale's
+ * own `applyOptions`, and a blanket grep for `autoscaleInfoProvider` would be satisfied by the
+ * marks and prove nothing.
+ */
+function productionBarScaleIsAutoscaled(): boolean {
+  const style = /const barStyle: Partial<HistogramSeriesOptions> = \{([\s\S]*?)\n\s*\};/.exec(source);
+  assert.ok(style !== null, "barStyle was not found in SymbolClient.tsx — the anchor moved, fix this test");
+  const scale = /barSeries\.priceScale\(\)\.applyOptions\(\{([\s\S]*?)\n\s*\}\);/.exec(source);
+  assert.ok(scale !== null, "the bar scale's applyOptions was not found in SymbolClient.tsx — the anchor moved, fix this test");
+  const declared = `${style[1]!}${scale[1]!}`;
+  return !declared.includes("autoscaleInfoProvider") && !/autoScale:\s*false/.test(declared);
+}
+
 // ── The synthetic universe: the real series' sparsity AND its long tail ──────────────────────
 
 const ONE_MINUTE_MS = 60_000;
@@ -101,21 +144,50 @@ const REAL_MAX = 2_880_132.45;
  * below, so a convenience tweak fails instead of silently loosening the negative control. */
 const SKEW = 1.244;
 
-/** ⛔ A VALUE FAR BELOW ANYTHING EVER OBSERVED ON THIS SERIES, on purpose. `T-01.8`'s ordering was
- * true for its universe; this one is the counter-example that would have broken it — on a `log10`
- * scale anchored at base `1` this bar is a fraction of a decade tall, well inside the height the
- * zero mark occupies. The disjointness test below has to hold for it too, and it holds because the
- * separation is a scale margin, not a measured luck. */
-const MICRO_LIQUIDATION_USD = 2;
+/**
+ * ⛔ THE COUNTER-EXAMPLE, AND IT HAD TO BE REPLACED BECAUSE THE PREVIOUS ONE COULD NOT FAIL.
+ *
+ * It used to be `2`, with `LIQUIDATION_LOG_BASE = 1` — a value ABOVE the base, therefore on the
+ * safe side BY CONSTRUCTION, so the assertion it was supposed to challenge was true whatever the
+ * configuration did. `T-05.10`'s `design_gate` named it for what it was: decoration, the same
+ * false-green class this file was written to kill.
+ *
+ * `0.003` is not hypothetical and not chosen for drama: it is the number
+ * `backend/src/modules/sentimento/domain/liquidation_catalog.py:34-38` MEASURED coming out of the
+ * provider's own default (`convert_to_usd=false` returns BASE units — `BTC 0.003`). So the
+ * counter-example is the shape of a REAL regression: if `CONVERT_TO_USD_REQUIRED` ever stops
+ * reaching the request, every value in this pane looks like this one.
+ */
+const MICRO_LIQUIDATION_USD = 0.003;
+/** Five decades, straddling the base: one above it and four below. The guarantee has to hold
+ * identically across all of them — and what proves it is not merely that each passes, but that the
+ * measured floor is the SAME number for the sub-base ones while the baseline moves. */
+const MICRO_SWEEP_USD = [2, 0.26, 0.1, 0.01, 0.003] as const;
 
 interface Slot {
   readonly time: number;
   readonly value: number | null;
 }
 
-/** Where the micro liquidation sits among the observations — the middle, so it is inside the
- * visible range whatever `fitContent` decides. */
-const MICRO_AT_ORDINAL = 95;
+/**
+ * Where the micro liquidation sits among the observations — the LAST one, so that it is inside the
+ * visible range and therefore actually DRAWN.
+ *
+ * ⛔ IT USED TO BE `95` ("the middle, so it is inside the visible range whatever `fitContent`
+ * decides"), and that parenthesis was FALSE — which is the second half of why the old assertion
+ * measured nothing. `fitContent` over `5.761` grades saturates at `minBarSpacing`, and the visible
+ * logical range comes back anchored to the RIGHT: `[3485, 5760]` at `1.200px`
+ * `[MEDIDO 2026-09-16, getVisibleLogicalRange() after fitContent]`. Observation `95` sits at grid
+ * index `2850` — OUTSIDE it, so it was neither drawn nor included in the autoscale, and every
+ * coordinate the file read for it was an EXTRAPOLATION. Ordinal `190` is at grid index `5700`,
+ * inside the range; the sweep below asserts that instead of asserting it in prose.
+ */
+const MICRO_AT_ORDINAL = 190;
+/** One observation every `OBSERVATION_STRIDE` grid slots — the generator's own spreading rule,
+ * lifted to module scope so the measurement can say WHERE the micro bar is without re-deriving it
+ * (and drifting from it). */
+const OBSERVATION_STRIDE = Math.floor(GRID_SLOTS / PRESENT_SLOTS);
+const MICRO_GRID_INDEX = MICRO_AT_ORDINAL * OBSERVATION_STRIDE;
 
 /**
  * The sparse, long-tailed universe, from a deterministic generator (no `Math.random`: a test that
@@ -131,11 +203,11 @@ const MICRO_AT_ORDINAL = 95;
  * z.priceToCoordinate(18) = null, enquanto a série de ausência respondia 175,97]`. Spreading them
  * is also what the real series does: the zeros are interleaved with the events, not a prefix.
  */
-function syntheticLiquidationSlots(): readonly Slot[] {
+function syntheticLiquidationSlots(micro: number = MICRO_LIQUIDATION_USD): readonly Slot[] {
   const slots: Slot[] = [];
   // The observations are spread evenly across the window so no test can accidentally depend on
   // them clustering; WHICH grid instants carry them is irrelevant to every assertion below.
-  const stride = Math.floor(GRID_SLOTS / PRESENT_SLOTS);
+  const stride = OBSERVATION_STRIDE;
   let observed = 0;
   let zerosPlaced = 0;
   for (let i = 0; i < GRID_SLOTS; i += 1) {
@@ -147,7 +219,7 @@ function syntheticLiquidationSlots(): readonly Slot[] {
     const ordinal = observed;
     observed += 1;
     if (ordinal === MICRO_AT_ORDINAL) {
-      slots.push({ time, value: MICRO_LIQUIDATION_USD });
+      slots.push({ time, value: micro });
       continue;
     }
     if (ordinal % 3 === 1 && zerosPlaced < ZERO_SLOTS) {
@@ -170,23 +242,53 @@ function syntheticLiquidationSlots(): readonly Slot[] {
 }
 
 interface Measurement {
-  /** Height in pixels of every STRICTLY POSITIVE bar, from the bar series' own baseline. */
+  /** VISUAL height in pixels of every STRICTLY POSITIVE bar — the ABSOLUTE distance between the
+   * bar's tip and the series' baseline. Absolute on purpose: a value below the histogram's `base`
+   * draws DOWNWARD, and the number this feeds (the sub-pixel floor) asks how many pixels the bar
+   * OCCUPIES, which has no sign. The direction is not lost — it is exactly what `lowestDrawnBarY`
+   * below carries, and that is where the collision claim is decided. */
   readonly barHeightsPx: readonly number[];
   readonly absenceMarkPx: number;
   readonly zeroMarkPx: number;
-  /** ⛔ THE TWO NUMBERS THE DISJOINTNESS CLAIM IS MADE OF, in absolute canvas coordinates (y grows
-   * DOWNWARD): where the bar series' baseline sits, and where the TOP of the tallest mark sits.
-   * `barBaselineY < zeroMarkTopY` is the whole claim — the bar band starts strictly above the mark
-   * band, for every value, not just for the ones this universe happens to carry. */
+  /** ⛔ THE NUMBER THE DISJOINTNESS CLAIM IS ACTUALLY MADE OF (y grows DOWNWARD): the LOWEST pixel
+   * any DRAWN bar reaches — the maximum `y` over every positive value inside the visible logical
+   * range. `lowestDrawnBarY < marksBandTopY` is the whole claim. It is NOT `barBaselineY`, which is
+   * where a bar STARTS and which moves with the data. */
+  readonly lowestDrawnBarY: number;
+  /** Where the marks' own band begins — `priceToCoordinate(LIQUIDATION_MARKS_BAND_PX)` on the marks
+   * scale. Stricter than `zeroMarkTopY`: the band is the territory, the zero mark is only the
+   * tallest thing standing in it today. */
+  readonly marksBandTopY: number;
   readonly barBaselineY: number;
   readonly zeroMarkTopY: number;
+  /** The pane's own floor in pixels — `priceToCoordinate(0)` on the marks scale, whose bottom
+   * margin is `0`. It is the pane HEIGHT after the time axis took its share, and it is what turns
+   * the production margin (a fraction) into the pixel bound the bars may not pass. */
+  readonly paneFloorY: number;
+  /** The recorte `fitContent` actually produced, so a test can assert that what it measured was
+   * DRAWN instead of extrapolated. */
+  readonly visibleFrom: number;
+  readonly visibleTo: number;
+  /** Whether the micro value's grid slot fell inside that recorte. `false` would make every micro
+   * measurement in this file an extrapolation again — which is how the previous version went
+   * vacuous. */
+  readonly microDrawn: boolean;
 }
 
 /** Builds ONE cohort surface with the production configuration (`mode` and the marks margin
  * parameterised only for the negative controls) and asks the library for the pixels. */
 async function measureCohortSurface(
   slots: readonly Slot[],
-  options: { readonly mode: "Logarithmic" | "Normal"; readonly marksMarginTop?: number },
+  options: {
+    readonly mode: "Logarithmic" | "Normal";
+    readonly marksMarginTop?: number;
+    /** Mutation knob: the bar scale's own bottom margin, which is one half of the inequality the
+     * guarantee rests on. */
+    readonly barMarginBottom?: number;
+    /** Mutation knob: pins the bar scale's autoscale, which is the OTHER half. Production must not
+     * do this, and `productionBarScaleIsAutoscaled()` is what keeps it from starting to. */
+    readonly pinBarAutoscale?: boolean;
+  },
 ): Promise<Measurement> {
   const dom = new JSDOM('<!doctype html><html><body><div id="chart"></div></body></html>', { pretendToBeVisual: true });
   installGlobals(dom);
@@ -202,9 +304,15 @@ async function measureCohortSurface(
     base: LIQUIDATION_LOG_BASE,
     priceLineVisible: false,
     lastValueVisible: false,
+    ...(options.pinBarAutoscale === true
+      ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: LIQUIDATION_LOG_BASE, maxValue: REAL_MAX } }) }
+      : {}),
   });
   barSeries.priceScale().applyOptions({
-    scaleMargins: LIQUIDATION_BAR_SCALE_MARGINS,
+    scaleMargins: {
+      top: LIQUIDATION_BAR_SCALE_MARGINS.top,
+      bottom: options.barMarginBottom ?? LIQUIDATION_BAR_SCALE_MARGINS.bottom,
+    },
     mode: options.mode === "Logarithmic" ? lc.PriceScaleMode.Logarithmic : lc.PriceScaleMode.Normal,
   });
   barSeries.setData(positiveValueSeriesLossless(slots) as never);
@@ -241,8 +349,28 @@ async function measureCohortSurface(
     .map((slot) => {
       const coordinate = barSeries.priceToCoordinate(slot.value);
       assert.ok(coordinate !== null, `the bar of ${slot.value} got no coordinate`);
-      return (barBase as number) - (coordinate as number);
+      return Math.abs((barBase as number) - (coordinate as number));
     });
+
+  // ⛔ THE FLOOR, AND IT IS COMPUTED ONLY OVER WHAT IS DRAWN. A slot outside the visible logical
+  // range is not painted, and `priceToCoordinate` answers for it by EXTRAPOLATING off the pane —
+  // folding those numbers in would measure a bar nobody can see, which is precisely the mistake
+  // that made the previous version of this file claim more than the geometry gives.
+  const visible = chart.timeScale().getVisibleLogicalRange();
+  assert.ok(visible !== null, "the time scale has no visible range — the measurement would be vacuous");
+  let lowestDrawnBarY = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < slots.length; index += 1) {
+    const value = slots[index]!.value;
+    if (value === null || value <= 0 || index < visible.from || index > visible.to) {
+      continue;
+    }
+    const coordinate = barSeries.priceToCoordinate(value);
+    assert.ok(coordinate !== null, `the drawn bar of ${value} got no coordinate`);
+    lowestDrawnBarY = Math.max(lowestDrawnBarY, coordinate as number);
+  }
+  assert.ok(Number.isFinite(lowestDrawnBarY), "no positive bar is inside the visible range — nothing was measured");
+  const marksBandTop = absence.priceToCoordinate(LIQUIDATION_MARKS_BAND_PX);
+  assert.ok(marksBandTop !== null, "the marks band has no top coordinate — the measurement would be vacuous");
   const heightOf = (series: typeof absence, value: number): number => {
     const coordinate = series.priceToCoordinate(value);
     assert.ok(coordinate !== null, `the mark of ${value} got no coordinate`);
@@ -252,8 +380,14 @@ async function measureCohortSurface(
     barHeightsPx,
     absenceMarkPx: heightOf(absence, LIQUIDATION_ABSENCE_MARK_PX),
     zeroMarkPx: heightOf(zero, LIQUIDATION_ZERO_MARK_PX),
+    lowestDrawnBarY,
+    marksBandTopY: marksBandTop as number,
     barBaselineY: barBase as number,
     zeroMarkTopY: zeroTop as number,
+    paneFloorY: markBase as number,
+    visibleFrom: visible.from,
+    visibleTo: visible.to,
+    microDrawn: MICRO_GRID_INDEX >= visible.from && MICRO_GRID_INDEX <= visible.to,
   };
   chart.remove();
   dom.window.close();
@@ -292,6 +426,19 @@ test("the synthetic universe reproduces the real series' sparsity AND its max/p5
     `synthetic max/p50 = ${ratio.toFixed(1)}x against the ${REAL_MAX_OVER_P50}x measured on the real 4-day window`,
   );
   assert.ok(positives.includes(MICRO_LIQUIDATION_USD), "the sub-observed micro value must be in the universe");
+  // ⛔ THE ANTI-VACUITY GUARD, and it is the one this file did not have. A counter-example at or
+  // above the histogram base is on the safe side BY CONSTRUCTION: every disjointness assertion
+  // would hold no matter what the configuration did, which is how `2` passed while proving nothing
+  // (`T-05.10`, `M-1`).
+  assert.ok(
+    MICRO_LIQUIDATION_USD < LIQUIDATION_LOG_BASE,
+    `the counter-example is ${MICRO_LIQUIDATION_USD}, not below the histogram base of ${LIQUIDATION_LOG_BASE} — ` +
+      "a bar at or above the base cannot be drawn downward, so it cannot challenge the claim it is here to challenge",
+  );
+  assert.ok(
+    MICRO_SWEEP_USD.filter((micro) => micro < LIQUIDATION_LOG_BASE).length >= 3,
+    "fewer than three sweep values are below the histogram base — the sweep stopped spanning the regime that fails",
+  );
 });
 
 test("no present bar falls below 1 pixel, and the median is legible", async () => {
@@ -347,24 +494,120 @@ test("RN-1 in pixels: absence DRAWS, and it does not draw what the legitimate ze
   );
 });
 
-test("the BANDS are disjoint: no bar reaches the marks band — including one far below anything observed", async () => {
-  // ⛔ THIS IS THE CLAIM `T-01.8` COULD NOT MAKE. There the ordering held because of the values that
-  // happened to be in the data; here it holds because the bar baseline sits ABOVE the top of the
-  // tallest mark, so the shortest bar expressible is still above the marks. `y` grows DOWNWARD.
-  const { barBaselineY, zeroMarkTopY, barHeightsPx } = await measureCohortSurface(syntheticLiquidationSlots(), {
+test("the BANDS are disjoint by SCALE MARGIN — an inequality between two production constants", () => {
+  // ⛔ THE STRUCTURAL HALF, AND IT IS PURE ARITHMETIC OVER THE SOURCE. The pixels below are what the
+  // library does with these two numbers; this is the number itself. It fails the moment someone
+  // restyles either margin into the other's territory, without needing a canvas to notice.
+  const barBandFloor = 1 - LIQUIDATION_BAR_SCALE_MARGINS.bottom;
+  const marksBandTop = LIQUIDATION_MARKS_SCALE_MARGINS.top;
+  assert.ok(
+    barBandFloor < marksBandTop,
+    `the bar band's floor is at ${(barBandFloor * 100).toFixed(0)}% of the pane and the marks band starts at ` +
+      `${(marksBandTop * 100).toFixed(0)}% — the bars own pixels the marks also own, and a small enough ` +
+      "liquidation is drawn where the zero mark is",
+  );
+});
+
+test("the bar band's FLOOR is what no drawn bar passes — across five decades, four of them BELOW the base", async () => {
+  // ⛔ THIS IS THE CLAIM `T-01.8` COULD NOT MAKE, IN THE ONLY FORM IN WHICH IT IS TRUE. The previous
+  // version asserted `barBaselineY < zeroMarkTopY` and read it as "no bar of any value" — a
+  // non-sequitur `T-05.10`'s gate falsified: the baseline is where a bar STARTS, and a value below
+  // `base` draws DOWNWARD from it. What holds for every value is the FLOOR, and the proof that it
+  // is a property of the CONFIGURATION rather than of this universe is that the floor comes back as
+  // the SAME number for every sub-base value while the baseline moves across decades.
+  const subBaseFloors: number[] = [];
+  const baselines: number[] = [];
+  for (const micro of MICRO_SWEEP_USD) {
+    const measurement = await measureCohortSurface(syntheticLiquidationSlots(micro), { mode: "Logarithmic" });
+    assert.ok(
+      measurement.microDrawn,
+      `the micro value ${micro} sits at grid index ${MICRO_GRID_INDEX}, outside the visible range ` +
+        `[${measurement.visibleFrom.toFixed(0)}, ${measurement.visibleTo.toFixed(0)}] — it is NOT drawn, so this ` +
+        "measurement would be an extrapolation and the assertion below would prove nothing",
+    );
+    assert.ok(
+      measurement.lowestDrawnBarY < measurement.marksBandTopY,
+      `with a liquidation of ${micro} the lowest DRAWN bar reaches y=${measurement.lowestDrawnBarY.toFixed(2)}, ` +
+        `inside the marks band that starts at y=${measurement.marksBandTopY.toFixed(2)} — a real liquidation is ` +
+        "being painted where the pane says 'zero legítimo' lives",
+    );
+    assert.ok(
+      measurement.zeroMarkTopY - measurement.lowestDrawnBarY > PIXEL_FLOOR,
+      `the gap to the tallest mark is ${(measurement.zeroMarkTopY - measurement.lowestDrawnBarY).toFixed(2)}px — ` +
+        "under a pixel it is not a separation",
+    );
+    // ⛔ AND THE BOUND IS THE PRODUCTION MARGIN, NOT A NUMBER THIS FILE LIKED. `paneFloorY` is the
+    // pane's height in pixels and `1 - bottom` is the constant read off the source, so this ties
+    // the measured pixel to the configuration instead of to a remembered `162,20`.
+    const bandFloorY = measurement.paneFloorY * (1 - LIQUIDATION_BAR_SCALE_MARGINS.bottom);
+    assert.ok(
+      measurement.lowestDrawnBarY <= bandFloorY + 0.5,
+      `with a liquidation of ${micro} the lowest drawn bar reaches y=${measurement.lowestDrawnBarY.toFixed(2)}, past ` +
+        `the band floor the margin declares (y=${bandFloorY.toFixed(2)} = ${measurement.paneFloorY.toFixed(2)} × ` +
+        `${(1 - LIQUIDATION_BAR_SCALE_MARGINS.bottom).toFixed(2)})`,
+    );
+    if (micro < LIQUIDATION_LOG_BASE) {
+      subBaseFloors.push(measurement.lowestDrawnBarY);
+    }
+    baselines.push(measurement.barBaselineY);
+  }
+  // Below the base the floor is INVARIANT in the value — the sub-base bar is the smallest visible
+  // one, so autoscale puts it exactly on the floor whatever it is worth. That invariance is the
+  // evidence that the guarantee belongs to the configuration and not to this universe. (At or above
+  // the base the floor is a BOUND, not an equality: nothing is drawn that low, which is safer.)
+  assert.ok(
+    Math.max(...subBaseFloors) - Math.min(...subBaseFloors) < PIXEL_FLOOR,
+    `across ${subBaseFloors.length} values spanning two decades below the base the floor moved by ` +
+      `${(Math.max(...subBaseFloors) - Math.min(...subBaseFloors)).toFixed(2)}px — it is not a floor, and the ` +
+      "guarantee is back to being a property of the data",
+  );
+  assert.ok(
+    Math.max(...baselines) - Math.min(...baselines) > 10,
+    `the baseline barely moved (${(Math.max(...baselines) - Math.min(...baselines)).toFixed(2)}px) across five ` +
+      "decades — the sweep is no longer reaching below the histogram base, so it can no longer fail",
+  );
+});
+
+test("the same holds when the WHOLE series arrives in base units — the regression the catalog measured", async () => {
+  // ⛔ NOT ACADEMIC: `liquidation_catalog.py:34-38` measured that the provider's DEFAULT
+  // (`convert_to_usd=false`) answers in BASE units — `BTC 0.003`. If `CONVERT_TO_USD_REQUIRED` ever
+  // stops reaching the request, EVERY value in this pane is below the histogram base at once, which
+  // is the regime the old wording would have drawn straight through the marks.
+  const baseUnitSlots = syntheticLiquidationSlots(0.003).map((slot) =>
+    slot.value === null || slot.value === 0 ? slot : { time: slot.time, value: (slot.value / REAL_MAX) * 0.05 },
+  );
+  const { lowestDrawnBarY, marksBandTopY, barBaselineY } = await measureCohortSurface(baseUnitSlots, {
     mode: "Logarithmic",
   });
   assert.ok(
-    barBaselineY < zeroMarkTopY,
-    `the bar baseline (y=${barBaselineY.toFixed(2)}) is not above the top of the zero mark (y=${zeroMarkTopY.toFixed(2)}) — ` +
-      "the two bands overlap and a small enough liquidation is drawn where the zero mark is",
+    lowestDrawnBarY < marksBandTopY,
+    `in base units the lowest drawn bar reaches y=${lowestDrawnBarY.toFixed(2)}, inside the marks band ` +
+      `(y=${marksBandTopY.toFixed(2)})`,
   );
-  // The micro bar is in the universe and it is the shortest one; the claim above covers it by
-  // construction, and this line makes the coverage visible rather than implied.
-  assert.ok(Math.min(...barHeightsPx) >= 0, "a negative bar height would mean the baseline moved below the data");
+  // And the evidence that the regime really is the pathological one: the baseline has left the
+  // floor far behind, i.e. every bar in the pane now hangs DOWNWARD from it.
   assert.ok(
-    zeroMarkTopY - barBaselineY > PIXEL_FLOOR,
-    `the gap between the bands is ${(zeroMarkTopY - barBaselineY).toFixed(2)}px — under a pixel it is not a separation`,
+    barBaselineY < lowestDrawnBarY - 50,
+    `the baseline (y=${barBaselineY.toFixed(2)}) is not far above the floor (y=${lowestDrawnBarY.toFixed(2)}) — ` +
+      "this universe stopped being entirely below the histogram base, so it stopped testing the regression",
+  );
+});
+
+test("MORDE: dropping the bars' bottom margin INTO the marks band makes the floor assert FAIL", async () => {
+  // ⛔ THE TIGHT MUTATION — it moves the guarantee's own inequality by the smallest step that
+  // breaks it: `bottom: 0.10` puts the bar floor at 90% of the pane against a marks band that
+  // starts at 88%. The bar is still above the ZERO MARK's top (`171,80` vs `175,97`), so a test
+  // written against the mark instead of against the BAND would survive this — which is exactly why
+  // the assertion above is written against the band.
+  const { lowestDrawnBarY, marksBandTopY } = await measureCohortSurface(syntheticLiquidationSlots(), {
+    mode: "Logarithmic",
+    barMarginBottom: 0.1,
+  });
+  assert.ok(
+    lowestDrawnBarY >= marksBandTopY,
+    "with the bars' bottom margin at 0.10 against a marks band starting at " +
+      `${LIQUIDATION_MARKS_SCALE_MARGINS.top} the overlap did NOT happen (floor y=${lowestDrawnBarY.toFixed(2)}, ` +
+      `band top y=${marksBandTopY.toFixed(2)}) — the assert above is not measuring the margin, re-anchor it`,
   );
 });
 
@@ -372,14 +615,42 @@ test("MORDE: raising the marks band into the bars makes the disjointness assert 
   // The mutation is the one a careless restyle would make: giving the marks the same margin the
   // bars have, so the two bands share pixels again. Without this half, the green above could be a
   // property of the library rather than of the configuration.
-  const { barBaselineY, zeroMarkTopY } = await measureCohortSurface(syntheticLiquidationSlots(), {
+  const { lowestDrawnBarY, marksBandTopY } = await measureCohortSurface(syntheticLiquidationSlots(), {
     mode: "Logarithmic",
     marksMarginTop: LIQUIDATION_BAR_SCALE_MARGINS.top,
   });
   assert.ok(
-    barBaselineY >= zeroMarkTopY,
-    `with the marks band raised to the bars' own margin the separation SURVIVED (bar baseline y=${barBaselineY.toFixed(2)}, ` +
-      `zero mark top y=${zeroMarkTopY.toFixed(2)}) — the assert above is not measuring the margin, re-anchor it`,
+    lowestDrawnBarY >= marksBandTopY,
+    `with the marks band raised to the bars' own margin the separation SURVIVED (floor y=${lowestDrawnBarY.toFixed(2)}, ` +
+      `band top y=${marksBandTopY.toFixed(2)}) — the assert above is not measuring the margin, re-anchor it`,
+  );
+});
+
+test("production leaves the bar scale AUTOSCALED — the guarantee's second precondition", () => {
+  assert.ok(
+    productionBarScaleIsAutoscaled(),
+    "the liquidation bar scale in SymbolClient.tsx pins its autoscale — the band floor stops holding still and a " +
+      "value below the histogram base leaves the pane (see the MORDE below for the pixels)",
+  );
+});
+
+test("MORDE: pinning the bar scale's autoscale walks a sub-base bar out of the pane", async () => {
+  // ⛔ WHY THIS HALF EXISTS: the floor is not a law of the library, it is a consequence of the
+  // smallest VISIBLE value setting the range. Pin the range and the consequence goes away — the
+  // `0,003` bar is drawn below the pane's own floor, through the marks band on its way out. This is
+  // the mutation that makes the guard above load-bearing instead of decorative.
+  const { lowestDrawnBarY, marksBandTopY, paneFloorY } = await measureCohortSurface(syntheticLiquidationSlots(), {
+    mode: "Logarithmic",
+    pinBarAutoscale: true,
+  });
+  assert.ok(
+    lowestDrawnBarY >= marksBandTopY,
+    `with the bar scale pinned the sub-base bar STAYED inside its band (floor y=${lowestDrawnBarY.toFixed(2)}, ` +
+      `band top y=${marksBandTopY.toFixed(2)}) — autoscale is not what the floor rests on, re-anchor the claim`,
+  );
+  assert.ok(
+    lowestDrawnBarY > paneFloorY,
+    `pinned, the bar stopped at y=${lowestDrawnBarY.toFixed(2)}, still inside the pane (floor y=${paneFloorY.toFixed(2)})`,
   );
 });
 
