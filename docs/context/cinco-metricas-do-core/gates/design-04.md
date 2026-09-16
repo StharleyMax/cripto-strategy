@@ -1203,3 +1203,144 @@ owner como informação nova, não como decisão revogada.** Ação registrada n
   (proibido). Sustentados por fonte + 17 asserts + o universo FRACO do `make verify`.
 - **Se o rótulo de borda basta cognitivamente** — continua `[NÃO SEI]` desde o `§R2.6 Explore`, e
   nenhuma das três rodadas o respondeu, porque nenhuma observou uso.
+
+---
+---
+
+# RODADA 4 — `2026-09-16` · MICRO-RODADA `§R4` · **R1, R2 e R3 permanecem intactas**
+
+**Escopo, e ele é estreito de propósito:** ratificar (ou não) **UMA** divergência de forma — a faixa
+das 4 h implementada **só com as bordas, sem fill**. **Não é revisão completa da tela.** Nada além
+desta pergunta foi julgado.
+
+**Cabeça medida:** `05a7826` — ⚠️ o despacho disse `10fffdf`; o `HEAD` real tem um commit a mais.
+**Conferido que ele não toca o artefato:** `git show --stat 05a7826` = **1 arquivo, `docs/`**
+(`PENDENCIAS-PARA-AVALIAR-DEPOIS.md`, +22) ⇒ `frontend/` é byte-idêntico a `10fffdf`, e o julgamento
+vale para os dois. **Registro em vez de assumir.**
+**Artefato:** `LongShortRecentBand`, `SymbolClient.tsx:1920-1960`, na **tela renderizada**.
+**Divergência julgada:** `T-04.10-achados-front.md` §2.3.
+
+## VEREDITO DE `§R4`: **APPROVED** — a faixa sem fill fica
+
+| pergunta do despacho | veredito |
+|---|---|
+| **(a)** a faixa sem fill honra o que `§R2`/`§R3` aprovaram? | **SIM.** A perda do agrupamento **não é material**, e o §R4.2 diz por quê com número |
+| **(b)** ela é **visível** na tela real, por PIXEL? | **SIM.** **2 204 pixels** mudam quando ela sai. Duas colunas de **192 px** de altura, `#8b949e` **exato**, contraste medido **5.82** contra o plot |
+
+⚠️ **E ratifico o RESULTADO corrigindo a JUSTIFICATIVA: a razão declarada como "física" está
+superestimada** (§R4.3). Isso não muda o veredito — muda o que fica escrito como verdade.
+
+## R4.1 A evidência de pixel — e ela é uma ABLAÇÃO, não uma asserção de DOM
+
+O §2.4 de `T-04.10` provou que **toda** asserção de DOM desta faixa foi cega uma vez
+(`toHaveCount(1)` ✔, `boundingBox 120×192` ✔, **zero pixel na tela**). ⇒ **não medi por DOM.**
+Medi **removendo a faixa no browser e comparando os pixels compostos** — a única evidência que aquele
+defeito não teria passado.
+
+```
+next start desta árvore em 127.0.0.1:4991 (:3000 é o container de PRODUÇÃO, não tem este branch)
+INGEST_HEALTH_API_BASE_URL=http://127.0.0.1:8000 · Chromium · viewport 1280×1024 · deviceScaleFactor=1
+clip no host do gráfico = 1254×220 · screenshot COM a faixa → el.style.display='none' → screenshot SEM
+decodificação PNG em python3 puro (zlib+struct; não há PIL nem numpy nesta máquina)
+```
+
+| medida | valor |
+|---|---|
+| pixels que **mudam** ao remover a faixa | **`2204`** |
+| colunas com ≥ 80% da altura (as **bordas**) | **`x=1087` e `x=1206`**, **`192 px` cada** |
+| cor composta da borda (`y=95`) | **`rgb(139,148,158)`** = **`#8b949e` exato** |
+| pixel vizinho, fora da faixa | `rgb(19,23,34)` = `#131722` |
+| **contraste medido no pixel composto** | **`5.82`** contra o plot |
+| `background-color` / `opacity` computados | `rgba(0,0,0,0)` / `1` ⇒ **zero fill, zero alpha** |
+| `z-index` da faixa vs maior canvas | **`10` vs `2`** |
+| `data-fact` | `long_short_recent_band:5519/5759` ⇒ `240` grades = **4 h exatas** |
+
+⭐ **O `5.82` medido no pixel é o MESMO `5.82` que o `§2.3` previu por cálculo, três rodadas antes.**
+Previsão e medição independentes batendo no centésimo é a evidência mais forte deste gate — e ela
+prova, de quebra, que **nenhum alpha sobrou na cadeia de composição** (`M-4` continua fechado **na
+tela**, não só no HTML do estudo).
+
+**Determinismo da ablação conferido:** o screenshot **restaurado** é **byte-idêntico** ao original
+(`cmp` → sem diferença) ⇒ os `2204` são a faixa, não ruído de repintura.
+
+## R4.2 (a) A perda do agrupamento **não é material** — três razões, todas medidas
+
+1. **O fill nunca foi portador.** `§2.3`: fill `1.19` contra borda `5.82`. `1.19` está abaixo do piso
+   `3.0` de `SC 1.4.11` **por um fator de 2,5** — por construção ele **não podia** carregar
+   informação. Remover o que mede `1.19` remove **agrupamento**, não **fato**.
+2. **A dívida que o `D-1` abriu está paga no canal exato que ela nomeou.** `§R3.5`: *"o operador lê
+   'últimas 4 h: amplitude 0.0917' e **não consegue apontar no gráfico onde essas 4 h começam**"*.
+   **Onde começam é a borda esquerda, e ela existe, em `192 px` de `#8b949e` a `5.82`.** O `D-1` não
+   pediu região preenchida; pediu **fronteira localizável**.
+   ⭐ **E a geometria explica por que uma borda basta:** a borda direita cai em `x=1206` de um plot de
+   `1208px` — **2 px da margem**. A região é delimitada por **uma régua + a borda do "agora"**, que é
+   a forma correta de uma janela *"últimas N horas"*: ela não tem duas fronteiras simétricas, tem uma
+   fronteira e um presente.
+3. **A implementação ACRESCENTA um canal que o estudo não tinha: a região é NOMEADA.** A tag
+   `Últimas 4 h` é uma caixa **opaca de ~`91×20 px`** (`1820` dos `2204` pixels alterados, em `20`
+   linhas). **Um rótulo que diz o que a região É agrupa mais que um fill de `1.19` que diz apenas que
+   ela existe** — e, ao contrário do fill, **sobrevive inteiro à ablação de cinza**, porque é forma e
+   palavra, não tinta de área. `#8b949e` tem croma de `19/255` (`7,5%`): é **luminância quase pura**,
+   que é o canal que `ADR-010` §5.4 reserva para marca operacional.
+
+**Prova aritmética de que não há fill escondido:** um fill de área teria alterado
+`(1206−1087−1) × 192 = 22 656` pixels. Alteraram **`1820`** — **8,0%** disso, e todos na faixa de
+`20` linhas da tag. **A tela não tem fill, e o número diz exatamente quanto de fill ela não tem.**
+
+## R4.3 ⛔ A JUSTIFICATIVA do builder está SUPERESTIMADA — e ratificar sem corrigi-la seria o defeito
+
+O §2.3 de `T-04.10` declara a divergência **"física, não estética"**: *"um overlay HTML só pode ficar
+**em cima**"* de um `<canvas>` opaco, logo um fill esconderia a linha.
+
+**A primeira metade é verdadeira; a conclusão não é.** `lightweight-charts` **5.2.1** — a versão
+instalada nesta árvore — expõe `attachPrimitive()` **com `zOrder()`**, e o próprio `typings.d.ts`
+documenta o valor que refuta a impossibilidade:
+
+```
+node_modules/lightweight-charts/dist/typings.d.ts:4885-4889
+ * - `bottom`: Draw below everything except the background.
+export type PrimitivePaneViewZOrder = "bottom" | "normal" | "top";
+$ grep -c 'ISeriesPrimitive\|attachPrimitive\|IPanePrimitive' …/typings.d.ts  → 28
+```
+
+⇒ **um fill opaco DENTRO do canvas, por baixo da série, era possível.** A restrição real não é
+*"o fill é impossível"* — é *"o fill é impossível **pelo caminho de overlay HTML que foi escolhido**"*.
+São afirmações diferentes, e a segunda é a verdadeira.
+
+**Ratifico assim mesmo, e a distinção é o ponto:** a decisão está **certa pelo argumento do §R4.2**
+(o fill mede `1.19`, a região já é nomeada, `D-1` pedia fronteira), **não** por impossibilidade
+técnica. Um "não dá" que na verdade é "não valia a pena" é dívida que ninguém reabre, porque ninguém
+reabre o impossível. **Corrijo a frase, mantenho o resultado** (`R11`: erro não se apaga, se tarja).
+
+**⇒ Ação, e é de uma linha, sem tocar pixel:** `T-04.10` §2.3 passa a ler *"o fill sai porque mede
+`1.19` e a região já é nomeada; por overlay HTML ele seria impossível, e por
+`attachPrimitive`/`zOrder:'bottom'` seria possível e não compensa"*. **Não apliquei** — `frontend/` e
+o relatório do builder não são meus para editar nesta rodada; fica como item devolvido (§R4.5).
+
+## R4.4 ⛔ O que `§R4` NÃO responde — e não deixo implícito
+
+- **Se duas réguas + tag são lidas como UMA REGIÃO** por um operador — continua `[NÃO MEDIDO]`.
+  **O falsificador do `D-1` permanece em pé, na redação que `§R3.5` já lhe deu:** *"ponha o operador
+  diante da tela e peça que aponte o início das últimas 4 h; se ele precisar contar marcas de eixo,
+  `D-1` vira must-fix"*. **Este `APPROVED` não o fecha** — ele aprova a forma **entregue**, não a
+  cognição **não observada**. `[NÃO SEI]`, e é o mesmo `[NÃO SEI]` desde `§R2.6 Explore`.
+- **Se a tag oclui a linha em outro estado de mercado** — a caixa é **opaca** e tem posição **fixa**
+  (`left-2 top-1.5`). Hoje a série corre em `~1.53` e a tag está no topo, sem colisão
+  `[MEDIDO nesta rodada, 1 instante]`. **Um instante não é uma medição de colisão** — não medi outros.
+  Fora do escopo desta micro-rodada; registrado para não virar permanente por omissão.
+- **Nada mais da tela foi rejulgado.** `D-2`, `D-3`, `d-4` e o `§R3.7` seguem como `§R3` os deixou.
+
+## R4.5 Registro de execução da rodada 4
+
+| item | estado |
+|---|---|
+| escrita | **somente** este arquivo, **somente** como `§R4`. As **1205** linhas de `R1`+`R2`+`R3` não foram tocadas |
+| `frontend/` | **intocado** — a ablação foi `el.style.display` **no browser**; nenhum arquivo editado |
+| servidor | `next start` em `127.0.0.1:4991`, **derrubado ao fim** (`ss -ltn` → `0` listeners em `:4991`) |
+| `:3000` / `:8000` | **não tocadas** e **vivas** ao fim (`1` listener cada). `:3000` é PRODUÇÃO e não foi usada |
+| commits | **nenhum** |
+| `gate-record` | **NÃO gravado** — ato do owner |
+| Figma | **nenhuma chamada** |
+| Stitch | **nenhuma geração** — o artefato é código renderizado |
+| Postgres | **não tocado**; nada semeado; API lida só por `GET` |
+| devolvido | **1 item**: a correção da frase de `T-04.10` §2.3 (§R4.3), dono = quem for tocar aquele relatório |
