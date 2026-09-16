@@ -62,6 +62,7 @@ from src.modules.sentimento.domain.as_of_accessor import (
     _absorb,
     _activation_instant,
     _admits,
+    _first_observation_order,
     as_of,
     as_of_batch,
 )
@@ -290,9 +291,20 @@ def test_no_backwards_revision_in_md_series_today_can_move_a_reading() -> None:
     could not fire is the `rc=0` ambiguity `ADR-012` names, and it would have let
     `_absorb` degrade to "first arrival wins" with the suite green.
 
-    THIS TEST IS THE TRIPWIRE. The day a revision lands inside its own bucket's ownership
-    window, this assertion fails and whoever sees it moves the `D3` falsifier onto real rows,
-    where it belongs.
+    ⛔ THIS TEST IS **NOT** AN AUTOMATIC TRIPWIRE, AND THE PREVIOUS VERSION OF THIS PARAGRAPH
+    CLAIMED IT WAS. It read "the day a revision lands inside its own bucket's ownership window,
+    this assertion fails" — which is FALSE, and falsely in the exact direction this whole file
+    warns about. It asserts over `_observations()`, the slice FROZEN by md5 at the top of this
+    module, not over `md.series`: the frozen bytes cannot acquire a new shape, so the day the
+    shape appears in production this assertion goes on passing. Claiming a gate that cannot
+    fire is the `rc=0` ambiguity of `ADR-012` — the same one the paragraph above denounces —
+    and it was caught by `/review` of this branch, not by the suite.
+
+    WHAT IT ACTUALLY IS: a PIN on the frozen slice. It fails only if someone RE-EXPORTS the
+    slice and the new bytes carry a readable re-minimisation — so the trigger is **manual, and
+    owned by whoever re-exports**. The check itself is the `SELECT` above, and it has to be
+    re-run by hand against `md.series` (read-only) before trusting `D3`'s synthetic falsifier
+    again. `[NÃO MEDIDO automaticamente — por construção, e agora dito em vez de implicado]`
     """
     observations = _observations()
     by_series: dict[str, dict[int, list[Observation]]] = {}
@@ -640,3 +652,128 @@ def test_absorb_is_reachable_and_is_what_the_falsifier_above_replaced() -> None:
     assert callable(_absorb)
     assert callable(_activation_instant)
     assert callable(_admits)
+
+
+def _older_bucket_activating_last() -> tuple[Observation, ...]:
+    """Two buckets; the OLDER one activates LAST — the shape `max(latest, bucket_end)` exists for.
+
+    ⚠️ SYNTHETIC AND LABELLED, same contract as `_revision_inside_its_own_ownership_window`
+    above: the IDENTITY is the real open-interest key of the pilot catalog, and only the
+    TIMING is fabricated.
+
+    Why it has to be synthetic is the same measured reason: a row of an older bucket that
+    only becomes available AFTER a newer bucket is already readable is a shape `md.series`
+    does not carry today, and shipping the falsifier anyway — knowing it could not fire — is
+    the failure `ADR-012` names.
+
+        bucket NEW (`B`)         activates at `B + 10.000`, value `9.0`
+        bucket OLD (`B - 60.000`) activates at `B + 130.000`, value `1.0`   <- absorbed LAST
+
+    `_absorb` returns the running latest `bucket_end`. Dropping the `max` makes absorbing the
+    OLD row move the pointer BACKWARDS, and the reading at `B + 140.000` answers `1.0` — a
+    stale value drawn as the current one, which is precisely the screen defect this whole
+    feature exists to prevent.
+    """
+    bucket_new = 1_789_383_000_000
+    bucket_old = bucket_new - 60_000
+    series, _ = _open_interest_case()
+    key_id = series.series_key_id()
+
+    def _row(*, bucket_end: int, available_at: int, value_raw: str) -> Observation:
+        row = SeriesRow(
+            series_key_id=key_id,
+            symbol=_SYMBOL,
+            source="/futures/data/openInterestHist",
+            bucket_end=bucket_end,
+            event_time=bucket_end,
+            available_at=available_at,
+            availability_source=AvailabilitySource.OBSERVED,
+            ingested_at=available_at,
+            observed_at=available_at,
+            provenance=Provenance.OBSERVED,
+            src_label_raw="/futures/data/openInterestHist",
+            observer_id="adr-039-latest-bucket-end-falsifier",
+            observer_region="unknown",
+            is_final=True,
+            value_raw=value_raw,
+            principal_id=None,
+        )
+        return Observation(row=row, value=Decimal(value_raw))
+
+    return (
+        _row(bucket_end=bucket_new, available_at=bucket_new + 10_000, value_raw="9.00000000"),
+        _row(bucket_end=bucket_old, available_at=bucket_new + 130_000, value_raw="1.00000000"),
+    )
+
+
+def test_falsifier_the_latest_bucket_end_must_never_move_backwards() -> None:
+    """`ADR-039` §3 item 3: dropping the `max` in `_absorb` draws a STALE value as current.
+
+    Found by `/review` of this branch: mutating `as_of_accessor.py`'s last line of `_absorb`
+    to `return bucket_end` left the whole suite GREEN `[MEDIDO 2026-09-16: 64 passed with the
+    mutation in place]`. A contract line with no falsifier is a contract line the gate cannot
+    hold, which is the `rc=0` ambiguity of `ADR-012` — so this test exists to make that
+    mutation red.
+
+    It asserts the DIVERGENCE, not just the mutation: the unmutated batch has to keep matching
+    `as_of` on the same rows, or the test would be measuring its own fixture.
+    """
+    series, policy = _open_interest_case()
+    observations = _older_bucket_activating_last()
+    bar_policy = BarPolicy.FINAL_ONLY
+    bucket_new = observations[0].row.bucket_end
+    instants = (bucket_new + 60_000, bucket_new + 140_000)
+
+    definition = _one_by_one(
+        instants,
+        series=series,
+        observations=observations,
+        policy=policy,
+        bar_policy=bar_policy,
+    )
+    honest = _in_batch(
+        instants,
+        series=series,
+        observations=observations,
+        policy=policy,
+        bar_policy=bar_policy,
+    )
+    assert [r.projection() for r in honest] == [r.projection() for r in definition]
+    assert definition[0].value == Decimal("9.00000000")
+    assert definition[1].value == Decimal("9.00000000"), (
+        "the definition itself stopped holding the newest bucket once an older one activates "
+        "later — the shape this falsifier is about no longer exists in `as_of`"
+    )
+
+    def _forget_the_max(
+        observation: Observation,
+        *,
+        best_by_bucket_end: dict[int, Observation],
+        latest_bucket_end: int | None,
+    ) -> int:
+        bucket_end = observation.row.bucket_end
+        incumbent = best_by_bucket_end.get(bucket_end)
+        if incumbent is None or _first_observation_order(observation) < _first_observation_order(
+            incumbent
+        ):
+            best_by_bucket_end[bucket_end] = observation
+        return bucket_end
+
+    original = as_of_accessor._absorb  # noqa: SLF001
+    try:
+        as_of_accessor._absorb = _forget_the_max  # noqa: SLF001
+        mutated = _in_batch(
+            instants,
+            series=series,
+            observations=observations,
+            policy=policy,
+            bar_policy=bar_policy,
+        )
+    finally:
+        as_of_accessor._absorb = original  # noqa: SLF001
+
+    assert mutated[1].value == Decimal("1.00000000"), (
+        "the mutation stopped diverging — this falsifier no longer proves the `max` is "
+        "load-bearing, and the contract line goes back to having no gate"
+    )
+    assert [r.projection() for r in mutated] != [r.projection() for r in definition]

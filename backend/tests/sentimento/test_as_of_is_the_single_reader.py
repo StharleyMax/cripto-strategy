@@ -327,9 +327,19 @@ DECLARED_PRODUCERS = [
     # `C3` the gate is DIFFERENTIAL, not argumentative, and it runs on a REAL slice of
     #      `md.series`: `test_as_of_batch_differential.py` asserts
     #      `as_of_batch(...)[i].projection() == as_of(t=instants[i], ...).projection()` bit for
-    #      bit over `1.282` real rows that contain BOTH defects a synthetic fixture does not
-    #      have — `5` of the `748` rows with `available_at < bucket_end` (`ADR-039`/`D2`) and
-    #      `53` of the multi-row buckets whose winner is re-minimised backwards (`D3`).
+    #      bit over `571` real rows that carry the `D2` defect a synthetic fixture does not
+    #      have — `2` of the `748` rows with `available_at < bucket_end` (`ADR-039`/`D2`),
+    #      INCLUDING THE WORST (`-3.481.439 ms`), plus `23` multi-row buckets re-minimised
+    #      backwards (`D3`).
+    #      ⛔ The three numbers in the previous version of these lines (`1.282` rows, `5` of
+    #      the 748, `53` buckets) were WRONG — none matched what the differential asserts, and
+    #      `/review` of this branch caught them against `CLAUDE.md`'s "nenhum número sem o
+    #      comando que o produziu". These are the asserted ones:
+    #      `test_as_of_batch_differential.py:238` (`len(early) == 2`), `:261`
+    #      (`re_minimised == 23`), and `len(_observations()) == 571`.
+    #      ⚠️ `D3` is carried but NOT observable at the reading on today's data (`0` of `5.624`
+    #      — see that file's universe section), so its falsifier runs on a LABELLED synthetic
+    #      pair. `D2`'s runs on the real rows.
     # `C4` this entry, and the tightened `_mentions_a_reading` below that made the guard able to
     #      see a `-> tuple[AsOfReading, ...]` at all. Before `ADR-039` it could not, and would
     #      have passed this change WITHOUT A LINE ALTERED.
