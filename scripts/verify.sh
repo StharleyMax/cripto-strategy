@@ -253,9 +253,20 @@ else
     # O `passed` do Playwright vem com o tempo entre parênteses (`26 passed (33.2s)`) e o
     # `failed` vem sozinho (`1 failed`) — os DOIS são impressos, porque "26 passed" ao lado de
     # um `[FALHA]` é exatamente o resumo que faz alguém ler verde num portão vermelho.
+    # ⚠️ 2026-09-16 — TERCEIRA ocorrência da mesma classe neste arquivo (ver o bloco de
+    # `test-frontend`): o Playwright escreve `40 passed\033[39m\033[2m (3.2s)`, com a decoração
+    # ENTRE o `passed` e o parêntese, então o padrão acima nunca casava e o portão imprimia
+    # `(número não extraído)` com 40 testes verdes no log. Honesto, mas cego — e um portão que
+    # não sabe dizer quantos mediu é o `rc=0` indistinguível de `ADR-012`. Remover o ANSI ANTES
+    # de casar é o remédio da classe inteira; caçar `$` e parêntese um a um é o que a repetiu 3×.
+    # O `sed` vai INLINE nas duas, e não numa variável: comando guardado em variável depende de
+    # word splitting, que o `bash` deste script faz e o `zsh` do operador NÃO — a versão em
+    # variável passa aqui e morre na mão de quem copiar a linha para o terminal.
     N_E_PASS="$(awk '/^########## e2e ::/{f=1;next} /^########## /{f=0} f' "$LOG" \
-                  | grep -aoE '[0-9]+ passed \([0-9.]+m?s\)' | tail -1)"
+                  | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
+                  | grep -aoE '[0-9]+ passed( \([0-9.]+m?s\))?' | tail -1)"
     N_E_FAIL="$(awk '/^########## e2e ::/{f=1;next} /^########## /{f=0} f' "$LOG" \
+                  | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
                   | grep -aoE '^ *[0-9]+ failed' | tail -1 | tr -s ' ')"
     DET_E="${N_E_PASS:-(número não extraído)}${N_E_FAIL:+, $N_E_FAIL}"
     [ "$RC_E" -eq 3 ] && DET_E="ambiente recusou medir — grep '^RECUSA:' no log"
