@@ -262,12 +262,46 @@ def test_the_scan_has_a_non_empty_universe_so_a_green_result_means_something() -
     assert len(modules) >= 116, f"only {len(modules)} modules scanned — the universe collapsed"
 
 
+# Every public callable of `as_of_accessor` allowed to produce an `AsOfReading`, each with the
+# reason it is NOT a second reading track — same format as `DECLARED_TOUCHERS` above, and for the
+# same reason: a registry whose entries carry no argument is a list, not a gate.
+DECLARED_PRODUCERS = [
+    # The DEFINITION of the read (`ADR-039/D1`, `C2`). Every other entry here owes a
+    # bit-for-bit differential against THIS one over `projection()`, never an argument.
+    "as_of",
+]
+
+
+def _mentions_a_reading(annotation: object) -> bool:
+    """Does this return annotation produce an `AsOfReading`, under ANY spelling?
+
+    ⛔ Asking `annotation in {AsOfReading, "AsOfReading"}` — what this test did until
+    `ADR-039` — is a gate that does not look. `as_of_accessor` carries
+    `from __future__ import annotations`, so every annotation arrives as a STRING: a new
+    public `-> tuple[AsOfReading, ...]` spells `"tuple[AsOfReading, ...]"`, which is not in
+    that set, and the old assert passed **without a single line changed**
+    `[MEDIDO 2026-09-16: regressao plantada, suite VERDE 5 passed]`.
+
+    That is the exact act `DECLARED_TOUCHERS`'s `collectors_cli.py` entry already names and
+    rejects — "it would have kept this file out of this registry by picking a synonym, which
+    is a bypass of the gate, not a compliance with it". Matching the MENTION instead of the
+    whole annotation closes it: a container of readings is still a producer of readings.
+    """
+    if annotation is inspect.Signature.empty:
+        return False
+    if annotation is AsOfReading:
+        return True
+    return AsOfReading.__name__ in str(annotation)
+
+
 def test_exactly_one_public_callable_in_the_module_produces_a_reading() -> None:
     """The uniqueness stated inside the module: one function returns `AsOfReading`.
 
     `reject_delay_threshold_above_staleness` is public and is NOT an accessor — it returns
     `None` and only refuses. The distinction is the return type, so this test asks for it
     directly instead of trusting the naming.
+
+    ⚠️ The distinction is the return type, NOT the spelling of it — see `_mentions_a_reading`.
     """
     producers = [
         name
@@ -275,9 +309,13 @@ def test_exactly_one_public_callable_in_the_module_produces_a_reading() -> None:
         if not name.startswith("_")
         and inspect.isfunction(member)
         and member.__module__ == as_of_accessor.__name__
-        and inspect.signature(member).return_annotation in {AsOfReading, "AsOfReading"}
+        and _mentions_a_reading(inspect.signature(member).return_annotation)
     ]
-    assert producers == ["as_of"]
+    assert producers == DECLARED_PRODUCERS, (
+        f"public callables producing an AsOfReading changed: {producers} != "
+        f"{DECLARED_PRODUCERS}. A new one is a SECOND TRACK unless ADR-039/D1's C1-C4 hold; "
+        f"declare it in DECLARED_PRODUCERS with the reason, never by renaming its return type."
+    )
 
 
 DECLARED_IMPORTERS = frozenset(
