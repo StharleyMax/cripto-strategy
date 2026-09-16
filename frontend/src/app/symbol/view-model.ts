@@ -39,14 +39,14 @@
  */
 
 import { ONE_MINUTE_MS, resolveFlowReading, type FlowReading, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
-import type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance } from "./panel-status.ts";
+import type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance, SeriesValueStats } from "./panel-status.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 
 // Re-exported so the server-side callers of `resolveFreshnessVerdict` get the function and its
 // return type from ONE import; the type itself is DECLARED in `panel-status.ts`, which is the
 // only module both sides of the RSC boundary may import (see its own docstring for why).
-export type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance };
+export type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance, SeriesValueStats };
 
 // Re-exported, not re-implemented: `computeSeriesKeyId` moved to its own module so a Playwright
 // spec can import it without evaluating the `charts` barrel (and, through it, `jsdom`). Every
@@ -260,6 +260,98 @@ export function countZeroSlots(slots: readonly ScalarSlotShape[]): number {
 export function firstPresentSlotMs(slots: readonly ScalarSlotShape[]): number | null {
   const found = slots.find((slot) => slot.value !== null);
   return found === undefined ? null : found.time;
+}
+
+/**
+ * `T-04.8` — the five numbers of `SeriesValueStats`, computed over the slots that carry a value.
+ * `null` when none does: a window with no observation has no minimum, and inventing one (`0`, the
+ * previous window's, the equilibrium of the metric) is the `RN-1` defect wearing a statistic's
+ * costume.
+ *
+ * ⛔ THE MEDIAN IS NEAREST-RANK, and the choice is `M-1`'s, not taste: the interpolated median of
+ * an even sample is a value the series never took, and the approved screen publishes the median as
+ * a NUMBER OF THE SERIES (*"42,08% da mediana 1,6575"*). `Math.ceil(n/2) - 1` over the ascending
+ * order is the p50 that is always an observation.
+ *
+ * Sorting a COPY (`[...]`), and comparing with `a - b` rather than the default lexicographic
+ * comparator: `[1.1395, 1.8369, 1.495].sort()` answers `[1.1395, 1.495, 1.8369]` only by accident
+ * of the decimal digits, and on this very series `[10, 9]` would sort to `[10, 9]`.
+ *
+ * ⚠️ THE UNIVERSE IS THE GRID SLOT, NOT THE NATIVE OBSERVATION, AND THAT IS DECLARED RATHER THAN
+ * HIDDEN — it is the same `RN-S1` staircase this file counts twice for the pane's headline. A `5m`
+ * series served on the `1m` grid repeats one observation across up to five slots, so the MEDIAN
+ * computed here is weighted by how long each value stood (a time-weighted p50), not by how many
+ * times it was published. `min`/`max`/`amplitude` are unaffected by weighting; only the median is.
+ *
+ * Two things keep that from being a silent distortion. First, the caller PUBLISHES the universe:
+ * the pane prints `n = <presentSlots> grades legíveis` beside the numbers, so the reader is told
+ * what was counted. Second, it was checked against the other weighting: over the same production
+ * window the `design_gate` computed the median over `n=850` NATIVE observations and got `1.6575`,
+ * and this function over `n=3.038` grid slots gets `1.6575` too `[MEDIDO 2026-09-16, GET /symbol
+ * contra a API de produção; gate: gates/design-04.md §R2.2]`. Agreement is not a proof for every
+ * window — it is evidence that the two weightings do not diverge on this series' shape, recorded
+ * so the next reader can re-measure instead of re-deriving.
+ */
+export function seriesValueStats(slots: readonly ScalarSlotShape[]): SeriesValueStats | null {
+  const values: number[] = [];
+  for (const slot of slots) {
+    if (slot.value !== null) {
+      values.push(slot.value);
+    }
+  }
+  if (values.length === 0) {
+    return null;
+  }
+  values.sort((left, right) => left - right);
+  const min = values[0]!;
+  const max = values[values.length - 1]!;
+  return {
+    presentSlots: values.length,
+    min,
+    max,
+    median: values[Math.ceil(values.length / 2) - 1]!,
+    amplitude: max - min,
+  };
+}
+
+/**
+ * The slots at or after an instant — the TRAILING sub-window the approved screen puts a solid band
+ * around (*"ÚLTIMAS 4 HORAS"*, `gates/design-04.md` §R2.2).
+ *
+ * ⛔ IT FILTERS, IT DOES NOT RE-GRID AND IT DOES NOT SHRINK TO FIT. The slots handed back are the
+ * same objects, at the same instants, that the chart is drawn from; a sub-window computed over a
+ * re-derived grid would be `M-2` of `gates/design-05.md` ("a janela declarada não é a janela
+ * desenhada") reintroduced one pane later.
+ *
+ * `>=` is inclusive on the left because the caller's instant is itself a grid instant of the same
+ * window (`windowEndMsInclusive - spanMs`), so excluding it would drop a real observation from a
+ * span the screen then calls "4 h".
+ */
+export function slotsFrom(slots: readonly ScalarSlotShape[], sinceMs: number): readonly ScalarSlotShape[] {
+  return slots.filter((slot) => slot.time >= sinceMs);
+}
+
+/**
+ * How many slots at the RIGHT EDGE carry no value — the *"cauda ausente: 2 grades de 1m"* the
+ * approved screen prints beside `SEM_PONTO` (`M-2`, `gates/design-04.md`).
+ *
+ * ⛔ IT IS THE MEASURE OF WHAT IS **NOT** DRAWN, and that is why it exists: for a `RATIO` series
+ * the server refuses to carry a value forward (`CARRY_FORWARD_BY_NATURE[Nature.RATIO] = False`),
+ * so the line simply STOPS. The approved design forbids any mark to the right of that stop, which
+ * leaves the operator with a blank right edge and no way to tell "2 minutes of tail" from "2 days"
+ * — unless the pane says the number. Absence stays absence AND gets counted.
+ *
+ * `0` here means the window's own last instant carries an observation; it never means "no data".
+ */
+export function trailingAbsentSlots(slots: readonly ScalarSlotShape[]): number {
+  let count = 0;
+  for (let index = slots.length - 1; index >= 0; index -= 1) {
+    if (slots[index]!.value !== null) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
 }
 
 /**
@@ -509,6 +601,93 @@ export function matchesLiquidationCohort(key: SeriesKey, cohort: LiquidationCoho
   return (
     key.metric === LIQUIDATION_METRIC && key.provider === LIQUIDATION_PROVIDER && key.cohort === cohort
   );
+}
+
+
+// ── `T-04.5` — WHICH `count_long_short_ratio` ROW THE LONG/SHORT PANE READS ───────────────────
+//
+// ⛔ M3 IS NOT ONE SERIES, IT IS FOUR, AND THE BACKEND REFUSES THE GENERIC NAME IN CODE.
+// `series_key.FORBIDDEN_METRIC_NAMES` rejects `ls_ratio` inside `SeriesKey.__post_init__`
+// because that name covers `count_long_short_ratio`, `count_toptrader_long_short_ratio`,
+// `sum_toptrader_long_short_ratio` and `sum_taker_long_short_vol_ratio` — three with lag-1
+// autocorrelation of `0,99+` and one with `0,0955` (`SPEC-001` §3.1/§5.11, `CA-F2-3`). This pane
+// draws exactly ONE of them, `count_long_short_ratio`, the row `long_short_catalog.py` publishes
+// and the one Binance serves at `/futures/data/globalLongShortAccountRatio`.
+//
+// THE SELECTOR TAKES TWO TERMS, and the count of terms is a MEASUREMENT, not a habit:
+//
+//   `metric`    ALONE IT MATCHES EXACTLY 1 TODAY `[MEDIDO 2026-09-16: GET /api/v1/series-catalog
+//               -> n_entries=60, 15 linhas para BTCUSDT, 1 com metric="count_long_short_ratio"]`.
+//               The three sibling L/S series are not cataloged at all, and if they were they would
+//               carry DIFFERENT metric names — so they are not what a second term defends against.
+//   `provider`  `ADR-036/D3` fixes BINANCE (the ORIGIN) as the source of M3, and Coinalyze mirrors
+//               the same quotient in its `r` field. The day that row is cataloged, `metric` alone
+//               becomes ambiguous — and this term is what makes the pane keep pointing at the
+//               origin instead of at whichever row the catalog happens to list first.
+//
+// ⛔ AND A THIRD TERM WAS CONSIDERED AND REFUSED, because redundancy is not free (`T-03.5`'s own
+// warning: "a third term is a third way for the backend to make this panel go dark by renaming
+// something"). The candidate was `reduction === "POINT"` — the term that saved the OI pane, where
+// the SAME metric is published under four reductions. Here it defends against nothing: the
+// coarsening this series would need for another reduction is refused BY TYPE upstream
+// (`long_short_ratio_series.py` allows `last()` on the edge and refuses `mean()`/`sum()`), so a
+// second reduction of this metric is not a row the catalog can grow. Two terms, both load-bearing.
+
+/** `metric` of the row (`long_short_catalog.py`, via `long_short_ratio_series.COUNT_LONG_SHORT_RATIO`). */
+export const LONG_SHORT_METRIC = "count_long_short_ratio";
+/** The ORIGIN (`ADR-036/D3`) — the term that excludes a future Coinalyze mirror of the same quotient. */
+export const LONG_SHORT_PROVIDER = "binance";
+
+/**
+ * Is this the Binance `globalLongShortAccountRatio` row — the one `T-04.2`'s collector writes?
+ *
+ * Exported from `view-model.ts` rather than written inline in `page.tsx` for the same reason the
+ * three selectors above are: `page.tsx` cannot be imported by a `node --test` suite, and a selector
+ * that can only be checked by reading it is exactly the class of defect it exists to avoid
+ * (`long-short-series-selector.test.ts` runs this one against a fixture carrying the sibling rows).
+ */
+export function matchesCountLongShortRatio(key: SeriesKey): boolean {
+  return key.metric === LONG_SHORT_METRIC && key.provider === LONG_SHORT_PROVIDER;
+}
+
+/**
+ * `RN-S1` FOR A SERIES WHOSE STAIRCASE DOES NOT LAND ON THE 5-MINUTE GRID — how many NATIVE
+ * observations the wire rows carry, counted by DISTINCT PUBLICATION (`available_at`).
+ *
+ * ⛔ WHY NOT `presentRows / 5`, WHICH IS THE DIVISOR THE PLAN WRITES DOWN: the divisor assumes every
+ * native bucket occupies exactly five slots of the `1m` grid. Measured against production it does
+ * not: over a 4-hour window the readable rows group into runs of `1..5` slots (`1x1, 2x6, 3x17,
+ * 4x14, 5x11`), because the run is cut short by the next publication and by the absences around it.
+ * `[MEDIDO 2026-09-16, GET /api/v1/series-history?series_key_id=279d3172…&symbol=BTCUSDT&
+ *  interval=1m&bar_policy=final_only, janela de 240 min: 240 slots, 175 com valor, 65 sem;
+ *  175/5 = 35 contra 49 available_at distintos, e 240 min / 5 min = 48 baldes esperados]` — the
+ * divisor UNDERSTATES this series by ~28%.
+ *
+ * ⛔ AND NOT `event_time % 300_000 === 0` EITHER, which is how the OI pane gets its native grid:
+ * that series' observations land ON the five-minute grid, and this one's do not. The same
+ * measurement answers `11` readable rows on the `300_000` grid out of `49` real buckets — a 4,5x
+ * undercount — because the ladder of this series starts wherever the publication landed
+ * (`long_short_catalog.py` measured delays of `9,6 s` and `70,8 s` on two consecutive buckets).
+ *
+ * WHAT `available_at` IS HERE, AND WHY IT IDENTIFIES THE BUCKET: `ADR-038` stamps the row at the
+ * instant the observation became knowable, and the read path repeats THAT ONE STAMP across every
+ * `1m` slot the bucket covers — the adendo of `handoff/T-04.5-HANDOFF-FRONT.md` names it as what
+ * produces the staircase. So one distinct `available_at` is one distinct native observation.
+ *
+ * ⚠️ ITS ONE FAILURE MODE, DECLARED: rows imported by BACKFILL share the instant they were fetched,
+ * so a backfilled stretch collapses into fewer publications than it has buckets. The error is
+ * therefore always toward UNDERSTATING the data — a `DoD-3` threshold read off this number is never
+ * passed by a bucket that does not exist, which is the direction a count feeding an `N >= 30` gate
+ * has to fail in.
+ */
+export function countNativeBarsByPublication(rows: readonly SeriesHistoryRow[]): number {
+  const publications = new Set<number>();
+  for (const row of rows) {
+    if (row.value !== null && row.available_at !== null) {
+      publications.add(row.available_at);
+    }
+  }
+  return publications.size;
 }
 
 

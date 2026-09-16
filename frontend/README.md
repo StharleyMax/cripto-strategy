@@ -1767,3 +1767,49 @@ dev` (8000/3000), para não colidir com um dev server já de pé.
 `make test`/`make boundaries` (o cabeçalho do `Makefile` já documenta: "o `rc` do `make` não é o do
 script"). Quem quer o `rc` exato do Playwright chama a receita fora do `make`, ou lê a mensagem
 `make: *** [Makefile:NNN: e2e] Erro N` — o `N` ali É o `rc` do Playwright.
+
+## 23. ⚠️ Sobreposição HTML sobre `lightweight-charts` — o `z-index` que NÃO é estilo (`T-04.10`, 2026-09-16)
+
+Registrado aqui porque é **gotcha de UI reutilizável**, não detalhe de um painel: a fase `05` monta
+mais painéis sobre a mesma biblioteca, e esta armadilha reaparece idêntica.
+
+**O caso:** `D-1` do `design_gate` da fase `04` pedia uma faixa delimitando as últimas 4 h sobre o
+gráfico de long/short. A primeira implementação **passou em toda asserção de DOM e não existia na
+tela**:
+
+```
+toHaveCount(1)                                  ✔
+boundingBox   → 120 × 192, x=1099.75            ✔
+data-fact     → long_short_recent_band:5519/5759 ✔
+screenshot do painel                             ← NADA. Nenhum pixel.
+```
+
+**Causa, medida, não suposta** — `getComputedStyle` sobre os 7 `<canvas>` de um gráfico desta
+biblioteca:
+
+```
+z-index dos <canvas>:  1, 2, 1, 2, 1, 2, auto
+position:              absolute (dentro de um <td> position:relative)
+```
+
+Nenhum ancestral até o contêiner do React abre **contexto de empilhamento** (`position: relative` com
+`z-index: auto` **não** abre) ⇒ os canvases participam do mesmo contexto do seu overlay, e um overlay
+em `z-index: auto` (= `0`) **é pintado por baixo deles**. O elemento existe, tem caixa, responde
+`getBoundingClientRect` — e é invisível.
+
+**A regra, em uma linha:** *toda sobreposição HTML sobre um gráfico desta biblioteca precisa de
+`z-index` explícito maior que `2`.*
+
+⛔ **E a lição que vale mais que a regra: nenhuma asserção de DOM enxerga ordem de pintura.**
+`toHaveCount`, `getAttribute`, `boundingBox` e até `toBeVisible()` do Playwright passam todos sobre
+um elemento coberto — `toBeVisible()` checa caixa e `visibility`, **não oclusão**. O falsificador que
+enxerga é comparar, **no browser**, o `z-index` computado do overlay contra o maior dos canvases
+(`frontend/e2e/14-long-short-dado-real.spec.ts`), e ele foi **rodado contra o defeito**: mutante sem
+a classe → `band_z=0 · max_canvas_z=2` → `1 failed`; restaurado → `z=10` → `4 passed`.
+
+**Corolário de geometria, do mesmo lugar:** coordenada de overlay se **lê da biblioteca**
+(`timeScale.logicalToCoordinate(índice)` + `chart.paneSize()`), nunca se calcula como fração do
+contêiner — a área de plot mede `1208px` dentro de um host de `1254px` (o eixo de preço come o
+resto), e a fração sobre o elemento errado desenha uma faixa que **parece** alinhada. E a leitura vai
+**no frame seguinte** ao `fitContent()`: antes dele a escala ainda responde o intervalo anterior, e
+uma coordenada assim tem cara de medição sem ser uma.

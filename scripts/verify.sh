@@ -153,10 +153,27 @@ else
         # ⚠️ O padrão NÃO ancora o prefixo: `node --test` escreve `ℹ pass 181`, e o `ℹ` é
         # multibyte — um `^.?` casa UM byte e falha em silêncio, imprimindo `0 pass, 0 fail`
         # (medido na primeira versão deste bloco, com as suítes REPROVANDO ao lado).
-        DET_TF="$(awk '/^########## test-frontend-/{f=1;next} /^########## /{f=0}
-                       f && / pass [0-9]+$/{p+=$NF}
-                       f && / fail [0-9]+$/{q+=$NF}
-                       END{printf "%d pass, %d fail em 4 suítes (app/charts/s1/s3)", p, q}' "$LOG")"
+        #
+        # ⚠️⚠️ E NÃO ANCORA O SUFIXO TAMPOUCO, pela MESMA classe de erro, encontrada de novo em
+        # 2026-09-16: a linha do `node --test` termina no reset ANSI, não no dígito —
+        # `\033[34mℹ pass 200\033[39m` — então `/ pass [0-9]+$/` NUNCA casa e o resumo imprime
+        # `0 pass, 0 fail` com as suítes VERDES ao lado. `[MEDIDO 2026-09-16 sobre
+        # verify-cripto-strategy-20260916T204716Z.log: padrão ancorado -> 0 pass; mesmo log
+        # com o ANSI removido antes do casamento -> 689 pass, 0 fail]`. Consertar o prefixo e
+        # deixar o sufixo é por que a classe voltou: o remédio é remover a decoração ANTES de
+        # casar, não caçar um `$` de cada vez.
+        #
+        # E o resumo carrega o PRÓPRIO falsificador: `0 pass, 0 fail` com seção `test-frontend-*`
+        # presente no log é indistinguível entre "nenhum teste" e "o awk cegou de novo"
+        # (`ADR-012`), então essa combinação grita em vez de imprimir um zero silencioso.
+        DET_TF="$(awk '/^########## test-frontend-/{f=1;seen=1;next} /^########## /{f=0}
+                       f{ s=$0; gsub(/\033\[[0-9;]*m/,"",s)
+                          if (s ~ / pass [0-9]+$/) { n=split(s,a," "); p+=a[n] }
+                          if (s ~ / fail [0-9]+$/) { n=split(s,a," "); q+=a[n] } }
+                       END{ if (seen && p==0 && q==0)
+                                printf "⚠ RESUMO CEGO: 0 pass, 0 fail com seção test-frontend no log — número não confiável (rc acima é que vale)"
+                            else
+                                printf "%d pass, %d fail em 4 suítes (app/charts/s1/s3)", p, q }' "$LOG")"
     fi
 fi
 falhou $RC_TF
@@ -236,9 +253,20 @@ else
     # O `passed` do Playwright vem com o tempo entre parênteses (`26 passed (33.2s)`) e o
     # `failed` vem sozinho (`1 failed`) — os DOIS são impressos, porque "26 passed" ao lado de
     # um `[FALHA]` é exatamente o resumo que faz alguém ler verde num portão vermelho.
+    # ⚠️ 2026-09-16 — TERCEIRA ocorrência da mesma classe neste arquivo (ver o bloco de
+    # `test-frontend`): o Playwright escreve `40 passed\033[39m\033[2m (3.2s)`, com a decoração
+    # ENTRE o `passed` e o parêntese, então o padrão acima nunca casava e o portão imprimia
+    # `(número não extraído)` com 40 testes verdes no log. Honesto, mas cego — e um portão que
+    # não sabe dizer quantos mediu é o `rc=0` indistinguível de `ADR-012`. Remover o ANSI ANTES
+    # de casar é o remédio da classe inteira; caçar `$` e parêntese um a um é o que a repetiu 3×.
+    # O `sed` vai INLINE nas duas, e não numa variável: comando guardado em variável depende de
+    # word splitting, que o `bash` deste script faz e o `zsh` do operador NÃO — a versão em
+    # variável passa aqui e morre na mão de quem copiar a linha para o terminal.
     N_E_PASS="$(awk '/^########## e2e ::/{f=1;next} /^########## /{f=0} f' "$LOG" \
-                  | grep -aoE '[0-9]+ passed \([0-9.]+m?s\)' | tail -1)"
+                  | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
+                  | grep -aoE '[0-9]+ passed( \([0-9.]+m?s\))?' | tail -1)"
     N_E_FAIL="$(awk '/^########## e2e ::/{f=1;next} /^########## /{f=0} f' "$LOG" \
+                  | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
                   | grep -aoE '^ *[0-9]+ failed' | tail -1 | tr -s ' ')"
     DET_E="${N_E_PASS:-(número não extraído)}${N_E_FAIL:+, $N_E_FAIL}"
     [ "$RC_E" -eq 3 ] && DET_E="ambiente recusou medir — grep '^RECUSA:' no log"

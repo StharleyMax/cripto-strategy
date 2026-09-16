@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=1280, initial-scale=1.0" name="viewport"/>
+<title>cripto-strategy — Estudo de Forma: Painel Long/Short (S2)</title>
+<style>
+    @font-face {
+      font-family: 'JetBrains Mono';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: local('JetBrains Mono Regular'), local('JetBrainsMono-Regular');
+    }
+    @font-face {
+      font-family: 'JetBrains Mono';
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: local('JetBrains Mono Bold'), local('JetBrainsMono-Bold');
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      text-shadow: none !important;
+    }
+
+    body {
+      background-color: #0d1017;
+      color: #e6e9ef;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.35;
+      font-variant-numeric: tabular-nums;
+      width: 1280px;
+      height: 1024px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Cores estritas do sistema: 6 hexes canônicos */
+    .bg-root { background-color: #0d1017; }
+    .bg-panel { background-color: #131722; }
+    .bg-elevated { background-color: #222634; }
+    .border-muted { border-color: #222634; }
+    .border-strong { border-color: #8b949e; }
+    .text-strong { color: #e6e9ef; }
+    .text-weak { color: #8b949e; }
+    .text-violet { color: #e0aaff; }
+
+    /* Layout do documento */
+    header {
+      height: 38px;
+      background-color: #0d1017;
+      border-bottom: 1px solid #222634;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 12px;
+      background-color: #0d1017;
+    }
+
+    footer {
+      height: 24px;
+      background-color: #0d1017;
+      border-top: 1px solid #222634;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 12px;
+      color: #8b949e;
+      flex-shrink: 0;
+    }
+
+    /* Painel do Estudo de Forma */
+    .pane-card {
+      flex: 1;
+      background-color: #131722;
+      border: 1px solid #222634;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .pane-header {
+      background-color: #0d1017;
+      border-bottom: 1px solid #222634;
+      padding: 5px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      font-size: 12px;
+    }
+
+    .pane-body {
+      flex: 1;
+      position: relative;
+      background-color: #131722;
+      display: flex;
+    }
+
+    .plot-area {
+      flex: 1;
+      position: relative;
+      height: 100%;
+    }
+
+    .axis-y {
+      width: 130px;
+      border-left: 1px solid #222634;
+      background-color: #0d1017;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      flex-shrink: 0;
+      padding: 0;
+    }
+
+    .pane-footer {
+      background-color: #0d1017;
+      border-top: 1px solid #222634;
+      padding: 5px 12px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    /* Elementos visuais sem opacidade */
+    .four-hour-window {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background-color: #222634;
+      border-left: 1px solid #8b949e;
+      border-right: 1px solid #8b949e;
+    }
+
+    .window-tag {
+      position: absolute;
+      top: 6px;
+      left: 8px;
+      color: #8b949e;
+      font-size: 12px;
+      background-color: #0d1017;
+      padding: 1px 6px;
+      border: 1px solid #8b949e;
+    }
+
+    /* Tag de leitura no eixo Y */
+    .axis-current-badge {
+      background-color: #222634;
+      color: #e6e9ef;
+      border-top: 1px solid #8b949e;
+      border-bottom: 1px solid #8b949e;
+      border-left: 2px solid #8b949e;
+      padding: 2px 6px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .badge-quarentena {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid #e0aaff;
+      background-color: #131722;
+      padding: 2px 8px;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+<!-- Chrome Global -->
+<header>
+<div style="display: flex; align-items: center; gap: 14px;">
+<span style="font-weight: 700; color: #e6e9ef; font-size: 13px;">cripto-strategy</span>
+<span style="color: #8b949e;">/</span>
+<h1 style="font-size: 12px; font-weight: 400; color: #e6e9ef;">ESTUDO DE FORMA — PAINEL LONG/SHORT (S2)</h1>
+<span style="background-color: #222634; border: 1px solid #8b949e; color: #e6e9ef; padding: 1px 6px; font-size: 12px;">MAINNET</span>
+<span style="background-color: #131722; border: 1px solid #222634; color: #e6e9ef; padding: 1px 6px; font-size: 12px;">AO VIVO</span>
+</div>
+<div style="display: flex; align-items: center; gap: 16px; color: #8b949e; font-size: 12px;">
+<span>UTC-3</span>
+<span>v2.4.0</span>
+<span>bundle 7f3a9c1</span>
+</div>
+</header>
+<!-- Corpo Principal com os 3 Estados -->
+<main>
+<!-- ESTADO 1: MISTO -->
+<section aria-label="Estado 1: Misto — observação no instante final com vãos no histórico" class="pane-card" data-long-short-native-bars="850" data-long-short-wire-points="2999" data-testid="long-short-pane">
+<!-- Cabeçalho do Painel em 2 Linhas Semânticas -->
+<div class="pane-header">
+<div class="header-row">
+<div style="display: flex; align-items: center; gap: 10px;">
+<h2 style="font-size: 13px; font-weight: 700; color: #e6e9ef;">ESTADO 1: MISTO</h2>
+<span style="color: #8b949e;">·</span>
+<span style="color: #e6e9ef;">Long/short de contas · grade 5m · BTCUSDT · binance · reduction=POINT</span>
+<span style="color: #8b949e;">·</span>
+<span style="color: #8b949e;">unidade: ratio</span>
+</div>
+<div style="display: flex; align-items: center; gap: 14px;">
+<div>
+<span style="color: #8b949e;">leitura atual: </span>
+<span style="color: #e6e9ef; font-weight: 700; font-size: 14px;">1.5164</span>
+<span style="color: #8b949e; font-size: 12px;"> ratio</span>
+</div>
+<div><span style="color: #8b949e;">idade: </span>
+<span style="color: #e6e9ef;">1m16s</span></div>
+</div>
+</div>
+<div class="header-row" style="color: #8b949e;">
+<div style="display: flex; align-items: center; gap: 12px;">
+<span>procedência: <strong style="color: #e6e9ef; font-weight: 700;">OBSERVADO</strong></span>
+<span>·</span>
+<span>completude: <strong style="color: #e6e9ef; font-weight: 700;">850 observações nativas de 5m</strong> <span style="color: #8b949e;">(2999/5760 grades de 1m)</span></span>
+</div>
+<div>
+<span>amostragem: 48 nativas nas últimas 4h</span>
+</div>
+</div>
+</div>
+<!-- Plot Area + Eixo Y -->
+<div class="pane-body">
+<div aria-hidden="true" class="plot-area">
+<!-- Faixa sólida das últimas 4 horas (sem opacidade: preenchimento #222634 e bordas #8b949e sólidas) -->
+<div class="four-hour-window" style="left: 810px; width: 330px;">
+<div class="window-tag">Últimas 4h [1.4950 a 1.8098]</div>
+</div>
+<!-- SVG do Plot -->
+<svg preserveaspectratio="none" viewbox="0 0 1140 185">
+<!-- Linhas de grade horizontais exatas aos níveis das marcas do eixo Y -->
+<!-- 1.8369 (y=16), 1.6575 (y=64), 1.4950 (y=107), 1.1395 (y=176) -->
+<line stroke="#222634" stroke-width="1" x1="0" x2="1140" y1="16" y2="16"></line>
+<line stroke="#222634" stroke-dasharray="4 4" stroke-width="1" x1="0" x2="1140" y1="64" y2="64"></line>
+<line stroke="#222634" stroke-dasharray="4 4" stroke-width="1" x1="0" x2="1140" y1="107" y2="107"></line>
+<line stroke="#222634" stroke-width="1" x1="0" x2="1140" y1="176" y2="176"></line>
+<!-- Traçado da Série (Autoescala 1.1395 a 1.8369) com Vãos/Lacunas Reais -->
+<!-- Segmento 1: Início em 1.1850 até lacuna nativa em x=320 -->
+<path d="M 0,165 Q 120,150 220,120 T 320,105" fill="none" stroke="#e6e9ef" stroke-width="1.5"></path>
+<!-- Rótulo de vau/lacuna -->
+<text fill="#8b949e" font-family="JetBrains Mono" font-size="12" x="325" y="112">[sem dado nativo]</text>
+<!-- Segmento 2: Retoma em x=460 em 1.3400 até x=680 -->
+<path d="M 460,95 Q 560,85 680,82" fill="none" stroke="#e6e9ef" stroke-width="1.5"></path>
+<text fill="#8b949e" font-family="JetBrains Mono" font-size="12" x="685" y="87">[lacuna]</text>
+<!-- Segmento 3: Retoma em x=740 e entra na faixa das últimas 4h, fechando no ponto observado atual x=1140 em 1.5164 (y=101) -->
+<path d="M 740,76 Q 840,68 940,30 T 1030,23 T 1090,55 L 1140,101" fill="none" stroke="#e6e9ef" stroke-width="1.5"></path>
+<!-- Marcador pontual do instante atual (observado) -->
+<circle cx="1140" cy="101" fill="#e6e9ef" r="3"></circle>
+</svg>
+</div>
+<!-- Eixo Y Direito (Marcas exatas: 1.8369, 1.6575, 1.4950, 1.1395) -->
+<div aria-hidden="true" class="axis-y">
+<div style="position: absolute; top: 8px; left: 8px; font-size: 12px;">
+<span style="color: #e6e9ef; font-weight: 700;">1.8369</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">topo (máx)</span>
+</div>
+<div style="position: absolute; top: 56px; left: 8px; font-size: 12px;">
+<span style="color: #8b949e;">1.6575</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">mediana</span>
+</div>
+<!-- Posição da leitura atual (1.5164) com tag sólida -->
+<div style="position: absolute; top: 92px; left: 0; right: 0;">
+<div class="axis-current-badge">
+<span>1.5164</span>
+<span style="font-size: 12px; font-weight: 400; color: #8b949e; display: block;">fecho atual</span>
+</div>
+</div>
+<div style="position: absolute; top: 124px; left: 8px; font-size: 12px;">
+<span style="color: #8b949e;">1.4950</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">mín 4h</span>
+</div>
+<div style="position: absolute; bottom: 22px; left: 8px; font-size: 12px;">
+<span style="color: #e6e9ef; font-weight: 700;">1.1395</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">base (mín)</span>
+</div>
+<!-- Rótulo de Borda (S-7): 1.0000 Equilíbrio Fora da Escala com seta ▼ -->
+<div style="position: absolute; bottom: 2px; left: 8px; font-size: 12px; color: #8b949e; white-space: nowrap;">
+<span>▼ 1,0000 equilíbrio · abaixo da base</span>
+</div>
+</div>
+</div>
+<!-- Rodapé de Compressão Analítica (M-1) -->
+<div class="pane-footer">
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<div><strong style="color: #8b949e;">ESCALA &amp; RESOLUÇÃO:</strong> <span style="color: #e6e9ef;">Janela de 4 dias: 1.1395 a 1.8369 · amplitude 0.6974 (42,08% da mediana 1,6575)</span></div>
+<div><strong style="color: #8b949e;">ÚLTIMAS 4 HORAS:</strong> <span style="color: #e6e9ef;">Últimas 4 h: 1.4950 a 1.8098 · amplitude 0.3148 (45,1% da amplitude de 4 dias)</span></div>
+</div>
+<div style="color: #8b949e; text-align: right; font-size: 12px;">
+<span>números derivados da série, não redigidos</span>
+<span style="display: block; color: #8b949e;">lag-1 autocorr: 0.9989 · excursão mediana 15m: 0.88 px</span>
+</div>
+</div>
+</section>
+<!-- ESTADO 2: SEM_PONTO NO FECHO -->
+<section aria-label="Estado 2: Sem Ponto no Fecho — linha interrompida no último ponto observado, vão vazio" class="pane-card" data-testid="long-short-pane-no-point">
+<!-- Cabeçalho do Painel -->
+<div class="pane-header">
+<div class="header-row">
+<div style="display: flex; align-items: center; gap: 10px;">
+<h2 style="font-size: 13px; font-weight: 700; color: #e6e9ef;">ESTADO 2: SEM_PONTO NO FECHO</h2>
+<span style="color: #8b949e;">·</span>
+<span style="color: #e6e9ef;">Long/short de contas · grade 5m · BTCUSDT · binance · reduction=POINT</span>
+<span style="color: #8b949e;">·</span>
+<span style="color: #8b949e;">unidade: ratio</span>
+</div>
+<div style="display: flex; align-items: center; gap: 14px;">
+<div>
+<span style="color: #8b949e;">leitura atual: </span>
+<span style="color: #e6e9ef; font-weight: 700; font-size: 14px;">—</span>
+</div>
+<div><span style="color: #8b949e;">idade: </span>
+<span style="color: #e6e9ef;">4m55s</span></div>
+</div>
+</div>
+<div class="header-row" style="color: #8b949e;">
+<div style="display: flex; align-items: center; gap: 12px;"><span>procedência: <strong style="color: #e6e9ef; font-weight: 700;">OBSERVADO</strong></span>
+<span>·</span>
+<span>completude: <strong style="color: #e6e9ef; font-weight: 700;">849 observações nativas de 5m</strong> <span style="color: #8b949e;">(2997/5758 grades de 1m)</span></span></div>
+<div><span style="color: #8b949e;">status fecho: <strong style="color: #e6e9ef;">SEM PONTO</strong> (travessão afirmativo) · cauda ausente: 2 grades de 1m</span></div>
+</div>
+</div>
+<!-- Plot Area + Eixo Y -->
+<div class="pane-body">
+<div aria-hidden="true" class="plot-area">
+<!-- Faixa sólida das últimas 4 horas -->
+<div class="four-hour-window" style="left: 810px; width: 330px;">
+<div class="window-tag">Últimas 4h (truncada) [1.4950 a 1.8114]</div>
+</div>
+<!-- SVG do Plot: M-2 CUMPRIDO - ZERO Carry-Forward, linha cessa em x=990 -->
+<svg preserveaspectratio="none" viewbox="0 0 1140 185">
+<!-- Linhas de grade horizontais -->
+<line stroke="#222634" stroke-width="1" x1="0" x2="1140" y1="16" y2="16"></line>
+<line stroke="#222634" stroke-dasharray="4 4" stroke-width="1" x1="0" x2="1140" y1="64" y2="64"></line>
+<line stroke="#222634" stroke-dasharray="4 4" stroke-width="1" x1="0" x2="1140" y1="107" y2="107"></line>
+<line stroke="#222634" stroke-width="1" x1="0" x2="1140" y1="176" y2="176"></line>
+<!-- Trajetória até x=990 onde ocorreu a última observação real (~28m atrás) -->
+<path d="M 0,165 Q 180,140 380,110 T 700,75 T 880,50 L 990,42" fill="none" stroke="#e6e9ef" stroke-width="1.5"></path>
+<!-- Marcador do último ponto observado -->
+<circle cx="990" cy="42" fill="#e6e9ef" r="3"></circle>
+<!-- NENHUM TRAÇO após x=990. Espaço estritamente vazio até x=1140 -->
+<!-- Anotação textual explicativa neutra no vão -->
+<text fill="#8b949e" font-family="JetBrains Mono" font-size="12" x="1010" y="80">vão no instante final</text>
+<text fill="#8b949e" font-family="JetBrains Mono" font-size="12" x="1010" y="98">[sem carry-forward]</text>
+</svg>
+</div>
+<!-- Eixo Y Direito -->
+<div aria-hidden="true" class="axis-y">
+<div style="position: absolute; top: 8px; left: 8px; font-size: 12px;">
+<span style="color: #e6e9ef; font-weight: 700;">1.8369</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">topo (máx)</span>
+</div>
+<div style="position: absolute; top: 56px; left: 8px; font-size: 12px;">
+<span style="color: #8b949e;">1.6575</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">mediana</span>
+</div>
+<!-- Etiqueta do Fecho Ausente: Travessão afirmativo (M-2 e (5)) -->
+<div style="position: absolute; top: 92px; left: 0; right: 0;">
+<div class="axis-current-badge">
+<span>—</span>
+<span style="font-size: 12px; font-weight: 400; color: #8b949e; display: block;">fecho ausente</span>
+</div>
+</div>
+<div style="position: absolute; top: 124px; left: 8px; font-size: 12px;">
+<span style="color: #8b949e;">1.4950</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">mín 4h</span>
+</div>
+<div style="position: absolute; bottom: 22px; left: 8px; font-size: 12px;">
+<span style="color: #e6e9ef; font-weight: 700;">1.1395</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">base (mín)</span>
+</div>
+<!-- Rótulo de Borda (S-7): 1.0000 Equilíbrio Fora da Escala com seta ▼ -->
+<div style="position: absolute; bottom: 2px; left: 8px; font-size: 12px; color: #8b949e; white-space: nowrap;">
+<span>▼ 1,0000 equilíbrio · abaixo da base</span>
+</div>
+</div>
+</div>
+<!-- Rodapé de Compressão Analítica -->
+<div class="pane-footer">
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<div><strong style="color: #8b949e;">ESCALA &amp; RESOLUÇÃO:</strong> <span style="color: #e6e9ef;">Janela de 4 dias: 1.1395 a 1.8369 · amplitude 0.6974 (42,08% da mediana 1,6575)</span></div>
+<div><strong style="color: #8b949e;">ÚLTIMAS 4 HORAS:</strong> <span style="color: #e6e9ef;">Últimas 4 h: 1.4950 a 1.8114 · amplitude 0.3164 (45,4% da amplitude de 4 dias)</span></div>
+</div>
+<div style="color: #8b949e; text-align: right; font-size: 12px;">
+<span>números derivados da série, não redigidos</span>
+<span style="display: block; color: #8b949e;">ausência não interpolada nem carregada adiante</span>
+</div>
+</div>
+</section>
+<!-- ESTADO 3: NENHUMA GRADE LEGÍVEL -->
+<section aria-label="Estado 3: Nenhuma Grade Legível — série bem formada sem observações no período" class="pane-card" data-testid="long-short-pane-empty">
+<!-- Cabeçalho do Painel: M-3 e S-6 CUMPRIDOS (Procedência removida; Idade removida) -->
+<div class="pane-header">
+<div class="header-row">
+<div style="display: flex; align-items: center; gap: 10px;">
+<h2 style="font-size: 13px; font-weight: 700; color: #e6e9ef;">ESTADO 3: NENHUMA GRADE LEGÍVEL</h2>
+<span style="color: #8b949e;">·</span>
+<span style="color: #e6e9ef;">Long/short de contas · grade 5m · BTCUSDT · binance · reduction=POINT</span>
+<span style="color: #8b949e;">·</span>
+<span style="color: #8b949e;">unidade: ratio</span>
+</div>
+<div style="display: flex; align-items: center; gap: 14px;">
+<!-- Canal de Integridade Estrito (M-3, S-5): Losango Vazado + SEM OBSERVAÇÃO NA JANELA + Violeta #e0aaff -->
+<div class="badge-quarentena">
+<!-- SVG Losango VAZADO com traço #e0aaff -->
+<svg height="12" style="width: 12px; height: 12px;" viewbox="0 0 12 12" width="12">
+<polygon fill="none" points="6,1 11,6 6,11 1,6" stroke="#e0aaff" stroke-width="1.5"></polygon>
+</svg>
+<span style="color: #e0aaff; font-weight: 700; font-size: 12px;">SEM OBSERVAÇÃO NA JANELA</span>
+</div>
+</div>
+</div>
+<div class="header-row" style="color: #8b949e;">
+<div style="display: flex; align-items: center; gap: 12px;">
+<!-- PROCEDÊNCIA REMOVIDA: sem sujeito de observação (M-3) -->
+<span>completude: <strong style="color: #e6e9ef; font-weight: 700;">0 observações nativas de 5m</strong> <span style="color: #8b949e;">(0/5760 grades de 1m)</span></span>
+</div>
+<div>
+<span style="color: #8b949e;">regime: série cadastrada e íntegra, vazia no corte temporal</span>
+</div>
+</div>
+</div>
+<!-- Plot Area Vazia + Eixo Y -->
+<div class="pane-body">
+<div aria-hidden="true" class="plot-area" style="display: flex; align-items: center; justify-content: center;">
+<!-- Grade padrão do fundo -->
+<svg preserveaspectratio="none" style="position: absolute; inset: 0;" viewbox="0 0 1140 185">
+<line stroke="#222634" stroke-width="1" x1="0" x2="1140" y1="16" y2="16"></line>
+<line stroke="#222634" stroke-dasharray="4 4" stroke-width="1" x1="0" x2="1140" y1="64" y2="64"></line>
+<line stroke="#222634" stroke-dasharray="4 4" stroke-width="1" x1="0" x2="1140" y1="107" y2="107"></line>
+<line stroke="#222634" stroke-width="1" x1="0" x2="1140" y1="176" y2="176"></line>
+</svg>
+<!-- Mensagem Central de Ausência de Dados (S-5: SEM a palavra QUARENTENA) -->
+<div style="position: relative; z-index: 10; background-color: #0d1017; border: 1px solid #222634; padding: 18px 28px; text-align: center; max-width: 620px;">
+<div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px;">
+<svg height="14" style="width: 14px; height: 14px;" viewbox="0 0 12 12" width="14">
+<polygon fill="none" points="6,1 11,6 6,11 1,6" stroke="#e0aaff" stroke-width="1.5"></polygon>
+</svg>
+<span style="color: #e6e9ef; font-weight: 700; font-size: 13px;">NENHUMA GRADE LEGÍVEL NO PERÍODO</span>
+</div>
+<p style="color: #8b949e; font-size: 12px; line-height: 1.5;">
+              0 observações nativas registradas na janela de 4 dias (0/5760 buckets de 1 min). Nenhum dado recebido do endpoint de contas da binance. Ausência de dados não é interpolada nem substituída por zero.
+            </p>
+</div>
+</div>
+<!-- Eixo Y Direito (Valores não determinados na janela vazia) -->
+<div aria-hidden="true" class="axis-y">
+<div style="position: absolute; top: 8px; left: 8px; font-size: 12px;">
+<span style="color: #8b949e;">—</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">topo</span>
+</div>
+<div style="position: absolute; top: 56px; left: 8px; font-size: 12px;">
+<span style="color: #8b949e;">—</span>
+</div>
+<div style="position: absolute; top: 92px; left: 0; right: 0;">
+<div class="axis-current-badge">
+<span>—</span>
+<span style="font-size: 12px; font-weight: 400; color: #8b949e; display: block;">sem leitura</span>
+</div>
+</div>
+<div style="position: absolute; top: 124px; left: 8px; font-size: 12px;">
+<span style="color: #8b949e;">—</span>
+</div>
+<div style="position: absolute; bottom: 22px; left: 8px; font-size: 12px;">
+<span style="color: #8b949e;">—</span>
+<span style="color: #8b949e; font-size: 12px; display: block;">base</span>
+</div>
+<!-- Rótulo de Borda (S-7): 1.0000 Equilíbrio Fora da Escala com seta ▼ -->
+<div style="position: absolute; bottom: 2px; left: 8px; font-size: 12px; color: #8b949e; white-space: nowrap;">
+<span>▼ 1,0000 equilíbrio · abaixo da base</span>
+</div>
+</div>
+</div>
+<!-- Rodapé de Compressão Analítica -->
+<div class="pane-footer">
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<div><strong style="color: #8b949e;">ESCALA &amp; RESOLUÇÃO:</strong> <span style="color: #8b949e;">Janela total 4d: — (sem observações)</span></div>
+<div><strong style="color: #8b949e;">ÚLTIMAS 4 HORAS:</strong> <span style="color: #8b949e;">Últimas 4 h: —</span></div>
+</div>
+<div style="color: #8b949e; text-align: right; font-size: 12px;">
+<div class="badge-quarentena" style="border: 1px solid #e0aaff; padding: 1px 6px;">
+<svg height="10" style="width: 10px; height: 10px;" viewbox="0 0 12 12" width="10">
+<polygon fill="none" points="6,1 11,6 6,11 1,6" stroke="#e0aaff" stroke-width="1.5"></polygon>
+</svg>
+<span style="color: #e0aaff; font-size: 12px;">SEM OBSERVAÇÃO NA JANELA</span>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Rodapé Global -->
+<footer>
+<div style="display: flex; align-items: center; gap: 6px;">
+<a href="https://www.tradingview.com/" rel="noopener noreferrer" style="color: #8b949e; text-decoration: none;" target="_blank">Gráficos por Lightweight Charts — TradingView</a>
+</div>
+<div style="display: flex; align-items: center; gap: 14px;">
+<span>Estudo de forma S2 · Densidade Analítica</span>
+<span>·</span>
+<span>Resolução nativa 1280x1024</span>
+</div>
+</footer>
+</body>
+</html>

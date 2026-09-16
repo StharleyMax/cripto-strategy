@@ -106,3 +106,25 @@ pelo coletor de liquidações (`/v1/liquidation-history`, `43.425` linhas em `md
 `[MEDIDO 2026-09-13T02:40Z]`). Na mesma condição: `POSTGRES_PASSWORD` e `PANEL_BASIC_AUTH_HASH`.
 
 Dono: **owner**. Não bloqueia nenhuma task.
+
+---
+
+## H · O gráfico desenha ~40 h de uma janela de 96 h — **pré-existente nos 5 painéis**
+
+`[MEDIDO 2026-09-16 pelo builder de `T-04.10`, com a faixa das 4 h como RÉGUA]` — e é por isso que o
+número é confiável: a faixa cobre **240 intervalos** e mede **120px** de largura sobre um `canvas` de
+`1208px` ⇒ **0,5px por barra**, que é exatamente o `minBarSpacing` da `lightweight-charts`. Com 5.760
+slots na janela e 0,5px cada, só cabem ~2.400 barras — **~40 h das 96 h que a rota pede**.
+
+**Não é defeito desta fase e não é do painel de long/short:** atinge os **5** painéis da S2, e nasceu
+antes de `04`. Foi achado agora porque a faixa deu a primeira régua de pixel que a tela tinha.
+
+⚠️ **Por que isto importa mais do que parece:** é a mesma família do que `T-04.9` e o `§R3` mediram
+sobre planura — **a escala entregue não é a escala pedida**. O rodapé numérico da `D18` continua
+correto (ele lê os dados, não os pixels), mas quem olha o gráfico vê menos janela do que acredita
+estar vendo, e **nada na tela diz isso**.
+
+**Gatilho de reabertura, literal:** quando alguém pedir para ler no gráfico um evento com mais de
+~40 h de idade, ou quando a janela da rota passar de 96 h. **Dono:** `frontend-architect` — é decisão
+de escala/viewport, não de painel. **`[NÃO MEDIDO]`:** se o remédio é `minBarSpacing`, agregação por
+balde, ou janela menor com navegação.

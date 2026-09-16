@@ -19,10 +19,27 @@ camada de identidade reprova essa leitura **em tempo de construção**.
 **Escolha desta fase: `count_long_short_ratio`** — é o que a expressão do owner nomeia em uso comum, e o
 que a Coinalyze espelha no campo `r`.
 
-⚠️ **Uma série com autocorrelação 0,99+ desenha uma reta.** Falsificador: se o painel for uma linha
-visualmente plana no timeframe de operação (`15min .. 4h`), a fase acrescenta
-`sum_taker_long_short_vol_ratio` como segunda série do mesmo painel — reversível dentro da fase, porque
-é outra entrada de catálogo e outra chamada, não outro cano.
+⚠️ **Uma série com autocorrelação 0,99+ desenha uma reta.** Falsificador, **na redação em vigor desde
+2026-09-16**: se o painel for uma linha visualmente plana **na escala entregue**, a fase **conserta a
+escala** — dizer quanto a série andou no prazo de decisão sem exigir zoom.
+
+> **CORREÇÃO 2026-09-16 — o gatilho mudou, e a mudança é do owner.**
+> `[DECISÃO-OWNER: 2026-09-16, escolha entre alternativas apresentadas]`, registrada em
+> [`handoff/DECISOES-OWNER.md` §D18](../../context/cinco-metricas-do-core/handoff/DECISOES-OWNER.md).
+> A redação anterior era *"a fase acrescenta `sum_taker_long_short_vol_ratio` como segunda série do
+> mesmo painel — reversível dentro da fase, porque é outra entrada de catálogo e outra chamada, não
+> outro cano"*. **Três medições a derrubaram** `[MEDIDO 2026-09-16, `gates/design-04.md` §7]`:
+> 1. o falsificador **dispara, e só no piso da banda**: 15 min mediana `0.88px` / **25,5%**
+>    sub-pixel · 1 h `4.80px` / 0% · 4 h `13.18px` / 0%;
+> 2. **a série não está no catálogo servido** (`n_entries=60`, 7 métricas) ⇒ o remédio exigia
+>    entrada de catálogo **e** coletor novos — `sentimento`/`infra` e cota, **não** a "outra
+>    chamada reversível dentro da fase" que esta linha supunha;
+> 3. e **não resolveria**: entraria na mesma escala comprimida — autocorrelação `0.0955` num eixo
+>    de 4 dias vira ruído denso, trocando *"não se move"* por *"não se lê"*.
+>
+> A segunda série fica **fora** (`D18`, segunda pergunta). ⚠️ Isso **não** é juízo de que ela seja
+> inútil — o gate marcou `[NÃO SEI]`: ela mede fluxo de *taker*, não posicionamento de contas, e
+> pode ter valor próprio. Se voltar, volta como task própria com custo de cota declarado.
 
 ## Itens
 
@@ -34,13 +51,24 @@ visualmente plana no timeframe de operação (`15min .. 4h`), a fase acrescenta
 | 4.4 | Registro no catálogo servido | `sentimento` | `RF-2` |
 | 4.5 | **Painel novo** em `/symbol`, com `SEM_PONTO` honesto | `web` | `RF-3`, `RN-1` |
 | 4.6 | `ui-designer` desenha; **veredito do `ux-ui-mastery` antes de a fase fechar** | `web` | `CLAUDE.md` §Design |
-| 4.7 | e2e Playwright contra o app real, **com o divisor de `RN-S1`** (série de `5m`) | `web` | `DoD-3` |
+| 4.7 | e2e Playwright contra o app real, **contando barra nativa por PUBLICAÇÃO** (série de `5m`; ⚠️ **não** pelo divisor `÷5` — ver a correção no `DoD-3`) | `web` | `DoD-3` |
 
 ## DoD verificável
 
 1. `count(*)` de `md.series` para `count_long_short_ratio` **> 0**. Hoje: `0` `[MEDIDO 2026-09-10]`.
 2. `GET /api/v1/series-history` → `n_points > 0`.
-3. Playwright: **`N ≥ 30` barras nativas distintas** (`pontos_no_DOM ÷ 5`, `RN-S1`), **não** `SEM_PONTO`.
+3. Playwright: **`N ≥ 30` barras nativas distintas** (contadas por **PUBLICAÇÃO** — `available_at`
+   distintos —, `RN-S1`), **não** `SEM_PONTO`.
+   > ⚠️ **CORREÇÃO 2026-09-16 — a versão anterior desta linha dizia `pontos_no_DOM ÷ 5`, e o divisor
+   > está ERRADO para esta série.** Duas medições independentes, a do builder de `T-04.5` e a
+   > remedição da QA de `T-04.7`, sobre 240 min (`n = 240` slots, 175 com valor): **49 `available_at`
+   > distintos** para 48 baldes de `5m`; `÷5` devolve **35** (subconta **28,6%**) e
+   > `event_time % 300_000 == 0` devolve **11** (subconta **4,5×**). A causa é estrutural, não ruído:
+   > os intervalos entre publicações são `28×360s, 15×180s, 3×300s, 1×330s, 1×120s` (`n = 48`), de
+   > **média exata 300 s** — a Binance publica a cada `5m` em MÉDIA, não em grade fixa, então as
+   > corridas de slots repetidos têm de 1 a 5 elementos e nenhum divisor constante as conta.
+   > O e2e não transcreve a conclusão: asserta a banda `ceil(wire ÷ 5) ≤ native ≤ wire` recalculada
+   > da API. `[MEDIDO 2026-09-16 · gates/T-04.5-builder.md e gates/T-04.5-T-04.7-qa.md]`
 4. Run fechado da fonte com `n_written > 0`.
 5. **Veredito `APPROVED` do `ux-ui-mastery`** sobre o painel novo, registrado — silêncio do owner não é
    aprovação; aprovação é o veredito do validador.

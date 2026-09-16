@@ -27,6 +27,14 @@
  *      mapped separately (`volumeSlotsFromHistoryRows`) because it is a sub-axis, not a panel.
  *   4. Hand `{ panels, volume, cvd, panelStatus, liveUrls }` to `SymbolClient.tsx` by props.
  *
+ * ⚠️ THE LIST ABOVE SAYS "3 panels" BECAUSE `buildS2Panels` BUILDS THREE. The route now resolves
+ * SEVEN series: those three, the volume sub-axis (`T-01.7`), the two liquidation cohorts (`T-05.9`)
+ * and `count_long_short_ratio` (`T-04.5`, M3 — the first NEW pane of `SPEC-007`). The four newer
+ * ones are NOT part of `S2RawInputs`: widening `charts`' panel composition is a change to a
+ * component these `web` tasks do not own (`ADR-003`), so each is mapped from the route's own wire
+ * grid and degrades on its own status. Their sections are at the bottom of this file, each with the
+ * argument for why it is not a fourth member of `S2Panels`.
+ *
  * ── WHY EVERY FAILURE DEGRADES TO ABSENCE, NEVER A THROWN PAGE (`CA-F2-3`) ──────────────────
  *
  * Three independent, NAMED failure modes exist today, and all three render as absence, exactly
@@ -91,18 +99,22 @@ import {
   type CvdPaneData,
   type LiquidationCohortData,
   type LiquidationPaneData,
+  type LongShortPaneData,
   type OiPaneData,
   type VolumeSubAxisData,
 } from "./SymbolClient.tsx";
 import {
   computeSeriesKeyId,
+  countNativeBarsByPublication,
   countPresentSlots,
   countZeroSlots,
   firstPresentSlotMs,
   daysWithPresence,
   keyMatchesSymbol,
   lastPresentSlotMs,
+  lastReadableAvailableAtMs,
   matchesBinanceOpenInterest,
+  matchesCountLongShortRatio,
   matchesKlineTakerBuyCvd,
   matchesLiquidationCohort,
   nonNegativeFlowSlotsFromHistoryRows,
@@ -112,6 +124,9 @@ import {
   resolveSeriesProvenance,
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
+  seriesValueStats,
+  slotsFrom,
+  trailingAbsentSlots,
 } from "./view-model.ts";
 
 export const metadata: Metadata = {
@@ -121,6 +136,20 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 const BAR_POLICY: BarPolicy = "final_only";
+
+/**
+ * `T-04.8` — the TRAILING SUB-WINDOW the approved long/short form measures separately (*"ÚLTIMAS 4
+ * HORAS"*, `gates/design-04.md` §R2, veredito `APPROVED`).
+ *
+ * ⛔ `4 h` IS NOT A ROUND NUMBER SOMEBODY LIKED — it is the CEILING of this feature's declared
+ * operating timeframe, `15min..4h` (`tasks.toml`, `T-04.9`'s falsifier), and the gate measured the
+ * series over exactly that band: at `15 min` the median excursion is `0.88 px` and `25,5%` of the
+ * windows do not move half a pixel; at `4 h` it is `13.18 px` and `0,0%`
+ * `[DOC: gates/design-04.md §R2.7, n=850 native observations over 4 days]`. The pane publishes the
+ * top of the band NUMERICALLY for the reason that measurement gives: the bottom of it is, on this
+ * scale, not readable as geometry — so the number is how the operator reads it.
+ */
+const LONG_SHORT_RECENT_SPAN_MS = 4 * 60 * 60_000;
 // ⛔ `const OI_METRIC = "sum_open_interest"` USED TO LIVE HERE, AND IT WAS THE WHOLE SELECTOR.
 // `T-03.5` retired it: the metric is one of THREE terms now and all three live in
 // `view-model.ts::matchesBinanceOpenInterest`, where a `node --test` suite can execute them
@@ -300,16 +329,33 @@ export default async function SymbolPage() {
     catalogStatus.kind === "ok"
       ? resolveCatalogEntry(catalog, (entry) => matchesLiquidationCohort(entry.key, "short"))
       : CATALOG_UNAVAILABLE;
+  // `T-04.5` — M3, the first NEW pane of this feature. TWO terms, both load-bearing, and the
+  // predicate is `view-model.ts`'s (`metric` alone matches exactly 1 today, MEASURED there;
+  // `provider` is what keeps the pane on the ORIGIN the day Coinalyze's mirror of the same quotient
+  // is cataloged). ⛔ `count_long_short_ratio` and not "long/short": M3 is FOUR series, and
+  // `series_key.FORBIDDEN_METRIC_NAMES` refuses the generic name in code.
+  const longShortResolution =
+    catalogStatus.kind === "ok"
+      ? resolveCatalogEntry(catalog, (entry) => matchesCountLongShortRatio(entry.key))
+      : CATALOG_UNAVAILABLE;
 
-  const [priceResult, oiResult, cvdResult, volumeResult, liquidationLongResult, liquidationShortResult] =
-    await Promise.all([
-      fetchPanelRows(priceResolution, routeWindow),
-      fetchPanelRows(oiResolution, routeWindow),
-      fetchPanelRows(cvdResolution, routeWindow),
-      fetchPanelRows(volumeResolution, routeWindow),
-      fetchPanelRows(liquidationLongResolution, routeWindow),
-      fetchPanelRows(liquidationShortResolution, routeWindow),
-    ]);
+  const [
+    priceResult,
+    oiResult,
+    cvdResult,
+    volumeResult,
+    liquidationLongResult,
+    liquidationShortResult,
+    longShortResult,
+  ] = await Promise.all([
+    fetchPanelRows(priceResolution, routeWindow),
+    fetchPanelRows(oiResolution, routeWindow),
+    fetchPanelRows(cvdResolution, routeWindow),
+    fetchPanelRows(volumeResolution, routeWindow),
+    fetchPanelRows(liquidationLongResolution, routeWindow),
+    fetchPanelRows(liquidationShortResolution, routeWindow),
+    fetchPanelRows(longShortResolution, routeWindow),
+  ]);
 
   // The day list is the window's own (`utcDaysCovered`, derived in `charts`), never a literal.
   const days = routeWindow.window.days;
@@ -473,6 +519,83 @@ export default async function SymbolPage() {
     unit: liquidationEntry?.key.unit ?? null,
   };
 
+  // ── The long/short pane (`T-04.5`, M3) ────────────────────────────────────────────────────
+  //
+  // NOT part of `S2RawInputs`/`buildS2Panels`, for the same reason the volume sub-axis and the
+  // liquidation pane are not: widening `charts`' panel composition is a change to a component this
+  // task does not own (`ADR-003`; this task is `components = ["web"]`). The slots are the route's
+  // own `1m` WIRE grid, transcribed — and here the transcription keeps a STAIRCASE, because the
+  // series is `5m` native (`long_short_catalog.LONG_SHORT_INTERVAL`) served on the `1m` grid
+  // (`GA-2`). The ladder is not smoothed, hidden or re-gridded; it is what the read path serves.
+  //
+  // ⛔ AND THE MAPPER IS THE SHARED ONE, NOT A COPY. `nonNegativeFlowSlotsFromHistoryRows` is named
+  // for its CONTRACT — a non-negative scalar whose absence stays absence — and a ratio of account
+  // counts satisfies it (a quotient of two counts is never negative, and a negative one would be a
+  // producer defect worth refusing rather than drawing). `RN-1` is written ONCE; a third copy of it
+  // for this pane is exactly what `T-05.9` refused to write for liquidation.
+  //
+  // ⛔ `RN-S1` IS PAID BY `countNativeBarsByPublication`, AND NOT BY A `/5`. That function carries
+  // the measurement that rules the two cheaper answers out for this series: the divisor understates
+  // it by ~28% (runs of `1..5` slots, not always 5) and a `% 300_000` filter by 4,5x (this series'
+  // observations do not land on the five-minute grid).
+  //
+  // ── `T-04.8`: THE NUMBERS THE APPROVED FORM PUBLISHES, DERIVED HERE AND NEVER IN THE VIEW ────
+  //
+  // The `design_gate` of `T-04.6` (`APPROVED`, Rev. 3 — `gates/design-04.md` §R2) put a SCALE
+  // FOOTER, a FOUR-HOUR BAND, an AGE STAMP and a `cauda ausente` count on this pane. Every one of
+  // them is computed from the rows this route already fetched, on the server, and handed over as
+  // plain data — the same discipline the six panes above follow, and the structural answer to `M-1`
+  // of that report: a rodada that tried to write those numbers instead of deriving them fabricated
+  // SIX of them, and the audit caught it only because it was exhaustive.
+  const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(longShortResult.rows);
+  const longShortEntry = resolvedEntry(longShortResolution);
+  // The `available_at` of the newest READABLE row — a PUBLICATION instant, the same one `RNF-2`
+  // uses for OI (`lastReadableAvailableAtMs`, and its docstring explains why it is not `max`).
+  const longShortObservedAtMs = lastReadableAvailableAtMs(longShortResult.rows);
+  const longShort: LongShortPaneData = {
+    slots: longShortSlots,
+    nativeBars: countNativeBarsByPublication(longShortResult.rows),
+    wirePoints: countPresentSlots(longShortSlots),
+    firstPresentMs: firstPresentSlotMs(longShortSlots),
+    lastPresentMs: lastPresentSlotMs(longShortSlots),
+    observedAtMs: longShortObservedAtMs,
+    // ⛔ AN AGE, AND NOT A FRESHNESS VERDICT. `OiFreshness` compares the age against the catalog's
+    // `max_staleness_ms` and can print "DADO VELHO"; this pane does not, and the difference is the
+    // series' nature. Open interest is `STOCK`: the server carries the last observation forward, so
+    // a number on screen can be much older than it looks and owes the operator a verdict. This one
+    // is `RATIO` with `CARRY_FORWARD_BY_NATURE[Nature.RATIO] = False` — the readout at the window's
+    // last instant is EXACT or it is `SEM_PONTO`, never stale-in-disguise. What `S-6` of the gate
+    // asks for is the STAMP, at the right edge of time, and only where an observation exists.
+    ageMs: longShortObservedAtMs === null ? null : routeWindow.windowEndMsInclusive - longShortObservedAtMs,
+    trailingAbsentSlots: trailingAbsentSlots(longShortSlots),
+    windowStats: seriesValueStats(longShortSlots),
+    // The trailing band of the approved form. `windowEndMsInclusive - span` is a grid instant of
+    // this very window, so `slotsFrom` filters the SAME slots the chart draws — it never re-grids
+    // and never shrinks the window to fit the data (`M-2` of `gates/design-05.md`).
+    recentSpanMs: LONG_SHORT_RECENT_SPAN_MS,
+    recentStats: seriesValueStats(
+      slotsFrom(longShortSlots, routeWindow.windowEndMsInclusive - LONG_SHORT_RECENT_SPAN_MS),
+    ),
+    // `RS-5` resolved from the catalog row, never spelled as a literal — same call, same rule as the
+    // liquidation pane above. For M3 the venue's own publisher IS the provider, so this resolves to
+    // `origin` and the pane says so instead of leaving procedência unstated.
+    provenance: resolveSeriesProvenance(longShortEntry),
+    // `windowEndMsInclusive` — the SAME instant every other readout on this page uses. One instant
+    // for the whole render, never an eighth one computed here.
+    reading: resolveFlowReadingOrAbsent(longShortSlots, routeWindow.windowEndMsInclusive),
+    // The `unit` term of the series' own identity (`ratio`), printed beside the numeral — a literal
+    // here would say the same thing while being free to drift from what the backend published.
+    unit: longShortEntry?.key.unit ?? null,
+    // ⛔ AND THE CADENCE COMES OFF THE SAME ROW, for exactly the reason the line above gives — the
+    // `/review` `[WARNING]` of `T-04.8`: FOUR sentences of the pane spelled `5 min`/`5m` by hand
+    // while this entry was already being read for `unit`, i.e. two rules for two terms of one
+    // identity. `interval` is the KEY term (`5m`, what distinguishes this series from a `1m` one)
+    // and `nativeGrid` is the SAMPLING property (`5min`); `e2e/14:330-331` asserts both against the
+    // served catalog, separately, so neither can drift without a test noticing.
+    nativeInterval: longShortEntry?.key.interval ?? null,
+    nativeGrid: longShortEntry?.nativeGrid ?? null,
+  };
+
   const baseUrl = process.env.INGEST_HEALTH_API_BASE_URL;
   const liveUrls =
     baseUrl === undefined
@@ -490,6 +613,7 @@ export default async function SymbolPage() {
       cvd={cvd}
       oi={oi}
       liquidation={liquidation}
+      longShort={longShort}
       panelStatus={{
         price: priceResult.status,
         oi: oiResult.status,
@@ -497,6 +621,7 @@ export default async function SymbolPage() {
         volume: volumeResult.status,
         liquidationLong: liquidationLongResult.status,
         liquidationShort: liquidationShortResult.status,
+        longShort: longShortResult.status,
       }}
       knowledgeTimeMs={routeWindow.knowledgeTimeMs}
       liveUrls={liveUrls}

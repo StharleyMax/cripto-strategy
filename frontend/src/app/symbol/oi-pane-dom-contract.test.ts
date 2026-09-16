@@ -195,9 +195,11 @@ test("V-1: the ` UTC` suffix is printed ONCE — the formatter owns it, no call 
   // Sanity on the universe: this assert is worth something only if there ARE call sites to scan.
   assert.equal(
     (source.match(/formatUtcMinute\(/g) ?? []).length,
-    7,
-    "one declaration + SIX call sites — five from `T-03.5` plus the liquidation pane's own " +
-      "readable horizon (`T-05.9`). If the count moved, re-anchor this guard rather than trusting it",
+    9,
+    "one declaration + EIGHT call sites — five from `T-03.5`, the liquidation pane's own readable " +
+      "horizon (`T-05.9`), the long/short pane's (`T-04.5`) and its age stamp (`T-04.8`, the `S-6` " +
+      "carimbo the `design_gate` requires at the right edge of time). If the count moved, re-anchor " +
+      "this guard rather than trusting it",
   );
 
   // MORDE, by replanting the exact duplicator that shipped: with it back, this test is rc=1.
@@ -237,12 +239,14 @@ test("the selector defect is GONE from the route, both halves of it", () => {
   assert.match(pageCode, /reason: "ambiguous_in_catalog"/, "and ambiguity has to be SAID, not swallowed");
   // Every panel goes through it — a panel added later inherits the refusal by default, and this
   // count is what proves the inheritance ACTUALLY happened instead of being assumed. `T-05.9` added
-  // the two liquidation cohorts and the number moved from 4 to 6, which is the guard working: a new
-  // selector written with `find` would have left it at 4 and failed here.
+  // the two liquidation cohorts and the number moved from 4 to 6, and `T-04.5` added the long/short
+  // pane and moved it to 7 — which is the guard working twice: a new selector written with `find`
+  // would have left the count where it was and failed here.
   assert.equal(
     (pageCode.match(/resolveCatalogEntry\(catalog,/g) ?? []).length,
-    6,
-    "price, OI, CVD, volume and the TWO liquidation cohorts all resolve through the unique-match helper",
+    7,
+    "price, OI, CVD, volume, the TWO liquidation cohorts and long/short all resolve through the " +
+      "unique-match helper",
   );
 });
 

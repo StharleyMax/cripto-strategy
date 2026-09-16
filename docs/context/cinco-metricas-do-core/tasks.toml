@@ -553,7 +553,7 @@ local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sess
 id = "T-04.1"
 title = "[sentimento] 04 · Testar contra a Binance o `[INFERRED]` de que o teto de `5min` e DELA — ANTES de gravar a identidade"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-16T23:42:26Z @ 23bc3de5c21b2c2c25385e144b56b7ead1f3c0be
 phase = "04"
 depends_on = ["T-03.2"]
 refs = [
@@ -570,7 +570,7 @@ local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sess
 id = "T-04.2"
 title = "[sentimento] 04 · Identidade `count_long_short_ratio` (`RATIO`, `5m`) com teste nomeado — e `RATIO` de fluxo NAO e agregavel por soma"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-16T23:42:26Z @ 23bc3de5c21b2c2c25385e144b56b7ead1f3c0be
 phase = "04"
 depends_on = ["T-04.1"]
 refs = [
@@ -588,7 +588,7 @@ local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sess
 id = "T-04.3"
 title = "[sentimento] 04 · Coletor de long/short REUSANDO o cliente de `/futures/data/` da fase 03 — nao e integracao nova"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-16T23:42:26Z @ 23bc3de5c21b2c2c25385e144b56b7ead1f3c0be
 phase = "04"
 depends_on = ["T-04.2", "T-03.3"]
 refs = [
@@ -605,7 +605,7 @@ local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sess
 id = "T-04.4"
 title = "[sentimento] 04 · `count_long_short_ratio` registrada no catalogo servido"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-16T23:42:26Z @ 23bc3de5c21b2c2c25385e144b56b7ead1f3c0be
 phase = "04"
 depends_on = ["T-04.2", "T-03.4"]
 refs = [
@@ -620,7 +620,7 @@ local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sess
 id = "T-04.5"
 title = "[web] 04 · PAINEL NOVO de long/short em `/symbol`, com `SEM_PONTO` honesto e `data-testid` estavel"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-16T23:42:26Z @ 23bc3de5c21b2c2c25385e144b56b7ead1f3c0be
 phase = "04"
 depends_on = ["T-04.4"]
 refs = [
@@ -637,7 +637,7 @@ local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sess
 id = "T-04.6"
 title = "[web] 04 · `ui-designer` desenha o painel novo e o `ux-ui-mastery` emite veredito ANTES de a fase fechar"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-16T23:42:26Z @ 23bc3de5c21b2c2c25385e144b56b7ead1f3c0be
 phase = "04"
 depends_on = ["T-04.5"]
 refs = [
@@ -654,12 +654,13 @@ local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sess
 id = "T-04.7"
 title = "[web] 04 · e2e Playwright com o divisor de `RN-S1` no painel novo de long/short"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-16T23:42:26Z @ 23bc3de5c21b2c2c25385e144b56b7ead1f3c0be
 phase = "04"
 depends_on = ["T-04.5", "T-04.8"]
 refs = [
     "plano 04 item 4.7 + DoD 3", "RN-S1", "RN-S2", "DoD-3",
-    "N >= 30 BARRAS NATIVAS distintas: `pontos_no_DOM / 5`, porque a serie e de 5m servida numa grade de 1m.",
+    "N >= 30 BARRAS NATIVAS distintas, contadas por PUBLICACAO (`available_at` distintos), porque a serie e de 5m servida numa grade de 1m.",
+    "⚠️ CORRECAO 2026-09-16: esta ref dizia `pontos_no_DOM / 5` e o divisor esta ERRADO. Medido 2x (builder de T-04.5 e remedicao da QA de T-04.7, 240 min, n=240 slots): 49 available_at distintos para 48 baldes; `/5` da 35 (subconta 28,6%) e `event_time % 300_000` da 11 (subconta 4,5x). Intervalos entre publicacoes: 28x360s, 15x180s, 3x300s, 1x330s, 1x120s — media exata 300s, grade NAO fixa. Ver gates/T-04.5-T-04.7-qa.md e a correcao no DoD-3 do plano 04.",
     "Arquivo: frontend/e2e/12-long-short-dado-real.spec.ts (novo). Seleciona por data-testid de T-04.5 — e o que desacopla este assert do veredito de T-04.6.",
 ]
 local_only = true
@@ -669,7 +670,7 @@ local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sess
 id = "T-04.8"
 title = "[infra] 04 · Coletor de long/short em PRODUCAO: medir DoD-1 e DoD-4"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-16T23:42:26Z @ 23bc3de5c21b2c2c25385e144b56b7ead1f3c0be
 phase = "04"
 depends_on = ["T-04.3"]
 refs = [
@@ -684,14 +685,14 @@ local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sess
 id = "T-04.9"
 title = "[sentimento][infra][web] 04 · Fechamento vertical de long/short — e o FALSIFICADOR DA RETA (autocorrelacao 0,99+)"
 components = ["sentimento", "infra", "web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-16T23:42:26Z @ 23bc3de5c21b2c2c25385e144b56b7ead1f3c0be
 phase = "04"
 depends_on = ["T-04.6", "T-04.7", "T-04.8"]
 refs = [
     "plano 04 DoD 1-7 + falsificador da fase", "SPEC-007 §4.2", "D2 (owner)",
     "CONJUNCAO dos 4 DoD, mais o veredito APPROVED do ux-ui-mastery (item 5), mais o [INFERRED] do teto de 5min testado (item 6, feito em T-04.1), mais make verify verde.",
-    "⛔ O FALSIFICADOR DA ESCOLHA DE SERIE, e ele e VISUAL: se o painel de `count_long_short_ratio` for uma linha VISUALMENTE PLANA no timeframe de operacao (15min..4h), a fatia ACRESCENTA `sum_taker_long_short_vol_ratio` (autocorrelacao 0,0955) como SEGUNDA serie do MESMO painel.",
-    "E REVERSIVEL DENTRO DA FASE porque e outra entrada de catalogo e outra chamada, NAO outro cano. Se virar fase nova, a decomposicao errou.",
+    "⛔ O FALSIFICADOR DA ESCOLHA DE SERIE, e ele e VISUAL — REDACAO EM VIGOR DESDE 2026-09-16: se o painel de `count_long_short_ratio` for uma linha VISUALMENTE PLANA NA ESCALA ENTREGUE, a fatia CONSERTA A ESCALA (dizer quanto a serie andou no prazo de decisao, sem exigir zoom).",
+    "⚠️ CORRECAO 2026-09-16 [DECISAO-OWNER, escolha entre alternativas apresentadas] — ver handoff/DECISOES-OWNER.md §D18. A redacao anterior mandava ACRESCENTAR `sum_taker_long_short_vol_ratio` como 2a serie, e 3 medicoes a derrubaram (gates/design-04.md §7): (1) o falsificador dispara SO no piso da banda — 15min 0.88px/25,5% sub-pixel, 1h 4.80px/0%, 4h 13.18px/0%; (2) a serie NAO esta no catalogo servido (n_entries=60, 7 metricas), entao exigiria entrada de catalogo E coletor novos — sentimento/infra e cota, nao 'outra chamada reversivel dentro da fase'; (3) e nao resolveria: entraria na mesma escala comprimida, autocorrelacao 0,0955 num eixo de 4 dias vira ruido denso. A 2a serie fica FORA — e isso NAO e juizo de que seja inutil ([NAO SEI] do gate: mede fluxo de taker, nao posicionamento de contas).",
 ]
 local_only = true
 local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."
