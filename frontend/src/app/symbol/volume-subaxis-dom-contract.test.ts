@@ -156,14 +156,14 @@ test("MORDE: each of the 3 DOM-contract mutations that used to pass green is now
   }
 });
 
-// ── `T-01.8`: os dois `BLOCKER` do `design_gate`, guardados do lado do FONTE ─────────────────
+// ── `T-01.8`: the two `design_gate` `BLOCKER`s, guarded on the SOURCE side ───────────────────
 //
-// ⚠️ ESTA É A METADE FRACA, E ELA DIZ ISSO. O que prova a ALTURA EM PIXEL é
-// `volume-subaxis-geometry.test.ts`, que mede contra a `lightweight-charts` real; o que estes
-// asserts provam é que a FIAÇÃO está escrita — que a série de barras não voltou ao mapeamento
-// que desenha zero como barra, que as duas marcas existem e que a escala é declarada na tela.
-// As duas metades são necessárias: a geometria não vê um `setData` que deixou de ser chamado no
-// componente, e o scan não vê um pixel.
+// ⚠️ THIS IS THE WEAK HALF, AND IT SAYS SO. What proves the HEIGHT IN PIXELS is
+// `volume-subaxis-geometry.test.ts`, which measures against the real `lightweight-charts`; what
+// these asserts prove is that the WIRING is written — that the bar series has not gone back to
+// the mapping that draws zero as a bar, that both marks exist and that the scale is declared on
+// screen. Both halves are necessary: the geometry does not see a `setData` that stopped being
+// called in the component, and the scan does not see a pixel.
 
 const VOLUME_SETDATA = /volumeSeries\.setData\(positiveValueSeriesLossless\(volume\.slots\) as never\);/;
 const LOG_MODE = /mode: PriceScaleMode\.Logarithmic,/;
@@ -172,65 +172,65 @@ const ZERO_SETDATA = /zeroSeries\.setData\(zeroMarkSeries\(volume\.slots, ZERO_M
 const ABSENCE_ROLE = /const ABSENCE_MARK_COLOR_ROLE = "(\w+)" as const;/;
 const ZERO_ROLE = /const ZERO_MARK_COLOR_ROLE = "(\w+)" as const;/;
 
-test("BLOCKER-1: a série de barras usa o mapeamento que uma escala log consegue posicionar", () => {
+test("BLOCKER-1: the bar series uses the mapping a log scale is able to place", () => {
   assert.match(
     source,
     VOLUME_SETDATA,
-    "o sub-eixo voltou a `lineSeriesLossless`, que entrega `0` como barra de altura zero — " +
-      "`log10(0)` não tem coordenada e a barra de altura zero É a marca da ausência",
+    "the sub-axis went back to `lineSeriesLossless`, which hands `0` over as a zero-height bar — " +
+      "`log10(0)` has no coordinate and the zero-height bar IS the absence mark",
   );
-  assert.match(source, LOG_MODE, "a escala do sub-eixo não declara `PriceScaleMode.Logarithmic` — BLOCKER-1");
-  // E o rótulo que o laudo exige JUNTO com a escala: um eixo log não rotulado é pior que um
-  // linear ilegível, porque convida a ler o dobro de altura como o dobro de volume.
-  assert.match(source, /data-fact="volume_scale:log10"/, "a escala tem de ser DECLARADA na tela, não só aplicada");
-  assert.match(source, /escala log10/, "o rótulo visível tem de dizer a escala em palavras");
+  assert.match(source, LOG_MODE, "the sub-axis scale does not declare `PriceScaleMode.Logarithmic` — BLOCKER-1");
+  // And the label the report requires ALONGSIDE the scale: an unlabelled log axis is worse than an
+  // illegible linear one, because it invites reading twice the height as twice the volume.
+  assert.match(source, /data-fact="volume_scale:log10"/, "the scale must be DECLARED on screen, not merely applied");
+  assert.match(source, /escala log10/, "the visible label must state the scale in words");
 });
 
-test("BLOCKER-2: ausência e zero legítimo são DUAS séries, com marcas e tintas distintas", () => {
-  assert.match(source, ABSENCE_SETDATA, "não há série de marca de ausência — `WhitespaceItem` não desenha nada");
-  assert.match(source, ZERO_SETDATA, "não há série de marca para o zero legítimo do fornecedor");
+test("BLOCKER-2: absence and legitimate zero are TWO series, with distinct marks and inks", () => {
+  assert.match(source, ABSENCE_SETDATA, "there is no absence mark series — `WhitespaceItem` draws nothing");
+  assert.match(source, ZERO_SETDATA, "there is no mark series for the provider's legitimate zero");
   const absenceRole = ABSENCE_ROLE.exec(source)?.[1];
   const zeroRole = ZERO_ROLE.exec(source)?.[1];
-  assert.ok(absenceRole !== undefined && zeroRole !== undefined, "os papéis de tinta das marcas sumiram do fonte");
+  assert.ok(absenceRole !== undefined && zeroRole !== undefined, "the ink roles of the marks vanished from the source");
   assert.notEqual(
     absenceRole,
     zeroRole,
-    "as duas marcas partilham a MESMA tinta — 'não houve liquidação' e 'não sabemos' voltariam a ser " +
-      "a mesma afirmação (STITCH_CONTEXT.md:1821-1825)",
+    "both marks share the SAME ink — 'there was no liquidation' and 'we do not know' would be the " +
+      "same claim again (STITCH_CONTEXT.md:1821-1825)",
   );
-  // ⛔ `ADR-010`: a distinção é de LUMINÂNCIA, hue zero. Nem direção de preço (verde/vermelho, que
-  // é `fill` e volume não tem direção) nem integridade de dado (`dataBrokenInk` — uma lacuna de
-  // grade é OPERACIONAL, não dado quebrado).
+  // ⛔ `ADR-010`: the distinction is one of LUMINANCE, zero hue. Neither price direction
+  // (green/red, which is `fill` and volume has no direction) nor data integrity (`dataBrokenInk` —
+  // a grid gap is OPERATIONAL, not broken data).
   for (const role of [absenceRole!, zeroRole!]) {
-    assert.match(role, /^provenance(Strong|Weak)$/, `a marca usa o papel ${role}, fora da rampa de procedência`);
+    assert.match(role, /^provenance(Strong|Weak)$/, `the mark uses the role ${role}, outside the provenance ramp`);
   }
-  // E a legenda, que é o terceiro canal — dentro do `<canvas>` nenhuma legenda alcança.
+  // And the legend, which is the third channel — inside the `<canvas>` no legend reaches.
   assert.match(source, /data-fact="volume_marks_legend:2"/);
 });
 
-test("MORDE: cada uma das 4 regressões dos dois BLOCKER é pega por um assert acima", () => {
+test("MORDE: each of the 4 regressions of the two BLOCKERs is caught by an assert above", () => {
   const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
     {
-      name: "volta ao lineSeriesLossless (zero vira barra de altura zero)",
+      name: "back to lineSeriesLossless (zero becomes a zero-height bar)",
       mutate: (s) => s.replace(VOLUME_SETDATA, "volumeSeries.setData(lineSeriesLossless(volume.slots) as never);"),
     },
-    { name: "escala volta ao linear", mutate: (s) => s.replace(LOG_MODE, "") },
-    { name: "a marca de ausência some", mutate: (s) => s.replace(ABSENCE_SETDATA, "") },
+    { name: "scale back to linear", mutate: (s) => s.replace(LOG_MODE, "") },
+    { name: "the absence mark disappears", mutate: (s) => s.replace(ABSENCE_SETDATA, "") },
     {
-      name: "as duas marcas passam a usar a MESMA tinta",
+      name: "both marks start using the SAME ink",
       mutate: (s) => s.replace(ZERO_ROLE, 'const ZERO_MARK_COLOR_ROLE = "provenanceWeak" as const;'),
     },
   ];
   for (const mutant of mutants) {
     const mutated = mutant.mutate(source);
-    assert.notEqual(mutated, source, `a mutação "${mutant.name}" não achou âncora — atualize este teste, não o apague`);
+    assert.notEqual(mutated, source, `the mutation "${mutant.name}" found no anchor — update this test, do not delete it`);
     const survives =
       VOLUME_SETDATA.test(mutated) &&
       LOG_MODE.test(mutated) &&
       ABSENCE_SETDATA.test(mutated) &&
       ZERO_SETDATA.test(mutated) &&
       ABSENCE_ROLE.exec(mutated)?.[1] !== ZERO_ROLE.exec(mutated)?.[1];
-    assert.ok(!survives, `a mutação "${mutant.name}" NÃO é detectada pelos asserts acima — a guarda é vazia`);
+    assert.ok(!survives, `the mutation "${mutant.name}" is NOT detected by the asserts above — the guard is vacuous`);
   }
 });
 
