@@ -111,6 +111,28 @@ numa thread (`backend/tests/api/test_*.py`).
 **Decisão do owner (2026-09-16):** seguir com a **3**, mantendo a **1** como ajuste que vale por si,
 e **avaliar Granian**. É o que os dois despachos abaixo vão validar.
 
+## 6b. ⛔ O que os dois arquitetos DERRUBARAM deste documento
+
+Acrescentado em 2026-09-16, depois dos laudos. **Três erros meus, nenhum apagado do texto acima.**
+
+1. **A opção 1 como eu a escrevi CRASH-LOOPA, não degrada.** `uvicorn/main.py:603-607` faz
+   `sys.exit(STARTUP_FAILURE)` com `workers>1` quando recebe app-OBJETO, e `__main__.py:40` passa
+   objeto. "Risco baixo" estava errado: o serviço não sobe.
+2. **A citação `ADR-009/D2`/`D3` que pus no despacho está TROCADA.** A propriedade de escritor único
+   é `ADR-002/D5` + `ADR-027:81`. Mandei o arquiteto conferir contra a ADR errada; ele corrigiu.
+3. **A opção 2 na forma que propus foi RECUSADA.** Li `series_key_id`/`symbol` dentro de `as_of`
+   como desperdício de performance; são a **guarda de solda** (`as_of_accessor.py:283-286`).
+   Sobrevive só como `2A` (o caller filtra fora do laço; `as_of` mantém os cinco predicados).
+
+⚠️ **E `B12` sobe de sequela para PORTÃO:** `create_app` abre **2** conexões
+(`src/main/__init__.py:241,251`) que ficam `idle in transaction` desde o boot — verificado pelo
+orquestrador em `pg_stat_activity`: `pids` 187453/187454, **40 min** de `xact_start`, uma delas com
+o `_SELECT_WINDOW_SQL` literal. `workers=N` multiplica isso por `N` ⇒ bloqueadores do `ALTER TABLE`
+do coletor. **Consertar `B12` é pré-requisito de qualquer worker.**
+
+⚠️ **Correção ao meu próprio §4:** dizer que `B12`/`B13` "não são a causa desta latência" continua
+verdadeiro, mas eles **são** o que impede a mitigação. Não são inertes.
+
 ## 7. O que os arquitetos NÃO devem fazer
 
 ⛔ Nenhum código. Decisão, ADR e plano — implementação é do `builder`, com QA e code-review próprios.
