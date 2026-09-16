@@ -88,10 +88,52 @@ is either this accessor or a second read path.
 # already-listed module is caught too — which is where a second reader would most naturally be
 # born, next to code that already has the row in its hands.
 DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
-    # The accessor itself. `as_of` and its four private helpers are ONE read path split for
-    # `C90` (max-complexity 10); `AsOfReading.projection` reads the winning row back out.
+    # The accessor itself. `as_of` and its private helpers are ONE read path split for `C90`
+    # (max-complexity 10); `AsOfReading.projection` reads the winning row back out.
+    #
+    # `ADR-039` adds `as_of_batch` — the SECOND DOOR of this same accessor, never a second
+    # accessor (its four conditions `C1`-`C4` are argued in the function's own docstring and
+    # pinned by `DECLARED_PRODUCERS` below) — and, with it, four private helpers. Three of the
+    # four exist precisely so the two doors do NOT hold two copies of the same truth, which is
+    # the divergence this whole file is about:
+    #
+    #   `_admits`             the admission conjunction, moved out of `as_of`'s comprehension
+    #                         into ONE named place that BOTH doors call. It is the same five
+    #                         terms, not a rewrite of them (`ADR-039`/`D1`/`C2`).
+    #   `_reading_for`        the two `O(1)` post-filters plus the reading, likewise shared.
+    #   `_absorb`             the running minimum per `bucket_end` (`ADR-039`/`D3`) — batch-only,
+    #                         because `as_of` has no pointer to fold rows into.
+    #   `_activation_instant` the ONE thing that is genuinely NEW: the earliest `t` at which
+    #                         `_admits` can hold. It is DELIBERATELY NOT called by `as_of` —
+    #                         sharing it would move both sides of `ADR-039`/`C3`'s differential
+    #                         together and blind it to exactly the defect the `748`
+    #                         `available_at < bucket_end` rows exist to catch.
+    #
+    # None of the four is a second READ: none is reachable from outside this module, none takes
+    # a store, and the ONE question "what was this series worth at `t`" is still answered by the
+    # two public doors alone, which `C3` holds bit-identical to each other.
+    #
+    # ⚠️ `as_of_batch` IS ABSENT FROM THIS SET, AND THAT ABSENCE IS THE MEASUREMENT, NOT AN
+    # OVERSIGHT: this scan finds `ast.Attribute` reads of the three read-path columns, and
+    # `as_of_batch` has NONE. It never spells `.observed_at`, `.available_at` or `.bucket_end`
+    # itself — every one of them is reached through `_admits`, `_activation_instant`, `_absorb`
+    # and `_reading_for`, the shared helpers `as_of` reaches them through too. That is
+    # `ADR-039`/`D1`/`C2` ("a semantics that stays written in one place") turned from a claim
+    # into something an AST can check: a batch door that had rewritten the conjunction would
+    # have had to name those columns, and naming them would have put it in this set. Adding it
+    # here anyway would make this registry lie in the safe-looking direction — it would reserve
+    # a permission the function does not use, and the day it starts using it nothing would move.
     "modules/sentimento/domain/as_of_accessor.py": frozenset(
-        {"as_of", "_r2_admits", "_first_observation_order", "projection"}
+        {
+            "as_of",
+            "_admits",
+            "_activation_instant",
+            "_absorb",
+            "_reading_for",
+            "_r2_admits",
+            "_first_observation_order",
+            "projection",
+        }
     ),
     # WRITE path, not read path, and the distinction is the whole point: `reject_clock_skew`
     # compares a row against ITSELF (`event_time` against `available_at`) to decide whether it
@@ -269,11 +311,38 @@ DECLARED_PRODUCERS = [
     # The DEFINITION of the read (`ADR-039/D1`, `C2`). Every other entry here owes a
     # bit-for-bit differential against THIS one over `projection()`, never an argument.
     "as_of",
+    # `ADR-039`/`D1`: the SECOND DOOR of this same accessor, and the four cumulative conditions
+    # that admit it are checkable rather than asserted — which is the whole point of writing the
+    # reason here instead of a name:
+    #
+    # `C1` it lives in `as_of_accessor.py`, beside the definition, inside the SAME
+    #      `DECLARED_TOUCHERS` entry above. In `use_cases/` the column scan would accuse it, and
+    #      would be right — a reader born next to its caller is how the fork starts.
+    # `C2` `as_of` is NOT removed and is NOT re-expressed as `as_of_batch(t)[0]`. The inversion
+    #      is the tempting form and it is refused: the day the definition becomes the optimised
+    #      code, nobody can prove equivalence against anything. And the admission conjunction is
+    #      NOT rewritten either — `_admits` is the one place it is written and both doors call
+    #      it, so what `as_of_batch` reformulates is the ALGORITHM (`O(n log n + m)` against
+    #      `O(n * m)`), never the semantics.
+    # `C3` the gate is DIFFERENTIAL, not argumentative, and it runs on a REAL slice of
+    #      `md.series`: `test_as_of_batch_differential.py` asserts
+    #      `as_of_batch(...)[i].projection() == as_of(t=instants[i], ...).projection()` bit for
+    #      bit over `1.282` real rows that contain BOTH defects a synthetic fixture does not
+    #      have — `5` of the `748` rows with `available_at < bucket_end` (`ADR-039`/`D2`) and
+    #      `53` of the multi-row buckets whose winner is re-minimised backwards (`D3`).
+    # `C4` this entry, and the tightened `_mentions_a_reading` below that made the guard able to
+    #      see a `-> tuple[AsOfReading, ...]` at all. Before `ADR-039` it could not, and would
+    #      have passed this change WITHOUT A LINE ALTERED.
+    #
+    # ⛔ It is not a second reading TRACK because it produces no answer of its own: every
+    # reading it returns is the reading `as_of` returns for the same instant, and that claim is
+    # a test that runs, not a sentence in this comment.
+    "as_of_batch",
 ]
 
 
 def _mentions_a_reading(annotation: object) -> bool:
-    """Does this return annotation produce an `AsOfReading`, under ANY spelling?
+    """Return whether this annotation produces an `AsOfReading`, under ANY spelling.
 
     ⛔ Asking `annotation in {AsOfReading, "AsOfReading"}` — what this test did until
     `ADR-039` — is a gate that does not look. `as_of_accessor` carries

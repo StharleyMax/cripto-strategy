@@ -1,10 +1,15 @@
 """`build_series_history_report`: the use case behind `GET /series-history` (`ADR-034/D9`, item 2).
 
-For every 1-minute grid instant in the requested window, this module calls `as_of()`
-(`domain/as_of_accessor.py`) with `purpose=RENDERING` and projects the result onto the
-discriminated pair `ADR-034/D5` fixes. `as_of` is pure — it never touches a store — so this
-module needs the observations already loaded, which is exactly what `SeriesWindowReader`
+For every 1-minute grid instant in the requested window, this module asks
+`domain/as_of_accessor.py` with `purpose=RENDERING` and projects the result onto the
+discriminated pair `ADR-034/D5` fixes. The accessor is pure — it never touches a store — so
+this module needs the observations already loaded, which is exactly what `SeriesWindowReader`
 (the port `infra/postgres_series_window_reader.py` implements) supplies.
+
+⚠️ SINCE `ADR-039` IT ASKS ONCE FOR THE WHOLE GRID, THROUGH `as_of_batch`, NOT ONCE PER
+INSTANT THROUGH `as_of`. The two are held bit-identical by `ADR-039`/`C3`'s differential over
+real rows, so this is the same answer computed in `O(n log n + m)` instead of `O(n * m)`; the
+loop it replaces was `99,95%` of a `17,250 s` response whose `SELECT` took `9 ms`.
 
 `ADR-034/D6`: F1 serves the NATIVE 1-minute grid only — `interval` outside `{"1m"}` is refused
 here as a second line of defence, even though the route (`src.api.routes.series_history`)
@@ -21,7 +26,7 @@ from src.modules.sentimento.domain.as_of_accessor import (
     Observation,
     ReadPurpose,
     SeriesReadPolicy,
-    as_of,
+    as_of_batch,
 )
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.domain.series_history_report import (
@@ -225,19 +230,39 @@ def build_series_history_report(
         lookback_ms=lookback_ms,
     )
 
+    # `ADR-039`: ONE ordered pass over the window answers the whole grid, instead of one
+    # `as_of` call per grid instant re-scanning every row of the window. The loop this replaces
+    # cost `O(grid x rows)` and the numbers are measured, not estimated: `208.391.040` predicate
+    # evaluations for ONE series of a four-day panel (`36.179` rows x `5.760` instants), which
+    # is `99,95%` of a `17,250 s` response whose `SELECT` took `9 ms`
+    # `[MEDIDO 2026-09-16, ADR-039 §1]`.
+    #
+    # ⛔ NO PRE-FILTER IS APPLIED HERE, AND THAT IS `ADR-039`/`D6` HONOURED RATHER THAN IGNORED.
+    # Form `2A` — the predicates that do not depend on `t` evaluated once, outside the loop — is
+    # what `_activated_in_order` already does INSIDE the accessor, once per row. Repeating it
+    # here would buy nothing and would cost the one thing that matters: this module would start
+    # touching `observed_at`/`available_at` itself and become a new entry in
+    # `test_as_of_is_the_single_reader.py`'s `DECLARED_TOUCHERS`. Form `2B` — dropping
+    # `series_key_id`/`symbol` from inside the accessor "because the SQL already filtered them" —
+    # is VETOED outright: those two are the `q`/`nq` weld guard, not a performance term.
+    grid_instants = tuple(
+        range(_first_grid_instant(window_start_ms), window_end_ms + 1, _GRID_STEP_MS)
+    )
+    readings = as_of_batch(
+        series=entry.key,
+        symbol=symbol,
+        # THE GRID INSTANT IS AN X COORDINATE; `t` IS A DECISION INSTANT (`_read_instant`). The
+        # mapping is monotone in both branches, so the batch's one-way cursor is legitimate on
+        # the sequence it produces — and `as_of_batch` refuses loudly if it ever stops being.
+        instants=tuple(_read_instant(g, bar_policy=bar_policy) for g in grid_instants),
+        observations=observations,
+        policy=policy,
+        bar_policy=bar_policy,
+        purpose=ReadPurpose.RENDERING,
+        knowledge_time=knowledge_time_ms,
+    )
     rows: list[SeriesHistoryRow] = []
-    grid_instant = _first_grid_instant(window_start_ms)
-    while grid_instant <= window_end_ms:
-        reading = as_of(
-            series=entry.key,
-            symbol=symbol,
-            t=_read_instant(grid_instant, bar_policy=bar_policy),
-            observations=observations,
-            policy=policy,
-            bar_policy=bar_policy,
-            purpose=ReadPurpose.RENDERING,
-            knowledge_time=knowledge_time_ms,
-        )
+    for grid_instant, reading in zip(grid_instants, readings, strict=True):
         # `.projection()` (`as_of_accessor.py`) is the ALREADY-DECLARED read of the winning row's
         # `available_at` — reading it here directly, as `reading.observation.row.available_at`,
         # would make this module a second entry in `test_as_of_is_the_single_reader.py`'s
@@ -252,7 +277,6 @@ def build_series_history_report(
                 absence=cast("str | None", projected["absence"]),
             )
         )
-        grid_instant += _GRID_STEP_MS
 
     return SeriesHistoryReport(
         panel_series_key_id=series_key_id,

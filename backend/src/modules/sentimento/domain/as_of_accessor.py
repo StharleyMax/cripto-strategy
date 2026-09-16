@@ -297,6 +297,13 @@ def as_of(
     `observations` is a `Sequence` and not a store handle ON PURPOSE: this function is pure, so
     the poisoned fixture of `SPEC-001` §5.1 is a list literal in a test rather than a database
     that has to be stood up, and the whole anti-lookahead mechanism is verifiable offline.
+
+    ⚠️ STEPS 2-3 LIVE IN `_admits` AND STEP 6 IN `_reading_for` SINCE `ADR-039`, and the move is
+    not tidying. `as_of_batch` — the second door of this same accessor — has to apply the very
+    same predicates and the very same post-filters, and a second copy of either is the failure
+    `test_as_of_is_the_single_reader.py` exists to stop: two read paths do not fail, they
+    DIVERGE. `as_of` is still THE DEFINITION (`ADR-039`/`D1`/`C2`); what changed is that the
+    definition is now reachable by name from the one other function allowed to need it.
     """
     staleness_ms = _require_decision_staleness(policy)
     _refuse_intrabar_for_entry(bar_policy=bar_policy, purpose=purpose)
@@ -305,11 +312,14 @@ def as_of(
     admitted = [
         observation
         for observation in observations
-        if observation.row.series_key_id == series_key_id
-        and observation.row.symbol == symbol
-        and observation.row.observed_at <= knowledge_time
-        and observation.row.available_at <= t
-        and _r2_admits(observation.row, t=t, bar_policy=bar_policy)
+        if _admits(
+            observation,
+            series_key_id=series_key_id,
+            symbol=symbol,
+            t=t,
+            bar_policy=bar_policy,
+            knowledge_time=knowledge_time,
+        )
     ]
     if not admitted:
         return _absent(
@@ -323,21 +333,119 @@ def as_of(
         (o for o in admitted if o.row.bucket_end == latest_bucket_end),
         key=_first_observation_order,
     )
-    age_ms = t - winner.row.bucket_end
-
-    if age_ms >= policy.bucket_interval_ms and not CARRY_FORWARD_BY_NATURE[series.nature]:
-        return _absent(Absence.NO_POINT, knowledge_time=knowledge_time, bar_policy=bar_policy)
-    if age_ms > staleness_ms:
-        return _absent(Absence.NO_POINT, knowledge_time=knowledge_time, bar_policy=bar_policy)
-
-    return AsOfReading(
-        value=winner.value,
-        absence=None,
-        observation=winner,
+    return _reading_for(
+        winner,
+        t=t,
+        nature=series.nature,
+        policy=policy,
+        staleness_ms=staleness_ms,
         knowledge_time=knowledge_time,
         bar_policy=bar_policy,
-        age_ms=age_ms,
     )
+
+
+def as_of_batch(
+    *,
+    series: SeriesKey,
+    symbol: str,
+    instants: Sequence[int],
+    observations: Sequence[Observation],
+    policy: SeriesReadPolicy,
+    bar_policy: BarPolicy,
+    purpose: ReadPurpose,
+    knowledge_time: int,
+) -> tuple[AsOfReading, ...]:
+    """Answer a whole NON-DECREASING grid of instants in ONE ordered pass (`ADR-039`/`D1`).
+
+    ⛔ THIS IS NOT A SECOND ACCESSOR, AND THE FOUR CONDITIONS OF `ADR-039`/`D1` SAY WHY.
+
+    * `C1` — it lives HERE, beside `as_of`, on the same review surface and inside the same
+      `DECLARED_TOUCHERS` entry. In `use_cases/` the AST scan of
+      `test_as_of_is_the_single_reader.py` would accuse it, and it would be right.
+    * `C2` — `as_of` is NOT removed and is NOT re-expressed as `as_of_batch(t)[0]`. It stays
+      THE DEFINITION; this function is an ALGORITHMIC reformulation of it.
+    * `C3` — the gate is DIFFERENTIAL, never argumentative:
+      `as_of_batch(...)[i].projection() == as_of(t=instants[i], ...).projection()`, bit for bit,
+      over a REAL slice of `md.series` (`tests/sentimento/test_as_of_batch_differential.py`).
+    * `C4` — `DECLARED_PRODUCERS` in that same file names this function, with its reason.
+
+    AND IT DOES NOT REWRITE THE ADMISSION CONJUNCTION, which is the other half of `C2`
+    ("uma semantica que segue escrita num lugar so"). `_admits` below is the ONE place the five
+    terms are written, and BOTH functions call it. What this function adds — and the only thing
+    it adds — is WHEN each row enters:
+
+        THE THEOREM (`ADR-039`/`D2`, the monotonicity of admission)
+
+        `_admits(o, t=...)` is monotone in `t`: its two `t`-dependent terms reach BACKWARDS
+        (`available_at <= t`, and `bucket_end <= t` under `final_only`), so once a row is
+        admitted it stays admitted for every later `t`. The instant at which it FIRST becomes
+        admitted is `_activation_instant` — and evaluating `_admits` AT that instant leaves
+        exactly the terms that do not depend on `t` at all. So
+
+            admitted(t) == { o : _admits(o, t=activation(o)) and activation(o) <= t }
+
+        which a sorted list plus one forward cursor answers for the whole grid in one pass.
+
+    ⛔ THE NAIVE ACTIVATION KEY — `available_at` — IS LOOKAHEAD, AND THE DATA PROVES IT
+    (`ADR-039`/`D2`): `748` rows of `1.452.975` in `md.series` carry `available_at < bucket_end`,
+    the worst by `-3.481.439 ms` — about 58 grid steps. Ordering by `available_at` would let
+    such a row become admissible BEFORE its own bucket closed, changing which row wins.
+
+    Cost: `O(n log n + m)` against `as_of`-per-instant's `O(n * m)` — `n` rows, `m` instants.
+    `ADR-039` §1 measures the `n * m` this replaces: `208.391.040` predicate evaluations for
+    ONE series of one four-day panel.
+
+    Raises:
+        DecisionReadRefusedError: `instants` is not non-decreasing (the cursor is one-way, so a
+            grid that goes backwards would silently answer with a future pointer state), or any
+            refusal `as_of` itself raises for the same arguments.
+
+    """
+    staleness_ms = _require_decision_staleness(policy)
+    _refuse_intrabar_for_entry(bar_policy=bar_policy, purpose=purpose)
+    _refuse_a_grid_that_goes_backwards(instants)
+
+    activated = _activated_in_order(
+        observations,
+        series_key_id=series.series_key_id(),
+        symbol=symbol,
+        bar_policy=bar_policy,
+        knowledge_time=knowledge_time,
+    )
+
+    best_by_bucket_end: dict[int, Observation] = {}
+    latest_bucket_end: int | None = None
+    cursor = 0
+    readings: list[AsOfReading] = []
+    for t in instants:
+        while cursor < len(activated) and activated[cursor][0] <= t:
+            latest_bucket_end = _absorb(
+                activated[cursor][1],
+                best_by_bucket_end=best_by_bucket_end,
+                latest_bucket_end=latest_bucket_end,
+            )
+            cursor += 1
+        if latest_bucket_end is None:
+            readings.append(
+                _absent(
+                    _absence_for_empty(policy=policy, t=t),
+                    knowledge_time=knowledge_time,
+                    bar_policy=bar_policy,
+                )
+            )
+            continue
+        readings.append(
+            _reading_for(
+                best_by_bucket_end[latest_bucket_end],
+                t=t,
+                nature=series.nature,
+                policy=policy,
+                staleness_ms=staleness_ms,
+                knowledge_time=knowledge_time,
+                bar_policy=bar_policy,
+            )
+        )
+    return tuple(readings)
 
 
 def reject_delay_threshold_above_staleness(
@@ -404,6 +512,196 @@ def _refuse_intrabar_for_entry(*, bar_policy: BarPolicy, purpose: ReadPurpose) -
             "77,4% of the definitive highs are already known and 90,0% of the range has "
             "already happened"
         )
+
+
+def _admits(
+    observation: Observation,
+    *,
+    series_key_id: str,
+    symbol: str,
+    t: int,
+    bar_policy: BarPolicy,
+    knowledge_time: int,
+) -> bool:
+    """Decide THE admission conjunction — steps 2 and 3 of `as_of`, in ONE place.
+
+    It was inlined in `as_of`'s comprehension until `ADR-039`. It is a named function now for
+    one reason and not for tidiness: `as_of_batch` has to evaluate the SAME five terms, and a
+    second copy of them is what `test_as_of_is_the_single_reader.py`'s own docstring calls the
+    failure that "does not fail, it DIVERGES" — one copy applying R-2 and the other not, both
+    answers plausible. `ADR-039`/`D1`/`C2` states it as a requirement: the semantics stays
+    written in one place, and only the ALGORITHM is reformulated.
+
+    The five terms, each with the rule it serves:
+
+    * `series_key_id` and `symbol` — the `q`/`nq` weld guard (`SPEC-001` §5.1 class (c)).
+      ⛔ `ADR-039`/`D6` VETOES removing these two because "the SQL already filtered them": they
+      are a GUARD, not a performance term, and the coupling reader<->accessor that removing
+      them would create is invisible to the AST guard.
+    * `observed_at <= knowledge_time` — the knowledge horizon (`CA-F4-25`).
+    * `available_at <= t` — R-1, the fact was knowable at `t`.
+    * `_r2_admits` — R-2, the bucket had closed at `t` and the source did not call it partial.
+
+    The last two are the only terms that depend on `t`, and both reach BACKWARDS from it. That
+    is what makes admission MONOTONE in `t`, which is the theorem `as_of_batch` rests on.
+    """
+    row = observation.row
+    return (
+        row.series_key_id == series_key_id
+        and row.symbol == symbol
+        and row.observed_at <= knowledge_time
+        and row.available_at <= t
+        and _r2_admits(row, t=t, bar_policy=bar_policy)
+    )
+
+
+def _activation_instant(row: SeriesRow, *, bar_policy: BarPolicy) -> int:
+    """Return the EARLIEST `t` at which `_admits` can hold for this row — `ADR-039`/`D2`.
+
+    ⛔ IT IS NOT `available_at`, AND THE DATA IS WHY. Under `final_only` the admission has TWO
+    backwards-reaching terms, `available_at <= t` AND `bucket_end <= t`, so the first instant
+    that satisfies both is their MAXIMUM. `748` rows of `1.452.975` in `md.series` have
+    `available_at < bucket_end` — all of them `/fapi/v1/premiumIndex`, a SNAPSHOT series
+    attributed to a bucket that closes ahead of it, the worst by `-3.481.439 ms`
+    `[MEDIDO 2026-09-16, ADR-039/D2, `BEGIN READ ONLY`]`. Keying the scan on `available_at`
+    alone would make such a row admissible BEFORE its own bucket closed: lookahead, and it
+    changes which row wins.
+
+    Under `intrabar` R-2 does not apply at all (`_r2_admits` returns `True`), so the only
+    backwards-reaching term left is R-1 and the key IS `available_at`. The key therefore
+    DEPENDS ON `bar_policy`, which is why it is a parameter and never a default.
+
+    ⚠️ THIS FUNCTION IS DELIBERATELY NOT CALLED BY `as_of`. If it were, a wrong key here would
+    move both sides of `ADR-039`/`C3`'s differential by the same amount and the comparison
+    would go blind — the one defect the `748` rows exist to catch would become invisible. `as_of`
+    keeps stating `available_at <= t` and `bucket_end <= t` literally; this is the derived form,
+    and the differential is what holds the two together.
+    """
+    if bar_policy is BarPolicy.INTRABAR:
+        return row.available_at
+    return max(row.available_at, row.bucket_end)
+
+
+def _activated_in_order(
+    observations: Sequence[Observation],
+    *,
+    series_key_id: str,
+    symbol: str,
+    bar_policy: BarPolicy,
+    knowledge_time: int,
+) -> list[tuple[int, Observation]]:
+    """Step 1 of `ADR-039` §3: the admissible rows, paired with their activation, sorted by it.
+
+    `_admits` is evaluated ONCE PER ROW, at that row's own activation instant — never once per
+    row per grid instant. At `t = activation(o)` the two `t`-dependent terms hold by
+    construction, so what the call actually decides is the part that does not depend on `t` at
+    all: identity, symbol, the knowledge horizon and the source's own `is_final`. That is
+    `ADR-039`/`D6`'s form `2A` — the constant-in-`t` predicates applied once, outside the loop —
+    realised INSIDE the accessor, where the weld guard lives, rather than in a caller.
+
+    ⛔ THE ORDERING LIVES HERE, IN `domain`, AND `ADR-039`/`D5` VETOES getting it from an
+    `ORDER BY`: `postgres_series_window_reader.py` has no `ORDER BY` and does not get one for
+    this. A `domain` function whose correctness depended on the order a SQL STRING in `infra`
+    produced would put the premise exactly where the AST guard structurally cannot see it.
+
+    The sort key is the activation alone — `Observation` is not orderable, and it must not be:
+    ties inside one bucket are broken by `_first_observation_order` when the row is ABSORBED
+    (`ADR-039`/`D3`), never by where the sort happened to leave it.
+    """
+    activated = [
+        (_activation_instant(observation.row, bar_policy=bar_policy), observation)
+        for observation in observations
+        if _admits(
+            observation,
+            series_key_id=series_key_id,
+            symbol=symbol,
+            t=_activation_instant(observation.row, bar_policy=bar_policy),
+            bar_policy=bar_policy,
+            knowledge_time=knowledge_time,
+        )
+    ]
+    activated.sort(key=lambda pair: pair[0])
+    return activated
+
+
+def _absorb(
+    observation: Observation,
+    *,
+    best_by_bucket_end: dict[int, Observation],
+    latest_bucket_end: int | None,
+) -> int:
+    """Step 3 of `ADR-039` §3: fold one newly activated row in, and return the latest bucket.
+
+    ⛔ THE RUNNING MINIMUM IS RE-MINIMISED, NEVER "THE FIRST ONE THAT ACTIVATED" (`ADR-039`/`D3`).
+    The winner INSIDE a bucket can be revised BACKWARDS: in `7.600` of `147.802` multi-row
+    buckets a row that activates LATER wins by `_first_observation_order`, because that key is
+    `observed_at` and `observed_at` is not ordered by `available_at`. Keeping the first arrival
+    would answer with a row `as_of` never picks. `[MEDIDO: ADR-039/D3; reconfirmado 2026-09-16
+    sobre md.series em `BEGIN READ ONLY`, 5.624 de 147.860 buckets multi-linha]`
+    """
+    bucket_end = observation.row.bucket_end
+    incumbent = best_by_bucket_end.get(bucket_end)
+    if incumbent is None or _first_observation_order(observation) < _first_observation_order(
+        incumbent
+    ):
+        best_by_bucket_end[bucket_end] = observation
+    if latest_bucket_end is None:
+        return bucket_end
+    return max(latest_bucket_end, bucket_end)
+
+
+def _reading_for(
+    winner: Observation,
+    *,
+    t: int,
+    nature: Nature,
+    policy: SeriesReadPolicy,
+    staleness_ms: int,
+    knowledge_time: int,
+    bar_policy: BarPolicy,
+) -> AsOfReading:
+    """Step 6 of `as_of`: the two `O(1)` post-filters, then the reading — one place, two callers.
+
+    ⛔ `ADR-039`/`D4`: NEITHER FILTER MAY SHORT-CIRCUIT THE SCAN. They are not monotone in `t` —
+    a series can be stale at one instant and fresh at the next, because a newer bucket activates
+    in between — so they may not prune the pointer's advance. They apply PER INSTANT, after the
+    winner is already chosen, which is exactly where this function sits.
+
+    The two limits are independent and the tighter one wins; neither has a default
+    (`D4.11` and `ADR-006`).
+    """
+    age_ms = t - winner.row.bucket_end
+    if age_ms >= policy.bucket_interval_ms and not CARRY_FORWARD_BY_NATURE[nature]:
+        return _absent(Absence.NO_POINT, knowledge_time=knowledge_time, bar_policy=bar_policy)
+    if age_ms > staleness_ms:
+        return _absent(Absence.NO_POINT, knowledge_time=knowledge_time, bar_policy=bar_policy)
+    return AsOfReading(
+        value=winner.value,
+        absence=None,
+        observation=winner,
+        knowledge_time=knowledge_time,
+        bar_policy=bar_policy,
+        age_ms=age_ms,
+    )
+
+
+def _refuse_a_grid_that_goes_backwards(instants: Sequence[int]) -> None:
+    """Refuse a grid that is not non-decreasing — the cursor of `as_of_batch` is one-way.
+
+    A single forward pointer cannot answer an instant EARLIER than one it has already passed:
+    rows absorbed for the later instant would still be in `best_by_bucket_end`, and the reading
+    would carry a row that was not yet knowable — lookahead, produced by an argument rather than
+    by a predicate. Refusing is the only honest answer, and refusing LOUDLY is the point:
+    silently sorting the caller's grid would return readings in an order the caller did not ask
+    for, which is the same defect wearing a different hat.
+    """
+    for earlier, later in zip(instants, instants[1:], strict=False):
+        if later < earlier:
+            raise DecisionReadRefusedError(
+                f"instants must be non-decreasing, and {later} follows {earlier}: the single "
+                f"forward cursor of `as_of_batch` cannot answer an instant it has already "
+                f"passed without carrying rows that were not knowable then (`ADR-039` §3)"
+            )
 
 
 def _r2_admits(row: SeriesRow, *, t: int, bar_policy: BarPolicy) -> bool:

@@ -128,9 +128,31 @@ invisível ao guarda AST.
 
 Custo: **`O(n log n + m)`**, `n` = linhas, `m` = instantes de grade.
 
-⚠️ `[NÃO MEDIDO]` — o ganho *"17,2 s → < 1 s"* projetado em `handoff` §6 é **estimativa do
-orquestrador, não medição**. O número real só existe depois da construção. O que está **medido** é o
-custo atual.
+### ✅ O ganho — MEDIDO em 2026-09-16, depois do deploy local do owner
+
+A versão anterior desta seção dizia `[NÃO MEDIDO]` e chamava o *"17,2 s → < 1 s"* de **estimativa do
+orquestrador**. O owner subiu o deploy local e o número agora existe, pela **rede**, `curl -w`:
+
+| cenário | antes | depois | fator |
+|---|---|---|---|
+| **1** `series-history` sozinho | `17,250 s` | **`0,298 s`** | **57,9×** |
+| **4** concorrentes (o que a página faz) | `22,2` / `44,0` / `117,2` / **`124,2 s`** | `0,770` / `0,949` / `1,026` / **`1,826 s`** | **68,0×** |
+| **`/symbol`** ponta a ponta | **`300 s`, `ttfb=0`, ZERO bytes, `3 de 3`** | **`4,31` / `4,68` / `4,82 s`, `HTTP 200`, `1.493.157 B`, `3 de 3`** | de *não entrega* para **entrega** |
+
+⭐ **O corpo do `series-history` é byte-idêntico ao de antes (`570.607 B`)** — o ganho não veio de
+servir menos dado. E o A/B in-process do `builder` (`23,662 s → 0,228 s`, `103,8×`) **sobreviveu à
+rede** com folga: o `57,9×` medido de fora é o mesmo efeito, mais o custo de rede e serialização que
+o A/B não enxergava.
+
+⚠️ **Sobram ~2,5 s da rota que NÃO são estas leituras:** as 4 concorrentes fecham em `1,826 s` e a
+página leva `4,3-4,8 s`. O resto é `series-catalog` (`0,659 s`) + render do Next + o cálculo de `S2`.
+`[NÃO MEDIDO]` em detalhe — fora do escopo desta ADR, e registrado para não ser redescoberto.
+
+⇒ **E isto DECIDE a questão dos workers**, pelo critério literal do `/infra-architect`
+(`gates/A11-infra-architect.md`, item 4): *"se 4 concorrentes com 1 worker fecharem em < 3 s, NÃO
+subir workers"*. Fecharam em **`1,826 s`**. **Workers não entram**, e os `+205 MiB` numa VPS sob
+pressão ficam economizados. `B12` continua defeito real e **deixa de ser urgente** — vira dívida a
+pagar com calma, não portão de nada.
 
 ---
 
