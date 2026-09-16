@@ -260,11 +260,12 @@ function AbsenceNote({ status }: { readonly status: PanelStatus }) {
     return null;
   }
   return (
-    // ⛔ SEM `role="status"`, e a remoção é o achado `m-5` de `T-05.10`. Uma região viva
-    // (`aria-live="polite"`) anuncia MUDANÇA; esta nota existe no primeiro paint (o `status` vem do
-    // servidor, por requisição) e nunca muta no cliente. Região viva presente no carregamento não é
-    // anunciada por leitor de tela ⇒ o papel não comprava nada e deixava uma região viva espúria
-    // competindo com as que de fato mudam. O texto continua alcançável: é um `<p>` no fluxo.
+    // ⛔ NO `role="status"`, and the removal is `T-05.10`'s `m-5` finding. A live region
+    // (`aria-live="polite"`) announces CHANGE; this note exists at the first paint (`status` comes
+    // from the server, per request) and never mutates on the client. A live region already present
+    // at load time is NOT announced by a screen reader ⇒ the role bought nothing and left a spurious
+    // live region competing with the ones that do change. The text stays reachable: it is a `<p>` in
+    // the flow.
     <p data-fact={`panel_absent:${status.reason}`} className="text-sm text-provenance-weak">
       Sem dado real neste painel — {ABSENCE_REASON_LABEL[status.reason]}. Nenhum número é mostrado no lugar
       (nunca um zero fabricado).
@@ -455,98 +456,100 @@ const CVD_CUMULATIVE_PRICE_SCALE_ID = "cvd_cumulative";
 const CVD_DELTA_SCALE_MARGINS = { top: 0.05, bottom: 0.55 } as const;
 const CVD_CUMULATIVE_SCALE_MARGINS = { top: 0.55, bottom: 0.05 } as const;
 
-// ── `T-05.9` — O PAINEL DE LIQUIDAÇÕES (M4), E A SÉRIE MAIS ESPARSA DA TELA ───────────────────
+// ── `T-05.9` — THE LIQUIDATION PANE (M4), AND THE SPARSEST SERIES ON THE SCREEN ───────────────
 //
-// ⛔ A ESTABILIDADE DOS SELETORES, primeiro: `e2e/13-liquidacoes-dado-real.spec.ts` (`T-05.11`)
-// encontra o painel por ESTAS strings e lê `data-liquidation-present-points` de cada coorte. São
-// CONTRATO, não estilo — o `design_gate` (`T-05.10`) pode mudar altura, cor, palavra e ordem sem
-// tocar em nenhuma delas, que é o que torna as duas tasks paralelizáveis. `section[aria-label=
-// "Liquidações"]` NÃO é o gancho: rótulo é microcopy pt-BR que o `ui-designer` pode reescrever, e
-// prender um assert de DADO ao TEXTO DA UI é como uma mudança de forma quebra um teste de dado.
+// ⛔ SELECTOR STABILITY, first: `e2e/13-liquidacoes-dado-real.spec.ts` (`T-05.11`) finds the pane by
+// THESE strings and reads `data-liquidation-present-points` off each cohort. They are a CONTRACT,
+// not styling — the `design_gate` (`T-05.10`) may change height, color, wording and order without
+// touching any of them, which is what makes the two tasks parallelizable. `section[aria-label=
+// "Liquidações"]` is NOT the hook: a label is pt-BR microcopy the `ui-designer` may rewrite, and
+// pinning a DATA assertion to UI TEXT is how a change of form breaks a test about data.
 const LIQUIDATION_PANE_TESTID = "liquidation-pane";
-/** Um testid por COORTE, derivado do nome da coorte — as duas legs são duas séries e o e2e tem de
- * poder afirmar sobre cada uma. Derivar em vez de enumerar mantém o par colado ao `cohort` que o
- * catálogo publica (`liquidation_catalog.py::COHORTS`), então uma terceira leg não poderia nascer
- * sem gancho. */
+/** One testid per COHORT, derived from the cohort name — the two legs are two series and the e2e
+ * has to be able to assert about each one. Deriving instead of enumerating keeps the pair glued to
+ * the `cohort` the catalog publishes (`liquidation_catalog.py::COHORTS`), so a third leg could not
+ * be born without a hook. */
 function liquidationCohortTestId(cohort: string): string {
   return `liquidation-cohort-${cohort}`;
 }
 
-// ⛔ AS TRÊS ESCALAS DESTE PAINEL, E A SEPARAÇÃO É GEOMÉTRICA — NÃO É CUIDADO, É IMPOSSIBILIDADE.
+// ⛔ THE THREE SCALES OF THIS PANE, AND THE SEPARATION IS GEOMETRIC — NOT CARE, IMPOSSIBILITY.
 //
-// A lição da fase `01` é literal (`gates/design-01.md` §A3, `BLOCKER-2`): a distinção entre "não
-// sabemos" e "foi zero" tem de viajar em SÉRIES SEPARADAS, nunca num `if` de cor — *"duas séries
-// fazem a colisão deixar de ser expressável"*. Aqui a forma é reusada E ENDURECIDA, porque nesta
-// série a colisão não é estrutural-mas-adormecida como era no volume (`zeros_exatos = 0` lá): ela
-// está VIVA HOJE. Na janela de 4 dias que a rota pede, a coorte `long` responde `191` observações
-// em `5.761` grades, e `62` delas são ZERO LEGÍTIMO; a `short`, `50` zeros em `76` observações em
-// 24 h `[MEDIDO 2026-09-16, GET /api/v1/series-history, bar_policy=final_only]`. Zero legítimo é
-// um fato de tipo aqui: `ZL-3` de `domain/liquidation_zero_legitimacy.py`.
+// Phase `01`'s lesson is literal (`gates/design-01.md` §A3, `BLOCKER-2`): the distinction between
+// "we do not know" and "it was zero" has to travel in SEPARATE SERIES, never in an `if` on color —
+// *"two series make the collision stop being expressible"*. Here the form is reused AND HARDENED,
+// because in this series the collision is not structural-but-dormant as it was in volume
+// (`zeros_exatos = 0` there): it is ALIVE TODAY. Over the 4-day window the route asks for, the
+// `long` cohort answers `191` observations in `5.761` grid slots, and `62` of them are LEGITIMATE
+// ZERO; the `short` one, `50` zeros in `76` observations over 24 h `[MEDIDO 2026-09-16, GET
+// /api/v1/series-history, bar_policy=final_only]`. Legitimate zero is a fact of TYPE here: `ZL-3`
+// of `domain/liquidation_zero_legitimacy.py`.
 //
-// O QUE A FASE `01` DEIXOU EM ABERTO E ESTE PAINEL FECHA: lá a ordenação ausência < zero < menor
-// barra foi MEDIDA sobre um universo sintético — verdadeira para aquele dado, não garantida para
-// todo dado. Aqui as duas faixas são DISJUNTAS por MARGEM DE ESCALA, e o que as separa é uma
-// desigualdade entre duas constantes desta seção, não uma propriedade do dado:
+// WHAT PHASE `01` LEFT OPEN AND THIS PANE CLOSES: there the ordering absence < zero < smallest bar
+// was MEASURED over a synthetic universe — true for that data, not guaranteed for all data. Here
+// the two bands are DISJOINT by SCALE MARGIN, and what separates them is an inequality between two
+// constants of this section, not a property of the data:
 //
 //     1 - LIQUIDATION_BAR_SCALE_MARGINS.bottom  <  LIQUIDATION_MARKS_SCALE_MARGINS.top
 //                        0,85                   <              0,88
 //
-// A GARANTIA, na forma exata em que ela é verdadeira: **toda barra DESENHADA termina no PISO da
-// faixa das barras**, `y = H·(1 - bottom)`, e a faixa das marcas só começa em `H·top`. O piso é
-// invariante no valor porque a escala das barras é AUTOESCALADA e a série de barras é a ÚNICA
-// pendurada nela: o menor valor visível é, por definição, quem cai no piso.
-// `[MEDIDO 2026-09-16, liquidation-geometry.test.ts contra a biblioteca real: para micro ∈ {2 ·
-//  0,26 · 0,1 · 0,01 · 0,003} a barra mais baixa desenhada fica em `y = 162,20` nas quatro abaixo
-//  da base, contra topo da faixa das marcas em `168,96` e topo da marca de zero em `175,97`]`.
+// THE GUARANTEE, in the exact form in which it is true: **every DRAWN bar ends at the FLOOR of the
+// bar band**, `y = H·(1 - bottom)`, and the marks band only starts at `H·top`. The floor is
+// invariant in value because the bar scale is AUTOSCALED and the bar series is the ONLY one hung on
+// it: the smallest visible value is, by definition, the one that lands on the floor.
+// `[MEDIDO 2026-09-16, liquidation-geometry.test.ts against the real library: for micro ∈ {2 ·
+//  0,26 · 0,1 · 0,01 · 0,003} the lowest drawn bar sits at `y = 162,20` in the four below the
+//  baseline, against a marks-band top of `168,96` and a zero-mark top of `175,97`]`.
 //
-// ⛔ O QUE NÃO É A GARANTIA, E A VERSÃO ANTERIOR DESTA SEÇÃO AFIRMAVA: *"nenhuma barra, de nenhum
-// valor, alcança a faixa das marcas, porque a LINHA DE BASE das barras fica acima do topo das
-// marcas"*. A frase foi REMOVIDA por ser FALSA, e o `design_gate` de `T-05.10` (`M-1`,
-// `gates/design-05.md`) a falsificou com número: a linha de base NÃO é um piso. Num histograma com
-// `base = 1`, um valor ABAIXO da base desenha PARA BAIXO a partir dela — e quem se move quando o
-// dado encolhe é a linha de base (de `y = 162,20` para `118,76` com uma barra de `0,003`; para
-// `74,88` se a série inteira vier em unidade BASE), nunca o piso. O piso é o que fecha a colisão.
+// ⛔ WHAT THE GUARANTEE IS NOT, AND THE PREVIOUS VERSION OF THIS SECTION ASSERTED: *"no bar, of any
+// value, reaches the marks band, because the BASELINE of the bars sits above the top of the
+// marks"*. The sentence was REMOVED for being FALSE, and `T-05.10`'s `design_gate` (`M-1`,
+// `gates/design-05.md`) falsified it with a number: the baseline is NOT a floor. In a histogram
+// with `base = 1`, a value BELOW the base draws DOWNWARD from it — and what moves when the data
+// shrinks is the baseline (from `y = 162,20` to `118,76` with a bar of `0,003`; to `74,88` if the
+// whole series comes in BASE unit), never the floor. The floor is what closes the collision.
 //
-// ⚠️ E ELA NÃO É INCONDICIONAL NA CONFIGURAÇÃO — só no DADO. Duas coisas a sustentam, e as duas são
-// testadas por mutação em `liquidation-geometry.test.ts`: (1) a desigualdade acima; (2) o autoescale
-// da escala das barras. Fixar o autoescale (um `autoscaleInfoProvider` na série de barras) devolve
-// a colisão na hora: com ele, a barra de `0,003` vai para `y = 221,47`, ABAIXO do piso do painel
-// (`191`) `[MEDIDO 2026-09-16, MORDE do teste]`.
+// ⚠️ AND IT IS NOT UNCONDITIONAL IN THE CONFIGURATION — only in the DATA. Two things sustain it, and
+// both are mutation-tested in `liquidation-geometry.test.ts`: (1) the inequality above; (2) the
+// autoscale of the bar scale. Pinning the autoscale (an `autoscaleInfoProvider` on the bar series)
+// hands the collision back at once: with it, the `0,003` bar goes to `y = 221,47`, BELOW the pane's
+// own floor (`191`) `[MEDIDO 2026-09-16, the test's MORDE]`.
 //
-// ⚠️ O QUE ELA NÃO COBRE: barra FORA da janela visível. `priceToCoordinate` extrapola para ela
-// (`0,26 → 176,36`, dentro da faixa do zero), mas nada é pintado — ela não está no recorte. Quando
-// entra, o autoescale a inclui e ela cai no piso. Que a janela DECLARADA não seja a DESENHADA é o
-// `M-2` do mesmo laudo, escalado: é transversal aos 4 painéis e não se resolve aqui.
+// ⚠️ WHAT IT DOES NOT COVER: a bar OUTSIDE the visible window. `priceToCoordinate` extrapolates for
+// it (`0,26 → 176,36`, inside the zero band), but nothing is painted — it is not in the viewport.
+// When it enters, the autoscale includes it and it lands on the floor. That the DECLARED window is
+// not the DRAWN one is `M-2` of the same report, escalated: it is transversal to the 4 panes and is
+// not solved here.
 const LIQUIDATION_BAR_SCALE_MARGINS = { top: 0.05, bottom: 0.15 } as const;
 const LIQUIDATION_MARKS_PRICE_SCALE_ID = "liquidation_marks";
 const LIQUIDATION_MARKS_SCALE_MARGINS = { top: 0.88, bottom: 0 } as const;
 const LIQUIDATION_MARKS_BAND_PX = CHART_HEIGHT_PX * (1 - LIQUIDATION_MARKS_SCALE_MARGINS.top);
 
-// ⛔ ESCALA `log10`, PELO MESMO ARGUMENTO ARITMÉTICO DO `BLOCKER-1` DA FASE `01` — e aqui ele é
-// MAIS FORTE, não menos: o volume de 1 min tinha `max/p50 = 60,8x` e já punha 67,9% das barras
-// abaixo de 1 px; a liquidação tem `max/p50 = 443,8x` (`min 75,62 · p50 6.489,82 · max
-// 2.880.132,45`) `[MEDIDO 2026-09-16, n=191 grades presentes em 4 dias de dado real]`. Numa escala
-// linear ancorada no máximo, a barra MEDIANA desta série ficaria abaixo de meio pixel.
-// `PriceScaleMode.Logarithmic` move a GEOMETRIA e deixa o número intacto (`ADR-003` FR-2 aplicada a
-// uma escala); transformar o DADO poria `log10(v)` dentro da série e de lá sairia toda leitura que
-// a biblioteca faz dela.
+// ⛔ `log10` SCALE, BY THE SAME ARITHMETIC ARGUMENT AS PHASE `01`'s `BLOCKER-1` — and here it is
+// STRONGER, not weaker: 1-minute volume had `max/p50 = 60,8x` and already put 67,9% of the bars
+// below 1 px; liquidation has `max/p50 = 443,8x` (`min 75,62 · p50 6.489,82 · max 2.880.132,45`)
+// `[MEDIDO 2026-09-16, n=191 present grid slots over 4 days of real data]`. On a linear scale
+// anchored at the maximum, the MEDIAN bar of this series would sit below half a pixel.
+// `PriceScaleMode.Logarithmic` moves the GEOMETRY and leaves the number intact (`ADR-003` FR-2
+// applied to a scale); transforming the DATA would put `log10(v)` inside the series, and every
+// reading the library makes of it would come out of there.
 //
-// Base `1` pelo mesmo motivo do sub-eixo de volume: âncora ABSOLUTA na unidade da série (USD), de
-// modo que a mesma altura significa o mesmo valor em qualquer janela.
+// Base `1` for the same reason as the volume sub-axis: an ABSOLUTE anchor in the series' unit (USD),
+// so that the same height means the same value in any window.
 const LIQUIDATION_LOG_BASE = 1;
 
-// As duas marcas da faixa de baixo, em "pixels nominais da faixa". A razão 3:1 entre elas é a mesma
-// ordem de grandeza que a fase `01` mediu como suficiente para separar as duas afirmações; o que
-// prova a separação em pixels REAIS, contra a biblioteca, é `liquidation-geometry.test.ts`.
+// The two marks of the bottom band, in "nominal pixels of the band". The 3:1 ratio between them is
+// the same order of magnitude phase `01` measured as enough to separate the two assertions; what
+// proves the separation in REAL pixels, against the library, is `liquidation-geometry.test.ts`.
 const LIQUIDATION_ABSENCE_MARK_PX = 6;
 const LIQUIDATION_ZERO_MARK_PX = 18;
-// ⛔ `ADR-010` GOVERNA A TINTA, e a atribuição aqui segue a SEMÂNTICA da rampa de procedência
-// (`D-4`: luminância, hue zero), não o gosto: ausência é o que NÃO se sabe ⇒ tinta FRACA; zero
-// legítimo e barra presente são OBSERVAÇÕES ⇒ tinta FORTE, e o que as separa é a altura, que é
-// justamente a grandeza que difere entre elas. Nem verde/vermelho (são `fill` de DIREÇÃO de preço,
-// e `long`/`short` aqui são COORTES de liquidação, não direção de vela — pintar de vermelho a
-// liquidação de comprados convidaria a ler a coorte como direção do mercado) nem violeta
-// (`dataBrokenInk` é INTEGRIDADE do dado, e uma lacuna de grade não é dado quebrado).
+// ⛔ `ADR-010` GOVERNS THE INK, and the assignment here follows the SEMANTICS of the provenance ramp
+// (`D-4`: luminance, zero hue), not taste: absence is what is NOT known ⇒ WEAK ink; legitimate zero
+// and a present bar are OBSERVATIONS ⇒ STRONG ink, and what separates them is the height, which is
+// precisely the quantity that differs between them. Neither green/red (they are the `fill` of price
+// DIRECTION, and `long`/`short` here are liquidation COHORTS, not candle direction — painting the
+// liquidation of longs in red would invite reading the cohort as the market's direction) nor violet
+// (`dataBrokenInk` is data INTEGRITY, and a grid gap is not broken data).
 const LIQUIDATION_ABSENCE_MARK_COLOR_ROLE = "provenanceWeak" as const;
 const LIQUIDATION_ZERO_MARK_COLOR_ROLE = "provenanceStrong" as const;
 const LIQUIDATION_BAR_COLOR_ROLE = "provenanceStrong" as const;
@@ -1077,24 +1080,23 @@ function CvdPane({
   );
 }
 
-/** ⛔ `RS-5`, PAGO AQUI — E O QUE O TORNA DIFÍCIL DE ESQUECER É O TIPO, NÃO ESTA FUNÇÃO.
- * `SeriesProvenance` (`panel-status.ts`) tem três membros, e só o membro `declared` carrega
- * `provider`/`reconstructedFrom`/`publishedError`: um painel de série de TERCEIRO sem rótulo não é
- * um estado que esta árvore de componentes consiga expressar. A alternativa — uma prop booleana que
- * o renderizador pode simplesmente não ler — é como `RS-5` seria satisfeita no papel e violada na
- * tela.
+/** ⛔ `RS-5`, PAID HERE — AND WHAT MAKES IT HARD TO FORGET IS THE TYPE, NOT THIS FUNCTION.
+ * `SeriesProvenance` (`panel-status.ts`) has three members, and only the `declared` member carries
+ * `provider`/`reconstructedFrom`/`publishedError`: a THIRD-PARTY series pane with no label is not a
+ * state this component tree is able to express. The alternative — a boolean prop the renderer may
+ * simply not read — is how `RS-5` would be satisfied on paper and violated on the screen.
  *
- * ⚠️ E O `published_error` AUSENTE É DITO, NÃO OMITIDO. Para M4 ele é `null`, e isso é uma RECUSA
- * MEDIDA, não um esquecimento: `liquidation_catalog.py` escreve o motivo — a Binance não tem
- * endpoint REST de liquidação e `!forceOrder@arr`, a única comparação possível, está fora do
- * caminho crítico por `ADR-036/D4` e não escreveu nada (`5` runs, todos `REJECTED`, `n_written=0`
- * `[MEDIDO 2026-09-12 em md.ingest_run]`). *"Inventar um `(median, p99, n)` aqui publicaria uma
- * fidelidade que ninguém mediu, o que é pior do que não publicar nenhuma."* Uma tela que some com o
- * campo faz o operador ler ausência de erro como ausência de dúvida.
+ * ⚠️ AND AN ABSENT `published_error` IS SAID, NOT OMITTED. For M4 it is `null`, and that is a
+ * MEASURED REFUSAL, not an oversight: `liquidation_catalog.py` writes the reason down — Binance has
+ * no REST liquidation endpoint, and `!forceOrder@arr`, the only possible comparison, is off the
+ * critical path by `ADR-036/D4` and wrote nothing (`5` runs, all `REJECTED`, `n_written=0`
+ * `[MEDIDO 2026-09-12 em md.ingest_run]`). *"Making up a `(median, p99, n)` here would publish a
+ * fidelity nobody measured, which is worse than publishing none."* A screen that drops the field
+ * makes the operator read absence of error as absence of doubt.
  *
- * ⛔ PALAVRA E POSIÇÃO SÃO FORMA — do `ui-designer` com o veredito do `ux-ui-mastery` (`T-05.10`,
- * `CLAUDE.md` §"Design — autonomia delegada, com gate de validação"). O que um builder decide, e
- * tudo o que está decidido aqui, é que o FATO está na tela e é legível por máquina. */
+ * ⛔ WORDING AND POSITION ARE FORM — the `ui-designer`'s, with the `ux-ui-mastery` verdict
+ * (`T-05.10`, `CLAUDE.md` §"Design — autonomia delegada, com gate de validação"). What a builder
+ * decides, and all that is decided here, is that the FACT is on the screen and machine-readable. */
 function LiquidationProvenance({ provenance }: { readonly provenance: SeriesProvenance }) {
   if (provenance.kind === "unresolved") {
     return (
@@ -1112,17 +1114,18 @@ function LiquidationProvenance({ provenance }: { readonly provenance: SeriesProv
   }
   const { publishedError } = provenance;
   return (
-    // ⛔ `provenanceStrong` AQUI E `provenanceWeak` NO RESTO DO PAINEL — é HIERARQUIA, não
-    // legibilidade: `#8b949e` sobre `#131722` mede `5,82:1` e já passa AA. O achado `S-3` de
-    // `T-05.10` contou `7` nós no tom fraco contra `2` no forte, e o aviso de `RS-5` (o que
-    // `SPEC-007` §7 define como o que o operador NÃO pode deixar de ver) estava no mesmo peso do
-    // rodapé da escala. `ADR-010` §5.4 deixa a LUMINÂNCIA como único canal de ênfase — três hues, e
-    // nenhum disponível para isto — e havia um degrau de `2,53` (`5,82` → `14,72`) não gasto.
-    // Rodapé, legenda e horizonte continuam fracos: se tudo subir, nada sobe.
+    // ⛔ `provenanceStrong` HERE AND `provenanceWeak` IN THE REST OF THE PANE — it is HIERARCHY, not
+    // legibility: `#8b949e` over `#131722` measures `5,82:1` and already passes AA. `T-05.10`'s
+    // `S-3` finding counted `7` nodes in the weak tone against `2` in the strong one, and the `RS-5`
+    // warning (what `SPEC-007` §7 defines as what the operator must NOT fail to see) carried the
+    // same weight as the scale footer. `ADR-010` §5.4 leaves LUMINANCE as the only channel of
+    // emphasis — three hues, and none available for this — and there was an unspent step of `2,53`
+    // (`5,82` → `14,72`). Footer, legend and horizon stay weak: if everything rises, nothing rises.
     //
-    // ⛔ SEM `role="status"` (`m-5` do mesmo laudo): região viva anuncia MUDANÇA, e esta linha vem
-    // do servidor no primeiro paint e nunca muta no cliente. `aria-live` presente no carregamento
-    // não é anunciado — o papel não comprava nada e competia com as regiões que de fato mudam.
+    // ⛔ NO `role="status"` (`m-5` of the same report): a live region announces CHANGE, and this line
+    // comes from the server at the first paint and never mutates on the client. An `aria-live`
+    // present at load time is not announced — the role bought nothing and competed with the regions
+    // that do change.
     <p
       data-fact={`liquidation_provenance:declared:${provenance.provider}`}
       data-reconstructed-from={provenance.reconstructedFrom ?? ""}
@@ -1145,11 +1148,11 @@ function LiquidationProvenance({ provenance }: { readonly provenance: SeriesProv
   );
 }
 
-/** O rótulo que a escala `log10` exige, pelo mesmo motivo literal do laudo da fase `01`: *"um eixo
- * logarítmico não rotulado é pior que um linear ilegível"* — quem lê uma barra com o dobro da altura
- * como o dobro do valor está lendo o quadrado dele. A escala do painel não desenha rótulo numérico
- * no canvas, então ele só pode existir aqui, no DOM; e aqui ele é texto, alcança leitor de tela e é
- * asserível. */
+/** The label the `log10` scale demands, by the literal reason of phase `01`'s report: *"an unlabeled
+ * logarithmic axis is worse than an illegible linear one"* — whoever reads a bar of twice the height
+ * as twice the value is reading its square. The pane's scale draws no numeric label on the canvas,
+ * so it can only exist here, in the DOM; and here it is text, it reaches a screen reader and it is
+ * assertable. */
 function LiquidationScaleNote() {
   return (
     <p data-fact="liquidation_scale:log10" className="text-sm text-provenance-weak">
@@ -1159,14 +1162,14 @@ function LiquidationScaleNote() {
   );
 }
 
-/** Os TRÊS estados, nomeados em palavras — o terceiro canal, pelo mesmo motivo que `CvdLegend` e
- * `VolumeMarksLegend` existem: dentro do `<canvas>` nenhuma legenda alcança, e uma distinção que só
- * vive em pixels morre num screenshot monocromático ou num leitor de tela. Aqui ela viaja em
- * palavras, e as palavras dizem a diferença que `RN-1` cobra: *"não houve"* ≠ *"não sabemos"*.
+/** The THREE states, named in words — the third channel, for the same reason `CvdLegend` and
+ * `VolumeMarksLegend` exist: inside the `<canvas>` no legend reaches, and a distinction that lives
+ * only in pixels dies in a monochrome screenshot or in a screen reader. Here it travels in words,
+ * and the words say the difference `RN-1` demands: *"there was none"* ≠ *"we do not know"*.
  *
- * A tinta sai de `colorTokens()`, a MESMA chamada de onde sai a das séries, então uma legenda que
- * minta sobre a cor da marca não é expressável. `aria-hidden` no glifo é deliberado: ele é a cópia
- * redundante do que as palavras ao lado já carregam. */
+ * The ink comes out of `colorTokens()`, the SAME call the series' ink comes from, so a legend that
+ * lies about the mark's color is not expressible. `aria-hidden` on the glyph is deliberate: it is
+ * the redundant copy of what the words beside it already carry. */
 function LiquidationMarksLegend() {
   const tokens = colorTokens();
   return (
@@ -1193,13 +1196,14 @@ function LiquidationMarksLegend() {
   );
 }
 
-/** O horizonte legível de UMA coorte — os mesmos dois números e um instante que os outros painéis
- * declaram, mais a fração que só esta série precisa: quantas das observações são ZERO LEGÍTIMO.
+/** The readable horizon of ONE cohort — the same two numbers and one instant the other panes
+ * declare, plus the fraction only this series needs: how many of the observations are a LEGITIMATE
+ * ZERO.
  *
- * Escrito por extenso em vez de compartilhado com `ReadableHorizon`/`CvdReadableHorizon` pelo motivo
- * que aquele já declara em full: as expressões literais de `data-fact` estão presas, caractere a
- * caractere, por testes de contrato diferentes, e fundir dois contratos num componente
- * parametrizado é como um refactor re-aponta, em silêncio, o falsificador de outra task. */
+ * Written out in full instead of shared with `ReadableHorizon`/`CvdReadableHorizon` for the reason
+ * that one already states at length: the literal `data-fact` expressions are pinned, character by
+ * character, by different contract tests, and merging two contracts into one parameterized component
+ * is how a refactor silently re-points another task's falsifier. */
 function LiquidationReadableHorizon({
   cohort,
   data,
@@ -1225,15 +1229,15 @@ function LiquidationReadableHorizon({
 }
 
 /**
- * UMA coorte: um gráfico, três séries, e a colisão zero↔ausência tornada geometricamente
- * impossível — ver o bloco de constantes `LIQUIDATION_*` para o argumento inteiro.
+ * ONE cohort: one chart, three series, and the zero↔absence collision made geometrically impossible
+ * — see the `LIQUIDATION_*` block of constants for the whole argument.
  *
- * ⛔ AS TRÊS SÉRIES NÃO SÃO TRÊS CORES DE UMA. `positiveValueSeriesLossless` manda para whitespace
- * tanto a ausência quanto o zero (numa escala log, `log10(0)` não tem coordenada, e uma barra de
- * altura zero na linha de base é, pixel a pixel, a marca de "nada foi desenhado aqui"), e então
- * `absenceMarkSeries` e `zeroMarkSeries` desenham cada um dos dois estados com marca própria. Um
- * `if` de cor resolveria a aparência e deixaria a distinção presa a um ramo que um refactor apaga
- * sem que nada reprove.
+ * ⛔ THE THREE SERIES ARE NOT THREE COLORS OF ONE. `positiveValueSeriesLossless` sends both absence
+ * and zero to whitespace (on a log scale, `log10(0)` has no coordinate, and a zero-height bar on the
+ * baseline is, pixel by pixel, the mark of "nothing was drawn here"), and then `absenceMarkSeries`
+ * and `zeroMarkSeries` draw each of the two states with a mark of its own. An `if` on color would
+ * settle the appearance and leave the distinction pinned to a branch a refactor erases without
+ * anything failing.
  */
 function LiquidationCohortSurface({
   cohort,
@@ -1269,17 +1273,17 @@ function LiquidationCohortSurface({
       priceScaleId: LIQUIDATION_MARKS_PRICE_SCALE_ID,
       priceLineVisible: false,
       lastValueVisible: false,
-      // A faixa fixa: a altura da marca é a da própria marca, nunca a do dado ao lado dela.
+      // The fixed band: the mark's height is the mark's own, never that of the data beside it.
       autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: LIQUIDATION_MARKS_BAND_PX } }),
     });
     const absenceSeries: ISeriesApi<"Histogram"> = chart.addSeries(
       HistogramSeries,
       markStyle(tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE]),
     );
-    // ⛔ A MARGEM É O QUE SEPARA AS DUAS FAIXAS, e ela é aplicada na escala das MARCAS: com
-    // `top: 0.88` elas ocupam os 12% de baixo do painel, e o PISO da faixa das barras fica aos 85%
-    // (`1 - bottom`). Nenhuma barra DESENHADA passa do piso, para nenhum valor — ver o bloco de
-    // constantes `LIQUIDATION_*` para a garantia inteira, o que ela pressupõe e o que ela não cobre.
+    // ⛔ THE MARGIN IS WHAT SEPARATES THE TWO BANDS, and it is applied on the MARKS scale: with
+    // `top: 0.88` they take the bottom 12% of the pane, and the FLOOR of the bar band sits at 85%
+    // (`1 - bottom`). No DRAWN bar passes the floor, for any value — see the `LIQUIDATION_*` block of
+    // constants for the whole guarantee, what it presupposes and what it does not cover.
     absenceSeries.priceScale().applyOptions({ scaleMargins: LIQUIDATION_MARKS_SCALE_MARGINS });
     absenceSeries.setData(absenceMarkSeries(data.slots, LIQUIDATION_ABSENCE_MARK_PX) as never);
     const zeroSeries: ISeriesApi<"Histogram"> = chart.addSeries(
@@ -1288,11 +1292,11 @@ function LiquidationCohortSurface({
     );
     zeroSeries.setData(zeroMarkSeries(data.slots, LIQUIDATION_ZERO_MARK_PX) as never);
   });
-  // `RN-1` na camada de renderização, e para esta série é regra de TIPO: um bucket de `FLOW` sem
-  // observação NÃO é um bucket em que ninguém foi liquidado. Um `0` ali seria uma AFIRMAÇÃO sobre o
-  // mercado feita a partir de ignorância — e ela é a mais cara desta tela, porque `77` de `1.440`
-  // grades carregam ponto: se ausência e zero colidissem, o painel mentiria na maior parte da
-  // janela.
+  // `RN-1` at the rendering layer, and for this series it is a rule of TYPE: a `FLOW` bucket with no
+  // observation is NOT a bucket in which nobody was liquidated. A `0` there would be an ASSERTION
+  // about the market made out of ignorance — and it is the most expensive one on this screen,
+  // because `77` of `1.440` grid slots carry a point: if absence and zero collided, the pane would
+  // lie over most of the window.
   const readingText =
     data.reading.kind === "absent" || data.reading.value === null
       ? ABSENCE_TOKEN
@@ -1308,9 +1312,9 @@ function LiquidationCohortSurface({
       data-liquidation-zero-points={data.zeroPoints}
     >
       <h3 className="font-label-caps text-label-caps text-on-surface">{label}</h3>
-      {/* ⛔ `aria-hidden` no hospedeiro do canvas — mesmo critério de `CvdPane`/`DR-6`:
-          `lightweight-charts` pinta num `<canvas>` sem nome acessível, e as leituras abaixo SÃO a
-          alternativa textual declarada. */}
+      {/* ⛔ `aria-hidden` on the canvas host — same criterion as `CvdPane`/`DR-6`:
+          `lightweight-charts` paints on a `<canvas>` with no accessible name, and the readouts below
+          ARE the declared textual alternative. */}
       <div
         ref={containerRef}
         aria-hidden="true"
@@ -1326,18 +1330,18 @@ function LiquidationCohortSurface({
 }
 
 /**
- * `T-05.9` — o painel de liquidações: DUAS coortes, o rótulo de `RS-5` e a ausência que nunca vira
- * zero.
+ * `T-05.9` — the liquidation pane: TWO cohorts, the `RS-5` label and the absence that never becomes
+ * a zero.
  *
- * ⛔ AS DUAS LEGS NÃO SÃO UMA SÓ SÉRIE COM DUAS CORES, e a razão não é de UX: somá-las apaga
- * exatamente a discriminação que a métrica existe para dar (`liquidation_catalog.py`, literal —
- * *"a long liquidation is forced selling and a short liquidation is forced buying"*). Duas
- * superfícies, dois `series_key_id`, dois status que degradam sozinhos.
+ * ⛔ THE TWO LEGS ARE NOT ONE SERIES WITH TWO COLORS, and the reason is not a UX one: summing them
+ * erases exactly the discrimination the metric exists to provide (`liquidation_catalog.py`, literal
+ * — *"a long liquidation is forced selling and a short liquidation is forced buying"*). Two
+ * surfaces, two `series_key_id`, two statuses that degrade on their own.
  *
- * E as duas ficam em GRÁFICOS separados, com título próprio, em vez de duas cores num gráfico só:
- * assim a distinção entre as coortes não depende de hue nenhum (WCAG 1.4.1) e as marcas de ausência
- * de uma leg não se sobrepõem às da outra — o que importa quando `94,7%` das grades são ausentes em
- * ambas `[MEDIDO 2026-09-16: 1.365 ausentes de 1.441 grades em 24 h, por coorte]`.
+ * And the two live in SEPARATE charts, each with its own title, instead of two colors in a single
+ * chart: that way the distinction between the cohorts depends on no hue (WCAG 1.4.1) and the absence
+ * marks of one leg do not overlap those of the other — which matters when `94,7%` of the grid slots
+ * are absent in both `[MEDIDO 2026-09-16: 1.365 absent of 1.441 grid slots over 24 h, per cohort]`.
  */
 function LiquidationPane({
   liquidation,
