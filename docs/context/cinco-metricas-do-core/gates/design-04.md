@@ -557,3 +557,354 @@ Em ordem de precedência. **Só os quatro primeiros bloqueiam.**
 | commits | **nenhum** |
 | `gate-record` | **NÃO gravado** — ato do owner |
 | Postgres | **não tocado**; API de produção lida só por `GET` |
+
+---
+---
+
+# RODADA 2 — `2026-09-16` · **a rodada 1 acima permanece intacta**
+
+**Cabeça julgada:** `b0dfdb0` · **Branch:** `task/cinco-metricas-do-core-f04-front`
+**Artefato de FORMA julgado:** tela Stitch **`7d87cac18168441cb538a78746709282`** —
+`Estudo de Forma — Painel Long/Short (S2) Rev. 3`, `2560×2048`, `DESKTOP`,
+DS `assets/0334450534074a98ba400e46f5b69dc7`. HTML baixado em `/tmp/ls-study-r2f.html` (22 769 B).
+**Artefato de CÓDIGO:** inalterado — `LongShortPane`, `SymbolClient.tsx:1505-1548`. **`frontend/` não
+foi tocado nesta rodada** (nem `scripts/`, nem `docs/plans/`, nem `tasks.toml`).
+
+⛔ **Nenhuma ferramenta de Figma foi usada, em nenhum momento.** ⛔ **Nada foi commitado.**
+⛔ **`gate-record` NÃO foi gravado** — é ato do owner. Postgres não foi tocado; a API de produção foi
+lida só por `GET`.
+
+## VEREDITO DA RODADA 2: **APPROVED**
+
+| | |
+|---|---|
+| **must-fix** | **0** — `M-1`, `M-2`, `M-3` e `M-4` fechados, cada um com a medição abaixo |
+| **should-fix** | **4** (`A-1` … `A-4`), sendo **`A-4` um achado NOVO que a rodada 1 deixou passar** |
+| **could-improve** | **2** (`c-5`, `c-6`) |
+| **`S-7`** | **resolvido**, e o ganho foi medido: sub-pixel de 15 min cai de **33,7% → 25,5%** |
+| **`S-5`, `S-6`, `S-8`, `S-9`** | **resolvidos** (medidos no §R2.3) |
+
+⇒ **`DoD-5` da fase `04` está satisfeito** no que compete a este item: o veredito é `APPROVED` e
+**este arquivo é o registro**.
+
+**A linha que separa a rodada 1 da rodada 2, e é ela que justifica o `APPROVED`:** a rodada 1
+reprovou porque a tela **AFIRMAVA COISAS FALSAS** — um rodapé que publicava amplitude inexistente,
+um traço que carregava valor adiante numa série que o servidor recusa carregar, um carimbo
+`OBSERVADO` sobre zero observações. **A rodada 2 tem ZERO afirmação falsa.** O que resta são
+**omissões com conserto de uma linha cada** — um `aria-hidden` que falta, uma regra de `:focus` que
+não foi escrita, um canvas de tamanho fixo e um `user-select: none`. Omissão nomeada não é o mesmo
+defeito que afirmação falsa, e misturar as duas classes foi o que a rodada 1 existiu para evitar.
+
+---
+
+## R2.1 ⚠️ A auditoria mordeu o gerador DE NOVO — 6 numerais fabricados na Rev. 2
+
+**Isto é o registro mais importante desta rodada, e ele é desfavorável ao meu próprio processo.**
+
+A primeira saída (`0738eb77a1924bcdad22e02f88fbd349`, Rev. 2) declarou, no próprio texto de resposta
+do Stitch, ter cumprido os 4 bloqueantes. **Eu extraí TODO numeral renderizado e conferi um a um
+contra a produção — e SEIS não vinham de medição nenhuma:**
+
+| onde | Rev. 2 publicava | medido | como se mede |
+|---|---|---|---|
+| E1, idade | `1m14s` | **`1m16s`** | `knowledge_time 1789592608000 − available_at 1789592531242 = 76758 ms` |
+| E2, completude | `842 nativas` | **`849`** | `available_at` distintos na janela que fecha em `1789592460000` |
+| E2, completude | `(2960/5760)` | **`(2997/5758)`** | slots com valor / slots da janela truncada |
+| E2, idade | `28m42s` | **`4m55s`** | `fecho − available_at da última observação = 295847 ms` |
+| E2, teto de 4 h | `1.8098` | **`1.8114`** | a janela de E2 fecha 2 min antes ⇒ a janela de 4 h dela **começa antes** e alcança um máximo mais alto |
+| E2, amplitude de 4 h | `0.3148 · 45,1%` | **`0.3164 · 45,4%`** | idem |
+
+Consertados por `edit_screens` (§R2.7), produzindo a Rev. 3, que é a tela julgada.
+
+⭐ **E o conserto deixou uma prova que uma fabricação não deixaria:** os Estados 1 e 2 agora
+publicam **pares de 4 h DIFERENTES** (`1.8098 / 0.3148 / 45,1%` contra `1.8114 / 0.3164 / 45,4%`),
+porque **desenham janelas diferentes**. Um gerador que inventa números publica o mesmo par nos dois
+painéis — foi exatamente o que a Rev. 2 fez. **Dois números que discordam pelo motivo certo são
+evidência mais forte que dois números que concordam.**
+
+⚠️ **Um dos numerais não autorizados estava CERTO, e registro isso contra mim:** `lag-1 autocorr:
+0.9989` não estava no meu prompt e o gerador o escreveu mesmo assim. Eu o recomputei
+(`0.9989`, `n=850`) e **reproduz**. Mantive-o. **Acertar por sorte não valida o processo** — se a
+auditoria fosse por amostragem em vez de exaustiva, o `842` teria passado junto.
+
+---
+
+## R2.2 Os 4 bloqueantes, um a um, com a medição que os fecha
+
+### `M-1` — **FECHADO.** Todo numeral renderizado rastreia a uma medição
+
+```bash
+# extrai TODO numeral do texto renderizado (comentarios, <script> e <style> removidos)
+python3 - <<'PY'   # saida integral conferida item a item
+import re; from collections import Counter
+s=re.sub(r'<!--.*?-->','',open('/tmp/ls-study-r2f.html').read(),flags=re.S)
+s=re.sub(r'<(script|style)\b.*?</\1>','',s,flags=re.S)
+print(Counter(re.findall(r'\d[\d.,]*%?', re.sub(r'<[^>]+>',' ',s))).most_common())
+PY
+```
+
+**`n=37` numerais distintos, e cada um tem origem:** `1.1395` `1.8369` `0.6974` `1,6575` `42,08%`
+`1.4950` `1.8098` `0.3148` `45,1%` `1.8114` `0.3164` `45,4%` `1.5164` `850` `2999` `5760` `849`
+`2997` `5758` `48` `0.9989` `0.88` `0` — **medidos**; `1,0000` — **constante de definição**
+(equilíbrio), não medição; `1m16s` `4m55s` — medidos; `2.4.0` `7f3a9c1` `1280x1024` `15` `4` `5`
+`2` — chrome e rótulos de prazo (ver `c-6`).
+
+**A contradição interna da rodada 1 morreu:** o eixo imprime `1.8369` no topo e o rodapé declara
+máximo `1.8369`. Os dois concordam porque saem da mesma medição.
+
+⚠️ **E aqui tarjo um erro DA RODADA 1, em vez de apagá-lo (`CLAUDE.md`, "erro não se apaga, se
+tarja"):** o `M-1` da rodada 1 mandou trocar `6.1% da escala` por **`3.71%`**. **`3.71%` também está
+errado** — ele foi obtido dividindo `0.0259` (a amplitude de 4 h **fabricada pela própria tela**) por
+`0.6974` (a amplitude real). **O laudo consertou o denominador e herdou o numerador falso.** A
+amplitude de 4 h medida é **`0.3148`**, e a fração é **`45,1%`** — mais de **12×** o que a rodada 1
+publicou como remédio. **É a mesma classe de defeito que o `M-1` acusava, cometida dentro da
+acusação**, e ela sobreviveu porque eu reusei um número em vez de remedi-lo.
+
+### `M-2` — **FECHADO.** A geometria, não a prosa, é que prova
+
+```bash
+# primitivas SVG do painel do Estado 2, linhas de grade (#222634) excluidas
+<path d="M 0,165 Q 180,140 380,110 T 700,75 T 880,50 L 990,42" stroke="#e6e9ef" stroke-width="1.5">
+<circle cx="990" cy="42" r="3" fill="#e6e9ef">
+```
+
+**A linha termina em `x=990` e o marcador do último ponto observado está em `x=990`. Não existe
+NENHUMA primitiva desenhada à direita disso** — nem tracejado, nem área, nem ponto fantasma. O
+tracejado horizontal de `1060→1180` da rodada 1 sumiu. Os dois únicos `stroke-dasharray` que
+sobraram no painel são as linhas de **grade de fundo** em `#222634`, horizontais e de largura total.
+
+⇒ **o carry-forward que `CARRY_FORWARD_BY_NATURE[Nature.RATIO] = False` proíbe no servidor deixou de
+existir em pixels.** A ausência é dita por travessão na leitura, `—` na etiqueta do eixo
+(`— fecho ausente`), a palavra no rodapé (`ausência não interpolada nem carregada adiante`) e —
+**novo e medido** — `cauda ausente: 2 grades de 1m`.
+
+### `M-3` — **FECHADO.** Procedência saiu inteira do estado vazio
+
+```
+Estado 3, texto renderizado: contagem de "OBSERVADO" = 0 · contagem de "procedênc" = 0
+```
+
+Nenhum rótulo, nenhum valor, nenhum travessão de procedência, nenhum "sem procedência". A afirmação
+migrou inteira para o canal de integridade, e ele está nos três canais **na ordem certa**:
+
+```html
+<polygon fill="none" points="6,1 11,6 6,11 1,6" stroke="#e0aaff" stroke-width="1.5">
+<span style="color:#e0aaff; font-weight:700">SEM OBSERVAÇÃO NA JANELA</span>
+```
+
+**Losango VAZADO (`fill="none"`) + palavra + violeta** — a cor é o terceiro canal, e o losango nunca
+preenche área, como o §9 item 4 exige. Os Estados 1 e 2 **continuam** imprimindo
+`procedência: OBSERVADO`, porque neles há observação da qual isso é predicado.
+
+### `M-4` — **FECHADO.** Zero alpha no documento inteiro, e o piso volta com folga
+
+```bash
+grep -oc 'opacity' /tmp/ls-study-r2f.html   # 0
+grep -oc 'rgba('   /tmp/ls-study-r2f.html   # 0
+grep -oc 'backdrop'/tmp/ls-study-r2f.html   # 0     (gradient: 0 · box-shadow: 1, e e' "none !important")
+```
+
+| marca | contraste contra o plot `#131722` | piso | veredito |
+|---|---:|---:|---|
+| **borda da faixa** `#8b949e` sólido | **5.82** | 3.0 | **PASSA**, folga de 2.82 |
+| o composto da rodada 1 `#8b949e @50% = #4f5660` | 2.41 | 3.0 | **não existe mais na tela** |
+| tinta fraca `#8b949e` sobre plot / chrome | 5.82 / 6.19 | 4.5 | PASSA |
+| tinta forte `#e6e9ef` sobre plot / faixa | 14.72 / 12.38 | 4.5 | PASSA |
+| violeta `#e0aaff` sobre plot / chrome | 9.68 / 10.30 | 4.5 | PASSA |
+| **fill da faixa** `#222634` | **1.19** | 3.0 | **e isto está CERTO** — ver abaixo |
+
+⚠️ **O `1.19` do fill NÃO é reprovação, e registro de novo para que a conclusão errada não seja
+redescoberta:** `SC 1.4.11` alcança objeto gráfico **necessário para entender o conteúdo**. A
+fronteira da faixa é necessária e mede **5.82**; o fill só **agrupa**. Mesma leitura vale para as
+linhas de grade de fundo (`#222634`, também `1.19`): quem carrega o valor é a **etiqueta do eixo**,
+não a linha. Um auditor futuro que meça só os fills vai concluir que a tela reprova — **ela não
+reprova, porque a informação não está nos fills.**
+
+---
+
+## R2.3 `S-5` a `S-9` — todos resolvidos, cada um com o comando
+
+| item | medição na Rev. 3 |
+|---|---|
+| `S-5` | `QUARENTENA` **renderizada: 0**. A única ocorrência no arquivo está **dentro de comentário HTML**. A palavra do Estado 3 é `SEM OBSERVAÇÃO NA JANELA` |
+| `S-6` | `idade` no Estado 3: **0**. Os carimbos renderizados são **2**, um por painel **que tem observação**, na borda direita do tempo — exatamente o que o §9 item 10 manda |
+| `S-8` | `font-size` distintos no documento inteiro: **`12px` (48×), `13px` (6×), `14px` (2×)**. **Zero nó abaixo de 12px** — a rodada 1 tinha 16 a 9px e 14 a 10px |
+| `S-9` | `<h1>` ×1 → `<h2>` ×3 (sem salto de nível) · `aria-label` ×3, um por `<section>`, todos descritivos e únicos · `aria-hidden` ×6 · landmarks `<header>` `<main>` `<footer>` presentes. A rodada 1 tinha **0** de cada |
+
+### `S-7` — resolvido, e o ganho é medido, não afirmado
+
+A régua saiu de dentro do domínio e virou **rótulo de borda**: `▼ 1,0000 equilíbrio · abaixo da
+base`, abaixo da marca `1.1395`. A escala é autoescala pura `1.1395..1.8369`. Marcas do eixo:
+`1.8369` · `1.6575` · `1.4950` · `1.1395` — **nenhuma fora do domínio**.
+
+| escala | domínio | 15 min: excursão mediana | 15 min: janelas sub-pixel |
+|---|---:|---:|---:|
+| **ancorada em 1.0000** (rodada 1) | `0.8369` | `0.74 px` | **`33.7%`** |
+| **autoescala pura** (rodada 2) | **`0.6974`** | **`0.88 px`** | **`25.5%`** |
+
+⇒ **8,2 pontos percentuais de janelas de 15 min saíram do regime sub-pixel, e 19% de resolução
+vertical voltaram.** O operador não perdeu o lado do equilíbrio — ele está no rótulo de borda.
+`[NÃO MEDIDO]` se o rótulo de borda basta **cognitivamente**; isso só se responde observando uso, e
+continua sendo a pergunta de `Explore`.
+
+---
+
+## R2.4 ⛔ O que a rodada 1 aprovou — RE-MEDIDO, e nada regrediu
+
+| eixo protegido | medição na Rev. 3 | veredito |
+|---|---|---|
+| paleta canônica | **6 hexes, e só 6**: `#8b949e`(79) `#e6e9ef`(38) `#222634`(26) `#e0aaff`(10) `#0d1017`(10) `#131722`(5). Zero revogado, zero superfície inventada | **mantido** |
+| os 14 desvios do item 16 | `0/14` — `lang="pt-BR"`, `<title>` em português, acentuação correta, zero sino, zero login, zero `overflow-y-auto`, zero microcopy em inglês, `MAINNET` preservado | **mantido** |
+| `SC 1.4.1` por construção | `grep -c '#089981\|#f23645'` → **0**. Coorte ≠ direção: zero verde, zero vermelho na tela inteira | **mantido** |
+| **e agora DEMONSTRADO por ablação, não só argumentado** | substituí todo hex pelo cinza de mesma luminância: sobram **6 cinzas distintos**, o **losango vazado sobrevive (3×)**, a **palavra sobrevive (2×)** e o **travessão sobrevive (7×)** ⇒ nenhuma informação vive só na cor | **reforçado** |
+| faixa carregada pela BORDA | fill `#222634` (1.19) + `border-left`/`border-right` **`1px solid #8b949e`** (5.82), sem alpha | **mantido** |
+| completude com os dois números | `850 observações nativas de 5m` em **tinta forte** + `(2999/5760 grades de 1m)` em **tinta fraca, entre parênteses** | **mantido** |
+| travessão do `SEM_PONTO` em três lugares | leitura atual `—`, etiqueta do eixo `— fecho ausente`, fecho do plot. **Nenhum `0`, nenhum `--`, nenhum valor velho reaproveitado** | **mantido** |
+| ganchos de teste | `data-testid="long-short-pane"` + `data-long-short-native-bars="850"` + `data-long-short-wire-points="2999"`, **byte-idênticos** | **mantido** |
+
+⭐ **E confirmei que os dois `data-testid` NOVOS não quebram o e2e:**
+`14-long-short-dado-real.spec.ts:496` usa `page.locator('[data-testid="long-short-pane"]')` com
+`toHaveCount(1)`. O seletor de atributo CSS `=` é **igualdade exata**, então
+`long-short-pane-empty` e `long-short-pane-no-point` **não casam** — `toHaveCount(1)` continua
+verdadeiro. **Medido lendo o seletor, não suposto.**
+
+---
+
+## R2.5 `/accessibility-check` — WCAG 2.2 AA sobre a Rev. 3
+
+### Nível de conformidade: **AA**, com 0 crítico · 0 sério · 3 moderados · 1 menor
+
+**Passa:** `1.3.1` (landmarks + `h1→h2×3` sem salto + `aria-label` único por `<section>`) ·
+`2.4.1` · `2.4.6` · `1.4.3` (o pior texto mede **5.82**) · `1.4.11` (a fronteira mede **5.82**) ·
+`1.4.1` (demonstrado por ablação) · `2.4.4` (link descritivo, `rel="noopener noreferrer"`) ·
+`3.1.1` (`lang="pt-BR"`) · `2.3.3`/`2.2.2` (zero animação) · `1.4.12` (`line-height: 1.35`).
+
+| # | achado | critério | conserto |
+|---|---|---|---|
+| **`A-1`** | os **3 `<svg>` do losango de integridade** não têm `aria-hidden`, `role` nem nome acessível | `1.1.1` (A) | `aria-hidden="true" focusable="false"` no `<svg>` |
+| **`A-2`** | **zero regra de `:focus`/`outline` no documento** — o §9 item 7 faz `outline-offset > 0` ser **requisito**, não estilo | `2.4.7` (AA) atendido pelo default do navegador; **a regra do projeto não está expressa** | escrever a regra, com o vão em cor de superfície |
+| **`A-3`** | `body { width:1280px; height:1024px; overflow:hidden }` ⇒ a 200% de zoom o conteúdo **corta** | `1.4.4` / `1.4.10` | inerente a estudo de forma de canvas fixo; **vira defeito se a forma migrar para a `S2`** |
+| **`A-4`** | `body { user-select: none }` — **o operador não consegue copiar um numeral** | fora de AA; é **defeito de produto** | remover `user-select: none` do texto (mantê-lo só no plot, se preciso) |
+
+⚠️ **`A-1`: por que classifiquei como should-fix e não como must-fix, e onde posso estar errado.**
+`1.1.1` é **nível A**, e uma leitura estrita diria must-fix. Classifiquei abaixo disso porque **a
+informação não se perde**: a palavra `SEM OBSERVAÇÃO NA JANELA` está no MESMO contêiner, a 6px do
+glifo — é o caso canônico de gráfico decorativo, e o conserto é **um atributo**. **O falsificador:**
+rodar NVDA/VoiceOver na tela; se algum anunciar um "graphic" solto **sem** a palavra adjacente logo
+em seguida, **`A-1` vira must-fix e este `APPROVED` tem de ser revisto**. `[NÃO MEDIDO]` — não há
+leitor de tela neste ambiente.
+
+⚠️ **`A-4` é achado NOVO, e ele é uma FALHA DA RODADA 1.** O `select-none` já estava na Rev. A
+(`ls-study.html:51`, na classe do `<body>`) e **eu não o vi** — auditei tamanho de fonte e contraste,
+não seleção de texto. Num produto cuja tese é *"impedir que um número sem procedência chegue a uma
+decisão"*, **impedir que o operador copie o número para conferir fora da tela trabalha contra a
+tese.** Registro como achado da rodada 2 e como lacuna da rodada 1.
+
+**Testes que este gate NÃO substitui:** leitor de tela real · navegação só por teclado · zoom 200% ·
+simulação de dicromacia. Os quatro continuam `[NÃO MEDIDO]`.
+
+---
+
+## R2.6 `/design-critique` — as 10 dimensões, rodada 1 → rodada 2
+
+| dimensão | r1 | **r2** | o que mudou |
+|---|---:|---:|---|
+| Clarity | 6 | **8** | o rodapé reproduz; perde por exigir que o leitor note que E1 e E2 desenham janelas diferentes (o `(truncada)` carrega isso) |
+| Consistency | 8 | **9** | 6 hexes, `0/14` desvios, zero alpha; sobra a classe CSS `.badge-quarentena` (`c-5`) |
+| Hierarchy | 8 | **8** | inalterado — tinta forte para a manchete, fraca para a escada |
+| Efficiency | 8 | **8** | inalterado — tudo visível sem hover |
+| Accessibility | 4 | **7** | landmarks + headings + rótulos + piso de 12px + zero alpha; perde por `A-1`…`A-4` |
+| Emotional Design | 8 | **8** | inalterado — zero ruído afetivo |
+| Error Resilience | **3** | **9** | **o maior salto, e é o eixo que reprovava**: carry-forward eliminado (geometria conferida), `OBSERVADO` fora do vazio, ausência dita por palavra + glifo + travessão |
+| Cognitive Load | 6 | **7** | cabeçalho em duas linhas, piso de 12px; ainda são 7 campos por painel |
+| Innovation | 8 | **8** | faixa + rodapé numérico mantidos, agora com o equilíbrio como rótulo de borda |
+| Polish | 5 | **8** | a régua deixou de derrotar a si mesma; todo numeral rastreia a uma medição; sobram os placeholders de chrome (`c-6`) |
+
+**Média: 6,4 → `8,0`/10.**
+
+### Could-improve
+
+- **`c-5`** — a classe CSS chama-se `.badge-quarentena`. **Não é renderizada**, então não é defeito
+  de usuário, mas o vocabulário errado que `S-5` derrubou **sobreviveu no identificador**. Quem
+  transcrever o HTML para `.tsx` reintroduz a palavra.
+- **`c-6`** — o chrome publica `v2.4.0` e `bundle 7f3a9c1`: **placeholders que nenhuma medição deste
+  repositório produziu**. Não são numeral de mercado (o selo de 4 campos não os alcança), mas são
+  exatamente a superfície onde `M-1` nasceu. ⭐ **E há um acerto novo a não regredir:** o chrome
+  agora traz **`AO VIVO`**, que a rodada 1 registrou faltando em `m-10`.
+
+### Explore
+
+1. O rótulo de borda `▼ 1,0000` basta cognitivamente, ou o operador precisa da linha no domínio?
+   **`[NÃO SEI]`** — mede-se observando uso, não argumentando.
+2. Dois painéis lado a lado publicando pares de 4 h diferentes é **correto e potencialmente
+   confuso**. `[NÃO MEDIDO]` se o sufixo `(truncada)` basta para desarmar a leitura de erro.
+
+---
+
+## R2.7 ⛔ O FALSIFICADOR DA RETA, DEPOIS DO `S-7` — **CONTINUA DISPARANDO, e agora com menos folga**
+
+> *"se o painel de `count_long_short_ratio` for uma linha **VISUALMENTE PLANA** no timeframe de
+> operação (`15min..4h`), a fatia ACRESCENTA `sum_taker_long_short_vol_ratio` como SEGUNDA série
+> do MESMO painel"* — `tasks.toml:T-04.9`
+
+**Medido sobre a mesma leitura de produção (`n=850` nativas, 4 dias), com autoescala pura — isto é,
+COM o `S-7` já aplicado. Janelas fixas não sobrepostas, baldes parciais de borda descartados
+(é o método da rodada 1; mantê-lo é o que torna as duas rodadas comparáveis):**
+
+| janela | n | excursão mediana | janelas sub-pixel (< 0,5 px) |
+|---|---:|---:|---:|
+| **15 min** | 282 | **`0.88 px`** | **`25.5%`** |
+| 1 h | 72 | `4.80 px` | `0.0%` |
+| 4 h | 19 | `13.18 px` | `0.0%` |
+
+⇒ **VEREDITO: dispara no piso da banda (15 min), não dispara no teto (1 h e 4 h).** Exatamente a
+mesma forma da rodada 1 — **o `S-7` melhorou o número (33,7% → 25,5%) e não cruzou o limiar**: a
+mediana de 15 min continua **abaixo de um pixel** e **um quarto** das janelas não move meio pixel.
+
+⚠️ **Nota de método, contra mim:** medindo **com** os baldes parciais de borda, o 4 h dá
+`11.97 px / 4.8%` em vez de `13.18 px / 0.0%`. Os `4.8%` são **1 balde de 21**, artefato de recorte.
+Publico os dois para que ninguém redescubra a discrepância como se fosse mudança da série.
+
+**E as três razões da rodada 1 para NÃO acrescentar a segunda série continuam de pé, uma delas
+re-medida agora:**
+
+1. a segunda série entraria na **mesma escala comprimida** — o remédio não toca o denominador;
+2. ⛔ **a série não existe no catálogo servido**, e reconferi **hoje**:
+   `GET /api/v1/series-catalog` → `n_entries=60`, **7 métricas**, e
+   `sum_taker_long_short_vol_ratio` **não é uma delas** `[MEDIDO 2026-09-16]`. O remédio que a fase
+   pré-autorizou **não tem dado**;
+3. a resposta certa é a faixa + o rodapé numérico — **e agora eles publicam número que reproduz**,
+   que era precisamente o que faltava.
+
+**⇒ A proposta a `T-04.9` continua a mesma, e continua NÃO EXECUTADA:** trocar o gatilho de *"a
+série é plana ⇒ acrescente uma segunda série"* para *"a série é plana **na escala entregue** ⇒
+conserte a escala"*, reapontando para o `M-2` transversal de `gates/design-05.md`
+(*"a janela declarada não é a janela desenhada"*). **`tasks.toml` é plano de fase e esta rodada está
+proibida de tocá-lo** — a decisão é de quem é dono da fase.
+
+---
+
+## R2.8 Registro de execução da rodada 2
+
+| item | estado |
+|---|---|
+| tela Rev. 2 (intermediária) | `0738eb77a1924bcdad22e02f88fbd349` — `generate_screen_from_text`, prompt de **33 453 B** = §9 **verbatim** (272 linhas / 19 455 B, `startswith` conferido, `R3`) + instrução de 14 KB |
+| tela Rev. 3 (**a julgada**) | `7d87cac18168441cb538a78746709282` — `edit_screens` com §9 **verbatim** de novo + a correção dos 6 numerais do §R2.1 |
+| `modelId` | ⛔ **`GEMINI_3_1_PRO` recusado outra vez** — `"Request contains an invalid argument."` O enum do MCP tem 3 membros e nenhum é ele. **Pendência de `R1` continua com o owner** (§0.1 da rodada 1). Geração feita no default do servidor (`"agentType":"PRO_AGENT"`) |
+| `edit_screens` sobre a `S2` canônica | **NÃO executado** — `R7` (`S2` é BLOCKER) e `R5` |
+| descoberta shadcn | `get_project_registries` → **nenhum registry configurado** (reconferido). ⇒ não aplicável a um painel que é `<canvas>` + texto |
+| Figma | **nenhuma chamada** |
+| `frontend/` · `scripts/` · `docs/plans/` · `tasks.toml` | **intocados** |
+| commits | **nenhum** |
+| `gate-record` | **NÃO gravado** — ato do owner |
+| `verify_screen.py` | `REPROVADO (9 reprovações)` — **as mesmas 9 da rodada 1, e as 9 continuam sendo falso negativo estrutural** (o script é calibrado para a `S2` inteira, com candles e painel de preço; um `ratio` não tem OHLC). ⭐ **E o bug `E6` da rodada 1 REPRODUZIU**: o script conta **3** carimbos de idade, mas `\bidade\b` com `re.I` está casando com a palavra `Idade` **dentro de um comentário HTML** — os renderizados são **2**, um por painel com observação, que é o que o §9 manda. Não corrigi: `scripts/` está fora do escopo desta rodada |
+
+### R2.9 Proposta a `docs/product/STITCH_CONTEXT.md` — **redigida, NÃO aplicada** (`R6`)
+
+| § | mudança proposta |
+|---|---|
+| linha 4 | a contagem diz `7`; eram **10** antes desta rodada e são **12** depois. **Trocar a contagem por uma lista de `screenId`** — a TARJA de 2026-08-28 daquele arquivo já disse por quê: *"um id não envelhece; uma contagem sim"*, e esta é a **terceira** rodada seguida em que a contagem chega desatualizada |
+| §4.1 | registrar `7d87cac1…` como **estudo de forma** do painel de long/short — **não** como tela canônica: não é uma `S2` e `verify_screen.py` não a arbitra |
+| §5 / linha 48 | `[NÃO SEI]` o que fazer com `GEMINI_3_1_PRO`. É `[PREMISSA-OWNER]` e **só o owner a reescreve** |
+
+⛔ **Nenhuma linha de `docs/product/` foi alterada nesta sessão.**
