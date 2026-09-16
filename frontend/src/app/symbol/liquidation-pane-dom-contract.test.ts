@@ -264,11 +264,18 @@ test("the route reuses the ONE RN-1 mapper, and does not write a second copy of 
   // ⛔ AND THE OLD NAME IS GONE. `volumeSlotsFromHistoryRows` called on liquidation rows would work
   // and LIE at the call site; a second mapper would be two implementations of `RN-1`.
   assert.doesNotMatch(pageCode, /volumeSlotsFromHistoryRows/, "the volume-specific name must not come back");
+  // ⚠️ THE NUMBER MOVED FROM 2 TO 3 IN `T-04.5`, AND THAT IS THE GUARD SAYING WHAT IT WAS BUILT TO
+  // SAY. The long/short pane (M3) maps its rows with this SAME function — a non-negative scalar
+  // whose absence stays absence describes a ratio of account counts as exactly as it describes a
+  // summed quantity — so the count rose by one because a pane JOINED the rule, which is the opposite
+  // of the failure this assert watches for. What it still catches is a pane that stops sharing it:
+  // a fourth mapper written by hand leaves this number where it is and fails the MORDE below.
   assert.equal(
     (pageCode.match(/nonNegativeFlowSlotsFromHistoryRows\(/g) ?? []).length,
-    2,
-    "exactly TWO call sites — the volume sub-axis and the shared liquidation cohort builder (the " +
-      "import carries no parenthesis). A third would mean a panel stopped sharing the rule",
+    3,
+    "exactly THREE call sites — the volume sub-axis, the shared liquidation cohort builder and the " +
+      "long/short pane (the import carries no parenthesis). A panel missing from this count wrote " +
+      "its own copy of `RN-1`",
   );
 });
 

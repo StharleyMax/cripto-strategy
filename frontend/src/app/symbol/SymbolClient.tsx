@@ -228,12 +228,56 @@ export interface LiquidationPaneData {
   readonly unit: string | null;
 }
 
+/**
+ * `T-04.5` — `count_long_short_ratio` (M3), the FIRST NEW PANE of this feature, computed
+ * server-side (`page.tsx` + `view-model.ts`) and handed over as plain, JSON-serializable data, same
+ * RSC-boundary discipline as `volume`/`cvd`/`oi`/`liquidation`. This component draws it; it decides
+ * nothing about it.
+ *
+ * ⛔ `nature = RATIO`, AND THAT IS NOT A LABEL — IT IS WHY THIS PANE NEVER HOLDS A VALUE FORWARD.
+ * `CARRY_FORWARD_BY_NATURE[Nature.RATIO]` is `False` on the server (`as_of_accessor.py`, read by
+ * `modeled_availability.py:38-40,134`), so a slot with no observation of its own comes back ABSENT
+ * from the read path — never the previous quotient carried over. The screen renders that as
+ * `SEM_PONTO`, and a `0` there would be the `RN-1` defect in its most misleading form on this
+ * screen: `0` is a readable long/short ratio (nobody long), so a fabricated zero would not even
+ * look wrong.
+ */
+export interface LongShortPaneData {
+  /** The `1m` WIRE grid the route was served, transcribed — one slot per grid instant, `null` where
+   * nothing was readable. It is a STAIRCASE by construction: the series is `5m` native
+   * (`long_short_catalog.LONG_SHORT_INTERVAL`) served on the `1m` grid (`GA-2`), so one native
+   * observation occupies up to five slots. Nothing here smooths that over; the ladder IS what the
+   * data is. */
+  readonly slots: readonly VolumeSlot[];
+  /** ⛔ THE HEADLINE NUMBER, AND THE ONE `DoD-3` COUNTS AGAINST `N >= 30`: distinct NATIVE
+   * observations, counted by publication (`view-model.ts::countNativeBarsByPublication`, which also
+   * carries the measurement showing why neither `wirePoints / 5` nor a `% 300_000` filter answers
+   * it for this series). */
+  readonly nativeBars: number;
+  /** The STAIRCASE count — readable rows on the `1m` wire grid, i.e. the number `nativeBars` would
+   * have been if nobody applied `RN-S1`. Published beside it and never quoted as the amount of data,
+   * the same "a falsifier needs both figures" discipline `OiPaneData.wirePoints` states in full. */
+  readonly wirePoints: number;
+  /** The FIRST grid instant carrying a readable value, or `null` when none does — the left end of
+   * the readable horizon, DECLARED instead of left to look like a market nobody measured. ⛔ The
+   * span is NOT shrunk to fit the data; same rule as `VolumeSubAxisData.firstPresentMs`. */
+  readonly firstPresentMs: number | null;
+  readonly reading: FlowReading;
+  /** The `unit` term of the series' own identity (`ratio` for M3), read off the resolved catalog
+   * entry and printed beside the numeral — `null` when no entry resolved. Carried instead of
+   * spelled as a literal here for `W-1` of `gates/design-01.md`: a numeral with no unit on this
+   * screen was a finding once already, and a literal would be free to drift from what the backend
+   * published. */
+  readonly unit: string | null;
+}
+
 export interface SymbolClientProps {
   readonly panels: S2Panels;
   readonly volume: VolumeSubAxisData;
   readonly cvd: CvdPaneData;
   readonly oi: OiPaneData;
   readonly liquidation: LiquidationPaneData;
+  readonly longShort: LongShortPaneData;
   readonly panelStatus: SymbolPanelStatuses;
   /** `knowledge_time_ms` of the request this render was built from (`request-window.ts`). Shown
    * nowhere; carried to the DOM as a `data-` attribute so the screen can be AUDITED against the
@@ -358,6 +402,16 @@ const CVD_PANE_TESTID = "cvd-pane";
 // user-visible pt-BR microcopy the `design_gate` may restyle or reword, and selecting a DATA
 // assertion by the TEXT OF UI is what makes a form change break a data test.
 const OI_PANE_TESTID = "oi-pane";
+
+// ⛔ AND THE SAME CONTRACT FOR THE LONG/SHORT PANE (`T-04.5`), the first NEW pane of this feature:
+// `T-04.7`'s e2e finds it by THIS string and reads `data-long-short-native-bars` off it. It is what
+// DECOUPLES the data assertion from the design verdict — `T-04.6` (`ui-designer` +
+// `ux-ui-mastery`) may change every colour, height, word and position of this pane without touching
+// either string, which is what lets the two tasks run without coordinating.
+// `section[aria-label="Long/short"]` is NOT the handle: the label is user-visible pt-BR microcopy
+// the `ui-designer` may rewrite, and pinning a DATA assertion to UI TEXT is how a change of form
+// breaks a test about data.
+const LONG_SHORT_PANE_TESTID = "long-short-pane";
 
 /** `RN-1`'s literal token: absence is `SEM_PONTO`, and for a `FLOW` series rendering it as `0`
  * is an error of TYPE, not of taste. `DoD-3` asserts this exact string's ABSENCE from the CVD
@@ -1378,6 +1432,121 @@ function LiquidationPane({
   );
 }
 
+/** The readable horizon of the long/short pane — the same instant and the same pair of counts the
+ * other panes declare, over this series' own two grids.
+ *
+ * ⛔ THREE NUMBERS, NOT TWO, AND THE ORDER IS THE POINT: the NATIVE bar count comes first because it
+ * is the amount of data, and the wire count comes second because it is the ladder. `RN-S1`'s failure
+ * mode on this screen is stated by the phase itself — "contar 150 pontos onde há 30 barras" — and a
+ * pane that published only the second number would overstate this series by ~3,6x
+ * `[MEDIDO 2026-09-16: 175 grades legíveis de 1 min contra 49 observações nativas em 240 min]`.
+ *
+ * Written out instead of shared with `ReadableHorizon`/`CvdReadableHorizon`/`OiReadableHorizon` for
+ * the reason the first of them states in full: the literal `data-fact` expressions are pinned,
+ * character for character, by different contract tests, and merging contracts into one parameterized
+ * component is how a refactor silently re-points another task's falsifier.
+ *
+ * ⛔ WORDING AND PLACEMENT ARE FORM — the `ui-designer`'s, with the `ux-ui-mastery` verdict
+ * (`T-04.6`, `CLAUDE.md` §"Design — autonomia delegada, com gate de validação"). What a builder
+ * decides, and all that is decided here, is that the FACTS are on screen and machine-readable. */
+function LongShortReadableHorizon({ longShort }: { readonly longShort: LongShortPaneData }) {
+  const gridSlots = longShort.slots.length;
+  const sinceText =
+    longShort.firstPresentMs === null
+      ? "Nenhuma grade legível no período"
+      : `Dado legível desde ${formatUtcMinute(longShort.firstPresentMs)}`;
+  return (
+    <p
+      data-fact={`long_short_readable_horizon:${longShort.nativeBars}/${longShort.wirePoints}/${gridSlots}`}
+      data-readable-since-ms={longShort.firstPresentMs ?? ""}
+      className="text-sm text-provenance-weak"
+    >
+      {sinceText} — {longShort.nativeBars} observações nativas de 5 min, servidas como{" "}
+      {longShort.wirePoints}/{gridSlots} grades de 1 min (a mesma observação repetida na escada).
+    </p>
+  );
+}
+
+/**
+ * `T-04.5` — the long/short pane (M3), the FIRST NEW PANE of this feature.
+ *
+ * ⛔ ONE LINE, ONE SERIES, AND NO SECOND SERIES SMUGGLED IN. `count_long_short_ratio` is ONE of the
+ * four series `SPEC-001` §3.1 separates, and the plan's own falsifier (`04_long_short.md`) reserves
+ * the decision to add `sum_taker_long_short_vol_ratio` as a second line to the phase, AFTER the
+ * first one is on screen and measured flat or not. Adding it here would answer that question
+ * before it was asked.
+ *
+ * ⛔ AND THERE IS NO FRESHNESS LINE HERE, UNLIKE `OiPane` — the omission is reasoned, not forgotten.
+ * `OiFreshness` exists because open interest is `Nature.STOCK`: the server CARRIES the last
+ * observation forward, so the pane can print a number that is much older than it looks and owes the
+ * operator the age (`RNF-2`). This series is `Nature.RATIO` with
+ * `CARRY_FORWARD_BY_NATURE[Nature.RATIO] = False` — nothing is ever held forward, so the readout at
+ * the window's last instant is EXACT or it is `SEM_PONTO`, and there is no state in which a stale
+ * number can sit on this pane pretending to be current.
+ */
+function LongShortPane({
+  longShort,
+  status,
+}: {
+  readonly longShort: LongShortPaneData;
+  readonly status: PanelStatus;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useLightweightChart(containerRef, (chart) => {
+    const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
+    const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
+    // `lineSeriesLossless` — REUSED, never a second mapping: a slot with `value: null` becomes a
+    // bare `{time}` `WhitespaceItem`, which the library places on the axis and draws NOTHING for.
+    // For this series a `0` there would be worse than for any other pane on this screen: `0` is a
+    // legible long/short ratio (nobody long), so the fabricated value would not even look wrong.
+    series.setData(lineSeriesLossless(longShort.slots) as never);
+  });
+  // ⛔ `resolveFlowReadingOrAbsent` ON A `RATIO` SERIES, AND THE DIVERGENCE IS DECLARED RATHER THAN
+  // SMUGGLED: what is shared with `FLOW` is the RULE (never look at a neighbouring slot, absence is
+  // absence), not the nature. The rule is the right one here because the SERVER already applies it —
+  // `CARRY_FORWARD_BY_NATURE[Nature.RATIO]` is `False`, so an absent slot is a slot the read path
+  // itself refused to fill. `charts`' `SeriesNature` is `"STOCK" | "FLOW"` and `s2-absence-policy.ts`
+  // says a `RATIO` branch belongs to "a future task that adds a RATIO panel" — that branch lives in
+  // `charts`, a component this `web` task does not own (`ADR-003`), so this pane reuses the rule it
+  // needs and names what it is doing instead of writing a second absence policy in `web`.
+  const readingText =
+    longShort.reading.kind === "absent" || longShort.reading.value === null
+      ? ABSENCE_TOKEN
+      : longShort.unit === null
+        ? String(longShort.reading.value)
+        : `${longShort.reading.value} ${longShort.unit}`;
+  return (
+    <section
+      aria-label="Long/short"
+      data-testid={LONG_SHORT_PANE_TESTID}
+      // ⛔ THE TWO NUMBERS, SIDE BY SIDE, AND ONLY THE FIRST IS "QUANTO DADO EXISTE" — the same
+      // discipline `OiPane` publishes for its own staircase. `data-long-short-native-bars` is
+      // `DoD-3`'s `N >= 30`; `data-long-short-wire-points` is the ladder, published so the ratio
+      // between them is checkable from outside and so the e2e can assert the pane's headline number
+      // is NOT that one.
+      data-long-short-native-bars={longShort.nativeBars}
+      data-long-short-wire-points={longShort.wirePoints}
+    >
+      <h2 className="font-label-caps text-label-caps text-on-surface">
+        Long/short de contas (5m{longShort.unit === null ? "" : `, ${longShort.unit}`})
+      </h2>
+      {/* ⛔ `aria-hidden` on the canvas host — same criterion as `CvdPane`/`DR-6`:
+          `lightweight-charts` paints on a `<canvas>` with no accessible name, and the readouts below
+          ARE the declared textual alternative for the window's last instant. */}
+      <div
+        ref={containerRef}
+        aria-hidden="true"
+        data-fact={`long_short_slots:${longShort.slots.length}`}
+      />
+      <p data-fact={`long_short_last_reading:${longShort.reading.kind}`} className="text-sm text-provenance-weak">
+        Leitura atual: {readingText}
+      </p>
+      <LongShortReadableHorizon longShort={longShort} />
+      <AbsenceNote status={status} />
+    </section>
+  );
+}
+
 /** One `EventSource`, decoded through `../live-transport.ts` — see this module's own docstring
  * for why this reads "ao vivo indisponível" in this phase (no real producer wired yet). */
 function useLiveReadout(url: string | null): string {
@@ -1429,6 +1598,7 @@ export function SymbolClient({
   cvd,
   oi,
   liquidation,
+  longShort,
   panelStatus,
   knowledgeTimeMs,
   liveUrls,
@@ -1442,7 +1612,9 @@ export function SymbolClient({
       data-window-end-ms-inclusive={lastInstantMs(panels)}
       data-knowledge-time-ms={knowledgeTimeMs}
     >
-      <h1 className="sr-only">{panels.symbol} — Preço (com volume), Open Interest, CVD e Liquidações</h1>
+      <h1 className="sr-only">
+        {panels.symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
+      </h1>
       <PricePane panels={panels} status={panelStatus.price} volume={volume} volumeStatus={panelStatus.volume} />
       <OiPane panels={panels} status={panelStatus.oi} oi={oi} />
       <CvdPane panels={panels} status={panelStatus.cvd} cvd={cvd} />
@@ -1451,6 +1623,7 @@ export function SymbolClient({
         longStatus={panelStatus.liquidationLong}
         shortStatus={panelStatus.liquidationShort}
       />
+      <LongShortPane longShort={longShort} status={panelStatus.longShort} />
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>
         <ul>

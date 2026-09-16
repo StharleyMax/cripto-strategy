@@ -512,6 +512,93 @@ export function matchesLiquidationCohort(key: SeriesKey, cohort: LiquidationCoho
 }
 
 
+// ── `T-04.5` — WHICH `count_long_short_ratio` ROW THE LONG/SHORT PANE READS ───────────────────
+//
+// ⛔ M3 IS NOT ONE SERIES, IT IS FOUR, AND THE BACKEND REFUSES THE GENERIC NAME IN CODE.
+// `series_key.FORBIDDEN_METRIC_NAMES` rejects `ls_ratio` inside `SeriesKey.__post_init__`
+// because that name covers `count_long_short_ratio`, `count_toptrader_long_short_ratio`,
+// `sum_toptrader_long_short_ratio` and `sum_taker_long_short_vol_ratio` — three with lag-1
+// autocorrelation of `0,99+` and one with `0,0955` (`SPEC-001` §3.1/§5.11, `CA-F2-3`). This pane
+// draws exactly ONE of them, `count_long_short_ratio`, the row `long_short_catalog.py` publishes
+// and the one Binance serves at `/futures/data/globalLongShortAccountRatio`.
+//
+// THE SELECTOR TAKES TWO TERMS, and the count of terms is a MEASUREMENT, not a habit:
+//
+//   `metric`    ALONE IT MATCHES EXACTLY 1 TODAY `[MEDIDO 2026-09-16: GET /api/v1/series-catalog
+//               -> n_entries=60, 15 linhas para BTCUSDT, 1 com metric="count_long_short_ratio"]`.
+//               The three sibling L/S series are not cataloged at all, and if they were they would
+//               carry DIFFERENT metric names — so they are not what a second term defends against.
+//   `provider`  `ADR-036/D3` fixes BINANCE (the ORIGIN) as the source of M3, and Coinalyze mirrors
+//               the same quotient in its `r` field. The day that row is cataloged, `metric` alone
+//               becomes ambiguous — and this term is what makes the pane keep pointing at the
+//               origin instead of at whichever row the catalog happens to list first.
+//
+// ⛔ AND A THIRD TERM WAS CONSIDERED AND REFUSED, because redundancy is not free (`T-03.5`'s own
+// warning: "a third term is a third way for the backend to make this panel go dark by renaming
+// something"). The candidate was `reduction === "POINT"` — the term that saved the OI pane, where
+// the SAME metric is published under four reductions. Here it defends against nothing: the
+// coarsening this series would need for another reduction is refused BY TYPE upstream
+// (`long_short_ratio_series.py` allows `last()` on the edge and refuses `mean()`/`sum()`), so a
+// second reduction of this metric is not a row the catalog can grow. Two terms, both load-bearing.
+
+/** `metric` of the row (`long_short_catalog.py`, via `long_short_ratio_series.COUNT_LONG_SHORT_RATIO`). */
+export const LONG_SHORT_METRIC = "count_long_short_ratio";
+/** The ORIGIN (`ADR-036/D3`) — the term that excludes a future Coinalyze mirror of the same quotient. */
+export const LONG_SHORT_PROVIDER = "binance";
+
+/**
+ * Is this the Binance `globalLongShortAccountRatio` row — the one `T-04.2`'s collector writes?
+ *
+ * Exported from `view-model.ts` rather than written inline in `page.tsx` for the same reason the
+ * three selectors above are: `page.tsx` cannot be imported by a `node --test` suite, and a selector
+ * that can only be checked by reading it is exactly the class of defect it exists to avoid
+ * (`long-short-series-selector.test.ts` runs this one against a fixture carrying the sibling rows).
+ */
+export function matchesCountLongShortRatio(key: SeriesKey): boolean {
+  return key.metric === LONG_SHORT_METRIC && key.provider === LONG_SHORT_PROVIDER;
+}
+
+/**
+ * `RN-S1` FOR A SERIES WHOSE STAIRCASE DOES NOT LAND ON THE 5-MINUTE GRID — how many NATIVE
+ * observations the wire rows carry, counted by DISTINCT PUBLICATION (`available_at`).
+ *
+ * ⛔ WHY NOT `presentRows / 5`, WHICH IS THE DIVISOR THE PLAN WRITES DOWN: the divisor assumes every
+ * native bucket occupies exactly five slots of the `1m` grid. Measured against production it does
+ * not: over a 4-hour window the readable rows group into runs of `1..5` slots (`1x1, 2x6, 3x17,
+ * 4x14, 5x11`), because the run is cut short by the next publication and by the absences around it.
+ * `[MEDIDO 2026-09-16, GET /api/v1/series-history?series_key_id=279d3172…&symbol=BTCUSDT&
+ *  interval=1m&bar_policy=final_only, janela de 240 min: 240 slots, 175 com valor, 65 sem;
+ *  175/5 = 35 contra 49 available_at distintos, e 240 min / 5 min = 48 baldes esperados]` — the
+ * divisor UNDERSTATES this series by ~28%.
+ *
+ * ⛔ AND NOT `event_time % 300_000 === 0` EITHER, which is how the OI pane gets its native grid:
+ * that series' observations land ON the five-minute grid, and this one's do not. The same
+ * measurement answers `11` readable rows on the `300_000` grid out of `49` real buckets — a 4,5x
+ * undercount — because the ladder of this series starts wherever the publication landed
+ * (`long_short_catalog.py` measured delays of `9,6 s` and `70,8 s` on two consecutive buckets).
+ *
+ * WHAT `available_at` IS HERE, AND WHY IT IDENTIFIES THE BUCKET: `ADR-038` stamps the row at the
+ * instant the observation became knowable, and the read path repeats THAT ONE STAMP across every
+ * `1m` slot the bucket covers — the adendo of `handoff/T-04.5-HANDOFF-FRONT.md` names it as what
+ * produces the staircase. So one distinct `available_at` is one distinct native observation.
+ *
+ * ⚠️ ITS ONE FAILURE MODE, DECLARED: rows imported by BACKFILL share the instant they were fetched,
+ * so a backfilled stretch collapses into fewer publications than it has buckets. The error is
+ * therefore always toward UNDERSTATING the data — a `DoD-3` threshold read off this number is never
+ * passed by a bucket that does not exist, which is the direction a count feeding an `N >= 30` gate
+ * has to fail in.
+ */
+export function countNativeBarsByPublication(rows: readonly SeriesHistoryRow[]): number {
+  const publications = new Set<number>();
+  for (const row of rows) {
+    if (row.value !== null && row.available_at !== null) {
+      publications.add(row.available_at);
+    }
+  }
+  return publications.size;
+}
+
+
 // ── `T-05.9`/`RS-5` — WHOSE MEASUREMENT IS ON SCREEN, DECIDED BY RULE AND NOT BY MEMORY ───────
 //
 // `SPEC-007` §7, literal: *"toda série de terceiro ou de reconstrução que chega à tela é rotulada

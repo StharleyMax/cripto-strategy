@@ -158,6 +158,9 @@ export type SeriesProvenance =
  * market just flushed longs, flushed shorts, or flushed both"*), fetched under two different
  * `series_key_id`s, so they fail independently — and a single shared status would let a live
  * cohort vouch for a dead one.
+ *
+ * `T-04.5` adds `longShort` — `count_long_short_ratio` (M3) is a series of its own, fetched under
+ * its own `series_key_id`, so it fails and degrades on its own exactly like the six above.
  */
 export interface SymbolPanelStatuses {
   readonly price: PanelStatus;
@@ -166,4 +169,5 @@ export interface SymbolPanelStatuses {
   readonly volume: PanelStatus;
   readonly liquidationLong: PanelStatus;
   readonly liquidationShort: PanelStatus;
+  readonly longShort: PanelStatus;
 }
