@@ -50,3 +50,28 @@ Universo: `git diff 4e98d89..60178e7 -- frontend/src backend/src frontend/e2e`, 
 ⛔ `W-2` **não é defeito desta fase e não foi causado por ela** — é a rota crescendo contra uma API que
 serializa (`ACHADO-API-VAZA-IDLE-IN-TRANSACTION`). Mas cada painel novo piora, e o número já é
 observável em teste: está declarado aqui para não ser redescoberto como surpresa.
+
+---
+
+## ⛔ CORREÇÃO de 2026-09-16 — a causa que o `W-2` atribui está ERRADA
+
+Acrescentado **depois** do veredito, pelo orquestrador, sem reescrever o texto do auditor acima —
+o erro fica visível de propósito, porque ele é o achado.
+
+O `W-2` culpa *"uma API que serializa"* via `ACHADO-API-VAZA-IDLE-IN-TRANSACTION` (`B12`/`B13`).
+**A medição refuta.** O `EXPLAIN (ANALYZE, BUFFERS)` do `SELECT` exato que a rota dispara devolve
+**`9,078 ms`**, Bitmap Index Scan, 10.047 linhas — contra **`17.250 ms`** da resposta HTTP
+correspondente ⇒ **99,95% do tempo é Python, e o Postgres está inocente.**
+
+A causa real é `O(grade × linhas)`: `use_cases/series_history.py:229-255` chama `as_of` uma vez por
+instante de grade (5.760 numa janela de 4 dias) e `domain/as_of_accessor.py:305-313` reconstrói uma
+list comprehension sobre **todas** as linhas a cada chamada — **≈ 475 milhões** de avaliações de
+predicado por carga de página, num **processo só** (`docker top` → 1 PID), com **8 cores ociosos**.
+
+O falsificador que separa as hipóteses: o corpo da resposta cresce **exatamente linear** com a
+janela (71 KB → 142 KB → 285 KB → 570 KB) enquanto o tempo cresce **~5,5× por duplicação**. Saída
+linear com tempo superquadrático exclui I/O, serialização e banco.
+
+`B12`/`B13` continuam sendo defeitos reais — **só não são a causa desta latência.**
+
+Medição completa, com todos os comandos: [`../handoff/A11-LATENCIA-DE-SYMBOL.md`](../handoff/A11-LATENCIA-DE-SYMBOL.md).
