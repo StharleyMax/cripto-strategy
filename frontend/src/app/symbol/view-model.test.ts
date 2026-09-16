@@ -41,6 +41,9 @@ import {
   resolveFlowReadingOrAbsent,
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
+  seriesValueStats,
+  slotsFrom,
+  trailingAbsentSlots,
   nonNegativeFlowSlotsFromHistoryRows,
 } from "./view-model.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
@@ -256,6 +259,116 @@ test("firstPresentSlotMs: the LEFT end of the readable horizon, scanned forward 
   ];
   assert.equal(firstPresentSlotMs(leading), 121_000);
   assert.notEqual(firstPresentSlotMs(leading), leading[0]!.time, "the window's left edge is NOT the horizon");
+});
+
+// ── `T-04.8` — the three statistics the approved long/short pane publishes ────────────────────
+//
+// `gates/design-04.md` §R2 (veredito `APPROVED`, Rev. 3) puts a scale footer, a four-hour band and
+// a `cauda ausente` count on this pane. Each of the three is a number the API does NOT serve, so
+// each has to be DERIVED from the slots the chart is drawn from — which is what `M-1` of that
+// report demands and what its own Rev. 2 failed, publishing six numerals that traced to nothing.
+
+test("seriesValueStats: the five numbers of the scale footer, all derived from present slots", () => {
+  const slots = [
+    { time: 1_000, value: 1.4 },
+    { time: 61_000, value: null },
+    { time: 121_000, value: 1.1 },
+    { time: 181_000, value: 1.9 },
+    { time: 241_000, value: 1.6 },
+  ];
+  const stats = seriesValueStats(slots);
+  assert.ok(stats !== null);
+  assert.equal(stats.presentSlots, 4, "the absent slot is not part of the universe the numbers describe");
+  assert.equal(stats.min, 1.1);
+  assert.equal(stats.max, 1.9);
+  assert.equal(stats.amplitude, 1.9 - 1.1);
+  // ⛔ NEAREST-RANK p50 OVER `[1.1, 1.4, 1.6, 1.9]` — the SECOND of the four, an observation the
+  // series really took. The interpolated median would be `1.5`, a value this series never printed,
+  // and the screen quotes the median as a number OF the series (`M-1`).
+  assert.equal(stats.median, 1.4);
+  assert.ok(
+    slots.some((slot) => slot.value === stats.median),
+    "MORDE: the median must be one of the observations — an interpolated 1.5 would fail this",
+  );
+});
+
+test("seriesValueStats sorts NUMERICALLY — the default comparator is the bug this guards", () => {
+  const slots = [
+    { time: 1_000, value: 9 },
+    { time: 61_000, value: 10 },
+    { time: 121_000, value: 80 },
+  ];
+  const stats = seriesValueStats(slots);
+  assert.ok(stats !== null);
+  // `[9, 10, 80].sort()` (lexicographic) answers `[10, 80, 9]`, i.e. `min = 10` and `max = 9` —
+  // a footer claiming a maximum BELOW its own minimum.
+  assert.equal(stats.min, 9);
+  assert.equal(stats.max, 80);
+  assert.deepEqual([9, 10, 80].map(String).sort(), ["10", "80", "9"], "the mutation this test exists for");
+});
+
+test("seriesValueStats of a window with NO observation is null — never a fabricated domain", () => {
+  assert.equal(seriesValueStats([]), null);
+  assert.equal(
+    seriesValueStats([
+      { time: 1_000, value: null },
+      { time: 61_000, value: null },
+    ]),
+    null,
+    "a `{min: 0, max: 0}` here would put the metric's floor on screen as if it had been measured",
+  );
+  // A single observation has a domain of zero width, and that is a fact, not an error: the screen
+  // then says `n=1` beside it (`presentSlots`) instead of hiding the sample size.
+  const single = seriesValueStats([{ time: 1_000, value: 1.5 }]);
+  assert.deepEqual(single, { presentSlots: 1, min: 1.5, max: 1.5, median: 1.5, amplitude: 0 });
+});
+
+test("slotsFrom: the trailing sub-window is a FILTER of the same slots, never a re-grid", () => {
+  const slots = [
+    { time: 1_000, value: 1.4 },
+    { time: 61_000, value: 1.5 },
+    { time: 121_000, value: 1.6 },
+  ];
+  assert.deepEqual(slotsFrom(slots, 61_000), [slots[1], slots[2]], "inclusive on the left — the instant IS a grid instant");
+  assert.deepEqual(slotsFrom(slots, 0), slots);
+  assert.deepEqual(slotsFrom(slots, 200_000), []);
+  assert.ok(
+    // Identity, not deep equality: `includes` compares references, which is the property being
+    // asserted. The cast is the type system's price for a fixture literal narrower than
+    // `ScalarSlot` (`value: number | null`), not a widening of anything at runtime.
+    slotsFrom(slots, 61_000).every((slot) => (slots as readonly unknown[]).includes(slot)),
+    "the objects handed back are the SAME the chart draws — a sub-window computed over a re-derived grid " +
+      "is `M-2` of gates/design-05.md ('a janela declarada não é a janela desenhada')",
+  );
+});
+
+test("trailingAbsentSlots: the size of the tail the RATIO pane refuses to draw", () => {
+  const withTail = [
+    { time: 1_000, value: 1.4 },
+    { time: 61_000, value: 1.5 },
+    { time: 121_000, value: null },
+    { time: 181_000, value: null },
+  ];
+  assert.equal(trailingAbsentSlots(withTail), 2, "the two slots after the last observation — `cauda ausente: 2 grades`");
+  // ⛔ THE TAIL IS THE RIGHT EDGE ONLY. A hole in the middle is not tail, and counting every absent
+  // slot instead would publish `3` here — the pane would claim the line stops an hour before it does.
+  const withHole = [
+    { time: 1_000, value: null },
+    { time: 61_000, value: 1.5 },
+    { time: 121_000, value: null },
+    { time: 181_000, value: 1.6 },
+  ];
+  assert.equal(trailingAbsentSlots(withHole), 0, "the window's last instant carries an observation — no tail");
+  assert.equal(withHole.filter((slot) => slot.value === null).length, 2, "MORDE: the naive count answers 2, not 0");
+  assert.equal(trailingAbsentSlots([]), 0, "no slots, no tail — and `0` here is not a claim about data");
+  assert.equal(
+    trailingAbsentSlots([
+      { time: 1_000, value: null },
+      { time: 61_000, value: null },
+    ]),
+    2,
+    "a window where nothing is readable is ALL tail",
+  );
 });
 
 test("resolveFlowReadingOrAbsent: a real bucket answers its own number, and absence never borrows a neighbour's", () => {

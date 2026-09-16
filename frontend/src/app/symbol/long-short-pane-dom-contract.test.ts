@@ -62,7 +62,14 @@ const ABSENT_BRANCH =
 const LOSSLESS_SETDATA = /series\.setData\(lineSeriesLossless\(longShort\.slots\) as never\);/;
 const HORIZON_FACT =
   /data-fact=\{`long_short_readable_horizon:\$\{longShort\.nativeBars\}\/\$\{longShort\.wirePoints\}\/\$\{gridSlots\}`\}/;
-const PANE_RENDERED = /<LongShortPane longShort=\{longShort\} status=\{panelStatus\.longShort\} \/>/;
+/** ⚠️ RE-ANCHORED BY `T-04.8`, AND THE LOOSENING IS NAMED RATHER THAN SILENT: it used to end in
+ * `\/>`, which pinned the pane to EXACTLY two props. The `design_gate` of `T-04.6` approved a header
+ * that states the series' identity (symbol · publisher · grids), so the pane now takes `symbol` as a
+ * third prop — a change of FORM, which this file exists to let happen without emptying a DATA
+ * assert. What is still guarded is what the contract is about: that the pane is MOUNTED, and that it
+ * is fed `longShort` and its OWN status. The `MORDE` case below still bites, because deleting the
+ * match leaves no `<LongShortPane longShort={longShort} status={panelStatus.longShort}` behind. */
+const PANE_RENDERED = /<LongShortPane longShort=\{longShort\} status=\{panelStatus\.longShort\}/;
 const ABSENCE_NOTE_RENDERED = /<LongShortReadableHorizon longShort=\{longShort\} \/>\s*\n\s*<AbsenceNote status=\{status\} \/>/;
 
 /** `page.tsx`: the selector, CALLED through the unique-match helper. */

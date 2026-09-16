@@ -112,6 +112,7 @@ import {
   daysWithPresence,
   keyMatchesSymbol,
   lastPresentSlotMs,
+  lastReadableAvailableAtMs,
   matchesBinanceOpenInterest,
   matchesCountLongShortRatio,
   matchesKlineTakerBuyCvd,
@@ -123,6 +124,9 @@ import {
   resolveSeriesProvenance,
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
+  seriesValueStats,
+  slotsFrom,
+  trailingAbsentSlots,
 } from "./view-model.ts";
 
 export const metadata: Metadata = {
@@ -132,6 +136,20 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 const BAR_POLICY: BarPolicy = "final_only";
+
+/**
+ * `T-04.8` — the TRAILING SUB-WINDOW the approved long/short form measures separately (*"ÚLTIMAS 4
+ * HORAS"*, `gates/design-04.md` §R2, veredito `APPROVED`).
+ *
+ * ⛔ `4 h` IS NOT A ROUND NUMBER SOMEBODY LIKED — it is the CEILING of this feature's declared
+ * operating timeframe, `15min..4h` (`tasks.toml`, `T-04.9`'s falsifier), and the gate measured the
+ * series over exactly that band: at `15 min` the median excursion is `0.88 px` and `25,5%` of the
+ * windows do not move half a pixel; at `4 h` it is `13.18 px` and `0,0%`
+ * `[DOC: gates/design-04.md §R2.7, n=850 native observations over 4 days]`. The pane publishes the
+ * top of the band NUMERICALLY for the reason that measurement gives: the bottom of it is, on this
+ * scale, not readable as geometry — so the number is how the operator reads it.
+ */
+const LONG_SHORT_RECENT_SPAN_MS = 4 * 60 * 60_000;
 // ⛔ `const OI_METRIC = "sum_open_interest"` USED TO LIVE HERE, AND IT WAS THE WHOLE SELECTOR.
 // `T-03.5` retired it: the metric is one of THREE terms now and all three live in
 // `view-model.ts::matchesBinanceOpenInterest`, where a `node --test` suite can execute them
@@ -520,13 +538,48 @@ export default async function SymbolPage() {
   // the measurement that rules the two cheaper answers out for this series: the divisor understates
   // it by ~28% (runs of `1..5` slots, not always 5) and a `% 300_000` filter by 4,5x (this series'
   // observations do not land on the five-minute grid).
+  //
+  // ── `T-04.8`: THE NUMBERS THE APPROVED FORM PUBLISHES, DERIVED HERE AND NEVER IN THE VIEW ────
+  //
+  // The `design_gate` of `T-04.6` (`APPROVED`, Rev. 3 — `gates/design-04.md` §R2) put a SCALE
+  // FOOTER, a FOUR-HOUR BAND, an AGE STAMP and a `cauda ausente` count on this pane. Every one of
+  // them is computed from the rows this route already fetched, on the server, and handed over as
+  // plain data — the same discipline the six panes above follow, and the structural answer to `M-1`
+  // of that report: a rodada that tried to write those numbers instead of deriving them fabricated
+  // SIX of them, and the audit caught it only because it was exhaustive.
   const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(longShortResult.rows);
   const longShortEntry = resolvedEntry(longShortResolution);
+  // The `available_at` of the newest READABLE row — a PUBLICATION instant, the same one `RNF-2`
+  // uses for OI (`lastReadableAvailableAtMs`, and its docstring explains why it is not `max`).
+  const longShortObservedAtMs = lastReadableAvailableAtMs(longShortResult.rows);
   const longShort: LongShortPaneData = {
     slots: longShortSlots,
     nativeBars: countNativeBarsByPublication(longShortResult.rows),
     wirePoints: countPresentSlots(longShortSlots),
     firstPresentMs: firstPresentSlotMs(longShortSlots),
+    lastPresentMs: lastPresentSlotMs(longShortSlots),
+    observedAtMs: longShortObservedAtMs,
+    // ⛔ AN AGE, AND NOT A FRESHNESS VERDICT. `OiFreshness` compares the age against the catalog's
+    // `max_staleness_ms` and can print "DADO VELHO"; this pane does not, and the difference is the
+    // series' nature. Open interest is `STOCK`: the server carries the last observation forward, so
+    // a number on screen can be much older than it looks and owes the operator a verdict. This one
+    // is `RATIO` with `CARRY_FORWARD_BY_NATURE[Nature.RATIO] = False` — the readout at the window's
+    // last instant is EXACT or it is `SEM_PONTO`, never stale-in-disguise. What `S-6` of the gate
+    // asks for is the STAMP, at the right edge of time, and only where an observation exists.
+    ageMs: longShortObservedAtMs === null ? null : routeWindow.windowEndMsInclusive - longShortObservedAtMs,
+    trailingAbsentSlots: trailingAbsentSlots(longShortSlots),
+    windowStats: seriesValueStats(longShortSlots),
+    // The trailing band of the approved form. `windowEndMsInclusive - span` is a grid instant of
+    // this very window, so `slotsFrom` filters the SAME slots the chart draws — it never re-grids
+    // and never shrinks the window to fit the data (`M-2` of `gates/design-05.md`).
+    recentSpanMs: LONG_SHORT_RECENT_SPAN_MS,
+    recentStats: seriesValueStats(
+      slotsFrom(longShortSlots, routeWindow.windowEndMsInclusive - LONG_SHORT_RECENT_SPAN_MS),
+    ),
+    // `RS-5` resolved from the catalog row, never spelled as a literal — same call, same rule as the
+    // liquidation pane above. For M3 the venue's own publisher IS the provider, so this resolves to
+    // `origin` and the pane says so instead of leaving procedência unstated.
+    provenance: resolveSeriesProvenance(longShortEntry),
     // `windowEndMsInclusive` — the SAME instant every other readout on this page uses. One instant
     // for the whole render, never an eighth one computed here.
     reading: resolveFlowReadingOrAbsent(longShortSlots, routeWindow.windowEndMsInclusive),

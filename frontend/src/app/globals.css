@@ -144,3 +144,47 @@ body {
   background-color: var(--color-surface-base);
   color: var(--color-provenance-strong);
 }
+
+/*
+ * `A-2` of `docs/context/cinco-metricas-do-core/gates/design-04.md` §R2.5 — THE FOCUS RULE OF THE
+ * PROJECT, WRITTEN DOWN.
+ *
+ * The finding was not "focus is invisible": WCAG `2.4.7` was already met by the user agent's own
+ * default ring. It was that `STITCH_CONTEXT.md` §9 item 7 makes `outline-offset > 0` a REQUIREMENT
+ * of this product, and the requirement existed in no stylesheet — so every browser default and
+ * every future `outline: none` was free to answer for it. A rule nobody wrote is a rule nobody can
+ * break on purpose, which is also a rule nobody can keep.
+ *
+ * WHY THE OFFSET IS THE POINT: this app paints dense, bordered surfaces (`--color-surface-border`
+ * at 1px). A ring drawn AT the element's edge lands on top of that border and reads as a thicker
+ * border, not as focus. A 2px gap in the surface colour separates the two marks, which is what
+ * item 7 asks for in so many words.
+ *
+ * `:focus-visible`, not `:focus` — a mouse click on a pane must not paint a ring the keyboard user
+ * needs and the pointer user reads as an error state. `:where()` keeps specificity at zero, so a
+ * component may still override it without `!important`.
+ *
+ * ⛔ NO `outline: none` MAY BE ADDED ANYWHERE WITHOUT REPLACING THE RING IT REMOVES.
+ * `long-short-pane-design-contract.test.ts` reads this file as text and fails if the declaration
+ * below disappears.
+ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/*
+ * `A-4` OF THE SAME REPORT, AND IT IS A DEFECT OF PRODUCT, NOT OF ACCESSIBILITY — stated here as a
+ * declaration rather than left as an absence.
+ *
+ * The approved form study carries `body { user-select: none }`, inherited from its Rev. A and
+ * missed by rodada 1 of the gate. On a screen whose thesis is *"impedir que um número sem
+ * procedência chegue a uma decisão"*, forbidding the operator to COPY the number — to paste it into
+ * a query and check it against the source — works against the thesis. So the rule does not migrate
+ * here, and its opposite is written down so that a future paste of the study cannot smuggle it in
+ * silently: every numeral on this app is selectable.
+ */
+:root {
+  -webkit-user-select: text;
+  user-select: text;
+}

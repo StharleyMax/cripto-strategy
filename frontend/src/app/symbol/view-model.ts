@@ -39,14 +39,14 @@
  */
 
 import { ONE_MINUTE_MS, resolveFlowReading, type FlowReading, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
-import type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance } from "./panel-status.ts";
+import type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance, SeriesValueStats } from "./panel-status.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 
 // Re-exported so the server-side callers of `resolveFreshnessVerdict` get the function and its
 // return type from ONE import; the type itself is DECLARED in `panel-status.ts`, which is the
 // only module both sides of the RSC boundary may import (see its own docstring for why).
-export type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance };
+export type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance, SeriesValueStats };
 
 // Re-exported, not re-implemented: `computeSeriesKeyId` moved to its own module so a Playwright
 // spec can import it without evaluating the `charts` barrel (and, through it, `jsdom`). Every
@@ -260,6 +260,98 @@ export function countZeroSlots(slots: readonly ScalarSlotShape[]): number {
 export function firstPresentSlotMs(slots: readonly ScalarSlotShape[]): number | null {
   const found = slots.find((slot) => slot.value !== null);
   return found === undefined ? null : found.time;
+}
+
+/**
+ * `T-04.8` — the five numbers of `SeriesValueStats`, computed over the slots that carry a value.
+ * `null` when none does: a window with no observation has no minimum, and inventing one (`0`, the
+ * previous window's, the equilibrium of the metric) is the `RN-1` defect wearing a statistic's
+ * costume.
+ *
+ * ⛔ THE MEDIAN IS NEAREST-RANK, and the choice is `M-1`'s, not taste: the interpolated median of
+ * an even sample is a value the series never took, and the approved screen publishes the median as
+ * a NUMBER OF THE SERIES (*"42,08% da mediana 1,6575"*). `Math.ceil(n/2) - 1` over the ascending
+ * order is the p50 that is always an observation.
+ *
+ * Sorting a COPY (`[...]`), and comparing with `a - b` rather than the default lexicographic
+ * comparator: `[1.1395, 1.8369, 1.495].sort()` answers `[1.1395, 1.495, 1.8369]` only by accident
+ * of the decimal digits, and on this very series `[10, 9]` would sort to `[10, 9]`.
+ *
+ * ⚠️ THE UNIVERSE IS THE GRID SLOT, NOT THE NATIVE OBSERVATION, AND THAT IS DECLARED RATHER THAN
+ * HIDDEN — it is the same `RN-S1` staircase this file counts twice for the pane's headline. A `5m`
+ * series served on the `1m` grid repeats one observation across up to five slots, so the MEDIAN
+ * computed here is weighted by how long each value stood (a time-weighted p50), not by how many
+ * times it was published. `min`/`max`/`amplitude` are unaffected by weighting; only the median is.
+ *
+ * Two things keep that from being a silent distortion. First, the caller PUBLISHES the universe:
+ * the pane prints `n = <presentSlots> grades legíveis` beside the numbers, so the reader is told
+ * what was counted. Second, it was checked against the other weighting: over the same production
+ * window the `design_gate` computed the median over `n=850` NATIVE observations and got `1.6575`,
+ * and this function over `n=3.038` grid slots gets `1.6575` too `[MEDIDO 2026-09-16, GET /symbol
+ * contra a API de produção; gate: gates/design-04.md §R2.2]`. Agreement is not a proof for every
+ * window — it is evidence that the two weightings do not diverge on this series' shape, recorded
+ * so the next reader can re-measure instead of re-deriving.
+ */
+export function seriesValueStats(slots: readonly ScalarSlotShape[]): SeriesValueStats | null {
+  const values: number[] = [];
+  for (const slot of slots) {
+    if (slot.value !== null) {
+      values.push(slot.value);
+    }
+  }
+  if (values.length === 0) {
+    return null;
+  }
+  values.sort((left, right) => left - right);
+  const min = values[0]!;
+  const max = values[values.length - 1]!;
+  return {
+    presentSlots: values.length,
+    min,
+    max,
+    median: values[Math.ceil(values.length / 2) - 1]!,
+    amplitude: max - min,
+  };
+}
+
+/**
+ * The slots at or after an instant — the TRAILING sub-window the approved screen puts a solid band
+ * around (*"ÚLTIMAS 4 HORAS"*, `gates/design-04.md` §R2.2).
+ *
+ * ⛔ IT FILTERS, IT DOES NOT RE-GRID AND IT DOES NOT SHRINK TO FIT. The slots handed back are the
+ * same objects, at the same instants, that the chart is drawn from; a sub-window computed over a
+ * re-derived grid would be `M-2` of `gates/design-05.md` ("a janela declarada não é a janela
+ * desenhada") reintroduced one pane later.
+ *
+ * `>=` is inclusive on the left because the caller's instant is itself a grid instant of the same
+ * window (`windowEndMsInclusive - spanMs`), so excluding it would drop a real observation from a
+ * span the screen then calls "4 h".
+ */
+export function slotsFrom(slots: readonly ScalarSlotShape[], sinceMs: number): readonly ScalarSlotShape[] {
+  return slots.filter((slot) => slot.time >= sinceMs);
+}
+
+/**
+ * How many slots at the RIGHT EDGE carry no value — the *"cauda ausente: 2 grades de 1m"* the
+ * approved screen prints beside `SEM_PONTO` (`M-2`, `gates/design-04.md`).
+ *
+ * ⛔ IT IS THE MEASURE OF WHAT IS **NOT** DRAWN, and that is why it exists: for a `RATIO` series
+ * the server refuses to carry a value forward (`CARRY_FORWARD_BY_NATURE[Nature.RATIO] = False`),
+ * so the line simply STOPS. The approved design forbids any mark to the right of that stop, which
+ * leaves the operator with a blank right edge and no way to tell "2 minutes of tail" from "2 days"
+ * — unless the pane says the number. Absence stays absence AND gets counted.
+ *
+ * `0` here means the window's own last instant carries an observation; it never means "no data".
+ */
+export function trailingAbsentSlots(slots: readonly ScalarSlotShape[]): number {
+  let count = 0;
+  for (let index = slots.length - 1; index >= 0; index -= 1) {
+    if (slots[index]!.value !== null) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
 }
 
 /**

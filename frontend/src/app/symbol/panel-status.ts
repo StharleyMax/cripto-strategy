@@ -141,6 +141,40 @@ export type SeriesProvenance =
     };
 
 /**
+ * `T-04.8` — WHAT A WINDOW OF SLOTS ACTUALLY CONTAINS, as five numbers every one of which is
+ * derived from values the read API served, and none of which is written by hand.
+ *
+ * It exists because of `M-1` of `gates/design-04.md` (`ui-designer` + `ux-ui-mastery`, Rev. 3):
+ * the approved screen publishes the SCALE of the pane — *"Janela de 4 dias: 1.1395 a 1.8369 ·
+ * amplitude 0.6974 (42,08% da mediana 1,6575)"* — and the rodada that tried to publish those
+ * numbers without deriving them fabricated SIX of them. Carrying the statistic as a computed
+ * TYPE, filled server-side by `view-model.ts::seriesValueStats` from the very slots the chart is
+ * drawn from, is what makes a hand-written numeral on this pane inexpressible rather than merely
+ * discouraged.
+ *
+ * ⛔ `median` IS A NEAREST-RANK p50, SO IT IS AN OBSERVED VALUE — never the average of the two
+ * middle ones. The interpolated median of an even sample is a number the series never took, and
+ * `M-1`'s rule ("todo numeral rastreia a uma medição") is about exactly that difference.
+ *
+ * ⛔ IT LIVES IN THIS MODULE FOR THE STRUCTURAL REASON `FreshnessVerdict` states above: the SHAPE
+ * crosses the RSC boundary into `SymbolClient.tsx` (`"use client"`), the FUNCTION stays in
+ * `view-model.ts`, which reaches `node:crypto` and may not be imported by the browser half.
+ */
+export interface SeriesValueStats {
+  /** How many slots of the measured span carried a value — the universe the four numbers below
+   * were computed over, published so a reader can tell `n=1` from `n=850`. */
+  readonly presentSlots: number;
+  readonly min: number;
+  readonly max: number;
+  /** Nearest-rank p50 — an OBSERVED value of the series, see above. */
+  readonly median: number;
+  /** `max - min`, kept as the raw IEEE difference. The ROUNDING is presentation and belongs to
+   * the renderer (`ratio-format.ts`), which rounds it to the decimal places the operands
+   * themselves carry instead of publishing `0.6974000000000001`. */
+  readonly amplitude: number;
+}
+
+/**
  * `T-01.7` — the statuses `/symbol` computes today, named once so `page.tsx` and
  * `SymbolClient.tsx` cannot drift on the set.
  *

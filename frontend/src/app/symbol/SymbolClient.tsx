@@ -83,7 +83,19 @@ import {
 } from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
-import type { FreshnessVerdict, PanelStatus, SeriesProvenance, SymbolPanelStatuses } from "./panel-status.ts";
+import type {
+  FreshnessVerdict,
+  PanelStatus,
+  SeriesProvenance,
+  SeriesValueStats,
+  SymbolPanelStatuses,
+} from "./panel-status.ts";
+import {
+  equilibriumPlacement,
+  formatDerivedDecimal,
+  formatPercentPtBr,
+  LONG_SHORT_EQUILIBRIUM,
+} from "./ratio-format.ts";
 
 /** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
  * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
@@ -262,6 +274,37 @@ export interface LongShortPaneData {
    * the readable horizon, DECLARED instead of left to look like a market nobody measured. ⛔ The
    * span is NOT shrunk to fit the data; same rule as `VolumeSubAxisData.firstPresentMs`. */
   readonly firstPresentMs: number | null;
+  /** The RIGHT end of the readable horizon — the last grid instant carrying a value, `null` when
+   * none does. On screen because of the geometry the `design_gate` approved: for a `RATIO` series
+   * the line simply STOPS at this instant and nothing is drawn to the right of it (`M-2`), which
+   * leaves a blank right edge an operator cannot date. */
+  readonly lastPresentMs: number | null;
+  /** The `available_at` of the newest READABLE row — a PUBLICATION instant, not a grid instant, the
+   * same quantity `FreshnessVerdict.observedMs` carries for OI (`A-4.2`). `null` when nothing in
+   * the window is readable. */
+  readonly observedAtMs: number | null;
+  /** `windowEndMsInclusive - observedAtMs` — the age stamp `S-6` of `gates/design-04.md` requires
+   * at the right edge of time, and ONLY where there is an observation to date. `null` when there is
+   * none: an age over zero observations was one of the three false claims that reproved rodada 1.
+   *
+   * ⛔ IT IS AN AGE, NOT A FRESHNESS VERDICT — see the route's own comment at the call site for why
+   * this pane does not carry `OiPaneData.freshness`' ceiling comparison. */
+  readonly ageMs: number | null;
+  /** How many slots at the RIGHT EDGE carry nothing — *"cauda ausente: N grades de 1m"*. `0` means
+   * the window's last instant carries an observation, never "no data". */
+  readonly trailingAbsentSlots: number;
+  /** The scale of the pane over the WHOLE window — `null` when no slot carries a value, in which
+   * case the pane says the absence instead of printing a domain nobody measured. */
+  readonly windowStats: SeriesValueStats | null;
+  /** The same five numbers over the trailing band (`page.tsx::LONG_SHORT_RECENT_SPAN_MS`), and the
+   * span itself so the screen can NAME the band it is describing instead of hardcoding "4 h" beside
+   * a number computed over something else. */
+  readonly recentStats: SeriesValueStats | null;
+  readonly recentSpanMs: number;
+  /** `RS-5` — whose measurement this is, resolved from the catalog row (`resolveSeriesProvenance`).
+   * The approved header prints `procedência` where there IS an observation and drops it entirely
+   * where there is none (`M-3`): "OBSERVADO" over zero observations was a claim with no subject. */
+  readonly provenance: SeriesProvenance;
   readonly reading: FlowReading;
   /** The `unit` term of the series' own identity (`ratio` for M3), read off the resolved catalog
    * entry and printed beside the numeral — `null` when no entry resolved. Carried instead of
@@ -1467,6 +1510,287 @@ function LongShortReadableHorizon({ longShort }: { readonly longShort: LongShort
   );
 }
 
+// ══ `T-04.8` — THE FORM THE `design_gate` APPROVED, TRANSLATED INTO THIS COMPONENT TREE ═══════
+//
+// Source of truth: `docs/context/cinco-metricas-do-core/gates/design-04.md` §R2 — veredito
+// `APPROVED` over Rev. 3 (`7d87cac1…`), whose HTML is versioned beside it as
+// `gates/design-04-rev3.html`. What follows TRANSLATES that study; it does not paste it, and the
+// four places where it deliberately diverges are named at the point of divergence (`A-3`'s fixed
+// canvas, `A-4`'s `user-select`, the `.badge-quarentena` class name of `c-5`, and the border label
+// whose sentence the study could only ever hardcode).
+//
+// ⛔ WHAT MAY NOT MOVE, because the e2e and the DOM contract are pinned to it, character for
+// character (`long-short-pane-dom-contract.test.ts`, `e2e/14-long-short-dado-real.spec.ts`):
+// `data-testid="long-short-pane"`, `data-long-short-native-bars`, `data-long-short-wire-points`,
+// the `long_short_*` `data-fact` expressions, and `SEM_PONTO` as the absence token. The gate's own
+// §R2.4 re-measured them as intact and says why the split exists: a `NEEDS_FIX` about FORM must not
+// be able to empty an assert about DATA.
+
+/** `A-1` of the gate's `/accessibility-check` (`1.1.1`, level A) — the integrity glyph, with the
+ * attributes the study's three `<svg>` were missing.
+ *
+ * The lozenge is HOLLOW (`fill="none"`) and that is a rule, not a look: §9 item 4 of
+ * `STITCH_CONTEXT.md` forbids this mark from ever filling an area, so it cannot be mistaken for a
+ * data mark. `aria-hidden` + `focusable="false"` because the words beside it carry the whole
+ * message — the same criterion `CvdLegend`/`VolumeMarksLegend` already apply to their glyphs.
+ *
+ * ⚠️ AND THE GATE LEFT A FALSIFIER ON THIS DECISION, recorded here so it is not lost: run a real
+ * screen reader over the pane; if one announces a bare "graphic" WITHOUT the adjacent words, `A-1`
+ * becomes a must-fix and the `APPROVED` has to be revisited. `[NÃO MEDIDO]` — there is no screen
+ * reader in this environment. */
+function LongShortIntegrityGlyph() {
+  return (
+    <svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 12 12">
+      <polygon points="6,1 11,6 6,11 1,6" fill="none" stroke={colorTokens().dataBrokenInk} strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+/** `M-3` — the THREE CHANNELS of "there is no observation in this window", in the order the gate
+ * measured them: glyph, WORD, and colour as the third (never the only) one.
+ *
+ * ⚠️ THE WORD IS NOT "QUARENTENA" (`S-5`): quarantine is a verdict about a series' integrity, and
+ * this series is registered, well-formed and simply empty over the time slice asked for. The study
+ * still carried `.badge-quarentena` as a CSS CLASS NAME (`c-5` of the gate: *"quem transcrever o
+ * HTML para `.tsx` reintroduz a palavra"*) — this is that transcription, and the word does not come
+ * along, not even as an identifier. */
+function LongShortIntegrityBadge() {
+  return (
+    <p
+      data-fact="long_short_integrity:no_observation"
+      className="flex items-center gap-2 border border-integrity-ink px-2 py-0.5 text-sm font-bold text-integrity-ink"
+    >
+      <LongShortIntegrityGlyph />
+      SEM OBSERVAÇÃO NA JANELA
+    </p>
+  );
+}
+
+/** The series' identity, on the pane instead of in somebody's head — symbol, publisher and the two
+ * grids (`5m` native served on the `1m` wire, `GA-2`). The approved header carries it verbatim; the
+ * publisher is read off the resolved catalog row (`SeriesProvenance`), never spelled here. */
+function LongShortIdentity({
+  symbol,
+  provenance,
+}: {
+  readonly symbol: string;
+  readonly provenance: SeriesProvenance;
+}) {
+  const publisher = provenance.kind === "unresolved" ? "fonte não identificada" : provenance.provider;
+  return (
+    <p data-fact={`long_short_identity:${symbol}`} className="text-sm text-provenance-weak">
+      {symbol} · {publisher} · nativa de 5 min servida na grade de 1 min
+    </p>
+  );
+}
+
+/** `RS-5` — whose measurement this is. `M-3` of the gate is the reason this component is rendered
+ * CONDITIONALLY by its caller and not always: over a window with zero observations, `procedência:
+ * OBSERVADO` is a predicate with no subject, and printing it there was one of the three false
+ * claims that reproved rodada 1. Where there IS an observation, the label is owed and printed. */
+function LongShortProvenance({ provenance }: { readonly provenance: SeriesProvenance }) {
+  if (provenance.kind === "unresolved") {
+    return (
+      <p data-fact="long_short_provenance:unresolved" className="text-sm text-provenance-weak">
+        Procedência não declarada — nenhuma série identificada no catálogo.
+      </p>
+    );
+  }
+  if (provenance.kind === "origin") {
+    return (
+      <p data-fact={`long_short_provenance:origin:${provenance.provider}`} className="text-sm text-provenance-weak">
+        Procedência: <strong className="font-bold text-on-surface">OBSERVADO</strong> — dado da própria
+        fonte ({provenance.provider}).
+      </p>
+    );
+  }
+  return (
+    <p
+      data-fact={`long_short_provenance:declared:${provenance.provider}`}
+      data-reconstructed-from={provenance.reconstructedFrom ?? ""}
+      className="text-sm text-provenance-strong"
+    >
+      ⚠️ Dado de TERCEIRO ({provenance.provider}), não da corretora de origem
+      {provenance.reconstructedFrom === null ? "" : ` — reconstruído a partir de ${provenance.reconstructedFrom}`}.
+    </p>
+  );
+}
+
+/** `S-6` — THE AGE STAMP EXISTS ONLY WHERE THERE IS AN OBSERVATION TO DATE, and it sits at the
+ * right edge of time, which is where the approved form puts it.
+ *
+ * What it measures is `windowEndMsInclusive - available_at`: the distance from the window's own
+ * close to the instant the newest readable observation BECAME KNOWABLE (`A-4.2`,
+ * `STITCH_CONTEXT.md:1774`). Both instants are printed as `data-` attributes so the number can be
+ * recomputed from outside instead of trusted.
+ *
+ * ⛔ IT IS NOT A FRESHNESS VERDICT. `OiFreshness` compares an age against the catalog's ceiling and
+ * can say "DADO VELHO"; this pane cannot and must not, because a `RATIO` series is never carried
+ * forward — the readout is exact or it is `SEM_PONTO`, so there is no state in which a stale number
+ * sits here pretending to be current. */
+function LongShortAgeStamp({ longShort }: { readonly longShort: LongShortPaneData }) {
+  if (longShort.ageMs === null || longShort.observedAtMs === null) {
+    return null;
+  }
+  return (
+    <p
+      data-fact={`long_short_age:${longShort.ageMs}`}
+      data-observed-at-ms={longShort.observedAtMs}
+      className="text-sm text-provenance-weak"
+    >
+      Idade da última observação: {formatSpan(longShort.ageMs)} (publicada em{" "}
+      {formatUtcMinute(longShort.observedAtMs)}).
+    </p>
+  );
+}
+
+/** `M-2` — THE TAIL THE PANE REFUSES TO DRAW, COUNTED.
+ *
+ * The gate's blocking finding was geometric: the study's rodada 1 carried the last value forward as
+ * a dashed stretch to the right edge, and `CARRY_FORWARD_BY_NATURE[Nature.RATIO] = False` means the
+ * server refuses to do exactly that. Rev. 3 draws NOTHING past the last observation — and then owes
+ * the operator the size of that emptiness, because a blank right edge cannot be dated by looking at
+ * it. *"cauda ausente: 2 grades de 1m"*, verbatim.
+ *
+ * The `0` case is printed too, and it is not noise: it is the assertion that the window's own last
+ * instant IS observed, which is what makes the other branch falsifiable. */
+function LongShortTailNote({ longShort }: { readonly longShort: LongShortPaneData }) {
+  const absent = longShort.trailingAbsentSlots;
+  return (
+    <p data-fact={`long_short_tail_absent:${absent}`} className="text-sm text-provenance-weak">
+      {absent === 0
+        ? "Fecho da janela observado — cauda ausente: 0 grades de 1 min."
+        : `Fecho da janela sem ponto — cauda ausente: ${absent} grades de 1 min (nada é desenhado à direita da última observação).`}
+    </p>
+  );
+}
+
+/** ⛔ `M-1`, WHERE IT IS HARDEST: EVERY NUMERAL OF THE SCALE FOOTER IS DERIVED FROM THE SLOTS.
+ *
+ * The approved footer publishes the pane's own compression — the domain, the amplitude, and the
+ * amplitude as a share of the median — because the series is, at the operator's own timeframe,
+ * nearly flat: `25,5%` of 15-minute windows do not move half a pixel `[DOC: gates/design-04.md
+ * §R2.7, n=850]`. The number is how the geometry becomes readable, which is why the gate refused
+ * (twice) to fix flatness by adding a second series, and why these numerals are the pane's most
+ * load-bearing text rather than decoration.
+ *
+ * Nothing here is typed by hand: `windowStats`/`recentStats` come from
+ * `view-model.ts::seriesValueStats` over the very slots the chart draws, and the rounding comes
+ * from `ratio-format.ts`, which prints a derived value at the precision of its operands. Rev. 2 of
+ * this very screen published SIX numerals that traced to no measurement, and the only reason it was
+ * caught is that the audit extracted every numeral and checked each one.
+ *
+ * `null` stats print a travessão and say why, never a zero: a window with no observation has no
+ * domain, and `0` is a legible long/short ratio (nobody long), so a fabricated zero on THIS pane
+ * would not even look wrong. */
+function LongShortScaleFooter({ longShort }: { readonly longShort: LongShortPaneData }) {
+  const { windowStats, recentStats } = longShort;
+  const windowText =
+    windowStats === null
+      ? "— (nenhuma observação na janela)"
+      : `${windowStats.min} a ${windowStats.max} · amplitude ` +
+        `${formatDerivedDecimal(windowStats.amplitude, [windowStats.min, windowStats.max])} ` +
+        `(${formatPercentPtBr(windowStats.amplitude / windowStats.median)} da mediana ${windowStats.median}) · ` +
+        `n = ${windowStats.presentSlots} grades legíveis`;
+  const recentShare =
+    // ⚠️ A DEGENERATE WINDOW IS SAID, NOT DIVIDED BY. With a single observation (or a perfectly flat
+    // window) the amplitude is `0`, and `x/0` would put `Infinity%` — or `NaN%` for `0/0` — on a
+    // screen whose whole subject is not publishing numbers nobody measured.
+    windowStats === null || windowStats.amplitude === 0 || recentStats === null
+      ? null
+      : formatPercentPtBr(recentStats.amplitude / windowStats.amplitude);
+  const recentText =
+    recentStats === null
+      ? "— (nenhuma observação na banda)"
+      : `${recentStats.min} a ${recentStats.max} · amplitude ` +
+        `${formatDerivedDecimal(recentStats.amplitude, [recentStats.min, recentStats.max])}` +
+        `${recentShare === null ? "" : ` (${recentShare} da amplitude da janela)`} · ` +
+        `n = ${recentStats.presentSlots} grades legíveis`;
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <div className="flex flex-col gap-0.5">
+        <p
+          data-fact={`long_short_window_scale:${windowStats === null ? "absent" : windowStats.presentSlots}`}
+          className="text-sm text-provenance-weak"
+        >
+          Escala da janela: {windowText}
+        </p>
+        <p
+          data-fact={`long_short_recent_scale:${recentStats === null ? "absent" : recentStats.presentSlots}`}
+          data-recent-span-ms={longShort.recentSpanMs}
+          className="text-sm text-provenance-weak"
+        >
+          Últimas {formatSpan(longShort.recentSpanMs)}: {recentText}
+        </p>
+      </div>
+      <p className="text-sm text-provenance-weak">
+        números derivados da série, não redigidos
+        <span className="block">ausência não interpolada nem carregada adiante</span>
+      </p>
+    </div>
+  );
+}
+
+/** `S-7` — THE EQUILIBRIUM AS A BORDER LABEL, AND THE SENTENCE DERIVED INSTEAD OF TRANSCRIBED.
+ *
+ * The gate's `S-7` took the `1,0000` reference OUT of the plot: anchoring the scale there costs
+ * `19%` of vertical resolution and pushes `33,7%` (against `25,5%`) of 15-minute windows below one
+ * pixel `[DOC: gates/design-04.md §R2.3]`. The operator does not lose the side of equilibrium — it
+ * is stated here, in words, outside the domain.
+ *
+ * ⛔ AND THIS IS THE ONE PLACE THE TRANSLATION REFUSES THE STUDY'S OWN TEXT. The HTML hardcodes
+ * *"abaixo da base"*, which is true of the four days it was generated over (`min = 1.1395`) and
+ * FALSE the first time this ratio trades below parity — a normal market state. A transcribed
+ * sentence would then assert a position nothing measured, which is exactly the `M-1` class of
+ * defect this gate reproved. `equilibriumPlacement` derives the wording from the window's own
+ * domain, and `ratio-format.test.ts` exercises all three branches. */
+function LongShortEquilibriumNote({ stats }: { readonly stats: SeriesValueStats | null }) {
+  const placement = equilibriumPlacement(stats);
+  if (placement === null) {
+    return null;
+  }
+  const equilibrium = LONG_SHORT_EQUILIBRIUM.toFixed(4).replace(".", ",");
+  const glyph = placement === "below" ? "▼" : placement === "above" ? "▲" : "◆";
+  const where =
+    placement === "below"
+      ? "abaixo da base da escala desenhada"
+      : placement === "above"
+        ? "acima do topo da escala desenhada"
+        : "dentro da escala desenhada";
+  return (
+    <p data-fact={`long_short_equilibrium:${placement}`} className="text-sm text-provenance-weak">
+      <span aria-hidden="true">{glyph}</span> {equilibrium} equilíbrio de contas (constante de
+      definição, não medição) — {where}.
+    </p>
+  );
+}
+
+/** `M-3` + `S-5` — the empty state, said in full instead of left as a blank rectangle.
+ *
+ * It carries NO procedência, NO age and NO domain (there is no observation to predicate any of them
+ * of), and the two numbers it does carry are `0` and the size of the grid that was asked for — the
+ * only two facts that exist in this state. The sentence names the ONE thing an operator cannot
+ * infer from an empty chart: that the emptiness is a property of the time slice, not of the series
+ * or of the screen. */
+function LongShortEmptyState({ longShort }: { readonly longShort: LongShortPaneData }) {
+  return (
+    <div
+      data-fact={`long_short_empty:0/${longShort.slots.length}`}
+      className="border border-surface-border bg-surface-lowest px-4 py-3"
+    >
+      <p className="flex items-center gap-2 text-sm font-bold text-on-surface">
+        <LongShortIntegrityGlyph />
+        NENHUMA GRADE LEGÍVEL NO PERÍODO
+      </p>
+      <p className="text-sm text-provenance-weak">
+        0 observações nativas de 5 min na janela ({longShort.wirePoints}/{longShort.slots.length} grades de
+        1 min legíveis). A série está cadastrada e íntegra; o que está vazio é o corte temporal. Ausência
+        não é interpolada nem substituída por zero.
+      </p>
+    </div>
+  );
+}
+
 /**
  * `T-04.5` — the long/short pane (M3), the FIRST NEW PANE of this feature.
  *
@@ -1487,9 +1811,11 @@ function LongShortReadableHorizon({ longShort }: { readonly longShort: LongShort
 function LongShortPane({
   longShort,
   status,
+  symbol,
 }: {
   readonly longShort: LongShortPaneData;
   readonly status: PanelStatus;
+  readonly symbol: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, (chart) => {
@@ -1515,7 +1841,16 @@ function LongShortPane({
       : longShort.unit === null
         ? String(longShort.reading.value)
         : `${longShort.reading.value} ${longShort.unit}`;
+  // WHETHER THERE IS ANYTHING TO PREDICATE — the ONE branch `M-3`/`S-6` of the gate turn on, and it
+  // is the window's own statistic rather than a status or a count of rows: a pane with a healthy
+  // transport and an empty time slice is the state the empty form exists for.
+  const hasObservation = longShort.windowStats !== null;
   return (
+    // ⛔ NO `overflow: hidden` AND NO FIXED WIDTH ON THIS CARD, AND THE OMISSION IS `A-3` OF THE
+    // GATE. The study is a `1280x1024` canvas (`body { width: 1280px; overflow: hidden }`), which
+    // CLIPS its own content at 200% zoom — `1.4.4`/`1.4.10`. The report classifies that as inherent
+    // to a fixed-canvas form study and as a DEFECT the moment the form migrates into the `S2`. This
+    // is that migration, so the card is fluid and every row of it wraps (`flex-wrap`).
     <section
       aria-label="Long/short"
       data-testid={LONG_SHORT_PANE_TESTID}
@@ -1526,23 +1861,54 @@ function LongShortPane({
       // is NOT that one.
       data-long-short-native-bars={longShort.nativeBars}
       data-long-short-wire-points={longShort.wirePoints}
+      className="border border-surface-border bg-surface-base"
     >
-      <h2 className="font-label-caps text-label-caps text-on-surface">
-        Long/short de contas (5m{longShort.unit === null ? "" : `, ${longShort.unit}`})
-      </h2>
-      {/* ⛔ `aria-hidden` on the canvas host — same criterion as `CvdPane`/`DR-6`:
-          `lightweight-charts` paints on a `<canvas>` with no accessible name, and the readouts below
-          ARE the declared textual alternative for the window's last instant. */}
-      <div
-        ref={containerRef}
-        aria-hidden="true"
-        data-fact={`long_short_slots:${longShort.slots.length}`}
-      />
-      <p data-fact={`long_short_last_reading:${longShort.reading.kind}`} className="text-sm text-provenance-weak">
-        Leitura atual: {readingText}
-      </p>
-      <LongShortReadableHorizon longShort={longShort} />
-      <AbsenceNote status={status} />
+      {/* THE HEADER IN TWO SEMANTIC ROWS, the shape the approved form uses: row 1 is WHAT THIS IS
+          and WHAT IT READS NOW; row 2 is HOW MUCH OF IT IS REAL. `S-8` of the gate floors the type
+          at 12px — every class here is `text-sm` (14px) or the `label-caps` scale, and nothing is
+          smaller. */}
+      <div className="flex flex-col gap-1 border-b border-surface-border bg-surface-lowest px-3 py-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 className="font-label-caps text-label-caps text-on-surface">
+              Long/short de contas (5m{longShort.unit === null ? "" : `, ${longShort.unit}`})
+            </h2>
+            <LongShortIdentity symbol={symbol} provenance={longShort.provenance} />
+          </div>
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            {/* THE HEADLINE, in the strong ink and bold — the only node of this pane in that
+                weight, which is the whole of `ADR-010` §5.4's hierarchy channel (luminance; there
+                is no hue to spend). If everything rises, nothing rises. */}
+            <p data-fact={`long_short_last_reading:${longShort.reading.kind}`} className="text-sm font-bold text-on-surface">
+              Leitura atual: {readingText}
+            </p>
+            {hasObservation ? <LongShortAgeStamp longShort={longShort} /> : <LongShortIntegrityBadge />}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            {hasObservation ? <LongShortProvenance provenance={longShort.provenance} /> : null}
+            <LongShortReadableHorizon longShort={longShort} />
+            <AbsenceNote status={status} />
+          </div>
+          <LongShortTailNote longShort={longShort} />
+        </div>
+      </div>
+      <div className="px-3 py-2">
+        {/* ⛔ `aria-hidden` on the canvas host — same criterion as `CvdPane`/`DR-6`:
+            `lightweight-charts` paints on a `<canvas>` with no accessible name, and the readouts
+            around it ARE the declared textual alternative for the window's last instant. */}
+        <div
+          ref={containerRef}
+          aria-hidden="true"
+          data-fact={`long_short_slots:${longShort.slots.length}`}
+        />
+        {hasObservation ? null : <LongShortEmptyState longShort={longShort} />}
+      </div>
+      <div className="flex flex-col gap-1 border-t border-surface-border bg-surface-lowest px-3 py-2">
+        <LongShortScaleFooter longShort={longShort} />
+        <LongShortEquilibriumNote stats={longShort.windowStats} />
+      </div>
     </section>
   );
 }
@@ -1623,7 +1989,10 @@ export function SymbolClient({
         longStatus={panelStatus.liquidationLong}
         shortStatus={panelStatus.liquidationShort}
       />
-      <LongShortPane longShort={longShort} status={panelStatus.longShort} />
+      {/* `symbol` is the pane's THIRD prop since `T-04.8`: the approved header states the series'
+          identity on the pane (symbol · publisher · the two grids), and the symbol is the route's,
+          read off `panels` — never re-derived here. */}
+      <LongShortPane longShort={longShort} status={panelStatus.longShort} symbol={panels.symbol} />
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>
         <ul>
