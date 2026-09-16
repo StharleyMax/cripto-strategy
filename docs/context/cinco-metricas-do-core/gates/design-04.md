@@ -908,3 +908,298 @@ proibida de tocá-lo** — a decisão é de quem é dono da fase.
 | §5 / linha 48 | `[NÃO SEI]` o que fazer com `GEMINI_3_1_PRO`. É `[PREMISSA-OWNER]` e **só o owner a reescreve** |
 
 ⛔ **Nenhuma linha de `docs/product/` foi alterada nesta sessão.**
+
+---
+---
+
+# RODADA 3 — `2026-09-16` · **a TELA IMPLEMENTADA, não o estudo. R1 e R2 permanecem intactas**
+
+**Cabeça julgada:** `da2ef79` · **Branch:** `task/cinco-metricas-do-core-f04-front`
+**⛔ MUDANÇA DE ARTEFATO, e ela é a razão desta rodada existir:** `R1` e `R2` julgaram telas do
+**Stitch** (`687b6958…`, `7d87cac1…`) com `frontend/` **declaradamente intocado**. Esta rodada julga
+**`LongShortPane` renderizado pela rota real** — `SymbolClient.tsx:1811-1914`, entregue por `fa16c15`
+(**+405 linhas**), servido por um `next start` desta árvore na porta **`4997`** contra a API de
+produção em `:8000`. O resíduo que a pediu está nomeado em
+[`gates/F04-T-04.9-fechamento-vertical.md`](F04-T-04.9-fechamento-vertical.md) §5.
+
+⚠️ **`:3000` NÃO foi usada** — ela serve o container de produção, que não tem este branch; medir ali
+mediria outro código. O processo da `4997` foi **derrubado ao fim** (§R3.9).
+
+⛔ Nada commitado · `frontend/`, `scripts/`, `docs/product/`, `docs/plans/` e `tasks.toml`
+**intocados** · **nenhuma** chamada de Figma · `gate-record` **NÃO gravado** (ato do owner) ·
+Postgres **não tocado** (só `GET` na API).
+
+## VEREDITO DA RODADA 3: **APPROVED**
+
+| | |
+|---|---|
+| **must-fix** | **0** — nenhuma afirmação falsa na tela viva; `M-1`…`M-4` e `A-1`…`A-4` re-medidos |
+| **should-fix** | **3** (`D-1` · `D-2` · `D-3`), e **dois deles são divergências que ninguém declarou** |
+| **could-improve** | **1** (`d-4`) |
+| **⚠️ tarja contra mim** | o `§7.1` da rodada 1 e o `§R2.7` da rodada 2 **subestimaram a planura** — geometria errada (§R3.6) |
+
+⇒ **A tela implementada honra o que o §R2 aprovou** na parte que reprovava: **zero afirmação
+falsa**. **12 de 12 numerais do rodapé reproduzem contra a API, ao dígito** (§R3.2) — e reproduzem
+**derivados**, não transcritos: em duas leituras separadas por minutos a mediana mudou de `1.6575`
+para `1.6567` e o `n` de `3064` para `3068`, enquanto `min`/`max` de 4 dias não mudaram. Um literal
+ou um `toFixed` congelado dariam o mesmo número nas duas.
+
+---
+
+## R3.1 O que eu medi, e contra o quê
+
+| eixo | instrumento | resultado |
+|---|---|---|
+| numerais do rodapé | réplica de `resolveRouteWindow` + `GET /api/v1/series-history` | **12/12 idênticos** (§R3.2) |
+| geometria do plot | `boundingBox` do `<canvas>` na rota real, Playwright | `1208 × 192` ⇒ plot **`134,4px`** (§R3.6) |
+| tipografia | `getComputedStyle` de **todo nó de texto** do painel | `14px` ×38 · `16px` ×1 · **`11px` ×3** (`D-2`) |
+| contraste | luminância relativa calculada no navegador | fraca **5.82 / 6.19** · forte **14.72 / 15.65** |
+| alpha | `opacity`/`backdropFilter` de todo descendente | **`[]` — zero** |
+| seleção de texto | `userSelect` de todo nó de texto | só um `<style>` da biblioteca é `none`; **todo numeral é copiável** (`A-4` ✅) |
+| foco | `Tab` ×14 + `getComputedStyle` do elemento focado | **`outline: 2px solid`, `offset: 2px`** em todos (`A-2` ✅ **em runtime**, não só no CSS) |
+| reflow | viewport `640×1024` (= 200% de zoom de 1280) | texto **envolve**; o `<canvas>` **não** (`D-3`) |
+| contrato de forma | `node --test long-short-pane-design-contract.test.ts` | **17 pass, 0 fail** (rodado por mim) |
+| `ratio-format` | `node --test ratio-format.test.ts` | **0 fail** |
+
+## R3.2 `M-1` na tela viva — a auditoria exaustiva, de novo, e desta vez ela não mordeu
+
+Leitura da página e da API na **mesma janela alinhada** (réplica de `resolveRouteWindow`: lag `5min`,
+span `5760min`, alinhamento `5min`, `knowledge_time = endEx + 4min`):
+
+```
+TELA : Escala da janela: 1.1395 a 1.8369 · amplitude 0.6974 (42,1% da mediana 1.6567) · n = 3068 grades legíveis
+API  :                   1.1395 a 1.8369 · amplitude 0.6974 (42,1% da mediana 1.6567) · n = 3068
+TELA : Últimas 4 h: 1.495 a 1.5867 · amplitude 0.0917 (13,1% da amplitude da janela) · n = 168 grades legíveis
+API  :              1.495 a 1.5867 · amplitude 0.0917 (13,1%)                          · n = 168
+TELA : 870 observações nativas   API: available_at distintos = 870
+```
+
+⭐ **E o `M-1` deixou de ser vigilância e virou impossibilidade estrutural**, que é a diferença entre
+a Rev. 2 (6 numerais fabricados, pegos só porque a auditoria foi exaustiva) e isto: os valores saem
+de `view-model.ts::seriesValueStats` sobre **os mesmos slots que o gráfico desenha**, o arredondamento
+sai de `ratio-format.ts::formatDerivedDecimal` (precisão dos **operandos**, não `toFixed` congelado) e
+`long-short-pane-design-contract.test.ts` **reprova** se qualquer um dos 9 numerais que este gate
+mediu por fora aparecer literal no componente. **Plantei a mutação e ela morde** — `T-04.9` §5 a
+replantou em `{windowStats.min}` → `1.1395` e obteve `16 pass, 1 fail`.
+
+⚠️ **Uma diferença de 1 grade que NÃO é defeito, registrada para não ser redescoberta como se
+fosse:** numa leitura anterior contei `168` contra `169` da tela porque usei `>` onde
+`slotsFrom(slots, windowEndMsInclusive − 4h)` é **inclusivo**. Com `>=` e janelas alinhadas, `168 =
+168`. A acusação errada era minha, não da tela.
+
+## R3.3 `M-2`, `M-3`, `M-4` e `SC 1.4.1` na implementação
+
+| item | como se sustenta aqui |
+|---|---|
+| `M-2` (sem carry-forward) | `lineSeriesLossless` transforma slot ausente em `WhitespaceItem` — a biblioteca **não desenha nada**; o painel ainda **conta** a cauda (`long_short_tail_absent:0` hoje, dito em palavras) e o contrato reprova `LineStyle.Dashed`/`lastValueVisible: true`. Não há tracejado à direita porque não há primitiva à direita |
+| `M-3` (procedência não predicada do vazio) | `hasObservation = windowStats !== null` é a **única** condição que governa `LongShortProvenance`, `LongShortAgeStamp` e o selo de integridade. Hoje há observação ⇒ `Procedência: OBSERVADO — dado da própria fonte (binance)` é predicado de algo |
+| `M-4` (sem alpha) | **`opacity !== 1` em zero descendentes**, medido no navegador; **zero hex literal** no painel (`grep -c '#[0-9a-fA-F]{6}'` no bloco `1495-1914` → `0`) — a tinta sai de `colorTokens()` |
+| `SC 1.4.1` | **zero** nó com verde/vermelho de direção; coorte continua não sendo direção |
+
+⚠️ **O estado vazio (`M-3`/`S-5`/`A-1`) NÃO foi medido em runtime, e o motivo é uma regra deste
+repositório, não preguiça:** produzi-lo exigiria semear dado no Postgres **compartilhado** — proibido.
+Fica sustentado por fonte + pelos 17 asserts do contrato. `[NÃO MEDIDO em runtime]`.
+
+## R3.4 Os 4 should-fix da rodada 2 — entraram, e 3 eu verifiquei na tela viva
+
+| item | veredito | medição |
+|---|---|---|
+| `A-1` (`1.1.1`) | **entrou** | `LongShortIntegrityGlyph` tem `aria-hidden="true" focusable="false"` e segue **vazado** (`fill="none"`). ⚠️ só existe no estado vazio ⇒ verificado por fonte + contrato, **não** em runtime |
+| `A-2` (`2.4.7`) | **entrou, e verificado NO NAVEGADOR** | `Tab` ×14: todo elemento focado resolve `outline: 2px solid`, `outline-offset: 2px`. O anel é `#8b949e` sobre `#0d1017` = **6.19** ⇒ passa `1.4.11` com folga |
+| `A-3` (`1.4.4`/`1.4.10`) | **entrou PELA METADE**, e a metade que falta não é deste painel | a 640px (200% de zoom) **todo `<p>` do painel envolve** dentro da moldura; o `<canvas>` **não** (`D-3`) |
+| `A-4` (produto) | **entrou** | único `user-select: none` da árvore é um `<style>` injetado pela `lightweight-charts`; **todo numeral visível é selecionável** |
+
+## R3.5 ⚠️ As divergências — uma declarada e defensável, DUAS que ninguém declarou
+
+### `D-0` — o rótulo de equilíbrio DERIVADO: **defensável, e eu o teria exigido**
+
+O estudo escreve fixo `▼ 1,0000 equilíbrio · abaixo da base`. `equilibriumPlacement` deriva
+`below`/`inside`/`above` do domínio medido. Na tela viva:
+`▼ 1,0000 equilíbrio de contas (constante de definição, não medição) — abaixo da base da escala desenhada`.
+
+**Aprovo, e por três razões medidas, não por cortesia:**
+
+1. **a frase transcrita seria o `M-1` de novo.** `min = 1.1395` é verdade **destes** 4 dias; na
+   primeira vez que a razão negociar abaixo da paridade — estado normal — o estudo afirmaria posição
+   que nada mediu. Recusar afirmação falsa é a **regra** deste gate, e ela não tem exceção para
+   afirmação falsa que EU aprovei;
+2. **a FORMA que o `S-7` comprou sobreviveu inteira**: continua sendo **rótulo de borda**, fora do
+   domínio, a escala continua autoescala pura, e o glifo (`▼`/`▲`/`◆`) é `aria-hidden` — a palavra
+   carrega o sentido. O que mudou é a **sentença**, não a decisão de forma;
+3. e o builder acrescentou o que o estudo **não** dizia — `(constante de definição, não medição)` —
+   que é exatamente a distinção que o `§R2.2` teve de fazer à mão ao auditar os 37 numerais.
+
+⇒ **`D-0` não é divergência a corrigir; é a decisão certa, e o registro de que o validador concordou
+DEPOIS é o que faltava** (`CLAUDE.md` §Design: *"nenhuma decisão de design vale antes de o validador
+concordar"*). **Concordo agora, e esta linha é esse ato.**
+
+### `D-1` — should-fix. **A FAIXA DAS 4 H NÃO FOI IMPLEMENTADA**, e ninguém declarou isso
+
+O estudo aprovado desenha a faixa **duas vezes** (`design-04-rev3.html:260` e `:360`):
+
+```css
+.four-hour-window { background-color:#222634; border-left:1px solid #8b949e; border-right:1px solid #8b949e; }
+```
+
+**O painel implementado não tem banda nenhuma:** `LongShortPane` cria **uma** série `Line` e chama
+`setData`; **zero** `createPriceLine`, `setMarkers`, `AreaSeries` ou sobreposição
+`[MEDIDO: bloco 1811-1914]`. O recorte das últimas 4 h existe **só como texto no rodapé**.
+
+**Por que importa:** o `§2.3` da rodada 1 chamou a faixa de melhor decisão da tela **e o motivo era
+medido** — a fronteira é o único elemento que delimita a janela de decisão e ela mede **5.82** contra
+o plot, enquanto o fill mede `1.19`. Sem a faixa, o operador lê *"últimas 4 h: amplitude `0.0917`"* e
+**não consegue apontar no gráfico onde essas 4 h começam**.
+
+⚠️ **E isto corrige uma afirmação de `T-04.9` §7.3**, que registra o remédio de `D18` como *"faixa de
+4 h + rodapé numérico … ENTREGUE"*. **Metade está entregue.** O que aquele laudo verificou no DOM
+foram as **duas linhas de rodapé**, que existem; a faixa, não. Tarjo em vez de apagar.
+
+**Por que mesmo assim é should-fix e não must-fix:** a redação em vigor do falsificador é
+`[DECISÃO-OWNER: 2026-09-16, §D18]` — *"dizer **quanto** a série andou no prazo de decisão, sem exigir
+zoom"*. O rodapé **diz quanto**, com `n` declarado e número que reproduz. A faixa responde **onde**,
+que `D18` não pede. ⇒ nenhuma afirmação falsa, informação presente em texto.
+**Falsificador de `D-1`:** ponha o operador diante da tela e peça que aponte o início das últimas
+4 h. Se ele precisar contar marcas de eixo, `D-1` vira must-fix. `[NÃO MEDIDO]`.
+
+### `D-2` — should-fix. **3 nós a 11px**, abaixo do piso que o `S-8` fixou
+
+```
+font-size de TODO nó de texto do painel:  14px ×38 · 16px ×1 · 11px ×3
+```
+
+Os três `11px` são o `<h2>` do painel (`font-label-caps text-label-caps`). O `§R2.3` registrou a Rev. 3
+com **zero nó abaixo de 12px**, e o comentário do próprio componente afirma *"every class here is
+`text-sm` (14px) or the `label-caps` scale, and **nothing is smaller**"* — **a afirmação é falsa como
+medida**: `label-caps` **é** 11px.
+
+⚠️ **E a substância é defensável, o que a afirmação não é:** os **9** cabeçalhos da `S2` medem 11px
+(`grep` de `getComputedStyle` sobre `h2,h3` da rota: `11px` ×9). O painel **conformou-se ao sistema**,
+não ao estudo — que é a escolha certa numa migração, e o inverso criaria um cabeçalho fora de escala
+no meio de oito irmãos. Contraste `14.72:1`, caixa alta, e **AA não fixa tamanho mínimo** ⇒ nenhum
+critério reprova. **O defeito é a declaração, não o pixel:** o comentário afirma o contrário do que a
+tela faz. ⇒ ou o comentário passa a nomear o desvio, ou o `S-8` passa a ler *"12px, exceto o token
+`label-caps` do chrome da `S2`"*. **Decisão de quem for dono do `STITCH_CONTEXT.md` §9 item 14 — eu
+proponho a segunda, e não a apliquei (`R6`).**
+
+### `D-3` — should-fix **TRANSVERSAL, com dono que já existe** — o `<canvas>` não reflui a 200%
+
+```
+viewport 640×1024 (= 200% de zoom de 1280):
+  documentElement.scrollWidth = 1280  contra  clientWidth = 640   ⇒ rolagem horizontal
+  larguras de canvas: inalteradas (1224, 1202, 1208, 1194, …)
+  elementos além da borda direita, por painel: oi 19 · cvd 19 · liquidation 38 · long-short 19
+```
+
+**`SC 1.4.10` (Reflow) reprova a ROTA**, e reprova **igual nos 4 painéis** — o gráfico é criado uma
+vez com `container.clientWidth` e **não há `ResizeObserver`** em `frontend/src` fora do shim de teste.
+⇒ **não é regressão de `fa16c15`**, e já tem endereço: `SymbolClient.tsx:382-385` cita `DR-4` de
+`gates/design-review-painel-cvd.md` como item MEDIUM daquele roadmap. **O `A-3` deste gate está pago
+no que era do painel** (moldura fluida, `flex-wrap`, sem `overflow:hidden`, sem largura fixa) — o
+resíduo é do host de gráfico, e nomeá-lo aqui é o que impede que ele vire permanente por omissão.
+
+### `d-4` — could-improve: o `<a id="tv-attr-logo">` da `lightweight-charts`
+
+**6 na página, um por gráfico, e são os ÚNICOS elementos focáveis da rota inteira** — `Tab` ×14 só
+visita eles. Nome acessível vem de `title="Charting by TradingView"` (⇒ `2.4.4`/`4.1.2` **passam**,
+por `title`, que é o canal mais fraco). Injetado pela biblioteca, idêntico nos 5 painéis ⇒
+**pré-existente e transversal**, não deste painel. Registrado porque um `Tab` que só encontra links de
+atribuição é um sinal sobre a rota, não sobre o link.
+
+## R3.6 ⛔ A GEOMETRIA REAL — e a tarja contra dois números MEUS
+
+`R11` (`CLAUDE.md`, *"erro não se apaga, se tarja"*). **O `§7.1` da rodada 1 escreveu *"painel de
+`220px`, área de plot `154px`"* e o `§R2.7` publicou `25,5%` sobre essa suposição. O `220` é o
+argumento passado a `createChart`; o eixo de tempo come o resto.** Medido por mim na rota real:
+
+```
+boundingBox do <canvas> em [data-testid="long-short-pane"] => 1208 × 192   (atributo: 1208 × 192)
+o <canvas> do eixo de tempo mede 1208 × 28, e 192 + 28 = 220
+scaleMargins: o painel não declara ⇒ default 0.2/0.1  ⇒  plot = 192 × 0,7 = 134,4px
+```
+
+⇒ **`134,4px`, não `154px`: `12,7%` a menos de resolução vertical do que eu publiquei.** Achado
+primeiro por `T-04.9` §7.2 e **reproduzido aqui por medição própria**, não importado.
+
+**O efeito, com o MÉTODO DE `§R2.7` CONGELADO (janelas fixas não sobrepostas) — só a geometria muda,
+`n=291` janelas de 15 min, dado de hoje:**
+
+| escala | plot | 15 min: excursão mediana | 15 min: sub-pixel (`< 0,5px`) |
+|---|---:|---:|---:|
+| autoescala pura (`S-7` aplicado) | `154px` **(SUPOSTO)** | `0.88 px` | **`27,1%`** |
+| **autoescala pura — a tela REAL** | **`134,4px`** | **`0.77 px`** | **`34,4%`** |
+| ancorada em `1,0000` (o que o `S-7` recusou) | `154px` | `0.74 px` | `35,7%` |
+| ancorada em `1,0000` | `134,4px` | `0.64 px` | `43,3%` |
+
+**Três leituras, e a terceira é desconfortável:**
+
+1. **a planura que publiquei estava SUBESTIMADA** — `25,5%` virou **`34,4%`**, quase **9 pontos
+   percentuais** a mais de janelas de 15 min que não movem meio pixel;
+2. **o `S-7` continua CERTO** — a geometria constante, autoescala bate a âncora em qualquer plot
+   (`34,4%` contra `43,3%`; `27,1%` contra `35,7%`). A decisão não muda;
+3. ⚠️ **mas o ganho que eu celebrei some na escala real:** o `§R2.3` comemorou `33,7% → 25,5%` como
+   *"8,2 pontos que saíram do regime sub-pixel"*. Na geometria real a tela entregue está em
+   **`34,4%`** — **pior que os `33,7%` que eu usei para condenar a alternativa**. O `S-7` melhorou a
+   tela; **não a tirou do regime que ele existia para combater**, e a minha frase deixava entender
+   que sim.
+
+## R3.7 ⛔ O FALSIFICADOR, na redação `D18`, contra a TELA — **continua disparando, e mais forte**
+
+> *"se o painel de `count_long_short_ratio` for uma linha VISUALMENTE PLANA **na escala entregue**, a
+> fatia **CONSERTA A ESCALA** — dizer quanto a série andou no prazo de decisão, sem exigir zoom."*
+> `[DECISÃO-OWNER: 2026-09-16, §D18]`
+
+| horizonte | mediana (plot real `134,4px`) | sub-pixel |
+|---|---:|---:|
+| **15 min** (piso da banda) | **`0.77 px`** | **`34,4%`** |
+| 1 h | `3.93 px` | `4,0%` |
+| 4 h (teto) | `11.51 px` | `0,0%` |
+
+⇒ **DISPARA no piso da banda operacional, e a geometria real o faz disparar com MENOS folga, nunca
+mais.** No teto não dispara. Mesma forma das rodadas 1 e 2 — por três caminhos independentes (eu ×2,
+`T-04.9` ×1) e agora sobre a tela viva em vez do estudo.
+
+**A ação que `D18` prescreve está ENTREGUE — na metade numérica, que é a que ele pede.** O rodapé diz
+`amplitude 0.0917 (13,1% da amplitude da janela) · n = 168 grades legíveis`, derivado dos mesmos slots
+que o gráfico desenha, **sem exigir zoom**. A metade visual (a faixa) **não** está — é o `D-1`, e é
+por isso que ele é should-fix e não cosmético.
+
+**O resíduo que `T-04.9` §7 já declarou continua de pé, e a geometria real o agrava:** o rodapé
+quantifica o **teto** (4 h), e a planura mora no **piso** (15 min). O owner escolheu com o número do
+piso na frente — só que **o número que ele viu era `25,5%`, e o real é `34,4%`**. ⇒ **isto volta ao
+owner como informação nova, não como decisão revogada.** Ação registrada no §R3.8.
+
+## R3.8 O que esta rodada devolve, e para quem
+
+1. **`D-1` (faixa das 4 h)** — dono: quem for construir a próxima passada de `web`. **Não bloqueia** a
+   fase `04`; bloqueia a frase *"faixa + rodapé entregues"*, que fica tarjada aqui e em `T-04.9` §7.3.
+2. **A correção de `25,5%` → `34,4%`** — dono: **o owner**, porque `D18` foi escolhido com o número
+   antigo à vista. Não proponho reverter `D18`; proponho que ele saiba que a planura do piso é ~1/3
+   das janelas, não ~1/4.
+3. **`D-2`** — dono do `STITCH_CONTEXT.md` §9 item 14: ou o comentário do componente nomeia o desvio,
+   ou o piso passa a excetuar `label-caps`. **Proponho a segunda; `R6` me proíbe de aplicar.**
+4. **`D-3`** — já tem dono: `DR-4` de `gates/design-review-painel-cvd.md`.
+
+## R3.9 Registro de execução da rodada 3
+
+| item | estado |
+|---|---|
+| servidor medido | `next start` desta árvore, `127.0.0.1:4997`, `INGEST_HEALTH_API_BASE_URL=http://127.0.0.1:8000` · build `.next` desta árvore (`fa16c15`), conferido pelos marcadores de `fa16c15` no HTML servido |
+| `:3000` | **não usada** — é o container de produção e **não tem este branch** |
+| processo | **derrubado ao fim desta rodada** (`kill`, porta livre) |
+| navegador | Playwright/Chromium, viewports `1280×1024` e `640×1024` |
+| escrita | **somente** este arquivo, **somente** como `§R3`. `R1` e `R2` **não foram tocadas** (as 910 linhas anteriores estão byte-idênticas) |
+| `frontend/` | **intocado** — outro agente audita o mesmo diff; `git status --porcelain` limpo fora deste `.md` |
+| commits | **nenhum** |
+| `gate-record` | **NÃO gravado** — ato do owner |
+| Figma | **nenhuma chamada**, em nenhum momento |
+| Stitch | **nenhuma geração** — o artefato desta rodada é código renderizado, não tela. ⇒ a pendência de `R1`/`GEMINI_3_1_PRO` (§0.1) **não foi exercida** e continua com o owner |
+| Postgres | **não tocado**; nada semeado; API lida só por `GET` |
+
+### O que esta rodada NÃO mediu, declarado
+
+- **Leitor de tela, teclado com usuário real, dicromacia** — `[NÃO MEDIDO]`. O `Tab` foi exercido por
+  script; o anel de foco foi **medido**, a experiência não.
+- **O estado vazio e o `SEM_PONTO` em runtime** — exigiriam semear o Postgres compartilhado
+  (proibido). Sustentados por fonte + 17 asserts + o universo FRACO do `make verify`.
+- **Se o rótulo de borda basta cognitivamente** — continua `[NÃO SEI]` desde o `§R2.6 Explore`, e
+  nenhuma das três rodadas o respondeu, porque nenhuma observou uso.
