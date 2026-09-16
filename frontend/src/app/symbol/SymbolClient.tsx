@@ -55,6 +55,7 @@ import type {
   IChartApi,
   LineSeriesOptions,
   ISeriesApi,
+  Logical,
 } from "lightweight-charts";
 import {
   CandlestickSeries,
@@ -82,6 +83,7 @@ import {
   type S2Panels,
 } from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
+import { recentBandSlotRange } from "./long-short-band.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
@@ -312,6 +314,18 @@ export interface LongShortPaneData {
    * screen was a finding once already, and a literal would be free to drift from what the backend
    * published. */
   readonly unit: string | null;
+  /** `key.interval` of the resolved catalog row (`5m` for M3) — the CADENCE term of the series'
+   * identity, carried for exactly the reason `unit` above is carried, and the `/review` `[WARNING]`
+   * of `T-04.8` is that reason measured: four places on this pane spelled `5 min`/`5m` BY HAND while
+   * the API published the term per entry, so *"a literal would be free to drift from what the
+   * backend published"* applied to them word for word. `null` when no entry resolved, and then the
+   * pane says nothing about cadence rather than a cadence nobody served. */
+  readonly nativeInterval: string | null;
+  /** `native_grid` of the same row (`5min` for M3). Published BESIDE `nativeInterval` and not
+   * instead of it because they are two different declarations — the interval is a term of the
+   * series' KEY (it distinguishes two series), the grid is a property of how it is SAMPLED — and
+   * `e2e/14` asserts both, separately, against the served catalog (`:330-331`). */
+  readonly nativeGrid: string | null;
 }
 
 export interface SymbolClientProps {
@@ -385,7 +399,25 @@ function lastInstantMs(panels: S2Panels): number {
  * the next pass has one place to change instead of a literal inside a call. */
 const CHART_HEIGHT_PX = 220;
 
-function useLightweightChart(containerRef: RefObject<HTMLDivElement | null>, build: (chart: IChartApi) => void): void {
+/**
+ * ⛔ `measure` IS READ AFTER THE FIT, ON THE NEXT FRAME, AND BOTH HALVES OF THAT SENTENCE ARE THE
+ * REASON IT EXISTS — `D-1` of `gates/design-04.md` §R3.5 needs a pane to draw an overlay ALIGNED
+ * with the chart's own time scale, and the only honest source of that alignment is the library.
+ *
+ * `fitContent()` sets the target range and INVALIDATES; the time scale's coordinates are recomputed
+ * when the chart next paints. Reading `logicalToCoordinate` in the same tick answers with the range
+ * the chart had BEFORE the fit — a coordinate that looks like a measurement and is not. So the
+ * callback is deferred one animation frame, and cancelled with the chart if the pane unmounts
+ * first: a callback that outlives `chart.remove()` would read a disposed model.
+ *
+ * It is OPTIONAL, and four of the five panes pass nothing: a pane that draws only on the canvas has
+ * no geometry to read back out.
+ */
+function useLightweightChart(
+  containerRef: RefObject<HTMLDivElement | null>,
+  build: (chart: IChartApi) => void,
+  measure?: (chart: IChartApi) => void,
+): void {
   useEffect(() => {
     const container = containerRef.current;
     if (container === null) {
@@ -401,10 +433,19 @@ function useLightweightChart(containerRef: RefObject<HTMLDivElement | null>, bui
     const chart = createChart(container, chartConstructorOptions(container.clientWidth || 600, CHART_HEIGHT_PX));
     build(chart);
     chart.timeScale().fitContent();
+    const frame =
+      measure === undefined
+        ? null
+        : requestAnimationFrame(() => {
+            measure(chart);
+          });
     return () => {
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
       chart.remove();
     };
-    // `build` intentionally excluded from the dependency list: it is a fresh closure every
+    // `build` and `measure` intentionally excluded from the dependency list: each is a fresh closure every
     // render by construction (it captures this render's own panel slots), and
     // `lightweight-charts` owns its own mount/unmount lifecycle — re-running this effect on
     // every render would tear the chart down and rebuild it constantly instead of once per
@@ -1502,12 +1543,44 @@ function LongShortReadableHorizon({ longShort }: { readonly longShort: LongShort
     <p
       data-fact={`long_short_readable_horizon:${longShort.nativeBars}/${longShort.wirePoints}/${gridSlots}`}
       data-readable-since-ms={longShort.firstPresentMs ?? ""}
+      data-native-grid={longShort.nativeGrid ?? ""}
       className="text-sm text-provenance-weak"
     >
-      {sinceText} — {longShort.nativeBars} observações nativas de 5 min, servidas como{" "}
-      {longShort.wirePoints}/{gridSlots} grades de 1 min (a mesma observação repetida na escada).
+      {sinceText} — {longShort.nativeBars} observações nativas
+      {nativeGridSuffix(longShort.nativeGrid)}, servidas como {longShort.wirePoints}/{gridSlots} grades
+      de 1 min (a mesma observação repetida na escada).
     </p>
   );
+}
+
+/** The cadence term, spelled ONLY when the backend published one — the `/review` `[WARNING]` of
+ * `T-04.8`, paid.
+ *
+ * Three sentences of this pane used to carry a hand-typed `5 min`. The catalog serves `native_grid`
+ * per entry, so the literal was a second, unversioned copy of a term the API owns, free to keep
+ * saying `5 min` the day the series is re-sampled — the exact failure `LongShortPaneData.unit`'s own
+ * docstring names for the unit ("a literal would be free to drift from what the backend
+ * published"). With no resolved entry the phrase simply ends: a pane that invents a cadence is worse
+ * than one that declines to state it, and the identity line already says the source is unidentified.
+ *
+ * ⚠️ THE WIRE GRID (`1 min`) IS NOT READ FROM HERE, AND THE ASYMMETRY IS DELIBERATE: it is not a
+ * property of the SERIES but of the REQUEST this route makes (`page.tsx`, `interval: "1m"`), so the
+ * catalog has nothing to say about it and reading it off the catalog would be the drift defect with
+ * the arrow reversed. */
+function nativeGridSuffix(nativeGrid: string | null): string {
+  return nativeGrid === null ? "" : ` de ${nativeGrid}`;
+}
+
+/** The parenthesised terms of the pane's heading — CADENCE then UNIT, the order the approved form
+ * prints them in, and each one present only where the catalog served it.
+ *
+ * The heading used to read `Long/short de contas (5m{, unit})`: one term read off the entry, one
+ * typed by hand, inside the same pair of parentheses. Both come off the entry now. With neither
+ * term the parentheses do not appear — `Long/short de contas ()` would be the screen announcing
+ * that it has an identity it cannot state. */
+function identityTerms(longShort: LongShortPaneData): string {
+  const terms = [longShort.nativeInterval, longShort.unit].filter((term): term is string => term !== null);
+  return terms.length === 0 ? "" : ` (${terms.join(", ")})`;
 }
 
 // ══ `T-04.8` — THE FORM THE `design_gate` APPROVED, TRANSLATED INTO THIS COMPONENT TREE ═══════
@@ -1572,14 +1645,16 @@ function LongShortIntegrityBadge() {
 function LongShortIdentity({
   symbol,
   provenance,
+  nativeGrid,
 }: {
   readonly symbol: string;
   readonly provenance: SeriesProvenance;
+  readonly nativeGrid: string | null;
 }) {
   const publisher = provenance.kind === "unresolved" ? "fonte não identificada" : provenance.provider;
   return (
     <p data-fact={`long_short_identity:${symbol}`} className="text-sm text-provenance-weak">
-      {symbol} · {publisher} · nativa de 5 min servida na grade de 1 min
+      {symbol} · {publisher} · nativa{nativeGridSuffix(nativeGrid)} servida na grade de 1 min
     </p>
   );
 }
@@ -1685,12 +1760,22 @@ function LongShortTailNote({ longShort }: { readonly longShort: LongShortPaneDat
  * would not even look wrong. */
 function LongShortScaleFooter({ longShort }: { readonly longShort: LongShortPaneData }) {
   const { windowStats, recentStats } = longShort;
+  // ⚠️ THE SAME GUARD ITS SISTER BELOW ALREADY HAD, AND THE `/review` `[INFO]` of `T-04.8` is why it
+  // is here: this quotient divides by the MEDIAN, which nothing stopped from being `0`. It is not a
+  // theoretical case on this pane — `0` is a LEGIBLE long/short ratio (nobody long), so a window in
+  // which the majority of readable slots are `0` is a market state, not a producer defect, and it
+  // would have put `Infinity%` (or `NaN%`, for an amplitude of `0` over it) on a screen whose whole
+  // subject is not publishing numbers nobody measured. A degenerate window is SAID, never divided by.
+  const windowShare =
+    windowStats === null || windowStats.median === 0
+      ? null
+      : formatPercentPtBr(windowStats.amplitude / windowStats.median);
   const windowText =
     windowStats === null
       ? "— (nenhuma observação na janela)"
       : `${windowStats.min} a ${windowStats.max} · amplitude ` +
-        `${formatDerivedDecimal(windowStats.amplitude, [windowStats.min, windowStats.max])} ` +
-        `(${formatPercentPtBr(windowStats.amplitude / windowStats.median)} da mediana ${windowStats.median}) · ` +
+        `${formatDerivedDecimal(windowStats.amplitude, [windowStats.min, windowStats.max])}` +
+        `${windowShare === null ? ` (mediana ${windowStats.median})` : ` (${windowShare} da mediana ${windowStats.median})`} · ` +
         `n = ${windowStats.presentSlots} grades legíveis`;
   const recentShare =
     // ⚠️ A DEGENERATE WINDOW IS SAID, NOT DIVIDED BY. With a single observation (or a perfectly flat
@@ -1783,10 +1868,94 @@ function LongShortEmptyState({ longShort }: { readonly longShort: LongShortPaneD
         NENHUMA GRADE LEGÍVEL NO PERÍODO
       </p>
       <p className="text-sm text-provenance-weak">
-        0 observações nativas de 5 min na janela ({longShort.wirePoints}/{longShort.slots.length} grades de
-        1 min legíveis). A série está cadastrada e íntegra; o que está vazio é o corte temporal. Ausência
-        não é interpolada nem substituída por zero.
+        0 observações nativas{nativeGridSuffix(longShort.nativeGrid)} na janela ({longShort.wirePoints}/
+        {longShort.slots.length} grades de 1 min legíveis). A série está cadastrada e íntegra; o que está
+        vazio é o corte temporal. Ausência não é interpolada nem substituída por zero.
       </p>
+    </div>
+  );
+}
+
+/** The band's geometry, in pixels of the chart's own canvas — read back OUT of `lightweight-charts`
+ * rather than computed beside it, which is the only way an HTML overlay and a canvas series can be
+ * asserted to describe the same slots. `firstIndex`/`lastIndex` travel with the pixels so the DOM
+ * publishes WHAT was measured next to WHERE it landed. */
+interface RecentBandGeometry {
+  readonly leftPx: number;
+  readonly widthPx: number;
+  readonly heightPx: number;
+  readonly firstIndex: number;
+  readonly lastIndex: number;
+}
+
+/**
+ * ⛔ `D-1` OF `gates/design-04.md` §R3.5 — THE FAIXA DAS 4 H, WHICH WAS THE MISSING HALF OF THE
+ * REMEDY `[DECISÃO-OWNER 2026-09-16, §D18]` APPROVED ("faixa de 4h + rodapé numérico").
+ *
+ * The finding, measured: the study draws the band twice (`gates/design-04-rev3.html:260`, `:360`)
+ * and the pane had *"uma série `Line` e ZERO sobreposição"* — so the recorte existed only as text.
+ * The footer says **quanto** the series moved in the decision timeframe; this says **onde** that
+ * timeframe starts, which an operator otherwise has to find by counting axis marks.
+ *
+ * ── ⚠️ THE ONE DIVERGENCE FROM THE STUDY, DECLARED HERE BECAUSE IT IS A REAL ONE ─────────────
+ *
+ * The study's `.four-hour-window` carries `background-color:#222634` PLUS the two 1px borders. This
+ * element carries **the borders only, and no fill**, and the reason is a property of the migration
+ * rather than a preference: the study is HTML all the way down, so its fill sits UNDER its own
+ * `<svg>` trace; here the series is painted by `lightweight-charts` on an OPAQUE `<canvas>`, and an
+ * HTML overlay can only sit ON TOP of it. An opaque fill would therefore hide the very line the band
+ * exists to locate, and `M-4` forbids the escape hatch (`opacity`/`rgba`) — for a measured reason,
+ * not a stylistic one: a ratio computed on a token and rendered through alpha is a ratio nobody has.
+ *
+ * ⭐ AND THE GATE'S OWN NUMBERS SAY THIS COSTS ALMOST NOTHING: §2.3 measured the fill at **1.19**
+ * against the plot and the border at **5.82**, and concluded in so many words that *"a faixa é
+ * carregada pela BORDA, não pelo fill … o fill só AGRUPA"*. A 1.19 fill is, by definition of the
+ * number, nearly indistinguishable from the surface it sits on. What is dropped is the ~invisible
+ * half; what is kept is the half that measures 5.82 and does the delimiting.
+ *
+ * ⛔ FORM IS NOT MINE TO SETTLE: this divergence is a builder's answer to a physical constraint, and
+ * the `ui-designer` with the `ux-ui-mastery` verdict owns whether it stands. Recorded in
+ * `gates/T-04.10-achados-front.md` so it is decided rather than inherited.
+ */
+function LongShortRecentBand({
+  band,
+  longShort,
+}: {
+  readonly band: RecentBandGeometry;
+  readonly longShort: LongShortPaneData;
+}) {
+  return (
+    <div
+      // `aria-hidden` for the same reason the canvas host beside it is: this is a MARK over a
+      // graphic, and the sentence that carries its meaning to a screen reader is the footer's
+      // *"Últimas 4 h: … n = N grades legíveis"*, which is real text in the accessibility tree.
+      aria-hidden="true"
+      data-fact={`long_short_recent_band:${band.firstIndex}/${band.lastIndex}`}
+      data-recent-band-left-px={Math.round(band.leftPx)}
+      data-recent-band-width-px={Math.round(band.widthPx)}
+      // ⛔ `z-10` IS NOT DECORATION — WITHOUT IT THIS ELEMENT EXISTS IN THE DOM AND NOT ON THE
+      // SCREEN, which is the worst failure available to a mark whose whole job is to be seen. The
+      // first working version of this band had no `z-` class: every assertion passed (`toHaveCount(1)`,
+      // a bounding box of `120x192` at the right coordinates) and a screenshot showed NOTHING.
+      // Measured cause: `lightweight-charts` paints its canvases at `z-index: 1` and `2`
+      // (`getComputedStyle` over the 7 `<canvas>` of this chart: `1,2,1,2,1,2,auto`), none of their
+      // ancestors up to `.relative` opens a stacking context, so an overlay at `auto` (= 0) sorts
+      // BELOW them. `10` clears both with room for the library to add a layer.
+      // `pointer-events-none`: the band must not eat the crosshair of the chart underneath it.
+      className="pointer-events-none absolute z-10 border-l border-r border-provenance-weak"
+      style={{ left: `${band.leftPx}px`, top: 0, width: `${band.widthPx}px`, height: `${band.heightPx}px` }}
+    >
+      {/* ⚠️ THE TAG NAMES THE BAND AND DOES NOT REPEAT ITS DOMAIN, WHICH THE STUDY DOES
+          (*"Últimas 4h [1.4950 a 1.8098]"*) — and the reason is a width this migration measured and
+          the study could not have: the study's own band is `330px` (it chose its window); over the
+          route's REAL 4-day window this band renders `120px` wide `[MEDIDO 2026-09-16, `e2e/14`:
+          `long_short_recent_band_width_px=120` sobre `canvas=1208px`]`, in which the domain wraps to
+          three lines and becomes a blob over the plot. The two numerals are not lost: they are the
+          footer's *"Últimas 4 h: 1.495 a 1.5707 · …"*, 14px, one line below, which is the MORE
+          legible copy of the same fact. One fact, one place. */}
+      <span className="absolute left-2 top-1.5 whitespace-nowrap border border-provenance-weak bg-surface-lowest px-1.5 text-data-sm text-provenance-weak">
+        Últimas {formatSpan(longShort.recentSpanMs)}
+      </span>
     </div>
   );
 }
@@ -1818,15 +1987,50 @@ function LongShortPane({
   readonly symbol: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  useLightweightChart(containerRef, (chart) => {
-    const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
-    const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
-    // `lineSeriesLossless` — REUSED, never a second mapping: a slot with `value: null` becomes a
-    // bare `{time}` `WhitespaceItem`, which the library places on the axis and draws NOTHING for.
-    // For this series a `0` there would be worse than for any other pane on this screen: `0` is a
-    // legible long/short ratio (nobody long), so the fabricated value would not even look wrong.
-    series.setData(lineSeriesLossless(longShort.slots) as never);
-  });
+  // `D-1` — the band's slots, resolved by the SAME rule `page.tsx` used for the footer's numerals
+  // (`long-short-band.ts`, whose test compares the two sets slot for slot). `null` where there is
+  // nothing to delimit, and then no rectangle is drawn at all.
+  const [band, setBand] = useState<RecentBandGeometry | null>(null);
+  const bandRange = recentBandSlotRange(longShort.slots, longShort.recentSpanMs);
+  useLightweightChart(
+    containerRef,
+    (chart) => {
+      const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
+      const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
+      // `lineSeriesLossless` — REUSED, never a second mapping: a slot with `value: null` becomes a
+      // bare `{time}` `WhitespaceItem`, which the library places on the axis and draws NOTHING for.
+      // For this series a `0` there would be worse than for any other pane on this screen: `0` is a
+      // legible long/short ratio (nobody long), so the fabricated value would not even look wrong.
+      series.setData(lineSeriesLossless(longShort.slots) as never);
+    },
+    (chart) => {
+      // ⛔ THE COORDINATES ARE THE LIBRARY'S, NOT A PROPORTION COMPUTED BESIDE IT. The plot area is
+      // narrower than the container by whatever the price axis takes, and `fitContent` leaves half
+      // a bar of margin at each end — a percentage over the container would be a band that looks
+      // aligned and is not, which on a pane about provenance is the worst kind of wrong. Every slot
+      // fed to the series is one logical index, in order, so `logicalToCoordinate` answers exactly.
+      if (bandRange === null) {
+        return;
+      }
+      const timeScale = chart.timeScale();
+      const leftPx = timeScale.logicalToCoordinate(bandRange.firstIndex as Logical);
+      const rightPx = timeScale.logicalToCoordinate(bandRange.lastIndex as Logical);
+      const paneHeightPx = chart.paneSize().height;
+      // A coordinate outside the visible range comes back `null`, and a zero-width band would draw
+      // two coincident borders over a window that is not zero wide. Either way: no band, never an
+      // invented one.
+      if (leftPx === null || rightPx === null || !(rightPx > leftPx) || !(paneHeightPx > 0)) {
+        return;
+      }
+      setBand({
+        leftPx,
+        widthPx: rightPx - leftPx,
+        heightPx: paneHeightPx,
+        firstIndex: bandRange.firstIndex,
+        lastIndex: bandRange.lastIndex,
+      });
+    },
+  );
   // ⛔ `resolveFlowReadingOrAbsent` ON A `RATIO` SERIES, AND THE DIVERGENCE IS DECLARED RATHER THAN
   // SMUGGLED: what is shared with `FLOW` is the RULE (never look at a neighbouring slot, absence is
   // absence), not the nature. The rule is the right one here because the SERVER already applies it —
@@ -1864,16 +2068,42 @@ function LongShortPane({
       className="border border-surface-border bg-surface-base"
     >
       {/* THE HEADER IN TWO SEMANTIC ROWS, the shape the approved form uses: row 1 is WHAT THIS IS
-          and WHAT IT READS NOW; row 2 is HOW MUCH OF IT IS REAL. `S-8` of the gate floors the type
-          at 12px — every class here is `text-sm` (14px) or the `label-caps` scale, and nothing is
-          smaller. */}
+          and WHAT IT READS NOW; row 2 is HOW MUCH OF IT IS REAL.
+
+          ⚠️ TYPE SIZE — THE PREVIOUS VERSION OF THIS COMMENT CLAIMED "nothing is smaller", AND THAT
+          WAS FALSE AS MEASURED (`D-2`, `gates/design-04.md` §R3.5). Every class here is `text-sm`
+          (14px) except the `<h2>`, which carries the `label-caps` token — and `label-caps` is
+          `0.6875rem` = **11px** (`globals.css`, `--text-label-caps`), i.e. BELOW the 12px floor
+          `S-8` of the gate asked for. The pane's own nodes measure `14px ×38 · 16px ×1 · 11px ×3`.
+
+          THE PIXEL STAYS AND THE CLAIM GOES, and the gate's own measurement is why: the `S2`'s
+          NINE section headers all render at 11px (`getComputedStyle` over `h2,h3` of the route:
+          `11px ×9`), so this pane conformed to the SYSTEM rather than to the study — the choice a
+          migration should make, since the inverse would put one out-of-scale heading among eight
+          siblings. Contrast is `14.72:1`, the text is caps, and no WCAG criterion fixes a minimum
+          type size, so nothing REPROVES it. What was a defect was the declaration, and `D-2` says
+          so in as many words: *"O defeito é a declaração, não o pixel"*.
+
+          ⛔ WHOSE CALL THE 12px FLOOR IS: `STITCH_CONTEXT.md` §9 item 14, owner `ui-designer` with
+          the `ux-ui-mastery` verdict. The gate PROPOSED reading it as *"12px, exceto o token
+          `label-caps` do chrome da S2"* and explicitly did not apply it (`R6`). This comment states
+          the divergence; it does not resolve it. */}
       <div className="flex flex-col gap-1 border-b border-surface-border bg-surface-lowest px-3 py-2">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            {/* ⛔ THE CADENCE AND THE UNIT ARE BOTH TERMS OF THE SERIES' KEY, AND NEITHER IS TYPED
+                HERE — the `/review` `[WARNING]` of `T-04.8`. `5m` used to be a literal beside a
+                `longShort.unit` that was already being read off the catalog, which is two rules for
+                two halves of the same parenthesis. Where the backend published neither term the
+                parenthesis does not appear at all, rather than appearing empty. */}
             <h2 className="font-label-caps text-label-caps text-on-surface">
-              Long/short de contas (5m{longShort.unit === null ? "" : `, ${longShort.unit}`})
+              Long/short de contas{identityTerms(longShort)}
             </h2>
-            <LongShortIdentity symbol={symbol} provenance={longShort.provenance} />
+            <LongShortIdentity
+              symbol={symbol}
+              provenance={longShort.provenance}
+              nativeGrid={longShort.nativeGrid}
+            />
           </div>
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             {/* THE HEADLINE, in the strong ink and bold — the only node of this pane in that
@@ -1898,11 +2128,18 @@ function LongShortPane({
         {/* ⛔ `aria-hidden` on the canvas host — same criterion as `CvdPane`/`DR-6`:
             `lightweight-charts` paints on a `<canvas>` with no accessible name, and the readouts
             around it ARE the declared textual alternative for the window's last instant. */}
-        <div
-          ref={containerRef}
-          aria-hidden="true"
-          data-fact={`long_short_slots:${longShort.slots.length}`}
-        />
+        {/* ⛔ `relative` EXISTS ONLY SO THE BAND HAS AN ORIGIN. The band's coordinates come from the
+            chart's time scale, which measures from the chart element's own left edge — so the
+            overlay has to be positioned against THAT element and nothing else. No `overflow-hidden`
+            here either (`A-3`): the band is clamped by the coordinates it was measured from. */}
+        <div className="relative">
+          <div
+            ref={containerRef}
+            aria-hidden="true"
+            data-fact={`long_short_slots:${longShort.slots.length}`}
+          />
+          {band === null ? null : <LongShortRecentBand band={band} longShort={longShort} />}
+        </div>
         {hasObservation ? null : <LongShortEmptyState longShort={longShort} />}
       </div>
       <div className="flex flex-col gap-1 border-t border-surface-border bg-surface-lowest px-3 py-2">

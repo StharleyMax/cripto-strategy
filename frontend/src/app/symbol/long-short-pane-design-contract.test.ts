@@ -252,6 +252,122 @@ test("S-7: the equilibrium is a border label, and its sentence is DERIVED from t
   assert.doesNotMatch(PANE, /createPriceLine/, "a 1,0000 line inside the plot is what `S-7` removed, with a number");
 });
 
+// ── `D-1` (§R3.5) — THE FAIXA DAS 4 H, which §R3 measured as NOT IMPLEMENTED ──────────────────
+
+const BAND_FACT = /data-fact=\{`long_short_recent_band:\$\{band\.firstIndex\}\/\$\{band\.lastIndex\}`\}/;
+const BAND_BORDER = /className="pointer-events-none absolute z-10 border-l border-r border-provenance-weak"/;
+const BAND_RANGE_SHARED = /recentBandSlotRange\(longShort\.slots, longShort\.recentSpanMs\)/;
+const BAND_COORDINATES = /timeScale\.logicalToCoordinate\(bandRange\.(first|last)Index as Logical\)/;
+
+test("D-1: the pane DRAWS the four-hour band, and the band is carried by its BORDER", () => {
+  // The finding, literal: *"O painel implementado não tem banda nenhuma: `LongShortPane` cria UMA
+  // série `Line` … ZERO `createPriceLine`, `setMarkers`, `AreaSeries` ou sobreposição"*, so the
+  // recorte das últimas 4 h existed only as text in the footer. `[DECISÃO-OWNER 2026-09-16 §D18]`
+  // prescribes *"faixa de 4h + rodapé numérico"* — this assert is the first half.
+  assert.match(PANE, BAND_FACT, "the band must publish WHICH slots it delimits, machine-readably");
+  assert.match(PANE, BAND_BORDER, "the band is the two 1px borders — §2.3 measured them at 5.82 against the plot");
+  assert.match(PANE, /<LongShortRecentBand band=\{band\} longShort=\{longShort\} \/>/, "declared is not rendered");
+});
+
+test("D-1: the band delimits the SAME slots the footer's numerals were computed over", () => {
+  // Two answers to *"quais últimas 4 h"* on one pane is the `M-1` class of defect. The range comes
+  // from `long-short-band.ts`, whose own test compares it slot for slot against `slotsFrom`'s rule —
+  // the rule `page.tsx` used for `recentStats`.
+  assert.match(PANE, BAND_RANGE_SHARED, "the band's slots must come from the shared range function");
+  assert.doesNotMatch(PANE, /recentSpanMs\s*\/\s*ONE_MINUTE_MS/, "re-deriving the band's width from the span is a second rule");
+});
+
+test("D-1: the geometry is READ OFF the time scale, never a proportion of the container", () => {
+  // The plot is narrower than the container by the price axis, and `fitContent` leaves half a bar of
+  // margin at each end. A percentage would draw a band that LOOKS aligned and is not — on a pane
+  // about provenance, a mark that misreports where it points is worse than no mark.
+  assert.match(PANE, BAND_COORDINATES);
+  assert.match(PANE, /chart\.paneSize\(\)\.height/, "the band's height is the pane's, not a constant");
+  assert.doesNotMatch(PANE, /clientWidth\s*\*/, "a fraction of the container's width is the misalignment defect");
+});
+
+test("D-1 `M-4`: the band adds NO fill and NO alpha — the divergence from the study is the fill only", () => {
+  // The study's `.four-hour-window` has `background-color:#222634`; this one does not, because an
+  // HTML overlay can only sit ON TOP of an opaque `<canvas>` and an opaque fill would hide the line
+  // the band exists to locate. `M-4` forbids the escape hatch, and the gate itself measured the fill
+  // at `1.19` against the plot against `5.82` for the border (*"o fill só AGRUPA"*), so what is
+  // dropped is the half that carries ~nothing. The `M-4` asserts above already cover the whole pane;
+  // this one pins the SPECIFIC element, so a future paste of the study cannot reintroduce a fill
+  // with an `opacity` beside it.
+  const band = /className="pointer-events-none absolute[^"]*"/.exec(PANE);
+  assert.ok(band !== null, "the band's className moved — re-anchor this guard");
+  assert.doesNotMatch(band[0], /\bbg-/, "an opaque fill over the canvas hides the series the band points at");
+  assert.doesNotMatch(band[0], /opacity|\/\d/, "and alpha is the forbidden way to have both");
+});
+
+test("D-1 MORDE: the 4 ways this band dies silently are each caught by an assert above", () => {
+  const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
+    { name: "the band is built but never rendered", mutate: (s) => s.replace(/<LongShortRecentBand [^>]*\/>/, "null") },
+    {
+      name: "the band is positioned by a proportion of the container instead of the time scale",
+      // ⚠️ GLOBAL, AND THE FLAG IS THE POINT: there are TWO coordinate reads (left and right), and a
+      // mutation that replaced only the first would leave the second matching — the guard would then
+      // report itself as biting while the defect walked past it. Measured here, not assumed: the
+      // first draft of this mutation did exactly that and this test failed, which is the instrument
+      // working.
+      mutate: (s) =>
+        s.replace(
+          new RegExp(BAND_COORDINATES.source, "g"),
+          "((bandRange.firstIndex / longShort.slots.length) * container.clientWidth)",
+        ),
+    },
+    {
+      name: "the fill of the study comes back",
+      mutate: (s) =>
+        s.replace(BAND_BORDER, 'className="pointer-events-none absolute z-10 bg-surface-border border-l border-r border-provenance-weak"'),
+    },
+    {
+      // ⛔ THE DEFECT THIS BAND ACTUALLY SHIPPED WITH FOR ONE ITERATION, replanted. Without `z-10`
+      // the element is in the DOM, has a bounding box, satisfies every `toHaveCount`/`getAttribute`
+      // assertion — and is painted UNDER the library's canvases (`z-index: 1`/`2`), i.e. invisible.
+      // `e2e/14` carries the runtime half of this guard (it compares the two computed z-indices);
+      // this half keeps the class from being dropped by a restyle that never runs a browser.
+      name: "the band loses its stacking order and paints under the canvas",
+      mutate: (s) => s.replace(" absolute z-10 border-l", " absolute border-l"),
+    },
+  ];
+  for (const mutant of mutants) {
+    const mutated = mutant.mutate(PANE);
+    assert.notEqual(mutated, PANE, `the mutation "${mutant.name}" found no anchor — update this test, do not delete it`);
+    const bandClass = /className="pointer-events-none absolute[^"]*"/.exec(mutated);
+    const survives =
+      BAND_FACT.test(mutated) &&
+      BAND_BORDER.test(mutated) &&
+      BAND_COORDINATES.test(mutated) &&
+      /<LongShortRecentBand band=\{band\} longShort=\{longShort\} \/>/.test(mutated) &&
+      (bandClass === null || !/\bbg-/.test(bandClass[0]));
+    assert.ok(!survives, `the mutation "${mutant.name}" is NOT detected by the asserts above — the guard is vacuous`);
+  }
+});
+
+// ── The `/review` `[WARNING]` of `T-04.8` — no cadence is typed by hand ────────────────────────
+
+test("no hand-typed cadence on this pane: `5m`/`5 min` come off the catalog entry", () => {
+  // Four sentences used to spell the series' own cadence as a literal while `unit` — the term right
+  // beside it, in the same parenthesis — was already read off the entry. A literal is free to keep
+  // saying `5 min` the day the series is re-sampled, which is the drift `LongShortPaneData.unit`'s
+  // docstring already refuses in its own words.
+  const prose = PANE.replace(/\{[^}]*\}/g, "");
+  assert.doesNotMatch(prose, /\b5\s?m(in)?\b/, "a hand-typed native cadence is a second copy of a term the API owns");
+  assert.match(PANE, /nativeGridSuffix\(longShort\.nativeGrid\)/, "the prose cadence must come from `nativeGrid`");
+  assert.match(PANE, /identityTerms\(longShort\)/, "and the heading's from `nativeInterval` + `unit`");
+});
+
+test("MORDE: the literal, replanted exactly as it was, is REJECTED", () => {
+  const mutated = PANE.replace(/observações nativas/, "observações nativas de 5 min");
+  assert.notEqual(mutated, PANE, "the sentence moved — re-anchor this mutation, do not delete it");
+  assert.match(
+    mutated.replace(/\{[^}]*\}/g, ""),
+    /\b5\s?m(in)?\b/,
+    "the replanted literal is invisible to the assert above — the guard is vacuous",
+  );
+});
+
 // ── The contract with `T-04.7`, re-measured after a restyle (the gate's §R2.4) ────────────────
 
 test("the restyle left the DATA handles byte-identical — form must not empty a data assert", () => {

@@ -586,6 +586,14 @@ export default async function SymbolPage() {
     // The `unit` term of the series' own identity (`ratio`), printed beside the numeral — a literal
     // here would say the same thing while being free to drift from what the backend published.
     unit: longShortEntry?.key.unit ?? null,
+    // ⛔ AND THE CADENCE COMES OFF THE SAME ROW, for exactly the reason the line above gives — the
+    // `/review` `[WARNING]` of `T-04.8`: FOUR sentences of the pane spelled `5 min`/`5m` by hand
+    // while this entry was already being read for `unit`, i.e. two rules for two terms of one
+    // identity. `interval` is the KEY term (`5m`, what distinguishes this series from a `1m` one)
+    // and `nativeGrid` is the SAMPLING property (`5min`); `e2e/14:330-331` asserts both against the
+    // served catalog, separately, so neither can drift without a test noticing.
+    nativeInterval: longShortEntry?.key.interval ?? null,
+    nativeGrid: longShortEntry?.nativeGrid ?? null,
   };
 
   const baseUrl = process.env.INGEST_HEALTH_API_BASE_URL;

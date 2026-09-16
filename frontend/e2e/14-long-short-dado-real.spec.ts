@@ -517,6 +517,18 @@ test(`the LongShortPane's bar count is the API's, over the SAME window (${SPEC})
   fact(SPEC, "long_short_readable_horizon_fact", horizonFact);
   expect(horizonFact).toBe(`long_short_readable_horizon:${api.nativeByPublication}/${api.wire}/${domSlots}`);
 
+  // ── (c bis) `D-1` — the faixa das 4 h, which §R3.5 of the design gate measured as MISSING ──
+  //
+  // `[DECISÃO-OWNER 2026-09-16 §D18]` prescribes *"faixa de 4h + rodapé numérico"*, and the report
+  // found the second half on screen and the first half nowhere: *"o código tem 1 série `Line` e ZERO
+  // sobreposição"*. This is the assertion that the band EXISTS in the rendered DOM — which a source
+  // scan structurally cannot answer, because the band's coordinates only exist once a real browser
+  // has laid out a real chart.
+  const bandLocator = pane.locator('[data-fact^="long_short_recent_band:"]');
+  const recentScale = pane.locator('[data-fact^="long_short_recent_scale:"]');
+  const recentSpanMs = Number(await recentScale.getAttribute("data-recent-span-ms"));
+  fact(SPEC, "long_short_recent_span_ms", recentSpanMs);
+
   const readingLocator = pane.locator('[data-fact^="long_short_last_reading:"]');
   const readoutText = (await readingLocator.textContent())?.trim() ?? "";
   const readingKind = (await readingLocator.getAttribute("data-fact"))!.split(":")[1];
@@ -538,6 +550,9 @@ test(`the LongShortPane's bar count is the API's, over the SAME window (${SPEC})
     // "the long/short ratio of this series is zero" — and `0` is a LEGIBLE ratio (nobody long),
     // so the fabricated value would not even look wrong.
     expect(readoutText).not.toMatch(/\d/);
+    // And `D-1` in the same posture: with no grid there is nothing to delimit, so there is NO band.
+    // A rectangle drawn over an empty plot would be the screen pointing at four hours of nothing.
+    await expect(bandLocator, "no slots, no band — the overlay must not invent a window").toHaveCount(0);
     return;
   }
 
@@ -609,6 +624,61 @@ test(`the LongShortPane's bar count is the API's, over the SAME window (${SPEC})
     `DoD-3 asks for N >= ${MINIMUM_NATIVE_BARS} native bars on the LongShortPane; the screen declares ` +
       `${domNativeBars} (${domWirePoints} steps on the 1-min grid)`,
   ).toBeGreaterThanOrEqual(MINIMUM_NATIVE_BARS);
+
+  // ── ⭐ `D-1`: THE BAND IS ON SCREEN, AND IT DELIMITS THE SLOTS THE FOOTER DESCRIBES ────────
+  //
+  // Not "an element exists": the band publishes the two slot indices it was measured from, and they
+  // are recomputed here from the window the SERVER declared plus the span the pane itself published
+  // (`data-recent-span-ms`). A band over a different stretch than the numerals beside it would be
+  // two answers to *"quais últimas 4 h"* on one pane — the `M-1` class of defect.
+  await expect(bandLocator, "the faixa das 4 h must be in the DOM once the plot has slots").toHaveCount(1);
+  const bandFact = (await bandLocator.getAttribute("data-fact"))!;
+  const bandLeftPx = Number(await bandLocator.getAttribute("data-recent-band-left-px"));
+  const bandWidthPx = Number(await bandLocator.getAttribute("data-recent-band-width-px"));
+  fact(SPEC, "long_short_recent_band_fact", bandFact);
+  fact(SPEC, "long_short_recent_band_left_px", bandLeftPx);
+  fact(SPEC, "long_short_recent_band_width_px", bandWidthPx);
+
+  const expectedLastIndex = domSlots - 1;
+  const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS;
+  expect(recentSpanMs, "the pane must publish the span its own numerals were computed over").toBeGreaterThan(0);
+  expect(bandFact, "the band ends at the window's last slot and starts exactly one span earlier").toBe(
+    `long_short_recent_band:${expectedFirstIndex}/${expectedLastIndex}`,
+  );
+  // The geometry came from the chart's own time scale, so it has to land INSIDE the plot and have a
+  // width. `0` would be two coincident borders; a width wider than the canvas would be a proportion
+  // computed against the wrong element, which is the failure a percentage-based overlay produces.
+  // ⛔⭐ AND THE ASSERTION THAT "IT IS IN THE DOM" IS NOT — THIS ONE IS MEASURED AGAINST A DEFECT
+  // THAT REALLY SHIPPED FOR ONE ITERATION OF `T-04.10`. The first working band satisfied every
+  // assertion above — `toHaveCount(1)`, a `120x192` box at the right coordinates, the exact slot
+  // indices — and a screenshot of the pane showed NOTHING: `lightweight-charts` paints its canvases
+  // at `z-index: 1` and `2`, none of their ancestors opens a stacking context, so an overlay at
+  // `auto` sorts UNDER them. A DOM assertion cannot see that, which is precisely the failure mode
+  // `docs/context/.../QA de frontend exige Playwright contra app real` names. So the stacking order
+  // is compared, in the browser, against the canvases the band has to clear.
+  const stacking = await pane.evaluate((paneEl) => {
+    const bandEl = paneEl.querySelector('[data-fact^="long_short_recent_band:"]')!;
+    const host = bandEl.parentElement!.firstElementChild!;
+    const canvasZ = [...host.querySelectorAll("canvas")].map((c) => Number(getComputedStyle(c).zIndex) || 0);
+    return { bandZ: Number(getComputedStyle(bandEl).zIndex) || 0, maxCanvasZ: Math.max(0, ...canvasZ), canvases: canvasZ.length };
+  });
+  fact(SPEC, "long_short_band_z_index", stacking.bandZ);
+  fact(SPEC, "long_short_chart_max_canvas_z_index", stacking.maxCanvasZ);
+  fact(SPEC, "long_short_chart_canvases", stacking.canvases);
+  expect(
+    stacking.bandZ,
+    `the band paints at z-index ${stacking.bandZ} and the chart's canvases up to ${stacking.maxCanvasZ} — the band ` +
+      "would be in the DOM and invisible on screen, which every other assertion in this file cannot see",
+  ).toBeGreaterThan(stacking.maxCanvasZ);
+
+  const canvasBox = await pane.locator("canvas").first().boundingBox();
+  expect(canvasBox, "the pane draws no canvas at all").not.toBeNull();
+  fact(SPEC, "long_short_canvas_width_px", canvasBox!.width);
+  expect(bandWidthPx, "a zero-width band is two coincident borders over a four-hour window").toBeGreaterThan(0);
+  expect(bandLeftPx).toBeGreaterThanOrEqual(0);
+  expect(bandLeftPx + bandWidthPx, "the band must land inside the chart it was measured from").toBeLessThanOrEqual(
+    Math.ceil(canvasBox!.width),
+  );
 
   // ── (e) the current readout is the API's, tied at the EXACT instant the pane reads ─────────
   //

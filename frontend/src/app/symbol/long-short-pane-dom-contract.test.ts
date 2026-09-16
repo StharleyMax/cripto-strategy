@@ -289,10 +289,15 @@ test("CALA: a design_gate NEEDS_FIX about colour, wording or order leaves the co
   // Exactly the kind of edit `T-04.6` (`ui-designer` + `ux-ui-mastery`) is entitled to make WITHOUT
   // coordinating with `T-04.7`. If any of these trips an assert, the contract is guarding form
   // instead of the requirement, and it is the contract that is wrong.
+  // ⚠️ TWO ANCHORS RE-POINTED BY `T-04.10`, AND THE REASON IS THE `/review` `[WARNING]` THEY WERE
+  // CAUGHT BY, NOT A FAILING TEST: the pane used to spell `Long/short de contas (5m` and
+  // `observações nativas de 5 min` as LITERALS. Both cadence terms are now read off the catalog
+  // entry (`identityTerms`/`nativeGridSuffix`), so the old strings are gone from the source and
+  // those two `.replace` calls had become no-ops — a CALA that mutates nothing proves nothing.
   const restyled = source
-    .replace(/Long\/short de contas \(5m/, "Razão long\\/short de contas (5 min")
+    .replace(/Long\/short de contas\{identityTerms\(longShort\)\}/, "Razão long\\/short{identityTerms(longShort)}")
     .replace(/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}")
-    .replace(/observações nativas de 5 min/, "leituras de 5 min")
+    .replace(/\{longShort\.nativeBars\} observações nativas/, "{longShort.nativeBars} leituras")
     .replace(
       'const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };\n    const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);\n    // `lineSeriesLossless`',
       'const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceWeak };\n    const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);\n    // `lineSeriesLossless`',
