@@ -34,13 +34,24 @@ visualmente plana no timeframe de operação (`15min .. 4h`), a fase acrescenta
 | 4.4 | Registro no catálogo servido | `sentimento` | `RF-2` |
 | 4.5 | **Painel novo** em `/symbol`, com `SEM_PONTO` honesto | `web` | `RF-3`, `RN-1` |
 | 4.6 | `ui-designer` desenha; **veredito do `ux-ui-mastery` antes de a fase fechar** | `web` | `CLAUDE.md` §Design |
-| 4.7 | e2e Playwright contra o app real, **com o divisor de `RN-S1`** (série de `5m`) | `web` | `DoD-3` |
+| 4.7 | e2e Playwright contra o app real, **contando barra nativa por PUBLICAÇÃO** (série de `5m`; ⚠️ **não** pelo divisor `÷5` — ver a correção no `DoD-3`) | `web` | `DoD-3` |
 
 ## DoD verificável
 
 1. `count(*)` de `md.series` para `count_long_short_ratio` **> 0**. Hoje: `0` `[MEDIDO 2026-09-10]`.
 2. `GET /api/v1/series-history` → `n_points > 0`.
-3. Playwright: **`N ≥ 30` barras nativas distintas** (`pontos_no_DOM ÷ 5`, `RN-S1`), **não** `SEM_PONTO`.
+3. Playwright: **`N ≥ 30` barras nativas distintas** (contadas por **PUBLICAÇÃO** — `available_at`
+   distintos —, `RN-S1`), **não** `SEM_PONTO`.
+   > ⚠️ **CORREÇÃO 2026-09-16 — a versão anterior desta linha dizia `pontos_no_DOM ÷ 5`, e o divisor
+   > está ERRADO para esta série.** Duas medições independentes, a do builder de `T-04.5` e a
+   > remedição da QA de `T-04.7`, sobre 240 min (`n = 240` slots, 175 com valor): **49 `available_at`
+   > distintos** para 48 baldes de `5m`; `÷5` devolve **35** (subconta **28,6%**) e
+   > `event_time % 300_000 == 0` devolve **11** (subconta **4,5×**). A causa é estrutural, não ruído:
+   > os intervalos entre publicações são `28×360s, 15×180s, 3×300s, 1×330s, 1×120s` (`n = 48`), de
+   > **média exata 300 s** — a Binance publica a cada `5m` em MÉDIA, não em grade fixa, então as
+   > corridas de slots repetidos têm de 1 a 5 elementos e nenhum divisor constante as conta.
+   > O e2e não transcreve a conclusão: asserta a banda `ceil(wire ÷ 5) ≤ native ≤ wire` recalculada
+   > da API. `[MEDIDO 2026-09-16 · gates/T-04.5-builder.md e gates/T-04.5-T-04.7-qa.md]`
 4. Run fechado da fonte com `n_written > 0`.
 5. **Veredito `APPROVED` do `ux-ui-mastery`** sobre o painel novo, registrado — silêncio do owner não é
    aprovação; aprovação é o veredito do validador.

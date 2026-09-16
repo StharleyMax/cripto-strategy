@@ -659,7 +659,8 @@ phase = "04"
 depends_on = ["T-04.5", "T-04.8"]
 refs = [
     "plano 04 item 4.7 + DoD 3", "RN-S1", "RN-S2", "DoD-3",
-    "N >= 30 BARRAS NATIVAS distintas: `pontos_no_DOM / 5`, porque a serie e de 5m servida numa grade de 1m.",
+    "N >= 30 BARRAS NATIVAS distintas, contadas por PUBLICACAO (`available_at` distintos), porque a serie e de 5m servida numa grade de 1m.",
+    "⚠️ CORRECAO 2026-09-16: esta ref dizia `pontos_no_DOM / 5` e o divisor esta ERRADO. Medido 2x (builder de T-04.5 e remedicao da QA de T-04.7, 240 min, n=240 slots): 49 available_at distintos para 48 baldes; `/5` da 35 (subconta 28,6%) e `event_time % 300_000` da 11 (subconta 4,5x). Intervalos entre publicacoes: 28x360s, 15x180s, 3x300s, 1x330s, 1x120s — media exata 300s, grade NAO fixa. Ver gates/T-04.5-T-04.7-qa.md e a correcao no DoD-3 do plano 04.",
     "Arquivo: frontend/e2e/12-long-short-dado-real.spec.ts (novo). Seleciona por data-testid de T-04.5 — e o que desacopla este assert do veredito de T-04.6.",
 ]
 local_only = true

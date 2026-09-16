@@ -153,10 +153,27 @@ else
         # ⚠️ O padrão NÃO ancora o prefixo: `node --test` escreve `ℹ pass 181`, e o `ℹ` é
         # multibyte — um `^.?` casa UM byte e falha em silêncio, imprimindo `0 pass, 0 fail`
         # (medido na primeira versão deste bloco, com as suítes REPROVANDO ao lado).
-        DET_TF="$(awk '/^########## test-frontend-/{f=1;next} /^########## /{f=0}
-                       f && / pass [0-9]+$/{p+=$NF}
-                       f && / fail [0-9]+$/{q+=$NF}
-                       END{printf "%d pass, %d fail em 4 suítes (app/charts/s1/s3)", p, q}' "$LOG")"
+        #
+        # ⚠️⚠️ E NÃO ANCORA O SUFIXO TAMPOUCO, pela MESMA classe de erro, encontrada de novo em
+        # 2026-09-16: a linha do `node --test` termina no reset ANSI, não no dígito —
+        # `\033[34mℹ pass 200\033[39m` — então `/ pass [0-9]+$/` NUNCA casa e o resumo imprime
+        # `0 pass, 0 fail` com as suítes VERDES ao lado. `[MEDIDO 2026-09-16 sobre
+        # verify-cripto-strategy-20260916T204716Z.log: padrão ancorado -> 0 pass; mesmo log
+        # com o ANSI removido antes do casamento -> 689 pass, 0 fail]`. Consertar o prefixo e
+        # deixar o sufixo é por que a classe voltou: o remédio é remover a decoração ANTES de
+        # casar, não caçar um `$` de cada vez.
+        #
+        # E o resumo carrega o PRÓPRIO falsificador: `0 pass, 0 fail` com seção `test-frontend-*`
+        # presente no log é indistinguível entre "nenhum teste" e "o awk cegou de novo"
+        # (`ADR-012`), então essa combinação grita em vez de imprimir um zero silencioso.
+        DET_TF="$(awk '/^########## test-frontend-/{f=1;seen=1;next} /^########## /{f=0}
+                       f{ s=$0; gsub(/\033\[[0-9;]*m/,"",s)
+                          if (s ~ / pass [0-9]+$/) { n=split(s,a," "); p+=a[n] }
+                          if (s ~ / fail [0-9]+$/) { n=split(s,a," "); q+=a[n] } }
+                       END{ if (seen && p==0 && q==0)
+                                printf "⚠ RESUMO CEGO: 0 pass, 0 fail com seção test-frontend no log — número não confiável (rc acima é que vale)"
+                            else
+                                printf "%d pass, %d fail em 4 suítes (app/charts/s1/s3)", p, q }' "$LOG")"
     fi
 fi
 falhou $RC_TF
