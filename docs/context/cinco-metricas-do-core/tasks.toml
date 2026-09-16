@@ -691,8 +691,8 @@ depends_on = ["T-04.6", "T-04.7", "T-04.8"]
 refs = [
     "plano 04 DoD 1-7 + falsificador da fase", "SPEC-007 §4.2", "D2 (owner)",
     "CONJUNCAO dos 4 DoD, mais o veredito APPROVED do ux-ui-mastery (item 5), mais o [INFERRED] do teto de 5min testado (item 6, feito em T-04.1), mais make verify verde.",
-    "⛔ O FALSIFICADOR DA ESCOLHA DE SERIE, e ele e VISUAL: se o painel de `count_long_short_ratio` for uma linha VISUALMENTE PLANA no timeframe de operacao (15min..4h), a fatia ACRESCENTA `sum_taker_long_short_vol_ratio` (autocorrelacao 0,0955) como SEGUNDA serie do MESMO painel.",
-    "E REVERSIVEL DENTRO DA FASE porque e outra entrada de catalogo e outra chamada, NAO outro cano. Se virar fase nova, a decomposicao errou.",
+    "⛔ O FALSIFICADOR DA ESCOLHA DE SERIE, e ele e VISUAL — REDACAO EM VIGOR DESDE 2026-09-16: se o painel de `count_long_short_ratio` for uma linha VISUALMENTE PLANA NA ESCALA ENTREGUE, a fatia CONSERTA A ESCALA (dizer quanto a serie andou no prazo de decisao, sem exigir zoom).",
+    "⚠️ CORRECAO 2026-09-16 [DECISAO-OWNER, escolha entre alternativas apresentadas] — ver handoff/DECISOES-OWNER.md §D18. A redacao anterior mandava ACRESCENTAR `sum_taker_long_short_vol_ratio` como 2a serie, e 3 medicoes a derrubaram (gates/design-04.md §7): (1) o falsificador dispara SO no piso da banda — 15min 0.88px/25,5% sub-pixel, 1h 4.80px/0%, 4h 13.18px/0%; (2) a serie NAO esta no catalogo servido (n_entries=60, 7 metricas), entao exigiria entrada de catalogo E coletor novos — sentimento/infra e cota, nao 'outra chamada reversivel dentro da fase'; (3) e nao resolveria: entraria na mesma escala comprimida, autocorrelacao 0,0955 num eixo de 4 dias vira ruido denso. A 2a serie fica FORA — e isso NAO e juizo de que seja inutil ([NAO SEI] do gate: mede fluxo de taker, nao posicionamento de contas).",
 ]
 local_only = true
 local_reason = "2026-09-10: integracao Jira (MCP atlassian) exige OAuth e a sessao e nao-interativa; destino identificado (CST, board 36), cadastro manual instruido em tasks_review.md §6."

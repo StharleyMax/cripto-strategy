@@ -19,10 +19,27 @@ camada de identidade reprova essa leitura **em tempo de construção**.
 **Escolha desta fase: `count_long_short_ratio`** — é o que a expressão do owner nomeia em uso comum, e o
 que a Coinalyze espelha no campo `r`.
 
-⚠️ **Uma série com autocorrelação 0,99+ desenha uma reta.** Falsificador: se o painel for uma linha
-visualmente plana no timeframe de operação (`15min .. 4h`), a fase acrescenta
-`sum_taker_long_short_vol_ratio` como segunda série do mesmo painel — reversível dentro da fase, porque
-é outra entrada de catálogo e outra chamada, não outro cano.
+⚠️ **Uma série com autocorrelação 0,99+ desenha uma reta.** Falsificador, **na redação em vigor desde
+2026-09-16**: se o painel for uma linha visualmente plana **na escala entregue**, a fase **conserta a
+escala** — dizer quanto a série andou no prazo de decisão sem exigir zoom.
+
+> **CORREÇÃO 2026-09-16 — o gatilho mudou, e a mudança é do owner.**
+> `[DECISÃO-OWNER: 2026-09-16, escolha entre alternativas apresentadas]`, registrada em
+> [`handoff/DECISOES-OWNER.md` §D18](../../context/cinco-metricas-do-core/handoff/DECISOES-OWNER.md).
+> A redação anterior era *"a fase acrescenta `sum_taker_long_short_vol_ratio` como segunda série do
+> mesmo painel — reversível dentro da fase, porque é outra entrada de catálogo e outra chamada, não
+> outro cano"*. **Três medições a derrubaram** `[MEDIDO 2026-09-16, `gates/design-04.md` §7]`:
+> 1. o falsificador **dispara, e só no piso da banda**: 15 min mediana `0.88px` / **25,5%**
+>    sub-pixel · 1 h `4.80px` / 0% · 4 h `13.18px` / 0%;
+> 2. **a série não está no catálogo servido** (`n_entries=60`, 7 métricas) ⇒ o remédio exigia
+>    entrada de catálogo **e** coletor novos — `sentimento`/`infra` e cota, **não** a "outra
+>    chamada reversível dentro da fase" que esta linha supunha;
+> 3. e **não resolveria**: entraria na mesma escala comprimida — autocorrelação `0.0955` num eixo
+>    de 4 dias vira ruído denso, trocando *"não se move"* por *"não se lê"*.
+>
+> A segunda série fica **fora** (`D18`, segunda pergunta). ⚠️ Isso **não** é juízo de que ela seja
+> inútil — o gate marcou `[NÃO SEI]`: ela mede fluxo de *taker*, não posicionamento de contas, e
+> pode ter valor próprio. Se voltar, volta como task própria com custo de cota declarado.
 
 ## Itens
 

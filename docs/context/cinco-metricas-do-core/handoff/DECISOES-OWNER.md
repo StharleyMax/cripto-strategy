@@ -455,3 +455,41 @@ em `PENDENCIAS-PARA-AVALIAR-DEPOIS.md`.
 **Falsificador de `D17`:** se ao fim das fases `02`–`05` o comando acima não mostrar **5 famílias
 de `src_label_raw`** com linhas > 0, a inversão de prioridade não entregou o que prometeu e a
 decisão estava errada.
+
+---
+
+## D18 · O falsificador da fase `04` — o gatilho passa a ser a ESCALA, não a segunda série
+
+`[DECISÃO-OWNER: 2026-09-16, escolha entre alternativas apresentadas]`
+
+⚠️ **O rótulo é este e não `[PREMISSA-OWNER]`**: o owner escolheu uma de três opções que o
+orquestrador redigiu, com o custo de cada uma declarado. Não é frase ditada por ele.
+
+**O que ele escolheu, como estava escrito no menu:** *"Trocar o gatilho: consertar a escala —
+adotar a recomendação do gate: o gatilho passa a ser 'plana NA ESCALA ENTREGUE ⇒ conserte a escala',
+e o remédio é o que a Rev. 3 já entrega (faixa de 4h + rodapé numérico dizem quanto a série andou no
+prazo de decisão, sem exigir zoom). Custo: zero de cota, zero de coleta nova; a fase fecha hoje."*
+
+**O que ele recusou, e o custo que recusou junto:**
+
+| opção | custo declarado no menu |
+|---|---|
+| executar o remédio pré-escrito (coletar `sum_taker_long_short_vol_ratio`) | entrada de catálogo nova + coletor novo (`sentimento`/`infra`) + cota, e a fase `04` não fecharia hoje |
+| fechar com o falsificador disparado, como dívida | fecha hoje, mas carrega dívida declarada — e este repositório já mediu que dívida sem gatilho vira permanente por omissão |
+
+**A medição que sustentou a recomendação** `[MEDIDO 2026-09-16, `gates/design-04.md` §7]`:
+
+- o falsificador **dispara**, e **só no piso da banda de operação**: 15 min mediana `0.88px`,
+  **25,5%** sub-pixel · 1 h `4.80px`, 0% · 4 h `13.18px`, 0%;
+- o remédio pré-autorizado **não tem dado**: `sum_taker_long_short_vol_ratio` não está no catálogo
+  servido (`/api/v1/series-catalog` → `n_entries=60`, 7 métricas);
+- e **não resolveria**: entraria na mesma escala comprimida — autocorrelação `0.0955` num eixo de
+  4 dias vira ruído denso, trocando *"não se move"* por *"não se lê"*.
+
+**Segunda pergunta do mesmo menu, e a resposta foi `Não agora`:** a série de *taker* fica **fora**.
+⚠️ Isto **não** é um juízo de que ela seja inútil — o próprio gate marcou `[NÃO SEI]` ali: ela mede
+fluxo de *taker*, não posicionamento de contas, e pode ter valor **próprio**, independente desta
+pergunta. Se voltar, volta como task própria com custo de cota declarado.
+
+**Efeito, e ele é de plano:** `T-04.9` executa o gatilho novo; o texto do falsificador muda em
+`docs/plans/SPEC-007-cinco-metricas-do-core/04_long_short.md` e na ref de `T-04.9` em `tasks.toml`.
