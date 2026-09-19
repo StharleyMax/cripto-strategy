@@ -17,25 +17,43 @@
  * `WhitespaceItem` — a real gap on the chart, never a `0`. This module's only job is to never
  * shortcut that path by inventing a point for an absent row.
  *
- * ── WHY PRICE BECOMES A DEGENERATE CANDLE, NOT A TRUE OHLC BAR ──────────────────────────────
+ * ── `T-01.8` — PRICE IS FOUR SERIES NOW, AND THE DEGENERATE CANDLE IS GONE (`SPEC-008`/`D1`) ─
  *
- * `SPEC-006 §5.2`/`I-1`, literal: "uma coluna (`value_raw`) basta — sem OHLC ... a tabela é
- * observação pontual, não candle". `series_key.py`'s `Reduction` enum confirms it structurally:
- * a true OHLC bar would be FOUR series (`OPEN`/`HIGH`/`LOW`/`CLOSE`, `Reduction.
- * OHLC_OVER_BUCKET`), and the one price series this catalog actually builds for
- * `structure_detection`/`execution` (`price_source_catalog.py::build_klines_last_entry`) uses
- * `Reduction.LAST` — ONE scalar per bucket, the last traded price. `buildPricePanel`
- * (`s2-panels.ts`) still expects `RawCandle[]` (open/high/low/close/volume) because that is
- * the shape `T-05.2`'s own test fixtures built from REAL klines CSVs (4 real OHLC numbers per
- * bar) — a shape this phase's real backend does not serve. Rather than inventing a synthetic
- * OHLC (which would draw a WRONG range/wick nobody measured) or reimplementing panel geometry
- * (out of scope, `plan 02` non-goals), this module builds the HONEST degenerate candle
- * `open = high = low = close = <the one real number>`, `volume = 0` — every number on screen
- * traces to `value_raw` (`RN-7`), none is fabricated, and the visual reads as a flat body with
- * no wick, which is what "we only measured one number for this bucket" IS, not a decoration
- * of it. `[INFERRED: no ADR/SPEC picks between "line" and "degenerate candle" for this
- * specific gap — degenerate candle is chosen so `buildPricePanel`'s existing, tested signature
- * needs no change, honoring the phase's "no new charts geometry" non-goal.]`
+ * ⛔ THIS SECTION USED TO ARGUE FOR A DEGENERATE CANDLE — `{open: close, high: close, low:
+ * close, close}`, one scalar drawn as a flat body with no wick — and the argument was correct
+ * for as long as its premise held: the catalog served ONE price series per bucket
+ * (`klines_last`, `Reduction.LAST`), so four equal numbers were the honest transcription of
+ * "we only measured one number here". `SPEC-008`/`D1` (§3.4) retired the premise: `T-01.1`
+ * built the identity of FOUR `Reduction` readings of the SAME `/fapi/v1/klines` bucket
+ * (`klines_ohlc`, `OPEN`/`HIGH`/`LOW`/`CLOSE`, `interval="1m"`, `nature=STOCK`,
+ * `ts_convention=OHLC_OVER_BUCKET`), `T-01.3` writes them and `T-01.6` serves them.
+ *
+ * `RN-2`/`SPEC-008` §3.5 is why the old mapping is DELETED in the same commit that adds this
+ * one rather than kept behind a flag: two live assemblies would give the SAME drawing on the
+ * SAME screen two meanings, and an operator reading a flat bar could not tell "the market did
+ * not move" from "this code path only had one number". `grep -n "high: close\|low: close"
+ * frontend/src` is the falsifier, and it answers zero lines.
+ *
+ * ── A BUCKET MISSING ANY ONE OF THE FOUR DRAWS NOTHING, AND THAT IS `RN-1` ──────────────────
+ *
+ * A candle needs all four readings; three of them plus a guess is a drawing nobody measured.
+ * So `rawCandlesFromOhlcHistoryRows` emits a candle only where all four are present, and a
+ * bucket with one, two or three of them contributes NOTHING — which the grid renders as
+ * `candle: null` and `candlestickSeriesLossless` as a bare `{time}` `WhitespaceItem`: a real
+ * gap, never a bar. ⛔ IT IS NEVER A ZERO-HEIGHT CANDLE: `high === low` is, pixel for pixel,
+ * the mark of a market that did not move, so rendering absence that way would state as fact
+ * exactly the thing we do not know (`RN-1`, `SPEC-008` §7.2). The partial buckets are COUNTED
+ * and published beside the drawing (`assembleOhlcCandles`), so a hole in the middle of the
+ * window is a number on screen instead of a silence.
+ *
+ * ── WHAT IS NOT REOPENED HERE ───────────────────────────────────────────────────────────────
+ *
+ * `price_use`/`price_source` (`ADR-007`/`PS-1`, and `SPEC-008` §2.1 lists it among what that
+ * SPEC does not reopen): the panel keeps declaring `structure_detection`/`klines_last`, which
+ * are CONCEPTS of `ADR-007`'s decision table — the traded price off `/fapi/v1/klines`, which
+ * is precisely the endpoint these four readings come from. The four catalog rows themselves
+ * carry `price_use = None` on purpose (`klines_ohlc_catalog.py`: routing a decision-path price
+ * question stays `klines_last`'s job), so nothing here claims one for them.
  */
 
 import { ONE_MINUTE_MS, resolveFlowReading, type FlowReading, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
@@ -61,6 +79,11 @@ type RawCandleShape = S2RawInputs["candles"][number];
 
 /** `ScalarPoint`'s shape, same indexed-access technique, read off `S2RawInputs.oiPoints`. */
 type ScalarPointShape = S2RawInputs["oiPoints"][number];
+
+/** `GridSlot`'s shape for the PRICE panel (`candle: RawCandle | null`), read off the barrel's
+ * `S2Panels` by the same indexed access — the grid `buildS2Panels` produced, which is exactly
+ * what `SymbolClient.tsx` hands to `candlestickSeriesLossless`. */
+export type CandleSlotShape = S2Panels["price"]["series"]["slots"][number];
 
 /** One bucket's exact signed sum, `QUANTITY_SCALE`-scaled — mirrors `charts/s2-cvd.ts`'s own
  * `ScaledCvdDelta`, re-declared (not imported) because that module is `charts`-internal and
@@ -107,20 +130,190 @@ function daysWithPresence(
   return { missingDays, coveredDays };
 }
 
+// ── `T-01.8` — THE FOUR `klines_ohlc` SERIES THE PRICE PANEL READS (`SPEC-008` §3.4) ─────────
+
+/** `metric` of the four candle rows (`klines_ohlc_catalog.py::KLINES_OHLC_METRIC`),
+ * transcribed — never re-derived from a label on screen. */
+export const KLINES_OHLC_METRIC = "klines_ohlc";
+
+/** The ORIGIN of the traded price (`ADR-036/D2`), and the term that keeps this panel on
+ * `/fapi/v1/klines` the day a third party publishes its own mirror of the same four readings
+ * under the same `metric`. Redundant TODAY (`klines_ohlc` has a single publisher, measured in
+ * `price-candle.test.ts` against the served catalog fixture) and load-bearing the moment it
+ * stops being — the same posture `matchesKlineTakerBuyCvd`/`matchesBinanceOpenInterest` take,
+ * both of which were written AFTER a one-term selector silently picked an empty series. */
+export const KLINES_OHLC_PROVIDER = "binance";
+
+/** The four readings, in the order the metric's name spells them — mirrors
+ * `klines_ohlc_catalog.py::KLINES_OHLC_REDUCTIONS`. The tuple is the ONE place the set is
+ * written on this side of the wire. */
+export const KLINES_OHLC_REDUCTIONS = ["OPEN", "HIGH", "LOW", "CLOSE"] as const;
+
+/** One of the four `Reduction` values that identify a `klines_ohlc` row. */
+export type KlinesOhlcReduction = (typeof KLINES_OHLC_REDUCTIONS)[number];
+
 /**
- * Maps `/series-history` rows for the PRICE panel's series into `RawCandle[]` — one degenerate
- * candle per row that carries a real value (`row.value !== null`), NOTHING for an absent row
- * (`CA-F2-3`'s central rule, this module's own docstring). `row.value` is a `Decimal`-as-text
- * (`SPEC-001 §2.6`) — `Number(...)` at this one display edge, the same posture
- * `charts/s2-cvd.ts::unscale` documents for its own display-edge conversion.
+ * Is this the `klines_ohlc` row carrying `reduction` — one of the four the candle is made of?
+ *
+ * ⛔ `reduction` HAS NO DEFAULT, exactly as `build_klines_ohlc_key` has none on the other side
+ * of the wire (`CA-F2-17`/`D6.7`): the four rows differ in that ONE term, so a caller that
+ * omits it is asking "give me the candle" — a question with four answers — and answering it by
+ * picking one in silence is how `HIGH` becomes `LOW` with nothing reproving.
+ *
+ * Exported from `view-model.ts` rather than written inline in `page.tsx` for the reason the
+ * three selectors below it already state: `page.tsx` is a Next Server Component with
+ * route-level side effects and cannot be imported by a `node --test` suite, so a selector
+ * living there could only ever be checked by reading it.
  */
-export function rawCandlesFromHistoryRows(rows: readonly SeriesHistoryRow[]): readonly RawCandleShape[] {
-  return rows
-    .filter((row) => row.value !== null)
-    .map((row) => {
-      const close = Number(row.value);
-      return { openTimeMs: row.event_time, open: close, high: close, low: close, close, volume: 0 };
+export function matchesKlinesOhlc(key: SeriesKey, reduction: KlinesOhlcReduction): boolean {
+  return (
+    key.metric === KLINES_OHLC_METRIC &&
+    key.provider === KLINES_OHLC_PROVIDER &&
+    key.reduction === reduction
+  );
+}
+
+/** The four row sets `GET /series-history` answered for one window, one per `Reduction` —
+ * named fields and never a positional tuple, because a tuple whose second and third members
+ * are `HIGH` and `LOW` is one transposition away from an upside-down candle that draws
+ * perfectly well. */
+export interface OhlcHistoryRows {
+  readonly open: readonly SeriesHistoryRow[];
+  readonly high: readonly SeriesHistoryRow[];
+  readonly low: readonly SeriesHistoryRow[];
+  readonly close: readonly SeriesHistoryRow[];
+}
+
+/** One `Reduction` answered TWO readings for the same grid instant. Loud, for the same reason
+ * `InvalidSeriesValueError` is: `/series-history` walks the grid and answers one row per
+ * instant, so a duplicate is a broken contract upstream — and a `Map.set` that quietly kept
+ * the last one would pick a candle's `HIGH` by wire order. `alignCandlesToGrid` (`charts`)
+ * already refuses a duplicate candle; this refuses the duplicate READING, which is the one
+ * that could still differ in value. */
+export class DuplicateSeriesRowError extends Error {}
+
+/** What the price panel drew, and what it could not draw — returned TOGETHER, from ONE pass,
+ * so the count the screen prints and the bars it plots cannot disagree. */
+export interface OhlcCandleAssembly {
+  /** One candle per bucket where all four readings are present, ascending by `openTimeMs`. */
+  readonly candles: readonly RawCandleShape[];
+  /** Buckets where SOME (1..3) of the four readings are present — drawn as a gap, counted
+   * here so the hole is a number on screen rather than a silence (`SPEC-008` §7.2's own
+   * reason: "queijo suíço", holes in the middle, not a clean edge). */
+  readonly partialBuckets: number;
+}
+
+/**
+ * `RawCandle.volume` is a REQUIRED field of a `charts` type this route does not own
+ * (`ADR-003`), and no consumer on this path reads it: `candlestickSeriesLossless` maps `open`/
+ * `high`/`low`/`close` only, and `rollUpCandles` (the one function that sums it) is not on this
+ * route. The traded volume of the bucket is a SERIES OF ITS OWN — `klines_volume`, the sub-axis
+ * (`SPEC-007 §3.6`) — read from its own rows, with its own absence policy, a few lines below.
+ *
+ * ⛔ SO THIS IS A STRUCTURAL FILLER FOR A FIELD NOTHING READS, NOT A MEASUREMENT: the day
+ * something on this path starts reading it, it must read the volume series, never this. The
+ * guarantee that the filler does not reach the screen is pinned by a test, not by this
+ * sentence — `price-candle.test.ts` asserts the items handed to `setData` carry no `volume`
+ * key at all.
+ */
+const VOLUME_IS_ITS_OWN_SERIES = 0;
+
+/** `row.value` (a `Decimal`-as-text, `SPEC-001 §2.6`) by grid instant, for ONE reduction —
+ * absent rows contribute nothing (this module's central rule) and a malformed one throws.
+ * `Number(...)` at this one display edge, the same posture `charts/s2-cvd.ts::unscale`
+ * documents for its own. */
+function readingsByEventTime(
+  rows: readonly SeriesHistoryRow[],
+  reduction: KlinesOhlcReduction,
+): ReadonlyMap<number, number> {
+  const readings = new Map<number, number>();
+  for (const row of rows) {
+    if (row.value === null) {
+      continue;
+    }
+    const parsed = Number(row.value);
+    if (!Number.isFinite(parsed)) {
+      throw new InvalidSeriesValueError(
+        `${reduction} value ${JSON.stringify(row.value)} at event_time ${row.event_time} is not a finite number`,
+      );
+    }
+    if (readings.has(row.event_time)) {
+      throw new DuplicateSeriesRowError(
+        `${reduction} carries two readings for event_time ${row.event_time}: the grid answers one row per instant`,
+      );
+    }
+    readings.set(row.event_time, parsed);
+  }
+  return readings;
+}
+
+/**
+ * Maps the four `klines_ohlc` row sets into the `RawCandle[]` the price panel draws —
+ * `SPEC-008`/`D1`, and the function that replaced the degenerate candle (`RN-2`, this module's
+ * own docstring).
+ *
+ * ONE CANDLE PER BUCKET THAT HAS ALL FOUR READINGS, nothing for any other bucket:
+ *
+ *   - all four absent  ⇒ no candle ⇒ `candle: null` ⇒ `WhitespaceItem` ⇒ a gap on screen;
+ *   - one to three     ⇒ no candle either, and counted in `partialBuckets`. Drawing three
+ *     readings plus a guess would put a body or a wick on screen that nobody measured;
+ *   - all four present ⇒ the candle, with the four numbers transcribed as published.
+ *
+ * ⛔ NO REPAIR, NO REORDER, NO CLAMP. A bucket whose `high` is below its `low` is a defect of
+ * the producer, and sorting the four numbers here would turn it into a plausible-looking candle
+ * — hiding, behind a correct drawing, exactly the kind of transposition `T-01.3`'s six-tuple
+ * loop could introduce. The numbers reach the screen as the origin published them (`RN-7`), and
+ * the comparison against the origin's own kline is a DoD of this fase (`T-01.7`).
+ *
+ * `openTimeMs` IS `row.event_time`, UNCHANGED FROM THE SCALAR MAPPING IT REPLACES, and the
+ * deliberate omission is worth naming: `SPEC-008`/`A-9` measured that `event_time` is the
+ * bucket's END, so the bucket a fact belongs to is the one that TERMINATES at `ceil(t/B)*B`.
+ * Shifting the series by one native bar HERE, in one panel, would put price on a different
+ * time convention from every other pane on this screen — which is the defect `D9`/`RF-5` (the
+ * single master axis, fase `02`) exists to remove. The convention is one decision for the whole
+ * route, `T-01.4` owns its ingestion half, and this mapping stays on the one every other series
+ * of this page already uses until that decision lands.
+ */
+export function assembleOhlcCandles(rows: OhlcHistoryRows): OhlcCandleAssembly {
+  const open = readingsByEventTime(rows.open, "OPEN");
+  const high = readingsByEventTime(rows.high, "HIGH");
+  const low = readingsByEventTime(rows.low, "LOW");
+  const close = readingsByEventTime(rows.close, "CLOSE");
+  const buckets = [...new Set([...open.keys(), ...high.keys(), ...low.keys(), ...close.keys()])].sort(
+    (left, right) => left - right,
+  );
+  const candles: RawCandleShape[] = [];
+  let partialBuckets = 0;
+  for (const openTimeMs of buckets) {
+    const readings = [open.get(openTimeMs), high.get(openTimeMs), low.get(openTimeMs), close.get(openTimeMs)];
+    const [openValue, highValue, lowValue, closeValue] = readings;
+    if (
+      openValue === undefined ||
+      highValue === undefined ||
+      lowValue === undefined ||
+      closeValue === undefined
+    ) {
+      partialBuckets += 1;
+      continue;
+    }
+    candles.push({
+      openTimeMs,
+      open: openValue,
+      high: highValue,
+      low: lowValue,
+      close: closeValue,
+      volume: VOLUME_IS_ITS_OWN_SERIES,
     });
+  }
+  return { candles, partialBuckets };
+}
+
+/** How many slots of the price grid actually carry a candle — counted off the SAME
+ * `GridSlot[]` the chart draws (`panels.price.series.slots`), never off the raw rows, so the
+ * number the screen prints is the number of bars it plots. Sibling of `countPresentSlots`,
+ * which does the same for a scalar pane. */
+export function countPresentCandleSlots(slots: readonly CandleSlotShape[]): number {
+  return slots.filter((slot) => slot.candle !== null).length;
 }
 
 /** Maps `/series-history` rows for a SCALAR (OI/CVD-shaped) panel into `ScalarPoint[]` — same

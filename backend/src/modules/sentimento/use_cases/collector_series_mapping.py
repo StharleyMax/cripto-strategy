@@ -485,8 +485,50 @@ def is_closed_bucket(kline: KlineLike, observed_at_ms: int) -> bool:
     millisecond after it, so the bucket is closed exactly when the observation instant is
     strictly greater than it. `close_time_ms == observed_at_ms` is the boundary tick and counts
     as STILL OPEN: that millisecond is still inside the bucket.
+
+    ── `T-01.4` OF `SPEC-008`: THE CUT AND THE STAMP ARE ONE INEQUALITY, NOT TWO ─────────────
+
+    This predicate and `klines_bucket_end` below are the SAME assertion about bucket identity
+    seen from two sides: `is_closed_bucket(k, t)` holds exactly when `klines_bucket_end(k) <=
+    t`, because a bucket ends one millisecond after the last millisecond that belongs to it.
+    That matters because `bucket_end <= t` is the predicate the single reader admits a row on
+    (`_is_closed_bucket` in the `as_of` accessor), so the two drifting apart would publish a
+    row stamped at an instant this collector had not yet reached. The falsifiers, and they are
+    written against the SIGN rather than against the existence of a flag:
+    `test_collector_klines_mapping.py::test_the_cut_and_the_stamp_are_one_inequality_seen_from_two_sides`
+    sweeps the instants around the boundary, and
+    `..._the_candle_is_absent_at_the_closing_millisecond_and_present_one_ms_later`
+    pins the edge on the four `klines_ohlc` identities `T-01.3` hung off this same cut.
     """
     return kline.close_time_ms < observed_at_ms
+
+
+def klines_bucket_end(kline: KlineLike) -> int:
+    """Return the instant the bar's bucket TERMINATES at — `ceil(t/B)*B`, never `floor(t/B)*B`.
+
+    ⛔ `DoD 10` OF PLAN `01`, AND IT IS A FRONTIER CORRECTION THAT WAS MEASURED, NOT A STYLE
+    CHOICE (`SPEC-008` §1): `event_time` IS `bucket_end` on this endpoint, so the fact belongs
+    to the bucket that ENDS at `ceil(t/B)*B`. Taking the source's own `openTime` label as that
+    instant is the NAIVE FLOOR, and it shifts the entire series by ONE NATIVE BAR. The measured
+    gap that shift produces is `0,114 pp` — far too small for any assertion of MAGNITUDE to
+    catch, which is exactly why the falsifier is an equality of BUCKET
+    (`test_collector_klines_mapping.py::test_the_stamp_is_the_bucket_that_ends_at_the_ceiling_never_the_one_the_floor_names`).
+
+    `t` here is `close_time_ms`, an instant strictly inside the bar. `open_time_ms` is NOT such
+    an instant: it is the boundary the PREVIOUS bucket ends on, and `ceil(open_time/B)*B` hands
+    that previous bucket straight back — the one-bar shift, in one expression.
+
+    Taking the ceiling of the closing millisecond also lands on the whole-minute grid
+    `use_cases/series_history.py` walks its X axis on for ANY label the venue sends, instead of
+    inheriting that alignment from the venue: `open_time_ms + KLINES_BUCKET_WIDTH_MS`, the
+    previous spelling, carries a misaligned label straight through onto an off-grid instant
+    that `as_of` would still admit and that no exception would ever report.
+    """
+    # `-(-a // b)` is EXACT integer ceiling. `math.ceil(a / b)` would route a 13-digit epoch
+    # through a float on the way, which is the class of rounding this module refuses everywhere
+    # else (`value_raw` is carried as the source's own string for the same reason).
+    buckets_ending_at_or_after_t = -(-kline.close_time_ms // KLINES_BUCKET_WIDTH_MS)
+    return buckets_ending_at_or_after_t * KLINES_BUCKET_WIDTH_MS
 
 
 def build_klines_to_rows(
@@ -555,11 +597,13 @@ def build_klines_to_rows(
     explain later; the rows that ARE published carry `is_final=True`, which is the source
     genuinely DECLARING finality — the case `SeriesRow.is_final`'s docstring reserves it for.
 
-    `bucket_end` is `open_time_ms + KLINES_BUCKET_WIDTH_MS`, i.e. `close_time_ms + 1`: whole
-    minute instants, because `use_cases/series_history.py` states that "`md.series.bucket_end`
-    values are stamped on the whole-minute grid" and walks its X axis on exactly that step. The
-    source's own `...59999` would still be admitted by `as_of` (`bucket_end <= t`), but it
-    would put every volume bar one millisecond off the grid every other series is stamped on.
+    `bucket_end` is `klines_bucket_end(kline)`, the bucket that TERMINATES at `ceil(t/B)*B`
+    (`DoD 10`, `T-01.4`): whole minute instants, because `use_cases/series_history.py` states
+    that "`md.series.bucket_end` values are stamped on the whole-minute grid" and walks its X
+    axis on exactly that step. The source's own `...59999` would still be admitted by `as_of`
+    (`bucket_end <= t`), but it would put every bar one millisecond off the grid every other
+    series is stamped on — and the source's `openTime`, the naive floor, would put every bar
+    ONE WHOLE NATIVE BAR early, which is a shift of the series rather than of the grid.
 
     `event_time` is the SOURCE's instant (the bucket boundary) while `available_at`/
     `ingested_at`/`observed_at` are THIS collector's clock — the same separation `_build_row`
@@ -592,7 +636,7 @@ def build_klines_to_rows(
         for kline in klines:
             if not is_closed_bucket(kline, received_at):
                 continue
-            bucket_end = kline.open_time_ms + KLINES_BUCKET_WIDTH_MS
+            bucket_end = klines_bucket_end(kline)
             delta = kline_cvd_delta(
                 volume=kline.volume, taker_buy_base_volume=kline.taker_buy_base_volume
             )

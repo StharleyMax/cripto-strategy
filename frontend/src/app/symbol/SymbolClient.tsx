@@ -328,8 +328,33 @@ export interface LongShortPaneData {
   readonly nativeGrid: string | null;
 }
 
+/**
+ * `T-01.8` (`SPEC-008`/`D1`) — what the PRICE pane declares about the bars it just drew.
+ *
+ * The candle is FOUR series now (`klines_ohlc` `OPEN`/`HIGH`/`LOW`/`CLOSE`, one reading each,
+ * `view-model.ts::assembleOhlcCandles`), and every one of these three numbers is computed on
+ * the server, like every other prop on this component: this file draws, it decides nothing.
+ *
+ * ⛔ WHY THREE NUMBERS AND NOT ONE. `lightweight-charts` paints to a `<canvas>`, which no DOM
+ * assertion can read, so the pane's only auditable statement about its own data is what it
+ * publishes here — and "how many bars" alone cannot tell a window with no data (`0/5760`) from
+ * a window whose four series disagree about which buckets they covered (`0/5760` with
+ * `partialBuckets` in the thousands). The second is a REAL state of this feature's own data
+ * (`SPEC-008` §7.2's "queijo suíço": holes in the middle, not a clean edge), and without its
+ * own number it renders as the same nothing as the first.
+ */
+export interface PriceCandleData {
+  /** Grid slots carrying a candle — counted off the same `GridSlot[]` fed to `setData`. */
+  readonly drawnCandles: number;
+  /** Slots in the window's grid, drawn or not: the denominator, never omitted. */
+  readonly gridSlots: number;
+  /** Buckets where 1..3 of the four readings arrived ⇒ no candle, a gap, and a count. */
+  readonly partialBuckets: number;
+}
+
 export interface SymbolClientProps {
   readonly panels: S2Panels;
+  readonly priceCandles: PriceCandleData;
   readonly volume: VolumeSubAxisData;
   readonly cvd: CvdPaneData;
   readonly oi: OiPaneData;
@@ -472,6 +497,13 @@ function useLightweightChart(
 // is exactly what makes the two tasks parallelizable — a `NEEDS_FIX` about form must not be
 // able to break an assert about data.
 const VOLUME_SUBAXIS_TESTID = "price-pane-volume-subaxis";
+
+// ⛔ AND THE SAME KIND OF CONTRACT FOR THE PRICE PANE ITSELF (`T-01.8`): `T-01.11`'s e2e finds
+// it by THIS string and reads `data-price-candles` off it. `section[aria-label="Preço"]` is NOT
+// the handle — the label is user-visible pt-BR microcopy the `ui-designer` may rewrite under the
+// `ux-ui-mastery` verdict (`T-01.10`), and pinning a DATA assertion to UI TEXT is how a change of
+// form breaks a test about data. Form may change freely; this string may not.
+const PRICE_PANE_TESTID = "price-pane";
 
 // ⛔ THE STABLE SELECTOR OF THE CVD PANE (`T-02.5`), and it is the same KIND of contract the
 // line above is for `T-01.9`: `e2e/10-cvd-dado-real.spec.ts` finds this pane by THIS string and
@@ -805,13 +837,47 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
   );
 }
 
+/**
+ * `T-01.8` — the price pane's DOM contract about the candle: how many bars the canvas got, out
+ * of how many grid slots, and how many buckets had SOME of the four readings and therefore drew
+ * nothing at all.
+ *
+ * ⛔ THE MACHINE KEY IS ASCII AND DOES NOT COME FROM THE MICROCOPY (`SPEC-008`/`D7`,
+ * `RF-8`/`RN-5`). This page already publishes `data-fact="live_preço:attempted"` — with an
+ * accent, derived from a pt-BR label — and that is a known defect (`CST-230`), not a pattern to
+ * copy: a key an operator's `grep` cannot type is a key nobody queries. `price_candles` and
+ * `price_candle_partial_buckets` are stable identifiers; the sentence beside them is pt-BR
+ * microcopy and the `ui-designer` may rewrite every word of it without moving either key.
+ *
+ * ⚠️ FORM IS THE `design_gate`'S (`T-01.10`), NOT A BUILDER'S: the wording and the placement
+ * here are the sober placeholder that lets the fact be seen and asserted at all — the same
+ * split `ReadableHorizon` states for the volume sub-axis.
+ */
+function PriceCandleFacts({ priceCandles }: { readonly priceCandles: PriceCandleData }) {
+  return (
+    <p
+      data-fact={`price_candles:${priceCandles.drawnCandles}/${priceCandles.gridSlots}`}
+      data-price-partial-buckets={priceCandles.partialBuckets}
+      className="text-sm text-provenance-weak"
+    >
+      Vela completa em {priceCandles.drawnCandles} de {priceCandles.gridSlots} buckets de 1 min — as
+      quatro leituras do mesmo bucket: abertura, máxima, mínima e fechamento.{" "}
+      {priceCandles.partialBuckets} {priceCandles.partialBuckets === 1 ? "bucket" : "buckets"} com
+      leitura incompleta {priceCandles.partialBuckets === 1 ? "fica" : "ficam"} em lacuna — nada
+      desenhado, nunca uma vela de altura zero.
+    </p>
+  );
+}
+
 function PricePane({
   panels,
+  priceCandles,
   status,
   volume,
   volumeStatus,
 }: {
   readonly panels: S2Panels;
+  readonly priceCandles: PriceCandleData;
   readonly status: PanelStatus;
   readonly volume: VolumeSubAxisData;
   readonly volumeStatus: PanelStatus;
@@ -890,7 +956,7 @@ function PricePane({
         ? `${reading.value} (${formatHeldStockLabel(reading)})`
         : String(reading.value);
   return (
-    <section aria-label="Preço">
+    <section aria-label="Preço" data-testid={PRICE_PANE_TESTID} data-price-candles={priceCandles.drawnCandles}>
       <h2 className="font-label-caps text-label-caps text-on-surface">
         Preço ({panels.price.priceSource}, {panels.price.priceUse})
       </h2>
@@ -898,6 +964,7 @@ function PricePane({
       <p data-fact={`price_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
         Leitura atual: {readingText}
       </p>
+      <PriceCandleFacts priceCandles={priceCandles} />
       <AbsenceNote status={status} />
       <VolumeSubAxis volume={volume} status={volumeStatus} />
     </section>
@@ -2197,6 +2264,7 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
 
 export function SymbolClient({
   panels,
+  priceCandles,
   volume,
   cvd,
   oi,
@@ -2218,7 +2286,13 @@ export function SymbolClient({
       <h1 className="sr-only">
         {panels.symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
-      <PricePane panels={panels} status={panelStatus.price} volume={volume} volumeStatus={panelStatus.volume} />
+      <PricePane
+        panels={panels}
+        priceCandles={priceCandles}
+        status={panelStatus.price}
+        volume={volume}
+        volumeStatus={panelStatus.volume}
+      />
       <OiPane panels={panels} status={panelStatus.oi} oi={oi} />
       <CvdPane panels={panels} status={panelStatus.cvd} cvd={cvd} />
       <LiquidationPane
