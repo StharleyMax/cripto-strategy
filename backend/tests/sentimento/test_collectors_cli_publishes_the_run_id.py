@@ -357,13 +357,15 @@ def test_the_run_id_on_the_wire_is_the_envelope_field_not_a_seventeenth_row_colu
     )
 
     queued = queue.read_new(10)
-    # TWO rows since `T-02.3`: one settled bar publishes `klines_volume` AND `cvd_source`.
-    # `run_id` is the envelope field for BOTH — that it travels per ROW, not per bar, is what
-    # this assertion now also covers.
-    assert len(queued) == 2
+    # SIX rows since `T-01.3` of `SPEC-008`: one settled bar publishes `klines_volume`,
+    # `cvd_source` and the four `klines_ohlc` readings. `run_id` is the envelope field for ALL
+    # of them — that it travels per ROW, not per bar, is what this assertion also covers.
+    assert len(queued) == 6
     assert {item.run_id for item in queued} == {runs[0].run_id}
     values = {item.row.value_raw for item in queued}
-    assert values == {"12.345", "-0.345"}, "the volume string and 2*6.0 - 12.345, both exact"
+    assert values == {"12.345", "-0.345", "60000.0", "60010.0", "59990.0", "60005.0"}, (
+        "the volume string, 2*6.0 - 12.345, and the four prices of indices [1..4] — all exact"
+    )
     assert all(item.row.is_final is True for item in queued)
     # And the run's own digest is over SOMETHING: the empty `sha256` is what a pass that read
     # the page but never fed the hash would record, and it is indistinguishable from a pass

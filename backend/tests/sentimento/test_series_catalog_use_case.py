@@ -31,6 +31,7 @@ from src.modules.sentimento.domain.cvd_source_catalog import (
     CVD_SOURCE_METRIC,
     build_kline_takerbuy_entry,
 )
+from src.modules.sentimento.domain.klines_ohlc_catalog import klines_ohlc_catalog_entries
 from src.modules.sentimento.domain.klines_volume_catalog import (
     KLINES_VOLUME_MAX_STALENESS_MS,
     KLINES_VOLUME_METRIC,
@@ -819,6 +820,21 @@ def test_series_history_no_longer_refuses_the_kline_takerbuy_id() -> None:
     assert report.panel_nature == Nature.FLOW.value
 
 
+def _klines_ohlc_ids(instrument_id: str) -> set[str]:
+    """Return the four `klines_ohlc` ids of `instrument_id` — `T-01.3` writes them.
+
+    Rebuilt from the identity module rather than read off the served catalog, because what
+    this helper is used for is EXCLUSION: if it built the wrong four ids the subtraction would
+    not cancel and the assertion that uses it would fail, which is the behaviour wanted.
+    """
+    return {
+        entry.key.series_key_id()
+        for entry in klines_ohlc_catalog_entries(
+            instrument_id, verified_by="test_klines_ohlc_catalog.py"
+        ).entries
+    }
+
+
 def test_the_served_cvd_row_is_the_one_the_collector_writes_under() -> None:
     """Served id == written id, for all four pilot instruments — not only for `BTCUSDT`.
 
@@ -850,8 +866,14 @@ def test_the_served_cvd_row_is_the_one_the_collector_writes_under() -> None:
 
     for symbol in sorted(INITIAL_SYMBOLS):
         rows = build_klines_to_rows()(bucket_open_ms + 120_000, symbol, page)
-        assert len(rows) == 2
-        assert {row.series_key_id for row in rows} <= served
+        # Six rows per settled bar since `T-01.3` of `SPEC-008`: `klines_volume`, `cvd_source`
+        # and the four `klines_ohlc` readings. The four candle ids are SUBTRACTED from BOTH
+        # sides below — not from the written side alone — so this assertion holds before AND
+        # after `T-01.6` adds them to the served catalog, and never becomes a landmine that
+        # fails on the commit that satisfies it.
+        assert len(rows) == 6
+        candle_ids = _klines_ohlc_ids(symbol)
+        assert {row.series_key_id for row in rows} - candle_ids <= served - candle_ids
 
 
 # ── `T-05.8` — as DUAS coortes de `sum_liquidation` no catálogo SERVIDO (`SPEC-007` §4.5) ────

@@ -267,8 +267,10 @@ def test_a_bar_already_published_is_not_published_again_by_the_next_cycle() -> N
     assert {row.bucket_end for row in sink.rows} == {_T0 + KLINES_BUCKET_WIDTH_MS}, (
         "three passes over the same bar publish that bucket exactly once"
     )
-    assert len(sink.rows) == 2, "one bar is TWO rows since T-02.3 — volume and CVD"
-    assert len({row.series_key_id for row in sink.rows}) == 2, "two identities, not one twice"
+    assert len(sink.rows) == 6, (
+        "one bar is SIX rows since T-01.3 of SPEC-008 — volume, CVD and the four OHLC readings"
+    )
+    assert len({row.series_key_id for row in sink.rows}) == 6, "six identities, not one six times"
     assert [run.n_returned for run in runs] == [1, 1, 1], "the source still RETURNED it thrice"
 
 
@@ -282,9 +284,10 @@ def test_the_watermark_is_per_symbol_so_one_symbol_does_not_mask_another() -> No
     sink = _RecordingSink()
     _run_one_pass(client, sink, symbols=("BTCUSDT", "ETHUSDT"))
     assert {row.symbol for row in sink.rows} == {"BTCUSDT", "ETHUSDT"}
-    # Four ids: two instruments x two identities (`klines_volume`, `cvd_source`) since `T-02.3`.
-    assert len({row.series_key_id for row in sink.rows}) == 4
-    assert len({(row.symbol, row.series_key_id) for row in sink.rows}) == 4
+    # Twelve ids: two instruments x six identities (`klines_volume`, `cvd_source` and the four
+    # `klines_ohlc` readings of `T-01.3`), and no id shared between the two instruments.
+    assert len({row.series_key_id for row in sink.rows}) == 12
+    assert len({(row.symbol, row.series_key_id) for row in sink.rows}) == 12
 
 
 # ── THE `IngestRun` THIS PRODUCER OPENS (`ADR-035/D2`) ─────────────────────────────────────
@@ -338,9 +341,9 @@ def test_the_anti_lookahead_cut_stays_visible_in_the_gap_between_returned_and_pu
     runs, _ = _run_one_pass(client, sink)
     assert runs[0].n_returned == 2
     # `n_returned` and the log's `n_published` both count BARS, so the subtraction keeps
-    # meaning "the size of the cut" now that one bar publishes two rows (`T-02.3`).
+    # meaning "the size of the cut" now that one bar publishes SIX rows (`T-02.3` + `T-01.3`).
     assert {row.bucket_end for row in sink.rows} == {_T0 + KLINES_BUCKET_WIDTH_MS}
-    assert len(sink.rows) == 2
+    assert len(sink.rows) == 6
 
 
 def test_a_page_the_source_refused_closes_the_pass_with_a_warning_not_a_rejection() -> None:
@@ -425,8 +428,8 @@ def test_both_identities_are_published_from_the_very_same_single_http_call() -> 
     sink = _RecordingSink()
     runs, _ = _run_one_pass(client, sink)
 
-    assert len(client.calls) == 1, "the CVD identity must cost ZERO additional requests"
-    assert len({row.series_key_id for row in sink.rows}) == 2, "two identities were published"
+    assert len(client.calls) == 1, "the CVD and OHLC identities must cost ZERO extra requests"
+    assert len({row.series_key_id for row in sink.rows}) == 6, "six identities were published"
     assert runs[0].weight_used == KLINES_WEIGHT_PER_CALL, "and the quota spent is one call's"
 
 
@@ -471,8 +474,9 @@ def test_n_published_counts_bars_not_rows_so_the_cut_size_stays_readable(
 
     `n_returned - n_published` is the size of the `RS-3.4` anti-lookahead cut, and
     `/api/v1/ingest-health` plus the collector log are where an operator reads it. Since
-    `T-02.3` one bar publishes TWO rows, so a row-counting `n_published` makes that subtraction
-    NEGATIVE for a page with nothing cut — an operator would read "the cut is -1 bars".
+    `T-02.3` and `T-01.3` one bar publishes SIX rows, so a row-counting `n_published` makes that
+    subtraction NEGATIVE for a page with nothing cut — an operator would read "the cut is -5
+    bars".
 
     ⚠️ THIS TEST EXISTS BECAUSE A MUTATION FOUND ITS ABSENCE. `_publish_klines_page` was changed
     to `return len(rows)` and the whole klines suite stayed green `[MEDIDO 2026-09-12: 14 passed]`
@@ -480,7 +484,7 @@ def test_n_published_counts_bars_not_rows_so_the_cut_size_stays_readable(
     read the log record. The prose in `_KlinesPassTotals` asserting the invariant had never been
     run.
 
-    Morde: `return len(rows)` and this reads `n_published == 2` for one settled bar.
+    Morde: `return len(rows)` and this reads `n_published == 6` for one settled bar.
     """
     settled = _kline(_T0)
     in_progress = _kline(_T0 + 200 * 365 * 86_400_000)  # far in the future: still open
@@ -499,7 +503,7 @@ def test_n_published_counts_bars_not_rows_so_the_cut_size_stays_readable(
     assert completed, "the pass logged its completion"
     assert completed[-1].n_returned == 2  # type: ignore[attr-defined]
     assert completed[-1].n_published == 1, (  # type: ignore[attr-defined]
-        "one settled bar is ONE published bar, even though it is two rows"
+        "one settled bar is ONE published bar, even though it is six rows"
     )
-    assert len(sink.rows) == 2, "and the two rows really were written"
+    assert len(sink.rows) == 6, "and the six rows really were written"
     assert runs[0].n_returned - completed[-1].n_published == 1  # type: ignore[attr-defined]
