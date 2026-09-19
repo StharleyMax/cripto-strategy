@@ -255,6 +255,36 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # `AsOfReading.projection()` (a dict, not an attribute) precisely so it never needs an
     # entry here.
     "modules/sentimento/domain/series_history_report.py": frozenset({"to_wire"}),
+    # `T-01.7` (`CST-203`, `candle-real-e-eixo-unico`): the candle-fidelity harness, and it is
+    # an EIGHTH toucher that is not an eighth reader — the distinction this whole file exists
+    # to police, applied to a module that never opens a store at all.
+    #
+    # It consumes rows `/api/v1/series-history` ALREADY answered (`as_of`, one door, upstream)
+    # and asks a question no reader asks: "which kind of write put this cell here, and does it
+    # equal what the venue published for that minute". `available_at` is read for PROVENANCE
+    # — `available_at - event_time`, a publication LAG — and never as half of the admission
+    # conjunction. There is no decision instant `t` anywhere in the module, no `Observation`,
+    # no `SeriesRow`, no `bucket_end` of a stored row: the three functions below see only what
+    # the wire already served.
+    #
+    #   `publication_lag_ms`  the subtraction itself. A NEGATIVE result is the module's proof
+    #                         that a cell was carried (`WriterTrace.CARRIED`), which is a
+    #                         statement about `LOCF` having happened — never a decision to
+    #                         perform it.
+    #   `_repeat_runs_of`     folds consecutive grid instants that share `(value, available_at)`
+    #                         into ONE observation answering several instants. It compares two
+    #                         served cells with each other, never a cell with a `t`.
+    #   `compare_candles`     the comparison against the origin, which routes through the two
+    #                         above. It takes no store handle and no clock.
+    #
+    # ⚠️ `infra/candle_fidelity_cli.py` IS ABSENT HERE, AND THE ABSENCE IS THE MEASUREMENT,
+    # exactly as it is for `as_of_batch` at the top of this registry: the CLI reaches the same
+    # column as `row.get("available_at")`, a STRING KEY on a wire dict, and `ast.Attribute`
+    # cannot see inside a string. Declaring it anyway would reserve a permission it does not
+    # use, and the day it starts using one nothing would move.
+    "modules/sentimento/domain/candle_fidelity.py": frozenset(
+        {"publication_lag_ms", "_repeat_runs_of", "compare_candles"}
+    ),
 }
 
 
