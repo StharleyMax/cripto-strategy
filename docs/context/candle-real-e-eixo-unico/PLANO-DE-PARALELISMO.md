@@ -219,3 +219,60 @@ Com a troca, `make e2e` na worktree `t01-2` → **`40 passed (40,4 s)`**, contra
 `Invalid cross-device link` — e aí a opção é `npm ci` na worktree (rede, lento), não voltar ao
 symlink. **Voltar ao symlink recria exatamente este defeito, e ele passa como "rc=3 do e2e", não
 como "ambiente mal montado".**
+
+---
+
+## 7. `[DECISÃO-OWNER: 2026-09-19]` — a unidade do PORTÃO é a FASE, não o lote
+
+O owner perguntou se o ideal não seria **paralelizar as fases**, *"de modo que a fase seja
+independente? pq por task vamos ter isso toda hora"*. A queixa é do **custo de cerimônia por
+lote**, e está certa. A solução proposta, porém, foi **medida e recusada**.
+
+### 7.1 Por que paralelismo POR FASE está descartado — medido, não opinado
+
+```bash
+# componentes tocados por fase, e a intersecao entre cada par
+python3 …   # mesmo parser do §5, agrupando `components` por `phase`
+```
+
+`[MEDIDO 2026-09-19, n=48 tasks]`:
+
+| fase | tasks | componentes |
+|---|---|---|
+| `01` | 11 | `sentimento` 7 · **`web` 4** |
+| `02` | 8 | `charts` 3 · **`web` 5** |
+| `03` | 12 | `sentimento` 8 · **`web` 4** |
+| `04` | 6 | **`web` 6** |
+| `05` | 11 | `web` 8 · `sentimento` 2 · `charts` 1 · `docs` 1 |
+
+⇒ **os 10 pares de fase colidem, todos, em `web`** — e `web` nesta feature é essencialmente
+`SymbolClient.tsx`, `view-model.ts` e `page.tsx`. Duas fases em paralelo editariam os mesmos três
+arquivos por dias em worktrees separadas. **Paralelismo por fase não evita a disputa; concentra.**
+
+### 7.2 O que MUDA (Corte A), e o que fica igual
+
+`[DECISÃO-OWNER: 2026-09-19, escolha entre alternativas apresentadas]` — **"portão por fase"**:
+
+| | antes | agora |
+|---|---|---|
+| execução de task | 2 a 2, worktree isolada | **igual** |
+| `make verify` | por lote | **igual** (barato, automático) |
+| QA · code-review · design-review · **PR** | por lote (**30×**) | **por FASE (5×)** |
+| branch | `wave/<feature>-f<NN>-lote-NN` | **`wave/candle-f<NN>`** — os lotes se acumulam nela |
+
+**O custo aceito, como estava escrito no menu:** *"portão vermelho no fim da fase custa mais
+retrabalho do que no fim do lote"*.
+
+**O limite que NÃO se move, e é ele que impede "um agente por fase":** o teto de ~150 turnos por
+subagente. `[MEDIDO 2026-09-19, lote 1]` — `T-01.1` custou **131** chamadas de ferramenta e 35 min;
+`T-01.2` custou **268** e 28 min, para **uma task cada**. Uma fase de 11–12 tasks num agente só
+seria ~1.500–3.000 turnos, e o custo é **quadrático** nos turnos.
+
+### 7.3 O Corte B, NÃO adotado, e por que fica escrito
+
+Paralelizar **por componente atravessando fase**: os **8** tasks de `sentimento` da fase `03`
+(`reduce(nature, reduction)`, `SUPPORTED_INTERVAL`) **não tocam `web`** e não colidiriam com o
+front da `02`. ⚠️ Mas isso **reinterpreta** a restrição do `/architect` — ele exigiu `02` antes de
+`03` porque não se reagrega sobre eixo não unificado, o que amarra o **front** de `03` e **talvez
+não o backend**. **Dono da pergunta: o `/architect`.** Fica como opção viva, não como pendência
+esquecida.
