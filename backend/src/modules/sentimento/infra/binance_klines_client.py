@@ -15,6 +15,11 @@
 # would force phase `02` to repeat the HTTP call, and phase `02` exists precisely because it does
 # not have to: `delta_cvd = 2 * takerBuyBaseVol - volume`, from the SAME response.
 #
+# That refusal was paid forward again by `SPEC-008`/`D1`: indexes [1..4] (`open`/`high`/`low`/
+# `close`) were arriving in every response and being discarded, which is why the real candle costs
+# FOUR FIELD READS and zero new network calls (`SPEC-008` §3.1, `RNF-4`). `T-01.2` of that feature
+# named them below; nothing about the request changed.
+#
 # So `KlineRow` stores the array verbatim and REFUSES to exist with any other arity: a row of 11 or
 # 13 fields raises `KlineArityError` instead of being silently truncated or padded. The named
 # accessors are conveniences over `raw`, never a replacement for it.
@@ -65,6 +70,22 @@ OPEN_TIME_INDEX: Final[int] = KLINE_FIELD_NAMES.index("openTime")
 VOLUME_INDEX: Final[int] = KLINE_FIELD_NAMES.index("volume")
 CLOSE_TIME_INDEX: Final[int] = KLINE_FIELD_NAMES.index("closeTime")
 TAKER_BUY_BASE_VOLUME_INDEX: Final[int] = KLINE_FIELD_NAMES.index("takerBuyBaseVol")
+
+# Indexes [1..4], the four prices of the candle. They are named for the same reason the four
+# above are: a caller that wrote `row.raw[2]` would be one keystroke away from reading LOW where
+# it meant HIGH, and nothing in this repository would refuse it — the two are decimal strings of
+# the same shape, so the swap survives every type check and every arity guard. Reading them by
+# NAME moves that mistake to a place where it fails loudly: `KLINE_FIELD_NAMES.index("high")`
+# raises if the contract ever stops carrying `high`, and the accessor below is the only spelling
+# a call site needs.
+#
+# `_PRICE_` and not `OPEN_INDEX` on purpose: `OPEN_TIME_INDEX` is index [0] and `openTime` is a
+# timestamp, not a price. `OPEN_INDEX` next to `OPEN_TIME_INDEX` is an off-by-one waiting for a
+# reader in a hurry.
+OPEN_PRICE_INDEX: Final[int] = KLINE_FIELD_NAMES.index("open")
+HIGH_PRICE_INDEX: Final[int] = KLINE_FIELD_NAMES.index("high")
+LOW_PRICE_INDEX: Final[int] = KLINE_FIELD_NAMES.index("low")
+CLOSE_PRICE_INDEX: Final[int] = KLINE_FIELD_NAMES.index("close")
 
 # `limit` ceiling of the endpoint. Asking for more is a caller bug, not a server round trip.
 MAX_LIMIT: Final[int] = 1500
@@ -120,6 +141,26 @@ class KlineRow:
     def taker_buy_base_volume(self) -> str:
         """Return index [9], the aggressor-buy volume phase `02` builds CVD from."""
         return str(self.raw[TAKER_BUY_BASE_VOLUME_INDEX])
+
+    @property
+    def open_price(self) -> str:
+        """Return index [1], the bucket's first trade price, as the exact decimal string."""
+        return str(self.raw[OPEN_PRICE_INDEX])
+
+    @property
+    def high_price(self) -> str:
+        """Return index [2], the bucket's highest trade price, as the exact decimal string."""
+        return str(self.raw[HIGH_PRICE_INDEX])
+
+    @property
+    def low_price(self) -> str:
+        """Return index [3], the bucket's lowest trade price, as the exact decimal string."""
+        return str(self.raw[LOW_PRICE_INDEX])
+
+    @property
+    def close_price(self) -> str:
+        """Return index [4], the bucket's last trade price, as the exact decimal string."""
+        return str(self.raw[CLOSE_PRICE_INDEX])
 
 
 @dataclass(frozen=True, slots=True)
