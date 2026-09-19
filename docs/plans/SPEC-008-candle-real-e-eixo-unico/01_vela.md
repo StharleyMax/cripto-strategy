@@ -51,10 +51,37 @@ chega. É também a única que ataca o que o owner anotou em vermelho.
 5. **Zero chamada nova à Binance** (`RNF-4`). Diff de chamadas de rede da fase = **0** — o array de
    12 campos já é pago. **Morde** se aparecer uma segunda requisição a `/fapi/v1/klines`.
 
-6. **Pegada de disco declarada** (`RNF-3`, `D-h`). `pg_total_relation_size('md.series')` **antes e
-   depois** do backfill, e a contagem de linhas das 4 chaves. Previsão a bater:
-   **≈ 2,07 M linhas** no teto de 90 dias com 4 símbolos
-   `[INFERRED: aritmética, `SPEC-008` §3.6 — o byte/linha é `[NÃO MEDIDO]`, e esta é a medição que o fecha]`.
+6. **Pegada de disco declarada** (`RNF-3`, `D-h`). ⛔ **O comando é `hypertable_size('md.series')`,
+   NÃO `pg_total_relation_size`** — ver a correção logo abaixo. Medido **antes e depois** do
+   backfill, mais a contagem de linhas das 4 chaves. Previsão de linhas a bater: **≈ 2,07 M** no
+   teto de 90 dias com 4 símbolos `[INFERRED: aritmética, `SPEC-008` §3.6]`.
+
+   **O byte/linha deixou de ser `[NÃO MEDIDO]`: são 496 B/linha**
+   `[MEDIDO 2026-09-19 durante T-01.5, n=19.106 linhas: (1290756096−1281286144)/(2688019−2668913)]`
+   — a estimativa anterior de 99 B era **5× otimista**, e ~45% do custo é ÍNDICE. Projeção do teto
+   de 90 dias: **1,03 GB** para as 4 chaves (2.073.600 linhas).
+
+   > ⛔ **CORREÇÃO DE INSTRUMENTO — `pg_total_relation_size` é CEGO aqui, e a fase inteira
+   > dependia dele.** `md.series` é hypertable TimescaleDB: as linhas moram nos *chunks*, e
+   > `pg_total_relation_size` mede só a tabela-pai, que fica vazia.
+   >
+   > ```bash
+   > docker exec deploy-postgres-1 psql -U cripto_strategy -d cripto_strategy -Atc \
+   >   "select pg_total_relation_size('md.series'), hypertable_size('md.series')"
+   > # 24576|1505697792   <= o MESMO instante, razão de 61.266x
+   > ```
+   >
+   > `[MEDIDO 2026-09-19 pelo loop principal, conferindo o achado de T-01.5 — que mediu 52.135x
+   > 28 min antes; a razão CRESCE enquanto o backfill escreve, o que é a própria demonstração]`.
+   >
+   > Lido antes/depois, o comando original devolveria **`24.576 → 24.576`** e o portão concluiria
+   > *"não custou disco"* — o modo de falha que `ADR-012` nomeia para o `rc=0`: sinal
+   > indistinguível entre *"nada aconteceu"* e *"o instrumento nunca foi capaz de ver"*.
+   >
+   > **O que muda e o que NÃO muda:** muda **só o comando**. O requisito (`RNF-3`, `D-h` —
+   > declarar a pegada de disco), o teto de 90 dias `[DECISÃO-OWNER: 2026-09-19]` e o universo
+   > seguem idênticos. Não é reabertura de escopo; é um instrumento falsificado sendo trocado por
+   > um que mede. `SPEC-008` §3.6/§9 carrega a mesma correção.
 
 7. **A degenerada não existe mais.** `grep -n "high: close\|low: close" frontend/src` → **0 linhas**.
    **Morde** com qualquer ocorrência viva.

@@ -31,6 +31,14 @@ o achado.
 ambiente. Toda pegada de disco desta SPEC é portanto **aritmética sobre contagem de linhas**, com
 rótulo `[INFERRED]`, e o byte/linha real é **`[NÃO MEDIDO]`** — vira DoD da fase `01`, não premissa.
 
+> ✅ **RESOLVIDO em 2026-09-19 por `T-01.5`, e o número derrubou a estimativa: 496 B/linha**
+> `[MEDIDO, n=19.106 linhas: (1290756096−1281286144)/(2688019−2668913)]`. A estimativa que circulava
+> era 99 B — **5× otimista**; ~45% do custo é ÍNDICE, que a aritmética sobre contagem de linhas não
+> enxergava. Projeção do teto de 90 dias com as 4 chaves: **1,03 GB** (2.073.600 linhas).
+> ⚠️ E a medição só foi possível trocando o comando: `pg_total_relation_size` é **cego em
+> hypertable** — ver a correção de instrumento em §3.6. A recusa de ambiente citada acima **não era
+> a única barreira**; o comando também não media.
+
 ---
 
 ## 1. O veredito do Gap Analysis, e os quatro achados que ele produziu
@@ -315,7 +323,17 @@ produção negada pela política do ambiente, §0), então é aritmética:
 
 `[INFERRED: aritmética sobre contagem de buckets; o byte/linha é `[NÃO MEDIDO]` — ver §0]`
 
-⇒ **`pg_total_relation_size` antes e depois é DoD da fase `01`** (§9). Sem o teto de `D5`, a mesma
+⇒ **A pegada de disco medida antes e depois é DoD da fase `01`** (§9).
+
+> ⛔ **CORREÇÃO DE INSTRUMENTO, 2026-09-19 — o comando que esta SPEC fixou era CEGO.**
+> Onde esta SPEC dizia `pg_total_relation_size('md.series')`, leia **`hypertable_size('md.series')`**.
+> `md.series` é hypertable TimescaleDB: as linhas moram nos *chunks*, e `pg_total_relation_size`
+> mede só a tabela-pai, que fica vazia — **`24576` contra `1505697792` no mesmo instante, razão de
+> 61.266×** `[MEDIDO 2026-09-19, `psql -Atc "select pg_total_relation_size('md.series'),
+> hypertable_size('md.series')"`]`. Lido antes/depois, o original devolveria `24.576 → 24.576` e o
+> portão concluiria *"não custou disco"* (o modo de falha do `rc=0` de `ADR-012`).
+> **Muda só o comando** — o requisito, o teto de 90 dias e o universo seguem idênticos. Achado por
+> `T-01.5`; conferido pelo loop principal. Detalhe em `docs/plans/SPEC-008-candle-real-e-eixo-unico/01_vela.md` DoD 6. Sem o teto de `D5`, a mesma
 conta desde `2019-09-08` daria **≈ 14,8 M linhas por símbolo** `[INFERRED: 2.568 dias × 1440 × 4, conferido em python3]` —
 é por isso que `D5` existe.
 
@@ -636,7 +654,7 @@ pixel — e Playwright **contra o app real**, com assert de posição, nunca só
 
 | fase | componente | o pixel | DoD — comando e universo |
 |---|---|---|---|
-| **`01`** vela real | `sentimento` + `web` | `P1`: corpo e pavio | `curl` da chave de preço: `≥ 1` bucket com `high > low` sobre `n = 500` velas da janela; `data-fact="price_last_reading:…"` deixa de ser `absent`; **ablação**: sem o produtor, o corpo some; `pg_total_relation_size` antes/depois (§3.6); `make verify` verde |
+| **`01`** vela real | `sentimento` + `web` | `P1`: corpo e pavio | `curl` da chave de preço: `≥ 1` bucket com `high > low` sobre `n = 500` velas da janela; `data-fact="price_last_reading:…"` deixa de ser `absent`; **ablação**: sem o produtor, o corpo some; `hypertable_size` antes/depois (§3.6 — ⛔ NÃO `pg_total_relation_size`, cego em hypertable); `make verify` verde |
 | **`02`** grade única + eixo | `web`/`charts` | `P2`: pan move os cinco | **`CA-5a`..`CA-5d`** (§9.1) — ⛔ **não** a contagem de `grep`; **ablação**: desligada a assinatura, os 5 param |
 | **`03`** TF único | `sentimento`/`web` | `P3`: TF reagrega todos | Playwright: clicar `4h` muda a contagem de barras dos **6** painéis; teste diferencial sobre os **8 pares** de `A-1` (`STOCK` reagregado ≠ soma; `OPEN` ≠ `CLOSE` do mesmo bucket); `interval` fora de `{1m,5m,15m,1h,4h}` → `422`, `n = 3` casos |
 | **`04`** OI honesto | `web` | `P4`: rótulo soletra os três termos | `data-fact="oi_provenance:…"` contém grandeza+universo+coorte; **ablação de derivação** (`CA-10`): trocar a chave no catálogo de teste muda o rótulo; **`0`** chaves `data-fact` com caractere não-ASCII em toda a página |
