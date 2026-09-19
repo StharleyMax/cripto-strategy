@@ -1,3 +1,72 @@
+# ⛔ ACHADO REFUTADO — a vela NÃO tinha pavio truncado; era o degrau de LOCF
+
+> ## ⚠️ ESTE DOCUMENTO ESTAVA ERRADO. Leia esta seção antes do corpo.
+>
+> **Refutado por `T-01.7` (CST-203) em 2026-09-19, e reproduzido de forma independente pelo loop
+> principal — o mesmo que escreveu o erro.** O corpo abaixo fica **inalterado, de propósito**: apagá-lo
+> esconderia como o erro foi cometido, que é a parte útil.
+>
+> ### Por que os dois "defeitos" não eram defeitos
+>
+> `klines_ohlc` é **`nature: STOCK`** e `CARRY_FORWARD_BY_NATURE[Nature.STOCK] = True`
+> (`backend/src/modules/sentimento/domain/as_of_accessor.py:112`), com
+> **`maxStalenessMs = 120_000`** sobre grade de **1 min** ⇒ **uma barra escrita responde DUAS fatias
+> adjacentes, legitimamente.** Isso explica inteiramente o "defeito 1" (buckets idênticos): `n=1`
+> barra escrita, nada duplicado.
+>
+> O "defeito 2" (`+41,00` no low) cai junto: eu comparei uma célula **arrastada** contra o minuto da
+> origem em que ela foi desenhada. A prova é aritmética e o arnês a imprime —
+> **`lag_ms = −53.993`** para aquela célula: `available_at` **ANTES** do instante que ela responde.
+> Toda linha *escrita* tem `available_at >= bucket_end`; logo aquela célula foi **carregada**, não
+> escrita.
+>
+> ```
+> OPEN  t=1789852440000  origin=81001.10  carried=81023.00  delta=21.90  lag_ms=-53993
+> ```
+>
+> ### ⭐ Como eu errei, que é o que vale guardar
+>
+> **Os dois campos que me refutam estavam na saída do catálogo que eu mesmo imprimi** — `"nature":
+> "STOCK"` e `"maxStalenessMs": 120000` — e eu não os conectei. Comparei tela contra origem **sem
+> primeiro perguntar se a célula era escrita ou arrastada.** A lição não é "confira mais"; é:
+> **antes de acusar o dado, separe a célula ESCRITA da célula CARREGADA.** O arnês de `T-01.7` agora
+> faz essa separação por construção e reporta as duas classes apartadas.
+>
+> ### ⛔ O defeito REAL que ficou no lugar (menor, e de outra natureza)
+>
+> `[MEDIDO 2026-09-19, reproduzido pelo loop principal numa janela de 3 h, n=476 comparações sobre
+> 180 buckets de origem]` — `candle_fidelity_cli --symbol BTCUSDT --window-start-ms … --window-end-ms
+> … --knowledge-time-ms …`:
+>
+> | redução | exatas | divergências | direção |
+> |---|---|---|---|
+> | `OPEN` | **119/119** | 0 | — |
+> | `HIGH` | 116/119 | 3 | **3 neg** (armazenado ABAIXO da origem) |
+> | `LOW` | 118/119 | 1 | 1 pos (armazenado ACIMA) |
+> | `CLOSE` | 77/119 | **42** | `pos=22 / neg=20` — **atravessa o zero** |
+>
+> Todas com `writer trace = live_tail` e `lag_ms ≈ 2,3 s`. **O `CLOSE` é o defeito**: ~35% dos
+> buckets erram, quase sempre por **um tick**, e o sinal é **simétrico** ⇒ **NÃO é o `[M-9]`**, cujo
+> viés no volume era unilateral (`pos=0` em 4/4). O viés do volume **não se propagou** para a vela.
+>
+> ### ⚠️ Uma nuance que o veredito não cobre, e que eu levanto aqui
+>
+> `HIGH` divergiu **3/3 para baixo** e `LOW` **1/1 para cima** — as quatro divergências **estreitam a
+> vela**. Separadas, nenhuma alcança o `minimum_bias_n=4` do arnês; **agregadas como "estreitamento
+> de faixa" dariam `n=4`, unilateral 4/4**. `n=4` é amostra pequena e isto **não** derruba o veredito
+> — mas a pergunta *"HIGH-negativo e LOW-positivo deveriam ser um único estatístico?"* é de
+> `/architect` + `ADR-034`, e fica registrada em vez de perdida.
+>
+> ### O que continua `[NÃO MEDIDO]`
+>
+> A janela auto-verificável do owner (`2026-09-18 12:00→16:00 UTC`) seguia **`0/240`** — backfill em
+> voo —, e o assert sobre a quádrupla está **declarado NÃO-EXECUTADO** com `rc=3` (`ADR-012`), não
+> verde. Comando para repetir: `handoff/T-01.7-estado.md`.
+
+---
+
+## ⬇️ O TEXTO ORIGINAL, PRESERVADO COMO ESTAVA (e ERRADO nas conclusões)
+
 # ACHADO — a vela gravada DIVERGE da origem, e o pavio sai truncado
 
 **Medido pelo loop principal em 2026-09-19 ~21:20 UTC**, logo após o redeploy de `api`/`web`/`collector`
