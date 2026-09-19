@@ -21,9 +21,13 @@
  * do not ask for.
  *
  * THE ROLES THIS FILE DOES CARRY, and where each is drawn by `charts`:
- *   - `directionUpFill` / `directionDownFill` — the ONLY channel price direction may use
+ *   - `directionUpFill` / `directionDownFill` — the COLOR channel of price direction
  *     (`ADR-010/D-1`: "vive SÓ em fill", ties directly into the candlestick series this
- *     task wires in `s2-series-style.ts`).
+ *     task wires in `s2-series-style.ts`). ⚠️ Since `T-01.10`'s `design_gate` these are no
+ *     longer the only channel, and the correction is the point: direction ALSO travels as
+ *     BODY GEOMETRY (hollow rise / filled fall, `ADR-010/D-2`), because two hues alone are
+ *     `1,092:1` in grayscale and that reproves WCAG SC 1.4.1 at level A. See
+ *     `candlestickSeriesColors` and `dojiItemColors` below.
  *   - `directionOn` — ink drawn ON TOP of a direction fill (a label inside a candle body,
  *     `ADR-010`'s `ON` type, piso 4.5:1 against the fill it sits on).
  *   - `dataBrokenInk` — integrity-of-data role (`ADR-010/D-3`): `ink` ONLY, never a fill.
@@ -174,17 +178,53 @@ export function colorTokens(): ColorTokens {
 }
 
 /**
- * The 6 `CandlestickStyleOptions` fields `lightweight-charts` needs, built from EXACTLY 2
- * tokens (`directionUpFill`/`directionDownFill`) — never a bare hex. `ADR-010/D-1`'s own
- * `FILL` definition lists "corpo/pavio de vela" (candle body AND wick) as the same type of
- * mark, so wick and border reuse the fill token rather than inventing a third hue per
- * direction: one token, one role, three places it paints (body/border/wick) — no ad hoc
- * color is introduced by this function.
+ * The interior of a RISING candle: fully transparent, so the body is HOLLOW and the only ink
+ * on the rise is its border.
  *
- * `wickVisible`/`borderVisible` are left at the library default (`true`) — this task's
- * `refs` ask for a NAMED-BY-ROLE color, not a candle-shape redesign (`ADR-010/D-2`'s hollow/
- * filled body is a separate, later concern; see this file's module docstring for why it is
- * out of scope here).
+ * ⛔ THIS IS THE NON-COLOR CHANNEL, AND IT IS WHY IT IS ALPHA RATHER THAN A DARKER HUE. The
+ * gray ablation (`sed 's/089981/808080/g; s/f23645/808080/g'`) collapses every HUE onto one
+ * value; it does not touch `rgba(0,0,0,0)`, because ALPHA IS NOT HUE. So a rise still emits a
+ * body fill the fall does not, and the direction survives a screen with no color at all —
+ * which is what WCAG SC 1.4.1 (level A) asks for and what `#089981` vs `#f23645` alone cannot
+ * give: those two are `135` and `129` in grayscale, `1,092:1`, the same number `ADR-010:113`
+ * publishes.
+ */
+export const HOLLOW_BODY_FILL = "rgba(0,0,0,0)";
+
+/**
+ * The 8 `CandlestickStyleOptions` fields `lightweight-charts` needs for `ADR-010/D-2`'s TWO
+ * library-expressible states, built from the SAME 2 direction tokens — never a bare hex:
+ *
+ *   - RISE (`close > open`): body HOLLOW (`HOLLOW_BODY_FILL`), border and wick carrying
+ *     `directionUpFill`. The rise is the only state that paints a transparent interior.
+ *   - FALL (`close < open`): body FILLED with `directionDownFill`, border and wick the same
+ *     token — one token, three places it paints, exactly as before.
+ *
+ * `borderVisible`/`wickVisible` are now STATED rather than left to the library default: with a
+ * hollow up-body the border IS the rise's only ink, so `borderVisible: false` would erase the
+ * rising candle entirely. A default that a future library release may change is not a thing to
+ * rest an accessibility claim on.
+ *
+ * ⚠️ THE THIRD STATE IS NOT HERE, AND IT CANNOT BE — `dojiItemColors()` below. The library
+ * resolves direction with `isUp = open <= close`
+ * (`lightweight-charts@5.2.1`, `dist/lightweight-charts.development.mjs:2811`), so `open ===
+ * close` falls into the RISING branch and there is no third option to set. The neutral doji is
+ * therefore an override PER ITEM, applied by `candlestickSeriesLossless`.
+ *
+ * ⛔ `priceLineColor` IS NOT DECORATION HERE, IT IS THE REPAIR OF A DEFECT THE HOLLOW BODY
+ * CREATES, and it was measured, not guessed. The last-value label on the price axis takes the
+ * LAST BAR'S body color and strips its alpha —
+ * `generateContrastColors`, `dist/lightweight-charts.development.mjs:406-412`, literal:
+ * `` _internal_background: `rgb(${rgba[0]}, ${rgba[1]}, ${rgba[2]})` // no alpha ``. With a
+ * transparent up-body that resolves to `rgb(0, 0, 0)` — an OPAQUE BLACK label, a color no
+ * `ADR-010` role carries, on a `#131722` page. Reproduced in
+ * `candle-direction-channel.test.ts` (the paint recorder logs `fill:rgb(0, 0, 0)` for a rising
+ * last bar when this field is absent). `priceLineColor` short-circuits that path at its source
+ * (`_internal_priceLineColor`, `:3415-3417`: `this._private__options.priceLineColor ||
+ * lastBarColor`), for the price line AND for the axis label, in all three states at once.
+ * `provenanceStrong` is the value because that label affirms A PRICE, not a direction, and
+ * `ADR-010/D-4`'s procedência ramp is luminance-only — zero hue, so no direction is claimed
+ * where none is meant.
  */
 export function candlestickSeriesColors(): {
   readonly upColor: string;
@@ -193,14 +233,44 @@ export function candlestickSeriesColors(): {
   readonly borderDownColor: string;
   readonly wickUpColor: string;
   readonly wickDownColor: string;
+  readonly borderVisible: boolean;
+  readonly wickVisible: boolean;
+  readonly priceLineColor: string;
 } {
   const tokens = colorTokens();
   return {
-    upColor: tokens.directionUpFill,
+    upColor: HOLLOW_BODY_FILL,
     downColor: tokens.directionDownFill,
     borderUpColor: tokens.directionUpFill,
     borderDownColor: tokens.directionDownFill,
     wickUpColor: tokens.directionUpFill,
     wickDownColor: tokens.directionDownFill,
+    borderVisible: true,
+    wickVisible: true,
+    priceLineColor: tokens.provenanceStrong,
   };
+}
+
+/**
+ * THE THIRD STATE — the per-item override a DOJI (`open === close`) carries, so the screen
+ * stops affirming a direction the data does not carry.
+ *
+ * `ADR-010:110`, literal: `CRUZ (doji) = close == open ⇒ DIREÇÃO NÃO AFIRMADA`. Without this
+ * override the library paints the doji with `upColor`/`borderUpColor`/`wickUpColor` — byte for
+ * byte the RISING candle — because its own branch is `open <= close`. That is not a poor
+ * channel, it is a FALSE statement to an operator reading price.
+ *
+ * The value is `provenanceWeak` (`#8b949e`), and it is not a hue this module invented: it is
+ * the token `ADR-010/D-4` already declares LUMINANCE-only (zero saturation ⇒ zero direction
+ * hue), and it is the exact value the approved Stitch screen ships for the doji
+ * (`docs/product/STITCH_CONTEXT.md:1257`, `bg-[#8b949e]`). Named token, not a literal, for the
+ * same reason every other color here is.
+ */
+export function dojiItemColors(): {
+  readonly color: string;
+  readonly borderColor: string;
+  readonly wickColor: string;
+} {
+  const neutral = colorTokens().provenanceWeak;
+  return { color: neutral, borderColor: neutral, wickColor: neutral };
 }

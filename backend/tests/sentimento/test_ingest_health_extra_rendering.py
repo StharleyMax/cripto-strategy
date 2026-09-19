@@ -74,10 +74,26 @@ LOGGING_METHODS = frozenset(
 # a service process (an over-broad exemption), and
 # `test_no_projection_cli_emits_extra_on_its_product_logger` fails if anything NOT here started
 # emitting. A list that only one test looks at is a list that only grows.
+#
+# ⚠️ THE NAME OF THIS SET SAYS "SERVICE"; THE PROPERTY IT ENCODES IS "NOTHING HASHES THIS
+# STDOUT". `T-01.5` of `SPEC-008` is where the two stop coinciding, and the entry is written
+# rather than the set renamed so the divergence is READ instead of discovered.
+# `klines_backfill_cli.py` is a ONE-SHOT (`ADR-027/D1` — it is deliberately NOT a fourth
+# long-lived process, and its own test asserts that it RETURNS), yet it belongs on this side of
+# the question this list asks. The question is "projection or service?", and a projection CLI is
+# defined here by what it puts on `stdout`: canonical JSON whose bytes feed a `sha256`
+# (`ADR-008/DoD-2`). The backfill emits NO projection at all — its `stdout` is `docker compose
+# run` read by an operator watching a multi-hour job, and the numbers that make it watchable
+# (`n_rows`, `lag`, `n_published`) live in `extra={}`. `ADR-035/D3`'s amendment, rule (c), is
+# exactly this case and prescribes exactly this pair of edits: the module is PROMOTED — it
+# enters this set AND installs `build_service_stdout_handler` — and
+# `test_the_service_handler_is_taken_by_exactly_the_declared_service_processes` refuses either
+# edit alone.
 DECLARED_SERVICE_PROCESSES = frozenset(
     {
         "src/modules/sentimento/infra/single_writer_cli.py",
         "src/modules/sentimento/infra/collectors_cli.py",
+        "src/modules/sentimento/infra/klines_backfill_cli.py",
     }
 )
 
@@ -366,6 +382,8 @@ def test_the_universe_of_importers_is_the_one_this_guard_believes_it_is() -> Non
 
     `[MEDIDO 2026-09-10: `grep -rl 'from src.modules.sentimento.infra.ingest_health_cli import'
      backend/src --include='*.py' | sort` -> 8 arquivos; mais o proprio modulo = 9]`.
+    `[MEDIDO 2026-09-19, mesmo comando: 9 arquivos; mais o proprio modulo = 10 — `T-01.5`
+     acrescentou `klines_backfill_cli.py`, e a pergunta foi respondida acima, nao contornada]`.
     """
     importers = _modules_importing_the_shared_builders(SRC_ROOT)
 
@@ -376,6 +394,7 @@ def test_the_universe_of_importers_is_the_one_this_guard_believes_it_is() -> Non
         "src/modules/sentimento/infra/force_order_collector_cli.py",
         "src/modules/sentimento/infra/force_order_collision_report_cli.py",
         "src/modules/sentimento/infra/ingest_health_cli.py",
+        "src/modules/sentimento/infra/klines_backfill_cli.py",
         "src/modules/sentimento/infra/ntp_skew_probe_cli.py",
         "src/modules/sentimento/infra/premium_index_probe_cli.py",
         "src/modules/sentimento/infra/single_writer_cli.py",
@@ -394,9 +413,12 @@ def test_every_declared_service_process_actually_emits_extra() -> None:
 def test_no_projection_cli_emits_extra_on_its_product_logger() -> None:
     """The whole safety argument, as a machine-checked property of the tree.
 
-    Today: `n=0` offenders over the 9 modules of the universe minus the two declared service
-    processes `[MEDIDO 2026-09-10: `grep -c 'extra='` sobre os 9 -> collectors_cli 11,
-    single_writer_cli 5, os outros 7 com 0]`.
+    Today: `n=0` offenders over the 10 modules of the universe minus the three declared service
+    processes `[MEDIDO 2026-09-19 por `_logger_calls_passing_extra` (AST, nao `grep -c`, que
+    conta tambem `extra=` fora de chamada de logger) sobre os 10 -> collectors_cli 27,
+    single_writer_cli 8, klines_backfill_cli 8, os outros 7 com 0]`. A medicao anterior era
+    `n=0` sobre 9 modulos menos 2 `[MEDIDO 2026-09-10]` — a propriedade e a mesma, o universo
+    cresceu de um.
     """
     importers = _modules_importing_the_shared_builders(SRC_ROOT)
     offenders = {

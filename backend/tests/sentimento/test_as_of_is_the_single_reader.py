@@ -231,6 +231,21 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
             "_collect_long_short_for_symbol",
         }
     ),
+    # `T-01.5` (`SPEC-008`): PRODUCER BOOKKEEPING, the same category as the three
+    # `collectors_cli.py` functions above and for the same three checkable reasons.
+    # `_publish_page` of the ONE-SHOT backfill reads `row.bucket_end` off the rows the mapping
+    # JUST BUILT, to count DISTINCT buckets — because since `T-01.3` one bar is six rows, and
+    # `len(rows)` would report six times the bars and make `n_returned - n_published` (the size
+    # of the anti-lookahead cut) negative. (a) There is no decision instant `t` in the function;
+    # its only timestamp is the caller's `now_ms()`, the job's own clock at publication. (b) It
+    # never consults a SECOND row to pick a winner — it takes the CARDINALITY of a set over rows
+    # it is publishing in the same breath. (c) It returns two counts, never a value.
+    #
+    # ⚠️ The cheap way out was available and was REFUSED for the reason the `collectors_cli.py`
+    # entry already names: `row.event_time` is the SAME instant for these rows (`label_shift =
+    # 0`) and is NOT in `READ_PATH_COLUMNS`, so counting on it would have kept this function out
+    # of this registry by picking a synonym — a bypass of the gate wearing compliance.
+    "modules/sentimento/infra/klines_backfill_cli.py": frozenset({"_publish_page"}),
     # `T-01.2` (`pagina-de-grafico-s2`): SERIALIZATION, same category as `write_series_row.py`
     # and `series_row_wire.py` above — `SeriesHistoryRow` is a NEW dataclass (its OWN
     # `available_at`, not `SeriesRow`'s), and `to_wire()` only projects an already-computed

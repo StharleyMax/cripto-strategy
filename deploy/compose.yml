@@ -236,6 +236,35 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ── O BACKFILL PROFUNDO NAO E UM SERVICO, E POR ISSO NAO TEM BLOCO AQUI ──────────────────
+  #
+  # `T-01.5` / `SPEC-008` plano `01` item 1.6, `ADR-027/D1`. `KLINES_BACKFILL_DAYS` acima
+  # aprofunda o boot do `collector` — e o boot dele re-le a janela inteira a CADA restart, num
+  # servico cujo `restart:` e `unless-stopped`. No teto de `D5` isso seria
+  # `90 x 1440 x 4 simbolos x 6 identidades = 3.110.400` linhas apendadas por restart. Por isso
+  # a profundidade de 90 dias tem entrypoint PROPRIO, que roda uma vez e SAI:
+  #
+  #   docker compose -f deploy/compose.yml run --rm --no-deps collector \
+  #     python -m src.modules.sentimento.infra.klines_backfill_cli
+  #
+  # ⛔ NAO declare isso como `service:` deste arquivo. Um servico aqui sobe em todo
+  # `compose up` e vira o quarto processo de vida longa que `ADR-027/D1` recusa. Agendar e ato
+  # do operador (`cron` do host chamando a linha acima), nao deste compose.
+  #
+  #   KLINES_BACKFILL_ONE_SHOT_DAYS    default 90      profundidade do one-shot. E TETO, nao
+  #                                                    sugestao: acima de 90 o processo recusa
+  #                                                    no boot nomeando a variavel, nunca
+  #                                                    corta em silencio
+  #                                                    `[DECISAO-OWNER: 2026-09-19]`
+  #   KLINES_BACKFILL_MAX_STREAM_LAG   default 20000   quantas entradas o escritor unico pode
+  #                                                    estar atrasado antes de o walk PARAR de
+  #                                                    publicar. Tem de ficar abaixo de
+  #                                                    REDIS_STREAM_MAXLEN, ou `XADD MAXLEN ~`
+  #                                                    descarta entrada que o escritor ainda
+  #                                                    nao leu — perda SILENCIOSA
+  #   KLINES_BACKFILL_LAG_POLL_S       default 1       segundos entre duas sondagens de
+  #                                                    `XINFO GROUPS` enquanto espera drenar
+
   # Next.js server (`ADR-028/D1`, Server Component reads the API). No `ports:` either
   # — `caddy` is the only service exposed, and it proxies the rest of the host to here.
   web:

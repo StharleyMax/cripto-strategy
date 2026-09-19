@@ -29,6 +29,7 @@
  * at this boundary, so the conversion happens in ONE place.
  */
 
+import { dojiItemColors } from "./color-tokens.ts";
 import type { GridSlot } from "./canonical-grid.ts";
 import type { ScalarSlot } from "./s2-scalar-grid.ts";
 
@@ -41,6 +42,16 @@ export interface CandlestickItem {
   readonly high: number;
   readonly low: number;
   readonly close: number;
+  /**
+   * The DOJI override, and it is present on a doji item ONLY (`open === close`). These three
+   * optional fields are `lightweight-charts`'s own per-item escape hatch
+   * (`dist/typings.d.ts:841-849`: "Optional color value for certain data item. If missed,
+   * color from options is used"), and they exist here because the library has TWO direction
+   * branches and `ADR-010/D-2` has THREE states. See `candlestickSeriesLossless`.
+   */
+  readonly color?: string;
+  readonly borderColor?: string;
+  readonly wickColor?: string;
 }
 
 export interface LineItem {
@@ -63,15 +74,44 @@ function toUnixSeconds(timeMs: number): UnixSeconds {
   return timeMs / 1000;
 }
 
-/** The correct, lossless mapping for a candlestick series: one item per canonical slot. */
+/**
+ * The correct, lossless mapping for a candlestick series: one item per canonical slot.
+ *
+ * ── THE DOJI OVERRIDE, AND WHY IT IS ATTACHED HERE AND NOT IN THE SERIES STYLE ──────────────
+ *
+ * `lightweight-charts` resolves direction with ONE comparison, and the text is the library's:
+ *
+ *   `const isUp = ensure(currentBar._internal_value[0]) <= ensure(currentBar._internal_value[3]);`
+ *   (index `0` is Open and `3` is Close, per the library's own inline labels —
+ *   `dist/lightweight-charts.development.mjs:2811`, `lightweight-charts@5.2.1`)
+ *
+ * `open <= close` means a DOJI (`open === close`) falls into the RISING branch and is painted
+ * with `upColor`/`borderUpColor`/`wickUpColor` — byte for byte the rise. There is no third
+ * branch to configure, so the third state of `ADR-010/D-2` (`CRUZ (doji) = close == open ⇒
+ * DIREÇÃO NÃO AFIRMADA`, `ADR-010:110`) can only be expressed PER ITEM.
+ *
+ * That is what this function does: a slot whose candle has `open === close` carries
+ * `dojiItemColors()` (`provenanceWeak`, luminance-only, zero direction hue). Every other slot
+ * is byte for byte what it was before — no color key at all, so the series style decides.
+ *
+ * ⚠️ `color-tokens.ts` is imported by a MAPPER, and that is deliberate rather than a layering
+ * slip: a per-item color IS part of the shape `lightweight-charts` consumes
+ * (`CandlestickData.color`, `typings.d.ts:841`), both modules are `charts` (`ADR-003`), and the
+ * alternative — a parameter with a default — is the trap `D13` deleted from this palette by
+ * name ("the defect stops being a wrong argument and becomes INEXPRESSIBLE").
+ */
 export function candlestickSeriesLossless(
   slots: readonly GridSlot[],
 ): readonly (CandlestickItem | WhitespaceItem)[] {
   return slots.map((slot) => {
     const time = toUnixSeconds(slot.time);
-    return slot.candle === null
-      ? { time }
-      : { time, open: slot.candle.open, high: slot.candle.high, low: slot.candle.low, close: slot.candle.close };
+    if (slot.candle === null) {
+      return { time };
+    }
+    const { open, high, low, close } = slot.candle;
+    return open === close
+      ? { time, open, high, low, close, ...dojiItemColors() }
+      : { time, open, high, low, close };
   });
 }
 
