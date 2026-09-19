@@ -242,11 +242,27 @@ test("the selector defect is GONE from the route, both halves of it", () => {
   // the two liquidation cohorts and the number moved from 4 to 6, and `T-04.5` added the long/short
   // pane and moved it to 7 — which is the guard working twice: a new selector written with `find`
   // would have left the count where it was and failed here.
+  //
+  // ⚠️ `T-01.8` MOVED IT TO 8, AND THE READING OF THE NUMBER CHANGED WITH IT: it is no longer
+  // "one per series". The price panel now reads FOUR series (`klines_ohlc`
+  // `OPEN`/`HIGH`/`LOW`/`CLOSE`, `SPEC-008`/`D1`) through ONE call site,
+  // `resolveOhlcCatalogEntry(catalog, catalogStatus, reduction)`, because the four differ in
+  // exactly one term and four copies of the same lookup would be four places for `HIGH` and
+  // `LOW` to drift apart. So: 7 direct call sites (the live-stream price row, OI, CVD, volume,
+  // the two liquidation cohorts, long/short) + 1 inside that helper. What the assertion still
+  // guards is unchanged — that NO selector reaches the catalog by any other route.
   assert.equal(
     (pageCode.match(/resolveCatalogEntry\(catalog,/g) ?? []).length,
-    7,
-    "price, OI, CVD, volume, the TWO liquidation cohorts and long/short all resolve through the " +
-      "unique-match helper",
+    8,
+    "the price live-stream row, OI, CVD, volume, the TWO liquidation cohorts, long/short and the " +
+      "four-reduction candle helper all resolve through the unique-match helper",
+  );
+  // And the four candle series go through it by way of that helper — named here so deleting the
+  // helper (and inlining `find` for the four) cannot leave the count above looking healthy.
+  assert.match(
+    pageCode,
+    /function resolveOhlcCatalogEntry\([\s\S]*?resolveCatalogEntry\(catalog, \(entry\) => matchesKlinesOhlc\(entry\.key, reduction\)\)/,
+    "the four klines_ohlc rows must resolve by identity (metric + provider + reduction), through the same refusal",
   );
 });
 
