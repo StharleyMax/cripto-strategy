@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
 import {
   colorTokens,
   candlestickSeriesColors,
+  dojiItemColors,
+  HOLLOW_BODY_FILL,
   assertNoForbiddenColorRoles,
   FORBIDDEN_COLOR_ROLE_SUBSTRINGS,
 } from "./color-tokens.ts";
@@ -120,17 +122,99 @@ test("D5.6's own falsifier pair reproduces from the script text: #f23645 (direct
   assert.ok(scriptSource.includes("'#f23645', '#eb6834'"), "validate_palette.js should still carry the FAIL pair in BLOCO 1");
 });
 
-test("candlestickSeriesColors derives every field from the 2 direction tokens, never a 3rd hue", () => {
+// ── `T-01.10`'s `design_gate`, `[SERIOUS-1]`: the test that used to live here CEMENTED the
+//    defect. It was a `deepEqual` over 6 hue-only fields, it was green, and it was green
+//    BECAUSE none of its assertions measured shape — any correction of `[BLOCKER-1]` would have
+//    made it fail for being right. What replaces it below asserts the THREE states of
+//    `ADR-010/D-2` and runs the grayscale ablation on them.
+//
+//    ⛔ THIS FILE IS THE CHEAP HALF OF THE PROOF, AND SAYS SO: it reads a style OBJECT, and an
+//    object is not a screen. The expensive half — what the library actually paints, at a density
+//    where the hollow interior exists — is `src/app/symbol/candle-direction-channel.test.ts`
+//    (`npm --prefix frontend run test:app`), which also carries the legacy style as a negative
+//    control. Neither replaces the other: this one would stay green if the library stopped
+//    honouring `upColor`, and that one would stay green if a bare hex crept into the palette.
+
+test("candlestickSeriesColors emits ADR-010/D-2's three states: HOLLOW rise, FILLED fall, NEUTRAL doji", () => {
   const tokens = colorTokens();
   const style = candlestickSeriesColors();
-  assert.deepEqual(style, {
-    upColor: tokens.directionUpFill,
-    downColor: tokens.directionDownFill,
-    borderUpColor: tokens.directionUpFill,
-    borderDownColor: tokens.directionDownFill,
-    wickUpColor: tokens.directionUpFill,
-    wickDownColor: tokens.directionDownFill,
-  });
+
+  // 1. The rise is HOLLOW — its body carries no ink at all, and its token moved to the border.
+  assert.equal(style.upColor, HOLLOW_BODY_FILL, "the rising body must be transparent, not tinted");
+  assert.equal(style.borderUpColor, tokens.directionUpFill);
+  assert.equal(style.wickUpColor, tokens.directionUpFill);
+
+  // 2. The fall is FILLED, from the same single token it always used.
+  assert.equal(style.downColor, tokens.directionDownFill);
+  assert.equal(style.borderDownColor, tokens.directionDownFill);
+  assert.equal(style.wickDownColor, tokens.directionDownFill);
+
+  // 3. Border and wick are STATED, not inherited from a library default: with a hollow body the
+  // border is the rise's only ink, so `borderVisible: false` would erase the rising candle.
+  assert.equal(style.borderVisible, true);
+  assert.equal(style.wickVisible, true);
+
+  // 4. The doji is the third state, and it carries NEITHER direction token.
+  const doji = dojiItemColors();
+  assert.equal(doji.color, tokens.provenanceWeak, "the doji is the approved #8b949e (STITCH_CONTEXT.md:1257)");
+  assert.deepEqual(doji, { color: tokens.provenanceWeak, borderColor: tokens.provenanceWeak, wickColor: tokens.provenanceWeak });
+  for (const value of Object.values(doji)) {
+    assert.ok(
+      value !== tokens.directionUpFill && value !== tokens.directionDownFill,
+      `the doji carries ${value}, a DIRECTION token — ADR-010:110 says a doji affirms no direction`,
+    );
+  }
+
+  // 5. No bare hex: every colored field traces to a named token or to the hollow constant.
+  const namedValues = new Set<string>([...Object.values(tokens), HOLLOW_BODY_FILL]);
+  for (const [field, value] of Object.entries({ ...style, ...doji })) {
+    if (typeof value === "string") {
+      assert.ok(namedValues.has(value), `field "${field}" ships the un-named color ${value}`);
+    }
+  }
+});
+
+test("A3: the GRAYSCALE ABLATION — collapse both direction hues onto one gray and the 3 states STAY 3", () => {
+  const tokens = colorTokens();
+  // The gate's own ablation, literal: `sed 's/089981/808080/g; s/f23645/808080/g'`.
+  const gray = (value: string): string => value.replace(/089981/gi, "808080").replace(/f23645/gi, "808080");
+  const classOf = (fields: Record<string, string>, ablate: boolean): string =>
+    Object.entries(fields)
+      .map(([key, value]) => `${key}=${ablate ? gray(value) : value}`)
+      .sort()
+      .join("|");
+  const distinct = (states: readonly Record<string, string>[], ablate: boolean): number =>
+    new Set(states.map((state) => classOf(state, ablate))).size;
+
+  const style = candlestickSeriesColors();
+  const doji = dojiItemColors();
+  const states = [
+    { body: style.upColor, border: style.borderUpColor, wick: style.wickUpColor },
+    { body: style.downColor, border: style.borderDownColor, wick: style.wickDownColor },
+    { body: doji.color, border: doji.borderColor, wick: doji.wickColor },
+  ];
+
+  assert.equal(distinct(states, false), 3, "precondition: the three states differ BEFORE the ablation");
+  assert.equal(
+    distinct(states, true),
+    3,
+    `after collapsing ${tokens.directionUpFill} and ${tokens.directionDownFill} onto one gray the states ` +
+      `merged — direction would be travelling by HUE alone, which reproves WCAG SC 1.4.1 (level A)`,
+  );
+
+  // ⛔ THE NEGATIVE CONTROL, and without it the assertion above proves nothing: the style this
+  // fix replaced is fed to the SAME ablation and MUST collapse. A guard that never rejects is
+  // the false green `[SERIOUS-1]` was made of.
+  const legacyStates = [
+    { body: "#089981", border: "#089981", wick: "#089981" },
+    { body: "#f23645", border: "#f23645", wick: "#f23645" },
+    { body: "#089981", border: "#089981", wick: "#089981" },
+  ];
+  assert.equal(
+    distinct(legacyStates, true),
+    1,
+    "the legacy hue-only style survived the ablation — then this ablation is not measuring hue",
+  );
 });
 
 // ── CA-F4-10's guard, and it is shown REJECTING something, not just typechecking clean ──

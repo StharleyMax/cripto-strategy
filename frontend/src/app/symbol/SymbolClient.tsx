@@ -852,6 +852,14 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
  * ⚠️ FORM IS THE `design_gate`'S (`T-01.10`), NOT A BUILDER'S: the wording and the placement
  * here are the sober placeholder that lets the fact be seen and asserted at all — the same
  * split `ReadableHorizon` states for the volume sub-axis.
+ *
+ * `[MINOR-1]`/`A6` OF THAT GATE, APPLIED: the clause "as quatro leituras do mesmo bucket:
+ * abertura, máxima, mínima e fechamento" was CUT. It taught what an OHLC is, to a single user
+ * who is a heavy TradingView user (`STITCH_CONTEXT.md:58`), on a line he reads every session —
+ * H8, aesthetic and minimalist design, which the skill anchors in Sweller's extraneous load.
+ * Everything the gate said to KEEP is untouched: numerator AND denominator, `partialBuckets`
+ * with a number of its own, the un-tinted `text-provenance-weak` numeral, and "nada desenhado,
+ * nunca uma vela de altura zero".
  */
 function PriceCandleFacts({ priceCandles }: { readonly priceCandles: PriceCandleData }) {
   return (
@@ -860,8 +868,7 @@ function PriceCandleFacts({ priceCandles }: { readonly priceCandles: PriceCandle
       data-price-partial-buckets={priceCandles.partialBuckets}
       className="text-sm text-provenance-weak"
     >
-      Vela completa em {priceCandles.drawnCandles} de {priceCandles.gridSlots} buckets de 1 min — as
-      quatro leituras do mesmo bucket: abertura, máxima, mínima e fechamento.{" "}
+      Vela completa em {priceCandles.drawnCandles} de {priceCandles.gridSlots} buckets de 1 min.{" "}
       {priceCandles.partialBuckets} {priceCandles.partialBuckets === 1 ? "bucket" : "buckets"} com
       leitura incompleta {priceCandles.partialBuckets === 1 ? "fica" : "ficam"} em lacuna — nada
       desenhado, nunca uma vela de altura zero.

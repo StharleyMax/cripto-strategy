@@ -109,6 +109,8 @@ export type {
 export {
   colorTokens,
   candlestickSeriesColors,
+  dojiItemColors,
+  HOLLOW_BODY_FILL,
   assertNoForbiddenColorRoles,
   FORBIDDEN_COLOR_ROLE_SUBSTRINGS,
   CONTRAST_BACKDROP,
