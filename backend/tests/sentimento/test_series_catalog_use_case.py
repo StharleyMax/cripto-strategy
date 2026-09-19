@@ -31,6 +31,16 @@ from src.modules.sentimento.domain.cvd_source_catalog import (
     CVD_SOURCE_METRIC,
     build_kline_takerbuy_entry,
 )
+from src.modules.sentimento.domain.klines_ohlc_catalog import (
+    KLINES_OHLC_INTERVAL,
+    KLINES_OHLC_MAX_STALENESS_MS,
+    KLINES_OHLC_METRIC,
+    KLINES_OHLC_NATIVE_GRID,
+    KLINES_OHLC_NATIVE_GRID_MS,
+    KLINES_OHLC_REDUCTIONS,
+    build_klines_ohlc_key,
+    klines_ohlc_catalog_entries,
+)
 from src.modules.sentimento.domain.klines_volume_catalog import (
     KLINES_VOLUME_MAX_STALENESS_MS,
     KLINES_VOLUME_METRIC,
@@ -99,8 +109,8 @@ def _classify_panel_grid(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGri
     )
 
 
-def test_the_real_catalog_has_fifteen_rows_not_seven() -> None:
-    """The honest total: `3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines + 1 L/S + 2 liq`.
+def test_the_real_catalog_has_nineteen_rows_not_seven() -> None:
+    """`3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines + 1 L/S + 2 liq + 4 klines_ohlc`.
 
     Was `10` until `T-01.6` appended `klines_volume`, `11` until `T-02.4` appended
     `cvd_source`/`kline_takerbuy`, `12` until `T-04.4` appended `count_long_short_ratio` and
@@ -108,7 +118,12 @@ def test_the_real_catalog_has_fifteen_rows_not_seven() -> None:
     and M4). M4 moves the count by TWO because the two legs are two series and their sum would
     erase which leg was flushed. Phases `02` and `04` forked from the same tree and each
     wrote "the count is 12"; keeping only one of the two would DROP a real series, so the
-    integration keeps both and the number is 15. The reasoning
+    integration keeps both and the number is 15, and `15` until `T-01.6` of `SPEC-008`
+    appended the FOUR `klines_ohlc` rows (`RF-2`, plan `01` item 1.7) — `OPEN`, `HIGH`, `LOW`
+    and `CLOSE` of the same `/fapi/v1/klines` bucket, which are four distinct `series_key_id`s
+    because `reduction` is a term of the key. Collapsing them into one row is the defect this
+    digit refuses: a candle served as a single series can only be picked by POSITION. The
+    reasoning
     below is unchanged — the point of the test was never the digit, it is that `n_entries`
     counts what the route SERVES rather than what a grep of call sites suggests.
 
@@ -123,7 +138,11 @@ def test_the_real_catalog_has_fifteen_rows_not_seven() -> None:
     """
     catalog = list_series_catalog()
 
-    assert len(catalog.entries) == 15
+    assert len(catalog.entries) == 19
+    ohlc_reductions = [
+        entry.key.reduction for entry in catalog.entries if entry.key.metric == KLINES_OHLC_METRIC
+    ]
+    assert ohlc_reductions == [Reduction.OPEN, Reduction.HIGH, Reduction.LOW, Reduction.CLOSE]
     oi_reductions = {
         entry.key.reduction
         for entry in catalog.entries
@@ -250,10 +269,19 @@ def test_reconstructed_entry_projects_a_non_null_published_error_as_numbers() ->
 
 
 def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
-    """Every OTHER row — 14 of the 15 — carries `reconstructedFrom: null, publishedError: null`.
+    """Every OTHER row — 18 of the 19 — carries `reconstructedFrom: null, publishedError: null`.
 
-    Was 9 of 10 until `T-01.6`, 10 of 11 until `T-02.4`, 11 of 12 until `T-04.4` and 12 of 13
-    until `T-05.8` added BOTH `sum_liquidation` cohorts. All five `SPEC-007` rows join this side
+    Was 9 of 10 until `T-01.6`, 10 of 11 until `T-02.4`, 11 of 12 until `T-04.4`, 12 of 13
+    until `T-05.8` added BOTH `sum_liquidation` cohorts and 14 of 15 until `T-01.6` of
+    `SPEC-008` added the four `klines_ohlc` rows. The four join this side of the split for the
+    same reason and it is the same claim: `OPEN`/`HIGH`/`LOW`/`CLOSE` are READ off the bucket
+    `/fapi/v1/klines` itself publishes, so there is no ground truth they approximate and no
+    `(median, p99, n)` to declare. ⚠️ `[M-9]` is open on the sibling `klines_volume` of this
+    very endpoint (stored volume UNDERSTATES the origin, pos=0 in four buckets) — that is a
+    COLLECTION defect escalated to `ADR-034`, not a published reconstruction error, and
+    inventing a `publishedError` here would restate an open bug as a measured fidelity.
+
+    All five `SPEC-007` rows join this side
     of the split rather than the reconstructed one, and for each that is a claim rather than
     bookkeeping: the value is READ from the bucket its own endpoint publishes, so there is
     nothing reconstructed and no `(median, p99, n)` to declare (`D6.9`).
@@ -276,7 +304,7 @@ def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
     assert isinstance(entries, list)
     not_reconstructed = [e for e in entries if e["reconstructedFrom"] is None]
 
-    assert len(not_reconstructed) == 14
+    assert len(not_reconstructed) == 18
     for entry in not_reconstructed:
         assert entry["publishedError"] is None
 
@@ -592,7 +620,14 @@ def test_registering_the_new_rows_appended_and_did_not_reorder_the_pre_existing_
     assert metrics[11] == CVD_SOURCE_METRIC
     assert metrics[12] == COUNT_LONG_SHORT_RATIO
     assert metrics[13] == metrics[14] == LIQUIDATION_METRIC
-    assert [entry.key.cohort for entry in catalog.entries[13:]] == list(COHORTS)
+    assert [entry.key.cohort for entry in catalog.entries[13:15]] == list(COHORTS)
+    # `T-01.6` of `SPEC-008`: the four `klines_ohlc` rows are the TAIL, in the order
+    # `KLINES_OHLC_REDUCTIONS` declares. Pinning the reductions by index — not merely the
+    # metric — is what makes a permutation of `OPEN`/`HIGH`/`LOW`/`CLOSE` fail here: all four
+    # carry the same metric, so a metric-only assertion would stay green while the candle's
+    # body and wick swapped ends.
+    assert metrics[15:] == [KLINES_OHLC_METRIC] * 4
+    assert [entry.key.reduction for entry in catalog.entries[15:]] == list(KLINES_OHLC_REDUCTIONS)
     assert metrics[:10] == [
         "cvd_source",
         "cvd_source",
@@ -607,19 +642,20 @@ def test_registering_the_new_rows_appended_and_did_not_reorder_the_pre_existing_
     ]
 
 
-def test_the_envelope_serves_fifteen_entries_without_changing_its_top_level_fields() -> None:
-    """`RS-1` again, at the wire: `n_entries` moved 10 -> 11 -> 12 -> 13 -> 15, nothing else."""
+def test_the_envelope_serves_nineteen_entries_without_changing_its_top_level_fields() -> None:
+    """`RS-1` at the wire: `n_entries` moved 10 -> 11 -> 12 -> 13 -> 15 -> 19, nothing else."""
     envelope = series_catalog_envelope(list_series_catalog())
 
     assert list(envelope.keys()) == ["query", "n_entries", "entries"]
     assert envelope["query"] == "series_catalog"
-    assert envelope["n_entries"] == 15
+    assert envelope["n_entries"] == 19
     entries = envelope["entries"]
     assert isinstance(entries, list)
     served_metrics = [entry["key"]["metric"] for entry in entries]
     assert served_metrics.count(KLINES_VOLUME_METRIC) == 1
     assert served_metrics.count(COUNT_LONG_SHORT_RATIO) == 1
     assert served_metrics.count(LIQUIDATION_METRIC) == 2
+    assert served_metrics.count(KLINES_OHLC_METRIC) == 4
 
 
 # ── A1: `unit` IS DERIVED FROM THE INSTRUMENT, NOT A LITERAL `"BTC"` ────────────────────────
@@ -673,13 +709,22 @@ def test_quote_denominated_rows_are_untouched_by_the_derivation() -> None:
             if entry.key.denom == "quote"
         ]
         price_rows = [entry for entry in quote_rows if entry.key.metric in price_metrics]
-        liquidation_rows = [entry for entry in quote_rows if entry.key.metric not in price_metrics]
+        liquidation_rows = [entry for entry in quote_rows if entry.key.metric == LIQUIDATION_METRIC]
+        # `T-01.6` of `SPEC-008`: the four `klines_ohlc` rows are quote-denominated too, and
+        # their `unit` is derived from the instrument by `klines_ohlc_catalog.quote_asset`
+        # rather than hardcoded — the same reading the base rows get from `base_asset`.
+        ohlc_rows = [entry for entry in quote_rows if entry.key.metric == KLINES_OHLC_METRIC]
 
-        assert len(quote_rows) == 4
+        assert len(quote_rows) == 8
         assert len(price_rows) == 2
         assert {entry.key.unit for entry in price_rows} == {"USDT"}
-        assert {entry.key.metric for entry in liquidation_rows} == {LIQUIDATION_METRIC}
+        assert len(liquidation_rows) == 2
         assert {entry.key.unit for entry in liquidation_rows} == {"USD"}
+        assert len(ohlc_rows) == 4
+        assert {entry.key.unit for entry in ohlc_rows} == {"USDT"}
+        # Every quote row is accounted for by one of the three groups — a fourth quote-
+        # denominated metric appearing here has to be classified, never absorbed in silence.
+        assert len(price_rows) + len(liquidation_rows) + len(ohlc_rows) == len(quote_rows)
 
 
 # The `klines_volume` `series_key_id`s that PRODUCTION `md.series` actually carries, one per
@@ -745,18 +790,27 @@ def test_the_pilot_universe_is_the_four_symbols_the_collector_writes() -> None:
     assert PILOT_INSTRUMENT_IDS[0] == "BTCUSDT"
 
 
-def test_the_served_catalog_has_fifteen_rows_per_pilot_instrument() -> None:
-    """`15 x 4 = 60`, every id distinct — `instrument_id` is a term of the key."""
+def test_the_served_catalog_has_nineteen_rows_per_pilot_instrument() -> None:
+    """`19 x 4 = 76`, every id distinct — `instrument_id` is a term of the key.
+
+    Was `15 x 4 = 60` until `T-01.6` of `SPEC-008` registered the four `klines_ohlc` rows, and
+    the multiplication is the point: the candle is served for EVERY pilot instrument, not only
+    for the `BTCUSDT` the domain modules default to. Serving one instrument while the collector
+    wrote four is the finding this function's own docstring records.
+    """
     catalog = list_pilot_series_catalog()
 
-    assert len(catalog.entries) == 60
+    assert len(catalog.entries) == 76
     ids = [entry.key.series_key_id() for entry in catalog.entries]
-    assert len(set(ids)) == 60
+    assert len(set(ids)) == 76
+    ohlc = [entry for entry in catalog.entries if entry.key.metric == KLINES_OHLC_METRIC]
+    assert len(ohlc) == 16
+    assert {entry.key.instrument_id for entry in ohlc} == set(PILOT_INSTRUMENT_IDS)
     assert {entry.key.instrument_id for entry in catalog.entries} == set(PILOT_INSTRUMENT_IDS)
 
 
 def test_the_pilot_catalog_appends_and_never_reorders_the_btcusdt_prefix() -> None:
-    """`RS-1`: order is FORM. The fifteen `BTCUSDT` rows keep the indices they already had."""
+    """`RS-1`: order is FORM. The nineteen `BTCUSDT` rows keep the indices they already had."""
     served = [entry.key.series_key_id() for entry in list_pilot_series_catalog().entries]
     btcusdt = [entry.key.series_key_id() for entry in list_series_catalog("BTCUSDT").entries]
 
@@ -819,6 +873,21 @@ def test_series_history_no_longer_refuses_the_kline_takerbuy_id() -> None:
     assert report.panel_nature == Nature.FLOW.value
 
 
+def _klines_ohlc_ids(instrument_id: str) -> set[str]:
+    """Return the four `klines_ohlc` ids of `instrument_id` — `T-01.3` writes them.
+
+    Rebuilt from the identity module rather than read off the served catalog, because what
+    this helper is used for is EXCLUSION: if it built the wrong four ids the subtraction would
+    not cancel and the assertion that uses it would fail, which is the behaviour wanted.
+    """
+    return {
+        entry.key.series_key_id()
+        for entry in klines_ohlc_catalog_entries(
+            instrument_id, verified_by="test_klines_ohlc_catalog.py"
+        ).entries
+    }
+
+
 def test_the_served_cvd_row_is_the_one_the_collector_writes_under() -> None:
     """Served id == written id, for all four pilot instruments — not only for `BTCUSDT`.
 
@@ -850,8 +919,14 @@ def test_the_served_cvd_row_is_the_one_the_collector_writes_under() -> None:
 
     for symbol in sorted(INITIAL_SYMBOLS):
         rows = build_klines_to_rows()(bucket_open_ms + 120_000, symbol, page)
-        assert len(rows) == 2
-        assert {row.series_key_id for row in rows} <= served
+        # Six rows per settled bar since `T-01.3` of `SPEC-008`: `klines_volume`, `cvd_source`
+        # and the four `klines_ohlc` readings. The four candle ids are SUBTRACTED from BOTH
+        # sides below — not from the written side alone — so this assertion holds before AND
+        # after `T-01.6` adds them to the served catalog, and never becomes a landmine that
+        # fails on the commit that satisfies it.
+        assert len(rows) == 6
+        candle_ids = _klines_ohlc_ids(symbol)
+        assert {row.series_key_id for row in rows} - candle_ids <= served - candle_ids
 
 
 # ── `T-05.8` — as DUAS coortes de `sum_liquidation` no catálogo SERVIDO (`SPEC-007` §4.5) ────
@@ -966,3 +1041,149 @@ def test_the_two_served_liquidation_rows_publish_no_fidelity_nobody_measured() -
     for entry in _liquidation_entries_of(list_series_catalog()):
         assert entry.published_error is None
         assert entry.reconstructed_from is None
+
+
+# ── `T-01.6` of `SPEC-008` — the FOUR `klines_ohlc` rows in the SERVED catalog (`RF-2`) ─────
+#
+# `T-01.1` already proves the IDENTITY is right term by term (`test_klines_ohlc_catalog.py`);
+# none of that is repeated here. What this block proves is the thing `T-01.1` deliberately
+# could not: that the four rows reach the list the ROUTE serves, that they stay FOUR, and that
+# `/api/v1/series-history` therefore stops refusing their ids.
+#
+# The `verified_by` the served rows carry is read off the FILE ON DISK that `T-01.1` wrote,
+# never from a literal this file also owns: a literal compared with a copy of itself stays
+# green for two sides that drifted together. `verified_by` is the fifteenth term of the key,
+# so this string is part of what the four series ARE — renaming that test file without
+# updating the registration re-identifies four series in `md.series`, and the symptom is a
+# `200` with `n_points = 0`, never an error anyone sees.
+_KLINES_OHLC_VERIFIER: Final[Path] = Path(__file__).resolve().parent / "test_klines_ohlc_catalog.py"
+assert _KLINES_OHLC_VERIFIER.is_file(), f"the verifier file is gone: {_KLINES_OHLC_VERIFIER}"
+_KLINES_OHLC_SERVED_VERIFIED_BY: Final[str] = _KLINES_OHLC_VERIFIER.name
+
+
+def _klines_ohlc_entries_of(catalog: SeriesCatalog) -> list[SeriesCatalogEntry]:
+    """Return the served `klines_ohlc` rows, failing loudly if they are not exactly four.
+
+    Not a filter whose length is checked later: "exactly four" IS the assertion, and it is the
+    one that refuses the collapse. One row would mean a candle a consumer can only address by
+    position; five would mean the append happened twice.
+    """
+    rows = [entry for entry in catalog.entries if entry.key.metric == KLINES_OHLC_METRIC]
+    assert len(rows) == 4, f"expected exactly four {KLINES_OHLC_METRIC} rows, got {len(rows)}"
+    return rows
+
+
+def test_the_four_klines_ohlc_rows_are_registered_in_the_catalog_the_route_serves() -> None:
+    """`RF-2`: the identity `T-01.1` built is now four rows of `list_series_catalog()`.
+
+    The comparison is by `series_key_id`, which is the `sha256` of all fifteen terms — so a
+    single term drifting between `domain/` and this registration (a different `verified_by`, a
+    different `interval`, a `unit` of `"USD"`) fails here instead of shipping a row nothing
+    writes to. Comparing the ids rather than a handful of fields is what makes the assertion
+    cover the terms nobody thought to name.
+    """
+    served = _klines_ohlc_entries_of(list_series_catalog("BTCUSDT"))
+
+    assert [entry.key.reduction for entry in served] == list(KLINES_OHLC_REDUCTIONS)
+    for entry, reduction in zip(served, KLINES_OHLC_REDUCTIONS, strict=True):
+        canonical = build_klines_ohlc_key(
+            reduction, instrument_id="BTCUSDT", verified_by=_KLINES_OHLC_SERVED_VERIFIED_BY
+        )
+        assert entry.key.series_key_id() == canonical.series_key_id()
+        assert entry.key.verified_by == _KLINES_OHLC_SERVED_VERIFIED_BY
+        assert entry.key.interval == KLINES_OHLC_INTERVAL
+        assert entry.key.nature is Nature.STOCK
+        assert entry.native_grid == KLINES_OHLC_NATIVE_GRID
+        assert entry.native_grid_ms == KLINES_OHLC_NATIVE_GRID_MS
+        assert entry.max_staleness_ms == KLINES_OHLC_MAX_STALENESS_MS
+
+
+def test_the_four_served_klines_ohlc_rows_are_four_distinct_ids_and_never_one() -> None:
+    """The collapse falsifier: `OPEN`/`HIGH`/`LOW`/`CLOSE` are four addresses, pairwise.
+
+    A candle served as ONE row is the defect this task exists to prevent, and it is not
+    hypothetical here: the Open Interest panel spent a whole phase pointed at an empty series
+    because it chose by POSITION. Four ids means every reading has an address of its own, so a
+    consumer asking for `HIGH` can never be handed `LOW`.
+    """
+    served = _klines_ohlc_entries_of(list_series_catalog("BTCUSDT"))
+
+    ids = [entry.key.series_key_id() for entry in served]
+    assert len(set(ids)) == 4
+    # And they are distinct from the OTHER price row of the same endpoint (`klines_last`),
+    # which is a different metric — registering the candle must not displace it.
+    last_ids = {
+        entry.key.series_key_id()
+        for entry in list_series_catalog().entries
+        if entry.key.metric == "klines_last"
+    }
+    assert len(last_ids) == 1
+    assert set(ids).isdisjoint(last_ids)
+
+
+@pytest.mark.parametrize("reduction", list(KLINES_OHLC_REDUCTIONS))
+def test_series_history_no_longer_refuses_any_of_the_four_klines_ohlc_ids(
+    reduction: Reduction,
+) -> None:
+    """The DoD of this task, asserted at the function that actually raises the `422`.
+
+    Before this registration, `catalog.entry_for_id` returned `None` for all four ids and
+    `build_series_history_report` raised `UnknownSeriesKeyIdError`, which the route maps to
+    `422`. Asserting `entry_for_id is not None` would only test `entry_for_id`; this calls the
+    real use case, through the real refusal branch, once per reading — because registering
+    three of four would leave one leg of the candle refused and the other three green.
+
+    `panel_nature == STOCK` is the second half: a price is a LEVEL at an instant, and the
+    `FLOW` its `klines_volume` sibling carries off the same array would make `LOCF` over it a
+    type error. The read path branches on this value, so a wrong `nature` is a wrong drawing.
+    """
+    catalog = list_series_catalog()
+    entry = next(e for e in _klines_ohlc_entries_of(catalog) if e.key.reduction is reduction)
+    series_key_id = entry.key.series_key_id()
+
+    report = build_series_history_report(
+        catalog,
+        _EmptyWindowReader(),
+        _classify_panel_grid,
+        series_key_id=series_key_id,
+        symbol="BTCUSDT",
+        interval="1m",
+        window_start_ms=1_700_000_000_000,
+        window_end_ms=1_700_000_060_000,
+        knowledge_time_ms=1_700_000_120_000,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.panel_series_key_id == series_key_id
+    assert report.panel_nature == Nature.STOCK.value
+
+
+def test_the_four_klines_ohlc_ids_are_served_for_every_pilot_instrument() -> None:
+    """`16 = 4 x 4`: the candle is addressable for every symbol the collector writes.
+
+    MORDE the defect the pilot universe already paid once: a catalog built for `BTCUSDT` alone
+    answers `422` for the three other symbols whose rows are sitting in `md.series`, and the
+    panel empties with `rc=0` rather than with an error anyone sees.
+    """
+    served = _klines_ohlc_entries_of_pilot()
+
+    assert len(served) == 16
+    by_instrument: dict[str, list[Reduction]] = {
+        instrument: [] for instrument in PILOT_INSTRUMENT_IDS
+    }
+    for entry in served:
+        by_instrument[entry.key.instrument_id].append(entry.key.reduction)
+    assert all(reductions == list(KLINES_OHLC_REDUCTIONS) for reductions in by_instrument.values())
+    # `unit` is DERIVED from each instrument's quote asset, never the `"USDT"` literal of the
+    # normative table — the same defect `_BASE_ASSET_UNIT = "BTC"` was on the base side.
+    assert {entry.key.unit for entry in served} == {"USDT"}
+    assert len({entry.key.series_key_id() for entry in served}) == 16
+
+
+def _klines_ohlc_entries_of_pilot() -> list[SeriesCatalogEntry]:
+    """Return the `klines_ohlc` rows of the PILOT catalog — the one `create_app` wires."""
+    return [
+        entry
+        for entry in list_pilot_series_catalog().entries
+        if entry.key.metric == KLINES_OHLC_METRIC
+    ]
