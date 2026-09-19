@@ -20,6 +20,7 @@ taken at that minute could have seen, filed as though it had settled.
 from __future__ import annotations
 
 import inspect
+import math
 
 import pytest
 
@@ -53,6 +54,7 @@ from src.modules.sentimento.use_cases.collector_series_mapping import (
     KLINES_OHLC_PRICE_READINGS,
     build_klines_to_rows,
     is_closed_bucket,
+    klines_bucket_end,
 )
 
 # The `verified_by` `use_cases/series_catalog.py` (`T-01.6`) has to register the SERVED entry
@@ -703,3 +705,196 @@ def test_the_sixteen_provenance_fields_are_written_once_for_all_six_identities()
     )
     for field in ("availability_source", "observer_id", "observer_region", "src_label_raw"):
         assert source.count(f"{field}=") == 1, f"{field} is written more than once"
+
+
+# ── `T-01.4` OF `SPEC-008`: THE SIGN OF THE CUT, AND THE BUCKET THAT *ENDS* AT `ceil(t/B)*B` ─
+#
+# Plan `01` item 1.5 (the four new series INHERIT the anti-lookahead cut, and the test that
+# fixes its SIGN covers them) FUSED with `DoD 10` (the bucket is the one that TERMINATES at
+# `ceil(t/B)*B`). The fusion is not editorial: `is_closed_bucket(k, t)` and
+# `klines_bucket_end(k) <= t` are the same assertion about bucket identity seen from two sides.
+#
+# ⛔ EVERY ASSERTION BELOW IS AN EQUALITY OF BUCKET, NEVER OF MAGNITUDE. The naive floor shifts
+# the series by one native bar and the measured effect of that shift is `0,114 pp` — a test of
+# order of magnitude cannot see it, and `CLAUDE.md` records that an anti-lookahead rule of this
+# project was already INVERTED once and propagated through two documents before anyone noticed.
+
+
+def _bucket_end_by_ceiling(kline: KlineRow) -> int:
+    """Recompute `ceil(t/B)*B` independently of production, from the source array's own label.
+
+    Spelled out here instead of importing `klines_bucket_end` so the assertions below compare
+    two independently written expressions rather than one value with itself — the same device
+    `_CATALOG_VERIFIED_BY` uses at the top of this file.
+    """
+    return math.ceil(kline.close_time_ms / KLINES_BUCKET_WIDTH_MS) * KLINES_BUCKET_WIDTH_MS
+
+
+def test_the_candle_is_absent_at_the_closing_millisecond_and_present_one_ms_later() -> None:
+    """The edge, on the four `klines_ohlc` identities: `t == close_time_ms` publishes NOTHING.
+
+    ⛔ THIS IS THE FALSIFIER OF THE SIGN, and it is two-sided ON PURPOSE. Relax `<` to `<=` and
+    the first half fails (the candle of a bucket still one millisecond from settled reaches
+    `md.series` as a settled price). Invert `<` to `>` and the second half fails (a bar the
+    venue has closed never gets published at all, while the in-progress one does). A test that
+    only checked "the rows are booleans" or "some rows came back" passes under BOTH mutations.
+
+    The instant asserted is `close_time_ms` EXACTLY — `bar.close_time_ms`, not an offset — so
+    the edge named here is the one `is_closed_bucket`'s docstring reserves as STILL OPEN.
+    """
+    bar = _kline(_T0, "10.221", prices=("1.0", "1.9", "0.5", "1.5"))
+    to_rows = build_klines_to_rows()
+
+    at_the_closing_ms = to_rows(bar.close_time_ms, "BTCUSDT", (bar,))
+    one_ms_later = to_rows(bar.close_time_ms + 1, "BTCUSDT", (bar,))
+
+    assert {row.series_key_id for row in at_the_closing_ms} & _ohlc_ids() == set()
+    assert at_the_closing_ms == ()
+    assert {row.series_key_id for row in one_ms_later} & _ohlc_ids() == _ohlc_ids()
+    assert {
+        reduction: _values_of(one_ms_later, _ohlc_id(reduction))
+        for reduction in KLINES_OHLC_REDUCTIONS
+    } == {
+        Reduction.OPEN: ("1.0",),
+        Reduction.HIGH: ("1.9",),
+        Reduction.LOW: ("0.5",),
+        Reduction.CLOSE: ("1.5",),
+    }
+
+
+def test_which_buckets_the_candle_covers_is_pinned_per_reduction_never_by_a_count() -> None:
+    """Each of the four readings covers the three SETTLED buckets — by `bucket_end`, in order.
+
+    Morde: invert `is_closed_bucket` and each reduction comes back with the COMPLEMENT — the
+    single in-progress bucket — so the `==` fails on both the content and the count at once.
+    Morde também: a cut applied per identity instead of once above the six tuples leaves one
+    reduction covering a bucket the others do not, which a page-wide `{row.bucket_end}` set
+    (the shape the `T-01.3` test uses) cannot see, because the volume row would still be there.
+    """
+    page = _measured_page()
+    rows = build_klines_to_rows()(_now_with_the_last_bucket_still_open(), "BTCUSDT", page)
+    settled = tuple(_T0 + (index + 1) * KLINES_BUCKET_WIDTH_MS for index in range(3))
+    in_progress = _T0 + 4 * KLINES_BUCKET_WIDTH_MS
+
+    for reduction in KLINES_OHLC_REDUCTIONS:
+        covered = tuple(row.bucket_end for row in rows if row.series_key_id == _ohlc_id(reduction))
+        assert covered == settled, f"{reduction.value} covers {covered}, not {settled}"
+        assert in_progress not in covered
+
+
+def test_the_cut_and_the_stamp_are_one_inequality_seen_from_two_sides() -> None:
+    """`is_closed_bucket(k, t)` holds EXACTLY when `klines_bucket_end(k) <= t`, for every `t`.
+
+    ⛔ THE FUSION OF ITEM 1.5 WITH `DoD 10`, AS ONE EXECUTABLE STATEMENT. `bucket_end <= t` is
+    the predicate the single reader admits a row on (the `as_of` accessor's own
+    `_is_closed_bucket`), so the day these two drift apart the collector writes a row stamped
+    at an instant it had not yet reached — admitted by the reader, and drawn on the chart.
+
+    The sweep straddles the boundary on BOTH sides and includes the boundary instant itself, so
+    an off-by-one in either direction changes exactly one element of the two tuples below and
+    the `==` names it. `strict=True` on the `zip` is what keeps the two sweeps the same length.
+    """
+    bar = _kline(_T0, "10.0")
+    bucket_end = _bucket_end_by_ceiling(bar)
+    instants = (
+        bucket_end - KLINES_BUCKET_WIDTH_MS,
+        bucket_end - 2,
+        bucket_end - 1,
+        bucket_end,
+        bucket_end + 1,
+        bucket_end + KLINES_BUCKET_WIDTH_MS,
+    )
+
+    by_the_cut = tuple(is_closed_bucket(bar, instant) for instant in instants)
+    by_the_stamp = tuple(klines_bucket_end(bar) <= instant for instant in instants)
+
+    assert by_the_cut == by_the_stamp
+    assert by_the_cut == (False, False, False, True, True, True), (
+        f"the cut answered {by_the_cut} over {instants}; the bucket ending at {bucket_end} is "
+        "closed from that instant ON, and open at every instant before it"
+    )
+    assert [instant for instant, closed in zip(instants, by_the_cut, strict=True) if closed][
+        0
+    ] == bucket_end
+
+
+def test_the_stamp_is_the_bucket_that_ends_at_the_ceiling_never_the_one_the_floor_names() -> None:
+    """`bucket_end == ceil(close_time/B)*B` on all six identities — never the `openTime` label.
+
+    ⛔ `DoD 10`. `event_time` IS `bucket_end` on this endpoint, so the fact belongs to the
+    bucket that TERMINATES at `ceil(t/B)*B`. The naive floor — passing the source's own
+    `openTime` through as the stamp — moves the WHOLE series one native bar earlier, and the
+    measured effect of that is `0,114 pp`: every assertion of magnitude this repository could
+    write would go on passing. So the assertion is an equality of BUCKET, and the gap between
+    the two readings is named as EXACTLY one bar width rather than as "close enough".
+
+    Morde: `bucket_end = kline.open_time_ms` and the first `==` fails on every row; hoist the
+    stamp out of the bar loop and the per-bar `==` fails on two bars of three.
+    """
+    page = _measured_page()
+    settled_bars = page[:3]
+    rows = build_klines_to_rows()(_now_with_the_last_bucket_still_open(), "BTCUSDT", page)
+    assert rows
+
+    for bar in settled_bars:
+        ceiling = _bucket_end_by_ceiling(bar)
+        published = tuple(row.bucket_end for row in rows if row.bucket_end == ceiling)
+        assert len(published) == 6, f"the bucket ending at {ceiling} carries {len(published)} rows"
+        assert ceiling - bar.open_time_ms == KLINES_BUCKET_WIDTH_MS
+
+    stamps = {row.bucket_end for row in rows}
+    assert stamps == {_bucket_end_by_ceiling(bar) for bar in settled_bars}
+    assert {row.event_time for row in rows} == stamps
+
+    # The shift itself, named in order: what the naive floor would stamp, against what is
+    # stamped. NOT `isdisjoint` — a contiguous page shares boundaries, so bar N's bucket_end IS
+    # bar N+1's openTime, and the two sets overlap while every element is still one bar off.
+    floors = tuple(bar.open_time_ms for bar in settled_bars)
+    ceilings = tuple(sorted(stamps))
+    assert ceilings != floors
+    assert all(
+        ceiling - floor == KLINES_BUCKET_WIDTH_MS
+        for ceiling, floor in zip(ceilings, floors, strict=True)
+    ), f"stamped {ceilings}; the naive floor would have stamped {floors}"
+
+
+def test_no_published_row_is_stamped_at_an_instant_the_collector_had_not_yet_reached() -> None:
+    """Every `bucket_end` published is `<= received_at` — the anti-lookahead rule, as a scan.
+
+    This is the invariant the two halves exist to protect, stated over the ROWS instead of over
+    the predicate, and it covers the four new identities along with the two older ones because
+    it never names an identity at all.
+
+    Morde: invert `is_closed_bucket` and every surviving row is stamped in the FUTURE of the
+    collector's own clock — `as_of` would admit each of them at a `t` the collector never saw.
+    """
+    received_at = _now_with_the_last_bucket_still_open()
+    rows = build_klines_to_rows()(received_at, "BTCUSDT", _measured_page())
+    assert rows
+    late = [row for row in rows if row.bucket_end > received_at]
+    assert late == [], (
+        f"{len(late)} of {len(rows)} rows carry a bucket_end after received_at={received_at}; "
+        "the newest is "
+        f"{max((row.bucket_end for row in late), default=None)}"
+    )
+    assert max(row.bucket_end for row in rows) == _T0 + 3 * KLINES_BUCKET_WIDTH_MS
+
+
+def test_the_stamp_lands_on_the_grid_even_when_the_source_label_is_not_aligned() -> None:
+    """A misaligned `openTime` still yields a grid instant — the ceiling GUARANTEES the grid.
+
+    `use_cases/series_history.py` walks its X axis on whole-minute instants, and the previous
+    spelling (`open_time_ms + KLINES_BUCKET_WIDTH_MS`) only INHERITED that alignment from the
+    venue: a label off the grid went through onto an off-grid `bucket_end` that `as_of` would
+    still admit (`bucket_end <= t`) and that no exception would ever report.
+
+    Morde: restore `open_time_ms + KLINES_BUCKET_WIDTH_MS` and this reads `1788000060017`,
+    which is not a multiple of one minute. It is the one assertion in this file that tells the
+    two spellings apart — every other bar in this suite is aligned, so on those they agree.
+    """
+    misaligned = _kline(_T0 + 17, "10.0")
+    stamped = klines_bucket_end(misaligned)
+    assert stamped % KLINES_BUCKET_WIDTH_MS == 0
+    assert stamped == _T0 + 2 * KLINES_BUCKET_WIDTH_MS
+    assert stamped != misaligned.open_time_ms + KLINES_BUCKET_WIDTH_MS
+    assert misaligned.close_time_ms < stamped
