@@ -186,3 +186,36 @@ MORDE fase:   com espinha de fase -> 30  |  sem espinha -> 26
 
 ⚠️ **Leia o número certo:** os 4 lotes economizados **não são ganho disponível** — são o preço da
 correção. Pagá-los é o que impede `03` de reagregar sobre um eixo que `02` ainda não unificou.
+
+---
+
+## 6. ⛔ Preparo da worktree — e o erro que o loop principal cometeu no lote 1
+
+Worktree nova **não tem** `backend/.venv`, `frontend/node_modules` nem `data/`: os três são
+gitignored. Sem eles a suíte falha por `ENOENT` e o builder lê isso como **regressão**, que é
+falso vermelho.
+
+**O erro:** no lote 1 o loop principal ligou os três por `ln -s`. Funciona para `.venv` e `data/`,
+e **quebra o `make e2e`** — o Turbopack recusa o `next build` com
+*"Symlink [project]/node_modules is invalid, it points out of the filesystem root"*. Resultado:
+`e2e rc=3`, e o veredito de `make verify` da `T-01.2` nasceu **INDETERMINADO** — justamente no
+único portão que lê **pixel**.
+
+**A correção, medida:** `/tmp` e `/home/stharley` são o **mesmo filesystem**
+(`stat -c '%d' → 66306` nos dois) ⇒ `node_modules` entra por **hard link**, não por symlink:
+
+```bash
+WT=<caminho-da-worktree>
+git worktree add -b task/<slug> "$WT" <base>
+ln -sfn "$REPO/backend/.venv"  "$WT/backend/.venv"     # symlink OK
+ln -sfn "$REPO/data"           "$WT/data"              # symlink OK
+cp -al  "$REPO/frontend/node_modules" "$WT/frontend/node_modules"   # ⛔ HARD LINK, nunca symlink
+```
+
+`[MEDIDO 2026-09-19]`: `cp -al` de **1,3 GB** levou **0,44 s** e não consome disco (hard link).
+Com a troca, `make e2e` na worktree `t01-2` → **`40 passed (40,4 s)`**, contra `rc=3` antes.
+
+⚠️ **Se algum dia as worktrees ficarem noutro filesystem**, `cp -al` falha com
+`Invalid cross-device link` — e aí a opção é `npm ci` na worktree (rede, lento), não voltar ao
+symlink. **Voltar ao symlink recria exatamente este defeito, e ele passa como "rc=3 do e2e", não
+como "ambiente mal montado".**
