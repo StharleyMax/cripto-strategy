@@ -6,6 +6,38 @@
 > **Requisitos cobertos:** `RN-1` aplicado ao eixo do tempo · `SPEC-008` `D5` `D6` (§7)
 > **Depende da fase `02`** — a detecção de borda é do eixo mestre que `02` define
 
+## ⛔ PRÉ-REQUISITO ACRESCENTADO EM 2026-09-20 — esta fase estava planejada sobre uma premissa FALSA
+
+**Ela pressupõe que paginar para trás traz barra. Hoje não traz, e a causa já está medida.**
+
+O backfill de 90 dias — **2.148.504 linhas**, **1,641 GB**, 3 h de walk, run `ACCEPTED` — está no
+banco e **é invisível para a rota**. `R-1` do acessor é `available_at <= t` com `t` = **a fatia**,
+e a linha do backfill tem `available_at − bucket_end ≈ 33 h` ⇒ servi-la naquela fatia **seria
+lookahead** e o acessor recusa, **corretamente**:
+
+```bash
+# a MESMA janela: 240 linhas no psql, 241 fatias servidas com absence SEM_PONTO em TODAS
+psql -Atc "select count(*) from md.series where series_key_id='6486750c2f…' and symbol='BTCUSDT'
+           and bucket_end > 1789732800000 and bucket_end <= 1789747200000"   # 240
+curl -s ".../series-history?series_key_id=6486750c2f…&…&bar_policy=final_only"
+#   241 rows, absence: {'SEM_PONTO': 241}
+```
+
+`[MEDIDO 2026-09-19, gates/T-01.5-dod6-medicao-e-achado-lookahead.md; n=240 linhas × 241 fatias]`
+
+⇒ **Construído como este plano está escrito hoje, o `DoD 1` (*"3 arrastos aumentam a contagem de
+barras"*) morde — não por defeito de paginação, mas porque não há o que paginar.** Arrastar
+carrega `SEM_PONTO`, por mais páginas que se peça.
+
+**A decisão que destrava está em [`ADR-042`](../../adr/ADR-042-dois-relogios-available-at-responde-ao-horizonte-de-conhecimento-nao-a-fatia.md)**
+— `R-1` liga `available_at` ao **horizonte de conhecimento** (`K`), não à fatia; com `K = t` o
+comportamento de decisão é idêntico ao de hoje, e `K > t` só é admitido sob
+`ReadPurpose.RENDERING`. **A execução é `T-05.0`, e `T-05.1`/`T-05.8` dependem dela.**
+
+⚠️ **O que isto NÃO autoriza:** afrouxar `R-1`. Se a contagem de barras subir **sem** que o
+portão `D3` da `ADR-042` exista (`ENTRY_CONDITION` com `K > t` **levanta**), o lookahead que
+`SPEC-001` §2.3 existe para impedir voltou — e voltou pela porta que esta fase abriu.
+
 ## O requisito, e ele é NOVO
 
 `[PREMISSA-OWNER: 2026-09-19]`, literal — não estava no `PRD-008`:
@@ -62,6 +94,19 @@ só que mais rápido. **Onde mora a reagregação e quanto há para reagregar s�
 1. **Arrastar carrega.** Playwright contra o app real: `n = 3` arrastos sucessivos para trás
    aumentam a contagem de barras do painel de Preço, monotonicamente. **Morde** se a contagem
    estabilizar antes do teto.
+   ⛔ **E morde HOJE por uma causa que não é paginação** — ver o pré-requisito no topo: sem
+   `T-05.0`/`ADR-042` o arrasto pagina sobre `SEM_PONTO`. **Este `DoD` não é executável antes de
+   `T-05.0`**, e tentar fechá-lo antes mede a paginação contra um armazém que a rota não serve.
+
+0. ⛔ **`DoD` NOVO, e é o portão que impede a correção de virar afrouxamento** (`ADR-042`/`D3`):
+   `as_of(..., purpose=ENTRY_CONDITION, t=T, knowledge_time=T+1)` **levanta**, e o mesmo sob
+   `EXECUTION_SIMULATION`. **No MESMO arquivo de teste**, o caso positivo: `RENDERING` com
+   `K = T+1` **devolve** a linha do backfill. **Morde** se qualquer um dos dois recusar errado —
+   e morde em particular se só o caso negativo existir, porque aí o teste não distingue
+   *"recusou certo"* de *"recusa tudo"*.
+   **E a janela auto-verificável pelo owner:** `BTCUSDT`, `bucket_end ∈ (1789732800000,
+   1789747200000]` — hoje `absence: {SEM_PONTO: 241}`; depois, **≥ 1** das 240 linhas servida,
+   **sem** `R-1` ter sido removida.
 
 2. **A parede assimétrica aparece e é NOMEADA.** Arrastando além de **~30 dias** em `4h`:
    o painel de Preço **continua** com barras **e** os painéis de OI e long/short mostram o estado

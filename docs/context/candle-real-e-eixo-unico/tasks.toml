@@ -657,12 +657,38 @@ tracker = { provider = "jira", id = "CST-233", url = "https://conversationhub.at
 # ══════════════════════════════════════════════════════════════════════════════════
 
 [[tasks]]
+id = "T-05.0"
+title = "[sentimento] 05 · ⛔ PRE-REQUISITO: R-1 liga available_at ao HORIZONTE DE CONHECIMENTO, nao a fatia (ADR-042)"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "ADR-042 (D1..D5)", "SPEC-001 §2.3/§2.5", "ADR-006", "ADR-039 (monotonicidade da admissao)",
+    "ORIGEM: achado de T-01.5 — gates/T-01.5-dod6-medicao-e-achado-lookahead.md, corroborado por gates/FASE-01-qa.md §4.",
+    "⛔ A FASE 05 ESTAVA PLANEJADA SOBRE PREMISSA FALSA: o backfill de 90 dias (2.148.504 linhas, 1,641 GB, run ACCEPTED) E INVISIVEL PARA A ROTA. psql devolve 240 linhas na janela auto-verificavel e /series-history devolve absence {SEM_PONTO: 241} nas 241 fatias [MEDIDO 2026-09-19].",
+    "A CAUSA NAO E BUG: R-1 e `available_at <= t` com t = A FATIA (as_of_accessor.py:542). A linha do backfill tem available_at − bucket_end ≈ 33 h; servi-la naquela fatia SERIA lookahead e o acessor recusa CERTO.",
+    "DECISAO (ADR-042/D1): available_at <= K, onde K = knowledge_time. bucket_end continua respondendo a fatia (R-2 intacta). bucket_end = valid time, available_at = transaction time.",
+    "⛔ D2 — COM K = t O COMPORTAMENTO E IDENTICO AO DE HOJE, BYTE A BYTE. A regra antiga e caso particular da nova, nao caso revogado. O backtest passa K = t por definicao (record_run.py:96).",
+    "⛔ D3 E O PORTAO QUE IMPEDE ISTO DE VIRAR AFROUXAMENTO: K > t e admitido SOMENTE sob ReadPurpose.RENDERING; ENTRY_CONDITION e EXECUTION_SIMULATION LEVANTAM. Mesmo mecanismo de _refuse_intrabar_for_entry.",
+    "DoD-a: as_of(purpose=ENTRY_CONDITION, t=T, knowledge_time=T+1) levanta; idem EXECUTION_SIMULATION. MORDE se devolver leitura.",
+    "DoD-b: NO MESMO ARQUIVO, o caso POSITIVO — RENDERING com K = T+1 DEVOLVE a linha do backfill. Sem ele o teste nao distingue 'recusou certo' de 'recusa tudo'.",
+    "DoD-c: com K = t em toda fatia, /series-history devolve resposta IGUAL BYTE A BYTE a de hoje na mesma janela. MORDE com qualquer diferenca — diferenca ali significa que o modo de DECISAO mudou.",
+    "DoD-d: a fixture envenenada de SPEC-001 §5.1 continua recusada sob ENTRY_CONDITION para QUALQUER K.",
+    "DoD-e (auto-verificavel pelo owner): BTCUSDT, bucket_end ∈ (1789732800000, 1789747200000], com knowledge_time_ms = server_now_ms => ≥ 1 das 240 linhas servida, SEM R-1 ter sido removida.",
+    "⚠️ ADR-039 NAO QUEBRA: sob D1 o termo `available_at <= K` deixa de depender de t (K e constante na chamada), logo e trivialmente monotono em t, e R-2 segue alcancando para tras. A passada ordenada unica nao muda de forma. [NAO MEDIDO — argumento sobre o invariante escrito; quem paga e o DoD desta task].",
+    "⚠️ SPEC-001 §2.3 CARREGA A FORMULA LITERAL e precisa de emenda quando ADR-042 sair de `proposta`. Duas verdades sobre R-1 em dois documentos e o defeito que este repositorio ja pagou uma vez.",
+]
+local_only = true
+local_reason = "2026-09-20: task nascida do achado de lookahead da fase 01; o card entra junto com o resto da fase 05, que ainda nao teve `approve tasks`."
+
+[[tasks]]
 id = "T-05.1"
 title = "[charts][web] 05 · ⛔ A borda e detectada por ARITMETICA SOBRE A GRADE, nunca por barsInLogicalRange"
 components = ["charts", "web"]
 status = "todo"
 phase = "05"
-depends_on = ["T-02.3"]
+depends_on = ["T-02.3", "T-05.0"]
 refs = [
     "plano 05 item 5.1", "D-C3.4", "D5",
     "⛔ COM WHITESPACE A FRENTE, barsInLogicalRange DEVOLVE barsBefore = −4.608 => detector PERMANENTEMENTE DISPARADO = LACO INFINITO DE PAGINACAO [MEDIDO 2026-09-19: probe3.mjs].",
@@ -774,9 +800,10 @@ title = "[web] 05 · Playwright: 3 arrastos carregam + a parede assimetrica e NO
 components = ["web"]
 status = "todo"
 phase = "05"
-depends_on = ["T-05.6", "T-05.7"]
+depends_on = ["T-05.0", "T-05.6", "T-05.7"]
 refs = [
     "plano 05 DoD 1/2/3", "DoD-3", "DoD-4", "RN-1",
+    "⛔ DEPENDE DE T-05.0 (ADR-042) E A DEPENDENCIA NAO E DE CONVENIENCIA: sem ela o DoD 1 morde por FALTA DE DADO SERVIDO, nao por defeito de paginacao. O backfill de 90 dias esta no banco e a rota nao o serve (absence SEM_PONTO em 241/241 fatias) [MEDIDO 2026-09-19]. Fechar o DoD 1 antes de T-05.0 mede paginacao contra um armazem que a rota recusa.",
     "DoD 1: n=3 arrastos sucessivos para tras aumentam a contagem de barras do painel de Preco, MONOTONICAMENTE. MORDE se a contagem estabilizar antes do teto.",
     "DoD 2: arrastando alem de ~30 dias em 4h, o painel de Preco CONTINUA com barras E os paineis de OI e long/short mostram o estado nomeado — OS DOIS FATOS NO MESMO ASSERT, n=2 paineis. ⛔ MORDE SE O PAINEL APENAS ESVAZIAR: esvaziar em silencio E o defeito, nao a ausencia.",
     "⛔ DoD 3 (ABLACAO de P5): removido o estado nomeado, o painel VOLTA A ESVAZIAR SEM DIZER NADA — captura antes/depois. Se o pixel nao muda sob ablacao, nao era o estado nomeado.",

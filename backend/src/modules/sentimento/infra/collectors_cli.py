@@ -279,12 +279,52 @@ _DEFAULT_KLINES_CYCLE_INTERVAL_S: Final[float] = 60.0
 # `close_time_ms` against it; a clock running fast would let us ask for a bar the venue has not
 # closed. (b) The venue's own publication delay, measured at `<= 12 ms` on this endpoint
 # `[MEDIDO 2026-09-11: the 12 smallest observed lags over n=4.289 were 12..183 ms, OPCOES-D16 F3]`.
-# Two seconds is ~167x that measured delay while costing 2 s of the 60 s grid, leaving ~58 s of
-# margin before a reading could reach the SECOND grid point — against the 28 ms of margin the
-# unaligned scheduler had. ⚠️ It is a BOUND with a declared basis, not a measured optimum: the
-# remeasurement command and its acceptance criterion are in
-# `docs/context/cinco-metricas-do-core/handoff/REMEDICAO-ATRASO-APOS-ALINHAMENTO.md`.
-_DEFAULT_KLINES_CYCLE_OFFSET_S: Final[float] = 2.0
+#
+# ⛔ THOSE TWO REASONS ARE STILL TRUE AND THEY WERE NOT THE BINDING ONE — `ADR-041`, 2026-09-20.
+# The value used to be `2.0`, and the paragraph above closed with the sentence that turned out to
+# be the whole problem: "It is a BOUND with a declared basis, NOT A MEASURED OPTIMUM". The
+# quantity it bounded is the venue's delay in publishing ONE TICK. The quantity that governs this
+# constant is a different one, and it had never been measured: how long `/fapi/v1/klines` keeps
+# CHANGING a bar it has already declared closed.
+#
+# It keeps changing it for seconds. Read at `bucket_end + 2 s`, the response is a PREFIX of the
+# bucket's trades, and a prefix is wrong in five directions at once, each of them derivable
+# rather than empirical: `open` is exact (the first trade is in every non-empty prefix),
+# `volume` and `high` can only come out LOW (sum and max over a subset), `low` can only come out
+# HIGH (min over a subset), and `close` is the last trade SEEN, which straddles zero. Those are
+# exactly the five signatures `[M-9]` and the phase `01` `DoD-9` measured on stored data — and
+# the collector writes the bar `is_final=True` and never re-reads it (the watermark publishes a
+# bar exactly once), so the prefix is what `md.series` keeps FOREVER.
+#
+# The value below is the smallest rung of a measured ladder at which the origin had stopped
+# moving, DOUBLED. The ladder read the SAME closed bar at +2/+5/+10/+30 s and compared each
+# against a +110 s reference, with no database in the loop:
+#
+#   rung     n   OPEN  HIGH  LOW  CLOSE  VOLUME    <- bars DIFFERING from the reference
+#   + 2 s   52     0     3    2     21      32       <= WHAT PRODUCTION STORES TODAY
+#   + 5 s   52     0     0    0      2       3       <= NOT clean, and that is the point
+#   +10 s   52     0     0    0      0       0       <= the smallest CLEAN rung
+#   +30 s   52     0     0    0      0       0
+#   `[MEDIDO 2026-09-20, n=52 bars (4 symbols x 13 minute buckets); scripts and raw
+#    output cited in `docs/context/candle-real-e-eixo-unico/gates/DECISAO-M9-arquiteto.md`]`
+#
+# ⚠️ `20.0` is therefore `2x` the smallest CLEAN rung, and the factor of 2 is MARGIN, declared
+# as margin and not as measurement — settlement is a property of the venue, not of us, and it has
+# no published guarantee `[NAO MEDIDO: Binance does not document a settlement window for this
+# endpoint]`. The ladder was run over ~26 minutes of ONE market regime; a more volatile one
+# may settle slower, and that is exactly what the margin is for.
+#
+# ⛔ THE `+5 s` RUNG IS WHY THE MARGIN IS NOT RHETORICAL. The first n=12 bars of the ladder had
+# `+5 s` clean in every field, and a value of `10.0` was written against it. Letting the ladder
+# run to n=52 surfaced the bars that were still moving at `+5 s`. A bound taken from the
+# first sample that looked clean would have shipped a number the fuller sample refutes.
+#
+# ⭐ AND THE CHANGE COSTS ZERO SERVED LATENCY, which is derivable from the read path rather than
+# hoped for: under `final_only`, `use_cases/series_history._read_instant` asks `as_of` with
+# `t = grid_instant + 60_000 - 1`, so R-1 (`available_at <= t`) admits the bar closing at
+# `grid_instant` for ANY offset below 60 s. The bar is served at the SAME grid instant it was
+# served at with `2.0`. What moves is wall-clock only: the row lands in `md.series` 8 s later.
+_DEFAULT_KLINES_CYCLE_OFFSET_S: Final[float] = 20.0
 
 # `T-01.3`: *"backfill_dias = 7, uma vez, no boot: 7 x 1440 = 10.080 barras = 7 chamadas de
 # 1500. Da 672 candles de 15min e 42 de 4h — a menor e a maior unidade de operacao declarada

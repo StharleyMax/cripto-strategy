@@ -512,6 +512,28 @@ porque `CA-5` é escrito **como contagem de `grep`** — ver §9.1.
 > infinita, n sei como o TV e coinalyze resolvem isso. Então acho válido ser pensado essa navegação
 > e zooms"*
 
+### 7.0 ⛔ EMENDA 2026-09-20 — o pré-requisito que `D5` não tinha: **paginar não traz barra hoje**
+
+`D5` supõe que existe o que paginar. **Não existe pela rota**, e a causa não é defeito: o backfill
+de 90 dias está no banco (**2.148.504 linhas**, **1,641 GB**, run `ACCEPTED`) e `R-1`
+(`available_at <= t`, `t` = **a fatia**) o recusa, **corretamente** — a linha tem
+`available_at − bucket_end ≈ 33 h` e servi-la na fatia de 33 h antes **seria lookahead**.
+
+```
+psql   -> 240 linhas   |   /series-history na MESMA janela -> absence {SEM_PONTO: 241}
+```
+`[MEDIDO 2026-09-19, gates/T-01.5-dod6-medicao-e-achado-lookahead.md]`
+
+⇒ **`[M-12]`**, decidida por
+[`ADR-042`](../adr/ADR-042-dois-relogios-available-at-responde-ao-horizonte-de-conhecimento-nao-a-fatia.md):
+`bucket_end` responde à fatia (*valid time*), `available_at` responde ao **horizonte de
+conhecimento** `K` (*transaction time*). Com `K = t`, o modo de decisão é **idêntico** ao de hoje;
+`K > t` é admitido **somente** sob `ReadPurpose.RENDERING`, e `ENTRY_CONDITION`/
+`EXECUTION_SIMULATION` **levantam**. **Execução em `T-05.0`**, pré-requisito de `T-05.1`/`T-05.8`.
+
+⚠️ **O que a emenda NÃO autoriza:** afrouxar `R-1`. Contagem de barras subindo **sem** o portão
+`D3` da `ADR-042` é o lookahead voltando pela porta que `D5` abriu.
+
 ### 7.1 `D5` — *"navegação infinita"* é **paginada e com teto**, e o teto é declarado
 
 A palavra do owner é *"espécie de"*, e a engenharia honesta aqui é dizer onde para. Três fatos
@@ -708,7 +730,8 @@ do que as ADRs em vigor já permitem.
 | **`[M-2]`** | ✅ **RESOLVIDA 2026-09-19 — o veto NÃO foi exercido** (`[DECISÃO-OWNER]`, §8.1). Segue reversível **só pelo owner**: OI agregado multi-exchange, se ele quiser pagar 25%–145% do teto | **owner**, sob `ADR-036` | `F5` volta ao plano **só** por nova decisão dele |
 | ~~`[M-3]`~~ | ✅ **FECHADO 2026-09-19** — tabela dos 8 pares + `P-B` de cobertura parcial | `quant-architect` | §5, julgamento em disco |
 | ~~`[M-4]`~~ | ✅ **FECHADO 2026-09-19** — `D-C3.1`..`D-C3.7` | `frontend-architect` | §6, julgamento em disco |
-| **`[M-9]`** | ⛔ **`klines_volume` armazenado subestima a origem** (−2,2% a −4,5%, `pos=0` em 4/4) — assinatura de snapshot intrabarra gravado como `final_only`. **Nenhum backtest deve usar essa série como verdade de volume até resolver** | **`/architect` sob `ADR-034`** | **fora desta feature**; o DoD da fase `01` o **detecta** (`A-8`) |
+| **`[M-9]`** | ✅ **CAUSA-RAIZ ACHADA 2026-09-20 — [`ADR-041`](../adr/ADR-041-a-cauda-viva-le-uma-barra-que-a-origem-ainda-nao-assentou-a-causa-raiz-de-m9.md).** A `fapi` **continua alterando a barra que já declarou fechada** por alguns segundos depois de `bucket_end`, e a cauda viva lê em `bucket_end + 2 s` e grava `is_final=True`. Uma leitura de PREFIXO explica os **cinco** sinais de uma vez: `OPEN` exato, `VOLUME` e `HIGH` só para baixo, `LOW` só para cima, `CLOSE` simétrico. **Conserto: o offset do poll, medido, não `is_closed_bucket`.** ⛔ Continua valendo: **nenhum backtest deve usar `klines_volume` como verdade de volume sobre o dado escrito ANTES do conserto** | **`quant-architect`**, sucedendo `ADR-034` | a re-medição de `DoD-9` da fase `01` (comando em `ADR-041`) |
+| **`[M-12]`** | ✅ **DECIDIDA 2026-09-20 — [`ADR-042`](../adr/ADR-042-dois-relogios-available-at-responde-ao-horizonte-de-conhecimento-nao-a-fatia.md).** O backfill de 90 dias (**2.148.504 linhas, 1,641 GB**) é **invisível para a rota**: `R-1` é `available_at <= t` com `t` = a fatia, e servir a linha de 33 h depois **seria lookahead**. Decisão: `R-1` liga `available_at` ao **horizonte de conhecimento** `K`; com `K = t` nada muda; `K > t` só sob `RENDERING`. **Execução: `T-05.0`, pré-requisito de `T-05.1`/`T-05.8`** | **`quant-architect`**, com efeito em `ADR-006`/`SPEC-001` §2.3 | fase `05`; `SPEC-001` §2.3 emendada quando `ADR-042` sair de `proposta` |
 | **`[M-10]`** | `SEM_PONTO` ambíguo entre *"zero legítimo"* e *"não lemos"*; trilha `absence_means_zero` no catálogo | `/architect` | **fora desta feature** (`A-9`) |
 | **`[M-11]`** | `R4` — OHLC da própria razão long/short (16 entradas, **zero cota**), nomeada pelo `quant-architect` e **não construída** | `quant-architect` | quando a razão precisar de extremos |
 | ~~`[M-5]`~~ | ✅ **RESPONDIDA 2026-09-19 — deixou de ser `[NÃO MEDIDO]`:** **16 ms** (um quadro a 60 fps) para pan/zoom e **400 ms** para história nova aparecer. `[DECISÃO-OWNER, escolha entre alternativas apresentadas]` | **owner** | DoD 7 das fases `02` e `05` |
