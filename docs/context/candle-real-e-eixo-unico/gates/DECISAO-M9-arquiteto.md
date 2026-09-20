@@ -112,10 +112,20 @@ no número**.
 1. **`DoD-9` não é re-mensurável agora.** O veredito precisa de uma janela **inteiramente
    coletada depois do deploy** do conserto, e `deploy/` **não é meu escopo**. Uma janela que
    ATRAVESSE o deploy mistura as duas populações e diluiria o viés até ele caber no ruído.
-2. **`DoD-2` no pixel está aberto por outra causa** (`13,77 px`, `web`, outro agente) — e as
-   magnitudes **não batem**: o pior desvio de fidelidade é **−27,80 USDT** sobre `81.263,40`,
-   e a aresta de `13,77 px` vale **≈ 91,2 USDT** pela escala da própria rodada. **Uma não explica
-   a outra.**
+2. ~~**`DoD-2` no pixel está aberto por outra causa**~~ — ✅ **FECHADO por `79a9a5f`**, que
+   entrou na árvore enquanto eu trabalhava. **A minha previsão sobre ele estava certa e por
+   pouco:** eu argumentei que `13,77 px` **não é** este defeito porque as magnitudes não batem
+   (pior desvio de fidelidade **−27,80 USDT** sobre `81.263,40`, contra **≈ 91,2 USDT** da
+   aresta). O outro agente chegou ao mesmo veredito por outro caminho e foi além: **era o
+   INSTRUMENTO**, que ancorava a escala em `min(y)/max(y)` e elegia como âncora 3 arestas
+   medidas **em cima do piso da banda de preço** (`y=153,154,154` contra piso `153,6`, de
+   `VOLUME_SCALE_MARGINS = { top: 0.8 }`). Reparado, a **mesma** janela dá **`0,56 px`** de erro
+   máximo. **A tela desenhava as quatro leituras da API o tempo todo.**
+
+   ⇒ **Consequência para `D2`, e ela é do meu lado:** o `DoD-9` passa a ser **o único** `DoD`
+   aberto da fase `01`. Isso **não** muda a decisão — muda o que falta para revertê-la, e o que
+   falta é **uma medição que só o relógio produz**: uma janela de coleta inteiramente posterior
+   ao deploy do conserto.
 
 ### O comando que fecha `DoD-9`, com o universo obrigatório
 
@@ -198,8 +208,10 @@ repositório já pagou uma vez, e a emenda pertence ao ciclo que executar `T-05.
 1. **Se vale a pena reprocessar ou limpar a janela contaminada.** É custo de disco (**12,8 GB
    livres, 95%** `[MEDIDO 2026-09-19]`) e de reprocessamento, contra o valor de uma janela de
    backtest que ainda não existe. **Decisão do owner**; eu só declarei que a janela é prefixo.
-2. **A anomalia de `13,77 px`.** É `frontend/`, fora do meu escopo, e está com outro agente. Eu
-   mostrei que **não é o mesmo defeito** (as magnitudes não batem); **não sei** o que é.
+2. ~~**A anomalia de `13,77 px`.**~~ Eu declarei **não saber** o que era, mostrando apenas que
+   **não era** este defeito. **`79a9a5f` respondeu**: era o instrumento. ⚠️ Mantenho o registro
+   de que **eu não julguei isso** — a resposta é do agente de `web`, não minha, e o mérito de
+   tê-la achado é dele.
 3. **Quando o deploy do conserto acontece.** `deploy/` não é meu escopo. ⚠️ E
    `deploy/compose.yml:168` documenta `default 2` num comentário que **fica desatualizado** até
    alguém com escopo lá corrigir — **declarado, não escondido**.
