@@ -10,20 +10,23 @@
 
 ## ⛔ Veredito: `NEEDS_FIX`
 
-**Dois dos oito `DoD` não estão fechados, e os dois foram derrubados pelos instrumentos DA
-PRÓPRIA FASE, rodados por mim hoje:**
+**Um dos oito `DoD` não está fechado** — e ele foi derrubado pelo instrumento **da própria
+fase**, rodado por mim hoje. Um segundo esteve em aberto como anomalia e **foi resolvido a
+favor da tela** (ver o riscado abaixo):
 
 - **`DoD-9`** — `candle_fidelity_cli` devolve `verdict=rejected`, `rc=1`, em **duas janelas
   disjuntas**, com a **assinatura `[M-9]` que o `DoD` nomeia como MORDE** (§1);
-- **`DoD-2` no pixel** — `CA-2` do `15-vela-e-ablacao.spec.ts` reprova contra o app real:
-  `13,77 px` contra teto `3` (§2-bis). Cheguei a **localizar a aresta**, não a resolver a causa:
-  **anomalia**, e anomalia não fecha fase.
+- ~~**`DoD-2` no pixel**~~ — **RESOLVIDO em 2026-09-20T23:xxZ: era o INSTRUMENTO, não a tela.**
+  O estimador de escala ancorava em pixels **cortados pelo piso da banda de preço**
+  (`192 × 0,8 = 153,6 px`, `VOLUME_SCALE_MARGINS`). Reparado o estimador, **a mesma janela que
+  dava `13,77 px` dá `0,56 px`** (teto `3`), mediana `0,26` sobre 45 arestas. A tela desenhava os
+  números da API o tempo todo. **`DoD-2` fecha** (§2-bis). ⛔ Zero mudança de produção.
 
 **E o que eu tentei derrubar e NÃO caiu:** a ablação do `DoD-4`. Reproduzi-a sobre **19× mais
 dado** e ela morde e cala igual (§2). Os demais `DoD` remedi e passam.
 
-Nada aqui pede que a fase seja refeita. Pede que **dois ✅ que não são ✅ parem de ser escritos
-como ✅**, e que dois adiamentos ganhem carregador.
+Nada aqui pede que a fase seja refeita. Pede que **um ✅ que não é ✅ pare de ser escrito como
+✅** (`DoD-9`), e que dois adiamentos ganhem carregador.
 
 ---
 
@@ -173,87 +176,107 @@ achando que `make verify` cobre isso.
 
 ---
 
-## 2-bis. ⛔ `CA-2` **no PIXEL** reprova hoje — e o `✅` da fase valia para `n=80`, não para `n=1.515`
+## 2-bis. ✅ RESOLVIDO — `CA-2` no pixel: **o veredito é INSTRUMENTO, e a tela está certa a `0,56 px`**
 
-Na **mesma** rodada em que a ablação passou, o teste `CA-2` **reprovou**, com a mensagem que ele
-próprio escreve:
+> **Atualização de 2026-09-20T23:xxZ.** No laudo anterior isto era **anomalia declarada** — eu
+> tinha localizado a aresta e derrubado duas hipóteses, sem decidir entre **tela** e
+> **instrumento**. Decidido: **é o instrumento**, e a prova é que o instrumento reparado
+> **aprova a MESMA janela que reprovava**, com os MESMOS pixels.
 
-```
-1) CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz
-   Error: as arestas desenhadas não são as quatro leituras da API — a tela está desenhando outra coisa
-   Expected: <= 3          Received: 13.772269558480218
-```
-
-`[MEDIDO 2026-09-20T22:4xZ, n=1.515 velas, 12 velas alinhadas, 48 arestas]` — contra
-`alignment_max_error_px = 0,54` que o laudo `T-01.11` publicou ontem com `n=80`.
-
-**Persegui a causa e derrubei duas hipóteses, com o teste na mão (só arquivo de teste):**
-
-1. **A parada do zoom não estabelecia a pré-condição do próprio assert.** O laço parava em
-   `minGroups` velas LARGAS; o assert seguinte pede `minGroups` velas largas **em buckets
-   CONSECUTIVOS**. Com `1.515` velas o laço parou em `20` passos com `8` grupos, dos quais só
-   `2` consecutivos, e o `CA-2` reprovou **antes** de medir o que diz medir. **Corrigido** — a
-   parada agora é `longestUniformRun(...)`, e com ela o teste chega a `30` passos, `113` grupos,
-   `74` com pavio desenhado, `aligned_groups=12`. **Mudou o motivo da reprovação, não a
-   reprovação.**
-2. **Grupos que valem mais de uma vela.** `extractCandleGroups` funde trechos com as duas
-   arestas iguais; medi um corpo de **25 colunas** onde o passo entre velas é **~8,6 px** —
-   três buckets num "grupo" só. `bestAlignmentError` casa **um grupo com um bucket**.
-   **Corrigido** (`dropMergedGroups`, corte pela largura modal) — e o erro **não se moveu**:
-   `13,77 px` de novo. ⇒ **hipótese descartada com medição.**
-
-⛔ **Terceira medição, para separar tela de instrumento:** instrumentei qual das `4m` arestas
-erra (`alignment_worst_edge`), porque *"13,77 px"* não distingue **pavio encurtado** de **corpo
-deslocado**, e os dois são reparos opostos.
+### O que a reprovação era
 
 ```
-E2E-FACT 15-vela-e-ablacao alignment_max_error_px=13.77
-E2E-FACT 15-vela-e-ablacao alignment_worst_edge="wickBottom/low@3"
-E2E-FACT 15-vela-e-ablacao alignment_px_per_price=0.151
-E2E-FACT 15-vela-e-ablacao aligned_groups_px=[…,"432-438:corpo 116..121:pavio 116..153",…]
+Error: as arestas desenhadas não são as quatro leituras da API — a tela está desenhando outra coisa
+Expected: <= 3          Received: 13.772269558480218
+alignment_worst_edge="wickBottom/low@3"     alignment_first_candle_time=1789938060000
 ```
 
-`[MEDIDO 2026-09-20T22:5xZ, n=12 velas alinhadas × 4 arestas = 48]` — **e o erro NÃO está
-espalhado: ele é de UMA aresta, o `low` da 4ª vela do trecho.** Convertido pela escala medida na
-própria rodada, `13,77 px ÷ 0,151 px/USDT ≈ **91,2 USDT**.
+`13,77 px` em **3 rodadas consecutivas**, sempre na mesma janela de 12 velas
+(`1789938060000`..`1789938720000`). Não era flutuação: era determinístico **enquanto aquela
+fatia estava na tela**. Em `8` rodadas posteriores, com a fatia já rolada, deu `0,77` — `8/8`.
 
-A geometria explica por que ele salta: a vela `3` tem o pavio inferior descendo **32 px abaixo do
-corpo** (`corpo 116..121`, `pavio 116..153`) enquanto as vizinhas têm pavio de `1..11 px`. **Não
-é erro de escala nem de deslocamento global** — se fosse, as `48` arestas errariam juntas. É
-**uma leitura de `low` que a tela desenha e o número da API não confirma** (ou a recíproca).
+### A causa, em três medições
 
-### O que isto é, com a honestidade que o portão exige
+**1 · O erro não estava na vela 3 — estava na ÂNCORA.** Reconstruí a janela fora do browser
+(pixels do log × `/api/v1/series-history` dos 12 buckets) e ajustei a **mesma** reta por
+**mínimos quadrados** sobre as 48 arestas, em vez de ancorar nos 2 extremos:
 
-**Isto é uma ANOMALIA, e anomalia não é `OK` e não é `FAIL` de tela.** Eu **não** consegui
-decidir entre as duas leituras, e as duas são graves de formas diferentes:
+| estimador | erro máx | onde | mediana dos 48 |
+|---|---|---|---|
+| **2 pontos** (o que reprovou) | `13,77 px` | `wickBottom/low@`**`3`** | — |
+| **mínimos quadrados** | `13,37 px` | `wickBottom/low@`**`11`** | **`0,84 px`** |
 
-- **se é a TELA**: as arestas da vela — o pixel que o `P1` desta fase existe para entregar —
-  estão `13,77 px` fora do que a API diz, em `192 px` de painel (`~7%` da altura);
-- **se é o INSTRUMENTO**: o `alignment_max_error_px = 0,54` que o laudo `T-01.11` publica como
-  prova central do `CA-2` **só era verdadeiro na densidade de ontem**, e a prova mais forte do
-  pixel desta fase **não sobrevive a um dia de coleta**.
+**47 das 48 arestas dentro de `3,3 px`, mediana `0,84 px`** — e o outlier **muda de vela**. Isso
+mata a hipótese "a vela 3 está errada": a vela 3 estava sendo **acusada por um erro que não era
+dela**.
 
-**Nos dois casos o `DoD-2` não está fechado no pixel hoje** — está fechado **no dado** (§3), o
-que é metade do que ele pede. E vale registrar o que NÃO reprovou na mesma rodada: `74/113`
-velas **têm pavio desenhado** (pixel fora das arestas do corpo), `ink_bbox_height_share=0,667`,
-`ink_x_gap_to_right_edge_px=0`. **A vela existe, tem pavio e está na borda certa — o que não se
-sustenta é a correspondência aresta↔número.**
+**2 · O alinhamento estava CERTO** — não era offset trocado. Refiz a busca de offset com o
+critério robusto sobre `70` janelas consecutivas candidatas:
 
-**Ação, e ela é estreita porque o erro está localizado.** Tomar o bucket da vela `3` do trecho
-alinhado (`alignment_first_candle_time` + `3` minutos, publicado na rodada) e comparar **três
-números do MESMO bucket**: o `low` que `/api/v1/series-history` serve, o `low` que a Binance
-publica, e o pixel que a tela desenha. As três combinações possíveis são reparos diferentes:
+```
+maxres_px     first_time        pior aresta  i mediana   px/USDT
+    13.37  1789938060000     wickBottom/low 11    0.84   -0.1729   <= o que o teste escolheu
+    29.19  1789938000000     wickBottom/low  3    9.05   -0.1628
+```
 
-| tela ≠ API | API ≠ origem | leitura |
-|---|---|---|
-| sim | não | **defeito de render** — a tela desenha um `low` que ninguém serviu |
-| não | — | **defeito do instrumento** — o alinhamento casou a vela errada; derive a escala da API publicada pela biblioteca, não dos extremos do conjunto visível |
-| sim | sim | é o mesmo `[M-9]`/`ADR-034` do §1 chegando ao pixel |
+O offset escolhido ganha do segundo colocado por `13,37` contra `29,19` (mediana `0,84` contra
+`9,05`). **A pergunta "quais 12 buckets" estava respondida certo.**
 
-⛔ **Não fechar `DoD-2` com o número de ontem** — `n=80` não é o universo de hoje, e `0,54 px`
-não é um fato sobre este código, é um fato sobre aquela densidade.
+**3 · ⛔ E o outlier que sobrou é um PIXEL QUE NÃO PODE EXISTIR — a banda de preço acaba antes.**
+O `<canvas>` do painel carrega duas escalas: a do preço e a do sub-eixo de volume, que ocupa a
+faixa de baixo — `VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 }`
+(`frontend/src/app/symbol/SymbolClient.tsx:556`). Em `192 px` de painel:
 
----
+```
+piso da banda de preço = 192 × 0,8 = 153,6 px
+arestas medidas EM CIMA do piso (y >= 152,6): 3 de 48
+  wickBottom/low@3  y=153     wickBottom/low@11 y=154     bodyBottom/min@11 y=154
+```
+
+**Um pavio cujo preço cai abaixo de `153,6 px` não tem onde ser desenhado.** O estimador antigo
+mapeava `min(y)`→`max(preço)` e `max(y)`→`min(preço)` — ou seja, **elegia justamente esses
+pixels cortados como âncoras**. Âncora reporta erro `0,00` para si mesma e transfere a distorção
+para o meio do trecho. Daí a forma do resíduo que eu tinha medido e não sabia ler: **zero nas
+duas pontas, máximo no meio, sempre o mesmo sinal** (`0,87 · 2,43 · 8,67 · **13,77** · 9,42 ·
+7,49 · 7,00 · 5,23 · 6,27 · 9,50 · 12,51 · 0,00`). Isso nunca foi um defeito de dado — é a
+assinatura geométrica de uma reta presa em dois pontos errados.
+
+### A prova de fechamento: o instrumento reparado APROVA a janela que reprovava
+
+Mesmos pixels, mesmos números da API, excluídas as 3 arestas que encostam no piso da banda:
+
+```
+erro MÁXIMO = 0.56 px  na aresta wickTop/high@2       (teto do teste: 3 px)
+mediana = 0.26 px sobre as 45 arestas restantes       VEREDITO: PASSA
+```
+
+`[MEDIDO 2026-09-20, n=48 arestas da janela 1789938060000, script
+scratchpad/qa_realign.py sobre os pixels de `qa-e2e-forte4.log`]`
+
+⇒ **A tela desenhava as quatro leituras da API com erro máximo de `0,56 px` o tempo todo.** O
+`13,77 px` era inteiramente fabricado pelo estimador. ⛔ **Nenhuma mudança de produção é
+necessária, e eu não fiz nenhuma.**
+
+### O reparo, e ele é só teste
+
+`frontend/e2e/15-vela-e-ablacao.spec.ts`:
+
+1. **`bestAlignmentError` passa a ajustar a escala por mínimos quadrados sobre as `4m` arestas**,
+   não por dois extremos. Toda aresta pesa igual ⇒ **o outlier aparece onde ele está**, em vez de
+   virar âncora e acusar o vizinho.
+2. **Arestas em cima do piso da banda de preço são excluídas e CONTADAS** (`alignment_clipped_edges`),
+   porque medir ali mede a parede, não o número.
+3. **`CA-0`, novo teste: a guarda contra deriva da constante.** `PRICE_BAND_BOTTOM_FRACTION = 0.8`
+   é cópia de produção e não é exportada; o teste **lê `SymbolClient.tsx`** e reprova se
+   `VOLUME_SCALE_MARGINS` mudar. Sem isso a cópia ficaria órfã e o `CA-2` passaria a excluir a
+   faixa errada **em silêncio** — que é a classe de quebra que este repositório mais teme.
+4. **O falsificador continua mordendo:** `mutated_alignment_max_error_px = 8,52 > 3`.
+
+Rodada contra o app real depois do reparo: **`4 passed`**, `alignment_max_error_px=0,56`,
+`alignment_clipped_edges=0`, `aligned_groups=12`.
+
+⇒ **`DoD-2` fecha no pixel também.**
+
 
 ## 3. ⚠️ `DoD-1` passou — por decurso de relógio, sobre o dado que o `DoD-9` reprova
 
@@ -349,7 +372,7 @@ fase já corrigiu no arquivo vizinho.
 | `DoD` | veredito | evidência minha |
 |---|---|---|
 | **1** · ≥500 pontos/chave | ✅ | `1.505` nas 4, `min_non_null_per_key=1505` (§3) — **com as 3 ressalvas** |
-| **2** · a vela tem faixa | ⚠️ **metade** | **no DADO ✅**: `high_gt_low=1505/1505`, `open_ne_close=1476/1505`, `ohlc_invariant_violations=0`. **No PIXEL: anomalia não resolvida** — `alignment_max_error_px=13,77` contra teto `3` (§2-bis) |
+| **2** · a vela tem faixa | ✅ **inteiro** | **no DADO**: `high_gt_low=1505/1505`, `open_ne_close=1476/1505`, `ohlc_invariant_violations=0`. **No PIXEL**: `alignment_max_error_px=0,56` contra teto `3`, `clipped_edges=0`, falsificador da mutação em `8,52` (§2-bis) |
 | **3** · leitura não-ausente | ✅ | `curl -s http://127.0.0.1:3000/symbol \| grep -o 'data-fact="price_last_reading:[^"]*"'` → `price_last_reading:exact`; e `price_candles:1505/5760` **bate** com o `1505` da API |
 | **4** · ablação de pixel | ✅ **reproduzido** | rodado por mim contra o app real, `n=1.515` (19× o universo de ontem): `4.466 px → 0`, `surviving_columns=[]`, placebo `4.466` e geometria idêntica (§2) |
 | **5** · zero chamada nova | ✅ | `n_rows=34542` para `n_returned=5761` numa rodada de `n_calls=4` (`T-01.5-builder.md:198`) ⇒ **6 linhas por kline de UMA resposta**. As `348` chamadas do backfill são o item `1.6`, autorizado — não são chamada por bucket |
@@ -435,16 +458,17 @@ que só lê. A vela `1.505` é dado real do owner, não semente minha.
 
 ## Veredito e ações
 
-**`NEEDS_FIX`** — os itens `1` e `2` **bloqueiam**; os demais podem ser fechados no mesmo ciclo.
+**`NEEDS_FIX`** — resta **um** bloqueio, o item `1` (`DoD-9`). O item `2` era meu e **está
+fechado**; os demais podem ser fechados no mesmo ciclo.
 
 1. ⛔ **`DoD-9` volta a ⛔** no `ESTADO` e na descrição da `PR #227`, com o número medido
    (`verdict=rejected`, `rc=1`, `HIGH pos=0/neg=20`, `LOW pos=7/neg=0`, `n=34` buckets
    divergentes unilaterais em 2 janelas disjuntas). **Escalar a `/architect`** como achado NOVO
    (estreitamento de faixa no `HIGH`/`LOW` servidos), com o candidato já nomeado pela fase:
    `_DEFAULT_KLINES_CYCLE_OFFSET_S = 2,0 s` contra `~58 s` de assentamento da `fapi`.
-2. ⛔ **Resolver a anomalia do `CA-2` no pixel** pela tabela de três números do §2-bis (tela ×
-   API × origem, no bucket `alignment_first_candle_time + 3 min`). **`DoD-2` fica aberto no
-   pixel até lá** — e não se fecha com o `0,54 px` de ontem.
+2. ✅ **Feito por mim:** a anomalia do `CA-2` foi resolvida — **instrumento**, não tela. O
+   estimador de escala foi reparado, a guarda `CA-0` contra deriva da constante de produção foi
+   escrita, e a janela que reprovava **passa a `0,56 px`**. **`DoD-2` fechado.**
 3. ⚠️ **Carregar o achado do lookahead** para `05_historia_sob_demanda.md` ou para `tasks.toml`
    — a fase `05` está planejada sobre a premissa que ele falsifica.
 4. ✅ **Feito por mim:** `make verify` de fechamento em execução **isolada**, sobre a árvore já
@@ -456,12 +480,19 @@ que só lê. A vela `1.505` é dado real do owner, não semente minha.
 
 ### O que eu mesmo mexi, e o limite que respeitei
 
-**Só arquivo de teste, e um só:** `frontend/e2e/15-vela-e-ablacao.spec.ts` — a parada do zoom
-(passou a estabelecer a pré-condição do próprio assert), `dropMergedGroups` (hipótese testada e
-**descartada com medição**, mantida porque a premissa que ela remove era inválida de todo jeito)
-e o rótulo `alignment_worst_edge`/`alignment_px_per_price`/`aligned_groups_px`, que é o que
-transformou *"13,77 px"* em *"o `low` de uma vela, `91,2 USDT`"*. **Zero linha de produção.**
-`git status` fecha em `1 M` de teste + este relatório.
+**Só arquivo de teste, e um só:** `frontend/e2e/15-vela-e-ablacao.spec.ts`.
+
+1. a **parada do zoom** passou a estabelecer a pré-condição do próprio assert;
+2. `dropMergedGroups` — hipótese testada e **descartada com medição**, mantida porque a premissa
+   que ela remove era inválida de todo jeito;
+3. o **rótulo de aresta**, que transformou *"13,77 px"* em *"o `low` de uma vela"* e permitiu
+   achar a causa;
+4. **`bestAlignmentError` por mínimos quadrados**, com exclusão contada das arestas no piso da
+   banda de preço — o reparo que fechou a anomalia;
+5. **`CA-0`**, teste novo: guarda de deriva de `VOLUME_SCALE_MARGINS`, lendo `SymbolClient.tsx`.
+
+⛔ **Zero linha de produção.** A única leitura que fiz em `frontend/src` foi `grep` de
+`VOLUME_SCALE_MARGINS`, e o valor entrou no teste **com guarda**, não copiado a seco.
 
 ---
 

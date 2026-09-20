@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import http from "node:http";
+import path from "node:path";
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
@@ -354,6 +356,21 @@ const MAX_ALIGNMENT_ERROR_PX = 3;
  * e o falsificador reprovou a si mesmo]`. */
 const MUTATION_SCALE = 3;
 
+/** ⛔ ONDE A BANDA DE PREÇO TERMINA, e por que o teste precisa saber disso.
+ *
+ * O `<canvas>` do painel de Preço carrega DUAS escalas: a do preço e a do sub-eixo de volume,
+ * que ocupa a faixa de baixo (`VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 }`,
+ * `SymbolClient.tsx:556`). Em `192 px` de painel isso põe o piso da banda de preço em
+ * `192 × 0,8 = 153,6 px` — **e um pavio que caia abaixo disso não tem onde ser desenhado**.
+ *
+ * Foi exatamente o que produziu o falso `13,77 px`: o pavio inferior de uma vela parou em
+ * `154` (o piso da banda) enquanto o número da API o punha em `167,4`, e como o estimador
+ * antigo ANCORAVA nos extremos, esse pixel cortado virou a âncora — reportou o próprio erro
+ * como `0,00` e espalhou a culpa pelo meio do trecho `[MEDIDO 2026-09-20: 47 das 48 arestas
+ * dentro de 3,3 px por ajuste robusto, mediana 0,84 px; a única fora era a âncora]`. */
+const PRICE_BAND_BOTTOM_FRACTION = 0.8;
+
+
 /** Uma vela reconhecida no canvas: o vão de `x` do CORPO (as colunas que compartilham as duas
  * arestas) e as quatro coordenadas que a biblioteca desenhou. `wickTop`/`wickBottom` saem de
  * TODA coluna dentro do vão — dentro do corpo de uma vela, a única coisa que sai das arestas é
@@ -494,55 +511,86 @@ function longestUniformRun(groups: readonly CandleGroup[], maxLength: number): r
 function bestAlignmentError(
   groups: readonly CandleGroup[],
   candles: readonly AssembledCandle[],
+  canvasHeight: number,
 ): {
   readonly maxErrorPx: number;
   readonly firstCandleTime: number | null;
   readonly pxPerPrice: number;
   readonly worstEdge: string;
+  readonly clippedEdges: number;
+  readonly table: readonly string[];
 } {
-  if (groups.length === 0 || candles.length < groups.length) {
-    return { maxErrorPx: Number.POSITIVE_INFINITY, firstCandleTime: null, pxPerPrice: 0, worstEdge: "n/a" };
-  }
-  const yTop = Math.min(...groups.map((g) => g.wickTop));
-  const yBottom = Math.max(...groups.map((g) => g.wickBottom));
-  let best = {
+  const empty = {
     maxErrorPx: Number.POSITIVE_INFINITY,
     firstCandleTime: null as number | null,
     pxPerPrice: 0,
     worstEdge: "n/a",
+    clippedEdges: 0,
+    table: [] as string[],
   };
+  if (groups.length === 0 || candles.length < groups.length) return empty;
+  // O piso da banda de preço. Uma aresta medida EM CIMA dele não é leitura do número: é o
+  // desenho batendo na parede, e compará-la com o preço mede a parede.
+  const bandBottom = canvasHeight * PRICE_BAND_BOTTOM_FRACTION;
+  let best = empty;
   for (let offset = 0; offset + groups.length <= candles.length; offset += 1) {
     const window = candles.slice(offset, offset + groups.length);
     // Velas desenhadas lado a lado são buckets CONSECUTIVOS: um bucket sem leitura é lacuna e
     // não desenha nada, então um alinhamento que pule tempo é impossível por construção.
     const consecutive = window.every((c, i) => i === 0 || c.time - window[i - 1]!.time === 60_000);
     if (!consecutive) continue;
-    const priceHigh = Math.max(...window.map((c) => c.high));
-    const priceLow = Math.min(...window.map((c) => c.low));
-    if (priceHigh === priceLow) continue;
-    const pxPerPrice = (yBottom - yTop) / (priceHigh - priceLow);
-    const y = (price: number): number => yTop + (priceHigh - price) * pxPerPrice;
-    let maxError = 0;
-    // ⛔ QUAL ARESTA erra, e não só QUANTO: "13,77 px" não diz se a tela encurtou o PAVIO ou
-    // deslocou o CORPO, e os dois são reparos opostos. O rótulo sai junto com o número.
-    let worstEdge = "n/a";
-    for (const [i, group] of groups.entries()) {
+    const edges = groups.flatMap((group, i) => {
       const candle = window[i]!;
-      const edges: readonly (readonly [string, number])[] = [
-        ["wickTop/high", Math.abs(group.wickTop - y(candle.high))],
-        ["wickBottom/low", Math.abs(group.wickBottom - y(candle.low))],
-        ["bodyTop/max(open,close)", Math.abs(group.bodyTop - y(Math.max(candle.open, candle.close)))],
-        ["bodyBottom/min(open,close)", Math.abs(group.bodyBottom - y(Math.min(candle.open, candle.close)))],
+      return [
+        { label: `wickTop/high@${String(i)}`, price: candle.high, y: group.wickTop },
+        { label: `wickBottom/low@${String(i)}`, price: candle.low, y: group.wickBottom },
+        { label: `bodyTop/max(o,c)@${String(i)}`, price: Math.max(candle.open, candle.close), y: group.bodyTop },
+        { label: `bodyBottom/min(o,c)@${String(i)}`, price: Math.min(candle.open, candle.close), y: group.bodyBottom },
       ];
-      for (const [label, error] of edges) {
-        if (error > maxError) {
-          maxError = error;
-          worstEdge = `${label}@${String(i)}`;
-        }
+    });
+    const usable = edges.filter((edge) => edge.y < bandBottom - 1);
+    const clippedEdges = edges.length - usable.length;
+    if (usable.length < 8) continue;
+    // ⛔ A ESCALA SAI DE MÍNIMOS QUADRADOS SOBRE AS `4m` ARESTAS, NÃO DE DOIS EXTREMOS.
+    // O estimador anterior mapeava `min(y)`→`max(preço)` e `max(y)`→`min(preço)`: dois pontos,
+    // e cada um deles é justamente o candidato mais provável a estar errado (extremo cortado,
+    // pavio de um minuto volátil). Um extremo ruim ali não aparece — ele vira a âncora, reporta
+    // erro `0,00` para si mesmo e transfere a acusação para o meio do trecho. Com o ajuste
+    // robusto toda aresta pesa igual e o outlier aparece ONDE ELE ESTÁ.
+    const n = usable.length;
+    const meanPrice = usable.reduce((acc, e) => acc + e.price, 0) / n;
+    const meanY = usable.reduce((acc, e) => acc + e.y, 0) / n;
+    const sxx = usable.reduce((acc, e) => acc + (e.price - meanPrice) ** 2, 0);
+    if (sxx === 0) continue;
+    const slope = usable.reduce((acc, e) => acc + (e.price - meanPrice) * (e.y - meanY), 0) / sxx;
+    const intercept = meanY - slope * meanPrice;
+    const y = (price: number): number => slope * price + intercept;
+    let maxError = 0;
+    let worstEdge = "n/a";
+    for (const edge of usable) {
+      const residual = Math.abs(edge.y - y(edge.price));
+      if (residual > maxError) {
+        maxError = residual;
+        worstEdge = edge.label;
       }
     }
     if (maxError < best.maxErrorPx) {
-      best = { maxErrorPx: maxError, firstCandleTime: window[0]!.time, pxPerPrice, worstEdge };
+      best = {
+        maxErrorPx: maxError,
+        firstCandleTime: window[0]!.time,
+        pxPerPrice: Math.abs(slope),
+        worstEdge,
+        clippedEdges,
+        table: groups.map((group, i) => {
+          const candle = window[i]!;
+          return (
+            `${String(i)}|t=${String(candle.time)}` +
+            `|corpo=${String(group.bodyTop)}..${String(group.bodyBottom)}` +
+            `|pavio=${String(group.wickTop)}..${String(group.wickBottom)}` +
+            `|prev_h=${y(candle.high).toFixed(1)}|prev_l=${y(candle.low).toFixed(1)}`
+          );
+        }),
+      };
     }
   }
   return best;
@@ -687,6 +735,22 @@ async function startAblationProxy(): Promise<AblationProxy> {
 }
 
 // ── OS TESTES ────────────────────────────────────────────────────────────────────────────────
+
+test(`CA-0: a banda de preço ainda termina onde este teste acha que termina (${SPEC})`, () => {
+  // ⛔ ESTE TESTE EXISTE PORQUE `PRICE_BAND_BOTTOM_FRACTION` É UMA CÓPIA. O valor mora em
+  // produção (`SymbolClient.tsx:556`, `VOLUME_SCALE_MARGINS`) e não é exportado; copiá-lo aqui
+  // sem guarda criaria uma segunda verdade que o dia da mudança tornaria MUDA — o `CA-2`
+  // passaria a excluir a faixa errada e ninguém saberia. Com a guarda, a deriva REPROVA aqui,
+  // com o nome do arquivo, em vez de virar um `13,77 px` misterioso lá.
+  const source = readFileSync(path.join(import.meta.dirname, "..", "src", "app", "symbol", "SymbolClient.tsx"), "utf8");
+  const declared = /const VOLUME_SCALE_MARGINS = \{ top: ([0-9.]+), bottom: ([0-9.]+) \} as const;/.exec(source);
+  expect(declared, "`VOLUME_SCALE_MARGINS` mudou de grafia em SymbolClient.tsx — a cópia deste teste ficou órfã").not.toBeNull();
+  expect(
+    Number(declared![1]),
+    "o sub-eixo de volume mudou de margem: `PRICE_BAND_BOTTOM_FRACTION` aqui precisa acompanhar",
+  ).toBe(PRICE_BAND_BOTTOM_FRACTION);
+  fact(SPEC, "price_band_bottom_fraction", PRICE_BAND_BOTTOM_FRACTION);
+});
 
 test(`CA-3: /symbol declara a leitura de preço, e ela é ausente só quando a API é (${SPEC})`, async ({ page }) => {
   const response = await page.goto(SYMBOL_PATH, { waitUntil: "load" });
@@ -842,10 +906,12 @@ test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz 
     aligned.length,
     "não há três velas em buckets CONSECUTIVOS na tela — sem isso o alinhamento com a API não é ancorável",
   ).toBeGreaterThanOrEqual(MIN_ALIGNED_GROUPS);
-  const alignment = bestAlignmentError(aligned, candles);
+  const alignment = bestAlignmentError(aligned, candles, zoomed.canvasHeight);
   fact(SPEC, "alignment_max_error_px", Number(alignment.maxErrorPx.toFixed(2)));
   fact(SPEC, "alignment_first_candle_time", alignment.firstCandleTime);
   fact(SPEC, "alignment_worst_edge", alignment.worstEdge);
+  fact(SPEC, "alignment_clipped_edges", alignment.clippedEdges);
+  fact(SPEC, "alignment_table", alignment.table);
   fact(SPEC, "alignment_px_per_price", Number(alignment.pxPerPrice.toFixed(4)));
   fact(
     SPEC,
@@ -873,7 +939,7 @@ test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz 
     open: c.open - mutationUsdt,
     close: c.close - mutationUsdt,
   }));
-  const mutatedError = bestAlignmentError(aligned, mutatedCandles).maxErrorPx;
+  const mutatedError = bestAlignmentError(aligned, mutatedCandles, zoomed.canvasHeight).maxErrorPx;
   fact(SPEC, "mutated_alignment_max_error_px", Number(mutatedError.toFixed(2)));
   expect(
     mutatedError,
