@@ -432,6 +432,27 @@ function extractCandleGroups(columns: readonly InkColumn[], minBodyColumns: numb
     });
 }
 
+/** ⛔ DESCARTA OS GRUPOS QUE SÃO MAIS DE UMA VELA, e sem isto `bestAlignmentError` mente.
+ *
+ * `extractCandleGroups` funde trechos que compartilham as DUAS arestas — o que é certo para o
+ * corpo partido pelo pavio e ERRADO para velas VIZINHAS que fecharam no mesmo par de preços.
+ * Com pouca vela na tela isso não acontece; com muita, acontece o tempo todo: medi um corpo de
+ * **25 colunas** onde o passo entre velas é **~8,6 px** — três buckets num "grupo" só
+ * `[MEDIDO 2026-09-20: groups_px[2]="39-63", passo mediano 8,6 px, n=113 grupos, 1.515 velas]`.
+ * `bestAlignmentError` casa **um grupo com um bucket**; um grupo que vale três desloca todo o
+ * resto e o erro sai em `13,77 px` contra uma tolerância de `3` — **do instrumento, não da
+ * tela**, exatamente como já tinha acontecido com a penúltima vela (ver o cabeçalho daquela
+ * função).
+ *
+ * O corte é pela largura MODAL, não por um literal: a vela larga é a exceção e a mediana é dela
+ * mesma. */
+function dropMergedGroups(groups: readonly CandleGroup[]): readonly CandleGroup[] {
+  if (groups.length < 3) return groups;
+  const widths = groups.map((g) => g.xRight - g.xLeft + 1).sort((a, b) => a - b);
+  const median = widths[Math.floor(widths.length / 2)]!;
+  return groups.filter((g) => g.xRight - g.xLeft + 1 <= median * 1.5);
+}
+
 /** A maior sequência de velas UNIFORMEMENTE espaçadas no eixo — isto é, buckets CONSECUTIVOS.
  *
  * ⛔ POR QUE ELA É NECESSÁRIA: as velas servidas hoje têm LACUNAS (buckets sem as quatro
@@ -473,13 +494,23 @@ function longestUniformRun(groups: readonly CandleGroup[], maxLength: number): r
 function bestAlignmentError(
   groups: readonly CandleGroup[],
   candles: readonly AssembledCandle[],
-): { readonly maxErrorPx: number; readonly firstCandleTime: number | null; readonly pxPerPrice: number } {
+): {
+  readonly maxErrorPx: number;
+  readonly firstCandleTime: number | null;
+  readonly pxPerPrice: number;
+  readonly worstEdge: string;
+} {
   if (groups.length === 0 || candles.length < groups.length) {
-    return { maxErrorPx: Number.POSITIVE_INFINITY, firstCandleTime: null, pxPerPrice: 0 };
+    return { maxErrorPx: Number.POSITIVE_INFINITY, firstCandleTime: null, pxPerPrice: 0, worstEdge: "n/a" };
   }
   const yTop = Math.min(...groups.map((g) => g.wickTop));
   const yBottom = Math.max(...groups.map((g) => g.wickBottom));
-  let best = { maxErrorPx: Number.POSITIVE_INFINITY, firstCandleTime: null as number | null, pxPerPrice: 0 };
+  let best = {
+    maxErrorPx: Number.POSITIVE_INFINITY,
+    firstCandleTime: null as number | null,
+    pxPerPrice: 0,
+    worstEdge: "n/a",
+  };
   for (let offset = 0; offset + groups.length <= candles.length; offset += 1) {
     const window = candles.slice(offset, offset + groups.length);
     // Velas desenhadas lado a lado são buckets CONSECUTIVOS: um bucket sem leitura é lacuna e
@@ -492,17 +523,27 @@ function bestAlignmentError(
     const pxPerPrice = (yBottom - yTop) / (priceHigh - priceLow);
     const y = (price: number): number => yTop + (priceHigh - price) * pxPerPrice;
     let maxError = 0;
+    // ⛔ QUAL ARESTA erra, e não só QUANTO: "13,77 px" não diz se a tela encurtou o PAVIO ou
+    // deslocou o CORPO, e os dois são reparos opostos. O rótulo sai junto com o número.
+    let worstEdge = "n/a";
     for (const [i, group] of groups.entries()) {
       const candle = window[i]!;
-      maxError = Math.max(
-        maxError,
-        Math.abs(group.wickTop - y(candle.high)),
-        Math.abs(group.wickBottom - y(candle.low)),
-        Math.abs(group.bodyTop - y(Math.max(candle.open, candle.close))),
-        Math.abs(group.bodyBottom - y(Math.min(candle.open, candle.close))),
-      );
+      const edges: readonly (readonly [string, number])[] = [
+        ["wickTop/high", Math.abs(group.wickTop - y(candle.high))],
+        ["wickBottom/low", Math.abs(group.wickBottom - y(candle.low))],
+        ["bodyTop/max(open,close)", Math.abs(group.bodyTop - y(Math.max(candle.open, candle.close)))],
+        ["bodyBottom/min(open,close)", Math.abs(group.bodyBottom - y(Math.min(candle.open, candle.close)))],
+      ];
+      for (const [label, error] of edges) {
+        if (error > maxError) {
+          maxError = error;
+          worstEdge = `${label}@${String(i)}`;
+        }
+      }
     }
-    if (maxError < best.maxErrorPx) best = { maxErrorPx: maxError, firstCandleTime: window[0]!.time, pxPerPrice };
+    if (maxError < best.maxErrorPx) {
+      best = { maxErrorPx: maxError, firstCandleTime: window[0]!.time, pxPerPrice, worstEdge };
+    }
   }
   return best;
 }
@@ -522,9 +563,19 @@ async function zoomUntilCandlesAreWide(
   // ⛔ O CURSOR FICA SOBRE A TINTA: a roda da biblioteca mantém fixo o ponto sob o cursor e
   // espalha o resto, então ancorar longe das velas as empurra para fora do canvas
   // `[MEDIDO 2026-09-19: ancorado a 20 px da borda, 120 passos, corpo ainda com 4 colunas]`.
+  // ⛔ A CONDIÇÃO DE PARADA É O QUE O ASSERT PRECISA, NÃO UM PRIMO DELE. Ela pedia `minGroups`
+  // velas LARGAS; o assert que vem depois pede `minGroups` velas largas **em buckets
+  // CONSECUTIVOS** (`longestUniformRun`). As duas coincidem quando há pouca vela na tela e
+  // divergem quando há muita — foi o que aconteceu: com `1.515` velas servidas o laço parou em
+  // `20` passos com `8` grupos dos quais só `2` eram consecutivos, e o `CA-2` reprovou por uma
+  // PRÉ-CONDIÇÃO que o próprio laço deveria ter estabelecido
+  // `[MEDIDO 2026-09-20: candle_groups_on_screen=8, aligned_groups=2, n=1515 velas]`. Um teste
+  // que passa com `80` velas e reprova com `1.515` estava medindo a densidade do dado, não a
+  // tela.
   while (
     steps < MAX_ZOOM_STEPS &&
-    extractCandleGroups(measurement.columns, MIN_BODY_COLUMNS).length < minGroups
+    longestUniformRun(dropMergedGroups(extractCandleGroups(measurement.columns, MIN_BODY_COLUMNS)), MAX_ALIGNED_GROUPS)
+      .length < minGroups
   ) {
     const anchorX =
       measurement.columns.length === 0
@@ -785,7 +836,7 @@ test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz 
   // arestas que a biblioteca desenhou — `high`, `low`, e as duas do corpo (`open`/`close`).
   // Nenhum alinhamento é assumido: o teste procura o deslocamento que melhor casa e é o ERRO
   // desse melhor caso que a asserção julga.
-  const aligned = longestUniformRun(groups, MAX_ALIGNED_GROUPS);
+  const aligned = longestUniformRun(dropMergedGroups(groups), MAX_ALIGNED_GROUPS);
   fact(SPEC, "aligned_groups", aligned.length);
   expect(
     aligned.length,
@@ -794,6 +845,13 @@ test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz 
   const alignment = bestAlignmentError(aligned, candles);
   fact(SPEC, "alignment_max_error_px", Number(alignment.maxErrorPx.toFixed(2)));
   fact(SPEC, "alignment_first_candle_time", alignment.firstCandleTime);
+  fact(SPEC, "alignment_worst_edge", alignment.worstEdge);
+  fact(SPEC, "alignment_px_per_price", Number(alignment.pxPerPrice.toFixed(4)));
+  fact(
+    SPEC,
+    "aligned_groups_px",
+    aligned.map((g) => `${g.xLeft}-${g.xRight}:corpo ${g.bodyTop}..${g.bodyBottom}:pavio ${g.wickTop}..${g.wickBottom}`),
+  );
   // `3 px`: a biblioteca arredonda cada aresta para a grade de pixels e a borda do corpo tem
   // `1 px` de espessura própria, então `2 px` de folga já é geometria e não tolerância a erro.
   expect(
