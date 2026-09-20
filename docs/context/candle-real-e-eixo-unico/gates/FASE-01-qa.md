@@ -69,8 +69,10 @@ disjuntas; rc do Python = 1 nas duas]`
 
 1. **A direção é uma só, e ela tem nome: a vela armazenada é mais ESTREITA que a origem.**
    `HIGH` sempre **abaixo** da origem (`pos=0` em `20` buckets divergentes somando as duas
-   janelas), `LOW` sempre **acima** (`neg=0` em `14`). São **34 eventos, 34 no mesmo sentido**.
-   Sob moeda honesta isso é `2⁻³⁴ ≈ 5,8·10⁻¹¹` — não é amostra pequena, é assinatura.
+   janelas), `LOW` sempre **acima** (`neg=0` em `14`). São **34 divergências, 34 no sentido que
+   ESTREITA a faixa**. Sob sinal independente e simétrico, a chance de as 20 de `HIGH` e as 14
+   de `LOW` saírem todas do lado que fecha a vela é `2·2⁻²⁰ × 2·2⁻¹⁴ ≈ **2,3·10⁻¹⁰**` — não é
+   amostra pequena, é assinatura.
 2. **O `ESTADO-2026-09-19.md` previu exatamente isto e arquivou como ruído**: *"`HIGH` 3/3
    negativo + `LOW` 1/1 positivo … Separadas não alcançam `minimum_bias_n=4` … Amostra pequena,
    não derruba nada."* Hoje **cada redução sozinha** alcança `minimum_bias_n=4`, em **cada uma**
@@ -377,13 +379,26 @@ veredito: VERDE — 8 portões mediram e passaram        # rc=0
 2259]` — **cobertura `96,33%` sobre piso declarado de `70,0%`**, `2.623` testes (a fase reportava
 `2.571 / 96,24%`; subiu, não caiu).
 
-> ⚠️ **Anomalia de AMBIENTE, declarada porque afeta a confiança do número e não o veredito:**
-> havia **outros `make verify` rodando em paralelo** na mesma árvore
-> (`pid 1143809` + `pytest 1145661`), **dois `pytest` gravando o mesmo `coverage.xml`**, e meu
-> arquivo de resumo no scratchpad foi sobrescrito por outro agente que escolheu o mesmo nome. O
-> número acima foi relido do **meu** log bruto (carimbo `222720Z`), que é por processo — o
-> `Total coverage` do `--cov-report=term-missing` sai da memória do processo, não do `.xml`
-> disputado. **Ainda assim: a rodada que FECHA a fase deve ser uma só, isolada.**
+> ⚠️ **Anomalia de AMBIENTE na PRIMEIRA rodada, e ela foi RESOLVIDA, não contornada:** havia
+> **outros `make verify` em paralelo** na mesma árvore (`pid 1143809` + `pytest 1145661`), **dois
+> `pytest` gravando o mesmo `coverage.xml`**, e meu arquivo de resumo no scratchpad foi
+> sobrescrito por outro agente que escolheu o mesmo nome. **Refiz sozinho, sobre a árvore já
+> commitada com a minha mudança de teste, com `__pycache__` purgado de novo e SEM concorrente**
+> (`pgrep -f 'bash scripts/verify.sh'` = `1`):
+>
+> ```
+> === verify · cripto-strategy · 20260920T224651Z (UTC) ===
+> [OK] lint-backend rc=0 · lint-frontend rc=0 · test-frontend rc=0  757 pass
+> [OK] test         rc=0  2623 passed · Total coverage: 96.33%
+> [OK] boundaries   rc=0  7 kept, 0 broken
+> [OK] regras       rc=0  0 bloqueio(s), 73 aviso(s)
+> [OK] política     rc=0
+> [OK] e2e          rc=0  41 passed (42.4s)
+> veredito: VERDE — 8 portões mediram e passaram        # rc=0
+> ```
+>
+> **Os dois números batem entre as duas rodadas** (`2623` / `96,33%`), o que é a evidência de que
+> a contenção não os moveu — e a segunda rodada é a que vale, porque é a única isolada.
 
 ---
 
@@ -432,8 +447,8 @@ que só lê. A vela `1.505` é dado real do owner, não semente minha.
    pixel até lá** — e não se fecha com o `0,54 px` de ontem.
 3. ⚠️ **Carregar o achado do lookahead** para `05_historia_sob_demanda.md` ou para `tasks.toml`
    — a fase `05` está planejada sobre a premissa que ele falsifica.
-4. ⚠️ **`make verify` de fechamento em execução isolada**, sem `pytest` concorrente, e a
-   cobertura relida daí.
+4. ✅ **Feito por mim:** `make verify` de fechamento em execução **isolada**, sobre a árvore já
+   commitada — `VERDE`, 8 portões, `2623 passed · 96,33%`, `e2e 41 passed`.
 5. ⚠️ **`DoD-4`**: registrar que é medição manual, com o comando literal, repetível a cada
    mudança de produção que toque o painel de Preço — `make verify` **não** o executa.
 6. ⚠️ **Teste**: `color-tokens.test.ts` A3 deriva o cinza dos tokens, não de dois literais
