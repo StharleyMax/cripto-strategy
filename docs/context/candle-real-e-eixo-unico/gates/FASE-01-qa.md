@@ -90,6 +90,15 @@ disjuntas; rc do Python = 1 nas duas]`
    `fapi` assenta a barra **~58 s** depois. Ler o extremo antes de ele assentar **só pode**
    truncá-lo: `HIGH` nunca sobe, `LOW` nunca desce. **Viés unilateral não é ruído de mercado — é
    o instrumento lendo cedo.**
+
+   > ⚠️ **CORREÇÃO, 2026-09-20:** os `~58 s` estão errados — o número foi lido da docstring de
+   > `is_closed_bucket`, que mede o **bucket em curso** devolvido como elemento mais novo (o que
+   > o corte descarta), e não o assentamento de uma barra já fechada. O assentamento real é
+   > **menor que `10 s`**: divergência zero em `+10 s` e `+30 s` `[MEDIDO 2026-09-19, n=52,
+   > `ADR-041`]`. **A conclusão desta seção sobrevive inteira** — o offset de `2,0 s` era cedo
+   > demais, e é por isso que `ADR-041` o move para `20,0 s` (2× o menor degrau limpo). O que
+   > não sobrevive é a magnitude: a margem que faltava era de **~18 s, não de ~56 s**. As duas
+   > outras ocorrências do número neste laudo (§ recomendação 2 e § ação 1) herdam esta correção.
 5. **Magnitude máxima medida: `-27,80 USDT` sobre `81.263,40`** (`0,034%`,
    `t=1789923060000`). Pequeno em percentual — e irrelevante que seja: `DoD-9` **não** tem
    tolerância de magnitude, tem tolerância **zero** com contagem de sinal, e foi assim que

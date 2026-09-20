@@ -165,16 +165,23 @@ services:
   #   PREMIUM_INDEX_CYCLE_INTERVAL_S   default 60      seconds between premiumIndex polls
   #   KLINES_CYCLE_INTERVAL_S          default 60      seconds between klines polls; the series
   #                                                    is 1-minute, so below 60 buys only quota
-  #   KLINES_CYCLE_OFFSET_S            default 2       seconds PAST each grid point at which the
+  #   KLINES_CYCLE_OFFSET_S            default 20      seconds PAST each grid point at which the
   #                                                    aligned poll fires; must be in
   #                                                    [0, KLINES_CYCLE_INTERVAL_S). It is the
   #                                                    PHASE, not a cadence: the cycle sleeps
   #                                                    until `bucket_end + offset`, so the
   #                                                    period stays the cadence no matter how
-  #                                                    long the work took. Lowering it toward 0
-  #                                                    risks asking for a bar the venue has not
-  #                                                    closed (clock skew), which the
-  #                                                    anti-lookahead cut then drops
+  #                                                    long the work took. Lowering it does NOT
+  #                                                    fail loudly, and the previous text here
+  #                                                    said it did -- there is no clock skew to
+  #                                                    blame and the anti-lookahead cut drops
+  #                                                    NOTHING: the venue SERVES the bar as
+  #                                                    closed while still amending it, so we
+  #                                                    write a PREFIX of it with
+  #                                                    `is_final=True` and never re-read. See
+  #                                                    `ADR-041`: at +2 s, 32 of 52 bars had the
+  #                                                    volume understated; at +10 s and +30 s,
+  #                                                    zero `[MEDIDO 2026-09-19, n=52]`
   #   KLINES_BACKFILL_DAYS             default 7       days read once at boot (7 x 1440 = 10.080
   #                                                    bars per symbol = 7 calls of 1500)
   #   OPEN_INTEREST_CYCLE_INTERVAL_S   default 60      seconds between openInterestHist polls;
