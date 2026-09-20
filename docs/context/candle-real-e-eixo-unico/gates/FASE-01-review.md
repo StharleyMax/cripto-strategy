@@ -62,9 +62,26 @@ make verify
 [OK] boundaries      rc=0  7 kept, 0 broken
 [OK] regras          rc=0  0 bloqueio(s), 73 aviso(s)
 [OK] política        rc=0
+[OK] e2e             rc=0  41 passed (44.4s)
+veredito: VERDE — 8 portões mediram e passaram
 ```
 
 `boundaries — 7 kept, 0 broken` é a camada arquitetural medida por máquina, e ela está intacta.
+O portão `e2e` cobre o `15-vela-e-ablacao.spec.ts` novo desta fase: **41 passed**.
+
+> **Correção de um número meu, registrada em vez de apagada.** A primeira versão deste relatório
+> dizia *"6 portões verdes"* — eu tinha lido o `verify.out` **antes de a corrida terminar** e contei
+> as linhas que existiam naquele instante. O veredito real é **8 portões**, e o que faltava incluía
+> justamente o `e2e`. Nenhum achado muda; o número, sim. É o mesmo defeito que o `[WARNING-1]`
+> acusa no `CLAUDE.md` — ler um instrumento no meio da execução e publicar o parcial como total —
+> e seria incoerente corrigi-lo lá e escondê-lo aqui.
+
+⚠️ **O `make verify` acima mediu o estado COMMITADO do ramo.** Durante esta revisão um agente
+paralelo passou a editar `frontend/e2e/15-vela-e-ablacao.spec.ts` (o `[----] diff` da última linha
+da corrida: `1 file changed, 71 insertions(+), 13 deletions(-)`, não-commitado). **Esta auditoria
+é sobre `origin/master...wave/candle-f01`**, que não inclui essa mudança — se ela entrar na PR,
+**precisa de medição própria**, porque um `APPROVED` velho sobre código novo é pior que um
+`NEEDS_FIX` velho.
 
 ---
 
@@ -294,7 +311,7 @@ certo*. Dono declarado: `/architect` + `ADR-006`/`SPEC-001` §2.5, **cai na fase
 ## Veredito
 
 **COMPLIANT.** 8 regras bloqueantes em vigor, 8 avaliadas, **0 violadas** sobre 33 arquivos de
-código (`harness rules --mode sweep` → 0 bloqueio; `make verify` → 6 portões verdes, incluindo
+código (`harness rules --mode sweep` → 0 bloqueio; `make verify` → **8 portões VERDE**, incluindo
 `boundaries 7 kept, 0 broken`). O instrumento foi provado mordente antes de se confiar no
 silêncio dele.
 

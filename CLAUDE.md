@@ -142,8 +142,17 @@ de diretório (`backend/src/modules/sentimento/infra/`) é **nome de CAMADA** �
 `use_cases` —, não o componente. O componente `infra` mapeia para `deploy/`, que **não está no
 universo do falsificador**. Somá-lo à exclusão apagaria um segmento que o instrumento deve
 continuar vendo, em troca de nada: `infra` é inglês e nunca disparou a checagem
-`[MEDIDO 2026-09-19: o falsificador rodado com e sem `infra` na exclusão devolve a MESMA lista,
-menos o próprio `infra` — 23 segmentos contra 22, zero em português nos dois]`.
+`[MEDIDO 2026-09-20: o falsificador rodado com e sem `infra` na exclusão devolve a MESMA lista,
+menos o próprio `infra` — **22 segmentos contra 21**, zero em português nos dois]`.
+
+> ⚠️ **CORREÇÃO, 2026-09-20.** A versão anterior desta linha publicava **"23 contra 22"** sob
+> `[MEDIDO 2026-09-19]`. Rodando o **bloco `grep -vxE` desta mesma seção**, o resultado é **22 contra
+> 21** — **errado por um nos dois lados**. A CONCLUSÃO sobrevive intacta (mesma lista menos o próprio
+> `infra`, zero em português nos dois); **o número não**. Achado pelo `/review` do portão da fase `01`
+> de `candle-real-e-eixo-unico`, que rodou o comando em vez de reler a frase.
+>
+> **É o defeito que esta seção existe para impedir, cometido dentro dela.** Fica escrito em vez de
+> apagado: o valor da disciplina é ela pegar quem a escreve.
 
 ## Idioma de identificador — a fronteira escrita, e ela é **convenção, não portão**
 
