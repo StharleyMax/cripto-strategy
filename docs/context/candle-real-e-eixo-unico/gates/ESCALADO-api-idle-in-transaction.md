@@ -65,3 +65,58 @@ request que abrir transação e não a fechar. Se uma medição futura mostrar `
 Rode a consulta do topo. Se, **após um período de operação normal comparável (≥ 2 dias)**, não
 houver nenhuma sessão em `idle in transaction` com `xact_start` acima de alguns minutos, a causa
 foi corrigida em algum lugar e este documento pode sair. **Enquanto houver, ele fica.**
+
+---
+
+## ⛔ 2026-09-20 — ISTO DEIXOU DE SER TEÓRICO: derrubou a coleta INTEIRA por 9 minutos
+
+O falsificador acima pedia uma prova de dano além do `n_dead_tup`. Ela veio sozinha, e é pior do
+que o bloat que eu tinha ido procurar.
+
+**A cadeia, medida:**
+
+```
+select pid, pg_blocking_pids(pid), round(extract(epoch from now()-query_start)) espera_s, left(query,50)
+  from pg_stat_activity where cardinality(pg_blocking_pids(pid)) > 0;
+-- 555930 | {550219} | 538 | ALTER TABLE md.ingest_run ADD COLUMN IF NOT EXISTS
+```
+
+1. O deploy do coletor (`ADR-041`, offset `20 s`) subiu às `23:51:26Z`.
+2. No boot, o coletor roda `ALTER TABLE md.ingest_run ADD COLUMN IF NOT EXISTS writer_ac…`,
+   que exige `ACCESS EXCLUSIVE`.
+3. Duas sessões da **API** (`client_addr 172.18.0.4` = `deploy-api-1`, `backend_start 22:15:13Z`)
+   estavam `idle in transaction` havia **~50 minutos**, segurando lock conflitante.
+4. O `ALTER` entrou na fila e **nunca saiu**. O coletor nunca alcançou o laço de polling.
+
+**O sintoma, e por que ele engana:** o container fica `Up`, `healthy`, com **0,08% de CPU e
+`TIME 00:00:00`** — não parece travado, parece ocioso. E `docker logs` devolve **0 linhas**,
+porque não há `PYTHONUNBUFFERED` no `deploy/compose.yml:228-231` e o stdout do Python fica retido
+no buffer de 8 KB. **Um coletor morto e um coletor entre ciclos são indistinguíveis por fora.**
+
+**O dano, medido no banco** (`select src_label_raw, (now-max(ingested_at)) from md.series group by 1`):
+as **cinco** séries mudas por `435`–`549 s`. Não foi só klines — `ALTER` em fila bloqueia todo
+mundo atrás dele. Universo de comparação: **zero gaps > 120 s nas 6 h anteriores**
+`[MEDIDO 2026-09-20, n=6h de ingestão contínua]`, então 9 minutos não é variação, é parada.
+
+**Como foi destravado:** `pg_terminate_backend` é ação de interferência e foi recusada; o caminho
+usado foi reiniciar o **próprio serviço defeituoso** — `make compose-local ARGS="restart api"` —,
+que fecha as conexões dele. Silêncio caiu de `519 s` para `72 s` no minuto seguinte.
+
+## O que isto muda na severidade
+
+Estava arquivado como **não-bloqueante** com o argumento de que o workload é append-only e
+`n_dead_tup=1181` é desprezível. **O argumento continua certo e é irrelevante:** o dano real não é
+bloat, é **fila de lock**. Qualquer migração de schema no boot de qualquer serviço fica refém de
+uma transação ociosa da API, e o modo de falha é **silencioso e indistinguível de ocioso**.
+
+**Dois consertos, e eles são independentes:**
+
+| | conserto | por que sozinho não basta |
+|---|---|---|
+| 1 | a API não deve deixar transação aberta em leitura (causa-raiz) | não impede que OUTRO cliente repita |
+| 2 | `lock_timeout` no `ALTER` de boot + `PYTHONUNBUFFERED=1` no compose | não conserta a API, mas troca **parada silenciosa** por **erro que se nomeia** |
+
+⚠️ **O item 2 é o que eu teria querido ter hoje.** Passei ~9 minutos tratando "coletor ocioso"
+como hipótese de offset — o ticker chegou a ser lido e inocentado (`next_grid_instant_s` dá sono
+≤ 60 s) — porque nada no sistema dizia "estou esperando um lock". Um `lock_timeout` de 30 s teria
+matado o boot com a mensagem certa na primeira vez.
