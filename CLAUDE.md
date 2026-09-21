@@ -128,8 +128,31 @@ comandos a referenciam só como `$COINALYZE_API_KEY`.
 
 ## Vocabulário fechado de componentes
 
-`sentimento` · `charts` · `convergencia` · `backtest` · `web` · `docs` — via
+`sentimento` · `charts` · `convergencia` · `backtest` · `web` · `docs` · `infra` — via
 `harness policy --key components`. Alterar o vocabulário é ato do owner, não de agente.
+
+**`infra` entrou em 2026-09-19** `[DECISÃO-OWNER: 2026-09-19, escolha entre alternativas
+apresentadas]`. Não é vocabulário novo: a política já devolvia **7** e este arquivo listava **6**,
+e o owner decidiu que **a política é a verdade**. Quem achou: o `/architect` de `SPEC-008`
+(`[M-1]`), comparando `harness policy --key components` com esta linha.
+
+⚠️ **A exclusão do falsificador abaixo (linha do `grep -vxE`) NÃO ganhou `infra`, e a omissão é
+deliberada.** Ela subtrai *caminho que deriva de componente*, e o `infra` que aparece como segmento
+de diretório (`backend/src/modules/sentimento/infra/`) é **nome de CAMADA** — irmão de `domain` e
+`use_cases` —, não o componente. O componente `infra` mapeia para `deploy/`, que **não está no
+universo do falsificador**. Somá-lo à exclusão apagaria um segmento que o instrumento deve
+continuar vendo, em troca de nada: `infra` é inglês e nunca disparou a checagem
+`[MEDIDO 2026-09-20: o falsificador rodado com e sem `infra` na exclusão devolve a MESMA lista,
+menos o próprio `infra` — **22 segmentos contra 21**, zero em português nos dois]`.
+
+> ⚠️ **CORREÇÃO, 2026-09-20.** A versão anterior desta linha publicava **"23 contra 22"** sob
+> `[MEDIDO 2026-09-19]`. Rodando o **bloco `grep -vxE` desta mesma seção**, o resultado é **22 contra
+> 21** — **errado por um nos dois lados**. A CONCLUSÃO sobrevive intacta (mesma lista menos o próprio
+> `infra`, zero em português nos dois); **o número não**. Achado pelo `/review` do portão da fase `01`
+> de `candle-real-e-eixo-unico`, que rodou o comando em vez de reler a frase.
+>
+> **É o defeito que esta seção existe para impedir, cometido dentro dela.** Fica escrito em vez de
+> apagado: o valor da disciplina é ela pegar quem a escreve.
 
 ## Idioma de identificador — a fronteira escrita, e ela é **convenção, não portão**
 
@@ -205,7 +228,7 @@ por `SPEC-002` §6.1 e a **linha 12** deliberadamente em aberto por `SPEC-002` �
 | 6 | **mensagem de commit, corpo de PR** | **português** | `[INFERRED: não é "código gerado"; 18 dos 20 últimos commits em português, n=20]` | `ADR-013/D3` |
 | 7 | **`docs/`, `README`, SPEC, ADR, plano, `tasks.toml`, `CLAUDE.md`** | **português** | `[INFERRED: traduzir destruiria as âncoras textuais que 3 ADRs usam para se referir umas às outras]` | `ADR-013/D3` |
 | 8 | **string visível de UI / microcopy de operador** | **português (pt-BR)** — e **fora deste universo por REMISSÃO, não por omissão** | `[DOC: SPEC-001 §3.8 + PRD-001 §9/Q14]` — reabrir aqui criaria duas verdades sobre a mesma superfície | `ADR-013/D3` + `PRD-002` §3.2 |
-| 9 | **vocabulário fechado de componentes** (`sentimento` · `charts` · `convergencia` · `backtest` · `web` · `docs`) **e os caminhos que dele derivam** (`backend/src/modules/sentimento/`, `backend/tests/sentimento/`) | **português — EXCEÇÃO DECLARADA** | `[DECISÃO-OWNER: 2026-08-29, escolha entre alternativas apresentadas]` — ver a exceção literal acima | `PRD-002` §3.3 |
+| 9 | **vocabulário fechado de componentes** (`sentimento` · `charts` · `convergencia` · `backtest` · `web` · `docs` · `infra` — `infra` acrescentado em 2026-09-19, ver a seção do vocabulário) **e os caminhos que dele derivam** (`backend/src/modules/sentimento/`, `backend/tests/sentimento/`) | **português — EXCEÇÃO DECLARADA** | `[DECISÃO-OWNER: 2026-08-29, escolha entre alternativas apresentadas]` — ver a exceção literal acima | `PRD-002` §3.3 |
 | 10 | **nome de EVENTO DE LOG** (a string em `logger.info("…")`) e **as chaves de `extra={}`** | **inglês, PROSPECTIVAMENTE** — todo evento e toda chave **novos** nascem em inglês | `[INFERRED: aplicação de ADR-013/D3 linha 1 a superfície não enumerada — a string em `logger.info("…")` é escrita em código, por quem escreve o código]` | `SPEC-002` §6.1 |
 | 11 | **nome de COLUNA DE CONTRATO** (`janela_de_perda`, `window`, `class`) | **português — EXCEÇÃO, já declarada em código de produção** | `[DOC: backend/src/modules/sentimento/domain/ingest_record.py:87-89]` — herança de `ADR-008/D3`; reabri-la é ato daquela ADR, não desta feature | `PRD-002` §3.4 |
 | 12 | **segmento de URL / rota** (`"/painel"` em `ROTAS`) | **inglês — RESPONDIDA 2026-09-08** | `[DECISÃO-OWNER: 2026-09-08, escolha entre alternativas apresentadas]` — ver resolução abaixo | `PRD-002` §3.1 / `SPEC-002` §7 |

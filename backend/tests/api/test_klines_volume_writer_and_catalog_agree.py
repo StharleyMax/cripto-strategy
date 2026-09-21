@@ -40,6 +40,7 @@ from fastapi import FastAPI
 
 from src.main import create_app
 from src.modules.sentimento.domain.cvd_source_catalog import CVD_SOURCE_METRIC
+from src.modules.sentimento.domain.klines_ohlc_catalog import klines_ohlc_catalog_entries
 from src.modules.sentimento.domain.klines_volume_catalog import KLINES_VOLUME_METRIC
 from src.modules.sentimento.domain.series_key import (
     Nature,
@@ -146,9 +147,9 @@ def _written_row_series_key_ids(instrument_id: str) -> frozenset[str]:
     Produced by running the real mapping over a real, long-settled `KlineRow` — not by calling
     the catalog builders with arguments this test chose, which would test this test.
 
-    Since `T-02.3` one bar is TWO rows (volume and CVD), and the `== 2` below is load-bearing:
-    it is what stops this file from silently going back to checking a single identity the day
-    someone drops the CVD append.
+    Since `T-01.3` of `SPEC-008` one bar is SIX rows — volume, CVD and the four `klines_ohlc`
+    readings — and the `== 6` below is load-bearing: it is what stops this file from silently
+    going back to checking fewer identities the day someone drops an append.
     """
     settled = KlineRow(
         raw=(
@@ -167,8 +168,26 @@ def _written_row_series_key_ids(instrument_id: str) -> frozenset[str]:
         )
     )
     rows = build_klines_to_rows()(_T0 + 10 * KLINES_BUCKET_WIDTH_MS, instrument_id, (settled,))
-    assert len(rows) == 2, "the settled bar must publish BOTH identities: volume and CVD"
+    assert len(rows) == 6, (
+        "the settled bar must publish ALL SIX identities: volume, CVD and the four OHLC readings"
+    )
     return frozenset(row.series_key_id for row in rows)
+
+
+def _klines_ohlc_series_key_ids(instrument_id: str) -> frozenset[str]:
+    """Return the four `klines_ohlc` ids — written by `T-01.3`, SERVED from `T-01.6` on.
+
+    Subtracted from BOTH sides of the comparison below, never from the written side alone. The
+    asymmetric form would pass today and FAIL on the very commit that satisfies `T-01.6` — a
+    tripwire that fires when the thing it guards is finally right is worse than no tripwire,
+    because the next reader learns to edit the assertion instead of reading it.
+    """
+    return frozenset(
+        entry.key.series_key_id()
+        for entry in klines_ohlc_catalog_entries(
+            instrument_id, verified_by="test_klines_ohlc_catalog.py"
+        ).entries
+    )
 
 
 def test_the_id_the_collector_writes_is_the_id_the_catalog_route_publishes() -> None:
@@ -198,8 +217,9 @@ def test_the_id_the_collector_writes_is_the_id_the_catalog_route_publishes() -> 
     assert set(served_by_instrument) == set(_SERVED_INSTRUMENTS)
 
     for instrument_id in _SERVED_INSTRUMENTS:
-        served_ids = served_by_instrument[instrument_id]
-        written_ids = set(_written_row_series_key_ids(instrument_id))
+        candle_ids = _klines_ohlc_series_key_ids(instrument_id)
+        served_ids = served_by_instrument[instrument_id] - candle_ids
+        written_ids = set(_written_row_series_key_ids(instrument_id)) - candle_ids
         assert written_ids == served_ids, (
             f"for {instrument_id} the klines collector writes md.series rows under "
             f"series_key_id(s) the served catalog does not publish: written={written_ids!r} "

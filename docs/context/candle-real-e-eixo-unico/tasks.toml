@@ -1,0 +1,861 @@
+# Doc de tasks de `candle-real-e-eixo-unico` — o DADO DE MAQUINA da quebra.
+#
+# A narrativa e o racional vivem em `tasks_review.md`. Os dois NAO se sobrepoem: este
+# arquivo nao argumenta, e aquele nao e lido por maquina.
+#
+# A chave da feature e o campo `feature` ABAIXO, nunca o nome do diretorio (ADR-013/D4).
+#
+# ── A UNIDADE DE FASE E A FATIA VERTICAL ──────────────────────────────────────────
+#
+# coletor -> escritor -> md.series -> /api/v1/series-history -> painel com PIXEL visivel.
+# Elo ausente => fase incompleta. Toda fase paga os cinco itens do DoD-VERTICAL:
+#   DoD-1 count(*) de md.series para a series_key_id da fase > 0 (Postgres REAL)
+#   DoD-2 GET /api/v1/series-history -> n_points > 0
+#   DoD-3 Playwright contra o app REAL, assert de POSICAO (nunca so status HTTP)
+#   DoD-4 ⛔ ABLACAO: removida a causa, o pixel SOME. Pixel que sobrevive estava
+#         desenhando outra coisa. DoD-3 sem DoD-4 e verde falso.
+#   DoD-5 `make verify` verde, com __pycache__ purgado ANTES de acreditar
+#
+# ── TRACKER: DELIBERADO, NAO ESQUECIDO ────────────────────────────────────────────
+#
+# `harness policy --key tracker` -> {kind=jira, project=CST, board_id=36, parent_kind=Epic,
+# child_kind=Tarefa} [MEDIDO 2026-09-19]. NAO e `kind = none`: o destino esta declarado e
+# identificado. O que NAO aconteceu foi a CRIACAO, por duas razoes escritas:
+#   (1) ordem explicita de REVIEW-ONLY — criar card antes de `approve tasks` e acao externa
+#       irreversivel sobre um gate que e do OWNER;
+#   (2) CORRIGIDO 2026-09-19 pelo loop principal: a redacao original dizia que o MCP
+#       atlassian exigia OAuth nesta sessao. E FALSO — `jira_search` em CST respondeu
+#       autenticado e devolveu CST-168..171. O unico motivo do adiamento e (1).
+# As 48 tasks NASCERAM `local_only = true` com `local_reason` DATADO — nao era o marcador
+# de "esqueci". Um marcador que colapse "decidi" com "esqueci" faz o segundo nunca chamar
+# atencao.
+# ✅ REVERSAO EXECUTADA em 2026-09-19, depois de o OWNER aprovar a narrativa e autorizar
+# ("pode criar as tasks"): local_only/local_reason sairam e `tracker` inline entrou na MESMA
+# edicao — o validador PROIBE os dois juntos (V-20), entao a troca nao ficou pela metade em
+# silencio. Nenhuma task continua local_only. Os 5 Epics de tasks_review.md §5 viraram
+# CST-192..CST-196 (F1..F5) e as 48 Tarefas filhas, CST-197..CST-244.
+#
+# ── TRILHA DO TOTAL: 39 itens numerados -> 48 tasks ───────────────────────────────
+#
+# 39 itens numerados nas 5 fases; 5 fusoes (1.1+1.2, 1.5+DoD10, 1.6+DoD6, 2.2+2.2b,
+# 5.2+5.6); 1 item declarado FORA (2.5, migracao de /painel); +15 tasks que o plano EXIGE
+# e nao numerou (falsificadores, ablacoes, tetos de latencia, DoD-9 de [M-9], CA-8', e as
+# duas do requisito novo da 3a rodada). Trilha item a item em tasks_review.md §1.
+#
+# ── O QUE NAO EXISTE AQUI, E CADA AUSENCIA E DECISAO ──────────────────────────────
+#
+# * F5 do PRD-008 (OI agregado multi-exchange, nocional USD) — FORA por DECISAO-OWNER
+#   2026-09-19 ([M-2]), nao por deducao. Volta so por nova decisao dele.
+# * plano de migracao de /painel — item 2.5, task DEDICADA (CLAUDE.md linha 12)
+# * causa raiz de [M-9] (klines_volume subestimado) e de [M-10] (SEM_PONTO ambiguo) —
+#   ESCALADOS, dono /architect + ADR-034. T-01.7 DETECTA a propagacao, nao conserta.
+# * mecanismo de indisponibilidade POR TF — nasceria sem poder disparar (as duas grades
+#   nativas sao 1min e 5min; o TF mais fino e 5m). Declarado com gatilho em T-05.11.
+# * renomear os 4 eventos de log em portugues — NG-7, CLAUDE.md linha 10 e PROSPECTIVA
+# * SMC, VPVR, funding — NG-1/NG-2/NG-3
+# * qualquer [[rules.own]] / alvo de make / allowlist DE IDIOMA — RN-4, ADR-011/D1.10:
+#   REPROVA a fase
+
+schema_version = "1"
+feature = "candle-real-e-eixo-unico"
+spec = "docs/specs/SPEC-008-candle-real-e-eixo-unico.md"
+plan = "docs/plans/SPEC-008-candle-real-e-eixo-unico"
+review = "docs/context/candle-real-e-eixo-unico/tasks_review.md"
+untracked_note = "2026-09-19: TODAS as 48 tasks estao cardadas em CST (Jira, board 36). Os 5 Epics, um por fase: CST-192 (F1 A vela real), CST-193 (F2 O eixo unico), CST-194 (F3 O timeframe unico), CST-195 (F4 O OI honesto), CST-196 (F5 Historia sob demanda). As Tarefas filhas ocupam CST-197..CST-244, cada uma com `tracker` inline apontando id e url. Criadas apos o owner aprovar a narrativa e autorizar explicitamente ('pode criar as tasks', 2026-09-19); nenhuma task ficou local_only."
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 01 · A VELA REAL — quatro leituras de um array que ja e pago
+# Pixel P1: o painel de Preco desenha CORPO e PAVIO. Hoje: data-fact="price_last_reading:absent"
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-01.1"
+title = "[sentimento] 01 · Identidade das 4 series OPEN/HIGH/LOW/CLOSE no catalogo, com o nome passando por FORBIDDEN_METRIC_NAMES"
+components = ["sentimento"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 itens 1.1 + 1.2 (FUSAO)", "SPEC-008 §3.4 (tabela normativa)", "RF-2", "D1",
+    "interval=`1m`, nature=STOCK, ts_convention=OHLC_OVER_BUCKET, unit=`USDT`, denom=`quote`, reduction ∈ {OPEN,HIGH,LOW,CLOSE}. A tabela normativa e SPEC-008 §3.4 e ela e o contrato desta task.",
+    "POR QUE FUSAO: criar a identidade e passar o `metric` pela convencao `<endpoint>_<field/reduction>` + FORBIDDEN_METRIC_NAMES e a MESMA edicao e o MESMO teste. Separar produziria uma task cujo DoD e 'nao fiz nada errado na task irma'.",
+    "⛔ O NOME ENTRA NO sha256 DA IDENTIDADE: series_key_id() e a projecao canonica dos termos, e `verified_by` (o nome do teste) e um deles. Renomear serie DEPOIS e MIGRACAO, nao refactor — por isso a checagem de nome acontece ANTES de qualquer linha ser escrita.",
+    "DoD: teste nomeado existe e o nome dele entra no termo `verified_by` das 4 SeriesKey.",
+]
+tracker = { provider = "jira", id = "CST-197", url = "https://conversationhub.atlassian.net/browse/CST-197" }
+
+[[tasks]]
+id = "T-01.2"
+title = "[sentimento] 01 · Os 4 acessores nomeados que faltam em binance_klines_client.py (indices [1..4])"
+components = ["sentimento"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 item 1.3", "RF-1", "SPEC-008 §3.1",
+    "No MESMO padrao nomeado dos 4 acessores que ja existem. ⛔ NUNCA literal de indice no chamador — um `row[2]` solto no call site e onde HIGH vira LOW sem nada reprovar.",
+    "O array de 12 campos JA E PAGO (M5): esta task nao acrescenta nenhuma chamada de rede.",
+]
+tracker = { provider = "jira", id = "CST-198", url = "https://conversationhub.atlassian.net/browse/CST-198" }
+
+[[tasks]]
+id = "T-01.3"
+title = "[sentimento] 01 · build_klines_to_rows: o laco de pares passa de 2 para 6 tuplas, com proveniencia escrita UMA vez"
+components = ["sentimento"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = ["T-01.1", "T-01.2"]
+refs = [
+    "plano 01 item 1.4", "RF-1", "RNF-4",
+    "6 tuplas (series_key_id, value_raw). Os 16 campos de proveniencia escritos UMA vez e series_key_id() computado UMA VEZ POR PAGINA, nunca por linha — o sha256 por linha e o custo que transforma 2,07 M linhas em problema de CPU.",
+    "DoD: contagem de chamadas a series_key_id() por pagina = numero de chaves distintas, nao numero de linhas.",
+]
+tracker = { provider = "jira", id = "CST-199", url = "https://conversationhub.atlassian.net/browse/CST-199" }
+
+[[tasks]]
+id = "T-01.4"
+title = "[sentimento] 01 · O bucket e o que TERMINA em ceil(t/B)*B: is_closed_bucket cobre as 4 series novas, e o teste fixa o SINAL"
+components = ["sentimento"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = ["T-01.3"]
+refs = [
+    "plano 01 item 1.5 + DoD 10 (FUSAO)", "anti-lookahead", "SPEC-008 §3",
+    "POR QUE FUSAO: 'o bucket em curso nao e gravado como final' e 'o bucket e o que TERMINA em ceil(t/B)*B' sao a MESMA asseracao de identidade de bucket vista de dois lados.",
+    "⛔ event_time E bucket_end (confirmado contra a fapi) => `floor` ingenuo desloca a serie em UMA BARRA NATIVA. Δ medido de 0,114 pp [MEDIDO 2026-09-19] — pequeno demais para estourar um teste de ordem de grandeza. ⇒ o assert e de IGUALDADE DE BUCKET, nunca de magnitude.",
+    "⛔ FALSIFICADOR DA REGRA ANTI-LOOKAHEAD: o CLAUDE.md registra que uma regra anti-lookahead deste projeto ja esteve INVERTIDA e propagada por dois documentos. Escreva o teste que prova o SINAL da comparacao, nao a existencia da flag.",
+]
+tracker = { provider = "jira", id = "CST-200", url = "https://conversationhub.atlassian.net/browse/CST-200" }
+
+[[tasks]]
+id = "T-01.5"
+title = "[sentimento] 01 · Backfill one-shot/cron ate o teto de 90 dias, com a pegada de disco MEDIDA antes e depois"
+components = ["sentimento"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = ["T-01.3", "T-01.4"]
+refs = [
+    "plano 01 item 1.6 + DoD 6 (FUSAO)", "RNF-3", "RNF-4", "D5", "D-h", "ADR-027/D1",
+    "POR QUE FUSAO: a medicao de pg_total_relation_size('md.series') antes/depois so existe se o backfill rodar. E a MESMA execucao que produz os dois numeros.",
+    "⛔ NUNCA servico de vida longa (ADR-027/D1) — one-shot ou cron.",
+    "Previsao a bater: ≈ 2,07 M linhas no teto de 90 dias com 4 simbolos [INFERRED: aritmetica, SPEC-008 §3.6 — o byte/linha e [NAO MEDIDO], e ESTA medicao e a que o fecha].",
+    "[P-seed] NAO e violado: backfill LIDO DA ORIGEM nao e dado sintetico semeado no Postgres compartilhado.",
+]
+tracker = { provider = "jira", id = "CST-201", url = "https://conversationhub.atlassian.net/browse/CST-201" }
+
+[[tasks]]
+id = "T-01.6"
+title = "[sentimento] 01 · As 4 entradas registradas no SeriesCatalog SERVIDO por /api/v1/series-catalog"
+components = ["sentimento"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = ["T-01.1"]
+refs = [
+    "plano 01 item 1.7", "RF-2",
+    "REGISTRADO NAO BASTA: o DoD e a rota SERVINDO. O painel de OI ja passou uma fase inteira apontado para serie vazia escolhendo por posicao — o catalogo servido e o que impede a repeticao.",
+    "DoD: GET /api/v1/series-catalog devolve as 4 entradas com a chave completa.",
+]
+tracker = { provider = "jira", id = "CST-202", url = "https://conversationhub.atlassian.net/browse/CST-202" }
+
+[[tasks]]
+id = "T-01.7"
+title = "[sentimento] 01 · ⛔ A vela armazenada e comparada contra a KLINE DA PROPRIA BINANCE, e o assert morde VIES UNILATERAL"
+components = ["sentimento"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = ["T-01.5"]
+refs = [
+    "plano 01 DoD 9 (task propria)", "SPEC-008/A-8", "[M-9] ESCALADO", "ADR-034",
+    "⛔ O IRMAO NO MESMO COLETOR JA ESTA DOENTE: klines_volume armazenado SUBESTIMA a origem em −2,450% / −4,474% / −2,212% / −2,227%, pior minuto −69,6%, e pos=0 nos QUATRO (nunca acima da verdade) [MEDIDO 2026-09-19, n=4 buckets x 240 min = 960 comparacoes]. Vies unilateral e ASSINATURA de snapshot intrabarra gravado como final_only, nao ruido.",
+    "A vela de 01 anda no MESMO coletor => pode herdar o defeito, e um HIGH subestimado e pavio encurtado que ninguem ve.",
+    "UNIVERSO DO ASSERT, colhido da ORIGEM (auto-verificavel pelo owner no grafico da Binance): BTCUSDT, bucket fechado 2026-09-18 12:00→16:00 UTC, 240/240 minutos — first(open)=78.031,00 · max(high)=81.156,80 · min(low)=77.923,50 · last(close)=80.688,70.",
+    "MORDE se OPEN/HIGH/LOW/CLOSE divergirem alem da tolerancia declarada, e morde EM PARTICULAR com vies unilateral (pos=0 em n buckets).",
+    "⚠️ ESTA TASK NAO CONSERTA [M-9]. A causa raiz e de /architect + ADR-034. Ela IMPEDE que a feature propague o defeito em silencio para o preco — a diferenca entre divida declarada e defeito novo.",
+]
+tracker = { provider = "jira", id = "CST-203", url = "https://conversationhub.atlassian.net/browse/CST-203" }
+
+[[tasks]]
+id = "T-01.8"
+title = "[web] 01 · O painel de Preco le as 4 series e monta a vela; ausencia vira LACUNA, nunca vela de altura zero"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = ["T-01.6"]
+refs = [
+    "plano 01 item 1.8", "RF-3", "RF-4", "RN-1",
+    "Ausencia => WhitespaceItem (o padrao ja pago em s2-lightweight-adapter.ts), NUNCA vela de altura zero e NUNCA `0`.",
+    "RN-1: 'nao sabemos' e 'foi zero' NUNCA sao os mesmos pixels. Vela de altura zero renderiza ausencia como afirmacao.",
+]
+tracker = { provider = "jira", id = "CST-204", url = "https://conversationhub.atlassian.net/browse/CST-204" }
+
+[[tasks]]
+id = "T-01.9"
+title = "[web] 01 · ⛔ A vela degenerada SAI no mesmo commit — rawCandlesFromHistoryRows para de montar {open: close, high: close, low: close}"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = ["T-01.8"]
+refs = [
+    "plano 01 item 1.9", "RN-2", "SPEC-008 §3.5", "[Q7]", "G-5",
+    "view-model.ts:30-38 [MEDIDO 2026-09-19].",
+    "⛔ SEM BANDEIRA, SEM CONVIVENCIA. RN-2: a degenerada e afirmacao honesta ENQUANTO a fonte for escalar, e deixa de ser assim que RF-2 entrar. Duas montagens vivas = dois significados para o MESMO desenho na tela.",
+    "DoD: `grep -n \"high: close\\|low: close\" frontend/src` -> 0 linhas. MORDE com qualquer ocorrencia viva.",
+    "MESMO COMMIT e literal: um commit intermediario com as duas e exatamente o estado que RN-2 proibe.",
+]
+tracker = { provider = "jira", id = "CST-205", url = "https://conversationhub.atlassian.net/browse/CST-205" }
+
+[[tasks]]
+id = "T-01.10"
+title = "[web] 01 · Veredito do ux-ui-mastery sobre a vela e a lacuna"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = ["T-01.8", "T-01.9"]
+refs = [
+    "plano 01 item 1.10", "CLAUDE.md §Design — autonomia delegada COM gate de validacao",
+    "⛔ A autonomia do ui-designer e CONDICIONADA: nenhuma decisao de design vale antes de o validador concordar. Agente que gera e aprova o proprio trabalho nao tem gate — o ciclo e gera -> critica -> itera.",
+    "Silencio do owner NAO e aprovacao; aprovacao e o veredito do validador.",
+]
+tracker = { provider = "jira", id = "CST-206", url = "https://conversationhub.atlassian.net/browse/CST-206" }
+
+[[tasks]]
+id = "T-01.11"
+title = "[web] 01 · e2e Playwright contra o app REAL + ⛔ ablacao de P1: removido o produtor, corpo e pavio SOMEM"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
+phase = "01"
+depends_on = ["T-01.9"]
+refs = [
+    "plano 01 item 1.11 + DoD 2/3/4", "CA-2", "CA-3", "CA-4", "DoD-3", "DoD-4", "[P-seed]",
+    "⛔ [P-seed]: NUNCA semear o Postgres compartilhado. Dado sintetico de e2e ja vazou para a tela real do owner [DOC: MEMORY.md].",
+    "CA-2 (a vela tem faixa): sobre n=500 buckets, ≥1 com high > low. MORDE quando toda barra tem high == low (a degenerada de novo, com dado real por tras) e MORDE TAMBEM se open == close em 500 de 500 — seria o colapso dos quatro STOCK num so, o defeito que ADR-040/D2 nomeia.",
+    "CA-3: `curl -s http://127.0.0.1:3000/symbol | grep -o 'data-fact=\"price_last_reading:[^\"]*\"'` -> NAO `:absent`. Hoje: `:absent` [MEDIDO 2026-09-19].",
+    "⛔ CA-4 (ABLACAO): removido o produtor de preco, corpo e pavio SOMEM da tela — captura antes/depois, assert de POSICAO. Pixel que sobrevive a ablacao estava desenhando outra coisa (a degenerada, ou o close sozinho).",
+    "⛔ Assert de DOM nao prova pixel: elemento pode passar em tudo e nao existir na tela [DOC: MEMORY.md].",
+    "DoD-1: `[.rows[] | select(.value != null)] | length` ≥ 500 por chave, n=4 chaves. Hoje: 0, com price_slots:5760 [MEDIDO 2026-09-19].",
+]
+tracker = { provider = "jira", id = "CST-207", url = "https://conversationhub.atlassian.net/browse/CST-207" }
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 02 · O EIXO UNICO — um dono do range, nao seis ouvintes
+# Pixel P2: arrastar/zoom no Preco move os outros CINCO no mesmo instante
+# ⛔ A ordem importa: 2.0 (grade canonica) ANTES de ligar a assinatura
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-02.1"
+title = "[charts] 02 · ⛔ PRIMEIRO: a grade canonica UNICA — todo painel sobre exatamente a mesma grade, lossless com whitespace"
+components = ["charts"]
+status = "todo"
+phase = "02"
+depends_on = []
+refs = [
+    "plano 02 item 2.0", "D9", "D-C3.2", "CA-5a", "SPEC-008/A-6",
+    "⛔ AS GRADES JA DIVERGEM HOJE: price_slots:5760 · cvd_slots:5760 · long_short_slots:5760 · oi_slots:1152. buildOiPanel usa FIVE_MINUTES_MS (s2-panels.ts:135); buildPricePanel usa ONE_MINUTE_MS (:125) [MEDIDO 2026-09-19].",
+    "=> o indice logico `i` e o minuto `i` no Preco e o minuto `5i` no OI. Ligar a assinatura sem unificar sincroniza paineis MOSTRANDO INSTANTES DIFERENTES — 'um defeito pior que o atual, porque parece consertado'.",
+    "POR ISSO ESTA TASK E A PRIMEIRA DA FASE: T-02.2 sem ela entrega o defeito pior.",
+    "CA-5a: `grep -o 'data-fact=\"[a-z_]*slots:[0-9]*\"' <pagina> | cut -d: -f2 | sort -u | wc -l` -> 1. HOJE DA 2 (5760 e 1152).",
+]
+tracker = { provider = "jira", id = "CST-208", url = "https://conversationhub.atlassian.net/browse/CST-208" }
+
+[[tasks]]
+id = "T-02.2"
+title = "[charts] 02 · TimeAxisController PURO em charts — sem IChartApi, sem fetch"
+components = ["charts"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.1"]
+refs = [
+    "plano 02 item 2.1 (lado charts)", "RF-5", "C-3", "D-C3.1", "ADR-003/FR-1", "ADR-003/FR-2",
+    "A fronteira e o ponto: `charts` nao conhece a biblioteca de grafico nem a rede. `web` assina, despacha e aplica (T-02.4).",
+    "Baseline: `grep -n \"useLightweightChart(\" frontend/src/app/symbol/SymbolClient.tsx` -> :416 e a DEFINICAO; :820 :1024 :1137 :1394 :1995 sao 5 SITIOS DE CHAMADA. Sao 5 sitios mas 6 GRAFICOS em runtime — LiquidationCohortSurface monta 2x (:1503,:1510, cohort long/short). O '6' do PRD-008/M8 esta certo pelo caminho errado [MEDIDO 2026-09-19].",
+]
+tracker = { provider = "jira", id = "CST-209", url = "https://conversationhub.atlassian.net/browse/CST-209" }
+
+[[tasks]]
+id = "T-02.3"
+title = "[charts] 02 · O estado de registro e em INSTANTES, e a guarda de reentrancia NAO e o mecanismo de protecao"
+components = ["charts"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.2"]
+refs = [
+    "plano 02 itens 2.2 + 2.2b (FUSAO)", "RF-5", "D-C3.3", "CA-5c", "CA-5d",
+    "POR QUE FUSAO: separar produziria uma task ('guarda de reentrancia') cuja leitura isolada CONFIRMA a intuicao errada. Juntas, elas dizem a verdade medida.",
+    "⭐ CONTRA A INTUICAO: a malha ingenua NAO estoura (n=6: 6 notificacoes, 30 escritas, profundidade 1). O que morde e GRADE DIVERGENTE — CALA = 0 min de desalinhamento, MORDE = 5.460 min (91 h) COM A GUARDA LIGADA [MEDIDO 2026-09-19: loop-probe2.mjs, lightweight-charts 5.2.1 + jsdom].",
+    "logicalRange e SO FORMATO DE FIO, convertido por aritmetica pura SEM ARREDONDAR.",
+    "CA-5c (o remonte nao amplifica): setVisibleLogicalRange por UM pan > 5 para N=6 reprova — a malha ingenua da 30.",
+    "CA-5d (TF preserva o instante): 1m->4h com range fixo, erro < 1 bucket do TF novo. Range logico cru da 325,3 h; via tempo da 2,7 h.",
+]
+tracker = { provider = "jira", id = "CST-210", url = "https://conversationhub.atlassian.net/browse/CST-210" }
+
+[[tasks]]
+id = "T-02.4"
+title = "[web] 02 · web assina, despacha e aplica; fitContent() deixa de ser por grafico e o enquadramento inicial e DO EIXO"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.2", "T-02.3"]
+refs = [
+    "plano 02 itens 2.1 (lado web) + 2.3 (FUSAO)", "RF-5", "D-C3.1",
+    "POR QUE FUSAO: assinar/aplicar e tirar o fitContent de cada painel sao o MESMO deslocamento de dono do enquadramento. Um sem o outro deixa seis donos parciais.",
+    "Os 5 sitios de chamada + os 2 do LiquidationCohortSurface = 6 graficos em runtime.",
+]
+tracker = { provider = "jira", id = "CST-211", url = "https://conversationhub.atlassian.net/browse/CST-211" }
+
+[[tasks]]
+id = "T-02.5"
+title = "[web] 02 · A rota vira /symbol/[symbol], segmento em INGLES"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = []
+refs = [
+    "plano 02 item 2.4", "D-e", "[Q4]", "[M-7]", "CLAUDE.md linha 12 da tabela de fronteira",
+    "[DECISAO-OWNER: 2026-09-19] — /symbol/[symbol] NESTA feature, nao em feature futura. Custo aceito, literal do menu: 'alarga esta feature'. Motivo dele: 'vai entrar muita coisa ali ainda'.",
+    "Segmento em ingles por [PREMISSA-OWNER: 2026-09-08] — 'rotas em ingles, inclusive o que tiver de rotas em ptbr pode ser migrado para ingles'.",
+    "[M-7]: o nome exato do segmento e decisao de /architect + frontend-architect, nao deste documento.",
+    "⛔ FORA DESTA TASK: o plano de migracao de /painel (item 2.5 do plano) — e task DEDICADA (CLAUDE.md linha 12). Esta feature fecha a REGRA; a EXECUCAO tem gate proprio.",
+    "DoD: /symbol/BTCUSDT -> 200, segmento ASCII em ingles, n=4 simbolos do catalogo (BTCUSDT/ETHUSDT/LINKUSDT/SOLUSDT) [MEDIDO 2026-09-19].",
+]
+tracker = { provider = "jira", id = "CST-212", url = "https://conversationhub.atlassian.net/browse/CST-212" }
+
+[[tasks]]
+id = "T-02.6"
+title = "[web] 02 · Playwright: o pan move os CINCO + ⛔ ablacao de P2 + CA-5b (par morde/cala com 6 graficos)"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.4"]
+refs = [
+    "plano 02 DoD 2/3/4 + CA-5b", "CA-6", "DoD-3", "DoD-4",
+    "⛔ CA-5 FOI RETIRADO — ele nao morde nem cala: o desenho correto e a malha ingenua dao A MESMA contagem 1; a sonda que mede 30 ESCRITAS tem 1 ocorrencia textual [MEDIDO 2026-09-19: loop-probe.mjs]. O grep fica como HIGIENE, NUNCA como aceite.",
+    "DoD 2: arrastar o painel de Preco em n=3 deslocamentos distintos; os 5 paineis restantes mudam o range NO MESMO EVENTO. Assert de POSICAO, nunca de status HTTP nem de presenca de atributo.",
+    "⛔ DoD 3 (ABLACAO de P2): desligada a assinatura, os cinco PARAM de acompanhar — mesma captura, mesmo gesto, resultado oposto. Sem isso o DoD anterior e verde falso.",
+    "CA-5b: headless com 6 graficos. CALA = desalinhamento 0 min; MORDE (grades podadas) > 0. Referencia 5.460 min. Se o caso MORDE PASSAR, o teste mede 'algo se moveu', nao alinhamento.",
+    "DoD 4 (sem realimentacao): um gesto unico produz 1 propagacao por painel, nao N. Instrumentar a contagem — morde com contagem crescente ou laco.",
+]
+tracker = { provider = "jira", id = "CST-213", url = "https://conversationhub.atlassian.net/browse/CST-213" }
+
+[[tasks]]
+id = "T-02.7"
+title = "[web] 02 · Teto de latencia do eixo: p95 ≤ 16 ms sobre n ≥ 60 quadros — e MEDIA e PROIBIDA como criterio"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.4"]
+refs = [
+    "plano 02 item 2.6 + DoD 7", "RNF-2", "[Q5]", "[M-5] FECHADA",
+    "[DECISAO-OWNER: 2026-09-19, escolha entre alternativas apresentadas] — 16 ms = um quadro a 60 fps. Isto tira RNF-2 do estado [NAO MEDIDO], que era o motivo de o DoD nao ser verificavel.",
+    "COMO: Playwright contra o app real, n ≥ 60 quadros de um arrasto continuo (≈1 s a 60 fps), instrumentando o intervalo entre APLICACOES DE RANGE (performance.now() no aplicador do TimeAxisController, ou requestAnimationFrame sobre o canvas).",
+    "CRITERIO DE DISTRIBUICAO: p95 ≤ 16 ms. MORDE com p95 > 16 ms, e morde TAMBEM se a instrumentacao reportar n < 60 quadros — menos quadros que o esperado e queda de taxa disfarcada de amostra curta.",
+    "⚠️ MEDIA E PROIBIDA: um travamento de 200 ms em 60 quadros de 10 ms some na media (13,2 ms, 'passa') e e exatamente o que o owner percebe. O teto e sobre a CAUDA.",
+    "📌 ESCALA JA MEDIDA, para o numero nao nascer descalibrado: setData de 129.600 pontos x 6 paineis custa 752,6 ms [MEDIDO 2026-09-19] — 47x o teto. Nao reprova o eixo (e carga de dado), mas fixa que RECARREGAR DADO DENTRO DO GESTO DE PAN VIOLA O TETO POR CONSTRUCAO => paginacao e assincrona e fora do quadro (fase 05).",
+]
+tracker = { provider = "jira", id = "CST-214", url = "https://conversationhub.atlassian.net/browse/CST-214" }
+
+[[tasks]]
+id = "T-02.8"
+title = "[web] 02 · Veredito do ux-ui-mastery sobre o comportamento de pan/zoom"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.6"]
+refs = [
+    "plano 02 item 2.7", "CLAUDE.md §Design — autonomia delegada COM gate de validacao",
+    "Nenhuma decisao de design vale antes de o validador concordar. Silencio do owner nao e aprovacao.",
+]
+tracker = { provider = "jira", id = "CST-215", url = "https://conversationhub.atlassian.net/browse/CST-215" }
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 03 · O TIMEFRAME UNICO — a funcao que nao pode trocar OPEN por CLOSE
+# Pixel P3: trocar o TF na barra reagrega TODOS os paineis. TFs: 5m · 15m · 1h · 4h
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-03.1"
+title = "[sentimento] 03 · reduce(nature, reduction) como funcao PURA sobre os 8 pares, num lugar so — nunca tabela por metric"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = []
+refs = [
+    "plano 03 item 3.1", "ADR-040/D2", "RF-7", "RN-3", "SPEC-008 §5.1",
+    "A TABELA, total e sem ramo default: (FLOW,SUM)=Σ · (STOCK,OPEN)=first · (STOCK,HIGH)=max DA PROPRIA HIGH · (STOCK,LOW)=min DA PROPRIA LOW · (STOCK,CLOSE)=last · (STOCK,LAST)=last · (STOCK,POINT)=last · (RATIO,POINT)=last sob allowlist de 1 elemento.",
+    "ts_convention NAO entra na chave: a unica colisao ((STOCK,CLOSE) = price_mark_close + sum_open_interest) pede a MESMA funcao.",
+    "⛔ POR QUE ISTO E PORTAO E NAO NOTA DE RODAPE: uma soma aplicada a um STOCK nao quebra import, nao reprova teste, e devolve um numero PLAUSIVEL E ERRADO. Mesma classe do rc=0 ambiguo de ADR-012.",
+    "⛔ NUNCA tabela por `metric`: metric novo herdaria silenciosamente o default de outro. A chave e (nature, reduction).",
+]
+tracker = { provider = "jira", id = "CST-216", url = "https://conversationhub.atlassian.net/browse/CST-216" }
+
+[[tasks]]
+id = "T-03.2"
+title = "[sentimento] 03 · A funcao FALHA ALTO em par nao coberto, e o teste de totalidade prova que os 8 pares tem funcao declarada"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = [
+    "plano 03 item 3.2 + DoD 4 (FUSAO)", "ADR-040/D2",
+    "POR QUE FUSAO: 'falha alto em par nao coberto' e 'teste de totalidade sobre os 8 pares' sao a MESMA garantia vista de dentro e de fora. ⛔ UM 9º PAR QUEBRA O BUILD.",
+    "DoD: `curl -s http://127.0.0.1:8000/api/v1/series-catalog | python3 -c \"import sys,json;print(sorted({(x['key']['nature'],x['key']['reduction']) for x in json.load(sys.stdin)['entries']}))\"` -> n=8 pares, cada um com funcao declarada.",
+    "MORDE com par sem cobertura, e MORDE se a contagem subir sem alguem DECIDIR a funcao nova.",
+    "⛔ Cair num padrao e o defeito: o default e o que transforma serie nova em numero errado sem nenhum sinal.",
+]
+tracker = { provider = "jira", id = "CST-217", url = "https://conversationhub.atlassian.net/browse/CST-217" }
+
+[[tasks]]
+id = "T-03.3"
+title = "[sentimento] 03 · SUPPORTED_INTERVAL vira o conjunto {1m,5m,15m,1h,4h} e tudo fora CONTINUA 422"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = [
+    "plano 03 item 3.3 + DoD 5 (FUSAO)", "ADR-040/D1", "SPEC-008/A-2", "C-2",
+    "Baseline: SUPPORTED_INTERVAL = \"1m\" (series_history.py:48), com recusa em :180-183 [MEDIDO 2026-09-19].",
+    "⛔ A CLAUSULA DE ADR-034/D6 E ESTENDIDA, NAO DILUIDA: o conjunto cresce, a recusa permanece. ADR-034/D6 agendou a propria sucessao e o gatilho disparou (SPEC-008/A-2).",
+    "TFs do owner: 5m · 15m · 1h · 4h [PREMISSA-OWNER: 2026-09-19].",
+    "DoD: interval fora do conjunto -> 422, n=3 casos (1d, 3m, 30s). MORDE com qualquer 200.",
+]
+tracker = { provider = "jira", id = "CST-218", url = "https://conversationhub.atlassian.net/browse/CST-218" }
+
+[[tasks]]
+id = "T-03.4"
+title = "[sentimento] 03 · P-B: servir SEMPRE com o par de inteiros {present, expected} — nunca recusar, nunca limiar, nunca extrapolar"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = [
+    "plano 03 item 3.4", "ADR-040/D3", "SPEC-008 §5.2", "SPEC-008/A-3",
+    "⛔ 'RECUSAR' FOI DERRUBADO COM NUMERO, nao por gosto [MEDIDO 2026-09-19]: (1) a completude PIORA com o TF — klines_volume 93,0% (5m) -> 90,7% -> 84,7% -> 78,3% (4h), n=4.604/1.532/380/92 buckets fechados => 'recusar se < 100%' apagaria 21,7% das barras de 4h; (2) 1 minuto faltando e 80% em 5m e 99,6% em 4h => PERCENTUAL NAO E UNIDADE TRANSPORTAVEL; (3) sum_liquidation tem 0,0% de buckets completos em TODO TF (301 valores / 5.460 SEM_PONTO, n=5.761) => qualquer limiar apaga o painel INTEIRO.",
+    "⛔ PAR DE INTEIROS, NUNCA BOOL, NUNCA PERCENTUAL. Ex.: {\"present\": 81, \"expected\": 240}.",
+    "MAGNITUDE DO QUE HOJE E INVISIVEL: bucket fechado de 2026-09-16 00:00, 81/240, Σ = 4.246,891 BTC, SUBESTIMA ~66,2% sem a tela dizer nada.",
+    "Default por REGIME DE ERRO: regime A (Σ/max/min — vies unilateral) serve parcial COM MARCA VISIVEL; regime B (first/last) usa maxStalenessMs, que ja existe (ADR-006).",
+]
+tracker = { provider = "jira", id = "CST-219", url = "https://conversationhub.atlassian.net/browse/CST-219" }
+
+[[tasks]]
+id = "T-03.5"
+title = "[sentimento] 03 · (RATIO, POINT) = last sob ALLOWLIST DE METRIC de 1 elemento — nao por nature"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = [
+    "plano 03 item 3.5", "ADR-040/D4", "SPEC-008 §5.3", "SPEC-008/A-4",
+    "Rotulado 'razao no fechamento do bucket'. Allowlist com 1 elemento: count_long_short_ratio.",
+    "⛔ POR QUE NAO POR `nature`: SeriesKey tem UM membro RATIO para DOIS comportamentos, e razao de FLUXO somada infla 3,3x (p50 3,1809 vs 0,9707) [MEDIDO 2026-09-19]. Habilitar por nature ligaria o `last` para a razao errada.",
+    "⚠️ INGERIR OS COMPONENTES NAO RESOLVERIA: longAccount/shortAccount sao FRACOES QUE SOMAM 1, nao contagens — 'recomputa dos componentes' e impossivel hoje (A-4).",
+]
+tracker = { provider = "jira", id = "CST-220", url = "https://conversationhub.atlassian.net/browse/CST-220" }
+
+[[tasks]]
+id = "T-03.6"
+title = "[sentimento] 03 · O envelope de /series-history ganha coverage {earliest_bucket_ms, latest_bucket_ms, source_floor_ms}"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.4"]
+refs = [
+    "plano 03 item 3.5b", "D8", "D-C3.7", "SPEC-008 §7.3",
+    "Pedido formal D-C3.7 do frontend-architect, ACEITO. Hoje o envelope `panel` carrega series_key_id/source/nature/unit/native_grid_ms/grid_multiple e NADA de cobertura [MEDIDO 2026-09-19].",
+    "⛔ SEM ISTO `beyond-coverage` E INDISTINGUIVEL DE `absent` POR CONSTRUCAO, e nenhum esforco de front resolve => a fase 05 fica IRREALIZAVEL.",
+    "coverage e o par {present, expected} de T-03.4 sao A MESMA DECISAO VISTA DE DOIS LADOS: sem eles D6 e irrealizavel e P-B e indizivel.",
+    "⚠️ ESTA TASK E PRE-REQUISITO DE T-05.5 E T-05.7 — e por isso ela sobrevive INTACTA a qualquer leitura do requisito novo do owner (tasks_review.md §3): o par de inteiros precisa do coverage independentemente do que a tela mostra.",
+]
+tracker = { provider = "jira", id = "CST-221", url = "https://conversationhub.atlassian.net/browse/CST-221" }
+
+[[tasks]]
+id = "T-03.7"
+title = "[sentimento] 03 · ⛔ CA-8' em quatro camadas: guarda de nao-degenerescencia, fixture DA BINANCE, matriz 8x5=20 asseracoes, ablacao de cobertura"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1", "T-03.4"]
+refs = [
+    "plano 03 DoD 1 (task propria)", "SPEC-008 §5.4", "ADR-040/D2",
+    "⛔ O CA-8 DO PRD-008 FOI RETIRADO: ele MORDE 1 DE 20 TROCAS e passa VERDE sobre a vela degenerada que RN-2 mede existir [MEDIDO 2026-09-19].",
+    "(a) GUARDA DE NAO-DEGENERESCENCIA PRIMEIRO — sem ela o resto mede uma vela plana.",
+    "(b) FIXTURE DE MERCADO REAL, COLHIDA DA BINANCE, nao do nosso banco ([P-seed] respeitado: e LEITURA DA ORIGEM, nao semeadura). BTCUSDT, bucket fechado 2026-09-18 12:00→16:00 UTC, 240/240 min, cada numero com o CONTRAFACTUAL que a troca produziria: Σ volume = 93.465,237 · first(open) = 78.031,00 [troca daria first(close) = 77.984,40] · max(high) = 81.156,80 [max(close) = 81.062,60, −11,7 bp] · min(low) = 77.923,50 [min(close) = 77.944,80] · last(close) = 80.688,70 [first(close) = 77.984,40, −3,35%].",
+    "=> identicos a vela 4h da propria Binance, logo AUTO-VERIFICAVEIS PELO OWNER no grafico.",
+    "(c) MATRIZ EXAUSTIVA 8 pares x 5 funcoes = 20 ASSERCOES — cada celula errada reprova.",
+    "(d) ABLACAO DE COBERTURA (81/240): exigir que `mean x 240` NAO apareca — e a forma que a extrapolacao silenciosa tomaria.",
+]
+tracker = { provider = "jira", id = "CST-222", url = "https://conversationhub.atlassian.net/browse/CST-222" }
+
+[[tasks]]
+id = "T-03.8"
+title = "[sentimento] 03 · Testes diferenciais: STOCK NAO soma (senao 12x o OI real) e FLOW soma"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = [
+    "plano 03 DoD 2 + DoD 3", "CA-8", "RN-3", "RF-7",
+    "STOCK: OI reagregado a 1h == o ULTIMO do bucket e ≠ a soma dos 12 de 5min. MORDE se igual a soma — seria 12x o OI real.",
+    "FLOW: volume reagregado a 1h == a SOMA dos 60 fatos de 1min contidos. MORDE se igual ao ultimo (subestimacao silenciosa — o defeito que ADR-034/D6 recusou servir).",
+    "O teste e DIFERENCIAL de proposito: afirmar so o valor certo passaria com a funcao errada quando os dois coincidem por acaso na janela escolhida.",
+]
+tracker = { provider = "jira", id = "CST-223", url = "https://conversationhub.atlassian.net/browse/CST-223" }
+
+[[tasks]]
+id = "T-03.9"
+title = "[web] 03 · A barra de TF le o conjunto SERVIDO pelo backend, nunca escrito a mao no front"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.3"]
+refs = [
+    "plano 03 item 3.6", "RF-6",
+    "⛔ Se o front escrever a lista a mao, ele passa a oferecer TF que a rota recusa e o 422 vira DEFEITO DE TELA — divergencia que nenhum teste de backend alcanca.",
+    "DoD: remover um TF do conjunto servido remove o botao, sem tocar no componente.",
+]
+tracker = { provider = "jira", id = "CST-224", url = "https://conversationhub.atlassian.net/browse/CST-224" }
+
+[[tasks]]
+id = "T-03.10"
+title = "[web] 03 · A escala log10 do volume sob TF variavel — continua ate prova em contrario"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.9"]
+refs = [
+    "plano 03 item 3.7", "[Q8]", "[M-6]",
+    "A escala CONTINUA ate prova em contrario; quem decide e o design_gate (ux-ui-mastery).",
+    "O que muda e o dominio: sob TF de 4h o volume por bucket e ~240x o de 1m, e uma escala log fixada para a magnitude antiga achata o grafico novo.",
+]
+tracker = { provider = "jira", id = "CST-225", url = "https://conversationhub.atlassian.net/browse/CST-225" }
+
+[[tasks]]
+id = "T-03.11"
+title = "[web] 03 · Playwright: o TF move OS SEIS + ⛔ ablacao de P3 + a escada de GA-2 some OU e declarada"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.9"]
+refs = [
+    "plano 03 DoD 6/7/8", "CA-7", "RN-4", "ADR-037/D4", "DoD-3", "DoD-4",
+    "DoD 6: clicar 4h e ler a contagem de barras de CADA UM dos 6 paineis. MORDE se um painel mantiver a contagem anterior.",
+    "⛔ DoD 7 (ABLACAO de P3): fixado o TF de volta a 1m, a contagem volta ao valor anterior nos seis. Pixel que nao muda sob ablacao nao estava seguindo o mestre.",
+    "DoD 8: sob TF explicito, wire-points deixa de ser 5x native-bars — OU o relatorio carrega o veredito de upsampling (ADR-037/D4). Baseline: data-oi-wire-points=\"5760\" para data-oi-native-bars=\"1152\", cada barra nativa repetida 5x [MEDIDO 2026-09-19].",
+    "RN-4: repetir a barra nativa 5x e DEGRADACAO VISIVEL, nao neutra. Sob TF explicito a escada vira mentira se nao for declarada.",
+]
+tracker = { provider = "jira", id = "CST-226", url = "https://conversationhub.atlassian.net/browse/CST-226" }
+
+[[tasks]]
+id = "T-03.12"
+title = "[web] 03 · Veredito do ux-ui-mastery sobre a barra de TF"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.9"]
+refs = [
+    "plano 03 item 3.8", "CLAUDE.md §Design — autonomia delegada COM gate de validacao",
+    "Inclui o veredito sobre a marca visivel de cobertura parcial (regime A de T-03.4) — a marca e requisito de P-B, a APARENCIA dela e do gate.",
+]
+tracker = { provider = "jira", id = "CST-227", url = "https://conversationhub.atlassian.net/browse/CST-227" }
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 04 · O OI HONESTO — o rotulo soletra o que o numero mede
+# Pixel P4: o rotulo diz grandeza · universo · coorte. INDEPENDENTE — paralelo com a 01
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-04.1"
+title = "[web] 04 · O rotulo do painel de OI soletra GRANDEZA · UNIVERSO · COORTE, lidos do SeriesKey servido"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = []
+refs = [
+    "plano 04 item 4.1", "RF-8", "RN-5", "D7", "SPEC-008 §8.2", "CA-9",
+    "O DEFEITO QUE O OWNER CIRCULOU EM VERMELHO: a tela mostra 108.135,34 sob 'Open Interest (5m)' e o print do Coinalyze mostra 27,656 B. OS DOIS ESTAO CERTOS E MEDEM COISAS DIFERENTES — contratos em BTC na Binance USDT-M contra nocional em USD agregado multi-exchange sobre coorte STABLECOIN+COIN-margined [MEDIDO 2026-09-19, n=15 entradas BTCUSDT].",
+    "⛔ RN-5: rotulo DERIVADO do SeriesKey, NUNCA escrito a mao — senao a fonte muda e o rotulo mente.",
+    "DoD (CA-9): `curl -s http://127.0.0.1:3000/symbol | grep -o 'data-fact=\"oi_provenance:[^\"]*\"'` -> presente E com os tres termos. Hoje a chave NAO EXISTE [MEDIDO 2026-09-19].",
+]
+tracker = { provider = "jira", id = "CST-228", url = "https://conversationhub.atlassian.net/browse/CST-228" }
+
+[[tasks]]
+id = "T-04.2"
+title = "[web] 04 · O envelope de proveniencia C-4 derivado do SeriesKey, e a unidade PERMANECE contratos (BTC)"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.1"]
+refs = [
+    "plano 04 item 4.2 + DoD 5 (FUSAO)", "C-4", "SPEC-008 §8.1", "ADR-036/D2", "RN-6",
+    "⛔ NOCIONAL USD APAGA JUSTAMENTE A LEITURA QUE O OWNER DECLAROU QUERER: nocional = contratos x preco, entao o OI em USD sobe sozinho quando o preco sobe, sem um unico contrato novo — e o caso exato que ele citou ('mercado caiu e open interest subiu') e o que o nocional mais apaga.",
+    "A leitura do owner esta CORRETA e e leitura padrao de order flow [PREMISSA-OWNER: 2026-09-19].",
+    "DoD 5 (nada de fonte mudou): ADR-036/D2 INTOCADA — provider continua binance, unit=BTC, denom=base, aggregationScope=Symbol. MORDE com qualquer entrada nova de catalogo: isso seria F5, FORA deste plano por [DECISAO-OWNER: 2026-09-19] ([M-2]), nao por deducao.",
+    "EXTENSIBILIDADE JA EXISTE, declarar e nao construir: SeriesKey ja modela provider/venue/aggregation_scope (series_key.py:52,197); as 60 entradas de catalogo tem aggregationScope=\"Symbol\" [MEDIDO 2026-09-19] => agregar corretora um dia = linhas novas, sem migracao de schema e sem tocar INGEST_HEALTH_RUN_COLUMNS.",
+]
+tracker = { provider = "jira", id = "CST-229", url = "https://conversationhub.atlassian.net/browse/CST-229" }
+
+[[tasks]]
+id = "T-04.3"
+title = "[web] 04 · ⛔ A chave de maquina deixa de nascer da MICROCOPY — hoje a pagina publica data-fact=\"live_preço:attempted\", com acento"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = []
+refs = [
+    "plano 04 item 4.3", "[Q6]", "G-4", "M10", "CLAUDE.md linha 8 da tabela de fronteira",
+    "SymbolClient.tsx:2192 monta data-fact={`live_${label}:…`} A PARTIR DA STRING VISIVEL [MEDIDO 2026-09-19].",
+    "⛔ O CONSERTO E SEPARAR AS DUAS STRINGS: a chave passa a ser ASCII DERIVADA DO SeriesKey; a microcopy continua em pt-BR (linha 8 do CLAUDE.md). Traduzir a microcopy seria consertar a coisa errada.",
+    "Chave de contrato derivada de microcopy significa que trocar uma palavra na tela quebra um consumidor de dados — e quebra em SILENCIO.",
+]
+tracker = { provider = "jira", id = "CST-230", url = "https://conversationhub.atlassian.net/browse/CST-230" }
+
+[[tasks]]
+id = "T-04.4"
+title = "[web] 04 · Os demais paineis herdam a fabrica de chave nova — o defeito e da FABRICA, nao do painel de preco"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.3"]
+refs = [
+    "plano 04 item 4.4", "G-4",
+    "Consertar so o painel de preco deixaria a fabrica viva e o proximo painel nasceria com o mesmo defeito.",
+]
+tracker = { provider = "jira", id = "CST-231", url = "https://conversationhub.atlassian.net/browse/CST-231" }
+
+[[tasks]]
+id = "T-04.5"
+title = "[web] 04 · ⛔ Ablacao de derivacao (CA-10) + zero chave de maquina nao-ASCII + assert de POSICAO do rotulo"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2", "T-04.4"]
+refs = [
+    "plano 04 DoD 2/3/4", "CA-10", "DoD-3", "DoD-4",
+    "⛔ CA-10 (ABLACAO DE DERIVACAO): trocada a chave da serie no catalogo DE TESTE, o rotulo muda SEM TOCAR NO COMPONENTE. MORDE se o rotulo nao mudar — esta hard-coded, e RN-5 caiu.",
+    "DoD 3: `curl -s http://127.0.0.1:3000/symbol | grep -o 'data-fact=\"[^\"]*\"' | grep -P '[^\\x00-\\x7F]' | wc -l` -> 0. HOJE MORDE: data-fact=\"live_preço:attempted\" [MEDIDO 2026-09-19].",
+    "⚠️ ESTE COMANDO MEDE A CHAVE, NAO A MICROCOPY — a microcopy segue em pt-BR por decisao da linha 8 da tabela de fronteira, e reprovar acento nela seria reprovar um /symbol CORRETO.",
+    "DoD 4: Playwright contra o app real, rotulo VISIVEL com assert de posicao. Atributo presente com elemento fora da tela e verde falso [DOC: MEMORY.md, 'Assert de DOM nao prova pixel'].",
+]
+tracker = { provider = "jira", id = "CST-232", url = "https://conversationhub.atlassian.net/browse/CST-232" }
+
+[[tasks]]
+id = "T-04.6"
+title = "[web] 04 · Veredito do ux-ui-mastery sobre o rotulo de proveniencia"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.5"]
+refs = [
+    "plano 04 item 4.5", "CLAUDE.md §Design — autonomia delegada COM gate de validacao",
+    "O rotulo carrega tres termos tecnicos numa linha de painel: a legibilidade e do gate, o CONTEUDO e de RF-8.",
+]
+tracker = { provider = "jira", id = "CST-233", url = "https://conversationhub.atlassian.net/browse/CST-233" }
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 05 · HISTORIA SOB DEMANDA — a parede e assimetrica, e a tela tem de DIZER isso
+# Pixel P5: passado o horizonte, o painel mostra um estado NOMEADO. Depende da fase 02
+# ⚠️ E a fase onde incide o requisito novo da 3a rodada — ver tasks_review.md §3
+# ══════════════════════════════════════════════════════════════════════════════════
+
+[[tasks]]
+id = "T-05.0"
+title = "[sentimento] 05 · ⛔ PRE-REQUISITO: R-1 liga available_at ao HORIZONTE DE CONHECIMENTO, nao a fatia (ADR-042)"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "ADR-042 (D1..D5)", "SPEC-001 §2.3/§2.5", "ADR-006", "ADR-039 (monotonicidade da admissao)",
+    "ORIGEM: achado de T-01.5 — gates/T-01.5-dod6-medicao-e-achado-lookahead.md, corroborado por gates/FASE-01-qa.md §4.",
+    "⛔ A FASE 05 ESTAVA PLANEJADA SOBRE PREMISSA FALSA: o backfill de 90 dias (2.148.504 linhas, 1,641 GB, run ACCEPTED) E INVISIVEL PARA A ROTA. psql devolve 240 linhas na janela auto-verificavel e /series-history devolve absence {SEM_PONTO: 241} nas 241 fatias [MEDIDO 2026-09-19].",
+    "A CAUSA NAO E BUG: R-1 e `available_at <= t` com t = A FATIA (as_of_accessor.py:542). A linha do backfill tem available_at − bucket_end ≈ 33 h; servi-la naquela fatia SERIA lookahead e o acessor recusa CERTO.",
+    "DECISAO (ADR-042/D1): available_at <= K, onde K = knowledge_time. bucket_end continua respondendo a fatia (R-2 intacta). bucket_end = valid time, available_at = transaction time.",
+    "⛔ D2 — COM K = t O COMPORTAMENTO E IDENTICO AO DE HOJE, BYTE A BYTE. A regra antiga e caso particular da nova, nao caso revogado. O backtest passa K = t por definicao (record_run.py:96).",
+    "⛔ D3 E O PORTAO QUE IMPEDE ISTO DE VIRAR AFROUXAMENTO: K > t e admitido SOMENTE sob ReadPurpose.RENDERING; ENTRY_CONDITION e EXECUTION_SIMULATION LEVANTAM. Mesmo mecanismo de _refuse_intrabar_for_entry.",
+    "DoD-a: as_of(purpose=ENTRY_CONDITION, t=T, knowledge_time=T+1) levanta; idem EXECUTION_SIMULATION. MORDE se devolver leitura.",
+    "DoD-b: NO MESMO ARQUIVO, o caso POSITIVO — RENDERING com K = T+1 DEVOLVE a linha do backfill. Sem ele o teste nao distingue 'recusou certo' de 'recusa tudo'.",
+    "DoD-c: com K = t em toda fatia, /series-history devolve resposta IGUAL BYTE A BYTE a de hoje na mesma janela. MORDE com qualquer diferenca — diferenca ali significa que o modo de DECISAO mudou.",
+    "DoD-d: a fixture envenenada de SPEC-001 §5.1 continua recusada sob ENTRY_CONDITION para QUALQUER K.",
+    "DoD-e (auto-verificavel pelo owner): BTCUSDT, bucket_end ∈ (1789732800000, 1789747200000], com knowledge_time_ms = server_now_ms => ≥ 1 das 240 linhas servida, SEM R-1 ter sido removida.",
+    "⚠️ ADR-039 NAO QUEBRA: sob D1 o termo `available_at <= K` deixa de depender de t (K e constante na chamada), logo e trivialmente monotono em t, e R-2 segue alcancando para tras. A passada ordenada unica nao muda de forma. [NAO MEDIDO — argumento sobre o invariante escrito; quem paga e o DoD desta task].",
+    "⚠️ SPEC-001 §2.3 CARREGA A FORMULA LITERAL e precisa de emenda quando ADR-042 sair de `proposta`. Duas verdades sobre R-1 em dois documentos e o defeito que este repositorio ja pagou uma vez.",
+]
+local_only = true
+local_reason = "2026-09-20: task nascida do achado de lookahead da fase 01; o card entra junto com o resto da fase 05, que ainda nao teve `approve tasks`."
+
+[[tasks]]
+id = "T-05.1"
+title = "[charts][web] 05 · ⛔ A borda e detectada por ARITMETICA SOBRE A GRADE, nunca por barsInLogicalRange"
+components = ["charts", "web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-02.3", "T-05.0"]
+refs = [
+    "plano 05 item 5.1", "D-C3.4", "D5",
+    "⛔ COM WHITESPACE A FRENTE, barsInLogicalRange DEVOLVE barsBefore = −4.608 => detector PERMANENTEMENTE DISPARADO = LACO INFINITO DE PAGINACAO [MEDIDO 2026-09-19: probe3.mjs].",
+    "E o modo de falha mais caro desta fase: nao reprova teste, nao quebra import, e consome cota ate o teto.",
+    "Depende de T-02.3 porque a aritmetica e sobre a grade canonica e o estado em INSTANTES que a fase 02 estabelece.",
+]
+tracker = { provider = "jira", id = "CST-234", url = "https://conversationhub.atlassian.net/browse/CST-234" }
+
+[[tasks]]
+id = "T-05.2"
+title = "[web] 05 · Paginacao SERIAL, uma requisicao em voo por grade, teto de ~5.000 slots por pagina"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.1"]
+refs = [
+    "plano 05 item 5.1b", "D-C3.5", "D5",
+    "⛔ A BIBLIOTECA NAO TEM `prepend` => o custo e QUADRATICO em paginas: cada pagina nova refaz setData da serie inteira.",
+    "setData de 129.600 pts x 6 paineis = 752,6 ms de thread principal [MEDIDO 2026-09-19] — 47x o teto de 16 ms da fase 02 e ~1,9x o teto de 400 ms desta.",
+    "=> O TETO DE ~5.000 SLOTS E O QUE MANTEM O setData DENTRO DOS 400 ms. Nao e ajuste, e desenho.",
+    "⛔ A paginacao e ASSINCRONA E FORA DO QUADRO DE PAN — recarregar dado dentro do gesto viola o teto de 16 ms POR CONSTRUCAO.",
+]
+tracker = { provider = "jira", id = "CST-235", url = "https://conversationhub.atlassian.net/browse/CST-235" }
+
+[[tasks]]
+id = "T-05.3"
+title = "[sentimento] 05 · Teto declarado de 90 dias de 1m por simbolo, com backfill one-shot/cron e o custo de cota MEDIDO"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "plano 05 itens 5.2 + 5.6 + DoD 5 + DoD 6 (FUSAO)", "D5", "D-i", "ADR-027/D1", "SPEC-008 §7.1",
+    "POR QUE FUSAO: o teto, o backfill, o custo de cota e a pegada sao produzidos pela MESMA execucao. Separa-los criaria tres tasks cujo DoD depende de rodar a quarta.",
+    "RAZAO DO 90: 4h x 500 velas ≈ 83,3 dias — 90 e o menor teto redondo que cobre [Q2]+[Q3] inteiros.",
+    "⛔ NUNCA servico de vida longa (ADR-027/D1) — one-shot ou cron.",
+    "DoD 5 (cota): 90 x 1440 ÷ 1500 = 87 chamadas, weight 1 cada, contra teto de 2.400/min [INFERRED: aritmetica sobre os numeros medidos] => < 4% de um minuto de cota. MORDE se o backfill exceder o orcamento declarado OU rodar como servico de vida longa.",
+    "DoD 6 (disco): count(*) das 4 chaves de vela ≤ 2,07 M linhas para 4 simbolos (SPEC-008 §3.6). MORDE com crescimento sem teto — e o que D5 existe para impedir.",
+    "⚠️ ESTA TASK E O QUE FAZ A FASE 03 VALER: sem backfill, 4h x 500 velas mostra ~11% do OI e ~6% do CVD com ponto [MEDIDO/INFERRED 2026-09-19] — botoes de TF entregando tela quase vazia.",
+]
+tracker = { provider = "jira", id = "CST-236", url = "https://conversationhub.atlassian.net/browse/CST-236" }
+
+[[tasks]]
+id = "T-05.4"
+title = "[sentimento] 05 · ⛔ Alem do teto a rota RECUSA — nunca 200 com rows: []"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.3"]
+refs = [
+    "plano 05 item 5.3 + DoD 4 (FUSAO)", "D5", "ADR-012",
+    "⛔ 200 VAZIO ALI E O rc=0 AMBIGUO DE ADR-012: indistinguivel entre 'nao ha dado' e 'o instrumento nunca alcancou'. O consumidor nao tem como separar os dois, e escolhe o mais confortavel.",
+    "DoD: requisicao com janela iniciando antes de 90 dias -> RECUSA EXPLICITA. MORDE com 200 vazio, n=2 casos (91 dias, 400 dias).",
+]
+tracker = { provider = "jira", id = "CST-237", url = "https://conversationhub.atlassian.net/browse/CST-237" }
+
+[[tasks]]
+id = "T-05.5"
+title = "[web] 05 · Os TRES estados no CONTRATO: absent · not-loaded · beyond-coverage — hoje os tres sao indistinguiveis"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-03.6", "T-05.2"]
+refs = [
+    "plano 05 item 5.4", "D6", "D-C3.6", "RN-1", "SPEC-008 §7.2",
+    "absent = o bucket esta DENTRO da cobertura e mesmo assim nao ha ponto (o BURACO do queijo suico) · not-loaded = ainda nao paginamos ate aqui · beyond-coverage = esta FORA do que o armazem/fonte alcanca.",
+    "⛔ A PAREDE QUE IMPORTA NAO E A DA FONTE, E A DO NOSSO ARMAZEM, E E UM QUEIJO SUICO [MEDIDO 2026-09-19: 56 sondas de 60 grades contra /series-history]: sum_open_interest morre entre 8 e 11 dias; cvd_source, count_long_short_ratio e sum_liquidation entre 4 e 6; klines_last e price_mark_close dao 0 em TODAS as 8 profundidades (M2, sem escritor); klines_volume da 0 a 6 dias e 59 a 8 dias — NAO MONOTONICO.",
+    "E RN-1 ('nao sabemos' ≠ 'foi zero') aplicado ao EIXO DO TEMPO.",
+    "⚠️ ESCOPO APOS O REQUISITO NOVO DA 3a RODADA (tasks_review.md §3, Parte B): os tres estados sao de CONTRATO/MAQUINA (data-fact, envelope, teste). O BADGE VISIVEL e UM SO (T-05.6), como o owner escolheu. SPEC-008 §7.2 fixa que os estados EXISTEM E SAO DISTINGUIVEIS e declara literalmente que NAO FIXA A APARENCIA — por isso as duas decisoes vivem em camadas diferentes e nao ha emenda a fazer.",
+    "⛔ SE O OWNER DISSER QUE O 'uma so' VALE PARA O CONTRATO INTEIRO, esta task muda e SPEC-008 §7.2/D6 precisa de EMENDA (3 -> 2 estados). A pergunta esta escrita em tasks_review.md §3.",
+]
+tracker = { provider = "jira", id = "CST-238", url = "https://conversationhub.atlassian.net/browse/CST-238" }
+
+[[tasks]]
+id = "T-05.6"
+title = "[web] 05 · ⚠️ O aviso de indisponibilidade e UM BADGE SO por painel, e nada do que ja existe e removido"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.5"]
+refs = [
+    "REQUISITO NOVO — 3a rodada de docs/context/candle-real-e-eixo-unico/handoff/DECISOES-DO-OWNER-2026-09-19.md, chegado DEPOIS de approve spec (17:00:57)",
+    "[DECISAO-OWNER: 2026-09-19, escolha entre alternativas apresentadas] — 'Uma so: indisponivel', CONTRA a recomendacao de distinguir tres causas. O custo estava escrito no menu: 'em 4h quase todo painel mostra a mesma exclamacao, e ela deixa de dizer qualquer coisa'.",
+    "[INFERRED: LEITURA A, adotada pelo loop principal, comunicada ao owner e nao contestada] — o aviso NOVO e um estado so; as marcas POR PONTO e os 6 motivos que JA EXISTEM ficam INTACTOS. Nada e removido.",
+    "O QUE FICA INTACTO, e e comportamento VIVO EM PRODUCAO: (1) por ponto — SymbolClient.tsx:774,780,1325, 'Sem dado' (traco baixo e apagado) contra 'Zero do fornecedor' (traco alto e claro); (2) por painel — ABSENCE_REASON_LABEL (SymbolClient.tsx:347-357) com 6 motivos: not_in_catalog, ambiguous_in_catalog, missing_base_url, connection_refused, non_2xx, malformed_envelope. O SEGUNDO existe porque o painel de OI passou UMA FASE INTEIRA apontado para serie vazia, escolhendo por posicao.",
+    "⛔ A LEITURA B (colapsar tambem o que ja existe) NAO FOI ADOTADA: seria remocao deliberada de comportamento em producao construido contra um defeito real, e exigiria dize-lo com todas as letras.",
+    "DoD: um unico badge por painel para a indisponibilidade NOVA; teste de regressao provando que as marcas por ponto e os 6 motivos continuam distinguiveis.",
+    "⚠️ TASK CONDICIONAL A UMA LINHA DO OWNER — ver tasks_review.md §3, pergunta de sim/nao.",
+]
+tracker = { provider = "jira", id = "CST-239", url = "https://conversationhub.atlassian.net/browse/CST-239" }
+
+[[tasks]]
+id = "T-05.7"
+title = "[web] 05 · O horizonte vem do ENVELOPE (coverage), nunca de constante a mao e ⛔ nunca inferido de contagem de linhas"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-03.6", "T-05.5"]
+refs = [
+    "plano 05 item 5.5", "RN-5", "D8",
+    "⛔ INFERIR PAREDE A PARTIR DE CONTAGEM DE LINHAS E ERRADO POR CONSTRUCAO: o armazem tem BURACOS NO MEIO, nao uma borda. klines_volume da 0 a 6 dias e 59 a 8 dias — NAO MONOTONICO [MEDIDO 2026-09-19].",
+    "A nao-monotonicidade e o achado dentro do achado: uma heuristica de contagem devolveria uma parede que NAO EXISTE, e devolveria sem erro nenhum.",
+]
+tracker = { provider = "jira", id = "CST-240", url = "https://conversationhub.atlassian.net/browse/CST-240" }
+
+[[tasks]]
+id = "T-05.8"
+title = "[web] 05 · Playwright: 3 arrastos carregam + a parede assimetrica e NOMEADA nos dois paineis + ⛔ ablacao de P5"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.0", "T-05.6", "T-05.7"]
+refs = [
+    "plano 05 DoD 1/2/3", "DoD-3", "DoD-4", "RN-1",
+    "⛔ DEPENDE DE T-05.0 (ADR-042) E A DEPENDENCIA NAO E DE CONVENIENCIA: sem ela o DoD 1 morde por FALTA DE DADO SERVIDO, nao por defeito de paginacao. O backfill de 90 dias esta no banco e a rota nao o serve (absence SEM_PONTO em 241/241 fatias) [MEDIDO 2026-09-19]. Fechar o DoD 1 antes de T-05.0 mede paginacao contra um armazem que a rota recusa.",
+    "DoD 1: n=3 arrastos sucessivos para tras aumentam a contagem de barras do painel de Preco, MONOTONICAMENTE. MORDE se a contagem estabilizar antes do teto.",
+    "DoD 2: arrastando alem de ~30 dias em 4h, o painel de Preco CONTINUA com barras E os paineis de OI e long/short mostram o estado nomeado — OS DOIS FATOS NO MESMO ASSERT, n=2 paineis. ⛔ MORDE SE O PAINEL APENAS ESVAZIAR: esvaziar em silencio E o defeito, nao a ausencia.",
+    "⛔ DoD 3 (ABLACAO de P5): removido o estado nomeado, o painel VOLTA A ESVAZIAR SEM DIZER NADA — captura antes/depois. Se o pixel nao muda sob ablacao, nao era o estado nomeado.",
+    "Assimetria medida: klines tem preco desde 2019-09-08, mas /futures/data/* (OI e long/short) corta em ~30 dias (startTime de −60 d -> HTTP 400) [MEDIDO 2026-09-10, DOC: ADR-036/D5:58-59].",
+    "⛔ [P-seed]: NUNCA semear o Postgres compartilhado.",
+]
+tracker = { provider = "jira", id = "CST-241", url = "https://conversationhub.atlassian.net/browse/CST-241" }
+
+[[tasks]]
+id = "T-05.9"
+title = "[web] 05 · Teto da historia sob demanda: p95 ≤ 400 ms ate a barra estar DESENHADA, n ≥ 10 paginacoes"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.2"]
+refs = [
+    "plano 05 DoD 7", "[M-5] FECHADA", "RNF-2",
+    "[DECISAO-OWNER: 2026-09-19, escolha entre alternativas apresentadas] — 400 ms ate aparecer. O outro lado (16 ms por quadro de pan) e T-02.7.",
+    "COMO: Playwright contra o app real, do instante em que a BORDA E DETECTADA ate o primeiro frame em que a barra nova esta DESENHADA — nao em que a resposta chegou.",
+    "MORDE com p95 > 400 ms, e MORDE TAMBEM se o assert for de chegada da resposta em vez de pixel — 'Assert de DOM nao prova pixel', e aqui a diferenca e exatamente o setData.",
+    "⛔ OS DOIS TETOS COMPOEM: MORDE se um pan DURANTE paginacao estourar os 16 ms de T-02.7 — e o sintoma de que a paginacao entrou no quadro.",
+]
+tracker = { provider = "jira", id = "CST-242", url = "https://conversationhub.atlassian.net/browse/CST-242" }
+
+[[tasks]]
+id = "T-05.10"
+title = "[web] 05 · Veredito do ux-ui-mastery sobre o estado nomeado e o badge unico"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.6"]
+refs = [
+    "plano 05 item 5.7", "CLAUDE.md §Design — autonomia delegada COM gate de validacao",
+    "SPEC-008 fixa que o estado EXISTE e e DISTINGUIVEL; a APARENCIA e do design_gate.",
+    "⚠️ O gate tem de ver o custo que o owner aceitou no menu: 'em 4h quase todo painel mostra a mesma exclamacao, e ela deixa de dizer qualquer coisa'. O badge unico e decisao do owner; torna-lo legivel apesar disso e trabalho do gate.",
+]
+tracker = { provider = "jira", id = "CST-243", url = "https://conversationhub.atlassian.net/browse/CST-243" }
+
+[[tasks]]
+id = "T-05.11"
+title = "[docs] 05 · Declarar o NAO-CONSTRUIDO com gatilho nomeado: indisponibilidade POR TF nao nasce nesta feature"
+components = ["docs"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.6"]
+refs = [
+    "REQUISITO NOVO — 3a rodada, Parte A. Ver tasks_review.md §3",
+    "[PREMISSA-OWNER: 2026-09-19], literal: 'sobre o TF, OI por exemplo, se ele n tem 1min, nao vamos exibir esse indicador no TF onde ele n ta disponivel, dai ele pode ficar com uma toggle de exclamacao avisando que ta indisponivel naquele TF. tirando o OI, tem outros nesse mesmo escopo?'",
+    "A RESPOSTA MEDIDA: so existem DUAS grades nativas em todo o catalogo [MEDIDO 2026-09-19: curl .../series-catalog, n=60 entradas, 4 simbolos] — 1min (klines_volume, cvd_source, sum_liquidation) e 5min (sum_open_interest, klines_last, price_mark_close, count_long_short_ratio). A mais grossa e 5min; o TF mais fino escolhido e 5m. Agregar para cima e sempre possivel => NENHUMA serie fica indisponivel em 5m/15m/1h/4h.",
+    "⛔ POR QUE NAO CONSTRUIR: seria um pixel que NUNCA ACENDE, e pixel que nunca acende NAO TEM ABLACAO — que e o DoD-4 desta feature. Mesma classe do rc=0 ambiguo de ADR-012: verde indistinguivel entre 'nunca disparou' e 'nunca foi capaz de disparar'.",
+    "O GATILHO, nomeado: o dia em que 1m entrar na barra de TF. E ai pega TRES metricas de uma vez, nao so o OI — sum_open_interest, preco (klines_last, price_mark_close) e count_long_short_ratio, todas nascidas em 5min.",
+    "ONDE ESCREVER: SPEC-008 §11 ('o que esta SPEC nao decide — com dono e gatilho'), que ja e o lugar declarado para isto. SEM EMENDA DA SPEC — e acrescimo a uma secao que existe para receber exatamente este tipo de item.",
+    "⛔ ESTA TASK E ATO DE DOCUMENTACAO, NAO DE CODIGO. Componente `docs` de proposito: declara-la como task de `web` a faria parecer trabalho de tela que ela nao e.",
+]
+tracker = { provider = "jira", id = "CST-244", url = "https://conversationhub.atlassian.net/browse/CST-244" }

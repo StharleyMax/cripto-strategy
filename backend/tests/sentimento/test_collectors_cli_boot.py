@@ -47,8 +47,47 @@ def test_defaults_apply_when_every_variable_is_absent() -> None:
     assert config.ingest_record_backend == "sqlite"
     assert config.premium_index_cycle_interval_s == 60.0
     assert config.klines_cycle_interval_s == 60.0
-    assert config.klines_cycle_offset_s == 2.0
+    assert config.klines_cycle_offset_s == 20.0
     assert config.klines_backfill_days == 7
+
+
+# The settlement bound `ADR-041` measured at the ORIGIN: the smallest ladder rung at which
+# `/fapi/v1/klines` had stopped changing a bar it already declared closed. Production must poll
+# at or after it, or it stores a PREFIX of the bucket and calls it final.
+KLINES_SETTLEMENT_BOUND_S = 10.0
+
+
+def test_the_klines_poll_fires_after_the_origin_has_settled_the_bar_never_before() -> None:
+    """Pin the klines offset at or above the settlement bound `ADR-041` measured — `[M-9]`.
+
+    ⛔ THIS IS NOT A TEST OF A NUMBER; IT IS THE ONLY THING STANDING BETWEEN THIS REPOSITORY
+    AND `[M-9]` COMING BACK IN SILENCE. `/fapi/v1/klines` keeps mutating a bar after it has
+    declared it closed. Polling before it settles returns a PREFIX of the bucket's trades, and
+    the collector writes that prefix with `is_final=True` and never re-reads it — so the
+    truncation is permanent in `md.series`. A prefix is wrong in five derivable directions:
+    `open` exact, `volume`/`high` only low, `low` only high, `close` straddling zero. Those are
+    exactly the five signatures `DoD-9` of phase `01` measured on stored candles.
+
+    Morde: put the offset back to the old `2.0` and this fails, naming the reason. Nothing else
+    in the suite would — the collector is healthy, the run closes `ACCEPTED`, `n_published`
+    is right, and every stored candle is silently narrower than the market's.
+
+    ⚠️ The bound is the ORIGIN's behaviour, not ours, and Binance publishes no guarantee about
+    it `[NAO MEDIDO: no documented settlement window for this endpoint]`. Raising it is always
+    safe (the served grid instant does not move for any offset under 60 s — `series_history.
+    _read_instant` asks with `t = grid + 60_000 - 1`); LOWERING it needs the ladder of
+    `ADR-041` re-run, not an argument.
+    """
+    config = collectors_cli.resolve_boot_config({})
+    assert config.klines_cycle_offset_s >= KLINES_SETTLEMENT_BOUND_S, (
+        "the klines poll would read a bar the origin has not finished aggregating: "
+        f"offset={config.klines_cycle_offset_s}s is below the measured settlement bound "
+        f"of {KLINES_SETTLEMENT_BOUND_S}s (ADR-041, [M-9])"
+    )
+    assert config.klines_cycle_offset_s < config.klines_cycle_interval_s, (
+        "an offset of a whole cadence or more moves the poll onto a DIFFERENT bucket while "
+        "every log line still reads aligned"
+    )
 
 
 def test_every_variable_is_read_when_present(tmp_path: Path) -> None:

@@ -104,6 +104,7 @@ from src.modules.sentimento.domain.force_order_collision_accounting import (
 from src.modules.sentimento.domain.funding_settlement import FundingSource
 from src.modules.sentimento.domain.instrument import base_asset
 from src.modules.sentimento.domain.kline_cvd import kline_cvd_delta
+from src.modules.sentimento.domain.klines_ohlc_catalog import build_klines_ohlc_entry
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
 from src.modules.sentimento.domain.liquidation_catalog import coinalyze_liquidation_key
 from src.modules.sentimento.domain.liquidation_collection import LIQUIDATION_BUCKET_MS
@@ -358,6 +359,15 @@ def build_force_order_to_rows(
 # test instead of emptying a chart.
 _KLINES_VOLUME_VERIFIED_BY: Final[str] = "test_klines_volume_catalog.py"
 
+# The same cross-task contract, for the four `klines_ohlc` readings `T-01.1` created
+# (`domain/klines_ohlc_catalog.py`). `build_klines_ohlc_key` takes `verified_by` for the same
+# reason `build_klines_volume_entry` does — the term is the fifteenth of `SeriesKey` and the
+# caller has to point at the test that verified the row — so the string lives here, once, and
+# `test_klines_ohlc_catalog.py` is that test. `T-01.6` registers the SERVED entries under this
+# same value; `test_collector_klines_mapping.py` pins the four ids against the catalog builder
+# so a divergence fails a test instead of serving a chart of an empty series.
+_KLINES_OHLC_VERIFIED_BY: Final[str] = "test_klines_ohlc_catalog.py"
+
 # `klines_volume` carries `denom="base"` (`domain/klines_volume_catalog.py`), so `unit` must be
 # the instrument's OWN base asset — `BTC` for `BTCUSDT`, `ETH` for `ETHUSDT`. The READING of
 # that base asset off the symbol MOVED to `domain/instrument.py::base_asset`: it is a fact
@@ -382,6 +392,13 @@ class KlineLike(Protocol):
     `taker_buy_base_volume` was added by `T-02.3` and it is THE whole network cost of phase
     `02`: index `[9]` was already in the array `T-01.2` refused to project away, so reading it
     here adds a field to a protocol, not a request to the exchange.
+
+    The four PRICE accessors were added by `T-01.3` of `SPEC-008` at the same price: indices
+    `[1..4]` are in the very same array, so the candle's body and wick cost four attribute
+    reads and ZERO requests (`RNF-4`, `DoD 5` of plan `01`). They are read through NAMED
+    accessors (`infra/binance_klines_client.py`, `T-01.2`) and never through an index literal,
+    because `OPEN_TIME_INDEX` is `[0]` and `OPEN_PRICE_INDEX` is `[1]` — an off-by-one there
+    labels a timestamp as a price and nothing in the chain has a type that would notice.
     """
 
     @property
@@ -404,8 +421,47 @@ class KlineLike(Protocol):
         """Return index `[9]`, the aggressor-buy share of `volume`, as the source's own string."""
         ...
 
+    @property
+    def open_price(self) -> str:
+        """Return index `[1]`, the bucket's FIRST traded price, as the source's own string."""
+        ...
+
+    @property
+    def high_price(self) -> str:
+        """Return index `[2]`, the bucket's HIGHEST traded price, as the source's own string."""
+        ...
+
+    @property
+    def low_price(self) -> str:
+        """Return index `[3]`, the bucket's LOWEST traded price, as the source's own string."""
+        ...
+
+    @property
+    def close_price(self) -> str:
+        """Return index `[4]`, the bucket's LAST traded price, as the source's own string."""
+        ...
+
 
 KlinesToRows = Callable[[int, str, Sequence[KlineLike]], tuple[SeriesRow, ...]]
+
+# One reading of one bucket: the `Reduction` term of the identity, beside the accessor that
+# reads the matching price off the array.
+KlinePriceReading = Callable[[KlineLike], str]
+
+# ⛔ THE ONE PLACE `Reduction` IS PAIRED WITH AN ACCESSOR, AND THE PAIRING IS THE WHOLE RISK.
+# `HIGH` reading `low_price` keeps the arity, keeps the types, passes `ruff` and `mypy`, writes
+# four rows per bar and draws an INVERTED candle that no exception ever reports — the same
+# failure class `T-01.2`'s `test_each_price_accessor_is_pinned_to_its_own_field_name` was
+# written against, one layer up. Written once here rather than as four hand-matched pairs
+# inside the loop, so `test_collector_klines_mapping.py` has a single object to pin: it checks
+# that the `Reduction`s below are exactly `KLINES_OHLC_REDUCTIONS` (dropping one cannot stay
+# silent) and that each published value is the field of the SAME name on the source array.
+KLINES_OHLC_PRICE_READINGS: Final[tuple[tuple[Reduction, KlinePriceReading], ...]] = (
+    (Reduction.OPEN, lambda kline: kline.open_price),
+    (Reduction.HIGH, lambda kline: kline.high_price),
+    (Reduction.LOW, lambda kline: kline.low_price),
+    (Reduction.CLOSE, lambda kline: kline.close_price),
+)
 
 
 def is_closed_bucket(kline: KlineLike, observed_at_ms: int) -> bool:
@@ -429,8 +485,50 @@ def is_closed_bucket(kline: KlineLike, observed_at_ms: int) -> bool:
     millisecond after it, so the bucket is closed exactly when the observation instant is
     strictly greater than it. `close_time_ms == observed_at_ms` is the boundary tick and counts
     as STILL OPEN: that millisecond is still inside the bucket.
+
+    ── `T-01.4` OF `SPEC-008`: THE CUT AND THE STAMP ARE ONE INEQUALITY, NOT TWO ─────────────
+
+    This predicate and `klines_bucket_end` below are the SAME assertion about bucket identity
+    seen from two sides: `is_closed_bucket(k, t)` holds exactly when `klines_bucket_end(k) <=
+    t`, because a bucket ends one millisecond after the last millisecond that belongs to it.
+    That matters because `bucket_end <= t` is the predicate the single reader admits a row on
+    (`_is_closed_bucket` in the `as_of` accessor), so the two drifting apart would publish a
+    row stamped at an instant this collector had not yet reached. The falsifiers, and they are
+    written against the SIGN rather than against the existence of a flag:
+    `test_collector_klines_mapping.py::test_the_cut_and_the_stamp_are_one_inequality_seen_from_two_sides`
+    sweeps the instants around the boundary, and
+    `..._the_candle_is_absent_at_the_closing_millisecond_and_present_one_ms_later`
+    pins the edge on the four `klines_ohlc` identities `T-01.3` hung off this same cut.
     """
     return kline.close_time_ms < observed_at_ms
+
+
+def klines_bucket_end(kline: KlineLike) -> int:
+    """Return the instant the bar's bucket TERMINATES at — `ceil(t/B)*B`, never `floor(t/B)*B`.
+
+    ⛔ `DoD 10` OF PLAN `01`, AND IT IS A FRONTIER CORRECTION THAT WAS MEASURED, NOT A STYLE
+    CHOICE (`SPEC-008` §1): `event_time` IS `bucket_end` on this endpoint, so the fact belongs
+    to the bucket that ENDS at `ceil(t/B)*B`. Taking the source's own `openTime` label as that
+    instant is the NAIVE FLOOR, and it shifts the entire series by ONE NATIVE BAR. The measured
+    gap that shift produces is `0,114 pp` — far too small for any assertion of MAGNITUDE to
+    catch, which is exactly why the falsifier is an equality of BUCKET
+    (`test_collector_klines_mapping.py::test_the_stamp_is_the_bucket_that_ends_at_the_ceiling_never_the_one_the_floor_names`).
+
+    `t` here is `close_time_ms`, an instant strictly inside the bar. `open_time_ms` is NOT such
+    an instant: it is the boundary the PREVIOUS bucket ends on, and `ceil(open_time/B)*B` hands
+    that previous bucket straight back — the one-bar shift, in one expression.
+
+    Taking the ceiling of the closing millisecond also lands on the whole-minute grid
+    `use_cases/series_history.py` walks its X axis on for ANY label the venue sends, instead of
+    inheriting that alignment from the venue: `open_time_ms + KLINES_BUCKET_WIDTH_MS`, the
+    previous spelling, carries a misaligned label straight through onto an off-grid instant
+    that `as_of` would still admit and that no exception would ever report.
+    """
+    # `-(-a // b)` is EXACT integer ceiling. `math.ceil(a / b)` would route a 13-digit epoch
+    # through a float on the way, which is the class of rounding this module refuses everywhere
+    # else (`value_raw` is carried as the source's own string for the same reason).
+    buckets_ending_at_or_after_t = -(-kline.close_time_ms // KLINES_BUCKET_WIDTH_MS)
+    return buckets_ending_at_or_after_t * KLINES_BUCKET_WIDTH_MS
 
 
 def build_klines_to_rows(
@@ -444,27 +542,42 @@ def build_klines_to_rows(
     already closed at `received_at` (`is_closed_bucket`). A symbol outside `symbols` yields no
     rows, the same filter the other two producers in this module already apply.
 
-    ── TWO ROWS PER CLOSED BAR SINCE `T-02.3`, AND THE SECOND ONE COSTS NO REQUEST ──────────
+    ── SIX ROWS PER CLOSED BAR SINCE `T-01.3` OF `SPEC-008`, AND FOUR OF THEM ARE THE CANDLE ─
 
-    `klines_volume` (index `[5]`) and `cvd_source`/`kline_takerbuy` (`2 * takerBuy[9] - volume`,
-    `domain/kline_cvd.kline_cvd_delta`) are TWO IDENTITIES OFF ONE ARRAY. That is the capability
-    phase `02` exists to demonstrate and the reason it is a phase of its own rather than a line
-    inside phase `01`: a second metric riding an existing collector, with a diff of ZERO network
-    calls (`DoD 7`) — `T-01.2` already refused to project the 12-field array down, precisely so
-    this moment would cost a field read instead of a second integration.
+    One `/fapi/v1/klines` array carries SIX identities this module publishes, and every one of
+    them past the first is free of network cost — the array was already paid for, and `T-01.2`
+    refused to project it down precisely so these moments would cost a field read instead of a
+    new integration:
 
-    The two rows share `bucket_end`, `event_time` and every provenance field, because they are
-    two readings OF THE SAME OBSERVATION; they differ only in `series_key_id` and `value_raw`.
-    They are built by iterating a pair of `(series_key_id, value_raw)` tuples rather than by a
-    closure defined inside the loop — there is no late-binding hazard either way (a closure
+      * `klines_volume` (index `[5]`), the `FLOW` this collector was built for;
+      * `cvd_source`/`kline_takerbuy` (`2 * takerBuy[9] - volume`, `T-02.3`);
+      * the four `klines_ohlc` readings (`OPEN`/`HIGH`/`LOW`/`CLOSE`, indices `[1..4]`,
+        `domain/klines_ohlc_catalog.py`), which are the body and the wick of the candle
+        (`RF-1`, `SPEC-008` §3.4). They are four SERIES and not four columns because
+        `reduction` is one of the fifteen terms of the identity — the shape Open Interest has
+        carried in production since `T-06.5`.
+
+    ⛔ THE DIFF OF NETWORK CALLS FOR THE FOUR NEW ROWS IS ZERO (`RNF-4`, `DoD 5` of plan `01`).
+    A second request to `/fapi/v1/klines` here would be the whole point thrown away; the rows
+    below read `kline.open_price`…`kline.close_price` off the page already in hand.
+
+    The six rows of one bar share `bucket_end`, `event_time` and every provenance field, because
+    they are six readings OF THE SAME OBSERVATION; they differ only in `series_key_id` and
+    `value_raw`. They are built by iterating six `(series_key_id, value_raw)` tuples rather than
+    by a closure defined inside the loop — there is no late-binding hazard either way (a closure
     called in the same iteration reads the current value), and a mutation test confirmed that:
     removing a default-argument binding written to "protect" against it killed NO test, because
-    there was nothing to protect against. The pair loop is what the code actually needs, and it
-    keeps the sixteen provenance fields written once instead of twice.
+    there was nothing to protect against. The tuple loop is what the code actually needs, and it
+    keeps the sixteen provenance fields written ONCE instead of six times.
 
     ⚠️ `series_key_id()` is computed ONCE PER PAGE, above the loop, not once per row: it is a
-    `sha256` over the canonical projection of fifteen terms, and a seven-day backfill is 10.080
-    bars per symbol — 20.160 hashes per symbol per restart if it were recomputed per row.
+    `sha256` over the canonical projection of fifteen terms, and the `90`-day ceiling of `D5` is
+    `129.600` bars per symbol — `777.600` hashes per symbol per backfill if the six ids were
+    recomputed per row, against `6`. That is `RNF-4`'s reason for existing: the sha256 per row
+    is the cost that turns `2,07 M` rows into a CPU problem, not the disk.
+    `test_collector_klines_mapping.py::test_the_six_identities_are_hashed_once_per_page_never_once_per_row`
+    counts the calls and is invariant in the number of bars, which is the only way the claim
+    can fail loudly instead of merely being believed.
 
     The CVD delta is computed through the domain function, never inline here, so the invariant
     `0 <= takerBuy <= volume` (item 2.4) is enforced on every bar the collector publishes: an
@@ -477,17 +590,20 @@ def build_klines_to_rows(
     not False`; the module is named without its filename here on purpose, because
     `test_as_of_is_the_single_reader.py` polices that name by TEXT SEARCH and a prose citation
     would register this module as a fifth importer of an accessor it never imports) — but
-    `md.series` is APPEND-ONLY, so a 60-second cycle over four symbols would append four rows
-    per minute (`5.760/day`) that no read path can ever admit, on a host whose own premise is
-    scarce resources. Dropping costs nothing and leaves nothing to explain later; the rows that
-    ARE published carry `is_final=True`, which is the source genuinely DECLARING finality —
-    the case `SeriesRow.is_final`'s own docstring reserves the column for.
+    `md.series` is APPEND-ONLY, so a 60-second cycle over four symbols would append TWENTY-FOUR
+    rows per minute (four symbols x six identities = `34.560/day`, up from the `5.760/day` of
+    when this paragraph was written for one identity) that no read path can ever admit, on a
+    host whose own premise is scarce resources. Dropping costs nothing and leaves nothing to
+    explain later; the rows that ARE published carry `is_final=True`, which is the source
+    genuinely DECLARING finality — the case `SeriesRow.is_final`'s docstring reserves it for.
 
-    `bucket_end` is `open_time_ms + KLINES_BUCKET_WIDTH_MS`, i.e. `close_time_ms + 1`: whole
-    minute instants, because `use_cases/series_history.py` states that "`md.series.bucket_end`
-    values are stamped on the whole-minute grid" and walks its X axis on exactly that step. The
-    source's own `...59999` would still be admitted by `as_of` (`bucket_end <= t`), but it
-    would put every volume bar one millisecond off the grid every other series is stamped on.
+    `bucket_end` is `klines_bucket_end(kline)`, the bucket that TERMINATES at `ceil(t/B)*B`
+    (`DoD 10`, `T-01.4`): whole minute instants, because `use_cases/series_history.py` states
+    that "`md.series.bucket_end` values are stamped on the whole-minute grid" and walks its X
+    axis on exactly that step. The source's own `...59999` would still be admitted by `as_of`
+    (`bucket_end <= t`), but it would put every bar one millisecond off the grid every other
+    series is stamped on — and the source's `openTime`, the naive floor, would put every bar
+    ONE WHOLE NATIVE BAR early, which is a shift of the series rather than of the grid.
 
     `event_time` is the SOURCE's instant (the bucket boundary) while `available_at`/
     `ingested_at`/`observed_at` are THIS collector's clock — the same separation `_build_row`
@@ -507,17 +623,27 @@ def build_klines_to_rows(
         cvd_key = build_kline_takerbuy_entry(symbol, unit=unit).key
         volume_key_id = volume_key.series_key_id()
         cvd_key_id = cvd_key.series_key_id()
+        ohlc_readings = tuple(
+            (
+                build_klines_ohlc_entry(
+                    reduction, instrument_id=symbol, verified_by=_KLINES_OHLC_VERIFIED_BY
+                ).key.series_key_id(),
+                read_price,
+            )
+            for reduction, read_price in KLINES_OHLC_PRICE_READINGS
+        )
         rows: list[SeriesRow] = []
         for kline in klines:
             if not is_closed_bucket(kline, received_at):
                 continue
-            bucket_end = kline.open_time_ms + KLINES_BUCKET_WIDTH_MS
+            bucket_end = klines_bucket_end(kline)
             delta = kline_cvd_delta(
                 volume=kline.volume, taker_buy_base_volume=kline.taker_buy_base_volume
             )
             for series_key_id, value_raw in (
                 (volume_key_id, kline.volume),
                 (cvd_key_id, str(delta)),
+                *((key_id, read_price(kline)) for key_id, read_price in ohlc_readings),
             ):
                 rows.append(
                     SeriesRow(

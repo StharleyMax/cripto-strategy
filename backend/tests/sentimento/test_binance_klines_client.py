@@ -19,11 +19,16 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from src.modules.sentimento.infra.binance_klines_client import (
+    CLOSE_PRICE_INDEX,
     FAPI_HOST,
+    HIGH_PRICE_INDEX,
     KLINE_FIELD_COUNT,
     KLINE_FIELD_NAMES,
     KLINES_PATH,
+    LOW_PRICE_INDEX,
     MAX_LIMIT,
+    OPEN_PRICE_INDEX,
+    OPEN_TIME_INDEX,
     TAKER_BUY_BASE_VOLUME_INDEX,
     VOLUME_INDEX,
     BinanceKlinesClient,
@@ -178,6 +183,93 @@ def test_phase_02_can_compute_cvd_from_the_preserved_row_without_a_new_call() ->
 
     assert delta == Decimal("-24.505")
     assert len(opened) == 1
+
+
+# ── The four prices of the candle (`SPEC-008`/`D1`, plan `01` item 1.3, `T-01.2`) ──────────────
+#
+# `PRICE_ACCESSORS` is the table these tests read instead of re-typing four near-identical cases.
+# It pairs each accessor NAME with the field name of `KLINE_FIELD_NAMES` it claims to quote, which
+# is the pairing the whole task exists to make checkable: a swap of HIGH and LOW is invisible to
+# every type check and to the arity guard, because both are decimal strings of the same shape.
+PRICE_ACCESSORS: list[tuple[str, str]] = [
+    ("open_price", "open"),
+    ("high_price", "high"),
+    ("low_price", "low"),
+    ("close_price", "close"),
+]
+
+
+def test_the_four_prices_are_read_by_name_from_the_array_that_was_already_paid_for() -> None:
+    """`RF-1`: `open`/`high`/`low`/`close` reach the caller, from the SAME response as `volume`.
+
+    Before this task the client had four named indexes and none of them was a price, so the four
+    numbers the candle is made of arrived in every page and were discarded (`SPEC-008` §3.1).
+    """
+    client, opened = _client_for(200, [ONE_KLINE])
+    (row,) = client.klines("BTCUSDT", "1m", limit=1).rows
+
+    assert row.open_price == "112000.10"
+    assert row.high_price == "112050.00"
+    assert row.low_price == "111980.00"
+    assert row.close_price == "112010.50"
+    assert len(opened) == 1
+
+
+@pytest.mark.parametrize(("accessor", "field_name"), PRICE_ACCESSORS)
+def test_each_price_accessor_is_pinned_to_its_own_field_name(
+    accessor: str, field_name: str
+) -> None:
+    """The falsifier of the four accessors: prove each one reads ITS field and not a neighbour.
+
+    The row below carries, at every position, the NAME of that position. So the assertion binds
+    the accessor to a field name rather than to a number, and it MORDE on exactly the mutation
+    that no other gate here can see: swapping `HIGH_PRICE_INDEX` with `LOW_PRICE_INDEX` (or
+    letting `open_price` slide onto index [0], `openTime`) keeps the arity, keeps the types, keeps
+    `ruff` and `mypy` green — and fails this test.
+    """
+    row = KlineRow(raw=tuple(KLINE_FIELD_NAMES))
+
+    assert getattr(row, accessor) == field_name
+
+
+def test_the_four_price_indexes_are_one_through_four_and_collide_with_nothing() -> None:
+    """`[1..4]` is the contract; and `open` is NOT `openTime`, which is the off-by-one to fear."""
+    price_indexes = (OPEN_PRICE_INDEX, HIGH_PRICE_INDEX, LOW_PRICE_INDEX, CLOSE_PRICE_INDEX)
+
+    assert price_indexes == (1, 2, 3, 4)
+    named = (*price_indexes, OPEN_TIME_INDEX, VOLUME_INDEX, TAKER_BUY_BASE_VOLUME_INDEX)
+    assert len(set(named)) == len(named)
+    assert OPEN_PRICE_INDEX != OPEN_TIME_INDEX
+
+
+def test_a_price_keeps_the_exact_decimal_the_exchange_quoted() -> None:
+    """A price is handed over as the exact string, never a float — trailing zeros included.
+
+    `"112050.00"` parsed as a float and re-rendered would be `112050.0`; the digit lost is the
+    one that says how precisely the exchange quoted. Same property `volume` already defends
+    (`binance_klines_client.py`, the header note on `KlineField`).
+    """
+    client, _ = _client_for(200, [ONE_KLINE])
+    (row,) = client.klines("BTCUSDT", "1m", limit=1).rows
+
+    assert row.high_price.endswith(".00")
+    assert Decimal(row.high_price) > Decimal(row.low_price)
+    assert Decimal(row.low_price) <= Decimal(row.open_price) <= Decimal(row.high_price)
+    assert Decimal(row.low_price) <= Decimal(row.close_price) <= Decimal(row.high_price)
+
+
+def test_a_truncated_array_cannot_hand_back_a_price_at_all() -> None:
+    """The arity guard is what keeps a short row from answering `low_price` with a neighbour.
+
+    Without `KlineArityError`, a row cut at index [3] would still have SOMETHING at
+    `LOW_PRICE_INDEX` and the accessor would return it — a plausible decimal string, wrong by one
+    position, with nothing to reject it.
+    """
+    truncated = ONE_KLINE[: LOW_PRICE_INDEX + 1]
+    client, _ = _client_for(200, [truncated])
+
+    with pytest.raises(KlineArityError):
+        client.klines("BTCUSDT", "1m", limit=1)
 
 
 def test_a_row_with_fewer_than_twelve_fields_is_refused() -> None:

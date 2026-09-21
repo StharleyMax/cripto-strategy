@@ -36,7 +36,7 @@ import {
   keyMatchesSymbol,
   lastPresentSlotMs,
   parseSignedDecimalToScaled,
-  rawCandlesFromHistoryRows,
+  assembleOhlcCandles,
   resolveFreshnessVerdict,
   resolveFlowReadingOrAbsent,
   scalarPointsFromHistoryRows,
@@ -76,7 +76,12 @@ test("CA-F2-3 (price/OI/CVD, end to end): a SEM_PONTO row becomes a bare Whitesp
   const rows = rowsWithOneAbsentMinute();
 
   // ── PRICE (candlestick) ────────────────────────────────────────────────────────────────
-  const candles = rawCandlesFromHistoryRows(rows);
+  // `T-01.8`: the candle is FOUR series now (`SPEC-008`/`D1`), so the fixture feeds the same
+  // three grid instants to each `Reduction` — the middle one absent in all four, which is what
+  // a bucket nobody wrote looks like on the wire. The candle-specific cases (one reading
+  // missing, a real body and wick, the ablation) live in `price-candle.test.ts`; what this
+  // test still owns is the END-TO-END absence rule, through the real `charts` machinery.
+  const candles = assembleOhlcCandles({ open: rows, high: rows, low: rows, close: rows }).candles;
   assert.equal(candles.length, 2, "the absent row must NOT become a candle");
   const pricePanel = buildS2Panels({
     window: FIXTURE_WINDOW,
@@ -127,13 +132,17 @@ test("CA-F2-3 (price/OI/CVD, end to end): a SEM_PONTO row becomes a bare Whitesp
 test("MORDE (negative control — proves the falsifier is not vacuous): naively mapping value ?? 0 WOULD fabricate a zero", () => {
   // This test does NOT call any production function — it exists to show the falsifier bites a
   // real defect shape, not just the correct code path. If a future edit replaced
-  // `rawCandlesFromHistoryRows`'s `.filter(...)` with a `Number(row.value ?? 0)` "convenience",
+  // `assembleOhlcCandles`'s `row.value === null` skip with a `Number(row.value ?? 0)` "convenience",
   // this is the exact wrong output that change would start producing.
   const missingRowValue: string | null = rowsWithOneAbsentMinute()[1]!.value;
   const naiveClose = Number(missingRowValue ?? 0);
   assert.equal(naiveClose, 0, "sanity: this IS what a fabricated-zero bug would look like");
   // The REAL mapper must never reach this shape — reasserted for the reader, not the runtime:
-  assert.equal(rawCandlesFromHistoryRows(rowsWithOneAbsentMinute()).length, 2);
+  const sameRows = rowsWithOneAbsentMinute();
+  assert.equal(
+    assembleOhlcCandles({ open: sameRows, high: sameRows, low: sameRows, close: sameRows }).candles.length,
+    2,
+  );
 });
 
 test("scalarPointsFromHistoryRows filters to the destination grid (OI's 1m→5m re-grid)", () => {

@@ -284,7 +284,16 @@ test(`GET /series-history responde 200 sobre a MESMA janela que a página pediu 
   const request = await loadRenderedRequest(page);
 
   const entries = await fetchCatalogEntries();
-  const priceEntry = findEntry(entries, (entry) => entry.priceUse === "structure_detection");
+  // ⛔ `T-01.8` REPOINTED THIS, and leaving it where it was would have been the `BLOCKER-2` of
+  // wave `03` all over again — a spec cross-checking the price pane against a series the pane no
+  // longer reads. The panel draws the FOUR `klines_ohlc` readings now (`SPEC-008`/`D1`);
+  // `priceUse === "structure_detection"` still resolves `klines_last`, which today feeds only the
+  // live-stream row. `CLOSE` is asked about here because the window/grid question this test owns
+  // is the same for all four, and the other three are the `T-01.11` spec's business.
+  const priceEntry = findEntry(
+    entries,
+    (entry) => entry.key.metric === "klines_ohlc" && entry.key.reduction === "CLOSE",
+  );
   const { status, rows } = await fetchSeriesHistory(seriesKeyIdOf(priceEntry), request);
   const withValue = rows.filter((row) => row.value !== null);
   const readerPresent = await seriesWindowReaderPresent();
@@ -391,11 +400,18 @@ test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunc
   expect(sinceMs).toBe(apiPresent.length === 0 ? "" : String(apiPresent[0]!.event_time));
 
   // ── (d) no panel prints a fabricated zero where the API has nothing ─────────────────────────
-  for (const [label, metric] of [
-    ["Preço", "klines_last"],
-    ["Open Interest", "sum_open_interest"],
+  // `T-01.8`: Preço is `klines_ohlc`/`CLOSE` now — the reading the pane prints comes off the
+  // candle's close (`SymbolClient.tsx::PricePane`), so that is the series this falsifier has to
+  // ask about. Asking `klines_last` would compare the screen against a series nothing draws.
+  for (const [label, metric, reduction] of [
+    ["Preço", "klines_ohlc", "CLOSE"],
+    ["Open Interest", "sum_open_interest", null],
   ] as const) {
-    const entry = findEntry(entries, (candidate) => candidate.key.metric === metric);
+    const entry = findEntry(
+      entries,
+      (candidate) =>
+        candidate.key.metric === metric && (reduction === null || candidate.key.reduction === reduction),
+    );
     const panelRows = (await fetchSeriesHistory(seriesKeyIdOf(entry), request)).rows;
     const panelHasValue = panelRows.some((row) => row.value !== null);
     const readingText =

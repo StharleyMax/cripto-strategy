@@ -25,15 +25,23 @@
  *   3. Map the rows into `RawCandle[]`/`ScalarPoint[]`/`ScaledCvdDeltaInput[]`
  *      (`view-model.ts`) and call `buildS2Panels` (the barrel) to get the 3 panels; volume is
  *      mapped separately (`volumeSlotsFromHistoryRows`) because it is a sub-axis, not a panel.
- *   4. Hand `{ panels, volume, cvd, panelStatus, liveUrls }` to `SymbolClient.tsx` by props.
+ *   4. Hand `{ panels, priceCandles, volume, cvd, panelStatus, liveUrls }` to
+ *      `SymbolClient.tsx` by props.
  *
  * ⚠️ THE LIST ABOVE SAYS "3 panels" BECAUSE `buildS2Panels` BUILDS THREE. The route now resolves
- * SEVEN series: those three, the volume sub-axis (`T-01.7`), the two liquidation cohorts (`T-05.9`)
- * and `count_long_short_ratio` (`T-04.5`, M3 — the first NEW pane of `SPEC-007`). The four newer
- * ones are NOT part of `S2RawInputs`: widening `charts`' panel composition is a change to a
- * component these `web` tasks do not own (`ADR-003`), so each is mapped from the route's own wire
- * grid and degrades on its own status. Their sections are at the bottom of this file, each with the
- * argument for why it is not a fourth member of `S2Panels`.
+ * TEN series: the price panel's FOUR (`T-01.8` — `klines_ohlc` `OPEN`/`HIGH`/`LOW`/`CLOSE`,
+ * `SPEC-008`/`D1`, one candle per bucket that answers all four), OI, CVD, the volume sub-axis
+ * (`T-01.7`), the two liquidation cohorts (`T-05.9`) and `count_long_short_ratio` (`T-04.5`, M3 —
+ * the first NEW pane of `SPEC-007`). The four newest panes are NOT part of `S2RawInputs`: widening
+ * `charts`' panel composition is a change to a component these `web` tasks do not own (`ADR-003`),
+ * so each is mapped from the route's own wire grid and degrades on its own status. Their sections
+ * are at the bottom of this file, each with the argument for why it is not a fourth member of
+ * `S2Panels`.
+ *
+ * ⛔ ELEVEN CATALOG LOOKUPS, TEN FETCHES: `priceUse === S2_PRICE_USE` (`klines_last`) is still
+ * RESOLVED, and deliberately NOT fetched — it feeds the live-stream URL of the price readout and
+ * nothing else. It used to be the series the panel DREW, as a degenerate candle; `RN-2` retired
+ * that drawing in the same commit that added the four (`view-model.ts`'s own section).
  *
  * ── WHY EVERY FAILURE DEGRADES TO ABSENCE, NEVER A THROWN PAGE (`CA-F2-3`) ──────────────────
  *
@@ -101,11 +109,14 @@ import {
   type LiquidationPaneData,
   type LongShortPaneData,
   type OiPaneData,
+  type PriceCandleData,
   type VolumeSubAxisData,
 } from "./SymbolClient.tsx";
 import {
+  assembleOhlcCandles,
   computeSeriesKeyId,
   countNativeBarsByPublication,
+  countPresentCandleSlots,
   countPresentSlots,
   countZeroSlots,
   firstPresentSlotMs,
@@ -116,9 +127,9 @@ import {
   matchesBinanceOpenInterest,
   matchesCountLongShortRatio,
   matchesKlineTakerBuyCvd,
+  matchesKlinesOhlc,
   matchesLiquidationCohort,
   nonNegativeFlowSlotsFromHistoryRows,
-  rawCandlesFromHistoryRows,
   resolveFlowReadingOrAbsent,
   resolveFreshnessVerdict,
   resolveSeriesProvenance,
@@ -127,6 +138,7 @@ import {
   seriesValueStats,
   slotsFrom,
   trailingAbsentSlots,
+  type KlinesOhlcReduction,
 } from "./view-model.ts";
 
 export const metadata: Metadata = {
@@ -220,6 +232,37 @@ function resolvedEntry(resolution: CatalogResolution): SeriesCatalogEntry | unde
   return resolution.kind === "found" ? resolution.entry : undefined;
 }
 
+/** `T-01.8` — ONE of the four `klines_ohlc` rows, by `reduction`. The predicate is
+ * `view-model.ts`'s (three terms, each named there), and `resolveCatalogEntry`'s refusal to
+ * choose among multiple matches applies unchanged: two rows differing only in `verified_by`
+ * would leave this panel saying `ambiguous_in_catalog` instead of drawing a candle built from
+ * whichever the catalog happened to list first. */
+function resolveOhlcCatalogEntry(
+  catalog: SeriesCatalogProjection,
+  catalogStatus: PanelStatus,
+  reduction: KlinesOhlcReduction,
+): CatalogResolution {
+  return catalogStatus.kind === "ok"
+    ? resolveCatalogEntry(catalog, (entry) => matchesKlinesOhlc(entry.key, reduction))
+    : CATALOG_UNAVAILABLE;
+}
+
+/**
+ * ONE status for a panel whose data comes from MORE THAN ONE series — the first non-`ok` of
+ * `statuses`, in the order given, or `ok` when every one of them is.
+ *
+ * ⛔ THE CANDLE IS AN ALL-OR-NOTHING READ, and this is the rendering half of that. A bucket
+ * needs all four readings (`assembleOhlcCandles`), so one series failing means NO candle is
+ * drawn anywhere in the window — and a panel drawing nothing while reporting `ok` because
+ * three of its four fetches succeeded is the "every link in the chain reported success" state
+ * this route has already paid for twice (`resolveCatalogEntry`'s own header). The first reason
+ * is published rather than a synthetic "one of four failed": every member of the union is a
+ * reason an operator can act on, and inventing a fifth would name none of them.
+ */
+function firstAbsentStatus(statuses: readonly PanelStatus[]): PanelStatus {
+  return statuses.find((status) => status.kind !== "ok") ?? { kind: "ok" };
+}
+
 /** `routeWindow` is PASSED IN, not read from a module constant: one clock reading serves the
  * whole render, so the four panels are guaranteed to be asking about the same window even if
  * the request straddles a bucket boundary. */
@@ -291,10 +334,28 @@ export default async function SymbolPage() {
     catalogStatus = { kind: "absent", reason: cause.kind };
   }
 
-  const priceResolution =
+  // ⛔ `T-01.8` — THE PANEL NO LONGER FETCHES A HISTORY FOR THIS RESOLUTION, and the split is
+  // the whole point. `priceUse === S2_PRICE_USE` resolves `klines_last` (`ADR-007`'s
+  // `structure_detection` row), which is ONE scalar per bucket — the series the retired
+  // degenerate candle was built from. What the panel DRAWS now is the four `klines_ohlc`
+  // readings below (`SPEC-008`/`D1`). This entry survives for ONE consumer, named here so it
+  // cannot quietly grow a second: the live stream URL, whose retargeting is not this task's
+  // (it is a text readout of the last traded price, not a bar on the chart).
+  const priceLiveStreamResolution =
     catalogStatus.kind === "ok"
       ? resolveCatalogEntry(catalog, (entry) => entry.priceUse === S2_PRICE_USE)
       : CATALOG_UNAVAILABLE;
+  // `T-01.8` / `SPEC-008` §3.4 — FOUR resolutions, one per `Reduction`, never one "the candle"
+  // selector. The four rows share `metric`, `provider`, `interval` and every other term of the
+  // fifteen except `reduction` (`klines_ohlc_catalog.py`), so `reduction` is the term that
+  // identifies each of them and it is passed EXPLICITLY at each of the four call sites — a
+  // helper that looped the four names here would be a fifth place for `HIGH` and `LOW` to swap.
+  const ohlcResolutions = {
+    open: resolveOhlcCatalogEntry(catalog, catalogStatus, "OPEN"),
+    high: resolveOhlcCatalogEntry(catalog, catalogStatus, "HIGH"),
+    low: resolveOhlcCatalogEntry(catalog, catalogStatus, "LOW"),
+    close: resolveOhlcCatalogEntry(catalog, catalogStatus, "CLOSE"),
+  };
   // `T-03.5` — the predicate is `view-model.ts`'s (three terms, each one named there with the
   // sibling row it excludes and the one that is redundant today said out loud). ⛔ It used to be
   // `entry.key.metric === OI_METRIC`, which matches FIVE rows and whose first match has zero rows
@@ -340,7 +401,10 @@ export default async function SymbolPage() {
       : CATALOG_UNAVAILABLE;
 
   const [
-    priceResult,
+    openResult,
+    highResult,
+    lowResult,
+    closeResult,
     oiResult,
     cvdResult,
     volumeResult,
@@ -348,7 +412,10 @@ export default async function SymbolPage() {
     liquidationShortResult,
     longShortResult,
   ] = await Promise.all([
-    fetchPanelRows(priceResolution, routeWindow),
+    fetchPanelRows(ohlcResolutions.open, routeWindow),
+    fetchPanelRows(ohlcResolutions.high, routeWindow),
+    fetchPanelRows(ohlcResolutions.low, routeWindow),
+    fetchPanelRows(ohlcResolutions.close, routeWindow),
     fetchPanelRows(oiResolution, routeWindow),
     fetchPanelRows(cvdResolution, routeWindow),
     fetchPanelRows(volumeResolution, routeWindow),
@@ -362,9 +429,32 @@ export default async function SymbolPage() {
   const oiPresence = daysWithPresence(oiResult.rows, days);
   const cvdPresence = daysWithPresence(cvdResult.rows, days);
 
+  // `T-01.8` — the candle is assembled ONCE, here, from the four row sets, and both the bars
+  // and the counts the screen publishes come out of that single pass (`assembleOhlcCandles`):
+  // a second traversal to "count what was drawn" is how a printed number and a plotted bar
+  // start disagreeing.
+  const candleAssembly = assembleOhlcCandles({
+    open: openResult.rows,
+    high: highResult.rows,
+    low: lowResult.rows,
+    close: closeResult.rows,
+  });
+  const priceStatus = firstAbsentStatus([
+    openResult.status,
+    highResult.status,
+    lowResult.status,
+    closeResult.status,
+  ]);
+
   const rawInputs: S2RawInputs = {
     window: routeWindow.window,
-    candles: rawCandlesFromHistoryRows(priceResult.rows),
+    candles: candleAssembly.candles,
+    // ⛔ UNCHANGED, AND THE OMISSION IS DELIBERATE (`SPEC-008` §2.1): `price_use` /
+    // `price_source` are `ADR-007`/`PS-1`'s decision table, which this feature does not
+    // reopen. `structure_detection` ⇒ `klines_last` is the CONCEPT "the traded price off
+    // `/fapi/v1/klines`" — the very endpoint the four `klines_ohlc` readings are read from —
+    // and the four catalog rows themselves carry `price_use = None` on purpose
+    // (`klines_ohlc_catalog.py`), so nothing here claims one for them.
     priceUse: S2_PRICE_USE,
     oiPoints: scalarPointsFromHistoryRows(oiResult.rows, FIVE_MINUTES_MS),
     oiMissingDays: oiPresence.missingDays,
@@ -389,6 +479,23 @@ export default async function SymbolPage() {
   // equivalent in that case anyway. `buildS2Panels` never sees a mix that hides one panel's
   // real data because a SIBLING panel's fetch failed.
   const panels: S2Panels = buildS2Panels(rawInputs);
+
+  // ── What the price panel DREW, and what it could not (`T-01.8`) ───────────────────────────
+  //
+  // `drawnCandles` is counted off `panels.price.series.slots` — the SAME array
+  // `candlestickSeriesLossless` maps into the items `setData` receives — so the number the
+  // screen prints is the number of bars the canvas gets, not a hopeful recount of the rows.
+  // `gridSlots` is the window's own grid, so the pair reads as "N buckets of M carry a candle"
+  // and an empty panel says `0/5760` instead of saying nothing.
+  const priceCandles: PriceCandleData = {
+    drawnCandles: countPresentCandleSlots(panels.price.series.slots),
+    gridSlots: panels.price.series.slots.length,
+    // ⛔ THE HOLE, NAMED. A bucket that answered one, two or three of the four readings draws
+    // NOTHING (`assembleOhlcCandles`) — and without this count it would be indistinguishable
+    // from a bucket that answered none, which is `SPEC-008` §7.2's "queijo suíço" hiding
+    // behind a clean-looking gap.
+    partialBuckets: candleAssembly.partialBuckets,
+  };
 
   // ── The volume sub-axis (`T-01.7`) ────────────────────────────────────────────────────────
   //
@@ -601,7 +708,7 @@ export default async function SymbolPage() {
     baseUrl === undefined
       ? { price: null, oi: null, cvd: null }
       : {
-          price: buildLiveUrl(baseUrl, resolvedEntry(priceResolution)),
+          price: buildLiveUrl(baseUrl, resolvedEntry(priceLiveStreamResolution)),
           oi: buildLiveUrl(baseUrl, resolvedEntry(oiResolution)),
           cvd: buildLiveUrl(baseUrl, resolvedEntry(cvdResolution)),
         };
@@ -609,13 +716,14 @@ export default async function SymbolPage() {
   return (
     <SymbolClient
       panels={panels}
+      priceCandles={priceCandles}
       volume={volume}
       cvd={cvd}
       oi={oi}
       liquidation={liquidation}
       longShort={longShort}
       panelStatus={{
-        price: priceResult.status,
+        price: priceStatus,
         oi: oiResult.status,
         cvd: cvdResult.status,
         volume: volumeResult.status,

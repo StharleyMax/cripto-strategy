@@ -231,6 +231,21 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
             "_collect_long_short_for_symbol",
         }
     ),
+    # `T-01.5` (`SPEC-008`): PRODUCER BOOKKEEPING, the same category as the three
+    # `collectors_cli.py` functions above and for the same three checkable reasons.
+    # `_publish_page` of the ONE-SHOT backfill reads `row.bucket_end` off the rows the mapping
+    # JUST BUILT, to count DISTINCT buckets — because since `T-01.3` one bar is six rows, and
+    # `len(rows)` would report six times the bars and make `n_returned - n_published` (the size
+    # of the anti-lookahead cut) negative. (a) There is no decision instant `t` in the function;
+    # its only timestamp is the caller's `now_ms()`, the job's own clock at publication. (b) It
+    # never consults a SECOND row to pick a winner — it takes the CARDINALITY of a set over rows
+    # it is publishing in the same breath. (c) It returns two counts, never a value.
+    #
+    # ⚠️ The cheap way out was available and was REFUSED for the reason the `collectors_cli.py`
+    # entry already names: `row.event_time` is the SAME instant for these rows (`label_shift =
+    # 0`) and is NOT in `READ_PATH_COLUMNS`, so counting on it would have kept this function out
+    # of this registry by picking a synonym — a bypass of the gate wearing compliance.
+    "modules/sentimento/infra/klines_backfill_cli.py": frozenset({"_publish_page"}),
     # `T-01.2` (`pagina-de-grafico-s2`): SERIALIZATION, same category as `write_series_row.py`
     # and `series_row_wire.py` above — `SeriesHistoryRow` is a NEW dataclass (its OWN
     # `available_at`, not `SeriesRow`'s), and `to_wire()` only projects an already-computed
@@ -240,6 +255,36 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # `AsOfReading.projection()` (a dict, not an attribute) precisely so it never needs an
     # entry here.
     "modules/sentimento/domain/series_history_report.py": frozenset({"to_wire"}),
+    # `T-01.7` (`CST-203`, `candle-real-e-eixo-unico`): the candle-fidelity harness, and it is
+    # an EIGHTH toucher that is not an eighth reader — the distinction this whole file exists
+    # to police, applied to a module that never opens a store at all.
+    #
+    # It consumes rows `/api/v1/series-history` ALREADY answered (`as_of`, one door, upstream)
+    # and asks a question no reader asks: "which kind of write put this cell here, and does it
+    # equal what the venue published for that minute". `available_at` is read for PROVENANCE
+    # — `available_at - event_time`, a publication LAG — and never as half of the admission
+    # conjunction. There is no decision instant `t` anywhere in the module, no `Observation`,
+    # no `SeriesRow`, no `bucket_end` of a stored row: the three functions below see only what
+    # the wire already served.
+    #
+    #   `publication_lag_ms`  the subtraction itself. A NEGATIVE result is the module's proof
+    #                         that a cell was carried (`WriterTrace.CARRIED`), which is a
+    #                         statement about `LOCF` having happened — never a decision to
+    #                         perform it.
+    #   `_repeat_runs_of`     folds consecutive grid instants that share `(value, available_at)`
+    #                         into ONE observation answering several instants. It compares two
+    #                         served cells with each other, never a cell with a `t`.
+    #   `compare_candles`     the comparison against the origin, which routes through the two
+    #                         above. It takes no store handle and no clock.
+    #
+    # ⚠️ `infra/candle_fidelity_cli.py` IS ABSENT HERE, AND THE ABSENCE IS THE MEASUREMENT,
+    # exactly as it is for `as_of_batch` at the top of this registry: the CLI reaches the same
+    # column as `row.get("available_at")`, a STRING KEY on a wire dict, and `ast.Attribute`
+    # cannot see inside a string. Declaring it anyway would reserve a permission it does not
+    # use, and the day it starts using one nothing would move.
+    "modules/sentimento/domain/candle_fidelity.py": frozenset(
+        {"publication_lag_ms", "_repeat_runs_of", "compare_candles"}
+    ),
 }
 
 

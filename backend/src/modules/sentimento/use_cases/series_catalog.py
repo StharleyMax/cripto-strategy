@@ -144,6 +144,37 @@ the falsifier that a hole stays a hole through the real `build_series_history_re
 the `"1min"` label (`ADR-037/D3`, `ADR-003`/FR-3) — and the moment these rows are served they
 enter the universe of `tests/sentimento/test_native_grid_ms_pairs.py`, which enumerates every
 SERVED row and refuses a width that contradicts its label.
+
+── `T-01.6` OF `SPEC-008` (`RF-2`, plan `01` item 1.7): THE COUNT IS 19 — FOUR ROWS AT THE TAIL ─
+
+⚠️ TWO DIFFERENT TASKS SHARE THE ID `T-01.6` IN THIS FILE. The section above titled "`T-01.6`
+(`SPEC-007` §4.5)" registered `klines_volume`; this one is `SPEC-008`'s own `T-01.6`, and it
+registers `klines_ohlc`. The ids collide because each feature numbers its phases from `01` — the
+SPEC is what disambiguates them, so both are named with it here rather than by the bare id.
+
+`klines_ohlc` (`domain/klines_ohlc_catalog.py`, built by `T-01.1`) is APPENDED as the four rows
+at indices 15 (`OPEN`), 16 (`HIGH`), 17 (`LOW`) and 18 (`CLOSE`), in the order
+`KLINES_OHLC_REDUCTIONS` declares them. Appended for the same `RS-1` reason as every row above:
+order is FORM, content is what this task may change, and every row that already had an index in
+`"entries"` keeps it.
+
+FOUR ROWS IS THE REQUIREMENT, NOT AN IMPLEMENTATION DETAIL, and the failure mode of collapsing
+them is the one the Open Interest panel already paid: a consumer that picks a series BY POSITION
+instead of by `series_key_id` renders whatever sits at that index. Four `Reduction` readings of
+the same bucket are four distinct ids by construction (`reduction` is a term of the key), so
+`HIGH` can never be served where `LOW` was asked for — unless the four are collapsed into one
+row, which `build_series_catalog` refuses as a duplicate before it can be served.
+
+REGISTERED IS NOT SERVED, AND THIS LINE IS WHERE THE DIFFERENCE LIVES. Until these four entries
+exist, `/api/v1/series-history` answers `422 UnknownSeriesKeyIdError` for all four ids
+(`series_history.py:119-121` -> `catalog.entry_for_id` returns `None`) no matter how many rows
+the collector wrote, and `/api/v1/series-catalog` lists 60 entries with no `klines_ohlc` among
+them `[MEDIDO 2026-09-19 at 307c099: n_entries=60, klines_ohlc=0]`. The candle would then have
+an identity in `domain/`, a writer in the collector, and no address on the wire.
+
+`verified_by` is passed from `_KLINES_OHLC_VERIFIED_BY` below for the reason the `klines_volume`
+constant already spells out: it is the fifteenth term of the key, so the row SERVED here and the
+row WRITTEN to `md.series` are the same series only while both sides carry this exact string.
 """
 
 from __future__ import annotations
@@ -157,6 +188,7 @@ from src.modules.sentimento.domain.cvd_source_catalog import (
     build_kline_takerbuy_entry,
 )
 from src.modules.sentimento.domain.instrument import base_asset
+from src.modules.sentimento.domain.klines_ohlc_catalog import klines_ohlc_catalog_entries
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
 from src.modules.sentimento.domain.liquidation_catalog import liquidation_catalog_entries
 from src.modules.sentimento.domain.long_short_catalog import build_count_long_short_ratio_entry
@@ -250,6 +282,16 @@ _PRICE_VERIFIED_BY: Final[str] = "test_price_source_catalog.py"
 # "nothing here", which is the silent-break class `ADR-012` names, not a `422` anyone would see.
 _KLINES_VOLUME_VERIFIED_BY: Final[str] = "test_klines_volume_catalog.py"
 
+# `T-01.6` of `SPEC-008`, load-bearing for the SAME reason the constant above is: it is the
+# fifteenth term of `SeriesKey`, so it enters `series_key_id()`'s `sha256` (`series_key.py`).
+# The four `klines_ohlc` rows SERVED here and the four the collector WRITES are the same four
+# series only while both sides carry this exact string. `T-01.1` created the test that names it
+# (`backend/tests/sentimento/test_klines_ohlc_catalog.py`); the writer side quotes THIS value
+# rather than inventing one. A one-character divergence keeps every other gate green and makes
+# `/api/v1/series-history` answer `200` with `n_points = 0` for a series whose rows are sitting
+# in the table under a different id — the `rc=0` silent break `ADR-012` names, never a `422`.
+_KLINES_OHLC_VERIFIED_BY: Final[str] = "test_klines_ohlc_catalog.py"
+
 
 def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
     """Build `series_catalog` from the three modules `T-06.x` already populated, for one instrument.
@@ -268,7 +310,14 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
     `n_points > 0` for each cohort separately, and an unregistered id cannot answer `n_points`
     at all — it answers `422`.
 
-    `T-01.6` APPENDS `klines_volume` (`SPEC-007` §4, row M1) as the eleventh row. Appended, not
+    `T-01.6` of `SPEC-008` APPENDS the FOUR `klines_ohlc` rows (`RF-2`) at indices 15-18, in
+    `OPEN`/`HIGH`/`LOW`/`CLOSE` order. Four rows and never one: a collapsed candle is a series a
+    consumer can only pick by POSITION, which is the failure the Open Interest panel already
+    paid for. Until this line exists the identity `T-01.1` built is unaddressable on the wire —
+    `/api/v1/series-history` answers `422 UnknownSeriesKeyIdError` for all four ids.
+
+    `T-01.6` of `SPEC-007` APPENDS `klines_volume` (`SPEC-007` §4, row M1) as the eleventh
+    row. Appended, not
     inserted: `RS-1` lets this task change the catalog's CONTENT and forbids changing its FORM,
     and the ORDER of `"entries"` is form — appending leaves all ten pre-existing rows at the
     indices they already had. Registering it here is what `SPEC-007` §4.5 means by "reusar não é
@@ -288,6 +337,7 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
         build_kline_takerbuy_entry(instrument_id, unit=base_asset(instrument_id)),
         build_count_long_short_ratio_entry(instrument_id),
         *liquidation_catalog_entries(instrument_id).entries,
+        *klines_ohlc_catalog_entries(instrument_id, verified_by=_KLINES_OHLC_VERIFIED_BY).entries,
     ]
     # DEBUG, not INFO — same reasoning `ingest_health_query` already documents: this read path
     # is not a byte contract of its own, but a library that logs at INFO by default imposes its
