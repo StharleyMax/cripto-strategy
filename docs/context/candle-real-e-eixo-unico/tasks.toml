@@ -72,7 +72,7 @@ untracked_note = "2026-09-19: TODAS as 48 tasks estao cardadas em CST (Jira, boa
 id = "T-01.1"
 title = "[sentimento] 01 · Identidade das 4 series OPEN/HIGH/LOW/CLOSE no catalogo, com o nome passando por FORBIDDEN_METRIC_NAMES"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = []
 refs = [
@@ -88,7 +88,7 @@ tracker = { provider = "jira", id = "CST-197", url = "https://conversationhub.at
 id = "T-01.2"
 title = "[sentimento] 01 · Os 4 acessores nomeados que faltam em binance_klines_client.py (indices [1..4])"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = []
 refs = [
@@ -102,7 +102,7 @@ tracker = { provider = "jira", id = "CST-198", url = "https://conversationhub.at
 id = "T-01.3"
 title = "[sentimento] 01 · build_klines_to_rows: o laco de pares passa de 2 para 6 tuplas, com proveniencia escrita UMA vez"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = ["T-01.1", "T-01.2"]
 refs = [
@@ -116,7 +116,7 @@ tracker = { provider = "jira", id = "CST-199", url = "https://conversationhub.at
 id = "T-01.4"
 title = "[sentimento] 01 · O bucket e o que TERMINA em ceil(t/B)*B: is_closed_bucket cobre as 4 series novas, e o teste fixa o SINAL"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = ["T-01.3"]
 refs = [
@@ -131,7 +131,7 @@ tracker = { provider = "jira", id = "CST-200", url = "https://conversationhub.at
 id = "T-01.5"
 title = "[sentimento] 01 · Backfill one-shot/cron ate o teto de 90 dias, com a pegada de disco MEDIDA antes e depois"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = ["T-01.3", "T-01.4"]
 refs = [
@@ -147,7 +147,7 @@ tracker = { provider = "jira", id = "CST-201", url = "https://conversationhub.at
 id = "T-01.6"
 title = "[sentimento] 01 · As 4 entradas registradas no SeriesCatalog SERVIDO por /api/v1/series-catalog"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = ["T-01.1"]
 refs = [
@@ -161,7 +161,7 @@ tracker = { provider = "jira", id = "CST-202", url = "https://conversationhub.at
 id = "T-01.7"
 title = "[sentimento] 01 · ⛔ A vela armazenada e comparada contra a KLINE DA PROPRIA BINANCE, e o assert morde VIES UNILATERAL"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = ["T-01.5"]
 refs = [
@@ -178,7 +178,7 @@ tracker = { provider = "jira", id = "CST-203", url = "https://conversationhub.at
 id = "T-01.8"
 title = "[web] 01 · O painel de Preco le as 4 series e monta a vela; ausencia vira LACUNA, nunca vela de altura zero"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = ["T-01.6"]
 refs = [
@@ -192,7 +192,7 @@ tracker = { provider = "jira", id = "CST-204", url = "https://conversationhub.at
 id = "T-01.9"
 title = "[web] 01 · ⛔ A vela degenerada SAI no mesmo commit — rawCandlesFromHistoryRows para de montar {open: close, high: close, low: close}"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = ["T-01.8"]
 refs = [
@@ -208,7 +208,7 @@ tracker = { provider = "jira", id = "CST-205", url = "https://conversationhub.at
 id = "T-01.10"
 title = "[web] 01 · Veredito do ux-ui-mastery sobre a vela e a lacuna"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = ["T-01.8", "T-01.9"]
 refs = [
@@ -222,7 +222,7 @@ tracker = { provider = "jira", id = "CST-206", url = "https://conversationhub.at
 id = "T-01.11"
 title = "[web] 01 · e2e Playwright contra o app REAL + ⛔ ablacao de P1: removido o produtor, corpo e pavio SOMEM"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-21T05:15:23Z @ 1e8e803cb55954627a4fafc8d66bbcaa97b2bdd2
 phase = "01"
 depends_on = ["T-01.9"]
 refs = [
