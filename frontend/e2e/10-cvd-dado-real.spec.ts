@@ -6,71 +6,72 @@ import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl } from "./helpers.ts";
 
 /**
- * `T-02.6` (`SPEC-007` plano `02` item `2.7`, `DoD-3`, `D2`/item 3 do `DoD-VERTICAL`) — o
- * `CvdPane` com dado real na tela, contado contra a API que a própria página leu.
+ * `T-02.6` (`SPEC-007` plano `02` item `2.7`, `DoD-3`, `D2`/item 3 do `DoD-VERTICAL`) â o
+ * `CvdPane` com dado real na tela, contado contra a API que a prÃ³pria pÃ¡gina leu.
  *
- * ── O QUE ELE ASSERTA, E POR QUE NÃO É "STATUS 200" ──────────────────────────────────────────
+ * ââ O QUE ELE ASSERTA, E POR QUE NÃO Ã "STATUS 200" ââââââââââââââââââââââââââââââââââââââââââ
  *
- * `D2` recusou o DoD só-de-API COM NÚMERO: a fase `02` de `pagina-de-grafico-s2` passou SQL+HTTP
- * verdes e o dado não chegava na tela; quem achou o defeito de wiring foi a fase `04`, em uso ao
- * vivo pelo owner. Então o que este arquivo mede é o DOM: quantos pontos o painel DIZ ter, e se
- * esse número é o da API sobre EXATAMENTE a janela que o servidor declarou no `<main>`.
+ * `D2` recusou o DoD sÃ³-de-API COM NÃMERO: a fase `02` de `pagina-de-grafico-s2` passou SQL+HTTP
+ * verdes e o dado nÃ£o chegava na tela; quem achou o defeito de wiring foi a fase `04`, em uso ao
+ * vivo pelo owner. EntÃ£o o que este arquivo mede Ã© o DOM: quantos pontos o painel DIZ ter, e se
+ * esse nÃºmero Ã© o da API sobre EXATAMENTE a janela que o servidor declarou no `<main>`.
  *
- * ── AS DUAS ARMADILHAS QUE JÁ CUSTARAM UM CICLO DE GATE, E COMO ESTE ARQUIVO PAGA CADA UMA ────
+ * ââ AS DUAS ARMADILHAS QUE JÃ CUSTARAM UM CICLO DE GATE, E COMO ESTE ARQUIVO PAGA CADA UMA ââââ
  *
- *   1. `Number(null) === 0`. Sob `make e2e` a API compõe o engine sqlite, que `ADR-034/D9` não
- *      dá reader de `md.series` ⇒ a API serve `0` pontos; se a página parar de publicar
- *      `data-cvd-present-points`, `Number(null)` também é `0` e a asserção fica verde sobre um
- *      DOM sem contrato nenhum — foi o `BLOCKER-3` da wave `03`, `rc=0, 24 passed`. Por isso o
- *      atributo é exigido NÃO-NULO e NÃO-VAZIO, em dígitos, ANTES de virar número.
- *   2. `metric === "cvd_source"` casa QUATRO linhas do catálogo, não uma (`aggtrade_q`,
- *      `aggtrade_nq`, `coinalyze_bv`, `kline_takerbuy`). O filtro daqui é o de três termos, e
- *      este arquivo AINDA verifica que ele casa exatamente UMA linha do catálogo servido pela
- *      API sob teste — é o guarda de deriva da transcrição em `cvd-series-selector.test.ts`,
- *      que roda contra um fixture e portanto não vê o catálogo real.
+ *   1. `Number(null) === 0`. Sob `make e2e` a API compÃµe o engine sqlite, que `ADR-034/D9` nÃ£o
+ *      dÃ¡ reader de `md.series` â a API serve `0` pontos; se a pÃ¡gina parar de publicar
+ *      `data-cvd-present-points`, `Number(null)` tambÃ©m Ã© `0` e a asserÃ§Ã£o fica verde sobre um
+ *      DOM sem contrato nenhum â foi o `BLOCKER-3` da wave `03`, `rc=0, 24 passed`. Por isso o
+ *      atributo Ã© exigido NÃO-NULO e NÃO-VAZIO, em dÃ­gitos, ANTES de virar nÃºmero.
+ *   2. `metric === "cvd_source"` casa QUATRO linhas do catÃ¡logo, nÃ£o uma (`aggtrade_q`,
+ *      `aggtrade_nq`, `coinalyze_bv`, `kline_takerbuy`). O filtro daqui Ã© o de trÃªs termos, e
+ *      este arquivo AINDA verifica que ele casa exatamente UMA linha do catÃ¡logo servido pela
+ *      API sob teste â Ã© o guarda de deriva da transcriÃ§Ã£o em `cvd-series-selector.test.ts`,
+ *      que roda contra um fixture e portanto nÃ£o vÃª o catÃ¡logo real.
  *
- * ── OS DOIS UNIVERSOS, DECLARADOS EM TODA RODADA ─────────────────────────────────────────────
+ * ââ OS DOIS UNIVERSOS, DECLARADOS EM TODA RODADA âââââââââââââââââââââââââââââââââââââââââââââ
  *
- * Mesma partição que `08-symbol-dado-real.spec.ts` publica como `series_window_reader_present`:
+ * Mesma partiÃ§Ã£o que `08-symbol-dado-real.spec.ts` publica como `series_window_reader_present`:
  *
- *   FRACO  (sqlite, o que `make e2e` compõe): `/series-history` RECUSA (`500`). O que se prova
- *          aqui é o que `RN-1` é: diante de um backend que não responde, a tela diz `SEM_PONTO`
- *          e NUNCA um `0` fabricado — e o contrato de DOM está publicado.
- *   FORTE  (Postgres com reader): `N >= 30` grades distintas no DOM, iguais às da API, e o painel
- *          NÃO diz `SEM_PONTO` na leitura que a API sabe responder. É este o item 3 do
- *          `DoD-VERTICAL`, e ele só existe depois que `T-02.7` publica o deploy e o coletor roda
- *          ~30 min ao vivo (`handoff/T-02.5-T-02.6-web.md` §3: o backfill de 7 dias é invisível
- *          ao `as_of` por `available_at`, e isso é `D15`/`D17`, fora desta fase).
+ *   FRACO  (sqlite, o que `make e2e` compÃµe): `/series-history` RECUSA (`500`). O que se prova
+ *          aqui Ã© o que `RN-1` Ã©: diante de um backend que nÃ£o responde, a tela diz `SEM_PONTO`
+ *          e NUNCA um `0` fabricado â e o contrato de DOM estÃ¡ publicado.
+ *   FORTE  (Postgres com reader): `N >= 30` grades distintas no DOM, iguais Ã s da API, e o painel
+ *          NÃO diz `SEM_PONTO` na leitura que a API sabe responder. Ã este o item 3 do
+ *          `DoD-VERTICAL`, e ele sÃ³ existe depois que `T-02.7` publica o deploy e o coletor roda
+ *          ~30 min ao vivo (`handoff/T-02.5-T-02.6-web.md` Â§3: o backfill de 7 dias Ã© invisÃ­vel
+ *          ao `as_of` por `available_at`, e isso Ã© `D15`/`D17`, fora desta fase).
  *
- * ⛔ O universo FRACO nunca é relatado como se fosse o FORTE: toda rodada imprime
+ * â O universo FRACO nunca Ã© relatado como se fosse o FORTE: toda rodada imprime
  * `series_window_reader_present` e `cvd_dom_present_points`, e o veredito do gate cita os dois.
- * ⛔ NADA AQUI SEMEIA O POSTGRES COMPARTILHADO (`[P-seed]`, `D2`): não há `INSERT`, `psql` nem
- * `docker` neste arquivo fora deste parágrafo.
+ * â NADA AQUI SEMEIA O POSTGRES COMPARTILHADO (`[P-seed]`, `D2`): nÃ£o hÃ¡ `INSERT`, `psql` nem
+ * `docker` neste arquivo fora deste parÃ¡grafo.
  */
 
 const SPEC = "10-cvd-dado-real";
-const SYMBOL_PATH = "/symbol";
 const SYMBOL = "BTCUSDT";
+// `T-02.5` — a rota virou `/symbol/[symbol]`, segmento em ingles; a página do piloto é `SYMBOL`.
+const SYMBOL_PATH = `/symbol/${SYMBOL}`;
 
 const apiBaseUrl = sentimentoApiBaseUrl;
 
-/** `SymbolClient.tsx`'s stable anchors for this pane. Spelled out, not imported — importing
+/** `SymbolClient.tsx`'s stable anchors for this pane. Spelled out, not imported â importing
  * `SymbolClient.tsx` would pull `lightweight-charts` (and `../src/app/symbol/view-model.ts`
- * would pull `charts/index.ts` → `jsdom`, which dies under Playwright's module loader here and
+ * would pull `charts/index.ts` â `jsdom`, which dies under Playwright's module loader here and
  * takes the whole COLLECTION to `Total: 0 tests`). `cvd-pane-dom-contract.test.ts` guards the
  * same strings from the other side, which is the point: two independent witnesses of one
  * contract, so a rename has to break one of them. */
 const CVD_PANE_TESTID = "cvd-pane";
 const ABSENCE_TOKEN = "SEM_PONTO";
 
-/** `DoD-3`: `N >= 30` pontos DISTINTOS, não `N > 0`. Não há divisor de `RN-S1` aqui — a série é
- * `1m` NATIVA (`SPEC-007 §4.1`), então cada grade com valor é uma barra nativa distinta e
- * `presentPoints === nativeBars`. Aplicar o `/5` do `RN-S1` subcontaria por 5×. */
+/** `DoD-3`: `N >= 30` pontos DISTINTOS, nÃ£o `N > 0`. NÃ£o hÃ¡ divisor de `RN-S1` aqui â a sÃ©rie Ã©
+ * `1m` NATIVA (`SPEC-007 Â§4.1`), entÃ£o cada grade com valor Ã© uma barra nativa distinta e
+ * `presentPoints === nativeBars`. Aplicar o `/5` do `RN-S1` subcontaria por 5Ã. */
 const MINIMUM_DISTINCT_POINTS = 30;
 
-/** Os três termos que identificam a linha `kline_takerbuy` — a MESMA regra de
- * `view-model.ts::matchesKlineTakerBuyCvd`, escrita à mão aqui pelo motivo do parágrafo acima.
- * Cada termo exclui um irmão: sem `provider` casa `coinalyze_bv`; sem `quantityField` casam
+/** Os trÃªs termos que identificam a linha `kline_takerbuy` â a MESMA regra de
+ * `view-model.ts::matchesKlineTakerBuyCvd`, escrita Ã  mÃ£o aqui pelo motivo do parÃ¡grafo acima.
+ * Cada termo exclui um irmÃ£o: sem `provider` casa `coinalyze_bv`; sem `quantityField` casam
  * `aggtrade_q`/`aggtrade_nq`. */
 function isKlineTakerBuyCvd(key: SeriesKey): boolean {
   return key.metric === "cvd_source" && key.provider === "binance" && key.quantityField === "NA";
@@ -96,7 +97,7 @@ interface RenderedRequest {
 
 function requiredNumberAttribute(value: string | null, name: string): number {
   if (value === null) {
-    throw new Error(`the page did not declare ${name} — SymbolClient.tsx stopped publishing its own request`);
+    throw new Error(`the page did not declare ${name} â SymbolClient.tsx stopped publishing its own request`);
   }
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -105,9 +106,9 @@ function requiredNumberAttribute(value: string | null, name: string): number {
   return parsed;
 }
 
-/** `fetch` com UMA retentativa, e só em erro de transporte — mesma razão medida que
- * `08-symbol-dado-real.spec.ts` documenta (`undici` reaproveita a conexão que um worker que
- * acabou de responder `500` já fechou). Nenhuma asserção é afrouxada: qualquer resposta HTTP,
+/** `fetch` com UMA retentativa, e sÃ³ em erro de transporte â mesma razÃ£o medida que
+ * `08-symbol-dado-real.spec.ts` documenta (`undici` reaproveita a conexÃ£o que um worker que
+ * acabou de responder `500` jÃ¡ fechou). Nenhuma asserÃ§Ã£o Ã© afrouxada: qualquer resposta HTTP,
  * de qualquer status, volta intacta. */
 async function fetchWithOneRetry(url: string): Promise<Response> {
   try {
@@ -141,7 +142,7 @@ async function fetchSeriesHistory(
   });
   const response = await fetchWithOneRetry(`${apiBaseUrl()}/series-history?${query.toString()}`);
   // Corpo lido como TEXTO primeiro: uma rota que recusa responde `Internal Server Error`, e
-  // `response.json()` viraria `SyntaxError` — escondendo o status que o chamador precisa julgar.
+  // `response.json()` viraria `SyntaxError` â escondendo o status que o chamador precisa julgar.
   const raw = await response.text();
   let rows: readonly HistoryRow[];
   try {
@@ -152,17 +153,17 @@ async function fetchSeriesHistory(
   return { status: response.status, rows };
 }
 
-/** Este deployment tem reader de janela de `md.series`? Perguntado À PRÓPRIA API, nunca a uma
- * variável de ambiente — env var aqui seria allowlist disfarçada ("entrada de allowlist é
- * indistinguível de bypass", `CLAUDE.md`). `/ready` publica `store.path`, e `ADR-034/D9` não dá
- * fallback sqlite para `md.series`. Mesma função de `08`, transcrita pelo mesmo motivo de
- * carregamento de módulo que o cabeçalho explica. */
+/** Este deployment tem reader de janela de `md.series`? Perguntado Ã PRÃPRIA API, nunca a uma
+ * variÃ¡vel de ambiente â env var aqui seria allowlist disfarÃ§ada ("entrada de allowlist Ã©
+ * indistinguÃ­vel de bypass", `CLAUDE.md`). `/ready` publica `store.path`, e `ADR-034/D9` nÃ£o dÃ¡
+ * fallback sqlite para `md.series`. Mesma funÃ§Ã£o de `08`, transcrita pelo mesmo motivo de
+ * carregamento de mÃ³dulo que o cabeÃ§alho explica. */
 async function seriesWindowReaderPresent(): Promise<boolean> {
   const response = await fetchWithOneRetry(`${apiBaseUrl()}/ready`);
   const body = (await response.json()) as { store?: { path?: string } };
   const storePath = body.store?.path;
   if (typeof storePath !== "string") {
-    throw new Error(`GET /ready did not publish store.path — cannot tell which engine this API composed`);
+    throw new Error(`GET /ready did not publish store.path â cannot tell which engine this API composed`);
   }
   return !storePath.endsWith(".sqlite3");
 }
@@ -175,7 +176,7 @@ async function loadRenderedRequest(page: Page): Promise<RenderedRequest> {
   const main = page.locator("main[data-window-start-ms]");
   await expect(
     main,
-    "a página não declara o próprio request (data-window-start-ms) — build anterior a esta wave?",
+    "a pÃ¡gina nÃ£o declara o prÃ³prio request (data-window-start-ms) â build anterior a esta wave?",
   ).toHaveCount(1);
   return {
     windowStartMs: requiredNumberAttribute(await main.getAttribute("data-window-start-ms"), "data-window-start-ms"),
@@ -187,33 +188,33 @@ async function loadRenderedRequest(page: Page): Promise<RenderedRequest> {
   };
 }
 
-/** Lê `data-cvd-present-points` EXIGINDO que ele exista e seja dígitos, antes de converter.
+/** LÃª `data-cvd-present-points` EXIGINDO que ele exista e seja dÃ­gitos, antes de converter.
  *
- * ⛔ A conversão vem depois da exigência, e a ordem é o ativo: `Number(null)` e `Number("")` são
- * ambos `0`, e `0` é exatamente o que a API serve no universo fraco ⇒ sem estas duas asserções
+ * â A conversÃ£o vem depois da exigÃªncia, e a ordem Ã© o ativo: `Number(null)` e `Number("")` sÃ£o
+ * ambos `0`, e `0` Ã© exatamente o que a API serve no universo fraco â sem estas duas asserÃ§Ãµes
  * o `expect(dom).toBe(api)` compara `0 === 0` e fica verde com o contrato APAGADO do DOM. */
 async function readPresentPoints(page: Page): Promise<number> {
   const pane = page.locator(`[data-testid="${CVD_PANE_TESTID}"]`);
-  await expect(pane, `o painel de CVD não existe no DOM sob [data-testid="${CVD_PANE_TESTID}"]`).toHaveCount(1);
+  await expect(pane, `o painel de CVD nÃ£o existe no DOM sob [data-testid="${CVD_PANE_TESTID}"]`).toHaveCount(1);
   const raw = await pane.getAttribute("data-cvd-present-points");
   expect(
     raw,
-    "a página parou de publicar `data-cvd-present-points` — sem o atributo não há o que comparar " +
-      "com a API, e `Number(null) === 0` faria esta asserção passar sobre um DOM sem contrato",
+    "a pÃ¡gina parou de publicar `data-cvd-present-points` â sem o atributo nÃ£o hÃ¡ o que comparar " +
+      "com a API, e `Number(null) === 0` faria esta asserÃ§Ã£o passar sobre um DOM sem contrato",
   ).not.toBeNull();
   expect(
     raw ?? "",
-    "`data-cvd-present-points` tem de ser uma contagem em dígitos; vazio vira 0 em `Number()`",
+    "`data-cvd-present-points` tem de ser uma contagem em dÃ­gitos; vazio vira 0 em `Number()`",
   ).toMatch(/^\d+$/);
   return Number(raw);
 }
 
-test(`o catálogo servido casa EXATAMENTE UMA linha de CVD para ${SYMBOL} (${SPEC})`, async () => {
+test(`o catÃ¡logo servido casa EXATAMENTE UMA linha de CVD para ${SYMBOL} (${SPEC})`, async () => {
   // O guarda de deriva do seletor. `cvd-series-selector.test.ts` roda contra um fixture
-  // TRANSCRITO de `cvd_source_catalog.py`; este teste roda contra o catálogo que a API sob teste
+  // TRANSCRITO de `cvd_source_catalog.py`; este teste roda contra o catÃ¡logo que a API sob teste
   // realmente serve. Se o backend acrescentar uma quinta linha `cvd_source` de `binance`/`NA`, o
-  // seletor passa a casar duas e `Array.prototype.find` escolhe uma delas em silêncio — que é a
-  // classe de defeito que só aparece na tela, semanas depois.
+  // seletor passa a casar duas e `Array.prototype.find` escolhe uma delas em silÃªncio â que Ã© a
+  // classe de defeito que sÃ³ aparece na tela, semanas depois.
   const entries = await fetchCatalogEntries();
   const forSymbol = entries.filter((entry) => entry.key.instrumentId === SYMBOL);
   const cvdSourceRows = forSymbol.filter((entry) => entry.key.metric === "cvd_source");
@@ -224,31 +225,31 @@ test(`o catálogo servido casa EXATAMENTE UMA linha de CVD para ${SYMBOL} (${SPE
 
   expect(
     matched.length,
-    `o filtro de três termos casou ${matched.length} linhas — DoD-3 lê um painel só, e ` +
+    `o filtro de trÃªs termos casou ${matched.length} linhas â DoD-3 lÃª um painel sÃ³, e ` +
       "`find` escolheria uma delas sem dizer qual",
   ).toBe(1);
-  // E a linha casada é a leitura DIRETA, não a reconstrução da Coinalyze: `T-02.1` mediu
+  // E a linha casada Ã© a leitura DIRETA, nÃ£o a reconstruÃ§Ã£o da Coinalyze: `T-02.1` mediu
   // `reconstructed_from=None` ANTES de a identidade ser gravada (`n=4.320` buckets, `276` runs
-  // divergentes, ZERO com resíduo). Uma reconstrução na tela sem banda de erro é o par `D6.9`
-  // quebrado, e seria invisível sem esta linha.
-  expect(matched[0]!.reconstructedFrom, "a linha escolhida não pode ser a reconstrução").toBeNull();
-  expect(matched[0]!.key.nature, "nature FLOW é o contrato em que SEM_PONTO se apoia").toBe("FLOW");
+  // divergentes, ZERO com resÃ­duo). Uma reconstruÃ§Ã£o na tela sem banda de erro Ã© o par `D6.9`
+  // quebrado, e seria invisÃ­vel sem esta linha.
+  expect(matched[0]!.reconstructedFrom, "a linha escolhida nÃ£o pode ser a reconstruÃ§Ã£o").toBeNull();
+  expect(matched[0]!.key.nature, "nature FLOW Ã© o contrato em que SEM_PONTO se apoia").toBe("FLOW");
   // ...e o filtro de UM termo, que seria "o mesmo filtro, mais simples", casaria as quatro.
   expect(
     cvdSourceRows.length,
-    "se houvesse só uma linha `cvd_source` no catálogo, o filtro de três termos seria indistinguível " +
-      "do de um termo e este arquivo não provaria nada sobre ele",
+    "se houvesse sÃ³ uma linha `cvd_source` no catÃ¡logo, o filtro de trÃªs termos seria indistinguÃ­vel " +
+      "do de um termo e este arquivo nÃ£o provaria nada sobre ele",
   ).toBeGreaterThan(1);
 });
 
-test(`o número de pontos do CvdPane é o da API, sobre a MESMA janela (${SPEC})`, async ({ page }) => {
+test(`o nÃºmero de pontos do CvdPane Ã© o da API, sobre a MESMA janela (${SPEC})`, async ({ page }) => {
   const request = await loadRenderedRequest(page);
-  // A grade da janela, derivada dos instantes que o SERVIDOR declarou no `<main>` — nunca do
-  // relógio deste processo, que correria contra o do render.
+  // A grade da janela, derivada dos instantes que o SERVIDOR declarou no `<main>` â nunca do
+  // relÃ³gio deste processo, que correria contra o do render.
   const windowGridSlots = (request.windowEndMsInclusive - request.windowStartMs) / 60_000 + 1;
   const entries = await fetchCatalogEntries();
   const cvdEntry = entries.find((entry) => entry.key.instrumentId === SYMBOL && isKlineTakerBuyCvd(entry.key));
-  expect(cvdEntry, `nenhuma linha kline_takerbuy no catálogo para ${SYMBOL}`).toBeDefined();
+  expect(cvdEntry, `nenhuma linha kline_takerbuy no catÃ¡logo para ${SYMBOL}`).toBeDefined();
 
   const seriesKeyId = computeSeriesKeyId(cvdEntry!.key);
   const { status, rows } = await fetchSeriesHistory(seriesKeyId, request);
@@ -261,22 +262,22 @@ test(`o número de pontos do CvdPane é o da API, sobre a MESMA janela (${SPEC})
   fact(SPEC, "cvd_series_history_rows", rows.length);
   fact(SPEC, "cvd_api_rows_with_value", apiPresent.length);
 
-  // ── (a) o contrato de DOM existe, e é lido ANTES de qualquer comparação ────────────────────
+  // ââ (a) o contrato de DOM existe, e Ã© lido ANTES de qualquer comparaÃ§Ã£o ââââââââââââââââââââ
   const domPresentPoints = await readPresentPoints(page);
   fact(SPEC, "cvd_dom_present_points", domPresentPoints);
 
-  // ── (b) a contagem da tela é a da API, exata ───────────────────────────────────────────────
+  // ââ (b) a contagem da tela Ã© a da API, exata âââââââââââââââââââââââââââââââââââââââââââââââ
   //
-  // Exata, não aproximada: os dois lados saíram da MESMA janela declarada, então divergir é
-  // defeito de wiring, não corrida. Total sobre os dois universos — no fraco a API serve `0` e a
-  // tela tem de servir `0` TAMBÉM PUBLICANDO o atributo, o que (a) já exigiu.
+  // Exata, nÃ£o aproximada: os dois lados saÃ­ram da MESMA janela declarada, entÃ£o divergir Ã©
+  // defeito de wiring, nÃ£o corrida. Total sobre os dois universos â no fraco a API serve `0` e a
+  // tela tem de servir `0` TAMBÃM PUBLICANDO o atributo, o que (a) jÃ¡ exigiu.
   expect(domPresentPoints).toBe(apiPresent.length);
 
-  // ── (c) o horizonte legível é DECLARADO, com os dois números ───────────────────────────────
+  // ââ (c) o horizonte legÃ­vel Ã© DECLARADO, com os dois nÃºmeros âââââââââââââââââââââââââââââââ
   //
-  // Sem encolher o vão: o denominador é a grade inteira da janela, não um sub-intervalo recortado
-  // em volta do dado. `[MEDIDO 2026-09-11]` só `769/5.761` grades da janela derivada carregam
-  // valor, e a primeira fica ~86% adentro — o CVD herda isso exatamente, porque é a mesma linha
+  // Sem encolher o vÃ£o: o denominador Ã© a grade inteira da janela, nÃ£o um sub-intervalo recortado
+  // em volta do dado. `[MEDIDO 2026-09-11]` sÃ³ `769/5.761` grades da janela derivada carregam
+  // valor, e a primeira fica ~86% adentro â o CVD herda isso exatamente, porque Ã© a mesma linha
   // do mesmo coletor (`ACHADO-BACKFILL-INVISIVEL-AO-AS-OF.md`).
   const pane = page.locator(`[data-testid="${CVD_PANE_TESTID}"]`);
   const horizon = pane.locator('[data-fact^="cvd_readable_horizon:"]');
@@ -284,46 +285,46 @@ test(`o número de pontos do CvdPane é o da API, sobre a MESMA janela (${SPEC})
   const horizonFact = await horizon.getAttribute("data-fact");
   fact(SPEC, "cvd_readable_horizon_fact", horizonFact);
   fact(SPEC, "cvd_window_grid_slots", windowGridSlots);
-  // ⚠️ O DENOMINADOR É A GRADE DA JANELA, NÃO `rows.length`, E A DIFERENÇA É O PRÓPRIO PONTO.
+  // â ï¸ O DENOMINADOR Ã A GRADE DA JANELA, NÃO `rows.length`, E A DIFERENÃA Ã O PRÃPRIO PONTO.
   // O sub-eixo de Volume monta os slots a partir das LINHAS da API (`volumeSlotsFromHistoryRows`),
-  // então lá os dois números coincidem e `08` pode comparar contra `rows.length`. O CVD passa por
-  // `buildCvdPanel`, que alinha os deltas na grade canônica da JANELA — então quando a API recusa
-  // (universo fraco, `rows = []`) o painel continua declarando `0/5760`, e é isso que ele deve
-  // declarar: a janela não encolheu porque o backend não respondeu. Assertar `0/0` aqui exigiria
-  // que a tela ESCONDESSE o vão, que é exatamente o oposto do que `RN-1` pede.
+  // entÃ£o lÃ¡ os dois nÃºmeros coincidem e `08` pode comparar contra `rows.length`. O CVD passa por
+  // `buildCvdPanel`, que alinha os deltas na grade canÃ´nica da JANELA â entÃ£o quando a API recusa
+  // (universo fraco, `rows = []`) o painel continua declarando `0/5760`, e Ã© isso que ele deve
+  // declarar: a janela nÃ£o encolheu porque o backend nÃ£o respondeu. Assertar `0/0` aqui exigiria
+  // que a tela ESCONDESSE o vÃ£o, que Ã© exatamente o oposto do que `RN-1` pede.
   expect(horizonFact).toBe(`cvd_readable_horizon:${apiPresent.length}/${windowGridSlots}`);
   const sinceMs = await horizon.getAttribute("data-readable-since-ms");
   fact(SPEC, "cvd_readable_since_ms", sinceMs);
   expect(sinceMs).toBe(apiPresent.length === 0 ? "" : String(apiPresent[0]!.event_time));
 
-  // ── (d) a âncora do acumulado está na tela, e é a que o servidor declarou ───────────────────
+  // ââ (d) a Ã¢ncora do acumulado estÃ¡ na tela, e Ã© a que o servidor declarou âââââââââââââââââââ
   //
-  // `delta` é âncora-livre; `cumulativo` é uma VIEW cujo sinal do total muda com a âncora
-  // (`D4.7`). Uma curva acumulada sem âncora dita não é legível, e herdá-la em silêncio do
-  // default de `charts` é o mesmo que não ter escolhido.
+  // `delta` Ã© Ã¢ncora-livre; `cumulativo` Ã© uma VIEW cujo sinal do total muda com a Ã¢ncora
+  // (`D4.7`). Uma curva acumulada sem Ã¢ncora dita nÃ£o Ã© legÃ­vel, e herdÃ¡-la em silÃªncio do
+  // default de `charts` Ã© o mesmo que nÃ£o ter escolhido.
   const anchor = pane.locator('[data-fact^="cvd_cumulative_anchor:"]');
   await expect(anchor).toHaveCount(1);
   const anchorFact = await anchor.getAttribute("data-fact");
   fact(SPEC, "cvd_cumulative_anchor_fact", anchorFact);
   expect(anchorFact).toBe(`cvd_cumulative_anchor:${request.windowStartMs}`);
 
-  // ── (d2) `DR-3`: o ACUMULADO tem leitura numérica, e ela é do mesmo TIPO que a do delta ────
+  // ââ (d2) `DR-3`: o ACUMULADO tem leitura numÃ©rica, e ela Ã© do mesmo TIPO que a do delta ââââ
   //
-  // O design-review de 2026-09-12 bloqueou o painel por isto: ele desenhava DUAS séries e lia
-  // exatamente UMA. A tela declarava a âncora do acumulado (`D4.7`, logo acima) e nunca dizia
-  // qual valor tinha sido ancorado — "há uma série renderizada sem nenhum falsificador de DOM
+  // O design-review de 2026-09-12 bloqueou o painel por isto: ele desenhava DUAS sÃ©ries e lia
+  // exatamente UMA. A tela declarava a Ã¢ncora do acumulado (`D4.7`, logo acima) e nunca dizia
+  // qual valor tinha sido ancorado â "hÃ¡ uma sÃ©rie renderizada sem nenhum falsificador de DOM
   // sobre o seu valor".
   //
-  // ⛔ E A ASSERÇÃO É DE ACORDO ENTRE OS DOIS READOUTS, não "existe um <p>". `cvdCumulativeScaled`
-  // (`charts/s2-cvd.ts:176-193`) acumula SÓ sobre bucket presente, a partir de `anchorMs`, e a
-  // âncora é `window.startMs` ⇒ o slot do acumulado é presente **se e somente se** o do delta é.
-  // Logo os dois `kind` têm de ser o MESMO, nos dois universos. Um acumulado que diga um número
-  // onde o delta diz `SEM_PONTO` é uma soma corrida inventada sobre um bucket sem observação,
-  // que é o defeito de `RN-1` uma série ao lado.
+  // â E A ASSERÃÃO Ã DE ACORDO ENTRE OS DOIS READOUTS, nÃ£o "existe um <p>". `cvdCumulativeScaled`
+  // (`charts/s2-cvd.ts:176-193`) acumula SÃ sobre bucket presente, a partir de `anchorMs`, e a
+  // Ã¢ncora Ã© `window.startMs` â o slot do acumulado Ã© presente **se e somente se** o do delta Ã©.
+  // Logo os dois `kind` tÃªm de ser o MESMO, nos dois universos. Um acumulado que diga um nÃºmero
+  // onde o delta diz `SEM_PONTO` Ã© uma soma corrida inventada sobre um bucket sem observaÃ§Ã£o,
+  // que Ã© o defeito de `RN-1` uma sÃ©rie ao lado.
   const cumulativeReadout = pane.locator('[data-fact^="cvd_cumulative_last_reading:"]');
   await expect(
     cumulativeReadout,
-    "o acumulado do CVD tem de ter leitura numérica no DOM — sem ela a tela declara a âncora e nunca diz o valor " +
+    "o acumulado do CVD tem de ter leitura numÃ©rica no DOM â sem ela a tela declara a Ã¢ncora e nunca diz o valor " +
       "ancorado (DR-3 do design-review de 2026-09-12)",
   ).toHaveCount(1);
   const cumulativeKind = (await cumulativeReadout.getAttribute("data-fact"))?.split(":")[1] ?? "";
@@ -340,7 +341,7 @@ test(`o número de pontos do CvdPane é o da API, sobre a MESMA janela (${SPEC})
     expect(cumulativeText).toMatch(/\d/);
   }
 
-  // ── (d3) `DR-3`/WCAG 1.4.1: as duas linhas são NOMEADAS, não distinguidas só por cor ───────
+  // ââ (d3) `DR-3`/WCAG 1.4.1: as duas linhas sÃ£o NOMEADAS, nÃ£o distinguidas sÃ³ por cor âââââââ
   const legend = pane.locator('[data-fact="cvd_legend:2"]');
   await expect(legend).toHaveCount(1);
   const legendText = (await legend.textContent())?.trim() ?? "";
@@ -348,30 +349,30 @@ test(`o número de pontos do CvdPane é o da API, sobre a MESMA janela (${SPEC})
   expect(legendText).toContain("Delta");
   expect(legendText).toContain("Acumulado");
 
-  // ── (e) o veredito por universo ────────────────────────────────────────────────────────────
+  // ââ (e) o veredito por universo ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   if (!readerPresent) {
-    // A API acabou de declarar, sobre si mesma, que compôs o engine sqlite — que `ADR-034/D9` não
-    // dá reader de `md.series`. A asserção que SIGNIFICA algo aqui é a oposta: a rota tem de
+    // A API acabou de declarar, sobre si mesma, que compÃ´s o engine sqlite â que `ADR-034/D9` nÃ£o
+    // dÃ¡ reader de `md.series`. A asserÃ§Ã£o que SIGNIFICA algo aqui Ã© a oposta: a rota tem de
     // RECUSAR alto, nunca responder `200` com uma grade inventada, e a tela tem de dizer a
-    // ausência com o token, nunca com um número.
+    // ausÃªncia com o token, nunca com um nÃºmero.
     expect(status, "sem window reader a rota tem de RECUSAR, nunca responder 200 com grade inventada").toBe(500);
     expect(apiPresent).toHaveLength(0);
     const readoutText = (await pane.locator('[data-fact^="cvd_last_reading:"]').textContent())?.trim() ?? "";
     fact(SPEC, "cvd_last_reading_text", readoutText);
     expect(readoutText).toContain(ABSENCE_TOKEN);
-    // ⛔ `RN-1` literal: nenhum dígito onde não há observação. Um `0` aqui seria a afirmação "não
-    // houve desequilíbrio comprador/vendedor neste minuto", feita a partir de ignorância.
+    // â `RN-1` literal: nenhum dÃ­gito onde nÃ£o hÃ¡ observaÃ§Ã£o. Um `0` aqui seria a afirmaÃ§Ã£o "nÃ£o
+    // houve desequilÃ­brio comprador/vendedor neste minuto", feita a partir de ignorÃ¢ncia.
     expect(readoutText).not.toMatch(/\d/);
     return;
   }
 
-  // ── UNIVERSO FORTE: o item 3 do DoD-VERTICAL ───────────────────────────────────────────────
+  // ââ UNIVERSO FORTE: o item 3 do DoD-VERTICAL âââââââââââââââââââââââââââââââââââââââââââââââ
   expect(status).toBe(200);
-  // Uma linha por instante da grade, presente ou ausente — `rows.length` sozinho NÃO é evidência
-  // de dado (`build_series_history_report` percorre a grade inteira); é evidência de que a grade
-  // pedida é a grade devolvida.
+  // Uma linha por instante da grade, presente ou ausente â `rows.length` sozinho NÃO Ã© evidÃªncia
+  // de dado (`build_series_history_report` percorre a grade inteira); Ã© evidÃªncia de que a grade
+  // pedida Ã© a grade devolvida.
   expect(rows.length).toBe(windowGridSlots);
-  // Ausência DECLARADA, nunca implícita: toda linha sem valor nomeia o motivo.
+  // AusÃªncia DECLARADA, nunca implÃ­cita: toda linha sem valor nomeia o motivo.
   expect(rows.filter((row) => row.value === null && row.absence === null)).toHaveLength(0);
 
   // `DoD-3`: `N >= 30` grades DISTINTAS com valor, lidas do DOM.
@@ -379,25 +380,25 @@ test(`o número de pontos do CvdPane é o da API, sobre a MESMA janela (${SPEC})
     domPresentPoints,
     `DoD-3 pede N >= ${MINIMUM_DISTINCT_POINTS} pontos distintos no CvdPane; a tela declara ${domPresentPoints}`,
   ).toBeGreaterThanOrEqual(MINIMUM_DISTINCT_POINTS);
-  // ...e o painel NÃO está no estado todo-ausente: com `N > 0`, o horizonte legível tem começo.
-  expect(sinceMs, "com pontos na janela o horizonte legível tem de ter um começo").not.toBe("");
+  // ...e o painel NÃO estÃ¡ no estado todo-ausente: com `N > 0`, o horizonte legÃ­vel tem comeÃ§o.
+  expect(sinceMs, "com pontos na janela o horizonte legÃ­vel tem de ter um comeÃ§o").not.toBe("");
 
-  // A leitura atual, comparada nos DOIS sentidos contra a API no último instante da janela.
+  // A leitura atual, comparada nos DOIS sentidos contra a API no Ãºltimo instante da janela.
   const apiLast = rows.find((row) => row.event_time === request.windowEndMsInclusive);
   const readoutText = (await pane.locator('[data-fact^="cvd_last_reading:"]').textContent())?.trim() ?? "";
   fact(SPEC, "cvd_api_last_instant_value", apiLast?.value ?? null);
   fact(SPEC, "cvd_last_reading_text", readoutText);
   if (apiLast?.value == null) {
-    // Ausência REAL no último instante, e ela é NORMAL, não falha: a cauda de publicação deste
-    // endpoint passa de um passo de grade (máx medido 267 s, n=804 —
-    // `ACHADO-FLOW-COM-ATRASO-MAIOR-QUE-A-GRADE.md`). O que `RN-1` proíbe é o que ela NÃO pode
-    // dizer. ⚠️ É por isso que "não diz SEM_PONTO" do `DoD-3` é asserido sobre o HORIZONTE
-    // (acima) e não sobre esta leitura: exigir um número no último minuto reprovaria a
-    // implementação correta.
+    // AusÃªncia REAL no Ãºltimo instante, e ela Ã© NORMAL, nÃ£o falha: a cauda de publicaÃ§Ã£o deste
+    // endpoint passa de um passo de grade (mÃ¡x medido 267 s, n=804 â
+    // `ACHADO-FLOW-COM-ATRASO-MAIOR-QUE-A-GRADE.md`). O que `RN-1` proÃ­be Ã© o que ela NÃO pode
+    // dizer. â ï¸ Ã por isso que "nÃ£o diz SEM_PONTO" do `DoD-3` Ã© asserido sobre o HORIZONTE
+    // (acima) e nÃ£o sobre esta leitura: exigir um nÃºmero no Ãºltimo minuto reprovaria a
+    // implementaÃ§Ã£o correta.
     expect(readoutText).toContain(ABSENCE_TOKEN);
     expect(readoutText).not.toMatch(/\d/);
   } else {
-    // A API sabe o valor deste instante ⇒ a tela mostra ESSE número e NÃO diz SEM_PONTO.
+    // A API sabe o valor deste instante â a tela mostra ESSE nÃºmero e NÃO diz SEM_PONTO.
     expect(readoutText).not.toContain(ABSENCE_TOKEN);
     expect(readoutText).toContain(String(Number(apiLast.value)));
   }

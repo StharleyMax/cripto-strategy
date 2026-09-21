@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SYMBOL_CLIENT_PATH = path.join(HERE, "SymbolClient.tsx");
-const PAGE_PATH = path.join(HERE, "page.tsx");
+const PAGE_PATH = path.join(HERE, "[symbol]", "page.tsx");
 const source = readFileSync(SYMBOL_CLIENT_PATH, "utf8");
 const pageSource = readFileSync(PAGE_PATH, "utf8");
 

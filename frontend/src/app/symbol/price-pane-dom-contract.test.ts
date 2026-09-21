@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
-const pageSource = readFileSync(path.join(HERE, "page.tsx"), "utf8");
+const pageSource = readFileSync(path.join(HERE, "[symbol]", "page.tsx"), "utf8");
 
 /** `page.tsx` with every comment removed — the asserts below ask what the CODE does, and this
  * file's route documents the retired scalar price series in prose. Same crude stripper, same
@@ -57,13 +57,13 @@ test("the route resolves the FOUR klines_ohlc reductions, by identity, through t
   for (const reduction of ["OPEN", "HIGH", "LOW", "CLOSE"]) {
     assert.match(
       pageCode,
-      new RegExp(`resolveOhlcCatalogEntry\\(catalog, catalogStatus, "${reduction}"\\)`),
+      new RegExp(`resolveOhlcCatalogEntry\\(catalog, catalogStatus, routeSymbol, "${reduction}"\\)`),
       `the route does not resolve ${reduction} — a candle missing one reading is a candle nobody can draw`,
     );
   }
   assert.match(
     pageCode,
-    /resolveCatalogEntry\(catalog, \(entry\) => matchesKlinesOhlc\(entry\.key, reduction\)\)/,
+    /resolveCatalogEntry\(catalog, symbol, \(entry\) => matchesKlinesOhlc\(entry\.key, reduction\)\)/,
     "the four must resolve by metric + provider + reduction, never by metric alone",
   );
 });
@@ -104,7 +104,7 @@ test("the price panel degrades on ALL FOUR statuses, never on one of them", () =
 test("the retired scalar price series is NOT fetched any more — it only opens the live stream", () => {
   assert.match(
     pageCode,
-    /price: buildLiveUrl\(baseUrl, resolvedEntry\(priceLiveStreamResolution\)\)/,
+    /price: buildLiveUrl\(baseUrl, routeSymbol, resolvedEntry\(priceLiveStreamResolution\)\)/,
     "the live-stream row keeps its own resolution, named for what it is",
   );
   assert.ok(

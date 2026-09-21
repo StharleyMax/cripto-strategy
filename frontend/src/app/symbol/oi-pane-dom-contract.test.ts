@@ -48,7 +48,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
-const pageSource = readFileSync(path.join(HERE, "page.tsx"), "utf8");
+const pageSource = readFileSync(path.join(HERE, "[symbol]", "page.tsx"), "utf8");
 
 /** `page.tsx` with every comment removed — block first, then line. Needed because the asserts
  * below ask whether a RETIRED SELECTOR is gone from the CODE, and `page.tsx`'s header now
@@ -72,7 +72,7 @@ const WIRE_POINTS_ATTRIBUTE = /data-oi-wire-points=\{oi\.wirePoints\}/;
 const FRESHNESS_FACT = /data-fact=\{`oi_freshness:\$\{freshness\.kind\}`\}/;
 const FRESHNESS_RENDERED = /<OiFreshness oi=\{oi\} \/>/;
 /** `page.tsx`: the three-term predicate, CALLED. */
-const PAGE_OI_SELECTOR = /resolveCatalogEntry\(catalog, \(entry\) => matchesBinanceOpenInterest\(entry\.key\)\)/;
+const PAGE_OI_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesBinanceOpenInterest\(entry\.key\)\)/;
 /** `page.tsx`: the native count comes off the PANEL's 5-minute grid, never off the wire rows. */
 const PAGE_NATIVE_COUNT = /nativeBars: countPresentSlots\(oiGridSlots\)/;
 const PAGE_OI_GRID_SOURCE = /const oiGridSlots = panels\.oi\.slots;/;
@@ -261,7 +261,7 @@ test("the selector defect is GONE from the route, both halves of it", () => {
   // helper (and inlining `find` for the four) cannot leave the count above looking healthy.
   assert.match(
     pageCode,
-    /function resolveOhlcCatalogEntry\([\s\S]*?resolveCatalogEntry\(catalog, \(entry\) => matchesKlinesOhlc\(entry\.key, reduction\)\)/,
+    /function resolveOhlcCatalogEntry\([\s\S]*?resolveCatalogEntry\(catalog, symbol, \(entry\) => matchesKlinesOhlc\(entry\.key, reduction\)\)/,
     "the four klines_ohlc rows must resolve by identity (metric + provider + reduction), through the same refusal",
   );
 });

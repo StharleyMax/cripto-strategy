@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
-const pageSource = readFileSync(path.join(HERE, "page.tsx"), "utf8");
+const pageSource = readFileSync(path.join(HERE, "[symbol]", "page.tsx"), "utf8");
 
 /** `page.tsx` with every comment removed — block first, then line. Needed because the asserts below
  * ask whether a RETIRED shape is gone from the CODE, and `page.tsx`'s comments quote the shapes they
@@ -76,8 +76,8 @@ const PUBLISHED_ERROR_ATTRIBUTE = /data-published-error=\{/;
 const PROVENANCE_RENDERED = /<LiquidationProvenance provenance=\{liquidation\.provenance\} \/>/;
 
 /** `page.tsx`: the two cohort selectors, CALLED, each with its own leg. */
-const PAGE_LONG_SELECTOR = /resolveCatalogEntry\(catalog, \(entry\) => matchesLiquidationCohort\(entry\.key, "long"\)\)/;
-const PAGE_SHORT_SELECTOR = /resolveCatalogEntry\(catalog, \(entry\) => matchesLiquidationCohort\(entry\.key, "short"\)\)/;
+const PAGE_LONG_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesLiquidationCohort\(entry\.key, "long"\)\)/;
+const PAGE_SHORT_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesLiquidationCohort\(entry\.key, "short"\)\)/;
 /** `page.tsx`: the provenance is RESOLVED from the catalog row, never spelled as a literal. */
 const PAGE_PROVENANCE = /provenance: resolveSeriesProvenance\(liquidationEntry\)/;
 /** `page.tsx`: the two statuses are two, so one live cohort cannot vouch for a dead one. */

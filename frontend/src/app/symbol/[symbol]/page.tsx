@@ -1,14 +1,41 @@
 /**
- * `T-02.4`, `ADR-034/D8` — the `/symbol` route: BTCUSDT, Preço + OI + CVD (delta e acumulado),
+ * `T-02.4`, `ADR-034/D8` — the `/symbol/[symbol]` route: Preço + OI + CVD (delta e acumulado),
  * 4 dias (`plano 02` itens `2.4`+`2.5`), Server Component (`async`, no `"use client"`,
  * `ADR-005/D5`).
+ *
+ * `T-02.5` — THE SEGMENT IS DYNAMIC NOW. The route used to be the static `frontend/src/app/
+ * symbol/page.tsx`, hardcoded to the `SYMBOL` constant `charts` exports (`"BTCUSDT"`,
+ * `s2-panels.ts`). `CLAUDE.md`'s language-boundary table row 12 (`[PREMISSA-OWNER:
+ * 2026-09-08]`, "rotas em ingles") plus `[DECISÃO-OWNER: 2026-09-19]` ("`/symbol/[symbol]`
+ * NESTA feature, não em feature futura — vai entrar muita coisa ali ainda") fix the shape;
+ * `[M-7]` left the exact segment name to `/architect` + `frontend-architect`, and it stays
+ * `symbol` — the same noun the route's own folder already carried, so the URL reads as
+ * "`/symbol/<instrument>`" rather than inventing a second noun for the same concept.
+ *
+ * ⛔ THIS FILE MOVED, THE SIBLINGS DID NOT. `SymbolClient.tsx`, `view-model.ts`,
+ * `series-history-client.ts`, `request-window.ts` and `panel-status.ts` stay at
+ * `frontend/src/app/symbol/` — only `page.tsx` (the one file Next's router treats specially)
+ * lives one level deeper, inside `[symbol]/`. Moving the whole directory would have meant
+ * every one of those modules AND their co-located `.test.ts` files re-import each other with
+ * a path that says nothing about the router; moving only the router's own entry point keeps
+ * every existing relative import between the siblings intact and costs one extra `../` on
+ * THIS file's imports alone.
+ *
+ * ⛔ THE ROUTE NOW VALIDATES THE SEGMENT AGAINST A KNOWN UNIVERSE, IT DOES NOT TRUST IT
+ * BLINDLY. `PILOT_SYMBOLS` below is the same four-instrument set the backend already commits
+ * to as its pilot universe (`backend/src/modules/sentimento/domain/
+ * availability_probe_set.py::AVAILABILITY_PROBE_SYMBOLS`, read — never re-derived, `backend/`
+ * being off limits per `CLAUDE.md`). A segment outside that set calls `notFound()` — a `404`,
+ * not a `200` page quietly showing six absent panels for an instrument nobody ever catalogued.
+ * That is the same posture `resolveCatalogEntry`'s own header takes for an ambiguous catalog
+ * match: refuse rather than guess.
  *
  * ── THE PIPELINE, IN ORDER ───────────────────────────────────────────────────────────────────
  *
  *   1. `GET /series-catalog` (reused from `features/s3-inspector/series-catalog-query.ts` —
  *      the SAME query `/console` already makes; not duplicated here) — its wire carries the
- *      15 raw `SeriesKey` terms for every cataloged series, BTCUSDT included, but no
- *      `series_key_id` of its own (`view-model.ts`'s own comment on `computeSeriesKeyId`).
+ *      15 raw `SeriesKey` terms for every cataloged series, the route's symbol included, but
+ *      no `series_key_id` of its own (`view-model.ts`'s own comment on `computeSeriesKeyId`).
  *   2. For each of the 3 panels PLUS the volume sub-axis of the price panel (`T-01.7`,
  *      `SPEC-007 §3.6` — `klines_volume`, `1m`, cataloged by `T-01.6`), find the ONE catalog
  *      entry that matches (symbol + a per-series selector, below), recompute its `series_key_id`
@@ -25,7 +52,7 @@
  *   3. Map the rows into `RawCandle[]`/`ScalarPoint[]`/`ScaledCvdDeltaInput[]`
  *      (`view-model.ts`) and call `buildS2Panels` (the barrel) to get the 3 panels; volume is
  *      mapped separately (`volumeSlotsFromHistoryRows`) because it is a sub-axis, not a panel.
- *   4. Hand `{ panels, priceCandles, volume, cvd, panelStatus, liveUrls }` to
+ *   4. Hand `{ panels, priceCandles, volume, cvd, panelStatus, liveUrls, symbol }` to
  *      `SymbolClient.tsx` by props.
  *
  * ⚠️ THE LIST ABOVE SAYS "3 panels" BECAUSE `buildS2Panels` BUILDS THREE. The route now resolves
@@ -37,6 +64,15 @@
  * so each is mapped from the route's own wire grid and degrades on its own status. Their sections
  * are at the bottom of this file, each with the argument for why it is not a fourth member of
  * `S2Panels`.
+ *
+ * ⛔ `buildS2Panels`/`S2Panels.symbol` STAYS THE `charts` CONSTANT (`"BTCUSDT"`) — untouched by
+ * this task. Widening THAT signature to take a symbol argument would be a change to a `charts`
+ * export this task (`components = ["web"]`) does not own, and every `charts` fixture test
+ * (`s2-panels.test.ts`, `s2-axis-integration.test.ts`, `s2-absence-policy.test.ts`) reads real
+ * BTCUSDT CSVs keyed off that same constant. The route therefore NEVER reads `panels.symbol` for
+ * display — `SymbolClient` takes the route's own resolved symbol as an explicit prop instead
+ * (see its own comment on the `symbol` prop), the same "no silent default" discipline `priceUse`
+ * and `window` already follow in `S2RawInputs`.
  *
  * ⛔ ELEVEN CATALOG LOOKUPS, TEN FETCHES: `priceUse === S2_PRICE_USE` (`klines_last`) is still
  * RESOLVED, and deliberately NOT fetched — it feeds the live-stream URL of the price readout and
@@ -75,33 +111,35 @@
  *
  * `dynamic = "force-dynamic"`: same reasoning `console/page.tsx` documents in full — this
  * route's transports throw synchronously on a missing `INGEST_HEALTH_API_BASE_URL` BEFORE any
- * `fetch` call, which would otherwise let `next build` bake a stale static error page.
+ * `fetch` call, which would otherwise let `next build` bake a stale static error page. It is
+ * also why no `generateStaticParams` is declared here: every request is already server-rendered
+ * on demand, so pre-listing the pilot symbols would buy nothing.
  */
 
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
 import {
   buildS2Panels,
   FIVE_MINUTES_MS,
   S2_PRICE_USE,
-  SYMBOL,
   type S2Panels,
   type S2RawInputs,
-} from "../../charts/index.ts";
+} from "../../../charts/index.ts";
 import {
   fetchSeriesCatalogProjectionViaHttp,
   TransportError,
   type SeriesCatalogProjection,
-} from "../../features/s3-inspector/series-catalog-query.ts";
-import type { SeriesCatalogEntry } from "../../features/s3-inspector/series-catalog.ts";
-import type { BarPolicy, HistoryRequestKey } from "../history-transport.ts";
-import { encodeLiveStreamOpenRequest, liveStreamUrl, type LiveStreamOpenRequest } from "../live-transport.ts";
+} from "../../../features/s3-inspector/series-catalog-query.ts";
+import type { SeriesCatalogEntry } from "../../../features/s3-inspector/series-catalog.ts";
+import type { BarPolicy, HistoryRequestKey } from "../../history-transport.ts";
+import { encodeLiveStreamOpenRequest, liveStreamUrl, type LiveStreamOpenRequest } from "../../live-transport.ts";
 import {
   fetchSeriesHistoryViaHttp,
   type SeriesHistoryRow,
-} from "./series-history-client.ts";
-import type { PanelStatus } from "./panel-status.ts";
-import { resolveRouteWindow, type RouteWindow } from "./request-window.ts";
+} from "../series-history-client.ts";
+import type { PanelStatus } from "../panel-status.ts";
+import { resolveRouteWindow, type RouteWindow } from "../request-window.ts";
 import {
   SymbolClient,
   type CvdPaneData,
@@ -111,7 +149,7 @@ import {
   type OiPaneData,
   type PriceCandleData,
   type VolumeSubAxisData,
-} from "./SymbolClient.tsx";
+} from "../SymbolClient.tsx";
 import {
   assembleOhlcCandles,
   computeSeriesKeyId,
@@ -139,7 +177,7 @@ import {
   slotsFrom,
   trailingAbsentSlots,
   type KlinesOhlcReduction,
-} from "./view-model.ts";
+} from "../view-model.ts";
 
 export const metadata: Metadata = {
   title: "cripto-strategy — Símbolo",
@@ -148,6 +186,32 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 const BAR_POLICY: BarPolicy = "final_only";
+
+/**
+ * `T-02.5` — the pilot instrument universe, transcribed (never re-derived) from
+ * `backend/src/modules/sentimento/domain/availability_probe_set.py::AVAILABILITY_PROBE_SYMBOLS`.
+ * A `[symbol]` segment outside this set is a `404`, not a `200` page over a catalog that never
+ * carried the instrument — the same "refuse rather than guess" posture `resolveCatalogEntry`
+ * already takes for an ambiguous match, applied one step earlier, at the route boundary itself.
+ */
+const PILOT_SYMBOLS = ["BTCUSDT", "ETHUSDT", "LINKUSDT", "SOLUSDT"] as const;
+type PilotSymbol = (typeof PILOT_SYMBOLS)[number];
+
+function isPilotSymbol(candidate: string): candidate is PilotSymbol {
+  return (PILOT_SYMBOLS as readonly string[]).includes(candidate);
+}
+
+// ⛔ `const OI_METRIC = "sum_open_interest"` USED TO LIVE HERE, AND IT WAS THE WHOLE SELECTOR.
+// `T-03.5` retired it: the metric is one of THREE terms now and all three live in
+// `view-model.ts::matchesBinanceOpenInterest`, where a `node --test` suite can execute them
+// against a fixture that carries all five rows of this metric. Leaving the constant here would
+// leave a second, weaker way to spell the same selection one import away.
+/** `T-01.7` / `SPEC-007 §4`, row M1 — the volume SUB-AXIS of the price panel (§3.6), whose
+ * catalog entry `T-01.6` registered (`domain/klines_volume_catalog.py`, `metric` transcribed
+ * here, not re-derived). Its `interval` is `1m` (§4.1), the grid `/series-history` serves
+ * natively, so this request asks for exactly the same `interval` the other three do while the
+ * series behind it is the only one of the four with no ladder. */
+const VOLUME_METRIC = "klines_volume";
 
 /**
  * `T-04.8` — the TRAILING SUB-WINDOW the approved long/short form measures separately (*"ÚLTIMAS 4
@@ -162,17 +226,6 @@ const BAR_POLICY: BarPolicy = "final_only";
  * scale, not readable as geometry — so the number is how the operator reads it.
  */
 const LONG_SHORT_RECENT_SPAN_MS = 4 * 60 * 60_000;
-// ⛔ `const OI_METRIC = "sum_open_interest"` USED TO LIVE HERE, AND IT WAS THE WHOLE SELECTOR.
-// `T-03.5` retired it: the metric is one of THREE terms now and all three live in
-// `view-model.ts::matchesBinanceOpenInterest`, where a `node --test` suite can execute them
-// against a fixture that carries all five rows of this metric. Leaving the constant here would
-// leave a second, weaker way to spell the same selection one import away.
-/** `T-01.7` / `SPEC-007 §4`, row M1 — the volume SUB-AXIS of the price panel (§3.6), whose
- * catalog entry `T-01.6` registered (`domain/klines_volume_catalog.py`, `metric` transcribed
- * here, not re-derived). Its `interval` is `1m` (§4.1), the grid `/series-history` serves
- * natively, so this request asks for exactly the same `interval` the other three do while the
- * series behind it is the only one of the four with no ladder. */
-const VOLUME_METRIC = "klines_volume";
 
 /** What the catalog answered for ONE panel's selector — never a bare entry.
  *
@@ -199,22 +252,21 @@ type CatalogResolution =
  * matches more than one row RESOLVES TO NOTHING, with the count carried out, instead of
  * resolving to whichever row the catalog happens to list first.
  *
- * ⚠️ WHY THE SET IS SCANNED WHOLE INSTEAD OF SHORT-CIRCUITING: the cost of `filter` over `find`
- * here is one pass over 44 entries (`GET /series-catalog` `n_entries` at this SHA, 4 pilot
- * instruments x 11..13 rows), and the whole point is to KNOW there was a second match. A
- * short-circuit is precisely the optimization that made the defect unobservable.
+ * `symbol` is now a PARAMETER (`T-02.5`), never a module constant — the route serves one of
+ * `PILOT_SYMBOLS` per request, so the predicate that used to close over `SYMBOL` from `charts`
+ * takes the resolved segment explicitly, the same discipline `S2RawInputs.window` already
+ * follows for the same reason (no silent default two modules away).
  *
- * Measured over the catalog this route reads `[MEDIDO 2026-09-12: GET /api/v1/series-catalog,
- * n=13 linhas para BTCUSDT]` — the four selectors of this route match, respectively:
- * price `1` (`priceUse === "structure_detection"`), OI `1` (three terms; `metric` alone would be
- * `5`), CVD `1` (three terms; `metric` alone would be `4`), volume `1` (`klines_volume` is a
- * single row today). Every one of them is unique, and now that is ENFORCED rather than assumed.
+ * ⚠️ WHY THE SET IS SCANNED WHOLE INSTEAD OF SHORT-CIRCUITING: the cost of `filter` over `find`
+ * here is one pass over the catalog's own entries, and the whole point is to KNOW there was a
+ * second match. A short-circuit is precisely the optimization that made the defect unobservable.
  */
 function resolveCatalogEntry(
   catalog: SeriesCatalogProjection,
+  symbol: string,
   predicate: (entry: SeriesCatalogEntry) => boolean,
 ): CatalogResolution {
-  const matches = catalog.entries.filter((entry) => keyMatchesSymbol(entry.key, SYMBOL) && predicate(entry));
+  const matches = catalog.entries.filter((entry) => keyMatchesSymbol(entry.key, symbol) && predicate(entry));
   if (matches.length === 1) {
     return { kind: "found", entry: matches[0]! };
   }
@@ -240,10 +292,11 @@ function resolvedEntry(resolution: CatalogResolution): SeriesCatalogEntry | unde
 function resolveOhlcCatalogEntry(
   catalog: SeriesCatalogProjection,
   catalogStatus: PanelStatus,
+  symbol: string,
   reduction: KlinesOhlcReduction,
 ): CatalogResolution {
   return catalogStatus.kind === "ok"
-    ? resolveCatalogEntry(catalog, (entry) => matchesKlinesOhlc(entry.key, reduction))
+    ? resolveCatalogEntry(catalog, symbol, (entry) => matchesKlinesOhlc(entry.key, reduction))
     : CATALOG_UNAVAILABLE;
 }
 
@@ -265,9 +318,11 @@ function firstAbsentStatus(statuses: readonly PanelStatus[]): PanelStatus {
 
 /** `routeWindow` is PASSED IN, not read from a module constant: one clock reading serves the
  * whole render, so the four panels are guaranteed to be asking about the same window even if
- * the request straddles a bucket boundary. */
+ * the request straddles a bucket boundary. `symbol` is the route's resolved segment (`T-02.5`),
+ * threaded the same way. */
 async function fetchPanelRows(
   resolution: CatalogResolution,
+  symbol: string,
   routeWindow: RouteWindow,
 ): Promise<{ readonly rows: readonly SeriesHistoryRow[]; readonly status: PanelStatus }> {
   if (resolution.kind === "none") {
@@ -281,7 +336,7 @@ async function fetchPanelRows(
   const entry = resolution.entry;
   const key: HistoryRequestKey = {
     series_key_id: computeSeriesKeyId(entry.key),
-    symbol: SYMBOL,
+    symbol,
     interval: "1m",
     window_start_ms: routeWindow.window.startMs,
     window_end_ms: routeWindow.windowEndMsInclusive,
@@ -299,24 +354,39 @@ async function fetchPanelRows(
   }
 }
 
-/** Builds the 3 `LiveStreamOpenRequest` URLs (`../live-transport.ts`) for whichever panels DID
+/** Builds the 3 `LiveStreamOpenRequest` URLs (`../../live-transport.ts`) for whichever panels DID
  * resolve a `series_key_id` — `null` for a panel that stayed absent, since there is no series
  * to open a live stream for. Genuinely used (not decorative): `encodeLiveStreamOpenRequest`
- * validates the request before `SymbolClient` ever sees the URL. */
-function buildLiveUrl(baseUrl: string, entry: SeriesCatalogEntry | undefined): string | null {
+ * validates the request before `SymbolClient` ever sees the URL. `symbol` is the route's
+ * resolved segment (`T-02.5`), not the retired `charts` constant. */
+function buildLiveUrl(baseUrl: string, symbol: string, entry: SeriesCatalogEntry | undefined): string | null {
   if (entry === undefined) {
     return null;
   }
   const request: LiveStreamOpenRequest = {
     series_key_id: computeSeriesKeyId(entry.key),
-    symbol: SYMBOL,
+    symbol,
     interval: "1m",
   };
   encodeLiveStreamOpenRequest(request); // validates; throws on an incomplete request
   return liveStreamUrl(baseUrl, request).toString();
 }
 
-export default async function SymbolPage() {
+export default async function SymbolPage({
+  params,
+}: {
+  // Next 16 (like 15) hands dynamic params as a `Promise` in Server Components — awaited below,
+  // before the ONE clock reading this render takes (`routeWindow`).
+  readonly params: Promise<{ readonly symbol: string }>;
+}) {
+  const { symbol: rawSegment } = await params;
+  const routeSymbol = rawSegment.toUpperCase();
+  // `T-02.5` DoD: a segment outside the catalogued pilot universe is a `404`, never a `200`
+  // page over a symbol nothing was ever collected for.
+  if (!isPilotSymbol(routeSymbol)) {
+    notFound();
+  }
+
   // The ONE clock reading of this render. `Date.now()` is I/O and therefore lives here, in
   // `web`, and nowhere else — `request-window.ts`/`resolveTrailingWindow` take it as an
   // argument precisely so the window stays falsifiable at every instant.
@@ -343,7 +413,7 @@ export default async function SymbolPage() {
   // (it is a text readout of the last traded price, not a bar on the chart).
   const priceLiveStreamResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, (entry) => entry.priceUse === S2_PRICE_USE)
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => entry.priceUse === S2_PRICE_USE)
       : CATALOG_UNAVAILABLE;
   // `T-01.8` / `SPEC-008` §3.4 — FOUR resolutions, one per `Reduction`, never one "the candle"
   // selector. The four rows share `metric`, `provider`, `interval` and every other term of the
@@ -351,10 +421,10 @@ export default async function SymbolPage() {
   // identifies each of them and it is passed EXPLICITLY at each of the four call sites — a
   // helper that looped the four names here would be a fifth place for `HIGH` and `LOW` to swap.
   const ohlcResolutions = {
-    open: resolveOhlcCatalogEntry(catalog, catalogStatus, "OPEN"),
-    high: resolveOhlcCatalogEntry(catalog, catalogStatus, "HIGH"),
-    low: resolveOhlcCatalogEntry(catalog, catalogStatus, "LOW"),
-    close: resolveOhlcCatalogEntry(catalog, catalogStatus, "CLOSE"),
+    open: resolveOhlcCatalogEntry(catalog, catalogStatus, routeSymbol, "OPEN"),
+    high: resolveOhlcCatalogEntry(catalog, catalogStatus, routeSymbol, "HIGH"),
+    low: resolveOhlcCatalogEntry(catalog, catalogStatus, routeSymbol, "LOW"),
+    close: resolveOhlcCatalogEntry(catalog, catalogStatus, routeSymbol, "CLOSE"),
   };
   // `T-03.5` — the predicate is `view-model.ts`'s (three terms, each one named there with the
   // sibling row it excludes and the one that is redundant today said out loud). ⛔ It used to be
@@ -362,7 +432,7 @@ export default async function SymbolPage() {
   // in `md.series`: the measured defect of `handoff/T-03.5-T-03.6-FRONT.md` §2.
   const oiResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, (entry) => matchesBinanceOpenInterest(entry.key))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesBinanceOpenInterest(entry.key))
       : CATALOG_UNAVAILABLE;
   // `T-02.5` — the CVD panel now reads a series that EXISTS: `cvd_source`/`binance`/`NA`, the
   // `kline_takerbuy` row `T-02.3`'s collector publishes off the same `/fapi/v1/klines` array
@@ -371,11 +441,11 @@ export default async function SymbolPage() {
   // `metric === "cvd_source"` alone silently selects `aggtrade_q`, a series with no rows).
   const cvdResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, (entry) => matchesKlineTakerBuyCvd(entry.key))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesKlineTakerBuyCvd(entry.key))
       : CATALOG_UNAVAILABLE;
   const volumeResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, (entry) => entry.key.metric === VOLUME_METRIC)
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => entry.key.metric === VOLUME_METRIC)
       : CATALOG_UNAVAILABLE;
   // `T-05.9` — TWO resolutions, one per leg, and NEVER one that sums them. `cohort` is a term of
   // identity (`SPEC-001` §2.1) and `liquidation_catalog.py` publishes one row per leg on purpose:
@@ -384,11 +454,11 @@ export default async function SymbolPage() {
   // predicate is `view-model.ts`'s (three terms, each named there with the sibling row it excludes).
   const liquidationLongResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, (entry) => matchesLiquidationCohort(entry.key, "long"))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesLiquidationCohort(entry.key, "long"))
       : CATALOG_UNAVAILABLE;
   const liquidationShortResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, (entry) => matchesLiquidationCohort(entry.key, "short"))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesLiquidationCohort(entry.key, "short"))
       : CATALOG_UNAVAILABLE;
   // `T-04.5` — M3, the first NEW pane of this feature. TWO terms, both load-bearing, and the
   // predicate is `view-model.ts`'s (`metric` alone matches exactly 1 today, MEASURED there;
@@ -397,7 +467,7 @@ export default async function SymbolPage() {
   // `series_key.FORBIDDEN_METRIC_NAMES` refuses the generic name in code.
   const longShortResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, (entry) => matchesCountLongShortRatio(entry.key))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesCountLongShortRatio(entry.key))
       : CATALOG_UNAVAILABLE;
 
   const [
@@ -412,16 +482,16 @@ export default async function SymbolPage() {
     liquidationShortResult,
     longShortResult,
   ] = await Promise.all([
-    fetchPanelRows(ohlcResolutions.open, routeWindow),
-    fetchPanelRows(ohlcResolutions.high, routeWindow),
-    fetchPanelRows(ohlcResolutions.low, routeWindow),
-    fetchPanelRows(ohlcResolutions.close, routeWindow),
-    fetchPanelRows(oiResolution, routeWindow),
-    fetchPanelRows(cvdResolution, routeWindow),
-    fetchPanelRows(volumeResolution, routeWindow),
-    fetchPanelRows(liquidationLongResolution, routeWindow),
-    fetchPanelRows(liquidationShortResolution, routeWindow),
-    fetchPanelRows(longShortResolution, routeWindow),
+    fetchPanelRows(ohlcResolutions.open, routeSymbol, routeWindow),
+    fetchPanelRows(ohlcResolutions.high, routeSymbol, routeWindow),
+    fetchPanelRows(ohlcResolutions.low, routeSymbol, routeWindow),
+    fetchPanelRows(ohlcResolutions.close, routeSymbol, routeWindow),
+    fetchPanelRows(oiResolution, routeSymbol, routeWindow),
+    fetchPanelRows(cvdResolution, routeSymbol, routeWindow),
+    fetchPanelRows(volumeResolution, routeSymbol, routeWindow),
+    fetchPanelRows(liquidationLongResolution, routeSymbol, routeWindow),
+    fetchPanelRows(liquidationShortResolution, routeSymbol, routeWindow),
+    fetchPanelRows(longShortResolution, routeSymbol, routeWindow),
   ]);
 
   // The day list is the window's own (`utcDaysCovered`, derived in `charts`), never a literal.
@@ -708,13 +778,14 @@ export default async function SymbolPage() {
     baseUrl === undefined
       ? { price: null, oi: null, cvd: null }
       : {
-          price: buildLiveUrl(baseUrl, resolvedEntry(priceLiveStreamResolution)),
-          oi: buildLiveUrl(baseUrl, resolvedEntry(oiResolution)),
-          cvd: buildLiveUrl(baseUrl, resolvedEntry(cvdResolution)),
+          price: buildLiveUrl(baseUrl, routeSymbol, resolvedEntry(priceLiveStreamResolution)),
+          oi: buildLiveUrl(baseUrl, routeSymbol, resolvedEntry(oiResolution)),
+          cvd: buildLiveUrl(baseUrl, routeSymbol, resolvedEntry(cvdResolution)),
         };
 
   return (
     <SymbolClient
+      symbol={routeSymbol}
       panels={panels}
       priceCandles={priceCandles}
       volume={volume}

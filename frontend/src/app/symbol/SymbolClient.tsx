@@ -353,6 +353,13 @@ export interface PriceCandleData {
 }
 
 export interface SymbolClientProps {
+  /** `T-02.5` — the route's resolved `[symbol]` segment (`page.tsx`, validated against the
+   * pilot universe there), never `panels.symbol`. `charts`' `S2Panels.symbol` stays the module
+   * constant `"BTCUSDT"` (`s2-panels.ts`) on purpose — widening THAT signature is a change to a
+   * component this task does not own (`ADR-003`) — so the page that DOES know which instrument
+   * this request served passes it explicitly, the same "no silent default" rule `priceUse` and
+   * `window` already follow one level up. */
+  readonly symbol: string;
   readonly panels: S2Panels;
   readonly priceCandles: PriceCandleData;
   readonly volume: VolumeSubAxisData;
@@ -2270,6 +2277,7 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
 }
 
 export function SymbolClient({
+  symbol,
   panels,
   priceCandles,
   volume,
@@ -2291,7 +2299,7 @@ export function SymbolClient({
       data-knowledge-time-ms={knowledgeTimeMs}
     >
       <h1 className="sr-only">
-        {panels.symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
+        {symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
       <PricePane
         panels={panels}
@@ -2308,9 +2316,11 @@ export function SymbolClient({
         shortStatus={panelStatus.liquidationShort}
       />
       {/* `symbol` is the pane's THIRD prop since `T-04.8`: the approved header states the series'
-          identity on the pane (symbol · publisher · the two grids), and the symbol is the route's,
-          read off `panels` — never re-derived here. */}
-      <LongShortPane longShort={longShort} status={panelStatus.longShort} symbol={panels.symbol} />
+          identity on the pane (symbol · publisher · the two grids). Since `T-02.5` it is the
+          route's resolved `[symbol]` segment, passed into `SymbolClient` above — never
+          `panels.symbol` (that field stays `charts`' own fixed constant), and never re-derived
+          here. */}
+      <LongShortPane longShort={longShort} status={panelStatus.longShort} symbol={symbol} />
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>
         <ul>
