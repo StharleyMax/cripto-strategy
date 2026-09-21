@@ -17,92 +17,93 @@ import {
 } from "./helpers.ts";
 
 /**
- * `T-01.11` (`CST-207`) — **o único instrumento desta fase que pergunta se a VELA foi PINTADA.**
+ * `T-01.11` (`CST-207`) â **o Ãºnico instrumento desta fase que pergunta se a VELA foi PINTADA.**
  *
- * ── O VÃO QUE ELE FECHA, MEDIDO ──────────────────────────────────────────────────────────────
+ * ââ O VÃO QUE ELE FECHA, MEDIDO ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
  *
- * A suíte de e2e tinha **40 asserções** sobre `/symbol` e **nenhuma** olhava a forma da vela:
- * `grep -rn 'candle\|vela' frontend/e2e/*.ts` devolvia **1 linha**, e era um comentário
- * `[MEDIDO 2026-09-19, n=15 arquivos em frontend/e2e/]`. O painel de Preço publica
- * `data-price-candles` no DOM, e `price-pane-dom-contract.test.ts` o verifica — mas
- * **asserção de DOM não prova pixel**: o elemento passa em tudo e não existe na tela. Esta
- * lição já foi paga neste repositório (memória `assert-de-dom-nao-prova-pixel`), e o preço
- * anterior dela foi um defeito de wiring achado **em produção, a olho**, na fase `04` de
+ * A suÃ­te de e2e tinha **40 asserÃ§Ãµes** sobre `/symbol` e **nenhuma** olhava a forma da vela:
+ * `grep -rn 'candle\|vela' frontend/e2e/*.ts` devolvia **1 linha**, e era um comentÃ¡rio
+ * `[MEDIDO 2026-09-19, n=15 arquivos em frontend/e2e/]`. O painel de PreÃ§o publica
+ * `data-price-candles` no DOM, e `price-pane-dom-contract.test.ts` o verifica â mas
+ * **asserÃ§Ã£o de DOM nÃ£o prova pixel**: o elemento passa em tudo e nÃ£o existe na tela. Esta
+ * liÃ§Ã£o jÃ¡ foi paga neste repositÃ³rio (memÃ³ria `assert-de-dom-nao-prova-pixel`), e o preÃ§o
+ * anterior dela foi um defeito de wiring achado **em produÃ§Ã£o, a olho**, na fase `04` de
  * `pagina-de-grafico-s2`.
  *
- * ── OS TRÊS CRITÉRIOS DO PLANO, E QUAL TESTE PAGA CADA UM ────────────────────────────────────
+ * ââ OS TRÃS CRITÃRIOS DO PLANO, E QUAL TESTE PAGA CADA UM ââââââââââââââââââââââââââââââââââââ
  *
- * `docs/plans/SPEC-008-candle-real-e-eixo-unico/01_vela.md`, "DoD verificável":
+ * `docs/plans/SPEC-008-candle-real-e-eixo-unico/01_vela.md`, "DoD verificÃ¡vel":
  *
- *   - **`CA-2`** — "a vela tem faixa … **≥ 1** bucket com `high > low` … morde quando toda barra
- *     tem `high == low` … e morde também se `open == close` em 500 de 500". Pago em DOIS níveis
- *     pelo teste `CA-2`: no DADO (a API serve faixa) e no PIXEL (a tinta da vela tem extensão
- *     vertical, e o corpo/pavio saem onde os números da API dizem).
- *   - **`CA-3`** — "a leitura deixa de ser ausente": `data-fact="price_last_reading:…"` ≠
+ *   - **`CA-2`** â "a vela tem faixa â¦ **â¥ 1** bucket com `high > low` â¦ morde quando toda barra
+ *     tem `high == low` â¦ e morde tambÃ©m se `open == close` em 500 de 500". Pago em DOIS nÃ­veis
+ *     pelo teste `CA-2`: no DADO (a API serve faixa) e no PIXEL (a tinta da vela tem extensÃ£o
+ *     vertical, e o corpo/pavio saem onde os nÃºmeros da API dizem).
+ *   - **`CA-3`** â "a leitura deixa de ser ausente": `data-fact="price_last_reading:â¦"` â 
  *     `:absent`. Pago pelo teste `CA-3`, **condicionado ao que a API serve** para continuar
  *     total sobre os dois universos (ver abaixo).
- *   - ⛔ **`CA-4`, a ablação** — "removido o produtor de preço, o corpo e o pavio somem da tela
- *     — captura antes/depois, assert de posição". Pago pelo teste `CA-4`, com o **par
- *     morde/cala** que este repositório exige: ablar `klines_ohlc` apaga a tinta da vela
- *     (MORDE); ablar `sum_open_interest` — outra série, mesma página — deixa a tinta da vela
+ *   - â **`CA-4`, a ablaÃ§Ã£o** â "removido o produtor de preÃ§o, o corpo e o pavio somem da tela
+ *     â captura antes/depois, assert de posiÃ§Ã£o". Pago pelo teste `CA-4`, com o **par
+ *     morde/cala** que este repositÃ³rio exige: ablar `klines_ohlc` apaga a tinta da vela
+ *     (MORDE); ablar `sum_open_interest` â outra sÃ©rie, mesma pÃ¡gina â deixa a tinta da vela
  *     **byte a byte no mesmo lugar** (CALA). Sem o segundo, "a tinta sumiu" seria
- *     indistinguível de "a página quebrou".
+ *     indistinguÃ­vel de "a pÃ¡gina quebrou".
  *
- * ── ⛔ `[P-seed]`: ESTE ARQUIVO NÃO SEMEIA NADA ──────────────────────────────────────────────
+ * ââ â `[P-seed]`: ESTE ARQUIVO NÃO SEMEIA NADA ââââââââââââââââââââââââââââââââââââââââââââââ
  *
- * Nenhum `INSERT`, nenhum `psql`, nenhum `docker`. A ablação **não toca o banco**: ela põe um
+ * Nenhum `INSERT`, nenhum `psql`, nenhum `docker`. A ablaÃ§Ã£o **nÃ£o toca o banco**: ela pÃµe um
  * **proxy HTTP de leitura** na frente da API (`GET` encaminhado verbatim) e reescreve, na
- * RESPOSTA, as linhas de UMA métrica para o estado de ausência que o próprio envelope já
- * carrega em `5.680` das `5.760` linhas. O Postgres compartilhado é o de PRODUÇÃO — dado sintético
- * de e2e já vazou para a tela real do owner, e a regra que saiu daquele episódio é literal:
- * nunca semear. Um proxy de leitura respeita isso por construção: ele não tem caminho de
+ * RESPOSTA, as linhas de UMA mÃ©trica para o estado de ausÃªncia que o prÃ³prio envelope jÃ¡
+ * carrega em `5.680` das `5.760` linhas. O Postgres compartilhado Ã© o de PRODUÃÃO â dado sintÃ©tico
+ * de e2e jÃ¡ vazou para a tela real do owner, e a regra que saiu daquele episÃ³dio Ã© literal:
+ * nunca semear. Um proxy de leitura respeita isso por construÃ§Ã£o: ele nÃ£o tem caminho de
  * escrita.
  *
- * ── OS DOIS UNIVERSOS, E POR QUE NENHUMA ASSERÇÃO AQUI É CONDICIONADA A UMA `env` ────────────
+ * ââ OS DOIS UNIVERSOS, E POR QUE NENHUMA ASSERÃÃO AQUI Ã CONDICIONADA A UMA `env` ââââââââââââ
  *
- * Sob `make e2e` a API é sqlite efêmera e `/series-history` responde `500` (`ADR-034/D9`: sem
- * fallback sqlite para `md.series`) — universo FRACO, zero vela. Contra o deployment do owner
- * a API é Postgres — universo FORTE. O universo é decidido **perguntando à API quantas velas
- * ela serve**, nunca lendo uma variável de ambiente: variável aqui seria allowlist disfarçada
- * (`CLAUDE.md`), e qualquer um a desligaria sem mudar o que o deployment É. Os dois universos
- * têm asserção própria e o número medido vai para `facts.jsonl` em toda rodada.
+ * Sob `make e2e` a API Ã© sqlite efÃªmera e `/series-history` responde `500` (`ADR-034/D9`: sem
+ * fallback sqlite para `md.series`) â universo FRACO, zero vela. Contra o deployment do owner
+ * a API Ã© Postgres â universo FORTE. O universo Ã© decidido **perguntando Ã  API quantas velas
+ * ela serve**, nunca lendo uma variÃ¡vel de ambiente: variÃ¡vel aqui seria allowlist disfarÃ§ada
+ * (`CLAUDE.md`), e qualquer um a desligaria sem mudar o que o deployment Ã. Os dois universos
+ * tÃªm asserÃ§Ã£o prÃ³pria e o nÃºmero medido vai para `facts.jsonl` em toda rodada.
  *
- * ── O QUE ESTE ARQUIVO **NÃO** PROVA, DECLARADO EM VEZ DE ESCONDIDO ──────────────────────────
+ * ââ O QUE ESTE ARQUIVO **NÃO** PROVA, DECLARADO EM VEZ DE ESCONDIDO ââââââââââââââââââââââââââ
  *
- * `DoD-1` pede **≥ 500 pontos não-nulos por chave**, `n=4` chaves. No momento em que ele foi
+ * `DoD-1` pede **â¥ 500 pontos nÃ£o-nulos por chave**, `n=4` chaves. No momento em que ele foi
  * escrito a API servia **80** `[MEDIDO 2026-09-19T23:0xZ]`, com o backfill de 90 dias em voo.
- * Este arquivo **não** afirma `DoD-1`: ele publica `candles_full` toda rodada, e o relatório do
- * gate é quem confronta o número com o alvo. Um teste que passasse com 80 e se chamasse "500"
+ * Este arquivo **nÃ£o** afirma `DoD-1`: ele publica `candles_full` toda rodada, e o relatÃ³rio do
+ * gate Ã© quem confronta o nÃºmero com o alvo. Um teste que passasse com 80 e se chamasse "500"
  * seria pior que nenhum.
  */
 
 const SPEC = "15-vela-e-ablacao";
-const SYMBOL_PATH = "/symbol";
 const SYMBOL = "BTCUSDT";
+// `T-02.5` — a rota virou `/symbol/[symbol]`, segmento em ingles; a página do piloto é `SYMBOL`.
+const SYMBOL_PATH = `/symbol/${SYMBOL}`;
 const PRICE_PANE_TESTID = "price-pane";
 const ABSENCE_FACT_SUFFIX = ":absent";
 
-/** As DUAS tintas que **só** a série de velas usa neste `<canvas>`, lidas do módulo de tokens e
- * não transcritas: `directionUpFill`/`directionDownFill` chegam aqui por
- * `borderUpColor`/`borderDownColor` (= `wickUpColor`/`wickDownColor`), e o corpo de alta é
- * `HOLLOW_BODY_FILL` (transparente), então a borda é a tinta do corpo também.
+/** As DUAS tintas que **sÃ³** a sÃ©rie de velas usa neste `<canvas>`, lidas do mÃ³dulo de tokens e
+ * nÃ£o transcritas: `directionUpFill`/`directionDownFill` chegam aqui por
+ * `borderUpColor`/`borderDownColor` (= `wickUpColor`/`wickDownColor`), e o corpo de alta Ã©
+ * `HOLLOW_BODY_FILL` (transparente), entÃ£o a borda Ã© a tinta do corpo tambÃ©m.
  *
- * ⚠️ O NEUTRO DO DOJI (`dojiItemColors().color` = `provenanceWeak`) FICA DE FORA, e a omissão é
- * deliberada: é **a mesma cor** que a sub-eixo de volume usa para as barras
- * (`SymbolClient.tsx:909`, `color: colorTokens().provenanceWeak`), no MESMO `<canvas>` — contá-la
- * como tinta de vela mediria volume e chamaria de preço. O custo disso é real e está coberto:
- * uma tela em que TODA vela fosse doji mediria `0` de tinta, então o teste só exige tinta depois
+ * â ï¸ O NEUTRO DO DOJI (`dojiItemColors().color` = `provenanceWeak`) FICA DE FORA, e a omissÃ£o Ã©
+ * deliberada: Ã© **a mesma cor** que a sub-eixo de volume usa para as barras
+ * (`SymbolClient.tsx:909`, `color: colorTokens().provenanceWeak`), no MESMO `<canvas>` â contÃ¡-la
+ * como tinta de vela mediria volume e chamaria de preÃ§o. O custo disso Ã© real e estÃ¡ coberto:
+ * uma tela em que TODA vela fosse doji mediria `0` de tinta, entÃ£o o teste sÃ³ exige tinta depois
  * de checar, na API, que existe ao menos uma vela com `open != close`. */
 function candleInkColors(): readonly (readonly [number, number, number])[] {
   const style = candlestickSeriesColors();
   return [style.borderUpColor, style.borderDownColor].map((hex) => {
     const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
-    if (m === null) throw new Error(`candleInkColors: ${hex} não é #rrggbb — os tokens mudaram de grafia`);
+    if (m === null) throw new Error(`candleInkColors: ${hex} nÃ£o Ã© #rrggbb â os tokens mudaram de grafia`);
     return [parseInt(m[1]!, 16), parseInt(m[2]!, 16), parseInt(m[3]!, 16)] as const;
   });
 }
 
-// ── A API SOB TESTE ──────────────────────────────────────────────────────────────────────────
+// ââ A API SOB TESTE ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 interface CatalogEntryWire {
   readonly key: SeriesKey;
@@ -121,8 +122,8 @@ interface RenderedRequest {
 }
 
 /** Uma vela montada: os quatro `STOCK` do MESMO bucket. `assembleOhlcCandles` (`view-model.ts`)
- * exige os quatro, e esta reconstrução do lado do teste usa a mesma regra — bucket com 1..3
- * leituras é lacuna, não vela. */
+ * exige os quatro, e esta reconstruÃ§Ã£o do lado do teste usa a mesma regra â bucket com 1..3
+ * leituras Ã© lacuna, nÃ£o vela. */
 interface AssembledCandle {
   readonly time: number;
   readonly open: number;
@@ -157,9 +158,9 @@ function historyQuery(seriesKeyId: string, request: RenderedRequest): string {
   }).toString();
 }
 
-/** Mesmo tratamento de `08-symbol-dado-real.spec.ts`: o corpo é lido como TEXTO primeiro, porque
+/** Mesmo tratamento de `08-symbol-dado-real.spec.ts`: o corpo Ã© lido como TEXTO primeiro, porque
  * a API do universo fraco responde `Internal Server Error` e `response.json()` trocaria o status
- * — que é o que decide o universo — por um `SyntaxError`. */
+ * â que Ã© o que decide o universo â por um `SyntaxError`. */
 async function fetchSeriesHistory(
   seriesKeyId: string,
   request: RenderedRequest,
@@ -177,7 +178,7 @@ async function fetchSeriesHistory(
 
 const OHLC_REDUCTIONS = ["OPEN", "HIGH", "LOW", "CLOSE"] as const;
 
-/** As quatro chaves `klines_ohlc` do símbolo, remontadas em velas — a MESMA regra do painel. */
+/** As quatro chaves `klines_ohlc` do sÃ­mbolo, remontadas em velas â a MESMA regra do painel. */
 async function fetchAssembledCandles(request: RenderedRequest): Promise<{
   readonly status: number;
   readonly candles: readonly AssembledCandle[];
@@ -193,7 +194,7 @@ async function fetchAssembledCandles(request: RenderedRequest): Promise<{
         candidate.key.reduction === reduction,
     );
     if (entry === undefined) {
-      throw new Error(`o catálogo servido não tem klines_ohlc/${reduction} para ${SYMBOL} — RF-2 regrediu`);
+      throw new Error(`o catÃ¡logo servido nÃ£o tem klines_ohlc/${reduction} para ${SYMBOL} â RF-2 regrediu`);
     }
     const { status, rows } = await fetchSeriesHistory(computeSeriesKeyId(entry.key), request);
     lastStatus = status;
@@ -213,12 +214,12 @@ async function fetchAssembledCandles(request: RenderedRequest): Promise<{
   return { status: lastStatus, candles };
 }
 
-// ── O PIXEL ──────────────────────────────────────────────────────────────────────────────────
+// ââ O PIXEL ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-/** A geometria da tinta de vela no `<canvas>` do painel de Preço, em coordenadas do PRÓPRIO
- * canvas (não da página): uma coluna por `x` com tinta, com o topo e o fundo dela. Isso é o
- * suficiente para corpo, pavio e posição, e é estável sob deslocamento de layout dos painéis
- * vizinhos — que é exatamente o que a ablação da OUTRA série provoca. */
+/** A geometria da tinta de vela no `<canvas>` do painel de PreÃ§o, em coordenadas do PRÃPRIO
+ * canvas (nÃ£o da pÃ¡gina): uma coluna por `x` com tinta, com o topo e o fundo dela. Isso Ã© o
+ * suficiente para corpo, pavio e posiÃ§Ã£o, e Ã© estÃ¡vel sob deslocamento de layout dos painÃ©is
+ * vizinhos â que Ã© exatamente o que a ablaÃ§Ã£o da OUTRA sÃ©rie provoca. */
 interface InkColumn {
   readonly x: number;
   readonly top: number;
@@ -233,17 +234,17 @@ interface InkMeasurement {
   readonly inkPixels: number;
 }
 
-/** Roda DENTRO do browser: `getImageData` do canvas do painel de Preço. Mesma técnica de
- * `11-canvas-fundo.spec.ts` (o único portão que já lia pixel) — `lightweight-charts` pinta em
- * `<canvas>` 2D, opaco a qualquer asserção de DOM. */
+/** Roda DENTRO do browser: `getImageData` do canvas do painel de PreÃ§o. Mesma tÃ©cnica de
+ * `11-canvas-fundo.spec.ts` (o Ãºnico portÃ£o que jÃ¡ lia pixel) â `lightweight-charts` pinta em
+ * `<canvas>` 2D, opaco a qualquer asserÃ§Ã£o de DOM. */
 async function measureCandleInk(page: Page): Promise<InkMeasurement> {
   const tolerance = 12;
   return page.evaluate(
     ({ colors, testid, tolerance: tol }) => {
       const pane = document.querySelector(`[data-testid="${testid}"]`);
-      if (pane === null) throw new Error(`não há [data-testid="${testid}"] na página`);
+      if (pane === null) throw new Error(`nÃ£o hÃ¡ [data-testid="${testid}"] na pÃ¡gina`);
       const canvas = Array.from(pane.querySelectorAll("canvas")).find((c) => c.width > 200 && c.height > 100);
-      if (canvas === undefined) throw new Error("o painel de Preço não tem um canvas de gráfico com área");
+      if (canvas === undefined) throw new Error("o painel de PreÃ§o nÃ£o tem um canvas de grÃ¡fico com Ã¡rea");
       const width = canvas.width;
       const height = canvas.height;
       const data = canvas.getContext("2d")!.getImageData(0, 0, width, height).data;
@@ -279,26 +280,26 @@ async function measureCandleInk(page: Page): Promise<InkMeasurement> {
   );
 }
 
-/** Espera o `<canvas>` existir E ter área — um canvas ANEXADO ainda não é um canvas PINTADO,
- * distinção que `11-canvas-fundo.spec.ts` já pagou. */
+/** Espera o `<canvas>` existir E ter Ã¡rea â um canvas ANEXADO ainda nÃ£o Ã© um canvas PINTADO,
+ * distinÃ§Ã£o que `11-canvas-fundo.spec.ts` jÃ¡ pagou. */
 async function waitForPaintedChart(page: Page): Promise<void> {
   await page.waitForFunction(
     () => Array.from(document.querySelectorAll("canvas")).some((c) => c.width > 0 && c.height > 0),
     undefined,
     { timeout: 120_000 },
   );
-  // Os painéis montam por `useEffect` e a série é `setData`-ada depois do primeiro frame.
+  // Os painÃ©is montam por `useEffect` e a sÃ©rie Ã© `setData`-ada depois do primeiro frame.
   await page.waitForTimeout(2_000);
 }
 
 async function readRenderedRequest(page: Page): Promise<RenderedRequest> {
   const main = page.locator("main[data-window-start-ms]");
-  await expect(main, "a página não declara o próprio request — build anterior a esta wave?").toHaveCount(1);
+  await expect(main, "a pÃ¡gina nÃ£o declara o prÃ³prio request â build anterior a esta wave?").toHaveCount(1);
   const number = async (name: string): Promise<number> => {
     const raw = await main.getAttribute(name);
-    if (raw === null) throw new Error(`a página parou de publicar ${name}`);
+    if (raw === null) throw new Error(`a pÃ¡gina parou de publicar ${name}`);
     const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) throw new Error(`${name}=${JSON.stringify(raw)} não é um instante em ms`);
+    if (!Number.isFinite(parsed)) throw new Error(`${name}=${JSON.stringify(raw)} nÃ£o Ã© um instante em ms`);
     return parsed;
   };
   return {
@@ -308,72 +309,72 @@ async function readRenderedRequest(page: Page): Promise<RenderedRequest> {
   };
 }
 
-/** Quantas velas o painel DIZ ter desenhado (`data-price-candles`), como número e nunca como
- * `Number(null)` — que é `0` e faria a comparação com a API passar sobre um DOM sem contrato
+/** Quantas velas o painel DIZ ter desenhado (`data-price-candles`), como nÃºmero e nunca como
+ * `Number(null)` â que Ã© `0` e faria a comparaÃ§Ã£o com a API passar sobre um DOM sem contrato
  * (`BLOCKER-3` da wave `03`). */
 async function readDrawnCandlesAttribute(page: Page): Promise<number> {
   const raw = await page.locator(`[data-testid="${PRICE_PANE_TESTID}"]`).getAttribute("data-price-candles");
-  expect(raw, "o painel de Preço parou de publicar `data-price-candles`").not.toBeNull();
-  expect(raw ?? "", "`data-price-candles` tem de ser uma contagem em dígitos").toMatch(/^\d+$/);
+  expect(raw, "o painel de PreÃ§o parou de publicar `data-price-candles`").not.toBeNull();
+  expect(raw ?? "", "`data-price-candles` tem de ser uma contagem em dÃ­gitos").toMatch(/^\d+$/);
   return Number(raw);
 }
 
-// ── ZOOM: o único jeito de separar CORPO de PAVIO neste eixo ──────────────────────────────────
+// ââ ZOOM: o Ãºnico jeito de separar CORPO de PAVIO neste eixo ââââââââââââââââââââââââââââââââââ
 //
-// ⛔ O NÚMERO QUE OBRIGA O ZOOM, MEDIDO: a janela da rota tem `5.760` buckets de 1 min e o canvas
-// do painel tem `1208 px` — `0,21 px por bucket`. Com `fitContent()` (`SymbolClient.tsx:460`) as
+// â O NÃMERO QUE OBRIGA O ZOOM, MEDIDO: a janela da rota tem `5.760` buckets de 1 min e o canvas
+// do painel tem `1208 px` â `0,21 px por bucket`. Com `fitContent()` (`SymbolClient.tsx:460`) as
 // 80 velas servidas hoje ocupam `43 colunas` de tinta, ~`0,54 px` por vela
-// `[MEDIDO 2026-09-19T23:0xZ, canvas 1208x192, dpr=1]`. Nessa largura **corpo e pavio são a
-// MESMA coluna**, e "o pavio ultrapassa o corpo" não é uma proposição que o pixel possa
+// `[MEDIDO 2026-09-19T23:0xZ, canvas 1208x192, dpr=1]`. Nessa largura **corpo e pavio sÃ£o a
+// MESMA coluna**, e "o pavio ultrapassa o corpo" nÃ£o Ã© uma proposiÃ§Ã£o que o pixel possa
 // responder. Depois de `30` passos de roda aparecem `70` velas com corpo de `7 a 16` colunas,
-// `49` delas com pixel FORA das arestas do corpo — o pavio
+// `49` delas com pixel FORA das arestas do corpo â o pavio
 // `[MEDIDO na mesma rodada: `candle_groups_on_screen=70`, `groups_with_drawn_wick=49`]`.
 //
-// Esta é uma interação de UI com teto, não um laço de espera (`R9`): ela para no primeiro
+// Esta Ã© uma interaÃ§Ã£o de UI com teto, nÃ£o um laÃ§o de espera (`R9`): ela para no primeiro
 // instante em que a largura pedida existe, e desiste depois de `MAX_ZOOM_STEPS`.
 
 const ZOOM_STEP_DELTA = -200;
 const MAX_ZOOM_STEPS = 160;
-/** Passos de roda entre duas medições — medir a cada passo custaria 160 varreduras do canvas. */
+/** Passos de roda entre duas mediÃ§Ãµes â medir a cada passo custaria 160 varreduras do canvas. */
 const ZOOM_BURST = 5;
-/** Quantas colunas o corpo da última vela precisa ter para que "o pavio ultrapassa o corpo"
- * deixe de ser uma proposição sobre a mesma coluna. `6` é folgado contra as `15` medidas em
+/** Quantas colunas o corpo da Ãºltima vela precisa ter para que "o pavio ultrapassa o corpo"
+ * deixe de ser uma proposiÃ§Ã£o sobre a mesma coluna. `6` Ã© folgado contra as `15` medidas em
  * `40` passos de roda `[MEDIDO 2026-09-19]`. */
 const MIN_BODY_COLUMNS = 6;
-/** Quantas velas o alinhamento precisa ter para que casar com a API deixe de ser coincidência.
- * Com `3`, são `12` arestas presas a uma escala derivada dos extremos do próprio conjunto. */
+/** Quantas velas o alinhamento precisa ter para que casar com a API deixe de ser coincidÃªncia.
+ * Com `3`, sÃ£o `12` arestas presas a uma escala derivada dos extremos do prÃ³prio conjunto. */
 const MIN_ALIGNED_GROUPS = 3;
-/** Teto do trecho alinhado. Mais velas é prova mais forte, mas um trecho longo tem mais chance
- * de conter uma lacuna que o espaçamento não delate. */
+/** Teto do trecho alinhado. Mais velas Ã© prova mais forte, mas um trecho longo tem mais chance
+ * de conter uma lacuna que o espaÃ§amento nÃ£o delate. */
 const MAX_ALIGNED_GROUPS = 12;
-/** Folga da asserção afim. A biblioteca arredonda cada aresta para a grade de pixels e a borda
- * do corpo tem `1 px` de espessura própria, então `3` é geometria e não tolerância a erro —
- * contra `0,54 px` medidos sobre `12` velas, isto é, `48` arestas `[MEDIDO 2026-09-19]`. */
+/** Folga da asserÃ§Ã£o afim. A biblioteca arredonda cada aresta para a grade de pixels e a borda
+ * do corpo tem `1 px` de espessura prÃ³pria, entÃ£o `3` Ã© geometria e nÃ£o tolerÃ¢ncia a erro â
+ * contra `0,54 px` medidos sobre `12` velas, isto Ã©, `48` arestas `[MEDIDO 2026-09-19]`. */
 const MAX_ALIGNMENT_ERROR_PX = 3;
-/** Quantas vezes a tolerância vale a mutação do falsificador. `3x` em PIXELS, convertido para
- * USDT pela escala MEDIDA na própria rodada — um literal em USDT ficaria abaixo da tolerância
+/** Quantas vezes a tolerÃ¢ncia vale a mutaÃ§Ã£o do falsificador. `3x` em PIXELS, convertido para
+ * USDT pela escala MEDIDA na prÃ³pria rodada â um literal em USDT ficaria abaixo da tolerÃ¢ncia
  * assim que o zoom mudasse, e foi o que aconteceu `[MEDIDO 2026-09-19: 5 USDT = 1,9 px < 3 px,
  * e o falsificador reprovou a si mesmo]`. */
 const MUTATION_SCALE = 3;
 
-/** ⛔ ONDE A BANDA DE PREÇO TERMINA, e por que o teste precisa saber disso.
+/** â ONDE A BANDA DE PREÃO TERMINA, e por que o teste precisa saber disso.
  *
- * O `<canvas>` do painel de Preço carrega DUAS escalas: a do preço e a do sub-eixo de volume,
+ * O `<canvas>` do painel de PreÃ§o carrega DUAS escalas: a do preÃ§o e a do sub-eixo de volume,
  * que ocupa a faixa de baixo (`VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 }`,
- * `SymbolClient.tsx:556`). Em `192 px` de painel isso põe o piso da banda de preço em
- * `192 × 0,8 = 153,6 px` — **e um pavio que caia abaixo disso não tem onde ser desenhado**.
+ * `SymbolClient.tsx:556`). Em `192 px` de painel isso pÃµe o piso da banda de preÃ§o em
+ * `192 Ã 0,8 = 153,6 px` â **e um pavio que caia abaixo disso nÃ£o tem onde ser desenhado**.
  *
  * Foi exatamente o que produziu o falso `13,77 px`: o pavio inferior de uma vela parou em
- * `154` (o piso da banda) enquanto o número da API o punha em `167,4`, e como o estimador
- * antigo ANCORAVA nos extremos, esse pixel cortado virou a âncora — reportou o próprio erro
+ * `154` (o piso da banda) enquanto o nÃºmero da API o punha em `167,4`, e como o estimador
+ * antigo ANCORAVA nos extremos, esse pixel cortado virou a Ã¢ncora â reportou o prÃ³prio erro
  * como `0,00` e espalhou a culpa pelo meio do trecho `[MEDIDO 2026-09-20: 47 das 48 arestas
- * dentro de 3,3 px por ajuste robusto, mediana 0,84 px; a única fora era a âncora]`. */
+ * dentro de 3,3 px por ajuste robusto, mediana 0,84 px; a Ãºnica fora era a Ã¢ncora]`. */
 const PRICE_BAND_BOTTOM_FRACTION = 0.8;
 
 
-/** Uma vela reconhecida no canvas: o vão de `x` do CORPO (as colunas que compartilham as duas
+/** Uma vela reconhecida no canvas: o vÃ£o de `x` do CORPO (as colunas que compartilham as duas
  * arestas) e as quatro coordenadas que a biblioteca desenhou. `wickTop`/`wickBottom` saem de
- * TODA coluna dentro do vão — dentro do corpo de uma vela, a única coisa que sai das arestas é
+ * TODA coluna dentro do vÃ£o â dentro do corpo de uma vela, a Ãºnica coisa que sai das arestas Ã©
  * o pavio. */
 interface CandleGroup {
   readonly xLeft: number;
@@ -385,16 +386,16 @@ interface CandleGroup {
 }
 
 /**
- * Todas as velas reconhecíveis no canvas ampliado, da esquerda para a direita.
+ * Todas as velas reconhecÃ­veis no canvas ampliado, da esquerda para a direita.
  *
- * ⛔ POR QUE O CORPO É PROCURADO EM DOIS PEDAÇOS: o pavio é UMA coluna no CENTRO da vela e ela
- * **parte o corpo em dois trechos** de colunas idênticas. Uma versão anterior pegou só o trecho
- * da direita e concluiu "esta vela não tem pavio" com o pavio a 8 colunas de distância
- * `[MEDIDO 2026-09-19: corpo "61..70", pavio idêntico ao corpo]`.
+ * â POR QUE O CORPO Ã PROCURADO EM DOIS PEDAÃOS: o pavio Ã© UMA coluna no CENTRO da vela e ela
+ * **parte o corpo em dois trechos** de colunas idÃªnticas. Uma versÃ£o anterior pegou sÃ³ o trecho
+ * da direita e concluiu "esta vela nÃ£o tem pavio" com o pavio a 8 colunas de distÃ¢ncia
+ * `[MEDIDO 2026-09-19: corpo "61..70", pavio idÃªntico ao corpo]`.
  *
- * ⛔ E POR QUE "O AGLOMERADO CONTÍGUO MAIS À DIREITA" NÃO SERVE: no zoom padrão as ~70 velas
- * ocupam `38` colunas CONTÍGUAS (`0,21 px` por bucket), então o aglomerado é a janela inteira e
- * o topo/fundo dele são os da janela, não os de uma vela `[MEDIDO 2026-09-19: grupo de 31
+ * â E POR QUE "O AGLOMERADO CONTÃGUO MAIS Ã DIREITA" NÃO SERVE: no zoom padrÃ£o as ~70 velas
+ * ocupam `38` colunas CONTÃGUAS (`0,21 px` por bucket), entÃ£o o aglomerado Ã© a janela inteira e
+ * o topo/fundo dele sÃ£o os da janela, nÃ£o os de uma vela `[MEDIDO 2026-09-19: grupo de 31
  * colunas, corpo "122..133", contra `open/close` de `81033,2/81021,8`]`.
  */
 function extractCandleGroups(columns: readonly InkColumn[], minBodyColumns: number): readonly CandleGroup[] {
@@ -415,7 +416,7 @@ function extractCandleGroups(columns: readonly InkColumn[], minBodyColumns: numb
       runs.push([column]);
     }
   }
-  // 2. Trechos com as mesmas arestas separados por até 2 colunas são as duas METADES do mesmo
+  // 2. Trechos com as mesmas arestas separados por atÃ© 2 colunas sÃ£o as duas METADES do mesmo
   //    corpo, partido pelo pavio.
   const merged: InkColumn[][] = [];
   for (const run of runs) {
@@ -449,19 +450,19 @@ function extractCandleGroups(columns: readonly InkColumn[], minBodyColumns: numb
     });
 }
 
-/** ⛔ DESCARTA OS GRUPOS QUE SÃO MAIS DE UMA VELA, e sem isto `bestAlignmentError` mente.
+/** â DESCARTA OS GRUPOS QUE SÃO MAIS DE UMA VELA, e sem isto `bestAlignmentError` mente.
  *
- * `extractCandleGroups` funde trechos que compartilham as DUAS arestas — o que é certo para o
- * corpo partido pelo pavio e ERRADO para velas VIZINHAS que fecharam no mesmo par de preços.
- * Com pouca vela na tela isso não acontece; com muita, acontece o tempo todo: medi um corpo de
- * **25 colunas** onde o passo entre velas é **~8,6 px** — três buckets num "grupo" só
+ * `extractCandleGroups` funde trechos que compartilham as DUAS arestas â o que Ã© certo para o
+ * corpo partido pelo pavio e ERRADO para velas VIZINHAS que fecharam no mesmo par de preÃ§os.
+ * Com pouca vela na tela isso nÃ£o acontece; com muita, acontece o tempo todo: medi um corpo de
+ * **25 colunas** onde o passo entre velas Ã© **~8,6 px** â trÃªs buckets num "grupo" sÃ³
  * `[MEDIDO 2026-09-20: groups_px[2]="39-63", passo mediano 8,6 px, n=113 grupos, 1.515 velas]`.
- * `bestAlignmentError` casa **um grupo com um bucket**; um grupo que vale três desloca todo o
- * resto e o erro sai em `13,77 px` contra uma tolerância de `3` — **do instrumento, não da
- * tela**, exatamente como já tinha acontecido com a penúltima vela (ver o cabeçalho daquela
- * função).
+ * `bestAlignmentError` casa **um grupo com um bucket**; um grupo que vale trÃªs desloca todo o
+ * resto e o erro sai em `13,77 px` contra uma tolerÃ¢ncia de `3` â **do instrumento, nÃ£o da
+ * tela**, exatamente como jÃ¡ tinha acontecido com a penÃºltima vela (ver o cabeÃ§alho daquela
+ * funÃ§Ã£o).
  *
- * O corte é pela largura MODAL, não por um literal: a vela larga é a exceção e a mediana é dela
+ * O corte Ã© pela largura MODAL, nÃ£o por um literal: a vela larga Ã© a exceÃ§Ã£o e a mediana Ã© dela
  * mesma. */
 function dropMergedGroups(groups: readonly CandleGroup[]): readonly CandleGroup[] {
   if (groups.length < 3) return groups;
@@ -470,13 +471,13 @@ function dropMergedGroups(groups: readonly CandleGroup[]): readonly CandleGroup[
   return groups.filter((g) => g.xRight - g.xLeft + 1 <= median * 1.5);
 }
 
-/** A maior sequência de velas UNIFORMEMENTE espaçadas no eixo — isto é, buckets CONSECUTIVOS.
+/** A maior sequÃªncia de velas UNIFORMEMENTE espaÃ§adas no eixo â isto Ã©, buckets CONSECUTIVOS.
  *
- * ⛔ POR QUE ELA É NECESSÁRIA: as velas servidas hoje têm LACUNAS (buckets sem as quatro
- * leituras não desenham nada), então as `70` velas na tela não são `70` minutos seguidos — há
- * saltos de `21 px` onde o espaçamento normal é `8,6 px` `[MEDIDO 2026-09-19]`. Alinhar a lista
- * inteira contra minutos consecutivos comparava pixel de um instante com número de outro, e o
- * erro saía em `77 px` — do instrumento, não da tela. */
+ * â POR QUE ELA Ã NECESSÃRIA: as velas servidas hoje tÃªm LACUNAS (buckets sem as quatro
+ * leituras nÃ£o desenham nada), entÃ£o as `70` velas na tela nÃ£o sÃ£o `70` minutos seguidos â hÃ¡
+ * saltos de `21 px` onde o espaÃ§amento normal Ã© `8,6 px` `[MEDIDO 2026-09-19]`. Alinhar a lista
+ * inteira contra minutos consecutivos comparava pixel de um instante com nÃºmero de outro, e o
+ * erro saÃ­a em `77 px` â do instrumento, nÃ£o da tela. */
 function longestUniformRun(groups: readonly CandleGroup[], maxLength: number): readonly CandleGroup[] {
   if (groups.length < 2) return groups;
   const center = (g: CandleGroup): number => (g.xLeft + g.xRight) / 2;
@@ -497,15 +498,15 @@ function longestUniformRun(groups: readonly CandleGroup[], maxLength: number): r
   return best;
 }
 
-/** O erro máximo, em pixels, entre as 4 arestas que a tela desenhou para `m` velas e as 4
- * leituras que a API serve para `m` velas CONSECUTIVAS — sobre o melhor alinhamento possível.
+/** O erro mÃ¡ximo, em pixels, entre as 4 arestas que a tela desenhou para `m` velas e as 4
+ * leituras que a API serve para `m` velas CONSECUTIVAS â sobre o melhor alinhamento possÃ­vel.
  *
- * ⛔ POR QUE ALINHAR EM VEZ DE ASSUMIR "a de mais à direita é a última": ela NÃO é. Com zoom e
- * arrasto a última vela sai do canvas, e a versão anterior deste teste comparou os pixels da
- * penúltima com os números da última — e o erro que apareceu era do instrumento
- * `[MEDIDO 2026-09-19: grupo mais à direita = penúltima vela; px/unidade 1,55 casava com a
- * penúltima e não com a última]`. Alinhar `m >= 3` velas de uma vez é uma prova MAIS forte que a
- * de uma só: a escala é derivada dos extremos do conjunto e as `4m` arestas têm de cair todas
+ * â POR QUE ALINHAR EM VEZ DE ASSUMIR "a de mais Ã  direita Ã© a Ãºltima": ela NÃO Ã©. Com zoom e
+ * arrasto a Ãºltima vela sai do canvas, e a versÃ£o anterior deste teste comparou os pixels da
+ * penÃºltima com os nÃºmeros da Ãºltima â e o erro que apareceu era do instrumento
+ * `[MEDIDO 2026-09-19: grupo mais Ã  direita = penÃºltima vela; px/unidade 1,55 casava com a
+ * penÃºltima e nÃ£o com a Ãºltima]`. Alinhar `m >= 3` velas de uma vez Ã© uma prova MAIS forte que a
+ * de uma sÃ³: a escala Ã© derivada dos extremos do conjunto e as `4m` arestas tÃªm de cair todas
  * no lugar.
  */
 function bestAlignmentError(
@@ -529,14 +530,14 @@ function bestAlignmentError(
     table: [] as string[],
   };
   if (groups.length === 0 || candles.length < groups.length) return empty;
-  // O piso da banda de preço. Uma aresta medida EM CIMA dele não é leitura do número: é o
-  // desenho batendo na parede, e compará-la com o preço mede a parede.
+  // O piso da banda de preÃ§o. Uma aresta medida EM CIMA dele nÃ£o Ã© leitura do nÃºmero: Ã© o
+  // desenho batendo na parede, e comparÃ¡-la com o preÃ§o mede a parede.
   const bandBottom = canvasHeight * PRICE_BAND_BOTTOM_FRACTION;
   let best = empty;
   for (let offset = 0; offset + groups.length <= candles.length; offset += 1) {
     const window = candles.slice(offset, offset + groups.length);
-    // Velas desenhadas lado a lado são buckets CONSECUTIVOS: um bucket sem leitura é lacuna e
-    // não desenha nada, então um alinhamento que pule tempo é impossível por construção.
+    // Velas desenhadas lado a lado sÃ£o buckets CONSECUTIVOS: um bucket sem leitura Ã© lacuna e
+    // nÃ£o desenha nada, entÃ£o um alinhamento que pule tempo Ã© impossÃ­vel por construÃ§Ã£o.
     const consecutive = window.every((c, i) => i === 0 || c.time - window[i - 1]!.time === 60_000);
     if (!consecutive) continue;
     const edges = groups.flatMap((group, i) => {
@@ -551,12 +552,12 @@ function bestAlignmentError(
     const usable = edges.filter((edge) => edge.y < bandBottom - 1);
     const clippedEdges = edges.length - usable.length;
     if (usable.length < 8) continue;
-    // ⛔ A ESCALA SAI DE MÍNIMOS QUADRADOS SOBRE AS `4m` ARESTAS, NÃO DE DOIS EXTREMOS.
-    // O estimador anterior mapeava `min(y)`→`max(preço)` e `max(y)`→`min(preço)`: dois pontos,
-    // e cada um deles é justamente o candidato mais provável a estar errado (extremo cortado,
-    // pavio de um minuto volátil). Um extremo ruim ali não aparece — ele vira a âncora, reporta
-    // erro `0,00` para si mesmo e transfere a acusação para o meio do trecho. Com o ajuste
-    // robusto toda aresta pesa igual e o outlier aparece ONDE ELE ESTÁ.
+    // â A ESCALA SAI DE MÃNIMOS QUADRADOS SOBRE AS `4m` ARESTAS, NÃO DE DOIS EXTREMOS.
+    // O estimador anterior mapeava `min(y)`â`max(preÃ§o)` e `max(y)`â`min(preÃ§o)`: dois pontos,
+    // e cada um deles Ã© justamente o candidato mais provÃ¡vel a estar errado (extremo cortado,
+    // pavio de um minuto volÃ¡til). Um extremo ruim ali nÃ£o aparece â ele vira a Ã¢ncora, reporta
+    // erro `0,00` para si mesmo e transfere a acusaÃ§Ã£o para o meio do trecho. Com o ajuste
+    // robusto toda aresta pesa igual e o outlier aparece ONDE ELE ESTÃ.
     const n = usable.length;
     const meanPrice = usable.reduce((acc, e) => acc + e.price, 0) / n;
     const meanY = usable.reduce((acc, e) => acc + e.y, 0) / n;
@@ -596,29 +597,29 @@ function bestAlignmentError(
   return best;
 }
 
-/** Amplia até haver ao menos `minGroups` velas com corpo de `MIN_BODY_COLUMNS` colunas. Interação
- * de UI com teto, não laço de espera (`R9`): para no primeiro instante em que a largura existe e
+/** Amplia atÃ© haver ao menos `minGroups` velas com corpo de `MIN_BODY_COLUMNS` colunas. InteraÃ§Ã£o
+ * de UI com teto, nÃ£o laÃ§o de espera (`R9`): para no primeiro instante em que a largura existe e
  * desiste em `MAX_ZOOM_STEPS`. */
 async function zoomUntilCandlesAreWide(
   page: Page,
   minGroups: number,
 ): Promise<{ readonly measurement: InkMeasurement; readonly steps: number }> {
   const box = await page.locator(`[data-testid="${PRICE_PANE_TESTID}"] canvas`).first().boundingBox();
-  if (box === null) throw new Error("o canvas do painel de Preço não tem caixa — nada foi montado");
+  if (box === null) throw new Error("o canvas do painel de PreÃ§o nÃ£o tem caixa â nada foi montado");
   const midY = box.y + box.height / 2;
   let measurement = await measureCandleInk(page);
   let steps = 0;
-  // ⛔ O CURSOR FICA SOBRE A TINTA: a roda da biblioteca mantém fixo o ponto sob o cursor e
-  // espalha o resto, então ancorar longe das velas as empurra para fora do canvas
+  // â O CURSOR FICA SOBRE A TINTA: a roda da biblioteca mantÃ©m fixo o ponto sob o cursor e
+  // espalha o resto, entÃ£o ancorar longe das velas as empurra para fora do canvas
   // `[MEDIDO 2026-09-19: ancorado a 20 px da borda, 120 passos, corpo ainda com 4 colunas]`.
-  // ⛔ A CONDIÇÃO DE PARADA É O QUE O ASSERT PRECISA, NÃO UM PRIMO DELE. Ela pedia `minGroups`
+  // â A CONDIÃÃO DE PARADA Ã O QUE O ASSERT PRECISA, NÃO UM PRIMO DELE. Ela pedia `minGroups`
   // velas LARGAS; o assert que vem depois pede `minGroups` velas largas **em buckets
-  // CONSECUTIVOS** (`longestUniformRun`). As duas coincidem quando há pouca vela na tela e
-  // divergem quando há muita — foi o que aconteceu: com `1.515` velas servidas o laço parou em
-  // `20` passos com `8` grupos dos quais só `2` eram consecutivos, e o `CA-2` reprovou por uma
-  // PRÉ-CONDIÇÃO que o próprio laço deveria ter estabelecido
+  // CONSECUTIVOS** (`longestUniformRun`). As duas coincidem quando hÃ¡ pouca vela na tela e
+  // divergem quando hÃ¡ muita â foi o que aconteceu: com `1.515` velas servidas o laÃ§o parou em
+  // `20` passos com `8` grupos dos quais sÃ³ `2` eram consecutivos, e o `CA-2` reprovou por uma
+  // PRÃ-CONDIÃÃO que o prÃ³prio laÃ§o deveria ter estabelecido
   // `[MEDIDO 2026-09-20: candle_groups_on_screen=8, aligned_groups=2, n=1515 velas]`. Um teste
-  // que passa com `80` velas e reprova com `1.515` estava medindo a densidade do dado, não a
+  // que passa com `80` velas e reprova com `1.515` estava medindo a densidade do dado, nÃ£o a
   // tela.
   while (
     steps < MAX_ZOOM_STEPS &&
@@ -640,7 +641,7 @@ async function zoomUntilCandlesAreWide(
   return { measurement, steps };
 }
 
-// ── O PROXY DE ABLAÇÃO — leitura encaminhada, UMA métrica apagada na volta ────────────────────
+// ââ O PROXY DE ABLAÃÃO â leitura encaminhada, UMA mÃ©trica apagada na volta ââââââââââââââââââââ
 
 interface AblationProxy {
   readonly url: string;
@@ -651,18 +652,18 @@ interface AblationProxy {
 
 /**
  * Um proxy `GET` na frente da API de leitura. Encaminha caminho e query **verbatim**; quando a
- * métrica ablada está armada, reescreve as linhas de `/series-history` daquela métrica para o
- * estado de AUSÊNCIA — `value: null`, `available_at: null`, `absence` copiada de uma linha
+ * mÃ©trica ablada estÃ¡ armada, reescreve as linhas de `/series-history` daquela mÃ©trica para o
+ * estado de AUSÃNCIA â `value: null`, `available_at: null`, `absence` copiada de uma linha
  * ausente do MESMO envelope.
  *
- * ⛔ POR QUE COPIAR O TOKEN DE AUSÊNCIA EM VEZ DE INVENTAR UM: `CA-F1-5`
- * (`series-history-client.ts:76`) exige exatamente um de `value`/`absence` nulo, e o vocabulário
- * de `absence` é do backend. Um literal aqui seria uma segunda verdade sobre o contrato, e o dia
- * em que ele divergisse esta ablação passaria a medir o VALIDADOR em vez da tela.
+ * â POR QUE COPIAR O TOKEN DE AUSÃNCIA EM VEZ DE INVENTAR UM: `CA-F1-5`
+ * (`series-history-client.ts:76`) exige exatamente um de `value`/`absence` nulo, e o vocabulÃ¡rio
+ * de `absence` Ã© do backend. Um literal aqui seria uma segunda verdade sobre o contrato, e o dia
+ * em que ele divergisse esta ablaÃ§Ã£o passaria a medir o VALIDADOR em vez da tela.
  *
- * ⛔ E POR QUE A ABLAÇÃO É AQUI E NÃO NO BANCO: `[P-seed]`. Este processo não tem caminho de
- * escrita — ele lê `GET` e devolve JSON. O Postgres de produção fica intocado, o que é a única
- * forma aceitável de ablar em cima do deployment do owner.
+ * â E POR QUE A ABLAÃÃO Ã AQUI E NÃO NO BANCO: `[P-seed]`. Este processo nÃ£o tem caminho de
+ * escrita â ele lÃª `GET` e devolve JSON. O Postgres de produÃ§Ã£o fica intocado, o que Ã© a Ãºnica
+ * forma aceitÃ¡vel de ablar em cima do deployment do owner.
  */
 async function startAblationProxy(): Promise<AblationProxy> {
   const upstream = new URL(sentimentoApiBaseUrl()).origin;
@@ -704,8 +705,8 @@ async function startAblationProxy(): Promise<AblationProxy> {
         const borrowed = rows.find((row) => row.value === null && typeof row.absence === "string")?.absence;
         if (typeof borrowed !== "string") {
           throw new Error(
-            "ablation proxy: nenhuma linha ausente no envelope para tomar emprestado o token de `absence` — " +
-              "sem ele a ablação teria de inventar vocabulário de contrato, e isso é proibido aqui",
+            "ablation proxy: nenhuma linha ausente no envelope para tomar emprestado o token de `absence` â " +
+              "sem ele a ablaÃ§Ã£o teria de inventar vocabulÃ¡rio de contrato, e isso Ã© proibido aqui",
           );
         }
         envelope.rows = rows.map((row) => ({ ...row, value: null, available_at: null, absence: borrowed }));
@@ -734,17 +735,17 @@ async function startAblationProxy(): Promise<AblationProxy> {
   };
 }
 
-// ── OS TESTES ────────────────────────────────────────────────────────────────────────────────
+// ââ OS TESTES ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-test(`CA-0: a banda de preço ainda termina onde este teste acha que termina (${SPEC})`, () => {
-  // ⛔ ESTE TESTE EXISTE PORQUE `PRICE_BAND_BOTTOM_FRACTION` É UMA CÓPIA. O valor mora em
-  // produção (`SymbolClient.tsx:556`, `VOLUME_SCALE_MARGINS`) e não é exportado; copiá-lo aqui
-  // sem guarda criaria uma segunda verdade que o dia da mudança tornaria MUDA — o `CA-2`
-  // passaria a excluir a faixa errada e ninguém saberia. Com a guarda, a deriva REPROVA aqui,
-  // com o nome do arquivo, em vez de virar um `13,77 px` misterioso lá.
+test(`CA-0: a banda de preÃ§o ainda termina onde este teste acha que termina (${SPEC})`, () => {
+  // â ESTE TESTE EXISTE PORQUE `PRICE_BAND_BOTTOM_FRACTION` Ã UMA CÃPIA. O valor mora em
+  // produÃ§Ã£o (`SymbolClient.tsx:556`, `VOLUME_SCALE_MARGINS`) e nÃ£o Ã© exportado; copiÃ¡-lo aqui
+  // sem guarda criaria uma segunda verdade que o dia da mudanÃ§a tornaria MUDA â o `CA-2`
+  // passaria a excluir a faixa errada e ninguÃ©m saberia. Com a guarda, a deriva REPROVA aqui,
+  // com o nome do arquivo, em vez de virar um `13,77 px` misterioso lÃ¡.
   const source = readFileSync(path.join(import.meta.dirname, "..", "src", "app", "symbol", "SymbolClient.tsx"), "utf8");
   const declared = /const VOLUME_SCALE_MARGINS = \{ top: ([0-9.]+), bottom: ([0-9.]+) \} as const;/.exec(source);
-  expect(declared, "`VOLUME_SCALE_MARGINS` mudou de grafia em SymbolClient.tsx — a cópia deste teste ficou órfã").not.toBeNull();
+  expect(declared, "`VOLUME_SCALE_MARGINS` mudou de grafia em SymbolClient.tsx â a cÃ³pia deste teste ficou Ã³rfÃ£").not.toBeNull();
   expect(
     Number(declared![1]),
     "o sub-eixo de volume mudou de margem: `PRICE_BAND_BOTTOM_FRACTION` aqui precisa acompanhar",
@@ -752,7 +753,7 @@ test(`CA-0: a banda de preço ainda termina onde este teste acha que termina (${
   fact(SPEC, "price_band_bottom_fraction", PRICE_BAND_BOTTOM_FRACTION);
 });
 
-test(`CA-3: /symbol declara a leitura de preço, e ela é ausente só quando a API é (${SPEC})`, async ({ page }) => {
+test(`CA-3: /symbol declara a leitura de preÃ§o, e ela Ã© ausente sÃ³ quando a API Ã© (${SPEC})`, async ({ page }) => {
   const response = await page.goto(SYMBOL_PATH, { waitUntil: "load" });
   fact(SPEC, "http_status", response?.status() ?? null);
   expect(response?.status()).toBe(200);
@@ -762,38 +763,38 @@ test(`CA-3: /symbol declara a leitura de preço, e ela é ausente só quando a A
   fact(SPEC, "candles_full", candles.length);
 
   const readingFact = page.locator('[data-fact^="price_last_reading:"]');
-  await expect(readingFact, "o painel de Preço parou de publicar `price_last_reading`").toHaveCount(1);
+  await expect(readingFact, "o painel de PreÃ§o parou de publicar `price_last_reading`").toHaveCount(1);
   const published = await readingFact.getAttribute("data-fact");
   fact(SPEC, "price_last_reading_fact", published);
 
-  // TOTAL SOBRE OS DOIS UNIVERSOS, e a condição sai da API e não de uma `env`: a leitura só pode
-  // deixar de ser ausente se existir uma vela no último instante da janela que a própria página
-  // declarou. Sem esta condição o teste reprovaria o universo fraco — onde `:absent` é a resposta
-  // CORRETA — e verde ali seria verde sobre a ausência do dado, não sobre a presença dele.
+  // TOTAL SOBRE OS DOIS UNIVERSOS, e a condiÃ§Ã£o sai da API e nÃ£o de uma `env`: a leitura sÃ³ pode
+  // deixar de ser ausente se existir uma vela no Ãºltimo instante da janela que a prÃ³pria pÃ¡gina
+  // declarou. Sem esta condiÃ§Ã£o o teste reprovaria o universo fraco â onde `:absent` Ã© a resposta
+  // CORRETA â e verde ali seria verde sobre a ausÃªncia do dado, nÃ£o sobre a presenÃ§a dele.
   const lastCandle = candles.at(-1);
   const servesLastInstant = lastCandle !== undefined && lastCandle.time === request.windowEndMsInclusive;
   fact(SPEC, "api_serves_last_instant", servesLastInstant);
   if (servesLastInstant) {
     expect(
       published,
-      "a API serve vela no último instante da janela e a tela ainda diz `absent` — é o defeito de wiring de `CA-3`",
+      "a API serve vela no Ãºltimo instante da janela e a tela ainda diz `absent` â Ã© o defeito de wiring de `CA-3`",
     ).not.toContain(ABSENCE_FACT_SUFFIX);
   } else if (candles.length === 0) {
-    expect(published, "a API não serve vela nenhuma e a tela afirma uma leitura — número fabricado").toContain(
+    expect(published, "a API nÃ£o serve vela nenhuma e a tela afirma uma leitura â nÃºmero fabricado").toContain(
       ABSENCE_FACT_SUFFIX,
     );
   }
 
-  // O NÚMERO NA TELA É O NÚMERO DA API — exato, porque os dois lados saíram da MESMA janela
-  // declarada pela página (`knowledge_time` fixa a resposta), então divergência é wiring.
+  // O NÃMERO NA TELA Ã O NÃMERO DA API â exato, porque os dois lados saÃ­ram da MESMA janela
+  // declarada pela pÃ¡gina (`knowledge_time` fixa a resposta), entÃ£o divergÃªncia Ã© wiring.
   const drawn = await readDrawnCandlesAttribute(page);
   fact(SPEC, "dom_price_candles", drawn);
-  expect(drawn, "`data-price-candles` diverge das velas que a API serve para a janela da própria página").toBe(
+  expect(drawn, "`data-price-candles` diverge das velas que a API serve para a janela da prÃ³pria pÃ¡gina").toBe(
     candles.length,
   );
 });
 
-test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz (${SPEC})`, async ({ page }) => {
+test(`CA-2: a vela tem faixa â no dado E no pixel, com o pavio onde a API diz (${SPEC})`, async ({ page }) => {
   await page.goto(SYMBOL_PATH, { waitUntil: "load" });
   const request = await readRenderedRequest(page);
   const { candles } = await fetchAssembledCandles(request);
@@ -810,64 +811,64 @@ test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz 
   fact(SPEC, "ink_columns_default_zoom", flat.columns.length);
   fact(SPEC, "canvas", `${flat.canvasWidth}x${flat.canvasHeight}`);
 
-  // ── UNIVERSO FRACO: a API não serve vela ⇒ a tela não pode ter pintado uma ────────────────
+  // ââ UNIVERSO FRACO: a API nÃ£o serve vela â a tela nÃ£o pode ter pintado uma ââââââââââââââââ
   //
-  // Isto é a metade CALA do par, e não é decoração: é a asserção que distingue "não desenhou
-  // porque não há dado" de "não desenhou porque quebrou". Ela reprova se a página inventar uma
-  // vela sobre um backend que não respondeu.
+  // Isto Ã© a metade CALA do par, e nÃ£o Ã© decoraÃ§Ã£o: Ã© a asserÃ§Ã£o que distingue "nÃ£o desenhou
+  // porque nÃ£o hÃ¡ dado" de "nÃ£o desenhou porque quebrou". Ela reprova se a pÃ¡gina inventar uma
+  // vela sobre um backend que nÃ£o respondeu.
   if (candles.length === 0) {
     expect(await readDrawnCandlesAttribute(page)).toBe(0);
-    expect(flat.inkPixels, "a API não serve vela e o canvas tem tinta de vela — pixel fabricado").toBe(0);
+    expect(flat.inkPixels, "a API nÃ£o serve vela e o canvas tem tinta de vela â pixel fabricado").toBe(0);
     await shot(page, `${SPEC}-universo-fraco`);
-    test.skip(true, "universo FRACO: a API sob teste serve 0 velas — CA-2 forte e CA-4 não são mensuráveis aqui");
+    test.skip(true, "universo FRACO: a API sob teste serve 0 velas â CA-2 forte e CA-4 nÃ£o sÃ£o mensurÃ¡veis aqui");
     return;
   }
 
-  // ── `CA-2` NO DADO ────────────────────────────────────────────────────────────────────────
+  // ââ `CA-2` NO DADO ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   expect(
     withRange,
-    "TODA barra tem `high == low` — é a vela degenerada de novo, agora com dado real por trás (`RN-2`)",
+    "TODA barra tem `high == low` â Ã© a vela degenerada de novo, agora com dado real por trÃ¡s (`RN-2`)",
   ).toBeGreaterThanOrEqual(1);
   expect(
     withBody,
-    "`open == close` em TODAS as velas — é o colapso dos quatro STOCK num só que `ADR-040/D2` nomeia",
+    "`open == close` em TODAS as velas â Ã© o colapso dos quatro STOCK num sÃ³ que `ADR-040/D2` nomeia",
   ).toBeGreaterThanOrEqual(1);
 
-  // ── `CA-2` NO PIXEL, parte 1: existe tinta, e ela tem EXTENSÃO VERTICAL ────────────────────
-  expect(flat.inkPixels, "a API serve vela e o canvas não tem um pixel da tinta da vela").toBeGreaterThan(0);
+  // ââ `CA-2` NO PIXEL, parte 1: existe tinta, e ela tem EXTENSÃO VERTICAL ââââââââââââââââââââ
+  expect(flat.inkPixels, "a API serve vela e o canvas nÃ£o tem um pixel da tinta da vela").toBeGreaterThan(0);
   const bboxTop = Math.min(...flat.columns.map((c) => c.top));
   const bboxBottom = Math.max(...flat.columns.map((c) => c.bottom));
   const bboxHeight = bboxBottom - bboxTop + 1;
   fact(SPEC, "ink_bbox_height_px", bboxHeight);
   fact(SPEC, "ink_bbox_height_share", Number((bboxHeight / flat.canvasHeight).toFixed(3)));
-  // A escala do painel autoescala para a faixa do dado dentro da banda da série (as margens
+  // A escala do painel autoescala para a faixa do dado dentro da banda da sÃ©rie (as margens
   // publicadas da biblioteca deixam ~70% da altura). Uma tela em que toda vela fosse um ponto
-  // colapsaria isso para poucos pixels — que é o MORDE desta asserção
+  // colapsaria isso para poucos pixels â que Ã© o MORDE desta asserÃ§Ã£o
   // `[MEDIDO 2026-09-19: 129/192 px = 67%, n=60 velas]`.
-  expect(bboxHeight / flat.canvasHeight, "a tinta da vela é uma linha achatada — a faixa não chegou ao eixo").toBeGreaterThan(
+  expect(bboxHeight / flat.canvasHeight, "a tinta da vela Ã© uma linha achatada â a faixa nÃ£o chegou ao eixo").toBeGreaterThan(
     0.4,
   );
 
-  // ── `CA-2` NO PIXEL, parte 2: POSIÇÃO — a vela mais nova no lugar mais novo ────────────────
+  // ââ `CA-2` NO PIXEL, parte 2: POSIÃÃO â a vela mais nova no lugar mais novo ââââââââââââââââ
   const lastCandle = candles.at(-1)!;
   if (lastCandle.time === request.windowEndMsInclusive) {
     const xMax = Math.max(...flat.columns.map((c) => c.x));
     fact(SPEC, "ink_x_max", xMax);
     fact(SPEC, "ink_x_gap_to_right_edge_px", flat.canvasWidth - 1 - xMax);
-    // `fitContent()` ancora a última barra na borda direita; a vela do último instante tem de
-    // sair LÁ. Folga de 12 px sobre `1208` (1%) contra `1 px` medido — o bug de wiring que a
-    // fase `04` de `pagina-de-grafico-s2` achou a olho em produção era exatamente uma série
+    // `fitContent()` ancora a Ãºltima barra na borda direita; a vela do Ãºltimo instante tem de
+    // sair LÃ. Folga de 12 px sobre `1208` (1%) contra `1 px` medido â o bug de wiring que a
+    // fase `04` de `pagina-de-grafico-s2` achou a olho em produÃ§Ã£o era exatamente uma sÃ©rie
     // desenhada no lugar errado do eixo `[MEDIDO 2026-09-19: xMax=1207, canvas 1208]`.
-    expect(flat.canvasWidth - 1 - xMax, "a vela do último instante não está na borda direita do eixo").toBeLessThanOrEqual(12);
+    expect(flat.canvasWidth - 1 - xMax, "a vela do Ãºltimo instante nÃ£o estÃ¡ na borda direita do eixo").toBeLessThanOrEqual(12);
   }
 
-  // ── `CA-2` NO PIXEL, parte 3: CORPO e PAVIO, com os números da API PREVENDO os pixels ─────
+  // ââ `CA-2` NO PIXEL, parte 3: CORPO e PAVIO, com os nÃºmeros da API PREVENDO os pixels âââââ
   //
-  // ⛔ O ZOOM É OBRIGATÓRIO, E O NÚMERO QUE O OBRIGA ESTÁ MEDIDO: a janela da rota tem `5.760`
-  // buckets de 1 min num canvas de `1208 px` — `0,21 px por bucket`. Com `fitContent()`
+  // â O ZOOM Ã OBRIGATÃRIO, E O NÃMERO QUE O OBRIGA ESTÃ MEDIDO: a janela da rota tem `5.760`
+  // buckets de 1 min num canvas de `1208 px` â `0,21 px por bucket`. Com `fitContent()`
   // (`SymbolClient.tsx:460`) as ~70 velas servidas hoje ocupam `38` colunas de tinta, `~0,93 px`
-  // por vela `[MEDIDO 2026-09-19, canvas 1208x192, dpr=1]`. Nessa largura **corpo e pavio são a
-  // MESMA coluna**, e "o pavio ultrapassa o corpo" não é proposição que o pixel possa responder.
+  // por vela `[MEDIDO 2026-09-19, canvas 1208x192, dpr=1]`. Nessa largura **corpo e pavio sÃ£o a
+  // MESMA coluna**, e "o pavio ultrapassa o corpo" nÃ£o Ã© proposiÃ§Ã£o que o pixel possa responder.
   const { measurement: zoomed, steps } = await zoomUntilCandlesAreWide(page, MIN_ALIGNED_GROUPS);
   const groups = extractCandleGroups(zoomed.columns, MIN_BODY_COLUMNS);
   fact(SPEC, "zoom_steps", steps);
@@ -876,12 +877,12 @@ test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz 
 
   expect(
     groups.length,
-    "nem com o zoom no teto apareceram velas largas o bastante para separar corpo de pavio — " +
-      "sem isso `CA-2` fica só no dado, e o relatório do gate tem de dizer isso",
+    "nem com o zoom no teto apareceram velas largas o bastante para separar corpo de pavio â " +
+      "sem isso `CA-2` fica sÃ³ no dado, e o relatÃ³rio do gate tem de dizer isso",
   ).toBeGreaterThanOrEqual(MIN_ALIGNED_GROUPS);
 
-  // O PAVIO EXISTE na tela: ao menos uma das velas visíveis tem pixel fora das arestas do corpo.
-  // É a metade "morde" de `CA-2` no pixel — a vela degenerada (`high == low`) não produz nenhum.
+  // O PAVIO EXISTE na tela: ao menos uma das velas visÃ­veis tem pixel fora das arestas do corpo.
+  // Ã a metade "morde" de `CA-2` no pixel â a vela degenerada (`high == low`) nÃ£o produz nenhum.
   const withDrawnWick = groups.filter((g) => g.wickTop < g.bodyTop || g.wickBottom > g.bodyBottom);
   fact(SPEC, "groups_with_drawn_wick", withDrawnWick.length);
   fact(
@@ -891,20 +892,20 @@ test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz 
   );
   expect(
     withDrawnWick.length,
-    "nenhuma vela na tela tem um pixel fora do corpo — não há pavio desenhado, só retângulo",
+    "nenhuma vela na tela tem um pixel fora do corpo â nÃ£o hÃ¡ pavio desenhado, sÃ³ retÃ¢ngulo",
   ).toBeGreaterThanOrEqual(1);
 
-  // ⛔ A ASSERÇÃO QUE LIGA NÚMERO A PIXEL, e é a que morde um `close` desenhado sozinho ou a
-  // degenerada com dado real por trás: a escala de preço é afim, então uma escala derivada dos
-  // EXTREMOS do conjunto de velas visíveis tem de prever, dentro de poucos pixels, as `4 x m`
-  // arestas que a biblioteca desenhou — `high`, `low`, e as duas do corpo (`open`/`close`).
-  // Nenhum alinhamento é assumido: o teste procura o deslocamento que melhor casa e é o ERRO
-  // desse melhor caso que a asserção julga.
+  // â A ASSERÃÃO QUE LIGA NÃMERO A PIXEL, e Ã© a que morde um `close` desenhado sozinho ou a
+  // degenerada com dado real por trÃ¡s: a escala de preÃ§o Ã© afim, entÃ£o uma escala derivada dos
+  // EXTREMOS do conjunto de velas visÃ­veis tem de prever, dentro de poucos pixels, as `4 x m`
+  // arestas que a biblioteca desenhou â `high`, `low`, e as duas do corpo (`open`/`close`).
+  // Nenhum alinhamento Ã© assumido: o teste procura o deslocamento que melhor casa e Ã© o ERRO
+  // desse melhor caso que a asserÃ§Ã£o julga.
   const aligned = longestUniformRun(dropMergedGroups(groups), MAX_ALIGNED_GROUPS);
   fact(SPEC, "aligned_groups", aligned.length);
   expect(
     aligned.length,
-    "não há três velas em buckets CONSECUTIVOS na tela — sem isso o alinhamento com a API não é ancorável",
+    "nÃ£o hÃ¡ trÃªs velas em buckets CONSECUTIVOS na tela â sem isso o alinhamento com a API nÃ£o Ã© ancorÃ¡vel",
   ).toBeGreaterThanOrEqual(MIN_ALIGNED_GROUPS);
   const alignment = bestAlignmentError(aligned, candles, zoomed.canvasHeight);
   fact(SPEC, "alignment_max_error_px", Number(alignment.maxErrorPx.toFixed(2)));
@@ -919,18 +920,18 @@ test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz 
     aligned.map((g) => `${g.xLeft}-${g.xRight}:corpo ${g.bodyTop}..${g.bodyBottom}:pavio ${g.wickTop}..${g.wickBottom}`),
   );
   // `3 px`: a biblioteca arredonda cada aresta para a grade de pixels e a borda do corpo tem
-  // `1 px` de espessura própria, então `2 px` de folga já é geometria e não tolerância a erro.
+  // `1 px` de espessura prÃ³pria, entÃ£o `2 px` de folga jÃ¡ Ã© geometria e nÃ£o tolerÃ¢ncia a erro.
   expect(
     alignment.maxErrorPx,
-    "as arestas desenhadas não são as quatro leituras da API — a tela está desenhando outra coisa",
+    "as arestas desenhadas nÃ£o sÃ£o as quatro leituras da API â a tela estÃ¡ desenhando outra coisa",
   ).toBeLessThanOrEqual(MAX_ALIGNMENT_ERROR_PX);
 
-  // ⛔ O FALSIFICADOR DO PRÓPRIO INSTRUMENTO — verde não prova nada até uma mutação reprovar.
-  // A asserção acima é um `<=` sobre um número calculado aqui dentro; se o cálculo fosse
+  // â O FALSIFICADOR DO PRÃPRIO INSTRUMENTO â verde nÃ£o prova nada atÃ© uma mutaÃ§Ã£o reprovar.
+  // A asserÃ§Ã£o acima Ã© um `<=` sobre um nÃºmero calculado aqui dentro; se o cÃ¡lculo fosse
   // degenerado (uma escala que absorve qualquer coisa, um alinhamento que sempre acha um
-  // encaixe), ela ficaria verde sobre qualquer tela. A mutação desloca AS DUAS arestas do corpo
-  // de todas as velas em `BODY_MUTATION_USDT`, deixando `high`/`low` — e portanto a escala —
-  // intactos, e exige que o mesmo cálculo REPROVE.
+  // encaixe), ela ficaria verde sobre qualquer tela. A mutaÃ§Ã£o desloca AS DUAS arestas do corpo
+  // de todas as velas em `BODY_MUTATION_USDT`, deixando `high`/`low` â e portanto a escala â
+  // intactos, e exige que o mesmo cÃ¡lculo REPROVE.
   const mutationUsdt = (MUTATION_SCALE * MAX_ALIGNMENT_ERROR_PX) / alignment.pxPerPrice;
   fact(SPEC, "alignment_px_per_usdt", Number(alignment.pxPerPrice.toFixed(3)));
   fact(SPEC, "mutation_usdt", Number(mutationUsdt.toFixed(2)));
@@ -943,28 +944,28 @@ test(`CA-2: a vela tem faixa — no dado E no pixel, com o pavio onde a API diz 
   fact(SPEC, "mutated_alignment_max_error_px", Number(mutatedError.toFixed(2)));
   expect(
     mutatedError,
-    "o alinhamento aceitou um corpo deslocado — o instrumento não mede nada, e o verde acima é vazio",
+    "o alinhamento aceitou um corpo deslocado â o instrumento nÃ£o mede nada, e o verde acima Ã© vazio",
   ).toBeGreaterThan(MAX_ALIGNMENT_ERROR_PX);
 });
 
-test(`CA-4: ablação de P1 — sem o produtor de preço, corpo e pavio somem (${SPEC})`, async ({ page }) => {
-  // O universo é decidido pela API, antes de subir processo nenhum.
+test(`CA-4: ablaÃ§Ã£o de P1 â sem o produtor de preÃ§o, corpo e pavio somem (${SPEC})`, async ({ page }) => {
+  // O universo Ã© decidido pela API, antes de subir processo nenhum.
   await page.goto(SYMBOL_PATH, { waitUntil: "load" });
   const probeRequest = await readRenderedRequest(page);
   const probe = await fetchAssembledCandles(probeRequest);
   fact(SPEC, "ablation_candles_available", probe.candles.length);
   test.skip(
     probe.candles.length === 0,
-    "universo FRACO: a API sob teste serve 0 velas — não há produtor de preço para ablar",
+    "universo FRACO: a API sob teste serve 0 velas â nÃ£o hÃ¡ produtor de preÃ§o para ablar",
   );
 
   const proxy = await startAblationProxy();
   let instance: NextInstanceHandle | null = null;
   try {
-    // ⛔ A instância secundária existe porque `/symbol` é Server Component: o `fetch` acontece no
-    // processo do Next, nunca no browser, então `page.route()` NÃO alcança a chamada que precisa
-    // ser ablada. `INGEST_HEALTH_API_BASE_URL` é lida de `process.env` a cada chamada (jamais
-    // inlinada no build), que é o que torna este redirecionamento possível sem rebuild.
+    // â A instÃ¢ncia secundÃ¡ria existe porque `/symbol` Ã© Server Component: o `fetch` acontece no
+    // processo do Next, nunca no browser, entÃ£o `page.route()` NÃO alcanÃ§a a chamada que precisa
+    // ser ablada. `INGEST_HEALTH_API_BASE_URL` Ã© lida de `process.env` a cada chamada (jamais
+    // inlinada no build), que Ã© o que torna este redirecionamento possÃ­vel sem rebuild.
     instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: proxy.url });
 
     const load = async (): Promise<{ ink: InkMeasurement; drawn: number; request: RenderedRequest }> => {
@@ -977,7 +978,7 @@ test(`CA-4: ablação de P1 — sem o produtor de preço, corpo e pavio somem ($
       };
     };
 
-    // ── ANTES ─────────────────────────────────────────────────────────────────────────────
+    // ââ ANTES âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
     proxy.ablate(null);
     const before = await load();
     await shot(page, `${SPEC}-1-antes`);
@@ -986,54 +987,54 @@ test(`CA-4: ablação de P1 — sem o produtor de preço, corpo e pavio somem ($
     fact(SPEC, "ablation_before_drawn_candles", before.drawn);
     expect(
       before.ink.inkPixels,
-      "o controle da ablação já sai sem tinta de vela — sem isso não há o que ablar, e um " +
-        "'sumiu' medido sobre o nada não prova nada",
+      "o controle da ablaÃ§Ã£o jÃ¡ sai sem tinta de vela â sem isso nÃ£o hÃ¡ o que ablar, e um " +
+        "'sumiu' medido sobre o nada nÃ£o prova nada",
     ).toBeGreaterThan(0);
 
-    // ── DEPOIS: o produtor de preço REMOVIDO (MORDE) ──────────────────────────────────────
+    // ââ DEPOIS: o produtor de preÃ§o REMOVIDO (MORDE) ââââââââââââââââââââââââââââââââââââââ
     proxy.ablate("klines_ohlc");
     const ablated = await load();
     await shot(page, `${SPEC}-2-depois-sem-preco`);
     fact(SPEC, "ablation_after_ink_pixels", ablated.ink.inkPixels);
     fact(SPEC, "ablation_after_drawn_candles", ablated.drawn);
     fact(SPEC, "ablation_rewritten_responses", proxy.rewrittenResponses());
-    expect(proxy.rewrittenResponses(), "o proxy não chegou a reescrever resposta nenhuma — a ablação não aconteceu").toBe(
+    expect(proxy.rewrittenResponses(), "o proxy nÃ£o chegou a reescrever resposta nenhuma â a ablaÃ§Ã£o nÃ£o aconteceu").toBe(
       OHLC_REDUCTIONS.length,
     );
-    expect(ablated.drawn, "sem o produtor de preço o painel ainda diz ter desenhado velas").toBe(0);
-    // ⛔ ASSERÇÃO DE POSIÇÃO: nenhuma das colunas que carregavam a vela pode ter sobrado. Pixel
-    // que sobrevive à ablação estava desenhando outra coisa.
+    expect(ablated.drawn, "sem o produtor de preÃ§o o painel ainda diz ter desenhado velas").toBe(0);
+    // â ASSERÃÃO DE POSIÃÃO: nenhuma das colunas que carregavam a vela pode ter sobrado. Pixel
+    // que sobrevive Ã  ablaÃ§Ã£o estava desenhando outra coisa.
     const survivors = ablated.ink.columns.filter((c) => before.ink.columns.some((b) => b.x === c.x));
     fact(SPEC, "ablation_surviving_columns", survivors.map((c) => c.x));
     expect(
       survivors.map((c) => c.x),
-      "sobrou tinta de vela exatamente onde ela estava — esse pixel não vinha do produtor de preço",
+      "sobrou tinta de vela exatamente onde ela estava â esse pixel nÃ£o vinha do produtor de preÃ§o",
     ).toEqual([]);
-    expect(ablated.ink.inkPixels, "removido o produtor de preço ainda há tinta de vela no canvas").toBe(0);
+    expect(ablated.ink.inkPixels, "removido o produtor de preÃ§o ainda hÃ¡ tinta de vela no canvas").toBe(0);
 
-    // ── PLACEBO: outra série ablada, a vela INTACTA (CALA) ────────────────────────────────
+    // ââ PLACEBO: outra sÃ©rie ablada, a vela INTACTA (CALA) ââââââââââââââââââââââââââââââââ
     //
-    // Sem esta metade, "a tinta sumiu" seria indistinguível de "a página parou de renderizar".
-    // Ablar `sum_open_interest` mexe no painel de OI e não pode mover um pixel do de Preço.
+    // Sem esta metade, "a tinta sumiu" seria indistinguÃ­vel de "a pÃ¡gina parou de renderizar".
+    // Ablar `sum_open_interest` mexe no painel de OI e nÃ£o pode mover um pixel do de PreÃ§o.
     proxy.ablate("sum_open_interest");
     const placebo = await load();
     await shot(page, `${SPEC}-3-placebo-sem-oi`);
     fact(SPEC, "placebo_ink_pixels", placebo.ink.inkPixels);
     fact(SPEC, "placebo_drawn_candles", placebo.drawn);
-    expect(placebo.ink.inkPixels, "ablar OUTRA série apagou a vela — a medição não é específica do preço").toBeGreaterThan(
+    expect(placebo.ink.inkPixels, "ablar OUTRA sÃ©rie apagou a vela â a mediÃ§Ã£o nÃ£o Ã© especÃ­fica do preÃ§o").toBeGreaterThan(
       0,
     );
-    expect(placebo.drawn, "ablar OUTRA série mudou a contagem de velas do painel de Preço").toBe(before.drawn);
+    expect(placebo.drawn, "ablar OUTRA sÃ©rie mudou a contagem de velas do painel de PreÃ§o").toBe(before.drawn);
 
-    // A identidade de POSIÇÃO só é exigível quando as duas renderizações caíram na MESMA janela:
-    // a rota ancora a janela no relógio do servidor, então duas cargas em minutos diferentes
-    // desenham instantes diferentes — e reprovar por isso mediria o relógio, não a tela.
+    // A identidade de POSIÃÃO sÃ³ Ã© exigÃ­vel quando as duas renderizaÃ§Ãµes caÃ­ram na MESMA janela:
+    // a rota ancora a janela no relÃ³gio do servidor, entÃ£o duas cargas em minutos diferentes
+    // desenham instantes diferentes â e reprovar por isso mediria o relÃ³gio, nÃ£o a tela.
     const sameWindow = placebo.request.windowStartMs === before.request.windowStartMs;
     fact(SPEC, "placebo_same_window", sameWindow);
     if (sameWindow) {
       expect(
         placebo.ink.columns.map((c) => `${c.x}:${c.top}:${c.bottom}`),
-        "ablar OUTRA série moveu a geometria da vela — o painel de Preço não é independente do de OI",
+        "ablar OUTRA sÃ©rie moveu a geometria da vela â o painel de PreÃ§o nÃ£o Ã© independente do de OI",
       ).toEqual(before.ink.columns.map((c) => `${c.x}:${c.top}:${c.bottom}`));
     }
   } finally {

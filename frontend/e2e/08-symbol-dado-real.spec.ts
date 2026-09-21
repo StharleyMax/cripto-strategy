@@ -6,13 +6,13 @@ import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl } from "./helpers.ts";
 
 /**
- * `T-04.3` (`SPEC-006` plan `04`, `CA-F4-3`) — the falsifier this fase exists for, REPAIRED by
+ * `T-04.3` (`SPEC-006` plan `04`, `CA-F4-3`) â the falsifier this fase exists for, REPAIRED by
  * wave `03` of `cinco-metricas-do-core` on two counts, both of them measured.
  *
- * ── 1. IT NO LONGER IMPORTS A WINDOW THAT DOES NOT EXIST (the QA bloqueio of wave `03`) ───────
+ * ââ 1. IT NO LONGER IMPORTS A WINDOW THAT DOES NOT EXIST (the QA bloqueio of wave `03`) âââââââ
  *
  * This spec used to import `RANGE_START_MS`/`RANGE_END_MS_EXCLUSIVE` from
- * `../src/charts/s2-panels.ts`. Wave `03` deleted those two constants — correctly: they were
+ * `../src/charts/s2-panels.ts`. Wave `03` deleted those two constants â correctly: they were
  * four days of 2026-08 typed in once, and the route asked `/series-history` for a window that
  * PRECEDES every row that exists (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`). The import survived the
  * deletion, and a spec that fails to LOAD takes the whole collection down with it:
@@ -27,51 +27,52 @@ import { fact, sentimentoApiBaseUrl } from "./helpers.ts";
  * checks the API over EXACTLY the window the server used for THAT render, with no clock race
  * between the two processes and no constant to go stale a second time.
  *
- * ── 2. IT NO LONGER SEEDS THE SHARED POSTGRES (`[P-seed]`, `tasks.toml:226`) ──────────────────
+ * ââ 2. IT NO LONGER SEEDS THE SHARED POSTGRES (`[P-seed]`, `tasks.toml:226`) ââââââââââââââââââ
  *
  * The previous version `INSERT`ed two synthetic rows (`65432.5`, `543210.75`) into `md.series`
- * through `docker exec psql`, because when it was written no collector produced Preço/OI. That
+ * through `docker exec psql`, because when it was written no collector produced PreÃ§o/OI. That
  * is forbidden in this repository and for a reason that already happened: synthetic e2e data
  * leaked into the owner's real screen. Removed entirely: the only mentions of `INSERT`, `psql`
- * and `docker` left in this file are the ones in THIS paragraph — no statement, no invocation,
+ * and `docker` left in this file are the ones in THIS paragraph â no statement, no invocation,
  * no child process. `grep -n 'INSERT\\|psql\\|docker' e2e/08-symbol-dado-real.spec.ts` lands
  * only here.
  *
- * ── SO WHAT DOES IT ASSERT, IF IT CANNOT PLANT THE NUMBER IT WANTS TO FIND? ───────────────────
+ * ââ SO WHAT DOES IT ASSERT, IF IT CANNOT PLANT THE NUMBER IT WANTS TO FIND? âââââââââââââââââââ
  *
  * The DOM has to agree with the read API over the same window. That is the wiring falsifier
  * `CA-F4-1`/fase `04` was actually about (the route served no real data while every gate stayed
  * green), and it does not need a planted row: it needs the two surfaces to be compared. What is
  * live today, measured read-only against the running stack
- * `[MEDIDO 2026-09-11, GET /api/v1/series-history sobre a janela derivada, n=11 séries BTCUSDT]`:
+ * `[MEDIDO 2026-09-11, GET /api/v1/series-history sobre a janela derivada, n=11 sÃ©ries BTCUSDT]`:
  *
- *     klines_volume      200   5.760 grades   799 com valor   1º valor 2026-09-11T01:40Z
+ *     klines_volume      200   5.760 grades   799 com valor   1Âº valor 2026-09-11T01:40Z
  *     klines_last        200   5.760 grades     0 com valor
  *     sum_open_interest  200   5.760 grades     0 com valor
  *     cvd_source         200   5.760 grades     0 com valor
  *
- * ⇒ asserting "um número real de Preço no DOM" today would assert about a collector that does
+ * â asserting "um nÃºmero real de PreÃ§o no DOM" today would assert about a collector that does
  * not exist yet, and the only way to make it pass would be the seed that was just removed. What
  * IS assertable, and is asserted below: the page's numbers are the API's numbers, its absences
  * are the API's absences, and absence prints `SEM_PONTO` rather than a fabricated `0` (`RN-1`).
- * When the Preço/OI collectors land, THE SAME ASSERTIONS start proving the number on screen —
+ * When the PreÃ§o/OI collectors land, THE SAME ASSERTIONS start proving the number on screen â
  * they are written against the API's answer, not against a constant.
  *
- * ⛔ NOT the `DoD-3` of `T-01.9`: that one counts `N >= 30` DISTINCT points on the volume
+ * â NOT the `DoD-3` of `T-01.9`: that one counts `N >= 30` DISTINCT points on the volume
  * sub-axis and gets its own spec (`09-volume-dado-real.spec.ts`). This one is about agreement
  * between the two surfaces, at whatever density the collectors have reached.
  */
 
 const SPEC = "08-symbol-dado-real";
-const SYMBOL_PATH = "/symbol";
 const SYMBOL = "BTCUSDT";
+// `T-02.5` — a rota virou `/symbol/[symbol]`, segmento em ingles; a página do piloto é `SYMBOL`.
+const SYMBOL_PATH = `/symbol/${SYMBOL}`;
 
 /**
- * THE READ API THIS SPEC COMPARES THE DOM AGAINST — the SAME one the page under test reads.
+ * THE READ API THIS SPEC COMPARES THE DOM AGAINST â the SAME one the page under test reads.
  *
  * It used to be a CONSTANT in this file: `process.env.E2E_SENTIMENTO_API_BASE_URL ??
  * "http://localhost:8000/api/v1"`, with nothing anywhere setting that variable (`grep -c
- * E2E_SENTIMENTO_API_BASE_URL scripts/e2e-env.sh Makefile` → `0` e `0`) ⇒ under `make e2e` this
+ * E2E_SENTIMENTO_API_BASE_URL scripts/e2e-env.sh Makefile` â `0` e `0`) â under `make e2e` this
  * file asked the owner's PRODUCTION API while the page answered from the ephemeral fixture API:
  * `volume_api_rows_with_value=916` against `volume_dom_present_points=0`, two surfaces that
  * cannot agree by construction, deterministic over 2 runs (`BLOCKER-2` do gate da wave `03`).
@@ -86,7 +87,7 @@ const apiBaseUrl = sentimentoApiBaseUrl;
  * `../src/app/symbol/request-window.ts` would pull `charts/index.ts`, whose barrel evaluates
  * `s2-headless-run.ts` and therefore `jsdom`, which breaks under Playwright's module loader in
  * this environment ("module is not linked", `html-encoding-sniffer`). Duplicating a SELECTOR is
- * also the right posture for a contract with another module — see
+ * also the right posture for a contract with another module â see
  * `volume-subaxis-dom-contract.test.ts`, which guards the same strings from the other side. */
 const VOLUME_SUBAXIS_TESTID = "price-pane-volume-subaxis";
 const ABSENCE_TOKEN = "SEM_PONTO";
@@ -98,7 +99,7 @@ interface CatalogEntryWire {
 
 /** `series_key_id` is NOT on the wire (`GET /series-catalog` publishes the KEY, n=11 entries):
  * it is the `sha256` of the canonical key, and `view-model.ts` is the one place this repository
- * computes it. Imported rather than re-implemented — a second hashing of the same key is the
+ * computes it. Imported rather than re-implemented â a second hashing of the same key is the
  * class of duplicate that goes wrong silently, since a wrong id answers `200` with an empty
  * grid instead of failing. */
 function seriesKeyIdOf(entry: CatalogEntryWire): string {
@@ -111,7 +112,7 @@ interface HistoryRow {
   readonly absence: string | null;
 }
 
-/** The three instants of the request the SERVER built this render from — read off the rendered
+/** The three instants of the request the SERVER built this render from â read off the rendered
  * page, so the API is asked the same question the page asked, not a similar one. */
 interface RenderedRequest {
   readonly windowStartMs: number;
@@ -121,7 +122,7 @@ interface RenderedRequest {
 
 function requiredNumberAttribute(value: string | null, name: string): number {
   if (value === null) {
-    throw new Error(`the page did not declare ${name} — SymbolClient.tsx stopped publishing its own request`);
+    throw new Error(`the page did not declare ${name} â SymbolClient.tsx stopped publishing its own request`);
   }
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -136,16 +137,16 @@ function requiredNumberAttribute(value: string | null, name: string): number {
  * Not flakiness tolerance: `undici` keeps the connection alive between requests, and a uvicorn
  * worker that just answered `500` closes it, so the NEXT request on that socket loses the race
  * and throws `TypeError: fetch failed [cause: ECONNRESET]` before any status exists to judge
- * `[MEDIDO 2026-09-11: falha no 2º painel do laço (d), sempre depois de um 500, contra a API
- * efêmera]`. The retry opens a new connection; an HTTP answer of ANY status is returned
- * untouched, so no assertion below is softened — only the socket is.
+ * `[MEDIDO 2026-09-11: falha no 2Âº painel do laÃ§o (d), sempre depois de um 500, contra a API
+ * efÃªmera]`. The retry opens a new connection; an HTTP answer of ANY status is returned
+ * untouched, so no assertion below is softened â only the socket is.
  */
 async function fetchWithOneRetry(url: string): Promise<Response> {
   try {
     return await fetch(url);
   } catch {
     // Deliberately NOT swallowed: a second transport failure propagates with its own cause and
-    // fails the test — one retry, never a loop.
+    // fails the test â one retry, never a loop.
     return await fetch(url);
   }
 }
@@ -174,7 +175,7 @@ async function fetchSeriesHistory(
   });
   const response = await fetchWithOneRetry(`${apiBaseUrl()}/series-history?${query.toString()}`);
   // The body is read as TEXT first: a route that refuses answers `Internal Server Error`, which
-  // `response.json()` turns into `SyntaxError: Unexpected token 'I'` — an exception that hides
+  // `response.json()` turns into `SyntaxError: Unexpected token 'I'` â an exception that hides
   // the status code the caller needs to judge. Returning `rows: []` is NOT "treat an error as
   // no data": every caller below branches on `status` (and on the reader capability) before it
   // reads `rows`.
@@ -191,8 +192,8 @@ async function fetchSeriesHistory(
 /**
  * Does the read API under test have an `md.series` WINDOW READER at all?
  *
- * Asked to the API ITSELF, never to an env var — an env var here would be an allowlist in
- * disguise ("entrada de allowlist é indistinguível de bypass", `CLAUDE.md`): anyone could
+ * Asked to the API ITSELF, never to an env var â an env var here would be an allowlist in
+ * disguise ("entrada de allowlist Ã© indistinguÃ­vel de bypass", `CLAUDE.md`): anyone could
  * silence the strong branch without changing what the deployment IS. `/ready` publishes
  * `store.path` (`backend/src/api/routes/ready.py`), which is the sqlite FILE for the sqlite
  * engine and a masked DSN for Postgres, and `ADR-034/D9` gives `md.series` NO sqlite fallback:
@@ -201,9 +202,9 @@ async function fetchSeriesHistory(
  * API declaring, about itself, that `/series-history` cannot be served here.
  *
  * WHY THIS EXISTS: `make e2e`'s harness composes a sqlite store over an ephemeral seed
- * (`scripts/e2e-env.sh`), so under the canonical gate `/series-history` answers `500` —
- * `[MEDIDO 2026-09-11: GET http://127.0.0.1:8811/api/v1/series-history?... → 500 "Internal
- * Server Error"; GET /ready → store.path=/tmp/cripto-strategy-e2e.<rand>/ingest_health.sqlite3]`.
+ * (`scripts/e2e-env.sh`), so under the canonical gate `/series-history` answers `500` â
+ * `[MEDIDO 2026-09-11: GET http://127.0.0.1:8811/api/v1/series-history?... â 500 "Internal
+ * Server Error"; GET /ready â store.path=/tmp/cripto-strategy-e2e.<rand>/ingest_health.sqlite3]`.
  * Asserting `200` there would measure the HARNESS, not the app. What is asserted instead is the
  * property that survives the difference and is the one `RN-1` is about: facing a backend that
  * cannot answer, the page prints `SEM_PONTO` and NEVER a fabricated number. The universe is
@@ -212,11 +213,11 @@ async function fetchSeriesHistory(
  */
 async function seriesWindowReaderPresent(): Promise<boolean> {
   const response = await fetchWithOneRetry(`${apiBaseUrl()}/ready`);
-  // `/ready` answers 200 or 503 with the SAME shape (`ready.py`) — both are readable.
+  // `/ready` answers 200 or 503 with the SAME shape (`ready.py`) â both are readable.
   const body = (await response.json()) as { store?: { path?: string } };
   const storePath = body.store?.path;
   if (typeof storePath !== "string") {
-    throw new Error(`GET /ready did not publish store.path — cannot tell which engine this API composed: ${body}`);
+    throw new Error(`GET /ready did not publish store.path â cannot tell which engine this API composed: ${body}`);
   }
   return !storePath.endsWith(".sqlite3");
 }
@@ -227,7 +228,7 @@ function findEntry(
 ): CatalogEntryWire {
   const entry = entries.find((candidate) => candidate.key.instrumentId === SYMBOL && predicate(candidate));
   if (entry === undefined) {
-    throw new Error(`no ${SYMBOL} catalog entry matched the predicate — catalog drifted?`);
+    throw new Error(`no ${SYMBOL} catalog entry matched the predicate â catalog drifted?`);
   }
   return entry;
 }
@@ -236,7 +237,7 @@ function findEntry(
  * Loads `/symbol` and reads the three instants the SERVER declared for that render.
  *
  * WARNING: if this fails with "the page does not declare its own request", the app being pointed
- * at is a BUILD OLDER than wave `03` of `cinco-metricas-do-core` — those attributes are emitted
+ * at is a BUILD OLDER than wave `03` of `cinco-metricas-do-core` â those attributes are emitted
  * by `SymbolClient.tsx`'s root element. That is a real failure and is deliberately NOT
  * downgraded to a `skip`: a spec that quietly skips when the deployment is stale is the
  * "0 tests" signal in another costume, and this file exists because that signal cost 21 tests.
@@ -249,7 +250,7 @@ async function loadRenderedRequest(page: Page): Promise<RenderedRequest> {
   const main = page.locator("main[data-window-start-ms]");
   await expect(
     main,
-    "a página não declara o próprio request (data-window-start-ms) — build anterior a esta wave?",
+    "a pÃ¡gina nÃ£o declara o prÃ³prio request (data-window-start-ms) â build anterior a esta wave?",
   ).toHaveCount(1);
   return {
     windowStartMs: requiredNumberAttribute(await main.getAttribute("data-window-start-ms"), "data-window-start-ms"),
@@ -261,7 +262,7 @@ async function loadRenderedRequest(page: Page): Promise<RenderedRequest> {
   };
 }
 
-test(`/symbol declara a janela que pediu, e ela ACOMPANHA o relógio (${SPEC})`, async ({ page }) => {
+test(`/symbol declara a janela que pediu, e ela ACOMPANHA o relÃ³gio (${SPEC})`, async ({ page }) => {
   const request = await loadRenderedRequest(page);
   fact(SPEC, "window_start_ms", request.windowStartMs);
   fact(SPEC, "window_end_ms_inclusive", request.windowEndMsInclusive);
@@ -273,19 +274,19 @@ test(`/symbol declara a janela que pediu, e ela ACOMPANHA o relógio (${SPEC})`,
   const fourDaysMs = 4 * 24 * 60 * 60_000;
   expect(request.windowEndMsInclusive - request.windowStartMs).toBe(fourDaysMs - 60_000);
   expect(request.windowEndMsInclusive).toBeGreaterThan(Date.now() - 60 * 60_000);
-  // And it never asks about the future — that is a `422` against the backend's `server_now_ms`.
+  // And it never asks about the future â that is a `422` against the backend's `server_now_ms`.
   expect(request.knowledgeTimeMs).toBeLessThan(Date.now());
 });
 
-test(`GET /series-history responde 200 sobre a MESMA janela que a página pediu (${SPEC})`, async ({ page }) => {
+test(`GET /series-history responde 200 sobre a MESMA janela que a pÃ¡gina pediu (${SPEC})`, async ({ page }) => {
   // `500`/`NotImplementedError` on this exact query is the regression the whole fase exists to
-  // catch, and it is checked independently of the DOM (the browser never issues it — `page.tsx`
+  // catch, and it is checked independently of the DOM (the browser never issues it â `page.tsx`
   // is a Server Component, `ADR-028/D1`), so a server-side-only regression still fails here.
   const request = await loadRenderedRequest(page);
 
   const entries = await fetchCatalogEntries();
-  // ⛔ `T-01.8` REPOINTED THIS, and leaving it where it was would have been the `BLOCKER-2` of
-  // wave `03` all over again — a spec cross-checking the price pane against a series the pane no
+  // â `T-01.8` REPOINTED THIS, and leaving it where it was would have been the `BLOCKER-2` of
+  // wave `03` all over again â a spec cross-checking the price pane against a series the pane no
   // longer reads. The panel draws the FOUR `klines_ohlc` readings now (`SPEC-008`/`D1`);
   // `priceUse === "structure_detection"` still resolves `klines_last`, which today feeds only the
   // live-stream row. `CLOSE` is asked about here because the window/grid question this test owns
@@ -305,7 +306,7 @@ test(`GET /series-history responde 200 sobre a MESMA janela que a página pediu 
   if (!readerPresent) {
     // The API just declared it composed the sqlite engine, which `ADR-034/D9` gives no
     // `md.series` reader. The assertion that MEANS something here is the opposite one: it must
-    // refuse loudly instead of answering `200` with an invented grid — a `200` in this universe
+    // refuse loudly instead of answering `200` with an invented grid â a `200` in this universe
     // would be fabricated data, the exact defect `RN-1` forbids one layer down.
     expect(status, "sem window reader a rota tem de RECUSAR, nunca responder 200 com grade inventada").toBe(500);
     expect(rows).toHaveLength(0);
@@ -313,7 +314,7 @@ test(`GET /series-history responde 200 sobre a MESMA janela que a página pediu 
   }
 
   expect(status).toBe(200);
-  // One row per 1-minute grid instant of the window, present or absent — `rows.length` alone is
+  // One row per 1-minute grid instant of the window, present or absent â `rows.length` alone is
   // therefore NOT evidence of data (`build_series_history_report` walks the whole grid,
   // `use_cases/series_history.py:193`); it is evidence that the grid the route asked for is the
   // grid it got back. The data question is the next test's, and it is asked against the DOM.
@@ -322,7 +323,7 @@ test(`GET /series-history responde 200 sobre a MESMA janela que a página pediu 
   expect(rows.filter((row) => row.value === null && row.absence === null)).toHaveLength(0);
 });
 
-test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunca 0 (${SPEC})`, async ({ page }) => {
+test(`o nÃºmero na tela Ã© o nÃºmero da API â e a ausÃªncia Ã© SEM_PONTO, nunca 0 (${SPEC})`, async ({ page }) => {
   const request = await loadRenderedRequest(page);
 
   const entries = await fetchCatalogEntries();
@@ -333,14 +334,14 @@ test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunc
   // THE FOUR ASSERTIONS BELOW ARE TOTAL OVER THE TWO UNIVERSES, which is why this test has no
   // branch of its own: with a window reader, `apiPresent` is the API's real points and the
   // screen has to show exactly them; without one, the API serves NOTHING and the screen has to
-  // say `SEM_PONTO` — never `0`, never a leftover number. The universe is published so the run
+  // say `SEM_PONTO` â never `0`, never a leftover number. The universe is published so the run
   // output states which one it measured instead of leaving the reader to guess.
   fact(SPEC, "series_window_reader_present", await seriesWindowReaderPresent());
   fact(SPEC, "volume_series_history_status", status);
   fact(SPEC, "volume_api_rows_with_value", apiPresent.length);
   fact(SPEC, "volume_api_last_instant_value", apiLast?.value ?? null);
 
-  // ── (a) the COUNT on screen is the API's count, exactly ────────────────────────────────────
+  // ââ (a) the COUNT on screen is the API's count, exactly ââââââââââââââââââââââââââââââââââââ
   //
   // Exact, not approximate: both sides were computed from the same declared window, so a
   // mismatch is a wiring defect and not a race. This is the assertion fase `04` of
@@ -351,31 +352,31 @@ test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunc
   // THE ATTRIBUTE HAS TO EXIST BEFORE IT IS A NUMBER (wave `03` QA, `BLOCKER-3`): `Number(null)`
   // is `0`, and under `make e2e` the API also serves `0` (sqlite, no `md.series` reader), so
   // deleting `data-volume-present-points` from the page left this assertion reading `0 === 0` and
-  // the canonical gate GREEN — `rc=0, 24 passed` — with the contract absent from the DOM. The
-  // mutation only failed in the strong universe (`Expected: 965 · Received: 0`), which no gate
+  // the canonical gate GREEN â `rc=0, 24 passed` â with the contract absent from the DOM. The
+  // mutation only failed in the strong universe (`Expected: 965 Â· Received: 0`), which no gate
   // runs. Asserting non-null makes the morde exist in the universe the gate CAN run: the page
   // publishing nothing is now distinguishable from the window holding nothing.
   const rawPresentPoints = await subAxis.getAttribute("data-volume-present-points");
   expect(
     rawPresentPoints,
-    "a página parou de publicar `data-volume-present-points` — sem o atributo não há o que comparar " +
-      "com a API, e `Number(null) === 0` faria esta asserção passar sobre um DOM sem contrato",
+    "a pÃ¡gina parou de publicar `data-volume-present-points` â sem o atributo nÃ£o hÃ¡ o que comparar " +
+      "com a API, e `Number(null) === 0` faria esta asserÃ§Ã£o passar sobre um DOM sem contrato",
   ).not.toBeNull();
-  // ...and an EMPTY attribute is not a count either — `Number("")` is `0` by the same rule.
+  // ...and an EMPTY attribute is not a count either â `Number("")` is `0` by the same rule.
   expect(
     rawPresentPoints ?? "",
-    "`data-volume-present-points` tem de ser uma contagem em dígitos; vazio vira 0 em `Number()`",
+    "`data-volume-present-points` tem de ser uma contagem em dÃ­gitos; vazio vira 0 em `Number()`",
   ).toMatch(/^\d+$/);
   const domPresentPoints = Number(rawPresentPoints);
   fact(SPEC, "volume_dom_present_points", domPresentPoints);
   expect(domPresentPoints).toBe(apiPresent.length);
 
-  // ── (b) the READOUT agrees with the API at the window's last grid instant ───────────────────
+  // ââ (b) the READOUT agrees with the API at the window's last grid instant âââââââââââââââââââ
   const readout = subAxis.locator('[data-fact^="volume_last_reading:"]');
   const readoutText = (await readout.textContent())?.trim() ?? "";
   fact(SPEC, "volume_last_reading_text", readoutText);
   if (apiLast?.value == null) {
-    // Real absence — the publication tail can exceed one grid step (max medido 267 s, n=804),
+    // Real absence â the publication tail can exceed one grid step (max medido 267 s, n=804),
     // so this branch is NORMAL, not a failure. What `RN-1` forbids is what it must NOT say.
     expect(readoutText).toContain(ABSENCE_TOKEN);
     expect(readoutText).not.toMatch(/\d/);
@@ -384,12 +385,12 @@ test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunc
     expect(readoutText).toContain(String(Number(apiLast.value)));
   }
 
-  // ── (c) the readable horizon is DECLARED, and it is the API's first present instant ─────────
+  // ââ (c) the readable horizon is DECLARED, and it is the API's first present instant âââââââââ
   //
   // `[MEDIDO 2026-09-11]` only `799/5.760` grades of this window carry a value and the first sits
   // ~86% into it: backfilled rows carry `available_at = when we FETCHED them`, which `R-1`
   // refuses at their own grid instant. The screen has to name that, or a structurally empty left
-  // edge reads as "o mercado não teve dado" (`quant-architect`, wave `03`, C4).
+  // edge reads as "o mercado nÃ£o teve dado" (`quant-architect`, wave `03`, C4).
   const horizon = subAxis.locator('[data-fact^="volume_readable_horizon:"]');
   await expect(horizon).toHaveCount(1);
   const horizonFact = await horizon.getAttribute("data-fact");
@@ -399,12 +400,12 @@ test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunc
   fact(SPEC, "volume_readable_since_ms", sinceMs);
   expect(sinceMs).toBe(apiPresent.length === 0 ? "" : String(apiPresent[0]!.event_time));
 
-  // ── (d) no panel prints a fabricated zero where the API has nothing ─────────────────────────
-  // `T-01.8`: Preço is `klines_ohlc`/`CLOSE` now — the reading the pane prints comes off the
+  // ââ (d) no panel prints a fabricated zero where the API has nothing âââââââââââââââââââââââââ
+  // `T-01.8`: PreÃ§o is `klines_ohlc`/`CLOSE` now â the reading the pane prints comes off the
   // candle's close (`SymbolClient.tsx::PricePane`), so that is the series this falsifier has to
   // ask about. Asking `klines_last` would compare the screen against a series nothing draws.
   for (const [label, metric, reduction] of [
-    ["Preço", "klines_ohlc", "CLOSE"],
+    ["PreÃ§o", "klines_ohlc", "CLOSE"],
     ["Open Interest", "sum_open_interest", null],
   ] as const) {
     const entry = findEntry(
@@ -421,7 +422,7 @@ test(`o número na tela é o número da API — e a ausência é SEM_PONTO, nunc
     fact(SPEC, `${metric}_dom_reading_text`, readingText);
     if (!panelHasValue) {
       // THE `RN-1` FALSIFIER, and the one that would have caught a fabricated zero: with no data
-      // at all in the API, the only honest readouts are `SEM_PONTO` — a `0` here is an error of
+      // at all in the API, the only honest readouts are `SEM_PONTO` â a `0` here is an error of
       // TYPE, not of taste.
       expect(readingText).toContain(ABSENCE_TOKEN);
       expect(readingText).not.toMatch(/\d/);

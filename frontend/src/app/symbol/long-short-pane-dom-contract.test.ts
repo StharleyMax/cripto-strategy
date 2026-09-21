@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
-const pageSource = readFileSync(path.join(HERE, "page.tsx"), "utf8");
+const pageSource = readFileSync(path.join(HERE, "[symbol]", "page.tsx"), "utf8");
 
 /** `page.tsx` with every comment removed — block first, then line. Needed because the asserts below
  * ask whether a shape is in the CODE, and this route's comments quote the shapes they retired.
@@ -73,7 +73,7 @@ const PANE_RENDERED = /<LongShortPane longShort=\{longShort\} status=\{panelStat
 const ABSENCE_NOTE_RENDERED = /<LongShortReadableHorizon longShort=\{longShort\} \/>\s*\n\s*<AbsenceNote status=\{status\} \/>/;
 
 /** `page.tsx`: the selector, CALLED through the unique-match helper. */
-const PAGE_SELECTOR = /resolveCatalogEntry\(catalog, \(entry\) => matchesCountLongShortRatio\(entry\.key\)\)/;
+const PAGE_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesCountLongShortRatio\(entry\.key\)\)/;
 /** `page.tsx`: the headline count comes from the publication counter, never from a divisor. */
 const PAGE_NATIVE_BARS = /nativeBars: countNativeBarsByPublication\(longShortResult\.rows\)/;
 const PAGE_WIRE_POINTS = /wirePoints: countPresentSlots\(longShortSlots\)/;

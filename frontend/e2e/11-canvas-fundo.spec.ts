@@ -50,7 +50,9 @@ import { fact } from "./helpers.ts";
  */
 
 const SPEC = "11-canvas-fundo";
-const SYMBOL_PATH = "/symbol";
+const SYMBOL = "BTCUSDT";
+// `T-02.5` — a rota virou `/symbol/[symbol]`, segmento em ingles; a página do piloto é `SYMBOL`.
+const SYMBOL_PATH = `/symbol/${SYMBOL}`;
 
 /** `#rrggbb` minúsculo, a grafia que `SURFACE_BASE` usa. */
 function toHex(channels: readonly number[]): string {
