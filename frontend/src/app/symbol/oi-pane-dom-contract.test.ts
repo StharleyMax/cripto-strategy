@@ -73,7 +73,9 @@ const FRESHNESS_FACT = /data-fact=\{`oi_freshness:\$\{freshness\.kind\}`\}/;
 const FRESHNESS_RENDERED = /<OiFreshness oi=\{oi\} \/>/;
 /** `page.tsx`: the three-term predicate, CALLED. */
 const PAGE_OI_SELECTOR = /resolveCatalogEntry\(catalog, \(entry\) => matchesBinanceOpenInterest\(entry\.key\)\)/;
-/** `page.tsx`: the native count comes off the PANEL's 5-minute grid, never off the wire rows. */
+/** `page.tsx`: the native count comes off the PANEL's grid, never off the wire rows — since
+ * `T-02.1` (`D-C3.2`) that grid is the SHARED axis grid, not a 5-minute grid of its own, but
+ * `countPresentSlots` over it still counts native buckets exactly (see `s2-panels.ts`). */
 const PAGE_NATIVE_COUNT = /nativeBars: countPresentSlots\(oiGridSlots\)/;
 const PAGE_OI_GRID_SOURCE = /const oiGridSlots = panels\.oi\.slots;/;
 /** `page.tsx`: the `RNF-2` ceiling is the catalog's own, and `null` when no entry resolved. */
@@ -119,8 +121,12 @@ test("RN-S1: the pane publishes the NATIVE bar count, with the staircase beside 
   assert.match(source, /<OiReadableHorizon oi=\{oi\} gridSlots=\{panels\.oi\.slots\.length\} \/>/);
 });
 
-test("RN-S1, route side: the count comes off the 5-minute PANEL grid, not off the wire rows", () => {
-  assert.match(pageCode, PAGE_OI_GRID_SOURCE, "`panels.oi.slots` IS the native grid (buildOiPanel, FIVE_MINUTES_MS)");
+test("RN-S1, route side: the count comes off the shared axis PANEL grid, not off the wire rows", () => {
+  assert.match(
+    pageCode,
+    PAGE_OI_GRID_SOURCE,
+    "`panels.oi.slots` is the shared axis grid since `T-02.1` (`D-C3.2`) — the native cadence lives in `panels.oi.timeframeMs`",
+  );
   assert.match(pageCode, PAGE_NATIVE_COUNT);
   assert.match(pageCode, /wirePoints: oiResult\.rows\.filter\(\(row\) => row\.value !== null\)\.length/);
   // ⛔ NO `/5` ANYWHERE, and that is deliberate, not an omission: a literal divisor would be a

@@ -21,7 +21,8 @@
  *      1-minute density) that lives OUTSIDE `src/charts/` and therefore has to cross this
  *      same boundary, same as `page.tsx` does for the rest.
  *   2. composição de painéis       — `s2-panels.ts` (`buildS2Panels` and the panel shapes/
- *      constants it is built from: `SYMBOL` and the timeframe constants), mais a janela
+ *      constants it is built from: `SYMBOL` and the timeframe constants, incluindo
+ *      `S2_AXIS_STEP_MS` — `T-02.1`/`D-C3.2`'s ONE shared axis grid step), mais a janela
  *      (`s2-window.ts`, categoria `2b` abaixo), que deixou de ser constante deste módulo.
  *   3. adaptador lightweight       — `s2-lightweight-adapter.ts`'s LOSSLESS mappings only
  *      (`candlestickSeriesLossless`/`lineSeriesLossless`). `naiveDropGapsLine` is
@@ -62,6 +63,7 @@ export {
   SYMBOL,
   ONE_MINUTE_MS,
   FIVE_MINUTES_MS,
+  S2_AXIS_STEP_MS,
   S2_PRICE_USE,
   buildPricePanel,
   buildOiPanel,

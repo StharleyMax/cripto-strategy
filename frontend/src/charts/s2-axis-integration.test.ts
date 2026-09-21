@@ -61,8 +61,13 @@ const METRICS_DIR = path.join(DATA_ROOT, "binance/metrics");
 const AGGTRADES_DIR = path.join(DATA_ROOT, "binance/aggtrades");
 
 const EXPECTED_PRICE_SLOTS = (RANGE_END_MS_EXCLUSIVE - RANGE_START_MS) / ONE_MINUTE_MS;
-const EXPECTED_OI_SLOTS = (RANGE_END_MS_EXCLUSIVE - RANGE_START_MS) / FIVE_MINUTES_MS;
-const EXPECTED_MISSING_DAY_OI_SLOTS = (24 * 60 * 60_000) / FIVE_MINUTES_MS; // one whole day, 5m grid
+// `T-02.1`/`D-C3.2`: OI's `slots` sits on the SAME shared axis grid as price/CVD since
+// `buildOiPanel` stopped building its own `FIVE_MINUTES_MS` grid — so its slot COUNT is the
+// same `EXPECTED_PRICE_SLOTS`, not a quarter of it. What stays native-5-minute is which of
+// those slots carry a real point (`EXPECTED_OI_PRESENT_SLOTS`/`EXPECTED_OI_WHITESPACE_SLOTS`
+// below, computed once `oi.missingDays` is known — see the fixture-precondition test).
+const EXPECTED_OI_SLOTS = EXPECTED_PRICE_SLOTS;
+const OI_NATIVE_BUCKETS_PER_DAY = (24 * 60 * 60_000) / FIVE_MINUTES_MS; // 288, one point every 5m
 const EXPECTED_MISSING_DAY_CVD_SLOTS = (24 * 60 * 60_000) / ONE_MINUTE_MS; // one whole day, 1m grid
 
 /** Reads `dir/<SYMBOL>-<fileInfix>-<day>.csv` for `day`, or `undefined` if it does not exist. */
@@ -103,6 +108,15 @@ const { deltas: cvdDeltas, missingDays: cvdMissingDays, coveredDays: cvdCoveredD
 const price = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW).series;
 const oi = buildOiPanel(oiPoints, oiMissingDays, S2_FIXTURE_WINDOW);
 const cvd = buildCvdPanel(cvdDeltas, cvdMissingDays, cvdCoveredDays, S2_FIXTURE_WINDOW);
+
+// The number of axis slots OI actually FILLS: one per native (5-minute) bucket on a covered
+// day, zero on the missing one — unaffected by which axis step `buildOiPanel` builds `slots`
+// at, since a native-cadence point still lands on exactly one axis slot either way. Derived
+// from `oi.missingDays` (asserted below to be exactly `["2026-08-22"]`) rather than a bare
+// literal, so this number cannot silently drift from the fixture it is measuring.
+const OI_COVERED_DAYS = DAYS.length - oi.missingDays.length;
+const EXPECTED_OI_PRESENT_SLOTS = OI_COVERED_DAYS * OI_NATIVE_BUCKETS_PER_DAY;
+const EXPECTED_OI_WHITESPACE_SLOTS = EXPECTED_OI_SLOTS - EXPECTED_OI_PRESENT_SLOTS;
 
 test("fixture precondition: exactly one real gap day (08-22), shared by OI and CVD, price gapless", () => {
   assert.deepEqual(oi.missingDays, ["2026-08-22"]);
@@ -169,8 +183,8 @@ test("D5.11 + null-gap survival, LOSSLESS: price + OI + CVD delta + CVD cumulati
     assert.equal(byLabel.get("price")?.whitespaceItemsSent, 0, "price has no real gap in this window");
     assert.equal(byLabel.get("price")?.dataLength, EXPECTED_PRICE_SLOTS);
     assert.equal(byLabel.get("oi")?.itemsSent, EXPECTED_OI_SLOTS);
-    assert.equal(byLabel.get("oi")?.whitespaceItemsSent, EXPECTED_MISSING_DAY_OI_SLOTS);
-    assert.equal(byLabel.get("oi")?.dataLength, EXPECTED_OI_SLOTS - EXPECTED_MISSING_DAY_OI_SLOTS);
+    assert.equal(byLabel.get("oi")?.whitespaceItemsSent, EXPECTED_OI_WHITESPACE_SLOTS);
+    assert.equal(byLabel.get("oi")?.dataLength, EXPECTED_OI_PRESENT_SLOTS);
     assert.equal(byLabel.get("cvd_delta")?.itemsSent, EXPECTED_PRICE_SLOTS);
     assert.equal(byLabel.get("cvd_delta")?.whitespaceItemsSent, EXPECTED_MISSING_DAY_CVD_SLOTS);
     assert.equal(byLabel.get("cvd_delta")?.dataLength, EXPECTED_PRICE_SLOTS - EXPECTED_MISSING_DAY_CVD_SLOTS);
@@ -257,7 +271,11 @@ const GAP_DAY_START_SECONDS = Date.UTC(2026, 7, 22, 0, 0, 0) / 1000;
 test("NEGATIVE CONTROL — OI: dropping the gap (naive) breaks D5.11 that whitespace (lossless) keeps", async () => {
   const lossless = lineSeriesLossless(oi.slots);
   const naive = naiveDropGapsLine(oi.slots);
-  assert.equal(naive.length, EXPECTED_OI_SLOTS - EXPECTED_MISSING_DAY_OI_SLOTS, "naive must actually drop the gap day");
+  assert.equal(
+    naive.length,
+    EXPECTED_OI_PRESENT_SLOTS,
+    "naive must actually drop every null slot — the gap day's AND the covered days' intra-native-bucket gaps",
+  );
 
   const { lossless: losslessReport, naive: naiveReport, losslessGapCoordinate, naiveGapCoordinate } =
     await measureIsolated("oi", lossless, naive, GAP_DAY_START_SECONDS);

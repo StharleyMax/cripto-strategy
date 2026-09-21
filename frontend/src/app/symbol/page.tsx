@@ -547,11 +547,15 @@ export default async function SymbolPage() {
   //
   // This code does not divide, and does not have to: `scalarPointsFromHistoryRows(rows,
   // FIVE_MINUTES_MS)` already keeps only the rows landing ON the 5-minute grid
-  // (`event_time % 300_000 === 0`) and `buildOiPanel` aligns them to a 5-minute canonical grid,
-  // so `panels.oi.slots` carries ONE SLOT PER NATIVE BUCKET and `countPresentSlots` over it is a
-  // count of native buckets — exact, with no heuristic about repeated values (two adjacent
-  // buckets carrying the SAME open interest are two buckets, and a "distinct consecutive values"
-  // rule would silently merge them).
+  // (`event_time % 300_000 === 0`). Since `T-02.1` (`D-C3.2`), `buildOiPanel` no longer aligns
+  // those points to a 5-minute grid of its own — `panels.oi.slots` sits on the SAME shared axis
+  // grid every other panel uses (`ONE_MINUTE_MS`), so a 4-day window carries `5760` slots for OI
+  // too (`CA-5a`), not `1152`. `countPresentSlots` over it is STILL an exact count of native
+  // buckets, unaffected by the wider grid: only the points that were already native-cadence
+  // (5-minute-aligned) are non-null, one axis slot per native bucket, with an explicit gap
+  // (`value: null`) on every axis slot in between — no heuristic about repeated values (two
+  // adjacent buckets carrying the SAME open interest are two buckets, and a "distinct
+  // consecutive values" rule would silently merge them).
   //
   // ⚠️ `wirePoints` IS PUBLISHED BESIDE IT ON PURPOSE, and it is the number nobody should quote:
   // it is the staircase count, kept on screen so the ratio is VISIBLE and so `e2e/12` can assert

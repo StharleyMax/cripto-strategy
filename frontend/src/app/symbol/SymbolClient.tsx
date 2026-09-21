@@ -162,8 +162,12 @@ export interface OiPaneData {
   /** ⛔ NATIVE 5-MINUTE BUCKETS carrying a real value — the number `DoD-3` counts against
    * `N >= 30`, and the `RN-S1` divisor paid in the TYPE instead of in a `/5`.
    *
-   * `page.tsx` derives it from `panels.oi.slots`, which is the 5-minute canonical grid
-   * (`buildOiPanel`, `FIVE_MINUTES_MS`) — one slot per native bucket. It is NOT the count of
+   * `page.tsx` derives it from `panels.oi.slots`, which since `T-02.1` (`D-C3.2`) is the ONE
+   * shared axis grid every panel's `slots` sits on (`ONE_MINUTE_MS`), NOT a 5-minute grid of
+   * its own — `buildOiPanel` no longer builds one. The count still comes out to native buckets
+   * because `oiPoints` only ever carries points at the native 5-minute cadence
+   * (`scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS)`), so exactly one axis slot per native
+   * bucket is non-null and every slot in between is an explicit gap. It is NOT the count of
    * readable wire rows: the route serves this `5m` series on the `1m` grid (`GA-2`), so one
    * native bucket appears as up to five rows and that count runs ~5x high. */
   readonly nativeBars: number;
@@ -955,7 +959,9 @@ function PricePane({
     time: slot.time,
     value: slot.candle === null ? null : slot.candle.close,
   }));
-  const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, lastInstantMs(panels));
+  // Price's own native cadence IS the axis step (`ONE_MINUTE_MS`) — the two `resolveStockReading`
+  // parameters happen to be the same value here, unlike OI's call below (`T-02.1`).
+  const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, ONE_MINUTE_MS, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
       ? "SEM_PONTO"
@@ -1100,7 +1106,10 @@ function OiPane({
     const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
     series.setData(lineSeriesLossless(panels.oi.slots) as never);
   });
-  const reading = resolveStockReading(panels.oi.slots, panels.oi.timeframeMs, lastInstantMs(panels));
+  // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (`ONE_MINUTE_MS`, `D-C3.2`),
+  // no longer OI's own native grid — `panels.oi.timeframeMs` (5 min) is passed SEPARATELY, as
+  // the cap `resolveStockReading`'s held-value rule (`D5.2`) reads against.
+  const reading = resolveStockReading(panels.oi.slots, ONE_MINUTE_MS, panels.oi.timeframeMs, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
       ? ABSENCE_TOKEN

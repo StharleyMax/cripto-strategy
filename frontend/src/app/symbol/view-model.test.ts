@@ -444,8 +444,9 @@ test("RN-S1: 30 native buckets arrive as 150 readable rows, and the OI panel cou
   assert.equal(rows.filter((row) => row.value !== null).length, 150, "sanity: the wire carries the staircase");
 
   // ⛔ NO `/5` IS WRITTEN ANYWHERE. `scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS)` keeps
-  // only the rows landing ON the 5-minute grid, and `buildOiPanel` aligns them to a 5-minute
-  // canonical grid — so the panel's slots ARE native buckets and counting them is exact.
+  // only the rows landing ON the 5-minute grid. Since `T-02.1` (`D-C3.2`) `buildOiPanel` aligns
+  // those points to the SHARED axis grid (not a 5-minute grid of its own), but each native
+  // point still lands on exactly one axis slot — so counting NON-NULL slots is still exact.
   const points = scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS);
   assert.equal(points.length, nativeBars, "one point per native bucket, not per wire row");
 
