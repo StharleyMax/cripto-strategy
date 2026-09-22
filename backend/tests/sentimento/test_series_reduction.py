@@ -195,3 +195,74 @@ def test_empty_bucket_is_checked_before_the_table_lookup() -> None:
     """
     with pytest.raises(EmptyBucketError):
         reduce_bucket(Nature.EVENT, Reduction.POINT, [])
+
+
+# ── `CA-8` (`PRD-008` §10, literal) — `T-03.8`'s OWN scope, at PRODUCTION fact-count ──────────
+#
+# The falsifier tests above (`ADR-040`'s own text) already prove `reduce_bucket` disagrees
+# pairwise across `{first, last, max, min, sum}`; those are `T-03.1`'s tests, over toy-sized
+# `values`. `T-03.8` (`docs/context/candle-real-e-eixo-unico/tasks.toml`, refs `CA-8`, `RN-3`,
+# `RF-7`, `plano 03` DoD 2 + DoD 3) is CA-8 word for word: a `1h` bucket reduced from EACH
+# series' own real native cadence — `sum_open_interest`'s is `5min`
+# (`domain/open_interest_catalog.py`'s `_NATIVE_GRID`), so `1h` holds exactly `60 / 5 = 12`
+# native facts, the count `PRD-008` §10 names, not an arbitrary one; `klines_volume`'s is `1min`,
+# so `1h` holds exactly `60` native facts, `DoD 3`'s own count. `RF-7` requires the SAME
+# `reduce_bucket` regardless of how many native facts a bucket holds — these two tests are that
+# claim at the fact-count a real `1h` bucket actually produces for each series, quantified
+# rather than merely asserted different, per `CA-8`'s own "≠ soma dos 12 de `5min`" wording.
+
+
+def test_ca8_stock_point_1h_from_its_12_native_5min_oi_facts_is_last_never_their_sum() -> None:
+    """`CA-8` literal: OI at `1h` == the last of its own 12 native `5min` facts, never their `Σ`.
+
+    Values are a realistic OI drift around `~15.230` BTC — an hour of BTCUSDT perpetual open
+    interest barely moves. The correct answer is the LAST fact; `Σ` over these twelve is
+    `~12×` that level, quantified below (not just asserted "different") — exactly the magnitude
+    `RN-3` names as the defect a summed `STOCK` produces.
+    """
+    oi_facts_ascending_event_time = [
+        15_234.120,
+        15_238.500,
+        15_240.010,
+        15_235.775,
+        15_229.330,
+        15_231.900,
+        15_225.410,
+        15_220.075,
+        15_218.660,
+        15_222.900,
+        15_226.430,
+        15_230.880,
+    ]
+    assert len(oi_facts_ascending_event_time) == 12  # `60min / 5min` — `CA-8`'s own count
+
+    reduced = reduce_bucket(Nature.STOCK, Reduction.POINT, oi_facts_ascending_event_time)
+    wrong_if_summed = float(sum(oi_facts_ascending_event_time))
+
+    assert reduced == oi_facts_ascending_event_time[-1]  # 15_230.88, the LAST native fact
+    assert reduced != wrong_if_summed
+    # `CA-8`'s "≠ soma dos 12 de `5min`", quantified: `Σ` over 12 near-flat facts lands close to
+    # `12×` a single reading — not a coincidence of these particular numbers, the shape `RN-3`
+    # and `JULGAMENTO-QUANT-ARCHITECT.md` §4 (`"Σ aqui devolve 48× o OI real num bucket de 4h"`,
+    # the same defect at `4h == 48 * 5min`) both name.
+    assert wrong_if_summed / reduced == pytest.approx(12.0, rel=0.01)
+
+
+def test_ca8_flow_sum_1h_from_its_60_native_1min_volume_facts_is_sum_never_the_last() -> None:
+    """`CA-8`'s `FLOW` mirror (`DoD 3`): volume at `1h` == `Σ` of its own 60 native `1min` facts.
+
+    `klines_volume`'s native grid is `1min`, so a real `1h` bucket holds exactly 60 native facts
+    — `last` alone would under-report the bucket by construction, `ADR-034/D6`'s named refusal.
+    The reduced value must be the TOTAL, strictly greater than any single minute's own volume —
+    a stronger claim than "not equal to the last", since a coincidental near-miss could still
+    pass a bare inequality.
+    """
+    minute_volumes = [round(300.0 + 5.0 * i + (i % 7) * 11.3, 3) for i in range(60)]
+    assert len(minute_volumes) == 60  # `60min / 1min` — `DoD 3`'s own count
+
+    reduced = reduce_bucket(Nature.FLOW, Reduction.SUM, minute_volumes)
+    wrong_if_last_only = minute_volumes[-1]
+
+    assert reduced == pytest.approx(sum(minute_volumes))
+    assert reduced != wrong_if_last_only
+    assert reduced > max(minute_volumes)  # the Σ of 60 positive facts dwarfs any single one
