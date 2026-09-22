@@ -169,7 +169,11 @@ test("CA-5a (QA · Fase 02 gate): an upstream fetch failure for long_short/liqui
   assert.equal(gridPanels.oi.slots.length, priceSlotCount, "control: OI still pads to the full grid with 0 points (T-02.1)");
   assert.equal(gridPanels.cvd.deltaSlots.length, priceSlotCount, "control: CVD still pads to the full grid with 0 points");
 
-  const longShortSlotCountOnFetchFailure = nonNegativeFlowSlotsFromHistoryRows([]).length;
+  // `FIXTURE_WINDOW` passed here for the same reason `[symbol]/page.tsx` now passes
+  // `routeWindow.window` at its own `long_short`/`liquidation` call sites (`CA-5a` fix): the
+  // grid-padding is a function of the WINDOW, never of how many rows the wire happened to
+  // answer, so an empty row list on a real window must still answer the full grid length.
+  const longShortSlotCountOnFetchFailure = nonNegativeFlowSlotsFromHistoryRows([], FIXTURE_WINDOW).length;
   assert.equal(
     longShortSlotCountOnFetchFailure,
     priceSlotCount,

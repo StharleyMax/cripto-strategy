@@ -79,8 +79,10 @@ const PAGE_NATIVE_BARS = /nativeBars: countNativeBarsByPublication\(longShortRes
 const PAGE_WIRE_POINTS = /wirePoints: countPresentSlots\(longShortSlots\)/;
 /** `page.tsx`: the pane has a status of its OWN, so it degrades on its own. */
 const PAGE_STATUS = /longShort: longShortResult\.status/;
-/** `page.tsx`: the ONE `RN-1` mapper, shared. */
-const PAGE_MAPPER = /const longShortSlots = nonNegativeFlowSlotsFromHistoryRows\(longShortResult\.rows\);/;
+/** `page.tsx`: the ONE `RN-1` mapper, shared — and grid-padded by the route's own window since
+ * the `CA-5a` fix (`gates/FASE-02-qa.md`), the same reason the liquidation pane's own anchor
+ * carries `routeWindow.window` now. */
+const PAGE_MAPPER = /const longShortSlots = nonNegativeFlowSlotsFromHistoryRows\(longShortResult\.rows, routeWindow\.window\);/;
 
 // ── The stable handles `T-04.7` depends on ────────────────────────────────────────────────────
 

@@ -545,15 +545,39 @@ test(`the LongShortPane's bar count is the API's, over the SAME window (${SPEC})
     expect(status, "with no window reader the route must REFUSE, never answer 200 with an invented grid").toBe(500);
     expect(api.nativeByPublication).toBe(0);
     expect(api.wire).toBe(0);
-    expect(domSlots, "no rows, no slots â the pane must not invent a grid either").toBe(0);
+    // NOTE â `CA-5a` FIX (`gates/FASE-02-qa.md`, achado bloqueante) â� THIS USED TO
+    // ASSERT `toBe(0)`, AND THAT WAS THE BUG THE ACHADO CAUGHT. Zero rows on the wire is not licence
+    // for zero SLOTS: the pane's grid is a function of the WINDOW (`price`/`oi`/`cvd` already stayed
+    // at `windowGridSlots` under this exact upstream failure â� `T-02.1`/`D-C3.2`), never of
+    // how many rows the wire happened to answer. `long_short`/`liquidation` collapsing to `0` while
+    // their four siblings stayed grid-padded broke the one-shared-grid invariant (`CA-5a`, plano `02`
+    // item `2.0`) â� the pane still says nothing was observed (`readoutText`/`ABSENCE_TOKEN`
+    // below), but now on the SAME axis every other pane draws on, not on a shorter one.
+    expect(domSlots, "no rows still means the FULL shared grid, whitespace-filled â� never a shorter one").toBe(
+      windowGridSlots,
+    );
     expect(readoutText).toContain(ABSENCE_TOKEN);
     // â `RN-1` literally: no digit where there is no observation. A `0` here would be the claim
-    // "the long/short ratio of this series is zero" â and `0` is a LEGIBLE ratio (nobody long),
+    // "the long/short ratio of this series is zero" â� and `0` is a LEGIBLE ratio (nobody long),
     // so the fabricated value would not even look wrong.
     expect(readoutText).not.toMatch(/\d/);
-    // And `D-1` in the same posture: with no grid there is nothing to delimit, so there is NO band.
-    // A rectangle drawn over an empty plot would be the screen pointing at four hours of nothing.
-    await expect(bandLocator, "no slots, no band â the overlay must not invent a window").toHaveCount(0);
+    // `D-1`, ALSO CORRECTED BY THIS FIX: `recentBandSlotRange` (`long-short-band.ts`) already
+    // documented its own `null` case as "there are no slots" â� never "no OBSERVATION in
+    // the slots" â� and a `0`-length grid was the ONLY reason it used to answer `null`
+    // here. With the grid always at its full length (above), the band now renders even though
+    // nothing was observed inside it â� it marks WHERE the last 4 h fall on the axis,
+    // which `LongShortEmptyState` (rendered alongside it, `hasObservation === false`) then says in
+    // words has no data. Same geometry check the STRONG-universe branch below already runs, reused
+    // rather than a second implementation of it (`M-1`).
+    await expect(bandLocator, "the grid always has a last-4h span now, data or not").toHaveCount(1);
+    {
+      const bandFact = (await bandLocator.getAttribute("data-fact"))!;
+      const expectedLastIndex = domSlots - 1;
+      const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS;
+      expect(bandFact, "the band ends at the window's last slot and starts exactly one span earlier").toBe(
+        `long_short_recent_band:${expectedFirstIndex}/${expectedLastIndex}`,
+      );
+    }
     return;
   }
 

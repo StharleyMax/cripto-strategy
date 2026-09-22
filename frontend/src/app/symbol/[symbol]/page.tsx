@@ -667,8 +667,14 @@ export default async function SymbolPage({
   // `SymbolClient.tsx` draws as the ABSENCE MARK — never as a zero bar, and never as the same mark
   // the legitimate zero of `ZL-3` gets. That distinction is the whole reason this pane is hard:
   // over the route's window, `5.570` of `5.761` grades carry no point at all.
+  //
+  // `routeWindow.window` IS PASSED HERE NOW (`CA-5a` fix, `gates/FASE-02-qa.md`): without it, an
+  // upstream failure (`rows: []`, `fetchPanelRows`'s own `catch`, above) collapsed this pane to
+  // `0` slots while `price`/`oi`/`cvd` stayed grid-padded at the full window — the six panes were
+  // no longer "sobre exatamente a mesma grade" (plano `02` item `2.0`). See
+  // `nonNegativeFlowSlotsFromHistoryRows`'s own docstring for the mechanism.
   const liquidationCohortData = (rows: readonly SeriesHistoryRow[]): LiquidationCohortData => {
-    const slots = nonNegativeFlowSlotsFromHistoryRows(rows);
+    const slots = nonNegativeFlowSlotsFromHistoryRows(rows, routeWindow.window);
     return {
       slots,
       presentPoints: countPresentSlots(slots),
@@ -728,7 +734,9 @@ export default async function SymbolPage({
   // plain data — the same discipline the six panes above follow, and the structural answer to `M-1`
   // of that report: a rodada that tried to write those numbers instead of deriving them fabricated
   // SIX of them, and the audit caught it only because it was exhaustive.
-  const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(longShortResult.rows);
+  // `routeWindow.window` passed for the same `CA-5a` reason as the liquidation pane above — see
+  // `nonNegativeFlowSlotsFromHistoryRows`'s own docstring for the mechanism.
+  const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(longShortResult.rows, routeWindow.window);
   const longShortEntry = resolvedEntry(longShortResolution);
   // The `available_at` of the newest READABLE row — a PUBLICATION instant, the same one `RNF-2`
   // uses for OI (`lastReadableAvailableAtMs`, and its docstring explains why it is not `max`).

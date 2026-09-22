@@ -192,3 +192,118 @@ bloqueio(s), 73 aviso(s))` acima, e `harness rules --mode sweep --changed-only` 
 2. Re-rodar `CA-5a` literal (o `grep` ao vivo) contra a página renderizada depois do conserto, não
    só o teste unitário — o unitário prova a causa raiz; o `grep` prova o sintoma na página real.
 3. Nenhuma ação sobre `T-02.5`/`T-02.7`/`T-02.8` — os três fecham `OK` nesta re-verificação.
+
+## Fix aplicado (`wave/candle-f02`, 2026-09-22) — não apaga o achado acima, que é histórico
+
+**Veredito pós-fix: os 8 portões de `make verify` fecham VERDE.** `saída completa:
+/tmp/verify-wave-f02-20260922T150301Z.log`; resumo:
+
+```
+[OK] lint-backend    rc=0  461 source files
+[OK] lint-frontend   rc=0  ESLint + tsc --noEmit --strict
+[OK] test-frontend   rc=0  805 pass, 0 fail em 4 suítes (app/charts/s1/s3)
+[OK] test            rc=0  2623 passed · Total coverage: 96.31%
+[OK] boundaries      rc=0  7 kept, 0 broken
+[OK] regras          rc=0  0 bloqueio(s), 73 aviso(s)
+[OK] política        rc=0
+[OK] e2e             rc=0  45 passed (58.2s)
+veredito: VERDE — 8 portões mediram e passaram
+```
+
+**A causa raiz e o conserto, no arquivo:linha que o achado apontou:**
+
+- `frontend/src/app/symbol/view-model.ts::nonNegativeFlowSlotsFromHistoryRows` ganhou um segundo
+  parâmetro **opcional**, `window?: S2Window`. Sem ele, o comportamento é o de sempre — "um slot
+  por linha", inalterado, o que preserva os 25 testes de `view-model.test.ts` que passam fixtures
+  pequenas não pensadas para cobrir a janela inteira. Com ele, a validação (`InvalidSeriesValueError`
+  nos mesmos dois casos de antes, mesma mensagem) fica igual, mas as linhas presentes viram
+  `ScalarPoint[]` e passam por `charts/s2-scalar-grid.ts::buildScalarSeries` — a MESMA primitiva de
+  grade que `buildOiPanel`/`buildCvdPanel` já usam internamente (`ADR-003` FR-2/FR-3: nenhuma
+  geometria nova foi escrita, só reaproveitada) — alinhada em `S2_AXIS_STEP_MS`, `[window.startMs,
+  window.endMsExclusive)`. O comprimento do resultado passa a depender só da JANELA, nunca de
+  quantas linhas o wire respondeu: `0` linhas reais ainda produzem a grade cheia, `null`-preenchida,
+  exatamente como `oi`/`cvd` já faziam desde `T-02.1`.
+- `frontend/src/charts/index.ts`: `buildScalarSeries` passou a ser reexportado do barrel (categoria
+  2, ao lado de `buildOiPanel`/`buildCvdPanel`) — sem isso `view-model.ts` (componente `web`)
+  precisaria de um deep-import proibido por `ADR-034/D8` para alcançar a mesma primitiva.
+- `frontend/src/app/symbol/[symbol]/page.tsx`: os dois call sites de `long_short`/`liquidation`
+  (linhas ~671/~731 antes do fix) passaram a chamar `nonNegativeFlowSlotsFromHistoryRows(rows,
+  routeWindow.window)`. O call site do sub-eixo de volume (linha ~582) **não mudou** — `klines_volume`
+  não é um dos 6 painéis do invariante de `CA-5a` (`SPEC-007 §3.6`: sub-eixo, não painel; nenhum
+  `data-fact` publica `volume_slots`), então estender o grid-padding ali não tinha motivo e
+  aumentaria o raio do diff sem necessidade.
+
+**Por que preserva o comportamento CORRETO dos outros 4 painéis (price/oi/cvd, e o próprio
+`nonNegativeFlowSlotsFromHistoryRows` sem `window`):** nenhuma linha de `s2-panels.ts` foi tocada —
+`buildPricePanel`/`buildOiPanel`/`buildCvdPanel` continuam chamando `buildChartSeries`/
+`buildScalarSeries` exatamente como antes. A prova ao vivo, literal do `tasks.toml:257`, contra a
+MESMA store efêmera onde o achado morde (`/series-history` devolvendo `500` para tudo):
+
+```
+$ curl -s "$BASE/symbol/BTCUSDT" | grep -o 'data-fact="[a-z_]*slots:[0-9]*"' | sort -u
+data-fact="cvd_slots:5760"
+data-fact="long_short_slots:5760"
+data-fact="oi_slots:5760"
+data-fact="price_slots:5760"
+$ curl -s "$BASE/symbol/BTCUSDT" | grep -o 'data-fact="[a-z_]*slots:[0-9]*"' | cut -d: -f2 | sort -u | wc -l
+1
+$ curl -s "$BASE/symbol/BTCUSDT" | grep -o 'data-fact="liquidation_slots:[a-z]*:[0-9]*"' | sort -u
+data-fact="liquidation_slots:long:5760"
+data-fact="liquidation_slots:short:5760"
+```
+
+`[MEDIDO 2026-09-22]` — `wc -l` volta a dar `1` (era `2`), e os 6 painéis (o `grep` de 1 linha não
+captura `liquidation_slots:long:`/`:short:` por causa do segmento extra, checado à parte com o
+segundo `grep`, exatamente como o achado original já registrava) concordam em `5760`.
+
+**Efeito colateral real, encontrado e corrigido, não escondido:** dois testes de mutação
+(`frontend/src/app/symbol/liquidation-pane-dom-contract.test.ts`,
+`long-short-pane-dom-contract.test.ts`) tinham uma âncora regex sobre o TEXTO LITERAL do call site
+(`const slots = nonNegativeFlowSlotsFromHistoryRows(rows);`) — quebraram ao ganhar o segundo
+argumento, e as âncoras foram atualizadas para o texto novo (`..., routeWindow.window);`), sem
+alterar o que cada teste verifica (mesma contagem de 3 call sites, mesmo par de mutantes MORDE).
+
+**Segundo efeito colateral, mais interessante — achado, não escondido:**
+`frontend/e2e/14-long-short-dado-real.spec.ts` (`the LongShortPane's bar count is the API's, over
+the SAME window`) tinha DOIS asserts que codificavam a MESMA suposição errada que `CA-5a` corrige,
+sob o ramo `!readerPresent` (a store deste worktree, sem leitor `md.series`, `status=500`):
+
+- `expect(domSlots, ...).toBe(0)` — óbvio, o mesmo bug, agora `toBe(windowGridSlots)`.
+- `await expect(bandLocator, ...).toHaveCount(0)` (a faixa de "últimas 4 h", `D-1`) — menos óbvio:
+  `long-short-band.ts::recentBandSlotRange`'s próprio docstring já dizia que `null` acontece
+  "quando não há slots" — nunca "quando não há OBSERVAÇÃO nos slots" — e `slots.length === 0` era a
+  ÚNICA razão prática de ela devolver `null` antes deste fix. Com a grade sempre no comprimento
+  cheio, a faixa agora RENDERIZA mesmo sem nenhum dado dentro dela (marca ONDE ficam as últimas 4h
+  no eixo; o texto "NENHUMA GRADE LEGÍVEL", renderizado ao lado por `hasObservation === false`, diz
+  que não há dado). **Nenhuma linha de `SymbolClient.tsx`/`long-short-band.ts` foi tocada** — o
+  comportamento novo já estava especificado no docstring da função, só nunca .tinha sido exercitado
+  porque o bug de `CA-5a` mascarava o caminho. O teste e2e foi atualizado para `toHaveCount(1)` e
+  reusa a MESMA checagem de geometria (`expectedFirstIndex`/`expectedLastIndex` a partir de
+  `domSlots`/`recentSpanMs`) que o ramo "universo forte" (dado real) já fazia — mesmo invariante
+  `M-1`, agora provado também sob ausência total. Rodado isolado 2×: vermelho antes do ajuste do
+  teste (`Received: 1` onde se esperava `0`), verde depois, 4/4 specs do arquivo.
+
+**Comandos rodados, literais:**
+
+```
+node --experimental-strip-types --test --test-name-pattern='CA-5a' frontend/src/app/symbol/view-model.test.ts
+  → 1 passed
+node --experimental-strip-types --test frontend/src/app/symbol/view-model.test.ts
+  → 25 passed
+node --experimental-strip-types --test frontend/src/app/symbol/liquidation-pane-dom-contract.test.ts frontend/src/app/symbol/long-short-pane-dom-contract.test.ts
+  → 23 passed
+npm --prefix frontend run test:app
+  → 361 passed
+playwright test frontend/e2e/14-long-short-dado-real.spec.ts (isolado, store própria)
+  → 4 passed
+E2E_API_PORT=8875 E2E_NEXT_PORT=4375 make verify (worktree sozinha, __pycache__ purgado antes)
+  → VERDE, 8/8 portões
+```
+
+**Doc delta:** esta seção. Nenhum ADR novo — a mudança é implementação de um `achado` já registrado
+neste mesmo gate, não uma decisão de arquitetura nova (`ADR-003` já cobria "grade em `charts`, não
+em `web`"; este fix só faz `long_short`/`liquidation` finalmente obedecer o que `oi`/`cvd` já
+obedeciam desde `T-02.1`).
+
+**Bloqueado:** nenhum. Devolvo para o loop principal decidir sobre re-despachar `frontend-qa` para
+re-veredicto da fase — não é ato meu (`gate-record`/`advance` são de owner/QA, não de builder).

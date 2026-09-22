@@ -97,6 +97,20 @@ export type { OiPanel, CvdPanel, PricePanel, S2Panels, S2RawInputs } from "./s2-
 export { ONE_DAY_MS, S2_WINDOW_SPAN_MS, lastGridInstant, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
 export type { S2Window, TrailingWindowRequest } from "./s2-window.ts";
 
+// ── `T-02.1`/`CA-5a` follow-up — THE SAME PRIMITIVE `buildOiPanel`/`buildCvdPanel` ALREADY GRID-
+// PAD WITH, NOW REACHABLE FROM `web` DIRECTLY. `long_short`/`liquidation` are NOT part of
+// `S2Panels` (`ADR-003`; those two panes are `components = ["web"]`, `[symbol]/page.tsx`'s own
+// comment on why), so before this line the ONE grid-alignment function every OTHER panel goes
+// through (`buildScalarSeries`, already used inside `s2-panels.ts` — not new geometry) was
+// unreachable outside `charts`, and `view-model.ts::nonNegativeFlowSlotsFromHistoryRows` fell
+// back to counting wire rows one-for-one — correct only while `/series-history` always answers
+// the full grid, and silently wrong the moment an upstream failure makes it answer `rows: []`
+// (`gates/FASE-02-qa.md`, achado bloqueante `CA-5a`: `long_short_slots`/`liquidation_slots`
+// collapsed to `0` while `price`/`oi`/`cvd` stayed grid-padded at the full window). Exporting the
+// primitive itself, rather than adding a fourth panel-shaped wrapper, keeps `web` the one place
+// that composes non-`S2Panels` panes while `charts` stays the one place grid alignment is coded.
+export { buildScalarSeries } from "./s2-scalar-grid.ts";
+
 // ── 3. adaptador lightweight (LOSSLESS mappings only — see module docstring above) ───────────
 // `T-01.8` (design_gate da fase `01`) acrescenta TRÊS mapeamentos a esta MESMA categoria — e
 // eles não alargam a porta: continuam sendo `ScalarSlot[] -> (LineItem|WhitespaceItem)[]`, a

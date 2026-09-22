@@ -258,8 +258,9 @@ test("the route resolves TWO cohorts through the unique-match helper, and gives 
 test("the route reuses the ONE RN-1 mapper, and does not write a second copy of the rule", () => {
   assert.match(
     pageCode,
-    /const slots = nonNegativeFlowSlotsFromHistoryRows\(rows\);/,
-    "the liquidation slots must come from the shared non-negative FLOW mapper",
+    /const slots = nonNegativeFlowSlotsFromHistoryRows\(rows, routeWindow\.window\);/,
+    "the liquidation slots must come from the shared non-negative FLOW mapper, grid-padded by the " +
+      "route's own window (`CA-5a` fix, `gates/FASE-02-qa.md`)",
   );
   // ⛔ AND THE OLD NAME IS GONE. `volumeSlotsFromHistoryRows` called on liquidation rows would work
   // and LIE at the call site; a second mapper would be two implementations of `RN-1`.
@@ -377,7 +378,7 @@ test("MORDE, route side: the 4 route mutations are caught", () => {
     },
     {
       name: "a second copy of the RN-1 mapper for liquidation",
-      mutate: (s) => s.replace(/const slots = nonNegativeFlowSlotsFromHistoryRows\(rows\);/, "const slots = rows.map((row) => ({ time: row.event_time, value: Number(row.value ?? 0) }));"),
+      mutate: (s) => s.replace(/const slots = nonNegativeFlowSlotsFromHistoryRows\(rows, routeWindow\.window\);/, "const slots = rows.map((row) => ({ time: row.event_time, value: Number(row.value ?? 0) }));"),
     },
   ];
   for (const mutant of mutants) {
@@ -389,7 +390,7 @@ test("MORDE, route side: the 4 route mutations are caught", () => {
       PAGE_LONG_STATUS.test(mutated) &&
       PAGE_SHORT_STATUS.test(mutated) &&
       PAGE_PROVENANCE.test(mutated) &&
-      /const slots = nonNegativeFlowSlotsFromHistoryRows\(rows\);/.test(mutated);
+      /const slots = nonNegativeFlowSlotsFromHistoryRows\(rows, routeWindow\.window\);/.test(mutated);
     assert.ok(!survives, `the mutation "${mutant.name}" is NOT detected by the asserts above — the guard is vacuous`);
   }
 });
