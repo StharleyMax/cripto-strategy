@@ -267,8 +267,15 @@ def test_lookback_ms_passed_to_the_reader_is_at_least_the_grid_and_the_staleness
     assert reader.calls[0]["lookback_ms"] == max(GRID_MS, 999_999)
 
 
-def test_refuses_an_interval_other_than_1m() -> None:
-    """`ADR-034/D6`: never subestimate — refuse instead of aggregating a coarser interval."""
+@pytest.mark.parametrize("interval", ["1d", "3m", "30s"])
+def test_refuses_an_interval_outside_the_supported_set(interval: str) -> None:
+    """`ADR-040/D1` (`T-03.3` DoD 5): `1d`/`3m`/`30s` are still refused, `n=3` — `D6` extended.
+
+    `ADR-040/D1` widened the set `ADR-034/D6` refused-against from `{1m}` to
+    `{1m,5m,15m,1h,4h}`; the refusal ITSELF is unchanged and this is the falsifier in the
+    opposite direction named by the ADR: *"se algum `interval` FORA do conjunto devolver `200`,
+    a recusa de `D6` foi diluída em vez de estendida"*.
+    """
     catalog = _catalog_with_one_entry()
     reader = _FakeReader(())
 
@@ -279,12 +286,34 @@ def test_refuses_an_interval_other_than_1m() -> None:
             classify_panel_grid,
             series_key_id=_oi_key().series_key_id(),
             symbol=SYMBOL,
-            interval="5m",
+            interval=interval,
             window_start_ms=BUCKET_END,
             window_end_ms=BUCKET_END + GRID_MS,
             knowledge_time_ms=BUCKET_END + 100_000,
             bar_policy=BarPolicy.FINAL_ONLY,
         )
+
+
+@pytest.mark.parametrize("interval", ["1m", "5m", "15m", "1h", "4h"])
+def test_every_member_of_the_supported_set_is_accepted(interval: str) -> None:
+    """The other half of the same falsifier: none of the 5 widened values raises `422`."""
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval=interval,
+        window_start_ms=BUCKET_END,
+        window_end_ms=BUCKET_END,
+        knowledge_time_ms=BUCKET_END + 100_000,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert len(report.rows) == 1
 
 
 def test_refuses_an_unknown_series_key_id() -> None:
@@ -767,4 +796,199 @@ def test_a_series_whose_native_grid_equals_the_panel_grid_is_not_upsampling() ->
         "enabled": True,
         "reason": "multiple_of_native",
         "multiple": 1,
+    }
+
+
+# ── `ADR-040/D1` — reaggregation above the native grid ─────────────────────────────────────
+#
+# Everything above this line pins `interval == "1m"`, the degenerate case where
+# `_reaggregated_row` (`use_cases/series_history.py`) is never reached. What follows is
+# `T-03.3`'s own falsifier — `ADR-040` "Falsificador desta ADR", item 2, literal: *"se
+# `/series-history?interval=15m` devolver `200` com um `FLOW` que não seja a soma dos fatos de
+# 1 min contidos no bucket, ou um `STOCK` que seja soma em vez do extremo/último
+# correspondente, `D1` foi violada"*. The exhaustive 8-pair matrix against a real fixture is
+# `T-03.7`'s task (`reduce_bucket` itself, `domain/series_reduction.py`); this pins the WIRING
+# one layer up, through the real use case, on the two functions that disagree the loudest.
+
+OUTER_BUCKET_END = 1_620_000_000_000
+"""Aligned to EVERY member of `_INTERVAL_STEP_MS`, not only `GRID_MS` — `1_620_000_000_000 /
+300_000 = 5_400_000` exact — so the fixture below is the window a real `5m` request would
+send, not an arbitrary instant that happens to divide evenly by one width only."""
+
+
+def _five_native_facts(key: SeriesKey, *, values: tuple[str, ...]) -> list[SeriesRow]:
+    """Five `_lagged_row`s spanning `[OUTER_BUCKET_END - 4*GRID_MS, OUTER_BUCKET_END]`.
+
+    `values[0]` is the OLDEST (smallest `event_time`), `values[-1]` the NEWEST — the ascending
+    order `reduce_bucket`'s `first`/`last` require, same contract the fixtures above already
+    honour for the native 1-minute case.
+    """
+    return [
+        _lagged_row(key, bucket_end=OUTER_BUCKET_END - (4 - index) * GRID_MS, value_raw=value)
+        for index, value in enumerate(values)
+    ]
+
+
+def test_interval_5m_sums_the_five_native_facts_for_a_flow_series() -> None:
+    """`FLOW` reaggregated is the `Σ` of the facts it covers — never the last fact alone."""
+    key = _volume_key()
+    rows = _five_native_facts(key, values=("1.0", "2.0", "3.0", "4.0", "5.0"))
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(_observations(*rows)),
+        classify_panel_grid,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert len(report.rows) == 1
+    only_row = report.rows[0]
+    assert only_row.event_time == OUTER_BUCKET_END
+    assert only_row.value == "15.0"  # 1+2+3+4+5 — never "5.0" (last) nor "1.0" (first)
+    assert only_row.absence is None
+
+
+def test_interval_5m_takes_the_last_native_fact_for_a_stock_series_never_the_sum() -> None:
+    """`STOCK` reaggregated is the extremum/last its `reduction` names — `MORDE` if it summed.
+
+    `_oi_key()` is `(STOCK, POINT)`, which `reduce_bucket`'s table maps to `_last` — the same
+    function `(STOCK, CLOSE)`/`(STOCK, LAST)` share (`series_reduction.py`'s one documented
+    collision). `12×`-the-real-OI is exactly the shape `ADR-040`'s M2 named: summing a `STOCK`.
+    """
+    key = _oi_key()
+    rows = _five_native_facts(key, values=("10", "20", "30", "40", "50"))
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(_observations(*rows)),
+        classify_panel_grid,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    only_row = report.rows[0]
+    assert only_row.value == "50.0"  # the LAST fact — never "150.0" (Σ) nor "10.0" (first)
+
+
+def test_interval_5m_reports_absence_when_no_native_fact_is_admitted_at_all() -> None:
+    """Every native instant of the outer bucket absent -> the outer row is `SEM_PONTO` too."""
+    key = _volume_key()
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(()),
+        classify_panel_grid,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    only_row = report.rows[0]
+    assert only_row.value is None
+    assert only_row.absence == Absence.NO_POINT.value
+    assert only_row.available_at is None
+
+
+def test_interval_5m_sums_only_the_native_facts_present_when_some_minutes_are_holes() -> None:
+    """`ADR-040/D3` (`P-B`'s visible mark) is `T-03.4`'s task.
+
+    This pins the ARITHMETIC under it: a partial outer bucket sums whatever native facts ARE
+    present, and never fabricates the holes. Only 2 of the 5 native minutes carry a fact; the
+    middle 3 are simply absent rows.
+    """
+    key = _volume_key()
+    rows = [
+        _lagged_row(key, bucket_end=OUTER_BUCKET_END - 4 * GRID_MS, value_raw="1.0"),
+        _lagged_row(key, bucket_end=OUTER_BUCKET_END, value_raw="5.0"),
+    ]
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(_observations(*rows)),
+        classify_panel_grid,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    only_row = report.rows[0]
+    assert only_row.value == "6.0"  # 1.0 + 5.0 — never "0", never extrapolated to 5 minutes
+    assert only_row.absence is None
+
+
+def test_a_window_start_not_aligned_to_the_interval_still_composes_the_full_bucket() -> None:
+    """The caller's window need not be interval-aligned.
+
+    The first outer bucket is still built from its OWN true start, never truncated to whatever
+    millisecond `window_start_ms` is.
+    """
+    key = _volume_key()
+    rows = _five_native_facts(key, values=("1.0", "2.0", "3.0", "4.0", "5.0"))
+    # Lands one native minute INSIDE the bucket — its true start is `OUTER_BUCKET_END -
+    # 4*GRID_MS`, three minutes earlier than this.
+    window_start_ms = OUTER_BUCKET_END - 3 * GRID_MS
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(_observations(*rows)),
+        classify_panel_grid,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=window_start_ms,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert len(report.rows) == 1
+    assert report.rows[0].event_time == OUTER_BUCKET_END
+    assert report.rows[0].value == "15.0"
+
+
+def test_the_panel_grid_verdict_uses_the_requested_interval_not_the_native_step() -> None:
+    """`ADR-040/D1`: `panel_grid_ms` is now the REQUESTED interval.
+
+    Not the pre-`ADR-040` constant `_GRID_STEP_MS` — `5m` over a `60_000` native grid is
+    `multiple=5`, not `1`.
+    """
+    catalog = _catalog_with_one_entry()  # native_grid_ms == GRID_MS == 60_000
+
+    report = build_series_history_report(
+        catalog,
+        _FakeReader(()),
+        classify_panel_grid,
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    panel = report.to_envelope(principal_id=None, server_now_ms=OUTER_BUCKET_END)["panel"]
+    assert panel["grid_multiple"] == {  # type: ignore[index]
+        "enabled": True,
+        "reason": "multiple_of_native",
+        "multiple": 5,
     }

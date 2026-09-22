@@ -230,14 +230,93 @@ def test_two_identical_requests_produce_byte_identical_bodies(tmp_path: Path) ->
     assert first == second
 
 
-def test_interval_other_than_1m_is_refused_with_422(tmp_path: Path) -> None:
-    """`CA-F1-3`/`RN-8`: `interval=5m` never `200` with a subestimated number."""
+def test_an_interval_outside_the_supported_set_is_refused_with_422(tmp_path: Path) -> None:
+    """`CA-F1-3`/`RN-8` (`ADR-040/D1`, `T-03.3` DoD 5): `1d`/`3m`/`30s` never `200`, `n=3`.
+
+    `ADR-040/D1` widened `ADR-034/D6`'s refused-against set from `{1m}` to
+    `{1m,5m,15m,1h,4h}` — this pins the falsifier in the OTHER direction: a value still
+    outside the widened set is refused for the same reason it always was.
+    """
     app = _app_with_reader(tmp_path, _FakeReader())
 
-    with _served(app) as port:
-        status, _ = _get(port, _valid_query(interval="5m"))
+    for interval in ("1d", "3m", "30s"):
+        with _served(app) as port:
+            status, _ = _get(port, _valid_query(interval=interval))
+        assert status == 422, f"interval={interval!r} was not refused"
 
-    assert status == 422
+
+def test_every_member_of_the_widened_set_is_accepted_with_200(tmp_path: Path) -> None:
+    """`ADR-040/D1`: none of the 5 served intervals is refused — the set GREW, `D6` intact."""
+    row = _row()
+    reader = _FakeReader((Observation(row=row, value=Decimal(row.value_raw)),))
+    app = _app_with_reader(tmp_path, reader)
+
+    for interval in ("1m", "5m", "15m", "1h", "4h"):
+        with _served(app) as port:
+            status, _ = _get(port, _valid_query(interval=interval))
+        assert status == 200, f"interval={interval!r} was refused"
+
+
+def test_interval_15m_reaggregates_a_stock_series_to_its_last_native_fact(
+    tmp_path: Path,
+) -> None:
+    """`ADR-040`'s falsifier item 2, end to end.
+
+    `200` on `interval=15m` never subestimates — and for a `STOCK` series (`(STOCK, POINT)`,
+    `reduce_bucket`'s `_last`) the served value is the LAST of the native facts the bucket
+    covers, never their sum.
+    """
+    outer_end = BUCKET_END_MS
+    values = (
+        "10",
+        "20",
+        "30",
+        "40",
+        "50",
+        "60",
+        "70",
+        "80",
+        "90",
+        "100",
+        "110",
+        "120",
+        "130",
+        "140",
+        "150",
+    )
+    rows = tuple(
+        SeriesRow(
+            series_key_id=_oi_key().series_key_id(),
+            symbol=SYMBOL,
+            source="binance",
+            bucket_end=outer_end - (len(values) - 1 - index) * 60_000,
+            event_time=outer_end - (len(values) - 1 - index) * 60_000,
+            available_at=outer_end - (len(values) - 1 - index) * 60_000 + 30_000,
+            availability_source=AvailabilitySource.OBSERVED,
+            ingested_at=outer_end - (len(values) - 1 - index) * 60_000 + 30_000,
+            observed_at=outer_end - (len(values) - 1 - index) * 60_000 + 30_000,
+            provenance=Provenance.OBSERVED,
+            src_label_raw="sumOpenInterest",
+            observer_id="vps-01",
+            observer_region=UNKNOWN_OBSERVER_REGION,
+            is_final=True,
+            value_raw=value,
+        )
+        for index, value in enumerate(values)
+    )
+    reader = _FakeReader(tuple(Observation(row=row, value=Decimal(row.value_raw)) for row in rows))
+    app = _app_with_reader(tmp_path, reader)
+
+    with _served(app) as port:
+        status, body = _get(
+            port,
+            _valid_query(interval="15m", window_start_ms=outer_end, window_end_ms=outer_end),
+        )
+
+    assert status == 200
+    envelope = json.loads(body)
+    assert len(envelope["rows"]) == 1
+    assert envelope["rows"][0]["value"] == "150.0"
 
 
 def test_bar_policy_missing_is_refused_with_422(tmp_path: Path) -> None:
