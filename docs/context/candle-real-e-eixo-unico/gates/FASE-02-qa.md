@@ -8,13 +8,30 @@
 
 ## Veredito
 
-**NEEDS_FIX.**
+**APPROVED** (atualizado 2026-09-22, após o fix registrado na seção "Fix aplicado" abaixo e
+**reconfirmado por mim, de forma independente, nesta mesma sessão** — não aceito de segunda mão).
 
-Sete dos oito itens de DoD se sustentam sob re-medição independente. Um — `CA-5a`, item `1` do
-DoD, explicitamente apontado no despacho para checagem ao vivo — **MORDE** numa condição real
-(falha de upstream em `/series-history`) que nenhum teste desta fase exercita. A prova é um teste
-vermelho reproduzível, não opinião: `frontend/src/app/symbol/view-model.test.ts`, teste `CA-5a (QA
-· Fase 02 gate)`, `0 !== 5760`.
+Histórico preservado abaixo, não apagado: os oito itens de DoD foram medidos ao vivo nesta sessão;
+sete se sustentaram de primeira. Um — `CA-5a`, item `1` do DoD, explicitamente apontado no
+despacho para checagem ao vivo — **MORDEU** numa condição real (falha de upstream em
+`/series-history`) que nenhum teste da fase exercitava. A prova foi um teste vermelho
+reproduzível: `frontend/src/app/symbol/view-model.test.ts`, teste `CA-5a (QA · Fase 02 gate)`,
+`0 !== 5760`. Outro agente corrigiu (`wave/candle-f02`, commit `6d8e06e`, seção "Fix aplicado"
+abaixo) e eu reverifiquei pessoalmente, sozinha na máquina (`ps aux` confirmado, worktree isolada,
+`__pycache__` purgado, portas novas `8881`/`4381` para não reaproveitar nenhum ambiente anterior):
+
+1. **Meu próprio teste vermelho agora passa**: `node --experimental-strip-types --test
+   --test-name-pattern='CA-5a' frontend/src/app/symbol/view-model.test.ts` → `1 pass, 0 fail`
+   (o fix atualizou a chamada para `nonNegativeFlowSlotsFromHistoryRows([], FIXTURE_WINDOW)`,
+   coerente com a nova assinatura — não é o teste enfraquecido, é a chamada corrigida).
+2. **`make verify` fresco, isolado, `E2E_API_PORT=8881 E2E_NEXT_PORT=4381`**: `8/8` portões
+   `VERDE` (`test-frontend rc=0, 805 pass, 0 fail` — inclui meu teste `CA-5a`).
+3. **`CA-5a` ao vivo, de novo, contra a MESMA store efêmera onde mordeu antes** (`up`/`down`
+   próprios, portas `8882`/`4382`, não reaproveitando nenhum ambiente de terceiros):
+   `grep -o 'data-fact="[a-z_]*slots:[0-9]*"' | cut -d: -f2 | sort -u | wc -l` → **`1`** (era `2`),
+   os 6 painéis (incluindo `liquidation_slots:long`/`:short`, checados à parte) em `5760`.
+
+Nada ficou pendente. Ver DoD item a item, atualizado, mais abaixo.
 
 ## Achados
 
@@ -171,27 +188,28 @@ Nenhuma das 8 regras (`core.relative-import`, `core.silent-except`, `core.print-
 bloqueio(s), 73 aviso(s))` acima, e `harness rules --mode sweep --changed-only` já citado limpo em
 `gates/T-02.4-builder.md`/`T-02.7-builder.md`.
 
-## DoD da fase (`02_eixo_unico.md`, itens 1-8), item a item
+## DoD da fase (`02_eixo_unico.md`, itens 1-8), item a item — estado FINAL após o fix
 
-1. `CA-5a`/`CA-5b`/`CA-5c`/`CA-5d` — `CA-5b`/`c`/`d` **OK** (medidos, `gates/T-02.3`/`T-02.6`, e
-   `CA-5b` re-confirmado nesta sessão). **`CA-5a` FAIL** — ver achado bloqueante acima.
-2. Pan move os 5 — **OK**, confirmado ao vivo nesta sessão.
-3. Ablação — **OK**, confirmado ao vivo nesta sessão.
-4. Sem realimentação — **OK**, confirmado ao vivo nesta sessão (lockstep + idle sem laço).
+1. `CA-5a`/`CA-5b`/`CA-5c`/`CA-5d` — todos **OK**. `CA-5a` mordeu na primeira passada (histórico
+   acima), foi corrigido (`6d8e06e`) e **reconfirmado por mim, ao vivo, de forma independente**
+   (`wc -l` → `1`, seção "Veredito" acima). `CA-5b`/`c`/`d` seguem `OK` desde `gates/T-02.3`/`T-02.6`.
+2. Pan move os 5 — **OK**, confirmado ao vivo.
+3. Ablação — **OK**, confirmado ao vivo.
+4. Sem realimentação — **OK**, confirmado ao vivo (lockstep + idle sem laço).
 5. Rota responde, `n=4` símbolos — **OK**, `gates/T-02.5-builder.md`, evidência citável.
 7. Teto de latência `160ms` — **OK**, recalibração bem documentada e decisão do owner respeitada.
-8. `make verify` verde, `__pycache__` purgado — **FALHA** (ver acima; o `FALHA` é o achado real
-   que este gate existe para produzir, não um erro de execução do portão).
+8. `make verify` verde, `__pycache__` purgado — **OK**. Reprovou na primeira passada (o achado real
+   que este gate existia para produzir), fechou verde 8/8 depois do fix, e eu reproduzi esse verde
+   de novo, sozinha, em ambiente isolado e portas novas (`8881`/`4381`) — não é o mesmo log relido.
 
-## Ações (NEEDS_FIX)
+## Ações
 
-1. `frontend-builder`: consertar `long_short`/`liquidation` para compartilhar a mesma grade
-   canônica de `price`/`oi`/`cvd` mesmo sob falha de upstream (`rows: []`) — ver "causa raiz"
-   acima. O teste vermelho `CA-5a` em `frontend/src/app/symbol/view-model.test.ts` é o
-   falsificador: fica verde quando corrigido.
-2. Re-rodar `CA-5a` literal (o `grep` ao vivo) contra a página renderizada depois do conserto, não
-   só o teste unitário — o unitário prova a causa raiz; o `grep` prova o sintoma na página real.
-3. Nenhuma ação sobre `T-02.5`/`T-02.7`/`T-02.8` — os três fecham `OK` nesta re-verificação.
+Nenhuma pendente. Histórico (não apagado, para quem quiser a trilha completa):
+
+1. ~~`frontend-builder`: consertar `long_short`/`liquidation`...~~ — feito em `6d8e06e`, ver "Fix
+   aplicado" abaixo, reconfirmado por mim de forma independente (ver "Veredito").
+2. ~~Re-rodar `CA-5a` literal ao vivo depois do conserto~~ — feito por mim, `wc -l` → `1`.
+3. Nenhuma ação sobre `T-02.5`/`T-02.7`/`T-02.8` — os três fecham `OK`.
 
 ## Fix aplicado (`wave/candle-f02`, 2026-09-22) — não apaga o achado acima, que é histórico
 
