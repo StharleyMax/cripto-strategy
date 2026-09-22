@@ -385,11 +385,14 @@ test(`o nÃºmero de barras do OiPane Ã© o da API, sobre a MESMA janela (${SPE
   const horizonFact = await horizon.getAttribute("data-fact");
   fact(SPEC, "oi_readable_horizon_fact", horizonFact);
   fact(SPEC, "oi_native_grid_slots", nativeGridSlots);
-  // â ï¸ `nativeGridSlots`, NUNCA `windowGridSlots`: o painel desenha a grade de 5 min, e declarar
-  // `N/5761` seria a escada vestida de mediÃ§Ã£o. Os dois nÃºmeros sÃ£o publicados como fatos para
-  // que a razÃ£o entre eles (5) fique legÃ­vel no relatÃ³rio do gate.
+  // `windowGridSlots`, não mais `nativeGridSlots`: `T-02.1` unificou TODO painel na mesma
+  // grade (`S2_AXIS_STEP_MS`, 1 min) — `buildOiPanel` parou de reimplementar a grade de 5 min
+  // (ver `s2-panels.ts`), e `panels.oi.slots.length` (o `gridSlots` que `OiReadableHorizon`
+  // recebe em `SymbolClient.tsx`) já é a grade de 1 min, igual price/CVD/volume.
+  // `oi_native_grid_slots` segue publicado como fato só para a razão (5) entre os dois ficar
+  // legível no relatório do gate — não é mais o denominador do horizonte.
   fact(SPEC, "oi_window_grid_slots", windowGridSlots);
-  expect(horizonFact).toBe(`oi_readable_horizon:${api.native}/${nativeGridSlots}`);
+  expect(horizonFact).toBe(`oi_readable_horizon:${api.native}/${windowGridSlots}`);
 
   // ââ (e) o veredito por universo ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   if (!readerPresent) {

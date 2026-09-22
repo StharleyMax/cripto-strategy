@@ -405,7 +405,7 @@ test(`o nÃºmero na tela Ã© o nÃºmero da API â e a ausÃªncia Ã© SE
   // candle's close (`SymbolClient.tsx::PricePane`), so that is the series this falsifier has to
   // ask about. Asking `klines_last` would compare the screen against a series nothing draws.
   for (const [label, metric, reduction] of [
-    ["PreÃ§o", "klines_ohlc", "CLOSE"],
+    ["Preço", "klines_ohlc", "CLOSE"],
     ["Open Interest", "sum_open_interest", null],
   ] as const) {
     const entry = findEntry(
