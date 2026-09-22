@@ -202,12 +202,15 @@ def test_get_series_history_serves_the_3_level_envelope(tmp_path: Path) -> None:
     assert envelope["bar_policy"] == "final_only"
     assert len(envelope["rows"]) == 1
     row_wire = envelope["rows"][0]
-    assert set(row_wire) == {"event_time", "available_at", "value", "absence"}
+    assert set(row_wire) == {"event_time", "available_at", "value", "absence", "coverage"}
     # `CA-F1-5`: the discriminated pair is never malformed on the wire — exactly one of
     # value/absence is non-null, for every row (universe: N=1 row this fixture produced).
     assert (row_wire["value"] is None) != (row_wire["absence"] is None)
     assert row_wire["value"] == "1234.56"
     assert row_wire["absence"] is None
+    # `T-03.4`/`ADR-040/D3`: `coverage` is a REAGGREGATED-row concept — `interval == "1m"` here
+    # is the native grid, never reaggregated, so the key is present but its value is `null`.
+    assert row_wire["coverage"] is None
 
 
 def test_two_identical_requests_produce_byte_identical_bodies(tmp_path: Path) -> None:
@@ -317,6 +320,57 @@ def test_interval_15m_reaggregates_a_stock_series_to_its_last_native_fact(
     envelope = json.loads(body)
     assert len(envelope["rows"]) == 1
     assert envelope["rows"][0]["value"] == "150.0"
+    # `T-03.4`/`ADR-040/D3` (`P-B`): the reaggregated row carries `coverage` on the wire, the
+    # `{present, expected}` pair — full here, 15 distinct native facts of the 15 a `15m` bucket
+    # spans over a `1m` native grid.
+    assert envelope["rows"][0]["coverage"] == {"present": 15, "expected": 15}
+
+
+def test_interval_5m_partial_coverage_carries_the_present_expected_pair_never_a_bool(
+    tmp_path: Path,
+) -> None:
+    """`ADR-040/D3` (`P-B`), literal: `{"present": N, "expected": M}` — never a bool, never a %.
+
+    Only 2 of the 5 native minutes the `5m` outer bucket spans carry a fact; the route still
+    serves `200` with the partial `Σ`, and `coverage` says exactly how partial — never `true`/
+    `false`, never a server-computed ratio that would throw the denominator away.
+    """
+    outer_end = BUCKET_END_MS
+    present_offsets = (4, 0)  # native minutes -4 and 0 of the 5-minute group carry a fact
+    rows = tuple(
+        SeriesRow(
+            series_key_id=_oi_key().series_key_id(),
+            symbol=SYMBOL,
+            source="binance",
+            bucket_end=outer_end - offset * 60_000,
+            event_time=outer_end - offset * 60_000,
+            available_at=outer_end - offset * 60_000,
+            availability_source=AvailabilitySource.OBSERVED,
+            ingested_at=outer_end - offset * 60_000,
+            observed_at=outer_end - offset * 60_000,
+            provenance=Provenance.OBSERVED,
+            src_label_raw="sumOpenInterest",
+            observer_id="vps-01",
+            observer_region=UNKNOWN_OBSERVER_REGION,
+            is_final=True,
+            value_raw=value,
+        )
+        for offset, value in zip(present_offsets, ("1000", "9000"), strict=True)
+    )
+    reader = _FakeReader(tuple(Observation(row=row, value=Decimal(row.value_raw)) for row in rows))
+    app = _app_with_reader(tmp_path, reader)
+
+    with _served(app) as port:
+        status, body = _get(
+            port,
+            _valid_query(interval="5m", window_start_ms=outer_end, window_end_ms=outer_end),
+        )
+
+    assert status == 200
+    row_wire = json.loads(body)["rows"][0]
+    assert row_wire["value"] == "9000.0"  # `(STOCK, POINT)` = last — the more recent of the two
+    assert isinstance(row_wire["coverage"], dict)  # never `True`/`False`
+    assert row_wire["coverage"] == {"present": 2, "expected": 5}
 
 
 def test_bar_policy_missing_is_refused_with_422(tmp_path: Path) -> None:

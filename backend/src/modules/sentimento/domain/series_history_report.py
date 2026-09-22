@@ -21,6 +21,40 @@ from src.modules.sentimento.domain.as_of_accessor import BarPolicy
 
 
 @dataclass(frozen=True)
+class BucketCoverage:
+    """The `{present, expected}` pair `P-B` requires on every REAGGREGATED row (`ADR-040/D3`).
+
+    `SPEC-008` §5.2 / `JULGAMENTO-QUANT-ARCHITECT.md` §2.2, literal: a pair of INTEGERS, never a
+    bool, never a percentage — collapsing to either loses the denominator, and the denominator
+    IS the information (`81/240` and `1/3` are not the same claim about the world, and a server-
+    computed percentage cannot be told apart from a different window that happens to land on the
+    same ratio). `present` and `expected` are counts of NATIVE facts, never a served-row count.
+
+    `present` counts DISTINCT native facts this route admitted inside the outer bucket — never
+    the number of native GRID SLOTS that carry a value. The two differ exactly when
+    `CARRY_FORWARD_BY_NATURE[nature]` is `True` (`STOCK`): one observed fact can answer several
+    consecutive native instants, and counting slots would report "5 of 5 present" for a bucket
+    that in truth holds ONE fact stretched forward by `as_of`. `JULGAMENTO-QUANT-ARCHITECT.md`
+    §2.1 measures coverage the same way, "fatos nativos distintos (não linhas da grade
+    servida)", for the same reason: a slot count is not a fact count, and reporting one as the
+    other is the same class of misrepresentation `P-B` exists to prevent for the SUM/extremum
+    case.
+
+    `expected` is the number of native grid slots the outer bucket spans
+    (`interval_ms // native_grid_ms`) — never "how many facts existed at the source", which this
+    route has no way to know and `P-B` explicitly does not promise (`ADR-040/D3`: cobertura
+    declarada NÃO promete soma certa).
+    """
+
+    present: int
+    expected: int
+
+    def to_wire(self) -> dict[str, int]:
+        """Project onto the exact `{"present": .., "expected": ..}` shape `SPEC-008` §5.2 fixes."""
+        return {"present": self.present, "expected": self.expected}
+
+
+@dataclass(frozen=True)
 class SeriesHistoryRow:
     """One row of the `rows` array — the discriminated pair of `ADR-034/D5`, on the grid.
 
@@ -29,12 +63,20 @@ class SeriesHistoryRow:
     grid step, and the grid step is what a chart's X axis needs, not the source's own stamp.
     `available_at` is `None` exactly when `value`/`absence` says there is no point, matching the
     example in `SPEC-006 §5.2` line 2.
+
+    `coverage` is `None` for the DEGENERATE case (`interval` == the series' native interval, so
+    `use_cases/series_history.py` never reaggregates) — a native row has nothing to report a
+    coverage FRACTION of; it already IS the one native fact, unmediated. Every row that WAS
+    reaggregated (`ADR-040/D1`) carries a `BucketCoverage`, whether served with a value or
+    `absence`d — `present == 0` is itself the information `SPEC-008` §7.3 asks the wire to carry,
+    not a case to hide.
     """
 
     event_time: int
     available_at: int | None
     value: str | None
     absence: str | None
+    coverage: BucketCoverage | None = None
 
     def to_wire(self) -> dict[str, object]:
         """Project onto the exact field names `SPEC-006 §5.2` writes, snake_case, verbatim."""
@@ -43,6 +85,7 @@ class SeriesHistoryRow:
             "available_at": self.available_at,
             "value": self.value,
             "absence": self.absence,
+            "coverage": None if self.coverage is None else self.coverage.to_wire(),
         }
 
 

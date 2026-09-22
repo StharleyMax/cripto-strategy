@@ -16,7 +16,7 @@ from src.modules.sentimento.domain.provenance import (
     SeriesRow,
 )
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog, SeriesCatalogEntry
-from src.modules.sentimento.domain.series_history_report import PanelGridVerdict
+from src.modules.sentimento.domain.series_history_report import BucketCoverage, PanelGridVerdict
 from src.modules.sentimento.domain.series_key import (
     Nature,
     QuantityField,
@@ -172,6 +172,9 @@ def test_reports_one_row_per_grid_instant_with_a_value_present() -> None:
     assert only_row.value == "42"
     assert only_row.absence is None
     assert only_row.available_at == bucket_end
+    # `T-03.4`: `coverage` is a REAGGREGATED-row concept (`ADR-040/D3`) — the native `1m` grid
+    # (`interval == native`, `_row_from_native_reading`) never reaggregates, so it never gets one.
+    assert only_row.coverage is None
 
 
 def test_reports_absence_for_a_grid_instant_with_no_admitted_observation() -> None:
@@ -195,6 +198,7 @@ def test_reports_absence_for_a_grid_instant_with_no_admitted_observation() -> No
     only_row = report.rows[0]
     assert only_row.value is None
     assert only_row.absence == Absence.NO_POINT.value
+    assert only_row.coverage is None
 
 
 def test_panel_fields_come_from_the_catalog_entry() -> None:
@@ -852,6 +856,9 @@ def test_interval_5m_sums_the_five_native_facts_for_a_flow_series() -> None:
     assert only_row.event_time == OUTER_BUCKET_END
     assert only_row.value == "15.0"  # 1+2+3+4+5 — never "5.0" (last) nor "1.0" (first)
     assert only_row.absence is None
+    # `T-03.4`/`ADR-040/D3` (`P-B`): full coverage is still REPORTED, not omitted — 5 distinct
+    # native facts (five different `bucket_end`s) of the 5 the `5m` outer bucket spans.
+    assert only_row.coverage == BucketCoverage(present=5, expected=5)
 
 
 def test_interval_5m_takes_the_last_native_fact_for_a_stock_series_never_the_sum() -> None:
@@ -879,6 +886,8 @@ def test_interval_5m_takes_the_last_native_fact_for_a_stock_series_never_the_sum
 
     only_row = report.rows[0]
     assert only_row.value == "50.0"  # the LAST fact — never "150.0" (Σ) nor "10.0" (first)
+    # Regime B (`first`/`last`) still carries the pair — 5 distinct native facts of 5 expected.
+    assert only_row.coverage == BucketCoverage(present=5, expected=5)
 
 
 def test_interval_5m_reports_absence_when_no_native_fact_is_admitted_at_all() -> None:
@@ -902,14 +911,18 @@ def test_interval_5m_reports_absence_when_no_native_fact_is_admitted_at_all() ->
     assert only_row.value is None
     assert only_row.absence == Absence.NO_POINT.value
     assert only_row.available_at is None
+    # `P-B` never withholds the pair even when the whole bucket is absent — `present == 0` IS
+    # the information (`SPEC-008` §7.3), not a case where the field disappears.
+    assert only_row.coverage == BucketCoverage(present=0, expected=5)
 
 
 def test_interval_5m_sums_only_the_native_facts_present_when_some_minutes_are_holes() -> None:
-    """`ADR-040/D3` (`P-B`'s visible mark) is `T-03.4`'s task.
+    """`ADR-040/D3` (`P-B`): sum whatever native facts ARE present, mark the hole, never fake it.
 
-    This pins the ARITHMETIC under it: a partial outer bucket sums whatever native facts ARE
-    present, and never fabricates the holes. Only 2 of the 5 native minutes carry a fact; the
-    middle 3 are simply absent rows.
+    A partial outer bucket sums whatever native facts ARE present, never fabricates the holes,
+    and reports the hole through `coverage` (`T-03.4`) — never a refusal, never a threshold,
+    never an extrapolation. Only 2 of the 5 native minutes carry a fact; the middle 3 are simply
+    absent rows.
     """
     key = _volume_key()
     rows = [
@@ -933,6 +946,45 @@ def test_interval_5m_sums_only_the_native_facts_present_when_some_minutes_are_ho
     only_row = report.rows[0]
     assert only_row.value == "6.0"  # 1.0 + 5.0 — never "0", never extrapolated to 5 minutes
     assert only_row.absence is None
+    # `[MEDIDO 2026-09-19]`-shaped magnitude, at fixture scale: 2 of the 5 expected native slots.
+    # `mean(present) * expected` (the forbidden extrapolation) would be `15.0`, not `6.0` — this
+    # assertion is what would catch a future edit that started scaling instead of just summing.
+    assert only_row.coverage == BucketCoverage(present=2, expected=5)
+
+
+def test_present_counts_distinct_native_facts_never_carried_forward_grid_slots() -> None:
+    """`coverage.present` is a FACT count, not a SLOT count — `MORDE` on the naive count.
+
+    `(STOCK, POINT)` carries forward (`CARRY_FORWARD_BY_NATURE[STOCK] is True`,
+    `as_of_accessor.py`): ONE observed fact at the group's first minute is a legitimate answer
+    for `as_of` at every one of the 5 native instants inside this `5m` outer bucket, as long as
+    each stays within `max_staleness_ms` of its own read instant. A `present` that counted grid
+    SLOTS would read `5/5` here and claim full coverage; `JULGAMENTO-QUANT-ARCHITECT.md` §2.1
+    counts "fatos nativos distintos (não linhas da grade servida)" for exactly this reason — one
+    fact stretched across five slots by carry-forward is not five observations, and reporting it
+    as five would be the same misrepresentation `P-B`'s pair exists to prevent.
+    """
+    key = _oi_key()
+    only_fact_bucket_end = OUTER_BUCKET_END - 4 * GRID_MS
+    row = _lagged_row(key, bucket_end=only_fact_bucket_end, value_raw="7")
+
+    report = build_series_history_report(
+        _catalog_for(key, max_staleness_ms=400_000),
+        _FakeReader(_observations(row)),
+        classify_panel_grid,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    only_row = report.rows[0]
+    assert only_row.value == "7.0"  # carried forward correctly to the bucket's LAST minute
+    # The `MORDE`: a slot-counting implementation would assert `present == 5` here, not `1`.
+    assert only_row.coverage == BucketCoverage(present=1, expected=5)
 
 
 def test_a_window_start_not_aligned_to_the_interval_still_composes_the_full_bucket() -> None:
