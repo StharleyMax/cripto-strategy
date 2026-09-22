@@ -48,7 +48,8 @@
  * follows, rather than pretending a live feed exists.
  */
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type {
   CandlestickSeriesOptions,
   HistogramSeriesOptions,
@@ -391,6 +392,14 @@ export interface SymbolClientProps {
    * DOM against `/series-history` without seeding anything (`[P-seed]`). */
   readonly knowledgeTimeMs: number;
   readonly liveUrls: { readonly price: string | null; readonly oi: string | null; readonly cvd: string | null };
+  /** `T-03.11` — the `interval` THIS render's ten fetches actually asked `/series-history` for
+   * (`page.tsx`'s own `selectedInterval`, resolved from `?interval=` against
+   * `SUPPORTED_TIMEFRAMES`, never trusted raw). Replaces the `useState(DEFAULT_TIMEFRAME)` the
+   * bar used to own locally (`T-03.9`): the URL is now the single source of truth for which TF
+   * is selected, so `TimeframeBar`'s own selection can never drift from what was actually
+   * fetched — the exact drift a client-only `useState` would reopen the day someone reads
+   * `selectedTimeframe` as "what the panels show" instead of "what the bar highlights". */
+  readonly selectedTimeframe: string;
 }
 
 const ABSENCE_REASON_LABEL: Record<Exclude<PanelStatus, { kind: "ok" }>["reason"], string> = {
@@ -2391,12 +2400,12 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
  * on this screen already went through its own `design_gate`. Each button stays independently
  * `Tab`-focusable in the meantime, which is the simpler, still-fully-operable baseline.
  *
- * ⛔ `onSelect` UPDATES LOCAL SELECTION STATE ONLY — it does not (yet) trigger a refetch of any
- * panel's history. Wiring the actual reaggregated request is explicitly OUT of this task's scope
- * (`supported-timeframes.ts`'s own docstring names the two unmerged backend prerequisites —
- * `T-03.4`'s `{present, expected}` marks and `T-03.6`'s `coverage` envelope field — and the
- * wire-grid/staircase counts `T-03.11`'s own DoD exists to re-verify under a non-`1m` interval).
- * Selecting a TF here moves which button reads "selected" and nothing else on screen, on purpose.
+ * `T-03.11` (`CST-226`) — `onSelect` NOW TRIGGERS A REAL REFETCH, wired by `SymbolClient` below.
+ * The two backend prerequisites `T-03.9`'s docstring named (`T-03.4`'s `{present, expected}`
+ * marks, `T-03.6`'s `coverage` envelope field) are merged on this branch now, and the DoD this
+ * task exists for (`plan 03` DoD 6/7/8) is the falsifier over the wire-grid/staircase counts
+ * every panel already published — see `SymbolClient`'s own `handleTimeframeSelect` for the
+ * mechanism (a URL search param, not an in-component fetch).
  */
 function TimeframeBar({
   selected,
@@ -2446,6 +2455,7 @@ export function SymbolClient({
   panelStatus,
   knowledgeTimeMs,
   liveUrls,
+  selectedTimeframe,
 }: SymbolClientProps) {
   // `T-02.4` (`D-C3.1`) — the ONE `TimeAxis` every one of the six charts shares, derived off the
   // WINDOW (`panels.window`), never off any one panel's own `slots.length`: the axis is a
@@ -2466,10 +2476,29 @@ export function SymbolClient({
     }),
     [panels.window.startMs, panels.window.endMsExclusive],
   );
-  // `T-03.9` — local selection state ONLY (`TimeframeBar`'s own docstring: no refetch yet).
-  // Defaults to `DEFAULT_TIMEFRAME` ("1m"), the one interval this route has ever served — so
-  // first paint is unchanged for every existing e2e/DOM-contract assertion.
-  const [selectedTimeframe, setSelectedTimeframe] = useState<string>(DEFAULT_TIMEFRAME);
+  // `T-03.11` — `selectedTimeframe` is now a PROP, resolved server-side by `page.tsx` off
+  // `?interval=` (never a client `useState`): the URL is the single source of truth for which
+  // TF the ten fetches this render answers were actually made with, so the bar's own highlight
+  // can never say "5m" while the panels drew "1m" data. Clicking a button pushes a NEW url via
+  // `next/navigation`'s router — `dynamic = "force-dynamic"` on `page.tsx` guarantees that
+  // navigation re-runs the Server Component with the new `interval`, which is the real refetch
+  // `T-03.9`/`T-03.10` deferred (`ADR-005/D5`: history fetches are `web`'s server half, never
+  // client-side `fetch` against `INGEST_HEALTH_API_BASE_URL`, which is not even readable from
+  // the browser).
+  const router = useRouter();
+  const pathname = usePathname();
+  const handleTimeframeSelect = useCallback(
+    (interval: string) => {
+      // The default TF omits the param entirely rather than writing `?interval=1m` — the same
+      // "no silent default, but no noisy one either" discipline the rest of this route already
+      // follows (`page.tsx`'s own `S2_PRICE_USE` comment): `/symbol/BTCUSDT` and
+      // `/symbol/BTCUSDT?interval=1m` are the SAME request, and only one of the two spellings
+      // needs to exist for a bookmark to keep working after the default ever changes.
+      const query = interval === DEFAULT_TIMEFRAME ? "" : `?interval=${encodeURIComponent(interval)}`;
+      router.push(`${pathname}${query}`, { scroll: false });
+    },
+    [pathname, router],
+  );
   return (
     // The three instants of the request this render was built from, on the root element: the
     // screen declares WHAT IT ASKED, so an assertion (or an operator) can re-issue exactly that
@@ -2482,7 +2511,7 @@ export function SymbolClient({
       <h1 className="sr-only">
         {symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
-      <TimeframeBar selected={selectedTimeframe} onSelect={setSelectedTimeframe} />
+      <TimeframeBar selected={selectedTimeframe} onSelect={handleTimeframeSelect} />
       <AxisSyncProvider axis={axis}>
         <PricePane
           panels={panels}
