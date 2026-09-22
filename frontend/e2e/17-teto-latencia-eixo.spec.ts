@@ -6,7 +6,8 @@ import { expect, test } from "@playwright/test";
 import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
 
 /**
- * `T-02.7` (`CST-214`, `RNF-2`) — o teto de latência do eixo único: **`p95 <= 16 ms`** sobre
+ * `T-02.7` (`CST-214`, `RNF-2`) — o teto de latência do eixo único: **`p95 <= 160 ms`**
+ * (recalibrado de `16 ms`, ver "RECALIBRAÇÃO DO TETO" abaixo) sobre
  * **`n >= 60` quadros** de UM arrasto contínuo (≈1 s a 60 fps), contra o app real (`next
  * build`/`next start` — `scripts/e2e-env.sh`, nunca `next dev`).
  *
@@ -85,6 +86,38 @@ import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./hel
  * app. Com `steps` (uma única chamada, o Chromium interpola e despacha internamente), `p50` cai
  * para `~16,7 ms` — exatamente um quadro a 60 fps — que é o sinal de que o COALESCING nativo do
  * navegador está pacing a entrada, e o que sobra no `p95`/`max` é o app, não o transporte.
+ *
+ * ── RECALIBRAÇÃO DO TETO, `[DECISÃO-OWNER: 2026-09-22, escolha entre alternativas apresentadas]` ─
+ *
+ * `T-02.7` (`gates/T-02.7-builder.md`) mediu `p95` MORDENDO o teto original de `16 ms` em 6
+ * rodadas (3 com `T-02.6` ativa na mesma máquina, 3 isoladas depois): `32,90 · 32,80 · 33,00 ·
+ * 33,00 · 49,50 · 49,70 ms`. `T-02-latencia-fix` (`gates/T-02-latencia-fix.md`) testou por
+ * MUTAÇÃO REAL duas hipóteses de causa (coalescing das 5 escritas em `requestAnimationFrame`, e
+ * "6 `IChartApi` custam mais que 16ms") e refutou as duas: instrumentando `performance.now()` no
+ * evento CRU do painel de origem, ANTES de `RangeDispatcher`/`axis-sync.ts` ou qualquer escrita
+ * nos outros 5 painéis rodarem, `p95` já chega em `~33 ms` sozinho — o custo mora no Chromium
+ * headless dirigido por `page.mouse.move(..., { steps })` via CDP sobre um único
+ * `lightweight-charts@5.2.1` real, não no mecanismo de sincronia que esta fase construiu (`T-02.2`
+ * a `T-02.4`, absolvido pela medição). `16ms` nunca foi alcançável NESTE ambiente de teste — não
+ * porque o app é lento, mas porque o instrumento de arrasto sintético não o é o bastante.
+ *
+ * O owner escolheu, entre 3 alternativas redigidas (medir só o custo marginal do dispatch /
+ * recalibrar o teto fim-a-fim / investigar mais antes de decidir): **manter a medição fim-a-fim
+ * (CDP+headless) e recalibrar o número.** Método idêntico ao já usado neste mesmo repositório para
+ * o mesmo problema — um teto que não pode ficar colado no valor medido de hoje, ou volta a
+ * estourar sozinho amanhã por variância de rodada, não por regressão real
+ * (`frontend/playwright.config.ts`, comentário de topo: teto de `400s` = `3,2x` o PIOR caso
+ * medido sobre `n=3`/`n=4` rodadas). Aplicando o MESMO multiplicador ao PIOR `p95` das 6 rodadas
+ * documentadas acima (`49,70 ms`): `49,70 × 3,2 = 159,04 ms`, arredondado para **`160 ms`** — um
+ * número redondo, folgado sobre a conta, nunca colado nela.
+ *
+ * A folga de `3,2x` não é generosidade gratuita: `p50` ficou estável em `16,7–16,8 ms` nas 6
+ * rodadas (o quadro a 60 fps continua sendo o comportamento normal) — é só `p95`/`max` que variam
+ * por quadros ocasionalmente perdidos no driver de teste. `160 ms` continua MUITO abaixo do
+ * `max=584,30 ms` já observado sob contenção externa (`T-02.7`, `make verify` com outra worktree
+ * ativa) e do `max=2167,5 ms` do `DIAG_raw_max` (`T-02-latencia-fix`) — este teto mede o `p95` do
+ * MECANISMO, não um outlier de agendamento do SO, e continua capaz de morder uma regressão real
+ * (ex.: `RangeDispatcher` voltando a bloquear o main thread por centenas de ms a cada quadro).
  */
 
 const SPEC = "16-teto-latencia-eixo";
@@ -92,8 +125,13 @@ const SYMBOL = "BTCUSDT";
 const SYMBOL_PATH = `/symbol/${SYMBOL}`;
 const PRICE_PANE_TESTID = "price-pane";
 
-/** `[DECISAO-OWNER: 2026-09-19]` — 16 ms = um quadro a 60 fps, `tasks.toml:349-352`. */
-const LATENCY_CEILING_MS = 16;
+/** `[DECISÃO-OWNER: 2026-09-22, escolha entre alternativas apresentadas]` — recalibrado de `16 ms`
+ * (`[DECISAO-OWNER: 2026-09-19]`, `tasks.toml:349-352`) para `160 ms` = `3,2x` o PIOR `p95` medido
+ * em 6 rodadas (`49,70 ms`, `gates/T-02.7-builder.md` + `gates/T-02-latencia-fix.md`) — mesmo
+ * multiplicador que `frontend/playwright.config.ts` já usa para o mesmo problema (teto colado no
+ * medido de hoje estoura sozinho amanhã). Ver o bloco de comentário acima, seção "RECALIBRAÇÃO DO
+ * TETO", para a conta completa e por que `16ms` nunca foi alcançável neste ambiente de teste. */
+const LATENCY_CEILING_MS = 160;
 /** DoD 7 — `n >= 60` quadros ⇒ `>= 61` amostras de `performance.now()` (`n-1` intervalos). */
 const MIN_FRAMES = 60;
 const MIN_SAMPLES = MIN_FRAMES + 1;
