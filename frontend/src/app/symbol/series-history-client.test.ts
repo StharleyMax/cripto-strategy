@@ -30,8 +30,8 @@ function validEnvelopeBody(): unknown {
     session: { principal_id: null, server_now_ms: 1_000 },
     panel: { series_key_id: "abc123", source: "binance", nature: "STOCK", unit: "USD" },
     rows: [
-      { event_time: 0, available_at: 500, value: "42.5", absence: null },
-      { event_time: 60_000, available_at: null, value: null, absence: "SEM_PONTO" },
+      { event_time: 0, available_at: 500, value: "42.5", absence: null, coverage: null },
+      { event_time: 60_000, available_at: null, value: null, absence: "SEM_PONTO", coverage: { present: 3, expected: 5 } },
     ],
     knowledge_time: 120_000,
     bar_policy: "final_only",

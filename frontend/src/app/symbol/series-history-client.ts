@@ -28,6 +28,17 @@ import { TransportError, type TransportErrorKind } from "../../features/s1-conso
 export { TransportError };
 export type { TransportErrorKind };
 
+/** `T-03.12` — `BucketCoverage.to_wire()` (`series_history_report.py`): the `{present,
+ * expected}` PAIR OF INTEGERS `T-03.4`/`P-B`/`ADR-040/D3` mandates on every REAGGREGATED row,
+ * never a bool, never a percentage (the backend docstring's own reasoning: a percentage cannot
+ * be told apart from a different window landing on the same ratio, and the denominator IS the
+ * information). `null` is the DEGENERATE case — a native row (no reaggregation happened) has no
+ * fraction to report, not a fraction of `0/0`. */
+export interface BucketCoverage {
+  readonly present: number;
+  readonly expected: number;
+}
+
 /** One row of the `rows` array — `SeriesHistoryRow.to_wire()` (`series_history_report.py`),
  * mirrored field-for-field. `available_at`/`value`/`absence` are `null` exactly when there is
  * no point (`(value === null) !== (absence === null)` never both, per `CA-F1-5`) — this module
@@ -37,6 +48,7 @@ export interface SeriesHistoryRow {
   readonly available_at: number | null;
   readonly value: string | null;
   readonly absence: string | null;
+  readonly coverage: BucketCoverage | null;
 }
 
 /** The 3-level envelope `GET /series-history` serves (`ADR-005/D3`, `session`/`panel`/`rows`). */
@@ -77,6 +89,27 @@ function assertWireRow(value: unknown, index: number): asserts value is SeriesHi
     throw new Error(
       `series_history envelope: rows[${index}] has value=${JSON.stringify(value.value)} and ` +
         `absence=${JSON.stringify(value.absence)} — CA-F1-5 requires exactly one of the two to be null`,
+    );
+  }
+  assertWireCoverage(value.coverage, index);
+}
+
+/** `T-03.12` — validates `rows[i].coverage` against `BucketCoverage.to_wire()`'s exact shape:
+ * `null`, or a plain object with two INTEGER fields, never a bool and never a float (a
+ * percentage smuggled through as `0.34` would pass `typeof === "number"` silently, which is
+ * exactly the collapse `T-03.4`'s backend docstring rejects "par de inteiros, nunca bool, nunca
+ * percentual" for). */
+function assertWireCoverage(value: unknown, index: number): asserts value is BucketCoverage | null {
+  if (value === null) {
+    return;
+  }
+  if (!isPlainRecord(value)) {
+    throw new Error(`series_history envelope: rows[${index}].coverage is not null and not a plain object`);
+  }
+  if (!Number.isInteger(value.present) || !Number.isInteger(value.expected)) {
+    throw new Error(
+      `series_history envelope: rows[${index}].coverage must be {present: int, expected: int}, got ` +
+        `${JSON.stringify(value)}`,
     );
   }
 }
