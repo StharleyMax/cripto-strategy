@@ -16,7 +16,11 @@ from src.modules.sentimento.domain.provenance import (
     SeriesRow,
 )
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog, SeriesCatalogEntry
-from src.modules.sentimento.domain.series_history_report import BucketCoverage, PanelGridVerdict
+from src.modules.sentimento.domain.series_history_report import (
+    BucketCoverage,
+    PanelCoverage,
+    PanelGridVerdict,
+)
 from src.modules.sentimento.domain.series_key import (
     Nature,
     QuantityField,
@@ -24,6 +28,7 @@ from src.modules.sentimento.domain.series_key import (
     SeriesKey,
     TsConvention,
 )
+from src.modules.sentimento.domain.source_floor import resolve_source_floor_ms
 from src.modules.sentimento.use_cases.series_history import (
     InvalidWindowError,
     UnknownSeriesKeyIdError,
@@ -146,6 +151,31 @@ class _FakeReader:
         return self._observations
 
 
+class _FakeBoundsReader:
+    """A `SeriesStoreBoundsReader` fixture: returns the `(earliest, latest)` it was built with.
+
+    `T-03.6`. Defaults to `(None, None)` — an EMPTY store — the honest answer this class of test
+    (arithmetic over rows the `_FakeReader` above already supplies, not the store's extent)
+    should assert nothing beyond "the field exists and round-trips"; `test_source_floor.py` and
+    the `panel.coverage`-specific tests below cover the resolved-value cases.
+    """
+
+    def __init__(self, bounds: tuple[int | None, int | None] = (None, None)) -> None:
+        self._bounds = bounds
+        self.calls: list[dict[str, object]] = []
+
+    def read_bounds(self, *, series_key_id: str, symbol: str) -> tuple[int | None, int | None]:
+        self.calls.append({"series_key_id": series_key_id, "symbol": symbol})
+        return self._bounds
+
+
+bounds_reader = _FakeBoundsReader()
+"""The shared default instance every fixed call site above references by name (`T-03.6`'s bulk
+edit inserted `bounds_reader,` positionally) — stateless beyond its own `.calls` log, so sharing
+it across tests that never assert on `.calls` is safe; a test that needs a DIFFERENT extent
+builds its own `_FakeBoundsReader(...)` and shadows this name locally."""
+
+
 def test_reports_one_row_per_grid_instant_with_a_value_present() -> None:
     """A window covering one bucket returns exactly one row, value decoded from `value_raw`."""
     catalog = _catalog_with_one_entry()
@@ -157,6 +187,7 @@ def test_reports_one_row_per_grid_instant_with_a_value_present() -> None:
         catalog,
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -186,6 +217,7 @@ def test_reports_absence_for_a_grid_instant_with_no_admitted_observation() -> No
         catalog,
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -211,6 +243,7 @@ def test_panel_fields_come_from_the_catalog_entry() -> None:
         catalog,
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key_id,
         symbol=SYMBOL,
         interval="1m",
@@ -224,6 +257,105 @@ def test_panel_fields_come_from_the_catalog_entry() -> None:
     assert report.panel_source == "binance"
     assert report.panel_nature == "STOCK"
     assert report.panel_unit == "BTC"
+
+
+def test_panel_coverage_is_none_none_source_floor_when_the_store_holds_no_row() -> None:
+    """`T-03.6`, `D8`: an empty store — `earliest`/`latest` are `None`.
+
+    `source_floor_ms` still resolves (it never reads the store; `_oi_key()` is
+    `provider="binance"`, `metric="sum_open_interest"`, the `/futures/data/*` rolling case).
+    """
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+    knowledge_time_ms = BUCKET_END + 100_000
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        _FakeBoundsReader((None, None)),
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=BUCKET_END,
+        window_end_ms=BUCKET_END,
+        knowledge_time_ms=knowledge_time_ms,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.panel_coverage == PanelCoverage(
+        earliest_bucket_ms=None,
+        latest_bucket_ms=None,
+        source_floor_ms=resolve_source_floor_ms(_oi_key(), knowledge_time_ms=knowledge_time_ms),
+    )
+    assert report.panel_coverage.source_floor_ms is not None
+
+
+def test_panel_coverage_echoes_the_bounds_reader_verbatim() -> None:
+    """`T-03.6`: a non-empty store's `(earliest, latest)` round-trips onto `panel.coverage`.
+
+    UNCHANGED by the request's own window — `_FakeBoundsReader` here returns values OUTSIDE
+    `[window_start_ms, window_end_ms]`, and they still land on the wire exactly as given.
+    """
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+    store_earliest = BUCKET_END - 999 * GRID_MS
+    store_latest = BUCKET_END + 999 * GRID_MS
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        _FakeBoundsReader((store_earliest, store_latest)),
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=BUCKET_END,
+        window_end_ms=BUCKET_END,
+        knowledge_time_ms=BUCKET_END + 100_000,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.panel_coverage.earliest_bucket_ms == store_earliest
+    assert report.panel_coverage.latest_bucket_ms == store_latest
+
+
+def test_panel_coverage_is_none_for_a_provider_with_no_measured_source_floor() -> None:
+    """A `coinalyze` panel: `earliest`/`latest_bucket_ms` still resolve from the store.
+
+    `source_floor_ms` stays `None` — `domain/source_floor.py` has no measured wall for that
+    provider (`test_source_floor.py` is the falsifier-bearing suite for this table).
+    """
+    coinalyze_key = _oi_key(provider="coinalyze")
+    catalog = SeriesCatalog(
+        (
+            SeriesCatalogEntry(
+                key=coinalyze_key,
+                native_grid="1min",
+                native_grid_ms=60_000,
+                max_staleness_ms=120_000,
+            ),
+        )
+    )
+    reader = _FakeReader(())
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        _FakeBoundsReader((BUCKET_END, BUCKET_END)),
+        series_key_id=coinalyze_key.series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=BUCKET_END,
+        window_end_ms=BUCKET_END,
+        knowledge_time_ms=BUCKET_END + 100_000,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.panel_coverage.earliest_bucket_ms == BUCKET_END
+    assert report.panel_coverage.latest_bucket_ms == BUCKET_END
+    assert report.panel_coverage.source_floor_ms is None
 
 
 def test_calling_twice_with_the_same_key_produces_byte_identical_envelopes() -> None:
@@ -242,8 +374,20 @@ def test_calling_twice_with_the_same_key_produces_byte_identical_envelopes() -> 
         "bar_policy": BarPolicy.FINAL_ONLY,
     }
 
-    first = build_series_history_report(catalog, reader, classify_panel_grid, **kwargs)  # type: ignore[arg-type]
-    second = build_series_history_report(catalog, reader, classify_panel_grid, **kwargs)  # type: ignore[arg-type]
+    first = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        bounds_reader,
+        **kwargs,  # type: ignore[arg-type]
+    )
+    second = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        bounds_reader,
+        **kwargs,  # type: ignore[arg-type]
+    )
 
     assert first.to_envelope(principal_id=None, server_now_ms=0) == second.to_envelope(
         principal_id=None, server_now_ms=0
@@ -259,6 +403,7 @@ def test_lookback_ms_passed_to_the_reader_is_at_least_the_grid_and_the_staleness
         catalog,
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -288,6 +433,7 @@ def test_refuses_an_interval_outside_the_supported_set(interval: str) -> None:
             catalog,
             reader,
             classify_panel_grid,
+            bounds_reader,
             series_key_id=_oi_key().series_key_id(),
             symbol=SYMBOL,
             interval=interval,
@@ -308,6 +454,7 @@ def test_every_member_of_the_supported_set_is_accepted(interval: str) -> None:
         catalog,
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval=interval,
@@ -330,6 +477,7 @@ def test_refuses_an_unknown_series_key_id() -> None:
             catalog,
             reader,
             classify_panel_grid,
+            bounds_reader,
             series_key_id="does-not-exist",
             symbol=SYMBOL,
             interval="1m",
@@ -350,6 +498,7 @@ def test_refuses_a_window_that_is_not_strictly_increasing() -> None:
             catalog,
             reader,
             classify_panel_grid,
+            bounds_reader,
             series_key_id=_oi_key().series_key_id(),
             symbol=SYMBOL,
             interval="1m",
@@ -470,6 +619,7 @@ def test_a_flow_series_with_publication_lag_serves_a_value_at_every_grid_instant
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -505,6 +655,7 @@ def test_a_stock_series_with_publication_lag_is_not_shifted_one_bucket_late() ->
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -542,6 +693,7 @@ def test_a_bucket_that_closes_after_the_grid_instant_is_never_served_at_it() -> 
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -570,6 +722,7 @@ def test_the_knowledge_horizon_still_excludes_a_row_observed_after_it() -> None:
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -606,6 +759,7 @@ def test_intrabar_reads_at_the_grid_instant_and_never_the_next_bucket_partial() 
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -697,6 +851,7 @@ def _count_points(*, native_grid_ms: int) -> int:
         _ratio_catalog(native_grid_ms=native_grid_ms),
         _ratio_reader(window_end_ms=window_end_ms),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_ratio_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -761,6 +916,7 @@ def test_the_report_names_upsampling_when_the_native_grid_is_wider_than_the_pane
         _ratio_catalog(native_grid_ms=FIVE_MINUTE_GRID_MS),
         _ratio_reader(window_end_ms=window_end_ms),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_ratio_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -786,6 +942,7 @@ def test_a_series_whose_native_grid_equals_the_panel_grid_is_not_upsampling() ->
         catalog,
         _FakeReader(()),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -842,6 +999,7 @@ def test_interval_5m_sums_the_five_native_facts_for_a_flow_series() -> None:
         _catalog_for(key),
         _FakeReader(_observations(*rows)),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="5m",
@@ -875,6 +1033,7 @@ def test_interval_5m_takes_the_last_native_fact_for_a_stock_series_never_the_sum
         _catalog_for(key),
         _FakeReader(_observations(*rows)),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="5m",
@@ -898,6 +1057,7 @@ def test_interval_5m_reports_absence_when_no_native_fact_is_admitted_at_all() ->
         _catalog_for(key),
         _FakeReader(()),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="5m",
@@ -934,6 +1094,7 @@ def test_interval_5m_sums_only_the_native_facts_present_when_some_minutes_are_ho
         _catalog_for(key),
         _FakeReader(_observations(*rows)),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="5m",
@@ -972,6 +1133,7 @@ def test_present_counts_distinct_native_facts_never_carried_forward_grid_slots()
         _catalog_for(key, max_staleness_ms=400_000),
         _FakeReader(_observations(row)),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="5m",
@@ -1003,6 +1165,7 @@ def test_a_window_start_not_aligned_to_the_interval_still_composes_the_full_buck
         _catalog_for(key),
         _FakeReader(_observations(*rows)),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="5m",
@@ -1029,6 +1192,7 @@ def test_the_panel_grid_verdict_uses_the_requested_interval_not_the_native_step(
         catalog,
         _FakeReader(()),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="5m",

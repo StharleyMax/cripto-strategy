@@ -20,7 +20,11 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 
-from src.api.dependencies import get_series_catalog_source, get_series_window_reader_source
+from src.api.dependencies import (
+    get_series_catalog_source,
+    get_series_store_bounds_reader_source,
+    get_series_window_reader_source,
+)
 from src.main import create_app
 from src.modules.sentimento.domain.as_of_accessor import DecisionReadRefusedError, Observation
 from src.modules.sentimento.domain.provenance import (
@@ -128,6 +132,18 @@ class _RefusingReader:
         raise DecisionReadRefusedError("simulated malformed read, for the route's 500 test")
 
 
+class _FakeBoundsReader:
+    """A `SeriesStoreBoundsReader` fixture: `(None, None)` — an empty store (`T-03.6`).
+
+    This file's own domain is the envelope's 3-level SHAPE over a real socket, never
+    `panel.coverage`'s resolved values — `test_source_floor.py` covers the resolver, and
+    `test_series_history.py`'s use-case-level tests cover the store-extent wiring.
+    """
+
+    def read_bounds(self, *, series_key_id: str, symbol: str) -> tuple[int | None, int | None]:
+        return (None, None)
+
+
 @contextmanager
 def _served(app: FastAPI) -> Iterator[int]:
     """Run `app` on a real loopback socket, in-thread, and yield the port it bound."""
@@ -149,6 +165,7 @@ def _app_with_reader(tmp_path: Path, reader: object) -> FastAPI:
     app = create_app(store_path=tmp_path / "ih.sqlite3")
     app.dependency_overrides[get_series_catalog_source] = _catalog
     app.dependency_overrides[get_series_window_reader_source] = lambda: reader
+    app.dependency_overrides[get_series_store_bounds_reader_source] = _FakeBoundsReader
     return app
 
 
@@ -191,6 +208,8 @@ def test_get_series_history_serves_the_3_level_envelope(tmp_path: Path) -> None:
     # `native_grid_ms`/`grid_multiple` joined the panel level with `ADR-037/D4`: the report
     # grid is fixed at 1 minute, so a series on a wider grid comes back as a staircase and the
     # envelope has to SAY so rather than let the consumer count repeated slots as bars.
+    # `coverage` joined the panel level with `D8`/`D-C3.7` (`T-03.6`): the two walls that make
+    # `beyond-coverage` distinguishable from `absent` (`PanelCoverage`, never `BucketCoverage`).
     assert set(envelope["panel"]) == {
         "series_key_id",
         "source",
@@ -198,7 +217,19 @@ def test_get_series_history_serves_the_3_level_envelope(tmp_path: Path) -> None:
         "unit",
         "native_grid_ms",
         "grid_multiple",
+        "coverage",
     }
+    assert set(envelope["panel"]["coverage"]) == {
+        "earliest_bucket_ms",
+        "latest_bucket_ms",
+        "source_floor_ms",
+    }
+    # `_FakeBoundsReader` (this file's fixture) serves an EMPTY store; `_oi_key()`'s
+    # `metric="sum_open_interest"`/`provider="binance"` resolves the `/futures/data/*` rolling
+    # wall (`domain/source_floor.py`), never `None` — the wire round-trips both honestly.
+    assert envelope["panel"]["coverage"]["earliest_bucket_ms"] is None
+    assert envelope["panel"]["coverage"]["latest_bucket_ms"] is None
+    assert envelope["panel"]["coverage"]["source_floor_ms"] is not None
     assert envelope["bar_policy"] == "final_only"
     assert len(envelope["rows"]) == 1
     row_wire = envelope["rows"][0]

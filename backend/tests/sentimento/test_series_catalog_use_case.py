@@ -484,6 +484,23 @@ class _EmptyWindowReader:
         return ()
 
 
+class _EmptyBoundsReader:
+    """`SeriesStoreBoundsReader` fixture: an empty store — `(None, None)` always (`T-03.6`).
+
+    Every call site in this file is a catalog-registration check (`_EmptyWindowReader`'s own
+    docstring), never a `panel.coverage` assertion — `(None, None)` is the honest "nothing
+    stored yet" answer and keeps the two fixtures symmetric.
+    """
+
+    def read_bounds(self, *, series_key_id: str, symbol: str) -> tuple[int | None, int | None]:
+        return (None, None)
+
+
+bounds_reader = _EmptyBoundsReader()
+"""Shared default the fixed `build_series_history_report(...)` call sites below reference by
+name — stateless, so sharing across this file's registration-only tests is safe."""
+
+
 def test_klines_volume_is_registered_in_the_catalog_the_route_serves() -> None:
     """`RF-2`: the identity `T-01.1` built is now a row of `list_series_catalog()`."""
     catalog = list_series_catalog()
@@ -514,6 +531,7 @@ def test_series_history_no_longer_refuses_the_klines_volume_id_with_unknown_seri
         catalog,
         _EmptyWindowReader(),
         _classify_panel_grid,
+        bounds_reader,
         series_key_id=series_key_id,
         symbol="BTCUSDT",
         interval="1m",
@@ -542,6 +560,7 @@ def test_an_unregistered_id_still_raises_unknown_series_key_id_error() -> None:
             catalog,
             _EmptyWindowReader(),
             _classify_panel_grid,
+            bounds_reader,
             series_key_id="0" * 64,
             symbol="BTCUSDT",
             interval="1m",
@@ -860,6 +879,7 @@ def test_series_history_no_longer_refuses_the_kline_takerbuy_id() -> None:
         catalog,
         _EmptyWindowReader(),
         _classify_panel_grid,
+        bounds_reader,
         series_key_id=series_key_id,
         symbol="BTCUSDT",
         interval="1m",
@@ -991,6 +1011,7 @@ def test_series_history_no_longer_refuses_either_liquidation_id(cohort: str) -> 
         catalog,
         _EmptyWindowReader(),
         _classify_panel_grid,
+        bounds_reader,
         series_key_id=series_key_id,
         symbol="BTCUSDT",
         interval="1m",
@@ -1145,6 +1166,7 @@ def test_series_history_no_longer_refuses_any_of_the_four_klines_ohlc_ids(
         catalog,
         _EmptyWindowReader(),
         _classify_panel_grid,
+        bounds_reader,
         series_key_id=series_key_id,
         symbol="BTCUSDT",
         interval="1m",
