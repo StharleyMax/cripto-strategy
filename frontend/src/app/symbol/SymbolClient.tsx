@@ -471,6 +471,14 @@ const CHART_HEIGHT_PX = 220;
  * subscribes to this chart's own `subscribeVisibleLogicalRangeChange` so a gesture ON this chart
  * DISPATCHES to the other five. "Assina, despacha e aplica" — the three verbs `D-C3.1`'s table
  * assigns to `web` — are exactly these three calls.
+ *
+ * `T-02.6` (`CST-213`, `DoD-2`/`DoD-4`) — three `data-*` attributes on `container` itself, kept
+ * in lockstep with every "aplica"/"despacha" write: `data-visible-logical-from`/`-to` (the
+ * `LogicalRange` this chart is CURRENTLY showing, position — not presence — for Playwright to
+ * assert on) and `data-axis-sync-write-count` (incremented only inside `registerPanel`'s
+ * callback, i.e. only when the DISPATCHER wrote here because ANOTHER panel moved — a gesture on
+ * THIS panel's own drag never increments its own counter, matching `axis-sync.test.ts`'s
+ * already-proven "never in the origin").
  */
 function useLightweightChart(
   containerRef: RefObject<HTMLDivElement | null>,
@@ -496,15 +504,29 @@ function useLightweightChart(
     const timeScale = chart.timeScale();
     // "aplica" — the axis-owned initial framing, not `fitContent()`.
     timeScale.setVisibleLogicalRange(axisSync.initialLogicalRange);
+    // `T-02.6` (`DoD-2`/`DoD-4`) — DOM-observable POSITION, not presence: `data-visible-logical-*`
+    // carries the actual `LogicalRange` this chart currently applies (updated below on both the
+    // "aplica" and "despacha" halves, so it is current no matter which of the six panels a
+    // gesture originated on), and `data-axis-sync-write-count` counts how many times the
+    // DISPATCHER (never this chart's own drag) wrote into it — the instrumentation `CA-6`/`DoD-4`
+    // need without adding a status code or an attribute a test could pass by merely existing.
+    container.dataset.visibleLogicalFrom = String(axisSync.initialLogicalRange.from);
+    container.dataset.visibleLogicalTo = String(axisSync.initialLogicalRange.to);
+    container.dataset.axisSyncWriteCount = "0";
     // "assina" (this chart is now WRITABLE by the dispatcher) + "despacha" (this chart's own
     // range changes are forwarded to the other five).
     const unregister = axisSync.registerPanel(panelIndex, (logical) => {
       timeScale.setVisibleLogicalRange(logical);
+      container.dataset.visibleLogicalFrom = String(logical.from);
+      container.dataset.visibleLogicalTo = String(logical.to);
+      container.dataset.axisSyncWriteCount = String(Number(container.dataset.axisSyncWriteCount ?? "0") + 1);
     });
     const handleRangeChange = (range: LibraryLogicalRange | null) => {
       if (range === null) {
         return;
       }
+      container.dataset.visibleLogicalFrom = String(range.from);
+      container.dataset.visibleLogicalTo = String(range.to);
       axisSync.notifyPanelRangeChanged(panelIndex, range);
     };
     timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);

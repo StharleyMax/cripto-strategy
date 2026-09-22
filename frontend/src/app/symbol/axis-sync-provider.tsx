@@ -10,7 +10,13 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 
-import { createAxisSyncStore, PANEL_COUNT, type AxisSyncStore } from "./axis-sync.ts";
+import {
+  createAxisSyncStore,
+  isAxisSyncAblationRequested,
+  withAxisSyncAblation,
+  PANEL_COUNT,
+  type AxisSyncStore,
+} from "./axis-sync.ts";
 import type { TimeAxis } from "../../charts/index.ts";
 
 const AxisSyncContext = createContext<AxisSyncStore | null>(null);
@@ -22,9 +28,20 @@ const AxisSyncContext = createContext<AxisSyncStore | null>(null);
  * (`useMemo`'s own contract, mirrored from `createAxisSyncStore`'s docstring) — deliberately
  * what a FUTURE timeframe switch would need, not something today's caller triggers (there is
  * no TF selector in this route yet).
+ *
+ * `T-02.6` (`DoD-3`/`CA-6`): the store is wrapped through `withAxisSyncAblation` on every
+ * construction. `window.location.search` is read here — the one place in this file with a real
+ * `window` — and handed to `axis-sync.ts`'s pure parser; that module itself never touches the
+ * DOM. On every real URL this is `ablated = false` and `withAxisSyncAblation` returns `store`
+ * unchanged, so this costs nothing outside the `?e2eAxisSyncDisabled=1` Playwright uses to
+ * prove the negative control.
  */
 export function AxisSyncProvider({ axis, children }: { readonly axis: TimeAxis; readonly children: ReactNode }) {
-  const store = useMemo(() => createAxisSyncStore(axis, PANEL_COUNT), [axis]);
+  const store = useMemo(() => {
+    const real = createAxisSyncStore(axis, PANEL_COUNT);
+    const ablated = typeof window !== "undefined" && isAxisSyncAblationRequested(window.location.search);
+    return withAxisSyncAblation(real, ablated);
+  }, [axis]);
   return <AxisSyncContext.Provider value={store}>{children}</AxisSyncContext.Provider>;
 }
 

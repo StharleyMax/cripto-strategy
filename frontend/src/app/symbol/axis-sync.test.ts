@@ -11,14 +11,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  AXIS_SYNC_ABLATION_QUERY_PARAM,
   createAxisSyncStore,
   CVD_PANEL_INDEX,
+  isAxisSyncAblationRequested,
   LIQUIDATION_LONG_PANEL_INDEX,
   LIQUIDATION_SHORT_PANEL_INDEX,
   LONG_SHORT_PANEL_INDEX,
   OI_PANEL_INDEX,
   PANEL_COUNT,
   PRICE_PANEL_INDEX,
+  withAxisSyncAblation,
 } from "./axis-sync.ts";
 import type { LogicalRange, TimeAxis } from "../../charts/index.ts";
 
@@ -137,4 +140,56 @@ test("createAxisSyncStore rejects a non-positive panelCount", () => {
   assert.throws(() => createAxisSyncStore(axisOf(10), 0), RangeError);
   assert.throws(() => createAxisSyncStore(axisOf(10), -1), RangeError);
   assert.throws(() => createAxisSyncStore(axisOf(10), 2.5), RangeError);
+});
+
+// ── `T-02.6` (`CST-213`, `DoD-3`/`CA-6`) — the ablation switch, par morde/cala ──────────────
+
+test("isAxisSyncAblationRequested: MORDE — the exact param+value the Playwright spec sets", () => {
+  assert.equal(isAxisSyncAblationRequested(`?${AXIS_SYNC_ABLATION_QUERY_PARAM}=1`), true);
+});
+
+test("isAxisSyncAblationRequested CALA — absent, a different value, or a look-alike param name", () => {
+  assert.equal(isAxisSyncAblationRequested(""), false, "no query string at all");
+  assert.equal(isAxisSyncAblationRequested("?symbol=BTCUSDT"), false, "an unrelated param");
+  assert.equal(
+    isAxisSyncAblationRequested(`?${AXIS_SYNC_ABLATION_QUERY_PARAM}=0`), false,
+    "the param present but not '1' must not ablate",
+  );
+  assert.equal(
+    isAxisSyncAblationRequested(`?${AXIS_SYNC_ABLATION_QUERY_PARAM}=true`), false,
+    "only the literal string '1' ablates — 'true' is a different value",
+  );
+});
+
+test("withAxisSyncAblation(store, false) returns the SAME store — zero cost on every real URL", () => {
+  const store = createAxisSyncStore(axisOf(10), PANEL_COUNT);
+  assert.equal(withAxisSyncAblation(store, false), store);
+});
+
+test("withAxisSyncAblation(store, true) MORDE: notifyPanelRangeChanged becomes a no-op — the five never hear about it", () => {
+  const store = createAxisSyncStore(axisOf(10), PANEL_COUNT);
+  let writes = 0;
+  for (let index = 0; index < PANEL_COUNT; index += 1) {
+    store.registerPanel(index, () => {
+      writes += 1;
+    });
+  }
+  const ablated = withAxisSyncAblation(store, true);
+  ablated.notifyPanelRangeChanged(PRICE_PANEL_INDEX, { from: 2, to: 8 });
+  assert.equal(writes, 0, "ablated: a gesture on one panel must write to none of the others");
+});
+
+test("withAxisSyncAblation(store, true) CALA: registerPanel and initialLogicalRange stay real — only the dispatch verb is silenced", () => {
+  const store = createAxisSyncStore(axisOf(10), PANEL_COUNT);
+  const ablated = withAxisSyncAblation(store, true);
+  assert.deepEqual(ablated.initialLogicalRange, store.initialLogicalRange);
+  let calls = 0;
+  const unregister = ablated.registerPanel(OI_PANEL_INDEX, () => {
+    calls += 1;
+  });
+  // Calling the UNABLATED store's own dispatch directly proves `registerPanel` really did
+  // register on the SAME underlying table — ablation only replaced `notifyPanelRangeChanged`.
+  store.notifyPanelRangeChanged(PRICE_PANEL_INDEX, { from: 2, to: 8 });
+  assert.equal(calls, 1, "registerPanel must still be wired to the real store's write table");
+  unregister();
 });
