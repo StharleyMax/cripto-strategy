@@ -138,3 +138,32 @@ test("createAxisSyncStore rejects a non-positive panelCount", () => {
   assert.throws(() => createAxisSyncStore(axisOf(10), -1), RangeError);
   assert.throws(() => createAxisSyncStore(axisOf(10), 2.5), RangeError);
 });
+
+// ── `T-02.7` — `onRangeApplied`, the hook `axis-latency-probe.ts` reads a timestamp from ──────
+
+test("onRangeApplied MORDE: fires exactly once for a real pan, the event `T-02.7` measures", () => {
+  const axis = axisOf(10);
+  let calls = 0;
+  const store = createAxisSyncStore(axis, PANEL_COUNT, () => {
+    calls += 1;
+  });
+  store.notifyPanelRangeChanged(PRICE_PANEL_INDEX, { from: 2, to: 8 });
+  assert.equal(calls, 1, "a genuine range change must fire the hook exactly once");
+});
+
+test("onRangeApplied CALA: an echo of the current state fires the hook ZERO times", () => {
+  const axis = axisOf(10);
+  let calls = 0;
+  const store = createAxisSyncStore(axis, PANEL_COUNT, () => {
+    calls += 1;
+  });
+  // Same echo `axis-sync.test.ts` already proves produces zero writes — the hook must agree
+  // with the writes, not fire on every call regardless of whether anything actually applied.
+  store.notifyPanelRangeChanged(PRICE_PANEL_INDEX, store.initialLogicalRange);
+  assert.equal(calls, 0, "an echo of the current state is not an application");
+});
+
+test("onRangeApplied is a true no-op when omitted — every call site before `T-02.7` still works", () => {
+  const store = createAxisSyncStore(axisOf(10), PANEL_COUNT);
+  assert.doesNotThrow(() => store.notifyPanelRangeChanged(PRICE_PANEL_INDEX, { from: 2, to: 8 }));
+});

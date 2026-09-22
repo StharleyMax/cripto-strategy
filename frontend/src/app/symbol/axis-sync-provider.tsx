@@ -11,7 +11,15 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import { createAxisSyncStore, PANEL_COUNT, type AxisSyncStore } from "./axis-sync.ts";
+import { recordAxisRangeApplied } from "./axis-latency-probe.ts";
 import type { TimeAxis } from "../../charts/index.ts";
+
+// `T-02.7` (`RNF-2`): the ONE extra wire this file carries. `createAxisSyncStore`'s optional
+// `onRangeApplied` hook is bound to `recordAxisRangeApplied` here, at the same place the store
+// itself is constructed, so every real axis application on every mount of this provider is
+// timestamped for `frontend/e2e/16-teto-latencia-eixo.spec.ts` to read back — one place decides
+// what counts as an application (`axis-sync.ts`), one place decides what clock measures it
+// (`axis-latency-probe.ts`), and this file only wires the two together.
 
 const AxisSyncContext = createContext<AxisSyncStore | null>(null);
 
@@ -24,7 +32,10 @@ const AxisSyncContext = createContext<AxisSyncStore | null>(null);
  * no TF selector in this route yet).
  */
 export function AxisSyncProvider({ axis, children }: { readonly axis: TimeAxis; readonly children: ReactNode }) {
-  const store = useMemo(() => createAxisSyncStore(axis, PANEL_COUNT), [axis]);
+  const store = useMemo(
+    () => createAxisSyncStore(axis, PANEL_COUNT, recordAxisRangeApplied),
+    [axis],
+  );
   return <AxisSyncContext.Provider value={store}>{children}</AxisSyncContext.Provider>;
 }
 

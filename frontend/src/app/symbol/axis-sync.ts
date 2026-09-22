@@ -71,8 +71,22 @@ export interface AxisSyncStore {
  * documents — "swapping the axis means constructing a new controller, not mutating this
  * one"), which is deliberately what a FUTURE timeframe switch would need, not something this
  * task's caller triggers today (there is no TF selector in this route yet).
+ *
+ * `onRangeApplied` — `T-02.7` (`RNF-2`, `p95 <= 16ms` over `n >= 60` frames of one continuous
+ * drag) — is called ONCE per `notifyPanelRangeChanged` call that actually produced a write to
+ * the other panels (i.e. the dispatcher's own `state` changed), never on an echo or a
+ * guard-dropped reentrant notification. It carries no value on purpose: this module stays free
+ * of `performance.now()`/`Date.now()` — a caller that wants a timestamp reads its OWN clock
+ * inside the callback, at the instant it fires, so this module's only obligation is calling it
+ * at the right MOMENT, not choosing what a moment is measured against. `axis-latency-probe.ts`
+ * is `web`'s caller for this; nothing under `node --test` needs it and every existing call site
+ * omits it (`undefined`, the default, is a true no-op — checked before invoking).
  */
-export function createAxisSyncStore(axis: TimeAxis, panelCount: number = PANEL_COUNT): AxisSyncStore {
+export function createAxisSyncStore(
+  axis: TimeAxis,
+  panelCount: number = PANEL_COUNT,
+  onRangeApplied?: () => void,
+): AxisSyncStore {
   if (!Number.isInteger(panelCount) || panelCount <= 0) {
     throw new RangeError(`panelCount must be a positive integer, received ${panelCount}`);
   }
@@ -104,7 +118,16 @@ export function createAxisSyncStore(axis: TimeAxis, panelCount: number = PANEL_C
       };
     },
     notifyPanelRangeChanged(panelIndex, candidateLogical) {
+      // `T-02.7`: `dispatcher.state` is reassigned (a NEW object, `range-dispatch.ts:131`) only
+      // when `reduceRangeEvent` found a real change — an echo of the current state or a
+      // guard-dropped reentrant notification leaves the SAME reference. Comparing identity
+      // before/after is how this module knows an actual "aplica" happened without duplicating
+      // `reduceRangeEvent`'s own dedupe logic or reaching into the guard's internals.
+      const stateBeforeDispatch = dispatcher.state;
       dispatcher.onPanelRangeChanged(panelIndex, candidateLogical);
+      if (onRangeApplied !== undefined && dispatcher.state !== stateBeforeDispatch) {
+        onRangeApplied();
+      }
     },
   };
 }
