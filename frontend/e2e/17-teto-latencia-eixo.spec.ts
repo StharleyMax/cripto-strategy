@@ -214,12 +214,20 @@ async function startSyntheticOhlcStub(): Promise<{ readonly url: string; close()
         response.end("synthetic stub: window_start_ms/window_end_ms missing or not numeric");
         return;
       }
-      const rows: { event_time: number; available_at: number; value: string; absence: null }[] = [];
+      const rows: {
+        event_time: number;
+        available_at: number;
+        value: string;
+        absence: null;
+        coverage: null;
+      }[] = [];
       for (let t = startMs; t <= endMsInclusive; t += ONE_MINUTE_MS) {
         // Um valor plausível, monotônico o bastante para não parecer um erro de dado — nunca
         // lido por nenhuma asserção deste spec, só precisa existir para não ser `WhitespaceItem`.
         const value = 100 + (t % 1_000_000) / 100_000;
-        rows.push({ event_time: t, available_at: t, value: value.toFixed(4), absence: null });
+        // `coverage: null` — T-03.12 tornou o campo obrigatório em series-history-client.ts
+        // (assertWireCoverage recusa `undefined`, só aceita `null` ou `{present,expected}`).
+        rows.push({ event_time: t, available_at: t, value: value.toFixed(4), absence: null, coverage: null });
       }
       const envelope = {
         session: { principal_id: null, server_now_ms: Date.now() },
