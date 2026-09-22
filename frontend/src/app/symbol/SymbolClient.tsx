@@ -110,6 +110,7 @@ import {
   formatPercentPtBr,
   LONG_SHORT_EQUILIBRIUM,
 } from "./ratio-format.ts";
+import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
 
 /** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
  * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
@@ -2357,6 +2358,70 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
   );
 }
 
+/**
+ * `T-03.9` (`RF-6`, plan `03` item `3.6`) — the TF bar. ONE `<button>` per entry of
+ * `SUPPORTED_TIMEFRAMES` (`supported-timeframes.ts`), via `.map()` — never a hand-written
+ * `<button>` per label. That is the DoD, literally: *"remover um TF do conjunto servido remove o
+ * botão, sem tocar no componente"* — shrink the array (kept honest by that module's own sync
+ * test against the backend) and this component's rendered output shrinks with it, with zero
+ * edit here. `timeframe-bar-dom-contract.test.ts` is the source-scan that proves this component
+ * actually maps rather than duplicating the list.
+ *
+ * Colour: the two GOVERNED roles `DESIGN_SYSTEM.md` §1.2 reserves for exactly this — `action`
+ * (`--acao-fill`/`--acao-borda`/`--acao-on`, "Marca / ação", never yet consumed by any `.tsx`
+ * before this task) for the SELECTED member, `surface`/`provenance` (already used everywhere
+ * else on this screen) for the rest. No new hue (`NG-5`).
+ *
+ * `role="group"` + `aria-pressed` (a toggle-button group), not `role="radiogroup"` +
+ * `aria-checked`: the roving-tabindex keyboard pattern a true ARIA radiogroup requires is a
+ * FORM decision this task does not own — `T-03.12` ("Veredito do `ux-ui-mastery` sobre a barra
+ * de TF") is the gate for the bar's final interaction pattern, same as every other pane's form
+ * on this screen already went through its own `design_gate`. Each button stays independently
+ * `Tab`-focusable in the meantime, which is the simpler, still-fully-operable baseline.
+ *
+ * ⛔ `onSelect` UPDATES LOCAL SELECTION STATE ONLY — it does not (yet) trigger a refetch of any
+ * panel's history. Wiring the actual reaggregated request is explicitly OUT of this task's scope
+ * (`supported-timeframes.ts`'s own docstring names the two unmerged backend prerequisites —
+ * `T-03.4`'s `{present, expected}` marks and `T-03.6`'s `coverage` envelope field — and the
+ * wire-grid/staircase counts `T-03.11`'s own DoD exists to re-verify under a non-`1m` interval).
+ * Selecting a TF here moves which button reads "selected" and nothing else on screen, on purpose.
+ */
+function TimeframeBar({
+  selected,
+  onSelect,
+}: {
+  readonly selected: string;
+  readonly onSelect: (interval: string) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Timeframe"
+      className="flex gap-1 border-b border-surface-border bg-surface-lowest px-3 py-2"
+    >
+      {SUPPORTED_TIMEFRAMES.map((option) => {
+        const isSelected = option.interval === selected;
+        return (
+          <button
+            key={option.interval}
+            type="button"
+            aria-pressed={isSelected}
+            data-testid={`timeframe-button-${option.interval}`}
+            onClick={() => onSelect(option.interval)}
+            className={
+              isSelected
+                ? "border border-action-border bg-action-fill px-2 py-1 font-label-caps text-data-sm text-action-on"
+                : "border border-surface-border bg-surface-base px-2 py-1 font-label-caps text-data-sm text-provenance-weak"
+            }
+          >
+            {option.interval}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SymbolClient({
   symbol,
   panels,
@@ -2389,6 +2454,10 @@ export function SymbolClient({
     }),
     [panels.window.startMs, panels.window.endMsExclusive],
   );
+  // `T-03.9` — local selection state ONLY (`TimeframeBar`'s own docstring: no refetch yet).
+  // Defaults to `DEFAULT_TIMEFRAME` ("1m"), the one interval this route has ever served — so
+  // first paint is unchanged for every existing e2e/DOM-contract assertion.
+  const [selectedTimeframe, setSelectedTimeframe] = useState<string>(DEFAULT_TIMEFRAME);
   return (
     // The three instants of the request this render was built from, on the root element: the
     // screen declares WHAT IT ASKED, so an assertion (or an operator) can re-issue exactly that
@@ -2401,6 +2470,7 @@ export function SymbolClient({
       <h1 className="sr-only">
         {symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
+      <TimeframeBar selected={selectedTimeframe} onSelect={setSelectedTimeframe} />
       <AxisSyncProvider axis={axis}>
         <PricePane
           panels={panels}
