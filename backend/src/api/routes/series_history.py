@@ -7,9 +7,10 @@ case (`build_series_history_report`) and translates its typed refusals into the 
 `use_cases/series_history.py`'s own behaviour.
 
 `interval`/`bar_policy` are `Literal` types — FastAPI/Pydantic already answer `422` for a value
-outside either closed set (`interval != "1m"`, or `bar_policy` missing/outside
-`{"final_only", "intrabar"}`) before this function body ever runs, which is `CA-F1-3` and half
-of `RN-8` for free, without a second hand-written check that could disagree with the first.
+outside either closed set (`interval` outside `{"1m", "5m", "15m", "1h", "4h"}` — `ADR-040/D1`,
+extending `ADR-034/D6`'s single-value set — or `bar_policy` missing/outside `{"final_only",
+"intrabar"}`) before this function body ever runs, which is `CA-F1-3` and half of `RN-8` for
+free, without a second hand-written check that could disagree with the first.
 """
 
 from __future__ import annotations
@@ -53,7 +54,7 @@ def _now_ms() -> int:
 def get_series_history(
     series_key_id: str,
     symbol: str,
-    interval: Literal["1m"],
+    interval: Literal["1m", "5m", "15m", "1h", "4h"],
     window_start_ms: int,
     window_end_ms: int,
     knowledge_time_ms: int,
