@@ -28,23 +28,26 @@
  * edit anywhere else. `timeframe-bar-dom-contract.test.ts` is the source-scan that proves the
  * component actually maps rather than duplicating the list a second time in JSX.
  *
- * ⛔ WHAT THIS MODULE DOES NOT DO: it does not thread `interval` through `page.tsx`'s
- * `fetchPanelRows`/`resolveRouteWindow`, so selecting a TF today changes the BAR's own selection
- * state and nothing else on screen. Wiring the actual reaggregated refetch is deliberately left
- * to a later task — the two backend prerequisites `ADR-040/D3`'s partial-coverage marks
- * (`T-03.4`, `{present, expected}`) and the `coverage` envelope field (`T-03.6`, `sentimento`)
- * are NOT on this branch yet (`git log`, 2026-09-22: only `T-03.1`/`T-03.3`/`T-03.5` merged), and
- * the wire-grid/staircase counts several panels already publish (`GA-2`, "5× native-bars") are
- * PROVEN correct only for `interval=1m` today — `T-03.11`'s own DoD (`plan 03 DoD 8`) is
- * specifically the falsifier for what changes once a NON-default `interval` reaches those counts.
- * Wiring a real refetch here, against prerequisites not yet merged and a correctness matrix not
- * yet proven, would be exactly the "alargar só o literal sem religar" shortcut `T-03.3`'s own
- * gate report names as the shape of the defect `ADR-034/D6` exists to forbid — reaggregating the
- * DATA is real (`T-03.3`, already merged), but the SEVERAL DOWNSTREAM READOUTS that assume the
- * OLD 1-minute-wire-with-holes shape are not yet re-verified against the NEW `panel_grid_ms ===
- * interval_ms` shape, and this task (`components = ["web"]`, plan item `3.6` only) has no
- * Playwright surface to re-verify them against (no server, `.claude` has no Playwright MCP —
- * `claude mcp list`, 2026-09-22).
+ * ✅ `T-03.11` (`CST-226`) CLOSED THE GAP THIS SECTION USED TO DESCRIBE. `interval` now threads
+ * through `page.tsx`'s `fetchPanelRows`/`resolveRouteWindow` (`?interval=`, validated against
+ * this module's own `isSupportedTimeframe`) — the two backend prerequisites named below are both
+ * merged on that branch, and `T-03.11`'s own DoD (`plan 03` DoD 6/7/8) is the falsifier that
+ * re-verified the wire-grid/staircase counts under a non-`1m` interval before the wiring landed.
+ * Left below, UNEDITED, as the record of the decision that DEFERRED it past `T-03.9`:
+ *
+ * ⛔ WHAT THIS MODULE DID NOT DO YET, AS OF `T-03.9`: thread `interval` through `page.tsx`'s
+ * `fetchPanelRows`/`resolveRouteWindow`, so selecting a TF changed the BAR's own selection state
+ * and nothing else on screen. Wiring the actual reaggregated refetch was deliberately left to a
+ * later task — the two backend prerequisites `ADR-040/D3`'s partial-coverage marks (`T-03.4`,
+ * `{present, expected}`) and the `coverage` envelope field (`T-03.6`, `sentimento`) were NOT on
+ * that branch yet (`git log`, 2026-09-22: only `T-03.1`/`T-03.3`/`T-03.5` merged), and the
+ * wire-grid/staircase counts several panels already published (`GA-2`, "5× native-bars") were
+ * PROVEN correct only for `interval=1m` at that point — `T-03.11`'s own DoD (`plan 03 DoD 8`) was
+ * named, in advance, as the falsifier for what changes once a NON-default `interval` reaches
+ * those counts. Wiring a real refetch at `T-03.9`, against prerequisites not yet merged and a
+ * correctness matrix not yet proven, would have been exactly the "alargar só o literal sem
+ * religar" shortcut `T-03.3`'s own gate report names as the shape of the defect `ADR-034/D6`
+ * exists to forbid.
  */
 
 /** One entry of the backend's `SUPPORTED_INTERVALS` — the wire value the route's `interval`

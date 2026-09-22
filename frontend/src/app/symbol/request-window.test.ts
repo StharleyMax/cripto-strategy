@@ -22,6 +22,7 @@ import {
   RIGHT_EDGE_LAG_MS,
   resolveRouteWindow,
 } from "./request-window.ts";
+import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
 
 /** The literal window the defect was made of — the negative control, and the ONLY place in
  * this tree those four days still appear as a hardcoded pair. */
@@ -126,6 +127,55 @@ test("the derived window builds a request key the transport ACCEPTS", () => {
     bar_policy: "final_only",
   };
   assert.doesNotThrow(() => assertValidHistoryRequestKey(key));
+});
+
+// ── `T-03.11` (`CST-226`) — `requestIntervalMs` widens `alignmentMs` with the SELECTED TF ────
+
+test("resolveRouteWindow(nowMs) with ONE argument is byte-identical to the pre-T-03.11 behaviour", () => {
+  // Every existing caller above this line in the file calls with one argument — this is the
+  // backward-compatibility falsifier: the new second parameter's default (`ONE_MINUTE_MS`) must
+  // never change `alignmentMs` for a caller that never opted into a wider interval.
+  const oneArg = resolveRouteWindow(MEASURED_NOW_MS);
+  const explicitOneMinute = resolveRouteWindow(MEASURED_NOW_MS, ONE_MINUTE_MS);
+  assert.deepEqual(oneArg, explicitOneMinute, "the default must equal an explicit 1m interval");
+});
+
+test("resolveRouteWindow never throws for any SUPPORTED_TIMEFRAMES member, and the right edge lands on ITS OWN boundary", () => {
+  // `resolveTrailingWindow` refuses (`RangeError`) when `spanMs % alignmentMs !== 0` — this is
+  // the guard that a sixth TF wider than 4 days (or one that does not divide it evenly) would
+  // trip. All five entries divide `S2_WINDOW_SPAN_MS` (4 days) today; this test is what would
+  // catch the day that stops being true.
+  for (const option of SUPPORTED_TIMEFRAMES) {
+    const { window } = resolveRouteWindow(MEASURED_NOW_MS, option.stepMs);
+    assert.equal(
+      window.endMsExclusive % option.stepMs,
+      0,
+      `interval=${option.interval}: the window's right edge must land on a ${option.interval} boundary`,
+    );
+  }
+});
+
+test("MORDE: the interval-aware alignment is load-bearing — a 5-minute-only floor lands on a DIFFERENT edge than a 4h-aware one", () => {
+  // `MEASURED_NOW_MS` (2026-09-11 11:58:17.000Z) minus `RIGHT_EDGE_LAG_MS` (5 min) floors to a
+  // 5-minute boundary that is NOT also a 4-hour boundary — the exact silent-truncation case the
+  // module's own comment warned about (`quant-architect`, wave `03`, C1). If this assertion ever
+  // fails because the two edges coincide, replace `MEASURED_NOW_MS` with an instant that does not
+  // — a test that cannot tell the two code paths apart proves nothing about the fix.
+  const fiveMinuteAware = resolveRouteWindow(MEASURED_NOW_MS, ONE_MINUTE_MS); // alignmentMs floors to FIVE_MINUTES_MS regardless
+  const fourHourAware = resolveRouteWindow(MEASURED_NOW_MS, 4 * 60 * 60_000);
+
+  assert.notEqual(
+    fiveMinuteAware.window.endMsExclusive,
+    fourHourAware.window.endMsExclusive,
+    "a 5-minute-only alignment and a 4h-aware one must disagree at this instant — otherwise T-03.11's " +
+      "fix is a no-op that this test cannot distinguish from the pre-fix bug",
+  );
+  assert.equal(fourHourAware.window.endMsExclusive % (4 * 60 * 60_000), 0, "the 4h-aware edge lands on a 4h boundary");
+  assert.notEqual(
+    fiveMinuteAware.window.endMsExclusive % (4 * 60 * 60_000),
+    0,
+    "the 5-minute-only edge does NOT land on a 4h boundary — this is the outermost-bar truncation the rise fixes",
+  );
 });
 
 test("the day list the route passes to `daysWithPresence` is the window's own, not a literal", () => {
