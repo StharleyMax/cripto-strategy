@@ -94,7 +94,7 @@ function buildBackendShapedRows(
     const rows: SeriesHistoryRow[] = [];
     for (let eventTimeMs = windowStartMs; eventTimeMs <= lastEventTimeMs; eventTimeMs += ONE_MINUTE_MS) {
       const nativeBucketIndex = Math.floor((eventTimeMs - windowStartMs) / NATIVE_GRID_MS);
-      rows.push({ event_time: eventTimeMs, available_at: eventTimeMs, value: String(70_000 + nativeBucketIndex), absence: null });
+      rows.push({ event_time: eventTimeMs, available_at: eventTimeMs, value: String(70_000 + nativeBucketIndex), absence: null, coverage: null });
     }
     return rows;
   }
@@ -103,7 +103,7 @@ function buildBackendShapedRows(
   const rows: SeriesHistoryRow[] = [];
   for (let eventTimeMs = windowStartMs; eventTimeMs <= lastEventTimeMs; eventTimeMs += intervalMs) {
     const outerBucketIndex = Math.floor((eventTimeMs - windowStartMs) / intervalMs);
-    rows.push({ event_time: eventTimeMs, available_at: eventTimeMs, value: String(70_000 + outerBucketIndex), absence: null });
+    rows.push({ event_time: eventTimeMs, available_at: eventTimeMs, value: String(70_000 + outerBucketIndex), absence: null, coverage: null });
   }
   return rows;
 }

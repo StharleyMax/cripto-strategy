@@ -656,6 +656,56 @@ export function scaledCvdDeltasFromHistoryRows(rows: readonly SeriesHistoryRow[]
     .map((row) => ({ bucketStartMs: row.event_time, valueScaled: parseSignedDecimalToScaled(row.value as string) }));
 }
 
+// ── `T-03.12` — the VISIBLE MARK `P-B`/`ADR-040/D3` requires on regime-A panels ─────────────
+//
+// Regime A (`plano 03` item `3.4`, literal): "Σ/max/min — viés unilateral serve parcial COM
+// MARCA VISIVEL". The three FLOW/SUM panels this screen draws — `klines_volume`, `cvd_delta`,
+// `sum_liquidation` (both cohorts) — are exactly the series `T-03.4`'s backend docstring names
+// as needing the pair, because their reading is a SUM over the bucket's native facts: a bucket
+// that answered fewer than `expected` still draws a number, and that number UNDERSTATES the
+// true sum by construction (`81/240` example, `SUBESTIMA ~66,2%`). OI/price/long-short are
+// regime B (carry-forward `STOCK`/`RATIO`) and are covered by `maxStalenessMs` already
+// (`ADR-006`) — this module does not touch them.
+//
+// `row.coverage === null` (the DEGENERATE case, `series_history_report.py`'s own docstring: a
+// native row, requested interval === series' own cadence) is never counted as partial NOR as
+// full — it is simply not a reaggregated bucket, so it contributes to neither count below. A
+// panel entirely on its native grid (e.g. `1m` klines_volume requested at `1m`) therefore shows
+// `0/0` — no mark — honestly, rather than a false `0/N` that would read as "N buckets, all
+// complete" when in truth none of them was ever a fraction of anything.
+
+/** One panel's worth of the `{present, expected}` pairs, folded into the two counts the mark on
+ * screen needs: how many reaggregated buckets are short of their own `expected`, out of how
+ * many were reaggregated at all. */
+export interface PartialCoverageSummary {
+  readonly partialBuckets: number;
+  readonly totalReaggregatedBuckets: number;
+}
+
+/** `true` exactly when this row's own pair says the bucket is short of the native facts it
+ * claims to cover — the literal test `ADR-040/D3`'s regime A exists to make visible. */
+export function isPartialCoverageRow(row: SeriesHistoryRow): boolean {
+  return row.coverage !== null && row.coverage.present < row.coverage.expected;
+}
+
+/** Folds a panel's rows into `PartialCoverageSummary` — pure, no I/O, same tier as every other
+ * function in this module (`ADR-003` FR-1). Order-independent: a caller may pass the FULL
+ * window's rows or a sub-window (e.g. the trailing band `T-04.8` already carves out) and get
+ * back the honest count for exactly the rows it passed. */
+export function summarizePartialCoverage(rows: readonly SeriesHistoryRow[]): PartialCoverageSummary {
+  let partialBuckets = 0;
+  let totalReaggregatedBuckets = 0;
+  for (const row of rows) {
+    if (row.coverage !== null) {
+      totalReaggregatedBuckets += 1;
+      if (row.coverage.present < row.coverage.expected) {
+        partialBuckets += 1;
+      }
+    }
+  }
+  return { partialBuckets, totalReaggregatedBuckets };
+}
+
 export { daysWithPresence };
 
 /** `SeriesCatalogEntry.key.instrumentId === symbol` — the ONE filter every panel selector

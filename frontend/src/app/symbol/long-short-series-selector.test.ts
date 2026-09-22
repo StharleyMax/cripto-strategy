@@ -204,6 +204,7 @@ function ladder(startMs: number, availableAt: number, value: string, span: numbe
     available_at: availableAt,
     value,
     absence: null,
+    coverage: null,
   }));
 }
 
@@ -213,6 +214,7 @@ function gap(startMs: number, span: number): readonly SeriesHistoryRow[] {
     available_at: null,
     value: null,
     absence: "NO_SOURCE",
+    coverage: null,
   }));
 }
 
@@ -280,7 +282,7 @@ test("RN-1: an absent row contributes NO observation, and an all-absent window c
   // And a readable row lying about it (value present, `available_at` null) is not counted either:
   // there is no publication to identify the observation by.
   const malformed: readonly SeriesHistoryRow[] = [
-    { event_time: 1_789_576_440_000, available_at: null, value: "1.80", absence: null },
+    { event_time: 1_789_576_440_000, available_at: null, value: "1.80", absence: null, coverage: null },
   ];
   assert.equal(countNativeBarsByPublication(malformed), 0);
 });

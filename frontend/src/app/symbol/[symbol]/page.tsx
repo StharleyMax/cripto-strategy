@@ -186,6 +186,7 @@ import {
   scaledCvdDeltasFromHistoryRows,
   seriesValueStats,
   slotsFrom,
+  summarizePartialCoverage,
   trailingAbsentSlots,
   type KlinesOhlcReduction,
 } from "../view-model.ts";
@@ -640,6 +641,11 @@ export default async function SymbolPage({
     // `windowEndMsInclusive` is the same instant `SymbolClient.tsx` derives as `lastInstantMs`
     // for the other three readouts — one instant for the whole page, not a fourth one.
     reading: resolveFlowReadingOrAbsent(volumeSlots, routeWindow.windowEndMsInclusive),
+    // `T-03.12` / `P-B` / `ADR-040/D3` regime A — `klines_volume` is a `FLOW` SUM, folded off the
+    // SAME raw rows the slots above came from (not the slots themselves, which have already
+    // dropped `coverage` — `ScalarSlot` carries only `{time, value}`, `ADR-003`'s canonical grid
+    // is untouched by this task).
+    partialCoverage: summarizePartialCoverage(volumeResult.rows),
   };
 
   // ── The CVD panel's own declared facts (`T-02.5`) ─────────────────────────────────────────
@@ -655,6 +661,10 @@ export default async function SymbolPage({
     presentPoints: countPresentSlots(cvdDeltaSlots),
     firstPresentMs: firstPresentSlotMs(cvdDeltaSlots),
     anchorMs: routeWindow.window.startMs,
+    // `T-03.12` — `cvd_delta` is the other `FLOW` SUM this screen draws (regime A); the running
+    // `cumulativeSlots` is a downstream VIEW of these same deltas (`buildCvdPanel`) and gets no
+    // second, derived mark of its own — one honest count at the source, not two that could drift.
+    partialCoverage: summarizePartialCoverage(cvdResult.rows),
   };
 
   // ── The OI pane's own declared facts (`T-03.5`) ───────────────────────────────────────────
@@ -733,6 +743,10 @@ export default async function SymbolPage({
       // `windowEndMsInclusive` — the SAME instant every other readout on this page uses. One
       // instant for the whole render, never a seventh one computed here.
       reading: resolveFlowReadingOrAbsent(slots, routeWindow.windowEndMsInclusive),
+      // `T-03.12` — `sum_liquidation` is the third `FLOW` SUM (regime A), off the SAME raw `rows`
+      // this closure already receives per cohort — long and short degrade independently, same as
+      // every other fact on this pane.
+      partialCoverage: summarizePartialCoverage(rows),
     };
   };
   // ⛔ `RS-5` IS RESOLVED FROM THE CATALOG ROW, NEVER SPELLED AS A LITERAL. A hardcoded "dado de
