@@ -650,6 +650,18 @@ const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 } as const;
 // ancorar no mínimo da janela, que faz o desenho mudar de significado quando a janela muda
 // `[MEDIDO: base=1 -> menor barra 10,39px, p50 19,34px, 0/1403 abaixo de 1px; base=mínimo da
 //  janela -> menor barra 0,00px e 9 abaixo de 1px]`.
+//
+// ── `T-03.10` (`[Q8]`/`[M-6]`) — E SOB TF≠1m (volume ~240× MAIOR a `4h`)? A ÂNCORA CONTINUA `1`,
+// ATÉ PROVA EM CONTRÁRIO (quem decide mudar é o `design_gate`, não este arquivo). A prova, em
+// `volume-subaxis-tf-invariance.test.ts`: `BLOCKER-1` (nenhuma barra sub-pixel, mediana legível)
+// CONTINUA valendo a `240×` a magnitude de `1x` — mas o CONTRASTE entre a menor e a maior barra
+// visíveis MEDIDAMENTE se comprime (`spread` de `27,26px` para `16,57px`, `n=1.440`), porque `1`
+// é âncora ABSOLUTA: o vão `base→mínimo` cresce com a magnitude enquanto o vão `mínimo→máximo`
+// (a razão da própria série) não muda. Isto é o PREÇO já aceito da âncora absoluta, não um
+// defeito novo — a alternativa (âncora no mínimo da janela) já foi medida e recusada duas
+// comentários acima, e ela reintroduziria o BLOCKER-1 que motivou `base=1` em primeiro lugar.
+// `[MEDIDO 2026-09-22, jsdom contra a biblioteca real: 1× -> mín 10,14px/mediana 19,15px/máx
+//  37,40px; 240× -> mín 20,83px/mediana 26,30px/máx 37,40px, 0/1.440 abaixo de 1px nos dois]`
 const VOLUME_LOG_BASE = 1;
 
 // ⛔ `BLOCKER-2`: A AUSÊNCIA NÃO TINHA MARCA, E A REGRA TRAVADA EXIGE UMA.
