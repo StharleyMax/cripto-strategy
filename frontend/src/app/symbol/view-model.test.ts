@@ -129,6 +129,61 @@ test("CA-F2-3 (price/OI/CVD, end to end): a SEM_PONTO row becomes a bare Whitesp
   assert.equal(deltas[1]!.valueScaled, -350_000_000n, "a negative CVD delta must stay signed through the scaled BigInt");
 });
 
+test("CA-5a (QA · Fase 02 gate): an upstream fetch failure for long_short/liquidation breaks the ONE-GRID invariant, unlike price/OI/CVD", () => {
+  // Reproduced LIVE against this worktree's own `make e2e` store (100% upstream `/series-history`
+  // 500 for every series, `[MEDIDO 2026-09-22]`, `api.log`: every GET returns 500):
+  //   curl "$BASE/symbol/BTCUSDT" | grep -o 'data-fact="[a-z_]*slots:[0-9]*"' | sort -u
+  //   -> price_slots:5760 · oi_slots:5760 · cvd_slots:5760 · long_short_slots:0 ·
+  //      liquidation_slots:long:0 · liquidation_slots:short:0
+  // CA-5a's own literal check (`tasks.toml:257`, plano `02` DoD item 1) is
+  //   `grep -o 'data-fact="[a-z_]*slots:[0-9]*"' <página> | cut -d: -f2 | sort -u | wc -l` -> 1,
+  // and it MORDES here: `wc -l` gives 2, not 1.
+  //
+  // Root cause, in production code, not test setup: `buildPricePanel`/`buildOiPanel`/
+  // `buildCvdPanel` (`charts/s2-panels.ts`) all call `buildChartSeries`/`buildScalarSeries`,
+  // which build the grid from `window.startMs`/`window.endMsExclusive` — the slot COUNT never
+  // depends on how many real points arrived, so it stays `[MEASURED]` the full window length
+  // even when every point is missing (T-02.1's fix). `nonNegativeFlowSlotsFromHistoryRows`
+  // (the mapper `long_short`/`liquidation` panels use, `[symbol]/page.tsx:731,671`) instead
+  // returns "ONE SLOT PER ROW" with no grid fallback — when `fetchPanelRows` catches an
+  // upstream failure it returns `rows: []` (`[symbol]/page.tsx:349-353`), so the resulting
+  // panel silently collapses to ZERO slots while its five siblings stay grid-padded at full
+  // length. This is exactly the "index i means a different instant in different panels" hazard
+  // `D9`/`D-C3.2`/`CA-5a` exist to catch (`02_eixo_unico.md` — "um defeito pior que o atual,
+  // porque parece consertado") — except CA-5a was written to catch a STEP mismatch (5m vs 1m,
+  // T-02.1's OI defect), and this is a COUNT mismatch (0 vs full grid) under partial/total
+  // upstream failure, a case none of T-02.1's/T-02.6's tests exercise (T-02.6's e2e checks
+  // range-dispatch write-through, which fires unconditionally regardless of a panel's own slot
+  // count, so it cannot see this).
+  const gridPanels = buildS2Panels({
+    window: FIXTURE_WINDOW,
+    candles: [], // 0 real candles — the SAME "upstream gave nothing" shape `rows: []` is for long_short
+    priceUse: S2_PRICE_USE,
+    oiPoints: [],
+    oiMissingDays: [],
+    cvdDeltas: [],
+    cvdMissingDays: [],
+    cvdCoveredDays: [],
+  });
+  const priceSlotCount = gridPanels.price.series.slots.length;
+  assert.equal(gridPanels.oi.slots.length, priceSlotCount, "control: OI still pads to the full grid with 0 points (T-02.1)");
+  assert.equal(gridPanels.cvd.deltaSlots.length, priceSlotCount, "control: CVD still pads to the full grid with 0 points");
+
+  // `FIXTURE_WINDOW` passed here for the same reason `[symbol]/page.tsx` now passes
+  // `routeWindow.window` at its own `long_short`/`liquidation` call sites (`CA-5a` fix): the
+  // grid-padding is a function of the WINDOW, never of how many rows the wire happened to
+  // answer, so an empty row list on a real window must still answer the full grid length.
+  const longShortSlotCountOnFetchFailure = nonNegativeFlowSlotsFromHistoryRows([], FIXTURE_WINDOW).length;
+  assert.equal(
+    longShortSlotCountOnFetchFailure,
+    priceSlotCount,
+    `CA-5a MORDE: on a \`fetchPanelRows\` failure (rows: []), long_short/liquidation collapse to ` +
+      `${longShortSlotCountOnFetchFailure} slots while price/OI/CVD stay grid-padded at ${priceSlotCount} — ` +
+      `the six panels are no longer "sobre exatamente a mesma grade" (plano 02 item 2.0). Same class as the ` +
+      `defect T-02.1 fixed for OI (grid divergence), now live for long_short/liquidation under upstream failure.`,
+  );
+});
+
 test("MORDE (negative control — proves the falsifier is not vacuous): naively mapping value ?? 0 WOULD fabricate a zero", () => {
   // This test does NOT call any production function — it exists to show the falsifier bites a
   // real defect shape, not just the correct code path. If a future edit replaced
@@ -444,8 +499,9 @@ test("RN-S1: 30 native buckets arrive as 150 readable rows, and the OI panel cou
   assert.equal(rows.filter((row) => row.value !== null).length, 150, "sanity: the wire carries the staircase");
 
   // ⛔ NO `/5` IS WRITTEN ANYWHERE. `scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS)` keeps
-  // only the rows landing ON the 5-minute grid, and `buildOiPanel` aligns them to a 5-minute
-  // canonical grid — so the panel's slots ARE native buckets and counting them is exact.
+  // only the rows landing ON the 5-minute grid. Since `T-02.1` (`D-C3.2`) `buildOiPanel` aligns
+  // those points to the SHARED axis grid (not a 5-minute grid of its own), but each native
+  // point still lands on exactly one axis slot — so counting NON-NULL slots is still exact.
   const points = scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS);
   assert.equal(points.length, nativeBars, "one point per native bucket, not per wire row");
 

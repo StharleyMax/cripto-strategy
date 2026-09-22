@@ -44,6 +44,19 @@
  * `"absent"`, not held for a day — that is this cap being honored, proven against real data
  * in `s2-absence-policy.test.ts`, not merely asserted in prose.
  *
+ * ⚠️ `axisStepMs` VS `nativeTimeframeMs`, ADDED BY `T-02.1` — NOT A COSMETIC RENAME. Before
+ * `T-02.1`, the ONLY grid `resolveStockReading` ever saw was OI's OWN 5-minute grid
+ * (`buildOiPanel` built its `slots` at `FIVE_MINUTES_MS`), so "the array's own spacing" and
+ * "the native bucket width" were the SAME number and one parameter covered both jobs.
+ * `D-C3.2` (`docs/context/candle-real-e-eixo-unico/handoff/JULGAMENTO-FRONTEND-ARCHITECT.md`)
+ * ends that: EVERY panel's `slots` now sits on the ONE shared axis grid (`ONE_MINUTE_MS`),
+ * so OI's array is spaced at the AXIS step while its native cadence stays 5 minutes — two
+ * different numbers, and `findSlotAt`'s `offset / step` index arithmetic breaks silently
+ * (reads the wrong slot, not an exception) if the wrong one is used for indexing. `axisStepMs`
+ * is what indexes `slots`; `nativeTimeframeMs` is only ever used to compute WHICH instant to
+ * look up (the native bucket start, and the one-bucket-back fallback), never as a stride into
+ * the array itself.
+ *
  * The guide-line endpoints are chart X-POSITIONS (bucket-start instants — the same instant
  * `lineSeriesLossless`/`candlestickSeriesLossless` in `s2-lightweight-adapter.ts` already
  * plot a slot at), which is why `guideLine`/`observedBucketStartMs` are bucket-starts while
@@ -84,42 +97,45 @@ export interface FlowReading {
   readonly value: number | null;
 }
 
-/** Looks up the slot exactly at `bucketStartMs` in `nativeSlots`, or `null` if outside the grid's own extent. */
-function findSlotAt(
-  nativeSlots: readonly ScalarSlot[],
-  nativeTimeframeMs: number,
-  bucketStartMs: number,
-): ScalarSlot | null {
-  if (nativeSlots.length === 0) {
-    throw new RangeError("nativeSlots must have at least one slot — an empty grid has no extent to query");
+/** Looks up the slot exactly at `bucketStartMs` in `slots`, or `null` if outside the grid's own
+ * extent. `stepMs` is the ARRAY'S OWN spacing (the axis step the caller built `slots` at), never
+ * the native cadence of the series it carries — see this file's header note on `T-02.1`. */
+function findSlotAt(slots: readonly ScalarSlot[], stepMs: number, bucketStartMs: number): ScalarSlot | null {
+  if (slots.length === 0) {
+    throw new RangeError("slots must have at least one slot — an empty grid has no extent to query");
   }
-  const gridStartMs = nativeSlots[0].time;
+  const gridStartMs = slots[0].time;
   const offset = bucketStartMs - gridStartMs;
-  if (offset % nativeTimeframeMs !== 0) {
+  if (offset % stepMs !== 0) {
     throw new RangeError(
-      `bucketStartMs ${bucketStartMs} does not land on a ${nativeTimeframeMs}ms grid instant — ` +
-        `the caller passed a timestamp not built at this grid's own timeframe`,
+      `bucketStartMs ${bucketStartMs} does not land on a ${stepMs}ms grid instant — ` +
+        `the caller passed a timestamp not built at this grid's own step`,
     );
   }
-  const index = offset / nativeTimeframeMs;
-  return index >= 0 && index < nativeSlots.length ? nativeSlots[index] : null;
+  const index = offset / stepMs;
+  return index >= 0 && index < slots.length ? slots[index] : null;
 }
 
 /**
- * Resolves what a crosshair at `queryBucketStartMs` should read from a `STOCK` (OI) grid —
- * `nativeSlots` at `nativeTimeframeMs` resolution (e.g. the 5-minute OI panel from
- * `buildOiPanel`). `queryBucketStartMs` need not land on `nativeSlots`' own grid (that is
- * exactly the 1-minute-price-vs-5-minute-OI case `D5.2` names) — it is floored to the native
- * timeframe internally, the same rule `alignToTimeframeStart` states for every other grid
- * consumer in this directory.
+ * Resolves what a crosshair at `queryBucketStartMs` should read from a `STOCK` (OI) grid.
+ *
+ * `slots` is spaced at `axisStepMs` (the ONE shared axis grid every panel's `slots` sits on,
+ * `D-C3.2` — e.g. `ONE_MINUTE_MS`), which is NOT necessarily the series' own native cadence:
+ * `nativeTimeframeMs` names that separately (e.g. `5` minutes for OI), and is used only to
+ * decide WHICH instant to look up — the native bucket start, and the one-native-bucket-back
+ * fallback — never to index `slots` itself. `queryBucketStartMs` need not land on either grid
+ * (that is exactly the 1-minute-price-vs-5-minute-OI case `D5.2` names) — it is floored to the
+ * native timeframe internally, the same rule `alignToTimeframeStart` states for every other
+ * grid consumer in this directory.
  */
 export function resolveStockReading(
-  nativeSlots: readonly ScalarSlot[],
+  slots: readonly ScalarSlot[],
+  axisStepMs: number,
   nativeTimeframeMs: number,
   queryBucketStartMs: number,
 ): StockReading {
   const nativeBucketStartMs = alignToTimeframeStart(queryBucketStartMs, nativeTimeframeMs);
-  const exactSlot = findSlotAt(nativeSlots, nativeTimeframeMs, nativeBucketStartMs);
+  const exactSlot = findSlotAt(slots, axisStepMs, nativeBucketStartMs);
 
   if (exactSlot !== null && exactSlot.value !== null) {
     const isExactQuery = queryBucketStartMs === nativeBucketStartMs;
@@ -136,7 +152,7 @@ export function resolveStockReading(
   // §5.11: "trilho de vigência ≤ grade nativa" — hold back AT MOST one native bucket-width.
   // Looking further would be exactly the forbidden "trilho maior que grade nativa".
   const priorBucketStartMs = nativeBucketStartMs - nativeTimeframeMs;
-  const priorSlot = findSlotAt(nativeSlots, nativeTimeframeMs, priorBucketStartMs);
+  const priorSlot = findSlotAt(slots, axisStepMs, priorBucketStartMs);
   if (priorSlot !== null && priorSlot.value !== null) {
     return {
       kind: "held",

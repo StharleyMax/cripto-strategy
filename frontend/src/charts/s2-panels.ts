@@ -52,6 +52,27 @@ export const ONE_MINUTE_MS = 60_000;
 export const FIVE_MINUTES_MS = 5 * 60_000;
 
 /**
+ * `T-02.1` / `D-C3.2` — THE grade canônica ÚNICA: the ONE axis step every S2 panel's `slots`
+ * array is built at, `lossless com whitespace`. Before this constant existed, `buildOiPanel`
+ * built its OWN grid at `FIVE_MINUTES_MS` while every other panel (price, CVD) built at
+ * `ONE_MINUTE_MS` — two implementations of "the grid", disagreeing on what index `i` means
+ * (minute `i` in Price, minute `5i` in OI) `[MEDIDO 2026-09-19: price_slots:5760 ·
+ * cvd_slots:5760 · long_short_slots:5760 · liquidation_slots:5760 vs oi_slots:1152]`. Every
+ * builder below now takes this SAME value for its `slots` grid — `buildOiPanel` no longer
+ * excepted — so index-equal ⇒ instant-equal across every panel, by construction, not by
+ * coincidence of two constants that happen to agree today.
+ *
+ * A series whose NATIVE cadence differs from this step (OI, 5 minutes) is not resampled or
+ * interpolated onto it — its `slots` gain explicit `value: null` gaps between native
+ * observations (`alignScalarPointsToGrid` never fabricates), and the series' own native
+ * cadence is carried SEPARATELY (`OiPanel.timeframeMs`) for consumers that need it (`D5.2`'s
+ * held-value cap, `resolveStockReading`'s `nativeTimeframeMs` parameter) — collapsing the two
+ * into one field is exactly how `GA-2`'s confusion between "grade nativa" and "grade do eixo"
+ * was born (`JULGAMENTO-FRONTEND-ARCHITECT.md` §1).
+ */
+export const S2_AXIS_STEP_MS = ONE_MINUTE_MS;
+
+/**
  * `T-05.5` / plan item `5.7`: this S2-mínima price panel is a VISUAL / STRUCTURE display —
  * candles for the human to read swing/BOS/CHoCH context on, not a liquidation or funding
  * surface — so its `price_use` is `structure_detection`, `ADR-007`'s own assignment for
@@ -63,7 +84,18 @@ export const FIVE_MINUTES_MS = 5 * 60_000;
 export const S2_PRICE_USE: PriceUse = "structure_detection";
 
 export interface OiPanel {
+  /** OI's OWN native cadence (5 minutes) — NOT the step of `slots` below since `T-02.1`
+   * (`D-C3.2`). Kept for consumers that need the native bucket width, e.g.
+   * `resolveStockReading`'s held-value cap (`D5.2`) and `DoD-3`'s native-bucket count
+   * (`countPresentSlots(slots)` — unaffected by the grid widening, since a native-cadence
+   * point still lands on exactly one axis slot). */
   readonly timeframeMs: number;
+  /** THE shared axis grid (`S2_AXIS_STEP_MS`), same step and same `window` every other S2
+   * panel's slots use — never OI's own `timeframeMs`. A native OI observation lands on the
+   * one axis slot it belongs to; every other axis slot in between is an explicit `value:
+   * null` gap (whitespace), never a fabricated hold — `resolveStockReading` is what turns
+   * that gap into a "held" READING for a crosshair query, and it does so WITHOUT touching
+   * this array's shape. */
   readonly slots: readonly ScalarSlot[];
   readonly missingDays: readonly string[];
 }
@@ -126,13 +158,25 @@ export function buildPricePanel(
   };
 }
 
-/** `points`/`missingDays` — already assembled (`assembleOiPoints`), never read from disk here. */
+/**
+ * `points`/`missingDays` — already assembled (`assembleOiPoints`), never read from disk here.
+ *
+ * `T-02.1`/`D-C3.2`: `slots` is built at `S2_AXIS_STEP_MS` — THE shared axis grid, same as
+ * every other panel — never at `FIVE_MINUTES_MS` internally (that was the divergence: `CA-5a`
+ * measured `oi_slots:1152` beside `price_slots:5760`/`cvd_slots:5760` on the SAME window).
+ * `points` still arrive at OI's native 5-minute cadence (the caller filters to it,
+ * `scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS)`); every native timestamp is ALSO a
+ * multiple of `S2_AXIS_STEP_MS`, so each one lands on exactly one axis slot and every slot in
+ * between is an explicit gap — `alignScalarPointsToGrid` neither drops a point nor invents
+ * one. `timeframeMs` keeps returning the NATIVE cadence, unchanged, for the reasons the
+ * `OiPanel` docstring gives.
+ */
 export function buildOiPanel(
   points: readonly ScalarPoint[],
   missingDays: readonly string[],
   window: S2Window,
 ): OiPanel {
-  const series = buildScalarSeries(points, FIVE_MINUTES_MS, window.startMs, window.endMsExclusive);
+  const series = buildScalarSeries(points, S2_AXIS_STEP_MS, window.startMs, window.endMsExclusive);
   return { timeframeMs: FIVE_MINUTES_MS, slots: series.slots, missingDays };
 }
 

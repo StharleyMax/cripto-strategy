@@ -351,6 +351,7 @@ refs = [
     "CRITERIO DE DISTRIBUICAO: p95 ≤ 16 ms. MORDE com p95 > 16 ms, e morde TAMBEM se a instrumentacao reportar n < 60 quadros — menos quadros que o esperado e queda de taxa disfarcada de amostra curta.",
     "⚠️ MEDIA E PROIBIDA: um travamento de 200 ms em 60 quadros de 10 ms some na media (13,2 ms, 'passa') e e exatamente o que o owner percebe. O teto e sobre a CAUDA.",
     "📌 ESCALA JA MEDIDA, para o numero nao nascer descalibrado: setData de 129.600 pontos x 6 paineis custa 752,6 ms [MEDIDO 2026-09-19] — 47x o teto. Nao reprova o eixo (e carga de dado), mas fixa que RECARREGAR DADO DENTRO DO GESTO DE PAN VIOLA O TETO POR CONSTRUCAO => paginacao e assincrona e fora do quadro (fase 05).",
+    "[DECISAO-OWNER: 2026-09-22, escolha entre alternativas apresentadas] — teto recalibrado de 16ms para 160ms. gates/T-02.7-builder.md + gates/T-02-latencia-fix.md provaram por mutacao real (RangeDispatcher/axis-sync.ts absolvidos; p95~33-49,7ms ja existe no evento CRU do painel de origem, antes de qualquer fan-out) que 16ms nunca foi alcancavel NESTE ambiente de teste (Chromium headless + page.mouse.move via CDP), nao por lentidao do app. Metodo identico ao ja usado em frontend/playwright.config.ts: 3,2x o PIOR p95 medido em 6 rodadas (49,70 ms) = 159,04 ms, arredondado para 160ms. Ver frontend/e2e/17-teto-latencia-eixo.spec.ts, comentario 'RECALIBRACAO DO TETO', para a conta completa.",
 ]
 tracker = { provider = "jira", id = "CST-214", url = "https://conversationhub.atlassian.net/browse/CST-214" }
 

@@ -56,7 +56,16 @@
  * question stays `klines_last`'s job), so nothing here claims one for them.
  */
 
-import { ONE_MINUTE_MS, resolveFlowReading, type FlowReading, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
+import {
+  ONE_MINUTE_MS,
+  S2_AXIS_STEP_MS,
+  buildScalarSeries,
+  resolveFlowReading,
+  type FlowReading,
+  type S2Panels,
+  type S2RawInputs,
+  type S2Window,
+} from "../../charts/index.ts";
 import type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance, SeriesValueStats } from "./panel-status.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
@@ -363,10 +372,33 @@ export type ScalarSlotShape = S2Panels["oi"]["slots"][number];
  * producer behind the exact same `SEM_PONTO` a real gap shows. */
 export class InvalidSeriesValueError extends Error {}
 
+/** One row's `value`, validated the same way for both branches of
+ * `nonNegativeFlowSlotsFromHistoryRows` below — `null` for an absent row, the parsed number for
+ * a present one, and a throw for anything malformed. Split out so the two branches cannot drift
+ * on what counts as a valid flow value (`RN-1` is written ONCE, same discipline the function's
+ * own docstring already states for the `volume`/`liquidation` merge). */
+function parseNonNegativeFlowValue(row: SeriesHistoryRow): number | null {
+  if (row.value === null) {
+    return null;
+  }
+  const parsed = Number(row.value);
+  if (!Number.isFinite(parsed)) {
+    throw new InvalidSeriesValueError(`value ${JSON.stringify(row.value)} at event_time ${row.event_time} is not a finite number`);
+  }
+  if (parsed < 0) {
+    // `klines_volume` is `nature=FLOW`, `reduction=SUM`, `denom=base` and `sum_liquidation` is
+    // `nature=FLOW`, `reduction=SUM`, `denom=quote` (`SPEC-007 §4`): a sum of traded base
+    // quantity — or of liquidated USD notional — over a bucket is never negative. Refused
+    // rather than drawn — the same posture `charts/s2-cvd.ts::parseQuantityToScaled` takes for
+    // its own never-negative quantity, and the opposite of a downward bar nobody could explain.
+    throw new InvalidSeriesValueError(`flow value ${parsed} at event_time ${row.event_time} is negative — a summed traded quantity never is`);
+  }
+  return parsed;
+}
+
 /**
  * Maps `/series-history` rows for a NON-NEGATIVE `FLOW` series into the `ScalarSlot[]` the
- * lossless lightweight adapter takes (`lineSeriesLossless`/`positiveValueSeriesLossless`) — ONE
- * SLOT PER ROW, in wire order.
+ * lossless lightweight adapter takes (`lineSeriesLossless`/`positiveValueSeriesLossless`).
  *
  * `RN-1`, the rule this function exists for: a row with `absence !== null` (⇒ `value === null`,
  * `CA-F1-5`) becomes `value: null`, which `lineSeriesLossless` turns into a bare `{time}`
@@ -381,26 +413,46 @@ export class InvalidSeriesValueError extends Error {}
  * first lies at the call site; the second is two implementations of the one rule this route
  * exists to keep. So the function keeps its single body and takes the name of its CONTRACT:
  * a summed, non-negative flow quantity, whatever the metric.
+ *
+ * ── `CA-5a` FOLLOW-UP (`gates/FASE-02-qa.md`, achado bloqueante) — `window` IS OPTIONAL, AND
+ * THAT IS THE WHOLE FIX ──────────────────────────────────────────────────────────────────────
+ *
+ * Without `window`, this function still returns ONE SLOT PER ROW, in wire order — unchanged from
+ * before this fix, and every caller that never needed a grid guarantee (this file's own tests
+ * that hand a short, hand-built row list not meant to span a whole window) keeps that exact
+ * shape.
+ *
+ * WITH `window`, absent rows are dropped instead of turned into a `null` slot, the survivors
+ * become `ScalarPoint`s, and the shared grid primitive `charts/s2-scalar-grid.ts::buildScalarSeries`
+ * — the SAME one `buildOiPanel`/`buildCvdPanel` already call, not a second implementation
+ * (`ADR-003` FR-2/FR-3) — aligns them onto `S2_AXIS_STEP_MS`. The result's LENGTH then depends
+ * only on `window`, never on how many rows the wire happened to answer: `0` real rows still
+ * produce a full, `null`-filled grid, exactly like `buildOiPanel`/`buildCvdPanel` already do for
+ * `oi`/`cvd` when `/series-history` fails (`T-02.1`/`D-C3.2`). Before this fix, `long_short`'s and
+ * `liquidation`'s "one slot per row" mapping meant an upstream `500` (`rows: []`) silently
+ * collapsed those two panes to `0` slots while their four siblings stayed grid-padded at the
+ * full window length — the SAME "index `i` means a different instant in different panels" hazard
+ * `T-02.1` fixed for OI's `5m`-vs-`1m` step mismatch, now a COUNT mismatch instead of a STEP one.
+ * `[symbol]/page.tsx`'s `long_short`/`liquidation` call sites pass `routeWindow.window` for
+ * exactly this reason; the volume sub-axis call site does not (`SPEC-007 §3.6` — volume is not
+ * one of the six panes `CA-5a`'s one-grid invariant covers, `data-fact` never publishes a
+ * `volume_slots` fact for it).
  */
-export function nonNegativeFlowSlotsFromHistoryRows(rows: readonly SeriesHistoryRow[]): readonly ScalarSlotShape[] {
-  return rows.map((row) => {
-    if (row.value === null) {
-      return { time: row.event_time, value: null };
+export function nonNegativeFlowSlotsFromHistoryRows(
+  rows: readonly SeriesHistoryRow[],
+  window?: S2Window,
+): readonly ScalarSlotShape[] {
+  if (window === undefined) {
+    return rows.map((row) => ({ time: row.event_time, value: parseNonNegativeFlowValue(row) }));
+  }
+  const points: ScalarPointShape[] = [];
+  for (const row of rows) {
+    const value = parseNonNegativeFlowValue(row);
+    if (value !== null) {
+      points.push({ timeMs: row.event_time, value });
     }
-    const parsed = Number(row.value);
-    if (!Number.isFinite(parsed)) {
-      throw new InvalidSeriesValueError(`value ${JSON.stringify(row.value)} at event_time ${row.event_time} is not a finite number`);
-    }
-    if (parsed < 0) {
-      // `klines_volume` is `nature=FLOW`, `reduction=SUM`, `denom=base` and `sum_liquidation` is
-      // `nature=FLOW`, `reduction=SUM`, `denom=quote` (`SPEC-007 §4`): a sum of traded base
-      // quantity — or of liquidated USD notional — over a bucket is never negative. Refused
-      // rather than drawn — the same posture `charts/s2-cvd.ts::parseQuantityToScaled` takes for
-      // its own never-negative quantity, and the opposite of a downward bar nobody could explain.
-      throw new InvalidSeriesValueError(`flow value ${parsed} at event_time ${row.event_time} is negative — a summed traded quantity never is`);
-    }
-    return { time: row.event_time, value: parsed };
-  });
+  }
+  return buildScalarSeries(points, S2_AXIS_STEP_MS, window.startMs, window.endMsExclusive).slots;
 }
 
 /**

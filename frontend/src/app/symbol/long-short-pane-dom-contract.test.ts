@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
-const pageSource = readFileSync(path.join(HERE, "page.tsx"), "utf8");
+const pageSource = readFileSync(path.join(HERE, "[symbol]", "page.tsx"), "utf8");
 
 /** `page.tsx` with every comment removed — block first, then line. Needed because the asserts below
  * ask whether a shape is in the CODE, and this route's comments quote the shapes they retired.
@@ -73,14 +73,16 @@ const PANE_RENDERED = /<LongShortPane longShort=\{longShort\} status=\{panelStat
 const ABSENCE_NOTE_RENDERED = /<LongShortReadableHorizon longShort=\{longShort\} \/>\s*\n\s*<AbsenceNote status=\{status\} \/>/;
 
 /** `page.tsx`: the selector, CALLED through the unique-match helper. */
-const PAGE_SELECTOR = /resolveCatalogEntry\(catalog, \(entry\) => matchesCountLongShortRatio\(entry\.key\)\)/;
+const PAGE_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesCountLongShortRatio\(entry\.key\)\)/;
 /** `page.tsx`: the headline count comes from the publication counter, never from a divisor. */
 const PAGE_NATIVE_BARS = /nativeBars: countNativeBarsByPublication\(longShortResult\.rows\)/;
 const PAGE_WIRE_POINTS = /wirePoints: countPresentSlots\(longShortSlots\)/;
 /** `page.tsx`: the pane has a status of its OWN, so it degrades on its own. */
 const PAGE_STATUS = /longShort: longShortResult\.status/;
-/** `page.tsx`: the ONE `RN-1` mapper, shared. */
-const PAGE_MAPPER = /const longShortSlots = nonNegativeFlowSlotsFromHistoryRows\(longShortResult\.rows\);/;
+/** `page.tsx`: the ONE `RN-1` mapper, shared — and grid-padded by the route's own window since
+ * the `CA-5a` fix (`gates/FASE-02-qa.md`), the same reason the liquidation pane's own anchor
+ * carries `routeWindow.window` now. */
+const PAGE_MAPPER = /const longShortSlots = nonNegativeFlowSlotsFromHistoryRows\(longShortResult\.rows, routeWindow\.window\);/;
 
 // ── The stable handles `T-04.7` depends on ────────────────────────────────────────────────────
 

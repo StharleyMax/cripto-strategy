@@ -48,7 +48,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
-const pageSource = readFileSync(path.join(HERE, "page.tsx"), "utf8");
+const pageSource = readFileSync(path.join(HERE, "[symbol]", "page.tsx"), "utf8");
 
 /** `page.tsx` with every comment removed — block first, then line. Needed because the asserts
  * below ask whether a RETIRED SELECTOR is gone from the CODE, and `page.tsx`'s header now
@@ -72,8 +72,10 @@ const WIRE_POINTS_ATTRIBUTE = /data-oi-wire-points=\{oi\.wirePoints\}/;
 const FRESHNESS_FACT = /data-fact=\{`oi_freshness:\$\{freshness\.kind\}`\}/;
 const FRESHNESS_RENDERED = /<OiFreshness oi=\{oi\} \/>/;
 /** `page.tsx`: the three-term predicate, CALLED. */
-const PAGE_OI_SELECTOR = /resolveCatalogEntry\(catalog, \(entry\) => matchesBinanceOpenInterest\(entry\.key\)\)/;
-/** `page.tsx`: the native count comes off the PANEL's 5-minute grid, never off the wire rows. */
+const PAGE_OI_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesBinanceOpenInterest\(entry\.key\)\)/;
+/** `page.tsx`: the native count comes off the PANEL's grid, never off the wire rows — since
+ * `T-02.1` (`D-C3.2`) that grid is the SHARED axis grid, not a 5-minute grid of its own, but
+ * `countPresentSlots` over it still counts native buckets exactly (see `s2-panels.ts`). */
 const PAGE_NATIVE_COUNT = /nativeBars: countPresentSlots\(oiGridSlots\)/;
 const PAGE_OI_GRID_SOURCE = /const oiGridSlots = panels\.oi\.slots;/;
 /** `page.tsx`: the `RNF-2` ceiling is the catalog's own, and `null` when no entry resolved. */
@@ -119,8 +121,12 @@ test("RN-S1: the pane publishes the NATIVE bar count, with the staircase beside 
   assert.match(source, /<OiReadableHorizon oi=\{oi\} gridSlots=\{panels\.oi\.slots\.length\} \/>/);
 });
 
-test("RN-S1, route side: the count comes off the 5-minute PANEL grid, not off the wire rows", () => {
-  assert.match(pageCode, PAGE_OI_GRID_SOURCE, "`panels.oi.slots` IS the native grid (buildOiPanel, FIVE_MINUTES_MS)");
+test("RN-S1, route side: the count comes off the shared axis PANEL grid, not off the wire rows", () => {
+  assert.match(
+    pageCode,
+    PAGE_OI_GRID_SOURCE,
+    "`panels.oi.slots` is the shared axis grid since `T-02.1` (`D-C3.2`) — the native cadence lives in `panels.oi.timeframeMs`",
+  );
   assert.match(pageCode, PAGE_NATIVE_COUNT);
   assert.match(pageCode, /wirePoints: oiResult\.rows\.filter\(\(row\) => row\.value !== null\)\.length/);
   // ⛔ NO `/5` ANYWHERE, and that is deliberate, not an omission: a literal divisor would be a
@@ -261,7 +267,7 @@ test("the selector defect is GONE from the route, both halves of it", () => {
   // helper (and inlining `find` for the four) cannot leave the count above looking healthy.
   assert.match(
     pageCode,
-    /function resolveOhlcCatalogEntry\([\s\S]*?resolveCatalogEntry\(catalog, \(entry\) => matchesKlinesOhlc\(entry\.key, reduction\)\)/,
+    /function resolveOhlcCatalogEntry\([\s\S]*?resolveCatalogEntry\(catalog, symbol, \(entry\) => matchesKlinesOhlc\(entry\.key, reduction\)\)/,
     "the four klines_ohlc rows must resolve by identity (metric + provider + reduction), through the same refusal",
   );
 });

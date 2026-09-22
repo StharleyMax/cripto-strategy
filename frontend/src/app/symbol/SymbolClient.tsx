@@ -48,7 +48,7 @@
  * follows, rather than pretending a live feed exists.
  */
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type {
   CandlestickSeriesOptions,
   HistogramSeriesOptions,
@@ -56,6 +56,7 @@ import type {
   LineSeriesOptions,
   ISeriesApi,
   Logical,
+  LogicalRange as LibraryLogicalRange,
 } from "lightweight-charts";
 import {
   CandlestickSeries,
@@ -78,12 +79,23 @@ import {
   positiveValueSeriesLossless,
   resolveFlowReading,
   resolveStockReading,
+  S2_AXIS_STEP_MS,
   zeroMarkSeries,
   type FlowReading,
   type S2Panels,
+  type TimeAxis,
 } from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
 import { recentBandSlotRange } from "./long-short-band.ts";
+import { AxisSyncProvider, useAxisSync } from "./axis-sync-provider.tsx";
+import {
+  CVD_PANEL_INDEX,
+  LIQUIDATION_LONG_PANEL_INDEX,
+  LIQUIDATION_SHORT_PANEL_INDEX,
+  LONG_SHORT_PANEL_INDEX,
+  OI_PANEL_INDEX,
+  PRICE_PANEL_INDEX,
+} from "./axis-sync.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
@@ -162,8 +174,12 @@ export interface OiPaneData {
   /** ⛔ NATIVE 5-MINUTE BUCKETS carrying a real value — the number `DoD-3` counts against
    * `N >= 30`, and the `RN-S1` divisor paid in the TYPE instead of in a `/5`.
    *
-   * `page.tsx` derives it from `panels.oi.slots`, which is the 5-minute canonical grid
-   * (`buildOiPanel`, `FIVE_MINUTES_MS`) — one slot per native bucket. It is NOT the count of
+   * `page.tsx` derives it from `panels.oi.slots`, which since `T-02.1` (`D-C3.2`) is the ONE
+   * shared axis grid every panel's `slots` sits on (`ONE_MINUTE_MS`), NOT a 5-minute grid of
+   * its own — `buildOiPanel` no longer builds one. The count still comes out to native buckets
+   * because `oiPoints` only ever carries points at the native 5-minute cadence
+   * (`scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS)`), so exactly one axis slot per native
+   * bucket is non-null and every slot in between is an explicit gap. It is NOT the count of
    * readable wire rows: the route serves this `5m` series on the `1m` grid (`GA-2`), so one
    * native bucket appears as up to five rows and that count runs ~5x high. */
   readonly nativeBars: number;
@@ -353,6 +369,13 @@ export interface PriceCandleData {
 }
 
 export interface SymbolClientProps {
+  /** `T-02.5` — the route's resolved `[symbol]` segment (`page.tsx`, validated against the
+   * pilot universe there), never `panels.symbol`. `charts`' `S2Panels.symbol` stays the module
+   * constant `"BTCUSDT"` (`s2-panels.ts`) on purpose — widening THAT signature is a change to a
+   * component this task does not own (`ADR-003`) — so the page that DOES know which instrument
+   * this request served passes it explicitly, the same "no silent default" rule `priceUse` and
+   * `window` already follow one level up. */
+  readonly symbol: string;
   readonly panels: S2Panels;
   readonly priceCandles: PriceCandleData;
   readonly volume: VolumeSubAxisData;
@@ -429,20 +452,41 @@ const CHART_HEIGHT_PX = 220;
  * REASON IT EXISTS — `D-1` of `gates/design-04.md` §R3.5 needs a pane to draw an overlay ALIGNED
  * with the chart's own time scale, and the only honest source of that alignment is the library.
  *
- * `fitContent()` sets the target range and INVALIDATES; the time scale's coordinates are recomputed
- * when the chart next paints. Reading `logicalToCoordinate` in the same tick answers with the range
- * the chart had BEFORE the fit — a coordinate that looks like a measurement and is not. So the
- * callback is deferred one animation frame, and cancelled with the chart if the pane unmounts
- * first: a callback that outlives `chart.remove()` would read a disposed model.
+ * `setVisibleLogicalRange()` sets the target range and INVALIDATES; the time scale's coordinates
+ * are recomputed when the chart next paints (same async contract `fitContent()` had —
+ * `charts/headless-chart.ts`'s own docstring: "`fitContent()` and `setVisibleLogicalRange()` do
+ * NOT change anything synchronously"). Reading `logicalToCoordinate` in the same tick answers
+ * with the range the chart had BEFORE the write — a coordinate that looks like a measurement and
+ * is not. So the callback is deferred one animation frame, and cancelled with the chart if the
+ * pane unmounts first: a callback that outlives `chart.remove()` would read a disposed model.
  *
  * It is OPTIONAL, and four of the five panes pass nothing: a pane that draws only on the canvas has
  * no geometry to read back out.
+ *
+ * `T-02.4` (`D-C3.1`, plan `02` item `2.3`) — `panelIndex` is new, and `fitContent()` is GONE:
+ * ⛔ the initial framing is no longer this chart's own decision. It writes `axisSync`'s
+ * `initialLogicalRange` — the ONE `LogicalRange` computed off the shared `TimeAxis`, the same
+ * value every one of the six panels applies — then registers itself with the `AxisSyncStore` so
+ * `RangeDispatcher` (`T-02.3`, `charts`) can WRITE this chart when ANOTHER panel pans, and
+ * subscribes to this chart's own `subscribeVisibleLogicalRangeChange` so a gesture ON this chart
+ * DISPATCHES to the other five. "Assina, despacha e aplica" — the three verbs `D-C3.1`'s table
+ * assigns to `web` — are exactly these three calls.
+ *
+ * `T-02.6` (`CST-213`, `DoD-2`/`DoD-4`) — three `data-*` attributes on `container` itself, kept
+ * in lockstep with every "aplica"/"despacha" write: `data-visible-logical-from`/`-to` (the
+ * `LogicalRange` this chart is CURRENTLY showing, position — not presence — for Playwright to
+ * assert on) and `data-axis-sync-write-count` (incremented only inside `registerPanel`'s
+ * callback, i.e. only when the DISPATCHER wrote here because ANOTHER panel moved — a gesture on
+ * THIS panel's own drag never increments its own counter, matching `axis-sync.test.ts`'s
+ * already-proven "never in the origin").
  */
 function useLightweightChart(
   containerRef: RefObject<HTMLDivElement | null>,
+  panelIndex: number,
   build: (chart: IChartApi) => void,
   measure?: (chart: IChartApi) => void,
 ): void {
+  const axisSync = useAxisSync();
   useEffect(() => {
     const container = containerRef.current;
     if (container === null) {
@@ -457,7 +501,35 @@ function useLightweightChart(
     // again: `chart-construction.test.ts` can only require a NAME.
     const chart = createChart(container, chartConstructorOptions(container.clientWidth || 600, CHART_HEIGHT_PX));
     build(chart);
-    chart.timeScale().fitContent();
+    const timeScale = chart.timeScale();
+    // "aplica" — the axis-owned initial framing, not `fitContent()`.
+    timeScale.setVisibleLogicalRange(axisSync.initialLogicalRange);
+    // `T-02.6` (`DoD-2`/`DoD-4`) — DOM-observable POSITION, not presence: `data-visible-logical-*`
+    // carries the actual `LogicalRange` this chart currently applies (updated below on both the
+    // "aplica" and "despacha" halves, so it is current no matter which of the six panels a
+    // gesture originated on), and `data-axis-sync-write-count` counts how many times the
+    // DISPATCHER (never this chart's own drag) wrote into it — the instrumentation `CA-6`/`DoD-4`
+    // need without adding a status code or an attribute a test could pass by merely existing.
+    container.dataset.visibleLogicalFrom = String(axisSync.initialLogicalRange.from);
+    container.dataset.visibleLogicalTo = String(axisSync.initialLogicalRange.to);
+    container.dataset.axisSyncWriteCount = "0";
+    // "assina" (this chart is now WRITABLE by the dispatcher) + "despacha" (this chart's own
+    // range changes are forwarded to the other five).
+    const unregister = axisSync.registerPanel(panelIndex, (logical) => {
+      timeScale.setVisibleLogicalRange(logical);
+      container.dataset.visibleLogicalFrom = String(logical.from);
+      container.dataset.visibleLogicalTo = String(logical.to);
+      container.dataset.axisSyncWriteCount = String(Number(container.dataset.axisSyncWriteCount ?? "0") + 1);
+    });
+    const handleRangeChange = (range: LibraryLogicalRange | null) => {
+      if (range === null) {
+        return;
+      }
+      container.dataset.visibleLogicalFrom = String(range.from);
+      container.dataset.visibleLogicalTo = String(range.to);
+      axisSync.notifyPanelRangeChanged(panelIndex, range);
+    };
+    timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
     const frame =
       measure === undefined
         ? null
@@ -468,6 +540,8 @@ function useLightweightChart(
       if (frame !== null) {
         cancelAnimationFrame(frame);
       }
+      timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
+      unregister();
       chart.remove();
     };
     // `build` and `measure` intentionally excluded from the dependency list: each is a fresh closure every
@@ -476,7 +550,7 @@ function useLightweightChart(
     // every render would tear the chart down and rebuild it constantly instead of once per
     // mount. No `react-hooks` plugin is configured in this project's `eslint.config.mjs`, so
     // no rule enforces exhaustive deps here; this comment names the intent for a reader.
-  }, [containerRef]);
+  }, [containerRef, panelIndex, axisSync]);
 }
 
 /** `T-04.3` (`CA-F4-3`): a "leitura atual" readout for Preço, same shape `OiPane` already has
@@ -890,7 +964,7 @@ function PricePane({
   readonly volumeStatus: PanelStatus;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  useLightweightChart(containerRef, (chart) => {
+  useLightweightChart(containerRef, PRICE_PANEL_INDEX, (chart) => {
     const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors();
     const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style);
     series.setData(candlestickSeriesLossless(panels.price.series.slots) as never);
@@ -955,7 +1029,9 @@ function PricePane({
     time: slot.time,
     value: slot.candle === null ? null : slot.candle.close,
   }));
-  const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, lastInstantMs(panels));
+  // Price's own native cadence IS the axis step (`ONE_MINUTE_MS`) — the two `resolveStockReading`
+  // parameters happen to be the same value here, unlike OI's call below (`T-02.1`).
+  const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, ONE_MINUTE_MS, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
       ? "SEM_PONTO"
@@ -1095,12 +1171,15 @@ function OiPane({
   readonly oi: OiPaneData;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  useLightweightChart(containerRef, (chart) => {
+  useLightweightChart(containerRef, OI_PANEL_INDEX, (chart) => {
     const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
     const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
     series.setData(lineSeriesLossless(panels.oi.slots) as never);
   });
-  const reading = resolveStockReading(panels.oi.slots, panels.oi.timeframeMs, lastInstantMs(panels));
+  // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (`ONE_MINUTE_MS`, `D-C3.2`),
+  // no longer OI's own native grid — `panels.oi.timeframeMs` (5 min) is passed SEPARATELY, as
+  // the cap `resolveStockReading`'s held-value rule (`D5.2`) reads against.
+  const reading = resolveStockReading(panels.oi.slots, ONE_MINUTE_MS, panels.oi.timeframeMs, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
       ? ABSENCE_TOKEN
@@ -1208,7 +1287,7 @@ function CvdPane({
   readonly cvd: CvdPaneData;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  useLightweightChart(containerRef, (chart) => {
+  useLightweightChart(containerRef, CVD_PANEL_INDEX, (chart) => {
     const tokens = colorTokens();
     // ⛔ `LineStyle.Dashed` is NOT decoration — it is `DR-3`/WCAG 1.4.1 (Use of Color) inside the
     // canvas, where no legend reaches: with two lines distinguished ONLY by hue, a dicromata or a
@@ -1457,15 +1536,21 @@ function LiquidationCohortSurface({
   data,
   unit,
   status,
+  panelIndex,
 }: {
   readonly cohort: string;
   readonly label: string;
   readonly data: LiquidationCohortData;
   readonly unit: string | null;
   readonly status: PanelStatus;
+  /** `T-02.4`: the two cohorts are two of the SIX runtime charts (`LIQUIDATION_LONG_PANEL_INDEX`/
+   * `LIQUIDATION_SHORT_PANEL_INDEX`) — `LiquidationPane` names which is which, since this
+   * component mounts twice and cannot infer its own index from `cohort` alone without
+   * duplicating the mapping `axis-sync.ts` already owns. */
+  readonly panelIndex: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  useLightweightChart(containerRef, (chart) => {
+  useLightweightChart(containerRef, panelIndex, (chart) => {
     const tokens = colorTokens();
     const barStyle: Partial<HistogramSeriesOptions> = {
       color: tokens[LIQUIDATION_BAR_COLOR_ROLE],
@@ -1578,6 +1663,7 @@ function LiquidationPane({
         data={liquidation.long}
         unit={liquidation.unit}
         status={longStatus}
+        panelIndex={LIQUIDATION_LONG_PANEL_INDEX}
       />
       <LiquidationCohortSurface
         cohort="short"
@@ -1585,6 +1671,7 @@ function LiquidationPane({
         data={liquidation.short}
         unit={liquidation.unit}
         status={shortStatus}
+        panelIndex={LIQUIDATION_SHORT_PANEL_INDEX}
       />
     </section>
   );
@@ -2068,6 +2155,7 @@ function LongShortPane({
   const bandRange = recentBandSlotRange(longShort.slots, longShort.recentSpanMs);
   useLightweightChart(
     containerRef,
+    LONG_SHORT_PANEL_INDEX,
     (chart) => {
       const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
       const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
@@ -2270,6 +2358,7 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
 }
 
 export function SymbolClient({
+  symbol,
   panels,
   priceCandles,
   volume,
@@ -2281,6 +2370,25 @@ export function SymbolClient({
   knowledgeTimeMs,
   liveUrls,
 }: SymbolClientProps) {
+  // `T-02.4` (`D-C3.1`) — the ONE `TimeAxis` every one of the six charts shares, derived off the
+  // WINDOW (`panels.window`), never off any one panel's own `slots.length`: the axis is a
+  // property of the request, not of whichever series happened to build it. `S2_AXIS_STEP_MS` is
+  // the SAME step `T-02.1` unified every panel's grid onto (`D-C3.2`) — reusing it here, instead
+  // of a second `60_000` literal, is what keeps "the axis" and "the grid every slot sits on" one
+  // fact instead of two that could drift.
+  //
+  // Memoized off primitives, not off `panels` itself: `AxisSyncProvider` constructs a NEW
+  // `RangeDispatcher` whenever this reference changes (`axis-sync.ts`'s own contract), and a
+  // fresh object literal every render would do that on EVERY render, not just when the window
+  // this request answers over actually changes.
+  const axis: TimeAxis = useMemo(
+    () => ({
+      startMs: panels.window.startMs,
+      stepMs: S2_AXIS_STEP_MS,
+      slotCount: (panels.window.endMsExclusive - panels.window.startMs) / S2_AXIS_STEP_MS,
+    }),
+    [panels.window.startMs, panels.window.endMsExclusive],
+  );
   return (
     // The three instants of the request this render was built from, on the root element: the
     // screen declares WHAT IT ASKED, so an assertion (or an operator) can re-issue exactly that
@@ -2291,26 +2399,30 @@ export function SymbolClient({
       data-knowledge-time-ms={knowledgeTimeMs}
     >
       <h1 className="sr-only">
-        {panels.symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
+        {symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
-      <PricePane
-        panels={panels}
-        priceCandles={priceCandles}
-        status={panelStatus.price}
-        volume={volume}
-        volumeStatus={panelStatus.volume}
-      />
-      <OiPane panels={panels} status={panelStatus.oi} oi={oi} />
-      <CvdPane panels={panels} status={panelStatus.cvd} cvd={cvd} />
-      <LiquidationPane
-        liquidation={liquidation}
-        longStatus={panelStatus.liquidationLong}
-        shortStatus={panelStatus.liquidationShort}
-      />
-      {/* `symbol` is the pane's THIRD prop since `T-04.8`: the approved header states the series'
-          identity on the pane (symbol · publisher · the two grids), and the symbol is the route's,
-          read off `panels` — never re-derived here. */}
-      <LongShortPane longShort={longShort} status={panelStatus.longShort} symbol={panels.symbol} />
+      <AxisSyncProvider axis={axis}>
+        <PricePane
+          panels={panels}
+          priceCandles={priceCandles}
+          status={panelStatus.price}
+          volume={volume}
+          volumeStatus={panelStatus.volume}
+        />
+        <OiPane panels={panels} status={panelStatus.oi} oi={oi} />
+        <CvdPane panels={panels} status={panelStatus.cvd} cvd={cvd} />
+        <LiquidationPane
+          liquidation={liquidation}
+          longStatus={panelStatus.liquidationLong}
+          shortStatus={panelStatus.liquidationShort}
+        />
+        {/* `symbol` is the pane's THIRD prop since `T-04.8`: the approved header states the series'
+            identity on the pane (symbol · publisher · the two grids). Since `T-02.5` it is the
+            route's resolved `[symbol]` segment, passed into `SymbolClient` above — never
+            `panels.symbol` (that field stays `charts`' own fixed constant), and never re-derived
+            here. */}
+        <LongShortPane longShort={longShort} status={panelStatus.longShort} symbol={symbol} />
+      </AxisSyncProvider>
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>
         <ul>

@@ -42,6 +42,9 @@ const REPO_ROOT = path.resolve(THIS_DIR, "../../..");
 const METRICS_DIR = path.join(REPO_ROOT, "data/binance/metrics");
 
 const ONE_MINUTE_MS = 60_000;
+/** `T-02.1`/`D-C3.2`: `buildOiPanel`'s `slots` sits on this shared axis step, not on its own
+ * `FIVE_MINUTES_MS` native cadence anymore — see `s2-panels.ts::S2_AXIS_STEP_MS`. */
+const AXIS_STEP_MS = ONE_MINUTE_MS;
 
 function readOiDay(day: string): string {
   return readFileSync(path.join(METRICS_DIR, `${SYMBOL}-metrics-${day}.csv`), "utf8");
@@ -84,7 +87,7 @@ test("D5.2 — REAL FIXTURE: a 1-minute bar with no OI point of its own reads th
   // (OI's own native cadence is 5 minutes — SPEC-001 §5.12's "1m -> 0,2 points per bar").
   const nativeBucketMs = Date.UTC(2026, 7, 20, 0, 0, 0);
   const queryBucketMs = Date.UTC(2026, 7, 20, 0, 2, 0);
-  const reading = resolveStockReading(panel.slots, panel.timeframeMs, queryBucketMs);
+  const reading = resolveStockReading(panel.slots, AXIS_STEP_MS, panel.timeframeMs, queryBucketMs);
   assert.equal(reading.kind, "held");
   assert.equal(reading.observedBucketStartMs, nativeBucketMs);
   assert.equal(reading.observedCloseMs, Date.UTC(2026, 7, 20, 0, 5, 0));
@@ -96,7 +99,7 @@ test("D5.2 — REAL FIXTURE: a 1-minute bar with no OI point of its own reads th
 test("D5.2 — REAL FIXTURE: the exact native instant is \"exact\", not \"held\" — no guide line, no stale label", () => {
   const panel = realOiPanel();
   const nativeBucketMs = Date.UTC(2026, 7, 20, 0, 0, 0);
-  const reading = resolveStockReading(panel.slots, panel.timeframeMs, nativeBucketMs);
+  const reading = resolveStockReading(panel.slots, AXIS_STEP_MS, panel.timeframeMs, nativeBucketMs);
   assert.equal(reading.kind, "exact");
   assert.equal(reading.staleMinutes, 0);
   assert.equal(reading.guideLine, null);
@@ -110,7 +113,7 @@ test("D5.2 — REAL FIXTURE: trilho de vigencia caps at ONE native bucket — th
 
   // First missing bucket of the gap day: exactly ONE native bucket back from the last real
   // point still resolves — this is the width the policy PERMITS.
-  const firstGapReading = resolveStockReading(panel.slots, panel.timeframeMs, gapDayStartMs);
+  const firstGapReading = resolveStockReading(panel.slots, AXIS_STEP_MS, panel.timeframeMs, gapDayStartMs);
   assert.equal(firstGapReading.kind, "held");
   assert.equal(firstGapReading.observedBucketStartMs, lastGoodBucketMs);
   assert.equal(firstGapReading.staleMinutes, 5);
@@ -118,7 +121,12 @@ test("D5.2 — REAL FIXTURE: trilho de vigencia caps at ONE native bucket — th
 
   // Second missing bucket: TWO native buckets back from the last real point — the forbidden
   // "trilho maior que grade nativa". The policy refuses to hold this far; must read absent.
-  const secondGapReading = resolveStockReading(panel.slots, panel.timeframeMs, gapDayStartMs + FIVE_MINUTES_MS);
+  const secondGapReading = resolveStockReading(
+    panel.slots,
+    AXIS_STEP_MS,
+    panel.timeframeMs,
+    gapDayStartMs + FIVE_MINUTES_MS,
+  );
   assert.equal(secondGapReading.kind, "absent");
   assert.equal(secondGapReading.value, null);
   assert.equal(secondGapReading.guideLine, null);
@@ -165,13 +173,15 @@ test("resolveFlowReading rejects a query not aligned to the grid's own timeframe
 test("resolveStockReading DOES tolerate an arbitrary sub-instant — that IS the D5.2 case, not a caller error", () => {
   const series = buildScalarSeries([{ timeMs: 0, value: 1 }], FIVE_MINUTES_MS, 0, 2 * FIVE_MINUTES_MS);
   // 123ms floors into the [0, 5min) native bucket, same as any 1-minute price-bar instant would.
-  const reading = resolveStockReading(series.slots, FIVE_MINUTES_MS, 123);
+  // Synthetic series built at `FIVE_MINUTES_MS` directly (not via `buildOiPanel`), so its own
+  // array spacing IS `FIVE_MINUTES_MS` here — axis step and native cadence coincide on purpose.
+  const reading = resolveStockReading(series.slots, FIVE_MINUTES_MS, FIVE_MINUTES_MS, 123);
   assert.equal(reading.kind, "held");
   assert.equal(reading.value, 1);
   assert.equal(reading.observedBucketStartMs, 0);
 });
 
 test("resolveStockReading/resolveFlowReading reject an empty grid", () => {
-  assert.throws(() => resolveStockReading([], FIVE_MINUTES_MS, 0), RangeError);
+  assert.throws(() => resolveStockReading([], FIVE_MINUTES_MS, FIVE_MINUTES_MS, 0), RangeError);
   assert.throws(() => resolveFlowReading([], FIVE_MINUTES_MS, 0), RangeError);
 });

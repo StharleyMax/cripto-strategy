@@ -4,7 +4,7 @@
  * `web -> charts` import (`ADR-003/D5.12`) — correctly, because nothing under `src/app/`
  * mounted a chart yet (`T-05.2`'s own handoff: "no actual chart rendering"). `T-02.4` is that
  * first mount, and `ADR-034/D8` carves the exception NARROWLY: one file, re-exporting exactly
- * the five surfaces a page needs to assemble the S2-mínima screen, nothing wider.
+ * the surfaces a page needs to assemble the S2-mínima screen, nothing wider.
  *
  * SO REEXPORTAÇÃO — zero função nova de geometria (plan `02` item `2.1`, literal). Every name
  * below is defined and already tested in its own sibling module; this file adds no behavior,
@@ -13,7 +13,8 @@
  * `charts/s2-*` import" — `eslint-boundary.test.ts` proves both halves (morde on the deep
  * import, cala on this one) in the same run.
  *
- * THE FIVE CATEGORIES `ADR-034/D8` NAMES, one `export *`/named block per category:
+ * THE SIX CATEGORIES `ADR-034/D8` NAMES (a sixth added by `T-02.4`, see below), one
+ * `export *`/named block per category:
  *
  *   1. execução headless S2       — `s2-headless-run.ts` (`runHeadlessChart` + its types).
  *      Not a browser-mount API — a jsdom-backed `lightweight-charts` runner. Its production
@@ -21,7 +22,8 @@
  *      1-minute density) that lives OUTSIDE `src/charts/` and therefore has to cross this
  *      same boundary, same as `page.tsx` does for the rest.
  *   2. composição de painéis       — `s2-panels.ts` (`buildS2Panels` and the panel shapes/
- *      constants it is built from: `SYMBOL` and the timeframe constants), mais a janela
+ *      constants it is built from: `SYMBOL` and the timeframe constants, incluindo
+ *      `S2_AXIS_STEP_MS` — `T-02.1`/`D-C3.2`'s ONE shared axis grid step), mais a janela
  *      (`s2-window.ts`, categoria `2b` abaixo), que deixou de ser constante deste módulo.
  *   3. adaptador lightweight       — `s2-lightweight-adapter.ts`'s LOSSLESS mappings only
  *      (`candlestickSeriesLossless`/`lineSeriesLossless`). `naiveDropGapsLine` is
@@ -38,6 +40,17 @@
  *   5. tipos de política de ausência — `s2-absence-policy.ts` (`resolveStockReading`/
  *      `resolveFlowReading` and their formatters) — `D5.2`/`D5.3`'s STOCK-held/FLOW-absent
  *      rules, exercised by `T-02.4` on real (or really-absent) OI/CVD data for the first time.
+ *   6. eixo único (`D-C3.1`, `T-02.4`) — `time-axis-controller.ts` (`toLogicalRange`/
+ *      `fromLogicalRange`, plus `TimeAxis`/`TimeRange`/`LogicalRange` as VALUES) and
+ *      `range-dispatch.ts` (`createRangeDispatcher`/`RangeDispatcher`/`PanelWrite`). This is
+ *      the fewest names `web` needs to stop `fitContent()` being a per-chart decision (plan
+ *      `02` item `2.3`): neither the bound `TimeAxisController` object nor
+ *      `ReentrancyGuard`/`createReentrancyGuard` cross here — `createRangeDispatcher` already
+ *      builds and owns a guard internally (`range-dispatch.ts`, `T-02.3`) — and
+ *      `anchorTimeframeSwitch` (`timeframe-switch.ts`) does not either: this route has no
+ *      timeframe selector yet, so sanctioning it now would hand `web` a function with no
+ *      caller, the same over-wide-door mistake `naiveDropGapsLine` (category 3) already
+ *      refuses to make.
  */
 
 // ── 1. execução headless S2 ─────────────────────────────────────────────────────────────────
@@ -62,6 +75,7 @@ export {
   SYMBOL,
   ONE_MINUTE_MS,
   FIVE_MINUTES_MS,
+  S2_AXIS_STEP_MS,
   S2_PRICE_USE,
   buildPricePanel,
   buildOiPanel,
@@ -82,6 +96,20 @@ export type { OiPanel, CvdPanel, PricePanel, S2Panels, S2RawInputs } from "./s2-
 // janela congelada (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, segundo defeito).
 export { ONE_DAY_MS, S2_WINDOW_SPAN_MS, lastGridInstant, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
 export type { S2Window, TrailingWindowRequest } from "./s2-window.ts";
+
+// ── `T-02.1`/`CA-5a` follow-up — THE SAME PRIMITIVE `buildOiPanel`/`buildCvdPanel` ALREADY GRID-
+// PAD WITH, NOW REACHABLE FROM `web` DIRECTLY. `long_short`/`liquidation` are NOT part of
+// `S2Panels` (`ADR-003`; those two panes are `components = ["web"]`, `[symbol]/page.tsx`'s own
+// comment on why), so before this line the ONE grid-alignment function every OTHER panel goes
+// through (`buildScalarSeries`, already used inside `s2-panels.ts` — not new geometry) was
+// unreachable outside `charts`, and `view-model.ts::nonNegativeFlowSlotsFromHistoryRows` fell
+// back to counting wire rows one-for-one — correct only while `/series-history` always answers
+// the full grid, and silently wrong the moment an upstream failure makes it answer `rows: []`
+// (`gates/FASE-02-qa.md`, achado bloqueante `CA-5a`: `long_short_slots`/`liquidation_slots`
+// collapsed to `0` while `price`/`oi`/`cvd` stayed grid-padded at the full window). Exporting the
+// primitive itself, rather than adding a fourth panel-shaped wrapper, keeps `web` the one place
+// that composes non-`S2Panels` panes while `charts` stays the one place grid alignment is coded.
+export { buildScalarSeries } from "./s2-scalar-grid.ts";
 
 // ── 3. adaptador lightweight (LOSSLESS mappings only — see module docstring above) ───────────
 // `T-01.8` (design_gate da fase `01`) acrescenta TRÊS mapeamentos a esta MESMA categoria — e
@@ -134,3 +162,15 @@ export {
   formatFlowValue,
 } from "./s2-absence-policy.ts";
 export type { SeriesNature, StockReading, FlowReading } from "./s2-absence-policy.ts";
+
+// ── 6. eixo único ────────────────────────────────────────────────────────────────────────────
+//
+// `D-C3.1`: `web` assina, despacha e aplica; a álgebra pura mora aqui. `toLogicalRange`/
+// `fromLogicalRange` são o que `axis-sync.ts` usa para converter o `TimeRange` inicial (a
+// janela inteira do eixo) na `LogicalRange` que substitui o `fitContent()` por painel (plan
+// `02` item `2.3`) — `createRangeDispatcher` é o que liga os seis painéis a ESSE `TimeRange`
+// registrado, com a guarda de reentrância (`T-02.3`) já embutida.
+export { toLogicalRange, fromLogicalRange } from "./time-axis-controller.ts";
+export type { TimeAxis, TimeRange, LogicalRange } from "./time-axis-controller.ts";
+export { createRangeDispatcher } from "./range-dispatch.ts";
+export type { RangeDispatcher, PanelWrite } from "./range-dispatch.ts";

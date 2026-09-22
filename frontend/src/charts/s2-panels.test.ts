@@ -73,11 +73,17 @@ test("buildOiPanel: 08-22 is reported as the missing day, slots explicit null th
   const { points, missingDays } = assembleOiPoints(DAYS, csvTextByDay);
   const panel = buildOiPanel(points, missingDays, S2_FIXTURE_WINDOW);
   assert.deepEqual(panel.missingDays, ["2026-08-22"]);
+  // `timeframeMs` stays the series' NATIVE cadence (5 minutes) — it is `slots` that changed
+  // (`T-02.1`/`D-C3.2`): `slots` now sits on the shared axis grid (`ONE_MINUTE_MS`), not on a
+  // 5-minute grid of its own, so a whole day of it is `1440` slots, not `288`.
   assert.equal(panel.timeframeMs, FIVE_MINUTES_MS);
   const gapDayStartMs = Date.UTC(2026, 7, 22, 0, 0, 0);
   const gapDaySlots = panel.slots.filter((slot) => slot.time >= gapDayStartMs && slot.time < gapDayStartMs + 86_400_000);
-  assert.equal(gapDaySlots.length, 288);
+  assert.equal(gapDaySlots.length, 1440, "one axis slot per minute of the missing day, all explicit null");
   assert.ok(gapDaySlots.every((slot) => slot.value === null));
+  // Populated slots are unaffected by the wider grid: a native (5-minute) point still lands on
+  // exactly one axis slot, so the count of real observations across the 3 covered days is the
+  // same 288-per-day it always was.
   const populatedSlots = panel.slots.filter((slot) => slot.value !== null);
   assert.equal(populatedSlots.length, 288 * 3);
 });
