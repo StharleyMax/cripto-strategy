@@ -117,6 +117,20 @@ class _FakeReader:
         return self._observations
 
 
+class _FakeBoundsReader:
+    """A `SeriesStoreBoundsReader` fixture — `(None, None)` always (`T-03.6`).
+
+    This file's own test domain is `sum_liquidation`'s hole handling within the requested
+    window, never `panel.coverage`'s store-extent fields — an empty store is the neutral answer.
+    """
+
+    def read_bounds(self, *, series_key_id: str, symbol: str) -> tuple[int | None, int | None]:
+        return (None, None)
+
+
+bounds_reader = _FakeBoundsReader()
+
+
 def _served_entry(cohort: str) -> SeriesCatalogEntry:
     """Return the row `list_series_catalog()` SERVES for this cohort — not a hand-built one.
 
@@ -180,6 +194,7 @@ def _report(
         SeriesCatalog((entry,)),
         _FakeReader(observations),
         _classify_panel_grid,
+        bounds_reader,
         series_key_id=entry.key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",

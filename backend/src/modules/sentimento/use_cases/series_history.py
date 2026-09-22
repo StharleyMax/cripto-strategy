@@ -58,12 +58,14 @@ from src.modules.sentimento.domain.provenance import Absence
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.domain.series_history_report import (
     BucketCoverage,
+    PanelCoverage,
     PanelGridVerdict,
     SeriesHistoryReport,
     SeriesHistoryRow,
 )
 from src.modules.sentimento.domain.series_key import Nature, Reduction
 from src.modules.sentimento.domain.series_reduction import reduce_bucket
+from src.modules.sentimento.domain.source_floor import resolve_source_floor_ms
 
 # `CVD_BUCKET_WIDTH_MS` (`domain/cvd.py:31`) transcribed, not imported: that constant is `cvd`'s
 # own "NOT a parameter" fact about ONE metric, while this module's grid applies to every series
@@ -128,6 +130,29 @@ class SeriesWindowReader(Protocol):
         window_end_ms: int,
         lookback_ms: int,
     ) -> tuple[Observation, ...]: ...
+
+
+class SeriesStoreBoundsReader(Protocol):
+    """Read port over `md.series`'s own MIN/MAX `bucket_end`, per `(series_key_id, symbol)`.
+
+    `D8`/`D-C3.7` (`SPEC-008` §7.3): `panel.coverage.earliest_bucket_ms`/`latest_bucket_ms` are
+    OUR STORE's own walls — a SEPARATE question from `SeriesWindowReader.read_window` above,
+    which returns the rows inside one REQUEST's window. A bucket outside the requested window is
+    routinely `None`-served today; a bucket outside the STORE'S OWN extent is a different fact
+    (`beyond-coverage`, not `not-loaded`), and answering it needs an aggregate over the WHOLE
+    series, never a slice of it — deliberately a second port rather than a second method
+    demanded of every `SeriesWindowReader` implementer (four exist in `backend/tests/` alone;
+    widening that protocol would force all four to grow a method none of their own tests need).
+
+    `infra/postgres_series_window_reader.PostgresSeriesWindowReader` satisfies this
+    structurally too (`read_bounds`, alongside its existing `read_window`, over the SAME
+    injected connection — no second connection opened for this) — the same "name the port here,
+    wire the adapter at composition" shape `SeriesWindowReader` above already uses.
+    """
+
+    def read_bounds(  # noqa: D102
+        self, *, series_key_id: str, symbol: str
+    ) -> tuple[int | None, int | None]: ...
 
 
 class GridMultipleClassifier(Protocol):
@@ -213,6 +238,7 @@ def build_series_history_report(
     catalog: SeriesCatalog,
     reader: SeriesWindowReader,
     classify_grid: GridMultipleClassifier,
+    bounds_reader: SeriesStoreBoundsReader,
     *,
     series_key_id: str,
     symbol: str,
@@ -352,6 +378,22 @@ def build_series_history_report(
                 )
             )
 
+    # `D8`/`D-C3.7`, `T-03.6`: the two walls `panel.coverage` needs. `earliest_bucket_ms`/
+    # `latest_bucket_ms` are OUR OWN STORE's extent for this exact `(series_key_id, symbol)` —
+    # an AGGREGATE over `md.series`, deliberately not derived from `observations` above (that
+    # tuple is already sliced to this request's window + lookback; the store may hold rows far
+    # outside it in either direction, and THAT is the fact `beyond-coverage` needs).
+    # `source_floor_ms` is `entry.key`'s own resolution (`domain/source_floor.py`) — pure, no
+    # store read, `None` for every provider/metric that has no measured wall.
+    earliest_bucket_ms, latest_bucket_ms = bounds_reader.read_bounds(
+        series_key_id=series_key_id, symbol=symbol
+    )
+    panel_coverage = PanelCoverage(
+        earliest_bucket_ms=earliest_bucket_ms,
+        latest_bucket_ms=latest_bucket_ms,
+        source_floor_ms=resolve_source_floor_ms(entry.key, knowledge_time_ms=knowledge_time_ms),
+    )
+
     return SeriesHistoryReport(
         panel_series_key_id=series_key_id,
         # `panel.source` (`SPEC-006 §5.2`) names the WIRE column `SeriesRow.source`, but the
@@ -369,6 +411,7 @@ def build_series_history_report(
         # the constant `_GRID_STEP_MS` this argument carried while `ADR-034/D6` served only
         # `interval=1m` — the comment this replaces named this exact moment as the trigger.
         panel_grid=classify_grid(panel_grid_ms=interval_ms, native_grid_ms=entry.native_grid_ms),
+        panel_coverage=panel_coverage,
         rows=tuple(rows),
         knowledge_time=knowledge_time_ms,
         bar_policy=bar_policy,

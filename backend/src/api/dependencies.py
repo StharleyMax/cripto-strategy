@@ -26,6 +26,7 @@ from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.use_cases.ingest_health import IngestRecordSource
 from src.modules.sentimento.use_cases.series_history import (
     GridMultipleClassifier,
+    SeriesStoreBoundsReader,
     SeriesWindowReader,
 )
 from src.modules.sentimento.use_cases.series_live import LiveBucketSource
@@ -134,6 +135,29 @@ def get_series_window_reader_source() -> SeriesWindowReader:
     raise NotImplementedError(
         "get_series_window_reader_source has no default adapter; src.main.create_app must "
         "override it via app.dependency_overrides before serving a request."
+    )
+
+
+def get_series_store_bounds_reader_source() -> SeriesStoreBoundsReader:
+    """Return the `SeriesStoreBoundsReader` `/series-history` reads — overridden by `src.main`.
+
+    `T-03.6`, `D8`/`D-C3.7`: `panel.coverage.earliest_bucket_ms`/`latest_bucket_ms` need `md.
+    series`'s own extent for the requested series, a SEPARATE question from
+    `get_series_window_reader_source`'s windowed rows — see `SeriesStoreBoundsReader`'s own
+    docstring (`use_cases/series_history.py`) for why this is a second port rather than a second
+    method demanded of every `SeriesWindowReader` implementer. `src.main.create_app` wires the
+    SAME `PostgresSeriesWindowReader` instance here (it satisfies both ports structurally, over
+    one connection) whenever the `postgres` engine is composed — same "no default adapter"
+    contract as `get_series_window_reader_source`.
+
+    Raises:
+        NotImplementedError: always, until `src.main` overrides it via
+            `app.dependency_overrides[get_series_store_bounds_reader_source]`.
+
+    """
+    raise NotImplementedError(
+        "get_series_store_bounds_reader_source has no default adapter; src.main.create_app "
+        "must override it via app.dependency_overrides before serving a request."
     )
 
 
