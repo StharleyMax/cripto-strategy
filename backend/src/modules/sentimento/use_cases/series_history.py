@@ -30,11 +30,16 @@ built. `ADR-040/D2`'s own words: *"`STOCK` sozinho é insuficiente"* — `OPEN`/
 three different functions from `CLOSE`/`LAST`/`POINT`'s `last`, and only `reduce_bucket` (never
 a hand-written `if`) is allowed to know which is which.
 
-⚠️ WHAT THIS MODULE STILL DOES NOT DO: partial-bucket coverage (`{present, expected}`,
-`maxStalenessMs`-gated marking) is `ADR-040/D3`'s `P-B`, `T-03.4`'s task — a reaggregated bucket
-here is served from whatever native facts `as_of` admits, unmarked, exactly the same silent
-partial the native 1-minute grid already served before this module existed. `T-03.4` layers the
-visible mark on top; it does not change the arithmetic this module already gets right.
+`ADR-040/D3`'s `P-B` (`T-03.4`): every reaggregated row carries `coverage`
+(`domain/series_history_report.BucketCoverage`), the `{present, expected}` pair of INTEGERS —
+never a bool, never a percentage — `SPEC-008` §5.2 fixes. `present` counts DISTINCT native facts
+`as_of` admitted inside the outer bucket, `expected` the native grid slots it spans; a bucket
+missing facts is still SERVED, never refused and never extrapolated, exactly the arithmetic this
+module already had — `T-03.4` only makes the hole VISIBLE on the wire. The regime split
+`ADR-040/D3` draws (`Σ`/`max`/`min` serve the partial number as-is, so the renderer marking it is
+`web`'s job; `first`/`last` are already staleness-gated by the EXISTING `as_of_batch` mechanism,
+per native instant, before a reading ever reaches `present_values` below) needs no new piece
+here — both regimes reduce through the one function below and both get the one pair.
 """
 
 from __future__ import annotations
@@ -52,6 +57,7 @@ from src.modules.sentimento.domain.as_of_accessor import (
 from src.modules.sentimento.domain.provenance import Absence
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.domain.series_history_report import (
+    BucketCoverage,
     PanelGridVerdict,
     SeriesHistoryReport,
     SeriesHistoryRow,
@@ -401,9 +407,10 @@ def _reaggregated_row(
     `native_readings` is already the SLICE belonging to this one outer bucket, in ascending
     grid-instant order — `reduce_bucket`'s own contract for `first`/`last`
     (`domain/series_reduction.py`). A native instant with no admitted observation is dropped
-    before reducing: `ADR-040/D3` (`P-B`, `{present, expected}`) is `T-03.4`'s task, not this
-    one — what ships here reduces whatever native facts ARE present, unmarked, the same silent
-    partial a native 1-minute bucket already served before this function existed.
+    before reducing: this is `P-B` (`ADR-040/D3`) — the arithmetic below sums/picks whatever
+    native facts ARE present, never refusing and never extrapolating the holes, and every call
+    now carries that fact forward on the wire as `coverage` (`T-03.4`), instead of leaving the
+    same silent partial a native 1-minute bucket already served before this function existed.
 
     `available_at` is read through `.projection()`, never as `reading.observation.row.
     available_at` — the same reason `_row_from_native_reading` above goes through the dict
@@ -413,14 +420,28 @@ def _reaggregated_row(
     """
     present_values: list[float] = []
     present_available_at: list[int] = []
+    # `BucketCoverage.present` counts DISTINCT native FACTS, never grid slots — `bucket_end` is
+    # the identity of the underlying fact `as_of` answered with, read through the SAME
+    # `.projection()` dict as `available_at` above it (never `.observation.row.bucket_end`, for
+    # the identical `DECLARED_TOUCHERS` reason). For a `STOCK` series (`CARRY_FORWARD_BY_NATURE`
+    # is `True`) one observed row can answer several consecutive native instants in this group;
+    # a `set` collapses those repeats back to the ONE fact they are, so `present` never reports
+    # "5 of 5" for a bucket a single carried-forward observation is stretched across.
+    present_native_facts: set[int] = set()
     for reading in native_readings:
         if reading.value is None:
             continue
-        available_at = cast("int | None", reading.projection()["available_at"])
+        projected = reading.projection()
+        available_at = cast("int | None", projected["available_at"])
         if available_at is None:
             continue
         present_values.append(float(reading.value))
         present_available_at.append(available_at)
+        bucket_end = cast("int | None", projected["bucket_end"])
+        if bucket_end is not None:
+            present_native_facts.add(bucket_end)
+
+    coverage = BucketCoverage(present=len(present_native_facts), expected=len(native_readings))
 
     if not present_values:
         # Every native instant in this outer bucket is absent. The four `Absence` reasons are
@@ -430,7 +451,11 @@ def _reaggregated_row(
         last_absence = native_readings[-1].absence
         absence = last_absence.value if last_absence is not None else Absence.NO_POINT.value
         return SeriesHistoryRow(
-            event_time=outer_bucket_end, available_at=None, value=None, absence=absence
+            event_time=outer_bucket_end,
+            available_at=None,
+            value=None,
+            absence=absence,
+            coverage=coverage,
         )
 
     reduced = reduce_bucket(nature, reduction, present_values)
@@ -439,4 +464,5 @@ def _reaggregated_row(
         available_at=max(present_available_at),
         value=str(reduced),
         absence=None,
+        coverage=coverage,
     )
