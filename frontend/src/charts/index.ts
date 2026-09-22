@@ -4,7 +4,7 @@
  * `web -> charts` import (`ADR-003/D5.12`) — correctly, because nothing under `src/app/`
  * mounted a chart yet (`T-05.2`'s own handoff: "no actual chart rendering"). `T-02.4` is that
  * first mount, and `ADR-034/D8` carves the exception NARROWLY: one file, re-exporting exactly
- * the five surfaces a page needs to assemble the S2-mínima screen, nothing wider.
+ * the surfaces a page needs to assemble the S2-mínima screen, nothing wider.
  *
  * SO REEXPORTAÇÃO — zero função nova de geometria (plan `02` item `2.1`, literal). Every name
  * below is defined and already tested in its own sibling module; this file adds no behavior,
@@ -13,7 +13,8 @@
  * `charts/s2-*` import" — `eslint-boundary.test.ts` proves both halves (morde on the deep
  * import, cala on this one) in the same run.
  *
- * THE FIVE CATEGORIES `ADR-034/D8` NAMES, one `export *`/named block per category:
+ * THE SIX CATEGORIES `ADR-034/D8` NAMES (a sixth added by `T-02.4`, see below), one
+ * `export *`/named block per category:
  *
  *   1. execução headless S2       — `s2-headless-run.ts` (`runHeadlessChart` + its types).
  *      Not a browser-mount API — a jsdom-backed `lightweight-charts` runner. Its production
@@ -39,6 +40,17 @@
  *   5. tipos de política de ausência — `s2-absence-policy.ts` (`resolveStockReading`/
  *      `resolveFlowReading` and their formatters) — `D5.2`/`D5.3`'s STOCK-held/FLOW-absent
  *      rules, exercised by `T-02.4` on real (or really-absent) OI/CVD data for the first time.
+ *   6. eixo único (`D-C3.1`, `T-02.4`) — `time-axis-controller.ts` (`toLogicalRange`/
+ *      `fromLogicalRange`, plus `TimeAxis`/`TimeRange`/`LogicalRange` as VALUES) and
+ *      `range-dispatch.ts` (`createRangeDispatcher`/`RangeDispatcher`/`PanelWrite`). This is
+ *      the fewest names `web` needs to stop `fitContent()` being a per-chart decision (plan
+ *      `02` item `2.3`): neither the bound `TimeAxisController` object nor
+ *      `ReentrancyGuard`/`createReentrancyGuard` cross here — `createRangeDispatcher` already
+ *      builds and owns a guard internally (`range-dispatch.ts`, `T-02.3`) — and
+ *      `anchorTimeframeSwitch` (`timeframe-switch.ts`) does not either: this route has no
+ *      timeframe selector yet, so sanctioning it now would hand `web` a function with no
+ *      caller, the same over-wide-door mistake `naiveDropGapsLine` (category 3) already
+ *      refuses to make.
  */
 
 // ── 1. execução headless S2 ─────────────────────────────────────────────────────────────────
@@ -136,3 +148,15 @@ export {
   formatFlowValue,
 } from "./s2-absence-policy.ts";
 export type { SeriesNature, StockReading, FlowReading } from "./s2-absence-policy.ts";
+
+// ── 6. eixo único ────────────────────────────────────────────────────────────────────────────
+//
+// `D-C3.1`: `web` assina, despacha e aplica; a álgebra pura mora aqui. `toLogicalRange`/
+// `fromLogicalRange` são o que `axis-sync.ts` usa para converter o `TimeRange` inicial (a
+// janela inteira do eixo) na `LogicalRange` que substitui o `fitContent()` por painel (plan
+// `02` item `2.3`) — `createRangeDispatcher` é o que liga os seis painéis a ESSE `TimeRange`
+// registrado, com a guarda de reentrância (`T-02.3`) já embutida.
+export { toLogicalRange, fromLogicalRange } from "./time-axis-controller.ts";
+export type { TimeAxis, TimeRange, LogicalRange } from "./time-axis-controller.ts";
+export { createRangeDispatcher } from "./range-dispatch.ts";
+export type { RangeDispatcher, PanelWrite } from "./range-dispatch.ts";

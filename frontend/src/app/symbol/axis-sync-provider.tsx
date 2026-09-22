@@ -1,0 +1,40 @@
+"use client";
+
+/**
+ * `T-02.4` (`CST-211`) — the thin React glue over `axis-sync.ts`'s pure `AxisSyncStore`. ALL of
+ * the logic (the dispatcher, the writer table, the guards) lives in that plain `.ts` module and
+ * is tested there without a DOM (`axis-sync.test.ts`); this file's only job is holding ONE
+ * `AxisSyncStore` per mount and handing it to `SymbolClient.tsx`'s six panels via context, so a
+ * pan on any one panel dispatches through the SAME store the other five read from — `D-C3.1`.
+ */
+
+import { createContext, useContext, useMemo, type ReactNode } from "react";
+
+import { createAxisSyncStore, PANEL_COUNT, type AxisSyncStore } from "./axis-sync.ts";
+import type { TimeAxis } from "../../charts/index.ts";
+
+const AxisSyncContext = createContext<AxisSyncStore | null>(null);
+
+/**
+ * `axis` is expected to be REFERENTIALLY STABLE across `SymbolClient`'s re-renders for one
+ * request — the caller (`SymbolClient.tsx`) memoizes it off the primitives that define it
+ * (`panels.window`, the shared axis step). A new `axis` identity here constructs a NEW store
+ * (`useMemo`'s own contract, mirrored from `createAxisSyncStore`'s docstring) — deliberately
+ * what a FUTURE timeframe switch would need, not something today's caller triggers (there is
+ * no TF selector in this route yet).
+ */
+export function AxisSyncProvider({ axis, children }: { readonly axis: TimeAxis; readonly children: ReactNode }) {
+  const store = useMemo(() => createAxisSyncStore(axis, PANEL_COUNT), [axis]);
+  return <AxisSyncContext.Provider value={store}>{children}</AxisSyncContext.Provider>;
+}
+
+/** Throws rather than degrading silently (`core.silent-except` territory) if a chart ever
+ * mounts `useLightweightChart` outside `AxisSyncProvider` — every one of `SymbolClient.tsx`'s
+ * six panels is meant to render inside it, always. */
+export function useAxisSync(): AxisSyncStore {
+  const store = useContext(AxisSyncContext);
+  if (store === null) {
+    throw new Error("useAxisSync must be called within an AxisSyncProvider");
+  }
+  return store;
+}
