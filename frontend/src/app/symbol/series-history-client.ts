@@ -77,6 +77,32 @@ function describeCause(cause: unknown): string {
 }
 
 /**
+ * `T-05.2-FIX-adr005` — the ONE place that turns `INGEST_HEALTH_API_BASE_URL` into the absolute
+ * `GET /series-history` endpoint URL, for a SERVER caller to resolve once and hand the browser
+ * an already-resolved string (`page.tsx`'s own `buildLiveUrl` precedent for the live edge,
+ * `ADR-019/D4`). Returns `null` — never throws — when the variable is unset: `page.tsx` already
+ * treats a missing base URL as "degrade this feature to absent", the same posture it takes for
+ * `liveUrls` (`baseUrl === undefined ? { price: null, oi: null, cvd: null } : …`), so this
+ * mirrors that rather than forcing a try/catch at the one call site that only ever wants a
+ * string or a `null`.
+ *
+ * The browser NEVER calls this function — it lives in this `import "server-only"` module on
+ * purpose, same as `fetchSeriesHistoryViaHttp` itself. What the browser gets is the STRING this
+ * returns, carried across the RSC boundary as a plain prop (`SymbolClientProps.historyBaseUrl`),
+ * then combined client-side with a `HistoryRequestKey` via `historyRequestUrl`
+ * (`../history-transport.ts`, which has no `server-only` import and is therefore safe in a
+ * client bundle) — exactly the same division of labour `buildLiveUrl`/`liveStreamUrl` already
+ * establish for the SSE edge.
+ */
+export function seriesHistoryEndpointUrl(explicitBaseUrl?: string): string | null {
+  const baseUrl = explicitBaseUrl ?? process.env.INGEST_HEALTH_API_BASE_URL;
+  if (baseUrl === undefined || baseUrl === "") {
+    return null;
+  }
+  return new URL(`${resolveApiPrefix()}/series-history`, baseUrl).toString();
+}
+
+/**
  * The `web` HTTP consumer of `GET /series-history` for ONE `HistoryRequestKey`. Throws
  * `TransportError` with the same four kinds every other `web` transport in this codebase uses.
  *

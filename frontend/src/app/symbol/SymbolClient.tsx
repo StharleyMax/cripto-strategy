@@ -442,6 +442,11 @@ export interface SymbolClientProps {
     readonly keys: HistorySeriesKeys;
     readonly rows: HistoryRowsBundle;
   };
+  /** `T-05.2-FIX-adr005` — the ALREADY RESOLVED absolute `GET /series-history` endpoint URL
+   * (`page.tsx`'s own `seriesHistoryEndpointUrl`, `series-history-client.ts`), carried into
+   * `useHistoryPager`'s seed unchanged. `null` when `INGEST_HEALTH_API_BASE_URL` was unset at
+   * render time — same shape `liveUrls` above already has per-panel. */
+  readonly historyBaseUrl: string | null;
 }
 
 const ABSENCE_REASON_LABEL: Record<Exclude<PanelStatus, { kind: "ok" }>["reason"], string> = {
@@ -2695,6 +2700,7 @@ export function SymbolClient({
   knowledgeTimeMs,
   liveUrls,
   historyPagingRows,
+  historyBaseUrl,
   selectedTimeframe,
 }: SymbolClientProps) {
   // `T-05.2` (`D-C3.5`) — the SEED the client-side paginator starts from, memoized off PRIMITIVES
@@ -2712,6 +2718,7 @@ export function SymbolClient({
       interval: selectedTimeframe,
       barPolicy: HISTORY_BAR_POLICY,
       knowledgeTimeMs,
+      historyBaseUrl,
       window: { startMs: initialPanels.window.startMs, endMsExclusive: initialPanels.window.endMsExclusive },
       keys: historyPagingRows.keys,
       rows: historyPagingRows.rows,
@@ -2727,6 +2734,7 @@ export function SymbolClient({
       symbol,
       selectedTimeframe,
       knowledgeTimeMs,
+      historyBaseUrl,
       initialPanels,
       historyPagingRows,
       initialCvd.anchorMs,

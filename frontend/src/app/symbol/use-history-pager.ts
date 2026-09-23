@@ -102,6 +102,14 @@ export interface HistoryPagingSeed {
    * docstring — a client-side paginator that read a fresh clock per page would let `R-1`'s
    * admission answer differently for the SAME grid instant across two pages of the same session). */
   readonly knowledgeTimeMs: number;
+  /** `T-05.2-FIX-adr005` — the ALREADY RESOLVED absolute `GET /series-history` endpoint URL
+   * `page.tsx` computed once, server-side, via `seriesHistoryEndpointUrl`
+   * (`series-history-client.ts`) — `null` when `INGEST_HEALTH_API_BASE_URL` was unset at render
+   * time, same degrade-to-absent posture `page.tsx`'s own `liveUrls` already takes. This hook
+   * never reads an environment variable itself (`ADR-019/D4`: the browser cannot); it only
+   * carries this string to `fetchSeriesHistoryFromBrowser`, which combines it with each page's
+   * `HistoryRequestKey` and calls FastAPI directly. */
+  readonly historyBaseUrl: string | null;
   readonly window: AccumulatedWindow;
   readonly keys: HistorySeriesKeys;
   readonly rows: HistoryRowsBundle;
@@ -179,7 +187,7 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
         if (seriesKeyId === null) {
           return [];
         }
-        const envelope = await fetchSeriesHistoryFromBrowser(buildKey(seriesKeyId));
+        const envelope = await fetchSeriesHistoryFromBrowser(buildKey(seriesKeyId), seed.historyBaseUrl);
         return envelope.rows;
       };
 
@@ -234,7 +242,7 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
         inFlightRef.current = false;
       }
     },
-    [seed.symbol, seed.interval, seed.knowledgeTimeMs, seed.barPolicy, seed.keys, maxSlots],
+    [seed.symbol, seed.interval, seed.knowledgeTimeMs, seed.barPolicy, seed.historyBaseUrl, seed.keys, maxSlots],
   );
 
   const onCandidateRange = useCallback(

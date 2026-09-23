@@ -146,6 +146,7 @@ import { HISTORY_BAR_POLICY, type HistoryRequestKey } from "../../history-transp
 import { encodeLiveStreamOpenRequest, liveStreamUrl, type LiveStreamOpenRequest } from "../../live-transport.ts";
 import {
   fetchSeriesHistoryViaHttp,
+  seriesHistoryEndpointUrl,
   type SeriesHistoryRow,
 } from "../series-history-client.ts";
 import type { PanelStatus } from "../panel-status.ts";
@@ -892,6 +893,12 @@ export default async function SymbolPage({
           cvd: buildLiveUrl(baseUrl, routeSymbol, resolvedEntry(cvdResolution)),
         };
 
+  // `T-05.2-FIX-adr005` — resolved ONCE, server-side, exactly like `liveUrls`' own `baseUrl`
+  // above: `null` when `INGEST_HEALTH_API_BASE_URL` is unset, never a relative path and never a
+  // second HTTP surface (`ADR-005/D5`). `SymbolClient.tsx`'s client-side paginator combines this
+  // string with each page's own `HistoryRequestKey` and calls FastAPI directly.
+  const historyBaseUrl = seriesHistoryEndpointUrl();
+
   // `T-05.2` (`D-C3.5`) — the SEED `use-history-pager.ts` starts from: the ten resolved keys
   // (`null` where the catalog resolution itself failed/was ambiguous) and the ten raw row arrays
   // this render already fetched. Built here, once, off values this function already computed —
@@ -934,6 +941,7 @@ export default async function SymbolPage({
       liquidation={liquidation}
       longShort={longShort}
       historyPagingRows={historyPagingRows}
+      historyBaseUrl={historyBaseUrl}
       panelStatus={{
         price: priceStatus,
         oi: oiResult.status,
