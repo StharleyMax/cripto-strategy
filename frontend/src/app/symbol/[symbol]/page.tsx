@@ -142,7 +142,7 @@ import {
   type SeriesCatalogProjection,
 } from "../../../features/s3-inspector/series-catalog-query.ts";
 import type { SeriesCatalogEntry } from "../../../features/s3-inspector/series-catalog.ts";
-import type { BarPolicy, HistoryRequestKey } from "../../history-transport.ts";
+import { HISTORY_BAR_POLICY, type HistoryRequestKey } from "../../history-transport.ts";
 import { encodeLiveStreamOpenRequest, liveStreamUrl, type LiveStreamOpenRequest } from "../../live-transport.ts";
 import {
   fetchSeriesHistoryViaHttp,
@@ -198,7 +198,11 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const BAR_POLICY: BarPolicy = "final_only";
+// `T-05.2` — `BAR_POLICY` USED TO BE A LOCAL CONSTANT HERE. It now aliases
+// `HISTORY_BAR_POLICY` (`history-transport.ts`), the SAME value `use-history-pager.ts`'s
+// client-side paginator sends on every later page — one constant instead of two literals that
+// could silently drift (see that module's own docstring on why the dedup exists).
+const BAR_POLICY = HISTORY_BAR_POLICY;
 
 /**
  * `T-02.5` — the pilot instrument universe, transcribed (never re-derived) from
@@ -295,6 +299,30 @@ const CATALOG_UNAVAILABLE: CatalogResolution = { kind: "none" };
  * on purpose: neither yields a series to open a stream for or to publish a ceiling from. */
 function resolvedEntry(resolution: CatalogResolution): SeriesCatalogEntry | undefined {
   return resolution.kind === "found" ? resolution.entry : undefined;
+}
+
+/** `T-05.2` — the `series_key_id` a panel resolved, or `null` when it did not (`resolvedEntry`'s
+ * own "none and ambiguous collapse" posture, one step further: `use-history-pager.ts` needs a
+ * KEY to page with, not an entry). `null` here is what tells the client-side paginator "there is
+ * no series to page for this panel, at any window" — the SAME refusal `fetchPanelRows` already
+ * makes for the initial fetch, carried one level further instead of discarded after it. */
+function seriesKeyIdOf(resolution: CatalogResolution): string | null {
+  const entry = resolvedEntry(resolution);
+  return entry === undefined ? null : computeSeriesKeyId(entry.key);
+}
+
+/** `T-05.2` — reads `.rows` off a `fetchPanelRows` result through a function call, never a
+ * second `field: xResult.rows,` OBJECT-LITERAL text (`historyPagingRows.rows` below feeds the
+ * SAME ten results `assembleOhlcCandles`/the panel props already consumed by their own literal
+ * calls). `price-pane-dom-contract.test.ts`'s MORDE guard scans `page.tsx` for the EXACT string
+ * `open: openResult.rows,` to prove a mutation of the real `assembleOhlcCandles({ open: ... })`
+ * call is still detectable; a second, textually-identical occurrence here would make that scan
+ * match the MUTATED source too and the guard would stop guarding anything
+ * (`[MEDIDO 2026-09-23: a literal `open: openResult.rows,` copy here left the MORDE assertion at
+ * `price-pane-dom-contract.test.ts:193` failing — "the guard is vacuous" — caught by the phase's
+ * own gate run before this comment/helper existed]`). */
+function extractRows(result: { readonly rows: readonly SeriesHistoryRow[] }): readonly SeriesHistoryRow[] {
+  return result.rows;
 }
 
 /** `T-01.8` — ONE of the four `klines_ohlc` rows, by `reduction`. The predicate is
@@ -864,6 +892,37 @@ export default async function SymbolPage({
           cvd: buildLiveUrl(baseUrl, routeSymbol, resolvedEntry(cvdResolution)),
         };
 
+  // `T-05.2` (`D-C3.5`) — the SEED `use-history-pager.ts` starts from: the ten resolved keys
+  // (`null` where the catalog resolution itself failed/was ambiguous) and the ten raw row arrays
+  // this render already fetched. Built here, once, off values this function already computed —
+  // never a second catalog lookup, never a second fetch.
+  const historyPagingRows = {
+    keys: {
+      open: seriesKeyIdOf(ohlcResolutions.open),
+      high: seriesKeyIdOf(ohlcResolutions.high),
+      low: seriesKeyIdOf(ohlcResolutions.low),
+      close: seriesKeyIdOf(ohlcResolutions.close),
+      oi: seriesKeyIdOf(oiResolution),
+      cvd: seriesKeyIdOf(cvdResolution),
+      volume: seriesKeyIdOf(volumeResolution),
+      liquidationLong: seriesKeyIdOf(liquidationLongResolution),
+      liquidationShort: seriesKeyIdOf(liquidationShortResolution),
+      longShort: seriesKeyIdOf(longShortResolution),
+    },
+    rows: {
+      open: extractRows(openResult),
+      high: extractRows(highResult),
+      low: extractRows(lowResult),
+      close: extractRows(closeResult),
+      oi: extractRows(oiResult),
+      cvd: extractRows(cvdResult),
+      volume: extractRows(volumeResult),
+      liquidationLong: extractRows(liquidationLongResult),
+      liquidationShort: extractRows(liquidationShortResult),
+      longShort: extractRows(longShortResult),
+    },
+  };
+
   return (
     <SymbolClient
       symbol={routeSymbol}
@@ -874,6 +933,7 @@ export default async function SymbolPage({
       oi={oi}
       liquidation={liquidation}
       longShort={longShort}
+      historyPagingRows={historyPagingRows}
       panelStatus={{
         price: priceStatus,
         oi: oiResult.status,

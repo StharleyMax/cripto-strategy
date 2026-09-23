@@ -88,7 +88,6 @@ import {
   positiveValueSeriesLossless,
   resolveFlowReading,
   resolveStockReading,
-  S2_AXIS_STEP_MS,
   zeroMarkSeries,
   type FlowReading,
   type S2Panels,
@@ -121,6 +120,9 @@ import {
   LONG_SHORT_EQUILIBRIUM,
 } from "./ratio-format.ts";
 import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
+import { HISTORY_BAR_POLICY } from "../history-transport.ts";
+import type { HistoryRowsBundle } from "./panel-assembly.ts";
+import { useHistoryPager, type HistoryPagingSeed, type HistorySeriesKeys } from "./use-history-pager.ts";
 
 /** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
  * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
@@ -425,6 +427,21 @@ export interface SymbolClientProps {
    * fetched — the exact drift a client-only `useState` would reopen the day someone reads
    * `selectedTimeframe` as "what the panels show" instead of "what the bar highlights". */
   readonly selectedTimeframe: string;
+  /** `T-05.2` (`D-C3.5`) — the SEED the client-side history paginator (`use-history-pager.ts`)
+   * starts from: the ten `series_key_id`s this render resolved (`null` where the catalog
+   * resolution itself failed/was ambiguous — `page.tsx`'s own `CatalogResolution`) and the ten
+   * raw `SeriesHistoryRow[]` arrays this render already fetched. Every OTHER prop above
+   * (`panels`/`priceCandles`/`volume`/`cvd`/`oi`/`liquidation`/`longShort`) is what the FIRST
+   * paint draws; this is what a later drag-to-the-edge widens. Plain, JSON-serializable data,
+   * same RSC-boundary discipline every other prop here follows — `page.tsx` already had all ten
+   * row arrays in hand (`openResult.rows`, …, `longShortResult.rows`) and all ten resolved keys
+   * (`computeSeriesKeyId(entry.key)` at each of the ten `HistoryRequestKey` call sites); this
+   * prop is those same values, carried one level further instead of discarded after the initial
+   * fetch. */
+  readonly historyPagingRows: {
+    readonly keys: HistorySeriesKeys;
+    readonly rows: HistoryRowsBundle;
+  };
 }
 
 const ABSENCE_REASON_LABEL: Record<Exclude<PanelStatus, { kind: "ok" }>["reason"], string> = {
@@ -2669,37 +2686,92 @@ function TimeframeBar({
 
 export function SymbolClient({
   symbol,
-  panels,
-  priceCandles,
-  volume,
-  cvd,
-  oi,
-  liquidation,
-  longShort,
+  panels: initialPanels,
+  cvd: initialCvd,
+  oi: initialOi,
+  liquidation: initialLiquidation,
+  longShort: initialLongShort,
   panelStatus,
   knowledgeTimeMs,
   liveUrls,
+  historyPagingRows,
   selectedTimeframe,
 }: SymbolClientProps) {
-  // `T-02.4` (`D-C3.1`) — the ONE `TimeAxis` every one of the six charts shares, derived off the
-  // WINDOW (`panels.window`), never off any one panel's own `slots.length`: the axis is a
-  // property of the request, not of whichever series happened to build it. `S2_AXIS_STEP_MS` is
-  // the SAME step `T-02.1` unified every panel's grid onto (`D-C3.2`) — reusing it here, instead
-  // of a second `60_000` literal, is what keeps "the axis" and "the grid every slot sits on" one
-  // fact instead of two that could drift.
-  //
-  // Memoized off primitives, not off `panels` itself: `AxisSyncProvider` constructs a NEW
-  // `RangeDispatcher` whenever this reference changes (`axis-sync.ts`'s own contract), and a
-  // fresh object literal every render would do that on EVERY render, not just when the window
-  // this request answers over actually changes.
-  const axis: TimeAxis = useMemo(
+  // `T-05.2` (`D-C3.5`) — the SEED the client-side paginator starts from, memoized off PRIMITIVES
+  // and the stable `historyPagingRows` prop reference, never rebuilt as a fresh object every
+  // render: `use-history-pager.ts`'s own docstring on why `onCandidateRange` needs a STABLE
+  // `seed.keys` identity to stay a stable callback across renders (the ref-based
+  // stale-closure fix depends on `fetchPage`'s `useCallback` deps not churning every render).
+  // Every field here comes off props THIS render already has — `windowEndMsInclusive` off
+  // `lastInstantMs(initialPanels)` (the SAME conversion the "leitura atual" readouts already use,
+  // `ADR-003` FR-2: not re-derived a second way), `cvdAnchorMs`/`oiMaxStalenessMs`/
+  // `longShortRecentSpanMs` off the STATIC facts `page.tsx` already resolved once.
+  const historyPagingSeed: HistoryPagingSeed = useMemo(
     () => ({
-      startMs: panels.window.startMs,
-      stepMs: S2_AXIS_STEP_MS,
-      slotCount: (panels.window.endMsExclusive - panels.window.startMs) / S2_AXIS_STEP_MS,
+      symbol,
+      interval: selectedTimeframe,
+      barPolicy: HISTORY_BAR_POLICY,
+      knowledgeTimeMs,
+      window: { startMs: initialPanels.window.startMs, endMsExclusive: initialPanels.window.endMsExclusive },
+      keys: historyPagingRows.keys,
+      rows: historyPagingRows.rows,
+      staticContext: {
+        priceUse: initialPanels.price.priceUse,
+        cvdAnchorMs: initialCvd.anchorMs,
+        windowEndMsInclusive: lastInstantMs(initialPanels),
+        longShortRecentSpanMs: initialLongShort.recentSpanMs,
+        oiMaxStalenessMs: initialOi.maxStalenessMs,
+      },
     }),
-    [panels.window.startMs, panels.window.endMsExclusive],
+    [
+      symbol,
+      selectedTimeframe,
+      knowledgeTimeMs,
+      initialPanels,
+      historyPagingRows,
+      initialCvd.anchorMs,
+      initialLongShort.recentSpanMs,
+      initialOi.maxStalenessMs,
+    ],
   );
+  const pager = useHistoryPager(historyPagingSeed);
+  // `T-02.4` (`D-C3.1`) — the ONE `TimeAxis` every one of the six charts shares. `T-05.2`: THIS IS
+  // NOW `pager.axis`, NOT a local `useMemo` off `initialPanels.window` — the paginator OWNS the
+  // window from here on (it starts equal to `initialPanels.window`, `use-history-pager.ts`'s own
+  // `useState` initializer, and widens as pages arrive). `S2_AXIS_STEP_MS` is the SAME step
+  // `T-02.1` unified every panel's grid onto (`D-C3.2`) — `use-history-pager.ts` reuses it, not a
+  // second `60_000` literal.
+  const axis: TimeAxis = pager.axis;
+  // `T-05.2` — THE SIX PANES DRAW `pager.assembly`'s SLOTS FROM HERE ON, never `initialPanels`
+  // directly: `panels`/`priceCandles`/`volume`/`cvd` merge the paginator's DYNAMIC facts
+  // (recomputed from the merged rows on every page, `panel-assembly.ts`) with the STATIC facts a
+  // CATALOG ENTRY carries (`provenance`/`unit`/`maxStalenessMs`/`nativeInterval`/`nativeGrid`/
+  // `anchorMs`/`recentSpanMs`) — properties of the SERIES, not the window, frozen at their
+  // SSR-resolved values because paging never changes which series a pane reads, only how much of
+  // it is loaded (see `panel-assembly.ts`'s own docstring on why this split is deliberate).
+  const panels: S2Panels = pager.assembly.panels;
+  const priceCandles: PriceCandleData = pager.assembly.priceCandles;
+  const volume: VolumeSubAxisData = pager.assembly.volume;
+  const cvd: CvdPaneData = { ...pager.assembly.cvd, anchorMs: initialCvd.anchorMs };
+  const oi: OiPaneData = {
+    ...pager.assembly.oi,
+    maxStalenessMs: initialOi.maxStalenessMs,
+    provenance: initialOi.provenance,
+  };
+  const liquidation: LiquidationPaneData = {
+    long: pager.assembly.liquidationLong,
+    short: pager.assembly.liquidationShort,
+    provenance: initialLiquidation.provenance,
+    unit: initialLiquidation.unit,
+  };
+  const longShort: LongShortPaneData = {
+    ...pager.assembly.longShort,
+    recentSpanMs: initialLongShort.recentSpanMs,
+    provenance: initialLongShort.provenance,
+    unit: initialLongShort.unit,
+    nativeInterval: initialLongShort.nativeInterval,
+    nativeGrid: initialLongShort.nativeGrid,
+  };
   // `T-03.11` — `selectedTimeframe` is now a PROP, resolved server-side by `page.tsx` off
   // `?interval=` (never a client `useState`): the URL is the single source of truth for which
   // TF the ten fetches this render answers were actually made with, so the bar's own highlight
@@ -2736,7 +2808,7 @@ export function SymbolClient({
         {symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
       <TimeframeBar selected={selectedTimeframe} onSelect={handleTimeframeSelect} />
-      <AxisSyncProvider axis={axis}>
+      <AxisSyncProvider axis={axis} initialRange={pager.initialRange} onCandidateRange={pager.onCandidateRange}>
         <PricePane
           panels={panels}
           priceCandles={priceCandles}

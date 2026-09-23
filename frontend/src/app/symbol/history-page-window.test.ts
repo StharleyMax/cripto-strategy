@@ -1,0 +1,83 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  DEFAULT_MAX_ACCUMULATED_SLOTS,
+  mergeOlderPage,
+  trimRowsToWindow,
+  widenAndCapWindow,
+} from "./history-page-window.ts";
+
+const STEP_MS = 60_000; // 1m grid
+
+test("CALA: widening under the cap keeps the endMsExclusive unchanged and moves startMs to the page's fromMs", () => {
+  const current = { startMs: 1_000 * STEP_MS, endMsExclusive: 6_000 * STEP_MS }; // 5,000 slots
+  const page = { fromMs: 900 * STEP_MS, toMs: current.startMs }; // +100 slots => 5,100, still small
+  const result = widenAndCapWindow(current, page, STEP_MS, 10_000);
+  assert.equal(result.startMs, page.fromMs);
+  assert.equal(result.endMsExclusive, current.endMsExclusive);
+});
+
+test("MORDE: exceeding the cap discards the RIGHT edge, never the left one the page just extended", () => {
+  const current = { startMs: 5_000 * STEP_MS, endMsExclusive: 10_000 * STEP_MS }; // 5,000 slots
+  const page = { fromMs: 0, toMs: current.startMs }; // +5,000 slots => 10,000 total
+  const result = widenAndCapWindow(current, page, STEP_MS, DEFAULT_MAX_ACCUMULATED_SLOTS);
+  assert.equal(result.startMs, page.fromMs, "the left edge is exactly what the page asked for — never trimmed");
+  assert.equal(result.endMsExclusive, page.fromMs + DEFAULT_MAX_ACCUMULATED_SLOTS * STEP_MS);
+  const slots = (result.endMsExclusive - result.startMs) / STEP_MS;
+  assert.equal(slots, DEFAULT_MAX_ACCUMULATED_SLOTS, "the cap is exact, not merely 'under'");
+});
+
+test("MORDE: a page that does not abut the current window (toMs !== current.startMs) is REFUSED", () => {
+  const current = { startMs: 1_000 * STEP_MS, endMsExclusive: 2_000 * STEP_MS };
+  assert.throws(
+    () => widenAndCapWindow(current, { fromMs: 0, toMs: 500 * STEP_MS }, STEP_MS),
+    /must equal current\.startMs/,
+  );
+});
+
+test("MORDE: a degenerate page (fromMs >= toMs) is REFUSED", () => {
+  const current = { startMs: 1_000 * STEP_MS, endMsExclusive: 2_000 * STEP_MS };
+  assert.throws(
+    () => widenAndCapWindow(current, { fromMs: current.startMs, toMs: current.startMs }, STEP_MS),
+    /must precede/,
+  );
+});
+
+test("CALA: trimRowsToWindow drops rows the capped right edge no longer covers", () => {
+  const window = { startMs: 0, endMsExclusive: 3 * STEP_MS };
+  const rows = [
+    { event_time: -STEP_MS, x: "before" },
+    { event_time: 0, x: "first" },
+    { event_time: STEP_MS, x: "middle" },
+    { event_time: 3 * STEP_MS, x: "at-exclusive-edge" },
+    { event_time: 4 * STEP_MS, x: "after" },
+  ];
+  const kept = trimRowsToWindow(rows, window);
+  assert.deepEqual(
+    kept.map((r) => r.x),
+    ["first", "middle"],
+  );
+});
+
+test("CALA: mergeOlderPage prepends a strictly-earlier page ahead of the existing rows", () => {
+  const older = [{ event_time: 0 }, { event_time: STEP_MS }];
+  const existing = [{ event_time: 2 * STEP_MS }, { event_time: 3 * STEP_MS }];
+  const merged = mergeOlderPage(older, existing);
+  assert.deepEqual(
+    merged.map((r) => r.event_time),
+    [0, STEP_MS, 2 * STEP_MS, 3 * STEP_MS],
+  );
+});
+
+test("MORDE: mergeOlderPage REFUSES an overlapping/out-of-order pair instead of silently corrupting draw order", () => {
+  const older = [{ event_time: 0 }, { event_time: 2 * STEP_MS }];
+  const existing = [{ event_time: STEP_MS }]; // overlaps — older's last (2*STEP) >= existing's first (1*STEP)
+  assert.throws(() => mergeOlderPage(older, existing), /not strictly before/);
+});
+
+test("CALA: mergeOlderPage tolerates an empty side without throwing", () => {
+  assert.deepEqual(mergeOlderPage([], [{ event_time: 0 }]), [{ event_time: 0 }]);
+  assert.deepEqual(mergeOlderPage([{ event_time: 0 }], []), [{ event_time: 0 }]);
+  assert.deepEqual(mergeOlderPage([], []), []);
+});
