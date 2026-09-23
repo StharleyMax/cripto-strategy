@@ -65,7 +65,7 @@ _WINDOW_START_MS = 1_789_732_800_000  # aligned to `_GRID_MS`, same fixture epoc
 
 
 def _disallowed_ratio_key() -> SeriesKey:
-    """A `(RATIO, POINT)` key whose `metric` is NOT in `RATIO_POINT_METRIC_ALLOWLIST`."""
+    """Build a `(RATIO, POINT)` key whose `metric` is NOT in `RATIO_POINT_METRIC_ALLOWLIST`."""
     return SeriesKey(
         provider="binance",
         venue="usdm_futures",
@@ -92,7 +92,9 @@ def _catalog_for(key: SeriesKey) -> SeriesCatalog:
     return SeriesCatalog((entry,))
 
 
-def _lagged_row(key: SeriesKey, *, bucket_end: int, value_raw: str, lag_ms: int = 5_000) -> SeriesRow:
+def _lagged_row(
+    key: SeriesKey, *, bucket_end: int, value_raw: str, lag_ms: int = 5_000
+) -> SeriesRow:
     return SeriesRow(
         series_key_id=key.series_key_id(),
         symbol=_SYMBOL,
