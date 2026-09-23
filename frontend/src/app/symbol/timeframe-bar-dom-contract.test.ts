@@ -158,3 +158,108 @@ test("supported-timeframes.ts and this file agree on how many buttons a full ren
   assert.ok(SUPPORTED_TIMEFRAMES.length >= 1, "the served set must never be empty — an empty bar is not a bar");
   assert.equal(new Set(SUPPORTED_TIMEFRAMES.map((o) => o.interval)).size, SUPPORTED_TIMEFRAMES.length, "no duplicate interval, or React's own `key` warning would fire at runtime for a reason this test can catch first");
 });
+
+// ── `T-03.12` (`CST-227`) — the ARIA/roving-focus wiring the design gate's own Future-Readiness
+// finding (score 6/10) named as unguarded: none of `role="group"`, `aria-pressed`, roving
+// `tabIndex`, or the arrow-key handler were pinned by any test, in this file or elsewhere.
+// Confirmed a LIVE gap, not a hypothetical one, by QA (`FASE-03-qa`): stripping `aria-pressed`
+// and the roving `tabIndex` from the real button JSX left `typecheck`/`lint`/`test:app` (387/387)
+// and `test:charts` (228/228) unchanged — zero failures, on the SAME commit these anchors close.
+
+const GROUP_ROLE = /role="group"\s*\n\s*aria-label="Timeframe"\s*\n\s*onKeyDown=\{handleKeyDown\}/;
+const BUTTON_ARIA_PRESSED = /aria-pressed=\{isSelected\}/;
+const BUTTON_ROVING_TABINDEX = /tabIndex=\{option\.interval === activeInterval \? 0 : -1\}/;
+const ARROW_KEY_HANDLER = /const handleKeyDown = useCallback/;
+const MOVE_ROVING_FOCUS = /const moveRovingFocus = useCallback/;
+
+test("T-03.12 contract: the bar carries role=group, a Timeframe label, and wires handleKeyDown", () => {
+  assert.match(
+    source,
+    GROUP_ROLE,
+    "TimeframeBar's outer <div> must be role=group + aria-label=Timeframe + onKeyDown=handleKeyDown, " +
+      "the WAI-ARIA APG Toolbar shape T-03.12 decided (not radiogroup) — see the component's own docstring",
+  );
+  assert.match(source, ARROW_KEY_HANDLER, "a handleKeyDown callback must exist to drive arrow-key roving focus");
+  assert.match(source, MOVE_ROVING_FOCUS, "a moveRovingFocus callback must exist — handleKeyDown with nothing to move is dead wiring");
+});
+
+test("T-03.12 contract: each button announces aria-pressed and roves tabIndex off the active member", () => {
+  assert.match(
+    source,
+    BUTTON_ARIA_PRESSED,
+    "each button must announce its selected state via aria-pressed={isSelected} — a toggle button " +
+      "group silent about which member is pressed fails NNG H2 (match between system and real world)",
+  );
+  assert.match(
+    source,
+    BUTTON_ROVING_TABINDEX,
+    "each button's tabIndex must rove off activeInterval — five independent Tab stops (the pre-" +
+      "T-03.12 shape) is the WRONG Toolbar semantic and the design gate's Interaction Design score " +
+      "depends on this being exactly one Tab stop for the whole bar",
+  );
+});
+
+test("MORDE: stripping aria-pressed and the roving tabIndex from the button breaks both new contracts", () => {
+  // The EXACT mutation QA applied by hand to `SymbolClient.tsx` on disk (and reverted) to prove
+  // this gap was live rather than theoretical — reproduced here over a COPY of the real source so
+  // the MORDE is enforced going forward without needing a human to repeat the manual edit.
+  const stripped = source.replace(
+    /type="button"\s*\n\s*aria-pressed=\{isSelected\}\s*\n\s*tabIndex=\{option\.interval === activeInterval \? 0 : -1\}\s*\n/,
+    'type="button"\n',
+  );
+  assert.notEqual(stripped, source, "the replacement must actually change something — the anchor moved");
+  assert.doesNotMatch(stripped, BUTTON_ARIA_PRESSED, "MORDE: the mutated source must no longer satisfy the aria-pressed contract");
+  assert.doesNotMatch(stripped, BUTTON_ROVING_TABINDEX, "MORDE: the mutated source must no longer satisfy the roving-tabIndex contract");
+});
+
+// ── `T-03.12` — `PartialCoverageMark` had NO contract of its own (design gate's own Future-
+// Readiness finding, same score). It renders NOTHING when `totalReaggregatedBuckets === 0` (no
+// reaggregation happened, or every bucket answered in full — nothing undercounted to warn about);
+// QA confirmed by mutation that breaking that guard (`=== 0` → `< 0`, a realistic off-by-one/typo
+// class of regression, never a count `md.series_history_report.py` can produce) still passes
+// `typecheck`/`lint`/`test:app`/`test:charts` clean — the exact silent-false-alarm regression
+// `ADR-040/D3`'s "nunca extrapola" clause exists to forbid the OPPOSITE of (a badge that lies by
+// APPEARING, not one that lies by omission, but a mark this repo's own operators must trust is
+// only as trustworthy as the guard that decides when it speaks).
+
+const PARTIAL_MARK_GUARD = /if \(summary\.totalReaggregatedBuckets === 0\) \{\s*\n\s*return null;\s*\n\s*\}/;
+const PARTIAL_MARK_DATA_FACT = /data-fact=\{`\$\{factKey\}:\$\{summary\.partialBuckets\}\/\$\{summary\.totalReaggregatedBuckets\}`\}/;
+const PARTIAL_MARK_GLYPH_MOUNTED = /<PartialCoverageGlyph \/>\s*\n\s*COBERTURA PARCIAL/;
+
+test("T-03.12 contract: PartialCoverageMark renders null exactly when totalReaggregatedBuckets is 0", () => {
+  assert.match(
+    source,
+    PARTIAL_MARK_GUARD,
+    "PartialCoverageMark must return null on totalReaggregatedBuckets === 0 — anything looser " +
+      "(e.g. < 0) would render a false COBERTURA PARCIAL badge for a fully-answered window",
+  );
+});
+
+test("T-03.12 contract: the mark's data-fact carries factKey:partialBuckets/totalReaggregatedBuckets, and the glyph leads the word", () => {
+  assert.match(
+    source,
+    PARTIAL_MARK_DATA_FACT,
+    "data-fact must be literally `${factKey}:${partialBuckets}/${totalReaggregatedBuckets}` — the " +
+      "shape every other data-fact assertion in this repo's e2e DoD lines already parses",
+  );
+  assert.match(
+    source,
+    PARTIAL_MARK_GLYPH_MOUNTED,
+    "PartialCoverageGlyph must be mounted immediately before the COBERTURA PARCIAL word — the " +
+      "three-channel discipline (glyph+word+colour) this component's own docstring claims",
+  );
+});
+
+test("MORDE: loosening the totalReaggregatedBuckets guard from === 0 to < 0 breaks the null-render contract", () => {
+  // The EXACT mutation QA applied by hand to `SymbolClient.tsx` on disk (and reverted) to prove
+  // this gap was live: with this change, EVERY window with totalReaggregatedBuckets >= 0 (i.e.
+  // every real window this backend can ever produce) renders a COBERTURA PARCIAL badge — even one
+  // where nothing was ever reaggregated, or every bucket answered in full — and nothing in
+  // typecheck/lint/test:app/test:charts caught it before this test existed.
+  const loosened = source.replace(
+    /if \(summary\.totalReaggregatedBuckets === 0\) \{/,
+    "if (summary.totalReaggregatedBuckets < 0) {",
+  );
+  assert.notEqual(loosened, source, "the replacement must actually change something — the anchor moved");
+  assert.doesNotMatch(loosened, PARTIAL_MARK_GUARD, "MORDE: the mutated source must no longer satisfy the null-render guard contract");
+});
