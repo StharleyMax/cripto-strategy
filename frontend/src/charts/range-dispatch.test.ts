@@ -46,6 +46,57 @@ test("createReentrancyGuard starts released and is held only during runApplying"
   assert.equal(guard.isApplying, false, "guard must release once runApplying returns");
 });
 
+test("createReentrancyGuard.holdApplying holds until released, unlike runApplying's synchronous release", () => {
+  const guard = createReentrancyGuard();
+  assert.equal(guard.isApplying, false);
+  const release = guard.holdApplying();
+  assert.equal(guard.isApplying, true, "held immediately, synchronously");
+  assert.equal(guard.isApplying, true, "still held on a LATER read — this is what runApplying cannot do");
+  release();
+  assert.equal(guard.isApplying, false, "released once the caller calls the returned function");
+});
+
+test("createReentrancyGuard.holdApplying's release is idempotent — a second call is a harmless no-op", () => {
+  const guard = createReentrancyGuard();
+  const release = guard.holdApplying();
+  release();
+  assert.equal(guard.isApplying, false);
+  release(); // must not throw, must not re-acquire, must not affect a later independent hold
+  assert.equal(guard.isApplying, false, "a double release must not leave applying stuck true");
+});
+
+test("T-05-FIX falsifier: a candidate that arrives WHILE holdApplying is held is dropped — the exact deferred-echo shape a synchronous runApplying cannot cover", () => {
+  // Models `SymbolClient.tsx`'s mount-time fix precisely: `setVisibleLogicalRange` is a
+  // synchronous CALL whose own change notification is delivered on a LATER turn (the library's
+  // `requestAnimationFrame`, per `lightweight-charts.development.mjs:11196`) — by which point a
+  // synchronous `runApplying(fn)` has already released. Only a hold that survives past the
+  // synchronous call can catch it.
+  const axis: TimeAxis = { startMs: 0, stepMs: 60_000, slotCount: 5_760 };
+  const initialState: TimeRange = { fromMs: 0, toMs: 500 * 60_000 };
+  let writes = 0;
+  const dispatcher: RangeDispatcher = createRangeDispatcher(axis, initialState, 3, () => {
+    writes += 1;
+  });
+
+  const release = dispatcher.guard.holdApplying();
+  // The deferred echo of the mount's own "aplica" — landing later, wildly different from
+  // `initialState` (simulating the relayout-driven mismatch T-05.9 measured on a widened axis),
+  // exactly the shape plain dedupe (`reduceRangeEvent`) alone does not catch.
+  dispatcher.onPanelRangeChanged(0, { from: 9_999, to: 10_499 });
+  assert.equal(writes, 0, "held: the deferred echo must be dropped before dedupe even runs");
+  assert.equal(dispatcher.state, initialState, "held: state must not move from the echo");
+
+  release();
+  // MUTATION THIS FALSIFIER REJECTS: a caller that forgot to hold (or released too early, back
+  // to `runApplying`'s synchronous-only contract) — proven by NOT holding at all here, over the
+  // SAME candidate, on a fresh dispatcher.
+  const unguarded: RangeDispatcher = createRangeDispatcher(axis, initialState, 3, () => {
+    writes += 1;
+  });
+  unguarded.onPanelRangeChanged(0, { from: 9_999, to: 10_499 });
+  assert.ok(writes > 0, "sanity: unguarded, the same candidate DOES write — proving the guard above was load-bearing, not dead");
+});
+
 test("createReentrancyGuard releases even if the wrapped function throws", () => {
   const guard = createReentrancyGuard();
   assert.throws(() => {
@@ -54,6 +105,66 @@ test("createReentrancyGuard releases even if the wrapped function throws", () =>
     });
   });
   assert.equal(guard.isApplying, false, "a mid-sequence exception must not leave the guard stuck");
+});
+
+test("T-05-FIX RODADA 3 falsifier: TWO concurrent holdApplying calls — releasing the FIRST must not open the guard while the SECOND is still held (the six-panel mount shape)", () => {
+  // Models `useLightweightChart`'s real interleaving precisely: `axisSync.guard` is ONE
+  // instance shared by all six panels (`axis-sync.ts::guard` === `dispatcher.guard`), and each
+  // panel's own mount effect calls `holdApplying()` independently, then releases from its OWN
+  // `requestAnimationFrame` — panel 0's release (`releaseA` here) fires BEFORE panel 1's own
+  // deferred echo has had its chance to arrive, because `lightweight-charts` schedules its own
+  // `window.requestAnimationFrame` per chart instance and same-frame callbacks fire in
+  // REGISTRATION order: [chart0-lib-raf, chart0-release-raf, chart1-lib-raf, chart1-release-raf].
+  // A guard that is a plain boolean (release = "set applying=false", no counting) fails this:
+  // `releaseA()` would flip `isApplying` to `false` before `releaseB` ever runs, reopening the
+  // door for panel 1's own deferred echo to be misread as a real gesture — the exact mechanism
+  // `[MEDIDO 2026-09-23]` found still looping after RODADA 1's single-hold fix.
+  const guard = createReentrancyGuard();
+  assert.equal(guard.isApplying, false);
+  const releaseA = guard.holdApplying();
+  const releaseB = guard.holdApplying();
+  assert.equal(guard.isApplying, true, "held once either caller has opened it");
+  releaseA();
+  assert.equal(
+    guard.isApplying,
+    true,
+    "MUTATION THIS FALSIFIER REJECTS: the guard must STILL be held — releaseB has not run yet",
+  );
+  releaseB();
+  assert.equal(guard.isApplying, false, "released only once EVERY outstanding hold has been released");
+});
+
+test("T-05-FIX RODADA 3 falsifier: a candidate for panel 1 is still dropped after panel 0's own release, while panel 1's hold is outstanding", () => {
+  // Same shape as the test above, but through the dispatcher end-to-end (not just the guard's
+  // own boolean), proving the six-panel mount race actually keeps a SECOND panel's deferred echo
+  // from reaching `write` — the falsifier from `range-dispatch.test.ts`'s existing single-hold
+  // test does not cover this because it only ever opens ONE hold.
+  const axis: TimeAxis = { startMs: 0, stepMs: 60_000, slotCount: 5_760 };
+  const initialState: TimeRange = { fromMs: 0, toMs: 500 * 60_000 };
+  let writes = 0;
+  const dispatcher: RangeDispatcher = createRangeDispatcher(axis, initialState, 3, () => {
+    writes += 1;
+  });
+
+  // Panel 0 and panel 1 both mount and both hold, exactly like `useLightweightChart`'s effect
+  // running twice in the same commit for two sibling panels sharing `axisSync.guard`.
+  const releasePanel0 = dispatcher.guard.holdApplying();
+  const releasePanel1 = dispatcher.guard.holdApplying();
+  // Panel 0's own deferred echo lands and is (correctly) dropped, then panel 0 releases ITS OWN
+  // hold — this is chart0-lib-raf then chart0-release-raf, in that order.
+  dispatcher.onPanelRangeChanged(0, { from: 9_999, to: 10_499 });
+  releasePanel0();
+  // Panel 1's own deferred echo has not arrived yet (its lib-raf is queued AFTER panel 0's
+  // release-raf) — but it is about to, and panel 1 has not released its own hold.
+  dispatcher.onPanelRangeChanged(1, { from: 9_999, to: 10_499 });
+  assert.equal(
+    writes,
+    0,
+    "MUTATION THIS FALSIFIER REJECTS: panel 1's deferred echo must still be dropped — panel 1's own hold is outstanding",
+  );
+  assert.equal(dispatcher.state, initialState, "state must not move from either panel's own deferred echo");
+
+  releasePanel1();
 });
 
 test("createRangeDispatcher rejects a negative or non-integer panelCount", () => {

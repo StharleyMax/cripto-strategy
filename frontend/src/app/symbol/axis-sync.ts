@@ -61,6 +61,17 @@ export interface AxisSyncStore {
    * call into a `write` closure that still references a disposed `IChartApi`. */
   registerPanel(panelIndex: number, write: (logical: LogicalRange) => void): () => void;
   notifyPanelRangeChanged(panelIndex: number, candidateLogical: LogicalRange): void;
+  /**
+   * `T-05-FIX` — the SAME `ReentrancyGuard` `RangeDispatcher`'s cross-panel writes already hold
+   * during a dispatch (`range-dispatch.ts`), reached here so `useLightweightChart`
+   * (`SymbolClient.tsx`) can wrap the mount-time "aplica" — `setVisibleLogicalRange(initialLogicalRange)`
+   * — the ONE write `RangeDispatcher` itself never sees, because it happens before any panel is
+   * registered. Typed off `RangeDispatcher["guard"]` rather than importing `ReentrancyGuard`
+   * directly: `charts/index.ts` (`ADR-034/D8`) deliberately does not re-export
+   * `ReentrancyGuard`/`createReentrancyGuard` through the sanctioned `web -> charts` doorway, and
+   * this indexed-access type crosses no wider than that door already does.
+   */
+  readonly guard: RangeDispatcher["guard"];
 }
 
 /**
@@ -183,6 +194,7 @@ export function createAxisSyncStore(
   return {
     axis,
     initialLogicalRange: toLogicalRange(initialRange, axis),
+    guard: dispatcher.guard,
     registerPanel(panelIndex, panelWrite) {
       if (!Number.isInteger(panelIndex) || panelIndex < 0 || panelIndex >= panelCount) {
         throw new RangeError(`panelIndex out of range: received ${panelIndex}, panelCount is ${panelCount}`);
