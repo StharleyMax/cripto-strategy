@@ -235,3 +235,37 @@ export interface OiProvenanceLabel {
   readonly universo: string;
   readonly coorte: string;
 }
+
+/**
+ * `T-05.5`/`D-C3.6` — the THREE distinguishable reasons a SLOT has no point, named so the state
+ * is expressible on the wire and in a test instead of collapsing into one "sem dado" the operator
+ * cannot act on (`RN-1`, applied to the TIME AXIS: *"não sabemos" e "foi zero" nunca são os
+ * mesmos pixels*, and here it further splits into "não sabemos" for two different reasons):
+ *
+ *   - `"absent"`          the bucket is INSIDE what we know we cover (the fetched window AND the
+ *                          declared walls) and still has no point — the "buraco do queijo suíço"
+ *                          (`klines_volume` gives `0` at 6 days and `59` at 8 days, non-monotonic
+ *                          — a real mid-range hole, not an edge). This is `RF-4`'s existing
+ *                          whitespace pixel; nothing about it is new.
+ *   - `"not-loaded"`      the slot sits on the grid but OUTSIDE the window the pager
+ *                          (`use-history-pager.ts`, `T-05.2`) has fetched so far — we have not
+ *                          asked yet, so "no point" says nothing about the data.
+ *   - `"beyond-coverage"` the slot is INSIDE the fetched window but OUTSIDE what `panel.coverage`
+ *                          (`series-history-envelope.ts`) declares the store/source can ever
+ *                          serve — asking again would not help.
+ *
+ * ⛔ THIS TYPE NAMES THE STATE; IT DOES NOT DRAW IT. `T-05.6` owns the single visible badge this
+ * maps to and `T-05.7` owns wiring the pager's stop condition to the SAME walls — this module
+ * only makes the state expressible, and `classifySlotCoverage` (`slot-coverage.ts`) is the one
+ * function that computes it, pure and DOM-free.
+ *
+ * ⛔ LIVES HERE, NOT IN `view-model.ts`, FOR THE SAME STRUCTURAL REASON EVERY OTHER SHAPE IN THIS
+ * MODULE DOES: `view-model.ts` re-exports `computeSeriesKeyId` (`node:crypto`), which taints it
+ * for any client bundle — and unlike `FreshnessVerdict`'s freshness-at-SSR-time computation, the
+ * FUNCTION that produces this state has to run again after every client-side page
+ * (`use-history-pager.ts` is `"use client"`), so it cannot live behind that taint either. The
+ * function is in its own dependency-free module (`slot-coverage.ts`) rather than here only
+ * because a discriminant union is data and a function is not — this file's own established
+ * convention (see `FreshnessVerdict`'s docstring above).
+ */
+export type SlotCoverageState = "absent" | "not-loaded" | "beyond-coverage";

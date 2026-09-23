@@ -69,6 +69,7 @@ the closest this module gets to a guard for it.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from decimal import Decimal
 from typing import Final
 
 from src.modules.sentimento.domain.series_key import Nature, Reduction
@@ -108,8 +109,24 @@ class EmptyBucketError(Exception):
 
 
 def _sum(values: Sequence[float]) -> float:
-    """`(FLOW, SUM)` — Σ of the facts present. The definition of a flow quantity."""
-    return float(sum(values))
+    """`(FLOW, SUM)` — Σ of the facts present. The definition of a flow quantity.
+
+    Summed through `Decimal`, not `float(sum(values))` directly — the latter accumulates IEEE-754
+    rounding error across the additions, one bit at a time, and a wide bucket (`4h` reaggregating
+    `240` native `1m` `cvd_delta` facts) sums enough signed terms for that error to surface as
+    13-14 noise digits on the wire (`"-655.9100000000001"` for a value whose true precision is 8
+    decimal places, the source's own quantity scale — `CA-F1-…` handoff of `candle-real-e-eixo-
+    unico` fase `05`, reproduced against production Postgres). `Decimal(str(v))` reconstructs the
+    exact decimal each `float` already carries (Python's `repr` is the shortest string that
+    round-trips to that same `float`, so this is lossless, not a second lossy hop), sums those
+    EXACTLY the way `domain/cvd.py::cvd_delta_by_bucket` already sums the un-reaggregated facts,
+    and only touches `float` once more, at the very end, to keep this function's signature the
+    `REDUCTION_TABLE` contract (`ADR-040/D2`) already fixes. The single final round-trip is the
+    same one the `1m` native path already takes with no visible noise (`use_cases/series_history.
+    py::_row_from_native_reading`'s own comment) — the defect was in the REPEATED float additions
+    this replaces, never in touching `float` once.
+    """
+    return float(sum(Decimal(str(value)) for value in values))
 
 
 def _first(values: Sequence[float]) -> float:

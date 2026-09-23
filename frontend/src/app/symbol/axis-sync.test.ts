@@ -23,7 +23,7 @@ import {
   PRICE_PANEL_INDEX,
   withAxisSyncAblation,
 } from "./axis-sync.ts";
-import type { LogicalRange, TimeAxis } from "../../charts/index.ts";
+import type { LogicalRange, TimeAxis, TimeRange } from "../../charts/index.ts";
 
 const ONE_MINUTE_MS = 60_000;
 
@@ -221,4 +221,72 @@ test("onRangeApplied CALA: an echo of the current state fires the hook ZERO time
 test("onRangeApplied is a true no-op when omitted — every call site before `T-02.7` still works", () => {
   const store = createAxisSyncStore(axisOf(10), PANEL_COUNT);
   assert.doesNotThrow(() => store.notifyPanelRangeChanged(PRICE_PANEL_INDEX, { from: 2, to: 8 }));
+});
+
+// ── `T-05.2` — `options.initialRange`/`options.onCandidateRange`, the paginator's own wiring ──
+
+test("options.initialRange CALA: a page-triggered axis swap preserves the operator's OWN visible range, not the whole axis", () => {
+  const axis = axisOf(20, 0); // a widened axis, e.g. after a history page arrived
+  const preserved: TimeRange = { fromMs: 5 * ONE_MINUTE_MS, toMs: 15 * ONE_MINUTE_MS };
+  const store = createAxisSyncStore(axis, PANEL_COUNT, undefined, { initialRange: preserved });
+  assert.deepEqual(store.initialLogicalRange, { from: 5, to: 15 }, "never [0, slotCount] when a range was preserved");
+});
+
+test("options.initialRange omitted MORDE: falls back to the whole axis — the pre-T-05.2 default, byte for byte", () => {
+  const axis = axisOf(10, 1_000);
+  const store = createAxisSyncStore(axis, PANEL_COUNT, undefined, {});
+  assert.deepEqual(store.initialLogicalRange, { from: 0, to: 10 });
+});
+
+test("options.onCandidateRange MORDE: fires with the CURRENT TimeRange on a real pan, panel-agnostic", () => {
+  const axis = axisOf(10);
+  const seen: TimeRange[] = [];
+  const store = createAxisSyncStore(axis, PANEL_COUNT, undefined, {
+    onCandidateRange: (range) => seen.push(range),
+  });
+  store.notifyPanelRangeChanged(OI_PANEL_INDEX, { from: 1, to: 7 });
+  assert.equal(seen.length, 1);
+  assert.deepEqual(seen[0], { fromMs: 1 * ONE_MINUTE_MS, toMs: 7 * ONE_MINUTE_MS });
+});
+
+test("options.onCandidateRange CALA: an echo of the current state fires it ZERO times — same gate as onRangeApplied", () => {
+  const axis = axisOf(10);
+  let calls = 0;
+  const store = createAxisSyncStore(axis, PANEL_COUNT, undefined, {
+    onCandidateRange: () => {
+      calls += 1;
+    },
+  });
+  store.notifyPanelRangeChanged(PRICE_PANEL_INDEX, store.initialLogicalRange);
+  assert.equal(calls, 0);
+});
+
+test("onRangeApplied and onCandidateRange BOTH fire, independently, off the SAME dispatch", () => {
+  const axis = axisOf(10);
+  let latencyCalls = 0;
+  const seenRanges: TimeRange[] = [];
+  const store = createAxisSyncStore(
+    axis,
+    PANEL_COUNT,
+    () => {
+      latencyCalls += 1;
+    },
+    { onCandidateRange: (range) => seenRanges.push(range) },
+  );
+  store.notifyPanelRangeChanged(CVD_PANEL_INDEX, { from: 2, to: 9 });
+  assert.equal(latencyCalls, 1);
+  assert.equal(seenRanges.length, 1);
+});
+
+test("withAxisSyncAblation(store, true) also silences onCandidateRange — ablation disables the whole dispatch verb", () => {
+  const axis = axisOf(10);
+  let calls = 0;
+  const real = createAxisSyncStore(axis, PANEL_COUNT, undefined, {
+    onCandidateRange: () => {
+      calls += 1;
+    },
+  });
+  const ablated = withAxisSyncAblation(real, true);
+  ablated.notifyPanelRangeChanged(PRICE_PANEL_INDEX, { from: 2, to: 8 });
+  assert.equal(calls, 0);
 });

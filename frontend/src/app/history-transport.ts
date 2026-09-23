@@ -51,6 +51,16 @@
 export type BarPolicy = "final_only" | "intrabar";
 
 /**
+ * `T-05.2` — the ONE `BarPolicy` `/symbol` requests, at both edges of a page: the initial SSR
+ * fetch (`[symbol]/page.tsx`, which used to keep its own local `BAR_POLICY` constant) and every
+ * later client-side paginated fetch (`use-history-pager.ts`, `D-C3.5`). Neither route offers an
+ * `intrabar` control yet, so this is not a default a caller could silently drift away from — it
+ * is the one value in play, named once so a future SECOND `const BAR_POLICY = "final_only"`
+ * (page.tsx and `SymbolClient.tsx` disagreeing by a typo) is structurally impossible.
+ */
+export const HISTORY_BAR_POLICY: BarPolicy = "final_only";
+
+/**
  * Mirror de `Absence` (`provenance.py:97-114`) — o conjunto fechado de quatro razões, verbatim
  * na grafia do domínio (`SPEC-001` §3.1 já fixa os valores em português; traduzir aqui criaria
  * uma segunda vocabulário para a mesma coisa).

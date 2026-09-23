@@ -12,13 +12,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_PAGE_TRIGGER_SLOTS,
   DEFAULT_RANGE_EPSILON_MS,
   createTimeAxisController,
   fromLogicalRange,
+  historyRequest,
   reduceRangeEvent,
   toLogicalRange,
 } from "./time-axis-controller.ts";
-import type { TimeAxis, TimeRange } from "./time-axis-controller.ts";
+import type { HistoryCoverage, TimeAxis, TimeRange } from "./time-axis-controller.ts";
 
 const THIS_FILE = fileURLToPath(import.meta.url);
 const SOURCE_FILE = path.join(path.dirname(THIS_FILE), "time-axis-controller.ts");
@@ -148,4 +150,129 @@ test("createTimeAxisController does not mutate or re-derive axis — swapping ti
   const controllerB = createTimeAxisController(AXIS_4H);
   assert.notEqual(controllerA.axis.stepMs, controllerB.axis.stepMs);
   assert.equal(controllerA.axis, AXIS_1M, "constructing controllerB must not have touched controllerA's axis");
+});
+
+// `historyRequest` — `T-05.1`, `D-C3.4`. `AXIS`'s `startMs` is deliberately non-zero so a
+// "floor before startMs" is a distinct, unambiguous instant from "no floor at all" (`null`).
+const HOUR_MS = 60 * 60 * 1000;
+const AXIS: TimeAxis = { startMs: 1_000_000 * HOUR_MS, stepMs: HOUR_MS, slotCount: 500 };
+const NO_COVERAGE: HistoryCoverage = { earliestBucketMs: null, sourceFloorMs: null };
+
+test("historyRequest returns null when the visible range is not near the loaded left edge", () => {
+  const range: TimeRange = {
+    fromMs: AXIS.startMs + 1_000 * HOUR_MS,
+    toMs: AXIS.startMs + 1_010 * HOUR_MS,
+  };
+  assert.equal(historyRequest(range, AXIS, NO_COVERAGE, 500), null);
+});
+
+test("historyRequest proposes exactly the page immediately preceding axis.startMs once near the edge", () => {
+  const range: TimeRange = { fromMs: AXIS.startMs + 5 * HOUR_MS, toMs: AXIS.startMs + 100 * HOUR_MS };
+  const request = historyRequest(range, AXIS, NO_COVERAGE, 500, DEFAULT_PAGE_TRIGGER_SLOTS);
+  assert.deepEqual(request, {
+    fromMs: AXIS.startMs - 500 * HOUR_MS,
+    toMs: AXIS.startMs,
+    intervalMs: HOUR_MS,
+  });
+});
+
+test("historyRequest's trigger is a strict less-than at the threshold, not <=", () => {
+  const atThreshold: TimeRange = {
+    fromMs: AXIS.startMs + DEFAULT_PAGE_TRIGGER_SLOTS * HOUR_MS,
+    toMs: AXIS.startMs + 100 * HOUR_MS,
+  };
+  const justInside: TimeRange = { fromMs: atThreshold.fromMs - 1, toMs: atThreshold.toMs };
+  assert.equal(historyRequest(atThreshold, AXIS, NO_COVERAGE, 500), null);
+  assert.notEqual(historyRequest(justInside, AXIS, NO_COVERAGE, 500), null);
+});
+
+test("historyRequest is insensitive to HOW FAR range.fromMs sits past the edge — the requested window is a function of axis.startMs alone, never of range", () => {
+  // This is the direct contrast with `barsInLogicalRange`: that API's `barsBefore` keeps
+  // changing (and going more negative) the deeper the visible range sits in whitespace.
+  // `D-C3.5`: "o gatilho é a grade, não o painel" — the proposed window must NOT move with it.
+  const shallow = historyRequest(
+    { fromMs: AXIS.startMs + 1 * HOUR_MS, toMs: AXIS.startMs + 50 * HOUR_MS },
+    AXIS,
+    NO_COVERAGE,
+    500,
+  );
+  const deepInWhitespace = historyRequest(
+    { fromMs: AXIS.startMs - 999_999 * HOUR_MS, toMs: AXIS.startMs + 50 * HOUR_MS },
+    AXIS,
+    NO_COVERAGE,
+    500,
+  );
+  assert.deepEqual(shallow, deepInWhitespace);
+});
+
+test("D-C3.4 falsifier: once the known floor is reached, historyRequest goes PERMANENTLY null — no infinite loop, even with whitespace deep ahead of the range", () => {
+  // Reproduces the measured failure mode's geometry (`probe3.mjs`: whitespace precedes the
+  // visible range, `barsBefore = -4608`, permanently below any positive threshold) but with a
+  // coverage floor this axis has already reached. A naive `barsBefore < N` detector never
+  // stops firing in this geometry; this predicate must, and must keep not-firing on repeat
+  // calls, not just the first one.
+  const coverage: HistoryCoverage = { earliestBucketMs: AXIS.startMs, sourceFloorMs: null };
+  const rangeDeepInWhitespace: TimeRange = {
+    fromMs: AXIS.startMs - 10_000 * HOUR_MS,
+    toMs: AXIS.startMs + 50 * HOUR_MS,
+  };
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    assert.equal(
+      historyRequest(rangeDeepInWhitespace, AXIS, coverage, 500),
+      null,
+      `attempt ${attempt} must not propose a page past the known floor`,
+    );
+  }
+});
+
+test("historyRequest clamps fromMs to the known floor instead of overshooting past it (partial last page)", () => {
+  const floorMs = AXIS.startMs - 200 * HOUR_MS; // closer than a full 500-slot page
+  const coverage: HistoryCoverage = { earliestBucketMs: floorMs, sourceFloorMs: null };
+  const range: TimeRange = { fromMs: AXIS.startMs + 5 * HOUR_MS, toMs: AXIS.startMs + 50 * HOUR_MS };
+  const request = historyRequest(range, AXIS, coverage, 500);
+  assert.deepEqual(request, { fromMs: floorMs, toMs: AXIS.startMs, intervalMs: HOUR_MS });
+});
+
+test("historyRequest falls back to sourceFloorMs when the store has captured nothing yet (earliestBucketMs null)", () => {
+  const coverage: HistoryCoverage = { earliestBucketMs: null, sourceFloorMs: AXIS.startMs };
+  const range: TimeRange = { fromMs: AXIS.startMs + 1 * HOUR_MS, toMs: AXIS.startMs + 50 * HOUR_MS };
+  assert.equal(
+    historyRequest(range, AXIS, coverage, 500),
+    null,
+    "axis already sits at the origin's own wall — nothing to fetch",
+  );
+});
+
+test("historyRequest prefers earliestBucketMs (our own store) over sourceFloorMs when both are known", () => {
+  const strictFloor = AXIS.startMs - 10 * HOUR_MS; // our store — closer, more restrictive
+  const looseFloor = AXIS.startMs - 5_000 * HOUR_MS; // origin's wall — far looser
+  const coverage: HistoryCoverage = { earliestBucketMs: strictFloor, sourceFloorMs: looseFloor };
+  const range: TimeRange = { fromMs: AXIS.startMs + 1 * HOUR_MS, toMs: AXIS.startMs + 50 * HOUR_MS };
+  const request = historyRequest(range, AXIS, coverage, 500);
+  assert.deepEqual(request, { fromMs: strictFloor, toMs: AXIS.startMs, intervalMs: HOUR_MS });
+});
+
+test("historyRequest refuses a non-positive or non-integer pageSlots", () => {
+  assert.throws(() => historyRequest({ fromMs: 0, toMs: 1 }, AXIS, NO_COVERAGE, 0), RangeError);
+  assert.throws(() => historyRequest({ fromMs: 0, toMs: 1 }, AXIS, NO_COVERAGE, -500), RangeError);
+  assert.throws(() => historyRequest({ fromMs: 0, toMs: 1 }, AXIS, NO_COVERAGE, 1.5), RangeError);
+});
+
+test("historyRequest refuses a negative or non-integer triggerSlots", () => {
+  assert.throws(() => historyRequest({ fromMs: 0, toMs: 1 }, AXIS, NO_COVERAGE, 500, -1), RangeError);
+  assert.throws(() => historyRequest({ fromMs: 0, toMs: 1 }, AXIS, NO_COVERAGE, 500, 1.5), RangeError);
+});
+
+test("historyRequest refuses a non-positive axis.stepMs", () => {
+  const badAxis: TimeAxis = { startMs: 0, stepMs: 0, slotCount: 1 };
+  assert.throws(() => historyRequest({ fromMs: 0, toMs: 1 }, badAxis, NO_COVERAGE, 500), RangeError);
+});
+
+test("createTimeAxisController.historyRequest delegates to the free function bound to its own axis", () => {
+  const controller = createTimeAxisController(AXIS);
+  const range: TimeRange = { fromMs: AXIS.startMs + 5 * HOUR_MS, toMs: AXIS.startMs + 100 * HOUR_MS };
+  assert.deepEqual(
+    controller.historyRequest(range, NO_COVERAGE, 500),
+    historyRequest(range, AXIS, NO_COVERAGE, 500),
+  );
 });

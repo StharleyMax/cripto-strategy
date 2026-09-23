@@ -12,6 +12,7 @@ import {
   decodeHistoryRequest,
   encodeHistoryRequest,
   historyRequestUrl,
+  HISTORY_BAR_POLICY,
   HistoryResponseCache,
 } from "./history-transport.ts";
 import type { HistoryRequestKey } from "./history-transport.ts";
@@ -257,4 +258,11 @@ test("assertBucketSpacingWithinInterval e MUTAÇÃO: a mesma serie limpa reprova
 test("assertBucketSpacingWithinInterval RECUSA sequencia fora de ordem em vez de reordenar em silencio", () => {
   const outOfOrder = ["2026-08-24T00:05:00Z", "2026-08-24T00:00:00Z"];
   assert.throws(() => assertBucketSpacingWithinInterval(outOfOrder, 60_000), /fora de ordem/);
+});
+
+// `T-05.2` — `HISTORY_BAR_POLICY` e o unico valor em jogo, em ambas as bordas (SSR inicial de
+// `page.tsx` e a paginacao do lado do cliente, `use-history-pager.ts`): nao ha controle de
+// `intrabar` em nenhuma das duas rotas hoje.
+test("HISTORY_BAR_POLICY e final_only — o unico valor que page.tsx/use-history-pager.ts pedem hoje", () => {
+  assert.equal(HISTORY_BAR_POLICY, "final_only");
 });

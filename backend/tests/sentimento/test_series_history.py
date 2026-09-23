@@ -8,6 +8,7 @@ import pytest
 
 from src.modules.charts.domain.panel_grid_enablement import classify_grid_multiple
 from src.modules.sentimento.domain.as_of_accessor import BarPolicy, Observation
+from src.modules.sentimento.domain.history_ceiling import MAX_HISTORY_DAYS, MAX_HISTORY_MS
 from src.modules.sentimento.domain.provenance import (
     UNKNOWN_OBSERVER_REGION,
     Absence,
@@ -30,6 +31,7 @@ from src.modules.sentimento.domain.series_key import (
 )
 from src.modules.sentimento.domain.source_floor import resolve_source_floor_ms
 from src.modules.sentimento.use_cases.series_history import (
+    HistoryWindowBeyondCeilingError,
     InvalidWindowError,
     UnknownSeriesKeyIdError,
     UnsupportedIntervalError,
@@ -509,6 +511,78 @@ def test_refuses_a_window_that_is_not_strictly_increasing() -> None:
         )
 
 
+# ── `D5`, item 5.3, `T-05.4`: the 90-day ceiling REFUSES, it never serves `200`/`rows: []` ──
+#
+# `docs/plans/SPEC-008-candle-real-e-eixo-unico/05_historia_sob_demanda.md` DoD 4, literal:
+# "Requisição a `series-history` com janela iniciando antes de 90 dias -> recusa explícita.
+# Morde com `200` vazio, `n = 2` casos (91 dias, 400 dias) — teste os dois, não só um." The
+# ceiling is anchored at `knowledge_time_ms` (this request's own "now"), not `window_end_ms` —
+# `MAX_HISTORY_MS` is imported from `domain/history_ceiling.py`, `T-05.3`'s single source of
+# truth, never re-derived as a literal here.
+
+_MS_PER_DAY = 86_400_000
+
+
+@pytest.mark.parametrize("days_before_ceiling", [91, 400])
+def test_refuses_a_window_starting_beyond_the_90_day_ceiling(days_before_ceiling: int) -> None:
+    """`MORDE`: without this refusal these two windows would serve `200` with `rows: []`.
+
+    `_FakeReader(())` — an empty store, exactly what a real request this far back would see —
+    is the fixture proving the point: nothing here fabricates data to make the refusal easy: a
+    caller that swallowed `HistoryWindowBeyondCeilingError` and fell through would get precisely
+    the ambiguous empty `200` `ADR-012` names, not an exception on some unrelated path.
+    """
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+    knowledge_time_ms = BUCKET_END
+    window_start_ms = knowledge_time_ms - days_before_ceiling * _MS_PER_DAY
+
+    with pytest.raises(HistoryWindowBeyondCeilingError, match=str(MAX_HISTORY_DAYS)):
+        build_series_history_report(
+            catalog,
+            reader,
+            classify_panel_grid,
+            bounds_reader,
+            series_key_id=_oi_key().series_key_id(),
+            symbol=SYMBOL,
+            interval="1m",
+            window_start_ms=window_start_ms,
+            window_end_ms=knowledge_time_ms,
+            knowledge_time_ms=knowledge_time_ms,
+            bar_policy=BarPolicy.FINAL_ONLY,
+        )
+
+
+def test_a_window_starting_exactly_at_the_90_day_ceiling_is_not_refused() -> None:
+    """`CALA`: the boundary itself is still servable — `D5` declares 90 days AS the ceiling.
+
+    `window_start_ms == knowledge_time_ms - MAX_HISTORY_MS` is the last instant `D5` still owns;
+    one millisecond earlier is `test_refuses_a_window_starting_beyond_the_90_day_ceiling`'s
+    smaller sibling if it existed, and a refusal that fired HERE too would be the ceiling wrongly
+    off by one, undetectable by the `MORDE` test alone (both would raise).
+    """
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+    knowledge_time_ms = BUCKET_END
+    window_start_ms = knowledge_time_ms - MAX_HISTORY_MS
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=window_start_ms,
+        window_end_ms=window_start_ms,
+        knowledge_time_ms=knowledge_time_ms,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.rows[0].event_time == window_start_ms
+
+
 # ── PUBLICATION LAG: the fixture property every test above is missing ──────────────────────
 #
 # Every fixture above stamps `available_at == bucket_end` — a bucket readable AT THE VERY
@@ -744,6 +818,18 @@ def test_intrabar_reads_at_the_grid_instant_and_never_the_next_bucket_partial() 
     WAIVED (`_r2_admits` returns `True`), so that same reach would let a PARTIAL of the bucket
     closing one step LATER win and be labelled with the earlier grid instant — data from after
     `t` drawn at `t`, the inversion `SPEC-001` §2.4 exists to stop.
+
+    `[ADR-042 UPDATE, 2026-09-23]` `knowledge_time_ms` is now `first` (`= t`, `D2`'s own case),
+    not `second + 10 * GRID_MS`. Before `D1`, R-1 was `available_at <= t`, so a wide K past
+    `second` changed nothing here — `t` alone already bounded what could be known. After `D1`,
+    R-1 became `available_at <= knowledge_time`: a K past `second`'s `available_at` would make
+    the `second`-bucket partial ADMISSIBLE by R-1 too, and this test's `_FakeReader` (unlike the
+    real `PostgresSeriesWindowReader`, confirmed by grep to filter `bucket_end <= window_end_ms`
+    in SQL) returns every row it was built with regardless of the requested window — so a wide K
+    would let R-2's waiver alone decide, defeating the very guard this test exists to prove. This
+    test is the `ENTRY_CONDITION`-shaped question ("what may I decide on AT `t`, knowing only up
+    to `t`?"), so `K = t` is the correct horizon for it, and the guard it proves (R-2's waiver
+    does not resurrect a future partial) is orthogonal to `D1`'s widening of R-1.
     """
     key = _volume_key()
     first, second = BUCKET_END, BUCKET_END + GRID_MS
@@ -765,7 +851,7 @@ def test_intrabar_reads_at_the_grid_instant_and_never_the_next_bucket_partial() 
         interval="1m",
         window_start_ms=first,
         window_end_ms=first,
-        knowledge_time_ms=second + 10 * GRID_MS,
+        knowledge_time_ms=first,
         bar_policy=BarPolicy.INTRABAR,
     )
 
@@ -865,26 +951,43 @@ def _count_points(*, native_grid_ms: int) -> int:
 
 
 def test_a_five_minute_non_carried_series_renders_through_the_real_use_case() -> None:
-    """MORDE (`ADR-037` falsifier item 1): 4 of 61 slots carry a value, `RATIO` untouched.
+    """MORDE (`ADR-037` falsifier item 1): all 61 slots carry a value, `RATIO` untouched.
 
-    Four, not one: the readable window of a non-carry-forward bucket is
-    `[bucket_end + lag, bucket_end + native_grid)` — 233.288 ms wide here, which covers four
-    1-minute slots. This is `ADR-037`/M3's `4 / 61` cell, reproduced through
-    `build_series_history_report` rather than through a direct `as_of` call.
+    `[ADR-042 UPDATE, 2026-09-23]` This was `4 / 61` before `ADR-042`/`D1`: the readable window
+    of a non-carry-forward bucket used to be `[bucket_end + lag, bucket_end + native_grid)`,
+    gated by the REAL publication lag (`available_at <= t`). `_count_points`'s
+    `knowledge_time_ms = window_end_ms + 10 * GRID_MS` equals `_ratio_reader`'s `backfill_at`
+    exactly, so under `D1` (`available_at <= knowledge_time`) EVERY one of the 16 backfilled
+    buckets is now admissible the instant its own `bucket_end` closes — `_ratio_reader`'s own
+    docstring named this "invisible... until `E1`/`D16` exists in code", and `ADR-042` is that
+    code. Each 5-minute bucket is then visible for exactly 5 one-minute slots
+    (`age_ms < native_grid_ms`, `D4.11`), buckets are spaced exactly `FIVE_MINUTE_GRID_MS`
+    apart, so the 5-slot runs tile the 61-slot window with no gap and no overlap: buckets at
+    `bucket_end = window_start_ms, window_start_ms + 300_000, …, window_end_ms` (13 buckets)
+    cover offsets `0..60` minutes completely. `[MEDIDO 2026-09-23: re-derived by hand from
+    `_ratio_reader`'s fixture and confirmed by this test going green]`.
     """
-    assert _count_points(native_grid_ms=FIVE_MINUTE_GRID_MS) == 4
+    assert _count_points(native_grid_ms=FIVE_MINUTE_GRID_MS) == 61
 
 
 def test_injecting_the_report_step_as_the_width_vetoes_every_slot() -> None:
-    """CALA (`ADR-037` falsifier item 2): the OLD value gives EXACTLY zero, on the same data.
+    """CALA (`ADR-037` falsifier item 2): the wrong width still shows LESS than the right one.
 
-    This is the mutation, written as a test instead of as a promise: `60_000` is precisely what
-    `series_history.py:179` injected before `ADR-037`, and with it the series is unreadable at
-    every one of the 61 slots — `HTTP 200` with `n_points = 0`, the `rc=0` silence `ADR-012`
-    names. A change that put `_GRID_STEP_MS` back would make the test above fail; a test that
-    passed under both widths would not be measuring this decision at all.
+    `[ADR-042 UPDATE, 2026-09-23]` This was "exactly zero" before `ADR-042`/`D1`: with the WRONG
+    (report-step) width injected, `bucket_interval_ms (60_000) < RATIO_LAG_MS`, so the OLD
+    `[bucket_end + lag, bucket_end + native_grid)` window was empty for every bucket — the
+    veto was total because visibility used to be gated by the REAL publication lag. Under `D1`
+    a bucket becomes visible at its OWN `bucket_end` (`age_ms = 0`), regardless of lag, so the
+    veto is no longer total: each of the 13 buckets inside the window (`bucket_end` from
+    `window_start_ms` to `window_end_ms`, one every 300_000 ms) is visible for exactly ONE
+    1-minute slot (`age_ms < 60_000` admits only `age_ms = 0`) before the width itself expires
+    it. `13` (this test) vs `61` (the test above) still isolates `ADR-037`'s decision — the wrong
+    width shows a fifth of what the right width shows on the SAME data — it just no longer reads
+    as literal zero now that `D1` decoupled "known" from "published on time". A change that put
+    `_GRID_STEP_MS` back would still make the test above fail; a test that passed under both
+    widths would still not be measuring this decision at all.
     """
-    assert _count_points(native_grid_ms=GRID_MS) == 0
+    assert _count_points(native_grid_ms=GRID_MS) == 13
 
 
 def test_the_one_minute_control_is_invariant_under_this_change() -> None:

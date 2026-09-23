@@ -142,10 +142,11 @@ import {
   type SeriesCatalogProjection,
 } from "../../../features/s3-inspector/series-catalog-query.ts";
 import type { SeriesCatalogEntry } from "../../../features/s3-inspector/series-catalog.ts";
-import type { BarPolicy, HistoryRequestKey } from "../../history-transport.ts";
+import { HISTORY_BAR_POLICY, type HistoryRequestKey } from "../../history-transport.ts";
 import { encodeLiveStreamOpenRequest, liveStreamUrl, type LiveStreamOpenRequest } from "../../live-transport.ts";
 import {
   fetchSeriesHistoryViaHttp,
+  seriesHistoryEndpointUrl,
   type SeriesHistoryRow,
 } from "../series-history-client.ts";
 import type { PanelStatus } from "../panel-status.ts";
@@ -171,6 +172,7 @@ import {
   firstPresentSlotMs,
   daysWithPresence,
   deriveOiProvenanceLabel,
+  InvalidSignedDecimalError,
   keyMatchesSymbol,
   lastPresentSlotMs,
   lastReadableAvailableAtMs,
@@ -190,6 +192,7 @@ import {
   summarizePartialCoverage,
   trailingAbsentSlots,
   type KlinesOhlcReduction,
+  type ScaledCvdDeltaInput,
 } from "../view-model.ts";
 
 export const metadata: Metadata = {
@@ -198,7 +201,11 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const BAR_POLICY: BarPolicy = "final_only";
+// `T-05.2` — `BAR_POLICY` USED TO BE A LOCAL CONSTANT HERE. It now aliases
+// `HISTORY_BAR_POLICY` (`history-transport.ts`), the SAME value `use-history-pager.ts`'s
+// client-side paginator sends on every later page — one constant instead of two literals that
+// could silently drift (see that module's own docstring on why the dedup exists).
+const BAR_POLICY = HISTORY_BAR_POLICY;
 
 /**
  * `T-02.5` — the pilot instrument universe, transcribed (never re-derived) from
@@ -295,6 +302,61 @@ const CATALOG_UNAVAILABLE: CatalogResolution = { kind: "none" };
  * on purpose: neither yields a series to open a stream for or to publish a ceiling from. */
 function resolvedEntry(resolution: CatalogResolution): SeriesCatalogEntry | undefined {
   return resolution.kind === "found" ? resolution.entry : undefined;
+}
+
+/** `T-05.2` — the `series_key_id` a panel resolved, or `null` when it did not (`resolvedEntry`'s
+ * own "none and ambiguous collapse" posture, one step further: `use-history-pager.ts` needs a
+ * KEY to page with, not an entry). `null` here is what tells the client-side paginator "there is
+ * no series to page for this panel, at any window" — the SAME refusal `fetchPanelRows` already
+ * makes for the initial fetch, carried one level further instead of discarded after it. */
+function seriesKeyIdOf(resolution: CatalogResolution): string | null {
+  const entry = resolvedEntry(resolution);
+  return entry === undefined ? null : computeSeriesKeyId(entry.key);
+}
+
+/** `T-05.2` — reads `.rows` off a `fetchPanelRows` result through a function call, never a
+ * second `field: xResult.rows,` OBJECT-LITERAL text (`historyPagingRows.rows` below feeds the
+ * SAME ten results `assembleOhlcCandles`/the panel props already consumed by their own literal
+ * calls). `price-pane-dom-contract.test.ts`'s MORDE guard scans `page.tsx` for the EXACT string
+ * `open: openResult.rows,` to prove a mutation of the real `assembleOhlcCandles({ open: ... })`
+ * call is still detectable; a second, textually-identical occurrence here would make that scan
+ * match the MUTATED source too and the guard would stop guarding anything
+ * (`[MEDIDO 2026-09-23: a literal `open: openResult.rows,` copy here left the MORDE assertion at
+ * `price-pane-dom-contract.test.ts:193` failing — "the guard is vacuous" — caught by the phase's
+ * own gate run before this comment/helper existed]`). */
+function extractRows(result: { readonly rows: readonly SeriesHistoryRow[] }): readonly SeriesHistoryRow[] {
+  return result.rows;
+}
+
+/** `T-05-FIX` — SSR SAFETY NET, NOT A SUBSTITUTE FOR THE ROOT FIX (`series_reduction.py::_sum`,
+ * backend, same task). `parseSignedDecimalToScaled` (`view-model.ts`) is RIGHT to throw on a
+ * `cvd_delta` string carrying more than 8 decimal digits — 8 is the domain's real precision
+ * ceiling (`SPEC-001` §2.6's own `Decimal` scale), and `view-model.test.ts`'s own
+ * `"refuses over-precise input"` case pins that refusal on purpose. What was WRONG is that this
+ * refusal, reached from SSR with no catch anywhere above it, took down the entire `/symbol` route
+ * — all ten panels, not just this one — the exact failure class `resolveFlowReadingOrAbsent`'s
+ * own docstring already names for a different panel ("a throw there would crash the whole
+ * `/symbol` route over an absence the page is designed to render").
+ *
+ * Scoped to `InvalidSignedDecimalError` ONLY — any other exception (a programming error, a
+ * missing import, `TypeError` from a shape nobody foresaw) still propagates uncaught, same as
+ * every other panel on this route; this function does not become a general "swallow anything"
+ * boundary. Degrades SILENTLY to `[]`, the SAME posture `fetchPanelRows`' own `catch` above takes
+ * for a `TransportError` (no `console.*` call there either — `no-console` is a hard lint error on
+ * this file, `eslint.config.mjs:67`, with no carve-out) — the degrade is visible in what the pane
+ * draws (an honest gap), which is this codebase's established way of surfacing it, not a log
+ * line. */
+function safeScaledCvdDeltasFromHistoryRows(
+  rows: readonly SeriesHistoryRow[],
+): readonly ScaledCvdDeltaInput[] {
+  try {
+    return scaledCvdDeltasFromHistoryRows(rows);
+  } catch (cause) {
+    if (!(cause instanceof InvalidSignedDecimalError)) {
+      throw cause;
+    }
+    return [];
+  }
 }
 
 /** `T-01.8` — ONE of the four `klines_ohlc` rows, by `reduction`. The predicate is
@@ -580,7 +642,7 @@ export default async function SymbolPage({
     priceUse: S2_PRICE_USE,
     oiPoints: scalarPointsFromHistoryRows(oiResult.rows, FIVE_MINUTES_MS),
     oiMissingDays: oiPresence.missingDays,
-    cvdDeltas: scaledCvdDeltasFromHistoryRows(cvdResult.rows),
+    cvdDeltas: safeScaledCvdDeltasFromHistoryRows(cvdResult.rows),
     cvdMissingDays: cvdPresence.missingDays,
     cvdCoveredDays: cvdPresence.coveredDays,
     // ⛔ THE ANCHOR IS CHOSEN HERE, EXPLICITLY, AND SHOWN ON SCREEN — never inherited in
@@ -864,6 +926,43 @@ export default async function SymbolPage({
           cvd: buildLiveUrl(baseUrl, routeSymbol, resolvedEntry(cvdResolution)),
         };
 
+  // `T-05.2-FIX-adr005` — resolved ONCE, server-side, exactly like `liveUrls`' own `baseUrl`
+  // above: `null` when `INGEST_HEALTH_API_BASE_URL` is unset, never a relative path and never a
+  // second HTTP surface (`ADR-005/D5`). `SymbolClient.tsx`'s client-side paginator combines this
+  // string with each page's own `HistoryRequestKey` and calls FastAPI directly.
+  const historyBaseUrl = seriesHistoryEndpointUrl();
+
+  // `T-05.2` (`D-C3.5`) — the SEED `use-history-pager.ts` starts from: the ten resolved keys
+  // (`null` where the catalog resolution itself failed/was ambiguous) and the ten raw row arrays
+  // this render already fetched. Built here, once, off values this function already computed —
+  // never a second catalog lookup, never a second fetch.
+  const historyPagingRows = {
+    keys: {
+      open: seriesKeyIdOf(ohlcResolutions.open),
+      high: seriesKeyIdOf(ohlcResolutions.high),
+      low: seriesKeyIdOf(ohlcResolutions.low),
+      close: seriesKeyIdOf(ohlcResolutions.close),
+      oi: seriesKeyIdOf(oiResolution),
+      cvd: seriesKeyIdOf(cvdResolution),
+      volume: seriesKeyIdOf(volumeResolution),
+      liquidationLong: seriesKeyIdOf(liquidationLongResolution),
+      liquidationShort: seriesKeyIdOf(liquidationShortResolution),
+      longShort: seriesKeyIdOf(longShortResolution),
+    },
+    rows: {
+      open: extractRows(openResult),
+      high: extractRows(highResult),
+      low: extractRows(lowResult),
+      close: extractRows(closeResult),
+      oi: extractRows(oiResult),
+      cvd: extractRows(cvdResult),
+      volume: extractRows(volumeResult),
+      liquidationLong: extractRows(liquidationLongResult),
+      liquidationShort: extractRows(liquidationShortResult),
+      longShort: extractRows(longShortResult),
+    },
+  };
+
   return (
     <SymbolClient
       symbol={routeSymbol}
@@ -874,6 +973,8 @@ export default async function SymbolPage({
       oi={oi}
       liquidation={liquidation}
       longShort={longShort}
+      historyPagingRows={historyPagingRows}
+      historyBaseUrl={historyBaseUrl}
       panelStatus={{
         price: priceStatus,
         oi: oiResult.status,

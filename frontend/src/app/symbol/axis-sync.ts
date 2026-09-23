@@ -61,6 +61,17 @@ export interface AxisSyncStore {
    * call into a `write` closure that still references a disposed `IChartApi`. */
   registerPanel(panelIndex: number, write: (logical: LogicalRange) => void): () => void;
   notifyPanelRangeChanged(panelIndex: number, candidateLogical: LogicalRange): void;
+  /**
+   * `T-05-FIX` — the SAME `ReentrancyGuard` `RangeDispatcher`'s cross-panel writes already hold
+   * during a dispatch (`range-dispatch.ts`), reached here so `useLightweightChart`
+   * (`SymbolClient.tsx`) can wrap the mount-time "aplica" — `setVisibleLogicalRange(initialLogicalRange)`
+   * — the ONE write `RangeDispatcher` itself never sees, because it happens before any panel is
+   * registered. Typed off `RangeDispatcher["guard"]` rather than importing `ReentrancyGuard`
+   * directly: `charts/index.ts` (`ADR-034/D8`) deliberately does not re-export
+   * `ReentrancyGuard`/`createReentrancyGuard` through the sanctioned `web -> charts` doorway, and
+   * this indexed-access type crosses no wider than that door already does.
+   */
+  readonly guard: RangeDispatcher["guard"];
 }
 
 /**
@@ -133,20 +144,49 @@ export function withAxisSyncAblation(store: AxisSyncStore, ablated: boolean): Ax
   };
 }
 
+/**
+ * `T-05.2` — the fourth, OPTIONAL parameter `D-C3.5`'s paginator needs, kept as a trailing
+ * options object rather than two more positional parameters: every existing call site
+ * (`createAxisSyncStore(axis, panelCount)`, `createAxisSyncStore(axis, panelCount,
+ * onRangeApplied)`) stays byte-for-byte valid, since both new fields are optional and the
+ * object itself may be omitted.
+ */
+export interface AxisSyncStoreOptions {
+  /** The `TimeRange` to register as CURRENT at construction, in place of "the whole axis"
+   * (this function's own historic default, still what a caller gets by omitting this field —
+   * the initial page load, where there is no PRIOR visible range to preserve). `D-C3.5`: "o
+   * range de tempo sobrevive ao remonte" — when a history page widens the axis, `web`
+   * constructs a NEW store (a new `axis` identity, `axis-sync-provider.tsx`'s own contract),
+   * and passes the range the operator was ALREADY looking at here, so the remount does not
+   * reset the viewport to "fit everything" the way a fresh page load correctly does. */
+  readonly initialRange?: TimeRange;
+  /** Called with the dispatcher's CURRENT `TimeRange` every time `notifyPanelRangeChanged`
+   * produces a real application (same "did dispatcher.state actually change" gate
+   * `onRangeApplied` below already uses) — panel-agnostic by construction, since the dispatcher
+   * has already folded whichever of the six panels originated the gesture into ONE registered
+   * state. This is `D-C3.5`'s "o gatilho é a grade, não o painel": the paginator (`web`,
+   * `SymbolClient.tsx`) reads `historyRequest` off THIS range, once per real range change,
+   * never once per panel. */
+  readonly onCandidateRange?: (range: TimeRange) => void;
+}
+
 export function createAxisSyncStore(
   axis: TimeAxis,
   panelCount: number = PANEL_COUNT,
   onRangeApplied?: () => void,
+  options: AxisSyncStoreOptions = {},
 ): AxisSyncStore {
   if (!Number.isInteger(panelCount) || panelCount <= 0) {
     throw new RangeError(`panelCount must be a positive integer, received ${panelCount}`);
   }
   const writes: Array<((logical: LogicalRange) => void) | null> = new Array(panelCount).fill(null);
-  // The initial framing IS the whole axis — every slot the shared grid declares, from its
-  // first instant to one step past its last (`window.endMsExclusive`'s own convention,
-  // `s2-window.ts`). This is the value `fitContent()` used to let each chart guess at
-  // independently; here it is computed once, off the axis every panel already shares.
-  const initialRange: TimeRange = { fromMs: axis.startMs, toMs: axis.startMs + axis.slotCount * axis.stepMs };
+  // The initial framing is `options.initialRange` when given (`T-05.2`: a page-triggered axis
+  // swap preserving what was on screen) — otherwise the WHOLE axis, every slot the shared grid
+  // declares, from its first instant to one step past its last (`window.endMsExclusive`'s own
+  // convention, `s2-window.ts`). This is the value `fitContent()` used to let each chart guess
+  // at independently; here it is computed once, off the axis every panel already shares.
+  const initialRange: TimeRange =
+    options.initialRange ?? { fromMs: axis.startMs, toMs: axis.startMs + axis.slotCount * axis.stepMs };
   const write: PanelWrite = (panelIndex, logical) => {
     writes[panelIndex]?.(logical);
   };
@@ -154,6 +194,7 @@ export function createAxisSyncStore(
   return {
     axis,
     initialLogicalRange: toLogicalRange(initialRange, axis),
+    guard: dispatcher.guard,
     registerPanel(panelIndex, panelWrite) {
       if (!Number.isInteger(panelIndex) || panelIndex < 0 || panelIndex >= panelCount) {
         throw new RangeError(`panelIndex out of range: received ${panelIndex}, panelCount is ${panelCount}`);
@@ -176,8 +217,9 @@ export function createAxisSyncStore(
       // `reduceRangeEvent`'s own dedupe logic or reaching into the guard's internals.
       const stateBeforeDispatch = dispatcher.state;
       dispatcher.onPanelRangeChanged(panelIndex, candidateLogical);
-      if (onRangeApplied !== undefined && dispatcher.state !== stateBeforeDispatch) {
-        onRangeApplied();
+      if (dispatcher.state !== stateBeforeDispatch) {
+        onRangeApplied?.();
+        options.onCandidateRange?.(dispatcher.state);
       }
     },
   };

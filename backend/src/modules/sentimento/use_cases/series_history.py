@@ -54,6 +54,7 @@ from src.modules.sentimento.domain.as_of_accessor import (
     SeriesReadPolicy,
     as_of_batch,
 )
+from src.modules.sentimento.domain.history_ceiling import MAX_HISTORY_DAYS, MAX_HISTORY_MS
 from src.modules.sentimento.domain.provenance import Absence
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.domain.series_history_report import (
@@ -111,6 +112,18 @@ class UnsupportedIntervalError(Exception):
 
 class InvalidWindowError(Exception):
     """`window_start_ms` is not strictly before `window_end_ms` — there is no grid to read."""
+
+
+class HistoryWindowBeyondCeilingError(Exception):
+    """`window_start_ms` starts before the declared `MAX_HISTORY_DAYS` ceiling (`D5`).
+
+    `T-05.4`, plan `05` item 5.3 + DoD 4: beyond the ceiling this route REFUSES rather than
+    serving `200` with `rows: []` — that empty `200` is the `rc=0` ambiguity `ADR-012` names,
+    indistinguishable between "there is no data" and "the instrument never reached that far".
+    The ceiling is anchored at `knowledge_time_ms` (the request's own "now", already checked
+    against `server_now_ms` by the route), not `window_end_ms` — a window can end recently and
+    still start beyond the 90-day wall.
+    """
 
 
 class SeriesWindowReader(Protocol):
@@ -254,6 +267,9 @@ def build_series_history_report(
         UnsupportedIntervalError: `interval` outside `SUPPORTED_INTERVALS` (`ADR-040/D1`).
         UnknownSeriesKeyIdError: `series_key_id` has no row in `catalog`.
         InvalidWindowError: `window_start_ms > window_end_ms`.
+        HistoryWindowBeyondCeilingError: `window_start_ms` starts before the
+            `MAX_HISTORY_DAYS`-day ceiling anchored at `knowledge_time_ms` (`D5`, item 5.3) —
+            refused explicitly, never served as `200` with `rows: []`.
         UncoveredReductionPairError: propagated, uncaught, from `reduce_bucket_for_series` — a
             `(nature, reduction)` pair the table does not cover FAILS HIGH (`ADR-040/D2`),
             never silently, only reachable when `interval != "1m"` (below).
@@ -275,6 +291,16 @@ def build_series_history_report(
         raise InvalidWindowError(
             f"window_start_ms ({window_start_ms}) must not be after window_end_ms "
             f"({window_end_ms}) — a single instant (start == end) is a valid, one-row window"
+        )
+    # `D5`, item 5.3: the ceiling is anchored at `knowledge_time_ms` — this request's own "now"
+    # — not at `window_end_ms`. Checked before the catalog lookup: whether the series is known
+    # is a separate question from whether the requested window is even servable at all.
+    history_floor_ms = knowledge_time_ms - MAX_HISTORY_MS
+    if window_start_ms < history_floor_ms:
+        raise HistoryWindowBeyondCeilingError(
+            f"window_start_ms ({window_start_ms}) is before the {MAX_HISTORY_DAYS}-day ceiling "
+            f"({history_floor_ms} = knowledge_time_ms {knowledge_time_ms} - "
+            f"MAX_HISTORY_MS) — refusing rather than serving `200` with `rows: []` (`D5`)"
         )
     entry = catalog.entry_for_id(series_key_id)
     if entry is None:

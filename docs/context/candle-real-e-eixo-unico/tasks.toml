@@ -661,7 +661,7 @@ tracker = { provider = "jira", id = "CST-233", url = "https://conversationhub.at
 id = "T-05.0"
 title = "[sentimento] 05 · ⛔ PRE-REQUISITO: R-1 liga available_at ao HORIZONTE DE CONHECIMENTO, nao a fatia (ADR-042)"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = []
 refs = [
@@ -687,7 +687,7 @@ local_reason = "2026-09-20: task nascida do achado de lookahead da fase 01; o ca
 id = "T-05.1"
 title = "[charts][web] 05 · ⛔ A borda e detectada por ARITMETICA SOBRE A GRADE, nunca por barsInLogicalRange"
 components = ["charts", "web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-02.3", "T-05.0"]
 refs = [
@@ -702,7 +702,7 @@ tracker = { provider = "jira", id = "CST-234", url = "https://conversationhub.at
 id = "T-05.2"
 title = "[web] 05 · Paginacao SERIAL, uma requisicao em voo por grade, teto de ~5.000 slots por pagina"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-05.1"]
 refs = [
@@ -718,7 +718,7 @@ tracker = { provider = "jira", id = "CST-235", url = "https://conversationhub.at
 id = "T-05.3"
 title = "[sentimento] 05 · Teto declarado de 90 dias de 1m por simbolo, com backfill one-shot/cron e o custo de cota MEDIDO"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = []
 refs = [
@@ -736,7 +736,7 @@ tracker = { provider = "jira", id = "CST-236", url = "https://conversationhub.at
 id = "T-05.4"
 title = "[sentimento] 05 · ⛔ Alem do teto a rota RECUSA — nunca 200 com rows: []"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-05.3"]
 refs = [
@@ -750,7 +750,7 @@ tracker = { provider = "jira", id = "CST-237", url = "https://conversationhub.at
 id = "T-05.5"
 title = "[web] 05 · Os TRES estados no CONTRATO: absent · not-loaded · beyond-coverage — hoje os tres sao indistinguiveis"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-03.6", "T-05.2"]
 refs = [
@@ -767,7 +767,7 @@ tracker = { provider = "jira", id = "CST-238", url = "https://conversationhub.at
 id = "T-05.6"
 title = "[web] 05 · ⚠️ O aviso de indisponibilidade e UM BADGE SO por painel, e nada do que ja existe e removido"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-05.5"]
 refs = [
@@ -785,7 +785,7 @@ tracker = { provider = "jira", id = "CST-239", url = "https://conversationhub.at
 id = "T-05.7"
 title = "[web] 05 · O horizonte vem do ENVELOPE (coverage), nunca de constante a mao e ⛔ nunca inferido de contagem de linhas"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-03.6", "T-05.5"]
 refs = [
@@ -799,7 +799,7 @@ tracker = { provider = "jira", id = "CST-240", url = "https://conversationhub.at
 id = "T-05.8"
 title = "[web] 05 · Playwright: 3 arrastos carregam + a parede assimetrica e NOMEADA nos dois paineis + ⛔ ablacao de P5"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-05.0", "T-05.6", "T-05.7"]
 refs = [
@@ -817,7 +817,7 @@ tracker = { provider = "jira", id = "CST-241", url = "https://conversationhub.at
 id = "T-05.9"
 title = "[web] 05 · Teto da historia sob demanda: p95 ≤ 400 ms ate a barra estar DESENHADA, n ≥ 10 paginacoes"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-05.2"]
 refs = [
@@ -833,7 +833,7 @@ tracker = { provider = "jira", id = "CST-242", url = "https://conversationhub.at
 id = "T-05.10"
 title = "[web] 05 · Veredito do ux-ui-mastery sobre o estado nomeado e o badge unico"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-05.6"]
 refs = [
@@ -847,7 +847,7 @@ tracker = { provider = "jira", id = "CST-243", url = "https://conversationhub.at
 id = "T-05.11"
 title = "[docs] 05 · Declarar o NAO-CONSTRUIDO com gatilho nomeado: indisponibilidade POR TF nao nasce nesta feature"
 components = ["docs"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T18:58:13Z @ c5770ab23bae335fb3284504d4e23cf78e0178ec
 phase = "05"
 depends_on = ["T-05.6"]
 refs = [

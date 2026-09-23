@@ -11,6 +11,7 @@ import { test } from "node:test";
 import {
   fetchSeriesHistoryViaHttp,
   parseSeriesHistoryEnvelope,
+  seriesHistoryEndpointUrl,
   TransportError,
 } from "./series-history-client.ts";
 import type { HistoryRequestKey } from "../history-transport.ts";
@@ -28,7 +29,13 @@ const KEY: HistoryRequestKey = {
 function validEnvelopeBody(): unknown {
   return {
     session: { principal_id: null, server_now_ms: 1_000 },
-    panel: { series_key_id: "abc123", source: "binance", nature: "STOCK", unit: "USD" },
+    panel: {
+      series_key_id: "abc123",
+      source: "binance",
+      nature: "STOCK",
+      unit: "USD",
+      coverage: { earliest_bucket_ms: 0, latest_bucket_ms: 60_000, source_floor_ms: null },
+    },
     rows: [
       { event_time: 0, available_at: 500, value: "42.5", absence: null, coverage: null },
       { event_time: 60_000, available_at: null, value: null, absence: "SEM_PONTO", coverage: { present: 3, expected: 5 } },
@@ -125,6 +132,22 @@ test("MORDE TransportErrorKind=malformed_envelope: corpo com um campo de nivel d
       return true;
     },
   );
+});
+
+test("CALA T-05.2-FIX-adr005: seriesHistoryEndpointUrl resolve o baseUrl explicito em URL absoluta com API_PREFIX + /series-history", () => {
+  assert.equal(seriesHistoryEndpointUrl("http://127.0.0.1:1"), "http://127.0.0.1:1/api/v1/series-history");
+});
+
+test("MORDE T-05.2-FIX-adr005: seriesHistoryEndpointUrl devolve null (nunca lanca) sem baseUrl explicito e sem env", () => {
+  const previousBaseUrl = process.env.INGEST_HEALTH_API_BASE_URL;
+  delete process.env.INGEST_HEALTH_API_BASE_URL;
+  try {
+    assert.equal(seriesHistoryEndpointUrl(), null);
+  } finally {
+    if (previousBaseUrl !== undefined) {
+      process.env.INGEST_HEALTH_API_BASE_URL = previousBaseUrl;
+    }
+  }
 });
 
 test("CALA: envelope bem formado via fetchImpl mockado", async () => {

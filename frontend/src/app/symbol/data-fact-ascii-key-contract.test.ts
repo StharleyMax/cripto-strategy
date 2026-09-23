@@ -22,6 +22,11 @@
  * directly `[MEDIDO 2026-09-23]`. The count is asserted below as a floor/ceiling so a change to
  * the extraction regex — or a panel that stops publishing its fact under `data-fact` — cannot
  * make this file pass by finding nothing.
+ *
+ * `T-05.6` moved the count to `44`: ONE new expression, `` data-fact={`${factKey}:beyond`} ``
+ * (`BeyondCoverageBadge`) — a single declaration reused at TWO call sites (`OiPane`,
+ * `LongShortPane`), which is why the universe grew by one and not two
+ * `[MEDIDO 2026-09-23, node --experimental-strip-types over the same extractor this file uses]`.
  */
 
 import assert from "node:assert/strict";
@@ -81,7 +86,7 @@ test("sanity: the scan finds the measured universe of data-fact expressions, not
   const expressions = extractDataFactExpressions(rawSource);
   assert.equal(
     expressions.length,
-    43,
+    44,
     "the count moved — either a panel gained/lost a data-fact, or the extractor regex broke; " +
       "update this number ONLY after confirming which, never to silence a red run",
   );
