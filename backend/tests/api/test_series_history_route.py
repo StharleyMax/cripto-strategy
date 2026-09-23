@@ -449,6 +449,61 @@ def test_unknown_series_key_id_is_refused_with_422(tmp_path: Path) -> None:
     assert status == 422
 
 
+def test_a_window_starting_beyond_the_90_day_ceiling_is_refused_with_422(tmp_path: Path) -> None:
+    """`D5`, item 5.3, `T-05.4`, plan `05` DoD 4: `MORDE` with `200`/`rows: []`, `n=2`.
+
+    `91`/`400` days before `knowledge_time_ms` — the route's own `422` never a `200` with an
+    empty `rows`, which is the `rc=0` ambiguity `ADR-012` names: indistinguishable between "no
+    data" and "the instrument never reached that far". `_FakeReader()` here is the EMPTY-store
+    reader every other `422` test in this file already uses — the refusal fires before the
+    reader is ever asked, which is the whole point: an ambiguous `200` is never a possible
+    outcome of this request, not merely an unlikely one.
+    """
+    app = _app_with_reader(tmp_path, _FakeReader())
+    knowledge_time_ms = BUCKET_END_MS
+
+    for days_before_ceiling in (91, 400):
+        window_start_ms = knowledge_time_ms - days_before_ceiling * 86_400_000
+        with _served(app) as port:
+            status, body = _get(
+                port,
+                _valid_query(
+                    window_start_ms=window_start_ms,
+                    window_end_ms=knowledge_time_ms,
+                    knowledge_time_ms=knowledge_time_ms,
+                ),
+            )
+        assert status == 422, f"days_before_ceiling={days_before_ceiling} was not refused"
+        # `CA-F1-5`-adjacent: the `422` body is the named `detail` string, never the envelope
+        # shape a `200` would carry — no `"rows"` KEY (a JSON object member), regardless of the
+        # refusal message's own prose (which legitimately spells out "rows: []" in English to
+        # explain what it is refusing to serve).
+        assert json.loads(body).keys() == {"detail"}
+
+
+def test_a_window_starting_exactly_at_the_90_day_ceiling_is_served_with_200(
+    tmp_path: Path,
+) -> None:
+    """The boundary itself is still servable — `D5` declares 90 days AS the ceiling, not before."""
+    row = _row()
+    reader = _FakeReader((Observation(row=row, value=Decimal(row.value_raw)),))
+    app = _app_with_reader(tmp_path, reader)
+    knowledge_time_ms = BUCKET_END_MS
+    window_start_ms = knowledge_time_ms - 90 * 86_400_000
+
+    with _served(app) as port:
+        status, _ = _get(
+            port,
+            _valid_query(
+                window_start_ms=window_start_ms,
+                window_end_ms=window_start_ms,
+                knowledge_time_ms=knowledge_time_ms,
+            ),
+        )
+
+    assert status == 200
+
+
 def test_a_malformed_read_is_refused_with_a_named_500_never_served(tmp_path: Path) -> None:
     """`RN-9`: `AsOfReading` refused -> `500` named, never `200` with inconsistent data."""
     app = _app_with_reader(tmp_path, _RefusingReader())

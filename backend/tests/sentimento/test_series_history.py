@@ -8,6 +8,7 @@ import pytest
 
 from src.modules.charts.domain.panel_grid_enablement import classify_grid_multiple
 from src.modules.sentimento.domain.as_of_accessor import BarPolicy, Observation
+from src.modules.sentimento.domain.history_ceiling import MAX_HISTORY_DAYS, MAX_HISTORY_MS
 from src.modules.sentimento.domain.provenance import (
     UNKNOWN_OBSERVER_REGION,
     Absence,
@@ -30,6 +31,7 @@ from src.modules.sentimento.domain.series_key import (
 )
 from src.modules.sentimento.domain.source_floor import resolve_source_floor_ms
 from src.modules.sentimento.use_cases.series_history import (
+    HistoryWindowBeyondCeilingError,
     InvalidWindowError,
     UnknownSeriesKeyIdError,
     UnsupportedIntervalError,
@@ -507,6 +509,78 @@ def test_refuses_a_window_that_is_not_strictly_increasing() -> None:
             knowledge_time_ms=BUCKET_END + 100_000,
             bar_policy=BarPolicy.FINAL_ONLY,
         )
+
+
+# ── `D5`, item 5.3, `T-05.4`: the 90-day ceiling REFUSES, it never serves `200`/`rows: []` ──
+#
+# `docs/plans/SPEC-008-candle-real-e-eixo-unico/05_historia_sob_demanda.md` DoD 4, literal:
+# "Requisição a `series-history` com janela iniciando antes de 90 dias -> recusa explícita.
+# Morde com `200` vazio, `n = 2` casos (91 dias, 400 dias) — teste os dois, não só um." The
+# ceiling is anchored at `knowledge_time_ms` (this request's own "now"), not `window_end_ms` —
+# `MAX_HISTORY_MS` is imported from `domain/history_ceiling.py`, `T-05.3`'s single source of
+# truth, never re-derived as a literal here.
+
+_MS_PER_DAY = 86_400_000
+
+
+@pytest.mark.parametrize("days_before_ceiling", [91, 400])
+def test_refuses_a_window_starting_beyond_the_90_day_ceiling(days_before_ceiling: int) -> None:
+    """`MORDE`: without this refusal these two windows would serve `200` with `rows: []`.
+
+    `_FakeReader(())` — an empty store, exactly what a real request this far back would see —
+    is the fixture proving the point: nothing here fabricates data to make the refusal easy: a
+    caller that swallowed `HistoryWindowBeyondCeilingError` and fell through would get precisely
+    the ambiguous empty `200` `ADR-012` names, not an exception on some unrelated path.
+    """
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+    knowledge_time_ms = BUCKET_END
+    window_start_ms = knowledge_time_ms - days_before_ceiling * _MS_PER_DAY
+
+    with pytest.raises(HistoryWindowBeyondCeilingError, match=str(MAX_HISTORY_DAYS)):
+        build_series_history_report(
+            catalog,
+            reader,
+            classify_panel_grid,
+            bounds_reader,
+            series_key_id=_oi_key().series_key_id(),
+            symbol=SYMBOL,
+            interval="1m",
+            window_start_ms=window_start_ms,
+            window_end_ms=knowledge_time_ms,
+            knowledge_time_ms=knowledge_time_ms,
+            bar_policy=BarPolicy.FINAL_ONLY,
+        )
+
+
+def test_a_window_starting_exactly_at_the_90_day_ceiling_is_not_refused() -> None:
+    """`CALA`: the boundary itself is still servable — `D5` declares 90 days AS the ceiling.
+
+    `window_start_ms == knowledge_time_ms - MAX_HISTORY_MS` is the last instant `D5` still owns;
+    one millisecond earlier is `test_refuses_a_window_starting_beyond_the_90_day_ceiling`'s
+    smaller sibling if it existed, and a refusal that fired HERE too would be the ceiling wrongly
+    off by one, undetectable by the `MORDE` test alone (both would raise).
+    """
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+    knowledge_time_ms = BUCKET_END
+    window_start_ms = knowledge_time_ms - MAX_HISTORY_MS
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=window_start_ms,
+        window_end_ms=window_start_ms,
+        knowledge_time_ms=knowledge_time_ms,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.rows[0].event_time == window_start_ms
 
 
 # ── PUBLICATION LAG: the fixture property every test above is missing ──────────────────────
