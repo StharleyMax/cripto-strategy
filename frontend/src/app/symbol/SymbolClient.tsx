@@ -96,6 +96,7 @@ import {
 import { chartConstructorOptions } from "./chart-options.ts";
 import { recentBandSlotRange } from "./long-short-band.ts";
 import { AxisSyncProvider, useAxisSync } from "./axis-sync-provider.tsx";
+import { recordHistoryPageDrawn } from "./history-page-latency-probe.ts";
 import {
   CVD_PANEL_INDEX,
   LIQUIDATION_LONG_PANEL_INDEX,
@@ -1111,6 +1112,12 @@ function PricePane({
     const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors();
     const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style);
     series.setData(candlestickSeriesLossless(panels.price.series.slots) as never);
+    // `T-05.9` (plan `05` DoD 7): "a barra nova está desenhada" — this `build` callback only
+    // re-runs when the `AxisSyncStore` identity changes (`useLightweightChart`'s own docstring),
+    // which a successful history page does on purpose (`axis-sync-provider.tsx`'s own docstring).
+    // Recording HERE, right after `setData`, is the literal instant the DoD names as the
+    // difference between "resposta chegou" and "pixel" — see `history-page-latency-probe.ts`.
+    recordHistoryPageDrawn();
 
     // The volume sub-axis, on the SAME chart as price (`SPEC-007 §3.6`) and on its own price
     // scale. `lineSeriesLossless` is REUSED, not copied: it already maps a `value: null` slot
