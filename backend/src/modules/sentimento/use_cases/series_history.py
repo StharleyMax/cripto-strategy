@@ -63,8 +63,8 @@ from src.modules.sentimento.domain.series_history_report import (
     SeriesHistoryReport,
     SeriesHistoryRow,
 )
-from src.modules.sentimento.domain.series_key import Nature, Reduction
-from src.modules.sentimento.domain.series_reduction import reduce_bucket
+from src.modules.sentimento.domain.series_key import SeriesKey
+from src.modules.sentimento.domain.series_reduction_gate import reduce_bucket_for_series
 from src.modules.sentimento.domain.source_floor import resolve_source_floor_ms
 
 # `CVD_BUCKET_WIDTH_MS` (`domain/cvd.py:31`) transcribed, not imported: that constant is `cvd`'s
@@ -254,9 +254,13 @@ def build_series_history_report(
         UnsupportedIntervalError: `interval` outside `SUPPORTED_INTERVALS` (`ADR-040/D1`).
         UnknownSeriesKeyIdError: `series_key_id` has no row in `catalog`.
         InvalidWindowError: `window_start_ms > window_end_ms`.
-        UncoveredReductionPairError: propagated, uncaught, from `reduce_bucket` — a
+        UncoveredReductionPairError: propagated, uncaught, from `reduce_bucket_for_series` — a
             `(nature, reduction)` pair the table does not cover FAILS HIGH (`ADR-040/D2`),
             never silently, only reachable when `interval != "1m"` (below).
+        DisallowedRatioPointMetricError: propagated, uncaught, from `reduce_bucket_for_series`
+            (`domain/series_reduction_gate.py`) — a `(RATIO, POINT)` key whose `metric` is
+            outside the one-element allowlist FAILS HIGH (`ADR-040/D4`), only reachable when
+            `interval != "1m"` (below).
         DecisionReadRefusedError: propagated, uncaught, from `as_of` — a malformed read
             (`ADR-006`/D3, `SPEC-001` §2.3) is the route's `500` case (`RN-9`), never served.
 
@@ -373,8 +377,7 @@ def build_series_history_report(
                 _reaggregated_row(
                     outer_bucket_end,
                     native_readings=group_readings,
-                    nature=entry.key.nature,
-                    reduction=entry.key.reduction,
+                    key=entry.key,
                 )
             )
 
@@ -442,10 +445,17 @@ def _reaggregated_row(
     outer_bucket_end: int,
     *,
     native_readings: tuple[AsOfReading, ...],
-    nature: Nature,
-    reduction: Reduction,
+    key: SeriesKey,
 ) -> SeriesHistoryRow:
-    """Reduce one outer bucket's native readings through `reduce_bucket` (`ADR-040/D1`/`D2`).
+    """Reduce one outer bucket's native readings through `reduce_bucket_for_series`.
+
+    `ADR-040/D1`/`D2`/`D4`.
+
+    `key` (`entry.key`, the full `SeriesKey`) travels here — not just `nature`/`reduction` — so
+    `reduce_bucket_for_series` (`domain/series_reduction_gate.py`) can gate `(RATIO, POINT)` by
+    `key.metric`, the one refusal `reduce_bucket` itself cannot make (`ADR-040/D4`). Calling
+    `reduce_bucket` directly here was the wiring gap QA fase 03 caught: the allowlist of one
+    element never ran on this, the only call site that reaches it for a reaggregating request.
 
     `native_readings` is already the SLICE belonging to this one outer bucket, in ascending
     grid-instant order — `reduce_bucket`'s own contract for `first`/`last`
@@ -501,7 +511,7 @@ def _reaggregated_row(
             coverage=coverage,
         )
 
-    reduced = reduce_bucket(nature, reduction, present_values)
+    reduced = reduce_bucket_for_series(key, present_values)
     return SeriesHistoryRow(
         event_time=outer_bucket_end,
         available_at=max(present_available_at),
