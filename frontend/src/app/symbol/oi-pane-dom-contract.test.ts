@@ -82,6 +82,14 @@ const PAGE_OI_GRID_SOURCE = /const oiGridSlots = panels\.oi\.slots;/;
 const PAGE_CEILING = /maxStalenessMs: oiEntry\?\.maxStalenessMs \?\? null/;
 /** `page.tsx`: ambiguity RESOLVES TO NOTHING — the structural half of the fix. */
 const PAGE_UNIQUE_MATCH = /if \(matches\.length === 1\) \{\s*\n\s*return \{ kind: "found", entry: matches\[0\]! \};/;
+/** `T-04.1`/`RN-5`/`CA-9`: the resolved-entry branch interpolates the DERIVED label, never a
+ * literal — and the unresolved branch still publishes the attribute (`CA-9` greps for it). */
+const OI_PROVENANCE_RESOLVED_FACT =
+  /`oi_provenance:grandeza=\$\{provenance\.grandeza\};universo=\$\{provenance\.universo\};coorte=\$\{provenance\.coorte\}`/;
+const OI_PROVENANCE_UNRESOLVED_FACT = /"oi_provenance:unresolved"/;
+const OI_PROVENANCE_RENDERED = /<OiProvenance oi=\{oi\} \/>/;
+/** `page.tsx`: the label is derived from the SAME resolved entry the ceiling/freshness read. */
+const PAGE_PROVENANCE = /provenance: deriveOiProvenanceLabel\(oiEntry\?\.key\)/;
 
 test("T-03.6 contract: the OI pane carries the STABLE testid, spelled exactly", () => {
   const declaration = TESTID_DECLARATION.exec(source);
@@ -272,6 +280,49 @@ test("the selector defect is GONE from the route, both halves of it", () => {
   );
 });
 
+test("T-04.1/RN-5/CA-9: the OI pane spells grandeza/universo/coorte, DERIVED — never hard-coded", () => {
+  assert.match(
+    source,
+    OI_PROVENANCE_RESOLVED_FACT,
+    "the resolved branch must interpolate `oi.provenance`'s own fields, not a literal string a " +
+      "developer remembered to keep in sync with the SeriesKey",
+  );
+  assert.match(
+    source,
+    OI_PROVENANCE_UNRESOLVED_FACT,
+    "an unresolved entry must still publish the data-fact attribute — CA-9's falsifier greps for its presence",
+  );
+  assert.match(source, OI_PROVENANCE_RENDERED, "the provenance line must be RENDERED inside the pane, not merely declared");
+  // Route side: the label is derived from `oiEntry?.key` — the SAME entry `maxStalenessMs` and
+  // `freshness` already read off, never a second, independent lookup that could disagree.
+  assert.match(pageCode, PAGE_PROVENANCE);
+});
+
+// ── MORDE (T-04.1), self-contained — same replant-and-assert technique `V-1` uses above ────────
+
+test("MORDE (T-04.1): the provenance line removed is caught by THIS guard alone", () => {
+  const mutated = source.replace(OI_PROVENANCE_RENDERED, "");
+  assert.notEqual(mutated, source, "the render call found no anchor — update this test, do not delete it");
+  assert.doesNotMatch(mutated, OI_PROVENANCE_RENDERED, "sanity: the mutation actually removed the line");
+  // The rest of the OI contract survives untouched — proving this guard, not a neighbour, is
+  // what would catch the regression.
+  assert.match(mutated, NATIVE_BARS_ATTRIBUTE);
+  assert.match(mutated, FRESHNESS_RENDERED);
+});
+
+test("MORDE (T-04.1): hard-coding the label instead of interpolating `oi.provenance` is caught", () => {
+  const hardCoded = source.replace(
+    OI_PROVENANCE_RESOLVED_FACT,
+    '"oi_provenance:grandeza=contracts (BTC);universo=binance/usdm_futures;coorte=all"',
+  );
+  assert.notEqual(hardCoded, source, "the resolved branch found no anchor — update this test, do not delete it");
+  assert.doesNotMatch(
+    hardCoded,
+    OI_PROVENANCE_RESOLVED_FACT,
+    "the replanted hard-coded literal is NOT detected by the assert above — the guard would be vacuous",
+  );
+});
+
 // ── MORDE: the seven mutations that were GREEN before this file existed ───────────────────────
 
 test("MORDE: each of the 7 OI DOM-contract mutations that used to pass green is now caught", () => {
@@ -314,7 +365,12 @@ test("CALA: a design_gate NEEDS_FIX about colour or wording leaves the OI contra
     .replace(/Open Interest \(5m\)/, "Open Interest — contratos em aberto (5m)")
     .replace(/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}")
     .replace(/barras nativas de 5 min na janela/, "buckets de 5 min legíveis")
-    .replace(/⚠️ Mais velha que o teto — o valor acima é DADO VELHO\./, "Atenção: leitura vencida.");
+    .replace(/⚠️ Mais velha que o teto — o valor acima é DADO VELHO\./, "Atenção: leitura vencida.")
+    // `T-04.1`: the ui-designer owns the SENTENCE, never the derived VALUES inside it (`RN-5`).
+    .replace(
+      /`Grandeza: \$\{provenance\.grandeza\} · Universo: \$\{provenance\.universo\} · Coorte: \$\{provenance\.coorte\}`/,
+      '`${provenance.grandeza} (grandeza) — ${provenance.universo} (universo) — ${provenance.coorte} (coorte)`',
+    );
   assert.notEqual(restyled, source, "the form constants moved — re-anchor this CALA rather than dropping it");
   assert.equal(TESTID_DECLARATION.exec(restyled)?.[1], EXPECTED_TESTID);
   assert.equal(ABSENCE_TOKEN_DECLARATION.exec(restyled)?.[1], EXPECTED_ABSENCE_TOKEN);
@@ -322,4 +378,8 @@ test("CALA: a design_gate NEEDS_FIX about colour or wording leaves the OI contra
   assert.match(restyled, WIRE_POINTS_ATTRIBUTE);
   assert.match(restyled, FRESHNESS_FACT);
   assert.match(restyled, OI_ABSENT_BRANCH);
+  // The MACHINE data-fact survives the SENTENCE reword untouched — it is a different expression.
+  assert.match(restyled, OI_PROVENANCE_RESOLVED_FACT);
+  assert.match(restyled, OI_PROVENANCE_UNRESOLVED_FACT);
+  assert.match(restyled, OI_PROVENANCE_RENDERED);
 });

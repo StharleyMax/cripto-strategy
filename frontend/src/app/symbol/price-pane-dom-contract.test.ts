@@ -47,8 +47,9 @@ const pageCode = pageSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*
 const EXPECTED_TESTID = "price-pane";
 const TESTID_DECLARATION = /const PRICE_PANE_TESTID = "([^"]+)";/;
 /** The machine key of the candle count. ⛔ ASCII, and NOT derived from the pt-BR label beside it
- * (`SPEC-008`/`D7`, `RF-8`/`RN-5`): this page still publishes `data-fact="live_preço:attempted"`,
- * accent and all, and that is a known defect (`CST-230`), not a precedent. */
+ * (`SPEC-008`/`D7`, `RF-8`/`RN-5`) — the same rule `T-04.3` (`CST-230`) applied to `LiveRow`,
+ * which used to publish `data-fact="live_preço:attempted"`, accent and all, before `factKey` was
+ * split out of `label`. */
 const EXPECTED_CANDLES_FACT = "price_candles";
 
 // ── 1. THE ROUTE READS FOUR SERIES, EACH ONE ITS OWN ─────────────────────────────────────────

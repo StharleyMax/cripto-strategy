@@ -205,3 +205,33 @@ export interface SymbolPanelStatuses {
   readonly liquidationShort: PanelStatus;
   readonly longShort: PanelStatus;
 }
+
+/**
+ * `T-04.1`/`RN-5` — the three terms the OI pane's rótulo must spell, DERIVED from the
+ * `SeriesKey` the route resolved for the OI panel, never written by hand in `SymbolClient.tsx`.
+ *
+ * The owner's own circled defect (`docs/plans/SPEC-008-candle-real-e-eixo-unico/
+ * 04_oi_honesto.md`): the screen showed `108.135,34` under the unlabelled words "Open Interest
+ * (5m)" while the Coinalyze dashboard showed `27,656 B` for what looked like the same fact.
+ * Both numbers were correct and measured different things — contracts in BTC on one exchange
+ * versus notional USD aggregated across many, over different counterparty cohorts. These three
+ * fields are what tells the two apart:
+ *
+ *   `grandeza`  WHAT is counted (a contract count vs. a notional value, with its unit).
+ *   `universo`  WHICH market the reading was aggregated over (provider/venue).
+ *   `coorte`    WHICH counterparty subset it covers.
+ *
+ * ⛔ THE SHAPE LIVES HERE, AND NOT IN `view-model.ts` WHERE THE FUNCTION THAT BUILDS IT DOES,
+ * for the same structural reason `FreshnessVerdict` states above: it crosses the RSC boundary
+ * into `SymbolClient.tsx` (`"use client"`), which must not import `view-model.ts`
+ * (`web-fullstack.browser-imports-server`). The FUNCTION stays server-side
+ * (`view-model.ts::deriveOiProvenanceLabel`) — only the SHAPE crosses, and only the derivation
+ * decides what it says, which is what makes `CA-10`'s ablation true by construction: swap the
+ * catalog row the route resolves and this value changes without touching the component that
+ * renders it.
+ */
+export interface OiProvenanceLabel {
+  readonly grandeza: string;
+  readonly universo: string;
+  readonly coorte: string;
+}
