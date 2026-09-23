@@ -1,0 +1,136 @@
+# ADR-044 — Um gráfico com panes nativos v5: a legenda lê o slot, não o `seriesData`, e a perna long desce por escala invertida, não por sinal
+
+**Data:** 2026-09-23 · **Status:** proposta · **SPEC:** [`SPEC-009`](../specs/SPEC-009-paineis-de-fluxo.md) §3, §4, §7
+**Componente alvo:** `web` · `charts` · **Fases:** `01` (D1–D3), `04` (D4)
+**Julgamento delegado citado:** [`ARQ-1-julgamento-frontend-architect.md`](../context/paineis-de-fluxo/handoff/ARQ-1-julgamento-frontend-architect.md)
+(`frontend-architect`, e um segundo `frontend-architect` independente chegou ao mesmo veredito, segundo o despacho do orquestrador `[DOC: mensagem do orquestrador, 2026-09-23]`) · [`LIQ-1-julgamento-quant-architect.md`](../context/paineis-de-fluxo/handoff/LIQ-1-julgamento-quant-architect.md) (`quant-architect`, só em D4)
+**Amenda:** a postura de 6 `createChart` + `axis-sync` com fan-out de `SPEC-008` §6 (`D4`). **Não** amenda `ADR-003`, `ADR-026` nem `ADR-040`.
+
+---
+
+## Contexto
+
+O `/symbol/[symbol]` tem hoje **seis** instâncias de `createChart`: um ponto de construção
+(`SymbolClient.tsx:562`), montado por 5 funções de pane, sendo que `LiquidationPane` monta 2× (`:1155`,
+`:1399`, `:1522`, `:1887`, `:2385`) `[MEDIDO 2026-09-23: grep -n 'createChart\|function .*Pane(' SymbolClient.tsx]`.
+Há **11** `addSeries`, não 10 como diz o `PRD-009` M7 (`ARQ-1` C-1/C-2) `[MEDIDO 2026-09-23: grep -c 'addSeries(' → 11]`.
+A `lightweight-charts` instalada é a **5.2.1** e expõe `addPane`, `addSeries(def, opts, paneIndex)`,
+`IPaneApi.getHTMLElement`, `setStretchFactor` e `PriceScaleOptions.invertScale`
+(`dist/typings.d.ts:1640, 1773-1792, 2019-2025, 3706-3726`) `[MEDIDO: ARQ-1 §1.1, leitura do pacote instalado]`.
+
+## D1 — `S-1`: **um** `createChart`, panes nativos. `axis-sync` fica com `panelCount = 1`
+
+**Decisão.** O gráfico do símbolo é **uma** instância de `createChart` com um pane por métrica, na ordem
+do *pane registry* (`SPEC-009` §5). A store de `axis-sync` **não é apagada**: ela passa a rodar com
+`panelCount = 1` (`axis-sync.ts:173-180` só rejeita `<= 0`). Com isso o `initialLogicalRange`, a guarda
+`holdApplying` do `T-05-FIX` (`SymbolClient.tsx:583-587`) e o `onCandidateRange` que alimenta o pager da
+história sob demanda (`axis-sync.ts:163-170, 219-222`) continuam funcionando. O que sai é o fan-out: os
+seis índices `axis-sync.ts:40-46` e `PANEL_COUNT = 6`.
+
+**O argumento que decide.** Com `S-2` não se consegue cumprir o `CA-1` do `PRD-009`: *"reverter para 6
+`createChart` ⇒ reprova"* (`PRD-009:242`). Seis `createChart` **são** o `S-2`, então escolhê-lo exigiria
+reescrever o critério de aceite. O fonte da biblioteca mostra ainda duas coisas: a linha vertical do
+crosshair é pintada em todo pane (`DEV:667-668`), e por isso o `RF-3` sai por construção; e o
+`seriesData` do evento percorre **todas** as séries do modelo (`DEV:11264-11274`) `[MEDIDO por leitura do fonte, ARQ-1 §1.1]`.
+
+### Alternativas recusadas, com o custo
+
+| alternativa | custo | por que cai |
+|---|---|---|
+| **`S-2`** — 6 charts estilizados, crosshair sincronizado à mão | seis escalas de preço de larguras diferentes e sem `minimumWidth` (`chart-options.ts:40-53`), ou seja, seis origens de x; um segundo despachante com guarda de reentrância; `setCrosshairPosition` exige preço, e num slot *whitespace* não há preço (94,7% dos slots de liquidação, `SymbolClient.tsx:1884`); o `RF-2` só se cumpre **escondendo** eixos | reescreve o `CA-1`, e o risco de desalinhamento continua existindo `[INFERRED: aritmética de layout, NÃO MEDIDO em pixel]` |
+| **`S-1` sem store** — apagar `axis-sync` inteiro | perde a guarda de eco do `T-05-FIX` e a semente do pager, e reabre um defeito que já foi fechado com 3 rodadas de fix `[DOC: docs/INDEX.md, entrada de 2026-09-23 da fase 05]` | regressão em superfície aprovada |
+| **dependência nova de gráfico** | fere o `RNF-1` | nada na 5.2.1 falta |
+
+**O custo de `D1`, declarado:** reescrever ~**811** linhas de `SymbolClient.tsx` (hook `:510-640`, panes
+`:1155-1940, 2385-2562`, montagem `:2904-2925`) `[MEDIDO: ARQ-1 §8]`. Cerca de **7 de 56** testes dos 5
+`*-pane-dom-contract.test.ts` estão acoplados à construção e morrem, renascendo como invariantes do
+registry `[MEDIDO por heurística: ARQ-1 §6]`. As bandas de marca presas a `CHART_HEIGHT_PX = 220`
+(`:508, 868, 970`) passam a ser ancoradas em `IPaneApi.getHeight()`.
+
+## D2 — A legenda lê `param.logical` contra os slots do view-model, **nunca** o `seriesData`
+
+**Decisão.** O valor da legenda de cada pane (`RF-4`) é resolvido a partir de `param.logical` sobre os
+slots da grade canônica, usando a mesma função de leitura por `nature` que o "Leitura atual" de cada pane
+já usa (`resolveStockReading`, `charts/s2-absence-policy.ts`). Se `param.logical === undefined`, vale o
+último bucket fechado.
+
+**Por que não `seriesData`** `[MEDIDO por leitura do fonte: ARQ-1 §4]`:
+(1) num slot *whitespace* a série some do `Map`, e "sem ponto" fica indistinguível de "série não montada";
+(2) as séries de marca aparecem no `Map` com a **altura em px** como valor, e uma legenda sem filtro
+mostraria `6` (`LIQUIDATION_ZERO_MARK_PX`, `:989`) como se fosse liquidação;
+(3) o `seriesData` não conhece o *held* de `STOCK`.
+
+**A invariante que D2 exige**, que é a mesma que torna `D1` seguro: **toda série de todo pane chama
+`setData` exatamente com os `time` da grade canônica.** Um `time` fora da grade insere um índice lógico
+novo em **todos** os panes (`ARQ-1` §2). Com `S-1` essa violação deixa de ser local, por isso ela passa
+a ser invariante testada do registry.
+
+## D3 — `RN-4` passa a ser propriedade do registry
+
+Toda série `FLOW` do registry declara o par `absence_mark` + `zero_mark`. O teste do registry reprova
+quando o par falta. Com isso a fusão da fase `04` não consegue "esquecer" a marca (`ARQ-1` §5, invariante iii).
+
+## D4 — Liquidação num pane: a perna long **desce por escala invertida**, o dado **nunca é negado**
+
+**O conflito entre os dois julgamentos.** O `quant-architect` propõe desenhar a perna long como `−v`
+(convenção do indicador da Coinalyze: `return[a,i?s:-1*s]`, `LIQ-1` Fonte 1). O `frontend-architect`
+mediu que o pane de liquidação é **logarítmico** (`SymbolClient.tsx:1810-1813`). Log não representa
+negativo, então ele propõe duas escalas sobrepostas, com `invertScale: true` na de baixo (`TD:3726`).
+
+**Decisão: a de duas escalas.** A perna `cohort=short` fica numa escala da metade superior e a perna
+`cohort=long` numa escala da metade inferior com `invertScale: true`. **Os dois valores entram no gráfico
+como magnitudes `≥ 0`.**
+
+**Por que esta, e não a negação:**
+1. **Ela torna a regra 4 do `quant-architect` estrutural.** A regra diz *"nenhum valor derivado de
+   `short + (−long)` pode chegar à tela"* (`LIQ-1` §Critério, item 4). Se nenhum número negativo existe
+   no caminho do dado, a soma com sinal nem é expressável. Com negação, a regra vira disciplina; com
+   escala invertida, vira propriedade. O `RN-3` sai ganhando.
+2. **A escolha log × linear continua com o `design_gate`.** A negação obriga a escala linear, e isso
+   decidiria por fora uma questão que é do gate (`CLAUDE.md` §Design). A escala invertida funciona nas
+   duas.
+3. **Cada perna mantém o próprio par de marcas** (`ARQ-1` §3.3). São 6 séries e 4 escalas no pane, e o
+   argumento de hoje, *"a distinção entre coortes não depende de matiz (WCAG 1.4.1)"* (`:1881-1884`),
+   passa a ser atendido pela posição.
+
+**O que D4 herda do `quant-architect` sem mudar nada:** o lado e a cor por perna (short em cima com o
+token de alta, long embaixo com o token de baixa; `SPEC-009` §7.1 registra a escolha como `[INFERRED]`)
+e a legenda mostrando **as duas magnitudes, sem sinal de menos** (`LIQ-1` Fonte 2: o tooltip da própria
+Coinalyze usa `Math.abs`).
+
+**Alternativa recusada:** negação com escala linear única. Custo: tira o log do `design_gate` e torna o
+`RN-3` dependente de disciplina. **Ela volta como plano B só se o falsificador F-6 abaixo reprovar.**
+
+---
+
+## Falsificador
+
+**F-1..F-5 rodam no spike `T-01.0`, antes de qualquer linha de produção da fase `01`**, e F-6 roda na
+fase `04`. `S-1` cai e `S-2` reabre se **qualquer** um de F-1..F-5 reprovar (`ARQ-1` §1.4):
+
+| # | medida | reprova se |
+|---|---|---|
+| F-1 | `p95` do intervalo entre aplicações de range (`e2e/17`, `panelCount=1`), `n ≥ 61` amostras | `> 160 ms` (teto vigente `[DECISÃO-OWNER: 2026-09-22, escolha entre alternativas apresentadas]`, `e2e/17-teto-latencia-eixo.spec.ts:128-134`) **ou** `n < 61` |
+| F-2 | `setData` da história sob demanda (`e2e/20`) | `p95 > 400 ms` (`[DECISÃO-OWNER: 2026-09-19]`, plano `SPEC-008/05` DoD 7) |
+| F-3 | x em pixel da linha vertical nos panes, lido do canvas | algum par difere em `> 1 px` |
+| F-4 | `seriesData.size` num hover sobre índice com dado em todos os panes | `<` número de séries não-*whitespace* naquele índice |
+| F-5 | slot de OI ausente e slot de liquidação `0` na mesma pilha | o ausente desenha barra ou candle, **ou** zero e ausência renderizam igual |
+| F-6 | na fase `04`: a linha de base das duas escalas (topo da invertida e base da superior) | as duas bases diferem em `> 1 px` no canvas, **ou** algum valor `< 0` aparece em `setData` de liquidação |
+
+⛔ **Controle negativo obrigatório para F-1.** Injetar um *busy-wait* de 20 ms no handler de range, por
+query param de e2e (mesmo idioma de `e2eAxisSyncDisabled`, `axis-sync.ts:104`). **Se o `p95` não subir,
+F-1 não é evidência nem a favor nem contra.** A gate `T-02-latencia-fix` já mediu que o probe carrega a
+cadência de entrada do Chromium headless (`p95 ≈ 33 ms` com zero escrita) `[DOC: docs/context/candle-real-e-eixo-unico/gates/T-02-latencia-fix.md:29-84]`.
+Nesse caso o spike tem de apresentar um segundo instrumento com poder demonstrado (duração de frame por
+`requestAnimationFrame`, ou `PerformanceObserver` `longtask`, com `[NÃO SEI]` sobre qual deles tem poder,
+`ARQ-1` §7). Se nenhum dos dois tiver, **`CA-11` é declarado `[NÃO MEDIDO]` e escalado**, e não sai verde.
+
+## Consequências
+
+- `CA-2` deixa de ter mutação própria, porque a API não tem eixo de tempo por pane. Ele vira critério
+  **estrutural** cuja ablação é a mesma do `CA-1` (`SPEC-009` §9).
+- A ablação `e2eAxisSyncDisabled` do e2e `16` perde sentido. Quem a substitui é a mutação do `CA-1`.
+- A mutação do `CA-3` passa a ser **filtrar a atualização da legenda por `param.paneIndex`** (`ARQ-1` §4).
+- A dívida `FR-2` de `ADR-003` (**14** constantes de geometria em `web`,
+  `grep -nE '^const [A-Z_]*(_PX|_SCALE_MARGINS|_LOG_BASE|_HEIGHT_PX)\s*=' SymbolClient.tsx | wc -l → 14`
+  `[MEDIDO: ARQ-1 §5]`) **não pode crescer em F1**. As que F1 re-ancora (bandas de marca) migram para `charts`.

@@ -1,0 +1,37 @@
+
+Com base nesse contexto, revise SOMENTE a tela de S2 simbolo e reorganize os graficos no layout de PANES EMPILHADOS estilo TradingView/Coinalyze. Nao altere arquitetura de navegacao, design system nem escopo. Esta e uma reorganizacao estrutural da area de grafico: REESCREVA O ARQUIVO DA TELA por completo, em vez de emitir operacoes pontuais de DOM. O chrome global (cripto-strategy, BTCUSDT, 15m, AO VIVO, COMO EM T (2023-10-26T14:30:00Z), MAINNET, v2.4, UTC, bundle 7f3a9c1, LER, MARCAR), o rail esquerdo e o rodape "Gráficos por Lightweight Charts — TradingView" ficam EXATAMENTE como estao. Documento com lang="pt-BR" e <title> em portugues.
+
+PEDIDO DO OWNER (2026-09-23, literal): "Quero ter essa visão do volume, OI e liquidações ... vamos manter essa forma de separação bem procima da coinalyze e tradingview."
+Nota de escopo: o item "painel de liquidacao" de FORA DE ESCOPO se refere a feed/dashboard de liquidacoes de mercado. Aqui liquidacao entra como UM PANE DE SERIE dentro da S2, pedido explicito do owner. Nada de feed, ranking, heatmap ou lista de ordens.
+
+ESTRUTURA — UM UNICO GRAFICO, NAO CARDS:
+  - A area do grafico e UMA superficie #131722 continua, dividida em 7 panes empilhados por separadores horizontais de 1px #222634. SEM cabecalho de painel em faixa separada, SEM moldura, SEM card, SEM gap entre panes, SEM scroll: os 7 panes cabem juntos na altura da tela (item 16(l)).
+  - UM SO eixo de tempo, no rodape do ultimo pane (04:00 08:00 12:00 16:00 20:00). Nenhum pane repete eixo de tempo.
+  - Eixo de preco/valor a direita de CADA pane, numeral tabular mono #8b949e, alinhado na mesma coluna em todos.
+  - CROSSHAIR COMPARTILHADO: UMA linha vertical tracejada #8b949e atravessando os 7 panes na mesma coordenada x (desenhe-a em ~08:45), e UMA etiqueta de hora no eixo de tempo. Cada pane mostra na legenda o valor do bucket sob o crosshair.
+  - Todos os panes compartilham a MESMA grade de x: a vela de preco, a barra de volume, a barra de liquidacao, a vela de OI e os pontos das linhas de um mesmo bucket ficam na MESMA coluna.
+
+LEGENDA DE PANE (o selo do item 10, em UMA linha sobreposta no canto superior ESQUERDO do proprio pane, dentro do plot, texto 11-12px, fundo transparente sem blur):
+  nome em tinta forte #e6e9ef MAIUSCULO + campos da serie em tinta fraca #8b949e + valor sob o crosshair em tinta forte mono + procedencia + completude. A idade continua SO na borda direita (item 10), em tinta fraca, na mesma linha, alinhada a direita. Nenhum valor da legenda e tingido de verde ou vermelho (LEMBRETE 2), nem o do OI, nem o da liquidacao, nem o do funding.
+
+OS 7 PANES, de cima para baixo, com alturas aproximadas para 1024px de tela:
+  1. PREÇO (~34% da altura) — "PREÇO · candles 15m · BTCUSDT · klines_last · fonte bn-dump · uso: structure_detection · O 64980.50 H 65120.00 L 64850.00 C 65040.25 · OBSERVADO · 384/384".
+     Velas com vazado/cheio/cruz (item 2), densas: ~70 velas visiveis, 1px de vao entre elas.
+     VOLUME no RODAPE do MESMO pane (sub-faixa inferior de ~22% da altura do pane, escala propria, sem eixo proprio): uma barra por vela, na mesma coluna da vela, com a MESMA forma da vela: barra VAZADA (so contorno #089981) quando a vela e vazada, barra CHEIA #f23645 quando a vela e cheia, e barra em tinta fraca #8b949e quando a vela e cruz (doji nao afirma direcao). Nunca bloco solido para as duas direcoes. Sem transparencia.
+     Legenda secundaria na segunda linha: "Volume · 1m→15m · BTC · 812.44".
+  2. LIQUIDAÇÕES (~11%) — "LIQUIDAÇÕES · 1m→15m · BTCUSDT · coinalyze · OBSERVADO · 96/96" e, sob o crosshair, "▲ short 30258 · ▼ long 0 (USD)".
+     Uma linha de base zero horizontal no meio do pane. Liquidacao de posicoes VENDIDAS (short, compra forcada) = barra PARA CIMA da base. Liquidacao de posicoes COMPRADAS (long, venda forcada) = barra PARA BAIXO da base. As palavras "▲ short" e "▼ long" na legenda sao o canal primario da coorte; a POSICAO e o segundo.
+     COR DAS BARRAS: NAO use verde nem vermelho aqui. A semantica de cor da liquidacao ainda NAO foi decidida. As DUAS coortes usam o MESMO token neutro #e6e9ef (tinta forte), cheio, e a coorte se le pela posicao e pela palavra.
+     AUSENCIA ≠ ZERO (decisao travada): minuto sem ponto = traco baixo e apagado #8b949e rente a base; zero do fornecedor = traco medio #e6e9ef na base. A maioria dos buckets e ausencia: desenhe assim, com poucas barras reais e altas espalhadas.
+  3. OPEN INTEREST (~15%) — "OPEN INTEREST · OHLC 5m→15m · BTCUSDT · coinalyze · O 27588 H 27681 L 27515 C 27622 (USD mi) · OBSERVADO · 285/288 · 1 lacuna".
+     OI desenhado como VELA (nao linha), com a MESMA regra de forma do preco, e a forma codifica o predicado do OI: vela VAZADA #089981 = OI fechou acima da propria abertura (entraram contratos); vela CHEIA #f23645 = OI fechou abaixo (sairam contratos); CRUZ = sem variacao.
+     Essa leitura vai em PALAVRA, uma unica vez, a direita da legenda, em tinta fraca: "vazado = entraram contratos · cheio = saíram contratos".
+     A lacuna de 1 bucket aparece como vao sem vela + o losango vazado violeta #e0aaff com a palavra "1 lacuna" na legenda (itens 3 e 4). Nao interpole.
+  4. LONG/SHORT (~9%) — "LONG/SHORT · razão top traders · 5m · BTCUSDT · bn-dump · 2.096 · OBSERVADO · 288/288". Linha fina 1px #e6e9ef. Sem area preenchida.
+  5. FUNDING (~9%) — "FUNDING · taxa 8h · BTCUSDT · bn-dump · +0.0042% · OBSERVADO · 3/3". Linha em DEGRAU (step line) 1px #e6e9ef, com linha de base zero tracejada #222634. O "+" do sinal e obrigatorio (item 8).
+  6. CVD DELTA (~9%) — "CVD DELTA · bucket 15m · BTC · DERIVADO (2*taker_buy - volume) · +312.40 · 384/384". Barras vazada (delta > 0) / cheia (delta < 0) em torno da base zero, como ja estao hoje.
+  7. CVD ACUMULADO (~9%) — "CVD ACUMULADO · âncora 00:00Z · BTC · DERIVADO · +9311.00 · 384/384". Linha 1px #e6e9ef. Este pane carrega o UNICO eixo de tempo.
+
+DENSIDADE: tipografia de legenda 11-12px, zero padding vertical alem de 4px no topo de cada pane, nenhum espaco morto: a area de plot comeca imediatamente abaixo do chrome e termina imediatamente acima do rodape.
+
+VERIFIQUE ANTES DE RESPONDER: (1) nenhuma vela, barra de volume ou barra de delta e bloco solido nas duas direcoes; (2) nenhum numeral, legenda ou rotulo tingido de verde/vermelho; (3) liquidacao sem verde e sem vermelho; (4) um so eixo de tempo; (5) os 7 panes visiveis sem scroll; (6) superficies so #131722 / #0d1017 / #222634; (7) acentos: PREÇO, LIQUIDAÇÕES, razão, âncora, saíram.
