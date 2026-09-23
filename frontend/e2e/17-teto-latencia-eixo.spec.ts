@@ -231,7 +231,17 @@ async function startSyntheticOhlcStub(): Promise<{ readonly url: string; close()
       }
       const envelope = {
         session: { principal_id: null, server_now_ms: Date.now() },
-        panel: { series_key_id: seriesKeyId, source: "T-02.7-synthetic-stub", nature: "STOCK", unit: "USD" },
+        panel: {
+          series_key_id: seriesKeyId,
+          source: "T-02.7-synthetic-stub",
+          nature: "STOCK",
+          unit: "USD",
+          // `T-05.7`/`D-C3.7` tornou `panel.coverage` obrigatório (`series-history-envelope.ts`,
+          // `assertWirePanelCoverage`) DEPOIS que este stub foi escrito — sem isto, TODA resposta
+          // reprovava a validação de envelope no cliente e nenhuma vela real era desenhada
+          // (achado independente, mesmo bug consertado em `20-*.spec.ts`).
+          coverage: { earliest_bucket_ms: null, latest_bucket_ms: null, source_floor_ms: null },
+        },
         rows,
         knowledge_time: Number.isFinite(knowledgeTimeMs) ? knowledgeTimeMs : Date.now(),
         bar_policy: "final_only",
