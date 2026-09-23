@@ -897,6 +897,64 @@ export function deriveOiProvenanceLabel(key: OiProvenanceKey | undefined): OiPro
   return { grandeza, universo: `${key.provider}/${key.venue}`, coorte: key.cohort };
 }
 
+// ── `T-04.2`/`C-4` — THE ENVELOPE IS A CONTRACT, AND THE UNIT IT PINS IS VERIFIABLE ────────────
+//
+// `RF-8`'s label (above) already spells whatever `denom`/`unit` the resolved key carries — it
+// does not GUESS. What it cannot do by itself is tell "the source still is what `ADR-036/D2`
+// says" from "the source drifted and the label is dutifully reporting the drift". `C-4` (`PRD-008`
+// §9) asks for the envelope to be its OWN contract, not a loose object a developer remembers to
+// keep in sync — this is that contract, expressed as the four terms `SPEC-008` §8.1 fixes:
+// `ADR-036/D2` keeps the OI pane on the ORIGIN (`provider = binance`), in CONTRACTS
+// (`unit = BTC`, `denom = base`), over ONE instrument (`aggregationScope = Symbol`) — never
+// nocional USD, which is exactly what the owner's circled defect was about: nocional = contracts
+// × preço, so it rises with price alone, with zero new contracts — the one case the owner named
+// (*"mercado caiu e open interest subiu"*) is the one nocional erases.
+export const OPEN_INTEREST_ADR_036_D2_INVARIANTS = {
+  provider: OPEN_INTEREST_PROVIDER,
+  unit: "BTC",
+  denom: "base",
+  aggregationScope: "Symbol",
+} as const;
+
+/** The subset of `SeriesKey` the invariant check reads — declared structurally like
+ * `OiProvenanceKey` above, so a test fixture does not have to carry the other eleven terms. */
+export type OpenInterestOriginKey = Pick<SeriesKey, "provider" | "unit" | "denom" | "aggregationScope">;
+
+/**
+ * Which of the four `ADR-036/D2` terms the resolved OI key DOES NOT honor today — empty when it
+ * honors all four. A pure comparison, nothing more: it does not choose a fallback, does not
+ * convert a unit, does not pick a different row. Its only job is to turn a silent drift into a
+ * named list a test (or, one day, a monitor) can morder on.
+ *
+ * ⛔ THIS IS THE "DECLARE, DO NOT BUILD" HALF OF `C-4`. `SeriesKey` already models
+ * `provider`/`venue`/`aggregation_scope` (`series_key.py:52,197`), and every one of today's ~60
+ * catalog rows already carries `aggregation_scope="Symbol"` — so a multi-exchange aggregate
+ * (`F5`) is a NEW CATALOG ROW away, not a schema migration, the day the owner reopens `[M-2]`.
+ * This function does not build that extensibility (`F5` is `[DECISÃO-OWNER: 2026-09-19]`,
+ * explicitly out of this plan) — it only pins today's invariant so that if a future row silently
+ * satisfied `matchesBinanceOpenInterest`'s three terms while disagreeing on unit/denom/scope, the
+ * disagreement would be caught here, in a test, before it reached the pane as a mislabelled
+ * number.
+ */
+export function openInterestAdr036D2Violations(key: OpenInterestOriginKey): readonly string[] {
+  const violations: string[] = [];
+  if (key.provider !== OPEN_INTEREST_ADR_036_D2_INVARIANTS.provider) {
+    violations.push(`provider=${key.provider} (expected ${OPEN_INTEREST_ADR_036_D2_INVARIANTS.provider})`);
+  }
+  if (key.unit !== OPEN_INTEREST_ADR_036_D2_INVARIANTS.unit) {
+    violations.push(`unit=${key.unit} (expected ${OPEN_INTEREST_ADR_036_D2_INVARIANTS.unit})`);
+  }
+  if (key.denom !== OPEN_INTEREST_ADR_036_D2_INVARIANTS.denom) {
+    violations.push(`denom=${key.denom} (expected ${OPEN_INTEREST_ADR_036_D2_INVARIANTS.denom})`);
+  }
+  if (key.aggregationScope !== OPEN_INTEREST_ADR_036_D2_INVARIANTS.aggregationScope) {
+    violations.push(
+      `aggregationScope=${key.aggregationScope} (expected ${OPEN_INTEREST_ADR_036_D2_INVARIANTS.aggregationScope})`,
+    );
+  }
+  return violations;
+}
+
 
 // ── `T-05.9` — WHICH `sum_liquidation` ROWS THE LIQUIDATION PANE READS, AND WHY THERE ARE TWO ─
 //

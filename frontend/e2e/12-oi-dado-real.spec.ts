@@ -267,6 +267,24 @@ test(`o catÃ¡logo servido casa EXATAMENTE UMA linha de open interest para ${SY
   expect(matched[0]!.key.interval).toBe("5m");
   expect(matched[0]!.nativeGrid).toBe("5min");
   expect(matched[0]!.maxStalenessMs, "o teto de frescor de RNF-2 Ã© 2 x o bucket nativo").toBe(2 * NATIVE_GRID_MS);
+
+  // T-04.2 / C-4 / DoD-5: ADR-036/D2 stays intact on the row this suite selects, checked against
+  // the REAL catalog the API under test serves (oi-series-selector.test.ts checks the same four
+  // terms against a transcribed fixture; this is the other witness). "Nada de fonte mudou": the
+  // OI provider stays the ORIGIN, in CONTRACTS, over ONE instrument -- never nocional, and never
+  // a multi-exchange aggregate (that would be F5, out of this plan by owner decision 2026-09-19).
+  fact(SPEC, "catalog_binance_oi_unit", matched[0]!.key.unit);
+  fact(SPEC, "catalog_binance_oi_denom", matched[0]!.key.denom);
+  fact(SPEC, "catalog_binance_oi_aggregation_scope", matched[0]!.key.aggregationScope);
+  expect(matched[0]!.key.provider, "ADR-036/D2: the source is the ORIGIN, never a third party").toBe("binance");
+  expect(matched[0]!.key.unit, "ADR-036/D2: the unit stays BTC -- contracts, never nocional USD").toBe("BTC");
+  expect(matched[0]!.key.denom, "ADR-036/D2: denom stays base -- a contract count, never a quote-denominated value").toBe(
+    "base",
+  );
+  expect(
+    matched[0]!.key.aggregationScope,
+    "ADR-036/D2: the reading stays over ONE instrument, not a cross-symbol aggregate",
+  ).toBe("Symbol");
 });
 
 test(`MORDE do instrumento: a contagem por grade nativa rejeita a escada (${SPEC})`, async () => {
