@@ -3,13 +3,30 @@
 /**
  * `T-05.2` — the REACT half of `D-C3.5`'s history paginator. Mirrors the split
  * `axis-sync.ts`/`axis-sync-provider.tsx` already establish in this feature: the PURE decisions
- * (which page to ask for, how to widen/cap the window, how to merge a page's rows, how to
- * rebuild the six panels' drawable shapes) live in plain `.ts` modules with no React import
- * (`history-page-window.ts`, `panel-assembly.ts`, and `charts`' own `historyRequest`) and are
- * tested there, under `node --test`, with no DOM. THIS file is the thin glue: it holds the
- * paging STATE (the accumulated window, the merged rows, whether a request is in flight, the
- * coverage floor a failed page freezes) and wires it to `AxisSyncProvider`'s two `T-05.2` props
+ * (which page to ask for, how to widen/cap the window, how to merge a page's rows, how to fold
+ * the pager's own declared coverage walls into one, how to rebuild the six panels' drawable
+ * shapes) live in plain `.ts` modules with no React import (`history-page-window.ts`,
+ * `slot-coverage.ts`, `panel-assembly.ts`, and `charts`' own `historyRequest`) and are tested
+ * there, under `node --test`, with no DOM. THIS file is the thin glue: it holds the paging STATE
+ * (the accumulated window, the merged rows, whether a request is in flight, the coverage floor a
+ * failed page freezes, and — since `T-05.7` — the latest `panel.coverage` each of the ten series
+ * has DECLARED) and wires it to `AxisSyncProvider`'s two `T-05.2` props
  * (`initialRange`/`onCandidateRange`, `axis-sync.ts`'s own docstring on `AxisSyncStoreOptions`).
+ *
+ * ── `T-05.7`/`D-C3.7` — THE HORIZON COMES FROM THE ENVELOPE, NEVER FROM THE FAILURE FREEZE ────
+ *
+ * Before this task, `onCandidateRange` built `HistoryCoverage` from `coverageFloorMs` alone — a
+ * client-OBSERVED heuristic that only learns anything the moment a page FAILS, freezing the axis
+ * edge that fetch was fired from (`D-C3.4`'s "never loop forever" contract, still true and still
+ * below). That is not the horizon `plan 05` item `5.5` requires: "vem do ENVELOPE (`coverage`),
+ * nunca de constante a mão e nunca inferido de contagem de linhas" (row COUNT is provably
+ * non-monotonic — `slot-coverage.ts`'s own fixture, `klines_volume` present at day 0, absent at
+ * day 6, present again at day 59). Every SUCCESSFUL page now also captures `envelope.panel
+ * .coverage` per series (`fetchOne` below), `combineHistoryCoverage` (`slot-coverage.ts`) folds
+ * the ten walls into one, and THAT is the primary source `onCandidateRange` feeds
+ * `historyRequest`. The failure freeze does not go away — it stays exactly what `D-C3.4` built it
+ * for, a safety net against an infinite loop when the wire has declared no coverage at all
+ * (`combineHistoryCoverage` returns `null` only then) — it simply stops being consulted FIRST.
  *
  * ── WHY `onCandidateRange` READS EVERYTHING THROUGH REFS, NEVER THROUGH CLOSURE ──────────────
  *
@@ -17,12 +34,12 @@
  * constructed with until `axis` itself changes (`axis-sync-provider.tsx`'s `useMemo` deps on
  * `[axis]` alone) — and `axis` does NOT change when a page fetch merely FAILS (only a
  * SUCCESSFUL page widens the window, hence changes `axis`). A callback that captured
- * `coverageFloorMs` by closure would therefore keep re-proposing a page already known to fail —
- * the exact "detector permanentemente disparado" failure mode `D-C3.4` measured for
- * `barsInLogicalRange`, reopened one layer up. Every value `onCandidateRange` reads
- * (`axis`/`coverageFloorMs`/`window`/`rows`) is therefore read off a REF, updated on every
- * render, so `onCandidateRange`'s own IDENTITY can stay constant (empty dep array) while its
- * BEHAVIOUR always sees the latest state — the standard React ref-for-stale-closure pattern,
+ * `coverageFloorMs`/`panelCoverage` by closure would therefore keep re-proposing a page already
+ * known to fail — the exact "detector permanentemente disparado" failure mode `D-C3.4` measured
+ * for `barsInLogicalRange`, reopened one layer up. Every value `onCandidateRange` reads
+ * (`axis`/`coverageFloorMs`/`panelCoverage`/`window`/`rows`) is therefore read off a REF, updated
+ * on every render, so `onCandidateRange`'s own IDENTITY can stay constant (empty dep array) while
+ * its BEHAVIOUR always sees the latest state — the standard React ref-for-stale-closure pattern,
  * applied here because `axis-sync.ts`'s store-freezing contract makes it load-bearing rather
  * than optional.
  *
@@ -66,7 +83,8 @@ import {
   type HistoryPageAssembly,
   type HistoryRowsBundle,
 } from "./panel-assembly.ts";
-import type { SeriesHistoryRow } from "./series-history-envelope.ts";
+import type { PanelCoverage, SeriesHistoryRow } from "./series-history-envelope.ts";
+import { combineHistoryCoverage, type PanelCoverageBundle } from "./slot-coverage.ts";
 
 /** The `series_key_id` this route resolved for each of the ten `/series-history` fetches
  * `page.tsx` already makes — `null` for a panel whose catalog resolution failed or was
@@ -132,6 +150,25 @@ export interface HistoryPagerResult {
   readonly onCandidateRange: (range: TimeRange) => void;
 }
 
+/** The pager's initial belief about every series' own declared coverage: unmeasured, all ten —
+ * `T-05.7`'s own scope is "a resposta MAIS RECENTE que o pager já tem", never the SSR-fetched
+ * envelope `page.tsx` already discarded (`fetchPanelRows` there keeps only `{rows, status}`).
+ * The very first `onCandidateRange` call of a mount therefore falls straight through to the
+ * failure-freeze safety net, exactly like before this task, until the pager's OWN first
+ * successful page lands and this bundle stops being all-`null`. */
+const EMPTY_PANEL_COVERAGE: PanelCoverageBundle = {
+  open: null,
+  high: null,
+  low: null,
+  close: null,
+  oi: null,
+  cvd: null,
+  volume: null,
+  liquidationLong: null,
+  liquidationShort: null,
+  longShort: null,
+};
+
 function axisFromWindow(window: AccumulatedWindow): TimeAxis {
   return {
     startMs: window.startMs,
@@ -149,6 +186,10 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
   const [rows, setRows] = useState<HistoryRowsBundle>(seed.rows);
   const [preservedRange, setPreservedRange] = useState<TimeRange | undefined>(undefined);
   const [coverageFloorMs, setCoverageFloorMs] = useState<number | null>(null);
+  // `T-05.7`/`D-C3.7` — the latest `panel.coverage` DECLARED for each of the ten series, from
+  // the most recent page THIS pager itself fetched successfully. See `EMPTY_PANEL_COVERAGE`'s
+  // own docstring for why this never starts seeded from the SSR envelope.
+  const [panelCoverage, setPanelCoverage] = useState<PanelCoverageBundle>(EMPTY_PANEL_COVERAGE);
 
   const axis = useMemo(() => axisFromWindow(windowState), [windowState.startMs, windowState.endMsExclusive]);
   const assembly = useMemo(
@@ -161,6 +202,8 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
   axisRef.current = axis;
   const coverageFloorMsRef = useRef(coverageFloorMs);
   coverageFloorMsRef.current = coverageFloorMs;
+  const panelCoverageRef = useRef(panelCoverage);
+  panelCoverageRef.current = panelCoverage;
   const windowRef = useRef(windowState);
   windowRef.current = windowState;
   const rowsRef = useRef(rows);
@@ -182,13 +225,18 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
       // A `null` key means this render never resolved a series for that panel (`not_in_catalog`/
       // `ambiguous_in_catalog`, `page.tsx`'s own `CatalogResolution`) — there is nothing to page,
       // ever, at any window, so this returns the SAME "no rows" answer that panel already has,
-      // without spending a request on it.
-      const fetchOne = async (seriesKeyId: string | null): Promise<readonly SeriesHistoryRow[]> => {
+      // without spending a request on it, and `coverage: null` (`T-05.7`): there is no series to
+      // declare a wall for, ever, at any window — `combineHistoryCoverage` excludes it forever.
+      interface FetchedSeries {
+        readonly rows: readonly SeriesHistoryRow[];
+        readonly coverage: PanelCoverage | null;
+      }
+      const fetchOne = async (seriesKeyId: string | null): Promise<FetchedSeries> => {
         if (seriesKeyId === null) {
-          return [];
+          return { rows: [], coverage: null };
         }
         const envelope = await fetchSeriesHistoryFromBrowser(buildKey(seriesKeyId), seed.historyBaseUrl);
-        return envelope.rows;
+        return { rows: envelope.rows, coverage: envelope.panel.coverage };
       };
 
       try {
@@ -217,20 +265,36 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
           trimRowsToWindow(mergeOlderPage(older, existing), widened);
 
         const nextRows: HistoryRowsBundle = {
-          open: mergeAndTrim(open, currentRows.open),
-          high: mergeAndTrim(high, currentRows.high),
-          low: mergeAndTrim(low, currentRows.low),
-          close: mergeAndTrim(close, currentRows.close),
-          oi: mergeAndTrim(oi, currentRows.oi),
-          cvd: mergeAndTrim(cvd, currentRows.cvd),
-          volume: mergeAndTrim(volume, currentRows.volume),
-          liquidationLong: mergeAndTrim(liquidationLong, currentRows.liquidationLong),
-          liquidationShort: mergeAndTrim(liquidationShort, currentRows.liquidationShort),
-          longShort: mergeAndTrim(longShort, currentRows.longShort),
+          open: mergeAndTrim(open.rows, currentRows.open),
+          high: mergeAndTrim(high.rows, currentRows.high),
+          low: mergeAndTrim(low.rows, currentRows.low),
+          close: mergeAndTrim(close.rows, currentRows.close),
+          oi: mergeAndTrim(oi.rows, currentRows.oi),
+          cvd: mergeAndTrim(cvd.rows, currentRows.cvd),
+          volume: mergeAndTrim(volume.rows, currentRows.volume),
+          liquidationLong: mergeAndTrim(liquidationLong.rows, currentRows.liquidationLong),
+          liquidationShort: mergeAndTrim(liquidationShort.rows, currentRows.liquidationShort),
+          longShort: mergeAndTrim(longShort.rows, currentRows.longShort),
+        };
+        // `T-05.7`/`D-C3.7` — the walls THIS page's ten envelopes just declared, replacing
+        // whatever this pager previously knew for each series (the wire's own store only ever
+        // grows, so the latest declaration is always at least as informative as the last).
+        const nextCoverage: PanelCoverageBundle = {
+          open: open.coverage,
+          high: high.coverage,
+          low: low.coverage,
+          close: close.coverage,
+          oi: oi.coverage,
+          cvd: cvd.coverage,
+          volume: volume.coverage,
+          liquidationLong: liquidationLong.coverage,
+          liquidationShort: liquidationShort.coverage,
+          longShort: longShort.coverage,
         };
 
         setWindowState(widened);
         setRows(nextRows);
+        setPanelCoverage(nextCoverage);
         setPreservedRange(range);
       } catch (cause) {
         // See this module's docstring, "WHY A FAILED PAGE ABORTS ALL TEN FETCHES".
@@ -253,7 +317,15 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
         // first's `setData` and could apply a stale, narrower window on top of a wider one).
         return;
       }
-      const coverage: HistoryCoverage = { earliestBucketMs: coverageFloorMsRef.current, sourceFloorMs: null };
+      // `T-05.7`/`D-C3.7` — the DECLARED wall is primary; `coverageFloorMsRef` (the failure
+      // freeze `D-C3.4` built) is only consulted as the safety net for when every series is
+      // still unmeasured (`combineHistoryCoverage` returns `earliestBucketMs: null` then), per
+      // this module's own docstring above.
+      const declared = combineHistoryCoverage(panelCoverageRef.current);
+      const coverage: HistoryCoverage = {
+        earliestBucketMs: declared.earliestBucketMs ?? coverageFloorMsRef.current,
+        sourceFloorMs: null,
+      };
       const req = historyRequest(range, axisRef.current, coverage, pageSlots, triggerSlots);
       if (req === null) {
         return;
