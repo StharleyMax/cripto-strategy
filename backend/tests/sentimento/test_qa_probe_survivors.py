@@ -117,7 +117,10 @@ def _read(
         policy=_policy() if policy is None else policy,
         bar_policy=BarPolicy.FINAL_ONLY,
         purpose=ReadPurpose.ENTRY_CONDITION,
-        knowledge_time=t + BUCKET_MS if knowledge_time is None else knowledge_time,
+        # `ADR-042`/`D2`: `knowledge_time = t` is the decision-read case, byte-identical to the
+        # pre-`ADR-042` rule — a default past `t` would trip `ADR-042`/`D3` for every call here,
+        # since `purpose` is fixed at `ENTRY_CONDITION`.
+        knowledge_time=t if knowledge_time is None else knowledge_time,
     )
 
 
