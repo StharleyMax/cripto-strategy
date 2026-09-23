@@ -172,6 +172,7 @@ import {
   firstPresentSlotMs,
   daysWithPresence,
   deriveOiProvenanceLabel,
+  InvalidSignedDecimalError,
   keyMatchesSymbol,
   lastPresentSlotMs,
   lastReadableAvailableAtMs,
@@ -191,6 +192,7 @@ import {
   summarizePartialCoverage,
   trailingAbsentSlots,
   type KlinesOhlcReduction,
+  type ScaledCvdDeltaInput,
 } from "../view-model.ts";
 
 export const metadata: Metadata = {
@@ -324,6 +326,37 @@ function seriesKeyIdOf(resolution: CatalogResolution): string | null {
  * own gate run before this comment/helper existed]`). */
 function extractRows(result: { readonly rows: readonly SeriesHistoryRow[] }): readonly SeriesHistoryRow[] {
   return result.rows;
+}
+
+/** `T-05-FIX` — SSR SAFETY NET, NOT A SUBSTITUTE FOR THE ROOT FIX (`series_reduction.py::_sum`,
+ * backend, same task). `parseSignedDecimalToScaled` (`view-model.ts`) is RIGHT to throw on a
+ * `cvd_delta` string carrying more than 8 decimal digits — 8 is the domain's real precision
+ * ceiling (`SPEC-001` §2.6's own `Decimal` scale), and `view-model.test.ts`'s own
+ * `"refuses over-precise input"` case pins that refusal on purpose. What was WRONG is that this
+ * refusal, reached from SSR with no catch anywhere above it, took down the entire `/symbol` route
+ * — all ten panels, not just this one — the exact failure class `resolveFlowReadingOrAbsent`'s
+ * own docstring already names for a different panel ("a throw there would crash the whole
+ * `/symbol` route over an absence the page is designed to render").
+ *
+ * Scoped to `InvalidSignedDecimalError` ONLY — any other exception (a programming error, a
+ * missing import, `TypeError` from a shape nobody foresaw) still propagates uncaught, same as
+ * every other panel on this route; this function does not become a general "swallow anything"
+ * boundary. Degrades SILENTLY to `[]`, the SAME posture `fetchPanelRows`' own `catch` above takes
+ * for a `TransportError` (no `console.*` call there either — `no-console` is a hard lint error on
+ * this file, `eslint.config.mjs:67`, with no carve-out) — the degrade is visible in what the pane
+ * draws (an honest gap), which is this codebase's established way of surfacing it, not a log
+ * line. */
+function safeScaledCvdDeltasFromHistoryRows(
+  rows: readonly SeriesHistoryRow[],
+): readonly ScaledCvdDeltaInput[] {
+  try {
+    return scaledCvdDeltasFromHistoryRows(rows);
+  } catch (cause) {
+    if (!(cause instanceof InvalidSignedDecimalError)) {
+      throw cause;
+    }
+    return [];
+  }
 }
 
 /** `T-01.8` — ONE of the four `klines_ohlc` rows, by `reduction`. The predicate is
@@ -609,7 +642,7 @@ export default async function SymbolPage({
     priceUse: S2_PRICE_USE,
     oiPoints: scalarPointsFromHistoryRows(oiResult.rows, FIVE_MINUTES_MS),
     oiMissingDays: oiPresence.missingDays,
-    cvdDeltas: scaledCvdDeltasFromHistoryRows(cvdResult.rows),
+    cvdDeltas: safeScaledCvdDeltasFromHistoryRows(cvdResult.rows),
     cvdMissingDays: cvdPresence.missingDays,
     cvdCoveredDays: cvdPresence.coveredDays,
     // ⛔ THE ANCHOR IS CHOSEN HERE, EXPLICITLY, AND SHOWN ON SCREEN — never inherited in

@@ -171,6 +171,111 @@ def test_a_ninth_pair_would_have_to_be_added_to_the_table_not_inferred() -> None
     assert len(REDUCTION_TABLE) == len(SPEC_008_5_1_PAIRS)
 
 
+# ── `(FLOW, SUM)` NEVER LEAKS FLOAT-ACCUMULATION NOISE ONTO THE WIRE ────────────────────────
+#
+# Achado real, `candle-real-e-eixo-unico` fase `05`, reproduced against production Postgres:
+# `/symbol/BTCUSDT`, `1h`/`4h`, paginating history past 2 pages — a `cvd_delta` panel value
+# arrived on the wire as `"-655.9100000000001"`, 13-14 decimal digits for a quantity whose true
+# precision is 8 (`SPEC-001` §2.6's own `Decimal`-over-raw-string contract). The frontend parser
+# (`view-model.ts::parseSignedDecimalToScaled`) correctly REFUSED it — 8 is the real domain
+# precision, not a bug in the parser.
+#
+# This fixture is the same SHAPE that produced it: 60 native `1m` `cvd_delta` facts (a `1h`
+# reaggregation), signed, magnitudes plausible for BTCUSDT order flow, generated once
+# (`random.seed(3)`, `random.uniform(-2000, 2000)`, formatted `%.8f` — the same string precision
+# `cvd.py`'s `Decimal(trade.raw_quantity)` produces) and frozen here as literals so the test does
+# not depend on `random` at run time.
+_CVD_1H_BUCKET_60_NATIVE_1M_FACTS: list[float] = [
+    370.56364251,
+    -1478.30881566,
+    1663.77924692,
+    -103.78585381,
+    323.4083374,
+    422.39812056,
+    1635.27360074,
+    -123.07064952,
+    203.13856704,
+    -1233.02358402,
+    868.59215707,
+    163.89554252,
+    198.52466811,
+    -411.46169188,
+    1444.0884337,
+    -1072.31197849,
+    -1393.51049459,
+    1703.34188709,
+    -440.25311645,
+    -1939.41305067,
+    1108.93872571,
+    -1362.40024095,
+    1829.98828861,
+    -1828.84388264,
+    1120.30595633,
+    1294.28204493,
+    -922.27332375,
+    378.99806258,
+    1680.62647816,
+    -449.56565755,
+    1152.43541959,
+    -292.26045624,
+    912.50389221,
+    307.63865842,
+    1856.3750069,
+    -1463.40355638,
+    -537.92136617,
+    -1856.45347428,
+    -20.466351,
+    -968.07509764,
+    688.16493261,
+    1115.89034279,
+    1420.90232077,
+    -315.40594973,
+    1333.90847998,
+    296.09094116,
+    136.41233996,
+    -369.69654011,
+    -1070.45409369,
+    -652.93995494,
+    1662.9231849,
+    -1885.35851668,
+    -881.25717667,
+    423.27692125,
+    782.26161489,
+    794.46348133,
+    -694.43884597,
+    167.06376984,
+    287.82241252,
+    -1583.69676132,
+]
+
+
+def test_flow_sum_has_no_more_than_8_decimal_digits_the_domain_ever_carries() -> None:
+    """The falsifier proof this is a REAL bug, not decoration.
+
+    Naive `float(sum(values))` on this exact fixture DOES print 13 noise digits
+    (`"4398.226998300001"`) — reproduced here so a future edit that reverts `_sum` to
+    `float(sum(values))` fails this assertion first, instead of only showing up against
+    production Postgres again. `reduce_bucket` must not reproduce it.
+    """
+    naive = float(sum(_CVD_1H_BUCKET_60_NATIVE_1M_FACTS))
+    naive_fraction_digits = len(repr(naive).split(".")[-1])
+    assert naive_fraction_digits > 8, (
+        "fixture stopped reproducing the float-accumulation defect (regenerate the seed) — "
+        f"naive sum {naive!r} now has only {naive_fraction_digits} fraction digits"
+    )
+
+    reduced = reduce_bucket(Nature.FLOW, Reduction.SUM, _CVD_1H_BUCKET_60_NATIVE_1M_FACTS)
+    reduced_fraction_digits = len(repr(reduced).split(".")[-1])
+    assert reduced_fraction_digits <= 8, (
+        f"reduce_bucket((FLOW, SUM), …) leaked float-accumulation noise onto the wire: "
+        f"{reduced!r} carries {reduced_fraction_digits} decimal digits, the exact defect that "
+        f"crashed SSR at /symbol (InvalidSignedDecimalError, view-model.ts's own 8-digit refusal)"
+    )
+    # And the value itself is still right — the fix must not have changed the SUM, only how it
+    # is computed.
+    assert reduced == pytest.approx(sum(_CVD_1H_BUCKET_60_NATIVE_1M_FACTS), rel=1e-9)
+
+
 # ── EMPTY BUCKET: A COVERAGE QUESTION, NOT A REDUCTION ONE ────────────────────────────────
 
 
