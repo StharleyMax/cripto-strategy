@@ -46,6 +46,27 @@ export interface SeriesHistoryRow {
   readonly coverage: BucketCoverage | null;
 }
 
+/** `T-05.5`/`D-C3.7` — `PanelCoverage.to_wire()` (`series_history_report.py:57-92`), mirrored
+ * field-for-field, snake_case verbatim like every other field in this module (the envelope is
+ * kept wire-exact rather than camelCased — see `SeriesHistoryRow` above for the same choice).
+ *
+ * NOT `BucketCoverage`: that one is per-ROW (a fraction of native facts inside ONE reaggregated
+ * bucket); this one is per-PANEL, the two WALLS the requested window sits between, which is what
+ * makes `beyond-coverage` distinguishable from `absent` at all (`D-C3.6`).
+ *
+ * `earliest_bucket_ms`/`latest_bucket_ms` are OUR OWN STORE's bounds for this series — `null`
+ * when the store holds no row at all. `source_floor_ms` is the DIFFERENT wall: the upstream
+ * API's own historical depth, resolved from the series' identity alone — `null` means
+ * UNMEASURED, never "zero" and never "unlimited" (backend docstring, verbatim). A classifier
+ * that cannot tell the two apart cannot tell "a Binance não tem" from "nós não coletamos", which
+ * are different repairs.
+ */
+export interface PanelCoverage {
+  readonly earliest_bucket_ms: number | null;
+  readonly latest_bucket_ms: number | null;
+  readonly source_floor_ms: number | null;
+}
+
 /** The 3-level envelope `GET /series-history` serves (`ADR-005/D3`, `session`/`panel`/`rows`). */
 export interface SeriesHistoryEnvelope {
   readonly session: { readonly principal_id: string | null; readonly server_now_ms: number };
@@ -54,6 +75,7 @@ export interface SeriesHistoryEnvelope {
     readonly source: string;
     readonly nature: string;
     readonly unit: string;
+    readonly coverage: PanelCoverage;
   };
   readonly rows: readonly SeriesHistoryRow[];
   readonly knowledge_time: number;
@@ -77,6 +99,26 @@ function assertWireCoverage(value: unknown, index: number): asserts value is Buc
       `series_history envelope: rows[${index}].coverage must be {present: int, expected: int}, got ` +
         `${JSON.stringify(value)}`,
     );
+  }
+}
+
+/** `T-05.5`/`D-C3.7` — validates `panel.coverage` against `PanelCoverage.to_wire()`'s exact
+ * shape: a plain object with three fields, each either an INTEGER or `null` — never a bool,
+ * never a float, never missing (a missing `coverage` on the wire would make `D-C3.6`'s
+ * `beyond-coverage` state unclassifiable, and silently treating it as "no walls known" would
+ * hide exactly the regression `D-C3.7` exists to catch). */
+function assertWirePanelCoverage(value: unknown): asserts value is PanelCoverage {
+  if (!isPlainRecord(value)) {
+    throw new Error('series_history envelope: "panel.coverage" is missing or not a plain object');
+  }
+  for (const field of ["earliest_bucket_ms", "latest_bucket_ms", "source_floor_ms"] as const) {
+    const fieldValue = value[field];
+    if (fieldValue !== null && !Number.isInteger(fieldValue)) {
+      throw new Error(
+        `series_history envelope: "panel.coverage.${field}" must be an integer or null, got ` +
+          `${JSON.stringify(fieldValue)}`,
+      );
+    }
   }
 }
 
@@ -133,6 +175,7 @@ export function parseSeriesHistoryEnvelope(body: unknown): SeriesHistoryEnvelope
   ) {
     throw new Error('series_history envelope: "panel" is missing one of series_key_id/source/nature/unit');
   }
+  assertWirePanelCoverage(panel.coverage);
   if (!Array.isArray(body.rows)) {
     throw new Error('series_history envelope: "rows" is missing or not an array');
   }
@@ -151,6 +194,7 @@ export function parseSeriesHistoryEnvelope(body: unknown): SeriesHistoryEnvelope
       source: panel.source,
       nature: panel.nature,
       unit: panel.unit,
+      coverage: panel.coverage,
     },
     rows: body.rows as readonly SeriesHistoryRow[],
     knowledge_time: body.knowledge_time,
