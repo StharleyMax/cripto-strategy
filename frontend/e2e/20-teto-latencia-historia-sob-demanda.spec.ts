@@ -49,33 +49,34 @@ import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./hel
  * DIREITA (`deltaXPx > 0`) move `data-visible-logical-from` para valores mais NEGATIVOS — revela
  * passado, a direção que aproxima da borda esquerda. Este spec usa a MESMA convenção.
  *
- * ── ⛔ ACHADO, FORA DO ESCOPO DESTA TASK (o handoff é explícito: "registre, não conserte") ──────
+ * ── `T-05-FIX` FECHOU O AUTO-DISPARO; `T-05.9` FECHOU A CORRIDA QUE ELE ESCONDIA ────────────────
  *
- * `[MEDIDO 2026-09-23, esta worktree]`: a paginação AUTO-DISPARA a partir do próprio settle do
- * MOUNT — sem nenhum arrasto, `requestedMs.length` cresceu `6 -> 13 -> 21 -> 28 -> 35 -> 43 -> 52
- * -> 59` a cada `1,5 s` de espera pura (`n=8` amostras, zero interação de mouse), e
- * `data-visible-logical-from` do painel de Preço ficou PARADO em `-1` o tempo todo. A causa: CADA
- * remonte de `IChartApi` (`useLightweightChart`'s efeito, disparado pela troca de identidade do
- * `AxisSyncStore` a cada página bem-sucedida) sofre o MESMO artefato de relayout que o mount
- * ORIGINAL sofre (largura real do container vs a largura assumida na primeira renderização,
- * pousando `from` perto de `-1` de novo) — e como `-1` está dentro da zona de gatilho (`20`
- * slots), cada página REARMA o próprio gatilho que a produziu, indefinidamente. `[P-sonda]`: só
- * uma FALHA (`coverageFloorMs`, permanente — ver `use-history-pager.ts`'s "never loop forever")
- * ou um `reset()` interrompe; sem o teto real de cobertura de um backend de produção (`D5.3`,
- * `~90` dias), este estoque sintético — que deliberadamente nunca recusa — não o alcança sozinho.
+ * Três achados em sequência sobre este MESMO mecanismo, cada um só visível depois do anterior
+ * fechar. `T-05-FIX` (3 rodadas, mergeadas antes desta task) mediu e fechou o auto-disparo da
+ * paginação a partir do próprio settle do mount (`requestedMs.length` crescendo sem nenhum
+ * arrasto) — verificado com uma sonda de zero-gesto, estável (probe de zero-gesto, estável em
+ * `12 s`). Isso tirou o disfarce de um SEGUNDO defeito: sob arrastos REAIS rápidos e sucessivos
+ * (não mais sob o loop-bug), `use-history-pager.ts`'s `inFlightRef` deixava passar uma segunda
+ * requisição antes da primeira aplicar seu resultado — `widenAndCapWindow`'s "page.toMs must
+ * equal current.startMs" disparava depois de ~7 páginas reais em sequência rápida (achado da
+ * rodada 3 do `T-05-FIX`, não corrigido ali).
  *
- * Consequência prática para ESTE spec: não há uma janela "quieta" para esperar antes de medir —
- * qualquer tentativa de `reset()`-então-esperar-silêncio nunca retorna. Este spec por isso NÃO
- * reseta nenhuma das duas sondas: mede sobre a série INTEIRA desde o `load`, usando a invariante
- * que sobrevive à descoberta — a cada instante, `drawnMs.length` é `requestedMs.length` (o ÚLTIMO
- * pedido ainda em voo) ou `requestedMs.length + 1` (nada em voo; o "+1" é o `setData` do MOUNT
- * inicial, sem pedido por trás) — nunca outro valor, dado o contrato serial (`D-C3.5`). Este
- * spec descarta a cauda possivelmente não resolvida (`pairCount = min(requestedMs.length,
- * drawnMs.length - 1)`) em vez de assumir qual dos dois casos vale no instante da leitura, e
- * pareia `requestedMs[i]` com `drawnMs[i+1]` sobre esse `pairCount`. Um arrasto real ainda é
- * disparado (DoD 7 pede "disparadas por arrasto"), mas a amostra medida mistura páginas por
- * arrasto e páginas do laço-achado — os dois indistinguíveis nesta medição, que é exatamente o
- * que este achado documenta.
+ * A CAUSA (`T-05.9`, `use-history-pager.ts`): `inFlightRef.current` era limpo em `finally`, mas
+ * `axisRef.current`/`windowRef.current` só eram atualizados pela LINHA DE RENDER
+ * (`axisRef.current = axis;`), que só corre depois que React comita o `setWindowState` daquele
+ * mesmo `fetchPage`. Entre o `finally` (guarda liberada) e o commit (refs atualizadas) havia uma
+ * fresta: um segundo `onCandidateRange` — disparado por um arrasto rápido seguinte — lia
+ * `axisRef.current` ainda apontando para a janela ANTERIOR, calculava `req.toMs` a partir dela, e
+ * só descobria o descompasso quando a SUA PRÓPRIA resposta chegava (por essa altura, o commit do
+ * primeiro `fetchPage` já tinha avançado `windowRef.current` para a janela nova). O fix: as refs
+ * agora são escritas SINCRONAMENTE dentro do próprio `fetchPage`, no mesmo trecho síncrono que
+ * limpa `inFlightRef` — a guarda e os dados que ela protege ficam consistentes no MESMO instante,
+ * nunca um render-tick adiantado.
+ *
+ * Com os dois fechados, este spec dirige `n >= 12` arrastos REAIS em sequência — nunca mais
+ * dependendo de nenhum comportamento auto-disparado — cada um esperando (pela sonda) a página do
+ * arrasto anterior ter sido DESENHADA antes do próximo começar, o mesmo contrato serial `D-C3.5`
+ * pede da própria paginação, aplicado aqui na cadência do GESTO.
  *
  * ── A COMPOSIÇÃO DOS DOIS TETOS (DoD 7, último parágrafo) ─────────────────────────────────────
  *
@@ -83,13 +84,12 @@ import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./hel
  * teto nasceu `16 ms` e foi RECALIBRADO para `160 ms` (`[DECISÃO-OWNER: 2026-09-22]`,
  * `17-teto-latencia-eixo.spec.ts`) depois de medir que `16 ms` nunca foi alcançável neste MESMO
  * ambiente de teste (Chromium headless dirigido por CDP) — este spec usa o MESMO teto recalibrado
- * para o mesmo instrumento, não o número original que já foi substituído. Dado o achado acima
- * (paginação roda continuamente desde o mount, nunca "quieta"), não há uma janela limpa "durante
- * a paginação" para isolar — os `6` primeiros samples de `window.__axisLatencyProbe` são o mount
- * (`17-*.spec.ts`'s próprio achado, "6 aplicações do próprio mount"); todo o resto é, pelo
- * raciocínio acima, inerentemente "durante paginação" nesta medição — por instrução explícita do
- * handoff desta task, um achado aqui é REGISTRADO, não "consertado" fora do escopo (a correção,
- * se houver, é da fase `02`).
+ * para o mesmo instrumento, não o número original que já foi substituído. Com o auto-disparo
+ * fechado (`T-05-FIX`), a paginação só roda enquanto este spec a dirige: os `6` primeiros samples
+ * de `window.__axisLatencyProbe` são o mount (`17-*.spec.ts`'s próprio achado, "6 aplicações do
+ * próprio mount"); cada sample seguinte é um remonte disparado por uma página que ESTE spec
+ * pediu via arrasto — a janela "durante a paginação" agora é exatamente essa cauda, sem
+ * ambiguidade com nenhum laço de fundo.
  *
  * Run with: `make e2e` (ou `npx playwright test 20-teto-latencia-historia-sob-demanda
  * --config=frontend/playwright.config.ts`), contra `E2E_API_PORT=8811 E2E_NEXT_PORT=4311`.
@@ -105,6 +105,16 @@ const PRICE_PANE_TESTID = "price-pane";
 const LATENCY_CEILING_MS = 400;
 /** Plan `05` DoD 7, literal: "n >= 10 paginações". */
 const MIN_PAGES = 10;
+/** `T-05.9` — número de arrastos REAIS, sequenciais, este spec dirige. Acima de `MIN_PAGES` com
+ * a mesma margem (`+2`) que a versão anterior deste spec usava para a cauda possivelmente em
+ * voo (`pairCount`'s próprio docstring, abaixo) — só que agora a margem cobre o mesmo risco sob
+ * gestos reais, não sob um laço de fundo. */
+const DRAG_COUNT = MIN_PAGES + 2;
+/** Teto de espera, por arrasto, para (a) a página que ELE disparou aparecer em `requestedMs` e
+ * (b) essa mesma página ser DESENHADA (`drawnMs` alcançar `requestedMs`) antes do próximo arrasto
+ * começar — bem acima do teto de `400 ms` que DoD 7 mede, para não confundir um timeout de
+ * sincronização do PRÓPRIO spec com uma violação do teto medido abaixo. */
+const PER_DRAG_TIMEOUT_MS = 10_000;
 
 /** `17-teto-latencia-eixo.spec.ts`'s own recalibrated ceiling (`[DECISÃO-OWNER: 2026-09-22]`) —
  * the sibling DoD this spec's own composition check (DoD 7's last paragraph) cites. Reusing the
@@ -311,6 +321,65 @@ async function dragRight(page: Page, deltaXPx: number): Promise<void> {
   await page.mouse.up();
 }
 
+async function probeCounts(page: Page): Promise<{ readonly requested: number; readonly drawn: number }> {
+  return page.evaluate(() => ({
+    requested: window.__historyPageLatencyProbe?.requestedMs.length ?? 0,
+    drawn: window.__historyPageLatencyProbe?.drawnMs.length ?? 0,
+  }));
+}
+
+/**
+ * `T-05.9` — dirige `DRAG_COUNT` arrastos REAIS, um de cada vez, cada um esperando (pela sonda,
+ * nunca por um tempo fixo) que a PRÓPRIA página desse arrasto tenha sido pedida e então DESENHADA
+ * antes do próximo arrasto começar. Isto é o contrato serial de `D-C3.5` reaplicado na cadência
+ * do GESTO: sem esta espera, dois arrastos rápidos poderiam disparar dois `onCandidateRange`
+ * antes de qualquer um resolver — exatamente a corrida que o fix de `use-history-pager.ts` fecha
+ * DENTRO do pager, mas que só não se manifesta aqui porque este spec nunca tenta produzi-la (a
+ * corrida em si já está coberta pelo fix; este spec mede latência, não re-testa a corrida).
+ *
+ * Recalcula `pxPerSlot` a cada iteração (em vez de uma vez só no início) porque cada página
+ * aterrissada pode ter mudado a relação pixel/slot do range visível — o mesmo raciocínio que já
+ * levou `TARGET_SHIFT_SLOTS` a somar margem ao `PAGE_SLOTS` de uma página.
+ *
+ * Nem todo arrasto necessariamente cruza a zona de gatilho (`historyRequest`'s próprio
+ * `distanceFromEdgeMs >= triggerMs` — variação de layout entre iterações pode deixar um arrasto
+ * curto demais); quando isso acontece, `requested` não cresce e a espera por essa metade é
+ * dispensada (não há pedido novo para esperar), e a iteração conta como um arrasto sem página —
+ * o loop segue, e a asserção de `pairCount >= MIN_PAGES` no fim do teste é quem cobra o total.
+ */
+async function driveSequentialDrags(page: Page, count: number): Promise<void> {
+  for (let i = 0; i < count; i += 1) {
+    const before = await readPriceRange(page);
+    const box = await priceContainerLocator(page).boundingBox();
+    if (box === null) {
+      throw new Error("painel de Preço: sem bounding box — nada montado");
+    }
+    const pxPerSlot = box.width / (before.to - before.from);
+    const deltaXPx = Math.max(10, pxPerSlot * TARGET_SHIFT_SLOTS);
+    fact(SPEC, `drag_delta_px:${i}`, Number(deltaXPx.toFixed(2)));
+
+    const counts = await probeCounts(page);
+    await dragRight(page, deltaXPx);
+
+    const requestedGrew = await page
+      .waitForFunction((n) => (window.__historyPageLatencyProbe?.requestedMs.length ?? 0) > n, counts.requested, {
+        timeout: PER_DRAG_TIMEOUT_MS,
+      })
+      .then(() => true)
+      .catch(() => false);
+    fact(SPEC, `drag_requested_new_page:${i}`, requestedGrew);
+    if (!requestedGrew) {
+      continue;
+    }
+    const afterRequest = await probeCounts(page);
+    // Espera a PRÓPRIA página deste arrasto ser desenhada antes do próximo arrasto começar —
+    // nunca dispara dois arrastos com uma página ainda em voo.
+    await page.waitForFunction((n) => (window.__historyPageLatencyProbe?.drawnMs.length ?? 0) >= n, afterRequest.requested, {
+      timeout: PER_DRAG_TIMEOUT_MS,
+    });
+  }
+}
+
 test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a barra desenhada, sobre n >= ${MIN_PAGES} paginações disparadas por arrasto (${SPEC})`, async ({
   page,
 }) => {
@@ -334,46 +403,20 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
         "por mouse) não satisfeito",
     ).toBeGreaterThan(0);
 
-    // ⛔ ACHADO (`T-05.9`, `[MEDIDO 2026-09-23]`, não corrigido aqui — fora do escopo desta task,
-    // ver o docstring deste arquivo): a paginação AUTO-DISPARA a partir do próprio mount, sem
-    // NENHUM arrasto — `requestedMs.length` cresceu `6 -> 13 -> 21 -> 28 -> 35 -> 43 -> 52 -> 59`
-    // a cada 1,5 s de espera pura (`n=8` amostras, zero interação), e `data-visible-logical-from`
-    // do painel de Preço ficou PARADO em `-1` o tempo todo — cada remonte reintroduz o MESMO
-    // artefato de "settle" que o produziu da primeira vez, então cada página bem-sucedida
-    // rearma o próprio gatilho. Sem um teto real de cobertura (`D5.3`, que este estoque
-    // deliberadamente não modela — ver `startSyntheticOhlcStub`'s docstring), isto NUNCA
-    // sozinho — só um `reset()` OU uma resposta que falha (`coverageFloorMs`, que trava
-    // PERMANENTEMENTE) o interrompe. Por isso este spec NÃO tenta esperar "silêncio" antes de
-    // medir (`waitForHistoryProbeQuiet` teria feito isso — e nunca teria retornado): a única
-    // invariante que sobrevive a essa descoberta é GLOBAL, válida desde o load da página —
-    // `drawnMs.length === requestedMs.length + 1` sempre (o "+1" é o `setData` do MOUNT inicial,
-    // sem pedido por trás) — e é essa invariante, não um reset, que este spec usa para parear.
+    // `reset()` ANTES do primeiro arrasto — `history-page-latency-probe.ts`'s próprio docstring:
+    // "a caller that wants only page-triggered pairs calls `reset()` once the initial paint has
+    // settled, before driving any drag". Sem isto, `drawnMs` carregaria o `setData` do MOUNT
+    // inicial (sem pedido atrás) e o predicado de borda já satisfeito no mount
+    // (`AxisSyncStore`'s `initialRange` é o grid inteiro, ver docstring deste arquivo) poderia
+    // somar um pedido "de graça" antes do loop — o `reset()` faz `requestedMs[i]`/`drawnMs[i]`
+    // (MESMO índice, sem deslocamento) ser exclusivamente os `DRAG_COUNT` arrastos abaixo.
+    await page.evaluate(() => window.__historyPageLatencyProbe?.reset());
 
-    // Um arrasto real de qualquer forma — DoD 7 pede "disparadas por arrasto", e este spec
-    // dirige um gesto genuíno mesmo sabendo (achado acima) que páginas já se acumulam sem ele.
-    const before = await readPriceRange(page);
-    const box = await priceContainerLocator(page).boundingBox();
-    if (box === null) {
-      throw new Error("painel de Preço: sem bounding box — nada montado");
-    }
-    const pxPerSlot = box.width / (before.to - before.from);
-    const deltaXPx = Math.max(10, pxPerSlot * TARGET_SHIFT_SLOTS);
-    fact(SPEC, "drag_delta_px", Number(deltaXPx.toFixed(2)));
-    await dragRight(page, deltaXPx);
-
-    // Espera n >= MIN_PAGES + margem pedidos acumulados — pelo arrasto acima e/ou pelo
-    // laço-achado, os dois indistinguíveis nesta medição (é exatamente o que o achado documenta).
-    // A margem (+2) existe porque o laço nunca fica quieto (achado acima): no instante exato em
-    // que lemos as duas sondas, o ÚLTIMO pedido pode ainda estar em voo (`drawnMs.length ===
-    // requestedMs.length`, não `+1`) — `[MEDIDO 2026-09-23]` — então o par abaixo DESCARTA
-    // deliberadamente essa cauda em vez de assumir a instantânea "+1" como garantida.
-    const PAIR_MARGIN = 2;
-    await expect
-      .poll(async () => (await page.evaluate(() => window.__historyPageLatencyProbe?.requestedMs.length ?? 0)), {
-        timeout: 20_000,
-        message: `menos de ${MIN_PAGES + PAIR_MARGIN} páginas solicitadas em 20s`,
-      })
-      .toBeGreaterThanOrEqual(MIN_PAGES + PAIR_MARGIN);
+    // `T-05.9` — `DRAG_COUNT` arrastos REAIS, sequenciais, cada um esperando a página do arrasto
+    // anterior ter sido desenhada antes do próximo começar. Ver `driveSequentialDrags`'s próprio
+    // docstring para o porquê da espera por-arrasto (é o contrato serial de `D-C3.5` reaplicado
+    // na cadência do gesto).
+    await driveSequentialDrags(page, DRAG_COUNT);
 
     const probe = await page.evaluate(() => ({
       requestedMs: window.__historyPageLatencyProbe?.requestedMs ?? [],
@@ -381,23 +424,24 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     }));
     fact(SPEC, "history_page_requested_n", probe.requestedMs.length);
     fact(SPEC, "history_page_drawn_n", probe.drawnMs.length);
-    // `drawnMs.length` no instante da leitura é `requestedMs.length` (um pedido ainda em voo) ou
-    // `requestedMs.length + 1` (nada em voo, o "+1" é o setData do mount inicial) — nunca outro
-    // valor, dado o contrato serial (`D-C3.5`: uma requisição em voo por grade). `pairCount`
-    // descarta a cauda possivelmente não resolvida em vez de assumir qual dos dois casos vale.
+    // Pós-`reset()`, cada arrasto que efetivamente pediu uma página também esperou (dentro do
+    // loop) essa MESMA página ser desenhada antes do próximo começar — então, ao chegar aqui,
+    // `drawnMs.length` tem de ser EXATAMENTE `requestedMs.length` (índice a índice, sem o "+1" do
+    // mount que o `reset()` acima já descartou, e sem cauda em voo — o loop nunca avança para o
+    // próximo arrasto com um pedido pendente).
     expect(
       probe.drawnMs.length,
-      `drawnMs (${probe.drawnMs.length}) deveria ser requestedMs (${probe.requestedMs.length}) ` +
-        "ou requestedMs+1 — nenhum outro valor é possível sob o contrato serial (D-C3.5)",
-    ).toBeGreaterThanOrEqual(probe.requestedMs.length);
-    const pairCount = Math.min(probe.requestedMs.length, probe.drawnMs.length - 1);
+      `drawnMs (${probe.drawnMs.length}) deveria ser EXATAMENTE requestedMs (${probe.requestedMs.length}) ` +
+        "pós-reset — driveSequentialDrags espera cada página desenhar antes do próximo arrasto",
+    ).toBe(probe.requestedMs.length);
+    const pairCount = probe.requestedMs.length;
     fact(SPEC, "history_page_pair_n", pairCount);
     expect(
       pairCount,
-      `apenas ${pairCount} pares requested/drawn completos — esperado >= ${MIN_PAGES} (plan 05 DoD 7)`,
+      `apenas ${pairCount} páginas disparadas por arrasto — esperado >= ${MIN_PAGES} (plan 05 DoD 7)`,
     ).toBeGreaterThanOrEqual(MIN_PAGES);
 
-    const latenciesMs = Array.from({ length: pairCount }, (_, i) => probe.drawnMs[i + 1]! - probe.requestedMs[i]!);
+    const latenciesMs = Array.from({ length: pairCount }, (_, i) => probe.drawnMs[i]! - probe.requestedMs[i]!);
     const sorted = [...latenciesMs].sort((a, b) => a - b);
     const p95Index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(0.95 * sorted.length) - 1));
     const p95 = sorted[p95Index]!;
@@ -422,12 +466,14 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     ).toBeGreaterThanOrEqual(0);
 
     // ── Composição dos dois tetos (DoD 7, último parágrafo) ──────────────────────────────────
-    // Achado, não conserto: se isto morder, é sintoma de que a paginação entrou no quadro de
-    // pan — registrado no QA Gate Context Block desta task, correção (se houver) é da fase 02.
-    // Dado o achado acima (paginação roda continuamente desde o mount, nunca "quieta"), não há
-    // uma janela limpa "durante a paginação" para isolar — os `6` primeiros samples são o mount
-    // (`17-teto-latencia-eixo.spec.ts`'s próprio achado, "6 aplicações do próprio mount"); todo
-    // o resto, pelo raciocínio acima, é inerentemente "durante paginação" nesta medição.
+    // Medição honesta, não conserto: este bloco pode morder, e se morder é sintoma de que a
+    // paginação entrou no quadro de pan — este spec MEDE a composição (`T-05.9`'s próprio
+    // handoff: "pode passar ou reprovar honestamente, mas TEM que medir"), não a conserta; se
+    // reprovar, é achado para a fase `02` (dona do teto de `T-02.7`), não desta task. Os `6`
+    // primeiros samples de `window.__axisLatencyProbe` são o mount (`17-teto-latencia-eixo
+    // .spec.ts`'s próprio achado, "6 aplicações do próprio mount"); todo sample depois desses `6`
+    // é, sob os `DRAG_COUNT` arrastos que este spec agora dirige, um remonte disparado por uma
+    // página que ESTE spec pediu — a janela "durante a paginação" é exatamente essa cauda.
     const axisSamplesMs = await page.evaluate(() => window.__axisLatencyProbe?.samplesMs ?? []);
     const MOUNT_SAMPLES = 6;
     const pagingSamplesMs = axisSamplesMs.slice(MOUNT_SAMPLES);

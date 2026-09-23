@@ -306,12 +306,35 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
           longShort: longShort.coverage,
         };
 
+        // `T-05.9` — refs are updated HERE, synchronously, in the same microtask this fetch
+        // resolves in — never left to wait for the render `axisRef.current = axis;` line above
+        // performs. React does not commit `setWindowState`'s render until the scheduler gets
+        // around to it, which is NOT before this `async` function returns control to its
+        // caller. A second `onCandidateRange` fired in that gap (`inFlightRef.current` is
+        // cleared in `finally`, right below, at the END of this same synchronous stretch) would
+        // otherwise read `axisRef.current`/`windowRef.current` still pointing at the window
+        // BEFORE this page — computing `req.toMs` off a stale `axis.startMs` that no longer
+        // equals `windowRef.current.startMs` by the time ITS OWN fetch resolves (which may be
+        // after THIS state has committed), tripping `widenAndCapWindow`'s "page.toMs must equal
+        // current.startMs" invariant. Updating the refs eagerly, right alongside the state that
+        // will eventually reach them via render, closes that gap: the guard
+        // (`inFlightRef.current`) and the data it gates (`windowRef`/`axisRef`/`rowsRef`/
+        // `panelCoverageRef`) become consistent at the exact same instant, instead of the guard
+        // opening one render-tick before the data it protects has caught up.
+        windowRef.current = widened;
+        rowsRef.current = nextRows;
+        panelCoverageRef.current = nextCoverage;
+        axisRef.current = axisFromWindow(widened);
+
         setWindowState(widened);
         setRows(nextRows);
         setPanelCoverage(nextCoverage);
         setPreservedRange(range);
       } catch (cause) {
-        // See this module's docstring, "WHY A FAILED PAGE ABORTS ALL TEN FETCHES".
+        // See this module's docstring, "WHY A FAILED PAGE ABORTS ALL TEN FETCHES". `axisRef`
+        // here is always the FRESH axis (see the success branch above for why it cannot be
+        // stale), so the freeze lands on the edge THIS failed request was actually fired from.
+        coverageFloorMsRef.current = axisRef.current.startMs;
         setCoverageFloorMs(axisRef.current.startMs);
         if (!(cause instanceof HistoryPageFetchError)) {
           throw cause;
