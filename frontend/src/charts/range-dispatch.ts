@@ -65,28 +65,49 @@ export interface ReentrancyGuard {
 }
 
 export function createReentrancyGuard(): ReentrancyGuard {
-  let applying = false;
+  // `T-05-FIX` RODADA 3 (achado escalado desta rodada: `holdApplying` era um booleano com
+  // "último a liberar vence", não um contador). `SymbolClient.tsx` calls `holdApplying()` once
+  // PER PANEL on every mount — this guard is the ONE instance `AxisSyncStore` hands out
+  // (`axis-sync.ts::guard`), shared by all `PANEL_COUNT` (6) panels, and their six mount effects
+  // run in the SAME React commit, each scheduling its own `requestAnimationFrame` release right
+  // after its own `setVisibleLogicalRange` call. Because `lightweight-charts` also schedules its
+  // OWN `window.requestAnimationFrame` per chart instance
+  // (`lightweight-charts.development.mjs:11196`, registered synchronously inside
+  // `setVisibleLogicalRange`), the six panels interleave in the SAME animation frame in mount
+  // order: [chart0-lib-raf, chart0-release-raf, chart1-lib-raf, chart1-release-raf, ...]. A
+  // BOOLEAN guard has chart0's release (2nd callback in the queue) flip `applying` back to
+  // `false` BEFORE chart1..chart5's own deferred echoes (3rd, 5th, 7th, ... callbacks) have had
+  // their chance to be dropped — exactly the deferred-echo shape `holdApplying` exists to catch,
+  // just for every panel after the first. `holdCount` makes `isApplying` true for as long as
+  // ANY hold (or the synchronous `runApplying`) is outstanding — a release only closes the gate
+  // once every opener has released, so panel 1..5's echoes are still guarded even after panel
+  // 0's own release fires first. `runApplying` folds into the same counter (not a separate
+  // `applying` boolean) so the two mechanisms cannot desync: a `runApplying` dispatch never runs
+  // while a hold is outstanding in the first place (`onPanelRangeChanged` checks `isApplying`
+  // before calling it), so this is not a behavior change for the already-covered single-writer
+  // case — see `range-dispatch.test.ts`'s "TWO concurrent holdApplying calls" falsifier.
+  let holdCount = 0;
   return {
     get isApplying(): boolean {
-      return applying;
+      return holdCount > 0;
     },
     runApplying<T>(fn: () => T): T {
-      applying = true;
+      holdCount += 1;
       try {
         return fn();
       } finally {
-        applying = false;
+        holdCount -= 1;
       }
     },
     holdApplying(): () => void {
-      applying = true;
+      holdCount += 1;
       let released = false;
       return () => {
         if (released) {
           return;
         }
         released = true;
-        applying = false;
+        holdCount -= 1;
       };
     },
   };
