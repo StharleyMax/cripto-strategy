@@ -115,12 +115,13 @@ function rowsFor(
   const absentAt = new Set(options.absentAt ?? []);
   return BARS.map((bar) =>
     absentAt.has(bar.openTimeMs)
-      ? { event_time: bar.openTimeMs, available_at: null, value: null, absence: "SEM_PONTO" }
+      ? { event_time: bar.openTimeMs, available_at: null, value: null, absence: "SEM_PONTO", coverage: null }
       : {
           event_time: bar.openTimeMs,
           available_at: bar.openTimeMs + 1_000,
           value: String(reading(bar)),
           absence: null,
+          coverage: null,
         },
   );
 }
@@ -366,7 +367,7 @@ test("the `volume` filler never reaches the canvas — the items carry OHLC and 
 test("a malformed value and a duplicated reading are LOUD, never swallowed as absence", () => {
   const bucket = BARS[0]!.openTimeMs;
   const malformed: readonly SeriesHistoryRow[] = [
-    { event_time: bucket, available_at: bucket, value: "not-a-number", absence: null },
+    { event_time: bucket, available_at: bucket, value: "not-a-number", absence: null, coverage: null },
   ];
   assert.throws(
     () => assembleOhlcCandles({ ...ohlcRows(), high: malformed }),
@@ -374,8 +375,8 @@ test("a malformed value and a duplicated reading are LOUD, never swallowed as ab
     "a broken producer must not hide behind the same gap a real absence draws",
   );
   const duplicated: readonly SeriesHistoryRow[] = [
-    { event_time: bucket, available_at: bucket, value: "110", absence: null },
-    { event_time: bucket, available_at: bucket, value: "999", absence: null },
+    { event_time: bucket, available_at: bucket, value: "110", absence: null, coverage: null },
+    { event_time: bucket, available_at: bucket, value: "999", absence: null, coverage: null },
   ];
   assert.throws(
     () => assembleOhlcCandles({ ...ohlcRows(), high: duplicated }),

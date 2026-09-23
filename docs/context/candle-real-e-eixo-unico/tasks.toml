@@ -377,7 +377,7 @@ tracker = { provider = "jira", id = "CST-215", url = "https://conversationhub.at
 id = "T-03.1"
 title = "[sentimento] 03 · reduce(nature, reduction) como funcao PURA sobre os 8 pares, num lugar so — nunca tabela por metric"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = []
 refs = [
@@ -393,7 +393,7 @@ tracker = { provider = "jira", id = "CST-216", url = "https://conversationhub.at
 id = "T-03.2"
 title = "[sentimento] 03 · A funcao FALHA ALTO em par nao coberto, e o teste de totalidade prova que os 8 pares tem funcao declarada"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.1"]
 refs = [
@@ -409,7 +409,7 @@ tracker = { provider = "jira", id = "CST-217", url = "https://conversationhub.at
 id = "T-03.3"
 title = "[sentimento] 03 · SUPPORTED_INTERVAL vira o conjunto {1m,5m,15m,1h,4h} e tudo fora CONTINUA 422"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.1"]
 refs = [
@@ -425,7 +425,7 @@ tracker = { provider = "jira", id = "CST-218", url = "https://conversationhub.at
 id = "T-03.4"
 title = "[sentimento] 03 · P-B: servir SEMPRE com o par de inteiros {present, expected} — nunca recusar, nunca limiar, nunca extrapolar"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.1"]
 refs = [
@@ -441,7 +441,7 @@ tracker = { provider = "jira", id = "CST-219", url = "https://conversationhub.at
 id = "T-03.5"
 title = "[sentimento] 03 · (RATIO, POINT) = last sob ALLOWLIST DE METRIC de 1 elemento — nao por nature"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.1"]
 refs = [
@@ -456,7 +456,7 @@ tracker = { provider = "jira", id = "CST-220", url = "https://conversationhub.at
 id = "T-03.6"
 title = "[sentimento] 03 · O envelope de /series-history ganha coverage {earliest_bucket_ms, latest_bucket_ms, source_floor_ms}"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.4"]
 refs = [
@@ -472,7 +472,7 @@ tracker = { provider = "jira", id = "CST-221", url = "https://conversationhub.at
 id = "T-03.7"
 title = "[sentimento] 03 · ⛔ CA-8' em quatro camadas: guarda de nao-degenerescencia, fixture DA BINANCE, matriz 8x5=20 asseracoes, ablacao de cobertura"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.1", "T-03.4"]
 refs = [
@@ -490,7 +490,7 @@ tracker = { provider = "jira", id = "CST-222", url = "https://conversationhub.at
 id = "T-03.8"
 title = "[sentimento] 03 · Testes diferenciais: STOCK NAO soma (senao 12x o OI real) e FLOW soma"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.1"]
 refs = [
@@ -505,7 +505,7 @@ tracker = { provider = "jira", id = "CST-223", url = "https://conversationhub.at
 id = "T-03.9"
 title = "[web] 03 · A barra de TF le o conjunto SERVIDO pelo backend, nunca escrito a mao no front"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.3"]
 refs = [
@@ -519,7 +519,7 @@ tracker = { provider = "jira", id = "CST-224", url = "https://conversationhub.at
 id = "T-03.10"
 title = "[web] 03 · A escala log10 do volume sob TF variavel — continua ate prova em contrario"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.9"]
 refs = [
@@ -533,7 +533,7 @@ tracker = { provider = "jira", id = "CST-225", url = "https://conversationhub.at
 id = "T-03.11"
 title = "[web] 03 · Playwright: o TF move OS SEIS + ⛔ ablacao de P3 + a escada de GA-2 some OU e declarada"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.9"]
 refs = [
@@ -549,7 +549,7 @@ tracker = { provider = "jira", id = "CST-226", url = "https://conversationhub.at
 id = "T-03.12"
 title = "[web] 03 · Veredito do ux-ui-mastery sobre a barra de TF"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T00:21:36Z @ 00a5bc8990327193ad8a9dbf3584741967f65ba5
 phase = "03"
 depends_on = ["T-03.9"]
 refs = [

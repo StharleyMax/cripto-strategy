@@ -21,6 +21,78 @@ from src.modules.sentimento.domain.as_of_accessor import BarPolicy
 
 
 @dataclass(frozen=True)
+class BucketCoverage:
+    """The `{present, expected}` pair `P-B` requires on every REAGGREGATED row (`ADR-040/D3`).
+
+    `SPEC-008` §5.2 / `JULGAMENTO-QUANT-ARCHITECT.md` §2.2, literal: a pair of INTEGERS, never a
+    bool, never a percentage — collapsing to either loses the denominator, and the denominator
+    IS the information (`81/240` and `1/3` are not the same claim about the world, and a server-
+    computed percentage cannot be told apart from a different window that happens to land on the
+    same ratio). `present` and `expected` are counts of NATIVE facts, never a served-row count.
+
+    `present` counts DISTINCT native facts this route admitted inside the outer bucket — never
+    the number of native GRID SLOTS that carry a value. The two differ exactly when
+    `CARRY_FORWARD_BY_NATURE[nature]` is `True` (`STOCK`): one observed fact can answer several
+    consecutive native instants, and counting slots would report "5 of 5 present" for a bucket
+    that in truth holds ONE fact stretched forward by `as_of`. `JULGAMENTO-QUANT-ARCHITECT.md`
+    §2.1 measures coverage the same way, "fatos nativos distintos (não linhas da grade
+    servida)", for the same reason: a slot count is not a fact count, and reporting one as the
+    other is the same class of misrepresentation `P-B` exists to prevent for the SUM/extremum
+    case.
+
+    `expected` is the number of native grid slots the outer bucket spans
+    (`interval_ms // native_grid_ms`) — never "how many facts existed at the source", which this
+    route has no way to know and `P-B` explicitly does not promise (`ADR-040/D3`: cobertura
+    declarada NÃO promete soma certa).
+    """
+
+    present: int
+    expected: int
+
+    def to_wire(self) -> dict[str, int]:
+        """Project onto the exact `{"present": .., "expected": ..}` shape `SPEC-008` §5.2 fixes."""
+        return {"present": self.present, "expected": self.expected}
+
+
+@dataclass(frozen=True)
+class PanelCoverage:
+    """`panel.coverage` — the wire shape `D8`/`D-C3.7` fixes (`SPEC-008` §7.3), on the PANEL.
+
+    NOT `BucketCoverage` above, and the difference is the whole point of the two names:
+    `BucketCoverage` is a per-ROW fraction (`{present, expected}`, how many of THIS bucket's
+    native facts are present); `PanelCoverage` is per-SERIES, the two WALLS the request's window
+    sits between — `beyond-coverage` is otherwise indistinguishable from `absent` "by
+    construction" (`D8`'s own words), because nothing on the wire today says how far back or
+    forward either the store or the origin actually reaches.
+
+    `earliest_bucket_ms` / `latest_bucket_ms` are OUR OWN STORE's bounds — the smallest and
+    largest `bucket_end` `md.series` holds for this `(series_key_id, symbol)`, `None` when the
+    store holds no row at all (`use_cases/series_history.py` resolves these against
+    `SeriesStoreBoundsReader`, never against the request's own window — a wall the CURRENT
+    request happens not to reach is not the same fact as a wall that does not exist).
+
+    `source_floor_ms` is a DIFFERENT wall — the upstream API's own historical depth, resolved by
+    `domain/source_floor.py` from the series' identity alone (never a store read). `None` means
+    UNMEASURED, not zero and not "unlimited": `JULGAMENTO-FRONTEND-ARCHITECT.md`'s `D-C3.7`
+    names this "a parede da API" and is explicit that the operator needs to tell the two walls
+    apart — "a Binance não tem" (`source_floor_ms`) and "nós não coletamos"
+    (`earliest_bucket_ms`) are different repairs.
+    """
+
+    earliest_bucket_ms: int | None
+    latest_bucket_ms: int | None
+    source_floor_ms: int | None
+
+    def to_wire(self) -> dict[str, int | None]:
+        """Project onto the exact `panel.coverage` shape `SPEC-008` §7.3 fixes."""
+        return {
+            "earliest_bucket_ms": self.earliest_bucket_ms,
+            "latest_bucket_ms": self.latest_bucket_ms,
+            "source_floor_ms": self.source_floor_ms,
+        }
+
+
+@dataclass(frozen=True)
 class SeriesHistoryRow:
     """One row of the `rows` array — the discriminated pair of `ADR-034/D5`, on the grid.
 
@@ -29,12 +101,20 @@ class SeriesHistoryRow:
     grid step, and the grid step is what a chart's X axis needs, not the source's own stamp.
     `available_at` is `None` exactly when `value`/`absence` says there is no point, matching the
     example in `SPEC-006 §5.2` line 2.
+
+    `coverage` is `None` for the DEGENERATE case (`interval` == the series' native interval, so
+    `use_cases/series_history.py` never reaggregates) — a native row has nothing to report a
+    coverage FRACTION of; it already IS the one native fact, unmediated. Every row that WAS
+    reaggregated (`ADR-040/D1`) carries a `BucketCoverage`, whether served with a value or
+    `absence`d — `present == 0` is itself the information `SPEC-008` §7.3 asks the wire to carry,
+    not a case to hide.
     """
 
     event_time: int
     available_at: int | None
     value: str | None
     absence: str | None
+    coverage: BucketCoverage | None = None
 
     def to_wire(self) -> dict[str, object]:
         """Project onto the exact field names `SPEC-006 §5.2` writes, snake_case, verbatim."""
@@ -43,6 +123,7 @@ class SeriesHistoryRow:
             "available_at": self.available_at,
             "value": self.value,
             "absence": self.absence,
+            "coverage": None if self.coverage is None else self.coverage.to_wire(),
         }
 
 
@@ -94,6 +175,7 @@ class SeriesHistoryReport:
     panel_nature: str
     panel_unit: str
     panel_grid: PanelGridVerdict
+    panel_coverage: PanelCoverage
     rows: tuple[SeriesHistoryRow, ...]
     knowledge_time: int
     bar_policy: BarPolicy
@@ -120,6 +202,10 @@ class SeriesHistoryReport:
                 # `upsampling` is the named state for "4 of every 5 slots repeat one bucket".
                 "native_grid_ms": self.panel_grid.native_grid_ms,
                 "grid_multiple": self.panel_grid.to_wire(),
+                # `D8`/`D-C3.7` (`SPEC-008` §7.3): the two walls that make `beyond-coverage`
+                # distinguishable from `absent` — see `PanelCoverage`'s own docstring for why
+                # this is not `BucketCoverage` repeated at a different level.
+                "coverage": self.panel_coverage.to_wire(),
             },
             "rows": [row.to_wire() for row in self.rows],
             "knowledge_time": self.knowledge_time,

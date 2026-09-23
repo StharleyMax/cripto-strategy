@@ -11,41 +11,90 @@ INSTANT THROUGH `as_of`. The two are held bit-identical by `ADR-039`/`C3`'s diff
 real rows, so this is the same answer computed in `O(n log n + m)` instead of `O(n * m)`; the
 loop it replaces was `99,95%` of a `17,250 s` response whose `SELECT` took `9 ms`.
 
-`ADR-034/D6`: F1 serves the NATIVE 1-minute grid only — `interval` outside `{"1m"}` is refused
-here as a second line of defence, even though the route (`src.api.routes.series_history`)
-already restricts the FastAPI query parameter to the literal `"1m"` before this function is
-ever called. A use case that trusted its caller completely would be untestable on its own.
+`ADR-034/D6` served the NATIVE 1-minute grid only, and named its own successor: *"trabalho
+futuro, dono `quant-architect`, gatilho: o dia em que um seletor de timeframe entrar no escopo
+de alguma feature"* — that day is `ADR-040`. `D1` of that ADR is the execution of the
+succession, WORD FOR WORD the same refusal clause extended from one interval to five:
+`interval` outside `SUPPORTED_INTERVALS` is still refused, here, as a second line of defence,
+even though the route (`src.api.routes.series_history`) already restricts the FastAPI query
+parameter to that same closed literal set before this function is ever called. A use case that
+trusted its caller completely would be untestable on its own.
+
+For `interval != "1m"` this module now REAGGREGATES: `SeriesWindowReader` still returns raw
+observations, `as_of_batch` still answers the NATIVE 1-minute grid (unchanged — `ADR-037`), and
+the widened set of intervals only changes what happens AFTER that read, in this module —
+`ADR-040/D1`: *"a reagregação mora na rota"*, never in the browser (`RF-7`). Each requested
+interval groups the native readings it covers and reduces them through
+`domain/series_reduction.reduce_bucket`, the pure `(nature, reduction)` function `T-03.1`
+built. `ADR-040/D2`'s own words: *"`STOCK` sozinho é insuficiente"* — `OPEN`/`HIGH`/`LOW` are
+three different functions from `CLOSE`/`LAST`/`POINT`'s `last`, and only `reduce_bucket` (never
+a hand-written `if`) is allowed to know which is which.
+
+`ADR-040/D3`'s `P-B` (`T-03.4`): every reaggregated row carries `coverage`
+(`domain/series_history_report.BucketCoverage`), the `{present, expected}` pair of INTEGERS —
+never a bool, never a percentage — `SPEC-008` §5.2 fixes. `present` counts DISTINCT native facts
+`as_of` admitted inside the outer bucket, `expected` the native grid slots it spans; a bucket
+missing facts is still SERVED, never refused and never extrapolated, exactly the arithmetic this
+module already had — `T-03.4` only makes the hole VISIBLE on the wire. The regime split
+`ADR-040/D3` draws (`Σ`/`max`/`min` serve the partial number as-is, so the renderer marking it is
+`web`'s job; `first`/`last` are already staleness-gated by the EXISTING `as_of_batch` mechanism,
+per native instant, before a reading ever reaches `present_values` below) needs no new piece
+here — both regimes reduce through the one function below and both get the one pair.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, cast
+from typing import Final, Protocol, cast
 
 from src.modules.sentimento.domain.as_of_accessor import (
+    AsOfReading,
     BarPolicy,
     Observation,
     ReadPurpose,
     SeriesReadPolicy,
     as_of_batch,
 )
+from src.modules.sentimento.domain.provenance import Absence
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.domain.series_history_report import (
+    BucketCoverage,
+    PanelCoverage,
     PanelGridVerdict,
     SeriesHistoryReport,
     SeriesHistoryRow,
 )
+from src.modules.sentimento.domain.series_key import SeriesKey
+from src.modules.sentimento.domain.series_reduction_gate import reduce_bucket_for_series
+from src.modules.sentimento.domain.source_floor import resolve_source_floor_ms
 
 # `CVD_BUCKET_WIDTH_MS` (`domain/cvd.py:31`) transcribed, not imported: that constant is `cvd`'s
 # own "NOT a parameter" fact about ONE metric, while this module's grid applies to every series
 # `md.series` stores at F1 (price and OI share the same 1-minute native cadence — `ADR-034/D6`
 # scopes the REAGGREGATION restriction to CVD specifically, not the grid width itself, which
 # `postgres_series_sink.py`'s hypertable already fixes at 1 minute for everything it stores).
+# This is also the ONLY step `as_of_batch` is ever asked to read at — `ADR-040/D1` reaggregates
+# ABOVE this layer, never by asking `as_of` for a coarser `t`.
 _GRID_STEP_MS = 60_000
 
-# `ADR-034/D6`: the only `interval` F1/F2 serve. A request for anything else is refused with a
-# named `422` by the route; this constant is what both the route's `Literal["1m"]` annotation
-# and this defence-in-depth check are checked against, so the two can never silently drift.
-SUPPORTED_INTERVAL = "1m"
+# `ADR-040/D1`: the set `/series-history` serves — the four TFs the owner asked for
+# (`[PREMISSA-OWNER: 2026-09-19]`) plus the native grid itself. `ADR-034/D6`'s clause is
+# EXTENDED, not diluted: every `interval` outside this set is still refused with a named `422`
+# (`SUPPORTED_INTERVAL`, singular, is gone — the name now says what the value is).
+SUPPORTED_INTERVALS: Final[frozenset[str]] = frozenset({"1m", "5m", "15m", "1h", "4h"})
+
+# The width, in ms, of each member of `SUPPORTED_INTERVALS` — both the route's `Literal`
+# annotation and this dict are checked against the SAME set, so the two can never silently
+# drift, and both are epoch-ms multiples of `_GRID_STEP_MS`: every bucket boundary this dict
+# can produce lands on a UTC-aligned instant (`1970-01-01T00:00:00Z` is itself a multiple of
+# all five), which is what makes a `4h` bucket line up with the exchange's own `4h` candle
+# without this module ever parsing a calendar.
+_INTERVAL_STEP_MS: Final[dict[str, int]] = {
+    "1m": _GRID_STEP_MS,
+    "5m": 5 * _GRID_STEP_MS,
+    "15m": 15 * _GRID_STEP_MS,
+    "1h": 60 * _GRID_STEP_MS,
+    "4h": 4 * 60 * _GRID_STEP_MS,
+}
 
 
 class UnknownSeriesKeyIdError(Exception):
@@ -53,7 +102,11 @@ class UnknownSeriesKeyIdError(Exception):
 
 
 class UnsupportedIntervalError(Exception):
-    """`interval` is not `"1m"` — `ADR-034/D6` refuses rather than silently subestimating a sum."""
+    """`interval` is outside `SUPPORTED_INTERVALS`.
+
+    `ADR-040/D1` refuses rather than silently subestimating a sum — the same clause
+    `ADR-034/D6` wrote, now over a set of 5 instead of 1.
+    """
 
 
 class InvalidWindowError(Exception):
@@ -79,6 +132,29 @@ class SeriesWindowReader(Protocol):
     ) -> tuple[Observation, ...]: ...
 
 
+class SeriesStoreBoundsReader(Protocol):
+    """Read port over `md.series`'s own MIN/MAX `bucket_end`, per `(series_key_id, symbol)`.
+
+    `D8`/`D-C3.7` (`SPEC-008` §7.3): `panel.coverage.earliest_bucket_ms`/`latest_bucket_ms` are
+    OUR STORE's own walls — a SEPARATE question from `SeriesWindowReader.read_window` above,
+    which returns the rows inside one REQUEST's window. A bucket outside the requested window is
+    routinely `None`-served today; a bucket outside the STORE'S OWN extent is a different fact
+    (`beyond-coverage`, not `not-loaded`), and answering it needs an aggregate over the WHOLE
+    series, never a slice of it — deliberately a second port rather than a second method
+    demanded of every `SeriesWindowReader` implementer (four exist in `backend/tests/` alone;
+    widening that protocol would force all four to grow a method none of their own tests need).
+
+    `infra/postgres_series_window_reader.PostgresSeriesWindowReader` satisfies this
+    structurally too (`read_bounds`, alongside its existing `read_window`, over the SAME
+    injected connection — no second connection opened for this) — the same "name the port here,
+    wire the adapter at composition" shape `SeriesWindowReader` above already uses.
+    """
+
+    def read_bounds(  # noqa: D102
+        self, *, series_key_id: str, symbol: str
+    ) -> tuple[int | None, int | None]: ...
+
+
 class GridMultipleClassifier(Protocol):
     """Port over `ADR-026/D1`'s `classify_grid_multiple`, which lives in the OTHER context.
 
@@ -99,15 +175,19 @@ class GridMultipleClassifier(Protocol):
     ) -> PanelGridVerdict: ...
 
 
-def _first_grid_instant(window_start_ms: int) -> int:
-    """Round `window_start_ms` UP to the nearest 1-minute grid instant.
+def _first_grid_instant(window_start_ms: int, *, step_ms: int = _GRID_STEP_MS) -> int:
+    """Round `window_start_ms` UP to the nearest multiple of `step_ms`.
 
     `md.series.bucket_end` values are stamped on the whole-minute grid (`transact_time //
     60000`, `cvd.py`'s own bucketing rule) — starting the reported rows on that SAME grid, not
     on whatever millisecond the caller's window happens to begin at, is what makes `event_time`
-    line up with the real `bucket_end` a chart's X axis expects.
+    line up with the real `bucket_end` a chart's X axis expects. `step_ms` defaults to the
+    native 1-minute grid; `ADR-040/D1` calls this a second time, with `step_ms=interval_ms`, to
+    align the OUTER (reaggregated) bucket boundaries — `1970-01-01T00:00:00Z` is a multiple of
+    every member of `_INTERVAL_STEP_MS`, so this rounding is also what lines a `4h` bucket up
+    with the exchange's own UTC-aligned `4h` candle.
     """
-    return -(-window_start_ms // _GRID_STEP_MS) * _GRID_STEP_MS
+    return -(-window_start_ms // step_ms) * step_ms
 
 
 def _read_instant(grid_instant: int, *, bar_policy: BarPolicy) -> int:
@@ -158,6 +238,7 @@ def build_series_history_report(
     catalog: SeriesCatalog,
     reader: SeriesWindowReader,
     classify_grid: GridMultipleClassifier,
+    bounds_reader: SeriesStoreBoundsReader,
     *,
     series_key_id: str,
     symbol: str,
@@ -170,18 +251,26 @@ def build_series_history_report(
     """Build the `SeriesHistoryReport` `GET /series-history` serves for one request.
 
     Raises:
-        UnsupportedIntervalError: `interval != "1m"` (`ADR-034/D6`).
+        UnsupportedIntervalError: `interval` outside `SUPPORTED_INTERVALS` (`ADR-040/D1`).
         UnknownSeriesKeyIdError: `series_key_id` has no row in `catalog`.
         InvalidWindowError: `window_start_ms > window_end_ms`.
+        UncoveredReductionPairError: propagated, uncaught, from `reduce_bucket_for_series` — a
+            `(nature, reduction)` pair the table does not cover FAILS HIGH (`ADR-040/D2`),
+            never silently, only reachable when `interval != "1m"` (below).
+        DisallowedRatioPointMetricError: propagated, uncaught, from `reduce_bucket_for_series`
+            (`domain/series_reduction_gate.py`) — a `(RATIO, POINT)` key whose `metric` is
+            outside the one-element allowlist FAILS HIGH (`ADR-040/D4`), only reachable when
+            `interval != "1m"` (below).
         DecisionReadRefusedError: propagated, uncaught, from `as_of` — a malformed read
             (`ADR-006`/D3, `SPEC-001` §2.3) is the route's `500` case (`RN-9`), never served.
 
     """
-    if interval != SUPPORTED_INTERVAL:
+    if interval not in SUPPORTED_INTERVALS:
         raise UnsupportedIntervalError(
-            f"interval {interval!r} is not supported: `ADR-034/D6` serves only "
-            f"{SUPPORTED_INTERVAL!r} in this phase, refusing rather than subestimating"
+            f"interval {interval!r} is not supported: `ADR-040/D1` serves only "
+            f"{sorted(SUPPORTED_INTERVALS)!r}, refusing rather than subestimating"
         )
+    interval_ms = _INTERVAL_STEP_MS[interval]
     if window_start_ms > window_end_ms:
         raise InvalidWindowError(
             f"window_start_ms ({window_start_ms}) must not be after window_end_ms "
@@ -222,10 +311,25 @@ def build_series_history_report(
     # for every entry cataloged today, so this is a no-op on current data and a guard against
     # the next entry whose staleness is tighter than its grid.
     lookback_ms = max(_GRID_STEP_MS, entry.native_grid_ms, staleness_ms)
+
+    # `ADR-040/D1`: the OUTER grid is the requested interval; `as_of_batch` below is still asked
+    # only at the NATIVE 1-minute step (`ADR-037` is untouched). `interval == "1m"` is the
+    # degenerate case where the two coincide, `outer_bucket_ends == native_instants` exactly —
+    # written as ONE general path rather than a special-cased `if interval == "1m"` branch, so
+    # the native case stays provably the same code the pre-`ADR-040` behaviour ran.
+    first_outer_bucket_end = _first_grid_instant(window_start_ms, step_ms=interval_ms)
+    outer_bucket_ends = tuple(range(first_outer_bucket_end, window_end_ms + 1, interval_ms))
+    # The first outer bucket's own start can fall BEFORE `window_start_ms` (the caller's window
+    # need not itself be interval-aligned) — the native instants requested reach back to THAT
+    # bucket's true start, never to `window_start_ms` verbatim, so a wide bucket at the left edge
+    # of the window is never composed from a truncated slice of its own native facts.
+    first_native_instant = first_outer_bucket_end - interval_ms + _GRID_STEP_MS
+    native_instants = tuple(range(first_native_instant, window_end_ms + 1, _GRID_STEP_MS))
+
     observations = reader.read_window(
         series_key_id=series_key_id,
         symbol=symbol,
-        window_start_ms=window_start_ms,
+        window_start_ms=min(window_start_ms, first_native_instant),
         window_end_ms=window_end_ms,
         lookback_ms=lookback_ms,
     )
@@ -245,38 +349,53 @@ def build_series_history_report(
     # `test_as_of_is_the_single_reader.py`'s `DECLARED_TOUCHERS`. Form `2B` — dropping
     # `series_key_id`/`symbol` from inside the accessor "because the SQL already filtered them" —
     # is VETOED outright: those two are the `q`/`nq` weld guard, not a performance term.
-    grid_instants = tuple(
-        range(_first_grid_instant(window_start_ms), window_end_ms + 1, _GRID_STEP_MS)
-    )
-    readings = as_of_batch(
+    native_readings = as_of_batch(
         series=entry.key,
         symbol=symbol,
         # THE GRID INSTANT IS AN X COORDINATE; `t` IS A DECISION INSTANT (`_read_instant`). The
         # mapping is monotone in both branches, so the batch's one-way cursor is legitimate on
         # the sequence it produces — and `as_of_batch` refuses loudly if it ever stops being.
-        instants=tuple(_read_instant(g, bar_policy=bar_policy) for g in grid_instants),
+        instants=tuple(_read_instant(g, bar_policy=bar_policy) for g in native_instants),
         observations=observations,
         policy=policy,
         bar_policy=bar_policy,
         purpose=ReadPurpose.RENDERING,
         knowledge_time=knowledge_time_ms,
     )
+
+    group_size = interval_ms // _GRID_STEP_MS
     rows: list[SeriesHistoryRow] = []
-    for grid_instant, reading in zip(grid_instants, readings, strict=True):
-        # `.projection()` (`as_of_accessor.py`) is the ALREADY-DECLARED read of the winning row's
-        # `available_at` — reading it here directly, as `reading.observation.row.available_at`,
-        # would make this module a second entry in `test_as_of_is_the_single_reader.py`'s
-        # `DECLARED_TOUCHERS`; going through the dict keeps the read-path column scan exactly
-        # where it already is.
-        projected = reading.projection()
-        rows.append(
-            SeriesHistoryRow(
-                event_time=grid_instant,
-                available_at=cast("int | None", projected["available_at"]),
-                value=cast("str | None", projected["value"]),
-                absence=cast("str | None", projected["absence"]),
+    for index, outer_bucket_end in enumerate(outer_bucket_ends):
+        group_start = index * group_size
+        group_readings = native_readings[group_start : group_start + group_size]
+        if group_size == 1:
+            # `interval == "1m"`: the exact pre-`ADR-040` projection, string in, string out — no
+            # `float` round-trip through `reduce_bucket`, which `SPEC-001 §2.6` protects.
+            rows.append(_row_from_native_reading(outer_bucket_end, group_readings[0]))
+        else:
+            rows.append(
+                _reaggregated_row(
+                    outer_bucket_end,
+                    native_readings=group_readings,
+                    key=entry.key,
+                )
             )
-        )
+
+    # `D8`/`D-C3.7`, `T-03.6`: the two walls `panel.coverage` needs. `earliest_bucket_ms`/
+    # `latest_bucket_ms` are OUR OWN STORE's extent for this exact `(series_key_id, symbol)` —
+    # an AGGREGATE over `md.series`, deliberately not derived from `observations` above (that
+    # tuple is already sliced to this request's window + lookback; the store may hold rows far
+    # outside it in either direction, and THAT is the fact `beyond-coverage` needs).
+    # `source_floor_ms` is `entry.key`'s own resolution (`domain/source_floor.py`) — pure, no
+    # store read, `None` for every provider/metric that has no measured wall.
+    earliest_bucket_ms, latest_bucket_ms = bounds_reader.read_bounds(
+        series_key_id=series_key_id, symbol=symbol
+    )
+    panel_coverage = PanelCoverage(
+        earliest_bucket_ms=earliest_bucket_ms,
+        latest_bucket_ms=latest_bucket_ms,
+        source_floor_ms=resolve_source_floor_ms(entry.key, knowledge_time_ms=knowledge_time_ms),
+    )
 
     return SeriesHistoryReport(
         panel_series_key_id=series_key_id,
@@ -291,11 +410,112 @@ def build_series_history_report(
         panel_nature=entry.key.nature.value,
         panel_unit=entry.key.unit,
         # `ADR-037/D4`: `classify_grid_multiple`'s FIRST production caller, reached through the
-        # injected port. `_GRID_STEP_MS` is the panel grid because `ADR-034/D6` serves only
-        # `interval=1m`; the moment a second interval is served, the panel grid stops being a
-        # constant and this argument becomes the one that carries it.
-        panel_grid=classify_grid(panel_grid_ms=_GRID_STEP_MS, native_grid_ms=entry.native_grid_ms),
+        # injected port. `ADR-040/D1`: the panel grid is now the REQUESTED interval's width, not
+        # the constant `_GRID_STEP_MS` this argument carried while `ADR-034/D6` served only
+        # `interval=1m` — the comment this replaces named this exact moment as the trigger.
+        panel_grid=classify_grid(panel_grid_ms=interval_ms, native_grid_ms=entry.native_grid_ms),
+        panel_coverage=panel_coverage,
         rows=tuple(rows),
         knowledge_time=knowledge_time_ms,
         bar_policy=bar_policy,
+    )
+
+
+def _row_from_native_reading(grid_instant: int, reading: AsOfReading) -> SeriesHistoryRow:
+    """Project one native `AsOfReading` onto its `SeriesHistoryRow` — the pre-`ADR-040` path.
+
+    `.projection()` (`as_of_accessor.py`) is the ALREADY-DECLARED read of the winning row's
+    `available_at` — reading it here directly, as `reading.observation.row.available_at`, would
+    make this module a second entry in `test_as_of_is_the_single_reader.py`'s
+    `DECLARED_TOUCHERS`; going through the dict keeps the read-path column scan exactly where it
+    already is. The exact decoded string travels straight to the wire, with no `float`
+    round-trip: `SPEC-001 §2.6` protects that string, and `reduce_bucket` (`_reaggregated_row`,
+    below) is reached only when `interval != "1m"`, for exactly that reason.
+    """
+    projected = reading.projection()
+    return SeriesHistoryRow(
+        event_time=grid_instant,
+        available_at=cast("int | None", projected["available_at"]),
+        value=cast("str | None", projected["value"]),
+        absence=cast("str | None", projected["absence"]),
+    )
+
+
+def _reaggregated_row(
+    outer_bucket_end: int,
+    *,
+    native_readings: tuple[AsOfReading, ...],
+    key: SeriesKey,
+) -> SeriesHistoryRow:
+    """Reduce one outer bucket's native readings through `reduce_bucket_for_series`.
+
+    `ADR-040/D1`/`D2`/`D4`.
+
+    `key` (`entry.key`, the full `SeriesKey`) travels here — not just `nature`/`reduction` — so
+    `reduce_bucket_for_series` (`domain/series_reduction_gate.py`) can gate `(RATIO, POINT)` by
+    `key.metric`, the one refusal `reduce_bucket` itself cannot make (`ADR-040/D4`). Calling
+    `reduce_bucket` directly here was the wiring gap QA fase 03 caught: the allowlist of one
+    element never ran on this, the only call site that reaches it for a reaggregating request.
+
+    `native_readings` is already the SLICE belonging to this one outer bucket, in ascending
+    grid-instant order — `reduce_bucket`'s own contract for `first`/`last`
+    (`domain/series_reduction.py`). A native instant with no admitted observation is dropped
+    before reducing: this is `P-B` (`ADR-040/D3`) — the arithmetic below sums/picks whatever
+    native facts ARE present, never refusing and never extrapolating the holes, and every call
+    now carries that fact forward on the wire as `coverage` (`T-03.4`), instead of leaving the
+    same silent partial a native 1-minute bucket already served before this function existed.
+
+    `available_at` is read through `.projection()`, never as `reading.observation.row.
+    available_at` — the same reason `_row_from_native_reading` above goes through the dict
+    instead of the attribute: a second `ast.Attribute` read of a read-path column outside
+    `as_of_accessor.py` would make this module a second entry in
+    `test_as_of_is_the_single_reader.py`'s `DECLARED_TOUCHERS`.
+    """
+    present_values: list[float] = []
+    present_available_at: list[int] = []
+    # `BucketCoverage.present` counts DISTINCT native FACTS, never grid slots — `bucket_end` is
+    # the identity of the underlying fact `as_of` answered with, read through the SAME
+    # `.projection()` dict as `available_at` above it (never `.observation.row.bucket_end`, for
+    # the identical `DECLARED_TOUCHERS` reason). For a `STOCK` series (`CARRY_FORWARD_BY_NATURE`
+    # is `True`) one observed row can answer several consecutive native instants in this group;
+    # a `set` collapses those repeats back to the ONE fact they are, so `present` never reports
+    # "5 of 5" for a bucket a single carried-forward observation is stretched across.
+    present_native_facts: set[int] = set()
+    for reading in native_readings:
+        if reading.value is None:
+            continue
+        projected = reading.projection()
+        available_at = cast("int | None", projected["available_at"])
+        if available_at is None:
+            continue
+        present_values.append(float(reading.value))
+        present_available_at.append(available_at)
+        bucket_end = cast("int | None", projected["bucket_end"])
+        if bucket_end is not None:
+            present_native_facts.add(bucket_end)
+
+    coverage = BucketCoverage(present=len(present_native_facts), expected=len(native_readings))
+
+    if not present_values:
+        # Every native instant in this outer bucket is absent. The four `Absence` reasons are
+        # not interchangeable (`SPEC-001 §3.1`) — reporting the LAST instant's own reason keeps
+        # the same "closest to the reported edge wins" direction `_last`/`reduce_bucket` already
+        # use for `STOCK`/`RATIO`, instead of inventing a fifth, unnamed reason.
+        last_absence = native_readings[-1].absence
+        absence = last_absence.value if last_absence is not None else Absence.NO_POINT.value
+        return SeriesHistoryRow(
+            event_time=outer_bucket_end,
+            available_at=None,
+            value=None,
+            absence=absence,
+            coverage=coverage,
+        )
+
+    reduced = reduce_bucket_for_series(key, present_values)
+    return SeriesHistoryRow(
+        event_time=outer_bucket_end,
+        available_at=max(present_available_at),
+        value=str(reduced),
+        absence=None,
+        coverage=coverage,
     )

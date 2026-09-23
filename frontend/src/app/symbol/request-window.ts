@@ -131,25 +131,33 @@ export interface RouteWindow {
  * `nowMs` is an ARGUMENT, not `Date.now()` read inside: that is what makes this falsifiable at
  * every instant (`request-window.test.ts`) instead of only on whatever day the suite runs.
  * `page.tsx` is the one place that reads the real clock.
+ *
+ * `requestIntervalMs` — `T-03.11` (`CST-226`) — is the width of the TF the render actually asked
+ * `/series-history` for (`SUPPORTED_TIMEFRAMES[…].stepMs`, `supported-timeframes.ts`), defaulted
+ * to `ONE_MINUTE_MS` (the pre-`T-03.11` behaviour, byte-for-byte, for every existing caller that
+ * still passes one argument). ⚠️ THIS PARAMETER IS THE "THE DAY A 15M/1H/4H AGGREGATE IS DRAWN
+ * OVER THIS SAME WINDOW" THIS MODULE'S OWN COMMENT ALREADY WARNED ABOUT (`quant-architect`, wave
+ * `03`, C1) — that day is this task. Below, `alignmentMs` is the wider of `FIVE_MINUTES_MS` (OI's
+ * native grid, unaffected) and `requestIntervalMs`, so the window's right edge lands on a
+ * boundary the REQUESTED interval actually admits — at `interval=4h` an edge merely 5-minute
+ * aligned lands on a `4h` boundary in only `2,1%` of clock readings `[MEDIDO 2026-09-11, n=1440,
+ * gate WAVE-03-janela-deslizante-quant-architect.md §1]`, silently truncating the outermost bar.
  */
-export function resolveRouteWindow(nowMs: number): RouteWindow {
+export function resolveRouteWindow(nowMs: number, requestIntervalMs: number = ONE_MINUTE_MS): RouteWindow {
+  const alignmentMs = Math.max(FIVE_MINUTES_MS, requestIntervalMs);
   const window = resolveTrailingWindow({
     nowMs,
     lagMs: RIGHT_EDGE_LAG_MS,
-    // ⚠️ `alignmentMs` IS THE COARSEST GRID THIS PAGE DRAWS, and today that is OI's 5 minutes.
-    // The day a 15m/1h/4h aggregate is drawn over this same window, THIS ARGUMENT HAS TO RISE
-    // WITH IT — a 5-minute-aligned edge lands on a 15m boundary in only 33,3% of clock
-    // readings, on a 1h boundary in 8,3% and on a 4h boundary in 2,1% `[MEDIDO 2026-09-11,
-    // n=1440 leituras de minuto, gate WAVE-03-janela-deslizante-quant-architect.md §1]`. The
-    // window stays VALID when that happens; it is the outermost bars that get cut, which is a
-    // silent wrongness, not an error. (`quant-architect`, wave `03`, C1.)
     spanMs: S2_WINDOW_SPAN_MS,
-    alignmentMs: FIVE_MINUTES_MS,
+    alignmentMs,
   });
   return {
     window,
     // The half-open → inclusive conversion is `charts`' (`ADR-003` FR-2), and it takes the
-    // FINEST grid this route queries (`interval: "1m"`), not the alignment above.
+    // FINEST grid this route EVER queries (`ONE_MINUTE_MS`) — never `alignmentMs` above, which is
+    // the OUTER (requested) grid: `windowEndMsInclusive` feeds `native_instants` on the backend
+    // (`series_history.py`'s own `first_native_instant`), a 1-minute-stepped sequence regardless
+    // of `interval`, so this conversion stays unchanged by `T-03.11`.
     windowEndMsInclusive: lastGridInstant(window, ONE_MINUTE_MS),
     knowledgeTimeMs: window.endMsExclusive + KNOWLEDGE_TIME_LAG_MS,
   };

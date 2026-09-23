@@ -16,7 +16,11 @@ from src.modules.sentimento.domain.provenance import (
     SeriesRow,
 )
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog, SeriesCatalogEntry
-from src.modules.sentimento.domain.series_history_report import PanelGridVerdict
+from src.modules.sentimento.domain.series_history_report import (
+    BucketCoverage,
+    PanelCoverage,
+    PanelGridVerdict,
+)
 from src.modules.sentimento.domain.series_key import (
     Nature,
     QuantityField,
@@ -24,6 +28,7 @@ from src.modules.sentimento.domain.series_key import (
     SeriesKey,
     TsConvention,
 )
+from src.modules.sentimento.domain.source_floor import resolve_source_floor_ms
 from src.modules.sentimento.use_cases.series_history import (
     InvalidWindowError,
     UnknownSeriesKeyIdError,
@@ -146,6 +151,31 @@ class _FakeReader:
         return self._observations
 
 
+class _FakeBoundsReader:
+    """A `SeriesStoreBoundsReader` fixture: returns the `(earliest, latest)` it was built with.
+
+    `T-03.6`. Defaults to `(None, None)` — an EMPTY store — the honest answer this class of test
+    (arithmetic over rows the `_FakeReader` above already supplies, not the store's extent)
+    should assert nothing beyond "the field exists and round-trips"; `test_source_floor.py` and
+    the `panel.coverage`-specific tests below cover the resolved-value cases.
+    """
+
+    def __init__(self, bounds: tuple[int | None, int | None] = (None, None)) -> None:
+        self._bounds = bounds
+        self.calls: list[dict[str, object]] = []
+
+    def read_bounds(self, *, series_key_id: str, symbol: str) -> tuple[int | None, int | None]:
+        self.calls.append({"series_key_id": series_key_id, "symbol": symbol})
+        return self._bounds
+
+
+bounds_reader = _FakeBoundsReader()
+"""The shared default instance every fixed call site above references by name (`T-03.6`'s bulk
+edit inserted `bounds_reader,` positionally) — stateless beyond its own `.calls` log, so sharing
+it across tests that never assert on `.calls` is safe; a test that needs a DIFFERENT extent
+builds its own `_FakeBoundsReader(...)` and shadows this name locally."""
+
+
 def test_reports_one_row_per_grid_instant_with_a_value_present() -> None:
     """A window covering one bucket returns exactly one row, value decoded from `value_raw`."""
     catalog = _catalog_with_one_entry()
@@ -157,6 +187,7 @@ def test_reports_one_row_per_grid_instant_with_a_value_present() -> None:
         catalog,
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -172,6 +203,9 @@ def test_reports_one_row_per_grid_instant_with_a_value_present() -> None:
     assert only_row.value == "42"
     assert only_row.absence is None
     assert only_row.available_at == bucket_end
+    # `T-03.4`: `coverage` is a REAGGREGATED-row concept (`ADR-040/D3`) — the native `1m` grid
+    # (`interval == native`, `_row_from_native_reading`) never reaggregates, so it never gets one.
+    assert only_row.coverage is None
 
 
 def test_reports_absence_for_a_grid_instant_with_no_admitted_observation() -> None:
@@ -183,6 +217,7 @@ def test_reports_absence_for_a_grid_instant_with_no_admitted_observation() -> No
         catalog,
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -195,6 +230,7 @@ def test_reports_absence_for_a_grid_instant_with_no_admitted_observation() -> No
     only_row = report.rows[0]
     assert only_row.value is None
     assert only_row.absence == Absence.NO_POINT.value
+    assert only_row.coverage is None
 
 
 def test_panel_fields_come_from_the_catalog_entry() -> None:
@@ -207,6 +243,7 @@ def test_panel_fields_come_from_the_catalog_entry() -> None:
         catalog,
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key_id,
         symbol=SYMBOL,
         interval="1m",
@@ -220,6 +257,105 @@ def test_panel_fields_come_from_the_catalog_entry() -> None:
     assert report.panel_source == "binance"
     assert report.panel_nature == "STOCK"
     assert report.panel_unit == "BTC"
+
+
+def test_panel_coverage_is_none_none_source_floor_when_the_store_holds_no_row() -> None:
+    """`T-03.6`, `D8`: an empty store — `earliest`/`latest` are `None`.
+
+    `source_floor_ms` still resolves (it never reads the store; `_oi_key()` is
+    `provider="binance"`, `metric="sum_open_interest"`, the `/futures/data/*` rolling case).
+    """
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+    knowledge_time_ms = BUCKET_END + 100_000
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        _FakeBoundsReader((None, None)),
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=BUCKET_END,
+        window_end_ms=BUCKET_END,
+        knowledge_time_ms=knowledge_time_ms,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.panel_coverage == PanelCoverage(
+        earliest_bucket_ms=None,
+        latest_bucket_ms=None,
+        source_floor_ms=resolve_source_floor_ms(_oi_key(), knowledge_time_ms=knowledge_time_ms),
+    )
+    assert report.panel_coverage.source_floor_ms is not None
+
+
+def test_panel_coverage_echoes_the_bounds_reader_verbatim() -> None:
+    """`T-03.6`: a non-empty store's `(earliest, latest)` round-trips onto `panel.coverage`.
+
+    UNCHANGED by the request's own window — `_FakeBoundsReader` here returns values OUTSIDE
+    `[window_start_ms, window_end_ms]`, and they still land on the wire exactly as given.
+    """
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+    store_earliest = BUCKET_END - 999 * GRID_MS
+    store_latest = BUCKET_END + 999 * GRID_MS
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        _FakeBoundsReader((store_earliest, store_latest)),
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=BUCKET_END,
+        window_end_ms=BUCKET_END,
+        knowledge_time_ms=BUCKET_END + 100_000,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.panel_coverage.earliest_bucket_ms == store_earliest
+    assert report.panel_coverage.latest_bucket_ms == store_latest
+
+
+def test_panel_coverage_is_none_for_a_provider_with_no_measured_source_floor() -> None:
+    """A `coinalyze` panel: `earliest`/`latest_bucket_ms` still resolve from the store.
+
+    `source_floor_ms` stays `None` — `domain/source_floor.py` has no measured wall for that
+    provider (`test_source_floor.py` is the falsifier-bearing suite for this table).
+    """
+    coinalyze_key = _oi_key(provider="coinalyze")
+    catalog = SeriesCatalog(
+        (
+            SeriesCatalogEntry(
+                key=coinalyze_key,
+                native_grid="1min",
+                native_grid_ms=60_000,
+                max_staleness_ms=120_000,
+            ),
+        )
+    )
+    reader = _FakeReader(())
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        _FakeBoundsReader((BUCKET_END, BUCKET_END)),
+        series_key_id=coinalyze_key.series_key_id(),
+        symbol=SYMBOL,
+        interval="1m",
+        window_start_ms=BUCKET_END,
+        window_end_ms=BUCKET_END,
+        knowledge_time_ms=BUCKET_END + 100_000,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert report.panel_coverage.earliest_bucket_ms == BUCKET_END
+    assert report.panel_coverage.latest_bucket_ms == BUCKET_END
+    assert report.panel_coverage.source_floor_ms is None
 
 
 def test_calling_twice_with_the_same_key_produces_byte_identical_envelopes() -> None:
@@ -238,8 +374,20 @@ def test_calling_twice_with_the_same_key_produces_byte_identical_envelopes() -> 
         "bar_policy": BarPolicy.FINAL_ONLY,
     }
 
-    first = build_series_history_report(catalog, reader, classify_panel_grid, **kwargs)  # type: ignore[arg-type]
-    second = build_series_history_report(catalog, reader, classify_panel_grid, **kwargs)  # type: ignore[arg-type]
+    first = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        bounds_reader,
+        **kwargs,  # type: ignore[arg-type]
+    )
+    second = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        bounds_reader,
+        **kwargs,  # type: ignore[arg-type]
+    )
 
     assert first.to_envelope(principal_id=None, server_now_ms=0) == second.to_envelope(
         principal_id=None, server_now_ms=0
@@ -255,6 +403,7 @@ def test_lookback_ms_passed_to_the_reader_is_at_least_the_grid_and_the_staleness
         catalog,
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -267,8 +416,15 @@ def test_lookback_ms_passed_to_the_reader_is_at_least_the_grid_and_the_staleness
     assert reader.calls[0]["lookback_ms"] == max(GRID_MS, 999_999)
 
 
-def test_refuses_an_interval_other_than_1m() -> None:
-    """`ADR-034/D6`: never subestimate — refuse instead of aggregating a coarser interval."""
+@pytest.mark.parametrize("interval", ["1d", "3m", "30s"])
+def test_refuses_an_interval_outside_the_supported_set(interval: str) -> None:
+    """`ADR-040/D1` (`T-03.3` DoD 5): `1d`/`3m`/`30s` are still refused, `n=3` — `D6` extended.
+
+    `ADR-040/D1` widened the set `ADR-034/D6` refused-against from `{1m}` to
+    `{1m,5m,15m,1h,4h}`; the refusal ITSELF is unchanged and this is the falsifier in the
+    opposite direction named by the ADR: *"se algum `interval` FORA do conjunto devolver `200`,
+    a recusa de `D6` foi diluída em vez de estendida"*.
+    """
     catalog = _catalog_with_one_entry()
     reader = _FakeReader(())
 
@@ -277,14 +433,38 @@ def test_refuses_an_interval_other_than_1m() -> None:
             catalog,
             reader,
             classify_panel_grid,
+            bounds_reader,
             series_key_id=_oi_key().series_key_id(),
             symbol=SYMBOL,
-            interval="5m",
+            interval=interval,
             window_start_ms=BUCKET_END,
             window_end_ms=BUCKET_END + GRID_MS,
             knowledge_time_ms=BUCKET_END + 100_000,
             bar_policy=BarPolicy.FINAL_ONLY,
         )
+
+
+@pytest.mark.parametrize("interval", ["1m", "5m", "15m", "1h", "4h"])
+def test_every_member_of_the_supported_set_is_accepted(interval: str) -> None:
+    """The other half of the same falsifier: none of the 5 widened values raises `422`."""
+    catalog = _catalog_with_one_entry()
+    reader = _FakeReader(())
+
+    report = build_series_history_report(
+        catalog,
+        reader,
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval=interval,
+        window_start_ms=BUCKET_END,
+        window_end_ms=BUCKET_END,
+        knowledge_time_ms=BUCKET_END + 100_000,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert len(report.rows) == 1
 
 
 def test_refuses_an_unknown_series_key_id() -> None:
@@ -297,6 +477,7 @@ def test_refuses_an_unknown_series_key_id() -> None:
             catalog,
             reader,
             classify_panel_grid,
+            bounds_reader,
             series_key_id="does-not-exist",
             symbol=SYMBOL,
             interval="1m",
@@ -317,6 +498,7 @@ def test_refuses_a_window_that_is_not_strictly_increasing() -> None:
             catalog,
             reader,
             classify_panel_grid,
+            bounds_reader,
             series_key_id=_oi_key().series_key_id(),
             symbol=SYMBOL,
             interval="1m",
@@ -437,6 +619,7 @@ def test_a_flow_series_with_publication_lag_serves_a_value_at_every_grid_instant
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -472,6 +655,7 @@ def test_a_stock_series_with_publication_lag_is_not_shifted_one_bucket_late() ->
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -509,6 +693,7 @@ def test_a_bucket_that_closes_after_the_grid_instant_is_never_served_at_it() -> 
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -537,6 +722,7 @@ def test_the_knowledge_horizon_still_excludes_a_row_observed_after_it() -> None:
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -573,6 +759,7 @@ def test_intrabar_reads_at_the_grid_instant_and_never_the_next_bucket_partial() 
         _catalog_for(key),
         reader,
         classify_panel_grid,
+        bounds_reader,
         series_key_id=key.series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -664,6 +851,7 @@ def _count_points(*, native_grid_ms: int) -> int:
         _ratio_catalog(native_grid_ms=native_grid_ms),
         _ratio_reader(window_end_ms=window_end_ms),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_ratio_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -728,6 +916,7 @@ def test_the_report_names_upsampling_when_the_native_grid_is_wider_than_the_pane
         _ratio_catalog(native_grid_ms=FIVE_MINUTE_GRID_MS),
         _ratio_reader(window_end_ms=window_end_ms),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_ratio_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -753,6 +942,7 @@ def test_a_series_whose_native_grid_equals_the_panel_grid_is_not_upsampling() ->
         catalog,
         _FakeReader(()),
         classify_panel_grid,
+        bounds_reader,
         series_key_id=_oi_key().series_key_id(),
         symbol=SYMBOL,
         interval="1m",
@@ -767,4 +957,254 @@ def test_a_series_whose_native_grid_equals_the_panel_grid_is_not_upsampling() ->
         "enabled": True,
         "reason": "multiple_of_native",
         "multiple": 1,
+    }
+
+
+# ── `ADR-040/D1` — reaggregation above the native grid ─────────────────────────────────────
+#
+# Everything above this line pins `interval == "1m"`, the degenerate case where
+# `_reaggregated_row` (`use_cases/series_history.py`) is never reached. What follows is
+# `T-03.3`'s own falsifier — `ADR-040` "Falsificador desta ADR", item 2, literal: *"se
+# `/series-history?interval=15m` devolver `200` com um `FLOW` que não seja a soma dos fatos de
+# 1 min contidos no bucket, ou um `STOCK` que seja soma em vez do extremo/último
+# correspondente, `D1` foi violada"*. The exhaustive 8-pair matrix against a real fixture is
+# `T-03.7`'s task (`reduce_bucket` itself, `domain/series_reduction.py`); this pins the WIRING
+# one layer up, through the real use case, on the two functions that disagree the loudest.
+
+OUTER_BUCKET_END = 1_620_000_000_000
+"""Aligned to EVERY member of `_INTERVAL_STEP_MS`, not only `GRID_MS` — `1_620_000_000_000 /
+300_000 = 5_400_000` exact — so the fixture below is the window a real `5m` request would
+send, not an arbitrary instant that happens to divide evenly by one width only."""
+
+
+def _five_native_facts(key: SeriesKey, *, values: tuple[str, ...]) -> list[SeriesRow]:
+    """Five `_lagged_row`s spanning `[OUTER_BUCKET_END - 4*GRID_MS, OUTER_BUCKET_END]`.
+
+    `values[0]` is the OLDEST (smallest `event_time`), `values[-1]` the NEWEST — the ascending
+    order `reduce_bucket`'s `first`/`last` require, same contract the fixtures above already
+    honour for the native 1-minute case.
+    """
+    return [
+        _lagged_row(key, bucket_end=OUTER_BUCKET_END - (4 - index) * GRID_MS, value_raw=value)
+        for index, value in enumerate(values)
+    ]
+
+
+def test_interval_5m_sums_the_five_native_facts_for_a_flow_series() -> None:
+    """`FLOW` reaggregated is the `Σ` of the facts it covers — never the last fact alone."""
+    key = _volume_key()
+    rows = _five_native_facts(key, values=("1.0", "2.0", "3.0", "4.0", "5.0"))
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(_observations(*rows)),
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert len(report.rows) == 1
+    only_row = report.rows[0]
+    assert only_row.event_time == OUTER_BUCKET_END
+    assert only_row.value == "15.0"  # 1+2+3+4+5 — never "5.0" (last) nor "1.0" (first)
+    assert only_row.absence is None
+    # `T-03.4`/`ADR-040/D3` (`P-B`): full coverage is still REPORTED, not omitted — 5 distinct
+    # native facts (five different `bucket_end`s) of the 5 the `5m` outer bucket spans.
+    assert only_row.coverage == BucketCoverage(present=5, expected=5)
+
+
+def test_interval_5m_takes_the_last_native_fact_for_a_stock_series_never_the_sum() -> None:
+    """`STOCK` reaggregated is the extremum/last its `reduction` names — `MORDE` if it summed.
+
+    `_oi_key()` is `(STOCK, POINT)`, which `reduce_bucket`'s table maps to `_last` — the same
+    function `(STOCK, CLOSE)`/`(STOCK, LAST)` share (`series_reduction.py`'s one documented
+    collision). `12×`-the-real-OI is exactly the shape `ADR-040`'s M2 named: summing a `STOCK`.
+    """
+    key = _oi_key()
+    rows = _five_native_facts(key, values=("10", "20", "30", "40", "50"))
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(_observations(*rows)),
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    only_row = report.rows[0]
+    assert only_row.value == "50.0"  # the LAST fact — never "150.0" (Σ) nor "10.0" (first)
+    # Regime B (`first`/`last`) still carries the pair — 5 distinct native facts of 5 expected.
+    assert only_row.coverage == BucketCoverage(present=5, expected=5)
+
+
+def test_interval_5m_reports_absence_when_no_native_fact_is_admitted_at_all() -> None:
+    """Every native instant of the outer bucket absent -> the outer row is `SEM_PONTO` too."""
+    key = _volume_key()
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(()),
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    only_row = report.rows[0]
+    assert only_row.value is None
+    assert only_row.absence == Absence.NO_POINT.value
+    assert only_row.available_at is None
+    # `P-B` never withholds the pair even when the whole bucket is absent — `present == 0` IS
+    # the information (`SPEC-008` §7.3), not a case where the field disappears.
+    assert only_row.coverage == BucketCoverage(present=0, expected=5)
+
+
+def test_interval_5m_sums_only_the_native_facts_present_when_some_minutes_are_holes() -> None:
+    """`ADR-040/D3` (`P-B`): sum whatever native facts ARE present, mark the hole, never fake it.
+
+    A partial outer bucket sums whatever native facts ARE present, never fabricates the holes,
+    and reports the hole through `coverage` (`T-03.4`) — never a refusal, never a threshold,
+    never an extrapolation. Only 2 of the 5 native minutes carry a fact; the middle 3 are simply
+    absent rows.
+    """
+    key = _volume_key()
+    rows = [
+        _lagged_row(key, bucket_end=OUTER_BUCKET_END - 4 * GRID_MS, value_raw="1.0"),
+        _lagged_row(key, bucket_end=OUTER_BUCKET_END, value_raw="5.0"),
+    ]
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(_observations(*rows)),
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    only_row = report.rows[0]
+    assert only_row.value == "6.0"  # 1.0 + 5.0 — never "0", never extrapolated to 5 minutes
+    assert only_row.absence is None
+    # `[MEDIDO 2026-09-19]`-shaped magnitude, at fixture scale: 2 of the 5 expected native slots.
+    # `mean(present) * expected` (the forbidden extrapolation) would be `15.0`, not `6.0` — this
+    # assertion is what would catch a future edit that started scaling instead of just summing.
+    assert only_row.coverage == BucketCoverage(present=2, expected=5)
+
+
+def test_present_counts_distinct_native_facts_never_carried_forward_grid_slots() -> None:
+    """`coverage.present` is a FACT count, not a SLOT count — `MORDE` on the naive count.
+
+    `(STOCK, POINT)` carries forward (`CARRY_FORWARD_BY_NATURE[STOCK] is True`,
+    `as_of_accessor.py`): ONE observed fact at the group's first minute is a legitimate answer
+    for `as_of` at every one of the 5 native instants inside this `5m` outer bucket, as long as
+    each stays within `max_staleness_ms` of its own read instant. A `present` that counted grid
+    SLOTS would read `5/5` here and claim full coverage; `JULGAMENTO-QUANT-ARCHITECT.md` §2.1
+    counts "fatos nativos distintos (não linhas da grade servida)" for exactly this reason — one
+    fact stretched across five slots by carry-forward is not five observations, and reporting it
+    as five would be the same misrepresentation `P-B`'s pair exists to prevent.
+    """
+    key = _oi_key()
+    only_fact_bucket_end = OUTER_BUCKET_END - 4 * GRID_MS
+    row = _lagged_row(key, bucket_end=only_fact_bucket_end, value_raw="7")
+
+    report = build_series_history_report(
+        _catalog_for(key, max_staleness_ms=400_000),
+        _FakeReader(_observations(row)),
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    only_row = report.rows[0]
+    assert only_row.value == "7.0"  # carried forward correctly to the bucket's LAST minute
+    # The `MORDE`: a slot-counting implementation would assert `present == 5` here, not `1`.
+    assert only_row.coverage == BucketCoverage(present=1, expected=5)
+
+
+def test_a_window_start_not_aligned_to_the_interval_still_composes_the_full_bucket() -> None:
+    """The caller's window need not be interval-aligned.
+
+    The first outer bucket is still built from its OWN true start, never truncated to whatever
+    millisecond `window_start_ms` is.
+    """
+    key = _volume_key()
+    rows = _five_native_facts(key, values=("1.0", "2.0", "3.0", "4.0", "5.0"))
+    # Lands one native minute INSIDE the bucket — its true start is `OUTER_BUCKET_END -
+    # 4*GRID_MS`, three minutes earlier than this.
+    window_start_ms = OUTER_BUCKET_END - 3 * GRID_MS
+
+    report = build_series_history_report(
+        _catalog_for(key),
+        _FakeReader(_observations(*rows)),
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=key.series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=window_start_ms,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    assert len(report.rows) == 1
+    assert report.rows[0].event_time == OUTER_BUCKET_END
+    assert report.rows[0].value == "15.0"
+
+
+def test_the_panel_grid_verdict_uses_the_requested_interval_not_the_native_step() -> None:
+    """`ADR-040/D1`: `panel_grid_ms` is now the REQUESTED interval.
+
+    Not the pre-`ADR-040` constant `_GRID_STEP_MS` — `5m` over a `60_000` native grid is
+    `multiple=5`, not `1`.
+    """
+    catalog = _catalog_with_one_entry()  # native_grid_ms == GRID_MS == 60_000
+
+    report = build_series_history_report(
+        catalog,
+        _FakeReader(()),
+        classify_panel_grid,
+        bounds_reader,
+        series_key_id=_oi_key().series_key_id(),
+        symbol=SYMBOL,
+        interval="5m",
+        window_start_ms=OUTER_BUCKET_END,
+        window_end_ms=OUTER_BUCKET_END,
+        knowledge_time_ms=OUTER_BUCKET_END + 10 * GRID_MS,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+    panel = report.to_envelope(principal_id=None, server_now_ms=OUTER_BUCKET_END)["panel"]
+    assert panel["grid_multiple"] == {  # type: ignore[index]
+        "enabled": True,
+        "reason": "multiple_of_native",
+        "multiple": 5,
     }

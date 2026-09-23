@@ -66,9 +66,9 @@ const RANGE_START_MS = FIXTURE_WINDOW.startMs;
 
 function rowsWithOneAbsentMinute(): readonly SeriesHistoryRow[] {
   return [
-    { event_time: RANGE_START_MS, available_at: RANGE_START_MS + 1_000, value: "111.5", absence: null },
-    { event_time: RANGE_START_MS + ONE_MINUTE_MS, available_at: null, value: null, absence: "SEM_PONTO" },
-    { event_time: RANGE_START_MS + 2 * ONE_MINUTE_MS, available_at: RANGE_START_MS + 2 * ONE_MINUTE_MS + 1_000, value: "113.25", absence: null },
+    { event_time: RANGE_START_MS, available_at: RANGE_START_MS + 1_000, value: "111.5", absence: null, coverage: null },
+    { event_time: RANGE_START_MS + ONE_MINUTE_MS, available_at: null, value: null, absence: "SEM_PONTO", coverage: null },
+    { event_time: RANGE_START_MS + 2 * ONE_MINUTE_MS, available_at: RANGE_START_MS + 2 * ONE_MINUTE_MS + 1_000, value: "113.25", absence: null, coverage: null },
   ];
 }
 
@@ -122,7 +122,7 @@ test("CA-F2-3 (price/OI/CVD, end to end): a SEM_PONTO row becomes a bare Whitesp
   const cvdRowsWithNegative: readonly SeriesHistoryRow[] = [
     rows[0]!,
     rows[1]!,
-    { event_time: RANGE_START_MS + 2 * ONE_MINUTE_MS, available_at: RANGE_START_MS + 2 * ONE_MINUTE_MS, value: "-3.5", absence: null },
+    { event_time: RANGE_START_MS + 2 * ONE_MINUTE_MS, available_at: RANGE_START_MS + 2 * ONE_MINUTE_MS, value: "-3.5", absence: null, coverage: null },
   ];
   const deltas = scaledCvdDeltasFromHistoryRows(cvdRowsWithNegative);
   assert.equal(deltas.length, 2);
@@ -202,9 +202,9 @@ test("MORDE (negative control — proves the falsifier is not vacuous): naively 
 
 test("scalarPointsFromHistoryRows filters to the destination grid (OI's 1m→5m re-grid)", () => {
   const rows: SeriesHistoryRow[] = [
-    { event_time: 0, available_at: 0, value: "1", absence: null },
-    { event_time: ONE_MINUTE_MS, available_at: ONE_MINUTE_MS, value: "2", absence: null },
-    { event_time: 5 * ONE_MINUTE_MS, available_at: 5 * ONE_MINUTE_MS, value: "3", absence: null },
+    { event_time: 0, available_at: 0, value: "1", absence: null, coverage: null },
+    { event_time: ONE_MINUTE_MS, available_at: ONE_MINUTE_MS, value: "2", absence: null, coverage: null },
+    { event_time: 5 * ONE_MINUTE_MS, available_at: 5 * ONE_MINUTE_MS, value: "3", absence: null, coverage: null },
   ];
   const fiveMinPoints = scalarPointsFromHistoryRows(rows, 5 * ONE_MINUTE_MS);
   assert.deepEqual(
@@ -454,13 +454,13 @@ test("resolveFlowReadingOrAbsent on an EMPTY sub-axis answers absent instead of 
 
 test("nonNegativeFlowSlotsFromHistoryRows refuses a malformed value instead of hiding it as absence", () => {
   const notANumber: readonly SeriesHistoryRow[] = [
-    { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "not-a-number", absence: null },
+    { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "not-a-number", absence: null, coverage: null },
   ];
   assert.throws(() => nonNegativeFlowSlotsFromHistoryRows(notANumber), InvalidSeriesValueError);
   // A negative traded volume is a contract break too (`nature=FLOW`, `reduction=SUM`,
   // `denom=base`): refused loudly rather than drawn as a downward bar nobody could explain.
   const negative: readonly SeriesHistoryRow[] = [
-    { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "-1", absence: null },
+    { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "-1", absence: null, coverage: null },
   ];
   assert.throws(() => nonNegativeFlowSlotsFromHistoryRows(negative), InvalidSeriesValueError);
 });
@@ -486,6 +486,7 @@ function ladderRows(nativeBars: number, startMs: number): readonly SeriesHistory
         // The SAME value five times: that is what a held reading of one observation IS.
         value: String(1000 + bar),
         absence: null,
+        coverage: null,
       });
     }
   }
@@ -528,8 +529,8 @@ test("RN-S1: two ADJACENT native buckets carrying the SAME value are TWO buckets
   // The failure mode of the "count distinct consecutive values" shortcut, which is the other
   // tempting way to undo the staircase. Open interest is a STOCK: it genuinely repeats.
   const rows: readonly SeriesHistoryRow[] = [
-    { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "70000", absence: null },
-    { event_time: RANGE_START_MS + FIVE_MINUTES_MS, available_at: RANGE_START_MS, value: "70000", absence: null },
+    { event_time: RANGE_START_MS, available_at: RANGE_START_MS, value: "70000", absence: null, coverage: null },
+    { event_time: RANGE_START_MS + FIVE_MINUTES_MS, available_at: RANGE_START_MS, value: "70000", absence: null, coverage: null },
   ];
   const points = scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS);
   assert.equal(points.length, 2, "identical values at two grid instants are two observations");
@@ -559,12 +560,12 @@ const OI_CEILING_MS = 600_000;
 /** A readable wire row, with the publication instant spelled out — `A-4.2` made `available_at`
  * the minuend of the age, so a fixture that leaves it implicit no longer describes the input. */
 function readableRow(eventTimeMs: number, availableAtMs: number): SeriesHistoryRow {
-  return { event_time: eventTimeMs, available_at: availableAtMs, value: "70000", absence: null };
+  return { event_time: eventTimeMs, available_at: availableAtMs, value: "70000", absence: null, coverage: null };
 }
 
 /** An absent row — `available_at` is `null` exactly when `value` is (`CA-F1-5`). */
 function absentRow(eventTimeMs: number): SeriesHistoryRow {
-  return { event_time: eventTimeMs, available_at: null, value: null, absence: "SEM_PONTO" };
+  return { event_time: eventTimeMs, available_at: null, value: null, absence: "SEM_PONTO", coverage: null };
 }
 
 test("RNF-2: a reading older than the series' own ceiling is called STALE, and the ceiling is the served one", () => {

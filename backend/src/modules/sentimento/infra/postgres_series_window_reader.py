@@ -42,6 +42,15 @@ _SELECT_WINDOW_SQL = (
     "WHERE series_key_id = %s AND symbol = %s AND bucket_end >= %s AND bucket_end <= %s"
 )
 
+# `T-03.6`, `D8`/`D-C3.7`: our own store's WHOLE extent for one series — never bounded by a
+# request window (`_SELECT_WINDOW_SQL` above answers a different question). `MIN`/`MAX` over an
+# empty match both come back `NULL`, which `psycopg` hands back as `None` — the honest "the
+# store holds nothing for this series yet" answer, not a sentinel this module has to invent.
+_SELECT_EXTENT_SQL = (
+    "SELECT MIN(bucket_end), MAX(bucket_end) FROM md.series "
+    "WHERE series_key_id = %s AND symbol = %s"
+)
+
 
 class InvalidLookbackError(Exception):
     """`lookback_ms` is negative, and refuses rather than silently narrowing the window.
@@ -141,3 +150,20 @@ class PostgresSeriesWindowReader:
             records = cursor.fetchall()
         rows = (_row_from_record(record) for record in records)
         return tuple(Observation(row=row, value=Decimal(row.value_raw)) for row in rows)
+
+    def read_bounds(self, *, series_key_id: str, symbol: str) -> tuple[int | None, int | None]:
+        """Return `(MIN(bucket_end), MAX(bucket_end))` for this series — `None`/`None` if empty.
+
+        `T-03.6`, `D8`/`D-C3.7`: this is `SeriesStoreBoundsReader`'s adapter, over the SAME
+        injected connection `read_window` above uses — no second connection opened for it. It
+        aggregates over the WHOLE table for `(series_key_id, symbol)`, deliberately unbounded by
+        any window: `use_cases/series_history.py` needs the store's own extent, not a slice of
+        it, to tell `beyond-coverage` apart from `not-loaded`.
+        """
+        with self._connection.cursor() as cursor:
+            cursor.execute(_SELECT_EXTENT_SQL, (series_key_id, symbol))
+            record = cursor.fetchone()
+        if record is None:
+            return (None, None)
+        earliest, latest = cast("tuple[int | None, int | None]", record)
+        return (earliest, latest)

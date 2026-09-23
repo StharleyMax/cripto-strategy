@@ -35,6 +35,7 @@ from src.api.dependencies import (
     get_ingest_record_source,
     get_series_catalog_source,
     get_series_quarantine_source,
+    get_series_store_bounds_reader_source,
     get_series_window_reader_source,
     get_store_readiness_source,
 )
@@ -277,6 +278,10 @@ def create_app(
     app.dependency_overrides[get_series_quarantine_source] = lambda: quarantine_store
     if window_reader is not None:
         app.dependency_overrides[get_series_window_reader_source] = lambda: window_reader
+        # `T-03.6`, `D8`/`D-C3.7`: `PostgresSeriesWindowReader` satisfies `SeriesStoreBoundsReader`
+        # structurally too (`read_bounds`, same injected connection) — wiring the SAME instance
+        # here, never a second adapter or a second connection, mirrors `window_reader` above.
+        app.dependency_overrides[get_series_store_bounds_reader_source] = lambda: window_reader
     # `ADR-037/D4`: the ONE place `classify_grid_multiple` (`src.modules.charts`) meets
     # `sentimento`'s read path. Unconditional, unlike `window_reader` above — the adapter is a
     # pure function of two integers, so there is no engine whose absence could leave it unwired.

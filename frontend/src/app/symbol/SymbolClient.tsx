@@ -48,7 +48,16 @@
  * follows, rather than pretending a live feed exists.
  */
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type RefObject,
+} from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type {
   CandlestickSeriesOptions,
   HistogramSeriesOptions,
@@ -110,6 +119,7 @@ import {
   formatPercentPtBr,
   LONG_SHORT_EQUILIBRIUM,
 } from "./ratio-format.ts";
+import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
 
 /** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
  * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
@@ -140,6 +150,10 @@ export interface VolumeSubAxisData {
    * than one that names it. */
   readonly firstPresentMs: number | null;
   readonly reading: FlowReading;
+  /** `T-03.12` / `P-B` / `ADR-040/D3` regime A — `klines_volume` is a `FLOW` SUM; a reaggregated
+   * bucket short of its own `expected` native facts draws an UNDERCOUNT, silently, unless this
+   * pane says so. `0/0` (no reaggregated bucket in the window) draws no mark at all. */
+  readonly partialCoverage: PartialCoverageSummary;
 }
 
 /**
@@ -163,6 +177,10 @@ export interface CvdPaneData {
    * instant, and three anchors over the SAME deltas invert the sign of the total (`D4.7`) — so
    * an anchor inherited in silence is a chart that cannot be read. */
   readonly anchorMs: number;
+  /** `T-03.12` / `P-B` / `ADR-040/D3` regime A — `cvd_delta` is the other `FLOW` SUM this screen
+   * draws. Folded off `cvdDeltaSlots`'s own raw rows, never off `cumulativeSlots` (a downstream
+   * VIEW of the same deltas — one honest count at the source, `page.tsx`'s own comment). */
+  readonly partialCoverage: PartialCoverageSummary;
 }
 
 /**
@@ -232,6 +250,10 @@ export interface LiquidationCohortData {
    * ⛔ The span is NOT shrunk to fit the data; same rule as `VolumeSubAxisData.firstPresentMs`. */
   readonly firstPresentMs: number | null;
   readonly reading: FlowReading;
+  /** `T-03.12` / `P-B` / `ADR-040/D3` regime A — `sum_liquidation` is a `FLOW` SUM per cohort;
+   * long and short each carry their OWN count, degrading independently like every other fact on
+   * this pane. */
+  readonly partialCoverage: PartialCoverageSummary;
 }
 
 /**
@@ -390,6 +412,14 @@ export interface SymbolClientProps {
    * DOM against `/series-history` without seeding anything (`[P-seed]`). */
   readonly knowledgeTimeMs: number;
   readonly liveUrls: { readonly price: string | null; readonly oi: string | null; readonly cvd: string | null };
+  /** `T-03.11` — the `interval` THIS render's ten fetches actually asked `/series-history` for
+   * (`page.tsx`'s own `selectedInterval`, resolved from `?interval=` against
+   * `SUPPORTED_TIMEFRAMES`, never trusted raw). Replaces the `useState(DEFAULT_TIMEFRAME)` the
+   * bar used to own locally (`T-03.9`): the URL is now the single source of truth for which TF
+   * is selected, so `TimeframeBar`'s own selection can never drift from what was actually
+   * fetched — the exact drift a client-only `useState` would reopen the day someone reads
+   * `selectedTimeframe` as "what the panels show" instead of "what the bar highlights". */
+  readonly selectedTimeframe: string;
 }
 
 const ABSENCE_REASON_LABEL: Record<Exclude<PanelStatus, { kind: "ok" }>["reason"], string> = {
@@ -619,6 +649,78 @@ const LONG_SHORT_PANE_TESTID = "long-short-pane";
  * validação"; what a builder decides is that absence is DISTINGUISHABLE and machine-readable. */
 const ABSENCE_TOKEN = "SEM_PONTO";
 
+/** `T-03.12` — the SAME shape `view-model.ts::PartialCoverageSummary` (`page.tsx`'s own return
+ * type from `summarizePartialCoverage`) declares, DUPLICATED here rather than imported: this
+ * file is a Client Component and `view-model.ts` pulls `node:crypto`
+ * (`computeSeriesKeyId`) — `volume-subaxis-dom-contract.test.ts`'s own
+ * `web-fullstack.browser-imports-server` scan forbids ANY import of `view-model.ts` from here,
+ * type-only or not (the scan is a text regex over import specifiers, not TS-aware). Structural
+ * typing makes the duplication safe: `page.tsx` assigns a `view-model.ts`-shaped object literal
+ * straight into these props with no cast needed, and a shape drift between the two would fail
+ * `tsc`, not pass silently. */
+interface PartialCoverageSummary {
+  readonly partialBuckets: number;
+  readonly totalReaggregatedBuckets: number;
+}
+
+/** `T-03.12` — the SAME hollow-lozenge glyph `LongShortIntegrityGlyph` already carries, reused
+ * rather than reinvented: `DESIGN_SYSTEM.md` §1.5 reserves exactly ONE glyph for "integridade do
+ * dado" ("losango vazado, sempre o mesmo, nunca triângulo nem círculo"), and a partial `FLOW` SUM
+ * silently undercounting its own denominator is that class of signal, not a new one. `fill="none"`
+ * is the rule, not a look — §9 item 4 of `STITCH_CONTEXT.md` forbids this mark from ever filling
+ * an area, so it is never mistaken for a data mark. `aria-hidden` + `focusable="false"` because
+ * the word beside it (`PartialCoverageMark`, below) carries the whole message, same criterion
+ * `CvdLegend`/`VolumeMarksLegend`/`LongShortIntegrityGlyph` already apply to their own glyphs. */
+function PartialCoverageGlyph() {
+  return (
+    <svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 12 12">
+      <polygon points="6,1 11,6 6,11 1,6" fill="none" stroke={colorTokens().dataBrokenInk} strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+/**
+ * `T-03.12` — the VISIBLE MARK `P-B`/`ADR-040/D3` requires when a regime-A (`Σ`/max/min) panel
+ * serves a partial reaggregated bucket: glyph, WORD, and colour as the THIRD channel (never the
+ * only one), same three-channel discipline `LongShortIntegrityBadge` already established on this
+ * screen — reused, not reinvented, because both are the same role (`ADR-010/D-3`, `integridade do
+ * dado`) applied to two different absences ("no observation" there, "fewer native facts than
+ * claimed" here).
+ *
+ * Renders NOTHING when `partialBuckets === 0` — either no reaggregation happened at all (the
+ * window's rows never left their native grid, `series_history_report.py`'s own DEGENERATE case,
+ * `totalReaggregatedBuckets === 0` too) or every reaggregated bucket answered its full `expected`
+ * — in both cases there is nothing undercounted to warn about, and a badge reading "0 de N
+ * buckets... subestimada" would be a false alarm about a sum that is, in fact, whole.
+ *
+ * Scope, stated rather than hidden: this counts buckets across the visible WINDOW, never a mark
+ * painted on the individual bar inside the canvas — `lightweight-charts` paints to an OPAQUE
+ * `<canvas>` (every other pane's own comment on this file, `DR-6`), so a per-bar mark painted
+ * there would be invisible to every `data-fact` assertion this repo's DoD lines already run
+ * (`grep -o 'data-fact=...'`). `panel.coverage`'s two WALLS (`T-03.6`, beyond-coverage vs
+ * absent) are a DIFFERENT fact (`D-C3.7`) and stay out of this mark on purpose. */
+function PartialCoverageMark({
+  factKey,
+  summary,
+}: {
+  readonly factKey: string;
+  readonly summary: PartialCoverageSummary;
+}) {
+  if (summary.totalReaggregatedBuckets === 0) {
+    return null;
+  }
+  return (
+    <p
+      data-fact={`${factKey}:${summary.partialBuckets}/${summary.totalReaggregatedBuckets}`}
+      className="flex items-center gap-2 border border-integrity-ink px-2 py-0.5 text-sm font-bold text-integrity-ink"
+    >
+      <PartialCoverageGlyph />
+      COBERTURA PARCIAL — {summary.partialBuckets} de {summary.totalReaggregatedBuckets} buckets reagregados
+      somam menos fatos nativos do que deveriam (soma subestimada).
+    </p>
+  );
+}
+
 // ⛔ FORM, NOT CONTRACT — every constant in this block belongs to the `ui-designer` WITH the
 // `ux-ui-mastery` verdict (`T-01.8`, `CLAUDE.md` §"Design — autonomia delegada, com gate de
 // validação"). What is here is the sober, functional placeholder a builder is allowed to write
@@ -649,6 +751,18 @@ const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 } as const;
 // ancorar no mínimo da janela, que faz o desenho mudar de significado quando a janela muda
 // `[MEDIDO: base=1 -> menor barra 10,39px, p50 19,34px, 0/1403 abaixo de 1px; base=mínimo da
 //  janela -> menor barra 0,00px e 9 abaixo de 1px]`.
+//
+// ── `T-03.10` (`[Q8]`/`[M-6]`) — E SOB TF≠1m (volume ~240× MAIOR a `4h`)? A ÂNCORA CONTINUA `1`,
+// ATÉ PROVA EM CONTRÁRIO (quem decide mudar é o `design_gate`, não este arquivo). A prova, em
+// `volume-subaxis-tf-invariance.test.ts`: `BLOCKER-1` (nenhuma barra sub-pixel, mediana legível)
+// CONTINUA valendo a `240×` a magnitude de `1x` — mas o CONTRASTE entre a menor e a maior barra
+// visíveis MEDIDAMENTE se comprime (`spread` de `27,26px` para `16,57px`, `n=1.440`), porque `1`
+// é âncora ABSOLUTA: o vão `base→mínimo` cresce com a magnitude enquanto o vão `mínimo→máximo`
+// (a razão da própria série) não muda. Isto é o PREÇO já aceito da âncora absoluta, não um
+// defeito novo — a alternativa (âncora no mínimo da janela) já foi medida e recusada duas
+// comentários acima, e ela reintroduziria o BLOCKER-1 que motivou `base=1` em primeiro lugar.
+// `[MEDIDO 2026-09-22, jsdom contra a biblioteca real: 1× -> mín 10,14px/mediana 19,15px/máx
+//  37,40px; 240× -> mín 20,83px/mediana 26,30px/máx 37,40px, 0/1.440 abaixo de 1px nos dois]`
 const VOLUME_LOG_BASE = 1;
 
 // ⛔ `BLOCKER-2`: A AUSÊNCIA NÃO TINHA MARCA, E A REGRA TRAVADA EXIGE UMA.
@@ -906,6 +1020,7 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
         Leitura atual: {readingText}
       </p>
       <ReadableHorizon volume={volume} />
+      <PartialCoverageMark factKey="volume_partial_coverage" summary={volume.partialCoverage} />
       <AbsenceNote status={status} />
     </div>
   );
@@ -1366,6 +1481,7 @@ function CvdPane({
       <p data-fact={`cvd_cumulative_anchor:${cvd.anchorMs}`} className="text-sm text-provenance-weak">
         Acumulado ancorado em {formatUtcMinute(cvd.anchorMs)}.
       </p>
+      <PartialCoverageMark factKey="cvd_partial_coverage" summary={cvd.partialCoverage} />
       <AbsenceNote status={status} />
     </section>
   );
@@ -1621,6 +1737,7 @@ function LiquidationCohortSurface({
         Leitura atual: {readingText}
       </p>
       <LiquidationReadableHorizon cohort={cohort} data={data} />
+      <PartialCoverageMark factKey={`liquidation_partial_coverage:${cohort}`} summary={data.partialCoverage} />
       <AbsenceNote status={status} />
     </div>
   );
@@ -2357,6 +2474,147 @@ function LiveRow({ label, url }: { readonly label: string; readonly url: string 
   );
 }
 
+/**
+ * `T-03.9` (`RF-6`, plan `03` item `3.6`) — the TF bar. ONE `<button>` per entry of
+ * `SUPPORTED_TIMEFRAMES` (`supported-timeframes.ts`), via `.map()` — never a hand-written
+ * `<button>` per label. That is the DoD, literally: *"remover um TF do conjunto servido remove o
+ * botão, sem tocar no componente"* — shrink the array (kept honest by that module's own sync
+ * test against the backend) and this component's rendered output shrinks with it, with zero
+ * edit here. `timeframe-bar-dom-contract.test.ts` is the source-scan that proves this component
+ * actually maps rather than duplicating the list.
+ *
+ * Colour: the two GOVERNED roles `DESIGN_SYSTEM.md` §1.2 reserves for exactly this — `action`
+ * (`--acao-fill`/`--acao-borda`/`--acao-on`, "Marca / ação", never yet consumed by any `.tsx`
+ * before this task) for the SELECTED member, `surface`/`provenance` (already used everywhere
+ * else on this screen) for the rest. No new hue (`NG-5`).
+ *
+ * `role="group"` + `aria-pressed` (a toggle-button group), NOT `role="radiogroup"` +
+ * `aria-checked` — `T-03.12` DECIDES this, and it is the earlier docstring's "FORM decision this
+ * task does not own" being finally owned. Kept, not flipped: a `radiogroup` asserts "one value
+ * among mutually exclusive options, as if submitted by a form" (WAI-ARIA 1.2's own role
+ * definition), and a screen reader announces each item as "radio button" — the WRONG semantic
+ * for a VIEW control that reshapes what six charts already on screen draw, never a value bound
+ * to any form. `role="group"` + `aria-pressed` is the correct reading: "a set of toggle
+ * buttons", which is exactly what clicking one of these DOES (toggles which TF is active).
+ *
+ * What WAS missing, and is what this task actually adds: roving `tabIndex` + arrow-key
+ * navigation, the WAI-ARIA APG "Toolbar" pattern (a horizontal cluster of related buttons,
+ * `https://www.w3.org/WAI/ARIA/apg/patterns/toolbar/` — `[NÃO SEI]` the exact current wording of
+ * that page; this environment has no web fetch, so the pattern is applied from its well-known
+ * shape — one stop on `Tab`, `ArrowLeft`/`ArrowRight`/`Home`/`End` move the roving cursor,
+ * `Enter`/`Space`/click activate — never from a live read of the page). Before this task, every
+ * button was independently `Tab`-stoppable (5 stops to cross the bar); now the bar is ONE `Tab`
+ * stop, consistent with every other multi-button cluster a keyboard user encounters on the web,
+ * while `aria-pressed`'s semantics (and the DOM contract pinning `data-testid`/`key`/`onClick`/
+ * the visible label, `timeframe-bar-dom-contract.test.ts`) are UNCHANGED.
+ *
+ * `T-03.11` (`CST-226`) — `onSelect` NOW TRIGGERS A REAL REFETCH, wired by `SymbolClient` below.
+ * The two backend prerequisites `T-03.9`'s docstring named (`T-03.4`'s `{present, expected}`
+ * marks, `T-03.6`'s `coverage` envelope field) are merged on this branch now, and the DoD this
+ * task exists for (`plan 03` DoD 6/7/8) is the falsifier over the wire-grid/staircase counts
+ * every panel already published — see `SymbolClient`'s own `handleTimeframeSelect` for the
+ * mechanism (a URL search param, not an in-component fetch).
+ */
+function TimeframeBar({
+  selected,
+  onSelect,
+}: {
+  readonly selected: string;
+  readonly onSelect: (interval: string) => void;
+}) {
+  // The roving cursor — WHICH button is the bar's one `Tab` stop right now. Starts, and
+  // re-syncs, on `selected`: after a real navigation (`onSelect` fired, `page.tsx` re-rendered
+  // with a new `selectedTimeframe`) the newly-active TF is also the sensible place `Tab` should
+  // land next time, same as a native radio group re-syncing its roving stop to whichever input
+  // is `checked`. Arrow-key browsing before a selection is made moves this WITHOUT touching
+  // `selected` — the two are related, never the same state.
+  const [activeInterval, setActiveInterval] = useState(selected);
+  useEffect(() => {
+    setActiveInterval(selected);
+  }, [selected]);
+
+  const buttonNodesByInterval = useRef(new Map<string, HTMLButtonElement>());
+  // ⛔ Parameter named `entry`, deliberately NOT `option` — `timeframe-bar-dom-contract.test.ts`'s
+  // `MAP_OVER_SUPPORTED_TIMEFRAMES` regex is anchored on the array's `.map` call spelled with an
+  // `option` parameter, singular, to prove there is exactly ONE such call (the render map,
+  // below). A second call spelled the same way would give the MORDE test two matches to strip
+  // instead of one, and the mutation it applies would silently miss the real render map.
+  const intervals = SUPPORTED_TIMEFRAMES.map((entry) => entry.interval);
+
+  const moveRovingFocus = useCallback((interval: string) => {
+    setActiveInterval(interval);
+    buttonNodesByInterval.current.get(interval)?.focus();
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      const currentIndex = intervals.indexOf(activeInterval);
+      if (currentIndex === -1) {
+        return;
+      }
+      switch (event.key) {
+        case "ArrowRight":
+          event.preventDefault();
+          moveRovingFocus(intervals[(currentIndex + 1) % intervals.length]!);
+          return;
+        case "ArrowLeft":
+          event.preventDefault();
+          moveRovingFocus(intervals[(currentIndex - 1 + intervals.length) % intervals.length]!);
+          return;
+        case "Home":
+          event.preventDefault();
+          moveRovingFocus(intervals[0]!);
+          return;
+        case "End":
+          event.preventDefault();
+          moveRovingFocus(intervals[intervals.length - 1]!);
+          return;
+        default:
+          return;
+      }
+    },
+    [activeInterval, intervals, moveRovingFocus],
+  );
+
+  return (
+    <div
+      role="group"
+      aria-label="Timeframe"
+      onKeyDown={handleKeyDown}
+      className="flex gap-1 border-b border-surface-border bg-surface-lowest px-3 py-2"
+    >
+      {SUPPORTED_TIMEFRAMES.map((option) => {
+        const isSelected = option.interval === selected;
+        return (
+          <button
+            key={option.interval}
+            ref={(node) => {
+              if (node === null) {
+                buttonNodesByInterval.current.delete(option.interval);
+              } else {
+                buttonNodesByInterval.current.set(option.interval, node);
+              }
+            }}
+            type="button"
+            aria-pressed={isSelected}
+            tabIndex={option.interval === activeInterval ? 0 : -1}
+            data-testid={`timeframe-button-${option.interval}`}
+            onClick={() => onSelect(option.interval)}
+            onFocus={() => setActiveInterval(option.interval)}
+            className={
+              isSelected
+                ? "border border-action-border bg-action-fill px-2 py-1 font-label-caps text-data-sm text-action-on"
+                : "border border-surface-border bg-surface-base px-2 py-1 font-label-caps text-data-sm text-provenance-weak"
+            }
+          >
+            {option.interval}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SymbolClient({
   symbol,
   panels,
@@ -2369,6 +2627,7 @@ export function SymbolClient({
   panelStatus,
   knowledgeTimeMs,
   liveUrls,
+  selectedTimeframe,
 }: SymbolClientProps) {
   // `T-02.4` (`D-C3.1`) — the ONE `TimeAxis` every one of the six charts shares, derived off the
   // WINDOW (`panels.window`), never off any one panel's own `slots.length`: the axis is a
@@ -2389,6 +2648,29 @@ export function SymbolClient({
     }),
     [panels.window.startMs, panels.window.endMsExclusive],
   );
+  // `T-03.11` — `selectedTimeframe` is now a PROP, resolved server-side by `page.tsx` off
+  // `?interval=` (never a client `useState`): the URL is the single source of truth for which
+  // TF the ten fetches this render answers were actually made with, so the bar's own highlight
+  // can never say "5m" while the panels drew "1m" data. Clicking a button pushes a NEW url via
+  // `next/navigation`'s router — `dynamic = "force-dynamic"` on `page.tsx` guarantees that
+  // navigation re-runs the Server Component with the new `interval`, which is the real refetch
+  // `T-03.9`/`T-03.10` deferred (`ADR-005/D5`: history fetches are `web`'s server half, never
+  // client-side `fetch` against `INGEST_HEALTH_API_BASE_URL`, which is not even readable from
+  // the browser).
+  const router = useRouter();
+  const pathname = usePathname();
+  const handleTimeframeSelect = useCallback(
+    (interval: string) => {
+      // The default TF omits the param entirely rather than writing `?interval=1m` — the same
+      // "no silent default, but no noisy one either" discipline the rest of this route already
+      // follows (`page.tsx`'s own `S2_PRICE_USE` comment): `/symbol/BTCUSDT` and
+      // `/symbol/BTCUSDT?interval=1m` are the SAME request, and only one of the two spellings
+      // needs to exist for a bookmark to keep working after the default ever changes.
+      const query = interval === DEFAULT_TIMEFRAME ? "" : `?interval=${encodeURIComponent(interval)}`;
+      router.push(`${pathname}${query}`, { scroll: false });
+    },
+    [pathname, router],
+  );
   return (
     // The three instants of the request this render was built from, on the root element: the
     // screen declares WHAT IT ASKED, so an assertion (or an operator) can re-issue exactly that
@@ -2401,6 +2683,7 @@ export function SymbolClient({
       <h1 className="sr-only">
         {symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
+      <TimeframeBar selected={selectedTimeframe} onSelect={handleTimeframeSelect} />
       <AxisSyncProvider axis={axis}>
         <PricePane
           panels={panels}

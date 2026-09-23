@@ -12,6 +12,16 @@
  * `symbol` — the same noun the route's own folder already carried, so the URL reads as
  * "`/symbol/<instrument>`" rather than inventing a second noun for the same concept.
  *
+ * `T-03.11` (`CST-226`, `ADR-040/D1`) — THE TF BAR NOW DRIVES A REAL REFETCH. `?interval=`
+ * (`selectedInterval` below, validated against `SUPPORTED_TIMEFRAMES`) reaches every one of the
+ * ten `fetchPanelRows` calls below AND `resolveRouteWindow`'s own `alignmentMs` — `TimeframeBar`
+ * (`SymbolClient.tsx`) triggers this by `router.push`-ing a new URL, never by a client-side
+ * `fetch`: this Server Component is still the ONLY place that calls `/series-history`
+ * (`ADR-005/D5`), and Next's own dynamic-route re-render (`dynamic = "force-dynamic"` below) is
+ * what makes a URL change into a real round trip. `T-03.9`/`T-03.10` deferred this exact wiring
+ * pending two backend prerequisites (`T-03.4`'s `{present, expected}`, `T-03.6`'s `coverage`
+ * envelope field) that are merged on this branch now.
+ *
  * ⛔ THIS FILE MOVED, THE SIBLINGS DID NOT. `SymbolClient.tsx`, `view-model.ts`,
  * `series-history-client.ts`, `request-window.ts` and `panel-status.ts` stay at
  * `frontend/src/app/symbol/` — only `page.tsx` (the one file Next's router treats specially)
@@ -140,6 +150,7 @@ import {
 } from "../series-history-client.ts";
 import type { PanelStatus } from "../panel-status.ts";
 import { resolveRouteWindow, type RouteWindow } from "../request-window.ts";
+import { DEFAULT_TIMEFRAME, isSupportedTimeframe, SUPPORTED_TIMEFRAMES } from "../supported-timeframes.ts";
 import {
   SymbolClient,
   type CvdPaneData,
@@ -175,6 +186,7 @@ import {
   scaledCvdDeltasFromHistoryRows,
   seriesValueStats,
   slotsFrom,
+  summarizePartialCoverage,
   trailingAbsentSlots,
   type KlinesOhlcReduction,
 } from "../view-model.ts";
@@ -319,11 +331,20 @@ function firstAbsentStatus(statuses: readonly PanelStatus[]): PanelStatus {
 /** `routeWindow` is PASSED IN, not read from a module constant: one clock reading serves the
  * whole render, so the four panels are guaranteed to be asking about the same window even if
  * the request straddles a bucket boundary. `symbol` is the route's resolved segment (`T-02.5`),
- * threaded the same way. */
+ * threaded the same way.
+ *
+ * `interval` — `T-03.11` (`CST-226`, `ADR-040/D1`) — is `selectedInterval` below, resolved from
+ * `?interval=` and validated against `SUPPORTED_TIMEFRAMES` BEFORE it ever reaches this
+ * function: this is the wiring `T-03.9`'s `TimeframeBar` deferred ("`onSelect` UPDATES LOCAL
+ * SELECTION STATE ONLY"). It used to be the literal `"1m"` here — the one interval the route had
+ * ever served — and is now the one term of `HistoryRequestKey` every one of the ten fetches below
+ * shares with `routeWindow`'s own `alignmentMs` (`request-window.ts`), so a wider TF re-grids the
+ * response AND aligns the window edge to it in the same render. */
 async function fetchPanelRows(
   resolution: CatalogResolution,
   symbol: string,
   routeWindow: RouteWindow,
+  interval: string,
 ): Promise<{ readonly rows: readonly SeriesHistoryRow[]; readonly status: PanelStatus }> {
   if (resolution.kind === "none") {
     return { rows: [], status: { kind: "absent", reason: "not_in_catalog" } };
@@ -337,7 +358,7 @@ async function fetchPanelRows(
   const key: HistoryRequestKey = {
     series_key_id: computeSeriesKeyId(entry.key),
     symbol,
-    interval: "1m",
+    interval,
     window_start_ms: routeWindow.window.startMs,
     window_end_ms: routeWindow.windowEndMsInclusive,
     knowledge_time_ms: routeWindow.knowledgeTimeMs,
@@ -358,7 +379,13 @@ async function fetchPanelRows(
  * resolve a `series_key_id` — `null` for a panel that stayed absent, since there is no series
  * to open a live stream for. Genuinely used (not decorative): `encodeLiveStreamOpenRequest`
  * validates the request before `SymbolClient` ever sees the URL. `symbol` is the route's
- * resolved segment (`T-02.5`), not the retired `charts` constant. */
+ * resolved segment (`T-02.5`), not the retired `charts` constant.
+ *
+ * ⛔ `interval: "1m"` STAYS A LITERAL HERE, DELIBERATELY, EVEN AFTER `T-03.11` — never
+ * `selectedInterval`. The live stream is `GET /series-live` (`ADR-005/D1`'s OTHER route), which
+ * ticks at the series' own NATIVE cadence; it is not a second rendering of the historical TF the
+ * `/series-history` fetches below now honour, and `T-03.11`'s own `refs` (`DoD 6/7/8`) name only
+ * the six panels' BAR counts — the live readout is untouched scope. */
 function buildLiveUrl(baseUrl: string, symbol: string, entry: SeriesCatalogEntry | undefined): string | null {
   if (entry === undefined) {
     return null;
@@ -374,10 +401,17 @@ function buildLiveUrl(baseUrl: string, symbol: string, entry: SeriesCatalogEntry
 
 export default async function SymbolPage({
   params,
+  searchParams,
 }: {
   // Next 16 (like 15) hands dynamic params as a `Promise` in Server Components — awaited below,
   // before the ONE clock reading this render takes (`routeWindow`).
   readonly params: Promise<{ readonly symbol: string }>;
+  // `T-03.11` (`CST-226`) — the TF bar's selection arrives here as `?interval=`, the same
+  // Promise-wrapped shape `params` already has in Next 16. A key present more than once
+  // (`?interval=5m&interval=1h`) resolves to a `string[]` per Next's own typing; treated below
+  // as "not a recognized value" rather than silently picking `[0]`, the same "refuse rather than
+  // guess" posture `resolveCatalogEntry` already takes for an ambiguous catalog match.
+  readonly searchParams: Promise<{ readonly interval?: string | readonly string[] }>;
 }) {
   const { symbol: rawSegment } = await params;
   const routeSymbol = rawSegment.toUpperCase();
@@ -387,10 +421,27 @@ export default async function SymbolPage({
     notFound();
   }
 
+  // `T-03.11` — `requestedInterval` is UNTRUSTED input (any string a client can put in a URL);
+  // `selectedInterval` is what the rest of this render actually uses, and it is NEVER anything
+  // outside `SUPPORTED_TIMEFRAMES` (`ADR-040/D1`'s own served set, the SAME array `TimeframeBar`
+  // renders from) — an unrecognized `?interval=` degrades to `DEFAULT_TIMEFRAME` rather than
+  // reaching the backend and turning into a `422` the operator did not ask for.
+  const { interval: requestedIntervalRaw } = await searchParams;
+  const requestedInterval = typeof requestedIntervalRaw === "string" ? requestedIntervalRaw : undefined;
+  const selectedInterval =
+    requestedInterval !== undefined && isSupportedTimeframe(requestedInterval) ? requestedInterval : DEFAULT_TIMEFRAME;
+  // `SUPPORTED_TIMEFRAMES` is a `readonly TimeframeOption[]`, never a `Record` keyed by
+  // `interval` — `isSupportedTimeframe` already proved `selectedInterval` is a member, so this
+  // `find` cannot miss; the `!` states that invariant rather than re-deriving `stepMs` by parsing
+  // the label (`"4h"` → `4 * 60 * 60_000`), which would be a SECOND place that number lives.
+  const selectedIntervalStepMs = SUPPORTED_TIMEFRAMES.find((option) => option.interval === selectedInterval)!.stepMs;
+
   // The ONE clock reading of this render. `Date.now()` is I/O and therefore lives here, in
   // `web`, and nowhere else — `request-window.ts`/`resolveTrailingWindow` take it as an
-  // argument precisely so the window stays falsifiable at every instant.
-  const routeWindow = resolveRouteWindow(Date.now());
+  // argument precisely so the window stays falsifiable at every instant. `selectedIntervalStepMs`
+  // is `T-03.11`'s own addition (`request-window.ts`'s own docstring on `requestIntervalMs`):
+  // the window's right edge now aligns to the REQUESTED grid, not just OI's native 5 minutes.
+  const routeWindow = resolveRouteWindow(Date.now(), selectedIntervalStepMs);
 
   let catalog: SeriesCatalogProjection;
   let catalogStatus: PanelStatus = { kind: "ok" };
@@ -482,16 +533,16 @@ export default async function SymbolPage({
     liquidationShortResult,
     longShortResult,
   ] = await Promise.all([
-    fetchPanelRows(ohlcResolutions.open, routeSymbol, routeWindow),
-    fetchPanelRows(ohlcResolutions.high, routeSymbol, routeWindow),
-    fetchPanelRows(ohlcResolutions.low, routeSymbol, routeWindow),
-    fetchPanelRows(ohlcResolutions.close, routeSymbol, routeWindow),
-    fetchPanelRows(oiResolution, routeSymbol, routeWindow),
-    fetchPanelRows(cvdResolution, routeSymbol, routeWindow),
-    fetchPanelRows(volumeResolution, routeSymbol, routeWindow),
-    fetchPanelRows(liquidationLongResolution, routeSymbol, routeWindow),
-    fetchPanelRows(liquidationShortResolution, routeSymbol, routeWindow),
-    fetchPanelRows(longShortResolution, routeSymbol, routeWindow),
+    fetchPanelRows(ohlcResolutions.open, routeSymbol, routeWindow, selectedInterval),
+    fetchPanelRows(ohlcResolutions.high, routeSymbol, routeWindow, selectedInterval),
+    fetchPanelRows(ohlcResolutions.low, routeSymbol, routeWindow, selectedInterval),
+    fetchPanelRows(ohlcResolutions.close, routeSymbol, routeWindow, selectedInterval),
+    fetchPanelRows(oiResolution, routeSymbol, routeWindow, selectedInterval),
+    fetchPanelRows(cvdResolution, routeSymbol, routeWindow, selectedInterval),
+    fetchPanelRows(volumeResolution, routeSymbol, routeWindow, selectedInterval),
+    fetchPanelRows(liquidationLongResolution, routeSymbol, routeWindow, selectedInterval),
+    fetchPanelRows(liquidationShortResolution, routeSymbol, routeWindow, selectedInterval),
+    fetchPanelRows(longShortResolution, routeSymbol, routeWindow, selectedInterval),
   ]);
 
   // The day list is the window's own (`utcDaysCovered`, derived in `charts`), never a literal.
@@ -590,6 +641,11 @@ export default async function SymbolPage({
     // `windowEndMsInclusive` is the same instant `SymbolClient.tsx` derives as `lastInstantMs`
     // for the other three readouts — one instant for the whole page, not a fourth one.
     reading: resolveFlowReadingOrAbsent(volumeSlots, routeWindow.windowEndMsInclusive),
+    // `T-03.12` / `P-B` / `ADR-040/D3` regime A — `klines_volume` is a `FLOW` SUM, folded off the
+    // SAME raw rows the slots above came from (not the slots themselves, which have already
+    // dropped `coverage` — `ScalarSlot` carries only `{time, value}`, `ADR-003`'s canonical grid
+    // is untouched by this task).
+    partialCoverage: summarizePartialCoverage(volumeResult.rows),
   };
 
   // ── The CVD panel's own declared facts (`T-02.5`) ─────────────────────────────────────────
@@ -605,6 +661,10 @@ export default async function SymbolPage({
     presentPoints: countPresentSlots(cvdDeltaSlots),
     firstPresentMs: firstPresentSlotMs(cvdDeltaSlots),
     anchorMs: routeWindow.window.startMs,
+    // `T-03.12` — `cvd_delta` is the other `FLOW` SUM this screen draws (regime A); the running
+    // `cumulativeSlots` is a downstream VIEW of these same deltas (`buildCvdPanel`) and gets no
+    // second, derived mark of its own — one honest count at the source, not two that could drift.
+    partialCoverage: summarizePartialCoverage(cvdResult.rows),
   };
 
   // ── The OI pane's own declared facts (`T-03.5`) ───────────────────────────────────────────
@@ -683,6 +743,10 @@ export default async function SymbolPage({
       // `windowEndMsInclusive` — the SAME instant every other readout on this page uses. One
       // instant for the whole render, never a seventh one computed here.
       reading: resolveFlowReadingOrAbsent(slots, routeWindow.windowEndMsInclusive),
+      // `T-03.12` — `sum_liquidation` is the third `FLOW` SUM (regime A), off the SAME raw `rows`
+      // this closure already receives per cohort — long and short degrade independently, same as
+      // every other fact on this pane.
+      partialCoverage: summarizePartialCoverage(rows),
     };
   };
   // ⛔ `RS-5` IS RESOLVED FROM THE CATALOG ROW, NEVER SPELLED AS A LITERAL. A hardcoded "dado de
@@ -816,6 +880,7 @@ export default async function SymbolPage({
       }}
       knowledgeTimeMs={routeWindow.knowledgeTimeMs}
       liveUrls={liveUrls}
+      selectedTimeframe={selectedInterval}
     />
   );
 }

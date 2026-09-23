@@ -7,9 +7,10 @@ case (`build_series_history_report`) and translates its typed refusals into the 
 `use_cases/series_history.py`'s own behaviour.
 
 `interval`/`bar_policy` are `Literal` types — FastAPI/Pydantic already answer `422` for a value
-outside either closed set (`interval != "1m"`, or `bar_policy` missing/outside
-`{"final_only", "intrabar"}`) before this function body ever runs, which is `CA-F1-3` and half
-of `RN-8` for free, without a second hand-written check that could disagree with the first.
+outside either closed set (`interval` outside `{"1m", "5m", "15m", "1h", "4h"}` — `ADR-040/D1`,
+extending `ADR-034/D6`'s single-value set — or `bar_policy` missing/outside `{"final_only",
+"intrabar"}`) before this function body ever runs, which is `CA-F1-3` and half of `RN-8` for
+free, without a second hand-written check that could disagree with the first.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from starlette.responses import JSONResponse
 from src.api.dependencies import (
     get_grid_multiple_classifier,
     get_series_catalog_source,
+    get_series_store_bounds_reader_source,
     get_series_window_reader_source,
 )
 from src.modules.sentimento.domain.as_of_accessor import BarPolicy, DecisionReadRefusedError
@@ -30,6 +32,7 @@ from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.use_cases.series_history import (
     GridMultipleClassifier,
     InvalidWindowError,
+    SeriesStoreBoundsReader,
     SeriesWindowReader,
     UnknownSeriesKeyIdError,
     UnsupportedIntervalError,
@@ -53,7 +56,7 @@ def _now_ms() -> int:
 def get_series_history(
     series_key_id: str,
     symbol: str,
-    interval: Literal["1m"],
+    interval: Literal["1m", "5m", "15m", "1h", "4h"],
     window_start_ms: int,
     window_end_ms: int,
     knowledge_time_ms: int,
@@ -61,6 +64,7 @@ def get_series_history(
     catalog: SeriesCatalog = Depends(get_series_catalog_source),
     reader: SeriesWindowReader = Depends(get_series_window_reader_source),
     classify_grid: GridMultipleClassifier = Depends(get_grid_multiple_classifier),
+    bounds_reader: SeriesStoreBoundsReader = Depends(get_series_store_bounds_reader_source),
 ) -> JSONResponse:
     """Serve one `SeriesHistoryReport` envelope, or a named `422`/`500` (`SPEC-006 §5.2`).
 
@@ -83,6 +87,7 @@ def get_series_history(
             catalog,
             reader,
             classify_grid,
+            bounds_reader,
             series_key_id=series_key_id,
             symbol=symbol,
             interval=interval,

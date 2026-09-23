@@ -20,7 +20,11 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 
-from src.api.dependencies import get_series_catalog_source, get_series_window_reader_source
+from src.api.dependencies import (
+    get_series_catalog_source,
+    get_series_store_bounds_reader_source,
+    get_series_window_reader_source,
+)
 from src.main import create_app
 from src.modules.sentimento.domain.as_of_accessor import DecisionReadRefusedError, Observation
 from src.modules.sentimento.domain.provenance import (
@@ -128,6 +132,18 @@ class _RefusingReader:
         raise DecisionReadRefusedError("simulated malformed read, for the route's 500 test")
 
 
+class _FakeBoundsReader:
+    """A `SeriesStoreBoundsReader` fixture: `(None, None)` — an empty store (`T-03.6`).
+
+    This file's own domain is the envelope's 3-level SHAPE over a real socket, never
+    `panel.coverage`'s resolved values — `test_source_floor.py` covers the resolver, and
+    `test_series_history.py`'s use-case-level tests cover the store-extent wiring.
+    """
+
+    def read_bounds(self, *, series_key_id: str, symbol: str) -> tuple[int | None, int | None]:
+        return (None, None)
+
+
 @contextmanager
 def _served(app: FastAPI) -> Iterator[int]:
     """Run `app` on a real loopback socket, in-thread, and yield the port it bound."""
@@ -149,6 +165,7 @@ def _app_with_reader(tmp_path: Path, reader: object) -> FastAPI:
     app = create_app(store_path=tmp_path / "ih.sqlite3")
     app.dependency_overrides[get_series_catalog_source] = _catalog
     app.dependency_overrides[get_series_window_reader_source] = lambda: reader
+    app.dependency_overrides[get_series_store_bounds_reader_source] = _FakeBoundsReader
     return app
 
 
@@ -191,6 +208,8 @@ def test_get_series_history_serves_the_3_level_envelope(tmp_path: Path) -> None:
     # `native_grid_ms`/`grid_multiple` joined the panel level with `ADR-037/D4`: the report
     # grid is fixed at 1 minute, so a series on a wider grid comes back as a staircase and the
     # envelope has to SAY so rather than let the consumer count repeated slots as bars.
+    # `coverage` joined the panel level with `D8`/`D-C3.7` (`T-03.6`): the two walls that make
+    # `beyond-coverage` distinguishable from `absent` (`PanelCoverage`, never `BucketCoverage`).
     assert set(envelope["panel"]) == {
         "series_key_id",
         "source",
@@ -198,16 +217,31 @@ def test_get_series_history_serves_the_3_level_envelope(tmp_path: Path) -> None:
         "unit",
         "native_grid_ms",
         "grid_multiple",
+        "coverage",
     }
+    assert set(envelope["panel"]["coverage"]) == {
+        "earliest_bucket_ms",
+        "latest_bucket_ms",
+        "source_floor_ms",
+    }
+    # `_FakeBoundsReader` (this file's fixture) serves an EMPTY store; `_oi_key()`'s
+    # `metric="sum_open_interest"`/`provider="binance"` resolves the `/futures/data/*` rolling
+    # wall (`domain/source_floor.py`), never `None` — the wire round-trips both honestly.
+    assert envelope["panel"]["coverage"]["earliest_bucket_ms"] is None
+    assert envelope["panel"]["coverage"]["latest_bucket_ms"] is None
+    assert envelope["panel"]["coverage"]["source_floor_ms"] is not None
     assert envelope["bar_policy"] == "final_only"
     assert len(envelope["rows"]) == 1
     row_wire = envelope["rows"][0]
-    assert set(row_wire) == {"event_time", "available_at", "value", "absence"}
+    assert set(row_wire) == {"event_time", "available_at", "value", "absence", "coverage"}
     # `CA-F1-5`: the discriminated pair is never malformed on the wire — exactly one of
     # value/absence is non-null, for every row (universe: N=1 row this fixture produced).
     assert (row_wire["value"] is None) != (row_wire["absence"] is None)
     assert row_wire["value"] == "1234.56"
     assert row_wire["absence"] is None
+    # `T-03.4`/`ADR-040/D3`: `coverage` is a REAGGREGATED-row concept — `interval == "1m"` here
+    # is the native grid, never reaggregated, so the key is present but its value is `null`.
+    assert row_wire["coverage"] is None
 
 
 def test_two_identical_requests_produce_byte_identical_bodies(tmp_path: Path) -> None:
@@ -230,14 +264,144 @@ def test_two_identical_requests_produce_byte_identical_bodies(tmp_path: Path) ->
     assert first == second
 
 
-def test_interval_other_than_1m_is_refused_with_422(tmp_path: Path) -> None:
-    """`CA-F1-3`/`RN-8`: `interval=5m` never `200` with a subestimated number."""
+def test_an_interval_outside_the_supported_set_is_refused_with_422(tmp_path: Path) -> None:
+    """`CA-F1-3`/`RN-8` (`ADR-040/D1`, `T-03.3` DoD 5): `1d`/`3m`/`30s` never `200`, `n=3`.
+
+    `ADR-040/D1` widened `ADR-034/D6`'s refused-against set from `{1m}` to
+    `{1m,5m,15m,1h,4h}` — this pins the falsifier in the OTHER direction: a value still
+    outside the widened set is refused for the same reason it always was.
+    """
     app = _app_with_reader(tmp_path, _FakeReader())
 
-    with _served(app) as port:
-        status, _ = _get(port, _valid_query(interval="5m"))
+    for interval in ("1d", "3m", "30s"):
+        with _served(app) as port:
+            status, _ = _get(port, _valid_query(interval=interval))
+        assert status == 422, f"interval={interval!r} was not refused"
 
-    assert status == 422
+
+def test_every_member_of_the_widened_set_is_accepted_with_200(tmp_path: Path) -> None:
+    """`ADR-040/D1`: none of the 5 served intervals is refused — the set GREW, `D6` intact."""
+    row = _row()
+    reader = _FakeReader((Observation(row=row, value=Decimal(row.value_raw)),))
+    app = _app_with_reader(tmp_path, reader)
+
+    for interval in ("1m", "5m", "15m", "1h", "4h"):
+        with _served(app) as port:
+            status, _ = _get(port, _valid_query(interval=interval))
+        assert status == 200, f"interval={interval!r} was refused"
+
+
+def test_interval_15m_reaggregates_a_stock_series_to_its_last_native_fact(
+    tmp_path: Path,
+) -> None:
+    """`ADR-040`'s falsifier item 2, end to end.
+
+    `200` on `interval=15m` never subestimates — and for a `STOCK` series (`(STOCK, POINT)`,
+    `reduce_bucket`'s `_last`) the served value is the LAST of the native facts the bucket
+    covers, never their sum.
+    """
+    outer_end = BUCKET_END_MS
+    values = (
+        "10",
+        "20",
+        "30",
+        "40",
+        "50",
+        "60",
+        "70",
+        "80",
+        "90",
+        "100",
+        "110",
+        "120",
+        "130",
+        "140",
+        "150",
+    )
+    rows = tuple(
+        SeriesRow(
+            series_key_id=_oi_key().series_key_id(),
+            symbol=SYMBOL,
+            source="binance",
+            bucket_end=outer_end - (len(values) - 1 - index) * 60_000,
+            event_time=outer_end - (len(values) - 1 - index) * 60_000,
+            available_at=outer_end - (len(values) - 1 - index) * 60_000 + 30_000,
+            availability_source=AvailabilitySource.OBSERVED,
+            ingested_at=outer_end - (len(values) - 1 - index) * 60_000 + 30_000,
+            observed_at=outer_end - (len(values) - 1 - index) * 60_000 + 30_000,
+            provenance=Provenance.OBSERVED,
+            src_label_raw="sumOpenInterest",
+            observer_id="vps-01",
+            observer_region=UNKNOWN_OBSERVER_REGION,
+            is_final=True,
+            value_raw=value,
+        )
+        for index, value in enumerate(values)
+    )
+    reader = _FakeReader(tuple(Observation(row=row, value=Decimal(row.value_raw)) for row in rows))
+    app = _app_with_reader(tmp_path, reader)
+
+    with _served(app) as port:
+        status, body = _get(
+            port,
+            _valid_query(interval="15m", window_start_ms=outer_end, window_end_ms=outer_end),
+        )
+
+    assert status == 200
+    envelope = json.loads(body)
+    assert len(envelope["rows"]) == 1
+    assert envelope["rows"][0]["value"] == "150.0"
+    # `T-03.4`/`ADR-040/D3` (`P-B`): the reaggregated row carries `coverage` on the wire, the
+    # `{present, expected}` pair — full here, 15 distinct native facts of the 15 a `15m` bucket
+    # spans over a `1m` native grid.
+    assert envelope["rows"][0]["coverage"] == {"present": 15, "expected": 15}
+
+
+def test_interval_5m_partial_coverage_carries_the_present_expected_pair_never_a_bool(
+    tmp_path: Path,
+) -> None:
+    """`ADR-040/D3` (`P-B`), literal: `{"present": N, "expected": M}` — never a bool, never a %.
+
+    Only 2 of the 5 native minutes the `5m` outer bucket spans carry a fact; the route still
+    serves `200` with the partial `Σ`, and `coverage` says exactly how partial — never `true`/
+    `false`, never a server-computed ratio that would throw the denominator away.
+    """
+    outer_end = BUCKET_END_MS
+    present_offsets = (4, 0)  # native minutes -4 and 0 of the 5-minute group carry a fact
+    rows = tuple(
+        SeriesRow(
+            series_key_id=_oi_key().series_key_id(),
+            symbol=SYMBOL,
+            source="binance",
+            bucket_end=outer_end - offset * 60_000,
+            event_time=outer_end - offset * 60_000,
+            available_at=outer_end - offset * 60_000,
+            availability_source=AvailabilitySource.OBSERVED,
+            ingested_at=outer_end - offset * 60_000,
+            observed_at=outer_end - offset * 60_000,
+            provenance=Provenance.OBSERVED,
+            src_label_raw="sumOpenInterest",
+            observer_id="vps-01",
+            observer_region=UNKNOWN_OBSERVER_REGION,
+            is_final=True,
+            value_raw=value,
+        )
+        for offset, value in zip(present_offsets, ("1000", "9000"), strict=True)
+    )
+    reader = _FakeReader(tuple(Observation(row=row, value=Decimal(row.value_raw)) for row in rows))
+    app = _app_with_reader(tmp_path, reader)
+
+    with _served(app) as port:
+        status, body = _get(
+            port,
+            _valid_query(interval="5m", window_start_ms=outer_end, window_end_ms=outer_end),
+        )
+
+    assert status == 200
+    row_wire = json.loads(body)["rows"][0]
+    assert row_wire["value"] == "9000.0"  # `(STOCK, POINT)` = last — the more recent of the two
+    assert isinstance(row_wire["coverage"], dict)  # never `True`/`False`
+    assert row_wire["coverage"] == {"present": 2, "expected": 5}
 
 
 def test_bar_policy_missing_is_refused_with_422(tmp_path: Path) -> None:
