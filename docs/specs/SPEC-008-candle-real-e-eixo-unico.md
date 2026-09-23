@@ -738,6 +738,7 @@ do que as ADRs em vigor já permitem.
 | **`[M-6]`** | A escala `log10` do volume sob TF variável (`[Q8]`) | `design_gate` | fase `03`; **até prova em contrário, continua** |
 | **`[M-7]`** | O nome exato do segmento da rota `/symbol/[symbol]` — **inglês** está fixado (linha 12 do `CLAUDE.md`), o nome não | `frontend-architect` | fase `02` |
 | **`[M-8]`** | Renomear `janela_de_perda` e as 4 mensagens/eventos em português | `ADR-008/D3` · linha 10 | **não é desta feature** |
+| **`[M-13]`** | Mecanismo de **indisponibilidade POR TIMEFRAME** (toggle/exclamação por métrica: *"esse indicador não está disponível neste TF"*) — **declarado e não construído**, ver §11.2 | `/architect` da feature que introduzir uma grade nativa mais grossa que `5min` | o dia em que essa grade entrar no catálogo — hoje não existe |
 
 ### 11.1 Nota sobre `[M-1]`: o `infra` do falsificador de idioma **não é** o `infra` do vocabulário
 
@@ -761,6 +762,87 @@ falsificador devolve **a mesma lista** — **23 contra 22 segmentos, zero em por
 `backend/src/modules/infra/` **como caminho de componente** (e não como camada), os dois referentes
 colidem — e aí a exclusão passa a ser necessária **pelo motivo certo**, não por simetria com a
 tabela. Hoje não existe.
+
+### 11.2 `[M-13]`: por que a indisponibilidade POR TF não nasce nesta feature — e a correção sobre o gatilho
+
+`T-05.11` (`CST-244`, `tasks.toml:847-861`) pediu esta declaração a partir da pergunta literal do
+owner `[PREMISSA-OWNER: 2026-09-19]`: *"sobre o TF, OI por exemplo, se ele n tem 1min, nao vamos
+exibir esse indicador no TF onde ele n ta disponivel, dai ele pode ficar com uma toggle de
+exclamacao avisando que ta indisponivel naquele TF. tirando o OI, tem outros nesse mesmo escopo?"*
+
+**A resposta medida, hoje (2026-09-23), não em 2026-09-19:**
+
+```bash
+curl -s http://127.0.0.1:8000/api/v1/series-catalog | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+print(len(d['entries']), sorted(set(e['nativeGrid'] for e in d['entries'])))"
+# 76 [1min, 5min]  — 4 símbolos (BTCUSDT, ETHUSDT, LINKUSDT, SOLUSDT)
+```
+
+Continuam existindo **apenas duas grades nativas** em todo o catálogo: `1min`
+(`klines_ohlc`, `klines_volume`, `cvd_source`, `sum_liquidation`) e `5min`
+(`sum_open_interest`, `klines_last`, `price_mark_close`, `count_long_short_ratio`)
+`[MEDIDO 2026-09-23]`. A contagem de entradas subiu de 60 (2026-09-19) para 76 — `klines_ohlc`
+entrou com a fase `01` — mas o **conjunto de grades nativas não mudou**.
+
+⚠️ **Correção sobre o gatilho que `tasks.toml` nomeou.** O texto da task (escrito 2026-09-19) diz
+*"o TF mais fino escolhido e 5m"* e nomeia o gatilho como *"o dia em que 1m entrar na barra de
+TF"*. **Isso já não é verdade hoje:** `1m` está na barra de TF desde a fase `03`
+(`T-03.9`/`T-03.11`, mergeadas antes desta task rodar) —
+`frontend/src/app/symbol/supported-timeframes.ts:68,78`:
+`SUPPORTED_TIMEFRAMES` inclui `{interval: "1m", stepMs: 60_000}` e
+`DEFAULT_TIMEFRAME = "1m"` — **`1m` é o TF que a tela mostra no primeiro paint.** Documentar o
+gatilho como um evento futuro seria escrever um número que o próprio repositório já contradiz.
+
+**E mesmo assim o mecanismo continua sem caso para disparar — por um motivo mais forte do que o
+que a task original deu:** `interval=1m` contra uma série nativa de `5min` (ex. `sum_open_interest`)
+não produz ausência. `build_series_history_report`
+(`backend/src/modules/sentimento/use_cases/series_history.py:339,374-386`) pede leituras ao `as_of`
+na grade nativa de **1 minuto** (`native_instants`), com a política de carry-forward construída sobre
+`bucket_interval_ms=entry.native_grid_ms` — ou seja, o valor de `5min` é **repetido a cada minuto**
+até `maxStalenessMs` (600.000 ms para `sum_open_interest`, do próprio catálogo). Esse mecanismo
+**não é novo**: é o `as_of`/carry-forward que já existia antes desta feature. Resultado: hoje, para
+os TFs servidos `{1m, 5m, 15m, 1h, 4h}` (`SUPPORTED_INTERVAL`, `series_history.py:60`), **nenhuma
+das quatro métricas nativas de `5min` fica sem leitura só por causa do TF escolhido** — inclusive em
+`1m`, que é justamente o caso que motivou a pergunta do owner.
+
+⚠️ **Achado correlato, fora do escopo desta declaração — registrado para não desaparecer:** existe
+um segundo mecanismo, **pré-existente e não relacionado a esta feature** (`ADR-026/D1`,
+`classify_grid_multiple`, `backend/src/modules/charts/domain/panel_grid_enablement.py`), que
+**já** calcula `enabled=False, reason=UPSAMPLING` exatamente quando `panel_grid_ms < native_grid_ms`
+— isto é, exatamente para `interval=1m` sobre uma série de `5min`. Esse veredito **já viaja no fio**
+(`SeriesHistoryReport.panel_grid`, campo `grid_multiple` do envelope,
+`backend/src/modules/sentimento/domain/series_history_report.py:177,204`), mas **nenhum ponto de
+`frontend/src` o lê** — `grep -rniE 'grid_multiple|panel_grid|upsampling' frontend/src --include='*.ts' --include='*.tsx'`
+→ **`0`** `[MEDIDO 2026-09-23]`. **Isto não é o mesmo mecanismo que o owner pediu**: `UPSAMPLING` é
+um veredito sobre a FIDELIDADE do desenho de candle num TF mais fino que a grade nativa (o domínio
+de `ADR-026`, ligado ao eixo único da fase `02`), não sobre AUSÊNCIA de leitura — o carry-forward do
+parágrafo acima já garante que sempre há valor. Não é escopo de `[M-13]` nem desta task construir
+consumo de `grid_multiple` em `web`; fica nomeado aqui para o dia em que alguém precisar decidir se
+os dois vereditos (ausência-por-TF e fidelidade-de-upsampling) devem convergir numa única UI.
+
+**Por que a ausência genuína exigiria uma grade mais grossa que `5min`, não a entrada de `1m` na
+barra:** o carry-forward cobre qualquer TF servido **enquanto `maxStalenessMs` alcançar o próximo
+ponto nativo**. Isso vale para `1min` sobre `5min` (a única lacuna nativa que existe hoje) porque
+`600.000 ms ≥ 300.000 ms` (a largura da própria grade). Uma série cuja grade nativa fosse, por
+exemplo, `15min` ou `1h` **também** seria coberta pelo mesmo mecanismo em qualquer TF `≥` sua
+própria grade — o caso que genuinamente quebra o carry-forward é pedir um TF **mais fino** que uma
+grade nativa **mais grossa** que a maior janela de staleness admitida, ou simplesmente uma grade tão
+grossa que o produto (design) decida que repetir o mesmo valor por horas deixou de ser uma leitura
+honesta. **Por isso o gatilho certo não é "`1m` entra na barra"** (já entrou, e nada quebrou) **— é
+"uma grade nativa mais grossa que `5min` entra no catálogo"**, como o dono da decisão (`/architect`
+da feature que a introduzir) terá de julgar caso a caso se o carry-forward ainda basta ou se a
+ausência passa a ser real.
+
+**Por que não construir agora:** um toggle de indisponibilidade que nunca teria caso positivo para
+mostrar é um pixel que nunca acende — e pixel que nunca acende não tem ablação, que é o `DoD-VERTICAL`
+que este repositório exige de todo pixel (`D-C3.6`/`DoD-4` da fase `05`; mesma classe do `rc=0`
+ambíguo de `ADR-012`: verde indistinguível entre *"nunca disparou"* e *"nunca foi capaz de
+disparar"*).
+
+**O gatilho de reabertura, nomeado:** o dia em que uma série entrar no catálogo com grade nativa
+mais grossa que `5min` (ex.: um provider cuja menor resolução seja `15m` ou `1h`). Dono: o
+`/architect` da feature que introduzir essa grade — não esta.
 
 ---
 
