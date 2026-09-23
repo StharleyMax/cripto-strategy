@@ -567,7 +567,7 @@ tracker = { provider = "jira", id = "CST-227", url = "https://conversationhub.at
 id = "T-04.1"
 title = "[web] 04 · O rotulo do painel de OI soletra GRANDEZA · UNIVERSO · COORTE, lidos do SeriesKey servido"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T12:43:00Z @ 08b4e4eb0c51d39ec76f07189ef171708ca0a311
 phase = "04"
 depends_on = []
 refs = [
@@ -582,7 +582,7 @@ tracker = { provider = "jira", id = "CST-228", url = "https://conversationhub.at
 id = "T-04.2"
 title = "[web] 04 · O envelope de proveniencia C-4 derivado do SeriesKey, e a unidade PERMANECE contratos (BTC)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T12:43:00Z @ 08b4e4eb0c51d39ec76f07189ef171708ca0a311
 phase = "04"
 depends_on = ["T-04.1"]
 refs = [
@@ -598,7 +598,7 @@ tracker = { provider = "jira", id = "CST-229", url = "https://conversationhub.at
 id = "T-04.3"
 title = "[web] 04 · ⛔ A chave de maquina deixa de nascer da MICROCOPY — hoje a pagina publica data-fact=\"live_preço:attempted\", com acento"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T12:43:00Z @ 08b4e4eb0c51d39ec76f07189ef171708ca0a311
 phase = "04"
 depends_on = []
 refs = [
@@ -613,7 +613,7 @@ tracker = { provider = "jira", id = "CST-230", url = "https://conversationhub.at
 id = "T-04.4"
 title = "[web] 04 · Os demais paineis herdam a fabrica de chave nova — o defeito e da FABRICA, nao do painel de preco"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T12:43:00Z @ 08b4e4eb0c51d39ec76f07189ef171708ca0a311
 phase = "04"
 depends_on = ["T-04.3"]
 refs = [
@@ -626,7 +626,7 @@ tracker = { provider = "jira", id = "CST-231", url = "https://conversationhub.at
 id = "T-04.5"
 title = "[web] 04 · ⛔ Ablacao de derivacao (CA-10) + zero chave de maquina nao-ASCII + assert de POSICAO do rotulo"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T12:43:00Z @ 08b4e4eb0c51d39ec76f07189ef171708ca0a311
 phase = "04"
 depends_on = ["T-04.2", "T-04.4"]
 refs = [
@@ -642,7 +642,7 @@ tracker = { provider = "jira", id = "CST-232", url = "https://conversationhub.at
 id = "T-04.6"
 title = "[web] 04 · Veredito do ux-ui-mastery sobre o rotulo de proveniencia"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-23T12:43:00Z @ 08b4e4eb0c51d39ec76f07189ef171708ca0a311
 phase = "04"
 depends_on = ["T-04.5"]
 refs = [
