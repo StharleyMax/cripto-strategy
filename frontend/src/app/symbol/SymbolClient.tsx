@@ -111,6 +111,7 @@ import type {
   PanelStatus,
   SeriesProvenance,
   SeriesValueStats,
+  SlotCoverageState,
   SymbolPanelStatuses,
 } from "./panel-status.ts";
 import {
@@ -123,6 +124,7 @@ import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES } from "./supported-timeframes.
 import { HISTORY_BAR_POLICY } from "../history-transport.ts";
 import type { HistoryRowsBundle } from "./panel-assembly.ts";
 import { useHistoryPager, type HistoryPagingSeed, type HistorySeriesKeys } from "./use-history-pager.ts";
+import { panelWallState } from "./slot-coverage.ts";
 
 /** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
  * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
@@ -748,6 +750,35 @@ function PartialCoverageMark({
   );
 }
 
+/**
+ * `T-05.6` (`D-C3.6`, plan `05` item `5.5`) — the NAMED STATE for a panel whose accumulated
+ * window has widened past this SERIES' OWN declared floor (`beyond-coverage`,
+ * `slot-coverage.ts::panelWallState`): the store/source has no history before this point, ever —
+ * a WALL, distinct from `not-loaded` (the pager just hasn't paged there yet, `T-05.7` already
+ * stops asking silently once the wall is known) and from `absent` (a real hole inside KNOWN
+ * coverage). Reuses the SAME glyph/word/colour three-channel discipline
+ * `PartialCoverageMark`/`LongShortIntegrityBadge` already established on this screen (`ADR-010/D-
+ * 3`, "integridade do dado") — the SAME glyph too (`PartialCoverageGlyph`), not a fourth SVG for a
+ * fourth flavour of "integrity", so an operator only ever has to learn ONE mark.
+ *
+ * ONE badge per PANEL, never per slot/bar (this task's own DoD): the caller decides ONE
+ * `SlotCoverageState` for the whole panel (`panelWallState` against the window's own left edge,
+ * never a scan of every slot) and this component only ever renders for `"beyond-coverage"` —
+ * `"absent"`/`"not-loaded"` render nothing here, on purpose: neither is "this panel has hit a
+ * wall it can never cross".
+ */
+function BeyondCoverageBadge({ factKey }: { readonly factKey: string }) {
+  return (
+    <p
+      data-fact={`${factKey}:beyond`}
+      className="flex items-center gap-2 border border-integrity-ink px-2 py-0.5 text-sm font-bold text-integrity-ink"
+    >
+      <PartialCoverageGlyph />
+      LIMITE DA COBERTURA — sem histórico disponível além deste ponto.
+    </p>
+  );
+}
+
 // ⛔ FORM, NOT CONTRACT — every constant in this block belongs to the `ui-designer` WITH the
 // `ux-ui-mastery` verdict (`T-01.8`, `CLAUDE.md` §"Design — autonomia delegada, com gate de
 // validação"). What is here is the sober, functional placeholder a builder is allowed to write
@@ -1335,10 +1366,15 @@ function OiPane({
   panels,
   status,
   oi,
+  wallState,
 }: {
   readonly panels: S2Panels;
   readonly status: PanelStatus;
   readonly oi: OiPaneData;
+  /** `T-05.6` — `slot-coverage.ts::panelWallState` against the pager's own fetched window and
+   * THIS series' declared floor, computed once in `SymbolClient` and handed down rather than
+   * recomputed per pane (every pane would otherwise need `pager.window` threaded to it anyway). */
+  readonly wallState: SlotCoverageState;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useLightweightChart(containerRef, OI_PANEL_INDEX, (chart) => {
@@ -1379,6 +1415,7 @@ function OiPane({
       <OiFreshness oi={oi} />
       <OiReadableHorizon oi={oi} gridSlots={panels.oi.slots.length} />
       <OiProvenance oi={oi} />
+      {wallState === "beyond-coverage" ? <BeyondCoverageBadge factKey="oi_coverage" /> : null}
       <AbsenceNote status={status} />
     </section>
   );
@@ -2315,10 +2352,13 @@ function LongShortPane({
   longShort,
   status,
   symbol,
+  wallState,
 }: {
   readonly longShort: LongShortPaneData;
   readonly status: PanelStatus;
   readonly symbol: string;
+  /** `T-05.6` — same contract as `OiPane`'s own `wallState` prop; see that docstring. */
+  readonly wallState: SlotCoverageState;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // `D-1` — the band's slots, resolved by the SAME rule `page.tsx` used for the footer's numerals
@@ -2455,6 +2495,7 @@ function LongShortPane({
             {hasObservation ? <LongShortProvenance provenance={longShort.provenance} /> : null}
             <LongShortReadableHorizon longShort={longShort} />
             <AbsenceNote status={status} />
+            {wallState === "beyond-coverage" ? <BeyondCoverageBadge factKey="long_short_coverage" /> : null}
           </div>
           <LongShortTailNote longShort={longShort} />
         </div>
@@ -2780,6 +2821,16 @@ export function SymbolClient({
     nativeInterval: initialLongShort.nativeInterval,
     nativeGrid: initialLongShort.nativeGrid,
   };
+  // `T-05.6` (`D-C3.6`, plan `05` item `5.5`) — THE ASYMMETRIC WALL, NAMED. Computed once here,
+  // off `pager.window`/`pager.panelCoverage` (`T-05.6`'s own additions to `HistoryPagerResult`),
+  // and handed down as a single `SlotCoverageState` per panel rather than recomputed inside each
+  // pane (both panes would otherwise need the pager's window threaded to them anyway). Price gets
+  // NO such prop/badge — it deliberately keeps drawing whatever bars its own floor allows, per the
+  // DoD's own "o painel de Preço continua com barras": OI and long/short are the two panels this
+  // task's plan names as the shallower series, and a THIRD candidate here would be scope this task
+  // does not own (the plan's own falsifier is `n=2` panels, not `n=3`).
+  const oiWallState = panelWallState(pager.window, pager.panelCoverage.oi);
+  const longShortWallState = panelWallState(pager.window, pager.panelCoverage.longShort);
   // `T-03.11` — `selectedTimeframe` is now a PROP, resolved server-side by `page.tsx` off
   // `?interval=` (never a client `useState`): the URL is the single source of truth for which
   // TF the ten fetches this render answers were actually made with, so the bar's own highlight
@@ -2824,7 +2875,7 @@ export function SymbolClient({
           volume={volume}
           volumeStatus={panelStatus.volume}
         />
-        <OiPane panels={panels} status={panelStatus.oi} oi={oi} />
+        <OiPane panels={panels} status={panelStatus.oi} oi={oi} wallState={oiWallState} />
         <CvdPane panels={panels} status={panelStatus.cvd} cvd={cvd} />
         <LiquidationPane
           liquidation={liquidation}
@@ -2836,7 +2887,7 @@ export function SymbolClient({
             route's resolved `[symbol]` segment, passed into `SymbolClient` above — never
             `panels.symbol` (that field stays `charts`' own fixed constant), and never re-derived
             here. */}
-        <LongShortPane longShort={longShort} status={panelStatus.longShort} symbol={symbol} />
+        <LongShortPane longShort={longShort} status={panelStatus.longShort} symbol={symbol} wallState={longShortWallState} />
       </AxisSyncProvider>
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>

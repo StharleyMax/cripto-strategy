@@ -148,6 +148,19 @@ export interface HistoryPagerResult {
    * viewport (`D-C3.5`: "o range de tempo sobrevive ao remonte"). */
   readonly initialRange: TimeRange | undefined;
   readonly onCandidateRange: (range: TimeRange) => void;
+  /** `T-05.6` — the SAME accumulated window `axis` was just built from, exposed as-is (not
+   * re-derived from `axis`) so a caller can feed it straight to `slot-coverage.ts::panelWallState`
+   * alongside `panelCoverage` below, without reconstructing `{startMs, endMsExclusive}` out of
+   * `axis.startMs`/`stepMs`/`slotCount` a second way. */
+  readonly window: AccumulatedWindow;
+  /** `T-05.6` — the pager's latest belief about every series' own declared floor (`T-05.7`'s own
+   * state, `EMPTY_PANEL_COVERAGE` until the first successful page lands), exposed so a caller can
+   * ask, per panel, whether the fetched window has walked past that series' wall
+   * (`slot-coverage.ts::panelWallState`) — the PIXEL this task adds. This hook itself never reads
+   * that question; `combineHistoryCoverage` above already folds it for the paging DECISION, this
+   * is the raw per-series bundle for the RENDER decision, which needs to tell OI/long-short apart
+   * from price rather than one merged floor. */
+  readonly panelCoverage: PanelCoverageBundle;
 }
 
 /** The pager's initial belief about every series' own declared coverage: unmeasured, all ten —
@@ -336,5 +349,5 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
     [fetchPage, pageSlots, triggerSlots],
   );
 
-  return { axis, assembly, initialRange: preservedRange, onCandidateRange };
+  return { axis, assembly, initialRange: preservedRange, onCandidateRange, window: windowState, panelCoverage };
 }
