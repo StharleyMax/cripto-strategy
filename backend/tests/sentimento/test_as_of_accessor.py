@@ -150,7 +150,13 @@ def _read(
         policy=_policy() if policy is None else policy,
         bar_policy=bar_policy,
         purpose=ReadPurpose.RENDERING if bar_policy is BarPolicy.INTRABAR else purpose,
-        knowledge_time=t + BUCKET_MS if knowledge_time is None else knowledge_time,
+        # `ADR-042`/`D2`: `knowledge_time = t` is the DECISION-read case — the old rule
+        # (`available_at <= t`) as the one point where the two horizons coincide. Defaulting to
+        # `t` here, rather than to something ahead of it, is what keeps every test below that
+        # does not care about `knowledge_time` exercising EXACTLY the pre-`ADR-042` behaviour;
+        # a default ahead of `t` would trip `ADR-042`/`D3`'s refusal for the default
+        # `purpose=ENTRY_CONDITION` on every call that does not override it.
+        knowledge_time=t if knowledge_time is None else knowledge_time,
     )
 
 
@@ -665,7 +671,14 @@ def test_intrabar_is_refused_for_an_entry_condition() -> None:
 
 @pytest.mark.parametrize("purpose", [ReadPurpose.RENDERING, ReadPurpose.EXECUTION_SIMULATION])
 def test_intrabar_is_admitted_for_the_two_purposes_the_spec_names(purpose: ReadPurpose) -> None:
-    """The `cala` side: the refusal is about the PAIR, not about `intrabar` being banned."""
+    """The `cala` side: the refusal is about the PAIR, not about `intrabar` being banned.
+
+    `knowledge_time` is per-purpose on purpose (`ADR-042`/`D3`): `RENDERING` may legitimately
+    reach past `t` (`B4`, testing that the widening does not break this pair), but
+    `EXECUTION_SIMULATION` is a DECISION purpose and `K > t` there is exactly what `D3` refuses
+    — so its own read uses `K = t`, the one value every decision read may pass.
+    """
+    knowledge_time = B4 if purpose is ReadPurpose.RENDERING else DECISION_T
     reading = as_of(
         series=STOCK_KEY,
         symbol="BTCUSDT",
@@ -674,7 +687,7 @@ def test_intrabar_is_admitted_for_the_two_purposes_the_spec_names(purpose: ReadP
         policy=_policy(),
         bar_policy=BarPolicy.INTRABAR,
         purpose=purpose,
-        knowledge_time=B4,
+        knowledge_time=knowledge_time,
     )
     assert reading.value == Decimal("12.5")
 
@@ -688,13 +701,18 @@ def test_final_only_is_admitted_for_an_entry_condition() -> None:
 
 
 @pytest.mark.parametrize("bar_policy", list(BarPolicy))
-def test_f1_no_read_ever_returns_a_row_the_reader_could_not_have_known(
+def test_f1_no_decision_read_ever_returns_a_row_the_reader_could_not_have_known(
     bar_policy: BarPolicy,
 ) -> None:
     """Sweep the poisoned fixture for the observation `F-1` says must never come back.
 
     "uma leitura de decisao que devolva linha com `available_at > t_decisao` **ou**
     `bucket_end > t_decisao` sob `final_only`".
+
+    `purpose=EXECUTION_SIMULATION` and `knowledge_time=t` (`ADR-042`/`D2`) is what keeps this a
+    DECISION read under both `bar_policy` values (`ENTRY_CONDITION` would refuse `intrabar`
+    outright, which is a different falsifier below) — and `D2` is exactly why `available_at`
+    is still bounded by `t` here: a decision read's horizon IS the slice it is deciding.
 
     n = every quarter-bucket instant across the fixture, under both policies.
     """
@@ -704,12 +722,41 @@ def test_f1_no_read_ever_returns_a_row_the_reader_could_not_have_known(
             _poisoned_rows(),
             t=t,
             bar_policy=bar_policy,
-            purpose=ReadPurpose.RENDERING,
-            knowledge_time=B4 + 20 * BUCKET_MS,
+            purpose=ReadPurpose.EXECUTION_SIMULATION,
+            knowledge_time=t,
         )
         if reading.observation is not None:
             checked += 1
             assert reading.observation.row.available_at <= t
+            if bar_policy is BarPolicy.FINAL_ONLY:
+                assert reading.observation.row.bucket_end <= t
+    assert checked > 0, "the sweep has to return at least one row, or it proves nothing"
+
+
+@pytest.mark.parametrize("bar_policy", list(BarPolicy))
+def test_rendering_bounds_available_at_by_knowledge_time_not_by_t(bar_policy: BarPolicy) -> None:
+    """`ADR-042`/`D1`, the other half of `F-1`: under `RENDERING` the reachable bound MOVES.
+
+    This is not a relaxation of `F-1` — it is what `D1` is FOR. A `RENDERING` read with
+    `knowledge_time` fixed far ahead of the whole fixture may legitimately return a row whose
+    `available_at` is past `t` (that is the poisoned-fixture line `_poison_a` describes, and
+    `D4.6` class (a) pins that it is EXCLUDED under a horizon that does NOT reach it — this test
+    pins the other side: INCLUDED once the horizon does). `bucket_end <= t` under `final_only`
+    is untouched by `D1` and still holds — R-2 never moved.
+    """
+    knowledge_time = B4 + 20 * BUCKET_MS
+    checked = 0
+    for t in range(B1 - BUCKET_MS, B4 + 3 * BUCKET_MS, BUCKET_MS // 4):
+        reading = _read(
+            _poisoned_rows(),
+            t=t,
+            bar_policy=bar_policy,
+            purpose=ReadPurpose.RENDERING,
+            knowledge_time=knowledge_time,
+        )
+        if reading.observation is not None:
+            checked += 1
+            assert reading.observation.row.available_at <= knowledge_time
             if bar_policy is BarPolicy.FINAL_ONLY:
                 assert reading.observation.row.bucket_end <= t
     assert checked > 0, "the sweep has to return at least one row, or it proves nothing"
@@ -720,7 +767,7 @@ def test_f1_no_read_ever_returns_a_row_the_reader_could_not_have_known(
 
 def test_knowledge_time_bounds_the_read_and_is_echoed_back_on_every_reading() -> None:
     """`reproduzir(run) = (bundle_hash, window, knowledge_time)` — the third one has to travel."""
-    reading = _read(_clean_rows(), knowledge_time=B4)
+    reading = _read(_clean_rows(), knowledge_time=B4, purpose=ReadPurpose.RENDERING)
     assert reading.knowledge_time == B4
 
 
@@ -730,16 +777,33 @@ def test_ca_f4_25_a_late_observation_of_an_evaluated_bucket_does_not_move_the_sa
     Held at the same `knowledge_time`, the answer is IDENTICAL — twice over: the late row is
     outside the horizon, and even inside it `argmin(observed_at)` still returns the first
     observation.
+
+    `purpose=RENDERING` throughout: since `ADR-042`/`D1` a moving `knowledge_time` that reaches
+    past `t` is exactly the `RENDERING` case — `CA-F4-25`/`F-4` is about the knowledge horizon,
+    not about an entry decision, and `D3` would refuse the widened calls below under a decision
+    purpose (correctly — that refusal is what `test_as_of_accessor.py`'s `D3` tests pin).
     """
     horizon = B3 + PUBLICATION_LAG_MS
     late = _observation(STOCK_KEY, bucket_end=B2, observed_at=horizon + 10 * BUCKET_MS, value="0.1")
-    before = _read(_clean_rows(), knowledge_time=horizon).projection()
-    after = _read([*_clean_rows(), late], knowledge_time=horizon).projection()
+    before = _read(
+        _clean_rows(), knowledge_time=horizon, purpose=ReadPurpose.RENDERING
+    ).projection()
+    after = _read(
+        [*_clean_rows(), late], knowledge_time=horizon, purpose=ReadPurpose.RENDERING
+    ).projection()
     assert before == after
 
-    at_b2 = _read(_clean_rows(), t=B2 + PUBLICATION_LAG_MS, knowledge_time=horizon).value
+    at_b2 = _read(
+        _clean_rows(),
+        t=B2 + PUBLICATION_LAG_MS,
+        knowledge_time=horizon,
+        purpose=ReadPurpose.RENDERING,
+    ).value
     with_late = _read(
-        [*_clean_rows(), late], t=B2 + PUBLICATION_LAG_MS, knowledge_time=horizon + 20 * BUCKET_MS
+        [*_clean_rows(), late],
+        t=B2 + PUBLICATION_LAG_MS,
+        knowledge_time=horizon + 20 * BUCKET_MS,
+        purpose=ReadPurpose.RENDERING,
     ).value
     assert at_b2 == with_late == Decimal("11.5")
 
@@ -750,13 +814,16 @@ def test_ca_f4_25_raising_the_horizon_can_change_the_answer_and_the_reading_says
     A late observation of a bucket that had NO earlier observation is the case where the number
     really moves. It moves only when `knowledge_time` moves, and the reading carries the value
     that moved it — so two runs are comparable instead of mysteriously different.
+
+    `purpose=RENDERING`: `wide`'s horizon reaches past the default `t` on purpose, to prove the
+    number moves with the horizon — `ADR-042`/`D3` reserves exactly that reach for `RENDERING`.
     """
     late_only = _observation(
         STOCK_KEY, bucket_end=B3, observed_at=B3 + 50 * BUCKET_MS, value="13.5"
     )
     rows = [*_clean_rows()[:2], late_only]
-    narrow = _read(rows, knowledge_time=B3 + PUBLICATION_LAG_MS)
-    wide = _read(rows, knowledge_time=B3 + 60 * BUCKET_MS)
+    narrow = _read(rows, knowledge_time=B3 + PUBLICATION_LAG_MS, purpose=ReadPurpose.RENDERING)
+    wide = _read(rows, knowledge_time=B3 + 60 * BUCKET_MS, purpose=ReadPurpose.RENDERING)
     assert narrow.value == Decimal("11.5")
     assert wide.value == Decimal("13.5")
     assert narrow.knowledge_time != wide.knowledge_time
@@ -826,3 +893,129 @@ def test_an_absent_reading_projects_the_reason_and_no_provenance() -> None:
 def test_a_read_for_another_symbol_does_not_see_this_symbols_rows() -> None:
     """`symbol` is a term of the row key (`SPEC-001` §3.2), not decoration."""
     assert _read(_clean_rows(), symbol="ETHUSDT").absence is Absence.NO_POINT
+
+
+# ── `ADR-042` — THE FOUR FALSIFIERS, EACH ONE NAMED THE WAY THE ADR NAMES IT ───────────────
+#
+# `docs/adr/ADR-042-dois-relogios-…md`, section "Falsificadores — como o owner confere sem
+# confiar em mim". Falsifier 4 (the auto-verifiable window over the real 90-day backfill) is
+# NOT here — it needs the actual backfilled rows in `md.series`, which no unit fixture can
+# stand in for without becoming the thing it is supposed to verify. It is run against the real
+# store and reported in the QA gate block instead, the same way `test_as_of_batch_differential.
+# py`'s "universe" section pins facts a unit test cannot manufacture.
+
+
+def _reference_reading_under_the_pre_adr_042_rule(
+    observations: list[Observation], *, t: int
+) -> Decimal | None:
+    """Reimplement the OLD rule (`available_at <= t`) INDEPENDENTLY, for falsifier 1.
+
+    Deliberately NOT a call into `as_of_accessor` at all — comparing the new code against ITSELF
+    with `knowledge_time = t` would only prove the two expressions are algebraically the same
+    line, which nobody disputes. This function is what "today" meant before `ADR-042` existed:
+    admit `STOCK_KEY` rows of `final_only` `bucket_end <= t` and `available_at <= t`, pick the
+    latest surviving `bucket_end`, then `argmin(observed_at)` inside it. If `D1` had silently
+    changed the admitted SET, this independent walk and `as_of(knowledge_time=t)` would diverge.
+    """
+    admitted = [
+        o
+        for o in observations
+        if o.row.series_key_id == STOCK_KEY.series_key_id()
+        and o.row.available_at <= t
+        and o.row.bucket_end <= t
+        and o.row.is_final is not False
+    ]
+    if not admitted:
+        return None
+    latest = max(o.row.bucket_end for o in admitted)
+    winner = min(
+        (o for o in admitted if o.row.bucket_end == latest),
+        key=lambda o: (o.row.observed_at, o.row.source, o.row.ingested_at),
+    )
+    age_ms = t - winner.row.bucket_end
+    if age_ms > ASOF_MAX_STALENESS_MS:
+        return None  # `ADR-006`'s carry window — STOCK_KEY carries, but not forever
+    return winner.value
+
+
+def test_adr_042_falsifier_1_knowledge_time_equal_t_is_bit_identical_to_the_pre_adr_042_rule() -> (
+    None
+):
+    """`D2`: com `K = t` em toda fatia, `/series-history` byte a byte igual ao de hoje.
+
+    Swept at the accessor level (the use case above it is a thin projection of the same
+    reading) against an INDEPENDENT reimplementation of the pre-`ADR-042` rule — see
+    `_reference_reading_under_the_pre_adr_042_rule`. **Morde** on any single `t` where the two
+    disagree: that would mean `D1` moved the admitted set even at `K = t`, which `D2` promises
+    never happens.
+    """
+    rows = _poisoned_rows()
+    checked = 0
+    for t in range(B1 - BUCKET_MS, B4 + 3 * BUCKET_MS, BUCKET_MS // 4):
+        reading = _read(rows, t=t, purpose=ReadPurpose.EXECUTION_SIMULATION, knowledge_time=t)
+        expected = _reference_reading_under_the_pre_adr_042_rule(rows, t=t)
+        assert reading.value == expected, f"diverged at t={t}: {reading.value} != {expected}"
+        checked += 1
+    assert checked > 20, "the sweep has to cover the whole fixture, or D2 is not really tested"
+
+
+def test_adr_042_falsifier_2_poisoned_fixture_stays_refused_under_entry_condition_for_any_k() -> (
+    None
+):
+    """`SPEC-001` §5.1's poisoned fixture continues to be refused under `ENTRY_CONDITION`.
+
+    "Sob `purpose=ENTRY_CONDITION` e qualquer `K`, ela tem de continuar não produzindo leitura
+    de lookahead." Two shapes of "não produzir": for `K <= t` the read may PROCEED but must
+    never serve `_poison_a`'s value; for `K > t` `ADR-042`/`D3` REFUSES the read outright, which
+    is the strictly stronger way of not producing it. **Morde** if any `K` at or below `t` ever
+    returns `999.999`, or if some `K` above `t` fails to raise.
+    """
+    rows = _poisoned_rows()
+    served = 0
+    for t in range(B1 - BUCKET_MS, B4 + 3 * BUCKET_MS, BUCKET_MS // 4):
+        for k in (t - BUCKET_MS, t - 1, t):
+            reading = _read(rows, t=t, purpose=ReadPurpose.ENTRY_CONDITION, knowledge_time=k)
+            if reading.value is not None:
+                served += 1
+                assert reading.value != Decimal("999.999")
+        with pytest.raises(DecisionReadRefusedError):
+            _read(rows, t=t, purpose=ReadPurpose.ENTRY_CONDITION, knowledge_time=t + 1)
+    assert served > 0, "the sweep has to serve at least one legitimate value, or it proves nothing"
+
+
+def test_adr_042_falsifier_3_the_d3_gate_refuses_lookahead_and_admits_the_legitimate_pair() -> None:
+    """`D3`, both halves in the SAME test.
+
+    A falsifier that only checked the refusal would not distinguish "recusou certo" from
+    "recusa tudo" (the ADR's own warning).
+
+    ⛔ NEGATIVE: `as_of(purpose=ENTRY_CONDITION, t=T, knowledge_time=T+1)` and the same for
+    `EXECUTION_SIMULATION` — both RAISE.
+    ✅ POSITIVE, same `T`, same rows: `RENDERING` with `K=T+1` DEVOLVES the line.
+    """
+    rows = [_observation(STOCK_KEY, bucket_end=B3, observed_at=B3 + 1, value="12.5")]
+    t = B3 + PUBLICATION_LAG_MS
+    k = t + 1
+    for purpose in (ReadPurpose.ENTRY_CONDITION, ReadPurpose.EXECUTION_SIMULATION):
+        with pytest.raises(DecisionReadRefusedError, match="knowledge_time"):
+            as_of(
+                series=STOCK_KEY,
+                symbol="BTCUSDT",
+                t=t,
+                observations=rows,
+                policy=_policy(),
+                bar_policy=BarPolicy.FINAL_ONLY,
+                purpose=purpose,
+                knowledge_time=k,
+            )
+    reading = as_of(
+        series=STOCK_KEY,
+        symbol="BTCUSDT",
+        t=t,
+        observations=rows,
+        policy=_policy(),
+        bar_policy=BarPolicy.FINAL_ONLY,
+        purpose=ReadPurpose.RENDERING,
+        knowledge_time=k,
+    )
+    assert reading.value == Decimal("12.5")

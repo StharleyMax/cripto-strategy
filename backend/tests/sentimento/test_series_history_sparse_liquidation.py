@@ -266,20 +266,35 @@ def test_the_same_holes_are_filled_for_a_carry_forward_nature(cohort: str) -> No
 
 
 @pytest.mark.parametrize("cohort", COHORTS)
-def test_a_lag_of_a_whole_native_grid_makes_every_instant_sem_ponto(cohort: str) -> None:
-    """The BOUNDARY that `DoD-2` of plan `05` depends on, stated instead of assumed.
+def test_a_lag_of_a_whole_native_grid_is_visible_only_at_the_buckets_own_close(cohort: str) -> None:
+    """The BOUNDARY `DoD-2` of plan `05` depends on — reshaped by `ADR-042`/`D1`, not erased.
 
-    `as_of` returns `SEM_PONTO` for a `FLOW` once `age_ms >= bucket_interval_ms`, and
-    `bucket_interval_ms` for this series is its NATIVE grid, 60_000 ms (`ADR-037/D1`). A row
-    that only becomes readable `NATIVE_GRID_MS` after its bucket closed is therefore NEVER
-    served — `n_points = 0` with every row sitting in `md.series`, which is exactly what
-    `ACHADO-SERIES-HISTORY-SEM-PONTO.md` measured on `klines_volume` (180 rows, 0 values,
-    100% `SEM_PONTO`).
+    `[ADR-042 UPDATE, 2026-09-23]` Renamed from `..._makes_every_instant_sem_ponto`: that was
+    the PRE-`ADR-042` shape, where R-1 (`available_at <= t`) and `D4.11`'s staleness
+    (`age_ms < bucket_interval_ms`) were CONTRADICTORY whenever `lag_ms == bucket_interval_ms`
+    exactly — `available_at <= t` forces `age_ms >= bucket_interval_ms`, which `D4.11` then
+    always refuses, so a row published exactly one native grid late was NEVER servable at any
+    `t`, from any reader. That was the collector precondition this test pinned.
 
-    This is not a defect of the catalog registration and this test does not assert one: it pins
-    the precondition the COLLECTOR has to meet for `DoD-2`'s `n_points > 0` to be reachable at
-    all, so that a future `n_points = 0` is diagnosed as publication lag rather than re-debugged
-    as a missing catalog row.
+    Under `D1` (`available_at <= knowledge_time`), `_report`'s single, WIDE
+    `knowledge_time_ms` (one grid past the window, the RENDERING shape `ADR-042` exists to
+    unlock) no longer ties visibility to `t` at all — it ties it to `K`, fixed for the whole
+    batch. `D4.11`'s staleness is then the ONLY t-dependent gate left, and it admits exactly
+    `age_ms = 0`: each filled bucket is visible at its OWN closing instant and nowhere else.
+    `[MEDIDO 2026-09-23: filled indices are `{0, 1, 4, 9}` — identical to `FILLED_OFFSETS`,
+    the SAME shape `test_a_bucket_without_a_liquidation_is_sem_ponto_and_never_zero` gets with
+    `PUBLICATION_LAG_MS = 30_000` — confirmed by running this fixture and printing
+    `(index, value, absence)` for all ten rows]`.
+
+    The precondition this test now pins is narrower but still real: a RENDERING caller with a
+    wide-enough `K` recovers the collector's point EXACTLY at its own bucket close regardless of
+    how late (within `K`) it was published — `D1` subsumes the old "publish within one native
+    grid or lose the point forever" requirement, but only for `RENDERING`. A per-instant,
+    `ENTRY_CONDITION`-shaped read (`K = t`, `D2`'s own equivalence) still reproduces the OLD,
+    tighter boundary exactly — that case is `test_adr_042_falsifier_1_...` in
+    `test_as_of_accessor.py`, not this file, since this file's `_report` fixes ONE `K` for the
+    whole window by construction (`SPEC-001`'s RENDERING shape), and this test's job is that
+    shape specifically.
     """
     entry = _served_entry(cohort)
 
@@ -287,5 +302,15 @@ def test_a_lag_of_a_whole_native_grid_makes_every_instant_sem_ponto(cohort: str)
         entry, _sparse_observations(entry.key.series_key_id(), lag_ms=NATIVE_GRID_MS)
     ).rows
 
-    assert [row.absence for row in rows] == [Absence.NO_POINT.value] * WINDOW_INSTANTS
-    assert all(row.value is None for row in rows)
+    filled = {index for index, row in enumerate(rows) if row.value is not None}
+    assert filled == set(FILLED_OFFSETS)
+    for index, row in enumerate(rows):
+        if index in FILLED_OFFSETS:
+            assert row.value == VALUES[index]
+            assert row.absence is None
+            # visible exactly AT the bucket's own close — `age_ms = 0` is the only age `D4.11`
+            # admits once `K` no longer bounds anything (row published one whole grid late).
+            assert row.available_at == row.event_time + NATIVE_GRID_MS
+        else:
+            assert row.value is None, f"instant {index} was FILLED: {row.value!r}"
+            assert row.absence == Absence.NO_POINT.value == "SEM_PONTO"

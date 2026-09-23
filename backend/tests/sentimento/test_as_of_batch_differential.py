@@ -244,21 +244,52 @@ def test_the_real_slice_carries_the_d2_rows_a_synthetic_fixture_would_not_have()
     )
 
 
-def test_the_real_slice_carries_the_d3_backwards_revision_a_synthetic_fixture_would_not() -> None:
-    """`ADR-039`/`D3`: buckets whose winner activates LATER than the first row that activated."""
+def test_the_real_slice_no_longer_carries_a_per_row_d3_activation_gap_under_adr_042() -> None:
+    """`ADR-039`/`D3` measured on `_activation_instant`, and `ADR-042`/`D1` retired the measure.
+
+    ⚠️ THIS TEST USED TO ASSERT `23`, AND THE NUMBER IS GONE ON PURPOSE, NOT LOST. Before
+    `ADR-042`, `_activation_instant` under `final_only` was `max(available_at, bucket_end)` —
+    a PER-ROW value, since `available_at` varies row to row even within one `bucket_end`. `D1`
+    dropped `available_at` from that key entirely (`available_at` now gates admission against
+    `knowledge_time`, not WHEN a row activates): the key is `bucket_end` alone, and every row of
+    the SAME bucket shares the SAME `bucket_end` by definition. So `min(acts) ==
+    _activation_instant(winner.row, ...)` for every multi-row bucket, ALWAYS, structurally — the
+    per-row gap this test used to count no longer exists to be counted, on ANY slice, real or
+    synthetic. Asserting `23` again would be asserting `0 == 23`.
+
+    `re_minimised == 0` here is `[MEDIDO]`, not assumed: this loop still runs it, so a REGRESSION
+    that puts `available_at` back into the activation key would turn this red (a nonzero count),
+    the same way a positive count once proved the OLD key carried the defect.
+
+    `ADR-039`/`D3`'s underlying concern — a later-arriving revision winning by
+    `_first_observation_order` rather than by "first absorbed" — is UNCHANGED and still gated by
+    `_absorb`'s re-minimisation (`test_falsifier_d3_keeping_the_first_row_that_activated_is_
+    caught`, below). What changed is only HOW that tie can arise: before `D1`, by two rows of one
+    bucket activating at genuinely different wall-clock instants; since `D1`, only by two rows
+    of one bucket sharing ONE activation instant and needing a tie-break, which `_absorb`
+    supplies by comparing `_first_observation_order` rather than by processing order.
+    """
     observations = _observations()
     by_bucket: dict[tuple[str, int], list[Observation]] = {}
     for o in observations:
         by_bucket.setdefault((o.row.series_key_id, o.row.bucket_end), []).append(o)
     re_minimised = 0
+    multi_row_buckets = 0
     for rows in by_bucket.values():
         if len(rows) < 2:
             continue
+        multi_row_buckets += 1
         winner = min(rows, key=as_of_accessor._first_observation_order)  # noqa: SLF001
         acts = [_activation_instant(o.row, bar_policy=BarPolicy.FINAL_ONLY) for o in rows]
         if _activation_instant(winner.row, bar_policy=BarPolicy.FINAL_ONLY) > min(acts):
             re_minimised += 1
-    assert re_minimised == 23, f"the slice stopped carrying the D3 defect: {re_minimised}"
+    assert multi_row_buckets > 0, (
+        "the slice has to carry at least one multi-row bucket to prove anything"
+    )
+    assert re_minimised == 0, (
+        f"a per-row activation gap resurfaced under `final_only` ({re_minimised} buckets) — "
+        f"`available_at` is back in `_activation_instant`'s key, which `ADR-042`/`D1` retired"
+    )
 
 
 def test_no_backwards_revision_in_md_series_today_can_move_a_reading() -> None:
@@ -305,6 +336,17 @@ def test_no_backwards_revision_in_md_series_today_can_move_a_reading() -> None:
     owned by whoever re-exports**. The check itself is the `SELECT` above, and it has to be
     re-run by hand against `md.series` (read-only) before trusting `D3`'s synthetic falsifier
     again. `[NÃO MEDIDO automaticamente — por construção, e agora dito em vez de implicado]`
+
+    ⚠️ `ADR-042`/`D1`, ADDED HERE RATHER THAN LEFT IMPLIED: `activations` below is computed with
+    `_activation_instant(..., bar_policy=FINAL_ONLY)`, and since `D1` that key is `bucket_end`
+    alone — identical for every row of one bucket. So `activations[bucket_end] == win_act`
+    ALWAYS now, and `activations[bucket_end] < win_act` (this loop's own middle condition) is
+    `False` unconditionally: `visible == 0` holds STRUCTURALLY, not because today's revisions
+    happen to land outside their bucket's ownership window. The `SELECT` above still measures a
+    true, separate fact about the ROWS (whether ANY revision today lands inside that window by
+    real-world timing) — that fact just stopped being what decides this assertion. See
+    `test_the_real_slice_no_longer_carries_a_per_row_d3_activation_gap_under_adr_042`, which
+    names the same consequence directly rather than through this loop's side effect.
     """
     observations = _observations()
     by_series: dict[str, dict[int, list[Observation]]] = {}
@@ -504,7 +546,7 @@ def test_falsifier_d2_keying_the_scan_on_available_at_alone_is_caught() -> None:
 
 
 def _revision_inside_its_own_ownership_window() -> tuple[Observation, ...]:
-    """Two rows of ONE bucket: the second activates later and wins by `_first_observation_order`.
+    """Two rows of ONE bucket, tied on activation, where `_absorb`'s re-minimisation matters.
 
     ⚠️ THIS IS THE ONE SYNTHETIC INPUT IN THIS FILE, AND IT IS LABELLED RATHER THAN BLENDED IN.
     `test_no_backwards_revision_in_md_series_today_can_move_a_reading` measures WHY it has to
@@ -516,11 +558,19 @@ def _revision_inside_its_own_ownership_window() -> tuple[Observation, ...]:
     every other predicate behave exactly as they do on the rows above. What is fabricated is the
     TIMING, and only the timing:
 
-        row `live`     activates at `B + 10.000`, `observed_at = B + 10.000`
-        row `revision` activates at `B + 70.000`, `observed_at = B + 5.000`  <- wins
+        row `live`     `observed_at = B + 10.000`
+        row `revision` `observed_at = B + 5.000`   <- wins, argmin(observed_at)
 
-    At `t = B + 59.999` only `live` is in; at `t = B + 119.999` both are, and the winner flips
-    BACKWARDS to `revision`. "Keep the first row that activated" answers `live` at both.
+    ⚠️ `ADR-042`/`D1` CHANGED WHAT "TIMING" MEANS HERE. Before `D1`, `available_at` set each
+    row's OWN activation instant, so `live` and `revision` activated at genuinely different `t`
+    (the docstring this replaces staged that staggering on purpose). Since `D1`,
+    `_activation_instant` under `final_only` is `bucket_end` alone — IDENTICAL for both rows,
+    because they share one bucket. So both are admitted from the FIRST grid instant this test
+    asks about, and the tie is broken the other way `_absorb` breaks ties: by
+    `_first_observation_order` (`observed_at`), never by which row the cursor happened to reach
+    first. `available_at` still has to clear `knowledge_time` for each row to be admitted at
+    all — `bucket_end + 70_000` does, comfortably, against this file's `_KNOWLEDGE_TIME` — but it
+    no longer decides WHEN either row enters.
     """
     bucket_end = 1_789_383_000_000
     series, _ = _open_interest_case()
@@ -571,6 +621,13 @@ def test_falsifier_d3_keeping_the_first_row_that_activated_is_caught() -> None:
     for the measured reason that test states — and the assertion that the UNMUTATED batch still
     matches the definition on the same two rows is what keeps this from being a test of the
     mutation alone.
+
+    ⚠️ `ADR-042`/`D1`: both instants now show `revision` from the START, not just the second one
+    — see `_revision_inside_its_own_ownership_window`'s docstring for why the two rows tie on
+    activation under `final_only` since `D1`. The MECHANISM this falsifier proves is unchanged
+    (`_absorb` has to re-minimise, not keep the first row it saw); only the SHAPE of the
+    divergence moved from "wrong at the second instant" to "wrong at both", because there is no
+    longer a first instant where only `live` has activated.
     """
     series, policy = _open_interest_case()
     observations = _revision_inside_its_own_ownership_window()
@@ -592,10 +649,14 @@ def test_falsifier_d3_keeping_the_first_row_that_activated_is_caught() -> None:
         bar_policy=bar_policy,
     )
     assert [r.projection() for r in honest] == [r.projection() for r in definition]
-    assert definition[0].value == Decimal("1.00000000")
+    assert definition[0].value == Decimal("2.00000000"), (
+        "`revision` (smaller observed_at) has to win from the FIRST instant: since `ADR-042`/"
+        "`D1` both rows of this bucket activate together (`bucket_end` alone), so there is no "
+        "instant where only `live` has entered"
+    )
     assert definition[1].value == Decimal("2.00000000"), (
-        "the definition itself stopped revising the winner backwards — the shape this falsifier "
-        "is about no longer exists in `as_of`"
+        "the definition itself stopped picking `revision` by `argmin(observed_at)` — the shape "
+        "this falsifier is about no longer exists in `as_of`"
     )
 
     def _keep_first(
@@ -624,10 +685,12 @@ def test_falsifier_d3_keeping_the_first_row_that_activated_is_caught() -> None:
     divergences = [
         i for i in range(len(instants)) if mutated[i].projection() != definition[i].projection()
     ]
-    assert divergences == [1], (
-        f"keeping the first row that activated diverged at {divergences}, expected exactly the "
-        f"second instant — before the revision activates the two forms agree by construction"
+    assert divergences == [0, 1], (
+        f"keeping the first row that activated diverged at {divergences}, expected BOTH instants "
+        f"— since `ADR-042`/`D1` both rows tie on activation, so `live` is already the (wrong) "
+        f"incumbent by the time either instant is read"
     )
+    assert mutated[0].value == Decimal("1.00000000")
     assert mutated[1].value == Decimal("1.00000000")
 
 
@@ -655,24 +718,36 @@ def test_absorb_is_reachable_and_is_what_the_falsifier_above_replaced() -> None:
 
 
 def _older_bucket_activating_last() -> tuple[Observation, ...]:
-    """Two buckets; the OLDER one activates LAST — the shape `max(latest, bucket_end)` exists for.
+    """Two buckets, `intrabar`; the OLDER one is ABSORBED LAST.
+
+    The shape `max(latest, bucket_end)` in `_absorb` exists for.
 
     ⚠️ SYNTHETIC AND LABELLED, same contract as `_revision_inside_its_own_ownership_window`
     above: the IDENTITY is the real open-interest key of the pilot catalog, and only the
-    TIMING is fabricated.
+    TIMING/ORDER is fabricated.
 
-    Why it has to be synthetic is the same measured reason: a row of an older bucket that
-    only becomes available AFTER a newer bucket is already readable is a shape `md.series`
-    does not carry today, and shipping the falsifier anyway — knowing it could not fire — is
-    the failure `ADR-012` names.
+    ⚠️ `ADR-042`/`D1` MOVED WHAT MAKES THIS SHAPE POSSIBLE. Before `D1` this fixture used
+    `final_only`: the OLD bucket's large `available_at` made it activate LATER, in real `t`,
+    than the NEW bucket — `_activation_instant` was `max(available_at, bucket_end)` then, so a
+    late `available_at` could push a row's activation past a chronologically newer bucket's.
+    Since `D1`, `final_only`'s activation is `bucket_end` ALONE (`available_at` gates admission
+    against `knowledge_time`, not timing), so buckets always activate in `bucket_end` order —
+    the older bucket can never again activate after the newer one, and this exact fixture would
+    no longer exercise `_absorb`'s `max()` under `final_only`.
 
-        bucket NEW (`B`)         activates at `B + 10.000`, value `9.0`
-        bucket OLD (`B - 60.000`) activates at `B + 130.000`, value `1.0`   <- absorbed LAST
+    Under `intrabar`, R-2 never applied and `D1` retired the last `t`-dependent term
+    (`_ADMITTED_FROM_THE_START`): every admitted row activates AT ONCE, tied, and ties are
+    broken by the ORDER `_activated_in_order`'s stable sort leaves them in — the order this
+    tuple is written in. Listing the NEW row first and the OLD row second reproduces "the older
+    bucket is absorbed after the newer one", now by INPUT ORDER rather than by wall-clock
+    timing:
+
+        bucket NEW (`B`)          value `9.0`   <- absorbed FIRST
+        bucket OLD (`B - 60.000`) value `1.0`   <- absorbed SECOND
 
     `_absorb` returns the running latest `bucket_end`. Dropping the `max` makes absorbing the
-    OLD row move the pointer BACKWARDS, and the reading at `B + 140.000` answers `1.0` — a
-    stale value drawn as the current one, which is precisely the screen defect this whole
-    feature exists to prevent.
+    OLD row move the pointer BACKWARDS, and the reading answers `1.0` — a stale value drawn as
+    the current one, which is precisely the screen defect this whole feature exists to prevent.
     """
     bucket_new = 1_789_383_000_000
     bucket_old = bucket_new - 60_000
@@ -717,10 +792,18 @@ def test_falsifier_the_latest_bucket_end_must_never_move_backwards() -> None:
 
     It asserts the DIVERGENCE, not just the mutation: the unmutated batch has to keep matching
     `as_of` on the same rows, or the test would be measuring its own fixture.
+
+    `bar_policy=INTRABAR`, since `ADR-042`/`D1` (`_older_bucket_activating_last`'s docstring has
+    the argument): under `final_only`, `D1` made activation `bucket_end` alone, so an older
+    bucket can no longer be absorbed AFTER a newer one — the shape this falsifier needs. `intrabar`
+    still reproduces it, now via absorption ORDER rather than wall-clock timing. Both grid
+    instants land on the SAME side of that absorption (it happens in the cursor's first pass),
+    so both show the same value — unlike the pre-`D1` version of this test, where the divergence
+    was staggered across the two instants.
     """
     series, policy = _open_interest_case()
     observations = _older_bucket_activating_last()
-    bar_policy = BarPolicy.FINAL_ONLY
+    bar_policy = BarPolicy.INTRABAR
     bucket_new = observations[0].row.bucket_end
     instants = (bucket_new + 60_000, bucket_new + 140_000)
 
@@ -772,8 +855,9 @@ def test_falsifier_the_latest_bucket_end_must_never_move_backwards() -> None:
     finally:
         as_of_accessor._absorb = original  # noqa: SLF001
 
-    assert mutated[1].value == Decimal("1.00000000"), (
+    assert mutated[0].value == Decimal("1.00000000"), (
         "the mutation stopped diverging — this falsifier no longer proves the `max` is "
         "load-bearing, and the contract line goes back to having no gate"
     )
+    assert mutated[1].value == Decimal("1.00000000")
     assert [r.projection() for r in mutated] != [r.projection() for r in definition]
