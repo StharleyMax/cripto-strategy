@@ -15,10 +15,10 @@
 | 1.2 | O *pane registry* (`SPEC-009` §5), com as invariantes (i)–(v) e um teste para cada uma que tem caso que reprova e caso que passa | `web` | `RF-1`, `RF-5`, `RN-4` |
 | 1.3 | Montagem única: `useLightweightChart` vira um host, cada `addSeries` ganha o `paneIndex`, e a store de `axis-sync` roda com `panelCount = 1`. Os seis índices fixos e `PANEL_COUNT = 6` saem. `RangeDispatcher` (`charts`) e os testes de álgebra **ficam** | `web` · `charts` | `RF-2`, `RF-3`, `RF-6` |
 | 1.4 | As bandas de marca ancoradas em `IPaneApi.getHeight()`, com a geometria **em `charts`**. As 14 constantes de geometria em `web` **não podem crescer** | `charts` | `RN-4`, `ADR-003/FR-2` |
-| 1.5 | A camada de DOM por pane (título, legenda, `BeyondCoverageBadge`/`PartialCoverageMark`/`AbsenceNote`) na forma que o `design_gate` escolher (`[Q-DG-1]`). Os `data-testid` atuais continuam existindo, derivados de `pane_id` | `web` | `RF-4`, `CA-12` |
+| 1.5 | A camada de DOM por pane (título, legenda, `BeyondCoverageBadge`/`PartialCoverageMark`/`AbsenceNote`) com a **entrada de design já resolvida** (`[Q-DG-1]`) `[DECISÃO do design_gate: ui-designer + ux-ui-mastery, APPROVED WITH CONDITIONS 7.3/10 — docs/context/paineis-de-fluxo/handoff/DESIGN-LAYOUT.md §6-§7, gates/DESIGN-LAYOUT-ux-critique-r2.md]`: **overlay em `IPaneApi.getHTMLElement()`**, `pointer-events: none`, `scaleMargins.top` reservando a legenda; `setStretchFactor` com pesos **34/11/15/9/9/9/9** e piso de **72px** (só os dos panes que existem: funding e CVD partido são `NG-3`/`NG-5`, `SPEC-009` §3); `enableResize = false`; separador `#8b949e` 1px **com teste de override**. Os `data-testid` atuais sobrevivem na raiz da camada | `web` · `charts` | `RF-4`, `CA-12` |
 | 1.6 | Legenda a partir de `param.logical` × slots, com leitura por `nature`. Sem crosshair, mostra o último bucket fechado; slot ausente mostra **ausente** | `web` · `charts` | `RF-4`, `ADR-044/D2` |
 | 1.7 | Re-ancorar os e2e `16`, `20` e `21` e os ~7 contratos de DOM que estão acoplados à construção (`ARQ-1` §6). O `e2e/11` fica intacto | `web` | — |
-| 1.8 | Stitch (`ui-designer`) e veredito do `ux-ui-mastery` sobre a pilha, que inclui ordem, alturas, separador e posição da legenda | `web` | `CA-12`, `D-i` |
+| 1.8 | Veredito do `ux-ui-mastery` sobre o **screenshot da implementação** (a especificação já foi aprovada com condições, r2 7.3; a condição C-0 é um render medido) | `web` | `CA-12`, `D-i` |
 
 ## DoD verificável — comando e universo
 

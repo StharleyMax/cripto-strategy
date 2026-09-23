@@ -4,7 +4,7 @@
 > **Componentes:** `web` · `charts`
 > **Requisitos cobertos:** `RF-10` · `RF-11` · `RN-3` · `RN-4` · `CA-9′` · `CA-10′` · `CA-LIQ`
 > **Decide:** `SPEC-009` §7 · `ADR-044/D4`
-> **Convenção:** Coinalyze, registrada como `[INFERRED]`, com `[Q-LIQ-2]` aberta ao owner como veto não-bloqueante
+> **Convenção:** Coinalyze, `[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas]` (`[Q-LIQ-2]`; a recusada foi a TradingView Markets)
 
 ## Itens
 
@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 4.1 | Os panes `liquidation_long` e `liquidation_short` do registry viram um só, `liquidation`: 2 barras, 4 marcas e 4 escalas. A escala da perna long usa `invertScale: true`. **Nenhum valor negativo** entra em `setData` | `charts` · `web` | `RF-10`, `RN-3`, `ADR-044/D4` |
 | 4.2 | Cada perna mantém o **próprio** par ausência/zero, do seu lado do zero. A invariante (iii) do registry cobre isso | `charts` | `RN-4` |
-| 4.3 | Legenda com **2 magnitudes**, sem sinal de menos, cada uma na cor da sua perna, e nenhum terceiro número | `web` | `RF-10`, `RN-3` |
+| 4.3 | Legenda com **2 magnitudes**, sem sinal de menos, **numeral em tinta neutra** precedido de um quadrado de 8px na forma e na cor da perna (`SPEC-009` §7.3, emenda do `design_gate`), e nenhum terceiro número. Ausência por bucket e por perna: barra, zero ou ausente, cada um do lado da sua perna | `web` | `RF-10`, `RN-3` |
 | 4.4 | Log × linear e o tamanho das duas metades (`[Q-DG-2]`), decididos pelo `design_gate` | `web` | `CA-12` |
 | 4.5 | Re-ancorar o `e2e/13` (hoje há um hospedeiro de canvas por coorte, `:532, 692-697`) no pane fundido | `web` | — |
 

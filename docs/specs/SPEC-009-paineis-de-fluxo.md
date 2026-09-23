@@ -1,7 +1,7 @@
 # SPEC-009 — Painéis de fluxo: um gráfico, panes nativos, e três métricas que passam a dizer a direção
 
 **Feature:** `paineis-de-fluxo` · **Status:** `DRAFT`. `SPEC_APPROVED` é gate do **owner** (`harness pipeline approve paineis-de-fluxo spec`), e este documento **não** o declara.
-**PRD:** [`PRD-009`](PRD-009-paineis-de-fluxo.md) · **ADRs:** [`ADR-044`](../adr/ADR-044-um-grafico-com-panes-nativos-v5-a-legenda-le-o-slot-e-a-perna-long-desce-por-escala-invertida.md) (proposta) · [`ADR-045`](../adr/ADR-045-candle-de-oi-derivado-e-projecao-na-rota-ancorada-na-fronteira-de-abertura.md) (proposta, **condicional** a `[Q-OI-1]`)
+**PRD:** [`PRD-009`](PRD-009-paineis-de-fluxo.md) · **ADRs:** [`ADR-044`](../adr/ADR-044-um-grafico-com-panes-nativos-v5-a-legenda-le-o-slot-e-a-perna-long-desce-por-escala-invertida.md) (proposta) · [`ADR-045`](../adr/ADR-045-candle-de-oi-derivado-e-projecao-na-rota-ancorada-na-fronteira-de-abertura.md) (proposta; a condição foi satisfeita em 2026-09-23, quando `[Q-OI-1]` = `O-4`, e ela passa a valer para os dois regimes)
 **Plano:** [`docs/plans/SPEC-009-paineis-de-fluxo/`](../plans/SPEC-009-paineis-de-fluxo/index.md)
 **Julgamentos delegados:** [`ARQ-1-julgamento-frontend-architect.md`](../context/paineis-de-fluxo/handoff/ARQ-1-julgamento-frontend-architect.md) (`ARQ-1`) · [`LIQ-1-julgamento-quant-architect.md`](../context/paineis-de-fluxo/handoff/LIQ-1-julgamento-quant-architect.md) (`LIQ-1`)
 **Ledger ao escrever:** `PRD_VALIDATED` (`approve prd` em 2026-09-23) `[MEDIDO: harness pipeline state paineis-de-fluxo]`
@@ -21,8 +21,8 @@ seção. Onde o `/architect` decidiu entre dois julgamentos que discordavam, a l
 ## 1. Veredito do Gap Analysis — `[READY FOR SPEC]`
 
 **Nenhum bloqueante de PRD.** Os bloqueantes existem só no nível de fase: F1 (`Q-ARQ-1` e `Q-SEQ-1`,
-ambos **fechados aqui**), F3 (`[Q-OI-1]`, do **owner**, sem resposta) e F4 (`Q-LIQ-1`, **fechado aqui**
-como `[INFERRED]`, com veto do owner em aberto). Os achados abaixo corrigem o PRD sem reabrir o que o owner
+ambos **fechados aqui**), F3 (`[Q-OI-1]`, **respondida pelo owner em 2026-09-23: `O-4`**, §6) e F4 (`Q-LIQ-1`, **escolhida pelo
+owner em 2026-09-23: Coinalyze**, §7.1). Os achados abaixo corrigem o PRD sem reabrir o que o owner
 decidiu, e cada um é **inferível**:
 
 | id | achado | classe | resolução |
@@ -44,12 +44,12 @@ decidiu, e cada um é **inferível**:
 ## 2. O que esta SPEC fixa, e o que não reabre
 
 **Fixa:** a estrutura (`D1`, `ADR-044`), a fonte da legenda (`D2`), o *pane registry* (`D3`), o volume
-com direção (`D4`), o candle de OI **condicional** (`D5`, `ADR-045`), a liquidação num pane (`D6`), a
+com direção (`D4`), o candle de OI por polling da origem, com histórico derivado (`D5`, `ADR-045`), a liquidação num pane (`D6`), a
 sequência contra a `ADR-043` (`D7`) e os tetos de latência (`D8`).
 
 **Não reabre:** `D-a`..`D-j` do `PRD-009` §3. Em particular `D-a` (OI na origem, em contratos) é
-`[DECISÃO-OWNER: 2026-09-19, escolha entre alternativas apresentadas]`, e `[Q-OI-2]` segue com o owner.
-Sem resposta, vale `D-a`.
+`[DECISÃO-OWNER: 2026-09-19, escolha entre alternativas apresentadas]`, e o owner o **manteve** em 2026-09-23 (`[Q-OI-2]` = `U-1`, `[DECISÃO-OWNER: 2026-09-23, escolha entre
+alternativas apresentadas]`).
 
 ---
 
@@ -74,10 +74,20 @@ da grade canônica do TF. O registry testa isso.
 **Posição do HTML de pane** (título, legenda, `BeyondCoverageBadge`/`PartialCoverageMark`/`AbsenceNote`
 — 48 `data-fact=` e 9 `data-testid=` hoje, `[MEDIDO: ARQ-1 §3.2]`): há duas formas estruturais possíveis,
 uma **camada sobreposta ancorada em `IPaneApi.getHTMLElement()`** e um **trilho lateral indexado por
-`paneIndex`**. **Escolher entre elas, e decidir altura, `enableResize` e separador, é do `design_gate`**
-(`ui-designer` + `ux-ui-mastery`, `CLAUDE.md` §Design). A SPEC fixa só duas coisas: os `data-testid`
-atuais (`price-pane`, `oi-pane`, …) **sobrevivem**, derivados de `pane_id`; e o `[NÃO SEI]` sobre
-`getHTMLElement()` ser não-nulo no mesmo tick de `addPane` é respondido pelo spike (F-5).
+`paneIndex`**. **✅ `[Q-DG-1]` RESOLVIDA** `[DECISÃO do design_gate: ui-designer + ux-ui-mastery, APPROVED WITH CONDITIONS 7.3/10 — handoff/DESIGN-LAYOUT.md §6-§7, gates/DESIGN-LAYOUT-ux-critique-r2.md]`: a posição é a **camada sobreposta ancorada em
+`IPaneApi.getHTMLElement()`**, no canto superior esquerdo, com `pointer-events: none` e `scaleMargins.top`
+reservando a altura da legenda; o trilho lateral foi recusado. As alturas saem de `setStretchFactor` com os
+pesos **34 · 11 · 15 · 9 · 9 · 9 · 9** e **piso de 72px** por pane de linha. `enableResize = false` na F1. O
+separador é `#8b949e`, 1px, com **teste de override** (a biblioteca tem um único `separatorColor`,
+`typings.d.ts:3234`). Os `data-testid` atuais (`price-pane`, `oi-pane`, …) **sobrevivem**, derivados de
+`pane_id`, na raiz da camada. O `[NÃO SEI]` sobre `getHTMLElement()` ser não-nulo no tick de `addPane` é
+respondido pelo spike (F-5).
+
+⚠️ **Divergência de escopo entre os pesos e o PRD, que a F1 não resolve sozinha:** os 7 pesos nomeiam
+*preço · liquidações · OI · L/S · **funding** · CVD delta · CVD acumulado*. **Funding é `NG-3`** (fora da
+feature), e **dois panes de CVD** mudariam a forma do CVD, o que é `NG-5`. Na F1 valem os pesos **dos panes
+que existem**, e a F1 **não cria** pane de funding nem parte o CVD. Os 6 panes da F1 (5 depois da F4)
+recebem os pesos correspondentes, renormalizados. Se a intenção era outra, é o owner quem reabre `NG-3`/`NG-5`.
 
 **Ciclo de vida:** F1 **mantém** o de hoje. Trocar o `axis` remonta o chart, agora um só. Trocar para
 *"`setData` sem remontar"* **não** é escopo de F1; fica como herança possível para a `ADR-043` (§8).
@@ -122,32 +132,99 @@ Um array ordenado; a posição no array é o `paneIndex`, de cima para baixo. Fo
 
 ---
 
-## 6. `D5` — O candle de OI: **CONDICIONAL a `[Q-OI-1]`**, e sem escolher pelo owner
+## 6. `D5` — O candle de OI: **`O-4`**, polling pela origem, e o histórico derivado antes do coletor ligar
 
-### 6.1 O menu `§13-A`, com as correções dos julgamentos e a opção `O-4`
+> ✅ **`[Q-OI-1]` RESPONDIDA: `O-4`**, `[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas]`
+> ([`DECISOES-DO-OWNER-2026-09-23.md`](../context/paineis-de-fluxo/handoff/DECISOES-DO-OWNER-2026-09-23.md)).
+> **Recusadas pelo owner, no mesmo ato:** `O-1` (derivar só do `openInterestHist`), `O-2` (OHLC da
+> Coinalyze) e `O-3` (`O-1` agora, `O-2` depois). O menu com o custo de cada uma continua legível no
+> `git show 0b99a1d:docs/specs/SPEC-009-paineis-de-fluxo.md` (§6.1) e no `PRD-009` §13-A. **Como `O-2` e
+> `O-3` caíram, a emenda de `ADR-036/D2` não é necessária.** `O-4` passa em `ADR-036/D1`/`D2` sem emenda,
+> porque é a origem.
+> ✅ **`[Q-OI-2]` RESPONDIDA: `U-1`**, só Binance e em contratos, mantendo `D-a`. Mesmo rótulo, mesmo arquivo.
 
-`[Q-OI-1]` é **do owner**, e esta SPEC **não escolhe**. O menu abaixo é o do `PRD-009` §13-A com duas
-correções (A-2, A-9) e uma opção nova levantada pelo `quant-architect` (`LIQ-1` §Q2), apresentada **sem
-recomendação**:
+### 6.1 O coletor: o custo lido, o custo medido e a cadência fixada
 
-| opção | o que o owner vê | custo | fases |
-|---|---|---|---|
-| **O-1** — derivar da Binance (a origem de `D-a`) | candle em contratos, **corpo exato** `p(T1) − p(T0)` sempre que as duas fronteiras existem; pavio = extremo de amostras de 5 min, que é **cota inferior**; em `5m` **sem pavio** (`samples.expected == 1`) | zero cota, zero terceiro, `D-a`/`ADR-036` intactas, backtest vê a mesma série. Definição **corrigida** em `ADR-045/D1`, e **não** a do `§13-A` original. Após um buraco em `5m`: **nenhum candle** | `03` única (`sentimento` + `web`) |
-| **O-2** — capturar o OHLC de OI da Coinalyze, mesmo universo | candle com pavio intra-5 min, **inclusive em `5m`** | coletor novo (M2), cota ≈ 4 u/ciclo `[INFERRED no PRD]`, quarentena (`PRD-005`), retenção de ~7 dias contra 90 dias servidos. ⚠️ **Duas correções:** o pavio **também é amostrado**, com cadência `[NÃO SEI]` (A-9); e ⛔ **não passa em `ADR-036/D2` como escrita**. O que a origem não publica é a **história** intra-5 min, não a grandeza, e aceitar `O-2` exige **emendar** `D2`, decisão do dono daquela ADR (`LIQ-1` §Q2, `[INFERRED]`) | `03a` (captura) + `03b` (pixel) |
-| **O-3** — `O-1` agora, `O-2` quando `PRD-005` sair da quarentena | `O-1` hoje, pavio da Coinalyze depois | o custo de `O-1` agora, mais a emenda de `ADR-036/D2` **depois** | `03` agora |
-| **O-4** ⭐ *(nova, `LIQ-1` §Q2)* — polling de `GET /fapi/v1/openInterest` (*"present open interest"*) **pela origem**, em cadência < 5 min | pavio **da origem**, com a cadência escolhida, **só daqui para frente**. Para trás, o candle é o de `O-1` | coletor novo em `sentimento`; **passa em `ADR-036/D1`/`D2` sem emenda**. Peso da chamada `[NÃO LIDO]`, contra teto de 2.400/min por IP `[DOC: ADR-036:152]`. Disco a 1 min: 4 símbolos × 1.440/dia × ~99 B/linha ≈ **570 KB/dia** `[INFERRED: aritmética sobre os 99,06 B/linha medidos em SPEC-008 §4]`, a declarar e medir antes de escrever (`RNF-4`, `D-j`). **Zero backfill**: o pavio real começa no dia da captura. Duas cadências no mesmo pane (5 min antes, a escolhida depois) ⇒ `samples` tem de dizer qual | `03a` (coletor) + `03b` (pixel), e **usa `ADR-045`** para a parte histórica |
+| fato | valor | fonte |
+|---|---|---|
+| endpoint | `GET /fapi/v1/openInterest?symbol=…`, *"Get present open interest of a specific symbol"*; resposta `{openInterest, symbol, time}` | `[DOC: developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Open-Interest, lido 2026-09-23]` |
+| peso | **IP Weight: 1** por chamada | o mesmo `[DOC]`. `[MEDIDO 2026-09-23: header x-mbx-used-weight-1m sobe 16→17→18→19 em 4 chamadas seguidas]` |
+| teto | `REQUEST_WEIGHT` = **2.400 / 1 min** por IP | `[MEDIDO 2026-09-23: GET /fapi/v1/exchangeInfo → rateLimits]` |
+| frescor do valor servido | em 30 chamadas espaçadas ~3,4 s, vieram **27** `time` distintos. O atraso de `time` em relação ao pedido foi **mín 0,5 s · mediana 4,4 s · máx 7,6 s** | `[MEDIDO 2026-09-23, n=30, BTCUSDT]` |
 
-**Recomendação do `/pm`:** `O-3` (`PRD-009` §13-A). **O `/architect` não soma recomendação.** O que o
-owner escolhe é entre *"sem terceiro e sem pavio em 5m"* (`O-1`), *"pavio de terceiro com a ADR-036
-emendada"* (`O-2`/`O-3`) e *"pavio da origem só daqui para frente"* (`O-4`).
+**Cadência fixada: 1 chamada por símbolo por minuto, alinhada à grade de 1 min.** `[INFERRED: escolha do
+/architect entre as cadências abaixo; o owner escolheu O-4 com "intervalo < 5m", não um número]`
 
-### 6.2 A definição do candle derivado (vale para `O-1`, `O-3` e o histórico de `O-4`)
+| cadência | peso/min (4 símbolos) | % do teto | linhas/dia | disco/dia | disco/ano |
+|---|---|---|---|---|---|
+| **60 s** ⭐ | **4** | **0,17%** | **5.760** | **~570 KB** | **~208 MB** |
+| 30 s | 8 | 0,33% | 11.520 | ~1,1 MB | ~416 MB |
+| 15 s | 16 | 0,67% | 23.040 | ~2,3 MB | ~830 MB |
 
-`ADR-045/D1`. A condição que licencia a âncora é **existir `p(T0)`**. Isso **substitui** o `RN-5` do PRD
-para séries `(STOCK, POINT)`; para séries `(STOCK, OPEN|HIGH|LOW|CLOSE)` nativas (`O-2`), o `RN-5` vale
-como escrito.
+Peso e teto são `[MEDIDO]`/`[DOC]`. O disco é `[INFERRED: aritmética sobre os 99,06 B/linha medidos em SPEC-008 §4]`.
 
-### 6.3 O contrato `OiCandle` (fecha o TBD do `PRD-009` §9)
+**Por que 60 s:** (1) **a grade de 1 min é a do TF default** (`supported-timeframes.ts:67-78`,
+`DEFAULT_TIMEFRAME = "1m"`). Com ela, o OI passa a ter **um candle por slot em `1m`** (corpo exato
+`p(T1) − p(T0)`, ainda sem pavio), e o artefato 1-em-5 de A-7 **desaparece** para frente. Com 30 s ou
+15 s, o ganho seria só no pavio, pagando 2× ou 4× o disco. (2) Em `5m` o pavio sai de **5** amostras, em
+`15m` de 15, em `1h` de 60. (3) A premissa de infra (*"poucos recursos"*, `D-j`) põe 830 MB/ano fora do
+aceitável sem decisão do owner. **O valor de 208 MB/ano é declarado aqui para o owner vetar se quiser.**
+
+**Carimbo** (`[INFERRED]`, dono de validação: `quant-architect` na fase `03a`): a leitura do minuto `T` é
+a primeira chamada feita em `T` ou depois dele cujo `time` fique em `[T, T + 20 s]`. Leitura fora dessa
+janela **não** entra como ponto de `T`: `T` fica **ausente** (`RN-2`), nunca carregando o valor anterior.
+O `time` da resposta é o `event_time`. O atraso máximo medido foi de 7,6 s, então 20 s dá cerca de 2,6× de
+margem, e o `DoD` da fase `03a` mede a fração de minutos admitidos.
+
+### 6.2 O candle ANTES do dia em que o coletor liga: **histórico derivado (`ADR-045`), e não ausência**
+
+**Decisão:** para os buckets anteriores ao início da captura, o candle de OI é o **derivado do
+`openInterestHist` 5 min** pela projeção de `ADR-045` (a "parte histórica de `O-4`" que o menu já
+descrevia). A alternativa era **ausência declarada**, e ela é **recusada**.
+
+**Por quê:**
+1. **O dado existe e é da mesma origem.** O corpo `p(T1) − p(T0)` é **exato** sempre que as duas
+   fronteiras existem (`LIQ-1` §Q3), e é justamente o que responde *"se ta entrando OI"*
+   `[PREMISSA-OWNER: 2026-09-23]`. Declarar ausência onde a origem publicou o valor é o erro inverso do
+   `RN-4`: diz *"não observado"* sobre algo que foi observado.
+2. **Com ausência, o pane de OI nasceria vazio** para toda a história servida, até o coletor acumular.
+   A parede de `/futures/data/*` é ~30 dias (`[DOC: plans/SPEC-008/05:55]`), então haveria cerca de um mês
+   de OI já pago sem desenho.
+3. **Custo zero de mecanismo:** a projeção de `ADR-045` é definida sobre o trio
+   `(STOCK, POINT, POINT_AT_BUCKET_END)`, e **as duas séries são desse trio**, só com grades nativas
+   diferentes (5 min e 1 min). **Uma função, dois regimes.**
+
+**O custo, declarado:** o pane mostra dois regimes. Antes da captura o pavio é de amostras de 5 min, e
+em `1m` aparece 1 slot em 5. Depois da captura o pavio é de amostras de 1 min, e aparece um candle por
+slot. Cada candle carrega **`derived_from`** e **`samples`**, que dizem em qual regime ele está (`RN-6`).
+**Se** a fronteira entre os regimes recebe marca visual, decide o `design_gate` (`[Q-DG-3]`).
+
+**Rótulo de procedência: `DERIVADO`, nos dois regimes, com a expressão** (`RN-6`). Antes da captura:
+*"DERIVADO (OHLC de amostras 5m · ADR-045)"*; depois: *"DERIVADO (OHLC de amostras 1m · ADR-045)"*. Nunca
+`OBSERVADO`: `open` e `close` são pontos observados, mas `high` e `low` são extremos de amostras discretas, ou
+seja, cota inferior da amplitude (`ADR-045/D1`) `[DECISÃO do design_gate: ui-designer + ux-ui-mastery, APPROVED WITH CONDITIONS 7.3/10 — handoff/DESIGN-LAYOUT.md §6-§7, gates/DESIGN-LAYOUT-ux-critique-r2.md]`. A liquidação reagregada por soma continua
+`OBSERVADO`, porque a soma preserva a medida do fornecedor. A string é derivada de `derived_from`, nunca
+escrita à mão (`RF-5`).
+
+**Regra de fonte por bucket** `[INFERRED: um candle com open de uma fonte e close de outra teria um corpo
+que é diferença ENTRE fontes, e não variação de contratos — fere RN-1]`: **um candle, uma série.** O
+bucket do TF usa a série de polling **se** ela tem ponto em `T0`, e a série `openInterestHist` caso
+contrário. **Nunca se mistura** amostra de uma série com âncora da outra.
+
+**Falsificador de §6.2** (item `3.4` do plano): nos instantes de 5 min em que **as duas** séries têm
+ponto, `n ≥ 288` (24 h × 4 símbolos, depois da captura ligar), a mediana de `|poll(T) − hist(T)| / hist(T)`
+tem de ficar **≤ 10 bp**. Se passar disso, as duas não medem a mesma grandeza, os dois regimes não são
+comparáveis, e a decisão volta ao `/architect` com o número. `[NÃO MEDIDO: o limiar de 10 bp é
+INFERRED, cerca de 5× os 1,86 bp de mediana medidos entre Binance e Coinalyze em
+open_interest_catalog.py:15-16]`
+
+### 6.3 A definição do candle (os dois regimes)
+
+`ADR-045/D1`, com a grade nativa `g` da série escolhida pela regra de §6.2 (`g = 5 min` no histórico,
+`g = 1 min` no polling). A âncora é **existir `p(T0)`**. Isso **substitui** o `RN-5` do PRD para séries
+`(STOCK, POINT)`.
+
+### 6.4 O contrato `OiCandle` (fecha o TBD do `PRD-009` §9)
 
 | campo | tipo lógico | regra |
 |---|---|---|
@@ -155,33 +232,37 @@ como escrito.
 | `open`, `high`, `low`, `close` | real, **contratos** (unidade do `SeriesKey`, `D-b`) | `low ≤ min(open, close) ≤ max(open, close) ≤ high` |
 | `open_at_ms` | inteiro, ms | `== T0` ⇔ âncora de fronteira; `> T0` ⇔ primeira amostra |
 | `close_at_ms` | inteiro, ms | `< T1` ⇔ buraco no fim |
-| `samples` | `{present: int, expected: int}` | `expected = TF_efetivo / 5 min`; par de inteiros de `ADR-040/D3` |
+| `samples` | `{present: int, expected: int}` | `expected = TF_efetivo / g`; par de inteiros de `ADR-040/D3` |
 | `closed` | booleano | `false` no bucket em progresso |
-| `derived_from` | enum `binance_point_5m` · `coinalyze_ohlc_5m` · `binance_poll` (este último só com `O-4`) | fecha o `RN-6` |
+| `derived_from` | enum `binance_poll_1m` · `binance_point_5m` | fecha o `RN-6`. `coinalyze_ohlc_5m` **sai** junto com o `O-2` recusado |
 
-**Não existe linha com `open_at_ms == close_at_ms`** (`ADR-045/D1`). A unidade e o nome vêm do `SeriesKey`
-servido (`RF-5`), sem campo novo. **Onde é montado:** na rota, em `sentimento` (`ADR-045/D2`). O browser
-**não** deriva.
+**Não existe linha com `open_at_ms == close_at_ms`.** A unidade e o nome vêm do `SeriesKey` servido
+(`RF-5`). **Onde é montado:** na rota, em `sentimento` (`ADR-045/D2`). O browser **não** deriva.
 
-### 6.4 TF `1m` (o default) e o OI
+### 6.5 TF `1m` (o default)
 
-O OI nativo é `5m` e não existe candle mais fino. Com `interval=1m`, a rota serve os candles `5m`
-declarando `bucket_interval_ms = 300000`, que é a grade nativa da série (`ADR-037`). Na tela isso é 1 slot
-em cada 5 (`ARQ-1` §2). **A forma visual** (1-em-5, esconder o pane ou avisar) é do `design_gate` +
-`quant-architect`, junto com o `Q-OI-3`. O `[NÃO SEI]` sobre como o OI aparece hoje em `1m` é medido no
-item `1.1` do plano.
+Depois da captura: um candle por slot, sem pavio (`samples.expected == 1`). Antes da captura: o OI de 5 min
+em 1 slot de cada 5, declarando `bucket_interval_ms = 300000` (`ADR-037`). A forma visual do trecho
+anterior à captura é do `design_gate` + `quant-architect` (`[Q-DG-3]`).
 
-### 6.5 `Q-OI-3` — o fato viaja no contrato
+### 6.6 `Q-OI-3` — o fato viaja no contrato
 
-`samples.expected == 1` já diz *"sem informação de pavio nesta resolução"* (`LIQ-1` §Q5). Tratar a falta
-de pavio como *"OI não oscilou"* é a troca ausência×zero do `RN-4`. **Se isso vira aviso, rótulo ou
-tooltip, decide o `design_gate`.**
+`samples.expected == 1` diz *"sem informação de pavio nesta resolução"* (`LIQ-1` §Q5). **Se isso vira
+aviso, rótulo ou tooltip, decide o `design_gate`.**
+
+### 6.7 Componentes que a F3 toca
+
+| componente | o quê |
+|---|---|
+| `sentimento` | cliente de `/fapi/v1/openInterest`, coletor, entrada de catálogo (4 séries `binance·open_interest·1m·POINT`, uma por símbolo), projeção `OiCandle` e a rota |
+| `infra` | o coletor roda no serviço `collectors` de `deploy/compose.yml` (`:150-231`, `collectors_cli.py`). A cadência entra como variável de ambiente, no mesmo idioma de `OPEN_INTEREST_CYCLE_INTERVAL_S` (`deploy/compose.yml:187`), e é o `infra-architect` quem julga o job agendado e a pegada de disco |
+| `web` | o pane `oi` passa a `candlestick`, com legenda O·H·L·C e `derived_from` |
 
 ---
 
 ## 7. `D6` — Liquidação num pane (F4)
 
-### 7.1 `Q-LIQ-1` — qual perna vai para cima: **Coinalyze**, `[INFERRED]`, e o owner pode vetar
+### 7.1 `Q-LIQ-1` — qual perna vai para cima: **Coinalyze**, por decisão do owner
 
 **As fontes discordam** (`LIQ-1` §Correção, 2ª passagem):
 - **Coinalyze** (o indicador `AggregatedLqUsdDenominated`, no bundle servido, `sha256 96938b47…7ac2`):
@@ -192,17 +273,16 @@ tooltip, decide o `design_gate`.**
   Short vermelho embaixo**, ou seja, rotula pela **coorte** `[DOC]`. No Supercharts: `[NÃO SEI]`.
 
 **Escolha: Coinalyze. Short liquidado vai para CIMA com o token de ALTA; long liquidado vai para BAIXO
-com o token de BAIXA.** `[INFERRED: a referência que o owner enviou (coinalyze-tradingview-2026-09-23.png)
+com o token de BAIXA.** `[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas]`
+(`[Q-LIQ-2]`; recusada: TradingView Markets; `DECISOES-DO-OWNER-2026-09-23.md`). O argumento que levou
+a opção ao menu, e que o owner confirmou, era `[INFERRED: a referência que o owner enviou (coinalyze-tradingview-2026-09-23.png)
 é o indicador DA Coinalyze rodando dentro da biblioteca de chart da TradingView — a legenda "Aggregated
 Liquidations COIN-margined Contracts" é o `AggregatedLqUsdDenominated` (LIQ-1 Fonte 1); adotar a convenção
 Markets inverteria a imagem que ele mesmo mandou]`. A regra também casa com o `RNF-3`: alta = compra,
 mesma gramática da vela.
 
-**É dedutível, então não bloqueia.** Mas a fala do owner cita **as duas** referências (*"bem proxima da
-coinalyze e tradingview"* `[PREMISSA-OWNER: 2026-09-23]`), e elas discordam. Por isso fica registrada como
-**`[Q-LIQ-2]`, pergunta não-bloqueante ao owner, com default = Coinalyze** (§11). Se o owner vetar, a
-mudança é **uma troca de lado no registry**: a mesma inversão de `scale_ref` nas duas pernas, sem mudança
-de contrato.
+A mudança, se um dia for revertida, é **uma troca de lado no registry** (a inversão de `scale_ref` nas duas
+pernas), sem mudança de contrato.
 
 **Semântica do dado, conferida:** `cohort=long` = posições long liquidadas (`LONG = "l"`,
 `liquidation_zero_legitimacy.py:63-67`; `liquidation_collection.py:57-64`, travado por
@@ -218,9 +298,19 @@ sai estrutural, já que nenhum número negativo existe no caminho. Log × linear
 
 ### 7.3 Legenda e `RN-3`/`RN-4`
 
-A legenda mostra as **duas magnitudes**, cada uma na cor da sua perna, **sem sinal de menos** (a Coinalyze
-também usa `Math.abs`, `LIQ-1` Fonte 2), e nenhum terceiro número. Cada perna mantém o **próprio** par
-ausência/zero do seu lado do zero: 6 séries e 4 escalas no pane (`ARQ-1` §3.3).
+A legenda mostra as **duas magnitudes**, **sem sinal de menos** (a Coinalyze também usa `Math.abs`,
+`LIQ-1` Fonte 2), e nenhum terceiro número. ⛔ **Emenda de 2026-09-23 pelo `design_gate`:** o numeral sai em
+**tinta neutra**, precedido de um **quadrado de 8px que repete a forma e a cor da perna** (short = vazado no
+token de alta, long = cheio no token de baixa). O quadrado é preenchimento e pode usar o matiz; **o número
+não**. A redação anterior, *"cada uma na cor da sua perna"*, violava a regra de que nenhum numeral é tingido
+por direção (`STITCH_CONTEXT.md` D14 `:1101`) `[DECISÃO do design_gate: ui-designer + ux-ui-mastery, APPROVED WITH CONDITIONS 7.3/10 — handoff/DESIGN-LAYOUT.md §6-§7, gates/DESIGN-LAYOUT-ux-critique-r2.md]`.
+
+**Ausência é estado POR BUCKET DO TF e POR PERNA** (`RN-4`). Em cada bucket, cada perna está num de três
+estados, desenhado do **seu** lado do zero: **barra** (soma > 0), **zero** (houve minutos observados e todos
+valem 0) ou **ausente** (nenhum minuto observado). São 6 séries e 4 escalas no pane (`ARQ-1` §3.3). O
+**bucket misto**, com alguns minutos observados e outros não, **não é um quarto estado**: ele é servido com o
+valor sobre os minutos observados e o par `(present, expected)`, pela regra `P-B` de `ADR-040/D3` (*"servir
+sempre, com o par de inteiros"*). Como marcá-lo na tela é do `design_gate`.
 
 ---
 
@@ -249,15 +339,15 @@ deveria ter esperado.
 ## 9. `DoD-VERTICAL` instanciado e os critérios corrigidos
 
 Toda fase paga os itens do `DoD-VERTICAL` (`MEMORY: fatia vertical`). Nas fases que não criam dado (`01`,
-`02`, `04` e a `03` sob `O-1`), o `count` em `md.series` e o `n_written` são **não-regressão**: continuam
-`> 0`. Os comandos e universos estão nos arquivos de fase.
+`02`, `04`), o `count` em `md.series` e o `n_written` são **não-regressão**: continuam `> 0`. A `03a`
+**cria** dado (4 séries de polling), e ali os dois itens têm de sair de `0` para `> 0`. Os comandos e universos estão nos arquivos de fase.
 
 | id | critério corrigido | morde |
 |---|---|---|
 | `CA-1′` | `count(.tv-lightweight-charts)` no `/symbol` `== 1` (**não** `count(canvas)`, porque cada pane tem os próprios canvases, `ARQ-1` §1.1); panes com `N>0` pontos = **6** na F1, **5** a partir da F4 | voltar a 6 `createChart` |
 | `CA-2′` | estrutural: só o pane do rodapé tem rótulo de tempo, com assert de **pixel** | a mesma ablação de `CA-1′` (A-6) |
 | `CA-3′` | hover no pane de preço em `x` ⇒ a legenda de todos os panes = valores do slot de `x` na API | **filtrar a atualização da legenda por `param.paneIndex`** (`ADR-044` §Consequências) |
-| `CA-7` | como no PRD, **com** a cláusula de inconclusivo; sob `O-1`, `cor(oi_i) == sinal(close_i − open_i)` com os valores de `OiCandle` | colorir pelo preço |
+| `CA-7` | como no PRD, **com** a cláusula de inconclusivo: `cor(oi_i) == sinal(close_i − open_i)` com os valores de `OiCandle`, **nos dois regimes** (§6.2) | colorir pelo preço |
 | `CA-8′` | janela com buraco de M3 ⇒ `0` candle no intervalo **e** `0` candle no primeiro bucket `5m` depois do buraco (`ADR-045/D1`). Janela sem buraco ⇒ **inconclusivo** | costurar a âncora com o último ponto antes do buraco |
 | `CA-9′` | (a) nenhum valor `< 0` em `setData` de liquidação; (b) a legenda mostra **exatamente 2** números, cada um `==` a sua perna na API; (c) em buckets com **as duas pernas `> 0` e distintas**, nenhum número da tela `== |long − short|`. Sem tal bucket na janela ⇒ inconclusivo (A-5) | somar ou subtrair as pernas |
 | `CA-10′` | ausente ≠ zero no pane fundido, **por perna**; sem os dois estados na janela ⇒ inconclusivo | fundir os estados |
@@ -280,13 +370,15 @@ recalibrado em 2026-09-22.
 
 | id | pergunta | classe | dono | default sem resposta |
 |---|---|---|---|---|
-| `[Q-OI-1]` | `O-1`/`O-2`/`O-3`/`O-4` (§6.1) | **bloqueante da F3** | **owner** | nenhum; a F3 não começa |
-| `[Q-OI-2]` | U-1/U-2 (`PRD-009` §13-C) | não-bloqueante | **owner** | `D-a` (U-1) |
-| `[Q-LIQ-2]` | convenção Coinalyze (escolhida) ou TradingView Markets (§7.1)? | não-bloqueante | **owner** (veto) | Coinalyze |
-| `[Q-ADR036]` | se `O-2`/`O-3` for escolhida: emendar `ADR-036/D2` | condicional | dono da `ADR-036` + owner | — |
-| `[Q-DG-1]` | posição do HTML de pane, altura, `enableResize`, separador (§3) | inferível | `design_gate` | — |
+| ~~`[Q-OI-1]`~~ | ✅ `O-4` | respondida | owner, `[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas]` | — |
+| ~~`[Q-OI-2]`~~ | ✅ `U-1` | respondida | owner, mesmo rótulo | — |
+| ~~`[Q-LIQ-2]`~~ | ✅ Coinalyze | respondida | owner, mesmo rótulo | — |
+| ~~`[Q-ADR036]`~~ | a emenda de `ADR-036/D2` **não é necessária**: `O-2`/`O-3` foram recusadas | extinta | — | — |
+| `[Q-CAD-1]` | a cadência de 60 s e os ~208 MB/ano (§6.1) | não-bloqueante | owner (veto) | 60 s |
+| `[Q-STAMP-1]` | a janela de admissão `[T, T + 20 s]` do carimbo (§6.1) | inferível | `quant-architect` (fase `03a`) | 20 s |
+| ~~`[Q-DG-1]`~~ | ✅ resolvida pelo `design_gate` (§3) | respondida | `design_gate` | — |
 | `[Q-DG-2]` | log × linear da liquidação e do volume (`Q-VOL-2`) | inferível | `design_gate` | o de hoje |
-| `[Q-DG-3]` | forma do OI em TF `1m` e sem pavio em `5m` (§6.4, §6.5) | inferível | `design_gate` + `quant-architect` | — |
+| `[Q-DG-3]` | forma do OI em TF `1m` antes da captura, sem pavio em `5m`, e marca de fronteira entre os regimes (§6.2, §6.5) | inferível | `design_gate` + `quant-architect` | — |
 | `[Q-VOL-1]` | V-1 (cor pela direção) | **resolvida** `[INFERRED: é a referência e não duplica o CVD]` | owner veta | V-1 |
 | `[I-5]` | ciclo de vida *"`setData` sem remontar"* | fora da F1 | `ADR-043` | remonta |
 
@@ -307,5 +399,5 @@ recalibrado em 2026-09-22.
 
 ## 13. Próximo passo
 
-`advance SPEC_DRAFT` → **owner** revisa e roda `approve spec`. Depois vem o `/tech-lead`. A F3 só é
-quebrada em tasks depois de `[Q-OI-1]`.
+Estado: `SPEC_DRAFT`. O **owner** revisa e roda `approve spec`, e depois vem o `/tech-lead`. A F3 é quebrada
+em `03a` (coletor, `sentimento` + `infra`) e `03b` (projeção e pixel, `sentimento` + `web`).

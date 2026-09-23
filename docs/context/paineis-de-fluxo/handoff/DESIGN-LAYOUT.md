@@ -96,3 +96,48 @@ O §9 ainda lista a S2 como *"Preco, OI, CVD delta, CVD acumulado"* e põe *"pai
 produto já tem liquidações (`T-05.9`) e o owner pediu os 7 panes. Nos prompts, colei o §9 **verbatim** e acrescentei, na
 instrução, que "painel de liquidação" ali significa feed/dashboard `[INFERRED]`. Atualizar o §9 é edição do artefato mais
 copiado do repositório ⇒ `ADR`, não prompt; fica **proposto**.
+
+## 6. `Q-DG-1` de `SPEC-009` — onde fica o HTML de cada pane, altura, `enableResize`, separador (decisão do `design_gate`)
+
+Pergunta: [`SPEC-009`](../../../specs/SPEC-009-paineis-de-fluxo.md) §3 e §11 (linha `[Q-DG-1]`). As duas formas vêm de
+[`ARQ-1-julgamento-frontend-architect.md`](ARQ-1-julgamento-frontend-architect.md) §3.2. **Status: decidido pelo
+`ui-designer`; o gate `ux-ui-mastery` ainda não julgou esta seção** (vai na rodada 2).
+
+| item | decisão | argumento · fonte | falsificador |
+|---|---|---|---|
+| **posição do HTML** (título, selo, `BeyondCoverageBadge`/`PartialCoverageMark`/`AbsenceNote`) | **camada sobreposta, ancorada em `IPaneApi.getHTMLElement()`**, no canto superior esquerdo de cada pane. **Não** o trilho lateral | (1) é a forma da referência do owner e da TradingView (legenda dentro do pane); (2) proximidade: o valor sob o crosshair fica ao lado da curva que ele descreve, e o trilho o afasta; (3) o trilho tira largura do plot de **todos** os 7 panes para servir texto; (4) `§9` item 12: identidade e procedência ficam **no painel**, sempre visíveis | spike `F-5` (`ADR-044`): `getHTMLElement()` nulo depois do primeiro paint, ou reposicionamento que deixa numeral de eixo visível **sem** selo por mais de um frame ⇒ cai para o trilho |
+| **anatomia da camada** | linha 1, `nowrap`, 12px: `NOME · campos da série · valor sob o crosshair · procedência · completude · ◇ badges`; `idade` / `◇ idade ?` alinhada à direita, antes da coluna do eixo. Linha 2, só quando existe: nota longa (`AbsenceNote`, código vazado/cheio do OI, selo do volume). Badges de cobertura entram **inline** na linha 1 como losango + palavra | `§9` itens 4, 10, 12; MF-3/MF-9 do gate r1 | uma linha que não cabe em 1166px a 12px ⇒ tirar o símbolo repetido do selo (CI-2 do gate), nunca diminuir a fonte |
+| **a camada não cobre a série** | `scaleMargins.top` de cada pane reserva a altura da legenda (linhas × 16px + 4px) e `scaleMargins.bottom` ≥ 8px. A camada tem `pointer-events: none`, para não roubar o crosshair | é o que impede a vela mais alta de ficar debaixo do texto | medir no render se alguma marca intersecta o bounding box da legenda |
+| **`data-testid`** | sobrevivem, derivados de `pane_id`, **na raiz da camada** de cada pane | exigência literal de `SPEC-009` §3 | — |
+| **altura** | `setStretchFactor` com pesos **34 · 11 · 15 · 9 · 9 · 9 · 9** (preço · liquidações · OI · L/S · funding · CVD delta · CVD acumulado). Volume dentro do pane de preço, ~13% da altura dele (`scaleMargins.top ≈ 0.87` na escala do volume). Piso de **72px** por pane de linha | cabe em 1024px sem rolagem (`§9` item 16(l)); os pesos são os do mock r1, com o volume encolhido por SF-1 | `[NÃO SEI]` se 72px bastam para ler mudança de regime do funding (EX-3 do gate) e o que acontece abaixo de ~900px de altura |
+| **`enableResize`** | **`false`** na F1 | redimensionar cria estado de layout: se não persistir, some na próxima navegação (a `ADR-043` remonta); se persistir, é gerenciador de layout, fora de escopo (`§7` D7: *"o bundle é a URL"*) | o owner pedir redimensionamento, e aí a pergunta vira "onde o tamanho vive na URL" |
+| **separador** | `layout.panes.separatorColor = #8b949e` (`provenanceWeak`), 1px, largura inteira; `separatorHoverColor` com o mesmo valor | o `lightweight-charts` tem **um** `separatorColor` para o pane inteiro (`frontend/node_modules/lightweight-charts/dist/typings.d.ts:3234`), então o separador dividido da instrução da rodada 2 (`#222634` no plot + `#8b949e` no eixo) **não existe nativamente**. Contra `#131722`: `#222634` **1.19** · `#333846` **1.53** · `#8b949e` **5.82** `[MEDIDO: WCAG relative luminance, python3 inline, n=4]`. É o único token neutro existente ≥ 3:1 (MF-10) sem criar superfície | o owner achar o separador pesado demais ⇒ a alternativa é a folga de eixo sozinha (opção (b) do MF-10), medida no render |
+
+⚠️ **Conflito com `SPEC-009` §7.3, escalado ao `/architect` e não resolvido aqui:** o texto pede *"as duas magnitudes,
+cada uma na cor da sua perna"*. Numeral tingido por direção viola `§7` **D14** e o LEMBRETE 2 do `§9` (*"nenhum numeral …
+é tingido de verde nem de vermelho"*). **Proposta do design:** numeral em tinta neutra, precedido de um quadrado de 8px
+que repete **forma e cor** da perna (vazado `#089981` para short, cheio `#f23645` para long). O quadrado é FILL e pode
+usar o hue; o número não. É a forma que está na instrução da rodada 2b.
+
+**Liquidação, depois de `[Q-LIQ-2]`** `[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas —
+handoff/DECISOES-DO-OWNER-2026-09-23.md]`: short **para cima** com o token de alta, long **para baixo** com o de baixa.
+A redundância de forma que o gate exige (EX-1) fica assim: **short = barra vazada, long = barra cheia**. Isso é coerente
+com o vocabulário do sistema (short liquidado é compra forçada, long liquidado é venda forçada) e mantém o invariante
+**zero `rect` preenchido de verde**. São três canais que sobrevivem em cinza: posição, forma e palavra. O `[NÃO SEI]` de
+cor e posição do §4 itens 1–2 **fecha** com esta decisão.
+
+**OI, depois de `[Q-OI-1]`/`[Q-OI-2]`:** a fonte é **só Binance, em contratos** (O-4, polling da origem). O selo do OI na
+rodada 2b diz `binance · (BTC, contratos)`, **sem** `QUARENTENA`, e com `◇ idade ?`, porque o atraso do coletor novo não
+foi medido. O pavio real só existe a partir do dia em que o coletor ligar; antes disso a vela é o "O-4-histórico" ou
+ausência declarada, e essa pergunta é do `/architect` + `quant-architect`, não do design.
+
+## 7. Rodada 2b e veredito r2 — acréscimo de 2026-09-23 (a tabela do §0 fica como estava, e este acréscimo a atualiza)
+
+| | |
+|---|---|
+| **rodada 2b** (Q-LIQ-2 + Q-OI-1/2 aplicadas, §9 verbatim, **uma** chamada sobre `bc317e03`) | **timeout, e não materializou** em ~24 min `[MEDIDO: get_screen devolveu files/746d0487… de novo; get_project com as mesmas 16 instâncias, 21:36Z–22:00Z]`. Não insisti, como o despacho mandou. Instrução: [`stitch/instrucao-rodada2b-sobre-bc317e03.txt`](stitch/instrucao-rodada2b-sobre-bc317e03.txt). **São 4 chamadas seguidas sem artefato** desde a r1 |
+| **veredito r2** | **`APPROVED WITH CONDITIONS` — 7.3/10, sobre a ESPECIFICAÇÃO, não sobre pixel** (o render da r2 não existe) · [`../gates/DESIGN-LAYOUT-ux-critique-r2.md`](../gates/DESIGN-LAYOUT-ux-critique-r2.md) |
+| **o que o veredito libera** | as decisões de `Q-DG-1` (§6: camada sobreposta, pesos, `enableResize=false`, separador `#8b949e`), a codificação da liquidação (vazado ↑ / cheio ↓ + quadrado de forma) e a recusa do numeral colorido de `SPEC-009` §7.3 — que o `/architect` deve emendar |
+| **o que NÃO libera** | `bc317e03` **não é canônica** (C-0: exige render medido). A canônica continua `8174…` |
+| **a corrigir antes de reemitir** (achados do gate r2) | (1) contradição da instrução 2b: "única ausência = 1 bucket de OI" × `1364 ausentes` da liquidação; falta dizer como a ausência por minuto aparece num bucket de 15m (estado por bucket e por perna, `SPEC-009` §7.3). (2) vela de OI rotulada `DERIVADO`, não `OBSERVADO` (`ADR-045`: é derivada, H/L de amostras discretas) |
+| **condições de implementação** (C-1..C-7 do r2) | escalas das duas pernas da liquidação com **o mesmo máximo** (senão `40000/0/40000` mente para uma delas); modo explícito no chrome (`idade 42s` só é coerente em AO VIVO); `forced-colors` no quadrado da perna; coluna fixa para os numerais da legenda; filhos interativos da camada continuam clicáveis apesar do `pointer-events: none`; o override de `separatorColor` vira **teste** (o default da lib, `#2B2B43`, dá **1.30:1** e regride o MF-10 em silêncio) |

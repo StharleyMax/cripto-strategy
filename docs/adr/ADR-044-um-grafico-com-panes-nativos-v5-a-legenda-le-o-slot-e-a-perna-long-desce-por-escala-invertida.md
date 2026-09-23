@@ -94,14 +94,24 @@ como magnitudes `≥ 0`.**
    passa a ser atendido pela posição.
 
 **O que D4 herda do `quant-architect` sem mudar nada:** o lado e a cor por perna (short em cima com o
-token de alta, long embaixo com o token de baixa; `SPEC-009` §7.1 registra a escolha como `[INFERRED]`)
-e a legenda mostrando **as duas magnitudes, sem sinal de menos** (`LIQ-1` Fonte 2: o tooltip da própria
+token de alta, long embaixo com o token de baixa; convenção Coinalyze, `[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas]`, sendo a TradingView
+Markets a recusada; `SPEC-009` §7.1)
+e a legenda mostrando **as duas magnitudes, sem sinal de menos**, com numeral neutro e quadrado de 8px na forma e na cor da perna (`design_gate`, ver abaixo) (`LIQ-1` Fonte 2: o tooltip da própria
 Coinalyze usa `Math.abs`).
 
 **Alternativa recusada:** negação com escala linear única. Custo: tira o log do `design_gate` e torna o
 `RN-3` dependente de disciplina. **Ela volta como plano B só se o falsificador F-6 abaixo reprovar.**
 
 ---
+
+## Entrada de design da F1 — `[Q-DG-1]`, resolvida pelo `design_gate`
+
+`[DECISÃO do design_gate: ui-designer + ux-ui-mastery, APPROVED WITH CONDITIONS 7.3/10 — docs/context/paineis-de-fluxo/handoff/DESIGN-LAYOUT.md §6-§7, gates/DESIGN-LAYOUT-ux-critique-r2.md]`: a camada de HTML fica **sobreposta a `IPaneApi.getHTMLElement()`** (trilho lateral recusado),
+com `pointer-events: none`. As alturas usam `setStretchFactor` com os pesos **34/11/15/9/9/9/9** e piso de
+**72px**. `enableResize = false`. O separador é `#8b949e`, 1px, **com teste de override**. Na legenda de
+liquidação (`D4`), o numeral é **neutro**, precedido de um quadrado de 8px com a forma e a cor da perna.
+⚠️ Os pesos nomeiam funding e dois panes de CVD, que são `NG-3`/`NG-5` do PRD. A F1 aplica só os pesos dos
+panes que existem (`SPEC-009` §3).
 
 ## Falsificador
 

@@ -1,9 +1,12 @@
 # ADR-045 — O candle de OI derivado é uma PROJEÇÃO na rota, ancorada na fronteira de abertura, e não um 9º par de redução
 
-**Data:** 2026-09-23 · **Status:** proposta, **CONDICIONAL**: entra em vigor só se o owner escolher em
-`[Q-OI-1]` uma opção que derive da Binance (`O-1` ou `O-3`, e a parte histórica de `O-4`; `SPEC-009` §6.1).
-Com `O-2` puro ela **não se aplica**, porque aí a série `(STOCK, OPEN|HIGH|LOW|CLOSE)` da Coinalyze já
-reagrega pela tabela de `ADR-040` (`ADR-040` M2).
+**Data:** 2026-09-23 · **Status:** proposta. ✅ **A condição foi satisfeita em 2026-09-23**: o owner escolheu
+`O-4` em `[Q-OI-1]` `[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas]`
+([`DECISOES-DO-OWNER-2026-09-23.md`](../context/paineis-de-fluxo/handoff/DECISOES-DO-OWNER-2026-09-23.md)).
+Sob `O-4` esta ADR vale para **os dois regimes**: o histórico (`openInterestHist`, grade 5 min, antes do
+coletor ligar) e o polling (`/fapi/v1/openInterest`, grade 1 min, depois). As duas séries são do trio
+`(STOCK, POINT, POINT_AT_BUCKET_END)`, e a função é uma só (`SPEC-009` §6.2). `O-1`, `O-2` e `O-3` foram
+recusadas pelo owner. Com `O-2` fora, a nota sobre a Coinalyze abaixo fica só como registro.
 **SPEC:** [`SPEC-009`](../specs/SPEC-009-paineis-de-fluxo.md) §6 · **Componente alvo:** `sentimento` (função de domínio + rota) · `web` (consumo)
 **Fase:** `03` · **Amplia:** o domínio de `ADR-040/D2` (fechado em `(nature, reduction)`), sem mexer nos 8 pares
 **Julgamento delegado citado:** [`LIQ-1-julgamento-quant-architect.md`](../context/paineis-de-fluxo/handoff/LIQ-1-julgamento-quant-architect.md) §Q3, §Q4, §Q5
@@ -25,7 +28,8 @@ entrando OI"* `[PREMISSA-OWNER: 2026-09-23]`. O `quant-architect` confirmou isso
 
 ## Decisão
 
-**D1 — A definição.** Para o bucket `B = (T0, T1]`, com amostras `S = {p(t) : T0 < t ≤ T1}`
+**D1 — A definição.** Para o bucket `B = (T0, T1]` e a grade nativa `g` da série (5 min no histórico,
+1 min no polling), com amostras `S = {p(t) : T0 < t ≤ T1}`
 (fonte: Coinalyze `candlestick_oi`, `"o": "Open interest at the beginning of the interval"`
 `[DOC: api.coinalyze.net/v1/doc/api-spec.json, LIQ-1 §Q3]`):
 
@@ -45,10 +49,15 @@ demais: descartava uma âncora válida quando havia buraco em `T0 + 5 min`.
 `(STOCK, POINT, POINT_AT_BUCKET_END)`, e qualquer outro trio **falha alto** (mesmo princípio de
 `UncoveredReductionPairError`).
 
+**D2-bis — Um candle, uma série.** Se o bucket do TF tem ponto de polling em `T0`, ele é montado **só** com
+a série de polling; se não tem, **só** com a série `openInterestHist`. Nunca se mistura âncora de uma
+série com amostras da outra, porque o corpo viraria diferença entre fontes, e não variação de contratos
+(`RN-1`) `[INFERRED]`.
+
 **D3 — A forma do dado** (sem código; os nomes fixados em `SPEC-009` §6.3):
 `bucket_end_ms, open, high, low, close, open_at_ms, close_at_ms, samples{present, expected}, closed, derived_from`.
 `samples` segue o par de inteiros de `ADR-040/D3` (nunca percentual, nunca booleano), e
-`expected = TF / 5 min` ⇒ `expected == 1` diz, **no contrato**, que não há pavio nesta resolução (`Q-OI-3`).
+`expected = TF / g` ⇒ `expected == 1` diz, **no contrato**, que não há pavio nesta resolução (`Q-OI-3`).
 
 ## Alternativas recusadas, com o custo
 
@@ -68,8 +77,12 @@ demais: descartava uma âncora válida quando havia buraco em `T0 + 5 min`.
    Uma divergência mostra que a âncora está lendo o ponto errado.
 3. **Poder da decisão (o que a derruba no mérito).** Se nos buckets `5m` com âncora e sem buraco
    (`n ≥ 200`) o corpo `close − open` for `0` em **mais de 50%**, então o OI da origem é quase constante
-   na grade de 5 min, o candle derivado não entrega a leitura *"entrou/saiu contrato"*, e a escolha
-   `O-1` precisa voltar ao owner com esse número. `[NÃO MEDIDO: é o item 3.2 do plano 03]`
+   na grade de 5 min, o candle derivado não entrega a leitura *"entrou/saiu contrato"*, e a
+   decisão volta ao owner com esse número (no regime de polling, o mesmo teste vale para buckets `1m`).
+   `[NÃO MEDIDO: é o item 3b.2 do plano 03]`
+4. **Os dois regimes medem a mesma grandeza.** Nos instantes de 5 min em que as duas séries têm ponto,
+   `n ≥ 288`, a mediana de `|poll(T) − hist(T)| / hist(T)` tem de ficar `≤ 10 bp` `[INFERRED: limiar]`.
+   Se passar, `D2-bis` e o histórico derivado voltam ao `/architect` (`SPEC-009` §6.2).
 
 ## Fora desta ADR
 
@@ -77,6 +90,6 @@ demais: descartava uma âncora válida quando havia buraco em `T0 + 5 min`.
   publicado cerca de 1 min depois (`collector_series_mapping.py:735`). Um consumidor que **decida** com
   base no `OiCandle` (`backtest`/`convergencia`) tem de usar `modeled_availability.py`. O pane não decide
   nada `[DOC: LIQ-1 §Q4]`.
-- **Com `O-2`/`O-4`**, os corpos de `O-1` e da Coinalyze diferem por construção: concordam no `close`
+- **Registro, já que `O-2` foi recusada:** os corpos de `O-1` e da Coinalyze diferem por construção: concordam no `close`
   (1,86 bp mediana) e não no `open` (6/2.141) `[DOC: open_interest_catalog.py:15-17]`. Se as duas
   aparecerem na tela, isso não é bug.
