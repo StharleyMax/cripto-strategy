@@ -31,6 +31,7 @@ from src.modules.sentimento.domain.as_of_accessor import BarPolicy, DecisionRead
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog
 from src.modules.sentimento.use_cases.series_history import (
     GridMultipleClassifier,
+    HistoryWindowBeyondCeilingError,
     InvalidWindowError,
     SeriesStoreBoundsReader,
     SeriesWindowReader,
@@ -69,9 +70,12 @@ def get_series_history(
     """Serve one `SeriesHistoryReport` envelope, or a named `422`/`500` (`SPEC-006 §5.2`).
 
     `422`: `knowledge_time_ms` in the future relative to `server_now_ms`, or `series_key_id`
-    unknown to the catalog, or an invalid window (`window_start_ms >= window_end_ms`) — none of
-    these are expressible as a `Literal` type, so they are checked here, explicitly, each with
-    its own named message. `500`: `as_of` refused the read (`RN-9`) — never served as `200`.
+    unknown to the catalog, or an invalid window (`window_start_ms >= window_end_ms`), or
+    `window_start_ms` starting before the `MAX_HISTORY_DAYS`-day ceiling anchored at
+    `knowledge_time_ms` (`D5`, `T-05.4`, plan `05` item 5.3 — refused explicitly, never served
+    as `200` with `rows: []`) — none of these are expressible as a `Literal` type, so they are
+    checked here, explicitly, each with its own named message. `500`: `as_of` refused the read
+    (`RN-9`) — never served as `200`.
     """
     server_now_ms = _now_ms()
     if knowledge_time_ms > server_now_ms:
@@ -96,7 +100,12 @@ def get_series_history(
             knowledge_time_ms=knowledge_time_ms,
             bar_policy=BarPolicy(bar_policy),
         )
-    except (UnsupportedIntervalError, UnknownSeriesKeyIdError, InvalidWindowError) as error:
+    except (
+        UnsupportedIntervalError,
+        UnknownSeriesKeyIdError,
+        InvalidWindowError,
+        HistoryWindowBeyondCeilingError,
+    ) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except DecisionReadRefusedError as error:
         raise HTTPException(status_code=500, detail=str(error)) from error
