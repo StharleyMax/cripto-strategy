@@ -1,0 +1,678 @@
+# Doc de tasks de `paineis-de-fluxo` — o DADO DE MAQUINA da quebra.
+#
+# A narrativa e o racional vivem em `tasks_review.md`; a ordem de execucao em
+# `PLANO-DE-PARALELISMO.md`. Este arquivo nao argumenta, e aqueles nao sao lidos por maquina.
+# A chave da feature e o campo `feature` ABAIXO, nunca o nome do diretorio.
+#
+# ── A UNIDADE DE FASE E A FATIA VERTICAL (DoD-VERTICAL) ───────────────────────────
+#   DoD-1 md.series > 0 (Postgres REAL; nao-regressao nas fases sem dado novo)
+#   DoD-2 /api/v1/series-history -> n_points > 0
+#   DoD-3 Playwright contra o app REAL, assert de dado/posicao no DOM
+#   DoD-4 ⛔ ABLACAO: removida a causa, o pixel SOME
+#   DoD-5 `make verify` verde, com __pycache__ purgado antes
+#   DoD-6 veredito do ux-ui-mastery sobre o screenshot real
+#
+# ── APROVACAO ─────────────────────────────────────────────────────────────────────
+# [DECISAO-OWNER: 2026-09-23, escolha entre alternativas apresentadas] — transmitida pelo
+# loop principal: (1) 39 tasks, wave = fase; (2) T-04.0 entra; (3) pernas da ADR-043 depois
+# de DONE desta feature; (4) 03a na prioridade padrao (27 lotes). tasks_review.md §7.
+#
+# ── ESPINHA NO DADO ───────────────────────────────────────────────────────────────
+# A primeira task de cada fase da trilha de tela depende das terminais da anterior:
+# T-02.1/T-02.2 <- T-01.10+T-01.11 ; T-04.0 <- T-02.5 ; T-03.8 <- T-04.7+T-03.7.
+# Remover qualquer dessas arestas faz o falsificador de PLANO-DE-PARALELISMO.md §5.1
+# (`sem R-C`) passar a mudar a saida.
+#
+# ── TRACKER ───────────────────────────────────────────────────────────────────────
+# `harness policy --key tracker` -> {kind=jira, project=CST, board_id=36, parent_kind=Epic,
+# child_kind=Tarefa} [MEDIDO 2026-09-23]. TODAS as 39 tasks cardadas em 2026-09-23, depois
+# da aprovacao acima: Epics CST-246 (F1), CST-247 (F2), CST-248 (F3a), CST-249 (F3b),
+# CST-250 (F4); Tarefas filhas CST-251..CST-289, cada uma com `tracker` inline. Nenhuma
+# task e local_only. O conector Atlassian respondeu autenticado (sem OAuth).
+#
+# ── FASE 03 = 03a + 03b ───────────────────────────────────────────────────────────
+# O validador recusa fase com letra (V-11: "fora do formato NN") e fase sem arquivo de
+# plano (V-24: phase '05' sem 05_*.md) [MEDIDO 2026-09-23]. Por isso T-03.1..7 (03a) e
+# T-03.8..14 (03b) sao todas phase "03", e o rotulo 03a/03b vive no TITULO.
+# ⚠️ `harness resolve` e atomico por fase: ao fechar a 03a, listar T-03.8..T-03.14 como
+# blocked:<motivo> na mesma chamada. [NAO MEDIDO: se blocked -> done e aceito depois].
+
+schema_version = "1"
+feature = "paineis-de-fluxo"
+spec = "docs/specs/SPEC-009-paineis-de-fluxo.md"
+plan = "docs/plans/SPEC-009-paineis-de-fluxo"
+review = "docs/context/paineis-de-fluxo/tasks_review.md"
+untracked_note = "2026-09-23: TODAS as 39 tasks estao cardadas em CST (Jira, board 36). Epics, um por fatia: CST-246 (F1 O esqueleto), CST-247 (F2 O volume com direcao), CST-248 (F3a O coletor de OI), CST-249 (F3b O candle de OI), CST-250 (F4 As liquidacoes num pane). Tarefas filhas CST-251..CST-289, com tracker inline. Nenhuma task ficou local_only."
+
+[[tasks]]
+id = "T-01.0"
+title = "[web][charts] 01 · ⛔ Spike: um createChart com panes nativos sobre dado real, F-1..F-5 + controle negativo de F-1 (NAO mergeado)"
+components = ["web", "charts"]
+status = "todo"
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 item 1.0",
+    "ADR-044 §Falsificador",
+    "ARQ-1 [NAO SEI] (getHTMLElement no tick de addPane; setCrosshairPosition sobre whitespace)",
+    "BTCUSDT, TF 1m, ~5.760 slots, 11 series, next build/next start.",
+    "DoD: relatorio em docs/context/paineis-de-fluxo/gates/T-01.0-spike.md com F-1..F-5, cada um com comando e n, E o controle negativo (busy-wait de 20 ms que TEM de mover o p95; senao, 2o instrumento com poder demonstrado, ou [NAO MEDIDO]).",
+    "⛔ Reprovou qualquer um => a fase 01 PARA, S-2 reabre, relatorio ao /architect, e tasks_review.md reabre (T-01.2..T-01.11 estao decompostas para S-1).",
+    "Codigo do spike vive em branch spike/..., NUNCA chega a master. Lote SOLO (medicao de latencia).",
+]
+tracker = { provider = "jira", id = "CST-251", url = "https://conversationhub.atlassian.net/browse/CST-251" }
+
+[[tasks]]
+id = "T-01.1"
+title = "[web] 01 · Baseline de latencia no HEAD de master: 5 rodadas isoladas de e2e/17 e e2e/20 (p50/p95/max) + como o OI aparece hoje no TF 1m"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.0"]
+refs = [
+    "plano 01 item 1.1",
+    "CA-11'",
+    "SPEC-009 §6.4",
+    "comando: ARQ-1 §7",
+    "DoD: p50/p95/max por spec e por rodada, com o sha medido; data-fact oi_slots e presentPoints em /symbol/BTCUSDT?interval=1m.",
+    "Lote SOLO: com outra worktree compilando, o p95 mede a contencao.",
+]
+tracker = { provider = "jira", id = "CST-252", url = "https://conversationhub.atlassian.net/browse/CST-252" }
+
+[[tasks]]
+id = "T-01.2"
+title = "[web] 01 · Pane registry: array ordenado, paneIndex = posicao, invariantes (i)-(v) com um caso que reprova e um que passa"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.0"]
+refs = [
+    "plano 01 item 1.2",
+    "SPEC-009 §5",
+    "RF-1",
+    "RF-5",
+    "RN-4",
+    "DoD: node --test com >= 10 casos (5 invariantes x {reprova, passa}). pane_id ASCII em ingles: price, liquidation_long, liquidation_short, oi, long_short, cvd.",
+    "MORDE: tirar o absence_mark de serie FLOW reprova (iii); label escrito a mao reprova (iv); time fora da grade reprova (v).",
+    "Os ~7 contratos de DOM acoplados a construcao (ARQ-1 §6) renascem aqui como invariantes.",
+]
+tracker = { provider = "jira", id = "CST-253", url = "https://conversationhub.atlassian.net/browse/CST-253" }
+
+[[tasks]]
+id = "T-01.3"
+title = "[charts] 01 · Geometria das bandas de marca ancorada em IPaneApi.getHeight(), em charts; as 14 constantes de geometria de web nao crescem"
+components = ["charts"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.0"]
+refs = [
+    "plano 01 item 1.4",
+    "RN-4",
+    "ADR-003/FR-2",
+    "DoD: funcao pura em frontend/src/charts/ com teste.",
+    "grep -nE '^const [A-Z_]*(_PX|_SCALE_MARGINS|_LOG_BASE|_HEIGHT_PX)\\s*=' frontend/src/app/symbol/SymbolClient.tsx | wc -l -> 14 [MEDIDO em 61dbf6b]; >= 15 REPROVA.",
+]
+tracker = { provider = "jira", id = "CST-254", url = "https://conversationhub.atlassian.net/browse/CST-254" }
+
+[[tasks]]
+id = "T-01.4"
+title = "[charts] 01 · Leitura da legenda como funcao pura: (param.logical, slots, nature) -> valor, held ou ausente; sem crosshair, o ultimo bucket FECHADO"
+components = ["charts"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.0"]
+refs = [
+    "plano 01 item 1.6 (CISAO: parte pura)",
+    "RF-4",
+    "RN-4",
+    "ADR-044/D2",
+    "ADR-026",
+    "DoD: casos FLOW/STOCK/RATIO; slot ausente => ausente, nunca 0; sem crosshair => ultimo FECHADO (em formacao so com marca).",
+    "MORDE: indice do ultimo bucket trocado por -1; ausente devolvendo 0.",
+]
+tracker = { provider = "jira", id = "CST-255", url = "https://conversationhub.atlassian.net/browse/CST-255" }
+
+[[tasks]]
+id = "T-01.5"
+title = "[web][charts] 01 · Montagem unica: useLightweightChart vira host, addSeries com paneIndex, axis-sync com panelCount=1; saem os 6 indices fixos e PANEL_COUNT=6"
+components = ["web", "charts"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.2", "T-01.3"]
+refs = [
+    "plano 01 item 1.3",
+    "RF-2",
+    "RF-3",
+    "RF-6",
+    "EDITOR de SymbolClient.tsx",
+    "DoD: PANEL_COUNT sai de axis-sync.ts/axis-sync-provider.tsx (e das 37 ocorrencias em teste, grep -c em 61dbf6b); RangeDispatcher e os testes de algebra verdes sem editar assercao; e2e 08..15 verdes (nenhuma forma de serie muda).",
+]
+tracker = { provider = "jira", id = "CST-256", url = "https://conversationhub.atlassian.net/browse/CST-256" }
+
+[[tasks]]
+id = "T-01.6"
+title = "[web][charts] 01 · Camada de DOM por pane sobre getHTMLElement(): pointer-events none, scaleMargins.top reservando a legenda, setStretchFactor com piso de 72px, enableResize=false, separador #8b949e testado"
+components = ["web", "charts"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.5"]
+refs = [
+    "plano 01 item 1.5",
+    "RF-4",
+    "CA-12",
+    "[Q-DG-1]",
+    "DESIGN-LAYOUT.md §6-§7",
+    "gates/DESIGN-LAYOUT-ux-critique-r2.md",
+    "EDITOR de SymbolClient.tsx",
+    "Condicoes do gate r2 que sao de F1: C-4 (modo explicito no chrome), C-5 (filho interativo clicavel e alcancavel por teclado), C-6 (assercao sobre separatorColor — o default da lib da 1.30:1 — e margem inferior >= 4px no volume).",
+    "data-testid atuais sobrevivem na raiz da camada, derivados de pane_id.",
+    "MORDE: remover o override de separador reprova; remover scaleMargins.top faz marca intersectar a legenda no render.",
+    "⚠️ R-2: os pesos 34/11/15/9/9/9/9 nomeiam 7 panes; a F1 tem 6 (liquidacao em 2, CVD em 1). A renormalizacao e do design_gate, decidida AQUI.",
+]
+tracker = { provider = "jira", id = "CST-257", url = "https://conversationhub.atlassian.net/browse/CST-257" }
+
+[[tasks]]
+id = "T-01.7"
+title = "[web] 01 · Ligacao crosshair -> legenda: subscribeCrosshairMove SEM filtro por paneIndex, nome derivado de identityTerms uma vez por pane, coluna fixa para os numerais (C-8)"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.4", "T-01.6"]
+refs = [
+    "plano 01 item 1.6 (CISAO: ligacao)",
+    "RF-4",
+    "RF-5",
+    "CA-3'",
+    "CA-4",
+    "CA-5",
+    "EDITOR de SymbolClient.tsx",
+    "Consome a funcao de T-01.4. C-8: slot de largura fixa em ch, alinhado a direita.",
+]
+tracker = { provider = "jira", id = "CST-258", url = "https://conversationhub.atlassian.net/browse/CST-258" }
+
+[[tasks]]
+id = "T-01.8"
+title = "[web] 01 · Re-ancorar e2e 16, 20 e 21 e os contratos de DOM acoplados a construcao (ARQ-1 §6); e2e/11 intacto"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.6"]
+refs = [
+    "plano 01 item 1.7",
+    "ARQ-1 §6",
+    "DoD: git diff --stat <base>..HEAD -- frontend/e2e/11-canvas-fundo.spec.ts VAZIO.",
+    "Contabilidade dos 56 testes de *-pane-dom-contract.test.ts: quantos sobrevivem, quantos migram para T-01.2, nenhum some sem destino.",
+]
+tracker = { provider = "jira", id = "CST-259", url = "https://conversationhub.atlassian.net/browse/CST-259" }
+
+[[tasks]]
+id = "T-01.9"
+title = "[web] 01 · Playwright contra o app real: 1 grafico (CA-1'), 1 eixo por pixel (CA-2'), legenda == API em n>=5 posicoes (CA-3'/CA-4), legenda derivada (CA-5), com as 4 ablacoes"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.7", "T-01.8"]
+refs = [
+    "plano 01 DoD 2-6",
+    "CA-1'",
+    "CA-2'",
+    "CA-3'",
+    "CA-4",
+    "CA-5",
+    "DoD-3",
+    "DoD-4",
+    "DoD: .tv-lightweight-charts == 1 e 6 panes com N>0; rotulo de tempo so no rodape, POR PIXEL; hover em x => 6 legendas == slot de x em /series-history (n>=5); sem hover => ultimo fechado. DoD-1/DoD-2 como nao-regressao; e2e 08..15 verdes.",
+    "ABLACOES: voltar a 6 createChart; filtrar por param.paneIndex; indice -1; nome escrito a mao.",
+]
+tracker = { provider = "jira", id = "CST-260", url = "https://conversationhub.atlassian.net/browse/CST-260" }
+
+[[tasks]]
+id = "T-01.10"
+title = "[web] 01 · Teto de latencia (CA-11'): e2e/17 p95<=160ms com n>=61, e2e/20 p95<=400ms com n>=10, sem regredir sobre T-01.1, controle negativo que move o p95"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1", "T-01.8"]
+refs = [
+    "plano 01 DoD 7",
+    "CA-11'",
+    "RNF-2",
+    "tetos: DECISAO-OWNER 2026-09-22 (eixo) e 2026-09-19 (historia)",
+    "Lote SOLO. Sem o controle negativo movendo o p95 => [NAO MEDIDO] e escala; NAO sai verde.",
+]
+tracker = { provider = "jira", id = "CST-261", url = "https://conversationhub.atlassian.net/browse/CST-261" }
+
+[[tasks]]
+id = "T-01.11"
+title = "[web] 01 · Veredito do ux-ui-mastery sobre o SCREENSHOT Playwright do app real com dado real (C-0, render medido)"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.9"]
+refs = [
+    "plano 01 item 1.8",
+    "CA-12",
+    "DoD-6",
+    "DECISAO-OWNER 2026-09-23 (2a rodada): julgar o pixel real, nao o Stitch",
+    "NEEDS_FIX volta para T-01.6/T-01.7 dentro da fase.",
+]
+tracker = { provider = "jira", id = "CST-262", url = "https://conversationhub.atlassian.net/browse/CST-262" }
+
+[[tasks]]
+id = "T-02.1"
+title = "[charts] 02 · Funcao pura vela -> cor da barra de volume com os dois tokens da vela; doji = alta; vela ausente sem cor de direcao"
+components = ["charts"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.10", "T-01.11"]
+refs = [
+    "plano 02 itens 2.1 + 2.2 (FUSAO)",
+    "RF-7",
+    "RNF-3",
+    "RN-4",
+    "ESPINHA: depende das terminais da fase 01",
+    "DoD: node --test, 4 casos (alta, baixa, doji, vela ausente). MORDE: >= -> < reprova 3 de 4.",
+]
+tracker = { provider = "jira", id = "CST-263", url = "https://conversationhub.atlassian.net/browse/CST-263" }
+
+[[tasks]]
+id = "T-02.2"
+title = "[web] 02 · Escala log x linear do rodape de volume (Q-VOL-2/Q-DG-2), decidida pelo design_gate"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.10", "T-01.11"]
+refs = [
+    "plano 02 item 2.3",
+    "CA-12",
+    "EDITOR de SymbolClient.tsx",
+    "Decisao registrada com o veredito do ux-ui-mastery antes da implementacao.",
+]
+tracker = { provider = "jira", id = "CST-264", url = "https://conversationhub.atlassian.net/browse/CST-264" }
+
+[[tasks]]
+id = "T-02.3"
+title = "[web] 02 · Ligacao no registry: a serie secondary do pane price usa a funcao de T-02.1"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.1", "T-02.2"]
+refs = [
+    "plano 02 item 2.4",
+    "EDITOR de SymbolClient.tsx",
+    "Mesma entrada do registry que T-02.2 => em serie.",
+]
+tracker = { provider = "jira", id = "CST-265", url = "https://conversationhub.atlassian.net/browse/CST-265" }
+
+[[tasks]]
+id = "T-02.4"
+title = "[web] 02 · Playwright CA-6: cor lida do canvas na barra i == direcao da vela i na API, n>=50, com alta e baixa na janela; ablacao inverte o comparador"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.3"]
+refs = [
+    "plano 02 DoD 2-4",
+    "CA-6",
+    "DoD-3",
+    "DoD-4",
+    "Janela sem as duas direcoes => INCONCLUSIVO, nao verde. Nao-regressao de binance·klines_volume·1m·SUM.",
+]
+tracker = { provider = "jira", id = "CST-266", url = "https://conversationhub.atlassian.net/browse/CST-266" }
+
+[[tasks]]
+id = "T-02.5"
+title = "[web] 02 · Veredito do ux-ui-mastery sobre o screenshot do volume com direcao"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.4"]
+refs = [
+    "plano 02 DoD 5",
+    "CA-12",
+]
+tracker = { provider = "jira", id = "CST-267", url = "https://conversationhub.atlassian.net/browse/CST-267" }
+
+[[tasks]]
+id = "T-04.0"
+title = "[web][charts] 04 · ⛔ Spike F-6 antes da construcao: base das duas escalas (invertida e superior) em <=1px e nenhum valor <0 em setData; responde o [NAO SEI] de C-3 (NAO mergeado)"
+components = ["web", "charts"]
+status = "todo"
+phase = "04"
+depends_on = ["T-02.5"]
+refs = [
+    "ADR-044/F-6",
+    "gate r2 C-3",
+    "DECISAO-OWNER 2026-09-23: T-04.0 entra (tasks_review.md §7)",
+    "ESPINHA: depende da terminal da fase 02",
+    "DoD: relatorio em gates/T-04.0-spike-f6.md. Reprovou => plano B (negacao + escala linear), relatorio ao /architect, e T-04.1..T-04.3 reescritas ANTES de construidas.",
+    "F-6 continua no DoD de T-04.6, contra o codigo de producao.",
+]
+tracker = { provider = "jira", id = "CST-268", url = "https://conversationhub.atlassian.net/browse/CST-268" }
+
+[[tasks]]
+id = "T-04.1"
+title = "[charts] 04 · Pane de liquidacao em charts: 2 barras, 4 marcas, 4 escalas; perna long com invertScale; mesmo maximo nas duas pernas (C-3); magnitudes >=0; par ausencia/zero por perna"
+components = ["charts"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.0"]
+refs = [
+    "plano 04 item 4.1 (parte charts) + 4.2 (FUSAO)",
+    "RF-10",
+    "RN-3",
+    "RN-4",
+    "ADR-044/D4",
+    "MORDE: negar a perna long; autoscale independente reprova o mesmo-maximo.",
+]
+tracker = { provider = "jira", id = "CST-269", url = "https://conversationhub.atlassian.net/browse/CST-269" }
+
+[[tasks]]
+id = "T-04.2"
+title = "[web] 04 · Registry: liquidation_long + liquidation_short viram um pane liquidation; short em cima (alta), long embaixo (baixa)"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.1"]
+refs = [
+    "plano 04 item 4.1 (parte web)",
+    "RF-10",
+    "[Q-LIQ-2] = Coinalyze, DECISAO-OWNER 2026-09-23",
+    "EDITOR de SymbolClient.tsx",
+]
+tracker = { provider = "jira", id = "CST-270", url = "https://conversationhub.atlassian.net/browse/CST-270" }
+
+[[tasks]]
+id = "T-04.3"
+title = "[web] 04 · Legenda da liquidacao: 2 magnitudes sem sinal, numeral em tinta neutra, quadrado de 8px vazado (short) / cheio (long) estrutural em forced-colors (C-7), nenhum terceiro numero"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2"]
+refs = [
+    "plano 04 item 4.3",
+    "RF-10",
+    "RN-3",
+    "SPEC-009 §7.3",
+    "EDITOR de SymbolClient.tsx",
+    "C-7: borda nos dois e preenchimento so no cheio, ou forced-color-adjust: none.",
+]
+tracker = { provider = "jira", id = "CST-271", url = "https://conversationhub.atlassian.net/browse/CST-271" }
+
+[[tasks]]
+id = "T-04.4"
+title = "[web] 04 · Log x linear e tamanho das duas metades do pane de liquidacao (Q-DG-2), decididos pelo design_gate"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2"]
+refs = [
+    "plano 04 item 4.4",
+    "CA-12",
+    "EDITOR de SymbolClient.tsx",
+]
+tracker = { provider = "jira", id = "CST-272", url = "https://conversationhub.atlassian.net/browse/CST-272" }
+
+[[tasks]]
+id = "T-04.5"
+title = "[web] 04 · Re-ancorar e2e/13 (hospedeiro de canvas por coorte, :532, 692-697) no pane fundido"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2"]
+refs = [
+    "plano 04 item 4.5",
+]
+tracker = { provider = "jira", id = "CST-273", url = "https://conversationhub.atlassian.net/browse/CST-273" }
+
+[[tasks]]
+id = "T-04.6"
+title = "[web] 04 · Playwright: F-6 no codigo de producao, CA-LIQ n>=20, CA-9' (a)(b)(c), CA-10' por perna, 5 panes com N>0, nao-regressao das duas coortes, com as ablacoes"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.3", "T-04.4", "T-04.5"]
+refs = [
+    "plano 04 DoD 1-6",
+    "CA-9'",
+    "CA-10'",
+    "CA-LIQ",
+    "CA-1'",
+    "DoD-3",
+    "DoD-4",
+    "Clausulas de INCONCLUSIVO: bucket com as duas pernas > 0 e distintas; os dois estados na janela.",
+    "ABLACOES: trocar o scale_ref; somar/subtrair as pernas; fundir ausencia e zero.",
+]
+tracker = { provider = "jira", id = "CST-274", url = "https://conversationhub.atlassian.net/browse/CST-274" }
+
+[[tasks]]
+id = "T-04.7"
+title = "[web] 04 · Veredito do ux-ui-mastery sobre o screenshot do pane fundido"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.6"]
+refs = [
+    "plano 04 DoD 7",
+    "CA-12",
+]
+tracker = { provider = "jira", id = "CST-275", url = "https://conversationhub.atlassian.net/browse/CST-275" }
+
+[[tasks]]
+id = "T-03.1"
+title = "[sentimento] 03a · Cliente de GET /fapi/v1/openInterest: o time da resposta vira event_time; le x-mbx-used-weight-1m"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = []
+refs = [
+    "plano 03 item 3a.1",
+    "RN-1",
+    "SPEC-009 §6.1",
+    "DoD: teste com resposta LIDA da Binance (leitura de origem nao e semeadura). MORDE: usar o instante do pedido em vez do time.",
+]
+tracker = { provider = "jira", id = "CST-276", url = "https://conversationhub.atlassian.net/browse/CST-276" }
+
+[[tasks]]
+id = "T-03.2"
+title = "[sentimento] 03a · Carimbo na grade de 1 min com janela de admissao [T, T+20s]; fora dela o minuto fica AUSENTE, nunca carrega o anterior"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = []
+refs = [
+    "plano 03 item 3a.2",
+    "RN-2",
+    "[Q-STAMP-1]",
+    "DoD: funcao pura, casos na borda da janela; validacao do quant-architect registrada. MORDE: carry-forward.",
+]
+tracker = { provider = "jira", id = "CST-277", url = "https://conversationhub.atlassian.net/browse/CST-277" }
+
+[[tasks]]
+id = "T-03.3"
+title = "[sentimento] 03a · Catalogo: 4 entradas binance·open_interest·1m·POINT (STOCK, POINT_AT_BUCKET_END, unit=BTC, denom=base), uma por simbolo"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = []
+refs = [
+    "plano 03 item 3a.3",
+    "D-a",
+    "D-b",
+    "Servidas por /api/v1/series-catalog.",
+    "⚠️ R-4: coinalyze-fora-da-quarentena (SPEC_APPROVED, sentimento) pode editar o mesmo catalogo de OI; nao dividir lote com task dela que o edite.",
+]
+tracker = { provider = "jira", id = "CST-278", url = "https://conversationhub.atlassian.net/browse/CST-278" }
+
+[[tasks]]
+id = "T-03.4"
+title = "[sentimento] 03a · Coletor: laco de 60s alinhado a grade que compoe cliente + carimbo + escritor, registrado no collectors_cli, com n_written por ciclo"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1", "T-03.2", "T-03.3"]
+refs = [
+    "SPEC-009 §6.7 (o plano pressupoe, nao numerou)",
+    "RNF-4",
+    "PRD-009 G-1 (escritor desde o dia 1)",
+    "Eventos de log e chaves de extra NOVOS em ingles (CLAUDE.md linha 10).",
+]
+tracker = { provider = "jira", id = "CST-279", url = "https://conversationhub.atlassian.net/browse/CST-279" }
+
+[[tasks]]
+id = "T-03.5"
+title = "[infra] 03a · Cadencia de 60s como variavel de ambiente do servico collectors em deploy/compose.yml, no idioma de OPEN_INTEREST_CYCLE_INTERVAL_S (:187), com julgamento do infra-architect"
+components = ["infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.4"]
+refs = [
+    "plano 03 item 3a.4",
+    "RNF-4",
+    "D-j",
+    "[Q-CAD-1] = 60 s, DECISAO-OWNER 2026-09-23 (2a rodada)",
+    "DoD: docker compose config valido; veredito do infra-architect em gates/.",
+]
+tracker = { provider = "jira", id = "CST-280", url = "https://conversationhub.atlassian.net/browse/CST-280" }
+
+[[tasks]]
+id = "T-03.6"
+title = "[sentimento] 03a · DoD de captura na stack de e2e PROPRIA: md.series 0 -> >0 com n_written>0, cota <=4/min pelo header, minuto com o coletor parado nao tem linha"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.5"]
+refs = [
+    "plano 03 DoD-03a 1 (contagem), 2 e 4",
+    "DoD-1",
+    "RN-2",
+    "⛔ NUNCA no Postgres compartilhado (D-g).",
+    "MORDE: laco sem espera faz a parcela passar de 4; carry-forward cria linha no minuto parado.",
+]
+tracker = { provider = "jira", id = "CST-281", url = "https://conversationhub.atlassian.net/browse/CST-281" }
+
+[[tasks]]
+id = "T-03.7"
+title = "[infra] 03a · Medicao pos-deploy de 24h: count por simbolo >= 0,95 x 1.440 e pg_total_relation_size contra ~570 KB/dia (> 1,14 MB/dia volta ao owner)"
+components = ["infra"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.6"]
+refs = [
+    "plano 03 item 3a.5 + DoD-03a 1 (24h) e 3",
+    "DoD-1",
+    "RNF-4",
+    "⏱ TASK COM RELOGIO: t0 de pg_total_relation_size tirado NO DEPLOY (ato do orquestrador ao mergear a wave 03a); t1 >= 24 h depois.",
+    "Abaixo de 0,95 x 1.440 => numero ao quant-architect. Acima de 1,14 MB/dia => owner ([Q-CAD-1]).",
+]
+tracker = { provider = "jira", id = "CST-282", url = "https://conversationhub.atlassian.net/browse/CST-282" }
+
+[[tasks]]
+id = "T-03.8"
+title = "[sentimento] 03b · Projecao OiCandle pura (ADR-045/D1), chave no trio (STOCK, POINT, POINT_AT_BUCKET_END); outro trio falha alto; a grade nativa g vem do SeriesKey"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-04.7", "T-03.7"]
+refs = [
+    "plano 03 item 3b.1",
+    "RN-2",
+    "RN-5 corrigido",
+    "SPEC-009 §6.3-§6.4",
+    "ESPINHA: depende da terminal da fase 04 e da medicao de 24h",
+    "DoD: low <= min(o,c) <= max(o,c) <= high; nenhuma linha com open_at_ms == close_at_ms; samples.expected = TF/g.",
+    "MORDE: aceitar outro trio; costurar ancora sobre buraco.",
+]
+tracker = { provider = "jira", id = "CST-283", url = "https://conversationhub.atlassian.net/browse/CST-283" }
+
+[[tasks]]
+id = "T-03.9"
+title = "[sentimento] 03b · Um candle, uma serie (ADR-045/D2-bis): polling se ha ponto em T0, openInterestHist senao; a rota serve OiCandle com derived_from e samples"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.8"]
+refs = [
+    "plano 03 item 3b.2",
+    "RN-6",
+    "derived_from in {binance_poll_1m, binance_point_5m}",
+    "MORDE: ancora do historico com amostras do polling.",
+]
+tracker = { provider = "jira", id = "CST-284", url = "https://conversationhub.atlassian.net/browse/CST-284" }
+
+[[tasks]]
+id = "T-03.10"
+title = "[sentimento] 03b · ⛔ Falsificadores 3 e 4 de ADR-045 ANTES do pixel: propriedades em n>=288 buckets reais por regime e mediana abs(poll-hist)/hist <= 10bp em n>=288"
+components = ["sentimento"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.9"]
+refs = [
+    "plano 03 item 3b.3 + DoD-03b 1-2",
+    "ADR-045 §Falsificador",
+    "limiar de 10 bp e [INFERRED] (SPEC-009 §6.2)",
+    "Uma divergencia reprova. Reprovou => PARA, numero ao /architect/owner.",
+]
+tracker = { provider = "jira", id = "CST-285", url = "https://conversationhub.atlassian.net/browse/CST-285" }
+
+[[tasks]]
+id = "T-03.11"
+title = "[web] 03b · Pane oi passa de line para candlestick no registry, legenda O·H·L·C, rotulo DERIVADO derivado de derived_from (nunca escrito a mao)"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.10"]
+refs = [
+    "plano 03 item 3b.4",
+    "RF-8",
+    "RF-9",
+    "RN-6",
+    "EDITOR de SymbolClient.tsx",
+]
+tracker = { provider = "jira", id = "CST-286", url = "https://conversationhub.atlassian.net/browse/CST-286" }
+
+[[tasks]]
+id = "T-03.12"
+title = "[web] 03b · Forma do trecho anterior a captura em 1m, falta de pavio em 5m e marca de fronteira entre regimes (Q-DG-3, Q-OI-3), por design_gate + quant-architect"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.11"]
+refs = [
+    "plano 03 item 3b.5",
+    "Q-OI-3",
+    "[Q-DG-3]",
+    "EDITOR de SymbolClient.tsx",
+]
+tracker = { provider = "jira", id = "CST-287", url = "https://conversationhub.atlassian.net/browse/CST-287" }
+
+[[tasks]]
+id = "T-03.13"
+title = "[web] 03b · Playwright: CA-7 n>=50 por regime com bucket de divergencia preco x OI, CA-8' com buraco de M3, um candle uma serie na fronteira, pixel com ablacao (volta a line)"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.12"]
+refs = [
+    "plano 03 DoD-03b 3-6",
+    "CA-7",
+    "CA-8'",
+    "DoD-3",
+    "DoD-4",
+    "Clausulas de INCONCLUSIVO.",
+    "MORDE: colorir pelo preco; costurar o buraco; misturar as series.",
+]
+tracker = { provider = "jira", id = "CST-288", url = "https://conversationhub.atlassian.net/browse/CST-288" }
+
+[[tasks]]
+id = "T-03.14"
+title = "[web] 03b · Veredito do ux-ui-mastery sobre o screenshot do candle de OI nos dois regimes"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.13"]
+refs = [
+    "plano 03 DoD-03b 7",
+    "CA-12",
+]
+tracker = { provider = "jira", id = "CST-289", url = "https://conversationhub.atlassian.net/browse/CST-289" }
