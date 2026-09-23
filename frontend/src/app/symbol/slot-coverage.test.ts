@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { historyRequest, type TimeAxis } from "../../charts/index.ts";
-import { classifySlotCoverage, combineHistoryCoverage, type PanelCoverageBundle } from "./slot-coverage.ts";
+import { classifySlotCoverage, combineHistoryCoverage, panelWallState, type PanelCoverageBundle } from "./slot-coverage.ts";
 
 const STEP_MS = 60_000; // 1m grid
 const DAY_MS = 24 * 60 * 60_000;
@@ -178,4 +178,54 @@ test("CALA: historyRequest still pages when the combined floor has not been reac
   const coverage = combineHistoryCoverage(bundle);
   const req = historyRequest({ fromMs: axis.startMs, toMs: axis.startMs + 10 * STEP_MS }, axis, coverage, 500);
   assert.notEqual(req, null, "OI's floor (day 0) is still 4 days below the axis edge — a page is still owed");
+});
+
+// ── `T-05.6` — `panelWallState`, the ONE check the PIXEL (badges) needs: has the series' own
+// declared floor walked past the LEFT EDGE of the window the pager has already fetched? ─────────
+
+test("MORDE: the floor sitting strictly inside the fetched window is beyond-coverage", () => {
+  const window = { startMs: 3 * DAY_MS, endMsExclusive: 10 * DAY_MS };
+  const state = panelWallState(window, { earliest_bucket_ms: 5 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null });
+  assert.equal(state, "beyond-coverage", "the window widened to day 3, but this series has nothing before day 5");
+});
+
+test("CALA: the floor not yet reached (still to the left of the fetched window) is not beyond-coverage", () => {
+  const window = { startMs: 5 * DAY_MS, endMsExclusive: 10 * DAY_MS };
+  const state = panelWallState(window, { earliest_bucket_ms: 0, latest_bucket_ms: null, source_floor_ms: null });
+  assert.equal(state, "absent", "the series has data all the way to day 0 — day 5 is not a wall yet");
+});
+
+test("CALA: unmeasured coverage (null) never reports beyond-coverage — nothing known yet", () => {
+  const window = { startMs: 5 * DAY_MS, endMsExclusive: 10 * DAY_MS };
+  assert.equal(panelWallState(window, null), "absent");
+});
+
+test("CALA: the floor sitting exactly at the fetched window's startMs is not beyond-coverage — the edge is inclusive", () => {
+  const window = { startMs: 5 * DAY_MS, endMsExclusive: 10 * DAY_MS };
+  const state = panelWallState(window, { earliest_bucket_ms: 5 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null });
+  assert.equal(state, "absent", "classifySlotCoverage's own left-edge-inclusive CALA — day 5 IS covered, not beyond it");
+});
+
+test("MORDE: an unmeasured store (earliest_bucket_ms null) still falls back to source_floor_ms", () => {
+  const window = { startMs: 3 * DAY_MS, endMsExclusive: 10 * DAY_MS };
+  const state = panelWallState(window, { earliest_bucket_ms: null, latest_bucket_ms: null, source_floor_ms: 4 * DAY_MS });
+  assert.equal(state, "beyond-coverage", "the source's own floor (day 4) is still past the fetched window's edge (day 3)");
+});
+
+// The falsifier this task's own gate names explicitly: OI and long/short can wall off while price
+// (a series with deeper native history, `SPEC-008`/`D1`) still has data at the SAME window edge —
+// the asymmetric wall `plan 05` item `5.5` describes. Proven against the SAME window all three
+// panels would share (`CA-5a`), with three DIFFERENT declared floors.
+test("MORDE: the SAME window walls OI and long/short while price is still covered — the asymmetric wall", () => {
+  const sharedWindow = { startMs: 30 * DAY_MS, endMsExclusive: 40 * DAY_MS };
+  const priceState = panelWallState(sharedWindow, { earliest_bucket_ms: 0, latest_bucket_ms: null, source_floor_ms: null });
+  const oiState = panelWallState(sharedWindow, { earliest_bucket_ms: 35 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null });
+  const longShortState = panelWallState(sharedWindow, {
+    earliest_bucket_ms: 33 * DAY_MS,
+    latest_bucket_ms: null,
+    source_floor_ms: null,
+  });
+  assert.equal(priceState, "absent", "price's own floor (day 0) is nowhere near this window — still covered");
+  assert.equal(oiState, "beyond-coverage");
+  assert.equal(longShortState, "beyond-coverage");
 });

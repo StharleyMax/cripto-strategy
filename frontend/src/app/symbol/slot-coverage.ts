@@ -68,6 +68,38 @@ export function classifySlotCoverage(
   return "absent";
 }
 
+/**
+ * `T-05.6` — the ONE check `SymbolClient.tsx`'s badges need after every page: has this SERIES'
+ * own wall entered the window the pager has already fetched? Reuses `classifySlotCoverage` above
+ * against the window's OWN `startMs`, rather than scanning every slot in the window, and the
+ * shortcut is sound, not a heuristic: `classifySlotCoverage` returns `"beyond-coverage"` for
+ * `slotMs` exactly when `leftFloorMs !== null && slotMs < leftFloorMs` — a pure comparison that
+ * does not consult whether a row actually landed at `slotMs`. Calling it at `window.startMs`
+ * therefore answers "has the declared floor walked past the LEFT EDGE of what was fetched" for
+ * the whole window in one comparison: if the floor sits strictly inside the fetched window (floor
+ * `>` `window.startMs`), then by the floor's own definition (`PanelCoverage`'s docstring: nothing
+ * exists before it) EVERY slot from `window.startMs` up to the floor is pointless-by-construction
+ * and inside the fetched window — `"beyond-coverage"`, correctly, without inspecting a single row.
+ * If the floor has not yet been reached (floor `<=` `window.startMs`, or unmeasured), nothing in
+ * the fetched window is beyond it yet.
+ *
+ * `null` coverage — `EMPTY_PANEL_COVERAGE`'s starting state, or a series whose `series_key_id`
+ * never resolved (`HistorySeriesKeys`'s own `null`) — answers `"absent"`, never
+ * `"beyond-coverage"`: an unmeasured floor asserts nothing (this module's own `PanelCoverage`
+ * docstring, `classifySlotCoverage`'s own CALA fixture), so nothing is known to badge yet.
+ *
+ * `"not-loaded"` can never come back from this function: `window.startMs` is by construction the
+ * left edge of `window` itself, always inside `[window.startMs, window.endMsExclusive)` for any
+ * non-empty window — the caller (`SymbolClient.tsx`) only ever needs to branch on
+ * `"beyond-coverage"` vs everything else.
+ */
+export function panelWallState(window: AccumulatedWindow, coverage: PanelCoverage | null): SlotCoverageState {
+  if (coverage === null) {
+    return "absent";
+  }
+  return classifySlotCoverage(window.startMs, window, coverage);
+}
+
 /** One declared `panel.coverage` per series `use-history-pager.ts` pages — mirrors the same
  * ten-series shape `panel-assembly.ts`'s `HistoryRowsBundle` and `use-history-pager.ts`'s own
  * `HistorySeriesKeys` already carry (`open`/`high`/`low`/`close`/`oi`/`cvd`/`volume`/
