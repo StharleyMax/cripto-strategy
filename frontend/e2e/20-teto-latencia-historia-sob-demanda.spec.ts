@@ -227,7 +227,19 @@ async function startSyntheticOhlcStub(): Promise<{ readonly url: string; close()
       }
       const envelope = {
         session: { principal_id: null, server_now_ms: Date.now() },
-        panel: { series_key_id: seriesKeyId, source: "T-05.9-synthetic-stub", nature: "STOCK", unit: "USD" },
+        panel: {
+          series_key_id: seriesKeyId,
+          source: "T-05.9-synthetic-stub",
+          nature: "STOCK",
+          unit: "USD",
+          // `T-05.7`/`D-C3.7` tornou `panel.coverage` obrigatório (`series-history-envelope.ts`,
+          // `assertWirePanelCoverage`) DEPOIS que este stub foi escrito — sem isto, TODA resposta
+          // reprovava a validação de envelope no cliente, e nenhuma vela era desenhada
+          // (`stub_drawn_candles=0`, achado independente do que este arquivo mede).
+          // `null` nos três campos == "nenhum teto conhecido", coerente com o docstring de
+          // `startSyntheticOhlcStub` acima ("este estoque nunca recusa").
+          coverage: { earliest_bucket_ms: null, latest_bucket_ms: null, source_floor_ms: null },
+        },
         rows,
         knowledge_time: Number.isFinite(knowledgeTimeMs) ? knowledgeTimeMs : Date.now(),
         bar_policy: "final_only",
