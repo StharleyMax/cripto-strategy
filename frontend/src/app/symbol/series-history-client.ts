@@ -36,12 +36,13 @@ import { TransportError, type TransportErrorKind } from "../../features/s1-conso
 import { parseSeriesHistoryEnvelope } from "./series-history-envelope.ts";
 import type {
   BucketCoverage,
+  PanelCoverage,
   SeriesHistoryEnvelope,
   SeriesHistoryRow,
 } from "./series-history-envelope.ts";
 
 export { TransportError, parseSeriesHistoryEnvelope };
-export type { TransportErrorKind, BucketCoverage, SeriesHistoryEnvelope, SeriesHistoryRow };
+export type { TransportErrorKind, BucketCoverage, PanelCoverage, SeriesHistoryEnvelope, SeriesHistoryRow };
 
 // ── THE HTTP TRANSPORT — same base URL/API_PREFIX pattern as the other two `web` HTTP clients ──
 const DEFAULT_API_PREFIX = "/api/v1";

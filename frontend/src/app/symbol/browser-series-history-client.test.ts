@@ -25,7 +25,13 @@ const BASE_URL = "http://localhost:8765/api/v1/series-history";
 function validEnvelopeBody(): unknown {
   return {
     session: { principal_id: null, server_now_ms: 1_000 },
-    panel: { series_key_id: "abc123", source: "binance", nature: "STOCK", unit: "USD" },
+    panel: {
+      series_key_id: "abc123",
+      source: "binance",
+      nature: "STOCK",
+      unit: "USD",
+      coverage: { earliest_bucket_ms: 0, latest_bucket_ms: 60_000, source_floor_ms: null },
+    },
     rows: [{ event_time: 0, available_at: 500, value: "42.5", absence: null, coverage: null }],
     knowledge_time: 120_000,
     bar_policy: "final_only",
