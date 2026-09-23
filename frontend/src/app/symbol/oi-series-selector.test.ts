@@ -37,7 +37,12 @@ import {
   type Reduction,
   type SeriesCatalogEntry,
 } from "../../features/s3-inspector/series-catalog.ts";
-import { deriveOiProvenanceLabel, matchesBinanceOpenInterest } from "./view-model.ts";
+import {
+  deriveOiProvenanceLabel,
+  matchesBinanceOpenInterest,
+  openInterestAdr036D2Violations,
+  OPEN_INTEREST_ADR_036_D2_INVARIANTS,
+} from "./view-model.ts";
 
 const SYMBOL = "BTCUSDT";
 /** `_MAX_STALENESS_MS` of `open_interest_catalog.py`: 2 x the 5-minute native bucket. The number
@@ -244,4 +249,52 @@ test("DoD-3 sanity: every term the derivation can produce today is ASCII — it 
   assert.ok(isAscii(label.grandeza), `non-ASCII byte in grandeza: ${label.grandeza}`);
   assert.ok(isAscii(label.universo), `non-ASCII byte in universo: ${label.universo}`);
   assert.ok(isAscii(label.coorte), `non-ASCII byte in coorte: ${label.coorte}`);
+});
+
+// ── `T-04.2`/`C-4`/`DoD-5` — THE ENVELOPE IS A CONTRACT: `ADR-036/D2` STAYS INTACT ─────────────
+//
+// `RF-8`'s label above already SPELLS whatever the resolved key carries; these tests are the
+// other half `C-4` asks for — that the four terms `ADR-036/D2` fixes (origin, contracts, single
+// instrument) actually HOLD for the row this file's own selector picks, and that a fixture (or,
+// one day, the real catalog) drifting from them is caught here, loudly, rather than reaching the
+// pane as a quietly re-labelled number.
+
+test("DoD-5: today's REAL Binance OI row honors ADR-036/D2 — origin, contracts, single instrument", () => {
+  const matched = OPEN_INTEREST_ROWS.filter((row) => matchesBinanceOpenInterest(row.entry.key))[0]!;
+  const violations = openInterestAdr036D2Violations(matched.entry.key);
+  assert.deepEqual(
+    violations,
+    [],
+    `ADR-036/D2 no longer holds for the resolved OI row: ${violations.join(", ")} — this is F5 arriving, ` +
+      "and F5 is out of this plan by [DECISÃO-OWNER: 2026-09-19], not something this pane may absorb silently",
+  );
+  // Sanity on the invariants themselves — BTC/base/Symbol, never USD/quote/an aggregate scope.
+  assert.deepEqual(OPEN_INTEREST_ADR_036_D2_INVARIANTS, {
+    provider: "binance",
+    unit: "BTC",
+    denom: "base",
+    aggregationScope: "Symbol",
+  });
+});
+
+test("MORDE (DoD-5): a row that drifted from ADR-036/D2 is named, term by term", () => {
+  const origin = { provider: "binance", unit: "BTC", denom: "base", aggregationScope: "Symbol" } as const;
+  assert.deepEqual(openInterestAdr036D2Violations(origin), [], "sanity: the honest row has zero violations");
+
+  // `F5` in miniature: a third-party aggregate, nocional, over more than one instrument — the
+  // exact shape `SPEC-008` §8.1 says the owner did NOT choose.
+  const aggregateNotional = { provider: "coinalyze", unit: "USD", denom: "quote", aggregationScope: "Aggregate" };
+  const violations = openInterestAdr036D2Violations(aggregateNotional);
+  assert.equal(violations.length, 4, "all four terms disagree — none of the four checks is dead code");
+  assert.ok(violations.some((line) => line.startsWith("provider=coinalyze")));
+  assert.ok(violations.some((line) => line.startsWith("unit=USD")));
+  assert.ok(violations.some((line) => line.startsWith("denom=quote")));
+  assert.ok(violations.some((line) => line.startsWith("aggregationScope=Aggregate")));
+
+  // A SINGLE term drifting (Binance quietly re-publishing OI as nocional, origin unchanged) is
+  // named on its own — the check does not require every term to fail to say something.
+  const denomOnly = { ...origin, denom: "quote" };
+  assert.deepEqual(openInterestAdr036D2Violations(denomOnly), [
+    `denom=quote (expected ${OPEN_INTEREST_ADR_036_D2_INVARIANTS.denom})`,
+  ]);
 });
