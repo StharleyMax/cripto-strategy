@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# T-01.1 baseline: 5 isolated rounds. Each round = its own e2e stack (ephemeral sqlite store,
+# fresh `next build`), the ARQ-1 §7 command literally (e2e/17 + e2e/20), then the rAF companion.
+set -u
+W=/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/agent-acadc78b783901700
+OUT=/tmp/claude-1002/-home-stharley-Documentos-projects-cripto-strategy/e5b6e66d-8da8-4342-9a1a-9940df8a9192/scratchpad/${OUTNAME:-baseline}
+mkdir -p "$OUT"
+cd "$W" || exit 9
+echo "sha=$(git rev-parse HEAD)" > "$OUT/meta.txt"
+for i in $(seq 1 "${ROUNDS:-5}"); do
+  echo "=== round $i start $(date -Is)" >> "$OUT/meta.txt"
+  STATE_DIR="$(bash scripts/e2e-env.sh up 1 8811 4311 2>>"$OUT/env-up-$i.log")"
+  if [ -z "$STATE_DIR" ]; then echo "round $i: env up FAILED" >> "$OUT/meta.txt"; continue; fi
+  E2E_BASE_URL="$(cat "$STATE_DIR/base_url")" E2E_API_LOG_PATH="$STATE_DIR/api.log" \
+    E2E_SENTIMENTO_API_BASE_URL="$(cat "$STATE_DIR/api_base_url")" \
+    E2E_FACTS_FILE="$OUT/facts-official-$i.jsonl" E2E_SHOTS_DIR="$OUT/shots" \
+    frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts \
+      frontend/e2e/17-teto-latencia-eixo.spec.ts frontend/e2e/20-teto-latencia-historia-sob-demanda.spec.ts \
+      > "$OUT/official-$i.log" 2>&1
+  echo "round $i official rc=$?" >> "$OUT/meta.txt"
+  BASELINE_ROUND="$i" E2E_BASE_URL="$(cat "$STATE_DIR/base_url")" \
+    E2E_FACTS_FILE="$OUT/facts-companion-$i.jsonl" E2E_SHOTS_DIR="$OUT/shots" \
+    frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts \
+      frontend/e2e/91-baseline-t011.spec.ts > "$OUT/companion-$i.log" 2>&1
+  echo "round $i companion rc=$?" >> "$OUT/meta.txt"
+  bash scripts/e2e-env.sh down "$STATE_DIR" >/dev/null 2>&1
+  echo "=== round $i end $(date -Is)" >> "$OUT/meta.txt"
+done
+echo DONE >> "$OUT/meta.txt"
