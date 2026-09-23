@@ -170,6 +170,7 @@ import {
   countZeroSlots,
   firstPresentSlotMs,
   daysWithPresence,
+  deriveOiProvenanceLabel,
   keyMatchesSymbol,
   lastPresentSlotMs,
   lastReadableAvailableAtMs,
@@ -710,6 +711,10 @@ export default async function SymbolPage({
     // only the wire rows carry `available_at`. See
     // `docs/context/cinco-metricas-do-core/gates/T-03.5-T-03.6-A-4.2-decisao-limiar.md`.
     freshness: resolveFreshnessVerdict(oiResult.rows, routeWindow.windowEndMsInclusive, oiEntry?.maxStalenessMs ?? null),
+    // `T-04.1`/`RN-5`, `CA-9`: grandeza · universo · coorte, derived from the resolved entry's
+    // OWN `SeriesKey` — `null` when no entry resolved (`oiEntry` above already collapses "none"
+    // and "ambiguous" to `undefined`, the same posture `maxStalenessMs`/`freshness` take).
+    provenance: deriveOiProvenanceLabel(oiEntry?.key),
   };
 
   // ── The liquidation pane (`T-05.9`, M4) ───────────────────────────────────────────────────

@@ -108,6 +108,7 @@ import {
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
+  OiProvenanceLabel,
   PanelStatus,
   SeriesProvenance,
   SeriesValueStats,
@@ -222,6 +223,10 @@ export interface OiPaneData {
   /** `RNF-2` — whether the newest readable point is past that ceiling. The pane must not show a
    * number older than the series' own periodicity without SAYING it is old. */
   readonly freshness: FreshnessVerdict;
+  /** `T-04.1`/`RN-5` — grandeza · universo · coorte, DERIVED from the `SeriesKey` the route
+   * resolved for this panel (`page.tsx` + `view-model.ts::deriveOiProvenanceLabel`), never a
+   * literal in this file. `null` when no entry resolved — there is no series to describe. */
+  readonly provenance: OiProvenanceLabel | null;
 }
 
 /**
@@ -1276,6 +1281,33 @@ function formatSpan(spanMs: number): string {
   return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
 }
 
+/**
+ * `T-04.1`/`RN-5`, `CA-9` — the three terms the owner's circled defect asks for, spelled from
+ * `oi.provenance` (already DERIVED server-side, `view-model.ts::deriveOiProvenanceLabel`): this
+ * component only interpolates the object it was handed, exactly the RSC-boundary discipline
+ * every other prop on this file follows — it decides nothing about what the terms say.
+ *
+ * ⛔ THE `data-fact` IS RENDERED EVEN WHEN `provenance` IS `null` (no entry resolved), because
+ * `CA-9`'s falsifier greps for the ATTRIBUTE: a panel that cannot identify its own series must
+ * still publish a machine-readable fact saying so, never drop the attribute off the page.
+ */
+function OiProvenance({ oi }: { readonly oi: OiPaneData }) {
+  const { provenance } = oi;
+  const fact =
+    provenance === null
+      ? "oi_provenance:unresolved"
+      : `oi_provenance:grandeza=${provenance.grandeza};universo=${provenance.universo};coorte=${provenance.coorte}`;
+  const text =
+    provenance === null
+      ? "Procedência não identificada — nenhuma série resolvida no catálogo."
+      : `Grandeza: ${provenance.grandeza} · Universo: ${provenance.universo} · Coorte: ${provenance.coorte}`;
+  return (
+    <p data-fact={fact} className="text-sm text-provenance-weak">
+      {text}
+    </p>
+  );
+}
+
 function OiPane({
   panels,
   status,
@@ -1323,6 +1355,7 @@ function OiPane({
       </p>
       <OiFreshness oi={oi} />
       <OiReadableHorizon oi={oi} gridSlots={panels.oi.slots.length} />
+      <OiProvenance oi={oi} />
       <AbsenceNote status={status} />
     </section>
   );
