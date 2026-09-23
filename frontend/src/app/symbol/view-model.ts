@@ -66,14 +66,20 @@ import {
   type S2RawInputs,
   type S2Window,
 } from "../../charts/index.ts";
-import type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance, SeriesValueStats } from "./panel-status.ts";
+import type {
+  FreshnessVerdict,
+  OiProvenanceLabel,
+  PublishedErrorFact,
+  SeriesProvenance,
+  SeriesValueStats,
+} from "./panel-status.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 
 // Re-exported so the server-side callers of `resolveFreshnessVerdict` get the function and its
 // return type from ONE import; the type itself is DECLARED in `panel-status.ts`, which is the
 // only module both sides of the RSC boundary may import (see its own docstring for why).
-export type { FreshnessVerdict, PublishedErrorFact, SeriesProvenance, SeriesValueStats };
+export type { FreshnessVerdict, OiProvenanceLabel, PublishedErrorFact, SeriesProvenance, SeriesValueStats };
 
 // Re-exported, not re-implemented: `computeSeriesKeyId` moved to its own module so a Playwright
 // spec can import it without evaluating the `charts` barrel (and, through it, `jsdom`). Every
@@ -839,6 +845,56 @@ export function matchesBinanceOpenInterest(key: SeriesKey): boolean {
     key.provider === OPEN_INTEREST_PROVIDER &&
     key.reduction === OPEN_INTEREST_REDUCTION
   );
+}
+
+// ── `T-04.1`/`RN-5` — THE OI RÓTULO IS DERIVED FROM THE KEY, NEVER WRITTEN BY HAND ────────────
+//
+// The owner circled the defect in red (`plano 04` §"Por que esta fase existe"): the screen
+// showed `108.135,34` under the unlabelled words "Open Interest (5m)" while the Coinalyze
+// dashboard showed `27,656 B` for what read as the same fact. Both numbers are correct and
+// measure different things — contracts in BTC on Binance USDT-M versus notional USD aggregated
+// across exchanges, over a different counterparty cohort. A rótulo that does not spell WHICH of
+// those it is on screen is why the two got compared in the first place.
+
+/** The subset of `SeriesKey` `deriveOiProvenanceLabel` reads — declared structurally, the same
+ * discipline `ProvenanceSourceEntry` above uses, so a test can build one without the other ten
+ * terms of the full 15-term identity. */
+export type OiProvenanceKey = Pick<SeriesKey, "unit" | "denom" | "provider" | "venue" | "cohort">;
+
+/**
+ * `RN-5` as a FUNCTION over the resolved catalog row, so the pane's rótulo is the key's own
+ * terms, projected — never three strings a developer remembered to keep in sync with it. This is
+ * what makes `CA-10`'s ablation true by construction: change the `SeriesKey` a test fixture (or
+ * the real catalog) serves for OI and this value changes, with `SymbolClient.tsx` untouched.
+ *
+ * `undefined` (no OI entry resolved) answers `null` — there is no series to describe, and
+ * inventing a label for one would be the same fabricated claim `resolveSeriesProvenance`'s
+ * `unresolved` kind and `RNF-2`'s ceiling both refuse to make out of ignorance.
+ *
+ *   `grandeza`  `denom` names WHAT the number counts. `"base"` is a count of the instrument's
+ *               own base asset — a CONTRACT count; `"quote"` is a value denominated in the quote
+ *               asset — a NOTIONAL. `SPEC-001` §2.1 does not close `denom` to those two values,
+ *               so a third one is printed as itself rather than guessed at: a future term this
+ *               function does not recognise stays VISIBLE on screen instead of silently
+ *               mislabelled as a contract count.
+ *   `universo`  `provider`/`venue` — WHICH market the reading was aggregated over. A
+ *               single-exchange series (`binance`/`usdm_futures`) and a cross-exchange aggregate
+ *               are different universes even when `metric` and `unit` agree, which is exactly
+ *               the owner's circled defect.
+ *   `coorte`    `cohort`, transcribed verbatim — WHICH counterparty subset it covers. Never
+ *               re-worded: `SPEC-001` owns what the term means, this function only reads it.
+ */
+export function deriveOiProvenanceLabel(key: OiProvenanceKey | undefined): OiProvenanceLabel | null {
+  if (key === undefined) {
+    return null;
+  }
+  const grandeza =
+    key.denom === "base"
+      ? `contracts (${key.unit})`
+      : key.denom === "quote"
+        ? `notional (${key.unit})`
+        : `${key.denom} (${key.unit})`;
+  return { grandeza, universo: `${key.provider}/${key.venue}`, coorte: key.cohort };
 }
 
 

@@ -37,7 +37,7 @@ import {
   type Reduction,
   type SeriesCatalogEntry,
 } from "../../features/s3-inspector/series-catalog.ts";
-import { matchesBinanceOpenInterest } from "./view-model.ts";
+import { deriveOiProvenanceLabel, matchesBinanceOpenInterest } from "./view-model.ts";
 
 const SYMBOL = "BTCUSDT";
 /** `_MAX_STALENESS_MS` of `open_interest_catalog.py`: 2 x the 5-minute native bucket. The number
@@ -180,4 +180,68 @@ test("MORDE: position is NOT used — the predicate survives a permuted catalog"
   // catalog's content.
   assert.equal(reversed.find((row) => row.entry.key.metric === "sum_open_interest")!.name, "binance_point");
   assert.equal(OPEN_INTEREST_ROWS.find((row) => row.entry.key.metric === "sum_open_interest")!.name, "coinalyze_open");
+});
+
+// ── `T-04.1`/`RN-5`/`CA-9`/`CA-10` — THE RÓTULO IS DERIVED FROM THE KEY THIS FILE ALREADY
+// SELECTS, NEVER WRITTEN BY HAND ────────────────────────────────────────────────────────────
+//
+// The owner circled the defect in red: `108.135,34` on screen under the unlabelled words "Open
+// Interest (5m)" against `27,656 B` on the Coinalyze dashboard — both correct, both measuring
+// something different (contracts in BTC on one exchange vs. notional USD aggregated across many,
+// over a different cohort). `deriveOiProvenanceLabel` is what the pane's rótulo is built from;
+// these tests are `CA-10`'s ablation, run directly against the pure function rather than through
+// a DOM render (that half is `oi-pane-dom-contract.test.ts`).
+
+test("T-04.1: today's REAL Binance OI row spells contracts, single-exchange, cohort 'all'", () => {
+  const matched = OPEN_INTEREST_ROWS.filter((row) => matchesBinanceOpenInterest(row.entry.key))[0]!;
+  const label = deriveOiProvenanceLabel(matched.entry.key);
+  assert.deepEqual(label, { grandeza: "contracts (BTC)", universo: "binance/usdm_futures", coorte: "all" });
+});
+
+test("CA-10 (ablation): a different `denom` flips grandeza from contracts to notional — nothing else moves", () => {
+  const contracts = { unit: "BTC", denom: "base", provider: "binance", venue: "usdm_futures", cohort: "all" } as const;
+  const notional = { ...contracts, denom: "quote", unit: "USD" } as const;
+  const contractsLabel = deriveOiProvenanceLabel(contracts);
+  const notionalLabel = deriveOiProvenanceLabel(notional);
+  assert.equal(contractsLabel?.grandeza, "contracts (BTC)");
+  assert.equal(notionalLabel?.grandeza, "notional (USD)");
+  assert.equal(contractsLabel?.universo, notionalLabel?.universo, "universo did not move — only denom/unit changed");
+  assert.equal(contractsLabel?.coorte, notionalLabel?.coorte, "coorte did not move — only denom/unit changed");
+});
+
+test("CA-10 (ablation): a different `provider`/`venue` changes universo ONLY", () => {
+  const origin = { unit: "BTC", denom: "base", provider: "binance", venue: "usdm_futures", cohort: "all" } as const;
+  const aggregate = { ...origin, provider: "coinalyze", venue: "aggregated" } as const;
+  assert.notEqual(deriveOiProvenanceLabel(origin)?.universo, deriveOiProvenanceLabel(aggregate)?.universo);
+  assert.equal(deriveOiProvenanceLabel(origin)?.grandeza, deriveOiProvenanceLabel(aggregate)?.grandeza);
+  assert.equal(deriveOiProvenanceLabel(origin)?.coorte, deriveOiProvenanceLabel(aggregate)?.coorte);
+});
+
+test("CA-10 (ablation): a different `cohort` changes coorte ONLY", () => {
+  const all = { unit: "BTC", denom: "base", provider: "binance", venue: "usdm_futures", cohort: "all" } as const;
+  const stableAndCoinMargined = { ...all, cohort: "stablecoin_coin_margined" } as const;
+  assert.notEqual(deriveOiProvenanceLabel(all)?.coorte, deriveOiProvenanceLabel(stableAndCoinMargined)?.coorte);
+  assert.equal(deriveOiProvenanceLabel(all)?.grandeza, deriveOiProvenanceLabel(stableAndCoinMargined)?.grandeza);
+  assert.equal(deriveOiProvenanceLabel(all)?.universo, deriveOiProvenanceLabel(stableAndCoinMargined)?.universo);
+});
+
+test("RN-5: no entry resolved (`undefined` key) answers `null` — never a fabricated label", () => {
+  assert.equal(deriveOiProvenanceLabel(undefined), null);
+});
+
+test("DoD-3 sanity: every term the derivation can produce today is ASCII — it feeds a machine data-fact", () => {
+  const label = deriveOiProvenanceLabel({
+    unit: "BTC",
+    denom: "base",
+    provider: "binance",
+    venue: "usdm_futures",
+    cohort: "all",
+  })!;
+  // `no-control-regex` refuses a `\x00-\x7F` class, so the check is a scan, not a regex — the
+  // same class of instrument `harness rules` itself would apply to any FUTURE detector `CLAUDE.md`
+  // §"Idioma de identificador" reopens; this one only ever runs inside this test.
+  const isAscii = (value: string) => [...value].every((char) => char.charCodeAt(0) <= 0x7f);
+  assert.ok(isAscii(label.grandeza), `non-ASCII byte in grandeza: ${label.grandeza}`);
+  assert.ok(isAscii(label.universo), `non-ASCII byte in universo: ${label.universo}`);
+  assert.ok(isAscii(label.coorte), `non-ASCII byte in coorte: ${label.coorte}`);
 });
