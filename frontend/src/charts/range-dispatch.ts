@@ -49,6 +49,19 @@ export interface ReentrancyGuard {
    * later gesture silently swallowed.
    */
   runApplying<T>(fn: () => T): T;
+  /**
+   * `T-05-FIX` (achado escalado de T-05.8/T-05.9): the async twin of `runApplying`, for a
+   * caller whose "aplica" does NOT complete synchronously — `setVisibleLogicalRange` invalidates
+   * and defers the actual range change (and the `visibleLogicalRangeChange` notification that
+   * follows it) to a later turn, so a synchronous `runApplying(fn)` already released the guard
+   * by the time that deferred echo lands, indistinguishable from a real gesture.
+   * `holdApplying()` marks the guard held IMMEDIATELY and returns the release, left to the
+   * caller to invoke once its own deferred echo has had its chance to arrive — never fired
+   * automatically, and safe to call more than once (only the first call has an effect), so a
+   * caller that also releases on cleanup (an early unmount) cannot double-release into a
+   * wrongly-held guard.
+   */
+  holdApplying(): () => void;
 }
 
 export function createReentrancyGuard(): ReentrancyGuard {
@@ -64,6 +77,17 @@ export function createReentrancyGuard(): ReentrancyGuard {
       } finally {
         applying = false;
       }
+    },
+    holdApplying(): () => void {
+      applying = true;
+      let released = false;
+      return () => {
+        if (released) {
+          return;
+        }
+        released = true;
+        applying = false;
+      };
     },
   };
 }

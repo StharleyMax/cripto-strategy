@@ -46,6 +46,57 @@ test("createReentrancyGuard starts released and is held only during runApplying"
   assert.equal(guard.isApplying, false, "guard must release once runApplying returns");
 });
 
+test("createReentrancyGuard.holdApplying holds until released, unlike runApplying's synchronous release", () => {
+  const guard = createReentrancyGuard();
+  assert.equal(guard.isApplying, false);
+  const release = guard.holdApplying();
+  assert.equal(guard.isApplying, true, "held immediately, synchronously");
+  assert.equal(guard.isApplying, true, "still held on a LATER read — this is what runApplying cannot do");
+  release();
+  assert.equal(guard.isApplying, false, "released once the caller calls the returned function");
+});
+
+test("createReentrancyGuard.holdApplying's release is idempotent — a second call is a harmless no-op", () => {
+  const guard = createReentrancyGuard();
+  const release = guard.holdApplying();
+  release();
+  assert.equal(guard.isApplying, false);
+  release(); // must not throw, must not re-acquire, must not affect a later independent hold
+  assert.equal(guard.isApplying, false, "a double release must not leave applying stuck true");
+});
+
+test("T-05-FIX falsifier: a candidate that arrives WHILE holdApplying is held is dropped — the exact deferred-echo shape a synchronous runApplying cannot cover", () => {
+  // Models `SymbolClient.tsx`'s mount-time fix precisely: `setVisibleLogicalRange` is a
+  // synchronous CALL whose own change notification is delivered on a LATER turn (the library's
+  // `requestAnimationFrame`, per `lightweight-charts.development.mjs:11196`) — by which point a
+  // synchronous `runApplying(fn)` has already released. Only a hold that survives past the
+  // synchronous call can catch it.
+  const axis: TimeAxis = { startMs: 0, stepMs: 60_000, slotCount: 5_760 };
+  const initialState: TimeRange = { fromMs: 0, toMs: 500 * 60_000 };
+  let writes = 0;
+  const dispatcher: RangeDispatcher = createRangeDispatcher(axis, initialState, 3, () => {
+    writes += 1;
+  });
+
+  const release = dispatcher.guard.holdApplying();
+  // The deferred echo of the mount's own "aplica" — landing later, wildly different from
+  // `initialState` (simulating the relayout-driven mismatch T-05.9 measured on a widened axis),
+  // exactly the shape plain dedupe (`reduceRangeEvent`) alone does not catch.
+  dispatcher.onPanelRangeChanged(0, { from: 9_999, to: 10_499 });
+  assert.equal(writes, 0, "held: the deferred echo must be dropped before dedupe even runs");
+  assert.equal(dispatcher.state, initialState, "held: state must not move from the echo");
+
+  release();
+  // MUTATION THIS FALSIFIER REJECTS: a caller that forgot to hold (or released too early, back
+  // to `runApplying`'s synchronous-only contract) — proven by NOT holding at all here, over the
+  // SAME candidate, on a fresh dispatcher.
+  const unguarded: RangeDispatcher = createRangeDispatcher(axis, initialState, 3, () => {
+    writes += 1;
+  });
+  unguarded.onPanelRangeChanged(0, { from: 9_999, to: 10_499 });
+  assert.ok(writes > 0, "sanity: unguarded, the same candidate DOES write — proving the guard above was load-bearing, not dead");
+});
+
 test("createReentrancyGuard releases even if the wrapped function throws", () => {
   const guard = createReentrancyGuard();
   assert.throws(() => {

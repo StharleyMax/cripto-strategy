@@ -563,7 +563,28 @@ function useLightweightChart(
     build(chart);
     const timeScale = chart.timeScale();
     // "aplica" — the axis-owned initial framing, not `fitContent()`.
+    //
+    // `T-05-FIX` (achado escalado de T-05.8/T-05.9): `setVisibleLogicalRange` does not apply
+    // synchronously (docstring above, lines 515-521) — the library defers the actual range
+    // change, and the `visibleLogicalRangeChange` notification that follows it, to the NEXT
+    // animation frame, by which point `subscribeVisibleLogicalRangeChange` below is already
+    // wired. Left unguarded, that deferred echo reaches `notifyPanelRangeChanged` indistinguishable
+    // from a real drag; on a history-page remount it can also fall outside `reduceRangeEvent`'s
+    // epsilon (the new, wider axis discretizes its logical grid differently), so dedupe alone does
+    // not catch it — the false "range changed" feeds `onCandidateRange`
+    // (`axis-sync.ts`/`use-history-pager.ts`) into ANOTHER page fetch, repeating on every remount
+    // until the floor, with zero user gesture. `guard.holdApplying()` is the SAME reentrancy guard
+    // `RangeDispatcher`'s cross-panel writes already hold during a dispatch
+    // (`range-dispatch.ts`), now extended to this mount-time write too — held open across that one
+    // deferred frame by releasing it from OUR OWN `requestAnimationFrame`, registered immediately
+    // after `setVisibleLogicalRange`: the library's own pending frame was scheduled first (inside
+    // that call, via its internal invalidate/RAF), so same-frame RAF callbacks fire in registration
+    // order — its deferred notification is guarded before our release runs.
+    const releaseAxisSyncGuard = axisSync.guard.holdApplying();
     timeScale.setVisibleLogicalRange(axisSync.initialLogicalRange);
+    const guardReleaseFrame = requestAnimationFrame(() => {
+      releaseAxisSyncGuard();
+    });
     // `T-02.6` (`DoD-2`/`DoD-4`) — DOM-observable POSITION, not presence: `data-visible-logical-*`
     // carries the actual `LogicalRange` this chart currently applies (updated below on both the
     // "aplica" and "despacha" halves, so it is current no matter which of the six panels a
@@ -600,6 +621,12 @@ function useLightweightChart(
       if (frame !== null) {
         cancelAnimationFrame(frame);
       }
+      // `T-05-FIX`: cancel our pending release frame AND release right now — idempotent
+      // (`holdApplying`'s own contract), so an unmount racing the deferred echo (the exact
+      // rapid-remount shape this fix exists for) can never leave the guard stuck `true` on a
+      // store instance a later effect might still reuse (React strict-mode double-invoke).
+      cancelAnimationFrame(guardReleaseFrame);
+      releaseAxisSyncGuard();
       timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
       unregister();
       chart.remove();
