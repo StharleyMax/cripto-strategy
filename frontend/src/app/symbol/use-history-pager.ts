@@ -69,6 +69,7 @@ import {
 } from "../../charts/index.ts";
 import type { BarPolicy, HistoryRequestKey } from "../history-transport.ts";
 import { fetchSeriesHistoryFromBrowser, HistoryPageFetchError } from "./browser-series-history-client.ts";
+import { recordHistoryPageRequested } from "./history-page-latency-probe.ts";
 import {
   DEFAULT_MAX_ACCUMULATED_SLOTS,
   DEFAULT_PAGE_SLOTS,
@@ -343,6 +344,10 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
       if (req === null) {
         return;
       }
+      // `T-05.9` (plan `05` DoD 7): "a borda é detectada" — recorded HERE, the instant
+      // `historyRequest` decided a page is warranted, before `fetchPage` (network) is even
+      // invoked. See `history-page-latency-probe.ts`'s own docstring for the full contract.
+      recordHistoryPageRequested();
       inFlightRef.current = true;
       void fetchPage(req, range);
     },
