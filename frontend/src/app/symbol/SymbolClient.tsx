@@ -1037,11 +1037,12 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
  * nothing at all.
  *
  * ⛔ THE MACHINE KEY IS ASCII AND DOES NOT COME FROM THE MICROCOPY (`SPEC-008`/`D7`,
- * `RF-8`/`RN-5`). This page already publishes `data-fact="live_preço:attempted"` — with an
- * accent, derived from a pt-BR label — and that is a known defect (`CST-230`), not a pattern to
- * copy: a key an operator's `grep` cannot type is a key nobody queries. `price_candles` and
- * `price_candle_partial_buckets` are stable identifiers; the sentence beside them is pt-BR
- * microcopy and the `ui-designer` may rewrite every word of it without moving either key.
+ * `RF-8`/`RN-5`). Before `T-04.3` (`CST-230`) this page built `` `live_${label}:…` `` straight
+ * off the pt-BR label and published `data-fact="live_preço:attempted"` — accent and all, a key
+ * an operator's `grep` could not type. `LiveRow` now takes `factKey` (ASCII, stable) separately
+ * from `label` (pt-BR microcopy) — see its own docstring. `price_candles` and
+ * `price_candle_partial_buckets` are stable identifiers the same way; the sentence beside them is
+ * pt-BR microcopy and the `ui-designer` may rewrite every word of it without moving either key.
  *
  * ⚠️ FORM IS THE `design_gate`'S (`T-01.10`), NOT A BUILDER'S: the wording and the placement
  * here are the sober placeholder that lets the fact be seen and asserted at all — the same
@@ -2498,10 +2499,28 @@ function useLiveReadout(url: string | null): string {
   return text;
 }
 
-function LiveRow({ label, url }: { readonly label: string; readonly url: string | null }) {
+/**
+ * `T-04.3` (`CST-230`, `SPEC-008`/`D7`, `RF-8`/`RN-5`) — `factKey` and `label` are two DIFFERENT
+ * strings on purpose. Before this task the machine key was built from `label` itself
+ * (`` `live_${label}:…` ``), so the page published `data-fact="live_preço:attempted"` — an
+ * operator's `grep -P '[^\x00-\x7F]'` mordeu on the accent, and worse, renaming the visible word
+ * (the `ui-designer`'s call, gated by `ux-ui-mastery`, CLAUDE.md §Design) would have silently
+ * renamed the CONTRACT a consumer greps for. `factKey` is ASCII and stable — the property name
+ * `liveUrls` already carries (`price`/`oi`/`cvd`, `page.tsx:853-860`) — and never derived from
+ * the pt-BR microcopy beside it.
+ */
+function LiveRow({
+  label,
+  factKey,
+  url,
+}: {
+  readonly label: string;
+  readonly factKey: string;
+  readonly url: string | null;
+}) {
   const text = useLiveReadout(url);
   return (
-    <li data-fact={`live_${label}:${url === null ? "no_series" : "attempted"}`}>
+    <li data-fact={`live_${factKey}:${url === null ? "no_series" : "attempted"}`}>
       {label}: {text}
     </li>
   );
@@ -2742,9 +2761,9 @@ export function SymbolClient({
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>
         <ul>
-          <LiveRow label="preço" url={liveUrls.price} />
-          <LiveRow label="oi" url={liveUrls.oi} />
-          <LiveRow label="cvd" url={liveUrls.cvd} />
+          <LiveRow label="preço" factKey="price" url={liveUrls.price} />
+          <LiveRow label="oi" factKey="oi" url={liveUrls.oi} />
+          <LiveRow label="cvd" factKey="cvd" url={liveUrls.cvd} />
         </ul>
       </section>
     </main>
