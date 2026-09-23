@@ -11,6 +11,7 @@ import { test } from "node:test";
 import {
   fetchSeriesHistoryViaHttp,
   parseSeriesHistoryEnvelope,
+  seriesHistoryEndpointUrl,
   TransportError,
 } from "./series-history-client.ts";
 import type { HistoryRequestKey } from "../history-transport.ts";
@@ -125,6 +126,22 @@ test("MORDE TransportErrorKind=malformed_envelope: corpo com um campo de nivel d
       return true;
     },
   );
+});
+
+test("CALA T-05.2-FIX-adr005: seriesHistoryEndpointUrl resolve o baseUrl explicito em URL absoluta com API_PREFIX + /series-history", () => {
+  assert.equal(seriesHistoryEndpointUrl("http://127.0.0.1:1"), "http://127.0.0.1:1/api/v1/series-history");
+});
+
+test("MORDE T-05.2-FIX-adr005: seriesHistoryEndpointUrl devolve null (nunca lanca) sem baseUrl explicito e sem env", () => {
+  const previousBaseUrl = process.env.INGEST_HEALTH_API_BASE_URL;
+  delete process.env.INGEST_HEALTH_API_BASE_URL;
+  try {
+    assert.equal(seriesHistoryEndpointUrl(), null);
+  } finally {
+    if (previousBaseUrl !== undefined) {
+      process.env.INGEST_HEALTH_API_BASE_URL = previousBaseUrl;
+    }
+  }
 });
 
 test("CALA: envelope bem formado via fetchImpl mockado", async () => {

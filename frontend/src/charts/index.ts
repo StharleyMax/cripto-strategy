@@ -170,7 +170,14 @@ export type { SeriesNature, StockReading, FlowReading } from "./s2-absence-polic
 // janela inteira do eixo) na `LogicalRange` que substitui o `fitContent()` por painel (plan
 // `02` item `2.3`) — `createRangeDispatcher` é o que liga os seis painéis a ESSE `TimeRange`
 // registrado, com a guarda de reentrância (`T-02.3`) já embutida.
-export { toLogicalRange, fromLogicalRange } from "./time-axis-controller.ts";
-export type { TimeAxis, TimeRange, LogicalRange } from "./time-axis-controller.ts";
+//
+// `T-05.2` — `historyRequest`/`HistoryCoverage`/`HistoryRequest`/`DEFAULT_PAGE_TRIGGER_SLOTS`
+// SÃO NOVOS AQUI, embora `T-05.1` já os tivesse implementado em `time-axis-controller.ts`: o
+// bloqueio de import direto (`no-restricted-imports`, `eslint.config.mjs`, grupo
+// `"**/charts/**"`) reprova QUALQUER caminho de `web` para dentro de `charts` que não seja este
+// barril — sem esta linha, `use-history-pager.ts` (`D-C3.5`) não teria como chamar a função que
+// `T-05.1` construiu especificamente para ele consumir. Omissão de `T-05.1`, fechada aqui.
+export { toLogicalRange, fromLogicalRange, historyRequest, DEFAULT_PAGE_TRIGGER_SLOTS } from "./time-axis-controller.ts";
+export type { TimeAxis, TimeRange, LogicalRange, HistoryCoverage, HistoryRequest } from "./time-axis-controller.ts";
 export { createRangeDispatcher } from "./range-dispatch.ts";
 export type { RangeDispatcher, PanelWrite } from "./range-dispatch.ts";

@@ -71,10 +71,16 @@ test("T-03.9 contract: TimeframeBar renders ONE button per SUPPORTED_TIMEFRAMES 
   assert.match(source, BUTTON_LABEL_FROM_OPTION, "each button's visible label must be option.interval itself");
 });
 
+// `T-05.2` widened this anchor from the exact string `<AxisSyncProvider axis={axis}>` to a
+// regex tolerant of the extra `initialRange`/`onCandidateRange` props the client-side history
+// pager now threads through — the component being mounted, and its position relative to the
+// bar, are what this test guards; the exact prop list is `axis-sync.test.ts`'s to guard.
+const AXIS_PROVIDER_MOUNTED = /<AxisSyncProvider axis=\{axis\}/;
+
 test("T-03.9 contract: the bar is actually mounted by SymbolClient, above the six panels", () => {
   assert.match(source, BAR_MOUNTED, "a TimeframeBar nobody renders guards nothing");
   const mountIndex = source.search(BAR_MOUNTED);
-  const axisProviderIndex = source.indexOf("<AxisSyncProvider axis={axis}>");
+  const axisProviderIndex = source.search(AXIS_PROVIDER_MOUNTED);
   assert.ok(mountIndex >= 0 && axisProviderIndex >= 0, "both anchors must be found");
   assert.ok(mountIndex < axisProviderIndex, "the bar must sit above the six panels, not interleaved with them");
 });
