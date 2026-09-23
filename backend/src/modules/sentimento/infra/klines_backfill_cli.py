@@ -57,6 +57,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final
 
+from src.modules.sentimento.domain.history_ceiling import MAX_HISTORY_DAYS
 from src.modules.sentimento.domain.ingest_record import IngestRun
 from src.modules.sentimento.infra.binance_klines_client import (
     MAX_LIMIT,
@@ -104,7 +105,14 @@ MS_PER_DAY: Final[int] = 86_400_000
 
 # `D5`, the owner's ceiling. It is a MAXIMUM the boot check reads, and also the default: an
 # operator who runs this job without saying how deep wants the history the SPEC declares.
-MAX_BACKFILL_DAYS: Final[int] = 90
+#
+# `T-05.3` moved the NUMBER itself to `domain/history_ceiling.MAX_HISTORY_DAYS` — the route
+# refusal `T-05.4` builds on top of `GET /series-history` cannot import THIS module (`infra`)
+# under `backend/pyproject.toml`'s `infra > use_cases > domain` layer contract, so the single
+# source of truth had to move down a layer. `MAX_BACKFILL_DAYS` stays as the name this module's
+# own boot check and test suite already know, now an ALIAS rather than a second declaration —
+# see `domain/history_ceiling.py` for the arithmetic and the measured DoD 5/6 numbers.
+MAX_BACKFILL_DAYS: Final[int] = MAX_HISTORY_DAYS
 DEFAULT_BACKFILL_DAYS: Final[int] = MAX_BACKFILL_DAYS
 
 # `interval` of the series this job deepens. Quoted from the collector's own constant family
