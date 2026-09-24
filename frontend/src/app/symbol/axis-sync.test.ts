@@ -13,14 +13,9 @@ import { test } from "node:test";
 import {
   AXIS_SYNC_ABLATION_QUERY_PARAM,
   createAxisSyncStore,
-  CVD_PANEL_INDEX,
   isAxisSyncAblationRequested,
-  LIQUIDATION_LONG_PANEL_INDEX,
-  LIQUIDATION_SHORT_PANEL_INDEX,
-  LONG_SHORT_PANEL_INDEX,
-  OI_PANEL_INDEX,
-  PANEL_COUNT,
-  PRICE_PANEL_INDEX,
+  SINGLE_CHART_PANEL_COUNT,
+  SINGLE_CHART_PANEL_INDEX,
   withAxisSyncAblation,
 } from "./axis-sync.ts";
 import type { LogicalRange, TimeAxis, TimeRange } from "../../charts/index.ts";
@@ -31,17 +26,73 @@ function axisOf(slotCount: number, startMs = 0): TimeAxis {
   return { startMs, stepMs: ONE_MINUTE_MS, slotCount };
 }
 
-test("the six panel indices are 0..5, distinct, and PANEL_COUNT is 6 — the `T-02.4` baseline", () => {
-  const indices = [
-    PRICE_PANEL_INDEX,
-    OI_PANEL_INDEX,
-    CVD_PANEL_INDEX,
-    LIQUIDATION_LONG_PANEL_INDEX,
-    LIQUIDATION_SHORT_PANEL_INDEX,
-    LONG_SHORT_PANEL_INDEX,
-  ];
-  assert.deepEqual([...indices].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5]);
-  assert.equal(PANEL_COUNT, 6);
+// `paineis-de-fluxo` `T-01.5`: production no longer exports six fixed indices — the page is ONE
+// chart and the store runs with `panelCount = 1`. The store's multi-panel ALGEBRA is unchanged and
+// is still pinned below with six panels, through these test-local constants, so that every
+// assertion written for `T-02.4`/`T-02.6`/`T-02.7`/`T-05.2` keeps its exact text.
+const PANEL_COUNT = 6;
+const PRICE_PANEL_INDEX = 0;
+const OI_PANEL_INDEX = 1;
+const CVD_PANEL_INDEX = 2;
+const LIQUIDATION_LONG_PANEL_INDEX = 3;
+const LIQUIDATION_SHORT_PANEL_INDEX = 4;
+const LONG_SHORT_PANEL_INDEX = 5;
+
+test("T-01.5: production runs ONE panel at index 0, and that is the store's default panelCount", () => {
+  assert.equal(SINGLE_CHART_PANEL_COUNT, 1);
+  assert.equal(SINGLE_CHART_PANEL_INDEX, 0);
+  const store = createAxisSyncStore(axisOf(10));
+  assert.doesNotThrow(() => store.registerPanel(SINGLE_CHART_PANEL_INDEX, () => {}));
+  assert.throws(() => store.registerPanel(1, () => {}), RangeError, "a second panel index must not exist by default");
+});
+
+test("T-01.5: with the default single panel, a gesture is registered and nothing is ever written", () => {
+  const store = createAxisSyncStore(axisOf(100));
+  let writes = 0;
+  store.registerPanel(SINGLE_CHART_PANEL_INDEX, () => {
+    writes += 1;
+  });
+  store.notifyPanelRangeChanged(SINGLE_CHART_PANEL_INDEX, { from: 10, to: 60 });
+  store.notifyPanelRangeChanged(SINGLE_CHART_PANEL_INDEX, { from: 5, to: 55 });
+  assert.equal(writes, 0, "the only panel is always the origin");
+  assert.deepEqual(store.currentRange, { fromMs: 5 * ONE_MINUTE_MS, toMs: 55 * ONE_MINUTE_MS });
+});
+
+test("T-01.5 rebase: the page's own echo (from + k on the NEW axis) does not reach onCandidateRange", () => {
+  // MORDE: a rebase that keeps the OLD axis reads `from + k` as a move of `k` slots to the right,
+  // fires `onCandidateRange`, and the pager asks for another page with no gesture — the cascade
+  // `T-05-FIX` closed, back through the page path.
+  const candidates: TimeRange[] = [];
+  const applied: number[] = [];
+  const oldAxis = axisOf(1_000, 500 * ONE_MINUTE_MS);
+  const store = createAxisSyncStore(oldAxis, SINGLE_CHART_PANEL_COUNT, () => applied.push(1), {
+    onCandidateRange: (range) => candidates.push(range),
+  });
+  store.notifyPanelRangeChanged(SINGLE_CHART_PANEL_INDEX, { from: 10, to: 210 });
+  assert.equal(candidates.length, 1, "sanity: a real gesture reaches the pager");
+  const registered = store.currentRange;
+
+  const k = 500;
+  const newAxis = axisOf(1_000 + k, 0);
+  store.rebase(newAxis);
+  assert.equal(store.axis, newAxis, "conversions now run on the new axis");
+  assert.equal(store.currentRange, registered, "rebase keeps the state, same reference");
+  store.notifyPanelRangeChanged(SINGLE_CHART_PANEL_INDEX, { from: 10 + k, to: 210 + k });
+  assert.equal(candidates.length, 1, "the echo converts to the same milliseconds — no new candidate");
+  assert.equal(applied.length, 1, "and no new application either");
+
+  store.notifyPanelRangeChanged(SINGLE_CHART_PANEL_INDEX, { from: 9 + k, to: 209 + k });
+  assert.equal(candidates.length, 2, "a real move after the rebase still reaches the pager");
+  assert.deepEqual(candidates[1], { fromMs: 509 * ONE_MINUTE_MS, toMs: 709 * ONE_MINUTE_MS });
+});
+
+test("T-01.5 rebase through the ablation wrapper reaches the real store (no frozen spread)", () => {
+  const store = createAxisSyncStore(axisOf(10));
+  const ablated = withAxisSyncAblation(store, true);
+  const next = axisOf(20);
+  ablated.rebase(next);
+  assert.equal(store.axis, next);
+  assert.equal(ablated.axis, next, "the wrapper reads the live axis, not a copy taken at wrap time");
 });
 
 test("initialLogicalRange spans the WHOLE axis — [0, slotCount], the value that replaces fitContent()", () => {

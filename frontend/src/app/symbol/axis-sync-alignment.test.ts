@@ -34,10 +34,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
-import { createAxisSyncStore, PANEL_COUNT, PRICE_PANEL_INDEX, type AxisSyncStore } from "./axis-sync.ts";
+import { createAxisSyncStore, type AxisSyncStore } from "./axis-sync.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
 import { installGlobals, flushFrames } from "../../charts/index.ts";
 import type { TimeAxis } from "../../charts/index.ts";
+
+// `paineis-de-fluxo` `T-01.5`: production is ONE chart since the single mount, and no longer
+// exports six fixed indices. This file proves the grid ALGEBRA over six independent headless
+// charts (`CA-5b`), which the single chart inherits as "every series of the chart on the SAME
+// canonical grid" (`ARQ-1` §6); the six-panel count it measures with is test-local.
+const PANEL_COUNT = 6;
+const PRICE_PANEL_INDEX = 0;
 
 const ONE_MINUTE_S = 60;
 /** 4 days of 1-minute slots — the same magnitude as `T-02.1`'s real canonical grid

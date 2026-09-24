@@ -49,12 +49,15 @@
  */
 
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -88,6 +91,7 @@ import {
   positiveValueSeriesLossless,
   resolveFlowReading,
   resolveStockReading,
+  toLogicalRange,
   zeroMarkSeries,
   type FlowReading,
   type S2Panels,
@@ -97,14 +101,8 @@ import { chartConstructorOptions } from "./chart-options.ts";
 import { recentBandSlotRange } from "./long-short-band.ts";
 import { AxisSyncProvider, useAxisSync } from "./axis-sync-provider.tsx";
 import { recordHistoryPageDrawn } from "./history-page-latency-probe.ts";
-import {
-  CVD_PANEL_INDEX,
-  LIQUIDATION_LONG_PANEL_INDEX,
-  LIQUIDATION_SHORT_PANEL_INDEX,
-  LONG_SHORT_PANEL_INDEX,
-  OI_PANEL_INDEX,
-  PRICE_PANEL_INDEX,
-} from "./axis-sync.ts";
+import { SINGLE_CHART_PANEL_INDEX } from "./axis-sync.ts";
+import { F1_PANE_ORDER, type PaneId } from "./pane-registry.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
@@ -508,136 +506,299 @@ function lastInstantMs(panels: S2Panels): number {
 const CHART_HEIGHT_PX = 220;
 
 /**
- * ⛔ `measure` IS READ AFTER THE FIT, ON THE NEXT FRAME, AND BOTH HALVES OF THAT SENTENCE ARE THE
- * REASON IT EXISTS — `D-1` of `gates/design-04.md` §R3.5 needs a pane to draw an overlay ALIGNED
- * with the chart's own time scale, and the only honest source of that alignment is the library.
+ * ── THE SINGLE CHART HOST (`paineis-de-fluxo` `T-01.5`, plan `01` item `1.3`, `ADR-044/D1`) ──
  *
- * `setVisibleLogicalRange()` sets the target range and INVALIDATES; the time scale's coordinates
- * are recomputed when the chart next paints (same async contract `fitContent()` had —
- * `charts/headless-chart.ts`'s own docstring: "`fitContent()` and `setVisibleLogicalRange()` do
- * NOT change anything synchronously"). Reading `logicalToCoordinate` in the same tick answers
- * with the range the chart had BEFORE the write — a coordinate that looks like a measurement and
- * is not. So the callback is deferred one animation frame, and cancelled with the chart if the
- * pane unmounts first: a callback that outlives `chart.remove()` would read a disposed model.
+ * The symbol page is ONE `createChart`, with one native pane per metric, in the order of the pane
+ * registry (`pane-registry.ts::F1_PANE_ORDER` — the position IS the `paneIndex`). The six pane
+ * components below still own what each pane DRAWS (series kind, style, scales, the lossless
+ * mappings, the absence/zero marks), and they declare it through `useHostedPane`; the host owns the
+ * one chart, the one `timeScale`, and the one conversation with `AxisSyncStore`.
  *
- * It is OPTIONAL, and four of the five panes pass nothing: a pane that draws only on the canvas has
- * no geometry to read back out.
+ * ⛔ THE HOST SURVIVES A PAGE (`handoff/FIX-regressoes-fase05.md` §4.2 option A, §4.3). The mount
+ * effect runs ONCE per mount of `SymbolClient` — its dependencies are the stable `registrar`
+ * alone, never the `axis` nor the store identity. A new seed (timeframe, symbol, instant) is a new
+ * `key` on `<SymbolClient>` (`T-01.F1`), which remounts the whole tree. A history page is NOT a new
+ * seed: it arrives as new props, and the data effect applies it IN PLACE —
  *
- * `T-02.4` (`D-C3.1`, plan `02` item `2.3`) — `panelIndex` is new, and `fitContent()` is GONE:
- * ⛔ the initial framing is no longer this chart's own decision. It writes `axisSync`'s
- * `initialLogicalRange` — the ONE `LogicalRange` computed off the shared `TimeAxis`, the same
- * value every one of the six panels applies — then registers itself with the `AxisSyncStore` so
- * `RangeDispatcher` (`T-02.3`, `charts`) can WRITE this chart when ANOTHER panel pans, and
- * subscribes to this chart's own `subscribeVisibleLogicalRangeChange` so a gesture ON this chart
- * DISPATCHES to the other five. "Assina, despacha e aplica" — the three verbs `D-C3.1`'s table
- * assigns to `web` — are exactly these three calls.
+ *   `holdApplying()` → `setData` on every existing series (the new grid) → `store.rebase(axis)` →
+ *   release on the next animation frame (the `T-05-FIX` pattern: the library's own frame was
+ *   scheduled inside `setData`, so its deferred range notification is dropped before our release).
  *
- * `T-02.6` (`CST-213`, `DoD-2`/`DoD-4`) — three `data-*` attributes on `container` itself, kept
- * in lockstep with every "aplica"/"despacha" write: `data-visible-logical-from`/`-to` (the
- * `LogicalRange` this chart is CURRENTLY showing, position — not presence — for Playwright to
- * assert on) and `data-axis-sync-write-count` (incremented only inside `registerPanel`'s
- * callback, i.e. only when the DISPATCHER wrote here because ANOTHER panel moved — a gesture on
- * THIS panel's own drag never increments its own counter, matching `axis-sync.test.ts`'s
- * already-proven "never in the origin").
+ * The host does NOT write `initialRange`/`preservedRange` into the time scale on a page: the range
+ * of the instant the page was requested is stale when it lands (the `-15 → 507` re-framing of
+ * `gates/DIAG-e2e-master.md` §4). A prepend does not move the view — the library anchors it to the
+ * last bar. The one write left is when the RIGHT edge moved (`use-history-pager.ts`'s deferred
+ * cap, `holdRightEdgeCap`): then the view is put back on the REGISTERED range, in milliseconds,
+ * which is current, not a snapshot. The pager defers that cut while a pointer gesture is held, so
+ * this write never lands in the middle of a drag.
+ *
+ * `data-chart-mount-count` on the surface counts `createChart` calls — `e2e/22` asserts it stays
+ * at `1` across paging. `data-visible-logical-from`/`-to` carry the range the chart shows, and
+ * `data-axis-sync-write-count` counts dispatcher writes, which with `panelCount = 1` stays `0`.
  */
-function useLightweightChart(
-  containerRef: RefObject<HTMLDivElement | null>,
-  panelIndex: number,
-  build: (chart: IChartApi) => void,
-  measure?: (chart: IChartApi) => void,
-): void {
+
+/** What a pane declares to the host. `mount` runs ONCE, when the chart exists, and returns the
+ * pane's series handles; `apply` feeds them the data of the CURRENT render (the host keeps the
+ * latest binding, so `apply` never reads stale props); `measure`, optional, reads geometry back
+ * out of the library one frame after every apply. */
+interface HostedPaneBinding<Handles> {
+  readonly mount: (chart: IChartApi, paneIndex: number) => Handles;
+  readonly apply: (handles: Handles) => void;
+  readonly measure?: (chart: IChartApi, paneIndex: number) => void;
+}
+
+type AnyPaneBinding = HostedPaneBinding<unknown>;
+
+interface PaneRegistrar {
+  register(paneIndex: number, binding: RefObject<AnyPaneBinding>): () => void;
+  readonly surfaceRef: RefObject<HTMLDivElement | null>;
+}
+
+/** The host's own view of the registrar: the same object, plus the bindings it iterates. */
+interface HostRegistrar extends PaneRegistrar {
+  readonly bindings: Map<number, RefObject<AnyPaneBinding>>;
+}
+
+const ChartHostContext = createContext<PaneRegistrar | null>(null);
+
+function useChartHost(): PaneRegistrar {
+  const registrar = useContext(ChartHostContext);
+  if (registrar === null) {
+    throw new Error("useChartHost must be called within a SymbolChartHost");
+  }
+  return registrar;
+}
+
+/** The `paneIndex` of `paneId` — its position in the pane registry's order. */
+function paneIndexOfId(paneId: PaneId): number {
+  const index = F1_PANE_ORDER.indexOf(paneId);
+  if (index < 0) {
+    throw new Error(`pane ${paneId} is not in F1_PANE_ORDER`);
+  }
+  return index;
+}
+
+/**
+ * Declares one pane to the single chart host. Registration happens in the pane's own effect,
+ * which React runs BEFORE the host's (a child's effects run before its parent's), so by the time
+ * the host creates the chart every pane of the first render is registered.
+ */
+function useHostedPane<Handles>(paneId: PaneId, binding: HostedPaneBinding<Handles>): void {
+  const registrar = useChartHost();
+  const bindingRef = useRef(binding as AnyPaneBinding);
+  bindingRef.current = binding as AnyPaneBinding;
+  useEffect(() => registrar.register(paneIndexOfId(paneId), bindingRef), [registrar, paneId]);
+}
+
+/** The element the single chart is created in. Rendered where the Price pane's chart used to
+ * be until the per-pane DOM layer (`T-01.6`) moves the pane chrome onto `IPaneApi.getHTMLElement()`
+ * — so the selectors `[data-testid="price-pane"] canvas` / `[data-visible-logical-from]` keep
+ * finding the chart meanwhile. `aria-hidden`: the canvas has no accessible name, and every pane's
+ * readouts are the declared textual alternative (`DR-6`). */
+function ChartHostSurface({ priceSlots }: { readonly priceSlots: number }) {
+  const registrar = useChartHost();
+  return (
+    <div
+      ref={registrar.surfaceRef}
+      aria-hidden="true"
+      data-testid={CHART_HOST_TESTID}
+      data-fact={`price_slots:${priceSlots}`}
+    />
+  );
+}
+
+function SymbolChartHost({
+  axis,
+  dataVersion,
+  onGestureChange,
+  children,
+}: {
+  /** The pager's current axis. Read by the DATA effect only (`rebase`), never by the mount. */
+  readonly axis: TimeAxis;
+  /** Changes identity exactly when the panes' data changes (a page, or the deferred cap). */
+  readonly dataVersion: unknown;
+  /** `true` when a pointer gesture starts on the chart, `false` when it ends — the pager's
+   * `holdRightEdgeCap`. */
+  readonly onGestureChange: (active: boolean) => void;
+  readonly children: ReactNode;
+}) {
   const axisSync = useAxisSync();
+  const axisSyncRef = useRef(axisSync);
+  axisSyncRef.current = axisSync;
+  const onGestureChangeRef = useRef(onGestureChange);
+  onGestureChangeRef.current = onGestureChange;
+  const chartStateRef = useRef<{
+    readonly chart: IChartApi;
+    readonly handles: Map<number, unknown>;
+  } | null>(null);
+  const appliedAxisRef = useRef<TimeAxis | null>(null);
+  const mountCountRef = useRef(0);
+  const latestDataVersionRef = useRef(dataVersion);
+  latestDataVersionRef.current = dataVersion;
+  const appliedDataVersionRef = useRef<unknown>(undefined);
+  const [registrar] = useState<HostRegistrar>(() => {
+    const bindings = new Map<number, RefObject<AnyPaneBinding>>();
+    const surfaceRef: RefObject<HTMLDivElement | null> = { current: null };
+    return {
+      surfaceRef,
+      bindings,
+      register(paneIndex, binding) {
+        bindings.set(paneIndex, binding);
+        const state = chartStateRef.current;
+        if (state !== null && !state.handles.has(paneIndex)) {
+          // A pane that registers after the chart exists (not the case for the six fixed panes of
+          // phase `01`, which all render on the first commit) is mounted on arrival.
+          state.handles.set(paneIndex, binding.current.mount(state.chart, paneIndex));
+          binding.current.apply(state.handles.get(paneIndex));
+        }
+        return () => {
+          if (bindings.get(paneIndex) === binding) {
+            bindings.delete(paneIndex);
+          }
+        };
+      },
+    };
+  });
+
+  // ── MOUNT: once per mount of `SymbolClient`. Deliberately NOT keyed on `axis` or on the store
+  // identity — returning either to this list is the ablation `e2e/22` bites on (a new chart per
+  // page, `data-chart-mount-count` = 1 + pages).
   useEffect(() => {
-    const container = containerRef.current;
+    const container = registrar.surfaceRef.current;
     if (container === null) {
       return;
     }
-    // ⛔ THE OPTIONS ARE NOT SPELLED HERE, AND THAT IS THE FIX — `DR-1` of
-    // `gates/design-review-painel-cvd.md`. This call used to pass `width`/`height`/`timeScale`
-    // only, so the canvas kept the library default `#FFFFFF` background inside a `#131722`
-    // page and the CVD delta line measured `1,22:1` on screen while `color-contrast.test.ts`
-    // read `14,72:1` against a surface nothing was painted on. Building the options here
-    // instead of naming them would have fixed THIS pane and left the next one free to do it
-    // again: `chart-construction.test.ts` can only require a NAME.
-    const chart = createChart(container, chartConstructorOptions(container.clientWidth || 600, CHART_HEIGHT_PX));
-    build(chart);
+    const store = axisSyncRef.current;
+    const bindings = registrar.bindings;
+    // ⛔ THE OPTIONS ARE NOT SPELLED HERE (`DR-1`, `chart-construction.test.ts`). The height is one
+    // `CHART_HEIGHT_PX` per pane, the same canvas area the six charts had, so each pane keeps the
+    // 220px the mark bands were sized against until `T-01.6` sets the stretch factors.
+    const chart = createChart(
+      container,
+      chartConstructorOptions(container.clientWidth || 600, CHART_HEIGHT_PX * F1_PANE_ORDER.length),
+    );
+    mountCountRef.current += 1;
+    container.dataset.chartMountCount = String(mountCountRef.current);
+    const handles = new Map<number, unknown>();
+    const paneIndices = [...bindings.keys()].sort((a, b) => a - b);
+    for (const paneIndex of paneIndices) {
+      const binding = bindings.get(paneIndex)!.current;
+      handles.set(paneIndex, binding.mount(chart, paneIndex));
+    }
+    for (const paneIndex of paneIndices) {
+      bindings.get(paneIndex)!.current.apply(handles.get(paneIndex));
+    }
+    chartStateRef.current = { chart, handles };
+    appliedAxisRef.current = store.axis;
+    appliedDataVersionRef.current = latestDataVersionRef.current;
+    // `T-05.9` (plan `05` DoD 7): the first `setData` is drawn here.
+    recordHistoryPageDrawn();
+
     const timeScale = chart.timeScale();
-    // "aplica" — the axis-owned initial framing, not `fitContent()`.
-    //
-    // `T-05-FIX` (achado escalado de T-05.8/T-05.9): `setVisibleLogicalRange` does not apply
-    // synchronously (docstring above, lines 515-521) — the library defers the actual range
-    // change, and the `visibleLogicalRangeChange` notification that follows it, to the NEXT
-    // animation frame, by which point `subscribeVisibleLogicalRangeChange` below is already
-    // wired. Left unguarded, that deferred echo reaches `notifyPanelRangeChanged` indistinguishable
-    // from a real drag; on a history-page remount it can also fall outside `reduceRangeEvent`'s
-    // epsilon (the new, wider axis discretizes its logical grid differently), so dedupe alone does
-    // not catch it — the false "range changed" feeds `onCandidateRange`
-    // (`axis-sync.ts`/`use-history-pager.ts`) into ANOTHER page fetch, repeating on every remount
-    // until the floor, with zero user gesture. `guard.holdApplying()` is the SAME reentrancy guard
-    // `RangeDispatcher`'s cross-panel writes already hold during a dispatch
-    // (`range-dispatch.ts`), now extended to this mount-time write too — held open across that one
-    // deferred frame by releasing it from OUR OWN `requestAnimationFrame`, registered immediately
-    // after `setVisibleLogicalRange`: the library's own pending frame was scheduled first (inside
-    // that call, via its internal invalidate/RAF), so same-frame RAF callbacks fire in registration
-    // order — its deferred notification is guarded before our release runs.
-    const releaseAxisSyncGuard = axisSync.guard.holdApplying();
-    timeScale.setVisibleLogicalRange(axisSync.initialLogicalRange);
-    const guardReleaseFrame = requestAnimationFrame(() => {
-      releaseAxisSyncGuard();
+    // "aplica" — the axis-owned initial framing, not `fitContent()`, held across the library's
+    // deferred frame (`T-05-FIX`: `setVisibleLogicalRange` notifies on the NEXT frame).
+    const releaseMountGuard = store.guard.holdApplying();
+    timeScale.setVisibleLogicalRange(store.initialLogicalRange);
+    const mountGuardFrame = requestAnimationFrame(() => {
+      releaseMountGuard();
     });
-    // `T-02.6` (`DoD-2`/`DoD-4`) — DOM-observable POSITION, not presence: `data-visible-logical-*`
-    // carries the actual `LogicalRange` this chart currently applies (updated below on both the
-    // "aplica" and "despacha" halves, so it is current no matter which of the six panels a
-    // gesture originated on), and `data-axis-sync-write-count` counts how many times the
-    // DISPATCHER (never this chart's own drag) wrote into it — the instrumentation `CA-6`/`DoD-4`
-    // need without adding a status code or an attribute a test could pass by merely existing.
-    container.dataset.visibleLogicalFrom = String(axisSync.initialLogicalRange.from);
-    container.dataset.visibleLogicalTo = String(axisSync.initialLogicalRange.to);
+    container.dataset.visibleLogicalFrom = String(store.initialLogicalRange.from);
+    container.dataset.visibleLogicalTo = String(store.initialLogicalRange.to);
     container.dataset.axisSyncWriteCount = "0";
-    // "assina" (this chart is now WRITABLE by the dispatcher) + "despacha" (this chart's own
-    // range changes are forwarded to the other five).
-    const unregister = axisSync.registerPanel(panelIndex, (logical) => {
+    // "assina": with `panelCount = 1` the dispatcher never calls this (the only panel is always
+    // the origin) — kept so a regression that writes into the origin shows up in the counter.
+    const unregister = store.registerPanel(SINGLE_CHART_PANEL_INDEX, (logical) => {
       timeScale.setVisibleLogicalRange(logical);
       container.dataset.visibleLogicalFrom = String(logical.from);
       container.dataset.visibleLogicalTo = String(logical.to);
       container.dataset.axisSyncWriteCount = String(Number(container.dataset.axisSyncWriteCount ?? "0") + 1);
     });
+    // "despacha": every range change of the one time scale is folded into the registered range.
     const handleRangeChange = (range: LibraryLogicalRange | null) => {
       if (range === null) {
         return;
       }
       container.dataset.visibleLogicalFrom = String(range.from);
       container.dataset.visibleLogicalTo = String(range.to);
-      axisSync.notifyPanelRangeChanged(panelIndex, range);
+      axisSyncRef.current.notifyPanelRangeChanged(SINGLE_CHART_PANEL_INDEX, range);
     };
     timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
-    const frame =
-      measure === undefined
-        ? null
-        : requestAnimationFrame(() => {
-            measure(chart);
-          });
-    return () => {
-      if (frame !== null) {
-        cancelAnimationFrame(frame);
+    // The gesture window the pager's deferred right-edge cut waits on (`holdRightEdgeCap`).
+    const handlePointerDown = () => onGestureChangeRef.current(true);
+    const handlePointerUp = () => onGestureChangeRef.current(false);
+    container.addEventListener("pointerdown", handlePointerDown, { capture: true });
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+    const measureFrame = requestAnimationFrame(() => {
+      for (const paneIndex of paneIndices) {
+        bindings.get(paneIndex)?.current.measure?.(chart, paneIndex);
       }
-      // `T-05-FIX`: cancel our pending release frame AND release right now — idempotent
-      // (`holdApplying`'s own contract), so an unmount racing the deferred echo (the exact
-      // rapid-remount shape this fix exists for) can never leave the guard stuck `true` on a
-      // store instance a later effect might still reuse (React strict-mode double-invoke).
-      cancelAnimationFrame(guardReleaseFrame);
-      releaseAxisSyncGuard();
+    });
+    return () => {
+      cancelAnimationFrame(measureFrame);
+      cancelAnimationFrame(mountGuardFrame);
+      releaseMountGuard();
+      container.removeEventListener("pointerdown", handlePointerDown, { capture: true });
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
       timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
       unregister();
+      chartStateRef.current = null;
       chart.remove();
     };
-    // `build` and `measure` intentionally excluded from the dependency list: each is a fresh closure every
-    // render by construction (it captures this render's own panel slots), and
-    // `lightweight-charts` owns its own mount/unmount lifecycle — re-running this effect on
-    // every render would tear the chart down and rebuild it constantly instead of once per
-    // mount. No `react-hooks` plugin is configured in this project's `eslint.config.mjs`, so
-    // no rule enforces exhaustive deps here; this comment names the intent for a reader.
-  }, [containerRef, panelIndex, axisSync]);
+  }, [registrar]);
+
+  // ── PAGE: new data on the SAME chart. Skipped on the commit that mounted (the mount effect
+  // already applied that data on that axis).
+  useEffect(() => {
+    const state = chartStateRef.current;
+    const container = registrar.surfaceRef.current;
+    if (state === null || container === null || appliedAxisRef.current === null) {
+      return;
+    }
+    if (appliedDataVersionRef.current === dataVersion) {
+      // The commit that mounted: the mount effect already applied exactly this data.
+      return;
+    }
+    appliedDataVersionRef.current = dataVersion;
+    const previousAxis = appliedAxisRef.current;
+    const store = axisSyncRef.current;
+    const bindings = registrar.bindings;
+    const releasePageGuard = store.guard.holdApplying();
+    for (const [paneIndex, handles] of state.handles) {
+      bindings.get(paneIndex)?.current.apply(handles);
+    }
+    store.rebase(axis);
+    appliedAxisRef.current = axis;
+    if (axis.startMs !== previousAxis.startMs) {
+      // A PAGE (the left edge moved): its bars are drawn now — `T-05.9`'s "pixel" instant. The
+      // deferred right-edge cut alone is not a page and is not recorded, so `requestedMs[i]` and
+      // `drawnMs[i]` stay paired one to one.
+      recordHistoryPageDrawn();
+    }
+    const previousEndMs = previousAxis.startMs + previousAxis.slotCount * previousAxis.stepMs;
+    const nextEndMs = axis.startMs + axis.slotCount * axis.stepMs;
+    if (nextEndMs !== previousEndMs) {
+      // The right edge moved — only the deferred cap does that, and never inside a drag. The view
+      // goes back onto the REGISTERED range (milliseconds, current), read through the new grid.
+      const logical = toLogicalRange(store.currentRange, axis);
+      state.chart.timeScale().setVisibleLogicalRange(logical);
+      container.dataset.visibleLogicalFrom = String(logical.from);
+      container.dataset.visibleLogicalTo = String(logical.to);
+    }
+    const releaseFrame = requestAnimationFrame(() => {
+      releasePageGuard();
+      for (const paneIndex of state.handles.keys()) {
+        bindings.get(paneIndex)?.current.measure?.(state.chart, paneIndex);
+      }
+    });
+    return () => {
+      cancelAnimationFrame(releaseFrame);
+      releasePageGuard();
+    };
+  }, [registrar, axis, dataVersion]);
+
+  return <ChartHostContext.Provider value={registrar}>{children}</ChartHostContext.Provider>;
 }
 
 /** `T-04.3` (`CA-F4-3`): a "leitura atual" readout for Preço, same shape `OiPane` already has
@@ -658,6 +819,9 @@ function useLightweightChart(
 // is exactly what makes the two tasks parallelizable — a `NEEDS_FIX` about form must not be
 // able to break an assert about data.
 const VOLUME_SUBAXIS_TESTID = "price-pane-volume-subaxis";
+
+/** `T-01.5` — the element the ONE chart is created in (`ChartHostSurface`). */
+const CHART_HOST_TESTID = "symbol-chart-host";
 
 // ⛔ AND THE SAME KIND OF CONTRACT FOR THE PRICE PANE ITSELF (`T-01.8`): `T-01.11`'s e2e finds
 // it by THIS string and reads `data-price-candles` off it. `section[aria-label="Preço"]` is NOT
@@ -1165,73 +1329,78 @@ function PricePane({
   readonly volume: VolumeSubAxisData;
   readonly volumeStatus: PanelStatus;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  useLightweightChart(containerRef, PRICE_PANEL_INDEX, (chart) => {
-    const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors();
-    const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style);
-    series.setData(candlestickSeriesLossless(panels.price.series.slots) as never);
-    // `T-05.9` (plan `05` DoD 7): "a barra nova está desenhada" — this `build` callback only
-    // re-runs when the `AxisSyncStore` identity changes (`useLightweightChart`'s own docstring),
-    // which a successful history page does on purpose (`axis-sync-provider.tsx`'s own docstring).
-    // Recording HERE, right after `setData`, is the literal instant the DoD names as the
-    // difference between "resposta chegou" and "pixel" — see `history-page-latency-probe.ts`.
-    recordHistoryPageDrawn();
+  useHostedPane("price", {
+    mount: (chart, paneIndex) => {
+      const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors();
+      const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style, paneIndex);
+      // `T-05.9` (plan `05` DoD 7): "a barra nova está desenhada" — recorded by the chart host
+      // (`SymbolChartHost`) right after it has fed EVERY pane's `setData`, on mount and on every
+      // page; since `T-01.5` a page no longer remounts this pane.
 
-    // The volume sub-axis, on the SAME chart as price (`SPEC-007 §3.6`) and on its own price
-    // scale. `lineSeriesLossless` is REUSED, not copied: it already maps a `value: null` slot
-    // to a bare `{time}` `WhitespaceItem`, which a histogram series renders as NO BAR — never
-    // a zero-height bar at zero, which is what `RN-1` forbids. A histogram accepts the same
-    // `{time, value}` / `{time}` items a line does.
-    //
-    // ⚠️ The two series on this panel run on DIFFERENT native grids, and that is deliberate and
-    // visible (`SPEC-007 §4.1`): price is `klines_last` at `5m` served on the `1m` grid — a
-    // ladder — while volume is `klines_volume` at `1m` native. The `design_gate` of `T-01.8` is
-    // meant to see it, so nothing here hides it.
-    const volumeStyle: Partial<HistogramSeriesOptions> = {
-      color: colorTokens().provenanceWeak,
-      priceScaleId: VOLUME_PRICE_SCALE_ID,
-      base: VOLUME_LOG_BASE,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    };
-    const volumeSeries: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, volumeStyle);
-    // ⛔ `BLOCKER-1`, pago aqui: `PriceScaleMode.Logarithmic`, NÃO uma transformação do DADO. A
-    // diferença importa e não é de estilo — transformar o dado poria `log10(v)` dentro da série,
-    // e daí sai toda leitura que a biblioteca faz dela (crosshair, `priceFormat`, qualquer
-    // rótulo futuro). O modo de escala move a GEOMETRIA e deixa o número intacto, que é a
-    // fronteira de `ADR-003` FR-2 aplicada a uma escala.
-    volumeSeries.priceScale().applyOptions({
-      scaleMargins: VOLUME_SCALE_MARGINS,
-      mode: PriceScaleMode.Logarithmic,
-    });
-    // E a série de barras recebe só o que uma escala log consegue posicionar: `log10(0)` não tem
-    // coordenada, e um `0` desenhado como barra de altura zero seria, pixel a pixel, a marca da
-    // ausência. Os dois estados saem daqui e ganham marca própria abaixo.
-    volumeSeries.setData(positiveValueSeriesLossless(volume.slots) as never);
+      // The volume sub-axis, on the SAME chart as price (`SPEC-007 §3.6`) and on its own price
+      // scale. `lineSeriesLossless` is REUSED, not copied: it already maps a `value: null` slot
+      // to a bare `{time}` `WhitespaceItem`, which a histogram series renders as NO BAR — never
+      // a zero-height bar at zero, which is what `RN-1` forbids. A histogram accepts the same
+      // `{time, value}` / `{time}` items a line does.
+      //
+      // ⚠️ The two series on this panel run on DIFFERENT native grids, and that is deliberate and
+      // visible (`SPEC-007 §4.1`): price is `klines_last` at `5m` served on the `1m` grid — a
+      // ladder — while volume is `klines_volume` at `1m` native. The `design_gate` of `T-01.8` is
+      // meant to see it, so nothing here hides it.
+      const volumeStyle: Partial<HistogramSeriesOptions> = {
+        color: colorTokens().provenanceWeak,
+        priceScaleId: VOLUME_PRICE_SCALE_ID,
+        base: VOLUME_LOG_BASE,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      };
+      const volumeSeries: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, volumeStyle, paneIndex);
+      // ⛔ `BLOCKER-1`, pago aqui: `PriceScaleMode.Logarithmic`, NÃO uma transformação do DADO. A
+      // diferença importa e não é de estilo — transformar o dado poria `log10(v)` dentro da série,
+      // e daí sai toda leitura que a biblioteca faz dela (crosshair, `priceFormat`, qualquer
+      // rótulo futuro). O modo de escala move a GEOMETRIA e deixa o número intacto, que é a
+      // fronteira de `ADR-003` FR-2 aplicada a uma escala.
+      volumeSeries.priceScale().applyOptions({
+        scaleMargins: VOLUME_SCALE_MARGINS,
+        mode: PriceScaleMode.Logarithmic,
+      });
+      // E a série de barras recebe só o que uma escala log consegue posicionar: `log10(0)` não tem
+      // coordenada, e um `0` desenhado como barra de altura zero seria, pixel a pixel, a marca da
+      // ausência. Os dois estados saem daqui e ganham marca própria abaixo (`apply`).
 
-    // ⛔ `BLOCKER-2`, pago aqui — DUAS séries de marca, numa escala de faixa FIXA, para que
-    // "não sabemos" e "foi zero" nunca sejam os mesmos pixels. Uma só série com cor condicional
-    // resolveria a aparência e deixaria a distinção depender de um `if` que um refactor apaga
-    // sem que nada reprove; duas séries fazem a colisão deixar de ser expressável.
-    const markStyle = (color: string): Partial<HistogramSeriesOptions> => ({
-      color,
-      priceScaleId: VOLUME_MARKS_PRICE_SCALE_ID,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      // A faixa fixa: a altura da marca é a da própria marca, não a do dado ao lado dela.
-      autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: VOLUME_MARKS_BAND_PX } }),
-    });
-    const absenceSeries: ISeriesApi<"Histogram"> = chart.addSeries(
-      HistogramSeries,
-      markStyle(colorTokens()[ABSENCE_MARK_COLOR_ROLE]),
-    );
-    absenceSeries.priceScale().applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS });
-    absenceSeries.setData(absenceMarkSeries(volume.slots, ABSENCE_MARK_PX) as never);
-    const zeroSeries: ISeriesApi<"Histogram"> = chart.addSeries(
-      HistogramSeries,
-      markStyle(colorTokens()[ZERO_MARK_COLOR_ROLE]),
-    );
-    zeroSeries.setData(zeroMarkSeries(volume.slots, ZERO_MARK_PX) as never);
+      // ⛔ `BLOCKER-2`, pago aqui — DUAS séries de marca, numa escala de faixa FIXA, para que
+      // "não sabemos" e "foi zero" nunca sejam os mesmos pixels. Uma só série com cor condicional
+      // resolveria a aparência e deixaria a distinção depender de um `if` que um refactor apaga
+      // sem que nada reprove; duas séries fazem a colisão deixar de ser expressável.
+      const markStyle = (color: string): Partial<HistogramSeriesOptions> => ({
+        color,
+        priceScaleId: VOLUME_MARKS_PRICE_SCALE_ID,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        // A faixa fixa: a altura da marca é a da própria marca, não a do dado ao lado dela.
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: VOLUME_MARKS_BAND_PX } }),
+      });
+      const absenceSeries: ISeriesApi<"Histogram"> = chart.addSeries(
+        HistogramSeries,
+        markStyle(colorTokens()[ABSENCE_MARK_COLOR_ROLE]),
+        paneIndex,
+      );
+      absenceSeries.priceScale().applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS });
+      const zeroSeries: ISeriesApi<"Histogram"> = chart.addSeries(
+        HistogramSeries,
+        markStyle(colorTokens()[ZERO_MARK_COLOR_ROLE]),
+        paneIndex,
+      );
+      return { series, volumeSeries, absenceSeries, zeroSeries };
+    },
+      // `T-01.5` — the data of the CURRENT render, fed to the series `mount` created once. The chart
+      // host calls this at mount and again on every history page, on the same series.
+    apply: ({ series, volumeSeries, absenceSeries, zeroSeries }) => {
+      series.setData(candlestickSeriesLossless(panels.price.series.slots) as never);
+      volumeSeries.setData(positiveValueSeriesLossless(volume.slots) as never);
+      absenceSeries.setData(absenceMarkSeries(volume.slots, ABSENCE_MARK_PX) as never);
+      zeroSeries.setData(zeroMarkSeries(volume.slots, ZERO_MARK_PX) as never);
+    },
   });
   const closeSlots = panels.price.series.slots.map((slot) => ({
     time: slot.time,
@@ -1251,7 +1420,9 @@ function PricePane({
       <h2 className="font-label-caps text-label-caps text-on-surface">
         Preço ({panels.price.priceSource}, {panels.price.priceUse})
       </h2>
-      <div ref={containerRef} data-fact={`price_slots:${panels.price.series.slots.length}`} />
+      {/* `T-01.5`: the ONE chart (all six panes) lives here until `T-01.6` moves each pane's chrome
+          onto its own `IPaneApi.getHTMLElement()`. */}
+      <ChartHostSurface priceSlots={panels.price.series.slots.length} />
       <p data-fact={`price_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
         Leitura atual: {readingText}
       </p>
@@ -1410,11 +1581,15 @@ function OiPane({
    * recomputed per pane (every pane would otherwise need `pager.window` threaded to it anyway). */
   readonly wallState: SlotCoverageState;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  useLightweightChart(containerRef, OI_PANEL_INDEX, (chart) => {
-    const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
-    const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
-    series.setData(lineSeriesLossless(panels.oi.slots) as never);
+  useHostedPane("oi", {
+    mount: (chart, paneIndex) => {
+      const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
+      const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style, paneIndex);
+      return { series };
+    },
+    apply: ({ series }) => {
+      series.setData(lineSeriesLossless(panels.oi.slots) as never);
+    },
   });
   // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (`ONE_MINUTE_MS`, `D-C3.2`),
   // no longer OI's own native grid — `panels.oi.timeframeMs` (5 min) is passed SEPARATELY, as
@@ -1442,7 +1617,7 @@ function OiPane({
       data-oi-wire-points={oi.wirePoints}
     >
       <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest (5m)</h2>
-      <div ref={containerRef} data-fact={`oi_slots:${panels.oi.slots.length}`} />
+      <div data-fact={`oi_slots:${panels.oi.slots.length}`} />
       <p data-fact={`oi_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
         Leitura atual: {readingText}
       </p>
@@ -1528,29 +1703,41 @@ function CvdPane({
   readonly status: PanelStatus;
   readonly cvd: CvdPaneData;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  useLightweightChart(containerRef, CVD_PANEL_INDEX, (chart) => {
-    const tokens = colorTokens();
-    // ⛔ `LineStyle.Dashed` is NOT decoration — it is `DR-3`/WCAG 1.4.1 (Use of Color) inside the
-    // canvas, where no legend reaches: with two lines distinguished ONLY by hue, a dicromata or a
-    // monochrome screenshot carries no way to tell delta from cumulative. Dash vs solid is a
-    // SECOND channel, and the legend below repeats it in words, so the information survives the
-    // loss of any one of the three.
-    const deltaSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, {
-      color: tokens.provenanceStrong,
-      lineStyle: LineStyle.Solid,
-    });
-    deltaSeries.priceScale().applyOptions({ scaleMargins: CVD_DELTA_SCALE_MARGINS });
-    deltaSeries.setData(lineSeriesLossless(panels.cvd.deltaSlots) as never);
-    const cumulativeSeries: ISeriesApi<"Line"> = chart.addSeries(LineSeries, {
-      color: tokens.provenanceWeak,
-      lineStyle: LineStyle.Dashed,
-      priceScaleId: CVD_CUMULATIVE_PRICE_SCALE_ID,
-      lastValueVisible: false,
-      priceLineVisible: false,
-    });
-    cumulativeSeries.priceScale().applyOptions({ scaleMargins: CVD_CUMULATIVE_SCALE_MARGINS });
-    cumulativeSeries.setData(lineSeriesLossless(panels.cvd.cumulativeSlots) as never);
+  useHostedPane("cvd", {
+    mount: (chart, paneIndex) => {
+      const tokens = colorTokens();
+      // ⛔ `LineStyle.Dashed` is NOT decoration — it is `DR-3`/WCAG 1.4.1 (Use of Color) inside the
+      // canvas, where no legend reaches: with two lines distinguished ONLY by hue, a dicromata or a
+      // monochrome screenshot carries no way to tell delta from cumulative. Dash vs solid is a
+      // SECOND channel, and the legend below repeats it in words, so the information survives the
+      // loss of any one of the three.
+      const deltaSeries: ISeriesApi<"Line"> = chart.addSeries(
+        LineSeries,
+        {
+          color: tokens.provenanceStrong,
+          lineStyle: LineStyle.Solid,
+        },
+        paneIndex,
+      );
+      deltaSeries.priceScale().applyOptions({ scaleMargins: CVD_DELTA_SCALE_MARGINS });
+      const cumulativeSeries: ISeriesApi<"Line"> = chart.addSeries(
+        LineSeries,
+        {
+          color: tokens.provenanceWeak,
+          lineStyle: LineStyle.Dashed,
+          priceScaleId: CVD_CUMULATIVE_PRICE_SCALE_ID,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        },
+        paneIndex,
+      );
+      cumulativeSeries.priceScale().applyOptions({ scaleMargins: CVD_CUMULATIVE_SCALE_MARGINS });
+      return { deltaSeries, cumulativeSeries };
+    },
+    apply: ({ deltaSeries, cumulativeSeries }) => {
+      deltaSeries.setData(lineSeriesLossless(panels.cvd.deltaSlots) as never);
+      cumulativeSeries.setData(lineSeriesLossless(panels.cvd.cumulativeSlots) as never);
+    },
   });
   const deltaReading = resolveFlowReading(panels.cvd.deltaSlots, panels.cvd.timeframeMs, lastInstantMs(panels));
   // `DR-3`, second half: the pane drew TWO series and read exactly ONE. The screen went to the
@@ -1590,7 +1777,6 @@ function CvdPane({
           leaving a nameless node in the tree. A per-point alternative (a keyboard-navigable
           table) is `DR-10`, strategic, not this pass. */}
       <div
-        ref={containerRef}
         aria-hidden="true"
         data-fact={`cvd_slots:${panels.cvd.deltaSlots.length}`}
       />
@@ -1779,58 +1965,64 @@ function LiquidationCohortSurface({
   data,
   unit,
   status,
-  panelIndex,
+  paneId,
 }: {
   readonly cohort: string;
   readonly label: string;
   readonly data: LiquidationCohortData;
   readonly unit: string | null;
   readonly status: PanelStatus;
-  /** `T-02.4`: the two cohorts are two of the SIX runtime charts (`LIQUIDATION_LONG_PANEL_INDEX`/
-   * `LIQUIDATION_SHORT_PANEL_INDEX`) — `LiquidationPane` names which is which, since this
-   * component mounts twice and cannot infer its own index from `cohort` alone without
-   * duplicating the mapping `axis-sync.ts` already owns. */
-  readonly panelIndex: number;
+  /** `T-01.5`: the two cohorts are two panes of the ONE chart (`pane-registry.ts`'s
+   * `liquidation_long`/`liquidation_short`) — `LiquidationPane` names which is which, since this
+   * component mounts twice and cannot infer its pane from `cohort` alone without duplicating the
+   * registry's own keys. */
+  readonly paneId: PaneId;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  useLightweightChart(containerRef, panelIndex, (chart) => {
-    const tokens = colorTokens();
-    const barStyle: Partial<HistogramSeriesOptions> = {
-      color: tokens[LIQUIDATION_BAR_COLOR_ROLE],
-      base: LIQUIDATION_LOG_BASE,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    };
-    const barSeries: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, barStyle);
-    barSeries.priceScale().applyOptions({
-      scaleMargins: LIQUIDATION_BAR_SCALE_MARGINS,
-      mode: PriceScaleMode.Logarithmic,
-    });
-    barSeries.setData(positiveValueSeriesLossless(data.slots) as never);
+  useHostedPane(paneId, {
+    mount: (chart, paneIndex) => {
+      const tokens = colorTokens();
+      const barStyle: Partial<HistogramSeriesOptions> = {
+        color: tokens[LIQUIDATION_BAR_COLOR_ROLE],
+        base: LIQUIDATION_LOG_BASE,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      };
+      const barSeries: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, barStyle, paneIndex);
+      barSeries.priceScale().applyOptions({
+        scaleMargins: LIQUIDATION_BAR_SCALE_MARGINS,
+        mode: PriceScaleMode.Logarithmic,
+      });
 
-    const markStyle = (color: string): Partial<HistogramSeriesOptions> => ({
-      color,
-      priceScaleId: LIQUIDATION_MARKS_PRICE_SCALE_ID,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      // The fixed band: the mark's height is the mark's own, never that of the data beside it.
-      autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: LIQUIDATION_MARKS_BAND_PX } }),
-    });
-    const absenceSeries: ISeriesApi<"Histogram"> = chart.addSeries(
-      HistogramSeries,
-      markStyle(tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE]),
-    );
-    // ⛔ THE MARGIN IS WHAT SEPARATES THE TWO BANDS, and it is applied on the MARKS scale: with
-    // `top: 0.88` they take the bottom 12% of the pane, and the FLOOR of the bar band sits at 85%
-    // (`1 - bottom`). No DRAWN bar passes the floor, for any value — see the `LIQUIDATION_*` block of
-    // constants for the whole guarantee, what it presupposes and what it does not cover.
-    absenceSeries.priceScale().applyOptions({ scaleMargins: LIQUIDATION_MARKS_SCALE_MARGINS });
-    absenceSeries.setData(absenceMarkSeries(data.slots, LIQUIDATION_ABSENCE_MARK_PX) as never);
-    const zeroSeries: ISeriesApi<"Histogram"> = chart.addSeries(
-      HistogramSeries,
-      markStyle(tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE]),
-    );
-    zeroSeries.setData(zeroMarkSeries(data.slots, LIQUIDATION_ZERO_MARK_PX) as never);
+      const markStyle = (color: string): Partial<HistogramSeriesOptions> => ({
+        color,
+        priceScaleId: LIQUIDATION_MARKS_PRICE_SCALE_ID,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        // The fixed band: the mark's height is the mark's own, never that of the data beside it.
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: LIQUIDATION_MARKS_BAND_PX } }),
+      });
+      const absenceSeries: ISeriesApi<"Histogram"> = chart.addSeries(
+        HistogramSeries,
+        markStyle(tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE]),
+        paneIndex,
+      );
+      // ⛔ THE MARGIN IS WHAT SEPARATES THE TWO BANDS, and it is applied on the MARKS scale: with
+      // `top: 0.88` they take the bottom 12% of the pane, and the FLOOR of the bar band sits at 85%
+      // (`1 - bottom`). No DRAWN bar passes the floor, for any value — see the `LIQUIDATION_*` block of
+      // constants for the whole guarantee, what it presupposes and what it does not cover.
+      absenceSeries.priceScale().applyOptions({ scaleMargins: LIQUIDATION_MARKS_SCALE_MARGINS });
+      const zeroSeries: ISeriesApi<"Histogram"> = chart.addSeries(
+        HistogramSeries,
+        markStyle(tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE]),
+        paneIndex,
+      );
+      return { barSeries, absenceSeries, zeroSeries };
+    },
+    apply: ({ barSeries, absenceSeries, zeroSeries }) => {
+      barSeries.setData(positiveValueSeriesLossless(data.slots) as never);
+      absenceSeries.setData(absenceMarkSeries(data.slots, LIQUIDATION_ABSENCE_MARK_PX) as never);
+      zeroSeries.setData(zeroMarkSeries(data.slots, LIQUIDATION_ZERO_MARK_PX) as never);
+    },
   });
   // `RN-1` at the rendering layer, and for this series it is a rule of TYPE: a `FLOW` bucket with no
   // observation is NOT a bucket in which nobody was liquidated. A `0` there would be an ASSERTION
@@ -1856,7 +2048,6 @@ function LiquidationCohortSurface({
           `lightweight-charts` paints on a `<canvas>` with no accessible name, and the readouts below
           ARE the declared textual alternative. */}
       <div
-        ref={containerRef}
         aria-hidden="true"
         data-fact={`liquidation_slots:${cohort}:${data.slots.length}`}
       />
@@ -1907,7 +2098,7 @@ function LiquidationPane({
         data={liquidation.long}
         unit={liquidation.unit}
         status={longStatus}
-        panelIndex={LIQUIDATION_LONG_PANEL_INDEX}
+        paneId="liquidation_long"
       />
       <LiquidationCohortSurface
         cohort="short"
@@ -1915,7 +2106,7 @@ function LiquidationPane({
         data={liquidation.short}
         unit={liquidation.unit}
         status={shortStatus}
-        panelIndex={LIQUIDATION_SHORT_PANEL_INDEX}
+        paneId="liquidation_short"
       />
     </section>
   );
@@ -2394,25 +2585,25 @@ function LongShortPane({
   /** `T-05.6` — same contract as `OiPane`'s own `wallState` prop; see that docstring. */
   readonly wallState: SlotCoverageState;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
   // `D-1` — the band's slots, resolved by the SAME rule `page.tsx` used for the footer's numerals
   // (`long-short-band.ts`, whose test compares the two sets slot for slot). `null` where there is
   // nothing to delimit, and then no rectangle is drawn at all.
   const [band, setBand] = useState<RecentBandGeometry | null>(null);
   const bandRange = recentBandSlotRange(longShort.slots, longShort.recentSpanMs);
-  useLightweightChart(
-    containerRef,
-    LONG_SHORT_PANEL_INDEX,
-    (chart) => {
+  useHostedPane("long_short", {
+    mount: (chart, paneIndex) => {
       const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
-      const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);
+      const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style, paneIndex);
+      return { series };
+    },
+    apply: ({ series }) => {
       // `lineSeriesLossless` — REUSED, never a second mapping: a slot with `value: null` becomes a
       // bare `{time}` `WhitespaceItem`, which the library places on the axis and draws NOTHING for.
       // For this series a `0` there would be worse than for any other pane on this screen: `0` is a
       // legible long/short ratio (nobody long), so the fabricated value would not even look wrong.
       series.setData(lineSeriesLossless(longShort.slots) as never);
     },
-    (chart) => {
+    measure: (chart, paneIndex) => {
       // ⛔ THE COORDINATES ARE THE LIBRARY'S, NOT A PROPORTION COMPUTED BESIDE IT. The plot area is
       // narrower than the container by whatever the price axis takes, and `fitContent` leaves half
       // a bar of margin at each end — a percentage over the container would be a band that looks
@@ -2424,7 +2615,8 @@ function LongShortPane({
       const timeScale = chart.timeScale();
       const leftPx = timeScale.logicalToCoordinate(bandRange.firstIndex as Logical);
       const rightPx = timeScale.logicalToCoordinate(bandRange.lastIndex as Logical);
-      const paneHeightPx = chart.paneSize().height;
+      // `T-01.5`: this pane's own height inside the one chart, not the whole chart's.
+      const paneHeightPx = chart.panes()[paneIndex]?.getHeight() ?? 0;
       // A coordinate outside the visible range comes back `null`, and a zero-width band would draw
       // two coincident borders over a window that is not zero wide. Either way: no band, never an
       // invented one.
@@ -2439,7 +2631,7 @@ function LongShortPane({
         lastIndex: bandRange.lastIndex,
       });
     },
-  );
+  });
   // ⛔ `resolveFlowReadingOrAbsent` ON A `RATIO` SERIES, AND THE DIVERGENCE IS DECLARED RATHER THAN
   // SMUGGLED: what is shared with `FLOW` is the RULE (never look at a neighbouring slot, absence is
   // absence), not the nature. The rule is the right one here because the SERVER already applies it —
@@ -2544,7 +2736,6 @@ function LongShortPane({
             here either (`A-3`): the band is clamped by the coordinates it was measured from. */}
         <div className="relative">
           <div
-            ref={containerRef}
             aria-hidden="true"
             data-fact={`long_short_slots:${longShort.slots.length}`}
           />
@@ -2901,7 +3092,8 @@ export function SymbolClient({
         {symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
       <TimeframeBar selected={selectedTimeframe} onSelect={handleTimeframeSelect} />
-      <AxisSyncProvider axis={axis} initialRange={pager.initialRange} onCandidateRange={pager.onCandidateRange}>
+      <AxisSyncProvider axis={axis} onCandidateRange={pager.onCandidateRange}>
+        <SymbolChartHost axis={axis} dataVersion={pager.assembly} onGestureChange={pager.holdRightEdgeCap}>
         <PricePane
           panels={panels}
           priceCandles={priceCandles}
@@ -2922,6 +3114,7 @@ export function SymbolClient({
             `panels.symbol` (that field stays `charts`' own fixed constant), and never re-derived
             here. */}
         <LongShortPane longShort={longShort} status={panelStatus.longShort} symbol={symbol} wallState={longShortWallState} />
+        </SymbolChartHost>
       </AxisSyncProvider>
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>

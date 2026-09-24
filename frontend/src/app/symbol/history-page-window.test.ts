@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  capWindowRightEdge,
   DEFAULT_MAX_ACCUMULATED_SLOTS,
   mergeOlderPage,
   trimRowsToWindow,
@@ -9,6 +10,21 @@ import {
 } from "./history-page-window.ts";
 
 const STEP_MS = 60_000; // 1m grid
+
+test("T-01.5 capWindowRightEdge CALA: a window at or under the cap is returned as the SAME reference", () => {
+  const current = { startMs: 0, endMsExclusive: DEFAULT_MAX_ACCUMULATED_SLOTS * STEP_MS };
+  assert.equal(capWindowRightEdge(current, STEP_MS), current);
+});
+
+test("T-01.5 capWindowRightEdge MORDE: a deferred over-cap window loses the RIGHT edge only, to exactly maxSlots", () => {
+  // The first `1m` page with the cut deferred: 5.760 initial + 500 = 6.260 slots.
+  const current = { startMs: -500 * STEP_MS, endMsExclusive: 5_760 * STEP_MS };
+  const capped = capWindowRightEdge(current, STEP_MS);
+  assert.equal(capped.startMs, current.startMs, "the left edge the drag reached is never cut");
+  assert.equal((capped.endMsExclusive - capped.startMs) / STEP_MS, DEFAULT_MAX_ACCUMULATED_SLOTS);
+  assert.throws(() => capWindowRightEdge(current, 0), RangeError);
+  assert.throws(() => capWindowRightEdge(current, STEP_MS, 1.5), RangeError);
+});
 
 test("CALA: widening under the cap keeps the endMsExclusive unchanged and moves startMs to the page's fromMs", () => {
   const current = { startMs: 1_000 * STEP_MS, endMsExclusive: 6_000 * STEP_MS }; // 5,000 slots

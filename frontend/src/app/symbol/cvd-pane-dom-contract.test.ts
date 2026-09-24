@@ -263,7 +263,9 @@ test("DR-6: the canvas host is hidden from the accessibility tree, with the read
   // to find a nameless empty node. This does not make the SERIES accessible (that is DR-10, a
   // keyboard-navigable table, strategic) — it stops the tree from carrying a node that says
   // nothing, next to readouts that say the last instant.
-  assert.match(source, /ref=\{containerRef\}\s*\n\s*aria-hidden="true"/);
+  // `paineis-de-fluxo` `T-01.5`: the canvas host is now the ONE chart's surface
+  // (`ChartHostSurface`), not a per-pane `containerRef` — re-anchored on the same property.
+  assert.match(source, /ref=\{registrar\.surfaceRef\}\s*\n\s*aria-hidden="true"/);
 });
 
 // ── MORDE: the four mutations that were GREEN before this file existed ────────────────────────
