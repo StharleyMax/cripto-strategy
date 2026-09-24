@@ -282,7 +282,13 @@ test("D-1: the geometry is READ OFF the time scale, never a proportion of the co
   // margin at each end. A percentage would draw a band that LOOKS aligned and is not — on a pane
   // about provenance, a mark that misreports where it points is worse than no mark.
   assert.match(PANE, BAND_COORDINATES);
-  assert.match(PANE, /chart\.paneSize\(\)\.height/, "the band's height is the pane's, not a constant");
+  // `paineis-de-fluxo` `T-01.5`: one chart holds six panes, so "the pane's height" is the native
+  // pane's `getHeight()`, no longer the whole chart's `paneSize()` — same property, re-anchored.
+  assert.match(
+    PANE,
+    /chart\.panes\(\)\[paneIndex\]\?\.getHeight\(\)/,
+    "the band's height is the pane's, not a constant",
+  );
   assert.doesNotMatch(PANE, /clientWidth\s*\*/, "a fraction of the container's width is the misalignment defect");
 });
 

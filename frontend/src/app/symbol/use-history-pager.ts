@@ -71,6 +71,7 @@ import type { BarPolicy, HistoryRequestKey } from "../history-transport.ts";
 import { fetchSeriesHistoryFromBrowser, HistoryPageFetchError } from "./browser-series-history-client.ts";
 import { recordHistoryPageRequested } from "./history-page-latency-probe.ts";
 import {
+  capWindowRightEdge,
   DEFAULT_MAX_ACCUMULATED_SLOTS,
   DEFAULT_PAGE_SLOTS,
   mergeOlderPage,
@@ -142,13 +143,20 @@ export interface HistoryPagingSeed {
 export interface HistoryPagerResult {
   readonly axis: TimeAxis;
   readonly assembly: HistoryPageAssembly;
-  /** `undefined` until the FIRST page lands — `AxisSyncProvider` then falls back to its own
-   * "whole axis" default, correct for the very first mount. Defined from then on: the exact
-   * `TimeRange` the operator was looking at when the page that just landed was requested,
-   * handed straight to `AxisSyncProvider`'s `initialRange` so the remount does not reset the
-   * viewport (`D-C3.5`: "o range de tempo sobrevive ao remonte"). */
-  readonly initialRange: TimeRange | undefined;
+  // `paineis-de-fluxo` `T-01.5`: `initialRange` (the range captured when a page was REQUESTED,
+  // re-applied on the remount the page caused) is gone. The chart no longer remounts on a page,
+  // and that range was already stale when the page landed — the `-15 → 507` re-framing of
+  // `gates/DIAG-e2e-master.md` §4 (`handoff/FIX-regressoes-fase05.md` §4.3 item 3).
   readonly onCandidateRange: (range: TimeRange) => void;
+  /**
+   * `T-01.5` (`handoff/FIX-regressoes-fase05.md` §4.2, the `[NÃO SEI]`) — the host calls this
+   * with `true` when a pointer gesture starts on the chart and with `false` when it ends. While
+   * held, a page widens the window WITHOUT the `maxSlots` right-edge cut: the chart's time scale
+   * anchors the view to the last bar, so a right cut in the middle of a drag moves the view by the
+   * whole cut. On release, the deferred cut is applied at once (`capWindowRightEdge`), and the
+   * host restores the view from the registered range, with no drag left to fight it.
+   */
+  readonly holdRightEdgeCap: (held: boolean) => void;
   /** `T-05.6` — the SAME accumulated window `axis` was just built from, exposed as-is (not
    * re-derived from `axis`) so a caller can feed it straight to `slot-coverage.ts::panelWallState`
    * alongside `panelCoverage` below, without reconstructing `{startMs, endMsExclusive}` out of
@@ -198,7 +206,6 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
 
   const [windowState, setWindowState] = useState<AccumulatedWindow>(seed.window);
   const [rows, setRows] = useState<HistoryRowsBundle>(seed.rows);
-  const [preservedRange, setPreservedRange] = useState<TimeRange | undefined>(undefined);
   const [coverageFloorMs, setCoverageFloorMs] = useState<number | null>(null);
   // `T-05.7`/`D-C3.7` — the latest `panel.coverage` DECLARED for each of the ten series, from
   // the most recent page THIS pager itself fetched successfully. See `EMPTY_PANEL_COVERAGE`'s
@@ -223,9 +230,11 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const inFlightRef = useRef(false);
+  // `T-01.5` — see `HistoryPagerResult.holdRightEdgeCap`.
+  const rightEdgeCapHeldRef = useRef(false);
 
   const fetchPage = useCallback(
-    async (req: { readonly fromMs: number; readonly toMs: number; readonly intervalMs: number }, range: TimeRange) => {
+    async (req: { readonly fromMs: number; readonly toMs: number; readonly intervalMs: number }) => {
       const windowEndMsInclusiveOfPage = req.toMs - req.intervalMs;
       const buildKey = (seriesKeyId: string): HistoryRequestKey => ({
         series_key_id: seriesKeyId,
@@ -272,7 +281,8 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
           windowRef.current,
           { fromMs: req.fromMs, toMs: req.toMs },
           axisRef.current.stepMs,
-          maxSlots,
+          // `T-01.5`: no right cut while a gesture is held — it is applied when the gesture ends.
+          rightEdgeCapHeldRef.current ? Number.MAX_SAFE_INTEGER : maxSlots,
         );
         const currentRows = rowsRef.current;
         const mergeAndTrim = (older: readonly SeriesHistoryRow[], existing: readonly SeriesHistoryRow[]) =>
@@ -329,7 +339,6 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
         setWindowState(widened);
         setRows(nextRows);
         setPanelCoverage(nextCoverage);
-        setPreservedRange(range);
       } catch (cause) {
         // See this module's docstring, "WHY A FAILED PAGE ABORTS ALL TEN FETCHES". `axisRef`
         // here is always the FRESH axis (see the success branch above for why it cannot be
@@ -372,10 +381,45 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
       // invoked. See `history-page-latency-probe.ts`'s own docstring for the full contract.
       recordHistoryPageRequested();
       inFlightRef.current = true;
-      void fetchPage(req, range);
+      void fetchPage(req);
     },
     [fetchPage, pageSlots, triggerSlots],
   );
 
-  return { axis, assembly, initialRange: preservedRange, onCandidateRange, window: windowState, panelCoverage };
+  const holdRightEdgeCap = useCallback(
+    (held: boolean) => {
+      rightEdgeCapHeldRef.current = held;
+      if (held) {
+        return;
+      }
+      const capped = capWindowRightEdge(windowRef.current, axisRef.current.stepMs, maxSlots);
+      if (capped === windowRef.current) {
+        return;
+      }
+      // Same eager-ref discipline as `fetchPage`'s success branch (`T-05.9`): the refs and the
+      // state they mirror move together, so a page fired right after this sees the capped window.
+      const current = rowsRef.current;
+      const trim = (series: readonly SeriesHistoryRow[]) => trimRowsToWindow(series, capped);
+      const nextRows: HistoryRowsBundle = {
+        open: trim(current.open),
+        high: trim(current.high),
+        low: trim(current.low),
+        close: trim(current.close),
+        oi: trim(current.oi),
+        cvd: trim(current.cvd),
+        volume: trim(current.volume),
+        liquidationLong: trim(current.liquidationLong),
+        liquidationShort: trim(current.liquidationShort),
+        longShort: trim(current.longShort),
+      };
+      windowRef.current = capped;
+      rowsRef.current = nextRows;
+      axisRef.current = axisFromWindow(capped);
+      setWindowState(capped);
+      setRows(nextRows);
+    },
+    [maxSlots],
+  );
+
+  return { axis, assembly, onCandidateRange, holdRightEdgeCap, window: windowState, panelCoverage };
 }

@@ -86,6 +86,34 @@ export function widenAndCapWindow(
   return { startMs: widenedStartMs, endMsExclusive: widenedStartMs + maxSlots * stepMs };
 }
 
+/**
+ * `paineis-de-fluxo` `T-01.5` (`handoff/FIX-regressoes-fase05.md` §4.2, the `[NÃO SEI]`): the
+ * SAME right-edge discard `widenAndCapWindow` applies, on its own, for a window that grew past
+ * `maxSlots` while the cut was deferred. The single chart survives a page, and its `timeScale`
+ * anchors the view to the LAST bar — so cutting the right edge in the middle of a drag moves the
+ * view by the whole cut (1.260 slots on the first `1m` page: 5.760 + 500 − 5.000), and the
+ * library's own drag state then continues from the old offset. The pager widens without the cap
+ * while a gesture is held and applies this when it ends, when the host can restore the view from
+ * the registered range. Returns `current` itself (same reference) when nothing needs cutting.
+ */
+export function capWindowRightEdge(
+  current: AccumulatedWindow,
+  stepMs: number,
+  maxSlots: number = DEFAULT_MAX_ACCUMULATED_SLOTS,
+): AccumulatedWindow {
+  if (!(stepMs > 0)) {
+    throw new RangeError(`capWindowRightEdge: stepMs must be positive, received ${stepMs}`);
+  }
+  if (!(maxSlots > 0) || !Number.isInteger(maxSlots)) {
+    throw new RangeError(`capWindowRightEdge: maxSlots must be a positive integer, received ${maxSlots}`);
+  }
+  const totalSlots = (current.endMsExclusive - current.startMs) / stepMs;
+  if (totalSlots <= maxSlots) {
+    return current;
+  }
+  return { startMs: current.startMs, endMsExclusive: current.startMs + maxSlots * stepMs };
+}
+
 /** Keeps only the rows landing inside `window` — the trim `widenAndCapWindow`'s right-edge
  * discard requires on every row array a page merge touches: capping the WINDOW without also
  * dropping the rows it no longer covers would leave `setData` fed points past the axis's own
