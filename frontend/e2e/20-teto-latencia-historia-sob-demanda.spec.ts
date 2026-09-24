@@ -123,6 +123,11 @@ const SPEC = "20-teto-latencia-historia-sob-demanda";
 const SYMBOL = "BTCUSDT";
 const SYMBOL_PATH = `/symbol/${SYMBOL}`;
 const PRICE_PANE_TESTID = "price-pane";
+/** `paineis-de-fluxo` `T-01.6`: the ONE chart host publishes `data-visible-logical-from`/`-to`
+ * (`SymbolClient.tsx::ChartHostSurface`); the panes share one time scale, so the host's range IS
+ * the Price pane's range. The Price pane's DOM is now a layer portalled into the pane's canvas
+ * wrapper — the canvases' sibling, not their ancestor — so it no longer contains that attribute. */
+const CHART_HOST_TESTID = "symbol-chart-host";
 
 /** `[DECISÃO-OWNER: 2026-09-19, escolha entre alternativas apresentadas]` — plan `05` DoD 7,
  * literal: "400 ms até aparecer". */
@@ -322,12 +327,14 @@ interface PriceRange {
   readonly to: number;
 }
 
+/** The Price pane's canvas — the rectangle a drag must start in (same re-anchoring as
+ * `21-arrasto-historia-parede-e-ablacao.spec.ts` after `T-01.6`). */
 function priceContainerLocator(page: Page) {
-  return page.locator(`[data-testid="${PRICE_PANE_TESTID}"] [data-visible-logical-from]`);
+  return page.locator(`[data-testid="${PRICE_PANE_TESTID}"]`).locator("xpath=../canvas").first();
 }
 
 async function readPriceRange(page: Page): Promise<PriceRange> {
-  const container = priceContainerLocator(page);
+  const container = page.locator(`[data-testid="${CHART_HOST_TESTID}"]`);
   const [from, to] = await Promise.all([
     container.getAttribute("data-visible-logical-from"),
     container.getAttribute("data-visible-logical-to"),
@@ -402,9 +409,11 @@ async function driveSequentialDrags(page: Page, count: number): Promise<GestureW
   const gestures: GestureWindow[] = [];
   for (let i = 0; i < count; i += 1) {
     const before = await readPriceRange(page);
-    const box = await priceContainerLocator(page).boundingBox();
+    // The host's width is the chart's full width — the same width the pre-`T-01.6` Price
+    // container had — so `pxPerSlot` keeps the geometry the drag delta was calibrated on.
+    const box = await page.locator(`[data-testid="${CHART_HOST_TESTID}"]`).boundingBox();
     if (box === null) {
-      throw new Error("painel de Preço: sem bounding box — nada montado");
+      throw new Error("chart host: no bounding box — nothing mounted");
     }
     const pxPerSlot = box.width / (before.to - before.from);
     const deltaXPx = Math.max(10, pxPerSlot * TARGET_SHIFT_SLOTS);
@@ -434,21 +443,22 @@ async function driveSequentialDrags(page: Page, count: number): Promise<GestureW
 }
 
 /** `T-01.F2` — starts recording the Price range IN TIME. Every `MutationObserver` callback that
- * saw a `data-visible-logical-from` write under the Price pane reads, in that same callback, the
- * pane's current `data-visible-logical-from` and `<main>`'s current `data-window-start-ms` (the
+ * saw a `data-visible-logical-from` write on the chart host (since `T-01.6` the one element that
+ * carries the shared range) reads, in that same callback, the host's current
+ * `data-visible-logical-from` and `<main>`'s current `data-window-start-ms` (the
  * pager's window start, re-rendered on every landed page). Installed after the probe `reset()`,
  * so only the drags below are recorded. */
 async function startPriceTimeRecorder(page: Page): Promise<void> {
-  await page.evaluate((priceTestId) => {
+  await page.evaluate((hostTestId) => {
     const samples: PriceTimeSample[] = [];
     window.__priceTimeSamples = samples;
-    const priceSelector = `[data-testid="${priceTestId}"]`;
+    const hostSelector = `[data-testid="${hostTestId}"]`;
     new MutationObserver((records) => {
-      const touchedPrice = records.some((r) => r.target instanceof Element && r.target.closest(priceSelector) !== null);
-      if (!touchedPrice) {
+      const touchedHost = records.some((r) => r.target instanceof Element && r.target.matches(hostSelector));
+      if (!touchedHost) {
         return;
       }
-      const container = document.querySelector(`${priceSelector} [data-visible-logical-from]`);
+      const container = document.querySelector(hostSelector);
       const main = document.querySelector("main[data-window-start-ms]");
       const logicalFrom = Number(container?.getAttribute("data-visible-logical-from"));
       const windowStartMs = Number(main?.getAttribute("data-window-start-ms"));
@@ -457,7 +467,7 @@ async function startPriceTimeRecorder(page: Page): Promise<void> {
       }
       samples.push({ atMs: performance.now(), logicalFrom, windowStartMs });
     }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ["data-visible-logical-from"] });
-  }, PRICE_PANE_TESTID);
+  }, CHART_HOST_TESTID);
 }
 
 function sampleTimeMs(sample: PriceTimeSample): number {
