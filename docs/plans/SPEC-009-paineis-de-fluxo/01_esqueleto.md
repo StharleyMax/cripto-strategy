@@ -43,3 +43,40 @@
    aceitar o quadro explicitamente. O probe de `e2e/17` só vale para o teto de 160 ms e para a banda de
    mediana `≤ 49,4 ms`. O `e2e/20` fica fora deste critério.
 8. `make verify` verde, com `__pycache__` purgado. Veredito do `ux-ui-mastery` (`DoD-6`).
+
+## Correção — 2026-09-24: as 3 regressões da fase 05 de `candle-real-e-eixo-unico` entram nesta fase
+
+> **Origem:** `[DECISÃO-OWNER: 2026-09-24, escolha entre alternativas apresentadas]`, que escolheu corrigir dentro de
+> `paineis-de-fluxo`, antes do lote 4 (`handoff/DECISOES-DO-OWNER-2026-09-24.md` D-1). **Diagnóstico:**
+> `gates/DIAG-e2e-master.md` §2–§5. **Desenho:** `handoff/FIX-regressoes-fase05.md`, que carrega o argumento e as
+> alternativas recusadas. Este bloco **acrescenta** itens e DoD. Não reescreve nenhum dos de cima.
+
+| # | item | componente | e2e | vira |
+|---|---|---|---|---|
+| **1.F1** | `key` em `<SymbolClient>` com a identidade do seed (`symbol · interval · knowledgeTimeMs`), derivada de uma função pura testada. **Não edita** `SymbolClient.tsx` nem `use-history-pager.ts` | `web` | `18:107`, `18:153` | task `T-01.F1` |
+| **1.F2** | Instrumento do `e2e/20`, **só teste**: intervalo de eixo medido só dentro de `[moveStart, moveEnd]`, mais a asserção *"o range do Preço, em tempo, continua mudando depois da página desenhada enquanto o mouse se move"*. **Reprova hoje, 24/24** | `web` | `20:383` | task `T-01.F2` |
+| 1.3′ | O item 1.3 ganha dois critérios. **O host sobrevive à página**: uma store por mount com `rebase(axis)`, a página vira `setData` sob `holdApplying`, e nada de `chart.remove()`. **`panelCount = 1` não escreve nunca**, nem na origem | `web` · `charts` | `16:204` (por construção), `20` (código) | critério da `T-01.5` |
+| 1.7′ | O item 1.7 re-ancora o `e2e/20` **na versão da `T-01.F2`** e prova `16`/`20`/`18` verdes com ablação | `web` | `16`, `18`, `20`, `21` | critério da `T-01.8` |
+
+**A resposta à pergunta que decidiu a forma** (`FIX-regressoes-fase05.md` §1): a `T-01.5` torna o `16`
+**obsoleto por construção**. Com `panelCount = 1` não há painel não-origem para ecoar. **Já o `20` ela não torna
+obsoleto por construção.** O remonte vem de o host depender da identidade do `axis` (`axis-sync-provider.tsx:86`,
+`SymbolClient.tsx:640`), e um chart único com as mesmas deps remonta igual. Mesmo assim o conserto entra como
+critério da `T-01.5`, e não como task, porque é o mesmo efeito que ela reescreve e as duas seriam editoras de
+`SymbolClient.tsx` (a R-D serializa de qualquer jeito).
+
+### DoD da correção — comando e universo
+
+9. **`18`.** `e2e/18` verde. Com `DIAG-e2e-master-tf-stale.spec.ts.txt`, o clique em `4h` leva a **24** velas,
+   igual à carga direta (hoje fica em 4583). **Morde:** tirar `interval` da chave reprova `18:107`, e o unitário
+   reprova quando dois seeds de TF diferente dão a mesma chave.
+10. **`16`.** Em `range-dispatch.test.ts`, com `panelCount = 1`, nenhum gesto escreve e a origem nunca é escrita.
+    **Morde:** tirar o `continue` de `index === originIndex`. O `e2e/16` re-ancorado prova, na `T-01.8`, que o
+    Preço não recebe escrita no próprio arrasto, com a mesma ablação.
+11. **`20`.** (a) A asserção nova da `T-01.F2` **reprova no código de 6 charts** (tem de dar vermelho antes do
+    conserto). (b) `frontend/e2e/22-single-host-survives-paging.spec.ts` (`T-01.5`): `data-chart-mount-count == 1`
+    depois de ≥ 2 páginas. **Morde:** devolver `axisSync`/`axis` às deps do host. (c) Na `T-01.8`, a asserção da
+    `T-01.F2` fica verde e o salto de tempo na fronteira da página vira asserção com limiar medido.
+12. **`T-01.10`** refaz a baseline de composição do `e2e/20` com o instrumento da `T-01.F2` sobre o código de 6
+    charts, antes de medir o `HEAD`. A coluna `axis_max_interval_during_paging_ms` da `T-01.1` (550–584 ms) mediu a
+    pausa do driver e **não serve de régua**.
