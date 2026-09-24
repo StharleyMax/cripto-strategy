@@ -56,6 +56,10 @@ from src.modules.sentimento.domain.liquidation_catalog import (
     coinalyze_liquidation_key,
 )
 from src.modules.sentimento.domain.long_short_ratio_series import COUNT_LONG_SHORT_RATIO
+from src.modules.sentimento.domain.open_interest_catalog import (
+    OPEN_INTEREST_POLL_METRIC,
+    binance_open_interest_poll_key,
+)
 from src.modules.sentimento.domain.series_catalog import (
     DuplicateSeriesKeyError,
     PublishedError,
@@ -109,8 +113,11 @@ def _classify_panel_grid(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGri
     )
 
 
-def test_the_real_catalog_has_nineteen_rows_not_seven() -> None:
-    """`3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines + 1 L/S + 2 liq + 4 klines_ohlc`.
+def test_the_real_catalog_has_twenty_rows_not_seven() -> None:
+    """`3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines + 1 L/S + 2 liq + 4 ohlc + 1 oi-poll`.
+
+    `19` until `T-03.3` of `SPEC-009` appended the polled open-interest row (`open_interest`,
+    `1m`, `POINT`) at index 19.
 
     Was `10` until `T-01.6` appended `klines_volume`, `11` until `T-02.4` appended
     `cvd_source`/`kline_takerbuy`, `12` until `T-04.4` appended `count_long_short_ratio` and
@@ -138,7 +145,7 @@ def test_the_real_catalog_has_nineteen_rows_not_seven() -> None:
     """
     catalog = list_series_catalog()
 
-    assert len(catalog.entries) == 19
+    assert len(catalog.entries) == 20
     ohlc_reductions = [
         entry.key.reduction for entry in catalog.entries if entry.key.metric == KLINES_OHLC_METRIC
     ]
@@ -269,11 +276,13 @@ def test_reconstructed_entry_projects_a_non_null_published_error_as_numbers() ->
 
 
 def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
-    """Every OTHER row — 18 of the 19 — carries `reconstructedFrom: null, publishedError: null`.
+    """Every OTHER row — 19 of the 20 — carries `reconstructedFrom: null, publishedError: null`.
 
     Was 9 of 10 until `T-01.6`, 10 of 11 until `T-02.4`, 11 of 12 until `T-04.4`, 12 of 13
     until `T-05.8` added BOTH `sum_liquidation` cohorts and 14 of 15 until `T-01.6` of
-    `SPEC-008` added the four `klines_ohlc` rows. The four join this side of the split for the
+    `SPEC-008` added the four `klines_ohlc` rows, and 18 of 19 until `T-03.3` of `SPEC-009`
+    added the polled `open_interest` row — a reading of the origin's own present value, nothing
+    reconstructed. The four `klines_ohlc` rows join this side of the split for the
     same reason and it is the same claim: `OPEN`/`HIGH`/`LOW`/`CLOSE` are READ off the bucket
     `/fapi/v1/klines` itself publishes, so there is no ground truth they approximate and no
     `(median, p99, n)` to declare. ⚠️ `[M-9]` is open on the sibling `klines_volume` of this
@@ -304,7 +313,7 @@ def test_a_non_reconstructed_entry_projects_a_null_published_error() -> None:
     assert isinstance(entries, list)
     not_reconstructed = [e for e in entries if e["reconstructedFrom"] is None]
 
-    assert len(not_reconstructed) == 18
+    assert len(not_reconstructed) == 19
     for entry in not_reconstructed:
         assert entry["publishedError"] is None
 
@@ -645,8 +654,10 @@ def test_registering_the_new_rows_appended_and_did_not_reorder_the_pre_existing_
     # metric — is what makes a permutation of `OPEN`/`HIGH`/`LOW`/`CLOSE` fail here: all four
     # carry the same metric, so a metric-only assertion would stay green while the candle's
     # body and wick swapped ends.
-    assert metrics[15:] == [KLINES_OHLC_METRIC] * 4
-    assert [entry.key.reduction for entry in catalog.entries[15:]] == list(KLINES_OHLC_REDUCTIONS)
+    assert metrics[15:19] == [KLINES_OHLC_METRIC] * 4
+    assert [entry.key.reduction for entry in catalog.entries[15:19]] == list(KLINES_OHLC_REDUCTIONS)
+    # `T-03.3` of `SPEC-009`: the polled open-interest row is the new TAIL, after the candle.
+    assert metrics[19:] == [OPEN_INTEREST_POLL_METRIC]
     assert metrics[:10] == [
         "cvd_source",
         "cvd_source",
@@ -661,13 +672,13 @@ def test_registering_the_new_rows_appended_and_did_not_reorder_the_pre_existing_
     ]
 
 
-def test_the_envelope_serves_nineteen_entries_without_changing_its_top_level_fields() -> None:
-    """`RS-1` at the wire: `n_entries` moved 10 -> 11 -> 12 -> 13 -> 15 -> 19, nothing else."""
+def test_the_envelope_serves_twenty_entries_without_changing_its_top_level_fields() -> None:
+    """`RS-1` at the wire: `n_entries` moved 10 -> 11 -> 12 -> 13 -> 15 -> 19 -> 20, only that."""
     envelope = series_catalog_envelope(list_series_catalog())
 
     assert list(envelope.keys()) == ["query", "n_entries", "entries"]
     assert envelope["query"] == "series_catalog"
-    assert envelope["n_entries"] == 19
+    assert envelope["n_entries"] == 20
     entries = envelope["entries"]
     assert isinstance(entries, list)
     served_metrics = [entry["key"]["metric"] for entry in entries]
@@ -675,6 +686,7 @@ def test_the_envelope_serves_nineteen_entries_without_changing_its_top_level_fie
     assert served_metrics.count(COUNT_LONG_SHORT_RATIO) == 1
     assert served_metrics.count(LIQUIDATION_METRIC) == 2
     assert served_metrics.count(KLINES_OHLC_METRIC) == 4
+    assert served_metrics.count(OPEN_INTEREST_POLL_METRIC) == 1
 
 
 # ── A1: `unit` IS DERIVED FROM THE INSTRUMENT, NOT A LITERAL `"BTC"` ────────────────────────
@@ -690,7 +702,8 @@ def test_base_denominated_rows_carry_the_instruments_own_base_asset(
     """MORDE the defect this fix removes: `_BASE_ASSET_UNIT = "BTC"`, passed to every caller.
 
     Every row this catalog builds with `denom="base"` — the three `cvd_source`, the five
-    `sum_open_interest` and `klines_volume` — is denominated in the INSTRUMENT's base asset.
+    `sum_open_interest`, `klines_volume` and (`T-03.3` of `SPEC-009`) the polled
+    `open_interest` — is denominated in the INSTRUMENT's base asset.
     With the old module-level literal, `list_series_catalog("ETHUSDT")` returned nine rows
     labelled `unit="BTC"`, and because `unit` is the seventh term of `SeriesKey` those rows
     were not mislabelled, they were a DIFFERENT `series_key_id` — one nothing writes to.
@@ -702,7 +715,7 @@ def test_base_denominated_rows_carry_the_instruments_own_base_asset(
     catalog = list_series_catalog(instrument_id)
 
     base_rows = [entry for entry in catalog.entries if entry.key.denom == "base"]
-    assert len(base_rows) == 10
+    assert len(base_rows) == 11
     assert {entry.key.unit for entry in base_rows} == {expected_unit}
 
 
@@ -809,8 +822,10 @@ def test_the_pilot_universe_is_the_four_symbols_the_collector_writes() -> None:
     assert PILOT_INSTRUMENT_IDS[0] == "BTCUSDT"
 
 
-def test_the_served_catalog_has_nineteen_rows_per_pilot_instrument() -> None:
-    """`19 x 4 = 76`, every id distinct — `instrument_id` is a term of the key.
+def test_the_served_catalog_has_twenty_rows_per_pilot_instrument() -> None:
+    """`20 x 4 = 80`, every id distinct — `instrument_id` is a term of the key.
+
+    Was `19 x 4 = 76` until `T-03.3` of `SPEC-009` appended the polled open-interest row.
 
     Was `15 x 4 = 60` until `T-01.6` of `SPEC-008` registered the four `klines_ohlc` rows, and
     the multiplication is the point: the candle is served for EVERY pilot instrument, not only
@@ -819,9 +834,9 @@ def test_the_served_catalog_has_nineteen_rows_per_pilot_instrument() -> None:
     """
     catalog = list_pilot_series_catalog()
 
-    assert len(catalog.entries) == 76
+    assert len(catalog.entries) == 80
     ids = [entry.key.series_key_id() for entry in catalog.entries]
-    assert len(set(ids)) == 76
+    assert len(set(ids)) == 80
     ohlc = [entry for entry in catalog.entries if entry.key.metric == KLINES_OHLC_METRIC]
     assert len(ohlc) == 16
     assert {entry.key.instrument_id for entry in ohlc} == set(PILOT_INSTRUMENT_IDS)
@@ -829,7 +844,7 @@ def test_the_served_catalog_has_nineteen_rows_per_pilot_instrument() -> None:
 
 
 def test_the_pilot_catalog_appends_and_never_reorders_the_btcusdt_prefix() -> None:
-    """`RS-1`: order is FORM. The nineteen `BTCUSDT` rows keep the indices they already had."""
+    """`RS-1`: order is FORM. The twenty `BTCUSDT` rows keep the indices they already had."""
     served = [entry.key.series_key_id() for entry in list_pilot_series_catalog().entries]
     btcusdt = [entry.key.series_key_id() for entry in list_series_catalog("BTCUSDT").entries]
 
@@ -1209,3 +1224,51 @@ def _klines_ohlc_entries_of_pilot() -> list[SeriesCatalogEntry]:
         for entry in list_pilot_series_catalog().entries
         if entry.key.metric == KLINES_OHLC_METRIC
     ]
+
+
+# ── `T-03.3` (`SPEC-009`, plan `03` item 3a.3): THE POLLED OI ROW IS SERVED, ONE PER SYMBOL ──
+
+
+def test_the_polled_open_interest_row_is_served_once_per_pilot_symbol_at_the_tail() -> None:
+    """Four rows over the pilot universe, each at offset 19 of its instrument's block.
+
+    `RS-1`: appended, so the nineteen rows before it keep their offsets. The id is compared
+    against `binance_open_interest_poll_key` — the builder the writer (`T-03.4`) will call —
+    so a served row that merely LOOKS like the polled series (another `verified_by`, another
+    `unit`) fails here instead of answering `n_points = 0` forever.
+    """
+    served = list_pilot_series_catalog().entries
+    poll_rows = [
+        (index, entry)
+        for index, entry in enumerate(served)
+        if entry.key.metric == OPEN_INTEREST_POLL_METRIC
+    ]
+
+    assert [index % 20 for index, _ in poll_rows] == [19, 19, 19, 19]
+    assert [entry.key.instrument_id for _, entry in poll_rows] == list(PILOT_INSTRUMENT_IDS)
+    for _, entry in poll_rows:
+        expected = binance_open_interest_poll_key(instrument_id=entry.key.instrument_id)
+        assert entry.key.series_key_id() == expected.series_key_id()
+
+
+def test_the_front_oi_selector_still_resolves_exactly_one_row_per_symbol() -> None:
+    """MORDE on the front's behalf: `metric + provider + reduction` must stay UNIQUE.
+
+    `frontend/src/app/symbol/view-model.ts::matchesBinanceOpenInterest` selects the OI pane by
+    `metric == "sum_open_interest"`, `provider == "binance"`, `reduction == "POINT"`, and
+    `findUniqueCatalogEntry` answers `panel_absent` on TWO matches. Spelling the polled row
+    `sum_open_interest` would make this count 2 per symbol and blank the production pane.
+    """
+    served = list_pilot_series_catalog().entries
+
+    for instrument_id in PILOT_INSTRUMENT_IDS:
+        matches = [
+            entry
+            for entry in served
+            if entry.key.instrument_id == instrument_id
+            and entry.key.metric == "sum_open_interest"
+            and entry.key.provider == "binance"
+            and entry.key.reduction is Reduction.POINT
+        ]
+        assert len(matches) == 1, f"{instrument_id}: {len(matches)} OI rows match the front"
+        assert matches[0].key.interval == "5m"
