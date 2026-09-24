@@ -70,6 +70,43 @@ a ser invariante testada do registry.
 Toda série `FLOW` do registry declara o par `absence_mark` + `zero_mark`. O teste do registry reprova
 quando o par falta. Com isso a fusão da fase `04` não consegue "esquecer" a marca (`ARQ-1` §5, invariante iii).
 
+### ⛔ Emenda D3′ (2026-09-23): a invariante (iii) é estreitada ao `kind`, e o CVD não ganha marca
+
+**O defeito medido.** A (iii), como escrita acima, recusa o pane de CVD de hoje: duas linhas `FLOW` (delta
+e acumulado), sem marcas. O teste da `T-01.2` mede **4 violações**, 2 séries × 2 marcas
+(`frontend/src/app/symbol/pane-registry.test.ts:240-250`, em `7f524ad`) `[MEDIDO]`. As duas saídas eram
+pôr marcas no CVD ou estreitar a (iii).
+
+**Decisão: estreitar.** O par de marcas existe porque **uma barra de altura zero não se distingue de
+barra nenhuma**, e o próprio registry escreve isso (`pane-registry.ts:73`: *"which a bar of height zero
+cannot tell apart"*). Numa **linha** alimentada pelo adapter *lossless* (`lineSeriesLossless`,
+`charts/index.ts:124`), o problema não existe: o bucket ausente é *whitespace* e **interrompe a linha**,
+enquanto o zero legítimo é um ponto **no nível 0**. Os dois já são geometrias diferentes, sem marca.
+Pôr marcas no CVD **mudaria a forma dele**, o que o `NG-5` proíbe.
+
+**A (iii′), normativa:**
+- **(iii-a)** toda série de dado `FLOW` com `kind = histogram` tem o par `absence_mark` + `zero_mark`
+  para o **mesmo** `series_key_id` (é a (iii) original, restrita ao `kind` em que ela morde);
+- **(iii-b)** toda série de dado `FLOW` com `kind = line` é alimentada **pelo adapter lossless**
+  (ausência = *whitespace*, nunca `0`, nunca valor carregado). O registry declara isso no `slots_ref`, e
+  quem reprova é o teste do adapter, porque o registry não enxerga o dado;
+- `kind = candlestick` `FLOW` não existe hoje. Se aparecer, é **falha alta** até ser classificado (o mesmo
+  princípio de `UncoveredReductionPairError`).
+
+**O ajuste que a `T-01.5` precisa fazer** (em `pane-registry.ts` e `.test.ts`, onde a `T-01.2` deixou):
+1. a (iii) só dispara quando `series.kind === "histogram"`;
+2. o teste *"(iii) FAILS: today's CVD pane … is refused"* (`:240`) vira **PASSES** e continua medindo
+   o mesmo registro, com as duas linhas `FLOW` e nenhuma marca, agora **aceitas**;
+3. entra um teste **(iii-a) FAILS** que troca o `kind` do CVD para `histogram`, mantém as linhas sem marca
+   e espera **4** violações. É ele que prova que o estreitamento não desligou a (iii);
+4. os testes existentes de volume e de marca de outra série (`:208-238`) continuam reprovando como hoje.
+
+**Falsificador de D3′.** Um bucket de CVD **presente e isolado** (os dois vizinhos ausentes) tem de
+desenhar ≥ 1 pixel no canvas. Se desenhar zero pixel, a linha lossless **não** separa *"presente
+isolado"* de *"ausente"*, a (iii-b) cai, e a correção (marcador de ponto, `pointMarkersVisible`, ou a
+marca) volta ao `/architect` + `design_gate` `[NÃO SEI: comportamento da LineSeries v5 com ponto único
+entre whitespaces; medir na T-01.5]`.
+
 ## D4 — Liquidação num pane: a perna long **desce por escala invertida**, o dado **nunca é negado**
 
 **O conflito entre os dois julgamentos.** O `quant-architect` propõe desenhar a perna long como `−v`
@@ -134,6 +171,27 @@ cadência de entrada do Chromium headless (`p95 ≈ 33 ms` com zero escrita) `[D
 Nesse caso o spike tem de apresentar um segundo instrumento com poder demonstrado (duração de frame por
 `requestAnimationFrame`, ou `PerformanceObserver` `longtask`, com `[NÃO SEI]` sobre qual deles tem poder,
 `ARQ-1` §7). Se nenhum dos dois tiver, **`CA-11` é declarado `[NÃO MEDIDO]` e escalado**, e não sai verde.
+
+## ⛔ Emenda F-7 (2026-09-23): o critério de "+1 quadro" da `T-01.10`
+
+**O defeito medido.** O `p95` do probe de `e2e/17` **salta entre 2 e 3 quadros** (32,8–49,4 ms em 5
+rodadas) **sem mudança de código** (`gates/T-01.1-baseline.md` §2, `n=87` por rodada) `[MEDIDO]`. Esse
+probe não resolve 1 quadro. O instrumento **com poder** é o intervalo de `requestAnimationFrame` durante o
+arrasto: `p95` de **16,7–16,8 ms em 10/10** arrastos, com stub e com dado real (§4, `n=101–197` quadros
+por rodada) `[MEDIDO]`. O spike S-1 deu **33,2–33,3 em 3 de 7** rodadas (`T-01.0-spike-facts.jsonl`) `[MEDIDO]`.
+
+**Critério, fixado ANTES de a `T-01.10` rodar:**
+
+| | regra |
+|---|---|
+| instrumento de julgamento | `p95` do intervalo de rAF durante o arrasto, **dado real** (braço B de `T-01.1` §4), **5 rodadas isoladas**, `n ≥ 100` quadros por rodada |
+| **"+1 quadro" numa rodada** | `p95_rAF ≥ 25,0 ms`, que é 1,5 quadro. O limiar fica no meio do degrau para não depender de 16,7 × 2 exato `[INFERRED: quantização em múltiplos de 16,7 medida nos dois instrumentos]` |
+| **regressão** | "+1 quadro" em **≥ 2 das 5** rodadas. A baseline deu **0/10**. Uma rodada isolada é registrada, mas não reprova `[INFERRED: com 0/10 de base, 1/5 não se distingue de ruído; 2/5 (40%) está perto dos 3/7 (43%) do spike, que é justamente o efeito que se quer pegar]` |
+| **conta como regressão?** | **SIM.** O `CA-11′` exige *"sem regredir sobre a baseline"*, e o rAF é o instrumento com poder. ⇒ a `T-01.10` **não sai verde** |
+| o que acontece quando reprova | **não** é revert automático de S-1, porque 33 ms está abaixo do teto de 160 ms. A task volta com o número e ou a F1 otimiza até sumir, ou o **owner** aceita o quadro explicitamente (`[DECISÃO-OWNER]`). O `/architect` **não** absorve o custo por ele: o 16 ms (*"um quadro a 60 fps"*) era a escolha do owner em 2026-09-19, e o 160 ms foi recalibrado para o probe **sem poder**, não para o rAF |
+| papel do probe de `e2e/17` | só o **teto absoluto** (`p95 ≤ 160 ms`, `n ≥ 61`) e uma banda: a mediana das 5 rodadas `≤ 49,4 ms`, que é o topo da faixa da baseline. **Não** é usado para julgar "+1 quadro" |
+| controle negativo | o busy-wait de 20 ms tem de levar o `p95_rAF` a `≥ 33 ms` em 5/5 rodadas. Se não levar, o resultado é `[NÃO MEDIDO]` e escala (a regra de `ADR-044` §Falsificador) |
+| fora desta emenda | `e2e/20`, que está vermelho em `master` e em diagnóstico pelo `frontend-qa` |
 
 ## Consequências
 

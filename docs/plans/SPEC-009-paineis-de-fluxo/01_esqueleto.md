@@ -38,4 +38,8 @@
 6. **Não-regressão de forma.** Os e2e `08`..`15` continuam verdes, porque nenhuma forma de série mudou.
 7. **Latência** (`CA-11′`). `e2e/17`: `p95 ≤ 160 ms` com `n ≥ 61`. `e2e/20`: `p95 ≤ 400 ms` com `n ≥ 10`.
    Os dois sem regredir sobre a baseline do item 1.1. **Morde** com o controle negativo.
+   **Regressão, pelo critério de `ADR-044/F-7`:** `p95` de rAF com dado real `≥ 25 ms` ("+1 quadro") em
+   **≥ 2 de 5** rodadas (baseline: 0/10). **Ela reprova a `T-01.10`**, e a saída é otimizar ou o owner
+   aceitar o quadro explicitamente. O probe de `e2e/17` só vale para o teto de 160 ms e para a banda de
+   mediana `≤ 49,4 ms`. O `e2e/20` fica fora deste critério.
 8. `make verify` verde, com `__pycache__` purgado. Veredito do `ux-ui-mastery` (`DoD-6`).
