@@ -3792,3 +3792,20 @@ em 2026-09-24 → `{"symbol":"BTCUSDT","openInterest":"96012.544","time":1790287
 enviado em `1790287796821` — **a leitura é 3,1 s mais velha que o pedido** `[MEDIDO 2026-09-24, n=1]`.
 
 Relatório e mutações: [`gates/T-03.1-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.1-build.md).
+
+## 📎 2026-09-24 por `T-03.2` — carimbo do OI na grade de 1 min: `[T, T + 20 s]` ou **ausente**
+
+Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1, `RN-2`, `[Q-STAMP-1]`, plano `03` item 3a.2).
+Segunda peça do coletor de OI por polling (`O-4`). Função pura: **não** agenda a chamada (`T-03.4`),
+**não** cataloga (`T-03.3`), **não** escreve em `md.series`.
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/open_interest_grid_stamp.py` | `domain` | `admitted_grid_instant(event_time_ms)` devolve o `T` (piso na grade de 60 000 ms, **nunca o mais próximo**) cuja janela **fechada** `[T, T + 20 000 ms]` contém o `time` da Binance, ou `None` = minuto **ausente**. `stamp_open_interest_readings(readings)` recebe as leituras **em ordem de chamada** e as separa em três destinos que somam a entrada: `admitted` (a primeira leitura em janela de cada `(symbol, T)`), `out_of_window` e `superseded`. `StampedOpenInterest` **recusa existir** se o próprio `event_time_ms` não cair na própria janela — um valor carregado de um minuto anterior não é representável num `T` posterior |
+
+**Ausente é ausência de linha** (`RN-2`): nenhum minuto é preenchido pelo vizinho. As duas capturas reais de
+`T-03.1` (`time` a 53,7 s e 51,0 s do minuto) caem **fora** de toda janela — é a evidência de que `T-03.4`
+precisa agendar a chamada de modo que o `time` caia em `[T, T + 20 s]` (com o atraso medido de 0,5–7,6 s,
+chamar exatamente em `T` admitiria 0%).
+
+Relatório e mutações: [`gates/T-03.2-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.2-build.md).
