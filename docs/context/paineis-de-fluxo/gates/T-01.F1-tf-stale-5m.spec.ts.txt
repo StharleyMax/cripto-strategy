@@ -1,0 +1,43 @@
+// DIAGNOSTIC ONLY — never committed as a spec (T-01.F1). Copied to frontend/e2e/98-*.spec.ts to run,
+// removed after. Same probe as DIAG-e2e-master-tf-stale.spec.ts.txt, but on the 1m -> 5m click:
+// `resolveRouteWindow` aligns to max(5m, interval), so 1m and 5m share `knowledgeTimeMs` inside the
+// same 5-minute bucket — the ONE transition where `interval` is the only term of the seed key that
+// changes. This is what makes the "drop interval from the key" mutation observable on screen; the
+// 1m -> 4h click in e2e/18 cannot, because 4h also moves `knowledgeTimeMs`.
+import { expect, test, type Page } from "@playwright/test";
+import { fact } from "./helpers.ts";
+
+const SPEC = "98-diag-tf-stale-5m";
+
+async function snapshot(page: Page): Promise<Record<string, unknown>> {
+  return page.evaluate(() => {
+    const main = document.querySelector("main[data-window-start-ms]") as HTMLElement | null;
+    const price = document.querySelector('[data-testid="price-pane"]') as HTMLElement | null;
+    const facts = Array.from(document.querySelectorAll("[data-fact]"))
+      .map((el) => el.getAttribute("data-fact") ?? "")
+      .filter((f) => /^(price_slots|price_candles|volume_readable_horizon)/.test(f));
+    return {
+      url: location.search,
+      knowledgeTimeMs: main?.dataset.knowledgeTimeMs,
+      windowStart: main?.dataset.windowStartMs,
+      priceCandles: price?.getAttribute("data-price-candles"),
+      facts,
+    };
+  });
+}
+
+test("diag: TF 5m click — what the panes draw", async ({ page }) => {
+  await page.goto("/symbol/BTCUSDT", { waitUntil: "networkidle" });
+  const before = await snapshot(page);
+  await page.locator('[data-testid="timeframe-button-5m"]').click();
+  await page.waitForURL(/interval=5m/);
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(1500);
+  const after5m = await snapshot(page);
+  await page.goto("/symbol/BTCUSDT?interval=5m", { waitUntil: "networkidle" });
+  const direct5m = await snapshot(page);
+  fact(SPEC, "before", before);
+  fact(SPEC, "after_click_5m", after5m);
+  fact(SPEC, "direct_load_5m", direct5m);
+  expect(true).toBe(true);
+});

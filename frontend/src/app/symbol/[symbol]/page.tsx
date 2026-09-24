@@ -151,6 +151,7 @@ import {
 } from "../series-history-client.ts";
 import type { PanelStatus } from "../panel-status.ts";
 import { resolveRouteWindow, type RouteWindow } from "../request-window.ts";
+import { seedIdentityKey } from "../seed-identity.ts";
 import { DEFAULT_TIMEFRAME, isSupportedTimeframe, SUPPORTED_TIMEFRAMES } from "../supported-timeframes.ts";
 import {
   SymbolClient,
@@ -963,8 +964,16 @@ export default async function SymbolPage({
     },
   };
 
+  // `T-01.F1` — `key` is the SEED's identity (`seed-identity.ts`). The pager reads its seed once
+  // per mount, so a new `?interval=` (or a new symbol, or a new knowledge instant) must be a new
+  // instance, never a new render reconciled into the old one (the `e2e/18` regression, `718cb1a`).
   return (
     <SymbolClient
+      key={seedIdentityKey({
+        symbol: routeSymbol,
+        interval: selectedInterval,
+        knowledgeTimeMs: routeWindow.knowledgeTimeMs,
+      })}
       symbol={routeSymbol}
       panels={panels}
       priceCandles={priceCandles}
