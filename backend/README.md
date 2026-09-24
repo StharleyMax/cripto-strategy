@@ -3792,3 +3792,26 @@ em 2026-09-24 → `{"symbol":"BTCUSDT","openInterest":"96012.544","time":1790287
 enviado em `1790287796821` — **a leitura é 3,1 s mais velha que o pedido** `[MEDIDO 2026-09-24, n=1]`.
 
 Relatório e mutações: [`gates/T-03.1-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.1-build.md).
+
+## 📎 2026-09-24 por `T-03.3` — catálogo: 4 entradas `binance·open_interest·1m·POINT`, uma por símbolo
+
+Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1/§6.7, plano `03` item 3a.3, `D-a`/`D-b`). Registra
+a identidade da série de polling de OI (`O-4`) **antes** do coletor (`T-03.4`), que escreve por ela.
+
+| peça | o que mudou |
+|---|---|
+| `domain/open_interest_catalog.py` | `binance_open_interest_poll_key(*, instrument_id)` (sem default de símbolo) e `binance_open_interest_poll_entry(instrument_id)`: `provider=binance`, `metric=open_interest`, `interval=1m`, `unit=base_asset(símbolo)`, `denom=base`, `STOCK`, `POINT_AT_BUCKET_END`, `POINT`, `label_shift=0`, `native_grid=1min`/`60_000`, `max_staleness_ms=120_000`. `verified_by` fixo no módulo (o escritor passa pelo mesmo builder). `open_interest_catalog_entries` **continua com 5 linhas** (`CA-F2-17`) |
+| `use_cases/series_catalog.py` | a linha é **acrescentada no fim** de cada bloco de instrumento (índice 19, `RS-1`): 19 → **20** por instrumento, 76 → **80** servidas por `/api/v1/series-catalog` |
+
+**Por que `metric=open_interest` e não `sum_open_interest`** — a outra grafia quebraria três coisas:
+1. o seletor do pane de OI no front (`view-model.ts::matchesBinanceOpenInterest`: `metric + provider + reduction`)
+   veria **duas** linhas por símbolo e `findUniqueCatalogEntry` apagaria o pane (`panel_absent`) em produção;
+2. `source_floor.py` daria a esta série a parede de 30 dias de `/futures/data/*`, que ela não tem (o endpoint
+   só devolve o valor presente; o piso honesto é `None`);
+3. a origem nomeia o campo diferente (`openInterest` × `sumOpenInterest`), e se são a mesma grandeza é o
+   falsificador 4 de `ADR-045`, ainda não medido.
+
+**Registrado antes de escrito, e a janela é a wave:** até `T-03.4` entrar, `/series-history` responde `200`
+com `n_points = 0` para estes 4 ids (o padrão `PRD-009` G-1). `T-03.4` depende desta task e sai na mesma wave.
+
+Relatório e mutações: [`gates/T-03.3-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.3-build.md).

@@ -175,6 +175,27 @@ an identity in `domain/`, a writer in the collector, and no address on the wire.
 `verified_by` is passed from `_KLINES_OHLC_VERIFIED_BY` below for the reason the `klines_volume`
 constant already spells out: it is the fifteenth term of the key, so the row SERVED here and the
 row WRITTEN to `md.series` are the same series only while both sides carry this exact string.
+
+── `T-03.3` OF `SPEC-009` (plan `03` item 3a.3, `D-a`/`D-b`): THE COUNT IS 20, ONE ROW AT THE TAIL
+
+The polled open-interest series
+(`domain/open_interest_catalog.py::binance_open_interest_poll_entry`,
+`Binance · open_interest · 1m · POINT`, contracts of the base asset) is APPENDED as the row at
+index 19 of every instrument's block, for the same `RS-1` reason as every row above: order is
+FORM, and every row that already had an index keeps it. Over the four pilot instruments that is
+FOUR rows — "uma por símbolo" — and the served total moves from `19 x 4 = 76` to `20 x 4 = 80`.
+
+Its `metric` is `open_interest`, NOT `sum_open_interest`, and that is load-bearing for a reader
+outside this repository's Python: the front selects the OI pane by `metric + provider +
+reduction` and refuses ambiguity, so a second `binance`/`POINT` row named `sum_open_interest`
+would turn the production OI pane into `panel_absent` the moment this catalog is served (see
+the block in `open_interest_catalog.py` for the other two reasons).
+
+REGISTERED BEFORE WRITTEN, AND THE GAP IS BOUNDED BY THE WAVE: until `T-03.4` (the collector)
+lands, `/api/v1/series-history` answers `200` with `n_points = 0` for these four ids — the
+`PRD-009` G-1 pattern. `T-03.4` depends on this task and ships in the same wave, so the row and
+its writer reach `master` together; the writer goes through `binance_open_interest_poll_key`,
+the SAME builder, so the two sides cannot land on two ids that merely look alike.
 """
 
 from __future__ import annotations
@@ -192,7 +213,10 @@ from src.modules.sentimento.domain.klines_ohlc_catalog import klines_ohlc_catalo
 from src.modules.sentimento.domain.klines_volume_catalog import build_klines_volume_entry
 from src.modules.sentimento.domain.liquidation_catalog import liquidation_catalog_entries
 from src.modules.sentimento.domain.long_short_catalog import build_count_long_short_ratio_entry
-from src.modules.sentimento.domain.open_interest_catalog import open_interest_catalog_entries
+from src.modules.sentimento.domain.open_interest_catalog import (
+    binance_open_interest_poll_entry,
+    open_interest_catalog_entries,
+)
 from src.modules.sentimento.domain.price_source_catalog import build_price_series_entries
 from src.modules.sentimento.domain.series_catalog import (
     PublishedError,
@@ -316,6 +340,10 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
     paid for. Until this line exists the identity `T-01.1` built is unaddressable on the wire —
     `/api/v1/series-history` answers `422 UnknownSeriesKeyIdError` for all four ids.
 
+    `T-03.3` of `SPEC-009` APPENDS the polled open-interest row (`open_interest`, `1m`,
+    `POINT`) at index 19 — one per instrument, never a sixth `sum_open_interest` row, which the
+    front's OI selector would read as ambiguity and blank the pane.
+
     `T-01.6` of `SPEC-007` APPENDS `klines_volume` (`SPEC-007` §4, row M1) as the eleventh
     row. Appended, not
     inserted: `RS-1` lets this task change the catalog's CONTENT and forbids changing its FORM,
@@ -338,6 +366,7 @@ def list_series_catalog(instrument_id: str = _INSTRUMENT_ID) -> SeriesCatalog:
         build_count_long_short_ratio_entry(instrument_id),
         *liquidation_catalog_entries(instrument_id).entries,
         *klines_ohlc_catalog_entries(instrument_id, verified_by=_KLINES_OHLC_VERIFIED_BY).entries,
+        binance_open_interest_poll_entry(instrument_id),
     ]
     # DEBUG, not INFO — same reasoning `ingest_health_query` already documents: this read path
     # is not a byte contract of its own, but a library that logs at INFO by default imposes its

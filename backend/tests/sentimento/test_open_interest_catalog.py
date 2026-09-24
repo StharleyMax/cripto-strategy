@@ -11,11 +11,18 @@ touches `test_series_identity.py` again.
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 
 from src.modules.sentimento.domain.open_interest_catalog import (
     OPEN_INTEREST_LABEL_SHIFT_MS,
+    OPEN_INTEREST_POLL_METRIC,
+    OPEN_INTEREST_POLL_VERIFIED_BY,
     binance_open_interest_key,
+    binance_open_interest_poll_entry,
+    binance_open_interest_poll_key,
     coinalyze_open_interest_key,
     open_interest_catalog_entries,
 )
@@ -24,7 +31,12 @@ from src.modules.sentimento.domain.series_catalog import (
     SeriesCatalogEntry,
     build_series_catalog,
 )
-from src.modules.sentimento.domain.series_key import Reduction, TsConvention
+from src.modules.sentimento.domain.series_key import (
+    Nature,
+    QuantityField,
+    Reduction,
+    TsConvention,
+)
 
 
 def test_asking_for_the_coinalyze_open_interest_key_without_reduction_is_refused() -> None:
@@ -135,3 +147,115 @@ def test_instrument_id_is_a_parameter_not_a_hardcoded_symbol() -> None:
     catalog = open_interest_catalog_entries(instrument_id="ETHUSDT")
 
     assert all(entry.key.instrument_id == "ETHUSDT" for entry in catalog.entries)
+
+
+# ── `T-03.3` (`SPEC-009`, plan `03` item 3a.3): THE POLLED SERIES, ONE ROW PER SYMBOL ─────────
+
+_PILOT_SYMBOLS_AND_BASE_UNITS = (
+    ("BTCUSDT", "BTC"),
+    ("ETHUSDT", "ETH"),
+    ("LINKUSDT", "LINK"),
+    ("SOLUSDT", "SOL"),
+)
+
+
+@pytest.mark.parametrize(("instrument_id", "base_unit"), _PILOT_SYMBOLS_AND_BASE_UNITS)
+def test_the_polled_open_interest_row_is_binance_point_1m_in_contracts(
+    instrument_id: str, base_unit: str
+) -> None:
+    """Every term the plan names, on every pilot symbol: `binance·open_interest·1m·POINT`.
+
+    `STOCK`, `POINT_AT_BUCKET_END`, `unit` = the symbol's OWN base asset (`D-a`/`D-b`: contracts,
+    never USD), `denom="base"`. `BTCUSDT` yields `BTC`, as the title of `T-03.3` writes; the
+    other three prove the unit is derived and not the literal the 5-minute builders once
+    hardcoded (`ETHUSDT` published as `BTC`).
+    """
+    entry = binance_open_interest_poll_entry(instrument_id)
+    key = entry.key
+
+    assert key.provider == "binance"
+    assert key.venue == "usdm_futures"
+    assert key.instrument_id == instrument_id
+    assert key.metric == OPEN_INTEREST_POLL_METRIC == "open_interest"
+    assert key.interval == "1m"
+    assert key.unit == base_unit
+    assert key.denom == "base"
+    assert key.nature is Nature.STOCK
+    assert key.ts_convention is TsConvention.POINT_AT_BUCKET_END
+    assert key.reduction is Reduction.POINT
+    assert key.quantity_field is QuantityField.NA
+    assert key.label_shift == 0
+    assert entry.native_grid == "1min"
+    assert entry.native_grid_ms == 60_000
+    assert entry.max_staleness_ms == 2 * entry.native_grid_ms
+
+
+def test_the_poll_key_refuses_to_default_the_instrument() -> None:
+    """One row per symbol means no default symbol: omitting it is a `TypeError`, never BTC."""
+    with pytest.raises(TypeError, match="instrument_id"):
+        binance_open_interest_poll_key()  # type: ignore[call-arg]
+
+
+def test_the_poll_row_shares_the_projection_trio_with_the_5m_point_row() -> None:
+    """`ADR-045/D1` keys its projection on `(STOCK, POINT, POINT_AT_BUCKET_END)`.
+
+    Both regimes of the OI candle have to sit on that trio for "one function, two regimes"
+    (`SPEC-009` §6.2) to hold; a poll row on any other trio would make the projection fail
+    loud on the very series `O-4` exists to capture.
+    """
+    poll = binance_open_interest_poll_key(instrument_id="BTCUSDT")
+    hist = binance_open_interest_key(instrument_id="BTCUSDT")
+
+    assert (poll.nature, poll.reduction, poll.ts_convention) == (
+        hist.nature,
+        hist.reduction,
+        hist.ts_convention,
+    )
+    assert (poll.unit, poll.denom) == (hist.unit, hist.denom)
+
+
+def test_the_poll_row_is_a_sixth_identity_and_leaves_the_five_row_catalog_alone() -> None:
+    """Distinct from all five 5-minute rows, and `open_interest_catalog_entries` is still five.
+
+    MORDE: appending the poll row INSIDE `open_interest_catalog_entries` moves this count to 6
+    and fails the `CA-F2-17` assertion above as well.
+    """
+    five = open_interest_catalog_entries("BTCUSDT")
+    poll_id = binance_open_interest_poll_key(instrument_id="BTCUSDT").series_key_id()
+
+    assert len(five.entries) == 5
+    assert poll_id not in {entry.key.series_key_id() for entry in five.entries}
+    assert five.entry_for_id(poll_id) is None
+
+
+def test_the_poll_row_does_not_reuse_the_5m_metric_name() -> None:
+    """`metric` must NOT be `sum_open_interest`, or the front's OI selector sees two matches.
+
+    `view-model.ts::matchesBinanceOpenInterest` selects by `metric + provider + reduction` and
+    `findUniqueCatalogEntry` refuses ambiguity, so a poll row spelled `sum_open_interest` would
+    blank the production OI pane (`panel_absent`) as soon as it is served.
+    """
+    poll = binance_open_interest_poll_key(instrument_id="BTCUSDT")
+    hist = binance_open_interest_key(instrument_id="BTCUSDT")
+
+    assert (poll.provider, poll.reduction) == (hist.provider, hist.reduction)
+    assert poll.metric != hist.metric
+
+
+def test_the_poll_verified_by_names_a_test_that_exists_in_this_file() -> None:
+    """`verified_by` is inside the `sha256`, so it has to name something real, not a label.
+
+    Read from the FILE ON DISK via `ast`, never compared against a literal this suite also
+    owns: renaming the test without renaming the constant (or the reverse) fails here.
+    """
+    file_name, test_name = OPEN_INTEREST_POLL_VERIFIED_BY.split("::")
+    here = Path(__file__).resolve()
+    tree = ast.parse(here.read_text(encoding="utf-8"))
+    defined = {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+
+    assert file_name == here.name
+    assert test_name in defined
+    assert (
+        binance_open_interest_poll_key(instrument_id="ETHUSDT").verified_by
+        == OPEN_INTEREST_POLL_VERIFIED_BY
+    )
