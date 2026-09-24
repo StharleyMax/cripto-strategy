@@ -195,3 +195,22 @@ export {
   MIN_DRAWABLE_MARK_PX,
 } from "./mark-band-geometry.ts";
 export type { MarkBandSpec, MarkBandGeometry, MarkBandPriceRange, PaneHeightSource } from "./mark-band-geometry.ts";
+
+// ── 8. leitura da legenda ────────────────────────────────────────────────────────────────────
+//
+// `T-01.4` (`paineis-de-fluxo`, plano `01` item `1.6`, a metade PURA; `ADR-044/D2`, `RF-4`,
+// `RN-4`, `ADR-026`): `(param.logical, slots, nature) -> value | held | forming | absent`. The
+// crosshair wiring that calls it is `T-01.7`, in `web` — which cannot reach this module except
+// through this barrel (`no-restricted-imports`, group `"**/charts/**"`).
+export { resolveLegendReading, lastClosedSlotIndex, LegendNatureNotCoveredError } from "./legend-reading.ts";
+export type {
+  LegendReading,
+  LegendReadingInput,
+  LegendValueReading,
+  LegendHeldReading,
+  LegendFormingReading,
+  LegendAbsentReading,
+  LegendNature,
+  LegendSource,
+  ReadingNature,
+} from "./legend-reading.ts";
