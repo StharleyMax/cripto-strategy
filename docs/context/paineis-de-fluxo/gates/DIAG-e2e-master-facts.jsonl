@@ -1,0 +1,803 @@
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 48}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-2e86ade", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 48}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 48}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-48d47e5", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 8}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 149}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-c0fe440", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-d88d579", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "b-ef608ec", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 87.3}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 600.6}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_windows_n", "value": 12}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_duration_ms", "value": [727, 738.6, 751.9, 750.3, 716.1, 783.9, 759.1, 669.5, 735.2, 780, 650.7, 771.2]}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_driver_idle_between_gestures_ms", "value": [242.4, 278.2, 284.7, 275.8, 274.6, 291.3, 277.3, 277.2, 244.3, 250, 262.1]}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_n", "value": 243}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_max_ms", "value": 82.6}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_p95_ms", "value": 49.3}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_n", "value": 10}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_top5_ms", "value": [600.6, 595.3, 566.7, 556.9, 550.3]}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_over_160_n", "value": 10}
+{"run": "diag20-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_over_160_n", "value": 0}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 95.6}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 588.3}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_windows_n", "value": 12}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_duration_ms", "value": [718.2, 726.7, 739.8, 714.9, 779.9, 711, 903.2, 737.7, 752.8, 680.5, 650.7, 659.2]}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_driver_idle_between_gestures_ms", "value": [273.4, 264, 259.6, 288.2, 290.4, 271.8, 272.3, 285.3, 279.3, 280.1, 288.1]}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_n", "value": 243}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_max_ms", "value": 66.9}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_p95_ms", "value": 49.5}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_n", "value": 10}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_top5_ms", "value": [588.3, 578, 566.1, 549.6, 549]}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_over_160_n", "value": 10}
+{"run": "diag20-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_over_160_n", "value": 0}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 88.8}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 593.6}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_windows_n", "value": 12}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_duration_ms", "value": [758.4, 764.9, 697.7, 725.8, 713.3, 730.6, 684.5, 671.1, 765.5, 672.7, 703.9, 859.3]}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_driver_idle_between_gestures_ms", "value": [272.7, 276.5, 290.6, 279.4, 270.6, 274.2, 293.1, 273, 273.8, 265.8, 287.6]}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_n", "value": 243}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_max_ms", "value": 66.5}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_p95_ms", "value": 49.3}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_n", "value": 10}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_top5_ms", "value": [593.6, 591.3, 566.6, 566.4, 566.1]}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_over_160_n", "value": 10}
+{"run": "diag20-master", "file": "facts-3.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_over_160_n", "value": 0}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 88.4}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 572.9}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_windows_n", "value": 12}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_duration_ms", "value": [714.5, 693, 719.4, 764.2, 685.5, 781.2, 699.8, 658.6, 766.8, 638.2, 683.7, 691.3]}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_driver_idle_between_gestures_ms", "value": [275.3, 291.6, 284.3, 284.5, 240.5, 278.5, 272.1, 268.2, 245.8, 267.9, 272.7]}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_n", "value": 243}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_max_ms", "value": 66.2}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_p95_ms", "value": 35.7}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_n", "value": 10}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_top5_ms", "value": [572.9, 566.6, 566.3, 549.3, 533.6]}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_over_160_n", "value": 10}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_over_160_n", "value": 0}
+{"run": "diag20b-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_detail", "value": [{"dt": 549.3, "a_minus_moveEnd": 758.6, "b_minus_nextMoveStart": 1032.6, "kA": 0, "kB": 0}, {"dt": 566.6, "a_minus_moveEnd": 804.8, "b_minus_nextMoveStart": 1079.8, "kA": 1, "kB": 0}, {"dt": 532.8, "a_minus_moveEnd": 860.7, "b_minus_nextMoveStart": 1109.2, "kA": 2, "kB": 0}, {"dt": 533.2, "a_minus_moveEnd": 746.1, "b_minus_nextMoveStart": 994.8, "kA": 3, "kB": 0}, {"dt": 572.9, "a_minus_moveEnd": 785.2, "b_minus_nextMoveStart": 1117.6, "kA": 4, "kB": 0}, {"dt": 566.3, "a_minus_moveEnd": 720.4, "b_minus_nextMoveStart": 1008.2, "kA": 5, "kB": 0}, {"dt": 533.6, "a_minus_moveEnd": 724.7, "b_minus_nextMoveStart": 986.2, "kA": 6, "kB": 0}, {"dt": 516.4, "a_minus_moveEnd": 827.8, "b_minus_nextMoveStart": 1076, "kA": 7, "kB": 0}, {"dt": 532.5, "a_minus_moveEnd": 693.6, "b_minus_nextMoveStart": 980.3, "kA": 8, "kB": 0}, {"dt": 516.2, "a_minus_moveEnd": 759.2, "b_minus_nextMoveStart": 1007.5, "kA": 9, "kB": 0}]}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 111.7}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 598.4}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_windows_n", "value": 12}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_duration_ms", "value": [768.1, 744.9, 810.1, 831.6, 858.4, 752, 727.8, 689.9, 744.7, 635.9, 765.5, 688.6]}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_driver_idle_between_gestures_ms", "value": [274.2, 256.7, 295.2, 271.7, 282.7, 286.8, 267.8, 271.9, 281, 246.8, 276.3]}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_n", "value": 243}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_max_ms", "value": 67}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_p95_ms", "value": 49.6}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_n", "value": 10}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_top5_ms", "value": [598.4, 584.1, 566.9, 566, 557.3]}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_over_160_n", "value": 10}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_over_160_n", "value": 0}
+{"run": "diag20c-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_detail", "value": [{"dt": 550.4, "a_minus_moveEnd": 787.5, "b_minus_nextMoveStart": 1063.7, "kA": 0, "kB": 0}, {"dt": 598.4, "a_minus_moveEnd": 820.4, "b_minus_nextMoveStart": 1162.1, "kA": 1, "kB": 0}, {"dt": 557.3, "a_minus_moveEnd": 911, "b_minus_nextMoveStart": 1173.1, "kA": 2, "kB": 0}, {"dt": 546.9, "a_minus_moveEnd": 928, "b_minus_nextMoveStart": 1203.2, "kA": 3, "kB": 0}, {"dt": 584.1, "a_minus_moveEnd": 810.6, "b_minus_nextMoveStart": 1112, "kA": 4, "kB": 0}, {"dt": 533.4, "a_minus_moveEnd": 809.7, "b_minus_nextMoveStart": 1056.3, "kA": 5, "kB": 0}, {"dt": 516.5, "a_minus_moveEnd": 745.2, "b_minus_nextMoveStart": 993.9, "kA": 6, "kB": 0}, {"dt": 566, "a_minus_moveEnd": 787.6, "b_minus_nextMoveStart": 1081.7, "kA": 7, "kB": 0}, {"dt": 498.4, "a_minus_moveEnd": 721.9, "b_minus_nextMoveStart": 939.3, "kA": 8, "kB": 0}, {"dt": 566.9, "a_minus_moveEnd": 786.6, "b_minus_nextMoveStart": 1106.7, "kA": 9, "kB": 0}]}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 91.2}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 600.3}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_windows_n", "value": 12}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_duration_ms", "value": [777.3, 738.5, 694.2, 761.6, 713.8, 747.7, 742.7, 687.4, 745.2, 697.7, 645.1, 710.7]}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_driver_idle_between_gestures_ms", "value": [251.2, 282.4, 294.9, 276.2, 271, 287.9, 279.6, 273.6, 271.7, 238.2, 270.7]}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_n", "value": 243}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_max_ms", "value": 66.4}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_p95_ms", "value": 49}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_n", "value": 10}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_top5_ms", "value": [600.3, 583.1, 567.1, 549, 548.6]}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_over_160_n", "value": 10}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_over_160_n", "value": 0}
+{"run": "diag20d-master", "file": "facts-1.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_detail", "value": [{"dt": 600.3, "a_minus_moveEnd": 741.2, "b_minus_nextMoveStart": 1090.3, "kA": 0, "kB": 0}, {"dt": 567.1, "a_minus_moveEnd": 768.3, "b_minus_nextMoveStart": 1053, "kA": 1, "kB": 0}, {"dt": 542.5, "a_minus_moveEnd": 848.7, "b_minus_nextMoveStart": 1096.3, "kA": 2, "kB": 0}, {"dt": 533.4, "a_minus_moveEnd": 784.8, "b_minus_nextMoveStart": 1042, "kA": 3, "kB": 0}, {"dt": 583.1, "a_minus_moveEnd": 794.7, "b_minus_nextMoveStart": 1106.8, "kA": 4, "kB": 0}, {"dt": 548.6, "a_minus_moveEnd": 827.2, "b_minus_nextMoveStart": 1087.9, "kA": 5, "kB": 0}, {"dt": 549, "a_minus_moveEnd": 762.6, "b_minus_nextMoveStart": 1032, "kA": 6, "kB": 0}, {"dt": 526.6, "a_minus_moveEnd": 818.2, "b_minus_nextMoveStart": 1071.2, "kA": 7, "kB": 0}, {"dt": 483.2, "a_minus_moveEnd": 759.5, "b_minus_nextMoveStart": 971, "kA": 8, "kB": 0}, {"dt": 533.1, "a_minus_moveEnd": 673.3, "b_minus_nextMoveStart": 968.2, "kA": 9, "kB": 0}]}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 103.2}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 583.3}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_windows_n", "value": 12}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_gesture_duration_ms", "value": [768, 731.1, 705.6, 819.5, 709, 693.9, 650.4, 791.4, 727.4, 771.9, 741, 697]}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_driver_idle_between_gestures_ms", "value": [289.4, 281.8, 282.2, 272.6, 273.2, 281.7, 260, 271.8, 287.5, 268.4, 254.4]}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_n", "value": 242}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_max_ms", "value": 66.9}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_p95_ms", "value": 49.4}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_n", "value": 10}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_top5_ms", "value": [583.3, 575.4, 566.5, 564.8, 560.8]}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_over_160_n", "value": 10}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_intra_over_160_n", "value": 0}
+{"run": "diag20d-master", "file": "facts-2.jsonl", "spec": "98-diag-20-teto-latencia-historia-sob-demanda", "name": "diag_inter_detail", "value": [{"dt": 575.4, "a_minus_moveEnd": 794.2, "b_minus_nextMoveStart": 1080.2, "kA": 0, "kB": 0}, {"dt": 564.8, "a_minus_moveEnd": 767.5, "b_minus_nextMoveStart": 1050.5, "kA": 1, "kB": 0}, {"dt": 509.9, "a_minus_moveEnd": 901.3, "b_minus_nextMoveStart": 1129, "kA": 2, "kB": 0}, {"dt": 560.8, "a_minus_moveEnd": 765.4, "b_minus_nextMoveStart": 1053.6, "kA": 3, "kB": 0}, {"dt": 533.5, "a_minus_moveEnd": 761.4, "b_minus_nextMoveStart": 1021.7, "kA": 4, "kB": 0}, {"dt": 517.2, "a_minus_moveEnd": 744.5, "b_minus_nextMoveStart": 980, "kA": 5, "kB": 0}, {"dt": 583.3, "a_minus_moveEnd": 812.9, "b_minus_nextMoveStart": 1136.2, "kA": 6, "kB": 0}, {"dt": 550.5, "a_minus_moveEnd": 810.8, "b_minus_nextMoveStart": 1089.5, "kA": 7, "kB": 0}, {"dt": 533.9, "a_minus_moveEnd": 861.8, "b_minus_nextMoveStart": 1108.2, "kA": 8, "kB": 0}, {"dt": 566.5, "a_minus_moveEnd": 769.1, "b_minus_nextMoveStart": 1067.2, "kA": 9, "kB": 0}]}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789862400000, "endMsInclusive": 1790207940000, "knowledgeTimeMs": 1790208240000}}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_original", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_under_4h", "value": {"startMs": 1789862400000, "endMsInclusive": 1790207940000, "knowledgeTimeMs": 1790208240000}}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_restored_1m", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "f04-08e5e75", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789862400000, "endMsInclusive": 1790207940000, "knowledgeTimeMs": 1790208240000}}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_original", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_under_4h", "value": {"startMs": 1789862400000, "endMsInclusive": 1790207940000, "knowledgeTimeMs": 1790208240000}}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_restored_1m", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "f04-08e5e75", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790209740000}}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790208240000}}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790209740000}}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790209740000}}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 113.8}
+{"run": "master-ba21f07", "file": "facts-1.jsonl", "spec": "20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 583.1}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790209740000}}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790208240000}}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790209740000}}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790209740000}}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 88.8}
+{"run": "master-ba21f07", "file": "facts-2.jsonl", "spec": "20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 584.2}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 48}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790209740000}}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790208240000}}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790209740000}}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789863900000, "endMsInclusive": 1790209440000, "knowledgeTimeMs": 1790209740000}}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "20-teto-latencia-historia-sob-demanda", "name": "history_page_pair_n", "value": 12}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "20-teto-latencia-historia-sob-demanda", "name": "history_page_latency_p95_ms", "value": 87.2}
+{"run": "master-ba21f07", "file": "facts-3.jsonl", "spec": "20-teto-latencia-historia-sob-demanda", "name": "axis_max_interval_during_paging_ms", "value": 567.1}
+{"run": "pre-t052-0c9cb43", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789862400000, "endMsInclusive": 1790207940000, "knowledgeTimeMs": 1790208240000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_original", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_under_4h", "value": {"startMs": 1789862400000, "endMsInclusive": 1790207940000, "knowledgeTimeMs": 1790208240000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_restored_1m", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789862400000, "endMsInclusive": 1790207940000, "knowledgeTimeMs": 1790208240000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_original", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_under_4h", "value": {"startMs": 1789862400000, "endMsInclusive": 1790207940000, "knowledgeTimeMs": 1790208240000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_restored_1m", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "pre-t052-0c9cb43", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 17}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 14}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 13}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 13}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 13}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 15}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 17}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 155}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 154}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 154}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 154}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 156}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "real-7f63aa0", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 17}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 14}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 13}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 13}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 13}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 15}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 17}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 155}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 154}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 154}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 154}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 156}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "real-7f63aa0", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 49}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 49}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 49}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789864800000, "endMsInclusive": 1790210340000, "knowledgeTimeMs": 1790210640000}}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789864800000, "endMsInclusive": 1790210340000, "knowledgeTimeMs": 1790208240000}}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789864800000, "endMsInclusive": 1790210340000, "knowledgeTimeMs": 1790210640000}}
+{"run": "real-master", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789864800000, "endMsInclusive": 1790210340000, "knowledgeTimeMs": 1790210640000}}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 48}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 49}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 48}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 49}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 49}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789864800000, "endMsInclusive": 1790210340000, "knowledgeTimeMs": 1790210640000}}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789864800000, "endMsInclusive": 1790210340000, "knowledgeTimeMs": 1790208240000}}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789864800000, "endMsInclusive": 1790210340000, "knowledgeTimeMs": 1790210640000}}
+{"run": "real-master", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789864800000, "endMsInclusive": 1790210340000, "knowledgeTimeMs": 1790210640000}}
+{"run": "real-tf-master", "file": "facts-1.jsonl", "spec": "97-diag-tf-stale", "name": "before", "value": {"url": "", "windowStart": "1789865100000", "windowEnd": "1790210640000", "priceCandles": "4583", "facts": ["price_slots:5760", "price_candles:4583/5760", "volume_readable_horizon:4560/5760", "oi_slots:5760"]}}
+{"run": "real-tf-master", "file": "facts-1.jsonl", "spec": "97-diag-tf-stale", "name": "after_click_4h", "value": {"url": "?interval=4h", "windowStart": "1789865100000", "windowEnd": "1790210640000", "priceCandles": "4583", "facts": ["price_slots:5760", "price_candles:4583/5760", "volume_readable_horizon:4560/5760", "oi_slots:5760"]}}
+{"run": "real-tf-master", "file": "facts-1.jsonl", "spec": "97-diag-tf-stale", "name": "direct_load_4h", "value": {"url": "?interval=4h", "windowStart": "1789862400000", "windowEnd": "1790207940000", "priceCandles": "24", "facts": ["price_slots:5760", "price_candles:24/5760", "volume_readable_horizon:24/24", "oi_slots:5760"]}}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790208240000}}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "t052-718cb1a", "file": "facts-1.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:baseline", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_0", "value": 47}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_1", "value": 48}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count_delta:gesture_2", "value": 46}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "price-pane_write_count:after_idle", "value": 10}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "oi-pane_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "cvd-pane_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-long_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "liquidation-cohort-short_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "long-short-pane_write_count:after_idle", "value": 151}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_oi-pane_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_cvd-pane_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-long_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_liquidation-cohort-short_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "16-eixo-unico-pan-e-ablacao", "name": "ablation_long-short-pane_write_count_after", "value": 0}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_before", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_after_4h", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790208240000}}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_unsupported_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
+{"run": "t052-718cb1a", "file": "facts-2.jsonl", "spec": "18-tf-refetch-e-ablacao", "name": "window_with_default_interval", "value": {"startMs": 1789864200000, "endMsInclusive": 1790209740000, "knowledgeTimeMs": 1790210040000}}
