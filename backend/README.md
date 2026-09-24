@@ -3774,3 +3774,21 @@ vence" (`q` sumido, `quantity` aparecendo) e prova reprovação, não quarentena
   durante o desenvolvimento e foi corrigido antes deste commit — mesma forma de
   `quarantine_terms.py`/`live_availability_write.py`: conteúdo movido para comentário `#`,
   docstring de módulo em uma linha).
+
+## 📎 2026-09-24 por `T-03.1` — cliente de `GET /fapi/v1/openInterest`: o `time` da resposta é o `event_time`
+
+Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1, `RN-1`, plano `03` item 3a.1). Primeira
+peça do coletor de OI por polling (`O-4`). **Não** carimba na grade (`T-03.2`), **não** cataloga
+(`T-03.3`) e **não** é coletor (`T-03.4`): entrega as duas coisas que eles precisam ler da resposta.
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/open_interest_snapshot.py` | `domain` | `OpenInterestSnapshot(symbol, open_interest_raw, event_time_ms)` — **não existe campo para o instante do pedido**; `parse_open_interest_snapshot(payload, requested_symbol)` não recebe relógio nem instante de pedido, então o instante errado não tem por onde entrar. Recusa símbolo cruzado, `openInterest` que não é string decimal finita `≥ 0`, `time` que não é `int` (inclusive `bool`). `OpenInterestFetch` + `OpenInterestFetchOutcome` (`READ`/`TRANSPORT`/`HTTP_STATUS`/`PAYLOAD`), com as invariantes de cada forma no `__post_init__` |
+| `infra/binance_open_interest_client.py` | `infra` | `BinanceOpenInterestClient.fetch(symbol)` — uma conexão keep-alive refeita em `OSError` (mesmo ciclo de `PremiumIndexHttpClient`), reusando `ConnectionFactory`/`flatten_headers` de `https_quota_probe.py`. Lê `x-mbx-used-weight-1m` em todo status respondido (um `400` também é cobrado), `None` quando ausente — nunca zero |
+
+**A resposta dos testes é LIDA da Binance**, não escrita à mão (ler a origem não é semear; nenhum
+Postgres é tocado): `curl -sS -D hdr.txt "https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT"`
+em 2026-09-24 → `{"symbol":"BTCUSDT","openInterest":"96012.544","time":1790287793703}`, pedido
+enviado em `1790287796821` — **a leitura é 3,1 s mais velha que o pedido** `[MEDIDO 2026-09-24, n=1]`.
+
+Relatório e mutações: [`gates/T-03.1-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.1-build.md).
