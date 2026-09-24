@@ -139,7 +139,11 @@ async function dragPricePanelBackward(page: Page, deltaXPx: number): Promise<voi
   if (deltaXPx <= 0) {
     throw new Error(`dragPricePanelBackward: deltaXPx must be positive, received ${deltaXPx}`);
   }
-  const container = page.locator(`[data-testid="${PRICE_PANE_TESTID}"] [data-visible-logical-from]`);
+  // `paineis-de-fluxo` `T-01.6`: the price pane's DOM is now a LAYER portalled into the pane's own
+  // canvas wrapper, so it is the canvases' sibling, not their ancestor. `xpath=../canvas` is the
+  // price pane's canvas — the same rectangle the old `price-pane [data-visible-logical-from]`
+  // host occupied when the chart was 220px tall and held only this pane.
+  const container = page.locator(`[data-testid="${PRICE_PANE_TESTID}"]`).locator("xpath=../canvas").first();
   const box = await container.boundingBox();
   if (box === null) {
     throw new Error("o painel de Preço não tem bounding box — canvas não montado?");

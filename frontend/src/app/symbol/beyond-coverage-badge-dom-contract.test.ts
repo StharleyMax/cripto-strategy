@@ -149,7 +149,10 @@ test("MORDE: removing long/short's guarded render is caught — the panel would 
 test("MORDE: a THIRD panel quietly gaining the badge (e.g. price) is caught by the same assert", () => {
   // Simulates the inverse regression: price wired up to a badge it should never receive — the
   // universe assert above must notice a THIRD call site appearing, not just the two it expects.
-  const anchor = '<section aria-label="Preço" data-testid={PRICE_PANE_TESTID} data-price-candles={priceCandles.drawnCandles}>';
+  // `paineis-de-fluxo` `T-01.6`: the section became the root of the price pane's DOM layer and
+  // gained `className={PANE_LAYER_CLASS}` — same element, same testid, anchor re-read.
+  const anchor =
+    '<section aria-label="Preço" data-testid={PRICE_PANE_TESTID} data-price-candles={priceCandles.drawnCandles} className={PANE_LAYER_CLASS}>';
   assert.ok(source.includes(anchor), "the PricePane section anchor moved — update this test, do not delete it");
   const mutated = source.replace(anchor, `${anchor}\n      <BeyondCoverageBadge factKey="price_coverage" />`);
   assert.notEqual(mutated, source, "the PricePane anchor found no match — update this test, do not delete it");

@@ -69,6 +69,57 @@ export const F1_PANE_ORDER: readonly PaneId[] = [
   "cvd",
 ];
 
+/**
+ * `T-01.6` — the relative height of each pane of phase `01`, handed to `setStretchFactor`
+ * (`handoff/DESIGN-LAYOUT.md` §6, row "altura"; `SPEC-009` §3).
+ *
+ * The `design_gate` approved **34 · 11 · 15 · 9 · 9 · 9 · 9** for SEVEN panes (price · liquidations ·
+ * OI · L/S · funding · CVD delta · CVD cumulative). Phase `01` has SIX: funding is `NG-3` and the CVD
+ * stays one pane (`NG-5`), and the liquidation is TWO panes until phase `04` fuses it (`R-2` of
+ * `tasks_review.md`). `SPEC-009` §3: "os 6 panes da F1 recebem os pesos correspondentes,
+ * renormalizados" — `setStretchFactor` is relative, so renormalizing is only the choice of which
+ * weight each F1 pane corresponds to:
+ *
+ *   - `liquidation_long` / `liquidation_short` → **11 each**, not 5,5. Not a taste: at 5,5 the
+ *     lightest pane binds the 72px floor at a chart of `72 × 83,5 / 5,5 ≈ 1.093px` of panes, past the
+ *     1.024px viewport the same gate asked the stack to fit without scrolling (§9 item 16(l)); at 11
+ *     the floor binds at `72 × 89 / 9 = 712px`. The two approved constraints leave only this value.
+ *   - `cvd` → **9**, the weight of a line pane (the floor was specified "por pane de linha").
+ *
+ * ⚠️ `[INFERRED]`, and it is a PROPOSAL: `R-2` says the renormalization is the `design_gate`'s, decided
+ * in this task. A builder cannot dispatch the gate from inside a task (no nested agents); the
+ * argument above is written so the `ui-designer` + `ux-ui-mastery` can accept or overturn it on the
+ * screenshot of `T-01.11` without re-deriving it. Changing a value here is the whole change.
+ */
+export const F1_PANE_STRETCH: Readonly<Record<PaneId, number>> = {
+  price: 34,
+  liquidation_long: 11,
+  liquidation_short: 11,
+  oi: 15,
+  long_short: 9,
+  cvd: 9,
+};
+
+/**
+ * `T-01.6` — the `data-testid` of the ROOT of a pane's DOM layer, derived from its `pane_id`
+ * (`SPEC-009` §3: "os `data-testid` atuais sobrevivem, derivados de `pane_id`, na raiz da camada").
+ *
+ * The rule is `<pane_id with "-" for "_">-pane`, which reproduces every testid the e2e suite already
+ * reads (`price-pane`, `oi-pane`, `cvd-pane`, `long-short-pane`). The two liquidation legs are the
+ * one exception, and it is inherited, not chosen: until phase `04` fuses them their layers are the
+ * two cohort groups `e2e/13` has always read, `liquidation-cohort-<cohort>`.
+ */
+export function paneLayerTestId(paneId: PaneId): string {
+  switch (paneId) {
+    case "liquidation_long":
+      return "liquidation-cohort-long";
+    case "liquidation_short":
+      return "liquidation-cohort-short";
+    default:
+      return `${paneId.replace(/_/g, "-")}-pane`;
+  }
+}
+
 /** `primary`/`secondary` draw the DATA; the two marks draw the absence and the legitimate zero
  * of a `FLOW` series, which a bar of height zero cannot tell apart (`RN-4`). */
 export type SeriesRole = "primary" | "secondary" | "absence_mark" | "zero_mark";

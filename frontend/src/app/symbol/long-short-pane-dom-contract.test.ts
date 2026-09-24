@@ -70,7 +70,12 @@ const HORIZON_FACT =
  * is fed `longShort` and its OWN status. The `MORDE` case below still bites, because deleting the
  * match leaves no `<LongShortPane longShort={longShort} status={panelStatus.longShort}` behind. */
 const PANE_RENDERED = /<LongShortPane longShort=\{longShort\} status=\{panelStatus\.longShort\}/;
-const ABSENCE_NOTE_RENDERED = /<LongShortReadableHorizon longShort=\{longShort\} \/>\s*\n\s*<AbsenceNote status=\{status\} \/>/;
+// `paineis-de-fluxo` `T-01.6`: the absence note moved into the pane's LEGEND (row 2, beside the
+// provenance), while the readable horizon went to the part of the layer that is not painted
+// (`PaneDetails`). The property is unchanged — the long/short pane renders `AbsenceNote` with its
+// own status — so the anchor is its new neighbour, not the old one.
+const ABSENCE_NOTE_RENDERED =
+  /\{hasObservation \? <LongShortProvenance provenance=\{longShort\.provenance\} \/> : null\}\s*\n\s*<AbsenceNote status=\{status\} \/>/;
 
 /** `page.tsx`: the selector, CALLED through the unique-match helper. */
 const PAGE_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesCountLongShortRatio\(entry\.key\)\)/;

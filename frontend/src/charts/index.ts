@@ -202,6 +202,30 @@ export type { MarkBandSpec, MarkBandGeometry, MarkBandPriceRange, PaneHeightSour
 // `RN-4`, `ADR-026`): `(param.logical, slots, nature) -> value | held | forming | absent`. The
 // crosshair wiring that calls it is `T-01.7`, in `web` — which cannot reach this module except
 // through this barrel (`no-restricted-imports`, group `"**/charts/**"`).
+// ── 9. geometria vertical da pilha de panes ──────────────────────────────────────────────────
+//
+// `T-01.6` (`paineis-de-fluxo`, plano `01` item `1.5`, `[Q-DG-1]`): the chart height that keeps
+// every pane at its floor, and the scale margins that keep the marks out from under the per-pane
+// DOM layer (and off the separator, `C-6`). `web` measures (pane height, legend bottom) and
+// applies; the arithmetic lives here (`ADR-003/FR-2`).
+export {
+  stackedPaneLayout,
+  paneScaleMargins,
+  F1_PANE_STACK_FORM,
+  PANE_SEPARATOR_PX,
+  SEPARATOR_CLEARANCE_PX,
+  LEGEND_GAP_PX,
+  MAX_LEGEND_RESERVE_FRACTION,
+} from "./pane-stack-layout.ts";
+export type {
+  PaneStackForm,
+  PaneStackLayout,
+  ScaleMargins,
+  PaneScaleRole,
+  PaneScaleMeasure,
+  PaneScaleMargins,
+} from "./pane-stack-layout.ts";
+
 export { resolveLegendReading, lastClosedSlotIndex, LegendNatureNotCoveredError } from "./legend-reading.ts";
 export type {
   LegendReading,

@@ -5,16 +5,20 @@
 // Run with: npm --prefix frontend run test:app
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 // `ADR-034/D8`: this route reaches `charts` only through the barrel.
 import { absenceMarkSeries, lineSeriesLossless, zeroMarkSeries } from "../../charts/index.ts";
 import type { Nature, SeriesCatalogEntry, SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 import {
   F1_PANE_ORDER,
+  F1_PANE_STRETCH,
   PaneRegistryError,
   assertValidPaneRegistry,
   paneIndexOf,
+  paneLayerTestId,
   resolvePaneLegend,
   validatePaneRegistry,
   validateSetDataOnCanonicalGrid,
@@ -28,6 +32,29 @@ import {
   type ServedCatalog,
 } from "./pane-registry.ts";
 import { computeSeriesKeyId } from "./series-key-id.ts";
+
+// ── `T-01.6`: the layer testids and the stretch weights are derived from `pane_id` ──────────────
+
+test("T-01.6: every pane's layer testid, derived from pane_id, is the literal SymbolClient.tsx renders", () => {
+  const source = readFileSync(fileURLToPath(new URL("./SymbolClient.tsx", import.meta.url)), "utf8");
+  const rendered = new Set<string>();
+  for (const match of source.matchAll(/const [A-Z_]+_PANE_TESTID = "([a-z-]+)";/g)) rendered.add(match[1] as string);
+  // The two liquidation cohorts are derived in SymbolClient.tsx too: `liquidation-cohort-${cohort}`.
+  assert.ok(source.includes("return `liquidation-cohort-${cohort}`;"), "the cohort testid derivation moved");
+  for (const cohort of ["long", "short"]) rendered.add(`liquidation-cohort-${cohort}`);
+  for (const paneId of F1_PANE_ORDER) {
+    const testId = paneLayerTestId(paneId);
+    assert.ok(rendered.has(testId), `${paneId} → "${testId}" is not a testid SymbolClient.tsx renders`);
+  }
+  // MORDE: a derivation that forgets the `_` → `-` rule yields a testid nobody renders.
+  assert.equal(rendered.has("long_short-pane"), false);
+});
+
+test("T-01.6: F1_PANE_STRETCH weighs exactly the panes of F1_PANE_ORDER, all positive, both liquidation legs equal", () => {
+  assert.deepEqual(Object.keys(F1_PANE_STRETCH).sort(), [...F1_PANE_ORDER].sort());
+  for (const paneId of F1_PANE_ORDER) assert.ok(F1_PANE_STRETCH[paneId] > 0, `${paneId} has no weight`);
+  assert.equal(F1_PANE_STRETCH.liquidation_long, F1_PANE_STRETCH.liquidation_short);
+});
 
 // ── Catalog fixture: one entry per series the six panes of phase 01 draw ──────────────────
 

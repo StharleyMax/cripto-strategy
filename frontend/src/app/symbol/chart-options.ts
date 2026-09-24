@@ -45,6 +45,17 @@ export function chartConstructorOptions(width: number, height: number): DeepPart
     layout: {
       background: { type: ColorType.Solid, color: theme.backgroundColor },
       textColor: theme.textColor,
+      // `paineis-de-fluxo` `T-01.6` (`[Q-DG-1]`, `C-6`): the pane chrome of the ONE chart. The
+      // separator colour is the theme's (never a literal here — `DR-1`), the hover colour is the
+      // same value, and resizing is off: a resized layout would be state that the next remount
+      // forgets (`handoff/DESIGN-LAYOUT.md` §6, row "enableResize"). `pane-chrome-options.test.ts`
+      // asserts all three on the BUILT value, so dropping this block reddens a test instead of
+      // silently falling back to the library's own (light, undesigned) default separator.
+      panes: {
+        separatorColor: theme.paneSeparatorColor,
+        separatorHoverColor: theme.paneSeparatorColor,
+        enableResize: false,
+      },
     },
     grid: {
       vertLines: { color: theme.gridLineColor },

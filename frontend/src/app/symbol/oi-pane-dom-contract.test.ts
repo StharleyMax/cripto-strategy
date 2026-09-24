@@ -209,7 +209,9 @@ test("V-1: the ` UTC` suffix is printed ONCE — the formatter owns it, no call 
   // Sanity on the universe: this assert is worth something only if there ARE call sites to scan.
   assert.equal(
     (source.match(/formatUtcMinute\(/g) ?? []).length,
-    9,
+    // 9 → 10 in `paineis-de-fluxo` `T-01.6`: `ChromeModeStamp` spells T with the same formatter
+    // (gate r2 `C-4`), and appends no ` UTC` of its own — the assert below still scans it.
+    10,
     "one declaration + EIGHT call sites — five from `T-03.5`, the liquidation pane's own readable " +
       "horizon (`T-05.9`), the long/short pane's (`T-04.5`) and its age stamp (`T-04.8`, the `S-6` " +
       "carimbo the `design_gate` requires at the right edge of time). If the count moved, re-anchor " +

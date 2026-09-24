@@ -53,8 +53,9 @@ const PER_DRAG_TIMEOUT_MS = 10_000;
 const NO_REQUEST_WAIT_MS = 2_500;
 /** Slots past the left edge each drag aims at — above `DEFAULT_PAGE_TRIGGER_SLOTS` (20). */
 const EDGE_OVERSHOOT_SLOTS = 60;
-/** The price pane is the TOP pane of the single chart; one `CHART_HEIGHT_PX` (220) tall until
- * `T-01.6` sets the stretch factors. The drag happens in its middle. */
+/** The price pane is the TOP pane of the single chart. Since `T-01.6` set the stretch factors it is
+ * ~335px of a 910px chart (`charts::stackedPaneLayout`, weight 34 of 89), so 110px from the host's
+ * top is still inside it — no longer its middle, but the drag only needs to start in the pane. */
 const PRICE_PANE_MID_Y_PX = 110;
 
 const ONE_MINUTE_MS = 60_000;

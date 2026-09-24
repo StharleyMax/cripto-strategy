@@ -60,6 +60,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import type {
   CandlestickSeriesOptions,
@@ -69,6 +70,7 @@ import type {
   ISeriesApi,
   Logical,
   LogicalRange as LibraryLogicalRange,
+  SeriesType,
 } from "lightweight-charts";
 import {
   CandlestickSeries,
@@ -84,17 +86,21 @@ import {
   candlestickSeriesColors,
   candlestickSeriesLossless,
   colorTokens,
+  F1_PANE_STACK_FORM,
   formatHeldStockLabel,
   lastGridInstant,
   lineSeriesLossless,
   ONE_MINUTE_MS,
+  paneScaleMargins,
   positiveValueSeriesLossless,
   resolveFlowReading,
   resolveStockReading,
+  stackedPaneLayout,
   toLogicalRange,
   zeroMarkSeries,
   type FlowReading,
   type S2Panels,
+  type ScaleMargins,
   type TimeAxis,
 } from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
@@ -102,7 +108,7 @@ import { recentBandSlotRange } from "./long-short-band.ts";
 import { AxisSyncProvider, useAxisSync } from "./axis-sync-provider.tsx";
 import { recordHistoryPageDrawn } from "./history-page-latency-probe.ts";
 import { SINGLE_CHART_PANEL_INDEX } from "./axis-sync.ts";
-import { F1_PANE_ORDER, type PaneId } from "./pane-registry.ts";
+import { F1_PANE_ORDER, F1_PANE_STRETCH, type PaneId } from "./pane-registry.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
@@ -499,11 +505,27 @@ function lastInstantMs(panels: S2Panels): number {
   return lastGridInstant(panels.window, ONE_MINUTE_MS);
 }
 
-/** ⛔ FORM, submitted to the `design_gate` — `DR-4` of `gates/design-review-painel-cvd.md` asks
- * for a `ResizeObserver`/`autoSize` on top of this, and that is a MEDIUM item of that report's
- * roadmap, not one of the three blockers this pass exists to clear. Named as a constant here so
- * the next pass has one place to change instead of a literal inside a call. */
+/** ⛔ NOT THE CHART HEIGHT ANY MORE (`T-01.6`). Until `T-01.5` each pane was its own chart of this
+ * height; the ONE chart now takes its height from `PANE_STACK` below. What still reads this number
+ * is the NOMINAL band of the absence/zero marks (`VOLUME_MARKS_BAND_PX`,
+ * `LIQUIDATION_MARKS_BAND_PX`): their autoscale range stays pinned to `220 × (1 − top)`, so a mark
+ * keeps its height RATIO to its band on a pane of any height (the marks scale with the band, the
+ * absence/zero distinction survives), but its pixel height is no longer the nominal one. Anchoring
+ * the band on `IPaneApi.getHeight()` is `charts/mark-band-geometry.ts` (`T-01.3`), and wiring it into
+ * the marks is not in `T-01.6`'s listed scope — declared in `gates/T-01.6-builder.md` §7, not
+ * silently left. Named here as before so the geometry tests that read it
+ * (`volume-subaxis-geometry.test.ts`, `liquidation-geometry.test.ts`) keep measuring the same band. */
 const CHART_HEIGHT_PX = 220;
+
+/**
+ * `T-01.6` — the ONE chart's vertical layout: chart height and stretch factors, computed once
+ * (`charts/pane-stack-layout.ts`, `ADR-003/FR-2`). The weights are the registry's
+ * (`F1_PANE_STRETCH`, in `F1_PANE_ORDER`), the pixels the `design_gate`'s form (`F1_PANE_STACK_FORM`).
+ */
+const PANE_STACK = stackedPaneLayout({
+  ...F1_PANE_STACK_FORM,
+  weights: F1_PANE_ORDER.map((paneId) => F1_PANE_STRETCH[paneId]),
+});
 
 /**
  * ── THE SINGLE CHART HOST (`paineis-de-fluxo` `T-01.5`, plan `01` item `1.3`, `ADR-044/D1`) ──
@@ -535,16 +557,62 @@ const CHART_HEIGHT_PX = 220;
  * `data-chart-mount-count` on the surface counts `createChart` calls — `e2e/22` asserts it stays
  * at `1` across paging. `data-visible-logical-from`/`-to` carry the range the chart shows, and
  * `data-axis-sync-write-count` counts dispatcher writes, which with `panelCount = 1` stays `0`.
+ *
+ * ── THE PER-PANE DOM LAYER (`T-01.6`, plan `01` item `1.5`, `[Q-DG-1]`) ─────────────────────────
+ *
+ * Each pane's chrome — title, readouts, badges, the absence note — is rendered INTO that pane, as a
+ * layer over its canvas, and not beside the chart any more (`handoff/DESIGN-LAYOUT.md` §6, approved
+ * by the gate r2 with conditions). The mechanics, each one measured or read in the library:
+ *
+ *   1. WHERE. `IPaneApi.getHTMLElement()` returns the pane's `<tr>` (`lightweight-charts@5.2.1`
+ *      `dist/lightweight-charts.development.mjs:9592`, `_internal_getElement`), and a `<div>` inside a
+ *      `<tr>` is invalid table content. The layer goes into the pane CELL's own wrapper — the
+ *      `position: relative; overflow: hidden` `<div>` the library puts in the middle `<td>` and paints
+ *      the pane's two canvases into (`:9565-9577`). There, `absolute inset-0` IS the plot area: the
+ *      price-axis cells are the `<td>`s beside it, so the layer never covers an axis numeral, and a
+ *      coordinate from `timeScale()`/`priceToCoordinate` is already in the layer's own frame.
+ *   2. WHEN. That element is `null` in the tick the pane is created (`gates/T-01.0-spike.md` §6.2,
+ *      5/5 panes). The host asks again on the next animation frame, up to `PANE_ANCHOR_MAX_FRAMES`,
+ *      and only then portals the layers in. Since the host survives a page (above), this happens
+ *      once per mount, not per page. Before that — and on the server — each layer renders in place,
+ *      visually hidden: every `data-fact`/`data-testid` is in the first HTML the server sends.
+ *   3. THE LAYER DOES NOT COVER THE SERIES. The layer is `pointer-events: none` (the crosshair and
+ *      the drag stay the canvas'), and every scale that draws near the top of its pane is compressed
+ *      into the part BELOW the layer's measured legend (`charts::paneScaleMargins`). A
+ *      `ResizeObserver` re-runs that whenever a legend changes height (a badge appears, a font loads).
+ *   4. THE CANVASES, NOT THE HOST, ARE `aria-hidden` (`DR-6`). The host now CONTAINS the readouts
+ *      (they live inside the chart's DOM), so hiding the host would hide the very text that is the
+ *      canvas' declared alternative. The host marks each `<canvas>` hidden, and the library's layout
+ *      `<table>` `role="presentation"`, once the panes exist.
  */
+
+/** Frames the host waits for `getHTMLElement()` to stop being `null` before giving up. The spike
+ * measured ONE frame (`T-01.0` §6.2); the margin is for a slow first layout, and giving up leaves
+ * the layers rendered in place (hidden) and `data-pane-layers="unanchored"` on the host. */
+const PANE_ANCHOR_MAX_FRAMES = 10;
+
+/** `T-01.6` — one price scale of a pane and its role in the stack. The host reads its BASE margins
+ * from the library once, right after `mount` (so the pane's own `applyOptions` is the base), and
+ * from then on only ever writes the margins `charts::paneScaleMargins` derives from that base. Two
+ * series sharing one scale need to be declared once. */
+interface PaneScaleBinding {
+  readonly series: ISeriesApi<SeriesType>;
+  /** Draws near the top of the pane ⇒ is compressed below the legend. */
+  readonly belowLegend: boolean;
+  /** Anchored at the pane's bottom ⇒ keeps `SEPARATOR_CLEARANCE_PX` off the separator (`C-6`). */
+  readonly clearSeparator: boolean;
+}
 
 /** What a pane declares to the host. `mount` runs ONCE, when the chart exists, and returns the
  * pane's series handles; `apply` feeds them the data of the CURRENT render (the host keeps the
  * latest binding, so `apply` never reads stale props); `measure`, optional, reads geometry back
- * out of the library one frame after every apply. */
+ * out of the library one frame after every apply; `scales` (`T-01.6`) names the pane's scales and
+ * their role in the stack. */
 interface HostedPaneBinding<Handles> {
   readonly mount: (chart: IChartApi, paneIndex: number) => Handles;
   readonly apply: (handles: Handles) => void;
   readonly measure?: (chart: IChartApi, paneIndex: number) => void;
+  readonly scales?: (handles: Handles) => readonly PaneScaleBinding[];
 }
 
 type AnyPaneBinding = HostedPaneBinding<unknown>;
@@ -560,6 +628,10 @@ interface HostRegistrar extends PaneRegistrar {
 }
 
 const ChartHostContext = createContext<PaneRegistrar | null>(null);
+
+/** `T-01.6` — the element each pane's layer is portaled into, by `paneIndex`. Empty until the
+ * panes are laid out (see the host docstring, item 2). */
+const PaneAnchorsContext = createContext<readonly (HTMLElement | null)[]>([]);
 
 function useChartHost(): PaneRegistrar {
   const registrar = useContext(ChartHostContext);
@@ -590,19 +662,108 @@ function useHostedPane<Handles>(paneId: PaneId, binding: HostedPaneBinding<Handl
   useEffect(() => registrar.register(paneIndexOfId(paneId), bindingRef), [registrar, paneId]);
 }
 
-/** The element the single chart is created in. Rendered where the Price pane's chart used to
- * be until the per-pane DOM layer (`T-01.6`) moves the pane chrome onto `IPaneApi.getHTMLElement()`
- * — so the selectors `[data-testid="price-pane"] canvas` / `[data-visible-logical-from]` keep
- * finding the chart meanwhile. `aria-hidden`: the canvas has no accessible name, and every pane's
- * readouts are the declared textual alternative (`DR-6`). */
+/**
+ * `T-01.6` — the wrapper `<div>` of a pane's plot cell, given the pane's `<tr>` (see the host
+ * docstring, item 1). `null` when the row is not there yet, or when the library's DOM is not the
+ * shape this was read from — in which case the layer stays in place instead of landing somewhere
+ * wrong.
+ */
+function paneLayerAnchorOf(row: HTMLElement | null): HTMLElement | null {
+  const cell = row?.children.item(1) ?? null;
+  const wrapper = cell?.firstElementChild ?? null;
+  if (!(wrapper instanceof HTMLElement) || wrapper.querySelector("canvas") === null) {
+    return null;
+  }
+  return wrapper;
+}
+
+/** `DR-6`, re-anchored by `T-01.6` (see the host docstring, item 4). */
+function hideChartGraphicsFromAssistiveTech(container: HTMLElement): void {
+  for (const canvas of container.querySelectorAll("canvas")) {
+    canvas.setAttribute("aria-hidden", "true");
+  }
+  for (const table of container.querySelectorAll("table")) {
+    table.setAttribute("role", "presentation");
+  }
+}
+
+/** The bottom edge of a pane layer's legend, in CSS px from the pane's top — `null` while the layer
+ * is not portaled in. Read off the RENDER (`getBoundingClientRect`), never counted in lines. */
+function legendBottomPx(anchor: HTMLElement | null): number | null {
+  const legend = anchor?.querySelector<HTMLElement>("[data-pane-legend]") ?? null;
+  if (anchor === null || legend === null) {
+    return null;
+  }
+  return legend.getBoundingClientRect().bottom - anchor.getBoundingClientRect().top;
+}
+
+/**
+ * Where a pane's layer is rendered: portaled into its pane once the host has the anchor, in place
+ * and visually hidden until then (and on the server). `children` is the layer ROOT — the element
+ * that carries the pane's `data-testid` (`pane-registry.ts::paneLayerTestId`) and `PANE_LAYER_CLASS`.
+ */
+function PaneLayer({ paneId, children }: { readonly paneId: PaneId; readonly children: ReactNode }) {
+  const anchors = useContext(PaneAnchorsContext);
+  const anchor = anchors[paneIndexOfId(paneId)] ?? null;
+  if (anchor === null) {
+    return (
+      <div className="sr-only" data-pane-layer-pending={paneId}>
+        {children}
+      </div>
+    );
+  }
+  return createPortal(children, anchor);
+}
+
+/**
+ * The class of every pane layer ROOT (`T-01.6`, `DESIGN-LAYOUT.md` §6 + gate r2 `C-5`):
+ * - `absolute inset-0` over the pane's plot area, `overflow-hidden` so a long line is clipped at the
+ *   price axis instead of running over it;
+ * - `z-[3]`: the library's two canvases sit at `z-index: 1` and `2` (`:9582`, `:9589`);
+ * - `pointer-events-none`, so the layer never steals the crosshair or the drag — and
+ *   `pointer-events-auto` given back to any link or button inside it (`C-5`), which stays in the
+ *   tab order because nothing here touches `tabindex`. `[MEDIDO 2026-09-24: grep -nE '<(a|button)\b'
+ *   inside the six pane components → 0]`: the rule protects the next one, not a current one.
+ */
+const PANE_LAYER_CLASS =
+  "pointer-events-none absolute inset-0 z-[3] overflow-hidden [&_a]:pointer-events-auto [&_button]:pointer-events-auto";
+
+/** The legend block of a layer: everything VISIBLE in it, measured by the host (`data-pane-legend`)
+ * for the scale reserve. 12px (`DESIGN-LAYOUT.md` §6: "linha 1, `nowrap`, 12px") on every
+ * descendant, whatever class the reused readout carries. */
+function PaneLegend({ children }: { readonly children: ReactNode }) {
+  return (
+    <div data-pane-legend="" className="flex flex-col items-start gap-0.5 px-2 pt-1 text-xs [&_*]:text-xs">
+      {children}
+    </div>
+  );
+}
+
+/** One line of a legend: `nowrap`, clipped by the layer at the axis (`DESIGN-LAYOUT.md` §6: a line
+ * that does not fit loses its tail, never its font size). */
+function PaneLegendLine({ children }: { readonly children: ReactNode }) {
+  return <div className="flex max-w-full flex-nowrap items-baseline gap-x-3 whitespace-nowrap">{children}</div>;
+}
+
+/** The part of a pane's chrome that is NOT drawn over the canvas: still in the accessibility tree
+ * and still machine-readable (every `data-fact` in it survives), but not painted. ⚠️ FORM — which
+ * readout goes here and which stays in the legend is a builder's placeholder under the rule written
+ * in `gates/T-01.6-builder.md` §2, submitted to the `ux-ui-mastery` verdict of `T-01.11`. */
+function PaneDetails({ children }: { readonly children: ReactNode }) {
+  return <div className="sr-only">{children}</div>;
+}
+
+/** The element the single chart is created in, rendered by the host above the panes' layers.
+ * ⛔ NOT `aria-hidden` any more (`T-01.6`): the layers live inside it; the canvases are hidden one by
+ * one instead (`hideChartGraphicsFromAssistiveTech`). */
 function ChartHostSurface({ priceSlots }: { readonly priceSlots: number }) {
   const registrar = useChartHost();
   return (
     <div
       ref={registrar.surfaceRef}
-      aria-hidden="true"
       data-testid={CHART_HOST_TESTID}
       data-fact={`price_slots:${priceSlots}`}
+      data-pane-stack-height-px={PANE_STACK.chartHeightPx}
     />
   );
 }
@@ -611,6 +772,7 @@ function SymbolChartHost({
   axis,
   dataVersion,
   onGestureChange,
+  priceSlots,
   children,
 }: {
   /** The pager's current axis. Read by the DATA effect only (`rebase`), never by the mount. */
@@ -620,6 +782,8 @@ function SymbolChartHost({
   /** `true` when a pointer gesture starts on the chart, `false` when it ends — the pager's
    * `holdRightEdgeCap`. */
   readonly onGestureChange: (active: boolean) => void;
+  /** The price pane's slot count, published on the surface (`data-fact="price_slots:N"`). */
+  readonly priceSlots: number;
   readonly children: ReactNode;
 }) {
   const axisSync = useAxisSync();
@@ -630,12 +794,15 @@ function SymbolChartHost({
   const chartStateRef = useRef<{
     readonly chart: IChartApi;
     readonly handles: Map<number, unknown>;
+    /** `T-01.6` — per pane, its scales and the base margins read right after `mount`. */
+    readonly scales: Map<number, readonly { readonly binding: PaneScaleBinding; readonly base: ScaleMargins }[]>;
   } | null>(null);
   const appliedAxisRef = useRef<TimeAxis | null>(null);
   const mountCountRef = useRef(0);
   const latestDataVersionRef = useRef(dataVersion);
   latestDataVersionRef.current = dataVersion;
   const appliedDataVersionRef = useRef<unknown>(undefined);
+  const [paneAnchors, setPaneAnchors] = useState<readonly (HTMLElement | null)[]>([]);
   const [registrar] = useState<HostRegistrar>(() => {
     const bindings = new Map<number, RefObject<AnyPaneBinding>>();
     const surfaceRef: RefObject<HTMLDivElement | null> = { current: null };
@@ -670,13 +837,9 @@ function SymbolChartHost({
     }
     const store = axisSyncRef.current;
     const bindings = registrar.bindings;
-    // ⛔ THE OPTIONS ARE NOT SPELLED HERE (`DR-1`, `chart-construction.test.ts`). The height is one
-    // `CHART_HEIGHT_PX` per pane, the same canvas area the six charts had, so each pane keeps the
-    // 220px the mark bands were sized against until `T-01.6` sets the stretch factors.
-    const chart = createChart(
-      container,
-      chartConstructorOptions(container.clientWidth || 600, CHART_HEIGHT_PX * F1_PANE_ORDER.length),
-    );
+    // ⛔ THE OPTIONS ARE NOT SPELLED HERE (`DR-1`, `chart-construction.test.ts`) — the separator
+    // colour and `enableResize` included (`chart-options.ts`, `T-01.6`). The height is the stack's.
+    const chart = createChart(container, chartConstructorOptions(container.clientWidth || 600, PANE_STACK.chartHeightPx));
     mountCountRef.current += 1;
     container.dataset.chartMountCount = String(mountCountRef.current);
     const handles = new Map<number, unknown>();
@@ -685,10 +848,30 @@ function SymbolChartHost({
       const binding = bindings.get(paneIndex)!.current;
       handles.set(paneIndex, binding.mount(chart, paneIndex));
     }
+    // `T-01.6` — the stretch factors (the panes exist once `addSeries(…, paneIndex)` ran), and the
+    // base margins of every declared scale, read back AFTER the pane's own `applyOptions`.
+    const panes = chart.panes();
+    for (const [paneIndex, pane] of panes.entries()) {
+      const factor = PANE_STACK.stretchFactors[paneIndex];
+      if (factor !== undefined) {
+        pane.setStretchFactor(factor);
+      }
+    }
+    const scales = new Map<number, readonly { readonly binding: PaneScaleBinding; readonly base: ScaleMargins }[]>();
+    for (const paneIndex of paneIndices) {
+      const declared = bindings.get(paneIndex)!.current.scales?.(handles.get(paneIndex)) ?? [];
+      scales.set(
+        paneIndex,
+        declared.map((binding) => {
+          const margins = binding.series.priceScale().options().scaleMargins;
+          return { binding, base: { top: margins.top, bottom: margins.bottom } };
+        }),
+      );
+    }
     for (const paneIndex of paneIndices) {
       bindings.get(paneIndex)!.current.apply(handles.get(paneIndex));
     }
-    chartStateRef.current = { chart, handles };
+    chartStateRef.current = { chart, handles, scales };
     appliedAxisRef.current = store.axis;
     appliedDataVersionRef.current = latestDataVersionRef.current;
     // `T-05.9` (plan `05` DoD 7): the first `setData` is drawn here.
@@ -734,7 +917,25 @@ function SymbolChartHost({
         bindings.get(paneIndex)?.current.measure?.(chart, paneIndex);
       }
     });
+    // `T-01.6` — the anchors of the per-pane layers, once the panes' DOM exists (host docstring,
+    // item 2). A cancelled mount stops asking.
+    let anchorFrame = 0;
+    let anchorFrames = 0;
+    const acquireAnchors = () => {
+      anchorFrames += 1;
+      const anchors = chart.panes().map((pane) => paneLayerAnchorOf(pane.getHTMLElement()));
+      if (anchors.some((anchor) => anchor === null) && anchorFrames < PANE_ANCHOR_MAX_FRAMES) {
+        anchorFrame = requestAnimationFrame(acquireAnchors);
+        return;
+      }
+      hideChartGraphicsFromAssistiveTech(container);
+      container.dataset.paneLayers = anchors.every((anchor) => anchor !== null) ? "anchored" : "unanchored";
+      container.dataset.paneAnchorFrames = String(anchorFrames);
+      setPaneAnchors(anchors);
+    };
+    anchorFrame = requestAnimationFrame(acquireAnchors);
     return () => {
+      cancelAnimationFrame(anchorFrame);
       cancelAnimationFrame(measureFrame);
       cancelAnimationFrame(mountGuardFrame);
       releaseMountGuard();
@@ -744,9 +945,66 @@ function SymbolChartHost({
       timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
       unregister();
       chartStateRef.current = null;
+      setPaneAnchors([]);
       chart.remove();
     };
   }, [registrar]);
+
+  // ── LAYOUT (`T-01.6`): once the layers are portaled in, every declared scale gets the margins
+  // `charts::paneScaleMargins` derives from its base, the pane's height and its legend's MEASURED
+  // bottom — and again whenever a legend changes height. What was applied is read back from the
+  // library and published on the layer root, so the e2e compares the render, not this code.
+  useEffect(() => {
+    const state = chartStateRef.current;
+    if (state === null || paneAnchors.length === 0) {
+      return;
+    }
+    const layoutPaneScales = () => {
+      const panes = state.chart.panes();
+      for (const [paneIndex, declared] of state.scales) {
+        const pane = panes[paneIndex];
+        const anchor = paneAnchors[paneIndex] ?? null;
+        if (pane === undefined || anchor === null) {
+          continue;
+        }
+        const paneHeightPx = pane.getHeight();
+        const legendBottom = legendBottomPx(anchor);
+        let reserveKind = "none";
+        let reservedTopPx: number | null = null;
+        for (const { binding, base } of declared) {
+          const result = paneScaleMargins(base, binding, { paneHeightPx, legendBottomPx: legendBottom });
+          if (result.kind === "unmeasured") {
+            reserveKind = "unmeasured";
+            continue;
+          }
+          binding.series.priceScale().applyOptions({ scaleMargins: result.margins });
+          if (binding.belowLegend) {
+            reserveKind = result.kind === "overflow" ? "overflow" : reserveKind === "none" ? "margins" : reserveKind;
+            const appliedTopPx = binding.series.priceScale().options().scaleMargins.top * paneHeightPx;
+            reservedTopPx = reservedTopPx === null ? appliedTopPx : Math.min(reservedTopPx, appliedTopPx);
+          }
+        }
+        // The layer ROOT is the legend's parent by construction (`PaneLegend` is always its direct
+        // child), so the facts land on the element that carries the pane's `data-testid`.
+        const root = anchor.querySelector<HTMLElement>("[data-pane-legend]")?.parentElement ?? null;
+        if (root !== null) {
+          root.dataset.paneHeightPx = String(Math.round(paneHeightPx * 100) / 100);
+          root.dataset.legendBottomPx = legendBottom === null ? "" : String(Math.round(legendBottom * 100) / 100);
+          root.dataset.reservedScaleTopPx = reservedTopPx === null ? "" : String(Math.round(reservedTopPx * 100) / 100);
+          root.dataset.legendReserve = reserveKind;
+        }
+      }
+    };
+    layoutPaneScales();
+    const observer = new ResizeObserver(() => layoutPaneScales());
+    for (const anchor of paneAnchors) {
+      const legend = anchor?.querySelector("[data-pane-legend]") ?? null;
+      if (legend !== null) {
+        observer.observe(legend);
+      }
+    }
+    return () => observer.disconnect();
+  }, [paneAnchors]);
 
   // ── PAGE: new data on the SAME chart. Skipped on the commit that mounted (the mount effect
   // already applied that data on that axis).
@@ -798,7 +1056,14 @@ function SymbolChartHost({
     };
   }, [registrar, axis, dataVersion]);
 
-  return <ChartHostContext.Provider value={registrar}>{children}</ChartHostContext.Provider>;
+  return (
+    <ChartHostContext.Provider value={registrar}>
+      <PaneAnchorsContext.Provider value={paneAnchors}>
+        <ChartHostSurface priceSlots={priceSlots} />
+        {children}
+      </PaneAnchorsContext.Provider>
+    </ChartHostContext.Provider>
+  );
 }
 
 /** `T-04.3` (`CA-F4-3`): a "leitura atual" readout for Preço, same shape `OiPane` already has
@@ -1263,15 +1528,21 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
       data-testid={VOLUME_SUBAXIS_TESTID}
       data-volume-present-points={volume.presentPoints}
     >
-      <h3 className="font-label-caps text-label-caps text-on-surface">Volume (1m)</h3>
-      <VolumeScaleNote />
-      <VolumeMarksLegend />
-      <p data-fact={`volume_last_reading:${volume.reading.kind}`} className="text-sm text-provenance-weak">
-        Leitura atual: {readingText}
-      </p>
-      <ReadableHorizon volume={volume} />
+      <PaneLegendLine>
+        <h3 className="font-label-caps text-label-caps text-on-surface">Volume (1m)</h3>
+        <p data-fact={`volume_last_reading:${volume.reading.kind}`} className="text-sm text-provenance-weak">
+          Leitura atual: {readingText}
+        </p>
+        {/* ⛔ STAYS VISIBLE (`BLOCKER-1`): an overlay scale draws no numeral, so this line is the
+            only place the log10 is declared, and an undeclared log axis is worse than none. */}
+        <VolumeScaleNote />
+      </PaneLegendLine>
       <PartialCoverageMark factKey="volume_partial_coverage" summary={volume.partialCoverage} />
       <AbsenceNote status={status} />
+      <PaneDetails>
+        <VolumeMarksLegend />
+        <ReadableHorizon volume={volume} />
+      </PaneDetails>
     </div>
   );
 }
@@ -1401,6 +1672,14 @@ function PricePane({
       absenceSeries.setData(absenceMarkSeries(volume.slots, ABSENCE_MARK_PX) as never);
       zeroSeries.setData(zeroMarkSeries(volume.slots, ZERO_MARK_PX) as never);
     },
+    // `T-01.6` — the candles draw near the top (compressed below the legend); the volume bars and
+    // the two marks sit on the pane's floor, and their `#8b949e` keeps `C-6`'s 4px off the separator.
+    // `zeroSeries` shares `absenceSeries`' scale (`VOLUME_MARKS_PRICE_SCALE_ID`), declared once.
+    scales: ({ series, volumeSeries, absenceSeries }) => [
+      { series, belowLegend: true, clearSeparator: false },
+      { series: volumeSeries, belowLegend: false, clearSeparator: true },
+      { series: absenceSeries, belowLegend: false, clearSeparator: true },
+    ],
   });
   const closeSlots = panels.price.series.slots.map((slot) => ({
     time: slot.time,
@@ -1416,20 +1695,27 @@ function PricePane({
         ? `${reading.value} (${formatHeldStockLabel(reading)})`
         : String(reading.value);
   return (
-    <section aria-label="Preço" data-testid={PRICE_PANE_TESTID} data-price-candles={priceCandles.drawnCandles}>
-      <h2 className="font-label-caps text-label-caps text-on-surface">
-        Preço ({panels.price.priceSource}, {panels.price.priceUse})
-      </h2>
-      {/* `T-01.5`: the ONE chart (all six panes) lives here until `T-01.6` moves each pane's chrome
-          onto its own `IPaneApi.getHTMLElement()`. */}
-      <ChartHostSurface priceSlots={panels.price.series.slots.length} />
-      <p data-fact={`price_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
-        Leitura atual: {readingText}
-      </p>
-      <PriceCandleFacts priceCandles={priceCandles} />
-      <AbsenceNote status={status} />
-      <VolumeSubAxis volume={volume} status={volumeStatus} />
-    </section>
+    // `T-01.6`: this section is the ROOT of the price pane's layer, portaled into the pane itself
+    // (`PaneLayer`); the chart surface moved up into `SymbolChartHost`.
+    <PaneLayer paneId="price">
+      <section aria-label="Preço" data-testid={PRICE_PANE_TESTID} data-price-candles={priceCandles.drawnCandles} className={PANE_LAYER_CLASS}>
+        <PaneLegend>
+          <PaneLegendLine>
+            <h2 className="font-label-caps text-label-caps text-on-surface">
+              Preço ({panels.price.priceSource}, {panels.price.priceUse})
+            </h2>
+            <p data-fact={`price_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
+              Leitura atual: {readingText}
+            </p>
+          </PaneLegendLine>
+          <AbsenceNote status={status} />
+          <VolumeSubAxis volume={volume} status={volumeStatus} />
+          <PaneDetails>
+            <PriceCandleFacts priceCandles={priceCandles} />
+          </PaneDetails>
+        </PaneLegend>
+      </section>
+    </PaneLayer>
   );
 }
 
@@ -1590,6 +1876,7 @@ function OiPane({
     apply: ({ series }) => {
       series.setData(lineSeriesLossless(panels.oi.slots) as never);
     },
+    scales: ({ series }) => [{ series, belowLegend: true, clearSeparator: false }],
   });
   // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (`ONE_MINUTE_MS`, `D-C3.2`),
   // no longer OI's own native grid — `panels.oi.timeframeMs` (5 min) is passed SEPARATELY, as
@@ -1602,6 +1889,7 @@ function OiPane({
         ? `${reading.value} (${formatHeldStockLabel(reading)})`
         : String(reading.value);
   return (
+    <PaneLayer paneId="oi">
     <section
       aria-label="Open Interest"
       // ⛔ THE STABLE SELECTOR (`T-03.5`), and the same KIND of contract `VOLUME_SUBAXIS_TESTID`
@@ -1615,18 +1903,28 @@ function OiPane({
       // checkable from outside; the e2e asserts the pane's headline number is the FIRST one.
       data-oi-native-bars={oi.nativeBars}
       data-oi-wire-points={oi.wirePoints}
+      className={PANE_LAYER_CLASS}
     >
-      <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest (5m)</h2>
-      <div data-fact={`oi_slots:${panels.oi.slots.length}`} />
-      <p data-fact={`oi_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
-        Leitura atual: {readingText}
-      </p>
-      <OiFreshness oi={oi} />
-      <OiReadableHorizon oi={oi} gridSlots={panels.oi.slots.length} />
-      <OiProvenance oi={oi} />
-      {wallState === "beyond-coverage" ? <BeyondCoverageBadge factKey="oi_coverage" /> : null}
-      <AbsenceNote status={status} />
+      <PaneLegend>
+        <PaneLegendLine>
+          <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest (5m)</h2>
+          <p data-fact={`oi_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
+            Leitura atual: {readingText}
+          </p>
+          <OiProvenance oi={oi} />
+        </PaneLegendLine>
+        {/* ⛔ STAYS VISIBLE (`RNF-2`): a held STOCK value older than its cadence is never shown
+            without its age, and "DADO VELHO" is said here or nowhere. */}
+        <OiFreshness oi={oi} />
+        {wallState === "beyond-coverage" ? <BeyondCoverageBadge factKey="oi_coverage" /> : null}
+        <AbsenceNote status={status} />
+        <PaneDetails>
+          <div data-fact={`oi_slots:${panels.oi.slots.length}`} />
+          <OiReadableHorizon oi={oi} gridSlots={panels.oi.slots.length} />
+        </PaneDetails>
+      </PaneLegend>
     </section>
+    </PaneLayer>
   );
 }
 
@@ -1738,6 +2036,13 @@ function CvdPane({
       deltaSeries.setData(lineSeriesLossless(panels.cvd.deltaSlots) as never);
       cumulativeSeries.setData(lineSeriesLossless(panels.cvd.cumulativeSlots) as never);
     },
+    // `T-01.6` — BOTH halves are compressed below the legend, so the delta/cumulative split keeps
+    // its place in the part of the pane the legend leaves (`charts/pane-stack-layout.ts`, "why the
+    // margins are compressed, not merely raised").
+    scales: ({ deltaSeries, cumulativeSeries }) => [
+      { series: deltaSeries, belowLegend: true, clearSeparator: false },
+      { series: cumulativeSeries, belowLegend: true, clearSeparator: false },
+    ],
   });
   const deltaReading = resolveFlowReading(panels.cvd.deltaSlots, panels.cvd.timeframeMs, lastInstantMs(panels));
   // `DR-3`, second half: the pane drew TWO series and read exactly ONE. The screen went to the
@@ -1763,40 +2068,53 @@ function CvdPane({
       : String(cumulativeReading.value);
   const gridSlots = panels.cvd.deltaSlots.length;
   return (
+    <PaneLayer paneId="cvd">
     <section
       aria-label="CVD"
       data-testid={CVD_PANE_TESTID}
       data-cvd-present-points={cvd.presentPoints}
+      className={PANE_LAYER_CLASS}
     >
-      <h2 className="font-label-caps text-label-caps text-on-surface">CVD (delta e acumulado)</h2>
-      <CvdLegend />
+      <PaneLegend>
+      <PaneLegendLine>
+        <h2 className="font-label-caps text-label-caps text-on-surface">CVD (delta e acumulado)</h2>
+        <p data-fact={`cvd_last_reading:${deltaReading.kind}`} className="text-sm text-provenance-weak">
+          Delta atual: {readingText}
+        </p>
+        <p data-fact={`cvd_cumulative_last_reading:${cumulativeReading.kind}`} className="text-sm text-provenance-weak">
+          Acumulado atual: {cumulativeReadingText}
+        </p>
+      </PaneLegendLine>
+      <PaneLegendLine>
+        <CvdLegend />
+        {/* The anchor of the CUMULATIVE curve, named on screen. The delta line needs none; the
+            cumulative one is unreadable without this instant, and `page.tsx` chooses it EXPLICITLY
+            (`cvdAnchorMs`) instead of letting `buildCvdPanel`'s default decide in silence — three
+            anchors over the same deltas invert the sign of the total (`D4.7`). */}
+        <p data-fact={`cvd_cumulative_anchor:${cvd.anchorMs}`} className="text-sm text-provenance-weak">
+          Acumulado ancorado em {formatUtcMinute(cvd.anchorMs)}.
+        </p>
+      </PaneLegendLine>
+      <PartialCoverageMark factKey="cvd_partial_coverage" summary={cvd.partialCoverage} />
+      <AbsenceNote status={status} />
+      <PaneDetails>
       {/* ⛔ `aria-hidden` on the canvas host — `DR-6`. `lightweight-charts` paints into a
           `<canvas>` with no accessible name, so a screen reader finds an empty node here and a
           user cannot tell an empty chart from an unlabelled one. The readouts below ARE the
           declared textual alternative for the last instant; hiding the host says so instead of
           leaving a nameless node in the tree. A per-point alternative (a keyboard-navigable
-          table) is `DR-10`, strategic, not this pass. */}
+          table) is `DR-10`, strategic, not this pass. `T-01.6`: the canvases are hidden by the
+          host itself now (`hideChartGraphicsFromAssistiveTech`); this empty node only carries
+          `cvd_slots`. */}
       <div
         aria-hidden="true"
         data-fact={`cvd_slots:${panels.cvd.deltaSlots.length}`}
       />
-      <p data-fact={`cvd_last_reading:${deltaReading.kind}`} className="text-sm text-provenance-weak">
-        Delta atual: {readingText}
-      </p>
-      <p data-fact={`cvd_cumulative_last_reading:${cumulativeReading.kind}`} className="text-sm text-provenance-weak">
-        Acumulado atual: {cumulativeReadingText}
-      </p>
       <CvdReadableHorizon cvd={cvd} gridSlots={gridSlots} />
-      {/* The anchor of the CUMULATIVE curve, named on screen. The delta line above needs none;
-          the cumulative one is unreadable without this instant, and `page.tsx` chooses it
-          EXPLICITLY (`cvdAnchorMs`) instead of letting `buildCvdPanel`'s default decide in
-          silence — three anchors over the same deltas invert the sign of the total (`D4.7`). */}
-      <p data-fact={`cvd_cumulative_anchor:${cvd.anchorMs}`} className="text-sm text-provenance-weak">
-        Acumulado ancorado em {formatUtcMinute(cvd.anchorMs)}.
-      </p>
-      <PartialCoverageMark factKey="cvd_partial_coverage" summary={cvd.partialCoverage} />
-      <AbsenceNote status={status} />
+      </PaneDetails>
+      </PaneLegend>
     </section>
+    </PaneLayer>
   );
 }
 
@@ -1966,6 +2284,7 @@ function LiquidationCohortSurface({
   unit,
   status,
   paneId,
+  header = null,
 }: {
   readonly cohort: string;
   readonly label: string;
@@ -1977,6 +2296,9 @@ function LiquidationCohortSurface({
    * component mounts twice and cannot infer its pane from `cohort` alone without duplicating the
    * registry's own keys. */
   readonly paneId: PaneId;
+  /** `T-01.6`: the lines the two legs SHARE (the pane title, the `RS-5` third-party label, the
+   * log10 declaration) — drawn once, in the upper leg's legend, until phase `04` fuses the legs. */
+  readonly header?: ReactNode;
 }) {
   useHostedPane(paneId, {
     mount: (chart, paneIndex) => {
@@ -2023,6 +2345,12 @@ function LiquidationCohortSurface({
       absenceSeries.setData(absenceMarkSeries(data.slots, LIQUIDATION_ABSENCE_MARK_PX) as never);
       zeroSeries.setData(zeroMarkSeries(data.slots, LIQUIDATION_ZERO_MARK_PX) as never);
     },
+    // `T-01.6` — the bars below the legend; the marks band on the floor, `C-6`'s 4px off the
+    // separator (the absence mark is `#8b949e`, the separator's colour, same reason as the volume).
+    scales: ({ barSeries, absenceSeries }) => [
+      { series: barSeries, belowLegend: true, clearSeparator: false },
+      { series: absenceSeries, belowLegend: false, clearSeparator: true },
+    ],
   });
   // `RN-1` at the rendering layer, and for this series it is a rule of TYPE: a `FLOW` bucket with no
   // observation is NOT a bucket in which nobody was liquidated. A `0` there would be an ASSERTION
@@ -2036,28 +2364,42 @@ function LiquidationCohortSurface({
         ? String(data.reading.value)
         : `${data.reading.value} ${unit}`;
   return (
+    // `T-01.6`: the cohort group IS the root of its pane's layer — `paneLayerTestId("liquidation_long")`
+    // is `liquidation-cohort-long`, the handle `e2e/13` has always read.
+    <PaneLayer paneId={paneId}>
     <div
       role="group"
       aria-label={label}
       data-testid={liquidationCohortTestId(cohort)}
       data-liquidation-present-points={data.presentPoints}
       data-liquidation-zero-points={data.zeroPoints}
+      className={PANE_LAYER_CLASS}
     >
-      <h3 className="font-label-caps text-label-caps text-on-surface">{label}</h3>
-      {/* ⛔ `aria-hidden` on the canvas host — same criterion as `CvdPane`/`DR-6`:
-          `lightweight-charts` paints on a `<canvas>` with no accessible name, and the readouts below
-          ARE the declared textual alternative. */}
+      <PaneLegend>
+      {header}
+      <PaneLegendLine>
+        <h3 className="font-label-caps text-label-caps text-on-surface">{label}</h3>
+        <p data-fact={`liquidation_last_reading:${cohort}:${data.reading.kind}`} className="text-sm text-provenance-weak">
+          Leitura atual: {readingText}
+        </p>
+      </PaneLegendLine>
+      <PartialCoverageMark factKey={`liquidation_partial_coverage:${cohort}`} summary={data.partialCoverage} />
+      <AbsenceNote status={status} />
+      <PaneDetails>
+      <LiquidationReadableHorizon cohort={cohort} data={data} />
+      </PaneDetails>
+      </PaneLegend>
+      {/* ⛔ `aria-hidden` — same criterion as `CvdPane`/`DR-6`: the readouts above ARE the textual
+          alternative. `T-01.6`: this zero-height block is a DIRECT child of the layer root (which
+          covers the pane's canvas, `inset-0`), NOT of the sr-only details, because
+          `e2e/13` reads its `clientWidth` as the pane's drawable width; inside `sr-only` it would
+          read 1px. */}
       <div
         aria-hidden="true"
         data-fact={`liquidation_slots:${cohort}:${data.slots.length}`}
       />
-      <p data-fact={`liquidation_last_reading:${cohort}:${data.reading.kind}`} className="text-sm text-provenance-weak">
-        Leitura atual: {readingText}
-      </p>
-      <LiquidationReadableHorizon cohort={cohort} data={data} />
-      <PartialCoverageMark factKey={`liquidation_partial_coverage:${cohort}`} summary={data.partialCoverage} />
-      <AbsenceNote status={status} />
     </div>
+    </PaneLayer>
   );
 }
 
@@ -2084,14 +2426,30 @@ function LiquidationPane({
   readonly longStatus: PanelStatus;
   readonly shortStatus: PanelStatus;
 }) {
-  return (
+  // `T-01.6`: the two legs are two panes, so there is no single element that could enclose both
+  // layers any more. What the legs SHARE — the title, the `RS-5` label, the log10 declaration — is
+  // this section, drawn at the top of the UPPER leg's legend (`liquidation_long`, the first
+  // liquidation pane in `F1_PANE_ORDER`). `e2e/13` reads each leg's facts off its cohort group.
+  const header = (
     <section aria-label="Liquidações" data-testid={LIQUIDATION_PANE_TESTID}>
-      <h2 className="font-label-caps text-label-caps text-on-surface">
-        Liquidações (1m{liquidation.unit === null ? "" : `, ${liquidation.unit}`})
-      </h2>
-      <LiquidationProvenance provenance={liquidation.provenance} />
-      <LiquidationScaleNote />
-      <LiquidationMarksLegend />
+      <PaneLegendLine>
+        <h2 className="font-label-caps text-label-caps text-on-surface">
+          Liquidações (1m{liquidation.unit === null ? "" : `, ${liquidation.unit}`})
+        </h2>
+        {/* ⛔ STAYS VISIBLE (`RS-5`, `SPEC-007` §7): third-party data is never read without its label. */}
+        <LiquidationProvenance provenance={liquidation.provenance} />
+      </PaneLegendLine>
+      <PaneLegendLine>
+        {/* ⛔ STAYS VISIBLE (`BLOCKER-1`): the log10 is declared here or nowhere. */}
+        <LiquidationScaleNote />
+      </PaneLegendLine>
+      <PaneDetails>
+        <LiquidationMarksLegend />
+      </PaneDetails>
+    </section>
+  );
+  return (
+    <>
       <LiquidationCohortSurface
         cohort="long"
         label="Liquidação de posições compradas (long)"
@@ -2099,6 +2457,7 @@ function LiquidationPane({
         unit={liquidation.unit}
         status={longStatus}
         paneId="liquidation_long"
+        header={header}
       />
       <LiquidationCohortSurface
         cohort="short"
@@ -2108,7 +2467,7 @@ function LiquidationPane({
         status={shortStatus}
         paneId="liquidation_short"
       />
-    </section>
+    </>
   );
 }
 
@@ -2603,6 +2962,7 @@ function LongShortPane({
       // legible long/short ratio (nobody long), so the fabricated value would not even look wrong.
       series.setData(lineSeriesLossless(longShort.slots) as never);
     },
+    scales: ({ series }) => [{ series, belowLegend: true, clearSeparator: false }],
     measure: (chart, paneIndex) => {
       // ⛔ THE COORDINATES ARE THE LIBRARY'S, NOT A PROPORTION COMPUTED BESIDE IT. The plot area is
       // narrower than the container by whatever the price axis takes, and `fitContent` leaves half
@@ -2651,11 +3011,15 @@ function LongShortPane({
   // transport and an empty time slice is the state the empty form exists for.
   const hasObservation = longShort.windowStats !== null;
   return (
-    // ⛔ NO `overflow: hidden` AND NO FIXED WIDTH ON THIS CARD, AND THE OMISSION IS `A-3` OF THE
-    // GATE. The study is a `1280x1024` canvas (`body { width: 1280px; overflow: hidden }`), which
-    // CLIPS its own content at 200% zoom — `1.4.4`/`1.4.10`. The report classifies that as inherent
-    // to a fixed-canvas form study and as a DEFECT the moment the form migrates into the `S2`. This
-    // is that migration, so the card is fluid and every row of it wraps (`flex-wrap`).
+    // `T-01.6`: THE CARD BECAME A LAYER. This section is the root of the long/short pane's layer,
+    // portaled over the pane's own canvas — so it carries no background (it would hide the line)
+    // and no border (the pane separator is the boundary now, `#8b949e`). The two header rows the
+    // design-04 form approved are the legend; `A-3`'s "every row wraps" is superseded by the gate
+    // r2's anatomy ("linha 1, `nowrap`, 12px", `handoff/DESIGN-LAYOUT.md` §6), and a line that does
+    // not fit loses its tail at the price axis, never its font size. What does not fit in two lines
+    // over a 9-weight pane — the horizon, the tail note, the scale footer, the equilibrium note, the
+    // empty state — stays in the accessibility tree (`PaneDetails`), with every `data-fact`.
+    <PaneLayer paneId="long_short">
     <section
       aria-label="Long/short"
       data-testid={LONG_SHORT_PANE_TESTID}
@@ -2666,88 +3030,83 @@ function LongShortPane({
       // is NOT that one.
       data-long-short-native-bars={longShort.nativeBars}
       data-long-short-wire-points={longShort.wirePoints}
-      className="border border-surface-border bg-surface-base"
+      className={PANE_LAYER_CLASS}
     >
-      {/* THE HEADER IN TWO SEMANTIC ROWS, the shape the approved form uses: row 1 is WHAT THIS IS
-          and WHAT IT READS NOW; row 2 is HOW MUCH OF IT IS REAL.
-
-          ⚠️ TYPE SIZE — THE PREVIOUS VERSION OF THIS COMMENT CLAIMED "nothing is smaller", AND THAT
-          WAS FALSE AS MEASURED (`D-2`, `gates/design-04.md` §R3.5). Every class here is `text-sm`
-          (14px) except the `<h2>`, which carries the `label-caps` token — and `label-caps` is
-          `0.6875rem` = **11px** (`globals.css`, `--text-label-caps`), i.e. BELOW the 12px floor
-          `S-8` of the gate asked for. The pane's own nodes measure `14px ×38 · 16px ×1 · 11px ×3`.
-
-          THE PIXEL STAYS AND THE CLAIM GOES, and the gate's own measurement is why: the `S2`'s
-          NINE section headers all render at 11px (`getComputedStyle` over `h2,h3` of the route:
-          `11px ×9`), so this pane conformed to the SYSTEM rather than to the study — the choice a
-          migration should make, since the inverse would put one out-of-scale heading among eight
-          siblings. Contrast is `14.72:1`, the text is caps, and no WCAG criterion fixes a minimum
-          type size, so nothing REPROVES it. What was a defect was the declaration, and `D-2` says
-          so in as many words: *"O defeito é a declaração, não o pixel"*.
-
-          ⛔ WHOSE CALL THE 12px FLOOR IS: `STITCH_CONTEXT.md` §9 item 14, owner `ui-designer` with
-          the `ux-ui-mastery` verdict. The gate PROPOSED reading it as *"12px, exceto o token
-          `label-caps` do chrome da S2"* and explicitly did not apply it (`R6`). This comment states
-          the divergence; it does not resolve it. */}
-      <div className="flex flex-col gap-1 border-b border-surface-border bg-surface-lowest px-3 py-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            {/* ⛔ THE CADENCE AND THE UNIT ARE BOTH TERMS OF THE SERIES' KEY, AND NEITHER IS TYPED
-                HERE — the `/review` `[WARNING]` of `T-04.8`. `5m` used to be a literal beside a
-                `longShort.unit` that was already being read off the catalog, which is two rules for
-                two halves of the same parenthesis. Where the backend published neither term the
-                parenthesis does not appear at all, rather than appearing empty. */}
-            <h2 className="font-label-caps text-label-caps text-on-surface">
-              Long/short de contas{identityTerms(longShort)}
-            </h2>
-            <LongShortIdentity
-              symbol={symbol}
-              provenance={longShort.provenance}
-              nativeGrid={longShort.nativeGrid}
-            />
-          </div>
-          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            {/* THE HEADLINE, in the strong ink and bold — the only node of this pane in that
-                weight, which is the whole of `ADR-010` §5.4's hierarchy channel (luminance; there
-                is no hue to spend). If everything rises, nothing rises. */}
-            <p data-fact={`long_short_last_reading:${longShort.reading.kind}`} className="text-sm font-bold text-on-surface">
-              Leitura atual: {readingText}
-            </p>
-            {hasObservation ? <LongShortAgeStamp longShort={longShort} /> : <LongShortIntegrityBadge />}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            {hasObservation ? <LongShortProvenance provenance={longShort.provenance} /> : null}
-            <LongShortReadableHorizon longShort={longShort} />
-            <AbsenceNote status={status} />
-            {wallState === "beyond-coverage" ? <BeyondCoverageBadge factKey="long_short_coverage" /> : null}
-          </div>
-          <LongShortTailNote longShort={longShort} />
-        </div>
-      </div>
-      <div className="px-3 py-2">
-        {/* ⛔ `aria-hidden` on the canvas host — same criterion as `CvdPane`/`DR-6`:
-            `lightweight-charts` paints on a `<canvas>` with no accessible name, and the readouts
-            around it ARE the declared textual alternative for the window's last instant. */}
-        {/* ⛔ `relative` EXISTS ONLY SO THE BAND HAS AN ORIGIN. The band's coordinates come from the
-            chart's time scale, which measures from the chart element's own left edge — so the
-            overlay has to be positioned against THAT element and nothing else. No `overflow-hidden`
-            here either (`A-3`): the band is clamped by the coordinates it was measured from. */}
-        <div className="relative">
+      <PaneLegend>
+        {/* ROW 1 is WHAT THIS IS and WHAT IT READS NOW; ROW 2 is WHOSE it is and WHAT IS MISSING. */}
+        <PaneLegendLine>
+          {/* ⛔ THE CADENCE AND THE UNIT ARE BOTH TERMS OF THE SERIES' KEY, AND NEITHER IS TYPED
+              HERE — the `/review` `[WARNING]` of `T-04.8`. Where the backend published neither term
+              the parenthesis does not appear at all, rather than appearing empty. */}
+          <h2 className="font-label-caps text-label-caps text-on-surface">
+            Long/short de contas{identityTerms(longShort)}
+          </h2>
+          {/* THE HEADLINE, in the strong ink and bold — the only node of this pane in that weight,
+              which is the whole of `ADR-010` §5.4's hierarchy channel (luminance; there is no hue to
+              spend). If everything rises, nothing rises. */}
+          <p data-fact={`long_short_last_reading:${longShort.reading.kind}`} className="text-sm font-bold text-on-surface">
+            Leitura atual: {readingText}
+          </p>
+          {hasObservation ? <LongShortAgeStamp longShort={longShort} /> : <LongShortIntegrityBadge />}
+          <LongShortIdentity
+            symbol={symbol}
+            provenance={longShort.provenance}
+            nativeGrid={longShort.nativeGrid}
+          />
+        </PaneLegendLine>
+        <PaneLegendLine>
+          {hasObservation ? <LongShortProvenance provenance={longShort.provenance} /> : null}
+          <AbsenceNote status={status} />
+          {wallState === "beyond-coverage" ? <BeyondCoverageBadge factKey="long_short_coverage" /> : null}
+        </PaneLegendLine>
+        <PaneDetails>
+          {/* ⛔ `aria-hidden` — same criterion as `CvdPane`/`DR-6`; an empty node that only carries
+              `long_short_slots` now that the host hides the canvases itself (`T-01.6`). */}
           <div
             aria-hidden="true"
             data-fact={`long_short_slots:${longShort.slots.length}`}
           />
-          {band === null ? null : <LongShortRecentBand band={band} longShort={longShort} />}
-        </div>
-        {hasObservation ? null : <LongShortEmptyState longShort={longShort} />}
-      </div>
-      <div className="flex flex-col gap-1 border-t border-surface-border bg-surface-lowest px-3 py-2">
-        <LongShortScaleFooter longShort={longShort} />
-        <LongShortEquilibriumNote stats={longShort.windowStats} />
-      </div>
+          <LongShortReadableHorizon longShort={longShort} />
+          <LongShortTailNote longShort={longShort} />
+          {hasObservation ? null : <LongShortEmptyState longShort={longShort} />}
+          <LongShortScaleFooter longShort={longShort} />
+          <LongShortEquilibriumNote stats={longShort.windowStats} />
+        </PaneDetails>
+      </PaneLegend>
+      {/* ⛔ THE BAND'S ORIGIN IS THE LAYER ITSELF (`T-01.6`): the layer is `absolute inset-0` over
+          the pane's plot area, and the band's coordinates come from the chart's time scale, which
+          measures from that same plot area's left edge — so `left`/`top` land where they were
+          measured, without the `relative` wrapper the card needed. */}
+      {band === null ? null : <LongShortRecentBand band={band} longShort={longShort} />}
     </section>
+    </PaneLayer>
+  );
+}
+
+/**
+ * `C-4` of `gates/DESIGN-LAYOUT-ux-critique-r2.md` — THE MODE, EXPLICIT IN THE CHROME.
+ *
+ * The gate's finding: an age like "idade 42s" is only coherent in AO VIVO; in COMO EM T it has to
+ * count against T, and the AO VIVO chip must not look active. On this route there is ONE mode today
+ * — every age on the screen (`OiFreshness`, `LongShortAgeStamp`) is counted against the window's
+ * own last instant (`view-model.ts::oiFreshnessVerdict`'s `referenceMs`, `panel-assembly.ts`'s
+ * `windowEndMsInclusive - observedAt`), never against the clock — so the honest label is
+ * COMO EM T, with T spelled, and the "Ao vivo" list at the foot of the page stays a separate,
+ * self-labelled readout (it is not a mode chip and says "indisponível" while no producer exists).
+ *
+ * `data-mode-reference-ms` is the same instant the ages use, so an assertion can check the stamp
+ * and the ages point at one T. ⚠️ Wording and placement are FORM, submitted with `T-01.11`.
+ */
+function ChromeModeStamp({ referenceMs }: { readonly referenceMs: number }) {
+  return (
+    <p
+      data-fact="chrome_mode:as_of"
+      data-mode-reference-ms={referenceMs}
+      className="text-xs text-provenance-weak"
+    >
+      <strong className="font-bold text-on-surface">COMO EM T</strong> · T = {formatUtcMinute(referenceMs)} · as
+      idades de cada painel contam contra T, não contra o relógio
+    </p>
   );
 }
 
@@ -3092,8 +3451,14 @@ export function SymbolClient({
         {symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
       <TimeframeBar selected={selectedTimeframe} onSelect={handleTimeframeSelect} />
+      <ChromeModeStamp referenceMs={lastInstantMs(panels)} />
       <AxisSyncProvider axis={axis} onCandidateRange={pager.onCandidateRange}>
-        <SymbolChartHost axis={axis} dataVersion={pager.assembly} onGestureChange={pager.holdRightEdgeCap}>
+        <SymbolChartHost
+          axis={axis}
+          dataVersion={pager.assembly}
+          onGestureChange={pager.holdRightEdgeCap}
+          priceSlots={panels.price.series.slots.length}
+        >
         <PricePane
           panels={panels}
           priceCandles={priceCandles}
