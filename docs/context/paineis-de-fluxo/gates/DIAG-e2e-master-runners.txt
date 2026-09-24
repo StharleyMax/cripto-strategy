@@ -1,0 +1,135 @@
+##### run.sh (universo fraco: e2e-env.sh, sqlite efemero)
+#!/usr/bin/env bash
+# run.sh <label> <repeat> <spec...>  — sobe a stack uma vez, roda os specs N vezes, derruba.
+set -uo pipefail
+W=/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/agent-abf65d90304c2a28a
+OUT=/tmp/claude-1002/-home-stharley-Documentos-projects-cripto-strategy/e5b6e66d-8da8-4342-9a1a-9940df8a9192/scratchpad/diag/out
+label="$1"; rep="$2"; shift 2
+mkdir -p "$OUT/$label"
+cd "$W"
+echo "sha=$(git -C "$W" rev-parse HEAD)" > "$OUT/$label/meta.txt"
+STATE_DIR="$(bash scripts/e2e-env.sh up 1 ${E2E_API_PORT:-8937} ${E2E_NEXT_PORT:-4397} 2>"$OUT/$label/up.err")" || { echo "UP FAIL"; tail -20 "$OUT/$label/up.err"; exit 3; }
+for i in $(seq 1 "$rep"); do
+  E2E_BASE_URL="$(cat "$STATE_DIR/base_url")" E2E_API_LOG_PATH="$STATE_DIR/api.log" \
+  E2E_SENTIMENTO_API_BASE_URL="$(cat "$STATE_DIR/api_base_url")" E2E_FACTS_FILE="$OUT/$label/facts-$i.jsonl" \
+  PW_OUTPUT_DIR="$OUT/$label/pw-$i" \
+  frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts "$@" >"$OUT/$label/run-$i.log" 2>&1
+  rc=$?
+  echo "round $i rc=$rc $(grep -Eo '[0-9]+ (passed|failed)' "$OUT/$label/run-$i.log" | tr '\n' ' ')" | tee -a "$OUT/$label/meta.txt"
+  grep -E '✘' "$OUT/$label/run-$i.log" | head -8
+done
+cp "$STATE_DIR/api.log" "$OUT/$label/api.log" 2>/dev/null
+bash scripts/e2e-env.sh down "$STATE_DIR"
+
+##### run-real.sh (dado real via proxy so-leitura)
+#!/usr/bin/env bash
+# run-real.sh <label> <repeat> <spec...> — next build/start against the REAL API through a
+# read-only proxy (GET/HEAD only). Nothing is written to Postgres.
+set -uo pipefail
+W=/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/agent-abf65d90304c2a28a
+D=/tmp/claude-1002/-home-stharley-Documentos-projects-cripto-strategy/e5b6e66d-8da8-4342-9a1a-9940df8a9192/scratchpad/diag
+OUT=$D/out
+label="$1"; rep="$2"; shift 2
+PP=8961; NP=4461
+mkdir -p "$OUT/$label"
+echo "sha=$(git -C "$W" rev-parse HEAD) universe=real-via-ro-proxy" > "$OUT/$label/meta.txt"
+python3 "$D/ro_proxy.py" $PP >"$OUT/$label/proxy.log" 2>&1 &
+PROXY=$!
+sleep 1
+cd "$W/frontend"
+INGEST_HEALTH_API_BASE_URL="http://127.0.0.1:$PP" timeout 180 node_modules/.bin/next build >"$OUT/$label/build.log" 2>&1 || { echo BUILD FAIL; kill $PROXY; exit 3; }
+INGEST_HEALTH_API_BASE_URL="http://127.0.0.1:$PP" node_modules/.bin/next start -p $NP >"$OUT/$label/next.log" 2>&1 &
+NEXT=$!
+for i in $(seq 1 60); do curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$NP/" && break; sleep 0.5; done
+cd "$W"
+for i in $(seq 1 "$rep"); do
+  E2E_BASE_URL="http://127.0.0.1:$NP" E2E_SENTIMENTO_API_BASE_URL="http://127.0.0.1:$PP/api/v1" \
+  E2E_FACTS_FILE="$OUT/$label/facts-$i.jsonl" PW_OUTPUT_DIR="$OUT/$label/pw-$i" \
+  DIAG_OUT="$OUT/$label/diag-$i.json" \
+  frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts "$@" >"$OUT/$label/run-$i.log" 2>&1
+  rc=$?
+  echo "round $i rc=$rc $(grep -Eo '[0-9]+ (passed|failed)' "$OUT/$label/run-$i.log" | tr '\n' ' ')" | tee -a "$OUT/$label/meta.txt"
+  grep -E '✘' "$OUT/$label/run-$i.log" | head -8
+done
+kill $NEXT $PROXY 2>/dev/null
+pkill -f "next start -p $NP" 2>/dev/null
+echo "proxy GET=$(grep -c '"GET ' "$OUT/$label/proxy.log") refused=$(grep -c REFUSED "$OUT/$label/proxy.log")" | tee -a "$OUT/$label/meta.txt"
+
+##### ro_proxy.py (proxy GET/HEAD/OPTIONS, recusa o resto)
+"""Read-only pass-through proxy (GET/HEAD/OPTIONS only) to the real API. Diagnostic, never committed."""
+import http.server
+import sys
+import urllib.error
+import urllib.request
+
+UPSTREAM = sys.argv[2] if len(sys.argv) > 2 else "http://127.0.0.1:8000"
+PORT = int(sys.argv[1])
+COUNTS = {"get": 0, "refused": 0}
+
+
+class H(http.server.BaseHTTPRequestHandler):
+    def _cors(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "*")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.end_headers()
+
+    def _forward(self, head=False):
+        COUNTS["get"] += 1
+        try:
+            with urllib.request.urlopen(UPSTREAM + self.path, timeout=60) as r:
+                body = r.read()
+                self.send_response(r.status)
+                for k, v in r.headers.items():
+                    if k.lower() in ("content-type", "cache-control"):
+                        self.send_header(k, v)
+        except urllib.error.HTTPError as e:
+            body = e.read()
+            self.send_response(e.code)
+            self.send_header("Content-Type", e.headers.get("Content-Type", "text/plain"))
+        self._cors()
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if not head:
+            self.wfile.write(body)
+
+    def do_GET(self):
+        self._forward()
+
+    def do_HEAD(self):
+        self._forward(head=True)
+
+    def _refuse(self):
+        COUNTS["refused"] += 1
+        sys.stderr.write(f"REFUSED {self.command} {self.path}\n")
+        self.send_response(405)
+        self.end_headers()
+
+    do_POST = do_PUT = do_PATCH = do_DELETE = _refuse
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write("%s\n" % (fmt % args))
+
+
+http.server.ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
+
+##### an20.py (analise por gesto do spec 98 (e2e/20 instrumentado))
+import json,sys
+f=sys.argv[1]
+raw=[json.loads(l)['value'] for l in open(f) if '"diag_raw"' in l][0]
+S=raw['samples'][6:]; M=raw['marks']; R=raw['requested']; D=raw['drawn']; P=raw['priceFrom']
+W=[(M[k][1],M[k+1][1]) for k in range(0,len(M),2)]
+print('k req drawn lastAxis lastPriceMove moveEnd  priceMovesAfterDrawn  from@drawn from@end')
+for k,(s0,e0) in enumerate(W):
+    ins=[x for x in S if s0<=x<=e0+100]
+    req=[r-s0 for r in R if s0<=r<=e0+300]
+    dr=[d for d in D if s0<=d<=e0+500]
+    pm=[(t,v) for t,v in P if s0<=t<=e0+100]
+    after=[(t,v) for t,v in pm if dr and t>dr[0]]
+    fd=[v for t,v in pm if dr and t<=dr[0]]
+    print(k,[round(x) for x in req],[round(d-s0) for d in dr], round(max(ins)-s0) if ins else None, round(pm[-1][0]-s0) if pm else None, round(e0-s0), len(after), (fd[-1][:7] if fd else None), (pm[-1][1][:7] if pm else None))
+
