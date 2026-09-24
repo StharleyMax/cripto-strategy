@@ -181,3 +181,17 @@ export { toLogicalRange, fromLogicalRange, historyRequest, DEFAULT_PAGE_TRIGGER_
 export type { TimeAxis, TimeRange, LogicalRange, HistoryCoverage, HistoryRequest } from "./time-axis-controller.ts";
 export { createRangeDispatcher } from "./range-dispatch.ts";
 export type { RangeDispatcher, PanelWrite } from "./range-dispatch.ts";
+
+// ── 7. bandas de marca ancoradas no pane ─────────────────────────────────────────────────────
+//
+// `T-01.3` (`paineis-de-fluxo`, plano `01` item `1.4`, `ADR-044/D1`): the absence/zero mark band
+// stops deriving from `CHART_HEIGHT_PX` in `web` and is computed here from `IPaneApi.getHeight()`.
+// `web` hands over the FORM (margins, nominal heights); `charts` returns the autoscale range and
+// the values the two mark series are fed.
+export {
+  markBandGeometry,
+  markBandGeometryOfPane,
+  LIBRARY_SCALE_PIXEL_INSET,
+  MIN_DRAWABLE_MARK_PX,
+} from "./mark-band-geometry.ts";
+export type { MarkBandSpec, MarkBandGeometry, MarkBandPriceRange, PaneHeightSource } from "./mark-band-geometry.ts";
