@@ -125,10 +125,22 @@ test("A-2 MORDE: an outline:none anywhere, or a zero offset, is caught", () => {
 test("A-3: the pane carries no fixed width and no overflow:hidden — it wraps instead of clipping", () => {
   assert.doesNotMatch(PANE, /overflow-hidden/, "`overflow: hidden` on a fluid card is how content disappears at 200%");
   assert.doesNotMatch(PANE, /\bw-\[\d+px\]/, "a pinned pixel width is the study's `width: 1280px`, migrated");
-  // And the positive half: every row of the header/footer is declared wrappable, which is what
-  // makes the layout survive the reflow `1.4.10` asks for.
-  const rows = [...PANE.matchAll(/className="flex flex-wrap/g)];
-  assert.ok(rows.length >= 3, `only ${rows.length} wrappable rows — the header/footer rows must wrap, not clip`);
+  // ⚠️ THE POSITIVE HALF WAS SUPERSEDED BY A LATER GATE, and it is re-anchored rather than dropped
+  // (`paineis-de-fluxo` `T-01.6`). The card became a LAYER over the pane's canvas, and the gate r2
+  // approved its anatomy as "linha 1, `nowrap`, 12px" (`handoff/DESIGN-LAYOUT.md` §6, row
+  // "anatomia da camada"; `gates/DESIGN-LAYOUT-ux-critique-r2.md` §2, MF-9): a line that does not
+  // fit loses its tail at the price axis, never its font size. The reflow `1.4.10` asked of the
+  // CARD is paid differently now: the header is exactly two legend lines, and every sentence that
+  // does not fit in them — horizon, tail, the whole scale footer — is kept, unpainted, in the
+  // accessibility tree (`PaneDetails`), so nothing the card said is gone from the page. Whether the
+  // clipped tail at 200% zoom is acceptable is the `ux-ui-mastery` verdict of `T-01.11`.
+  const lines = [...PANE.matchAll(/<PaneLegendLine>/g)];
+  assert.equal(lines.length, 2, `the long/short legend must be TWO lines (the approved header rows), got ${lines.length}`);
+  assert.match(
+    PANE,
+    /<PaneDetails>[\s\S]*<LongShortScaleFooter longShort=\{longShort\} \/>[\s\S]*<\/PaneDetails>/,
+    "the scale footer left the painted legend but must stay in the accessibility tree",
+  );
 });
 
 // ── `A-4` — the operator can COPY a numeral ───────────────────────────────────────────────────

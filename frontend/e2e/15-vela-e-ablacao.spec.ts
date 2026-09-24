@@ -243,7 +243,11 @@ async function measureCandleInk(page: Page): Promise<InkMeasurement> {
     ({ colors, testid, tolerance: tol }) => {
       const pane = document.querySelector(`[data-testid="${testid}"]`);
       if (pane === null) throw new Error(`nÃ£o hÃ¡ [data-testid="${testid}"] na pÃ¡gina`);
-      const canvas = Array.from(pane.querySelectorAll("canvas")).find((c) => c.width > 200 && c.height > 100);
+      // `paineis-de-fluxo` `T-01.6`: the layer sits NEXT to the pane's canvases, inside the
+      // pane wrapper — the canvases are its parent's direct children.
+      const wrapper = pane.parentElement;
+      const siblings = wrapper === null ? [] : Array.from(wrapper.children).filter((c) => c instanceof HTMLCanvasElement);
+      const canvas = (siblings as HTMLCanvasElement[]).find((c) => c.width > 200 && c.height > 100);
       if (canvas === undefined) throw new Error("o painel de PreÃ§o nÃ£o tem um canvas de grÃ¡fico com Ã¡rea");
       const width = canvas.width;
       const height = canvas.height;
@@ -604,7 +608,9 @@ async function zoomUntilCandlesAreWide(
   page: Page,
   minGroups: number,
 ): Promise<{ readonly measurement: InkMeasurement; readonly steps: number }> {
-  const box = await page.locator(`[data-testid="${PRICE_PANE_TESTID}"] canvas`).first().boundingBox();
+  // `paineis-de-fluxo` `T-01.6`: the pane layer is the canvases' sibling (portalled into the
+  // pane wrapper), no longer their ancestor.
+  const box = await page.locator(`[data-testid="${PRICE_PANE_TESTID}"]`).locator("xpath=../canvas").first().boundingBox();
   if (box === null) throw new Error("o canvas do painel de PreÃ§o nÃ£o tem caixa â nada foi montado");
   const midY = box.y + box.height / 2;
   let measurement = await measureCandleInk(page);

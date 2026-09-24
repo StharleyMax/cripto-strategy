@@ -306,7 +306,9 @@ test(`RNF-2: p95 <= ${LATENCY_CEILING_MS} ms sobre n >= ${MIN_FRAMES} quadros de
     ).toBeGreaterThan(0);
 
     const pane = page.locator(`[data-testid="${PRICE_PANE_TESTID}"]`);
-    const box = await pane.locator("canvas").first().boundingBox();
+    // `paineis-de-fluxo` `T-01.6`: the pane's DOM layer is the canvases' SIBLING inside the pane
+    // wrapper (portalled there), no longer their ancestor.
+    const box = await pane.locator("xpath=../canvas").first().boundingBox();
     if (box === null) throw new Error("o canvas do painel de Preço não tem caixa — nada foi montado");
 
     await page.evaluate(() => window.__axisLatencyProbe?.reset());

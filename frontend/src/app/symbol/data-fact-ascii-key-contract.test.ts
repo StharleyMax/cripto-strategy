@@ -86,7 +86,11 @@ test("sanity: the scan finds the measured universe of data-fact expressions, not
   const expressions = extractDataFactExpressions(rawSource);
   assert.equal(
     expressions.length,
-    44,
+    // 44 → 45 in `paineis-de-fluxo` `T-01.6`, confirmed as a GAINED fact, not a broken extractor:
+    // `ChromeModeStamp` publishes `data-fact="chrome_mode:as_of"` (gate r2 `C-4`, the mode made
+    // explicit in the chrome). No data-fact was lost: every pane's facts moved with it into the
+    // pane's layer, unchanged.
+    45,
     "the count moved — either a panel gained/lost a data-fact, or the extractor regex broke; " +
       "update this number ONLY after confirming which, never to silence a red run",
   );
