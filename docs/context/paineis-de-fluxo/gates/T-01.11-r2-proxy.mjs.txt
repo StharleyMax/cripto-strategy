@@ -1,0 +1,18 @@
+// Read-only pass-through proxy: GET/HEAD to the production API, 405 otherwise, adds CORS.
+import http from "node:http";
+const TARGET = { host: "127.0.0.1", port: 8000 };
+let gets = 0, refused = 0;
+http.createServer((req, res) => {
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" };
+  if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
+  if (req.method !== "GET" && req.method !== "HEAD") { refused++; res.writeHead(405, cors); return res.end(); }
+  gets++;
+  const up = http.request({ ...TARGET, path: req.url, method: req.method, headers: { ...req.headers, host: "127.0.0.1:8000" } }, (r) => {
+    res.writeHead(r.statusCode, { ...r.headers, ...cors }); r.pipe(res);
+  });
+  up.on("error", () => { res.writeHead(502, cors); res.end(); });
+  up.end();
+}).listen(8822, "127.0.0.1", () => console.log("proxy up 8822"));
+const report = () => console.log(`proxy_get_requests_total=${gets} refused=${refused}`);
+process.on("SIGTERM", () => { report(); process.exit(0); });
+setInterval(report, 30000);
