@@ -158,7 +158,8 @@ const PAGE_SLOTS = 500;
 /** Comfortably above `PAGE_SLOTS` so a single drag both closes the ~500-slot gap a landed page
  * leaves AND crosses `time-axis-controller.ts::DEFAULT_PAGE_TRIGGER_SLOTS` (20) into the trigger
  * zone, with margin for the small amount of panning consumed before the FIRST page of a session
- * ever landed (mount already sits at the edge — see this file's own docstring). */
+ * ever landed. Since `T-01.5` the mount no longer sits at the edge (the library clamps the initial
+ * range at `minBarSpacing`); `panToLoadedLeftEdge` walks there before the counted drags start. */
 const TARGET_SHIFT_SLOTS = PAGE_SLOTS + 140;
 
 const ONE_MINUTE_MS = 60_000;
@@ -418,6 +419,7 @@ async function driveSequentialDrags(page: Page, count: number): Promise<GestureW
     const pxPerSlot = box.width / (before.to - before.from);
     const deltaXPx = Math.max(10, pxPerSlot * TARGET_SHIFT_SLOTS);
     fact(SPEC, `drag_delta_px:${i}`, Number(deltaXPx.toFixed(2)));
+    fact(SPEC, `drag_logical_from_before:${i}`, Number(before.from.toFixed(2)));
 
     const counts = await probeCounts(page);
     gestures.push(await dragRight(page, deltaXPx));
@@ -440,6 +442,58 @@ async function driveSequentialDrags(page: Page, count: number): Promise<GestureW
     });
   }
   return gestures;
+}
+
+/** Most pre-roll drags `panToLoadedLeftEdge` may drive before giving up. The seed is 5 760 slots,
+ * and each pre-roll drag moves up to `TARGET_SHIFT_SLOTS` (640) of them, so ~9 would cross the
+ * whole seed even from `from = 5760`. */
+const MAX_PREROLL_DRAGS = 20;
+/** Where a pre-roll drag parks the left edge at the closest: half a page from the loaded edge,
+ * well outside `DEFAULT_PAGE_TRIGGER_SLOTS` (20), so pre-roll does not normally fire a page. */
+const PREROLL_PARK_SLOTS = PAGE_SLOTS / 2;
+
+/**
+ * Pans the view back until its left edge is within ONE counted drag (`TARGET_SHIFT_SLOTS`) of the
+ * loaded edge, so every drag `driveSequentialDrags` counts after this is an EDGE drag.
+ *
+ * Why this exists: until `T-01.5` the pager read its range from the store's `initialRange` (the
+ * WHOLE grid), so the mount "already sat at the edge" and every drag fired a page (12/12). Since
+ * `T-01.5` the store follows the time scale's REAL range, and with 5 760 slots in a 1 280 px host
+ * the library clamps at its default `minBarSpacing` (0.5 px) and shows only the right-most
+ * ~2 443 slots `[MEDIDO 2026-09-25: logical range at mount 3317..5760, w=1280]`. The first 5 drags
+ * then only panned through loaded data and fired no page: 9 pages instead of >= 10. Those drags
+ * measure no paging latency, so they run here, BEFORE the probe `reset()`, and not in the counted
+ * loop.
+ *
+ * Every drag waits for any page it happened to fire to be drawn, so nothing is in flight at the
+ * `reset()` that follows.
+ */
+async function panToLoadedLeftEdge(page: Page): Promise<number> {
+  for (let i = 0; i < MAX_PREROLL_DRAGS; i += 1) {
+    const before = await readPriceRange(page);
+    if (before.from <= TARGET_SHIFT_SLOTS) {
+      return i;
+    }
+    const box = await page.locator(`[data-testid="${CHART_HOST_TESTID}"]`).boundingBox();
+    if (box === null) {
+      throw new Error("chart host: no bounding box — nothing mounted");
+    }
+    const pxPerSlot = box.width / (before.to - before.from);
+    const shiftSlots = Math.min(TARGET_SHIFT_SLOTS, before.from - PREROLL_PARK_SLOTS);
+    await dragRight(page, Math.max(10, pxPerSlot * shiftSlots));
+    await page.waitForFunction(
+      () =>
+        (window.__historyPageLatencyProbe?.drawnMs.length ?? 0) >=
+        (window.__historyPageLatencyProbe?.requestedMs.length ?? 0),
+      undefined,
+      { timeout: PER_DRAG_TIMEOUT_MS },
+    );
+  }
+  const last = await readPriceRange(page);
+  throw new Error(
+    `pre-roll: left edge still at logical ${last.from} after ${MAX_PREROLL_DRAGS} drags — ` +
+      `expected <= ${TARGET_SHIFT_SLOTS}; the drag is not panning`,
+  );
 }
 
 /** `T-01.F2` — starts recording the Price range IN TIME. Every `MutationObserver` callback that
@@ -564,6 +618,11 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
         "17-teto-latencia-eixo.spec.ts (a biblioteca exige ao menos um valor real para o pan " +
         "por mouse) não satisfeito",
     ).toBeGreaterThan(0);
+
+    // Pre-roll: pan through the loaded seed to its left edge first, so the counted drags below
+    // are all edge drags (see `panToLoadedLeftEdge`'s docstring for the measured why).
+    fact(SPEC, "preroll_logical_from_at_mount", Number((await readPriceRange(page)).from.toFixed(2)));
+    fact(SPEC, "preroll_drags_n", await panToLoadedLeftEdge(page));
 
     // `reset()` ANTES do primeiro arrasto — `history-page-latency-probe.ts`'s próprio docstring:
     // "a caller that wants only page-triggered pairs calls `reset()` once the initial paint has
