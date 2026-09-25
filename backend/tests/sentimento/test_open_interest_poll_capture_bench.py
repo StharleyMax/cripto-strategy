@@ -175,6 +175,21 @@ def test_a_header_span_above_four_fails_even_with_four_calls() -> None:
     assert judge_quota(quotas)[0] is Verdict.FAIL
 
 
+def test_five_calls_in_one_minute_is_one_over_the_ceiling() -> None:
+    """MORDE at the edge (W2 QA): `DoD-2` is `<= 4/min`, so ONE extra call already fails.
+
+    The cases above fail at 20 calls and at a span of 6, which a ceiling loosened to 5 still
+    fails — measured: the mutant `QUOTA_CEILING_PER_MINUTE = 5` survived the whole file. This
+    pins the boundary on both counters: 4 passes, 5 fails.
+    """
+    at_ceiling = (MinuteQuota(minute_start_ms=T0, n_calls=4, header_span=4),)
+    one_call_over = (MinuteQuota(minute_start_ms=T0, n_calls=5, header_span=4),)
+    one_weight_over = (MinuteQuota(minute_start_ms=T0, n_calls=4, header_span=5),)
+    assert judge_quota(at_ceiling)[0] is Verdict.PASS
+    assert judge_quota(one_call_over)[0] is Verdict.FAIL
+    assert judge_quota(one_weight_over)[0] is Verdict.FAIL
+
+
 def test_no_header_at_all_is_inconclusive_not_a_pass() -> None:
     """Without a single header the check is not by the header, so it cannot pass."""
     verdict, evidence = judge_quota(minute_quotas(_cycle(T0, first_weight=None)))

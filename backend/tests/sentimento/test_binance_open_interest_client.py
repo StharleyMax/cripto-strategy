@@ -15,6 +15,7 @@ here touches any Postgres:
 
 from __future__ import annotations
 
+import http.client
 from collections.abc import Mapping, Sequence
 
 import pytest
@@ -239,6 +240,41 @@ def test_a_dead_socket_is_a_transport_failure_and_the_next_call_opens_a_fresh_co
     assert first.status is None
     assert first.weight_used is None
     assert first.failure == "ConnectionResetError: peer closed"
+    assert connections[0].closed
+    assert len(connections) == 2
+    assert second.outcome is OpenInterestFetchOutcome.READ
+
+
+class TruncatedBodyResponse(FakeResponse):
+    """A `200` whose body dies mid-read — what `http.client` raises on a cut keep-alive."""
+
+    def read(self) -> bytes:
+        """Raise the stdlib's `IncompleteRead`, an `HTTPException` and NOT an `OSError`."""
+        raise http.client.IncompleteRead(b'{"symbol":"BTC', 57)
+
+
+def test_a_body_truncated_mid_read_is_a_transport_failure_not_an_escaping_exception() -> None:
+    """W2 QA, proving `W2-CODE-REVIEW` C-1: a transport failure is `TRANSPORT`, not only `OSError`.
+
+    `IncompleteRead` (and `BadStatusLine`, `LineTooLong`, `CannotSendRequest`) subclass
+    `http.client.HTTPException`, not `OSError`. Escaping `fetch`, it escapes the poll thread,
+    `_supervised` sets `failure_event` and ALL seven collector threads stop — `forceOrder`
+    (capture-or-lose) included. The half-read connection must also be dropped, so the next
+    call opens a fresh one.
+    """
+    client, connections = _client_replaying(
+        TruncatedBodyResponse(200, REAL_BTC_HEADERS, b""),
+        FakeResponse(200, REAL_BTC_HEADERS, REAL_BTC_BODY),
+    )
+
+    first = client.fetch("BTCUSDT")
+    second = client.fetch("BTCUSDT")
+
+    assert first.outcome is OpenInterestFetchOutcome.TRANSPORT
+    assert first.status is None
+    assert first.snapshot is None
+    assert first.failure is not None
+    assert first.failure.startswith("IncompleteRead")
     assert connections[0].closed
     assert len(connections) == 2
     assert second.outcome is OpenInterestFetchOutcome.READ
