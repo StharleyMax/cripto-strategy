@@ -301,14 +301,27 @@ test("CALA: a design_gate NEEDS_FIX about colour, wording or order leaves the co
   // `observações nativas de 5 min` as LITERALS. Both cadence terms are now read off the catalog
   // entry (`identityTerms`/`nativeGridSuffix`), so the old strings are gone from the source and
   // those two `.replace` calls had become no-ops — a CALA that mutates nothing proves nothing.
-  const restyled = source
-    .replace(/Long\/short de contas\{identityTerms\(legends\.long_short\)\}/, "Razão long\\/short{identityTerms(legends.long_short)}")
-    .replace(/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}")
-    .replace(/\{longShort\.nativeBars\} observações nativas/, "{longShort.nativeBars} leituras")
-    .replace(
-      'const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };\n    const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);\n    // `lineSeriesLossless`',
-      'const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceWeak };\n    const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);\n    // `lineSeriesLossless`',
-    );
-  assert.notEqual(restyled, source, "the form anchors moved — re-anchor this CALA rather than dropping it");
+  // ⚠️ `paineis-de-fluxo` `T-01.8`: THE SAME DEFECT, A THIRD TIME, and this time on the colour edit.
+  // `T-01.5` moved the series into `useHostedPane("long_short", { mount: (chart, paneIndex) => … })`,
+  // so the old literal `chart.addSeries(LineSeries, style);` (no `paneIndex`) was gone and the colour
+  // `.replace` became a silent no-op, while the single `notEqual(restyled, source)` below stayed green
+  // because the three wording edits still changed something. The colour edit is re-anchored on the
+  // hosted-pane `mount`, and every edit is now checked ONE BY ONE, so the next move of any anchor
+  // fails here instead of shrinking the CALA without a word.
+  const edits: readonly (readonly [string | RegExp, string])[] = [
+    [/Long\/short de contas\{identityTerms\(legends\.long_short\)\}/, "Razão long\\/short{identityTerms(legends.long_short)}"],
+    [/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}"],
+    [/\{longShort\.nativeBars\} observações nativas/, "{longShort.nativeBars} leituras"],
+    [
+      'useHostedPane("long_short", {\n    mount: (chart, paneIndex) => {\n      const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };',
+      'useHostedPane("long_short", {\n    mount: (chart, paneIndex) => {\n      const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceWeak };',
+    ],
+  ];
+  let restyled = source;
+  for (const [anchor, replacement] of edits) {
+    const next = restyled.replace(anchor, replacement);
+    assert.notEqual(next, restyled, `the form anchor ${String(anchor).slice(0, 60)}… moved — re-anchor this CALA rather than dropping it`);
+    restyled = next;
+  }
   assert.ok(survivesClient(restyled), "a pure restyling must leave every contract assert of this file green");
 });
