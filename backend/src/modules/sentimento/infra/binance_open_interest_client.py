@@ -7,9 +7,9 @@
 # amputates `socket`, so the suite injects a fake factory; the real one is reached only from the
 # collector process.
 #
-# One keep-alive connection, rebuilt on a transport failure (`PremiumIndexHttpClient`'s lifecycle): the
-# collector of `T-03.4` calls this four times a minute, forever, and a broken keep-alive must not
-# poison every following call. No key: the endpoint is public (`SPEC-009` §6.1).
+# One keep-alive connection, rebuilt on a transport failure (`PremiumIndexHttpClient`'s
+# lifecycle): the collector of `T-03.4` calls this four times a minute, forever, and a broken
+# keep-alive must not poison every following call. No key: the endpoint is public (`SPEC-009` §6.1).
 #
 # What this file does NOT decide: which minute of the grid a reading belongs to (`T-03.2`, the
 # `[T - 20 s, T]` admission window) and whether the quota share stays `<= 4/min` (`T-03.4`,
