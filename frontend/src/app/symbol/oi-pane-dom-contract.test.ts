@@ -364,7 +364,8 @@ test("MORDE: each of the 7 OI DOM-contract mutations that used to pass green is 
 test("CALA: a design_gate NEEDS_FIX about colour or wording leaves the OI contract intact", () => {
   const restyled = source
     .replace(/color: colorTokens\(\)\.provenanceStrong/, "color: colorTokens().provenanceWeak")
-    .replace(/Open Interest \(5m\)/, "Open Interest — contratos em aberto (5m)")
+    // `T-01.7`: the heading's cadence comes off the catalog entry now (`identityTerms(legends.oi)`).
+    .replace(/Open Interest\{identityTerms\(legends\.oi\)\}/, "Open Interest — contratos em aberto{identityTerms(legends.oi)}")
     .replace(/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}")
     .replace(/barras nativas de 5 min na janela/, "buckets de 5 min legíveis")
     .replace(/⚠️ Mais velha que o teto — o valor acima é DADO VELHO\./, "Atenção: leitura vencida.")

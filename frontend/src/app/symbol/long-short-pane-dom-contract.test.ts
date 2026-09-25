@@ -302,7 +302,7 @@ test("CALA: a design_gate NEEDS_FIX about colour, wording or order leaves the co
   // entry (`identityTerms`/`nativeGridSuffix`), so the old strings are gone from the source and
   // those two `.replace` calls had become no-ops — a CALA that mutates nothing proves nothing.
   const restyled = source
-    .replace(/Long\/short de contas\{identityTerms\(longShort\)\}/, "Razão long\\/short{identityTerms(longShort)}")
+    .replace(/Long\/short de contas\{identityTerms\(legends\.long_short\)\}/, "Razão long\\/short{identityTerms(legends.long_short)}")
     .replace(/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}")
     .replace(/\{longShort\.nativeBars\} observações nativas/, "{longShort.nativeBars} leituras")
     .replace(
