@@ -65,6 +65,29 @@ mostraria `6` (`LIQUIDATION_ZERO_MARK_PX`, `:989`) como se fosse liquidação;
 novo em **todos** os panes (`ARQ-1` §2). Com `S-1` essa violação deixa de ser local, por isso ela passa
 a ser invariante testada do registry.
 
+### ⛔ Emenda D2′ (2026-09-25): a grade é carregada pelo host, e as séries dos panes recebem só itens de plot
+
+**O defeito medido.** Com um só `createChart`, cada ponto da `timeScale` carrega uma entrada de `mapping` **por
+série**, e um item *whitespace* também cria entrada (`lightweight-charts@5.2.1`,
+`dist/lightweight-charts.development.mjs:11590-11602`). Cada `setData` percorre todos os pontos e o `mapping` de cada
+um (`:11576-11580`, `:11530-11537`, `:11886-11893`). O resultado é que a página custa **118,6 ms** de mediana com as
+14 séries *lossless* `[MEDIDO 2026-09-25, n=40 páginas, handoff/T-01.10-desenho.md §2]`, e o `e2e/20` estoura o teto
+intra-gesto de 160 ms `[DECISÃO-OWNER: 2026-09-22]`.
+
+**A invariante de D2, reescrita em duas regras:**
+- **(a)** uma série **portadora** do host (invisível, no pane 0) recebe **exatamente** os `time` da grade canônica,
+  e recebe **antes** de toda série de pane, no mount e em toda página;
+- **(b)** toda série de pane recebe um **subconjunto** da grade (só itens de plot, pela função `plotItemsOnly` de
+  `charts`, aplicada sobre a saída do adaptador lossless) e **nunca um `time` fora dela**.
+
+O motivo de D2 era impedir que um `time` fora da grade inserisse um índice lógico em todos os panes. **Esse motivo
+fica inteiro em (b).** Os adaptadores lossless **não mudam**.
+
+**Falsificador de D2′:** comparar o canvas de hoje (sem portadora, lossless) com o canvas do desenho (portadora +
+`plotItemsOnly`) sobre a mesma entrada, com lacuna, bucket isolado e zeros, tem de dar **0 byte** de diferença.
+Hoje dá 0 de 880×290×4, e o mutante de controle dá 3.952 `[MEDIDO 2026-09-25, n=1 render]`. **Morde:** filtrar
+também a portadora colapsa as lacunas. O detalhe está em `handoff/T-01.10-desenho.md` §4, linhas F-D e F-E.
+
 ## D3 — `RN-4` passa a ser propriedade do registry
 
 Toda série `FLOW` do registry declara o par `absence_mark` + `zero_mark`. O teste do registry reprova

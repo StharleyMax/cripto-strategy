@@ -1,0 +1,56 @@
+// Pixel identity: lossless (whitespace per slot) vs pruned (whitespace dropped, a full-grid carrier
+// series present) for line, histogram and candlestick, incl. an isolated present bucket and a gap.
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/wave-paineis-f01/frontend/node_modules/playwright/index.mjs";
+const LIB = "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/wave-paineis-f01/frontend/node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
+await page.setContent(`<html><body style="margin:0"><div id="a"></div><div id="b"></div><div id="c"></div></body></html>`);
+await page.addScriptTag({ path: LIB });
+const res = await page.evaluate(async () => {
+  const L = window.LightweightCharts;
+  const STEP = 60, N = 80, T0 = 1_700_000_040;
+  const times = Array.from({ length: N }, (_, i) => T0 + i * STEP);
+  // present: 0-19, gap 20-29, isolated 35, gap, 45-79 ; zeros at 50,51
+  const val = (i) => (i < 20 || i === 35 || i >= 45 ? (i === 50 || i === 51 ? 0 : 10 + (i % 7)) : null);
+  const lossless = (kind) => times.map((t, i) => {
+    const v = val(i);
+    if (v === null) return { time: t };
+    if (kind === "candle") return { time: t, open: v, high: v + 2, low: v - 2, close: v + 1 };
+    if (kind === "hist") return v === 0 ? { time: t } : { time: t, value: v };
+    return { time: t, value: v };
+  });
+  const pruned = (kind) => lossless(kind).filter((x) => Object.keys(x).length > 1);
+  function build(el, mode, stagger) { const vv = mode === "mutant" ? (i) => (i === 35 ? 14 : val(i)) : val;
+    const chart = L.createChart(el, { width: 880, height: 290, layout: { attributionLogo: false }, timeScale: { rightOffset: 0 } });
+    const carrier = mode === "lossless" ? null : chart.addSeries(L.LineSeries, { visible: false, priceScaleId: "grid", lastValueVisible: false, priceLineVisible: false }, 0);
+    const line = chart.addSeries(L.LineSeries, { color: "#ff0000" }, 0);
+    const hist = chart.addSeries(L.HistogramSeries, { color: "#00ff00", priceScaleId: "h" }, 1);
+    const candle = chart.addSeries(L.CandlestickSeries, {}, 2);
+    if (carrier) carrier.setData(times.map((t) => ({ time: t })));
+    const pick = (k) => (mode === "pruned" ? pruned(k) : mode === "mutant" ? pruned(k).map((x) => x.time === times[35] && "value" in x && k === "line" ? { ...x, value: 13 } : x) : lossless(k));
+    line.setData(pick("line")); hist.setData(pick("hist")); candle.setData(pick("candle"));
+    chart.timeScale().fitContent();
+    return chart;
+  }
+  const a = build(document.getElementById("a"), "lossless");
+  const b = build(document.getElementById("b"), "pruned"); const c = build(document.getElementById("c"), "mutant");
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await new Promise((r) => setTimeout(r, 200));
+  const shotA = a.takeScreenshot(); const shotB = b.takeScreenshot();
+  const ctxA = shotA.getContext("2d"), ctxB = shotB.getContext("2d");
+  const da = ctxA.getImageData(0, 0, shotA.width, shotA.height).data;
+  const db = ctxB.getImageData(0, 0, shotB.width, shotB.height).data;
+  const dc = c.takeScreenshot().getContext("2d").getImageData(0,0,shotA.width,shotA.height).data; let diffMut = 0; for (let i = 0; i < da.length; i++) if (da[i] !== dc[i]) diffMut++;
+  let diff = 0; for (let i = 0; i < da.length; i++) if (da[i] !== db[i]) diff++;
+  // red pixels (the line) inside the gap 21..28 x-range, lossless chart
+  const ts = a.timeScale();
+  const x21 = ts.timeToCoordinate(times[21]), x28 = ts.timeToCoordinate(times[28]);
+  const pr = window.devicePixelRatio;
+  let redInGap = 0;
+  for (let y = 0; y < 290 * pr; y++) for (let x = Math.ceil(x21 * pr); x < Math.floor(x28 * pr); x++) {
+    const o = (y * shotA.width + x) * 4; if (da[o] > 200 && da[o + 1] < 60 && da[o + 2] < 60) redInGap++;
+  }
+  return { diffMutantVsLossless: diffMut, w: shotA.width, h: shotA.height, bytesDiffer: diff, redPixelsInsideGapLossless: redInGap, x21, x28 };
+});
+console.log(JSON.stringify(res));
+await browser.close();
