@@ -136,6 +136,11 @@ import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./hel
 const SPEC = "20-teto-latencia-historia-sob-demanda";
 const SYMBOL = "BTCUSDT";
 const SYMBOL_PATH = `/symbol/${SYMBOL}`;
+/** `T-01.10` (`handoff/T-01.10-desenho.md` §4, `F-B`/`F-C`) — an optional query string appended to
+ * the page URL, so the SAME spec measures the fix and its controls in the lot run:
+ * `E2E20_SYMBOL_QUERY='?e2eDenseSeries=1'` (the ablation) or `'?e2ePageApplyBusyMs=80'` (the
+ * instrument's negative control). Empty by default: `make verify` measures the shipped path. */
+const SYMBOL_QUERY = process.env.E2E20_SYMBOL_QUERY ?? "";
 const PRICE_PANE_TESTID = "price-pane";
 /** `paineis-de-fluxo` `T-01.6`: the ONE chart host publishes `data-visible-logical-from`/`-to`
  * (`SymbolClient.tsx::ChartHostSurface`); the panes share one time scale, so the host's range IS
@@ -201,7 +206,7 @@ interface TimedPriceSample extends PriceTimeSample {
 
 declare global {
   interface Window {
-    __historyPageLatencyProbe?: { requestedMs: number[]; drawnMs: number[]; reset(): void };
+    __historyPageLatencyProbe?: { requestedMs: number[]; drawnMs: number[]; applyMs?: number[]; reset(): void };
     __axisLatencyProbe?: { samplesMs: number[]; reset(): void };
     __priceTimeSamples?: PriceTimeSample[];
     /** `T-01.8` — `<main>`'s `data-window-start-ms`, the value at recorder start then every change. */
@@ -728,9 +733,12 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
   try {
     instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: stub.url });
 
-    const response = await page.goto(`${instance.baseUrl}${SYMBOL_PATH}`, { waitUntil: "load" });
-    expect(response?.ok(), `GET ${SYMBOL_PATH} não respondeu ok`).toBe(true);
+    fact(SPEC, "symbol_query", SYMBOL_QUERY);
+    const response = await page.goto(`${instance.baseUrl}${SYMBOL_PATH}${SYMBOL_QUERY}`, { waitUntil: "load" });
+    expect(response?.ok(), `GET ${SYMBOL_PATH}${SYMBOL_QUERY} não respondeu ok`).toBe(true);
     await waitForPaintedChart(page);
+    // `T-01.10` — which feed the host is running (`sparse`, or `dense` under the ablation).
+    fact(SPEC, "series_feed", await page.locator('[data-testid="symbol-chart-host"]').getAttribute("data-series-feed"));
 
     const drawnCandles = await page
       .locator(`[data-testid="${PRICE_PANE_TESTID}"]`)
@@ -782,9 +790,19 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     const probe = await page.evaluate(() => ({
       requestedMs: window.__historyPageLatencyProbe?.requestedMs ?? [],
       drawnMs: window.__historyPageLatencyProbe?.drawnMs ?? [],
+      applyMs: window.__historyPageLatencyProbe?.applyMs ?? [],
     }));
     fact(SPEC, "history_page_requested_n", probe.requestedMs.length);
     fact(SPEC, "history_page_drawn_n", probe.drawnMs.length);
+    // `T-01.10` (`F-B`, `handoff/T-01.10-desenho.md` §3 item 6) — the host's page application time,
+    // one per page: a `fact`, never asserted. It is compared against `?e2eDenseSeries=1` in the lot run.
+    const applySorted = [...probe.applyMs].sort((a, b) => a - b);
+    fact(SPEC, "history_page_apply_ms", probe.applyMs.map((v) => Number(v.toFixed(2))));
+    fact(
+      SPEC,
+      "history_page_apply_p50_ms",
+      applySorted.length === 0 ? null : Number(applySorted[Math.floor(applySorted.length / 2)]!.toFixed(2)),
+    );
     // Pós-`reset()`, cada arrasto que efetivamente pediu uma página também esperou (dentro do
     // loop) essa MESMA página ser desenhada antes do próximo começar — então, ao chegar aqui,
     // `drawnMs.length` tem de ser EXATAMENTE `requestedMs.length` (índice a índice, sem o "+1" do

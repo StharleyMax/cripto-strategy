@@ -132,6 +132,10 @@ export type {
   LineItem,
   WhitespaceItem,
 } from "./s2-lightweight-adapter.ts";
+// `paineis-de-fluxo` `T-01.10` (`ADR-044/D2′`) — the grid carried by ONE host series, the pane
+// series fed plot items only. `plotItemsOnly` FILTERS the lossless output above; it never replaces it.
+export { gridCarrierItems, isPlotItem, plotItemsOnly } from "./sparse-series-feed.ts";
+export type { SeriesFeedItem } from "./sparse-series-feed.ts";
 
 // ── 4. tokens de cor ─────────────────────────────────────────────────────────────────────────
 export {

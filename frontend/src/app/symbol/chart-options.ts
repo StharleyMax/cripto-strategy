@@ -29,7 +29,7 @@
  * What a builder decides is that the canvas and the page are the SAME surface.
  */
 
-import { ColorType, type DeepPartial, type ChartOptions } from "lightweight-charts";
+import { ColorType, type DeepPartial, type ChartOptions, type LineSeriesPartialOptions } from "lightweight-charts";
 
 import { chartSurfaceTheme } from "../../charts/index.ts";
 
@@ -62,5 +62,28 @@ export function chartConstructorOptions(width: number, height: number): DeepPart
       horzLines: { color: theme.gridLineColor },
     },
     timeScale: { timeVisible: true, secondsVisible: false },
+  };
+}
+
+/** `T-01.10` — the overlay price scale of the grid carrier, its own and nobody else's: a scale id
+ * that is neither `left` nor `right` is an overlay, so it draws no axis and moves no pane scale. */
+export const GRID_CARRIER_PRICE_SCALE_ID = "grid-carrier";
+
+/**
+ * `T-01.10` (`ADR-044/D2′(a)`, `handoff/T-01.10-desenho.md` §3 item 1) — the options of the host's
+ * grid CARRIER: the one `LineSeries`, in pane 0, that is fed exactly the canonical grid as `{time}`
+ * items so the 14 pane series can be fed plot items only. It must draw NOTHING and take part in
+ * NOTHING the operator sees: hidden, on its own overlay scale, no last-value label, no price line,
+ * no crosshair marker. Here and not in `SymbolClient.tsx` for `DR-1`'s reason: options that have a
+ * NAME can be required and compared (`e2e/25-sparse-feed-pixel-identity.spec.ts` builds the carrier
+ * from THIS value, so the pixel proof and the app cannot hold two carriers).
+ */
+export function gridCarrierSeriesOptions(): LineSeriesPartialOptions {
+  return {
+    visible: false,
+    priceScaleId: GRID_CARRIER_PRICE_SCALE_ID,
+    lastValueVisible: false,
+    priceLineVisible: false,
+    crosshairMarkerVisible: false,
   };
 }
