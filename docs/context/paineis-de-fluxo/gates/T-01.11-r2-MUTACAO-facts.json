@@ -1,0 +1,1787 @@
+{
+ "1280x800": {
+  "load_ms": 12318,
+  "console_errors": [
+   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "failed_responses": [
+   "404 http://127.0.0.1:8822/?series_key_id=31c0a9a695d475592bb2fee75da82ff62f6a828800992d4135a2a961ca6bfc53&symbol=BTCUSDT&interval=1m",
+   "404 http://127.0.0.1:8822/?series_key_id=94c3d3dd5f45abcb801a53e4a8b52ea81ea2479a9cdd51d90cd2cb6895e1a4a9&symbol=BTCUSDT&interval=1m",
+   "404 http://127.0.0.1:8822/?series_key_id=18125f63e24133cbe564dd4bdcb13aedf2c9014661dfc95b57959f2c484b2130&symbol=BTCUSDT&interval=1m"
+  ],
+  "chart_count": 1,
+  "panes": [
+   {
+    "id": "price-pane",
+    "present": true,
+    "top": 61,
+    "height": 335,
+    "width": 1098,
+    "text": "Preço (1m, USDT) 84033.9 klines_last · structure_detection Volume (1m, BTC) 101.707 Altura da barra em escala log10 (base 1) — cada degrau de altura é uma ordem de grandeza, não uma diferença absoluta. Leitura atual: 101.707 ▁ Sem dado — traço baixo e apagado na linha de base (não sabemos) ▃ Zero do fornecedor — traço alto e claro na linha de base (sabemos: foi zero) Dado legível desde 2026-09-21 ",
+    "attrs": {
+     "data-testid": "price-pane",
+     "data-price-candles": "3174",
+     "data-pane-height-px": "335",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "100.6",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "normal"
+    }
+   },
+   {
+    "id": "liquidation-cohort-long",
+    "present": true,
+    "top": 397,
+    "height": 108,
+    "width": 1098,
+    "text": "Liquidações (1m, USD) ⚠️ Dado de TERCEIRO (coinalyze), não da corretora de origem. Erro publicado: NENHUM — não há segunda fonte para medir a fidelidade contra, e publicar um número que ninguém mediu seria pior do que não publicar. Altura da barra em escala log10 (base 1) — cada degrau de altura é uma ordem de grandeza, não uma diferença absoluta. ▁ Sem ponto — traço baixo e apagado (não sabemos s",
+    "attrs": {
+     "data-testid": "liquidation-cohort-long",
+     "data-liquidation-present-points": "848",
+     "data-liquidation-zero-points": "423",
+     "data-pane-height-px": "108",
+     "data-legend-bottom-px": "54",
+     "data-reserved-scale-top-px": "60.5",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "liquidation-cohort-short",
+    "present": true,
+    "top": 506,
+    "height": 108,
+    "width": 1098,
+    "text": "Liquidação de posições vendidas (short) SEM_PONTO ▁ ausente (não sabemos) · ▃ zero do fornecedor (sabemos: foi zero) Leitura atual: SEM_PONTO Dado legível desde 2026-09-22 15:15 UTC — 851/5760 grades de 1 min observadas, das quais 393 são zero do fornecedor.",
+    "attrs": {
+     "data-testid": "liquidation-cohort-short",
+     "data-liquidation-present-points": "851",
+     "data-liquidation-zero-points": "393",
+     "data-pane-height-px": "108",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "45.3",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "oi-pane",
+    "present": true,
+    "top": 615,
+    "height": 148,
+    "width": 1098,
+    "text": "Open Interest (5m, BTC) 95300.421 retido Grandeza: contracts (BTC) · Universo: binance/usdm_futures · Coorte: all Última leitura há 0 min em relação ao fecho da janela (2026-09-25 22:59 UTC) — teto desta série: 10 min. Leitura atual: 95300.421 (de 23:00:00Z (−4m)) Dado legível desde 2026-09-21 23:00 UTC — 571/5760 barras nativas de 5 min na janela.",
+    "attrs": {
+     "data-testid": "oi-pane",
+     "data-oi-native-bars": "571",
+     "data-oi-wire-points": "2855",
+     "data-pane-height-px": "148",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "47.3",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "long-short-pane",
+    "present": true,
+    "top": 764,
+    "height": 89,
+    "width": 1098,
+    "text": "Long/short de contas (5m, ratio) 1.3132 Idade da última observação: 1 min 6 s (publicada em 2026-09-25 22:57 UTC). BTCUSDT · binance · nativa de 5min servida na grade de 1 min Procedência: OBSERVADO — dado da própria fonte (binance). Leitura atual: 1.3132 ratio Dado legível desde 2026-09-21 23:00 UTC — 546 observações nativas de 5min, servidas como 5760/5760 grades de 1 min (a mesma observação rep",
+    "attrs": {
+     "data-testid": "long-short-pane",
+     "data-long-short-native-bars": "546",
+     "data-long-short-wire-points": "5760",
+     "data-pane-height-px": "89",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "44.35",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "cvd-pane",
+    "present": true,
+    "top": 854,
+    "height": 89,
+    "width": 1098,
+    "text": "CVD (1m, BTC) delta -85.323 acumulado -12631.484 ▬ Delta (linha cheia) ▬ ▬ Acumulado (linha tracejada) Acumulado ancorado em 2026-09-21 23:00 UTC. Delta atual: -85.323 Acumulado atual: -12631.484 Dado legível desde 2026-09-21 23:05 UTC — 3154/5760 grades de 1 min na janela.",
+    "attrs": {
+     "data-testid": "cvd-pane",
+     "data-cvd-present-points": "3154",
+     "data-pane-height-px": "89",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "44.35",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   }
+  ],
+  "scale_modes": {
+   "price-pane": "normal",
+   "liquidation-cohort-long": "logarithmic",
+   "liquidation-cohort-short": "logarithmic",
+   "oi-pane": "logarithmic",
+   "long-short-pane": "logarithmic",
+   "cvd-pane": "logarithmic"
+  },
+  "axis_ink": [
+   {
+    "testId": "price-pane",
+    "canvases": 2,
+    "lightInk": 957,
+    "cell": {
+     "x": 1098,
+     "y": 61,
+     "w": 182,
+     "h": 335
+    }
+   },
+   {
+    "testId": "liquidation-cohort-long",
+    "canvases": 2,
+    "lightInk": 0,
+    "cell": {
+     "x": 1098,
+     "y": 397,
+     "w": 182,
+     "h": 108
+    }
+   },
+   {
+    "testId": "liquidation-cohort-short",
+    "canvases": 2,
+    "lightInk": 0,
+    "cell": {
+     "x": 1098,
+     "y": 506,
+     "w": 182,
+     "h": 108
+    }
+   },
+   {
+    "testId": "oi-pane",
+    "canvases": 2,
+    "lightInk": 967,
+    "cell": {
+     "x": 1098,
+     "y": 615,
+     "w": 182,
+     "h": 148
+    }
+   },
+   {
+    "testId": "long-short-pane",
+    "canvases": 2,
+    "lightInk": 622,
+    "cell": {
+     "x": 1098,
+     "y": 764,
+     "w": 182,
+     "h": 89
+    }
+   },
+   {
+    "testId": "cvd-pane",
+    "canvases": 2,
+    "lightInk": 811,
+    "cell": {
+     "x": 1098,
+     "y": 854,
+     "w": 182,
+     "h": 89
+    }
+   }
+  ],
+  "attribution": {
+   "logosInChartDom": 0,
+   "footerText": "Gráficos: TradingView Lightweight Charts",
+   "footerHref": "https://www.tradingview.com/",
+   "footerRect": {
+    "x": 0,
+    "y": 1065,
+    "h": 16
+   },
+   "footerFont": "12px"
+  },
+  "truncation": [
+   {
+    "t": "BTCUSDT — Preço (com volume), Open Interest, CVD, Liquidações e Long/short",
+    "overflow": "hidden",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": false
+   },
+   {
+    "t": "Altura da barra em escala log10 (base 1) — cada degrau de altura é uma ordem de grandeza, ",
+    "overflow": "hidden",
+    "textOverflow": "ellipsis",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 101.707",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:05 UTC — 3153/5760 grades de 1 min na janela.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 84033.9",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Vela completa em 3174 de 5760 buckets de 1 min. 23 buckets com leitura incompleta ficam em",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "⚠️ Dado de TERCEIRO (coinalyze), não da corretora de origem. Erro publicado: NENHUM — não ",
+    "overflow": "hidden",
+    "textOverflow": "ellipsis",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: SEM_PONTO",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 15:15 UTC — 848/5760 grades de 1 min observadas, das quais 4",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: SEM_PONTO",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 15:15 UTC — 851/5760 grades de 1 min observadas, das quais 3",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 95300.421 (de 23:00:00Z (−4m))",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:00 UTC — 571/5760 barras nativas de 5 min na janela.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "BTCUSDT · binance · nativa de 5min servida na grade de 1 min",
+    "overflow": "hidden",
+    "textOverflow": "ellipsis",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 1.3132 ratio",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:00 UTC — 546 observações nativas de 5min, servidas como 5",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Fecho da janela observado — cauda ausente: 0 grades de 1 min.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Delta atual: -85.323",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Acumulado atual: -12631.484",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:05 UTC — 3154/5760 grades de 1 min na janela.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   }
+  ],
+  "left_edges": [
+   {
+    "t": "BTCUSDT — Preço (com volume), Open Inter",
+    "x": -1,
+    "y": -1
+   },
+   {
+    "t": "COMO EM T · T = 2026-09-25 22:59 UTC · a",
+    "x": 0,
+    "y": 45
+   },
+   {
+    "t": "Gráficos: TradingView Lightweight Charts",
+    "x": 0,
+    "y": 1065
+   },
+   {
+    "t": "Leitura atual: 101.707",
+    "x": 7,
+    "y": 98
+   },
+   {
+    "t": "▁ Sem dado — traço baixo e apagado na li",
+    "x": 7,
+    "y": 114
+   },
+   {
+    "t": "▁",
+    "x": 7,
+    "y": 114
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:05 UTC ",
+    "x": 7,
+    "y": 130
+   },
+   {
+    "t": "Leitura atual: 84033.9",
+    "x": 7,
+    "y": 64
+   },
+   {
+    "t": "Vela completa em 3174 de 5760 buckets de",
+    "x": 7,
+    "y": 80
+   },
+   {
+    "t": "▁ Sem ponto — traço baixo e apagado (não",
+    "x": 7,
+    "y": 432
+   },
+   {
+    "t": "▁",
+    "x": 7,
+    "y": 432
+   },
+   {
+    "t": "Leitura atual: SEM_PONTO",
+    "x": 7,
+    "y": 400
+   }
+  ],
+  "text": [
+   {
+    "sample": "1m",
+    "fontSize": "12px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(51, 56, 70)",
+    "contrast": 9.62
+   },
+   {
+    "sample": "5m",
+    "fontSize": "12px",
+    "color": "rgb(139, 148, 158)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 5.82
+   },
+   {
+    "sample": "COMO EM T",
+    "fontSize": "12px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 14.72
+   },
+   {
+    "sample": "Últimas 4 h",
+    "fontSize": "12px",
+    "color": "rgb(139, 148, 158)",
+    "bg": "rgb(13, 16, 23)",
+    "contrast": 6.19
+   },
+   {
+    "sample": "Ao vivo",
+    "fontSize": "11px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 14.72
+   },
+   {
+    "sample": "preço : ao vivo indisponível",
+    "fontSize": "16px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 14.72
+   }
+  ],
+  "min_font_px": 11,
+  "doc_scroll": {
+   "sw": 1280,
+   "sh": 1081,
+   "cw": 1280,
+   "ch": 800
+  },
+  "chart_rect": {
+   "x": 0,
+   "y": 61,
+   "w": 1280,
+   "h": 910
+  },
+  "rest_legends": [
+   {
+    "k": "price",
+    "src": "last_closed",
+    "absence": "",
+    "t": "84033.9",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "volume",
+    "src": "last_closed",
+    "absence": "",
+    "t": "101.707",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_long",
+    "src": "last_closed",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_short",
+    "src": "last_closed",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "oi",
+    "src": "last_closed",
+    "absence": "",
+    "t": "95300.421retido",
+    "x": 192,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "long_short",
+    "src": "last_closed",
+    "absence": "",
+    "t": "1.3132",
+    "x": 259,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_delta",
+    "src": "last_closed",
+    "absence": "",
+    "t": "delta-85.323",
+    "x": 117,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_cumulative",
+    "src": "last_closed",
+    "absence": "",
+    "t": "acumulado-12631.484",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   }
+  ]
+ },
+ "1280x1200": {
+  "load_ms": 13829,
+  "console_errors": [
+   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "failed_responses": [
+   "404 http://127.0.0.1:8822/?series_key_id=31c0a9a695d475592bb2fee75da82ff62f6a828800992d4135a2a961ca6bfc53&symbol=BTCUSDT&interval=1m",
+   "404 http://127.0.0.1:8822/?series_key_id=94c3d3dd5f45abcb801a53e4a8b52ea81ea2479a9cdd51d90cd2cb6895e1a4a9&symbol=BTCUSDT&interval=1m",
+   "404 http://127.0.0.1:8822/?series_key_id=18125f63e24133cbe564dd4bdcb13aedf2c9014661dfc95b57959f2c484b2130&symbol=BTCUSDT&interval=1m"
+  ],
+  "chart_count": 1,
+  "panes": [
+   {
+    "id": "price-pane",
+    "present": true,
+    "top": 61,
+    "height": 335,
+    "width": 1098,
+    "text": "Preço (1m, USDT) 84033.9 klines_last · structure_detection Volume (1m, BTC) 101.707 Altura da barra em escala log10 (base 1) — cada degrau de altura é uma ordem de grandeza, não uma diferença absoluta. Leitura atual: 101.707 ▁ Sem dado — traço baixo e apagado na linha de base (não sabemos) ▃ Zero do fornecedor — traço alto e claro na linha de base (sabemos: foi zero) Dado legível desde 2026-09-21 ",
+    "attrs": {
+     "data-testid": "price-pane",
+     "data-price-candles": "3174",
+     "data-pane-height-px": "335",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "100.6",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "normal"
+    }
+   },
+   {
+    "id": "liquidation-cohort-long",
+    "present": true,
+    "top": 397,
+    "height": 108,
+    "width": 1098,
+    "text": "Liquidações (1m, USD) ⚠️ Dado de TERCEIRO (coinalyze), não da corretora de origem. Erro publicado: NENHUM — não há segunda fonte para medir a fidelidade contra, e publicar um número que ninguém mediu seria pior do que não publicar. Altura da barra em escala log10 (base 1) — cada degrau de altura é uma ordem de grandeza, não uma diferença absoluta. ▁ Sem ponto — traço baixo e apagado (não sabemos s",
+    "attrs": {
+     "data-testid": "liquidation-cohort-long",
+     "data-liquidation-present-points": "848",
+     "data-liquidation-zero-points": "423",
+     "data-pane-height-px": "108",
+     "data-legend-bottom-px": "54",
+     "data-reserved-scale-top-px": "60.5",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "liquidation-cohort-short",
+    "present": true,
+    "top": 506,
+    "height": 108,
+    "width": 1098,
+    "text": "Liquidação de posições vendidas (short) SEM_PONTO ▁ ausente (não sabemos) · ▃ zero do fornecedor (sabemos: foi zero) Leitura atual: SEM_PONTO Dado legível desde 2026-09-22 15:15 UTC — 851/5760 grades de 1 min observadas, das quais 393 são zero do fornecedor.",
+    "attrs": {
+     "data-testid": "liquidation-cohort-short",
+     "data-liquidation-present-points": "851",
+     "data-liquidation-zero-points": "393",
+     "data-pane-height-px": "108",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "45.3",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "oi-pane",
+    "present": true,
+    "top": 615,
+    "height": 148,
+    "width": 1098,
+    "text": "Open Interest (5m, BTC) 95300.421 retido Grandeza: contracts (BTC) · Universo: binance/usdm_futures · Coorte: all Última leitura há 0 min em relação ao fecho da janela (2026-09-25 22:59 UTC) — teto desta série: 10 min. Leitura atual: 95300.421 (de 23:00:00Z (−4m)) Dado legível desde 2026-09-21 23:00 UTC — 571/5760 barras nativas de 5 min na janela.",
+    "attrs": {
+     "data-testid": "oi-pane",
+     "data-oi-native-bars": "571",
+     "data-oi-wire-points": "2855",
+     "data-pane-height-px": "148",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "47.3",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "long-short-pane",
+    "present": true,
+    "top": 764,
+    "height": 89,
+    "width": 1098,
+    "text": "Long/short de contas (5m, ratio) 1.3132 Idade da última observação: 1 min 6 s (publicada em 2026-09-25 22:57 UTC). BTCUSDT · binance · nativa de 5min servida na grade de 1 min Procedência: OBSERVADO — dado da própria fonte (binance). Leitura atual: 1.3132 ratio Dado legível desde 2026-09-21 23:00 UTC — 546 observações nativas de 5min, servidas como 5760/5760 grades de 1 min (a mesma observação rep",
+    "attrs": {
+     "data-testid": "long-short-pane",
+     "data-long-short-native-bars": "546",
+     "data-long-short-wire-points": "5760",
+     "data-pane-height-px": "89",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "44.35",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "cvd-pane",
+    "present": true,
+    "top": 854,
+    "height": 89,
+    "width": 1098,
+    "text": "CVD (1m, BTC) delta -85.323 acumulado -12631.484 ▬ Delta (linha cheia) ▬ ▬ Acumulado (linha tracejada) Acumulado ancorado em 2026-09-21 23:00 UTC. Delta atual: -85.323 Acumulado atual: -12631.484 Dado legível desde 2026-09-21 23:05 UTC — 3154/5760 grades de 1 min na janela.",
+    "attrs": {
+     "data-testid": "cvd-pane",
+     "data-cvd-present-points": "3154",
+     "data-pane-height-px": "89",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "44.35",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   }
+  ],
+  "scale_modes": {
+   "price-pane": "normal",
+   "liquidation-cohort-long": "logarithmic",
+   "liquidation-cohort-short": "logarithmic",
+   "oi-pane": "logarithmic",
+   "long-short-pane": "logarithmic",
+   "cvd-pane": "logarithmic"
+  },
+  "axis_ink": [
+   {
+    "testId": "price-pane",
+    "canvases": 2,
+    "lightInk": 957,
+    "cell": {
+     "x": 1098,
+     "y": 61,
+     "w": 182,
+     "h": 335
+    }
+   },
+   {
+    "testId": "liquidation-cohort-long",
+    "canvases": 2,
+    "lightInk": 0,
+    "cell": {
+     "x": 1098,
+     "y": 397,
+     "w": 182,
+     "h": 108
+    }
+   },
+   {
+    "testId": "liquidation-cohort-short",
+    "canvases": 2,
+    "lightInk": 0,
+    "cell": {
+     "x": 1098,
+     "y": 506,
+     "w": 182,
+     "h": 108
+    }
+   },
+   {
+    "testId": "oi-pane",
+    "canvases": 2,
+    "lightInk": 967,
+    "cell": {
+     "x": 1098,
+     "y": 615,
+     "w": 182,
+     "h": 148
+    }
+   },
+   {
+    "testId": "long-short-pane",
+    "canvases": 2,
+    "lightInk": 622,
+    "cell": {
+     "x": 1098,
+     "y": 764,
+     "w": 182,
+     "h": 89
+    }
+   },
+   {
+    "testId": "cvd-pane",
+    "canvases": 2,
+    "lightInk": 811,
+    "cell": {
+     "x": 1098,
+     "y": 854,
+     "w": 182,
+     "h": 89
+    }
+   }
+  ],
+  "attribution": {
+   "logosInChartDom": 0,
+   "footerText": "Gráficos: TradingView Lightweight Charts",
+   "footerHref": "https://www.tradingview.com/",
+   "footerRect": {
+    "x": 0,
+    "y": 1065,
+    "h": 16
+   },
+   "footerFont": "12px"
+  },
+  "truncation": [
+   {
+    "t": "BTCUSDT — Preço (com volume), Open Interest, CVD, Liquidações e Long/short",
+    "overflow": "hidden",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": false
+   },
+   {
+    "t": "Altura da barra em escala log10 (base 1) — cada degrau de altura é uma ordem de grandeza, ",
+    "overflow": "hidden",
+    "textOverflow": "ellipsis",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 101.707",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:05 UTC — 3153/5760 grades de 1 min na janela.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 84033.9",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Vela completa em 3174 de 5760 buckets de 1 min. 23 buckets com leitura incompleta ficam em",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "⚠️ Dado de TERCEIRO (coinalyze), não da corretora de origem. Erro publicado: NENHUM — não ",
+    "overflow": "hidden",
+    "textOverflow": "ellipsis",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: SEM_PONTO",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 15:15 UTC — 848/5760 grades de 1 min observadas, das quais 4",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: SEM_PONTO",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 15:15 UTC — 851/5760 grades de 1 min observadas, das quais 3",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 95300.421 (de 23:00:00Z (−4m))",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:00 UTC — 571/5760 barras nativas de 5 min na janela.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "BTCUSDT · binance · nativa de 5min servida na grade de 1 min",
+    "overflow": "hidden",
+    "textOverflow": "ellipsis",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 1.3132 ratio",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:00 UTC — 546 observações nativas de 5min, servidas como 5",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Fecho da janela observado — cauda ausente: 0 grades de 1 min.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Delta atual: -85.323",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Acumulado atual: -12631.484",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:05 UTC — 3154/5760 grades de 1 min na janela.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   }
+  ],
+  "left_edges": [
+   {
+    "t": "BTCUSDT — Preço (com volume), Open Inter",
+    "x": -1,
+    "y": -1
+   },
+   {
+    "t": "COMO EM T · T = 2026-09-25 22:59 UTC · a",
+    "x": 0,
+    "y": 45
+   },
+   {
+    "t": "Gráficos: TradingView Lightweight Charts",
+    "x": 0,
+    "y": 1065
+   },
+   {
+    "t": "Leitura atual: 101.707",
+    "x": 7,
+    "y": 98
+   },
+   {
+    "t": "▁ Sem dado — traço baixo e apagado na li",
+    "x": 7,
+    "y": 114
+   },
+   {
+    "t": "▁",
+    "x": 7,
+    "y": 114
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:05 UTC ",
+    "x": 7,
+    "y": 130
+   },
+   {
+    "t": "Leitura atual: 84033.9",
+    "x": 7,
+    "y": 64
+   },
+   {
+    "t": "Vela completa em 3174 de 5760 buckets de",
+    "x": 7,
+    "y": 80
+   },
+   {
+    "t": "▁ Sem ponto — traço baixo e apagado (não",
+    "x": 7,
+    "y": 432
+   },
+   {
+    "t": "▁",
+    "x": 7,
+    "y": 432
+   },
+   {
+    "t": "Leitura atual: SEM_PONTO",
+    "x": 7,
+    "y": 400
+   }
+  ],
+  "text": [
+   {
+    "sample": "1m",
+    "fontSize": "12px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(51, 56, 70)",
+    "contrast": 9.62
+   },
+   {
+    "sample": "5m",
+    "fontSize": "12px",
+    "color": "rgb(139, 148, 158)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 5.82
+   },
+   {
+    "sample": "COMO EM T",
+    "fontSize": "12px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 14.72
+   },
+   {
+    "sample": "Últimas 4 h",
+    "fontSize": "12px",
+    "color": "rgb(139, 148, 158)",
+    "bg": "rgb(13, 16, 23)",
+    "contrast": 6.19
+   },
+   {
+    "sample": "Ao vivo",
+    "fontSize": "11px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 14.72
+   },
+   {
+    "sample": "preço : ao vivo indisponível",
+    "fontSize": "16px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 14.72
+   }
+  ],
+  "min_font_px": 11,
+  "doc_scroll": {
+   "sw": 1280,
+   "sh": 1200,
+   "cw": 1280,
+   "ch": 1200
+  },
+  "chart_rect": {
+   "x": 0,
+   "y": 61,
+   "w": 1280,
+   "h": 910
+  },
+  "rest_legends": [
+   {
+    "k": "price",
+    "src": "last_closed",
+    "absence": "",
+    "t": "84033.9",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "volume",
+    "src": "last_closed",
+    "absence": "",
+    "t": "101.707",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_long",
+    "src": "last_closed",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_short",
+    "src": "last_closed",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "oi",
+    "src": "last_closed",
+    "absence": "",
+    "t": "95300.421retido",
+    "x": 192,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "long_short",
+    "src": "last_closed",
+    "absence": "",
+    "t": "1.3132",
+    "x": 259,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_delta",
+    "src": "last_closed",
+    "absence": "",
+    "t": "delta-85.323",
+    "x": 117,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_cumulative",
+    "src": "last_closed",
+    "absence": "",
+    "t": "acumulado-12631.484",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   }
+  ],
+  "hover_0.55": [
+   {
+    "k": "price",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "volume",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_long",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_short",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "oi",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 192,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "long_short",
+    "src": "crosshair",
+    "absence": "",
+    "t": "1.2331",
+    "x": 259,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_delta",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "deltaSEM_PONTO",
+    "x": 117,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_cumulative",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "acumuladoSEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   }
+  ],
+  "hover_0.7": [
+   {
+    "k": "price",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "volume",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_long",
+    "src": "crosshair",
+    "absence": "",
+    "t": "1269.1484999999998",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_short",
+    "src": "crosshair",
+    "absence": "",
+    "t": "0",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "oi",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 192,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "long_short",
+    "src": "crosshair",
+    "absence": "",
+    "t": "1.1973",
+    "x": 259,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_delta",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "deltaSEM_PONTO",
+    "x": 117,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_cumulative",
+    "src": "crosshair",
+    "absence": "SEM_PONTO",
+    "t": "acumuladoSEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   }
+  ],
+  "rest_again": [
+   {
+    "k": "price",
+    "src": "last_closed",
+    "absence": "",
+    "t": "84033.9",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "volume",
+    "src": "last_closed",
+    "absence": "",
+    "t": "101.707",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_long",
+    "src": "last_closed",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_short",
+    "src": "last_closed",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "oi",
+    "src": "last_closed",
+    "absence": "",
+    "t": "95300.421retido",
+    "x": 192,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "long_short",
+    "src": "last_closed",
+    "absence": "",
+    "t": "1.3132",
+    "x": 259,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_delta",
+    "src": "last_closed",
+    "absence": "",
+    "t": "delta-85.323",
+    "x": 117,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_cumulative",
+    "src": "last_closed",
+    "absence": "",
+    "t": "acumulado-12631.484",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   }
+  ]
+ },
+ "1920x1080": {
+  "load_ms": 12211,
+  "console_errors": [
+   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)",
+   "Failed to load resource: the server responded with a status of 404 (Not Found)"
+  ],
+  "failed_responses": [
+   "404 http://127.0.0.1:8822/?series_key_id=31c0a9a695d475592bb2fee75da82ff62f6a828800992d4135a2a961ca6bfc53&symbol=BTCUSDT&interval=1m",
+   "404 http://127.0.0.1:8822/?series_key_id=94c3d3dd5f45abcb801a53e4a8b52ea81ea2479a9cdd51d90cd2cb6895e1a4a9&symbol=BTCUSDT&interval=1m",
+   "404 http://127.0.0.1:8822/?series_key_id=18125f63e24133cbe564dd4bdcb13aedf2c9014661dfc95b57959f2c484b2130&symbol=BTCUSDT&interval=1m"
+  ],
+  "chart_count": 1,
+  "panes": [
+   {
+    "id": "price-pane",
+    "present": true,
+    "top": 61,
+    "height": 335,
+    "width": 1738,
+    "text": "Preço (1m, USDT) 84033.9 klines_last · structure_detection Volume (1m, BTC) 101.707 Altura da barra em escala log10 (base 1) — cada degrau de altura é uma ordem de grandeza, não uma diferença absoluta. Leitura atual: 101.707 ▁ Sem dado — traço baixo e apagado na linha de base (não sabemos) ▃ Zero do fornecedor — traço alto e claro na linha de base (sabemos: foi zero) Dado legível desde 2026-09-21 ",
+    "attrs": {
+     "data-testid": "price-pane",
+     "data-price-candles": "3174",
+     "data-pane-height-px": "335",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "100.6",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "normal"
+    }
+   },
+   {
+    "id": "liquidation-cohort-long",
+    "present": true,
+    "top": 397,
+    "height": 108,
+    "width": 1738,
+    "text": "Liquidações (1m, USD) ⚠️ Dado de TERCEIRO (coinalyze), não da corretora de origem. Erro publicado: NENHUM — não há segunda fonte para medir a fidelidade contra, e publicar um número que ninguém mediu seria pior do que não publicar. Altura da barra em escala log10 (base 1) — cada degrau de altura é uma ordem de grandeza, não uma diferença absoluta. ▁ Sem ponto — traço baixo e apagado (não sabemos s",
+    "attrs": {
+     "data-testid": "liquidation-cohort-long",
+     "data-liquidation-present-points": "848",
+     "data-liquidation-zero-points": "423",
+     "data-pane-height-px": "108",
+     "data-legend-bottom-px": "54",
+     "data-reserved-scale-top-px": "60.5",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "liquidation-cohort-short",
+    "present": true,
+    "top": 506,
+    "height": 108,
+    "width": 1738,
+    "text": "Liquidação de posições vendidas (short) SEM_PONTO ▁ ausente (não sabemos) · ▃ zero do fornecedor (sabemos: foi zero) Leitura atual: SEM_PONTO Dado legível desde 2026-09-22 15:15 UTC — 851/5760 grades de 1 min observadas, das quais 393 são zero do fornecedor.",
+    "attrs": {
+     "data-testid": "liquidation-cohort-short",
+     "data-liquidation-present-points": "851",
+     "data-liquidation-zero-points": "393",
+     "data-pane-height-px": "108",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "45.3",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "oi-pane",
+    "present": true,
+    "top": 615,
+    "height": 148,
+    "width": 1738,
+    "text": "Open Interest (5m, BTC) 95300.421 retido Grandeza: contracts (BTC) · Universo: binance/usdm_futures · Coorte: all Última leitura há 0 min em relação ao fecho da janela (2026-09-25 22:59 UTC) — teto desta série: 10 min. Leitura atual: 95300.421 (de 23:00:00Z (−4m)) Dado legível desde 2026-09-21 23:00 UTC — 571/5760 barras nativas de 5 min na janela.",
+    "attrs": {
+     "data-testid": "oi-pane",
+     "data-oi-native-bars": "571",
+     "data-oi-wire-points": "2855",
+     "data-pane-height-px": "148",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "47.3",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "long-short-pane",
+    "present": true,
+    "top": 764,
+    "height": 89,
+    "width": 1738,
+    "text": "Long/short de contas (5m, ratio) 1.3132 Idade da última observação: 1 min 6 s (publicada em 2026-09-25 22:57 UTC). BTCUSDT · binance · nativa de 5min servida na grade de 1 min Procedência: OBSERVADO — dado da própria fonte (binance). Leitura atual: 1.3132 ratio Dado legível desde 2026-09-21 23:00 UTC — 546 observações nativas de 5min, servidas como 5760/5760 grades de 1 min (a mesma observação rep",
+    "attrs": {
+     "data-testid": "long-short-pane",
+     "data-long-short-native-bars": "546",
+     "data-long-short-wire-points": "5760",
+     "data-pane-height-px": "89",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "44.35",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   },
+   {
+    "id": "cvd-pane",
+    "present": true,
+    "top": 854,
+    "height": 89,
+    "width": 1738,
+    "text": "CVD (1m, BTC) delta -85.323 acumulado -12631.484 ▬ Delta (linha cheia) ▬ ▬ Acumulado (linha tracejada) Acumulado ancorado em 2026-09-21 23:00 UTC. Delta atual: -85.323 Acumulado atual: -12631.484 Dado legível desde 2026-09-21 23:05 UTC — 3154/5760 grades de 1 min na janela.",
+    "attrs": {
+     "data-testid": "cvd-pane",
+     "data-cvd-present-points": "3154",
+     "data-pane-height-px": "89",
+     "data-legend-bottom-px": "38",
+     "data-reserved-scale-top-px": "44.35",
+     "data-legend-reserve": "margins",
+     "data-right-scale-mode": "logarithmic"
+    }
+   }
+  ],
+  "scale_modes": {
+   "price-pane": "normal",
+   "liquidation-cohort-long": "logarithmic",
+   "liquidation-cohort-short": "logarithmic",
+   "oi-pane": "logarithmic",
+   "long-short-pane": "logarithmic",
+   "cvd-pane": "logarithmic"
+  },
+  "axis_ink": [
+   {
+    "testId": "price-pane",
+    "canvases": 2,
+    "lightInk": 957,
+    "cell": {
+     "x": 1738,
+     "y": 61,
+     "w": 182,
+     "h": 335
+    }
+   },
+   {
+    "testId": "liquidation-cohort-long",
+    "canvases": 2,
+    "lightInk": 0,
+    "cell": {
+     "x": 1738,
+     "y": 397,
+     "w": 182,
+     "h": 108
+    }
+   },
+   {
+    "testId": "liquidation-cohort-short",
+    "canvases": 2,
+    "lightInk": 0,
+    "cell": {
+     "x": 1738,
+     "y": 506,
+     "w": 182,
+     "h": 108
+    }
+   },
+   {
+    "testId": "oi-pane",
+    "canvases": 2,
+    "lightInk": 967,
+    "cell": {
+     "x": 1738,
+     "y": 615,
+     "w": 182,
+     "h": 148
+    }
+   },
+   {
+    "testId": "long-short-pane",
+    "canvases": 2,
+    "lightInk": 622,
+    "cell": {
+     "x": 1738,
+     "y": 764,
+     "w": 182,
+     "h": 89
+    }
+   },
+   {
+    "testId": "cvd-pane",
+    "canvases": 2,
+    "lightInk": 811,
+    "cell": {
+     "x": 1738,
+     "y": 854,
+     "w": 182,
+     "h": 89
+    }
+   }
+  ],
+  "attribution": {
+   "logosInChartDom": 0,
+   "footerText": "Gráficos: TradingView Lightweight Charts",
+   "footerHref": "https://www.tradingview.com/",
+   "footerRect": {
+    "x": 0,
+    "y": 1065,
+    "h": 16
+   },
+   "footerFont": "12px"
+  },
+  "truncation": [
+   {
+    "t": "BTCUSDT — Preço (com volume), Open Interest, CVD, Liquidações e Long/short",
+    "overflow": "hidden",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": false
+   },
+   {
+    "t": "Leitura atual: 101.707",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:05 UTC — 3153/5760 grades de 1 min na janela.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 84033.9",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Vela completa em 3174 de 5760 buckets de 1 min. 23 buckets com leitura incompleta ficam em",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: SEM_PONTO",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 15:15 UTC — 848/5760 grades de 1 min observadas, das quais 4",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: SEM_PONTO",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 15:15 UTC — 851/5760 grades de 1 min observadas, das quais 3",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 95300.421 (de 23:00:00Z (−4m))",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:00 UTC — 571/5760 barras nativas de 5 min na janela.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Leitura atual: 1.3132 ratio",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:00 UTC — 546 observações nativas de 5min, servidas como 5",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Fecho da janela observado — cauda ausente: 0 grades de 1 min.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Delta atual: -85.323",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Acumulado atual: -12631.484",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:05 UTC — 3154/5760 grades de 1 min na janela.",
+    "overflow": "visible",
+    "textOverflow": "clip",
+    "title": null,
+    "visible": true
+   }
+  ],
+  "left_edges": [
+   {
+    "t": "BTCUSDT — Preço (com volume), Open Inter",
+    "x": -1,
+    "y": -1
+   },
+   {
+    "t": "COMO EM T · T = 2026-09-25 22:59 UTC · a",
+    "x": 0,
+    "y": 45
+   },
+   {
+    "t": "Gráficos: TradingView Lightweight Charts",
+    "x": 0,
+    "y": 1065
+   },
+   {
+    "t": "Leitura atual: 101.707",
+    "x": 7,
+    "y": 98
+   },
+   {
+    "t": "▁ Sem dado — traço baixo e apagado na li",
+    "x": 7,
+    "y": 114
+   },
+   {
+    "t": "▁",
+    "x": 7,
+    "y": 114
+   },
+   {
+    "t": "Dado legível desde 2026-09-21 23:05 UTC ",
+    "x": 7,
+    "y": 130
+   },
+   {
+    "t": "Leitura atual: 84033.9",
+    "x": 7,
+    "y": 64
+   },
+   {
+    "t": "Vela completa em 3174 de 5760 buckets de",
+    "x": 7,
+    "y": 80
+   },
+   {
+    "t": "▁ Sem ponto — traço baixo e apagado (não",
+    "x": 7,
+    "y": 432
+   },
+   {
+    "t": "▁",
+    "x": 7,
+    "y": 432
+   },
+   {
+    "t": "Leitura atual: SEM_PONTO",
+    "x": 7,
+    "y": 400
+   }
+  ],
+  "text": [
+   {
+    "sample": "1m",
+    "fontSize": "12px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(51, 56, 70)",
+    "contrast": 9.62
+   },
+   {
+    "sample": "5m",
+    "fontSize": "12px",
+    "color": "rgb(139, 148, 158)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 5.82
+   },
+   {
+    "sample": "COMO EM T",
+    "fontSize": "12px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 14.72
+   },
+   {
+    "sample": "Últimas 4 h",
+    "fontSize": "12px",
+    "color": "rgb(139, 148, 158)",
+    "bg": "rgb(13, 16, 23)",
+    "contrast": 6.19
+   },
+   {
+    "sample": "Ao vivo",
+    "fontSize": "11px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 14.72
+   },
+   {
+    "sample": "preço : ao vivo indisponível",
+    "fontSize": "16px",
+    "color": "rgb(230, 233, 239)",
+    "bg": "rgb(19, 23, 34)",
+    "contrast": 14.72
+   }
+  ],
+  "min_font_px": 11,
+  "doc_scroll": {
+   "sw": 1920,
+   "sh": 1081,
+   "cw": 1920,
+   "ch": 1080
+  },
+  "chart_rect": {
+   "x": 0,
+   "y": 61,
+   "w": 1920,
+   "h": 910
+  },
+  "rest_legends": [
+   {
+    "k": "price",
+    "src": "last_closed",
+    "absence": "",
+    "t": "84033.9",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "volume",
+    "src": "last_closed",
+    "absence": "",
+    "t": "101.707",
+    "x": 140,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_long",
+    "src": "last_closed",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "liquidation_short",
+    "src": "last_closed",
+    "absence": "SEM_PONTO",
+    "t": "SEM_PONTO",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "oi",
+    "src": "last_closed",
+    "absence": "",
+    "t": "95300.421retido",
+    "x": 192,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "long_short",
+    "src": "last_closed",
+    "absence": "",
+    "t": "1.3132",
+    "x": 259,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_delta",
+    "src": "last_closed",
+    "absence": "",
+    "t": "delta-85.323",
+    "x": 117,
+    "color": "rgb(230, 233, 239)"
+   },
+   {
+    "k": "cvd_cumulative",
+    "src": "last_closed",
+    "absence": "",
+    "t": "acumulado-12631.484",
+    "x": 312,
+    "color": "rgb(230, 233, 239)"
+   }
+  ]
+ }
+}

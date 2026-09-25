@@ -1,0 +1,133 @@
+// T-01.11 r2 capture: real app (next start :4322, HEAD a154fe3) over real data (prod API via the
+// read-only proxy :8822). Same viewports as r1. Adds the probes that re-check r1's MF/SF item by item.
+// No writes anywhere. Usage: node capture.mjs <out-dir> [base-url] [tag-prefix]
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/wf_b15536f1-3fb-14/frontend/node_modules/playwright/index.mjs";
+import fs from "node:fs";
+
+const OUT = process.argv[2];
+const BASE = process.argv[3] ?? "http://127.0.0.1:4322";
+const PREFIX = process.argv[4] ?? "T-01.11-r2";
+const PANES = ["price-pane", "liquidation-cohort-long", "liquidation-cohort-short", "oi-pane", "long-short-pane", "cvd-pane"];
+const facts = {};
+
+function lum(rgb) {
+  const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a, b) { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); }
+function parse(c) { const m = c.match(/\d+(\.\d+)?/g); return m ? m.slice(0, 3).map(Number) : null; }
+
+const legends = () => Array.from(document.querySelectorAll("[data-legend-value]")).map((e) => ({
+  k: e.getAttribute("data-legend-value"), src: e.getAttribute("data-legend-source"),
+  absence: e.getAttribute("data-legend-absence"), t: e.textContent.trim().slice(0, 60),
+  x: Math.round(e.getBoundingClientRect().left), color: getComputedStyle(e).color,
+}));
+
+const browser = await chromium.launch();
+for (const vp of [{ width: 1280, height: 800, tag: "1280x800" }, { width: 1280, height: 1200, tag: "1280x1200" }, { width: 1920, height: 1080, tag: "1920x1080" }]) {
+  const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 1 });
+  const errors = [];
+  const failed = [];
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
+  page.on("response", (r) => { if (r.status() >= 400) failed.push(`${r.status()} ${r.url().slice(0, 160)}`); });
+  const t0 = Date.now();
+  await page.goto(`${BASE}/symbol/BTCUSDT`, { waitUntil: "load", timeout: 180_000 });
+  await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180_000 });
+  await page.waitForTimeout(5000);
+  const f = { load_ms: Date.now() - t0, console_errors: errors, failed_responses: failed };
+  f.chart_count = await page.locator(".tv-lightweight-charts").count();
+  f.panes = await page.evaluate((ids) => ids.map((id) => {
+    const el = document.querySelector(`[data-testid="${id}"]`);
+    if (!el) return { id, present: false };
+    const r = el.getBoundingClientRect();
+    const attrs = {};
+    for (const a of el.attributes) if (a.name.startsWith("data-") && a.value.length < 80) attrs[a.name] = a.value;
+    return { id, present: true, top: Math.round(r.top), height: Math.round(r.height), width: Math.round(r.width), text: el.innerText.replace(/\s+/g, " ").slice(0, 400), attrs };
+  }), PANES);
+  // MF-1/MF-2: scale mode read back from the library + axis text ink per pane axis cell.
+  f.scale_modes = await page.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll("[data-right-scale-mode]")).map((n) => [n.dataset.testid ?? "", n.dataset.rightScaleMode ?? ""])));
+  f.axis_ink = await page.evaluate((ids) => ids.map((testId) => {
+    const row = document.querySelector(`[data-testid="${testId}"]`)?.closest("tr") ?? null;
+    const cell = row?.lastElementChild ?? null;
+    const canvases = cell === null ? [] : Array.from(cell.querySelectorAll("canvas"));
+    let ink = 0;
+    for (const c of canvases) {
+      if (!c.width || !c.height) continue;
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && d[i] > 150 && d[i + 1] > 150 && d[i + 2] > 150) ink++;
+    }
+    const r = cell?.getBoundingClientRect();
+    return { testId, canvases: canvases.length, lightInk: ink, cell: r ? { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) } : null };
+  }), PANES);
+  // SF-1: attribution.
+  f.attribution = await page.evaluate(() => {
+    const footer = document.querySelector('[data-testid="chart-attribution"]');
+    const a = footer?.querySelector("a");
+    const r = footer?.getBoundingClientRect();
+    return {
+      logosInChartDom: document.querySelectorAll('.tv-lightweight-charts a[href*="tradingview"]').length,
+      footerText: footer?.innerText.trim().slice(0, 120) ?? null, footerHref: a?.href ?? null,
+      footerRect: r ? { x: Math.round(r.left), y: Math.round(r.top), h: Math.round(r.height) } : null,
+      footerFont: footer ? getComputedStyle(footer).fontSize : null,
+    };
+  });
+  // SF-2 / SF-4 / SF-5: truncation, key, gutter.
+  f.truncation = await page.evaluate(() => Array.from(document.querySelectorAll("main *")).filter((e) => {
+    if (!e.textContent.trim() || e.clientWidth === 0) return false;
+    return e.scrollWidth > e.clientWidth + 1 && e.children.length === 0;
+  }).map((e) => { const cs = getComputedStyle(e); return { t: e.textContent.trim().slice(0, 90), overflow: cs.overflow, textOverflow: cs.textOverflow, title: e.getAttribute("title") ?? e.closest("[title]")?.getAttribute("title")?.slice(0, 60) ?? null, visible: cs.visibility !== "hidden" && e.getBoundingClientRect().height > 1 }; }).slice(0, 30));
+  f.left_edges = await page.evaluate(() => {
+    const out = [];
+    for (const e of document.querySelectorAll("main *")) {
+      const own = Array.from(e.childNodes).some((c) => c.nodeType === 3 && c.textContent.trim());
+      if (!own) continue;
+      const r = e.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (getComputedStyle(e).position === "absolute" && e.closest(".tv-lightweight-charts")) continue;
+      out.push({ t: e.textContent.trim().slice(0, 40), x: Math.round(r.left), y: Math.round(r.top) });
+    }
+    return out.sort((a, b) => a.x - b.x).slice(0, 12);
+  });
+  f.text = await page.evaluate(() => {
+    const out = []; const seen = new Set();
+    const walker = document.createTreeWalker(document.querySelector("main") || document.body, NodeFilter.SHOW_ELEMENT);
+    let n;
+    while ((n = walker.nextNode())) {
+      const own = Array.from(n.childNodes).filter((c) => c.nodeType === 3 && c.textContent.trim()).map((c) => c.textContent.trim()).join(" ");
+      if (!own) continue;
+      const cs = getComputedStyle(n);
+      const rr = n.getBoundingClientRect();
+      if (rr.width <= 1 || rr.height <= 1) continue; // sr-only
+      let bgEl = n, bg = "rgba(0, 0, 0, 0)";
+      while (bgEl) { const b = getComputedStyle(bgEl).backgroundColor; if (b && !b.startsWith("rgba(0, 0, 0, 0)") && b !== "transparent") { bg = b; break; } bgEl = bgEl.parentElement; }
+      const key = `${cs.fontSize}|${cs.color}|${bg}`;
+      if (seen.has(key)) continue; seen.add(key);
+      out.push({ sample: own.slice(0, 50), fontSize: cs.fontSize, color: cs.color, bg });
+    }
+    return out.slice(0, 60);
+  });
+  for (const s of f.text) { const a = parse(s.color), b = parse(s.bg); s.contrast = a && b ? Math.round(contrast(a, b) * 100) / 100 : null; }
+  f.min_font_px = Math.min(...f.text.map((s) => parseFloat(s.fontSize)));
+  f.doc_scroll = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, cw: document.documentElement.clientWidth, ch: document.documentElement.clientHeight }));
+  f.chart_rect = await page.evaluate(() => { const r = document.querySelector(".tv-lightweight-charts").getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; });
+  f.rest_legends = await page.evaluate(legends);
+  await page.screenshot({ path: `${OUT}/${PREFIX}-${vp.tag}-viewport.png` });
+  await page.screenshot({ path: `${OUT}/${PREFIX}-${vp.tag}-fullpage.png`, fullPage: true });
+  if (vp.tag === "1280x1200") {
+    const box = await page.locator('[data-testid="price-pane"]').boundingBox();
+    for (const frac of [0.55, 0.7]) {
+      await page.mouse.move(box.x + box.width * frac, box.y + box.height * 0.5);
+      await page.waitForTimeout(800);
+      f[`hover_${frac}`] = await page.evaluate(legends);
+      await page.screenshot({ path: `${OUT}/${PREFIX}-${vp.tag}-crosshair-${Math.round(frac * 100)}.png` });
+    }
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(500);
+    f.rest_again = await page.evaluate(legends);
+  }
+  facts[vp.tag] = f;
+  await page.close();
+}
+await browser.close();
+fs.writeFileSync(`${OUT}/${PREFIX}-facts.json`, JSON.stringify(facts, null, 1));
+console.log("done");
