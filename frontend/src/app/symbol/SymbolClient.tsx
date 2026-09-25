@@ -105,10 +105,18 @@ import {
   type ScaleMargins,
   type TimeAxis,
 } from "../../charts/index.ts";
-import { chartConstructorOptions } from "./chart-options.ts";
+import { chartConstructorOptions, gridCarrierSeriesOptions } from "./chart-options.ts";
 import { recentBandSlotRange } from "./long-short-band.ts";
 import { AxisSyncProvider, useAxisSync } from "./axis-sync-provider.tsx";
-import { recordHistoryPageDrawn } from "./history-page-latency-probe.ts";
+import { recordHistoryPageApplied, recordHistoryPageDrawn } from "./history-page-latency-probe.ts";
+import {
+  busyWait,
+  hostSeriesFeeds,
+  isDenseSeriesAblationRequested,
+  paneSeriesFeeds,
+  requestedPageApplyBusyMs,
+  type SeriesFeed,
+} from "./host-series-feed.ts";
 import { SINGLE_CHART_PANEL_INDEX } from "./axis-sync.ts";
 import { F1_PANE_ORDER, F1_PANE_STRETCH, type PaneId, type PaneLegendSpec } from "./pane-registry.ts";
 import {
@@ -622,14 +630,31 @@ interface PaneScaleBinding {
   readonly clearSeparator: boolean;
 }
 
+/** A series of the host's chart, and one `setData` the host will make on it (`T-01.10`). */
+type HostSeries = ISeriesApi<SeriesType>;
+type HostSeriesFeed = SeriesFeed<HostSeries>;
+
+/** `T-01.10` — the ONLY `setData` loop of the host: the feeds, in the order they were given
+ * (`host-series-feed.ts` puts the carrier first). */
+function feedSeries(feeds: readonly HostSeriesFeed[]): void {
+  for (const { series, items } of feeds) {
+    series.setData(items as never);
+  }
+}
+
+/** The pane the grid carrier lives in (`ADR-044/D2′(a)`): the first, which always exists. */
+const GRID_CARRIER_PANE_INDEX = 0;
+
 /** What a pane declares to the host. `mount` runs ONCE, when the chart exists, and returns the
- * pane's series handles; `apply` feeds them the data of the CURRENT render (the host keeps the
- * latest binding, so `apply` never reads stale props); `measure`, optional, reads geometry back
- * out of the library one frame after every apply; `scales` (`T-01.6`) names the pane's scales and
- * their role in the stack. */
+ * pane's series handles; `apply` RETURNS the lossless feeds of the CURRENT render for them (the
+ * host keeps the latest binding, so `apply` never reads stale props) — since `T-01.10` it no longer
+ * calls `setData`: the host does, after its grid carrier, through `plotItemsOnly`
+ * (`host-series-feed.ts`, `ADR-044/D2′`); `measure`, optional, reads geometry back out of the
+ * library one frame after every apply; `scales` (`T-01.6`) names the pane's scales and their role
+ * in the stack. */
 interface HostedPaneBinding<Handles> {
   readonly mount: (chart: IChartApi, paneIndex: number) => Handles;
-  readonly apply: (handles: Handles) => void;
+  readonly apply: (handles: Handles) => readonly HostSeriesFeed[];
   readonly measure?: (chart: IChartApi, paneIndex: number) => void;
   readonly scales?: (handles: Handles) => readonly PaneScaleBinding[];
 }
@@ -926,6 +951,12 @@ function SymbolChartHost({
   onGestureChangeRef.current = onGestureChange;
   const chartStateRef = useRef<{
     readonly chart: IChartApi;
+    /** `T-01.10` (`ADR-044/D2′(a)`) — the hidden series that carries the whole grid. */
+    readonly carrier: HostSeries;
+    /** `?e2eDenseSeries=1` — the panes get the lossless items of before (the ablation). */
+    readonly dense: boolean;
+    /** `?e2ePageApplyBusyMs=N` — `F-C`'s busy-wait on every page, `0` otherwise. */
+    readonly busyMs: number;
     readonly handles: Map<number, unknown>;
     /** `T-01.6` — per pane, its scales and the base margins read right after `mount`. */
     readonly scales: Map<number, readonly { readonly binding: PaneScaleBinding; readonly base: ScaleMargins }[]>;
@@ -950,7 +981,8 @@ function SymbolChartHost({
           // A pane that registers after the chart exists (not the case for the six fixed panes of
           // phase `01`, which all render on the first commit) is mounted on arrival.
           state.handles.set(paneIndex, binding.current.mount(state.chart, paneIndex));
-          binding.current.apply(state.handles.get(paneIndex));
+          // The carrier already holds the grid, so only this pane's feeds go in.
+          feedSeries(paneSeriesFeeds(binding.current.apply(state.handles.get(paneIndex)), state.dense));
         }
         return () => {
           if (bindings.get(paneIndex) === binding) {
@@ -976,6 +1008,14 @@ function SymbolChartHost({
     const chart = createChart(container, chartConstructorOptions(container.clientWidth || 600, PANE_STACK.chartHeightPx));
     mountCountRef.current += 1;
     container.dataset.chartMountCount = String(mountCountRef.current);
+    // `T-01.10` (`ADR-044/D2′(a)`, `handoff/T-01.10-desenho.md` §3 item 1) — the grid CARRIER, created
+    // BEFORE any pane's series: the host owns the grid, and the pane series carry plot items only.
+    // Its options are `chart-options.ts`'s (`DR-1`), and it draws nothing.
+    const carrier: HostSeries = chart.addSeries(LineSeries, gridCarrierSeriesOptions(), GRID_CARRIER_PANE_INDEX);
+    const search = window.location.search;
+    const dense = isDenseSeriesAblationRequested(search);
+    const busyMs = requestedPageApplyBusyMs(search);
+    container.dataset.seriesFeed = dense ? "dense" : "sparse";
     const handles = new Map<number, unknown>();
     const paneIndices = [...bindings.keys()].sort((a, b) => a - b);
     for (const paneIndex of paneIndices) {
@@ -1002,10 +1042,16 @@ function SymbolChartHost({
         }),
       );
     }
-    for (const paneIndex of paneIndices) {
-      bindings.get(paneIndex)!.current.apply(handles.get(paneIndex));
-    }
-    chartStateRef.current = { chart, handles, scales };
+    // The carrier FIRST, then every pane (`host-series-feed.ts`).
+    feedSeries(
+      hostSeriesFeeds(
+        carrier,
+        store.axis,
+        paneIndices.flatMap((paneIndex) => bindings.get(paneIndex)!.current.apply(handles.get(paneIndex))),
+        dense,
+      ),
+    );
+    chartStateRef.current = { chart, carrier, dense, busyMs, handles, scales };
     appliedAxisRef.current = store.axis;
     appliedDataVersionRef.current = latestDataVersionRef.current;
     // `T-05.9` (plan `05` DoD 7): the first `setData` is drawn here.
@@ -1165,15 +1211,32 @@ function SymbolChartHost({
     const store = axisSyncRef.current;
     const bindings = registrar.bindings;
     const releasePageGuard = store.guard.holdApplying();
-    for (const [paneIndex, handles] of state.handles) {
-      bindings.get(paneIndex)?.current.apply(handles);
+    const isPage = axis.startMs !== previousAxis.startMs;
+    if (isPage) {
+      // `F-C` (`handoff/T-01.10-desenho.md` §4) — the instrument's negative control, off unless the
+      // URL asks for it; OUTSIDE the timed loop, so `data-page-apply-ms` stays the apply alone.
+      busyWait(state.busyMs);
     }
+    // `T-01.10` (§3 item 6) — the page application, timed: the carrier with the new grid FIRST, then
+    // every pane's feeds as plot items only (`ADR-044/D2′`).
+    const applyStartMs = performance.now();
+    feedSeries(
+      hostSeriesFeeds(
+        state.carrier,
+        axis,
+        [...state.handles].flatMap(([paneIndex, handles]) => bindings.get(paneIndex)?.current.apply(handles) ?? []),
+        state.dense,
+      ),
+    );
+    const applyMs = performance.now() - applyStartMs;
     store.rebase(axis);
     appliedAxisRef.current = axis;
-    if (axis.startMs !== previousAxis.startMs) {
+    if (isPage) {
       // A PAGE (the left edge moved): its bars are drawn now — `T-05.9`'s "pixel" instant. The
-      // deferred right-edge cut alone is not a page and is not recorded, so `requestedMs[i]` and
-      // `drawnMs[i]` stay paired one to one.
+      // deferred right-edge cut alone is not a page and is not recorded, so `requestedMs[i]`,
+      // `drawnMs[i]` and `applyMs[i]` stay paired one to one.
+      container.dataset.pageApplyMs = applyMs.toFixed(2);
+      recordHistoryPageApplied(applyMs);
       recordHistoryPageDrawn();
     }
     const previousEndMs = previousAxis.startMs + previousAxis.slotCount * previousAxis.stepMs;
@@ -1814,12 +1877,12 @@ function PricePane({
     },
       // `T-01.5` — the data of the CURRENT render, fed to the series `mount` created once. The chart
       // host calls this at mount and again on every history page, on the same series.
-    apply: ({ series, volumeSeries, absenceSeries, zeroSeries }) => {
-      series.setData(candlestickSeriesLossless(panels.price.series.slots) as never);
-      volumeSeries.setData(positiveValueSeriesLossless(volume.slots) as never);
-      absenceSeries.setData(absenceMarkSeries(volume.slots, ABSENCE_MARK_PX) as never);
-      zeroSeries.setData(zeroMarkSeries(volume.slots, ZERO_MARK_PX) as never);
-    },
+    apply: ({ series, volumeSeries, absenceSeries, zeroSeries }) => [
+      { series, items: candlestickSeriesLossless(panels.price.series.slots) },
+      { series: volumeSeries, items: positiveValueSeriesLossless(volume.slots) },
+      { series: absenceSeries, items: absenceMarkSeries(volume.slots, ABSENCE_MARK_PX) },
+      { series: zeroSeries, items: zeroMarkSeries(volume.slots, ZERO_MARK_PX) },
+    ],
     // `T-01.6` — the candles draw near the top (compressed below the legend); the volume bars and
     // the two marks sit on the pane's floor, and their `#8b949e` keeps `C-6`'s 4px off the separator.
     // `zeroSeries` shares `absenceSeries`' scale (`VOLUME_MARKS_PRICE_SCALE_ID`), declared once.
@@ -2031,9 +2094,7 @@ function OiPane({
       const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style, paneIndex);
       return { series };
     },
-    apply: ({ series }) => {
-      series.setData(lineSeriesLossless(panels.oi.slots) as never);
-    },
+    apply: ({ series }) => [{ series, items: lineSeriesLossless(panels.oi.slots) }],
     scales: ({ series }) => [{ series, belowLegend: true, clearSeparator: false }],
   });
   // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (`ONE_MINUTE_MS`, `D-C3.2`),
@@ -2194,10 +2255,10 @@ function CvdPane({
       cumulativeSeries.priceScale().applyOptions({ scaleMargins: CVD_CUMULATIVE_SCALE_MARGINS });
       return { deltaSeries, cumulativeSeries };
     },
-    apply: ({ deltaSeries, cumulativeSeries }) => {
-      deltaSeries.setData(lineSeriesLossless(panels.cvd.deltaSlots) as never);
-      cumulativeSeries.setData(lineSeriesLossless(panels.cvd.cumulativeSlots) as never);
-    },
+    apply: ({ deltaSeries, cumulativeSeries }) => [
+      { series: deltaSeries, items: lineSeriesLossless(panels.cvd.deltaSlots) },
+      { series: cumulativeSeries, items: lineSeriesLossless(panels.cvd.cumulativeSlots) },
+    ],
     // `T-01.6` — BOTH halves are compressed below the legend, so the delta/cumulative split keeps
     // its place in the part of the pane the legend leaves (`charts/pane-stack-layout.ts`, "why the
     // margins are compressed, not merely raised").
@@ -2508,11 +2569,11 @@ function LiquidationCohortSurface({
       );
       return { barSeries, absenceSeries, zeroSeries };
     },
-    apply: ({ barSeries, absenceSeries, zeroSeries }) => {
-      barSeries.setData(positiveValueSeriesLossless(data.slots) as never);
-      absenceSeries.setData(absenceMarkSeries(data.slots, LIQUIDATION_ABSENCE_MARK_PX) as never);
-      zeroSeries.setData(zeroMarkSeries(data.slots, LIQUIDATION_ZERO_MARK_PX) as never);
-    },
+    apply: ({ barSeries, absenceSeries, zeroSeries }) => [
+      { series: barSeries, items: positiveValueSeriesLossless(data.slots) },
+      { series: absenceSeries, items: absenceMarkSeries(data.slots, LIQUIDATION_ABSENCE_MARK_PX) },
+      { series: zeroSeries, items: zeroMarkSeries(data.slots, LIQUIDATION_ZERO_MARK_PX) },
+    ],
     // `T-01.6` — the bars below the legend; the marks band on the floor, `C-6`'s 4px off the
     // separator (the absence mark is `#8b949e`, the separator's colour, same reason as the volume).
     scales: ({ barSeries, absenceSeries }) => [
@@ -3126,13 +3187,14 @@ function LongShortPane({
       const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style, paneIndex);
       return { series };
     },
-    apply: ({ series }) => {
+    apply: ({ series }) => [
       // `lineSeriesLossless` — REUSED, never a second mapping: a slot with `value: null` becomes a
-      // bare `{time}` `WhitespaceItem`, which the library places on the axis and draws NOTHING for.
+      // bare `{time}` `WhitespaceItem`, which the library places on the axis and draws NOTHING for
+      // (since `T-01.10` the host drops it through `plotItemsOnly`; the grid carrier keeps the slot).
       // For this series a `0` there would be worse than for any other pane on this screen: `0` is a
       // legible long/short ratio (nobody long), so the fabricated value would not even look wrong.
-      series.setData(lineSeriesLossless(longShort.slots) as never);
-    },
+      { series, items: lineSeriesLossless(longShort.slots) },
+    ],
     scales: ({ series }) => [{ series, belowLegend: true, clearSeparator: false }],
     measure: (chart, paneIndex) => {
       // ⛔ THE COORDINATES ARE THE LIBRARY'S, NOT A PROPORTION COMPUTED BESIDE IT. The plot area is

@@ -59,7 +59,10 @@ const NATIVE_BARS_ATTRIBUTE = /data-long-short-native-bars=\{longShort\.nativeBa
 const WIRE_POINTS_ATTRIBUTE = /data-long-short-wire-points=\{longShort\.wirePoints\}/;
 const ABSENT_BRANCH =
   /longShort\.reading\.kind === "absent" \|\| longShort\.reading\.value === null\s*\n?\s*\? ABSENCE_TOKEN/;
-const LOSSLESS_SETDATA = /series\.setData\(lineSeriesLossless\(longShort\.slots\) as never\);/;
+// `T-01.10` (`ADR-044/D2′`): the pane no longer calls `setData` — its `apply` RETURNS `{ series, items }`
+// feeds and the host applies them after the grid carrier. The contract (WHICH lossless mapping
+// feeds WHICH series) is unchanged; only the call site moved, so the anchors follow it.
+const LOSSLESS_SETDATA = /\{ series, items: lineSeriesLossless\(longShort\.slots\) \}/;
 const HORIZON_FACT =
   /data-fact=\{`long_short_readable_horizon:\$\{longShort\.nativeBars\}\/\$\{longShort\.wirePoints\}\/\$\{gridSlots\}`\}/;
 /** ⚠️ RE-ANCHORED BY `T-04.8`, AND THE LOOSENING IS NAMED RATHER THAN SILENT: it used to end in
@@ -240,7 +243,7 @@ test("MORDE: each of the 7 pane mutations is caught by an assert above", () => {
       mutate: (s) =>
         s.replace(
           LOSSLESS_SETDATA,
-          "series.setData(longShort.slots.map((slot) => ({ time: slot.time, value: slot.value ?? 0 })) as never);",
+          "{ series, items: longShort.slots.map((slot) => ({ time: slot.time, value: slot.value ?? 0 })) }",
         ),
     },
     {

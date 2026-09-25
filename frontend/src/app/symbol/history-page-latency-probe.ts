@@ -54,7 +54,12 @@ export interface HistoryPageLatencyProbe {
    * `setData` (there is no page request behind it); a caller that wants only page-triggered pairs
    * calls `reset()` once the initial paint has settled, before driving any drag. */
   readonly drawnMs: number[];
-  /** Empties both buffers without replacing either array's identity — a spec that captured a
+  /** `T-01.10` (`handoff/T-01.10-desenho.md` §3 item 6) — the DURATION, in milliseconds, of the
+   * chart host's page application (every `setData` of one page, carrier first), one per page, in
+   * the same order as `drawnMs`. It is `F-B`'s measure: less sensitive to machine load than the
+   * interval between gestures, and comparable across `?e2eDenseSeries=1` in the same run. */
+  readonly applyMs: number[];
+  /** Empties every buffer without replacing either array's identity — a spec that captured a
    * reference to `window.__historyPageLatencyProbe` before calling this still sees both drain. */
   reset(): void;
 }
@@ -75,12 +80,15 @@ function probe(): HistoryPageLatencyProbe | null {
   if (window.__historyPageLatencyProbe === undefined) {
     const requestedMs: number[] = [];
     const drawnMs: number[] = [];
+    const applyMs: number[] = [];
     window.__historyPageLatencyProbe = {
       requestedMs,
       drawnMs,
+      applyMs,
       reset() {
         requestedMs.length = 0;
         drawnMs.length = 0;
+        applyMs.length = 0;
       },
     };
   }
@@ -116,4 +124,14 @@ export function recordHistoryPageDrawn(): void {
     return;
   }
   pushCapped(p.drawnMs, performance.now());
+}
+
+/** `T-01.10` — records ONE page application's duration. The chart host (`SymbolClient.tsx`) calls
+ * this, and only this, on every page, with the `performance.now()` difference around its apply loop. */
+export function recordHistoryPageApplied(durationMs: number): void {
+  const p = probe();
+  if (p === null) {
+    return;
+  }
+  pushCapped(p.applyMs, durationMs);
 }

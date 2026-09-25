@@ -165,7 +165,10 @@ test("MORDE: each of the 3 DOM-contract mutations that used to pass green is now
 // screen. Both halves are necessary: the geometry does not see a `setData` that stopped being
 // called in the component, and the scan does not see a pixel.
 
-const VOLUME_SETDATA = /volumeSeries\.setData\(positiveValueSeriesLossless\(volume\.slots\) as never\);/;
+// `T-01.10` (`ADR-044/D2′`): the pane no longer calls `setData` — its `apply` RETURNS `{ series, items }`
+// feeds and the host applies them after the grid carrier. The contract (WHICH lossless mapping
+// feeds WHICH series) is unchanged; only the call site moved, so the anchors follow it.
+const VOLUME_SETDATA = /\{ series: volumeSeries, items: positiveValueSeriesLossless\(volume\.slots\) \}/;
 /** ⛔ ANCHORED TO `volumeSeries`, AND IT WAS NOT UNTIL `T-05.9` — the bare
  * `/mode: PriceScaleMode\.Logarithmic,/` was correct while this file was the only logarithmic scale
  * in `SymbolClient.tsx`, and went VACUOUS the moment a second one arrived (the liquidation pane):
@@ -174,8 +177,8 @@ const VOLUME_SETDATA = /volumeSeries\.setData\(positiveValueSeriesLossless\(volu
  * is what makes it survive a third chart too. */
 const LOG_MODE =
   /volumeSeries\.priceScale\(\)\.applyOptions\(\{\s*scaleMargins: VOLUME_SCALE_MARGINS,\s*mode: PriceScaleMode\.Logarithmic,/;
-const ABSENCE_SETDATA = /absenceSeries\.setData\(absenceMarkSeries\(volume\.slots, ABSENCE_MARK_PX\) as never\);/;
-const ZERO_SETDATA = /zeroSeries\.setData\(zeroMarkSeries\(volume\.slots, ZERO_MARK_PX\) as never\);/;
+const ABSENCE_SETDATA = /\{ series: absenceSeries, items: absenceMarkSeries\(volume\.slots, ABSENCE_MARK_PX\) \}/;
+const ZERO_SETDATA = /\{ series: zeroSeries, items: zeroMarkSeries\(volume\.slots, ZERO_MARK_PX\) \}/;
 const ABSENCE_ROLE = /const ABSENCE_MARK_COLOR_ROLE = "(\w+)" as const;/;
 const ZERO_ROLE = /const ZERO_MARK_COLOR_ROLE = "(\w+)" as const;/;
 
@@ -219,7 +222,7 @@ test("MORDE: each of the 4 regressions of the two BLOCKERs is caught by an asser
   const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
     {
       name: "back to lineSeriesLossless (zero becomes a zero-height bar)",
-      mutate: (s) => s.replace(VOLUME_SETDATA, "volumeSeries.setData(lineSeriesLossless(volume.slots) as never);"),
+      mutate: (s) => s.replace(VOLUME_SETDATA, "{ series: volumeSeries, items: lineSeriesLossless(volume.slots) }"),
     },
     {
       name: "scale back to linear",

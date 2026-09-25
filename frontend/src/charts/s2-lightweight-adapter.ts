@@ -63,7 +63,7 @@ export interface WhitespaceItem {
   readonly time: UnixSeconds;
 }
 
-function toUnixSeconds(timeMs: number): UnixSeconds {
+export function toUnixSeconds(timeMs: number): UnixSeconds {
   if (!Number.isInteger(timeMs) || timeMs % 1000 !== 0) {
     throw new RangeError(
       `slot time ${timeMs} is not a whole number of seconds — every grid boundary this ` +

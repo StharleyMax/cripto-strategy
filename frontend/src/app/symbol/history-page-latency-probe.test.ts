@@ -11,7 +11,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { recordHistoryPageDrawn, recordHistoryPageRequested } from "./history-page-latency-probe.ts";
+import {
+  recordHistoryPageApplied,
+  recordHistoryPageDrawn,
+  recordHistoryPageRequested,
+} from "./history-page-latency-probe.ts";
 
 test("recordHistoryPageRequested/recordHistoryPageDrawn never throw outside a browser — `window` is undefined under node --test", () => {
   assert.equal(typeof window, "undefined", "this test's own premise: no `window` under node --test");
@@ -20,5 +24,6 @@ test("recordHistoryPageRequested/recordHistoryPageDrawn never throw outside a br
     recordHistoryPageDrawn();
     recordHistoryPageRequested();
     recordHistoryPageDrawn();
+    recordHistoryPageApplied(12.5);
   });
 });
