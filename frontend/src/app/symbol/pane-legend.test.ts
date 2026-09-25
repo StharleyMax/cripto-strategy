@@ -14,6 +14,8 @@ import { fileURLToPath } from "node:url";
 import { resolveLegendReading, type LegendReading } from "../../charts/index.ts";
 import type { Nature, SeriesCatalogEntry, SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 import {
+  ABSENCE_MICROCOPY,
+  LEGEND_GRID_ABSENCE,
   LEGEND_MARK_TEXT,
   LEGEND_SERIES_IDS,
   createCrosshairSlotStore,
@@ -236,7 +238,44 @@ test("C-8: the mark column fits every mark the nature can produce", () => {
 });
 
 test("C-8: SymbolClient renders the numeral right-aligned in a width of `ch`, from the whole-pane width", () => {
-  assert.match(SOURCE, /legendNumeralWidthCh\(slots, ABSENCE_TOKEN\)/);
+  // `T-01.11-FIX` (`MF-3`): the column is sized to the pt-BR absence word the legend paints.
+  assert.match(SOURCE, /legendNumeralWidthCh\(slots, absenceText\)/);
   assert.match(SOURCE, /style=\{\{ width: `\$\{numeralWidthCh\}ch` \}\}/);
-  assert.match(SOURCE, /data-legend-numeral=""[^>]*className="[^"]*\btext-right\b[^"]*\btabular-nums\b/);
+  // `T-01.11-FIX` (`MF-3`): the class became a template literal (the absent numeral is dimmed).
+  assert.match(SOURCE, /data-legend-numeral=""[^>]*className=\{?[`"][^`"]*\btext-right\b[^`"]*\btabular-nums\b/);
+});
+
+// ── `T-01.11-FIX` (`MF-3`): the legend paints a pt-BR word for absence, never the domain enum ──────
+
+test("MF-3: every Absence reason has a pt-BR word, and none of them is the enum spelling", () => {
+  const reasons = ["SEM_PONTO", "NAO_LIDO", "QUARENTENA", "SEM_FONTE"] as const;
+  assert.deepEqual(Object.keys(ABSENCE_MICROCOPY).sort(), [...reasons].sort(), "the map is total over `Absence`");
+  for (const reason of reasons) {
+    const word = ABSENCE_MICROCOPY[reason];
+    assert.ok(word.length > 0, `${reason} has no word`);
+    assert.doesNotMatch(word, /[A-Z_]/, `${reason} → "${word}" still looks like an enum (uppercase or underscore)`);
+    assert.doesNotMatch(word, /\d/, `${reason} → "${word}" carries a digit — an absence must never read as a number`);
+  }
+  assert.equal(ABSENCE_MICROCOPY.SEM_PONTO, "ausente", "plan 01 item 1.6: \"slot ausente mostra ausente\"");
+  assert.equal(LEGEND_GRID_ABSENCE, "SEM_PONTO");
+});
+
+test("MF-3: an absent reading formats to the word, and the numeral column is at least that wide", () => {
+  const word = ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE];
+  const absent: LegendReading = { kind: "absent", source: "crosshair", slotIndex: 3, bucketStartMs: 0 };
+  assert.deepEqual(formatLegendReading(absent, word), { numeral: "ausente", mark: "none", rawValue: null });
+  assert.ok(legendNumeralWidthCh([{ value: null }, { value: 7 }], word) >= word.length);
+});
+
+test("MF-3: SymbolClient's legend paints the word, keeps the enum in data-legend-absence, and dims the absent numeral", () => {
+  const legendValue = /function LegendValue\([\s\S]*?\n\}\n/.exec(SOURCE);
+  assert.ok(legendValue !== null, "`LegendValue` moved — re-read SymbolClient.tsx before trusting this");
+  const body = legendValue[0];
+  assert.match(body, /const absenceText = ABSENCE_MICROCOPY\[LEGEND_GRID_ABSENCE\]/);
+  assert.match(body, /formatLegendReading\(reading, absenceText\)/);
+  assert.match(body, /numeral: absenceText/);
+  // The mutation this rejects: handing the ENUM back to the painted numeral.
+  assert.doesNotMatch(body, /formatLegendReading\(reading, ABSENCE_TOKEN\)|numeral: ABSENCE_TOKEN/);
+  assert.match(body, /data-legend-absence=\{isAbsent \? LEGEND_GRID_ABSENCE : ""\}/);
+  assert.match(body, /isAbsent \? "text-provenance-weak" : "text-on-surface"/);
 });

@@ -584,6 +584,86 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
       stub.setCatalog(realCatalog);
     }
   });
+
+  // `T-01.11-FIX` (`docs/context/paineis-de-fluxo/gates/T-01.11-FIX-builder.md`). The stub's CVD
+  // delta crosses zero (`wave − 498`), so the defect of `MF-1` is reachable here, not only on the
+  // production data the design review used.
+  //   MF-1  every pane's `right` scale mode, READ BACK from the library (`data-right-scale-mode`):
+  //         only the two liquidation legs are logarithmic. Bites: removing `createPanesBeforeSeries`
+  //         from the host (OI, long/short and CVD come back `logarithmic`).
+  //   MF-2  the price-axis cell beside each liquidation leg carries NO axis-text ink, while the OI
+  //         and CVD cells do (the instrument is not blind). Bites: dropping `unlabeledTickPriceFormat`.
+  //   SF-1  no attribution logo inside the chart, and the footer link that replaces it.
+  test("T-01.11-FIX: escala de cada pane isolada, liquidação sem rótulo falso, atribuição no rodapé", async ({ page }) => {
+    await openSymbol(page, instance!.baseUrl);
+    const modes = await page.evaluate(() =>
+      Object.fromEntries(
+        Array.from(document.querySelectorAll<HTMLElement>("[data-right-scale-mode]")).map((node) => [
+          node.dataset.testid ?? "",
+          node.dataset.rightScaleMode ?? "",
+        ]),
+      ),
+    );
+    fact(SPEC, "t0111fix_right_scale_modes", modes);
+    expect(modes, "MF-1: um pane herdou o modo de escala de outro").toEqual({
+      "price-pane": "normal",
+      "liquidation-cohort-long": "logarithmic",
+      "liquidation-cohort-short": "logarithmic",
+      "oi-pane": "normal",
+      "long-short-pane": "normal",
+      "cvd-pane": "normal",
+    });
+
+    const axisInk = await page.evaluate(
+      ({ testIds, text, tol }) => {
+        const [tr, tg, tb] = text;
+        return testIds.map((testId) => {
+          const row = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)?.closest("tr") ?? null;
+          const axisCell = row?.lastElementChild ?? null;
+          const canvases = axisCell === null ? [] : Array.from(axisCell.querySelectorAll("canvas"));
+          let textInk = 0;
+          for (const canvas of canvases) {
+            if (canvas.width === 0 || canvas.height === 0) continue;
+            const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+            for (let at = 0; at < data.length; at += 4) {
+              if (data[at + 3] === 0) continue;
+              if (Math.abs(data[at]! - tr) <= tol && Math.abs(data[at + 1]! - tg) <= tol && Math.abs(data[at + 2]! - tb) <= tol) {
+                textInk += 1;
+              }
+            }
+          }
+          return { testId, canvases: canvases.length, textInk };
+        });
+      },
+      {
+        testIds: ["liquidation-cohort-long", "liquidation-cohort-short", "oi-pane", "cvd-pane"],
+        text: hexToRgb(chartSurfaceTheme().textColor),
+        tol: INK_TOLERANCE,
+      },
+    );
+    fact(SPEC, "t0111fix_axis_text_ink", axisInk);
+    const ink = Object.fromEntries(axisInk.map((cell) => [cell.testId, cell]));
+    for (const control of ["oi-pane", "cvd-pane"]) {
+      expect(ink[control]!.canvases, `${control}: nenhum canvas na célula do eixo — o instrumento está cego`).toBeGreaterThan(0);
+      expect(ink[control]!.textInk, `${control}: o eixo sem rótulo — o controle positivo falhou`).toBeGreaterThan(0);
+    }
+    for (const leg of ["liquidation-cohort-long", "liquidation-cohort-short"]) {
+      expect(ink[leg]!.canvases, `${leg}: nenhum canvas na célula do eixo`).toBeGreaterThan(0);
+      expect(ink[leg]!.textInk, `MF-2 ${leg}: o eixo log da liquidação rotula (número fora da ordem de grandeza)`).toBe(0);
+    }
+
+    const attribution = await page.evaluate((hostTestId) => {
+      const host = document.querySelector(`[data-testid="${hostTestId}"]`);
+      const footer = document.querySelector<HTMLAnchorElement>('[data-testid="chart-attribution"] a');
+      return {
+        logosInChart: host === null ? -1 : host.querySelectorAll('a[href*="tradingview.com"]').length,
+        footerHref: footer?.href ?? null,
+      };
+    }, CHART_HOST_TESTID);
+    fact(SPEC, "t0111fix_attribution", attribution);
+    expect(attribution.logosInChart, "SF-1: o logo de atribuição continua sobre o gráfico").toBe(0);
+    expect(attribution.footerHref, "SF-1: a atribuição não foi para o rodapé").toMatch(/^https:\/\/www\.tradingview\.com\//);
+  });
 });
 
 function hexToRgb(hex: string): readonly [number, number, number] {

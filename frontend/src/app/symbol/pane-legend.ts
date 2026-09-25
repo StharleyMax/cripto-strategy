@@ -37,6 +37,7 @@
 
 import type { LegendReading, ReadingNature } from "../../charts/index.ts";
 import type { SeriesCatalogEntry } from "../../features/s3-inspector/series-catalog.ts";
+import type { Absence } from "../history-transport.ts";
 import { resolvePaneLegend, type PaneLegendSpec, type ServedCatalog } from "./pane-registry.ts";
 
 // ── The name (`RF-5`, `CA-5`) ────────────────────────────────────────────────────────────
@@ -181,6 +182,32 @@ export const LEGEND_MARK_TEXT: Readonly<Record<LegendMark, string>> = {
   held: "retido",
   forming: "em formação",
 };
+
+/**
+ * `T-01.11-FIX` (`MF-3` of `gates/T-01.11-design-review.md`) — the pt-BR word the LEGEND prints for
+ * each `Absence` reason, instead of the domain enum. The review measured `SEM_PONTO` as the numeral
+ * of all 8 legend values under the crosshair in a gap (and `deltaSEM_PONTO` on the CVD line): the
+ * enum is the machine's spelling, and the legend is the most-read text on the screen.
+ *
+ * ⚠️ WHAT DOES NOT CHANGE: the enum stays the machine-readable contract — in `data-legend-absence`
+ * next to this word, and in every `*_last_reading` readout the e2e of phases `01`-`05` pin
+ * (`RN-1`, `DoD-3`). Only the painted numeral speaks Portuguese.
+ *
+ * ⚠️ FORM — `ausente` is the review's own word (plan `01` item 1.6: *"slot ausente mostra
+ * ausente"*); the other three are a builder's proposal, submitted to the revalidation of `T-01.11`.
+ * The grid legend can only reach `SEM_PONTO` today (`LEGEND_GRID_ABSENCE`); the map is total so a
+ * reason that reaches it later has a word before it has a screen.
+ */
+export const ABSENCE_MICROCOPY: Readonly<Record<Absence, string>> = {
+  SEM_PONTO: "ausente",
+  NAO_LIDO: "não lido",
+  QUARENTENA: "em quarentena",
+  SEM_FONTE: "sem fonte",
+};
+
+/** The one `Absence` a legend slot can carry: the canonical grid keeps no reason — an absent slot
+ * is a `null` value, "the grid has a slot here and no source point filled it" (`ScalarSlot`). */
+export const LEGEND_GRID_ABSENCE: Absence = "SEM_PONTO";
 
 export interface LegendText {
   /** The number as the API served it, or the absence token — never `0` for an absent slot. */

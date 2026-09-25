@@ -56,6 +56,12 @@ export function chartConstructorOptions(width: number, height: number): DeepPart
         separatorHoverColor: theme.paneSeparatorColor,
         enableResize: false,
       },
+      // `T-01.11-FIX` (`SF-1` of `gates/T-01.11-design-review.md`): with ONE chart there is ONE logo,
+      // and the library pins it to the bottom-left of the LAST pane — on top of CVD data. The
+      // attribution the licence asks for is NOT dropped: it moved to the page's footer as a link
+      // (`SymbolClient.tsx`, `CHART_ATTRIBUTION_TESTID`), and `pane-chrome-options.test.ts` requires the
+      // two together — the logo off only while that link is rendered.
+      attributionLogo: false,
     },
     grid: {
       vertLines: { color: theme.gridLineColor },
@@ -64,6 +70,11 @@ export function chartConstructorOptions(width: number, height: number): DeepPart
     timeScale: { timeVisible: true, secondsVisible: false },
   };
 }
+
+/** `T-01.11-FIX` (`SF-1`) — the footer link that carries the library's attribution once the logo is
+ * off. The URL is the one the library's own logo links to. */
+export const CHART_ATTRIBUTION_TESTID = "chart-attribution";
+export const CHART_ATTRIBUTION_URL = "https://www.tradingview.com/";
 
 /** `T-01.10` — the overlay price scale of the grid carrier, its own and nobody else's: a scale id
  * that is neither `left` nor `right` is an overlay, so it draws no axis and moves no pane scale. */
