@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Lote solo da T-01.10: 5 rodadas; em cada uma, e2e/20 esparso, denso, busy80 e e2e/17.
+# uptime registrado antes de cada medição. Facts por medição em OUT/<rodada>-<braço>.jsonl.
+set -u
+WT=/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/wf_820bac26-f99-1
+OUT="$1"; ROUNDS="${2:-5}"
+STATE_DIR="$(cat "$OUT/../state_dir")"
+mkdir -p "$OUT"
+cd "$WT"
+BASE="$(cat "$STATE_DIR/base_url")"; APIB="$(cat "$STATE_DIR/api_base_url")"
+run() { # run <tag> <spec> <query>
+  local tag="$1" spec="$2" q="$3"
+  printf '%s %s uptime: %s\n' "$(date +%T)" "$tag" "$(uptime)" >> "$OUT/uptime.log"
+  E2E_FACTS_FILE="$OUT/$tag.jsonl" E2E20_SYMBOL_QUERY="$q" E2E_BASE_URL="$BASE" \
+    E2E_API_LOG_PATH="$STATE_DIR/api.log" E2E_SENTIMENTO_API_BASE_URL="$APIB" \
+    frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts "$spec" \
+    > "$OUT/$tag.log" 2>&1
+  printf '%s %s rc=%s\n' "$(date +%T)" "$tag" "$?" >> "$OUT/rc.log"
+}
+for r in $(seq 1 "$ROUNDS"); do
+  run "r$r-e20-sparse" e2e/20- ""
+  run "r$r-e20-dense"  e2e/20- "?e2eDenseSeries=1"
+  run "r$r-e20-busy80" e2e/20- "?e2ePageApplyBusyMs=80"
+  run "r$r-e17"        e2e/17- ""
+done
+echo done >> "$OUT/rc.log"
