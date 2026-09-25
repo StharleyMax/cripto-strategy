@@ -149,11 +149,13 @@ services:
   # against Postgres via the same shared composition (`compose_ingest_record_store`,
   # `collectors_cli.py`) — hence `depends_on` both. SAME image as `api`/`writer`.
   #
-  # FIVE threads since `T-04.3` (`SPEC-007` phase `04`, which added the fifth to the four
-  # `T-03.3` left): `forceOrder` (stream), `premiumIndex` (poll), `/fapi/v1/klines` and
+  # SEVEN threads since `T-03.4` (`SPEC-009` phase `03a`). The five `T-04.3` (`SPEC-007` phase
+  # `04`) left: `forceOrder` (stream), `premiumIndex` (poll), `/fapi/v1/klines` and
   # `/futures/data/openInterestHist` (both poll + a one-off backfill at boot) and
-  # `/futures/data/globalLongShortAccountRatio` (poll + a one-off full page at boot). The six
-  # CADENCE
+  # `/futures/data/globalLongShortAccountRatio` (poll + a one-off full page at boot); then the
+  # Coinalyze liquidation poll (`T-05.5`, `SPEC-007` phase `05`) and `/fapi/v1/openInterest`
+  # (`T-03.4`: poll aligned to the 1-minute grid, NO backfill — the endpoint serves only the
+  # present value). The CADENCE
   # variables live in `../.env`, which `env_file:` below supplies — NOT in an `environment:`
   # block here, and that is deliberate: `environment:` takes precedence over `env_file:`, so
   # pinning a default here would SILENTLY override whatever the operator wrote in `.env`. The
@@ -206,6 +208,28 @@ services:
   #                                                    takes no window on the tail call, and the
   #                                                    boot pass asks the endpoint's own ceiling
   #                                                    (limit=500 = ~41,7 h per symbol).
+  #   OPEN_INTEREST_POLL_CYCLE_INTERVAL_S
+  #                                    default 60      seconds between `/fapi/v1/openInterest`
+  #                                                    polls (`T-03.4`; `[Q-CAD-1] = 60 s`,
+  #                                                    `[DECISAO-OWNER: 2026-09-23, 2a
+  #                                                    rodada]`). NOT a twin of
+  #                                                    `OPEN_INTEREST_CYCLE_INTERVAL_S` above:
+  #                                                    that one reads the 5-minute HISTORY, this
+  #                                                    one samples the PRESENT value onto a
+  #                                                    1-minute grid, one call per symbol `5 s`
+  #                                                    before each minute `T` (`[Q-STAMP-1]` §3
+  #                                                    — the lead is a contract in code, not a
+  #                                                    knob here). ⛔ MUST be a whole multiple
+  #                                                    of 60: the collector REFUSES anything
+  #                                                    else at boot, because `30` would send
+  #                                                    every other call at `T + 25 s`, outside
+  #                                                    the stamp's `[T - 20 s, T]` window —
+  #                                                    quota spent, nothing written, silently.
+  #                                                    Raising it (120, 180...) is legal and
+  #                                                    thins the series: at 120, half the
+  #                                                    minutes are ABSENT by construction, and
+  #                                                    `03a` DoD-1 (>= 0,95 x 1.440 points per
+  #                                                    symbol per day) stops being reachable
   #
   # Quota, so the numbers are not adjectives: weight 1 per klines call against 2400 weight/min
   # per IP `[MEDIDO 2026-09-10: sequencia 31->32->33]` — four symbols at 60 s spend 4 of 2400.
@@ -225,6 +249,17 @@ services:
   # `[MEDIDO 2026-09-12: 60 chamadas consecutivas em 22,5 s (2,67 req/s) -> 60x HTTP 200, zero
   # 429/418]`, against a production cadence of 4 chamadas / 60 s = 0,067 req/s, 40x abaixo da
   # taxa sondada que nao disparou.
+  #
+  # The PRESENT open interest poll (`OPEN_INTEREST_POLL_CYCLE_INTERVAL_S`) is the opposite case
+  # on both counts. Quota IS readable: `/fapi/v1/*` publishes `x-mbx-used-weight-1m`, weight 1
+  # per call `[DOC + MEDIDO 2026-09-23: header 16->17->18->19 em 4 chamadas seguidas]`, so four
+  # symbols at 60 s spend 4 of 2.400/min, 0,17% `[MEDIDO 2026-09-23: exchangeInfo -> rateLimits]`
+  # (`SPEC-009` §6.1). There is NO retry, so its share cannot pass 4/min — a failed call is an
+  # absent minute, not a second call. The stream cost has no boot peak at all (no backfill):
+  # 4 entries per cycle. Disk is the one number still to be measured: ~570 KB/day, ~208 MB/year
+  # at 60 s `[INFERRED: SPEC-009 §6.1, 5.760 linhas/dia x 99,06 B/linha de SPEC-008 §4]`; the
+  # measurement after 24 h is `03a` item 3a.5, and past 2x (1,14 MB/day) it goes back to the
+  # owner (`[Q-CAD-1]`).
   collector:
     build:
       context: ../backend
