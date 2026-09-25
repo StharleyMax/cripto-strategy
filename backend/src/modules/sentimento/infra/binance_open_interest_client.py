@@ -12,7 +12,7 @@
 # poison every following call. No key: the endpoint is public (`SPEC-009` §6.1).
 #
 # What this file does NOT decide: which minute of the grid a reading belongs to (`T-03.2`, the
-# `[T, T + 20 s]` admission window) and whether the quota share stays `<= 4/min` (`T-03.4`,
+# `[T - 20 s, T]` admission window) and whether the quota share stays `<= 4/min` (`T-03.4`,
 # `DoD-2` of `03a`). It hands both of them the two facts they need, READ off the response: the
 # source's `time` (inside `OpenInterestSnapshot.event_time_ms`) and `x-mbx-used-weight-1m`.
 

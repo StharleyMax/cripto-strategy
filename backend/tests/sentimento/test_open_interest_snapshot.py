@@ -44,7 +44,8 @@ def test_the_event_time_is_the_responses_time_and_not_the_request_instant() -> N
 
     The capture itself is the proof that the two instants differ: Binance served a reading taken
     3.1 s BEFORE the request left this machine. A parser that stamped "now" would have put this
-    value one admission window (`T-03.2`, `[T, T + 20 s]`) away from where it belongs.
+    value 3.1 s fresher than it is, which the admission window (`T-03.2`, `[T - 20 s, T]`)
+    turns into the wrong minute whenever the request crosses a grid instant.
     """
     snapshot = parse_open_interest_snapshot(json.loads(REAL_BTC_BODY), "BTCUSDT")
 
