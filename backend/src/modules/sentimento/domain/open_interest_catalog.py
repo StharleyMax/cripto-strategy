@@ -190,7 +190,7 @@ OPEN_INTEREST_POLL_NATIVE_GRID_MS: Final[int] = 60_000
 
 # Twice the native grid, the `SPEC-001` §3.2 rule the 5-minute rows above already apply: a
 # reader may carry at most one missed minute before the row is stale. `T-03.2` leaves a minute
-# ABSENT when no reading lands in `[T, T + 20 s]`, so a longer bound would dress an outage of
+# ABSENT when no reading lands in `[T - 20 s, T]`, so a longer bound would dress an outage of
 # the collector up as a fresh value.
 OPEN_INTEREST_POLL_MAX_STALENESS_MS: Final[int] = 2 * OPEN_INTEREST_POLL_NATIVE_GRID_MS
 

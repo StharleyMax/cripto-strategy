@@ -236,9 +236,12 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # consults a SECOND stored row to choose a winner — it takes a `max()` over rows it published
     # in the same cycle against its own high-water mark; (c) it returns nothing — the watermark
     # never leaves the thread, so no caller can mistake it for "what was this series worth at
-    # `t`". Same refusal as above: keying the watermark off `row.event_time` (the same instant
-    # for these rows, and not in `READ_PATH_COLUMNS`) would have kept it out of this registry by
-    # picking a synonym.
+    # `t`". Same refusal as above, although here the two columns DIFFER:
+    # `bucket_end` is the grid minute `T` and `event_time` is Binance's `time`, up to 20 s before
+    # it (`event_time` differs from `bucket_end` by `[0, 20 000]` ms — the staleness the mapping
+    # documents). The watermark keys off `bucket_end` because `(symbol, T)` is the dedup key;
+    # keying it off `row.event_time` (not in `READ_PATH_COLUMNS`) would also have kept it out of
+    # this registry by picking a near-synonym.
     "modules/sentimento/infra/collectors_cli.py": frozenset(
         {
             "_publish_klines_page",

@@ -7,7 +7,7 @@
 # amputates `socket`, so the suite injects a fake factory; the real one is reached only from the
 # collector process.
 #
-# One keep-alive connection, rebuilt on `OSError` (`PremiumIndexHttpClient`'s lifecycle): the
+# One keep-alive connection, rebuilt on a transport failure (`PremiumIndexHttpClient`'s lifecycle): the
 # collector of `T-03.4` calls this four times a minute, forever, and a broken keep-alive must not
 # poison every following call. No key: the endpoint is public (`SPEC-009` §6.1).
 #
@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 from typing import Final
 from urllib.parse import urlencode
@@ -76,8 +77,11 @@ class BinanceOpenInterestClient:
     def fetch(self, symbol: str) -> OpenInterestFetch:
         """Issue one GET for `symbol` and classify the answer into one closed outcome.
 
-        `OSError` becomes `TRANSPORT` instead of propagating (the collector reads one vocabulary
-        of outcomes, never socket exceptions); a non-`200` becomes `HTTP_STATUS` with the weight
+        `OSError` and `http.client.HTTPException` become `TRANSPORT` instead of propagating (the
+        collector reads one vocabulary of outcomes, never socket exceptions). The second family is
+        NOT a subclass of the first: `IncompleteRead` (a body cut mid-read), `BadStatusLine`,
+        `LineTooLong` and `CannotSendRequest` would otherwise escape the collector thread and stop
+        every collector of the process. A non-`200` becomes `HTTP_STATUS` with the weight
         still read, because Binance charges a refused call too (`[MEDIDO 2026-09-24: 400
         {"code":-1121} com x-mbx-used-weight-1m: 1]`). Nothing here reads a clock: the reading's
         instant is the response's `time`, and only `parse_open_interest_snapshot` extracts it.
@@ -91,7 +95,7 @@ class BinanceOpenInterestClient:
             status = response.status
             flat = flatten_headers(response.getheaders())
             body = response.read()
-        except OSError as failure:
+        except (OSError, http.client.HTTPException) as failure:
             self._drop()
             return OpenInterestFetch(
                 symbol=symbol,
