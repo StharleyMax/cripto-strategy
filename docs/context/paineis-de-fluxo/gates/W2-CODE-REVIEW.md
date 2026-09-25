@@ -79,4 +79,8 @@ explicitamente. Os três custam poucas linhas.
 
 Seguindo a §4 das regras de despacho: depois da correção, peça **a mutação**, não o relatório.
 - C-1: o teste com `IncompleteRead` tem de ficar **vermelho** quando se volta para `except OSError`.
-- C-2 e C-3: `grep -n 'T, T + 20' backend/src` tem de devolver `rc=1`.
+- C-2: `grep -n 'T, T + 20' backend/src/modules/sentimento/domain/open_interest_catalog.py` tem de
+  devolver `rc=1`. Não use `backend/src` inteiro: `open_interest_grid_stamp.py:7` cita
+  `[T, T + 20 s]` **de propósito**, como a versão reprovada.
+- C-3: `grep -n 'the same instant' backend/tests/sentimento/test_as_of_is_the_single_reader.py` não
+  pode mais cair no parágrafo do `_run_open_interest_poll_collector`.
