@@ -56,6 +56,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -94,6 +95,7 @@ import {
   paneScaleMargins,
   positiveValueSeriesLossless,
   resolveFlowReading,
+  resolveLegendReading,
   resolveStockReading,
   stackedPaneLayout,
   toLogicalRange,
@@ -108,7 +110,19 @@ import { recentBandSlotRange } from "./long-short-band.ts";
 import { AxisSyncProvider, useAxisSync } from "./axis-sync-provider.tsx";
 import { recordHistoryPageDrawn } from "./history-page-latency-probe.ts";
 import { SINGLE_CHART_PANEL_INDEX } from "./axis-sync.ts";
-import { F1_PANE_ORDER, F1_PANE_STRETCH, type PaneId } from "./pane-registry.ts";
+import { F1_PANE_ORDER, F1_PANE_STRETCH, type PaneId, type PaneLegendSpec } from "./pane-registry.ts";
+import {
+  createCrosshairSlotStore,
+  crosshairMoveHandler,
+  formatLegendReading,
+  LEGEND_MARK_TEXT,
+  legendMarkWidthCh,
+  legendNumeralWidthCh,
+  resolvePaneLegends,
+  type CrosshairSlotStore,
+  type LegendSeriesId,
+  type PaneLegendSources,
+} from "./pane-legend.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
@@ -454,6 +468,11 @@ export interface SymbolClientProps {
    * `useHistoryPager`'s seed unchanged. `null` when `INGEST_HEALTH_API_BASE_URL` was unset at
    * render time — same shape `liveUrls` above already has per-panel. */
   readonly historyBaseUrl: string | null;
+  /** `paineis-de-fluxo` `T-01.7` (`RF-5`, `CA-5`) — the catalog entry each legend is NAMED and READ
+   * from, with its `series_key_id` (`page.tsx`, the same resolutions the ten fetches used). Static
+   * across pages, like `provenance`/`unit`: paging never changes which series a pane reads. `null`
+   * where the resolution failed or was ambiguous. */
+  readonly paneLegendSources: PaneLegendSources;
 }
 
 const ABSENCE_REASON_LABEL: Record<Exclude<PanelStatus, { kind: "ok" }>["reason"], string> = {
@@ -620,6 +639,9 @@ type AnyPaneBinding = HostedPaneBinding<unknown>;
 interface PaneRegistrar {
   register(paneIndex: number, binding: RefObject<AnyPaneBinding>): () => void;
   readonly surfaceRef: RefObject<HTMLDivElement | null>;
+  /** `T-01.7` — the slot under the crosshair, one per host (`pane-legend.ts`). Lives on the
+   * registrar so the mount effect keeps its single, stable dependency. */
+  readonly crosshairStore: CrosshairSlotStore;
 }
 
 /** The host's own view of the registrar: the same object, plus the bindings it iterates. */
@@ -753,6 +775,117 @@ function PaneDetails({ children }: { readonly children: ReactNode }) {
   return <div className="sr-only">{children}</div>;
 }
 
+// ── `T-01.7` — the crosshair → legend wiring (`pane-legend.ts`, `RF-4`, `RF-5`, `CA-3′`, `C-8`) ──
+
+/** The slot under the crosshair, published by the host's ONE `subscribeCrosshairMove`. */
+const CrosshairSlotContext = createContext<CrosshairSlotStore | null>(null);
+
+/** What every legend reads besides its own slots: the names and reading policies DERIVED once from
+ * the catalog (`resolvePaneLegends`), the grid step, and the instant a bucket counts as closed. */
+interface LegendFrame {
+  readonly legends: Readonly<Record<LegendSeriesId, PaneLegendSpec | null>>;
+  readonly axisStepMs: number;
+  /** `knowledge_time_ms` of the request: the page is "COMO EM T", so a bucket is closed iff it
+   * closed at T (`ChromeModeStamp`), never at the browser's clock. */
+  readonly asOfMs: number;
+}
+
+const LegendFrameContext = createContext<LegendFrame | null>(null);
+
+function useLegendFrame(): LegendFrame {
+  const frame = useContext(LegendFrameContext);
+  if (frame === null) {
+    throw new Error("useLegendFrame must be called within a LegendFrameContext provider");
+  }
+  return frame;
+}
+
+const NO_CROSSHAIR_STORE: CrosshairSlotStore = createCrosshairSlotStore();
+const noCrosshairSnapshot = (): number | undefined => undefined;
+
+/** The identity terms of a pane's heading — `T-04.8`'s rule, now fed the legend the registry
+ * derived from the catalog entry (`pane-legend.ts::paneIdentityLabel`): cadence then unit, in
+ * parentheses, and no parentheses at all where no entry resolved. */
+function identityTerms(legend: PaneLegendSpec | null): string {
+  return legend === null || legend.label.length === 0 ? "" : ` (${legend.label})`;
+}
+
+/**
+ * ONE legend value (`RF-4`): the slot under the crosshair, or — with no crosshair — the last closed
+ * bucket, read by the series' `nature` (`charts::resolveLegendReading`, `ADR-044/D2`). It is the only
+ * node that re-renders on a crosshair move: it subscribes to the store itself, so a move re-renders
+ * these spans and nothing else of the page.
+ *
+ * `C-8`: the numeral is right-aligned in a column of fixed width, in `ch`, sized to every numeral the
+ * pane can show; the held/forming mark has a fixed column of its own after it.
+ *
+ * The `data-legend-*` attributes are the CONTRACT half (`CA-3′`/`CA-4`, asserted against
+ * `/series-history` by `T-01.9`); the classes and the mark words are FORM, submitted with the
+ * screenshot of `T-01.11`.
+ */
+function LegendValue({
+  seriesId,
+  factKey,
+  slots,
+  nativeTimeframeMs,
+  prefix,
+}: {
+  /** Which derived legend names and reads this value. */
+  readonly seriesId: LegendSeriesId;
+  /** ASCII key of the value (`cvd_delta` and `cvd_cumulative` share the `cvd` legend). */
+  readonly factKey: string;
+  /** The slots on the canonical grid — slot `i` IS logical index `i` (registry invariant (v)). */
+  readonly slots: readonly VolumeSlot[];
+  /** The series' own cadence, when coarser than the grid (OI's 5 min); the grid step otherwise. */
+  readonly nativeTimeframeMs?: number;
+  /** pt-BR word before the numeral, when a pane shows two values. */
+  readonly prefix?: string;
+}) {
+  const frame = useLegendFrame();
+  const store = useContext(CrosshairSlotContext) ?? NO_CROSSHAIR_STORE;
+  const logical = useSyncExternalStore(store.subscribe, store.getSnapshot, noCrosshairSnapshot);
+  const legend = frame.legends[seriesId];
+  const numeralWidthCh = useMemo(() => legendNumeralWidthCh(slots, ABSENCE_TOKEN), [slots]);
+  const reading =
+    legend === null
+      ? null
+      : resolveLegendReading({
+          logical,
+          slots,
+          nature: legend.readingPolicy,
+          axisStepMs: frame.axisStepMs,
+          nativeTimeframeMs: nativeTimeframeMs ?? frame.axisStepMs,
+          asOfMs: frame.asOfMs,
+        });
+  // No resolved entry ⇒ no series ⇒ nothing to read: the token, never a number.
+  const text =
+    reading === null ? { numeral: ABSENCE_TOKEN, mark: "none" as const, rawValue: null } : formatLegendReading(reading, ABSENCE_TOKEN);
+  const markWidthCh = legend === null ? 0 : legendMarkWidthCh(legend.readingPolicy);
+  return (
+    <span
+      data-legend-value={factKey}
+      data-legend-kind={reading?.kind ?? "absent"}
+      data-legend-source={logical === undefined ? "last_closed" : "crosshair"}
+      data-legend-slot-index={reading?.slotIndex ?? ""}
+      data-legend-bucket-ms={reading?.bucketStartMs ?? ""}
+      data-legend-raw={text.rawValue ?? ""}
+      className="inline-flex items-baseline gap-x-1"
+    >
+      {prefix === undefined ? null : <span className="text-provenance-weak">{prefix}</span>}
+      <span
+        data-legend-numeral=""
+        style={{ width: `${numeralWidthCh}ch` }}
+        className="inline-block text-right font-data-sm tabular-nums text-on-surface"
+      >
+        {text.numeral}
+      </span>
+      <span data-legend-mark={text.mark} style={{ width: `${markWidthCh}ch` }} className="inline-block text-provenance-weak">
+        {LEGEND_MARK_TEXT[text.mark]}
+      </span>
+    </span>
+  );
+}
+
 /** The element the single chart is created in, rendered by the host above the panes' layers.
  * ⛔ NOT `aria-hidden` any more (`T-01.6`): the layers live inside it; the canvases are hidden one by
  * one instead (`hideChartGraphicsFromAssistiveTech`). */
@@ -808,6 +941,7 @@ function SymbolChartHost({
     const surfaceRef: RefObject<HTMLDivElement | null> = { current: null };
     return {
       surfaceRef,
+      crosshairStore: createCrosshairSlotStore(),
       bindings,
       register(paneIndex, binding) {
         bindings.set(paneIndex, binding);
@@ -906,6 +1040,12 @@ function SymbolChartHost({
       axisSyncRef.current.notifyPanelRangeChanged(SINGLE_CHART_PANEL_INDEX, range);
     };
     timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
+    // `T-01.7` (`CA-3′`) — ONE crosshair subscription for the ONE chart: `param.logical` reaches the
+    // legend of EVERY pane, whichever pane the pointer is over (`pane-legend.ts`). There is no filter
+    // by the pane the event came from; that filter is `CA-3′`'s named mutation.
+    const crosshairStore = registrar.crosshairStore;
+    const handleCrosshairMove = crosshairMoveHandler(crosshairStore);
+    chart.subscribeCrosshairMove(handleCrosshairMove);
     // The gesture window the pager's deferred right-edge cut waits on (`holdRightEdgeCap`).
     const handlePointerDown = () => onGestureChangeRef.current(true);
     const handlePointerUp = () => onGestureChangeRef.current(false);
@@ -943,6 +1083,8 @@ function SymbolChartHost({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
       timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
+      crosshairStore.publish(undefined);
       unregister();
       chartStateRef.current = null;
       setPaneAnchors([]);
@@ -1059,8 +1201,10 @@ function SymbolChartHost({
   return (
     <ChartHostContext.Provider value={registrar}>
       <PaneAnchorsContext.Provider value={paneAnchors}>
-        <ChartHostSurface priceSlots={priceSlots} />
-        {children}
+        <CrosshairSlotContext.Provider value={registrar.crosshairStore}>
+          <ChartHostSurface priceSlots={priceSlots} />
+          {children}
+        </CrosshairSlotContext.Provider>
       </PaneAnchorsContext.Provider>
     </ChartHostContext.Provider>
   );
@@ -1519,6 +1663,7 @@ function VolumeMarksLegend() {
 }
 
 function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData; readonly status: PanelStatus }) {
+  const { legends } = useLegendFrame();
   const readingText =
     volume.reading.kind === "absent" || volume.reading.value === null ? ABSENCE_TOKEN : String(volume.reading.value);
   return (
@@ -1529,10 +1674,8 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
       data-volume-present-points={volume.presentPoints}
     >
       <PaneLegendLine>
-        <h3 className="font-label-caps text-label-caps text-on-surface">Volume (1m)</h3>
-        <p data-fact={`volume_last_reading:${volume.reading.kind}`} className="text-sm text-provenance-weak">
-          Leitura atual: {readingText}
-        </p>
+        <h3 className="font-label-caps text-label-caps text-on-surface">Volume{identityTerms(legends.volume)}</h3>
+        <LegendValue seriesId="volume" factKey="volume" slots={volume.slots} />
         {/* ⛔ STAYS VISIBLE (`BLOCKER-1`): an overlay scale draws no numeral, so this line is the
             only place the log10 is declared, and an undeclared log axis is worse than none. */}
         <VolumeScaleNote />
@@ -1540,6 +1683,11 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
       <PartialCoverageMark factKey="volume_partial_coverage" summary={volume.partialCoverage} />
       <AbsenceNote status={status} />
       <PaneDetails>
+        {/* `T-01.7`: the static readout at the window's last instant left the painted legend — the
+            crosshair-driven value above took its place — and stays here, with its `data-fact`. */}
+        <p data-fact={`volume_last_reading:${volume.reading.kind}`} className="text-sm text-provenance-weak">
+          Leitura atual: {readingText}
+        </p>
         <VolumeMarksLegend />
         <ReadableHorizon volume={volume} />
       </PaneDetails>
@@ -1681,10 +1829,16 @@ function PricePane({
       { series: absenceSeries, belowLegend: false, clearSeparator: true },
     ],
   });
-  const closeSlots = panels.price.series.slots.map((slot) => ({
-    time: slot.time,
-    value: slot.candle === null ? null : slot.candle.close,
-  }));
+  const { legends } = useLegendFrame();
+  const priceSlots = panels.price.series.slots;
+  const closeSlots = useMemo(
+    () =>
+      priceSlots.map((slot) => ({
+        time: slot.time,
+        value: slot.candle === null ? null : slot.candle.close,
+      })),
+    [priceSlots],
+  );
   // Price's own native cadence IS the axis step (`ONE_MINUTE_MS`) — the two `resolveStockReading`
   // parameters happen to be the same value here, unlike OI's call below (`T-02.1`).
   const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, ONE_MINUTE_MS, lastInstantMs(panels));
@@ -1701,16 +1855,20 @@ function PricePane({
       <section aria-label="Preço" data-testid={PRICE_PANE_TESTID} data-price-candles={priceCandles.drawnCandles} className={PANE_LAYER_CLASS}>
         <PaneLegend>
           <PaneLegendLine>
-            <h2 className="font-label-caps text-label-caps text-on-surface">
-              Preço ({panels.price.priceSource}, {panels.price.priceUse})
-            </h2>
-            <p data-fact={`price_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
-              Leitura atual: {readingText}
+            <h2 className="font-label-caps text-label-caps text-on-surface">Preço{identityTerms(legends.price)}</h2>
+            {/* `T-01.7`: the close of the candle under the crosshair (the last closed one without it). */}
+            <LegendValue seriesId="price" factKey="price" slots={closeSlots} />
+            <p className="text-sm text-provenance-weak">
+              {panels.price.priceSource} · {panels.price.priceUse}
             </p>
           </PaneLegendLine>
           <AbsenceNote status={status} />
           <VolumeSubAxis volume={volume} status={volumeStatus} />
           <PaneDetails>
+            {/* `T-01.7`: the static readout left the painted legend; the fact stays. */}
+            <p data-fact={`price_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
+              Leitura atual: {readingText}
+            </p>
             <PriceCandleFacts priceCandles={priceCandles} />
           </PaneDetails>
         </PaneLegend>
@@ -1881,6 +2039,7 @@ function OiPane({
   // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (`ONE_MINUTE_MS`, `D-C3.2`),
   // no longer OI's own native grid — `panels.oi.timeframeMs` (5 min) is passed SEPARATELY, as
   // the cap `resolveStockReading`'s held-value rule (`D5.2`) reads against.
+  const { legends } = useLegendFrame();
   const reading = resolveStockReading(panels.oi.slots, ONE_MINUTE_MS, panels.oi.timeframeMs, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
@@ -1907,10 +2066,9 @@ function OiPane({
     >
       <PaneLegend>
         <PaneLegendLine>
-          <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest (5m)</h2>
-          <p data-fact={`oi_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
-            Leitura atual: {readingText}
-          </p>
+          <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest{identityTerms(legends.oi)}</h2>
+          {/* `T-01.7`: `STOCK`, held at most one native 5-minute bucket, and marked when it is. */}
+          <LegendValue seriesId="oi" factKey="oi" slots={panels.oi.slots} nativeTimeframeMs={panels.oi.timeframeMs} />
           <OiProvenance oi={oi} />
         </PaneLegendLine>
         {/* ⛔ STAYS VISIBLE (`RNF-2`): a held STOCK value older than its cadence is never shown
@@ -1919,6 +2077,10 @@ function OiPane({
         {wallState === "beyond-coverage" ? <BeyondCoverageBadge factKey="oi_coverage" /> : null}
         <AbsenceNote status={status} />
         <PaneDetails>
+          {/* `T-01.7`: the static readout left the painted legend; the fact stays. */}
+          <p data-fact={`oi_last_reading:${reading.kind}`} className="text-sm text-provenance-weak">
+            Leitura atual: {readingText}
+          </p>
           <div data-fact={`oi_slots:${panels.oi.slots.length}`} />
           <OiReadableHorizon oi={oi} gridSlots={panels.oi.slots.length} />
         </PaneDetails>
@@ -2044,6 +2206,7 @@ function CvdPane({
       { series: cumulativeSeries, belowLegend: true, clearSeparator: false },
     ],
   });
+  const { legends } = useLegendFrame();
   const deltaReading = resolveFlowReading(panels.cvd.deltaSlots, panels.cvd.timeframeMs, lastInstantMs(panels));
   // `DR-3`, second half: the pane drew TWO series and read exactly ONE. The screen went to the
   // trouble of naming the anchor of the cumulative curve (`D4.7`) and then never said what value
@@ -2077,13 +2240,11 @@ function CvdPane({
     >
       <PaneLegend>
       <PaneLegendLine>
-        <h2 className="font-label-caps text-label-caps text-on-surface">CVD (delta e acumulado)</h2>
-        <p data-fact={`cvd_last_reading:${deltaReading.kind}`} className="text-sm text-provenance-weak">
-          Delta atual: {readingText}
-        </p>
-        <p data-fact={`cvd_cumulative_last_reading:${cumulativeReading.kind}`} className="text-sm text-provenance-weak">
-          Acumulado atual: {cumulativeReadingText}
-        </p>
+        <h2 className="font-label-caps text-label-caps text-on-surface">CVD{identityTerms(legends.cvd)}</h2>
+        {/* `T-01.7`: TWO values on one line — the reason `C-8`'s fixed column exists: without it the
+            cumulative would walk every time the delta changes width. */}
+        <LegendValue seriesId="cvd" factKey="cvd_delta" slots={panels.cvd.deltaSlots} prefix="delta" />
+        <LegendValue seriesId="cvd" factKey="cvd_cumulative" slots={panels.cvd.cumulativeSlots} prefix="acumulado" />
       </PaneLegendLine>
       <PaneLegendLine>
         <CvdLegend />
@@ -2098,6 +2259,13 @@ function CvdPane({
       <PartialCoverageMark factKey="cvd_partial_coverage" summary={cvd.partialCoverage} />
       <AbsenceNote status={status} />
       <PaneDetails>
+      {/* `T-01.7`: the two static readouts left the painted legend; their facts stay. */}
+      <p data-fact={`cvd_last_reading:${deltaReading.kind}`} className="text-sm text-provenance-weak">
+        Delta atual: {readingText}
+      </p>
+      <p data-fact={`cvd_cumulative_last_reading:${cumulativeReading.kind}`} className="text-sm text-provenance-weak">
+        Acumulado atual: {cumulativeReadingText}
+      </p>
       {/* ⛔ `aria-hidden` on the canvas host — `DR-6`. `lightweight-charts` paints into a
           `<canvas>` with no accessible name, so a screen reader finds an empty node here and a
           user cannot tell an empty chart from an unlabelled one. The readouts below ARE the
@@ -2295,7 +2463,7 @@ function LiquidationCohortSurface({
    * `liquidation_long`/`liquidation_short`) — `LiquidationPane` names which is which, since this
    * component mounts twice and cannot infer its pane from `cohort` alone without duplicating the
    * registry's own keys. */
-  readonly paneId: PaneId;
+  readonly paneId: "liquidation_long" | "liquidation_short";
   /** `T-01.6`: the lines the two legs SHARE (the pane title, the `RS-5` third-party label, the
    * log10 declaration) — drawn once, in the upper leg's legend, until phase `04` fuses the legs. */
   readonly header?: ReactNode;
@@ -2379,13 +2547,15 @@ function LiquidationCohortSurface({
       {header}
       <PaneLegendLine>
         <h3 className="font-label-caps text-label-caps text-on-surface">{label}</h3>
-        <p data-fact={`liquidation_last_reading:${cohort}:${data.reading.kind}`} className="text-sm text-provenance-weak">
-          Leitura atual: {readingText}
-        </p>
+        <LegendValue seriesId={paneId} factKey={`liquidation_${cohort}`} slots={data.slots} />
       </PaneLegendLine>
       <PartialCoverageMark factKey={`liquidation_partial_coverage:${cohort}`} summary={data.partialCoverage} />
       <AbsenceNote status={status} />
       <PaneDetails>
+      {/* `T-01.7`: the static readout left the painted legend; the fact stays. */}
+      <p data-fact={`liquidation_last_reading:${cohort}:${data.reading.kind}`} className="text-sm text-provenance-weak">
+        Leitura atual: {readingText}
+      </p>
       <LiquidationReadableHorizon cohort={cohort} data={data} />
       </PaneDetails>
       </PaneLegend>
@@ -2430,11 +2600,14 @@ function LiquidationPane({
   // layers any more. What the legs SHARE — the title, the `RS-5` label, the log10 declaration — is
   // this section, drawn at the top of the UPPER leg's legend (`liquidation_long`, the first
   // liquidation pane in `F1_PANE_ORDER`). `e2e/13` reads each leg's facts off its cohort group.
+  const { legends } = useLegendFrame();
+  // `T-01.7` (`RF-5`): the cadence and the unit come off the long entry's key — the legs differ only
+  // in `cohort`, so the long entry answers for both, the rule `LiquidationPaneData.provenance` states.
   const header = (
     <section aria-label="Liquidações" data-testid={LIQUIDATION_PANE_TESTID}>
       <PaneLegendLine>
         <h2 className="font-label-caps text-label-caps text-on-surface">
-          Liquidações (1m{liquidation.unit === null ? "" : `, ${liquidation.unit}`})
+          Liquidações{identityTerms(legends.liquidation_long)}
         </h2>
         {/* ⛔ STAYS VISIBLE (`RS-5`, `SPEC-007` §7): third-party data is never read without its label. */}
         <LiquidationProvenance provenance={liquidation.provenance} />
@@ -2533,10 +2706,8 @@ function nativeGridSuffix(nativeGrid: string | null): string {
  * typed by hand, inside the same pair of parentheses. Both come off the entry now. With neither
  * term the parentheses do not appear — `Long/short de contas ()` would be the screen announcing
  * that it has an identity it cannot state. */
-function identityTerms(longShort: LongShortPaneData): string {
-  const terms = [longShort.nativeInterval, longShort.unit].filter((term): term is string => term !== null);
-  return terms.length === 0 ? "" : ` (${terms.join(", ")})`;
-}
+// `identityTerms` moved up, beside `LegendValue` (`T-01.7`): it now reads the legend the registry
+// derived from the catalog entry, for every pane, instead of this pane's transcribed props.
 
 // ══ `T-04.8` — THE FORM THE `design_gate` APPROVED, TRANSLATED INTO THIS COMPONENT TREE ═══════
 //
@@ -3010,6 +3181,7 @@ function LongShortPane({
   // is the window's own statistic rather than a status or a count of rows: a pane with a healthy
   // transport and an empty time slice is the state the empty form exists for.
   const hasObservation = longShort.windowStats !== null;
+  const { legends } = useLegendFrame();
   return (
     // `T-01.6`: THE CARD BECAME A LAYER. This section is the root of the long/short pane's layer,
     // portaled over the pane's own canvas — so it carries no background (it would hide the line)
@@ -3039,14 +3211,10 @@ function LongShortPane({
               HERE — the `/review` `[WARNING]` of `T-04.8`. Where the backend published neither term
               the parenthesis does not appear at all, rather than appearing empty. */}
           <h2 className="font-label-caps text-label-caps text-on-surface">
-            Long/short de contas{identityTerms(longShort)}
+            Long/short de contas{identityTerms(legends.long_short)}
           </h2>
-          {/* THE HEADLINE, in the strong ink and bold — the only node of this pane in that weight,
-              which is the whole of `ADR-010` §5.4's hierarchy channel (luminance; there is no hue to
-              spend). If everything rises, nothing rises. */}
-          <p data-fact={`long_short_last_reading:${longShort.reading.kind}`} className="text-sm font-bold text-on-surface">
-            Leitura atual: {readingText}
-          </p>
+          {/* `T-01.7`: the value under the crosshair (`RATIO`: the slot's own, never carried). */}
+          <LegendValue seriesId="long_short" factKey="long_short" slots={longShort.slots} />
           {hasObservation ? <LongShortAgeStamp longShort={longShort} /> : <LongShortIntegrityBadge />}
           <LongShortIdentity
             symbol={symbol}
@@ -3060,6 +3228,11 @@ function LongShortPane({
           {wallState === "beyond-coverage" ? <BeyondCoverageBadge factKey="long_short_coverage" /> : null}
         </PaneLegendLine>
         <PaneDetails>
+          {/* `T-01.7`: the static readout left the painted legend; the fact stays. It keeps the
+              strong ink and bold of `ADR-010` §5.4's hierarchy for whoever reads the tree. */}
+          <p data-fact={`long_short_last_reading:${longShort.reading.kind}`} className="text-sm font-bold text-on-surface">
+            Leitura atual: {readingText}
+          </p>
           {/* ⛔ `aria-hidden` — same criterion as `CvdPane`/`DR-6`; an empty node that only carries
               `long_short_slots` now that the host hides the canvases itself (`T-01.6`). */}
           <div
@@ -3326,6 +3499,7 @@ export function SymbolClient({
   liveUrls,
   historyPagingRows,
   historyBaseUrl,
+  paneLegendSources,
   selectedTimeframe,
 }: SymbolClientProps) {
   // `T-05.2` (`D-C3.5`) — the SEED the client-side paginator starts from, memoized off PRIMITIVES
@@ -3375,6 +3549,14 @@ export function SymbolClient({
   // `T-02.1` unified every panel's grid onto (`D-C3.2`) — `use-history-pager.ts` reuses it, not a
   // second `60_000` literal.
   const axis: TimeAxis = pager.axis;
+  // `T-01.7` (`RF-5`, `SPEC-009` §4) — every legend's name and reading policy, DERIVED from its catalog
+  // entry through the registry's `resolvePaneLegend`, once per pane: the sources are static props, so
+  // this runs once per mount of `SymbolClient`.
+  const legends = useMemo(() => resolvePaneLegends(paneLegendSources), [paneLegendSources]);
+  const legendFrame: LegendFrame = useMemo(
+    () => ({ legends, axisStepMs: axis.stepMs, asOfMs: knowledgeTimeMs }),
+    [legends, axis.stepMs, knowledgeTimeMs],
+  );
   // `T-05.2` — THE SIX PANES DRAW `pager.assembly`'s SLOTS FROM HERE ON, never `initialPanels`
   // directly: `panels`/`priceCandles`/`volume`/`cvd` merge the paginator's DYNAMIC facts
   // (recomputed from the merged rows on every page, `panel-assembly.ts`) with the STATIC facts a
@@ -3452,6 +3634,7 @@ export function SymbolClient({
       </h1>
       <TimeframeBar selected={selectedTimeframe} onSelect={handleTimeframeSelect} />
       <ChromeModeStamp referenceMs={lastInstantMs(panels)} />
+      <LegendFrameContext.Provider value={legendFrame}>
       <AxisSyncProvider axis={axis} onCandidateRange={pager.onCandidateRange}>
         <SymbolChartHost
           axis={axis}
@@ -3481,6 +3664,7 @@ export function SymbolClient({
         <LongShortPane longShort={longShort} status={panelStatus.longShort} symbol={symbol} wallState={longShortWallState} />
         </SymbolChartHost>
       </AxisSyncProvider>
+      </LegendFrameContext.Provider>
       <section aria-label="Ao vivo">
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>
         <ul>

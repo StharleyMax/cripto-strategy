@@ -373,7 +373,8 @@ test("no hand-typed cadence on this pane: `5m`/`5 min` come off the catalog entr
   const prose = PANE.replace(/\{[^}]*\}/g, "");
   assert.doesNotMatch(prose, /\b5\s?m(in)?\b/, "a hand-typed native cadence is a second copy of a term the API owns");
   assert.match(PANE, /nativeGridSuffix\(longShort\.nativeGrid\)/, "the prose cadence must come from `nativeGrid`");
-  assert.match(PANE, /identityTerms\(longShort\)/, "and the heading's from `nativeInterval` + `unit`");
+  // `T-01.7`: the heading reads the legend the registry derived from the catalog entry (cadence + unit).
+  assert.match(PANE, /identityTerms\(legends\.long_short\)/, "and the heading's from the entry's `interval` + `unit`");
 });
 
 test("MORDE: the literal, replanted exactly as it was, is REJECTED", () => {
