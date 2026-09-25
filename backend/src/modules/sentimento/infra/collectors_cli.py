@@ -36,6 +36,15 @@ as a page of 12, so only the CADENCE spends anything
 `[MEDIDO 2026-09-12: 60 chamadas consecutivas em 22,5 s -> 60x HTTP 200, zero 429/418, e ZERO
 header `x-mbx-*` para precificar]`.
 
+── THE SEVENTH THREAD, AND IT IS THE FIRST ONE THAT *IS* CAPTURE-OR-LOSE ON A REST ENDPOINT ──
+
+`T-03.4` (`SPEC-009` phase `03`, `O-4`) adds `_run_open_interest_poll_collector` over
+`GET /fapi/v1/openInterest`, the "present open interest": a minute that is not read is gone,
+because the endpoint keeps no history. It still costs `ADR-027/D1` nothing new — one synchronous
+thread, weight 1 per call, 4 calls a minute `[DOC + MEDIDO 2026-09-23, SPEC-009 §6.1]` — and it
+is the reason the grid-aligned ticker is load-bearing here rather than a refinement: the reading
+is admitted for `T` only inside `[T - 20 s, T]` (`[Q-STAMP-1]`), so the phase IS the data.
+
 `docs/context/captura-em-producao/gates/Q3-run-definition.md` (signed 2026-09-07,
 `quant-architect`) is the run-shape decision this module executes: §1 fixes what "one run" means
 per producer (a stream SESSION, a poll CYCLE); §3 fixes the 16 `IngestRun` fields, including the
@@ -112,6 +121,8 @@ from src.modules.sentimento.domain.oi_history_paginator import (
     classify_page,
     enumerate_history_pages,
 )
+from src.modules.sentimento.domain.open_interest_grid_stamp import OPEN_INTEREST_GRID_MS
+from src.modules.sentimento.domain.open_interest_snapshot import OpenInterestFetch
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
 from src.modules.sentimento.domain.provenance import SeriesRow
 from src.modules.sentimento.domain.quota_bucket import USED_WEIGHT_HEADER
@@ -129,6 +140,7 @@ from src.modules.sentimento.infra.binance_klines_client import (
     KlinesPageResponse,
 )
 from src.modules.sentimento.infra.binance_oi_history_client import BinanceOiHistoryClient
+from src.modules.sentimento.infra.binance_open_interest_client import BinanceOpenInterestClient
 from src.modules.sentimento.infra.binance_stream_probe import (
     BINANCE_FUTURES_STREAM_HOST,
     StreamIdleTimeoutError,
@@ -175,6 +187,12 @@ from src.modules.sentimento.use_cases.collect_liquidation_history import (
     LiquidationHistorySource,
     collect_liquidation_history_once,
 )
+from src.modules.sentimento.use_cases.collect_open_interest_poll import (
+    OpenInterestPollFate,
+    OpenInterestPollSettlement,
+    TimedOpenInterestFetch,
+    settle_open_interest_poll_cycle,
+)
 from src.modules.sentimento.use_cases.collect_premium_index import (
     PremiumIndexCycleStage,
     PremiumIndexFetcher,
@@ -189,11 +207,13 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     LONG_SHORT_DATA_ENDPOINT,
     LONG_SHORT_ENDPOINT,
     OPEN_INTEREST_HIST_ENDPOINT,
+    OPEN_INTEREST_POLL_ENDPOINT,
     KnownVerdict,
     build_force_order_run,
     build_klines_run,
     build_liquidation_history_run,
     build_long_short_run,
+    build_open_interest_poll_run,
     build_open_interest_run,
     build_premium_index_run,
 )
@@ -204,11 +224,13 @@ from src.modules.sentimento.use_cases.collector_series_mapping import (
     KlinesToRows,
     LiquidationPointToRow,
     LongShortToRows,
+    OpenInterestPollToRows,
     OpenInterestToRows,
     build_force_order_to_rows,
     build_klines_to_rows,
     build_liquidation_history_to_row,
     build_long_short_to_rows,
+    build_open_interest_poll_to_rows,
     build_open_interest_to_rows,
     build_premium_index_to_rows,
     open_interest_bucket_end,
@@ -257,6 +279,13 @@ _OPEN_INTEREST_BACKFILL_DAYS_VAR: Final[str] = "OPEN_INTEREST_BACKFILL_DAYS"
 # on the tail call — its whole history knob is `limit`, and `limit` is pinned at the
 # endpoint's own ceiling (`FUTURES_DATA_MAX_LIMIT`), a fact of the provider, not a setting.
 _LONG_SHORT_CYCLE_INTERVAL_S_VAR: Final[str] = "LONG_SHORT_CYCLE_INTERVAL_S"
+
+# `RS-3.5` for the SEVENTH producer (`T-03.4`, `SPEC-009` §6.1). One knob, the cadence, in the
+# idiom of `OPEN_INTEREST_CYCLE_INTERVAL_S` above; `deploy/compose.yml` documents it on the
+# `collectors` service in `T-03.5` (`infra`). There is no offset knob and no backfill knob:
+# the phase is fixed by `[Q-STAMP-1]` (`_OPEN_INTEREST_POLL_LEAD_S` below), and the endpoint
+# has no history to backfill ("present open interest").
+_OPEN_INTEREST_POLL_CYCLE_INTERVAL_S_VAR: Final[str] = "OPEN_INTEREST_POLL_CYCLE_INTERVAL_S"
 _LIQUIDATION_CYCLE_INTERVAL_S_VAR: Final[str] = "LIQUIDATION_CYCLE_INTERVAL_S"
 
 _DEFAULT_REDIS_HOST: Final[str] = "localhost"
@@ -362,6 +391,23 @@ _DEFAULT_OPEN_INTEREST_BACKFILL_DAYS: Final[int] = 7
 # and the newest bucket waits a full extra period. Polling faster than the grid costs almost
 # nothing here (the watermark drops what it has already seen) and removes that failure mode.
 _DEFAULT_LONG_SHORT_CYCLE_INTERVAL_S: Final[float] = 60.0
+
+# `SPEC-009` §6.1, "1 chamada por simbolo por minuto, alinhada a grade de 1 min", and
+# `[Q-CAD-1] = 60 s` (`[DECISAO-OWNER: 2026-09-23, 2a rodada]`): 4 weight/min for four symbols,
+# 0,17% of the 2.400/min ceiling `[MEDIDO 2026-09-23: GET /fapi/v1/exchangeInfo -> rateLimits]`.
+_DEFAULT_OPEN_INTEREST_POLL_CYCLE_INTERVAL_S: Final[float] = 60.0
+
+# ⛔ HOW LONG BEFORE THE GRID INSTANT `T` THE CALL GOES OUT — `[Q-STAMP-1]` §3, a CONTRACT of
+# this task, not a tuning knob
+# (`docs/context/paineis-de-fluxo/handoff/Q-STAMP-1-quant-architect.md`).
+# The stamp admits a reading for `T` when its `time` lies in `[T - 20 s, T]`; a call sent at
+# `T - d` whose answer lags by `L = sent - time` lands there iff `0 <= d + L <= 20 s`. Over the
+# `n = 4.546` measured lags (`L` from -2,24 s to 9,75 s, `[MEDIDO 2026-09-25]`) every `d` in
+# `[2,3 s; 10,2 s]` admits 100%, and `5 s` leaves the two margins of the same order: 2,8 s on the
+# fresh side (a stalled send, a local clock behind Binance's) and 5,2 s on the stale side (the
+# tail of `L`, which grew from 7,6 s at `n=30` to 9,75 s at `n=4.546`). Missing either margin
+# produces an ABSENT minute, never look-ahead — the stamp's ceiling makes that impossible.
+_OPEN_INTEREST_POLL_LEAD_S: Final[float] = 5.0
 
 # `RS-3.5`: THE CADENCE IS CONFIGURATION, and this is the value `SPEC-007` 6.3 adopted --
 # 5 minutes, which at `N = 10` spends `2 u/min`, 5% of the ceiling measured on 2026-09-10
@@ -528,6 +574,7 @@ class BootConfig:
     open_interest_backfill_days: int = _DEFAULT_OPEN_INTEREST_BACKFILL_DAYS
     long_short_cycle_interval_s: float = _DEFAULT_LONG_SHORT_CYCLE_INTERVAL_S
     liquidation_cycle_interval_s: float = _DEFAULT_LIQUIDATION_CYCLE_INTERVAL_S
+    open_interest_poll_cycle_interval_s: float = _DEFAULT_OPEN_INTEREST_POLL_CYCLE_INTERVAL_S
 
 
 def _parse_int(environ: Mapping[str, str], variable: str, default: int) -> int:
@@ -612,6 +659,28 @@ def _grid_offset(
     return value
 
 
+def _grid_multiple_cadence(
+    environ: Mapping[str, str], variable: str, default: float, *, grid_ms: int
+) -> float:
+    """Parse a cadence that must be a positive, finite, WHOLE multiple of `grid_ms`.
+
+    Same `RN-4` fail-fast as `_positive_float`, plus one refusal that only a poller stamped on a
+    fixed grid needs. The call goes out `_OPEN_INTEREST_POLL_LEAD_S` before an instant of the
+    CADENCE's grid; only when the cadence is a multiple of the stamp's 1-minute grid is that
+    instant also a minute `T`. A cadence of `30` would send every other call at `T + 25 s`,
+    whose reading lands in `T + 1 min` with ~40 s of staleness — out of the 20-second window,
+    so half the calls would spend quota and write nothing, deterministically and silently.
+    """
+    value = _positive_float(environ, variable, default)
+    if (value * 1000) % grid_ms != 0:
+        raise CollectorBootConfigurationError(
+            variable,
+            f"{variable} must be a whole multiple of {grid_ms // 1000} s (the stamp's grid), "
+            f"got {value!r}",
+        )
+    return value
+
+
 def _positive_int(environ: Mapping[str, str], variable: str, default: int) -> int:
     """Parse `variable` as an integer that must be `> 0` — same `RN-4` reasoning as above.
 
@@ -689,6 +758,12 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
             environ,
             _LIQUIDATION_CYCLE_INTERVAL_S_VAR,
             _DEFAULT_LIQUIDATION_CYCLE_INTERVAL_S,
+        ),
+        open_interest_poll_cycle_interval_s=_grid_multiple_cadence(
+            environ,
+            _OPEN_INTEREST_POLL_CYCLE_INTERVAL_S_VAR,
+            _DEFAULT_OPEN_INTEREST_POLL_CYCLE_INTERVAL_S,
+            grid_ms=OPEN_INTEREST_GRID_MS,
         ),
     )
 
@@ -1636,6 +1711,202 @@ def _run_open_interest_collector(
         stop_event.wait(interval_s)
 
 
+# ── THE SEVENTH COLLECTOR: `GET /fapi/v1/openInterest`, polled on the grid (`T-03.4`) ─────────
+
+
+class OpenInterestPollClient(Protocol):
+    """The calls `_run_open_interest_poll_collector` makes — `BinanceOpenInterestClient` has them.
+
+    A `Protocol` for the reason every transport here is injectable: the offline suite
+    (`backend/scripts/test.sh`'s "ZERO REDE") substitutes a fake, production gets the real one.
+    """
+
+    def fetch(self, symbol: str) -> OpenInterestFetch:
+        """Issue one `GET /fapi/v1/openInterest?symbol=…` and classify the answer."""
+        ...
+
+    def close(self) -> None:
+        """Close the connection, if one is open."""
+        ...
+
+
+def _log_open_interest_poll_calls(settlement: OpenInterestPollSettlement, run_id: str) -> None:
+    """Log one line per call — `Q-STAMP-1` §3 item 3, in English (`CLAUDE.md` line 10).
+
+    `lag_ms = sent_at - time` and `staleness_ms = T - time` per call are what let the owner check
+    the measured envelope against production without trusting the verdict's file: a `p5` of
+    `lag_ms` below zero is this host's clock running behind Binance's, and it is the signal that
+    `_OPEN_INTEREST_POLL_LEAD_S` needs revisiting. A call that did not become a row is a WARNING,
+    because each one is a minute `DoD-1` will count as missing.
+    """
+    for call in settlement.calls:
+        level = logging.INFO if call.fate is OpenInterestPollFate.ADMITTED else logging.WARNING
+        logger.log(
+            level,
+            "open_interest_poll_call",
+            extra={
+                "endpoint": OPEN_INTEREST_POLL_ENDPOINT,
+                "symbol": call.symbol,
+                "outcome": call.outcome.value,
+                "fate": call.fate.value,
+                "event_time_ms": call.event_time_ms,
+                "grid_instant_ms": call.grid_instant_ms,
+                "lag_ms": call.lag_ms,
+                "staleness_ms": call.staleness_ms,
+                "used_weight_1m": call.weight_used,
+                "failure": call.failure,
+                "run_id": run_id,
+            },
+        )
+
+
+def _run_open_interest_poll_collector(
+    *,
+    stop_event: threading.Event,
+    failure_event: threading.Event,
+    exit_code: list[int],
+    client_factory: Callable[[], OpenInterestPollClient],
+    sink: RedisStreamSeriesSink,
+    to_rows: OpenInterestPollToRows,
+    record_run: Callable[[IngestRun], None],
+    symbols: Sequence[str],
+    interval_s: float,
+    wall_clock_s: Callable[[], float] = time.time,
+) -> None:
+    """Poll the present open interest of every symbol `_OPEN_INTEREST_POLL_LEAD_S` before each `T`.
+
+    `SPEC-009` §6.1/§6.7 and `[Q-STAMP-1]` §3, whose five conditions this loop is written to meet:
+
+    1. **Wall-clock grid, recomputed every cycle.** `GridAlignedTicker` sleeps UNTIL the next
+       `T - 5 s` (phase `interval_s - lead` on the `interval_s` grid) — never `sleep(60)`
+       chained, which would drift by the cycle's own latency and cross the 20-second window in
+       hours. The FIRST action of the thread is that wait: there is no boot pass, because this
+       endpoint has no history and a call at an arbitrary phase can only land out of window.
+    2. **Stamped by the response's `time`**, via `settle_open_interest_poll_cycle` (which calls
+       `stamp_open_interest_readings`), NEVER by the ticker's target. The ticker only decides WHEN
+       to call; the `T` a reading is written on is decided by its own `time`.
+    3. **One log line per call** with `lag_ms`, `staleness_ms` and the fate
+       (`_log_open_interest_poll_calls`).
+    4. **No retry.** The verdict makes one retry before `T` optional; it is left out because it
+       is the only way this collector's share of the weight could pass `4/min` (`DoD-2` of
+       `03a`), and `x-mbx-used-weight-1m` charges a refused call too. A failed call costs its
+       minute — ABSENT, never carried — and `DoD-1` counts it.
+    5. **NTP on the host** is outside this process; `lag_ms` measures its effect for free.
+
+    ONE `IngestRun` PER CYCLE, `run_id` minted at cycle OPEN and carried by every row, so the
+    single writer credits `n_written` back onto the run (`ADR-035/D2`) — the per-cycle
+    `n_written` of the task's title is the writer's count, not this collector's claim. The
+    WATERMARK (`{symbol: newest T written}`) lives for the process and stops the same minute
+    from being written twice; it advances only after the publish succeeded.
+
+    `client_factory` is called INSIDE the thread, like `_run_force_order_collector`'s
+    `open_source`: the thread-death suite (`collectors_cli_thread_kill_driver.py`) needs a port
+    that only this thread calls BEFORE its first wait, and a client built in `run()` would
+    leave the thread nothing to fail on for up to a whole cadence.
+
+    A publish failure is `SPEC-004` §3.1's "falha do Redis em regime": the cycle closes
+    `REJECTED`, the other threads are told to stop, and `exit_code[0] = 1`. A call the SOURCE
+    failed, or a reading outside the window, is not that — the cycle closes
+    `ACCEPTED_WITH_WARNING`, with each missing symbol and its fate in `notes`.
+    """
+    client = client_factory()
+    ticker = GridAlignedTicker(
+        interval_s=interval_s,
+        offset_s=interval_s - _OPEN_INTEREST_POLL_LEAD_S,
+        endpoint=OPEN_INTEREST_POLL_ENDPOINT,
+        wall_clock_s=wall_clock_s,
+    )
+    newest_written: dict[str, int] = {}
+    try:
+        while not stop_event.is_set():
+            ticker.wait(stop_event)
+            if stop_event.is_set():
+                break
+            run_id = str(uuid.uuid4())
+            started_at = _iso_now()
+            fetches: list[TimedOpenInterestFetch] = []
+            for symbol in symbols:
+                if stop_event.is_set():
+                    break
+                sent_at_ms = int(wall_clock_s() * 1000)
+                fetch = client.fetch(symbol)
+                received_at_ms = int(wall_clock_s() * 1000)
+                fetches.append(
+                    TimedOpenInterestFetch(
+                        fetch=fetch, sent_at_ms=sent_at_ms, received_at_ms=received_at_ms
+                    )
+                )
+            published = 0
+            try:
+                settlement = settle_open_interest_poll_cycle(fetches, newest_written, to_rows)
+                for row in settlement.rows:
+                    sink.accept(row, run_id=run_id)
+                    published += 1
+            except _PUBLISH_FAILURE_EXCEPTIONS as failure:
+                run = build_open_interest_poll_run(
+                    started_at=started_at,
+                    ended_at=_iso_now(),
+                    n_calls=len(fetches),
+                    n_read=sum(1 for timed in fetches if timed.fetch.snapshot is not None),
+                    weight_used=None,
+                    api_code=None,
+                    verdict="REJECTED",
+                    notes=_failure_note(failure),
+                    src_sha256=hashlib.sha256().hexdigest(),
+                    run_id=run_id,
+                )
+                record_run(run)
+                logger.error(
+                    "collector_cycle_completed %s: %s",
+                    OPEN_INTEREST_POLL_ENDPOINT,
+                    failure,
+                    extra={
+                        "endpoint": OPEN_INTEREST_POLL_ENDPOINT,
+                        "n_published": published,
+                        "verdict": "REJECTED",
+                        "run_id": run.run_id,
+                    },
+                    exc_info=True,
+                )
+                exit_code[0] = 1
+                failure_event.set()
+                return
+            for row in settlement.rows:
+                newest_written[row.symbol] = max(
+                    row.bucket_end, newest_written.get(row.symbol, row.bucket_end)
+                )
+            _log_open_interest_poll_calls(settlement, run_id)
+            notes = settlement.shortfall_notes
+            verdict: KnownVerdict = "ACCEPTED" if notes is None else "ACCEPTED_WITH_WARNING"
+            run = build_open_interest_poll_run(
+                started_at=started_at,
+                ended_at=_iso_now(),
+                n_calls=settlement.n_calls,
+                n_read=settlement.n_read,
+                weight_used=settlement.weight_used,
+                api_code=settlement.api_code,
+                verdict=verdict,
+                notes=notes,
+                src_sha256=settlement.src_sha256,
+                run_id=run_id,
+            )
+            record_run(run)
+            logger.info(
+                "collector_cycle_completed",
+                extra={
+                    "endpoint": OPEN_INTEREST_POLL_ENDPOINT,
+                    "n_calls": settlement.n_calls,
+                    "n_admitted": settlement.n_admitted,
+                    "n_published": published,
+                    "used_weight_1m": settlement.weight_used,
+                    "verdict": verdict,
+                    "run_id": run.run_id,
+                },
+            )
+    finally:
+        client.close()
+
+
 # ── THE FIFTH COLLECTOR: `/futures/data/globalLongShortAccountRatio` (`T-04.3`) ─────────────
 
 
@@ -2340,18 +2611,25 @@ def run(
     open_interest_client_factory: Callable[[], OpenInterestHistoryClient] | None = None,
     long_short_client_factory: Callable[[], LongShortClient] | None = None,
     liquidation_source_factory: Callable[[], LiquidationHistorySource] | None = None,
+    open_interest_poll_client_factory: Callable[[], OpenInterestPollClient] | None = None,
     premium_index_to_rows: PremiumIndexReadingToRows | None = None,
     force_order_to_rows: ForceOrderObservationToRows | None = None,
     klines_to_rows: KlinesToRows | None = None,
     open_interest_to_rows: OpenInterestToRows | None = None,
     long_short_to_rows: LongShortToRows | None = None,
     liquidation_to_row: LiquidationPointToRow | None = None,
+    open_interest_poll_to_rows: OpenInterestPollToRows | None = None,
     klines_symbols: Sequence[str] | None = None,
     long_short_symbols: Sequence[str] | None = None,
     liquidation_symbols: Sequence[str] | None = None,
     stop_event: threading.Event | None = None,
 ) -> int:
-    """Start the SIX collector threads, install `SIGTERM`, and wait for a clean/failed exit.
+    """Start the SEVEN collector threads, install `SIGTERM`, and wait for a clean/failed exit.
+
+    The seventh (`T-03.4`) is `collector-open-interest-poll`; its client factory is handed to
+    the thread and called there (see `_run_open_interest_poll_collector`), and its mapping
+    falls back to the REAL one for the same reason `klines_to_rows` does below — the identity
+    is decided (`domain/open_interest_catalog.binance_open_interest_poll_key`, `T-03.3`).
 
     Every network-touching default is injectable, matching every other CLI in this package —
     left to default, `force_order_source_factory` opens a real per-symbol combined `forceOrder`
@@ -2387,6 +2665,8 @@ def run(
     # `_mapping_not_decided_yet` to protect against.
     liquidation_to_row_ = liquidation_to_row or build_liquidation_history_to_row()
     build_liquidation_source = liquidation_source_factory or _default_liquidation_source
+    build_open_interest_poll_client = open_interest_poll_client_factory or BinanceOpenInterestClient
+    open_interest_poll_to_rows_ = open_interest_poll_to_rows or build_open_interest_poll_to_rows()
     klines_symbols_ = sorted(INITIAL_SYMBOLS) if klines_symbols is None else klines_symbols
     long_short_symbols_ = (
         sorted(INITIAL_SYMBOLS) if long_short_symbols is None else long_short_symbols
@@ -2533,6 +2813,26 @@ def run(
             "interval_s": config.liquidation_cycle_interval_s,
         },
     )
+    open_interest_poll_thread = threading.Thread(
+        target=_supervised(
+            _run_open_interest_poll_collector,
+            thread_name="collector-open-interest-poll",
+            failure_event=failure,
+            exit_code=exit_code,
+        ),
+        name="collector-open-interest-poll",
+        kwargs={
+            "stop_event": stop,
+            "failure_event": failure,
+            "exit_code": exit_code,
+            "client_factory": build_open_interest_poll_client,
+            "sink": sink,
+            "to_rows": open_interest_poll_to_rows_,
+            "record_run": store.record_run,
+            "symbols": klines_symbols_,
+            "interval_s": config.open_interest_poll_cycle_interval_s,
+        },
+    )
     try:
         force_order_thread.start()
         premium_index_thread.start()
@@ -2540,6 +2840,7 @@ def run(
         open_interest_thread.start()
         long_short_thread.start()
         liquidation_thread.start()
+        open_interest_poll_thread.start()
         while not stop.is_set() and not failure.is_set():
             time.sleep(_MAIN_LOOP_POLL_S)
         if failure.is_set() and not stop.is_set():
@@ -2556,6 +2857,7 @@ def run(
         open_interest_thread.join(timeout=_JOIN_TIMEOUT_S)
         long_short_thread.join(timeout=_JOIN_TIMEOUT_S)
         liquidation_thread.join(timeout=_JOIN_TIMEOUT_S)
+        open_interest_poll_thread.join(timeout=_JOIN_TIMEOUT_S)
     finally:
         signal.signal(signal.SIGTERM, previous_handler)
     return exit_code[0]

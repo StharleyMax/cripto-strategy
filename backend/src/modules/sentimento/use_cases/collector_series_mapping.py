@@ -113,7 +113,11 @@ from src.modules.sentimento.domain.modeled_availability import (
     MODELED_AVAILABILITY_SOURCE,
     modeled_available_at_for_endpoint,
 )
-from src.modules.sentimento.domain.open_interest_catalog import binance_open_interest_key
+from src.modules.sentimento.domain.open_interest_catalog import (
+    binance_open_interest_key,
+    binance_open_interest_poll_key,
+)
+from src.modules.sentimento.domain.open_interest_grid_stamp import StampedOpenInterest
 from src.modules.sentimento.domain.premium_index_batch import (
     PREMIUM_INDEX_ENDPOINT,
     PremiumIndexReading,
@@ -142,6 +146,8 @@ from src.modules.sentimento.use_cases.collector_run_mapping import (
     LONG_SHORT_OBSERVER_ID,
     OPEN_INTEREST_HIST_ENDPOINT,
     OPEN_INTEREST_OBSERVER_ID,
+    OPEN_INTEREST_POLL_ENDPOINT,
+    OPEN_INTEREST_POLL_OBSERVER_ID,
     PREMIUM_INDEX_OBSERVER_ID,
 )
 
@@ -1155,3 +1161,73 @@ def build_liquidation_history_to_row(
         )
 
     return _to_row
+
+
+# ── `open_interest` 1m POINT — THE SEVENTH PRODUCER (`T-03.4`, `SPEC-009` §6.1) ─────────────────
+#
+# `GET /fapi/v1/openInterest` read once per symbol per minute, 5 s before the grid instant, and
+# STAMPED by `domain/open_interest_grid_stamp.py` (`T-03.2`, `[Q-STAMP-1]`) before it gets here:
+# this mapping only ever sees an ADMITTED reading, so it cannot write a minute that no reading
+# earned, and it has no way to carry a value forward — it receives no previous value at all.
+#
+# Two instants, never one, and which is which is the whole anti-lookahead content of the row:
+#
+#   * `bucket_end` = `grid_instant_ms` — the `T` the reading is AS OF, the close of `(T - 1 min, T]`
+#     (`POINT_AT_BUCKET_END`), which is what the projection of `ADR-045/D1` reads as `close`;
+#   * `event_time` = `event_time_ms` — the response's own `time` (`T-03.1`, `RN-1`), NEVER the grid
+#     instant and NEVER our request instant. Keeping it is what makes the `quant-architect`'s
+#     verification a one-column select on stored rows (`Q-STAMP-1` §1): `bucket_end - event_time`
+#     is the staleness, and every row must hold it in `[0, 20 000]`. A negative value would be
+#     look-ahead, and the stamp makes it unrepresentable.
+#
+# `available_at` is `received_at`, stamped `OBSERVED`, and the reason is that here it genuinely
+# IS observed: the reading reached this process at that instant, and nothing about it is
+# modeled. It is usually BEFORE `bucket_end` (the call goes out at `T - 5 s`), which the read
+# path already handles: `as_of` admits a row on `bucket_end <= t` (R-2) as well as
+# `available_at <= knowledge_time` (R-1), so the row is not drawn before `T`. Whether the
+# modeled availability of this series for `backtest`/`convergencia` may be `T` instead of
+# `T + 1 min` is `Q-STAMP-1` §5's open question, left to whoever wires a consumer that decides.
+#
+# `is_final=True`: a reading admitted as the value AS OF `T` is never re-read or revised — this
+# process writes at most one row per `(symbol, T)` (the collector's watermark) — the same
+# finality the `openInterestHist` rows above declare for the same `(STOCK, POINT,
+# POINT_AT_BUCKET_END)` trio.
+OpenInterestPollToRows = Callable[[int, StampedOpenInterest], tuple[SeriesRow, ...]]
+
+
+def build_open_interest_poll_to_rows(
+    *,
+    symbols: frozenset[str] = INITIAL_SYMBOLS,
+) -> OpenInterestPollToRows:
+    """Build the stamped `/fapi/v1/openInterest` reading -> `SeriesRow` mapping (`T-03.4`).
+
+    The returned callable takes the collector's own clock at reception (`received_at`) and ONE
+    admitted stamp, and answers its one row — or no row for a symbol outside `symbols`, the same
+    four-symbol filter every other producer in this module applies.
+    """
+
+    def _to_rows(received_at: int, stamped: StampedOpenInterest) -> tuple[SeriesRow, ...]:
+        if stamped.symbol not in symbols:
+            return ()
+        key = binance_open_interest_poll_key(instrument_id=stamped.symbol)
+        return (
+            SeriesRow(
+                series_key_id=key.series_key_id(),
+                symbol=stamped.symbol,
+                source=OPEN_INTEREST_POLL_ENDPOINT,
+                bucket_end=stamped.grid_instant_ms,
+                event_time=stamped.event_time_ms,
+                available_at=received_at,
+                availability_source=AvailabilitySource.OBSERVED,
+                ingested_at=received_at,
+                observed_at=received_at,
+                provenance=Provenance.OBSERVED,
+                src_label_raw=OPEN_INTEREST_POLL_ENDPOINT,
+                observer_id=OPEN_INTEREST_POLL_OBSERVER_ID,
+                observer_region=UNKNOWN_OBSERVER_REGION,
+                is_final=True,
+                value_raw=stamped.open_interest_raw,
+            ),
+        )
+
+    return _to_rows

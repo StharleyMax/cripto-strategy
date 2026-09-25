@@ -224,11 +224,27 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # `row.event_time` is the SAME instant for these rows (`label_shift = 0`) and is NOT in
     # `READ_PATH_COLUMNS`, so keying the watermark off it would have kept this function out of
     # this registry by picking a synonym — a bypass of the gate, not a compliance with it.
+    #
+    # `T-03.4` (`paineis-de-fluxo`, track `03a`) adds `_run_open_interest_poll_collector` — the
+    # FOURTH function of this file, and again producer bookkeeping, not a second reader. It
+    # reads `row.bucket_end` off the rows `settle_open_interest_poll_cycle` JUST BUILT and the
+    # sink JUST ACCEPTED, to advance the poll collector's in-process watermark (`{symbol: newest
+    # T written}`) so the same minute is never published twice. The three checkable properties
+    # hold: (a) there is no decision instant `t` in the function — its only timestamps are
+    # `wall_clock_s()`, the collector's own clock around each call, and the ticker's target,
+    # which decides WHEN to call and is never compared against a stored row; (b) it never
+    # consults a SECOND stored row to choose a winner — it takes a `max()` over rows it published
+    # in the same cycle against its own high-water mark; (c) it returns nothing — the watermark
+    # never leaves the thread, so no caller can mistake it for "what was this series worth at
+    # `t`". Same refusal as above: keying the watermark off `row.event_time` (the same instant
+    # for these rows, and not in `READ_PATH_COLUMNS`) would have kept it out of this registry by
+    # picking a synonym.
     "modules/sentimento/infra/collectors_cli.py": frozenset(
         {
             "_publish_klines_page",
             "_publish_open_interest_page",
             "_collect_long_short_for_symbol",
+            "_run_open_interest_poll_collector",
         }
     ),
     # `T-01.5` (`SPEC-008`): PRODUCER BOOKKEEPING, the same category as the three

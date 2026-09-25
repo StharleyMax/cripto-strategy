@@ -36,6 +36,10 @@ from src.modules.sentimento.domain.oi_history_paginator import (
     ClosedWindow,
     OiHistoryPageResponse,
 )
+from src.modules.sentimento.domain.open_interest_snapshot import (
+    OpenInterestFetch,
+    OpenInterestFetchOutcome,
+)
 from src.modules.sentimento.domain.premium_index_batch import PremiumIndexReading
 from src.modules.sentimento.domain.provenance import (
     UNKNOWN_OBSERVER_REGION,
@@ -182,6 +186,36 @@ class _EmptyLiquidationSource:
     def fetch(self, path: str) -> LiquidationFetch:
         """Return `status=200` with an empty array, whatever was asked for."""
         return LiquidationFetch(status=200, body=b"[]")
+
+
+class _UnreachableOpenInterestPollClient:
+    """An `OpenInterestPollClient` fake for the SEVENTH thread (`T-03.4`): nothing ever answers.
+
+    Left out, `run()` would build the real `BinanceOpenInterestClient`, whose first call reaches
+    `fapi.binance.com` from inside the offline suite. That thread has no boot pass — its first
+    action is the wait for `T - 5 s` — and the drivers set its cadence far beyond any scenario,
+    so `fetch` is not expected to run at all; if it does, it answers `TRANSPORT`, the one outcome
+    that claims nothing was read.
+    """
+
+    def fetch(self, symbol: str) -> OpenInterestFetch:
+        """Answer that no request reached the source."""
+        return OpenInterestFetch(
+            symbol=symbol,
+            outcome=OpenInterestFetchOutcome.TRANSPORT,
+            status=None,
+            weight_used=None,
+            snapshot=None,
+            failure="OSError: offline driver",
+        )
+
+    def close(self) -> None:
+        """Nothing to close."""
+
+
+# A multiple of 60 s, as `OPEN_INTEREST_POLL_CYCLE_INTERVAL_S` must be, and far enough that the
+# next `T - 5 s` on its grid falls outside every scenario's lifetime.
+OPEN_INTEREST_POLL_DRIVER_INTERVAL_S = 999_960.0
 
 
 class _OneShotPremiumIndexFetcher:
@@ -332,6 +366,7 @@ def main(argv: list[str]) -> int:
         # is ALSO what spreads the calls (`RS-3.6`), so a small value here would make the
         # driver sleep between symbols for no reason.
         liquidation_cycle_interval_s=999_999.0,
+        open_interest_poll_cycle_interval_s=OPEN_INTEREST_POLL_DRIVER_INTERVAL_S,
     )
     if force_publish_failure:
         # Same real-server technique `test_collectors_cli_publish_failure.py`'s `clobbered_sink`
@@ -363,6 +398,7 @@ def main(argv: list[str]) -> int:
             open_interest_client_factory=_EmptyOpenInterestClient,
             long_short_client_factory=_EmptyFuturesDataClient,
             liquidation_source_factory=_EmptyLiquidationSource,
+            open_interest_poll_client_factory=_UnreachableOpenInterestPollClient,
             premium_index_to_rows=premium_index_to_rows,
             force_order_to_rows=_never_maps,
         )

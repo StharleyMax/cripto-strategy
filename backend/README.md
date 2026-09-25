@@ -3841,3 +3841,29 @@ a identidade da série de polling de OI (`O-4`) **antes** do coletor (`T-03.4`),
 com `n_points = 0` para estes 4 ids (o padrão `PRD-009` G-1). `T-03.4` depende desta task e sai na mesma wave.
 
 Relatório e mutações: [`gates/T-03.3-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.3-build.md).
+
+## 📎 2026-09-25 por `T-03.4` — coletor de OI por polling: `T − 5 s` na grade, carimbado pelo `time`, um run por ciclo
+
+Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1/§6.7, `RNF-4`, `PRD-009` G-1, `[Q-STAMP-1]` §3). Compõe
+cliente (`T-03.1`) + carimbo (`T-03.2`) + escritor (a fila `md.series.write`) no **sétimo** thread de
+`collectors_cli`. A série passa a ter escritor no dia em que é servida (a lição de G-1).
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `use_cases/collect_open_interest_poll.py` | `use_cases` | `settle_open_interest_poll_cycle(fetches, newest_written, to_rows)` — puro, sem relógio (`ADR-016/D4`): carimba o ciclo inteiro de uma vez e dá **um destino a cada chamada** — `admitted` · `out_of_window` · `superseded` · `behind_watermark` · `not_read` — com `lag_ms = sent − time` e `staleness_ms = T − time` |
+| `use_cases/collector_series_mapping.py` | `use_cases` | `build_open_interest_poll_to_rows()`: `bucket_end = T`, **`event_time = time` da resposta** (nunca o `T` do agendador), `available_at = received_at` `OBSERVED`, `is_final=True`, `value_raw` = a string da origem |
+| `use_cases/collector_run_mapping.py` | `use_cases` | `build_open_interest_poll_run(...)`: `endpoint=/fapi/v1/openInterest`, `observer_id=openinterest-poll-collector`, **`n_expected = n_calls`, `n_returned = n_read`** (aqui há oráculo: 1 leitura por chamada), `weight_used` = maior `x-mbx-used-weight-1m` lido |
+| `infra/collectors_cli.py` | `infra` | `_run_open_interest_poll_collector` + thread `collector-open-interest-poll` em `run()`; `OPEN_INTEREST_POLL_CYCLE_INTERVAL_S` (default `60`, recusado no boot se não for múltiplo inteiro de 60 s) |
+
+**As cinco condições de `Q-STAMP-1` §3, e onde cada uma está:** (1) `GridAlignedTicker` com fase
+`interval − 5 s`, recalculada por ciclo — nunca `sleep(60)` encadeado; a primeira ação do thread é essa espera
+(sem passada de boot: o endpoint não tem histórico); (2) o `T` vem do `time` da resposta; (3) uma linha de log por
+chamada, `open_interest_poll_call`, com `lag_ms`/`staleness_ms`/`fate`; (4) **sem retry** — é o único jeito de a
+parcela passar de 4/min (`DoD-2`), e um minuto perdido vira **ausência**, nunca valor carregado; (5) NTP é do host.
+
+**`n_written` por ciclo:** `run_id` cunhado na abertura do ciclo e carregado por toda linha — o escritor único credita
+`n_written` no run (`ADR-035/D2`). O `IngestRun` sai com `n_written = 0` e o escritor fecha.
+
+**Para `T-03.5` (`infra`):** o nome da variável é `OPEN_INTEREST_POLL_CYCLE_INTERVAL_S`; o código já a lê.
+
+Relatório, mutações e comandos: [`gates/T-03.4-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.4-build.md).
