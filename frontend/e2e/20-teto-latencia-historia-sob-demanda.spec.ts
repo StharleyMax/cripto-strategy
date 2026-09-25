@@ -115,6 +115,20 @@ import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./hel
  *     `fact`, never asserted: its threshold depends on code that does not exist yet (`T-01.8`
  *     calibrates it and turns it into an assertion with an ablation).
  *
+ * ── `T-01.8` (paineis-de-fluxo): RE-ANCHORED ON THE SINGLE HOST ─────────────────────────────
+ *
+ *  1. PRE-WALK (`walkToLeftEdge`): with one chart the mount view is the RIGHT end of the seed, not
+ *     the whole grid, so the view is walked to `PREWALK_PARK_SLOTS` from the left edge BEFORE the
+ *     probe `reset()` — without paging (guarded) — and every measured drag is on the paging path;
+ *  2. the legacy "first 6 samples are the mount" cut is now measured on the run;
+ *  3. the instant of a sample is computed against the window start the CHART holds
+ *     (`timePriceSamples`): `<main>`'s start and the host's logical range are not written atomically;
+ *  4. the `T-01.F2` assertion above is GREEN on this code (the host survives the page), and the
+ *     boundary jump is now an ASSERTION (`PAGE_BOUNDARY_JUMP_CEILING_SLOTS`, calibrated);
+ *  5. NO CASCADE: 2 s with no input after the last page must request no page.
+ *
+ *  Bites (`gates/T-01.8-builder.md` §4): `axis` back in the host's mount deps (a remount per page).
+ *
  * Run with: `make e2e` (ou `npx playwright test 20-teto-latencia-historia-sob-demanda
  * --config=frontend/playwright.config.ts`), contra `E2E_API_PORT=8811 E2E_NEXT_PORT=4311`.
  */
@@ -179,11 +193,18 @@ interface PriceTimeSample {
   readonly windowStartMs: number;
 }
 
+/** `T-01.8` — a sample with its instant computed against the window start the CHART holds. */
+interface TimedPriceSample extends PriceTimeSample {
+  readonly timeMs: number;
+}
+
 declare global {
   interface Window {
     __historyPageLatencyProbe?: { requestedMs: number[]; drawnMs: number[]; reset(): void };
     __axisLatencyProbe?: { samplesMs: number[]; reset(): void };
     __priceTimeSamples?: PriceTimeSample[];
+    /** `T-01.8` — `<main>`'s `data-window-start-ms`, the value at recorder start then every change. */
+    __windowStartHistory?: number[];
   }
 }
 
@@ -442,16 +463,107 @@ async function driveSequentialDrags(page: Page, count: number): Promise<GestureW
   return gestures;
 }
 
+/** `T-01.8` — how long the spec waits, with no input, after the last page is drawn, for a page
+ * that nobody asked for (the cascade `T-05-FIX` closed). 2 s is ~20× the p95 borda→desenho the
+ * single-host code measured on this stub (97,8 ms, `gates/T-01.8-builder.md`). */
+const IDLE_AFTER_PAGING_MS = 2_000;
+
+/** `T-01.8` — ceiling on how far the view may move, in grid slots, across a page boundary and
+ * between two consecutive samples after it, inside one gesture.
+ *
+ * CALIBRATED `[MEDIDO 2026-09-24, single-host code, 5 runs × 12 gestures = 60 boundaries,
+ * `gates/T-01.8-builder.md` §3]`: every boundary jump was `0`, `−22` or `−24` slots, and the largest
+ * step between two consecutive samples of the same gesture BEFORE its page was `24` in all 60 — the
+ * jump across a page is one pan frame of this drag (640 slots over 30 mouse steps), nothing more.
+ * The ceiling is TWO such frames. The defects it exists to catch are an order of magnitude above:
+ * `500` (a page drawn without its prepend offset — `PAGE_SLOTS`), `1 260` (the right-edge cut
+ * applied mid-drag on the first `1m` page, `T-01.5-builder.md` §2) and `−3 274` (the six-chart
+ * remount re-framing the view, `T-01.F2-facts.txt`). */
+const PAGE_BOUNDARY_JUMP_CEILING_SLOTS = 48;
+
+/** `T-01.8` — where the pre-walk parks the left edge of the view, in grid slots from the axis
+ * start: far enough above `DEFAULT_PAGE_TRIGGER_SLOTS` (20) that no pre-walk drag pages, close
+ * enough that the FIRST measured drag (`TARGET_SHIFT_SLOTS` = 640) crosses the trigger. */
+const PREWALK_PARK_SLOTS = 200;
+/** A pre-walk drag never moves the mouse more than this fraction of the host's width from its
+ * middle start point, so the pointer stays over the chart. */
+const PREWALK_MAX_WIDTH_FRACTION = 0.4;
+/** Upper bound on pre-walk drags: the mount view spans ~2.4k slots of the 5.76k-slot seed, so
+ * ~6 drags reach the park; 12 only fails a run whose drags stopped moving the chart at all. */
+const PREWALK_MAX_DRAGS = 12;
+
+/**
+ * `T-01.8` — walks the view to `PREWALK_PARK_SLOTS` from the left edge BEFORE the probe `reset()`,
+ * without paging.
+ *
+ * Why this exists `[MEDIDO 2026-09-24, this spec on the single-host code, n=1 run]`: with six
+ * charts the mount view was the whole grid (the empty panes of the stub echoed `0..5760` into the
+ * store), so the FIRST drag already sat at the left edge. With one chart the Price series rules
+ * the time scale and the library frames its right end (`from ≈ 3317` of 5760 at ~0.52 px/slot),
+ * so the first 5 of 12 drags only WALKED to the edge (`drag_requested_new_page:0..4=false`), each
+ * one paying the 10 s wait for a page that never came, and the run ended with 9 pages < 10.
+ * Walking first keeps all `DRAG_COUNT` measured drags on the paging path the DoD measures.
+ *
+ * Guard: a pre-walk drag that paged would leave a request unpaired across the `reset()` — so the
+ * number of page requests is compared before and after, and must not move.
+ */
+async function walkToLeftEdge(page: Page): Promise<number> {
+  const requestedBefore = (await probeCounts(page)).requested;
+  let drags = 0;
+  for (; drags < PREWALK_MAX_DRAGS; drags += 1) {
+    const range = await readPriceRange(page);
+    const remainingSlots = range.from - PREWALK_PARK_SLOTS;
+    if (remainingSlots <= 0) {
+      break;
+    }
+    const box = await page.locator(`[data-testid="${CHART_HOST_TESTID}"]`).boundingBox();
+    if (box === null) {
+      throw new Error("chart host: no bounding box — nothing mounted");
+    }
+    const pxPerSlot = box.width / (range.to - range.from);
+    const deltaXPx = Math.max(10, Math.min(remainingSlots * pxPerSlot, box.width * PREWALK_MAX_WIDTH_FRACTION));
+    await dragRight(page, deltaXPx);
+    await expect
+      .poll(async () => (await readPriceRange(page)).from, { message: "o pré-arrasto não moveu o gráfico", timeout: 10_000 })
+      .not.toBe(range.from);
+  }
+  const parked = await readPriceRange(page);
+  fact(SPEC, "prewalk_drags_n", drags);
+  fact(SPEC, "prewalk_parked_from", Number(parked.from.toFixed(2)));
+  expect(
+    parked.from,
+    `o pré-arrasto não levou a borda esquerda da vista a <= ${PREWALK_PARK_SLOTS} slots em ${PREWALK_MAX_DRAGS} arrastos`,
+  ).toBeLessThanOrEqual(PREWALK_PARK_SLOTS);
+  expect(
+    (await probeCounts(page)).requested,
+    "um pré-arrasto pediu página — o par requested/drawn atravessaria o reset()",
+  ).toBe(requestedBefore);
+  return drags;
+}
+
 /** `T-01.F2` — starts recording the Price range IN TIME. Every `MutationObserver` callback that
  * saw a `data-visible-logical-from` write on the chart host (since `T-01.6` the one element that
  * carries the shared range) reads, in that same callback, the host's current
  * `data-visible-logical-from` and `<main>`'s current `data-window-start-ms` (the
  * pager's window start, re-rendered on every landed page). Installed after the probe `reset()`,
- * so only the drags below are recorded. */
+ * so only the drags below are recorded.
+ *
+ * `T-01.8`: it ALSO records every change of `<main>`'s `data-window-start-ms`
+ * (`__windowStartHistory`), because the two attributes are NOT written atomically — see
+ * `timePriceSamples`. */
 async function startPriceTimeRecorder(page: Page): Promise<void> {
   await page.evaluate((hostTestId) => {
     const samples: PriceTimeSample[] = [];
     window.__priceTimeSamples = samples;
+    const mainSelector = "main[data-window-start-ms]";
+    const startHistory = [Number(document.querySelector(mainSelector)?.getAttribute("data-window-start-ms"))];
+    window.__windowStartHistory = startHistory;
+    new MutationObserver(() => {
+      const current = Number(document.querySelector(mainSelector)?.getAttribute("data-window-start-ms"));
+      if (Number.isFinite(current) && current !== startHistory[startHistory.length - 1]) {
+        startHistory.push(current);
+      }
+    }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ["data-window-start-ms"] });
     const hostSelector = `[data-testid="${hostTestId}"]`;
     new MutationObserver((records) => {
       const touchedHost = records.some((r) => r.target instanceof Element && r.target.matches(hostSelector));
@@ -470,8 +582,37 @@ async function startPriceTimeRecorder(page: Page): Promise<void> {
   }, CHART_HOST_TESTID);
 }
 
-function sampleTimeMs(sample: PriceTimeSample): number {
-  return Math.round(sample.windowStartMs + sample.logicalFrom * GRID_STEP_MS);
+/**
+ * `T-01.8` — the instant of each sample, against the window start the CHART holds at that moment.
+ *
+ * `T-01.F2` read `<main>`'s `data-window-start-ms` in the same callback as the host's logical range
+ * and assumed the pair was consistent. It is not `[MEDIDO 2026-09-24, n=1 run, 2 of 12 gestures]`:
+ * React commits `<main>`'s new start during render, and the host's page effect (`SymbolClient.tsx`,
+ * "PAGE") only `setData`s the prepended bars — and records `drawnMs` — later, in a passive effect. A
+ * pan frame that lands in between `[INFERRED: reading of the two write sites]` pairs the NEW start
+ * with the OLD logical index: the instant reads
+ * `−PAGE_SLOTS` too early, then `+PAGE_SLOTS` once the chart gets the page. On the single-host code
+ * that showed up as a boundary "jump" of exactly `500` slots (and a `524`-slot "pan step" before the
+ * page) in gestures 0 and 11, while the chart itself never moved.
+ *
+ * The start the chart holds is known without guessing: every page changes the start exactly once,
+ * so after `k` pages drawn (`drawnMs <= atMs`) the chart holds `startHistory[k]`. The pairing is
+ * checked by the caller (`startHistory.length === drawnMs.length + 1`).
+ */
+function timePriceSamples(
+  samples: readonly PriceTimeSample[],
+  drawnMs: readonly number[],
+  startHistory: readonly number[],
+): TimedPriceSample[] {
+  return samples.map((s) => {
+    const pagesDrawn = drawnMs.filter((d) => d <= s.atMs).length;
+    const chartStartMs = startHistory[Math.min(pagesDrawn, startHistory.length - 1)]!;
+    return { ...s, timeMs: Math.round(chartStartMs + s.logicalFrom * GRID_STEP_MS) };
+  });
+}
+
+function sampleTimeMs(sample: TimedPriceSample): number {
+  return sample.timeMs;
 }
 
 /** Axis-application intervals split by the gesture windows (`DIAG-e2e-master-20-intra-inter
@@ -503,8 +644,29 @@ interface GesturePageVerdict {
    * here while `distinctTimesAfterPage < 2` shows the recorder sees a moving range — it is the
    * drag that stopped, not the instrument that is blind. */
   readonly distinctTimesBeforePage: number;
-  /** Time jump across the page boundary, in grid slots — `fact` only, never asserted (T-01.8). */
+  /** Time jump across the page boundary, in grid slots (last sample before the page vs first
+   * after). `T-01.F2` recorded it; `T-01.8` asserts it (`PAGE_BOUNDARY_JUMP_CEILING_SLOTS`). */
   readonly boundaryJumpSlots: number | null;
+  /** `T-01.8` — the largest step, in grid slots, between two consecutive samples of the SAME
+   * gesture before the page: how far one pan frame of this very drag moved the view. */
+  readonly maxPanStepBeforePageSlots: number | null;
+  /** `T-01.8` — the same, AFTER the page and until `moveEnd`: a view that jumps a few frames after
+   * the boundary (a right-edge cut mid-drag that the next `mousemove` undoes) shows up here, not in
+   * `boundaryJumpSlots`. */
+  readonly maxPanStepAfterPageSlots: number | null;
+  /** `T-01.8` — steps between consecutive samples AFTER the page that a pan frame could produce
+   * (`0 < |Δ| <= PAGE_BOUNDARY_JUMP_CEILING_SLOTS`): the drag continuing, frame by frame. */
+  readonly panStepsAfterPage: number;
+}
+
+/** Largest absolute difference between two consecutive values, or `null` with fewer than two. */
+function maxAbsStep(values: readonly number[]): number | null {
+  let max: number | null = null;
+  for (let i = 1; i < values.length; i += 1) {
+    const step = Math.abs(values[i]! - values[i - 1]!);
+    max = max === null ? step : Math.max(max, step);
+  }
+  return max;
 }
 
 /** For every gesture in which a page was DRAWN while the mouse was still moving: how many
@@ -512,7 +674,7 @@ interface GesturePageVerdict {
 function judgePagesDrawnMidGesture(
   gestures: readonly GestureWindow[],
   drawnMs: readonly number[],
-  samples: readonly PriceTimeSample[],
+  samples: readonly TimedPriceSample[],
 ): GesturePageVerdict[] {
   const verdicts: GesturePageVerdict[] = [];
   gestures.forEach((g, gesture) => {
@@ -524,6 +686,17 @@ function judgePagesDrawnMidGesture(
     const before = samples.filter((s) => s.atMs <= pageMs);
     const lastBefore = before.length > 0 ? before[before.length - 1]! : undefined;
     const firstAfter = samples.find((s) => s.atMs > pageMs);
+    const inGestureBefore = samples.filter((s) => s.atMs >= g.moveStartMs && s.atMs <= pageMs).map(sampleTimeMs);
+    const maxPanStepMs = maxAbsStep(inGestureBefore);
+    const afterTimes = after.map(sampleTimeMs);
+    const maxPanStepAfterMs = maxAbsStep(afterTimes);
+    let panStepsAfterPage = 0;
+    for (let i = 1; i < afterTimes.length; i += 1) {
+      const stepSlots = Math.abs(afterTimes[i]! - afterTimes[i - 1]!) / GRID_STEP_MS;
+      if (stepSlots > 0 && stepSlots <= PAGE_BOUNDARY_JUMP_CEILING_SLOTS) {
+        panStepsAfterPage += 1;
+      }
+    }
     verdicts.push({
       gesture,
       pageDrawnAfterMoveStartMs: Number((pageMs - g.moveStartMs).toFixed(1)),
@@ -537,6 +710,9 @@ function judgePagesDrawnMidGesture(
         lastBefore !== undefined && firstAfter !== undefined
           ? Number(((sampleTimeMs(firstAfter) - sampleTimeMs(lastBefore)) / GRID_STEP_MS).toFixed(2))
           : null,
+      maxPanStepBeforePageSlots: maxPanStepMs === null ? null : Number((maxPanStepMs / GRID_STEP_MS).toFixed(2)),
+      maxPanStepAfterPageSlots: maxPanStepAfterMs === null ? null : Number((maxPanStepAfterMs / GRID_STEP_MS).toFixed(2)),
+      panStepsAfterPage,
     });
   });
   return verdicts;
@@ -572,7 +748,11 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     // (`AxisSyncStore`'s `initialRange` é o grid inteiro, ver docstring deste arquivo) poderia
     // somar um pedido "de graça" antes do loop — o `reset()` faz `requestedMs[i]`/`drawnMs[i]`
     // (MESMO índice, sem deslocamento) ser exclusivamente os `DRAG_COUNT` arrastos abaixo.
+    // `T-01.8`: the pre-walk runs BEFORE the reset, so its drags are neither paired nor recorded.
+    await walkToLeftEdge(page);
     await page.evaluate(() => window.__historyPageLatencyProbe?.reset());
+    // `T-01.8`: the axis probe is never reset; everything before this index is mount + pre-walk.
+    const axisSamplesBeforePaging = await page.evaluate(() => window.__axisLatencyProbe?.samplesMs.length ?? 0);
     await startPriceTimeRecorder(page);
 
     // `T-05.9` — `DRAG_COUNT` arrastos REAIS, sequenciais, cada um esperando a página do arrasto
@@ -580,6 +760,18 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     // docstring para o porquê da espera por-arrasto (é o contrato serial de `D-C3.5` reaplicado
     // na cadência do gesto).
     const gestures = await driveSequentialDrags(page, DRAG_COUNT);
+
+    // `T-01.8` — NO CASCADE (`handoff/FIX-regressoes-fase05.md` §4.3 item 4): once the last page is
+    // drawn, the page's own echo must not page again. `IDLE_AFTER_PAGING_MS` with no input, and the
+    // request count must not move.
+    const requestedAtRest = (await probeCounts(page)).requested;
+    await page.waitForTimeout(IDLE_AFTER_PAGING_MS);
+    const requestedAfterIdle = (await probeCounts(page)).requested;
+    fact(SPEC, "history_page_requested_during_idle_n", requestedAfterIdle - requestedAtRest);
+    expect(
+      requestedAfterIdle - requestedAtRest,
+      `${requestedAfterIdle - requestedAtRest} página(s) pedida(s) em ${IDLE_AFTER_PAGING_MS} ms sem gesto — cascata de páginas`,
+    ).toBe(0);
 
     const probe = await page.evaluate(() => ({
       requestedMs: window.__historyPageLatencyProbe?.requestedMs ?? [],
@@ -592,17 +784,106 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     // `drawnMs.length` tem de ser EXATAMENTE `requestedMs.length` (índice a índice, sem o "+1" do
     // mount que o `reset()` acima já descartou, e sem cauda em voo — o loop nunca avança para o
     // próximo arrasto com um pedido pendente).
-    expect(
-      probe.drawnMs.length,
-      `drawnMs (${probe.drawnMs.length}) deveria ser EXATAMENTE requestedMs (${probe.requestedMs.length}) ` +
-        "pós-reset — driveSequentialDrags espera cada página desenhar antes do próximo arrasto",
-    ).toBe(probe.requestedMs.length);
+    // `T-01.8`: SOFT, for the reason the intra-gesture ceiling below is soft. A remount per page
+    // records every page twice (once by the new chart's mount, once by the page path), so this
+    // pairing is the FIRST thing the remount ablation breaks — hard, it would hide the verdicts on
+    // the range and the boundary below, which are the ones `FIX` §4.3 names. The test fails the same.
+    expect
+      .soft(
+        probe.drawnMs.length,
+        `drawnMs (${probe.drawnMs.length}) deveria ser EXATAMENTE requestedMs (${probe.requestedMs.length}) ` +
+          "pós-reset — driveSequentialDrags espera cada página desenhar antes do próximo arrasto",
+      )
+      .toBe(probe.requestedMs.length);
     const pairCount = probe.requestedMs.length;
     fact(SPEC, "history_page_pair_n", pairCount);
     expect(
       pairCount,
       `apenas ${pairCount} páginas disparadas por arrasto — esperado >= ${MIN_PAGES} (plan 05 DoD 7)`,
     ).toBeGreaterThanOrEqual(MIN_PAGES);
+
+    // `T-01.8`: the range and boundary verdicts come BEFORE the latency block. They are the ones
+    // `FIX` §4.3 names, and a remount per page (the ablation) also breaks the drawn/requested index
+    // pairing the latency block computes on — so, placed after it, a negative latency would stop
+    // the test before either verdict ran.
+    // ── `T-01.F2`: the Price range, IN TIME, keeps moving after a page drawn mid-gesture ──────
+    // Eligible gesture: its (first) page was drawn while the mouse was still moving, with at
+    // least one pan-frame ceiling of movement left — the same `160 ms` inside which a live pan
+    // must apply a frame, so an eligible gesture that stays parked is not "too little movement
+    // left", it is a dropped drag.
+    const rawPriceSamples = await page.evaluate(() => window.__priceTimeSamples ?? []);
+    const windowStartHistory = await page.evaluate(() => window.__windowStartHistory ?? []);
+    // `T-01.8` — instrument integrity: every drawn page changed `<main>`'s start exactly once, so
+    // the k-th change IS the k-th page (`timePriceSamples`).
+    fact(SPEC, "window_start_changes_n", windowStartHistory.length - 1);
+    // Soft, same reason as the drawn/requested pairing above.
+    expect
+      .soft(
+        windowStartHistory.length - 1,
+        `<main> mudou de data-window-start-ms ${windowStartHistory.length - 1} vez(es) para ${probe.drawnMs.length} ` +
+          "página(s) desenhada(s) — o pareamento página↔início da janela quebrou",
+      )
+      .toBe(probe.drawnMs.length);
+    const priceSamples = timePriceSamples(rawPriceSamples, probe.drawnMs, windowStartHistory);
+    fact(
+      SPEC,
+      "price_time_samples_non_atomic_n",
+      priceSamples.filter((s) => s.timeMs !== Math.round(s.windowStartMs + s.logicalFrom * GRID_STEP_MS)).length,
+    );
+    const verdicts = judgePagesDrawnMidGesture(gestures, probe.drawnMs, priceSamples);
+    const eligible = verdicts.filter((v) => v.moveLeftAfterPageMs >= PAN_FRAME_CEILING_MS);
+    // `T-01.8` — "keeps changing" now also has to be reached by a PAN step. `[MEDIDO 2026-09-24,
+    // ablation "axis.startMs back in the host's mount deps", n=1 run]`: on the single host a remount
+    // per page leaves exactly 2 samples after the page — the old view, then the re-framed initial
+    // range, `3 317` slots away — so "≥ 2 distinct values" passed 12/12 by accident (with six charts
+    // the re-frame repeated one value and it did not). A drag that continues moves in pan-sized
+    // steps (`≤ 24` slots here, see `PAGE_BOUNDARY_JUMP_CEILING_SLOTS`); a re-frame does not.
+    const parked = eligible.filter((v) => v.distinctTimesAfterPage < 2 || v.panStepsAfterPage === 0);
+    fact(SPEC, "price_time_samples_n", priceSamples.length);
+    fact(SPEC, "gestures_with_page_drawn_mid_move_n", verdicts.length);
+    fact(SPEC, "gestures_with_page_drawn_mid_move_eligible_n", eligible.length);
+    fact(SPEC, "gestures_parked_after_page_n", parked.length);
+    fact(SPEC, "gesture_page_verdicts", verdicts);
+    fact(
+      SPEC,
+      "page_boundary_jump_slots",
+      verdicts.map((v) => v.boundaryJumpSlots),
+    );
+    expect(
+      eligible.length,
+      `nenhum gesto teve página desenhada com >= ${PAN_FRAME_CEILING_MS} ms de movimento pela frente ` +
+        `(${verdicts.length} com página no meio do gesto) — a asserção abaixo ficaria vazia`,
+    ).toBeGreaterThan(0);
+    // `T-01.8`: soft, so the boundary verdict below is also reported when this one fails.
+    expect
+      .soft(
+        parked.map((v) => v.gesture),
+        `range parado depois da página: em ${parked.length}/${eligible.length} gestos com página desenhada enquanto ` +
+          `o mouse se movia, o range do Preço (em tempo) assumiu < 2 valores distintos, ou nenhum passo do tamanho de um ` +
+          `quadro de pan, até o fim do movimento — ` +
+          `o arrasto em curso foi descartado. ${JSON.stringify(parked)}`,
+      )
+      .toEqual([]);
+
+    // ── `T-01.8`: the page boundary does not move the view (FIX §4.1 item 3, §4.3) ─────────────
+    // `T-01.F2` recorded this jump as a `fact`; here it becomes an assertion, on EVERY gesture with
+    // a page drawn mid-move (eligible or not — a jump is a jump even with little movement left).
+    const jumped = verdicts.filter(
+      (v) =>
+        (v.boundaryJumpSlots !== null && Math.abs(v.boundaryJumpSlots) > PAGE_BOUNDARY_JUMP_CEILING_SLOTS) ||
+        (v.maxPanStepAfterPageSlots !== null && v.maxPanStepAfterPageSlots > PAGE_BOUNDARY_JUMP_CEILING_SLOTS),
+    );
+    expect(
+      verdicts.filter((v) => v.boundaryJumpSlots !== null).length,
+      "nenhum gesto tem amostra antes E depois da página — o salto de fronteira ficaria sem medida",
+    ).toBeGreaterThan(0);
+    expect(
+      jumped.map((v) => v.gesture),
+      `a vista saltou na fronteira da página: em ${jumped.length}/${verdicts.length} gestos o range do Preço, em tempo, ` +
+        `andou mais de ${PAGE_BOUNDARY_JUMP_CEILING_SLOTS} slots (dois quadros de pan) entre a última amostra antes da página ` +
+        "e a primeira depois, ou entre duas amostras seguidas depois dela. " +
+        JSON.stringify(jumped),
+    ).toEqual([]);
 
     const latenciesMs = Array.from({ length: pairCount }, (_, i) => probe.drawnMs[i]! - probe.requestedMs[i]!);
     const sorted = [...latenciesMs].sort((a, b) => a - b);
@@ -643,9 +924,13 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     // `DIAG-e2e-master.md` §4, and that idle is what failed `160`. The ceiling now applies only to
     // intervals inside one gesture's `[moveStart, moveEnd]`; the old number stays as a `fact` so
     // `T-01.10` can see both on the same run.
+    //
+    // `T-01.8`: "the first 6 samples are the mount" was the six-chart count. With ONE chart and a
+    // pre-walk before the paging, the cut is the probe's length read right before the first
+    // measured drag (`axisSamplesBeforePaging`), measured on the run instead of assumed.
     const axisSamplesMs = await page.evaluate(() => window.__axisLatencyProbe?.samplesMs ?? []);
-    const MOUNT_SAMPLES = 6;
-    const pagingSamplesMs = axisSamplesMs.slice(MOUNT_SAMPLES);
+    const pagingSamplesMs = axisSamplesMs.slice(axisSamplesBeforePaging);
+    fact(SPEC, "axis_samples_before_paging_n", axisSamplesBeforePaging);
     const legacyIntervalsMs: number[] = [];
     for (let i = 1; i < pagingSamplesMs.length; i += 1) {
       legacyIntervalsMs.push(pagingSamplesMs[i]! - pagingSamplesMs[i - 1]!);
@@ -675,7 +960,8 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
       intraMs.length,
       "nenhum intervalo de eixo caiu dentro de [moveStart, moveEnd] — o corte intra-gesto ficou vazio e não mede nada",
     ).toBeGreaterThan(0);
-    // Soft, so a regression here never hides the verdict on the range assertion below.
+    // Soft, so a regression here never hides the verdict on the range assertion (`T-01.8`: that one
+    // now runs before the latency block, but the ceiling stays soft).
     expect
       .soft(
         intraMaxMs,
@@ -684,37 +970,6 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
       )
       .toBeLessThanOrEqual(PAN_FRAME_CEILING_MS);
 
-    // ── `T-01.F2`: the Price range, IN TIME, keeps moving after a page drawn mid-gesture ──────
-    // Eligible gesture: its (first) page was drawn while the mouse was still moving, with at
-    // least one pan-frame ceiling of movement left — the same `160 ms` inside which a live pan
-    // must apply a frame, so an eligible gesture that stays parked is not "too little movement
-    // left", it is a dropped drag.
-    const priceSamples = await page.evaluate(() => window.__priceTimeSamples ?? []);
-    const verdicts = judgePagesDrawnMidGesture(gestures, probe.drawnMs, priceSamples);
-    const eligible = verdicts.filter((v) => v.moveLeftAfterPageMs >= PAN_FRAME_CEILING_MS);
-    const parked = eligible.filter((v) => v.distinctTimesAfterPage < 2);
-    fact(SPEC, "price_time_samples_n", priceSamples.length);
-    fact(SPEC, "gestures_with_page_drawn_mid_move_n", verdicts.length);
-    fact(SPEC, "gestures_with_page_drawn_mid_move_eligible_n", eligible.length);
-    fact(SPEC, "gestures_parked_after_page_n", parked.length);
-    fact(SPEC, "gesture_page_verdicts", verdicts);
-    // Recorded, never asserted: `T-01.8` measures the threshold on the single-host code.
-    fact(
-      SPEC,
-      "page_boundary_jump_slots",
-      verdicts.map((v) => v.boundaryJumpSlots),
-    );
-    expect(
-      eligible.length,
-      `nenhum gesto teve página desenhada com >= ${PAN_FRAME_CEILING_MS} ms de movimento pela frente ` +
-        `(${verdicts.length} com página no meio do gesto) — a asserção abaixo ficaria vazia`,
-    ).toBeGreaterThan(0);
-    expect(
-      parked.map((v) => v.gesture),
-      `range parado depois da página: em ${parked.length}/${eligible.length} gestos com página desenhada enquanto ` +
-        `o mouse se movia, o range do Preço (em tempo) assumiu < 2 valores distintos até o fim do movimento — ` +
-        `o arrasto em curso foi descartado. ${JSON.stringify(parked)}`,
-    ).toEqual([]);
   } finally {
     if (instance !== undefined) await instance.close();
     await stub.close();

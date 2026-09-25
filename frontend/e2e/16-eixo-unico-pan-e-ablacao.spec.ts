@@ -40,8 +40,10 @@ const ABLATION_QUERY = "e2eAxisSyncDisabled=1";
 
 /** `SymbolClient.tsx`'s `CHART_HOST_TESTID` — the element the ONE chart is created in. */
 const CHART_HOST_TESTID = "symbol-chart-host";
-/** The price pane is the TOP pane of the single chart; one `CHART_HEIGHT_PX` (220) tall until
- * `T-01.6` sets the stretch factors — same constant `e2e/22` uses. The drag happens in its middle. */
+/** The price pane is the TOP pane of the single chart — same constant `e2e/22` uses. `T-01.8`
+ * (`paineis-de-fluxo`): since `T-01.6` set the stretch factors the pane is ~335px of a 910px chart
+ * (`charts::stackedPaneLayout`, weight 34 of 89), so 110px from the host's top is still inside it —
+ * no longer its middle, but the drag only needs to start in the pane. */
 const PRICE_PANE_MID_Y_PX = 110;
 
 interface HostPosition {
