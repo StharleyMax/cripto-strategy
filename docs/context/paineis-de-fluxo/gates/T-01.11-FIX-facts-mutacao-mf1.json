@@ -1,0 +1,26 @@
+{
+ "mutation": "createPanesBeforeSeries commented out",
+ "1280x1200": {
+  "modes": {
+   "price-pane": "normal",
+   "liquidation-cohort-long": "logarithmic",
+   "liquidation-cohort-short": "logarithmic",
+   "oi-pane": "logarithmic",
+   "long-short-pane": "logarithmic",
+   "cvd-pane": "logarithmic"
+  },
+  "cvd": {
+   "top": 2.1543986216226465e+36,
+   "bottom": -1.7298421975689445e+22,
+   "min": -1525.724,
+   "max": 829.795,
+   "n": 3135
+  },
+  "axisInk": {
+   "liquidation-cohort-long": 0,
+   "liquidation-cohort-short": 0,
+   "oi-pane": 149,
+   "cvd-pane": 103
+  }
+ }
+}

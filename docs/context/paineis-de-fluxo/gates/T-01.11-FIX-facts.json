@@ -1,0 +1,86 @@
+{
+ "1280x1200": {
+  "modes": {
+   "price-pane": "normal",
+   "liquidation-cohort-long": "logarithmic",
+   "liquidation-cohort-short": "logarithmic",
+   "oi-pane": "normal",
+   "long-short-pane": "normal",
+   "cvd-pane": "normal"
+  },
+  "cvd": {
+   "top": 5919.367654494382,
+   "bottom": -4622.355042134831,
+   "min": -1525.724,
+   "max": 829.795,
+   "n": 3135
+  },
+  "axisInk": {
+   "liquidation-cohort-long": 0,
+   "liquidation-cohort-short": 0,
+   "oi-pane": 138,
+   "cvd-pane": 57
+  },
+  "logoInChart": 0,
+  "footer": "https://www.tradingview.com/",
+  "chromeLeft": 8,
+  "marksKey": "▁ ausente (não sabemos) · ▃ zero do fornecedor (sabemos: foi zero)",
+  "restLegends": [
+   "price=83844",
+   "volume=6.573",
+   "liquidation_long=ausente",
+   "liquidation_short=ausente",
+   "oi=95231.417retido",
+   "long_short=1.3132",
+   "cvd_delta=delta0.423",
+   "cvd_cumulative=acumulado-13014.878"
+  ],
+  "hoverLegends": [
+   "price=ausente|SEM_PONTO",
+   "volume=ausente|SEM_PONTO",
+   "liquidation_long=ausente|SEM_PONTO",
+   "liquidation_short=ausente|SEM_PONTO",
+   "oi=ausente|SEM_PONTO",
+   "long_short=1.2341|",
+   "cvd_delta=deltaausente|SEM_PONTO",
+   "cvd_cumulative=acumuladoausente|SEM_PONTO"
+  ]
+ },
+ "1280x800": {
+  "modes": {
+   "price-pane": "normal",
+   "liquidation-cohort-long": "logarithmic",
+   "liquidation-cohort-short": "logarithmic",
+   "oi-pane": "normal",
+   "long-short-pane": "normal",
+   "cvd-pane": "normal"
+  },
+  "cvd": {
+   "top": 5919.367654494382,
+   "bottom": -4622.355042134831,
+   "min": -1525.724,
+   "max": 829.795,
+   "n": 3135
+  },
+  "axisInk": {
+   "liquidation-cohort-long": 0,
+   "liquidation-cohort-short": 0,
+   "oi-pane": 138,
+   "cvd-pane": 57
+  },
+  "logoInChart": 0,
+  "footer": "https://www.tradingview.com/",
+  "chromeLeft": 8,
+  "marksKey": "▁ ausente (não sabemos) · ▃ zero do fornecedor (sabemos: foi zero)",
+  "restLegends": [
+   "price=83844",
+   "volume=6.573",
+   "liquidation_long=ausente",
+   "liquidation_short=ausente",
+   "oi=95231.417retido",
+   "long_short=1.3132",
+   "cvd_delta=delta0.423",
+   "cvd_cumulative=acumulado-13014.878"
+  ]
+ }
+}

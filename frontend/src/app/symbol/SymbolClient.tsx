@@ -105,7 +105,14 @@ import {
   type ScaleMargins,
   type TimeAxis,
 } from "../../charts/index.ts";
-import { chartConstructorOptions, gridCarrierSeriesOptions } from "./chart-options.ts";
+import {
+  CHART_ATTRIBUTION_TESTID,
+  CHART_ATTRIBUTION_URL,
+  chartConstructorOptions,
+  gridCarrierSeriesOptions,
+} from "./chart-options.ts";
+import { createPanesBeforeSeries } from "./pane-scale-isolation.ts";
+import { unlabeledTickPriceFormat } from "./unlabeled-tick-format.ts";
 import { recentBandSlotRange } from "./long-short-band.ts";
 import { AxisSyncProvider, useAxisSync } from "./axis-sync-provider.tsx";
 import { recordHistoryPageApplied, recordHistoryPageDrawn } from "./history-page-latency-probe.ts";
@@ -120,9 +127,11 @@ import {
 import { SINGLE_CHART_PANEL_INDEX } from "./axis-sync.ts";
 import { F1_PANE_ORDER, F1_PANE_STRETCH, type PaneId, type PaneLegendSpec } from "./pane-registry.ts";
 import {
+  ABSENCE_MICROCOPY,
   createCrosshairSlotStore,
   crosshairMoveHandler,
   formatLegendReading,
+  LEGEND_GRID_ABSENCE,
   LEGEND_MARK_TEXT,
   legendMarkWidthCh,
   legendNumeralWidthCh,
@@ -780,16 +789,29 @@ const PANE_LAYER_CLASS =
  * descendant, whatever class the reused readout carries. */
 function PaneLegend({ children }: { readonly children: ReactNode }) {
   return (
-    <div data-pane-legend="" className="flex flex-col items-start gap-0.5 px-2 pt-1 text-xs [&_*]:text-xs">
+    // `[&>*]:max-w-full` (`T-01.11-FIX`, `SF-2`): a wrapper between the legend and its lines (the
+    // liquidation header's `<section>`) would otherwise size to its nowrap content, and the lines'
+    // own `max-w-full` would be relative to THAT — the ellipsis would never trigger.
+    <div data-pane-legend="" className="flex flex-col items-start gap-0.5 px-2 pt-1 text-xs [&_*]:text-xs [&>*]:max-w-full">
       {children}
     </div>
   );
 }
 
 /** One line of a legend: `nowrap`, clipped by the layer at the axis (`DESIGN-LAYOUT.md` §6: a line
- * that does not fit loses its tail, never its font size). */
+ * that does not fit loses its tail, never its font size).
+ *
+ * `T-01.11-FIX` (`SF-2`): the tail is lost WITH an ellipsis. At 1280px the volume note, the
+ * third-party warning of the liquidation pane and the long/short stamp were cut mid-word at the axis
+ * with nothing saying so. The LAST item of the line is the one allowed to shrink (`min-w-0`) and it
+ * truncates with `…`; the full text stays in the DOM, so a screen reader still reads all of it. The
+ * line stays ONE line, so the legend's measured height — and the scale reserve under it — is unchanged. */
 function PaneLegendLine({ children }: { readonly children: ReactNode }) {
-  return <div className="flex max-w-full flex-nowrap items-baseline gap-x-3 whitespace-nowrap">{children}</div>;
+  return (
+    <div className="flex max-w-full flex-nowrap items-baseline gap-x-3 whitespace-nowrap [&>*:last-child]:min-w-0 [&>*:last-child]:truncate">
+      {children}
+    </div>
+  );
 }
 
 /** The part of a pane's chrome that is NOT drawn over the canvas: still in the accessibility tree
@@ -870,7 +892,10 @@ function LegendValue({
   const store = useContext(CrosshairSlotContext) ?? NO_CROSSHAIR_STORE;
   const logical = useSyncExternalStore(store.subscribe, store.getSnapshot, noCrosshairSnapshot);
   const legend = frame.legends[seriesId];
-  const numeralWidthCh = useMemo(() => legendNumeralWidthCh(slots, ABSENCE_TOKEN), [slots]);
+  // `T-01.11-FIX` (`MF-3`): the painted numeral of an absent slot is the pt-BR word, not the enum;
+  // the enum stays machine-readable in `data-legend-absence`.
+  const absenceText = ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE];
+  const numeralWidthCh = useMemo(() => legendNumeralWidthCh(slots, absenceText), [slots, absenceText]);
   const reading =
     legend === null
       ? null
@@ -884,7 +909,8 @@ function LegendValue({
         });
   // No resolved entry ⇒ no series ⇒ nothing to read: the token, never a number.
   const text =
-    reading === null ? { numeral: ABSENCE_TOKEN, mark: "none" as const, rawValue: null } : formatLegendReading(reading, ABSENCE_TOKEN);
+    reading === null ? { numeral: absenceText, mark: "none" as const, rawValue: null } : formatLegendReading(reading, absenceText);
+  const isAbsent = text.rawValue === null;
   const markWidthCh = legend === null ? 0 : legendMarkWidthCh(legend.readingPolicy);
   return (
     <span
@@ -894,13 +920,14 @@ function LegendValue({
       data-legend-slot-index={reading?.slotIndex ?? ""}
       data-legend-bucket-ms={reading?.bucketStartMs ?? ""}
       data-legend-raw={text.rawValue ?? ""}
+      data-legend-absence={isAbsent ? LEGEND_GRID_ABSENCE : ""}
       className="inline-flex items-baseline gap-x-1"
     >
       {prefix === undefined ? null : <span className="text-provenance-weak">{prefix}</span>}
       <span
         data-legend-numeral=""
         style={{ width: `${numeralWidthCh}ch` }}
-        className="inline-block text-right font-data-sm tabular-nums text-on-surface"
+        className={`inline-block text-right font-data-sm tabular-nums ${isAbsent ? "text-provenance-weak" : "text-on-surface"}`}
       >
         {text.numeral}
       </span>
@@ -1012,6 +1039,10 @@ function SymbolChartHost({
     // BEFORE any pane's series: the host owns the grid, and the pane series carry plot items only.
     // Its options are `chart-options.ts`'s (`DR-1`), and it draws nothing.
     const carrier: HostSeries = chart.addSeries(LineSeries, gridCarrierSeriesOptions(), GRID_CARRIER_PANE_INDEX);
+    // `T-01.11-FIX` (`MF-1`) — every pane exists BEFORE any pane mounts, so no pane's `right` scale is
+    // built from the chart template a sibling's `applyOptions` wrote into (`pane-scale-isolation.ts`:
+    // the liquidation panes' logarithmic mode used to reach OI, long/short and CVD this way).
+    createPanesBeforeSeries(chart, PANE_STACK.stretchFactors.length);
     const search = window.location.search;
     const dense = isDenseSeriesAblationRequested(search);
     const busyMs = requestedPageApplyBusyMs(search);
@@ -1180,6 +1211,10 @@ function SymbolChartHost({
           root.dataset.legendBottomPx = legendBottom === null ? "" : String(Math.round(legendBottom * 100) / 100);
           root.dataset.reservedScaleTopPx = reservedTopPx === null ? "" : String(Math.round(reservedTopPx * 100) / 100);
           root.dataset.legendReserve = reserveKind;
+          // `T-01.11-FIX` (`MF-1`) — the mode of the pane's `right` scale, READ BACK from the
+          // library: a pane that inherits a sibling's logarithmic mode shows here, not only in pixels.
+          root.dataset.rightScaleMode =
+            state.chart.priceScale("right", paneIndex).options().mode === PriceScaleMode.Logarithmic ? "logarithmic" : "normal";
         }
       }
     };
@@ -2463,6 +2498,24 @@ function LiquidationMarksLegend() {
   );
 }
 
+/** `T-01.11-FIX` (`SF-4` of `gates/T-01.11-design-review.md`) — the VISIBLE key of the two base
+ * marks. Since `T-01.6` the full `LiquidationMarksLegend` lives in `PaneDetails` (`sr-only`): the
+ * screen reader kept it, the eye lost it, and the two marks stayed drawn with nothing on screen to
+ * decode them. This is the short form, drawn in the legend of the LOWER leg (the upper one already
+ * carries the pane's two shared lines). `aria-hidden` because it is the redundant copy of the full
+ * legend, which a screen reader already reads; the ink is `colorTokens()`'s, the same call the marks
+ * are drawn with. `ausente` is the word the legend numeral uses for the same state (`MF-3`).
+ * ⚠️ FORM — wording and placement submitted to the revalidation of `T-01.11`. */
+function LiquidationMarksKey() {
+  const tokens = colorTokens();
+  return (
+    <p aria-hidden="true" data-liquidation-marks-key="" className="text-provenance-weak">
+      <span style={{ color: tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE] }}>▁</span> ausente (não sabemos) ·{" "}
+      <span style={{ color: tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE] }}>▃</span> zero do fornecedor (sabemos: foi zero)
+    </p>
+  );
+}
+
 /** The readable horizon of ONE cohort — the same two numbers and one instant the other panes
  * declare, plus the fraction only this series needs: how many of the observations are a LEGITIMATE
  * ZERO.
@@ -2514,6 +2567,7 @@ function LiquidationCohortSurface({
   status,
   paneId,
   header = null,
+  footer = null,
 }: {
   readonly cohort: string;
   readonly label: string;
@@ -2528,6 +2582,9 @@ function LiquidationCohortSurface({
   /** `T-01.6`: the lines the two legs SHARE (the pane title, the `RS-5` third-party label, the
    * log10 declaration) — drawn once, in the upper leg's legend, until phase `04` fuses the legs. */
   readonly header?: ReactNode;
+  /** `T-01.11-FIX` (`SF-4`): one more legend line under the leg's own, for what the legs share and
+   * the upper leg has no room for — the visible key of the base marks, on the lower leg. */
+  readonly footer?: ReactNode;
 }) {
   useHostedPane(paneId, {
     mount: (chart, paneIndex) => {
@@ -2537,6 +2594,9 @@ function LiquidationCohortSurface({
         base: LIQUIDATION_LOG_BASE,
         priceLineVisible: false,
         lastValueVisible: false,
+        // `T-01.11-FIX` (`MF-2`): the log scale compressed under the legend labels its reserve with
+        // values ~10 decades past the data — no tick label at all (`unlabeled-tick-format.ts`).
+        priceFormat: unlabeledTickPriceFormat(),
       };
       const barSeries: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, barStyle, paneIndex);
       barSeries.priceScale().applyOptions({
@@ -2610,6 +2670,7 @@ function LiquidationCohortSurface({
         <h3 className="font-label-caps text-label-caps text-on-surface">{label}</h3>
         <LegendValue seriesId={paneId} factKey={`liquidation_${cohort}`} slots={data.slots} />
       </PaneLegendLine>
+      {footer === null ? null : <PaneLegendLine>{footer}</PaneLegendLine>}
       <PartialCoverageMark factKey={`liquidation_partial_coverage:${cohort}`} summary={data.partialCoverage} />
       <AbsenceNote status={status} />
       <PaneDetails>
@@ -2700,6 +2761,7 @@ function LiquidationPane({
         unit={liquidation.unit}
         status={shortStatus}
         paneId="liquidation_short"
+        footer={<LiquidationMarksKey />}
       />
     </>
   );
@@ -3332,12 +3394,18 @@ function LongShortPane({
  * `data-mode-reference-ms` is the same instant the ages use, so an assertion can check the stamp
  * and the ages point at one T. ⚠️ Wording and placement are FORM, submitted with `T-01.11`.
  */
+/** `T-01.11-FIX` (`SF-5`) — the left gutter of the page's text blocks outside the chart (the chrome
+ * stamp, "Ao vivo", the footer), which started at x=0. `px-2` = 8px, the same inset the pane legends
+ * have inside the plot area (`PaneLegend`), so every left text edge lines up. The chart itself keeps
+ * its full width: its geometry is `ADR-044`'s, not this gutter's. */
+const PAGE_GUTTER_CLASS = "px-2";
+
 function ChromeModeStamp({ referenceMs }: { readonly referenceMs: number }) {
   return (
     <p
       data-fact="chrome_mode:as_of"
       data-mode-reference-ms={referenceMs}
-      className="text-xs text-provenance-weak"
+      className={`${PAGE_GUTTER_CLASS} text-xs text-provenance-weak`}
     >
       <strong className="font-bold text-on-surface">COMO EM T</strong> · T = {formatUtcMinute(referenceMs)} · as
       idades de cada painel contam contra T, não contra o relógio
@@ -3727,7 +3795,7 @@ export function SymbolClient({
         </SymbolChartHost>
       </AxisSyncProvider>
       </LegendFrameContext.Provider>
-      <section aria-label="Ao vivo">
+      <section aria-label="Ao vivo" className={PAGE_GUTTER_CLASS}>
         <h2 className="font-label-caps text-label-caps text-on-surface">Ao vivo</h2>
         <ul>
           <LiveRow label="preço" factKey="price" url={liveUrls.price} />
@@ -3735,6 +3803,14 @@ export function SymbolClient({
           <LiveRow label="cvd" factKey="cvd" url={liveUrls.cvd} />
         </ul>
       </section>
+      {/* `T-01.11-FIX` (`SF-1`): the library's attribution, as a link in the footer instead of the
+          logo over the CVD pane (`chart-options.ts` turns the logo off). */}
+      <footer data-testid={CHART_ATTRIBUTION_TESTID} className={`${PAGE_GUTTER_CLASS} mt-2 text-xs text-provenance-weak`}>
+        Gráficos:{" "}
+        <a href={CHART_ATTRIBUTION_URL} target="_blank" rel="noopener noreferrer" className="underline">
+          TradingView Lightweight Charts
+        </a>
+      </footer>
     </main>
   );
 }

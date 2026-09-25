@@ -18,7 +18,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { chartSurfaceTheme, colorTokens, contrastRatio } from "../../charts/index.ts";
-import { chartConstructorOptions } from "./chart-options.ts";
+import { CHART_ATTRIBUTION_TESTID, CHART_ATTRIBUTION_URL, chartConstructorOptions } from "./chart-options.ts";
 
 /** The library's own default for `layout.panes.separatorColor`, read from the installed bundle. */
 function librarySeparatorDefault(): string {
@@ -59,4 +59,17 @@ test("MORDE: options WITHOUT the panes override would render the library default
   // The same equality the first test makes, run on the mutant, must fail.
   assert.throws(() => assert.equal(effective, colorTokens().provenanceWeak));
   assert.equal(librarySeparatorDefault(), "#E0E3EB");
+});
+
+// ── `T-01.11-FIX` (`SF-1`): the logo is off ONLY because the attribution moved to the footer ──────
+
+test("SF-1: the logo is off, and the page renders the attribution link that replaces it", () => {
+  assert.equal(chartConstructorOptions(1280, 910).layout?.attributionLogo, false);
+  const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx"), "utf8");
+  // The two go together: dropping the footer while the logo stays off reddens here.
+  const footer = /<footer data-testid=\{CHART_ATTRIBUTION_TESTID\}[\s\S]*?<\/footer>/.exec(source);
+  assert.ok(footer !== null, "SymbolClient.tsx renders no attribution footer — the logo cannot be off without it");
+  assert.match(footer[0], /<a href=\{CHART_ATTRIBUTION_URL\}/);
+  assert.equal(CHART_ATTRIBUTION_TESTID, "chart-attribution");
+  assert.match(CHART_ATTRIBUTION_URL, /^https:\/\/www\.tradingview\.com\//);
 });
