@@ -172,7 +172,8 @@ const PAGE_SLOTS = 500;
 /** Comfortably above `PAGE_SLOTS` so a single drag both closes the ~500-slot gap a landed page
  * leaves AND crosses `time-axis-controller.ts::DEFAULT_PAGE_TRIGGER_SLOTS` (20) into the trigger
  * zone, with margin for the small amount of panning consumed before the FIRST page of a session
- * ever landed (mount already sits at the edge — see this file's own docstring). */
+ * ever landed. Since `T-01.5` the mount no longer sits at the edge (the library clamps the initial
+ * range at `minBarSpacing`); `walkToLeftEdge` walks there before the counted drags start. */
 const TARGET_SHIFT_SLOTS = PAGE_SLOTS + 140;
 
 const ONE_MINUTE_MS = 60_000;
@@ -439,6 +440,7 @@ async function driveSequentialDrags(page: Page, count: number): Promise<GestureW
     const pxPerSlot = box.width / (before.to - before.from);
     const deltaXPx = Math.max(10, pxPerSlot * TARGET_SHIFT_SLOTS);
     fact(SPEC, `drag_delta_px:${i}`, Number(deltaXPx.toFixed(2)));
+    fact(SPEC, `drag_logical_from_before:${i}`, Number(before.from.toFixed(2)));
 
     const counts = await probeCounts(page);
     gestures.push(await dragRight(page, deltaXPx));
@@ -740,6 +742,10 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
         "17-teto-latencia-eixo.spec.ts (a biblioteca exige ao menos um valor real para o pan " +
         "por mouse) não satisfeito",
     ).toBeGreaterThan(0);
+
+    // Pre-roll: where the mount frames the view, BEFORE the pre-walk below moves it (the wave's
+    // `b809756` fact, kept; the walk itself is `walkToLeftEdge`, which also guards against paging).
+    fact(SPEC, "preroll_logical_from_at_mount", Number((await readPriceRange(page)).from.toFixed(2)));
 
     // `reset()` ANTES do primeiro arrasto — `history-page-latency-probe.ts`'s próprio docstring:
     // "a caller that wants only page-triggered pairs calls `reset()` once the initial paint has
