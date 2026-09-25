@@ -11,8 +11,10 @@
 # `[MEDIDO 2026-09-23, n=30, BTCUSDT: atraso de time em relacao ao pedido min 0,5 s · mediana
 # 4,4 s · max 7,6 s]` (`SPEC-009` §6.1), and the capture this task's test replays shows it again
 # (`time = 1790287793703` for a request sent at `1790287796821`: the reading is 3.1 s OLDER than
-# the request). Stamped with the request instant, a reading Binance took at `T - 1 s` would be
-# admitted into minute `T` by the `[T, T + 20 s]` window of `T-03.2`. That is why
+# the request). Stamped with the request instant, a reading would claim to be 0,5 s to 7,6 s
+# fresher than it is, and the `[T - 20 s, T]` window of `T-03.2` would place it on the wrong
+# minute — a reading Binance took at `T - 1 s`, requested at `T + 2 s`, would go to `T + 1 min`
+# instead of `T`. That is why
 # `parse_open_interest_snapshot` takes no clock and no request instant at all: there is no
 # argument through which the wrong instant could enter.
 #

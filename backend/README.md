@@ -3793,6 +3793,32 @@ enviado em `1790287796821` — **a leitura é 3,1 s mais velha que o pedido** `[
 
 Relatório e mutações: [`gates/T-03.1-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.1-build.md).
 
+## 📎 2026-09-24 por `T-03.2` — carimbo do OI na grade de 1 min: `[T − 20 s, T]` ou **ausente**
+
+Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1, `RN-2`, `[Q-STAMP-1]`, plano `03` item 3a.2).
+Segunda peça do coletor de OI por polling (`O-4`). Função pura: **não** agenda a chamada (`T-03.4`),
+**não** cataloga (`T-03.3`), **não** escreve em `md.series`.
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/open_interest_grid_stamp.py` | `domain` | `admitted_grid_instant(event_time_ms)` devolve o `T` (**teto** na grade de 60 000 ms: o instante de grade **no ou depois** do `time`, nunca o piso nem o mais próximo) cuja janela **fechada** `[T − 20 000 ms, T]` contém o `time` da Binance, ou `None` = minuto **ausente**. `stamp_open_interest_readings(readings)` separa as leituras em três destinos que somam a entrada: `admitted` (a leitura de **maior `time`** em janela de cada `(symbol, T)`; empate de `time` ⇒ a primeira fica), `out_of_window` e `superseded`. `StampedOpenInterest` **recusa existir** se o próprio `event_time_ms` não cair na própria janela — nem valor carregado de minuto anterior, nem leitura posterior a `T` são representáveis |
+
+**Propriedade anti-lookahead**, e ela é um teste: toda linha admitida tem
+`0 ≤ grid_instant_ms − event_time_ms ≤ 20 000` — o valor em `T` é o OI **até** `T` (defasagem), nunca depois
+dele (`POINT_AT_BUCKET_END`, `series_key.py:107-108`). **Ausente é ausência de linha** (`RN-2`): nenhum minuto é
+preenchido pelo vizinho. As duas capturas reais de `T-03.1` (`time` a 53,7 s e 51,0 s do minuto) são admitidas no
+minuto **seguinte**, com defasagem de **6 297 ms** e **8 965 ms**. `T-03.4` chama em `T − 5 s`, agendado pelo relógio
+de parede e carimbado pelo `time` da resposta.
+
+> ⚠️ **CORREÇÃO, 2026-09-25.** A primeira versão desta seção (commit `67d8c0e`) publicava a janela `[T, T + 20 s]`
+> com **piso** e a regra *"a primeira chamada vence"*, fiel à frase de `SPEC-009` §6.1. O `quant-architect`
+> reprovou (`NEEDS_FIX`): com o piso, **toda** linha admitida carregava 0–20 s de **lookahead**. Laudo:
+> [`handoff/Q-STAMP-1-quant-architect.md`](../docs/context/paineis-de-fluxo/handoff/Q-STAMP-1-quant-architect.md).
+> A emenda da frase de `SPEC-009` §6.1 vai **por exceção** ao owner (orquestrador ou `/architect`); o código já
+> segue a regra corrigida.
+
+Relatório e mutações: [`gates/T-03.2-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.2-build.md).
+
 ## 📎 2026-09-24 por `T-03.3` — catálogo: 4 entradas `binance·open_interest·1m·POINT`, uma por símbolo
 
 Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1/§6.7, plano `03` item 3a.3, `D-a`/`D-b`). Registra
