@@ -3867,3 +3867,28 @@ parcela passar de 4/min (`DoD-2`), e um minuto perdido vira **ausência**, nunca
 **Para `T-03.5` (`infra`):** o nome da variável é `OPEN_INTEREST_POLL_CYCLE_INTERVAL_S`; o código já a lê.
 
 Relatório, mutações e comandos: [`gates/T-03.4-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.4-build.md).
+
+## 📎 2026-09-25 por `T-03.6` — DoD de captura da `03a` numa stack **própria**: `0 → > 0`, cota pelo header, ausente não é carregado
+
+Feature `paineis-de-fluxo`, trilha `03a` (plano `03`, `DoD-03a` itens 1-contagem, 2 e 4; `DoD-1`, `RN-2`, `D-g`).
+**Não é teste e não entra em `make verify`**: gasta cota real da Binance (peso 1 × 4 chamadas/min).
+
+    bash scripts/oi-poll-capture-bench.sh <out_dir>      # ~10 min; BENCH_BEFORE_S / BENCH_STOPPED_S / BENCH_AFTER_S
+
+| peça | o que é |
+|---|---|
+| `scripts/oi-poll-capture-bench.sh` | sobe Postgres (timescale) + Redis **descartáveis** em loopback/porta aleatória, roda o `single_writer_cli` de produção e o laço do coletor de OI sozinho, para o coletor por 150 s, religa, audita, **planta um carry-forward no Postgres do bench e exige que a 2ª auditoria reprove**; destrói a stack no `trap` |
+| `infra/open_interest_poll_capture_bench_cli.py` | `collect` (o **mesmo** `collectors_cli._run_open_interest_poll_collector` do thread de produção, sem os outros 6 threads, que gastariam cota no mesmo IP e sujariam o header) · `counts` · `audit` |
+
+**Guarda de `D-g`:** `POSTGRES_DB` **e** `REDIS_STREAM` têm de começar com `oi_capture_bench`, e
+`INGEST_RECORD_BACKEND=postgres` — senão `rc=2` antes de abrir socket. O stream também é guardado porque uma linha no
+stream compartilhado seria escrita no Postgres compartilhado pelo writer compartilhado.
+
+**Como cada item é julgado:** (1) as 4 `series_key_id` de `binance_open_interest_poll_key` com `> 0` linhas cada **e**
+`Σ n_written > 0` nos runs do endpoint; (2) por minuto de relógio, `≤ 4` chamadas **e** `max − min + 1` do
+`x-mbx-used-weight-1m` das NOSSAS chamadas `≤ 4` (o header é por IP: uma chamada alheia no meio só alarga o vão, então
+é cota superior); sem header nenhum = `INCONCLUSIVE`; (4) nenhuma linha em `T` com
+`parada + 20 s + 10 s < T < religada − 10 s` (margem de 10 s = envelope de `lag_ms` de `Q-STAMP-1` §3), e é
+`INCONCLUSIVE` se não houver minuto ausente esperado ou se algum símbolo não tiver linha dos dois lados da parada.
+
+Relatório, números e mutações: [`gates/T-03.6-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.6-build.md).
