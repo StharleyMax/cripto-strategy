@@ -36,6 +36,10 @@ from src.modules.sentimento.domain.klines_ohlc_catalog import (
     KLINES_OHLC_REDUCTIONS,
     build_klines_ohlc_key,
 )
+from src.modules.sentimento.domain.open_interest_catalog import (
+    OPEN_INTEREST_POLL_METRIC,
+    binance_open_interest_poll_key,
+)
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog, SeriesCatalogEntry
 from src.modules.sentimento.domain.series_key import (
     Nature,
@@ -137,7 +141,7 @@ def _key_from_wire(wire: dict[str, Any]) -> SeriesKey:
 def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_up(
     tmp_path: Path,
 ) -> None:
-    """CALA: process up -> `200`, `n_entries == len(entries) == 76` — the REAL total.
+    """CALA: process up -> `200`, `n_entries == len(entries) == 80` — the REAL total.
 
     `store_path` here is `/ingest-health`'s dependency, irrelevant to this route (`0` SQL in the
     handler, `D5.13c`'s sibling restriction) — a fresh, uninitialised store still serves this
@@ -146,8 +150,9 @@ def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_
     Was `10` until `T-01.6` registered `klines_volume`, then `11`, then `11 x 4 = 44` when the
     pilot universe landed, `13 x 4 = 52` after `T-02.4`/`T-04.4`, `15 x 4 = 60` after `T-05.8`
     registered BOTH `sum_liquidation` cohorts (`SPEC-007` §4.5, row M4 — two rows per
-    instrument, because their sum would erase which leg was flushed), and is now `19 x 4 = 76`
-    after `T-01.6` of `SPEC-008` registered the four `klines_ohlc` rows (`RF-2`):
+    instrument, because their sum would erase which leg was flushed), `19 x 4 = 76` after
+    `T-01.6` of `SPEC-008` registered the four `klines_ohlc` rows (`RF-2`), and is now
+    `20 x 4 = 80` after `T-03.3` of `SPEC-009` appended the polled open-interest row:
     `create_app` wires `list_pilot_series_catalog()`, covering the four instruments the
     collector actually writes `md.series` rows for. Serving one of them was the finding — the
     other three answered `422 UnknownSeriesKeyIdError` with their rows already on disk
@@ -171,30 +176,33 @@ def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_
     assert status == 200
     assert set(body) == {"query", "n_entries", "entries"}
     assert body["query"] == "series_catalog"
-    assert body["n_entries"] == 76
+    assert body["n_entries"] == 80
     entries = body["entries"]
     assert isinstance(entries, list)
-    assert len(entries) == 76
+    assert len(entries) == 80
 
     served_metrics = [e["key"]["metric"] for e in entries]
     assert served_metrics.count("klines_volume") == 4
     # `T-02.4` appends the klines-borne `cvd_source` row AFTER `klines_volume`, so within each
-    # instrument's block of NINETEEN the volume row is at offset 10, the CVD row at 11, the
+    # instrument's block of TWENTY the volume row is at offset 10, the CVD row at 11, the
     # long/short row at 12, the two `sum_liquidation` cohorts at 13 (`long`) and 14 (`short`)
-    # — `T-05.8` — and the four `klines_ohlc` readings at 15..18 (`T-01.6` of `SPEC-008`).
+    # — `T-05.8` — the four `klines_ohlc` readings at 15..18 (`T-01.6` of `SPEC-008`) and the
+    # polled open-interest row at 19 (`T-03.3` of `SPEC-009`).
     # Asserting the OFFSETS, not only the counts, is what makes a reordering fail here.
     assert served_metrics[10] == "klines_volume"
     assert served_metrics[11] == "cvd_source"
     assert served_metrics[12] == "count_long_short_ratio"
     assert served_metrics[13] == served_metrics[14] == "sum_liquidation"
-    # The TAIL is now `klines_ohlc`'s `CLOSE` — `T-01.6` of `SPEC-008` appended four rows
-    # after the two liquidation cohorts, so the last row of the last instrument's block is the
-    # fourth candle reading and no longer `sum_liquidation`.
-    assert served_metrics[-1] == KLINES_OHLC_METRIC
-    assert entries[-1]["key"]["reduction"] == KLINES_OHLC_REDUCTIONS[-1].value
+    # The TAIL is now the polled open-interest row — `T-03.3` of `SPEC-009` appended it after
+    # the four `klines_ohlc` readings, which therefore sit at offsets 15..18, CLOSE last.
+    assert served_metrics[-1] == OPEN_INTEREST_POLL_METRIC
+    assert served_metrics[-2] == KLINES_OHLC_METRIC
+    assert entries[-2]["key"]["reduction"] == KLINES_OHLC_REDUCTIONS[-1].value
+    poll_offsets = [i % 20 for i, m in enumerate(served_metrics) if m == OPEN_INTEREST_POLL_METRIC]
+    assert poll_offsets == [19] * 4
     assert served_metrics.count("count_long_short_ratio") == 4
     assert served_metrics.count("sum_liquidation") == 8
-    assert [index % 19 for index, m in enumerate(served_metrics) if m == "klines_volume"] == [
+    assert [index % 20 for index, m in enumerate(served_metrics) if m == "klines_volume"] == [
         10,
         10,
         10,
@@ -205,7 +213,7 @@ def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_
     # what makes a permutation bite — all four carry the same `metric`, so a metric-only
     # assertion would stay green while `HIGH` and `LOW` swapped places on the wire.
     assert served_metrics[15:19] == [KLINES_OHLC_METRIC] * 4
-    assert [index % 19 for index, m in enumerate(served_metrics) if m == KLINES_OHLC_METRIC] == [
+    assert [index % 20 for index, m in enumerate(served_metrics) if m == KLINES_OHLC_METRIC] == [
         15,
         16,
         17,
@@ -227,7 +235,7 @@ def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_
 
     served_instruments = [e["key"]["instrumentId"] for e in entries]
     assert set(served_instruments) == {"BTCUSDT", "ETHUSDT", "LINKUSDT", "SOLUSDT"}
-    assert set(served_instruments[:19]) == {"BTCUSDT"}
+    assert set(served_instruments[:20]) == {"BTCUSDT"}
 
     # A1 at the wire: a `denom="base"` row carries the INSTRUMENT's base asset, so the served
     # `ETHUSDT` volume is `ETH` and never the `"BTC"` the old module-level literal published.
@@ -267,6 +275,50 @@ def test_get_series_catalog_serves_the_whole_pilot_universe_when_the_process_is_
     }
     assert "completeness" not in body
     assert "completeness" not in entry
+
+
+def test_get_series_catalog_serves_the_four_polled_open_interest_rows_with_the_complete_key(
+    tmp_path: Path,
+) -> None:
+    """`T-03.3` of `SPEC-009`: "Servidas por /api/v1/series-catalog" — measured on the WIRE.
+
+    Same discipline as the `klines_ohlc` test below: rebuild the `SeriesKey` from the fifteen
+    terms the ROUTE published and demand the `series_key_id` of `binance_open_interest_poll_key`
+    — the builder the collector (`T-03.4`) writes through. A wrong `unit`, `interval` or
+    `verifiedBy` on the wire moves the `sha256` and fails here, where a `metric` comparison
+    would stay green for a series nothing will ever write.
+
+    Measured before this task, at `d58aa31`: `n_entries=76`, `open_interest` rows = 0
+    (the count test of this suite asserted `76` at that SHA).
+    """
+    store_path = tmp_path / "ih.sqlite3"
+
+    with _served(create_app(store_path=store_path)) as port:
+        status, body = _get_series_catalog(port)
+
+    assert status == 200
+    entries = body["entries"]
+    assert isinstance(entries, list)
+    polled = [e for e in entries if e["key"]["metric"] == OPEN_INTEREST_POLL_METRIC]
+
+    assert len(polled) == 4
+    served_by_instrument: dict[str, tuple[str, str]] = {}
+    for entry in polled:
+        wire_key = entry["key"]
+        assert set(wire_key) == _SERIES_KEY_WIRE_FIELDS
+        rebuilt = _key_from_wire(wire_key)
+        expected = binance_open_interest_poll_key(instrument_id=rebuilt.instrument_id)
+        assert rebuilt.series_key_id() == expected.series_key_id()
+        assert entry["nativeGrid"] == "1min"
+        assert entry["maxStalenessMs"] == 120_000
+        served_by_instrument[rebuilt.instrument_id] = (wire_key["unit"], wire_key["denom"])
+
+    assert served_by_instrument == {
+        "BTCUSDT": ("BTC", "base"),
+        "ETHUSDT": ("ETH", "base"),
+        "LINKUSDT": ("LINK", "base"),
+        "SOLUSDT": ("SOL", "base"),
+    }
 
 
 def test_get_series_catalog_serves_the_four_klines_ohlc_rows_with_the_complete_key(

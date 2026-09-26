@@ -1,0 +1,27 @@
+
+Com base nesse contexto, revise SOMENTE a tela "S2 Símbolo — Painel Multi-Série (7 Panes)" e corrija os defeitos abaixo, medidos por um revisor independente. Nao altere arquitetura de navegacao, design system nem escopo. A estrutura aprovada fica: chrome, rail, 7 panes empilhados num unico grafico, velas/barras em SVG com vazado (fill #131722 + stroke de direcao) / cheio (fill de direcao) / cruz, liquidacoes para cima e para baixo em tinta neutra, crosshair vertical em 08:45 atravessando tudo, UM eixo de tempo, rodape. REESCREVA O ARQUIVO DA TELA por completo, em vez de emitir operacoes pontuais de DOM.
+
+JANELA UNICA (corrige denominadores incoerentes e ausencia silenciosa):
+  - A janela carregada e visivel e de 24h em 15m: 96 buckets, 96 velas de preco desenhadas, eixo de tempo 00:00 04:00 08:00 12:00 16:00 20:00. Todo pane desenha UMA marca em TODO bucket da janela, ate a borda direita. Nenhum pane rareia na metade direita.
+  - Unica ausencia da tela: 1 bucket de OI (vao sem vela + losango vazado violeta no plot). Nao ha outra.
+  - Denominadores, todos da MESMA janela de 24h, cada um no grid nativo da serie:
+      PREÇO 96/96 · VOLUME 96/96 · LIQUIDAÇÕES 76/1440 · 1364 ausentes · OPEN INTEREST 287/288 · 1 lacuna · LONG/SHORT 288/288 · FUNDING 3/3 · CVD DELTA 96/96 · CVD ACUMULADO 96/96.
+
+SELO DE 4 CAMPOS EM TODO PANE (serie · idade · procedencia · completude), UMA linha por pane, white-space: nowrap, texto 12px (nunca 10 ou 11px), nome do pane em MAIUSCULO tinta forte, resto tinta fraca, valores tinta forte mono. A IDADE e POR SERIE, alinhada a DIREITA do proprio pane, na linha do selo:
+  1. PREÇO · candles 15m · klines_last · fonte bn-dump · uso: structure_detection · O 64980.50 H 65120.00 L 64850.00 C 65040.25 · OBSERVADO · 96/96          | direita: idade 42s
+     segunda linha: VOLUME · klines 15m · BTC · 812.44 · OBSERVADO · 96/96                                                                               | direita: idade 42s
+     A faixa de volume ocupa so ~13% da altura do pane de preco (hoje ocupa ~23%).
+  2. LIQUIDAÇÕES · 1m→15m · BTC · coinalyze · short liquidado (acima) 30258 · long liquidado (abaixo) 0 (USD) · OBSERVADO · 76/1440 · 1364 ausentes · ◇ QUARENTENA   | direita: ◇ idade ?
+     Eixo direito deste pane: "40000" no topo, "0" na base, "40000" embaixo. SEM sinal, SEM sufixo k. Nada de ▲ ▼.
+  3. OPEN INTEREST · OHLC 5m→15m · BTC · coinalyze · O 27588 H 27681 L 27515 C 27622 (USD mi) · OBSERVADO · 287/288 · 1 lacuna · ◇ QUARENTENA   | direita: ◇ idade ?
+     segunda linha, tinta fraca: vazado = entrada líquida de contratos · cheio = saída líquida de contratos
+     "287/288 · 1 lacuna" e numeral de completude: TINTA NEUTRA, sem caixa, sem borda, sem violeta. O violeta existe SO no traco dos losangos vazados (◇ QUARENTENA, ◇ idade ?, e o losango no vao do plot).
+  4. LONG/SHORT · razão top traders · 5m · BTC · bn-dump · 2.096 · OBSERVADO · 288/288   | direita: idade 3m10s
+  5. FUNDING · taxa 8h · BTC · bn-dump · +0.0042% · OBSERVADO · 3/3   | direita: idade 5h30m
+  6. CVD DELTA · bucket 15m · BTC · DERIVADO (2*taker_buy - volume) · +312.40 · 96/96   | direita: idade 42s
+  7. CVD ACUMULADO · âncora 00:00Z · BTC · DERIVADO · +9311.00 · 96/96   | direita: idade 42s
+  As series coinalyze estao em QUARENTENA e o atraso do endpoint delas NAO foi medido: por isso "◇ idade ?" (canal de integridade), e nao um numero.
+
+FRONTEIRA ENTRE PANES: o separador horizontal continua 1px #222634 na area de plot, mas NA COLUNA DO EIXO DIREITO ele passa a 1px #8b949e, para que cada rotulo de eixo pertenca inequivocamente ao seu pane. Deixe pelo menos 8px livres entre o ultimo rotulo de eixo de um pane e o primeiro do pane seguinte. Nao crie superficie nova.
+
+VERIFIQUE ANTES DE RESPONDER: 7 carimbos de idade (5 numericos + 2 "idade ?"), 2 "QUARENTENA", nenhum texto abaixo de 12px, nenhuma legenda quebrando linha, nenhuma caixa com borda violeta, nenhum "k" nem "-" no eixo das liquidacoes, 96 velas de preco, zero rect preenchido de verde.

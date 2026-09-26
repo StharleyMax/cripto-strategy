@@ -55,6 +55,7 @@ from typing import Final, Literal, get_args
 from uuid import uuid4
 
 from src.modules.sentimento.domain.ingest_record import IngestRun
+from src.modules.sentimento.domain.open_interest_snapshot import OPEN_INTEREST_SNAPSHOT_ENDPOINT
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
 from src.modules.sentimento.domain.provenance import UNKNOWN_OBSERVER_REGION
 from src.modules.sentimento.use_cases.persist_ntp_skew_run import SOURCE
@@ -92,6 +93,12 @@ LONG_SHORT_ENDPOINT: Final[str] = f"/futures/data/{LONG_SHORT_DATA_ENDPOINT}"
 # makes the pairing executable.
 LIQUIDATION_HISTORY_ENDPOINT: Final[str] = "/v1/liquidation-history"
 
+# The SEVENTH producer (`T-03.4`, `SPEC-009` phase `03`, trail `03a`): the polled present open
+# interest. It is IMPORTED from `domain/open_interest_snapshot.py` rather than spelled again:
+# the lines above duplicate their literal only because `use_cases` may not import `infra`, and
+# this one lives in `domain`, which `use_cases` may import — so there is no drift to test for.
+OPEN_INTEREST_POLL_ENDPOINT: Final[str] = OPEN_INTEREST_SNAPSHOT_ENDPOINT
+
 # ⛔ AND `source` IS NOT `binance-futures` FOR THIS ONE. Every run in `md.ingest_run` today
 # carries one single source — `[MEDIDO 2026-09-12, n=5.406 runs: uma unica source,
 # `binance-futures`]` — because every producer until now WAS Binance. Recording a Coinalyze run
@@ -121,6 +128,9 @@ KLINES_OBSERVER_ID: Final[str] = "klines-collector"
 OPEN_INTEREST_OBSERVER_ID: Final[str] = "openinterest-collector"
 LONG_SHORT_OBSERVER_ID: Final[str] = "longshort-collector"
 LIQUIDATION_OBSERVER_ID: Final[str] = "liquidation-collector"
+# Distinct from `OPEN_INTEREST_OBSERVER_ID` on purpose: the two open-interest collectors read
+# different endpoints on different grids, and `observer_id` is what tells their rows apart.
+OPEN_INTEREST_POLL_OBSERVER_ID: Final[str] = "openinterest-poll-collector"
 
 # ── `/futures/data/` ANSWERS WITH **NO** `x-mbx-*` HEADER AT ALL, AND THAT IS MEASURED ─────
 #
@@ -533,6 +543,62 @@ def build_liquidation_history_run(
         src_sha256=src_sha256,
         weight_used=n_calls,
         observer_id=LIQUIDATION_OBSERVER_ID,
+        observer_region=UNKNOWN_OBSERVER_REGION,
+        clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
+        started_at=started_at,
+        ended_at=ended_at,
+        notes=notes,
+    )
+
+
+def build_open_interest_poll_run(
+    *,
+    started_at: str,
+    ended_at: str,
+    n_calls: int,
+    n_read: int,
+    weight_used: int | None,
+    api_code: int | None,
+    verdict: KnownVerdict,
+    src_sha256: str,
+    run_id: str | None = None,
+    notes: str | None = None,
+) -> IngestRun:
+    """Build the `IngestRun` for one `/fapi/v1/openInterest` poll CYCLE (`T-03.4`, `SPEC-009` §6.1).
+
+    Same UNIT as every other poller here: one cycle over the configured symbol universe, the
+    thing the operator schedules — one call per symbol per minute, aligned to the grid.
+
+    ⚠️ `n_expected` is NOT `n_returned` here, and this is the one builder where the refusal the
+    others document does not apply. Their argument is "there is no oracle for how many points
+    the source SHOULD have had". This endpoint has one: it answers ONE present reading per call,
+    so a cycle that asked `n_calls` symbols expected `n_calls` readings, and `n_read` is how many
+    came back as a reading (`OpenInterestFetchOutcome.READ`). Their difference is the calls that
+    failed — which is exactly what `DoD-1` of `03a` (`>= 0,95 x 1.440` per symbol per day) is
+    read off, so collapsing it would hide the one shortfall this record exists to show.
+
+    `weight_used` is the largest `x-mbx-used-weight-1m` READ during the cycle — the IP-wide used
+    weight of the minute, the same reading `build_premium_index_run` stores — and
+    `WEIGHT_NOT_READABLE` when no answer carried it. It is READ, not `calls x 1`: the collector's
+    own share (`DoD-2`, `<= 4/min`) is `n_calls`, logged beside it by the composition root.
+
+    `n_written` stays `N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS`: this collector OPENS the run and
+    the single writer CLOSES it (`ADR-035/D2`), crediting the rows that carry this `run_id`.
+    """
+    require_rejection_reason(verdict, api_code, notes)
+    return IngestRun(
+        run_id=run_id if run_id is not None else str(uuid4()),
+        source=SOURCE,
+        endpoint=OPEN_INTEREST_POLL_ENDPOINT,
+        window=f"{started_at}/{ended_at}",
+        n_expected=n_calls,
+        n_returned=n_read,
+        n_written=N_WRITTEN_BEFORE_THE_WRITER_ACCOUNTS,
+        verdict=verdict,
+        api_code=api_code,
+        src_sha256=src_sha256,
+        weight_used=weight_used if weight_used is not None else WEIGHT_NOT_READABLE,
+        observer_id=OPEN_INTEREST_POLL_OBSERVER_ID,
         observer_region=UNKNOWN_OBSERVER_REGION,
         clock_skew_ms=CLOCK_SKEW_NOT_MEASURED_MS,
         started_at=started_at,

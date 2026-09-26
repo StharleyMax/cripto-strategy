@@ -1,0 +1,27 @@
+
+Com base nesse contexto, revise SOMENTE a tela "S2 Símbolo — Painel Multi-Série (7 Panes)" e corrija os defeitos abaixo, medidos por um revisor independente, aplicando tambem duas decisoes do owner de 2026-09-23. Nao altere arquitetura de navegacao, design system nem escopo. A estrutura aprovada fica: chrome, rail, 7 panes empilhados num unico grafico, velas/barras em SVG com vazado (rect fill #131722 + stroke de direcao) / cheio (rect fill de direcao) / cruz, crosshair vertical em 08:45 atravessando tudo, UM eixo de tempo, rodape. REESCREVA O ARQUIVO DA TELA por completo, em vez de emitir operacoes pontuais de DOM.
+
+DECISOES DO OWNER (2026-09-23), aplicar sem reabrir:
+  - LIQUIDACOES seguem a convencao Coinalyze: short liquidado PARA CIMA com o token de alta #089981, long liquidado PARA BAIXO com o token de baixa #f23645. Magnitudes sempre >= 0, nenhum sinal de menos.
+  - OPEN INTEREST e so da Binance, em contratos (BTC), nao agregado e nao coinalyze.
+
+FRONTEIRA ENTRE PANES: separador horizontal de 1px #8b949e em TODA a largura (plot e coluna do eixo). Cada pane deixa pelo menos 8px livres no topo e na base do seu eixo direito, para que nenhum rotulo de eixo encoste no separador. Nao crie superficie nova.
+
+JANELA UNICA: 24h em 15m, 96 buckets, 96 velas de preco, eixo de tempo 00:00 04:00 08:00 12:00 16:00 20:00. Todo pane desenha UMA marca em TODO bucket, ate a borda direita. Unica ausencia da tela: 1 bucket de OI (vao sem vela + losango vazado violeta no plot).
+
+SELO DE 4 CAMPOS EM TODO PANE (serie · idade · procedencia · completude): UMA linha por pane sobreposta no canto superior ESQUERDO do plot, white-space: nowrap, texto 12px (nunca 10 ou 11px), nome do pane MAIUSCULO tinta forte #e6e9ef, campos tinta fraca #8b949e, valores tinta forte mono. Nenhum texto tingido de verde ou vermelho. A IDADE e POR SERIE, alinhada a DIREITA do proprio pane, na linha do selo.
+  1. PREÇO (~34% da altura) — "PREÇO · candles 15m · klines_last · fonte bn-dump · uso: structure_detection · O 64980.50 H 65120.00 L 64850.00 C 65040.25 · OBSERVADO · 96/96", a direita "idade 42s".
+     VOLUME no rodape do mesmo pane, faixa de ~13% da altura do pane, mesma forma da vela (vazada contorno #089981 / cheia #f23645 / #8b949e no doji). Segunda linha: "VOLUME · klines 15m · BTC · 812.44 · OBSERVADO · 96/96", a direita "idade 42s".
+  2. LIQUIDAÇÕES (~11%) — "LIQUIDAÇÕES · 1m→15m · BTC · coinalyze · [q] short liquidado 30258 · [q] long liquidado 0 (USD) · OBSERVADO · 76/1440 · 1364 ausentes · ◇ QUARENTENA", a direita "◇ idade ?".
+     [q] e um quadradinho de 8x8px que repete a FORMA da perna: para short, quadrado VAZADO (fill #131722, stroke #089981); para long, quadrado CHEIO (#f23645). O numero ao lado continua em tinta forte neutra, NUNCA verde nem vermelho.
+     Linha de base zero no meio do pane. Short liquidado = barra PARA CIMA, VAZADA (rect fill #131722 + stroke #089981). Long liquidado = barra PARA BAIXO, CHEIA (rect fill #f23645). Tres canais que sobrevivem em escala de cinza: posicao acima/abaixo do zero, forma vazada/cheia, e a palavra. AUSENCIA ≠ ZERO: minuto sem ponto = traco baixo apagado #8b949e rente a base; zero do fornecedor = traco medio #e6e9ef na base; poucas barras reais e altas espalhadas.
+     Eixo direito: "40000" no topo, "0" na base, "40000" embaixo. SEM sinal, SEM sufixo k, sem ▲ ▼.
+  3. OPEN INTEREST (~15%) — "OPEN INTEREST · OHLC 15m · BTCUSDT perp · binance · O 81234.5 H 81410.2 L 81102.7 C 81356.0 (BTC, contratos) · OBSERVADO · 95/96 · 1 lacuna", a direita "◇ idade ?". Segunda linha, tinta fraca: "vazado = entrada líquida de contratos · cheio = saída líquida de contratos".
+     OI como VELA com a mesma regra de forma (vazada #089981 = fechou acima da abertura; cheia #f23645 = abaixo; cruz = sem variacao). "95/96 · 1 lacuna" em TINTA NEUTRA, sem caixa, sem borda, sem violeta. Este pane NAO leva QUARENTENA. O "◇ idade ?" e porque o atraso do coletor de OI ainda nao foi medido.
+  4. LONG/SHORT (~9%) — "LONG/SHORT · razão top traders · 5m · BTC · bn-dump · 2.096 · OBSERVADO · 288/288", a direita "idade 3m10s". Linha 1px #e6e9ef.
+  5. FUNDING (~9%) — "FUNDING · taxa 8h · BTC · bn-dump · +0.0042% · OBSERVADO · 3/3", a direita "idade 5h30m". Linha em DEGRAU 1px #e6e9ef, base zero tracejada #222634.
+  6. CVD DELTA (~9%) — "CVD DELTA · bucket 15m · BTC · DERIVADO (2*taker_buy - volume) · +312.40 · 96/96", a direita "idade 42s". Barras vazada (delta > 0) / cheia (delta < 0).
+  7. CVD ACUMULADO (~9%) — "CVD ACUMULADO · âncora 00:00Z · BTC · DERIVADO · +9311.00 · 96/96", a direita "idade 42s". Linha 1px #e6e9ef. Este pane carrega o UNICO eixo de tempo.
+  O violeta #e0aaff existe SO no traco dos losangos vazados (◇ QUARENTENA, os dois ◇ idade ?, e o losango no vao do OI).
+
+VERIFIQUE ANTES DE RESPONDER: 8 carimbos de idade (6 numericos + 2 "idade ?"), 1 "QUARENTENA" (so liquidacoes), nenhum texto abaixo de 12px, nenhuma legenda quebrando linha, nenhuma caixa com borda violeta, nenhum "k" nem "-" no eixo das liquidacoes, 96 velas de preco, zero rect preenchido de #089981, nenhum numeral verde ou vermelho, superficies so #131722 / #0d1017 / #222634, acentos em PREÇO, LIQUIDAÇÕES, razão, âncora, líquida.

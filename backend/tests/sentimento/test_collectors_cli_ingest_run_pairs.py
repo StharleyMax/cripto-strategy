@@ -96,6 +96,12 @@ def test_one_session_plus_one_cycle_group_by_source_endpoint_gives_at_least_two_
     # point — a producer that starts recording runs is forced to arrive here, in a declared
     # list, instead of slipping in unnoticed. Loosening to `>=` would have accepted it in
     # silence, and then it would accept the next one too, including one no task declared.
+    #
+    # ⚠️ The SEVENTH producer (`/fapi/v1/openInterest`, `T-03.4`) is absent BY DESIGN, not by
+    # omission: it has no boot pass (its first action is the wait for `T - 5 s`), and the driver
+    # sets its cadence to `OPEN_INTEREST_POLL_DRIVER_INTERVAL_S`, whose next grid instant falls
+    # outside this scenario's life. It records a run only after a real cycle, which
+    # `test_collectors_cli_open_interest_poll_collector.py` drives on a fake clock.
     assert endpoints == {
         FORCE_ORDER_ENDPOINT,
         PREMIUM_INDEX_ENDPOINT,

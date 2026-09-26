@@ -1,0 +1,12 @@
+[bench 22:15:58] subindo oi-capture-bench-pg-1790374558_593776 e oi-capture-bench-redis-1790374558_593776
+[bench 22:16:02] postgres 127.0.0.1:33124 db=oi_capture_bench_1790374558_593776 · redis 127.0.0.1:33125 stream=oi_capture_bench.series.write
+[bench 22:16:03] baseline: {"n_written_total": 0, "poll_runs": 0, "rows_by_symbol": {"BTCUSDT": 0, "ETHUSDT": 0, "LINKUSDT": 0, "SOLUSDT": 0}, "rows_total": 0}
+[bench 22:16:03] coletor ligado (pid 594417); 200s antes da parada
+[bench 22:19:24] coletor PARADO em 1790374764072; 150s parado
+[bench 22:21:54] coletor RELIGADO em 1790374914078 (pid 608450); 200s
+[bench 22:25:17] auditoria: rc=0 {"dod_1_new_data": {"n_written_total": 28, "poll_runs": 7, "rows_by_symbol": {"BTCUSDT": 7, "ETHUSDT": 7, "LINKUSDT": 7, "SOLUSDT": 7}, "rows_total": 28, "verdict": "PASS"}, "dod_2_quota": {"calls": 28, "ceiling_per_minute": 4, "max_calls_in_a_minute": 4, "max_header_span_in_a_minute": 4, "minutes": 7, "minutes_over_ceiling": [], "minutes_without_header": 0, "verdict": "PASS"}, "dod_4_absent_not_carried": {"expected_absent_minutes": [1790374800000, 1790374860000], "lag_envelope_ms": {"max_lag_ms": 8994, "min_lag_ms": 2473}, "rows_in_absent_minutes": [], "stopped_from_ms": 1790374764072, "stopped_until_ms": 1790374914078, "symbols_without_row_after_restart": [], "symbols_without_row_before_stop": [], "verdict": "PASS"}, "verdict": "PASS"}
+[bench 22:25:17] carry-forward plantado: d28b119002a9dfb2f5b99b1ad4bf29f9746591200fc21dfea501914bfa535897|1790374800000
+INSERT 0 1
+[bench 22:25:18] auditoria com carry-forward: rc=1 {"dod_1_new_data": {"n_written_total": 28, "poll_runs": 7, "rows_by_symbol": {"BTCUSDT": 8, "ETHUSDT": 7, "LINKUSDT": 7, "SOLUSDT": 7}, "rows_total": 29, "verdict": "PASS"}, "dod_2_quota": {"calls": 28, "ceiling_per_minute": 4, "max_calls_in_a_minute": 4, "max_header_span_in_a_minute": 4, "minutes": 7, "minutes_over_ceiling": [], "minutes_without_header": 0, "verdict": "PASS"}, "dod_4_absent_not_carried": {"expected_absent_minutes": [1790374800000, 1790374860000], "lag_envelope_ms": {"max_lag_ms": 8994, "min_lag_ms": 2473}, "rows_in_absent_minutes": [["BTCUSDT", 1790374800000]], "stopped_from_ms": 1790374764072, "stopped_until_ms": 1790374914078, "symbols_without_row_after_restart": [], "symbols_without_row_before_stop": [], "verdict": "FAIL"}, "verdict": "FAIL"}
+[bench 22:25:18] OK: auditoria verde e carry-forward reprovado
+[bench 22:25:21] stack destruida (oi-capture-bench-pg-1790374558_593776, oi-capture-bench-redis-1790374558_593776)
