@@ -1,0 +1,21 @@
+// SF-11 probe: ms from the click on a TF button to aria-pressed="true" on the button that carries that
+// testid (the node may be replaced), polled per animation frame. 1920x1080, n = 6 clicks.
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-02-5/frontend/node_modules/playwright/index.mjs";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+await page.goto("http://127.0.0.1:4321/symbol/BTCUSDT", { waitUntil: "load", timeout: 180_000 });
+await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180_000 });
+await page.waitForTimeout(4000);
+const out = [];
+for (const tf of ["5m", "15m", "1h", "4h", "15m", "1m"]) {
+  const id = `timeframe-button-${tf}`;
+  const t0 = Date.now();
+  await page.locator(`[data-testid="${id}"]`).click({ noWaitAfter: true });
+  await page.waitForFunction((i) => document.querySelector(`[data-testid="${i}"]`)?.getAttribute("aria-pressed") === "true", id, { polling: "raf", timeout: 60_000 });
+  const pressed = Date.now() - t0;
+  const busy = await page.evaluate(() => document.querySelectorAll('[aria-busy="true"]').length);
+  out.push({ tf, first_pressed_ms: pressed, aria_busy_after: busy });
+  await page.waitForTimeout(2500);
+}
+console.log(JSON.stringify(out));
+await browser.close();

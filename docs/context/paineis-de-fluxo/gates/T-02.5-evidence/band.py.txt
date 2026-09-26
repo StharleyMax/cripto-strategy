@@ -1,0 +1,63 @@
+# T-02.5: per-column reading of the volume band at the foot of the price pane (DPR 1 PNGs).
+# Classes are the exact tokens of color-tokens.ts: up #089981, down #f23645, neutral #8b949e.
+# Geometry: price pane top=61 h=335 (facts.geometry); bars base row = 385 (probe), band top = 61+0.8*335.
+import sys, json, statistics
+from PIL import Image
+
+TOK = {"G": (8, 153, 129), "R": (242, 54, 69), "N": (139, 148, 158)}
+TOP, H = 61, 335
+BASE = 385
+BAND_TOP = TOP + round(0.8 * H)          # 329: the highest a bar may reach (autoscale on max visible)
+PRICE_FLOOR = TOP + round(0.9 * H)       # 362: the lowest a candle may reach (default bottom margin 0.1)
+MARK_ROWS = range(BASE + 1, TOP + H)     # 386..395
+
+def cls(p):
+    for k, t in TOK.items():
+        if all(abs(a - b) <= 14 for a, b in zip(p, t)):
+            return k
+    return None
+
+def analyse(path, axis_x):
+    im = Image.open(path).convert("RGB")
+    bars, marks, contig, fused, shared = [], 0, 0, 0, 0
+    colours = {"G": 0, "R": 0, "N": 0}
+    for x in range(0, axis_x - 1):
+        c = cls(im.getpixel((x, BASE)))
+        mark = any(sum(im.getpixel((x, y))) > 150 for y in MARK_ROWS if y != TOP + H)
+        if mark:
+            marks += 1
+        if c is None:
+            continue
+        # F-2: the row right under the bar base must be background (no ink bridging bar and mark strip)
+        if sum(im.getpixel((x, BASE + 1))) > 150:
+            contig += 1
+        y = BASE
+        while y > TOP and cls(im.getpixel((x, y))) == c:
+            y -= 1
+        run_top = y + 1
+        h = BASE - run_top + 1
+        is_fused = run_top < BAND_TOP - 1
+        if is_fused:
+            fused += 1
+        # candle ink of a direction hue inside the rows bars and candles share, above the bar's own top
+        if any(cls(im.getpixel((x, yy))) in ("G", "R") for yy in range(BAND_TOP, min(PRICE_FLOOR, run_top - 1))):
+            shared += 1
+        colours[c] += 1
+        bars.append((x, min(h, BASE - BAND_TOP + 1), c, is_fused))
+    hs = [b[1] for b in bars]
+    med = statistics.median(hs) if hs else 0
+    mx = max(bars, key=lambda b: b[1]) if bars else None
+    return {
+        "bar_cols": len(bars), "mark_cols": marks, "colours": colours,
+        "F2_contiguous_cols": contig,
+        "F3_max_h": mx[1] if mx else None, "F3_max_x": mx[0] if mx else None, "F3_median_h": med,
+        "F3_ratio": round(mx[1] / med, 1) if med else None,
+        "fused_same_hue_cols": fused, "candle_ink_in_shared_rows_cols": shared,
+        "fused_x": [b[0] for b in bars if b[3]][:12],
+    }
+
+out = {}
+for spec in sys.argv[1:]:
+    path, axis = spec.split(":")
+    out[path.split("/")[-1]] = analyse(path, int(axis))
+print(json.dumps(out, indent=1))
