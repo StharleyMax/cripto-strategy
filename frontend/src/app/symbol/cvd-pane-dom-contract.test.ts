@@ -59,7 +59,7 @@ const pageCode = pageSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*
 const EXPECTED_TESTID = "cvd-pane";
 /** `RN-1`'s literal token. `DoD-3` asserts its ABSENCE from this pane once data is present, so
  * the string is as load-bearing as the testid. */
-const EXPECTED_ABSENCE_TOKEN = "SEM_PONTO";
+const EXPECTED_ABSENCE_TOKEN = "ausente";
 
 const TESTID_DECLARATION = /const CVD_PANE_TESTID = "([^"]*)";/;
 const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
@@ -109,13 +109,13 @@ test("T-02.6 contract: the present-point count is a bare integer attribute on th
   );
 });
 
-test("RN-1 at the RENDERING layer: CVD absence prints SEM_PONTO, and the token is never a number", () => {
+test("RN-1 at the RENDERING layer: CVD absence prints `ausente`, and the token is never a number", () => {
   const declaration = ABSENCE_TOKEN_DECLARATION.exec(source);
   assert.ok(declaration !== null, "ABSENCE_TOKEN declaration not found — the anchor moved, fix this test");
   assert.equal(
     declaration[1],
     EXPECTED_ABSENCE_TOKEN,
-    "absence is SEM_PONTO — for a FLOW series a number here is an error of TYPE, not of taste",
+    "absence is `ausente` — for a FLOW series a number here is an error of TYPE, not of taste",
   );
   assert.ok(
     !/^-?\d+(\.\d+)?$/.test(declaration[1]!),

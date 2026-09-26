@@ -90,7 +90,9 @@ const apiBaseUrl = sentimentoApiBaseUrl;
  * also the right posture for a contract with another module â see
  * `volume-subaxis-dom-contract.test.ts`, which guards the same strings from the other side. */
 const VOLUME_SUBAXIS_TESTID = "price-pane-volume-subaxis";
-const ABSENCE_TOKEN = "SEM_PONTO";
+/** `T-01.R1` (`SF-9`): the READOUT prints the pt-BR word, the same `ausente` the legend paints —
+ * `SymbolClient.tsx::ABSENCE_TOKEN`. The enum stays in the `data-fact` (`:absent`). */
+const ABSENCE_TOKEN = "ausente";
 
 interface CatalogEntryWire {
   readonly key: SeriesKey;
