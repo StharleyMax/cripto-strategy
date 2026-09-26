@@ -1,0 +1,59 @@
+# T-02.2 ciclo 2 — saida bruta dos scripts do designer (dado: val022/data, relido pelo proxy so-leitura :8823 do validador; pixel: t022/out do ciclo 1)
+## model.py (blocos 1-4, janela inteira)
+[b1] 1m: slots=5760 present=3989 px/bar(whole window)=0.19 max/p50=82.5x LIN p50=0.81px <1px=2323 LOG p50=31.1px LOG max/p50 height=2.16x
+[b1] 5m: slots=1152 present=816 px/bar(whole window)=0.96 max/p50=49.3x LIN p50=1.36px <1px=297 LOG p50=39.2px LOG max/p50 height=1.71x
+[b1] 15m: slots=384 present=272 px/bar(whole window)=2.88 max/p50=26.1x LIN p50=2.57px <1px=43 LOG p50=45.1px LOG max/p50 height=1.49x
+[b1] 1h: slots=96 present=75 px/bar(whole window)=11.51 max/p50=19.0x LIN p50=3.53px <1px=2 LOG p50=48.9px LOG max/p50 height=1.37x
+[b1] 4h: slots=24 present=24 px/bar(whole window)=46.04 max/p50=7.3x LIN p50=9.21px <1px=0 LOG p50=55.1px LOG max/p50 height=1.22x
+[b2] 1m: n=3989 up-bars=0.518 TRUE=0.456 LIN=0.456 LOG=0.503 err_log=+0.047
+[b2] 5m: n=816 up-bars=0.487 TRUE=0.436 LIN=0.436 LOG=0.483 err_log=+0.048
+[b2] 15m: n=272 up-bars=0.474 TRUE=0.421 LIN=0.421 LOG=0.472 err_log=+0.052
+[b2] 1h: n=75 up-bars=0.480 TRUE=0.377 LIN=0.377 LOG=0.474 err_log=+0.097
+[b2] 4h: n=24 up-bars=0.500 TRUE=0.303 LIN=0.303 LOG=0.485 err_log=+0.182
+[b3] 1m: LOG base=min/2 green=0.506 err=+0.049 height max/p50=1.96
+[b3] 5m: LOG base=min/2 green=0.481 err=+0.046 height max/p50=2.14
+[b3] 15m: LOG base=min/2 green=0.471 err=+0.051 height max/p50=1.81
+[b3] 1h: LOG base=min/2 green=0.462 err=+0.085 height max/p50=2.13
+[b3] 4h: LOG base=min/2 green=0.440 err=+0.137 height max/p50=1.82
+[b4] 1m: LIN bars < absence(1.70px)=2995 < zero(5.10px)=3775 of 3989
+[b4] 5m: LIN bars < absence(1.70px)=488 < zero(5.10px)=737 of 816
+[b4] 15m: LIN bars < absence(1.70px)=95 < zero(5.10px)=215 of 272
+[b4] 1h: LIN bars < absence(1.70px)=9 < zero(5.10px)=45 of 75
+[b4] 4h: LIN bars < absence(1.70px)=2 < zero(5.10px)=8 of 24
+## visible.py (15m, 1h) + visible1m.py (1m)
+15m: slots_in_data=384 inked_cols=147 spacing=7.50px best_offset=236 (last-slot offset would be 237) match=141/147
+1h: slots_in_data=96 inked_cols=37 spacing=30.00px best_offset=59 (last-slot offset would be 59) match=37/37
+spacing=0.50px visible_slots=2210 match=1099/1105
+spacing=0.54px visible_slots=2046 match=979/1105
+spacing=0.51px visible_slots=2166 match=979/1105
+spacing=0.49px visible_slots=2255 match=976/1105
+spacing=0.46px visible_slots=2402 match=962/1105
+observed: B cols 814 M cols 291
+## visible_area.py (janela visivel, modelo com piso de 1 px e sobrepintura, pixel)
+1m: visible=2210 present=1621 full=1621 upcount=0.549 truth_all=0.488 truth_full=0.488 | model lin_floor=0.501 log_floor=0.519
+   pix lincolor: all=0.506 (cols=814)
+   pix logcolor: all=0.520 (cols=818)
+5m: visible=442 present=328 full=316 upcount=0.512 truth_all=0.472 truth_full=0.466 | model lin_floor=0.469 log_floor=0.506
+   pix lincolor: all=0.449 (cols=324)
+   pix logcolor: all=0.498 (cols=325)
+15m: visible=147 present=105 full=98 upcount=0.476 truth_all=0.419 truth_full=0.418 | model lin_floor=0.419 log_floor=0.474
+   pix lincolor: all=0.397 (cols=110)
+   pix logcolor: all=0.462 (cols=110)
+1h: visible=37 present=27 full=21 upcount=0.444 truth_all=0.430 truth_full=0.531 | model lin_floor=0.432 log_floor=0.444
+   pix lincolor: all=0.524 (cols=27)
+   pix logcolor: all=0.417 (cols=27)
+## visible_fullcov_model.py (janela visivel, so cobertura cheia)
+1m: visible=2210 full-cov n=1621 upcount=0.549 truth=0.488 lin_floor=0.505 (+0.018) log_floor=0.525 (+0.038)
+5m: visible=442 full-cov n=316 upcount=0.506 truth=0.466 lin_floor=0.463 (-0.003) log_floor=0.501 (+0.035)
+15m: visible=147 full-cov n=98 upcount=0.480 truth=0.418 lin_floor=0.419 (+0.000) log_floor=0.478 (+0.060)
+1h: visible=37 full-cov n=21 upcount=0.524 truth=0.531 lin_floor=0.534 (+0.002) log_floor=0.525 (-0.006)
+## colour_match.py (MF-7)
+logcolor-1h: bar columns=27 present slots=27 colour==candle direction: 27/27
+lincolor-1h: bar columns=27 present slots=27 colour==candle direction: 27/27
+T-02.2-A-vs-B-com-cor.png(cc4c2b1) 1h A row: red=1043 green=838 grey(139,148,158)=40
+T-02.2-A-vs-B-com-cor.png(cc4c2b1) 1h B row: red=536 green=382 grey(139,148,158)=20
+## floor_share.py
+1m whole window n=3989 band=0.20: <1px=58.2% band=0.17: <1px=63.8% band=0.13: <1px=72.1%
+1m visible n=1621 band=0.20: <1px=48.7% band=0.17: <1px=54.2% band=0.13: <1px=62.2%
+5m whole window n=816 band=0.20: <1px=36.4% band=0.17: <1px=44.4% band=0.13: <1px=55.0%
+5m visible n=328 band=0.20: <1px=12.5% band=0.17: <1px=17.4% band=0.13: <1px=25.0%

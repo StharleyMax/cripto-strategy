@@ -1,0 +1,25 @@
+# facts.txt blocks 1-4, re-derived by the designer (ciclo 2) — the ciclo-1 numbers were computed inline and no
+# script was kept (MF-6). Universe: the WHOLE 4-day window of /series-history, not the visible range (see
+# visible_area.py for that). Geometry: band = 335 px * 0.20 = 67 px; marks 1.70 / 5.10 px measured.
+# Input: <dir>/data/{vol,open,close}-<tf>.json as written by validator-fetch.py (read-only proxy).
+import json, math, statistics as st, sys
+V = sys.argv[1]; BAND = 335 * 0.20
+def rows(n, tf): return {r["event_time"]: r for r in json.load(open(f"{V}/data/{n}-{tf}.json"))["rows"]}
+def q(xs, p): xs = sorted(xs); return xs[min(len(xs) - 1, int(p * len(xs)))]
+for tf in ["1m", "5m", "15m", "1h", "4h"]:
+    vol, op, cl = rows("vol", tf), rows("open", tf), rows("close", tf)
+    pres = {t: float(r["value"]) for t, r in vol.items() if r["value"] is not None and r.get("absence") is None}
+    vs = sorted(pres.values()); mx, mn, p50 = vs[-1], vs[0], st.median(vs)
+    lin = {t: v / mx * BAND for t, v in pres.items()}
+    lg = {t: max(0.0, math.log10(v) / math.log10(mx) * BAND) for t, v in pres.items()}
+    b = mn / 2; lgr = {t: math.log10(v / b) / math.log10(mx / b) * BAND for t, v in pres.items()}
+    ts = [t for t in pres if t in op and t in cl and op[t]["value"] and cl[t]["value"]]
+    up = {t: float(cl[t]["value"]) >= float(op[t]["value"]) for t in ts}
+    share = lambda h: sum(h[t] for t in ts if up[t]) / sum(h[t] for t in ts)
+    truth = share(pres); cnt = sum(up.values()) / len(ts)
+    print(f"[b1] {tf}: slots={len(vol)} present={len(pres)} px/bar(whole window)={1105/len(vol):.2f} max/p50={mx/p50:.1f}x "
+          f"LIN p50={st.median(lin.values()):.2f}px <1px={sum(h < 1 for h in lin.values())} "
+          f"LOG p50={st.median(lg.values()):.1f}px LOG max/p50 height={BAND/st.median(lg.values()):.2f}x")
+    print(f"[b2] {tf}: n={len(ts)} up-bars={cnt:.3f} TRUE={truth:.3f} LIN={share(lin):.3f} LOG={share(lg):.3f} err_log={share(lg)-truth:+.3f}")
+    print(f"[b3] {tf}: LOG base=min/2 green={share(lgr):.3f} err={share(lgr)-truth:+.3f} height max/p50={BAND/st.median(lgr.values()):.2f}")
+    print(f"[b4] {tf}: LIN bars < absence(1.70px)={sum(h < 1.70 for h in lin.values())} < zero(5.10px)={sum(h < 5.10 for h in lin.values())} of {len(pres)}")
