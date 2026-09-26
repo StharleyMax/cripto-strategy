@@ -274,12 +274,15 @@ test("the route reuses the ONE RN-1 mapper, and does not write a second copy of 
   // summed quantity — so the count rose by one because a pane JOINED the rule, which is the opposite
   // of the failure this assert watches for. What it still catches is a pane that stops sharing it:
   // a fourth mapper written by hand leaves this number where it is and fails the MORDE below.
+  // ⚠️ AND FROM 3 TO 4 IN `W1-REVIEW-r2` BLOCKER-2, FOR THE SAME REASON: the volume LEGEND reads the
+  // same rows on the canonical grid (`legendSlots`, `ADR-044/D2`) through this SAME mapper, with the
+  // route window — a consumer joined the rule; no second copy of it was written.
   assert.equal(
     (pageCode.match(/nonNegativeFlowSlotsFromHistoryRows\(/g) ?? []).length,
-    3,
-    "exactly THREE call sites — the volume sub-axis, the shared liquidation cohort builder and the " +
-      "long/short pane (the import carries no parenthesis). A panel missing from this count wrote " +
-      "its own copy of `RN-1`",
+    4,
+    "exactly FOUR call sites — the volume sub-axis bars, the volume legend's grid copy, the shared " +
+      "liquidation cohort builder and the long/short pane (the import carries no parenthesis). A " +
+      "panel missing from this count wrote its own copy of `RN-1`",
   );
 });
 

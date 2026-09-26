@@ -173,7 +173,13 @@ type VolumeSlot = S2Panels["oi"]["slots"][number];
  * discipline as `panels`/`panelStatus`. This component draws it; it decides nothing about it.
  */
 export interface VolumeSubAxisData {
+  /** What the bars draw: one slot per wire row (one per TF bucket on a TF ≠ `1m`). */
   readonly slots: readonly VolumeSlot[];
+  /** The same rows on the canonical 1-minute grid — slot `i` IS logical index `i`. The ONLY
+   * vector the legend may read (`ADR-044/D2`; `W1-REVIEW-r2` BLOCKER-2): `slots` above is in
+   * the TF's native index space, and reading it by `param.logical` answered `ausente` in every
+   * crosshair position on `4h`/`15m`. */
+  readonly legendSlots: readonly VolumeSlot[];
   /** Slots carrying a real value — the number `DoD-3`/`RN-S2` count against `N >= 30`. */
   readonly presentPoints: number;
   /** The FIRST grid instant of the window that carries a real value, or `null` when none does.
@@ -637,6 +643,9 @@ interface PaneScaleBinding {
   readonly belowLegend: boolean;
   /** Anchored at the pane's bottom ⇒ keeps `SEPARATOR_CLEARANCE_PX` off the separator (`C-6`). */
   readonly clearSeparator: boolean;
+  /** With `belowLegend`, only the ceiling descends: the floor stays where the base put it
+   * (`charts::PaneScaleRole.keepFloor`). */
+  readonly keepFloor?: boolean;
 }
 
 /** A series of the host's chart, and one `setData` the host will make on it (`T-01.10`). */
@@ -1134,6 +1143,10 @@ function SymbolChartHost({
     container.addEventListener("pointerdown", handlePointerDown, { capture: true });
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerUp);
+    // `W1-CODE-REVIEW-r2` P-1: a gesture that loses the window (alt-tab mid-drag) delivers neither
+    // `pointerup` nor `pointercancel`, and the held cap would let the window grow a page at a time
+    // until the next click. Losing focus ends the gesture too.
+    window.addEventListener("blur", handlePointerUp);
     const measureFrame = requestAnimationFrame(() => {
       for (const paneIndex of paneIndices) {
         bindings.get(paneIndex)?.current.measure?.(chart, paneIndex);
@@ -1164,6 +1177,7 @@ function SymbolChartHost({
       container.removeEventListener("pointerdown", handlePointerDown, { capture: true });
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
+      window.removeEventListener("blur", handlePointerUp);
       timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
       crosshairStore.publish(undefined);
@@ -1613,6 +1627,12 @@ function liquidationCohortTestId(cohort: string): string {
 //     1 - LIQUIDATION_BAR_SCALE_MARGINS.bottom  <  LIQUIDATION_MARKS_SCALE_MARGINS.top
 //                        0,85                   <              0,88
 //
+// ⚠️ OF THE APPLIED MARGINS, NOT ONLY OF THE BASE (`W1-CODE-REVIEW-r2` C-2, `T-01.6`): the legend
+// reserve rewrites the bar scale's margins at runtime, so the bar binding is declared `keepFloor`
+// — the reserve lowers the band's ceiling and leaves `bottom` at `0,15`. Without it, `bottom'`
+// was `0,15·(1−r)` and the inequality held only while `r < 0,2`.
+// `liquidation-geometry.test.ts` checks it on the margins `paneScaleMargins` hands the library.
+//
 // THE GUARANTEE, in the exact form in which it is true: **every DRAWN bar ends at the FLOOR of the
 // bar band**, `y = H·(1 - bottom)`, and the marks band only starts at `H·top`. The floor is
 // invariant in value because the bar scale is AUTOSCALED and the bar series is the ONLY one hung on
@@ -1778,7 +1798,7 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
     >
       <PaneLegendLine>
         <h3 className="font-label-caps text-label-caps text-on-surface">Volume{identityTerms(legends.volume)}</h3>
-        <LegendValue seriesId="volume" factKey="volume" slots={volume.slots} />
+        <LegendValue seriesId="volume" factKey="volume" slots={volume.legendSlots} />
         {/* ⛔ STAYS VISIBLE (`BLOCKER-1`): an overlay scale draws no numeral, so this line is the
             only place the log10 is declared, and an undeclared log axis is worse than none. */}
         <VolumeScaleNote />
@@ -2642,7 +2662,11 @@ function LiquidationCohortSurface({
     // `T-01.6` — the bars below the legend; the marks band on the floor, `C-6`'s 4px off the
     // separator (the absence mark is `#8b949e`, the separator's colour, same reason as the volume).
     scales: ({ barSeries, absenceSeries }) => [
-      { series: barSeries, belowLegend: true, clearSeparator: false },
+      // `keepFloor` (`W1-CODE-REVIEW-r2` C-2): the legend compresses the bar band from the TOP only.
+      // Compressing its `bottom` too walked the floor into the marks band once the legend passed
+      // `0,2` of the pane (a 54 px legend in a 108 px pane put the floor at 100,5 px against a marks
+      // band from 95,0 px) — the inequality below is only true of the APPLIED margins this way.
+      { series: barSeries, belowLegend: true, clearSeparator: false, keepFloor: true },
       { series: absenceSeries, belowLegend: false, clearSeparator: true },
     ],
   });

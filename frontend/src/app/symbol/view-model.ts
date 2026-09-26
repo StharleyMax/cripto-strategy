@@ -440,9 +440,16 @@ function parseNonNegativeFlowValue(row: SeriesHistoryRow): number | null {
  * full window length — the SAME "index `i` means a different instant in different panels" hazard
  * `T-02.1` fixed for OI's `5m`-vs-`1m` step mismatch, now a COUNT mismatch instead of a STEP one.
  * `[symbol]/page.tsx`'s `long_short`/`liquidation` call sites pass `routeWindow.window` for
- * exactly this reason; the volume sub-axis call site does not (`SPEC-007 §3.6` — volume is not
- * one of the six panes `CA-5a`'s one-grid invariant covers, `data-fact` never publishes a
- * `volume_slots` fact for it).
+ * exactly this reason; the volume sub-axis call site for the DRAWN BARS does not (`SPEC-007
+ * §3.6` — volume is not one of the six panes `CA-5a`'s one-grid invariant covers, `data-fact`
+ * never publishes a `volume_slots` fact for it).
+ *
+ * ⛔ THAT EXEMPTION IS REVOKED FOR THE LEGEND (`W1-REVIEW-r2` BLOCKER-2). `T-01.7` made volume a
+ * consumer of the pane legend, which `ADR-044/D2` resolves off `param.logical` over the CANONICAL
+ * grid, so "index `i` means a different instant" is exactly the hazard above: on `4h` the native
+ * vector has 24 slots and the legend read `ausente` in 24 of 24 crosshair positions
+ * (`W1-QA-r2` §3). Both call sites now ALSO build `legendSlots` WITH the window; only the bars
+ * keep the one-slot-per-row vector.
  */
 export function nonNegativeFlowSlotsFromHistoryRows(
   rows: readonly SeriesHistoryRow[],

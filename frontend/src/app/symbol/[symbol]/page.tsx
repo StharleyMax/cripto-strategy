@@ -706,6 +706,10 @@ export default async function SymbolPage({
   const volumeSlots = nonNegativeFlowSlotsFromHistoryRows(volumeResult.rows);
   const volume: VolumeSubAxisData = {
     slots: volumeSlots,
+    // `W1-REVIEW-r2` BLOCKER-2: the legend reads the SAME rows on the route's canonical grid
+    // (`ADR-044/D2`, slot `i` IS logical index `i`). The native vector above stays what the bars
+    // draw — on a TF ≠ `1m` it has one slot per TF bucket, not one per grid minute.
+    legendSlots: nonNegativeFlowSlotsFromHistoryRows(volumeResult.rows, routeWindow.window),
     presentPoints: countPresentSlots(volumeSlots),
     // The left end of the readable horizon, DECLARED on screen rather than left to look like a
     // dead market (`quant-architect`, wave `03`, C4). Derived from the same slots the sub-axis

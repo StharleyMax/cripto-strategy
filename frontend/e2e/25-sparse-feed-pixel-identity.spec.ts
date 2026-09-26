@@ -270,7 +270,7 @@ async function startGappedStub(): Promise<{ readonly url: string; close(): Promi
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("synthetic stub: sem porta");
+  if (address === null || typeof address === "string") throw new Error("synthetic stub: no port");
   return {
     url: `http://127.0.0.1:${address.port}`,
     close: () => new Promise((resolve) => server.close(() => resolve())),

@@ -144,7 +144,7 @@ async function startSyntheticOhlcStub(): Promise<{ readonly url: string; close()
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("synthetic stub: sem porta");
+  if (address === null || typeof address === "string") throw new Error("synthetic stub: no port");
   return {
     url: `http://127.0.0.1:${address.port}`,
     close: () => new Promise((resolve) => server.close(() => resolve())),
@@ -158,7 +158,7 @@ function hostLocator(page: Page) {
 async function readMountCount(page: Page): Promise<number> {
   const raw = await hostLocator(page).getAttribute("data-chart-mount-count");
   if (raw === null) {
-    throw new Error("o host do gráfico não publica data-chart-mount-count — nada montado?");
+    throw new Error("the chart host does not publish data-chart-mount-count — nothing mounted?");
   }
   return Number(raw);
 }
@@ -170,7 +170,7 @@ async function readVisibleRange(page: Page): Promise<{ readonly from: number; re
     host.getAttribute("data-visible-logical-to"),
   ]);
   if (from === null || to === null) {
-    throw new Error("o host do gráfico não publica data-visible-logical-from/-to");
+    throw new Error("the chart host does not publish data-visible-logical-from/-to");
   }
   return { from: Number(from), to: Number(to) };
 }
@@ -180,7 +180,7 @@ async function readVisibleRange(page: Page): Promise<{ readonly from: number; re
 async function dragRight(page: Page, deltaXPx: number): Promise<void> {
   const box = await hostLocator(page).boundingBox();
   if (box === null) {
-    throw new Error("o host do gráfico não tem bounding box — nada montado");
+    throw new Error("the chart host has no bounding box — nothing mounted");
   }
   const startX = box.x + box.width * 0.5;
   const y = box.y + PRICE_PANE_MID_Y_PX;
@@ -231,7 +231,7 @@ test(`DoD-11(b): data-chart-mount-count continua 1 depois de >= ${MIN_PAGES} pá
         break;
       }
       const box = await hostLocator(page).boundingBox();
-      if (box === null) throw new Error("o host do gráfico não tem bounding box — nada montado");
+      if (box === null) throw new Error("the chart host has no bounding box — nothing mounted");
       const range = await readVisibleRange(page);
       const pxPerSlot = box.width / (range.to - range.from);
       // Aim just past the left edge of the loaded grid (logical 0), never more than half the width.

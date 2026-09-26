@@ -159,6 +159,12 @@ export interface PaneScaleRole {
   /** The scale is anchored at the pane's bottom, so it keeps `SEPARATOR_CLEARANCE_PX` off the
    * separator. */
   readonly clearSeparator: boolean;
+  /** With `belowLegend`: only the scale's CEILING descends under the legend, its FLOOR stays at
+   * the base `bottom`. For a scale whose floor is a geometric guarantee against a sibling band
+   * (the liquidation bars over the marks band, `RN-4`): compressing `bottom` with the legend
+   * walked the floor of the bar band into the marks band as soon as the reserve passed `0,2` of
+   * the pane (`W1-CODE-REVIEW-r2` C-2). Absent means `false`. */
+  readonly keepFloor?: boolean;
 }
 
 export interface PaneScaleMeasure {
@@ -199,6 +205,8 @@ function assertValidMargins(base: ScaleMargins): void {
  *
  * - `belowLegend`: the base layout `[0, 1]` is mapped onto `[r, 1]`, `r = (legendBottom + gap) / h`
  *   — `top' = r + top·(1−r)`, `bottom' = bottom·(1−r)`. Every reserved scale keeps its share.
+ *   With `keepFloor`, `bottom' = bottom`: the band shrinks from the top only, and a floor another
+ *   band relies on does not move with the legend.
  * - `clearSeparator`: `bottom' >= SEPARATOR_CLEARANCE_PX / h`.
  */
 export function paneScaleMargins(base: ScaleMargins, role: PaneScaleRole, measure: PaneScaleMeasure): PaneScaleMargins {
@@ -221,7 +229,7 @@ export function paneScaleMargins(base: ScaleMargins, role: PaneScaleRole, measur
       overflow = true;
     } else {
       top = reserve + base.top * (1 - reserve);
-      bottom = base.bottom * (1 - reserve);
+      bottom = role.keepFloor === true ? base.bottom : base.bottom * (1 - reserve);
     }
   }
   if (role.clearSeparator) {

@@ -159,3 +159,25 @@ test("invalid base margins are refused", () => {
   assert.throws(() => paneScaleMargins({ top: 0.6, bottom: 0.5 }, TOP_ROLE, { paneHeightPx: 90, legendBottomPx: 10 }), RangeError);
   assert.throws(() => paneScaleMargins({ top: -0.1, bottom: 0 }, TOP_ROLE, { paneHeightPx: 90, legendBottomPx: 10 }), RangeError);
 });
+
+// ── keepFloor (`W1-CODE-REVIEW-r2` C-2) ─────────────────────────────────────────────────────────
+// A band whose FLOOR is a guarantee against a sibling band (the liquidation bars over the marks
+// band) must not have that floor compressed by the legend reserve: only its ceiling descends.
+
+test("keepFloor: the legend lowers the ceiling and leaves the floor at the base bottom", () => {
+  const base = { top: 0.05, bottom: 0.15 };
+  const result = paneScaleMargins(base, { belowLegend: true, clearSeparator: false, keepFloor: true }, {
+    paneHeightPx: 108,
+    legendBottomPx: 54,
+  });
+  assert.equal(result.kind, "margins");
+  if (result.kind !== "margins") return;
+  close(result.margins.bottom, base.bottom, "the floor must not move with the legend");
+  assert.ok(result.margins.top * 108 >= 54 + LEGEND_GAP_PX - 1e-9, "the ceiling still clears the legend");
+});
+
+test("MORDE: without keepFloor the same legend walks the floor down by the reserve", () => {
+  const base = { top: 0.05, bottom: 0.15 };
+  const result = paneScaleMargins(base, TOP_ROLE, { paneHeightPx: 108, legendBottomPx: 54 });
+  assert.ok(result.kind === "margins" && result.margins.bottom < base.bottom - 0.05);
+});
