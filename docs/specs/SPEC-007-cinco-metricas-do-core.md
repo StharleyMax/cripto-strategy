@@ -1,7 +1,10 @@
 # SPEC-007 — Cinco métricas do CORE: identidade de série, fonte por métrica, e o gate que mede escrita de verdade
 
+> **Status em 2026-09-26: PARCIAL.** RN-S1 (÷5) só vale no TF 1m (ADR-040); preço = klines_ohlc 1m (SPEC-008 D1), não klines_last; OI 1m por polling (SPEC-009 O-4).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #54,61.
+
 > **Feature:** `cinco-metricas-do-core` (filha de `plataforma-dados`)
-> **PRD:** [`PRD-007`](PRD-007-cinco-metricas-do-core.md) · **Status no ledger:** `SPEC_DRAFT`
+> **PRD:** [`PRD-007`](PRD-007-cinco-metricas-do-core.md) · **Status no ledger:** `SPEC_DRAFT` (ao escrever) → **Estado: ver `harness pipeline state cinco-metricas-do-core` (em 2026-09-26: `DONE`)** `[MEDIDO 2026-09-26: harness pipeline state cinco-metricas-do-core]`
 > **Status desta SPEC:** nasce `DRAFT`. `SPEC_APPROVED` exige `harness pipeline approve … spec` do **owner** — nenhum texto neste documento aprova a si mesmo (`CLAUDE.md` §*"O ledger é a identidade do estado"*).
 > **Componentes alvo:** `sentimento` · `web` · `infra` (`harness policy --key components`, n=7)
 > **ADRs desta rodada:** [`ADR-035`](../adr/ADR-035-contabilidade-de-n-written-o-escritor-fecha-o-run-que-o-coletor-abriu.md) · [`ADR-036`](../adr/ADR-036-fonte-por-metrica-do-core-a-origem-por-padrao-o-terceiro-so-onde-a-origem-e-vetada.md)

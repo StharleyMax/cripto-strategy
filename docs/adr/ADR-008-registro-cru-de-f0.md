@@ -1,5 +1,8 @@
 # ADR-008 — O registro cru de F0: CLI, e uma consulta nomeada compartilhada
 
+> **Status em 2026-09-26: PARCIAL.** DoD-1 via [[rules.own]] + corpus superado por ADR-011 (corpus descartado; critério 1.8′ morde+cala).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #23.
+
 **Data:** 2026-08-25 · **Status:** proposto · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §3.5
 **Fase/Epic:** F0 · `CST-2` (o registro) e `CST-5` (o consumidor S1) · **Componente alvo:** `sentimento`
 **Origem:** decisão `A1` do handoff + a terceira correção que o gate mandou carregar (**DoD falsificável para a query nomeada compartilhada**)

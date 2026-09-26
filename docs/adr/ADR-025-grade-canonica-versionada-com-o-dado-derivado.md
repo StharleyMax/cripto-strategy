@@ -1,6 +1,6 @@
 # ADR-025 — Grade canônica versionada junto com o dado derivado: `grid_version` como quarto termo, distinto de `commit`, na reprodutibilidade de `run_registry`
 
-**Status:** proposto · **Data:** 2026-09-04 · **Componente:** `charts` (dona da grade, `ADR-003`/FR-3) + `backtest` (consumidora via `run_registry`, `ADR-021`) — decisão registrada em `docs`
+**Status:** proposto · **Implementação em 2026-09-26:** `D3` (constante `CANONICAL_GRID_VERSION` em `canonical-grid.ts`) **não implementada**; `grid_version` existe só no backend (`backend/src/modules/backtest/domain/run_registry_entry.py:68`) `[MEDIDO 2026-09-26: grep -rni GRID_VERSION frontend/src | wc -l → 0]` — ver [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #58 · **Data:** 2026-09-04 · **Componente:** `charts` (dona da grade, `ADR-003`/FR-3) + `backtest` (consumidora via `run_registry`, `ADR-021`) — decisão registrada em `docs`
 **Feature:** `plataforma-dados` (`T-08.14`, `CST-82`) · **Autor:** `quant-architect`
 **Rev de ancoragem:** worktree `T-08.14` sobre `origin/master` `9e9bf9a` (inclui `T-08.4`/`ADR-021` e `T-08.7`/`ADR-022` já mergeados).
 **Requisito de origem:** `ADR-003`/FR-3, `docs/plans/SPEC-001-plataforma-dados/08_superficie_e_reprodutibilidade.md` item 8.9 ("Grade canônica versionada junto com o dado derivado"), falsificador global `F-4`.

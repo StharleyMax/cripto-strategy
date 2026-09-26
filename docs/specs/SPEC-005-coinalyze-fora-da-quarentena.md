@@ -176,4 +176,4 @@ Falsificador da regra de mesclagem (`ADR-033 D2`, citado aqui porque `RF-3`/`RNF
 
 ## 10. Ledger
 
-`harness pipeline advance coinalyze-fora-da-quarentena SPEC_DRAFT` — executado após gravar este arquivo e o ADR. `SPEC_APPROVED` é gate do owner (`approve spec`) — não executado aqui.
+`harness pipeline advance coinalyze-fora-da-quarentena SPEC_DRAFT` — executado após gravar este arquivo e o ADR. `SPEC_APPROVED` é gate do owner (`approve spec`) — não executado aqui. → **Estado: ver `harness pipeline state coinalyze-fora-da-quarentena` (em 2026-09-26: `SPEC_APPROVED`)** `[MEDIDO 2026-09-26: harness pipeline state coinalyze-fora-da-quarentena]`

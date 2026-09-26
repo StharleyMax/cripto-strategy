@@ -932,6 +932,10 @@ anel — e cada transição passa 1.4.11.
 > **`[NÃO SEI]` qual valor de `outline-offset` em px.** O vão tem de ser largo o bastante para ser
 > percebido como faixa, e isso depende de DPI e de zoom. Não medi. **A regra é "deslocado e medido";
 > a constante está faltando.**
+>
+> ⚠️ CORREÇÃO, 2026-09-26: a constante existe no código — **`outline-offset: 2px`** (com `outline: 2px`)
+> `[MEDIDO 2026-09-26: grep -n 'outline-offset' frontend/src/app/globals.css → :173]`. O `[NÃO SEI]` acima fica como registro;
+> se 2px basta sob DPI/zoom altos continua não medido. [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #65.
 
 **Consequência para o script:** `foco × acao-borda` e `foco × acao-fill` entraram no BLOCO 4b como
 adjacências **críticas**. Antes desta rodada, nenhum par de tokens *adjacentes* era medido — só
@@ -1099,6 +1103,10 @@ Também não existem, e cada um por um motivo escrito em [`PRD-001` §12](../spe
 gerenciador de presets (o bundle **é** a URL, não um CRUD) · painel de liquidação · watchlist
 multi-símbolo ao vivo · dashboard de métricas financeiras · tela de curadoria de alias.
 
+> ⚠️ CORREÇÃO, 2026-09-26: *"painel de liquidação"* não existe como **tela/painel separado**, mas existe como **pane** do
+> gráfico em `/symbol/[symbol]` (`SPEC-009` §liquidação) `[MEDIDO 2026-09-26: grep -n 'LiquidationPane' frontend/src/app/symbol/SymbolClient.tsx → :319]`.
+> O corte vale para a tela separada. [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #19.
+
 ---
 
 ## 6. Interação de gráfico
@@ -1145,7 +1153,7 @@ pública**, com a notice do arquivo `NOTICE` e link para `tradingview.com`. `[ME
 | **`forced-colors: active`** | **`[NÃO MEDIDO]`, e a premissa anterior estava INVERTIDA para o plot** — ver a caixa abaixo |
 | **`prefers-contrast: more`** | **`[NÃO MEDIDO]`** |
 | **acromatopsia** (monocromacia de bastonete) | **`[NÃO MEDIDO]` como simulação.** BLOCO 6 e 6b são **proxy por luminância**, e proxy não é simulação. Declarado no rodapé do script |
-| **`outline-offset` em px** (§1.8) | **`[NÃO SEI]`.** A regra é "deslocado e medido"; a constante depende de DPI e zoom e não foi medida |
+| **`outline-offset` em px** (§1.8) | **`[NÃO SEI]`.** A regra é "deslocado e medido"; a constante depende de DPI e zoom e não foi medida. ⚠️ CORREÇÃO, 2026-09-26: o código fixa **`2px`** `[MEDIDO 2026-09-26: globals.css:173]` |
 | **limiar de doji** (§1.9) | **`[NÃO SEI]`.** Tem de ser o `tick_size` datado (`ADR-007`), não um épsilon do desenhista. Fração de barras nesse regime: não medida |
 | **`#e0aaff` lê como violeta ou como rosa?** | **`[NÃO SEI]`.** Matiz e ΔE não decidem nomeação de cor. §1.4-ter |
 
@@ -1288,6 +1296,10 @@ grep -n 'aria-live="assertive"' \
   .../accessibility-inclusive-design/references/wcag-aria-patterns.md        # 577 — assertive só para falha urgente
 ```
 
+> ⚠️ CORREÇÃO, 2026-09-26: a coluna de ícone dizia **`lucide`**; o código usa **`material-symbols-outlined`**
+> (`frontend/src/features/s1-console/S1Console.tsx:92`) e não instala `lucide` `[MEDIDO 2026-09-26: grep -c lucide frontend/package.json → 0]`.
+> Os nomes abaixo ficam como registro. [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #64.
+
 | # | estado (`data-fact`) | componente (`shadcn`) | ícone `lucide` `[INFERRED, não confirmado contra o pacote instalado]` | título pt-BR | descrição pt-BR (causa + próximo passo, H9) | `role`/`aria-live` |
 |---|---|---|---|---|---|---|
 | 1 | `ui_state:loading` | `Skeleton` (blocos espelhando o layout de S1/S3 — `product-deep-dives.md:39`) | nenhum (skeleton não carrega ícone) | — (sem texto visível) | texto só para leitor de tela: *"Carregando dados do painel"* | `role="status" aria-live="polite"` — nunca `assertive` (não é falha, é espera dentro do limiar de Doherty) |
@@ -1319,6 +1331,10 @@ grep -rn 'destructive\|text-red-\|bg-red-\|border-red-\|f23645\|d03b3b' \
 # esperado: 0 ocorrências, quando os arquivos de T-01.4/T-01.5 existirem
 ```
 
+> ⚠️ CORREÇÃO, 2026-09-26: o caminho era `frontend/src/app/painel`; a rota migrou para **`frontend/src/app/console`**
+> (`ADR-034/D2`; `frontend/src/app/routes.ts:21` → `console: "/console"`). Com o caminho velho o grep lê um diretório que
+> não existe e devolve 0 por cegueira. `[MEDIDO 2026-09-26: o mesmo grep com frontend/src/app/console → 0]`. [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #50.
+
 **Por que o grep ganhou os dois hex literais:** a 1ª rodada (`c348103`) mediu, por mutação (`printf |
 grep`), que o comando `grep -rn 'destructive\|text-red-\|bg-red-\|border-red-'` **morde**
 `variant="destructive"` mas **cala** em `bg-[#f23645]` — valor arbitrário do Tailwind que não casa com o
@@ -1337,6 +1353,8 @@ quando esses arquivos existirem.
   `frontend` (o pacote `lucide-react` pode ou não estar instalado ainda — `T-01.5` decide o pipeline de
   ícone). Se o nome não existir no pacote instalado, `T-01.4` substitui por um ícone da mesma família
   semântica (config/rede/servidor/arquivo/caixa-vazia), sem reabrir a forma nem o texto.
+  ⚠️ CORREÇÃO, 2026-09-26: resolvido — o pipeline de ícone é `material-symbols-outlined`, não `lucide`
+  `[MEDIDO 2026-09-26: grep -c lucide frontend/package.json → 0; S1Console.tsx:92]`.
 - Os 4 estados de erro dizem "verifique"/"confirme" mas não têm controle de retry — só recarregar a
   página manualmente. É consistente com `M3`/`RN-5` (nenhum controle inerte: não há ação de cliente
   definida nesta fase) — candidato de `F2`, não desta task.

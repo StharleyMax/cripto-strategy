@@ -1,5 +1,8 @@
 # Direcionamento operacional do owner — e o que ele resolve
 
+> **Status em 2026-09-26: PARCIAL.** Q20 respondida 'coexistem' (2026-09-03); motor = ADR-002/D4.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §3 #1,9.
+
 **Declarado em:** 2026-08-25 · **Status:** intenção do owner, é premissa de projeto e não achado de medição
 **Efeito:** resolve 2 perguntas em aberto, rebaixa 1 fato capture-or-lose, dissolve o problema que
 dominou a rodada de UX, e abre 1 ambiguidade nova que precisa de resposta.

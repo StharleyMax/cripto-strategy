@@ -1,6 +1,6 @@
 # SPEC-009 — Painéis de fluxo: um gráfico, panes nativos, e três métricas que passam a dizer a direção
 
-**Feature:** `paineis-de-fluxo` · **Status:** `DRAFT`. `SPEC_APPROVED` é gate do **owner** (`harness pipeline approve paineis-de-fluxo spec`), e este documento **não** o declara.
+**Feature:** `paineis-de-fluxo` · **Status:** `DRAFT` (ao nascer) → **Estado: ver `harness pipeline state paineis-de-fluxo` (em 2026-09-26: `BUILD_AUTHORIZED`)** `[MEDIDO 2026-09-26: harness pipeline state paineis-de-fluxo]`. `SPEC_APPROVED` é gate do **owner** (`harness pipeline approve paineis-de-fluxo spec`), e este documento **não** o declara.
 **PRD:** [`PRD-009`](PRD-009-paineis-de-fluxo.md) · **ADRs:** [`ADR-044`](../adr/ADR-044-um-grafico-com-panes-nativos-v5-a-legenda-le-o-slot-e-a-perna-long-desce-por-escala-invertida.md) (proposta) · [`ADR-045`](../adr/ADR-045-candle-de-oi-derivado-e-projecao-na-rota-ancorada-na-fronteira-de-abertura.md) (proposta; a condição foi satisfeita em 2026-09-23, quando `[Q-OI-1]` = `O-4`, e ela passa a valer para os dois regimes)
 **Plano:** [`docs/plans/SPEC-009-paineis-de-fluxo/`](../plans/SPEC-009-paineis-de-fluxo/index.md)
 **Julgamentos delegados:** [`ARQ-1-julgamento-frontend-architect.md`](../context/paineis-de-fluxo/handoff/ARQ-1-julgamento-frontend-architect.md) (`ARQ-1`) · [`LIQ-1-julgamento-quant-architect.md`](../context/paineis-de-fluxo/handoff/LIQ-1-julgamento-quant-architect.md) (`LIQ-1`)
@@ -164,6 +164,13 @@ Um array ordenado; a posição no array é o `paneIndex`, de cima para baixo. Fo
 | 15 s | 16 | 0,67% | 23.040 | ~2,3 MB | ~830 MB |
 
 Peso e teto são `[MEDIDO]`/`[DOC]`. O disco é `[INFERRED: aritmética sobre os 99,06 B/linha medidos em SPEC-008 §4]`.
+
+> ⚠️ CORREÇÃO, 2026-09-26: as colunas de disco usavam **99,06 B/linha**, que é byte de **FIO** (JSON), não de disco
+> (`SPEC-008` §4 diz isso na própria linha). O byte de **disco** medido é **496 B/linha**, índice incluído
+> (`SPEC-008` §3.6, `[MEDIDO, n=19.106 linhas: (1290756096−1281286144)/(2688019−2668913) = 495,65]`). Refeita a aritmética,
+> 4 símbolos: **60 s → ~2,86 MB/dia, ~1,04 GB/ano** · 30 s → ~5,71 MB/dia, ~2,09 GB/ano · 15 s → ~11,4 MB/dia, ~4,17 GB/ano
+> `[INFERRED: linhas/dia da tabela × 496 B; python3 -c "print(5760*496, 5760*496*365)" → 2856960, 1042790400]`. A escolha de
+> cadência (O-4, owner) não muda por esta correção; só o custo declarado dela. [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #4.
 
 **Por que 60 s:** (1) **a grade de 1 min é a do TF default** (`supported-timeframes.ts:67-78`,
 `DEFAULT_TIMEFRAME = "1m"`). Com ela, o OI passa a ter **um candle por slot em `1m`** (corpo exato

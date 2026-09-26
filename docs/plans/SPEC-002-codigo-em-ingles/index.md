@@ -1,6 +1,9 @@
 # Plano de execução — `SPEC-002` · Código em inglês
 
-**SPEC:** [`SPEC-002`](../../specs/SPEC-002-codigo-em-ingles.md) (**`SPEC_APPROVED`** — o gate **do owner** aconteceu: `approve spec` em `2026-08-29T14:35:44Z`; a feature está hoje em **`BUILD_AUTHORIZED`** `[MEDIDO 2026-08-29 em c7df90c: harness pipeline state codigo-em-ingles]`)
+> **Status em 2026-09-26: HISTÓRICO.** Feature DONE no ledger. '/painel fica em PT' superado: migrou para /console em SPEC-006/03 (CLAUDE.md linha 12).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../../MAPA-DOCUMENTAL.md) §3 #49.
+
+**SPEC:** [`SPEC-002`](../../specs/SPEC-002-codigo-em-ingles.md) (**`SPEC_APPROVED`** — o gate **do owner** aconteceu: `approve spec` em `2026-08-29T14:35:44Z`; a feature estava em **`BUILD_AUTHORIZED`** `[MEDIDO 2026-08-29 em c7df90c: harness pipeline state codigo-em-ingles]` → **Estado: ver `harness pipeline state codigo-em-ingles` (em 2026-09-26: `DONE`)** `[MEDIDO 2026-09-26: harness pipeline state codigo-em-ingles]`)
 **ADRs:** [`ADR-013`](../../adr/ADR-013-codigo-em-ingles-convencao-com-fronteira-e-sem-portao.md) (`aceito`, usada) · [`ADR-015`](../../adr/ADR-015-token-tipado-no-verificador-de-ancora-e-o-criterio-de-citacao-viva.md) (**`aceito`** em 2026-08-29 pelo owner, `[DECISÃO-OWNER]` registrada no cabeçalho da própria ADR; nasceu com esta SPEC)
 **Rev de ancoragem de TODA medição:** **`master@5f4ece0`**
 **Data:** 2026-08-29

@@ -1,6 +1,6 @@
 # Plano de execução — `SPEC-009` · Painéis de fluxo
 
-> **SPEC:** [`SPEC-009`](../../specs/SPEC-009-paineis-de-fluxo.md) (`DRAFT`; `SPEC_APPROVED` é gate do **owner**)
+> **SPEC:** [`SPEC-009`](../../specs/SPEC-009-paineis-de-fluxo.md) (`DRAFT` ao nascer → **Estado: ver `harness pipeline state paineis-de-fluxo` (em 2026-09-26: `BUILD_AUTHORIZED`)** `[MEDIDO 2026-09-26: harness pipeline state paineis-de-fluxo]`; `SPEC_APPROVED` é gate do **owner**)
 > **ADRs:** [`ADR-044`](../../adr/ADR-044-um-grafico-com-panes-nativos-v5-a-legenda-le-o-slot-e-a-perna-long-desce-por-escala-invertida.md) (proposta) · [`ADR-045`](../../adr/ADR-045-candle-de-oi-derivado-e-projecao-na-rota-ancorada-na-fronteira-de-abertura.md) (proposta; a condição foi satisfeita: `[Q-OI-1]` = `O-4`)
 > **PRD:** [`PRD-009`](../../specs/PRD-009-paineis-de-fluxo.md)
 > **Vocabulário:** `harness policy --key components` → `n=7` `[MEDIDO 2026-09-23]`. Todo item declara o seu componente.
@@ -33,7 +33,8 @@ fronteira do `CLAUDE.md`) · qualquer regra, alvo de `make` ou allowlist **de id
 **Ordem:** `01` → `02` → `04` → `03b`. A `03a` **pode começar já** e andar em paralelo com `01`/`02`/`04`,
 porque não toca `SymbolClient.tsx`. Quanto mais cedo o coletor liga, mais história com pavio de 1 min
 existe quando o pixel chegar (**zero backfill**, `SPEC-009` §6.1). O teto é de **2** tasks simultâneas
-`[DOC: MEMORY.md]`.
+`[DOC: MEMORY.md]` (⚠️ CORREÇÃO, 2026-09-26: dizia **2**; o teto é **3** — `[PREMISSA-OWNER: 2026-09-12]` *"Podemos executar até
+3 tasks paralelas"*, reconfirmado em 2026-09-24 para esta feature; `[DOC: memória do owner orquestracao-3-paralelas-worktree]` — [`docs/MAPA-DOCUMENTAL.md`](../../MAPA-DOCUMENTAL.md) §3 #18).
 
 ⛔ **Um editor de `SymbolClient.tsx` por vez** (`SPEC-009` §8, `D7`). As fases `01`, `02`, `03` (pixel) e
 `04` editam o mesmo arquivo de 2.936 linhas `[MEDIDO: wc -l]` e **não andam em paralelo entre si**. As

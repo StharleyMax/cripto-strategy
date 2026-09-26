@@ -1,5 +1,8 @@
 # Arquitetura em diagramas — os quatro fluxos
 
+> **Status em 2026-09-26: PARCIAL.** Q16/Q10/Q11/Q13/Q20 respondidas (decisoes-do-owner); motor = ADR-002/D4.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §3 #1,9,46.
+
 **Data:** 2026-08-25 · **Deriva de:** [`SPEC-001`](specs/SPEC-001-plataforma-dados.md) (`DRAFT`) e [`ADR-001`..`ADR-009`](adr/)
 **Estado do ledger:** `SPEC_DRAFT` — **o gate `spec` é do owner e não foi dado.**
 

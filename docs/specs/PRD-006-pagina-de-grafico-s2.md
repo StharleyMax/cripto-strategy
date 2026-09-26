@@ -1,5 +1,8 @@
 # PRD-006 — Página de gráfico S2: rota que monta o motor `charts`, as duas rotas de backend que `ADR-005/D1` exige, e a migração de `/painel` para inglês
 
+> **Status em 2026-09-26: PARCIAL.** SPEC-006/ADR-034 prevalecem; D-h derrubado (md.series não tinha coluna de valor); página = /symbol/[symbol].
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #25,51.
+
 **Feature:** `pagina-de-grafico-s2` (**filha** de `plataforma-dados`, irmã de `captura-em-producao` e `coinalyze-fora-da-quarentena` — `harness pipeline show pagina-de-grafico-s2` → `init`, `relate parent plataforma-dados`, `dispatch pm`) · **Data:** 2026-09-08 · **Estado do pipeline ao escrever:** `INIT` (`harness pipeline state pagina-de-grafico-s2` → `INIT`) → este documento leva a `PRD_DRAFT`
 **Componentes tocados:** `web` (rota Next nova, montagem da página, migração de `/painel`) · `charts` (nenhum código novo de geometria — a S2 já existe testada; consumo do `history-transport`/`live-transport` existentes) · `sentimento` (as duas rotas de backend, leitura do registro de série já gravado por `captura-em-producao`) · `docs`. `backtest`/`convergencia` **não são tocados**. `harness policy --key components` → **7 elementos** `["sentimento","charts","convergencia","backtest","web","docs","infra"]` `[MEDIDO 2026-09-08]` — divergência já registrada pelas irmãs (`PRD-004`/`PRD-005`): `CLAUDE.md` ainda lista 6, este PRD não reabre a reconciliação.
 **Fonte de verdade:** `harness policy --key docs.external_prd_repo` → saída vazia, `rc=0`; `docs.external_prd_paths` → `[]` ⇒ este PRD **nasce aqui**.

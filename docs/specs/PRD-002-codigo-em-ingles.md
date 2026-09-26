@@ -1,5 +1,8 @@
 # PRD-002 — Código em inglês
 
+> **Status em 2026-09-26: PARCIAL.** Normativa vigente: CLAUDE.md §Idioma (linha 10 log inglês prospectivo; linha 12 rotas em inglês 2026-09-08; 7 componentes) e SPEC-002.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #27,29,49.
+
 **Feature:** `codigo-em-ingles` · **Data:** 2026-08-29 · **Estado do pipeline ao escrever:** `INIT` (`harness pipeline state codigo-em-ingles` → `INIT`; um evento, `init` em `2026-08-29T12:06:25Z`) → este documento leva a `PRD_DRAFT`
 **Componentes tocados:** `docs` (predominante — a convenção e sua fronteira) · `sentimento` (o retroativo de `backend/tests`) · `web` (o retroativo de `frontend/src`)
 **Fonte de verdade:** `harness policy --key docs.external_prd_repo` devolve **0 byte com `rc=0`** e `docs.external_prd_paths` devolve `[]` ⇒ este PRD **nasce aqui**; não é referência nem extração de fonte externa.

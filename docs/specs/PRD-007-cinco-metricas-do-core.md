@@ -1,5 +1,8 @@
 # PRD-007 — Cinco métricas do CORE: uma fase = uma métrica ponta a ponta, com ponto visível na tela
 
+> **Status em 2026-09-26: PARCIAL.** SPEC-007/ADR-036/ADR-035 prevalecem (DEF-2: Coinalyze primária; DEF-3: formatador). coinalyze-fora-da-quarentena está SPEC_APPROVED no ledger, não congelada.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #17,34.
+
 > Feature: `cinco-metricas-do-core` (filha de `plataforma-dados`).
 > Componentes tocados: `sentimento` · `infra` · `web` (`harness policy --key components`).
 > Estado no ledger ao escrever este documento: `INIT` (`harness pipeline state cinco-metricas-do-core` → `INIT`, `[MEDIDO 2026-09-10]`).

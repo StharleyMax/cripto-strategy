@@ -1,5 +1,8 @@
 # ADR-028 — Leitura do `/painel` em Server Component, `server-only` no transporte, e o portão de `ADR-005/D6.4` medido pela propriedade (não pelo proxy)
 
+> **Status em 2026-09-26: PARCIAL.** Caminho /painel → /console (ADR-034/D2); exceção client-driven para symbol/TF em ADR-043.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #32.
+
 **Data:** 2026-09-04 · **Status:** `aceito` (`approve spec` do owner em `2026-09-05T12:53:22Z` — `harness pipeline show camada-de-leitura-do-painel`; estado corrente sempre por `harness pipeline state camada-de-leitura-do-painel`, ledger é a identidade, não este texto) · **SPEC:** [`SPEC-003`](../specs/SPEC-003-camada-de-leitura-do-painel.md) §3.1–§3.3 · **PRD:** [`PRD-003`](../specs/PRD-003-camada-de-leitura-do-painel.md) `RN-1`, `RF-1`..`RF-4`, `CA-F1-1`..`CA-F1-9`
 **Fase:** `F1` do plano [`SPEC-003`](../plans/SPEC-003-camada-de-leitura-do-painel/01_pagina_diz_a_verdade.md) · **Componente alvo:** `web` (o instrumento é do `web`; a propriedade que ele mede é do `sentimento`, dona `quant-architect` — por isso a co-assinatura ao fim)
 **Decisão de origem, que esta ADR FORMALIZA e não reabre:** `REVISAO-FB-frontend-architect.md` §3 (2026-09-04, três alternativas com custo, falsificador em 3 casos). O `PRD-003` a adotou como `RF-1`; `RN-1` exige que ela nasça em ADR co-assinada.

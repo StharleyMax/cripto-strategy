@@ -1,5 +1,8 @@
 # PRD-001 — Plataforma e dados
 
+> **Status em 2026-09-26: PARCIAL.** Prevalecem: SPEC-001 (SeriesKey 15 termos, cvd_source 6 valores, 7 Epics, auth/Q2, label_shift do OI Coinalyze), ADR-002/D4 (TimescaleDB), ADR-010 (paleta), ADR-036 (fonte por métrica; CVD por klines; liquidação Coinalyze), ADR-042 (R-1 com K). CA-F0-2 superado por CL-1 (730 d). Estado: ledger.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #1,7,12-14,16,35,36,56,59.
+
 **Feature:** `plataforma-dados` · **Data:** 2026-08-25 · **Estado do pipeline ao escrever:** `INIT` → este documento leva a `PRD_DRAFT`
 **Componentes tocados:** `sentimento` (predominante, F0–F3) · `charts` (F1, F4) · `web` (F0?, F2, F3, F4 — ver §13.1) · `backtest` (só run registry e dimensão de ambiente, F4) · `docs` (ADRs, F1–F5)
 **Fonte de verdade:** `harness policy --key docs.external_prd_repo` está **vazio** ⇒ este PRD **nasce aqui**; não é referência nem extração de fonte externa.

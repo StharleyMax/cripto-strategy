@@ -1,5 +1,8 @@
 # PRD-008 — Candle real e eixo único: a vela que nunca teve escritor, e os seis gráficos que não se falam
 
+> **Status em 2026-09-26: PARCIAL.** SPEC-008 prevalece (CA-5a..d, CA-8′); OI OHLC Coinalyze tem 0 linhas em md.series (PRD-009 M2); latência: SPEC-009 (160/400 ms).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #26,60.
+
 **Feature:** `candle-real-e-eixo-unico` · **filha de** `plataforma-dados`
 **Componente primário:** `web` · **toca:** `sentimento` (ingestão), `charts` (composição de painel)
 **Estado do ledger ao escrever:** `INIT`, 3 eventos (`init`, `relate`, `dispatch pm`)

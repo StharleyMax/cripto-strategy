@@ -1,6 +1,9 @@
 # SPEC-001 — Plataforma e dados
 
-**Feature:** `plataforma-dados` · **Status:** `DRAFT` · **Data:** 2026-08-25
+> **Status em 2026-09-26: PARCIAL.** Q16 respondida 2026-08-28; infra no vocabulário (ADR-009/D6.5); motor = ADR-002/D4; liquidação primária = Coinalyze (ADR-036/D4); CVD do core = klines (ADR-036/D5); R-1 §2.3 emendada por ADR-042 (<= K).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #1,12,15,34,56.
+
+**Feature:** `plataforma-dados` · **Status:** `DRAFT` (ao nascer) → **Estado: ver `harness pipeline state plataforma-dados` (em 2026-09-26: `BUILD_AUTHORIZED`)** `[MEDIDO 2026-09-26: harness pipeline state plataforma-dados]` · **Data:** 2026-08-25
 **Estado do ledger ao escrever:** `PRD_VALIDATED` (`approve prd` em 2026-08-25T13:40:41Z) → esta SPEC leva a `SPEC_DRAFT`.
 **`SPEC_APPROVED` exige `approve` do owner.** Esta SPEC **não se autoaprova** e não declara aprovação em nenhuma linha.
 

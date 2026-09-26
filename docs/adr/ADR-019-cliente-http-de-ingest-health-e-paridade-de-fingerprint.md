@@ -1,5 +1,8 @@
 # ADR-019 — Cliente HTTP de `ingest_health` (`ADR-005/D6.1`) e o falsificador de `ADR-008/DoD-2` sobre a rota real
 
+> **Status em 2026-09-26: PARCIAL.** D1 superada por T-05.15/ADR-028 (transporte por subprocesso removido); D4 relativizada por ADR-043 (módulos-irmãos client-safe, URL por prop).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #32,33.
+
 **Status:** `RASCUNHO` (aprovar é gate do owner) · **Data:** 2026-09-04 · **Componente:** `web` ·
 **Feature:** `plataforma-dados` (`T-05.14`, `CST-105`) · **Autor:** `architect` (`web`, `A6`)
 **Rev de ancoragem:** `master@56b866c` (worktree `/tmp/claude-1002/wt/T-05.14`, branch

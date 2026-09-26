@@ -1,5 +1,8 @@
 # ADR-031 — Motor do registro `md.ingest_run`/`md.ingest_gap` em produção: Postgres por adaptador, escrito por quem observa; e a imagem que carrega o candidato 4
 
+> **Status em 2026-09-26: PARCIAL.** D3: n_written é creditado pelo escritor, que fecha o run (ADR-035/D2, credit_written).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #21.
+
 **Data:** 2026-09-07 · **Status:** **aceita** — o owner deu `approve spec` em `captura-em-producao` (`2026-09-07T18:23:31Z`, `harness pipeline show captura-em-producao`) e a co-assinatura do `quant-architect` está satisfeita — [`gates/Q3-run-definition.md`](../context/captura-em-producao/gates/Q3-run-definition.md) (§7) decide o que `D3` grava. **Flip formal de `Status` executado por `T-01.9`** (fase `01`, `docs`), conforme este parágrafo previa. **Co-assinatura do `infra-architect` satisfeita por `T-03.6`** — [`gates/F3-infra-architect.md`](../context/captura-em-producao/gates/F3-infra-architect.md) §1 confirma `D2` sem alteração: `timescale/timescaledb:2.17.2-pg15` é a imagem que os dois alvos de compose (`deploy/compose.yml`, `T-03.4`) já usam.
 **Feature:** `captura-em-producao` (filha de `plataforma-dados`) · **Fecha:** `PRD-004` `RN-3`/`M2`/`[GAP G4]` (motor do registro) e `[Q5]`/`[GAP G3]` (imagem) · **Emenda de:** `ADR-014/D1` (SQLite provisório em F0 — os gatilhos `G-A` e `G-B` de `D1e` disparados) e `ADR-002/D1` (aplicação, não reabertura) · **Rev de ancoragem:** `master@0acf947`.
 **Componentes:** `sentimento` (adaptador, composição dos CLIs) · `infra` (composição em `src.main`, imagem do serviço `postgres`).

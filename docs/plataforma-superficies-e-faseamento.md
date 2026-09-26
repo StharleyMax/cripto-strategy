@@ -1,5 +1,8 @@
 # Plataforma: superfícies e faseamento
 
+> **Status em 2026-09-26: PARCIAL.** paleta = ADR-010/Q13 (verde/vermelho); probe = Q19 (4 símbolos); pane de liquidação existe (SPEC-009).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §3 #11,19,59.
+
 **Data:** 2026-08-24 · **Fase:** PLATAFORMA E DADOS · **Destino:** `docs/plataforma-superficies-e-faseamento.md` · **Entra por:** `/pm`
 
 Esta rodada decidiu **quais telas existem, o que cada uma faz, o que cada uma se proíbe de fazer, e em que ordem elas caem junto com as cinco fases de [`docs/recorte-plataforma.md`](recorte-plataforma.md)**. Quatro desenhos de superfície foram produzidos e os quatro passaram por validação adversarial contra o dado real em disco; **os quatro voltaram `SUSTENTADO_COM_CORRECOES`**, e as correções não são cosméticas — nove desenhos específicos foram derrubados por medição e aparecem aqui como derrubados, não como acordo. Esta rodada **deliberadamente não decidiu**: nenhuma regra de estratégia, nenhum limiar de sinal, nenhuma linha da matriz de convergência, nenhum detector SMC — fronteira declarada pelo owner em 2026-08-24 e respeitada em cada superfície abaixo; nem escolha de venue/corretora, tamanho de posição, gestão de risco ou jurisdição, que são decisão do owner; nem transporte de tempo real (A3), alvo de deploy (C3), fuso de exibição (C4), N da watchlist (C2) e entrada da Bybit (C6), que continuam em aberto e estão marcadas onde bloqueiam. E nada aqui foi validado por `harness doctor`: o pack `core` são 5 regras de higiene de Python, ele não enxerga `frontend/`, e dizer CONFORME sobre este documento não significaria nada.

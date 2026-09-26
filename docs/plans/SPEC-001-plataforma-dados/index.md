@@ -1,8 +1,8 @@
 # Plano de execução — SPEC-001 `plataforma-dados`
 
-**SPEC:** [`SPEC-001`](../../specs/SPEC-001-plataforma-dados.md) (`DRAFT`) · **Data:** 2026-08-25
+**SPEC:** [`SPEC-001`](../../specs/SPEC-001-plataforma-dados.md) (`DRAFT` ao nascer → **Estado: ver `harness pipeline state plataforma-dados` (em 2026-09-26: `BUILD_AUTHORIZED`)** `[MEDIDO 2026-09-26: harness pipeline state plataforma-dados]`) · **Data:** 2026-08-25
 **Epics existentes no tracker (lidos, não escritos):** `CST-1`..`CST-7`
-**Componentes (vocabulário fechado):** `sentimento` · `charts` · `convergencia` · `backtest` · `web` · `docs`
+**Componentes (vocabulário fechado):** `sentimento` · `charts` · `convergencia` · `backtest` · `web` · `docs` (⚠️ CORREÇÃO, 2026-09-26: dizia 6; são **7**, com `infra` `[MEDIDO 2026-09-26: harness policy --key components → 7]`)
 
 ## Regra deste plano
 
@@ -88,7 +88,7 @@ T-01.4  ─── independente: não precede fase nenhuma
 
 ⇒ **`D-1` move o plano na direção que o `tasks.toml` já tinha.** Nenhum Epic muda de dono, nenhuma fronteira de valor se move: `T-01.1`..`T-01.4` seguem em `CST-1`.
 
-**O que este documento NÃO afirma.** A outra metade de `D-1` — `T-05.1` recebendo `T-01.2` em `depends_on`, e o desbloqueio de `T-01.2`/`T-01.3`/`T-05.1` em `tasks.toml` e no Jira — é superfície do `/tech-lead` (§0.1, item **2**), e **não foi tocada aqui**. E o **ledger não se moveu**: `harness pipeline state plataforma-dados` segue **`TASKS_APPROVED`**; `build` é gate do **owner**.
+**O que este documento NÃO afirma.** A outra metade de `D-1` — `T-05.1` recebendo `T-01.2` em `depends_on`, e o desbloqueio de `T-01.2`/`T-01.3`/`T-05.1` em `tasks.toml` e no Jira — é superfície do `/tech-lead` (§0.1, item **2**), e **não foi tocada aqui**. E o **ledger não se moveu**: `harness pipeline state plataforma-dados` segue **`TASKS_APPROVED`** (à época; em 2026-09-26: `BUILD_AUTHORIZED` `[MEDIDO 2026-09-26: harness pipeline state plataforma-dados]`); `build` é gate do **owner**.
 
 **`04` não depende de rede.** Todos os fixtures estão em disco (`data/`, 850 MB, `data/MANIFEST.md`). Ela pode correr em paralelo com `03`.
 

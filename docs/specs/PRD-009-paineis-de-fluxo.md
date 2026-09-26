@@ -1,5 +1,8 @@
 # PRD-009 — Painéis de fluxo: o gráfico do símbolo no layout Coinalyze/TradingView
 
+> **Status em 2026-09-26: PARCIAL.** SPEC-009 prevalece: RN-5 → ADR-045/D1 (open = p(T0)); TFs = {1m,5m,15m,1h,4h}; RATIO usa last sob allowlist (ADR-040); latência 160/400 ms.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #37,55.
+
 **Feature:** `paineis-de-fluxo` · **sem mãe declarada** `[INFERRED: escolha do loop principal — DISCOVERY §0; o owner pode relacionar com `harness pipeline relate`]`
 **Componente primário:** `web` · **toca:** `charts` (composição de pane) · `sentimento` **só** se `[Q-OI-1]` escolher `O-2`
 **Estado do ledger ao escrever:** `INIT`, 2 eventos (`init` 20:16:32Z, `dispatch pm` 20:17:04Z)

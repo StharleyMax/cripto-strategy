@@ -1,5 +1,8 @@
 # ADR-013 — Código em inglês é convenção com fronteira escrita, e o portão não existe hoje: eu medi por quê
 
+> **Status em 2026-09-26: PARCIAL.** D3 estendida: tabela de 12 linhas e 7 componentes em CLAUDE.md §Idioma (fonte normativa única).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #27,28.
+
 **Data:** 2026-08-29 · **Status:** **aceito** (atualizada em 2026-08-29 com as duas respostas do owner) · **SPEC:** — (a decisão é do repositório, não de `SPEC-001`)
 **Fase/Epic:** — · **Componente alvo:** `docs`
 **Origem:** achado do owner em 2026-08-29, medido e re-medido nesta árvore (`master@01ec5a8`)

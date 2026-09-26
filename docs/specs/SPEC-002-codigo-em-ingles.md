@@ -1,6 +1,9 @@
 # SPEC-002 — Código em inglês: contrato, fronteira e mecanismo
 
-**Status:** `SPEC_APPROVED` — **e é `SPEC_APPROVED` porque o ledger diz, não porque este documento diz.** O gate **do owner** aconteceu: `approve spec` em **`2026-08-29T14:35:44Z`**, com o motivo escrito no evento, e `advance SPEC_APPROVED` em `14:35:45Z`. A feature já seguiu adiante — `harness pipeline state codigo-em-ingles` → **`BUILD_AUTHORIZED`** `[MEDIDO 2026-08-29 em c7df90c]`.
+> **Status em 2026-09-26: PARCIAL.** §7 superado: rotas em inglês (CLAUDE.md linha 12, 2026-09-08); /painel → /console (ADR-034).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #49.
+
+**Status:** `SPEC_APPROVED` (em 2026-08-29) → **Estado: ver `harness pipeline state codigo-em-ingles` (em 2026-09-26: `DONE`)** `[MEDIDO 2026-09-26: harness pipeline state codigo-em-ingles]` — **e é `SPEC_APPROVED` porque o ledger diz, não porque este documento diz.** O gate **do owner** aconteceu: `approve spec` em **`2026-08-29T14:35:44Z`**, com o motivo escrito no evento, e `advance SPEC_APPROVED` em `14:35:45Z`. A feature já seguiu adiante — `harness pipeline state codigo-em-ingles` → **`BUILD_AUTHORIZED`** `[MEDIDO 2026-08-29 em c7df90c]`.
 > **Esta linha dizia `DRAFT`, e estava CERTA quando foi escrita** — ela mesma explicava por quê: *"é DRAFT porque o ledger diz DRAFT; escrever APROVADA aqui sem o evento seria violação, não atalho"*. **O ledger deixou de dizer isso, e o texto envelheceu por um evento.** Sincronizada por `T-01.3` (`CST-94`) aplicando ao documento a regra que ele escreveu para si; a autorização é o evento citado acima, **conferido por comando, não presumido do texto**. O gate continua sendo do owner: nenhum `approve`, `advance` ou `gate-record` foi executado por esta task.
 **Feature:** `codigo-em-ingles` · **Data:** 2026-08-29 · **Componentes:** `docs` (predominante) · `sentimento` (`F2`) · `web` (`F3`)
 **Estado do ledger ao escrever:** `PRD_DRAFT` `[MEDIDO 2026-08-29: harness pipeline state codigo-em-ingles → PRD_DRAFT; 3 eventos: init, dispatch pm, advance PRD_DRAFT]`

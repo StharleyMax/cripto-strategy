@@ -1,5 +1,8 @@
 # ADR-027 — Topologia de processo e produção real do escritor único
 
+> **Status em 2026-09-26: PARCIAL.** Lista de coletores de D1 e D1a ('poller de OI não existe') desatualizadas: collectors_cli.py roda klines, OI hist e OI poll (SPEC-007 §4; SPEC-009 O-4). A forma (1 processo, threads) vale.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #10.
+
 **Data:** 2026-09-04 · **Status:** aprovado pelo owner (D1 e D2, 2026-09-04); **Emenda D1a em 2026-09-08** (reabertura pedida sobre `coinalyze_one_shot_cli` — classificação FICA, item novo aberto sem decisão) · **SPEC:** [`SPEC-001`](../plans/SPEC-001-plataforma-dados) (nenhuma seção específica — ver "Por que não é emenda de outra ADR" abaixo)
 **Fase/Epic:** amplia a fase `07` (`CST-5`) — proposta de plano em anexo; materialização é ato do `/tech-lead`
 **Componente alvo:** `infra` (topologia, `deploy/compose.yml`, entrypoints) e `sentimento` (produtores reais dos coletores 24/7)

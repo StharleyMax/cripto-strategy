@@ -1,5 +1,8 @@
 # ADR-002 — Motor de armazenamento
 
+> **Status em 2026-09-26: PARCIAL.** D1 'instância que já está de pé' não confere com deploy/compose.yml:46 (container próprio); decisão pendente do owner (MAPA §4 P1). SQLite de F0 fechado por ADR-031.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #2.
+
 **Data:** 2026-08-25 · **Status:** proposto, **com um finalista pendente de spike** · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §2.5, §4.2
 **Fase/Epic:** F4 · `CST-6` · **Componente alvo:** `docs` (a decisão) / `sentimento` (o escritor único)
 **Requisito de origem:** `CA-F4-24`

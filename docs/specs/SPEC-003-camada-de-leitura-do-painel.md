@@ -1,6 +1,9 @@
 # SPEC-003 — Camada de leitura do `/painel`: contratos, fronteiras e comportamento de borda
 
-**Status:** `SPEC_APPROVED` — **`approve spec` do owner em `2026-09-05T12:53:22Z`** (`harness pipeline show camada-de-leitura-do-painel`). O ledger já avançou além (`TASKS_APPROVED`, `BUILD_AUTHORIZED`); o estado corrente **é sempre** `harness pipeline state camada-de-leitura-do-painel` — nunca o texto deste cabeçalho.
+> **Status em 2026-09-26: PARCIAL.** /painel → /console (ADR-034); store de produção = Postgres (ADR-031), SQLite só dev/teste; collector-status = ADR-030 + ADR-035.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #3,49.
+
+**Status:** `SPEC_APPROVED` (em 2026-09-05) → **Estado: ver `harness pipeline state camada-de-leitura-do-painel` (em 2026-09-26: `DONE`)** `[MEDIDO 2026-09-26: harness pipeline state camada-de-leitura-do-painel]` — **`approve spec` do owner em `2026-09-05T12:53:22Z`** (`harness pipeline show camada-de-leitura-do-painel`). O ledger já avançou além (`TASKS_APPROVED`, `BUILD_AUTHORIZED`); o estado corrente **é sempre** `harness pipeline state camada-de-leitura-do-painel` — nunca o texto deste cabeçalho.
 **Feature:** `camada-de-leitura-do-painel` (**filha** de `plataforma-dados`, `relate` no ledger) · **Data:** 2026-09-04 · **Componentes:** `web` (predominante) · `infra` · `sentimento` (`F3`) · `docs`
 **Ledger ao escrever:** `PRD_VALIDATED` — `approve prd` (architect) + `advance PRD_VALIDATED` em 2026-09-04, após a Gap Analysis de §0 · **Rev de ancoragem de TODA medição:** `master@c8e7193` (a mesma do `PRD-003` e dos 4 relatórios `REVISAO-FB-*` — nenhum número envelheceu)
 **Insumos:** [`PRD-003`](PRD-003-camada-de-leitura-do-painel.md) · [`handoff_to_architect.md`](../context/camada-de-leitura-do-painel/handoff_to_architect.md) · [`handoff/PRD.md`](../context/camada-de-leitura-do-painel/handoff/PRD.md) (falas literais do owner) · `REVISAO-FB-{frontend-architect,infra-architect,playwright,ux-gate}.md` em `docs/context/plataforma-dados/gates/` (evidência medida, **citada, não transcrita**) · `ADR-005` D5/D6 · `ADR-019` D4 · `ADR-027` · `05_fatia_visivel.md:215-225`
