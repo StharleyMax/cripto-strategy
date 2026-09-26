@@ -152,9 +152,9 @@ test("MORDE: reintroducing CST-230's bug on LiveRow is caught by the structural 
 
 test("MORDE: a hand-typed accented byte in a data-fact literal is caught by the ASCII scan", () => {
   const stripped = stripComments(rawSource);
-  const anchor = 'data-fact="volume_scale:log10"';
+  const anchor = 'data-fact="volume_scale:linear"';
   assert.ok(stripped.includes(anchor), "the known-good volume-scale anchor moved — update this test, do not delete it");
-  const mutated = stripped.replace(anchor, 'data-fact="volume_escála:log10"');
+  const mutated = stripped.replace(anchor, 'data-fact="volume_escála:linear"');
   assert.notEqual(mutated, stripped, "the mutation found no anchor to apply — the guard below proves nothing");
 
   const mutatedExpressions = extractDataFactExpressions(mutated);

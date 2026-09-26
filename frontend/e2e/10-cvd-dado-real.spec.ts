@@ -62,7 +62,9 @@ const apiBaseUrl = sentimentoApiBaseUrl;
  * same strings from the other side, which is the point: two independent witnesses of one
  * contract, so a rename has to break one of them. */
 const CVD_PANE_TESTID = "cvd-pane";
-const ABSENCE_TOKEN = "SEM_PONTO";
+/** `T-01.R1` (`SF-9`): the READOUT prints the pt-BR word, the same `ausente` the legend paints —
+ * `SymbolClient.tsx::ABSENCE_TOKEN`. The enum stays in the `data-fact` (`:absent`). */
+const ABSENCE_TOKEN = "ausente";
 
 /** `DoD-3`: `N >= 30` pontos DISTINTOS, nÃ£o `N > 0`. NÃ£o hÃ¡ divisor de `RN-S1` aqui â a sÃ©rie Ã©
  * `1m` NATIVA (`SPEC-007 Â§4.1`), entÃ£o cada grade com valor Ã© uma barra nativa distinta e

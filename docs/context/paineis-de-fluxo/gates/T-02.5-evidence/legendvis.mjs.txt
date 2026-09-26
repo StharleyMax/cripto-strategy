@@ -1,0 +1,15 @@
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-02-5/frontend/node_modules/playwright/index.mjs";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 1200 }, deviceScaleFactor: 1 });
+await page.goto("http://127.0.0.1:4321/symbol/BTCUSDT", { waitUntil: "load", timeout: 180000 });
+await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180000 });
+await page.waitForTimeout(4000);
+console.log(JSON.stringify(await page.evaluate(() => {
+  const q = (s) => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+    let hidden = null; for (let p = e; p; p = p.parentElement) { const c = getComputedStyle(p); if (c.display === "none" || c.visibility === "hidden" || p.classList.contains("sr-only") || p.hidden) { hidden = p.tagName + "." + p.className.slice(0, 60); break; } }
+    return { rect: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)], hiddenBy: hidden, text: e.innerText.slice(0, 80) }; };
+  const txt = document.querySelector("main").innerText;
+  return { marks: q('[data-fact^="volume_marks_legend"]'), note: q('[data-fact^="volume_scale"]'),
+    colourKeyWords: ["alta", "baixa", "doji", "direção"].map((w) => [w, (txt.match(new RegExp(w, "gi")) ?? []).length]) };
+})));
+await browser.close();

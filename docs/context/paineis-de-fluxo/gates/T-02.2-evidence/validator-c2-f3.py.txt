@@ -1,0 +1,22 @@
+# F-3 on the spec build: is the tallest drawn column the visible max-volume slot, and how tall vs median?
+import json, statistics as st, sys
+from PIL import Image
+im = Image.open("out/spec-1m-price.png").convert("RGB"); px = im.load(); W, H = im.size
+ink = lambda c: c[0] > 100 and c[1] > 100 and c[2] > 100 and abs(c[0]-c[2]) < 45
+hs = []
+for x in range(1105):
+    y = H - 1
+    while y > H - 12 and not ink(px[x, y]): y -= 1
+    h = 0
+    while y >= 0 and ink(px[x, y]): h += 1; y -= 1
+    hs.append(h)
+bars = [h for h in hs if h > 2]  # exclude the 2-px absence marks (rows 4-5)
+xmax = max(range(1105), key=lambda x: hs[x])
+rows = sorted(json.load(open("data/vol-1m.json"))["rows"], key=lambda r: r["event_time"])
+N = 2210; vis = rows[-N:]
+vals = [(i, float(r["value"])) for i, r in enumerate(vis) if r["value"] is not None and r.get("absence") is None]
+imax, vmax = max(vals, key=lambda t: t[1]); vs = sorted(v for _, v in vals)
+top2 = sorted(vals, key=lambda t: -t[1])[:3]
+print(f"slots={len(rows)} visible={N} present={len(vals)} vmax={vmax:.1f} at slot {imax} -> predicted x={int(imax*0.5)} | second/third: {[(int(i*0.5), round(v,1)) for i, v in top2[1:]]}")
+print(f"tallest column x={xmax} h={hs[xmax]} | median of bar columns (h>2 excl marks) = {st.median(bars)} ; all inked median={st.median([h for h in hs if h>0])}")
+print(f"ratio max/median(all inked) = {hs[xmax]/st.median([h for h in hs if h>0]):.1f}x ; data max/p50 (visible) = {vmax/st.median(vs):.1f}x")

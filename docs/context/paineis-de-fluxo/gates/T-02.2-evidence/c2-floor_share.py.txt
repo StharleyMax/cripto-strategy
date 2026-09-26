@@ -1,0 +1,9 @@
+# Share of present bars whose LINEAR height (v / visible max * band) is < 1 px, i.e. drawn at the lib's 1-px
+# floor, for band = 20% (HEAD), 17% (B: 0.8 top + 0.03 mark lane) and 13% (DESIGN-LAYOUT.md:112) of a 335-px pane.
+import json, sys
+V = sys.argv[1]
+for tf, N in (("1m", 2210), ("5m", 442)):
+    rows = sorted(json.load(open(f"{V}/data/vol-{tf}.json"))["rows"], key=lambda r: r["event_time"])
+    for name, R in (("whole window", rows), ("visible", rows[-N:])):
+        v = [float(r["value"]) for r in R if r["value"] is not None and r.get("absence") is None]; mx = max(v)
+        print(f"{tf} {name} n={len(v)} " + " ".join(f"band={f:.2f}: <1px={sum(x / mx * 335 * f < 1 for x in v) / len(v):.1%}" for f in (0.20, 0.17, 0.13)))

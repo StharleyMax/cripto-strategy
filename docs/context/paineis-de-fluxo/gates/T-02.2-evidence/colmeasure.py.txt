@@ -1,0 +1,19 @@
+# Measure volume-bar column heights from a price-pane screenshot (clip starts at pane top, 1280 wide).
+# A column's height = run of "volume ink" pixels scanning up from the pane bottom. Volume ink = the gray
+# provenanceWeak (r,g,b all > 110 and |r-b| < 40, i.e. near-neutral light gray), background is ~#131722.
+import sys, statistics as st
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB"); W, H = im.size; X1 = int(sys.argv[2]) if len(sys.argv) > 2 else 1105
+px = im.load()
+def ink(c): r, g, b = c; return r > 100 and g > 100 and b > 100 and abs(r - b) < 45
+hs = []
+for x in range(0, X1):
+    y = H - 1
+    # skip up to 11 px of pane border at the bottom
+    while y > H - 12 and not ink(px[x, y]): y -= 1
+    h = 0
+    while y >= 0 and ink(px[x, y]): h += 1; y -= 1
+    hs.append(h)
+nz = [h for h in hs if h > 0]
+q = sorted(nz)
+print(f"{sys.argv[1]}: columns={len(hs)} inked={len(nz)} p10={q[len(q)//10]} p50={st.median(nz)} p90={q[9*len(q)//10]} max={max(nz)} cols<=1px={sum(1 for h in nz if h<=1)} cols<=2px={sum(1 for h in nz if h<=2)}")

@@ -1,0 +1,16 @@
+# Area model on the VISIBLE window (last N slots) restricted to FULL-coverage buckets, with the 1-px floor.
+# Scale max = max of ALL present visible buckets (what autoscale uses), shares over full-coverage only.
+import json, math, sys
+V = sys.argv[1]; BAND = 335 * 0.20; LANE = 335 * 0.17
+VIS = {"1m": 2210, "5m": 442, "15m": 147, "1h": 37}
+def rows(n, tf): return sorted(json.load(open(f"{V}/data/{n}-{tf}.json"))["rows"], key=lambda r: r["event_time"])
+for tf, N in VIS.items():
+    vol = rows("vol", tf)[-N:]; op = {r["event_time"]: r for r in rows("open", tf)}; cl = {r["event_time"]: r for r in rows("close", tf)}
+    pres = [r for r in vol if r["value"] is not None and r.get("absence") is None]
+    mx = max(float(r["value"]) for r in pres)
+    full = [(float(r["value"]), float(cl[r["event_time"]]["value"]) >= float(op[r["event_time"]]["value"])) for r in pres
+            if not r.get("coverage") or r["coverage"]["present"] >= r["coverage"]["expected"]]
+    sh = lambda f: sum(f(v) for v, u in full if u) / sum(f(v) for v, _ in full)
+    truth = sh(lambda v: v); lin = sh(lambda v: max(1, round(v / mx * LANE))); lg = sh(lambda v: max(1, round(max(0, math.log10(v) / math.log10(mx) * BAND))))
+    cnt = sum(u for _, u in full) / len(full)
+    print(f"{tf}: visible={N} full-cov n={len(full)} upcount={cnt:.3f} truth={truth:.3f} lin_floor={lin:.3f} ({lin-truth:+.3f}) log_floor={lg:.3f} ({lg-truth:+.3f})")

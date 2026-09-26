@@ -1,0 +1,23 @@
+# 1m: several slots per pixel column. For each candidate bar spacing s, place the LAST N=1105/s slots
+# right-aligned and predict per column B (any present slot) / M (only absent slots); score vs the lane-1m capture.
+import json, sys
+from PIL import Image
+BG = {(19, 23, 34), (34, 38, 52)}
+S, V = sys.argv[1], sys.argv[2]
+im = Image.open(f"{S}/lane-1m-price.png").convert("RGB"); px = im.load(); W, H = im.size
+obs = {}
+for x in range(1105):
+    ink = [r for r in range(16) if px[x, H-1-r] not in BG and sum(px[x, H-1-r]) > 150]
+    obs[x] = 'B' if any(r >= 9 for r in ink) else ('M' if ink else '.')
+rows = sorted(json.load(open(f"{V}/data/vol-1m.json"))["rows"], key=lambda r: r["event_time"])
+pres = [r["value"] is not None and r.get("absence") is None for r in rows]
+res = []
+for s100 in range(15, 101):
+    s = s100 / 100; N = min(len(rows), int(1105 / s)); start = len(rows) - N; pred = {}
+    for i in range(N):
+        x = int(i * s); pred.setdefault(x, set()).add(pres[start + i])
+    p = {x: ('B' if True in v else 'M') for x, v in pred.items()}
+    hit = sum(1 for x in range(1105) if p.get(x, '.') == obs[x])
+    res.append((hit, s, N))
+for hit, s, N in sorted(res, reverse=True)[:5]: print(f"spacing={s:.2f}px visible_slots={N} match={hit}/1105")
+print("observed: B cols", sum(v == 'B' for v in obs.values()), "M cols", sum(v == 'M' for v in obs.values()))

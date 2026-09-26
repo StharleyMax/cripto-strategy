@@ -49,7 +49,7 @@ const pageCode = pageSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*
  * with another task is not guarded by importing the constant it is made of — that would rename
  * itself along with the mutation it is supposed to catch. */
 const EXPECTED_PANE_TESTID = "long-short-pane";
-const EXPECTED_ABSENCE_TOKEN = "SEM_PONTO";
+const EXPECTED_ABSENCE_TOKEN = "ausente";
 
 const PANE_TESTID_DECLARATION = /const LONG_SHORT_PANE_TESTID = "([^"]*)";/;
 const PANE_TESTID_RENDERED = /data-testid=\{LONG_SHORT_PANE_TESTID\}/;
@@ -134,10 +134,10 @@ test("T-04.7 contract: BOTH counts are bare integer attributes on the SAME eleme
 
 // ── `RN-1` — the rule this pane exists to not break ───────────────────────────────────────────
 
-test("RN-1: absence prints SEM_PONTO, and for a RATIO a number there would not even look wrong", () => {
+test("RN-1: absence prints `ausente`, and for a RATIO a number there would not even look wrong", () => {
   const declaration = ABSENCE_TOKEN_DECLARATION.exec(source);
   assert.ok(declaration !== null, "ABSENCE_TOKEN declaration not found — the anchor moved, fix this test");
-  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is SEM_PONTO, the same token the other four readouts use");
+  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is `ausente`, the same word the other four readouts use");
   assert.ok(
     !/^-?\d+(\.\d+)?$/.test(declaration[1]!),
     "the absence token must not be a number in any shape — 0, 0.0 and -0 are all the RN-1 defect",

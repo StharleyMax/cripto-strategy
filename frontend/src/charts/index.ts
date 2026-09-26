@@ -149,6 +149,10 @@ export {
   SURFACE_BASE,
 } from "./color-tokens.ts";
 export type { ColorRole, ColorTokens, ContrastBackdrop } from "./color-tokens.ts";
+// `paineis-de-fluxo` `T-02.1` — the volume bar takes the direction of the candle at the same
+// instant, in the SAME two tokens (`RF-7`, `RNF-3`); no candle ⇒ neutral ink (`RN-4`).
+export { volumeBarColor, directionalVolumeSeriesLossless } from "./volume-direction.ts";
+export type { CandleDirectionInput, ColoredHistogramItem } from "./volume-direction.ts";
 export { relativeLuminance, contrastRatio } from "./contrast.ts";
 // The surface the canvas is CLEARED to — the value `createChart` receives and the value every
 // `kind: "surface"` contrast ratio is measured against, so the two cannot be different things

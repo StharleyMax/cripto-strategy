@@ -391,6 +391,12 @@ recalibrado em 2026-09-22.
 | `[Q-VOL-1]` | V-1 (cor pela direção) | **resolvida** `[INFERRED: é a referência e não duplica o CVD]` | owner veta | V-1 |
 | `[I-5]` | ciclo de vida *"`setData` sem remontar"* | fora da F1 | `ADR-043` | remonta |
 
+> ✅ **NOTA 2026-09-26 — `[Q-DG-2]`, metade do volume respondida** (`W4-QA` achado 3): o default *"o de hoje"* (`log10`)
+> **não vale mais para o volume**. O `design_gate` de `T-02.2` escolheu a opção **B**, linear com base 0 e as marcas
+> numa faixa própria abaixo da base (`docs/context/paineis-de-fluxo/gates/T-02.2-design-gate.md` §4 e §8, ciclo 2
+> **APPROVED**). A metade da **liquidação** não foi julgada ali e continua aberta, com o mesmo default. A linha acima
+> fica como estava.
+
 ---
 
 ## 12. Rastreabilidade — requisito → onde fecha

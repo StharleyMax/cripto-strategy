@@ -8,7 +8,7 @@
  * mutations below passed unnoticed —
  *
  *   - renaming `VOLUME_SUBAXIS_TESTID`            -> 136 pass / 0 fail
- *   - `ABSENCE_TOKEN = "SEM_PONTO"` becoming `"0"` -> 136 pass / 0 fail
+ *   - `ABSENCE_TOKEN` (then `"SEM_PONTO"`, `"ausente"` since `T-01.R1`) becoming `"0"` -> 136 pass / 0 fail
  *   - deleting `data-volume-present-points`        -> 136 pass / 0 fail
  *
  * The second one IS the defect `RN-1` names, reachable by a one-token edit: a `FLOW` absence
@@ -43,7 +43,7 @@ const EXPECTED_TESTID = "price-pane-volume-subaxis";
 const EXPECTED_PRESENT_POINTS_ATTR = "data-volume-present-points";
 /** `RN-1`'s literal token. `DoD-3` asserts its ABSENCE from the screen when data is present, so
  * the string is as load-bearing as the testid. */
-const EXPECTED_ABSENCE_TOKEN = "SEM_PONTO";
+const EXPECTED_ABSENCE_TOKEN = "ausente";
 
 const TESTID_DECLARATION = /const VOLUME_SUBAXIS_TESTID = "([^"]*)";/;
 const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
@@ -71,10 +71,10 @@ test("T-01.9 contract: the present-point count is a bare integer attribute on th
   assert.match(source, subAxisElement, "testid and present-point count must sit on the SAME element");
 });
 
-test("RN-1 at the RENDERING layer: absence prints SEM_PONTO, and the token is never a number", () => {
+test("RN-1 at the RENDERING layer: absence prints `ausente`, and the token is never a number", () => {
   const declaration = ABSENCE_TOKEN_DECLARATION.exec(source);
   assert.ok(declaration !== null, "ABSENCE_TOKEN declaration not found — the anchor moved, fix this test");
-  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is SEM_PONTO — for a FLOW series a number here is an error of TYPE");
+  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is `ausente` — for a FLOW series a number here is an error of TYPE");
   assert.ok(
     !/^-?\d+(\.\d+)?$/.test(declaration[1]!),
     "the absence token must not be a number in any shape — 0, 0.0 and -0 are all the RN-1 defect",
@@ -168,32 +168,69 @@ test("MORDE: each of the 3 DOM-contract mutations that used to pass green is now
 // `T-01.10` (`ADR-044/D2′`): the pane no longer calls `setData` — its `apply` RETURNS `{ series, items }`
 // feeds and the host applies them after the grid carrier. The contract (WHICH lossless mapping
 // feeds WHICH series) is unchanged; only the call site moved, so the anchors follow it.
-const VOLUME_SETDATA = /\{ series: volumeSeries, items: positiveValueSeriesLossless\(volume\.slots\) \}/;
-/** ⛔ ANCHORED TO `volumeSeries`, AND IT WAS NOT UNTIL `T-05.9` — the bare
- * `/mode: PriceScaleMode\.Logarithmic,/` was correct while this file was the only logarithmic scale
- * in `SymbolClient.tsx`, and went VACUOUS the moment a second one arrived (the liquidation pane):
- * the mutation below deletes the FIRST occurrence, the second one kept the assert green, and the
- * `MORDE` test caught exactly that. The guard now names the series whose scale it is about, which
- * is what makes it survive a third chart too. */
-const LOG_MODE =
-  /volumeSeries\.priceScale\(\)\.applyOptions\(\{\s*scaleMargins: VOLUME_SCALE_MARGINS,\s*mode: PriceScaleMode\.Logarithmic,/;
+//
+// `T-02.3` (plan `02` item `2.4`): the bar series is fed `directionalVolumeSeriesLossless` — the SAME value
+// half as `positiveValueSeriesLossless` (`T-02.1`'s own tests pin that), plus each bar's `color` from the
+// candle at the same `time`. The second argument is the PRICE pane's slot vector: pairing the volume with
+// anything else (itself, the legend's 1-minute vector) colors bar `i` by a candle that is not bar `i`'s.
+const VOLUME_SETDATA =
+  /\{ series: volumeSeries, items: directionalVolumeSeriesLossless\(volume\.slots, panels\.price\.series\.slots\) \}/;
+/** ⛔ ANCHORED TO `volumeSeries`, AND IT WAS NOT UNTIL `T-05.9` — a bare `mode:` pattern went VACUOUS
+ * the moment a second scale arrived (the liquidation pane). The guard names the series whose scale
+ * it is about. Since `T-02.2` (`gates/T-02.2-design-gate.md` §5.1) the mode is `Normal`, written out
+ * explicitly so that it is a decision this line can read, not a default. */
+const LINEAR_MODE =
+  /volumeSeries\.priceScale\(\)\.applyOptions\(\{\s*scaleMargins: VOLUME_SCALE_MARGINS,\s*mode: PriceScaleMode\.Normal,/;
+/** `T-02.2` §5.2: the marks get a strip of their own, below the bars' base. */
+const MARKS_STRIP = /absenceSeries\.priceScale\(\)\.applyOptions\(\{ scaleMargins: VOLUME_MARKS_SCALE_MARGINS \}\);/;
 const ABSENCE_SETDATA = /\{ series: absenceSeries, items: absenceMarkSeries\(volume\.slots, ABSENCE_MARK_PX\) \}/;
 const ZERO_SETDATA = /\{ series: zeroSeries, items: zeroMarkSeries\(volume\.slots, ZERO_MARK_PX\) \}/;
 const ABSENCE_ROLE = /const ABSENCE_MARK_COLOR_ROLE = "(\w+)" as const;/;
 const ZERO_ROLE = /const ZERO_MARK_COLOR_ROLE = "(\w+)" as const;/;
 
-test("BLOCKER-1: the bar series uses the mapping a log scale is able to place", () => {
+test("T-02.2: the bar series gets only positive values, on the linear scale, and the scale is DECLARED on screen", () => {
   assert.match(
     source,
     VOLUME_SETDATA,
-    "the sub-axis went back to `lineSeriesLossless`, which hands `0` over as a zero-height bar — " +
-      "`log10(0)` has no coordinate and the zero-height bar IS the absence mark",
+    "the bar series is not fed `directionalVolumeSeriesLossless(volume.slots, panels.price.series.slots)` — " +
+      "either it lost the candle's direction (T-02.3), or it went back to `lineSeriesLossless`, which hands `0` " +
+      "over as a bar that a linear scale paints at its 1-px floor, and 'foi zero' reads as 'houve pouco'",
   );
-  assert.match(source, LOG_MODE, "the sub-axis scale does not declare `PriceScaleMode.Logarithmic` — BLOCKER-1");
-  // And the label the report requires ALONGSIDE the scale: an unlabelled log axis is worse than an
-  // illegible linear one, because it invites reading twice the height as twice the volume.
-  assert.match(source, /data-fact="volume_scale:log10"/, "the scale must be DECLARED on screen, not merely applied");
-  assert.match(source, /escala log10/, "the visible label must state the scale in words");
+  assert.match(source, LINEAR_MODE, "the sub-axis scale does not declare `PriceScaleMode.Normal` — T-02.2 §5.1");
+  assert.match(source, MARKS_STRIP, "the marks do not get their own strip below the bars — T-02.2 §5.2");
+  // The rule `BLOCKER-1` left and `T-02.2` kept: declare the scale, whichever it is.
+  assert.match(source, /data-fact="volume_scale:linear"/, "the scale must be DECLARED on screen, not merely applied");
+  assert.match(source, /escala linear/, "the visible label must state the scale in words");
+});
+
+/** The visible copy of the two notes, isolated by component so the negative assert below reads only
+ * the words the operator sees, not the comments around them. */
+function componentBody(name: string): string {
+  const start = source.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `${name} was not found in SymbolClient.tsx — the anchor moved, fix this test`);
+  const end = source.indexOf("\n}\n", start);
+  assert.ok(end > start, `the end of ${name} was not found`);
+  return source.slice(start, end);
+}
+
+/** `T-02.2` §5.4/§5.6 (`MF-5`): what the copy may no longer say, because on the linear layout it is false. */
+const FALSE_UNDER_B = [/linha de base/i, /zero na base/i] as const;
+
+test("T-02.2 (MF-5): the scale note and the marks legend do not say 'linha de base' nor 'zero na base'", () => {
+  for (const name of ["VolumeScaleNote", "VolumeMarksLegend"]) {
+    const body = componentBody(name);
+    for (const phrase of FALSE_UNDER_B) {
+      assert.doesNotMatch(body, phrase, `${name} still says ${phrase} — on the linear layout the marks sit BELOW the base (gate §5.4)`);
+    }
+  }
+  assert.match(componentBody("VolumeMarksLegend"), /faixa abaixo das barras/, "the absence line lost the strip it now points at");
+  assert.match(componentBody("VolumeScaleNote"), /maior barra visível/, "the note no longer says what the top of the strip is");
+});
+
+test("MORDE (MF-5): the pre-T-02.2 copy is caught by the negative assert", () => {
+  const legacy = componentBody("VolumeMarksLegend").replace("na faixa abaixo das barras", "na linha de base");
+  assert.notEqual(legacy, componentBody("VolumeMarksLegend"), "the mutation found no anchor — update this test, do not delete it");
+  assert.ok(FALSE_UNDER_B.some((phrase) => phrase.test(legacy)), "the negative assert does not see the old copy — it is vacuous");
 });
 
 test("BLOCKER-2: absence and legitimate zero are TWO series, with distinct marks and inks", () => {
@@ -209,7 +246,8 @@ test("BLOCKER-2: absence and legitimate zero are TWO series, with distinct marks
       "same claim again (STITCH_CONTEXT.md:1821-1825)",
   );
   // ⛔ `ADR-010`: the distinction is one of LUMINANCE, zero hue. Neither price direction
-  // (green/red, which is `fill` and volume has no direction) nor data integrity (`dataBrokenInk` —
+  // (green/red, which is `fill`; since `T-02.3` the BARS carry it, and a mark has no bar to carry
+  // it for) nor data integrity (`dataBrokenInk` —
   // a grid gap is OPERATIONAL, not broken data).
   for (const role of [absenceRole!, zeroRole!]) {
     assert.match(role, /^provenance(Strong|Weak)$/, `the mark uses the role ${role}, outside the provenance ramp`);
@@ -218,16 +256,28 @@ test("BLOCKER-2: absence and legitimate zero are TWO series, with distinct marks
   assert.match(source, /data-fact="volume_marks_legend:2"/);
 });
 
-test("MORDE: each of the 4 regressions of the two BLOCKERs is caught by an assert above", () => {
+test("MORDE: each of the 7 regressions of the wiring, the scale and the marks is caught by an assert above", () => {
   const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
     {
       name: "back to lineSeriesLossless (zero becomes a zero-height bar)",
       mutate: (s) => s.replace(VOLUME_SETDATA, "{ series: volumeSeries, items: lineSeriesLossless(volume.slots) }"),
     },
     {
-      name: "scale back to linear",
+      name: "T-02.3 undone: back to positiveValueSeriesLossless (every bar neutral, no direction)",
+      mutate: (s) => s.replace(VOLUME_SETDATA, "{ series: volumeSeries, items: positiveValueSeriesLossless(volume.slots) }"),
+    },
+    {
+      name: "T-02.3 paired with the wrong vector (the legend's 1-minute slots, not the price candles)",
       mutate: (s) =>
-        s.replace(LOG_MODE, "volumeSeries.priceScale().applyOptions({\n      scaleMargins: VOLUME_SCALE_MARGINS,"),
+        s.replace(VOLUME_SETDATA, "{ series: volumeSeries, items: directionalVolumeSeriesLossless(volume.slots, volume.legendSlots) }"),
+    },
+    {
+      name: "scale back to log10",
+      mutate: (s) => s.replace(LINEAR_MODE, "volumeSeries.priceScale().applyOptions({\n        scaleMargins: VOLUME_SCALE_MARGINS,\n        mode: PriceScaleMode.Logarithmic,"),
+    },
+    {
+      name: "marks back on the bars' margins",
+      mutate: (s) => s.replace(MARKS_STRIP, "absenceSeries.priceScale().applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS });"),
     },
     { name: "the absence mark disappears", mutate: (s) => s.replace(ABSENCE_SETDATA, "") },
     {
@@ -240,7 +290,8 @@ test("MORDE: each of the 4 regressions of the two BLOCKERs is caught by an asser
     assert.notEqual(mutated, source, `the mutation "${mutant.name}" found no anchor — update this test, do not delete it`);
     const survives =
       VOLUME_SETDATA.test(mutated) &&
-      LOG_MODE.test(mutated) &&
+      LINEAR_MODE.test(mutated) &&
+      MARKS_STRIP.test(mutated) &&
       ABSENCE_SETDATA.test(mutated) &&
       ZERO_SETDATA.test(mutated) &&
       ABSENCE_ROLE.exec(mutated)?.[1] !== ZERO_ROLE.exec(mutated)?.[1];
@@ -253,7 +304,7 @@ test("MORDE: each of the 4 regressions of the two BLOCKERs is caught by an asser
 test("CALA: a design_gate NEEDS_FIX about colour, height or scale leaves the contract intact", () => {
   // Exactly the kind of edit `T-01.8` is allowed to make without coordinating with `T-01.9`.
   const restyled = source
-    .replace(/const VOLUME_SCALE_MARGINS = \{ top: 0\.8, bottom: 0 \} as const;/, "const VOLUME_SCALE_MARGINS = { top: 0.55, bottom: 0.05 } as const;")
+    .replace(/const VOLUME_SCALE_MARGINS = \{ top: 0\.8, bottom: 0\.03 \} as const;/, "const VOLUME_SCALE_MARGINS = { top: 0.55, bottom: 0.05 } as const;")
     .replace(/color: colorTokens\(\)\.provenanceWeak,/, "color: colorTokens().provenanceStrong,");
   assert.notEqual(restyled, source, "the form constants moved — re-anchor this CALA rather than dropping it");
   assert.equal(TESTID_DECLARATION.exec(restyled)?.[1], EXPECTED_TESTID);

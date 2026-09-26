@@ -1,0 +1,54 @@
+# F-1 on the VISIBLE universe. The capture shows the LAST N slots of each TF (N measured by visible.py /
+# visible1m.py: 1m 2210 @0.5px, 5m 442 @2.5px, 15m 147 @7.5px, 1h 37 @30px). For those slots:
+#   truth      = up-volume share (close >= open), all present buckets and full-coverage only
+#   lin_area   = linear area share (== truth by construction)
+#   lin_floor  = linear with the lightweight-charts 1-px floor, drawn in slot order with overpaint per column
+#   log_floor  = log10 base 1 (current HEAD), same draw simulation
+#   pix_*      = measured green share of the bar run at the base (validator runshare rule), per column,
+#                all bar columns of the visible window (no full-coverage split: column<->slot
+#                mapping is not 1:1 at 5m/15m, bar columns != present slots by 4-5)
+import json, math, sys
+from PIL import Image
+S, V = sys.argv[1], sys.argv[2]
+LANE = 335 * (1 - 0.8 - 0.03)  # B geometry: VOLUME_SCALE_MARGINS {top 0.8, bottom 0.03} (lincolor capture)
+UP, DN = (8, 153, 129), (242, 54, 69); BAND = 335 * 0.20
+near = lambda c, k: all(abs(a - b) < 30 for a, b in zip(c, k))
+VIS = {"1m": (2210, 0.5), "5m": (442, 2.5), "15m": (147, 7.5), "1h": (37, 30.0)}
+def rows(n, tf): return sorted(json.load(open(f"{V}/data/{n}-{tf}.json"))["rows"], key=lambda r: r["event_time"])
+def runs(tag):
+    im = Image.open(f"{S}/{tag}-price.png").convert("RGB"); px = im.load(); W, H = im.size; out = {}
+    for x in range(1105):
+        y = H - 1
+        while y > H - 20 and not (near(px[x, y], UP) or near(px[x, y], DN)): y -= 1
+        if y <= H - 20: continue
+        u = d = 0
+        while y >= 0 and (near(px[x, y], UP) or near(px[x, y], DN)): u += near(px[x, y], UP); d += near(px[x, y], DN); y -= 1
+        out[x] = (u, d)
+    return out
+def sim(slots, hfun, s):
+    cols = {}
+    for i, (v, up) in enumerate(slots):
+        if v is None: continue
+        h = max(1, round(hfun(v))); c = cols.setdefault(int(i * s), {})
+        for r in range(h): c[r] = up          # later bar overpaints the rows it covers
+    u = sum(1 for c in cols.values() for up in c.values() if up); t = sum(len(c) for c in cols.values())
+    return u / t
+for tf, (N, s) in VIS.items():
+    vol, op, cl = rows("vol", tf)[-N:], {r["event_time"]: r for r in rows("open", tf)}, {r["event_time"]: r for r in rows("close", tf)}
+    slots, full = [], []
+    for r in vol:
+        t = r["event_time"]; ok = r["value"] is not None and r.get("absence") is None and t in op and t in cl and op[t]["value"] and cl[t]["value"]
+        v = float(r["value"]) if ok else None
+        slots.append((v, ok and float(cl[t]["value"]) >= float(op[t]["value"])))
+        full.append(ok and (not r.get("coverage") or r["coverage"]["present"] >= r["coverage"]["expected"]))
+    pv = [(v, up) for v, up in slots if v is not None]; fv = [(v, up) for (v, up), f in zip(slots, full) if f]
+    tr = lambda L: sum(v for v, up in L if up) / sum(v for v, _ in L)
+    mx = max(v for v, _ in pv)
+    lin = sim(slots, lambda v: v / mx * LANE, s); lg = sim(slots, lambda v: max(0, math.log10(v) / math.log10(mx) * BAND), s)
+    line = [f"{tf}: visible={N} present={len(pv)} full={len(fv)} upcount={sum(up for _, up in pv)/len(pv):.3f} "
+            f"truth_all={tr(pv):.3f} truth_full={tr(fv):.3f} | model lin_floor={lin:.3f} log_floor={lg:.3f}"]
+    for tag in ("lincolor", "logcolor"):
+        R = runs(f"{tag}-{tf}"); xs = sorted(R)
+        allu = sum(u for u, _ in R.values()); allt = sum(u + d for u, d in R.values())
+        line.append(f"   pix {tag}: all={allu/allt:.3f} (cols={len(R)})")
+    print("\n".join(line))

@@ -1,0 +1,17 @@
+# Green/red ink share in the volume footer from screenshots; BAND_ROWS = rows from the pane bottom scanned.
+import sys
+from PIL import Image
+def cls(c):
+    r,g,b=c
+    if g>120 and r<60: return 'up'
+    if r>200 and g<90: return 'down'
+for band in (72,30):
+  for tf in ['1m','5m','15m','1h']:
+    out=[f"rows={band} {tf}"]
+    for tag in ('logcolor','lincolor'):
+      im=Image.open(f'out/{tag}-{tf}-price.png').convert('RGB'); W,H=im.size; px=im.load(); up=dn=0
+      for y in range(H-band,H):
+        for x in range(1105):
+          k=cls(px[x,y]); up+=k=='up'; dn+=k=='down'
+      out.append(f"{tag} green-share={up/max(1,up+dn):.3f} (n_px={up+dn})")
+    print(' | '.join(out))

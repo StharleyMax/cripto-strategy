@@ -1,0 +1,11 @@
+# Validator fetch: same URLs the designer's capture logged, re-read via read-only proxy :8823.
+import re, json, urllib.request, sys
+S, V = sys.argv[1], sys.argv[2]
+KEYS = {"vol": "ef3033e6", "open": "b8dc419e", "close": "6486750c"}
+urls = sorted(set(re.findall(r'/api/v1/series-history\?\S+', open(f"{S}/urls.txt").read())))
+for u in urls:
+    k = re.search(r'series_key_id=([0-9a-f]+)', u).group(1); tf = re.search(r'interval=(\w+)', u).group(1)
+    name = next((n for n, p in KEYS.items() if k.startswith(p)), None)
+    if not name: continue
+    body = urllib.request.urlopen("http://127.0.0.1:8823" + u, timeout=60).read()
+    open(f"{V}/data/{name}-{tf}.json", "wb").write(body); print(name, tf, len(body))

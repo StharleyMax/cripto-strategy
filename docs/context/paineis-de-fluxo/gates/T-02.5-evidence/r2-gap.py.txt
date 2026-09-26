@@ -1,0 +1,44 @@
+# T-02.5 r2 (validator's own instrument, independent of band.py's fusion rule):
+# per column, the number of background rows between the top of the bar's ink run and the next
+# direction-hue (G/R) pixel above it. gap 0 = the candle touches the bar (fusion in any hue pair).
+# Also: the lowest direction-hue candle row anywhere above the band, and the candle ink extent.
+import sys, json, statistics
+from PIL import Image
+TOK = {"G": (8, 153, 129), "R": (242, 54, 69), "N": (139, 148, 158)}
+TOP, H, BASE = 61, 335, 385
+BAND_TOP = TOP + round(0.8 * H)   # 329
+def cls(p):
+    for k, t in TOK.items():
+        if all(abs(a - b) <= 14 for a, b in zip(p, t)):
+            return k
+    return None
+def analyse(path, axis_x):
+    im = Image.open(path).convert("RGB"); px = im.load()
+    gaps, low_candle, high_candle, in_band = [], 0, 10**9, 0
+    for x in range(0, axis_x - 1):
+        c = cls(px[x, BASE])
+        run_top = BASE + 1
+        if c is not None:
+            y = BASE
+            while y > TOP and cls(px[x, y]) == c:
+                y -= 1
+            run_top = y + 1
+        # candle ink: G/R pixels strictly above the bar run, below the pane top + legend area (y>=130)
+        ys = [y for y in range(130, run_top - 1) if cls(px[x, y]) in ("G", "R")]
+        if not ys:
+            continue
+        low = max(ys); low_candle = max(low_candle, low); high_candle = min(high_candle, min(ys))
+        if low >= BAND_TOP:
+            in_band += 1
+        if c is not None:
+            gaps.append((run_top - 1 - low, x))
+    gaps.sort()
+    return {"cols_with_bar_and_candle": len(gaps), "min_gap_rows": gaps[0][0] if gaps else None,
+            "min_gap_x": gaps[0][1] if gaps else None, "gap0_cols": sum(1 for g in gaps if g[0] <= 0),
+            "lowest_candle_row": low_candle, "candle_cols_reaching_band_top329": in_band,
+            "highest_candle_row": high_candle}
+out = {}
+for spec in sys.argv[1:]:
+    p, a = spec.split(":")
+    out[p.split("/")[-1]] = analyse(p, int(a))
+print(json.dumps(out, indent=1))

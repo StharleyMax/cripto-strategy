@@ -87,6 +87,7 @@ import {
   candlestickSeriesColors,
   candlestickSeriesLossless,
   colorTokens,
+  directionalVolumeSeriesLossless,
   F1_PANE_STACK_FORM,
   formatHeldStockLabel,
   lastGridInstant,
@@ -549,14 +550,15 @@ function lastInstantMs(panels: S2Panels): number {
 
 /** ⛔ NOT THE CHART HEIGHT ANY MORE (`T-01.6`). Until `T-01.5` each pane was its own chart of this
  * height; the ONE chart now takes its height from `PANE_STACK` below. What still reads this number
- * is the NOMINAL band of the absence/zero marks (`VOLUME_MARKS_BAND_PX`,
- * `LIQUIDATION_MARKS_BAND_PX`): their autoscale range stays pinned to `220 × (1 − top)`, so a mark
+ * is the NOMINAL band of the liquidation absence/zero marks (`LIQUIDATION_MARKS_BAND_PX`; the volume
+ * marks stopped reading it in `T-02.2`, whose strip is a fixed `0…10`): the autoscale range stays
+ * pinned to `220 × (1 − top)`, so a mark
  * keeps its height RATIO to its band on a pane of any height (the marks scale with the band, the
  * absence/zero distinction survives), but its pixel height is no longer the nominal one. Anchoring
  * the band on `IPaneApi.getHeight()` is `charts/mark-band-geometry.ts` (`T-01.3`), and wiring it into
  * the marks is not in `T-01.6`'s listed scope — declared in `gates/T-01.6-builder.md` §7, not
- * silently left. Named here as before so the geometry tests that read it
- * (`volume-subaxis-geometry.test.ts`, `liquidation-geometry.test.ts`) keep measuring the same band. */
+ * silently left. Named here as before so the geometry test that reads it
+ * (`liquidation-geometry.test.ts`) keeps measuring the same band. */
 const CHART_HEIGHT_PX = 220;
 
 /**
@@ -1393,8 +1395,18 @@ const LONG_SHORT_PANE_TESTID = "long-short-pane";
  * that could never say it: a test that passes whether or not the data arrived proves nothing.
  * One token, four readouts, one thing for an operator to learn. ⛔ FORM SUBMITTED TO THE
  * `design_gate`, not decided here — `CLAUDE.md` §"Design — autonomia delegada, com gate de
- * validação"; what a builder decides is that absence is DISTINGUISHABLE and machine-readable. */
-const ABSENCE_TOKEN = "SEM_PONTO";
+ * validação"; what a builder decides is that absence is DISTINGUISHABLE and machine-readable.
+ *
+ * ⚠️ `T-01.R1` (`SF-9` of `gates/W1-DESIGN-REVIEW.md` §3, still open in r3 §4): THE TOKEN IS NOW
+ * THE pt-BR WORD, NOT THE ENUM. Since `T-01.7` every readout using it lives in `PaneDetails`
+ * (`sr-only`), so the ONLY audience of this string is a screen reader — and it heard
+ * "Leitura atual: SEM_PONTO" while a sighted operator read `ausente` in the legend (`MF-3` of the
+ * r1, moved to another channel). One word on both channels: this literal must equal
+ * `ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE]`, which `absence-readout-microcopy.test.ts` pins (it is
+ * spelled out rather than derived because five `*-dom-contract.test.ts` mutate this exact
+ * declaration). The machine half is unchanged: every readout's `data-fact` still ends in
+ * `:absent`, and the legend keeps the enum in `data-legend-absence`. It is still never a number. */
+const ABSENCE_TOKEN = "ausente";
 
 /** `T-03.12` — the SAME shape `view-model.ts::PartialCoverageSummary` (`page.tsx`'s own return
  * type from `summarizePartialCoverage`) declares, DUPLICATED here rather than imported: this
@@ -1505,41 +1517,42 @@ function BeyondCoverageBadge({ factKey }: { readonly factKey: string }) {
 // (`SPEC-007 §3.6`: a SUB-AXIS of `PricePane`), since sharing price's scale would flatten one
 // of the two series into nothing.
 const VOLUME_PRICE_SCALE_ID = "volume";
-const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 } as const;
+// ⛔ `T-02.2` (`[Q-VOL-2]`/`[Q-DG-2]`): the bars stop `bottom = 0.03` above the pane floor, and that
+// strip belongs to the absence/zero marks (`VOLUME_MARKS_SCALE_MARGINS` below). The bars never
+// descend into it and no mark climbs out of it — the invariant that replaced the old ordering
+// `absence < zero < smallest bar` once the scale went linear (design gate §5.2).
+const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0.03 } as const;
+// ⛔ `T-02.5` `MF-1` (`gates/T-02.5-design-review.md` §3): the CANDLES' floor sits ABOVE the volume
+// band's ceiling, so a candle and the bar under it never share a pixel row. Since `T-02.3` both carry
+// the SAME direction ink, and with the library's default `bottom: 0.1` a candle could descend to 90%
+// of the pane while the tallest bar climbs to 80%: at the peak the two fused into one column, the
+// candle's low read lower than it is and the bar's height could not be read `[MEDIDO: band.py, 1-6
+// fused columns in each of the 8 captures, 0 with neutral ink]`. `bottom` = the band's share
+// (`1 − VOLUME_SCALE_MARGINS.top = 0.2`) + `0.02` of gap (~7 px of the 335-px price pane); `top` is
+// the library default, unchanged. The candle binding is `keepFloor` (see `PricePane`'s `scales`): a
+// reserve that also compressed `bottom` walked this floor back into the band under a tall legend —
+// why the design review's `M3` (`bottom: 0.24` WITHOUT `keepFloor`) still fused in `15m`/`1h`/`4h`.
+// `price-volume-band-separation.test.ts` fails if either half moves.
+const PRICE_CANDLE_SCALE_MARGINS = { top: 0.2, bottom: 0.22 } as const;
 
-// ⛔ `BLOCKER-1` DO `design_gate` DE `T-01.8`, E ELE ERA ARITMÉTICO, NÃO DE GOSTO
-// (`docs/context/cinco-metricas-do-core/gates/design-01.md` §2). Com a escala LINEAR ancorada no
-// máximo da janela, o volume de 1 min do BTCUSDT (`max/p50 = 60,8x`) dava uma barra mediana de
-// `0,62 px` e punha `954/1.404` barras presentes (`67,9%`) abaixo de 1 pixel físico — e uma barra
-// sub-pixel é, no canvas, a mesma coisa que a ausência: nada. WCAG 1.4.11 reprova (um objeto
-// gráfico necessário para entender o conteúdo tem de ser PERCEPTÍVEL, e nenhum contraste torna
-// perceptível uma marca de 0,62 px).
-// `[MEDIDO 2026-09-15 contra a própria `lightweight-charts@5.2.1` em jsdom, n=1.404 grades
-//  presentes em 24h de dado real; linear p50=0,62px / log10 p50=19,34px, 0 abaixo de 1px]`
+// ⛔ LINEAR SCALE, BASE `0` — `T-02.2`, decided by the `ui-designer` WITH the `ux-ui-mastery` verdict
+// (`docs/context/paineis-de-fluxo/gates/T-02.2-design-gate.md` §4-§5, cycle 2 APPROVED in §8).
+// Why it moved off `log10`: under `log10` base 1 the tallest bar of the window drew 1.21x-2.16x the
+// median for a volume 7.3x-82.5x larger, so the peak — "onde o volume empurrou o preço" — did not
+// stand out; the owner's reference draws volume linear (Jakob) `[MEDIDO 2026-09-26, gate §2.1/§2.3]`.
 //
-// ⛔ CLIP NO `p95` FOI CONSIDERADO E RECUSADO PELO LAUDO, e não se ressuscita: ele também
-// resolve a legibilidade, mas MENTE sobre o pico — uma barra recortada afirma `4931` e `1017`
-// com a mesma altura.
+// WHY THIS DOES NOT REOPEN `BLOCKER-1` (`cinco-metricas-do-core/gates/design-01.md` §2, which is
+// history now, not live justification): its harm was a sub-pixel bar being "the same thing as the
+// absence". The library draws every histogram bar at least `tickWidth = max(1,
+// floor(verticalPixelRatio))` tall (`lightweight-charts.development.mjs:14944-14963` `[DOC]`), so no
+// present bar vanishes, and every absent slot carries its own mark in its own strip.
 //
-// O QUE A BASE FAZ, e por que ela é `1` e não `0`: numa escala logarítmica a altura da barra é
-// `log10(valor/base)`, então a base é o ZERO da leitura. `1` é uma âncora ABSOLUTA na unidade da
-// própria série — a mesma altura significa o mesmo volume em qualquer janela —, ao contrário de
-// ancorar no mínimo da janela, que faz o desenho mudar de significado quando a janela muda
-// `[MEDIDO: base=1 -> menor barra 10,39px, p50 19,34px, 0/1403 abaixo de 1px; base=mínimo da
-//  janela -> menor barra 0,00px e 9 abaixo de 1px]`.
-//
-// ── `T-03.10` (`[Q8]`/`[M-6]`) — E SOB TF≠1m (volume ~240× MAIOR a `4h`)? A ÂNCORA CONTINUA `1`,
-// ATÉ PROVA EM CONTRÁRIO (quem decide mudar é o `design_gate`, não este arquivo). A prova, em
-// `volume-subaxis-tf-invariance.test.ts`: `BLOCKER-1` (nenhuma barra sub-pixel, mediana legível)
-// CONTINUA valendo a `240×` a magnitude de `1x` — mas o CONTRASTE entre a menor e a maior barra
-// visíveis MEDIDAMENTE se comprime (`spread` de `27,26px` para `16,57px`, `n=1.440`), porque `1`
-// é âncora ABSOLUTA: o vão `base→mínimo` cresce com a magnitude enquanto o vão `mínimo→máximo`
-// (a razão da própria série) não muda. Isto é o PREÇO já aceito da âncora absoluta, não um
-// defeito novo — a alternativa (âncora no mínimo da janela) já foi medida e recusada duas
-// comentários acima, e ela reintroduziria o BLOCKER-1 que motivou `base=1` em primeiro lugar.
-// `[MEDIDO 2026-09-22, jsdom contra a biblioteca real: 1× -> mín 10,14px/mediana 19,15px/máx
-//  37,40px; 240× -> mín 20,83px/mediana 26,30px/máx 37,40px, 0/1.440 abaixo de 1px nos dois]`
-const VOLUME_LOG_BASE = 1;
+// ⛔ `base: 0` IS STRUCTURAL, NOT A DETAIL (gate §8.8 `N-4`): the histogram autoscale FUSES the base
+// into the range (`:3841-3844`, `rangeWithBase`), so with `0` the range is `[0, visible max]` and
+// the height is PROPORTIONAL to the volume — which is what `VolumeScaleNote` says on screen. Any
+// other base shifts every bar and the label lies. `volume-subaxis-tf-invariance.test.ts` is what
+// fails if it moves.
+const VOLUME_BAR_BASE = 0;
 
 // ⛔ `BLOCKER-2`: A AUSÊNCIA NÃO TINHA MARCA, E A REGRA TRAVADA EXIGE UMA.
 // `STITCH_CONTEXT.md:1821-1825`, verbatim: *"Zero legitimo do fornecedor e uma MARCA desenhada na
@@ -1555,20 +1568,33 @@ const VOLUME_LOG_BASE = 1;
 // marcas declara uma faixa FIXA em "pixels nominais da banda do sub-eixo", então o valor de cada
 // marca se lê direto como altura.
 const VOLUME_MARKS_PRICE_SCALE_ID = "volume_marks";
-const VOLUME_MARKS_BAND_PX = CHART_HEIGHT_PX * (1 - VOLUME_SCALE_MARGINS.top);
-// ⚠️ NOMINAL, NÃO MEDIDO — a banda real é ~15% menor que `VOLUME_MARKS_BAND_PX` porque o eixo de
-// tempo come altura do painel. As alturas ABAIXO são as nominais; as MEDIDAS contra a biblioteca
-// real, e a ordenação estrita entre elas, estão em `volume-subaxis-geometry.test.ts`
-// `[MEDIDO 2026-09-15: ausência 1,70px < zero 5,10px < menor barra positiva 10,39px]`.
+// `T-02.2` (gate §5.2): the marks live in a strip of their OWN, BELOW the bars' base — `top: 0.97`
+// leaves them the bottom 3% of the pane, the same 3% `VOLUME_SCALE_MARGINS.bottom` keeps the bars
+// out of. On the linear scale the bars' zero line is where the library draws the 1-px floor of
+// every small bar, so a mark ON that line would be as tall as those bars — `BLOCKER-2` again.
+// ⚠️ Declared deviation of FORM (gate §5.2): `STITCH_CONTEXT.md:224`'s `D5.3` says "dash on the 0
+// line"; the dash now sits just below it. The intent — the gap is drawn, not interpolated, not
+// zeroed — is unchanged.
+const VOLUME_MARKS_SCALE_MARGINS = { top: 0.97, bottom: 0 } as const;
+// The strip's fixed range, in NOMINAL pixels of the strip (~`335 × 0.03 ≈ 10` on the price pane),
+// so that each mark's value reads as its height.
+const VOLUME_MARKS_BAND_PX = 10;
+// ⚠️ NOMINAL, NÃO MEDIDO — `clearSeparator` (`charts/pane-stack-layout.ts`) lifts the strip's floor
+// `4 px` off the separator, so the real strip is ~6 px and the marks draw ~2 px (absence) and ~4 px
+// (zero), not 2 and 6 (gate §8.8 `N-1`). What holds is the ORDER, plus a gap of at least one empty
+// row between the zero mark (the taller) and the bars' base — measured against the real library,
+// with the real draw calls, in `volume-subaxis-geometry.test.ts`.
 const ABSENCE_MARK_PX = 2;
 const ZERO_MARK_PX = 6;
-// ⛔ `ADR-010` GOVERNA A TINTA, E AS DUAS SÃO DA RAMPA DE PROCEDÊNCIA (`D-4`: luminância, hue
-// zero). Nem verde/vermelho (são `fill` de DIREÇÃO de preço, e volume não tem direção) nem
-// violeta (`dataBrokenInk` é INTEGRIDADE do dado, e uma lacuna de grade não é dado quebrado — é
-// operacional; `S3Inspector.tsx:26` escreve a mesma distinção). A atribuição segue a semântica da
-// rampa: ausência é o que NÃO se sabe, então tinta FRACA; zero legítimo é um fato OBSERVADO,
-// então tinta FORTE. A distinção viaja por dois canais no canvas (luminância E altura) e por um
-// terceiro em texto (`VolumeMarksLegend`), para que nenhuma perda isolada a apague.
+// ⛔ `ADR-010` GOVERNS THE INK, AND BOTH MARKS ARE ON THE PROVENANCE RAMP (`D-4`: luminance, zero
+// hue). Not green/red: those are the `fill` of price DIRECTION, and since `T-02.3` the BARS carry
+// them (the candle's direction at the same instant) — a mark has no volume to carry a direction
+// for, and an absence or a zero painted green/red would claim one. Not violet either
+// (`dataBrokenInk` is data INTEGRITY, and a grid gap is not broken data — it is operational;
+// `S3Inspector.tsx:26` draws the same distinction). The assignment follows the ramp's semantics:
+// absence is what is NOT known, so WEAK ink; a legitimate zero is an OBSERVED fact, so STRONG
+// ink. The distinction travels on two channels on the canvas (luminance AND height) and on a
+// third in text (`VolumeMarksLegend`), so that no single loss erases it.
 const ABSENCE_MARK_COLOR_ROLE = "provenanceWeak" as const;
 const ZERO_MARK_COLOR_ROLE = "provenanceStrong" as const;
 
@@ -1674,8 +1700,9 @@ const LIQUIDATION_MARKS_BAND_PX = CHART_HEIGHT_PX * (1 - LIQUIDATION_MARKS_SCALE
 // applied to a scale); transforming the DATA would put `log10(v)` inside the series, and every
 // reading the library makes of it would come out of there.
 //
-// Base `1` for the same reason as the volume sub-axis: an ABSOLUTE anchor in the series' unit (USD),
-// so that the same height means the same value in any window.
+// Base `1`: an ABSOLUTE anchor in the series' unit (USD), so that the same height means the same
+// value in any window. (The volume sub-axis used this same argument until `T-02.2` moved it to a
+// linear scale; the liquidation scale is `T-04.4`'s question, not that one's.)
 const LIQUIDATION_LOG_BASE = 1;
 
 // The two marks of the bottom band, in "nominal pixels of the band". The 3:1 ratio between them is
@@ -1698,7 +1725,8 @@ const LIQUIDATION_BAR_COLOR_ROLE = "provenanceStrong" as const;
  * The sub-axis' DOM anchor. The bars themselves are drawn on the price panel's own `<canvas>`
  * (`lightweight-charts`), which a DOM assertion cannot see — so this element carries the facts
  * about them: `data-volume-present-points` (how many 1-minute buckets have a real number) and
- * the "leitura atual" readout, which prints `SEM_PONTO` when the last instant has nothing.
+ * the "leitura atual" readout, which prints `ABSENCE_TOKEN` (`ausente` since `T-01.R1`/`SF-9`;
+ * it was `SEM_PONTO` before) when the last instant has nothing.
  *
  * For M1 the present-slot count IS the count of distinct native bars — no `RN-S1` `/5` divisor,
  * because `klines_volume` is `1m` native and nothing here is a ladder (`view-model.ts`
@@ -1739,24 +1767,24 @@ function ReadableHorizon({ volume }: { readonly volume: VolumeSubAxisData }) {
   );
 }
 
-/** ⛔ O RÓTULO QUE O `BLOCKER-1` EXIGE JUNTO COM A ESCALA, e a exigência é literal no laudo:
- * *"`log10` exige rótulo de eixo declarando a escala — um eixo logarítmico não rotulado é pior
- * que um linear ilegível."* Pior porque um eixo log não declarado convida à leitura errada: quem
- * lê uma barra com o dobro da altura como o dobro do volume está lendo o quadrado dele.
+/** ⛔ THE SCALE IS DECLARED ON SCREEN, WHICHEVER IT IS. `BLOCKER-1` demanded the label for `log10`;
+ * `T-02.2` (gate §5.3) keeps the rule and changes the words: the height is now proportional, and the
+ * top of the strip is the tallest VISIBLE bar — an overlay scale always autoscales on the visible
+ * range (`typings.d.ts:3708-3709`), so the same height does not mean the same volume after a pan.
+ * The "zero na base" of cycle 1 is gone on purpose: the zero is a MARK in its own strip, not the base.
  *
- * A escala do sub-eixo é uma escala SOBREPOSTA (`priceScaleId` próprio), e uma dessas não desenha
- * rótulo numérico nenhum no canvas — então o rótulo de eixo só pode existir aqui, no DOM. Isso é
- * uma vantagem, não um remendo: aqui ele é texto, alcança leitor de tela e é asserível. */
+ * An overlay scale (`priceScaleId` of its own) draws no numeral on the canvas, so the axis label can
+ * only live here, in the DOM — as text, reachable by a screen reader and assertable. */
 function VolumeScaleNote() {
   return (
-    <p data-fact="volume_scale:log10" className="text-sm text-provenance-weak">
-      Altura da barra em escala log10 (base {VOLUME_LOG_BASE}) — cada degrau de altura é uma ordem de
-      grandeza, não uma diferença absoluta.
+    <p data-fact="volume_scale:linear" className="text-sm text-provenance-weak">
+      Altura da barra proporcional ao volume (escala linear) — o topo da faixa é a maior barra visível.
     </p>
   );
 }
 
-/** As DUAS marcas de linha de base, nomeadas — o terceiro canal do `BLOCKER-2`, pelo mesmo motivo
+/** As DUAS marcas da faixa de marcas (abaixo da base das barras desde `T-02.2`,
+ * `gates/T-02.2-design-gate.md` §5.4), nomeadas — o terceiro canal do `BLOCKER-2`, pelo mesmo motivo
  * que `CvdLegend` existe: dentro do `<canvas>` nenhuma legenda alcança, e uma distinção que só
  * vive em pixels morre num screenshot monocromático ou num leitor de tela. Aqui ela viaja em
  * palavras, e as palavras dizem a diferença que o gate cobra: *"não houve"* ≠ *"não sabemos"*.
@@ -1773,13 +1801,13 @@ function VolumeMarksLegend() {
         <span aria-hidden="true" style={{ color: tokens[ABSENCE_MARK_COLOR_ROLE] }}>
           ▁
         </span>{" "}
-        Sem dado — traço baixo e apagado na linha de base (não sabemos)
+        Sem dado — traço baixo e apagado na faixa abaixo das barras (não sabemos)
       </li>
       <li>
         <span aria-hidden="true" style={{ color: tokens[ZERO_MARK_COLOR_ROLE] }}>
           ▃
         </span>{" "}
-        Zero do fornecedor — traço alto e claro na linha de base (sabemos: foi zero)
+        Zero do fornecedor — traço mais alto e claro, na mesma faixa (sabemos: foi zero)
       </li>
     </ul>
   );
@@ -1799,8 +1827,8 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
       <PaneLegendLine>
         <h3 className="font-label-caps text-label-caps text-on-surface">Volume{identityTerms(legends.volume)}</h3>
         <LegendValue seriesId="volume" factKey="volume" slots={volume.legendSlots} />
-        {/* ⛔ STAYS VISIBLE (`BLOCKER-1`): an overlay scale draws no numeral, so this line is the
-            only place the log10 is declared, and an undeclared log axis is worse than none. */}
+        {/* ⛔ STAYS VISIBLE: an overlay scale draws no numeral, so this line is the only place the
+            scale is declared (`T-02.2`, gate §5.3: declare the scale, whichever it is). */}
         <VolumeScaleNote />
       </PaneLegendLine>
       <PartialCoverageMark factKey="volume_partial_coverage" summary={volume.partialCoverage} />
@@ -1875,6 +1903,8 @@ function PricePane({
     mount: (chart, paneIndex) => {
       const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors();
       const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style, paneIndex);
+      // `T-02.5` `MF-1`: the candles stay out of the volume band (`PRICE_CANDLE_SCALE_MARGINS`).
+      series.priceScale().applyOptions({ scaleMargins: PRICE_CANDLE_SCALE_MARGINS });
       // `T-05.9` (plan `05` DoD 7): "a barra nova está desenhada" — recorded by the chart host
       // (`SymbolChartHost`) right after it has fed EVERY pane's `setData`, on mount and on every
       // page; since `T-01.5` a page no longer remounts this pane.
@@ -1889,26 +1919,28 @@ function PricePane({
       // visible (`SPEC-007 §4.1`): price is `klines_last` at `5m` served on the `1m` grid — a
       // ladder — while volume is `klines_volume` at `1m` native. The `design_gate` of `T-01.8` is
       // meant to see it, so nothing here hides it.
+      // `color` is the series DEFAULT only: since `T-02.3` every bar item carries its own `color`
+      // (`directionalVolumeSeriesLossless`), and a bar with no candle at its instant gets this same
+      // neutral ink back EXPLICITLY from `volumeBarColor` — `RN-4`, no direction the data lacks.
       const volumeStyle: Partial<HistogramSeriesOptions> = {
         color: colorTokens().provenanceWeak,
         priceScaleId: VOLUME_PRICE_SCALE_ID,
-        base: VOLUME_LOG_BASE,
+        base: VOLUME_BAR_BASE,
         priceLineVisible: false,
         lastValueVisible: false,
       };
       const volumeSeries: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, volumeStyle, paneIndex);
-      // ⛔ `BLOCKER-1`, pago aqui: `PriceScaleMode.Logarithmic`, NÃO uma transformação do DADO. A
-      // diferença importa e não é de estilo — transformar o dado poria `log10(v)` dentro da série,
-      // e daí sai toda leitura que a biblioteca faz dela (crosshair, `priceFormat`, qualquer
-      // rótulo futuro). O modo de escala move a GEOMETRIA e deixa o número intacto, que é a
-      // fronteira de `ADR-003` FR-2 aplicada a uma escala.
+      // ⛔ `T-02.2`: `PriceScaleMode.Normal`, stated EXPLICITLY rather than left to the default, so
+      // the scale is a decision a test can read (`volume-subaxis-geometry.test.ts`). Still no
+      // transformation of the DATA (`ADR-003` FR-2 applied to a scale): no clip, no height floor of
+      // our own — the library's 1-px floor is the only one (see `VOLUME_BAR_BASE`).
       volumeSeries.priceScale().applyOptions({
         scaleMargins: VOLUME_SCALE_MARGINS,
-        mode: PriceScaleMode.Logarithmic,
+        mode: PriceScaleMode.Normal,
       });
-      // E a série de barras recebe só o que uma escala log consegue posicionar: `log10(0)` não tem
-      // coordenada, e um `0` desenhado como barra de altura zero seria, pixel a pixel, a marca da
-      // ausência. Os dois estados saem daqui e ganham marca própria abaixo (`apply`).
+      // The bar series still gets only STRICTLY POSITIVE values: on a linear scale a `0` would be
+      // drawn at the library's 1-px floor, i.e. as tall as the smallest real bar, and "foi zero"
+      // would read as "houve pouco". Zero and absence leave here and get their own marks (`apply`).
 
       // ⛔ `BLOCKER-2`, pago aqui — DUAS séries de marca, numa escala de faixa FIXA, para que
       // "não sabemos" e "foi zero" nunca sejam os mesmos pixels. Uma só série com cor condicional
@@ -1927,7 +1959,7 @@ function PricePane({
         markStyle(colorTokens()[ABSENCE_MARK_COLOR_ROLE]),
         paneIndex,
       );
-      absenceSeries.priceScale().applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS });
+      absenceSeries.priceScale().applyOptions({ scaleMargins: VOLUME_MARKS_SCALE_MARGINS });
       const zeroSeries: ISeriesApi<"Histogram"> = chart.addSeries(
         HistogramSeries,
         markStyle(colorTokens()[ZERO_MARK_COLOR_ROLE]),
@@ -1939,15 +1971,21 @@ function PricePane({
       // host calls this at mount and again on every history page, on the same series.
     apply: ({ series, volumeSeries, absenceSeries, zeroSeries }) => [
       { series, items: candlestickSeriesLossless(panels.price.series.slots) },
-      { series: volumeSeries, items: positiveValueSeriesLossless(volume.slots) },
+      // `T-02.3` (plan `02` item `2.4`): the bar takes the direction of the candle at the SAME `time`
+      // — `directionalVolumeSeriesLossless` (`T-02.1`, `charts`) pairs the two vectors by time, not
+      // by position, because on a TF != `1m` they do not share positions: price is the 1-minute grid,
+      // volume is one row per TF bucket. Its value half is `positiveValueSeriesLossless`, unchanged.
+      { series: volumeSeries, items: directionalVolumeSeriesLossless(volume.slots, panels.price.series.slots) },
       { series: absenceSeries, items: absenceMarkSeries(volume.slots, ABSENCE_MARK_PX) },
       { series: zeroSeries, items: zeroMarkSeries(volume.slots, ZERO_MARK_PX) },
     ],
     // `T-01.6` — the candles draw near the top (compressed below the legend); the volume bars and
     // the two marks sit on the pane's floor, and their `#8b949e` keeps `C-6`'s 4px off the separator.
     // `zeroSeries` shares `absenceSeries`' scale (`VOLUME_MARKS_PRICE_SCALE_ID`), declared once.
+    // `keepFloor` on the candles (`T-02.5` `MF-1`): the legend lowers their CEILING only; their floor
+    // is the guarantee against the volume band below and must not move with the legend's height.
     scales: ({ series, volumeSeries, absenceSeries }) => [
-      { series, belowLegend: true, clearSeparator: false },
+      { series, belowLegend: true, clearSeparator: false, keepFloor: true },
       { series: volumeSeries, belowLegend: false, clearSeparator: true },
       { series: absenceSeries, belowLegend: false, clearSeparator: true },
     ],
@@ -1967,7 +2005,7 @@ function PricePane({
   const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, ONE_MINUTE_MS, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
-      ? "SEM_PONTO"
+      ? ABSENCE_TOKEN
       : reading.kind === "held"
         ? `${reading.value} (${formatHeldStockLabel(reading)})`
         : String(reading.value);

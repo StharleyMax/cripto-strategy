@@ -1,0 +1,19 @@
+# Validator, ciclo 2: the §5.1-5.2 spec applied LITERALLY as a local, uncommitted mutation of
+# frontend/src/app/symbol/SymbolClient.tsx (reverted with `git checkout --` afterwards), built with
+# INGEST_HEALTH_API_BASE_URL=http://127.0.0.1:8823 (read-only proxy, copy of proxy.mjs.txt) and captured
+# with capture.mjs.txt on :4323. Variant "spec" = the patch below. Variant "zero" = the patch plus the
+# sed at the end, which draws EVERY absent slot as a ZERO mark client-side (no DB write) so F-2 can be
+# checked for the 6-px zero mark, which has 0 live instances in production.
+import sys
+p = sys.argv[1]; s = open(p).read()
+s = s.replace('const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0 } as const;', 'const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0.03 } as const;')
+s = s.replace('const VOLUME_LOG_BASE = 1;', 'const VOLUME_LOG_BASE = 0;')
+s = s.replace('        scaleMargins: VOLUME_SCALE_MARGINS,\n        mode: PriceScaleMode.Logarithmic,\n      });',
+              '        scaleMargins: VOLUME_SCALE_MARGINS,\n        mode: PriceScaleMode.Normal,\n      });', 1)
+s = s.replace('autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: VOLUME_MARKS_BAND_PX } }),',
+              'autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 10 } }),')
+s = s.replace('absenceSeries.priceScale().applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS });',
+              'absenceSeries.priceScale().applyOptions({ scaleMargins: { top: 0.97, bottom: 0 } });')
+open(p, 'w').write(s)
+# variant "zero":
+# sed -i 's/items: zeroMarkSeries(volume.slots, ZERO_MARK_PX) }/items: absenceMarkSeries(volume.slots, ZERO_MARK_PX) }/' SymbolClient.tsx

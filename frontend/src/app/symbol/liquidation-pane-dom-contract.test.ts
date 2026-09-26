@@ -47,7 +47,7 @@ const pageCode = pageSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*
  * it is made of — that would rename itself along with the mutation it is supposed to catch. */
 const EXPECTED_PANE_TESTID = "liquidation-pane";
 const EXPECTED_COHORT_TESTIDS = ["liquidation-cohort-long", "liquidation-cohort-short"] as const;
-const EXPECTED_ABSENCE_TOKEN = "SEM_PONTO";
+const EXPECTED_ABSENCE_TOKEN = "ausente";
 
 const PANE_TESTID_DECLARATION = /const LIQUIDATION_PANE_TESTID = "([^"]*)";/;
 const COHORT_TESTID_BUILDER = /return `liquidation-cohort-\$\{cohort\}`;/;
@@ -135,10 +135,10 @@ test("T-05.11 contract: BOTH counts are bare integer attributes on the SAME elem
 
 // ── `RN-1` — the rule this pane exists to not break ───────────────────────────────────────────
 
-test("RN-1: absence prints SEM_PONTO, and the token is never a number", () => {
+test("RN-1: absence prints `ausente`, and the token is never a number", () => {
   const declaration = ABSENCE_TOKEN_DECLARATION.exec(source);
   assert.ok(declaration !== null, "ABSENCE_TOKEN declaration not found — the anchor moved, fix this test");
-  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is SEM_PONTO — for a FLOW series a number here is an error of TYPE");
+  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is `ausente` — for a FLOW series a number here is an error of TYPE");
   assert.ok(
     !/^-?\d+(\.\d+)?$/.test(declaration[1]!),
     "the absence token must not be a number in any shape — 0, 0.0 and -0 are all the RN-1 defect",

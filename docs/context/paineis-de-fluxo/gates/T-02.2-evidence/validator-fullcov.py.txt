@@ -1,0 +1,13 @@
+# Area test restricted to FULL-coverage buckets (partial buckets undercount volume by construction).
+import json, math, sys
+V = sys.argv[1]; B = 67.0
+R = lambda n, tf: {r["event_time"]: r for r in json.load(open(f"{V}/data/{n}-{tf}.json"))["rows"]}
+for tf in ["5m", "15m", "1h", "4h"]:
+    vol, op, cl = R("vol", tf), R("open", tf), R("close", tf)
+    full = {t: float(r["value"]) for t, r in vol.items() if r["value"] is not None and r.get("absence") is None
+            and (not r.get("coverage") or r["coverage"]["present"] >= r["coverage"]["expected"]) and t in op and t in cl}
+    mx = max(full.values()); up = {t: float(cl[t]["value"]) >= float(op[t]["value"]) for t in full}
+    truth = sum(v for t, v in full.items() if up[t]) / sum(full.values())
+    lg = {t: max(0, math.log10(v) / math.log10(mx)) for t, v in full.items()}
+    lshare = sum(h for t, h in lg.items() if up[t]) / sum(lg.values())
+    print(f"{tf}: full-coverage n={len(full)} upcount={sum(up.values())/len(up):.3f} truth={truth:.3f} log={lshare:.3f} err_log={lshare-truth:+.3f}")

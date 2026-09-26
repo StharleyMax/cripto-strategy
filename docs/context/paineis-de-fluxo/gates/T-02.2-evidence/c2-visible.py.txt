@@ -1,0 +1,23 @@
+# Which data slots are on screen? Match the bar/mark column sequence of the lane-* capture against the
+# slot sequence of /series-history (present vs absent), then report the visible universe per TF.
+import json, sys
+from PIL import Image
+BG = {(19, 23, 34), (34, 38, 52)}
+S, V = sys.argv[1], sys.argv[2]
+def seq_png(tag):
+    im = Image.open(f"{S}/{tag}-price.png").convert("RGB"); px = im.load(); W, H = im.size; out = []
+    for x in range(1105):
+        ink = [r for r in range(16) if px[x, H-1-r] not in BG and sum(px[x, H-1-r]) > 150]
+        if any(r >= 9 for r in ink): out.append((x, 'B'))
+        elif any(r <= 8 for r in ink): out.append((x, 'M'))
+    return out
+for tf in sys.argv[3:]:
+    rows = sorted(json.load(open(f"{V}/data/vol-{tf}.json"))["rows"], key=lambda r: r["event_time"])
+    dseq = ['B' if (r["value"] is not None and r.get("absence") is None) else 'M' for r in rows]
+    cols = seq_png(f"lane-{tf}"); pseq = [c for _, c in cols]; n = len(pseq)
+    best = max(range(len(dseq) - n + 1), key=lambda o: sum(a == b for a, b in zip(pseq, dseq[o:o+n])))
+    hit = sum(a == b for a, b in zip(pseq, dseq[best:best+n]))
+    sp = (cols[-1][0] - cols[0][0]) / max(1, n - 1)
+    print(f"{tf}: slots_in_data={len(dseq)} inked_cols={n} spacing={sp:.2f}px best_offset={best} "
+          f"(last-slot offset would be {len(dseq)-n}) match={hit}/{n}")
+    json.dump({"offset": best, "n": n}, open(f"visible-{tf}.json", "w"))

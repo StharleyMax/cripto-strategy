@@ -217,18 +217,52 @@ export interface LegendText {
   readonly rawValue: number | null;
 }
 
-/** A reading, as text. `String(value)` and not a locale format: the legend is compared, digit for
- * digit, with the value `/series-history` served (`CA-3′`/`CA-4`). */
+/**
+ * Significant digits kept by `formatLegendNumeral`: 15, the count an IEEE-754 double carries
+ * through any decimal round trip (`Number.MAX_SAFE_INTEGER` has 16 digits, and only 15 are
+ * guaranteed for an arbitrary decimal). Digits 16-17 of a double are where accumulated rounding
+ * lives.
+ */
+export const LEGEND_SIGNIFICANT_DIGITS = 15;
+
+/**
+ * `T-01.R1` (`SF-8` of `gates/W1-DESIGN-REVIEW.md` §3, still open in r3 §4) — the PAINTED numeral
+ * of a legend value, with IEEE-754 noise removed and nothing else changed.
+ *
+ * The review measured `613372.7679000001`, `14315336.490699999` and `60777.34220000001` in the
+ * liquidation legend on `4h`: a sum re-aggregated in binary floating point, printed by
+ * `String(value)` down to its last, meaningless digit. Rounding to 15 significant digits and
+ * re-reading the result gives the shortest decimal that is still the same value to that precision:
+ * `613372.7679`, `14315336.4907`, `60777.3422`. A value that carries no noise (`84059.3`, `1.1395`,
+ * `83767`) comes back unchanged, so no precision the data has is thrown away and none is invented —
+ * the same rule `ratio-format.ts` states for a derived value, applied without needing the operands.
+ *
+ * ⚠️ WHAT THIS DOES NOT DO: it is not a fixed-decimals formatter "at the axis precision", which is
+ * the other half of the review's suggestion (`83767` in the legend against `84059.30` on the axis).
+ * A fixed count of decimals per pane is FORM — how many digits an operator reads — and belongs to
+ * the `design_gate`, not to a builder; this function only stops the screen printing digits no
+ * measurement produced.
+ *
+ * ⛔ ONLY THE NUMERAL. `rawValue` keeps the number as served: `e2e/24` compares
+ * `data-legend-raw` with `/series-history` digit for digit (`CA-3′`/`CA-4`).
+ */
+export function formatLegendNumeral(value: number): string {
+  return String(Number(value.toPrecision(LEGEND_SIGNIFICANT_DIGITS)));
+}
+
+/** A reading, as text. Not a locale format: the numeral keeps the API's own decimal notation, only
+ * without floating-point noise (`formatLegendNumeral`); the exact served number is `rawValue`,
+ * compared digit for digit with `/series-history` (`CA-3′`/`CA-4`). */
 export function formatLegendReading(reading: LegendReading, absenceToken: string): LegendText {
   switch (reading.kind) {
     case "absent":
       return { numeral: absenceToken, mark: "none", rawValue: null };
     case "forming":
-      return { numeral: String(reading.valueSoFar), mark: "forming", rawValue: reading.valueSoFar };
+      return { numeral: formatLegendNumeral(reading.valueSoFar), mark: "forming", rawValue: reading.valueSoFar };
     case "held":
-      return { numeral: String(reading.value), mark: "held", rawValue: reading.value };
+      return { numeral: formatLegendNumeral(reading.value), mark: "held", rawValue: reading.value };
     case "value":
-      return { numeral: String(reading.value), mark: "none", rawValue: reading.value };
+      return { numeral: formatLegendNumeral(reading.value), mark: "none", rawValue: reading.value };
   }
 }
 
@@ -244,7 +278,7 @@ export function legendNumeralWidthCh(
   let width = absenceToken.length;
   for (const slot of slots) {
     if (slot.value !== null) {
-      width = Math.max(width, String(slot.value).length);
+      width = Math.max(width, formatLegendNumeral(slot.value).length);
     }
   }
   return width;
