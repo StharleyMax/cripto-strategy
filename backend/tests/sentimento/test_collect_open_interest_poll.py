@@ -8,8 +8,18 @@ carry-forward would enter.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
+from src.modules.sentimento.domain.as_of_accessor import (
+    AsOfReading,
+    BarPolicy,
+    Observation,
+    ReadPurpose,
+    SeriesReadPolicy,
+    as_of,
+)
 from src.modules.sentimento.domain.open_interest_catalog import binance_open_interest_poll_key
 from src.modules.sentimento.domain.open_interest_grid_stamp import (
     OPEN_INTEREST_ADMISSION_WINDOW_MS,
@@ -360,3 +370,67 @@ def test_a_rejected_poll_run_without_a_reason_cannot_be_built() -> None:
             verdict="REJECTED",
             src_sha256="0" * 64,
         )
+
+
+# ── WHAT THE READ PATH DOES WITH `available_at < T`, PER BAR POLICY (`D-1`, QA r3) ────────
+#
+# The comment above `build_open_interest_poll_to_rows` states two things about a row whose
+# `available_at` (`received_at`) precedes its `bucket_end` (`T`): under `final_only` R-2 keeps it
+# out before `T`; under `intrabar` it is admitted from `received_at`. That comment is the only
+# place the distinction is written, so this test pins it through `as_of` itself.
+
+_RECEIVED_AT = REAL_BTC_SENT_MS + 250  # `T - 2 929 ms`: the reading came back before `T`
+_POLL_POLICY = SeriesReadPolicy(
+    asof_max_staleness_ms=OPEN_INTEREST_ADMISSION_WINDOW_MS,
+    render_max_staleness_ms=None,
+    bucket_interval_ms=OPEN_INTEREST_GRID_MS,
+    first_capture_at=None,
+)
+
+
+def _poll_reading(*, t: int, bar_policy: BarPolicy) -> AsOfReading:
+    """Read the one polled BTCUSDT row at `t` for a chart, with `knowledge_time = t`."""
+    stamp = StampedOpenInterest(
+        symbol="BTCUSDT",
+        grid_instant_ms=T,
+        open_interest_raw="96012.544",
+        event_time_ms=REAL_BTC_TIME_MS,
+    )
+    (row,) = _TO_ROWS(_RECEIVED_AT, stamp)
+    return as_of(
+        series=binance_open_interest_poll_key(instrument_id="BTCUSDT"),
+        symbol="BTCUSDT",
+        t=t,
+        observations=[Observation(row=row, value=Decimal(row.value_raw))],
+        policy=_POLL_POLICY,
+        bar_policy=bar_policy,
+        purpose=ReadPurpose.RENDERING,
+        knowledge_time=t,
+    )
+
+
+@pytest.mark.parametrize(
+    ("t", "bar_policy", "expected"),
+    [
+        pytest.param(_RECEIVED_AT - 1, BarPolicy.INTRABAR, None, id="intrabar-before-received"),
+        pytest.param(
+            _RECEIVED_AT, BarPolicy.INTRABAR, Decimal("96012.544"), id="intrabar-at-received"
+        ),
+        pytest.param(T - 1, BarPolicy.INTRABAR, Decimal("96012.544"), id="intrabar-just-before-t"),
+        pytest.param(_RECEIVED_AT, BarPolicy.FINAL_ONLY, None, id="final-only-at-received"),
+        pytest.param(T - 1, BarPolicy.FINAL_ONLY, None, id="final-only-just-before-t"),
+        pytest.param(T, BarPolicy.FINAL_ONLY, Decimal("96012.544"), id="final-only-at-t"),
+    ],
+)
+def test_a_poll_row_read_before_t_is_admitted_under_intrabar_only(
+    t: int, bar_policy: BarPolicy, expected: Decimal | None
+) -> None:
+    """Before `T`, the row is readable from `received_at` under `intrabar`, never `final_only`.
+
+    `D-1` of the wave `03a` code-review, round 2: the claim lives only in a comment, so the test
+    reads the row the producer builds, through the single reader, on both sides of `T`.
+    """
+    reading = _poll_reading(t=t, bar_policy=bar_policy)
+
+    assert reading.value == expected
+    assert (reading.absence is None) is (expected is not None)
