@@ -1,0 +1,21 @@
+# Validator pixel measure: green share of VOLUME-BAR ink only = the contiguous colored run that starts at the
+# bar base (bottom 20 rows) in each column; candle pixels detached from the base are excluded (unlike inkshare.py).
+import sys
+from PIL import Image
+UP, DN = (8, 153, 129), (242, 54, 69)
+def near(c, k): return all(abs(a - b) < 30 for a, b in zip(c, k))
+S = sys.argv[1]
+for tf in ["1m", "5m", "15m", "1h"]:
+    out = [tf]
+    for tag in ("logcolor", "lincolor"):
+        im = Image.open(f"{S}/{tag}-{tf}-price.png").convert("RGB"); px = im.load(); W, H = im.size
+        up = dn = cols = 0
+        for x in range(1105):
+            y = H - 1
+            while y > H - 20 and not (near(px[x, y], UP) or near(px[x, y], DN)): y -= 1
+            if y <= H - 20: continue
+            cols += 1
+            while y >= 0 and (near(px[x, y], UP) or near(px[x, y], DN)):
+                up += near(px[x, y], UP); dn += near(px[x, y], DN); y -= 1
+        out.append(f"{tag} run-green={up/max(1,up+dn):.3f} (px={up+dn}, cols={cols})")
+    print(" | ".join(out))

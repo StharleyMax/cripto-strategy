@@ -1,0 +1,18 @@
+# F-2 check on the designer's mutation-2 screenshots: per column, which rows (from pane bottom) carry non-background ink.
+# Reports the row histogram of ink in the bottom 16 rows and columns whose ink is contiguous from mark band into bar region.
+import sys
+from PIL import Image
+from collections import Counter
+BG = {(19, 23, 34), (34, 38, 52)}  # background + grid line
+S = sys.argv[1]
+for tag in sys.argv[2:]:
+    im = Image.open(f"{S}/{tag}-price.png").convert("RGB"); px = im.load(); W, H = im.size
+    rowhist = Counter(); colors = Counter(); bridged = 0; marks = bars = 0
+    for x in range(1105):
+        inked = [r for r in range(16) if px[x, H - 1 - r] not in BG and sum(px[x, H-1-r]) > 150]
+        for r in inked: rowhist[r] += 1; colors[(r, px[x, H-1-r])] += 1
+        lo = [r for r in inked if r <= 8]; hi = [r for r in inked if r >= 9]
+        marks += bool(lo); bars += bool(hi)
+        if lo and hi and all(r in inked for r in range(min(lo), min(hi) + 1)): bridged += 1
+    print(tag, "rows(from bottom)->cols:", dict(sorted(rowhist.items())), "| cols with mark-band ink:", marks, "bar-region ink:", bars, "contiguous mark->bar:", bridged)
+    print("   colors by row (top 12):", colors.most_common(12))
