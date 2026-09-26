@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# usage: mut.sh <tag>   (app/src already mutated) -> build, start on 4321, capture, stop, analyse
+S=/tmp/claude-1002/-home-stharley-Documentos-projects-cripto-strategy/854f12b5-43c8-425a-9856-b6679093c941/scratchpad/t025r2v
+T=$1
+cd $S/app && INGEST_HEALTH_API_BASE_URL=http://127.0.0.1:8821 npx next build > $S/build-$T.log 2>&1 || { echo BUILD_FAIL; exit 3; }
+INGEST_HEALTH_API_BASE_URL=http://127.0.0.1:8821 npx next start -p 4321 > $S/next-$T.log 2>&1 &
+pid=$!
+for i in $(seq 1 60); do curl -s -o /dev/null -m 2 http://127.0.0.1:4321/ && break; sleep 1; done
+mkdir -p $S/png/$T; rm -f $S/png/$T/*
+node $S/cap.mjs $S/png/$T http://127.0.0.1:4321 $T > $S/cap-$T.log 2>&1
+kill $pid; sleep 1; pkill -P $pid 2>/dev/null
+for p in $(ss -ltnp | grep ':4321 ' | grep -o 'pid=[0-9]*' | cut -d= -f2); do kill $p; done
+echo "cap: $(tail -1 $S/cap-$T.log)"
