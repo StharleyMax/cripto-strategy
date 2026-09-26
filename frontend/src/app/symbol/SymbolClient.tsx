@@ -1395,8 +1395,18 @@ const LONG_SHORT_PANE_TESTID = "long-short-pane";
  * that could never say it: a test that passes whether or not the data arrived proves nothing.
  * One token, four readouts, one thing for an operator to learn. ⛔ FORM SUBMITTED TO THE
  * `design_gate`, not decided here — `CLAUDE.md` §"Design — autonomia delegada, com gate de
- * validação"; what a builder decides is that absence is DISTINGUISHABLE and machine-readable. */
-const ABSENCE_TOKEN = "SEM_PONTO";
+ * validação"; what a builder decides is that absence is DISTINGUISHABLE and machine-readable.
+ *
+ * ⚠️ `T-01.R1` (`SF-9` of `gates/W1-DESIGN-REVIEW.md` §3, still open in r3 §4): THE TOKEN IS NOW
+ * THE pt-BR WORD, NOT THE ENUM. Since `T-01.7` every readout using it lives in `PaneDetails`
+ * (`sr-only`), so the ONLY audience of this string is a screen reader — and it heard
+ * "Leitura atual: SEM_PONTO" while a sighted operator read `ausente` in the legend (`MF-3` of the
+ * r1, moved to another channel). One word on both channels: this literal must equal
+ * `ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE]`, which `absence-readout-microcopy.test.ts` pins (it is
+ * spelled out rather than derived because five `*-dom-contract.test.ts` mutate this exact
+ * declaration). The machine half is unchanged: every readout's `data-fact` still ends in
+ * `:absent`, and the legend keeps the enum in `data-legend-absence`. It is still never a number. */
+const ABSENCE_TOKEN = "ausente";
 
 /** `T-03.12` — the SAME shape `view-model.ts::PartialCoverageSummary` (`page.tsx`'s own return
  * type from `summarizePartialCoverage`) declares, DUPLICATED here rather than imported: this
@@ -1978,7 +1988,7 @@ function PricePane({
   const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, ONE_MINUTE_MS, lastInstantMs(panels));
   const readingText =
     reading.kind === "absent"
-      ? "SEM_PONTO"
+      ? ABSENCE_TOKEN
       : reading.kind === "held"
         ? `${reading.value} (${formatHeldStockLabel(reading)})`
         : String(reading.value);

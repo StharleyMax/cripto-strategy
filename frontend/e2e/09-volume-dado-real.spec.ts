@@ -84,7 +84,12 @@ const apiBaseUrl = sentimentoApiBaseUrl;
  * veredito de design de `T-01.8` â um `NEEDS_FIX` de cor, altura ou escala nÃ£o pode quebrar uma
  * asserÃ§Ã£o sobre DADO. */
 const VOLUME_SUBAXIS_TESTID = "price-pane-volume-subaxis";
-const ABSENCE_TOKEN = "SEM_PONTO";
+/** `T-01.R1` (`SF-9`): the READOUT prints the pt-BR word, the same `ausente` the legend paints —
+ * `SymbolClient.tsx::ABSENCE_TOKEN`. The enum stays in the `data-fact` (`:absent`). */
+const ABSENCE_TOKEN = "ausente";
+/** The API's own absence enum, for the synthetic `/series-history` rows below — NOT what the
+ * readout prints (that is `ABSENCE_TOKEN`, since `T-01.R1`). */
+const WIRE_ABSENCE = "SEM_PONTO";
 
 /**
  * `DoD-3`/`RN-S2`: o piso Ã© `N >= 30` pontos DISTINTOS, e o `30` nÃ£o Ã© gosto.
@@ -345,7 +350,7 @@ test(`MORDE do instrumento: o piso REJEITA grade vazia e CALA sobre dado legÃ­
   expect(countPresentRows(measuredLive)).toBeGreaterThanOrEqual(MINIMUM_DISTINCT_POINTS);
 
   // E se o dado sumir, a contagem some junto: nada aqui sobra como constante.
-  expect(countPresentRows(measuredLive.map((row) => ({ ...row, value: null, absence: ABSENCE_TOKEN })))).toBe(0);
+  expect(countPresentRows(measuredLive.map((row) => ({ ...row, value: null, absence: WIRE_ABSENCE })))).toBe(0);
 });
 
 test(`o sub-eixo de Volume mostra o nÃºmero da API, e N >= ${MINIMUM_DISTINCT_POINTS} no universo FORTE (${SPEC})`, async ({

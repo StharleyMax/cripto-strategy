@@ -20,6 +20,7 @@ import {
   LEGEND_SERIES_IDS,
   createCrosshairSlotStore,
   crosshairMoveHandler,
+  formatLegendNumeral,
   formatLegendReading,
   legendMarkWidthCh,
   legendNumeralWidthCh,
@@ -278,4 +279,51 @@ test("MF-3: SymbolClient's legend paints the word, keeps the enum in data-legend
   assert.doesNotMatch(body, /formatLegendReading\(reading, ABSENCE_TOKEN\)|numeral: ABSENCE_TOKEN/);
   assert.match(body, /data-legend-absence=\{isAbsent \? LEGEND_GRID_ABSENCE : ""\}/);
   assert.match(body, /isAbsent \? "text-provenance-weak" : "text-on-surface"/);
+});
+
+// ── `T-01.R1` — `SF-8` of `gates/W1-DESIGN-REVIEW.md` §3 (open in r3 §4): floating-point noise ──
+
+/** The four numerals the design review read off the screen, `[MEDIDO]` in r1/r2/r3, each with the
+ * decimal the API's own notation carries once the IEEE-754 tail is gone. */
+const MEASURED_NOISY_NUMERALS: readonly (readonly [number, string])[] = [
+  [613372.7679000001, "613372.7679"], // r3 §4: liquidação long, `4h`
+  [14315336.490699999, "14315336.4907"], // r1 §3
+  [60777.34220000001, "60777.3422"], // r1 §3 / r2 §4
+  [2851.2434000000003, "2851.2434"], // r2 §4
+];
+
+/** Where the reading sits — irrelevant to the numeral, spelled once. */
+const SF8_LOCATED = {
+  source: "crosshair",
+  slotIndex: 0,
+  bucketStartMs: 0,
+  observedBucketStartMs: 0,
+  observedCloseMs: 60_000,
+} as const;
+
+test("SF-8: the painted numeral carries no floating-point noise, and rawValue keeps the served number", () => {
+  for (const [value, expected] of MEASURED_NOISY_NUMERALS) {
+    const read: LegendReading = { kind: "value", ...SF8_LOCATED, value };
+    const text = formatLegendReading(read, "ausente");
+    // The mutation this rejects: `numeral: String(reading.value)` — it prints `613372.7679000001`.
+    assert.equal(text.numeral, expected, `${value} painted with its IEEE-754 tail`);
+    // `CA-3′`/`CA-4` (`e2e/24`) compare `data-legend-raw` with `/series-history` digit for digit.
+    assert.equal(text.rawValue, value, "rawValue must stay the exact served number");
+  }
+  // The same holds for the other two kinds that print a number.
+  const forming: LegendReading = { kind: "forming", ...SF8_LOCATED, valueSoFar: 0.1 + 0.2, staleMinutes: 0 };
+  assert.equal(formatLegendReading(forming, "ausente").numeral, "0.3");
+  const held: LegendReading = { kind: "held", ...SF8_LOCATED, value: 420.30800000000005, staleMinutes: 1 };
+  assert.equal(formatLegendReading(held, "ausente").numeral, "420.308");
+});
+
+test("SF-8 CALA: a value with no noise is printed exactly as String() did — no precision lost, none invented", () => {
+  for (const value of [84059.3, 1.1395, 83767, 0, 30258, 0.0001, 1e-7, 70123.45]) {
+    assert.equal(formatLegendNumeral(value), String(value), `${value} changed although it carried no noise`);
+  }
+});
+
+test("SF-8: the numeral column is sized to the PAINTED numeral, not to the noisy one", () => {
+  // `String(613372.7679000001).length` is 17; the painted `613372.7679` is 11.
+  assert.equal(legendNumeralWidthCh([{ value: 613372.7679000001 }, { value: null }], "ausente"), 11);
 });

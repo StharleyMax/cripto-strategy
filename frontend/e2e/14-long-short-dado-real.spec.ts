@@ -85,7 +85,12 @@ const apiBaseUrl = sentimentoApiBaseUrl;
  * â `data-testid`, NEVER `aria-label`: the pt-BR microcopy is exactly what `T-04.6`'s designer has
  * the right to rewrite, and an assert anchored on it would make this gate a veto on form. */
 const LONG_SHORT_PANE_TESTID = "long-short-pane";
-const ABSENCE_TOKEN = "SEM_PONTO";
+/** `T-01.R1` (`SF-9`): the READOUT prints the pt-BR word, the same `ausente` the legend paints -
+ * `SymbolClient.tsx::ABSENCE_TOKEN`. The enum stays in the `data-fact` (`:absent`). */
+const ABSENCE_TOKEN = "ausente";
+/** The API's own absence enum, for the synthetic `/series-history` rows below - NOT what the
+ * readout prints (that is `ABSENCE_TOKEN`, since `T-01.R1`). */
+const WIRE_ABSENCE = "SEM_PONTO";
 
 /** `DoD-3`: `N >= 30` NATIVE BARS â not `N > 0`, and not 30 steps of the staircase. */
 const MINIMUM_NATIVE_BARS = 30;
@@ -426,7 +431,7 @@ test(`MORDE of the instrument: the plan's \`/5\` UNDERCOUNTS this staircase (${S
   expect(counted.nativeByPublication).toBeLessThanOrEqual(counted.wire);
 
   // If the data disappears, every count goes with it: none of them survives as a constant.
-  const erased = rows.map((row) => ({ ...row, value: null, available_at: null, absence: ABSENCE_TOKEN }));
+  const erased = rows.map((row) => ({ ...row, value: null, available_at: null, absence: WIRE_ABSENCE }));
   expect(countRows(erased)).toMatchObject({ nativeByPublication: 0, wire: 0, widestPublicationSlots: 0 });
 
   // And six real bars do NOT pass for thirty â the phase's own named failure mode ("contar 150

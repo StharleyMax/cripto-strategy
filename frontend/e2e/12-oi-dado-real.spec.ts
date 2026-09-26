@@ -78,7 +78,12 @@ const apiBaseUrl = sentimentoApiBaseUrl;
  * COLEÃÃO inteira para `Total: 0 tests`). `oi-pane-dom-contract.test.ts` guarda as mesmas strings
  * do outro lado â duas testemunhas independentes de um contrato sÃ³. */
 const OI_PANE_TESTID = "oi-pane";
-const ABSENCE_TOKEN = "SEM_PONTO";
+/** `T-01.R1` (`SF-9`): the READOUT prints the pt-BR word, the same `ausente` the legend paints —
+ * `SymbolClient.tsx::ABSENCE_TOKEN`. The enum stays in the `data-fact` (`:absent`). */
+const ABSENCE_TOKEN = "ausente";
+/** The API's own absence enum, for the synthetic `/series-history` rows below — NOT what the
+ * readout prints (that is `ABSENCE_TOKEN`, since `T-01.R1`). */
+const WIRE_ABSENCE = "SEM_PONTO";
 
 /** `DoD-3`: `N >= 30` BARRAS NATIVAS, nÃ£o `N > 0` e nÃ£o 30 degraus. */
 const MINIMUM_NATIVE_BARS = 30;
@@ -307,7 +312,7 @@ test(`MORDE do instrumento: a contagem por grade nativa rejeita a escada (${SPEC
   expect(counted.native, "e 30 barras nativas â Ã© ESTE o nÃºmero do DoD-3").toBe(30);
 
   // Se o dado sumir, a contagem some junto: nenhuma das duas sobra como constante.
-  const erased = rows.map((row) => ({ ...row, value: null, absence: ABSENCE_TOKEN }));
+  const erased = rows.map((row) => ({ ...row, value: null, absence: WIRE_ABSENCE }));
   expect(countRows(erased)).toEqual({ native: 0, wire: 0 });
 
   // E seis barras reais NÃO passam por trinta: Ã© o cenÃ¡rio que o `DoD-3` nomeia como falsificador

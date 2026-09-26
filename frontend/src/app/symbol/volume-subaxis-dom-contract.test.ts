@@ -8,7 +8,7 @@
  * mutations below passed unnoticed —
  *
  *   - renaming `VOLUME_SUBAXIS_TESTID`            -> 136 pass / 0 fail
- *   - `ABSENCE_TOKEN = "SEM_PONTO"` becoming `"0"` -> 136 pass / 0 fail
+ *   - `ABSENCE_TOKEN` (then `"SEM_PONTO"`, `"ausente"` since `T-01.R1`) becoming `"0"` -> 136 pass / 0 fail
  *   - deleting `data-volume-present-points`        -> 136 pass / 0 fail
  *
  * The second one IS the defect `RN-1` names, reachable by a one-token edit: a `FLOW` absence
@@ -43,7 +43,7 @@ const EXPECTED_TESTID = "price-pane-volume-subaxis";
 const EXPECTED_PRESENT_POINTS_ATTR = "data-volume-present-points";
 /** `RN-1`'s literal token. `DoD-3` asserts its ABSENCE from the screen when data is present, so
  * the string is as load-bearing as the testid. */
-const EXPECTED_ABSENCE_TOKEN = "SEM_PONTO";
+const EXPECTED_ABSENCE_TOKEN = "ausente";
 
 const TESTID_DECLARATION = /const VOLUME_SUBAXIS_TESTID = "([^"]*)";/;
 const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
@@ -71,10 +71,10 @@ test("T-01.9 contract: the present-point count is a bare integer attribute on th
   assert.match(source, subAxisElement, "testid and present-point count must sit on the SAME element");
 });
 
-test("RN-1 at the RENDERING layer: absence prints SEM_PONTO, and the token is never a number", () => {
+test("RN-1 at the RENDERING layer: absence prints `ausente`, and the token is never a number", () => {
   const declaration = ABSENCE_TOKEN_DECLARATION.exec(source);
   assert.ok(declaration !== null, "ABSENCE_TOKEN declaration not found — the anchor moved, fix this test");
-  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is SEM_PONTO — for a FLOW series a number here is an error of TYPE");
+  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is `ausente` — for a FLOW series a number here is an error of TYPE");
   assert.ok(
     !/^-?\d+(\.\d+)?$/.test(declaration[1]!),
     "the absence token must not be a number in any shape — 0, 0.0 and -0 are all the RN-1 defect",

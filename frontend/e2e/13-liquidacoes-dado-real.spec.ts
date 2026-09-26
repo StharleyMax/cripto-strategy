@@ -94,7 +94,9 @@ const apiBaseUrl = sentimentoApiBaseUrl;
  * `liquidation-pane-dom-contract.test.ts` guarda as mesmas strings do outro lado â duas
  * testemunhas independentes de um contrato, de modo que um rename tenha de quebrar uma delas. */
 const LIQUIDATION_PANE_TESTID = "liquidation-pane";
-const ABSENCE_TOKEN = "SEM_PONTO";
+/** `T-01.R1` (`SF-9`): the READOUT prints the pt-BR word, the same `ausente` the legend paints —
+ * `SymbolClient.tsx::ABSENCE_TOKEN`. The enum stays in the `data-fact` (`:absent`). */
+const ABSENCE_TOKEN = "ausente";
 
 /** `liquidation_catalog.py::COHORTS`, transcrito â e FECHADO aqui pelo mesmo motivo que lÃ¡: uma
  * terceira coorte seria uma terceira sÃ©rie com requisito prÃ³prio, nÃ£o um valor que alguÃ©m passa.
