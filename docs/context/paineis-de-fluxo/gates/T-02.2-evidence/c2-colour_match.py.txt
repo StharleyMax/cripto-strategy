@@ -1,0 +1,25 @@
+# MF-7: does the simulated T-02.1 colour of each volume bar match the direction of its candle at 1h?
+# Bar columns of the capture (x order) zipped with the present slots of the visible window (last 37 slots, time order).
+# Also counts red/green pixels in the 1h rows of a composite PNG (argv[3]) to tell a colour crop from a grey one.
+import json, sys
+from collections import Counter
+from PIL import Image
+S, V = sys.argv[1], sys.argv[2]
+UP, DN = (8, 153, 129), (242, 54, 69)
+near = lambda c, k: all(abs(a - b) < 30 for a, b in zip(c, k))
+rows = lambda n: sorted(json.load(open(f"{V}/data/{n}-1h.json"))["rows"], key=lambda r: r["event_time"])
+vol = rows("vol")[-37:]; op = {r["event_time"]: r for r in rows("open")}; cl = {r["event_time"]: r for r in rows("close")}
+pres = [r for r in vol if r["value"] is not None and r.get("absence") is None]
+up = [float(cl[r["event_time"]]["value"]) >= float(op[r["event_time"]]["value"]) for r in pres]
+for tag in ("logcolor", "lincolor"):
+    im = Image.open(f"{S}/{tag}-1h-price.png").convert("RGB"); px = im.load(); W, H = im.size; cols = []
+    for x in range(1105):
+        u = sum(near(px[x, H-1-r], UP) for r in range(20)); d = sum(near(px[x, H-1-r], DN) for r in range(20))
+        if u or d: cols.append(u > d)
+    ok = sum(a == b for a, b in zip(cols, up)) if len(cols) == len(up) else None
+    print(f"{tag}-1h: bar columns={len(cols)} present slots={len(up)} colour==candle direction: {ok}/{len(up)}")
+for path in sys.argv[3:]:
+    im = Image.open(path).convert("RGB"); px = im.load(); W, H = im.size
+    for name, (y0, y1) in {"1h A row": (H - 296, H - 148), "1h B row": (H - 148, H)}.items():
+        c = Counter(px[x, y] for x in range(W - 100) for y in range(y0, y1))
+        print(f"{path.split('/')[-1]} {name}: red={c[DN]} green={c[UP]} grey(139,148,158)={c[(139, 148, 158)]}")
