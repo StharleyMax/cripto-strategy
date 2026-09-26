@@ -74,6 +74,7 @@ import {
   capWindowRightEdge,
   DEFAULT_MAX_ACCUMULATED_SLOTS,
   DEFAULT_PAGE_SLOTS,
+  effectiveMaxAccumulatedSlots,
   mergeOlderPage,
   trimRowsToWindow,
   widenAndCapWindow,
@@ -201,7 +202,13 @@ function axisFromWindow(window: AccumulatedWindow): TimeAxis {
 
 export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
   const pageSlots = seed.pageSlots ?? DEFAULT_PAGE_SLOTS;
-  const maxSlots = seed.maxAccumulatedSlots ?? DEFAULT_MAX_ACCUMULATED_SLOTS;
+  // W1-FIX (MF-A): never below the seed window + one page — see `effectiveMaxAccumulatedSlots`.
+  const maxSlots = effectiveMaxAccumulatedSlots(
+    seed.window,
+    S2_AXIS_STEP_MS,
+    pageSlots,
+    seed.maxAccumulatedSlots ?? DEFAULT_MAX_ACCUMULATED_SLOTS,
+  );
   const triggerSlots = seed.triggerSlots ?? DEFAULT_PAGE_TRIGGER_SLOTS;
 
   const [windowState, setWindowState] = useState<AccumulatedWindow>(seed.window);

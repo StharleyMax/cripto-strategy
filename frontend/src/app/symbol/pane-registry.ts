@@ -19,8 +19,12 @@
  *
  *   (i)   every `seriesKeyId` exists in the catalog that was served;
  *   (ii)  every pane has at least one `primary` series;
- *   (iii) every `FLOW` data series has the `absence_mark` + `zero_mark` pair (`RN-4`,
- *         `ADR-044/D3`) — so the fusion of phase `04` cannot "forget" a mark;
+ *   (iii) every `FLOW` data series of `kind = histogram` has the `absence_mark` + `zero_mark`
+ *         pair (`RN-4`, `ADR-044/D3′` (iii-a)) — so the fusion of phase `04` cannot "forget" a
+ *         mark. A `FLOW` LINE needs no mark (`D3′` (iii-b): it is fed by the lossless adapter, and
+ *         the adapter's own test is what refuses a carried value). A `FLOW` CANDLESTICK does not
+ *         exist today and is refused until classified (`D3′`, same principle as
+ *         `UncoveredReductionPairError`);
  *   (iv)  no legend is literal: the label (and the reading policy) is DERIVED from the
  *         `SeriesKey` in the catalog (`RF-5`, `CA-5`);
  *   (v)   every `time` of every `setData` belongs to the canonical grid (`ADR-044/D2`). Under
@@ -279,7 +283,9 @@ export function validatePaneRegistry(
       report("ii", paneIndex, `pane '${pane.paneId}' has no primary series`);
     }
 
-    // ── (iii) every FLOW data series carries the absence_mark + zero_mark pair ──
+    // ── (iii′) every FLOW HISTOGRAM data series carries the absence_mark + zero_mark pair ──
+    // `ADR-044/D3′`: the pair exists because a bar of height zero cannot be told apart from no bar.
+    // A line (iii-b) is guarded by the lossless adapter's own test; a FLOW candlestick has no rule.
     pane.series.forEach((series, seriesIndex) => {
       if (!DATA_ROLES.has(series.role)) {
         return;
@@ -287,6 +293,18 @@ export function validatePaneRegistry(
       const entry = catalog.get(series.seriesKeyId);
       if (entry === undefined || entry.key.nature !== "FLOW") {
         return; // a missing entry is (i)'s violation, not this one
+      }
+      if (series.kind === "line") {
+        return; // (iii-b): absence is whitespace from the lossless adapter, never a mark
+      }
+      if (series.kind === "candlestick") {
+        report(
+          "iii",
+          paneIndex,
+          `pane '${pane.paneId}' series ${seriesIndex} is a FLOW candlestick (${series.seriesKeyId}): ` +
+            "no absence rule is classified for that kind (ADR-044/D3')",
+        );
+        return;
       }
       for (const markRole of ["absence_mark", "zero_mark"] as const) {
         const hasMark = pane.series.some(

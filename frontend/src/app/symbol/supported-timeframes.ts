@@ -84,3 +84,15 @@ export const DEFAULT_TIMEFRAME = "1m";
 export function isSupportedTimeframe(candidate: string): boolean {
   return SUPPORTED_TIMEFRAMES.some((option) => option.interval === candidate);
 }
+
+/** The width in epoch-ms of a served `interval` — the bar the legend snaps a slot to on the `1m`
+ * grid (`charts::resolveLegendReading`'s `bucketMs`, W1-FIX MF-B). Throws for an interval outside
+ * the served set: `page.tsx` only ever hands `SymbolClient` a member, so an outsider is a contract
+ * violation, never a silent `1m`. */
+export function timeframeStepMs(interval: string): number {
+  const option = SUPPORTED_TIMEFRAMES.find((candidate) => candidate.interval === interval);
+  if (option === undefined) {
+    throw new RangeError(`timeframeStepMs: ${JSON.stringify(interval)} is not a served interval`);
+  }
+  return option.stepMs;
+}

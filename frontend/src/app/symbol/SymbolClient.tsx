@@ -156,7 +156,7 @@ import {
   formatPercentPtBr,
   LONG_SHORT_EQUILIBRIUM,
 } from "./ratio-format.ts";
-import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
+import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES, timeframeStepMs } from "./supported-timeframes.ts";
 import { HISTORY_BAR_POLICY } from "../history-transport.ts";
 import type { HistoryRowsBundle } from "./panel-assembly.ts";
 import { useHistoryPager, type HistoryPagingSeed, type HistorySeriesKeys } from "./use-history-pager.ts";
@@ -835,6 +835,10 @@ interface LegendFrame {
   /** `knowledge_time_ms` of the request: the page is "COMO EM T", so a bucket is closed iff it
    * closed at T (`ChromeModeStamp`), never at the browser's clock. */
   readonly asOfMs: number;
+  /** W1-FIX (`gates/W1-DESIGN-REVIEW.md` MF-B): the width of the served bar — the page's TF. Above
+   * `1m` a bar is ONE point on the slot of its open, so the legend snaps the slot it reads to that
+   * open (`charts::resolveLegendReading`'s `bucketMs`), instead of reading an empty minute. */
+  readonly bucketMs: number;
 }
 
 const LegendFrameContext = createContext<LegendFrame | null>(null);
@@ -906,6 +910,7 @@ function LegendValue({
           axisStepMs: frame.axisStepMs,
           nativeTimeframeMs: nativeTimeframeMs ?? frame.axisStepMs,
           asOfMs: frame.asOfMs,
+          bucketMs: frame.bucketMs,
         });
   // No resolved entry ⇒ no series ⇒ nothing to read: the token, never a number.
   const text =
@@ -3684,8 +3689,8 @@ export function SymbolClient({
   // this runs once per mount of `SymbolClient`.
   const legends = useMemo(() => resolvePaneLegends(paneLegendSources), [paneLegendSources]);
   const legendFrame: LegendFrame = useMemo(
-    () => ({ legends, axisStepMs: axis.stepMs, asOfMs: knowledgeTimeMs }),
-    [legends, axis.stepMs, knowledgeTimeMs],
+    () => ({ legends, axisStepMs: axis.stepMs, asOfMs: knowledgeTimeMs, bucketMs: timeframeStepMs(selectedTimeframe) }),
+    [legends, axis.stepMs, knowledgeTimeMs, selectedTimeframe],
   );
   // `T-05.2` — THE SIX PANES DRAW `pager.assembly`'s SLOTS FROM HERE ON, never `initialPanels`
   // directly: `panels`/`priceCandles`/`volume`/`cvd` merge the paginator's DYNAMIC facts

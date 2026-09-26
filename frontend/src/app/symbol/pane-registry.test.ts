@@ -143,7 +143,8 @@ function validRegistry(): PaneRegistry {
     ]),
     pane("oi", "oi", [data("primary", "oi", "line", "right")]),
     pane("long_short", "longShort", [data("primary", "longShort", "line", "right")]),
-    pane("cvd", "cvd", [data("primary", "cvd", "line", "right"), ...marks("cvd", "cvd_marks")]),
+    // `ADR-044/D3′`: the CVD is what production draws — two FLOW lines (delta, cumulative), NO marks.
+    pane("cvd", "cvd", [data("primary", "cvd", "line", "right"), data("secondary", "cvd", "line", "cvd_cumulative")]),
   ];
 }
 
@@ -264,16 +265,39 @@ test("(iii) FAILS: a mark that marks ANOTHER series does not count", () => {
   assert.equal(violations.length, 2);
 });
 
-test("(iii) FAILS: today's CVD pane — two FLOW lines, no marks — is refused", () => {
-  // `SymbolClient.tsx` CvdPane draws delta and cumulative as two lines without the pair. This
-  // is the shape the invariant refuses, and it is here so the conflict is measured, not guessed.
+test("(iii) PASSES: today's CVD pane — two FLOW lines, no marks — is accepted (ADR-044/D3′ iii-b)", () => {
+  // `SymbolClient.tsx` CvdPane draws delta and cumulative as two lossless lines without the pair.
+  // Before `D3′` this very registration measured 4 violations; the narrowing to `kind` accepts it.
   const registry = withPane(validRegistry(), "cvd", (value) => ({
     ...value,
     series: [data("primary", "cvd", "line", "right"), data("secondary", "cvd", "line", "cvd_cumulative")],
   }));
+  assert.deepEqual(validate(registry), []);
+});
+
+test("(iii-a) FAILS: the same CVD registration with kind = histogram and no marks is refused", () => {
+  // The proof the narrowing did not switch (iii) off: the SAME two FLOW series, now bars, no pair.
+  const registry = withPane(validRegistry(), "cvd", (value) => ({
+    ...value,
+    series: [
+      data("primary", "cvd", "histogram", "right"),
+      data("secondary", "cvd", "histogram", "cvd_cumulative"),
+    ],
+  }));
   const violations = validate(registry);
   assert.deepEqual(firedInvariants(violations), ["iii"]);
   assert.equal(violations.length, 4); // 2 series x 2 missing marks
+});
+
+test("(iii) FAILS: a FLOW candlestick is refused until classified (ADR-044/D3′)", () => {
+  const registry = withPane(validRegistry(), "cvd", (value) => ({
+    ...value,
+    series: [data("primary", "cvd", "candlestick", "right")],
+  }));
+  const violations = validate(registry);
+  assert.deepEqual(firedInvariants(violations), ["iii"]);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0].message, /FLOW candlestick/);
 });
 
 test("(iii) PASSES: STOCK and RATIO series need no marks; FLOW with the pair passes", () => {

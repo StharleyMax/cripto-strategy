@@ -4,6 +4,8 @@ import { test } from "node:test";
 import {
   capWindowRightEdge,
   DEFAULT_MAX_ACCUMULATED_SLOTS,
+  DEFAULT_PAGE_SLOTS,
+  effectiveMaxAccumulatedSlots,
   mergeOlderPage,
   trimRowsToWindow,
   widenAndCapWindow,
@@ -24,6 +26,39 @@ test("T-01.5 capWindowRightEdge MORDE: a deferred over-cap window loses the RIGH
   assert.equal((capped.endMsExclusive - capped.startMs) / STEP_MS, DEFAULT_MAX_ACCUMULATED_SLOTS);
   assert.throws(() => capWindowRightEdge(current, 0), RangeError);
   assert.throws(() => capWindowRightEdge(current, STEP_MS, 1.5), RangeError);
+});
+
+// ── W1-FIX (`gates/W1-DESIGN-REVIEW.md` MF-A): the cap never cuts what the route served ──────
+
+/** The seed every TF gets today: 4 days of the `1m` grid (`request-window.ts`). */
+const SEED_WINDOW = { startMs: 0, endMsExclusive: 5_760 * STEP_MS };
+
+test("W1-FIX MF-A MORDE: the RAW cap (5.000) cuts the 5.760-slot seed on a bare release — the 12 h 40 min on screen", () => {
+  // This is the defect, kept as a measured fact: a release with no page fetched still cuts 760 slots.
+  const capped = capWindowRightEdge(SEED_WINDOW, STEP_MS, DEFAULT_MAX_ACCUMULATED_SLOTS);
+  assert.equal((SEED_WINDOW.endMsExclusive - capped.endMsExclusive) / STEP_MS, 760);
+});
+
+test("W1-FIX MF-A CALA: with the effective cap, a release with no page leaves the seed window untouched", () => {
+  const maxSlots = effectiveMaxAccumulatedSlots(SEED_WINDOW, STEP_MS, DEFAULT_PAGE_SLOTS);
+  assert.equal(maxSlots, 5_760 + DEFAULT_PAGE_SLOTS);
+  assert.equal(capWindowRightEdge(SEED_WINDOW, STEP_MS, maxSlots), SEED_WINDOW);
+});
+
+test("W1-FIX MF-A CALA: the first page never cuts the right edge; the second slides it by one page", () => {
+  const maxSlots = effectiveMaxAccumulatedSlots(SEED_WINDOW, STEP_MS, DEFAULT_PAGE_SLOTS);
+  const page1 = { fromMs: -DEFAULT_PAGE_SLOTS * STEP_MS, toMs: 0 };
+  const afterFirst = widenAndCapWindow(SEED_WINDOW, page1, STEP_MS, maxSlots);
+  assert.equal(afterFirst.endMsExclusive, SEED_WINDOW.endMsExclusive, "the first page keeps the served right edge");
+  const page2 = { fromMs: afterFirst.startMs - DEFAULT_PAGE_SLOTS * STEP_MS, toMs: afterFirst.startMs };
+  const afterSecond = widenAndCapWindow(afterFirst, page2, STEP_MS, maxSlots);
+  assert.equal((SEED_WINDOW.endMsExclusive - afterSecond.endMsExclusive) / STEP_MS, DEFAULT_PAGE_SLOTS);
+});
+
+test("W1-FIX MF-A: a requested cap above the floor is kept, and bad arguments are refused", () => {
+  assert.equal(effectiveMaxAccumulatedSlots(SEED_WINDOW, STEP_MS, DEFAULT_PAGE_SLOTS, 10_000), 10_000);
+  assert.throws(() => effectiveMaxAccumulatedSlots(SEED_WINDOW, 0, DEFAULT_PAGE_SLOTS), RangeError);
+  assert.throws(() => effectiveMaxAccumulatedSlots(SEED_WINDOW, STEP_MS, 0), RangeError);
 });
 
 test("CALA: widening under the cap keeps the endMsExclusive unchanged and moves startMs to the page's fromMs", () => {

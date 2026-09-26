@@ -46,6 +46,33 @@ export const DEFAULT_MAX_ACCUMULATED_SLOTS = 5_000;
 export const DEFAULT_PAGE_SLOTS = 500;
 
 /**
+ * `paineis-de-fluxo` W1-FIX (`gates/W1-DESIGN-REVIEW.md` MF-A) — the cap the pager ACTUALLY applies:
+ * never below the seed window plus one page. The seed window of every TF is `5.760` slots (4 days
+ * of the `1m` grid), MORE than `D-C3.5`'s `~5.000`. With the raw cap, the deferred right-edge cut
+ * (`capWindowRightEdge`, applied on every pointer release) discarded `5.760 − 5.000 = 760` slots —
+ * the 12 h 40 min most recent, the very edge on screen — on the FIRST release, with no page fetched
+ * and no way back (there is no page toward the future). `D-C3.5`'s own intent is a SLIDING window
+ * that trims the edge FAR from where the operator dragged; that only holds once the window has
+ * grown past what the route itself served. Floor = seed + one page means the first page never cuts,
+ * and a later cut lands at least one page away from the view the paging was triggered from.
+ */
+export function effectiveMaxAccumulatedSlots(
+  seedWindow: AccumulatedWindow,
+  stepMs: number,
+  pageSlots: number,
+  requestedMaxSlots: number = DEFAULT_MAX_ACCUMULATED_SLOTS,
+): number {
+  if (!(stepMs > 0)) {
+    throw new RangeError(`effectiveMaxAccumulatedSlots: stepMs must be positive, received ${stepMs}`);
+  }
+  if (!(pageSlots > 0) || !Number.isInteger(pageSlots)) {
+    throw new RangeError(`effectiveMaxAccumulatedSlots: pageSlots must be a positive integer, received ${pageSlots}`);
+  }
+  const seedSlots = Math.ceil((seedWindow.endMsExclusive - seedWindow.startMs) / stepMs);
+  return Math.max(requestedMaxSlots, seedSlots + pageSlots);
+}
+
+/**
  * Widens `current` to include a just-fetched page `[page.fromMs, page.toMs)`, then caps the
  * result at `maxSlots` by trimming the RIGHT edge — never the left, which is the edge the page
  * just extended and the one the operator dragged toward. `page.toMs` MUST equal

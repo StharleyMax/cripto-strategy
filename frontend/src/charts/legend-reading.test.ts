@@ -251,6 +251,75 @@ test("a 5m STOCK served on a 4h axis reads on the axis cadence — no off-grid h
   assert.equal(held.kind === "held" ? held.staleMinutes : Number.NaN, 240);
 });
 
+// ── W1-FIX (`gates/W1-DESIGN-REVIEW.md` MF-B): a 4h bar served on the 1m grid ────────────────
+
+/** Two `4h` bars on the `1m` grid: a point on the OPEN slot of each bar (0 and 240), the other
+ * 478 minutes empty — exactly what the page feeds the legend after a click on `4h`. */
+const FOUR_H_SLOTS = 2 * 240;
+function fourHourBarsOnMinuteGrid(first: number, second: number): readonly ScalarSlot[] {
+  return grid(Array.from({ length: FOUR_H_SLOTS }, (_, index) => (index === 0 ? first : index === 240 ? second : null)));
+}
+const FOUR_H_BASE = { axisStepMs: ONE_MINUTE_MS, nativeTimeframeMs: ONE_MINUTE_MS } as const;
+
+test("MF-B MORDE: without bucketMs, a 4h bar on the 1m grid reads ABSENT at rest — the defect, kept measured", () => {
+  const slots = fourHourBarsOnMinuteGrid(84_000, 84_100);
+  for (const nature of ["STOCK", "FLOW"] as const) {
+    assertAbsent(read({ ...FOUR_H_BASE, slots, nature, asOfMs: T0 + 2 * FOUR_HOURS_MS }), FOUR_H_SLOTS - 1);
+  }
+});
+
+test("MF-B CALA: with bucketMs = 4h, at rest the legend reads the LAST CLOSED BAR, on its open slot", () => {
+  const slots = fourHourBarsOnMinuteGrid(84_000, 84_100);
+  for (const nature of ["STOCK", "FLOW", "RATIO"] as const) {
+    const reading = read({ ...FOUR_H_BASE, slots, nature, bucketMs: FOUR_HOURS_MS, asOfMs: T0 + 2 * FOUR_HOURS_MS });
+    assert.equal(reading.kind, "value", `${nature}: ${JSON.stringify(reading)}`);
+    assert.equal(reading.kind === "value" ? reading.value : Number.NaN, 84_100);
+    assert.equal(reading.slotIndex, 240);
+    assert.equal(reading.bucketStartMs, T0 + FOUR_HOURS_MS);
+    assert.equal(reading.kind === "value" ? reading.observedCloseMs : Number.NaN, T0 + 2 * FOUR_HOURS_MS);
+  }
+});
+
+test("MF-B CALA: under the crosshair, ANY minute inside a bar reads that bar's value", () => {
+  const slots = fourHourBarsOnMinuteGrid(84_000, 84_100);
+  const asOfMs = T0 + 2 * FOUR_HOURS_MS;
+  for (const [logical, expected, openIndex] of [
+    [0, 84_000, 0],
+    [1, 84_000, 0],
+    [239, 84_000, 0],
+    [240, 84_100, 240],
+    [241, 84_100, 240],
+    [479, 84_100, 240],
+  ] as const) {
+    const reading = read({ ...FOUR_H_BASE, slots, nature: "FLOW", bucketMs: FOUR_HOURS_MS, asOfMs, logical });
+    assert.equal(reading.kind, "value", `logical ${logical}: ${JSON.stringify(reading)}`);
+    assert.equal(reading.kind === "value" ? reading.value : Number.NaN, expected);
+    assert.equal(reading.slotIndex, openIndex);
+  }
+});
+
+test("MF-B: mid-bar, at rest reads the previous (closed) bar, and the crosshair on the open bar reads FORMING", () => {
+  const slots = fourHourBarsOnMinuteGrid(84_000, 84_100);
+  const asOfMs = T0 + FOUR_HOURS_MS + 60 * ONE_MINUTE_MS;
+  const rest = read({ ...FOUR_H_BASE, slots, nature: "FLOW", bucketMs: FOUR_HOURS_MS, asOfMs });
+  assert.equal(rest.kind === "value" ? rest.value : Number.NaN, 84_000, JSON.stringify(rest));
+  const forming = read({ ...FOUR_H_BASE, slots, nature: "FLOW", bucketMs: FOUR_HOURS_MS, asOfMs, logical: 250 });
+  assert.equal(forming.kind, "forming", JSON.stringify(forming));
+});
+
+test("MF-B: an absent bar reads absent on its open slot, and a bar whose open is before the grid reads absent with no slot", () => {
+  const slots = fourHourBarsOnMinuteGrid(84_000, Number.NaN).map((slot, index) => (index === 240 ? { ...slot, value: null } : slot));
+  assertAbsent(read({ ...FOUR_H_BASE, slots, nature: "FLOW", bucketMs: FOUR_HOURS_MS, logical: 300 }), 240);
+  const late = grid(Array.from({ length: 300 }, () => 1), ONE_MINUTE_MS, T0 + 60 * ONE_MINUTE_MS);
+  assertAbsent(read({ ...FOUR_H_BASE, slots: late, nature: "FLOW", bucketMs: FOUR_HOURS_MS, logical: 10 }), null);
+});
+
+test("MF-B: bucketMs must be a whole number of axis steps", () => {
+  const slots = fourHourBarsOnMinuteGrid(1, 2);
+  assert.throws(() => read({ ...FOUR_H_BASE, slots, nature: "FLOW", bucketMs: 90_000 }), RangeError);
+  assert.throws(() => read({ ...FOUR_H_BASE, slots, nature: "FLOW", bucketMs: 0 }), RangeError);
+});
+
 // ── what is not read ──────────────────────────────────────────────────────────────────────────
 
 test("EVENT and TICK have no legend rule — high failure, never a guessed reading", () => {

@@ -68,8 +68,10 @@ a fase `01` para, com o relatório do spike devolvido ao `/architect`.
 - `web` é dono do registry (composição), da camada de DOM por pane e da ligação com o pager;
 - a dívida de **14** constantes de geometria em `web` (`ADR-044` §Consequências) **não pode crescer**.
 
-**Invariante da grade (`ADR-044/D2`):** toda série de todo pane chama `setData` exatamente com os `time`
-da grade canônica do TF. O registry testa isso.
+**Invariante da grade (`ADR-044/D2′`):** a portadora recebe exatamente a grade canônica do TF; toda série de
+pane recebe um **subconjunto** dela (`plotItemsOnly`), e nunca um `time` fora dela. O registry testa isso.
+*(Emendado em 2026-09-26, W1-FIX: a redação anterior, "toda série de todo pane chama `setData` exatamente com
+os `time` da grade", era a D2 de antes da D2′ — achado por `gates/W1-REVIEW.md` WARNING-3.)*
 
 **Posição do HTML de pane** (título, legenda, `BeyondCoverageBadge`/`PartialCoverageMark`/`AbsenceNote`
 — 48 `data-fact=` e 9 `data-testid=` hoje, `[MEDIDO: ARQ-1 §3.2]`): há duas formas estruturais possíveis,

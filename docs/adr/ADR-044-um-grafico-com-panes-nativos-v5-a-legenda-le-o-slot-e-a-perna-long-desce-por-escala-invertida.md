@@ -83,10 +83,38 @@ intra-gesto de 160 ms `[DECISÃO-OWNER: 2026-09-22]`.
 O motivo de D2 era impedir que um `time` fora da grade inserisse um índice lógico em todos os panes. **Esse motivo
 fica inteiro em (b).** Os adaptadores lossless **não mudam**.
 
-**Falsificador de D2′:** comparar o canvas de hoje (sem portadora, lossless) com o canvas do desenho (portadora +
-`plotItemsOnly`) sobre a mesma entrada, com lacuna, bucket isolado e zeros, tem de dar **0 byte** de diferença.
-Hoje dá 0 de 880×290×4, e o mutante de controle dá 3.952 `[MEDIDO 2026-09-25, n=1 render]`. **Morde:** filtrar
-também a portadora colapsa as lacunas. O detalhe está em `handoff/T-01.10-desenho.md` §4, linhas F-D e F-E.
+**Falsificador de D2′**, em três partes, e cada uma diz onde vale:
+
+- **(b), o esparso não muda nenhum pixel.** Comparar o canvas lossless sem portadora com o canvas do desenho
+  (portadora + `plotItemsOnly`) sobre a mesma entrada, com lacuna, bucket isolado, zeros e as marcas de
+  ausência e zero, tem de dar **0 byte** de diferença. No app real, esparso contra `?e2eDenseSeries=1`,
+  também **0 byte**. **Morde:** um valor trocado reprova (3.952 bytes no harness do desenho, 6.061 no
+  `e2e/25`), e o ramo denso com `items.slice(0, -1)` reprova no app (7.742)
+  `[MEDIDO 2026-09-25, n=1 render cada; handoff/T-01.10-desenho.md §4, gates/T-01.10-builder.md §3]`.
+- **(a) eficácia, a portadora sozinha segura a lacuna.** Num gráfico **sem** marcas (linha + vela), o desenho
+  contra o lossless dá **0 byte**. **Morde:** com a portadora também filtrada, as lacunas colapsam (58.018
+  bytes) `[MEDIDO 2026-09-25, n=1 render]`. ⚠️ **Esse controle só existe num gráfico sem marcas.**
+  Positivo + ausência + zero repartem todo slot (`s2-lightweight-adapter.ts:145-216`, e um negativo lança
+  exceção), então com as marcas a união das séries esparsas já é a grade. Ali, filtrar a portadora dá
+  **0 byte**, e isso é esperado, não é falha do controle `[MEDIDO 2026-09-25: a tríade cobre a grade em
+  1000/1000 conjuntos aleatórios de slots; uma linha sozinha em 0/1000]`.
+- **(a) estrutura, que vale em qualquer composição.** O host alimenta a portadora **primeiro**, com
+  `axis.slotCount` itens, e nunca a filtra (`host-series-feed.test.ts`, `F-E`). **Morde:** a portadora
+  passada por `plotItemsOnly` reprova, e a portadora depois dos panes reprova.
+
+**O que isto implica em produção, dito com todas as letras:** com o pane de volume ou o de liquidação
+montado, apagar a portadora **não muda nenhum pixel**. Nessa composição, o único guarda de (a) é o unitário.
+A portadora fica porque ela é a **dona** da invariante: a grade não pode depender da forma das marcas de
+`D3`. **Gatilho:** a composição que deixar de ter uma tríade completa sobre a grade (a fusão da fase `04`, o
+pane de volume ou de liquidação removido ou condicional, o degrau 3 de `T-01.10-desenho.md` §6) obriga o
+`e2e/25` braço (ii) a ganhar uma ablação da portadora que **morda** no app real.
+`[handoff/ADR044-D2P-julgamento.md]`
+
+> ⚠️ **CORREÇÃO, 2026-09-26 (W1-FIX).** A versão anterior deste parágrafo dizia *"**Morde:** filtrar também a
+> portadora colapsa as lacunas"* sem qualificar a composição. `handoff/ADR044-D2P-julgamento.md` §1 mediu que,
+> com as marcas de ausência e zero montadas, esse controle dá **0 byte** por construção. O texto acima é a §4.1
+> daquele julgamento, aplicada literalmente. Achado por `gates/W1-QA.md` (BLOCKER-2) e `gates/W1-REVIEW.md`
+> (WARNING-2).
 
 ## D3 — `RN-4` passa a ser propriedade do registry
 
@@ -129,6 +157,21 @@ desenhar ≥ 1 pixel no canvas. Se desenhar zero pixel, a linha lossless **não*
 isolado"* de *"ausente"*, a (iii-b) cai, e a correção (marcador de ponto, `pointMarkersVisible`, ou a
 marca) volta ao `/architect` + `design_gate` `[NÃO SEI: comportamento da LineSeries v5 com ponto único
 entre whitespaces; medir na T-01.5]`.
+
+> ⚠️ **CORREÇÃO, 2026-09-26 (W1-FIX): a premissa desta emenda foi medida FALSA, e a decisão fica de pé por
+> outro motivo, ainda não medido.** O parágrafo *"O defeito medido"* acima diz que o bucket ausente é
+> *whitespace* e **interrompe a linha**. Na `lightweight-charts@5.2.1` isso não acontece: o `walkLine` liga itens
+> consecutivos por `lineTo` sem checar lacuna, e o render sintético pinta **169 px** da cor da linha dentro da
+> lacuna dos slots 21–28 `[DOC: handoff/T-01.10-desenho.md §7, MEDIDO 2026-09-25, n=1 render headless]`. O
+> `gates/T-01.11-design-review-r2.md` §5 (E-1) vê o mesmo no pixel real, com OI e CVD atravessando a lacuna.
+> O que **continua** valendo: o zero legítimo é um ponto no nível 0 e a ausência não vira `0` (o adapter lossless
+> não escreve valor no slot ausente), então a (iii-b) segue verdadeira como regra de **dado**. O que **caiu** é o
+> argumento de **geometria** (*"os dois já são geometrias diferentes, sem marca"*): uma lacuna entre dois pontos
+> vira uma reta. O falsificador acima (bucket isolado ≥ 1 px) **não foi rodado** (`gates/T-01.10-builder.md`:
+> *"não rodados"*) `[NÃO MEDIDO]`. **Donos da reabertura:** `quant-architect` (política de ausência por `nature`)
+> + `design_gate`. A implementação da (iii′) no registry (`pane-registry.ts`, W1-FIX) **não** depende desta
+> premissa: ela só estreita a regra ao `kind`, como os itens 1–4 acima pedem. Achado por `gates/W1-REVIEW.md`
+> (WARNING-1).
 
 ## D4 — Liquidação num pane: a perna long **desce por escala invertida**, o dado **nunca é negado**
 

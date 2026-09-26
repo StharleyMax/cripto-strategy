@@ -65,6 +65,18 @@
  * the axis is COARSER than the native cadence (a 5-minute OI on a 4-hour axis, served already
  * aggregated to 4 hours), the series' cadence ON THIS AXIS is the axis step — the width used is
  * `max(nativeTimeframeMs, axisStepMs)`, which has to be a whole number of axis steps.
+ *
+ * ── `bucketMs`: THE SERVED BAR ON A FINER GRID (W1-FIX, `gates/W1-DESIGN-REVIEW.md` MF-B) ────
+ *
+ * The page keeps ONE canonical grid of 1 minute for every TF (`S2_AXIS_STEP_MS`), and a TF above
+ * `1m` is served as one point per bar, on the slot of the bar's OPEN. Read slot by slot, every
+ * other minute of a `4h` bar is empty: at rest the last closed MINUTE (`hh:59`) has no point, and
+ * under the crosshair only the 1-px column of the open lands on one — the legend said `ausente`
+ * next to the drawn bar in 4 of the 5 TFs. `bucketMs` is the served bar's width: the slot found
+ * (crosshair or last closed) is snapped back to the slot of its bar's open (UTC-aligned, the
+ * backend's `_INTERVAL_STEP_MS` boundaries), the bar closes at `open + bucketMs`, and "last closed"
+ * means the last closed BAR. It has to be a whole number of axis steps; omitted, it is the axis
+ * step and nothing changes.
  */
 
 import { resolveFlowReading, resolveStockReading } from "./s2-absence-policy.ts";
@@ -92,6 +104,9 @@ export interface LegendReadingInput {
   readonly nativeTimeframeMs: number;
   /** The instant the legend is evaluated at, epoch ms. A bucket is closed iff its close `<=` this. */
   readonly asOfMs: number;
+  /** The width of the served bar when it is coarser than the axis step (the page's TF on the
+   * `1m` grid). Omitted = the axis step. See the module note, "`bucketMs`". */
+  readonly bucketMs?: number;
 }
 
 /** The slot the reading is about. */
@@ -195,6 +210,28 @@ function crosshairSlotIndex(logical: number, slotCount: number): number | null {
   return index >= 0 && index < slotCount ? index : null;
 }
 
+/**
+ * The slot of the OPEN of the served bar that slot `index` lies in, or `null` when that open is
+ * not on the loaded grid. With `barMs === axisStepMs` it is `index` itself.
+ */
+function barOpenSlotIndex(
+  slots: readonly ScalarSlot[],
+  index: number,
+  axisStepMs: number,
+  barMs: number,
+): number | null {
+  if (barMs === axisStepMs) {
+    return index;
+  }
+  const time = slots[index].time;
+  const openMs = Math.floor(time / barMs) * barMs;
+  const openIndex = index - (time - openMs) / axisStepMs;
+  if (!Number.isInteger(openIndex) || openIndex < 0 || slots[openIndex].time !== openMs) {
+    return null;
+  }
+  return openIndex;
+}
+
 function absent(source: LegendSource, slotIndex: number | null, slots: readonly ScalarSlot[]): LegendAbsentReading {
   return {
     kind: "absent",
@@ -213,7 +250,12 @@ export function resolveLegendReading(input: LegendReadingInput): LegendReading {
   if (!Number.isFinite(asOfMs)) {
     throw new RangeError(`asOfMs must be a finite epoch ms, received ${asOfMs}`);
   }
-  const seriesStepMs = Math.max(nativeTimeframeMs, axisStepMs);
+  const barMs = input.bucketMs ?? axisStepMs;
+  assertPositiveFinite(barMs, "bucketMs");
+  if (barMs % axisStepMs !== 0) {
+    throw new RangeError(`bucketMs ${barMs} is not a whole number of axis steps (${axisStepMs} ms)`);
+  }
+  const seriesStepMs = Math.max(nativeTimeframeMs, axisStepMs, barMs);
   if (seriesStepMs % axisStepMs !== 0) {
     throw new RangeError(
       `nativeTimeframeMs ${nativeTimeframeMs} is not a whole number of axis steps (${axisStepMs} ms)`,
@@ -221,11 +263,18 @@ export function resolveLegendReading(input: LegendReadingInput): LegendReading {
   }
 
   const source: LegendSource = logical === undefined ? "last_closed" : "crosshair";
-  const slotIndex =
+  // "Last closed" is measured on the served BAR: the largest slot whose `time + barMs <= asOfMs`
+  // lies in the last closed bar (its bar opened at or before `asOfMs - barMs`).
+  const foundIndex =
     logical === undefined
-      ? lastClosedSlotIndex(slots, axisStepMs, asOfMs)
+      ? lastClosedSlotIndex(slots, barMs, asOfMs)
       : crosshairSlotIndex(logical, slots.length);
+  if (foundIndex === null) {
+    return absent(source, null, slots);
+  }
+  const slotIndex = barOpenSlotIndex(slots, foundIndex, axisStepMs, barMs);
   if (slotIndex === null) {
+    // The bar's open lies before the first slot of the grid: that bar is not loaded.
     return absent(source, null, slots);
   }
   const bucketStartMs = slots[slotIndex].time;
