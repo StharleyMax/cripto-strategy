@@ -27,10 +27,6 @@ WHAT ONLY A REAL SERVER CAN PROVE, AND IT IS WHY THIS FILE EXISTS:
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-import time
-import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -48,14 +44,8 @@ from src.modules.sentimento.infra.postgres_ingest_record_store import (
 )
 from src.modules.sentimento.use_cases.collector_status import collector_status_query
 from src.modules.sentimento.use_cases.ingest_health import ingest_health_query
+from tests.helpers.postgres import PostgresDatabase
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("docker") is None, reason="docker not on PATH — see module docstring"
-)
-
-_IMAGE = "timescale/timescaledb:2.17.2-pg15"
-_CONTAINER_NAME_PREFIX = "t-01-4-run-credit-test-"
-_READY_TIMEOUT_S = 30.0
 _ACCOUNTED_AT = "2026-09-10T21:00:00.000Z"
 _LATER = "2026-09-10T21:05:00.000Z"
 
@@ -84,59 +74,11 @@ _PRE_ADR_035_DDL = """
 """
 
 
-def _run_docker(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run one `docker` subcommand, capturing output for the caller to inspect on failure."""
-    return subprocess.run(  # noqa: S603 — argv is a literal list, never shell-interpolated
-        ["docker", *args], capture_output=True, text=True, timeout=60
-    )
-
-
-def _wait_until_ready(conninfo: str) -> psycopg.Connection:
-    """Poll for the container to accept connections, refusing after `_READY_TIMEOUT_S`."""
-    deadline = time.monotonic() + _READY_TIMEOUT_S
-    last_error: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            return psycopg.connect(conninfo)
-        except psycopg.OperationalError as error:
-            last_error = error
-            time.sleep(0.5)
-    raise TimeoutError(f"postgres did not become ready within {_READY_TIMEOUT_S}s") from last_error
-
-
 @pytest.fixture
-def postgres_connection() -> Iterator[psycopg.Connection]:
-    """Start a throwaway `timescale/timescaledb` container, yield a connection, tear both down."""
-    name = f"{_CONTAINER_NAME_PREFIX}{uuid.uuid4().hex[:8]}"
-    started = _run_docker(
-        "run",
-        "-d",
-        "--rm",
-        "--name",
-        name,
-        "-e",
-        "POSTGRES_PASSWORD=test",
-        "-e",
-        "POSTGRES_USER=test",
-        "-e",
-        "POSTGRES_DB=test",
-        "-p",
-        "127.0.0.1::5432",
-        _IMAGE,
-    )
-    if started.returncode != 0:
-        pytest.skip(f"could not start {_IMAGE}: {started.stderr.strip()}")
-    try:
-        port_output = _run_docker("port", name, "5432/tcp")
-        host_port = port_output.stdout.strip().rsplit(":", maxsplit=1)[-1]
-        conninfo = f"host=127.0.0.1 port={host_port} dbname=test user=test password=test"
-        connection = _wait_until_ready(conninfo)
-        try:
-            yield connection
-        finally:
-            connection.close()
-    finally:
-        _run_docker("rm", "-f", "-v", name)
+def postgres_connection(postgres_database: PostgresDatabase) -> Iterator[psycopg.Connection]:
+    """One connection to this test's own database on the session's shared server."""
+    with postgres_database.connect() as connection:
+        yield connection
 
 
 def _an_open_run(run_id: str = "run-0001") -> IngestRun:

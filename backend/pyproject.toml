@@ -93,6 +93,11 @@ ruff = "0.16.5"
 # exact code path it would against a real Redis — without adding a runtime dependency or
 # reaching outside localhost. Pinned exact, per the paragraph above.
 fakeredis = "2.37.1"
+# `testcontainers` (2026-09-26) — DEV-ONLY. ONE TimescaleDB per test session instead of one
+# `docker run` per test (`tests/helpers/postgres.py`): ~149 s of container setup in a 451 s suite
+# `[MEDIDO 2026-09-26: pytest --durations=60, n=2728]`. Its Docker client talks to the local unix
+# socket, which `scripts/nonet/sitecustomize.py` allows for exactly that reason. Pinned exact.
+testcontainers = "4.15.0"
 
 [tool.pytest.ini_options]
 # `pythonpath = ["."]` torna `src` e `tests` importaveis com a raiz em `backend/`, que e o
