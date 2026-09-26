@@ -1,0 +1,83 @@
+# T-02.2 facts. bloco 1: modelo de altura por TF | bloco 2: área verde × volume em alta | bloco 3: log base min/2 | bloco 4: barras vs marcas no linear | bloco 5: área verde no pixel (mutação com cor) | bloco 6: altura desenhada por coluna (colmeasure, log e lin) | bloco 7: perfil vertical da faixa
+1m: slots=5760 present=3989 px/bar=0.19 min=0.9 p10=9.7 p50=45.3 p90=191.9 max=3741.3 max/p50=82.5x
+   LIN p10=0.17px p50=0.81px p90=3.44px <1px=2323/3989 (58.2%) <3px=3520 (88.2%) col-max-median=1.58px (cols=788)
+   LOG p10=18.5px p50=31.1px p90=42.8px max=67.0px <1px=5 | p90/p50 height ratio: lin=4.23 log=1.38; max/p50 height ratio: lin=82.5 log=2.16
+5m: slots=1152 present=816 px/bar=0.96 min=16.3 p10=74.8 p50=245.5 p90=903.8 max=12107.7 max/p50=49.3x
+   LIN p10=0.41px p50=1.36px p90=5.00px <1px=297/816 (36.4%) <3px=640 (78.4%) col-max-median=1.37px (cols=784)
+   LOG p10=30.7px p50=39.2px p90=48.5px max=67.0px <1px=0 | p90/p50 height ratio: lin=3.68 log=1.24; max/p50 height ratio: lin=49.3 log=1.71
+15m: slots=384 present=272 px/bar=2.89 min=29.9 p10=250.7 p50=829.9 p90=2505.2 max=21670.1 max/p50=26.1x
+   LIN p10=0.78px p50=2.57px p90=7.75px <1px=43/272 (15.8%) <3px=156 (57.4%) col-max-median=2.57px (cols=272)
+   LOG p10=37.1px p50=45.1px p90=52.5px max=67.0px <1px=0 | p90/p50 height ratio: lin=3.02 log=1.16; max/p50 height ratio: lin=26.1 log=1.49
+1h: slots=96 present=75 px/bar=11.54 min=410.2 p10=1185.5 p50=2802.9 p90=8874.8 max=53133.3 max/p50=19.0x
+   LIN p10=1.49px p50=3.53px p90=11.19px <1px=2/75 (2.7%) <3px=29 (38.7%) col-max-median=3.53px (cols=75)
+   LOG p10=43.6px p50=48.9px p90=56.0px max=67.0px <1px=0 | p90/p50 height ratio: lin=3.17 log=1.15; max/p50 height ratio: lin=19.0 log=1.37
+4h: slots=24 present=24 px/bar=46.17 min=1866.0 p10=2135.4 p50=10639.3 p90=33031.7 max=77407.7 max/p50=7.3x
+   LIN p10=1.85px p50=9.21px p90=28.59px <1px=0/24 (0.0%) <3px=6 (25.0%) col-max-median=9.21px (cols=24)
+   LOG p10=45.6px p50=55.2px p90=61.9px max=67.0px <1px=0 | p90/p50 height ratio: lin=3.10 log=1.12; max/p50 height ratio: lin=7.3 log=1.21
+1m: n=3989 up-bars=0.518 | TRUE up-volume share=0.456 | green-ink share: LINEAR=0.456 (err 0) LOG10 base1=0.503 (err +0.047, vs up-bar-count -0.015)
+5m: n=816 up-bars=0.487 | TRUE up-volume share=0.436 | green-ink share: LINEAR=0.436 (err 0) LOG10 base1=0.483 (err +0.048, vs up-bar-count -0.003)
+15m: n=272 up-bars=0.474 | TRUE up-volume share=0.421 | green-ink share: LINEAR=0.421 (err 0) LOG10 base1=0.472 (err +0.052, vs up-bar-count -0.002)
+1h: n=75 up-bars=0.480 | TRUE up-volume share=0.377 | green-ink share: LINEAR=0.377 (err 0) LOG10 base1=0.474 (err +0.097, vs up-bar-count -0.006)
+4h: n=24 up-bars=0.500 | TRUE up-volume share=0.303 | green-ink share: LINEAR=0.303 (err 0) LOG10 base1=0.485 (err +0.182, vs up-bar-count -0.015)
+1m: TRUE up-vol=0.456 | LOG base=min/2 green-ink=0.506 (err +0.049); max/p50 height ratio=1.96 (linear 82.5)
+5m: TRUE up-vol=0.436 | LOG base=min/2 green-ink=0.481 (err +0.046); max/p50 height ratio=2.14 (linear 49.3)
+15m: TRUE up-vol=0.421 | LOG base=min/2 green-ink=0.471 (err +0.051); max/p50 height ratio=1.81 (linear 26.0)
+1h: TRUE up-vol=0.377 | LOG base=min/2 green-ink=0.462 (err +0.085); max/p50 height ratio=2.13 (linear 19.0)
+4h: TRUE up-vol=0.303 | LOG base=min/2 green-ink=0.440 (err +0.137); max/p50 height ratio=1.72 (linear 6.4)
+1m LINEAR: present=3989 | bars shorter than ABSENCE mark (1.70px): 2995 (75.1%) | shorter than ZERO mark (5.10px): 3775 (94.6%)
+5m LINEAR: present=816 | bars shorter than ABSENCE mark (1.70px): 488 (59.8%) | shorter than ZERO mark (5.10px): 737 (90.3%)
+15m LINEAR: present=272 | bars shorter than ABSENCE mark (1.70px): 95 (34.9%) | shorter than ZERO mark (5.10px): 215 (79.0%)
+1h LINEAR: present=75 | bars shorter than ABSENCE mark (1.70px): 9 (12.0%) | shorter than ZERO mark (5.10px): 45 (60.0%)
+4h LINEAR: present=24 | bars shorter than ABSENCE mark (1.70px): 2 (8.3%) | shorter than ZERO mark (5.10px): 8 (33.3%)
+rows=72 1m | logcolor green-share=0.521 (n_px=25351) | lincolor green-share=0.519 (n_px=3109)
+rows=72 5m | logcolor green-share=0.502 (n_px=12933) | lincolor green-share=0.481 (n_px=1890)
+rows=72 15m | logcolor green-share=0.470 (n_px=4946) | lincolor green-share=0.434 (n_px=851)
+rows=72 1h | logcolor green-share=0.442 (n_px=1392) | lincolor green-share=0.410 (n_px=388)
+rows=30 1m | logcolor green-share=0.531 (n_px=19398) | lincolor green-share=0.511 (n_px=2853)
+rows=30 5m | logcolor green-share=0.507 (n_px=8442) | lincolor green-share=0.493 (n_px=1656)
+rows=30 15m | logcolor green-share=0.473 (n_px=2860) | lincolor green-share=0.466 (n_px=711)
+rows=30 1h | logcolor green-share=0.444 (n_px=702) | lincolor green-share=0.432 (n_px=271)
+out/log-1m-price.png: columns=1105 inked=1105 p10=4 p50=26 p90=41 max=62 cols<=1px=0 cols<=2px=0
+out/lin-1m-price.png: columns=1105 inked=1105 p10=1 p50=3 p90=6 max=63 cols<=1px=128 cols<=2px=427
+out/log-5m-price.png: columns=1105 inked=442 p10=4 p50=36.0 p90=48 max=63 cols<=1px=0 cols<=2px=0
+out/lin-5m-price.png: columns=1105 inked=442 p10=2 p50=4.0 p90=10 max=63 cols<=1px=3 cols<=2px=86
+out/log-15m-price.png: columns=1105 inked=147 p10=4 p50=41 p90=52 max=63 cols<=1px=0 cols<=2px=0
+out/lin-15m-price.png: columns=1105 inked=147 p10=3 p50=4 p90=13 max=63 cols<=1px=0 cols<=2px=6
+out/log-1h-price.png: columns=1105 inked=37 p10=4 p50=48 p90=58 max=63 cols<=1px=0 cols<=2px=0
+out/lin-1h-price.png: columns=1105 inked=37 p10=4 p50=7 p90=31 max=63 cols<=1px=0 cols<=2px=0
+out/log-4h-price.png: columns=1105 inked=9 p10=46 p50=52 p90=63 max=63 cols<=1px=0 cols<=2px=0
+out/lin-4h-price.png: columns=1105 inked=9 p10=4 p50=10 p90=63 max=63 cols<=1px=0 cols<=2px=0
+# bloco 7 — perfil vertical, mutação 2 (linear + faixa), 15m, x=150..400; coluna = linhas a partir do fundo do pane ('#' = tinta clara)
+x=153 |    ##                       |
+x=161 |          ####               |
+x=168 |          ########           |
+x=176 |          ######             |
+x=183 |    ##                       |
+x=191 |          ####               |
+x=198 |          ##############     |
+x=206 |    ##                       |
+x=213 |    ##                       |
+x=221 |    ##                       |
+x=228 |    ##                       |
+x=236 |    ##                       |
+x=243 |          ################   |
+x=251 |    ##                       |
+x=258 |    ##                       |
+x=266 |          #####              |
+x=273 |    ##                       |
+x=281 |    ##                       |
+x=288 |    ##                       |
+x=296 |    ##                       |
+x=303 |    ##                       |
+x=311 |    ##                       |
+x=318 |    ##                       |
+x=326 |    ##                       |
+x=333 |    ##                       |
+x=341 |    ##                       |
+x=348 |    ##                       |
+x=356 |    ##                       |
+x=363 |    ##                       |
+x=371 |          ########           |
+x=378 |          ###################|
+x=386 |          ###################|
+x=393 |          ###################|

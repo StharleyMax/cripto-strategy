@@ -1,0 +1,28 @@
+// T-02.2 capture 1: real app (next start :4322) over prod data via read-only proxy :8822.
+// Per TF: price-pane geometry, screenshots, and every /series-history body (to measure volume distribution).
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-02-2/frontend/node_modules/playwright/index.mjs";
+import fs from "node:fs";
+const OUT = process.argv[2]; const TAG = process.argv[3] ?? "log";
+const TFS = (process.argv[4] ?? "1m,5m,15m,1h,4h").split(",");
+fs.mkdirSync(OUT, { recursive: true });
+const browser = await chromium.launch();
+const facts = {};
+for (const tf of TFS) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+  const bodies = [];
+  page.on("response", async (r) => { if (r.url().includes("series-history")) { try { bodies.push({ url: r.url(), body: await r.json() }); } catch {} } });
+  await page.goto(`http://127.0.0.1:4322/symbol/BTCUSDT?interval=${tf}`, { waitUntil: "load", timeout: 180000 });
+  await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180000 });
+  await page.waitForTimeout(6000);
+  const pane = await page.locator('[data-testid="price-pane"]').boundingBox();
+  const row = await page.evaluate(() => { const el = document.querySelector('[data-testid="price-pane"]'); const tr = el?.closest("tr"); const r = tr?.getBoundingClientRect(); return r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; });
+  facts[tf] = { pane, row, n_history: bodies.length };
+  fs.writeFileSync(`${OUT}/${TAG}-${tf}-bodies.json`, JSON.stringify(bodies));
+  const clip = row ?? pane;
+  await page.screenshot({ path: `${OUT}/${TAG}-${tf}-price.png`, clip: { x: 0, y: clip.y, width: 1280, height: clip.h ?? clip.height } });
+  await page.screenshot({ path: `${OUT}/${TAG}-${tf}-viewport.png` });
+  await page.close();
+}
+await browser.close();
+fs.writeFileSync(`${OUT}/${TAG}-facts.json`, JSON.stringify(facts, null, 1));
+console.log(JSON.stringify(facts));
