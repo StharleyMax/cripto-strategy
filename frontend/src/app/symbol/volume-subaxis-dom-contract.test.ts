@@ -168,7 +168,13 @@ test("MORDE: each of the 3 DOM-contract mutations that used to pass green is now
 // `T-01.10` (`ADR-044/D2′`): the pane no longer calls `setData` — its `apply` RETURNS `{ series, items }`
 // feeds and the host applies them after the grid carrier. The contract (WHICH lossless mapping
 // feeds WHICH series) is unchanged; only the call site moved, so the anchors follow it.
-const VOLUME_SETDATA = /\{ series: volumeSeries, items: positiveValueSeriesLossless\(volume\.slots\) \}/;
+//
+// `T-02.3` (plan `02` item `2.4`): the bar series is fed `directionalVolumeSeriesLossless` — the SAME value
+// half as `positiveValueSeriesLossless` (`T-02.1`'s own tests pin that), plus each bar's `color` from the
+// candle at the same `time`. The second argument is the PRICE pane's slot vector: pairing the volume with
+// anything else (itself, the legend's 1-minute vector) colors bar `i` by a candle that is not bar `i`'s.
+const VOLUME_SETDATA =
+  /\{ series: volumeSeries, items: directionalVolumeSeriesLossless\(volume\.slots, panels\.price\.series\.slots\) \}/;
 /** ⛔ ANCHORED TO `volumeSeries`, AND IT WAS NOT UNTIL `T-05.9` — a bare `mode:` pattern went VACUOUS
  * the moment a second scale arrived (the liquidation pane). The guard names the series whose scale
  * it is about. Since `T-02.2` (`gates/T-02.2-design-gate.md` §5.1) the mode is `Normal`, written out
@@ -186,8 +192,9 @@ test("T-02.2: the bar series gets only positive values, on the linear scale, and
   assert.match(
     source,
     VOLUME_SETDATA,
-    "the sub-axis went back to `lineSeriesLossless`, which hands `0` over as a bar — on a linear scale the " +
-      "library paints it at its 1-px floor, as tall as the smallest real bar, and 'foi zero' reads as 'houve pouco'",
+    "the bar series is not fed `directionalVolumeSeriesLossless(volume.slots, panels.price.series.slots)` — " +
+      "either it lost the candle's direction (T-02.3), or it went back to `lineSeriesLossless`, which hands `0` " +
+      "over as a bar that a linear scale paints at its 1-px floor, and 'foi zero' reads as 'houve pouco'",
   );
   assert.match(source, LINEAR_MODE, "the sub-axis scale does not declare `PriceScaleMode.Normal` — T-02.2 §5.1");
   assert.match(source, MARKS_STRIP, "the marks do not get their own strip below the bars — T-02.2 §5.2");
@@ -239,7 +246,8 @@ test("BLOCKER-2: absence and legitimate zero are TWO series, with distinct marks
       "same claim again (STITCH_CONTEXT.md:1821-1825)",
   );
   // ⛔ `ADR-010`: the distinction is one of LUMINANCE, zero hue. Neither price direction
-  // (green/red, which is `fill` and volume has no direction) nor data integrity (`dataBrokenInk` —
+  // (green/red, which is `fill`; since `T-02.3` the BARS carry it, and a mark has no bar to carry
+  // it for) nor data integrity (`dataBrokenInk` —
   // a grid gap is OPERATIONAL, not broken data).
   for (const role of [absenceRole!, zeroRole!]) {
     assert.match(role, /^provenance(Strong|Weak)$/, `the mark uses the role ${role}, outside the provenance ramp`);
@@ -248,11 +256,20 @@ test("BLOCKER-2: absence and legitimate zero are TWO series, with distinct marks
   assert.match(source, /data-fact="volume_marks_legend:2"/);
 });
 
-test("MORDE: each of the 5 regressions of the scale and the marks is caught by an assert above", () => {
+test("MORDE: each of the 7 regressions of the wiring, the scale and the marks is caught by an assert above", () => {
   const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
     {
       name: "back to lineSeriesLossless (zero becomes a zero-height bar)",
       mutate: (s) => s.replace(VOLUME_SETDATA, "{ series: volumeSeries, items: lineSeriesLossless(volume.slots) }"),
+    },
+    {
+      name: "T-02.3 undone: back to positiveValueSeriesLossless (every bar neutral, no direction)",
+      mutate: (s) => s.replace(VOLUME_SETDATA, "{ series: volumeSeries, items: positiveValueSeriesLossless(volume.slots) }"),
+    },
+    {
+      name: "T-02.3 paired with the wrong vector (the legend's 1-minute slots, not the price candles)",
+      mutate: (s) =>
+        s.replace(VOLUME_SETDATA, "{ series: volumeSeries, items: directionalVolumeSeriesLossless(volume.slots, volume.legendSlots) }"),
     },
     {
       name: "scale back to log10",

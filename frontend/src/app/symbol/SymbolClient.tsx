@@ -87,6 +87,7 @@ import {
   candlestickSeriesColors,
   candlestickSeriesLossless,
   colorTokens,
+  directionalVolumeSeriesLossless,
   F1_PANE_STACK_FORM,
   formatHeldStockLabel,
   lastGridInstant,
@@ -1563,13 +1564,15 @@ const VOLUME_MARKS_BAND_PX = 10;
 // with the real draw calls, in `volume-subaxis-geometry.test.ts`.
 const ABSENCE_MARK_PX = 2;
 const ZERO_MARK_PX = 6;
-// ⛔ `ADR-010` GOVERNA A TINTA, E AS DUAS SÃO DA RAMPA DE PROCEDÊNCIA (`D-4`: luminância, hue
-// zero). Nem verde/vermelho (são `fill` de DIREÇÃO de preço, e volume não tem direção) nem
-// violeta (`dataBrokenInk` é INTEGRIDADE do dado, e uma lacuna de grade não é dado quebrado — é
-// operacional; `S3Inspector.tsx:26` escreve a mesma distinção). A atribuição segue a semântica da
-// rampa: ausência é o que NÃO se sabe, então tinta FRACA; zero legítimo é um fato OBSERVADO,
-// então tinta FORTE. A distinção viaja por dois canais no canvas (luminância E altura) e por um
-// terceiro em texto (`VolumeMarksLegend`), para que nenhuma perda isolada a apague.
+// ⛔ `ADR-010` GOVERNS THE INK, AND BOTH MARKS ARE ON THE PROVENANCE RAMP (`D-4`: luminance, zero
+// hue). Not green/red: those are the `fill` of price DIRECTION, and since `T-02.3` the BARS carry
+// them (the candle's direction at the same instant) — a mark has no volume to carry a direction
+// for, and an absence or a zero painted green/red would claim one. Not violet either
+// (`dataBrokenInk` is data INTEGRITY, and a grid gap is not broken data — it is operational;
+// `S3Inspector.tsx:26` draws the same distinction). The assignment follows the ramp's semantics:
+// absence is what is NOT known, so WEAK ink; a legitimate zero is an OBSERVED fact, so STRONG
+// ink. The distinction travels on two channels on the canvas (luminance AND height) and on a
+// third in text (`VolumeMarksLegend`), so that no single loss erases it.
 const ABSENCE_MARK_COLOR_ROLE = "provenanceWeak" as const;
 const ZERO_MARK_COLOR_ROLE = "provenanceStrong" as const;
 
@@ -1891,6 +1894,9 @@ function PricePane({
       // visible (`SPEC-007 §4.1`): price is `klines_last` at `5m` served on the `1m` grid — a
       // ladder — while volume is `klines_volume` at `1m` native. The `design_gate` of `T-01.8` is
       // meant to see it, so nothing here hides it.
+      // `color` is the series DEFAULT only: since `T-02.3` every bar item carries its own `color`
+      // (`directionalVolumeSeriesLossless`), and a bar with no candle at its instant gets this same
+      // neutral ink back EXPLICITLY from `volumeBarColor` — `RN-4`, no direction the data lacks.
       const volumeStyle: Partial<HistogramSeriesOptions> = {
         color: colorTokens().provenanceWeak,
         priceScaleId: VOLUME_PRICE_SCALE_ID,
@@ -1940,7 +1946,11 @@ function PricePane({
       // host calls this at mount and again on every history page, on the same series.
     apply: ({ series, volumeSeries, absenceSeries, zeroSeries }) => [
       { series, items: candlestickSeriesLossless(panels.price.series.slots) },
-      { series: volumeSeries, items: positiveValueSeriesLossless(volume.slots) },
+      // `T-02.3` (plan `02` item `2.4`): the bar takes the direction of the candle at the SAME `time`
+      // — `directionalVolumeSeriesLossless` (`T-02.1`, `charts`) pairs the two vectors by time, not
+      // by position, because on a TF != `1m` they do not share positions: price is the 1-minute grid,
+      // volume is one row per TF bucket. Its value half is `positiveValueSeriesLossless`, unchanged.
+      { series: volumeSeries, items: directionalVolumeSeriesLossless(volume.slots, panels.price.series.slots) },
       { series: absenceSeries, items: absenceMarkSeries(volume.slots, ABSENCE_MARK_PX) },
       { series: zeroSeries, items: zeroMarkSeries(volume.slots, ZERO_MARK_PX) },
     ],
