@@ -1,0 +1,1916 @@
+{
+ "1280x800": {
+  "failed_n": 3,
+  "failed_sample": [
+   "404 http://127.0.0.1:8821/?series_key_id=31c0a9a695d475592bb2fee75da82ff62f6a828800992d4135a2a961ca6bfc53&symbol=BTCUSDT&int",
+   "404 http://127.0.0.1:8821/?series_key_id=94c3d3dd5f45abcb801a53e4a8b52ea81ea2479a9cdd51d90cd2cb6895e1a4a9&symbol=BTCUSDT&int",
+   "404 http://127.0.0.1:8821/?series_key_id=18125f63e24133cbe564dd4bdcb13aedf2c9014661dfc95b57959f2c484b2130&symbol=BTCUSDT&int"
+  ],
+  "chart_count": 1,
+  "geometry": [
+   {
+    "id": "price-pane",
+    "top": 61,
+    "left": 0,
+    "height": 335,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "liquidation-cohort-long",
+    "top": 397,
+    "left": 0,
+    "height": 108,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "liquidation-cohort-short",
+    "top": 506,
+    "left": 0,
+    "height": 108,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "oi-pane",
+    "top": 615,
+    "left": 0,
+    "height": 148,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "long-short-pane",
+    "top": 764,
+    "left": 0,
+    "height": 89,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "cvd-pane",
+    "top": 854,
+    "left": 0,
+    "height": 89,
+    "width": 1108,
+    "axisX": 1108
+   }
+  ],
+  "scale_modes": {
+   "price-pane": "normal",
+   "liquidation-cohort-long": "logarithmic",
+   "liquidation-cohort-short": "logarithmic",
+   "oi-pane": "normal",
+   "long-short-pane": "normal",
+   "cvd-pane": "normal"
+  },
+  "doc_scroll": {
+   "sw": 1280,
+   "sh": 1081,
+   "cw": 1280
+  },
+  "text": {
+   "scaleNote": "Altura da barra proporcional ao volume (escala linear) — o topo da faixa é a maior barra visível.",
+   "scaleFact": "volume_scale:linear",
+   "marksLegend": "▁ Sem dado — traço baixo e apagado na faixa abaixo das barras (não sabemos) ▃ Zero do fornecedor — traço mais alto e claro, na mesma faixa (sabemos: foi zero)",
+   "floatNoise": [],
+   "srOnlySemPonto": 0,
+   "visibleSemPonto": 0,
+   "dadoVelho": 0,
+   "titles1m": [
+    "(1m, USDT)",
+    "(1m, BTC)",
+    "(1m, USD)",
+    "(5m, BTC)",
+    "(1m, BTC)"
+   ],
+   "aoVivoIndisp": 3,
+   "linhaDeBase": 0
+  },
+  "rest_legends": [
+   {
+    "k": "price",
+    "absence": "",
+    "t": "84110.5",
+    "x": 140
+   },
+   {
+    "k": "volume",
+    "absence": "",
+    "t": "8.518",
+    "x": 140
+   },
+   {
+    "k": "liquidation_long",
+    "absence": "",
+    "t": "0",
+    "x": 312
+   },
+   {
+    "k": "liquidation_short",
+    "absence": "",
+    "t": "169650.8785",
+    "x": 312
+   },
+   {
+    "k": "oi",
+    "absence": "",
+    "t": "94304.108retido",
+    "x": 192
+   },
+   {
+    "k": "long_short",
+    "absence": "",
+    "t": "1.2894",
+    "x": 259
+   },
+   {
+    "k": "cvd_delta",
+    "absence": "",
+    "t": "delta2.332",
+    "x": 117
+   },
+   {
+    "k": "cvd_cumulative",
+    "absence": "",
+    "t": "acumulado-6596.818",
+    "x": 312
+   }
+  ],
+  "truncation": [
+   {
+    "t": "BTCUSDT — Preço (com volume), Open Interest, CVD, Liquidações e Long/s",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 8.518",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:20 UTC — 4147/5760 grades de 1 min na",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 84110.5",
+    "title": null
+   },
+   {
+    "t": "Vela completa em 4162 de 5760 buckets de 1 min. 14 buckets com leitura",
+    "title": null
+   },
+   {
+    "t": "⚠️ Dado de TERCEIRO (coinalyze), não da corretora de origem. Erro publ",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 0 USD",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:44 UTC — 894/5760 grades de 1 min obs",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 169650.8785 USD",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:44 UTC — 897/5760 grades de 1 min obs",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 94304.108 (de 21:20:00Z (−4m))",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:20 UTC — 825/5760 barras nativas de 5",
+    "title": null
+   }
+  ]
+ },
+ "1280x1200": {
+  "failed_n": 3,
+  "failed_sample": [
+   "404 http://127.0.0.1:8821/?series_key_id=31c0a9a695d475592bb2fee75da82ff62f6a828800992d4135a2a961ca6bfc53&symbol=BTCUSDT&int",
+   "404 http://127.0.0.1:8821/?series_key_id=94c3d3dd5f45abcb801a53e4a8b52ea81ea2479a9cdd51d90cd2cb6895e1a4a9&symbol=BTCUSDT&int",
+   "404 http://127.0.0.1:8821/?series_key_id=18125f63e24133cbe564dd4bdcb13aedf2c9014661dfc95b57959f2c484b2130&symbol=BTCUSDT&int"
+  ],
+  "chart_count": 1,
+  "geometry": [
+   {
+    "id": "price-pane",
+    "top": 61,
+    "left": 0,
+    "height": 335,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "liquidation-cohort-long",
+    "top": 397,
+    "left": 0,
+    "height": 108,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "liquidation-cohort-short",
+    "top": 506,
+    "left": 0,
+    "height": 108,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "oi-pane",
+    "top": 615,
+    "left": 0,
+    "height": 148,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "long-short-pane",
+    "top": 764,
+    "left": 0,
+    "height": 89,
+    "width": 1108,
+    "axisX": 1108
+   },
+   {
+    "id": "cvd-pane",
+    "top": 854,
+    "left": 0,
+    "height": 89,
+    "width": 1108,
+    "axisX": 1108
+   }
+  ],
+  "scale_modes": {
+   "price-pane": "normal",
+   "liquidation-cohort-long": "logarithmic",
+   "liquidation-cohort-short": "logarithmic",
+   "oi-pane": "normal",
+   "long-short-pane": "normal",
+   "cvd-pane": "normal"
+  },
+  "doc_scroll": {
+   "sw": 1280,
+   "sh": 1200,
+   "cw": 1280
+  },
+  "text": {
+   "scaleNote": "Altura da barra proporcional ao volume (escala linear) — o topo da faixa é a maior barra visível.",
+   "scaleFact": "volume_scale:linear",
+   "marksLegend": "▁ Sem dado — traço baixo e apagado na faixa abaixo das barras (não sabemos) ▃ Zero do fornecedor — traço mais alto e claro, na mesma faixa (sabemos: foi zero)",
+   "floatNoise": [],
+   "srOnlySemPonto": 0,
+   "visibleSemPonto": 0,
+   "dadoVelho": 0,
+   "titles1m": [
+    "(1m, USDT)",
+    "(1m, BTC)",
+    "(1m, USD)",
+    "(5m, BTC)",
+    "(1m, BTC)"
+   ],
+   "aoVivoIndisp": 3,
+   "linhaDeBase": 0
+  },
+  "rest_legends": [
+   {
+    "k": "price",
+    "absence": "",
+    "t": "84110.5",
+    "x": 140
+   },
+   {
+    "k": "volume",
+    "absence": "",
+    "t": "8.518",
+    "x": 140
+   },
+   {
+    "k": "liquidation_long",
+    "absence": "",
+    "t": "0",
+    "x": 312
+   },
+   {
+    "k": "liquidation_short",
+    "absence": "",
+    "t": "169650.8785",
+    "x": 312
+   },
+   {
+    "k": "oi",
+    "absence": "",
+    "t": "94304.108retido",
+    "x": 192
+   },
+   {
+    "k": "long_short",
+    "absence": "",
+    "t": "1.2894",
+    "x": 259
+   },
+   {
+    "k": "cvd_delta",
+    "absence": "",
+    "t": "delta2.332",
+    "x": 117
+   },
+   {
+    "k": "cvd_cumulative",
+    "absence": "",
+    "t": "acumulado-6596.818",
+    "x": 312
+   }
+  ],
+  "truncation": [
+   {
+    "t": "BTCUSDT — Preço (com volume), Open Interest, CVD, Liquidações e Long/s",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 8.518",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:20 UTC — 4147/5760 grades de 1 min na",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 84110.5",
+    "title": null
+   },
+   {
+    "t": "Vela completa em 4162 de 5760 buckets de 1 min. 14 buckets com leitura",
+    "title": null
+   },
+   {
+    "t": "⚠️ Dado de TERCEIRO (coinalyze), não da corretora de origem. Erro publ",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 0 USD",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:44 UTC — 894/5760 grades de 1 min obs",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 169650.8785 USD",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:44 UTC — 897/5760 grades de 1 min obs",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 94304.108 (de 21:20:00Z (−4m))",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:20 UTC — 825/5760 barras nativas de 5",
+    "title": null
+   }
+  ],
+  "zoom_geometry": [
+   {
+    "id": "price-pane",
+    "top": 61,
+    "left": 0,
+    "height": 335,
+    "width": 1108,
+    "axisX": 1108
+   }
+  ]
+ },
+ "1920x1080": {
+  "failed_n": 3,
+  "failed_sample": [
+   "404 http://127.0.0.1:8821/?series_key_id=31c0a9a695d475592bb2fee75da82ff62f6a828800992d4135a2a961ca6bfc53&symbol=BTCUSDT&int",
+   "404 http://127.0.0.1:8821/?series_key_id=94c3d3dd5f45abcb801a53e4a8b52ea81ea2479a9cdd51d90cd2cb6895e1a4a9&symbol=BTCUSDT&int",
+   "404 http://127.0.0.1:8821/?series_key_id=18125f63e24133cbe564dd4bdcb13aedf2c9014661dfc95b57959f2c484b2130&symbol=BTCUSDT&int"
+  ],
+  "chart_count": 1,
+  "geometry": [
+   {
+    "id": "price-pane",
+    "top": 61,
+    "left": 0,
+    "height": 335,
+    "width": 1748,
+    "axisX": 1748
+   },
+   {
+    "id": "liquidation-cohort-long",
+    "top": 397,
+    "left": 0,
+    "height": 108,
+    "width": 1748,
+    "axisX": 1748
+   },
+   {
+    "id": "liquidation-cohort-short",
+    "top": 506,
+    "left": 0,
+    "height": 108,
+    "width": 1748,
+    "axisX": 1748
+   },
+   {
+    "id": "oi-pane",
+    "top": 615,
+    "left": 0,
+    "height": 148,
+    "width": 1748,
+    "axisX": 1748
+   },
+   {
+    "id": "long-short-pane",
+    "top": 764,
+    "left": 0,
+    "height": 89,
+    "width": 1748,
+    "axisX": 1748
+   },
+   {
+    "id": "cvd-pane",
+    "top": 854,
+    "left": 0,
+    "height": 89,
+    "width": 1748,
+    "axisX": 1748
+   }
+  ],
+  "scale_modes": {
+   "price-pane": "normal",
+   "liquidation-cohort-long": "logarithmic",
+   "liquidation-cohort-short": "logarithmic",
+   "oi-pane": "normal",
+   "long-short-pane": "normal",
+   "cvd-pane": "normal"
+  },
+  "doc_scroll": {
+   "sw": 1920,
+   "sh": 1081,
+   "cw": 1920
+  },
+  "text": {
+   "scaleNote": "Altura da barra proporcional ao volume (escala linear) — o topo da faixa é a maior barra visível.",
+   "scaleFact": "volume_scale:linear",
+   "marksLegend": "▁ Sem dado — traço baixo e apagado na faixa abaixo das barras (não sabemos) ▃ Zero do fornecedor — traço mais alto e claro, na mesma faixa (sabemos: foi zero)",
+   "floatNoise": [],
+   "srOnlySemPonto": 0,
+   "visibleSemPonto": 0,
+   "dadoVelho": 0,
+   "titles1m": [
+    "(1m, USDT)",
+    "(1m, BTC)",
+    "(1m, USD)",
+    "(5m, BTC)",
+    "(1m, BTC)"
+   ],
+   "aoVivoIndisp": 3,
+   "linhaDeBase": 0
+  },
+  "rest_legends": [
+   {
+    "k": "price",
+    "absence": "",
+    "t": "84110.5",
+    "x": 140
+   },
+   {
+    "k": "volume",
+    "absence": "",
+    "t": "8.518",
+    "x": 140
+   },
+   {
+    "k": "liquidation_long",
+    "absence": "",
+    "t": "0",
+    "x": 312
+   },
+   {
+    "k": "liquidation_short",
+    "absence": "",
+    "t": "169650.8785",
+    "x": 312
+   },
+   {
+    "k": "oi",
+    "absence": "",
+    "t": "94304.108retido",
+    "x": 192
+   },
+   {
+    "k": "long_short",
+    "absence": "",
+    "t": "1.2894",
+    "x": 259
+   },
+   {
+    "k": "cvd_delta",
+    "absence": "",
+    "t": "delta2.332",
+    "x": 117
+   },
+   {
+    "k": "cvd_cumulative",
+    "absence": "",
+    "t": "acumulado-6596.818",
+    "x": 312
+   }
+  ],
+  "truncation": [
+   {
+    "t": "BTCUSDT — Preço (com volume), Open Interest, CVD, Liquidações e Long/s",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 8.518",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:20 UTC — 4147/5760 grades de 1 min na",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 84110.5",
+    "title": null
+   },
+   {
+    "t": "Vela completa em 4162 de 5760 buckets de 1 min. 14 buckets com leitura",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 0 USD",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:44 UTC — 894/5760 grades de 1 min obs",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 169650.8785 USD",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:44 UTC — 897/5760 grades de 1 min obs",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 94304.108 (de 21:20:00Z (−4m))",
+    "title": null
+   },
+   {
+    "t": "Dado legível desde 2026-09-22 21:20 UTC — 825/5760 barras nativas de 5",
+    "title": null
+   },
+   {
+    "t": "Leitura atual: 1.2894 ratio",
+    "title": null
+   }
+  ],
+  "sweep_1m": [
+   {
+    "fx": 0.04,
+    "price": "83784.4",
+    "priceAbs": "",
+    "vol": "110.114",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.08,
+    "price": "84059.7",
+    "priceAbs": "",
+    "vol": "42.358",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.11,
+    "price": "ausente",
+    "priceAbs": "SEM_PONTO",
+    "vol": "ausente",
+    "volAbs": "SEM_PONTO"
+   },
+   {
+    "fx": 0.15,
+    "price": "84430.5",
+    "priceAbs": "",
+    "vol": "32.896",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.19,
+    "price": "ausente",
+    "priceAbs": "SEM_PONTO",
+    "vol": "ausente",
+    "volAbs": "SEM_PONTO"
+   },
+   {
+    "fx": 0.22,
+    "price": "ausente",
+    "priceAbs": "SEM_PONTO",
+    "vol": "ausente",
+    "volAbs": "SEM_PONTO"
+   },
+   {
+    "fx": 0.26,
+    "price": "ausente",
+    "priceAbs": "SEM_PONTO",
+    "vol": "ausente",
+    "volAbs": "SEM_PONTO"
+   },
+   {
+    "fx": 0.3,
+    "price": "ausente",
+    "priceAbs": "SEM_PONTO",
+    "vol": "ausente",
+    "volAbs": "SEM_PONTO"
+   },
+   {
+    "fx": 0.33,
+    "price": "84127.4",
+    "priceAbs": "",
+    "vol": "35.18",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.37,
+    "price": "ausente",
+    "priceAbs": "SEM_PONTO",
+    "vol": "ausente",
+    "volAbs": "SEM_PONTO"
+   },
+   {
+    "fx": 0.41,
+    "price": "ausente",
+    "priceAbs": "SEM_PONTO",
+    "vol": "ausente",
+    "volAbs": "SEM_PONTO"
+   },
+   {
+    "fx": 0.44,
+    "price": "ausente",
+    "priceAbs": "SEM_PONTO",
+    "vol": "ausente",
+    "volAbs": "SEM_PONTO"
+   },
+   {
+    "fx": 0.48,
+    "price": "83896.5",
+    "priceAbs": "",
+    "vol": "119.707",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.51,
+    "price": "83863.8",
+    "priceAbs": "",
+    "vol": "41.982",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.55,
+    "price": "83950.4",
+    "priceAbs": "",
+    "vol": "20.949",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.59,
+    "price": "83603",
+    "priceAbs": "",
+    "vol": "57.92",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.62,
+    "price": "84038",
+    "priceAbs": "",
+    "vol": "48.814",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.66,
+    "price": "83922.5",
+    "priceAbs": "",
+    "vol": "14.115",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.7,
+    "price": "83926.9",
+    "priceAbs": "",
+    "vol": "10.264",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.73,
+    "price": "83944.7",
+    "priceAbs": "",
+    "vol": "2.628",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.77,
+    "price": "84076.9",
+    "priceAbs": "",
+    "vol": "47.425",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.81,
+    "price": "84043.7",
+    "priceAbs": "",
+    "vol": "10.202",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.84,
+    "price": "84084.8",
+    "priceAbs": "",
+    "vol": "29.323",
+    "volAbs": ""
+   },
+   {
+    "fx": 0.88,
+    "price": "83931.6",
+    "priceAbs": "",
+    "vol": "31.649",
+    "volAbs": ""
+   }
+  ],
+  "tf_5m": {
+   "first_pressed_ms": -1,
+   "geometry": [
+    {
+     "id": "price-pane",
+     "top": 61,
+     "left": 0,
+     "height": 335,
+     "width": 1760,
+     "axisX": 1760
+    },
+    {
+     "id": "liquidation-cohort-long",
+     "top": 397,
+     "left": 0,
+     "height": 108,
+     "width": 1760,
+     "axisX": 1760
+    },
+    {
+     "id": "liquidation-cohort-short",
+     "top": 506,
+     "left": 0,
+     "height": 108,
+     "width": 1760,
+     "axisX": 1760
+    },
+    {
+     "id": "oi-pane",
+     "top": 615,
+     "left": 0,
+     "height": 148,
+     "width": 1760,
+     "axisX": 1760
+    },
+    {
+     "id": "long-short-pane",
+     "top": 764,
+     "left": 0,
+     "height": 89,
+     "width": 1760,
+     "axisX": 1760
+    },
+    {
+     "id": "cvd-pane",
+     "top": 854,
+     "left": 0,
+     "height": 89,
+     "width": 1760,
+     "axisX": 1760
+    }
+   ],
+   "text": {
+    "scaleNote": "Altura da barra proporcional ao volume (escala linear) — o topo da faixa é a maior barra visível.",
+    "scaleFact": "volume_scale:linear",
+    "marksLegend": "▁ Sem dado — traço baixo e apagado na faixa abaixo das barras (não sabemos) ▃ Zero do fornecedor — traço mais alto e claro, na mesma faixa (sabemos: foi zero)",
+    "floatNoise": [],
+    "srOnlySemPonto": 0,
+    "visibleSemPonto": 0,
+    "dadoVelho": 0,
+    "titles1m": [
+     "(1m, USDT)",
+     "(1m, BTC)",
+     "(1m, USD)",
+     "(5m, BTC)",
+     "(1m, BTC)"
+    ],
+    "aoVivoIndisp": 3,
+    "linhaDeBase": 0
+   },
+   "rest_legends": [
+    {
+     "k": "price",
+     "absence": "",
+     "t": "84088.5",
+     "x": 140
+    },
+    {
+     "k": "volume",
+     "absence": "",
+     "t": "80.847",
+     "x": 140
+    },
+    {
+     "k": "liquidation_long",
+     "absence": "SEM_PONTO",
+     "t": "ausente",
+     "x": 312
+    },
+    {
+     "k": "liquidation_short",
+     "absence": "SEM_PONTO",
+     "t": "ausente",
+     "x": 312
+    },
+    {
+     "k": "oi",
+     "absence": "",
+     "t": "94304.108",
+     "x": 192
+    },
+    {
+     "k": "long_short",
+     "absence": "",
+     "t": "1.2894",
+     "x": 259
+    },
+    {
+     "k": "cvd_delta",
+     "absence": "",
+     "t": "delta19.685",
+     "x": 117
+    },
+    {
+     "k": "cvd_cumulative",
+     "absence": "",
+     "t": "acumulado-6638.574",
+     "x": 312
+    }
+   ],
+   "sweep": [
+    {
+     "fx": 0.04,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.08,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.11,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.15,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.19,
+     "price": "84446.1",
+     "priceAbs": "",
+     "vol": "118.752",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.22,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.26,
+     "price": "84515.4",
+     "priceAbs": "",
+     "vol": "305.058",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.3,
+     "price": "84199.9",
+     "priceAbs": "",
+     "vol": "93.05",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.33,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.37,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.41,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.44,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.48,
+     "price": "83825.2",
+     "priceAbs": "",
+     "vol": "661.11",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.51,
+     "price": "83766.3",
+     "priceAbs": "",
+     "vol": "460.392",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.55,
+     "price": "83931.7",
+     "priceAbs": "",
+     "vol": "120.202",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.59,
+     "price": "83681.6",
+     "priceAbs": "",
+     "vol": "872.837",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.62,
+     "price": "84024.9",
+     "priceAbs": "",
+     "vol": "118.745",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.66,
+     "price": "83918.9",
+     "priceAbs": "",
+     "vol": "200.161",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.7,
+     "price": "83965",
+     "priceAbs": "",
+     "vol": "93.761",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.73,
+     "price": "83922.9",
+     "priceAbs": "",
+     "vol": "126.541",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.77,
+     "price": "84045",
+     "priceAbs": "",
+     "vol": "193.11",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.81,
+     "price": "83977.9",
+     "priceAbs": "",
+     "vol": "172.513",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.84,
+     "price": "84100",
+     "priceAbs": "",
+     "vol": "133.527",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.88,
+     "price": "83916",
+     "priceAbs": "",
+     "vol": "97.941",
+     "volAbs": ""
+    }
+   ]
+  },
+  "tf_15m": {
+   "first_pressed_ms": -1,
+   "geometry": [
+    {
+     "id": "price-pane",
+     "top": 61,
+     "left": 0,
+     "height": 335,
+     "width": 1762,
+     "axisX": 1762
+    },
+    {
+     "id": "liquidation-cohort-long",
+     "top": 397,
+     "left": 0,
+     "height": 108,
+     "width": 1762,
+     "axisX": 1762
+    },
+    {
+     "id": "liquidation-cohort-short",
+     "top": 506,
+     "left": 0,
+     "height": 108,
+     "width": 1762,
+     "axisX": 1762
+    },
+    {
+     "id": "oi-pane",
+     "top": 615,
+     "left": 0,
+     "height": 148,
+     "width": 1762,
+     "axisX": 1762
+    },
+    {
+     "id": "long-short-pane",
+     "top": 764,
+     "left": 0,
+     "height": 89,
+     "width": 1762,
+     "axisX": 1762
+    },
+    {
+     "id": "cvd-pane",
+     "top": 854,
+     "left": 0,
+     "height": 89,
+     "width": 1762,
+     "axisX": 1762
+    }
+   ],
+   "text": {
+    "scaleNote": "Altura da barra proporcional ao volume (escala linear) — o topo da faixa é a maior barra visível.",
+    "scaleFact": "volume_scale:linear",
+    "marksLegend": "▁ Sem dado — traço baixo e apagado na faixa abaixo das barras (não sabemos) ▃ Zero do fornecedor — traço mais alto e claro, na mesma faixa (sabemos: foi zero)",
+    "floatNoise": [],
+    "srOnlySemPonto": 0,
+    "visibleSemPonto": 0,
+    "dadoVelho": 0,
+    "titles1m": [
+     "(1m, USDT)",
+     "(1m, BTC)",
+     "(1m, USD)",
+     "(5m, BTC)",
+     "(1m, BTC)"
+    ],
+    "aoVivoIndisp": 3,
+    "linhaDeBase": 0
+   },
+   "rest_legends": [
+    {
+     "k": "price",
+     "absence": "",
+     "t": "83995.5",
+     "x": 140
+    },
+    {
+     "k": "volume",
+     "absence": "",
+     "t": "715.332",
+     "x": 140
+    },
+    {
+     "k": "liquidation_long",
+     "absence": "",
+     "t": "414560.6016",
+     "x": 312
+    },
+    {
+     "k": "liquidation_short",
+     "absence": "",
+     "t": "5370.29",
+     "x": 312
+    },
+    {
+     "k": "oi",
+     "absence": "",
+     "t": "94302.038",
+     "x": 192
+    },
+    {
+     "k": "long_short",
+     "absence": "",
+     "t": "1.2894",
+     "x": 259
+    },
+    {
+     "k": "cvd_delta",
+     "absence": "",
+     "t": "delta67.652",
+     "x": 117
+    },
+    {
+     "k": "cvd_cumulative",
+     "absence": "",
+     "t": "acumulado-6757.384",
+     "x": 312
+    }
+   ],
+   "sweep": [
+    {
+     "fx": 0.04,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.08,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.11,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.15,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.19,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.22,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.26,
+     "price": "84438.9",
+     "priceAbs": "",
+     "vol": "126.961",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.3,
+     "price": "84170.6",
+     "priceAbs": "",
+     "vol": "1215.707",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.33,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.37,
+     "price": "83803.5retido",
+     "priceAbs": "",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.41,
+     "price": "84578retido",
+     "priceAbs": "",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.44,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.48,
+     "price": "83618.1",
+     "priceAbs": "",
+     "vol": "2683.677",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.51,
+     "price": "83865.7",
+     "priceAbs": "",
+     "vol": "1438.947",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.55,
+     "price": "83949.3",
+     "priceAbs": "",
+     "vol": "376.903",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.59,
+     "price": "83839.7",
+     "priceAbs": "",
+     "vol": "1304.657",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.62,
+     "price": "84032.8",
+     "priceAbs": "",
+     "vol": "834.398",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.66,
+     "price": "83900.1",
+     "priceAbs": "",
+     "vol": "432.045",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.7,
+     "price": "83911",
+     "priceAbs": "",
+     "vol": "195.798",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.73,
+     "price": "83894.8",
+     "priceAbs": "",
+     "vol": "181.624",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.77,
+     "price": "84002.7",
+     "priceAbs": "",
+     "vol": "409.595",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.81,
+     "price": "83978.4",
+     "priceAbs": "",
+     "vol": "290.239",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.84,
+     "price": "84134.4",
+     "priceAbs": "",
+     "vol": "149.299",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.88,
+     "price": "83907.3",
+     "priceAbs": "",
+     "vol": "573.285",
+     "volAbs": ""
+    }
+   ]
+  },
+  "tf_1h": {
+   "first_pressed_ms": -1,
+   "geometry": [
+    {
+     "id": "price-pane",
+     "top": 61,
+     "left": 0,
+     "height": 335,
+     "width": 1756,
+     "axisX": 1756
+    },
+    {
+     "id": "liquidation-cohort-long",
+     "top": 397,
+     "left": 0,
+     "height": 108,
+     "width": 1756,
+     "axisX": 1756
+    },
+    {
+     "id": "liquidation-cohort-short",
+     "top": 506,
+     "left": 0,
+     "height": 108,
+     "width": 1756,
+     "axisX": 1756
+    },
+    {
+     "id": "oi-pane",
+     "top": 615,
+     "left": 0,
+     "height": 148,
+     "width": 1756,
+     "axisX": 1756
+    },
+    {
+     "id": "long-short-pane",
+     "top": 764,
+     "left": 0,
+     "height": 89,
+     "width": 1756,
+     "axisX": 1756
+    },
+    {
+     "id": "cvd-pane",
+     "top": 854,
+     "left": 0,
+     "height": 89,
+     "width": 1756,
+     "axisX": 1756
+    }
+   ],
+   "text": {
+    "scaleNote": "Altura da barra proporcional ao volume (escala linear) — o topo da faixa é a maior barra visível.",
+    "scaleFact": "volume_scale:linear",
+    "marksLegend": "▁ Sem dado — traço baixo e apagado na faixa abaixo das barras (não sabemos) ▃ Zero do fornecedor — traço mais alto e claro, na mesma faixa (sabemos: foi zero)",
+    "floatNoise": [],
+    "srOnlySemPonto": 0,
+    "visibleSemPonto": 0,
+    "dadoVelho": 1,
+    "titles1m": [
+     "(1m, USDT)",
+     "(1m, BTC)",
+     "(1m, USD)",
+     "(5m, BTC)",
+     "(1m, BTC)"
+    ],
+    "aoVivoIndisp": 3,
+    "linhaDeBase": 0
+   },
+   "rest_legends": [
+    {
+     "k": "price",
+     "absence": "",
+     "t": "83985.3",
+     "x": 140
+    },
+    {
+     "k": "volume",
+     "absence": "",
+     "t": "641.136",
+     "x": 140
+    },
+    {
+     "k": "liquidation_long",
+     "absence": "",
+     "t": "47538.2834",
+     "x": 312
+    },
+    {
+     "k": "liquidation_short",
+     "absence": "",
+     "t": "0",
+     "x": 312
+    },
+    {
+     "k": "oi",
+     "absence": "",
+     "t": "94512.333",
+     "x": 192
+    },
+    {
+     "k": "long_short",
+     "absence": "",
+     "t": "1.2878",
+     "x": 259
+    },
+    {
+     "k": "cvd_delta",
+     "absence": "",
+     "t": "delta76.37",
+     "x": 117
+    },
+    {
+     "k": "cvd_cumulative",
+     "absence": "",
+     "t": "acumulado-6840.648",
+     "x": 312
+    }
+   ],
+   "sweep": [
+    {
+     "fx": 0.04,
+     "price": "83325.4retido",
+     "priceAbs": "",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.08,
+     "price": "84209.5",
+     "priceAbs": "",
+     "vol": "7567.586",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.11,
+     "price": "84059.7retido",
+     "priceAbs": "",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.15,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.19,
+     "price": "84357.2",
+     "priceAbs": "",
+     "vol": "1455.821",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.22,
+     "price": "84453.3retido",
+     "priceAbs": "",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.26,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.3,
+     "price": "84551.2retido",
+     "priceAbs": "",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.33,
+     "price": "84199.9retido",
+     "priceAbs": "",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.37,
+     "price": "83803.5",
+     "priceAbs": "",
+     "vol": "2135.391",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.41,
+     "price": "84578",
+     "priceAbs": "",
+     "vol": "2475.727",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.44,
+     "price": "ausente",
+     "priceAbs": "SEM_PONTO",
+     "vol": "ausente",
+     "volAbs": "SEM_PONTO"
+    },
+    {
+     "fx": 0.48,
+     "price": "83887.9",
+     "priceAbs": "",
+     "vol": "10894.107",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.51,
+     "price": "83767",
+     "priceAbs": "",
+     "vol": "8874.77",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.55,
+     "price": "83750.1",
+     "priceAbs": "",
+     "vol": "2968.723",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.59,
+     "price": "83971.4",
+     "priceAbs": "",
+     "vol": "2057.286",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.62,
+     "price": "84032.8",
+     "priceAbs": "",
+     "vol": "2038",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.66,
+     "price": "83869",
+     "priceAbs": "",
+     "vol": "2565.224",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.7,
+     "price": "83997.1",
+     "priceAbs": "",
+     "vol": "1448.57",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.73,
+     "price": "83947.6",
+     "priceAbs": "",
+     "vol": "1488.421",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.77,
+     "price": "83861.3",
+     "priceAbs": "",
+     "vol": "839.206",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.81,
+     "price": "84167.3",
+     "priceAbs": "",
+     "vol": "2735.896",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.84,
+     "price": "84135.3",
+     "priceAbs": "",
+     "vol": "1228.432",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.88,
+     "price": "83907.3",
+     "priceAbs": "",
+     "vol": "2545.646",
+     "volAbs": ""
+    }
+   ]
+  },
+  "tf_4h": {
+   "first_pressed_ms": -1,
+   "geometry": [
+    {
+     "id": "price-pane",
+     "top": 61,
+     "left": 0,
+     "height": 335,
+     "width": 1754,
+     "axisX": 1754
+    },
+    {
+     "id": "liquidation-cohort-long",
+     "top": 397,
+     "left": 0,
+     "height": 108,
+     "width": 1754,
+     "axisX": 1754
+    },
+    {
+     "id": "liquidation-cohort-short",
+     "top": 506,
+     "left": 0,
+     "height": 108,
+     "width": 1754,
+     "axisX": 1754
+    },
+    {
+     "id": "oi-pane",
+     "top": 615,
+     "left": 0,
+     "height": 148,
+     "width": 1754,
+     "axisX": 1754
+    },
+    {
+     "id": "long-short-pane",
+     "top": 764,
+     "left": 0,
+     "height": 89,
+     "width": 1754,
+     "axisX": 1754
+    },
+    {
+     "id": "cvd-pane",
+     "top": 854,
+     "left": 0,
+     "height": 89,
+     "width": 1754,
+     "axisX": 1754
+    }
+   ],
+   "text": {
+    "scaleNote": "Altura da barra proporcional ao volume (escala linear) — o topo da faixa é a maior barra visível.",
+    "scaleFact": "volume_scale:linear",
+    "marksLegend": "▁ Sem dado — traço baixo e apagado na faixa abaixo das barras (não sabemos) ▃ Zero do fornecedor — traço mais alto e claro, na mesma faixa (sabemos: foi zero)",
+    "floatNoise": [],
+    "srOnlySemPonto": 0,
+    "visibleSemPonto": 0,
+    "dadoVelho": 1,
+    "titles1m": [
+     "(1m, USDT)",
+     "(1m, BTC)",
+     "(1m, USD)",
+     "(5m, BTC)",
+     "(1m, BTC)"
+    ],
+    "aoVivoIndisp": 3,
+    "linhaDeBase": 0
+   },
+   "rest_legends": [
+    {
+     "k": "price",
+     "absence": "",
+     "t": "84112.5",
+     "x": 140
+    },
+    {
+     "k": "volume",
+     "absence": "",
+     "t": "6101.346",
+     "x": 140
+    },
+    {
+     "k": "liquidation_long",
+     "absence": "",
+     "t": "73347.056",
+     "x": 312
+    },
+    {
+     "k": "liquidation_short",
+     "absence": "",
+     "t": "645589.9294",
+     "x": 312
+    },
+    {
+     "k": "oi",
+     "absence": "",
+     "t": "94905.502",
+     "x": 192
+    },
+    {
+     "k": "long_short",
+     "absence": "",
+     "t": "1.3079",
+     "x": 259
+    },
+    {
+     "k": "cvd_delta",
+     "absence": "",
+     "t": "delta-746.588",
+     "x": 117
+    },
+    {
+     "k": "cvd_cumulative",
+     "absence": "",
+     "t": "acumulado-9629.057",
+     "x": 312
+    }
+   ],
+   "sweep": [
+    {
+     "fx": 0.04,
+     "price": "84468",
+     "priceAbs": "",
+     "vol": "18043.59",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.08,
+     "price": "83325.4",
+     "priceAbs": "",
+     "vol": "33031.656",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.11,
+     "price": "84059.7",
+     "priceAbs": "",
+     "vol": "10103.86",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.15,
+     "price": "84059.7",
+     "priceAbs": "",
+     "vol": "10103.86",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.19,
+     "price": "84367.9",
+     "priceAbs": "",
+     "vol": "2833.075",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.22,
+     "price": "84367.9",
+     "priceAbs": "",
+     "vol": "2833.075",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.26,
+     "price": "84453.3",
+     "priceAbs": "",
+     "vol": "1866.002",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.3,
+     "price": "84453.3",
+     "priceAbs": "",
+     "vol": "1866.002",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.33,
+     "price": "84199.9",
+     "priceAbs": "",
+     "vol": "2893.284",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.37,
+     "price": "84199.9",
+     "priceAbs": "",
+     "vol": "2893.284",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.41,
+     "price": "83803.5",
+     "priceAbs": "",
+     "vol": "4032.652",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.44,
+     "price": "83803.5",
+     "priceAbs": "",
+     "vol": "4032.652",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.48,
+     "price": "84578",
+     "priceAbs": "",
+     "vol": "2475.727",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.51,
+     "price": "84578",
+     "priceAbs": "",
+     "vol": "2475.727",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.55,
+     "price": "83767",
+     "priceAbs": "",
+     "vol": "34200.456",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.59,
+     "price": "83767",
+     "priceAbs": "",
+     "vol": "34200.456",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.62,
+     "price": "83971.4",
+     "priceAbs": "",
+     "vol": "14515.595",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.66,
+     "price": "84056",
+     "priceAbs": "",
+     "vol": "9182.651",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.7,
+     "price": "84056",
+     "priceAbs": "",
+     "vol": "9182.651",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.73,
+     "price": "83908.6",
+     "priceAbs": "",
+     "vol": "6524.821",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.77,
+     "price": "83908.6",
+     "priceAbs": "",
+     "vol": "6524.821",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.81,
+     "price": "84075.1",
+     "priceAbs": "",
+     "vol": "5118.553",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.84,
+     "price": "84075.1",
+     "priceAbs": "",
+     "vol": "5118.553",
+     "volAbs": ""
+    },
+    {
+     "fx": 0.88,
+     "price": "84134.4",
+     "priceAbs": "",
+     "vol": "6599.448",
+     "volAbs": ""
+    }
+   ]
+  }
+ }
+}
