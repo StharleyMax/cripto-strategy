@@ -1,0 +1,22 @@
+# T-01.11-FIX — e2e/24 › "T-01.11-FIX" run against a rebuilt app under each mutation
+# command: scripts/e2e-env.sh up 1 8821 4321 ; playwright test 24-single-chart -g "T-01.11-FIX" ; e2e-env.sh down
+
+# e2e-mut-mf2: `priceFormat: unlabeledTickPriceFormat()` commented out of the liquidation barStyle
+  ✘  1 [chromium] › frontend/e2e/24-single-chart-axis-and-legend.spec.ts:597:3 › T-01.9: um gráfico, um eixo, legenda == API (24-single-chart-axis-and-legend) › T-01.11-FIX: escala de cada pane isolada, liquidação sem rótulo falso, atribuição no rodapé (3.7s)
+    Error: MF-2 liquidation-cohort-long: o eixo log da liquidação rotula (número fora da ordem de grandeza)
+    Expected: 0
+    Received: 29
+  1 failed
+
+# e2e-mut-mf1: `createPanesBeforeSeries(chart, PANE_STACK.stretchFactors.length)` commented out of the host
+  ✘  1 [chromium] › frontend/e2e/24-single-chart-axis-and-legend.spec.ts:597:3 › T-01.9: um gráfico, um eixo, legenda == API (24-single-chart-axis-and-legend) › T-01.11-FIX: escala de cada pane isolada, liquidação sem rótulo falso, atribuição no rodapé (3.8s)
+    Error: MF-1: um pane herdou o modo de escala de outro
+    - Expected  - 3
+    + Received  + 3
+    -   "cvd-pane": "normal",
+    +   "cvd-pane": "logarithmic",
+    -   "long-short-pane": "normal",
+    -   "oi-pane": "normal",
+    +   "long-short-pane": "logarithmic",
+    +   "oi-pane": "logarithmic",
+  1 failed

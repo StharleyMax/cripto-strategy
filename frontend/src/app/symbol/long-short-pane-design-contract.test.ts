@@ -125,10 +125,22 @@ test("A-2 MORDE: an outline:none anywhere, or a zero offset, is caught", () => {
 test("A-3: the pane carries no fixed width and no overflow:hidden — it wraps instead of clipping", () => {
   assert.doesNotMatch(PANE, /overflow-hidden/, "`overflow: hidden` on a fluid card is how content disappears at 200%");
   assert.doesNotMatch(PANE, /\bw-\[\d+px\]/, "a pinned pixel width is the study's `width: 1280px`, migrated");
-  // And the positive half: every row of the header/footer is declared wrappable, which is what
-  // makes the layout survive the reflow `1.4.10` asks for.
-  const rows = [...PANE.matchAll(/className="flex flex-wrap/g)];
-  assert.ok(rows.length >= 3, `only ${rows.length} wrappable rows — the header/footer rows must wrap, not clip`);
+  // ⚠️ THE POSITIVE HALF WAS SUPERSEDED BY A LATER GATE, and it is re-anchored rather than dropped
+  // (`paineis-de-fluxo` `T-01.6`). The card became a LAYER over the pane's canvas, and the gate r2
+  // approved its anatomy as "linha 1, `nowrap`, 12px" (`handoff/DESIGN-LAYOUT.md` §6, row
+  // "anatomia da camada"; `gates/DESIGN-LAYOUT-ux-critique-r2.md` §2, MF-9): a line that does not
+  // fit loses its tail at the price axis, never its font size. The reflow `1.4.10` asked of the
+  // CARD is paid differently now: the header is exactly two legend lines, and every sentence that
+  // does not fit in them — horizon, tail, the whole scale footer — is kept, unpainted, in the
+  // accessibility tree (`PaneDetails`), so nothing the card said is gone from the page. Whether the
+  // clipped tail at 200% zoom is acceptable is the `ux-ui-mastery` verdict of `T-01.11`.
+  const lines = [...PANE.matchAll(/<PaneLegendLine>/g)];
+  assert.equal(lines.length, 2, `the long/short legend must be TWO lines (the approved header rows), got ${lines.length}`);
+  assert.match(
+    PANE,
+    /<PaneDetails>[\s\S]*<LongShortScaleFooter longShort=\{longShort\} \/>[\s\S]*<\/PaneDetails>/,
+    "the scale footer left the painted legend but must stay in the accessibility tree",
+  );
 });
 
 // ── `A-4` — the operator can COPY a numeral ───────────────────────────────────────────────────
@@ -282,7 +294,13 @@ test("D-1: the geometry is READ OFF the time scale, never a proportion of the co
   // margin at each end. A percentage would draw a band that LOOKS aligned and is not — on a pane
   // about provenance, a mark that misreports where it points is worse than no mark.
   assert.match(PANE, BAND_COORDINATES);
-  assert.match(PANE, /chart\.paneSize\(\)\.height/, "the band's height is the pane's, not a constant");
+  // `paineis-de-fluxo` `T-01.5`: one chart holds six panes, so "the pane's height" is the native
+  // pane's `getHeight()`, no longer the whole chart's `paneSize()` — same property, re-anchored.
+  assert.match(
+    PANE,
+    /chart\.panes\(\)\[paneIndex\]\?\.getHeight\(\)/,
+    "the band's height is the pane's, not a constant",
+  );
   assert.doesNotMatch(PANE, /clientWidth\s*\*/, "a fraction of the container's width is the misalignment defect");
 });
 
@@ -355,7 +373,8 @@ test("no hand-typed cadence on this pane: `5m`/`5 min` come off the catalog entr
   const prose = PANE.replace(/\{[^}]*\}/g, "");
   assert.doesNotMatch(prose, /\b5\s?m(in)?\b/, "a hand-typed native cadence is a second copy of a term the API owns");
   assert.match(PANE, /nativeGridSuffix\(longShort\.nativeGrid\)/, "the prose cadence must come from `nativeGrid`");
-  assert.match(PANE, /identityTerms\(longShort\)/, "and the heading's from `nativeInterval` + `unit`");
+  // `T-01.7`: the heading reads the legend the registry derived from the catalog entry (cadence + unit).
+  assert.match(PANE, /identityTerms\(legends\.long_short\)/, "and the heading's from the entry's `interval` + `unit`");
 });
 
 test("MORDE: the literal, replanted exactly as it was, is REJECTED", () => {

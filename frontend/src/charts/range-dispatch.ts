@@ -68,7 +68,7 @@ export function createReentrancyGuard(): ReentrancyGuard {
   // `T-05-FIX` RODADA 3 (achado escalado desta rodada: `holdApplying` era um booleano com
   // "último a liberar vence", não um contador). `SymbolClient.tsx` calls `holdApplying()` once
   // PER PANEL on every mount — this guard is the ONE instance `AxisSyncStore` hands out
-  // (`axis-sync.ts::guard`), shared by all `PANEL_COUNT` (6) panels, and their six mount effects
+  // (`axis-sync.ts::guard`), shared by all six panels of that era, and their six mount effects
   // run in the SAME React commit, each scheduling its own `requestAnimationFrame` release right
   // after its own `setVisibleLogicalRange` call. Because `lightweight-charts` also schedules its
   // OWN `window.requestAnimationFrame` per chart instance
@@ -140,6 +140,16 @@ export interface RangeDispatcher {
    * this is a no-op, on purpose (an echo of our own write, or a repeat of the current state).
    */
   onPanelRangeChanged(originIndex: number, candidateLogical: LogicalRange): void;
+  /**
+   * `paineis-de-fluxo` `T-01.5` (`handoff/FIX-regressoes-fase05.md` §4.3) — swaps the axis every
+   * later conversion runs against, and KEEPS `state`. `state` is a `TimeRange` in milliseconds,
+   * independent of any axis, so a history page that widens the grid does not need a new
+   * dispatcher: it needs the same registered instant range read through the new grid. After the
+   * swap, the echo of the page's own `setData` (the SAME instants, now at `from + k` on the new
+   * grid) converts back to the same milliseconds and `reduceRangeEvent` reports no change.
+   * Writes nothing, fires nothing: a rebase is not a range change.
+   */
+  rebase(nextAxis: TimeAxis): void;
 }
 
 export function createRangeDispatcher(
@@ -154,10 +164,14 @@ export function createRangeDispatcher(
   }
   const guard = createReentrancyGuard();
   let state = initialState;
+  let currentAxis = axis;
   return {
     guard,
     get state(): TimeRange {
       return state;
+    },
+    rebase(nextAxis) {
+      currentAxis = nextAxis;
     },
     onPanelRangeChanged(originIndex, candidateLogical) {
       if (guard.isApplying) {
@@ -168,13 +182,13 @@ export function createRangeDispatcher(
         // near-duplicate `reduceRangeEvent` would catch).
         return;
       }
-      const candidate = fromLogicalRange(candidateLogical, axis);
+      const candidate = fromLogicalRange(candidateLogical, currentAxis);
       const { next, changed } = reduceRangeEvent(state, candidate, epsilonMs);
       if (!changed) {
         return;
       }
       state = next;
-      const logical = toLogicalRange(next, axis);
+      const logical = toLogicalRange(next, currentAxis);
       guard.runApplying(() => {
         for (let index = 0; index < panelCount; index += 1) {
           if (index === originIndex) {

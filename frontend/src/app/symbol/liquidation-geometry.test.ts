@@ -62,7 +62,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 
-import { absenceMarkSeries, flushFrames, installGlobals, positiveValueSeriesLossless, zeroMarkSeries } from "../../charts/index.ts";
+import {
+  absenceMarkSeries,
+  flushFrames,
+  installGlobals,
+  paneScaleMargins,
+  positiveValueSeriesLossless,
+  zeroMarkSeries,
+} from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
 
 const SYMBOL_CLIENT_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx");
@@ -669,4 +676,60 @@ test("MORDE: the three mark series draw on EXACTLY their own instants, and never
   assert.equal(bars.length, slots.length - absent - zeros, "the bar series draws on neither of the other two");
   // A partition: every slot is covered exactly once by exactly one of the three.
   assert.equal(absenceMarks.length + zeroMarks.length + bars.length, slots.length);
+});
+
+// ── `W1-CODE-REVIEW-r2` C-2 — the inequality must hold on the APPLIED margins ──────────────────
+// The legend reserve (`T-01.6`) rewrites the bar scale's margins at runtime. The two tests above
+// check the BASE constants; this one checks what `paneScaleMargins` hands the library for the
+// production binding, read BACK from the library, with the legend heights the design gate measured
+// on the live pane (`T-01.11-r2-facts.json`: long 54 px, short 38 px, pane 108 px), plus a sweep up
+// to the largest reserve `paneScaleMargins` accepts.
+
+/** The role production declares for the liquidation BAR scale, parsed from the source. */
+function productionBarScaleRole(): { belowLegend: boolean; clearSeparator: boolean; keepFloor?: boolean } {
+  const match = /\{ series: barSeries, belowLegend: (true|false), clearSeparator: (true|false)(?:, keepFloor: (true|false))? \}/.exec(
+    source,
+  );
+  assert.ok(match !== null, "the liquidation bar scale binding was not found in SymbolClient.tsx — fix this test");
+  return {
+    belowLegend: match[1] === "true",
+    clearSeparator: match[2] === "true",
+    ...(match[3] === undefined ? {} : { keepFloor: match[3] === "true" }),
+  };
+}
+
+async function appliedBarFloor(role: ReturnType<typeof productionBarScaleRole>, paneHeightPx: number, legendBottomPx: number) {
+  const result = paneScaleMargins(LIQUIDATION_BAR_SCALE_MARGINS, role, { paneHeightPx, legendBottomPx });
+  assert.notEqual(result.kind, "unmeasured");
+  if (result.kind === "unmeasured") return Number.NaN;
+  const dom = new JSDOM('<!doctype html><html><body><div id="chart"></div></body></html>', { pretendToBeVisual: true });
+  installGlobals(dom);
+  const lc = await import("lightweight-charts");
+  const container = dom.window.document.getElementById("chart");
+  assert.ok(container !== null);
+  const chart = lc.createChart(container, chartConstructorOptions(MEASUREMENT_WIDTH_PX, paneHeightPx));
+  const barSeries = chart.addSeries(lc.HistogramSeries, { base: LIQUIDATION_LOG_BASE });
+  barSeries.priceScale().applyOptions({ scaleMargins: result.margins });
+  const applied = barSeries.priceScale().options().scaleMargins;
+  chart.remove();
+  return 1 - applied.bottom;
+}
+
+test("C-2: on the APPLIED margins the bar band's floor stays above the marks band, for every legend the pane accepts", async () => {
+  const role = productionBarScaleRole();
+  assert.equal(role.belowLegend, true, "the bars sit below the legend");
+  for (const legendBottomPx of [38, 54, 60, 70, 76]) {
+    const floor = await appliedBarFloor(role, 108, legendBottomPx);
+    assert.ok(
+      floor < LIQUIDATION_MARKS_SCALE_MARGINS.top,
+      `legend ${legendBottomPx} px in a 108 px pane: bar floor at ${(floor * 100).toFixed(1)}% of the pane, marks band ` +
+        `from ${(LIQUIDATION_MARKS_SCALE_MARGINS.top * 100).toFixed(0)}% — a small bar lands on the zero mark`,
+    );
+  }
+});
+
+test("MORDE (C-2): the same binding WITHOUT keepFloor crosses into the marks band with the 54 px legend", async () => {
+  const role = { ...productionBarScaleRole(), keepFloor: false };
+  const floor = await appliedBarFloor(role, 108, 54);
+  assert.ok(floor >= LIQUIDATION_MARKS_SCALE_MARGINS.top, `expected the defect to reproduce, floor=${floor}`);
 });

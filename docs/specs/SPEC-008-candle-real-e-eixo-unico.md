@@ -493,6 +493,23 @@ quem detecta a borda na história sob demanda.
   permanentemente disparado = **laço infinito de paginação** `[MEDIDO: probe3.mjs]`.
 - **`D-C3.5`** `web` pagina **serial**, teto ~**5.000 slots** — a biblioteca **não tem `prepend`**,
   então o custo é **quadrático** em páginas; `setData` de 129.600 pts × 6 painéis = **752,6 ms**.
+
+  > ⚠️ **CORREÇÃO, 2026-09-26 (`paineis-de-fluxo`, wave W1).** O teto **efetivo** deixou de ser
+  > ~5.000: é **`max(5.000, seed + 1 página)`**, que dá **6.260 slots em todo TF** (seed de 5.760 +
+  > página de 500) — **25% acima** do número desta linha.
+  > Código: `frontend/src/app/symbol/history-page-window.ts::effectiveMaxAccumulatedSlots`, ligado
+  > em `use-history-pager.ts`. **Por quê:** o seed da rota (5.760) **já passava** do teto de 5.000
+  > antes da wave, então a primeira página cortava a borda direita e o `T` recuava **760 min** num
+  > arrasto (`MF-A` de `docs/context/paineis-de-fluxo/gates/W1-DESIGN-REVIEW.md`; mutação M-A em
+  > `gates/W1-QA-r2.md` §5). Com piso = seed + 1 página, a primeira página nunca corta.
+  > **Quem escolheu:** o `W1-FIX` (`4a17e35`) adotou a saída (a) do design gate `[INFERRED: escolha de
+  > agente, não do owner; nem `[PREMISSA-OWNER]` nem `[DECISÃO-OWNER]`]`. **Custo medido, sem atribuição
+  > causal (n=2 rodadas cada):** `e2e/20`, página p95 **71,8 / 72,4 ms** (r1) → **89,7 / 114,3 ms**
+  > (r2); intra-gesto max **66,9 / 80,5** → **100,6 / 112,9 ms** `[DOC: gates/W1-QA-r2.md §4]`. Os dois
+  > continuam dentro dos tetos exigíveis (400 ms e 160 ms, `SPEC-009` A-3), mas a tendência é o custo
+  > quadrático que esta linha nomeia. **Resíduo conhecido:** depois de ≥ 2 páginas o corte da borda
+  > direita volta a acontecer (`W1-QA-r2` W-1, anterior à W1) — o piso resolve a primeira página, não
+  > a sequência funda.
 - **`D-C3.6`** ⛔ **três** estados distinguíveis, nunca dois: `absent` · `not-loaded` ·
   `beyond-coverage`.
 - **`D-C3.7`** (pedido formal ao `/architect`, **aceito** — vira `D8`, §8.3).

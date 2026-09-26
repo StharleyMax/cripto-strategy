@@ -54,6 +54,17 @@ import { fact, sentimentoApiBaseUrl, shot } from "./helpers.ts";
  * este crescimento": eles afirmam o que o DoD realmente pede — que o estado FINAL, depois dos
  * gestos, mostra mais história do que o estado inicial (ou já estava saturado antes de qualquer
  * gesto, o que o próprio DoD-1 permite: "morde se estabilizar ANTES do teto", não "no teto").
+ *
+ * ── `T-01.8` (`paineis-de-fluxo`): THE MECHANISM ABOVE NO LONGER EXISTS, AND WHERE "NO CASCADE" IS PROVEN ──
+ *
+ * The paragraph above blames a store rebuilt per page (`useMemo([axis])`) that remounted six charts
+ * and re-applied the initial range. Since `T-05-FIX` the auto-paging is closed, and since `T-01.5`
+ * there is ONE chart, ONE store per mount with `rebase(axis)`, and no remount per page
+ * (`handoff/FIX-regressoes-fase05.md` §4.3; `e2e/22` bites on the remount). The paragraph stays as
+ * history. This file's selectors were re-anchored by `T-01.6` (the pane DOM is a layer beside the
+ * canvases, so the drag starts on `price-pane` → `../canvas`). "No cascade" is asserted where paging
+ * actually happens — the synthetic stub of `e2e/20`: its pre-walk drags must request no page, and
+ * after the last measured page, 2 s without input must request none (`20-teto-latencia-historia-sob-demanda.spec.ts`).
  */
 
 const SPEC = "21-arrasto-historia-parede-e-ablacao";
@@ -139,7 +150,11 @@ async function dragPricePanelBackward(page: Page, deltaXPx: number): Promise<voi
   if (deltaXPx <= 0) {
     throw new Error(`dragPricePanelBackward: deltaXPx must be positive, received ${deltaXPx}`);
   }
-  const container = page.locator(`[data-testid="${PRICE_PANE_TESTID}"] [data-visible-logical-from]`);
+  // `paineis-de-fluxo` `T-01.6`: the price pane's DOM is now a LAYER portalled into the pane's own
+  // canvas wrapper, so it is the canvases' sibling, not their ancestor. `xpath=../canvas` is the
+  // price pane's canvas — the same rectangle the old `price-pane [data-visible-logical-from]`
+  // host occupied when the chart was 220px tall and held only this pane.
+  const container = page.locator(`[data-testid="${PRICE_PANE_TESTID}"]`).locator("xpath=../canvas").first();
   const box = await container.boundingBox();
   if (box === null) {
     throw new Error("o painel de Preço não tem bounding box — canvas não montado?");

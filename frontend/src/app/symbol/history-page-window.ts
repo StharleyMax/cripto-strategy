@@ -46,6 +46,33 @@ export const DEFAULT_MAX_ACCUMULATED_SLOTS = 5_000;
 export const DEFAULT_PAGE_SLOTS = 500;
 
 /**
+ * `paineis-de-fluxo` W1-FIX (`gates/W1-DESIGN-REVIEW.md` MF-A) — the cap the pager ACTUALLY applies:
+ * never below the seed window plus one page. The seed window of every TF is `5.760` slots (4 days
+ * of the `1m` grid), MORE than `D-C3.5`'s `~5.000`. With the raw cap, the deferred right-edge cut
+ * (`capWindowRightEdge`, applied on every pointer release) discarded `5.760 − 5.000 = 760` slots —
+ * the 12 h 40 min most recent, the very edge on screen — on the FIRST release, with no page fetched
+ * and no way back (there is no page toward the future). `D-C3.5`'s own intent is a SLIDING window
+ * that trims the edge FAR from where the operator dragged; that only holds once the window has
+ * grown past what the route itself served. Floor = seed + one page means the first page never cuts,
+ * and a later cut lands at least one page away from the view the paging was triggered from.
+ */
+export function effectiveMaxAccumulatedSlots(
+  seedWindow: AccumulatedWindow,
+  stepMs: number,
+  pageSlots: number,
+  requestedMaxSlots: number = DEFAULT_MAX_ACCUMULATED_SLOTS,
+): number {
+  if (!(stepMs > 0)) {
+    throw new RangeError(`effectiveMaxAccumulatedSlots: stepMs must be positive, received ${stepMs}`);
+  }
+  if (!(pageSlots > 0) || !Number.isInteger(pageSlots)) {
+    throw new RangeError(`effectiveMaxAccumulatedSlots: pageSlots must be a positive integer, received ${pageSlots}`);
+  }
+  const seedSlots = Math.ceil((seedWindow.endMsExclusive - seedWindow.startMs) / stepMs);
+  return Math.max(requestedMaxSlots, seedSlots + pageSlots);
+}
+
+/**
  * Widens `current` to include a just-fetched page `[page.fromMs, page.toMs)`, then caps the
  * result at `maxSlots` by trimming the RIGHT edge — never the left, which is the edge the page
  * just extended and the one the operator dragged toward. `page.toMs` MUST equal
@@ -84,6 +111,34 @@ export function widenAndCapWindow(
   // ("descartando a ponta direita — nunca crescimento ilimitado"). The window SLIDES as a whole
   // rather than growing forever: each accepted page keeps the total at exactly `maxSlots`.
   return { startMs: widenedStartMs, endMsExclusive: widenedStartMs + maxSlots * stepMs };
+}
+
+/**
+ * `paineis-de-fluxo` `T-01.5` (`handoff/FIX-regressoes-fase05.md` §4.2, the `[NÃO SEI]`): the
+ * SAME right-edge discard `widenAndCapWindow` applies, on its own, for a window that grew past
+ * `maxSlots` while the cut was deferred. The single chart survives a page, and its `timeScale`
+ * anchors the view to the LAST bar — so cutting the right edge in the middle of a drag moves the
+ * view by the whole cut (1.260 slots on the first `1m` page: 5.760 + 500 − 5.000), and the
+ * library's own drag state then continues from the old offset. The pager widens without the cap
+ * while a gesture is held and applies this when it ends, when the host can restore the view from
+ * the registered range. Returns `current` itself (same reference) when nothing needs cutting.
+ */
+export function capWindowRightEdge(
+  current: AccumulatedWindow,
+  stepMs: number,
+  maxSlots: number = DEFAULT_MAX_ACCUMULATED_SLOTS,
+): AccumulatedWindow {
+  if (!(stepMs > 0)) {
+    throw new RangeError(`capWindowRightEdge: stepMs must be positive, received ${stepMs}`);
+  }
+  if (!(maxSlots > 0) || !Number.isInteger(maxSlots)) {
+    throw new RangeError(`capWindowRightEdge: maxSlots must be a positive integer, received ${maxSlots}`);
+  }
+  const totalSlots = (current.endMsExclusive - current.startMs) / stepMs;
+  if (totalSlots <= maxSlots) {
+    return current;
+  }
+  return { startMs: current.startMs, endMsExclusive: current.startMs + maxSlots * stepMs };
 }
 
 /** Keeps only the rows landing inside `window` — the trim `widenAndCapWindow`'s right-edge

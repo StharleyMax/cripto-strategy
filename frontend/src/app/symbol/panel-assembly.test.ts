@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { S2_PRICE_USE } from "../../charts/index.ts";
+import { S2_PRICE_USE, resolveLegendReading } from "../../charts/index.ts";
 import { assembleHistoryPage, type AssemblyWindow, type HistoryRowsBundle } from "./panel-assembly.ts";
 import type { SeriesHistoryRow } from "./series-history-envelope.ts";
 
@@ -152,4 +152,72 @@ test("MORDE: an upstream-failed series (empty rows) still comes back GRID-PADDED
   assert.equal(result.liquidationLong.presentPoints, 0);
   assert.equal(result.longShort.slots.length, 3, "long/short is grid-padded the same way");
   assert.equal(result.panels.oi.slots.length, 3, "OI/CVD/price stay grid-padded through buildS2Panels regardless");
+});
+
+// ── `W1-REVIEW-r2` BLOCKER-2 / `W1-QA-r2` BLOCKER-1 / `W1-DESIGN-REVIEW-r2` MF-B′ ────────────────
+// On a TF ≠ `1m` the wire answers ONE volume row per TF bucket. The legend resolves `param.logical`
+// over the CANONICAL 1-minute grid (`ADR-044/D2`), so it must read `legendSlots` (gridded), never
+// the native `slots` (one per row). Before the fix, the legend of a `4h` window read `ausente` in
+// every crosshair position and at rest, with the bar drawn and the value served.
+const FOUR_HOURS_MS = 4 * 60 * ONE_MINUTE_MS;
+const FOUR_HOUR_WINDOW: AssemblyWindow = { startMs: 0, endMsExclusive: 2 * FOUR_HOURS_MS }; // 480 grid minutes
+
+function assembleFourHourVolume() {
+  const rows: HistoryRowsBundle = {
+    ...emptyBundle(),
+    // The values the QA read off the live API for two `4h` bars (`W1-QA-r2` §3).
+    volume: [scalarRow(0, "34200.456"), scalarRow(FOUR_HOURS_MS, "14515.595")],
+  };
+  return assembleHistoryPage(rows, FOUR_HOUR_WINDOW, {
+    priceUse: S2_PRICE_USE,
+    cvdAnchorMs: FOUR_HOUR_WINDOW.startMs,
+    windowEndMsInclusive: FOUR_HOUR_WINDOW.endMsExclusive - ONE_MINUTE_MS,
+    longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
+    oiMaxStalenessMs: null,
+  }).volume;
+}
+
+function readVolumeLegend(slots: ReturnType<typeof assembleFourHourVolume>["legendSlots"], logical: number | undefined) {
+  return resolveLegendReading({
+    logical,
+    slots,
+    nature: "FLOW",
+    axisStepMs: ONE_MINUTE_MS,
+    nativeTimeframeMs: ONE_MINUTE_MS,
+    asOfMs: FOUR_HOUR_WINDOW.endMsExclusive,
+    bucketMs: FOUR_HOURS_MS,
+  });
+}
+
+test("CALA: on 4h the volume BARS keep one slot per wire row — pixels, presentPoints and firstPresentMs do not move", () => {
+  const volume = assembleFourHourVolume();
+  assert.equal(volume.slots.length, 2, "the drawn vector is the native one, one slot per 4h bar");
+  assert.equal(volume.presentPoints, 2);
+  assert.equal(volume.firstPresentMs, 0);
+});
+
+test("MORDE MF-B′: on 4h the volume legend reads the served bar at rest and under the crosshair, never ausente", () => {
+  const volume = assembleFourHourVolume();
+  assert.equal(volume.legendSlots.length, 480, "the legend vector is the window's canonical 1-minute grid");
+  const atRest = readVolumeLegend(volume.legendSlots, undefined);
+  assert.equal(atRest.kind, "value", "at rest the legend reads the last CLOSED 4h bar");
+  assert.equal(atRest.kind === "value" ? atRest.value : null, 14515.595);
+  // Every logical index inside a drawn bar reads that bar's served sum.
+  for (const [logical, expected] of [
+    [0, 34200.456],
+    [10, 34200.456],
+    [239, 34200.456],
+    [240, 14515.595],
+    [300, 14515.595],
+    [479, 14515.595],
+  ] as const) {
+    const reading = readVolumeLegend(volume.legendSlots, logical);
+    assert.equal(reading.kind, "value", `logical ${logical} lies inside a served bar and must not read ausente`);
+    assert.equal(reading.kind === "value" ? reading.value : null, expected, `logical ${logical}`);
+  }
+});
+
+test("MORDE (control): the NATIVE vector read by param.logical is the defect — ausente under the crosshair on 4h", () => {
+  const volume = assembleFourHourVolume();
+  assert.equal(readVolumeLegend(volume.slots, 300).kind, "absent");
 });

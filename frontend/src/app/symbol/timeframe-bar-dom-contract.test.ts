@@ -44,7 +44,9 @@ const BUTTON_LABEL_FROM_OPTION = /\{option\.interval\}\s*\n\s*<\/button>/;
  * `setState`) — see that file's own docstring on why the URL, not `useState`, is the source of
  * truth for `selectedTimeframe` since this task. */
 const BAR_MOUNTED = /<TimeframeBar selected=\{selectedTimeframe\} onSelect=\{handleTimeframeSelect\} \/>/;
-const IMPORTS_CANONICAL_ARRAY = /import \{ DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES \} from "\.\/supported-timeframes\.ts";/;
+// W1-FIX: the import may carry other names of the same module (`timeframeStepMs`, MF-B); what the
+// contract pins is that `SUPPORTED_TIMEFRAMES` comes from `supported-timeframes.ts`.
+const IMPORTS_CANONICAL_ARRAY = /import \{[^}]*\bSUPPORTED_TIMEFRAMES\b[^}]*\} from "\.\/supported-timeframes\.ts";/;
 
 test("T-03.9 contract: TimeframeBar imports the canonical array, never redeclares it", () => {
   assert.match(

@@ -104,6 +104,8 @@ export interface DynamicPriceFacts {
 
 export interface DynamicVolumeFacts {
   readonly slots: S2Panels["oi"]["slots"];
+  /** The same rows on the canonical 1-minute grid — what the legend reads (`ADR-044/D2`). */
+  readonly legendSlots: S2Panels["oi"]["slots"];
   readonly presentPoints: number;
   readonly firstPresentMs: number | null;
   readonly reading: FlowReading;
@@ -201,9 +203,18 @@ export function assembleHistoryPage(
   // order" (`view-model.ts::nonNegativeFlowSlotsFromHistoryRows`'s own docstring), because the
   // wire itself already answers one row per 1-minute grid instant of whatever window was asked
   // for, and volume is not one of the six panes `CA-5a`'s cross-panel grid invariant covers.
+  //
+  // ⛔ THAT PREMISE HOLDS FOR THE DRAWN BARS ONLY, NOT FOR THE LEGEND (`W1-REVIEW-r2` BLOCKER-2,
+  // `W1-QA-r2` BLOCKER-1). On a TF ≠ `1m` the wire answers one row per TF bucket (24 rows over a
+  // `4h` window), so "slot `i`" of the native vector is NOT logical index `i`, and the legend —
+  // which `ADR-044/D2` resolves off `param.logical` over the CANONICAL grid — read `ausente` in
+  // every position. `legendSlots` is the SAME rows aligned onto the window's 1-minute grid (the
+  // shared primitive, like liquidation and long/short below); the bars keep the native vector,
+  // so their pixels, `presentPoints` and `firstPresentMs` do not move.
   const volumeSlots = nonNegativeFlowSlotsFromHistoryRows(rows.volume);
   const volume: DynamicVolumeFacts = {
     slots: volumeSlots,
+    legendSlots: nonNegativeFlowSlotsFromHistoryRows(rows.volume, s2Window),
     presentPoints: countPresentSlots(volumeSlots),
     firstPresentMs: firstPresentSlotMs(volumeSlots),
     reading: resolveFlowReadingOrAbsent(volumeSlots, context.windowEndMsInclusive),

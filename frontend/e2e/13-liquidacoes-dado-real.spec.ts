@@ -108,6 +108,12 @@ function cohortTestId(cohort: LiquidationCohort): string {
   return `liquidation-cohort-${cohort}`;
 }
 
+/** `paineis-de-fluxo` `T-01.6`: each cohort is now its OWN pane of the one chart, with its own DOM
+ * layer rooted at `cohortTestId(cohort)`. `liquidation-pane` survives as the panel HEADER inside
+ * the long cohort's layer (title + third-party provenance), so it no longer encloses the short
+ * cohort — per-cohort facts are read under the cohort root. */
+const ANY_COHORT_ROOT = '[data-testid^="liquidation-cohort-"]';
+
 /** `RN-S2`, literal: *"o limiar Ã© `N >= 30` pontos distintos, nÃ£o `N > 0`. `N > 0` nÃ£o distingue
  * cano funcionando de ponto por acaso."* Sem divisor de `RN-S1`: `sum_liquidation` Ã© `1m` NATIVA
  * (`liquidation_catalog.py`), entÃ£o cada grade com valor Ã© uma barra nativa distinta.
@@ -336,14 +342,14 @@ const RETRIED_ABSENCE_REASON = "connection_refused";
 async function loadRenderedRequestWithLiveRead(page: Page): Promise<RenderedRequest> {
   let request = await loadRenderedRequest(page);
   let degraded = await page
-    .locator(`[data-testid="${LIQUIDATION_PANE_TESTID}"] [data-fact="panel_absent:${RETRIED_ABSENCE_REASON}"]`)
+    .locator(`${ANY_COHORT_ROOT} [data-fact="panel_absent:${RETRIED_ABSENCE_REASON}"]`)
     .count();
   let attempts = 1;
   while (degraded > 0 && attempts < SYMBOL_RENDER_ATTEMPTS) {
     attempts += 1;
     request = await loadRenderedRequest(page);
     degraded = await page
-      .locator(`[data-testid="${LIQUIDATION_PANE_TESTID}"] [data-fact="panel_absent:${RETRIED_ABSENCE_REASON}"]`)
+      .locator(`${ANY_COHORT_ROOT} [data-fact="panel_absent:${RETRIED_ABSENCE_REASON}"]`)
       .count();
   }
   fact(SPEC, "symbol_render_attempts", attempts);
@@ -534,7 +540,8 @@ test(`as DUAS coortes do painel de liquidaÃ§Ãµes sÃ£o as da API, sobre a M
     const domSlots = Number(slotsFact.split(":")[2]);
     fact(SPEC, `liquidation_dom_slots_${cohort}`, domSlots);
     expect(slotsFact, `liquidation_slots (${cohort}) tem de terminar em dÃ­gitos`).toMatch(/:\d+$/);
-    const horizon = pane.locator(`[data-fact^="liquidation_readable_horizon:${cohort}:"]`);
+    const cohortRoot = page.locator(`[data-testid="${cohortTestId(cohort)}"]`);
+    const horizon = cohortRoot.locator(`[data-fact^="liquidation_readable_horizon:${cohort}:"]`);
     await expect(horizon).toHaveCount(1);
     const horizonFact = await horizon.getAttribute("data-fact");
     fact(SPEC, `liquidation_readable_horizon_fact_${cohort}`, horizonFact);
@@ -544,7 +551,7 @@ test(`as DUAS coortes do painel de liquidaÃ§Ãµes sÃ£o as da API, sobre a M
     expect(sinceMs).toBe(api.firstPresentMs === null ? "" : String(api.firstPresentMs));
 
     // ââ (e) o veredito por universo âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    const readout = pane.locator(`[data-fact^="liquidation_last_reading:${cohort}:"]`);
+    const readout = cohortRoot.locator(`[data-fact^="liquidation_last_reading:${cohort}:"]`);
     await expect(readout).toHaveCount(1);
     const readoutFact = (await readout.getAttribute("data-fact")) ?? "";
     const readoutText = (await readout.textContent())?.trim() ?? "";

@@ -263,7 +263,24 @@ test("DR-6: the canvas host is hidden from the accessibility tree, with the read
   // to find a nameless empty node. This does not make the SERIES accessible (that is DR-10, a
   // keyboard-navigable table, strategic) — it stops the tree from carrying a node that says
   // nothing, next to readouts that say the last instant.
-  assert.match(source, /ref=\{containerRef\}\s*\n\s*aria-hidden="true"/);
+  // `paineis-de-fluxo` `T-01.5`: the canvas host is now the ONE chart's surface
+  // (`ChartHostSurface`), not a per-pane `containerRef` — re-anchored on the same property.
+  // `paineis-de-fluxo` `T-01.6`: RE-ANCHORED AGAIN, one level down, and the property is the same.
+  // The per-pane readouts now live INSIDE the chart's DOM (each pane's layer is portaled into its
+  // pane), so an `aria-hidden` host would hide the very readouts that are the canvas' alternative.
+  // What is hidden now is each `<canvas>` (and the library's layout `<table>` is presentational),
+  // and the surface must NOT be hidden — both halves are asserted, so neither regression passes.
+  assert.match(
+    source,
+    /for \(const canvas of container\.querySelectorAll\("canvas"\)\) \{\s*\n\s*canvas\.setAttribute\("aria-hidden", "true"\);/,
+    "every canvas of the one chart must be hidden from the accessibility tree",
+  );
+  assert.match(source, /hideChartGraphicsFromAssistiveTech\(container\);/, "declared is not called: the host must run it");
+  assert.doesNotMatch(
+    source,
+    /ref=\{registrar\.surfaceRef\}\s*\n\s*aria-hidden="true"/,
+    "the surface now CONTAINS the pane readouts; hiding it would hide the canvas' textual alternative",
+  );
 });
 
 // ── MORDE: the four mutations that were GREEN before this file existed ────────────────────────

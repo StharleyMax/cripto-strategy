@@ -29,7 +29,7 @@
  * What a builder decides is that the canvas and the page are the SAME surface.
  */
 
-import { ColorType, type DeepPartial, type ChartOptions } from "lightweight-charts";
+import { ColorType, type DeepPartial, type ChartOptions, type LineSeriesPartialOptions } from "lightweight-charts";
 
 import { chartSurfaceTheme } from "../../charts/index.ts";
 
@@ -45,11 +45,56 @@ export function chartConstructorOptions(width: number, height: number): DeepPart
     layout: {
       background: { type: ColorType.Solid, color: theme.backgroundColor },
       textColor: theme.textColor,
+      // `paineis-de-fluxo` `T-01.6` (`[Q-DG-1]`, `C-6`): the pane chrome of the ONE chart. The
+      // separator colour is the theme's (never a literal here — `DR-1`), the hover colour is the
+      // same value, and resizing is off: a resized layout would be state that the next remount
+      // forgets (`handoff/DESIGN-LAYOUT.md` §6, row "enableResize"). `pane-chrome-options.test.ts`
+      // asserts all three on the BUILT value, so dropping this block reddens a test instead of
+      // silently falling back to the library's own (light, undesigned) default separator.
+      panes: {
+        separatorColor: theme.paneSeparatorColor,
+        separatorHoverColor: theme.paneSeparatorColor,
+        enableResize: false,
+      },
+      // `T-01.11-FIX` (`SF-1` of `gates/T-01.11-design-review.md`): with ONE chart there is ONE logo,
+      // and the library pins it to the bottom-left of the LAST pane — on top of CVD data. The
+      // attribution the licence asks for is NOT dropped: it moved to the page's footer as a link
+      // (`SymbolClient.tsx`, `CHART_ATTRIBUTION_TESTID`), and `pane-chrome-options.test.ts` requires the
+      // two together — the logo off only while that link is rendered.
+      attributionLogo: false,
     },
     grid: {
       vertLines: { color: theme.gridLineColor },
       horzLines: { color: theme.gridLineColor },
     },
     timeScale: { timeVisible: true, secondsVisible: false },
+  };
+}
+
+/** `T-01.11-FIX` (`SF-1`) — the footer link that carries the library's attribution once the logo is
+ * off. The URL is the one the library's own logo links to. */
+export const CHART_ATTRIBUTION_TESTID = "chart-attribution";
+export const CHART_ATTRIBUTION_URL = "https://www.tradingview.com/";
+
+/** `T-01.10` — the overlay price scale of the grid carrier, its own and nobody else's: a scale id
+ * that is neither `left` nor `right` is an overlay, so it draws no axis and moves no pane scale. */
+export const GRID_CARRIER_PRICE_SCALE_ID = "grid-carrier";
+
+/**
+ * `T-01.10` (`ADR-044/D2′(a)`, `handoff/T-01.10-desenho.md` §3 item 1) — the options of the host's
+ * grid CARRIER: the one `LineSeries`, in pane 0, that is fed exactly the canonical grid as `{time}`
+ * items so the 14 pane series can be fed plot items only. It must draw NOTHING and take part in
+ * NOTHING the operator sees: hidden, on its own overlay scale, no last-value label, no price line,
+ * no crosshair marker. Here and not in `SymbolClient.tsx` for `DR-1`'s reason: options that have a
+ * NAME can be required and compared (`e2e/25-sparse-feed-pixel-identity.spec.ts` builds the carrier
+ * from THIS value, so the pixel proof and the app cannot hold two carriers).
+ */
+export function gridCarrierSeriesOptions(): LineSeriesPartialOptions {
+  return {
+    visible: false,
+    priceScaleId: GRID_CARRIER_PRICE_SCALE_ID,
+    lastValueVisible: false,
+    priceLineVisible: false,
+    crosshairMarkerVisible: false,
   };
 }

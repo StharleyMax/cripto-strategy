@@ -191,3 +191,25 @@ test("the day list the route passes to `daysWithPresence` is the window's own, n
     );
   }
 });
+
+// ── W1-FIX (`gates/W1-QA.md` BLOCKER-1): the predicate `e2e/18` branches on, proven exact ─────
+
+test("W1-FIX: the 1m and 4h windows coincide IFF the 1m edge (+1 min) is on a 4h boundary — 30 of 1440 minutes", () => {
+  const FOUR_HOURS_MS = 4 * 60 * ONE_MINUTE_MS;
+  const dayStartMs = Date.UTC(2026, 8, 25, 0, 0, 0);
+  let coincident = 0;
+  for (let minute = 0; minute < 1440; minute += 1) {
+    const nowMs = dayStartMs + minute * ONE_MINUTE_MS + 17_000; // off-grid second, like a real clock
+    const oneMinute = resolveRouteWindow(nowMs, ONE_MINUTE_MS);
+    const fourHours = resolveRouteWindow(nowMs, FOUR_HOURS_MS);
+    const same = oneMinute.windowEndMsInclusive === fourHours.windowEndMsInclusive;
+    const predicate = (oneMinute.windowEndMsInclusive + ONE_MINUTE_MS) % FOUR_HOURS_MS === 0;
+    assert.equal(same, predicate, `minute ${minute}: identity ${same}, e2e/18 predicate ${predicate}`);
+    if (same) {
+      coincident += 1;
+      const hhmm = new Date(nowMs).toISOString().slice(11, 16);
+      assert.match(hhmm, /^(00|04|08|12|16|20):0[5-9]$/, `coincidence outside HH:05–HH:10 at ${hhmm}`);
+    }
+  }
+  assert.equal(coincident, 30); // 6 boundaries x 5 minutes = 2,08 % of clock readings
+});

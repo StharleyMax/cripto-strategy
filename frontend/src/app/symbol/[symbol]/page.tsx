@@ -150,7 +150,9 @@ import {
   type SeriesHistoryRow,
 } from "../series-history-client.ts";
 import type { PanelStatus } from "../panel-status.ts";
+import type { PaneLegendSource, PaneLegendSources } from "../pane-legend.ts";
 import { resolveRouteWindow, type RouteWindow } from "../request-window.ts";
+import { seedIdentityKey } from "../seed-identity.ts";
 import { DEFAULT_TIMEFRAME, isSupportedTimeframe, SUPPORTED_TIMEFRAMES } from "../supported-timeframes.ts";
 import {
   SymbolClient,
@@ -312,6 +314,14 @@ function resolvedEntry(resolution: CatalogResolution): SeriesCatalogEntry | unde
 function seriesKeyIdOf(resolution: CatalogResolution): string | null {
   const entry = resolvedEntry(resolution);
   return entry === undefined ? null : computeSeriesKeyId(entry.key);
+}
+
+/** `paineis-de-fluxo` `T-01.7` (`RF-5`) — the entry a legend is named and read from, with its
+ * `series_key_id`, or `null` — the same "none and ambiguous collapse" posture as `seriesKeyIdOf`.
+ * The hash is taken HERE because it needs `node:crypto`, which the Client Component cannot import. */
+function legendSourceOf(resolution: CatalogResolution): PaneLegendSource | null {
+  const entry = resolvedEntry(resolution);
+  return entry === undefined ? null : { seriesKeyId: computeSeriesKeyId(entry.key), entry };
 }
 
 /** `T-05.2` — reads `.rows` off a `fetchPanelRows` result through a function call, never a
@@ -696,6 +706,10 @@ export default async function SymbolPage({
   const volumeSlots = nonNegativeFlowSlotsFromHistoryRows(volumeResult.rows);
   const volume: VolumeSubAxisData = {
     slots: volumeSlots,
+    // `W1-REVIEW-r2` BLOCKER-2: the legend reads the SAME rows on the route's canonical grid
+    // (`ADR-044/D2`, slot `i` IS logical index `i`). The native vector above stays what the bars
+    // draw — on a TF ≠ `1m` it has one slot per TF bucket, not one per grid minute.
+    legendSlots: nonNegativeFlowSlotsFromHistoryRows(volumeResult.rows, routeWindow.window),
     presentPoints: countPresentSlots(volumeSlots),
     // The left end of the readable horizon, DECLARED on screen rather than left to look like a
     // dead market (`quant-architect`, wave `03`, C4). Derived from the same slots the sub-axis
@@ -963,8 +977,29 @@ export default async function SymbolPage({
     },
   };
 
+  // `paineis-de-fluxo` `T-01.7` (`RF-5`) — the entry each legend is NAMED and READ from, off the SAME
+  // resolutions the ten fetches used (never a second catalog lookup). Price reads the candle's CLOSE,
+  // the reading its legend shows; the two liquidation legs are two panes, so two sources.
+  const paneLegendSources: PaneLegendSources = {
+    price: legendSourceOf(ohlcResolutions.close),
+    volume: legendSourceOf(volumeResolution),
+    oi: legendSourceOf(oiResolution),
+    cvd: legendSourceOf(cvdResolution),
+    liquidation_long: legendSourceOf(liquidationLongResolution),
+    liquidation_short: legendSourceOf(liquidationShortResolution),
+    long_short: legendSourceOf(longShortResolution),
+  };
+
+  // `T-01.F1` — `key` is the SEED's identity (`seed-identity.ts`). The pager reads its seed once
+  // per mount, so a new `?interval=` (or a new symbol, or a new knowledge instant) must be a new
+  // instance, never a new render reconciled into the old one (the `e2e/18` regression, `718cb1a`).
   return (
     <SymbolClient
+      key={seedIdentityKey({
+        symbol: routeSymbol,
+        interval: selectedInterval,
+        knowledgeTimeMs: routeWindow.knowledgeTimeMs,
+      })}
       symbol={routeSymbol}
       panels={panels}
       priceCandles={priceCandles}
@@ -975,6 +1010,7 @@ export default async function SymbolPage({
       longShort={longShort}
       historyPagingRows={historyPagingRows}
       historyBaseUrl={historyBaseUrl}
+      paneLegendSources={paneLegendSources}
       panelStatus={{
         price: priceStatus,
         oi: oiResult.status,

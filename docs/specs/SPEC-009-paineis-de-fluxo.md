@@ -68,8 +68,10 @@ a fase `01` para, com o relatório do spike devolvido ao `/architect`.
 - `web` é dono do registry (composição), da camada de DOM por pane e da ligação com o pager;
 - a dívida de **14** constantes de geometria em `web` (`ADR-044` §Consequências) **não pode crescer**.
 
-**Invariante da grade (`ADR-044/D2`):** toda série de todo pane chama `setData` exatamente com os `time`
-da grade canônica do TF. O registry testa isso.
+**Invariante da grade (`ADR-044/D2′`):** a portadora recebe exatamente a grade canônica do TF; toda série de
+pane recebe um **subconjunto** dela (`plotItemsOnly`), e nunca um `time` fora dela. O registry testa isso.
+*(Emendado em 2026-09-26, W1-FIX: a redação anterior, "toda série de todo pane chama `setData` exatamente com
+os `time` da grade", era a D2 de antes da D2′ — achado por `gates/W1-REVIEW.md` WARNING-3.)*
 
 **Posição do HTML de pane** (título, legenda, `BeyondCoverageBadge`/`PartialCoverageMark`/`AbsenceNote`
 — 48 `data-fact=` e 9 `data-testid=` hoje, `[MEDIDO: ARQ-1 §3.2]`): há duas formas estruturais possíveis,
@@ -126,7 +128,7 @@ Um array ordenado; a posição no array é o `paneIndex`, de cima para baixo. Fo
 **Invariantes, cada uma testada com um caso que reprova e um que passa:**
 (i) todo `series_key_id` existe no catálogo servido;
 (ii) todo pane tem ≥ 1 `primary`;
-(iii) toda série `FLOW` tem o par `absence_mark` + `zero_mark` (`ADR-044/D3`);
+(iii) **emendada por `ADR-044/D3′`:** toda série `FLOW` com `kind = histogram` tem o par `absence_mark` + `zero_mark`, e toda série `FLOW` com `kind = line` é alimentada pelo adapter lossless (ausência = *whitespace*);
 (iv) nenhum `label` é literal;
 (v) todo `time` de todo `setData` pertence à grade canônica (`ADR-044/D2`).
 
@@ -351,7 +353,7 @@ Toda fase paga os itens do `DoD-VERTICAL` (`MEMORY: fatia vertical`). Nas fases 
 | `CA-8′` | janela com buraco de M3 ⇒ `0` candle no intervalo **e** `0` candle no primeiro bucket `5m` depois do buraco (`ADR-045/D1`). Janela sem buraco ⇒ **inconclusivo** | costurar a âncora com o último ponto antes do buraco |
 | `CA-9′` | (a) nenhum valor `< 0` em `setData` de liquidação; (b) a legenda mostra **exatamente 2** números, cada um `==` a sua perna na API; (c) em buckets com **as duas pernas `> 0` e distintas**, nenhum número da tela `== |long − short|`. Sem tal bucket na janela ⇒ inconclusivo (A-5) | somar ou subtrair as pernas |
 | `CA-10′` | ausente ≠ zero no pane fundido, **por perna**; sem os dois estados na janela ⇒ inconclusivo | fundir os estados |
-| `CA-11′` | eixo `p95 ≤ 160 ms` (`n ≥ 61`) **e** história `p95 ≤ 400 ms` (`n ≥ 10`), sem regredir sobre a baseline medida em `1.1`, **e** controle negativo que move o `p95` (`ADR-044` §Falsificador) | busy-wait de 20 ms. Se ele não mover o `p95`, é `[NÃO MEDIDO]` e escala, e não sai verde |
+| `CA-11′` | eixo `p95 ≤ 160 ms` (`n ≥ 61`) **e** história `p95 ≤ 400 ms` (`n ≥ 10`), sem regredir sobre a baseline medida em `1.1`, **e** controle negativo que move o `p95` (`ADR-044` §Falsificador). A regressão tem critério em `ADR-044/F-7`: "+1 quadro" no `p95` de rAF em ≥ 2 de 5 rodadas, e reprova | busy-wait de 20 ms. Se ele não mover o `p95`, é `[NÃO MEDIDO]` e escala, e não sai verde |
 | `CA-LIQ` | short `+v` em cima, com token de alta; long embaixo, com token de baixa, lido do **pixel** (y da barra contra a linha de zero) | trocar o `scale_ref` das pernas |
 
 `CA-4`, `CA-5`, `CA-6` e `CA-12` ficam como no PRD.

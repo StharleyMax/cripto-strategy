@@ -65,10 +65,113 @@ mostraria `6` (`LIQUIDATION_ZERO_MARK_PX`, `:989`) como se fosse liquidação;
 novo em **todos** os panes (`ARQ-1` §2). Com `S-1` essa violação deixa de ser local, por isso ela passa
 a ser invariante testada do registry.
 
+### ⛔ Emenda D2′ (2026-09-25): a grade é carregada pelo host, e as séries dos panes recebem só itens de plot
+
+**O defeito medido.** Com um só `createChart`, cada ponto da `timeScale` carrega uma entrada de `mapping` **por
+série**, e um item *whitespace* também cria entrada (`lightweight-charts@5.2.1`,
+`dist/lightweight-charts.development.mjs:11590-11602`). Cada `setData` percorre todos os pontos e o `mapping` de cada
+um (`:11576-11580`, `:11530-11537`, `:11886-11893`). O resultado é que a página custa **118,6 ms** de mediana com as
+14 séries *lossless* `[MEDIDO 2026-09-25, n=40 páginas, handoff/T-01.10-desenho.md §2]`, e o `e2e/20` estoura o teto
+intra-gesto de 160 ms `[DECISÃO-OWNER: 2026-09-22]`.
+
+**A invariante de D2, reescrita em duas regras:**
+- **(a)** uma série **portadora** do host (invisível, no pane 0) recebe **exatamente** os `time` da grade canônica,
+  e recebe **antes** de toda série de pane, no mount e em toda página;
+- **(b)** toda série de pane recebe um **subconjunto** da grade (só itens de plot, pela função `plotItemsOnly` de
+  `charts`, aplicada sobre a saída do adaptador lossless) e **nunca um `time` fora dela**.
+
+O motivo de D2 era impedir que um `time` fora da grade inserisse um índice lógico em todos os panes. **Esse motivo
+fica inteiro em (b).** Os adaptadores lossless **não mudam**.
+
+**Falsificador de D2′**, em três partes, e cada uma diz onde vale:
+
+- **(b), o esparso não muda nenhum pixel.** Comparar o canvas lossless sem portadora com o canvas do desenho
+  (portadora + `plotItemsOnly`) sobre a mesma entrada, com lacuna, bucket isolado, zeros e as marcas de
+  ausência e zero, tem de dar **0 byte** de diferença. No app real, esparso contra `?e2eDenseSeries=1`,
+  também **0 byte**. **Morde:** um valor trocado reprova (3.952 bytes no harness do desenho, 6.061 no
+  `e2e/25`), e o ramo denso com `items.slice(0, -1)` reprova no app (7.742)
+  `[MEDIDO 2026-09-25, n=1 render cada; handoff/T-01.10-desenho.md §4, gates/T-01.10-builder.md §3]`.
+- **(a) eficácia, a portadora sozinha segura a lacuna.** Num gráfico **sem** marcas (linha + vela), o desenho
+  contra o lossless dá **0 byte**. **Morde:** com a portadora também filtrada, as lacunas colapsam (58.018
+  bytes) `[MEDIDO 2026-09-25, n=1 render]`. ⚠️ **Esse controle só existe num gráfico sem marcas.**
+  Positivo + ausência + zero repartem todo slot (`s2-lightweight-adapter.ts:145-216`, e um negativo lança
+  exceção), então com as marcas a união das séries esparsas já é a grade. Ali, filtrar a portadora dá
+  **0 byte**, e isso é esperado, não é falha do controle `[MEDIDO 2026-09-25: a tríade cobre a grade em
+  1000/1000 conjuntos aleatórios de slots; uma linha sozinha em 0/1000]`.
+- **(a) estrutura, que vale em qualquer composição.** O host alimenta a portadora **primeiro**, com
+  `axis.slotCount` itens, e nunca a filtra (`host-series-feed.test.ts`, `F-E`). **Morde:** a portadora
+  passada por `plotItemsOnly` reprova, e a portadora depois dos panes reprova.
+
+**O que isto implica em produção, dito com todas as letras:** com o pane de volume ou o de liquidação
+montado, apagar a portadora **não muda nenhum pixel**. Nessa composição, o único guarda de (a) é o unitário.
+A portadora fica porque ela é a **dona** da invariante: a grade não pode depender da forma das marcas de
+`D3`. **Gatilho:** a composição que deixar de ter uma tríade completa sobre a grade (a fusão da fase `04`, o
+pane de volume ou de liquidação removido ou condicional, o degrau 3 de `T-01.10-desenho.md` §6) obriga o
+`e2e/25` braço (ii) a ganhar uma ablação da portadora que **morda** no app real.
+`[handoff/ADR044-D2P-julgamento.md]`
+
+> ⚠️ **CORREÇÃO, 2026-09-26 (W1-FIX).** A versão anterior deste parágrafo dizia *"**Morde:** filtrar também a
+> portadora colapsa as lacunas"* sem qualificar a composição. `handoff/ADR044-D2P-julgamento.md` §1 mediu que,
+> com as marcas de ausência e zero montadas, esse controle dá **0 byte** por construção. O texto acima é a §4.1
+> daquele julgamento, aplicada literalmente. Achado por `gates/W1-QA.md` (BLOCKER-2) e `gates/W1-REVIEW.md`
+> (WARNING-2).
+
 ## D3 — `RN-4` passa a ser propriedade do registry
 
 Toda série `FLOW` do registry declara o par `absence_mark` + `zero_mark`. O teste do registry reprova
 quando o par falta. Com isso a fusão da fase `04` não consegue "esquecer" a marca (`ARQ-1` §5, invariante iii).
+
+### ⛔ Emenda D3′ (2026-09-23): a invariante (iii) é estreitada ao `kind`, e o CVD não ganha marca
+
+**O defeito medido.** A (iii), como escrita acima, recusa o pane de CVD de hoje: duas linhas `FLOW` (delta
+e acumulado), sem marcas. O teste da `T-01.2` mede **4 violações**, 2 séries × 2 marcas
+(`frontend/src/app/symbol/pane-registry.test.ts:240-250`, em `7f524ad`) `[MEDIDO]`. As duas saídas eram
+pôr marcas no CVD ou estreitar a (iii).
+
+**Decisão: estreitar.** O par de marcas existe porque **uma barra de altura zero não se distingue de
+barra nenhuma**, e o próprio registry escreve isso (`pane-registry.ts:73`: *"which a bar of height zero
+cannot tell apart"*). Numa **linha** alimentada pelo adapter *lossless* (`lineSeriesLossless`,
+`charts/index.ts:124`), o problema não existe: o bucket ausente é *whitespace* e **interrompe a linha**,
+enquanto o zero legítimo é um ponto **no nível 0**. Os dois já são geometrias diferentes, sem marca.
+Pôr marcas no CVD **mudaria a forma dele**, o que o `NG-5` proíbe.
+
+**A (iii′), normativa:**
+- **(iii-a)** toda série de dado `FLOW` com `kind = histogram` tem o par `absence_mark` + `zero_mark`
+  para o **mesmo** `series_key_id` (é a (iii) original, restrita ao `kind` em que ela morde);
+- **(iii-b)** toda série de dado `FLOW` com `kind = line` é alimentada **pelo adapter lossless**
+  (ausência = *whitespace*, nunca `0`, nunca valor carregado). O registry declara isso no `slots_ref`, e
+  quem reprova é o teste do adapter, porque o registry não enxerga o dado;
+- `kind = candlestick` `FLOW` não existe hoje. Se aparecer, é **falha alta** até ser classificado (o mesmo
+  princípio de `UncoveredReductionPairError`).
+
+**O ajuste que a `T-01.5` precisa fazer** (em `pane-registry.ts` e `.test.ts`, onde a `T-01.2` deixou):
+1. a (iii) só dispara quando `series.kind === "histogram"`;
+2. o teste *"(iii) FAILS: today's CVD pane … is refused"* (`:240`) vira **PASSES** e continua medindo
+   o mesmo registro, com as duas linhas `FLOW` e nenhuma marca, agora **aceitas**;
+3. entra um teste **(iii-a) FAILS** que troca o `kind` do CVD para `histogram`, mantém as linhas sem marca
+   e espera **4** violações. É ele que prova que o estreitamento não desligou a (iii);
+4. os testes existentes de volume e de marca de outra série (`:208-238`) continuam reprovando como hoje.
+
+**Falsificador de D3′.** Um bucket de CVD **presente e isolado** (os dois vizinhos ausentes) tem de
+desenhar ≥ 1 pixel no canvas. Se desenhar zero pixel, a linha lossless **não** separa *"presente
+isolado"* de *"ausente"*, a (iii-b) cai, e a correção (marcador de ponto, `pointMarkersVisible`, ou a
+marca) volta ao `/architect` + `design_gate` `[NÃO SEI: comportamento da LineSeries v5 com ponto único
+entre whitespaces; medir na T-01.5]`.
+
+> ⚠️ **CORREÇÃO, 2026-09-26 (W1-FIX): a premissa desta emenda foi medida FALSA, e a decisão fica de pé por
+> outro motivo, ainda não medido.** O parágrafo *"O defeito medido"* acima diz que o bucket ausente é
+> *whitespace* e **interrompe a linha**. Na `lightweight-charts@5.2.1` isso não acontece: o `walkLine` liga itens
+> consecutivos por `lineTo` sem checar lacuna, e o render sintético pinta **169 px** da cor da linha dentro da
+> lacuna dos slots 21–28 `[DOC: handoff/T-01.10-desenho.md §7, MEDIDO 2026-09-25, n=1 render headless]`. O
+> `gates/T-01.11-design-review-r2.md` §5 (E-1) vê o mesmo no pixel real, com OI e CVD atravessando a lacuna.
+> O que **continua** valendo: o zero legítimo é um ponto no nível 0 e a ausência não vira `0` (o adapter lossless
+> não escreve valor no slot ausente), então a (iii-b) segue verdadeira como regra de **dado**. O que **caiu** é o
+> argumento de **geometria** (*"os dois já são geometrias diferentes, sem marca"*): uma lacuna entre dois pontos
+> vira uma reta. O falsificador acima (bucket isolado ≥ 1 px) **não foi rodado** (`gates/T-01.10-builder.md`:
+> *"não rodados"*) `[NÃO MEDIDO]`. **Donos da reabertura:** `quant-architect` (política de ausência por `nature`)
+> + `design_gate`. A implementação da (iii′) no registry (`pane-registry.ts`, W1-FIX) **não** depende desta
+> premissa: ela só estreita a regra ao `kind`, como os itens 1–4 acima pedem. Achado por `gates/W1-REVIEW.md`
+> (WARNING-1).
 
 ## D4 — Liquidação num pane: a perna long **desce por escala invertida**, o dado **nunca é negado**
 
@@ -134,6 +237,27 @@ cadência de entrada do Chromium headless (`p95 ≈ 33 ms` com zero escrita) `[D
 Nesse caso o spike tem de apresentar um segundo instrumento com poder demonstrado (duração de frame por
 `requestAnimationFrame`, ou `PerformanceObserver` `longtask`, com `[NÃO SEI]` sobre qual deles tem poder,
 `ARQ-1` §7). Se nenhum dos dois tiver, **`CA-11` é declarado `[NÃO MEDIDO]` e escalado**, e não sai verde.
+
+## ⛔ Emenda F-7 (2026-09-23): o critério de "+1 quadro" da `T-01.10`
+
+**O defeito medido.** O `p95` do probe de `e2e/17` **salta entre 2 e 3 quadros** (32,8–49,4 ms em 5
+rodadas) **sem mudança de código** (`gates/T-01.1-baseline.md` §2, `n=87` por rodada) `[MEDIDO]`. Esse
+probe não resolve 1 quadro. O instrumento **com poder** é o intervalo de `requestAnimationFrame` durante o
+arrasto: `p95` de **16,7–16,8 ms em 10/10** arrastos, com stub e com dado real (§4, `n=101–197` quadros
+por rodada) `[MEDIDO]`. O spike S-1 deu **33,2–33,3 em 3 de 7** rodadas (`T-01.0-spike-facts.jsonl`) `[MEDIDO]`.
+
+**Critério, fixado ANTES de a `T-01.10` rodar:**
+
+| | regra |
+|---|---|
+| instrumento de julgamento | `p95` do intervalo de rAF durante o arrasto, **dado real** (braço B de `T-01.1` §4), **5 rodadas isoladas**, `n ≥ 100` quadros por rodada |
+| **"+1 quadro" numa rodada** | `p95_rAF ≥ 25,0 ms`, que é 1,5 quadro. O limiar fica no meio do degrau para não depender de 16,7 × 2 exato `[INFERRED: quantização em múltiplos de 16,7 medida nos dois instrumentos]` |
+| **regressão** | "+1 quadro" em **≥ 2 das 5** rodadas. A baseline deu **0/10**. Uma rodada isolada é registrada, mas não reprova `[INFERRED: com 0/10 de base, 1/5 não se distingue de ruído; 2/5 (40%) está perto dos 3/7 (43%) do spike, que é justamente o efeito que se quer pegar]` |
+| **conta como regressão?** | **SIM.** O `CA-11′` exige *"sem regredir sobre a baseline"*, e o rAF é o instrumento com poder. ⇒ a `T-01.10` **não sai verde** |
+| o que acontece quando reprova | **não** é revert automático de S-1, porque 33 ms está abaixo do teto de 160 ms. A task volta com o número e ou a F1 otimiza até sumir, ou o **owner** aceita o quadro explicitamente (`[DECISÃO-OWNER]`). O `/architect` **não** absorve o custo por ele: o 16 ms (*"um quadro a 60 fps"*) era a escolha do owner em 2026-09-19, e o 160 ms foi recalibrado para o probe **sem poder**, não para o rAF |
+| papel do probe de `e2e/17` | só o **teto absoluto** (`p95 ≤ 160 ms`, `n ≥ 61`) e uma banda: a mediana das 5 rodadas `≤ 49,4 ms`, que é o topo da faixa da baseline. **Não** é usado para julgar "+1 quadro" |
+| controle negativo | o busy-wait de 20 ms tem de levar o `p95_rAF` a `≥ 33 ms` em 5/5 rodadas. Se não levar, o resultado é `[NÃO MEDIDO]` e escala (a regra de `ADR-044` §Falsificador) |
+| fora desta emenda | `e2e/20`, que está vermelho em `master` e em diagnóstico pelo `frontend-qa` |
 
 ## Consequências
 

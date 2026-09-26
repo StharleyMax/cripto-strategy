@@ -1,0 +1,332 @@
+// BASELINE `T-01.1` (`paineis-de-fluxo`, `CST-252`) — MEASUREMENT INSTRUMENT, NEVER MERGED INTO frontend/e2e.
+//
+// Companion of `e2e/17` and `e2e/20` for the pre-F1 baseline. It adds the instrument that has
+// DEMONSTRATED power (`T-01.0` §2.2): frame duration by `requestAnimationFrame` during the SAME
+// drag `e2e/17` performs. `longtask` is recorded only as context (power: weak, `T-01.0` §2.2).
+//
+// Three measurements per run:
+//   A) `stub`  — the exact `e2e/17` condition (synthetic OHLC stub, copied literally from
+//                `e2e/17` lines 139-263), probe + rAF on the same drag.
+//   B) `real`  — `/symbol/BTCUSDT` on REAL data through a read-only pass-through proxy (GET/HEAD
+//                only, 405 on anything else; copied from the `T-01.0` spike). Nothing is written.
+//   C) `oi_1m` — `/symbol/BTCUSDT?interval=1m` on real data: every OI `data-fact` and
+//                `data-oi-*` attribute, plus a screenshot of the OI pane.
+//
+// Every number is printed as `E2E-FACT 91-baseline-t011 <name>=<json>`.
+
+import http from "node:http";
+
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
+import { fact, shot, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+
+const SPEC = "91-baseline-t011";
+const SYMBOL = "BTCUSDT";
+const SYMBOL_PATH = `/symbol/${SYMBOL}`;
+const UPSTREAM = process.env.BASELINE_UPSTREAM ?? "http://127.0.0.1:8000";
+const ROUND = process.env.BASELINE_ROUND ?? "0";
+// T-01.10 F-7 negative control: busy-wait N ms in a capture-phase pointermove listener during the drag.
+const PAN_BUSY_MS = Number(process.env.BASELINE_PAN_BUSY_MS ?? "0");
+
+// ── literal copy of e2e/17 lines 139-263 (stub) ─────────────────────────────────────────────
+const N_STEPS = 90;
+const STEP_PX = 3;
+const ONE_MINUTE_MS = 60_000;
+const OHLC_METRIC = "klines_ohlc";
+const OHLC_PROVIDER = "binance";
+const OHLC_REDUCTIONS = ["OPEN", "HIGH", "LOW", "CLOSE"] as const;
+
+declare global {
+  interface Window {
+    __axisLatencyProbe?: { samplesMs: number[]; reset(): void };
+  }
+}
+
+function syntheticOhlcKey(reduction: (typeof OHLC_REDUCTIONS)[number]): Record<string, unknown> {
+  return {
+    provider: OHLC_PROVIDER,
+    venue: OHLC_PROVIDER,
+    instrumentId: SYMBOL,
+    metric: OHLC_METRIC,
+    cohort: "NA",
+    interval: "1m",
+    unit: "USD",
+    denom: "USD",
+    nature: "STOCK",
+    tsConvention: "OHLC_OVER_BUCKET",
+    reduction,
+    quantityField: "NA",
+    labelShift: 0,
+    aggregationScope: "NA",
+    verifiedBy: "T-02.7-synthetic-stub",
+  };
+}
+
+function syntheticCatalogEnvelope(): { readonly query: string; readonly n_entries: number; readonly entries: unknown[] } {
+  const entries = OHLC_REDUCTIONS.map((reduction) => ({
+    key: syntheticOhlcKey(reduction),
+    nativeGrid: "1m",
+    maxStalenessMs: 600_000,
+    priceUse: null,
+    reconstructedFrom: null,
+    publishedError: null,
+  }));
+  return { query: "series_catalog", n_entries: entries.length, entries };
+}
+
+async function startSyntheticOhlcStub(): Promise<{ readonly url: string; close(): Promise<void> }> {
+  const catalog = syntheticCatalogEnvelope();
+  const server = http.createServer((request, response) => {
+    const incoming = new URL(request.url ?? "/", "http://placeholder");
+    if (incoming.pathname.endsWith("/series-catalog")) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(catalog));
+      return;
+    }
+    if (incoming.pathname.endsWith("/series-history")) {
+      const startMs = Number(incoming.searchParams.get("window_start_ms"));
+      const endMsInclusive = Number(incoming.searchParams.get("window_end_ms"));
+      const knowledgeTimeMs = Number(incoming.searchParams.get("knowledge_time_ms"));
+      const seriesKeyId = incoming.searchParams.get("series_key_id") ?? "unknown";
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMsInclusive)) {
+        response.writeHead(400, { "content-type": "text/plain" });
+        response.end("synthetic stub: window_start_ms/window_end_ms missing or not numeric");
+        return;
+      }
+      const rows: { event_time: number; available_at: number; value: string; absence: null; coverage: null }[] = [];
+      for (let t = startMs; t <= endMsInclusive; t += ONE_MINUTE_MS) {
+        const value = 100 + (t % 1_000_000) / 100_000;
+        rows.push({ event_time: t, available_at: t, value: value.toFixed(4), absence: null, coverage: null });
+      }
+      const envelope = {
+        session: { principal_id: null, server_now_ms: Date.now() },
+        panel: {
+          series_key_id: seriesKeyId,
+          source: "T-02.7-synthetic-stub",
+          nature: "STOCK",
+          unit: "USD",
+          coverage: { earliest_bucket_ms: null, latest_bucket_ms: null, source_floor_ms: null },
+        },
+        rows,
+        knowledge_time: Number.isFinite(knowledgeTimeMs) ? knowledgeTimeMs : Date.now(),
+        bar_policy: "final_only",
+      };
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(envelope));
+      return;
+    }
+    response.writeHead(404, { "content-type": "text/plain" });
+    response.end("synthetic stub: no route");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("synthetic stub: no port");
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+  };
+}
+// ── end of the e2e/17 copy ─────────────────────────────────────────────────────────────────
+
+// ── read-only proxy, copied from the T-01.0 spike (e867e16, e2e/90 lines 40-83) ─────────────
+async function startReadOnlyProxy(): Promise<{ readonly url: string; readonly requests: () => number; readonly refused: () => number; close(): Promise<void> }> {
+  let count = 0;
+  let refused = 0;
+  const upstream = new URL(UPSTREAM);
+  const server = http.createServer((request, response) => {
+    response.setHeader("access-control-allow-origin", "*");
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      refused += 1;
+      response.writeHead(405, { "content-type": "text/plain" });
+      response.end("baseline proxy: read-only (GET/HEAD)");
+      return;
+    }
+    count += 1;
+    const forward = http.request(
+      {
+        host: upstream.hostname,
+        port: upstream.port,
+        path: request.url,
+        method: request.method,
+        headers: { accept: request.headers.accept ?? "*/*" },
+      },
+      (upstreamResponse) => {
+        const headers: Record<string, string | string[]> = {};
+        for (const [k, v] of Object.entries(upstreamResponse.headers)) {
+          if (v !== undefined && k !== "content-length" && k !== "transfer-encoding" && k !== "connection") headers[k] = v;
+        }
+        headers["access-control-allow-origin"] = "*";
+        response.writeHead(upstreamResponse.statusCode ?? 502, headers);
+        upstreamResponse.pipe(response);
+      },
+    );
+    forward.on("error", (cause) => {
+      response.writeHead(502, { "content-type": "text/plain" });
+      response.end(`baseline proxy: upstream error ${String(cause)}`);
+    });
+    forward.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("baseline proxy: no port");
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    requests: () => count,
+    refused: () => refused,
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+  };
+}
+
+function percentile(sorted: readonly number[], p: number): number {
+  if (sorted.length === 0) throw new Error("percentile: empty sample");
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1));
+  return sorted[index]!;
+}
+
+function stats(values: readonly number[]): { n: number; p50: number; p95: number; max: number } | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return {
+    n: sorted.length,
+    p50: Number(percentile(sorted, 0.5).toFixed(2)),
+    p95: Number(percentile(sorted, 0.95).toFixed(2)),
+    max: Number(sorted[sorted.length - 1]!.toFixed(2)),
+  };
+}
+
+async function waitForPaintedChart(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => Array.from(document.querySelectorAll("canvas")).some((c) => c.width > 0 && c.height > 0),
+    undefined,
+    { timeout: 120_000 },
+  );
+  await page.waitForTimeout(2_000);
+}
+
+async function startFrameInstruments(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as { __frames: number[]; __framesOn: boolean; __longtasks: number[]; __ltObserver?: PerformanceObserver };
+    w.__frames = [];
+    w.__framesOn = true;
+    w.__longtasks = [];
+    const loop = (t: number) => {
+      if (!w.__framesOn) return;
+      w.__frames.push(t);
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+    try {
+      w.__ltObserver = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) w.__longtasks.push(e.duration);
+      });
+      w.__ltObserver.observe({ type: "longtask", buffered: false });
+    } catch {
+      w.__longtasks.push(-1);
+    }
+  });
+}
+
+async function stopFrameInstruments(page: Page): Promise<{ frames: number[]; longtasks: number[] }> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __frames: number[]; __framesOn: boolean; __longtasks: number[]; __ltObserver?: PerformanceObserver };
+    w.__framesOn = false;
+    w.__ltObserver?.disconnect();
+    return { frames: [...w.__frames], longtasks: [...w.__longtasks] };
+  });
+}
+
+/** The e2e/17 drag (90 steps x 3 px, one `mouse.move` with `steps`), with the rAF loop running. */
+async function measureDrag(page: Page, baseUrl: string, condition: "stub" | "real"): Promise<void> {
+  const response = await page.goto(`${baseUrl}${SYMBOL_PATH}`, { waitUntil: "load" });
+  expect(response?.ok(), `GET ${SYMBOL_PATH}`).toBe(true);
+  await waitForPaintedChart(page);
+  const drawn = await page.locator('[data-testid="price-pane"]').getAttribute("data-price-candles");
+  fact(SPEC, `drawn_candles:${condition}:${ROUND}`, drawn);
+  const box = await page.locator('[data-testid="price-pane"]').locator("xpath=../canvas").first().boundingBox();
+  if (box === null) throw new Error(`${condition}: price canvas has no box`);
+  await page.evaluate(() => window.__axisLatencyProbe?.reset());
+  if (PAN_BUSY_MS > 0) {
+    await page.evaluate((ms) => {
+      window.addEventListener("pointermove", () => { const t0 = performance.now(); while (performance.now() - t0 < ms) { /* busy */ } }, { capture: true });
+    }, PAN_BUSY_MS);
+  }
+  fact(SPEC, `pan_busy_ms:${condition}:${ROUND}`, PAN_BUSY_MS);
+  await startFrameInstruments(page);
+  const startX = box.x + box.width * 0.75;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(startX - N_STEPS * STEP_PX, y, { steps: N_STEPS });
+  await page.mouse.up();
+  const instruments = await stopFrameInstruments(page);
+  const samples = await page.evaluate(() => window.__axisLatencyProbe?.samplesMs ?? []);
+  const intervals: number[] = [];
+  for (let i = 1; i < samples.length; i += 1) intervals.push(samples[i]! - samples[i - 1]!);
+  const frameIntervals: number[] = [];
+  for (let i = 1; i < instruments.frames.length; i += 1) frameIntervals.push(instruments.frames[i]! - instruments.frames[i - 1]!);
+  fact(SPEC, `probe_samples_n:${condition}:${ROUND}`, samples.length);
+  fact(SPEC, `probe:${condition}:${ROUND}`, stats(intervals));
+  fact(SPEC, `raf_frames:${condition}:${ROUND}`, stats(frameIntervals));
+  fact(SPEC, `longtasks:${condition}:${ROUND}`, {
+    n: instruments.longtasks.length,
+    totalMs: Number(instruments.longtasks.reduce((a, b) => a + b, 0).toFixed(1)),
+  });
+  expect(samples.length, `${condition}: probe recorded too few range applications`).toBeGreaterThanOrEqual(61);
+}
+
+test.describe.configure({ mode: "serial" });
+
+test("A) e2e/17 condition (synthetic stub): probe + rAF on the same drag", async ({ page }) => {
+  test.setTimeout(300_000);
+  const stub = await startSyntheticOhlcStub();
+  let instance: NextInstanceHandle | undefined;
+  try {
+    instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: stub.url });
+    await measureDrag(page, instance.baseUrl, "stub");
+  } finally {
+    if (instance !== undefined) await instance.close();
+    await stub.close();
+  }
+});
+
+test("B+C) real data via read-only proxy: probe + rAF drag, and OI on TF 1m", async ({ page }) => {
+  test.setTimeout(600_000);
+  const proxy = await startReadOnlyProxy();
+  let instance: NextInstanceHandle | undefined;
+  try {
+    instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: proxy.url });
+    await measureDrag(page, instance.baseUrl, "real");
+
+    const response = await page.goto(`${instance.baseUrl}${SYMBOL_PATH}?interval=1m`, { waitUntil: "load" });
+    expect(response?.ok()).toBe(true);
+    await waitForPaintedChart(page);
+    const oi = await page.evaluate(() => {
+      const pane = document.querySelector('[data-testid="oi-pane"]');
+      const attrs: Record<string, string> = {};
+      if (pane !== null) {
+        for (const a of Array.from(pane.attributes)) if (a.name.startsWith("data-")) attrs[a.name] = a.value;
+      }
+      const facts = Array.from(document.querySelectorAll("[data-fact]"))
+        .map((el) => el.getAttribute("data-fact") ?? "")
+        .filter((f) => f.startsWith("oi_") || f.startsWith("price_slots") || f.startsWith("price_candles"));
+      return {
+        paneFound: pane !== null,
+        attrs,
+        facts,
+        tvCharts: document.querySelectorAll(".tv-lightweight-charts").length,
+      };
+    });
+    fact(SPEC, `oi_1m:${ROUND}`, oi);
+    const paneBox = await page.locator('[data-testid="oi-pane"]').boundingBox();
+    if (paneBox !== null) {
+      await page.screenshot({ path: `${process.env.E2E_SHOTS_DIR ?? "/tmp"}/T-01.1-oi-1m-round${ROUND}.png`, clip: paneBox });
+    }
+    await shot(page, `T-01.1-symbol-1m-round${ROUND}`);
+  } finally {
+    if (instance !== undefined) await instance.close();
+    fact(SPEC, `proxy_get_requests_total:${ROUND}`, proxy.requests());
+    fact(SPEC, `proxy_refused_non_get:${ROUND}`, proxy.refused());
+    await proxy.close();
+  }
+});

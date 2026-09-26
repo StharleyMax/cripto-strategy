@@ -64,6 +64,19 @@ interface RenderedWindow {
   readonly knowledgeTimeMs: number;
 }
 
+/**
+ * W1-FIX (`gates/W1-QA.md` BLOCKER-1) — whether the `1m` window ALREADY ends on a `4h` boundary.
+ * `request-window.ts` aligns the `1m` right edge to 5 min and the `4h` one to 4 h: when
+ * `floor_5m(now − 5 min)` lands on a 4-hour boundary (`HH:05`–`HH:10` UTC, HH ∈ {00,04,…,20} —
+ * 5 of every 240 min, 2,08 % of clock readings), the two windows are IDENTICAL by construction and
+ * "4h moves the edge" is false, with the product correct. In that band this file measures the
+ * identity instead (and keeps the access-log proof); that the click swaps the drawn grid even
+ * there is `e2e/26`'s proof, which does not depend on the clock.
+ */
+function oneMinuteEdgeIsOnFourHourBoundary(window: RenderedWindow): boolean {
+  return (window.endMsInclusive + 60_000) % FOUR_HOURS_MS === 0;
+}
+
 async function readRenderedWindow(page: import("@playwright/test").Page): Promise<RenderedWindow> {
   const main = page.locator("main[data-window-start-ms]");
   await expect(main, "a página não declara o próprio request (data-window-start-ms)").toHaveCount(1);
@@ -128,9 +141,18 @@ test(`clicar 4h navega, MOVE A JANELA DO SERVIDOR e chega no access log da API (
   // `/series-history` recusando nos dois lados — a janela é computada ANTES de qualquer fetch.
   const after = await readRenderedWindow(page);
   fact(SPEC, "window_after_4h", after);
-  expect(after.endMsInclusive, "MORDE de DoD 6/7: selecionar 4h tem de mover a borda da janela").not.toBe(
-    before.endMsInclusive,
-  );
+  const coincident = oneMinuteEdgeIsOnFourHourBoundary(before);
+  fact(SPEC, "one_minute_edge_on_4h_boundary", coincident);
+  if (coincident) {
+    // The 2,08 % band: the two alignments give the same edge by construction (see the helper).
+    expect(after.endMsInclusive, "na faixa HH:05–HH:10, as janelas de 1m e 4h coincidem por construção").toBe(
+      before.endMsInclusive,
+    );
+  } else {
+    expect(after.endMsInclusive, "MORDE de DoD 6/7: selecionar 4h tem de mover a borda da janela").not.toBe(
+      before.endMsInclusive,
+    );
+  }
   // A borda nova cai numa fronteira de 4h — não apenas "um valor diferente qualquer".
   expect((after.endMsInclusive + 60_000) % FOUR_HOURS_MS, "a borda direita, +1 grid de 1min, cai num limite de 4h").toBe(
     0,
@@ -151,24 +173,53 @@ test(`clicar 4h navega, MOVE A JANELA DO SERVIDOR e chega no access log da API (
 });
 
 test(`ablação (DoD 7): voltar a 1m restaura a janela ORIGINAL, byte a byte (${SPEC})`, async ({ page }) => {
-  await page.goto(SYMBOL_PATH, { waitUntil: "networkidle" });
-  const original = await readRenderedWindow(page);
+  // W1-FIX (`gates/W1-QA.md` BLOCKER-1, second mode): `knowledgeTimeMs` is read off the SERVER's
+  // clock on every render, aligned to 5 min. If a 5-minute boundary falls between the first render
+  // and the round trip back to `1m`, `original` and `restored` differ by the clock, not by the TF.
+  // The round trip is then re-run from scratch (at most 3 attempts; the ~2 s round trip crosses a
+  // 5-min boundary ~0,7 % of the time, so a second crossing in a row is a real leak, not the clock).
+  const MAX_ATTEMPTS = 3;
+  let original: RenderedWindow | null = null;
+  let under4h: RenderedWindow | null = null;
+  let restored: RenderedWindow | null = null;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    await page.goto(SYMBOL_PATH, { waitUntil: "networkidle" });
+    original = await readRenderedWindow(page);
 
-  await page.locator('[data-testid="timeframe-button-4h"]').click();
-  await page.waitForURL(/interval=4h/);
-  await page.waitForLoadState("networkidle");
-  const under4h = await readRenderedWindow(page);
-  expect(under4h.endMsInclusive, "pré-condição: 4h precisa ter movido a janela, senão a ablação não prova nada").not.toBe(
-    original.endMsInclusive,
-  );
+    await page.locator('[data-testid="timeframe-button-4h"]').click();
+    await page.waitForURL(/interval=4h/);
+    await page.waitForLoadState("networkidle");
+    under4h = await readRenderedWindow(page);
 
-  await page.locator('[data-testid="timeframe-button-1m"]').click();
-  await page.waitForURL((url) => !url.searchParams.has("interval"));
-  await page.waitForLoadState("networkidle");
-  const restored = await readRenderedWindow(page);
+    await page.locator('[data-testid="timeframe-button-1m"]').click();
+    await page.waitForURL((url) => !url.searchParams.has("interval"));
+    await page.waitForLoadState("networkidle");
+    restored = await readRenderedWindow(page);
+    fact(SPEC, `ablation_attempt_${attempt}_knowledge_moved`, restored.knowledgeTimeMs !== original.knowledgeTimeMs);
+    if (restored.knowledgeTimeMs === original.knowledgeTimeMs) {
+      break;
+    }
+  }
+  if (original === null || under4h === null || restored === null) {
+    throw new Error("ablation round trip never ran");
+  }
   fact(SPEC, "window_original", original);
   fact(SPEC, "window_under_4h", under4h);
   fact(SPEC, "window_restored_1m", restored);
+
+  // Precondition: 4h must have moved the window, or the ablation proves nothing about it — except
+  // in the `HH:05`–`HH:10` band, where the two windows coincide by construction (the helper above).
+  const coincident = oneMinuteEdgeIsOnFourHourBoundary(original);
+  fact(SPEC, "ablation_one_minute_edge_on_4h_boundary", coincident);
+  if (coincident) {
+    expect(under4h.endMsInclusive, "na faixa HH:05–HH:10, as janelas de 1m e 4h coincidem por construção").toBe(
+      original.endMsInclusive,
+    );
+  } else {
+    expect(under4h.endMsInclusive, "pré-condição: 4h precisa ter movido a janela, senão a ablação não prova nada").not.toBe(
+      original.endMsInclusive,
+    );
+  }
 
   expect(await page.locator('[data-testid="timeframe-button-1m"]').getAttribute("aria-pressed")).toBe("true");
   expect(new URL(page.url()).searchParams.has("interval")).toBe(false);

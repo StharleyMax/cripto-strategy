@@ -283,3 +283,73 @@ test("the guard drops a transient candidate mid-apply that dedupe alone would NO
     "the far-away transient candidates reported mid-apply must NOT have moved the registered state",
   );
 });
+
+// --- paineis-de-fluxo T-01.5 (handoff/FIX-regressoes-fase05.md §3, §4.3) ------------------
+//
+// Under `S-1` (`ADR-044/D1`) the symbol page is ONE chart, so the store runs with
+// `panelCount = 1`. The defect of `e2e/16:204` needed a NON-origin panel that the dispatcher had
+// written and whose echo came back late; with one panel there is no index to write, so there is
+// no echo. These tests pin that "by construction" argument on the dispatcher itself.
+
+test("T-01.5 (a): with panelCount = 1, no gesture ever produces a write", () => {
+  const writesTo: number[] = [];
+  const dispatcher = createRangeDispatcher(AXIS, INITIAL_STATE, 1, (panelIndex) => {
+    writesTo.push(panelIndex);
+  });
+  const gestures: LogicalRange[] = [
+    { from: 12, to: 512 },
+    { from: -40, to: 460 },
+    { from: 300, to: 900 },
+    { from: 5_000, to: 5_759 },
+  ];
+  for (const gesture of gestures) {
+    dispatcher.onPanelRangeChanged(0, gesture);
+  }
+  assert.deepEqual(writesTo, [], "a single-panel dispatcher has no other panel to write");
+  assert.deepEqual(
+    dispatcher.state,
+    { fromMs: 5_000 * 60_000, toMs: 5_759 * 60_000 },
+    "sanity: the gestures were real changes — the state followed the last one",
+  );
+});
+
+test("T-01.5 (b): the origin panel is never written, whichever panel the gesture starts on", () => {
+  // MORDE: removing the `continue` on `index === originIndex` makes every origin appear here —
+  // the shape of the `e2e/16` defect (the panel under the user's drag rewritten by the store),
+  // reproduced without six charts.
+  for (const panelCount of [1, 2, 6]) {
+    for (let origin = 0; origin < panelCount; origin += 1) {
+      const writesTo: number[] = [];
+      const dispatcher = createRangeDispatcher(AXIS, INITIAL_STATE, panelCount, (panelIndex) => {
+        writesTo.push(panelIndex);
+      });
+      dispatcher.onPanelRangeChanged(origin, { from: 12 + origin, to: 512 + origin });
+      assert.equal(
+        writesTo.includes(origin),
+        false,
+        `panelCount=${panelCount}, origin=${origin}: the origin was written (${JSON.stringify(writesTo)})`,
+      );
+      assert.equal(writesTo.length, panelCount - 1, `panelCount=${panelCount}: every OTHER panel is written once`);
+    }
+  }
+});
+
+test("T-01.5: rebase keeps the registered TimeRange and converts later candidates on the NEW axis", () => {
+  const writesTo: number[] = [];
+  const dispatcher = createRangeDispatcher(AXIS, INITIAL_STATE, 1, (panelIndex) => {
+    writesTo.push(panelIndex);
+  });
+  dispatcher.onPanelRangeChanged(0, { from: 100, to: 600 });
+  const before = dispatcher.state;
+  // A page of 500 older slots: same step, start moved 500 slots to the left.
+  const widened: TimeAxis = { startMs: AXIS.startMs - 500 * 60_000, stepMs: 60_000, slotCount: AXIS.slotCount + 500 };
+  dispatcher.rebase(widened);
+  assert.equal(dispatcher.state, before, "rebase must not touch the state (same reference)");
+  // The echo of the page's own setData: the same instants, now 500 indices to the right.
+  dispatcher.onPanelRangeChanged(0, { from: 600, to: 1_100 });
+  assert.equal(dispatcher.state, before, "the echo on the new grid is the same TimeRange — no change");
+  // A real move on the new grid is read on the new grid.
+  dispatcher.onPanelRangeChanged(0, { from: 590, to: 1_090 });
+  assert.deepEqual(dispatcher.state, { fromMs: 90 * 60_000, toMs: 590 * 60_000 });
+  assert.deepEqual(writesTo, [], "panelCount = 1 still writes nothing");
+});

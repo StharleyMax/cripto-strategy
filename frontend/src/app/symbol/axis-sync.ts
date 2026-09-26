@@ -34,16 +34,21 @@ import {
   type TimeRange,
 } from "../../charts/index.ts";
 
-/** Fixed, because the six panels this route mounts are fixed — no conditional panel, no
- * dynamic count. `RangeDispatcher` (`T-02.3`) takes `panelCount` at construction, so an index a
- * future panel needs has to be added HERE, not discovered at runtime. */
-export const PANEL_COUNT = 6;
-export const PRICE_PANEL_INDEX = 0;
-export const OI_PANEL_INDEX = 1;
-export const CVD_PANEL_INDEX = 2;
-export const LIQUIDATION_LONG_PANEL_INDEX = 3;
-export const LIQUIDATION_SHORT_PANEL_INDEX = 4;
-export const LONG_SHORT_PANEL_INDEX = 5;
+/**
+ * `paineis-de-fluxo` `T-01.5` (plan `01` item `1.3`, `ADR-044/D1`) — the symbol page is ONE
+ * `createChart` with one native pane per metric, and the six panes share the library's single
+ * `timeScale`. There is one writer and one reader of the visible range, so the store runs with
+ * `panelCount = 1`: the dispatcher still folds every gesture into ONE registered `TimeRange` (what
+ * `onCandidateRange` and `onRangeApplied` read), and it never writes, because the only panel is
+ * always the origin (`range-dispatch.test.ts`, "T-01.5 (a)").
+ *
+ * The six fixed indices and `PANEL_COUNT = 6` of `T-02.4` are gone. The position of a pane inside
+ * the chart is the pane registry's (`pane-registry.ts::F1_PANE_ORDER`), not a store index.
+ * `RangeDispatcher` still accepts any `panelCount`, and its algebra tests still run with six.
+ */
+export const SINGLE_CHART_PANEL_COUNT = 1;
+/** The only index the single chart registers under. */
+export const SINGLE_CHART_PANEL_INDEX = 0;
 
 /**
  * What `useLightweightChart` (`SymbolClient.tsx`) gets from the provider — `D-C3.1`'s table,
@@ -54,8 +59,20 @@ export const LONG_SHORT_PANEL_INDEX = 5;
  * handler calls — the "assina" and "despacha" halves, with "aplica" happening inside `write`.
  */
 export interface AxisSyncStore {
+  /** The axis conversions currently run against — the construction axis until `rebase`. */
   readonly axis: TimeAxis;
+  /** The framing applied ONCE, at mount, on the construction axis. Never re-read on a page. */
   readonly initialLogicalRange: LogicalRange;
+  /** The registered visible range, in milliseconds — independent of any axis. */
+  readonly currentRange: TimeRange;
+  /**
+   * `paineis-de-fluxo` `T-01.5` (`handoff/FIX-regressoes-fase05.md` §4.3) — ONE store per mount,
+   * not per axis. A history page widens the grid; the host calls `rebase(newAxis)` right after
+   * `setData` on every series (inside `guard.holdApplying()`), and the store keeps its state in
+   * milliseconds. The echo of that `setData` (`from + k` on the new grid) converts to the same
+   * milliseconds and does NOT reach `onCandidateRange` — so a page never pages again on its own.
+   */
+  rebase(nextAxis: TimeAxis): void;
   /** Registers `write` as panel `panelIndex`'s applier. Returns the unregister function — a
    * chart that unmounts (or is about to be replaced) MUST call it, or a later dispatch would
    * call into a `write` closure that still references a disposed `IChartApi`. */
@@ -76,12 +93,11 @@ export interface AxisSyncStore {
 
 /**
  * Builds ONE `AxisSyncStore` over `axis` — one `RangeDispatcher` (`T-02.3`), one initial
- * `LogicalRange`, one `panelCount`-sized table of panel writers. `axis` is expected to be
- * held fixed for the store's whole life: a NEW axis needs a NEW store (`createRangeDispatcher`
- * takes the axis at construction, same discipline `T-02.2`'s `createTimeAxisController`
- * documents — "swapping the axis means constructing a new controller, not mutating this
- * one"), which is deliberately what a FUTURE timeframe switch would need, not something this
- * task's caller triggers today (there is no TF selector in this route yet).
+ * `LogicalRange`, one `panelCount`-sized table of panel writers. `axis` is the CONSTRUCTION
+ * axis; since `paineis-de-fluxo` `T-01.5` a history page no longer builds a new store — it calls
+ * `rebase(newAxis)`, which keeps the state in milliseconds (`handoff/FIX-regressoes-fase05.md`
+ * §4.3). A timeframe switch is still a new store: it is a new seed, and the `key` of
+ * `<SymbolClient>` (`T-01.F1`) remounts the whole tree.
  *
  * `onRangeApplied` — `T-02.7` (`RNF-2`, `p95 <= 16ms` over `n >= 60` frames of one continuous
  * drag) — is called ONCE per `notifyPanelRangeChanged` call that actually produced a write to
@@ -134,8 +150,19 @@ export function withAxisSyncAblation(store: AxisSyncStore, ablated: boolean): Ax
   if (!ablated) {
     return store;
   }
+  // Delegating accessors, not an object spread: `axis`/`currentRange` change on `rebase` and on
+  // every dispatch (`T-01.5`), and a spread would freeze the values of the instant it ran.
   return {
-    ...store,
+    get axis() {
+      return store.axis;
+    },
+    get currentRange() {
+      return store.currentRange;
+    },
+    initialLogicalRange: store.initialLogicalRange,
+    guard: store.guard,
+    rebase: (nextAxis) => store.rebase(nextAxis),
+    registerPanel: (panelIndex, write) => store.registerPanel(panelIndex, write),
     notifyPanelRangeChanged: () => {
       // Deliberately empty — see this function's own docstring. `registerPanel` stays real,
       // so a regression that re-enabled dispatch while ablation is requested would still show
@@ -172,7 +199,7 @@ export interface AxisSyncStoreOptions {
 
 export function createAxisSyncStore(
   axis: TimeAxis,
-  panelCount: number = PANEL_COUNT,
+  panelCount: number = SINGLE_CHART_PANEL_COUNT,
   onRangeApplied?: () => void,
   options: AxisSyncStoreOptions = {},
 ): AxisSyncStore {
@@ -191,10 +218,20 @@ export function createAxisSyncStore(
     writes[panelIndex]?.(logical);
   };
   const dispatcher: RangeDispatcher = createRangeDispatcher(axis, initialRange, panelCount, write);
+  let currentAxis = axis;
   return {
-    axis,
+    get axis() {
+      return currentAxis;
+    },
+    get currentRange() {
+      return dispatcher.state;
+    },
     initialLogicalRange: toLogicalRange(initialRange, axis),
     guard: dispatcher.guard,
+    rebase(nextAxis) {
+      currentAxis = nextAxis;
+      dispatcher.rebase(nextAxis);
+    },
     registerPanel(panelIndex, panelWrite) {
       if (!Number.isInteger(panelIndex) || panelIndex < 0 || panelIndex >= panelCount) {
         throw new RangeError(`panelIndex out of range: received ${panelIndex}, panelCount is ${panelCount}`);

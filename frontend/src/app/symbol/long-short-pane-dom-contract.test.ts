@@ -59,7 +59,10 @@ const NATIVE_BARS_ATTRIBUTE = /data-long-short-native-bars=\{longShort\.nativeBa
 const WIRE_POINTS_ATTRIBUTE = /data-long-short-wire-points=\{longShort\.wirePoints\}/;
 const ABSENT_BRANCH =
   /longShort\.reading\.kind === "absent" \|\| longShort\.reading\.value === null\s*\n?\s*\? ABSENCE_TOKEN/;
-const LOSSLESS_SETDATA = /series\.setData\(lineSeriesLossless\(longShort\.slots\) as never\);/;
+// `T-01.10` (`ADR-044/D2′`): the pane no longer calls `setData` — its `apply` RETURNS `{ series, items }`
+// feeds and the host applies them after the grid carrier. The contract (WHICH lossless mapping
+// feeds WHICH series) is unchanged; only the call site moved, so the anchors follow it.
+const LOSSLESS_SETDATA = /\{ series, items: lineSeriesLossless\(longShort\.slots\) \}/;
 const HORIZON_FACT =
   /data-fact=\{`long_short_readable_horizon:\$\{longShort\.nativeBars\}\/\$\{longShort\.wirePoints\}\/\$\{gridSlots\}`\}/;
 /** ⚠️ RE-ANCHORED BY `T-04.8`, AND THE LOOSENING IS NAMED RATHER THAN SILENT: it used to end in
@@ -70,7 +73,12 @@ const HORIZON_FACT =
  * is fed `longShort` and its OWN status. The `MORDE` case below still bites, because deleting the
  * match leaves no `<LongShortPane longShort={longShort} status={panelStatus.longShort}` behind. */
 const PANE_RENDERED = /<LongShortPane longShort=\{longShort\} status=\{panelStatus\.longShort\}/;
-const ABSENCE_NOTE_RENDERED = /<LongShortReadableHorizon longShort=\{longShort\} \/>\s*\n\s*<AbsenceNote status=\{status\} \/>/;
+// `paineis-de-fluxo` `T-01.6`: the absence note moved into the pane's LEGEND (row 2, beside the
+// provenance), while the readable horizon went to the part of the layer that is not painted
+// (`PaneDetails`). The property is unchanged — the long/short pane renders `AbsenceNote` with its
+// own status — so the anchor is its new neighbour, not the old one.
+const ABSENCE_NOTE_RENDERED =
+  /\{hasObservation \? <LongShortProvenance provenance=\{longShort\.provenance\} \/> : null\}\s*\n\s*<AbsenceNote status=\{status\} \/>/;
 
 /** `page.tsx`: the selector, CALLED through the unique-match helper. */
 const PAGE_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesCountLongShortRatio\(entry\.key\)\)/;
@@ -235,7 +243,7 @@ test("MORDE: each of the 7 pane mutations is caught by an assert above", () => {
       mutate: (s) =>
         s.replace(
           LOSSLESS_SETDATA,
-          "series.setData(longShort.slots.map((slot) => ({ time: slot.time, value: slot.value ?? 0 })) as never);",
+          "{ series, items: longShort.slots.map((slot) => ({ time: slot.time, value: slot.value ?? 0 })) }",
         ),
     },
     {
@@ -296,14 +304,27 @@ test("CALA: a design_gate NEEDS_FIX about colour, wording or order leaves the co
   // `observações nativas de 5 min` as LITERALS. Both cadence terms are now read off the catalog
   // entry (`identityTerms`/`nativeGridSuffix`), so the old strings are gone from the source and
   // those two `.replace` calls had become no-ops — a CALA that mutates nothing proves nothing.
-  const restyled = source
-    .replace(/Long\/short de contas\{identityTerms\(longShort\)\}/, "Razão long\\/short{identityTerms(longShort)}")
-    .replace(/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}")
-    .replace(/\{longShort\.nativeBars\} observações nativas/, "{longShort.nativeBars} leituras")
-    .replace(
-      'const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };\n    const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);\n    // `lineSeriesLossless`',
-      'const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceWeak };\n    const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style);\n    // `lineSeriesLossless`',
-    );
-  assert.notEqual(restyled, source, "the form anchors moved — re-anchor this CALA rather than dropping it");
+  // ⚠️ `paineis-de-fluxo` `T-01.8`: THE SAME DEFECT, A THIRD TIME, and this time on the colour edit.
+  // `T-01.5` moved the series into `useHostedPane("long_short", { mount: (chart, paneIndex) => … })`,
+  // so the old literal `chart.addSeries(LineSeries, style);` (no `paneIndex`) was gone and the colour
+  // `.replace` became a silent no-op, while the single `notEqual(restyled, source)` below stayed green
+  // because the three wording edits still changed something. The colour edit is re-anchored on the
+  // hosted-pane `mount`, and every edit is now checked ONE BY ONE, so the next move of any anchor
+  // fails here instead of shrinking the CALA without a word.
+  const edits: readonly (readonly [string | RegExp, string])[] = [
+    [/Long\/short de contas\{identityTerms\(legends\.long_short\)\}/, "Razão long\\/short{identityTerms(legends.long_short)}"],
+    [/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}"],
+    [/\{longShort\.nativeBars\} observações nativas/, "{longShort.nativeBars} leituras"],
+    [
+      'useHostedPane("long_short", {\n    mount: (chart, paneIndex) => {\n      const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };',
+      'useHostedPane("long_short", {\n    mount: (chart, paneIndex) => {\n      const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceWeak };',
+    ],
+  ];
+  let restyled = source;
+  for (const [anchor, replacement] of edits) {
+    const next = restyled.replace(anchor, replacement);
+    assert.notEqual(next, restyled, `the form anchor ${String(anchor).slice(0, 60)}… moved — re-anchor this CALA rather than dropping it`);
+    restyled = next;
+  }
   assert.ok(survivesClient(restyled), "a pure restyling must leave every contract assert of this file green");
 });

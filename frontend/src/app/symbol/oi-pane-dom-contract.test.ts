@@ -209,7 +209,9 @@ test("V-1: the ` UTC` suffix is printed ONCE — the formatter owns it, no call 
   // Sanity on the universe: this assert is worth something only if there ARE call sites to scan.
   assert.equal(
     (source.match(/formatUtcMinute\(/g) ?? []).length,
-    9,
+    // 9 → 10 in `paineis-de-fluxo` `T-01.6`: `ChromeModeStamp` spells T with the same formatter
+    // (gate r2 `C-4`), and appends no ` UTC` of its own — the assert below still scans it.
+    10,
     "one declaration + EIGHT call sites — five from `T-03.5`, the liquidation pane's own readable " +
       "horizon (`T-05.9`), the long/short pane's (`T-04.5`) and its age stamp (`T-04.8`, the `S-6` " +
       "carimbo the `design_gate` requires at the right edge of time). If the count moved, re-anchor " +
@@ -362,7 +364,8 @@ test("MORDE: each of the 7 OI DOM-contract mutations that used to pass green is 
 test("CALA: a design_gate NEEDS_FIX about colour or wording leaves the OI contract intact", () => {
   const restyled = source
     .replace(/color: colorTokens\(\)\.provenanceStrong/, "color: colorTokens().provenanceWeak")
-    .replace(/Open Interest \(5m\)/, "Open Interest — contratos em aberto (5m)")
+    // `T-01.7`: the heading's cadence comes off the catalog entry now (`identityTerms(legends.oi)`).
+    .replace(/Open Interest\{identityTerms\(legends\.oi\)\}/, "Open Interest — contratos em aberto{identityTerms(legends.oi)}")
     .replace(/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}")
     .replace(/barras nativas de 5 min na janela/, "buckets de 5 min legíveis")
     .replace(/⚠️ Mais velha que o teto — o valor acima é DADO VELHO\./, "Atenção: leitura vencida.")

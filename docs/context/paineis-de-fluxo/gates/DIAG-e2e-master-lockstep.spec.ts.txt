@@ -1,0 +1,68 @@
+// DIAGNOSTIC ONLY — never committed (DIAG-e2e-master). Replays gesture 0 of spec 16 and records,
+// through a MutationObserver, every write-count / visible-range change on the six containers.
+import fs from "node:fs";
+import { expect, test, type Page } from "@playwright/test";
+
+const IDS = ["price-pane", "oi-pane", "cvd-pane", "liquidation-cohort-long", "liquidation-cohort-short", "long-short-pane"];
+const OUT = process.env.DIAG_OUT ?? "/tmp/diag-lockstep.json";
+
+async function counts(page: Page): Promise<Record<string, string | null>> {
+  return page.evaluate((ids) => {
+    const r: Record<string, string | null> = {};
+    for (const id of ids) {
+      const el = document.querySelector(`[data-testid="${id}"] [data-visible-logical-from]`) as HTMLElement | null;
+      r[id] = el?.dataset.axisSyncWriteCount ?? null;
+    }
+    return r;
+  }, IDS);
+}
+
+async function settle(page: Page): Promise<Record<string, string | null>> {
+  let prev = await counts(page);
+  for (let i = 0; i < 25; i += 1) {
+    await page.waitForTimeout(400);
+    const cur = await counts(page);
+    if (JSON.stringify(cur) === JSON.stringify(prev)) return cur;
+    prev = cur;
+  }
+  throw new Error("never settled");
+}
+
+test("diag: gesture 0 timeline", async ({ page }) => {
+  const reqs: { wall: number; url: string; status?: number }[] = [];
+  page.on("response", (r) => {
+    if (r.url().includes("series-history")) reqs.push({ wall: Date.now(), url: r.url().slice(0, 200), status: r.status() });
+  });
+  await page.goto("/symbol/BTCUSDT", { waitUntil: "networkidle" });
+  for (const id of IDS) {
+    await expect(page.locator(`[data-testid="${id}"] [data-visible-logical-from]`)).toHaveCount(1);
+  }
+  const baseline = await settle(page);
+  await page.evaluate((ids) => {
+    const w = window as unknown as { __diag: unknown[] };
+    w.__diag = [];
+    for (const id of ids) {
+      const el = document.querySelector(`[data-testid="${id}"] [data-visible-logical-from]`) as HTMLElement;
+      new MutationObserver((muts) => {
+        for (const m of muts) {
+          w.__diag.push({ t: Math.round(performance.now() * 10) / 10, id, attr: m.attributeName, v: el.getAttribute(m.attributeName!) });
+        }
+      }).observe(el, { attributes: true, attributeFilter: ["data-axis-sync-write-count", "data-visible-logical-from"] });
+    }
+  }, IDS);
+  const container = page.locator(`[data-testid="price-pane"] [data-visible-logical-from]`);
+  const box = (await container.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.waitForTimeout(100);
+  await page.mouse.move(x + 150, y, { steps: 50 });
+  await page.waitForTimeout(100);
+  await page.mouse.up();
+  const after = await settle(page);
+  const log = await page.evaluate(() => (window as unknown as { __diag: unknown[] }).__diag);
+  const origin = await page.evaluate(() => performance.timeOrigin);
+  const net = reqs.map((r) => ({ t: Math.round((r.wall - origin) * 10) / 10, status: r.status, url: r.url }));
+  fs.writeFileSync(OUT, JSON.stringify({ baseline, after, log, net }, null, 1));
+});

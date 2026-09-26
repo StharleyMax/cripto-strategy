@@ -1,0 +1,121 @@
+// Micro-benchmark: cost of applying one history page (prepend 500 slots) to the panes of the
+// symbol chart, lightweight-charts 5.2.1 standalone production, headless Chromium.
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/wave-paineis-f01/frontend/node_modules/playwright/index.mjs";
+
+const LIB = "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/wave-paineis-f01/frontend/node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js";
+const variant = process.argv[2] ?? "single14";
+const rounds = Number(process.argv[3] ?? 5);
+
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1400, height: 1200 } });
+await page.setContent(`<html><body style="margin:0"><div id="root" style="width:1300px"></div></body></html>`);
+await page.addScriptTag({ path: LIB });
+
+let result = await page.evaluate(async ({ variant, rounds }) => {
+  const L = window.LightweightCharts;
+  const STEP = 60;
+  const N0 = 5760;
+  const PAGE = 500;
+  const PAGES = 8;
+  const END = 1_790_000_000 - (1_790_000_000 % STEP);
+  const rnd = (i) => { const x = Math.sin(i * 12.9898) * 43758.5453; return x - Math.floor(x); };
+  function grid(n) { const start = END - n * STEP; return Array.from({ length: n }, (_, i) => start + i * STEP); }
+  // Slot generators, one item per grid slot (the lossless adapters' shape).
+  const gens = {
+    candle: (t) => { const i = t / STEP; const o = 100 + rnd(i) * 5; const c = 100 + rnd(i + 1) * 5; return { time: t, open: o, high: Math.max(o, c) + 1, low: Math.min(o, c) - 1, close: c }; },
+    volume: (t) => ({ time: t, value: 1 + rnd(t) * 100 }),
+    absence: (t) => (rnd(t + 7) < 0.03 ? { time: t, value: 6 } : { time: t }),
+    zero: (t) => (rnd(t + 9) < 0.05 ? { time: t, value: 4 } : { time: t }),
+    marks: (t) => { const r = rnd(t + 7); return r < 0.03 ? { time: t, value: 6, color: "#8b949e" } : r < 0.08 ? { time: t, value: 4, color: "#ffffff" } : { time: t }; },
+    liq: (t) => (rnd(t + 3) < 0.053 ? { time: t, value: 1 + rnd(t) * 1e5 } : { time: t }),
+    liqAbs: (t) => (rnd(t + 5) < 0.01 ? { time: t, value: 6 } : { time: t }),
+    liqZero: (t) => (rnd(t + 3) >= 0.053 ? { time: t, value: 4 } : { time: t }),
+    liqMarks: (t) => (rnd(t + 5) < 0.01 ? { time: t, value: 6, color: "#8b949e" } : rnd(t + 3) >= 0.053 ? { time: t, value: 4, color: "#fff" } : { time: t }),
+    oi: (t) => ((t / STEP) % 5 === 0 ? { time: t, value: 1e9 + rnd(t) * 1e6 } : { time: t }),
+    ls: (t) => ((t / STEP) % 5 === 0 ? { time: t, value: 1 + rnd(t) } : { time: t }),
+    cvd: (t) => ({ time: t, value: rnd(t) * 100 - 50 }),
+  };
+  const H = L.HistogramSeries, Ln = L.LineSeries, C = L.CandlestickSeries;
+  const panes14 = [
+    [[C, "candle"], [H, "volume", "vol"], [H, "absence", "marks"], [H, "zero", "marks"]],
+    [[H, "liq"], [H, "liqAbs", "m"], [H, "liqZero", "m"]],
+    [[H, "liq"], [H, "liqAbs", "m"], [H, "liqZero", "m"]],
+    [[Ln, "oi"]],
+    [[Ln, "ls"]],
+    [[Ln, "cvd"], [Ln, "cvd", "cum"]],
+  ];
+  const panes11 = [
+    [[C, "candle"], [H, "volume", "vol"], [H, "marks", "marks"]],
+    [[H, "liq"], [H, "liqMarks", "m"]],
+    [[H, "liq"], [H, "liqMarks", "m"]],
+    [[Ln, "oi"]],
+    [[Ln, "ls"]],
+    [[Ln, "cvd"], [Ln, "cvd", "cum"]],
+  ];
+  const layout = variant.startsWith("single11") ? panes11 : panes14; const prune = variant.includes("prune"); const carrier = variant.includes("carrier"); gens.ws = (t) => ({ time: t });
+  const root = document.getElementById("root");
+  const charts = [];
+  const seriesList = []; // {series, gen}
+  function makeChart(height) {
+    const el = document.createElement("div"); root.appendChild(el);
+    const chart = L.createChart(el, { width: 1300, height, timeScale: { timeVisible: true } });
+    charts.push(chart); return chart;
+  }
+  if (variant.startsWith("multi14")) {
+    for (const pane of layout) {
+      const chart = makeChart(200);
+      for (const [def, gen, scale] of pane) {
+        const s = chart.addSeries(def, scale ? { priceScaleId: scale } : {}, 0);
+        seriesList.push({ series: s, gen: gens[gen] });
+      }
+    }
+  } else {
+    const chart = makeChart(1100);
+    if (carrier) seriesList.push({ series: chart.addSeries(L.LineSeries, { visible: false, priceScaleId: "grid", lastValueVisible: false, priceLineVisible: false }, 0), gen: gens.ws, isCarrier: true });
+    layout.forEach((pane, p) => {
+      for (const [def, gen, scale] of pane) {
+        const s = chart.addSeries(def, scale ? { priceScaleId: scale } : {}, p);
+        seriesList.push({ series: s, gen: gens[gen] });
+      }
+    });
+  }
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r(performance.now())));
+  const out = [];
+  for (let round = 0; round < rounds; round++) {
+    let n = N0;
+    const g0 = grid(n);
+    const t0 = performance.now();
+    seriesList.forEach(({ series, gen, isCarrier }, k) => { const d = g0.map(gen); series.setData(prune && (carrier ? !isCarrier : k > 0) ? d.filter((x) => Object.keys(x).length > 1) : d); });
+    const tMount = performance.now() - t0;
+    for (const c of charts) c.timeScale().setVisibleLogicalRange({ from: n - 300, to: n });
+    await frame(); await frame();
+    const pageTimes = []; const buildTimes = []; const frameTimes = [];
+    for (let p = 0; p < PAGES; p++) {
+      n += PAGE;
+      const g = grid(n);
+      const b0 = performance.now();
+      const datas = seriesList.map(({ gen, isCarrier }, k) => { const d = g.map(gen); return prune && (carrier ? !isCarrier : k > 0) ? d.filter((x) => Object.keys(x).length > 1) : d; });
+      const b1 = performance.now();
+      const per=[]; for (let i = 0; i < seriesList.length; i++) { const q=performance.now(); seriesList[i].series.setData(datas[i]); per.push(performance.now()-q);} (window.__per ||= []).push(per);
+      const b2 = performance.now();
+      const f = await frame(); // lib paint rAF was scheduled before ours
+      const f2 = await frame();
+      buildTimes.push(b1 - b0); pageTimes.push(b2 - b1); frameTimes.push(f - b2);
+    }
+    out.push({ tMount, pageTimes, buildTimes, frameTimes });
+    // reset for next round
+    for (const { series } of seriesList) series.setData([]);
+    await frame();
+  }
+  return {out, per: window.__per};
+}, { variant, rounds });
+const perAll = result.per; result = result.out;
+
+const med = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+const all = result.flatMap((r) => r.pageTimes);
+const build = result.flatMap((r) => r.buildTimes);
+const fr = result.flatMap((r) => r.frameTimes);
+const perPageIdx = result[0].pageTimes.map((_, i) => med(result.map((r) => r.pageTimes[i])).toFixed(1));
+console.log(JSON.stringify({ variant, rounds, n: all.length, setData_median_ms: med(all).toFixed(1), setData_max_ms: Math.max(...all).toFixed(1), build_median_ms: med(build).toFixed(1), frame_median_ms: med(fr).toFixed(1), setData_median_by_page: perPageIdx }));
+const cols = perAll[0].map((_, i) => med(perAll.map(r => r[i])).toFixed(1)); console.log('per-series median ms', cols.join(' '));
+await browser.close();

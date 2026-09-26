@@ -132,6 +132,10 @@ export type {
   LineItem,
   WhitespaceItem,
 } from "./s2-lightweight-adapter.ts";
+// `paineis-de-fluxo` `T-01.10` (`ADR-044/D2′`) — the grid carried by ONE host series, the pane
+// series fed plot items only. `plotItemsOnly` FILTERS the lossless output above; it never replaces it.
+export { gridCarrierItems, isPlotItem, plotItemsOnly } from "./sparse-series-feed.ts";
+export type { SeriesFeedItem } from "./sparse-series-feed.ts";
 
 // ── 4. tokens de cor ─────────────────────────────────────────────────────────────────────────
 export {
@@ -181,3 +185,60 @@ export { toLogicalRange, fromLogicalRange, historyRequest, DEFAULT_PAGE_TRIGGER_
 export type { TimeAxis, TimeRange, LogicalRange, HistoryCoverage, HistoryRequest } from "./time-axis-controller.ts";
 export { createRangeDispatcher } from "./range-dispatch.ts";
 export type { RangeDispatcher, PanelWrite } from "./range-dispatch.ts";
+
+// ── 7. bandas de marca ancoradas no pane ─────────────────────────────────────────────────────
+//
+// `T-01.3` (`paineis-de-fluxo`, plano `01` item `1.4`, `ADR-044/D1`): the absence/zero mark band
+// stops deriving from `CHART_HEIGHT_PX` in `web` and is computed here from `IPaneApi.getHeight()`.
+// `web` hands over the FORM (margins, nominal heights); `charts` returns the autoscale range and
+// the values the two mark series are fed.
+export {
+  markBandGeometry,
+  markBandGeometryOfPane,
+  LIBRARY_SCALE_PIXEL_INSET,
+  MIN_DRAWABLE_MARK_PX,
+} from "./mark-band-geometry.ts";
+export type { MarkBandSpec, MarkBandGeometry, MarkBandPriceRange, PaneHeightSource } from "./mark-band-geometry.ts";
+
+// ── 8. leitura da legenda ────────────────────────────────────────────────────────────────────
+//
+// `T-01.4` (`paineis-de-fluxo`, plano `01` item `1.6`, a metade PURA; `ADR-044/D2`, `RF-4`,
+// `RN-4`, `ADR-026`): `(param.logical, slots, nature) -> value | held | forming | absent`. The
+// crosshair wiring that calls it is `T-01.7`, in `web` — which cannot reach this module except
+// through this barrel (`no-restricted-imports`, group `"**/charts/**"`).
+// ── 9. geometria vertical da pilha de panes ──────────────────────────────────────────────────
+//
+// `T-01.6` (`paineis-de-fluxo`, plano `01` item `1.5`, `[Q-DG-1]`): the chart height that keeps
+// every pane at its floor, and the scale margins that keep the marks out from under the per-pane
+// DOM layer (and off the separator, `C-6`). `web` measures (pane height, legend bottom) and
+// applies; the arithmetic lives here (`ADR-003/FR-2`).
+export {
+  stackedPaneLayout,
+  paneScaleMargins,
+  F1_PANE_STACK_FORM,
+  PANE_SEPARATOR_PX,
+  SEPARATOR_CLEARANCE_PX,
+  LEGEND_GAP_PX,
+  MAX_LEGEND_RESERVE_FRACTION,
+} from "./pane-stack-layout.ts";
+export type {
+  PaneStackForm,
+  PaneStackLayout,
+  ScaleMargins,
+  PaneScaleRole,
+  PaneScaleMeasure,
+  PaneScaleMargins,
+} from "./pane-stack-layout.ts";
+
+export { resolveLegendReading, lastClosedSlotIndex, LegendNatureNotCoveredError } from "./legend-reading.ts";
+export type {
+  LegendReading,
+  LegendReadingInput,
+  LegendValueReading,
+  LegendHeldReading,
+  LegendFormingReading,
+  LegendAbsentReading,
+  LegendNature,
+  LegendSource,
+  ReadingNature,
+} from "./legend-reading.ts";

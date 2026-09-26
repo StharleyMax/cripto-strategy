@@ -1,0 +1,33 @@
+// node parse.mjs <lote dir> — tabela por rodada de F-A / F-B / F-C e e2e/17.
+import fs from "node:fs";
+import path from "node:path";
+const dir = process.argv[2];
+const read = (tag) => {
+  const f = path.join(dir, `${tag}.jsonl`);
+  if (!fs.existsSync(f)) return {};
+  const o = {};
+  for (const l of fs.readFileSync(f, "utf8").split("\n").filter(Boolean)) {
+    const { name, value } = JSON.parse(l);
+    o[name] = value;
+  }
+  return o;
+};
+const rc = Object.fromEntries(
+  fs.readFileSync(path.join(dir, "rc.log"), "utf8").split("\n").filter((l) => l.includes("rc="))
+    .map((l) => { const [, tag, r] = l.split(" "); return [tag, r.replace("rc=", "")]; }),
+);
+const up = Object.fromEntries(
+  fs.readFileSync(path.join(dir, "uptime.log"), "utf8").split("\n").filter(Boolean)
+    .map((l) => { const [, tag] = l.split(" "); return [tag, l.match(/load average: ([\d]+,[\d]+)/)[1]]; }),
+);
+const rounds = [...new Set(Object.keys(rc).map((t) => t.split("-")[0]))];
+console.log("round | arm | load1 | rc | intra_max | intra_n | intra_p95 | pg_p95 | pg_n | apply_p50 | series_feed | e17_p95 | e17_n");
+for (const r of rounds) {
+  for (const arm of ["e20-sparse", "e20-dense", "e20-busy80", "e17"]) {
+    const t = `${r}-${arm}`; const f = read(t);
+    const p = (k) => (f[k] === undefined ? "-" : JSON.stringify(f[k]));
+    console.log([r, arm, up[t], rc[t], p("axis_intra_gesture_interval_max_ms"), p("axis_intra_gesture_interval_n"),
+      p("axis_intra_gesture_interval_p95_ms"), p("history_page_latency_p95_ms"), p("history_page_pair_n"),
+      p("history_page_apply_p50_ms"), p("series_feed"), p("axis_latency_p95_ms"), p("axis_latency_samples")].join(" | "));
+  }
+}

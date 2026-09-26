@@ -1,0 +1,84 @@
+== b-2e86ade
+sha=2e86ade2232ad8874bf5a085ee2e6961dca38f19
+round 1 rc=1 1 failed 1 passed 
+round 2 rc=1 1 failed 1 passed 
+round 3 rc=1 1 failed 1 passed 
+== b-48d47e5
+sha=48d47e50d7fa4ff757737916d3559d863c924738
+round 1 rc=1 1 failed 1 passed 
+round 2 rc=1 1 failed 1 passed 
+== b-7f63aa0
+sha=7f63aa0b65d1e3228b76a1ce6aafc433bfa157e6
+round 1 rc=0 2 passed 
+round 2 rc=0 2 passed 
+== b-c0fe440
+sha=c0fe4407ac20949fab1b999af0873dcd5b301fb8
+round 1 rc=0 2 passed 
+round 2 rc=0 2 passed 
+== b-d88d579
+sha=d88d57917b35a8ca9f70e90a8f71c6a0b0c47ed6
+round 1 rc=0 2 passed 
+round 2 rc=0 2 passed 
+== b-ef608ec
+sha=ef608eca4d890b5aaef7d7d1e4247a372c2fe825
+round 1 rc=0 2 passed 
+round 2 rc=0 2 passed 
+round 3 rc=0 2 passed 
+== diag16-7f63aa0
+sha=7f63aa0b65d1e3228b76a1ce6aafc433bfa157e6
+round 1 rc=0 1 passed 
+== diag16-master
+sha=ba21f07e763983f88b40cac46884439b78f3a9e2
+round 1 rc=0 1 passed 
+== diag16-master2
+sha=ba21f07e763983f88b40cac46884439b78f3a9e2
+round 1 rc=0 1 passed 
+== diag20-master
+sha=ba21f07e763983f88b40cac46884439b78f3a9e2
+round 1 rc=1 1 failed 
+round 2 rc=1 1 failed 
+round 3 rc=1 1 failed 
+== diag20b-master
+sha=ba21f07e763983f88b40cac46884439b78f3a9e2
+round 1 rc=1 1 failed 
+== diag20c-master
+sha=ba21f07e763983f88b40cac46884439b78f3a9e2
+round 1 rc=1 1 failed 
+== diag20d-master
+sha=ba21f07e763983f88b40cac46884439b78f3a9e2
+round 1 rc=1 1 failed 
+round 2 rc=1 1 failed 
+== f04-08e5e75
+sha=08e5e7518f5cb83a891007af24272de694046a0f
+round 1 rc=0 6 passed 
+round 2 rc=0 6 passed 
+== master-ba21f07
+sha=ba21f07e763983f88b40cac46884439b78f3a9e2
+round 1 rc=1 4 failed 3 passed 
+round 2 rc=1 4 failed 3 passed 
+round 3 rc=1 4 failed 3 passed 
+== pre-t052-0c9cb43
+sha=0c9cb43566c3bb404fbfb2b5f5b9ef8fbecf9e44
+round 1 rc=0 4 passed 
+round 2 rc=0 4 passed 
+== real-7f63aa0
+sha=7f63aa0b65d1e3228b76a1ce6aafc433bfa157e6 universe=real-via-ro-proxy
+round 1 rc=0 3 passed 
+round 2 rc=0 3 passed 
+proxy GET=84 refused=0
+== real-master
+sha=ba21f07e763983f88b40cac46884439b78f3a9e2 universe=real-via-ro-proxy
+round 1 rc=1 3 failed 4 passed 
+round 2 rc=1 3 failed 4 passed 
+proxy GET=268 refused=0
+== real-tf-master
+sha=ba21f07e763983f88b40cac46884439b78f3a9e2 universe=real-via-ro-proxy
+round 1 rc=0 1 passed 
+proxy GET=39 refused=0
+== s20-d88d579
+sha=d88d57917b35a8ca9f70e90a8f71c6a0b0c47ed6
+round 1 rc=1 1 failed 
+== t052-718cb1a
+sha=718cb1a578255ee66af0ebc65d2c03e3058e0ee9
+round 1 rc=1 2 failed 4 passed 
+round 2 rc=1 2 failed 4 passed 

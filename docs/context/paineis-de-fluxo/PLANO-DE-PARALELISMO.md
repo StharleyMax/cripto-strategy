@@ -25,7 +25,7 @@
 
 | # | restrição | origem | força |
 |---|---|---|---|
-| R-A | **≤ 2 tasks simultâneas** em worktree, mesmo quando o DAG liberar mais | `D8`, `MEMORY: orquestração` | `[PREMISSA-OWNER: 2026-09-10]` |
+| R-A | ~~≤ 2~~ **≤ 3 tasks simultâneas** em worktree, mesmo quando o DAG liberar mais (**desde 2026-09-24**; era 2) | `D8`, `MEMORY: orquestração`; **`handoff/DECISOES-DO-OWNER-2026-09-24.md` D-2**, *"executando as atividades em parelelo com até 3 tasks ao mesmo tempo"* | `[PREMISSA-OWNER: 2026-09-10]`, sucedida por `[PREMISSA-OWNER: 2026-09-24]` (§7) |
 | R-B | **`depends_on`** é respeitado sempre | contrato da quebra | `[DOC]` |
 | R-C | **espinha da trilha de tela: `01 → 02 → 04 → 03b`**. A `03a` corre fora dela | `plans/SPEC-009/index.md` §Ordem, despacho | `[DOC]` |
 | R-D | **no máximo um editor de `SymbolClient.tsx` por lote** (2.936 linhas, `wc -l` em `61dbf6b`) | `SPEC-009` §8: *"nenhuma outra branch edita `SymbolClient.tsx`"*. Duas worktrees num lote são duas branches | `[DOC]` |
@@ -51,6 +51,9 @@ contenção, e o controle negativo de 20 ms pode sumir no ruído ou aparecer por
 (§5.1): **1 lote** (27 → 26 sem a regra). É barato para não ter um verde que ninguém consegue interpretar.
 
 ## 3. Os 27 lotes — o que a execução segue
+
+> ⚠️ **Tabela de 2026-09-23, superada para o que falta da F1.** Os lotes 1–3 foram executados. O que falta segue
+> **§7** (teto 3, `T-01.F1`/`T-01.F2`, prioridade por caminho crítico). O texto abaixo fica como registro.
 
 Ordem de cima para baixo. Cada lote tem ≤ 2 tasks, em worktrees isoladas. **Editor** = edita
 `SymbolClient.tsx`.
@@ -220,3 +223,53 @@ do `tasks.toml`.
 - o `frontend-qa` não grava `gate-record`: o orquestrador roda o comando;
 - **revalidar o gate após mudança de produção**, pedindo a mutação e não o relatório;
 - subagente morre cedo: passando de ~150 turnos, escreve handoff em `handoff/<TASK>.md` e devolve.
+
+## 7. Emenda de 2026-09-24: teto 3 e as tasks de correção da fase 05
+
+**Origem:** `handoff/DECISOES-DO-OWNER-2026-09-24.md`. **D-1** `[DECISÃO-OWNER: 2026-09-24, escolha entre
+alternativas apresentadas]` põe as 3 regressões da fase 05 dentro da F1. **D-2** `[PREMISSA-OWNER: 2026-09-24]`
+sobe a R-A para **≤ 3**. A R-D (um editor de `SymbolClient.tsx` por lote) e a R-E (latência em lote solo)
+**continuam**. O desenho da correção está em `handoff/FIX-regressoes-fase05.md`.
+
+**O que mudou no script de §5**, e vale também para o `tasks.toml` (conferido com `harness tasks validate`, 41
+tasks, 0 ERROR, 0 WARN):
+
+```python
+# dicionario T: duas tasks novas, duas arestas novas
+ "T-01.F1":("01",[],0,0), "T-01.F2":("01",[],0,0),                 # nenhuma edita SymbolClient.tsx
+ "T-01.8":("01",["T-01.6","T-01.F1","T-01.F2"],0,0),              # re-ancora o e2e/20 da F2; exige e2e/18 verde
+ "T-01.10":("01",["T-01.1","T-01.8","T-01.F2"],0,1),              # nao mede composicao no instrumento inflado
+TETO = int(a[0]) if a and a[0].isdigit() else 3                   # R-A (D-2)
+# prioridade: caminho critico primeiro (a cadeia mais longa ate o fim), depois a ordem do dicionario
+def altura(i): return 1 + max((altura(j) for j in T if i in T[j][1]), default=0)
+prio = lambda i: (0 if T[i][0] in trilha else 1, -altura(i), list(T).index(i))
+# partida real: feito = {"T-01.0","T-01.1","T-01.2","T-01.3"} (argumento "real")
+```
+
+**O que falta, a partir do estado real** `[MEDIDO 2026-09-24: script emendado, argumento real]`:
+
+| lote | tasks | nota |
+|---|---|---|
+| 1 | `T-01.5` + `T-01.4` + `T-01.F1` | `T-01.5` é a editora. A `T-01.F1` só toca em `[symbol]/page.tsx` e num módulo puro |
+| 2 | `T-01.F2` + `T-01.6` + `T-03.1` | `T-01.6` é a editora. A `T-01.F2` só toca em `e2e/20`. Aqui a `03a` começa, e ela divide o teto com a W1 |
+| 3 | `T-01.7` + `T-01.8` + `T-03.2` | `T-01.7` é a editora. A `T-01.8` zera a lista de vermelhos esperados (FIX §6) |
+| 4 | `T-01.9` + `T-03.3` | |
+| 5 | `T-01.10` | solo (latência). Refaz a baseline de composição do `e2e/20` (FIX §4.1) |
+| 6 | `T-01.11` + `T-03.4` | **a W1 fecha aqui**: QA + review, depois PR e merge (D-2) |
+
+**Total a partir daqui: 24 lotes, 41 tasks, ocupação 1,71.** A mesma partida com a prioridade antiga (ordem
+do dicionário) dá 25 lotes, e a W1 fecha no lote 7 em vez do 6: a `T-01.4` pegava a vaga do lote 1 e empurrava a
+`T-01.5`, que é a cabeça do caminho crítico.
+
+**O falsificador de §5.1, rodado de novo sobre o script emendado** `[MEDIDO 2026-09-24, partida real, n=41]`:
+
+```
+regra desligada   total   a saída mudou?
+teto 3 -> 2         25    SIM   (lote 1 perde a T-01.F1; F1+F2 viram um lote próprio)
+sem R-D (editor)    23    SIM
+sem R-E (solo)      23    SIM
+sem R-C (espinha)   24    NÃO   (a espinha continua no depends_on, §2.1)
+```
+
+⚠️ **O teto de 3 é da execução inteira**, W1 e W2 juntas. A `03a` roda noutra worktree
+(`REGRAS-DE-DESPACHO-WORKFLOW-2026-09-24.md`), mas ocupa a mesma vaga.

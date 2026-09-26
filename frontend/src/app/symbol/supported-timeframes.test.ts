@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_TIMEFRAME, isSupportedTimeframe, SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
+import { DEFAULT_TIMEFRAME, isSupportedTimeframe, SUPPORTED_TIMEFRAMES, timeframeStepMs } from "./supported-timeframes.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // `frontend/src/app/symbol` -> repo root is four levels up.
@@ -146,4 +146,12 @@ test("every stepMs is a positive integer multiple of the finest member's own ste
       `"${option.interval}".stepMs (${option.stepMs}) must be a multiple of the finest grid (${finestStepMs})`,
     );
   }
+});
+
+test("W1-FIX MF-B: timeframeStepMs gives each served interval's width, and refuses an outsider", () => {
+  assert.deepEqual(
+    SUPPORTED_TIMEFRAMES.map((option) => timeframeStepMs(option.interval)),
+    [60_000, 300_000, 900_000, 3_600_000, 14_400_000],
+  );
+  assert.throws(() => timeframeStepMs("2h"), RangeError);
 });

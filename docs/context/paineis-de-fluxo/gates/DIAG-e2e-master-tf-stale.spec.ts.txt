@@ -1,0 +1,39 @@
+// DIAGNOSTIC ONLY — never committed (DIAG-e2e-master). What the OPERATOR sees before/after the
+// 4h click: the price pane's own published facts, not only <main>'s request attributes.
+import { expect, test, type Page } from "@playwright/test";
+import { fact } from "./helpers.ts";
+
+const SPEC = "97-diag-tf-stale";
+
+async function snapshot(page: Page): Promise<Record<string, unknown>> {
+  return page.evaluate(() => {
+    const main = document.querySelector("main[data-window-start-ms]") as HTMLElement | null;
+    const price = document.querySelector('[data-testid="price-pane"]') as HTMLElement | null;
+    const facts = Array.from(document.querySelectorAll("[data-fact]"))
+      .map((el) => el.getAttribute("data-fact") ?? "")
+      .filter((f) => /^(price_slots|price_candles|oi_slots|volume_readable_horizon)/.test(f));
+    return {
+      url: location.search,
+      windowStart: main?.dataset.windowStartMs,
+      windowEnd: main?.dataset.windowEndMsInclusive,
+      priceCandles: price?.getAttribute("data-price-candles"),
+      facts,
+    };
+  });
+}
+
+test("diag: TF 4h click — what the panes draw", async ({ page }) => {
+  await page.goto("/symbol/BTCUSDT", { waitUntil: "networkidle" });
+  const before = await snapshot(page);
+  await page.locator('[data-testid="timeframe-button-4h"]').click();
+  await page.waitForURL(/interval=4h/);
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(1500);
+  const after4h = await snapshot(page);
+  await page.goto("/symbol/BTCUSDT?interval=4h", { waitUntil: "networkidle" });
+  const direct4h = await snapshot(page);
+  fact(SPEC, "before", before);
+  fact(SPEC, "after_click_4h", after4h);
+  fact(SPEC, "direct_load_4h", direct4h);
+  expect(true).toBe(true);
+});

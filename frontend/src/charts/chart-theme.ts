@@ -89,6 +89,18 @@ export interface ChartSurfaceTheme {
   readonly textColor: string;
   /** Chrome, not a datum — see this module's docstring for why it is not a `ColorRole`. */
   readonly gridLineColor: string;
+  /**
+   * `paineis-de-fluxo` `T-01.6` (`[Q-DG-1]`, `MF-10` + `C-6` of
+   * `docs/context/paineis-de-fluxo/gates/DESIGN-LAYOUT-ux-critique-r2.md`): the 1px line between
+   * two panes of the one chart. `provenanceWeak` (`#8b949e`, 5,82:1 against the surface) because it
+   * is the only existing neutral token that passes 3:1. The gate quoted the library default as
+   * `#2B2B43` (`1,30:1`); the installed 5.2.1 bundle actually defaults to `#E0E3EB`, a light bar the
+   * design never chose (`#2B2B43` is the price-scale border default) — `pane-chrome-options.test.ts`
+   * reads it from the bundle. Either way, forgetting the override regresses `MF-10` in silence. Also the
+   * hover colour: with `enableResize = false` a hover that changes colour would suggest a drag that
+   * does not exist (gate r2 §1 item 4).
+   */
+  readonly paneSeparatorColor: string;
 }
 
 /**
@@ -102,5 +114,6 @@ export function chartSurfaceTheme(): ChartSurfaceTheme {
     backgroundColor: SURFACE_BASE,
     textColor: tokens.provenanceWeak,
     gridLineColor: CHART_GRID_LINE,
+    paneSeparatorColor: tokens.provenanceWeak,
   };
 }

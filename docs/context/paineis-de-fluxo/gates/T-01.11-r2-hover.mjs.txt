@@ -1,0 +1,15 @@
+// Hover over a stretch WITH data (80% of the price pane) and read the 8 legend slots.
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/wf_b15536f1-3fb-14/frontend/node_modules/playwright/index.mjs";
+const OUT = process.argv[2];
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 1200 }, deviceScaleFactor: 1 });
+await page.goto("http://127.0.0.1:4322/symbol/BTCUSDT", { waitUntil: "load", timeout: 180_000 });
+await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180_000 });
+await page.waitForTimeout(5000);
+const box = await page.locator('[data-testid="price-pane"]').boundingBox();
+await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.5);
+await page.waitForTimeout(800);
+const l = await page.evaluate(() => Array.from(document.querySelectorAll("[data-legend-value]")).map((e) => `${e.getAttribute("data-legend-value")}|${e.getAttribute("data-legend-source")}|${e.getAttribute("data-legend-absence")}|${e.textContent.trim()}`));
+console.log(l.join("\n"));
+await page.screenshot({ path: `${OUT}/T-01.11-r2-1280x1200-crosshair-80.png` });
+await browser.close();

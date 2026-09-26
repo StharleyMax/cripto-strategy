@@ -42,13 +42,13 @@ feature = "paineis-de-fluxo"
 spec = "docs/specs/SPEC-009-paineis-de-fluxo.md"
 plan = "docs/plans/SPEC-009-paineis-de-fluxo"
 review = "docs/context/paineis-de-fluxo/tasks_review.md"
-untracked_note = "2026-09-23: TODAS as 39 tasks estao cardadas em CST (Jira, board 36). Epics, um por fatia: CST-246 (F1 O esqueleto), CST-247 (F2 O volume com direcao), CST-248 (F3a O coletor de OI), CST-249 (F3b O candle de OI), CST-250 (F4 As liquidacoes num pane). Tarefas filhas CST-251..CST-289, com tracker inline. Nenhuma task ficou local_only."
+untracked_note = "2026-09-23: TODAS as 39 tasks estao cardadas em CST (Jira, board 36). Epics, um por fatia: CST-246 (F1 O esqueleto), CST-247 (F2 O volume com direcao), CST-248 (F3a O coletor de OI), CST-249 (F3b O candle de OI), CST-250 (F4 As liquidacoes num pane). Tarefas filhas CST-251..CST-289, com tracker inline. Nenhuma task ficou local_only. 2026-09-24: T-01.F1 e T-01.F2 (correcao das regressoes da fase 05, D-1 de handoff/DECISOES-DO-OWNER-2026-09-24.md) entraram SEM card; cardar sob o Epic CST-246 e ato do orquestrador."
 
 [[tasks]]
 id = "T-01.0"
 title = "[web][charts] 01 · ⛔ Spike: um createChart com panes nativos sobre dado real, F-1..F-5 + controle negativo de F-1 (NAO mergeado)"
 components = ["web", "charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = []
 refs = [
@@ -66,7 +66,7 @@ tracker = { provider = "jira", id = "CST-251", url = "https://conversationhub.at
 id = "T-01.1"
 title = "[web] 01 · Baseline de latencia no HEAD de master: 5 rodadas isoladas de e2e/17 e e2e/20 (p50/p95/max) + como o OI aparece hoje no TF 1m"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.0"]
 refs = [
@@ -83,7 +83,7 @@ tracker = { provider = "jira", id = "CST-252", url = "https://conversationhub.at
 id = "T-01.2"
 title = "[web] 01 · Pane registry: array ordenado, paneIndex = posicao, invariantes (i)-(v) com um caso que reprova e um que passa"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.0"]
 refs = [
@@ -102,7 +102,7 @@ tracker = { provider = "jira", id = "CST-253", url = "https://conversationhub.at
 id = "T-01.3"
 title = "[charts] 01 · Geometria das bandas de marca ancorada em IPaneApi.getHeight(), em charts; as 14 constantes de geometria de web nao crescem"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.0"]
 refs = [
@@ -114,11 +114,50 @@ refs = [
 ]
 tracker = { provider = "jira", id = "CST-254", url = "https://conversationhub.atlassian.net/browse/CST-254" }
 
+# ── CORRECAO 2026-09-24 (D-1): as 3 regressoes da fase 05 de candle-real-e-eixo-unico ──
+# Desenho: handoff/FIX-regressoes-fase05.md. 16 fica obsoleto por construcao com T-01.5
+# (panelCount=1) e 20-codigo vira criterio de T-01.5; por isso so ha DUAS tasks de fix.
+# Nenhuma das duas edita SymbolClient.tsx: cabem no lote da T-01.5 sem violar R-D.
+
+[[tasks]]
+id = "T-01.F1"
+title = "[web] 01 · FIX e2e/18: key em <SymbolClient> com a identidade do seed (symbol, interval, knowledgeTimeMs) — TF bar inerte desde 718cb1a"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 Correcao item 1.F1 + DoD 9",
+    "handoff/FIX-regressoes-fase05.md §2",
+    "gates/DIAG-e2e-master.md §2, §5.1",
+    "ADR-005/D1 (o cache E o knowledge_time)",
+    "Escopo: frontend/src/app/symbol/[symbol]/page.tsx (a linha do <SymbolClient>) + modulo puro novo com a funcao da chave e teste node --test. NAO edita SymbolClient.tsx nem use-history-pager.ts (R-D; T-01.5 corre no mesmo lote).",
+    "DoD: e2e/18:107 e 18:153 verdes; DIAG-e2e-master-tf-stale.spec.ts.txt mostra 24 velas depois do clique em 4h (hoje 4583).",
+    "MORDE: tirar interval da chave reprova 18:107; unitario reprova se dois seeds de TF diferente derem a mesma chave. CALA: mesmo (symbol, interval, knowledgeTimeMs) => mesma chave.",
+]
+
+[[tasks]]
+id = "T-01.F2"
+title = "[web] 01 · FIX e2e/20 (so teste): intervalo de eixo so dentro de [moveStart, moveEnd] + assercao 'o range do Preco, em tempo, continua mudando depois da pagina' que REPROVA hoje (24/24)"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
+phase = "01"
+depends_on = []
+refs = [
+    "plano 01 Correcao item 1.F2 + DoD 11(a)",
+    "handoff/FIX-regressoes-fase05.md §4.1",
+    "gates/DIAG-e2e-master.md §4, §5.3; gates/DIAG-e2e-master-20-intra-inter.spec.ts.txt (o metodo)",
+    "Escopo: SO frontend/e2e/20-teto-latencia-historia-sob-demanda.spec.ts. Zero linha de producao.",
+    "Range EM TEMPO (data-window-start-ms + data-visible-logical-from x passo, lidos no mesmo callback), nao em indice logico: sem remonte, a pagina desloca o logico em +k sem mover a vista.",
+    "DoD: intra-gesto max <= 160 ms (DIAG: 66,5-82,6 ms, n=243/rodada); a assercao nova REPROVA no codigo atual com o motivo 'range parado depois da pagina' em todo gesto com pagina; salto na fronteira da pagina registrado como fact, SEM assercao (T-01.8 calibra).",
+    "O vermelho resultante e o HONESTO e entra na lista de vermelhos esperados ate T-01.8 (FIX §6). Numero de latencia desta task NAO e medicao (lote nao-solo).",
+]
+
 [[tasks]]
 id = "T-01.4"
 title = "[charts] 01 · Leitura da legenda como funcao pura: (param.logical, slots, nature) -> valor, held ou ausente; sem crosshair, o ultimo bucket FECHADO"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.0"]
 refs = [
@@ -136,7 +175,7 @@ tracker = { provider = "jira", id = "CST-255", url = "https://conversationhub.at
 id = "T-01.5"
 title = "[web][charts] 01 · Montagem unica: useLightweightChart vira host, addSeries com paneIndex, axis-sync com panelCount=1; saem os 6 indices fixos e PANEL_COUNT=6"
 components = ["web", "charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.2", "T-01.3"]
 refs = [
@@ -146,6 +185,12 @@ refs = [
     "RF-6",
     "EDITOR de SymbolClient.tsx",
     "DoD: PANEL_COUNT sai de axis-sync.ts/axis-sync-provider.tsx (e das 37 ocorrencias em teste, grep -c em 61dbf6b); RangeDispatcher e os testes de algebra verdes sem editar assercao; e2e 08..15 verdes (nenhuma forma de serie muda).",
+    "CORRECAO 2026-09-24 (plano 01 item 1.3', DoD 10/11(b); handoff/FIX-regressoes-fase05.md §3, §4.2, §4.3):",
+    "(e2e/16, por construcao) range-dispatch.test.ts: panelCount=1 => nenhum gesto escreve; a origem nunca e escrita. MORDE: tirar o continue de index === originIndex.",
+    "(e2e/20, codigo) O HOST SOBREVIVE A PAGINA: uma store por mount com rebase(axis) preservando state em ms; AxisSyncProvider deixa de recriar a store em useMemo([axis]); o efeito do host NAO depende da identidade da store nem do axis; pagina = holdApplying -> setData -> rebase -> release no rAF seguinte; o host nao escreve initialRange/preservedRange no caminho de pagina.",
+    "axis-sync.test.ts: depois do rebase, o eco da propria pagina (from+k no eixo novo) nao aciona onCandidateRange. MORDE: rebase que mantem o eixo velho => cascata de paginas.",
+    "data-chart-mount-count na raiz do host + NOVO frontend/e2e/22-single-host-survives-paging.spec.ts: == 1 depois de >= 2 paginas por arrasto. MORDE: devolver axisSync/axis as deps do host. NAO editar e2e/16, 20, 21 (T-01.F2/T-01.8).",
+    "[NAO SEI] do FIX §4.2: widenAndCapWindow corta a borda DIREITA (5.760 > 5.000 slots ja na 1a pagina); se isso mover a vista no arrasto, adiar o corte ate o fim do gesto. Saida C (adiar a pagina ao pointerup) so com escalonamento ao owner pelo teto de 400 ms.",
 ]
 tracker = { provider = "jira", id = "CST-256", url = "https://conversationhub.atlassian.net/browse/CST-256" }
 
@@ -153,7 +198,7 @@ tracker = { provider = "jira", id = "CST-256", url = "https://conversationhub.at
 id = "T-01.6"
 title = "[web][charts] 01 · Camada de DOM por pane sobre getHTMLElement(): pointer-events none, scaleMargins.top reservando a legenda, setStretchFactor com piso de 72px, enableResize=false, separador #8b949e testado"
 components = ["web", "charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.5"]
 refs = [
@@ -168,6 +213,7 @@ refs = [
     "data-testid atuais sobrevivem na raiz da camada, derivados de pane_id.",
     "MORDE: remover o override de separador reprova; remover scaleMargins.top faz marca intersectar a legenda no render.",
     "⚠️ R-2: os pesos 34/11/15/9/9/9/9 nomeiam 7 panes; a F1 tem 6 (liquidacao em 2, CVD em 1). A renormalizacao e do design_gate, decidida AQUI.",
+    "CORRECAO 2026-09-24: com o host sobrevivendo a pagina (T-01.5, FIX §4.3), o getHTMLElement() nulo no tick de criacao (T-01.0-spike §6.2) so acontece no MOUNT, nao mais a cada paginacao.",
 ]
 tracker = { provider = "jira", id = "CST-257", url = "https://conversationhub.atlassian.net/browse/CST-257" }
 
@@ -175,7 +221,7 @@ tracker = { provider = "jira", id = "CST-257", url = "https://conversationhub.at
 id = "T-01.7"
 title = "[web] 01 · Ligacao crosshair -> legenda: subscribeCrosshairMove SEM filtro por paneIndex, nome derivado de identityTerms uma vez por pane, coluna fixa para os numerais (C-8)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.4", "T-01.6"]
 refs = [
@@ -194,14 +240,18 @@ tracker = { provider = "jira", id = "CST-258", url = "https://conversationhub.at
 id = "T-01.8"
 title = "[web] 01 · Re-ancorar e2e 16, 20 e 21 e os contratos de DOM acoplados a construcao (ARQ-1 §6); e2e/11 intacto"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
-depends_on = ["T-01.6"]
+depends_on = ["T-01.6", "T-01.F1", "T-01.F2"]
 refs = [
     "plano 01 item 1.7",
     "ARQ-1 §6",
     "DoD: git diff --stat <base>..HEAD -- frontend/e2e/11-canvas-fundo.spec.ts VAZIO.",
     "Contabilidade dos 56 testes de *-pane-dom-contract.test.ts: quantos sobrevivem, quantos migram para T-01.2, nenhum some sem destino.",
+    "CORRECAO 2026-09-24 (plano 01 item 1.7', DoD 10/11(c); handoff/FIX-regressoes-fase05.md §3, §4.3, §6):",
+    "e2e/16 re-ancorado: o Preco nao recebe escrita do dispatcher no proprio arrasto (write-count do host = 0 no gesto). MORDE: dispatcher escrevendo na origem.",
+    "e2e/20 re-ancorado SOBRE a versao da T-01.F2: a assercao 'range continua mudando depois da pagina' VERDE; o salto de tempo na fronteira da pagina vira assercao com limiar medido. MORDE: axisSync/axis de volta as deps do host.",
+    "e2e/18 (T-01.F1), e2e/21 (parede, sem cascata) e e2e/22 (T-01.5) verdes. Depois desta task a lista de vermelhos esperados (FIX §6) fica VAZIA.",
 ]
 tracker = { provider = "jira", id = "CST-259", url = "https://conversationhub.atlassian.net/browse/CST-259" }
 
@@ -209,7 +259,7 @@ tracker = { provider = "jira", id = "CST-259", url = "https://conversationhub.at
 id = "T-01.9"
 title = "[web] 01 · Playwright contra o app real: 1 grafico (CA-1'), 1 eixo por pixel (CA-2'), legenda == API em n>=5 posicoes (CA-3'/CA-4), legenda derivada (CA-5), com as 4 ablacoes"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.7", "T-01.8"]
 refs = [
@@ -230,15 +280,16 @@ tracker = { provider = "jira", id = "CST-260", url = "https://conversationhub.at
 id = "T-01.10"
 title = "[web] 01 · Teto de latencia (CA-11'): e2e/17 p95<=160ms com n>=61, e2e/20 p95<=400ms com n>=10, sem regredir sobre T-01.1, controle negativo que move o p95"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
-depends_on = ["T-01.1", "T-01.8"]
+depends_on = ["T-01.1", "T-01.8", "T-01.F2"]
 refs = [
     "plano 01 DoD 7",
     "CA-11'",
     "RNF-2",
     "tetos: DECISAO-OWNER 2026-09-22 (eixo) e 2026-09-19 (historia)",
     "Lote SOLO. Sem o controle negativo movendo o p95 => [NAO MEDIDO] e escala; NAO sai verde.",
+    "CORRECAO 2026-09-24 (plano 01 DoD 12; handoff/FIX-regressoes-fase05.md §4.1 item 4): a coluna axis_max_interval_during_paging_ms da T-01.1 (550-584 ms) mediu a pausa do driver e NAO e regua. Refazer a baseline de composicao do e2e/20 com o instrumento da T-01.F2 sobre o codigo de 6 charts (merge-base da W1 + o spec da T-01.F2), 5 rodadas, antes de medir o HEAD. A latencia borda->desenho (<= 400 ms) da T-01.1 continua valida.",
 ]
 tracker = { provider = "jira", id = "CST-261", url = "https://conversationhub.atlassian.net/browse/CST-261" }
 
@@ -246,7 +297,7 @@ tracker = { provider = "jira", id = "CST-261", url = "https://conversationhub.at
 id = "T-01.11"
 title = "[web] 01 · Veredito do ux-ui-mastery sobre o SCREENSHOT Playwright do app real com dado real (C-0, render medido)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.9"]
 refs = [

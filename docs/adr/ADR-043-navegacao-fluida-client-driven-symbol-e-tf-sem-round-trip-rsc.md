@@ -99,6 +99,15 @@ prop, módulo cliente-safe, `pushState` bruto) sobre uma superfície **nova**, s
 regressão sobre uma superfície **já aprovada**. Migrar os dois ao mesmo tempo é reescrever duas
 vezes se o padrão da Perna 1 precisar de ajuste depois de tocar produção.
 
+> ⚠️ **CORREÇÃO, 2026-09-24 (`frontend-architect`).** A premissa da linha 95 (*"o comportamento de
+> `T-03.11` está em produção, testado e correto"*) é **falsa desde `718cb1a`** (`T-05.2`). A partir desse
+> commit, clicar em `4h` muda a URL e a tela continua com as velas de `1m`: 4583 velas em vez de 24. O bisect deu
+> `0c9cb43` verde 2/2 e `718cb1a` vermelho 2/2 `[MEDIDO: docs/context/paineis-de-fluxo/gates/DIAG-e2e-master.md
+> §2]`. A **ordem** das pernas não muda (`[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas]`:
+> depois de `DONE` de `paineis-de-fluxo`), e a correção entra antes disso, na `T-01.F1`
+> (`docs/context/paineis-de-fluxo/handoff/FIX-regressoes-fase05.md` §2, §5). O texto original fica, porque o valor
+> do registro está em ele mostrar o erro.
+
 ## O que esta ADR NÃO decide — e por quê
 
 - **CORS do FastAPI para `GET /series-history`/`GET /series-catalog` a partir do browser.** SSE já
