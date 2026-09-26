@@ -20,7 +20,9 @@
 # QA já se perderam por remover worktree sem conferir.
 set -euo pipefail
 
-MAIN="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+# Resolvido a partir do PRÓPRIO script, não do diretório corrente: o orquestrador pode chamá-lo
+# de fora do repositório (pasta de rascunho) e ainda assim tem de achar o checkout principal.
+MAIN="$(dirname "$(git -C "$(dirname "$(readlink -f "$0")")" rev-parse --path-format=absolute --git-common-dir)")"
 WT_DIR="$MAIN/.claude/worktrees"
 DEPS=(frontend/node_modules backend/.venv data)
 
