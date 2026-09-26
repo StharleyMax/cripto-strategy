@@ -1,5 +1,10 @@
 """Open Interest, populated for both sources — `CA-F2-17`: five rows, never a collapsed one."""
 
+# `T-03.3` (`SPEC-009`) adds a separate builder for a sixth, polled identity per symbol
+# (`binance_open_interest_poll_entry`); see the block above it for why it is not a sixth row of
+# `open_interest_catalog_entries`.
+#
+
 # `T-06.1` (`series_key.py`, `series_catalog.py`) built the CONTRACT: the `reduction` term, the
 # `Reduction` enum's members, and the refusal of a blank or defaulted term of identity. This
 # module is what plan `06` item 6.11 (`T-06.5`) asks for on top of that contract — it POPULATES
@@ -140,6 +145,106 @@ def binance_open_interest_key(*, instrument_id: str = "BTCUSDT") -> SeriesKey:
         label_shift=OPEN_INTEREST_LABEL_SHIFT_MS,
         aggregation_scope="Symbol",
         verified_by=_VERIFIED_BY,
+    )
+
+
+# ── `T-03.3` (`SPEC-009` §6.1/§6.7, plan `03` item 3a.3): THE POLLED SERIES, ONE ROW PER SYMBOL ─
+#
+# `O-4` (`[DECISÃO-OWNER: 2026-09-23]`) adds a SIXTH open-interest identity per instrument: the
+# reading of `GET /fapi/v1/openInterest` (`T-03.1`, `open_interest_snapshot.py`) stamped on the
+# 1-minute grid (`T-03.2`). It is `Binance · open_interest · 1m · POINT`, in CONTRACTS of the
+# base asset (`D-a`/`D-b`: `unit = base_asset(symbol)`, `denom = "base"`), `STOCK` and
+# `POINT_AT_BUCKET_END` — the SAME trio `(STOCK, POINT, POINT_AT_BUCKET_END)` as the
+# `openInterestHist` row above, which is what lets `ADR-045/D1` project both regimes with one
+# function, only with native grids of 1 min and 5 min.
+#
+# It is DELIBERATELY NOT appended to `open_interest_catalog_entries` (whose "five rows, never a
+# collapsed one" is `CA-F2-17`'s contract and is pinned at 5 by its own suite), and it is
+# DELIBERATELY NOT spelled `metric="sum_open_interest"`. Three reasons, each a failure the other
+# spelling would ship:
+#
+#   1. The front's OI selector is `metric + provider + reduction`
+#      (`frontend/src/app/symbol/view-model.ts::matchesBinanceOpenInterest`) and REFUSES
+#      ambiguity (`findUniqueCatalogEntry` -> `panel_absent`). With `sum_open_interest` this row
+#      would be a second match per instrument and the OI pane of production would go dark the
+#      moment the catalog is served — before `T-03.4` has written one row.
+#   2. `source_floor.py` maps `sum_open_interest` on `provider="binance"` to the 30-day
+#      `/futures/data/*` wall. This endpoint has NO history at all ("present open interest"),
+#      so the honest floor is `None`, which is what an unlisted metric resolves to.
+#   3. The source names the field differently: `openInterest` here, `sumOpenInterest` in
+#      `openInterestHist`. Whether the two are the same GRANDEZA is `ADR-045`'s falsifier 4
+#      (median `|poll - hist| / hist <= 10 bp`), a measurement still to run — not something a
+#      shared metric name should assert in advance.
+#
+# `interval` and `native_grid` agree at 1 minute because the collector's cadence IS the grid
+# (`SPEC-009` §6.1, "1 chamada por símbolo por minuto, alinhada à grade de 1 min"), the same
+# agreement `klines_volume_catalog.py` declares for `/fapi/v1/klines?interval=1m`.
+OPEN_INTEREST_POLL_METRIC: Final[str] = "open_interest"
+OPEN_INTEREST_POLL_INTERVAL: Final[str] = "1m"
+OPEN_INTEREST_POLL_NATIVE_GRID: Final[str] = "1min"
+
+# Declared beside its label, never parsed from it (`ADR-037/D3`) — the pair (`"1min"`,
+# `60_000`) is enumerated by `tests/sentimento/test_native_grid_ms_pairs.py` like every other
+# served row.
+OPEN_INTEREST_POLL_NATIVE_GRID_MS: Final[int] = 60_000
+
+# Twice the native grid, the `SPEC-001` §3.2 rule the 5-minute rows above already apply: a
+# reader may carry at most one missed minute before the row is stale. `T-03.2` leaves a minute
+# ABSENT when no reading lands in `[T - 20 s, T]`, so a longer bound would dress an outage of
+# the collector up as a fresh value.
+OPEN_INTEREST_POLL_MAX_STALENESS_MS: Final[int] = 2 * OPEN_INTEREST_POLL_NATIVE_GRID_MS
+
+# An EXPLICIT zero, not an unmeasured default. `label_shift` is added to the source's own label
+# to reach the instant the value describes (`endpoint_shift_table.py`); here the source's label
+# IS that instant — the response's `time` is the `event_time` (`T-03.1`, `RN-1`), and there is
+# no dump of this endpoint whose timestamps could disagree with REST. The move from `time` to
+# the grid minute `T` is `T-03.2`'s admission window, a FUNCTION, not a constant shift.
+OPEN_INTEREST_POLL_LABEL_SHIFT_MS: Final[int] = 0
+
+# Hardcoded here, not taken from the caller, for the reason `long_short_catalog.py` and
+# `liquidation_catalog.py` give: `verified_by` is the fifteenth term of the key and enters
+# `series_key_id()`'s `sha256`, so the WRITER (`T-03.4`) and this READER land on the same
+# series only if both go through `binance_open_interest_poll_key` below. The string names a
+# real test — `test_open_interest_catalog.py` checks that the function exists in that file.
+OPEN_INTEREST_POLL_VERIFIED_BY: Final[str] = (
+    "test_open_interest_catalog.py::"
+    "test_the_polled_open_interest_row_is_binance_point_1m_in_contracts"
+)
+
+
+def binance_open_interest_poll_key(*, instrument_id: str) -> SeriesKey:
+    """Build the polled open-interest series of ONE symbol — `instrument_id` has no default.
+
+    The 5-minute builders above default to `BTCUSDT`; this one does not, because "one row per
+    symbol" is its whole requirement (plan `03` item 3a.3) and a default is how a caller asks
+    for `ETHUSDT`'s row and silently gets `BTCUSDT`'s.
+    """
+    return SeriesKey(
+        provider="binance",
+        venue="usdm_futures",
+        instrument_id=instrument_id,
+        metric=OPEN_INTEREST_POLL_METRIC,
+        cohort="all",
+        interval=OPEN_INTEREST_POLL_INTERVAL,
+        unit=base_asset(instrument_id),
+        denom="base",
+        nature=Nature.STOCK,
+        ts_convention=TsConvention.POINT_AT_BUCKET_END,
+        reduction=Reduction.POINT,
+        quantity_field=QuantityField.NA,
+        label_shift=OPEN_INTEREST_POLL_LABEL_SHIFT_MS,
+        aggregation_scope="Symbol",
+        verified_by=OPEN_INTEREST_POLL_VERIFIED_BY,
+    )
+
+
+def binance_open_interest_poll_entry(instrument_id: str) -> SeriesCatalogEntry:
+    """Build the ONE catalog row of the polled series for `instrument_id`."""
+    return SeriesCatalogEntry(
+        key=binance_open_interest_poll_key(instrument_id=instrument_id),
+        native_grid=OPEN_INTEREST_POLL_NATIVE_GRID,
+        native_grid_ms=OPEN_INTEREST_POLL_NATIVE_GRID_MS,
+        max_staleness_ms=OPEN_INTEREST_POLL_MAX_STALENESS_MS,
     )
 
 

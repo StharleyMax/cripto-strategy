@@ -11,6 +11,7 @@ exception of `2026-09-11T19:53`, and neither `OSError` nor `ValueError`, so it i
     collector-klines        -> `KlinesClient.klines`
     collector-open-interest -> `OpenInterestHistoryClient.open_interest_history`
     collector-long-short    -> `LongShortClient.history`
+    collector-open-interest-poll -> the `client_factory`, called inside the thread
 
 Every other port stays the empty/blocking fake `collectors_cli_driver.py` already uses, so the
 only thing that can end the process is the death of the named thread.
@@ -60,6 +61,7 @@ from tests.helpers.collectors_cli_driver import (
     _EmptyKlinesClient,
     _EmptyLiquidationSource,
     _EmptyOpenInterestClient,
+    _UnreachableOpenInterestPollClient,
 )
 
 FORCE_ORDER = "collector-force-order"
@@ -71,6 +73,9 @@ LONG_SHORT = "collector-long-short"
 # tuple is what makes the guarantee COMPLETE: `_supervised` is a class of protection, and a
 # thread missing from here would be a thread nobody ever proved brings the process down.
 LIQUIDATION = "collector-liquidation"
+# The SEVENTH thread (`T-03.4`). Its port is the client FACTORY, called inside the thread
+# before the first grid wait — the only call it makes before up to a whole cadence of sleep.
+OPEN_INTEREST_POLL = "collector-open-interest-poll"
 THREAD_NAMES = (
     FORCE_ORDER,
     PREMIUM_INDEX,
@@ -78,6 +83,7 @@ THREAD_NAMES = (
     OPEN_INTEREST,
     LONG_SHORT,
     LIQUIDATION,
+    OPEN_INTEREST_POLL,
 )
 
 _OUTAGE = "the connection is closed"
@@ -214,6 +220,7 @@ def main(argv: list[str]) -> int:
         open_interest_backfill_days=1,
         long_short_cycle_interval_s=999_999.0,
         liquidation_cycle_interval_s=999_999.0,
+        open_interest_poll_cycle_interval_s=999_960.0,
     )
     connection = connect_resp2(open_tcp_socket(host, port))
     store = SqliteIngestRecordStore(store_path)
@@ -226,6 +233,11 @@ def main(argv: list[str]) -> int:
             """Die the way a dead connection does, from inside the collector thread."""
             _boom()
             raise AssertionError("unreachable: _boom always raises")
+
+    def _open_interest_poll_factory() -> _UnreachableOpenInterestPollClient:
+        if target == OPEN_INTEREST_POLL:
+            _boom()
+        return _UnreachableOpenInterestPollClient()
 
     def _force_order_factory() -> object:
         if target == FORCE_ORDER:
@@ -251,6 +263,7 @@ def main(argv: list[str]) -> int:
             liquidation_source_factory=(
                 _DyingLiquidationSource if target == LIQUIDATION else _EmptyLiquidationSource
             ),
+            open_interest_poll_client_factory=_open_interest_poll_factory,
             premium_index_to_rows=_never_maps,
             force_order_to_rows=_never_maps,
             long_short_to_rows=_never_maps_long_short,

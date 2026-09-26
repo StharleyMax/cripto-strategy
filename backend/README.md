@@ -3774,3 +3774,121 @@ vence" (`q` sumido, `quantity` aparecendo) e prova reprovação, não quarentena
   durante o desenvolvimento e foi corrigido antes deste commit — mesma forma de
   `quarantine_terms.py`/`live_availability_write.py`: conteúdo movido para comentário `#`,
   docstring de módulo em uma linha).
+
+## 📎 2026-09-24 por `T-03.1` — cliente de `GET /fapi/v1/openInterest`: o `time` da resposta é o `event_time`
+
+Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1, `RN-1`, plano `03` item 3a.1). Primeira
+peça do coletor de OI por polling (`O-4`). **Não** carimba na grade (`T-03.2`), **não** cataloga
+(`T-03.3`) e **não** é coletor (`T-03.4`): entrega as duas coisas que eles precisam ler da resposta.
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/open_interest_snapshot.py` | `domain` | `OpenInterestSnapshot(symbol, open_interest_raw, event_time_ms)` — **não existe campo para o instante do pedido**; `parse_open_interest_snapshot(payload, requested_symbol)` não recebe relógio nem instante de pedido, então o instante errado não tem por onde entrar. Recusa símbolo cruzado, `openInterest` que não é string decimal finita `≥ 0`, `time` que não é `int` (inclusive `bool`). `OpenInterestFetch` + `OpenInterestFetchOutcome` (`READ`/`TRANSPORT`/`HTTP_STATUS`/`PAYLOAD`), com as invariantes de cada forma no `__post_init__` |
+| `infra/binance_open_interest_client.py` | `infra` | `BinanceOpenInterestClient.fetch(symbol)` — uma conexão keep-alive refeita em `OSError` (mesmo ciclo de `PremiumIndexHttpClient`), reusando `ConnectionFactory`/`flatten_headers` de `https_quota_probe.py`. Lê `x-mbx-used-weight-1m` em todo status respondido (um `400` também é cobrado), `None` quando ausente — nunca zero |
+
+**A resposta dos testes é LIDA da Binance**, não escrita à mão (ler a origem não é semear; nenhum
+Postgres é tocado): `curl -sS -D hdr.txt "https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT"`
+em 2026-09-24 → `{"symbol":"BTCUSDT","openInterest":"96012.544","time":1790287793703}`, pedido
+enviado em `1790287796821` — **a leitura é 3,1 s mais velha que o pedido** `[MEDIDO 2026-09-24, n=1]`.
+
+Relatório e mutações: [`gates/T-03.1-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.1-build.md).
+
+## 📎 2026-09-24 por `T-03.2` — carimbo do OI na grade de 1 min: `[T − 20 s, T]` ou **ausente**
+
+Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1, `RN-2`, `[Q-STAMP-1]`, plano `03` item 3a.2).
+Segunda peça do coletor de OI por polling (`O-4`). Função pura: **não** agenda a chamada (`T-03.4`),
+**não** cataloga (`T-03.3`), **não** escreve em `md.series`.
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `domain/open_interest_grid_stamp.py` | `domain` | `admitted_grid_instant(event_time_ms)` devolve o `T` (**teto** na grade de 60 000 ms: o instante de grade **no ou depois** do `time`, nunca o piso nem o mais próximo) cuja janela **fechada** `[T − 20 000 ms, T]` contém o `time` da Binance, ou `None` = minuto **ausente**. `stamp_open_interest_readings(readings)` separa as leituras em três destinos que somam a entrada: `admitted` (a leitura de **maior `time`** em janela de cada `(symbol, T)`; empate de `time` ⇒ a primeira fica), `out_of_window` e `superseded`. `StampedOpenInterest` **recusa existir** se o próprio `event_time_ms` não cair na própria janela — nem valor carregado de minuto anterior, nem leitura posterior a `T` são representáveis |
+
+**Propriedade anti-lookahead**, e ela é um teste: toda linha admitida tem
+`0 ≤ grid_instant_ms − event_time_ms ≤ 20 000` — o valor em `T` é o OI **até** `T` (defasagem), nunca depois
+dele (`POINT_AT_BUCKET_END`, `series_key.py:107-108`). **Ausente é ausência de linha** (`RN-2`): nenhum minuto é
+preenchido pelo vizinho. As duas capturas reais de `T-03.1` (`time` a 53,7 s e 51,0 s do minuto) são admitidas no
+minuto **seguinte**, com defasagem de **6 297 ms** e **8 965 ms**. `T-03.4` chama em `T − 5 s`, agendado pelo relógio
+de parede e carimbado pelo `time` da resposta.
+
+> ⚠️ **CORREÇÃO, 2026-09-25.** A primeira versão desta seção (commit `67d8c0e`) publicava a janela `[T, T + 20 s]`
+> com **piso** e a regra *"a primeira chamada vence"*, fiel à frase de `SPEC-009` §6.1. O `quant-architect`
+> reprovou (`NEEDS_FIX`): com o piso, **toda** linha admitida carregava 0–20 s de **lookahead**. Laudo:
+> [`handoff/Q-STAMP-1-quant-architect.md`](../docs/context/paineis-de-fluxo/handoff/Q-STAMP-1-quant-architect.md).
+> A emenda da frase de `SPEC-009` §6.1 vai **por exceção** ao owner (orquestrador ou `/architect`); o código já
+> segue a regra corrigida.
+
+Relatório e mutações: [`gates/T-03.2-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.2-build.md).
+
+## 📎 2026-09-24 por `T-03.3` — catálogo: 4 entradas `binance·open_interest·1m·POINT`, uma por símbolo
+
+Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1/§6.7, plano `03` item 3a.3, `D-a`/`D-b`). Registra
+a identidade da série de polling de OI (`O-4`) **antes** do coletor (`T-03.4`), que escreve por ela.
+
+| peça | o que mudou |
+|---|---|
+| `domain/open_interest_catalog.py` | `binance_open_interest_poll_key(*, instrument_id)` (sem default de símbolo) e `binance_open_interest_poll_entry(instrument_id)`: `provider=binance`, `metric=open_interest`, `interval=1m`, `unit=base_asset(símbolo)`, `denom=base`, `STOCK`, `POINT_AT_BUCKET_END`, `POINT`, `label_shift=0`, `native_grid=1min`/`60_000`, `max_staleness_ms=120_000`. `verified_by` fixo no módulo (o escritor passa pelo mesmo builder). `open_interest_catalog_entries` **continua com 5 linhas** (`CA-F2-17`) |
+| `use_cases/series_catalog.py` | a linha é **acrescentada no fim** de cada bloco de instrumento (índice 19, `RS-1`): 19 → **20** por instrumento, 76 → **80** servidas por `/api/v1/series-catalog` |
+
+**Por que `metric=open_interest` e não `sum_open_interest`** — a outra grafia quebraria três coisas:
+1. o seletor do pane de OI no front (`view-model.ts::matchesBinanceOpenInterest`: `metric + provider + reduction`)
+   veria **duas** linhas por símbolo e `findUniqueCatalogEntry` apagaria o pane (`panel_absent`) em produção;
+2. `source_floor.py` daria a esta série a parede de 30 dias de `/futures/data/*`, que ela não tem (o endpoint
+   só devolve o valor presente; o piso honesto é `None`);
+3. a origem nomeia o campo diferente (`openInterest` × `sumOpenInterest`), e se são a mesma grandeza é o
+   falsificador 4 de `ADR-045`, ainda não medido.
+
+**Registrado antes de escrito, e a janela é a wave:** até `T-03.4` entrar, `/series-history` responde `200`
+com `n_points = 0` para estes 4 ids (o padrão `PRD-009` G-1). `T-03.4` depende desta task e sai na mesma wave.
+
+Relatório e mutações: [`gates/T-03.3-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.3-build.md).
+
+## 📎 2026-09-25 por `T-03.4` — coletor de OI por polling: `T − 5 s` na grade, carimbado pelo `time`, um run por ciclo
+
+Feature `paineis-de-fluxo`, trilha `03a` (`SPEC-009` §6.1/§6.7, `RNF-4`, `PRD-009` G-1, `[Q-STAMP-1]` §3). Compõe
+cliente (`T-03.1`) + carimbo (`T-03.2`) + escritor (a fila `md.series.write`) no **sétimo** thread de
+`collectors_cli`. A série passa a ter escritor no dia em que é servida (a lição de G-1).
+
+| peça | camada | o que ela é |
+|---|---|---|
+| `use_cases/collect_open_interest_poll.py` | `use_cases` | `settle_open_interest_poll_cycle(fetches, newest_written, to_rows)` — puro, sem relógio (`ADR-016/D4`): carimba o ciclo inteiro de uma vez e dá **um destino a cada chamada** — `admitted` · `out_of_window` · `superseded` · `behind_watermark` · `not_read` — com `lag_ms = sent − time` e `staleness_ms = T − time` |
+| `use_cases/collector_series_mapping.py` | `use_cases` | `build_open_interest_poll_to_rows()`: `bucket_end = T`, **`event_time = time` da resposta** (nunca o `T` do agendador), `available_at = received_at` `OBSERVED`, `is_final=True`, `value_raw` = a string da origem |
+| `use_cases/collector_run_mapping.py` | `use_cases` | `build_open_interest_poll_run(...)`: `endpoint=/fapi/v1/openInterest`, `observer_id=openinterest-poll-collector`, **`n_expected = n_calls`, `n_returned = n_read`** (aqui há oráculo: 1 leitura por chamada), `weight_used` = maior `x-mbx-used-weight-1m` lido |
+| `infra/collectors_cli.py` | `infra` | `_run_open_interest_poll_collector` + thread `collector-open-interest-poll` em `run()`; `OPEN_INTEREST_POLL_CYCLE_INTERVAL_S` (default `60`, recusado no boot se não for múltiplo inteiro de 60 s) |
+
+**As cinco condições de `Q-STAMP-1` §3, e onde cada uma está:** (1) `GridAlignedTicker` com fase
+`interval − 5 s`, recalculada por ciclo — nunca `sleep(60)` encadeado; a primeira ação do thread é essa espera
+(sem passada de boot: o endpoint não tem histórico); (2) o `T` vem do `time` da resposta; (3) uma linha de log por
+chamada, `open_interest_poll_call`, com `lag_ms`/`staleness_ms`/`fate`; (4) **sem retry** — é o único jeito de a
+parcela passar de 4/min (`DoD-2`), e um minuto perdido vira **ausência**, nunca valor carregado; (5) NTP é do host.
+
+**`n_written` por ciclo:** `run_id` cunhado na abertura do ciclo e carregado por toda linha — o escritor único credita
+`n_written` no run (`ADR-035/D2`). O `IngestRun` sai com `n_written = 0` e o escritor fecha.
+
+**Para `T-03.5` (`infra`):** o nome da variável é `OPEN_INTEREST_POLL_CYCLE_INTERVAL_S`; o código já a lê.
+
+Relatório, mutações e comandos: [`gates/T-03.4-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.4-build.md).
+
+## 📎 2026-09-25 por `T-03.6` — DoD de captura da `03a` numa stack **própria**: `0 → > 0`, cota pelo header, ausente não é carregado
+
+Feature `paineis-de-fluxo`, trilha `03a` (plano `03`, `DoD-03a` itens 1-contagem, 2 e 4; `DoD-1`, `RN-2`, `D-g`).
+**Não é teste e não entra em `make verify`**: gasta cota real da Binance (peso 1 × 4 chamadas/min).
+
+    bash scripts/oi-poll-capture-bench.sh <out_dir>      # ~10 min; BENCH_BEFORE_S / BENCH_STOPPED_S / BENCH_AFTER_S
+
+| peça | o que é |
+|---|---|
+| `scripts/oi-poll-capture-bench.sh` | sobe Postgres (timescale) + Redis **descartáveis** em loopback/porta aleatória, roda o `single_writer_cli` de produção e o laço do coletor de OI sozinho, para o coletor por 150 s, religa, audita, **planta um carry-forward no Postgres do bench e exige que a 2ª auditoria reprove**; destrói a stack no `trap` |
+| `infra/open_interest_poll_capture_bench_cli.py` | `collect` (o **mesmo** `collectors_cli._run_open_interest_poll_collector` do thread de produção, sem os outros 6 threads, que gastariam cota no mesmo IP e sujariam o header) · `counts` · `audit` |
+
+**Guarda de `D-g`:** `POSTGRES_DB` **e** `REDIS_STREAM` têm de começar com `oi_capture_bench`, e
+`INGEST_RECORD_BACKEND=postgres` — senão `rc=2` antes de abrir socket. O stream também é guardado porque uma linha no
+stream compartilhado seria escrita no Postgres compartilhado pelo writer compartilhado.
+
+**Como cada item é julgado:** (1) as 4 `series_key_id` de `binance_open_interest_poll_key` com `> 0` linhas cada **e**
+`Σ n_written > 0` nos runs do endpoint; (2) por minuto de relógio, `≤ 4` chamadas **e** `max − min + 1` do
+`x-mbx-used-weight-1m` das NOSSAS chamadas `≤ 4` (o header é por IP: uma chamada alheia no meio só alarga o vão, então
+é cota superior); sem header nenhum = `INCONCLUSIVE`; (4) nenhuma linha em `T` com
+`parada + 20 s + 10 s < T < religada − 10 s` (margem de 10 s = envelope de `lag_ms` de `Q-STAMP-1` §3), e é
+`INCONCLUSIVE` se não houver minuto ausente esperado ou se algum símbolo não tiver linha dos dois lados da parada.
+
+Relatório, números e mutações: [`gates/T-03.6-build.md`](../docs/context/paineis-de-fluxo/gates/T-03.6-build.md).

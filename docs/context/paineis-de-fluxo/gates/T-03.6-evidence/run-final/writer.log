@@ -1,0 +1,14 @@
+writer_batch_acked n_accepted=4 n_rejected=0
+writer_run_credited run_id=a7043b9a-572f-4a97-a40b-0af6f2f3df69
+writer_batch_acked n_accepted=4 n_rejected=0
+writer_run_credited run_id=8aa25969-cc14-4fc3-b0b6-99bec399f0ac
+writer_batch_acked n_accepted=4 n_rejected=0
+writer_run_credited run_id=0be030a1-aeb2-4660-abbd-38d22de4e24a
+writer_batch_acked n_accepted=4 n_rejected=0
+writer_run_credited run_id=2c032865-8c72-4a5a-b973-e7c5f5379df2
+writer_batch_acked n_accepted=4 n_rejected=0
+writer_run_credited run_id=132b24ea-10d0-45fa-900d-e52d9fe0ce50
+writer_batch_acked n_accepted=4 n_rejected=0
+writer_run_credited run_id=b8a6b1db-a04f-4bbe-b5d4-0601ecb59fbe
+writer_batch_acked n_accepted=4 n_rejected=0
+writer_run_credited run_id=9a92c9df-a2a7-414e-b944-4508df7180ba
