@@ -4,17 +4,19 @@
  *
  * ── THE RULE, AND WHERE EACH HALF COMES FROM ──────────────────────────────────────────────
  *
- *   - `close >= open` ⇒ `directionUpFill`; otherwise ⇒ `directionDownFill`. `PRD-009` `RF-7`,
- *     literal: "Barra de volume `i` tem a cor de alta se `close_i ≥ open_i` do candle de preço
- *     `i`, e a de baixa caso contrário".
- *   - The two inks are the SAME two tokens the price candle paints with (`RNF-3`: "uma gramática
+ *   - `close > open` ⇒ `directionUpFill`; `close < open` ⇒ `directionDownFill`. The two inks
+ *     are the SAME two tokens the price candle paints with (`PRD-009` `RNF-3`: "uma gramática
  *     de cor, não três"). They come out of `colorTokens()`, never a literal, so the candle and
  *     the bar cannot drift apart.
- *   - DOJI (`close === open`) is the RISING ink. That is `[INFERRED: I-3]` of `PRD-009` §12
- *     ("Doji → cor de alta (RF-7)", TradingView convention), owned by the `design_gate`. It is
- *     NOT the price candle's doji, which `dojiItemColors()` paints neutral (`ADR-010:110`,
- *     "DIREÇÃO NÃO AFIRMADA"). The two disagree on purpose until the `design_gate` (`T-02.5`)
- *     says otherwise; this module states the inference instead of hiding it.
+ *   - DOJI (`close === open`) claims NO direction: the bar takes `dojiItemColors().color`, the
+ *     very ink the doji candle right above it paints with (`ADR-010/D-2`, `:110`: "CRUZ (doji)
+ *     = close == open ⇒ DIREÇÃO NÃO AFIRMADA"; `ADR-010:66` puts "barra" in the `FILL` mark
+ *     type). Same predicate as `candlestickSeriesLossless` (`s2-lightweight-adapter.ts`), and
+ *     the ink is READ from `dojiItemColors()`, not from a token by name, so the bar cannot
+ *     diverge from the candle even if the candle's doji ink changes one day. This overrides
+ *     the `[INFERRED: I-3]` "doji = alta" of `PRD-009` `RF-7` and plan `02`: the owner of `I-3`
+ *     (the `design_gate`) had already accepted `#8b949e` for the volume doji
+ *     (`DESIGN-LAYOUT.md` D3, critique r2 C-6). Decision: `handoff/T-02.1-doji-julgamento.md`.
  *   - NO CANDLE on the bar's slot ⇒ NO DIRECTION: the bar keeps the neutral ink it carries
  *     today (`provenanceWeak`, the one `SymbolClient.tsx` gives the whole volume series before
  *     this phase). `RN-4`: a direction the data does not carry is not drawn. The neutral is
@@ -33,7 +35,7 @@
  * `charts` owns this (`ADR-003` FR-1: pure, no I/O); `web` only hands the two slot vectors in.
  */
 
-import { colorTokens } from "./color-tokens.ts";
+import { colorTokens, dojiItemColors } from "./color-tokens.ts";
 import type { GridSlot, RawCandle } from "./canonical-grid.ts";
 import type { ScalarSlot } from "./s2-scalar-grid.ts";
 import { toUnixSeconds, type UnixSeconds, type WhitespaceItem } from "./s2-lightweight-adapter.ts";
@@ -50,7 +52,10 @@ export function volumeBarColor(candle: CandleDirectionInput | null): string {
   if (candle === null) {
     return tokens.provenanceWeak;
   }
-  return candle.close >= candle.open ? tokens.directionUpFill : tokens.directionDownFill;
+  if (candle.close === candle.open) {
+    return dojiItemColors().color;
+  }
+  return candle.close > candle.open ? tokens.directionUpFill : tokens.directionDownFill;
 }
 
 /** A histogram item carrying its own color — `lightweight-charts`' per-item `HistogramData.color`. */
