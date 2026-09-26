@@ -5,7 +5,7 @@ Data: 2026-09-25. Alvo: `wave/paineis-f01` em `c3e2c66` (código até `c06d420`;
 `handoff/ADR044-D2P-julgamento.md`, `ADR-045` e as regras bloqueantes em vigor. Revisor read-only: nenhum código
 foi editado, nenhum `gate-record` foi gravado.
 
-## 0. Veredito: **NON_COMPLIANT** (1 BLOCKER, 5 WARNING, 1 INFO)
+## 0. Veredito: **NON_COMPLIANT** (1 BLOCKER, 6 WARNING, 1 INFO)
 
 A regra mecânica está limpa. A reprovação vem da segunda camada: o registry contradiz a invariante (iii′) que
 esta mesma wave escreveu na `SPEC-009` §5.
@@ -17,7 +17,7 @@ esta mesma wave escreveu na `SPEC-009` §5.
 | regras bloqueantes | **8** em vigor, **8** avaliadas | `harness rules list --severity block` | — |
 | por arquivo | **58** arquivos (46 de código em `code_paths` + 12 de `frontend/e2e/`), de 132 no diff (o resto é `docs/`) | `harness rules --mode file --path <f> --format ndjson`, um por arquivo | **0 block**, 1 warn |
 | varredura | árvore inteira | `harness rules --mode sweep --format ndjson` | rc=0, **0 block**, 77 warn (pré-existentes) |
-| arquitetura | ADR-044 D1, D2, D2′(a)(b), D3/D3′, §Consequências (FR-2), SPEC-009 §3/§5, direção `charts`→`web`, ADR-045, idioma | leitura + `grep`, comandos na §4 | 1 BLOCKER, 4 WARNING, 1 INFO |
+| arquitetura | ADR-044 D1, D2, D2′(a)(b), D3/D3′, §Consequências (FR-2), SPEC-009 §3/§5, direção `charts`→`web`, ADR-045, idioma | leitura + `grep`, comandos na §4 | 1 BLOCKER, 5 WARNING, 1 INFO |
 
 `[MEDIDO 2026-09-25]`, todos.
 
