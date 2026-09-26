@@ -66,11 +66,14 @@ export interface ColoredHistogramItem {
 }
 
 /**
- * The volume series for a LOGARITHMIC scale, one item per volume slot, each bar colored by
- * `volumeBarColor` of the candle at the same `time`.
+ * The volume series, one item per volume slot, each bar colored by `volumeBarColor` of the
+ * candle at the same `time`. Fed to the price pane's volume sub-axis by `web` (`T-02.3`).
  *
  * The value half is exactly `positiveValueSeriesLossless`: an absent slot and a legitimate `0`
  * are whitespace (their own marks draw them), a negative value throws. Only the `color` is new.
+ * The rule was written for a logarithmic scale and holds unchanged on the LINEAR one the sub-axis
+ * uses since `T-02.2`: there a `0` would draw at the library's 1-px floor, as tall as the smallest
+ * real bar (`s2-lightweight-adapter.ts`, `positiveValueSeriesLossless`).
  *
  * A duplicate candle `time` throws: two candles for one instant is a broken grid upstream, and
  * picking one of them would be this module inventing which direction is true.

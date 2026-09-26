@@ -240,7 +240,7 @@ interface InkMeasurement {
 async function measureCandleInk(page: Page): Promise<InkMeasurement> {
   const tolerance = 12;
   return page.evaluate(
-    ({ colors, testid, tolerance: tol }) => {
+    ({ colors, testid, tolerance: tol, bandBottomFraction }) => {
       const pane = document.querySelector(`[data-testid="${testid}"]`);
       if (pane === null) throw new Error(`nÃ£o hÃ¡ [data-testid="${testid}"] na pÃ¡gina`);
       // `paineis-de-fluxo` `T-01.6`: the layer sits NEXT to the pane's canvases, inside the
@@ -254,7 +254,14 @@ async function measureCandleInk(page: Page): Promise<InkMeasurement> {
       const data = canvas.getContext("2d")!.getImageData(0, 0, width, height).data;
       const columns = new Map<number, { top: number; bottom: number; pixels: number }>();
       let inkPixels = 0;
-      for (let y = 0; y < height; y += 1) {
+      // `paineis-de-fluxo` `T-02.3`: since the volume bars take the candle's direction ink, the rows
+      // of the volume sub-axis (`y >= height * PRICE_BAND_BOTTOM_FRACTION`, the bars' scale top) carry
+      // the SAME two inks as the candles. Only the price band is read: no candle draws below its floor
+      // (see `PRICE_BAND_BOTTOM_FRACTION`), and an edge there was already `clippedEdges`, not a reading.
+      // Without this cut every candle group measured its body AND wick down to the volume floor
+      // (`corpo 208..324:pavio 208..324`) and `CA-2` failed on real data [MEASURED 2026-09-26].
+      const bandBottom = Math.floor(height * bandBottomFraction);
+      for (let y = 0; y < bandBottom; y += 1) {
         for (let x = 0; x < width; x += 1) {
           const at = (y * width + x) * 4;
           if (data[at + 3] === 0) continue;
@@ -280,7 +287,12 @@ async function measureCandleInk(page: Page): Promise<InkMeasurement> {
         columns: [...columns.entries()].map(([x, c]) => ({ x, ...c })).sort((a, b) => a.x - b.x),
       };
     },
-    { colors: candleInkColors().map((c) => [...c]), testid: PRICE_PANE_TESTID, tolerance },
+    {
+      colors: candleInkColors().map((c) => [...c]),
+      testid: PRICE_PANE_TESTID,
+      tolerance,
+      bandBottomFraction: PRICE_BAND_BOTTOM_FRACTION,
+    },
   );
 }
 
