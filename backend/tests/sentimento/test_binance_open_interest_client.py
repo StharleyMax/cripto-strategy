@@ -280,6 +280,76 @@ def test_a_body_truncated_mid_read_is_a_transport_failure_not_an_escaping_except
     assert second.outcome is OpenInterestFetchOutcome.READ
 
 
+class HttpExceptionConnection:
+    """A connection whose stdlib `HTTPException` fires at the stage `http.client` raises it."""
+
+    def __init__(self, stage: str, failure: http.client.HTTPException) -> None:
+        """Take the stage (`request` or `getresponse`) and the exception to raise there."""
+        self._stage = stage
+        self._failure = failure
+        self.closed = False
+
+    def request(
+        self, method: str, url: str, body: None = None, headers: Mapping[str, str] | None = None
+    ) -> None:
+        """Raise at send time when the stage is `request` (`CannotSendRequest`)."""
+        if self._stage == "request":
+            raise self._failure
+
+    def getresponse(self) -> FakeResponse:
+        """Raise while parsing the status or header lines (`BadStatusLine`, `LineTooLong`)."""
+        raise self._failure
+
+    def close(self) -> None:
+        """Mark the connection closed."""
+        self.closed = True
+
+
+@pytest.mark.parametrize(
+    ("stage", "failure"),
+    [
+        ("request", http.client.CannotSendRequest("Request-sent")),
+        ("getresponse", http.client.BadStatusLine("HTTP/1.1 ???")),
+        ("getresponse", http.client.LineTooLong("header line")),
+    ],
+    ids=["cannot-send-request", "bad-status-line", "line-too-long"],
+)
+def test_every_http_exception_family_member_is_a_transport_failure(
+    stage: str, failure: http.client.HTTPException
+) -> None:
+    """W2 QA r2: the C-1 fix must cover the FAMILY, not only the `IncompleteRead` it was proven on.
+
+    Kills the narrower fix `except (OSError, http.client.IncompleteRead)`, which the test above
+    lets survive: the docstring of `fetch` names these three, and each escapes `OSError`.
+    """
+    assert not isinstance(failure, OSError)
+    connections: list[HttpExceptionConnection | FakeConnection] = []
+
+    def factory(host: str) -> HttpExceptionConnection | FakeConnection:
+        """Hand out the broken connection first, then a healthy one."""
+        connection: HttpExceptionConnection | FakeConnection
+        if not connections:
+            connection = HttpExceptionConnection(stage, failure)
+        else:
+            connection = FakeConnection(host, [FakeResponse(200, REAL_BTC_HEADERS, REAL_BTC_BODY)])
+        connections.append(connection)
+        return connection
+
+    client = BinanceOpenInterestClient(connection_factory=factory)
+
+    first = client.fetch("BTCUSDT")
+    second = client.fetch("BTCUSDT")
+
+    assert first.outcome is OpenInterestFetchOutcome.TRANSPORT
+    assert first.status is None
+    assert first.failure is not None
+    assert first.failure.startswith(type(failure).__name__)
+    assert isinstance(connections[0], HttpExceptionConnection)
+    assert connections[0].closed
+    assert len(connections) == 2
+    assert second.outcome is OpenInterestFetchOutcome.READ
+
+
 def test_consecutive_calls_reuse_one_connection_until_closed() -> None:
     """Four calls a minute, forever: one keep-alive, closed only by `close()`."""
     client, connections = _client_replaying(
