@@ -1,16 +1,19 @@
 // `paineis-de-fluxo` `T-02.1` — the volume bar's color from the candle at the same instant.
 //
 // DoD (plan `02` item 1): four cases — rise, fall, doji, absent candle. MORDE: flipping the
-// comparator (`>=` -> `<`) in `volumeBarColor` fails 3 of the 4 (rise, fall and doji; the
-// absent case never reaches the comparator). The expected inks are read from `colorTokens()`
-// AND pinned to the hex of `ADR-010`, so a test cannot pass by agreeing with a wrong palette.
+// comparator (`>` -> `<`) in `volumeBarColor` fails 2 of the 4 (rise, fall); collapsing the
+// doji into the rising ink (the old `>=`) fails the 3rd; the absent case never reaches the
+// comparator. The doji claims NO direction (`ADR-010/D-2`, decision in
+// `handoff/T-02.1-doji-julgamento.md`). The expected inks are read from `colorTokens()` /
+// `dojiItemColors()` AND pinned to the hex of `ADR-010`, so a test cannot pass by agreeing
+// with a wrong palette.
 //
 // Run with: npm --prefix frontend run test:charts
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { colorTokens } from "./color-tokens.ts";
+import { colorTokens, dojiItemColors } from "./color-tokens.ts";
 import type { GridSlot } from "./canonical-grid.ts";
 import type { ScalarSlot } from "./s2-scalar-grid.ts";
 import { directionalVolumeSeriesLossless, volumeBarColor } from "./volume-direction.ts";
@@ -35,8 +38,12 @@ test("DoD case 2 — fall (close < open) paints the bar with the down token", ()
   assert.equal(volumeBarColor({ open: 101, close: 100 }), DOWN);
 });
 
-test("DoD case 3 — doji (close === open) paints the bar with the up token [INFERRED: I-3]", () => {
-  assert.equal(volumeBarColor({ open: 100, close: 100 }), UP);
+test("DoD case 3 — doji (close === open) claims no direction: the doji candle's own ink", () => {
+  const color = volumeBarColor({ open: 100, close: 100 });
+  assert.equal(color, dojiItemColors().color);
+  assert.equal(color, "#8b949e");
+  assert.notEqual(color, UP);
+  assert.notEqual(color, DOWN);
 });
 
 test("DoD case 4 — absent candle gets no direction ink, only the neutral one", () => {
@@ -58,7 +65,7 @@ function candle(time: number, open: number, close: number): GridSlot {
   };
 }
 
-test("each bar takes the direction of the candle at the SAME time; absent candle stays neutral", () => {
+test("each bar takes the direction of the candle at the SAME time; doji and absent candle claim none", () => {
   const price: GridSlot[] = [
     candle(T0, 10, 11),
     candle(T0 + MIN, 11, 10),
@@ -74,7 +81,7 @@ test("each bar takes the direction of the candle at the SAME time; absent candle
   assert.deepEqual(directionalVolumeSeriesLossless(volume, price), [
     { time: T0 / 1000, value: 5, color: UP },
     { time: (T0 + MIN) / 1000, value: 6, color: DOWN },
-    { time: (T0 + 2 * MIN) / 1000, value: 7, color: UP },
+    { time: (T0 + 2 * MIN) / 1000, value: 7, color: dojiItemColors().color },
     { time: (T0 + 3 * MIN) / 1000, value: 8, color: NEUTRAL },
   ]);
 });
