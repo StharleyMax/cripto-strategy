@@ -48,7 +48,7 @@ untracked_note = "2026-09-23: TODAS as 39 tasks estao cardadas em CST (Jira, boa
 id = "T-01.0"
 title = "[web][charts] 01 · ⛔ Spike: um createChart com panes nativos sobre dado real, F-1..F-5 + controle negativo de F-1 (NAO mergeado)"
 components = ["web", "charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = []
 refs = [
@@ -66,7 +66,7 @@ tracker = { provider = "jira", id = "CST-251", url = "https://conversationhub.at
 id = "T-01.1"
 title = "[web] 01 · Baseline de latencia no HEAD de master: 5 rodadas isoladas de e2e/17 e e2e/20 (p50/p95/max) + como o OI aparece hoje no TF 1m"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.0"]
 refs = [
@@ -83,7 +83,7 @@ tracker = { provider = "jira", id = "CST-252", url = "https://conversationhub.at
 id = "T-01.2"
 title = "[web] 01 · Pane registry: array ordenado, paneIndex = posicao, invariantes (i)-(v) com um caso que reprova e um que passa"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.0"]
 refs = [
@@ -102,7 +102,7 @@ tracker = { provider = "jira", id = "CST-253", url = "https://conversationhub.at
 id = "T-01.3"
 title = "[charts] 01 · Geometria das bandas de marca ancorada em IPaneApi.getHeight(), em charts; as 14 constantes de geometria de web nao crescem"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.0"]
 refs = [
@@ -123,7 +123,7 @@ tracker = { provider = "jira", id = "CST-254", url = "https://conversationhub.at
 id = "T-01.F1"
 title = "[web] 01 · FIX e2e/18: key em <SymbolClient> com a identidade do seed (symbol, interval, knowledgeTimeMs) — TF bar inerte desde 718cb1a"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = []
 refs = [
@@ -140,7 +140,7 @@ refs = [
 id = "T-01.F2"
 title = "[web] 01 · FIX e2e/20 (so teste): intervalo de eixo so dentro de [moveStart, moveEnd] + assercao 'o range do Preco, em tempo, continua mudando depois da pagina' que REPROVA hoje (24/24)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = []
 refs = [
@@ -157,7 +157,7 @@ refs = [
 id = "T-01.4"
 title = "[charts] 01 · Leitura da legenda como funcao pura: (param.logical, slots, nature) -> valor, held ou ausente; sem crosshair, o ultimo bucket FECHADO"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.0"]
 refs = [
@@ -175,7 +175,7 @@ tracker = { provider = "jira", id = "CST-255", url = "https://conversationhub.at
 id = "T-01.5"
 title = "[web][charts] 01 · Montagem unica: useLightweightChart vira host, addSeries com paneIndex, axis-sync com panelCount=1; saem os 6 indices fixos e PANEL_COUNT=6"
 components = ["web", "charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.2", "T-01.3"]
 refs = [
@@ -198,7 +198,7 @@ tracker = { provider = "jira", id = "CST-256", url = "https://conversationhub.at
 id = "T-01.6"
 title = "[web][charts] 01 · Camada de DOM por pane sobre getHTMLElement(): pointer-events none, scaleMargins.top reservando a legenda, setStretchFactor com piso de 72px, enableResize=false, separador #8b949e testado"
 components = ["web", "charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.5"]
 refs = [
@@ -221,7 +221,7 @@ tracker = { provider = "jira", id = "CST-257", url = "https://conversationhub.at
 id = "T-01.7"
 title = "[web] 01 · Ligacao crosshair -> legenda: subscribeCrosshairMove SEM filtro por paneIndex, nome derivado de identityTerms uma vez por pane, coluna fixa para os numerais (C-8)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.4", "T-01.6"]
 refs = [
@@ -240,7 +240,7 @@ tracker = { provider = "jira", id = "CST-258", url = "https://conversationhub.at
 id = "T-01.8"
 title = "[web] 01 · Re-ancorar e2e 16, 20 e 21 e os contratos de DOM acoplados a construcao (ARQ-1 §6); e2e/11 intacto"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.6", "T-01.F1", "T-01.F2"]
 refs = [
@@ -259,7 +259,7 @@ tracker = { provider = "jira", id = "CST-259", url = "https://conversationhub.at
 id = "T-01.9"
 title = "[web] 01 · Playwright contra o app real: 1 grafico (CA-1'), 1 eixo por pixel (CA-2'), legenda == API em n>=5 posicoes (CA-3'/CA-4), legenda derivada (CA-5), com as 4 ablacoes"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.7", "T-01.8"]
 refs = [
@@ -280,7 +280,7 @@ tracker = { provider = "jira", id = "CST-260", url = "https://conversationhub.at
 id = "T-01.10"
 title = "[web] 01 · Teto de latencia (CA-11'): e2e/17 p95<=160ms com n>=61, e2e/20 p95<=400ms com n>=10, sem regredir sobre T-01.1, controle negativo que move o p95"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.1", "T-01.8", "T-01.F2"]
 refs = [
@@ -297,7 +297,7 @@ tracker = { provider = "jira", id = "CST-261", url = "https://conversationhub.at
 id = "T-01.11"
 title = "[web] 01 · Veredito do ux-ui-mastery sobre o SCREENSHOT Playwright do app real com dado real (C-0, render medido)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T04:56:51Z @ c5dcc46cff1999cb07a1d41e5db7b999ef36bd2f
 phase = "01"
 depends_on = ["T-01.9"]
 refs = [
