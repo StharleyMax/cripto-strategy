@@ -16,7 +16,17 @@
 # informado, e prosa que ninguém lê deixa de ser a única cobrança.
 #
 # Escopo: SÓ subagente. O loop principal roda milhares de turnos legitimamente (2.843 na maior
-# sessão medida) e é discriminado pelo caminho do transcript, que carrega `/subagents/`.
+# sessão medida). Quem discrimina é o campo `agent_id` do stdin, que o Claude Code só envia
+# quando o hook dispara DENTRO de um subagente `[DOC: code.claude.com/docs/en/hooks]`.
+#
+# ⚠️ CORREÇÃO, 2026-09-26 — de 2026-09-07 a 2026-09-26 este hook NUNCA disparou. A versão
+# anterior discriminava pelo `transcript_path`, esperando `/subagents/` no caminho; mas dentro de
+# um subagente esse campo aponta para o transcript da SESSÃO PAI, e a checagem saía sempre com 0.
+# `[MEDIDO 2026-09-26: 136 de 499 subagentes passaram de 150 turnos desde 2026-09-07, máximo 853;
+# `grep "PORTÃO R6"` nos transcripts deles → 0]`. O script rodado À MÃO emitia o aviso, e por isso
+# parecia funcionar: é o `rc=0` que `ADR-012` nomeia — sinal indistinguível entre "ninguém passou
+# do teto" e "o instrumento nunca foi capaz de ver". O transcript do subagente é achado agora pelo
+# `agent_id`, sob a pasta da sessão (os de workflow ficam um nível abaixo, em `workflows/wf_*/`).
 #
 # Fonte versionada: scripts/claude-hooks/subagent-turn-cap.sh
 # Registro:         `bash scripts/install-claude-hooks.sh` (idempotente).
@@ -37,23 +47,23 @@ PASSO=50     # só repete o aviso a cada 50 turnos, para o próprio aviso não v
 ENTRADA="$(cat)"
 command -v jq >/dev/null 2>&1 || exit 0
 
-TRANSCRIPT="$(printf '%s' "$ENTRADA" | jq -r '.transcript_path // empty' 2>/dev/null)"
-if [[ -z "$TRANSCRIPT" || ! -f "$TRANSCRIPT" ]]; then
-    SESSAO="$(printf '%s' "$ENTRADA" | jq -r '.session_id // empty' 2>/dev/null)"
-    [[ -z "$SESSAO" ]] && exit 0
-    TRANSCRIPT="$(find "$HOME/.claude/projects" -name "${SESSAO}.jsonl" -print -quit 2>/dev/null)"
-fi
-[[ -z "$TRANSCRIPT" || ! -f "$TRANSCRIPT" ]] && exit 0
+AGENT_ID="$(printf '%s' "$ENTRADA" | jq -r '.agent_id // empty' 2>/dev/null)"
+[[ -z "$AGENT_ID" ]] && exit 0   # loop principal: sem teto
 
-# Loop principal não tem teto: só subagente é cobrado aqui.
-[[ "$TRANSCRIPT" != *"/subagents/"* ]] && exit 0
+SESSAO="$(printf '%s' "$ENTRADA" | jq -r '.session_id // empty' 2>/dev/null)"
+PAI="$(printf '%s' "$ENTRADA" | jq -r '.transcript_path // empty' 2>/dev/null)"
+RAIZ="${PAI%.jsonl}"
+[[ -n "$PAI" && -d "$RAIZ" ]] || RAIZ="$(find "$HOME/.claude/projects" -maxdepth 2 -type d -name "$SESSAO" -print -quit 2>/dev/null)"
+[[ -z "$RAIZ" || ! -d "$RAIZ" ]] && exit 0
+TRANSCRIPT="$(find "$RAIZ" -name "agent-${AGENT_ID}.jsonl" -print -quit 2>/dev/null)"
+[[ -z "$TRANSCRIPT" || ! -f "$TRANSCRIPT" ]] && exit 0
 
 TURNOS="$(grep -c '"type":"assistant"' "$TRANSCRIPT" 2>/dev/null || echo 0)"
 [[ "$TURNOS" -lt "$LIMITE" ]] && exit 0
 
 ESTADO_DIR="${TMPDIR:-/tmp}/claude-subagent-turn-cap"
 mkdir -p "$ESTADO_DIR" 2>/dev/null || exit 0
-ESTADO="$ESTADO_DIR/$(basename "$TRANSCRIPT" .jsonl).last"
+ESTADO="$ESTADO_DIR/${AGENT_ID}.last"
 ULTIMO="$(cat "$ESTADO" 2>/dev/null || echo 0)"
 [[ "$ULTIMO" =~ ^[0-9]+$ ]] || ULTIMO=0
 [[ "$TURNOS" -lt $((ULTIMO + PASSO)) ]] && exit 0

@@ -28,18 +28,15 @@ from __future__ import annotations
 import http.client
 import json
 import os
-import shutil
 import socket
 import subprocess
 import sys
 import threading
 import time
-import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-import psycopg
 import pytest
 import uvicorn
 from fastapi import FastAPI
@@ -50,6 +47,7 @@ from src.modules.sentimento.infra.ingest_record_store_composition import (
     IngestRecordStoreConnectionError,
 )
 from src.modules.sentimento.infra.postgres_ingest_record_store import PostgresIngestRecordStore
+from tests.helpers.postgres import DatabaseFactory, PostgresDatabase
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 BOOT_DEADLINE_S = 5.0
@@ -137,82 +135,20 @@ def test_running_the_process_exits_non_zero_and_names_the_variable_for_an_unknow
 
 # ── THE DoD's OTHER LITERAL COMMAND — a real, already-initialised Postgres, over the wire ────
 
-_IMAGE = "timescale/timescaledb:2.17.2-pg15"
-_CONTAINER_NAME_PREFIX = "t-02-6-src-main-postgres-test-"
-_READY_TIMEOUT_S = 30.0
-# Three DIFFERENT strings on purpose: a password that happens to equal the user or database
-# name would let a leak hide behind a coincidental substring match in the assertions below.
+# DIFFERENT strings on purpose (the database name is the fixture's `t_<hex>`): a password that
+# happens to equal the user or database name would let a leak hide behind a coincidental
+# substring match in the assertions below.
 _POSTGRES_USER = "ingest_reader"
-_POSTGRES_DB = "ingest_health_test"
-_POSTGRES_PASSWORD = "do-not-leak-me"  # noqa: S105 - a throwaway container's password, not a secret
-
-_skip_without_docker = pytest.mark.skipif(
-    shutil.which("docker") is None, reason="docker not on PATH — see module docstring"
-)
-
-
-def _run_docker(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run one `docker` subcommand, capturing output for the caller to inspect on failure."""
-    return subprocess.run(  # noqa: S603 — argv is a literal list, never shell-interpolated
-        ["docker", *args], capture_output=True, text=True, timeout=60
-    )
-
-
-def _wait_until_ready(conninfo: str) -> psycopg.Connection:
-    """Poll for the container to accept connections, refusing after `_READY_TIMEOUT_S`."""
-    deadline = time.monotonic() + _READY_TIMEOUT_S
-    last_error: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            return psycopg.connect(conninfo)
-        except psycopg.OperationalError as error:
-            last_error = error
-            time.sleep(0.5)
-    raise TimeoutError(f"postgres did not become ready within {_READY_TIMEOUT_S}s") from last_error
+_POSTGRES_PASSWORD = "do-not-leak-me"  # noqa: S105 - a throwaway role's password, not a secret
 
 
 @pytest.fixture
-def _postgres_host_port() -> Iterator[int]:
-    """Start a throwaway, ALREADY-INITIALISED `timescale/timescaledb` container; yield its port.
-
-    Initialising the schema here (via a direct `psycopg` connection) simulates what a collector
-    (`T-02.4`) would already have done in production BEFORE the API ever answers `/ready` — this
-    fixture proves `src.main`'s OWN composition, never the schema creation `T-02.6` does not own.
-    """
-    name = f"{_CONTAINER_NAME_PREFIX}{uuid.uuid4().hex[:8]}"
-    started = _run_docker(
-        "run",
-        "-d",
-        "--rm",
-        "--name",
-        name,
-        "-e",
-        f"POSTGRES_PASSWORD={_POSTGRES_PASSWORD}",
-        "-e",
-        f"POSTGRES_USER={_POSTGRES_USER}",
-        "-e",
-        f"POSTGRES_DB={_POSTGRES_DB}",
-        "-p",
-        "127.0.0.1::5432",
-        _IMAGE,
-    )
-    if started.returncode != 0:
-        pytest.skip(f"could not start {_IMAGE}: {started.stderr.strip()}")
-    try:
-        port_output = _run_docker("port", name, "5432/tcp")
-        host_port = int(port_output.stdout.strip().rsplit(":", maxsplit=1)[-1])
-        conninfo = (
-            f"host=127.0.0.1 port={host_port} dbname={_POSTGRES_DB} user={_POSTGRES_USER} "
-            f"password={_POSTGRES_PASSWORD}"
-        )
-        connection = _wait_until_ready(conninfo)
-        try:
-            PostgresIngestRecordStore(connection).initialise()
-        finally:
-            connection.close()
-        yield host_port
-    finally:
-        _run_docker("rm", "-f", "-v", name)
+def _postgres(postgres_database_factory: DatabaseFactory) -> PostgresDatabase:
+    """Create a database owned by `_POSTGRES_USER`, with the ingest-record schema initialised."""
+    database = postgres_database_factory(user=_POSTGRES_USER, password=_POSTGRES_PASSWORD)
+    with database.connect() as connection:
+        PostgresIngestRecordStore(connection).initialise()
+    return database
 
 
 @contextmanager
@@ -246,17 +182,13 @@ def _get_ready(port: int) -> tuple[int, dict[str, object]]:
     return response.status, body
 
 
-@_skip_without_docker
 def test_ready_reports_a_masked_dsn_and_true_schema_present_over_a_real_postgres(
-    _postgres_host_port: int, monkeypatch: pytest.MonkeyPatch
+    _postgres: PostgresDatabase, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`D2.7`'s literal command: `schema_present -> true`, `path` never carries the password."""
     monkeypatch.setenv("INGEST_RECORD_BACKEND", "postgres")
-    monkeypatch.setenv("POSTGRES_HOST", "127.0.0.1")
-    monkeypatch.setenv("POSTGRES_PORT", str(_postgres_host_port))
-    monkeypatch.setenv("POSTGRES_DB", _POSTGRES_DB)
-    monkeypatch.setenv("POSTGRES_USER", _POSTGRES_USER)
-    monkeypatch.setenv("POSTGRES_PASSWORD", _POSTGRES_PASSWORD)
+    for variable, value in _postgres.env().items():
+        monkeypatch.setenv(variable, value)
 
     with _served(create_app()) as port:
         status, body = _get_ready(port)
@@ -266,6 +198,6 @@ def test_ready_reports_a_masked_dsn_and_true_schema_present_over_a_real_postgres
     assert isinstance(store, dict)
     assert store["exists"] is True
     assert store["schema_present"] is True
-    expected_path = f"postgresql://{_POSTGRES_USER}@127.0.0.1:{_postgres_host_port}/{_POSTGRES_DB}"
+    expected_path = f"postgresql://{_POSTGRES_USER}@127.0.0.1:{_postgres.port}/{_postgres.dbname}"
     assert store["path"] == expected_path
     assert _POSTGRES_PASSWORD not in str(store["path"])

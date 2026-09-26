@@ -88,10 +88,17 @@ Vinculante para o loop principal e para todo subagente — R1–R9 em
 - **NUNCA `cat` nem `sed -n '1,300p'` de arquivo grande no loop principal** — `grep -n` com âncora,
   `--json` com filtro, ou delegue a leitura.
 - Todo comando que pode passar de ~50 linhas termina em `| head -N` ou `| tail -N`.
-- **Verificação é `make verify`** — os seis portões numa chamada, ~10 linhas, saída bruta em
-  arquivo. Nunca os seis comandos soltos: eles custaram ~397k tokens de saída bruta em 1.320
-  chamadas `[MEDIDO 2026-08-29 sobre 105 transcripts de subagente]`.
-- **O subagente morre cedo — e desde 2026-09-07 isto é PORTÃO, não doutrina.** Passando de ~150
+- **Verificação é `make verify`** — os oito portões numa chamada, ~10 linhas, saída bruta em
+  arquivo. Nunca os comandos soltos: eles custaram ~397k tokens de saída bruta em 1.320
+  chamadas `[MEDIDO 2026-08-29 sobre 105 transcripts de subagente]`. **Desde 2026-09-26 ele só
+  mede o que precisa:** diff só de docs desde a base (`VERIFY_BASE`, senão o upstream, senão
+  `origin/master`) roda apenas `regras`, `validate` e a varredura da chave Coinalyze, em **~4 s**;
+  uma árvore limpa que já mediu verde devolve o veredito do cache (`.git/verify-cache/`,
+  compartilhado entre worktrees). `VERIFY_FORCE=1` mede tudo de novo. O completo leva **354 s**,
+  contra 506–894 s antes `[MEDIDO 2026-09-26: rc=0; baseline n=16 logs /tmp/verify-*.log de
+  2026-09-25]`. Rode-o com `run_in_background`, porque o teto do `Bash` é 600 s.
+- **O subagente morre cedo — e isto é PORTÃO, não doutrina (de verdade só desde 2026-09-26; ver a
+  correção logo abaixo).** Passando de ~150
   turnos, escreva o estado em `docs/context/<feature>/handoff/<TASK>.md` e devolva — o workflow
   invoca o próximo. O custo é **quadrático** nos turnos: 376 turnos custaram 93M; 188 custariam
   ~22M. Quem cobra é [`scripts/claude-hooks/subagent-turn-cap.sh`](scripts/claude-hooks/subagent-turn-cap.sh)
@@ -102,11 +109,29 @@ Vinculante para o loop principal e para todo subagente — R1–R9 em
   `bash scripts/install-claude-hooks.sh`** (idempotente) — e isto **não é opcional**:
   `.claude/settings.json` é gitignored (`.gitignore:21`), então num clone limpo o script existe
   e **o portão não**, sem nada avisar. Mesma classe de quebra que `core.hooksPath` acima.
+
+  > ⚠️ **CORREÇÃO, 2026-09-26 — de 2026-09-07 a 2026-09-26 o hook NUNCA disparou.** Ele
+  > discriminava subagente pelo `transcript_path`, que dentro de subagente aponta para a sessão
+  > PAI. **136 de 499 subagentes passaram de 150 turnos, com 0 avisos**, e o máximo chegou a
+  > **853** `[MEDIDO 2026-09-26: grep "PORTÃO R6" nos transcripts de subagents/]`. Agora ele usa
+  > o `agent_id` do stdin `[DOC: code.claude.com/docs/en/hooks]`. O falsificador abaixo ("hoje
+  > **528**") mediu durante 19 dias um portão que não existia; ele recomeça a contar agora.
 - **Suíte inteira é portão, não laço de desenvolvimento (R8).** Durante o desenvolvimento use
-  `make test-fast K=<filtro>` — **2,19s** contra **37,5s** da suíte, ~17×. ⛔ Ele **não** roda
+  `make test-fast K=<filtro>` — segundos, contra **112,8 s** da suíte com cobertura
+  `[MEDIDO 2026-09-26: 2816 passed; era 523–703 s com um container Postgres por teste e 179 s
+  relendo CSV de aggTrades]`. ⛔ Ele **não** roda
   cobertura nem o piso por camada: verde ali **não é verde de portão**, que continua sendo
   `make test`/`make verify`. `[MEDIDO 2026-09-07: suíte inteira rodada 1.138×, 11,86h, 22% de
   todo o wall-clock de ferramenta]`.
+- **Worktree de trabalho é `scripts/wt.sh`, não `isolation: 'worktree'` (desde 2026-09-26).**
+  `bash scripts/wt.sh new <nome> <branch-base>` cria a worktree em `.claude/worktrees/<nome>`,
+  já na branch da wave e com as dependências por hard link. `ls` lista as worktrees, e `rm` recusa
+  arquivo não commitado e commit órfão. O orquestrador cria a worktree e despacha o agente **sem**
+  isolamento, passando o caminho absoluto. **Por quê:** o guard de isolamento do Claude Code não se
+  desliga e recusa comando com variável, `cd … &&` e laço, que é justamente o preparo que a
+  worktree isolada exigia (**82 chamadas bloqueadas em 2 sessões** `[MEDIDO 2026-09-26]`). **O que se
+  perde, e é declarado:** sem o guard, nada impede fisicamente um `git` no checkout principal. A
+  trava passa a ser a regra de despacho mais o `pre-push`.
 - **Não faça polling; peça notificação (R9).** `Bash` com `run_in_background` e a notificação de
   conclusão, ou o `Monitor` — nunca `until … sleep … done` por hábito. `[MEDIDO 2026-09-07: 114
   laços de espera, 3,68h, 116,4s cada]`.

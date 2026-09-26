@@ -176,6 +176,16 @@ notificação acorda quem precisa. Polling só se justifica contra estado que o 
 observa (CI remoto, fila externa), e aí o intervalo se escolhe pela velocidade do estado, não
 por hábito.
 
+> **Adendo, 2026-09-26: o polling também era sintoma de portão lento.** `make verify` chegou a
+> **8,5–15 min** (`n=16` logs `/tmp/verify-*.log` de 2026-09-25), acima do teto de 600 s do
+> `Bash`. O agente que rodava em primeiro plano estourava o teto e caía no `until`/`tail -f`:
+> **40 chamadas de espera, ~159 min**, numa única sessão (`6624939a`). As causas foram medidas e
+> atacadas na raiz, não na espera. A suíte do backend caiu de **451 s para 109 s** (sem cobertura, mesmo comando; **112,8 s** com
+> cobertura, dentro de um verify completo de **354 s**): um Postgres
+> por sessão via testcontainers e a remoção do código de aggTrades sem chamador. O verify passou
+> a pular diff só de docs e a devolver do cache uma árvore limpa que já mediu verde. A regra
+> continua a mesma: `run_in_background` e a notificação.
+
 ## O limite que este documento admite
 
 `agents/qa.md` já registrou a lição que vale aqui: *"prosa aqui mediu 0% de adesão — quem cobra
@@ -199,6 +209,17 @@ próprio aviso não virar o gasto que ele combate. Três propriedades deliberada
   (**2.843** na maior sessão medida) e é discriminado pelo `/subagents/` no caminho do
   transcript `[MEDIDO 2026-09-07: transcript de 2.843 turnos do loop principal → 0 bytes de
   saída; subagente de 493 turnos → avisa]`.
+
+> **⚠️ CORREÇÃO, 2026-09-26 — de 2026-09-07 a 2026-09-26 o hook NUNCA disparou.** A medição acima
+> alimentou o script **à mão**, com o caminho do transcript DO SUBAGENTE. Só que, no disparo real
+> dentro de um subagente, o Claude Code entrega em `transcript_path` o transcript da **sessão pai**.
+> A checagem por `/subagents/` saía com 0 sempre `[MEDIDO 2026-09-26: 136 de 499 subagentes passaram
+> de 150 turnos desde 2026-09-07, máximo **853**; `grep "PORTÃO R6"` nos transcripts deles → **0**]`.
+> O falsificador de R6 (o `max` de turnos cair) estava medindo um portão que não existia. **Agora quem
+> discrimina é o campo `agent_id`** do stdin, que só vem de dentro de subagente
+> `[DOC: code.claude.com/docs/en/hooks]`. O transcript é achado por ele sob a pasta da sessão, e o
+> teste sintético cobre os dois caminhos: subagente direto e subagente de workflow.
+> **A lição:** testar o hook com a entrada que *eu* montei provou o script, não o disparo.
 - **Ele fala com a cauda, não com o corpo.** A mediana de turnos por subagente **já obedece** a
   doutrina — 66 a 86 nas sessões recentes, contra a base de 137. Quem paga são os máximos de
   **528, 483 e 404**: os 19% que passam de 150 turnos consomem **65%** de todo o contexto de

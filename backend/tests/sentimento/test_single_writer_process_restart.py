@@ -92,13 +92,12 @@ from src.modules.sentimento.use_cases.run_single_writer import (
     run_single_writer,
 )
 from src.modules.sentimento.use_cases.write_series_row import ObservedLookup, write_series_row
+from tests.helpers.postgres import PostgresDatabase
 
 pytestmark = pytest.mark.skipif(
     shutil.which("docker") is None, reason="docker not on PATH — see module docstring"
 )
 
-_IMAGE = "timescale/timescaledb:2.17.2-pg15"
-_CONTAINER_NAME_PREFIX = "t-02-7-writer-restart-test-"
 _READY_TIMEOUT_S = 30.0
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -115,56 +114,10 @@ EVENT_TIME_MS = 1_787_443_500_000
 # ── shared docker/postgres plumbing — mirrors test_postgres_series_sink.py ───────────────────
 
 
-def _run_docker(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run one `docker` subcommand, capturing output for the caller to inspect on failure."""
-    return subprocess.run(  # noqa: S603 — argv is a literal list, never shell-interpolated
-        ["docker", *args], capture_output=True, text=True, timeout=60
-    )
-
-
 @pytest.fixture
-def postgres_conninfo() -> Iterator[str]:
-    """Start a throwaway TimescaleDB container, yield its `psycopg` conninfo, then tear it down."""
-    name = f"{_CONTAINER_NAME_PREFIX}{uuid.uuid4().hex[:8]}"
-    started = _run_docker(
-        "run",
-        "-d",
-        "--rm",
-        "--name",
-        name,
-        "-e",
-        "POSTGRES_PASSWORD=test",
-        "-e",
-        "POSTGRES_USER=test",
-        "-e",
-        "POSTGRES_DB=test",
-        "-p",
-        "127.0.0.1::5432",
-        _IMAGE,
-    )
-    if started.returncode != 0:
-        pytest.skip(f"could not start {_IMAGE}: {started.stderr.strip()}")
-    try:
-        port_output = _run_docker("port", name, "5432/tcp")
-        host_port = port_output.stdout.strip().rsplit(":", maxsplit=1)[-1]
-        conninfo = f"host=127.0.0.1 port={host_port} dbname=test user=test password=test"
-        _wait_until_ready(conninfo).close()
-        yield conninfo
-    finally:
-        _run_docker("rm", "-f", "-v", name)
-
-
-def _wait_until_ready(conninfo: str) -> psycopg.Connection:
-    """Poll for the container to accept connections, refusing after `_READY_TIMEOUT_S`."""
-    deadline = time.monotonic() + _READY_TIMEOUT_S
-    last_error: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            return psycopg.connect(conninfo)
-        except psycopg.OperationalError as error:
-            last_error = error
-            time.sleep(0.5)
-    raise TimeoutError(f"postgres did not become ready within {_READY_TIMEOUT_S}s") from last_error
+def postgres_conninfo(postgres_database: PostgresDatabase) -> str:
+    """Return the `psycopg` conninfo of this test's own database on the shared server."""
+    return postgres_database.conninfo
 
 
 def _host_port_from_conninfo(conninfo: str) -> tuple[str, str, str, str, str]:
@@ -190,19 +143,19 @@ def _host_port_from_conninfo(conninfo: str) -> tuple[str, str, str, str, str]:
 @pytest.fixture
 def redis_address() -> Iterator[tuple[str, int]]:
     """Start a throwaway `redis:7-alpine` container, yield its address, then tear it down."""
-    name = f"{_CONTAINER_NAME_PREFIX}redis-{uuid.uuid4().hex[:8]}"
-    started = _run_docker(
-        "run", "-d", "--rm", "--name", name, "-p", "127.0.0.1::6379", "redis:7-alpine"
-    )
-    if started.returncode != 0:
-        pytest.skip(f"could not start redis:7-alpine: {started.stderr.strip()}")
+    from testcontainers.core.container import DockerContainer
+
+    container = DockerContainer("redis:7-alpine").with_exposed_ports(6379)
     try:
-        port_output = _run_docker("port", name, "6379/tcp")
-        host_port = int(port_output.stdout.strip().rsplit(":", maxsplit=1)[-1])
+        container.start()
+    except Exception as error:  # noqa: BLE001 — any failure to start means "no engine here"
+        pytest.skip(f"could not start redis:7-alpine: {error}")
+    try:
+        host_port = int(container.get_exposed_port(6379))
         _wait_for_redis_ready("127.0.0.1", host_port)
         yield ("127.0.0.1", host_port)
     finally:
-        _run_docker("rm", "-f", "-v", name)
+        container.stop()
 
 
 def _wait_for_redis_ready(host: str, port: int) -> None:
