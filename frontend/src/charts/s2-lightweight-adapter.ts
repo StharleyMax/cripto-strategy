@@ -126,7 +126,9 @@ export function lineSeriesLossless(slots: readonly ScalarSlot[]): readonly (Line
 /**
  * The lossless mapping a LOGARITHMIC price scale can actually consume: one item per canonical
  * slot, `{time, value}` only for a STRICTLY POSITIVE value, `{time}` (whitespace) for an absent
- * slot AND for a legitimate `0`.
+ * slot AND for a legitimate `0`. On a LINEAR scale (the volume sub-axis since `web`'s `T-02.2`) the
+ * same routing holds for a different reason: the library draws a `0` at its 1-px floor, as tall as
+ * the smallest real bar, so "foi zero" would read as "houve pouco".
  *
  * ⛔ WHY `0` IS ROUTED OUT OF THE BAR SERIES RATHER THAN DRAWN AS A ZERO-HEIGHT BAR — and this
  * is NOT the same decision `lineSeriesLossless` makes. `log10(0)` has no coordinate, so a `0`
@@ -177,7 +179,10 @@ function assertDrawableMark(markValue: number): void {
  * exactly where the slot carries NO value, `{time}` (whitespace) everywhere else.
  *
  * Fed to a histogram on a fixed-range price scale, this is `D5.3`'s "lacuna de `FLOW` como
- * traço na linha de base" — the third channel of `STITCH_CONTEXT.md:1821-1825`, which a bare
+ * traço na linha de base" — drawn, for the volume sub-axis since `web`'s `T-02.2`, in a strip of
+ * marks just BELOW the bars' base rather than on it (`gates/T-02.2-design-gate.md` §5.2: on a linear
+ * scale the base is where every small bar's 1-px floor lands) — the third channel of
+ * `STITCH_CONTEXT.md:1821-1825`, which a bare
  * `WhitespaceItem` satisfies only two thirds of: it does not interpolate and it does not zero,
  * but it draws NO MARK, so "não sabemos" and "houve pouquíssimo volume" land on the same
  * pixels (none). `markValue` is the caller's, in the units of whatever fixed range that scale

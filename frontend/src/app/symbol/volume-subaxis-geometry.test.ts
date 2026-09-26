@@ -1,35 +1,38 @@
 /**
- * `T-01.8` — THE GEOMETRY OF THE VOLUME SUB-AXIS, MEASURED IN PIXELS AGAINST THE REAL LIBRARY.
+ * `T-01.8` → `T-02.2` — THE GEOMETRY OF THE VOLUME SUB-AXIS, MEASURED ON THE LIBRARY'S OWN DRAW CALLS.
  *
- * This file exists because phase `01`'s `design_gate`
- * (`docs/context/cinco-metricas-do-core/gates/design-01.md`) failed with TWO `BLOCKER` findings
- * that are arithmetic, and no instrument in this repo was able to see them:
+ * History, kept because the reason for the file outlives the decision it first guarded: phase
+ * `01`'s `design_gate` (`docs/context/cinco-metricas-do-core/gates/design-01.md`) failed with two
+ * arithmetic `BLOCKER`s no instrument here could see — `BLOCKER-1` (a linear scale put 67.9% of the
+ * bars below one pixel) and `BLOCKER-2` (an absent slot drew no mark at all). The answer then was
+ * `log10` base 1 plus two mark series.
  *
- *   - `BLOCKER-1` — LINEAR scale anchored on the window maximum => `954/1,404` present bars
- *     (`67.9%`) below one physical pixel, median bar of `0.62 px`. WCAG 1.4.11 fails it.
- *   - `BLOCKER-2` — `WhitespaceItem` draws no mark at all => "we do not know" and "it was zero"
- *     are the same pixels: none. `STITCH_CONTEXT.md:1821-1825` / `D5.3` forbid it.
+ * `T-02.2` (`docs/context/paineis-de-fluxo/gates/T-02.2-design-gate.md`, cycle 2 APPROVED, §8) moved
+ * the scale to LINEAR base 0 and the marks to a strip of their own BELOW the bars' base. This file
+ * now proves the invariants of THAT form (§5.2 and §8.8 `N-1`/`N-2`), each against the real
+ * `lightweight-charts` inside a `jsdom`:
  *
- * ⚠️ WHY THIS IS NOT ONE MORE SOURCE SCAN, and the difference is the reason the file exists:
- * `volume-subaxis-dom-contract.test.ts` proves the literals are SPELLED where the contract
- * requires — and with the whole suite green, the `67.9%` sub-pixel bars went unnoticed for two
- * tasks. Bar height is not a string one can grep: it comes out of the interaction between the
- * scale mode, the histogram base, the margins and the pane height. Only the library knows the
- * number, so this file asks IT for the number (`priceToCoordinate`), inside a `jsdom`, with the
- * SAME shim `charts` already uses to measure axis fidelity.
+ *   1. `BLOCKER-1` stays closed by the library, not by us: every present bar is PAINTED at least
+ *      1 px tall (`lightweight-charts.development.mjs:14944-14963`, `tickWidth = max(1, …)`). The
+ *      coordinate of a small bar is sub-pixel; its `fillRect` is not. That is why this file records
+ *      `fillRect` and does not stop at `priceToCoordinate`.
+ *   2. The two strips never touch: no mark row sits in the bar region, no bar row in the mark strip,
+ *      and there is at least ONE empty row between the top of the ZERO mark (the taller of the two)
+ *      and the bars' base (`N-1`).
+ *   3. Inside the strip, absence < zero in height (order, not the nominal 2/6 values — `N-1`).
+ *   4. The peak stands out (`F-3` of the gate, in unit form): the tallest painted bar is at least
+ *      `4×` the median painted bar. Under the previous `log10` it is not — the MORDE below.
  *
- * ⛔ AND THE CONSTANTS ARE READ FROM THE PRODUCTION SOURCE, NOT RETYPED HERE. A copy of the
- * margins/base/heights in this file would measure the configuration THIS file chose, not the one
- * the screen draws — and it would stay green while production regresses, which is exactly the
- * class of false-green the report found. Every form constant comes from `SymbolClient.tsx` by
- * regex; if one of them is renamed, the parse fails and the test FAILS instead of measuring the
- * default.
+ * ⛔ THE CONSTANTS ARE READ FROM THE PRODUCTION SOURCE, NOT RETYPED HERE, and so are the scale roles
+ * the chart host applies at runtime (`clearSeparator` lifts a floor-anchored scale 4 px off the
+ * separator, `charts/pane-stack-layout.ts`). A copy would measure the configuration THIS file chose.
+ * The pane height is the production price pane's (`stackedPaneLayout` over `F1_PANE_STRETCH`, 335 px),
+ * because the strip is a FRACTION of the pane and the gap between the strips scales with it.
  *
- * THE UNIVERSE: a synthetic long-tailed series with `max/p50 ~ 60x` — the ratio MEASURED on the
- * real 24h data (`max 4,931.19 / p50 81.07 = 60.8x`, `n=1,404`). Synthetic and not the on-disk
- * corpus on purpose: what fails here is the RATIO between maximum and median, which is a property
- * of the distribution, and tying that to a non-versioned CSV would turn a gate about form into a
- * `RECUSA` by environment (`scripts/verify.sh` §1c).
+ * THE UNIVERSE: a synthetic long tail with `max/p50 ~ 60x`, the ratio measured on real 1-minute
+ * data (`max 4,931.19 / p50 81.07 = 60.8x`, `n=1,404`), with absent slots and one legitimate zero.
+ * Synthetic on purpose: what matters is the ratio, and tying a form gate to a non-versioned CSV
+ * would turn it into a `RECUSA` by environment (`scripts/verify.sh` §1c).
  */
 
 import assert from "node:assert/strict";
@@ -39,45 +42,80 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 
-import { absenceMarkSeries, flushFrames, installGlobals, positiveValueSeriesLossless, zeroMarkSeries } from "../../charts/index.ts";
+import {
+  absenceMarkSeries,
+  F1_PANE_STACK_FORM,
+  flushFrames,
+  installGlobals,
+  paneScaleMargins,
+  positiveValueSeriesLossless,
+  stackedPaneLayout,
+  zeroMarkSeries,
+} from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
+import { F1_PANE_ORDER, F1_PANE_STRETCH } from "./pane-registry.ts";
 
 const SYMBOL_CLIENT_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx");
 const source = readFileSync(SYMBOL_CLIENT_PATH, "utf8");
 
-/** Reads a numeric module constant from the production source. Fails instead of defaulting: a
- * default here is the measurement silently switching to another object. */
+/** Reads a numeric module constant from the production source. Fails instead of defaulting. */
 function productionNumber(name: string): number {
   const match = new RegExp(`const ${name} = (-?\\d+(?:\\.\\d+)?);`).exec(source);
   assert.ok(match !== null, `${name} was not found in SymbolClient.tsx — the anchor moved, fix this test`);
   return Number(match[1]);
 }
 
-const CHART_HEIGHT_PX = productionNumber("CHART_HEIGHT_PX");
-const VOLUME_LOG_BASE = productionNumber("VOLUME_LOG_BASE");
-const ABSENCE_MARK_PX = productionNumber("ABSENCE_MARK_PX");
-const ZERO_MARK_PX = productionNumber("ZERO_MARK_PX");
+interface Margins {
+  readonly top: number;
+  readonly bottom: number;
+}
 
-const MARGINS_DECLARATION = /const VOLUME_SCALE_MARGINS = \{ top: (\d+(?:\.\d+)?), bottom: (\d+(?:\.\d+)?) \} as const;/;
-const marginsMatch = MARGINS_DECLARATION.exec(source);
-assert.ok(marginsMatch !== null, "VOLUME_SCALE_MARGINS was not found in SymbolClient.tsx");
-const VOLUME_SCALE_MARGINS = { top: Number(marginsMatch[1]), bottom: Number(marginsMatch[2]) };
-const VOLUME_MARKS_BAND_PX = CHART_HEIGHT_PX * (1 - VOLUME_SCALE_MARGINS.top);
+function productionMargins(name: string): Margins {
+  const match = new RegExp(`const ${name} = \\{ top: (\\d+(?:\\.\\d+)?), bottom: (\\d+(?:\\.\\d+)?) \\} as const;`).exec(source);
+  assert.ok(match !== null, `${name} was not found in SymbolClient.tsx — the anchor moved, fix this test`);
+  return { top: Number(match[1]), bottom: Number(match[2]) };
+}
 
-/** The scale mode production applies to the volume scale, read from the source — `"Logarithmic"`,
- * `"Normal"` or `null` when no mode is applied at all (which IS the linear mode, the defect). */
+interface ScaleRole {
+  readonly belowLegend: boolean;
+  readonly clearSeparator: boolean;
+}
+
+/** The role the chart host applies to a scale of the price pane, parsed from `PricePane`'s `scales`. */
+function productionScaleRole(seriesName: string): ScaleRole {
+  const match = new RegExp(`\\{ series: ${seriesName}, belowLegend: (true|false), clearSeparator: (true|false) \\}`).exec(source);
+  assert.ok(match !== null, `the scale binding of ${seriesName} was not found in SymbolClient.tsx — fix this test`);
+  return { belowLegend: match[1] === "true", clearSeparator: match[2] === "true" };
+}
+
+/** The scale mode production applies to the volume scale — `null` when no mode is applied. */
 function productionVolumeScaleMode(): string | null {
-  const match = /volumeSeries\s*\n?\s*\.priceScale\(\)[\s\S]{0,200}?mode: PriceScaleMode\.(\w+)/.exec(source);
+  const match = /volumeSeries\.priceScale\(\)\.applyOptions\(\{\s*scaleMargins: VOLUME_SCALE_MARGINS,\s*mode: PriceScaleMode\.(\w+),/.exec(source);
   return match === null ? null : match[1]!;
 }
 
-// ── The synthetic universe: long tail with the max/p50 ratio of the real data ────────────────
+const VOLUME_BAR_BASE = productionNumber("VOLUME_BAR_BASE");
+const ABSENCE_MARK_PX = productionNumber("ABSENCE_MARK_PX");
+const ZERO_MARK_PX = productionNumber("ZERO_MARK_PX");
+const VOLUME_MARKS_BAND_PX = productionNumber("VOLUME_MARKS_BAND_PX");
+const VOLUME_SCALE_MARGINS = productionMargins("VOLUME_SCALE_MARGINS");
+const VOLUME_MARKS_SCALE_MARGINS = productionMargins("VOLUME_MARKS_SCALE_MARGINS");
+const VOLUME_ROLE = productionScaleRole("volumeSeries");
+const MARKS_ROLE = productionScaleRole("absenceSeries");
+
+/** The production price pane's height — index 0 of the one-chart stack (`F1_PANE_ORDER[0]`). */
+const PRICE_PANE_PX = (() => {
+  assert.equal(F1_PANE_ORDER[0], "price", "the price pane is no longer index 0 — fix this test");
+  const layout = stackedPaneLayout({ ...F1_PANE_STACK_FORM, weights: F1_PANE_ORDER.map((paneId) => F1_PANE_STRETCH[paneId]) });
+  return Math.round(layout.paneHeightsPx[0]!);
+})();
+
+// ── The synthetic universe ──────────────────────────────────────────────────────────────────
 
 const ONE_MINUTE_MS = 60_000;
-/** The pane width only enters the bar's WIDTH, never its height — which is what this file
- * measures. Pinned anyway so the measurement does not depend on the `clientWidth` of a jsdom
- * `<div>` (which is `0`, and the component would fall back to its `|| 600`). */
-const MEASUREMENT_WIDTH_PX = 1_200;
+/** The pane width only enters the bar's WIDTH; pinned so a bar never shares a column with another
+ * (`1,200 / 1,440` would put two slots in some columns and the count below would blur). */
+const MEASUREMENT_WIDTH_PX = 1_600;
 const GRID_SLOTS = 1_440;
 const ABSENT_EVERY = 40;
 const ZERO_AT_INDEX = 500;
@@ -87,23 +125,13 @@ interface Slot {
   readonly value: number | null;
 }
 
-/** The `max/p50` ratio MEASURED on the real 24h data — `4,931.19 / 81.07`, `n=1,404`
- * (`gates/design-01.md` §2). IT is what produces the defect, not the amplitude alone: a
- * log-uniform distribution over the same amplitude gives `22x` and leaves "only" 40% of the bars
- * sub-pixel, too weak to serve as a negative control `[MEDIDO 2026-09-15]`. */
 const REAL_MAX_OVER_P50 = 60.8;
 const SYNTHETIC_MIN = 10;
 const SYNTHETIC_MAX = 4_931;
-/** Exponent that skews the low-discrepancy sequence inside log-space until the median lands where
- * the real one lands: `0.5 ** SKEW` has to equal `log10(p50/min) / log10(max/min)`, which on the
- * real data is `(1.909 - 1.026) / (3.693 - 1.026) = 0.331` => `SKEW = ln(0.331)/ln(0.5)`.
- * Written out as a number and VERIFIED by the universe test below, so that a convenience tweak
- * here fails instead of silently loosening the negative control. */
+/** Skews the low-discrepancy sequence inside log-space until the median lands where the real one
+ * does; verified by the universe test below, so a convenience tweak fails instead of loosening it. */
 const SKEW = 1.6;
 
-/** Long tail between `10` and `4,931`, with the SAME `max/p50` ratio as the real 24h data, from a
- * deterministic generator (no `Math.random`: a test that changes universe on every run is not a
- * gate). */
 function syntheticVolumeSlots(): readonly Slot[] {
   const slots: Slot[] = [];
   for (let i = 0; i < GRID_SLOTS; i += 1) {
@@ -113,7 +141,6 @@ function syntheticVolumeSlots(): readonly Slot[] {
     } else if (i % ABSENT_EVERY === 0) {
       slots.push({ time, value: null });
     } else {
-      // Low-discrepancy sequence (Van der Corput base 2), mapped into log-space.
       let bits = i;
       let fraction = 0;
       let denominator = 0.5;
@@ -122,87 +149,154 @@ function syntheticVolumeSlots(): readonly Slot[] {
         bits = Math.floor(bits / 2);
         denominator /= 2;
       }
-      slots.push({
-        time,
-        value: SYNTHETIC_MIN * 10 ** (fraction ** SKEW * Math.log10(SYNTHETIC_MAX / SYNTHETIC_MIN)),
-      });
+      slots.push({ time, value: SYNTHETIC_MIN * 10 ** (fraction ** SKEW * Math.log10(SYNTHETIC_MAX / SYNTHETIC_MIN)) });
     }
   }
   return slots;
 }
 
-interface Measurement {
-  readonly barHeightsPx: readonly number[];
-  readonly absenceMarkPx: number;
-  readonly zeroMarkPx: number;
+// ── The instrument: the library's own `fillRect` calls, one paint ───────────────────────────
+
+/** Colours only this file uses, so every recorded rectangle is attributable to ONE series. */
+const BAR_INK = "#a10000";
+const ABSENCE_INK = "#00a100";
+const ZERO_INK = "#0000a1";
+
+interface Rect {
+  readonly left: number;
+  readonly top: number;
+  /** Inclusive last row. */
+  readonly bottom: number;
 }
 
-/** Builds the sub-axis with the production configuration (`mode` parameterised only for the
- * negative control) and returns the height IN PIXELS of each mark, asked of the library itself. */
-async function measureSubAxis(slots: readonly Slot[], mode: "Logarithmic" | "Normal"): Promise<Measurement> {
+interface Paint {
+  readonly paneHeightPx: number;
+  readonly bars: readonly Rect[];
+  readonly absenceMarks: readonly Rect[];
+  readonly zeroMarks: readonly Rect[];
+}
+
+/** The configuration under test. Everything defaults to production; a MORDE overrides ONE field. */
+interface Config {
+  readonly mode: "Logarithmic" | "Normal";
+  readonly base: number;
+  readonly marksMargins: Margins;
+}
+
+const PRODUCTION: Config = {
+  mode: productionVolumeScaleMode() === "Normal" ? "Normal" : "Logarithmic",
+  base: VOLUME_BAR_BASE,
+  marksMargins: VOLUME_MARKS_SCALE_MARGINS,
+};
+
+async function paintSubAxis(slots: readonly Slot[], config: Config): Promise<Paint> {
   const dom = new JSDOM('<!doctype html><html><body><div id="chart"></div></body></html>', { pretendToBeVisual: true });
   installGlobals(dom);
+
+  let recording = false;
+  // Keyed by `left:top:bottom`, so a series painted twice inside the recorded frame counts once.
+  const rects = new Map<string, Map<string, Rect>>([
+    [BAR_INK, new Map()],
+    [ABSENCE_INK, new Map()],
+    [ZERO_INK, new Map()],
+  ]);
+  const baseGetContext = dom.window.HTMLCanvasElement.prototype.getContext;
+  dom.window.HTMLCanvasElement.prototype.getContext = function recordingGetContext(this: unknown, ...args: unknown[]): unknown {
+    const context = (baseGetContext as unknown as (...rest: unknown[]) => unknown).apply(this, args) as object;
+    const state = { fillStyle: "" };
+    return new Proxy(context, {
+      get(target, property): unknown {
+        if (property === "fillStyle") {
+          return state.fillStyle;
+        }
+        if (property === "fillRect") {
+          return (x: number, y: number, width: number, height: number): void => {
+            const bucket = rects.get(state.fillStyle.toLowerCase());
+            // A pane-sized fill of another colour is the background of a NEW paint: only the last
+            // paint is the screen, so what the previous ones drew is dropped.
+            if (bucket === undefined && width >= MEASUREMENT_WIDTH_PX / 2 && height >= PRICE_PANE_PX / 2) {
+              for (const drawnSoFar of rects.values()) {
+                drawnSoFar.clear();
+              }
+            }
+            if (recording && bucket !== undefined && height > 0 && width > 0) {
+              bucket.set(`${x}:${y}:${height}`, { left: x, top: y, bottom: y + height - 1 });
+            }
+          };
+        }
+        return Reflect.get(target, property);
+      },
+      set(_target, property, value): boolean {
+        if (property === "fillStyle") {
+          state.fillStyle = String(value);
+        }
+        return true;
+      },
+    });
+  } as unknown as HTMLCanvasElement["getContext"];
+
   const lc = await import("lightweight-charts");
   const container = dom.window.document.getElementById("chart");
   assert.ok(container !== null, "broken invariant: the chart container does not exist in the DOM");
-
-  // ⛔ The options come from `chartConstructorOptions`, the SAME call `useLightweightChart` makes,
-  // and not from an object written here. Two reasons, neither of them stylistic: (i) measuring the
-  // geometry of a pane built by another constructor would measure another pane; (ii)
-  // `chart-construction.test.ts` (`DR-1`) requires this of every `createChart` under `app/` — and
-  // the requirement is right, because a `createChart` writing its own options is how `DR-1` went
-  // to production.
-  const chart = lc.createChart(container, chartConstructorOptions(MEASUREMENT_WIDTH_PX, CHART_HEIGHT_PX));
+  // ⛔ `chartConstructorOptions`, the SAME call `useLightweightChart` makes (`chart-construction.test.ts`, `DR-1`).
+  // `locale` only: jsdom's `navigator.language` is not a locale `Intl` accepts, and the time axis
+  // formats its labels while painting — same override `candle-direction-channel.test.ts` makes.
+  const chart = lc.createChart(container, {
+    ...chartConstructorOptions(MEASUREMENT_WIDTH_PX, PRICE_PANE_PX + F1_PANE_STACK_FORM.timeAxisPx),
+    localization: { locale: "en-US" },
+  });
   const volumeSeries = chart.addSeries(lc.HistogramSeries, {
+    color: BAR_INK,
     priceScaleId: "volume",
-    base: VOLUME_LOG_BASE,
+    base: config.base,
     priceLineVisible: false,
     lastValueVisible: false,
   });
   volumeSeries.priceScale().applyOptions({
     scaleMargins: VOLUME_SCALE_MARGINS,
-    mode: mode === "Logarithmic" ? lc.PriceScaleMode.Logarithmic : lc.PriceScaleMode.Normal,
+    mode: config.mode === "Logarithmic" ? lc.PriceScaleMode.Logarithmic : lc.PriceScaleMode.Normal,
   });
   volumeSeries.setData(positiveValueSeriesLossless(slots) as never);
-
-  const markStyle = {
+  const markStyle = (color: string) => ({
+    color,
     priceScaleId: "volume_marks",
     priceLineVisible: false,
     lastValueVisible: false,
     autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: VOLUME_MARKS_BAND_PX } }),
-  };
-  const absence = chart.addSeries(lc.HistogramSeries, markStyle);
-  absence.priceScale().applyOptions({ scaleMargins: VOLUME_SCALE_MARGINS });
+  });
+  const absence = chart.addSeries(lc.HistogramSeries, markStyle(ABSENCE_INK));
+  absence.priceScale().applyOptions({ scaleMargins: config.marksMargins });
   absence.setData(absenceMarkSeries(slots, ABSENCE_MARK_PX) as never);
-  const zero = chart.addSeries(lc.HistogramSeries, markStyle);
+  const zero = chart.addSeries(lc.HistogramSeries, markStyle(ZERO_INK));
   zero.setData(zeroMarkSeries(slots, ZERO_MARK_PX) as never);
-
   chart.timeScale().fitContent();
   await flushFrames(dom, 3);
 
-  const barBase = volumeSeries.priceToCoordinate(VOLUME_LOG_BASE);
-  const markBase = absence.priceToCoordinate(0);
-  assert.ok(barBase !== null && markBase !== null, "the library did not place the baseline — the measurement would be vacuous");
-  const barHeightsPx = slots
-    .filter((slot): slot is Slot & { value: number } => slot.value !== null && slot.value > 0)
-    .map((slot) => {
-      const coordinate = volumeSeries.priceToCoordinate(slot.value);
-      assert.ok(coordinate !== null, `the bar of ${slot.value} got no coordinate`);
-      return (barBase as number) - (coordinate as number);
-    });
-  const heightOf = (series: typeof absence, value: number): number => {
-    const coordinate = series.priceToCoordinate(value);
-    assert.ok(coordinate !== null, `the mark of ${value} got no coordinate`);
-    return (markBase as number) - (coordinate as number);
-  };
-  const measurement = {
-    barHeightsPx,
-    absenceMarkPx: heightOf(absence, ABSENCE_MARK_PX),
-    zeroMarkPx: heightOf(zero, ZERO_MARK_PX),
-  };
+  recording = true;
+  // Pin the pane to the production price pane's height (the time-axis row jsdom lays out is not
+  // `F1_PANE_STACK_FORM`'s allowance), then apply the margins the chart host applies at runtime.
+  const firstHeight = chart.panes()[0]!.getHeight();
+  chart.resize(MEASUREMENT_WIDTH_PX, PRICE_PANE_PX + F1_PANE_STACK_FORM.timeAxisPx + (PRICE_PANE_PX - firstHeight));
+  await flushFrames(dom, 2);
+  const paneHeightPx = chart.panes()[0]!.getHeight();
+  for (const [series, base, role] of [
+    [volumeSeries, VOLUME_SCALE_MARGINS, VOLUME_ROLE],
+    [absence, config.marksMargins, MARKS_ROLE],
+  ] as const) {
+    const result = paneScaleMargins(base, role, { paneHeightPx, legendBottomPx: null });
+    assert.equal(result.kind, "margins", `the host would not apply margins to this scale (${result.kind})`);
+    if (result.kind === "margins") {
+      series.priceScale().applyOptions({ scaleMargins: result.margins });
+    }
+  }
+  chart.timeScale().fitContent();
+  await flushFrames(dom, 2);
+
+  recording = false;
   chart.remove();
   dom.window.close();
-  return measurement;
+  const drawn = (ink: string): readonly Rect[] => [...rects.get(ink)!.values()];
+  return { paneHeightPx, bars: drawn(BAR_INK), absenceMarks: drawn(ABSENCE_INK), zeroMarks: drawn(ZERO_INK) };
 }
 
 function median(values: readonly number[]): number {
@@ -210,21 +304,27 @@ function median(values: readonly number[]): number {
   return sorted[Math.floor(sorted.length / 2)]!;
 }
 
-/** `BLOCKER-1`'s floor: 1 PHYSICAL pixel. Below it the bar is indistinguishable from absence —
- * and `lightweight-charts` has a `Math.max(1, …)` in its minified source that the report
- * explicitly COULD NOT prove to be about height; if it is, the sub-pixel bars all become equal
- * and the sub-axis stops encoding volume. Both branches are a defect, and this floor kills
- * both. */
-const PIXEL_FLOOR = 1;
-/** The median has to be comfortably legible, not merely "above zero". `6 px` is a small fraction
- * of the measured usable band (~37 px) and still ~10x what the linear scale delivered. */
-const MEDIAN_FLOOR_PX = 6;
+const heightOf = (rect: Rect): number => rect.bottom - rect.top + 1;
 
-test("the synthetic universe reproduces the real data's max/p50 ratio — without it the negative control is weak", () => {
-  // ⛔ THE UNIVERSE IS DECLARED AND VERIFIED, not assumed. What produces `BLOCKER-1` is the RATIO
-  // between the maximum and the median; if a tweak here shrinks it, the linear scale stops failing
-  // and the negative control below turns into decoration — failing HERE, in this test, instead of
-  // later and in silence.
+/** Rows of empty space between the lowest bar row and the highest mark row (`N-1`: ≥ 1). */
+function stripGapRows(paint: Paint): number {
+  const lowestBarRow = Math.max(...paint.bars.map((rect) => rect.bottom));
+  const highestMarkRow = Math.min(...[...paint.absenceMarks, ...paint.zeroMarks].map((rect) => rect.top));
+  return highestMarkRow - lowestBarRow - 1;
+}
+
+/** `F-3` of the gate: the tallest painted bar against the median painted bar. */
+function peakOverMedian(paint: Paint): number {
+  const heights = paint.bars.map(heightOf);
+  return Math.max(...heights) / median(heights);
+}
+
+const presentCount = (slots: readonly Slot[]): number => slots.filter((slot) => slot.value !== null && slot.value > 0).length;
+
+/** `F-3`'s threshold, verbatim from the gate (§6): "≥ 4× a mediana das colunas desenhadas". */
+const PEAK_OVER_MEDIAN_FLOOR = 4;
+
+test("the synthetic universe reproduces the real data's max/p50 ratio — without it the controls are weak", () => {
   const values = syntheticVolumeSlots()
     .filter((slot): slot is Slot & { value: number } => slot.value !== null && slot.value > 0)
     .map((slot) => slot.value);
@@ -235,79 +335,59 @@ test("the synthetic universe reproduces the real data's max/p50 ratio — withou
   );
 });
 
-test("BLOCKER-1: no present bar falls below 1 pixel, and the median is legible", async () => {
+test("T-02.2: production APPLIES the linear mode with base 0 — the configuration measured below is the screen's", () => {
+  assert.equal(productionVolumeScaleMode(), "Normal", "the volume sub-axis scale in SymbolClient.tsx is not PriceScaleMode.Normal");
+  assert.equal(VOLUME_BAR_BASE, 0, "the histogram base is not 0 — the height stops being proportional (gate §8.8 N-4)");
+  assert.match(source, /base: VOLUME_BAR_BASE,/, "VOLUME_BAR_BASE is declared but not fed to the volume series");
+  assert.match(
+    source,
+    /absenceSeries\.priceScale\(\)\.applyOptions\(\{ scaleMargins: VOLUME_MARKS_SCALE_MARGINS \}\);/,
+    "the marks scale does not get its own strip — the measurement below would be of another layout",
+  );
+  assert.equal(PRICE_PANE_PX, 335, "the production price pane changed height — re-read the gate's 335-px geometry");
+});
+
+test("BLOCKER-1 stays closed: every present bar is PAINTED at least 1 px tall, and none vanishes", async () => {
   const slots = syntheticVolumeSlots();
-  const { barHeightsPx } = await measureSubAxis(slots, "Logarithmic");
-  const subPixel = barHeightsPx.filter((height) => height < PIXEL_FLOOR);
-  assert.ok(barHeightsPx.length > 1_000, `universe too small (${barHeightsPx.length}) — the measurement would be weak`);
-  assert.equal(
-    subPixel.length,
-    0,
-    `${subPixel.length}/${barHeightsPx.length} bars below ${PIXEL_FLOOR}px — that is BLOCKER-1 back (WCAG 1.4.11)`,
-  );
-  const p50 = median(barHeightsPx);
-  assert.ok(
-    p50 >= MEDIAN_FLOOR_PX,
-    `median bar of ${p50.toFixed(2)}px, below the floor of ${MEDIAN_FLOOR_PX}px`,
-  );
+  const paint = await paintSubAxis(slots, PRODUCTION);
+  assert.ok(Math.abs(paint.paneHeightPx - PRICE_PANE_PX) <= 1, `pane measured ${paint.paneHeightPx}px, not the production ${PRICE_PANE_PX}px`);
+  assert.equal(paint.bars.length, presentCount(slots), "a present bar was not painted — BLOCKER-1 back (the absence and the bar look the same)");
+  const thinnest = Math.min(...paint.bars.map(heightOf));
+  assert.ok(thinnest >= 1, `a bar was painted ${thinnest}px tall`);
 });
 
-test("MORDE: the SAME series on the LINEAR scale fails the assertion above — the negative control", async () => {
-  // ⛔ Without this half, the green above is not evidence: it would be a claim the instrument was
-  // never shown able to reject (`axis-spike.ts`, same argument). Here the mutation is the PREVIOUS
-  // configuration, literally — the one the gate failed.
-  const slots = syntheticVolumeSlots();
-  const { barHeightsPx } = await measureSubAxis(slots, "Normal");
-  const subPixel = barHeightsPx.filter((height) => height < PIXEL_FLOOR);
-  assert.ok(
-    subPixel.length > barHeightsPx.length / 2,
-    `the linear scale left only ${subPixel.length}/${barHeightsPx.length} bars sub-pixel — the ` +
-      `negative control stopped reproducing the defect, and without it the test above proves nothing`,
-  );
-  assert.ok(
-    median(barHeightsPx) < PIXEL_FLOOR,
-    "the linear median stopped being sub-pixel — re-anchor this control rather than deleting it",
-  );
+test("N-1: the strips never touch — at least one empty row between the ZERO mark (the taller) and the bars' base", async () => {
+  const paint = await paintSubAxis(syntheticVolumeSlots(), PRODUCTION);
+  assert.ok(paint.zeroMarks.length > 0 && paint.absenceMarks.length > 0, "the universe lost its zero or its gaps — the gap below would be vacuous");
+  const gap = stripGapRows(paint);
+  assert.ok(gap >= 1, `only ${gap} empty rows between the mark strip and the bars — the strips touch, BLOCKER-2 reopens (gate F-2)`);
 });
 
-test("BLOCKER-1: production APPLIES the logarithmic mode — the mode measured above is the screen's", async () => {
-  // The measurement above would use the right configuration even if production used the wrong one;
-  // this is the tie between the two. `null` (no `mode` applied) IS the defect: the default is
-  // linear.
-  assert.equal(
-    productionVolumeScaleMode(),
-    "Logarithmic",
-    "the volume sub-axis scale in SymbolClient.tsx is not logarithmic — BLOCKER-1",
-  );
+test("N-1: inside the strip, absence < zero in height, and both are drawn", async () => {
+  const paint = await paintSubAxis(syntheticVolumeSlots(), PRODUCTION);
+  const absence = Math.max(...paint.absenceMarks.map(heightOf));
+  const zero = Math.min(...paint.zeroMarks.map(heightOf));
+  assert.ok(absence >= 1, `the absence mark is ${absence}px — below 1px it does not exist`);
+  assert.ok(zero > absence, `zero (${zero}px) is not taller than absence (${absence}px) — "não sabemos" and "foi zero" collide`);
 });
 
-test("BLOCKER-2: absence, legitimate zero and the smallest present bar occupy DIFFERENT pixels", async () => {
-  const slots = syntheticVolumeSlots();
-  const { barHeightsPx, absenceMarkPx, zeroMarkPx } = await measureSubAxis(slots, "Logarithmic");
-  // 1. Absence DRAWS — it is `D5.3`'s third channel, the one `WhitespaceItem` did not have.
-  assert.ok(
-    absenceMarkPx >= PIXEL_FLOOR,
-    `the absence mark measures ${absenceMarkPx.toFixed(2)}px — below 1px it does not exist, which is BLOCKER-2`,
-  );
-  // 2. And it does not draw the SAME thing as the legitimate zero.
-  assert.ok(
-    zeroMarkPx >= 2 * absenceMarkPx,
-    `zero (${zeroMarkPx.toFixed(2)}px) and absence (${absenceMarkPx.toFixed(2)}px) do not separate by height — ` +
-      `"there was none" and "we do not know" would be the same claim again`,
-  );
-  // 3. And neither of the two may be mistaken for a small volume bar: the ORDERING is strict,
-  //    absence < zero < smallest present bar.
-  const smallestBar = Math.min(...barHeightsPx);
-  assert.ok(
-    smallestBar > zeroMarkPx,
-    `the smallest present bar (${smallestBar.toFixed(2)}px) does not exceed the zero mark (${zeroMarkPx.toFixed(2)}px)`,
-  );
+test("F-3 (unit form): the tallest painted bar is ≥ 4× the median painted bar — the peak stands out", async () => {
+  const ratio = peakOverMedian(await paintSubAxis(syntheticVolumeSlots(), PRODUCTION));
+  assert.ok(ratio >= PEAK_OVER_MEDIAN_FLOOR, `peak/median = ${ratio.toFixed(2)}x, below ${PEAK_OVER_MEDIAN_FLOOR}x — B loses its main argument (gate §6 F-3)`);
 });
 
-test("MORDE: deleting the absence series deletes the 36 gaps — the mark is not decorative", () => {
-  // This half is about COUNT, not pixels: it proves the mark series draws on EXACTLY the instants
-  // with no data, and whitespace everywhere else. An implementation that "marked everything" or
-  // "marked nothing" would pass the height floors above and fails here.
+test("MORDE: the previous log10 base-1 configuration FAILS the peak test above", async () => {
+  // Without this half, the green above is a claim the instrument was never shown able to reject.
+  const ratio = peakOverMedian(await paintSubAxis(syntheticVolumeSlots(), { ...PRODUCTION, mode: "Logarithmic", base: 1 }));
+  assert.ok(ratio < PEAK_OVER_MEDIAN_FLOOR, `log10 gave peak/median = ${ratio.toFixed(2)}x — the control stopped reproducing the flattening`);
+});
+
+test("MORDE: marks back on the bars' margins (the pre-T-02.2 layout) FAIL the strip gap", async () => {
+  const gap = stripGapRows(await paintSubAxis(syntheticVolumeSlots(), { ...PRODUCTION, marksMargins: VOLUME_SCALE_MARGINS }));
+  assert.ok(gap < 1, `the old layout left ${gap} empty rows — the gap measurement is blind`);
+});
+
+test("MORDE: deleting the absence series deletes the gaps — the mark is not decorative", () => {
   const slots = syntheticVolumeSlots();
   const absent = slots.filter((slot) => slot.value === null).length;
   const zeros = slots.filter((slot) => slot.value === 0).length;
@@ -316,7 +396,6 @@ test("MORDE: deleting the absence series deletes the 36 gaps — the mark is not
   const zeroMarks = zeroMarkSeries(slots, ZERO_MARK_PX).filter((item) => "value" in item);
   assert.equal(marks.length, absent, "the absence series must mark exactly the gaps");
   assert.equal(zeroMarks.length, zeros, "the zero series must mark exactly the legitimate zeros");
-  // And the bar series may draw on neither of the two.
   const bars = positiveValueSeriesLossless(slots).filter((item) => "value" in item);
   assert.equal(bars.length, slots.length - absent - zeros);
 });
