@@ -1,6 +1,6 @@
 # Plano de execução — `SPEC-005` · Coinalyze fora da quarentena
 
-**SPEC:** [`SPEC-005`](../../specs/SPEC-005-coinalyze-fora-da-quarentena.md) (`SPEC_DRAFT` — estado corrente sempre por `harness pipeline state coinalyze-fora-da-quarentena`)
+**SPEC:** [`SPEC-005`](../../specs/SPEC-005-coinalyze-fora-da-quarentena.md) (`SPEC_DRAFT` ao nascer → **Estado: ver `harness pipeline state coinalyze-fora-da-quarentena` (em 2026-09-26: `SPEC_APPROVED`)** `[MEDIDO 2026-09-26: harness pipeline state coinalyze-fora-da-quarentena]` — estado corrente sempre por `harness pipeline state coinalyze-fora-da-quarentena`)
 **ADR:** [`ADR-033`](../../adr/ADR-033-store-de-defasagem-motor-compartilhado-e-mesclagem-conservadora.md) (proposta; co-assinatura `quant-architect`)
 **PRD:** [`PRD-005`](../../specs/PRD-005-coinalyze-fora-da-quarentena.md) · **Feature:** `coinalyze-fora-da-quarentena` (filha de `plataforma-dados`, irmã de `captura-em-producao`) · **Rev de ancoragem:** `master@4605767` · **Data:** 2026-09-08
 **Tracker:** MCP `atlassian` não autenticado nesta sessão. UVs candidatas em `PRD-005 §6`; materialização é ato do `/tech-lead` após `SPEC_APPROVED`.

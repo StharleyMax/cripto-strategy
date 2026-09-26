@@ -47,6 +47,15 @@ do outro"*). Apontar para ele mandaria quem lê a política encontrar a doutrina
 em 2026-08-28.** A fonte única é [`docs/decisoes-do-owner.md`](decisoes-do-owner.md) §`Q16`,
 e ela mesma marca onde a fala do owner termina.
 
+> ⚠️ CORREÇÃO, 2026-09-26: os ponteiros de linha desta seção (`:405`, `:407`, `:418-421`, `:420`-`:421`) apontavam para uma
+> versão anterior de `decisoes-do-owner.md`, que foi reescrito depois (e ganhou banner de status em 2026-09-26). Hoje:
+> §`Q16` abre em **`:506`**; *"Declaração literal da opção selecionada"* em **`:518`**, a seta citada em **`:520`**, o rótulo
+> em **`:522`**; *"Consequência operacional a registrar em `T-01.3`"* em **`:533-536`**, e a frase *"Nenhum dos dois aprova o
+> trabalho do / outro."* fecha em **`:535`-`:536`**; a sucessão por `A6` está em §`A6` (**`:696`**), *"`A6` sucede `Q16`"*
+> em **`:709-710`** `[MEDIDO 2026-09-26: grep -n 'Declaração literal da opção selecionada\|Consequência
+> operacional a registrar\|aprova o trabalho do\|^### `A6`\|sucede `Q16`' docs/decisoes-do-owner.md]`. Os números antigos
+> ficam abaixo como registro; **ancore pelo texto**, que sobrevive à próxima reescrita. Ver [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §3 #43.
+
 **(a) O que o owner declarou, literal** — `decisoes-do-owner.md:405`, sob o título
 *"Declaração literal da opção selecionada"*, com o rótulo na `:407`:
 

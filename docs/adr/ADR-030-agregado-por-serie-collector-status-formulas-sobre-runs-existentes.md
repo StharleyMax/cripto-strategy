@@ -1,5 +1,8 @@
 # ADR-030 — Agregado por série (`collector-status`): as quatro fórmulas sobre `IngestRecordSource.runs()`, e o que este envelope se recusa a inventar
 
+> **Status em 2026-09-26: PARCIAL.** D2 (uptimePercent) emendada por ADR-035 D12: % de runs FECHADOS.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #22.
+
 **Data:** 2026-09-05 · **Status:** proposto pelo `quant-architect` (dono de `sentimento`, `harness policy --key agents`); libera `D3.0` do plano `03` por autorização do owner `[PREMISSA-OWNER: 2026-09-05]` *"já podemos fazer o adr tbm e deixar tudo liberado"* — a ratificação do **texto** continua sendo dele, e silêncio não é aprovação · **SPEC:** [`SPEC-003`](../specs/SPEC-003-camada-de-leitura-do-painel.md) §3.6 (linha *"agregado por série"*, `I-10`), §8 `[Q7]` · **PRD:** [`PRD-003`](../specs/PRD-003-camada-de-leitura-do-painel.md) `US-10`, `CA-F3-2`
 **Fase:** `F3` do plano [`03_recursos_baratos.md`](../plans/SPEC-003-camada-de-leitura-do-painel/03_recursos_baratos.md), item 3.5; task `T-03.1` (escreve) → `T-03.6` (constrói) · **Componentes:** `sentimento` (forma e fórmulas) · `infra` (rota) · `web` (parser, fora desta ADR)
 **Insumos lidos em `master@c8e7193`:** `lacunas-leitura-api-painel.md` §1 · `REVISAO-FB-frontend-architect.md` §4/§4.1 · `frontend/src/features/s1-console/domain.ts:59-79,145-189` · `ingest-health-query.ts:524-566` · `backend/src/modules/sentimento/domain/ingest_record.py` · `use_cases/ingest_health.py:24-29` · `ADR-008/D3` · `ADR-006` · `ADR-014/D2`

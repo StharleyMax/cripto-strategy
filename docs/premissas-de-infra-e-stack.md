@@ -1,5 +1,8 @@
 # Premissas de infraestrutura e stack — declaradas pelo owner, e o que elas fecham
 
+> **Status em 2026-09-26: PARCIAL.** motor decidido (ADR-002/D4); instância Postgres na VPS pendente (MAPA §4 P1).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §3 #1,2.
+
 **Declarado em:** 2026-08-25 · **Status:** premissa de projeto (declaração do owner) + medição sobre um repositório existente
 **Efeito:** **fecha Q2** (as duas metades), corrige uma premissa técnica do owner, acrescenta um eixo novo ao
 ADR de motor, e declara a stack que o `[GAP G2]` e a decisão de cobertura de `frontend/` estavam esperando.

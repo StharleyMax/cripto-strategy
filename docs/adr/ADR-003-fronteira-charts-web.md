@@ -1,5 +1,8 @@
 # ADR-003 — A fronteira `charts` ⇄ `web`
 
+> **Status em 2026-09-26: PARCIAL.** O "Ponteiro de arquiteto" (:43, citado em :77) está superado: web.architect = frontend-architect desde A6 (2026-09-03).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #41.
+
 **Data:** 2026-08-25 · **Status:** proposto · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §4.1
 **Fase/Epic:** F5a (a fronteira) e F1 (o primeiro uso) · `CST-1`, `CST-3` · **Componente alvo:** `docs`
 **Origem:** correção que o gate mandou carregar — **hoje nenhum dos dois tem arquiteto atribuído em `[agents.by_component]`**

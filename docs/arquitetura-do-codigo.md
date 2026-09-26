@@ -1,5 +1,8 @@
 # Arquitetura do CÓDIGO — o que existe na árvore, medido
 
+> **Status em 2026-09-26: SUPERADO.** fotografia de 840c500 (2026-08-30); o falsificador §11 hoje dá 223 módulos / 40.495 linhas / 3 tabelas / 15 CLIs / 32 hits fastapi.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §3 #45.
+
 **Data:** 2026-08-30 · **Deriva de:** `master@840c500`, lido arquivo a arquivo
 **Estado do ledger:** `plataforma-dados` em `BUILD_AUTHORIZED`, 2 de 9 fases com veredito
 

@@ -1,5 +1,8 @@
 # ADR-005 — Transporte de leitura
 
+> **Status em 2026-09-26: PARCIAL.** :115 ('ADR-009/D5 continua aberto') superada: componente infra adotado (ADR-009/D6.5+D6.8).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #15.
+
 **Data:** 2026-08-25 · **Status:** proposto · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §4.3
 **Fase/Epic:** F1 (mínimo) e F4 (completo) · `CST-3`, `CST-6` · **Componente alvo:** `web`
 **Origem:** `faseamento:A3` — **qualificado de propósito.** Não confundir com `avaliacao:A3`, que é **telemetria de cota** e é outro item, também requisito

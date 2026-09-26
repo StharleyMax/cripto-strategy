@@ -1,5 +1,8 @@
 # ADR-001 — `quantity_field` é termo de identidade da série
 
+> **Status em 2026-09-26: PARCIAL.** CVD do CORE vem de klines (ADR-036/D5, 2026-09-10); esta ADR rege só séries derivadas de aggTrade (identidade q/nq segue vigente).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #12.
+
 **Data:** 2026-08-25 · **Status:** proposto (o gate `spec` é do owner) · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §1
 **Fase/Epic:** F0 e F1 · `CST-2`, `CST-3` · **Componente alvo:** `sentimento`
 **Origem:** pré-condição **bloqueante** carregada pelo gate do PRD (`approve prd`, 2026-08-25T13:40:41Z)

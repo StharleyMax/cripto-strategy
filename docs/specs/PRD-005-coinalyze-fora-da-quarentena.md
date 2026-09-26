@@ -1,5 +1,8 @@
 # PRD-005 — Coinalyze fora da quarentena: fórmula MODELED, probe em regime, mecanismo de promoção
 
+> **Status em 2026-09-26: PARCIAL.** SPEC-005 prevalece: promoção exige lag_n >= REGIME_N_MIN (200); lag store = uma linha por chave, max p99 (ADR-033/D2).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #8,47.
+
 **Feature:** `coinalyze-fora-da-quarentena` (**filha** de `plataforma-dados`, irmã de `captura-em-producao` — `harness pipeline show coinalyze-fora-da-quarentena` → `init`, `relate parent plataforma-dados`, `dispatch pm`, todos em `2026-09-08T12:21:3[4-5]Z`) · **Data:** 2026-09-08 · **Estado do pipeline ao escrever:** `INIT` → este documento leva a `PRD_DRAFT`
 **Componentes tocados:** `sentimento` (fórmula MODELED, promoção, store de lag persistido, cadência de captura Coinalyze) · `infra` (persistência do probe em regime, possível cron/timer) · `docs`. `web`/`charts`/`convergencia`/`backtest` **não são tocados diretamente** — o efeito observável deles (uma série Coinalyze passa a aparecer em leitura de `backtest`) é consequência do predicado de quarentena mudar de valor, não de código novo nessas camadas. `harness policy --key components` → `["sentimento","charts","convergencia","backtest","web","docs","infra"]`, 7 elementos `[MEDIDO 2026-09-08]`.
 **Fonte de verdade:** `harness policy --key docs.external_prd_repo` → saída vazia, `rc=0`; `docs.external_prd_paths` → `[]` ⇒ este PRD **nasce aqui**.

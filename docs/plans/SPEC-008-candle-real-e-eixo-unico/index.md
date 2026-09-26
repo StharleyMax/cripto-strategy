@@ -1,6 +1,6 @@
 # Plano de execução — `SPEC-008` · Candle real e eixo único
 
-> **SPEC:** [`SPEC-008`](../../specs/SPEC-008-candle-real-e-eixo-unico.md) (`DRAFT` — `SPEC_APPROVED` é gate do **owner**)
+> **SPEC:** [`SPEC-008`](../../specs/SPEC-008-candle-real-e-eixo-unico.md) (`DRAFT` ao nascer → **Estado: ver `harness pipeline state candle-real-e-eixo-unico` (em 2026-09-26: `DONE`)** `[MEDIDO 2026-09-26: harness pipeline state candle-real-e-eixo-unico]` — `SPEC_APPROVED` é gate do **owner**)
 > **ADR:** [`ADR-040`](../../adr/ADR-040-reagregacao-na-rota-supported-interval-vira-conjunto-e-a-funcao-e-de-nature-e-reduction.md) (proposta)
 > **PRD:** [`PRD-008`](../../specs/PRD-008-candle-real-e-eixo-unico.md)
 > **Vocabulário de componentes:** `harness policy --key components` → **n=7** `[MEDIDO 2026-09-19]`. Toda fase declara o seu.

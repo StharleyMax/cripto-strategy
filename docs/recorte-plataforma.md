@@ -1,5 +1,8 @@
 # Recorte de Plataforma e Faseamento — `cripto-strategy`
 
+> **Status em 2026-09-26: PARCIAL.** faseamento F1–F5 substituído pelas 9 fases de SPEC-001 (com F0); motor = ADR-002/D4.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §2.
+
 **Data:** 2026-08-24 · **Fase:** PLATAFORMA E DADOS · **Destino:** `docs/recorte-plataforma.md` · **Pipeline:** INIT → entra por `/pm`
 
 ---

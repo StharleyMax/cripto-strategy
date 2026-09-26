@@ -1,5 +1,8 @@
 # ADR-034 — Rotas de série: nome, schema de linha, `bar_policy`, fronteira `charts`↔`web`, e a coluna de valor que faltava em `md.series`
 
+> **Status em 2026-09-26: PARCIAL.** D6 (só grade 1m) superada por ADR-040/D1.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #53.
+
 **Data:** 2026-09-08 · **Status:** proposta · **SPEC:** [`SPEC-006`](../specs/SPEC-006-pagina-de-grafico-s2.md)
 **Fase:** `F0`/`F1`/`F2` · **Componentes alvo:** `sentimento` (F0/F1), `web` (F1/F2), `charts` (nenhuma linha nova — só a superfície exportada em F2)
 **Co-assinatura:** `quant-architect` (F0, `bar_policy`, schema de linha, ponto de leitura) · `frontend-architect` (nomes de rota, bookmark, exceção ESLint)

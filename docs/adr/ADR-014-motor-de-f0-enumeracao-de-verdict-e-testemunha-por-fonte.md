@@ -1,5 +1,8 @@
 # ADR-014 — O motor de F0, a enumeração de `verdict`, e a testemunha de integridade POR FONTE
 
+> **Status em 2026-09-26: PARCIAL.** D1 emendada por ADR-031: registro em Postgres em produção; SQLite só dev/teste.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #3.
+
 **Data:** 2026-08-29 · **Status:** proposto · **SPEC:** [`SPEC-001`](../specs/SPEC-001-plataforma-dados.md) §3.5, §5.2, §5.6, §5.7, §5.8
 **Fase/Epic:** F0 · `CST-2` · **Componente alvo:** `sentimento` (o que executa) / `docs` (a decisão)
 **Origem:** três perguntas levantadas por dois builders da fase `02` — `T-02.3` (PR #17, `task/T-02.3-ingest-run-e-gap`) e `T-02.4a` (PR #16, `task/T-02.4a-checksum-na-borda`). **Nenhum dos dois inventou premissa: os dois pararam e nomearam a pergunta.**

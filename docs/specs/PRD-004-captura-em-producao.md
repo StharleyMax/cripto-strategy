@@ -1,5 +1,8 @@
 # PRD-004 — Captura em produção: coletores 24/7 → fila → escritor único, subindo por `compose` em dois alvos
 
+> **Status em 2026-09-26: HISTÓRICO.** Feature DONE no ledger. SPEC-004 prevalece: SeriesRow 15 campos, IngestRun 16; contagem de coletores em SPEC-007 §4 e collectors_cli.py.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #10,20.
+
 **Feature:** `captura-em-producao` (**filha** de `plataforma-dados` — `harness pipeline show captura-em-producao` → `init`, `relate`, `dispatch pm` em `2026-09-07T17:38:02-03Z`; `[PREMISSA-OWNER: 2026-09-07]` *"podemos puxar essa de captura em produção em um ladger novo e limpo"*) · **Data:** 2026-09-07 · **Estado do pipeline ao escrever:** `INIT` (`harness pipeline state captura-em-producao` → `INIT`) → este documento leva a `PRD_DRAFT`
 **Componentes tocados:** `sentimento` (produtor real, escritor único, registro de run) · `infra` (Dockerfiles, `compose` em dois alvos, Redis dedicado, serviços de vida longa) · `docs`. `web` **não é tocado** — `/collector-status` já existe e o contrato `ADR-030/D5` não muda. `harness policy --key components` → 7 elementos, os três acima incluídos `[MEDIDO 2026-09-07]`.
 **Fonte de verdade:** `harness policy --key docs.external_prd_repo` devolve **saída vazia com `rc=0`** e `docs.external_prd_paths` → `[]` ⇒ este PRD **nasce aqui**.

@@ -1,5 +1,8 @@
 # ADR-018 — Scaffold Next real sob `frontend/src/app/`, `tsconfig.json` estrito e `tsc --noEmit --strict` dentro de `make lint-frontend`
 
+> **Status em 2026-09-26: PARCIAL.** D2 (/painel) superada: rotas em inglês (CLAUDE.md linha 12, 2026-09-08); /console (ADR-034).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #49.
+
 **Status:** `RASCUNHO` (aprovar é gate do owner) · **Data:** 2026-09-04 · **Componente:** `web` ·
 **Feature:** `plataforma-dados` (`T-05.11`, `CST-102`) · **Autor:** `architect` (`web`, sucessor de `ui-designer` desde `A6`)
 **Rev de ancoragem:** medições em `master@758e2ef` (worktree `/tmp/claude-1002/wt/T-05.11`, branch `tasks/T-05.11-scaffold-next`)

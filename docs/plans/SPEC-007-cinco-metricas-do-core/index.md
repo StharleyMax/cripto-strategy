@@ -1,6 +1,6 @@
 # Plano de execução — `SPEC-007` · Cinco métricas do CORE
 
-> **SPEC:** [`SPEC-007`](../../specs/SPEC-007-cinco-metricas-do-core.md) (`DRAFT` — `SPEC_APPROVED` é gate do **owner**)
+> **SPEC:** [`SPEC-007`](../../specs/SPEC-007-cinco-metricas-do-core.md) (`DRAFT` ao nascer → **Estado: ver `harness pipeline state cinco-metricas-do-core` (em 2026-09-26: `DONE`)** `[MEDIDO 2026-09-26: harness pipeline state cinco-metricas-do-core]` — `SPEC_APPROVED` é gate do **owner**)
 > **ADRs:** [`ADR-035`](../../adr/ADR-035-contabilidade-de-n-written-o-escritor-fecha-o-run-que-o-coletor-abriu.md) · [`ADR-036`](../../adr/ADR-036-fonte-por-metrica-do-core-a-origem-por-padrao-o-terceiro-so-onde-a-origem-e-vetada.md)
 > **Vocabulário de componentes:** `harness policy --key components` (n=7). Toda fase declara o seu.
 
@@ -20,6 +20,11 @@
 
 **Emenda `RN-S1`:** para série de `5m` servida na grade de `1m` (fases `02` e `04`), `DoD-3` conta
 **barras nativas distintas** — `pontos_no_DOM ÷ 5`, não linhas da escada (`SPEC-007` §1/`GA-2`).
+
+> ⚠️ CORREÇÃO, 2026-09-26: dizia **fases `02` e `04`** e divisor **`÷ 5`**. As séries de `5m` são as das fases **`03`**
+> (`03_open_interest.md:1`, OI) e **`04`** (`04_long_short.md`); a numeração de fase foi trocada depois desta linha. E em `04`
+> o `÷ 5` subconta: a contagem é por **`available_at` distinto**, com a banda `ceil(wire ÷ 5) ≤ native ≤ wire`
+> `[DOC: 04_long_short.md:60-71, CORREÇÃO 2026-09-16, MEDIDO ali: 49 available_at distintos vs 35 por ÷5]`. [`docs/MAPA-DOCUMENTAL.md`](../../MAPA-DOCUMENTAL.md) §3 #54.
 
 **Reprova sempre:** `[P-seed]` violado · `DoD-3` contra mock · assert só de status HTTP · ausência
 renderizada como zero (`RN-1`) · qualquer `[[rules.own]]`/alvo de `make`/allowlist **de idioma**

@@ -34,6 +34,11 @@ Componentes: `sentimento` · `infra`. **Não toca `SymbolClient.tsx`**, então p
    **Morde:** um laço sem espera faz a parcela passar de 4.
 3. **Disco.** `pg_total_relation_size` antes e depois de 24 h, com o delta declarado no gate. Se passar
    de **2×** a estimativa (1,14 MB/dia), volta ao owner (`[Q-CAD-1]`).
+   > ⚠️ CORREÇÃO, 2026-09-26: o instrumento dizia `pg_total_relation_size`; o correto é **`hypertable_size('md.series')`** —
+   > `md.series` é hypertable e `pg_total_relation_size` mede só a tabela-pai vazia (`24576|1505697792` no mesmo instante)
+   > `[DOC: plans/SPEC-008-candle-real-e-eixo-unico/01_vela.md:54,64-79, MEDIDO 2026-09-19 ali]`. A estimativa-base
+   > (570 KB/dia) usava byte de fio; a de disco está na correção de `SPEC-009` §6.1 (~2,86 MB/dia). O limiar `2×` é do
+   > owner e **não** foi alterado aqui. [`docs/MAPA-DOCUMENTAL.md`](../../MAPA-DOCUMENTAL.md) §3 #5.
 4. **Ausente não é carregado.** Num minuto com o coletor parado de propósito na **stack de e2e própria**
    (nunca no Postgres compartilhado, `D-g`), **não existe linha** para aquele `T`.
 5. `make verify` verde.

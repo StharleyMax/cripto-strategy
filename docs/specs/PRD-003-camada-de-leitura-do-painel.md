@@ -1,5 +1,8 @@
 # PRD-003 — Camada de leitura do `/painel`
 
+> **Status em 2026-09-26: HISTÓRICO.** Feature DONE no ledger. SPEC-003 prevalece; /painel virou /console (ADR-034/D2).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §2.
+
 **Feature:** `camada-de-leitura-do-painel` (**filha** de `plataforma-dados` — `harness pipeline show camada-de-leitura-do-painel` → evento `relate` em `2026-09-04T23:31:07Z`; `[PREMISSA-OWNER: 2026-09-04]` *"pode ir como filha, é melhor para organizar"*) · **Data:** 2026-09-04 · **Estado do pipeline ao escrever:** `INIT` (`harness pipeline state camada-de-leitura-do-painel` → `INIT`; 3 eventos: `init`, `relate`, `dispatch pm`, todos em `2026-09-04T23:31:07-08Z`) → este documento leva a `PRD_DRAFT`
 **Componentes tocados:** `web` (predominante — a página, os estados, a fiação) · `infra` (a camada consumidora `backend/src/api`/`backend/src/main`, `deploy/`, Caddy estruturado) · `sentimento` (use cases de leitura novos: catálogo, agregado por série, listagem de quarentena) · `docs`. **`infra` é componente adotado**, não proposto: `harness policy --key components` devolve **7** elementos — `sentimento, charts, convergencia, backtest, web, docs, infra` — e `harness.toml:39-46` registra o ato `[DECISÃO-OWNER: 2026-09-03, escolha entre alternativas apresentadas]`. ⚠️ `CLAUDE.md` §"Vocabulário fechado de componentes" ainda lista **6** — divergência documental, registrada em §13 `[GAP G1]`, não corrigida aqui (`CLAUDE.md` é do owner).
 **Fonte de verdade:** `harness policy --key docs.external_prd_repo` devolve **saída vazia com `rc=0`** e `docs.external_prd_paths` devolve `[]` ⇒ este PRD **nasce aqui**. Não é referência nem extração de fonte externa.

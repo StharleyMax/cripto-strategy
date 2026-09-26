@@ -1,6 +1,6 @@
 # SPEC-008 — Candle real e eixo único: quatro leituras de uma chamada já paga, e um eixo com um dono só
 
-**Status:** `DRAFT` — **e isto não é formalidade.** `SPEC_APPROVED` é gate do **owner**
+**Status:** `DRAFT` (ao nascer) → **Estado: ver `harness pipeline state candle-real-e-eixo-unico` (em 2026-09-26: `DONE`)** `[MEDIDO 2026-09-26: harness pipeline state candle-real-e-eixo-unico]` — **e isto não é formalidade.** `SPEC_APPROVED` é gate do **owner**
 (`CLAUDE.md`, *"Gates marcados owner não podem ser feitos por agente"*). Nenhum agente marca esta
 SPEC como aprovada, nem no texto, nem no ledger.
 **Feature:** `candle-real-e-eixo-unico` · **filha de** `plataforma-dados`
@@ -751,9 +751,9 @@ do que as ADRs em vigor já permitem.
 | **`[M-12]`** | ✅ **DECIDIDA 2026-09-20 — [`ADR-042`](../adr/ADR-042-dois-relogios-available-at-responde-ao-horizonte-de-conhecimento-nao-a-fatia.md).** O backfill de 90 dias (**2.148.504 linhas, 1,641 GB**) é **invisível para a rota**: `R-1` é `available_at <= t` com `t` = a fatia, e servir a linha de 33 h depois **seria lookahead**. Decisão: `R-1` liga `available_at` ao **horizonte de conhecimento** `K`; com `K = t` nada muda; `K > t` só sob `RENDERING`. **Execução: `T-05.0`, pré-requisito de `T-05.1`/`T-05.8`** | **`quant-architect`**, com efeito em `ADR-006`/`SPEC-001` §2.3 | fase `05`; `SPEC-001` §2.3 emendada quando `ADR-042` sair de `proposta` |
 | **`[M-10]`** | `SEM_PONTO` ambíguo entre *"zero legítimo"* e *"não lemos"*; trilha `absence_means_zero` no catálogo | `/architect` | **fora desta feature** (`A-9`) |
 | **`[M-11]`** | `R4` — OHLC da própria razão long/short (16 entradas, **zero cota**), nomeada pelo `quant-architect` e **não construída** | `quant-architect` | quando a razão precisar de extremos |
-| ~~`[M-5]`~~ | ✅ **RESPONDIDA 2026-09-19 — deixou de ser `[NÃO MEDIDO]`:** **16 ms** (um quadro a 60 fps) para pan/zoom e **400 ms** para história nova aparecer. `[DECISÃO-OWNER, escolha entre alternativas apresentadas]` | **owner** | DoD 7 das fases `02` e `05` |
+| ~~`[M-5]`~~ | ✅ **RESPONDIDA 2026-09-19 — deixou de ser `[NÃO MEDIDO]`:** **16 ms** (um quadro a 60 fps) para pan/zoom e **400 ms** para história nova aparecer. `[DECISÃO-OWNER, escolha entre alternativas apresentadas]` ⚠️ CORREÇÃO, 2026-09-26: dizia **16 ms**; o teto vigente é **`p95 ≤ 160 ms`** (`n ≥ 61`), recalibrado em 2026-09-22 (`SPEC-009` A-3) `[MEDIDO 2026-09-26: grep -n '160 ms' frontend/e2e/17-teto-latencia-eixo.spec.ts → :9]` — [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #60 | **owner** | DoD 7 das fases `02` e `05` |
 | **`[M-6]`** | A escala `log10` do volume sob TF variável (`[Q8]`) | `design_gate` | fase `03`; **até prova em contrário, continua** |
-| **`[M-7]`** | O nome exato do segmento da rota `/symbol/[symbol]` — **inglês** está fixado (linha 12 do `CLAUDE.md`), o nome não | `frontend-architect` | fase `02` |
+| **`[M-7]`** | O nome exato do segmento da rota `/symbol/[symbol]` — **inglês** está fixado (linha 12 do `CLAUDE.md`), o nome não. ⚠️ CORREÇÃO, 2026-09-26: **resolvida** — o segmento é `/symbol/[symbol]` (`PRD-009` D-f, `[DECISÃO-OWNER: 2026-09-19]`) `[MEDIDO 2026-09-26: ls -d 'frontend/src/app/symbol/[symbol]' → existe]` — [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #51 | `frontend-architect` | fase `02` |
 | **`[M-8]`** | Renomear `janela_de_perda` e as 4 mensagens/eventos em português | `ADR-008/D3` · linha 10 | **não é desta feature** |
 | **`[M-13]`** | Mecanismo de **indisponibilidade POR TIMEFRAME** (toggle/exclamação por métrica: *"esse indicador não está disponível neste TF"*) — **declarado e não construído**, ver §11.2 | `/architect` da feature que introduzir uma grade nativa mais grossa que `5min` | o dia em que essa grade entrar no catálogo — hoje não existe |
 
@@ -774,6 +774,12 @@ que é o oposto do que a exclusão existe para fazer.
 E a medição confirma que a emenda não moveu o instrumento: com e sem `infra` na exclusão o
 falsificador devolve **a mesma lista** — **23 contra 22 segmentos, zero em português nos dois**
 `[MEDIDO 2026-09-19 pelo loop principal]`.
+
+> ⚠️ CORREÇÃO, 2026-09-26: dizia **23 contra 22** sob `[MEDIDO 2026-09-19]`; na árvore daquele dia o valor é **22 contra 21**
+> (a mesma correção que o `CLAUDE.md` publicou em 2026-09-20) `[MEDIDO 2026-09-26: o bloco `grep -vxE` do `CLAUDE.md`, com e sem
+> `infra` na exclusão, sobre `git ls-tree -r --name-only 9204d1d` (último commit de 2026-09-19) → 22/21]`. A conclusão sobrevive
+> (mesma lista menos o próprio `infra`, zero em português). Sobre `ee29de0` (2026-09-26) o mesmo comando dá **23/22** — a árvore
+> ganhou um segmento depois; o número de 2026-09-19 não. [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #30.
 
 ⚠️ **O gatilho que reabriria isto, e ele é específico:** se algum dia existir
 `backend/src/modules/infra/` **como caminho de componente** (e não como camada), os dois referentes

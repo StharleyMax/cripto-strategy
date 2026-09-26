@@ -1,5 +1,8 @@
 # Decisões do owner — **fonte única** de numeração e estado
 
+> **Status em 2026-09-26: PARCIAL.** Em :691 e :749 (A4, 'infra NÃO nasce'): superado mais abaixo no mesmo dia (:837-844, :918-923) — infra adotado. Em :626 (motor com 3 candidatos): decidido por ADR-002/D4 (TimescaleDB, 2026-09-04). (Linhas deste arquivo após este banner.)
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §3 #15,1.
+
 **Criado:** 2026-08-24 · **Consolidado em R2:** 2026-08-25 · **Fase:** PLATAFORMA E DADOS · **Destino:** `/pm` → PRD → `/architect`
 **Fontes consolidadas:** `docs/recorte-plataforma.md` §5 (8 perguntas) · `docs/plataforma-superficies-e-faseamento.md` (as 4 decisões de tela) · o que os 4 desenhos e as 4 validações revelaram · **R1 do PRD** (Q17, Q18, Q19) · **`docs/medicao-coinalyze.md`** (11 chamadas, responde Q4) · **`docs/direcionamento-operacional.md`** (`[PREMISSA-OWNER: 2026-08-25]`, responde Q17 e abre Q20).
 
@@ -40,13 +43,13 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 | **Q7** | Bybit entra nesta fase | `ABERTA` | SIM **se** a resposta for sim |
 | **Q8** | fuso de exibição e fronteira do dia | `INFERÍVEL` (F0–F2) / `ABERTA` (F4) | NÃO |
 | **Q9** | retenção de tick × disco | **`MORTA`** — ver o motivo | NÃO |
-| **Q10** | ordem: monitorar / pesquisar / executar | `ABERTA` | NÃO |
+| **Q10** | ordem: monitorar / pesquisar / executar | **`RESPONDIDA`** 2026-09-04 — ver §Q10 (⚠️ CORREÇÃO, 2026-09-26: dizia `ABERTA`; a seção §Q10 já registrava a resposta) | NÃO |
 | **Q11** | owner marca o corpus? quantas horas | **`RESPONDIDA`** 2026-09-03 — *"pode aceitar o default"*; ver §Q11 | NÃO |
 | **Q12** | `MATIC→POL` / `RNDR→RENDER` | `ABERTA` | NÃO |
 | **Q13** | cor do candle | **`RESPONDIDA`** | NÃO — ver §Q13 (reconciliada com `SPEC-001:649` em 2026-08-28) |
 | **Q14** | idioma da UI | `INFERÍVEL` | NÃO |
 | **Q15** | ToS dos fornecedores | `ABERTA` | NÃO por si |
-| **Q16** | dono de `charts`/`web` + regra em `frontend/` | **`RESPONDIDA`** 2026-08-28 | NÃO (de dado) — o relógio de retrabalho **parou** |
+| **Q16** | dono de `charts`/`web` + regra em `frontend/` | **`RESPONDIDA`** 2026-08-28 — na chave `web.architect`, sucedida por `A6` (2026-09-03, §`A6`) | NÃO (de dado) — o relógio de retrabalho **parou** |
 | **Q17** | spread: medir ou assumir | **`RESPONDIDA COM RESÍDUO`** | **SIM — capture-or-lose** |
 | **Q18** | profundidade do backfill de `metrics` | `ABERTA` | NÃO |
 | **Q19** | `availability_probe_set` | **`RESPONDIDA`** 2026-09-02 | **SIM — capture-or-lose, ver §Q19** |
@@ -55,6 +58,11 @@ Convenção de **(d)**: **RELÓGIO = dado que se perde a cada dia de espera.** R
 **Contagem: 20 · 7 `ABERTA` · 3 `INFERÍVEL` · 7 `RESPONDIDA` · 2 `RESPONDIDA COM RESÍDUO` · 1 `MORTA`.**
 *(Atualizada em 2026-09-03: `Q11` e `Q20` respondidas pelo owner na sessão do piloto de swing — ver as duas seções e
 [`ADR-017`](adr/ADR-017-deteccao-autonoma-com-auditoria-por-excecao.md), rascunho.)*
+
+> ⚠️ CORREÇÃO, 2026-09-26: dizia **7 `ABERTA` · 7 `RESPONDIDA`**; o valor é **6 `ABERTA` · 8 `RESPONDIDA`** (3 `INFERÍVEL`,
+> 2 `RESPONDIDA COM RESÍDUO`, 1 `MORTA` inalterados) — `Q10` foi respondida em 2026-09-04 (§Q10) e a tabela não acompanhou
+> `[MEDIDO 2026-09-26: contagem da coluna estado da tabela acima, n=20; grep -n '^### ✅ Q10' docs/decisoes-do-owner.md]`.
+> Ver [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §3 #44.
 *(Atualizada em 2026-09-02: `Q19` respondida pelo owner — destrava `T-03.6`; `T-03.9` segue `blocked` por
 `observer_region`/VPS, decisão explícita do owner de deixar a VPS fora por enquanto. Atualizada em
 2026-09-01: `Q1` respondida pelo owner — 8 tasks destravadas nas fases 02/03 de `plataforma-dados`.
@@ -640,7 +648,7 @@ O alarme **não pode** ser por taxa de mensagens: a vazão de `aggTrade` do mesm
 
 ---
 
-**Nada foi escrito, editado ou comentado no tracker por este documento.** Ledger em **`PRD_DRAFT`**, intocado. Arquivos lidos nesta consolidação: `docs/specs/PRD-001-plataforma-dados.md`, `docs/context/plataforma-dados/handoff_to_architect.md`, `docs/medicao-coinalyze.md`, `docs/direcionamento-operacional.md`, `docs/plataforma-superficies-e-faseamento.md`, `docs/recorte-plataforma.md`, `docs/avaliacao-discovery.md`, `docs/proposta-discovery.md`, `harness.toml`, `data/snapshots/`. **E `harness doctor` CONFORME não é evidência de nada acima.**
+**Nada foi escrito, editado ou comentado no tracker por este documento.** Ledger em **`PRD_DRAFT`**, intocado (à época) → **Estado: ver `harness pipeline state plataforma-dados` (em 2026-09-26: `BUILD_AUTHORIZED`)** `[MEDIDO 2026-09-26: harness pipeline state plataforma-dados]`. Arquivos lidos nesta consolidação: `docs/specs/PRD-001-plataforma-dados.md`, `docs/context/plataforma-dados/handoff_to_architect.md`, `docs/medicao-coinalyze.md`, `docs/direcionamento-operacional.md`, `docs/plataforma-superficies-e-faseamento.md`, `docs/recorte-plataforma.md`, `docs/avaliacao-discovery.md`, `docs/proposta-discovery.md`, `harness.toml`, `data/snapshots/`. **E `harness doctor` CONFORME não é evidência de nada acima.**
 
 ---
 

@@ -483,7 +483,10 @@ exato que cada achado usou.
 integral do `/design-critique`): `docs/context/plataforma-dados/gates/T-07.12-design.md` e
 `docs/context/plataforma-dados/gates/T-07.12-ux-critique.md`.
 
-### 4.3 S3 — inspetor de série · `[NÃO EXISTE]` · fase `06`
+### 4.3 S3 — inspetor de série · `[NÃO EXISTE no Stitch]` · fase `06`
+
+> ⚠️ CORREÇÃO, 2026-09-26: o título dizia `[NÃO EXISTE]`; a tela não existe **no Stitch**, mas o código tem
+> `frontend/src/features/s3-inspector/` `[MEDIDO 2026-09-26: ls frontend/src/features/s3-inspector → domain.ts, S3Inspector.tsx, …]`. [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #66.
 
 **Job:** *o que este número é, e quais linhas exatas o produziram.* Inclui a **gaveta de quarentena**.
 
@@ -571,6 +574,9 @@ O que **nenhum** prompt de Stitch pode contrariar:
 12. **Os dois modos são validados.** O modo de geração é **ESCURO** (`#131722` / `#0d1017` /
     `#222634`) — é o default da TradingView, e o `--dado-quebrado` mede **8,15** no escuro contra
     **9,54** no claro. O ramp claro existe, passa, e **não** é o que se gera.
+    > ⚠️ CORREÇÃO, 2026-09-26: *"os dois modos são validados"* — o **app** tem só o modo **escuro** desde 2026-09-11 (`D13`,
+    > `DESIGN_SYSTEM.md` tarja após a tabela de §1.2); o ramp claro sobrevive só como aritmética de `ADR-010`
+    > `[MEDIDO 2026-09-26: grep -n 'color-scheme' frontend/src/app/globals.css → :92 color-scheme: dark]`. [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #63.
 
 Os valores exatos vivem **só** em [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) §1.2 e no §9 deste arquivo —
 repeti-los em terceiro lugar **já produziu divergência** entre documentos uma vez.
@@ -1834,7 +1840,8 @@ FORA DE ESCOPO — NAO DESENHE, por mais natural que pareca num produto de tradi
   - placar de performance (win rate, profit factor, drawdown, sharpe)
   - entrada de ordem, carteira, saldo, posicao, execucao
   - detectores de padrao nomeados (order block, FVG, BOS, CHoCH, Fibonacci)
-  - watchlist multi-simbolo ao vivo, painel de liquidacao, gerenciador de layouts
+  - watchlist multi-simbolo ao vivo, TELA SEPARADA de liquidacao (o pane de liquidacao dentro do
+    grafico de /symbol/[symbol] EXISTE), gerenciador de layouts
   - TELA DE LOGIN, autenticacao, avatar de usuario, menu de conta. A plataforma roda LOCAL
     neste momento (declaracao do owner, 2026-08-25: "vps n e problema agora, vai rodar muito
     local ate la") e auth NAO e superficie visivel. principal_id continua sendo dimensao

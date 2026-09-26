@@ -1,6 +1,9 @@
 # SPEC-006 — Página de gráfico S2: a coluna de valor que faltava, as duas rotas de `ADR-005/D1`, a página `symbol`, e a migração `/painel` → `/console`
 
-**Status:** `SPEC_DRAFT` — nasce assim; `SPEC_APPROVED` exige `approve spec` do **owner**
+> **Status em 2026-09-26: PARCIAL.** interval ∈ {1m,5m,15m,1h,4h} com reagregação (ADR-040); página = /symbol/[symbol].
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../MAPA-DOCUMENTAL.md) §3 #51,53.
+
+**Status:** `SPEC_DRAFT` (ao nascer) → **Estado: ver `harness pipeline state pagina-de-grafico-s2` (em 2026-09-26: `DONE`)** `[MEDIDO 2026-09-26: harness pipeline state pagina-de-grafico-s2]` — nasce assim; `SPEC_APPROVED` exige `approve spec` do **owner**
 (`harness pipeline state pagina-de-grafico-s2` é sempre a fonte, não este texto).
 **Feature:** `pagina-de-grafico-s2` (filha de `plataforma-dados`) · **Data:** 2026-09-08
 **Componentes:** `sentimento` (F0 — coluna de valor; F1 — leitor de janela + rotas) · `web` (F1

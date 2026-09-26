@@ -1,5 +1,8 @@
 # Avaliação Crítica do Plano de Discovery — `cripto-strategy`
 
+> **Status em 2026-09-26: PARCIAL.** Coinalyze em daily é a fonte mais profunda (OI 2.409 d, medicao-coinalyze); CVD por bucket dispensa aggTrades (Q9 MORTA).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §3 #12,24.
+
 A proposta em [`docs/proposta-discovery.md`](/home/stharley/Documentos/projects/cripto-strategy/docs/proposta-discovery.md) está no estado de **plano aprovado em intenção e não executável em forma**: ela decompõe o problema nos módulos certos, mas os artefatos que ela promete não têm, hoje, como ser aceitos ou recusados por ninguém — inclusive por quem os escrever. Esta avaliação mede três coisas: (a) se cada decisão que a proposta deixa aberta pode ser fechada com o dado que existe, (b) se cada afirmação de fonte de dados sobrevive ao documento público do fornecedor, e (c) se cada entregável tem um critério de pronto que o owner possa conferir sem confiar em quem construiu. Ela **não** mede se a tese (SMC + CVD + posicionamento tem edge) é verdadeira — não há uma linha de código nem um backtest neste repositório, e opinião sobre edge aqui seria palpite. Ela também **não** mede qualidade de código: o pack `core` do harness são 5 regras de higiene de Python e um `doctor` CONFORME não diz nada sobre lookahead, survivorship ou calibração — nenhum veredito abaixo se apoia nele.
 
 ---

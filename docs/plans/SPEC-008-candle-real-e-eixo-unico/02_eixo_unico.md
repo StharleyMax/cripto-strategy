@@ -45,9 +45,9 @@ divergente — CALA = **0 min** de desalinhamento, MORDE = **5.460 min (91 h)** 
 | 2.2 | Guarda de reentrância — **necessária, mas não é ela que resolve** (ver acima); o invariante de grade é que protege | `charts` | `RF-5` |
 | 2.2b | O estado de registro é em **INSTANTES**; `logicalRange` é só formato de fio, convertido por **aritmética pura** sem arredondar (`D-C3.3`) | `charts` | `RF-5` |
 | 2.3 | `fitContent()` deixa de ser por gráfico — o enquadramento inicial é **do eixo**, não de cada painel | `web` | `RF-5` |
-| 2.4 | A rota vira `/symbol/[symbol]`, **segmento em inglês** (linha 12 do `CLAUDE.md`, `[DECISÃO-OWNER: 2026-09-19]`); o nome exato é `[M-7]` | `web` | `D-e`, `[Q4]` |
+| 2.4 | A rota vira `/symbol/[symbol]`, **segmento em inglês** (linha 12 do `CLAUDE.md`, `[DECISÃO-OWNER: 2026-09-19]`); o nome exato é `[M-7]`. ⚠️ CORREÇÃO, 2026-09-26: rótulo trocado — a linha 12 do `CLAUDE.md` é `[PREMISSA-OWNER: 2026-09-08]` (*"rotas em ingles"*); o que leva `[DECISÃO-OWNER: 2026-09-19]` é o segmento `/symbol/[symbol]` (`PRD-009` D-f), e `[M-7]` está resolvida `[MEDIDO 2026-09-26: grep -n 'PREMISSA-OWNER: 2026-09-08' CLAUDE.md; grep -n 'D-f' docs/specs/PRD-009-paineis-de-fluxo.md]` — [`docs/MAPA-DOCUMENTAL.md`](../../MAPA-DOCUMENTAL.md) §3 #52 | `web` | `D-e`, `[Q4]` |
 | 2.5 | Plano de migração de `/painel` **não** entra aqui — é task dedicada (`CLAUDE.md`, linha 12) | — | fora |
-| 2.6 | ✅ **Teto de latência DECIDIDO pelo owner (`[M-5]` fechada):** **16 ms** por quadro para arrastar/zoom — *um quadro a 60 fps*. `[DECISÃO-OWNER: 2026-09-19, escolha entre alternativas apresentadas]`. Deixou de ser `[NÃO MEDIDO]` ⇒ vira **DoD 7**, medível | `web` | `RNF-2`, `[Q5]` |
+| 2.6 | ✅ **Teto de latência DECIDIDO pelo owner (`[M-5]` fechada):** **16 ms** por quadro para arrastar/zoom — *um quadro a 60 fps*. `[DECISÃO-OWNER: 2026-09-19, escolha entre alternativas apresentadas]`. Deixou de ser `[NÃO MEDIDO]` ⇒ vira **DoD 7**, medível. ⚠️ CORREÇÃO, 2026-09-26: dizia **16 ms**; o teto vigente é **`p95 ≤ 160 ms`** (`n ≥ 61`), recalibrado pelo owner em 2026-09-22 `[MEDIDO 2026-09-26: grep -n '160 ms' frontend/e2e/17-teto-latencia-eixo.spec.ts → :9]` — [`docs/MAPA-DOCUMENTAL.md`](../../MAPA-DOCUMENTAL.md) §3 #60 | `web` | `RNF-2`, `[Q5]` |
 | 2.7 | **Veredito do `ux-ui-mastery`** sobre o comportamento de pan/zoom | `web` | `CLAUDE.md` §Design |
 
 ## DoD verificável — comando e universo
@@ -78,6 +78,10 @@ divergente — CALA = **0 min** de desalinhamento, MORDE = **5.460 min (91 h)** 
    `n = 4` símbolos do catálogo (`BTCUSDT`/`ETHUSDT`/`LINKUSDT`/`SOLUSDT`) `[MEDIDO 2026-09-19]`.
 
 7. ⭐ **Teto de latência do eixo: `16 ms` por quadro**
+   > ⚠️ CORREÇÃO, 2026-09-26: dizia **16 ms** / `n ≥ 60`; o teto vigente é **`p95 ≤ 160 ms`**, `n ≥ 61`, recalibrado em
+   > 2026-09-22 `[DECISÃO-OWNER: 2026-09-22, escolha entre alternativas apresentadas]` (`SPEC-009` A-3;
+   > `frontend/e2e/17-teto-latencia-eixo.spec.ts:9,90,128`) `[MEDIDO 2026-09-26: grep -n '160 ms\|RECALIBRA' frontend/e2e/17-teto-latencia-eixo.spec.ts]`.
+   > O texto abaixo fica como registro da decisão de 2026-09-19.
    `[DECISÃO-OWNER: 2026-09-19, escolha entre alternativas apresentadas]` — *um quadro a 60 fps*.
    Isto **fecha `[M-5]`** e tira `RNF-2` do estado `[NÃO MEDIDO]`.
 

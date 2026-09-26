@@ -1,5 +1,8 @@
 # 📋 PLANO DE DISCOVERY - PLATAFORMA DE TRADING QUANTITATIVO & SENTIMENTO
 
+> **Status em 2026-09-26: SUPERADO.** intenção original; ver recorte-plataforma, PRD-001/SPEC-001 e decisoes-do-owner.
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](MAPA-DOCUMENTAL.md) §2.
+
 ## 1. OBJETIVO DO DISCOVERY
 Validar a viabilidade técnica, arquitetura de dados, componentes visuais e modelo matemático de convergência para uma plataforma autônoma/semi-autônoma de trading baseada em SMC/Price Action + Sentimento (OI, Funding Rate, L/S Ratio) + Order Flow (CVD).
 

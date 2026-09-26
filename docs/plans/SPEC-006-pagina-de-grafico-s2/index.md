@@ -1,6 +1,9 @@
 # Plano de execução — `SPEC-006` · Página de gráfico S2
 
-**SPEC:** [`SPEC-006`](../../specs/SPEC-006-pagina-de-grafico-s2.md) (`SPEC_DRAFT`; `SPEC_APPROVED`
+> **Status em 2026-09-26: HISTÓRICO.** Feature DONE no ledger. R-D (só 1m) superado por ADR-040; o falsificador de 03 inclui infra na exclusão, diferente do CLAUDE.md (citação histórica).
+> Verdade corrente e contradições: [`docs/MAPA-DOCUMENTAL.md`](../../MAPA-DOCUMENTAL.md) §3 #31,53.
+
+**SPEC:** [`SPEC-006`](../../specs/SPEC-006-pagina-de-grafico-s2.md) (`SPEC_DRAFT` ao nascer → **Estado: ver `harness pipeline state pagina-de-grafico-s2` (em 2026-09-26: `DONE`)** `[MEDIDO 2026-09-26: harness pipeline state pagina-de-grafico-s2]`; `SPEC_APPROVED`
 exige `approve spec` do owner — estado corrente sempre por `harness pipeline state
 pagina-de-grafico-s2`) · **ADR:** [`ADR-034`](../../adr/ADR-034-rotas-de-serie-nome-schema-e-a-coluna-de-valor-que-faltava.md)
 **PRD:** [`PRD-006`](../../specs/PRD-006-pagina-de-grafico-s2.md) · **Feature:** `pagina-de-grafico-s2`
