@@ -3,10 +3,10 @@
 `ADR-031/F2`'s falsifier: "n_rows nao cresce" — the property this test proves is that TWO
 different composition roots (`collectors_cli`, `src.main`'s `create_app`), each opening its OWN
 connection, land on and read back the SAME external `md.ingest_run` state. Neither side is ever
-handed the other's Python object; the only thing they share is the ephemeral
-`timescale/timescaledb` container `_postgres_host_port` starts. This is `T-02.4` (composition) +
-`T-02.6` (`create_app` selects by env) + `T-01.6` (the mapping that gives `collectors_cli` its two
-distinct `(source, endpoint)` pairs) wired together for the first time.
+handed the other's Python object; the only thing they share is the database `_postgres`
+creates on the session's shared `timescale/timescaledb` container. This is `T-02.4`
+(composition) + `T-02.6` (`create_app` selects by env) + `T-01.6` (the mapping that gives
+`collectors_cli` its two distinct `(source, endpoint)` pairs) wired together for the first time.
 
 `test_collector_status_reports_at_least_two_rows_over_a_real_shared_postgres` is the DoD's literal
 positive case (skipped absent `docker`): after ONE `!forceOrder@arr` SESSION closes and ONE
@@ -26,13 +26,11 @@ from __future__ import annotations
 import http.client
 import json
 import os
-import shutil
 import signal
 import subprocess
 import sys
 import threading
 import time
-import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -47,6 +45,7 @@ from src.modules.sentimento.domain.ingest_record import IngestRun
 from src.modules.sentimento.domain.premium_index_batch import PREMIUM_INDEX_ENDPOINT
 from src.modules.sentimento.infra.postgres_ingest_record_store import PostgresIngestRecordStore
 from src.modules.sentimento.use_cases.collector_run_mapping import FORCE_ORDER_ENDPOINT
+from tests.helpers.postgres import DatabaseFactory, PostgresDatabase
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DRIVER = BACKEND_ROOT / "tests" / "helpers" / "collectors_cli_postgres_driver.py"
@@ -55,83 +54,23 @@ _JOIN_TIMEOUT_S = 5.0
 _READY_POLL_S = 0.02
 _READY_DEADLINE_S = 20.0
 
-_IMAGE = "timescale/timescaledb:2.17.2-pg15"
-_CONTAINER_NAME_PREFIX = "t-02-8-registro-unico-"
-_READY_TIMEOUT_S = 30.0
 # Three DIFFERENT strings on purpose — same reasoning as `test_create_app_selects_ingest_record_
 # backend.py`: a leaked password could otherwise hide behind a coincidental substring match.
 _POSTGRES_USER = "collector_and_api"
-_POSTGRES_DB = "captura_em_producao_test"
-_POSTGRES_PASSWORD = "do-not-leak-me-either"  # noqa: S105 - throwaway container password
-
-_skip_without_docker = pytest.mark.skipif(
-    shutil.which("docker") is None, reason="docker not on PATH — see module docstring"
-)
-
-
-def _run_docker(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run one `docker` subcommand, capturing output for the caller to inspect on failure."""
-    return subprocess.run(  # noqa: S603 — argv is a literal list, never shell-interpolated
-        ["docker", *args], capture_output=True, text=True, timeout=60
-    )
-
-
-def _wait_until_ready(conninfo: str) -> psycopg.Connection:
-    """Poll for the container to accept connections, refusing after `_READY_TIMEOUT_S`."""
-    deadline = time.monotonic() + _READY_TIMEOUT_S
-    last_error: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            return psycopg.connect(conninfo)
-        except psycopg.OperationalError as error:
-            last_error = error
-            time.sleep(0.5)
-    raise TimeoutError(f"postgres did not become ready within {_READY_TIMEOUT_S}s") from last_error
+_POSTGRES_PASSWORD = "do-not-leak-me-either"  # noqa: S105 - throwaway role password
 
 
 @pytest.fixture
-def _postgres_host_port() -> Iterator[int]:
-    """Start a throwaway, ALREADY-INITIALISED `timescale/timescaledb` container; yield its port.
+def _postgres(postgres_database_factory: DatabaseFactory) -> PostgresDatabase:
+    """Create an ALREADY-INITIALISED database on the session's shared server.
 
     Initialising the schema here simulates what the collector would already have done in
-    production before the API ever answers `/collector-status` — same shape
-    `test_create_app_selects_ingest_record_backend.py`'s own fixture uses, duplicated rather than
-    shared (no helper for it exists yet, matching that file's own precedent).
+    production before the API ever answers `/collector-status`.
     """
-    name = f"{_CONTAINER_NAME_PREFIX}{uuid.uuid4().hex[:8]}"
-    started = _run_docker(
-        "run",
-        "-d",
-        "--rm",
-        "--name",
-        name,
-        "-e",
-        f"POSTGRES_PASSWORD={_POSTGRES_PASSWORD}",
-        "-e",
-        f"POSTGRES_USER={_POSTGRES_USER}",
-        "-e",
-        f"POSTGRES_DB={_POSTGRES_DB}",
-        "-p",
-        "127.0.0.1::5432",
-        _IMAGE,
-    )
-    if started.returncode != 0:
-        pytest.skip(f"could not start {_IMAGE}: {started.stderr.strip()}")
-    try:
-        port_output = _run_docker("port", name, "5432/tcp")
-        host_port = int(port_output.stdout.strip().rsplit(":", maxsplit=1)[-1])
-        conninfo = (
-            f"host=127.0.0.1 port={host_port} dbname={_POSTGRES_DB} user={_POSTGRES_USER} "
-            f"password={_POSTGRES_PASSWORD}"
-        )
-        connection = _wait_until_ready(conninfo)
-        try:
-            PostgresIngestRecordStore(connection).initialise()
-        finally:
-            connection.close()
-        yield host_port
-    finally:
-        _run_docker("rm", "-f", "-v", name)
+    database = postgres_database_factory(user=_POSTGRES_USER, password=_POSTGRES_PASSWORD)
+    with database.connect() as connection:
+        PostgresIngestRecordStore(connection).initialise()
+    return database
 
 
 def _observed_runs(conninfo: str) -> tuple[IngestRun, ...]:
@@ -190,9 +129,8 @@ def _get_collector_status(port: int) -> tuple[int, dict[str, object]]:
     return response.status, body
 
 
-@_skip_without_docker
 def test_collector_status_reports_at_least_two_rows_over_a_real_shared_postgres(
-    _postgres_host_port: int, monkeypatch: pytest.MonkeyPatch
+    _postgres: PostgresDatabase, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`D2.8`'s literal command: `n_rows >= 2` after 1 session + 1 cycle, both on Postgres.
 
@@ -203,19 +141,12 @@ def test_collector_status_reports_at_least_two_rows_over_a_real_shared_postgres(
     `INGEST_RECORD_BACKEND`/`POSTGRES_*` (`T-02.6`) — never touching the collector's connection or
     store object.
     """
-    conninfo = (
-        f"host=127.0.0.1 port={_postgres_host_port} dbname={_POSTGRES_DB} "
-        f"user={_POSTGRES_USER} password={_POSTGRES_PASSWORD}"
-    )
+    conninfo = _postgres.conninfo
     driver_env = {
         **os.environ,
         "PYTHONPATH": str(BACKEND_ROOT),
         "INGEST_RECORD_BACKEND": "postgres",
-        "POSTGRES_HOST": "127.0.0.1",
-        "POSTGRES_PORT": str(_postgres_host_port),
-        "POSTGRES_DB": _POSTGRES_DB,
-        "POSTGRES_USER": _POSTGRES_USER,
-        "POSTGRES_PASSWORD": _POSTGRES_PASSWORD,
+        **_postgres.env(),
     }
     process = subprocess.Popen(
         [sys.executable, str(DRIVER)],
@@ -247,11 +178,8 @@ def test_collector_status_reports_at_least_two_rows_over_a_real_shared_postgres(
     )
 
     monkeypatch.setenv("INGEST_RECORD_BACKEND", "postgres")
-    monkeypatch.setenv("POSTGRES_HOST", "127.0.0.1")
-    monkeypatch.setenv("POSTGRES_PORT", str(_postgres_host_port))
-    monkeypatch.setenv("POSTGRES_DB", _POSTGRES_DB)
-    monkeypatch.setenv("POSTGRES_USER", _POSTGRES_USER)
-    monkeypatch.setenv("POSTGRES_PASSWORD", _POSTGRES_PASSWORD)
+    for variable, value in _postgres.env().items():
+        monkeypatch.setenv(variable, value)
 
     with _served(create_app()) as port:
         status, body = _get_collector_status(port)

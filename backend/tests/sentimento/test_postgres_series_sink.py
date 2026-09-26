@@ -5,7 +5,8 @@ container (`ADR-031/D2` fixes the image for THIS module: `timescale/timescaledb:
 not `postgres:16-alpine` — `md.series` is a hypertable, and only the Timescale image ships the
 extension `gates/F2-series-ddl.md` §2 requires).
 
-Skipped (not failed) when `docker` is not on `PATH`, same reasoning as the sibling file: an
+The engine is the session's shared container (`tests/helpers/postgres.py`), one fresh database
+per test. Skipped (not failed) when `docker` is not on `PATH`, same reasoning as before: an
 environment without Docker still gets a green, meaningful suite for the pure-domain tests
 (`test_write_series_row.py`), it only loses the tests that prove the DDL and the upsert-noop
 property against a real engine.
@@ -13,10 +14,6 @@ property against a real engine.
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-import time
-import uuid
 from collections.abc import Iterator
 
 import psycopg
@@ -34,89 +31,24 @@ from src.modules.sentimento.infra.postgres_series_sink import (
     ensure_schema,
 )
 from src.modules.sentimento.use_cases.write_series_row import WriteOutcome, write_series_row
-
-pytestmark = pytest.mark.skipif(
-    shutil.which("docker") is None, reason="docker not on PATH — see module docstring"
-)
-
-_IMAGE = "timescale/timescaledb:2.17.2-pg15"
-_CONTAINER_NAME_PREFIX = "t-02-2-series-sink-test-"
-_READY_TIMEOUT_S = 30.0
+from tests.helpers.postgres import PostgresDatabase
 
 BUCKET_END_MS = 1_787_443_499_999
 EVENT_TIME_MS = 1_787_443_500_000
 
 
-def _run_docker(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run one `docker` subcommand, capturing output for the caller to inspect on failure."""
-    return subprocess.run(  # noqa: S603 — argv is a literal list, never shell-interpolated
-        ["docker", *args], capture_output=True, text=True, timeout=60
-    )
-
-
 @pytest.fixture
-def postgres_conninfo() -> Iterator[str]:
-    """Start a throwaway TimescaleDB container, yield its `psycopg` conninfo, then tear it down."""
-    name = f"{_CONTAINER_NAME_PREFIX}{uuid.uuid4().hex[:8]}"
-    started = _run_docker(
-        "run",
-        "-d",
-        "--rm",
-        "--name",
-        name,
-        "-e",
-        "POSTGRES_PASSWORD=test",
-        "-e",
-        "POSTGRES_USER=test",
-        "-e",
-        "POSTGRES_DB=test",
-        "-p",
-        "127.0.0.1::5432",
-        _IMAGE,
-    )
-    if started.returncode != 0:
-        pytest.skip(f"could not start {_IMAGE}: {started.stderr.strip()}")
-    try:
-        port_output = _run_docker("port", name, "5432/tcp")
-        host_port = port_output.stdout.strip().rsplit(":", maxsplit=1)[-1]
-        conninfo = f"host=127.0.0.1 port={host_port} dbname=test user=test password=test"
-        _wait_until_ready(conninfo).close()
-        yield conninfo
-    finally:
-        _run_docker("rm", "-f", "-v", name)
-
-
-@pytest.fixture
-def postgres_connection(postgres_conninfo: str) -> Iterator[psycopg.Connection]:
-    """One connection to the throwaway container — the sink/lookup under test use this one."""
-    connection = _wait_until_ready(postgres_conninfo)
-    try:
+def postgres_connection(postgres_database: PostgresDatabase) -> Iterator[psycopg.Connection]:
+    """One connection to this test's database — the sink/lookup under test use this one."""
+    with postgres_database.connect() as connection:
         yield connection
-    finally:
-        connection.close()
 
 
 @pytest.fixture
-def second_connection(postgres_conninfo: str) -> Iterator[psycopg.Connection]:
-    """Open a SECOND, independent connection to the SAME container — for cross-connection reads."""
-    connection = _wait_until_ready(postgres_conninfo)
-    try:
+def second_connection(postgres_database: PostgresDatabase) -> Iterator[psycopg.Connection]:
+    """Open a SECOND, independent connection to the SAME database — for cross-connection reads."""
+    with postgres_database.connect() as connection:
         yield connection
-    finally:
-        connection.close()
-
-
-def _wait_until_ready(conninfo: str) -> psycopg.Connection:
-    """Poll for the container to accept connections, refusing after `_READY_TIMEOUT_S`."""
-    deadline = time.monotonic() + _READY_TIMEOUT_S
-    last_error: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            return psycopg.connect(conninfo)
-        except psycopg.OperationalError as error:
-            last_error = error
-            time.sleep(0.5)
-    raise TimeoutError(f"postgres did not become ready within {_READY_TIMEOUT_S}s") from last_error
 
 
 def _row(**overrides: object) -> SeriesRow:

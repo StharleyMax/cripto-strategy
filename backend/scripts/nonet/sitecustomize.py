@@ -26,6 +26,10 @@ ALLOWED    loopback. The suite's Postgres and Redis drivers talk to `127.0.0.1`,
            is how a gate gets switched off "temporarily" and never switched back on. The
            requirement was never "no sockets"; it was "no THIRD PARTY", and that is the line
            drawn here.
+ALLOWED    `AF_UNIX` sockets. They name a path on this machine, never a host, so they cannot
+           reach a third party by construction. The suite's one Postgres comes from
+           `testcontainers` (`tests/helpers/postgres.py`), whose Docker client talks to
+           `/var/run/docker.sock` — refusing that path would refuse the database itself.
 
 The refusal is an exception with the destination in the message, not a silent empty result: a
 test that trips this must say WHAT it tried to reach, or the next reader is left guessing.
@@ -37,6 +41,7 @@ import socket
 from collections.abc import Sequence
 from typing import Any
 
+_AF_UNIX = getattr(socket, "AF_UNIX", None)
 _LOOPBACK_NAMES = frozenset({"localhost", "localhost.localdomain", "ip6-localhost", ""})
 
 
@@ -78,6 +83,8 @@ _real_getaddrinfo = socket.getaddrinfo
 
 def _guarded_connect(self: socket.socket, address: Any) -> Any:
     """Connect only to the local machine."""
+    if self.family == _AF_UNIX:
+        return _real_connect(self, address)
     host = _host_of(address)
     if not _is_loopback(host):
         _refuse(host)
@@ -86,6 +93,8 @@ def _guarded_connect(self: socket.socket, address: Any) -> Any:
 
 def _guarded_connect_ex(self: socket.socket, address: Any) -> Any:
     """Connect only to the local machine, `connect_ex` spelling."""
+    if self.family == _AF_UNIX:
+        return _real_connect_ex(self, address)
     host = _host_of(address)
     if not _is_loopback(host):
         _refuse(host)

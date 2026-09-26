@@ -82,6 +82,58 @@ extrai() { grep -aoE "$1" "$LOG" | tail -1; }
 
 echo "=== verify · $(basename "$ROOT") · $TS (UTC) ==="
 
+# ── 0. só mede o que precisa ser medido ───────────────────────────────────────────────
+# Dois atalhos, e `VERIFY_FORCE=1` desliga os dois. `[MEDIDO 2026-09-26, sessão 6624939a]`: o
+# mesmo verify rodava 3–4× por task (builder, integrador, QA, code-review) sobre a MESMA árvore,
+# e também sobre diffs só de docs — a 8,5–15 min cada, acima do teto de 600 s do Bash.
+#
+# (a) CACHE POR ÁRVORE. Um verde completo sobre árvore limpa grava `HEAD^{tree}` no diretório
+#     comum do git, que todas as worktrees compartilham. A mesma árvore limpa, depois, devolve
+#     esse veredito sem medir de novo. Só VERDE entra: vermelho e "não mediu" sempre remedem.
+# (b) DOCS-ONLY. Se TODO caminho alterado desde a base é documento, código nenhum mudou e os
+#     portões de código mediriam a base de novo. Continuam rodando só os que LEEM documento:
+#     `regras`, `validate` e a varredura da chave da Coinalyze, que percorre todo `git ls-files`
+#     (`test_coinalyze_key_never_versioned.py`) — uma chave colada em `docs/` é exatamente o
+#     vazamento que ela existe para pegar.
+#     A allowlist é por caminho, não por `harness code-paths classify`: aquele classifica como
+#     não-produção arquivos que quebram portão (`e2e/*.spec.ts`, `Makefile`, `package.json`,
+#     `harness.toml`), e pular por ele seria pular o portão que eles alimentam.
+VERIFY_CACHE_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/verify-cache"
+TREE="$(git rev-parse 'HEAD^{tree}' 2>/dev/null)"
+SUJO="$(git status --porcelain --untracked-files=normal 2>/dev/null)"
+if [ "${VERIFY_FORCE:-0}" != 1 ]; then
+    if [ -z "$SUJO" ] && [ -n "$TREE" ] && [ -f "$VERIFY_CACHE_DIR/$TREE" ]; then
+        printf '[%-9s] árvore %s já mediu VERDE: %s\n' "CACHE" "${TREE:0:12}" "$(cat "$VERIFY_CACHE_DIR/$TREE")"
+        echo "veredito: VERDE (cache da árvore) — VERIFY_FORCE=1 mede de novo"
+        exit 0
+    fi
+
+    BASE="${VERIFY_BASE:-$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)}"
+    git rev-parse --verify -q "${BASE:-x}^{commit}" >/dev/null || BASE=origin/master
+    MB="$(git merge-base HEAD "$BASE" 2>/dev/null)"
+    MUDOU="$( { [ -n "$MB" ] && git diff --name-only "$MB"; git ls-files -o --exclude-standard; } | sort -u)"
+    NAO_DOC="$(printf '%s\n' "$MUDOU" | grep -v '^$' | grep -vE '^docs/' \
+        | grep -vE '^[^/]+\.md$|^(corpus|data|\.claude)/.*\.md$' || true)"
+    if [ -n "$MB" ] && [ -n "$MUDOU" ] && [ -z "$NAO_DOC" ]; then
+        N_DOC="$(printf '%s\n' "$MUDOU" | grep -vc '^$')"
+        printf '[%-9s] docs-only desde %s: %s arquivo(s) — portões de código não rodam\n' "PULADO" "$BASE" "$N_DOC"
+        printf '%s\n' "$MUDOU" | head -10 | sed 's/^/            /'
+        portao "regras" bash .harness/mechanism rules --mode sweep --surface git-hook; RC_R=$?; falhou $RC_R
+        printf '[%-9s] regras          rc=%s\n' "$(rotulo $RC_R)" "$RC_R"
+        portao "validate" bash .harness/mechanism validate --strict; RC_V=$?; falhou $RC_V
+        printf '[%-9s] política        rc=%s\n' "$(rotulo $RC_V)" "$RC_V"
+        portao "chave-coinalyze" bash backend/scripts/test-fast.sh -k coinalyze_key_never_versioned; RC_K=$?; falhou $RC_K
+        printf '[%-9s] chave-coinalyze rc=%s  varredura de todo git ls-files\n' "$(rotulo $RC_K)" "$RC_K"
+        case "$PIOR" in
+            0) echo "veredito: VERDE (docs-only) — 3 portões de documento mediram e passaram";;
+            1) echo "veredito: VERMELHO — algum portão de documento REPROVOU";;
+            3) echo "veredito: INDETERMINADO — algum portão RECUSOU medir (rc=3).";;
+        esac
+        printf 'saída completa: %s\n' "$LOG"
+        exit "$PIOR"
+    fi
+fi
+
 # ── 1. lint ────────────────────────────────────────────────────────────────────────────
 portao "lint-backend" bash backend/scripts/lint.sh; RC_LB=$?; falhou $RC_LB
 N_LB="$(extrai '[0-9]+ source files')"
@@ -294,4 +346,8 @@ case "$PIOR" in
 esac
 printf 'saída completa: %s (%s)\n' "$LOG" "$(du -h "$LOG" 2>/dev/null | cut -f1)"
 echo 'NÃO leia o log inteiro: grep o que precisar. Ele existe para ficar FORA do contexto.'
+# Grava o cache (seção 0a) só com árvore limpa e VERDE — a árvore medida é a que o SHA nomeia.
+if [ "$PIOR" -eq 0 ] && [ -z "$SUJO" ] && [ -n "$TREE" ] && mkdir -p "$VERIFY_CACHE_DIR" 2>/dev/null; then
+    printf '%s · %s\n' "$TS" "$LOG" > "$VERIFY_CACHE_DIR/$TREE"
+fi
 exit "$PIOR"

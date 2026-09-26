@@ -10,11 +10,13 @@ portable across worktrees on the same clone instead of guessing.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import subprocess
 from pathlib import Path
 
 
+@functools.cache
 def repo_data_root() -> Path:
     """Return `<main working tree>/data`, regardless of which worktree this process runs from."""
     common_dir = subprocess.run(
@@ -24,6 +26,12 @@ def repo_data_root() -> Path:
         text=True,
     ).stdout.strip()
     return Path(common_dir).parent / "data"
+
+
+@functools.cache
+def _md5_of(path: Path) -> str:
+    """Hash a fixture once per process: several tests pin the same multi-hundred-MB file."""
+    return hashlib.md5(path.read_bytes()).hexdigest()  # noqa: S324 — fixture identity, not crypto
 
 
 def require_fixture(relative_path: str, *, expected_md5: str) -> Path:
@@ -40,7 +48,7 @@ def require_fixture(relative_path: str, *, expected_md5: str) -> Path:
             f"fixture ausente: {path}. Catalogada em data/MANIFEST.md — este pacote de testes "
             f"exige o dado real, não uma versão sintética."
         )
-    digest = hashlib.md5(path.read_bytes()).hexdigest()  # noqa: S324 — fixture identity, not crypto
+    digest = _md5_of(path)
     if digest != expected_md5:
         raise ValueError(
             f"{path}: md5 {digest} não bate com o declarado pelo plano ({expected_md5}) — "

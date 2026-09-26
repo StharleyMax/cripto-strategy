@@ -18,16 +18,12 @@ from __future__ import annotations
 
 import http.client
 import json
-import shutil
-import subprocess
 import threading
 import time
-import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-import psycopg
 import pytest
 import uvicorn
 from fastapi import FastAPI
@@ -43,6 +39,7 @@ from src.modules.sentimento.domain.provenance import (
 from src.modules.sentimento.infra.postgres_ingest_record_store import PostgresIngestRecordStore
 from src.modules.sentimento.infra.postgres_series_sink import PostgresSeriesSink, ensure_schema
 from src.modules.sentimento.use_cases.series_catalog import list_series_catalog
+from tests.helpers.postgres import DatabaseFactory
 
 _STARTUP_POLL_S = 0.005
 _JOIN_TIMEOUT_S = 5.0
@@ -75,106 +72,48 @@ def test_sqlite_backend_leaves_series_window_reader_unwired(tmp_path: Path) -> N
 
 # ── MORDE — a real, ephemeral TimescaleDB, over the wire ─────────────────────────────────────
 
-_IMAGE = "timescale/timescaledb:2.17.2-pg15"
-_CONTAINER_NAME_PREFIX = "t-04-1-create-app-window-reader-"
-_READY_TIMEOUT_S = 30.0
 _POSTGRES_USER = "series_reader"
-_POSTGRES_DB = "series_history_test"
-_POSTGRES_PASSWORD = "do-not-leak-me"  # noqa: S105 - throwaway container password, not a secret
-
-_skip_without_docker = pytest.mark.skipif(
-    shutil.which("docker") is None, reason="docker not on PATH — see module docstring"
-)
-
-
-def _run_docker(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 — argv is a literal list, never shell-interpolated
-        ["docker", *args], capture_output=True, text=True, timeout=60
-    )
-
-
-def _wait_until_ready(conninfo: str) -> psycopg.Connection:
-    deadline = time.monotonic() + _READY_TIMEOUT_S
-    last_error: Exception | None = None
-    while time.monotonic() < deadline:
-        try:
-            return psycopg.connect(conninfo)
-        except psycopg.OperationalError as error:
-            last_error = error
-            time.sleep(0.5)
-    raise TimeoutError(f"postgres did not become ready within {_READY_TIMEOUT_S}s") from last_error
+_POSTGRES_PASSWORD = "do-not-leak-me"  # noqa: S105 - throwaway role password, not a secret
 
 
 @pytest.fixture
-def _postgres_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Start a throwaway TimescaleDB, seed `md.series`, point env at it.
+def _postgres_env(
+    monkeypatch: pytest.MonkeyPatch, postgres_database_factory: DatabaseFactory
+) -> None:
+    """Seed `md.series` in a fresh database, point env at it.
 
     Seeds one real `klines_last` row, then sets `INGEST_RECORD_BACKEND=postgres` (and every
     `POSTGRES_*` var) at it — the SAME shape `create_app()`'s module-level `app` resolves in
     production (`deploy/compose.yml`'s `api` service, `[MEDIDO 2026-09-08]`:
     `INGEST_RECORD_BACKEND=postgres` there).
     """
-    name = f"{_CONTAINER_NAME_PREFIX}{uuid.uuid4().hex[:8]}"
-    started = _run_docker(
-        "run",
-        "-d",
-        "--rm",
-        "--name",
-        name,
-        "-e",
-        f"POSTGRES_PASSWORD={_POSTGRES_PASSWORD}",
-        "-e",
-        f"POSTGRES_USER={_POSTGRES_USER}",
-        "-e",
-        f"POSTGRES_DB={_POSTGRES_DB}",
-        "-p",
-        "127.0.0.1::5432",
-        _IMAGE,
-    )
-    if started.returncode != 0:
-        pytest.skip(f"could not start {_IMAGE}: {started.stderr.strip()}")
-    try:
-        port_output = _run_docker("port", name, "5432/tcp")
-        host_port = port_output.stdout.strip().rsplit(":", maxsplit=1)[-1]
-        conninfo = (
-            f"host=127.0.0.1 port={host_port} dbname={_POSTGRES_DB} user={_POSTGRES_USER} "
-            f"password={_POSTGRES_PASSWORD}"
-        )
-        connection = _wait_until_ready(conninfo)
-        try:
-            PostgresIngestRecordStore(connection).initialise()
-            ensure_schema(connection)
-            PostgresSeriesSink(connection).accept(
-                SeriesRow(
-                    series_key_id=_SERIES_KEY_ID,
-                    symbol=_SYMBOL,
-                    source="binance",
-                    bucket_end=_BUCKET_END_MS,
-                    event_time=_BUCKET_END_MS,
-                    available_at=_BUCKET_END_MS,
-                    availability_source=AvailabilitySource.OBSERVED,
-                    ingested_at=_BUCKET_END_MS,
-                    observed_at=_BUCKET_END_MS,
-                    provenance=Provenance.OBSERVED,
-                    src_label_raw="klines",
-                    observer_id="vps-01",
-                    observer_region=UNKNOWN_OBSERVER_REGION,
-                    is_final=True,
-                    value_raw="65432.10",
-                )
+    database = postgres_database_factory(user=_POSTGRES_USER, password=_POSTGRES_PASSWORD)
+    with database.connect() as connection:
+        PostgresIngestRecordStore(connection).initialise()
+        ensure_schema(connection)
+        PostgresSeriesSink(connection).accept(
+            SeriesRow(
+                series_key_id=_SERIES_KEY_ID,
+                symbol=_SYMBOL,
+                source="binance",
+                bucket_end=_BUCKET_END_MS,
+                event_time=_BUCKET_END_MS,
+                available_at=_BUCKET_END_MS,
+                availability_source=AvailabilitySource.OBSERVED,
+                ingested_at=_BUCKET_END_MS,
+                observed_at=_BUCKET_END_MS,
+                provenance=Provenance.OBSERVED,
+                src_label_raw="klines",
+                observer_id="vps-01",
+                observer_region=UNKNOWN_OBSERVER_REGION,
+                is_final=True,
+                value_raw="65432.10",
             )
-        finally:
-            connection.close()
+        )
 
-        monkeypatch.setenv("INGEST_RECORD_BACKEND", "postgres")
-        monkeypatch.setenv("POSTGRES_HOST", "127.0.0.1")
-        monkeypatch.setenv("POSTGRES_PORT", host_port)
-        monkeypatch.setenv("POSTGRES_DB", _POSTGRES_DB)
-        monkeypatch.setenv("POSTGRES_USER", _POSTGRES_USER)
-        monkeypatch.setenv("POSTGRES_PASSWORD", _POSTGRES_PASSWORD)
-        yield
-    finally:
-        _run_docker("rm", "-f", "-v", name)
+    monkeypatch.setenv("INGEST_RECORD_BACKEND", "postgres")
+    for variable, value in database.env().items():
+        monkeypatch.setenv(variable, value)
 
 
 @contextmanager
@@ -208,7 +147,6 @@ def _get_series_history(port: int) -> tuple[int, dict[str, object]]:
     return response.status, body
 
 
-@_skip_without_docker
 def test_postgres_backend_wires_a_real_reader_and_series_history_answers_200(
     _postgres_env: None,
 ) -> None:

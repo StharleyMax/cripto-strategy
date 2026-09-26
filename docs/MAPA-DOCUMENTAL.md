@@ -32,7 +32,7 @@ Quando dois documentos discordam, vale nesta ordem:
 - CVD por bucket = `2·takerBuyBaseVol[9] − volume[5]` do klines, sem aggTrades — `ADR-036/D5` (2026-09-10), `SPEC-007:161-172`. Revoga CVD por aggTrade (`proposta-discovery:14`; `ADR-001:27` no core) e a D5 original (Coinalyze).
 - `cvd_delta` é fato; `cvd_cum(anchor)` é view com âncora obrigatória — `PRD-001:371-385`, `plataforma-superficies:115`.
 - `quantity_field ∈ {q,nq,NA}` na `SeriesKey`; `nq` só a partir da 1ª captura ao vivo, sem emenda com `q` — `ADR-001` (rege só séries de aggTrade).
-- **O código de aggTrade (`aggtrade_csv_reader`, `aggtrade_contiguity`, `aggtrade_bucket_aggregate`, `domain/cvd.py`) sai do repositório na branch `chore/harness-velocidade`**, porque não tinha chamador em produção `[DECISÃO-OWNER: 2026-09-26, escolha entre alternativas apresentadas]`. Depois do merge, `ADR-001` rege um caminho sem código, e reabri-lo é gatilho de `Q20` (nota em `PRD-001` E-07).
+- **O código de aggTrade (`aggtrade_csv_reader`, `aggtrade_contiguity`, `aggtrade_bucket_aggregate`, `domain/cvd.py`) saiu do repositório em 2026-09-26 (PR #234, merge `dc725ef`)**, porque não tinha chamador em produção `[DECISÃO-OWNER: 2026-09-26, escolha entre alternativas apresentadas]`. Depois do merge, `ADR-001` rege um caminho sem código, e reabri-lo é gatilho de `Q20` (nota em `PRD-001` E-07).
 - `cvd_source` com 6 valores — `SPEC-001:290`. No código: `kline_takerbuy` 22, `aggtrade_q` 24, `aggtrade_nq` 20 `[MEDIDO: grep -rhoE 'aggtrade_(q|nq)|kline_takerbuy' backend/src | sort | uniq -c]`.
 - `bv` da Coinalyze recusado como 2ª testemunha (116/120 iguais) — `ADR-036:161-165`.
 

@@ -23,7 +23,17 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
+
+from tests.helpers.postgres import (
+    DatabaseFactory,
+    PostgresDatabase,
+    PostgresServer,
+    start_server,
+)
 
 if "INGEST_HEALTH_STORE_PATH" not in os.environ:
     _scratch_dir = Path(tempfile.mkdtemp(prefix="ingest-health-store-"))
@@ -32,3 +42,28 @@ if "INGEST_HEALTH_STORE_PATH" not in os.environ:
 if "QUARANTINE_STORE_PATH" not in os.environ:
     _quarantine_scratch_dir = Path(tempfile.mkdtemp(prefix="series-quarantine-store-"))
     os.environ["QUARANTINE_STORE_PATH"] = str(_quarantine_scratch_dir / "series_quarantine.sqlite3")
+
+
+# ── The shared Postgres (`tests/helpers/postgres.py`) ───────────────────────────────────────
+# One container for the whole session; each test that asks gets a database of its own.
+
+
+@pytest.fixture(scope="session")
+def postgres_server() -> Iterator[PostgresServer]:
+    """Start the session's TimescaleDB once; skip every dependent test when Docker is absent."""
+    yield from start_server()
+
+
+@pytest.fixture
+def postgres_database_factory(postgres_server: PostgresServer) -> Iterator[DatabaseFactory]:
+    """Create fresh databases on demand (optionally owned by a role); drop them after the test."""
+    try:
+        yield postgres_server.create_database
+    finally:
+        postgres_server.drop_created()
+
+
+@pytest.fixture
+def postgres_database(postgres_database_factory: DatabaseFactory) -> PostgresDatabase:
+    """One empty database, owned by the admin role, private to this test."""
+    return postgres_database_factory()

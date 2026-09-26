@@ -8,14 +8,25 @@ Caminhos absolutos:
 - `W1DIR` = `MAIN/.claude/worktrees/wave-paineis-f01` (branch `wave/paineis-f01`)
 - `W2DIR` = `MAIN/.claude/worktrees/wave-paineis-f03a` (branch `wave/paineis-f03a`)
 
-## 1. Builder numa worktree isolada
+## 1. Builder numa worktree do projeto (revisado em 2026-09-26)
 
-1. Primeiro passo: `git merge --ff-only <branch da wave>` (`wave/paineis-f01` ou `wave/paineis-f03a`). O
-   `git reset --hard` é negado pela permissão.
-2. Dependências por hard link, **nunca symlink** (o Turbopack recusa symlink):
-   `for p in frontend/node_modules backend/.venv data; do [ -e $p ] || cp -al MAIN/$p $p; done`
+> **Mudou em 2026-09-26.** Antes, o builder nascia com `isolation: 'worktree'` a partir de `master` e fazia à mão o
+> `git merge --ff-only` da wave e o `for … cp -al` das dependências. O guard de isolamento do Claude Code recusa
+> essa forma de comando (*"too complex to verify"*), e ele não se desliga: foram **82 chamadas bloqueadas em 2
+> sessões** `[MEDIDO 2026-09-26: sessões 6624939a e 1a15360e, erros "isolated in the worktree"]`. O orquestrador
+> passa a criar a worktree, e o agente é despachado **sem** isolamento.
+
+1. **Orquestrador:** `bash scripts/wt.sh new <task> <branch da wave>` (ex.: `bash scripts/wt.sh new t-01-12
+   wave/paineis-f01`). A worktree já nasce da wave, com `frontend/node_modules`, `backend/.venv` e `data` por hard
+   link (o Turbopack recusa symlink). O script imprime o caminho absoluto, que vai no prompt como `WTDIR`. Despache
+   **sem** `isolation: 'worktree'`.
+2. **Builder:** todo comando roda em `WTDIR`: `cd WTDIR && …` ou `git -C WTDIR …`. **Nunca** commite nem edite no
+   `MAIN`. Sem o guard, essa trava passa a ser esta regra e a branch dedicada. O `pre-push` do harness continua
+   sendo o portão.
 3. e2e: use **as portas que o prompt deu**, com `E2E_API_PORT=… E2E_NEXT_PORT=… make verify`. A porta padrão 8811
-   colide com as outras worktrees.
+   colide com as outras worktrees. **Rode o verify com `run_in_background` e espere a notificação.** Laço
+   `until`/`tail -f` é proibido (R9). O verify pula sozinho quando o diff é só de docs e devolve do cache quando
+   a mesma árvore limpa já mediu verde (`VERIFY_FORCE=1` mede de novo).
 4. Insumos: a sua entrada em `harness tasks json paineis-de-fluxo` (filtre pelo id), o plano
    `docs/plans/SPEC-009-paineis-de-fluxo/0N_*.md`, as seções da SPEC-009 e das ADRs que a task cita em `refs`, e,
    na W1, `handoff/T-01.0-achados-para-a-F1.md`, `handoff/FIX-regressoes-fase05.md` e a ADR-044 D3′ (`1f5e448`).
@@ -25,7 +36,10 @@ Caminhos absolutos:
    vão para `docs/context/paineis-de-fluxo/gates/<TASK>-*.md`, também commitados.
 7. **Não** altere `status` no `tasks.toml`. **Não** rode `gate-record`, `approve`, `advance` nem `resolve`: esses
    atos são do orquestrador.
-8. Passando de ~150 turnos: escreva `handoff/<TASK>.md` com o estado, commite e devolva `PARTIAL`.
+8. Passando de ~150 turnos: escreva `handoff/<TASK>.md` com o estado, commite e devolva `PARTIAL`. Desde
+   2026-09-26 o hook R6 avisa de verdade (antes ele nunca disparava).
+9. **Remoção da worktree:** só pelo orquestrador, com `bash scripts/wt.sh rm <task>`. O script recusa se houver
+   arquivo não commitado ou commit que nenhuma outra branch conhece.
 
 ## 2. e2e vermelho conhecido (baseline)
 
