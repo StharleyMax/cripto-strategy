@@ -1725,7 +1725,8 @@ const LIQUIDATION_BAR_COLOR_ROLE = "provenanceStrong" as const;
  * The sub-axis' DOM anchor. The bars themselves are drawn on the price panel's own `<canvas>`
  * (`lightweight-charts`), which a DOM assertion cannot see — so this element carries the facts
  * about them: `data-volume-present-points` (how many 1-minute buckets have a real number) and
- * the "leitura atual" readout, which prints `SEM_PONTO` when the last instant has nothing.
+ * the "leitura atual" readout, which prints `ABSENCE_TOKEN` (`ausente` since `T-01.R1`/`SF-9`;
+ * it was `SEM_PONTO` before) when the last instant has nothing.
  *
  * For M1 the present-slot count IS the count of distinct native bars — no `RN-S1` `/5` divisor,
  * because `klines_volume` is `1m` native and nothing here is a ladder (`view-model.ts`

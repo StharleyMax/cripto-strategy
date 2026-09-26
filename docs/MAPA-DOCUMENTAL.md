@@ -66,6 +66,7 @@ Quando dois documentos discordam, vale nesta ordem:
 - Vela = 4 séries `klines_ohlc` 1m STOCK, fonte klines (nunca mark) — `SPEC-008 D1`. Revoga `klines_last` no PricePane (`SPEC-007:416-421`).
 - `price_source` por `price_use`: estrutura/execução → last; liquidação/funding/custo → mark; sem `price_use` é erro — `ADR-007`.
 - Cor do volume = direção da vela (doji = alta) — plano `SPEC-009/02`.
+  - ⚠️ **CORREÇÃO 2026-09-26** (`W4-QA` BLOCKER-1, ver `docs/context/paineis-de-fluxo/handoff/T-02.1-doji-julgamento.md`): o doji **não** é alta. A barra de volume sob vela doji (`close === open`) fica **sem direção**, com `dojiItemColors().color` (a mesma cor da vela doji), pela `ADR-010/D-2`, que precede o `[INFERRED: I-3]` do PRD e do plano. Código: `frontend/src/charts/volume-direction.ts` (`volumeBarColor`). A linha acima fica como estava, para o histórico.
 - Spread é premissa carimbada; `bookTicker` fora; resíduo `Q17` (a2/a3) aberto — `decisoes:202-209`.
 
 ### armazenamento

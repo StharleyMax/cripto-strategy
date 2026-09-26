@@ -197,6 +197,13 @@ Candidatas: **1 Epic** (`paineis-de-fluxo`) com **4** unidades F1–F4 (5 se `O-
 | RF-10 | Liquidações: uma série acima de zero, outra abaixo, **no mesmo pane**; a legenda mostra os **dois** valores, cada um na cor da sua perna | F4 |
 | RF-11 | Qual perna vai para cima/verde é a da **referência lida**, não suposta (`[Q-LIQ-1]`) | F4 |
 
+> ⚠️ **CORREÇÃO 2026-09-26 ao `RF-7`** (`W4-QA` BLOCKER-1, ver `docs/context/paineis-de-fluxo/handoff/T-02.1-doji-julgamento.md`):
+> o `[INFERRED: doji = alta, convenção TradingView]` **caiu**. Quem responde `I-3` é o `design_gate`, e ele já tinha
+> aceitado o doji do volume em `#8b949e` (`gates/DESIGN-LAYOUT-ux-critique-r1.md:38`, r2 `:117`). A `ADR-010/D-2`
+> (doji = direção não afirmada) precede este PRD. O que vale: alta se `close_i > open_i`, baixa se `close_i < open_i`,
+> e **sem direção** (`dojiItemColors().color`, a cor da vela doji) se `close_i = open_i`. A linha do `RF-7` fica como
+> estava, para o histórico.
+
 ### 7.2 Não-funcionais
 
 | id | requisito | fonte |
@@ -285,6 +292,11 @@ dado (F1, F2, F4, F3/`O-1`), itens 1 e 4 são **não-regressão**: continuam `> 
 | G-2 | **M3: OI Binance com 14,2% de buckets ausentes em 7 d, buraco de ~18 h.** O candle de OI vai **mostrar** isso | **não-bloqueante**; ingestão | `infra-architect`/`quant-architect` — fora deste escopo (NG-6) |
 | G-3 | Teto de latência (RNF-2) sem número no repositório (`PRD-008 [Q5]` segue aberta) | não-bloqueante | `/architect` propõe, owner ratifica |
 
+> ⚠️ **CORREÇÃO 2026-09-26 ao `I-3`** (`W4-QA` BLOCKER-1, ver `docs/context/paineis-de-fluxo/handoff/T-02.1-doji-julgamento.md`):
+> a metade do volume foi respondida pelo dono, o `design_gate`, **ao contrário** da inferência. Doji → barra de volume
+> **sem direção** (`dojiItemColors().color`), pela `ADR-010/D-2`. A metade do OI (`=` → neutro) não muda. A linha do
+> `I-3` fica como estava, para o histórico.
+
 ---
 
 ## 13. Menus — escolhas com o custo de cada uma
@@ -336,6 +348,11 @@ sem terceiro; o que O-2 acrescenta é o pavio. **A escolha é do owner.**
 | **[Q-VOL-1]** | Volume com cor pela direção (V-1, zero dado, é o que a referência faz) ou split compra/venda empilhado (V-2, derivável de M5, mas repete a informação do pane de CVD)? | **INFERÍVEL** — o `/pm` recomenda **V-1** `[INFERRED: é a referência pedida e não duplica o CVD]` | `/architect`/`design_gate`; owner veta se quiser |
 | **[Q-VOL-2]** | Volume segue em `log10` ou passa a linear no rodapé como a referência? | **INFERÍVEL** (`PRD-008 [Q8]`) | `design_gate` |
 | **[Q-OI-3]** | Em TF `5m` com O-1 (corpo sem pavio), o pane de OI mostra assim mesmo, ou avisa que o pavio não existe nessa resolução? | **NÃO-BLOQUEANTE**, decide junto com Q-OI-1 | `design_gate` + `quant-architect` |
+
+> ✅ **NOTA 2026-09-26 — `[Q-VOL-2]` respondida** (`W4-QA` achado 3): o `design_gate` de `T-02.2` escolheu a opção
+> **B**, volume **linear, base 0**, com as marcas de ausência e de zero numa faixa própria abaixo da base das barras
+> (`docs/context/paineis-de-fluxo/gates/T-02.2-design-gate.md` §4, e §8 ciclo 2 **APPROVED**). Código:
+> `PriceScaleMode.Normal` explícito em `frontend/src/app/symbol/SymbolClient.tsx`. A linha acima fica como estava.
 
 ---
 
