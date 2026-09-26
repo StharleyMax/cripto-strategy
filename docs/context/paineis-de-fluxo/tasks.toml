@@ -313,7 +313,7 @@ tracker = { provider = "jira", id = "CST-262", url = "https://conversationhub.at
 id = "T-02.1"
 title = "[charts] 02 · Funcao pura vela -> cor da barra de volume com os dois tokens da vela; doji = alta; vela ausente sem cor de direcao"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T23:58:12Z @ b5d8d1adfde6bcc8a570bbd9822d7a98faf6c582
 phase = "02"
 depends_on = ["T-01.10", "T-01.11"]
 refs = [
@@ -330,7 +330,7 @@ tracker = { provider = "jira", id = "CST-263", url = "https://conversationhub.at
 id = "T-02.2"
 title = "[web] 02 · Escala log x linear do rodape de volume (Q-VOL-2/Q-DG-2), decidida pelo design_gate"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T23:58:12Z @ b5d8d1adfde6bcc8a570bbd9822d7a98faf6c582
 phase = "02"
 depends_on = ["T-01.10", "T-01.11"]
 refs = [
@@ -345,7 +345,7 @@ tracker = { provider = "jira", id = "CST-264", url = "https://conversationhub.at
 id = "T-02.3"
 title = "[web] 02 · Ligacao no registry: a serie secondary do pane price usa a funcao de T-02.1"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T23:58:12Z @ b5d8d1adfde6bcc8a570bbd9822d7a98faf6c582
 phase = "02"
 depends_on = ["T-02.1", "T-02.2"]
 refs = [
@@ -359,7 +359,7 @@ tracker = { provider = "jira", id = "CST-265", url = "https://conversationhub.at
 id = "T-02.4"
 title = "[web] 02 · Playwright CA-6: cor lida do canvas na barra i == direcao da vela i na API, n>=50, com alta e baixa na janela; ablacao inverte o comparador"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T23:58:12Z @ b5d8d1adfde6bcc8a570bbd9822d7a98faf6c582
 phase = "02"
 depends_on = ["T-02.3"]
 refs = [
@@ -375,7 +375,7 @@ tracker = { provider = "jira", id = "CST-266", url = "https://conversationhub.at
 id = "T-02.5"
 title = "[web] 02 · Veredito do ux-ui-mastery sobre o screenshot do volume com direcao"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-26T23:58:12Z @ b5d8d1adfde6bcc8a570bbd9822d7a98faf6c582
 phase = "02"
 depends_on = ["T-02.4"]
 refs = [
