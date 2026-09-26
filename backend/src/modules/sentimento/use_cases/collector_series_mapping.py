@@ -1182,9 +1182,13 @@ def build_liquidation_history_to_row(
 #
 # `available_at` is `received_at`, stamped `OBSERVED`, and the reason is that here it genuinely
 # IS observed: the reading reached this process at that instant, and nothing about it is
-# modeled. It is usually BEFORE `bucket_end` (the call goes out at `T - 5 s`), which the read
-# path already handles: `as_of` admits a row on `bucket_end <= t` (R-2) as well as
-# `available_at <= knowledge_time` (R-1), so the row is not drawn before `T`. Whether the
+# modeled. It is usually BEFORE `bucket_end` (the call goes out at `T - 5 s`), and what the read
+# path does with that depends on the bar policy. Under `final_only`, `as_of` admits a row on
+# `bucket_end <= t` (R-2) as well as `available_at <= knowledge_time` (R-1), so R-2 keeps the
+# row out before `T`. Under `intrabar`, R-2 does not apply (`_r2_admits` returns `True`
+# outright), so the row is admitted from `received_at`, before `T`; that is a genuine
+# observation made at `received_at`, not look-ahead, but an `intrabar` consumer must not assume
+# the value AS OF `T` stays hidden until `T`. Whether the
 # modeled availability of this series for `backtest`/`convergencia` may be `T` instead of
 # `T + 1 min` is `Q-STAMP-1` §5's open question, left to whoever wires a consumer that decides.
 #
