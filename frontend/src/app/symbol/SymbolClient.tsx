@@ -1522,6 +1522,18 @@ const VOLUME_PRICE_SCALE_ID = "volume";
 // descend into it and no mark climbs out of it — the invariant that replaced the old ordering
 // `absence < zero < smallest bar` once the scale went linear (design gate §5.2).
 const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0.03 } as const;
+// ⛔ `T-02.5` `MF-1` (`gates/T-02.5-design-review.md` §3): the CANDLES' floor sits ABOVE the volume
+// band's ceiling, so a candle and the bar under it never share a pixel row. Since `T-02.3` both carry
+// the SAME direction ink, and with the library's default `bottom: 0.1` a candle could descend to 90%
+// of the pane while the tallest bar climbs to 80%: at the peak the two fused into one column, the
+// candle's low read lower than it is and the bar's height could not be read `[MEDIDO: band.py, 1-6
+// fused columns in each of the 8 captures, 0 with neutral ink]`. `bottom` = the band's share
+// (`1 − VOLUME_SCALE_MARGINS.top = 0.2`) + `0.02` of gap (~7 px of the 335-px price pane); `top` is
+// the library default, unchanged. The candle binding is `keepFloor` (see `PricePane`'s `scales`): a
+// reserve that also compressed `bottom` walked this floor back into the band under a tall legend —
+// why the design review's `M3` (`bottom: 0.24` WITHOUT `keepFloor`) still fused in `15m`/`1h`/`4h`.
+// `price-volume-band-separation.test.ts` fails if either half moves.
+const PRICE_CANDLE_SCALE_MARGINS = { top: 0.2, bottom: 0.22 } as const;
 
 // ⛔ LINEAR SCALE, BASE `0` — `T-02.2`, decided by the `ui-designer` WITH the `ux-ui-mastery` verdict
 // (`docs/context/paineis-de-fluxo/gates/T-02.2-design-gate.md` §4-§5, cycle 2 APPROVED in §8).
@@ -1890,6 +1902,8 @@ function PricePane({
     mount: (chart, paneIndex) => {
       const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors();
       const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style, paneIndex);
+      // `T-02.5` `MF-1`: the candles stay out of the volume band (`PRICE_CANDLE_SCALE_MARGINS`).
+      series.priceScale().applyOptions({ scaleMargins: PRICE_CANDLE_SCALE_MARGINS });
       // `T-05.9` (plan `05` DoD 7): "a barra nova está desenhada" — recorded by the chart host
       // (`SymbolChartHost`) right after it has fed EVERY pane's `setData`, on mount and on every
       // page; since `T-01.5` a page no longer remounts this pane.
@@ -1967,8 +1981,10 @@ function PricePane({
     // `T-01.6` — the candles draw near the top (compressed below the legend); the volume bars and
     // the two marks sit on the pane's floor, and their `#8b949e` keeps `C-6`'s 4px off the separator.
     // `zeroSeries` shares `absenceSeries`' scale (`VOLUME_MARKS_PRICE_SCALE_ID`), declared once.
+    // `keepFloor` on the candles (`T-02.5` `MF-1`): the legend lowers their CEILING only; their floor
+    // is the guarantee against the volume band below and must not move with the legend's height.
     scales: ({ series, volumeSeries, absenceSeries }) => [
-      { series, belowLegend: true, clearSeparator: false },
+      { series, belowLegend: true, clearSeparator: false, keepFloor: true },
       { series: volumeSeries, belowLegend: false, clearSeparator: true },
       { series: absenceSeries, belowLegend: false, clearSeparator: true },
     ],
