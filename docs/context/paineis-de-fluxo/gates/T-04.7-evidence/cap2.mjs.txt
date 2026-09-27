@@ -1,0 +1,56 @@
+// T-04.7 second pass: (a) DPR 2 liq crops for V-1; (b) SF-11 TF click latency (rAF poll, model: T-02.5 tfclick.mjs);
+// (c) V-2: per-pixel crosshair sweep over the liquidation pane at 5m/15m (1920x1080, DPR 1) reading both legs'
+// legend values, next to the at-rest liq crop, so per-bucket drawn heights can be paired with served values.
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-04-7/frontend/node_modules/playwright/index.mjs";
+import fs from "node:fs";
+const OUT = process.argv[2]; const BASE = "http://127.0.0.1:4321";
+const out = { dpr2: {}, tfclick: [], v2: {} };
+const liqAttrs = () => { const p = document.querySelector('[data-testid="liquidation-pane"]'); const a = {}; for (let n = p; n && n !== document.body; n = n.parentElement) for (const x of n.attributes) if (x.name.startsWith("data-liquidation") || x.name === "data-reserved-scale-top-px") a[x.name] = x.value; const tr = p.closest("tr"); const r = tr.getBoundingClientRect(); return { a, top: r.top, h: r.height, axisX: tr.lastElementChild.getBoundingClientRect().left }; };
+async function open(page, tf) {
+  await page.goto(`${BASE}/symbol/BTCUSDT?interval=${tf}`, { waitUntil: "load", timeout: 180_000 });
+  await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180_000 });
+  await page.waitForTimeout(6000);
+}
+const browser = await chromium.launch();
+// (a)
+for (const tf of ["1m", "15m"]) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
+  await open(page, tf);
+  const g = await page.evaluate(liqAttrs);
+  out.dpr2[tf] = g;
+  await page.screenshot({ path: `${OUT}/T-04.7-dpr2-1280x800-${tf}-liq.png`, clip: { x: 0, y: g.top, width: 1280, height: g.h } });
+  await page.close();
+}
+// (b)
+{
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await open(page, "1m");
+  for (const tf of ["5m", "15m", "1h", "4h", "15m", "1m"]) {
+    const id = `timeframe-button-${tf}`; const t0 = Date.now();
+    await page.locator(`[data-testid="${id}"]`).click({ noWaitAfter: true });
+    await page.waitForFunction((i) => document.querySelector(`[data-testid="${i}"]`)?.getAttribute("aria-pressed") === "true", id, { polling: "raf", timeout: 60_000 });
+    out.tfclick.push({ tf, first_pressed_ms: Date.now() - t0, aria_busy_after: await page.evaluate(() => document.querySelectorAll('[aria-busy="true"]').length) });
+    await page.waitForTimeout(2500);
+  }
+  await page.close();
+}
+// (c)
+for (const tf of ["5m", "15m"]) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await open(page, tf);
+  const g = await page.evaluate(liqAttrs);
+  await page.mouse.move(2, 2); await page.waitForTimeout(400);
+  await page.screenshot({ path: `${OUT}/T-04.7-v2-1920x1080-${tf}-liq.png`, clip: { x: 0, y: g.top, width: 1920, height: g.h } });
+  const yMid = g.top + Number(g.a["data-reserved-scale-top-px"]) + 10;
+  const rows = [];
+  for (let x = 0; x < Math.floor(g.axisX); x++) {
+    await page.mouse.move(x + 0.5, yMid);
+    await page.waitForTimeout(25);
+    rows.push([x, ...(await page.evaluate(() => Array.from(document.querySelectorAll('[data-testid="liquidation-pane"] [data-legend-value]')).map((e) => e.getAttribute("data-legend-value") + "=" + e.textContent.trim())))]);
+  }
+  out.v2[tf] = { g, rows };
+  await page.close();
+}
+await browser.close();
+fs.writeFileSync(`${OUT}/T-04.7-pass2-facts.json`, JSON.stringify(out));
+console.log(JSON.stringify(out.tfclick), JSON.stringify(out.dpr2));

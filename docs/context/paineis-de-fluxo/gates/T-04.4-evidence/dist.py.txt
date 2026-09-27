@@ -1,0 +1,15 @@
+# Distribution of the two liquidation legs per TF (the 4-day window the app requests), from data/*.json
+import json, statistics as st
+def q(xs,p):
+    xs=sorted(xs); i=min(len(xs)-1,max(0,int(round(p*(len(xs)-1))))); return xs[i]
+for tf in ["1m","5m","15m","1h","4h"]:
+    for k in ["23e43323","bc0b8a78"]:
+        rows=json.load(open(f"data/{k}-{tf}.json"))["rows"]
+        vals=[r["value"] for r in rows if r["value"] is not None]
+        v=[float(x) for x in vals]; pos=[x for x in v if x>0]; zero=sum(1 for x in v if x==0); neg=sum(1 for x in v if x<0)
+        absent=sum(1 for r in rows if r["value"] is None)
+        if pos:
+            print(f"{tf:>3} {k} slots={len(rows)} present={len(v)} pos={len(pos)} zero={zero} neg={neg} absent={absent} "
+                  f"min={min(pos):.2f} p50={q(pos,.5):.0f} p90={q(pos,.9):.0f} p99={q(pos,.99):.0f} max={max(pos):.0f} max/p50={max(pos)/q(pos,.5):.1f}")
+        else:
+            print(tf,k,"no positive", len(rows), len(v), absent)

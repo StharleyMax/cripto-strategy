@@ -43,9 +43,11 @@ import { resolvePaneLegend, type PaneLegendSpec, type ServedCatalog } from "./pa
 // ── The name (`RF-5`, `CA-5`) ────────────────────────────────────────────────────────────
 
 /**
- * The series that carry a legend value on the page: the six panes of phase `01`, plus the volume
- * sub-axis of the price pane (a second series inside it, with its own legend line). The CVD pane
- * reads its delta and its cumulative off ONE entry (`cvd`), so it is one source here.
+ * The series that carry a legend value on the page: one per pane, plus the volume sub-axis of the
+ * price pane (a second series inside it, with its own legend line) and, since `T-04.2`, the SECOND
+ * leg of the fused liquidation pane — each leg keeps its own value (`SPEC-009` §7.3: two magnitudes,
+ * never their difference). The CVD pane reads its delta and its cumulative off ONE entry (`cvd`), so
+ * it is one source here.
  */
 export type LegendSeriesId =
   | "price"

@@ -1,0 +1,10 @@
+ 1m 23e43323 slots=5760 present=848 pos=442 zero=406 neg=0 absent=4912 min=83.63 p50=3930 p90=264487 p99=2661389 max=6759380 max/p50=1719.8
+ 1m bc0b8a78 slots=5760 present=851 pos=451 zero=400 neg=0 absent=4909 min=83.72 p50=3458 p90=87279 p99=822858 max=1918350 max/p50=554.7
+ 5m 23e43323 slots=1152 present=433 pos=246 zero=187 neg=0 absent=719 min=83.69 p50=5134 p90=388459 p99=6271420 max=13112306 max/p50=2553.8
+ 5m bc0b8a78 slots=1152 present=434 pos=271 zero=163 neg=0 absent=718 min=83.80 p50=3861 p90=140456 p99=858187 max=2953179 max/p50=764.9
+15m 23e43323 slots=384 present=219 pos=159 zero=60 neg=0 absent=165 min=83.89 p50=6867 p90=618683 p99=6481481 max=13902444 max/p50=2024.6
+15m bc0b8a78 slots=384 present=220 pos=166 zero=54 neg=0 absent=164 min=83.80 p50=8095 p90=319675 p99=921442 max=3394469 max/p50=419.3
+ 1h 23e43323 slots=96 present=73 pos=66 zero=7 neg=0 absent=23 min=84.01 p50=47538 p90=1940174 p99=9128770 max=22592724 max/p50=475.3
+ 1h bc0b8a78 slots=96 present=73 pos=69 zero=4 neg=0 absent=23 min=83.99 p50=39812 p90=731645 p99=3147923 max=3747154 max/p50=94.1
+ 4h 23e43323 slots=24 present=19 pos=19 zero=0 neg=0 absent=5 min=1257.93 p50=437678 p90=14315336 p99=23804083 max=23804083 max/p50=54.4
+ 4h bc0b8a78 slots=24 present=19 pos=19 zero=0 neg=0 absent=5 min=20100.86 p50=750033 p90=3184860 p99=6623325 max=6623325 max/p50=8.8

@@ -246,3 +246,39 @@ export type {
   LegendSource,
   ReadingNature,
 } from "./legend-reading.ts";
+
+// ── 10. o pane de liquidação fundido ─────────────────────────────────────────────────────────
+//
+// `T-04.1` (`paineis-de-fluxo`, plano `04` itens `4.1`/`4.2`, `ADR-044/D4`, `RN-3`, `RN-4`): the
+// two liquidation legs in ONE pane — four scales named by side, the lower one inverted, magnitudes
+// `>= 0` only, each leg's absence/zero pair on its own side, and one shared maximum (`C-3`). `web`'s
+// registry (`T-04.2`) points at the scales by `scale_ref`; the form stays `web`'s.
+export {
+  liquidationPaneLayout,
+  liquidationPaneFeeds,
+  sharedMagnitudeAutoscale,
+  countNegativeFeedValues,
+  assertValidLiquidationPaneForm,
+  liquidationBarBase,
+  liquidationSideOfScale,
+  LiquidationPaneError,
+  LIQUIDATION_SCALE_IDS,
+  LIQUIDATION_SIDES,
+  LIQUIDATION_INVERTED_SIDE,
+  LIQUIDATION_LOG_BASE,
+} from "./liquidation-pane-geometry.ts";
+export type {
+  LiquidationSide,
+  LiquidationScaleMode,
+  LiquidationPaneForm,
+  LiquidationPaneLayout,
+  LiquidationSideLayout,
+  LiquidationPriceScaleOptions,
+  LiquidationLegInput,
+  LiquidationSeriesFeed,
+  LiquidationFeedRole,
+  LiquidationMarkValues,
+  MagnitudeAutoscaleInfo,
+  VerticalBand,
+  VisibleLogicalRangeSource,
+} from "./liquidation-pane-geometry.ts";

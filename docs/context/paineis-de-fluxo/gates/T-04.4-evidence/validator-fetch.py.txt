@@ -1,0 +1,21 @@
+# Validator fetch: same series keys, via the read-only proxy :8833, two windows:
+#  "pinned" = the LAST window the designer's app requested per TF (from his urls.txt), to compare bytes;
+#  "fresh"  = a 4-day window ending now (independent sample, tests whether the conclusion survives).
+import json, re, sys, time, urllib.request
+S = sys.argv[1]; OUT = sys.argv[2]
+KEYS = {"23e43323": "23e4332307dc408a49e1480ad73240a7bd37ac5b395119c620b662fdd6f539d5",
+        "bc0b8a78": "bc0b8a78e16b36aaedf79af6716405f0e859ee0712c0e44aea1bb6a76a44c551"}
+TFMS = {"1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000}
+urls = [u.strip() for u in open(f"{S}/urls.txt")]
+def get(path):
+    with urllib.request.urlopen("http://127.0.0.1:8833" + path, timeout=120) as r: return json.load(r)
+now = int(time.time() * 1000)
+for short, full in KEYS.items():
+    for tf, ms in TFMS.items():
+        pinned = [u for u in urls if full in u and f"interval={tf}&" in u][-1]
+        json.dump(get(pinned), open(f"{OUT}/pinned/{short}-{tf}.json", "w"))
+        end = (now // ms) * ms - ms; start = end - 4 * 86_400_000 + ms
+        fresh = (f"/api/v1/series-history?series_key_id={full}&symbol=BTCUSDT&interval={tf}"
+                 f"&window_start_ms={start}&window_end_ms={end}&knowledge_time_ms={end + ms}&bar_policy=final_only")
+        json.dump(get(fresh), open(f"{OUT}/fresh/{short}-{tf}.json", "w"))
+print("ok")

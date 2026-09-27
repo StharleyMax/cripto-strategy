@@ -1,0 +1,144 @@
+// T-04.7 capture: real app (next start :4321, wave/paineis-f04 HEAD 0df6ded) over real data (prod API via the
+// read-only proxy :8821). Same viewports/TF as T-01.11 r2 (1280x800, 1280x1200, 1920x1080 at 1m) + the TF sweep of
+// W1-DR3 (5m/15m/1h/4h at 1920x1080 by click and at 1280x800 by URL). No writes anywhere.
+// Usage: node cap.mjs <out-dir> [base-url] [tag-prefix]
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-04-7/frontend/node_modules/playwright/index.mjs";
+import fs from "node:fs";
+
+const OUT = process.argv[2];
+const BASE = process.argv[3] ?? "http://127.0.0.1:4321";
+const PREFIX = process.argv[4] ?? "T-04.7";
+const PANES = ["price-pane", "liquidation-pane", "oi-pane", "long-short-pane", "cvd-pane"];
+const facts = {};
+
+const legends = () => Array.from(document.querySelectorAll("[data-legend-value]")).map((e) => ({
+  k: e.getAttribute("data-legend-value"), absence: e.getAttribute("data-legend-absence"),
+  t: e.textContent.trim().slice(0, 60), x: Math.round(e.getBoundingClientRect().left),
+  inLiq: !!e.closest('[data-testid="liquidation-pane"]'), color: getComputedStyle(e).color,
+}));
+const geometry = (ids) => ids.map((id) => {
+  const el = document.querySelector(`[data-testid="${id}"]`);
+  if (!el) return { id, present: false };
+  const tr = el.closest("tr");
+  const r = tr ? tr.getBoundingClientRect() : el.getBoundingClientRect();
+  const cell = tr?.lastElementChild?.getBoundingClientRect();
+  return { id, top: Math.round(r.top), height: Math.round(r.height), width: Math.round(r.width), axisX: cell ? Math.round(cell.left) : null };
+});
+const liqFacts = () => {
+  const pane = document.querySelector('[data-testid="liquidation-pane"]');
+  if (!pane) return null;
+  const attrs = {};
+  for (let n = pane; n && n !== document.body; n = n.parentElement) {
+    for (const a of n.attributes) if (a.name.startsWith("data-liquidation") || a.name.startsWith("data-reserved") || a.name === "data-right-scale-mode") attrs[a.name] = a.value;
+  }
+  for (const n of pane.querySelectorAll("*")) for (const a of n.attributes) if (a.name.startsWith("data-liquidation") && a.value.length < 120) attrs[`${n.getAttribute("data-testid") ?? n.tagName}:${a.name}`] = a.value;
+  const legVals = Array.from(pane.querySelectorAll("[data-legend-value]")).map((e) => ({ k: e.getAttribute("data-legend-value"), t: e.textContent.trim(), absence: e.getAttribute("data-legend-absence"), color: getComputedStyle(e).color }));
+  const visible = pane.innerText.replace(/\s+/g, " ").trim();
+  const swatches = Array.from(pane.querySelectorAll("[data-liquidation-swatch]")).map((e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return { side: e.getAttribute("data-liquidation-swatch-side"), w: r.width, h: r.height, bg: cs.backgroundColor, border: cs.borderColor + " " + cs.borderWidth }; });
+  const key = pane.querySelector("[data-liquidation-marks-key]");
+  const kr = key?.getBoundingClientRect();
+  const trunc = Array.from(pane.querySelectorAll("*")).filter((e) => e.textContent.trim() && e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 1 && e.children.length === 0).map((e) => ({ t: e.textContent.trim().slice(0, 90), title: e.getAttribute("title") ?? e.closest("[title]")?.getAttribute("title")?.slice(0, 40) ?? null }));
+  return { attrs, legVals, visible: visible.slice(0, 900), swatches, keyText: key?.textContent.trim() ?? null, keyRect: kr ? { x: kr.left, w: kr.width, sw: key.scrollWidth, cw: key.clientWidth } : null, trunc,
+    minusInLegend: legVals.filter((l) => /[−-]\s*\d/.test(l.t)).length, logWords: (visible.match(/log10|ordem de grandeza/gi) ?? []).length };
+};
+const textFacts = () => {
+  const main = document.querySelector("main") ?? document.body;
+  const txt = main.innerText;
+  const srOnly = Array.from(document.querySelectorAll(".sr-only")).map((e) => e.textContent);
+  return {
+    floatNoise: (txt.match(/\d+\.\d{7,}/g) ?? []),
+    srOnlySemPonto: srOnly.filter((t) => t.includes("SEM_PONTO")).length,
+    visibleSemPonto: (txt.match(/SEM_PONTO/g) ?? []).length,
+    dadoVelho: (txt.match(/DADO VELHO/g) ?? []).length,
+    titles: (txt.match(/\((1m|5m|15m|1h|4h), [A-Z]+\)/g) ?? []),
+    aoVivoIndisp: (txt.match(/indispon[ií]vel/gi) ?? []).length,
+    coverageBoxes: (txt.match(/cobertura parcial/gi) ?? []).length,
+    ultimas4h: (txt.match(/Últimas 4 h/g) ?? []).length,
+  };
+};
+
+async function sweep(page) {
+  const box = await page.locator('[data-testid="price-pane"]').boundingBox();
+  const out = [];
+  for (let i = 0; i < 24; i++) {
+    const fx = 0.04 + (0.84 * i) / 23;
+    await page.mouse.move(box.x + box.width * fx, box.y + box.height * 0.5);
+    await page.waitForTimeout(120);
+    const L = await page.evaluate(legends);
+    const liq = L.filter((l) => l.inLiq);
+    out.push({ fx: Math.round(fx * 100) / 100, liq: liq.map((l) => l.t), liqAbs: liq.map((l) => l.absence), liqX: liq.map((l) => l.x),
+      priceAbs: L.find((l) => /price|preco|close/i.test(l.k ?? ""))?.absence ?? null, volAbs: L.find((l) => /volume/i.test(l.k ?? ""))?.absence ?? null, volT: L.find((l) => /volume/i.test(l.k ?? ""))?.t ?? null });
+  }
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(300);
+  return out;
+}
+
+async function snap(page, vp, tag) {
+  const g = {};
+  g.geometry = await page.evaluate(geometry, PANES);
+  g.liq = await page.evaluate(liqFacts);
+  g.text = await page.evaluate(textFacts);
+  g.rest_legends = await page.evaluate(legends);
+  g.scale_modes = await page.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll("[data-right-scale-mode]")).map((n) => [n.dataset.testid ?? n.getAttribute("data-pane-id") ?? "", n.dataset.rightScaleMode ?? ""])));
+  g.doc_scroll = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, cw: document.documentElement.clientWidth }));
+  await page.screenshot({ path: `${OUT}/${PREFIX}-${vp.tag}-${tag}.png` });
+  const row = g.geometry.find((p) => p.id === "liquidation-pane");
+  if (row && row.height) await page.screenshot({ path: `${OUT}/${PREFIX}-${vp.tag}-${tag}-liq.png`, clip: { x: 0, y: row.top, width: vp.width, height: row.height } });
+  return g;
+}
+
+const browser = await chromium.launch();
+for (const vp of [{ width: 1280, height: 800, tag: "1280x800" }, { width: 1280, height: 1200, tag: "1280x1200" }, { width: 1920, height: 1080, tag: "1920x1080" }]) {
+  const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 1 });
+  const failed = [];
+  page.on("response", (r) => { if (r.status() >= 400) failed.push(`${r.status()} ${r.url().slice(0, 120)}`); });
+  await page.goto(`${BASE}/symbol/BTCUSDT`, { waitUntil: "load", timeout: 180_000 });
+  await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180_000 });
+  await page.waitForTimeout(6000);
+  const f = { chart_count: await page.locator(".tv-lightweight-charts").count() };
+  f.rest_1m = await snap(page, vp, "1m");
+  await page.screenshot({ path: `${OUT}/${PREFIX}-${vp.tag}-1m-fullpage.png`, fullPage: true });
+  if (vp.tag === "1280x1200") {
+    const box = await page.locator('[data-testid="price-pane"]').boundingBox();
+    for (const frac of [0.55, 0.7, 0.8]) {
+      await page.mouse.move(box.x + box.width * frac, box.y + box.height * 0.5);
+      await page.waitForTimeout(800);
+      f[`hover_${frac}`] = { legends: await page.evaluate(legends), liq: await page.evaluate(liqFacts) };
+      await page.screenshot({ path: `${OUT}/${PREFIX}-${vp.tag}-1m-crosshair-${Math.round(frac * 100)}.png` });
+    }
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(500);
+  }
+  if (vp.tag === "1920x1080") {
+    f.sweep_1m = await sweep(page);
+    for (const tf of ["5m", "15m", "1h", "4h"]) {
+      await page.evaluate((id) => {
+        const b = document.querySelector(`[data-testid="${id}"]`);
+        window.__t0 = performance.now(); window.__pressed = null;
+        new MutationObserver((_, o) => { if (b.getAttribute("aria-pressed") === "true" && window.__pressed === null) { window.__pressed = performance.now() - window.__t0; o.disconnect(); } }).observe(b, { attributes: true });
+      }, `timeframe-button-${tf}`);
+      await page.locator(`[data-testid="timeframe-button-${tf}"]`).click();
+      await page.waitForFunction((id) => document.querySelector(`[data-testid="${id}"]`)?.getAttribute("aria-pressed") === "true", `timeframe-button-${tf}`, { timeout: 60_000 });
+      await page.waitForTimeout(3500);
+      const g = await snap(page, vp, tf);
+      g.first_pressed_ms = Math.round(await page.evaluate(() => window.__pressed ?? -1));
+      g.sweep = await sweep(page);
+      f[`tf_${tf}`] = g;
+    }
+  }
+  if (vp.tag === "1280x800") {
+    for (const tf of ["5m", "15m", "1h", "4h"]) {
+      await page.goto(`${BASE}/symbol/BTCUSDT?interval=${tf}`, { waitUntil: "load", timeout: 180_000 });
+      await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180_000 });
+      await page.waitForTimeout(6000);
+      f[`tf_${tf}`] = await snap(page, vp, tf);
+    }
+  }
+  f.failed_n = failed.length; f.failed_sample = failed.slice(0, 3);
+  facts[vp.tag] = f;
+  await page.close();
+}
+await browser.close();
+fs.writeFileSync(`${OUT}/${PREFIX}-facts.json`, JSON.stringify(facts, null, 1));
+console.log("done");

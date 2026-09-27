@@ -1,0 +1,23 @@
+# Validator: per-column INK of each leg (unmixing green/red over the background, R and G channels),
+# in CSS-px-equivalents, for "floor" columns (a leg's ink <= 3 CSS px). Works at any DPR.
+import sys, json, statistics as st
+from PIL import Image
+path, zl, top, dpr = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4])
+im = Image.open(path).convert("RGB"); W, H = im.size; px = im.load()
+BG, UP, DN = (19, 23, 34), (8, 153, 129), (242, 54, 69)
+a11, a12, a21, a22 = DN[0]-BG[0], UP[0]-BG[0], DN[1]-BG[1], UP[1]-BG[1]; det = a11*a22 - a12*a21
+z = zl * dpr; y0 = int(top * dpr); band = int(12 * dpr)
+ups, dns = [], []
+for x in range(W - int(70 * dpr)):
+    iu = idn = 0.0
+    for y in range(max(y0, int(z) - band), min(H, int(z) + band)):
+        r, g, _ = px[x, y]; dr, dg = r - BG[0], g - BG[1]
+        ar = (dr*a22 - a12*dg)/det; ag = (a11*dg - a21*dr)/det
+        if ag > 0.08: iu += min(1, ag)
+        if ar > 0.08: idn += min(1, ar)
+    iu /= dpr; idn /= dpr
+    if 0.3 <= iu <= 3: ups.append(iu)
+    if 0.3 <= idn <= 3: dns.append(idn)
+print(json.dumps({"file": path.split("/")[-1], "dpr": dpr, "floor_cols_up": len(ups), "up_ink_p50_css": round(st.median(ups), 2) if ups else None,
+                  "floor_cols_down": len(dns), "down_ink_p50_css": round(st.median(dns), 2) if dns else None,
+                  "ratio_up_over_down": round(st.median(ups)/st.median(dns), 2) if ups and dns else None}))

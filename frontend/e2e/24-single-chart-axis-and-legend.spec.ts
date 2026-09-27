@@ -60,16 +60,21 @@ const INK_TOLERANCE = 12;
 const HOVER_FRACTIONS = [0.12, 0.27, 0.41, 0.56, 0.7, 0.86] as const;
 const MIN_HOVER_POSITIONS = 5;
 
-/** The six panes, top to bottom, by the `data-testid` of their DOM layer (`T-01.6`), and the
- * attribute each publishes with its point count. */
-const PANES = [
+/** The five panes, top to bottom, by the `data-testid` of their DOM layer (`T-01.6`), and the
+ * attribute each publishes with its point count. `T-04.2`: the liquidation is ONE pane, and its N is
+ * the SMALLER of its two legs' (`pointsFrom`, the cohort groups inside the layer), so a pane with one
+ * leg drawn and the other empty does not pass as "N > 0". */
+const PANES: readonly { readonly testId: string; readonly pointsAttr: string; readonly pointsFrom?: readonly string[] }[] = [
   { testId: "price-pane", pointsAttr: "data-price-candles" },
-  { testId: "liquidation-cohort-long", pointsAttr: "data-liquidation-present-points" },
-  { testId: "liquidation-cohort-short", pointsAttr: "data-liquidation-present-points" },
+  {
+    testId: "liquidation-pane",
+    pointsAttr: "data-liquidation-present-points",
+    pointsFrom: ["liquidation-cohort-short", "liquidation-cohort-long"],
+  },
   { testId: "oi-pane", pointsAttr: "data-oi-wire-points" },
   { testId: "long-short-pane", pointsAttr: "data-long-short-wire-points" },
   { testId: "cvd-pane", pointsAttr: "data-cvd-present-points" },
-] as const;
+];
 
 /** The pt-BR word that opens each derived name on the page (`CA-5`): six names, because the two
  * liquidation legs share one. */
@@ -380,7 +385,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
     if (stub !== undefined) await stub.close();
   });
 
-  test("CA-1′: um .tv-lightweight-charts, e os 6 panes com N > 0 pontos na tela", async ({ page }) => {
+  test("CA-1′: um .tv-lightweight-charts, e os 5 panes com N > 0 pontos na tela", async ({ page }) => {
     await openSymbol(page, instance!.baseUrl);
     const chartCount = await page.locator(".tv-lightweight-charts").count();
     fact(SPEC, "tv_lightweight_charts_count", chartCount);
@@ -389,7 +394,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
     const panes = await page.evaluate(
       ({ panes, background, tol }) => {
         const [br, bg, bb] = background;
-        return panes.map(({ testId, pointsAttr }) => {
+        return panes.map(({ testId, pointsAttr, pointsFrom }) => {
           const layer = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
           if (layer === null) return { testId, points: Number.NaN, ink: -1, insideChart: false };
           const canvases = Array.from(layer.parentElement?.children ?? []).filter(
@@ -405,9 +410,12 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
               if (!isBackground) ink += 1;
             }
           }
+          const counts = (pointsFrom ?? []).map((groupTestId) =>
+            Number(layer.querySelector(`[data-testid="${groupTestId}"]`)?.getAttribute(pointsAttr) ?? Number.NaN),
+          );
           return {
             testId,
-            points: Number(layer.getAttribute(pointsAttr) ?? Number.NaN),
+            points: pointsFrom === undefined ? Number(layer.getAttribute(pointsAttr) ?? Number.NaN) : Math.min(...counts),
             ink,
             insideChart: layer.closest(".tv-lightweight-charts") !== null,
           };
@@ -416,7 +424,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
       { panes: PANES.map((p) => ({ ...p })), background: hexToRgb(chartSurfaceTheme().backgroundColor), tol: INK_TOLERANCE },
     );
     fact(SPEC, "panes_points_and_ink", panes);
-    expect(panes).toHaveLength(6);
+    expect(panes).toHaveLength(5);
     for (const pane of panes) {
       expect(pane.insideChart, `${pane.testId}: fora do gráfico único`).toBe(true);
       expect(pane.points, `${pane.testId}: N de pontos publicado`).toBeGreaterThan(0);
@@ -466,7 +474,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
     expect(strips.surfaces.length, "nenhuma superfície de eixo de tempo — o instrumento está cego").toBeGreaterThan(0);
     expect(strips.strips, "CA-2′: o número de faixas com rótulo de tempo não é 1").toHaveLength(1);
     expect(strips.strips[0]!.textInk, "a faixa do rodapé não tem tinta de rótulo").toBeGreaterThan(0);
-    expect(strips.paneBottoms, "a camada dos 6 panes não está na página").toHaveLength(6);
+    expect(strips.paneBottoms, "a camada dos 5 panes não está na página").toHaveLength(5);
     const lowestPaneBottom = Math.max(...strips.paneBottoms);
     expect(strips.strips[0]!.top, "CA-2′: a faixa de rótulo de tempo não está abaixo do último pane").toBeGreaterThanOrEqual(
       lowestPaneBottom - 1,
@@ -589,11 +597,22 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
   // delta crosses zero (`wave − 498`), so the defect of `MF-1` is reachable here, not only on the
   // production data the design review used.
   //   MF-1  every pane's `right` scale mode, READ BACK from the library (`data-right-scale-mode`):
-  //         only the two liquidation legs are logarithmic. Bites: removing `createPanesBeforeSeries`
-  //         from the host (OI, long/short and CVD come back `logarithmic`).
-  //   MF-2  the price-axis cell beside each liquidation leg carries NO axis-text ink, while the OI
-  //         and CVD cells do (the instrument is not blind). Bites: dropping `unlabeledTickPriceFormat`.
+  //         all `normal` — since `T-04.2` the liquidation bars hang on their own NAMED scales, read back
+  //         in `data-liquidation-bar-scales` (both linear since `T-04.4`, the lower one inverted).
+  //   MF-2  the price-axis cell beside the liquidation pane carries NO axis-text ink, while the OI
+  //         and CVD cells do (the instrument is not blind).
   //   SF-1  no attribution logo inside the chart, and the footer link that replaces it.
+  //
+  // ⚠️ WHAT THIS TEST NO LONGER BITES (`W5-QA`, W-b) `[MEDIDO 2026-09-27, e2e on the wave's
+  // `b465ae4`, each mutation reverted: removing `createPanesBeforeSeries(…)` → 1 passed; removing
+  // `priceFormat: unlabeledTickPriceFormat(),` → 1 passed]`. Since `T-04.2` put the bars on NAMED
+  // (overlay) scales, no series of this page sets a `right` scale logarithmic — so the leak `MF-1`
+  // guards is unreachable from the product — and an overlay scale draws no tick label at all, so the
+  // blank `tickmarksFormatter` is no longer what keeps the axis silent. Both stay as defence in depth,
+  // and what rejects removing them is the SOURCE pin in the unit suite (`pane-scale-isolation.test.ts`
+  // "the host creates every pane…", `unlabeled-tick-format.test.ts` "the host builds the liquidation
+  // bar series…" — each `not ok` under its mutation, same date). The MF-2 check below still bites
+  // the defect itself: bars on `right` WITHOUT the blank format label the axis at rest.
   test("T-01.11-FIX: escala de cada pane isolada, liquidação sem rótulo falso, atribuição no rodapé", async ({ page }) => {
     await openSymbol(page, instance!.baseUrl);
     const modes = await page.evaluate(() =>
@@ -607,12 +626,17 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
     fact(SPEC, "t0111fix_right_scale_modes", modes);
     expect(modes, "MF-1: um pane herdou o modo de escala de outro").toEqual({
       "price-pane": "normal",
-      "liquidation-cohort-long": "logarithmic",
-      "liquidation-cohort-short": "logarithmic",
+      "liquidation-pane": "normal",
       "oi-pane": "normal",
       "long-short-pane": "normal",
       "cvd-pane": "normal",
     });
+    const liquidationScales = await page.locator('[data-testid="liquidation-pane"]').getAttribute("data-liquidation-bar-scales");
+    fact(SPEC, "t0111fix_liquidation_bar_scales", liquidationScales);
+    // `T-04.4` (`gates/T-04.4-design-gate.md` §5.1): the decided form is linear.
+    expect(liquidationScales, "a liquidação perdeu a escala linear ou a inversão da perna de baixo").toBe(
+      "up:upright:normal;down:inverted:normal",
+    );
 
     const axisInk = await page.evaluate(
       ({ testIds, text, tol }) => {
@@ -636,7 +660,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
         });
       },
       {
-        testIds: ["liquidation-cohort-long", "liquidation-cohort-short", "oi-pane", "cvd-pane"],
+        testIds: ["liquidation-pane", "oi-pane", "cvd-pane"],
         text: hexToRgb(chartSurfaceTheme().textColor),
         tol: INK_TOLERANCE,
       },
@@ -647,9 +671,9 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
       expect(ink[control]!.canvases, `${control}: nenhum canvas na célula do eixo — o instrumento está cego`).toBeGreaterThan(0);
       expect(ink[control]!.textInk, `${control}: o eixo sem rótulo — o controle positivo falhou`).toBeGreaterThan(0);
     }
-    for (const leg of ["liquidation-cohort-long", "liquidation-cohort-short"]) {
+    for (const leg of ["liquidation-pane"]) {
       expect(ink[leg]!.canvases, `${leg}: nenhum canvas na célula do eixo`).toBeGreaterThan(0);
-      expect(ink[leg]!.textInk, `MF-2 ${leg}: o eixo log da liquidação rotula (número fora da ordem de grandeza)`).toBe(0);
+      expect(ink[leg]!.textInk, `MF-2 ${leg}: o eixo da liquidação rotula (número falso: USD negativo na metade de baixo)`).toBe(0);
     }
 
     const attribution = await page.evaluate((hostTestId) => {
@@ -663,6 +687,79 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
     fact(SPEC, "t0111fix_attribution", attribution);
     expect(attribution.logosInChart, "SF-1: o logo de atribuição continua sobre o gráfico").toBe(0);
     expect(attribution.footerHref, "SF-1: a atribuição não foi para o rodapé").toMatch(/^https:\/\/www\.tradingview\.com\//);
+  });
+
+  // `W5-QA` (W-c): the check above reads the axis AT REST, and the crosshair label is drawn only
+  // UNDER the pointer. `unlabeledTickPriceFormat` blanks the ticks and keeps a two-decimal
+  // `formatter`, so a bar scale the axis could reach would print, with the pointer in the lower half,
+  // the UPPER scale's price there: a NEGATIVE USD the pane never carries (`RN-3`, `CA-9′`).
+  //   RN-3  with the pointer in the upper and in the lower half of the liquidation pane, the pixels of
+  //         its price-axis cell do not change; with the pointer on the OI pane, the OI cell DOES
+  //         change (the crosshair label exists and the instrument sees it — positive control).
+  //         Bites: the upper bars on `right` (`LIQUIDATION_SCALE_IDS.up.bars = "right"`) — the rest
+  //         check above passes under that mutation, because the ticks stay blank `[MEDIDO 2026-09-27,
+  //         stub of this file: unmutated → OI 1407 px changed, liquidation 0/0/0 at 0.25/0.75/0.9;
+  //         mutated → liquidation 987/987/987, this test ✘ and T-01.11-FIX ✓]`.
+  test("RN-3: o ponteiro sobre a liquidação não põe rótulo de preço no eixo dela", async ({ page }) => {
+    await openSymbol(page, instance!.baseUrl);
+    const snapshot = (testId: string) =>
+      page.evaluate((id) => {
+        const cell = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)?.closest("tr")?.lastElementChild ?? null;
+        const canvases = cell === null ? [] : Array.from(cell.querySelectorAll("canvas")).filter((c) => c.width > 0 && c.height > 0);
+        const store = ((window as unknown as { __axisRest?: Record<string, Uint8ClampedArray[]> }).__axisRest ??= {});
+        store[id] = canvases.map((c) => c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data.slice());
+        return canvases.length;
+      }, testId);
+    const changedSinceSnapshot = (testId: string) =>
+      page.evaluate((id) => {
+        const cell = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)?.closest("tr")?.lastElementChild ?? null;
+        const canvases = cell === null ? [] : Array.from(cell.querySelectorAll("canvas")).filter((c) => c.width > 0 && c.height > 0);
+        const rest = (window as unknown as { __axisRest: Record<string, Uint8ClampedArray[]> }).__axisRest[id] ?? [];
+        let changed = 0;
+        canvases.forEach((c, index) => {
+          const now = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+          const before = rest[index];
+          if (before === undefined || before.length !== now.length) {
+            changed += now.length / 4;
+            return;
+          }
+          for (let at = 0; at < now.length; at += 4) {
+            if (now[at] !== before[at] || now[at + 1] !== before[at + 1] || now[at + 2] !== before[at + 2] || now[at + 3] !== before[at + 3]) {
+              changed += 1;
+            }
+          }
+        });
+        return changed;
+      }, testId);
+    const hoverAt = async (testId: string, fraction: number) => {
+      const box = await page.locator(`[data-testid="${testId}"]`).boundingBox();
+      expect(box, `${testId}: a camada do pane não tem caixa`).not.toBeNull();
+      await page.mouse.move(box!.x + box!.width * 0.6, box!.y + box!.height * fraction);
+      await expect(page.locator(`[data-testid="${testId}"] [data-legend-source="crosshair"]`).first()).toBeAttached();
+      await page.waitForTimeout(300);
+    };
+
+    const readings: { testId: string; fraction: number; canvases: number; changed: number }[] = [];
+    for (const [testId, fraction] of [
+      ["oi-pane", 0.5],
+      ["liquidation-pane", 0.25],
+      ["liquidation-pane", 0.75],
+      ["liquidation-pane", 0.9],
+    ] as const) {
+      await page.mouse.move(2, 2);
+      await page.waitForTimeout(300);
+      const canvases = await snapshot(testId);
+      await hoverAt(testId, fraction);
+      readings.push({ testId, fraction, canvases, changed: await changedSinceSnapshot(testId) });
+    }
+    fact(SPEC, "rn3_crosshair_axis_label", readings);
+    const [control, ...legs] = readings;
+    expect(control!.canvases, "oi-pane: nenhum canvas na célula do eixo — o instrumento está cego").toBeGreaterThan(0);
+    expect(control!.changed, "oi-pane: o ponteiro não desenhou rótulo no eixo — o controle positivo falhou").toBeGreaterThan(0);
+    for (const leg of legs) {
+      expect(leg.canvases, `liquidation-pane @${leg.fraction}: nenhum canvas na célula do eixo`).toBeGreaterThan(0);
+      expect(leg.changed, `RN-3 liquidation-pane @${leg.fraction}: o eixo rotulou o preço sob o ponteiro (USD com sinal)`).toBe(0);
+    }
   });
 });
 

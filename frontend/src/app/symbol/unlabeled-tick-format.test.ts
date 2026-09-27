@@ -41,8 +41,9 @@ test("MF-2: a series built with the format has blank tick labels and a two-decim
 
 test("MF-2: the host builds the liquidation bar series with the unlabelled format", () => {
   const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx"), "utf8");
-  const barStyle = /const barStyle: Partial<HistogramSeriesOptions> = \{([\s\S]*?)\n {6}\};/.exec(source);
+  // `T-04.2`: ONE `barStyle` for the two legs of the fused pane (built per side), so both carry it.
+  const barStyle = /const barStyle: Partial<HistogramSeriesOptions> = \{([\s\S]*?)\n\s*\};/.exec(source);
   assert.ok(barStyle !== null, "the liquidation `barStyle` literal moved — re-read the host before trusting this");
   assert.match(barStyle[1]!, /priceFormat: unlabeledTickPriceFormat\(\)/);
-  assert.match(barStyle[1]!, /base: LIQUIDATION_LOG_BASE/, "matched a barStyle that is not the liquidation one");
+  assert.match(barStyle[1]!, /base: initial\.sides\[side\]\.bars\.base/, "matched a barStyle that is not the liquidation one");
 });

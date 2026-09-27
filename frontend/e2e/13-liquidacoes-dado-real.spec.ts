@@ -110,11 +110,30 @@ function cohortTestId(cohort: LiquidationCohort): string {
   return `liquidation-cohort-${cohort}`;
 }
 
-/** `paineis-de-fluxo` `T-01.6`: each cohort is now its OWN pane of the one chart, with its own DOM
- * layer rooted at `cohortTestId(cohort)`. `liquidation-pane` survives as the panel HEADER inside
- * the long cohort's layer (title + third-party provenance), so it no longer encloses the short
- * cohort — per-cohort facts are read under the cohort root. */
-const ANY_COHORT_ROOT = '[data-testid^="liquidation-cohort-"]';
+/** `paineis-de-fluxo` `T-04.5` (plano `04` item `4.5`) — the anchor is the FUSED pane, not a pane per
+ * cohort.
+ *
+ * History, because the old anchor is what this re-anchoring replaces: `T-01.6` gave each cohort its
+ * OWN pane of the one chart, with a DOM layer rooted at `cohortTestId(cohort)` — and so this file
+ * read one canvas host per cohort (`liquidation_slots:<cohort>` WAS the layer root, `absolute
+ * inset-0` over that cohort's plot cell). `T-04.2` fused the two legs into ONE pane (`ADR-044/D4`,
+ * `SPEC-009` §7): the layer root is now `liquidation-pane` (`pane-registry.ts::paneLayerTestId`),
+ * portaled into the ONE plot cell, and each cohort is a `role="group"` INSIDE its legend.
+ *
+ * ⛔ EVERY per-cohort read below is therefore scoped UNDER the fused pane (`cohortRoot`). A cohort
+ * group that left the pane — the two-pane layout coming back, or a leg rendered outside the layer —
+ * fails here BY NAME instead of being read off whatever `liquidation-cohort-<c>` the page still has. */
+const FUSED_PANE_SELECTOR = `[data-testid="${LIQUIDATION_PANE_TESTID}"]`;
+const ANY_COHORT_ROOT = `${FUSED_PANE_SELECTOR} [data-testid^="liquidation-cohort-"]`;
+/** `pane-registry.ts::LiquidationSide` — the two sides of the zero line, and nothing else. */
+const LIQUIDATION_SIDES = ["up", "down"] as const;
+/** The single chart's host (`SymbolClient.tsx`), whose `data-pane-layers` says whether each layer is
+ * portaled into its pane (`anchored`) or still rendered in place, `sr-only` (`unanchored`/absent). */
+const CHART_HOST_TESTID = "symbol-chart-host";
+
+function cohortRoot(page: Page, cohort: LiquidationCohort) {
+  return page.locator(`${FUSED_PANE_SELECTOR} [data-testid="${cohortTestId(cohort)}"]`);
+}
 
 /** `RN-S2`, literal: *"o limiar Ã© `N >= 30` pontos distintos, nÃ£o `N > 0`. `N > 0` nÃ£o distingue
  * cano funcionando de ponto por acaso."* Sem divisor de `RN-S1`: `sum_liquidation` Ã© `1m` NATIVA
@@ -374,8 +393,11 @@ async function loadRenderedRequestWithLiveRead(page: Page): Promise<RenderedRequ
  * serve no universo fraco â sem estas duas asserÃ§Ãµes o `expect(dom).toBe(api)` compara `0 === 0` e
  * fica verde com o contrato APAGADO do DOM. */
 async function readCountAttribute(page: Page, cohort: LiquidationCohort, attribute: string): Promise<number> {
-  const group = page.locator(`[data-testid="${cohortTestId(cohort)}"]`);
-  await expect(group, `a coorte ${cohort} nÃ£o existe no DOM sob [data-testid="${cohortTestId(cohort)}"]`).toHaveCount(1);
+  const group = cohortRoot(page, cohort);
+  await expect(
+    group,
+    `a coorte ${cohort} não existe DENTRO do pane fundido (${FUSED_PANE_SELECTOR} [data-testid="${cohortTestId(cohort)}"])`,
+  ).toHaveCount(1);
   const raw = await group.getAttribute(attribute);
   expect(
     raw,
@@ -425,6 +447,109 @@ test(`o catÃ¡logo servido casa EXATAMENTE UMA linha por coorte de liquidaÃ§�
   }
   // DUAS sÃ©ries, nÃ£o uma com duas views: dois `series_key_id` diferentes.
   expect(ids.size, "as duas coortes tÃªm de ser DUAS sÃ©ries distintas â mesmo id seria uma sÃ³").toBe(2);
+});
+
+/** What the fused pane's DOM says about its own anchoring, read in ONE `evaluate` so the numbers
+ * come from the same frame. */
+interface FusedPaneAnchoring {
+  readonly cohortGroupsInPage: number;
+  readonly cohortGroupsInPane: readonly { readonly cohort: string; readonly side: string | null }[];
+  readonly sidesAttribute: string | null;
+  readonly layerRootsInAnchor: number;
+  readonly anchorCanvases: number;
+  readonly canvasCssWidthPx: number | null;
+  readonly layerClientWidthPx: number;
+  readonly legendSlotsHostWidthPx: number | null;
+  readonly pendingLiquidationLayers: number;
+}
+
+/** Waits for the host to portal the layers in (`data-pane-layers="anchored"`) and reads the fused
+ * pane's anchoring. Before the portal the layer is rendered in place, `sr-only` (1 px wide), and a
+ * width read then is a measurement of the `sr-only` box, not of the pane. */
+async function readFusedPaneAnchoring(page: Page): Promise<FusedPaneAnchoring> {
+  await expect(
+    page.locator(`[data-testid="${CHART_HOST_TESTID}"]`),
+    "o host do gráfico não ancorou as camadas nos panes — sem isso não há pane para medir",
+  ).toHaveAttribute("data-pane-layers", "anchored", { timeout: 120_000 });
+  const pane = page.locator(FUSED_PANE_SELECTOR);
+  await expect(pane, `o pane fundido não existe no DOM sob ${FUSED_PANE_SELECTOR}`).toHaveCount(1);
+  return pane.evaluate((layer) => {
+    const anchor = layer.parentElement;
+    const siblings = Array.from(anchor?.children ?? []);
+    const canvases = siblings.filter(
+      (child): child is HTMLCanvasElement => child instanceof HTMLCanvasElement && child.width > 0 && child.height > 0,
+    );
+    const slotsHost = layer.querySelector<HTMLElement>('[data-fact^="liquidation_slots:long:"]');
+    return {
+      cohortGroupsInPage: document.querySelectorAll('[data-testid^="liquidation-cohort-"]').length,
+      cohortGroupsInPane: Array.from(layer.querySelectorAll<HTMLElement>('[data-testid^="liquidation-cohort-"]')).map(
+        (group) => ({
+          cohort: (group.dataset.testid ?? "").replace("liquidation-cohort-", ""),
+          side: group.dataset.liquidationSide ?? null,
+        }),
+      ),
+      sidesAttribute: layer.dataset.liquidationSides ?? null,
+      // Every layer root carries a `data-testid` (`pane-registry.ts::paneLayerTestId`); a plot cell
+      // holding two of them would be two panes' legends drawn over one canvas.
+      layerRootsInAnchor: siblings.filter((child) => child instanceof HTMLElement && child.dataset.testid !== undefined)
+        .length,
+      anchorCanvases: canvases.length,
+      canvasCssWidthPx: canvases.length === 0 ? null : canvases[0]!.getBoundingClientRect().width,
+      layerClientWidthPx: layer.clientWidth,
+      legendSlotsHostWidthPx: slotsHost === null ? null : slotsHost.clientWidth,
+      pendingLiquidationLayers: document.querySelectorAll('[data-pane-layer-pending^="liquidation"]').length,
+    };
+  });
+}
+
+// ── `T-04.5` — O ÂNCORA É O PANE FUNDIDO: AS DUAS PERNAS VIVEM DENTRO DE UM SÓ PANE ─────────────────
+//
+// Os dois testes que vêm depois leem fatos POR COORTE. Até `T-04.2` cada coorte era o PRÓPRIO pane
+// (a camada da coorte era a raiz, sobre o seu plot cell), e ler `liquidation-cohort-<c>` em qualquer
+// lugar da página era ler o pane. Com o pane fundido isso deixou de ser verdade: um grupo de coorte
+// FORA do pane continuaria publicando as mesmas contagens, e o teste seguinte passaria VERDE sobre um
+// layout que não é o de `ADR-044/D4`. Este teste fixa o lugar, nos DOIS universos (não depende de
+// dado): exatamente DUAS pernas na página, AS DUAS dentro do ÚNICO pane, uma de cada lado do zero, e o
+// pane é UMA camada sobre UM plot cell com canvas.
+test(`as DUAS coortes são as duas pernas de UM pane fundido, ancorado num só plot cell (T-04.5) (${SPEC})`, async ({
+  page,
+}) => {
+  await loadRenderedRequest(page);
+  const anchoring = await readFusedPaneAnchoring(page);
+  fact(SPEC, "fused_pane_cohort_groups_in_page", anchoring.cohortGroupsInPage);
+  fact(SPEC, "fused_pane_cohort_groups_in_pane", anchoring.cohortGroupsInPane.length);
+  fact(SPEC, "fused_pane_sides", anchoring.sidesAttribute);
+  fact(SPEC, "fused_pane_layer_roots_in_anchor", anchoring.layerRootsInAnchor);
+  fact(SPEC, "fused_pane_anchor_canvases", anchoring.anchorCanvases);
+
+  expect(anchoring.pendingLiquidationLayers, "a camada de liquidação não foi portada para o pane").toBe(0);
+  expect(
+    anchoring.cohortGroupsInPage,
+    "a página tem de ter exatamente DUAS pernas de liquidação — nem uma coorte a mais, nem um grupo duplicado",
+  ).toBe(LIQUIDATION_COHORTS.length);
+  expect(
+    anchoring.cohortGroupsInPane.length,
+    `${anchoring.cohortGroupsInPane.length} das ${anchoring.cohortGroupsInPage} pernas estão DENTRO do pane ` +
+      "fundido — uma perna fora dele é o layout de dois panes de volta (ADR-044/D4)",
+  ).toBe(anchoring.cohortGroupsInPage);
+  expect(
+    anchoring.cohortGroupsInPane.map((group) => group.cohort).sort(),
+    "as duas pernas do pane são long e short",
+  ).toEqual([...LIQUIDATION_COHORTS].sort());
+
+  // Uma de cada lado do zero, e o lado que cada perna declara é o que o PANE declara.
+  const sideOf = (cohort: LiquidationCohort) => anchoring.cohortGroupsInPane.find((group) => group.cohort === cohort)?.side;
+  expect(
+    LIQUIDATION_COHORTS.map((cohort) => sideOf(cohort)).sort(),
+    "as duas pernas ocupam os DOIS lados do zero, um cada",
+  ).toEqual([...LIQUIDATION_SIDES].sort());
+  expect(anchoring.sidesAttribute, "o lado de cada perna é o que o pane fundido declara").toBe(
+    `short:${sideOf("short")};long:${sideOf("long")}`,
+  );
+
+  // UMA camada sobre UM plot cell que tem canvas.
+  expect(anchoring.anchorCanvases, "o pane fundido não está sobre nenhum canvas").toBeGreaterThan(0);
+  expect(anchoring.layerRootsInAnchor, "o plot cell do pane fundido carrega mais de uma camada").toBe(1);
 });
 
 test(`as DUAS coortes do painel de liquidaÃ§Ãµes sÃ£o as da API, sobre a MESMA janela (${SPEC})`, async ({ page }) => {
@@ -536,14 +661,19 @@ test(`as DUAS coortes do painel de liquidaÃ§Ãµes sÃ£o as da API, sobre a M
     // igualdade com a janela Ã© exigida no universo FORTE, logo adiante. Exigi-la aqui deixaria
     // `make verify` VERMELHO por um defeito que esta task nÃ£o introduziu nem tem escopo para
     // consertar â e um portÃ£o vermelho por dÃ­vida de terceiro deixa de ser lido.
-    const slotsHost = page.locator(`[data-testid="${cohortTestId(cohort)}"] [data-fact^="liquidation_slots:${cohort}:"]`);
-    await expect(slotsHost, `a coorte ${cohort} nÃ£o publica liquidation_slots no hospedeiro do canvas`).toHaveCount(1);
+    //
+    // `T-04.5`: `liquidation_slots:<coorte>` deixou de ser o hospedeiro do canvas da coorte — com o
+    // pane fundido (`T-04.2`) ele é um `<div>` de altura zero DENTRO do grupo da perna, na legenda do
+    // ÚNICO pane. O número que ele carrega (a grade que a perna recebeu) não mudou de significado; o
+    // lugar, sim, e por isso ele é lido sob `cohortRoot` (dentro do pane fundido).
+    const legRoot = cohortRoot(page, cohort);
+    const slotsHost = legRoot.locator(`[data-fact^="liquidation_slots:${cohort}:"]`);
+    await expect(slotsHost, `a perna ${cohort} não publica liquidation_slots dentro do pane fundido`).toHaveCount(1);
     const slotsFact = (await slotsHost.getAttribute("data-fact")) ?? "";
     const domSlots = Number(slotsFact.split(":")[2]);
     fact(SPEC, `liquidation_dom_slots_${cohort}`, domSlots);
     expect(slotsFact, `liquidation_slots (${cohort}) tem de terminar em dÃ­gitos`).toMatch(/:\d+$/);
-    const cohortRoot = page.locator(`[data-testid="${cohortTestId(cohort)}"]`);
-    const horizon = cohortRoot.locator(`[data-fact^="liquidation_readable_horizon:${cohort}:"]`);
+    const horizon = legRoot.locator(`[data-fact^="liquidation_readable_horizon:${cohort}:"]`);
     await expect(horizon).toHaveCount(1);
     const horizonFact = await horizon.getAttribute("data-fact");
     fact(SPEC, `liquidation_readable_horizon_fact_${cohort}`, horizonFact);
@@ -553,7 +683,7 @@ test(`as DUAS coortes do painel de liquidaÃ§Ãµes sÃ£o as da API, sobre a M
     expect(sinceMs).toBe(api.firstPresentMs === null ? "" : String(api.firstPresentMs));
 
     // ââ (e) o veredito por universo âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    const readout = cohortRoot.locator(`[data-fact^="liquidation_last_reading:${cohort}:"]`);
+    const readout = legRoot.locator(`[data-fact^="liquidation_last_reading:${cohort}:"]`);
     await expect(readout).toHaveCount(1);
     const readoutFact = (await readout.getAttribute("data-fact")) ?? "";
     const readoutText = (await readout.textContent())?.trim() ?? "";
@@ -697,13 +827,32 @@ test(`quantas das grades declaradas chegam ao canvas, em browser real (M-2, regi
   // JANELA, nÃ£o da sÃ©rie: `M-2` Ã© sobre quanto do que se PEDIU chega ao canvas, e o vÃ£o existe
   // igual com a sÃ©rie vazia.
   const declaredSlots = (request.windowEndMsInclusive - request.windowStartMs) / 60_000 + 1;
-  const host = page.locator(`[data-testid="${cohortTestId("long")}"] [data-fact^="liquidation_slots:long:"]`);
-  await expect(host, "o hospedeiro do canvas da coorte long nÃ£o estÃ¡ no DOM").toHaveCount(1);
-  const paneWidthPx = await host.evaluate((element) => element.clientWidth);
+  // ⛔ `T-04.5` — A LARGURA É A DO CANVAS DO PANE FUNDIDO, não a de `liquidation_slots:long`.
+  //
+  // Até `T-04.2` o `liquidation_slots:long` ERA a raiz da camada da coorte long (`absolute inset-0`
+  // sobre o plot cell dela), e o `clientWidth` dele era a largura do canvas. Com o pane fundido ele é
+  // um `<div>` de altura zero DENTRO da legenda, que tem `px-2`: a leitura antiga passou a medir a
+  // legenda, e não o canvas, sem reprovar nada — `1208 px` de legenda contra `1224 px` de canvas
+  // `[MEDIDO 2026-09-27, universo fraco, viewport do playwright.config.ts]`. E ela não via a camada:
+  // uma raiz de camada que não cobre o canvas continuava dando `> 0`. O âncora agora é o canvas do
+  // plot cell em que a camada do pane fundido foi portada, e a raiz da camada tem de cobrir esse
+  // canvas (`absolute inset-0`) a `<= 1 px`. A largura da legenda vai para `facts.jsonl`, para a
+  // diferença ficar registrada em toda rodada.
+  const anchoring = await readFusedPaneAnchoring(page);
+  fact(SPEC, "liquidation_pane_canvas_css_width_px", anchoring.canvasCssWidthPx);
+  fact(SPEC, "liquidation_pane_layer_client_width_px", anchoring.layerClientWidthPx);
+  fact(SPEC, "liquidation_legend_slots_host_width_px", anchoring.legendSlotsHostWidthPx);
+  expect(anchoring.canvasCssWidthPx, "o pane fundido não está sobre nenhum canvas — não há canvas para medir").not.toBeNull();
+  const paneWidthPx = Math.round(anchoring.canvasCssWidthPx!);
   fact(SPEC, "liquidation_pane_client_width_px", paneWidthPx);
   fact(SPEC, "liquidation_declared_slots", declaredSlots);
-  expect(declaredSlots, "a janela declarada no <main> nÃ£o tem grade").toBeGreaterThan(0);
-  expect(paneWidthPx, "o hospedeiro do canvas tem largura zero â nÃ£o hÃ¡ canvas para medir").toBeGreaterThan(0);
+  expect(declaredSlots, "a janela declarada no <main> não tem grade").toBeGreaterThan(0);
+  expect(paneWidthPx, "o canvas do pane fundido tem largura zero — não há canvas para medir").toBeGreaterThan(0);
+  expect(
+    Math.abs(anchoring.layerClientWidthPx - anchoring.canvasCssWidthPx!),
+    `a camada do pane fundido (${anchoring.layerClientWidthPx} px) não cobre o canvas dele ` +
+      `(${anchoring.canvasCssWidthPx} px) — a largura medida não seria a do pane`,
+  ).toBeLessThanOrEqual(1);
 
   await page.addScriptTag({ path: LIGHTWEIGHT_CHARTS_STANDALONE });
   const measured = await page.evaluate(
