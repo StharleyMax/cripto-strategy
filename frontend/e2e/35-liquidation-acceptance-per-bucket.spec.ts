@@ -82,7 +82,6 @@ import http from "node:http";
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
-import { chartSurfaceTheme } from "../src/charts/chart-theme.ts";
 import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
@@ -220,7 +219,7 @@ async function fetchTruth(apiBase: string, catalog: CatalogEnvelope, request: Re
     });
     const response = await fetchWithOneRetry(`${apiBase}/series-history?${query.toString()}`);
     const text = await response.text();
-    let parsed: readonly HistoryRow[] = [];
+    let parsed: readonly HistoryRow[];
     try {
       parsed = (JSON.parse(text) as { rows?: readonly HistoryRow[] }).rows ?? [];
     } catch {
