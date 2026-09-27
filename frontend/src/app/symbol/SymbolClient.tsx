@@ -173,6 +173,7 @@ import {
   oiCandleAt,
   oiCandleFieldSlots,
   oiCandleProvenanceLabel,
+  oiCandleRegimeStepAt,
   type OiCandleField,
   type OiCandlePaneData,
 } from "./oi-candle-pane.ts";
@@ -2301,7 +2302,8 @@ const OI_LEGEND_FIELDS: readonly { readonly field: OiCandleField; readonly lette
  *
  * ONE reading decides which candle the legend describes: the `STOCK` reading of the CLOSE vector
  * (`resolveLegendReading`, the same function every other legend of the page goes through — last
- * closed bucket without a crosshair, the slot under it otherwise, held at most `holdCapMs`). The
+ * closed bucket without a crosshair, the slot under it otherwise, held at most one bucket of the
+ * REGIME of that slot, `oiCandleRegimeStepAt`). The
  * four numbers and the label are then read off THAT candle, so O, H, L and C can never come from
  * two different buckets, and the regime printed is the regime of the numbers printed.
  *
@@ -2329,18 +2331,23 @@ function OiCandleLegend({ oiCandles }: { readonly oiCandles: OiCandlePaneData })
     () => Math.max(...OI_LEGEND_FIELDS.map(({ field }) => legendNumeralWidthCh(fieldSlots[field], absenceText))),
     [fieldSlots, absenceText],
   );
-  const reading =
-    legend === null
-      ? null
-      : resolveLegendReading({
-          logical,
-          slots: fieldSlots.close,
-          nature: legend.readingPolicy,
-          axisStepMs: frame.axisStepMs,
-          nativeTimeframeMs: oiCandles.holdCapMs ?? frame.axisStepMs,
-          asOfMs: frame.asOfMs,
-          bucketMs: frame.bucketMs,
-        });
+  // Two passes over the SAME reading function: the first locates the slot (which does not depend on
+  // the native width — `lastClosedSlotIndex`/`crosshairSlotIndex` read `bucketMs` only), the second
+  // reads it at the width of that slot's own regime (`oiCandleRegimeStepAt`).
+  const readAt = (nativeTimeframeMs: number) =>
+    resolveLegendReading({
+      logical,
+      slots: fieldSlots.close,
+      nature: legend!.readingPolicy,
+      axisStepMs: frame.axisStepMs,
+      nativeTimeframeMs,
+      asOfMs: frame.asOfMs,
+      bucketMs: frame.bucketMs,
+    });
+  const probe = legend === null ? null : readAt(frame.axisStepMs);
+  const regimeStepMs =
+    probe === null || probe.bucketStartMs === null ? null : oiCandleRegimeStepAt(oiCandles, probe.bucketStartMs);
+  const reading = probe === null ? null : regimeStepMs === null ? probe : readAt(regimeStepMs);
   const candle =
     reading === null || reading.kind === "absent" ? null : oiCandleAt(oiCandles.candles, reading.observedBucketStartMs);
   const mark = candle === null ? "none" : !candle.closed ? "forming" : reading?.kind === "held" ? "held" : "none";

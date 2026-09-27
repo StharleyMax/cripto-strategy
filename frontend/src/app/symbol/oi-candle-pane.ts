@@ -131,11 +131,6 @@ export interface OiCandlePaneData {
   readonly sources: readonly OiCandleSourceWire[];
   /** How many slots carry a candle — counted off `slots`, the array `setData` receives. */
   readonly drawnCandles: number;
-  /** The hold cap of the legend (`resolveLegendReading`'s `nativeTimeframeMs`): the WIDEST bucket
-   * of the regimes whose candles are loaded, `null` when none is. A held `STOCK` value is never
-   * held past its own bucket, and in the pre-capture regime that bucket is 5 minutes wide even on
-   * the `1m` TF (`SPEC-009` §6.5). */
-  readonly holdCapMs: number | null;
 }
 
 /**
@@ -167,17 +162,47 @@ export function oiCandlePaneData(bundle: OiCandleBundle, window: AccumulatedWind
     };
     return { time: slot.time, candle: raw };
   });
-  const usedSources = new Set(candles.map((candle) => candle.derived_from));
-  const intervals = bundle.sources
-    .filter((source) => usedSources.has(source.derived_from))
-    .map((source) => source.bucket_interval_ms);
   return {
     slots,
     candles,
     sources: bundle.sources,
     drawnCandles: slots.filter((slot) => slot.candle !== null).length,
-    holdCapMs: intervals.length === 0 ? null : Math.max(...intervals),
   };
+}
+
+/**
+ * The bucket width of the REGIME a slot at `atMs` belongs to — the legend's `nativeTimeframeMs`
+ * (`resolveLegendReading`): the `bucket_interval_ms` of the source of the latest candle whose
+ * `bucket_end_ms <= atMs`, `null` when no candle is at or before it.
+ *
+ * Per slot, never one width for the whole pane: a `STOCK` reading floors the slot to its native
+ * bucket, so a pane-wide `5m` (the widest regime loaded) made the legend of a `1m` candle read the
+ * candle of up to 4 minutes before (`e2e/36` PX-4, `[MEDIDO 2026-09-27]`), and a pane-wide `1m` would
+ * leave 4 of every 5 slots of the `5m` regime absent. The regime of a slot is the regime of the
+ * candle it would be held from — so a held value is never held past ITS OWN bucket (`SPEC-009` §6.5).
+ */
+export function oiCandleRegimeStepAt(pane: Pick<OiCandlePaneData, "candles" | "sources">, atMs: number): number | null {
+  const { candles } = pane;
+  let low = 0;
+  let high = candles.length - 1;
+  let found: OiCandleWire | null = null;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    if (candles[middle]!.bucket_end_ms <= atMs) {
+      found = candles[middle]!;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  if (found === null) {
+    return null;
+  }
+  const source = pane.sources.find((candidate) => candidate.derived_from === found.derived_from);
+  if (source === undefined) {
+    throw new OiCandleBundleError(`derived_from ${found.derived_from} is not declared by any source of this block`);
+  }
+  return source.bucket_interval_ms;
 }
 
 /** One of the four prices of each slot, on the grid — what a `STOCK` legend reading walks. */
