@@ -1,0 +1,36 @@
+# T-03.14 r2: reduces the W5 falsifier captures (r2/w5) to items (1)-(6), with measure.py / validator-ink unchanged.
+import json, subprocess, statistics as st, re
+from PIL import Image, ImageChops
+O="/tmp/claude-1002/-home-stharley-Documentos-projects-cripto-strategy/854f12b5-43c8-425a-9856-b6679093c941/scratchpad/r2/w5"; W="/tmp/claude-1002/-home-stharley-Documentos-projects-cripto-strategy/854f12b5-43c8-425a-9856-b6679093c941/scratchpad/t0314/w5"; G="/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-03-14/docs/context/paineis-de-fluxo/gates"
+f=json.load(open(f"{O}/T-03.14-facts.json")); rows=[]
+for vp,v in f.items():
+    for k in ["rest_1m","tf_5m","tf_15m","tf_1h","tf_4h"]:
+        if k not in v: continue
+        tf=k.split("_")[1]; a=v[k]["liq"]["attrs"]; zl=a["data-liquidation-zero-line-px"]; top=a["data-reserved-scale-top-px"]
+        ax=[g for g in v[k]["geometry"] if g["id"]=="liquidation-pane"][0]["axisX"]
+        png=f"{O}/T-03.14-{vp}-{tf}-liq.png"
+        m=json.loads(subprocess.check_output(["python3",f"{W}/measure.py",png,zl,top,str(ax)]).decode().strip().splitlines()[-1])
+        v1=json.loads(subprocess.check_output(["python3",f"{G}/T-04.4-evidence/validator-ink.py.txt",png,zl,top,"1"]).decode().strip().splitlines()[-1])
+        rows.append({"vp":vp,"tf":tf,"zl":zl,"top":top,"axis":ax,"m":m,"v1":v1})
+open(f"{O}/w5-measure-facts.jsonl","w").write("\n".join(json.dumps(r) for r in rows)+"\n")
+print("(1) SF10", [r["m"]["SF10_bar_ink_above_reserved_top"] for r in rows])
+print("(3) F6 green/red", [(r["vp"],r["tf"],r["m"]["F6_green_base_rows"],r["m"]["F6_red_base_rows"]) for r in rows])
+print("(4a) V1 DPR1 1m-1h", [(r["vp"],r["tf"],r["v1"]["ratio_up_over_down"]) for r in rows if r["tf"]!="4h"], "4h:", [(r["vp"],r["v1"]["ratio_up_over_down"]) for r in rows if r["tf"]=="4h"])
+print("(4b) F1 1m up/down", [(r["vp"],r["m"]["F1_up_max_over_p50"],r["m"]["F1_down_max_over_p50"]) for r in rows if r["tf"]=="1m"])
+print("F3/V3", [(r["m"]["F3_mark_ink_in_bar_region"],r["m"]["F3_bar_ink_in_mark_bands"],r["m"]["V3_bare_with_grid_on_zero"],r["m"]["V3_bare_cols"]) for r in rows])
+v=f["1920x1080"]; sw=list(v["sweep_1m"])+[s for k in ["tf_5m","tf_15m","tf_1h","tf_4h"] for s in v[k]["sweep"]]
+two=sum(1 for s in sw if len(s["liq"])==2); minus=sum(1 for s in sw for t in s["liq"] if re.search(r"[−-]\s*\d",t)); xs=sorted({x for s in sw for x in s["liqX"]})
+rest=[(vp,k,[l for l in vv[k]["rest_legends"] if l.get("inLiq")]) for vp,vv in f.items() for k in ["rest_1m","tf_5m","tf_15m","tf_1h","tf_4h"] if k in vv]
+print("(2) sweep two", two, "/", len(sw), "minus", minus, "x", xs, "rest two", sum(1 for r in rest if len(r[2])==2), "/", len(rest))
+p=json.load(open(f"{O}/T-04.7-pass2-facts.json")); ms=[t["first_pressed_ms"] for t in p["tfclick"]]
+print("(5) SF11 ms", ms, "median", st.median(ms), "busy", [t["aria_busy_after"] for t in p["tfclick"]])
+for tf in ["1m","15m"]:
+    for pre in ["rn3","rn3ctl"]:
+        r=Image.open(f"{O}/{pre}-{tf}-rest.png").convert("L")
+        out=[]
+        for n in ["upper","lower"]:
+            d=ImageChops.difference(r,Image.open(f"{O}/{pre}-{tf}-{n}.png").convert("L")); out.append(sum(1 for q in d.getdata() if q>24))
+        print("(6)",pre,tf,out)
+for tf in ["1m","15m"]:
+    png=f"{O}/T-04.7-dpr2-1280x800-{tf}-liq.png"; a=p["dpr2"][tf]["a"]
+    print("(4a) DPR2",tf,json.loads(subprocess.check_output(["python3",f"{G}/T-04.4-evidence/validator-ink.py.txt",png,a["data-liquidation-zero-line-px"],a["data-reserved-scale-top-px"],"2"]).decode().strip().splitlines()[-1])["ratio_up_over_down"])
