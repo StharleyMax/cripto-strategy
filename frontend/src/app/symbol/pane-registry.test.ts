@@ -19,6 +19,7 @@ import {
 } from "../../charts/index.ts";
 import type { Nature, SeriesCatalogEntry, SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 import {
+  F1_PANE_DATA_KIND,
   F1_PANE_ORDER,
   F1_PANE_STRETCH,
   LIQUIDATION_LEG_SCALE_REF,
@@ -27,6 +28,7 @@ import {
   liquidationCohortsTopFirst,
   liquidationMarksScaleOf,
   liquidationSidesOf,
+  oiPaneSeriesKind,
   paneIndexOf,
   paneLayerTestId,
   resolvePaneLegend,
@@ -189,7 +191,8 @@ function validRegistry(): PaneRegistry {
       data("primary", "liquidationLong", "histogram", LIQUIDATION_LEG_SCALE_REF.long),
       ...marks("liquidationLong", liquidationMarksScaleOf(LIQUIDATION_LEG_SCALE_REF.long)),
     ]),
-    pane("oi", "oi", [data("primary", "oi", "line", "right")]),
+    // `T-03.11` (`RF-8`): the OI pane's data kind is read off `F1_PANE_DATA_KIND`, candlestick since then.
+    pane("oi", "oi", [data("primary", "oi", F1_PANE_DATA_KIND.oi, "right")]),
     pane("long_short", "longShort", [data("primary", "longShort", "line", "right")]),
     // `ADR-044/D3′`: the CVD is what production draws — two FLOW lines (delta, cumulative), NO marks.
     pane("cvd", "cvd", [data("primary", "cvd", "line", "right"), data("secondary", "cvd", "line", "cvd_cumulative")]),
@@ -520,4 +523,35 @@ test("structure FAILS: duplicate pane_id, a non-ASCII pane_id, a zero stretch, a
 
   assert.deepEqual(firedInvariants(validate([])), ["structure"]);
   assert.throws(() => assertValidPaneRegistry([], { catalog: CATALOG }), PaneRegistryError);
+});
+
+// ── `T-03.11` (plan `03` item `3b.4`, `RF-8`): the OI pane is a candlestick in the registry ──
+
+test("T-03.11: the OI pane's data kind in the registry is candlestick, and the valid registry still passes", () => {
+  assert.equal(F1_PANE_DATA_KIND.oi, "candlestick", "MORDE: F1_PANE_DATA_KIND.oi back to line");
+  const oi = validRegistry()[paneIndexOf(validRegistry(), "oi")]!;
+  assert.deepEqual(
+    oi.series.map((series) => [series.role, series.kind]),
+    [["primary", "candlestick"]],
+  );
+  // OI is STOCK, so invariant (iii)'s "FLOW candlestick has no absence rule" must not fire on it.
+  assert.deepEqual(validate(validRegistry()), []);
+});
+
+test("T-03.11: every pane's declared data kind agrees with the primary series of the valid registry", () => {
+  for (const value of validRegistry()) {
+    const primaryKinds = [...new Set(value.series.filter((series) => series.role === "primary").map((series) => series.kind))];
+    assert.deepEqual(primaryKinds, [F1_PANE_DATA_KIND[value.paneId]], `pane ${value.paneId}`);
+  }
+});
+
+test("T-03.11: the OI pane mounts the registry's kind, `line` only under the DoD-6 ablation", () => {
+  assert.equal(oiPaneSeriesKind(false), "candlestick");
+  assert.equal(oiPaneSeriesKind(true), "line", "?e2eOiLine=1 puts the line back");
+  assert.equal(oiPaneSeriesKind(false, { ...F1_PANE_DATA_KIND, oi: "line" }), "line", "the mount follows the registry");
+  assert.throws(
+    () => oiPaneSeriesKind(false, { ...F1_PANE_DATA_KIND, oi: "histogram" }),
+    PaneRegistryError,
+    "an OI histogram would need marks the pane does not build",
+  );
 });

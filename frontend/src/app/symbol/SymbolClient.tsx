@@ -146,8 +146,10 @@ import {
   LIQUIDATION_LEG_SCALE_REF,
   liquidationCohortsTopFirst,
   liquidationSidesOf,
+  oiPaneSeriesKind,
   swappedLiquidationLegScaleRefs,
   type LiquidationCohort,
+  type OiPaneSeriesKind,
   type PaneId,
   type PaneLegendSpec,
 } from "./pane-registry.ts";
@@ -155,6 +157,7 @@ import {
   ABSENCE_MICROCOPY,
   createCrosshairSlotStore,
   crosshairMoveHandler,
+  formatLegendNumeral,
   formatLegendReading,
   LEGEND_GRID_ABSENCE,
   LEGEND_MARK_TEXT,
@@ -166,6 +169,14 @@ import {
   type PaneLegendSources,
 } from "./pane-legend.ts";
 import { LIQUIDATION_SWATCH_FORM_BY_SIDE, liquidationSwatchStyle } from "./liquidation-legend-swatch.ts";
+import {
+  oiCandleAt,
+  oiCandleFieldSlots,
+  oiCandleProvenanceLabel,
+  oiCandleRegimeStepAt,
+  type OiCandleField,
+  type OiCandlePaneData,
+} from "./oi-candle-pane.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
@@ -2251,27 +2262,199 @@ function OiProvenance({ oi }: { readonly oi: OiPaneData }) {
   );
 }
 
+/** `T-03.11` — the e2e switch of `DoD-6`'s ablation: the OI pane mounted as the `line` it was
+ * before, fed the rows it used to draw. Canvas only, like `e2eLiquidationLogScale`: the legend keeps
+ * saying O·H·L·C under the ablation, which is the point — the spec reads the pixels. */
+const OI_LINE_ABLATION_QUERY_PARAM = "e2eOiLine";
+
+function isOiLineAblationRequested(search: string): boolean {
+  return new URLSearchParams(search).get(OI_LINE_ABLATION_QUERY_PARAM) === "1";
+}
+
+/** The kind the OI pane mounts, off the registry (`pane-registry.ts::F1_PANE_DATA_KIND`). On the
+ * server (no `window`) always the registry's; the mount, which only runs in the browser, reads the
+ * same function, so the published `data-oi-series-kind` and the canvas agree. */
+function mountedOiPaneSeriesKind(): OiPaneSeriesKind {
+  return oiPaneSeriesKind(typeof window !== "undefined" && isOiLineAblationRequested(window.location.search));
+}
+
+function serverOiPaneSeriesKind(): OiPaneSeriesKind {
+  return oiPaneSeriesKind(false);
+}
+
+interface OiPaneHandles {
+  readonly kind: OiPaneSeriesKind;
+  readonly series: HostSeries;
+}
+
+/** The four prices of the legend, in the order the SPEC writes them (`O·H·L·C`, `RF-8`). The letters
+ * are the chart convention the SPEC itself uses; the numbers are the served candle's, never rounded
+ * beyond `formatLegendNumeral`. */
+const OI_LEGEND_FIELDS: readonly { readonly field: OiCandleField; readonly letter: string }[] = [
+  { field: "open", letter: "O" },
+  { field: "high", letter: "H" },
+  { field: "low", letter: "L" },
+  { field: "close", letter: "C" },
+];
+
+/**
+ * `T-03.11` — the O·H·L·C legend of the OI candle, and its `DERIVADO` label (`RN-6`).
+ *
+ * ONE reading decides which candle the legend describes: the `STOCK` reading of the CLOSE vector
+ * (`resolveLegendReading`, the same function every other legend of the page goes through — last
+ * closed bucket without a crosshair, the slot under it otherwise, held at most one bucket of the
+ * REGIME of that slot, `oiCandleRegimeStepAt`). The
+ * four numbers and the label are then read off THAT candle, so O, H, L and C can never come from
+ * two different buckets, and the regime printed is the regime of the numbers printed.
+ *
+ * The `forming` mark comes from the wire's `closed` flag (`SPEC-009` §6.4: `false` on the bucket in
+ * progress), not from arithmetic on the bucket width: in the polled regime a `1m` candle closes in
+ * one minute even when the pane also holds `5m` candles.
+ *
+ * `data-legend-value="oi"` stays on the CLOSE, the value `e2e/24` compares with `/series-history`:
+ * `close == last` is `ADR-045`'s falsifier 1, measured held on real data by `T-03.10`.
+ */
+function OiCandleLegend({ oiCandles }: { readonly oiCandles: OiCandlePaneData }) {
+  const frame = useLegendFrame();
+  const store = useContext(CrosshairSlotContext) ?? NO_CROSSHAIR_STORE;
+  const logical = useSyncExternalStore(store.subscribe, store.getSnapshot, noCrosshairSnapshot);
+  const legend = frame.legends.oi;
+  const absenceText = ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE];
+  const fieldSlots = useMemo(
+    () => Object.fromEntries(OI_LEGEND_FIELDS.map(({ field }) => [field, oiCandleFieldSlots(oiCandles.slots, field)])) as Record<
+      OiCandleField,
+      readonly VolumeSlot[]
+    >,
+    [oiCandles.slots],
+  );
+  const numeralWidthCh = useMemo(
+    () => Math.max(...OI_LEGEND_FIELDS.map(({ field }) => legendNumeralWidthCh(fieldSlots[field], absenceText))),
+    [fieldSlots, absenceText],
+  );
+  // Two passes over the SAME reading function: the first locates the slot (which does not depend on
+  // the native width — `lastClosedSlotIndex`/`crosshairSlotIndex` read `bucketMs` only), the second
+  // reads it at the width of that slot's own regime (`oiCandleRegimeStepAt`).
+  const readAt = (nativeTimeframeMs: number) =>
+    resolveLegendReading({
+      logical,
+      slots: fieldSlots.close,
+      nature: legend!.readingPolicy,
+      axisStepMs: frame.axisStepMs,
+      nativeTimeframeMs,
+      asOfMs: frame.asOfMs,
+      bucketMs: frame.bucketMs,
+    });
+  const probe = legend === null ? null : readAt(frame.axisStepMs);
+  const regimeStepMs =
+    probe === null || probe.bucketStartMs === null ? null : oiCandleRegimeStepAt(oiCandles, probe.bucketStartMs);
+  const reading = probe === null ? null : regimeStepMs === null ? probe : readAt(regimeStepMs);
+  const candle =
+    reading === null || reading.kind === "absent" ? null : oiCandleAt(oiCandles.candles, reading.observedBucketStartMs);
+  const mark = candle === null ? "none" : !candle.closed ? "forming" : reading?.kind === "held" ? "held" : "none";
+  const kind = candle === null ? "absent" : mark === "forming" ? "forming" : mark === "held" ? "held" : "value";
+  const markWidthCh = legend === null ? 0 : legendMarkWidthCh(legend.readingPolicy);
+  const numeral = (value: number | null) => (value === null ? absenceText : formatLegendNumeral(value));
+  const provenance = candle === null ? null : oiCandleProvenanceLabel(candle.derived_from, oiCandles.sources);
+  return (
+    <span
+      data-legend-ohlc="oi"
+      data-legend-open={candle?.open ?? ""}
+      data-legend-high={candle?.high ?? ""}
+      data-legend-low={candle?.low ?? ""}
+      data-legend-close={candle?.close ?? ""}
+      data-legend-derived-from={candle?.derived_from ?? ""}
+      data-legend-samples={candle === null ? "" : `${candle.samples.present}/${candle.samples.expected}`}
+      className="inline-flex flex-wrap items-baseline gap-x-2"
+    >
+      {OI_LEGEND_FIELDS.map(({ field, letter }) => {
+        const value = candle === null ? null : candle[field];
+        const numeralSpan = (
+          <span
+            data-legend-numeral=""
+            style={{ width: `${numeralWidthCh}ch` }}
+            className={`inline-block text-right font-data-sm tabular-nums ${value === null ? "text-provenance-weak" : "text-on-surface"}`}
+          >
+            {numeral(value)}
+          </span>
+        );
+        if (field !== "close") {
+          return (
+            <span key={field} data-legend-ohlc-part={field} className="inline-flex items-baseline gap-x-1">
+              <span className="text-provenance-weak">{letter}</span>
+              {numeralSpan}
+            </span>
+          );
+        }
+        return (
+          <span
+            key={field}
+            data-legend-ohlc-part={field}
+            data-legend-value="oi"
+            data-legend-kind={kind}
+            data-legend-source={logical === undefined ? "last_closed" : "crosshair"}
+            data-legend-slot-index={reading?.slotIndex ?? ""}
+            data-legend-bucket-ms={reading?.bucketStartMs ?? ""}
+            data-legend-raw={value ?? ""}
+            data-legend-absence={value === null ? LEGEND_GRID_ABSENCE : ""}
+            className="inline-flex items-baseline gap-x-1"
+          >
+            <span className="text-provenance-weak">{letter}</span>
+            {numeralSpan}
+            <span data-legend-mark={mark} style={{ width: `${markWidthCh}ch` }} className="inline-block text-provenance-weak">
+              {LEGEND_MARK_TEXT[mark]}
+            </span>
+          </span>
+        );
+      })}
+      {provenance === null ? null : (
+        <span data-fact={`oi_candle_provenance:${candle!.derived_from}`} className="text-sm text-on-surface">
+          {provenance}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function OiPane({
   panels,
   status,
   oi,
+  oiCandles,
   wallState,
 }: {
   readonly panels: S2Panels;
   readonly status: PanelStatus;
   readonly oi: OiPaneData;
+  /** `T-03.11` — what the pane DRAWS: the served `OiCandle`s on the canonical grid. */
+  readonly oiCandles: OiCandlePaneData;
   /** `T-05.6` — `slot-coverage.ts::panelWallState` against the pager's own fetched window and
    * THIS series' declared floor, computed once in `SymbolClient` and handed down rather than
    * recomputed per pane (every pane would otherwise need `pager.window` threaded to it anyway). */
   readonly wallState: SlotCoverageState;
 }) {
-  useHostedPane("oi", {
+  // `T-03.11` — the registry's kind (`candlestick`), or `line` under `?e2eOiLine=1`.
+  const seriesKind = useSyncExternalStore(subscribeToNothing, mountedOiPaneSeriesKind, serverOiPaneSeriesKind);
+  useHostedPane<OiPaneHandles>("oi", {
     mount: (chart, paneIndex) => {
+      const kind = mountedOiPaneSeriesKind();
+      if (kind === "candlestick") {
+        // `RF-9`: green when contracts ENTERED the bucket (`close > open`), red when they LEFT, the
+        // neutral doji ink when equal — the SAME two tokens as the price candle (`RNF-3`), so the
+        // colour means the same thing in both panes: direction of the pane's own quantity.
+        const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors();
+        const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style, paneIndex);
+        return { kind, series };
+      }
       const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
       const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style, paneIndex);
-      return { series };
+      return { kind, series };
     },
-    apply: ({ series }) => [{ series, items: lineSeriesLossless(panels.oi.slots) }],
+    apply: ({ kind, series }) => [
+      {
+        series,
+        items: kind === "candlestick" ? candlestickSeriesLossless(oiCandles.slots) : lineSeriesLossless(panels.oi.slots),
+      },
+    ],
     scales: ({ series }) => [{ series, belowLegend: true, clearSeparator: false }],
   });
   // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (`ONE_MINUTE_MS`, `D-C3.2`),
@@ -2300,13 +2483,17 @@ function OiPane({
       // checkable from outside; the e2e asserts the pane's headline number is the FIRST one.
       data-oi-native-bars={oi.nativeBars}
       data-oi-wire-points={oi.wirePoints}
+      // `T-03.11` — how many candles the canvas received, off the array `setData` gets, and which
+      // kind of series drew them (the registry's, or the `DoD-6` ablation's `line`).
+      data-oi-candles={oiCandles.drawnCandles}
+      data-oi-series-kind={seriesKind}
       className={PANE_LAYER_CLASS}
     >
       <PaneLegend>
         <PaneLegendLine>
           <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest{identityTerms(legends.oi)}</h2>
-          {/* `T-01.7`: `STOCK`, held at most one native 5-minute bucket, and marked when it is. */}
-          <LegendValue seriesId="oi" factKey="oi" slots={panels.oi.slots} nativeTimeframeMs={panels.oi.timeframeMs} />
+          {/* `T-03.11`: O·H·L·C of the candle the crosshair is over, and its `DERIVADO` label. */}
+          <OiCandleLegend oiCandles={oiCandles} />
           <OiProvenance oi={oi} />
         </PaneLegendLine>
         {/* ⛔ STAYS VISIBLE (`RNF-2`): a held STOCK value older than its cadence is never shown
@@ -4061,7 +4248,7 @@ export function SymbolClient({
           volume={volume}
           volumeStatus={panelStatus.volume}
         />
-        <OiPane panels={panels} status={panelStatus.oi} oi={oi} wallState={oiWallState} />
+        <OiPane panels={panels} status={panelStatus.oi} oi={oi} oiCandles={pager.assembly.oiCandles} wallState={oiWallState} />
         <CvdPane panels={panels} status={panelStatus.cvd} cvd={cvd} />
         <LiquidationPane
           liquidation={liquidation}

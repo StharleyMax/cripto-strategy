@@ -50,7 +50,8 @@ const OI_WALL_STATE_COMPUTED = /const oiWallState = panelWallState\(pager\.windo
 const LONG_SHORT_WALL_STATE_COMPUTED =
   /const longShortWallState = panelWallState\(pager\.window, pager\.panelCoverage\.longShort\);/;
 const OI_PANE_RENDER_SITE =
-  /<OiPane panels=\{panels\} status=\{panelStatus\.oi\} oi=\{oi\} wallState=\{oiWallState\} \/>/;
+  // `T-03.11` inserted `oiCandles={pager.assembly.oiCandles}` before `wallState` (what the pane draws).
+  /<OiPane panels=\{panels\} status=\{panelStatus\.oi\} oi=\{oi\} oiCandles=\{pager\.assembly\.oiCandles\} wallState=\{oiWallState\} \/>/;
 const LONG_SHORT_PANE_RENDER_SITE =
   /<LongShortPane longShort=\{longShort\} status=\{panelStatus\.longShort\} symbol=\{symbol\} wallState=\{longShortWallState\} \/>/;
 /** `PricePane`'s OWN prop signature, unchanged by this task — no `wallState` field anywhere in

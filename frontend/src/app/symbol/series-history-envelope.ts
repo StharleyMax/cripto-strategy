@@ -67,6 +67,46 @@ export interface PanelCoverage {
   readonly source_floor_ms: number | null;
 }
 
+/** `T-03.11` — `derived_from`, the closed enum of `SPEC-009` §6.4 (`oi_candle.py::OiCandleSource`):
+ * the polled `/fapi/v1/openInterest` series on the 1-minute grid, or the `openInterestHist` series
+ * on the 5-minute grid. `coinalyze_ohlc_5m` is NOT a member (it left with the refused `O-2`). */
+export type OiCandleSource = "binance_poll_1m" | "binance_point_5m";
+
+export const OI_CANDLE_SOURCES: readonly OiCandleSource[] = ["binance_poll_1m", "binance_point_5m"];
+
+/** One `OiCandle.to_wire()` (`SPEC-009` §6.4 / `ADR-045/D3`), mirrored field for field, snake_case
+ * verbatim like the rest of this envelope. The four prices are JSON NUMBERS in contracts (the unit
+ * of the `SeriesKey`), unlike `rows[i].value`, which the route serves as a decimal string. */
+export interface OiCandleWire {
+  readonly bucket_end_ms: number;
+  readonly open: number;
+  readonly high: number;
+  readonly low: number;
+  readonly close: number;
+  readonly open_at_ms: number;
+  readonly close_at_ms: number;
+  readonly samples: BucketCoverage;
+  readonly closed: boolean;
+  readonly derived_from: OiCandleSource;
+}
+
+/** One `OiCandleSourceDeclaration.to_wire()` (`oi_candle_regimes.py`): the regime a candle's
+ * `derived_from` names, with the native grid its samples come from. */
+export interface OiCandleSourceWire {
+  readonly derived_from: OiCandleSource;
+  readonly series_key_id: string;
+  readonly native_grid_ms: number;
+  readonly bucket_interval_ms: number;
+}
+
+/** `OiCandleReport.to_wire()` — the `oi_candles` block, served BESIDE `rows` on an open-interest
+ * panel (`ADR-045/D2`, `T-03.9`). */
+export interface OiCandlesWire {
+  readonly timeframe_ms: number;
+  readonly sources: readonly OiCandleSourceWire[];
+  readonly candles: readonly OiCandleWire[];
+}
+
 /** The 3-level envelope `GET /series-history` serves (`ADR-005/D3`, `session`/`panel`/`rows`). */
 export interface SeriesHistoryEnvelope {
   readonly session: { readonly principal_id: string | null; readonly server_now_ms: number };
@@ -78,8 +118,136 @@ export interface SeriesHistoryEnvelope {
     readonly coverage: PanelCoverage;
   };
   readonly rows: readonly SeriesHistoryRow[];
+  /** `T-03.11` — `null` on every panel that is not open interest. ⚠️ ALSO `null` when the key is
+   * MISSING from the body: the backend always writes it (explicit `null`, `series_history_report.py`),
+   * so a missing key only comes from a server older than `T-03.9` or from a test stub, and both mean
+   * "this response carries no candle" — the OI pane then draws none and says so, never a line in
+   * its place. `[INFERRED: the alternative, refusing the whole envelope, would blank the price pane
+   * of every stub that predates this task over a key the price pane does not read]` */
+  readonly oi_candles: OiCandlesWire | null;
   readonly knowledge_time: number;
   readonly bar_policy: string;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function assertWireOiCandle(
+  value: unknown,
+  index: number,
+  declared: ReadonlySet<OiCandleSource>,
+): asserts value is OiCandleWire {
+  const where = `oi_candles.candles[${index}]`;
+  if (!isPlainRecord(value)) {
+    throw new Error(`series_history envelope: ${where} is not a plain object`);
+  }
+  for (const field of ["bucket_end_ms", "open_at_ms", "close_at_ms"] as const) {
+    if (!Number.isInteger(value[field])) {
+      throw new Error(`series_history envelope: ${where}.${field} must be an integer epoch ms`);
+    }
+  }
+  for (const field of ["open", "high", "low", "close"] as const) {
+    if (typeof value[field] !== "number" || !Number.isFinite(value[field])) {
+      throw new Error(`series_history envelope: ${where}.${field} must be a finite number`);
+    }
+  }
+  const open = value.open as number;
+  const high = value.high as number;
+  const low = value.low as number;
+  const close = value.close as number;
+  // `SPEC-009` §6.4: `low <= min(open, close) <= max(open, close) <= high`. A candle that breaks it
+  // would draw a wick that does not contain its own body.
+  if (!(low <= Math.min(open, close) && Math.max(open, close) <= high)) {
+    throw new Error(
+      `series_history envelope: ${where} breaks low <= min(open, close) <= max(open, close) <= high ` +
+        `(o=${open} h=${high} l=${low} c=${close})`,
+    );
+  }
+  const bucketEnd = value.bucket_end_ms as number;
+  const openAt = value.open_at_ms as number;
+  const closeAt = value.close_at_ms as number;
+  // `SPEC-009` §6.4: "Não existe linha com `open_at_ms == close_at_ms`", and both instants lie in
+  // the candle's own bucket `[T0, T1]`.
+  if (!(openAt < closeAt && closeAt <= bucketEnd)) {
+    throw new Error(
+      `series_history envelope: ${where} has open_at_ms=${openAt}, close_at_ms=${closeAt}, ` +
+        `bucket_end_ms=${bucketEnd} — open_at_ms < close_at_ms <= bucket_end_ms is required`,
+    );
+  }
+  const samples = value.samples;
+  if (!isPlainRecord(samples) || !isNonNegativeInteger(samples.present) || !isNonNegativeInteger(samples.expected)) {
+    throw new Error(`series_history envelope: ${where}.samples must be {present: int, expected: int}`);
+  }
+  if (typeof value.closed !== "boolean") {
+    throw new Error(`series_history envelope: ${where}.closed must be a boolean`);
+  }
+  const derivedFrom = value.derived_from;
+  if (typeof derivedFrom !== "string" || !declared.has(derivedFrom as OiCandleSource)) {
+    throw new Error(
+      `series_history envelope: ${where}.derived_from=${JSON.stringify(derivedFrom)} is not one of the ` +
+        "sources this block declares",
+    );
+  }
+}
+
+/**
+ * `T-03.11` — validates the `oi_candles` block against `OiCandleReport.to_wire()`. Strict on every
+ * field the pane draws or labels: a candle whose `derived_from` is not DECLARED in `sources` would
+ * reach the `DERIVADO` label with no native grid to name, which is the hand-written label `RN-6`
+ * forbids by the back door. `undefined` (key missing) reads as `null` — see `SeriesHistoryEnvelope`.
+ */
+export function parseOiCandlesBlock(value: unknown): OiCandlesWire | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!isPlainRecord(value)) {
+    throw new Error('series_history envelope: "oi_candles" is neither null nor a plain object');
+  }
+  if (!Number.isInteger(value.timeframe_ms) || (value.timeframe_ms as number) <= 0) {
+    throw new Error('series_history envelope: "oi_candles.timeframe_ms" must be a positive integer');
+  }
+  if (!Array.isArray(value.sources) || !Array.isArray(value.candles)) {
+    throw new Error('series_history envelope: "oi_candles" needs a "sources" array and a "candles" array');
+  }
+  const declared = new Set<OiCandleSource>();
+  value.sources.forEach((source: unknown, index: number) => {
+    const where = `oi_candles.sources[${index}]`;
+    if (!isPlainRecord(source)) {
+      throw new Error(`series_history envelope: ${where} is not a plain object`);
+    }
+    const derivedFrom = source.derived_from;
+    if (typeof derivedFrom !== "string" || !OI_CANDLE_SOURCES.includes(derivedFrom as OiCandleSource)) {
+      throw new Error(`series_history envelope: ${where}.derived_from=${JSON.stringify(derivedFrom)} is not a known source`);
+    }
+    if (declared.has(derivedFrom as OiCandleSource)) {
+      throw new Error(`series_history envelope: ${where} declares ${derivedFrom} twice`);
+    }
+    if (typeof source.series_key_id !== "string") {
+      throw new Error(`series_history envelope: ${where}.series_key_id must be a string`);
+    }
+    for (const field of ["native_grid_ms", "bucket_interval_ms"] as const) {
+      if (!Number.isInteger(source[field]) || (source[field] as number) <= 0) {
+        throw new Error(`series_history envelope: ${where}.${field} must be a positive integer`);
+      }
+    }
+    declared.add(derivedFrom as OiCandleSource);
+  });
+  let previousEnd = Number.NEGATIVE_INFINITY;
+  value.candles.forEach((candle: unknown, index: number) => {
+    assertWireOiCandle(candle, index, declared);
+    // `OiCandleReport`: "`candles` is in ascending `bucket_end_ms`". Two candles on one instant would
+    // be two bars on one slot of the canonical grid.
+    if (candle.bucket_end_ms <= previousEnd) {
+      throw new Error(`series_history envelope: oi_candles.candles[${index}] is not strictly after the previous one`);
+    }
+    previousEnd = candle.bucket_end_ms;
+  });
+  return {
+    timeframe_ms: value.timeframe_ms as number,
+    sources: value.sources as readonly OiCandleSourceWire[],
+    candles: value.candles as readonly OiCandleWire[],
+  };
 }
 
 /** `T-03.12` — validates `rows[i].coverage` against `BucketCoverage.to_wire()`'s exact shape:
@@ -186,6 +354,7 @@ export function parseSeriesHistoryEnvelope(body: unknown): SeriesHistoryEnvelope
   if (typeof body.bar_policy !== "string") {
     throw new Error('series_history envelope: "bar_policy" must be a string');
   }
+  const oiCandles = parseOiCandlesBlock(body.oi_candles);
 
   return {
     session: { principal_id: session.principal_id as string | null, server_now_ms: session.server_now_ms },
@@ -197,6 +366,7 @@ export function parseSeriesHistoryEnvelope(body: unknown): SeriesHistoryEnvelope
       coverage: panel.coverage,
     },
     rows: body.rows as readonly SeriesHistoryRow[],
+    oi_candles: oiCandles,
     knowledge_time: body.knowledge_time,
     bar_policy: body.bar_policy,
   };

@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { S2_PRICE_USE, resolveLegendReading } from "../../charts/index.ts";
+import { EMPTY_OI_CANDLE_BUNDLE } from "./oi-candle-pane.ts";
 import { assembleHistoryPage, type AssemblyWindow, type HistoryRowsBundle } from "./panel-assembly.ts";
 import type { SeriesHistoryRow } from "./series-history-envelope.ts";
 
@@ -37,6 +38,7 @@ function emptyBundle(): HistoryRowsBundle {
     liquidationLong: [],
     liquidationShort: [],
     longShort: [],
+    oiCandles: EMPTY_OI_CANDLE_BUNDLE,
   };
 }
 
