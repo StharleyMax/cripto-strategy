@@ -490,6 +490,14 @@ DECLARED_IMPORTERS = frozenset(
         # claim that this module is not a second reader — it touches none of the three
         # read-path columns of anything it did not itself construct.
         "modules/sentimento/domain/modeled_availability.py",
+        # `T-03.10` (`ADR-045` falsifier bench), two TYPE-only importers, same claim as the
+        # three above: neither calls `as_of()`. The use case imports `BarPolicy` to call
+        # `build_series_history_report` — the route's own reader — with `FINAL_ONLY`; the CSV
+        # adapter imports `Observation` to return the exact shape `PostgresSeriesWindowReader`
+        # returns. Its window filter reads a parsed `int` kept BESIDE the row, never
+        # `row.bucket_end`, so `DECLARED_TOUCHERS` above still has nothing to declare for it.
+        "modules/sentimento/use_cases/measure_oi_candle_falsifiers.py",
+        "modules/sentimento/infra/csv_series_window_reader.py",
     }
 )
 
