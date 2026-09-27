@@ -1,0 +1,39 @@
+"""T-03.12 read-only: hole vs coarse grid, color flips vs body size, per symbol, TF 1m and 5m."""
+import json, sys, datetime
+from src.modules.sentimento.domain.open_interest_catalog import open_interest_catalog_entries, binance_open_interest_poll_entry, binance_open_interest_key
+from src.modules.sentimento.domain.oi_candle import OiReading
+from src.modules.sentimento.domain.oi_candle_regimes import OiRegimeReadings, project_one_series_per_bucket
+d=json.load(open(sys.argv[1])); now=d['knowledge_time_ms']
+iso=lambda ms: datetime.datetime.fromtimestamp(ms/1000, datetime.UTC).strftime('%m-%dT%H:%MZ')
+H0,H1=1790468520000,1790509140000  # 09-27T00:22Z, 11:39Z
+print('hole bounds',iso(H0),iso(H1))
+for s in ['BTCUSDT','ETHUSDT','LINKUSDT','SOLUSDT']:
+    hk=binance_open_interest_key(instrument_id=s); ents=list(getattr(open_interest_catalog_entries(s),'entries',open_interest_catalog_entries(s)))
+    he=[e for e in ents if e.key.series_key_id()==hk.series_key_id()][0]; pe=binance_open_interest_poll_entry(s)
+    rd=lambda k:tuple(OiReading(r['event_time'],float(r['value'])) for r in d[f'{s}:{k}']['rows'] if r['value'] is not None)
+    H=rd('hist'); P=rd('poll')
+    for tf in (60000,300000):
+        rep=project_one_series_per_bucket(poll=OiRegimeReadings(pe,P),hist=OiRegimeReadings(he,H),timeframe_ms=tf,now_ms=now)
+        width={x.derived_from:x.bucket_interval_ms for x in rep.sources}
+        inside=[c for c in rep.candles if H0<c.bucket_end_ms<=H1]
+        # classify every inter-candle gap: 'contiguous' (gap==width of next), 'hole' (gap>width)
+        g={'contig':0,'hole':0}; holes=[]
+        for a,b in zip(rep.candles,rep.candles[1:]):
+            gap=b.bucket_end_ms-a.bucket_end_ms; w=width[b.derived_from]
+            if gap==w: g['contig']+=1
+            else: g['hole']+=1; holes.append((iso(a.bucket_end_ms),iso(b.bucket_end_ms),gap//60000,a.derived_from.value[-2:],b.derived_from.value[-2:]))
+        empty_slots_total=(rep.candles[-1].bucket_end_ms-rep.candles[0].bucket_end_ms)//tf+1-len(rep.candles)
+        print(s,'tf',tf//60000,'m candles',len(rep.candles),'inside hole',len(inside),'gaps',g,'empty 1-TF slots',empty_slots_total)
+        for h in holes: print('   hole-gap',h)
+    # color flips hist vs poll-derived at 5m, vs |hist body|
+    r5p=project_one_series_per_bucket(poll=OiRegimeReadings(pe,P),hist=None,timeframe_ms=300000,now_ms=now)
+    r5h=project_one_series_per_bucket(poll=None,hist=OiRegimeReadings(he,H),timeframe_ms=300000,now_ms=now)
+    hb={c.bucket_end_ms:c for c in r5h.candles if c.closed and c.open_at_ms==c.bucket_end_ms-300000}
+    pairs=[(hb[c.bucket_end_ms],c) for c in r5p.candles if c.closed and c.open_at_ms==c.bucket_end_ms-300000 and c.samples.present==5 and c.bucket_end_ms in hb]
+    bins=[(0,1),(1,2),(2,5),(5,1e9)]
+    row=[]
+    for lo,hi in bins:
+        sel=[(h,p) for h,p in pairs if lo<=abs(h.close-h.open)/h.open*1e4<hi]
+        fl=sum(1 for h,p in sel if (h.close-h.open)*(p.close-p.open)<0 or ((h.close==h.open)!=(p.close==p.open)))
+        row.append(f'[{lo},{hi if hi<1e9 else "inf"})bp: {fl}/{len(sel)}')
+    print('  5m color disagreement hist vs poll by |hist body|:', ' | '.join(row), 'n=',len(pairs))
