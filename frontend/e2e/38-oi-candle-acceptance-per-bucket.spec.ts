@@ -676,7 +676,40 @@ interface ViewAudit {
  *     between the grid and those names;
  *  4. parks the pointer and reads the canvas column under every candle centre.
  */
-async function auditView(page: Page, mapping: Mapping): Promise<ViewAudit> {
+interface PhaseScanStep {
+  readonly delta: number;
+  /** Candle ink (up + down + doji) in the columns under `grid + delta`. */
+  readonly ink: number;
+}
+
+/** A scan with a candle on the canvas has columns between the bodies with (almost) no candle ink. */
+const PHASE_SCAN_FLOOR_RATIO = 0.1;
+
+/**
+ * The candle phase off a phase scan: its argmax, or `null` when the scan is FLAT — no step below
+ * `PHASE_SCAN_FLOOR_RATIO` of the peak. A flat scan has no candle in it (the `?e2eOiLine=1` line
+ * leaves ~100–400 px of anti-aliased stray ink on EVERY step, `[MEDIDO 2026-09-27]`), and its
+ * argmax is noise: on the same stub it landed on −3, −5 and +2 in three runs, and a phase near
+ * `+b/4` puts the right-quarter probe on the legend's half-bar boundary, which is the
+ * `ONE bucket shift of the grid (1,0)` of `W6-QA-FRONT`.
+ */
+function candlePhaseOf(scan: readonly PhaseScanStep[]): number | null {
+  if (scan.length === 0) return null;
+  let best = scan[0]!;
+  let floor = scan[0]!.ink;
+  for (const step of scan) {
+    if (step.ink > best.ink) best = step;
+    floor = Math.min(floor, step.ink);
+  }
+  return best.ink > 0 && floor <= PHASE_SCAN_FLOOR_RATIO * best.ink ? best.delta : null;
+}
+
+/**
+ * `phaseFraction` — the candle phase as a fraction of the spacing, measured on the candle page by a
+ * previous `auditView`. The ablation passes it: there is no candle on its canvas to scan a phase on,
+ * and the phase is a property of the time scale and the legend, not of the series drawn.
+ */
+async function auditView(page: Page, mapping: Mapping, phaseFraction?: number): Promise<ViewAudit> {
   const box = await oiCanvasBox(page);
   const y = box.y + box.height * 0.6;
   const step = mapping.b / SWEEP_STEPS_PER_BUCKET;
@@ -719,14 +752,23 @@ async function auditView(page: Page, mapping: Mapping): Promise<ViewAudit> {
   const lastK = ks[ks.length - 1]!;
   const allK: number[] = [];
   for (let k = firstK; k <= lastK; k += 1) allK.push(k);
-  let best = { delta: 0, ink: -1 };
-  const half = Math.floor(b / 2);
-  for (let delta = -half; delta <= half; delta += 1) {
-    const inks = await readColumns(page, allK.map((k) => groupX(k) + delta));
-    const total = inks.reduce((sum, ink) => sum + ink.up + ink.down + ink.neutral, 0);
-    if (total > best.ink) best = { delta, ink: total };
+  let phase: number;
+  if (phaseFraction === undefined) {
+    const scan: PhaseScanStep[] = [];
+    const half = Math.floor(b / 2);
+    for (let delta = -half; delta <= half; delta += 1) {
+      const inks = await readColumns(page, allK.map((k) => groupX(k) + delta));
+      scan.push({ delta, ink: inks.reduce((sum, ink) => sum + ink.up + ink.down + ink.neutral, 0) });
+    }
+    const found = candlePhaseOf(scan);
+    if (found === null) {
+      throw new Error(`auditView: the phase scan is flat — no candle on the canvas to find a phase on ${JSON.stringify(scan)}`);
+    }
+    phase = found;
+  } else {
+    phase = Math.round(phaseFraction * b);
   }
-  const candleX = (k: number) => groupX(k) + best.delta;
+  const candleX = (k: number) => groupX(k) + phase;
 
   // 3. The names: the legend on the right quarter of probed candles (and, for the record, the left quarter).
   const inkAtGrid = await readColumns(page, allK.map(candleX));
@@ -761,7 +803,7 @@ async function auditView(page: Page, mapping: Mapping): Promise<ViewAudit> {
     spacingPx: b,
     fitResidualPx: residual,
     lagPx: lags.reduce((sum, lag) => sum + lag, 0) / lags.length,
-    candlePhasePx: best.delta,
+    candlePhasePx: phase,
     leftQuarter,
     rightQuarter,
     buckets,
@@ -970,12 +1012,18 @@ interface Acceptance {
   readonly hovered: ReadonlyMap<number, LegendReading>;
 }
 
-async function auditViews(page: Page, views: readonly View[], hoverMs: ReadonlySet<number>, label: string): Promise<Acceptance> {
+async function auditViews(
+  page: Page,
+  views: readonly View[],
+  hoverMs: ReadonlySet<number>,
+  label: string,
+  phaseFraction?: number,
+): Promise<Acceptance> {
   const all = new Map<number, BucketReading>();
   const hovered = new Map<number, LegendReading>();
   for (const view of views) {
     const mapping = await showRange(page, view.fromMs, view.toMs);
-    const audit = await auditView(page, mapping);
+    const audit = await auditView(page, mapping, phaseFraction);
     fact(SPEC, `${label}_view_${view.name}`, {
       view,
       spacingPx: audit.spacingPx,
@@ -1020,12 +1068,22 @@ async function acceptance(page: Page, baseUrl: string, apiBase: string, catalog:
 }
 
 async function ablation(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string): Promise<void> {
+  // The phase comes from the CANDLE page, on the first view: the line leaves no candle to scan
+  // a phase on (`candlePhaseOf`), and naming the columns by a noise phase was `W6-QA-FRONT`'s flake.
+  const candleRequest = await openSymbol(page, baseUrl, INTERVAL_QUERY);
+  await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
+  const candleViews = viewsOf(await fetchTruth(apiBase, catalog, candleRequest));
+  expect(candleViews.length, "INCONCLUSIVO — no capture start in the window").toBeGreaterThan(0);
+  const phaseView = await auditView(page, await showRange(page, candleViews[0]!.fromMs, candleViews[0]!.toMs));
+  const phaseFraction = phaseView.candlePhasePx / phaseView.spacingPx;
+  fact(SPEC, `${label}_ablation_phase`, { view: candleViews[0]!.name, candlePhasePx: phaseView.candlePhasePx, spacingPx: phaseView.spacingPx, phaseFraction });
+
   const request = await openSymbol(page, baseUrl, `${INTERVAL_QUERY}&${ABLATION_QUERY}`);
   await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "line");
   const truth = await fetchTruth(apiBase, catalog, request);
   const views = viewsOf(truth);
   expect(views.length, "INCONCLUSIVO — no capture start in the window").toBeGreaterThan(0);
-  const { buckets } = await auditViews(page, views, new Set<number>(), `${label}_ablation`);
+  const { buckets } = await auditViews(page, views, new Set<number>(), `${label}_ablation`, phaseFraction);
   expectGreen(`${label}_px_ablation`, judgeAblation(buckets, truth));
   // The same colour judge that is green on the candle has to REJECT the line: the candle is gone.
   const colour = judgeColour(buckets, truth);
@@ -1034,6 +1092,24 @@ async function ablation(page: Page, baseUrl: string, apiBase: string, catalog: C
 }
 
 test.use({ viewport: { width: 1600, height: 1300 } });
+
+test.describe(`T-03.13: o instrumento — a fase da vela, ${SPEC}`, () => {
+  const scanOf = (inks: readonly number[]): PhaseScanStep[] => {
+    const half = Math.floor(inks.length / 2);
+    return inks.map((ink, i) => ({ delta: i - half, ink }));
+  };
+
+  test("uma varredura com vela dá o argmax; a varredura plana da linha (?e2eOiLine=1) não dá fase", () => {
+    // Recorded on the GATE stub, capture view (b = 10.13), `[MEDIDO 2026-09-27, W6-QA-FRONT fix]`.
+    expect(candlePhaseOf(scanOf([3209, 3318, 2048, 109, 0, 0, 0, 0, 0, 869, 3196])), "candles: the argmax").toBe(-4);
+    // The same view under the ablation, three runs: the argmax walked −2/−2/−2 here and −3/−5/+2 on
+    // the hole view — noise, not a phase.
+    expect(candlePhaseOf(scanOf([184, 291, 350, 392, 299, 268, 261, 283, 275, 235, 187])), "the line: flat").toBeNull();
+    expect(candlePhaseOf(scanOf([119, 147, 169, 168, 166, 160, 160, 166, 172, 160, 153, 133, 119])), "the line: flat").toBeNull();
+    expect(candlePhaseOf(scanOf([0, 0, 0])), "no ink at all").toBeNull();
+    expect(candlePhaseOf([]), "no scan").toBeNull();
+  });
+});
 
 test.describe(`T-03.13: aceite do candle de OI por balde — GATE (stub), ${SPEC}`, () => {
   test.describe.configure({ timeout: 600_000 });

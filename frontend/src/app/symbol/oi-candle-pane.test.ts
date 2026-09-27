@@ -183,6 +183,15 @@ test("trimOiCandlesToWindow keeps [startMs, endMsExclusive) by bucket_end_ms —
   assert.equal(trimOiCandlesToWindow(BUNDLE, WINDOW), BUNDLE, "nothing trimmed ⇒ the same object");
 });
 
+test("trimOiCandlesToWindow keeps the candle that ends ON startMs and drops the one that ends ON endMsExclusive", () => {
+  // Both edges at once, on candle instants: the start is inclusive, the end is exclusive. A `>`
+  // at the start (W6-QA-FRONT mutant U2) silently drops UP here.
+  const trimmed = trimOiCandlesToWindow(BUNDLE, { startMs: UP.bucket_end_ms, endMsExclusive: DOWN.bucket_end_ms });
+  assert.deepEqual(trimmed.candles, [UP], "the inclusive start keeps the candle that ends ON it");
+  const pastStart = trimOiCandlesToWindow(BUNDLE, { startMs: UP.bucket_end_ms + 1, endMsExclusive: WINDOW.endMsExclusive });
+  assert.deepEqual(pastStart.candles, [DOWN], "one millisecond past the start drops it");
+});
+
 // ── RN-6: the DERIVADO label is derived from derived_from + the source's native grid ────────
 
 test("the label names the native grid of the source the candle's derived_from declares", () => {
