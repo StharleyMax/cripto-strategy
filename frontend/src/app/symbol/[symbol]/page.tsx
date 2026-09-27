@@ -979,7 +979,8 @@ export default async function SymbolPage({
 
   // `paineis-de-fluxo` `T-01.7` (`RF-5`) — the entry each legend is NAMED and READ from, off the SAME
   // resolutions the ten fetches used (never a second catalog lookup). Price reads the candle's CLOSE,
-  // the reading its legend shows; the two liquidation legs are two panes, so two sources.
+  // the reading its legend shows; the two liquidation legs are one pane since `T-04.2` but two legend
+  // values (one magnitude per leg, `SPEC-009` §7.3), so two sources.
   const paneLegendSources: PaneLegendSources = {
     price: legendSourceOf(ohlcResolutions.close),
     volume: legendSourceOf(volumeResolution),

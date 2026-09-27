@@ -92,16 +92,31 @@ import {
   formatHeldStockLabel,
   lastGridInstant,
   lineSeriesLossless,
+  LIQUIDATION_LOG_BASE,
+  LIQUIDATION_PANE_FORM_PROPOSAL,
+  LIQUIDATION_SCALE_IDS,
+  LIQUIDATION_SIDES,
+  liquidationPaneFeeds,
+  liquidationPaneLayout,
   ONE_MINUTE_MS,
   paneScaleMargins,
-  positiveValueSeriesLossless,
   resolveFlowReading,
   resolveLegendReading,
   resolveStockReading,
   stackedPaneLayout,
+  sharedMagnitudeAutoscale,
   toLogicalRange,
   zeroMarkSeries,
+  type ColorRole,
   type FlowReading,
+  type LiquidationFeedRole,
+  type LiquidationMarkValues,
+  type LiquidationPaneForm,
+  type LiquidationPaneLayout,
+  type LiquidationScaleMode,
+  type LiquidationSide,
+  type MagnitudeAutoscaleInfo,
+  type PaneScaleMeasure,
   type S2Panels,
   type ScaleMargins,
   type TimeAxis,
@@ -126,7 +141,17 @@ import {
   type SeriesFeed,
 } from "./host-series-feed.ts";
 import { SINGLE_CHART_PANEL_INDEX } from "./axis-sync.ts";
-import { F1_PANE_ORDER, F1_PANE_STRETCH, type PaneId, type PaneLegendSpec } from "./pane-registry.ts";
+import {
+  F1_PANE_ORDER,
+  F1_PANE_STRETCH,
+  LIQUIDATION_LEG_SCALE_REF,
+  liquidationCohortsTopFirst,
+  liquidationSidesOf,
+  swappedLiquidationLegScaleRefs,
+  type LiquidationCohort,
+  type PaneId,
+  type PaneLegendSpec,
+} from "./pane-registry.ts";
 import {
   ABSENCE_MICROCOPY,
   createCrosshairSlotStore,
@@ -548,18 +573,14 @@ function lastInstantMs(panels: S2Panels): number {
   return lastGridInstant(panels.window, ONE_MINUTE_MS);
 }
 
-/** ⛔ NOT THE CHART HEIGHT ANY MORE (`T-01.6`). Until `T-01.5` each pane was its own chart of this
- * height; the ONE chart now takes its height from `PANE_STACK` below. What still reads this number
- * is the NOMINAL band of the liquidation absence/zero marks (`LIQUIDATION_MARKS_BAND_PX`; the volume
- * marks stopped reading it in `T-02.2`, whose strip is a fixed `0…10`): the autoscale range stays
- * pinned to `220 × (1 − top)`, so a mark
- * keeps its height RATIO to its band on a pane of any height (the marks scale with the band, the
- * absence/zero distinction survives), but its pixel height is no longer the nominal one. Anchoring
- * the band on `IPaneApi.getHeight()` is `charts/mark-band-geometry.ts` (`T-01.3`), and wiring it into
- * the marks is not in `T-01.6`'s listed scope — declared in `gates/T-01.6-builder.md` §7, not
- * silently left. Named here as before so the geometry test that reads it
- * (`liquidation-geometry.test.ts`) keeps measuring the same band. */
-const CHART_HEIGHT_PX = 220;
+/** ⛔ NOT THE CHART HEIGHT ANY MORE (`T-01.6`), AND SINCE `T-04.2` NOTHING IN PRODUCTION READS IT.
+ * Until `T-01.5` each pane was its own chart of this height; the ONE chart takes its height from
+ * `PANE_STACK` below. The last production reader was the nominal band of the two-pane liquidation's
+ * marks; the fused pane of `T-04.2` sizes its marks off the MEASURED pane
+ * (`charts::liquidationPaneLayout` → `markBandGeometry`). It stays, exported, because
+ * `price-candle.test.ts` and `candle-direction-channel.test.ts` read it off this source as the
+ * nominal single-pane height they measure a candle in — re-anchoring those two is not this task's. */
+export const CHART_HEIGHT_PX = 220;
 
 /**
  * `T-01.6` — the ONE chart's vertical layout: chart height and stretch factors, computed once
@@ -677,6 +698,19 @@ interface HostedPaneBinding<Handles> {
   readonly apply: (handles: Handles) => readonly HostSeriesFeed[];
   readonly measure?: (chart: IChartApi, paneIndex: number) => void;
   readonly scales?: (handles: Handles) => readonly PaneScaleBinding[];
+  /** `T-04.2` — a pane whose scales do not fit `paneScaleMargins`' one-scale-at-a-time rule (the fused
+   * liquidation pane: four scales on ONE zero line) lays them out itself, from the same measure. */
+  readonly layout?: (handles: Handles, measure: PaneScaleMeasure) => PaneLayoutReport;
+}
+
+/** What a pane's own `layout` tells the host: the same reserve facts the generic path publishes,
+ * whether the pane's feeds must be re-applied (its mark values moved with the layout), and extra
+ * facts for the layer root. */
+interface PaneLayoutReport {
+  readonly reserveKind: string;
+  readonly reservedTopPx: number | null;
+  readonly refeed: boolean;
+  readonly facts: Readonly<Record<string, string>>;
 }
 
 type AnyPaneBinding = HostedPaneBinding<unknown>;
@@ -1211,6 +1245,19 @@ function SymbolChartHost({
         const legendBottom = legendBottomPx(anchor);
         let reserveKind = "none";
         let reservedTopPx: number | null = null;
+        let paneFacts: Readonly<Record<string, string>> = {};
+        // `T-04.2` — a pane that lays out its own scales (the fused liquidation pane).
+        const ownBinding = registrar.bindings.get(paneIndex)?.current;
+        if (ownBinding?.layout !== undefined && state.handles.has(paneIndex)) {
+          const report = ownBinding.layout(state.handles.get(paneIndex), { paneHeightPx, legendBottomPx: legendBottom });
+          reserveKind = report.reserveKind;
+          reservedTopPx = report.reservedTopPx;
+          paneFacts = report.facts;
+          if (report.refeed) {
+            // The mark values moved with the layout: this pane's feeds again (the carrier holds the grid).
+            feedSeries(paneSeriesFeeds(ownBinding.apply(state.handles.get(paneIndex)), state.dense));
+          }
+        }
         for (const { binding, base } of declared) {
           const result = paneScaleMargins(base, binding, { paneHeightPx, legendBottomPx: legendBottom });
           if (result.kind === "unmeasured") {
@@ -1236,6 +1283,9 @@ function SymbolChartHost({
           // library: a pane that inherits a sibling's logarithmic mode shows here, not only in pixels.
           root.dataset.rightScaleMode =
             state.chart.priceScale("right", paneIndex).options().mode === PriceScaleMode.Logarithmic ? "logarithmic" : "normal";
+          for (const [name, value] of Object.entries(paneFacts)) {
+            root.dataset[name] = value;
+          }
         }
       }
     };
@@ -1633,93 +1683,104 @@ function liquidationCohortTestId(cohort: string): string {
   return `liquidation-cohort-${cohort}`;
 }
 
-// ⛔ THE THREE SCALES OF THIS PANE, AND THE SEPARATION IS GEOMETRIC — NOT CARE, IMPOSSIBILITY.
+// ⛔ ONE PANE, TWO LEGS, FOUR SCALES — AND THE GEOMETRY IS `charts`', NOT THIS FILE'S (`T-04.2`).
 //
-// Phase `01`'s lesson is literal (`gates/design-01.md` §A3, `BLOCKER-2`): the distinction between
-// "we do not know" and "it was zero" has to travel in SEPARATE SERIES, never in an `if` on color —
-// *"two series make the collision stop being expressible"*. Here the form is reused AND HARDENED,
-// because in this series the collision is not structural-but-dormant as it was in volume
-// (`zeros_exatos = 0` there): it is ALIVE TODAY. Over the 4-day window the route asks for, the
-// `long` cohort answers `191` observations in `5.761` grid slots, and `62` of them are LEGITIMATE
-// ZERO; the `short` one, `50` zeros in `76` observations over 24 h `[MEDIDO 2026-09-16, GET
-// /api/v1/series-history, bar_policy=final_only]`. Legitimate zero is a fact of TYPE here: `ZL-3`
-// of `domain/liquidation_zero_legitimacy.py`.
+// Until phase `04` each cohort was its own pane: one bar scale (log, autoscaled) over one marks band,
+// kept disjoint by an inequality between two margins of this file. `ADR-044/D4` fuses the two legs
+// into ONE pane (`pane-registry.ts`'s `liquidation`): the leg on the UPPER scale above a zero line,
+// the leg on the LOWER scale below it, the lower one going down by `invertScale` and NEVER by a sign.
+// Everything that is geometry now lives in `charts/liquidation-pane-geometry.ts` (`T-04.1`), which
+// this pane only calls:
 //
-// WHAT PHASE `01` LEFT OPEN AND THIS PANE CLOSES: there the ordering absence < zero < smallest bar
-// was MEASURED over a synthetic universe — true for that data, not guaranteed for all data. Here
-// the two bands are DISJOINT by SCALE MARGIN, and what separates them is an inequality between two
-// constants of this section, not a property of the data:
+//   - `liquidationPaneLayout(form, measure)` — the margins of the four scales and the two mark bands,
+//     from the pane's measured height and the legend's measured bottom (the equivalent of the other
+//     panes' `paneScaleMargins`, for four scales that share ONE zero line);
+//   - `liquidationPaneFeeds(legs, markValues)` — the six feeds: per leg, the bars (magnitudes, by
+//     `positiveValueSeriesLossless`), the absence mark and the zero mark, each on its own side
+//     (`RN-4`). It THROWS on a value `< 0` (`RN-3`, `F-6 (b)`);
+//   - `sharedMagnitudeAutoscale` — ONE maximum for both bar scales over the visible logical range, so
+//     the same value is the same height in both legs (`C-3`).
 //
-//     1 - LIQUIDATION_BAR_SCALE_MARGINS.bottom  <  LIQUIDATION_MARKS_SCALE_MARGINS.top
-//                        0,85                   <              0,88
+// WHICH cohort goes up is not decided here either: it is the registry's `LIQUIDATION_LEG_SCALE_REF`
+// (`[Q-LIQ-2]`, Coinalyze: short up, long down), and the side of a leg comes from its `scale_ref`
+// alone. `?e2eSwapLiquidationSides=1` swaps the two refs — the ablation `CA-LIQ` names.
 //
-// ⚠️ OF THE APPLIED MARGINS, NOT ONLY OF THE BASE (`W1-CODE-REVIEW-r2` C-2, `T-01.6`): the legend
-// reserve rewrites the bar scale's margins at runtime, so the bar binding is declared `keepFloor`
-// — the reserve lowers the band's ceiling and leaves `bottom` at `0,15`. Without it, `bottom'`
-// was `0,15·(1−r)` and the inequality held only while `r < 0,2`.
-// `liquidation-geometry.test.ts` checks it on the margins `paneScaleMargins` hands the library.
-//
-// THE GUARANTEE, in the exact form in which it is true: **every DRAWN bar ends at the FLOOR of the
-// bar band**, `y = H·(1 - bottom)`, and the marks band only starts at `H·top`. The floor is
-// invariant in value because the bar scale is AUTOSCALED and the bar series is the ONLY one hung on
-// it: the smallest visible value is, by definition, the one that lands on the floor.
-// `[MEDIDO 2026-09-16, liquidation-geometry.test.ts against the real library: for micro ∈ {2 ·
-//  0,26 · 0,1 · 0,01 · 0,003} the lowest drawn bar sits at `y = 162,20` in the four below the
-//  baseline, against a marks-band top of `168,96` and a zero-mark top of `175,97`]`.
-//
-// ⛔ WHAT THE GUARANTEE IS NOT, AND THE PREVIOUS VERSION OF THIS SECTION ASSERTED: *"no bar, of any
-// value, reaches the marks band, because the BASELINE of the bars sits above the top of the
-// marks"*. The sentence was REMOVED for being FALSE, and `T-05.10`'s `design_gate` (`M-1`,
-// `gates/design-05.md`) falsified it with a number: the baseline is NOT a floor. In a histogram
-// with `base = 1`, a value BELOW the base draws DOWNWARD from it — and what moves when the data
-// shrinks is the baseline (from `y = 162,20` to `118,76` with a bar of `0,003`; to `74,88` if the
-// whole series comes in BASE unit), never the floor. The floor is what closes the collision.
-//
-// ⚠️ AND IT IS NOT UNCONDITIONAL IN THE CONFIGURATION — only in the DATA. Two things sustain it, and
-// both are mutation-tested in `liquidation-geometry.test.ts`: (1) the inequality above; (2) the
-// autoscale of the bar scale. Pinning the autoscale (an `autoscaleInfoProvider` on the bar series)
-// hands the collision back at once: with it, the `0,003` bar goes to `y = 221,47`, BELOW the pane's
-// own floor (`191`) `[MEDIDO 2026-09-16, the test's MORDE]`.
-//
-// ⚠️ WHAT IT DOES NOT COVER: a bar OUTSIDE the visible window. `priceToCoordinate` extrapolates for
-// it (`0,26 → 176,36`, inside the zero band), but nothing is painted — it is not in the viewport.
-// When it enters, the autoscale includes it and it lands on the floor. That the DECLARED window is
-// not the DRAWN one is `M-2` of the same report, escalated: it is transversal to the 4 panes and is
-// not solved here.
-const LIQUIDATION_BAR_SCALE_MARGINS = { top: 0.05, bottom: 0.15 } as const;
-const LIQUIDATION_MARKS_PRICE_SCALE_ID = "liquidation_marks";
-const LIQUIDATION_MARKS_SCALE_MARGINS = { top: 0.88, bottom: 0 } as const;
-const LIQUIDATION_MARKS_BAND_PX = CHART_HEIGHT_PX * (1 - LIQUIDATION_MARKS_SCALE_MARGINS.top);
+// ⛔ WHAT THIS FILE OWNS is FORM (`ADR-003/FR-1`): the form handed to the layout, the inks, the words.
 
-// ⛔ `log10` SCALE, BY THE SAME ARITHMETIC ARGUMENT AS PHASE `01`'s `BLOCKER-1` — and here it is
-// STRONGER, not weaker: 1-minute volume had `max/p50 = 60,8x` and already put 67,9% of the bars
-// below 1 px; liquidation has `max/p50 = 443,8x` (`min 75,62 · p50 6.489,82 · max 2.880.132,45`)
-// `[MEDIDO 2026-09-16, n=191 present grid slots over 4 days of real data]`. On a linear scale
-// anchored at the maximum, the MEDIAN bar of this series would sit below half a pixel.
-// `PriceScaleMode.Logarithmic` moves the GEOMETRY and leaves the number intact (`ADR-003` FR-2
-// applied to a scale); transforming the DATA would put `log10(v)` inside the series, and every
-// reading the library makes of it would come out of there.
-//
-// Base `1`: an ABSOLUTE anchor in the series' unit (USD), so that the same height means the same
-// value in any window. (The volume sub-axis used this same argument until `T-02.2` moved it to a
-// linear scale; the liquidation scale is `T-04.4`'s question, not that one's.)
-const LIQUIDATION_LOG_BASE = 1;
+/** The FORM of the fused pane — `web`'s, with the `design_gate`'s verdict. ⚠️ Today it IS `charts`'
+ * proposal, unchanged (log mode, zero line at half, marks `6`/`18` px on each leg's outer edge):
+ * log × linear and the size of the two halves are `[Q-DG-2]`, decided by the `design_gate` in
+ * `T-04.4`. Changing it here is the whole change; `liquidationPaneLayout` refuses a form whose marks
+ * would reach the bars or cross to the other leg's side (`assertValidLiquidationPaneForm`). */
+const LIQUIDATION_PANE_FORM: LiquidationPaneForm = LIQUIDATION_PANE_FORM_PROPOSAL;
 
-// The two marks of the bottom band, in "nominal pixels of the band". The 3:1 ratio between them is
-// the same order of magnitude phase `01` measured as enough to separate the two assertions; what
-// proves the separation in REAL pixels, against the library, is `liquidation-geometry.test.ts`.
-const LIQUIDATION_ABSENCE_MARK_PX = 6;
-const LIQUIDATION_ZERO_MARK_PX = 18;
-// ⛔ `ADR-010` GOVERNS THE INK, and the assignment here follows the SEMANTICS of the provenance ramp
-// (`D-4`: luminance, zero hue), not taste: absence is what is NOT known ⇒ WEAK ink; legitimate zero
-// and a present bar are OBSERVATIONS ⇒ STRONG ink, and what separates them is the height, which is
-// precisely the quantity that differs between them. Neither green/red (they are the `fill` of price
-// DIRECTION, and `long`/`short` here are liquidation COHORTS, not candle direction — painting the
-// liquidation of longs in red would invite reading the cohort as the market's direction) nor violet
+/** The e2e switch of the `CA-LIQ` ablation: the registry's two `scale_ref`s swapped. */
+const LIQUIDATION_SIDE_SWAP_QUERY_PARAM = "e2eSwapLiquidationSides";
+
+function isLiquidationSideSwapRequested(search: string): boolean {
+  return new URLSearchParams(search).get(LIQUIDATION_SIDE_SWAP_QUERY_PARAM) === "1";
+}
+
+/** One answer per URL search string, so `useSyncExternalStore` gets a STABLE snapshot. */
+let liquidationLegScaleRefsCache: {
+  readonly search: string;
+  readonly refs: Readonly<Record<LiquidationCohort, string>>;
+} | null = null;
+
+/** The registry's leg → scale map the page draws: the registry's own, or swapped by the ablation.
+ * On the server (no `window`) it is always the registry's. */
+function liquidationLegScaleRefs(): Readonly<Record<LiquidationCohort, string>> {
+  if (typeof window === "undefined") {
+    return LIQUIDATION_LEG_SCALE_REF;
+  }
+  const search = window.location.search;
+  if (liquidationLegScaleRefsCache?.search !== search) {
+    const refs = isLiquidationSideSwapRequested(search)
+      ? swappedLiquidationLegScaleRefs(LIQUIDATION_LEG_SCALE_REF)
+      : LIQUIDATION_LEG_SCALE_REF;
+    liquidationLegScaleRefsCache = { search, refs };
+  }
+  return liquidationLegScaleRefsCache.refs;
+}
+
+/** The URL does not change under a mounted page (a new seed is a new `key`), so nothing to subscribe. */
+function subscribeToNothing(): () => void {
+  return () => {};
+}
+
+function serverLiquidationLegScaleRefs(): Readonly<Record<LiquidationCohort, string>> {
+  return LIQUIDATION_LEG_SCALE_REF;
+}
+
+// ⛔ THE INK OF THE BARS FOLLOWS THE SIDE, and the side follows the `scale_ref` (`[Q-LIQ-2]`,
+// `[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas]`, `SPEC-009` §7.1): the upper
+// leg is the forced BUYING (short liquidations, Coinalyze's convention), drawn in the token of the
+// rise; the lower leg is the forced SELLING, in the token of the fall — the candle's grammar (`RNF-3`).
+// `[INFERRED: SPEC-009 §7.1 says reverting the choice is "uma troca de lado no registry", with no
+// other change — so the ink cannot be bound to the cohort, or a swap would paint the rising leg red]`.
+//
+// This REPLACES the phase-`01` rule of this pane (bars in `provenanceStrong`, "a cohort is not a
+// direction"): the owner's `[Q-LIQ-2]` and the `design_gate` r2 (`handoff/DESIGN-LAYOUT.md` §6-§7,
+// `gates/DESIGN-LAYOUT-ux-critique-r2.md` §4) put the direction fill on the legs, with POSITION as the
+// channel that survives in grey. ⚠️ The gate also asked for a SECOND redundant channel, the FORM
+// (upper = hollow bar, lower = filled bar), and `HistogramSeries` has no outline: the hollow bar is
+// NOT drawn here — declared in `gates/T-04.2-builder.md` §4, not silently left.
+const LIQUIDATION_BAR_COLOR_ROLE: Readonly<Record<LiquidationSide, ColorRole>> = {
+  up: "directionUpFill",
+  down: "directionDownFill",
+};
+// ⛔ `ADR-010` GOVERNS THE INK OF THE MARKS, and the assignment follows the SEMANTICS of the
+// provenance ramp (`D-4`: luminance, zero hue): absence is what is NOT known ⇒ WEAK ink; a legitimate
+// zero is an OBSERVATION ⇒ STRONG ink, and what separates them is the height. Never green/red (that
+// is the bars' channel now, and a mark in a direction hue would claim a flow) nor violet
 // (`dataBrokenInk` is data INTEGRITY, and a grid gap is not broken data).
 const LIQUIDATION_ABSENCE_MARK_COLOR_ROLE = "provenanceWeak" as const;
 const LIQUIDATION_ZERO_MARK_COLOR_ROLE = "provenanceStrong" as const;
-const LIQUIDATION_BAR_COLOR_ROLE = "provenanceStrong" as const;
+
+/** `lightweight-charts`' mode for the form's. */
+function liquidationPriceScaleMode(mode: LiquidationScaleMode): PriceScaleMode {
+  return mode === "logarithmic" ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal;
+}
 
 /**
  * The sub-axis' DOM anchor. The bars themselves are drawn on the price panel's own `<canvas>`
@@ -2515,9 +2576,10 @@ function LiquidationProvenance({ provenance }: { readonly provenance: SeriesProv
 
 /** The label the `log10` scale demands, by the literal reason of phase `01`'s report: *"an unlabeled
  * logarithmic axis is worse than an illegible linear one"* — whoever reads a bar of twice the height
- * as twice the value is reading its square. The pane's scale draws no numeric label on the canvas,
+ * as twice the value is reading its square. The pane's scales draw no numeric label on the canvas,
  * so it can only exist here, in the DOM; and here it is text, it reaches a screen reader and it is
- * assertable. */
+ * assertable. `T-04.2`: rendered only while the form's mode IS logarithmic (`[Q-DG-2]`, `T-04.4`) —
+ * a label that outlived its scale would be the same lie in the other direction. */
 function LiquidationScaleNote() {
   return (
     <p data-fact="liquidation_scale:log10" className="text-sm text-provenance-weak">
@@ -2527,10 +2589,10 @@ function LiquidationScaleNote() {
   );
 }
 
-/** The THREE states, named in words — the third channel, for the same reason `CvdLegend` and
- * `VolumeMarksLegend` exist: inside the `<canvas>` no legend reaches, and a distinction that lives
- * only in pixels dies in a monochrome screenshot or in a screen reader. Here it travels in words,
- * and the words say the difference `RN-1` demands: *"there was none"* ≠ *"we do not know"*.
+/** The THREE states of each leg, named in words — the third channel, for the same reason `CvdLegend`
+ * and `VolumeMarksLegend` exist: inside the `<canvas>` no legend reaches, and a distinction that lives
+ * only in pixels dies in a monochrome screenshot or in a screen reader. Here it travels in words, and
+ * the words say the difference `RN-1` demands: *"there was none"* ≠ *"we do not know"*.
  *
  * The ink comes out of `colorTokens()`, the SAME call the series' ink comes from, so a legend that
  * lies about the mark's color is not expressible. `aria-hidden` on the glyph is deliberate: it is
@@ -2543,32 +2605,31 @@ function LiquidationMarksLegend() {
         <span aria-hidden="true" style={{ color: tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE] }}>
           ▁
         </span>{" "}
-        Sem ponto — traço baixo e apagado (não sabemos se houve liquidação neste minuto)
+        Sem ponto — traço baixo e apagado, na borda de fora da perna (não sabemos se houve liquidação neste minuto)
       </li>
       <li>
         <span aria-hidden="true" style={{ color: tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE] }}>
           ▃
         </span>{" "}
-        Zero do fornecedor — traço médio e claro (sabemos: não houve liquidação)
+        Zero do fornecedor — traço médio e claro, na borda de fora da perna (sabemos: não houve liquidação)
       </li>
       <li>
-        <span aria-hidden="true" style={{ color: tokens[LIQUIDATION_BAR_COLOR_ROLE] }}>
+        <span aria-hidden="true" style={{ color: tokens[LIQUIDATION_BAR_COLOR_ROLE.up] }}>
           ▇
         </span>{" "}
-        Liquidação — barra acima da faixa das marcas, altura em ordem de grandeza
+        Liquidação — barra que parte da linha do zero: para cima a perna de cima, para baixo a de baixo, altura
+        em ordem de grandeza
       </li>
     </ul>
   );
 }
 
 /** `T-01.11-FIX` (`SF-4` of `gates/T-01.11-design-review.md`) — the VISIBLE key of the two base
- * marks. Since `T-01.6` the full `LiquidationMarksLegend` lives in `PaneDetails` (`sr-only`): the
- * screen reader kept it, the eye lost it, and the two marks stayed drawn with nothing on screen to
- * decode them. This is the short form, drawn in the legend of the LOWER leg (the upper one already
- * carries the pane's two shared lines). `aria-hidden` because it is the redundant copy of the full
- * legend, which a screen reader already reads; the ink is `colorTokens()`'s, the same call the marks
- * are drawn with. `ausente` is the word the legend numeral uses for the same state (`MF-3`).
- * ⚠️ FORM — wording and placement submitted to the revalidation of `T-01.11`. */
+ * marks. The full `LiquidationMarksLegend` lives in `PaneDetails` (`sr-only`): the screen reader keeps
+ * it, and this short form keeps the eye able to decode the marks. `aria-hidden` because it is the
+ * redundant copy of the full legend; the ink is `colorTokens()`'s, the same call the marks are drawn
+ * with. `ausente` is the word the legend numeral uses for the same state (`MF-3`).
+ * ⚠️ FORM — wording and placement are `T-04.3`'s (the legend of the fused pane). */
 function LiquidationMarksKey() {
   const tokens = colorTokens();
   return (
@@ -2611,103 +2672,33 @@ function LiquidationReadableHorizon({
   );
 }
 
+/** `T-04.2` — the pt-BR name of each leg. Microcopy (`CLAUDE.md` table line 8); `T-04.3` owns it. */
+const LIQUIDATION_LEG_LABEL: Readonly<Record<LiquidationCohort, string>> = {
+  short: "Liquidação de posições vendidas (short)",
+  long: "Liquidação de posições compradas (long)",
+};
+
 /**
- * ONE cohort: one chart, three series, and the zero↔absence collision made geometrically impossible
- * — see the `LIQUIDATION_*` block of constants for the whole argument.
- *
- * ⛔ THE THREE SERIES ARE NOT THREE COLORS OF ONE. `positiveValueSeriesLossless` sends both absence
- * and zero to whitespace (on a log scale, `log10(0)` has no coordinate, and a zero-height bar on the
- * baseline is, pixel by pixel, the mark of "nothing was drawn here"), and then `absenceMarkSeries`
- * and `zeroMarkSeries` draw each of the two states with a mark of its own. An `if` on color would
- * settle the appearance and leave the distinction pinned to a branch a refactor erases without
- * anything failing.
+ * ONE leg of the fused pane, as DOM: its name and legend value, its coverage and absence notes, and
+ * the facts `e2e/13` reads off `liquidation-cohort-<cohort>` (the counts, the readout, the horizon,
+ * the slot count). The leg's PIXELS are the pane's (`LiquidationPane`'s binding); this is only the
+ * text that names them. `self-stretch`: the group spans the legend's width, so the zero-height slots
+ * host inside it measures the pane's drawable width, as it did when it was the layer root.
  */
-function LiquidationCohortSurface({
+function LiquidationLegGroup({
   cohort,
-  label,
+  side,
   data,
   unit,
   status,
-  paneId,
-  header = null,
-  footer = null,
 }: {
-  readonly cohort: string;
-  readonly label: string;
+  readonly cohort: LiquidationCohort;
+  readonly side: LiquidationSide;
   readonly data: LiquidationCohortData;
   readonly unit: string | null;
   readonly status: PanelStatus;
-  /** `T-01.5`: the two cohorts are two panes of the ONE chart (`pane-registry.ts`'s
-   * `liquidation_long`/`liquidation_short`) — `LiquidationPane` names which is which, since this
-   * component mounts twice and cannot infer its pane from `cohort` alone without duplicating the
-   * registry's own keys. */
-  readonly paneId: "liquidation_long" | "liquidation_short";
-  /** `T-01.6`: the lines the two legs SHARE (the pane title, the `RS-5` third-party label, the
-   * log10 declaration) — drawn once, in the upper leg's legend, until phase `04` fuses the legs. */
-  readonly header?: ReactNode;
-  /** `T-01.11-FIX` (`SF-4`): one more legend line under the leg's own, for what the legs share and
-   * the upper leg has no room for — the visible key of the base marks, on the lower leg. */
-  readonly footer?: ReactNode;
 }) {
-  useHostedPane(paneId, {
-    mount: (chart, paneIndex) => {
-      const tokens = colorTokens();
-      const barStyle: Partial<HistogramSeriesOptions> = {
-        color: tokens[LIQUIDATION_BAR_COLOR_ROLE],
-        base: LIQUIDATION_LOG_BASE,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        // `T-01.11-FIX` (`MF-2`): the log scale compressed under the legend labels its reserve with
-        // values ~10 decades past the data — no tick label at all (`unlabeled-tick-format.ts`).
-        priceFormat: unlabeledTickPriceFormat(),
-      };
-      const barSeries: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, barStyle, paneIndex);
-      barSeries.priceScale().applyOptions({
-        scaleMargins: LIQUIDATION_BAR_SCALE_MARGINS,
-        mode: PriceScaleMode.Logarithmic,
-      });
-
-      const markStyle = (color: string): Partial<HistogramSeriesOptions> => ({
-        color,
-        priceScaleId: LIQUIDATION_MARKS_PRICE_SCALE_ID,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        // The fixed band: the mark's height is the mark's own, never that of the data beside it.
-        autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: LIQUIDATION_MARKS_BAND_PX } }),
-      });
-      const absenceSeries: ISeriesApi<"Histogram"> = chart.addSeries(
-        HistogramSeries,
-        markStyle(tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE]),
-        paneIndex,
-      );
-      // ⛔ THE MARGIN IS WHAT SEPARATES THE TWO BANDS, and it is applied on the MARKS scale: with
-      // `top: 0.88` they take the bottom 12% of the pane, and the FLOOR of the bar band sits at 85%
-      // (`1 - bottom`). No DRAWN bar passes the floor, for any value — see the `LIQUIDATION_*` block of
-      // constants for the whole guarantee, what it presupposes and what it does not cover.
-      absenceSeries.priceScale().applyOptions({ scaleMargins: LIQUIDATION_MARKS_SCALE_MARGINS });
-      const zeroSeries: ISeriesApi<"Histogram"> = chart.addSeries(
-        HistogramSeries,
-        markStyle(tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE]),
-        paneIndex,
-      );
-      return { barSeries, absenceSeries, zeroSeries };
-    },
-    apply: ({ barSeries, absenceSeries, zeroSeries }) => [
-      { series: barSeries, items: positiveValueSeriesLossless(data.slots) },
-      { series: absenceSeries, items: absenceMarkSeries(data.slots, LIQUIDATION_ABSENCE_MARK_PX) },
-      { series: zeroSeries, items: zeroMarkSeries(data.slots, LIQUIDATION_ZERO_MARK_PX) },
-    ],
-    // `T-01.6` — the bars below the legend; the marks band on the floor, `C-6`'s 4px off the
-    // separator (the absence mark is `#8b949e`, the separator's colour, same reason as the volume).
-    scales: ({ barSeries, absenceSeries }) => [
-      // `keepFloor` (`W1-CODE-REVIEW-r2` C-2): the legend compresses the bar band from the TOP only.
-      // Compressing its `bottom` too walked the floor into the marks band once the legend passed
-      // `0,2` of the pane (a 54 px legend in a 108 px pane put the floor at 100,5 px against a marks
-      // band from 95,0 px) — the inequality below is only true of the APPLIED margins this way.
-      { series: barSeries, belowLegend: true, clearSeparator: false, keepFloor: true },
-      { series: absenceSeries, belowLegend: false, clearSeparator: true },
-    ],
-  });
+  const label = LIQUIDATION_LEG_LABEL[cohort];
   // `RN-1` at the rendering layer, and for this series it is a rule of TYPE: a `FLOW` bucket with no
   // observation is NOT a bucket in which nobody was liquidated. A `0` there would be an ASSERTION
   // about the market made out of ignorance — and it is the most expensive one on this screen,
@@ -2720,61 +2711,133 @@ function LiquidationCohortSurface({
         ? String(data.reading.value)
         : `${data.reading.value} ${unit}`;
   return (
-    // `T-01.6`: the cohort group IS the root of its pane's layer — `paneLayerTestId("liquidation_long")`
-    // is `liquidation-cohort-long`, the handle `e2e/13` has always read.
-    <PaneLayer paneId={paneId}>
     <div
       role="group"
       aria-label={label}
       data-testid={liquidationCohortTestId(cohort)}
       data-liquidation-present-points={data.presentPoints}
       data-liquidation-zero-points={data.zeroPoints}
-      className={PANE_LAYER_CLASS}
+      data-liquidation-side={side}
+      className="flex flex-col items-start gap-0.5 self-stretch [&>*]:max-w-full"
     >
-      <PaneLegend>
-      {header}
       <PaneLegendLine>
         <h3 className="font-label-caps text-label-caps text-on-surface">{label}</h3>
-        <LegendValue seriesId={paneId} factKey={`liquidation_${cohort}`} slots={data.slots} />
+        <LegendValue seriesId={`liquidation_${cohort}`} factKey={`liquidation_${cohort}`} slots={data.slots} />
       </PaneLegendLine>
-      {footer === null ? null : <PaneLegendLine>{footer}</PaneLegendLine>}
       <PartialCoverageMark factKey={`liquidation_partial_coverage:${cohort}`} summary={data.partialCoverage} />
       <AbsenceNote status={status} />
       <PaneDetails>
-      {/* `T-01.7`: the static readout left the painted legend; the fact stays. */}
-      <p data-fact={`liquidation_last_reading:${cohort}:${data.reading.kind}`} className="text-sm text-provenance-weak">
-        Leitura atual: {readingText}
-      </p>
-      <LiquidationReadableHorizon cohort={cohort} data={data} />
+        {/* `T-01.7`: the static readout left the painted legend; the fact stays. */}
+        <p data-fact={`liquidation_last_reading:${cohort}:${data.reading.kind}`} className="text-sm text-provenance-weak">
+          Leitura atual: {readingText}
+        </p>
+        <LiquidationReadableHorizon cohort={cohort} data={data} />
       </PaneDetails>
-      </PaneLegend>
       {/* ⛔ `aria-hidden` — same criterion as `CvdPane`/`DR-6`: the readouts above ARE the textual
-          alternative. `T-01.6`: this zero-height block is a DIRECT child of the layer root (which
-          covers the pane's canvas, `inset-0`), NOT of the sr-only details, because
-          `e2e/13` reads its `clientWidth` as the pane's drawable width; inside `sr-only` it would
-          read 1px. */}
-      <div
-        aria-hidden="true"
-        data-fact={`liquidation_slots:${cohort}:${data.slots.length}`}
-      />
+          alternative. Zero height, full width: `e2e/13` reads its `clientWidth` as the pane's
+          drawable width; inside `sr-only` it would read 1px. */}
+      <div aria-hidden="true" className="self-stretch" data-fact={`liquidation_slots:${cohort}:${data.slots.length}`} />
     </div>
-    </PaneLayer>
   );
 }
 
+type LiquidationLaidOut = Extract<LiquidationPaneLayout, { readonly kind: "layout" }>;
+
+/** The two mark values of a side, and the top of its marks scale's autoscale range. */
+interface LiquidationSideMarks extends LiquidationMarkValues {
+  readonly rangeMax: number;
+}
+
+/** The mark values a layout yields. A band too short to separate the two marks (`collapsed`) keeps
+ * the form's nominal pair over a range of the zero mark's height: both still draw, at the band's
+ * whole height and a third of it, and the distinction survives by height. */
+function liquidationMarksOf(layout: LiquidationLaidOut): Readonly<Record<LiquidationSide, LiquidationSideMarks>> {
+  const of = (side: LiquidationSide): LiquidationSideMarks => {
+    const band = layout.sides[side].markBand;
+    return band.kind === "band"
+      ? { absence: band.absenceMarkValue, zero: band.zeroMarkValue, rangeMax: band.priceRange.maxValue }
+      : {
+          absence: LIQUIDATION_PANE_FORM.absenceMarkPx,
+          zero: LIQUIDATION_PANE_FORM.zeroMarkPx,
+          rangeMax: LIQUIDATION_PANE_FORM.zeroMarkPx,
+        };
+  };
+  return { up: of("up"), down: of("down") };
+}
+
+function sameLiquidationMarks(
+  first: Readonly<Record<LiquidationSide, LiquidationSideMarks>>,
+  second: Readonly<Record<LiquidationSide, LiquidationSideMarks>>,
+): boolean {
+  return LIQUIDATION_SIDES.every(
+    (side) =>
+      first[side].absence === second[side].absence &&
+      first[side].zero === second[side].zero &&
+      first[side].rangeMax === second[side].rangeMax,
+  );
+}
+
+type LiquidationRoleSeries = Readonly<Record<LiquidationFeedRole, ISeriesApi<"Histogram">>>;
+
+/** What the fused pane's `mount` returns. `live` is the one mutable part: the layout the four scales
+ * carry, the mark values last fed, and the shared-maximum provider of the current data. */
+interface LiquidationPaneHandles {
+  readonly chart: IChartApi;
+  readonly scaleRefs: Readonly<Record<LiquidationCohort, string>>;
+  readonly sides: Readonly<Record<LiquidationCohort, LiquidationSide>>;
+  readonly series: Readonly<Record<LiquidationSide, LiquidationRoleSeries>>;
+  readonly live: {
+    layout: LiquidationLaidOut;
+    marks: Readonly<Record<LiquidationSide, LiquidationSideMarks>>;
+    autoscale: () => MagnitudeAutoscaleInfo | null;
+  };
+}
+
+/** Writes a layout's four scales into the library — margins, `invertScale` and mode, per side. */
+function applyLiquidationScales(series: Readonly<Record<LiquidationSide, LiquidationRoleSeries>>, layout: LiquidationLaidOut): void {
+  for (const side of LIQUIDATION_SIDES) {
+    const { bars, marks } = layout.sides[side];
+    series[side].bars.priceScale().applyOptions({
+      scaleMargins: bars.scaleMargins,
+      invertScale: bars.invertScale,
+      mode: liquidationPriceScaleMode(bars.mode),
+    });
+    // The two marks of a side share ONE scale id, so this configures both.
+    series[side].absence_mark.priceScale().applyOptions({
+      scaleMargins: marks.scaleMargins,
+      invertScale: marks.invertScale,
+      mode: liquidationPriceScaleMode(marks.mode),
+    });
+  }
+}
+
+/** The facts the layout step publishes on the layer root — READ BACK from the library, so the e2e
+ * compares the render and not this code. */
+function liquidationLayoutFacts(handles: LiquidationPaneHandles, layout: LiquidationLaidOut): Readonly<Record<string, string>> {
+  const scales = LIQUIDATION_SIDES.map((side) => {
+    const options = handles.series[side].bars.priceScale().options();
+    const mode = options.mode === PriceScaleMode.Logarithmic ? "logarithmic" : "normal";
+    return `${side}:${options.invertScale ? "inverted" : "upright"}:${mode}`;
+  });
+  return {
+    liquidationZeroLinePx: String(Math.round(layout.zeroLinePx * 100) / 100),
+    liquidationSides: `short:${handles.sides.short};long:${handles.sides.long}`,
+    liquidationBarScales: scales.join(";"),
+  };
+}
+
 /**
- * `T-05.9` — the liquidation pane: TWO cohorts, the `RS-5` label and the absence that never becomes
- * a zero.
+ * `T-04.2` — the liquidation pane: ONE pane, TWO legs (`ADR-044/D4`, `RF-10`), the `RS-5` label, and
+ * the absence that never becomes a zero, per leg (`RN-4`).
  *
  * ⛔ THE TWO LEGS ARE NOT ONE SERIES WITH TWO COLORS, and the reason is not a UX one: summing them
  * erases exactly the discrimination the metric exists to provide (`liquidation_catalog.py`, literal
  * — *"a long liquidation is forced selling and a short liquidation is forced buying"*). Two
- * surfaces, two `series_key_id`, two statuses that degrade on their own.
+ * `series_key_id`, two statuses that degrade on their own, six series on four scales, and no signed
+ * number anywhere on the path: the lower leg goes down by `invertScale` (`RN-3`).
  *
- * And the two live in SEPARATE charts, each with its own title, instead of two colors in a single
- * chart: that way the distinction between the cohorts depends on no hue (WCAG 1.4.1) and the absence
- * marks of one leg do not overlap those of the other — which matters when `94,7%` of the grid slots
- * are absent in both `[MEDIDO 2026-09-16: 1.365 absent of 1.441 grid slots over 24 h, per cohort]`.
+ * The distinction between the legs depends on no hue (WCAG 1.4.1): POSITION (above/below the zero)
+ * and the WORD (each leg's name in the legend) carry it in grey.
  */
 function LiquidationPane({
   liquidation,
@@ -2785,52 +2848,154 @@ function LiquidationPane({
   readonly longStatus: PanelStatus;
   readonly shortStatus: PanelStatus;
 }) {
-  // `T-01.6`: the two legs are two panes, so there is no single element that could enclose both
-  // layers any more. What the legs SHARE — the title, the `RS-5` label, the log10 declaration — is
-  // this section, drawn at the top of the UPPER leg's legend (`liquidation_long`, the first
-  // liquidation pane in `F1_PANE_ORDER`). `e2e/13` reads each leg's facts off its cohort group.
   const { legends } = useLegendFrame();
-  // `T-01.7` (`RF-5`): the cadence and the unit come off the long entry's key — the legs differ only
-  // in `cohort`, so the long entry answers for both, the rule `LiquidationPaneData.provenance` states.
-  const header = (
-    <section aria-label="Liquidações" data-testid={LIQUIDATION_PANE_TESTID}>
-      <PaneLegendLine>
-        <h2 className="font-label-caps text-label-caps text-on-surface">
-          Liquidações{identityTerms(legends.liquidation_long)}
-        </h2>
-        {/* ⛔ STAYS VISIBLE (`RS-5`, `SPEC-007` §7): third-party data is never read without its label. */}
-        <LiquidationProvenance provenance={liquidation.provenance} />
-      </PaneLegendLine>
-      <PaneLegendLine>
-        {/* ⛔ STAYS VISIBLE (`BLOCKER-1`): the log10 is declared here or nowhere. */}
-        <LiquidationScaleNote />
-      </PaneLegendLine>
-      <PaneDetails>
-        <LiquidationMarksLegend />
-      </PaneDetails>
-    </section>
-  );
+  // The registry's refs, or the ablation's. The server (and hydration) render the registry's; the
+  // client re-renders with the URL's when they differ. `mount` reads the same cached value, so the DOM
+  // order below and the pixels agree.
+  const scaleRefs = useSyncExternalStore(subscribeToNothing, liquidationLegScaleRefs, serverLiquidationLegScaleRefs);
+  const sides = liquidationSidesOf(scaleRefs);
+  useHostedPane<LiquidationPaneHandles>("liquidation", {
+    mount: (chart, paneIndex) => {
+      const tokens = colorTokens();
+      const mountedRefs = liquidationLegScaleRefs();
+      const initial = liquidationPaneLayout(LIQUIDATION_PANE_FORM, {
+        paneHeightPx: PANE_STACK.paneHeightsPx[paneIndex] ?? 0,
+        legendBottomPx: 0,
+      });
+      if (initial.kind !== "layout") {
+        throw new Error(`the liquidation pane has no nominal layout (${initial.kind}) at pane ${paneIndex}`);
+      }
+      const live: LiquidationPaneHandles["live"] = {
+        layout: initial,
+        marks: liquidationMarksOf(initial),
+        autoscale: () => null,
+      };
+      const addSide = (side: LiquidationSide): LiquidationRoleSeries => {
+        const ids = LIQUIDATION_SCALE_IDS[side];
+        const barStyle: Partial<HistogramSeriesOptions> = {
+          color: tokens[LIQUIDATION_BAR_COLOR_ROLE[side]],
+          base: initial.sides[side].bars.base,
+          priceScaleId: ids.bars,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          // `T-01.11-FIX` (`MF-2`): no tick label on a log scale compressed under the legend.
+          priceFormat: unlabeledTickPriceFormat(),
+          // `C-3`: ONE provider for both bar series — the same value is the same height in both legs.
+          autoscaleInfoProvider: () => live.autoscale(),
+        };
+        const bars: ISeriesApi<"Histogram"> = chart.addSeries(HistogramSeries, barStyle, paneIndex);
+        const mark = (color: string): ISeriesApi<"Histogram"> =>
+          chart.addSeries(
+            HistogramSeries,
+            {
+              color,
+              priceScaleId: ids.marks,
+              priceLineVisible: false,
+              lastValueVisible: false,
+              // The fixed band: a mark's height is its own, never that of the data beside it.
+              autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: live.marks[side].rangeMax } }),
+            },
+            paneIndex,
+          );
+        return {
+          bars,
+          absence_mark: mark(tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE]),
+          zero_mark: mark(tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE]),
+        };
+      };
+      const series = { up: addSide("up"), down: addSide("down") };
+      applyLiquidationScales(series, initial);
+      return { chart, scaleRefs: mountedRefs, sides: liquidationSidesOf(mountedRefs), series, live };
+    },
+    apply: (handles) => {
+      const legs = (["short", "long"] as const).map((cohort) => ({
+        cohort,
+        scaleRef: handles.scaleRefs[cohort],
+        slots: liquidation[cohort].slots,
+      }));
+      const bySide = (side: LiquidationSide) => legs.find((leg) => handles.sides[leg.cohort] === side)!.slots;
+      handles.live.autoscale = sharedMagnitudeAutoscale(
+        [bySide("up"), bySide("down")],
+        LIQUIDATION_PANE_FORM.mode,
+        () => handles.chart.timeScale().getVisibleLogicalRange(),
+      );
+      // `liquidationPaneFeeds` throws on a value `< 0`, on two legs on one side, and on two grids.
+      return liquidationPaneFeeds(legs, handles.live.marks).map((feed) => ({
+        series: handles.series[feed.side][feed.role],
+        items: feed.items,
+      }));
+    },
+    layout: (handles, measure) => {
+      const layout = liquidationPaneLayout(LIQUIDATION_PANE_FORM, measure);
+      if (layout.kind === "unmeasured") {
+        return { reserveKind: "unmeasured", reservedTopPx: null, refeed: false, facts: {} };
+      }
+      if (layout.kind === "collapsed") {
+        return { reserveKind: "collapsed", reservedTopPx: null, refeed: false, facts: {} };
+      }
+      applyLiquidationScales(handles.series, layout);
+      const marks = liquidationMarksOf(layout);
+      const refeed = !sameLiquidationMarks(marks, handles.live.marks);
+      handles.live.layout = layout;
+      handles.live.marks = marks;
+      // The topmost scale is the upper leg's marks band, at the top of the data area.
+      const reservedTopPx = handles.series.up.absence_mark.priceScale().options().scaleMargins.top * measure.paneHeightPx;
+      return {
+        reserveKind: layout.legendOverflow ? "overflow" : "margins",
+        reservedTopPx,
+        refeed,
+        facts: liquidationLayoutFacts(handles, layout),
+      };
+    },
+  });
+  const cohortsTopFirst = liquidationCohortsTopFirst(scaleRefs);
+  const statusOf: Readonly<Record<LiquidationCohort, PanelStatus>> = { long: longStatus, short: shortStatus };
   return (
-    <>
-      <LiquidationCohortSurface
-        cohort="long"
-        label="Liquidação de posições compradas (long)"
-        data={liquidation.long}
-        unit={liquidation.unit}
-        status={longStatus}
-        paneId="liquidation_long"
-        header={header}
-      />
-      <LiquidationCohortSurface
-        cohort="short"
-        label="Liquidação de posições vendidas (short)"
-        data={liquidation.short}
-        unit={liquidation.unit}
-        status={shortStatus}
-        paneId="liquidation_short"
-        footer={<LiquidationMarksKey />}
-      />
-    </>
+    // `T-04.2`: the layer ROOT is the pane's — `paneLayerTestId("liquidation")` is `liquidation-pane`,
+    // the handle `e2e/13` has always used — and each leg is a group inside it.
+    <PaneLayer paneId="liquidation">
+    <div
+      role="group"
+      aria-label="Liquidações"
+      data-testid={LIQUIDATION_PANE_TESTID}
+      data-liquidation-sides={`short:${sides.short};long:${sides.long}`}
+      className={PANE_LAYER_CLASS}
+    >
+      <PaneLegend>
+        <PaneLegendLine>
+          {/* `T-01.7` (`RF-5`): the cadence and the unit come off the long entry's key — the legs differ
+              only in `cohort`, so the long entry answers for both (`LiquidationPaneData.provenance`). */}
+          <h2 className="font-label-caps text-label-caps text-on-surface">
+            Liquidações{identityTerms(legends.liquidation_long)}
+          </h2>
+          {/* ⛔ STAYS VISIBLE (`RS-5`, `SPEC-007` §7): third-party data is never read without its label. */}
+          <LiquidationProvenance provenance={liquidation.provenance} />
+        </PaneLegendLine>
+        {LIQUIDATION_PANE_FORM.mode === "logarithmic" ? (
+          <PaneLegendLine>
+            {/* ⛔ STAYS VISIBLE (`BLOCKER-1`): the log10 is declared here or nowhere. */}
+            <LiquidationScaleNote />
+          </PaneLegendLine>
+        ) : null}
+        {cohortsTopFirst.map((cohort) => (
+          <LiquidationLegGroup
+            key={cohort}
+            cohort={cohort}
+            side={sides[cohort]}
+            data={liquidation[cohort]}
+            unit={liquidation.unit}
+            status={statusOf[cohort]}
+          />
+        ))}
+        <PaneLegendLine>
+          <LiquidationMarksKey />
+        </PaneLegendLine>
+        <PaneDetails>
+          <LiquidationMarksLegend />
+        </PaneDetails>
+      </PaneLegend>
+    </div>
+    </PaneLayer>
   );
 }
 

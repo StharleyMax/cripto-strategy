@@ -12,7 +12,7 @@ import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./hel
  *
  * ── O QUE ESTE SPEC AFIRMA, CADA UM SOBRE A PÁGINA REAL ───────────────────────────────────────
  *
- *   (a) UM gráfico, e as 6 raízes de camada (`data-pane-legend` → pai) DENTRO dele, uma por pane,
+ *   (a) UM gráfico, e as 5 raízes de camada (6 até a fusão da liquidação, `T-04.2`) (`data-pane-legend` → pai) DENTRO dele, uma por pane,
  *       com `pointer-events: none` computado e altura de pane `>= 72px` (o piso).
  *   (b) `C-6`: 5 separadores (`td[colspan="3"]`) com fundo `rgb(139, 148, 158)` (`#8b949e`,
  *       `provenanceWeak`) e SEM a alça de arrasto (`enableResize = false`).
@@ -44,7 +44,8 @@ const SYMBOL = "BTCUSDT";
 const SYMBOL_PATH = `/symbol/${SYMBOL}`;
 const CHART_HOST_TESTID = "symbol-chart-host";
 const PRICE_PANE_TESTID = "price-pane";
-const EXPECTED_PANES = 6;
+/** `T-04.2`: the two liquidation legs are ONE pane — five, where phase `01` had six. */
+const EXPECTED_PANES = 5;
 const PANE_FLOOR_PX = 72;
 const ONE_MINUTE_MS = 60_000;
 const OHLC_REDUCTIONS = ["OPEN", "HIGH", "LOW", "CLOSE"] as const;
@@ -239,8 +240,7 @@ test(`T-01.6: a camada de DOM por pane, o separador testado e a reserva da legen
     fact(SPEC, "layers", layers);
     expect(layers.map((l) => l.testId)).toEqual([
       "price-pane",
-      "liquidation-cohort-long",
-      "liquidation-cohort-short",
+      "liquidation-pane",
       "oi-pane",
       "long-short-pane",
       "cvd-pane",
