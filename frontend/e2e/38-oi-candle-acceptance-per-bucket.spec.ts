@@ -752,24 +752,6 @@ async function auditView(page: Page, mapping: Mapping): Promise<ViewAudit> {
   }
   const shift = [...shifts][0]!;
 
-  if (process.env.E2E_T0313_DEBUG === "1") {
-    const dump = await page.evaluate(({ testId, xs }) => {
-      const layer = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
-      const canvases = Array.from(layer.parentElement?.children ?? []).filter((c): c is HTMLCanvasElement => c instanceof HTMLCanvasElement);
-      return xs.map((px) => canvases.map((canvas) => {
-        const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
-        const out: string[] = [];
-        for (let x = Math.round(px) - 1; x <= Math.round(px) + 1; x += 1) for (let yy = 0; yy < canvas.height; yy += 1) {
-          const at = (yy * canvas.width + x) * 4;
-          if (data[at + 3] === 0) continue;
-          const c = `${data[at]},${data[at + 1]},${data[at + 2]}`;
-          if (c !== "30,34,48" && c !== "19,23,34") out.push(`${x},${yy}:${c}`);
-        }
-        return out.slice(0, 20);
-      }));
-    }, { testId: OI_PANE_TESTID, xs: [558.3, 599.9, 613.8] });
-    fact(SPEC, "debug_hole_pixels", dump);
-  }
   // 4. Every bucket of the grid, named `(k + shift) · 5 min`, read under its candle's centre, legend on its right quarter.
   const buckets: BucketReading[] = [];
   const inks = await readColumns(page, allK.map(candleX));
