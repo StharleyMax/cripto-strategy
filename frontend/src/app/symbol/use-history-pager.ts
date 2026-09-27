@@ -86,6 +86,13 @@ import {
   type HistoryPageAssembly,
   type HistoryRowsBundle,
 } from "./panel-assembly.ts";
+import {
+  EMPTY_OI_CANDLE_BUNDLE,
+  mergeOlderOiCandles,
+  oiCandleBundleOf,
+  trimOiCandlesToWindow,
+  type OiCandleBundle,
+} from "./oi-candle-pane.ts";
 import type { PanelCoverage, SeriesHistoryRow } from "./series-history-envelope.ts";
 import { combineHistoryCoverage, type PanelCoverageBundle } from "./slot-coverage.ts";
 
@@ -260,13 +267,15 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
       interface FetchedSeries {
         readonly rows: readonly SeriesHistoryRow[];
         readonly coverage: PanelCoverage | null;
+        /** `T-03.11` — the page's `oi_candles` block; empty on every panel that is not OI. */
+        readonly oiCandles: OiCandleBundle;
       }
       const fetchOne = async (seriesKeyId: string | null): Promise<FetchedSeries> => {
         if (seriesKeyId === null) {
-          return { rows: [], coverage: null };
+          return { rows: [], coverage: null, oiCandles: EMPTY_OI_CANDLE_BUNDLE };
         }
         const envelope = await fetchSeriesHistoryFromBrowser(buildKey(seriesKeyId), seed.historyBaseUrl);
-        return { rows: envelope.rows, coverage: envelope.panel.coverage };
+        return { rows: envelope.rows, coverage: envelope.panel.coverage, oiCandles: oiCandleBundleOf(envelope.oi_candles) };
       };
 
       try {
@@ -306,6 +315,8 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
           liquidationLong: mergeAndTrim(liquidationLong.rows, currentRows.liquidationLong),
           liquidationShort: mergeAndTrim(liquidationShort.rows, currentRows.liquidationShort),
           longShort: mergeAndTrim(longShort.rows, currentRows.longShort),
+          // `T-03.11` — the OI candles ride the SAME fetch as `oi` and follow the same merge-then-trim.
+          oiCandles: trimOiCandlesToWindow(mergeOlderOiCandles(oi.oiCandles, currentRows.oiCandles), widened),
         };
         // `T-05.7`/`D-C3.7` — the walls THIS page's ten envelopes just declared, replacing
         // whatever this pager previously knew for each series (the wire's own store only ever
@@ -418,6 +429,7 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
         liquidationLong: trim(current.liquidationLong),
         liquidationShort: trim(current.liquidationShort),
         longShort: trim(current.longShort),
+        oiCandles: trimOiCandlesToWindow(current.oiCandles, capped),
       };
       windowRef.current = capped;
       rowsRef.current = nextRows;

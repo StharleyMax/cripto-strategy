@@ -34,6 +34,7 @@ import type { FlowReading } from "../../charts/index.ts";
  * technique `view-model.ts`'s own `ScalarSlotShape`/`RawCandleShape` already use against
  * `S2Panels`. */
 type PriceUse = S2RawInputs["priceUse"];
+import { oiCandlePaneData, type OiCandleBundle, type OiCandlePaneData } from "./oi-candle-pane.ts";
 import type { FreshnessVerdict, SeriesValueStats } from "./panel-status.ts";
 import type { SeriesHistoryRow } from "./series-history-envelope.ts";
 import {
@@ -71,6 +72,10 @@ export interface HistoryRowsBundle {
   readonly liquidationLong: readonly SeriesHistoryRow[];
   readonly liquidationShort: readonly SeriesHistoryRow[];
   readonly longShort: readonly SeriesHistoryRow[];
+  /** `T-03.11` — the `oi_candles` block of the OI fetch (`ADR-045/D2`), served BESIDE `rows.oi` by
+   * the same request: `oi` keeps feeding the pane's declared facts (native bars, freshness, the
+   * readable horizon), and these are what the pane DRAWS. */
+  readonly oiCandles: OiCandleBundle;
 }
 
 /** A half-open window, epoch ms — `S2Window` minus `.days` (`history-page-window.ts`'s own
@@ -155,6 +160,8 @@ export interface HistoryPageAssembly {
   readonly volume: DynamicVolumeFacts;
   readonly cvd: DynamicCvdFacts;
   readonly oi: DynamicOiFacts;
+  /** `T-03.11` — the OI candles on the window's canonical grid (`oi-candle-pane.ts`). */
+  readonly oiCandles: OiCandlePaneData;
   readonly liquidationLong: DynamicLiquidationCohortFacts;
   readonly liquidationShort: DynamicLiquidationCohortFacts;
   readonly longShort: DynamicLongShortFacts;
@@ -270,5 +277,7 @@ export function assembleHistoryPage(
     reading: resolveFlowReadingOrAbsent(longShortSlots, context.windowEndMsInclusive),
   };
 
-  return { panels, priceCandles, volume, cvd, oi, liquidationLong, liquidationShort, longShort };
+  const oiCandles = oiCandlePaneData(rows.oiCandles, window);
+
+  return { panels, priceCandles, volume, cvd, oi, oiCandles, liquidationLong, liquidationShort, longShort };
 }

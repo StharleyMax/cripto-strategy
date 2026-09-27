@@ -187,6 +187,45 @@ export type SeriesRole = "primary" | "secondary" | "absence_mark" | "zero_mark";
 /** The series kinds `charts` renders (`ADR-003`: `charts` owns `kind`). */
 export type SeriesKind = "candlestick" | "line" | "histogram";
 
+/**
+ * `T-03.11` (plan `03` item `3b.4`, `RF-8`) — the kind of the series that draws each pane's DATA
+ * (its `primary` role). The OI pane is `candlestick` since this task: one candle of contracts per
+ * bucket, green when `close > open`, red when `close < open` (`RF-9`), fed by the `oi_candles` the
+ * route serves (`ADR-045/D2`). It was `line` from `T-02.4` until here.
+ *
+ * `SymbolClient.tsx`'s `OiPane` mounts the kind it reads HERE (`oiPaneSeriesKind`), so "o pane `oi`
+ * passa de `line` para `candlestick` no registry" is this one value, and the ablation of `DoD-6`
+ * (*"ao trocar a fonte do pane de volta para `line`, o candle some"*) is the same value flipped.
+ * The other four panes mount their kind in their own component (phase `01` wiring); their entries
+ * here are the DECLARATION the registry fixture validates, not a switch.
+ */
+export const F1_PANE_DATA_KIND: Readonly<Record<PaneId, SeriesKind>> = {
+  price: "candlestick",
+  liquidation: "histogram",
+  oi: "candlestick",
+  long_short: "line",
+  cvd: "line",
+};
+
+/** The two kinds the OI pane can be mounted as. */
+export type OiPaneSeriesKind = Extract<SeriesKind, "candlestick" | "line">;
+
+/**
+ * The kind the OI pane mounts: the registry's, or `line` under the e2e ablation (`?e2eOiLine=1`,
+ * `DoD-6`). Throws when the registry names a kind the pane has no feed for — a `histogram` of open
+ * interest would need the absence/zero marks of invariant (iii), which the pane does not build.
+ */
+export function oiPaneSeriesKind(lineAblation: boolean, registry: Readonly<Record<PaneId, SeriesKind>> = F1_PANE_DATA_KIND): OiPaneSeriesKind {
+  if (lineAblation) {
+    return "line";
+  }
+  const kind = registry.oi;
+  if (kind !== "candlestick" && kind !== "line") {
+    throw new PaneRegistryError(`the OI pane has no feed for kind ${kind}`);
+  }
+  return kind;
+}
+
 export interface PaneSeriesSpec {
   readonly role: SeriesRole;
   /** `sha256` of the `SeriesKey`, taken from the served catalog — never a literal. A mark
