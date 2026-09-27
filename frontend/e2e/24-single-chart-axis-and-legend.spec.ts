@@ -598,7 +598,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
   // production data the design review used.
   //   MF-1  every pane's `right` scale mode, READ BACK from the library (`data-right-scale-mode`):
   //         all `normal` — since `T-04.2` the liquidation bars hang on their own NAMED scales, read back
-  //         in `data-liquidation-bar-scales` (both logarithmic, the lower one inverted). Bites:
+  //         in `data-liquidation-bar-scales` (both linear since `T-04.4`, the lower one inverted). Bites:
   //         removing `createPanesBeforeSeries` from the host (OI, long/short and CVD come back
   //         `logarithmic`).
   //   MF-2  the price-axis cell beside the liquidation pane carries NO axis-text ink, while the OI
@@ -624,8 +624,9 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
     });
     const liquidationScales = await page.locator('[data-testid="liquidation-pane"]').getAttribute("data-liquidation-bar-scales");
     fact(SPEC, "t0111fix_liquidation_bar_scales", liquidationScales);
-    expect(liquidationScales, "a liquidação perdeu o log ou a inversão da perna de baixo").toBe(
-      "up:upright:logarithmic;down:inverted:logarithmic",
+    // `T-04.4` (`gates/T-04.4-design-gate.md` §5.1): the decided form is linear.
+    expect(liquidationScales, "a liquidação perdeu a escala linear ou a inversão da perna de baixo").toBe(
+      "up:upright:normal;down:inverted:normal",
     );
 
     const axisInk = await page.evaluate(
@@ -663,7 +664,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
     }
     for (const leg of ["liquidation-pane"]) {
       expect(ink[leg]!.canvases, `${leg}: nenhum canvas na célula do eixo`).toBeGreaterThan(0);
-      expect(ink[leg]!.textInk, `MF-2 ${leg}: o eixo log da liquidação rotula (número fora da ordem de grandeza)`).toBe(0);
+      expect(ink[leg]!.textInk, `MF-2 ${leg}: o eixo da liquidação rotula (número falso: USD negativo na metade de baixo)`).toBe(0);
     }
 
     const attribution = await page.evaluate((hostTestId) => {

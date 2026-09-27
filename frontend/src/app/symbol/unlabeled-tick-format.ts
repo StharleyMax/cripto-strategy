@@ -16,8 +16,12 @@
  *
  * ── WHAT THIS DOES, AND WHAT IT KEEPS ────────────────────────────────────────────────────────
  *
- * The axis draws NO tick label for this scale, which is what the pane already said about itself
- * (`LiquidationScaleNote`: the height is an order of magnitude, "não uma diferença absoluta"), and the
+ * ⚠️ `T-04.4` made the bar scale LINEAR (`gates/T-04.4-design-gate.md` §5). The labels would still be
+ * false, by another road: the ticks cover the whole pane, so the upper leg's scale would label the
+ * lower half with NEGATIVE USD — a signed number the pane never carries (`RN-3`). The format stays.
+ *
+ * The axis draws NO tick label for this scale, which is what the pane says about itself (the scale is
+ * declared in words in the legend, `data-fact="liquidation_scale:linear"`), and the
  * alternative the design review names (*"o eixo não rotula. O que não pode ficar é um número falso"*).
  * The crosshair label keeps the real value under the pointer (`formatter`, two decimals — the
  * library's own default `priceFormat` precision), and the legend keeps the reading. Nothing about the

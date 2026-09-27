@@ -19,7 +19,6 @@ import { JSDOM } from "jsdom";
 import { flushFrames, installGlobals } from "./headless-chart.ts";
 import {
   LIQUIDATION_INVERTED_SIDE,
-  LIQUIDATION_PANE_FORM_PROPOSAL,
   LIQUIDATION_SCALE_IDS,
   LiquidationPaneError,
   assertValidLiquidationPaneForm,
@@ -37,6 +36,22 @@ import {
 } from "./liquidation-pane-geometry.ts";
 import { LEGEND_GAP_PX, SEPARATOR_CLEARANCE_PX } from "./pane-stack-layout.ts";
 import type { ScalarSlot } from "./s2-scalar-grid.ts";
+
+// ── The form these geometry checks run on ──────────────────────────────────────────────────
+//
+// LOCAL on purpose (`T-04.4`, gate §5.1: "apagá-la e dar aos testes de charts uma forma local"). The
+// decided form is `web`'s (`app/symbol/liquidation-pane-form.ts`) and `charts` may not import `web`
+// (`ADR-003`). It is a copy of the decided values so the pixel checks below measure the geometry the
+// app draws; `app/symbol/liquidation-pane-form.test.ts` pins the web constant itself.
+
+const FORM: LiquidationPaneForm = {
+  mode: "normal",
+  zeroLine: 0.5,
+  up: { marks: { top: 0, bottom: 0.06 }, barsTop: 0.09 },
+  down: { barsBottom: 0.91, marks: { top: 0.94, bottom: 1 } },
+  absenceMarkPx: 2,
+  zeroMarkPx: 6,
+};
 
 // ── Synthetic legs ───────────────────────────────────────────────────────────────────────────
 //
@@ -104,12 +119,12 @@ function asLayout(layout: LiquidationPaneLayout): Extract<LiquidationPaneLayout,
 
 // ── Pure: the form and the layout ────────────────────────────────────────────────────────────
 
-test("the proposal is a valid form, and the two bar scales meet at ONE zero line for any legend height", () => {
-  assertValidLiquidationPaneForm(LIQUIDATION_PANE_FORM_PROPOSAL);
+test("the form is valid, and the two bar scales meet at ONE zero line for any legend height", () => {
+  assertValidLiquidationPaneForm(FORM);
   let measured = 0;
   for (const paneHeightPx of [72, 104, 131, 217]) {
     for (const legendBottomPx of [0, 12, 20, 36]) {
-      const layout = asLayout(liquidationPaneLayout(LIQUIDATION_PANE_FORM_PROPOSAL, { paneHeightPx, legendBottomPx }));
+      const layout = asLayout(liquidationPaneLayout(FORM, { paneHeightPx, legendBottomPx }));
       const up = layout.sides.up.bars.scaleMargins;
       const down = layout.sides.down.bars.scaleMargins;
       const upFloorPx = paneHeightPx * (1 - up.bottom);
@@ -128,7 +143,7 @@ test("the proposal is a valid form, and the two bar scales meet at ONE zero line
 test("the lower side is inverted on BOTH its scales, the upper on neither; one mode for both bar scales", () => {
   assert.deepEqual(LIQUIDATION_INVERTED_SIDE, { up: false, down: true });
   for (const mode of ["normal", "logarithmic"] as const) {
-    const layout = asLayout(liquidationPaneLayout({ ...LIQUIDATION_PANE_FORM_PROPOSAL, mode }, { paneHeightPx: 104, legendBottomPx: 20 }));
+    const layout = asLayout(liquidationPaneLayout({ ...FORM, mode }, { paneHeightPx: 104, legendBottomPx: 20 }));
     assert.equal(layout.sides.up.bars.invertScale, false);
     assert.equal(layout.sides.up.marks.invertScale, false);
     assert.equal(layout.sides.down.bars.invertScale, true);
@@ -145,7 +160,7 @@ test("the lower side is inverted on BOTH its scales, the upper on neither; one m
 
 test("each leg's mark band is on its OWN side and disjoint from its bars, in pixels of the applied margins", () => {
   const paneHeightPx = 104;
-  const layout = asLayout(liquidationPaneLayout(LIQUIDATION_PANE_FORM_PROPOSAL, { paneHeightPx, legendBottomPx: 20 }));
+  const layout = asLayout(liquidationPaneLayout(FORM, { paneHeightPx, legendBottomPx: 20 }));
   const px = (margins: { top: number; bottom: number }) => ({ top: paneHeightPx * margins.top, bottom: paneHeightPx * (1 - margins.bottom) });
   const upMarks = px(layout.sides.up.marks.scaleMargins);
   const upBars = px(layout.sides.up.bars.scaleMargins);
@@ -160,13 +175,13 @@ test("each leg's mark band is on its OWN side and disjoint from its bars, in pix
 });
 
 test("MORDE: a form that puts a mark band inside the bars, or on the other leg's side, is refused", () => {
-  const base = LIQUIDATION_PANE_FORM_PROPOSAL;
+  const base = FORM;
   const refused: readonly [string, LiquidationPaneForm][] = [
     ["upper marks overlap the upper bars", { ...base, up: { ...base.up, marks: { top: 0, bottom: 0.2 } } }],
     ["lower marks overlap the lower bars", { ...base, down: { ...base.down, marks: { top: 0.8, bottom: 1 } } }],
     ["upper marks glued to the zero line (the T-04.0 §3.1 collision)", { ...base, up: { marks: { top: 0.44, bottom: 0.5 }, barsTop: 0.1 } }],
     ["lower marks on the upper side", { ...base, down: { barsBottom: 0.84, marks: { top: 0.2, bottom: 0.3 } } }],
-    ["zero line outside the bars", { ...base, zeroLine: 0.9 }],
+    ["zero line outside the bars", { ...base, zeroLine: 0.95 }],
     ["a band past the data area", { ...base, down: { ...base.down, marks: { top: 0.88, bottom: 1.2 } } }],
   ];
   for (const [name, form] of refused) {
@@ -176,7 +191,7 @@ test("MORDE: a form that puts a mark band inside the bars, or on the other leg's
 });
 
 test("unmeasured before the first frame, collapsed with no data area, overflow when the legend is too tall", () => {
-  const form = LIQUIDATION_PANE_FORM_PROPOSAL;
+  const form = FORM;
   assert.equal(liquidationPaneLayout(form, { paneHeightPx: 0, legendBottomPx: 10 }).kind, "unmeasured");
   assert.equal(liquidationPaneLayout(form, { paneHeightPx: 104, legendBottomPx: null }).kind, "unmeasured");
   assert.equal(liquidationPaneLayout(form, { paneHeightPx: 3, legendBottomPx: 0 }).kind, "collapsed");
@@ -351,7 +366,7 @@ async function renderPane(options: RenderOptions): Promise<Render> {
   await flushFrames(dom, 2);
   const paneHeightPx = chart.panes()[0]!.getHeight();
   assert.ok(paneHeightPx > 0, "pane not laid out");
-  const layout = asLayout(liquidationPaneLayout({ ...LIQUIDATION_PANE_FORM_PROPOSAL, mode: options.mode }, { paneHeightPx, legendBottomPx: LEGEND_BOTTOM_PX }));
+  const layout = asLayout(liquidationPaneLayout({ ...FORM, mode: options.mode }, { paneHeightPx, legendBottomPx: LEGEND_BOTTOM_PX }));
   const markValues = {
     up: { absence: (layout.sides.up.markBand as { absenceMarkValue: number }).absenceMarkValue, zero: (layout.sides.up.markBand as { zeroMarkValue: number }).zeroMarkValue },
     down: { absence: (layout.sides.down.markBand as { absenceMarkValue: number }).absenceMarkValue, zero: (layout.sides.down.markBand as { zeroMarkValue: number }).zeroMarkValue },

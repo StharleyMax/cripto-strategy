@@ -23,9 +23,12 @@
  *     the same height in both legs (`C-3` of `gates/DESIGN-LAYOUT-ux-critique-r2.md`).
  *
  * WHAT IT DOES NOT OWN (`ADR-003/FR-1`): colour, the bar shape (hollow/filled), the legend, the log
- * × linear choice (`[Q-DG-2]`, `T-04.4`) and the size of the two halves — those are FORM, `web`'s,
- * with the `design_gate`'s verdict. They enter as `LiquidationPaneForm`, and
- * `LIQUIDATION_PANE_FORM_PROPOSAL` below is a PROPOSAL submitted to that gate, not a decision.
+ * × linear choice (`[Q-DG-2]`) and the size of the two halves — those are FORM, `web`'s, with the
+ * `design_gate`'s verdict. They enter as `LiquidationPaneForm`. `T-04.4` decided them (linear, zero
+ * line fixed at `0,5`, marks `2`/`6` px in a `0,06` band — `gates/T-04.4-design-gate.md` §5, APPROVED
+ * in §9) and the decided form lives in `web`, `app/symbol/liquidation-pane-form.ts`, ONE place. The
+ * proposal this module carried until then (`LIQUIDATION_PANE_FORM_PROPOSAL`, log) was deleted rather
+ * than kept beside it: a `charts` constant saying log while the app draws linear is two truths.
  *
  * ── THE FOUR GUARANTEES, AND WHERE EACH ONE LIVES ─────────────────────────────────────────────
  *
@@ -63,11 +66,10 @@
  *     both bar series hang the same provider.
  *
  * ⚠️ LOG MODE AND A VALUE BELOW THE BASE. On a logarithmic scale the bars start at
- * `LIQUIDATION_LOG_BASE = 1` (an absolute anchor in USD, the same argument `SymbolClient.tsx` gives
- * today). A value in `(0, 1)` would draw from the zero line TOWARD THE OTHER LEG. Not guarded here,
- * and the reason is a number: the smallest positive value over BTCUSDT and ETHUSDT, both legs, 4 days
- * of 1m (`4 × 5.760` slots) is `2,67` USD `[MEDIDO 2026-09-26, GET /api/v1/series-history, T-04.1
- * builder report]`. If `[Q-DG-2]` keeps log, `T-04.6` is where a sub-base value would show.
+ * `LIQUIDATION_LOG_BASE = 1` (an absolute anchor in USD). A value in `(0, 1)` would draw from the zero
+ * line TOWARD THE OTHER LEG. Not guarded here, and since `T-04.4` it is not reachable from the app:
+ * the decided form is linear, whose base is `0` (`gates/T-04.4-design-gate.md` §4, argument 5). The
+ * log mode stays expressible because the e2e ablation of `T-04.4` and `e2e/31` draw it on purpose.
  *
  * `charts` imports nothing from `lightweight-charts` here: numbers in, numbers out. `web` maps
  * `mode` onto `PriceScaleMode` and hands the rest to `applyOptions`/`addSeries`.
@@ -166,21 +168,6 @@ export interface LiquidationPaneForm {
   readonly absenceMarkPx: number;
   readonly zeroMarkPx: number;
 }
-
-/**
- * ⚠️ A PROPOSAL, submitted to the `design_gate` with `T-04.4`/`T-04.7` — not a decision. It keeps
- * what phase `01` has today (log mode, marks `6`/`18` px, a gap between marks and bars of the same
- * order as the `0,85 < 0,88` of `SymbolClient.tsx`), splits the pane in two equal halves and puts
- * each leg's marks on its outer edge, which is the only legal place (guarantee (3) above).
- */
-export const LIQUIDATION_PANE_FORM_PROPOSAL: LiquidationPaneForm = {
-  mode: "logarithmic",
-  zeroLine: 0.5,
-  up: { marks: { top: 0, bottom: 0.12 }, barsTop: 0.16 },
-  down: { barsBottom: 0.84, marks: { top: 0.88, bottom: 1 } },
-  absenceMarkPx: 6,
-  zeroMarkPx: 18,
-};
 
 function assertFraction(name: string, value: number): void {
   if (!Number.isFinite(value) || value < 0 || value > 1) {

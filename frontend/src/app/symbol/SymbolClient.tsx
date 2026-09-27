@@ -92,8 +92,6 @@ import {
   formatHeldStockLabel,
   lastGridInstant,
   lineSeriesLossless,
-  LIQUIDATION_LOG_BASE,
-  LIQUIDATION_PANE_FORM_PROPOSAL,
   LIQUIDATION_SCALE_IDS,
   LIQUIDATION_SIDES,
   liquidationPaneFeeds,
@@ -129,6 +127,7 @@ import {
 } from "./chart-options.ts";
 import { createPanesBeforeSeries } from "./pane-scale-isolation.ts";
 import { unlabeledTickPriceFormat } from "./unlabeled-tick-format.ts";
+import { LIQUIDATION_PANE_FORM } from "./liquidation-pane-form.ts";
 import { recentBandSlotRange } from "./long-short-band.ts";
 import { AxisSyncProvider, useAxisSync } from "./axis-sync-provider.tsx";
 import { recordHistoryPageApplied, recordHistoryPageDrawn } from "./history-page-latency-probe.ts";
@@ -1713,12 +1712,25 @@ function liquidationCohortTestId(cohort: string): string {
 //
 // ⛔ WHAT THIS FILE OWNS is FORM (`ADR-003/FR-1`): the form handed to the layout, the inks, the words.
 
-/** The FORM of the fused pane — `web`'s, with the `design_gate`'s verdict. ⚠️ Today it IS `charts`'
- * proposal, unchanged (log mode, zero line at half, marks `6`/`18` px on each leg's outer edge):
- * log × linear and the size of the two halves are `[Q-DG-2]`, decided by the `design_gate` in
- * `T-04.4`. Changing it here is the whole change; `liquidationPaneLayout` refuses a form whose marks
- * would reach the bars or cross to the other leg's side (`assertValidLiquidationPaneForm`). */
-const LIQUIDATION_PANE_FORM: LiquidationPaneForm = LIQUIDATION_PANE_FORM_PROPOSAL;
+// The FORM of the fused pane is `web`'s, with the `design_gate`'s verdict: `LIQUIDATION_PANE_FORM`
+// (`liquidation-pane-form.ts`, `T-04.4`: linear, zero line fixed at half, marks `2`/`6` px —
+// `gates/T-04.4-design-gate.md` §5, APPROVED in §9). `liquidationPaneLayout` refuses a form whose marks
+// would reach the bars or cross to the other leg's side (`assertValidLiquidationPaneForm`).
+
+/** The e2e switch of the `T-04.4` ablation: the decided form drawn in `log10` instead of linear, and
+ * nothing else — the instrument of `e2e/34` has to REJECT that render (`F-1` of the gate: the peak
+ * stops being `>= 4x` the median). ⚠️ Canvas only: the scale declaration in the DOM keeps saying
+ * linear under the ablation, which is the point — the spec reads the pixels, not the copy. */
+const LIQUIDATION_LOG_ABLATION_QUERY_PARAM = "e2eLiquidationLogScale";
+
+/** The form the canvas draws: the decided one, or the ablation's log variant. On the server (no
+ * `window`) always the decided one — the mount that reads it only runs in the browser. */
+function liquidationPaneForm(): LiquidationPaneForm {
+  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get(LIQUIDATION_LOG_ABLATION_QUERY_PARAM) === "1") {
+    return { ...LIQUIDATION_PANE_FORM, mode: "logarithmic" };
+  }
+  return LIQUIDATION_PANE_FORM;
+}
 
 /** The e2e switch of the `CA-LIQ` ablation: the registry's two `scale_ref`s swapped. */
 const LIQUIDATION_SIDE_SWAP_QUERY_PARAM = "e2eSwapLiquidationSides";
@@ -2580,21 +2592,6 @@ function LiquidationProvenance({ provenance }: { readonly provenance: SeriesProv
   );
 }
 
-/** The label the `log10` scale demands, by the literal reason of phase `01`'s report: *"an unlabeled
- * logarithmic axis is worse than an illegible linear one"* — whoever reads a bar of twice the height
- * as twice the value is reading its square. The pane's scales draw no numeric label on the canvas,
- * so it can only exist here, in the DOM; and here it is text, it reaches a screen reader and it is
- * assertable. `T-04.2`: rendered only while the form's mode IS logarithmic (`[Q-DG-2]`, `T-04.4`) —
- * a label that outlived its scale would be the same lie in the other direction. */
-function LiquidationScaleNote() {
-  return (
-    <p data-fact="liquidation_scale:log10" className="text-sm text-provenance-weak">
-      Altura da barra em escala log10 (base {LIQUIDATION_LOG_BASE}) — cada degrau de altura é uma
-      ordem de grandeza, não uma diferença absoluta.
-    </p>
-  );
-}
-
 /** The THREE states of each leg, named in words — the third channel, for the same reason `CvdLegend`
  * and `VolumeMarksLegend` exist: inside the `<canvas>` no legend reaches, and a distinction that lives
  * only in pixels dies in a monochrome screenshot or in a screen reader. Here it travels in words, and
@@ -2624,7 +2621,7 @@ function LiquidationMarksLegend() {
           ▇
         </span>{" "}
         Liquidação — barra que parte da linha do zero: para cima a perna de cima, para baixo a de baixo, altura
-        em ordem de grandeza
+        proporcional ao valor em USD, na mesma escala nas duas pernas; o topo é a maior barra visível das duas
       </li>
     </ul>
   );
@@ -2635,13 +2632,20 @@ function LiquidationMarksLegend() {
  * it, and this short form keeps the eye able to decode the marks. `aria-hidden` because it is the
  * redundant copy of the full legend; the ink is `colorTokens()`'s, the same call the marks are drawn
  * with. `ausente` is the word the legend numeral uses for the same state (`MF-3`).
- * ⚠️ FORM — wording and placement are `T-04.3`'s (the legend of the fused pane). */
+ * ⚠️ FORM — wording and placement are `T-04.3`'s (the legend of the fused pane).
+ *
+ * ⛔ `T-04.4`: THE SCALE IS DECLARED HERE, WHICHEVER IT IS (the rule `T-02.2` fixed, gate §5.3), and
+ * without a line of its own: the `log10` note line is gone with the log (it cost 18 px of data area
+ * at 1m). The *"(o topo é a maior barra visível)"* half lives in the `sr-only` legend, because at
+ * 1024 px this `nowrap` line truncates exactly there `[MEDIDO: gate §5.3]`. The fact mirrors the
+ * volume's `volume_scale:linear`. */
 function LiquidationMarksKey() {
   const tokens = colorTokens();
   return (
     <p aria-hidden="true" data-liquidation-marks-key="" className="text-provenance-weak">
       <span style={{ color: tokens[LIQUIDATION_ABSENCE_MARK_COLOR_ROLE] }}>▁</span> ausente (não sabemos) ·{" "}
       <span style={{ color: tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE] }}>▃</span> zero do fornecedor (sabemos: foi zero)
+      <span data-fact="liquidation_scale:linear"> · altura linear, a mesma escala nas duas pernas</span>
     </p>
   );
 }
@@ -2787,15 +2791,18 @@ interface LiquidationSideMarks extends LiquidationMarkValues {
 /** The mark values a layout yields. A band too short to separate the two marks (`collapsed`) keeps
  * the form's nominal pair over a range of the zero mark's height: both still draw, at the band's
  * whole height and a third of it, and the distinction survives by height. */
-function liquidationMarksOf(layout: LiquidationLaidOut): Readonly<Record<LiquidationSide, LiquidationSideMarks>> {
+function liquidationMarksOf(
+  layout: LiquidationLaidOut,
+  form: LiquidationPaneForm,
+): Readonly<Record<LiquidationSide, LiquidationSideMarks>> {
   const of = (side: LiquidationSide): LiquidationSideMarks => {
     const band = layout.sides[side].markBand;
     return band.kind === "band"
       ? { absence: band.absenceMarkValue, zero: band.zeroMarkValue, rangeMax: band.priceRange.maxValue }
       : {
-          absence: LIQUIDATION_PANE_FORM.absenceMarkPx,
-          zero: LIQUIDATION_PANE_FORM.zeroMarkPx,
-          rangeMax: LIQUIDATION_PANE_FORM.zeroMarkPx,
+          absence: form.absenceMarkPx,
+          zero: form.zeroMarkPx,
+          rangeMax: form.zeroMarkPx,
         };
   };
   return { up: of("up"), down: of("down") };
@@ -2819,6 +2826,8 @@ type LiquidationRoleSeries = Readonly<Record<LiquidationFeedRole, ISeriesApi<"Hi
  * carry, the mark values last fed, and the shared-maximum provider of the current data. */
 interface LiquidationPaneHandles {
   readonly chart: IChartApi;
+  /** The form this mount draws — `LIQUIDATION_PANE_FORM`, or the ablation's log variant. */
+  readonly form: LiquidationPaneForm;
   readonly scaleRefs: Readonly<Record<LiquidationCohort, string>>;
   readonly sides: Readonly<Record<LiquidationCohort, LiquidationSide>>;
   readonly series: Readonly<Record<LiquidationSide, LiquidationRoleSeries>>;
@@ -2894,7 +2903,8 @@ function LiquidationPane({
     mount: (chart, paneIndex) => {
       const tokens = colorTokens();
       const mountedRefs = liquidationLegScaleRefs();
-      const initial = liquidationPaneLayout(LIQUIDATION_PANE_FORM, {
+      const form = liquidationPaneForm();
+      const initial = liquidationPaneLayout(form, {
         paneHeightPx: PANE_STACK.paneHeightsPx[paneIndex] ?? 0,
         legendBottomPx: 0,
       });
@@ -2903,7 +2913,7 @@ function LiquidationPane({
       }
       const live: LiquidationPaneHandles["live"] = {
         layout: initial,
-        marks: liquidationMarksOf(initial),
+        marks: liquidationMarksOf(initial, form),
         autoscale: () => null,
       };
       const addSide = (side: LiquidationSide): LiquidationRoleSeries => {
@@ -2939,9 +2949,19 @@ function LiquidationPane({
           zero_mark: mark(tokens[LIQUIDATION_ZERO_MARK_COLOR_ROLE]),
         };
       };
+      // ⛔ `T-04.4` V-3 (gate §9.4): THE ZERO LINE IS DRAWN, AND THIS ORDER IS WHAT DRAWS IT. The pane's
+      // horizontal grid follows the marks of its DEFAULT price scale, which — no series on `left` or
+      // `right` here — is the scale of the pane's FIRST data source (`lightweight-charts`
+      // `Pane.defaultPriceScale`, `dist/lightweight-charts.development.mjs:5457-5468`; `GridPaneView`
+      // reads `defaultPriceScale().marks()`, `:4155-4170`). Adding the UPPER bars first makes that the
+      // upper bar scale, linear from base `0`, whose marks include `0`: one grid line lands on the upper
+      // floor, i.e. on the zero line, in the reference ink (`gridLineColor`) and never over a bar of the
+      // other leg. With 72-89% of the bars on the 1 px floor, that line is the landmark the whole reading
+      // hangs on (gate §4, H1 argument 2), so it is PINNED by `e2e/34` (reference ink on the zero row in
+      // the columns with no bar, and the same instrument blind when the grid is removed).
       const series = { up: addSide("up"), down: addSide("down") };
       applyLiquidationScales(series, initial);
-      return { chart, scaleRefs: mountedRefs, sides: liquidationSidesOf(mountedRefs), series, live };
+      return { chart, form, scaleRefs: mountedRefs, sides: liquidationSidesOf(mountedRefs), series, live };
     },
     apply: (handles) => {
       const legs = (["short", "long"] as const).map((cohort) => ({
@@ -2952,7 +2972,7 @@ function LiquidationPane({
       const bySide = (side: LiquidationSide) => legs.find((leg) => handles.sides[leg.cohort] === side)!.slots;
       handles.live.autoscale = sharedMagnitudeAutoscale(
         [bySide("up"), bySide("down")],
-        LIQUIDATION_PANE_FORM.mode,
+        handles.form.mode,
         () => handles.chart.timeScale().getVisibleLogicalRange(),
       );
       // `liquidationPaneFeeds` throws on a value `< 0`, on two legs on one side, and on two grids.
@@ -2962,7 +2982,7 @@ function LiquidationPane({
       }));
     },
     layout: (handles, measure) => {
-      const layout = liquidationPaneLayout(LIQUIDATION_PANE_FORM, measure);
+      const layout = liquidationPaneLayout(handles.form, measure);
       if (layout.kind === "unmeasured") {
         return { reserveKind: "unmeasured", reservedTopPx: null, refeed: false, facts: {} };
       }
@@ -2970,7 +2990,7 @@ function LiquidationPane({
         return { reserveKind: "collapsed", reservedTopPx: null, refeed: false, facts: {} };
       }
       applyLiquidationScales(handles.series, layout);
-      const marks = liquidationMarksOf(layout);
+      const marks = liquidationMarksOf(layout, handles.form);
       const refeed = !sameLiquidationMarks(marks, handles.live.marks);
       handles.live.layout = layout;
       handles.live.marks = marks;
@@ -3007,12 +3027,6 @@ function LiquidationPane({
           {/* ⛔ STAYS VISIBLE (`RS-5`, `SPEC-007` §7): third-party data is never read without its label. */}
           <LiquidationProvenance provenance={liquidation.provenance} />
         </PaneLegendLine>
-        {LIQUIDATION_PANE_FORM.mode === "logarithmic" ? (
-          <PaneLegendLine>
-            {/* ⛔ STAYS VISIBLE (`BLOCKER-1`): the log10 is declared here or nowhere. */}
-            <LiquidationScaleNote />
-          </PaneLegendLine>
-        ) : null}
         {cohortsTopFirst.map((cohort) => (
           <LiquidationLegGroup
             key={cohort}

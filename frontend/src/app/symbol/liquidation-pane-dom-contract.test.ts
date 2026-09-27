@@ -41,7 +41,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { assertValidLiquidationPaneForm, LIQUIDATION_PANE_FORM_PROPOSAL } from "../../charts/index.ts";
+import { assertValidLiquidationPaneForm } from "../../charts/index.ts";
+import { LIQUIDATION_PANE_FORM } from "./liquidation-pane-form.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
@@ -77,11 +78,36 @@ const FEEDS_CALL = /return liquidationPaneFeeds\(legs, handles\.live\.marks\)\.m
 /** The refs are the REGISTRY's (or the ablation's swap of them), never a literal scale name here. */
 const REFS_FROM_REGISTRY = /: LIQUIDATION_LEG_SCALE_REF;/;
 /** The layout is `charts`', from the form `web` owns — at mount and on every measure. */
-const FORM_DECLARATION = /const LIQUIDATION_PANE_FORM: LiquidationPaneForm = LIQUIDATION_PANE_FORM_PROPOSAL;/;
-const LAYOUT_ON_MEASURE = /const layout = liquidationPaneLayout\(LIQUIDATION_PANE_FORM, measure\);/;
+/** `T-04.4`: the form is the ONE constant of `liquidation-pane-form.ts`, and the canvas draws it
+ * unless the e2e ablation's query asks for its log variant. */
+const FORM_DECLARATION = /import \{ LIQUIDATION_PANE_FORM \} from "\.\/liquidation-pane-form\.ts";/;
+const DEFAULT_FORM_RETURNED = /return \{ \.\.\.LIQUIDATION_PANE_FORM, mode: "logarithmic" \};\s*\}\s*return LIQUIDATION_PANE_FORM;\s*\}/;
+const ABLATION_GATED = /\.get\(LIQUIDATION_LOG_ABLATION_QUERY_PARAM\) === "1"\)/;
+const LAYOUT_ON_MEASURE = /const layout = liquidationPaneLayout\(handles\.form, measure\);/;
 const SCALES_APPLIED = /series\[side\]\.bars\.priceScale\(\)\.applyOptions\(\{\s*scaleMargins: bars\.scaleMargins,\s*invertScale: bars\.invertScale,\s*mode: liquidationPriceScaleMode\(bars\.mode\),/;
 const LOG_MAPPING = /mode === "logarithmic" \? PriceScaleMode\.Logarithmic : PriceScaleMode\.Normal/;
-const SCALE_NOTE_WHILE_LOG = /LIQUIDATION_PANE_FORM\.mode === "logarithmic" \? \(\s*<PaneLegendLine>\s*\{[^}]*\}\s*<LiquidationScaleNote \/>/;
+/** `T-04.4` (gate §5.3): the scale is declared in the VISIBLE key, as linear, with the fact. */
+const KEY_DECLARES_LINEAR = /<span data-fact="liquidation_scale:linear"> · altura linear, a mesma escala nas duas pernas<\/span>/;
+const SR_ONLY_DECLARES_LINEAR = /altura\s+proporcional ao valor em USD, na mesma escala nas duas pernas; o topo é a maior barra visível das duas/;
+/** Where the scale copy lives: the visible key and the `sr-only` legend, each up to its closing brace. */
+function functionBody(text: string, name: string): string {
+  const start = text.indexOf(`function ${name}()`);
+  if (start < 0) return "";
+  const end = text.indexOf("\n}\n", start);
+  return end < 0 ? "" : text.slice(start, end);
+}
+/** No copy of the pane may still speak log: a label that outlived its scale is the lie `T-02.2` §5.6
+ * names (copy nobody pins keeps lying and nothing fails). */
+function scaleCopyIsLinearOnly(text: string): boolean {
+  const copy = functionBody(text, "LiquidationMarksKey") + functionBody(text, "LiquidationMarksLegend");
+  return (
+    copy.length > 0 &&
+    KEY_DECLARES_LINEAR.test(copy) &&
+    SR_ONLY_DECLARES_LINEAR.test(copy) &&
+    !/ordem de grandeza|log10/.test(copy) &&
+    !/liquidation_scale:log10|LiquidationScaleNote/.test(text)
+  );
+}
 /** `C-3`: ONE provider for both bar series, rebuilt from the current data on every apply. */
 const SHARED_AUTOSCALE_HUNG = /autoscaleInfoProvider: \(\) => live\.autoscale\(\),/;
 const SHARED_AUTOSCALE_BUILT = /handles\.live\.autoscale = sharedMagnitudeAutoscale\(\s*\[bySide\("up"\), bySide\("down"\)\],/;
@@ -186,29 +212,33 @@ test("T-04.2 / RN-4: BOTH legs go to charts' feed builder, each with its own slo
     assert.match(role, /^provenance(Strong|Weak)$/, `the mark uses the role ${role}, outside the provenance ramp`);
   }
   // Height is the second channel, and the form carries it (`markBandGeometry` refuses zero <= absence).
-  assert.ok(LIQUIDATION_PANE_FORM_PROPOSAL.zeroMarkPx > LIQUIDATION_PANE_FORM_PROPOSAL.absenceMarkPx);
+  assert.ok(LIQUIDATION_PANE_FORM.zeroMarkPx > LIQUIDATION_PANE_FORM.absenceMarkPx);
   // And the third channel, in words — inside the `<canvas>` no legend reaches.
   assert.match(source, /data-fact="liquidation_marks_legend:3"/, "the three states must be named in text too");
 });
 
 test("T-04.2: the form is laid out by charts at mount AND on every measure, and applied with invertScale", () => {
-  assert.match(source, FORM_DECLARATION, "the pane's form must be declared once, as a LiquidationPaneForm");
-  assert.doesNotThrow(() => assertValidLiquidationPaneForm(LIQUIDATION_PANE_FORM_PROPOSAL));
+  assert.match(source, FORM_DECLARATION, "the pane's form must come from the ONE constant of liquidation-pane-form.ts");
+  assert.doesNotMatch(source, /const LIQUIDATION_PANE_FORM\b/, "a second form declared in the view is a second truth");
+  assert.doesNotThrow(() => assertValidLiquidationPaneForm(LIQUIDATION_PANE_FORM));
+  assert.match(source, DEFAULT_FORM_RETURNED, "without the ablation's query the canvas draws the decided form, unchanged");
+  assert.match(source, ABLATION_GATED, "the log variant is reachable only through the e2e query, set to 1");
   assert.match(source, LAYOUT_ON_MEASURE, "the layout must follow the MEASURED pane and legend");
-  assert.match(source, /const initial = liquidationPaneLayout\(LIQUIDATION_PANE_FORM, \{/, "and exist before the first feed");
+  assert.match(source, /const form = liquidationPaneForm\(\);\s*const initial = liquidationPaneLayout\(form, \{/, "and exist before the first feed");
   assert.match(source, SCALES_APPLIED, "the bar scales must receive the layout's margins, invertScale and mode");
   // The two marks of a side share ONE price scale id — one band per side, not two.
   assert.equal((source.match(/priceScaleId: ids\.marks,/g) ?? []).length, 1);
 });
 
-test("BLOCKER-1 reused: while the form is logarithmic the scale is applied as such AND declared on screen", () => {
-  // `max/p50 = 443,8x` on this series `[MEDIDO 2026-09-16, n=191 grades presentes em 4 dias]`. Log ×
-  // linear is `[Q-DG-2]` (`T-04.4`); what this file pins is that the label follows the mode.
-  assert.equal(LIQUIDATION_PANE_FORM_PROPOSAL.mode, "logarithmic");
-  assert.match(source, LOG_MAPPING, "the form's logarithmic mode must reach PriceScaleMode.Logarithmic");
-  assert.match(source, SCALE_NOTE_WHILE_LOG, "the log10 note must be rendered exactly while the form is logarithmic");
-  assert.match(source, /data-fact="liquidation_scale:log10"/, "the scale must be DECLARED on screen, not merely applied");
-  assert.match(source, /escala log10/, "the visible label must state the scale in words");
+test("T-04.4 / [Q-DG-2]: the form is linear, and the scale is declared on screen as linear — never as log", () => {
+  // `gates/T-04.4-design-gate.md` §5.1 (APPROVED in §9): linear, base 0; §5.3: the declaration moves
+  // into the key line (visible) and the sr-only legend, and nothing may still say "ordem de grandeza".
+  assert.equal(LIQUIDATION_PANE_FORM.mode, "normal", "the decided form is linear — a log form would make the declaration below lie");
+  assert.match(source, LOG_MAPPING, "the form's mode must still reach PriceScaleMode (the ablation draws log on purpose)");
+  assert.match(source, KEY_DECLARES_LINEAR, "the visible key must declare the linear scale, with the fact");
+  assert.match(source, SR_ONLY_DECLARES_LINEAR, "the sr-only legend must say what the height means");
+  assert.ok(scaleCopyIsLinearOnly(source), "a copy of the pane still speaks log10 / 'ordem de grandeza'");
+  assert.doesNotMatch(source, /escala log10/, "the log10 label outlived its scale");
 });
 
 test("C-3 and [Q-LIQ-2]: one shared maximum on both bar series, and the bar ink follows the side", () => {
@@ -308,7 +338,10 @@ const CLIENT_ASSERTS: readonly ((mutated: string) => boolean)[] = [
   (m) => LAYOUT_ON_MEASURE.test(m),
   (m) => SCALES_APPLIED.test(m),
   (m) => LOG_MAPPING.test(m),
-  (m) => SCALE_NOTE_WHILE_LOG.test(m),
+  (m) => scaleCopyIsLinearOnly(m),
+  (m) => FORM_DECLARATION.test(m),
+  (m) => DEFAULT_FORM_RETURNED.test(m),
+  (m) => ABLATION_GATED.test(m),
   (m) => SHARED_AUTOSCALE_HUNG.test(m),
   (m) => SHARED_AUTOSCALE_BUILT.test(m),
   (m) => BAR_INK_BY_SIDE.test(m),
@@ -316,7 +349,7 @@ const CLIENT_ASSERTS: readonly ((mutated: string) => boolean)[] = [
   (m) => PROVENANCE_RENDERED.test(m),
 ];
 
-test("MORDE: each of the 13 liquidation-pane mutations is caught by an assert above", () => {
+test("MORDE: each of the 19 liquidation-pane mutations is caught by an assert above", () => {
   const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
     { name: "pane testid renamed", mutate: (s) => s.replace(PANE_TESTID_DECLARATION, 'const LIQUIDATION_PANE_TESTID = "renamed";') },
     { name: "the per-cohort handle collapses into one string", mutate: (s) => s.replace(COHORT_TESTID_BUILDER, "return `liquidation-cohort`;") },
@@ -329,7 +362,14 @@ test("MORDE: each of the 13 liquidation-pane mutations is caught by an assert ab
     { name: "the long leg fed the short leg's slots", mutate: (s) => s.replace("slots: liquidation[cohort].slots,", 'slots: liquidation["short"].slots,') },
     { name: "a scale name spelled in the view", mutate: (s) => s.replace("scaleRef: handles.scaleRefs[cohort],", 'scaleRef: "liquidation_up",') },
     { name: "the invertScale of the layout is dropped", mutate: (s) => s.replace("invertScale: bars.invertScale,", "invertScale: false,") },
-    { name: "the bar scale goes back to linear, silently", mutate: (s) => s.replace(LOG_MAPPING, "mode === \"logarithmic\" ? PriceScaleMode.Normal : PriceScaleMode.Normal") },
+    { name: "the form's mode stops reaching the library (the log ablation would draw linear, silently)", mutate: (s) => s.replace(LOG_MAPPING, "mode === \"logarithmic\" ? PriceScaleMode.Normal : PriceScaleMode.Normal") },
+    // `T-04.4` — the scale declaration and the decided form.
+    { name: "the linear declaration removed from the visible key", mutate: (s) => s.replace(KEY_DECLARES_LINEAR, "") },
+    { name: "the sr-only legend back to 'altura em ordem de grandeza'", mutate: (s) => s.replace(SR_ONLY_DECLARES_LINEAR, "altura em ordem de grandeza") },
+    { name: "the log10 note comes back beside the linear key", mutate: (s) => s.replace("<LiquidationMarksKey />", '<p data-fact="liquidation_scale:log10">Altura em escala log10</p>\n          <LiquidationMarksKey />') },
+    { name: "the canvas always draws the log variant", mutate: (s) => s.replace(/return LIQUIDATION_PANE_FORM;\s*\}/, 'return { ...LIQUIDATION_PANE_FORM, mode: "logarithmic" };\n}') },
+    { name: "the ablation fires without its query", mutate: (s) => s.replace(ABLATION_GATED, ".get(LIQUIDATION_LOG_ABLATION_QUERY_PARAM) !== \"0\")") },
+    { name: "a second form declared in the view", mutate: (s) => s.replace(FORM_DECLARATION, "const LIQUIDATION_PANE_FORM: LiquidationPaneForm = { ...BASE_FORM };") },
     { name: "each bar series autoscales on its own (C-3)", mutate: (s) => s.replace(SHARED_AUTOSCALE_HUNG, "") },
     { name: "the ink bound to one token for both sides", mutate: (s) => s.replace(BAR_INK_USED, 'color: tokens["provenanceStrong"],') },
     { name: "both marks start using the SAME ink", mutate: (s) => s.replace(ZERO_ROLE, 'const LIQUIDATION_ZERO_MARK_COLOR_ROLE = "provenanceWeak" as const;') },

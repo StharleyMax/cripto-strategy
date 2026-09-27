@@ -396,6 +396,13 @@ recalibrado em 2026-09-22.
 > numa faixa própria abaixo da base (`docs/context/paineis-de-fluxo/gates/T-02.2-design-gate.md` §4 e §8, ciclo 2
 > **APPROVED**). A metade da **liquidação** não foi julgada ali e continua aberta, com o mesmo default. A linha acima
 > fica como estava.
+>
+> ✅ **NOTA 2026-09-27 — `[Q-DG-2]`, metade da liquidação respondida** (`T-04.4`): o `design_gate` escolheu a opção
+> **B** também para a liquidação: linear com base 0, zero **fixo** no meio do pane (H1), marcas de `2`/`6` px numa faixa
+> de `0,06` na borda de fora de cada perna, e peso `22` sem mudança
+> (`docs/context/paineis-de-fluxo/gates/T-04.4-design-gate.md` §4-§5; §9 **APPROVED** pelo `ux-ui-mastery`, com V-1 a
+> V-4). Com isso o default *"o de hoje"* não vale mais para nenhuma das duas metades. A forma vive em
+> `frontend/src/app/symbol/liquidation-pane-form.ts`. A linha da tabela fica como estava.
 
 ---
 

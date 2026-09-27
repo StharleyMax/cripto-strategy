@@ -5,6 +5,10 @@
  * `liquidationPaneLayout` / `liquidationPaneFeeds` / `sharedMagnitudeAutoscale` of `charts`, for the
  * design and for each ablation.
  *
+ * `T-04.4`: the form is the app's own (`LIQUIDATION_PANE_FORM`, linear — `gates/T-04.4-design-gate.md`
+ * §5), so `normal:design` IS what the app draws; the `logarithmic:*` charts keep the same form in log,
+ * as the comparison the gate measured (§2.2, row A) and to keep the geometry honest in both modes.
+ *
  * ⚠️ WHY A SEPARATE PROCESS: the same reason `e2e/sparse-feed-fixture.ts` gives — the barrel
  * re-exports the jsdom harness, and Playwright's loader cannot link jsdom's dependency chain.
  *
@@ -15,8 +19,8 @@
  * range is measured against the library in `src/charts/liquidation-pane-geometry.test.ts`.
  */
 
+import { LIQUIDATION_PANE_FORM } from "../src/app/symbol/liquidation-pane-form.ts";
 import {
-  LIQUIDATION_PANE_FORM_PROPOSAL,
   LIQUIDATION_SCALE_IDS,
   countNegativeFeedValues,
   liquidationPaneFeeds,
@@ -73,7 +77,7 @@ const paneHeightPx = Number(paneHeightArg);
 const legendBottomPx = Number(legendBottomArg);
 
 function chartFor(mode: LiquidationScaleMode, variant: Variant) {
-  const layout = liquidationPaneLayout({ ...LIQUIDATION_PANE_FORM_PROPOSAL, mode }, { paneHeightPx, legendBottomPx });
+  const layout = liquidationPaneLayout({ ...LIQUIDATION_PANE_FORM, mode }, { paneHeightPx, legendBottomPx });
   if (layout.kind !== "layout") {
     throw new Error(`layout is ${layout.kind} for a ${paneHeightPx} px pane`);
   }
