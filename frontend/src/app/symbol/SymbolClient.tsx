@@ -2459,6 +2459,17 @@ const OI_REGIME_LABEL_RESERVE_PX = 16;
  * floor `PLOT_TEXT_BACKDROP` (4,5:1 against the band AND the base) is the one it owes. */
 const OI_REGIME_LABEL_CLASS = "pointer-events-none absolute whitespace-nowrap font-label-caps text-label-caps text-provenance-weak";
 
+/** `T-03.14` (`MF-1`) — the `data-legend-bottom-px` the host's layout published on a layer root,
+ * or `null` while it is absent or empty (`Number("")` is `0`, which is exactly the pane's top). */
+function measuredLegendBottomPx(root: HTMLElement | null): number | null {
+  const raw = root?.dataset.legendBottomPx;
+  if (raw === undefined || raw.trim() === "") {
+    return null;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
 interface PlacedOiRegimeLabels {
   readonly placed: readonly PlacedOiRegimeLabel[];
   readonly topPx: number | null;
@@ -2581,7 +2592,8 @@ function OiPane({
   useHostedPane<OiPaneHandles>("oi", {
     mount: (chart, paneIndex) => {
       // `T-03.12`: the band and the rule are the pane's, whatever kind draws the candles.
-      const primitive = new OiRegimePanePrimitive(scheduleLabelPlacement);
+      // `T-03.14` (`MF-1`): band and rule start under the legend the host measured, never at y = 0.
+      const primitive = new OiRegimePanePrimitive(scheduleLabelPlacement, () => measuredLegendBottomPx(sectionRef.current));
       chart.panes()[paneIndex]?.attachPrimitive(primitive);
       primitive.setMarks(canvasMarks);
       primitiveRef.current = primitive;

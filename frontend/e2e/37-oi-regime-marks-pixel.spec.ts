@@ -297,12 +297,22 @@ interface CanvasRead {
   readonly ruleColumns: readonly number[];
   /** Candle ink (up/down) pixels inside each label's box. */
   readonly inkUnderLabels: readonly number[];
+  /** `T-03.14` (`MF-1`): bitmap rows of the legend block (`[0, data-legend-bottom-px)`) and the
+   * `provenanceWeak` (rule) and band-surface pixels found in them, over the pane's whole width
+   * (band pixels only inside a run of ≥ 3, see below). */
+  readonly legendRows: {
+    readonly rows: number;
+    readonly weak: number;
+    readonly band: number;
+    /** The first hits, `[x, y, r, g, b]` in bitmap px, so a red names where the ink is. */
+    readonly samples: readonly (readonly number[])[];
+  };
 }
 
 async function readCanvas(page: Page, inside: readonly [number, number], outside: readonly [number, number]): Promise<CanvasRead> {
   const tokens = colorTokens();
   return page.evaluate(
-    ({ testId, inside, outside, weak, up, down, tol, inkTol }) => {
+    ({ testId, inside, outside, weak, up, down, band, tol, bandTol, inkTol }) => {
       const layer = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
       const canvases = Array.from(layer.parentElement?.children ?? []).filter((c): c is HTMLCanvasElement => c instanceof HTMLCanvasElement);
       const main = canvases[0]!;
@@ -351,7 +361,22 @@ async function readCanvas(page: Page, inside: readonly [number, number], outside
           }
         return ink;
       });
-      return { modeIn: mode(inside), modeOut: mode(outside), ruleColumns, inkUnderLabels };
+      const legendRowCount = Math.min(main.height, Math.ceil(Number(layer.dataset.legendBottomPx ?? "0") * sy));
+      const legendRows = { rows: legendRowCount, weak: 0, band: 0, samples: [] as number[][] };
+      // A band pixel counts only inside a horizontal run of ≥ 3 (the band is a solid fill): an isolated
+      // pixel where two grid lines cross blends to within `TOL` of the band surface — measured on the
+      // fixed render: 6 such pixels, at the 3 vertical grid lines × the 2 horizontal ones in the rows.
+      const bandAt = (x: number, y: number) => x >= 0 && x < main.width && isNear(px(x, y), band, bandTol);
+      for (let y = 0; y < legendRowCount; y += 1)
+        for (let x = 0; x < main.width; x += 1) {
+          const p = px(x, y);
+          const isWeak = isNear(p, weak, tol);
+          const isBand = bandAt(x - 1, y) && bandAt(x, y) && bandAt(x + 1, y);
+          if (isWeak) legendRows.weak += 1;
+          if (isBand) legendRows.band += 1;
+          if ((isWeak || isBand) && legendRows.samples.length < 12) legendRows.samples.push([x, y, p[0], p[1], p[2]]);
+        }
+      return { modeIn: mode(inside), modeOut: mode(outside), ruleColumns, inkUnderLabels, legendRows };
     },
     {
       testId: OI_PANE_TESTID,
@@ -360,7 +385,9 @@ async function readCanvas(page: Page, inside: readonly [number, number], outside
       weak: hexToRgb(tokens.provenanceWeak),
       up: hexToRgb(tokens.directionUpFill),
       down: hexToRgb(tokens.directionDownFill),
+      band: hexToRgb(OI_REGIME_BAND_SURFACE),
       tol: 6,
+      bandTol: TOL,
       inkTol: INK_TOLERANCE,
     },
   );
@@ -470,6 +497,11 @@ test.describe(`T-03.12: marcas de regime do pane de OI (faixa, regra, rótulo, H
         `RM-3: nenhuma coluna de regra perto de x=${x.toFixed(1)} (${new Date(atMs).toISOString()})`,
       ).toBe(true);
     }
+    // RM-3b (`T-03.14` `MF-1`) — neither the rule nor the band inks the legend's rows: painted from
+    // y = 0, the rule struck through the legend text (5/5 scenes, 38/38 rows) and the band sat behind it.
+    expect(design.legendRows.rows, "RM-3b: a legenda não foi medida — a checagem abaixo seria vazia").toBeGreaterThan(0);
+    expect(design.legendRows.weak, `RM-3b: tinta de regra (provenanceWeak) nas ${design.legendRows.rows} linhas da legenda: ${JSON.stringify(design.legendRows.samples)}`).toBe(0);
+    expect(design.legendRows.band, `RM-3b: fundo de faixa nas ${design.legendRows.rows} linhas da legenda: ${JSON.stringify(design.legendRows.samples)}`).toBe(0);
     // RM-4 — the labels: both regimes on screen, so both named; inside the reserved strip; no ink under.
     const labels = await page.evaluate((testId) => {
       const layer = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
