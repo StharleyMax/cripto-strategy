@@ -1,0 +1,555 @@
+{
+ "BTCUSDT:1m": {
+  "contract": {
+   "rules": 1,
+   "rule_at": [
+    "09-26T03:00Z"
+   ],
+   "bands": 2,
+   "bands_at": [
+    "(09-24T23:55Z,09-25T02:50Z] n=35",
+    "(09-25T13:25Z,09-26T03:00Z] n=163"
+   ],
+   "inband_blank": 788,
+   "outband_blank": 1315
+  },
+  "abl_literal_s31": {
+   "rules": 0,
+   "bands": 2,
+   "inband_blank": 788,
+   "outband_blank": 1315
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 788,
+   "outband_blank": 1315
+  },
+  "abl_band_crosses_gap": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 1423,
+   "outband_blank": 680
+  },
+  "abl_left_from_slot": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 784,
+   "outband_blank": 1319
+  },
+  "abl_band_per_candle": {
+   "rules": 1,
+   "bands": 198,
+   "inband_blank": 0,
+   "outband_blank": 2103
+  }
+ },
+ "BTCUSDT:5m": {
+  "contract": {
+   "rules": 1,
+   "rule_at": [
+    "09-26T03:05Z"
+   ],
+   "bands": 2,
+   "bands_at": [
+    "(09-24T23:55Z,09-25T02:50Z] n=35",
+    "(09-25T13:25Z,09-26T03:05Z] n=164"
+   ],
+   "inband_blank": 0,
+   "outband_blank": 262
+  },
+  "abl_literal_s31": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 262
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 262
+  },
+  "abl_band_crosses_gap": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 127,
+   "outband_blank": 135
+  },
+  "abl_left_from_slot": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 262
+  },
+  "abl_band_per_candle": {
+   "rules": 1,
+   "bands": 199,
+   "inband_blank": 0,
+   "outband_blank": 262
+  }
+ },
+ "BTCUSDT:15m": {
+  "contract": {
+   "rules": 3,
+   "rule_at": [
+    "09-26T03:15Z",
+    "09-27T11:30Z",
+    "09-27T11:45Z"
+   ],
+   "bands": 3,
+   "bands_at": [
+    "(09-24T23:45Z,09-25T03:00Z] n=13",
+    "(09-25T13:15Z,09-26T03:15Z] n=56",
+    "(09-27T11:30Z,09-27T11:45Z] n=1"
+   ],
+   "inband_blank": 0,
+   "outband_blank": 85
+  },
+  "abl_literal_s31": {
+   "rules": 2,
+   "bands": 3,
+   "inband_blank": 0,
+   "outband_blank": 85
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 3,
+   "inband_blank": 0,
+   "outband_blank": 85
+  },
+  "abl_band_crosses_gap": {
+   "rules": 3,
+   "bands": 2,
+   "inband_blank": 41,
+   "outband_blank": 44
+  },
+  "abl_left_from_slot": {
+   "rules": 3,
+   "bands": 3,
+   "inband_blank": 0,
+   "outband_blank": 85
+  },
+  "abl_band_per_candle": {
+   "rules": 3,
+   "bands": 70,
+   "inband_blank": 0,
+   "outband_blank": 85
+  }
+ },
+ "ETHUSDT:1m": {
+  "contract": {
+   "rules": 1,
+   "rule_at": [
+    "09-26T02:55Z"
+   ],
+   "bands": 1,
+   "bands_at": [
+    "(09-25T05:35Z,09-26T02:55Z] n=256"
+   ],
+   "inband_blank": 1020,
+   "outband_blank": 685
+  },
+  "abl_literal_s31": {
+   "rules": 0,
+   "bands": 1,
+   "inband_blank": 1020,
+   "outband_blank": 685
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 1020,
+   "outband_blank": 685
+  },
+  "abl_band_crosses_gap": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 1020,
+   "outband_blank": 685
+  },
+  "abl_left_from_slot": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 1020,
+   "outband_blank": 685
+  },
+  "abl_band_per_candle": {
+   "rules": 1,
+   "bands": 256,
+   "inband_blank": 0,
+   "outband_blank": 1705
+  }
+ },
+ "ETHUSDT:5m": {
+  "contract": {
+   "rules": 1,
+   "rule_at": [
+    "09-26T02:55Z"
+   ],
+   "bands": 1,
+   "bands_at": [
+    "(09-25T05:35Z,09-26T02:55Z] n=256"
+   ],
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_literal_s31": {
+   "rules": 0,
+   "bands": 1,
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_band_crosses_gap": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_left_from_slot": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_band_per_candle": {
+   "rules": 1,
+   "bands": 256,
+   "inband_blank": 0,
+   "outband_blank": 137
+  }
+ },
+ "ETHUSDT:15m": {
+  "contract": {
+   "rules": 3,
+   "rule_at": [
+    "09-26T03:15Z",
+    "09-27T11:30Z",
+    "09-27T11:45Z"
+   ],
+   "bands": 2,
+   "bands_at": [
+    "(09-25T05:30Z,09-26T03:15Z] n=87",
+    "(09-27T11:30Z,09-27T11:45Z] n=1"
+   ],
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_literal_s31": {
+   "rules": 2,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_band_crosses_gap": {
+   "rules": 3,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_left_from_slot": {
+   "rules": 3,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_band_per_candle": {
+   "rules": 3,
+   "bands": 88,
+   "inband_blank": 0,
+   "outband_blank": 44
+  }
+ },
+ "LINKUSDT:1m": {
+  "contract": {
+   "rules": 1,
+   "rule_at": [
+    "09-26T02:55Z"
+   ],
+   "bands": 2,
+   "bands_at": [
+    "(09-25T10:50Z,09-25T12:00Z] n=14",
+    "(09-25T13:25Z,09-26T02:55Z] n=162"
+   ],
+   "inband_blank": 700,
+   "outband_blank": 770
+  },
+  "abl_literal_s31": {
+   "rules": 0,
+   "bands": 2,
+   "inband_blank": 700,
+   "outband_blank": 770
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 700,
+   "outband_blank": 770
+  },
+  "abl_band_crosses_gap": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 785,
+   "outband_blank": 685
+  },
+  "abl_left_from_slot": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 696,
+   "outband_blank": 774
+  },
+  "abl_band_per_candle": {
+   "rules": 1,
+   "bands": 176,
+   "inband_blank": 0,
+   "outband_blank": 1470
+  }
+ },
+ "LINKUSDT:5m": {
+  "contract": {
+   "rules": 1,
+   "rule_at": [
+    "09-26T02:55Z"
+   ],
+   "bands": 2,
+   "bands_at": [
+    "(09-25T10:50Z,09-25T12:00Z] n=14",
+    "(09-25T13:25Z,09-26T02:55Z] n=162"
+   ],
+   "inband_blank": 0,
+   "outband_blank": 154
+  },
+  "abl_literal_s31": {
+   "rules": 0,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 154
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 154
+  },
+  "abl_band_crosses_gap": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 17,
+   "outband_blank": 137
+  },
+  "abl_left_from_slot": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 154
+  },
+  "abl_band_per_candle": {
+   "rules": 1,
+   "bands": 176,
+   "inband_blank": 0,
+   "outband_blank": 154
+  }
+ },
+ "LINKUSDT:15m": {
+  "contract": {
+   "rules": 3,
+   "rule_at": [
+    "09-26T03:15Z",
+    "09-27T11:30Z",
+    "09-27T11:45Z"
+   ],
+   "bands": 3,
+   "bands_at": [
+    "(09-25T10:45Z,09-25T12:00Z] n=5",
+    "(09-25T13:15Z,09-26T03:15Z] n=56",
+    "(09-27T11:30Z,09-27T11:45Z] n=1"
+   ],
+   "inband_blank": 0,
+   "outband_blank": 49
+  },
+  "abl_literal_s31": {
+   "rules": 2,
+   "bands": 3,
+   "inband_blank": 0,
+   "outband_blank": 49
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 3,
+   "inband_blank": 0,
+   "outband_blank": 49
+  },
+  "abl_band_crosses_gap": {
+   "rules": 3,
+   "bands": 2,
+   "inband_blank": 5,
+   "outband_blank": 44
+  },
+  "abl_left_from_slot": {
+   "rules": 3,
+   "bands": 3,
+   "inband_blank": 0,
+   "outband_blank": 49
+  },
+  "abl_band_per_candle": {
+   "rules": 3,
+   "bands": 62,
+   "inband_blank": 0,
+   "outband_blank": 49
+  }
+ },
+ "SOLUSDT:1m": {
+  "contract": {
+   "rules": 1,
+   "rule_at": [
+    "09-26T02:55Z"
+   ],
+   "bands": 1,
+   "bands_at": [
+    "(09-25T13:25Z,09-26T02:55Z] n=162"
+   ],
+   "inband_blank": 644,
+   "outband_blank": 685
+  },
+  "abl_literal_s31": {
+   "rules": 0,
+   "bands": 1,
+   "inband_blank": 644,
+   "outband_blank": 685
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 644,
+   "outband_blank": 685
+  },
+  "abl_band_crosses_gap": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 644,
+   "outband_blank": 685
+  },
+  "abl_left_from_slot": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 644,
+   "outband_blank": 685
+  },
+  "abl_band_per_candle": {
+   "rules": 1,
+   "bands": 162,
+   "inband_blank": 0,
+   "outband_blank": 1329
+  }
+ },
+ "SOLUSDT:5m": {
+  "contract": {
+   "rules": 1,
+   "rule_at": [
+    "09-26T02:55Z"
+   ],
+   "bands": 1,
+   "bands_at": [
+    "(09-25T13:25Z,09-26T02:55Z] n=162"
+   ],
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_literal_s31": {
+   "rules": 0,
+   "bands": 1,
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_band_crosses_gap": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_left_from_slot": {
+   "rules": 1,
+   "bands": 1,
+   "inband_blank": 0,
+   "outband_blank": 137
+  },
+  "abl_band_per_candle": {
+   "rules": 1,
+   "bands": 162,
+   "inband_blank": 0,
+   "outband_blank": 137
+  }
+ },
+ "SOLUSDT:15m": {
+  "contract": {
+   "rules": 3,
+   "rule_at": [
+    "09-26T03:15Z",
+    "09-27T11:30Z",
+    "09-27T11:45Z"
+   ],
+   "bands": 2,
+   "bands_at": [
+    "(09-25T13:15Z,09-26T03:15Z] n=56",
+    "(09-27T11:30Z,09-27T11:45Z] n=1"
+   ],
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_literal_s31": {
+   "rules": 2,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_fixed_instant": {
+   "rules": 1,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_band_crosses_gap": {
+   "rules": 3,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_left_from_slot": {
+   "rules": 3,
+   "bands": 2,
+   "inband_blank": 0,
+   "outband_blank": 44
+  },
+  "abl_band_per_candle": {
+   "rules": 3,
+   "bands": 57,
+   "inband_blank": 0,
+   "outband_blank": 44
+  }
+ },
+ "_meta": {
+  "export": "md.series read-only, bucket_end>=1789603200000 (09-17), 38637 rows, 2026-09-27T16:32Z",
+  "served_via": "T-03.12-design-proxy.py.txt :8823",
+  "kt_ms": 1790524200000,
+  "window_start_ms": 1790294400000,
+  "cmd": "python3 T-03.12-design-r2-fetch.py.txt 1790524200000 1790294400000 served.json && python3 T-03.12-design-r2-regime-derive.py.txt served.json facts.json"
+ }
+}

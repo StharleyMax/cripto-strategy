@@ -1,0 +1,18 @@
+# Fetch served oi_candles through the read-only design proxy :8823 (same URL/find() as T-03.12-design-served.py.txt).
+import json, sys, urllib.request
+ids = {'BTCUSDT':'94c3d3dd5f45abcb801a53e4a8b52ea81ea2479a9cdd51d90cd2cb6895e1a4a9','ETHUSDT':'e627e6554365b490e3d35df47c8a7038b4b41d0724e41d73dcfc17fbac32741a',
+       'LINKUSDT':'6f4a8efae9e4a61b4ac469e9e6ecf3624ef43e0a65355005aed73e9cda7d8ff0','SOLUSDT':'e881ab713adbae083e92dfe0bf705e1a53aaa9b9952e9aca0cede876ce127f1b'}
+KT = int(sys.argv[1]); START = int(sys.argv[2]); out = {}
+def find(o):
+  if isinstance(o, dict):
+    if 'oi_candles' in o: return o['oi_candles']
+    for v in o.values():
+      r = find(v)
+      if r is not None: return r
+for sym, sid in ids.items():
+  for iv in ('1m','5m','15m'):
+    u = f'http://127.0.0.1:8823/api/v1/series-history?series_key_id={sid}&symbol={sym}&interval={iv}&window_start_ms={START}&window_end_ms={KT}&knowledge_time_ms={KT}&bar_policy=final_only'
+    out[f'{sym}:{iv}'] = find(json.load(urllib.request.urlopen(u, timeout=120)))
+json.dump(out, open(sys.argv[3], 'w'))
+print({k: len(v['candles']) for k, v in out.items()})
+print(json.dumps(out['BTCUSDT:15m']['sources']))
