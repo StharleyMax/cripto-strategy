@@ -45,6 +45,11 @@
  */
 
 import {
+  LIQUIDATION_SCALE_IDS,
+  liquidationSideOfScale,
+  type LiquidationSide,
+} from "../../charts/index.ts";
+import {
   buildSeriesLabel,
   type Nature,
   type SeriesCatalogEntry,
@@ -53,52 +58,40 @@ import {
 // ── Shape ───────────────────────────────────────────────────────────────────────────────
 
 /**
- * The stable, ASCII, English pane keys of phase `01` (`SPEC-009` §5). Phase `04` fuses the two
- * liquidation legs into one `liquidation` pane; until then they are two panes.
+ * The stable, ASCII, English pane keys (`SPEC-009` §5). Phase `01` had the two liquidation legs as
+ * two panes (`liquidation_long`, `liquidation_short`); `T-04.2` (plan `04` item `4.1`, the `web`
+ * half, `ADR-044/D4`) fuses them into ONE pane, `liquidation`: the `short` leg above the zero line,
+ * the `long` leg below it, each on the scale its `scale_ref` names (`LIQUIDATION_LEG_SCALE_REF`).
  */
-export type PaneId = "price" | "liquidation_long" | "liquidation_short" | "oi" | "long_short" | "cvd";
+export type PaneId = "price" | "liquidation" | "oi" | "long_short" | "cvd";
 
 /**
- * The top-to-bottom order of the six panes of phase `01`: price+volume · liquidations · OI ·
- * long/short · CVD (`SPEC-009` §5, `RF-1`, the same order the `design_gate`'s weights in
- * `handoff/DESIGN-LAYOUT.md` §6 name). The final value is the `design_gate`'s; this constant is
- * the one place it is written.
+ * The top-to-bottom order of the five panes: price+volume · liquidations · OI · long/short · CVD
+ * (`SPEC-009` §5, `RF-1`, the same order the `design_gate`'s weights in `handoff/DESIGN-LAYOUT.md`
+ * §6 name). The final value is the `design_gate`'s; this constant is the one place it is written.
  */
-export const F1_PANE_ORDER: readonly PaneId[] = [
-  "price",
-  "liquidation_long",
-  "liquidation_short",
-  "oi",
-  "long_short",
-  "cvd",
-];
+export const F1_PANE_ORDER: readonly PaneId[] = ["price", "liquidation", "oi", "long_short", "cvd"];
 
 /**
- * `T-01.6` — the relative height of each pane of phase `01`, handed to `setStretchFactor`
+ * `T-01.6` — the relative height of each pane, handed to `setStretchFactor`
  * (`handoff/DESIGN-LAYOUT.md` §6, row "altura"; `SPEC-009` §3).
  *
  * The `design_gate` approved **34 · 11 · 15 · 9 · 9 · 9 · 9** for SEVEN panes (price · liquidations ·
- * OI · L/S · funding · CVD delta · CVD cumulative). Phase `01` has SIX: funding is `NG-3` and the CVD
- * stays one pane (`NG-5`), and the liquidation is TWO panes until phase `04` fuses it (`R-2` of
- * `tasks_review.md`). `SPEC-009` §3: "os 6 panes da F1 recebem os pesos correspondentes,
- * renormalizados" — `setStretchFactor` is relative, so renormalizing is only the choice of which
- * weight each F1 pane corresponds to:
+ * OI · L/S · funding · CVD delta · CVD cumulative). Phase `01` had SIX: funding is `NG-3`, the CVD
+ * stays one pane (`NG-5`), and the liquidation was TWO panes of **11 each** until phase `04` (the
+ * floor argument of `T-01.6`: at 5,5 the lightest pane binds the 72px floor past the 1.024px
+ * viewport; at 11 it binds at `72 × 89 / 9 = 712px`).
  *
- *   - `liquidation_long` / `liquidation_short` → **11 each**, not 5,5. Not a taste: at 5,5 the
- *     lightest pane binds the 72px floor at a chart of `72 × 83,5 / 5,5 ≈ 1.093px` of panes, past the
- *     1.024px viewport the same gate asked the stack to fit without scrolling (§9 item 16(l)); at 11
- *     the floor binds at `72 × 89 / 9 = 712px`. The two approved constraints leave only this value.
+ *   - `liquidation` → **22**, the SUM of the two legs it replaces (`T-04.2`). ⚠️ `[INFERRED]`, and it
+ *     is a PROPOSAL: it is the only value that moves NO other pane by a pixel (`Σ = 89` before and
+ *     after, so every other pane's height and the floor arithmetic are unchanged) and keeps the
+ *     liquidation's total height. The size of the pane and of its two halves is `[Q-DG-2]`, the
+ *     `design_gate`'s, decided in `T-04.4` — changing a value here is the whole change.
  *   - `cvd` → **9**, the weight of a line pane (the floor was specified "por pane de linha").
- *
- * ⚠️ `[INFERRED]`, and it is a PROPOSAL: `R-2` says the renormalization is the `design_gate`'s, decided
- * in this task. A builder cannot dispatch the gate from inside a task (no nested agents); the
- * argument above is written so the `ui-designer` + `ux-ui-mastery` can accept or overturn it on the
- * screenshot of `T-01.11` without re-deriving it. Changing a value here is the whole change.
  */
 export const F1_PANE_STRETCH: Readonly<Record<PaneId, number>> = {
   price: 34,
-  liquidation_long: 11,
-  liquidation_short: 11,
+  liquidation: 22,
   oi: 15,
   long_short: 9,
   cvd: 9,
@@ -108,20 +101,83 @@ export const F1_PANE_STRETCH: Readonly<Record<PaneId, number>> = {
  * `T-01.6` — the `data-testid` of the ROOT of a pane's DOM layer, derived from its `pane_id`
  * (`SPEC-009` §3: "os `data-testid` atuais sobrevivem, derivados de `pane_id`, na raiz da camada").
  *
- * The rule is `<pane_id with "-" for "_">-pane`, which reproduces every testid the e2e suite already
- * reads (`price-pane`, `oi-pane`, `cvd-pane`, `long-short-pane`). The two liquidation legs are the
- * one exception, and it is inherited, not chosen: until phase `04` fuses them their layers are the
- * two cohort groups `e2e/13` has always read, `liquidation-cohort-<cohort>`.
+ * The rule is `<pane_id with "-" for "_">-pane`, which reproduces every testid the e2e suite reads
+ * (`price-pane`, `liquidation-pane`, `oi-pane`, `cvd-pane`, `long-short-pane`). Since `T-04.2` there is
+ * no exception: the fused liquidation pane's root is `liquidation-pane`, the handle `e2e/13` has
+ * always used for the pane, and the two cohort groups `liquidation-cohort-<cohort>` live INSIDE it.
  */
 export function paneLayerTestId(paneId: PaneId): string {
-  switch (paneId) {
-    case "liquidation_long":
-      return "liquidation-cohort-long";
-    case "liquidation_short":
-      return "liquidation-cohort-short";
-    default:
-      return `${paneId.replace(/_/g, "-")}-pane`;
+  return `${paneId.replace(/_/g, "-")}-pane`;
+}
+
+// ── The fused liquidation pane (`T-04.2`, `[Q-LIQ-2]`, `SPEC-009` §7.1) ──────────────────────
+
+/** The two cohorts `liquidation_catalog.py::COHORTS` publishes — closed, so a third leg cannot be
+ * born without a scale of its own. */
+export type LiquidationCohort = "long" | "short";
+
+/**
+ * Which scale each leg of the fused pane hangs on — the ONE place the cohort → side choice is
+ * written (`SPEC-009` §7.1: *"a mudança, se um dia for revertida, é uma troca de lado no registry (a
+ * inversão de `scale_ref` nas duas pernas)"*).
+ *
+ * `short` → the UPPER scale (normal), `long` → the LOWER scale (`invertScale: true`, `ADR-044/D4`):
+ * the Coinalyze convention, `[DECISÃO-OWNER: 2026-09-23, escolha entre alternativas apresentadas]`
+ * (`[Q-LIQ-2]`; the refused one was TradingView Markets). A short liquidation is forced BUYING, so
+ * it goes up, in the token of the rise; a long liquidation is forced SELLING, down, in the token of
+ * the fall (`RNF-3`: the same grammar as the candle).
+ *
+ * The values are the NAMES `charts` gives the scales (`LIQUIDATION_SCALE_IDS`), never a margin or a
+ * pixel (`ADR-003/FR-2`). The side, and with it the ink, follows the scale and nothing else.
+ */
+export const LIQUIDATION_LEG_SCALE_REF: Readonly<Record<LiquidationCohort, string>> = {
+  short: LIQUIDATION_SCALE_IDS.up.bars,
+  long: LIQUIDATION_SCALE_IDS.down.bars,
+};
+
+/** The registry's leg → scale map with the two `scale_ref`s swapped — the ablation `CA-LIQ` names
+ * (plan `04` DoD 2, *"Morde: trocar o `scale_ref` das duas pernas"*). Pure; production never calls
+ * it outside the e2e switch. */
+export function swappedLiquidationLegScaleRefs(
+  refs: Readonly<Record<LiquidationCohort, string>> = LIQUIDATION_LEG_SCALE_REF,
+): Readonly<Record<LiquidationCohort, string>> {
+  return { short: refs.long, long: refs.short };
+}
+
+/** The side (`up`/`down`) each cohort is drawn on, off its `scale_ref` alone. Throws when a ref is
+ * not a scale of the fused pane, or when both legs landed on the same side. */
+export function liquidationSidesOf(
+  refs: Readonly<Record<LiquidationCohort, string>>,
+): Readonly<Record<LiquidationCohort, LiquidationSide>> {
+  const sideOf = (cohort: LiquidationCohort): LiquidationSide => {
+    const side = liquidationSideOfScale(refs[cohort]);
+    if (side === null) {
+      throw new PaneRegistryError(`liquidation leg ${cohort} points at ${refs[cohort]}, not a scale of the liquidation pane`);
+    }
+    return side;
+  };
+  const sides = { short: sideOf("short"), long: sideOf("long") };
+  if (sides.short === sides.long) {
+    throw new PaneRegistryError(`both liquidation legs are on side ${sides.short}: one goes up, the other down`);
   }
+  return sides;
+}
+
+/** The cohorts ordered top first (the `up` leg, then the `down` one), from the `scale_ref`s. */
+export function liquidationCohortsTopFirst(
+  refs: Readonly<Record<LiquidationCohort, string>> = LIQUIDATION_LEG_SCALE_REF,
+): readonly LiquidationCohort[] {
+  const sides = liquidationSidesOf(refs);
+  return sides.short === "up" ? ["short", "long"] : ["long", "short"];
+}
+
+/** The marks scale on the same side as a leg's bars scale (`LIQUIDATION_SCALE_IDS`). */
+export function liquidationMarksScaleOf(barsScaleRef: string): string {
+  const side = liquidationSideOfScale(barsScaleRef);
+  if (side === null) {
+    throw new PaneRegistryError(`${barsScaleRef} is not a scale of the liquidation pane`);
+  }
+  return LIQUIDATION_SCALE_IDS[side].marks;
 }
 
 /** `primary`/`secondary` draw the DATA; the two marks draw the absence and the legitimate zero

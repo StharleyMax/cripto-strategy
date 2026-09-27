@@ -10,16 +10,27 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 // `ADR-034/D8`: this route reaches `charts` only through the barrel.
-import { absenceMarkSeries, lineSeriesLossless, zeroMarkSeries } from "../../charts/index.ts";
+import {
+  absenceMarkSeries,
+  LIQUIDATION_INVERTED_SIDE,
+  LIQUIDATION_SCALE_IDS,
+  lineSeriesLossless,
+  zeroMarkSeries,
+} from "../../charts/index.ts";
 import type { Nature, SeriesCatalogEntry, SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 import {
   F1_PANE_ORDER,
   F1_PANE_STRETCH,
+  LIQUIDATION_LEG_SCALE_REF,
   PaneRegistryError,
   assertValidPaneRegistry,
+  liquidationCohortsTopFirst,
+  liquidationMarksScaleOf,
+  liquidationSidesOf,
   paneIndexOf,
   paneLayerTestId,
   resolvePaneLegend,
+  swappedLiquidationLegScaleRefs,
   validatePaneRegistry,
   validateSetDataOnCanonicalGrid,
   type PaneId,
@@ -39,21 +50,59 @@ test("T-01.6: every pane's layer testid, derived from pane_id, is the literal Sy
   const source = readFileSync(fileURLToPath(new URL("./SymbolClient.tsx", import.meta.url)), "utf8");
   const rendered = new Set<string>();
   for (const match of source.matchAll(/const [A-Z_]+_PANE_TESTID = "([a-z-]+)";/g)) rendered.add(match[1] as string);
-  // The two liquidation cohorts are derived in SymbolClient.tsx too: `liquidation-cohort-${cohort}`.
-  assert.ok(source.includes("return `liquidation-cohort-${cohort}`;"), "the cohort testid derivation moved");
-  for (const cohort of ["long", "short"]) rendered.add(`liquidation-cohort-${cohort}`);
   for (const paneId of F1_PANE_ORDER) {
     const testId = paneLayerTestId(paneId);
     assert.ok(rendered.has(testId), `${paneId} → "${testId}" is not a testid SymbolClient.tsx renders`);
   }
   // MORDE: a derivation that forgets the `_` → `-` rule yields a testid nobody renders.
   assert.equal(rendered.has("long_short-pane"), false);
+  // `T-04.2`: the fused pane's root is `liquidation-pane` — the handle `e2e/13` has always used.
+  assert.equal(paneLayerTestId("liquidation"), "liquidation-pane");
 });
 
-test("T-01.6: F1_PANE_STRETCH weighs exactly the panes of F1_PANE_ORDER, all positive, both liquidation legs equal", () => {
+test("T-01.6: F1_PANE_STRETCH weighs exactly the panes of F1_PANE_ORDER, all positive", () => {
   assert.deepEqual(Object.keys(F1_PANE_STRETCH).sort(), [...F1_PANE_ORDER].sort());
   for (const paneId of F1_PANE_ORDER) assert.ok(F1_PANE_STRETCH[paneId] > 0, `${paneId} has no weight`);
-  assert.equal(F1_PANE_STRETCH.liquidation_long, F1_PANE_STRETCH.liquidation_short);
+});
+
+test("T-04.2: the fused liquidation pane weighs the SUM of the two legs it replaced, so no other pane moves", () => {
+  // Phase `01`: 34 · 11 · 11 · 15 · 9 · 9 (Σ 89). The fusion keeps Σ, so every other pane's share —
+  // and the 72px floor arithmetic, bound by the lightest weight (9) — is the same number as before.
+  const total = F1_PANE_ORDER.reduce((sum, paneId) => sum + F1_PANE_STRETCH[paneId], 0);
+  assert.equal(total, 89);
+  assert.equal(F1_PANE_STRETCH.liquidation, 22);
+  assert.equal(Math.min(...F1_PANE_ORDER.map((paneId) => F1_PANE_STRETCH[paneId])), 9);
+});
+
+// ── `T-04.2`: the cohort → side choice of the fused pane (`[Q-LIQ-2]`, `SPEC-009` §7.1) ───────────
+
+test("T-04.2: short hangs on the UPPER (normal) scale, long on the LOWER (inverted) one — Coinalyze", () => {
+  assert.deepEqual(LIQUIDATION_LEG_SCALE_REF, {
+    short: LIQUIDATION_SCALE_IDS.up.bars,
+    long: LIQUIDATION_SCALE_IDS.down.bars,
+  });
+  const sides = liquidationSidesOf(LIQUIDATION_LEG_SCALE_REF);
+  assert.deepEqual(sides, { short: "up", long: "down" });
+  assert.equal(LIQUIDATION_INVERTED_SIDE[sides.short], false);
+  assert.equal(LIQUIDATION_INVERTED_SIDE[sides.long], true, "the long leg descends by invertScale, never by a sign");
+  assert.deepEqual(liquidationCohortsTopFirst(), ["short", "long"]);
+  assert.equal(liquidationMarksScaleOf(LIQUIDATION_LEG_SCALE_REF.short), LIQUIDATION_SCALE_IDS.up.marks);
+  assert.equal(liquidationMarksScaleOf(LIQUIDATION_LEG_SCALE_REF.long), LIQUIDATION_SCALE_IDS.down.marks);
+});
+
+test("T-04.2 MORDE: swapping the two scale_refs (the ablation of CA-LIQ) swaps the legs across the zero", () => {
+  const swapped = swappedLiquidationLegScaleRefs();
+  assert.deepEqual(liquidationSidesOf(swapped), { short: "down", long: "up" });
+  assert.deepEqual(liquidationCohortsTopFirst(swapped), ["long", "short"]);
+  // Swapping twice is the registry again — the ablation changes the side and nothing else.
+  assert.deepEqual(swappedLiquidationLegScaleRefs(swapped), LIQUIDATION_LEG_SCALE_REF);
+});
+
+test("T-04.2: both legs on one side, or a ref that is not a scale of the pane, is refused", () => {
+  const up = LIQUIDATION_SCALE_IDS.up.bars;
+  assert.throws(() => liquidationSidesOf({ short: up, long: up }), PaneRegistryError);
+  assert.throws(() => liquidationSidesOf({ short: "right", long: LIQUIDATION_SCALE_IDS.down.bars }), PaneRegistryError);
+  assert.throws(() => liquidationMarksScaleOf("right"), PaneRegistryError);
 });
 
 // ── Catalog fixture: one entry per series the six panes of phase 01 draw ──────────────────
@@ -133,13 +182,12 @@ function validRegistry(): PaneRegistry {
       data("secondary", "volume", "histogram", "volume"),
       ...marks("volume", "volume_marks"),
     ]),
-    pane("liquidation_long", "liquidationLong", [
-      data("primary", "liquidationLong", "histogram", "right"),
-      ...marks("liquidationLong", "liquidation_marks"),
-    ]),
-    pane("liquidation_short", "liquidationShort", [
-      data("primary", "liquidationShort", "histogram", "right"),
-      ...marks("liquidationShort", "liquidation_marks"),
+    // `T-04.2`: ONE pane, two FLOW legs, each with ITS OWN pair on the marks scale of its own side.
+    pane("liquidation", "liquidationLong", [
+      data("primary", "liquidationShort", "histogram", LIQUIDATION_LEG_SCALE_REF.short),
+      ...marks("liquidationShort", liquidationMarksScaleOf(LIQUIDATION_LEG_SCALE_REF.short)),
+      data("primary", "liquidationLong", "histogram", LIQUIDATION_LEG_SCALE_REF.long),
+      ...marks("liquidationLong", liquidationMarksScaleOf(LIQUIDATION_LEG_SCALE_REF.long)),
     ]),
     pane("oi", "oi", [data("primary", "oi", "line", "right")]),
     pane("long_short", "longShort", [data("primary", "longShort", "line", "right")]),
@@ -168,8 +216,8 @@ test("a registry built from the catalog passes every invariant", () => {
   assert.doesNotThrow(() => assertValidPaneRegistry(validRegistry(), { catalog: CATALOG }));
 });
 
-test("the paneIndex is the position in the array, and the phase-01 order is the six English keys", () => {
-  assert.deepEqual(F1_PANE_ORDER, ["price", "liquidation_long", "liquidation_short", "oi", "long_short", "cvd"]);
+test("the paneIndex is the position in the array, and the order is the five English keys (T-04.2)", () => {
+  assert.deepEqual(F1_PANE_ORDER, ["price", "liquidation", "oi", "long_short", "cvd"]);
   for (const paneId of F1_PANE_ORDER) {
     assert.match(paneId, /^[a-z]+(?:_[a-z]+)*$/);
   }
@@ -191,7 +239,7 @@ test("(i) FAILS: a series pointing at an id the catalog does not serve", () => {
   }));
   const violations = validate(registry);
   assert.deepEqual(firedInvariants(violations), ["i", "iv"]); // the legend source is no longer drawn
-  assert.equal(violations.find((v) => v.invariant === "i")?.paneIndex, 3);
+  assert.equal(violations.find((v) => v.invariant === "i")?.paneIndex, 2);
 });
 
 test("(i) FAILS: the catalog stopped serving a series the registry draws", () => {
@@ -217,7 +265,7 @@ test("(ii) FAILS: a pane whose only data series is secondary", () => {
   }));
   const violations = validate(registry);
   assert.deepEqual(firedInvariants(violations), ["ii"]);
-  assert.equal(violations[0].paneIndex, 4);
+  assert.equal(violations[0].paneIndex, 3);
 });
 
 test("(ii) FAILS: a pane with no series at all", () => {
@@ -233,15 +281,18 @@ test("(ii) PASSES: a primary plus secondaries and marks", () => {
 
 // ── (iii) every FLOW data series carries the absence_mark + zero_mark pair ──────────────
 
-test("(iii) FAILS: removing the absence_mark of a FLOW series", () => {
-  const registry = withPane(validRegistry(), "liquidation_long", (value) => ({
+test("(iii) FAILS: removing the absence_mark of ONE leg of the fused liquidation pane (plan 04 item 4.2)", () => {
+  // Only the LONG leg loses its absence mark; the short leg keeps its pair. One violation, not two:
+  // each leg is checked against its OWN pair, so the fusion cannot hide one leg's gap behind the other.
+  const registry = withPane(validRegistry(), "liquidation", (value) => ({
     ...value,
-    series: value.series.filter((series) => series.role !== "absence_mark"),
+    series: value.series.filter((series) => !(series.role === "absence_mark" && series.seriesKeyId === ID.liquidationLong)),
   }));
   const violations = validate(registry);
   assert.deepEqual(firedInvariants(violations), ["iii"]);
   assert.equal(violations.length, 1);
   assert.match(violations[0].message, /absence_mark/);
+  assert.match(violations[0].message, new RegExp(ID.liquidationLong));
 });
 
 test("(iii) FAILS: removing the zero_mark of the volume (a FLOW secondary)", () => {
@@ -254,15 +305,17 @@ test("(iii) FAILS: removing the zero_mark of the volume (a FLOW secondary)", () 
   assert.match(violations[0].message, /zero_mark/);
 });
 
-test("(iii) FAILS: a mark that marks ANOTHER series does not count", () => {
-  // the long leg's pane carrying the SHORT leg's marks: two marks present, neither is its own
-  const registry = withPane(validRegistry(), "liquidation_long", (value) => ({
+test("(iii) FAILS: in the fused pane, the other leg's pair does not count for a leg", () => {
+  // Both legs drawn, but only the SHORT leg's marks: four marks would be two, and the long leg's
+  // absence and zero would draw the same — the pair of a NEIGHBOUR is not the leg's own (`RN-4`).
+  const registry = withPane(validRegistry(), "liquidation", (value) => ({
     ...value,
-    series: [value.series[0], ...marks("liquidationShort", "liquidation_marks")],
+    series: value.series.filter((series) => series.seriesKeyId === ID.liquidationShort || !series.role.endsWith("_mark")),
   }));
   const violations = validate(registry);
   assert.deepEqual(firedInvariants(violations), ["iii"]);
   assert.equal(violations.length, 2);
+  for (const violation of violations) assert.match(violation.message, new RegExp(ID.liquidationLong));
 });
 
 test("(iii) PASSES: today's CVD pane — two FLOW lines, no marks — is accepted (ADR-044/D3′ iii-b)", () => {
@@ -353,7 +406,7 @@ test("(iv) PASSES: changing the key in the test catalog changes the name", () =>
   assert.equal(before.readingPolicy, "STOCK");
 
   const byCohort = (value: SeriesCatalogEntry): string => `${value.key.metric}:${value.key.cohort}`;
-  const registry = [pane("liquidation_long", "liquidationLong", validRegistry()[1].series)].map((value) => ({
+  const registry = [pane("liquidation", "liquidationLong", validRegistry()[1].series)].map((value) => ({
     ...value,
     legend: resolvePaneLegend(ID.liquidationLong, CATALOG, byCohort),
   }));
@@ -439,11 +492,12 @@ test("(v) FAILS: a series with no payload, and a pane count that disagrees", () 
   const registry = validRegistry();
   const payloads = losslessPayloads(registry);
   const missingSeries = payloads.map((panePayloads, p) => (p === 1 ? panePayloads.slice(0, 1) : panePayloads));
-  assert.equal(validateSetDataOnCanonicalGrid(registry, missingSeries, GRID_MS).length, 2);
-  const missingPane = payloads.slice(0, 5);
+  // The fused liquidation pane (index 1) draws SIX series; keeping only the first leaves five unfed.
+  assert.equal(validateSetDataOnCanonicalGrid(registry, missingSeries, GRID_MS).length, 5);
+  const missingPane = payloads.slice(0, 4);
   const violations = validateSetDataOnCanonicalGrid(registry, missingPane, GRID_MS);
   assert.deepEqual(firedInvariants(violations), ["v"]);
-  assert.equal(violations.find((v) => v.paneIndex === null)?.message, "5 pane payload(s) for 6 pane(s)");
+  assert.equal(violations.find((v) => v.paneIndex === null)?.message, "4 pane payload(s) for 5 pane(s)");
 });
 
 test("(v) PASSES: every series through the lossless adapters lands exactly on the grid", () => {
