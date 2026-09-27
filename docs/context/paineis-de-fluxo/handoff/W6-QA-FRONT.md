@@ -36,9 +36,26 @@ quando este arquivo foi escrito.
 7. **Árvore do `master` para o A/B de latência**: `$SP/master` (`git archive 68e6d50`, com `node_modules`, `.venv` e `data`
    por hard link).
 
+## ⚠️ Atualização no fim da tentativa 1
+
+- **O verify deu VERMELHO, e a medida está CONTAMINADA por mim.** O resultado foi 7 portões verdes e o e2e com **94
+  passed / 1 failed / 7 skipped** (7,8 min). A falha foi `e2e/38:1061` (GATE, DoD-6 ablação), com o erro de INSTRUMENTO
+  `auditView: the candles do not map to ONE bucket shift of the grid (1,0)` (`grep -n -A25 '1) \[chromium\]' <log>`), e
+  não com um defeito do juiz. Enquanto ela rodava, eu rodava em paralelo `mut-unit.sh` (8 execuções da suíte de unidade,
+  com CPU cheia), o que quebrou a janela exclusiva. **Rode `VERIFY_FORCE=1 … make verify` de novo, sem nada junto.** Se
+  `e2e/38` DoD-6 falhar de novo, é instabilidade do instrumento do `T-03.13` sob carga ou um defeito real. Nos dois casos
+  é achado para o `frontend-builder`, com a linha do log. Se passar, registre no laudo como *"flake sob carga, causado
+  pelo QA"*, com n de reexecuções (`--repeat-each`).
+- **Mutações de unidade, lote 1** (`mut-unit.sh NULL U1..U7`, `test:app`+`test:charts` juntos, n=991 testes):
+  NULL deu 991/0. U1 1 fail, U3 1, U4 1, U5 1, U6 6, U7 6: **todos mortos**. **U2 SOBREVIVEU** (0 fail): no
+  `trimOiCandlesToWindow`, `>= window.startMs` virou `> window.startMs`, e a vela com `bucket_end_ms == startMs` some sem
+  nenhum teste reprovar. **Lacuna de borda.** Acrescente um teste de QA em `oi-candle-pane.test.ts` que mantém a vela em
+  `startMs` e descarta a vela em `endMsExclusive` (o par morde/cala), e rode U2 de novo. Falta o lote 2: `U8..U15`.
+  Contagens: `grep -E '^ℹ (pass|fail) ' $SP/mut/<tag>.log`.
+
 ## Falta (nesta ordem, nada rodando junto)
 
-1. Fechar o verify (item 1).
+1. Refazer o verify limpo (ver acima).
 2. **REAL**: `bash $SP/real.sh up`. Ele sobe o proxy híbrido `$SP/real-proxy.py` (cópia de `gates/T-03.13-real-proxy.py.txt`,
    que responde o OI com a função de rota da WAVE sobre o export e passa o resto para a produção `:8000`; não-GET dá 405),
    depois `next build` e `next start :4345`. **A produção roda o `master` e não serve `oi_candles`**, e por isso o proxy é
