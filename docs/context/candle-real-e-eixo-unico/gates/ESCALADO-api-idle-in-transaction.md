@@ -120,3 +120,53 @@ uma transação ociosa da API, e o modo de falha é **silencioso e indistinguív
 como hipótese de offset — o ticker chegou a ser lido e inocentado (`next_grid_instant_s` dá sono
 ≤ 60 s) — porque nada no sistema dizia "estou esperando um lock". Um `lock_timeout` de 30 s teria
 matado o boot com a mensagem certa na primeira vez.
+
+---
+
+## 2026-09-27: reincidência e conserto
+
+**O dano.** A reincidência parou a ingestão inteira por **11h16min, de 00:22Z a 11:38Z** de
+2026-09-27. O destrave foi `make compose-local ARGS="restart api"` às 11:38Z
+`[DOC: wave/paineis-f03b@cbd4d16, docs/context/paineis-de-fluxo/handoff/DECISOES-DO-OWNER-2026-09-27.md:10,22-24]`.
+Duas consequências de feature estão escritas lá: a cobertura da `T-03.7` (DoD-1) reprovou com 1.280
+linhas por símbolo contra 1.368, e a janela de 24h recomeça em 11:39Z. O `T-04.6-builder` também
+registrou o coletor de liquidação parado desde 00:20Z (linha de `docs/INDEX.md` de 2026-09-27T04:30Z).
+
+Isto é o modo de falha da seção de 2026-09-20, com duração 70× maior. A escolha de 2026-09-19
+("deixar como está") está vencida: ela custou 9 minutos no dia 20 e 11h16min no dia 27.
+
+**A decisão, D-2** `[DECISÃO-OWNER: 2026-09-27, escolha entre alternativas apresentadas]`:
+*"`idle_in_transaction_session_timeout` no acesso da API + task para achar a causa"*. As alternativas
+recusadas foram "só o timeout" e "deixar como está". Isto não é fala do owner. É a opção que ele
+escolheu num menu redigido por agente.
+
+**A causa, achada** (`docs/context/paineis-de-fluxo/handoff/WI-desenho-infra-architect.md` §1). A API
+abre duas conexões `psycopg` de vida longa em `create_app`. Elas usam o `autocommit=False` padrão do
+psycopg 3, e nenhuma leitura faz `commit`. O primeiro `SELECT` abre uma transação que só fecha quando a
+API reinicia, e ela guarda `AccessShareLock` em `md.series` e nos chunks. Medido às 12:03:49Z: a API
+reiniciada às 11:38:36Z já tinha uma sessão `idle in transaction` com 48 relações travadas (§1.3).
+
+**O conserto** (`83e7a78`) tem duas peças, e elas são as duas linhas da tabela acima:
+
+1. **A causa:** as 2 conexões de `create_app` nascem com `connect=connect_autocommit`. Writer e coletor
+   mantêm o padrão sem mudança.
+2. **A rede de proteção, só na API:** `PGOPTIONS=-c idle_in_transaction_session_timeout=30s` e
+   `PGAPPNAME=cripto-api` em `services.api.environment` do `deploy/compose.yml`. O role e o `.env` não
+   mudam, porque são compartilhados pelas três aplicações. O timeout sozinho quebraria a API (500 até
+   reiniciar, desenho §4), por isso as duas peças vão juntas.
+
+**Os laudos** (os quatro em `docs/context/paineis-de-fluxo/gates/`):
+
+| portão | veredito | o que mediu |
+|---|---|---|
+| [`WI-QA.md`](../../paineis-de-fluxo/gates/WI-QA.md) | **APPROVED** | vazamento reproduzido sem o conserto (*"2 of 2 idle in transaction"*, 3 failed). As mutações A, B e M4 a M8 mordem em cópia isolada. `make verify` verde: 2829 passed, cobertura 96,23%, e2e 87 |
+| [`WI-REVIEW.md`](../../paineis-de-fluxo/gates/WI-REVIEW.md) | **COMPLIANT** | 0/8 regras bloqueantes em 8 arquivos, import-linter com 7 contratos kept. O timeout fica só na API |
+| [`WI-CODE-REVIEW.md`](../../paineis-de-fluxo/gates/WI-CODE-REVIEW.md) | **APPROVED** | 0 achado de correção confirmado entre 9 candidatos. As mutações A/B nos 2 call sites de `create_app` reprovam com 2 failed cada |
+| [`WI-INFRA.md`](../../paineis-de-fluxo/gates/WI-INFRA.md) | **APPROVED, 2 condições de deploy** | a API sobe primeiro e sozinha (`--no-deps api`). O portão do deploy é o §5.3 do desenho: `api 30s · writer 0 · collector 0`, `PGOPTIONS`/`PGAPPNAME` no `/proc/1/environ` e `2\|0` por `application_name='cripto-api'` (`0\|0` não conta como verde) |
+
+**O que muda no falsificador acima.** A consulta passa a usar `application_name='cripto-api'`, não
+o IP, porque o IP da API mudou de `172.18.0.4` para `172.18.0.3` entre 09-19 e 09-27 (desenho §1.3). O
+critério de saída continua o mesmo: `2|0` em toda leitura por ≥ 2 dias de uso normal, e **0**
+`IdleInTransactionSessionTimeout` no log da API (desenho §5.4). Um disparo do timeout não prova que ele
+funciona. Prova que um caminho novo abriu transação, e essa é a regressão a caçar. **Este documento
+fica até o falsificador passar.** A leitura do §5.3 depois do deploy vai no PR da trilha WI.
