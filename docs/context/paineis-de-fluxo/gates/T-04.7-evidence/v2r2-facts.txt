@@ -1,0 +1,13 @@
+{"tf": "5m", "ink_cols": 208, "buckets": 105, "incoherent_ink_vs_value": 22, "p90": 319745.5828, "pairs": 3, "drawn_ge_1_5": 2, "log_ge_1_5": 1}
+    {"x": [602, 604], "short": 2953178.8087, "long": 33221.927, "h_up": 20, "h_down": 1, "drawn": 20.0, "log": 1.43}
+    {"x": [677, 679], "short": 368310.392, "long": 2270.3491, "h_up": 4, "h_down": 4, "drawn": 1.0, "log": 1.66}
+    {"x": [682, 684], "short": 39762.4875, "long": 2909157.4719, "h_up": 2, "h_down": 19, "drawn": 9.5, "log": 1.41}
+{"tf": "15m", "ink_cols": 111, "buckets": 55, "incoherent_ink_vs_value": 15, "p90": 319745.5828, "pairs": 7, "drawn_ge_1_5": 7, "log_ge_1_5": 3}
+    {"x": [617, 624], "short": 337831.6812, "long": 71919.713, "h_up": 4, "h_down": 1, "drawn": 4.0, "log": 1.14}
+    {"x": [647, 654], "short": 61459.1608, "long": 3549769.835, "h_up": 2, "h_down": 22, "drawn": 11.0, "log": 1.37}
+    {"x": [692, 699], "short": 168329.1072, "long": 2909827.835, "h_up": 3, "h_down": 34, "drawn": 11.33, "log": 1.24}
+    {"x": [722, 729], "short": 442849.9121, "long": 12716.461, "h_up": 4, "h_down": 1, "drawn": 4.0, "log": 1.38}
+    {"x": [1562], "short": 83.9674, "long": 347024.3535, "h_up": 2, "h_down": 3, "drawn": 1.5, "log": 2.88}
+    {"x": [1622, 1629], "short": 5370.29, "long": 414560.6016, "h_up": 2, "h_down": 3, "drawn": 1.5, "log": 1.51}
+    {"x": [1637, 1644], "short": 592832.4301, "long": 6984.3814, "h_up": 5, "h_down": 1, "drawn": 5.0, "log": 1.5}
+{"pairs": 10, "linear_ok": 9, "log_ok": 4, "share": 0.9, "V2": "PASSA"}
