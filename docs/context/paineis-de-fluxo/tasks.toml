@@ -388,7 +388,7 @@ tracker = { provider = "jira", id = "CST-267", url = "https://conversationhub.at
 id = "T-04.0"
 title = "[web][charts] 04 · ⛔ Spike F-6 antes da construcao: base das duas escalas (invertida e superior) em <=1px e nenhum valor <0 em setData; responde o [NAO SEI] de C-3 (NAO mergeado)"
 components = ["web", "charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-27T06:37:07Z @ ca96bb3648c6b1e5dd91cac31eca598d56d3dbf3
 phase = "04"
 depends_on = ["T-02.5"]
 refs = [
@@ -405,7 +405,7 @@ tracker = { provider = "jira", id = "CST-268", url = "https://conversationhub.at
 id = "T-04.1"
 title = "[charts] 04 · Pane de liquidacao em charts: 2 barras, 4 marcas, 4 escalas; perna long com invertScale; mesmo maximo nas duas pernas (C-3); magnitudes >=0; par ausencia/zero por perna"
 components = ["charts"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-27T06:37:07Z @ ca96bb3648c6b1e5dd91cac31eca598d56d3dbf3
 phase = "04"
 depends_on = ["T-04.0"]
 refs = [
@@ -422,7 +422,7 @@ tracker = { provider = "jira", id = "CST-269", url = "https://conversationhub.at
 id = "T-04.2"
 title = "[web] 04 · Registry: liquidation_long + liquidation_short viram um pane liquidation; short em cima (alta), long embaixo (baixa)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-27T06:37:07Z @ ca96bb3648c6b1e5dd91cac31eca598d56d3dbf3
 phase = "04"
 depends_on = ["T-04.1"]
 refs = [
@@ -437,7 +437,7 @@ tracker = { provider = "jira", id = "CST-270", url = "https://conversationhub.at
 id = "T-04.3"
 title = "[web] 04 · Legenda da liquidacao: 2 magnitudes sem sinal, numeral em tinta neutra, quadrado de 8px vazado (short) / cheio (long) estrutural em forced-colors (C-7), nenhum terceiro numero"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-27T06:37:07Z @ ca96bb3648c6b1e5dd91cac31eca598d56d3dbf3
 phase = "04"
 depends_on = ["T-04.2"]
 refs = [
@@ -454,7 +454,7 @@ tracker = { provider = "jira", id = "CST-271", url = "https://conversationhub.at
 id = "T-04.4"
 title = "[web] 04 · Log x linear e tamanho das duas metades do pane de liquidacao (Q-DG-2), decididos pelo design_gate"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-27T06:37:07Z @ ca96bb3648c6b1e5dd91cac31eca598d56d3dbf3
 phase = "04"
 depends_on = ["T-04.2"]
 refs = [
@@ -468,7 +468,7 @@ tracker = { provider = "jira", id = "CST-272", url = "https://conversationhub.at
 id = "T-04.5"
 title = "[web] 04 · Re-ancorar e2e/13 (hospedeiro de canvas por coorte, :532, 692-697) no pane fundido"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-27T06:37:07Z @ ca96bb3648c6b1e5dd91cac31eca598d56d3dbf3
 phase = "04"
 depends_on = ["T-04.2"]
 refs = [
@@ -480,7 +480,7 @@ tracker = { provider = "jira", id = "CST-273", url = "https://conversationhub.at
 id = "T-04.6"
 title = "[web] 04 · Playwright: F-6 no codigo de producao, CA-LIQ n>=20, CA-9' (a)(b)(c), CA-10' por perna, 5 panes com N>0, nao-regressao das duas coortes, com as ablacoes"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-27T06:37:07Z @ ca96bb3648c6b1e5dd91cac31eca598d56d3dbf3
 phase = "04"
 depends_on = ["T-04.3", "T-04.4", "T-04.5"]
 refs = [
@@ -500,7 +500,7 @@ tracker = { provider = "jira", id = "CST-274", url = "https://conversationhub.at
 id = "T-04.7"
 title = "[web] 04 · Veredito do ux-ui-mastery sobre o screenshot do pane fundido"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-27T06:37:07Z @ ca96bb3648c6b1e5dd91cac31eca598d56d3dbf3
 phase = "04"
 depends_on = ["T-04.6"]
 refs = [
