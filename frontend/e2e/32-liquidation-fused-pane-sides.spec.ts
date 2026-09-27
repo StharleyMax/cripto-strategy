@@ -6,9 +6,9 @@
  * catálogo REAL da API de e2e e valores sintéticos — o mesmo arranjo do `e2e/24`, e pelo mesmo motivo:
  * **nada é semeado no Postgres compartilhado**. Os valores da liquidação são escolhidos para que a
  * IDENTIDADE da perna se leia no pixel sem depender da cor: `short` está na casa de `50.000`, `long` na
- * de `2..12`. Com o máximo compartilhado (`C-3`) e a escala log, a perna `short` sobe até o teto da
- * metade dela e a `long` fica em ~6–23% da sua. Então "qual perna está em cima" é "de que lado está a
- * barra alta", e isso sobrevive a um screenshot em cinza.
+ * de `2..12`. Com o máximo compartilhado (`C-3`) e a escala linear (`T-04.4`), a perna `short` sobe até o
+ * teto da metade dela e a `long` fica no piso de 1 px da biblioteca. Então "qual perna está em cima" é
+ * "de que lado está a barra alta", e isso sobrevive a um screenshot em cinza.
  *
  * ── O QUE O SPEC AFIRMA (desenho) ───────────────────────────────────────────────────────────────
  *
@@ -295,7 +295,7 @@ test.describe(`T-04.2: o pane de liquidação fundido, short em cima (alta), lon
     // (a) the sides are the registry's, on the layer and on each cohort group; the lower scale is inverted
     expect(reading.sides, "(a) os lados não são os do registry").toBe("short:up;long:down");
     expect(reading.legSides, "(a) cada coorte declara o seu lado").toEqual({ short: "up", long: "down" });
-    expect(reading.barScales, "(a) a escala de baixo não foi aplicada invertida").toBe("up:upright:logarithmic;down:inverted:logarithmic");
+    expect(reading.barScales, "(a) a escala de baixo não foi aplicada invertida").toBe("up:upright:normal;down:inverted:normal");
     expect(reading.zeroLinePx).toBeGreaterThan(0);
     expect(reading.zeroLinePx).toBeLessThan(reading.paneHeightPx);
 

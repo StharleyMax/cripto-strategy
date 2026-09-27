@@ -266,7 +266,6 @@ export {
   LIQUIDATION_SIDES,
   LIQUIDATION_INVERTED_SIDE,
   LIQUIDATION_LOG_BASE,
-  LIQUIDATION_PANE_FORM_PROPOSAL,
 } from "./liquidation-pane-geometry.ts";
 export type {
   LiquidationSide,

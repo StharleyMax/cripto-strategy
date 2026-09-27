@@ -1,0 +1,21 @@
+# Validator: add a sqrt scale to the designer's b3/b4/floor model (same data, same H, same visible N, same floor).
+import json, math
+SHORT, LONG = "bc0b8a78", "23e43323"
+VISIBLE = {"1m": 2210, "5m": 442, "15m": 147, "1h": 37}
+def load(k, tf): return [None if r["value"] is None else float(r["value"]) for r in json.load(open(f"data/{k}-{tf}.json"))["rows"]]
+def q(xs, p): xs = sorted(xs); return xs[min(len(xs)-1, int(round(p*(len(xs)-1))))]
+def h_lin(v, M, H): return max(1.0, H*v/M) if v > 0 else 0.0
+def h_log(v, M, H): return max(1.0, H*math.log10(max(v, 1))/math.log10(M)) if v > 0 else 0.0
+def h_sqrt(v, M, H): return max(1.0, H*math.sqrt(v/M)) if v > 0 else 0.0
+for tf, H in [("1m", 53.7), ("5m", 34.0), ("15m", 34.0), ("1h", 34.0)]:
+    s, l = load(SHORT, tf), load(LONG, tf); n = VISIBLE[tf]; s, l = s[-n:], l[-n:]
+    pos = [x for x in s+l if x and x > 0]; M = max(pos); p90 = q(pos, .9); p50 = q(pos, .5)
+    sw = [(a, b) for a, b in zip(s, l) if a and b and a > 0 and b > 0 and max(a, b)/min(a, b) >= 3 and max(a, b) >= p90]
+    row = []
+    for name, f in [("log", h_log), ("lin", h_lin), ("sqrt", h_sqrt)]:
+        eq = sum(1 for a, b in sw if max(f(a,M,H), f(b,M,H))/min(f(a,M,H), f(b,M,H)) < 1.5)
+        noise = sum(1 for x in pos if x <= p50 and f(x,M,H) >= 0.5*H)
+        floor = sum(1 for x in pos if f(x,M,H) <= 1.0)/len(pos)
+        peak = H/q([f(x,M,H) for x in pos], .5)
+        row.append(f"{name}: sweep<1.5x {eq}/{len(sw)} noise>=50%H {noise} floor {floor:.1%} max/p50 {peak:.1f}x")
+    print(tf, " | ".join(row))

@@ -1,0 +1,22 @@
+// Read-only pass-through proxy (model: gates/T-01.11-r2-proxy.mjs.txt), port 8823, plus one line that
+// logs each GET URL to urls.txt. GET/HEAD to the production API :8000, 405 for anything else.
+import http from "node:http";
+import fs from "node:fs";
+const TARGET = { host: "127.0.0.1", port: 8000 };
+const LOG = new URL("./urls.txt", import.meta.url);
+let gets = 0, refused = 0;
+http.createServer((req, res) => {
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" };
+  if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
+  if (req.method !== "GET" && req.method !== "HEAD") { refused++; res.writeHead(405, cors); return res.end(); }
+  gets++;
+  fs.appendFileSync(LOG, req.url + "\n");
+  const up = http.request({ ...TARGET, path: req.url, method: req.method, headers: { ...req.headers, host: "127.0.0.1:8000" } }, (r) => {
+    res.writeHead(r.statusCode, { ...r.headers, ...cors }); r.pipe(res);
+  });
+  up.on("error", () => { res.writeHead(502, cors); res.end(); });
+  up.end();
+}).listen(8823, "127.0.0.1", () => console.log("proxy up 8823"));
+const report = () => console.log(`proxy_get_requests_total=${gets} refused=${refused}`);
+process.on("SIGTERM", () => { report(); process.exit(0); });
+setInterval(report, 30000);

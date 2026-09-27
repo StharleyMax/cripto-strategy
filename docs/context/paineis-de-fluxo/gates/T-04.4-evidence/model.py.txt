@@ -1,0 +1,50 @@
+# T-04.4 model over the REAL data the app requested (data/<key>-<tf>.json, read via the read-only proxy).
+# short = bc0b8a78, long = 23e43323 (identified by present counts 851/848 and the 4h legend readout).
+# [b1] pair reading: buckets with BOTH legs > 0 -> does the height ratio tell the value ratio?
+# [b2] fixed zero line (H1) vs a zero line that follows the two visible maxima (H2): resolution gain.
+import json, math
+SHORT, LONG = "bc0b8a78", "23e43323"
+VISIBLE = {"1m": 2210, "5m": 442, "15m": 147, "1h": 37, "4h": 9}   # slots on screen, T-02.2 §2.1 + pixel
+def load(k, tf):
+    return [None if r["value"] is None else float(r["value"]) for r in json.load(open(f"data/{k}-{tf}.json"))["rows"]]
+def q(xs, p):
+    xs = sorted(xs); return xs[min(len(xs) - 1, int(round(p * (len(xs) - 1))))]
+def h_lin(v, M, H): return max(1.0, H * v / M) if v > 0 else 0.0
+def h_log(v, M, H): return max(1.0, H * math.log10(max(v, 1)) / math.log10(M)) if v > 0 else 0.0
+print("[b1] pair reading, visible window = last N slots, bar band H px per leg, shared max")
+for tf, H in [("1m", 53.7), ("5m", 34.0), ("15m", 34.0), ("1h", 34.0)]:
+    s, l = load(SHORT, tf), load(LONG, tf)
+    n = VISIBLE[tf]; s, l = s[-n:], l[-n:]
+    M = max(x for x in s + l if x is not None)
+    pairs = [(a, b) for a, b in zip(s, l) if a and b and a > 0 and b > 0 and a != b]
+    big = [(a, b) for a, b in pairs if max(a, b) / min(a, b) >= 3]
+    def looks_equal(f):  # larger leg >= 3x the smaller, but drawn less than 1.5x as tall
+        return sum(1 for a, b in big if max(f(a, M, H), f(b, M, H)) / min(f(a, M, H), f(b, M, H)) < 1.5)
+    def floor_share(f):
+        hs = [f(x, M, H) for x in s + l if x and x > 0]; return sum(1 for h in hs if h <= 1.0) / len(hs)
+    print(f"  {tf}: pairs(both>0, distinct)={len(pairs)} with ratio>=3: {len(big)} | drawn <1.5x as tall: "
+          f"log {looks_equal(h_log)}/{len(big)}  linear {looks_equal(h_lin)}/{len(big)} | bars at the 1px floor: "
+          f"log {floor_share(h_log):.1%} linear {floor_share(h_lin):.1%} | max/p50 height: "
+          f"log {M and H/ q([h_log(x,M,H) for x in s+l if x and x>0], .5):.2f}x linear {H/q([h_lin(x,M,H) for x in s+l if x and x>0], .5):.1f}x")
+print("[b2] H2 gain = 2*max(a,b)/(a+b) over sliding visible windows (a, b = the two legs' visible maxima)")
+for tf in ["1m", "5m", "15m", "1h"]:
+    s, l = load(SHORT, tf), load(LONG, tf); n = VISIBLE[tf]
+    gains, lopsided = [], 0
+    step = max(1, n // 20)
+    for i in range(0, len(s) - n + 1, step):
+        a = max([x for x in s[i:i + n] if x] or [0]); b = max([x for x in l[i:i + n] if x] or [0])
+        if a + b == 0: continue
+        gains.append(2 * max(a, b) / (a + b)); lopsided += min(a, b) / max(a, b) < 0.25
+    print(f"  {tf}: windows={len(gains)} gain p50={q(gains,.5):.2f} p90={q(gains,.9):.2f} max={max(gains):.2f} "
+          f"| windows where the smaller leg's max < 25% of the larger: {lopsided}/{len(gains)}")
+print("[b3] sweep pairs: both legs > 0, ratio >= 3, and the larger leg >= p90 of the visible positives")
+print("[b4] noise drawn as event: positive bars with value <= p50 of the visible positives drawn >= 50% of H")
+for tf, H in [("1m", 53.7), ("5m", 34.0), ("15m", 34.0), ("1h", 34.0)]:
+    s, l = load(SHORT, tf), load(LONG, tf); n = VISIBLE[tf]; s, l = s[-n:], l[-n:]
+    pos = [x for x in s + l if x and x > 0]; M = max(pos); p90 = q(pos, .9); p50 = q(pos, .5)
+    sw = [(a, b) for a, b in zip(s, l) if a and b and a > 0 and b > 0 and max(a, b) / min(a, b) >= 3 and max(a, b) >= p90]
+    def eq(f): return sum(1 for a, b in sw if max(f(a, M, H), f(b, M, H)) / min(f(a, M, H), f(b, M, H)) < 1.5)
+    small = [x for x in pos if x <= p50]
+    def noise(f): return sum(1 for x in small if f(x, M, H) >= 0.5 * H)
+    print(f"  {tf}: sweep pairs={len(sw)} drawn <1.5x as tall: log {eq(h_log)} linear {eq(h_lin)} | "
+          f"small bars (<=p50={p50:.0f} USD) n={len(small)} drawn >=50% H: log {noise(h_log)} linear {noise(h_lin)}")

@@ -1,0 +1,16 @@
+[b1] pair reading, visible window = last N slots, bar band H px per leg, shared max
+  1m: pairs(both>0, distinct)=15 with ratio>=3: 10 | drawn <1.5x as tall: log 7/10  linear 10/10 | bars at the 1px floor: log 0.0% linear 86.8% | max/p50 height: log 1.92x linear 53.7x
+  5m: pairs(both>0, distinct)=30 with ratio>=3: 19 | drawn <1.5x as tall: log 10/19  linear 16/19 | bars at the 1px floor: log 0.0% linear 89.3% | max/p50 height: log 1.95x linear 34.0x
+  15m: pairs(both>0, distinct)=44 with ratio>=3: 27 | drawn <1.5x as tall: log 17/27  linear 20/27 | bars at the 1px floor: log 0.0% linear 83.8% | max/p50 height: log 1.87x linear 34.0x
+  1h: pairs(both>0, distinct)=30 with ratio>=3: 22 | drawn <1.5x as tall: log 15/22  linear 10/22 | bars at the 1px floor: log 0.0% linear 70.1% | max/p50 height: log 1.59x linear 34.0x
+[b2] H2 gain = 2*max(a,b)/(a+b) over sliding visible windows (a, b = the two legs' visible maxima)
+  1m: windows=33 gain p50=1.63 p90=1.87 max=1.87 | windows where the smaller leg's max < 25% of the larger: 18/33
+  5m: windows=33 gain p50=1.43 p90=1.90 max=1.90 | windows where the smaller leg's max < 25% of the larger: 13/33
+  15m: windows=34 gain p50=1.38 p90=1.90 max=1.90 | windows where the smaller leg's max < 25% of the larger: 13/34
+  1h: windows=60 gain p50=1.42 p90=1.92 max=1.92 | windows where the smaller leg's max < 25% of the larger: 23/60
+[b3] sweep pairs: both legs > 0, ratio >= 3, and the larger leg >= p90 of the visible positives
+[b4] noise drawn as event: positive bars with value <= p50 of the visible positives drawn >= 50% of H
+  1m: sweep pairs=1 drawn <1.5x as tall: log 1 linear 1 | small bars (<=p50=2688 USD) n=156 drawn >=50% H: log 15 linear 0
+  5m: sweep pairs=5 drawn <1.5x as tall: log 4 linear 2 | small bars (<=p50=2774 USD) n=103 drawn >=50% H: log 7 linear 0
+  15m: sweep pairs=6 drawn <1.5x as tall: log 4 linear 0 | small bars (<=p50=3951 USD) n=71 drawn >=50% H: log 11 linear 0
+  1h: sweep pairs=7 drawn <1.5x as tall: log 5 linear 0 | small bars (<=p50=17806 USD) n=34 drawn >=50% H: log 16 linear 0
