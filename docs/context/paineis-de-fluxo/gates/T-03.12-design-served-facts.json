@@ -1,0 +1,552 @@
+{
+ "BTCUSDT:1m": {
+  "n": 1728,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T00:00Z",
+    "to": "09-26T03:00Z",
+    "n": 198
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:04Z",
+    "to": "09-27T15:50Z",
+    "n": 1530
+   }
+  ],
+  "events": [
+   {
+    "a": "09-25T02:50Z",
+    "b": "09-25T13:30Z",
+    "blank_slots": 639,
+    "kind": "+buraco",
+    "step_bp": -57.11
+   },
+   {
+    "a": "09-26T03:00Z",
+    "b": "09-26T03:04Z",
+    "blank_slots": 3,
+    "kind": "troca",
+    "step_bp": -1.4
+   },
+   {
+    "a": "09-27T00:22Z",
+    "b": "09-27T11:40Z",
+    "blank_slots": 677,
+    "kind": "+buraco",
+    "step_bp": 10.76
+   }
+  ],
+  "expected1": 1728,
+  "expected1_with_wick": 0,
+  "partial": 0
+ },
+ "BTCUSDT:5m": {
+  "n": 505,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T00:00Z",
+    "to": "09-26T03:05Z",
+    "n": 199
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:10Z",
+    "to": "09-27T15:50Z",
+    "n": 306
+   }
+  ],
+  "events": [
+   {
+    "a": "09-25T02:50Z",
+    "b": "09-25T13:30Z",
+    "blank_slots": 127,
+    "kind": "+buraco",
+    "step_bp": -57.11
+   },
+   {
+    "a": "09-26T03:05Z",
+    "b": "09-26T03:10Z",
+    "blank_slots": 0,
+    "kind": "troca",
+    "step_bp": -0.59
+   },
+   {
+    "a": "09-27T00:25Z",
+    "b": "09-27T11:45Z",
+    "blank_slots": 135,
+    "kind": "+buraco",
+    "step_bp": 10.23
+   }
+  ],
+  "expected1": 199,
+  "expected1_with_wick": 0,
+  "partial": 1
+ },
+ "BTCUSDT:15m": {
+  "n": 171,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T00:00Z",
+    "to": "09-26T03:15Z",
+    "n": 69
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:30Z",
+    "to": "09-27T00:30Z",
+    "n": 85
+   },
+   {
+    "df": "binance_point_5m",
+    "from": "09-27T11:45Z",
+    "to": "09-27T11:45Z",
+    "n": 1
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-27T12:00Z",
+    "to": "09-27T15:45Z",
+    "n": 16
+   }
+  ],
+  "events": [
+   {
+    "a": "09-25T03:00Z",
+    "b": "09-25T13:30Z",
+    "blank_slots": 41,
+    "kind": "+buraco",
+    "step_bp": -57.11
+   },
+   {
+    "a": "09-26T03:15Z",
+    "b": "09-26T03:30Z",
+    "blank_slots": 0,
+    "kind": "troca",
+    "step_bp": -0.67
+   },
+   {
+    "a": "09-27T00:30Z",
+    "b": "09-27T11:45Z",
+    "blank_slots": 44,
+    "kind": "troca",
+    "step_bp": 11.77
+   },
+   {
+    "a": "09-27T11:45Z",
+    "b": "09-27T12:00Z",
+    "blank_slots": 0,
+    "kind": "troca",
+    "step_bp": -0.99
+   }
+  ],
+  "expected1": 0,
+  "expected1_with_wick": 0,
+  "partial": 4
+ },
+ "ETHUSDT:1m": {
+  "n": 1786,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T05:40Z",
+    "to": "09-26T02:55Z",
+    "n": 256
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:04Z",
+    "to": "09-27T15:50Z",
+    "n": 1530
+   }
+  ],
+  "events": [
+   {
+    "a": "09-26T02:55Z",
+    "b": "09-26T03:04Z",
+    "blank_slots": 8,
+    "kind": "troca",
+    "step_bp": 11.04
+   },
+   {
+    "a": "09-27T00:22Z",
+    "b": "09-27T11:40Z",
+    "blank_slots": 677,
+    "kind": "+buraco",
+    "step_bp": 134.12
+   }
+  ],
+  "expected1": 1786,
+  "expected1_with_wick": 0,
+  "partial": 0
+ },
+ "ETHUSDT:5m": {
+  "n": 562,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T05:40Z",
+    "to": "09-26T02:55Z",
+    "n": 256
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:10Z",
+    "to": "09-27T15:50Z",
+    "n": 306
+   }
+  ],
+  "events": [
+   {
+    "a": "09-26T02:55Z",
+    "b": "09-26T03:10Z",
+    "blank_slots": 2,
+    "kind": "troca",
+    "step_bp": 12.03
+   },
+   {
+    "a": "09-27T00:25Z",
+    "b": "09-27T11:45Z",
+    "blank_slots": 135,
+    "kind": "+buraco",
+    "step_bp": 134.27
+   }
+  ],
+  "expected1": 256,
+  "expected1_with_wick": 0,
+  "partial": 1
+ },
+ "ETHUSDT:15m": {
+  "n": 189,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T05:45Z",
+    "to": "09-26T03:15Z",
+    "n": 87
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:30Z",
+    "to": "09-27T00:30Z",
+    "n": 85
+   },
+   {
+    "df": "binance_point_5m",
+    "from": "09-27T11:45Z",
+    "to": "09-27T11:45Z",
+    "n": 1
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-27T12:00Z",
+    "to": "09-27T15:45Z",
+    "n": 16
+   }
+  ],
+  "events": [
+   {
+    "a": "09-26T03:15Z",
+    "b": "09-26T03:30Z",
+    "blank_slots": 0,
+    "kind": "troca",
+    "step_bp": 8.52
+   },
+   {
+    "a": "09-27T00:30Z",
+    "b": "09-27T11:45Z",
+    "blank_slots": 44,
+    "kind": "troca",
+    "step_bp": 125.76
+   },
+   {
+    "a": "09-27T11:45Z",
+    "b": "09-27T12:00Z",
+    "blank_slots": 0,
+    "kind": "troca",
+    "step_bp": 9.26
+   }
+  ],
+  "expected1": 0,
+  "expected1_with_wick": 0,
+  "partial": 3
+ },
+ "LINKUSDT:1m": {
+  "n": 1706,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T10:55Z",
+    "to": "09-26T02:55Z",
+    "n": 176
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:04Z",
+    "to": "09-27T15:50Z",
+    "n": 1530
+   }
+  ],
+  "events": [
+   {
+    "a": "09-25T12:00Z",
+    "b": "09-25T13:30Z",
+    "blank_slots": 89,
+    "kind": "+buraco",
+    "step_bp": -158.82
+   },
+   {
+    "a": "09-26T02:55Z",
+    "b": "09-26T03:04Z",
+    "blank_slots": 8,
+    "kind": "troca",
+    "step_bp": -7.98
+   },
+   {
+    "a": "09-27T00:22Z",
+    "b": "09-27T11:40Z",
+    "blank_slots": 677,
+    "kind": "+buraco",
+    "step_bp": 124.3
+   }
+  ],
+  "expected1": 1706,
+  "expected1_with_wick": 0,
+  "partial": 0
+ },
+ "LINKUSDT:5m": {
+  "n": 482,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T10:55Z",
+    "to": "09-26T02:55Z",
+    "n": 176
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:10Z",
+    "to": "09-27T15:50Z",
+    "n": 306
+   }
+  ],
+  "events": [
+   {
+    "a": "09-25T12:00Z",
+    "b": "09-25T13:30Z",
+    "blank_slots": 17,
+    "kind": "+buraco",
+    "step_bp": -158.82
+   },
+   {
+    "a": "09-26T02:55Z",
+    "b": "09-26T03:10Z",
+    "blank_slots": 2,
+    "kind": "troca",
+    "step_bp": -11.67
+   },
+   {
+    "a": "09-27T00:25Z",
+    "b": "09-27T11:45Z",
+    "blank_slots": 135,
+    "kind": "+buraco",
+    "step_bp": 122.09
+   }
+  ],
+  "expected1": 176,
+  "expected1_with_wick": 0,
+  "partial": 1
+ },
+ "LINKUSDT:15m": {
+  "n": 163,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T11:00Z",
+    "to": "09-26T03:15Z",
+    "n": 61
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:30Z",
+    "to": "09-27T00:30Z",
+    "n": 85
+   },
+   {
+    "df": "binance_point_5m",
+    "from": "09-27T11:45Z",
+    "to": "09-27T11:45Z",
+    "n": 1
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-27T12:00Z",
+    "to": "09-27T15:45Z",
+    "n": 16
+   }
+  ],
+  "events": [
+   {
+    "a": "09-25T12:00Z",
+    "b": "09-25T13:30Z",
+    "blank_slots": 5,
+    "kind": "+buraco",
+    "step_bp": -158.82
+   },
+   {
+    "a": "09-26T03:15Z",
+    "b": "09-26T03:30Z",
+    "blank_slots": 0,
+    "kind": "troca",
+    "step_bp": -1.84
+   },
+   {
+    "a": "09-27T00:30Z",
+    "b": "09-27T11:45Z",
+    "blank_slots": 44,
+    "kind": "troca",
+    "step_bp": 123.96
+   },
+   {
+    "a": "09-27T11:45Z",
+    "b": "09-27T12:00Z",
+    "blank_slots": 0,
+    "kind": "troca",
+    "step_bp": -1.46
+   }
+  ],
+  "expected1": 0,
+  "expected1_with_wick": 0,
+  "partial": 4
+ },
+ "SOLUSDT:1m": {
+  "n": 1692,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T13:30Z",
+    "to": "09-26T02:55Z",
+    "n": 162
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:04Z",
+    "to": "09-27T15:50Z",
+    "n": 1530
+   }
+  ],
+  "events": [
+   {
+    "a": "09-26T02:55Z",
+    "b": "09-26T03:04Z",
+    "blank_slots": 8,
+    "kind": "troca",
+    "step_bp": -8.3
+   },
+   {
+    "a": "09-27T00:22Z",
+    "b": "09-27T11:40Z",
+    "blank_slots": 677,
+    "kind": "+buraco",
+    "step_bp": 187.19
+   }
+  ],
+  "expected1": 1692,
+  "expected1_with_wick": 0,
+  "partial": 0
+ },
+ "SOLUSDT:5m": {
+  "n": 468,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T13:30Z",
+    "to": "09-26T02:55Z",
+    "n": 162
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:10Z",
+    "to": "09-27T15:50Z",
+    "n": 306
+   }
+  ],
+  "events": [
+   {
+    "a": "09-26T02:55Z",
+    "b": "09-26T03:10Z",
+    "blank_slots": 2,
+    "kind": "troca",
+    "step_bp": -12.27
+   },
+   {
+    "a": "09-27T00:25Z",
+    "b": "09-27T11:45Z",
+    "blank_slots": 135,
+    "kind": "+buraco",
+    "step_bp": 184.2
+   }
+  ],
+  "expected1": 162,
+  "expected1_with_wick": 0,
+  "partial": 1
+ },
+ "SOLUSDT:15m": {
+  "n": 158,
+  "runs": [
+   {
+    "df": "binance_point_5m",
+    "from": "09-25T13:30Z",
+    "to": "09-26T03:15Z",
+    "n": 56
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-26T03:30Z",
+    "to": "09-27T00:30Z",
+    "n": 85
+   },
+   {
+    "df": "binance_point_5m",
+    "from": "09-27T11:45Z",
+    "to": "09-27T11:45Z",
+    "n": 1
+   },
+   {
+    "df": "binance_poll_1m",
+    "from": "09-27T12:00Z",
+    "to": "09-27T15:45Z",
+    "n": 16
+   }
+  ],
+  "events": [
+   {
+    "a": "09-26T03:15Z",
+    "b": "09-26T03:30Z",
+    "blank_slots": 0,
+    "kind": "troca",
+    "step_bp": 5.14
+   },
+   {
+    "a": "09-27T00:30Z",
+    "b": "09-27T11:45Z",
+    "blank_slots": 44,
+    "kind": "troca",
+    "step_bp": 181.06
+   },
+   {
+    "a": "09-27T11:45Z",
+    "b": "09-27T12:00Z",
+    "blank_slots": 0,
+    "kind": "troca",
+    "step_bp": 3.37
+   }
+  ],
+  "expected1": 0,
+  "expected1_with_wick": 0,
+  "partial": 4
+ }
+}

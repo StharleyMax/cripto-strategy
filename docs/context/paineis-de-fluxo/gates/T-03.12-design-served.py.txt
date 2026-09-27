@@ -1,0 +1,38 @@
+# Read the served oi_candles (through the design proxy) and list regime runs, gaps, and steps.
+import json, sys, urllib.request, datetime as dt, time
+ids = {'BTCUSDT':'94c3d3dd5f45abcb801a53e4a8b52ea81ea2479a9cdd51d90cd2cb6895e1a4a9','ETHUSDT':'e627e6554365b490e3d35df47c8a7038b4b41d0724e41d73dcfc17fbac32741a',
+       'LINKUSDT':'6f4a8efae9e4a61b4ac469e9e6ecf3624ef43e0a65355005aed73e9cda7d8ff0','SOLUSDT':'e881ab713adbae083e92dfe0bf705e1a53aaa9b9952e9aca0cede876ce127f1b'}
+iso = lambda ms: dt.datetime.fromtimestamp(ms/1000, dt.UTC).strftime('%m-%dT%H:%MZ')
+KT = int(sys.argv[1]); START = 1790294400000
+out = {}
+for sym, sid in ids.items():
+  for iv, step in (('1m',60000),('5m',300000),('15m',900000)):
+    u = f'http://127.0.0.1:8823/api/v1/series-history?series_key_id={sid}&symbol={sym}&interval={iv}&window_start_ms={START}&window_end_ms={KT}&knowledge_time_ms={KT}&bar_policy=final_only'
+    d = json.load(urllib.request.urlopen(u, timeout=60))
+    def find(o):
+      if isinstance(o, dict):
+        if 'oi_candles' in o: return o['oi_candles']
+        for v in o.values():
+          r = find(v)
+          if r is not None: return r
+    oc = find(d); c = oc['candles']; width = {s['derived_from']: s['bucket_interval_ms'] for s in oc['sources']}
+    runs = []; events = []
+    for i, x in enumerate(c):
+      if not runs or runs[-1]['df'] != x['derived_from']:
+        runs.append({'df': x['derived_from'], 'from': x['bucket_end_ms'], 'to': x['bucket_end_ms'], 'n': 0})
+      runs[-1]['to'] = x['bucket_end_ms']; runs[-1]['n'] += 1
+      if i:
+        a = c[i-1]; gap = x['bucket_end_ms'] - a['bucket_end_ms']; w = max(step, width[x['derived_from']])
+        change = a['derived_from'] != x['derived_from']
+        if change or gap > w:
+          events.append({'a': iso(a['bucket_end_ms']), 'b': iso(x['bucket_end_ms']), 'blank_slots': gap // step - 1,
+                         'kind': ('troca' if change else '') + ('+buraco' if gap > w and not change else ''),
+                         'step_bp': round((x['open'] - a['close']) / a['close'] * 1e4, 2)})
+    wick_e1 = sum(1 for x in c if x['samples']['expected'] == 1 and (x['high'] != max(x['open'], x['close']) or x['low'] != min(x['open'], x['close'])))
+    out[f'{sym}:{iv}'] = {'n': len(c), 'runs': [{**r, 'from': iso(r['from']), 'to': iso(r['to'])} for r in runs], 'events': events,
+                          'expected1': sum(1 for x in c if x['samples']['expected'] == 1), 'expected1_with_wick': wick_e1,
+                          'partial': sum(1 for x in c if x['samples']['present'] < x['samples']['expected'])}
+json.dump(out, open(sys.argv[2], 'w'), indent=1)
+for k, v in out.items():
+  print(k, 'n=', v['n'], 'runs=', [(r['df'][8:], r['from'], r['to'], r['n']) for r in v['runs']], 'e1=', v['expected1'], 'e1wick=', v['expected1_with_wick'], 'partial=', v['partial'])
+  for e in v['events']: print('   ', e)
