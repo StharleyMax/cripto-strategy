@@ -180,6 +180,25 @@ def _postgres_conninfo(environ: Mapping[str, str]) -> str:
     )
 
 
+def connect_autocommit(conninfo: str) -> psycopg.Connection[Any]:
+    """Open a connection where every statement is its own transaction (`autocommit=True`).
+
+    The `connect=` a caller that only ever READS injects into `compose_postgres_connection` /
+    `compose_ingest_record_store` (`src.main.create_app`, the API). `psycopg` 3 defaults to
+    `autocommit=False`, so the FIRST `SELECT` on a long-lived connection opens an implicit
+    transaction; the API's read methods never `commit`, so that transaction never closed and
+    held `AccessShareLock` on every relation it touched until the API restarted — which is what
+    queued the collector's boot `ALTER TABLE` behind it and stalled ingestion
+    (`docs/context/candle-real-e-eixo-unico/gates/ESCALADO-api-idle-in-transaction.md`). Under
+    `READ COMMITTED` every statement already takes its own snapshot, so autocommit changes no
+    answer the API gives; it only stops the lock and the vacuum horizon from being retained.
+
+    Deliberately NOT the default of either composition function: the writer and the collector
+    `commit` explicitly and may rely on multi-statement atomicity, so they keep `psycopg.connect`.
+    """
+    return psycopg.connect(conninfo, autocommit=True)
+
+
 def compose_postgres_connection(
     environ: Mapping[str, str],
     *,
