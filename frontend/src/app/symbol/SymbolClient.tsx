@@ -166,6 +166,7 @@ import {
   type LegendSeriesId,
   type PaneLegendSources,
 } from "./pane-legend.ts";
+import { LIQUIDATION_SWATCH_FORM_BY_SIDE, liquidationSwatchStyle } from "./liquidation-legend-swatch.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
@@ -925,6 +926,7 @@ function LegendValue({
   slots,
   nativeTimeframeMs,
   prefix,
+  lead,
 }: {
   /** Which derived legend names and reads this value. */
   readonly seriesId: LegendSeriesId;
@@ -936,6 +938,9 @@ function LegendValue({
   readonly nativeTimeframeMs?: number;
   /** pt-BR word before the numeral, when a pane shows two values. */
   readonly prefix?: string;
+  /** `T-04.3` — a mark drawn IMMEDIATELY before the numeral column (the liquidation leg's square,
+   * `SPEC-009` §7.3). Never text: the numeral stays the only number of this value. */
+  readonly lead?: ReactNode;
 }) {
   const frame = useLegendFrame();
   const store = useContext(CrosshairSlotContext) ?? NO_CROSSHAIR_STORE;
@@ -974,6 +979,7 @@ function LegendValue({
       className="inline-flex items-baseline gap-x-1"
     >
       {prefix === undefined ? null : <span className="text-provenance-weak">{prefix}</span>}
+      {lead ?? null}
       <span
         data-legend-numeral=""
         style={{ width: `${numeralWidthCh}ch` }}
@@ -2672,6 +2678,29 @@ function LiquidationReadableHorizon({
   );
 }
 
+/**
+ * `T-04.3` (`SPEC-009` §7.3, `C-7`) — the 8px square before a leg's numeral: HOLLOW for the upper
+ * leg, FILLED for the lower one, in the SAME ink as that side's bars (`LIQUIDATION_BAR_COLOR_ROLE`,
+ * off the same `colorTokens()` call), so a square that lies about its bar is not expressible. The
+ * geometry — and why no `background` is used — is `liquidation-legend-swatch.ts`'s.
+ *
+ * `aria-hidden`: the square is the redundant copy of what the leg's `<h3>` (the group's
+ * `aria-label`) already says in words. The `data-` attributes are for `e2e/33`.
+ */
+function LiquidationLegSwatch({ side }: { readonly side: LiquidationSide }) {
+  const form = LIQUIDATION_SWATCH_FORM_BY_SIDE[side];
+  const ink = colorTokens()[LIQUIDATION_BAR_COLOR_ROLE[side]];
+  return (
+    <span
+      aria-hidden="true"
+      data-liquidation-swatch={form}
+      data-liquidation-swatch-side={side}
+      className="self-center"
+      style={liquidationSwatchStyle(form, ink)}
+    />
+  );
+}
+
 /** `T-04.2` — the pt-BR name of each leg. Microcopy (`CLAUDE.md` table line 8); `T-04.3` owns it. */
 const LIQUIDATION_LEG_LABEL: Readonly<Record<LiquidationCohort, string>> = {
   short: "Liquidação de posições vendidas (short)",
@@ -2722,7 +2751,14 @@ function LiquidationLegGroup({
     >
       <PaneLegendLine>
         <h3 className="font-label-caps text-label-caps text-on-surface">{label}</h3>
-        <LegendValue seriesId={`liquidation_${cohort}`} factKey={`liquidation_${cohort}`} slots={data.slots} />
+        {/* `T-04.3`: the magnitude as served (never signed, never combined with the other leg),
+            in neutral ink, preceded by its side's square. */}
+        <LegendValue
+          seriesId={`liquidation_${cohort}`}
+          factKey={`liquidation_${cohort}`}
+          slots={data.slots}
+          lead={<LiquidationLegSwatch side={side} />}
+        />
       </PaneLegendLine>
       <PartialCoverageMark factKey={`liquidation_partial_coverage:${cohort}`} summary={data.partialCoverage} />
       <AbsenceNote status={status} />
