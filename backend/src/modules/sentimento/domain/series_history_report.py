@@ -16,8 +16,14 @@ layer allowed to ask the wall clock what time it is).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from src.modules.sentimento.domain.as_of_accessor import BarPolicy
+
+if TYPE_CHECKING:
+    # Type-only: `oi_candle.py` imports `BucketCoverage` from THIS module at runtime, so a
+    # runtime import back would be a cycle. The envelope only calls `.to_wire()` on it.
+    from src.modules.sentimento.domain.oi_candle_regimes import OiCandleReport
 
 
 @dataclass(frozen=True)
@@ -168,6 +174,10 @@ class SeriesHistoryReport:
     `panel_source`/`panel_nature`/`panel_unit` are the catalog-derived, per-screen-panel facts
     `ADR-005/D3`'s "painel" level asks for; `rows` is the "célula" level, one entry per grid
     instant in the requested window.
+
+    `oi_candles` (`ADR-045/D2`, `T-03.9`): the `OiCandle`s of `SPEC-009` §6.4 when the panel IS
+    one of the two open-interest series, `None` for every other panel — served beside `rows`,
+    never instead of them, so the `ADR-040/D1` `last` a consumer reads today does not move.
     """
 
     panel_series_key_id: str
@@ -179,6 +189,7 @@ class SeriesHistoryReport:
     rows: tuple[SeriesHistoryRow, ...]
     knowledge_time: int
     bar_policy: BarPolicy
+    oi_candles: OiCandleReport | None = None
 
     def to_envelope(self, *, principal_id: str | None, server_now_ms: int) -> dict[str, object]:
         """Return the 3-level envelope, byte-stable for the same inputs (`ADR-005/D1`'s cache).
@@ -208,6 +219,9 @@ class SeriesHistoryReport:
                 "coverage": self.panel_coverage.to_wire(),
             },
             "rows": [row.to_wire() for row in self.rows],
+            # `ADR-045/D2`: explicit `null` on a panel that is not open interest — a missing key
+            # would be indistinguishable from a server that predates `T-03.9`.
+            "oi_candles": None if self.oi_candles is None else self.oi_candles.to_wire(),
             "knowledge_time": self.knowledge_time,
             "bar_policy": self.bar_policy.value,
         }

@@ -50,8 +50,9 @@
 # ── WHAT THIS MODULE DELIBERATELY DOES NOT DO ─────────────────────────────────────────────────
 #
 # * It does not choose between the two series (`ADR-045/D2-bis`, "one candle, one series") —
-#   that is `T-03.9`. It projects ONE series; `derived_from` is resolved from that series' key,
-#   so a candle cannot name a source it was not built from.
+#   that is `T-03.9`, in `domain/oi_candle_regimes.py`, which calls this function ONCE PER
+#   SERIES and only then picks. It projects ONE series; `derived_from` is resolved from that
+#   series' key, so a candle cannot name a source it was not built from.
 # * It does not read `md.series`, a clock, or the network. `now_ms` arrives as an argument and is
 #   used only for `closed`.
 # * It does not model availability: `bucket_end_ms` is not the instant the value becomes known
@@ -203,6 +204,39 @@ class OiCandle:
                 f"== {self.open_at_ms}: a one-reading candle is a zero made of absence "
                 f"(SPEC-009 §6.4, ADR-045/D1)"
             )
+
+    def to_wire(self) -> dict[str, object]:
+        """Project onto the exact field names of `SPEC-009` §6.4 / `ADR-045/D3`, snake_case.
+
+        `samples` is `BucketCoverage.to_wire()` — the `{present, expected}` pair of integers of
+        `ADR-040/D3`, the same object `rows[i].coverage` already carries on this route, never a
+        second spelling of it. `derived_from` travels as the enum's string value.
+        """
+        return {
+            "bucket_end_ms": self.bucket_end_ms,
+            "open": self.open,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "open_at_ms": self.open_at_ms,
+            "close_at_ms": self.close_at_ms,
+            "samples": self.samples.to_wire(),
+            "closed": self.closed,
+            "derived_from": self.derived_from.value,
+        }
+
+
+def oi_candle_source_or_none(key: SeriesKey) -> OiCandleSource | None:
+    """Return `derived_from` for a series that IS one of the two OI sources, else `None`.
+
+    The non-raising question the route asks of EVERY series it serves ("does this panel carry
+    `OiCandle`s at all?"). `oi_candle_source` below stays the raising one, for a caller that
+    already committed to projecting: there, a wrong trio is a defect and fails high
+    (`ADR-045/D2`). Here it is simply a panel that is not open interest.
+    """
+    if (key.nature, key.reduction, key.ts_convention) != OI_CANDLE_TRIO:
+        return None
+    return _DERIVED_FROM_BY_SOURCE.get(_source_identity(key))
 
 
 def oi_candle_source(key: SeriesKey) -> OiCandleSource:

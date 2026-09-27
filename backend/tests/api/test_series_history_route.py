@@ -8,6 +8,7 @@ that file already runs for `get_series_catalog_source`.
 
 from __future__ import annotations
 
+import dataclasses
 import http.client
 import json
 import threading
@@ -203,7 +204,18 @@ def test_get_series_history_serves_the_3_level_envelope(tmp_path: Path) -> None:
 
     assert status == 200
     envelope = json.loads(body)
-    assert set(envelope) == {"session", "panel", "rows", "knowledge_time", "bar_policy"}
+    # `oi_candles` joined the top level with `ADR-045/D2` (`T-03.9`): beside `rows`, never
+    # instead of them. This fixture's series IS the `openInterestHist` identity, so the block is
+    # an object here (its per-candle shape is pinned by the next test).
+    assert set(envelope) == {
+        "session",
+        "panel",
+        "rows",
+        "oi_candles",
+        "knowledge_time",
+        "bar_policy",
+    }
+    assert set(envelope["oi_candles"]) == {"timeframe_ms", "sources", "candles"}
     assert set(envelope["session"]) == {"principal_id", "server_now_ms"}
     # `native_grid_ms`/`grid_multiple` joined the panel level with `ADR-037/D4`: the report
     # grid is fixed at 1 minute, so a series on a wider grid comes back as a staircase and the
@@ -242,6 +254,60 @@ def test_get_series_history_serves_the_3_level_envelope(tmp_path: Path) -> None:
     # `T-03.4`/`ADR-040/D3`: `coverage` is a REAGGREGATED-row concept — `interval == "1m"` here
     # is the native grid, never reaggregated, so the key is present but its value is `null`.
     assert row_wire["coverage"] is None
+
+
+def _row_at(bucket_end_ms: int, value_raw: str) -> SeriesRow:
+    return dataclasses.replace(
+        _row(),
+        bucket_end=bucket_end_ms,
+        event_time=bucket_end_ms,
+        available_at=bucket_end_ms,
+        ingested_at=bucket_end_ms,
+        observed_at=bucket_end_ms,
+        value_raw=value_raw,
+    )
+
+
+def test_the_route_serves_oi_candles_with_the_spec_009_6_4_fields(tmp_path: Path) -> None:
+    """`ADR-045/D2`, `T-03.9`: `OiCandle` crosses the wire with EXACTLY the ten fields of §6.4.
+
+    Two readings one minute apart on the fixture's 1-minute grid: `p(T0)` and `p(T1)`, so the
+    bucket `(T0, T1]` has its boundary anchor and ONE candle comes out, `derived_from` resolved
+    from the series itself (`binance_point_5m`, the `openInterestHist` identity).
+    """
+    t0, t1 = BUCKET_END_MS - 60_000, BUCKET_END_MS
+    rows = (_row_at(t0, "1000.5"), _row_at(t1, "1002.25"))
+    reader = _FakeReader(tuple(Observation(row=row, value=Decimal(row.value_raw)) for row in rows))
+    app = _app_with_reader(tmp_path, reader)
+
+    with _served(app) as port:
+        status, body = _get(port, _valid_query(window_start_ms=t1, window_end_ms=t1))
+
+    assert status == 200
+    block = json.loads(body)["oi_candles"]
+    assert block["timeframe_ms"] == 60_000
+    assert block["sources"] == [
+        {
+            "derived_from": "binance_point_5m",
+            "series_key_id": _oi_key().series_key_id(),
+            "native_grid_ms": 60_000,
+            "bucket_interval_ms": 60_000,
+        }
+    ]
+    assert block["candles"] == [
+        {
+            "bucket_end_ms": t1,
+            "open": 1000.5,
+            "high": 1002.25,
+            "low": 1000.5,
+            "close": 1002.25,
+            "open_at_ms": t0,
+            "close_at_ms": t1,
+            "samples": {"present": 1, "expected": 1},
+            "closed": True,
+            "derived_from": "binance_point_5m",
+        }
+    ]
 
 
 def test_two_identical_requests_produce_byte_identical_bodies(tmp_path: Path) -> None:
