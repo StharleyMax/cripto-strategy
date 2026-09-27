@@ -1,0 +1,29 @@
+# V-2 over cap3 facts: one row per canvas ink column (value read by hovering THAT column). Dedupe by value pair
+# (a bucket may span 2+ columns). Sweep pair as model.py [b3]; log comparison = model h_log on the same H and max.
+import json, math, sys
+d = json.load(open("out/T-04.7-v2r2-facts.json")); tot = [0, 0, 0]
+def f(s):
+    try: return float(s)
+    except (TypeError, ValueError): return None
+for tf, blk in d.items():
+    zl, top = blk["a"]["data-liquidation-zero-line-px"], blk["a"]["data-reserved-scale-top-px"]
+    H = (zl - top) * (1 - 0.18)
+    b = {}
+    for c in blk["out"]:
+        s, l = f(c["vals"].get("liquidation_short")), f(c["vals"].get("liquidation_long"))
+        k = (s, l); e = b.setdefault(k, {"x": [], "hu": 0, "hd": 0}); e["x"].append(c["x"]); e["hu"] = max(e["hu"], c["hu"]); e["hd"] = max(e["hd"], c["hd"])
+    # consistency: an ink column must read a positive value on the leg it has ink for
+    incoh = sum(1 for (s, l), e in b.items() if (e["hu"] and not (s and s > 0)) or (e["hd"] and not (l and l > 0)))
+    pos = sorted(v for k in b for v in k if v and v > 0); p90 = pos[int(round(.9 * (len(pos) - 1)))]; M = max(pos)
+    hlog = lambda v: max(1.0, H * math.log10(max(v, 1)) / math.log10(M))
+    pairs = []
+    for (s, l), e in b.items():
+        if not (s and l and s > 0 and l > 0 and max(s, l) / min(s, l) >= 3 and max(s, l) >= p90): continue
+        hb, hs = (e["hu"], e["hd"]) if s > l else (e["hd"], e["hu"])
+        pairs.append({"x": e["x"], "short": s, "long": l, "h_up": e["hu"], "h_down": e["hd"], "drawn": round(hb / hs, 2) if hs else None, "log": round(hlog(max(s, l)) / hlog(min(s, l)), 2)})
+    ok = sum(1 for p in pairs if p["drawn"] and p["drawn"] >= 1.5); lg = sum(1 for p in pairs if p["log"] >= 1.5)
+    tot[0] += len(pairs); tot[1] += ok; tot[2] += lg
+    print(json.dumps({"tf": tf, "ink_cols": len(blk["out"]), "buckets": len(b), "incoherent_ink_vs_value": incoh, "p90": p90, "pairs": len(pairs), "drawn_ge_1_5": ok, "log_ge_1_5": lg}))
+    for p in pairs: print("   ", json.dumps(p))
+print(json.dumps({"pairs": tot[0], "linear_ok": tot[1], "log_ok": tot[2], "share": round(tot[1] / tot[0], 3) if tot[0] else None,
+  "V2": "INCONCLUSIVO" if tot[0] < 5 else ("PASSA" if tot[1] / tot[0] >= .64 and tot[1] > tot[2] else "DISPARA")}))

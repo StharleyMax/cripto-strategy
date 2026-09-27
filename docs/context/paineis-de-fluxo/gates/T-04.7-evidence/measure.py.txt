@@ -1,0 +1,43 @@
+# T-04.7 pixel measure of the fused liquidation pane crop (DPR 1).
+# Usage: python3 measure.py <liq.png> <zero_line_px> <reserved_top_px> <plot_right_px>
+# F-1 peak/median per leg; F-6 base rows; V-3 grid ink on the zero row in bar-less columns;
+# F-3 mark ink in the bar region / bar ink in the mark bands; SF-10 bar ink above the reserved top.
+import sys, json, statistics as st
+from PIL import Image
+path, zl, top, right = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), int(sys.argv[4])
+im = Image.open(path).convert("RGB"); W, H = im.size; px = im.load()
+def near(c, t, tol=40): return all(abs(a - b) <= tol for a, b in zip(c, t))
+UP, DN, ZERO, ABS, GRID = (8, 153, 129), (242, 54, 69), (230, 233, 239), (139, 148, 158), (34, 38, 52)
+D = 2 * (zl - top)                       # data area height (zero fixed at 0.5)
+bars_lo, bars_hi = top + 0.075 * D, top + 0.925 * D   # between the two mark bands (marks end at 0.06, bars start at 0.09)
+zr = int(zl)
+up_h, dn_h, gbase, rbase = [], [], [], []
+bare_cols = bare_with_grid = 0
+mark_in_bars = bar_in_marks = bar_above_top = 0
+for x in range(min(right, W)):
+    ups = [y for y in range(int(top), min(H, zr + 3)) if near(px[x, y], UP)]
+    dns = [y for y in range(max(0, zr - 2), H) if near(px[x, y], DN)]
+    if ups: up_h.append(max(ups) - min(ups) + 1); gbase.append(max(ups))
+    if dns: dn_h.append(max(dns) - min(dns) + 1); rbase.append(min(dns))
+    if not ups and not dns:
+        bare_cols += 1
+        if any(near(px[x, y], GRID, 8) for y in range(zr - 1, zr + 2)): bare_with_grid += 1
+    for y in range(int(bars_lo), int(bars_hi) + 1):
+        c = px[x, y]
+        if near(c, ZERO, 18) or near(c, ABS, 12): mark_in_bars += 1
+    for y in list(range(int(top), int(top + 0.06 * D) + 1)) + list(range(int(top + 0.94 * D), min(H, int(top + D) + 1))):
+        if near(px[x, y], UP) or near(px[x, y], DN): bar_in_marks += 1
+    if not (300 <= x <= 330):
+        for y in range(0, int(top)):
+            if near(px[x, y], UP, 30) or near(px[x, y], DN, 30): bar_above_top += 1
+def ratio(h): return round(max(h) / st.median(h), 1) if h else None
+def mode(xs): return max(set(xs), key=xs.count) if xs else None
+print(json.dumps({"file": path.split("/")[-1], "cols_up": len(up_h), "cols_down": len(dn_h),
+  "F1_up_max_over_p50": ratio(up_h), "F1_down_max_over_p50": ratio(dn_h), "up_max": max(up_h or [0]), "down_max": max(dn_h or [0]),
+  "up_floor_le2_share": round(sum(h <= 2 for h in up_h) / len(up_h), 2) if up_h else None,
+  "down_floor_le2_share": round(sum(h <= 2 for h in dn_h) / len(dn_h), 2) if dn_h else None,
+  "F6_green_base_row_mode": mode(gbase), "F6_red_base_row_mode": mode(rbase),
+  "F6_green_base_rows": sorted(set(gbase)), "F6_red_base_rows": sorted(set(rbase)),
+  "V3_bare_cols": bare_cols, "V3_bare_with_grid_on_zero": bare_with_grid,
+  "F3_mark_ink_in_bar_region": mark_in_bars, "F3_bar_ink_in_mark_bands": bar_in_marks,
+  "SF10_bar_ink_above_reserved_top": bar_above_top}))

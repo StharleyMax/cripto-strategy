@@ -1,0 +1,48 @@
+// T-04.7 V-2, instrument r2: the per-pixel sweep of cap2 lagged the legend behind the mouse (25 ms), so buckets and
+// columns misaligned. Here the columns come FROM the canvas: read the liquidation row's plot canvases (DPR 1), find every
+// column with bar ink, measure the green run above / red run below the zero row there, THEN hover that exact column and
+// wait 150 ms before reading the two legend values. 1920x1080, 5m and 15m. No writes anywhere.
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-04-7/frontend/node_modules/playwright/index.mjs";
+import fs from "node:fs";
+const OUT = process.argv[2]; const BASE = "http://127.0.0.1:4321"; const res = {};
+const browser = await chromium.launch();
+for (const tf of ["5m", "15m"]) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await page.goto(`${BASE}/symbol/BTCUSDT?interval=${tf}`, { waitUntil: "load", timeout: 180_000 });
+  await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180_000 });
+  await page.waitForTimeout(6000);
+  await page.mouse.move(2, 2); await page.waitForTimeout(400);
+  const cols = await page.evaluate(() => {
+    const pane = document.querySelector('[data-testid="liquidation-pane"]');
+    let n = pane; const a = {};
+    for (; n && n !== document.body; n = n.parentElement) for (const x of n.attributes) if (x.name === "data-liquidation-zero-line-px" || x.name === "data-reserved-scale-top-px") a[x.name] = Number(x.value);
+    const tr = pane.closest("tr"); const cell = tr.children[tr.children.length - 2] ?? tr.firstElementChild;
+    const rect = tr.getBoundingClientRect(); const cr = cell.getBoundingClientRect();
+    const W = Math.round(cr.width), H = Math.round(cr.height);
+    const acc = new Uint8ClampedArray(W * H * 4); // composite of all canvases in the plot cell (source-over)
+    const off = document.createElement("canvas"); off.width = W; off.height = H; const ctx = off.getContext("2d");
+    for (const c of cell.querySelectorAll("canvas")) { if (c.width && c.height) ctx.drawImage(c, 0, 0, W, H); }
+    const d = ctx.getImageData(0, 0, W, H).data;
+    const near = (i, t, tol) => Math.abs(d[i] - t[0]) <= tol && Math.abs(d[i + 1] - t[1]) <= tol && Math.abs(d[i + 2] - t[2]) <= tol;
+    const UP = [8, 153, 129], DN = [242, 54, 69];
+    const zl = a["data-liquidation-zero-line-px"], top = a["data-reserved-scale-top-px"], zr = Math.floor(zl);
+    const out = [];
+    for (let x = 0; x < W; x++) {
+      let u0 = -1, u1 = -1, d0 = -1, d1 = -1;
+      for (let y = Math.floor(top); y < zr + 3; y++) { const i = (y * W + x) * 4; if (near(i, UP, 40)) { if (u0 < 0) u0 = y; u1 = y; } }
+      for (let y = zr - 2; y < H; y++) { const i = (y * W + x) * 4; if (near(i, DN, 40)) { if (d0 < 0) d0 = y; d1 = y; } }
+      if (u0 >= 0 || d0 >= 0) out.push({ x, hu: u0 >= 0 ? u1 - u0 + 1 : 0, hd: d0 >= 0 ? d1 - d0 + 1 : 0 });
+    }
+    return { a, cellX: cr.left, rowY: rect.top, W, H, out };
+  });
+  for (const c of cols.out) {
+    await page.mouse.move(cols.cellX + c.x + 0.5, cols.rowY + cols.a["data-reserved-scale-top-px"] + 10);
+    await page.waitForTimeout(150);
+    c.vals = await page.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll('[data-testid="liquidation-pane"] [data-legend-value]')).map((e) => [e.getAttribute("data-legend-value"), e.textContent.trim()])));
+  }
+  res[tf] = cols;
+  await page.close();
+}
+await browser.close();
+fs.writeFileSync(`${OUT}/T-04.7-v2r2-facts.json`, JSON.stringify(res));
+console.log(Object.entries(res).map(([k, v]) => `${k}:${v.out.length} ink cols W=${v.W}`).join(" "));

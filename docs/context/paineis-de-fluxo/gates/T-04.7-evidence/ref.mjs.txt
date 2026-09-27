@@ -1,0 +1,17 @@
+// Reference = master 613719a (before phase 04), same proxy, same instrument: tfclick (SF-11) + 1920x1080 1m/15m/4h screenshots.
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-04-7/frontend/node_modules/playwright/index.mjs";
+const OUT = process.argv[2]; const TAG = process.argv[3] ?? "REF"; const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+await page.goto("http://127.0.0.1:4321/symbol/BTCUSDT", { waitUntil: "load", timeout: 180000 });
+await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180000 }); await page.waitForTimeout(6000);
+await page.screenshot({ path: `${OUT}/${TAG}-1920x1080-1m.png` });
+const out = [];
+for (const tf of ["5m", "15m", "1h", "4h", "15m", "1m"]) {
+  const id = `timeframe-button-${tf}`; const t0 = Date.now();
+  await page.locator(`[data-testid="${id}"]`).click({ noWaitAfter: true });
+  await page.waitForFunction((i) => document.querySelector(`[data-testid="${i}"]`)?.getAttribute("aria-pressed") === "true", id, { polling: "raf", timeout: 60000 });
+  out.push({ tf, first_pressed_ms: Date.now() - t0 });
+  await page.waitForTimeout(3000);
+  if (tf === "4h" || (tf === "15m" && out.length === 2)) await page.screenshot({ path: `${OUT}/${TAG}-1920x1080-${tf}.png` });
+}
+console.log(JSON.stringify(out)); await browser.close();
