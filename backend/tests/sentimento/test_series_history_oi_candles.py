@@ -158,6 +158,7 @@ def _report(  # noqa: PLR0913 — every knob of one request, each defaulted to t
     interval: str = "5m",
     knowledge_time_ms: int = _at(30),
     bar_policy: BarPolicy = BarPolicy.FINAL_ONLY,
+    window_minutes: tuple[int, int] = (5, 15),
 ) -> tuple[SeriesHistoryReport, _ReaderBySeries]:
     hist, poll = _hist_entry(), _poll_entry()
     reader = _ReaderBySeries(
@@ -176,8 +177,8 @@ def _report(  # noqa: PLR0913 — every knob of one request, each defaulted to t
         series_key_id=(requested or hist).key.series_key_id(),
         symbol=SYMBOL,
         interval=interval,
-        window_start_ms=_at(5),
-        window_end_ms=_at(15),
+        window_start_ms=_at(window_minutes[0]),
+        window_end_ms=_at(window_minutes[1]),
         knowledge_time_ms=knowledge_time_ms,
         bar_policy=bar_policy,
     )
@@ -303,3 +304,11 @@ def test_a_panel_that_is_not_open_interest_carries_null() -> None:
     assert report.oi_candles is None
     assert report.to_envelope(principal_id=None, server_now_ms=_at(30))["oi_candles"] is None
     assert reader.asked_ids == [ratio.key.series_key_id()]
+
+
+def test_a_window_holding_no_whole_bucket_serves_no_candle_and_skips_the_second_read() -> None:
+    """`(6, 9)` in TF `5m` holds no 5-minute bucket end: `candles: []`, and no polled read."""
+    report, reader = _report(window_minutes=(6, 9))
+
+    assert _candles(report) == []
+    assert reader.asked_ids == [_hist_entry().key.series_key_id()]
