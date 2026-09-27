@@ -1,0 +1,178 @@
+{
+ "1920x1080-1m": {
+  "rows": {
+   "price-pane": {
+    "y": 61,
+    "h": 335,
+    "w": 1920
+   },
+   "liquidation-pane": {
+    "y": 397,
+    "h": 217,
+    "w": 1920
+   },
+   "oi-pane": {
+    "y": 615,
+    "h": 148,
+    "w": 1920
+   },
+   "long-short-pane": {
+    "y": 764,
+    "h": 89,
+    "w": 1920
+   },
+   "cvd-pane": {
+    "y": 854,
+    "h": 89,
+    "w": 1920
+   }
+  },
+  "attrs": {
+   "liquidation-pane:data-liquidation-sides": "short:up;long:down",
+   "liquidation-pane:data-pane-height-px": "217",
+   "liquidation-pane:data-legend-bottom-px": "78",
+   "liquidation-pane:data-reserved-scale-top-px": "82",
+   "liquidation-pane:data-legend-reserve": "margins",
+   "liquidation-pane:data-right-scale-mode": "normal",
+   "liquidation-pane:data-liquidation-zero-line-px": "147.5",
+   "liquidation-pane:data-liquidation-bar-scales": "up:upright:normal;down:inverted:normal",
+   "DIV:data-pane-legend": "",
+   "P:data-fact": "liquidation_readable_horizon:long:848/5760",
+   "P:data-reconstructed-from": "",
+   "P:data-published-error": "none",
+   "liquidation-cohort-short:data-liquidation-present-points": "851",
+   "liquidation-cohort-short:data-liquidation-zero-points": "400",
+   "liquidation-cohort-short:data-liquidation-side": "up",
+   "SPAN:data-legend-value": "liquidation_long",
+   "SPAN:data-legend-kind": "absent",
+   "SPAN:data-legend-source": "last_closed",
+   "SPAN:data-legend-slot-index": "5759",
+   "SPAN:data-legend-bucket-ms": "1790477340000",
+   "SPAN:data-legend-raw": "",
+   "SPAN:data-legend-absence": "SEM_PONTO",
+   "SPAN:data-liquidation-swatch": "filled",
+   "SPAN:data-liquidation-swatch-side": "down",
+   "SPAN:data-legend-numeral": "",
+   "SPAN:data-legend-mark": "none",
+   "P:data-readable-since-ms": "1790132400000",
+   "DIV:data-fact": "liquidation_slots:long:5760",
+   "liquidation-cohort-long:data-liquidation-present-points": "848",
+   "liquidation-cohort-long:data-liquidation-zero-points": "406",
+   "liquidation-cohort-long:data-liquidation-side": "down",
+   "P:data-liquidation-marks-key": "",
+   "UL:data-fact": "liquidation_marks_legend:3"
+  },
+  "legend": [
+   {
+    "k": "liquidation_short",
+    "t": "ausente",
+    "bottom": 435
+   },
+   {
+    "k": "liquidation_long",
+    "t": "ausente",
+    "bottom": 455
+   }
+  ],
+  "facts": [
+   "liquidation_provenance:declared:coinalyze",
+   "liquidation_last_reading:short:absent",
+   "liquidation_readable_horizon:short:851/5760",
+   "liquidation_slots:short:5760",
+   "liquidation_last_reading:long:absent",
+   "liquidation_readable_horizon:long:848/5760",
+   "liquidation_slots:long:5760",
+   "liquidation_marks_legend:3"
+  ],
+  "text": "Liquidações (1m, USD) ⚠️ Dado de TERCEIRO (coinalyze), não da corretora de origem. Erro publicado: NENHUM — não há segunda fonte para medir a fidelidade contra, e publicar um número que ninguém mediu seria pior do que não publicar. Liquidação de posições vendidas (short) ausente Leitura atual: ausente Dado legível desde 2026-09-23 03:00 UTC — 851/5760 grades de 1 min observadas, das quais 400 são zero do fornecedor. Liquidação de posições compradas (long) ausente Leitura atual: ausente Dado legí",
+  "n_history": 0
+ },
+ "1024x768-1m": {
+  "rows": {
+   "price-pane": {
+    "y": 61,
+    "h": 335,
+    "w": 1024
+   },
+   "liquidation-pane": {
+    "y": 397,
+    "h": 217,
+    "w": 1024
+   },
+   "oi-pane": {
+    "y": 615,
+    "h": 148,
+    "w": 1024
+   },
+   "long-short-pane": {
+    "y": 764,
+    "h": 89,
+    "w": 1024
+   },
+   "cvd-pane": {
+    "y": 854,
+    "h": 89,
+    "w": 1024
+   }
+  },
+  "attrs": {
+   "liquidation-pane:data-liquidation-sides": "short:up;long:down",
+   "liquidation-pane:data-pane-height-px": "217",
+   "liquidation-pane:data-legend-bottom-px": "78",
+   "liquidation-pane:data-reserved-scale-top-px": "82",
+   "liquidation-pane:data-legend-reserve": "margins",
+   "liquidation-pane:data-right-scale-mode": "normal",
+   "liquidation-pane:data-liquidation-zero-line-px": "147.5",
+   "liquidation-pane:data-liquidation-bar-scales": "up:upright:normal;down:inverted:normal",
+   "DIV:data-pane-legend": "",
+   "P:data-fact": "liquidation_readable_horizon:long:848/5760",
+   "P:data-reconstructed-from": "",
+   "P:data-published-error": "none",
+   "liquidation-cohort-short:data-liquidation-present-points": "851",
+   "liquidation-cohort-short:data-liquidation-zero-points": "400",
+   "liquidation-cohort-short:data-liquidation-side": "up",
+   "SPAN:data-legend-value": "liquidation_long",
+   "SPAN:data-legend-kind": "absent",
+   "SPAN:data-legend-source": "last_closed",
+   "SPAN:data-legend-slot-index": "5759",
+   "SPAN:data-legend-bucket-ms": "1790477340000",
+   "SPAN:data-legend-raw": "",
+   "SPAN:data-legend-absence": "SEM_PONTO",
+   "SPAN:data-liquidation-swatch": "filled",
+   "SPAN:data-liquidation-swatch-side": "down",
+   "SPAN:data-legend-numeral": "",
+   "SPAN:data-legend-mark": "none",
+   "P:data-readable-since-ms": "1790132400000",
+   "DIV:data-fact": "liquidation_slots:long:5760",
+   "liquidation-cohort-long:data-liquidation-present-points": "848",
+   "liquidation-cohort-long:data-liquidation-zero-points": "406",
+   "liquidation-cohort-long:data-liquidation-side": "down",
+   "P:data-liquidation-marks-key": "",
+   "UL:data-fact": "liquidation_marks_legend:3"
+  },
+  "legend": [
+   {
+    "k": "liquidation_short",
+    "t": "ausente",
+    "bottom": 435
+   },
+   {
+    "k": "liquidation_long",
+    "t": "ausente",
+    "bottom": 455
+   }
+  ],
+  "facts": [
+   "liquidation_provenance:declared:coinalyze",
+   "liquidation_last_reading:short:absent",
+   "liquidation_readable_horizon:short:851/5760",
+   "liquidation_slots:short:5760",
+   "liquidation_last_reading:long:absent",
+   "liquidation_readable_horizon:long:848/5760",
+   "liquidation_slots:long:5760",
+   "liquidation_marks_legend:3"
+  ],
+  "text": "Liquidações (1m, USD) ⚠️ Dado de TERCEIRO (coinalyze), não da corretora de origem. Erro publicado: NENHUM — não há segunda fonte para medir a fidelidade contra, e publicar um número que ninguém mediu seria pior do que não publicar. Liquidação de posições vendidas (short) ausente Leitura atual: ausente Dado legível desde 2026-09-23 03:00 UTC — 851/5760 grades de 1 min observadas, das quais 400 são zero do fornecedor. Liquidação de posições compradas (long) ausente Leitura atual: ausente Dado legí",
+  "n_history": 0
+ }
+}

@@ -1,0 +1,44 @@
+// T-04.4 capture: real app (next start :4323) over prod data via read-only proxy :8823.
+// Per TF x viewport: liquidation-pane geometry + facts, screenshots, and every /series-history body.
+// No writes anywhere. Usage: node capture.mjs <out-dir> <tag> [tfs] [viewports]
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-04-4/frontend/node_modules/playwright/index.mjs";
+import fs from "node:fs";
+const OUT = process.argv[2]; const TAG = process.argv[3] ?? "head";
+const TFS = (process.argv[4] ?? "1m,5m,15m,1h,4h").split(",");
+const VPS = (process.argv[5] ?? "1280x800").split(",").map((s) => { const [w, h] = s.split("x").map(Number); return { w, h, tag: s }; });
+fs.mkdirSync(OUT, { recursive: true });
+const browser = await chromium.launch();
+const facts = {};
+for (const vp of VPS) for (const tf of TFS) {
+  const page = await browser.newPage({ viewport: { width: vp.w, height: vp.h }, deviceScaleFactor: 1 });
+  const bodies = [];
+  page.on("response", async (r) => { if (r.url().includes("series-history")) { try { bodies.push({ url: r.url(), body: await r.json() }); } catch {} } });
+  await page.goto(`http://127.0.0.1:4323/symbol/BTCUSDT?interval=${tf}`, { waitUntil: "load", timeout: 180000 });
+  await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180000 });
+  await page.waitForTimeout(7000);
+  const f = await page.evaluate(() => {
+    const out = {};
+    for (const id of ["price-pane", "liquidation-pane", "oi-pane", "long-short-pane", "cvd-pane"]) {
+      const el = document.querySelector(`[data-testid="${id}"]`);
+      const tr = el?.closest("tr"); const r = tr?.getBoundingClientRect();
+      out[id] = r ? { y: r.top, h: r.height, w: r.width } : null;
+    }
+    const liq = document.querySelector('[data-testid="liquidation-pane"]');
+    const attrs = {};
+    if (liq) for (const n of [liq, ...liq.querySelectorAll("*")]) for (const a of n.attributes) if (a.name.startsWith("data-") && a.value.length < 120 && a.name !== "data-testid") attrs[`${n.getAttribute("data-testid") ?? n.tagName}:${a.name}`] = a.value;
+    const legend = liq?.querySelector("[data-legend-value]") ? Array.from(liq.querySelectorAll("[data-legend-value]")).map((e) => ({ k: e.getAttribute("data-legend-value"), t: e.textContent.trim().slice(0, 60), bottom: e.getBoundingClientRect().bottom })) : [];
+    const facts = Array.from(document.querySelectorAll("[data-fact]")).map((e) => e.getAttribute("data-fact")).filter((s) => s.startsWith("liquidation"));
+    return { rows: out, attrs, legend, facts, text: liq?.innerText.replace(/\s+/g, " ").slice(0, 500) ?? null };
+  });
+  f.n_history = bodies.length;
+  const key = `${vp.tag}-${tf}`;
+  facts[key] = f;
+  fs.writeFileSync(`${OUT}/${TAG}-${key}-bodies.json`, JSON.stringify(bodies));
+  const row = f.rows["liquidation-pane"];
+  if (row) await page.screenshot({ path: `${OUT}/${TAG}-${key}-liq.png`, clip: { x: 0, y: row.y, width: vp.w, height: row.h } });
+  await page.screenshot({ path: `${OUT}/${TAG}-${key}-viewport.png` });
+  await page.close();
+}
+await browser.close();
+fs.writeFileSync(`${OUT}/${TAG}-facts.json`, JSON.stringify(facts, null, 1));
+console.log(Object.keys(facts).join(" "));

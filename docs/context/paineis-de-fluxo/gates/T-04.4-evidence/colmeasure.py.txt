@@ -1,0 +1,37 @@
+# T-04.4 pixel measure of the fused liquidation pane, per column of pixel, from the pane screenshot.
+# Usage: python3 colmeasure.py out/<tag>-<vp>-<tf>-liq.png <zero_line_px> <data_top_px>
+# Reads, per plot column (x < plot_right): the green run going UP from the zero line (short leg) and the
+# red run going DOWN from it (long leg), and the ink of the two mark bands (#e6e9ef zero mark,
+# #8b949e absence mark). Prints one JSON line.
+import sys, json
+from PIL import Image
+path, zl, top = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
+im = Image.open(path).convert("RGB"); W, H = im.size; px = im.load()
+def near(c, t, tol=40): return all(abs(a - b) <= tol for a, b in zip(c, t))
+UP, DOWN, ZERO, ABS = (8, 153, 129), (242, 54, 69), (230, 233, 239), (139, 148, 158)
+# plot area: columns left of the price-axis column; find it as the last column with any bar/mark ink
+zrow = int(zl)  # the normal scale's floor row is zl-1 or zl; scan a +-2 window for the bases
+up_h, down_h, cols_up, cols_down = [], [], 0, 0
+zero_ink = abs_ink = bar_ink_up = bar_ink_down = 0
+plot_right = W - 70
+for x in range(plot_right):
+    # up: highest green pixel in [top, zl+1]
+    ys_up = [y for y in range(int(top), min(H, zrow + 2)) if near(px[x, y], UP)]
+    ys_dn = [y for y in range(max(0, zrow - 1), H) if near(px[x, y], DOWN)]
+    if ys_up:
+        cols_up += 1; up_h.append(max(ys_up) - min(ys_up) + 1); bar_ink_up += len(ys_up)
+    if ys_dn:
+        cols_down += 1; down_h.append(max(ys_dn) - min(ys_dn) + 1); bar_ink_down += len(ys_dn)
+    for y in range(int(top), H):
+        c = px[x, y]
+        if near(c, ZERO, 18): zero_ink += 1
+        elif near(c, ABS, 12): abs_ink += 1
+def q(xs, p):
+    xs = sorted(xs); return xs[min(len(xs) - 1, int(round(p * (len(xs) - 1))))] if xs else None
+out = {"file": path.split("/")[-1], "cols_up": cols_up, "cols_down": cols_down,
+       "up_p50": q(up_h, .5), "up_p90": q(up_h, .9), "up_max": max(up_h) if up_h else None,
+       "up_le1": sum(1 for h in up_h if h <= 1), "up_le2": sum(1 for h in up_h if h <= 2),
+       "down_p50": q(down_h, .5), "down_p90": q(down_h, .9), "down_max": max(down_h) if down_h else None,
+       "down_le1": sum(1 for h in down_h if h <= 1), "down_le2": sum(1 for h in down_h if h <= 2),
+       "ink_bars": bar_ink_up + bar_ink_down, "ink_zero_mark": zero_ink, "ink_absence_mark": abs_ink}
+print(json.dumps(out))
