@@ -1,0 +1,970 @@
+{
+ "BTCUSDT": {
+  "60000": {
+   "binance_point_5m": {
+    "n": 200,
+    "body_bp_p50": 2.415,
+    "body_bp_p90": 8.477,
+    "zero_body": 3,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-25T00:05Z",
+    "last": "09-27T00:30Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 1521,
+    "body_bp_p50": 0.278,
+    "body_bp_p90": 1.489,
+    "zero_body": 1,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-26T03:04Z",
+    "last": "09-27T15:40Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:04Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 4,
+     "level_jump_bp": -1.395,
+     "b_open_at_T0": 1790391780000
+    },
+    {
+     "at": "09-27T00:30Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 7,
+     "level_jump_bp": 2.47,
+     "b_open_at_T0": 1790468700000
+    },
+    {
+     "at": "09-27T11:40Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 670,
+     "level_jump_bp": 8.288,
+     "b_open_at_T0": 1790509140000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:40Z",
+     "binance_poll_1m",
+     true
+    ],
+    [
+     "09-27T11:41Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "300000": {
+   "binance_point_5m": {
+    "n": 201,
+    "body_bp_p50": 2.394,
+    "body_bp_p90": 8.085,
+    "zero_body": 3,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-25T00:05Z",
+    "last": "09-27T00:30Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 304,
+    "body_bp_p50": 1.108,
+    "body_bp_p90": 4.739,
+    "zero_body": 0,
+    "wick_bp_p50": 0.253,
+    "wick_nonzero": 233,
+    "first": "09-26T03:10Z",
+    "last": "09-27T15:40Z",
+    "samples": [
+     [
+      3,
+      5
+     ],
+     [
+      5,
+      5
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:10Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 5,
+     "level_jump_bp": -0.588,
+     "b_open_at_T0": 1790391900000
+    },
+    {
+     "at": "09-27T00:30Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 5,
+     "level_jump_bp": 2.47,
+     "b_open_at_T0": 1790468700000
+    },
+    {
+     "at": "09-27T11:45Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 675,
+     "level_jump_bp": 7.76,
+     "b_open_at_T0": 1790509200000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:45Z",
+     "binance_poll_1m",
+     true
+    ],
+    [
+     "09-27T11:50Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "900000": {
+   "binance_point_5m": {
+    "n": 69,
+    "body_bp_p50": 4.241,
+    "body_bp_p90": 21.427,
+    "zero_body": 0,
+    "wick_bp_p50": 0.445,
+    "wick_nonzero": 43,
+    "first": "09-25T00:15Z",
+    "last": "09-27T11:45Z",
+    "samples": [
+     [
+      2,
+      3
+     ],
+     [
+      3,
+      3
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 100,
+    "body_bp_p50": 2.732,
+    "body_bp_p90": 11.881,
+    "zero_body": 0,
+    "wick_bp_p50": 0.909,
+    "wick_nonzero": 85,
+    "first": "09-26T03:30Z",
+    "last": "09-27T15:30Z",
+    "samples": [
+     [
+      8,
+      15
+     ],
+     [
+      15,
+      15
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:30Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 15,
+     "level_jump_bp": -0.672,
+     "b_open_at_T0": 1790392500000
+    },
+    {
+     "at": "09-27T11:45Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 675,
+     "level_jump_bp": 11.773,
+     "b_open_at_T0": 1790509200000
+    },
+    {
+     "at": "09-27T12:00Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 15,
+     "level_jump_bp": -0.995,
+     "b_open_at_T0": 1790509500000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:45Z",
+     "binance_point_5m",
+     false
+    ],
+    [
+     "09-27T12:00Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "overlap_5m": {
+   "n": 303,
+   "hidden_range_bp_p50": 0.253,
+   "hidden_range_bp_p90": 1.175,
+   "body_over_range_p50": 0.808,
+   "buckets_with_wick": 233,
+   "hist_vs_poll_body_sign_flip": 25,
+   "capture_start": "09-26T03:03Z"
+  }
+ },
+ "ETHUSDT": {
+  "60000": {
+   "binance_point_5m": {
+    "n": 258,
+    "body_bp_p50": 1.981,
+    "body_bp_p90": 11.068,
+    "zero_body": 2,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-25T05:40Z",
+    "last": "09-27T00:30Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 1521,
+    "body_bp_p50": 0.286,
+    "body_bp_p90": 1.234,
+    "zero_body": 1,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-26T03:04Z",
+    "last": "09-27T15:40Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:04Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 4,
+     "level_jump_bp": 11.042,
+     "b_open_at_T0": 1790391780000
+    },
+    {
+     "at": "09-27T00:30Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 7,
+     "level_jump_bp": -8.402,
+     "b_open_at_T0": 1790468700000
+    },
+    {
+     "at": "09-27T11:40Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 670,
+     "level_jump_bp": 142.644,
+     "b_open_at_T0": 1790509140000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:40Z",
+     "binance_poll_1m",
+     true
+    ],
+    [
+     "09-27T11:41Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "300000": {
+   "binance_point_5m": {
+    "n": 259,
+    "body_bp_p50": 1.981,
+    "body_bp_p90": 11.068,
+    "zero_body": 2,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-25T05:40Z",
+    "last": "09-27T00:30Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 304,
+    "body_bp_p50": 0.938,
+    "body_bp_p90": 3.771,
+    "zero_body": 0,
+    "wick_bp_p50": 0.162,
+    "wick_nonzero": 217,
+    "first": "09-26T03:10Z",
+    "last": "09-27T15:40Z",
+    "samples": [
+     [
+      3,
+      5
+     ],
+     [
+      5,
+      5
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:10Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 5,
+     "level_jump_bp": 8.483,
+     "b_open_at_T0": 1790391900000
+    },
+    {
+     "at": "09-27T00:30Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 5,
+     "level_jump_bp": -8.402,
+     "b_open_at_T0": 1790468700000
+    },
+    {
+     "at": "09-27T11:45Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 675,
+     "level_jump_bp": 142.79,
+     "b_open_at_T0": 1790509200000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:45Z",
+     "binance_poll_1m",
+     true
+    ],
+    [
+     "09-27T11:50Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "900000": {
+   "binance_point_5m": {
+    "n": 88,
+    "body_bp_p50": 5.187,
+    "body_bp_p90": 17.415,
+    "zero_body": 0,
+    "wick_bp_p50": 0.698,
+    "wick_nonzero": 55,
+    "first": "09-25T05:45Z",
+    "last": "09-27T11:45Z",
+    "samples": [
+     [
+      2,
+      3
+     ],
+     [
+      3,
+      3
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 100,
+    "body_bp_p50": 2.231,
+    "body_bp_p90": 15.187,
+    "zero_body": 0,
+    "wick_bp_p50": 0.841,
+    "wick_nonzero": 83,
+    "first": "09-26T03:30Z",
+    "last": "09-27T15:30Z",
+    "samples": [
+     [
+      8,
+      15
+     ],
+     [
+      15,
+      15
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:30Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 15,
+     "level_jump_bp": 8.525,
+     "b_open_at_T0": 1790392500000
+    },
+    {
+     "at": "09-27T11:45Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 675,
+     "level_jump_bp": 125.762,
+     "b_open_at_T0": 1790509200000
+    },
+    {
+     "at": "09-27T12:00Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 15,
+     "level_jump_bp": 9.258,
+     "b_open_at_T0": 1790509500000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:45Z",
+     "binance_point_5m",
+     false
+    ],
+    [
+     "09-27T12:00Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "overlap_5m": {
+   "n": 303,
+   "hidden_range_bp_p50": 0.161,
+   "hidden_range_bp_p90": 1.084,
+   "body_over_range_p50": 0.833,
+   "buckets_with_wick": 216,
+   "hist_vs_poll_body_sign_flip": 20,
+   "capture_start": "09-26T03:03Z"
+  }
+ },
+ "LINKUSDT": {
+  "60000": {
+   "binance_point_5m": {
+    "n": 180,
+    "body_bp_p50": 4.452,
+    "body_bp_p90": 18.711,
+    "zero_body": 4,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-25T10:55Z",
+    "last": "09-27T00:30Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 1521,
+    "body_bp_p50": 1.005,
+    "body_bp_p90": 4.045,
+    "zero_body": 1,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-26T03:04Z",
+    "last": "09-27T15:40Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:04Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 4,
+     "level_jump_bp": -7.984,
+     "b_open_at_T0": 1790391780000
+    },
+    {
+     "at": "09-27T00:30Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 7,
+     "level_jump_bp": 2.911,
+     "b_open_at_T0": 1790468700000
+    },
+    {
+     "at": "09-27T11:40Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 670,
+     "level_jump_bp": 121.349,
+     "b_open_at_T0": 1790509140000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:40Z",
+     "binance_poll_1m",
+     true
+    ],
+    [
+     "09-27T11:41Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "300000": {
+   "binance_point_5m": {
+    "n": 181,
+    "body_bp_p50": 4.452,
+    "body_bp_p90": 18.248,
+    "zero_body": 4,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-25T10:55Z",
+    "last": "09-27T00:30Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 304,
+    "body_bp_p50": 3.421,
+    "body_bp_p90": 13.442,
+    "zero_body": 0,
+    "wick_bp_p50": 0.726,
+    "wick_nonzero": 223,
+    "first": "09-26T03:10Z",
+    "last": "09-27T15:40Z",
+    "samples": [
+     [
+      3,
+      5
+     ],
+     [
+      5,
+      5
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:10Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 5,
+     "level_jump_bp": -1.642,
+     "b_open_at_T0": 1790391900000
+    },
+    {
+     "at": "09-27T00:30Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 5,
+     "level_jump_bp": 2.911,
+     "b_open_at_T0": 1790468700000
+    },
+    {
+     "at": "09-27T11:45Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 675,
+     "level_jump_bp": 119.148,
+     "b_open_at_T0": 1790509200000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:45Z",
+     "binance_poll_1m",
+     true
+    ],
+    [
+     "09-27T11:50Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "900000": {
+   "binance_point_5m": {
+    "n": 63,
+    "body_bp_p50": 8.49,
+    "body_bp_p90": 41.551,
+    "zero_body": 1,
+    "wick_bp_p50": 0.938,
+    "wick_nonzero": 37,
+    "first": "09-25T11:00Z",
+    "last": "09-27T11:45Z",
+    "samples": [
+     [
+      2,
+      3
+     ],
+     [
+      3,
+      3
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 100,
+    "body_bp_p50": 6.424,
+    "body_bp_p90": 32.239,
+    "zero_body": 0,
+    "wick_bp_p50": 2.886,
+    "wick_nonzero": 86,
+    "first": "09-26T03:30Z",
+    "last": "09-27T15:30Z",
+    "samples": [
+     [
+      8,
+      15
+     ],
+     [
+      15,
+      15
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:30Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 15,
+     "level_jump_bp": -1.841,
+     "b_open_at_T0": 1790392500000
+    },
+    {
+     "at": "09-27T11:45Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 675,
+     "level_jump_bp": 123.96,
+     "b_open_at_T0": 1790509200000
+    },
+    {
+     "at": "09-27T12:00Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 15,
+     "level_jump_bp": -1.46,
+     "b_open_at_T0": 1790509500000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:45Z",
+     "binance_point_5m",
+     false
+    ],
+    [
+     "09-27T12:00Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "overlap_5m": {
+   "n": 303,
+   "hidden_range_bp_p50": 0.726,
+   "hidden_range_bp_p90": 3.28,
+   "body_over_range_p50": 0.847,
+   "buckets_with_wick": 223,
+   "hist_vs_poll_body_sign_flip": 12,
+   "capture_start": "09-26T03:03Z"
+  }
+ },
+ "SOLUSDT": {
+  "60000": {
+   "binance_point_5m": {
+    "n": 164,
+    "body_bp_p50": 4.749,
+    "body_bp_p90": 22.108,
+    "zero_body": 2,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-25T13:30Z",
+    "last": "09-27T00:30Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 1521,
+    "body_bp_p50": 0.922,
+    "body_bp_p90": 4.024,
+    "zero_body": 1,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-26T03:04Z",
+    "last": "09-27T15:40Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:04Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 4,
+     "level_jump_bp": -8.297,
+     "b_open_at_T0": 1790391780000
+    },
+    {
+     "at": "09-27T00:30Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 7,
+     "level_jump_bp": -1.698,
+     "b_open_at_T0": 1790468700000
+    },
+    {
+     "at": "09-27T11:40Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 670,
+     "level_jump_bp": 188.92,
+     "b_open_at_T0": 1790509140000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:40Z",
+     "binance_poll_1m",
+     true
+    ],
+    [
+     "09-27T11:41Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "300000": {
+   "binance_point_5m": {
+    "n": 165,
+    "body_bp_p50": 4.749,
+    "body_bp_p90": 22.108,
+    "zero_body": 2,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 0,
+    "first": "09-25T13:30Z",
+    "last": "09-27T00:30Z",
+    "samples": [
+     [
+      1,
+      1
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 304,
+    "body_bp_p50": 3.23,
+    "body_bp_p90": 11.699,
+    "zero_body": 0,
+    "wick_bp_p50": 0.748,
+    "wick_nonzero": 224,
+    "first": "09-26T03:10Z",
+    "last": "09-27T15:40Z",
+    "samples": [
+     [
+      3,
+      5
+     ],
+     [
+      5,
+      5
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:10Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 5,
+     "level_jump_bp": 3.328,
+     "b_open_at_T0": 1790391900000
+    },
+    {
+     "at": "09-27T00:30Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 5,
+     "level_jump_bp": -1.698,
+     "b_open_at_T0": 1790468700000
+    },
+    {
+     "at": "09-27T11:45Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 675,
+     "level_jump_bp": 185.93,
+     "b_open_at_T0": 1790509200000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:45Z",
+     "binance_poll_1m",
+     true
+    ],
+    [
+     "09-27T11:50Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "900000": {
+   "binance_point_5m": {
+    "n": 57,
+    "body_bp_p50": 11.315,
+    "body_bp_p90": 36.622,
+    "zero_body": 0,
+    "wick_bp_p50": 0.0,
+    "wick_nonzero": 23,
+    "first": "09-25T13:30Z",
+    "last": "09-27T11:45Z",
+    "samples": [
+     [
+      2,
+      3
+     ],
+     [
+      3,
+      3
+     ]
+    ]
+   },
+   "binance_poll_1m": {
+    "n": 100,
+    "body_bp_p50": 6.297,
+    "body_bp_p90": 24.84,
+    "zero_body": 0,
+    "wick_bp_p50": 3.472,
+    "wick_nonzero": 84,
+    "first": "09-26T03:30Z",
+    "last": "09-27T15:30Z",
+    "samples": [
+     [
+      8,
+      15
+     ],
+     [
+      15,
+      15
+     ]
+    ]
+   },
+   "transitions": [
+    {
+     "at": "09-26T03:30Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 15,
+     "level_jump_bp": 5.143,
+     "b_open_at_T0": 1790392500000
+    },
+    {
+     "at": "09-27T11:45Z",
+     "frm": "binance_poll_1m",
+     "to": "binance_point_5m",
+     "gap_min": 675,
+     "level_jump_bp": 181.056,
+     "b_open_at_T0": 1790509200000
+    },
+    {
+     "at": "09-27T12:00Z",
+     "frm": "binance_point_5m",
+     "to": "binance_poll_1m",
+     "gap_min": 15,
+     "level_jump_bp": 3.372,
+     "b_open_at_T0": 1790509500000
+    }
+   ],
+   "candles_strictly_inside_0030_1139": 0,
+   "first_after_hole": [
+    [
+     "09-27T11:45Z",
+     "binance_point_5m",
+     false
+    ],
+    [
+     "09-27T12:00Z",
+     "binance_poll_1m",
+     true
+    ]
+   ]
+  },
+  "overlap_5m": {
+   "n": 303,
+   "hidden_range_bp_p50": 0.748,
+   "hidden_range_bp_p90": 3.759,
+   "body_over_range_p50": 0.792,
+   "buckets_with_wick": 224,
+   "hist_vs_poll_body_sign_flip": 21,
+   "capture_start": "09-26T03:03Z"
+  }
+ }
+}

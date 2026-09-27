@@ -133,15 +133,53 @@ const TOKENS: ColorTokens = {
 export const SURFACE_BASE = "#131722";
 
 /**
+ * `--sup-regime` of `docs/product/DESIGN_SYSTEM.md` §1.2 — `paineis-de-fluxo` `T-03.12` (`[Q-DG-3]`,
+ * `DG-1` of `gates/T-03.12-design-gate.md`, approved by `ux-ui-mastery` in its §8-r3): the background
+ * the OI pane paints behind every run of candles of the pre-capture regime (`binance_point_5m`).
+ *
+ * ⛔ A SURFACE, NOT A `ColorRole` (`N-3` of the gate). Against `SURFACE_BASE` it measures `1,131:1`,
+ * so as a role it would fail the very `3:1` floor every role owes — and it is not ink, it is ground
+ * other ink is drawn on. What it changes is what the series roles are measured AGAINST: every plot
+ * role now declares BOTH surfaces (`PLOT_SURFACES`), and the worst of the two has to clear its floor.
+ *
+ * Not in `globals.css`: no CSS paints it (the band is canvas), and a second citation with no reader
+ * would be a number to keep without anyone reading it `[INFERRED: gate §3 item 3]`.
+ */
+export const OI_REGIME_BAND_SURFACE = "#1e2230";
+
+/**
+ * Every SURFACE a series role may be painted on inside a plot, by name — the declared set of
+ * `DESIGN_SYSTEM.md` §1.2's "REGRA DURA" (*"nenhum `fill` cromático pode ser desenhado sobre superfície
+ * fora deste conjunto"*), as far as the plot is concerned.
+ *
+ *   - `base` — the chart background. Its colour is the one `createChart` is handed
+ *     (`chartSurfaceTheme().backgroundColor`, which IS `SURFACE_BASE`), and the contrast gate reads it
+ *     from there, so a canvas moved off the page surface is still caught (`DR-1`).
+ *   - `oiRegimeBand` — `OI_REGIME_BAND_SURFACE`, the pre-capture band of the OI pane (`T-03.12`).
+ */
+export const PLOT_SURFACES = {
+  base: SURFACE_BASE,
+  oiRegimeBand: OI_REGIME_BAND_SURFACE,
+} as const;
+
+export type PlotSurface = keyof typeof PLOT_SURFACES;
+
+/**
  * What a token is DRAWN ON, and therefore what its contrast must be measured against.
  *
- *   - `kind: "surface"` — painted straight onto `SURFACE_BASE` (the chart background).
+ *   - `kind: "surfaces"` — painted straight onto the plot; measured against EVERY surface listed
+ *     (`PLOT_SURFACES`), and the WORST of those ratios is the one that has to clear `minRatio`.
+ *     Since `T-03.12` a plot role declares `base` AND `oiRegimeBand`: the OI band is ground the
+ *     candles, the lines and the marks may all be drawn over.
  *   - `kind: "roles"` — painted ON TOP of another token's fill; measured against EVERY role
  *     listed, and the WORST of those ratios is the one that has to clear `minRatio`.
  */
 export type ContrastBackdrop =
-  | { readonly kind: "surface"; readonly minRatio: number }
+  | { readonly kind: "surfaces"; readonly surfaces: readonly PlotSurface[]; readonly minRatio: number }
   | { readonly kind: "roles"; readonly roles: readonly ColorRole[]; readonly minRatio: number };
+
+/** Every plot surface, in declaration order — what a plot role's `surfaces` must list IN FULL. */
+const EVERY_PLOT_SURFACE: readonly PlotSurface[] = Object.keys(PLOT_SURFACES) as PlotSurface[];
 
 /**
  * THE GATE'S INPUT (`D13`), and the reason it is a `Record<ColorRole, ...>` rather than an
@@ -159,15 +197,33 @@ export type ContrastBackdrop =
  * ⚠️ `directionOn` measures `1,00:1` against the surface, and that is NOT a defect: it was
  * reported as one in design review and RETRACTED in `D13` ("Medi contra a referência errada").
  * Against the fills it is `5,01:1` (up) and `4,59:1` (down).
+ *
+ * `T-03.12`: the five plot roles list EVERY plot surface (`EVERY_PLOT_SURFACE`), so the worst case
+ * is now the OI regime band — the down fill at `4,06:1` there against `4,59:1` on the base
+ * `[MEDIDO: gates/T-03.12-design-gate.md §2 DG-1, WCAG 2.x]`. `color-contrast.test.ts` pins that
+ * every plot role declares every plot surface (`Q-6c`): a role that drops the band from its list
+ * would stop being measured against it with the floor still green.
  */
 export const CONTRAST_BACKDROP: Readonly<Record<ColorRole, ContrastBackdrop>> = {
-  directionUpFill: { kind: "surface", minRatio: 3.0 },
-  directionDownFill: { kind: "surface", minRatio: 3.0 },
+  directionUpFill: { kind: "surfaces", surfaces: EVERY_PLOT_SURFACE, minRatio: 3.0 },
+  directionDownFill: { kind: "surfaces", surfaces: EVERY_PLOT_SURFACE, minRatio: 3.0 },
   directionOn: { kind: "roles", roles: ["directionUpFill", "directionDownFill"], minRatio: 4.5 },
-  dataBrokenInk: { kind: "surface", minRatio: 3.0 },
-  provenanceStrong: { kind: "surface", minRatio: 3.0 },
-  provenanceWeak: { kind: "surface", minRatio: 3.0 },
+  dataBrokenInk: { kind: "surfaces", surfaces: EVERY_PLOT_SURFACE, minRatio: 3.0 },
+  provenanceStrong: { kind: "surfaces", surfaces: EVERY_PLOT_SURFACE, minRatio: 3.0 },
+  provenanceWeak: { kind: "surfaces", surfaces: EVERY_PLOT_SURFACE, minRatio: 3.0 },
 };
+
+/**
+ * `T-03.12` (`N-3`/`N-6` of the gate): a role used as TEXT on the plot — the regime-band label of the
+ * OI pane, `amostras 5m`, is `provenanceWeak` at 11 px. Text owes WCAG SC 1.4.3's `4,5:1`, not the
+ * `3:1` of SC 1.4.11 that `CONTRAST_BACKDROP` holds a role to, so it is declared APART: the role
+ * floor does not cover it (`5,15:1` on the band, `5,82:1` on the base, `[MEDIDO: gate §2 DG-1]`).
+ */
+export const PLOT_TEXT_BACKDROP: {
+  readonly role: ColorRole;
+  readonly surfaces: readonly PlotSurface[];
+  readonly minRatio: number;
+} = { role: "provenanceWeak", surfaces: EVERY_PLOT_SURFACE, minRatio: 4.5 };
 
 /**
  * The named tokens — the only way this module exposes a color to a caller. Takes NO argument:

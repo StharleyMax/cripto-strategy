@@ -177,6 +177,14 @@ import {
   type OiCandleField,
   type OiCandlePaneData,
 } from "./oi-candle-pane.ts";
+import {
+  hlUnmeasured,
+  oiRegimeBandsAtFact,
+  oiRegimeMarks,
+  placeOiRegimeLabels,
+  type PlacedOiRegimeLabel,
+} from "./oi-regime-marks.ts";
+import { OiRegimePanePrimitive } from "./oi-regime-primitive.ts";
 import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
@@ -2355,9 +2363,13 @@ function OiCandleLegend({ oiCandles }: { readonly oiCandles: OiCandlePaneData })
   const markWidthCh = legend === null ? 0 : legendMarkWidthCh(legend.readingPolicy);
   const numeral = (value: number | null) => (value === null ? absenceText : formatLegendNumeral(value));
   const provenance = candle === null ? null : oiCandleProvenanceLabel(candle.derived_from, oiCandles.sources);
+  // `T-03.12` (`DG-4`, `R4`, `N-7`): with at most two readings in the bucket, `H`/`L` ARE `O`/`C` by
+  // construction — the legend says so instead of printing them as a measured range.
+  const hlNotMeasured = candle !== null && hlUnmeasured(candle, oiCandles.sources);
   return (
     <span
       data-legend-ohlc="oi"
+      data-legend-hl-unmeasured={candle === null ? "" : String(hlNotMeasured)}
       data-legend-open={candle?.open ?? ""}
       data-legend-high={candle?.high ?? ""}
       data-legend-low={candle?.low ?? ""}
@@ -2377,6 +2389,13 @@ function OiCandleLegend({ oiCandles }: { readonly oiCandles: OiCandlePaneData })
             {numeral(value)}
           </span>
         );
+        if (hlNotMeasured && field === "low") {
+          // The `L` part lives inside the one `H/L não medidos` cell rendered in place of `H`.
+          return null;
+        }
+        if (hlNotMeasured && field === "high") {
+          return <OiLegendHlUnmeasuredCell key="hl-unmeasured" numeralWidthCh={numeralWidthCh} />;
+        }
         if (field !== "close") {
           return (
             <span key={field} data-legend-ohlc-part={field} className="inline-flex items-baseline gap-x-1">
@@ -2415,6 +2434,70 @@ function OiCandleLegend({ oiCandles }: { readonly oiCandles: OiCandlePaneData })
   );
 }
 
+/** `T-03.12` — the e2e switch of the regime marks' ablation (`Q-2`, and the rule/label pixel checks):
+ * `?e2eOiRegimeMarks=0` paints no band, no rule and no label. Canvas and labels only: the DOM facts
+ * (`data-oi-regime-*`) stay, because they are the derivation, not the paint. */
+const OI_REGIME_MARKS_ABLATION_QUERY_PARAM = "e2eOiRegimeMarks";
+
+function isOiRegimeMarksAblationRequested(search: string): boolean {
+  return new URLSearchParams(search).get(OI_REGIME_MARKS_ABLATION_QUERY_PARAM) === "0";
+}
+
+function mountedOiRegimeMarksPaint(): boolean {
+  return !(typeof window !== "undefined" && isOiRegimeMarksAblationRequested(window.location.search));
+}
+
+function serverOiRegimeMarksPaint(): boolean {
+  return true;
+}
+
+/** `DG-3`: the label sits in the reserved strip between the legend's bottom and the scale's top, and
+ * that strip gets `+16 px` when it is narrower than this (`gate §3 item 4`). */
+const OI_REGIME_LABEL_RESERVE_PX = 16;
+
+/** `DG-3`: small caps of 11 px (`--text-label-caps`, `0.6875rem`), `provenanceWeak` ink — the TEXT
+ * floor `PLOT_TEXT_BACKDROP` (4,5:1 against the band AND the base) is the one it owes. */
+const OI_REGIME_LABEL_CLASS = "pointer-events-none absolute whitespace-nowrap font-label-caps text-label-caps text-provenance-weak";
+
+interface PlacedOiRegimeLabels {
+  readonly placed: readonly PlacedOiRegimeLabel[];
+  readonly topPx: number | null;
+}
+
+const NO_PLACED_OI_REGIME_LABELS: PlacedOiRegimeLabels = { placed: [], topPx: null };
+
+/** `DG-4` (r2 wording, `§8.5`): *"não medidos"*, never *"sem pavio"* (that says marubozu), and never
+ * `ausente`/`—` (the absence tokens: here there WAS a reading). */
+const OI_HL_UNMEASURED_TEXT = "H/L não medidos";
+
+/**
+ * `T-03.12` (`DG-4`, `Q-5`) — the ONE cell that replaces the `H` and `L` parts when the bucket had at
+ * most two readings. Its width is the SUM of the two parts BY CONSTRUCTION, not by arithmetic in
+ * `ch`: the two parts are still laid out, invisible (same letter, same `numeralWidthCh` numeral, same
+ * `gap-x-2` between them as the legend's), and the text is drawn over them. So the numerals' column
+ * does not move when the crosshair crosses from a candle with the predicate true to one with it
+ * false (`C-4` of `DESIGN-LAYOUT-ux-critique-r2`). The invisible parts are `aria-hidden` and carry
+ * no numeral: no `H`/`L` number is visible or read out; `data-legend-high`/`-low` on the legend root
+ * keep the served numbers for the e2e that compares them with the route.
+ */
+function OiLegendHlUnmeasuredCell({ numeralWidthCh }: { readonly numeralWidthCh: number }) {
+  return (
+    <span data-legend-ohlc-part="hl-unmeasured" className="relative inline-flex items-baseline gap-x-2">
+      {(["H", "L"] as const).map((letter) => (
+        <span key={letter} aria-hidden="true" className="invisible inline-flex items-baseline gap-x-1">
+          <span>{letter}</span>
+          <span style={{ width: `${numeralWidthCh}ch` }} className="inline-block text-right font-data-sm tabular-nums">
+            {"\u00a0"}
+          </span>
+        </span>
+      ))}
+      <span data-legend-hl-text="" className="absolute inset-0 truncate whitespace-nowrap text-provenance-weak">
+        {OI_HL_UNMEASURED_TEXT}
+      </span>
+    </span>
+  );
+}
+
 function OiPane({
   panels,
   status,
@@ -2434,8 +2517,74 @@ function OiPane({
 }) {
   // `T-03.11` — the registry's kind (`candlestick`), or `line` under `?e2eOiLine=1`.
   const seriesKind = useSyncExternalStore(subscribeToNothing, mountedOiPaneSeriesKind, serverOiPaneSeriesKind);
+  // `T-03.12` (`DG-1`/`DG-2`/`DG-3`/`DG-5`) — the regime marks, derived from the served candles only
+  // (`oi-regime-marks.ts`), painted by a pane primitive, and the labels placed against the same x.
+  const paintRegime = useSyncExternalStore(subscribeToNothing, mountedOiRegimeMarksPaint, serverOiRegimeMarksPaint);
+  const regime = useMemo(() => oiRegimeMarks(oiCandles.candles, oiCandles.sources), [oiCandles.candles, oiCandles.sources]);
+  const gridStartMs = oiCandles.slots[0]?.time ?? null;
+  const canvasMarks = useMemo(
+    () => ({ bands: regime.bands, rules: regime.rules, gridStartMs, paint: paintRegime }),
+    [regime, gridStartMs, paintRegime],
+  );
+  const primitiveRef = useRef<OiRegimePanePrimitive | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const labelMeasureRef = useRef(new Map<string, HTMLElement>());
+  const [labels, setLabels] = useState<PlacedOiRegimeLabels>(NO_PLACED_OI_REGIME_LABELS);
+  const [labelReserve, setLabelReserve] = useState(false);
+  const placeLabelsRef = useRef<() => void>(() => undefined);
+  placeLabelsRef.current = () => {
+    const primitive = primitiveRef.current;
+    const section = sectionRef.current;
+    if (primitive === null || section === null || !paintRegime) {
+      setLabels((current) => (current.placed.length === 0 && current.topPx === null ? current : NO_PLACED_OI_REGIME_LABELS));
+      return;
+    }
+    const measured = labelMeasureRef.current;
+    const placed = placeOiRegimeLabels(
+      regime.labelSpans,
+      (ms) => primitive.edgePx(ms) ?? Number.NaN,
+      primitive.plotWidthPx(),
+      (text) => measured.get(text)?.getBoundingClientRect().width ?? Number.POSITIVE_INFINITY,
+    ).map((label) => ({ ...label, leftPx: Math.round(label.leftPx * 10) / 10 }));
+    const reservedTopPx = Number(section.dataset.reservedScaleTopPx ?? Number.NaN);
+    const legendBottom = Number(section.dataset.legendBottomPx ?? Number.NaN);
+    const labelHeightPx = [...measured.values()][0]?.getBoundingClientRect().height ?? Number.NaN;
+    const known = Number.isFinite(reservedTopPx) && Number.isFinite(legendBottom) && Number.isFinite(labelHeightPx);
+    // `gate §3 item 4`: the strip gets `+16 px` when it is narrower — latched while there is a band
+    // to label, so a scroll that hides and shows a label never makes the whole pane jump.
+    if (known && regime.bands.length > 0 && reservedTopPx - legendBottom < OI_REGIME_LABEL_RESERVE_PX) {
+      setLabelReserve(true);
+    } else if (regime.bands.length === 0) {
+      setLabelReserve(false);
+    }
+    const topPx = known ? Math.round((reservedTopPx - labelHeightPx - 1) * 10) / 10 : null;
+    setLabels((current) =>
+      current.topPx === topPx && JSON.stringify(current.placed) === JSON.stringify(placed) ? current : { placed, topPx },
+    );
+  };
+  const labelFrameRef = useRef(0);
+  const scheduleLabelPlacement = useCallback(() => {
+    if (labelFrameRef.current !== 0) {
+      return;
+    }
+    labelFrameRef.current = requestAnimationFrame(() => {
+      labelFrameRef.current = 0;
+      placeLabelsRef.current();
+    });
+  }, []);
+  useEffect(() => {
+    primitiveRef.current?.setMarks(canvasMarks);
+    scheduleLabelPlacement();
+  }, [canvasMarks, scheduleLabelPlacement]);
+  useEffect(() => () => cancelAnimationFrame(labelFrameRef.current), []);
+  const labelTexts = useMemo(() => [...new Set(regime.labelSpans.map((span) => span.text))], [regime.labelSpans]);
   useHostedPane<OiPaneHandles>("oi", {
     mount: (chart, paneIndex) => {
+      // `T-03.12`: the band and the rule are the pane's, whatever kind draws the candles.
+      const primitive = new OiRegimePanePrimitive(scheduleLabelPlacement);
+      chart.panes()[paneIndex]?.attachPrimitive(primitive);
+      primitive.setMarks(canvasMarks);
+      primitiveRef.current = primitive;
       const kind = mountedOiPaneSeriesKind();
       if (kind === "candlestick") {
         // `RF-9`: green when contracts ENTERED the bucket (`close > open`), red when they LEFT, the
@@ -2487,6 +2636,15 @@ function OiPane({
       // kind of series drew them (the registry's, or the `DoD-6` ablation's `line`).
       data-oi-candles={oiCandles.drawnCandles}
       data-oi-series-kind={seriesKind}
+      // `T-03.12` (`gate §3 item 7`) — the regime marks as the DERIVATION made them (not the paint):
+      // how many bands and rules, and each band's interval `(leftExcl, rightIncl]` in ms.
+      data-oi-regime-bands={regime.bands.length}
+      data-oi-regime-rules={regime.rules.length}
+      data-oi-regime-bands-at={oiRegimeBandsAtFact(regime)}
+      data-oi-regime-rules-at={regime.rules.map((rule) => rule.atMs).join(",")}
+      data-oi-regime-marks={paintRegime ? "painted" : "ablated"}
+      data-oi-regime-labels={labels.placed.map((label) => label.derivedFrom).join(",")}
+      ref={sectionRef}
       className={PANE_LAYER_CLASS}
     >
       <PaneLegend>
@@ -2496,6 +2654,8 @@ function OiPane({
           <OiCandleLegend oiCandles={oiCandles} />
           <OiProvenance oi={oi} />
         </PaneLegendLine>
+        {/* `T-03.12` (`gate §3 item 4`): the `+16 px` of the label strip, only when it was short. */}
+        {labelReserve ? <div aria-hidden="true" data-oi-regime-label-reserve="" style={{ height: OI_REGIME_LABEL_RESERVE_PX }} /> : null}
         {/* ⛔ STAYS VISIBLE (`RNF-2`): a held STOCK value older than its cadence is never shown
             without its age, and "DADO VELHO" is said here or nowhere. */}
         <OiFreshness oi={oi} />
@@ -2510,6 +2670,39 @@ function OiPane({
           <OiReadableHorizon oi={oi} gridSlots={panels.oi.slots.length} />
         </PaneDetails>
       </PaneLegend>
+      {/* `T-03.12` (`DG-3`) — the regime labels, HTML over the canvas (never inside the plot's
+          candles: they sit in the reserved strip above the scale), at the visible left edge of each
+          stretch + 4 px. The invisible copies are the rulers `placeOiRegimeLabels` measures. */}
+      {labels.topPx === null
+        ? null
+        : labels.placed.map((label) => (
+            <span
+              key={`${label.derivedFrom}:${label.leftPx}`}
+              data-fact={`oi_regime_band_label:${label.derivedFrom}`}
+              data-oi-regime-label-left-px={label.leftPx}
+              style={{ left: label.leftPx, top: labels.topPx ?? 0 }}
+              className={OI_REGIME_LABEL_CLASS}
+            >
+              {label.text}
+            </span>
+          ))}
+      {labelTexts.map((text) => (
+        <span
+          key={`ruler:${text}`}
+          aria-hidden="true"
+          ref={(element) => {
+            if (element === null) {
+              labelMeasureRef.current.delete(text);
+            } else {
+              labelMeasureRef.current.set(text, element);
+            }
+          }}
+          style={{ left: 0, top: 0 }}
+          className={`${OI_REGIME_LABEL_CLASS} invisible`}
+        >
+          {text}
+        </span>
+      ))}
     </section>
     </PaneLayer>
   );

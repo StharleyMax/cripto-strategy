@@ -93,7 +93,10 @@ test("sanity: the scan finds the measured universe of data-fact expressions, not
     // 45 → 46 in `paineis-de-fluxo` `T-03.11`, a GAINED fact: the OI candle legend publishes
     // `data-fact="oi_candle_provenance:<derived_from>"` beside the `DERIVADO` label (`RN-6`). No
     // data-fact was lost — the OI pane's other six are unchanged.
-    46,
+    // 46 → 47 in `paineis-de-fluxo` `T-03.12`, a GAINED fact: each regime label of the OI pane
+    // publishes `data-fact="oi_regime_band_label:<derived_from>"` (`DG-3`, gate §3 item 4). No
+    // data-fact was lost — the OI pane's other seven are unchanged.
+    47,
     "the count moved — either a panel gained/lost a data-fact, or the extractor regex broke; " +
       "update this number ONLY after confirming which, never to silence a red run",
   );

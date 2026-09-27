@@ -1,0 +1,12 @@
+# WCAG 2.x relative-luminance contrast of the 5 surface-drawn roles against each candidate backdrop.
+def L(h):
+    c=[int(h[i:i+2],16)/255 for i in (1,3,5)]; c=[x/12.92 if x<=0.04045 else ((x+0.055)/1.055)**2.4 for x in c]
+    return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2]
+def cr(a,b):
+    la,lb=sorted((L(a),L(b)),reverse=True); return (la+0.05)/(lb+0.05)
+roles={'directionUpFill':'#089981','directionDownFill':'#f23645','dataBrokenInk':'#e0aaff','provenanceStrong':'#e6e9ef','provenanceWeak':'#8b949e'}
+for name,s in {'SURFACE_BASE':'#131722','band #1e2230':'#1e2230','abl #2a3040':'#2a3040','abl #343b4f':'#343b4f','listra #222634':'#222634'}.items():
+    r={k:round(cr(v,s),2) for k,v in roles.items()}; w=min(r,key=r.get)
+    print(f"{name:16} vs base {cr(s,'#131722'):.3f}  " + ' '.join(f"{k[:12]}={v}" for k,v in r.items()) + f"  worst={w}:{r[w]}")
+print('grid #222634 on band', round(cr('#222634','#1e2230'),3), ' grid on base', round(cr('#222634','#131722'),3))
+print('directionOn on fills', round(cr('#131722','#089981'),2), round(cr('#131722','#f23645'),2))

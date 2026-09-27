@@ -370,6 +370,7 @@ nenhum contraste é verificável**, porque contraste é sempre *contra* algo.
 | `--sup-base` | `#ffffff` | `#131722` | fundo do **plot** e do painel — é onde os `fill` de direção vivem |
 | `--sup-chrome` | `#f7f8fa` | `#0d1017` | chrome global e cabeçalho de painel |
 | `--sup-listra` | `#eff0f2` | `#222634` | listra de tabela / linha em hover. **É o extremo**: no claro a mais escura, no escuro a mais clara ⇒ é o **pior caso** de cada modo |
+| --sup-regime | — (D13: o app tem um tema) | #1e2230 | fundo de trecho de regime de amostragem do pane de OI (faixa de T-03.12). Só o plot do OI. Os 5 papéis de série são medidos contra ela |
 
 `#131722` e `#222634` são os valores de superfície da **TradingView**. Jakob's Law aplicada à superfície,
 não só ao candle.

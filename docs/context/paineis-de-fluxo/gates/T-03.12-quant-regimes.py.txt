@@ -1,0 +1,73 @@
+"""Read-only analysis of prod OI rows through the worktree's own OiCandle projection (T-03.12)."""
+import json, statistics as st, sys, datetime
+from src.modules.sentimento.domain.open_interest_catalog import open_interest_catalog_entries, binance_open_interest_poll_entry, binance_open_interest_key
+from src.modules.sentimento.domain.oi_candle import OiReading
+from src.modules.sentimento.domain.oi_candle_regimes import OiRegimeReadings, project_one_series_per_bucket
+d=json.load(open(sys.argv[1])); now=d['knowledge_time_ms']
+iso=lambda ms: datetime.datetime.fromtimestamp(ms/1000, datetime.UTC).strftime('%m-%dT%H:%MZ')
+def q(xs,p): xs=sorted(xs); return xs[min(len(xs)-1,int(p*len(xs)))] if xs else None
+res={}
+for s in ['BTCUSDT','ETHUSDT','LINKUSDT','SOLUSDT']:
+    hk=binance_open_interest_key(instrument_id=s)
+    hentry=[e for e in open_interest_catalog_entries(s).entries if e.key.series_key_id()==hk.series_key_id()] if hasattr(open_interest_catalog_entries(s),'entries') else None
+    cat=open_interest_catalog_entries(s)
+    ents=list(getattr(cat,'entries',cat))
+    hentry=[e for e in ents if e.key.series_key_id()==hk.series_key_id()][0]
+    pentry=binance_open_interest_poll_entry(s)
+    rd=lambda k:tuple(OiReading(r['event_time'],float(r['value'])) for r in d[f'{s}:{k}']['rows'] if r['value'] is not None)
+    H=rd('hist'); P=rd('poll'); Hm={r.instant_ms:r.value for r in H}; Pm={r.instant_ms:r.value for r in P}
+    capture_start=min(Pm)
+    out={}
+    for tf in (60000,300000,900000):
+        rep=project_one_series_per_bucket(poll=OiRegimeReadings(pentry,P),hist=OiRegimeReadings(hentry,H),timeframe_ms=tf,now_ms=now)
+        C=[c for c in rep.candles if c.closed]
+        by={}
+        for c in C: by.setdefault(c.derived_from.value,[]).append(c)
+        tfo={}
+        for reg,cs in by.items():
+            body=[abs(c.close-c.open)/c.open*1e4 for c in cs]
+            wick=[((c.high-max(c.open,c.close))+(min(c.open,c.close)-c.low))/c.open*1e4 for c in cs]
+            zero=sum(1 for c in cs if c.close==c.open)
+            tfo[reg]=dict(n=len(cs),body_bp_p50=round(q(body,.5),3),body_bp_p90=round(q(body,.9),3),zero_body=zero,
+                          wick_bp_p50=round(q(wick,.5),3),wick_nonzero=sum(1 for w in wick if w>0),
+                          first=iso(cs[0].bucket_end_ms),last=iso(cs[-1].bucket_end_ms),
+                          samples=sorted({(c.samples.present,c.samples.expected) for c in cs})[:6])
+        # transitions between consecutive served candles
+        trans=[]
+        for a,b in zip(rep.candles,rep.candles[1:]):
+            if a.derived_from!=b.derived_from:
+                trans.append(dict(at=iso(b.bucket_end_ms),frm=a.derived_from.value,to=b.derived_from.value,
+                    gap_min=(b.bucket_end_ms-a.bucket_end_ms)//60000,
+                    level_jump_bp=round((b.open-a.close)/a.close*1e4,3), b_open_at_T0=b.open_at_ms))
+        # empty slots in the 00:22->11:39 hole at this tf
+        hole=[c for c in rep.candles if 1790469000000 < c.bucket_end_ms < 1790509140000]  # strictly inside (09-27T00:30Z, 11:39Z)
+        tfo['transitions']=trans; tfo['candles_strictly_inside_0030_1139']=len(hole)
+        # first candle after hole
+        after=[c for c in rep.candles if c.bucket_end_ms>=1790509140000][:2]
+        tfo['first_after_hole']=[(iso(c.bucket_end_ms),c.derived_from.value,c.open_at_ms==c.bucket_end_ms-max(tf,60000 if c.derived_from.value=='binance_poll_1m' else 300000)) for c in after]
+        out[str(tf)]=tfo
+    # missing wick: in overlap, poll-derived 5m candles vs hist 5m for the same buckets
+    rep5=project_one_series_per_bucket(poll=OiRegimeReadings(pentry,P),hist=None,timeframe_ms=300000,now_ms=now)
+    rep5h=project_one_series_per_bucket(poll=None,hist=OiRegimeReadings(hentry,H),timeframe_ms=300000,now_ms=now)
+    hb={c.bucket_end_ms:c for c in rep5h.candles if c.closed and c.open_at_ms==c.bucket_end_ms-300000}
+    ratio=[];hidden=[];sign_flip=0;n=0;inner_rev=0
+    for c in rep5.candles:
+        if not c.closed or c.open_at_ms!=c.bucket_end_ms-300000 or c.samples.present<5: continue
+        h=hb.get(c.bucket_end_ms)
+        if not h: continue
+        n+=1
+        body=abs(c.close-c.open); rng=c.high-c.low
+        hidden.append((rng-body)/c.open*1e4)
+        if rng>0: ratio.append(body/rng)
+        if (h.close-h.open)*(c.close-c.open)<0: sign_flip+=1
+        if rng>body: inner_rev+=1
+    out['overlap_5m']=dict(n=n,hidden_range_bp_p50=round(q(hidden,.5),3),hidden_range_bp_p90=round(q(hidden,.9),3),
+        body_over_range_p50=round(q(ratio,.5),3),buckets_with_wick=inner_rev,hist_vs_poll_body_sign_flip=sign_flip,
+        capture_start=iso(capture_start))
+    res[s]=out
+json.dump(res,open(sys.argv[2],'w'),indent=1)
+for s,o in res.items():
+    print('==',s,'overlap5m',o['overlap_5m'])
+    for tf in ('60000','300000','900000'):
+        t=o[tf]; print(' tf',int(tf)//60000,'m', {k:v for k,v in t.items() if k not in('transitions',)})
+        for tr in t['transitions']: print('   T',tr)

@@ -1,0 +1,203 @@
+{
+ "cases": {
+  "BTCUSDT:1m": {
+   "n": 1728,
+   "by_readings": {
+    "2": 1728
+   },
+   "r3_contract": 1728,
+   "abl_expected_eq1": 1728,
+   "abl_no_anchor": 1728,
+   "abl_present_eq1": 1728,
+   "wick_by_readings": {}
+  },
+  "BTCUSDT:5m": {
+   "n": 505,
+   "by_readings": {
+    "2": 199,
+    "3": 1,
+    "6": 305
+   },
+   "r3_contract": 199,
+   "abl_expected_eq1": 199,
+   "abl_no_anchor": 200,
+   "abl_present_eq1": 199,
+   "wick_by_readings": {
+    "6": 234
+   }
+  },
+  "BTCUSDT:15m": {
+   "n": 171,
+   "by_readings": {
+    "2": 3,
+    "4": 67,
+    "8": 1,
+    "16": 100
+   },
+   "wick_by_readings": {
+    "4": 44,
+    "8": 1,
+    "16": 85
+   },
+   "r3_contract": 3,
+   "abl_no_anchor": 3,
+   "abl_present_eq1": 1,
+   "missed_by_expected_eq1": [
+    "09-25T03:00Z binance_point_5m 1/3 anchor=1 O96395.17 H96420.445 L96395.17 C96420.445",
+    "09-25T13:30Z binance_point_5m 2/3 anchor=0 O95869.815 H95869.815 L95829.159 C95829.159",
+    "09-27T11:45Z binance_point_5m 2/3 anchor=0 O94562.41 H94566.411 L94562.41 C94566.411"
+   ]
+  },
+  "ETHUSDT:1m": {
+   "n": 1786,
+   "by_readings": {
+    "2": 1786
+   },
+   "r3_contract": 1786,
+   "abl_expected_eq1": 1786,
+   "abl_no_anchor": 1786,
+   "abl_present_eq1": 1786,
+   "wick_by_readings": {}
+  },
+  "ETHUSDT:5m": {
+   "n": 562,
+   "by_readings": {
+    "2": 256,
+    "3": 1,
+    "6": 305
+   },
+   "r3_contract": 256,
+   "abl_expected_eq1": 256,
+   "abl_no_anchor": 257,
+   "abl_present_eq1": 256,
+   "wick_by_readings": {
+    "3": 1,
+    "6": 216
+   },
+   "abl_no_anchor_wicks": 1
+  },
+  "ETHUSDT:15m": {
+   "n": 189,
+   "by_readings": {
+    "2": 1,
+    "3": 3,
+    "4": 84,
+    "8": 1,
+    "16": 100
+   },
+   "wick_by_readings": {
+    "3": 1,
+    "4": 53,
+    "8": 1,
+    "16": 82
+   },
+   "abl_no_anchor": 2,
+   "r3_contract": 1,
+   "missed_by_expected_eq1": [
+    "09-27T11:45Z binance_point_5m 2/3 anchor=0 O2302830.029 H2303017.737 L2302830.029 C2303017.737"
+   ]
+  },
+  "LINKUSDT:1m": {
+   "n": 1706,
+   "by_readings": {
+    "2": 1706
+   },
+   "r3_contract": 1706,
+   "abl_expected_eq1": 1706,
+   "abl_no_anchor": 1706,
+   "abl_present_eq1": 1706,
+   "wick_by_readings": {}
+  },
+  "LINKUSDT:5m": {
+   "n": 482,
+   "by_readings": {
+    "2": 176,
+    "3": 1,
+    "6": 305
+   },
+   "r3_contract": 176,
+   "abl_expected_eq1": 176,
+   "abl_no_anchor": 177,
+   "abl_present_eq1": 176,
+   "wick_by_readings": {
+    "6": 225
+   }
+  },
+  "LINKUSDT:15m": {
+   "n": 163,
+   "by_readings": {
+    "2": 2,
+    "3": 3,
+    "4": 57,
+    "8": 1,
+    "16": 100
+   },
+   "wick_by_readings": {
+    "4": 37,
+    "8": 1,
+    "16": 86
+   },
+   "r3_contract": 2,
+   "abl_no_anchor": 3,
+   "missed_by_expected_eq1": [
+    "09-25T13:30Z binance_point_5m 2/3 anchor=0 O9654081.91 H9660654.18 L9654081.91 C9660654.18",
+    "09-27T11:45Z binance_point_5m 2/3 anchor=0 O9877514.73 H9877514.73 L9874914.86 C9874914.86"
+   ]
+  },
+  "SOLUSDT:1m": {
+   "n": 1692,
+   "by_readings": {
+    "2": 1692
+   },
+   "r3_contract": 1692,
+   "abl_expected_eq1": 1692,
+   "abl_no_anchor": 1692,
+   "abl_present_eq1": 1692,
+   "wick_by_readings": {}
+  },
+  "SOLUSDT:5m": {
+   "n": 468,
+   "by_readings": {
+    "2": 162,
+    "3": 1,
+    "6": 305
+   },
+   "r3_contract": 162,
+   "abl_expected_eq1": 162,
+   "abl_no_anchor": 163,
+   "abl_present_eq1": 162,
+   "wick_by_readings": {
+    "6": 226
+   }
+  },
+  "SOLUSDT:15m": {
+   "n": 158,
+   "by_readings": {
+    "2": 2,
+    "3": 2,
+    "4": 53,
+    "8": 1,
+    "16": 100
+   },
+   "r3_contract": 2,
+   "abl_no_anchor": 3,
+   "missed_by_expected_eq1": [
+    "09-25T13:30Z binance_point_5m 2/3 anchor=0 O8402634.25 H8402634.25 L8391493.32 C8391493.32",
+    "09-27T11:45Z binance_point_5m 2/3 anchor=0 O8606497.49 H8606497.49 L8605476.56 C8605476.56"
+   ],
+   "wick_by_readings": {
+    "4": 23,
+    "16": 85
+   }
+  }
+ },
+ "totals": {
+  "n": 9610,
+  "r3_contract": 7713,
+  "abl_expected_eq1": 7705,
+  "abl_no_anchor": 7720,
+  "abl_present_eq1": 7706,
+  "missed_by_expected_eq1": 8,
+  "abl_no_anchor_wicks": 1
+ }
+}
