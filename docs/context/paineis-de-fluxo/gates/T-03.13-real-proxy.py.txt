@@ -1,0 +1,104 @@
+# T-03.13 REAL universe of e2e/38: a READ-ONLY proxy on :<port> (argv[3], default 8824) for the real app
+# (next start of the worktree). Copied from T-03.12-design-proxy.py.txt; the only change is the port
+# taken as an argument instead of fixed at 8823. Production (master) does not serve `oi_candles` yet (03b is unmerged), so:
+#   * GET /api/v1/series-history for one of the 8 OI series_key_ids -> answered HERE by the
+#     worktree's OWN route function `build_series_history_report` (+ the composition root's
+#     `_classify_panel_grid`), over a read-only CSV export of md.series (psql with
+#     default_transaction_read_only=on, the T-03.10 recipe). Same function the route will serve.
+#   * every other GET/HEAD -> passed through to the production API 127.0.0.1:8000, unchanged.
+#   * any other method -> 405, counted.
+# No INSERT, no seed, no write anywhere. Counters printed on SIGTERM and every 30 s.
+# Usage (from backend/): PYTHONPATH=$PWD .venv/bin/python T-03.13-real-proxy.py <oi-export.csv> <oi-ids,comma> <port>
+import json, signal, sys, threading, time, urllib.parse, urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from src.modules.charts.domain.panel_grid_enablement import classify_grid_multiple
+from src.modules.sentimento.domain.series_history_report import PanelGridVerdict
+
+
+def _classify_panel_grid(*, panel_grid_ms, native_grid_ms):
+    # verbatim copy of src/main/__init__.py::_classify_panel_grid (importing src.main boots the app)
+    v = classify_grid_multiple(panel_grid_ms, native_grid_ms)
+    return PanelGridVerdict(native_grid_ms=v.native_grid_ms, enabled=v.enabled, reason=v.reason.value, multiple=v.multiple)
+from src.modules.sentimento.domain.as_of_accessor import BarPolicy
+from src.modules.sentimento.infra.csv_series_window_reader import CsvSeriesWindowReader
+from src.modules.sentimento.use_cases.series_catalog import list_pilot_series_catalog
+from src.modules.sentimento.use_cases.series_history import build_series_history_report
+
+READER = CsvSeriesWindowReader.from_path(Path(sys.argv[1]))
+CATALOG = list_pilot_series_catalog()
+OI_IDS = set(sys.argv[2].split(",")) if len(sys.argv) > 2 else None
+PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 8824
+COUNT = {"passthrough_get": 0, "local_oi": 0, "refused": 0}
+
+
+def _bar_policy(raw):
+    return BarPolicy(raw)
+
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def _refuse(self):
+        COUNT["refused"] += 1
+        self.send_response(405)
+        self.end_headers()
+
+    do_POST = do_PUT = do_PATCH = do_DELETE = _refuse
+
+    def end_headers(self):
+        # the browser pager calls FastAPI directly (ADR-005/D5), so the proxy answers CORS
+        self.send_header("access-control-allow-origin", "*")
+        self.send_header("access-control-allow-headers", "*")
+        super().end_headers()
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.end_headers()
+
+    def do_GET(self):
+        u = urllib.parse.urlsplit(self.path)
+        print("GET " + self.path[:160], flush=True)
+        q = dict(urllib.parse.parse_qsl(u.query))
+        if u.path.endswith("/series-history") and q.get("series_key_id") in OI_IDS:
+            COUNT["local_oi"] += 1
+            now = int(time.time() * 1000)
+            rep = build_series_history_report(
+                CATALOG, READER, _classify_panel_grid, READER,
+                series_key_id=q["series_key_id"], symbol=q["symbol"], interval=q["interval"],
+                window_start_ms=int(q["window_start_ms"]), window_end_ms=int(q["window_end_ms"]),
+                knowledge_time_ms=int(q["knowledge_time_ms"]), bar_policy=_bar_policy(q["bar_policy"]),
+            )
+            body = json.dumps(rep.to_envelope(principal_id=None, server_now_ms=now)).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        COUNT["passthrough_get"] += 1
+        req = urllib.request.Request("http://127.0.0.1:8000" + self.path, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data, code, ctype = r.read(), r.status, r.headers.get("content-type", "application/json")
+        except urllib.error.HTTPError as e:
+            data, code, ctype = e.read(), e.code, e.headers.get("content-type", "application/json")
+        self.send_response(code)
+        self.send_header("content-type", ctype)
+        self.send_header("content-length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    do_HEAD = do_GET
+
+
+def report(*_):
+    print("proxy_counts " + json.dumps(COUNT), flush=True)
+
+
+signal.signal(signal.SIGTERM, lambda *a: (report(), sys.exit(0)))
+threading.Thread(target=lambda: [(time.sleep(30), report()) for _ in iter(int, 1)], daemon=True).start()
+print(f"real proxy up {PORT}", flush=True)
+ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
