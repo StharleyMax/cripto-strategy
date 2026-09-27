@@ -327,3 +327,13 @@ def test_a_property_verdict_below_the_floor_is_never_held() -> None:
     verdict = PropertyVerdict(derived_from=POLL, n=PROPERTY_MIN_BUCKETS - 1, divergences=())
 
     assert verdict.outcome is FalsifierOutcome.INCONCLUSIVE
+
+
+def test_the_floors_are_the_literals_adr_045_writes() -> None:
+    """The edge tests above move WITH the constants, so the literals are pinned here.
+
+    `ADR-045` §Falsificador writes `n ≥ 288` (1, 2, 4) and `n ≥ 200` (3); a floor lowered to 1
+    would keep every edge test green and turn a short universe into `held` (the `T-03.10`
+    mutation bench measured exactly that mutant surviving before this pin existed).
+    """
+    assert (PROPERTY_MIN_BUCKETS, POWER_MIN_BUCKETS, SPREAD_MIN_INSTANTS) == (288, 200, 288)
