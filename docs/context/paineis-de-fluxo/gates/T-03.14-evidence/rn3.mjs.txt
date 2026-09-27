@@ -1,0 +1,20 @@
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-03-14/frontend/node_modules/playwright/index.mjs";
+import fs from "node:fs";
+const OUT = process.argv[2]; const res = {}; const browser = await chromium.launch();
+for (const tf of ["1m", "15m"]) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await page.goto(`http://127.0.0.1:4321/symbol/BTCUSDT?interval=${tf}`, { waitUntil: "load", timeout: 180000 });
+  await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180000 }); await page.waitForTimeout(6000);
+  const g = await page.evaluate(() => { const tr = document.querySelector('[data-testid="liquidation-pane"]').closest("tr");
+    const r = tr.getBoundingClientRect(); const c = tr.lastElementChild.getBoundingClientRect(); return { top: r.top, h: r.height, ax: c.left, aw: c.width }; });
+  const clip = { x: g.ax, y: g.top, width: g.aw, height: g.h };
+  await page.mouse.move(2, 2); await page.waitForTimeout(400); await page.screenshot({ path: `${OUT}/rn3-${tf}-rest.png`, clip });
+  for (const [name, fy] of [["upper", 0.72], ["lower", 0.9]]) {
+    await page.mouse.move(g.ax * 0.3, g.top + g.h * fy); await page.waitForTimeout(400);
+    await page.screenshot({ path: `${OUT}/rn3-${tf}-${name}.png`, clip });
+    res[`${tf}-${name}`] = await page.evaluate(() => Array.from(document.querySelectorAll('[data-testid="liquidation-pane"] [data-legend-value]')).map((e) => e.textContent.trim()));
+  }
+  await page.close();
+}
+await browser.close(); fs.writeFileSync(`${OUT}/rn3-facts.json`, JSON.stringify(res));
+

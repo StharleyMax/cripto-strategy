@@ -1,14 +1,20 @@
 /**
  * `T-03.12` (`paineis-de-fluxo`, plan `03` item `3b.5`) — the pane primitive that PAINTS the regime
  * marks of the OI pane on its canvas: the band (`DG-1`, surface `OI_REGIME_BAND_SURFACE`, behind
- * everything) and the boundary rule (`DG-2`, 1 px, continuous, `provenanceWeak`, the pane's full
- * height, behind the candles). What to paint is `oi-regime-marks.ts`' (pure); this file only turns
+ * everything) and the boundary rule (`DG-2`, 1 px, continuous, `provenanceWeak`, the pane's height
+ * BELOW its legend, behind the candles). What to paint is `oi-regime-marks.ts`' (pure); this file only turns
  * milliseconds into x and fills rectangles.
  *
  * WHY A PANE PRIMITIVE (`gate §3 item 2`): it is redrawn by the library on every scroll and zoom, so
  * the band and the rule follow the candles without an effect of ours re-measuring anything. `zOrder`
  * `bottom`: the band is `drawBackground` (under the grid, which stays visible over it at `1,051:1`,
  * `gate §8.4-1`), the rule is `draw` (over the grid, under the candles).
+ *
+ * WHERE y STARTS (`T-03.14` `MF-1`): at the pane legend's MEASURED bottom (`data-legend-bottom-px`),
+ * never at the pane's top. Painted from `y = 0`, the rule struck through the legend text (5/5 scenes,
+ * 38/38 legend rows inked) and the band sat behind it — the `SF-10` class the W5 closed. The DG-3
+ * labels sit between the legend's bottom and the reserved scale top, so the band still holds them.
+ * While the legend is not measured yet, nothing is painted: `0` is exactly the defect.
  *
  * WHERE x COMES FROM: the canonical grid of the pane is `ONE_MINUTE_MS` in every TF (`S2_AXIS_STEP_MS`),
  * slot `i` at `gridStartMs + i · 1 min`, and each slot is one logical index — the same rule
@@ -52,10 +58,17 @@ export class OiRegimePanePrimitive implements IPanePrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
   private marks: OiRegimeCanvasMarks = NO_OI_REGIME_CANVAS_MARKS;
   private readonly views: readonly IPanePrimitivePaneView[];
+  private readonly onViewport: () => void;
+  private readonly legendBottomPx: () => number | null;
 
   /** `onViewport` runs whenever the library recomputes the views — every scroll, zoom and resize —
-   * so the HTML labels (`DG-3`) can be re-placed against the same x the canvas uses. */
-  constructor(private readonly onViewport: () => void) {
+   * so the HTML labels (`DG-3`) can be re-placed against the same x the canvas uses.
+   * `legendBottomPx` is the legend block's bottom, in CSS px from the pane's top, read at every
+   * paint; `null` while it is not measured. (Explicit fields, not parameter properties: `node
+   * --test` strips types only, and a parameter property is not strippable.) */
+  constructor(onViewport: () => void, legendBottomPx: () => number | null) {
+    this.onViewport = onViewport;
+    this.legendBottomPx = legendBottomPx;
     const renderer: IPrimitivePaneRenderer = {
       draw: (target) => this.drawRules(target),
       drawBackground: (target) => this.drawBands(target),
@@ -109,6 +122,16 @@ export class OiRegimePanePrimitive implements IPanePrimitive<Time> {
     return this.chart === null ? 0 : this.chart.timeScale().width();
   }
 
+  /** The first bitmap row the marks may ink — the one right under the legend — or `null` (paint
+   * nothing) while the legend is not measured. */
+  private firstRow(verticalPixelRatio: number, bitmapHeight: number): number | null {
+    const legendBottom = this.legendBottomPx();
+    if (legendBottom === null || !Number.isFinite(legendBottom)) {
+      return null;
+    }
+    return Math.min(bitmapHeight, Math.max(0, Math.ceil(legendBottom * verticalPixelRatio)));
+  }
+
   private drawBands(target: DrawTarget): void {
     if (!this.marks.paint || this.marks.bands.length === 0) {
       return;
@@ -116,13 +139,17 @@ export class OiRegimePanePrimitive implements IPanePrimitive<Time> {
     const spans = this.marks.bands
       .map((band) => [this.edgePx(band.leftExclusiveMs), this.edgePx(band.rightInclusiveMs)] as const)
       .filter((pair): pair is readonly [number, number] => pair[0] !== null && pair[1] !== null && pair[1] > pair[0]);
-    target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio }) => {
+    target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio, verticalPixelRatio }) => {
+      const top = this.firstRow(verticalPixelRatio, bitmapSize.height);
+      if (top === null || top >= bitmapSize.height) {
+        return;
+      }
       context.fillStyle = OI_REGIME_BAND_SURFACE;
       for (const [left, right] of spans) {
         const x0 = Math.max(0, Math.round(left * horizontalPixelRatio));
         const x1 = Math.min(bitmapSize.width, Math.round(right * horizontalPixelRatio));
         if (x1 > x0) {
-          context.fillRect(x0, 0, x1 - x0, bitmapSize.height);
+          context.fillRect(x0, top, x1 - x0, bitmapSize.height - top);
         }
       }
     });
@@ -133,13 +160,17 @@ export class OiRegimePanePrimitive implements IPanePrimitive<Time> {
       return;
     }
     const xs = this.marks.rules.map((rule) => this.edgePx(rule.atMs)).filter((x): x is number => x !== null);
-    target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio }) => {
+    target.useBitmapCoordinateSpace(({ context, bitmapSize, horizontalPixelRatio, verticalPixelRatio }) => {
+      const top = this.firstRow(verticalPixelRatio, bitmapSize.height);
+      if (top === null || top >= bitmapSize.height) {
+        return;
+      }
       context.fillStyle = colorTokens().provenanceWeak;
       const width = Math.max(1, Math.floor(RULE_WIDTH_CSS_PX * horizontalPixelRatio));
       for (const x of xs) {
         const left = Math.round(x * horizontalPixelRatio) - Math.floor(width / 2);
         if (left + width > 0 && left < bitmapSize.width) {
-          context.fillRect(left, 0, width, bitmapSize.height);
+          context.fillRect(left, top, width, bitmapSize.height - top);
         }
       }
     });

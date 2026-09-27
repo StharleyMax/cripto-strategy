@@ -1,0 +1,79 @@
+# T-03.14 pixel measure of the OI pane in a full-viewport PNG (DPR 1), using the facts.json of oicap.mjs.
+# Measures: candle ink columns (up/down/doji), hollow-body share of rising candles, band surface modes (Q-2),
+# the boundary rule (column + rows inside the legend block), band ink inside the legend block, label x candle
+# ink (Q-7), and the label/legend contrast read off the actual pixels.
+# Usage: python3 oipx.py <tag-full.png> <tag-facts.json>
+import sys, json
+from PIL import Image
+png, fj = sys.argv[1], sys.argv[2]
+f = json.load(open(fj)); rest = f["rest"]; row = rest["row"]
+im = Image.open(png).convert("RGB"); px = im.load()
+UP, DN, DOJI, BAND, BASE, RULE = (8, 153, 129), (242, 54, 69), (139, 148, 158), (30, 34, 48), (19, 23, 34), (139, 148, 158)
+near = lambda c, t, tol: all(abs(a - b) <= tol for a, b in zip(c, t))
+top, bot, axis = int(row["top"]), int(row["top"] + row["h"]), int(row["axisX"])
+leg_bottom = int(row["top"] + float(rest["attrs"].get("data-legend-bottom-px", 0)))
+res_top = int(row["top"] + float(rest["attrs"].get("data-reserved-scale-top-px", 0)))
+plot_y0, plot_y1 = res_top, bot - 2
+cols = {"up": 0, "down": 0, "doji": 0}; up_runs = []; hollow = filled = 0
+band_modes = {"in": {}, "out": {}}
+bands = []
+for s in (rest["attrs"].get("data-oi-regime-bands-at") or "").split(","):
+    if s: bands.append(tuple(int(v) for v in s.split("-")))
+def ink(c):
+    if near(c, UP, 30): return "up"
+    if near(c, DN, 30): return "down"
+    return None
+# band x extent from pixels: columns whose mode in plot rows is BAND
+col_is_band = []
+for x in range(0, axis):
+    hist = {}
+    for y in range(plot_y0, plot_y1):
+        c = px[x, y]; hist[c] = hist.get(c, 0) + 1
+    m = max(hist, key=hist.get)
+    col_is_band.append(near(m, BAND, 2))
+    kinds = [ink(px[x, y]) for y in range(plot_y0, plot_y1)]
+    ku = kinds.count("up"); kd = kinds.count("down")
+    if ku: cols["up"] += 1
+    if kd: cols["down"] += 1
+    if not ku and not kd:
+        band_modes["in" if col_is_band[-1] else "out"][str(m)] = band_modes["in" if col_is_band[-1] else "out"].get(str(m), 0) + 1
+# hollow: runs of consecutive up-ink columns (one candle); hollow if >=3 wide and middle column has a gap of
+# non-ink between its top and bottom border rows
+x = 0
+while x < axis:
+    if any(ink(px[x, y]) == "up" for y in range(plot_y0, plot_y1)):
+        x0 = x
+        while x < axis and any(ink(px[x, y]) == "up" for y in range(plot_y0, plot_y1)): x += 1
+        w = x - x0; up_runs.append(w)
+        if w >= 3:
+            mid = (x0 + x - 1) // 2; ys = [y for y in range(plot_y0, plot_y1) if ink(px[mid, y]) == "up"]
+            if ys and (max(ys) - min(ys) + 1) > len(ys): hollow += 1
+            else: filled += 1
+        else: filled += 1
+    x += 1
+# rule: columns where RULE colour covers >= 60% of the plot rows
+rules = []
+for x in range(0, axis):
+    n = sum(1 for y in range(plot_y0, plot_y1) if near(px[x, y], RULE, 12))
+    if n >= 0.6 * (plot_y1 - plot_y0): rules.append(x)
+rule_rows_in_legend = {x: sum(1 for y in range(top, leg_bottom) if near(px[x, y], RULE, 12)) for x in rules}
+band_px_in_legend = sum(1 for x in range(axis) if col_is_band[x] for y in range(top + 1, leg_bottom) if near(px[x, y], BAND, 2))
+# labels vs candle ink (Q-7)
+lab = []
+for L in rest["labels"]:
+    x0, y0, x1, y1 = int(L["x"]), int(L["y"]), int(L["x"] + L["w"]), int(L["y"] + L["h"])
+    inkpx = sum(1 for xx in range(x0, x1) for yy in range(y0, y1) if ink(px[xx, yy]))
+    bg = {}
+    for xx in range(x0, x1):
+        for yy in range(y0, y1):
+            c = px[xx, yy]; bg[c] = bg.get(c, 0) + 1
+    lab.append({"fact": L["fact"], "x": x0, "y": y0, "w": x1 - x0, "candle_ink_px": inkpx, "bg_mode": str(max(bg, key=bg.get)),
+                "above_reserved_top": y1 <= res_top, "below_legend_bottom": y0 >= leg_bottom})
+out = {"png": png.split("/")[-1], "pane_top": top, "legend_bottom_y": leg_bottom, "reserved_top_y": res_top, "axis": axis,
+       "px_per_slot": round(f.get("px_per_slot", 0), 3), "ink_cols": cols, "up_candles": len(up_runs),
+       "up_width_p50": sorted(up_runs)[len(up_runs) // 2] if up_runs else None, "up_hollow": hollow, "up_filled_or_narrow": filled,
+       "band_cols": sum(col_is_band), "Q2_bg_mode_in_band": max(band_modes["in"], key=band_modes["in"].get) if band_modes["in"] else None,
+       "Q2_bg_mode_out_band": max(band_modes["out"], key=band_modes["out"].get) if band_modes["out"] else None,
+       "rule_cols": rules, "rule_rows_inside_legend_block": rule_rows_in_legend, "band_px_inside_legend_block": band_px_in_legend,
+       "labels": lab, "attrs": {k: rest["attrs"].get(k) for k in ("data-oi-regime-bands", "data-oi-regime-rules", "data-oi-regime-labels", "data-oi-series-kind", "data-oi-candles")}}
+print(json.dumps(out))

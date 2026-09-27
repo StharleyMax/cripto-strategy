@@ -1,0 +1,42 @@
+# T-03.14 r2: separates PAINTED marks from legend TEXT inside the legend block [pane_top, legend_bottom).
+# oipx.py counts any pixel near #8b949e (rule, tol 12) or #1e2230 (band, tol 2) there; the legend text is itself
+# #8b949e-ish anti-aliased glyphs, so a text pixel matches too. A painted mark is SOLID: the rule is a vertical run,
+# the band a horizontal run. Reported per scene:
+#   rule_longest_vrun_in_legend : longest vertical run of rule colour at each rule column inside the legend block
+#   rule_rows_ctrl              : oipx's rule count at control columns (rule x +/- 25, 40) -> what text alone gives
+#   rule_first_row_below        : first row >= legend_bottom where the rule column has rule colour (must be the edge)
+#   band_px_in_hruns3           : band-colour pixels inside horizontal runs >= 3 in the legend block (builder RM-3b rule)
+#   band_longest_hrun_in_legend / band_longest_hrun_below (rows legend_bottom..+10, the band itself)
+# Usage: python3 legsolid.py <tag-full.png> <tag-facts.json> <rule_cols_json>
+import sys, json
+from PIL import Image
+png, fj, rc = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+f = json.load(open(fj)); r = f["rest"]; row = r["row"]
+im = Image.open(png).convert("RGB"); px = im.load()
+top = int(row["top"]); lb = int(row["top"] + float(r["attrs"]["data-legend-bottom-px"])); ax = int(row["axisX"])
+rule = lambda c: all(abs(a - b) <= 12 for a, b in zip(c, (139, 148, 158)))
+band = lambda c: all(abs(a - b) <= 2 for a, b in zip(c, (30, 34, 48)))
+def vrun(x, y0, y1):
+    best = cur = 0
+    for y in range(y0, y1):
+        cur = cur + 1 if rule(px[x, y]) else 0; best = max(best, cur)
+    return best
+def hruns(y0, y1):
+    tot = 0; best = 0
+    for y in range(y0, y1):
+        x = 0
+        while x < ax:
+            if band(px[x, y]):
+                x0 = x
+                while x < ax and band(px[x, y]): x += 1
+                w = x - x0; best = max(best, w)
+                if w >= 3: tot += w
+            else: x += 1
+    return tot, best
+out = {"png": png.split("/")[-1], "pane_top": top, "legend_bottom_y": lb}
+out["rule_longest_vrun_in_legend"] = {x: vrun(x, top, lb) for x in rc}
+out["rule_rows_ctrl"] = {x + d: sum(1 for y in range(top, lb) if rule(px[x + d, y])) for x in rc for d in (-40, -25, 25, 40) if 0 <= x + d < ax}
+out["rule_first_row_below"] = {x: next((y for y in range(lb, lb + 40) if rule(px[x, y])), None) for x in rc}
+t, b = hruns(top + 1, lb); out["band_px_in_hruns3"] = t; out["band_longest_hrun_in_legend"] = b
+out["band_longest_hrun_below"] = hruns(lb, lb + 10)[1]
+print(json.dumps(out))
