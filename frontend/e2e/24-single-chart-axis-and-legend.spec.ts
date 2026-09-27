@@ -598,12 +598,21 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
   // production data the design review used.
   //   MF-1  every pane's `right` scale mode, READ BACK from the library (`data-right-scale-mode`):
   //         all `normal` — since `T-04.2` the liquidation bars hang on their own NAMED scales, read back
-  //         in `data-liquidation-bar-scales` (both linear since `T-04.4`, the lower one inverted). Bites:
-  //         removing `createPanesBeforeSeries` from the host (OI, long/short and CVD come back
-  //         `logarithmic`).
+  //         in `data-liquidation-bar-scales` (both linear since `T-04.4`, the lower one inverted).
   //   MF-2  the price-axis cell beside the liquidation pane carries NO axis-text ink, while the OI
-  //         and CVD cells do (the instrument is not blind). Bites: dropping `unlabeledTickPriceFormat`.
+  //         and CVD cells do (the instrument is not blind).
   //   SF-1  no attribution logo inside the chart, and the footer link that replaces it.
+  //
+  // ⚠️ WHAT THIS TEST NO LONGER BITES (`W5-QA`, W-b) `[MEDIDO 2026-09-27, e2e on the wave's
+  // `b465ae4`, each mutation reverted: removing `createPanesBeforeSeries(…)` → 1 passed; removing
+  // `priceFormat: unlabeledTickPriceFormat(),` → 1 passed]`. Since `T-04.2` put the bars on NAMED
+  // (overlay) scales, no series of this page sets a `right` scale logarithmic — so the leak `MF-1`
+  // guards is unreachable from the product — and an overlay scale draws no tick label at all, so the
+  // blank `tickmarksFormatter` is no longer what keeps the axis silent. Both stay as defence in depth,
+  // and what rejects removing them is the SOURCE pin in the unit suite (`pane-scale-isolation.test.ts`
+  // "the host creates every pane…", `unlabeled-tick-format.test.ts` "the host builds the liquidation
+  // bar series…" — each `not ok` under its mutation, same date). The MF-2 check below still bites
+  // the defect itself: bars on `right` WITHOUT the blank format label the axis at rest.
   test("T-01.11-FIX: escala de cada pane isolada, liquidação sem rótulo falso, atribuição no rodapé", async ({ page }) => {
     await openSymbol(page, instance!.baseUrl);
     const modes = await page.evaluate(() =>
@@ -678,6 +687,79 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
     fact(SPEC, "t0111fix_attribution", attribution);
     expect(attribution.logosInChart, "SF-1: o logo de atribuição continua sobre o gráfico").toBe(0);
     expect(attribution.footerHref, "SF-1: a atribuição não foi para o rodapé").toMatch(/^https:\/\/www\.tradingview\.com\//);
+  });
+
+  // `W5-QA` (W-c): the check above reads the axis AT REST, and the crosshair label is drawn only
+  // UNDER the pointer. `unlabeledTickPriceFormat` blanks the ticks and keeps a two-decimal
+  // `formatter`, so a bar scale the axis could reach would print, with the pointer in the lower half,
+  // the UPPER scale's price there: a NEGATIVE USD the pane never carries (`RN-3`, `CA-9′`).
+  //   RN-3  with the pointer in the upper and in the lower half of the liquidation pane, the pixels of
+  //         its price-axis cell do not change; with the pointer on the OI pane, the OI cell DOES
+  //         change (the crosshair label exists and the instrument sees it — positive control).
+  //         Bites: the upper bars on `right` (`LIQUIDATION_SCALE_IDS.up.bars = "right"`) — the rest
+  //         check above passes under that mutation, because the ticks stay blank `[MEDIDO 2026-09-27,
+  //         stub of this file: unmutated → OI 1407 px changed, liquidation 0/0/0 at 0.25/0.75/0.9;
+  //         mutated → liquidation 987/987/987, this test ✘ and T-01.11-FIX ✓]`.
+  test("RN-3: o ponteiro sobre a liquidação não põe rótulo de preço no eixo dela", async ({ page }) => {
+    await openSymbol(page, instance!.baseUrl);
+    const snapshot = (testId: string) =>
+      page.evaluate((id) => {
+        const cell = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)?.closest("tr")?.lastElementChild ?? null;
+        const canvases = cell === null ? [] : Array.from(cell.querySelectorAll("canvas")).filter((c) => c.width > 0 && c.height > 0);
+        const store = ((window as unknown as { __axisRest?: Record<string, Uint8ClampedArray[]> }).__axisRest ??= {});
+        store[id] = canvases.map((c) => c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data.slice());
+        return canvases.length;
+      }, testId);
+    const changedSinceSnapshot = (testId: string) =>
+      page.evaluate((id) => {
+        const cell = document.querySelector<HTMLElement>(`[data-testid="${id}"]`)?.closest("tr")?.lastElementChild ?? null;
+        const canvases = cell === null ? [] : Array.from(cell.querySelectorAll("canvas")).filter((c) => c.width > 0 && c.height > 0);
+        const rest = (window as unknown as { __axisRest: Record<string, Uint8ClampedArray[]> }).__axisRest[id] ?? [];
+        let changed = 0;
+        canvases.forEach((c, index) => {
+          const now = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+          const before = rest[index];
+          if (before === undefined || before.length !== now.length) {
+            changed += now.length / 4;
+            return;
+          }
+          for (let at = 0; at < now.length; at += 4) {
+            if (now[at] !== before[at] || now[at + 1] !== before[at + 1] || now[at + 2] !== before[at + 2] || now[at + 3] !== before[at + 3]) {
+              changed += 1;
+            }
+          }
+        });
+        return changed;
+      }, testId);
+    const hoverAt = async (testId: string, fraction: number) => {
+      const box = await page.locator(`[data-testid="${testId}"]`).boundingBox();
+      expect(box, `${testId}: a camada do pane não tem caixa`).not.toBeNull();
+      await page.mouse.move(box!.x + box!.width * 0.6, box!.y + box!.height * fraction);
+      await expect(page.locator(`[data-testid="${testId}"] [data-legend-source="crosshair"]`).first()).toBeAttached();
+      await page.waitForTimeout(300);
+    };
+
+    const readings: { testId: string; fraction: number; canvases: number; changed: number }[] = [];
+    for (const [testId, fraction] of [
+      ["oi-pane", 0.5],
+      ["liquidation-pane", 0.25],
+      ["liquidation-pane", 0.75],
+      ["liquidation-pane", 0.9],
+    ] as const) {
+      await page.mouse.move(2, 2);
+      await page.waitForTimeout(300);
+      const canvases = await snapshot(testId);
+      await hoverAt(testId, fraction);
+      readings.push({ testId, fraction, canvases, changed: await changedSinceSnapshot(testId) });
+    }
+    fact(SPEC, "rn3_crosshair_axis_label", readings);
+    const [control, ...legs] = readings;
+    expect(control!.canvases, "oi-pane: nenhum canvas na célula do eixo — o instrumento está cego").toBeGreaterThan(0);
+    expect(control!.changed, "oi-pane: o ponteiro não desenhou rótulo no eixo — o controle positivo falhou").toBeGreaterThan(0);
+    for (const leg of legs) {
+      expect(leg.canvases, `liquidation-pane @${leg.fraction}: nenhum canvas na célula do eixo`).toBeGreaterThan(0);
+      expect(leg.changed, `RN-3 liquidation-pane @${leg.fraction}: o eixo rotulou o preço sob o ponteiro (USD com sinal)`).toBe(0);
+    }
   });
 });
 

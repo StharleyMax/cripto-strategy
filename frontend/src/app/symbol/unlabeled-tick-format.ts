@@ -20,6 +20,13 @@
  * false, by another road: the ticks cover the whole pane, so the upper leg's scale would label the
  * lower half with NEGATIVE USD — a signed number the pane never carries (`RN-3`). The format stays.
  *
+ * ⚠️ `W5-QA` (W-b): since `T-04.2` the bars live on NAMED (overlay) scales, and an overlay scale draws
+ * no tick label and no crosshair label at all — so today this format is DEFENCE IN DEPTH, not what
+ * keeps the axis silent `[MEDIDO 2026-09-27: dropping it from the host leaves `e2e/24` T-01.11-FIX
+ * green]`. It bites again the moment a bar scale becomes `right`/`left`; the pixel guard of that is
+ * `e2e/24` "RN-3" (pointer in both halves, axis cell unchanged), the source pin is the test beside
+ * this file.
+ *
  * The axis draws NO tick label for this scale, which is what the pane says about itself (the scale is
  * declared in words in the legend, `data-fact="liquidation_scale:linear"`), and the
  * alternative the design review names (*"o eixo não rotula. O que não pode ficar é um número falso"*).
