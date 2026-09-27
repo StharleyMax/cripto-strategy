@@ -506,7 +506,7 @@ def _oi_candle_report(
     regimes: dict[OiCandleSource, OiRegimeReadings] = {
         requested_source: OiRegimeReadings(
             entry=entry,
-            readings=_oi_readings(
+            readings=oi_point_readings(
                 entry,
                 observations,
                 symbol=symbol,
@@ -539,7 +539,7 @@ def _oi_candle_report(
             )
         regimes[other_source] = OiRegimeReadings(
             entry=other_entry,
-            readings=_oi_readings(
+            readings=oi_point_readings(
                 other_entry,
                 other_observations,
                 symbol=symbol,
@@ -579,7 +579,7 @@ def _oi_fact_instants(
     return tuple(range(first_bucket_end - bucket_ms, last_bucket_end + 1, entry.native_grid_ms))
 
 
-def _oi_readings(
+def oi_point_readings(
     entry: SeriesCatalogEntry,
     observations: tuple[Observation, ...],
     *,
@@ -590,6 +590,10 @@ def _oi_readings(
     knowledge_time_ms: int,
 ) -> tuple[OiReading, ...]:
     """Read the point facts `p(t)` of ONE series through `as_of_batch`, never around it.
+
+    Public since `T-03.10`: `use_cases/measure_oi_candle_falsifiers.py` reads the two regimes'
+    points through THIS function for `ADR-045`'s falsifier 4, so the spread is measured on the
+    very readings the candles are built from, never on a second extraction of them.
 
     A reading is kept ONLY when the fact `as_of` answers with at instant `t` IS the fact AT `t`
     (`projection()["bucket_end"] == t`). `STOCK` carries forward (`CARRY_FORWARD_BY_NATURE`), so
