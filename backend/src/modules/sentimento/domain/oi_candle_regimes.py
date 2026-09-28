@@ -96,10 +96,19 @@ class OiRegimeGridError(Exception):
 
 @dataclass(frozen=True)
 class OiRegimeReadings:
-    """ONE series' catalog row and its point readings, as `project_oi_candles` takes them."""
+    """ONE series' catalog row and its point readings, as `project_oi_candles` takes them.
+
+    `anchor_only_instants_ms` holds the POLLED instants, left of the first bucket this regime
+    serves, whose point `p(t)` was read only so `D2-bis` can be decided. They are never
+    projected into a candle. In TF `1m` the first historical bucket starts up to 4 minutes before
+    the first polled bucket of the window, and a `p_poll(T0)` in that stretch still owns the
+    historical bucket (`W6-QA-BACK-r2` D-1). Without these instants, whether that bucket is served
+    would depend on the minute the page starts. Only the polled slot may carry them.
+    """
 
     entry: SeriesCatalogEntry
     readings: tuple[OiReading, ...]
+    anchor_only_instants_ms: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -176,7 +185,7 @@ def project_one_series_per_bucket(
 
     Raises:
         OiRegimeMismatchError: a series in the wrong slot, the two slots on different
-            instruments, or both slots empty.
+            instruments, both slots empty, or anchor-only instants on the historical slot.
         OiRegimeGridError: the historical bucket is not a whole multiple of the polled one.
 
     """
@@ -186,6 +195,11 @@ def project_one_series_per_bucket(
         )
     _require_slot(poll, OiCandleSource.BINANCE_POLL_1M)
     _require_slot(hist, OiCandleSource.BINANCE_POINT_5M)
+    if hist is not None and hist.anchor_only_instants_ms:
+        raise OiRegimeMismatchError(
+            "the historical slot carries anchor-only instants: only polling anchors a bucket "
+            "under ADR-045/D2-bis"
+        )
     if poll is not None and hist is not None:
         _require_same_instrument(poll.entry.key, hist.entry.key)
 
@@ -196,7 +210,10 @@ def project_one_series_per_bucket(
     poll_instants: frozenset[int] = frozenset()
     if poll is not None:
         poll_bucket_ms = effective_timeframe_ms(timeframe_ms, poll.entry.native_grid_ms)
-        poll_instants = frozenset(reading.instant_ms for reading in poll.readings)
+        poll_instants = (
+            frozenset(reading.instant_ms for reading in poll.readings)
+            | poll.anchor_only_instants_ms
+        )
         sources.append(_declare(poll, OiCandleSource.BINANCE_POLL_1M, poll_bucket_ms))
         served.extend(
             candle

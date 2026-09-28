@@ -17,14 +17,17 @@ and window edges that are NOT aligned to any grid, three questions the plan impl
    from a truncated slice of its own native facts"); the pager concatenates windows, so a
    candle that changes with the window is two answers for one bucket.
 
-Then three pinned cases the random series do not reach: the `1m` left edge of `D2-bis` (strict
-`xfail` — the defect `W6-QA-BACK-r2` D-1 proves), `closed` judged at the request's
-`knowledge_time` rather than at the window end, and the falsifier thresholds at their exact edge.
+Then pinned cases the random series do not reach: the `1m` left edge of `D2-bis` (the defect
+`W6-QA-BACK-r2` D-1 proved, fixed by `_poll_anchors_left_of_window`) and its control, `closed`
+judged at the request's `knowledge_time` rather than at the window end, and the falsifier
+thresholds at their exact edge.
 """
 
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -242,8 +245,17 @@ def _oracle(
         )
         return OiRegimeReadings(entry=entry, readings=readings)
 
+    def first_anchor(entry: SeriesCatalogEntry) -> int:
+        bucket_ms = effective_timeframe_ms(tf_ms, entry.native_grid_ms)
+        return -(-window[0] // bucket_ms) * bucket_ms - bucket_ms
+
+    # `D2-bis` on the left edge (`W6-QA-BACK-r2` D-1): the stored polled points from `T0` of the
+    # first HISTORY bucket up to the polling's own first `T0` decide the rule, never a candle.
+    left = frozenset(
+        t for t in poll if first_anchor(_hist_entry()) <= t < first_anchor(_poll_entry())
+    )
     report = project_one_series_per_bucket(
-        poll=regime(_poll_entry(), poll),
+        poll=replace(regime(_poll_entry(), poll), anchor_only_instants_ms=left),
         hist=regime(_hist_entry(), hist),
         timeframe_ms=tf_ms,
         now_ms=ORIGIN_MS + (DATA_DAYS + 1) * DAY_MS,
@@ -307,13 +319,10 @@ def _at(minute: int) -> int:
     return ORIGIN_MS + minute * MINUTE_MS
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="W6-QA-BACK-r2 D-1: in 1m the polled instants start at the WINDOW's first minute, not "
-    "at T0 of the first history bucket, so a polled anchor left of the window is not seen and "
-    "the history serves a bucket D2-bis gives to polling. Remove this marker with the fix.",
-)
-def test_in_1m_a_polled_anchor_left_of_the_window_still_owns_the_history_bucket() -> None:
+@pytest.mark.parametrize("requested", [_hist_entry, _poll_entry], ids=["by_hist", "by_poll"])
+def test_in_1m_a_polled_anchor_left_of_the_window_still_owns_the_history_bucket(
+    requested: Callable[[], SeriesCatalogEntry],
+) -> None:
     """`ADR-045/D2-bis` on the left edge of a `1m` window.
 
     Polling has `p(5)` and then a 4-minute hole (`6..9`); history has `p(0)`, `p(5)`, `p(10)`.
@@ -329,13 +338,32 @@ def test_in_1m_a_polled_anchor_left_of_the_window_still_owns_the_history_bucket(
     poll = {_at(m): f"{2000 + m:.3f}" for m in (5, *range(10, 16))}
 
     def at_10(start_minute: int) -> list[tuple[object, object]]:
-        candles = _served(hist, poll, requested=_hist_entry(), interval="1m",
+        candles = _served(hist, poll, requested=requested(), interval="1m",
                           window=(_at(start_minute), _at(15)))  # fmt: skip
         return [(c["derived_from"], c["open_at_ms"]) for c in candles
                 if c["bucket_end_ms"] == _at(10)]  # fmt: skip
 
-    assert at_10(4) == []
-    assert at_10(7) == at_10(4)
+    # Every start minute whose window still ends the history bucket `(5, 10]` inside it.
+    for start_minute in range(4, 10):
+        assert at_10(start_minute) == [], start_minute
+
+
+def test_in_1m_the_history_still_serves_a_bucket_no_polled_anchor_claims() -> None:
+    """The control of the test above: without `p_poll(5)`, `(5, 10]` is the history's everywhere.
+
+    It is what keeps the left-edge read from being "refuse the first history bucket": a hole in
+    polling across the whole bucket leaves it to `openInterestHist`, whatever minute the page
+    starts on.
+    """
+    hist = {_at(m): f"{1000 + m:.3f}" for m in (0, 5, 10, 15)}
+    poll = {_at(m): f"{2000 + m:.3f}" for m in range(11, 16)}
+
+    for start_minute in range(4, 10):
+        candles = _served(hist, poll, requested=_hist_entry(), interval="1m",
+                          window=(_at(start_minute), _at(15)))  # fmt: skip
+        at_10 = [(c["derived_from"], c["open_at_ms"]) for c in candles
+                 if c["bucket_end_ms"] == _at(10)]  # fmt: skip
+        assert at_10 == [("binance_point_5m", _at(5))], start_minute
 
 
 def test_the_in_progress_bucket_is_closed_false_by_the_request_s_knowledge_time() -> None:

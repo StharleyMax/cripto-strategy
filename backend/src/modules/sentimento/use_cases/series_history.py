@@ -44,6 +44,7 @@ here — both regimes reduce through the one function below and both get the one
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Final, Protocol, cast
 
 from src.modules.sentimento.domain.as_of_accessor import (
@@ -549,11 +550,84 @@ def _oi_candle_report(
                 knowledge_time_ms=knowledge_time_ms,
             ),
         )
+    poll = regimes.get(OiCandleSource.BINANCE_POLL_1M)
+    hist = regimes.get(OiCandleSource.BINANCE_POINT_5M)
+    if poll is not None and hist is not None:
+        regimes[OiCandleSource.BINANCE_POLL_1M] = replace(
+            poll,
+            anchor_only_instants_ms=_poll_anchors_left_of_window(
+                reader,
+                poll_entry=poll.entry,
+                hist_entry=hist.entry,
+                symbol=symbol,
+                interval_ms=interval_ms,
+                window_start_ms=window_start_ms,
+                window_end_ms=window_end_ms,
+                knowledge_time_ms=knowledge_time_ms,
+            ),
+        )
     return project_one_series_per_bucket(
         poll=regimes.get(OiCandleSource.BINANCE_POLL_1M),
         hist=regimes.get(OiCandleSource.BINANCE_POINT_5M),
         timeframe_ms=interval_ms,
         now_ms=knowledge_time_ms,
+    )
+
+
+def _poll_anchors_left_of_window(
+    reader: SeriesWindowReader,
+    *,
+    poll_entry: SeriesCatalogEntry,
+    hist_entry: SeriesCatalogEntry,
+    symbol: str,
+    interval_ms: int,
+    window_start_ms: int,
+    window_end_ms: int,
+    knowledge_time_ms: int,
+) -> frozenset[int]:
+    """Return the polled instants with a point, from `T0` of the first HISTORICAL bucket on.
+
+    `ADR-045/D2-bis`, `W6-QA-BACK-r2` D-1. Each regime's readings start at `T0` of ITS OWN first
+    effective bucket. In TF `1m` the historical bucket is 5 minutes wide, so its first `T0` can
+    fall up to 4 minutes before the first polled bucket of the window. A `p_poll(T0)` in that
+    stretch still owns the historical bucket. Left unread, the history would serve that bucket in
+    one window and not in another that also contains its end.
+
+    The stretch is `[hist T0, poll T0)` on the polled grid, and it is empty for every TF
+    `>= 5m`, where the two effective buckets are equal. It is read on its own, because the
+    requested series' `observations` only reach its own lookback. Its points only decide
+    `D2-bis`. They are never projected into a candle, since their polled buckets end before the
+    window.
+    """
+    hist_instants = _oi_fact_instants(
+        hist_entry,
+        interval_ms=interval_ms,
+        window_start_ms=window_start_ms,
+        window_end_ms=window_end_ms,
+    )
+    poll_bucket_ms = effective_timeframe_ms(interval_ms, poll_entry.native_grid_ms)
+    poll_first_anchor = _first_grid_instant(window_start_ms, step_ms=poll_bucket_ms) - (
+        poll_bucket_ms
+    )
+    if not hist_instants or hist_instants[0] >= poll_first_anchor:
+        return frozenset()
+    instants = tuple(range(hist_instants[0], poll_first_anchor, poll_entry.native_grid_ms))
+    observations = reader.read_window(
+        series_key_id=poll_entry.key.series_key_id(),
+        symbol=symbol,
+        window_start_ms=instants[0],
+        window_end_ms=instants[-1],
+        lookback_ms=max(_GRID_STEP_MS, poll_entry.native_grid_ms, poll_entry.max_staleness_ms),
+    )
+    return frozenset(
+        reading.instant_ms
+        for reading in _point_readings_at(
+            poll_entry,
+            observations,
+            instants=instants,
+            symbol=symbol,
+            knowledge_time_ms=knowledge_time_ms,
+        )
     )
 
 
@@ -610,12 +684,29 @@ def oi_point_readings(
     `[INFERRED: bar_policy governs rows; the candle's partiality is the closed flag]`
     `knowledge_time_ms` is the request's, so a fact not yet knowable by it is not a reading.
     """
-    instants = _oi_fact_instants(
+    return _point_readings_at(
         entry,
-        interval_ms=interval_ms,
-        window_start_ms=window_start_ms,
-        window_end_ms=window_end_ms,
+        observations,
+        instants=_oi_fact_instants(
+            entry,
+            interval_ms=interval_ms,
+            window_start_ms=window_start_ms,
+            window_end_ms=window_end_ms,
+        ),
+        symbol=symbol,
+        knowledge_time_ms=knowledge_time_ms,
     )
+
+
+def _point_readings_at(
+    entry: SeriesCatalogEntry,
+    observations: tuple[Observation, ...],
+    *,
+    instants: tuple[int, ...],
+    symbol: str,
+    knowledge_time_ms: int,
+) -> tuple[OiReading, ...]:
+    """Read `p(t)` at each of `instants`, keeping only the fact AT `t` (`oi_point_readings`)."""
     staleness_ms = entry.max_staleness_ms
     answers = as_of_batch(
         series=entry.key,

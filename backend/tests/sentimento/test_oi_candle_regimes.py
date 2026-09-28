@@ -214,6 +214,38 @@ def test_in_1m_a_5_minute_history_candle_yields_to_any_polled_anchor_inside_it()
     )  # fmt: skip
 
 
+def test_in_1m_an_anchor_only_polled_instant_owns_the_history_bucket_without_a_candle() -> None:
+    """`W6-QA-BACK-r2` D-1: `p_poll(5)` read LEFT of the window still takes `(5, 10]` from history.
+
+    The instant decides `D2-bis` and is never projected: no polled candle ends at minute 6, and
+    the history's `(5, 10]` is not served either. Without the anchor, the history serves it.
+    """
+    hist = _hist({0: 1000.0, 5: 1010.0, 10: 1020.0})
+    with_anchor = project_one_series_per_bucket(
+        poll=dataclasses.replace(_poll({10: 2010.0}), anchor_only_instants_ms=frozenset({_at(5)})),
+        hist=hist,
+        timeframe_ms=MINUTE_MS,
+        now_ms=FAR_FUTURE_MS,
+    )
+    without = project_one_series_per_bucket(
+        poll=_poll({10: 2010.0}), hist=hist, timeframe_ms=MINUTE_MS, now_ms=FAR_FUTURE_MS
+    )
+
+    assert [c.bucket_end_ms for c in with_anchor.candles] == [_at(5)]
+    assert [c.bucket_end_ms for c in without.candles] == [_at(5), _at(10)]
+
+
+def test_anchor_only_instants_on_the_history_slot_are_refused() -> None:
+    """Only polling anchors a bucket under `D2-bis`; the history slot carrying them is a mix-up."""
+    with pytest.raises(OiRegimeMismatchError, match="anchor-only"):
+        project_one_series_per_bucket(
+            poll=None,
+            hist=dataclasses.replace(_hist({}), anchor_only_instants_ms=frozenset({_at(5)})),
+            timeframe_ms=MINUTE_MS,
+            now_ms=FAR_FUTURE_MS,
+        )
+
+
 def test_in_1m_the_report_declares_each_regime_s_own_bucket_width() -> None:
     """`SPEC-009` §6.5: "declarando `bucket_interval_ms = 300000`" for the history in `1m`."""
     report = project_one_series_per_bucket(
