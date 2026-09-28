@@ -191,12 +191,13 @@ def _served(
     interval: str,
     window: tuple[int, int],
     knowledge_time_ms: int = ORIGIN_MS + (DATA_DAYS + 1) * DAY_MS,
+    poll_lag_ms: int = POLL_LAG_MS,
 ) -> list[dict[str, object]]:
     h, p = _hist_entry(), _poll_entry()
     reader = _ReaderBySeries(
         {
             h.key.series_key_id(): _observations(h, hist, lag_ms=HIST_LAG_MS),
-            p.key.series_key_id(): _observations(p, poll, lag_ms=POLL_LAG_MS),
+            p.key.series_key_id(): _observations(p, poll, lag_ms=poll_lag_ms),
         }
     )
     report = build_series_history_report(
@@ -361,6 +362,52 @@ def test_in_1m_the_history_still_serves_a_bucket_no_polled_anchor_claims() -> No
     for start_minute in range(4, 10):
         candles = _served(hist, poll, requested=_hist_entry(), interval="1m",
                           window=(_at(start_minute), _at(15)))  # fmt: skip
+        at_10 = [(c["derived_from"], c["open_at_ms"]) for c in candles
+                 if c["bucket_end_ms"] == _at(10)]  # fmt: skip
+        assert at_10 == [("binance_point_5m", _at(5))], start_minute
+
+
+@pytest.mark.parametrize("requested", [_hist_entry, _poll_entry], ids=["by_hist", "by_poll"])
+def test_in_1m_a_polled_anchor_off_the_5_minute_grid_left_of_the_window_owns_the_bucket(
+    requested: Callable[[], SeriesCatalogEntry],
+) -> None:
+    """`W6-QA-BACK-r3` N2: the left-edge read walks the POLLED grid, not the history's.
+
+    `D2-bis` in `1m` gives the history bucket `(5, 10]` to polling when ANY of the 5 polled
+    buckets it spans has `p(T0)` (`_polling_anchors_inside`), so `p_poll(6)` owns it just as
+    `p_poll(5)` does. A left-edge read stepping on the 5-minute grid only looks at minute 5, and a
+    window starting at minute 8 or 9 would hand `(5, 10]` back to the history.
+    """
+    hist = {_at(m): f"{1000 + m:.3f}" for m in (0, 5, 10, 15)}
+    poll = {_at(m): f"{2000 + m:.3f}" for m in (6, *range(10, 16))}
+
+    for start_minute in range(4, 10):
+        candles = _served(hist, poll, requested=requested(), interval="1m",
+                          window=(_at(start_minute), _at(15)))  # fmt: skip
+        at_10 = [(c["derived_from"], c["open_at_ms"]) for c in candles
+                 if c["bucket_end_ms"] == _at(10)]  # fmt: skip
+        assert at_10 == [], start_minute
+
+
+@pytest.mark.parametrize("requested", [_hist_entry, _poll_entry], ids=["by_hist", "by_poll"])
+def test_in_1m_a_polled_anchor_not_yet_known_left_of_the_window_owns_nothing(
+    requested: Callable[[], SeriesCatalogEntry],
+) -> None:
+    """`W6-QA-BACK-r3` N4: the left-edge read is point-in-time, like every other read.
+
+    The polling writes late (20 min of lag, as after a writer backlog), so at `knowledge_time =
+    minute 16` no polled point is known yet, while the history's `p(5)` and `p(10)` are. What the
+    request could know gives `(5, 10]` to the history, whatever minute the window starts on. A
+    left-edge read that ignores `knowledge_time` sees `p_poll(5)` from the future and drops it
+    for windows starting at minute 7, 8 or 9 only.
+    """
+    hist = {_at(m): f"{1000 + m:.3f}" for m in (0, 5, 10, 15)}
+    poll = {_at(m): f"{2000 + m:.3f}" for m in (5, *range(10, 16))}
+
+    for start_minute in range(4, 10):
+        candles = _served(hist, poll, requested=requested(), interval="1m",
+                          window=(_at(start_minute), _at(15)), knowledge_time_ms=_at(16),
+                          poll_lag_ms=20 * MINUTE_MS)  # fmt: skip
         at_10 = [(c["derived_from"], c["open_at_ms"]) for c in candles
                  if c["bucket_end_ms"] == _at(10)]  # fmt: skip
         assert at_10 == [("binance_point_5m", _at(5))], start_minute
