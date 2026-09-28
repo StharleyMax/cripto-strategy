@@ -1110,6 +1110,44 @@ async function ablation(page: Page, baseUrl: string, apiBase: string, catalog: C
   expect(colour.defects.length, "the colour judge still passes with the candle gone — it is not reading the candle").toBeGreaterThan(0);
 }
 
+/** How many buckets the older-page view spans, all of them BEFORE the SSR window's first bucket. */
+const OLDER_VIEW_BUCKETS = 60;
+
+/** The older-page judge (`W6-QA-FRONT-r2` E5): every closed candle the stub serves before the SSR window
+ * is on the canvas with the colour of its own close − open. The stub serves the history for any
+ * `t <= STUB_END`, so those candles only reach the screen through the pager's merge of the OLDER page;
+ * a pager that dropped the older page's `oi_candles` leaves those columns with no candle ink. */
+function judgeOlderPage(buckets: readonly BucketReading[], request: RenderedRequest): Verdict {
+  const defects: string[] = [];
+  let judged = 0;
+  const olderMs = buckets.filter((bucket) => bucket.bucketMs < request.windowStartMs).map((bucket) => bucket.bucketMs);
+  if (olderMs.length === 0) return { defects, inconclusive: "INCONCLUSIVO — no bucket before the SSR window on screen", counts: { judged } };
+  const fromMs = Math.min(...olderMs) - 2 * FIVE;
+  const toMs = Math.max(...olderMs);
+  const hist = stubPoints(FIVE, stubHist, fromMs, toMs);
+  const poll = stubPoints(MIN, stubPoll, fromMs, toMs);
+  for (const bucket of buckets) {
+    if (bucket.bucketMs >= request.windowStartMs) continue;
+    const candle = stubCandle(hist, poll, bucket.bucketMs, request.knowledgeTimeMs);
+    if (candle === null || !candle.closed) continue;
+    judged += 1;
+    const expected = sign(candle.close - candle.open);
+    const seen = classify(bucket.ink);
+    if (seen !== expected) defects.push(`${bucket.bucketMs}: older page served close−open ${expected}, canvas ${seen} ${JSON.stringify(bucket.ink)}`);
+  }
+  return { defects, inconclusive: judged < MIN_PER_REGIME ? `INCONCLUSIVO — only ${judged} older-page candles on screen` : null, counts: { judged } };
+}
+
+async function olderPage(page: Page, baseUrl: string, label: string): Promise<void> {
+  const request = await openSymbol(page, baseUrl, INTERVAL_QUERY);
+  await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
+  const toMs = Math.floor(request.windowStartMs / FIVE) * FIVE - 2 * FIVE;
+  const view: View = { name: "older", fromMs: toMs - OLDER_VIEW_BUCKETS * FIVE, toMs };
+  fact(SPEC, `${label}_older_page_view`, { request, view });
+  const { buckets } = await auditViews(page, [view], new Set<number>(), `${label}_older`);
+  expectGreen(`${label}_e5_older_page`, judgeOlderPage(buckets, request));
+}
+
 test.use({ viewport: { width: 1600, height: 1300 } });
 
 test.describe(`T-03.13: o instrumento — a fase da vela, ${SPEC}`, () => {
@@ -1172,6 +1210,10 @@ test.describe(`T-03.13: aceite do candle de OI por balde — GATE (stub), ${SPEC
 
   test("DoD-6: sob ?e2eOiLine=1 a vela some em todos os baldes julgados", async ({ page }) => {
     await ablation(page, instance!.baseUrl, `${stub.url}/api/v1`, catalog, "gate");
+  });
+
+  test("E5: as velas de OI da página ANTIGA chegam à tela — o pager não as descarta", async ({ page }) => {
+    await olderPage(page, instance!.baseUrl, "gate");
   });
 });
 

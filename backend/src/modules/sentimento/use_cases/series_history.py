@@ -489,7 +489,9 @@ def _oi_candle_report(
     panel's instrument are read — the requested series from the `observations` already loaded
     for `rows`, the OTHER one (resolved from the catalog; absent from it => one regime only)
     through one more `read_window` — and `domain/oi_candle_regimes.py` picks ONE series per
-    bucket. Requesting either series' id yields the same candles.
+    bucket. Requesting either series' id yields the same candles. In TF `1m` a third read takes
+    the polled points left of the window that still decide `D2-bis` for the first historical
+    bucket (`_poll_anchors_left_of_window`).
 
     `observations` covers every instant `_oi_fact_instants` asks for the requested series: the
     main read reaches `min(window_start, first_native_instant) - lookback`, with `lookback >=
