@@ -128,6 +128,16 @@ test("Q-3 (ii): a hole inside the pre-capture regime breaks the band and draws N
   assert.equal(inside.length, 12, "02:01–02:04, then 02:56–02:59 (Q-3b) and 03:01–03:04");
 });
 
+test("Q-3 (ii-bis): ONE missing bucket is already a hole — the band breaks at the smallest gap, not only at a long one", () => {
+  // `W6-QA-FRONT-r2` (mutant U9, `> width` → `> 2 * width`, survived): every hole above is 55 min long.
+  const oneMissing = run(A, SOURCES_1M, [at(2, 0), at(2, 5), at(2, 15)]);
+  const marks = oiRegimeMarks(oneMissing, SOURCES_1M);
+  assert.equal(marks.rules.length, 0, "a hole is not a change of source");
+  assert.equal(oiRegimeBandsAtFact(marks), `${at(1, 55)}-${at(2, 5)},${at(2, 10)}-${at(2, 15)}`, "02:10 is missing");
+  // Cala: the same three candles with nothing missing stay ONE band.
+  assert.equal(oiRegimeBandsAtFact(oiRegimeMarks(run(A, SOURCES_1M, [at(2, 0), at(2, 5), at(2, 10)]), SOURCES_1M)), `${at(1, 55)}-${at(2, 10)}`);
+});
+
 test("Q-3b: the first pre-capture candle after a hole has the band from its own T0 (exclusive): 4 slots before it", () => {
   const candles = run(A, SOURCES_1M, [at(2, 0), at(3, 0)]);
   const second = oiRegimeMarks(candles, SOURCES_1M).bands[1]!;

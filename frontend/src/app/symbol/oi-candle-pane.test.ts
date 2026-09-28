@@ -169,6 +169,10 @@ test("two pages that declare the same derived_from on different grids are refuse
   const older: OiCandleBundle = { sources: [{ ...POINT_5M, native_grid_ms: MINUTE }], candles: [UP] };
   const existing: OiCandleBundle = { sources: [POINT_5M], candles: [DOWN] };
   assert.throws(() => mergeOlderOiCandles(older, existing), OiCandleBundleError);
+  // `W6-QA-FRONT-r2` (mutant U15 survived): the same series on the same native grid, but a page
+  // cut at another bucket width — the width is the candle's interval, so the pages disagree.
+  const otherWidth: OiCandleBundle = { sources: [{ ...POINT_5M, bucket_interval_ms: 3 * FIVE }], candles: [UP] };
+  assert.throws(() => mergeOlderOiCandles(otherWidth, existing), OiCandleBundleError, "another bucket_interval_ms");
   const both = mergeOlderOiCandles({ sources: [POLL_1M], candles: [] }, existing);
   assert.deepEqual(
     [...both.sources].map((source) => source.derived_from).sort(),

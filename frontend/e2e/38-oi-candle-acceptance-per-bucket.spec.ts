@@ -992,8 +992,23 @@ interface View {
   readonly toMs: number;
 }
 
-/** Two views: the hole nearest before the first capture (its tail, the first-after bucket and ~45 historical
- * buckets after it), and the capture start (~55 historical buckets before, ~60 polling after). */
+/** The capture-start bucket that follows the LONGEST polling gap in the window, or null when polling never
+ * stopped for more than a minute. On real data this is the return after an ingestion stall — a second
+ * B→A→B boundary, which only the first capture's view would otherwise never put on screen. */
+function longestGapRestart(pollMs: readonly number[]): number | null {
+  const poll = [...pollMs].sort((p, q) => p - q);
+  let best: { gapMs: number; bucketEndMs: number } | null = null;
+  for (let i = 1; i < poll.length; i += 1) {
+    const gapMs = poll[i]! - poll[i - 1]!;
+    if (gapMs > MIN && (best === null || gapMs > best.gapMs)) best = { gapMs, bucketEndMs: Math.ceil(poll[i]! / FIVE) * FIVE };
+  }
+  return best === null ? null : best.bucketEndMs;
+}
+
+/** Up to three views: the hole nearest before the first capture (its tail, the first-after bucket and ~45
+ * historical buckets after it), the capture start (~55 historical buckets before, ~60 polling after), and
+ * the RE-ENTRY after the longest polling gap (`W6-QA-FRONT-r2`: on real data the first capture was the only
+ * boundary ever judged). The GATE stub has one capture, so there the re-entry view does not exist. */
 function viewsOf(truth: Truth): View[] {
   const captures = captureBuckets(truth).filter((_, i) => i % 2 === 0);
   const last = Math.floor(truth.request.windowEndMsInclusive / FIVE) * FIVE - 2 * FIVE;
@@ -1004,6 +1019,10 @@ function viewsOf(truth: Truth): View[] {
   const hole = holes[holes.length - 1];
   if (hole !== undefined) views.push({ name: "hole", fromMs: hole.firstAfterMs - 20 * FIVE, toMs: hole.firstAfterMs + 45 * FIVE });
   views.push({ name: "capture", fromMs: capture - 55 * FIVE, toMs: Math.min(last, capture + 60 * FIVE) });
+  const reentry = longestGapRestart([...(truth.points.get(POLL) ?? new Map<number, number>()).keys()]);
+  if (reentry !== null && reentry !== capture && captures.includes(reentry) && reentry + 2 * FIVE <= last) {
+    views.push({ name: "reentry", fromMs: reentry - 30 * FIVE, toMs: Math.min(last, reentry + 45 * FIVE) });
+  }
   return views;
 }
 
@@ -1108,6 +1127,23 @@ test.describe(`T-03.13: o instrumento — a fase da vela, ${SPEC}`, () => {
     expect(candlePhaseOf(scanOf([119, 147, 169, 168, 166, 160, 160, 166, 172, 160, 153, 133, 119])), "the line: flat").toBeNull();
     expect(candlePhaseOf(scanOf([0, 0, 0])), "no ink at all").toBeNull();
     expect(candlePhaseOf([]), "no scan").toBeNull();
+  });
+
+  test("a vista de reentrada: a volta depois do MAIOR buraco do polling; sem buraco, nenhuma", () => {
+    const run = (fromMs: number, n: number): number[] => Array.from({ length: n }, (_, i) => fromMs + i * MIN);
+    const t0 = 1_790_391_780_000; // 09-26T03:03Z, the first real capture
+    // Cala: polling that never stops for more than a minute has no re-entry.
+    expect(longestGapRestart(run(t0, 50)), "no gap").toBeNull();
+    expect(longestGapRestart([]), "no polling").toBeNull();
+    // Morde: a 31 min gap, then the long stall back at 09-27T11:39Z. The LONGER one wins, and the answer is
+    // the bucket END that contains the first point back (11:39Z → 11:40Z), not the point.
+    const stallBack = 1_790_509_140_000; // 09-27T11:39Z
+    const pts = [...run(t0, 10), ...run(t0 + 40 * MIN, 10), ...run(stallBack, 5)];
+    expect(longestGapRestart(pts)).toBe(1_790_509_200_000);
+    // Order does not matter: the polling map is not sorted.
+    expect(longestGapRestart([...pts].reverse())).toBe(1_790_509_200_000);
+    // The longest, not the last: gaps of 691 min then 21 min pick the first (t0 + 700 min = 14:43Z → bucket end 14:45Z).
+    expect(longestGapRestart([...run(t0, 10), ...run(t0 + 700 * MIN, 10), ...run(t0 + 730 * MIN, 5)])).toBe(1_790_433_900_000);
   });
 });
 
