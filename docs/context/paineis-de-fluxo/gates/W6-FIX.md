@@ -69,7 +69,13 @@ Depois da rodada mutante, o arquivo foi restaurado: `git status` não lista `use
 - `npx tsc --noEmit -p frontend` deu rc=0, e `npx eslint --no-warn-ignored e2e/38-…spec.ts` também.
 - `harness rules --mode file --path <f>` nos arquivos alterados: **0 BLOQUEIO**. Aparece 1 AVISO herdado,
   `core.module-docstring-single-line` em `series_history.py:1`, igual em `master`.
-- `make verify` (`E2E_API_PORT=8843 E2E_NEXT_PORT=4343`): o resultado vai no commit do laudo e na devolução ao orquestrador.
+- `make verify` em `a0734b9`: purga de `__pycache__`, depois `E2E_API_PORT=8843 E2E_NEXT_PORT=4343 make verify`. **VERDE, 8 portões**
+  `[MEDIDO 2026-09-28T11:33Z]`. O log é `/tmp/verify-wave-paineis-f03b-20260928T113311Z.log`:
+  - test-frontend: 1209 pass, 0 fail
+  - test: 3412 passed, 96,42%
+  - boundaries: 7 kept, 0 broken
+  - regras: 0 bloqueio, 77 avisos
+  - e2e: **98 passed**, o que inclui o E5 novo, e 0 vermelho. Nenhum dos conhecidos do REGRAS §2 aparece.
 
 ## 4. Doc delta
 
