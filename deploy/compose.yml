@@ -93,11 +93,25 @@ services:
       - ../.env
     # `APP_HOST` overrides `__main__.py`'s `"127.0.0.1"` default so `web`/`caddy` can reach
     # this process by service name (`[DECISAO-OWNER: 2026-09-08]`, comment above). `env_file`
-    # above still supplies every OTHER variable (`APP_PORT` included) — this is the ONE
-    # variable this service pins regardless of what `.env` says, because it is a topology
-    # fact of running under compose, not an operator-tunable setting.
+    # above still supplies every OTHER variable (`APP_PORT` included). `APP_HOST` is pinned
+    # regardless of what `.env` says because it is a topology fact of running under compose,
+    # not an operator-tunable setting.
+    #
+    # `PGOPTIONS`/`PGAPPNAME` (WI, `D-2` of `DECISOES-DO-OWNER-2026-09-27.md`): pinned HERE and
+    # never in `.env`, because `.env` is the `env_file` of `writer` and `collector` too, and all
+    # three use the SAME Postgres role — this is the only place that reaches the API alone.
+    # libpq reads `PGOPTIONS` because the API's conninfo carries no `options=`
+    # (`_postgres_conninfo`); adding one there would silently stop this line from applying
+    # (`backend/tests/main/test_compose_api_idle_transaction_timeout.py` pins both sides).
+    # `30s` is a safety net only: since `connect_autocommit` (`src/main/__init__.py`), no API
+    # path idles inside a transaction, so any `IdleInTransactionSessionTimeout` in this log is a
+    # regression to hunt, not the timeout "working". `PGAPPNAME` gives `pg_stat_activity` a
+    # stable key (`application_name='cripto-api'`) — the container IP changed between
+    # 2026-09-19 and 2026-09-27 and stopped identifying this service.
     environment:
       APP_HOST: "0.0.0.0"
+      PGOPTIONS: "-c idle_in_transaction_session_timeout=30s"
+      PGAPPNAME: "cripto-api"
     # `T-03.8` (`CA-E2E-1`) measured this: `create_app` ALWAYS wires a
     # `SqliteSeriesQuarantineStore` at `QUARANTINE_STORE_PATH` (default
     # `data/md/series_quarantine.sqlite3`, `src/main/__init__.py:64/240`) regardless of
@@ -159,8 +173,9 @@ services:
   # variables live in `../.env`, which `env_file:` below supplies — NOT in an `environment:`
   # block here, and that is deliberate: `environment:` takes precedence over `env_file:`, so
   # pinning a default here would SILENTLY override whatever the operator wrote in `.env`. The
-  # one variable this file does pin that way is `api`'s `APP_HOST`, and its comment says why
-  # (a topology fact of running under compose, not an operator-tunable setting). Cadence is
+  # variables this file does pin that way are `api`'s `APP_HOST`, `PGOPTIONS` and `PGAPPNAME`,
+  # and their comment says why (a topology fact of running under compose, and a setting that
+  # must reach the API alone — neither is operator-tunable). Cadence is
   # the opposite — `RS-3.5`: *"e a unica variavel que paga cota, e grava-la em codigo
   # transforma ajuste de configuracao em release"*.
   #
