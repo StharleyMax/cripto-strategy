@@ -54,6 +54,7 @@ from src.modules.sentimento.infra.ingest_record_store_composition import (
     POSTGRES_USER_VAR,
     compose_ingest_record_store,
     compose_postgres_connection,
+    connect_autocommit,
 )
 from src.modules.sentimento.infra.postgres_ingest_record_store import PostgresIngestRecordStore
 from src.modules.sentimento.infra.postgres_series_window_reader import PostgresSeriesWindowReader
@@ -234,7 +235,12 @@ def create_app(
         # An unknown `backend` value skips the check above (there is no path to check) and
         # reaches `compose_ingest_record_store` regardless, which is what refuses it, naming
         # `INGEST_RECORD_BACKEND` — the ONE place that value is validated (`ADR-031/D3`).
-        composed = compose_ingest_record_store(os.environ)
+        # `connect_autocommit`, never the default `psycopg.connect`: this process only ever
+        # READS through these connections, and a default (`autocommit=False`) connection that
+        # never `commit`s stays `idle in transaction` forever after its first `SELECT`, holding
+        # `AccessShareLock` until restart (`connect_autocommit`'s docstring has the incident).
+        # `sqlite` ignores `connect` entirely.
+        composed = compose_ingest_record_store(os.environ, connect=connect_autocommit)
         # `compose_ingest_record_store` only ever returns one of these two concrete engines
         # (its own body constructs no other); narrowing back from its 6-method `IngestRecordStore`
         # Protocol return type is what lets `.path`/`_PostgresReadiness` below type-check without
@@ -249,7 +255,9 @@ def create_app(
             # purpose (`compose_postgres_connection`'s own docstring). Refuses at boot
             # (`ADR-029/D3`), same as `ingest_store`'s own connection just above: an unreachable
             # Postgres must fail `rc != 0` here, never on the first `/series-history` request.
-            window_connection = compose_postgres_connection(os.environ)
+            # Same `connect_autocommit` as `ingest_store` above, for the same reason: this is the
+            # connection `/series-history` reads `md.series` through.
+            window_connection = compose_postgres_connection(os.environ, connect=connect_autocommit)
             window_reader = PostgresSeriesWindowReader(window_connection)
         else:
             readiness_source = ingest_store
