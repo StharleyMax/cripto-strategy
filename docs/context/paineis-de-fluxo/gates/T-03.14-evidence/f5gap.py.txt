@@ -1,0 +1,15 @@
+# T-03.14 F-5 of T-03.12 gate: distance (px) from each regime rule to the nearest candle-ink column on each side.
+import json
+from PIL import Image
+UP, DN = (8, 153, 129), (242, 54, 69)
+near = lambda c, t, tol: all(abs(a - b) <= tol for a, b in zip(c, t))
+for l in open("oipx-facts.jsonl"):
+    d = json.loads(l); tag = d["png"][:-9]
+    if not d["rule_cols"] or "ablation" in tag: continue
+    f = json.load(open(f"cap/{tag}-facts.json")); px = Image.open(f"cap/{tag}-full.png").convert("RGB").load(); row = f["rest"]["row"]
+    y0 = int(row["top"] + float(f["rest"]["attrs"]["data-reserved-scale-top-px"])); y1 = int(row["top"] + row["h"] - 2)
+    ink = lambda x: any(near(px[x, y], UP, 30) or near(px[x, y], DN, 30) for y in range(y0, y1))
+    for r in d["rule_cols"]:
+        left = next((r - x for x in range(r - 1, max(0, r - 60), -1) if ink(x)), None)
+        right = next((x - r for x in range(r + 1, min(d["axis"], r + 60)) if ink(x)), None)
+        print(json.dumps({"tag": tag, "rule_x": r, "px_per_slot": d["px_per_slot"], "gap_left_px": left, "gap_right_px": right, "rule_has_candle_ink": ink(r)}))

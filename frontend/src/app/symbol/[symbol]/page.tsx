@@ -149,7 +149,9 @@ import {
   seriesHistoryEndpointUrl,
   type SeriesHistoryRow,
 } from "../series-history-client.ts";
+import { oiCandleBundleOf } from "../oi-candle-pane.ts";
 import type { PanelStatus } from "../panel-status.ts";
+import type { OiCandlesWire } from "../series-history-envelope.ts";
 import type { PaneLegendSource, PaneLegendSources } from "../pane-legend.ts";
 import { resolveRouteWindow, type RouteWindow } from "../request-window.ts";
 import { seedIdentityKey } from "../seed-identity.ts";
@@ -418,14 +420,19 @@ async function fetchPanelRows(
   symbol: string,
   routeWindow: RouteWindow,
   interval: string,
-): Promise<{ readonly rows: readonly SeriesHistoryRow[]; readonly status: PanelStatus }> {
+): Promise<{
+  readonly rows: readonly SeriesHistoryRow[];
+  /** `T-03.11` — the envelope's `oi_candles` block (`ADR-045/D2`): non-`null` only on an OI panel. */
+  readonly oiCandles: OiCandlesWire | null;
+  readonly status: PanelStatus;
+}> {
   if (resolution.kind === "none") {
-    return { rows: [], status: { kind: "absent", reason: "not_in_catalog" } };
+    return { rows: [], oiCandles: null, status: { kind: "absent", reason: "not_in_catalog" } };
   }
   if (resolution.kind === "ambiguous") {
     // ⛔ NO REQUEST IS ISSUED. Picking one of the matches to ask about would be `Array.find` with
     // extra steps — the panel says it cannot identify its own series, and the screen shows that.
-    return { rows: [], status: { kind: "absent", reason: "ambiguous_in_catalog" } };
+    return { rows: [], oiCandles: null, status: { kind: "absent", reason: "ambiguous_in_catalog" } };
   }
   const entry = resolution.entry;
   const key: HistoryRequestKey = {
@@ -439,12 +446,12 @@ async function fetchPanelRows(
   };
   try {
     const envelope = await fetchSeriesHistoryViaHttp(key);
-    return { rows: envelope.rows, status: { kind: "ok" } };
+    return { rows: envelope.rows, oiCandles: envelope.oi_candles, status: { kind: "ok" } };
   } catch (cause) {
     if (!(cause instanceof TransportError)) {
       throw cause;
     }
-    return { rows: [], status: { kind: "absent", reason: cause.kind } };
+    return { rows: [], oiCandles: null, status: { kind: "absent", reason: cause.kind } };
   }
 }
 
@@ -974,6 +981,8 @@ export default async function SymbolPage({
       liquidationLong: extractRows(liquidationLongResult),
       liquidationShort: extractRows(liquidationShortResult),
       longShort: extractRows(longShortResult),
+      // `T-03.11` — what the OI pane DRAWS, off the SAME fetch as `oi` (never a second request).
+      oiCandles: oiCandleBundleOf(oiResult.oiCandles),
     },
   };
 

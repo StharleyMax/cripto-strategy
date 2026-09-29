@@ -1,0 +1,18 @@
+import { computeSeriesKeyId } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-03-13/frontend/src/app/symbol/series-key-id.ts";
+const api = process.argv[2] ?? "http://127.0.0.1:8000/api/v1";
+const c = await (await fetch(`${api}/series-catalog`)).json();
+const pick = (f: (k: any) => boolean) => c.entries.find((e: any) => f(e.key)).key;
+const price = pick((k) => k.instrumentId === "BTCUSDT" && k.metric === "klines_ohlc" && k.reduction === "CLOSE");
+const priceO = pick((k) => k.instrumentId === "BTCUSDT" && k.metric === "klines_ohlc" && k.reduction === "OPEN");
+const hist = pick((k) => k.instrumentId === "BTCUSDT" && k.metric === "sum_open_interest" && k.provider === "binance");
+const poll = pick((k) => k.instrumentId === "BTCUSDT" && k.metric === "open_interest");
+const end = Math.floor(Date.now() / 300000) * 300000 - 3600000;
+const start = end - 1800000;
+for (const [name, key, interval] of [["priceO", priceO, "5m"], ["priceC", price, "5m"], ["hist", hist, "5m"], ["poll", poll, "1m"], ["priceC1", price, "1m"]] as const) {
+  const q = new URLSearchParams({ series_key_id: computeSeriesKeyId(key), symbol: "BTCUSDT", interval, window_start_ms: String(start), window_end_ms: String(end), knowledge_time_ms: String(Date.now()), bar_policy: "final_only" });
+  const r = await fetch(`${api}/series-history?${q}`);
+  const t = await r.text();
+  let j: any; try { j = JSON.parse(t); } catch { console.log(name, r.status, t.slice(0, 200)); continue; }
+  console.log(name, r.status, computeSeriesKeyId(key).slice(0, 10), "rows", j.rows?.length, JSON.stringify(j.rows?.slice(0, 3)), "oi_candles" in j ? JSON.stringify(j.oi_candles)?.slice(0, 300) : "no-oi-key");
+}
+console.log("start", start, "end", end);

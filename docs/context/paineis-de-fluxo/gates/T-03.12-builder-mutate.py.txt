@@ -1,0 +1,35 @@
+import subprocess, sys, re
+F='/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-03-12/frontend/'
+SRC=F+'src/app/symbol/oi-regime-marks.ts'
+TEST='src/app/symbol/oi-regime-marks.test.ts'
+orig=open(SRC).read()
+M=[
+ ('M1 rule suppressed by a hole (r1 literal)', [('    if (change) {\n','    if (change && !gap) {\n')]),
+ ('M2 band per candle (1 slot)', [('if (band !== null && !change && !gap) {','if (false) {'),('band = { leftExclusiveMs, rightInclusiveMs: candle.bucket_end_ms, candles: 1 };','band = { leftExclusiveMs: candle.bucket_end_ms - 60_000, rightInclusiveMs: candle.bucket_end_ms, candles: 1 };')]),
+ ('M3 band crosses a hole', [('if (band !== null && !change && !gap) {','if (band !== null && !change) {')]),
+ ('M4 band left edge from the slot of the 1st candle (r1)', [('const ownLeftMs = candle.bucket_end_ms - width;','const ownLeftMs = candle.bucket_end_ms - 60_000;')]),
+ ('M5 no cut at prev (max(..., prev) removed)', [('Math.max(ownLeftMs, previous.bucket_end_ms)','ownLeftMs')]),
+ ('M6 one rule only (fixed instant: the day the collector started)', [('    if (change) {\n','    if (change && rules.length === 0) {\n')]),
+ ('M7 rule always at the previous candle (not on the band edge)', [('atMs: candle.derived_from === OI_PRE_CAPTURE_SOURCE ? leftExclusiveMs : previous!.bucket_end_ms,','atMs: previous!.bucket_end_ms,')]),
+ ('Ha predicate expected == 1 (r2)', [('return candle.samples.present + anchor <= 2;','return candle.samples.expected === 1;')]),
+ ('Hb predicate present <= 2 (no anchor term)', [('return candle.samples.present + anchor <= 2;','return candle.samples.present <= 2;')]),
+ ('Hc predicate present == 1', [('return candle.samples.present + anchor <= 2;','return candle.samples.present === 1;')]),
+ ('Hd samples ignored (numerals always)', [('return candle.samples.present + anchor <= 2;','return false;')]),
+ ('He native_grid_ms instead of bucket_interval_ms (O-5)', [('const bucketStartMs = candle.bucket_end_ms - sourceOf(candle.derived_from, sources).bucket_interval_ms;','const bucketStartMs = candle.bucket_end_ms - sourceOf(candle.derived_from, sources).native_grid_ms;')]),
+ ('L1 polled regime always labelled', [('span.derivedFrom === OI_PRE_CAPTURE_SOURCE || regimes.size >= 2','true')]),
+ ('L2 no width clearance', [('rightPx - leftPx >= labelWidthPx(span.text) + OI_REGIME_LABEL_CLEARANCE_PX','rightPx - leftPx > 0')]),
+ ('L3 label at the span start, not the visible edge', [('leftPx: Math.max(0, edgePx(span.leftExclusiveMs)),','leftPx: edgePx(span.leftExclusiveMs),')]),
+]
+res=[]
+try:
+  for name, reps in M:
+    s=orig
+    for a,b in reps:
+      assert s.count(a)>=1, (name,a); s=s.replace(a,b)
+    open(SRC,'w').write(s)
+    out=subprocess.run(['node','--conditions=react-server','--test',TEST],cwd=F,capture_output=True,text=True).stdout
+    m=re.search(r'ℹ fail (\d+)',out); res.append((name,int(m.group(1)) if m else -1))
+finally:
+  open(SRC,'w').write(orig)
+for n,f in res: print(f'{f:3d} fail  {n}')
+print('red:',sum(1 for _,f in res if f>0),'of',len(res))

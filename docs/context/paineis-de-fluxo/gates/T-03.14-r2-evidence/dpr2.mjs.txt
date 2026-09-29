@@ -1,0 +1,12 @@
+// T-03.14 r2: the OI pane at DPR 2 (live 1m, 1600x1200), for MF-1 at a DPR != 1. No interaction but a mouse park.
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-03-14/frontend/node_modules/playwright/index.mjs";
+import fs from "node:fs";
+const OUT = process.argv[2]; const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1600, height: 1200 }, deviceScaleFactor: 2 });
+await p.goto("http://127.0.0.1:4321/symbol/BTCUSDT?interval=1m", { waitUntil: "load", timeout: 180000 });
+await p.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180000 }); await p.waitForTimeout(6000);
+await p.mouse.move(2, 2); await p.waitForTimeout(800);
+const g = await p.evaluate(() => { const el = document.querySelector('[data-testid="oi-pane"]'); const tr = el.closest("tr").getBoundingClientRect();
+  return { top: tr.top, h: tr.height, axisX: el.closest("tr").lastElementChild.getBoundingClientRect().left, lb: el.dataset.legendBottomPx, rules: el.dataset.oiRegimeRules, bands: el.dataset.oiRegimeBands }; });
+await p.screenshot({ path: `${OUT}/dpr2-oi.png`, clip: { x: 0, y: g.top, width: 1600, height: g.h } });
+fs.writeFileSync(`${OUT}/dpr2-facts.json`, JSON.stringify(g)); console.log(JSON.stringify(g)); await b.close();

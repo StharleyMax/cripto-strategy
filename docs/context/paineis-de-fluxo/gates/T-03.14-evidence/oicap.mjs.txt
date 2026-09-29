@@ -1,0 +1,93 @@
+// T-03.14 capture of the OI candle pane: real app (next start :4321 of worktree t-03-14, HEAD of wave/paineis-f03b)
+// over real data (T-03.13-real-proxy on :8821: OI series-history from the worktree's own route function over a
+// read-only md.series export; everything else passed through to prod :8000). Pan/zoom by mouse only (drag + wheel),
+// the navigation of T-03.12-design-r2-capture-1mgrid.mjs. No writes anywhere.
+// Usage: node oicap.mjs <out> <symbol> <interval> <targetIso|live> <spanSlots> <tag> [vpW] [vpH] [extraQuery]
+import { chromium } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-03-14/frontend/node_modules/playwright/index.mjs";
+import fs from "node:fs";
+
+const [OUT, SYMBOL, INTERVAL, TARGET_ISO, SPAN_RAW, TAG, VW = "1600", VH = "1200", EXTRA = ""] = process.argv.slice(2);
+const BASE = "http://127.0.0.1:4321";
+const SPAN = Number(SPAN_RAW);
+const STEP_MS = 60_000;
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: Number(VW), height: Number(VH) }, deviceScaleFactor: 1 });
+const errors = []; const failed = [];
+page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
+page.on("response", (r) => { if (r.status() >= 400) failed.push(`${r.status()} ${r.url().slice(0, 110)}`); });
+await page.goto(`${BASE}/symbol/${SYMBOL}?interval=${INTERVAL}${EXTRA ? "&" + EXTRA : ""}`, { waitUntil: "load", timeout: 180_000 });
+await page.locator(".tv-lightweight-charts").first().waitFor({ timeout: 180_000 });
+await page.waitForTimeout(5000);
+
+const host = page.locator("[data-visible-logical-from]").first();
+const range = async () => ({ from: Number(await host.getAttribute("data-visible-logical-from")), to: Number(await host.getAttribute("data-visible-logical-to")) });
+const wStart = async () => Number(await page.locator("main[data-window-start-ms]").getAttribute("data-window-start-ms"));
+const live = TARGET_ISO === "live";
+let target = 0;
+const retarget = async () => { if (!live) target = (Date.parse(TARGET_ISO) - (await wStart())) / STEP_MS; };
+const oiBox = async () => page.locator('[data-testid="oi-pane"]').boundingBox();
+const xOf = (r, b, logical) => b.x + (logical - r.from) * (b.width / (r.to - r.from));
+async function pan(maxIter) {
+  for (let i = 0; i < maxIter; i++) {
+    await retarget();
+    const r = await range(); const want = r.from + (r.to - r.from) * 0.6; const b = await oiBox();
+    const dx = (want - target) * (b.width / (r.to - r.from));
+    if (Math.abs(dx) < 4) break;
+    const cl = Math.max(-b.width * 0.4, Math.min(b.width * 0.4, dx)); const y = b.y + b.height * 0.5;
+    await page.mouse.move(b.x + b.width * 0.5, y); await page.mouse.down();
+    await page.mouse.move(b.x + b.width * 0.5 + cl, y, { steps: 8 }); await page.mouse.up();
+    await page.waitForTimeout(1200);
+  }
+}
+if (!live) {
+  await pan(20);
+  for (let i = 0; i < 160; i++) {
+    await retarget(); const r = await range(); const span = r.to - r.from;
+    if (Math.abs(span - SPAN) / SPAN < 0.12) break;
+    const b = await oiBox();
+    await page.mouse.move(xOf(r, b, target), b.y + b.height * 0.5);
+    await page.mouse.wheel(0, span > SPAN ? -120 : 120); await page.waitForTimeout(120);
+  }
+  await pan(20);
+}
+await page.mouse.move(2, 2); await page.waitForTimeout(1500);
+await retarget();
+const r = await range(); const b = await oiBox();
+if (live) target = r.to - 2;
+const oiDom = () => {
+  const el = document.querySelector('[data-testid="oi-pane"]');
+  const a = {}; for (const x of el.attributes) if (x.name.startsWith("data-")) a[x.name] = x.value.slice(0, 400);
+  const tr = el.closest("tr"); const rr = tr.getBoundingClientRect(); const ax = tr.lastElementChild.getBoundingClientRect();
+  const labels = Array.from(el.querySelectorAll('[data-fact^="oi_regime_band_label"]')).map((n) => { const q = n.getBoundingClientRect(); const cs = getComputedStyle(n); return { fact: n.getAttribute("data-fact"), text: n.textContent.trim(), x: q.left, y: q.top, w: q.width, h: q.height, color: cs.color, size: cs.fontSize, weight: cs.fontWeight, tt: cs.textTransform }; });
+  const leg = el.querySelector('[data-legend-ohlc="oi"]');
+  const lr = leg?.getBoundingClientRect();
+  const parts = leg ? Array.from(leg.querySelectorAll("[data-legend-ohlc-part]")).map((p) => { const q = p.getBoundingClientRect(); return { part: p.getAttribute("data-legend-ohlc-part"), t: p.textContent.trim(), x: Math.round(q.left), w: Math.round(q.width), color: getComputedStyle(p).color }; }) : [];
+  const legendBlock = el.querySelector("[data-pane-legend]") ?? leg?.parentElement;
+  const lb = legendBlock?.getBoundingClientRect();
+  const txt = el.innerText.replace(/\s+/g, " ").trim();
+  return { attrs: a, row: { top: rr.top, h: rr.height, w: rr.width, axisX: ax.left }, labels,
+    legend: leg ? { text: leg.textContent.replace(/\s+/g, " ").trim().slice(0, 200), df: leg.getAttribute("data-legend-derived-from"), samples: leg.getAttribute("data-legend-samples"), hlUnmeasured: leg.getAttribute("data-legend-hl-unmeasured"), x: lr.left, w: lr.width, h: lr.height, bottom: lr.bottom, parts } : null,
+    legendBlock: lb ? { top: lb.top, bottom: lb.bottom, h: lb.height } : null, paneText: txt.slice(0, 700),
+    minus: (txt.match(/[−-]\s*\d/g) ?? []).length, floatNoise: (txt.match(/\d+\.\d{7,}/g) ?? []) };
+};
+const facts = { symbol: SYMBOL, interval: INTERVAL, target_iso: TARGET_ISO, vp: `${VW}x${VH}`, extra: EXTRA, visible: r, target_logical: target, windowStartMs: await wStart(), oi_pane_box: b };
+facts.rest = await page.evaluate(oiDom);
+await page.screenshot({ path: `${OUT}/${TAG}-oi.png`, clip: { x: 0, y: b.y - 4, width: Number(VW), height: b.height + 8 } });
+const priceBox = await page.locator('[data-testid="price-pane"]').boundingBox();
+await page.screenshot({ path: `${OUT}/${TAG}-price+oi.png`, clip: { x: 0, y: priceBox.y, width: Number(VW), height: b.y + b.height - priceBox.y + 4 } });
+await page.screenshot({ path: `${OUT}/${TAG}-full.png` });
+facts.hover = [];
+const pxPerBar = b.width / (r.to - r.from);
+for (const off of [-45, -30, -15, -5, -1, 0, 1, 5, 15, 30]) {
+  const x = b.x + (target + off - r.from) * pxPerBar;
+  if (x < b.x + 2 || x > b.x + b.width - 2) continue;
+  await page.mouse.move(x, b.y + b.height * 0.6, { steps: 3 }); await page.waitForTimeout(300);
+  const d = await page.evaluate(oiDom);
+  facts.hover.push({ off, x: Math.round(x), legend: d.legend, labels: d.labels.map((l) => l.fact) });
+  if (off === 0) await page.screenshot({ path: `${OUT}/${TAG}-hover0-oi.png`, clip: { x: 0, y: b.y - 4, width: Number(VW), height: b.height + 8 } });
+}
+await page.mouse.move(2, 2); await page.waitForTimeout(400);
+facts.px_per_slot = pxPerBar; facts.console_errors = errors; facts.failed_n = failed.length; facts.failed_sample = failed.slice(0, 4);
+fs.writeFileSync(`${OUT}/${TAG}-facts.json`, JSON.stringify(facts, null, 1));
+console.log(JSON.stringify({ tag: TAG, visible: r, pxPerSlot: +pxPerBar.toFixed(2), rules: facts.rest.attrs["data-oi-regime-rules"], bands: facts.rest.attrs["data-oi-regime-bands"], labels: facts.rest.labels.map((l) => l.text), legend: facts.rest.legend?.text?.slice(0, 120), errors: errors.length, failed: failed.length }));
+await browser.close();

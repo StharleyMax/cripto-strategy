@@ -1,0 +1,48 @@
+# T-03.12 r2 — the §3.1 contract (revised) run over the served oi_candles, plus the ablations of Q-1/Q-3.
+# A = binance_point_5m. Units: ms. Slot of a candle = its bucket_end_ms (V4). TF step from the key.
+import json, sys, datetime as dt
+iso = lambda ms: dt.datetime.fromtimestamp(ms/1000, dt.UTC).strftime('%m-%dT%H:%MZ')
+A = 'binance_point_5m'; STEP = {'1m': 60000, '5m': 300000, '15m': 900000}
+FIXED_INSTANT = 1790391780000  # 09-26T03:03Z, first poll row: the "collector date" of Q-1's ablation
+def derive(oc, step, *, rule_mode='any_change', band_crosses_gap=False, left_mode='cover'):
+    c = oc['candles']; w = {s['derived_from']: s['bucket_interval_ms'] for s in oc['sources']}
+    rules = []; bands = []; cur = None
+    for i, x in enumerate(c):
+        prev = c[i-1] if i else None
+        gap = prev is not None and x['bucket_end_ms'] - prev['bucket_end_ms'] > w[x['derived_from']]
+        change = prev is not None and prev['derived_from'] != x['derived_from']
+        ruled = change and (rule_mode == 'any_change' or (rule_mode == 'literal' and not gap))
+        if ruled:
+            # the rule sits on the band edge: A->B right edge of A's last; B->A left edge of A's first
+            rules.append(prev['bucket_end_ms'] if prev['derived_from'] == A else None)
+        if x['derived_from'] == A:
+            if cur is None or change or (gap and not band_crosses_gap) or left_mode == 'per_candle':
+                left = x['bucket_end_ms'] - (w[A] if left_mode == 'cover' else step)
+                if left_mode == 'per_candle': left = x['bucket_end_ms'] - step
+                if prev is not None: left = max(left, prev['bucket_end_ms'])      # clip: never over a served candle
+                cur = {'left_excl': left, 'right_incl': x['bucket_end_ms'], 'n': 0}; bands.append(cur)
+                if ruled: rules[-1] = left if rules[-1] is None else rules[-1]
+            cur['right_incl'] = x['bucket_end_ms']; cur['n'] += 1
+        else:
+            cur = None
+    if rule_mode == 'fixed_instant':
+        rules = [FIXED_INSTANT] if c and c[0]['bucket_end_ms'] <= FIXED_INSTANT <= c[-1]['bucket_end_ms'] else []
+    served = {x['bucket_end_ms'] for x in c}
+    lo, hi = c[0]['bucket_end_ms'], c[-1]['bucket_end_ms']
+    inband_blank = outband_blank = uncovered_first = 0
+    for t in range(lo, hi + 1, step):
+        if t in served: continue
+        if any(b['left_excl'] < t <= b['right_incl'] for b in bands): inband_blank += 1
+        else: outband_blank += 1
+    return {'rules': len(rules), 'rule_at': [iso(r) for r in rules], 'bands': len(bands),
+            'bands_at': [f"({iso(b['left_excl'])},{iso(b['right_incl'])}] n={b['n']}" for b in bands],
+            'inband_blank': inband_blank, 'outband_blank': outband_blank}
+served = json.load(open(sys.argv[1])); out = {}
+for k, oc in served.items():
+    step = STEP[k.split(':')[1]]
+    out[k] = {m: derive(oc, step, **kw) for m, kw in {
+        'contract': {}, 'abl_literal_s31': {'rule_mode': 'literal'}, 'abl_fixed_instant': {'rule_mode': 'fixed_instant'},
+        'abl_band_crosses_gap': {'band_crosses_gap': True}, 'abl_left_from_slot': {'left_mode': 'slot'}, 'abl_band_per_candle': {'left_mode': 'per_candle'}}.items()}
+json.dump(out, open(sys.argv[2], 'w'), indent=1)
+for k, v in out.items():
+    print(k, ' '.join(f"{m}:R{d['rules']}/B{d['bands']}/in{d['inband_blank']}/out{d['outband_blank']}" for m, d in v.items()))

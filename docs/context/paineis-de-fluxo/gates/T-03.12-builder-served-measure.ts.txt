@@ -1,0 +1,21 @@
+import { readFileSync } from "node:fs";
+import { oiRegimeMarks, hlUnmeasured } from "/home/stharley/Documentos/projects/cripto-strategy/.claude/worktrees/t-03-12/frontend/src/app/symbol/oi-regime-marks.ts";
+const served = JSON.parse(readFileSync(process.argv[2]!, "utf8"));
+const STEP: Record<string, number> = { "1m": 60000, "5m": 300000, "15m": 900000 };
+let marked = 0, markedWick = 0, total = 0, missedByExp = 0;
+const out: Record<string, unknown> = {};
+for (const [k, block] of Object.entries<any>(served)) {
+  const tf = k.split(":")[1]!;
+  const m = oiRegimeMarks(block.candles, block.sources);
+  const ends = new Set(block.candles.map((c: any) => c.bucket_end_ms));
+  let blanksIn = 0;
+  for (const b of m.bands) for (let t = b.leftExclusiveMs + STEP[tf]!; t <= b.rightInclusiveMs; t += STEP[tf]!) if (!ends.has(t)) blanksIn++;
+  out[k] = { rules: m.rules.length, bands: m.bands.length, blanksInBands: blanksIn, ruleAt: m.rules.map((r) => new Date(r.atMs).toISOString().slice(5, 16)) };
+  for (const c of block.candles) {
+    total++;
+    const u = hlUnmeasured(c, block.sources);
+    const wick = c.high !== Math.max(c.open, c.close) || c.low !== Math.min(c.open, c.close);
+    if (u) { marked++; if (wick) markedWick++; if (c.samples.expected > 1) missedByExp++; }
+  }
+}
+console.log(JSON.stringify({ total, marked, markedWick, markedWithExpectedGt1: missedByExp, cases: out }, null, 0));

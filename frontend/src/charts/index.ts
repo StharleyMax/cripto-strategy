@@ -147,8 +147,11 @@ export {
   FORBIDDEN_COLOR_ROLE_SUBSTRINGS,
   CONTRAST_BACKDROP,
   SURFACE_BASE,
+  OI_REGIME_BAND_SURFACE,
+  PLOT_SURFACES,
+  PLOT_TEXT_BACKDROP,
 } from "./color-tokens.ts";
-export type { ColorRole, ColorTokens, ContrastBackdrop } from "./color-tokens.ts";
+export type { ColorRole, ColorTokens, ContrastBackdrop, PlotSurface } from "./color-tokens.ts";
 // `paineis-de-fluxo` `T-02.1` — the volume bar takes the direction of the candle at the same
 // instant, in the SAME two tokens (`RF-7`, `RNF-3`); no candle ⇒ neutral ink (`RN-4`).
 export { volumeBarColor, directionalVolumeSeriesLossless } from "./volume-direction.ts";

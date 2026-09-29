@@ -47,6 +47,12 @@ import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstan
  * serves on the 1-minute grid). Every row the stub answers is RECORDED, and the legends are compared
  * with that record, never with the generator. No `INSERT`, no Postgres, no shared state touched.
  *
+ * `T-03.11`: the OI pane draws the `oi_candles` block the route serves beside `rows` (`ADR-045/D2`,
+ * since `T-03.9`), no longer the rows. The stub serves one `1m` candle per minute of the OI series
+ * (`derived_from = binance_poll_1m`, the post-capture regime), `close = row(t)` — falsifier 1 of
+ * `ADR-045`, `close == last` — and `open = row(t − 1 min)`; the candles are RECORDED like the rows,
+ * and CA-3′/CA-4 also compare the O·H·L·C of the legend with the candle the stub served at that slot.
+ *
  * Run with: `E2E_API_PORT=… E2E_NEXT_PORT=… make e2e` (or `npx playwright test 24-single-chart`).
  */
 
@@ -197,10 +203,44 @@ function syntheticValue(key: SeriesKey, bucketMs: number): string {
   }
 }
 
+interface StubOiCandle {
+  readonly bucket_end_ms: number;
+  readonly open: number;
+  readonly high: number;
+  readonly low: number;
+  readonly close: number;
+  readonly open_at_ms: number;
+  readonly close_at_ms: number;
+  readonly samples: { readonly present: number; readonly expected: number };
+  readonly closed: boolean;
+  readonly derived_from: "binance_poll_1m";
+}
+
+/** `T-03.11` — the `1m` candle ending at `t`, off the same generator as the rows (`close` IS the row
+ * at `t`, so the legend's C is the value `/series-history` serves there). Quarters ⇒ exact numbers. */
+function syntheticOiCandle(key: SeriesKey, t: number, knowledgeTimeMs: number): StubOiCandle {
+  const open = Number(syntheticValue(key, t - ONE_MINUTE_MS));
+  const close = Number(syntheticValue(key, t));
+  return {
+    bucket_end_ms: t,
+    open,
+    high: Math.max(open, close) + 0.25,
+    low: Math.min(open, close) - 0.25,
+    close,
+    open_at_ms: t - ONE_MINUTE_MS,
+    close_at_ms: t,
+    samples: { present: 2, expected: 2 },
+    closed: t <= knowledgeTimeMs,
+    derived_from: "binance_poll_1m",
+  };
+}
+
 interface StubHandle {
   readonly url: string;
   /** series_key_id → bucket ms → the value string the stub served. */
   readonly served: Map<string, Map<number, string>>;
+  /** `T-03.11` — bucket_end_ms → the OI candle the stub served in `oi_candles`. */
+  readonly servedOiCandles: Map<number, StubOiCandle>;
   setCatalog(catalog: CatalogEnvelope): void;
   close(): Promise<void>;
 }
@@ -212,6 +252,7 @@ async function startCatalogBackedStub(initial: CatalogEnvelope, alternates: read
     for (const entry of envelope.entries) keysById.set(computeSeriesKeyId(entry.key), entry.key);
   }
   const served = new Map<string, Map<number, string>>();
+  const servedOiCandles = new Map<number, StubOiCandle>();
   const server = http.createServer((request, response) => {
     response.setHeader("access-control-allow-origin", "*");
     const incoming = new URL(request.url ?? "/", "http://placeholder");
@@ -239,6 +280,25 @@ async function startCatalogBackedStub(initial: CatalogEnvelope, alternates: read
         record.set(t, value);
         rows.push({ event_time: t, available_at: t, value, absence: null, coverage: null });
       }
+      const knowledge = Number.isFinite(knowledgeTimeMs) ? knowledgeTimeMs : Date.now();
+      // `T-03.11`: the OI panel carries its candles beside `rows`, like the real route; every other
+      // panel says `null`, like `series_history_report.py`.
+      let oiCandles: unknown = null;
+      if (key.metric === "sum_open_interest") {
+        const candles: StubOiCandle[] = [];
+        for (let t = startMs; t <= endMsInclusive; t += ONE_MINUTE_MS) {
+          const candle = syntheticOiCandle(key, t, knowledge);
+          servedOiCandles.set(t, candle);
+          candles.push(candle);
+        }
+        oiCandles = {
+          timeframe_ms: ONE_MINUTE_MS,
+          sources: [
+            { derived_from: "binance_poll_1m", series_key_id: seriesKeyId, native_grid_ms: ONE_MINUTE_MS, bucket_interval_ms: ONE_MINUTE_MS },
+          ],
+          candles,
+        };
+      }
       const envelope = {
         session: { principal_id: null, server_now_ms: Date.now() },
         panel: {
@@ -249,7 +309,8 @@ async function startCatalogBackedStub(initial: CatalogEnvelope, alternates: read
           coverage: { earliest_bucket_ms: null, latest_bucket_ms: null, source_floor_ms: null },
         },
         rows,
-        knowledge_time: Number.isFinite(knowledgeTimeMs) ? knowledgeTimeMs : Date.now(),
+        oi_candles: oiCandles,
+        knowledge_time: knowledge,
         bar_policy: "final_only",
       };
       response.writeHead(200, { "content-type": "application/json" });
@@ -265,6 +326,7 @@ async function startCatalogBackedStub(initial: CatalogEnvelope, alternates: read
   return {
     url: `http://127.0.0.1:${address.port}`,
     served,
+    servedOiCandles,
     setCatalog(next) {
       catalog = next;
     },
@@ -317,6 +379,43 @@ async function readLegends(page: Page): Promise<LegendReadingDom[]> {
       };
     }),
   );
+}
+
+interface OiOhlcDom {
+  readonly open: number;
+  readonly high: number;
+  readonly low: number;
+  readonly close: number;
+  readonly derivedFrom: string;
+  readonly label: string;
+}
+
+/** `T-03.11` — the O·H·L·C the OI legend publishes, and its `DERIVADO` label. */
+async function readOiOhlc(page: Page): Promise<OiOhlcDom> {
+  return page.evaluate(() => {
+    const node = document.querySelector<HTMLElement>('[data-legend-ohlc="oi"]');
+    const num = (raw: string | undefined) => (raw === undefined || raw === "" ? Number.NaN : Number(raw));
+    return {
+      open: num(node?.dataset.legendOpen),
+      high: num(node?.dataset.legendHigh),
+      low: num(node?.dataset.legendLow),
+      close: num(node?.dataset.legendClose),
+      derivedFrom: node?.dataset.legendDerivedFrom ?? "",
+      label: node?.querySelector('[data-fact^="oi_candle_provenance:"]')?.textContent?.trim() ?? "",
+    };
+  });
+}
+
+/** `T-03.11` — the OI legend's O·H·L·C must be the candle the stub served at the OI reading's slot. */
+function expectOiOhlc(stub: StubHandle, ohlc: OiOhlcDom, bucketMs: number, where: string): void {
+  const candle = stub.servedOiCandles.get(bucketMs);
+  if (candle === undefined) throw new Error(`${where}: the stub served no OI candle at ${bucketMs}`);
+  expect(
+    { open: ohlc.open, high: ohlc.high, low: ohlc.low, close: ohlc.close },
+    `${where}: O·H·L·C da legenda != vela servida em ${bucketMs}`,
+  ).toEqual({ open: candle.open, high: candle.high, low: candle.low, close: candle.close });
+  expect(ohlc.derivedFrom, `${where}: derived_from da legenda`).toBe(candle.derived_from);
+  expect(ohlc.label, `${where}: rótulo DERIVADO não derivado do native_grid_ms servido`).toBe("DERIVADO (OHLC de amostras 1m · ADR-045)");
 }
 
 interface WindowFrame {
@@ -501,6 +600,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
         expect(legend.raw, `CA-4 ${factKey}: o valor não é o do último balde fechado`).toBe(
           expectedAt(stub, ids, factKey, lastClosedMs, frame.windowStartMs),
         );
+        if (factKey === "oi") expectOiOhlc(stub, await readOiOhlc(page), legend.bucketMs, `CA-4 ${phase}`);
       }
     };
     await checkLastClosed("before_hover");
@@ -541,6 +641,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
         expect(legend.raw, `CA-3′ ${factKey}: legenda != /series-history no slot ${slot}`).toBe(
           expectedAt(stub, ids, factKey, legend.bucketMs, frame.windowStartMs),
         );
+        if (factKey === "oi") expectOiOhlc(stub, await readOiOhlc(page), legend.bucketMs, `CA-3′ slot ${slot}`);
       }
       seenSlots.add(slot);
       if (target.pane === "price-pane") priceHovers += 1;

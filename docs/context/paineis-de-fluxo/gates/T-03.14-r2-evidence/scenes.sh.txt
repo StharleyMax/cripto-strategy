@@ -1,0 +1,8 @@
+#!/bin/bash
+# T-03.14 r2: the r1 runner (t0314/scenes.sh) with the output moved to r2/cap. Same oicap.mjs, same scenes.txt.
+SP=/tmp/claude-1002/-home-stharley-Documentos-projects-cripto-strategy/854f12b5-43c8-425a-9856-b6679093c941/scratchpad
+S=$SP/t0314; R=$SP/r2; cd $S
+while read -r sym tf tgt span tag vw vh extra; do
+  [ -z "$sym" ] && continue
+  node oicap.mjs $R/cap $sym $tf $tgt $span $tag ${vw:-1600} ${vh:-1200} $extra > $R/cap-$tag.log 2>&1; echo "$tag rc=$?"; grep -v '^\s*at ' $R/cap-$tag.log | tail -1 | cut -c1-400
+done < $S/scenes.txt

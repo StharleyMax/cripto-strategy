@@ -1,0 +1,32 @@
+# T-03.14: colour under the crosshair vs the legend's O/C (CA-7 as the operator sees it), per scene of oicap.mjs.
+# For each hover probe whose legend names a candle, take the nearest candle-ink column at/left of the cursor
+# (the legend is as-of: the named candle sits on its bucket_end slot, at or left of the cursor), EXCLUDING the
+# regime-rule columns measured by oipx.py (the rule is #8b949e, the doji token too). Usage: python3 ca7.py
+import json, re
+from PIL import Image
+UP, DN, DOJI = (8, 153, 129), (242, 54, 69), (139, 148, 158)
+near = lambda c, t, tol: all(abs(a - b) <= tol for a, b in zip(c, t))
+RULES = {json.loads(l)["png"][:-9]: set(json.loads(l)["rule_cols"]) for l in open("oipx-facts.jsonl")}
+tot = {"n": 0, "ok": 0, "no_ink": 0, "bad": 0}
+per_df = {}
+for tag in ["btc-1m-entry", "btc-1m-liveB", "btc-1m-A", "btc-5m-entry", "btc-15m-island", "btc-1m-hole", "eth-1m-reentry"]:
+    f = json.load(open(f"cap/{tag}-facts.json")); px = Image.open(f"cap/{tag}-full.png").convert("RGB").load()
+    row = f["rest"]["row"]; y0 = int(row["top"] + float(f["rest"]["attrs"]["data-reserved-scale-top-px"])); y1 = int(row["top"] + row["h"] - 2)
+    span = max(2, int(f["px_per_slot"] * 15)); rc = RULES.get(tag, set())
+    for h in f["hover"]:
+        L = h["legend"]
+        if not L or "ausente" in L["text"]: continue
+        m = re.search(r"O([\d.]+).*C([\d.]+)", L["text"])
+        o, c = float(m.group(1)), float(m.group(2)); want = "up" if c > o else ("down" if c < o else "doji")
+        hit = None
+        for x in range(int(h["x"]) + 1, int(h["x"]) - span, -1):
+            if x in rc or x - 1 in rc and False: continue
+            k = [("up" if near(px[x, y], UP, 30) else "down" if near(px[x, y], DN, 30) else "doji" if near(px[x, y], DOJI, 8) else None) for y in range(y0, y1)]
+            k = [v for v in k if v]
+            if k: hit = max(set(k), key=k.count); break
+        tot["n"] += 1; d = per_df.setdefault(L["df"], {"n": 0, "ok": 0})
+        d["n"] += 1
+        if hit is None: tot["no_ink"] += 1
+        elif hit == want: tot["ok"] += 1; d["ok"] += 1
+        else: tot["bad"] += 1; print("MISMATCH", tag, h["off"], L["df"], o, c, want, hit)
+print(json.dumps({"total": tot, "per_derived_from": per_df}))

@@ -513,7 +513,7 @@ tracker = { provider = "jira", id = "CST-275", url = "https://conversationhub.at
 id = "T-03.1"
 title = "[sentimento] 03a · Cliente de GET /fapi/v1/openInterest: o time da resposta vira event_time; le x-mbx-used-weight-1m"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = []
 refs = [
@@ -528,7 +528,7 @@ tracker = { provider = "jira", id = "CST-276", url = "https://conversationhub.at
 id = "T-03.2"
 title = "[sentimento] 03a · Carimbo na grade de 1 min com janela de admissao [T, T+20s]; fora dela o minuto fica AUSENTE, nunca carrega o anterior"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = []
 refs = [
@@ -543,7 +543,7 @@ tracker = { provider = "jira", id = "CST-277", url = "https://conversationhub.at
 id = "T-03.3"
 title = "[sentimento] 03a · Catalogo: 4 entradas binance·open_interest·1m·POINT (STOCK, POINT_AT_BUCKET_END, unit=BTC, denom=base), uma por simbolo"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = []
 refs = [
@@ -559,7 +559,7 @@ tracker = { provider = "jira", id = "CST-278", url = "https://conversationhub.at
 id = "T-03.4"
 title = "[sentimento] 03a · Coletor: laco de 60s alinhado a grade que compoe cliente + carimbo + escritor, registrado no collectors_cli, com n_written por ciclo"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.1", "T-03.2", "T-03.3"]
 refs = [
@@ -574,7 +574,7 @@ tracker = { provider = "jira", id = "CST-279", url = "https://conversationhub.at
 id = "T-03.5"
 title = "[infra] 03a · Cadencia de 60s como variavel de ambiente do servico collectors em deploy/compose.yml, no idioma de OPEN_INTEREST_CYCLE_INTERVAL_S (:187), com julgamento do infra-architect"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.4"]
 refs = [
@@ -590,7 +590,7 @@ tracker = { provider = "jira", id = "CST-280", url = "https://conversationhub.at
 id = "T-03.6"
 title = "[sentimento] 03a · DoD de captura na stack de e2e PROPRIA: md.series 0 -> >0 com n_written>0, cota <=4/min pelo header, minuto com o coletor parado nao tem linha"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.5"]
 refs = [
@@ -606,7 +606,7 @@ tracker = { provider = "jira", id = "CST-281", url = "https://conversationhub.at
 id = "T-03.7"
 title = "[infra] 03a · Medicao pos-deploy de 24h: count por simbolo >= 0,95 x 1.440 e pg_total_relation_size contra ~570 KB/dia (> 1,14 MB/dia volta ao owner)"
 components = ["infra"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.6"]
 refs = [
@@ -622,7 +622,7 @@ tracker = { provider = "jira", id = "CST-282", url = "https://conversationhub.at
 id = "T-03.8"
 title = "[sentimento] 03b · Projecao OiCandle pura (ADR-045/D1), chave no trio (STOCK, POINT, POINT_AT_BUCKET_END); outro trio falha alto; a grade nativa g vem do SeriesKey"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-04.7", "T-03.7"]
 refs = [
@@ -640,7 +640,7 @@ tracker = { provider = "jira", id = "CST-283", url = "https://conversationhub.at
 id = "T-03.9"
 title = "[sentimento] 03b · Um candle, uma serie (ADR-045/D2-bis): polling se ha ponto em T0, openInterestHist senao; a rota serve OiCandle com derived_from e samples"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.8"]
 refs = [
@@ -655,7 +655,7 @@ tracker = { provider = "jira", id = "CST-284", url = "https://conversationhub.at
 id = "T-03.10"
 title = "[sentimento] 03b · ⛔ Falsificadores 3 e 4 de ADR-045 ANTES do pixel: propriedades em n>=288 buckets reais por regime e mediana abs(poll-hist)/hist <= 10bp em n>=288"
 components = ["sentimento"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.9"]
 refs = [
@@ -670,7 +670,7 @@ tracker = { provider = "jira", id = "CST-285", url = "https://conversationhub.at
 id = "T-03.11"
 title = "[web] 03b · Pane oi passa de line para candlestick no registry, legenda O·H·L·C, rotulo DERIVADO derivado de derived_from (nunca escrito a mao)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.10"]
 refs = [
@@ -686,7 +686,7 @@ tracker = { provider = "jira", id = "CST-286", url = "https://conversationhub.at
 id = "T-03.12"
 title = "[web] 03b · Forma do trecho anterior a captura em 1m, falta de pavio em 5m e marca de fronteira entre regimes (Q-DG-3, Q-OI-3), por design_gate + quant-architect"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.11"]
 refs = [
@@ -701,7 +701,7 @@ tracker = { provider = "jira", id = "CST-287", url = "https://conversationhub.at
 id = "T-03.13"
 title = "[web] 03b · Playwright: CA-7 n>=50 por regime com bucket de divergencia preco x OI, CA-8' com buraco de M3, um candle uma serie na fronteira, pixel com ablacao (volta a line)"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.12"]
 refs = [
@@ -719,7 +719,7 @@ tracker = { provider = "jira", id = "CST-288", url = "https://conversationhub.at
 id = "T-03.14"
 title = "[web] 03b · Veredito do ux-ui-mastery sobre o screenshot do candle de OI nos dois regimes"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-09-29T21:01:40Z @ 5c8f2a4c1ab0ee9063a73f4dd5bebc2dd2e333d7
 phase = "03"
 depends_on = ["T-03.13"]
 refs = [

@@ -44,6 +44,7 @@ here — both regimes reduce through the one function below and both get the one
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Final, Protocol, cast
 
 from src.modules.sentimento.domain.as_of_accessor import (
@@ -55,8 +56,20 @@ from src.modules.sentimento.domain.as_of_accessor import (
     as_of_batch,
 )
 from src.modules.sentimento.domain.history_ceiling import MAX_HISTORY_DAYS, MAX_HISTORY_MS
+from src.modules.sentimento.domain.oi_candle import (
+    OiCandleSource,
+    OiReading,
+    effective_timeframe_ms,
+    oi_candle_source_or_none,
+)
+from src.modules.sentimento.domain.oi_candle_regimes import (
+    OiCandleReport,
+    OiRegimeReadings,
+    other_regime_key,
+    project_one_series_per_bucket,
+)
 from src.modules.sentimento.domain.provenance import Absence
-from src.modules.sentimento.domain.series_catalog import SeriesCatalog
+from src.modules.sentimento.domain.series_catalog import SeriesCatalog, SeriesCatalogEntry
 from src.modules.sentimento.domain.series_history_report import (
     BucketCoverage,
     PanelCoverage,
@@ -444,7 +457,280 @@ def build_series_history_report(
         rows=tuple(rows),
         knowledge_time=knowledge_time_ms,
         bar_policy=bar_policy,
+        oi_candles=_oi_candle_report(
+            catalog,
+            reader,
+            entry=entry,
+            observations=observations,
+            symbol=symbol,
+            interval_ms=interval_ms,
+            window_start_ms=window_start_ms,
+            window_end_ms=window_end_ms,
+            knowledge_time_ms=knowledge_time_ms,
+        ),
     )
+
+
+def _oi_candle_report(
+    catalog: SeriesCatalog,
+    reader: SeriesWindowReader,
+    *,
+    entry: SeriesCatalogEntry,
+    observations: tuple[Observation, ...],
+    symbol: str,
+    interval_ms: int,
+    window_start_ms: int,
+    window_end_ms: int,
+    knowledge_time_ms: int,
+) -> OiCandleReport | None:
+    """Serve `OiCandle`s for an open-interest panel — `ADR-045/D2` + `D2-bis`, `T-03.9`.
+
+    `None` for any panel that is not one of the two OI sources. Otherwise BOTH regimes of the
+    panel's instrument are read — the requested series from the `observations` already loaded
+    for `rows`, the OTHER one (resolved from the catalog; absent from it => one regime only)
+    through one more `read_window` — and `domain/oi_candle_regimes.py` picks ONE series per
+    bucket. Requesting either series' id yields the same candles. In TF `1m` a third read takes
+    the polled points left of the window that still decide `D2-bis` for the first historical
+    bucket (`_poll_anchors_left_of_window`).
+
+    `observations` covers every instant `_oi_fact_instants` asks for the requested series: the
+    main read reaches `min(window_start, first_native_instant) - lookback`, with `lookback >=
+    max(60 s, g)`, while the earliest instant here is `T0` of the first effective bucket,
+    `>= window_start - max(TF, g)`, which is `>= first_native_instant - 60 s` when the effective
+    bucket is `TF`, and `>= window_start - g` when it is `g`.
+
+    `now_ms` of the projection is `knowledge_time_ms`: `closed` is then a function of the
+    request's own declared horizon, reproducible like the rest of the response (this layer has
+    no clock, `backend/pyproject.toml` "Natureza").
+    """
+    requested_source = oi_candle_source_or_none(entry.key)
+    if requested_source is None:
+        return None
+    regimes: dict[OiCandleSource, OiRegimeReadings] = {
+        requested_source: OiRegimeReadings(
+            entry=entry,
+            readings=oi_point_readings(
+                entry,
+                observations,
+                symbol=symbol,
+                interval_ms=interval_ms,
+                window_start_ms=window_start_ms,
+                window_end_ms=window_end_ms,
+                knowledge_time_ms=knowledge_time_ms,
+            ),
+        )
+    }
+    other_source, other_key = other_regime_key(entry.key)
+    other_entry = catalog.entry_for(other_key)
+    if other_entry is not None:
+        instants = _oi_fact_instants(
+            other_entry,
+            interval_ms=interval_ms,
+            window_start_ms=window_start_ms,
+            window_end_ms=window_end_ms,
+        )
+        other_observations: tuple[Observation, ...] = ()
+        if instants:
+            other_observations = reader.read_window(
+                series_key_id=other_entry.key.series_key_id(),
+                symbol=symbol,
+                window_start_ms=instants[0],
+                window_end_ms=instants[-1],
+                lookback_ms=max(
+                    _GRID_STEP_MS, other_entry.native_grid_ms, other_entry.max_staleness_ms
+                ),
+            )
+        regimes[other_source] = OiRegimeReadings(
+            entry=other_entry,
+            readings=oi_point_readings(
+                other_entry,
+                other_observations,
+                symbol=symbol,
+                interval_ms=interval_ms,
+                window_start_ms=window_start_ms,
+                window_end_ms=window_end_ms,
+                knowledge_time_ms=knowledge_time_ms,
+            ),
+        )
+    poll = regimes.get(OiCandleSource.BINANCE_POLL_1M)
+    hist = regimes.get(OiCandleSource.BINANCE_POINT_5M)
+    if poll is not None and hist is not None:
+        regimes[OiCandleSource.BINANCE_POLL_1M] = replace(
+            poll,
+            anchor_only_instants_ms=_poll_anchors_left_of_window(
+                reader,
+                poll_entry=poll.entry,
+                hist_entry=hist.entry,
+                symbol=symbol,
+                interval_ms=interval_ms,
+                window_start_ms=window_start_ms,
+                window_end_ms=window_end_ms,
+                knowledge_time_ms=knowledge_time_ms,
+            ),
+        )
+    return project_one_series_per_bucket(
+        poll=regimes.get(OiCandleSource.BINANCE_POLL_1M),
+        hist=regimes.get(OiCandleSource.BINANCE_POINT_5M),
+        timeframe_ms=interval_ms,
+        now_ms=knowledge_time_ms,
+    )
+
+
+def _poll_anchors_left_of_window(
+    reader: SeriesWindowReader,
+    *,
+    poll_entry: SeriesCatalogEntry,
+    hist_entry: SeriesCatalogEntry,
+    symbol: str,
+    interval_ms: int,
+    window_start_ms: int,
+    window_end_ms: int,
+    knowledge_time_ms: int,
+) -> frozenset[int]:
+    """Return the polled instants with a point, from `T0` of the first HISTORICAL bucket on.
+
+    `ADR-045/D2-bis`, `W6-QA-BACK-r2` D-1. Each regime's readings start at `T0` of ITS OWN first
+    effective bucket. In TF `1m` the historical bucket is 5 minutes wide, so its first `T0` can
+    fall up to 4 minutes before the first polled bucket of the window. A `p_poll(T0)` in that
+    stretch still owns the historical bucket. Left unread, the history would serve that bucket in
+    one window and not in another that also contains its end.
+
+    The stretch is `[hist T0, poll T0)` on the polled grid, and it is empty for every TF
+    `>= 5m`, where the two effective buckets are equal. It is read on its own, because the
+    requested series' `observations` only reach its own lookback. Its points only decide
+    `D2-bis`. They are never projected into a candle, since their polled buckets end before the
+    window.
+    """
+    hist_instants = _oi_fact_instants(
+        hist_entry,
+        interval_ms=interval_ms,
+        window_start_ms=window_start_ms,
+        window_end_ms=window_end_ms,
+    )
+    poll_bucket_ms = effective_timeframe_ms(interval_ms, poll_entry.native_grid_ms)
+    poll_first_anchor = _first_grid_instant(window_start_ms, step_ms=poll_bucket_ms) - (
+        poll_bucket_ms
+    )
+    if not hist_instants or hist_instants[0] >= poll_first_anchor:
+        return frozenset()
+    instants = tuple(range(hist_instants[0], poll_first_anchor, poll_entry.native_grid_ms))
+    observations = reader.read_window(
+        series_key_id=poll_entry.key.series_key_id(),
+        symbol=symbol,
+        window_start_ms=instants[0],
+        window_end_ms=instants[-1],
+        lookback_ms=max(_GRID_STEP_MS, poll_entry.native_grid_ms, poll_entry.max_staleness_ms),
+    )
+    return frozenset(
+        reading.instant_ms
+        for reading in _point_readings_at(
+            poll_entry,
+            observations,
+            instants=instants,
+            symbol=symbol,
+            knowledge_time_ms=knowledge_time_ms,
+        )
+    )
+
+
+def _oi_fact_instants(
+    entry: SeriesCatalogEntry,
+    *,
+    interval_ms: int,
+    window_start_ms: int,
+    window_end_ms: int,
+) -> tuple[int, ...]:
+    """Return the native-grid instants whose point `p(t)` the candles of the window can use.
+
+    From `T0` of the first effective bucket ending at or after `window_start_ms` (its anchor),
+    to the last effective bucket end at or before `window_end_ms` — the same inclusive
+    `[.., window_end]` edge `rows` uses, so no candle is served for a bucket `rows` does not
+    reach. Empty when the window holds no whole effective bucket end.
+    """
+    bucket_ms = effective_timeframe_ms(interval_ms, entry.native_grid_ms)
+    first_bucket_end = _first_grid_instant(window_start_ms, step_ms=bucket_ms)
+    last_bucket_end = (window_end_ms // bucket_ms) * bucket_ms
+    if last_bucket_end < first_bucket_end:
+        return ()
+    return tuple(range(first_bucket_end - bucket_ms, last_bucket_end + 1, entry.native_grid_ms))
+
+
+def oi_point_readings(
+    entry: SeriesCatalogEntry,
+    observations: tuple[Observation, ...],
+    *,
+    symbol: str,
+    interval_ms: int,
+    window_start_ms: int,
+    window_end_ms: int,
+    knowledge_time_ms: int,
+) -> tuple[OiReading, ...]:
+    """Read the point facts `p(t)` of ONE series through `as_of_batch`, never around it.
+
+    Public since `T-03.10`: `use_cases/measure_oi_candle_falsifiers.py` reads the two regimes'
+    points through THIS function for `ADR-045`'s falsifier 4, so the spread is measured on the
+    very readings the candles are built from, never on a second extraction of them.
+
+    A reading is kept ONLY when the fact `as_of` answers with at instant `t` IS the fact AT `t`
+    (`projection()["bucket_end"] == t`). `STOCK` carries forward (`CARRY_FORWARD_BY_NATURE`), so
+    at a hole `as_of` answers with the last fact before it — keeping that would hand the
+    projection a `p(T0)` that was never observed at `T0`, which is exactly "costurar a âncora
+    com o último ponto antes do buraco" (`plano 03` §03b DoD-4). `bucket_end` is read through
+    the `.projection()` dict, never as an attribute, for the `DECLARED_TOUCHERS` reason
+    `_reaggregated_row` gives.
+
+    `FINAL_ONLY`, whatever the request's `bar_policy`: a `POINT` reading is instantaneous — it
+    is never a partial bucket — and under `INTRABAR` R-2 does not apply, so `as_of(t)` answers
+    with the NEWEST admitted fact for every `t` and "the fact at `t`" would be unrecoverable.
+    The in-progress TF bucket is still served, flagged by `closed` (`SPEC-009` §6.4).
+    `[INFERRED: bar_policy governs rows; the candle's partiality is the closed flag]`
+    `knowledge_time_ms` is the request's, so a fact not yet knowable by it is not a reading.
+    """
+    return _point_readings_at(
+        entry,
+        observations,
+        instants=_oi_fact_instants(
+            entry,
+            interval_ms=interval_ms,
+            window_start_ms=window_start_ms,
+            window_end_ms=window_end_ms,
+        ),
+        symbol=symbol,
+        knowledge_time_ms=knowledge_time_ms,
+    )
+
+
+def _point_readings_at(
+    entry: SeriesCatalogEntry,
+    observations: tuple[Observation, ...],
+    *,
+    instants: tuple[int, ...],
+    symbol: str,
+    knowledge_time_ms: int,
+) -> tuple[OiReading, ...]:
+    """Read `p(t)` at each of `instants`, keeping only the fact AT `t` (`oi_point_readings`)."""
+    staleness_ms = entry.max_staleness_ms
+    answers = as_of_batch(
+        series=entry.key,
+        symbol=symbol,
+        instants=tuple(_read_instant(t, bar_policy=BarPolicy.FINAL_ONLY) for t in instants),
+        observations=observations,
+        policy=SeriesReadPolicy(
+            asof_max_staleness_ms=staleness_ms,
+            render_max_staleness_ms=staleness_ms,
+            bucket_interval_ms=entry.native_grid_ms,
+            first_capture_at=None,
+        ),
+        bar_policy=BarPolicy.FINAL_ONLY,
+        purpose=ReadPurpose.RENDERING,
+        knowledge_time=knowledge_time_ms,
+    )
+    readings: list[OiReading] = []
+    for instant, answer in zip(instants, answers, strict=True):
+        if answer.value is None or answer.projection()["bucket_end"] != instant:
+            continue
+        readings.append(OiReading(instant_ms=instant, value=float(answer.value)))
+    return tuple(readings)
 
 
 def _row_from_native_reading(grid_instant: int, reading: AsOfReading) -> SeriesHistoryRow:

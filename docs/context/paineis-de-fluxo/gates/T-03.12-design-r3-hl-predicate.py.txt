@@ -1,0 +1,53 @@
+# T-03.12 r3 (N-7): which served OI candles have H/L equal to O/C BY CONSTRUCTION, and which predicate catches them.
+# Usage: python3 T-03.12-design-r3-hl-predicate.py.txt <served.json from T-03.12-design-r2-fetch.py.txt> <facts-out.json>
+# Pure reader of the served payload: anchor = open_at_ms == bucket_end_ms - sources[derived_from].bucket_interval_ms
+# (oi_candle.py:336-341: open is p(T0) only when that exact reading exists; S readings are in (T0, T1], :306).
+import json, sys
+from collections import Counter
+from datetime import datetime, timezone
+
+served = json.load(open(sys.argv[1]))
+iso = lambda ms: datetime.fromtimestamp(ms / 1000, timezone.utc).strftime('%m-%dT%H:%MZ')
+
+def wick(c):  # a real excursion beyond the body, on either side
+    return c['high'] > max(c['open'], c['close']) or c['low'] < min(c['open'], c['close'])
+
+PRED = {
+    'r3_contract':      lambda c, a: c['samples']['present'] + a <= 2,   # <= 2 readings in {open} U S
+    'abl_expected_eq1': lambda c, a: c['samples']['expected'] == 1,      # r2 text (R4 literal)
+    'abl_no_anchor':    lambda c, a: c['samples']['present'] <= 2,       # forgets that p(T0) is a reading
+    'abl_present_eq1':  lambda c, a: c['samples']['present'] == 1,       # forgets the 2-reading no-anchor case
+}
+facts, tot = {}, Counter()
+for case, oc in served.items():
+    w = {s['derived_from']: s['bucket_interval_ms'] for s in oc['sources']}
+    row = {'n': len(oc['candles'])}
+    for c in oc['candles']:
+        a = int(c['open_at_ms'] == c['bucket_end_ms'] - w[c['derived_from']])
+        readings = c['samples']['present'] + a
+        row.setdefault('by_readings', Counter())[readings] += 1
+        if wick(c): row.setdefault('wick_by_readings', Counter())[readings] += 1
+        for name, p in PRED.items():
+            if p(c, a):
+                row[name] = row.get(name, 0) + 1
+                if wick(c): row[name + '_wicks'] = row.get(name + '_wicks', 0) + 1  # a marked candle that HAS a wick = over-marking
+        truth = readings <= 2 and not wick(c)
+        if PRED['r3_contract'](c, a) and not PRED['abl_expected_eq1'](c, a):
+            row.setdefault('missed_by_expected_eq1', []).append(
+                f"{iso(c['bucket_end_ms'])} {c['derived_from']} {c['samples']['present']}/{c['samples']['expected']}"
+                f" anchor={a} O{c['open']} H{c['high']} L{c['low']} C{c['close']}")
+    for k in ('by_readings', 'wick_by_readings'):
+        row[k] = dict(sorted(row.get(k, {}).items()))
+    facts[case] = row
+    for k, v in row.items():
+        if isinstance(v, int): tot[k] += v
+    tot['missed_by_expected_eq1'] += len(row.get('missed_by_expected_eq1', []))
+
+json.dump({'cases': facts, 'totals': dict(tot)}, open(sys.argv[2], 'w'), indent=1, default=dict)
+print('totals', dict(tot))
+for case, row in facts.items():
+    m = row.get('missed_by_expected_eq1', [])
+    print(case, 'n', row['n'], 'r3', row.get('r3_contract', 0), 'eq1', row.get('abl_expected_eq1', 0),
+          'noanchor', row.get('abl_no_anchor', 0), 'noanchor_wicks', row.get('abl_no_anchor_wicks', 0),
+          'readings', row['by_readings'], 'wicks', row['wick_by_readings'])
+    for x in m: print('   missed:', x)

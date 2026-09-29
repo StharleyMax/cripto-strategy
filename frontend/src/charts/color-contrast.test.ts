@@ -24,8 +24,8 @@ import { fileURLToPath } from "node:url";
 
 import { chartSurfaceTheme, CHART_GRID_LINE } from "./chart-theme.ts";
 import type { ChartSurfaceTheme } from "./chart-theme.ts";
-import { colorTokens, CONTRAST_BACKDROP, SURFACE_BASE } from "./color-tokens.ts";
-import type { ColorRole, ColorTokens, ContrastBackdrop } from "./color-tokens.ts";
+import { colorTokens, CONTRAST_BACKDROP, OI_REGIME_BAND_SURFACE, PLOT_SURFACES, PLOT_TEXT_BACKDROP, SURFACE_BASE } from "./color-tokens.ts";
+import type { ColorRole, ColorTokens, ContrastBackdrop, PlotSurface } from "./color-tokens.ts";
 import { contrastRatio, relativeLuminance } from "./contrast.ts";
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -59,18 +59,43 @@ const GLOBALS_CSS = path.resolve(THIS_DIR, "../app/globals.css");
 // theme as a PARAMETER rather than reading it inside is what lets the negative controls below
 // replant `#FFFFFF` and watch this gate produce `1,22:1` and REJECT — the defect reproduced, not
 // described.
+//
+// `T-03.12` — `kind: "surfaces"` lists every plot surface the role is painted on (`PLOT_SURFACES`),
+// and the WORST ratio is the one that owes the floor. `base` still resolves to the THEME's background
+// (the `DR-1` link above is intact); every other surface resolves to its declared value, which the
+// `surfaces` parameter lets a negative control replant (`Q-6a`/`Q-6b`: the OI band moved to a lighter
+// hex, and the gate has to REJECT it).
+function surfaceColor(
+  surface: PlotSurface,
+  theme: ChartSurfaceTheme,
+  surfaces: Readonly<Record<PlotSurface, string>>,
+): string {
+  return surface === "base" ? theme.backgroundColor : surfaces[surface];
+}
+
 function measure(
   role: ColorRole,
   tokens: ColorTokens,
   backdrop: ContrastBackdrop,
   theme: ChartSurfaceTheme = chartSurfaceTheme(),
+  surfaces: Readonly<Record<PlotSurface, string>> = PLOT_SURFACES,
 ): { readonly ratio: number; readonly floor: number; readonly against: string } {
-  if (backdrop.kind === "surface") {
-    return {
-      ratio: contrastRatio(tokens[role], theme.backgroundColor),
-      floor: backdrop.minRatio,
-      against: `chart background ${theme.backgroundColor}`,
-    };
+  if (backdrop.kind === "surfaces") {
+    assert.ok(
+      backdrop.surfaces.length > 0,
+      `role "${role}" declares kind:"surfaces" with an EMPTY list — that would be a vacuous floor`,
+    );
+    let worst = Number.POSITIVE_INFINITY;
+    let worstAgainst = "";
+    for (const surface of backdrop.surfaces) {
+      const color = surfaceColor(surface, theme, surfaces);
+      const ratio = contrastRatio(tokens[role], color);
+      if (ratio < worst) {
+        worst = ratio;
+        worstAgainst = `plot surface ${surface} (${color})`;
+      }
+    }
+    return { ratio: worst, floor: backdrop.minRatio, against: worstAgainst };
   }
   if (backdrop.kind === "roles") {
     assert.ok(
@@ -298,7 +323,7 @@ test("MORDE: a #FFFFFF canvas reproduces the DR-1 table and makes this gate REJE
   // printed — and two of them are below the floor.
   const onWhite = Object.fromEntries(
     (Object.keys(CONTRAST_BACKDROP) as ColorRole[])
-      .filter((role) => CONTRAST_BACKDROP[role].kind === "surface")
+      .filter((role) => CONTRAST_BACKDROP[role].kind === "surfaces")
       .map((role) => [role, Number(measure(role, tokens, CONTRAST_BACKDROP[role], whiteCanvas).ratio.toFixed(2))]),
   );
   assert.deepEqual(onWhite, {
@@ -368,17 +393,129 @@ test("the measured ratios are the ones D13 recorded, to 2 decimals", () => {
       Number(measure(role, tokens, CONTRAST_BACKDROP[role]).ratio.toFixed(2)),
     ]),
   );
-  // `[MEDIDO 2026-09-11]`. The two D13 names explicitly: volume (`provenanceWeak`) 2,80 -> 5,82,
-  // and the OI line (`provenanceStrong`) 1,00 -> 14,72. `directionOn` is the worst of its two
+  // `[MEDIDO 2026-09-11]` on the base. The two D13 names explicitly: volume (`provenanceWeak`) 2,80 ->
+  // 5,82, and the OI line (`provenanceStrong`) 1,00 -> 14,72. `directionOn` is the worst of its two
   // fills, i.e. the down fill at 4,59 — not the 1,00 it would read against the surface.
+  //
+  // `T-03.12`: the five plot roles are now the worst of the base AND the OI regime band, and the
+  // band is the worse of the two for all five — `gates/T-03.12-design-gate.md` §2 DG-1 publishes
+  // exactly these numbers (alta 4,43, baixa 4,06, provenanceWeak 5,15, provenanceStrong 13,01,
+  // dataBrokenInk 8,57). `directionOn` does not change: it is measured against the fills.
   assert.deepEqual(actual, {
+    directionUpFill: 4.43,
+    directionDownFill: 4.06,
+    directionOn: 4.59,
+    dataBrokenInk: 8.57,
+    provenanceStrong: 13.01,
+    provenanceWeak: 5.15,
+  });
+  // ...and on the base alone they are still D13's, so the band is what moved the worst case.
+  const onBase = Object.fromEntries(
+    (Object.keys(CONTRAST_BACKDROP) as ColorRole[])
+      .filter((role) => CONTRAST_BACKDROP[role].kind === "surfaces")
+      .map((role) => [role, Number(contrastRatio(tokens[role], SURFACE_BASE).toFixed(2))]),
+  );
+  assert.deepEqual(onBase, {
     directionUpFill: 5.01,
     directionDownFill: 4.59,
-    directionOn: 4.59,
     dataBrokenInk: 9.68,
     provenanceStrong: 14.72,
     provenanceWeak: 5.82,
   });
+});
+
+// ── 3b. `T-03.12` — THE OI REGIME BAND IS A SURFACE, AND EVERY PLOT ROLE IS MEASURED ON IT ────
+//
+// `gates/T-03.12-design-gate.md` §4 `Q-6a`/`Q-6b`/`Q-6c`, each with the ablation that has to fail it.
+
+/** The plot roles — the ones painted straight onto a plot surface (not on another role's fill). */
+function plotRoles(): readonly ColorRole[] {
+  return (Object.keys(CONTRAST_BACKDROP) as ColorRole[]).filter((role) => CONTRAST_BACKDROP[role].kind === "surfaces");
+}
+
+/** The roles below their floor when the plot surfaces are `surfaces`. */
+function roleFailures(surfaces: Readonly<Record<PlotSurface, string>>): readonly string[] {
+  const tokens = colorTokens();
+  return plotRoles().filter((role) => {
+    const { ratio, floor } = measure(role, tokens, CONTRAST_BACKDROP[role], chartSurfaceTheme(), surfaces);
+    return ratio < floor;
+  });
+}
+
+/** The worst ratio of the band label's ink, as TEXT, against every surface it declares. */
+function textWorst(surfaces: Readonly<Record<PlotSurface, string>>): number {
+  const ink = colorTokens()[PLOT_TEXT_BACKDROP.role];
+  return Math.min(...PLOT_TEXT_BACKDROP.surfaces.map((surface) => contrastRatio(ink, surfaceColor(surface, chartSurfaceTheme(), surfaces))));
+}
+
+test("T-03.12: the band is --sup-regime #1e2230, a SURFACE at 1,131:1 on the base — as a role it would fail its own floor", () => {
+  assert.equal(OI_REGIME_BAND_SURFACE, "#1e2230");
+  assert.equal(PLOT_SURFACES.oiRegimeBand, OI_REGIME_BAND_SURFACE);
+  assert.equal(PLOT_SURFACES.base, SURFACE_BASE);
+  assert.equal(Number(contrastRatio(OI_REGIME_BAND_SURFACE, SURFACE_BASE).toFixed(3)), 1.131);
+  assert.ok(!Object.keys(colorTokens()).includes("oiRegimeBand"), "the band must not be a ColorRole (N-3)");
+});
+
+test("Q-6c: every plot role declares EVERY plot surface — no role escapes the band", () => {
+  const every = Object.keys(PLOT_SURFACES).sort();
+  for (const role of plotRoles()) {
+    const backdrop = CONTRAST_BACKDROP[role];
+    assert.ok(backdrop.kind === "surfaces");
+    assert.deepEqual([...backdrop.surfaces].sort(), every, `plot role "${role}" does not declare every plot surface`);
+  }
+  assert.deepEqual(
+    [...plotRoles()].sort(),
+    ["dataBrokenInk", "directionDownFill", "directionUpFill", "provenanceStrong", "provenanceWeak"],
+    "the five roles drawn on the plot are the ones the gate names",
+  );
+});
+
+test("Q-6c MORDE: dropping the band from ONE role's list is caught by the structural pin, while the floor stays green", () => {
+  const every = Object.keys(PLOT_SURFACES).sort();
+  const mutated: Readonly<Record<ColorRole, ContrastBackdrop>> = {
+    ...CONTRAST_BACKDROP,
+    directionDownFill: { kind: "surfaces", surfaces: ["base"], minRatio: 3.0 },
+  };
+  const structural = (Object.keys(mutated) as ColorRole[]).every((role) => {
+    const backdrop = mutated[role];
+    return backdrop.kind !== "surfaces" || JSON.stringify([...backdrop.surfaces].sort()) === JSON.stringify(every);
+  });
+  assert.equal(structural, false, "the structural pin must reject a role that dropped the band");
+  // The floor alone does NOT see it — which is why Q-6c exists: the mutated role reads 4,59 on the
+  // base only, above 3,0, and the gate of section 3 would stay green.
+  const { ratio, floor } = measure("directionDownFill", colorTokens(), mutated.directionDownFill);
+  assert.equal(Number(ratio.toFixed(2)), 4.59);
+  assert.ok(ratio >= floor);
+});
+
+test("Q-6a: the five plot roles clear 3:1 against every plot surface (worst case: the down fill on the band, 4,06)", () => {
+  assert.deepEqual(roleFailures(PLOT_SURFACES), []);
+});
+
+test("Q-6a MORDE: a band at #343b4f drops the down fill to 2,86 and the up fill to 3,12 — the gate REJECTS", () => {
+  const lighter = { ...PLOT_SURFACES, oiRegimeBand: "#343b4f" };
+  const tokens = colorTokens();
+  assert.equal(Number(contrastRatio(tokens.directionDownFill, "#343b4f").toFixed(2)), 2.86);
+  assert.equal(Number(contrastRatio(tokens.directionUpFill, "#343b4f").toFixed(2)), 3.12);
+  assert.deepEqual(roleFailures(lighter), ["directionDownFill"]);
+});
+
+test("Q-6b: the band label (provenanceWeak as TEXT) clears 4,5:1 on both surfaces — 5,15 on the band, 5,82 on the base", () => {
+  assert.equal(PLOT_TEXT_BACKDROP.role, "provenanceWeak");
+  assert.equal(PLOT_TEXT_BACKDROP.minRatio, 4.5);
+  assert.deepEqual([...PLOT_TEXT_BACKDROP.surfaces].sort(), Object.keys(PLOT_SURFACES).sort());
+  const ink = colorTokens().provenanceWeak;
+  assert.equal(Number(contrastRatio(ink, OI_REGIME_BAND_SURFACE).toFixed(2)), 5.15);
+  assert.equal(Number(contrastRatio(ink, SURFACE_BASE).toFixed(2)), 5.82);
+  assert.ok(textWorst(PLOT_SURFACES) >= PLOT_TEXT_BACKDROP.minRatio);
+});
+
+test("Q-6b MORDE: a band at #2a3040 drops the label to 4,28 — the TEXT floor rejects while the ROLE floor passes (3,38)", () => {
+  const lighter = { ...PLOT_SURFACES, oiRegimeBand: "#2a3040" };
+  assert.equal(Number(textWorst(lighter).toFixed(2)), 4.28);
+  assert.ok(textWorst(lighter) < PLOT_TEXT_BACKDROP.minRatio, "the text floor has to reject #2a3040");
+  assert.equal(Number(contrastRatio(colorTokens().directionDownFill, "#2a3040").toFixed(2)), 3.38);
+  assert.deepEqual(roleFailures(lighter), [], "the role floor alone passes #2a3040 — the text floor is its own test");
 });
 
 // ── 4. THE GATE SHOWN BITING — with the exact values the deleted light palette carried ───────
@@ -390,7 +527,13 @@ test("NEGATIVE CONTROL: replanting the light provenanceWeak (#57606a) makes the 
   // only on data that already passes it proves nothing.
   const poisoned: ColorTokens = { ...colorTokens(), provenanceWeak: "#57606a" };
   const { ratio, floor } = measure("provenanceWeak", poisoned, CONTRAST_BACKDROP.provenanceWeak);
-  assert.equal(Number(ratio.toFixed(2)), 2.8, "the light provenanceWeak must still measure 2,80:1 against the surface");
+  assert.equal(
+    Number(contrastRatio(poisoned.provenanceWeak, SURFACE_BASE).toFixed(2)),
+    2.8,
+    "the light provenanceWeak must still measure 2,80:1 against the base surface",
+  );
+  // `T-03.12`: the gate now reads the worst of the base and the OI band, and the band is worse (2,48).
+  assert.equal(Number(ratio.toFixed(2)), 2.48, "the worst plot surface for #57606a is the OI band");
   assert.ok(ratio < floor, "2,80:1 has to be below the 3,0:1 floor — otherwise this gate cannot bite");
 });
 
