@@ -422,3 +422,20 @@ test("C-3: the chip renders BOTH forms, aria-hidden, and the legend is the named
   const legend = componentSource(SYMBOL_CLIENT, "PaneLegend");
   assert.match(legend, /data-pane-legend=""\s*\n\s*className="@container\/legend /);
 });
+
+// W7-QA-FRONT (`gates/W7-QA-FRONT.md`, mutation U4): the envelope only checks that `present`/`expected`
+// are INTEGERS (`series-history-envelope.ts`), never `present <= expected`. The `Math.max(0, …)` in
+// `summarizeCoverageMagnitude` is therefore the only guard against a row reporting MORE facts than it
+// expects (a revision double-count upstream), and it had no test: removing it left the suite green.
+// Without the clamp, the surplus row cancels a real hole elsewhere and the warning under-reports.
+test("QA U4: a row with present > expected never cancels a real hole elsewhere (the clamp bites)", () => {
+  const rows = hourlyWindow({ 10: 3 });
+  rows[20] = row(21 * HOUR_MS, 62, 60);
+  const magnitude = summarize(rows);
+  assert.equal(magnitude.missingFacts, 3);
+  assert.equal(magnitude.partialBuckets, 1);
+});
+
+test("QA U4 (cala): with no surplus row the same window counts the same hole", () => {
+  assert.equal(summarize(hourlyWindow({ 10: 3 })).missingFacts, 3);
+});
