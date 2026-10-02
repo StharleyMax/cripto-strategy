@@ -1856,3 +1856,27 @@ Desenho: [`handoff/T-05.1-desenho.md`](../docs/context/paineis-de-fluxo/handoff/
   oca o argmax cai na borda e o sondador de ¼ de barra cruza a fronteira da legenda.
 - **Falsificador do eixo:** `e2e/39-axis-step-per-timeframe.spec.ts` — `gridSlots === initialBars` nos 5 TFs.
   Com o passo trocado por 1 min nos dois pontos acima, 5m/15m/1h/4h reprovam (5.760/5.760/10.080/10.080) e 1m passa.
+
+## 25. O aviso de cobertura diz QUANTO falta, e a legenda devolve altura aos dados (`paineis-de-fluxo` `T-05.4`, 2026-10-02)
+
+Desenho: [`handoff/T-05.4-desenho.md`](../docs/context/paineis-de-fluxo/handoff/T-05.4-desenho.md) (gate:
+[`gates/T-05.4-design-critique.md`](../docs/context/paineis-de-fluxo/gates/T-05.4-design-critique.md)). Relatório:
+[`gates/T-05.4-build.md`](../docs/context/paineis-de-fluxo/gates/T-05.4-build.md).
+
+- **O cálculo mora em `coverage-magnitude.ts`** (browser-safe): `summarizeCoverageMagnitude(rows, {knowledgeTimeMs,
+  nativeGridMs})` soma `expected − present` **fora da cabeça** (`COVERAGE_HEAD_GRACE_MS = 600_000`) e `expected` sobre a
+  janela inteira. O chip só existe com `missingFacts ≥ 1`; não há limiar percentual.
+- **O `data-fact` mudou de `buckets/buckets` para `fatos/fatos`** e vive num `<span>` carregador VAZIO dentro do chip
+  (`[data-coverage-chip]`), um por série com falta; os `data-coverage-*` vão junto. O nó `p[data-coverage-ledger=<factKey>]`
+  no `PaneDetails` existe **sempre**, com ou sem chip: é ele que publica `data-coverage-head-excluded-facts` (A-3).
+- **⚠️ Gotcha — a cabeça só morde em 5m.** A linha mais nova tem idade `interval + 4 min` (`KNOWLEDGE_TIME_LAG_MS`):
+  9 min em 5m, 19/64/244 min em 15m/1h/4h. Teste da cabeça tem de rodar em **5m**.
+- **⚠️ Gotcha — o `native_grid` do catálogo é `"1min"`/`"5min"`**, que `timeframeStepMs` não lê: use
+  `parseNativeGridMs`/`coverageGridMsOf`.
+- **Falsificador:** `e2e/40-coverage-magnitude-and-legend-room.spec.ts` — stub por `interval` (`full`, `mid-3`,
+  `head-only` em 5m, `longest` em 1h) e o universo real em 5m/15m/1h/4h. As 5 ablações do §6.3 reprovam (ver o relatório).
+  **A-4 da liquidação é pego pelo `≥ 140 px`, não pelo `≥ 0,6 ×`** (`C-5`).
+- **⚠️ Em aberto, a 1024×768 (`C-3`):** com o chip inline, `(escala linear)` sai da linha do volume **já com o texto real
+  de hoje** (0 de 105 px visíveis), e o texto mais longo corta `Dado de TERCEIRO` (38,9 de 112 px). A 1280 os dois ficam
+  inteiros. O comportamento abaixo do ponto de quebra (~1.177 px de viewport no 4h real) é decisão do `ui-designer`; o
+  teste a 1024 fica **vermelho** até ela existir.
