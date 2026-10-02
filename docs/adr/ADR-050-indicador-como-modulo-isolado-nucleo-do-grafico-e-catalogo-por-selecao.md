@@ -152,3 +152,21 @@ de indicador acima de 20 KB gzip, ou indicadores desligados somando ≥ 25% do c
   `setup_hash` mudar quando o OI é desligado.
 - A F10 herda a dependência da `ADR-048/D8` (*proxy* de mesma origem). Sem ela, um indicador ligado depois do SSR não consegue buscar
   do navegador fora da VPS.
+
+---
+
+## Emendas propostas pela `SPEC-011` (2026-10-02, `/architect`) — o status continua `proposta`
+
+Anexadas aqui, e não reescritas no corpo, para que a decisão original e a correção fiquem legíveis lado a lado. Aceitar a ADR **com** elas é o menu
+`OWN-1 (a)` da [`SPEC-011 §13`](../specs/SPEC-011-estrutura-do-front.md). A Gap Analysis que as motiva está em
+[`gates/PRD-011-gap-analysis.md`](../context/estrutura-do-front/gates/PRD-011-gap-analysis.md).
+
+| id | onde | emenda | por quê |
+|---|---|---|---|
+| `E-1` | `D3` | o registrar expõe `refeed(instanceKey)`, do host, entregue na F2 e provado por um indicador sintético de `indicator-endpoint` | a `ADR-048/D3` tem `refeed`, e sem ele a primeira média edita `chart/**` (`G-E`) |
+| `E-2` | `D6` | a regra tem uma terceira proibição: fora de `indicators/<kind>/`, só `indicators/catalog.ts` importa `indicators/<kind>/**`. `selection/` não é pasta de indicador | o grep do `F-6` cala sobre um import de `./indicators/oi/` em `SymbolClient.tsx` `[MEDIDO 2026-10-02: 0 de 2 linhas de sonda casadas]` (`G-A`) |
+| `E-3` | `D7` | **10 fatias, F0–F9.** A F10 vai para a `SPEC-010` (emenda `A-7`), e a F11 para a F1 de `indicadores-smc` (`O-2`). Até lá, o pager busca o catálogo inteiro, e religar é só `mount` | sem seletor, a F10 economiza 0 pedido e depende da `ADR-048/D8` (`G-G`) |
+| `E-4` | `D2` | a união `IndicatorKind` é derivada do catálogo, não enumerada no contrato. Os tipos que o núcleo consome (binding, requisito de série) moram no núcleo, e o núcleo recebe as definições por parâmetro | com a união no contrato, o `CA-7` reprova por construção (`G-B`); com o binding no contrato, o registrar viola a própria `D6` (`G-R`) |
+
+**Falsificador das emendas:** se a F9 fechar e o ensaio do `CA-7 (b)` precisar editar qualquer arquivo fora de `indicators/probe/**` e `indicators/catalog.ts`, uma
+das emendas `E-1`, `E-2` ou `E-4` não fez o que prometia.
