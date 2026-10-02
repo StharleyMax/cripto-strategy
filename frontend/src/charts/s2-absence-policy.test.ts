@@ -43,7 +43,8 @@ const METRICS_DIR = path.join(REPO_ROOT, "data/binance/metrics");
 
 const ONE_MINUTE_MS = 60_000;
 /** `T-02.1`/`D-C3.2`: `buildOiPanel`'s `slots` sits on this shared axis step, not on its own
- * `FIVE_MINUTES_MS` native cadence anymore — see `s2-panels.ts::S2_AXIS_STEP_MS`. */
+ * `FIVE_MINUTES_MS` native cadence anymore — `buildOiPanel(…, axisStepMs)`, the TF's step since
+ * `paineis-de-fluxo` `T-05.1` (`S2_AXIS_STEP_MS` is gone); one minute in this fixture. */
 const AXIS_STEP_MS = ONE_MINUTE_MS;
 
 function readOiDay(day: string): string {
