@@ -45,7 +45,6 @@ import {
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
   seriesValueStats,
-  slotsFrom,
   trailingAbsentSlots,
   nonNegativeFlowSlotsFromHistoryRows,
 } from "./view-model.ts";
@@ -390,25 +389,6 @@ test("seriesValueStats of a window with NO observation is null — never a fabri
   // then says `n=1` beside it (`presentSlots`) instead of hiding the sample size.
   const single = seriesValueStats([{ time: 1_000, value: 1.5 }]);
   assert.deepEqual(single, { presentSlots: 1, min: 1.5, max: 1.5, median: 1.5, amplitude: 0 });
-});
-
-test("slotsFrom: the trailing sub-window is a FILTER of the same slots, never a re-grid", () => {
-  const slots = [
-    { time: 1_000, value: 1.4 },
-    { time: 61_000, value: 1.5 },
-    { time: 121_000, value: 1.6 },
-  ];
-  assert.deepEqual(slotsFrom(slots, 61_000), [slots[1], slots[2]], "inclusive on the left — the instant IS a grid instant");
-  assert.deepEqual(slotsFrom(slots, 0), slots);
-  assert.deepEqual(slotsFrom(slots, 200_000), []);
-  assert.ok(
-    // Identity, not deep equality: `includes` compares references, which is the property being
-    // asserted. The cast is the type system's price for a fixture literal narrower than
-    // `ScalarSlot` (`value: number | null`), not a widening of anything at runtime.
-    slotsFrom(slots, 61_000).every((slot) => (slots as readonly unknown[]).includes(slot)),
-    "the objects handed back are the SAME the chart draws — a sub-window computed over a re-derived grid " +
-      "is `M-2` of gates/design-05.md ('a janela declarada não é a janela desenhada')",
-  );
 });
 
 test("trailingAbsentSlots: the size of the tail the RATIO pane refuses to draw", () => {

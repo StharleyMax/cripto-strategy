@@ -6,12 +6,17 @@
 // Run with: npm --prefix frontend run test:app
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { S2_PRICE_USE, resolveLegendReading } from "../../charts/index.ts";
+import { recentBandSlotRange } from "./long-short-band.ts";
 import { EMPTY_OI_CANDLE_BUNDLE } from "./oi-candle-pane.ts";
 import { assembleHistoryPage, type AssemblyWindow, type HistoryRowsBundle } from "./panel-assembly.ts";
 import type { SeriesHistoryRow } from "./series-history-envelope.ts";
+import { seriesValueStats } from "./view-model.ts";
 
 const ONE_MINUTE_MS = 60_000;
 const WINDOW: AssemblyWindow = { startMs: 0, endMsExclusive: 3 * ONE_MINUTE_MS }; // 3 slots: 0, 60_000, 120_000
@@ -245,4 +250,72 @@ test("MORDE MF-B′: on 4h the volume legend reads the served bar at rest and un
 test("MORDE (control): the NATIVE vector read by param.logical is the defect — ausente under the crosshair on 4h", () => {
   const volume = assembleFourHourVolume();
   assert.equal(readVolumeLegend(volume.slots, 300).kind, "absent");
+});
+
+// ── `W7-CODE-REVIEW` C-1 — the long/short footer and the faixa das 4 h describe ONE set of slots ──
+// The footer's `recentStats` used to cut at `windowEndMsInclusive - span`, an instant on the
+// 1-MINUTE grid, while the band (`long-short-band.ts::recentBandSlotRange`) cuts at the last slot
+// of the AXIS grid. On `1m` the two instants coincide; on `1h`/`4h` the footer lost the band's
+// first slot: `4h` printed `n = 1` beside a band of 2 bars, `1h` 4 slots beside 5 bars.
+const ONE_HOUR_MS = 60 * ONE_MINUTE_MS;
+const RECENT_SPAN_MS = FOUR_HOURS_MS; // `LONG_SHORT_RECENT_SPAN_MS`
+
+/** A long/short window of `slotCount` axis slots at `axisStepMs`, EVERY slot readable (values
+ * cycling through 1.00..1.06 so `min`/`max` depend on which slots enter), assembled exactly as the
+ * pager does: `windowEndMsInclusive` on the 1-minute grid, as `request-window.ts` builds it. */
+function assembleLongShort(axisStepMs: number, slotCount: number) {
+  const window: AssemblyWindow = { startMs: 0, endMsExclusive: slotCount * axisStepMs };
+  const longShort = Array.from({ length: slotCount }, (_unused, index) =>
+    scalarRow(index * axisStepMs, (1 + (index % 7) / 100).toFixed(2)),
+  );
+  return assembleHistoryPage({ ...emptyBundle(), longShort }, window, {
+    priceUse: S2_PRICE_USE,
+    windowEndMsExclusive: window.endMsExclusive,
+    ...COVERAGE_CONTEXT,
+    cvdAnchorMs: window.startMs,
+    windowEndMsInclusive: window.endMsExclusive - ONE_MINUTE_MS,
+    longShortRecentSpanMs: RECENT_SPAN_MS,
+    oiMaxStalenessMs: null,
+  }, axisStepMs).longShort;
+}
+
+function bandBars(slots: readonly { readonly time: number }[]): number {
+  const range = recentBandSlotRange(slots, RECENT_SPAN_MS);
+  assert.notEqual(range, null, "the fixture must have a band to compare against");
+  return range!.lastIndex - range!.firstIndex + 1;
+}
+
+for (const [label, axisStepMs, slotCount, expectedBars] of [
+  ["4h", FOUR_HOURS_MS, 4, 2],
+  ["1h", ONE_HOUR_MS, 16, 5],
+] as const) {
+  test(`MORDE C-1: on ${label} the footer's n is the band's bar count (${expectedBars}), every slot readable`, () => {
+    const longShort = assembleLongShort(axisStepMs, slotCount);
+    assert.equal(bandBars(longShort.slots), expectedBars);
+    assert.notEqual(longShort.recentStats, null);
+    assert.equal(
+      longShort.recentStats!.presentSlots,
+      expectedBars,
+      `the footer describes ${longShort.recentStats!.presentSlots} slots and the band shades ${expectedBars}`,
+    );
+  });
+}
+
+test("CALA C-1: on 1m the footer is IDENTICAL to the pre-fix rule (cut at windowEndMsInclusive - span)", () => {
+  const slotCount = 300; // 5 h of 1m slots — the band is strictly inside the window
+  const longShort = assembleLongShort(ONE_MINUTE_MS, slotCount);
+  const windowEndMsInclusive = slotCount * ONE_MINUTE_MS - ONE_MINUTE_MS;
+  // The pre-fix expression, replanted: `slotsFrom(slots, windowEndMsInclusive - span)`.
+  const before = seriesValueStats(longShort.slots.filter((slot) => slot.time >= windowEndMsInclusive - RECENT_SPAN_MS));
+  assert.deepEqual(longShort.recentStats, before);
+  assert.equal(longShort.recentStats!.presentSlots, 241);
+  assert.equal(bandBars(longShort.slots), 241);
+});
+
+test("MORDE C-1: page.tsx (the SSR copy) derives recentStats through the SAME function the pager uses", () => {
+  // `page.tsx` is a Server Component no suite renders; its derivation is pinned by source, the way
+  // the `*-dom-contract.test.ts` files pin theirs.
+  const pageSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "[symbol]", "page.tsx"), "utf8");
+  assert.match(pageSource, /recentStats: seriesValueStats\(recentBandSlots\(longShortSlots, LONG_SHORT_RECENT_SPAN_MS\)\)/);
+  assert.doesNotMatch(pageSource, /windowEndMsInclusive - LONG_SHORT_RECENT_SPAN_MS/);
 });
