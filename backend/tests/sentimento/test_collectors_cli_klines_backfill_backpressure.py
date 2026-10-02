@@ -370,3 +370,22 @@ def test_the_production_gate_watches_the_configured_stream_and_group_on_its_own_
 def test_the_boot_config_defaults_the_group_to_the_single_writers() -> None:
     """Unset `REDIS_STREAM_GROUP` means the group `single_writer_cli` joins by default."""
     assert resolve_boot_config({}).redis_stream_group == "single_writer"
+
+
+# ── W7-QA-BACK — an edge the T-05.3 suite did not pin (QA mutation QA53-4) ──────────────────
+
+
+def test_the_catch_up_walk_also_waits_for_the_writer() -> None:
+    """A cycle behind its watermark WALKS `MAX_LIMIT` pages — a burst, so it must wait too.
+
+    QA mutation `QA53-4` (the gate only on the boot backfill) survived: the catch-up test drove
+    an `OpenGate` and never counted its waits. After a long outage the catch-up publishes the
+    same `1.500 x 6` entries per page the boot walk does.
+    """
+    client = _PagedClient([_bars(_T0, 1)])
+    gate = OpenGate()
+
+    _drive(client, CappedStream(max_len=10**6, drain_per_poll=1), gate, passes=2)
+
+    assert client.calls[1] == (MAX_LIMIT, _T0 + _W), "pass 2 is a catch-up walk"
+    assert gate.waits == 2, "the boot page and the catch-up page both waited"

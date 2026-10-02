@@ -497,3 +497,48 @@ def test_the_cycle_after_a_side_proves_itself_writes_the_minutes_zl2_held() -> N
     assert _zeros(first, "long") == [_m(i) for i in range(6, 10)]
     assert _zeros(second, "long") == [_m(i) for i in range(5)]
     assert _zeros(third, "long") == []
+
+
+# ── W7-QA-BACK — edges the T-05.2 suite did not pin (QA mutations QA52-1, QA52-2) ───────────
+
+
+def test_a_quiet_answered_window_with_no_point_at_all_is_ten_zeros_per_side() -> None:
+    """The DOMINANT production case: the provider answered BTCUSDT with `history: []`.
+
+    A symbol that cites itself with an EMPTY history was consulted and nothing happened, so a
+    side that already proved itself (`ZL-2`) gets a zero on every closed minute of the window.
+    QA mutation `QA52-1` (`answered=outcome.answered and bool(points)`) — a gate that demands a
+    point before it believes the window — survived the T-05.2 suite: every MORDE test had one
+    wire point, and the only `history: []` test runs with a fresh state where ZL-2 hides it.
+    """
+    result, published = _window_cycle(
+        [LiquidationFetch(status=200, body=_body("BTCUSDT", []))], state=_seeded_state()
+    )
+    every_minute = [_m(i) for i in range(10)]
+    assert _zeros(published, "long") == every_minute
+    assert _zeros(published, "short") == every_minute
+    assert result.n_published == 2 * 10
+    assert result.unanswered == ()
+
+
+def test_the_retention_guard_counts_the_whole_response_not_only_its_settled_points() -> None:
+    """`1.500` points where the newest is the minute in progress ⇒ the guard still holds.
+
+    The provider's retention is a count of points it RETURNED (`RETENTION_POINT_FLOOR`), and the
+    running minute is one of them. QA mutation `QA52-2` (`n_points_in_response=len(settled)`)
+    drops it from the count, reads `1.499`, and claims `m0..m500` — minutes the provider may
+    simply have forgotten — as consulted and empty.
+    """
+    now_ms = (_M0 + 2000 * 60 + 30) * 1000  # `m2000` is running
+    history: list[dict[str, object]] = [{"t": _m(i), "l": 1, "s": 1} for i in range(501, 2001)]
+    assert len(history) == 1500
+    result, published, _, _ = _collect(
+        symbols=["BTCUSDT"],
+        answers=[LiquidationFetch(status=200, body=_body("BTCUSDT", history))],
+        clock=_FakeClock(now_ms),
+        state=_seeded_state(),
+        lookback_seconds=(now_ms // 1000) - _M0,
+    )
+    assert [row for row in published if row[3] == "0"] == []
+    assert min(row[2] for row in published) == _m(501)
+    assert result.n_published == 2 * 1499
