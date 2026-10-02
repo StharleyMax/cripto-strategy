@@ -227,12 +227,34 @@ export function warningLegs<Leg extends CoverageLeg>(legs: readonly Leg[]): read
  *   two legs, different:        `short: faltam 12 min (0.2%) · long: faltam 40 min (0.7%), de 4 d`
  */
 export function coverageChipBody(legs: readonly CoverageLeg[]): string | null {
+  return chipBody(legs, "full");
+}
+
+/**
+ * The COMPACT visible form of the chip (`T-05.4-desenho.md` §10.2, `C-3`), painted instead of the
+ * full one when the pane legend is narrower than 1140 px: the same five branches as
+ * `coverageChipBody`, without the `cobertura parcial — ` prefix and without the denominator
+ * (`de <span>` / `, de <span>`). It is the full form minus those two declared pieces, so every
+ * `faltam <span>` and every `(p%)` survives in the same order. `null` exactly when
+ * `coverageChipText` is `null`. The denominator stays in the `sr-only` sentence and in
+ * `data-coverage-expected-ms`.
+ *
+ *   one series:                 `faltam 1 h 4 min (1.1%)`
+ *   one leg of two:             `long: faltam 40 min (0.7%)`
+ *   two legs, different:        `short: faltam 12 min (0.2%) · long: faltam 40 min (0.7%)`
+ */
+export function coverageChipCompactText(legs: readonly CoverageLeg[]): string | null {
+  return chipBody(legs, "compact");
+}
+
+function chipBody(legs: readonly CoverageLeg[], form: "full" | "compact"): string | null {
   const warning = warningLegs(legs);
   if (warning.length === 0) {
     return null;
   }
+  const denominator = (magnitude: CoverageMagnitude) => (form === "full" ? ` de ${expectedSpan(magnitude)}` : "");
   const whole = (magnitude: CoverageMagnitude) =>
-    `faltam ${missingSpan(magnitude)} de ${expectedSpan(magnitude)} (${percentOf(magnitude)}%)`;
+    `faltam ${missingSpan(magnitude)}${denominator(magnitude)} (${percentOf(magnitude)}%)`;
   if (legs.length === 1) {
     return whole(warning[0].magnitude);
   }
@@ -251,7 +273,7 @@ export function coverageChipBody(legs: readonly CoverageLeg[]): string | null {
   const sharedDenominator = warning.every((leg) => leg.magnitude.expectedFacts === first.expectedFacts);
   if (sharedDenominator) {
     const parts = warning.map((leg) => `${leg.label}: faltam ${missingSpan(leg.magnitude)} (${percentOf(leg.magnitude)}%)`);
-    return `${parts.join(" · ")}, de ${expectedSpan(first)}`;
+    return form === "full" ? `${parts.join(" · ")}, de ${expectedSpan(first)}` : parts.join(" · ");
   }
   return warning.map((leg) => `${leg.label}: ${whole(leg.magnitude)}`).join(" · ");
 }

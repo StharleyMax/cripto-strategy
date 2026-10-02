@@ -207,6 +207,7 @@ import type { HistoryRowsBundle } from "./panel-assembly.ts";
 import { useHistoryPager, type HistoryPagingSeed, type HistorySeriesKeys } from "./use-history-pager.ts";
 import { panelWallState } from "./slot-coverage.ts";
 import {
+  coverageChipCompactText,
   coverageChipText,
   coverageDataAttributes,
   coverageHeadText,
@@ -878,7 +879,14 @@ function PaneLegend({ children }: { readonly children: ReactNode }) {
     // `[&>*]:max-w-full` (`T-01.11-FIX`, `SF-2`): a wrapper between the legend and its lines (the
     // liquidation header's `<section>`) would otherwise size to its nowrap content, and the lines'
     // own `max-w-full` would be relative to THAT — the ellipsis would never trigger.
-    <div data-pane-legend="" className="flex flex-col items-start gap-0.5 px-2 pt-1 text-xs [&_*]:text-xs [&>*]:max-w-full">
+    // `@container/legend` (`T-05.4-desenho.md` §10.5, `C-3`): the coverage chip picks its painted form
+    // by THIS block's content width. The block is as wide as the layer (`absolute inset-0`), never
+    // as wide as its content, so inline-size containment is safe; it touches width only, and the
+    // height the host measures for the scale reserve is unchanged.
+    <div
+      data-pane-legend=""
+      className="@container/legend flex flex-col items-start gap-0.5 px-2 pt-1 text-xs [&_*]:text-xs [&>*]:max-w-full"
+    >
       {children}
     </div>
   );
@@ -1584,8 +1592,15 @@ function PartialCoverageMark({ legs }: { readonly legs: readonly CoverageMarkLeg
         ·
       </span>
       <PartialCoverageGlyph />
-      <span aria-hidden="true" data-coverage-visible="">
+      {/* `C-3` (`T-05.4-desenho.md` §10.2): two painted forms of the SAME chip, and the legend's container
+          query picks one — the full form at a legend content width >= 1140 px, the compact one (no
+          `cobertura parcial — `, no denominator) below it. `display:none`, not `sr-only`: both are
+          `aria-hidden`, and the `sr-only` sentence below is what is spoken, at every width. */}
+      <span aria-hidden="true" data-coverage-visible="full" className="@max-[1140px]/legend:hidden">
         {visible}
+      </span>
+      <span aria-hidden="true" data-coverage-visible="compact" className="hidden @max-[1140px]/legend:inline">
+        {coverageChipCompactText(legs)}
       </span>
       <span className="sr-only">{coverageScreenReaderText(legs)}</span>
       {/* One empty carrier per WARNING series: the magnitude in native facts, plus the `data-coverage-*`

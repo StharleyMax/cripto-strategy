@@ -28,9 +28,15 @@
  *   A-6. Then `C-3` on real data: the chips' visible text is swapped for the longest string (a probe,
  *   `page.evaluate`) and A-4/A-5/A-6 are read again after the host re-lays the scales.
  *
- * ⚠️ A-4 is asserted at 1280×800 only, because that is the viewport §3.2 declares its floors at. At
- * 1024×768 the areas are MEASURED and written to `facts.jsonl`, not judged: below ~1150 px the
- * liquidation legs wrap (§2.5, "4 linhas, ainda melhor que as 6 de hoje") and §3.2 sets no floor there.
+ * ⚠️ A-4 is asserted against the DESIGN floors of §3.2 at 1280×800 only, the viewport §3.2 declares them
+ * at. At 1024×768 it is asserted against `AREA_FLOORS_1024`, a NON-REGRESSION SNAPSHOT (`K-3` of
+ * `gates/T-05.4-design-critique-C3.md`), not a legibility floor. At 1200/1240 the areas are MEASURED and
+ * written to `facts.jsonl`, not judged.
+ *
+ * `C-3` (`handoff/T-05.4-desenho.md` §10): below 1140 px of legend content width the chip paints its
+ * COMPACT form (no `cobertura parcial — `, no denominator). A-7 checks that exactly one form is painted
+ * and that it is the one the measured width calls for; 1200/1240 bracket the threshold. `K-1`: the real
+ * universe runs A-5 + A-7 at 1240/1280 in `4h` on the four `PILOT_SYMBOLS`.
  *
  * Production-code ablations (rebuild per mutation) are run by hand and recorded in
  * `docs/context/paineis-de-fluxo/gates/T-05.4-build.md`.
@@ -47,7 +53,8 @@ import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstan
 
 const SPEC = "40-coverage-magnitude-and-legend-room";
 const SYMBOL = "BTCUSDT";
-const SYMBOL_PATH = `/symbol/${SYMBOL}`;
+/** `PILOT_SYMBOLS` of `[symbol]/page.tsx`, LITERAL: `K-1` runs F-5 on the universe that exists. */
+const PILOT_SYMBOLS = ["BTCUSDT", "ETHUSDT", "LINKUSDT", "SOLUSDT"] as const;
 const CHART_HOST_TESTID = "symbol-chart-host";
 const ONE_MINUTE_MS = 60_000;
 /** `COVERAGE_HEAD_GRACE_MS` of `coverage-magnitude.ts`, LITERAL on purpose: the spec judges the
@@ -56,10 +63,19 @@ const HEAD_GRACE_MS = 600_000;
 const INTERVAL_MS: Readonly<Record<string, number>> = { "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000 };
 const REAGGREGATED_TFS = ["5m", "15m", "1h", "4h"] as const;
 
+/** `areaFloors`: which A-4 floors judge this viewport — the design ones (§3.2), the 1024 snapshot
+ * (`K-3`), or none (measured only). 1200 and 1240 bracket `CHIP_COMPACT_BELOW_PX` (§10.6). */
 const VIEWPORTS = [
-  { name: "1280x800", width: 1280, height: 800, judgesArea: true },
-  { name: "1024x768", width: 1024, height: 768, judgesArea: false },
+  { name: "1024x768", width: 1024, height: 768, areaFloors: "1024" },
+  { name: "1200x800", width: 1200, height: 800, areaFloors: null },
+  { name: "1240x800", width: 1240, height: 800, areaFloors: null },
+  { name: "1280x800", width: 1280, height: 800, areaFloors: "design" },
 ] as const;
+type AreaFloorSet = (typeof VIEWPORTS)[number]["areaFloors"];
+
+/** `C-3` (§10.2): the legend content width from which the chip paints its FULL form; below it, the
+ * compact one. LITERAL, not imported: the spec judges the production threshold (`@max-[1140px]/legend`). */
+const CHIP_COMPACT_BELOW_PX = 1140;
 
 /** §3.2 with `C-4` (non-regression floors = measured − 1 px): `[testid, floor px]`. */
 const AREA_FLOORS: readonly (readonly [string, number])[] = [
@@ -68,6 +84,20 @@ const AREA_FLOORS: readonly (readonly [string, number])[] = [
   ["oi-pane", 71],
   ["long-short-pane", 36.6],
   ["cvd-pane", 40],
+];
+/**
+ * `K-3`: a NON-REGRESSION SNAPSHOT at 1024×768, not a legibility floor. Each value is the LOWEST data
+ * area measured with the compact form painted, over the four TFs of the real universe and the stub's
+ * `longest`, minus 1 px. It only says "no worse than on 2026-10-02"; whether these heights are readable
+ * is not measured (the OI one is open with the OI's own task, `gates/T-05.4-build.md` §6).
+ */
+const AREA_FLOORS_1024: readonly (readonly [string, number])[] = [
+  // [MEDIDO 2026-10-02, facts of `e2e/40` (real 5m/15m/1h/4h + probe, stub `longest`), compact form painted]
+  ["price-pane", 233.4], // 234.4 in every case
+  ["liquidation-pane", 134], // 135.0 real (the legs wrap), 155.0 stub
+  ["oi-pane", 58.2], // 59.2 real 1h/4h and stub (the OI legend wraps; the OI has no chip), 72.0 real 5m/15m
+  ["long-short-pane", 36.6], // 37.6 in every case
+  ["cvd-pane", 43.65], // 44.65 in every case
 ];
 /** §3.2: the liquidation data area is also `>= 0.6 ×` the pane's own height. */
 const LIQUIDATION_AREA_SHARE_FLOOR = 0.6;
@@ -81,6 +111,9 @@ const ELLIPSIS_ROOM_PX = 8;
  * de 6 d 23 h`), so passing it passes the example. */
 const LONGEST_LIQUIDATION_TEXT = "cobertura parcial — short: faltam 6 d 23 h (99.4%) · long: faltam 23 h 59 min (14.3%), de 7 d";
 const LONGEST_SINGLE_TEXT = "cobertura parcial — faltam 23 h 59 min de 7 d (14.3%)";
+/** The same two, in the COMPACT form (§10.2): without the prefix and without the denominator. */
+const LONGEST_LIQUIDATION_COMPACT = "short: faltam 6 d 23 h (99.4%) · long: faltam 23 h 59 min (14.3%)";
+const LONGEST_SINGLE_COMPACT = "faltam 23 h 59 min (14.3%)";
 
 type Family = "volume" | "cvd" | "liquidation_short" | "liquidation_long";
 const FAMILIES: readonly Family[] = ["volume", "cvd", "liquidation_short", "liquidation_long"];
@@ -290,10 +323,17 @@ interface DeclaredRequest {
   readonly knowledgeTimeMs: number;
 }
 
-async function openSymbol(page: Page, baseUrl: string, interval: string, cacheBuster: string): Promise<DeclaredRequest> {
+async function openSymbol(
+  page: Page,
+  baseUrl: string,
+  interval: string,
+  cacheBuster: string,
+  symbol: string = SYMBOL,
+): Promise<DeclaredRequest> {
   await page.mouse.move(2, 2);
-  const response = await page.goto(`${baseUrl}${SYMBOL_PATH}?interval=${interval}&e2eCoverage=${cacheBuster}`, { waitUntil: "load" });
-  expect(response?.ok(), `GET ${SYMBOL_PATH} did not answer ok`).toBe(true);
+  const symbolPath = `/symbol/${symbol}`;
+  const response = await page.goto(`${baseUrl}${symbolPath}?interval=${interval}&e2eCoverage=${cacheBuster}`, { waitUntil: "load" });
+  expect(response?.ok(), `GET ${symbolPath} did not answer ok`).toBe(true);
   await expect(page.locator(`[data-testid="${CHART_HOST_TESTID}"]`)).toHaveAttribute("data-pane-layers", "anchored", {
     timeout: 120_000,
   });
@@ -355,7 +395,10 @@ async function readChipFacts(page: Page): Promise<readonly ChipFact[]> {
         missingMs: Number(carrier.dataset.coverageMissingMs),
         expectedMs: Number(carrier.dataset.coverageExpectedMs),
         gridMs: Number(carrier.dataset.coverageNativeGridMs),
-        chipText: chip?.querySelector("[data-coverage-visible]")?.textContent ?? "NO CHIP",
+        chipText:
+          [...(chip?.querySelectorAll<HTMLElement>("[data-coverage-visible]") ?? [])].find(
+            (form) => form.getClientRects().length > 0 && form.getBoundingClientRect().width > 0,
+          )?.textContent ?? "NO PAINTED CHIP",
       };
     }),
   );
@@ -399,17 +442,17 @@ async function readAreas(page: Page): Promise<readonly PaneArea[]> {
   );
 }
 
-/** A-4 (§3.2 with `C-4`). */
-function judgeAreas(areas: readonly PaneArea[]): string[] {
+/** A-4 (§3.2 with `C-4`; at 1024 the `K-3` snapshot). */
+function judgeAreas(areas: readonly PaneArea[], floors: Exclude<AreaFloorSet, null> = "design"): string[] {
   const defects: string[] = [];
-  for (const [testId, floor] of AREA_FLOORS) {
+  for (const [testId, floor] of floors === "design" ? AREA_FLOORS : AREA_FLOORS_1024) {
     const area = areas.find((a) => a.testId === testId);
     if (area === undefined || !Number.isFinite(area.areaPx)) {
       defects.push(`${testId}: area not published`);
       continue;
     }
     if (area.areaPx < floor) defects.push(`${testId}: data area ${area.areaPx.toFixed(2)} px < ${floor} px`);
-    if (testId === "liquidation-pane" && area.areaPx < LIQUIDATION_AREA_SHARE_FLOOR * area.paneHeightPx) {
+    if (floors === "design" && testId === "liquidation-pane" && area.areaPx < LIQUIDATION_AREA_SHARE_FLOOR * area.paneHeightPx) {
       defects.push(
         `${testId}: data area ${area.areaPx.toFixed(2)} px < ${LIQUIDATION_AREA_SHARE_FLOOR} × pane ${area.paneHeightPx} px ` +
           `(${(area.areaPx / area.paneHeightPx).toFixed(3)})`,
@@ -504,7 +547,10 @@ async function readChipLines(page: Page): Promise<readonly ChipLine[]> {
         chipHeightPx: chip.getBoundingClientRect().height,
         lineHeightPx: Number.isFinite(lineHeight) ? lineHeight : 1.2 * Number.parseFloat(style.fontSize),
         lineBoxHeightPx: line.getBoundingClientRect().height,
-        text: chip.querySelector("[data-coverage-visible]")?.textContent ?? "",
+        text:
+          [...chip.querySelectorAll<HTMLElement>("[data-coverage-visible]")].find(
+            (form) => form.getClientRects().length > 0 && form.getBoundingClientRect().width > 0,
+          )?.textContent ?? "",
       };
     }),
   );
@@ -516,6 +562,53 @@ function judgeOneLine(lines: readonly ChipLine[]): string[] {
     const ceiling = ONE_LINE_FACTOR * l.lineHeightPx;
     if (l.chipHeightPx > ceiling) defects.push(`${l.chip}: chip ${l.chipHeightPx.toFixed(1)} px > ${ceiling.toFixed(1)} px`);
     if (l.lineBoxHeightPx > ceiling) defects.push(`${l.chip}: legend line ${l.lineBoxHeightPx.toFixed(1)} px > ${ceiling.toFixed(1)} px`);
+  }
+  return defects;
+}
+
+interface ChipForms {
+  readonly chip: string;
+  /** The legend's CONTENT box width (`clientWidth − padding`, CI-3): what the container query compares. */
+  readonly legendContentPx: number;
+  readonly painted: readonly string[];
+  readonly full: string;
+  readonly compact: string;
+}
+
+/** A-7: per chip, which `[data-coverage-visible]` forms have a painted box, and the legend width. */
+async function readChipForms(page: Page): Promise<readonly ChipForms[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("[data-coverage-chip]")].map((chip) => {
+      const legend = chip.closest<HTMLElement>("[data-pane-legend]");
+      const style = legend === null ? null : getComputedStyle(legend);
+      const legendContentPx =
+        legend === null || style === null
+          ? Number.NaN
+          : legend.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
+      const forms = [...chip.querySelectorAll<HTMLElement>("[data-coverage-visible]")];
+      const textOf = (name: string) => forms.find((form) => form.dataset.coverageVisible === name)?.textContent ?? "MISSING";
+      return {
+        chip: chip.getAttribute("data-coverage-chip") ?? "",
+        legendContentPx,
+        painted: forms
+          .filter((form) => form.getClientRects().length > 0 && form.getBoundingClientRect().width > 0)
+          .map((form) => form.dataset.coverageVisible ?? "?"),
+        full: textOf("full"),
+        compact: textOf("compact"),
+      };
+    }),
+  );
+}
+
+/** A-7: exactly one form painted, and it is `full` iff the legend content width is `>= 1140`. */
+function judgeForms(forms: readonly ChipForms[]): string[] {
+  const defects: string[] = [];
+  for (const f of forms) {
+    const expected = f.legendContentPx >= CHIP_COMPACT_BELOW_PX ? "full" : "compact";
+    if (!Number.isFinite(f.legendContentPx)) defects.push(`${f.chip}: no [data-pane-legend] around the chip`);
+    else if (f.painted.length !== 1 || f.painted[0] !== expected) {
+      defects.push(`${f.chip}: legend ${f.legendContentPx.toFixed(1)}px ⇒ ${expected} form, ${f.painted.join("+") || "none"} painted`);
+    }
   }
   return defects;
 }
@@ -618,7 +711,8 @@ test.describe(`T-05.4 gate: the coverage warning's magnitude, its absence, the h
   });
 
   for (const viewport of VIEWPORTS) {
-    test(`C-3 at ${viewport.name}: the longest text (1h, two legs different) — A-1, A-5, A-6${viewport.judgesArea ? ", A-4 (C-4)" : " (A-4 measured, not judged)"}`, async ({ page }) => {
+    const areaNote = viewport.areaFloors === "design" ? ", A-4 (C-4)" : viewport.areaFloors === "1024" ? ", A-4 (K-3 snapshot)" : " (A-4 measured, not judged)";
+    test(`C-3 at ${viewport.name}: the longest text (1h, two legs different) — A-1, A-5, A-6, A-7${areaNote}`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       stub!.mode = "longest";
       await openSymbol(page, instance!.baseUrl, "1h", `longest-${viewport.name}`);
@@ -626,14 +720,23 @@ test.describe(`T-05.4 gate: the coverage warning's magnitude, its absence, the h
       const lines = await readChipLines(page);
       const areas = await readAreas(page);
       const truncation = await judgeTruncation(page);
-      fact(SPEC, `gate_longest_${viewport.name}`, { facts, lines, areas, truncation: truncation.readings });
+      const forms = await readChipForms(page);
+      fact(SPEC, `gate_longest_${viewport.name}`, { facts, lines, areas, forms, truncation: truncation.readings });
 
-      // The case IS the longest string: production wrote exactly what C-3 asked to measure.
-      const texts = lines.map((l) => l.text).sort();
+      // The case IS the longest string: production wrote exactly what C-3 asked to measure — in BOTH
+      // forms, since production always renders the two and the container query picks the painted one.
       // `expect.soft` from here on: an ablation must show EVERY assert it breaks, not only the first one.
-      expect.soft(texts, "the stub's longest mode must make production write the longest texts").toEqual(
-        [LONGEST_LIQUIDATION_TEXT, LONGEST_SINGLE_TEXT, LONGEST_SINGLE_TEXT].sort(),
+      expect.soft(
+        forms.map((f) => `${f.full} | ${f.compact}`).sort(),
+        "the stub's longest mode must make production write the longest texts, full | compact",
+      ).toEqual(
+        [
+          `${LONGEST_LIQUIDATION_TEXT} | ${LONGEST_LIQUIDATION_COMPACT}`,
+          `${LONGEST_SINGLE_TEXT} | ${LONGEST_SINGLE_COMPACT}`,
+          `${LONGEST_SINGLE_TEXT} | ${LONGEST_SINGLE_COMPACT}`,
+        ].sort(),
       );
+      expect.soft(judgeForms(forms), "A-7").toEqual([]);
       expect.soft(judgeMagnitude(facts), "A-1").toEqual([]);
       for (const family of FAMILIES) {
         const truth = servedTruth(family);
@@ -642,7 +745,7 @@ test.describe(`T-05.4 gate: the coverage warning's magnitude, its absence, the h
       }
       expect.soft(truncation.defects, "A-5").toEqual([]);
       expect.soft(judgeOneLine(lines), "A-6").toEqual([]);
-      if (viewport.judgesArea) expect.soft(judgeAreas(areas), "A-4").toEqual([]);
+      if (viewport.areaFloors !== null) expect.soft(judgeAreas(areas, viewport.areaFloors), "A-4").toEqual([]);
     });
   }
 });
@@ -688,61 +791,75 @@ async function apiTruth(apiBase: string, key: SeriesKey, interval: string, decla
   return foldRows(body.rows, declared.knowledgeTimeMs);
 }
 
-test(`T-05.4 real data: A-1 against the API, A-4, A-5, A-6 in 5m/15m/1h/4h, then C-3 by probe (${SPEC})`, async ({ page, baseURL }) => {
-  test.setTimeout(400_000);
+test(`T-05.4 real data: A-1 against the API, A-4, A-5, A-6, A-7 in 5m/15m/1h/4h at 1280 and 1024, then C-3 by probe (${SPEC})`, async ({ page, baseURL }) => {
+  test.setTimeout(900_000);
   const apiBase = sentimentoApiBaseUrl();
   const readerPresent = await seriesWindowReaderPresent(apiBase);
   fact(SPEC, "series_window_reader_present", readerPresent);
   test.skip(!readerPresent, "universo FRACO: sem leitor de janela de md.series, /series-history recusa (skip não é verde)");
   const catalog = (await (await fetch(`${apiBase}/series-catalog`)).json()) as CatalogEnvelope;
-  await page.setViewportSize({ width: 1280, height: 800 });
 
-  for (const interval of REAGGREGATED_TFS) {
-    const declared = await openSymbol(page, baseURL ?? "", interval, `real-${interval}`);
-    const facts = await readChipFacts(page);
-    const ledgers = await readLedgers(page);
-    const lines = await readChipLines(page);
-    const areas = await readAreas(page);
-    const truncation = await judgeTruncation(page);
-    fact(SPEC, `real_${interval}`, { declared, facts, ledgers, lines, areas, truncation: truncation.readings });
+  for (const viewport of VIEWPORTS.filter((v) => v.areaFloors !== null)) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const interval of REAGGREGATED_TFS) {
+      const at = `${interval}@${viewport.name}`;
+      const declared = await openSymbol(page, baseURL ?? "", interval, `real-${interval}-${viewport.name}`);
+      const facts = await readChipFacts(page);
+      const ledgers = await readLedgers(page);
+      const lines = await readChipLines(page);
+      const areas = await readAreas(page);
+      const truncation = await judgeTruncation(page);
+      const forms = await readChipForms(page);
+      fact(SPEC, `real_${interval}_${viewport.name}`, { declared, facts, ledgers, lines, areas, forms, truncation: truncation.readings });
 
-    expect(judgeMagnitude(facts), `A-1 ${interval}`).toEqual([]);
-    for (const family of ["volume", "liquidation_short", "liquidation_long"] as const) {
-      const key = uniqueKey(catalog, family);
-      if (key === null) throw new Error(`the catalog has no unique ${family} entry for ${SYMBOL}`);
-      const truth = await apiTruth(apiBase, key, interval, declared);
-      const ledger = ledgers[FACT_KEY[family]];
-      expect(ledger, `${interval} ${family}: ledger`).toBeDefined();
-      expect(
-        { missing: ledger.missing, expected: ledger.expected, head: ledger.head },
-        `A-1 ${interval} ${family}: the page's coverage is the API's, on the page's own request`,
-      ).toEqual(truth);
-      const shown = facts.filter((f) => f.factKey === FACT_KEY[family]).map((f) => `${f.missing}/${f.expected}`);
-      expect(shown, `A-1/A-2 ${interval} ${family}: a chip iff something is missing outside the head`).toEqual(
-        truth.missing >= 1 ? [`${truth.missing}/${truth.expected}`] : [],
-      );
+      expect(judgeMagnitude(facts), `A-1 ${at}`).toEqual([]);
+      for (const family of ["volume", "liquidation_short", "liquidation_long"] as const) {
+        const key = uniqueKey(catalog, family);
+        if (key === null) throw new Error(`the catalog has no unique ${family} entry for ${SYMBOL}`);
+        const truth = await apiTruth(apiBase, key, interval, declared);
+        const ledger = ledgers[FACT_KEY[family]];
+        expect(ledger, `${at} ${family}: ledger`).toBeDefined();
+        expect(
+          { missing: ledger.missing, expected: ledger.expected, head: ledger.head },
+          `A-1 ${at} ${family}: the page's coverage is the API's, on the page's own request`,
+        ).toEqual(truth);
+        const shown = facts.filter((f) => f.factKey === FACT_KEY[family]).map((f) => `${f.missing}/${f.expected}`);
+        expect(shown, `A-1/A-2 ${at} ${family}: a chip iff something is missing outside the head`).toEqual(
+          truth.missing >= 1 ? [`${truth.missing}/${truth.expected}`] : [],
+        );
+      }
+      if (viewport.areaFloors !== null) expect.soft(judgeAreas(areas, viewport.areaFloors), `A-4 ${at}`).toEqual([]);
+      expect.soft(truncation.defects, `A-5 ${at}`).toEqual([]);
+      expect.soft(judgeOneLine(lines), `A-6 ${at}`).toEqual([]);
+      expect.soft(judgeForms(forms), `A-7 ${at}`).toEqual([]);
     }
-    expect.soft(judgeAreas(areas), `A-4 ${interval}`).toEqual([]);
-    expect.soft(truncation.defects, `A-5 ${interval}`).toEqual([]);
-    expect.soft(judgeOneLine(lines), `A-6 ${interval}`).toEqual([]);
   }
 
-  // C-3 on real data: the chips present are made to say the longest text, then everything is re-read.
+  // C-3 on real data: the chips present are made to say the longest text — the full one in the full
+  // form, the compact one in the compact form — then everything is re-read.
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await openSymbol(page, baseURL ?? "", "1h", `real-probe-${viewport.name}`);
     const probed = await page.evaluate(
-      ({ liquidationText, singleText }) => {
+      ({ liquidationText, singleText, liquidationCompact, singleCompact }) => {
         let n = 0;
         for (const chip of document.querySelectorAll<HTMLElement>("[data-coverage-chip]")) {
-          const visible = chip.querySelector("[data-coverage-visible]");
-          if (visible === null) continue;
-          visible.textContent = chip.closest('[data-testid="liquidation-pane"]') !== null ? liquidationText : singleText;
+          const full = chip.querySelector<HTMLElement>('[data-coverage-visible="full"]');
+          const compact = chip.querySelector<HTMLElement>('[data-coverage-visible="compact"]');
+          if (full === null || compact === null) continue;
+          const liquidation = chip.closest('[data-testid="liquidation-pane"]') !== null;
+          full.textContent = liquidation ? liquidationText : singleText;
+          compact.textContent = liquidation ? liquidationCompact : singleCompact;
           n += 1;
         }
         return n;
       },
-      { liquidationText: LONGEST_LIQUIDATION_TEXT, singleText: LONGEST_SINGLE_TEXT },
+      {
+        liquidationText: LONGEST_LIQUIDATION_TEXT,
+        singleText: LONGEST_SINGLE_TEXT,
+        liquidationCompact: LONGEST_LIQUIDATION_COMPACT,
+        singleCompact: LONGEST_SINGLE_COMPACT,
+      },
     );
     fact(SPEC, `real_probe_${viewport.name}_chips`, probed);
     if (probed === 0) {
@@ -754,9 +871,37 @@ test(`T-05.4 real data: A-1 against the API, A-4, A-5, A-6 in 5m/15m/1h/4h, then
     const lines = await readChipLines(page);
     const areas = await readAreas(page);
     const truncation = await judgeTruncation(page);
-    fact(SPEC, `real_probe_${viewport.name}`, { lines, areas, truncation: truncation.readings });
+    const forms = await readChipForms(page);
+    fact(SPEC, `real_probe_${viewport.name}`, { lines, areas, forms, truncation: truncation.readings });
     expect.soft(truncation.defects, `C-3 A-5 ${viewport.name}`).toEqual([]);
     expect.soft(judgeOneLine(lines), `C-3 A-6 ${viewport.name}`).toEqual([]);
-    if (viewport.judgesArea) expect.soft(judgeAreas(areas), `C-4 A-4 ${viewport.name}`).toEqual([]);
+    expect.soft(judgeForms(forms), `C-3 A-7 ${viewport.name}`).toEqual([]);
+    if (viewport.areaFloors !== null) expect.soft(judgeAreas(areas, viewport.areaFloors), `A-4 ${viewport.name}`).toEqual([]);
+  }
+});
+
+/** `K-1` of `gates/T-05.4-design-critique-C3.md`: F-5 on the universe that exists. In `4h`, with real
+ * data, on each of the four `PILOT_SYMBOLS` at 1240 and 1280: A-5 and A-7, with the legend width and
+ * where each protected phrase ends written to `facts.jsonl`. A symbol whose `A-5` fails with the FULL
+ * form painted sends the threshold back to the `ui-designer` (§10.7 F-5) — the threshold does not move
+ * silently in code. */
+test(`T-05.4 real data K-1: A-5 + A-7 in 4h on the four PILOT_SYMBOLS at 1240x800 and 1280x800 (${SPEC})`, async ({ page, baseURL }) => {
+  test.setTimeout(600_000);
+  const apiBase = sentimentoApiBaseUrl();
+  const readerPresent = await seriesWindowReaderPresent(apiBase);
+  test.skip(!readerPresent, "universo FRACO: sem leitor de janela de md.series, /series-history recusa (skip não é verde)");
+  for (const viewport of VIEWPORTS.filter((v) => v.width >= 1240)) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const symbol of PILOT_SYMBOLS) {
+      const at = `${symbol} 4h@${viewport.name}`;
+      await openSymbol(page, baseURL ?? "", "4h", `k1-${symbol}-${viewport.name}`, symbol);
+      const truncation = await judgeTruncation(page);
+      const forms = await readChipForms(page);
+      const lines = await readChipLines(page);
+      const scrollbarPx = await page.evaluate(() => window.innerWidth - document.documentElement.clientWidth);
+      fact(SPEC, `real_k1_${symbol}_${viewport.name}`, { forms, lines, scrollbarPx, truncation: truncation.readings });
+      expect.soft(truncation.defects, `K-1 A-5 ${at} (painted: ${forms.map((f) => f.painted.join("+")).join(", ")})`).toEqual([]);
+      expect.soft(judgeForms(forms), `K-1 A-7 ${at}`).toEqual([]);
+    }
   }
 });

@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import {
   COVERAGE_HEAD_GRACE_MS,
   coverageChipBody,
+  coverageChipCompactText,
   coverageChipText,
   coverageDataAttributes,
   coverageGridMsOf,
@@ -300,7 +301,7 @@ test("the null rule lives in the pure function: the component renders nothing ex
   const mark = componentSource(SYMBOL_CLIENT, "PartialCoverageMark");
   assert.match(mark, /const visible = coverageChipText\(legs\);\s*\n\s*if \(visible === null\) \{\s*\n\s*return null;/);
   assert.doesNotMatch(mark, /totalReaggregatedBuckets|reaggregatedBuckets === 0/, "the T-03.12 guard (rendered '0 de N') must not come back");
-  assert.match(mark, /<PartialCoverageGlyph \/>\s*\n\s*<span aria-hidden="true" data-coverage-visible="">/, "the glyph leads the word");
+  assert.match(mark, /<PartialCoverageGlyph \/>\s*\n[\s\S]*?<span aria-hidden="true" data-coverage-visible="full"/, "the glyph leads the word");
   assert.match(
     mark,
     /data-fact=\{`\$\{leg\.factKey\}:\$\{leg\.magnitude\.missingFacts\}\/\$\{leg\.magnitude\.expectedFacts\}`\}/,
@@ -321,4 +322,103 @@ test("MORDE: the T-03.12 guard and data-fact put back are caught", () => {
   );
   assert.notEqual(buckets, mark);
   assert.doesNotMatch(buckets, /\$\{leg\.magnitude\.missingFacts\}\/\$\{leg\.magnitude\.expectedFacts\}/);
+});
+
+// ── §10.5 (`C-3`) — the COMPACT form, painted below 1140 px of legend content width ───────────────────
+
+/** The five branches of `coverageChipBody`, each with the spans it must carry. */
+function compactCases(): ReadonlyArray<{ readonly name: string; readonly legs: Parameters<typeof coverageChipBody>[0]; readonly compact: string }> {
+  const single = summarize(hourlyWindow({ 5: 30, 6: 34 }));
+  const short = summarize(hourlyWindow({ 10: 12 }));
+  const long = summarize(hourlyWindow({ 10: 20, 30: 20 }));
+  const whole = summarize(hourlyWindow());
+  /** 48 hourly rows = 2 d: a leg whose denominator differs from the 4 d one. */
+  const shortWindow = summarize(hourlyWindow({ 2: 6 }).slice(0, 48));
+  return [
+    { name: "one series", legs: [{ label: "volume", magnitude: single }], compact: "faltam 1 h 4 min (1.1%)" },
+    {
+      name: "two legs, same shortfall",
+      legs: [
+        { label: "short", magnitude: single },
+        { label: "long", magnitude: single },
+      ],
+      compact: "faltam 1 h 4 min (1.1%)",
+    },
+    {
+      name: "one leg of two",
+      legs: [
+        { label: "short", magnitude: whole },
+        { label: "long", magnitude: long },
+      ],
+      compact: "long: faltam 40 min (0.7%)",
+    },
+    {
+      name: "two legs, shared denominator",
+      legs: [
+        { label: "short", magnitude: short },
+        { label: "long", magnitude: long },
+      ],
+      compact: "short: faltam 12 min (0.2%) · long: faltam 40 min (0.7%)",
+    },
+    {
+      name: "two legs, different denominators",
+      legs: [
+        { label: "short", magnitude: shortWindow },
+        { label: "long", magnitude: long },
+      ],
+      compact: "short: faltam 6 min (0.2%) · long: faltam 40 min (0.7%)",
+    },
+  ];
+}
+
+test("C-3: the five compact forms — no `cobertura parcial — `, no denominator", () => {
+  for (const { name, legs, compact } of compactCases()) {
+    assert.equal(coverageChipCompactText(legs), compact, name);
+    assert.doesNotMatch(compact, /cobertura parcial/, name);
+    assert.doesNotMatch(compact, / de \d/, `${name}: no \` de <span>\``);
+  }
+});
+
+test("C-3: compact is null exactly when the full chip is null", () => {
+  const whole = summarize(hourlyWindow());
+  assert.equal(coverageChipText([{ label: "volume", magnitude: whole }]), null);
+  assert.equal(coverageChipCompactText([{ label: "volume", magnitude: whole }]), null);
+  for (const { name, legs } of compactCases()) {
+    assert.notEqual(coverageChipText(legs), null, name);
+    assert.notEqual(coverageChipCompactText(legs), null, name);
+  }
+});
+
+test("C-3 (CI-1): the compact form IS the full form minus the two declared pieces, so nothing else is lost", () => {
+  for (const { name, legs } of compactCases()) {
+    const full = coverageChipText(legs) ?? "";
+    const compact = coverageChipCompactText(legs) ?? "";
+    assert.ok(compact.length < full.length, `${name}: compact (${compact.length}) < full (${full.length})`);
+    const stripped = full
+      .replace(/^cobertura parcial — /, "")
+      .replace(/ de \d[^()]*(?= \()/g, "")
+      .replace(/, de \d.*$/, "");
+    assert.equal(compact, stripped, `${name}: compact = full − prefix − denominator`);
+  }
+});
+
+test("MORDE C-3 (ablation C3-4 at unit level): the full body returned as the compact form is caught in all five branches", () => {
+  for (const { name, legs, compact } of compactCases()) {
+    assert.notEqual(coverageChipBody(legs), compact, `${name}: the full body must NOT pass as the compact form`);
+    assert.notEqual(coverageChipText(legs), compact, name);
+  }
+});
+
+test("C-3: the chip renders BOTH forms, aria-hidden, and the legend is the named container that picks one", () => {
+  const mark = componentSource(SYMBOL_CLIENT, "PartialCoverageMark");
+  assert.match(
+    mark,
+    /<span aria-hidden="true" data-coverage-visible="full" className="@max-\[1140px\]\/legend:hidden">\s*\{visible\}/,
+  );
+  assert.match(
+    mark,
+    /<span aria-hidden="true" data-coverage-visible="compact" className="hidden @max-\[1140px\]\/legend:inline">\s*\{coverageChipCompactText\(legs\)\}/,
+  );
+  const legend = componentSource(SYMBOL_CLIENT, "PaneLegend");
+  assert.match(legend, /data-pane-legend=""\s*\n\s*className="@container\/legend /);
 });
