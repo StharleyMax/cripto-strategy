@@ -1832,11 +1832,22 @@ Desenho: [`handoff/T-05.1-desenho.md`](../docs/context/paineis-de-fluxo/handoff/
 - **`windowEndMsInclusive` continua na grade de 1 min, de propósito** — é o `window_end_ms` do pedido, e o backend
   devolve as mesmas linhas para `end − 1 min` e `end − step` (`e2e/18`). A leitura do readout usa
   `lastGridInstant(window, axisStepMs)`.
-- **⚠️ Gotcha — a montagem não pode paginar.** Depois do quadro de guarda da montagem, a biblioteca ainda reassenta
-  o layout e re-reporta a faixa uma fração de barra deslocada (`from = −0,07` em 4h). Em 4h a vista é o eixo inteiro,
-  e esse eco caía dentro do gatilho de página: a montagem pedia **10** `/series-history` sem gesto `[MEDIDO
-  2026-10-02, e2e/39]`. O host agora só leva uma mudança de faixa ao store **depois do primeiro `pointerdown` ou
-  `wheel` no gráfico**. Falsificador: `e2e/39` (`browser_history_requests_at_mount:4h` = 0, e o primeiro arrasto
-  em 4h pede página).
+- **⚠️ Gotcha — a montagem não pode paginar, e quem decide isso é a POSIÇÃO, no pager.** Depois do quadro de guarda
+  da montagem, a biblioteca ainda reassenta o layout e re-reporta a faixa uma fração de barra deslocada
+  (`from = −0,07` em 4h, `263,8` por `264` em 15m). Em 4h a vista é o eixo inteiro, nasce dentro do gatilho de
+  página, e esse eco fazia a montagem pedir **10** `/series-history` (1 página) sem gesto `[MEDIDO 2026-10-02,
+  e2e/39]`. O conserto é `isLeftOfMountView` (`timeframe-window.ts`), chamado em `use-history-pager.ts::onCandidateRange`:
+  não pagina enquanto `range.fromMs > mountViewFrom − step/2`, com `mountViewFrom` do **mesmo**
+  `mountViewRange(axis)` que o `axis-sync-provider.tsx` usa para enquadrar. Só morde em 4h; nos outros TFs o
+  gatilho já fica muito à esquerda da vista. O primeiro conserto (`ab29321`, um gate de gesto no host que calava
+  o `notifyPanelRangeChanged` até o 1º `pointerdown`/`wheel`) foi **revertido** pela revisão do
+  `frontend-architect` (`handoff/T-05.1-revisao-ab29321.md`): filtrava pela origem do evento (excluía teclado e
+  chamada programática) e, depois do 1º gesto, deixava o zoom-in em 4h paginar. Falsificadores: `e2e/39`
+  (montagem 4h = 0 pedidos; 1º arrasto em 4h pede página; **zoom-in pela roda em 4h = 0 pedidos**, que dá 10 sob
+  `ab29321`) e `timeframe-window.test.ts` (eco −0,0717 e zoom-in não paginam, −0,6 barra pagina; `step/2 → 0`
+  reprova 2).
+- **e2e que leem a vista na montagem:** com 120 barras, `e2e/20`, `22`, `35` (dado real) e `37` dão **zoom-out pela
+  roda** antes de agir (até o piso de `minBarSpacing`, ~2.400 slots em 1m: a geometria que a montagem tinha antes).
+  O `37` também passou a converter instante → slot pelo passo do TF (`5m` = 5 min).
 - **Falsificador do eixo:** `e2e/39-axis-step-per-timeframe.spec.ts` — `gridSlots === initialBars` nos 5 TFs.
   Com o passo trocado por 1 min nos dois pontos acima, 5m/15m/1h/4h reprovam (5.760/5.760/10.080/10.080) e 1m passa.
