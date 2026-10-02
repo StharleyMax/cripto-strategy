@@ -830,7 +830,7 @@ refs = [
 
 [[tasks]]
 id = "T-06.3"
-title = "[infra] 06 · API com mais de um worker e as 10 series da tela servidas em paralelo"
+title = "[infra][sentimento] 06 · API com mais de um worker e as 10 series da tela servidas em paralelo"
 components = ["infra", "sentimento"]
 status = "todo"
 phase = "06"
