@@ -56,13 +56,13 @@ import { alignToTimeframeStart } from "./canonical-grid.ts";
 
 export const ONE_DAY_MS = 24 * 60 * 60_000;
 
-/**
- * The four days `PRD-006 §2`/item `5.1` specifies the `/symbol` route with (quoted inside
- * `ADR-034:127`), as a DURATION rather than as a pair of dates. This is the one number that
- * survived the literal window, and it survived because "how much history" is a product choice,
- * while "which four days" is a fact about the clock.
+/*
+ * `S2_WINDOW_SPAN_MS` (4 days, `PRD-006 §2`/item `5.1`) used to live here as the ONE span of every
+ * timeframe. `paineis-de-fluxo` `T-05.1` removed it (`handoff/T-05.1-desenho.md` §2): a span in
+ * TIME gives `1h` 96 bars and `4h` 24, fewer than the view frames. How much history to fetch is a
+ * transport policy counted in BARS per timeframe, and it lives in `web`
+ * (`app/symbol/timeframe-window.ts`). This module still takes the span as an argument.
  */
-export const S2_WINDOW_SPAN_MS = 4 * ONE_DAY_MS;
 
 /** A half-open window over the canonical grid, plus the UTC dates it touches. */
 export interface S2Window {

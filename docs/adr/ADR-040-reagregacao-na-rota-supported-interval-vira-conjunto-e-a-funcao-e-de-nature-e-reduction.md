@@ -162,6 +162,55 @@ origem mesmo em buckets de cobertura alta (−2,2% a −4,5%, `pos=0` em 4/4, `n
 `SPEC-008`/`[M-9]`. `P-B` mede a **presença**, não a **fidelidade**; confundir as duas seria
 comprar de volta o `rc=0` ambíguo por outro caminho.
 
+### Adendo 2026-10-02 — `T-05.2` (`paineis-de-fluxo`): na liquidação, o que é fato mudou; `P-B` não
+
+**Origem.** Uso real do owner: o pane de liquidação de BTCUSDT aparecia **100% parcial** na janela de
+4 dias (384/384 buckets de `15m` com `present < expected`) `[DOC: handoff/FIX-uso-2026-10-02.md §D-B]`.
+O motivo era a semântica do dado, não a da cobertura: o coletor só gravava minuto **com** liquidação, e
+o minuto consultado e vazio virava buraco no store. O desenho é do `quant-architect`
+(`docs/context/paineis-de-fluxo/handoff/T-05.2-desenho.md`). **O owner não decidiu a semântica abaixo.**
+A fala dele foi uma pergunta, *"Realmente faz-se necessário?"* `[PREMISSA-OWNER: 2026-10-02]`, e o item
+5.2 do plano foi redigido pelo orquestrador. Por isso o rótulo das decisões é `[INFERRED]`.
+
+- **D1 — a evidência de consulta é a resposta `answered`, consumida no mesmo processo e no mesmo
+  instante em que chega.** `answered` = `2xx`, JSON bem formado e corpo que **cita** o símbolo. Um `200`
+  com `[]` não basta (foram 618 gaps `UNANSWERED_SYMBOL` só de BTCUSDT entre 2026-09-14 e 2026-09-30,
+  `[DOC: desenho §1, q2]`). A evidência **não** é reconstruída do `md.ingest_run`, porque a coluna
+  `window` é o relógio do run e não a janela pedida. **A coluna `window` não é reinterpretada**: ela é
+  coluna de contrato de `ADR-008/D3`, e o `sha256` da projeção canônica depende dela. `[INFERRED]`
+- **D2 — o zero nasce na mesma fronteira do não-zero (`is_settled_bucket`, `RS-3.4`), sem margem
+  extra.** O primeiro run bem-sucedido após o fechamento capturou 5.846 de 5.848 buckets não-vazios, e
+  as 2 falhas foram perda no nosso pipeline, não atraso do fornecedor `[DOC: desenho §1, q7/q8]`. Se o
+  falsificador F-1 do desenho der `> 0` em produção, a margem entra com o número que F-1 medir.
+  `[INFERRED]`
+- **D3 — o zero legítimo nasce na INGESTÃO, como `SidePoint(t, "0")` intercalado antes de
+  `classify_side_points`.** As condições são seis: (1) `answered`; (2) `t ≥ ceil_60(from)`; (3)
+  assentado; (4) `t` ausente da resposta; (5) com `≥ 1.500` pontos na resposta, nenhum zero antes do
+  menor `t` devolvido (retenção por contagem, `docs/medicao-coinalyze.md §1.3`); (6) uma publicação por
+  processo e por `(símbolo, lado, t)`. O `ZL-2` fica intacto **por construção**, porque o zero candidato
+  passa pela mesma classificação. O anti-lookahead também fica intacto: o zero sai com
+  `available_at = instante da publicação ≥ bucket_end`, e um replay com `knowledge_time` anterior não o
+  vê. Código: `domain/liquidation_collection.interleave_consulted_zeros` e
+  `use_cases/collect_liquidation_history._publish_settled_points`. `[INFERRED]`
+- **D4 — `BucketCoverage` NÃO muda, nem para `EVENT` nem para `FLOW`.** `present` continua sendo "fatos
+  nativos distintos admitidos", e `expected` continua sendo "slots de 1 min". Quem muda é o que é fato:
+  o minuto consultado e vazio agora é uma linha `0` e conta em `present`. **Não há nenhum
+  `if nature == EVENT` na leitura** (`series_history.py`, `as_of_accessor.py` e
+  `liquidation_zero_legitimacy.py` intocados). A alternativa `expected := present` para `EVENT` foi
+  **recusada**, porque daria 100% sempre e esconderia o coletor parado. `[INFERRED]`
+
+**O que continua parcial de verdade na liquidação:** coletor parado por mais que o lookback de 3 h;
+símbolo sem resposta em todos os ciclos que cobriam o minuto; lado ainda sem não-zero desde o boot
+(`ZL-2`); saída de run perdida no pipeline; e a **cabeça**, o minuto fechado ainda não consultado (até
+cerca de uma cadência). O último caso é latência, não buraco, e quem decide se a tela o silencia é o
+`web` (item 5.4).
+
+**O que esta seção NÃO muda.** `P-B` (servir sempre, com o par de inteiros, sem limiar) fica de pé
+como está escrito acima. `RN-1` (`PRD-007` §5.4) também: o buraco do store continua `SEM_PONTO`, e só
+mudou o que o buraco significa (agora é "não consultado", não "sem liquidação"). A re-população do
+histórico já gravado usa `LIQUIDATION_FIRST_CYCLE_LOOKBACK_S`, que vale só para o primeiro ciclo após
+o boot e tem default igual ao lookback de regime, `[DOC: infra/collectors_cli.py]`.
+
 ---
 
 ## D4 · `(RATIO, POINT)`: *"recomputa dos componentes"* é recusado por **impossibilidade medida**

@@ -251,11 +251,21 @@ services:
   # The long/short thread spends 4 calls/min on `/futures/data/*`, a family that answers `200`
   # with ZERO `x-mbx-*` headers (`domain/clock_skew.py`, `T-03.7`) — so its weight is UNREADABLE
   # rather than zero, and its runs carry `WEIGHT_NOT_READABLE` instead of a derived number.
-  # The boot backfill publishes `7 x 1440 x |symbols|` entries onto the Redis stream, under the
-  # `REDIS_STREAM_MAXLEN` cap (default 100.000, `redis_stream_bus.py`); with the four-symbol
-  # universe that peak is 40.320, i.e. 40% of the cap. An operator who raises
-  # `KLINES_BACKFILL_DAYS` past ~17 days on four symbols must raise `REDIS_STREAM_MAXLEN` with
-  # it, or `XADD ... MAXLEN ~` will trim entries the writer has not drained yet.
+  # The boot backfill publishes `7 x 1440 x |symbols| x 6` entries onto the Redis stream — SIX
+  # rows per bar since `T-01.3` of `SPEC-008` (volume, CVD and the four OHLC readings) — under
+  # the `REDIS_STREAM_MAXLEN` cap (default 100.000, `redis_stream_bus.py`). With four symbols
+  # that is 241.920 entries, 242% of the cap.
+  #
+  # ⚠️ CORRECAO, 2026-10-02 (`T-05.3` de `paineis-de-fluxo`). Este paragrafo dizia "40.320, 40%
+  # do teto" — a conta de UMA linha por barra, que deixou de valer quando a barra virou seis
+  # linhas, e ninguem refez. Publicado sem freio, o boot passava do teto e `XADD MAXLEN ~`
+  # descartava o que o escritor ainda nao tinha lido: no boot de 2026-10-01T20:11Z o `BTCUSDT`
+  # (o primeiro a ser andado) guardou 1.248 de 60.480 linhas
+  # `[MEDIDO 2026-10-02, docs/context/paineis-de-fluxo/gates/T-05.3-build.md]`. Desde `T-05.3`
+  # cada pagina do walk ESPERA o lag do grupo `REDIS_STREAM_GROUP` cair abaixo de 1/5 do teto
+  # (`redis_stream_backpressure.StreamDrainGate`), entao o boot fica mais lento — minutos, no
+  # ritmo do escritor — e nao perde linha; o ciclo seguinte anda a partir do watermark e fecha
+  # os minutos que o boot lento deixou para tras.
   #
   # Open interest is CHEAP against that cap by a factor of five (5-minute grid, not 1-minute):
   # `7 x 288 x 4 = 8.064` entries at boot, 8% of the default cap, and 4 entries per 60 s cycle.

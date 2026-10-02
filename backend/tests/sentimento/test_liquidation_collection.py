@@ -22,18 +22,26 @@ from src.modules.sentimento.domain.liquidation_collection import (
     LIQUIDATION_BUCKET_SECONDS,
     LIQUIDATION_HISTORY_PATH,
     QUOTA_CEILING,
+    RETENTION_POINT_FLOOR,
     InvalidCadenceError,
     QuotaExhaustedError,
     RetryLedger,
     SlidingQuotaWindow,
     answered_symbols,
+    first_whole_bucket_start,
+    interleave_consulted_zeros,
     is_settled_bucket,
     liquidation_history_path,
     side_points,
     spread_interval_seconds,
     unanswered_symbols,
 )
-from src.modules.sentimento.domain.liquidation_zero_legitimacy import LiquidationSide
+from src.modules.sentimento.domain.liquidation_zero_legitimacy import (
+    LiquidationSide,
+    NonMonotonicSidePointsError,
+    SidePoint,
+    classify_side_points,
+)
 
 _SYMBOL = "BTCUSDT_PERP.A"
 
@@ -279,3 +287,150 @@ def test_a_ledger_that_permits_no_attempt_is_refused() -> None:
     """`max_attempts=0` is a disabled collector wearing a retry policy's name."""
     with pytest.raises(ValueError, match="disabled collector"):
         RetryLedger(max_attempts=0)
+
+
+# ── `T-05.2` — A CONSULTED, EMPTY MINUTE IS A CANDIDATE ZERO (`D3`, conditions 2–5) ───────────
+
+# `m0` of the window: a whole minute (`1_789_200_600 / 60 = 29_820_010`).
+_M0 = 1_789_200_600
+# Ten closed minutes `m0..m9`; `m10` is in progress (`now = m10 + 30 s`).
+_NOW_MS = (_M0 + 10 * LIQUIDATION_BUCKET_SECONDS + 30) * 1000
+
+
+def _minute(index: int) -> int:
+    """Return the start of minute `index` of the window."""
+    return _M0 + index * LIQUIDATION_BUCKET_SECONDS
+
+
+def _zero_times(points: tuple[SidePoint, ...]) -> list[int]:
+    """Return the minutes that came back as a candidate `"0"`."""
+    return [point.event_time for point in points if point.raw_quantity == "0"]
+
+
+def test_every_settled_minute_without_a_point_becomes_a_candidate_zero() -> None:
+    """Conditions 3 and 4: the nine empty closed minutes, and never the answered one."""
+    settled = (SidePoint(event_time=_minute(3), raw_quantity="12.5"),)
+    merged = interleave_consulted_zeros(
+        settled, window_from_epoch_seconds=_M0, observed_at_ms=_NOW_MS, n_points_in_response=1
+    )
+    assert _zero_times(merged) == [_minute(i) for i in range(10) if i != 3]
+    assert [point.event_time for point in merged] == [_minute(i) for i in range(10)]
+    assert SidePoint(event_time=_minute(3), raw_quantity="12.5") in merged
+
+
+def test_the_answered_minute_is_never_duplicated_by_a_candidate() -> None:
+    """CALA: a wire zero at `m3` stays ONE point — a duplicate would trip the monotonic guard."""
+    settled = (SidePoint(event_time=_minute(3), raw_quantity="0"),)
+    merged = interleave_consulted_zeros(
+        settled, window_from_epoch_seconds=_M0, observed_at_ms=_NOW_MS, n_points_in_response=1
+    )
+    assert [point.event_time for point in merged].count(_minute(3)) == 1
+    classify_side_points(merged, seen_nonzero=True)  # strictly increasing, or this raises
+
+
+def test_the_minute_in_progress_never_becomes_a_zero() -> None:
+    """Condition 3 at its boundary: `m9` closes exactly at `m10`, and `m10` never qualifies.
+
+    THE MUTATION: `<` for `<=` in `is_settled_bucket`, or a range one minute too long, moves
+    the newest zero by one minute — and a zero published for a minute still running is the
+    anti-lookahead rule inverted, frozen forever by `argmin(observed_at)`.
+    """
+    at_close = interleave_consulted_zeros(
+        (),
+        window_from_epoch_seconds=_M0,
+        observed_at_ms=_minute(10) * 1000,
+        n_points_in_response=0,
+    )
+    just_before = interleave_consulted_zeros(
+        (),
+        window_from_epoch_seconds=_M0,
+        observed_at_ms=_minute(10) * 1000 - 1,
+        n_points_in_response=0,
+    )
+    assert _zero_times(at_close)[-1] == _minute(9)
+    assert _zero_times(just_before)[-1] == _minute(8)
+    assert _minute(10) not in _zero_times(
+        interleave_consulted_zeros(
+            (), window_from_epoch_seconds=_M0, observed_at_ms=_NOW_MS, n_points_in_response=0
+        )
+    )
+
+
+def test_a_misaligned_from_never_claims_the_minute_that_straddles_it() -> None:
+    """Condition 2: `from = m0 + 1 s` starts the zeros at `m1`; `from = m0` starts them at `m0`.
+
+    THE MUTATION: flooring instead of ceiling claims `m0`, whose first second the request may
+    not have covered — the API's inclusivity of `from` is `[NÃO SEI]`.
+    """
+    misaligned = interleave_consulted_zeros(
+        (), window_from_epoch_seconds=_M0 + 1, observed_at_ms=_NOW_MS, n_points_in_response=0
+    )
+    aligned = interleave_consulted_zeros(
+        (), window_from_epoch_seconds=_M0, observed_at_ms=_NOW_MS, n_points_in_response=0
+    )
+    assert _zero_times(misaligned)[0] == _minute(1)
+    assert _zero_times(aligned)[0] == _minute(0)
+    assert first_whole_bucket_start(_M0 + 59) == _minute(1)
+    assert first_whole_bucket_start(_M0) == _M0
+
+
+def test_a_response_at_the_retention_floor_gets_no_zero_before_its_oldest_point() -> None:
+    """Condition 5: `1.500` points may be a retention cut, `1.499` cannot be.
+
+    THE MUTATION: without the guard, a re-population whose window outlived the provider's
+    point-count retention `[DOC: docs/medicao-coinalyze.md §1.3]` would write `0` over minutes
+    the provider had simply forgotten.
+    """
+    settled = (SidePoint(event_time=_minute(5), raw_quantity="3"),)
+    at_floor = interleave_consulted_zeros(
+        settled,
+        window_from_epoch_seconds=_M0,
+        observed_at_ms=_NOW_MS,
+        n_points_in_response=RETENTION_POINT_FLOOR,
+    )
+    below_floor = interleave_consulted_zeros(
+        settled,
+        window_from_epoch_seconds=_M0,
+        observed_at_ms=_NOW_MS,
+        n_points_in_response=RETENTION_POINT_FLOOR - 1,
+    )
+    assert RETENTION_POINT_FLOOR == 1500
+    assert _zero_times(at_floor) == [_minute(i) for i in range(6, 10)]
+    assert _zero_times(below_floor) == [_minute(i) for i in range(10) if i != 5]
+
+
+def test_a_response_at_the_floor_with_no_settled_point_gets_no_zero_at_all() -> None:
+    """No oldest point to anchor on ⇒ the whole window may be past the retention cut."""
+    assert (
+        interleave_consulted_zeros(
+            (),
+            window_from_epoch_seconds=_M0,
+            observed_at_ms=_NOW_MS,
+            n_points_in_response=RETENTION_POINT_FLOOR,
+        )
+        == ()
+    )
+
+
+def test_a_disordered_wire_stays_disordered_so_the_monotonic_guard_still_fires() -> None:
+    """A MERGE, not a sort: sorting here would repair the provider's order in silence."""
+    settled = (
+        SidePoint(event_time=_minute(4), raw_quantity="1"),
+        SidePoint(event_time=_minute(2), raw_quantity="1"),
+    )
+    merged = interleave_consulted_zeros(
+        settled, window_from_epoch_seconds=_M0, observed_at_ms=_NOW_MS, n_points_in_response=2
+    )
+    with pytest.raises(NonMonotonicSidePointsError):
+        classify_side_points(merged, seen_nonzero=True)
+
+
+def test_a_point_count_smaller_than_the_settled_points_is_refused() -> None:
+    """The settled points are a subset of the response; fewer response points is a caller bug."""
+    with pytest.raises(ValueError, match="subset of the response"):
+        interleave_consulted_zeros(
+            (SidePoint(event_time=_minute(1), raw_quantity="1"),),
+            window_from_epoch_seconds=_M0,
+            observed_at_ms=_NOW_MS,
+            n_points_in_response=0,
+        )

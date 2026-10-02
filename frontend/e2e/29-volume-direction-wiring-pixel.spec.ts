@@ -312,6 +312,50 @@ async function readPane(page: Page): Promise<PaneReading> {
   );
 }
 
+/**
+ * `paineis-de-fluxo` `T-05.1` — the mount now frames the last `VIEW_BARS` (120) bars: 2 h at `1m`,
+ * inside ONE of the stub's 240-minute runs (or its 120-minute gap), so the screen held one direction
+ * and the verdict was `INCONCLUSIVO: only 0 up-candle columns` (`make verify` of 2026-10-02). The
+ * wheel zooms OUT (positive `deltaY`) with the cursor on the LAST bar, so the right edge stays put and
+ * the span grows leftward only, until it stops growing: the library's `minBarSpacing` floor, ~2.400
+ * slots, the geometry the mount had before `T-05.1` and on which `MIN_COLUMNS_PER_DIRECTION` and
+ * `MIN_NEUTRAL_RUN_COLUMNS` were set (same recipe as `e2e/37`). The 5.760-slot axis is longer than
+ * the floor, so the view never reaches the paging trigger. Bounded (R9).
+ */
+const ZOOM_OUT_STEP_DELTA = 100;
+const ZOOM_OUT_MAX_STEPS = 200;
+/** Below this the wheel did not take the view out of one run, and the verdict would be blind. */
+const ZOOM_OUT_MIN_SPAN_SLOTS = 2 * CYCLE_MINUTES;
+
+async function visibleSpan(page: Page): Promise<{ readonly from: number; readonly to: number }> {
+  const host = page.locator(`[data-testid="${CHART_HOST_TESTID}"]`);
+  return {
+    from: Number(await host.getAttribute("data-visible-logical-from")),
+    to: Number(await host.getAttribute("data-visible-logical-to")),
+  };
+}
+
+async function zoomOutToFloor(page: Page): Promise<void> {
+  const box = await page.locator(`[data-testid="${PRICE_PANE_TESTID}"]`).boundingBox();
+  if (box === null) throw new Error("the price pane has no box");
+  let range = await visibleSpan(page);
+  fact(SPEC, "mount_visible_span_slots", Number((range.to - range.from).toFixed(2)));
+  let steps = 0;
+  for (; steps < ZOOM_OUT_MAX_STEPS; steps += 1) {
+    const span = range.to - range.from;
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height * 0.5);
+    await page.mouse.wheel(0, ZOOM_OUT_STEP_DELTA);
+    await page.waitForTimeout(60);
+    range = await visibleSpan(page);
+    if (Math.abs(range.to - range.from - span) < 0.5) break;
+  }
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(300);
+  range = await visibleSpan(page);
+  fact(SPEC, "zoomed_out", { steps, from: range.from, to: range.to });
+  expect(range.to - range.from, "o zoom-out não afastou a vista para além de um ciclo do stub").toBeGreaterThanOrEqual(ZOOM_OUT_MIN_SPAN_SLOTS);
+}
+
 interface Verdict {
   readonly compared: number;
   readonly comparedUp: number;
@@ -373,6 +417,8 @@ test(`T-02.3: no app real, a barra de volume toma a direção da vela da mesma c
     await page.waitForTimeout(1_000);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     expect(stub.unknownIds(), "the page asked for a series_key_id the stub does not know — the keys drifted").toBe(0);
+    await zoomOutToFloor(page);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
     const reading = await readPane(page);
     const verdict = judge(reading.columns);

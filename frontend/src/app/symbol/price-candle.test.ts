@@ -55,10 +55,13 @@ import {
   resolveTrailingWindow,
   FIVE_MINUTES_MS,
   S2_PRICE_USE,
-  S2_WINDOW_SPAN_MS,
   type CandlestickItem,
   type WhitespaceItem,
 } from "../../charts/index.ts";
+
+/** The 4-day fixture span — `S2_WINDOW_SPAN_MS` until `paineis-de-fluxo` `T-05.1` moved the route's
+ * span to bars per timeframe (`timeframe-window.ts`); at `1m` it is still 4 days (5.760 bars). */
+const FOUR_DAYS_MS = 4 * 24 * 60 * 60_000;
 import { chartConstructorOptions } from "./chart-options.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
@@ -78,7 +81,7 @@ const ONE_MINUTE_MS = 60_000;
 const FIXTURE_WINDOW = resolveTrailingWindow({
   nowMs: Date.UTC(2026, 7, 24, 0, 0, 0),
   lagMs: 0,
-  spanMs: S2_WINDOW_SPAN_MS,
+  spanMs: FOUR_DAYS_MS,
   alignmentMs: FIVE_MINUTES_MS,
 });
 const FIRST_BUCKET_MS = FIXTURE_WINDOW.startMs;
@@ -163,6 +166,7 @@ async function measureCandles(rows: OhlcHistoryRows): Promise<CandleMeasurement>
   const assembly = assembleOhlcCandles(rows);
   const panels = buildS2Panels({
     window: FIXTURE_WINDOW,
+    axisStepMs: ONE_MINUTE_MS,
     candles: assembly.candles,
     priceUse: S2_PRICE_USE,
     oiPoints: [],
@@ -351,6 +355,7 @@ test("the `volume` filler never reaches the canvas — the items carry OHLC and 
   const assembly = assembleOhlcCandles(ohlcRows());
   const panels = buildS2Panels({
     window: FIXTURE_WINDOW,
+    axisStepMs: ONE_MINUTE_MS,
     candles: assembly.candles,
     priceUse: S2_PRICE_USE,
     oiPoints: [],

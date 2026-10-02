@@ -43,17 +43,20 @@ import {
   resolveTrailingWindow,
   runHeadlessChart,
   S2_PRICE_USE,
-  S2_WINDOW_SPAN_MS,
   type CandlestickItem,
   type WhitespaceItem,
 } from "../../charts/index.ts";
+
+/** The 4-day fixture span — `S2_WINDOW_SPAN_MS` until `paineis-de-fluxo` `T-05.1` moved the route's
+ * span to bars per timeframe (`timeframe-window.ts`); at `1m` it is still 4 days (5.760 bars). */
+const FOUR_DAYS_MS = 4 * 24 * 60 * 60_000;
 
 /** The same 4-day span the route asks for, over a pinned clock reading — see this file's
  * header for why the window is derived here instead of imported. */
 const WINDOW = resolveTrailingWindow({
   nowMs: Date.UTC(2026, 7, 24, 0, 0, 0),
   lagMs: 0,
-  spanMs: S2_WINDOW_SPAN_MS,
+  spanMs: FOUR_DAYS_MS,
   alignmentMs: FIVE_MINUTES_MS,
 });
 const DAYS = WINDOW.days;
@@ -103,6 +106,7 @@ test("CA-F2-5: X coordinates for real event_time instants stay within 0.5px acro
 
   const pricePanel = buildS2Panels({
     window: WINDOW,
+    axisStepMs: ONE_MINUTE_MS,
     candles,
     priceUse: S2_PRICE_USE,
     oiPoints: [],

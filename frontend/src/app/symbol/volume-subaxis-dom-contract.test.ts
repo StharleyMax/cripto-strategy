@@ -127,10 +127,13 @@ test("C4: the screen declares the readable horizon — first readable instant AN
 test("C4: the request this render was built from is on the root element, so the screen is auditable", () => {
   // What makes `e2e/08` able to cross-check the DOM against `/series-history` over EXACTLY the
   // window the server used — instead of re-deriving it from the spec's own clock, which races,
-  // or seeding Postgres, which `[P-seed]` forbids.
+  // or seeding Postgres, which `[P-seed]` forbids. ⚠️ `T-05.1`: the end stays on the 1-MINUTE grid
+  // on purpose, even at 1h/4h — it is the REQUEST's `window_end_ms`, and the backend answers the
+  // same rows for `end − 1 min` and `end − step` (`T-05.1-desenho.md` §1, `e2e/18`). Pointing it at
+  // the axis step would move the audited request away from the one the server actually received.
   for (const attribute of [
     /data-window-start-ms=\{panels\.window\.startMs\}/,
-    /data-window-end-ms-inclusive=\{lastInstantMs\(panels\)\}/,
+    /data-window-end-ms-inclusive=\{lastInstantMs\(panels, ONE_MINUTE_MS\)\}/,
     /data-knowledge-time-ms=\{knowledgeTimeMs\}/,
   ]) {
     assert.match(source, attribute, `the root element must declare ${attribute}`);

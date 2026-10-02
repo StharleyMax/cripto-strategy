@@ -1,10 +1,18 @@
 """`T-05.8`: the SPARSE contract of `sum_liquidation` — absence is absence, never zero.
 
-Plan `05` item 5.4 and `RN-1`: a grid instant with no liquidation is `SEM_PONTO`, and a
-projection that filled the hole with `0` would publish a fact the source never stated. This is
-not a corner case on this series — it is the COMMON one: only **20,2%** of 1-minute buckets
-carry a liquidation at all `[MEDIDO 2026-09-12, n=14.344 buckets possiveis, 2.900 preenchidos,
-docs/context/cinco-metricas-do-core/gates/retencao-liquidation-history.md]`.
+Plan `05` item 5.4 and `RN-1`: a grid instant with NO ROW in the store is `SEM_PONTO`, and a
+projection that filled the hole with `0` would publish a fact the source never stated.
+
+`[T-05.2 UPDATE, 2026-10-02]` WHAT A HOLE MEANS CHANGED, AND THE READ RULE DID NOT. Until
+`T-05.2` a hole meant "no liquidation" — only **20,2%** of 1-minute buckets carry one
+`[MEDIDO 2026-09-12, n=14.344 buckets possiveis, 2.900 preenchidos,
+docs/context/cinco-metricas-do-core/gates/retencao-liquidation-history.md]`, and the other
+79,8% were left as holes. Since `T-05.2` the collector WRITES a consulted, empty minute as a `0`
+row (`use_cases/collect_liquidation_history._publish_settled_points`), so a hole now means
+"NOT CONSULTED" — the collector was down, the symbol went unanswered, or the side had not yet
+proved itself (`ZL-2`). Either way the read path must not fill it, which is why every test
+below still holds unedited; the two `T-05.2` tests at the end pin the other half, that a `0`
+row the collector DID write is served as a fact, and only through `R-1`.
 
 WHAT THIS MODULE MEASURES, AND WHY IT IS NOT A TEST OF `as_of`. `as_of` already has its own
 suite, and `CARRY_FORWARD_BY_NATURE[Nature.FLOW] is False` is already pinned there. What was
@@ -45,6 +53,7 @@ from src.modules.sentimento.domain.provenance import (
 )
 from src.modules.sentimento.domain.series_catalog import SeriesCatalog, SeriesCatalogEntry
 from src.modules.sentimento.domain.series_history_report import (
+    BucketCoverage,
     PanelGridVerdict,
     SeriesHistoryReport,
 )
@@ -169,9 +178,10 @@ def _sparse_observations(
 ) -> tuple[Observation, ...]:
     """Build one observation per FILLED offset — the holes are simply absent rows.
 
-    That is the whole point of a sparse series on the write side: a minute with no liquidation
-    produces NO ROW, not a row carrying `0`. Writing zeros here would make the read path's
-    behaviour untestable, because there would be no hole left to fill.
+    A hole here is a minute the collector did NOT consult (`T-05.2`): a consulted, empty minute
+    would be a `0` row, which is a different fixture (`_quarter_of_consulted_zeros`). Writing
+    zeros here would make the read path's behaviour untestable, because there would be no hole
+    left to fill.
     """
     return tuple(
         Observation(
@@ -314,3 +324,89 @@ def test_a_lag_of_a_whole_native_grid_is_visible_only_at_the_buckets_own_close(c
         else:
             assert row.value is None, f"instant {index} was FILLED: {row.value!r}"
             assert row.absence == Absence.NO_POINT.value == "SEM_PONTO"
+
+
+# ── `T-05.2` — A CONSULTED, EMPTY MINUTE REACHES THE READ PATH AS A FACT, THROUGH `R-1` ────
+
+QUARTER_HOUR_MS: Final[int] = 15 * NATIVE_GRID_MS
+QUARTER_END: Final[int] = BUCKET_ZERO
+"""A `15m` bucket end — `1_620_000_000_000 / 900_000 = 1_800_000` exact."""
+
+REPOPULATION_LAG_MS: Final[int] = 4 * 24 * 60 * 60 * 1000
+"""The zeros were written by the re-population, four days after the minutes they describe."""
+
+
+def _quarter_of_consulted_zeros(series_key_id: str) -> tuple[Observation, ...]:
+    """Fifteen `0` rows, one per native minute of the `15m` bucket ending at `QUARTER_END`."""
+    return tuple(
+        Observation(
+            row=_row(
+                series_key_id=series_key_id,
+                bucket_end=QUARTER_END - (14 - index) * NATIVE_GRID_MS,
+                value_raw="0",
+                lag_ms=REPOPULATION_LAG_MS,
+            ),
+            value=Decimal(0),
+        )
+        for index in range(15)
+    )
+
+
+def _quarter_report(
+    entry: SeriesCatalogEntry, observations: tuple[Observation, ...], *, knowledge_time_ms: int
+) -> SeriesHistoryReport:
+    return build_series_history_report(
+        SeriesCatalog((entry,)),
+        _FakeReader(observations),
+        _classify_panel_grid,
+        bounds_reader,
+        series_key_id=entry.key.series_key_id(),
+        symbol=SYMBOL,
+        interval="15m",
+        window_start_ms=QUARTER_END,
+        window_end_ms=QUARTER_END,
+        knowledge_time_ms=knowledge_time_ms,
+        bar_policy=BarPolicy.FINAL_ONLY,
+    )
+
+
+@pytest.mark.parametrize("cohort", COHORTS)
+def test_a_quarter_of_consulted_zeros_is_a_zero_bucket_with_full_coverage(cohort: str) -> None:
+    """`T-05.2`/`D4`: fifteen consulted, empty minutes ⇒ `value "0"`, no absence, `15/15`.
+
+    The read path is UNCHANGED — no `if nature == EVENT` anywhere. What changed is what the
+    store holds: the collector now writes the minute it consulted, so `present` counts it.
+    """
+    entry = _served_entry(cohort)
+    observations = _quarter_of_consulted_zeros(entry.key.series_key_id())
+
+    (row,) = _quarter_report(
+        entry, observations, knowledge_time_ms=QUARTER_END + REPOPULATION_LAG_MS + NATIVE_GRID_MS
+    ).rows
+
+    assert row.value is not None
+    assert Decimal(row.value) == 0
+    assert row.absence is None
+    assert row.coverage == BucketCoverage(present=15, expected=15)
+
+
+@pytest.mark.parametrize("cohort", COHORTS)
+def test_the_same_zeros_are_invisible_to_a_knowledge_time_before_they_were_written(
+    cohort: str,
+) -> None:
+    """THE ABLATION OF `DoD 2`, in a test: the zero enters through `R-1`, never around it.
+
+    Same fifteen rows, `knowledge_time` one native grid after the bucket closed — four days
+    BEFORE the re-population wrote them. A replay at that instant did not know the zero, so
+    it must not see it: `SEM_PONTO`, `0/15`. A zero that leaked here would be lookahead.
+    """
+    entry = _served_entry(cohort)
+    observations = _quarter_of_consulted_zeros(entry.key.series_key_id())
+
+    (row,) = _quarter_report(
+        entry, observations, knowledge_time_ms=QUARTER_END + NATIVE_GRID_MS
+    ).rows
+
+    assert row.value is None
+    assert row.absence == Absence.NO_POINT.value
+    assert row.coverage == BucketCoverage(present=0, expected=15)

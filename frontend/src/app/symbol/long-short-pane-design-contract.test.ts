@@ -283,8 +283,8 @@ test("D-1: the pane DRAWS the four-hour band, and the band is carried by its BOR
 
 test("D-1: the band delimits the SAME slots the footer's numerals were computed over", () => {
   // Two answers to *"quais últimas 4 h"* on one pane is the `M-1` class of defect. The range comes
-  // from `long-short-band.ts`, whose own test compares it slot for slot against `slotsFrom`'s rule —
-  // the rule `page.tsx` used for `recentStats`.
+  // from `long-short-band.ts`, whose own test compares it slot for slot against `recentBandSlots` —
+  // the function `page.tsx` and `panel-assembly.ts` compute `recentStats` over.
   assert.match(PANE, BAND_RANGE_SHARED, "the band's slots must come from the shared range function");
   assert.doesNotMatch(PANE, /recentSpanMs\s*\/\s*ONE_MINUTE_MS/, "re-deriving the band's width from the span is a second rule");
 });

@@ -40,6 +40,8 @@ from src.modules.sentimento.domain.liquidation_collection import (
     RetryLedger,
     SlidingQuotaWindow,
     answered_symbols,
+    first_whole_bucket_start,
+    interleave_consulted_zeros,
     is_settled_bucket,
     liquidation_history_path,
     side_points,
@@ -142,7 +144,8 @@ class CollectorClock(Protocol):
     def sleep(self, seconds: float) -> None: ...  # noqa: D102
 
 
-# Called once per (cohort, settled bucket) with the raw digits the provider sent. The composition
+# Called once per (cohort, settled bucket) with the raw digits the provider sent — or `"0"` for a
+# consulted, empty minute (`T-05.2`), which the provider answered by omission. The composition
 # root turns it into a `SeriesRow`; this module never builds one, because a `SeriesRow` needs a
 # `SeriesKey`, an observer and an `observed_at` that belong to the caller.
 PublishPoint = Callable[[str, str, int, str], None]
@@ -203,10 +206,20 @@ class LiquidationCollectorState:
     `quota` is the sliding window itself, which is meaningless per-cycle by definition: its whole
     job is to remember calls made in the previous 60 seconds, and a cycle boundary is not a
     quota boundary.
+
+    `zero_published` is `T-05.2`'s condition 6, per `(symbol, side, bucket start)`: a
+    consulted, empty minute this process already wrote as `0`. Without it every zero would be
+    rewritten on every cycle whose window still covers it — ~36 times at a 3-hour window and a
+    5-minute cadence (180 / 5) — the same multiplicity the non-zero rows already pay today, ~33
+    observations per bucket `[MEDIDO 2026-10-02, desenho §2, q1: 194.775 linhas / 5.843
+    buckets]`. It is pruned to the current window each cycle, so it never grows past one window
+    per symbol. A reboot empties it and rewrites the last window's zeros once, which is
+    harmless: `as_of` keeps the `argmin(observed_at)` and the value is the same.
     """
 
     quota: SlidingQuotaWindow = field(default_factory=SlidingQuotaWindow)
     seen_nonzero: set[tuple[str, str]] = field(default_factory=set)
+    zero_published: set[tuple[str, str, int]] = field(default_factory=set)
 
 
 def _serve_the_recoil(
@@ -244,24 +257,40 @@ def _publish_settled_points(
     binance_symbol: str,
     points: Sequence[DailyPoint],
     observed_at_ms: int,
+    window_from_epoch_seconds: int,
+    answered: bool,
     state: LiquidationCollectorState,
     publish: PublishPoint,
 ) -> int:
     """Write every SETTLED, legitimately-valued bucket of both sides; return how many.
 
-    THREE refusals happen here and each one is a different fact:
+    FOUR decisions happen here and each one is a different fact:
 
     - `RS-3.4`: the newest bucket has not closed, so it is dropped — not written and not a gap.
       It arrives settled on a later cycle, which is free because the window's width costs
       nothing.
-    - `ZL-2`: a side that has never once reported a non-zero is SILENT, not zero. Dropping it
-      leaves `SEM_PONTO`, which is what the read path is built to show.
+    - `T-05.2` (`D1`/`D3`): a settled minute of the window the provider ANSWERED for this
+      symbol, and for which it returned no point, was CONSULTED and found empty. That is an
+      observation, so it enters the side's sequence as a candidate `0`
+      (`interleave_consulted_zeros`). ⛔ Only `answered` earns it: a body `[]`, a body about
+      another instrument, a `429`, a `5xx`, a malformed body or a transport error is evidence
+      of NOTHING, and none of them produces a single zero. A hole in the store keeps meaning
+      "not consulted" — never "no liquidation" — which is what `RN-1` asks of the read path.
+    - `ZL-2`: a side that has never once reported a non-zero is SILENT, not zero. Its zeros —
+      wire or candidate — are demoted to `NO_SOURCE` and dropped, leaving `SEM_PONTO`. Those
+      minutes are NOT remembered as published, so the cycle after the side proves itself
+      writes them: the same self-repair inside one window the store already shows.
     - a `ZL-3` legitimate zero IS written, because a side that has proved it can report tells
       the truth when it reports nothing — and `SEM_PONTO` there would erase a real observation.
+      A candidate zero is written ONCE per process (`LiquidationCollectorState.zero_published`).
 
     The two sides are classified INDEPENDENTLY (`ZL-1`): they are two sequences riding one grid,
     and `classify_side_points` refuses merged input precisely so this cannot be done by accident.
     """
+    floor = first_whole_bucket_start(window_from_epoch_seconds)
+    state.zero_published = {
+        key for key in state.zero_published if key[0] != binance_symbol or key[2] >= floor
+    }
     published = 0
     for side in LiquidationSide:
         cohort = COHORT_BY_SIDE[side]
@@ -269,11 +298,27 @@ def _publish_settled_points(
         settled = tuple(
             point for point in raw_side if is_settled_bucket(point.event_time, observed_at_ms)
         )
+        sequence = (
+            interleave_consulted_zeros(
+                settled,
+                window_from_epoch_seconds=window_from_epoch_seconds,
+                observed_at_ms=observed_at_ms,
+                n_points_in_response=len(points),
+            )
+            if answered
+            else settled
+        )
+        wire_times = {point.event_time for point in settled}
         memory_key = (binance_symbol, side.value)
-        classified = classify_side_points(settled, seen_nonzero=memory_key in state.seen_nonzero)
+        classified = classify_side_points(sequence, seen_nonzero=memory_key in state.seen_nonzero)
         for point in classified:
             if point.value is None:
                 continue
+            if point.event_time not in wire_times:
+                zero_key = (binance_symbol, side.value, point.event_time)
+                if zero_key in state.zero_published:
+                    continue
+                state.zero_published.add(zero_key)
             if point.value != Decimal(0):
                 state.seen_nonzero.add(memory_key)
             publish(binance_symbol, cohort, point.event_time, str(point.value))
@@ -358,7 +403,8 @@ def _collect_one_symbol(
     coinalyze_symbol = to_coinalyze_symbol(binance_symbol)
     observed_at_ms = clock.epoch_ms()
     to_epoch = observed_at_ms // 1000
-    path = liquidation_history_path(coinalyze_symbol, to_epoch - lookback_seconds, to_epoch)
+    from_epoch = to_epoch - lookback_seconds
+    path = liquidation_history_path(coinalyze_symbol, from_epoch, to_epoch)
     while ledger.may_retry(binance_symbol, LIQUIDATION_HISTORY_PATH):
         ledger.record_attempt(binance_symbol, LIQUIDATION_HISTORY_PATH)
         fetch = _spend_one_call(state=state, clock=clock, source=source, path=path)
@@ -402,6 +448,11 @@ def _collect_one_symbol(
             binance_symbol=binance_symbol,
             points=points,
             observed_at_ms=observed_at_ms,
+            window_from_epoch_seconds=from_epoch,
+            # ⛔ `T-05.2` condition 1, EXPLICIT. A body `[]` reaches this line too — only the
+            # "names another instrument" case returned above — and `points` is then empty,
+            # which without this gate would be read as a window of consulted, empty minutes.
+            answered=outcome.answered,
             state=state,
             publish=publish,
         )

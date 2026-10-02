@@ -45,9 +45,19 @@ const CHART_HOST_TESTID = "symbol-chart-host";
 /** Plan `01` DoD `11(b)`, literal: "depois de ≥ 2 páginas". */
 const MIN_PAGES = 2;
 /** Drags attempted before giving up on reaching `MIN_PAGES`. The first drags only WALK to the
- * left edge: at mount the library clamps the bar spacing to its minimum, so the visible range is
- * the RIGHT ~2.300 of the 5.760 slots, and a drag is capped at half the chart's width. */
+ * left edge: after `zoomOutToFloor` the visible range is the RIGHT ~2.300 of the 5.760 slots (the
+ * library's `minBarSpacing` floor), and a drag is capped at half the chart's width. */
 const MAX_DRAGS = 12;
+/** `paineis-de-fluxo` `T-05.1` — the zoom-out before the walk, same recipe as `20-*.spec.ts`'s
+ * `zoomOutToFloor` (own copy, like the stub). Since `T-05.1` the mount frames the last `VIEW_BARS`
+ * (120) bars at ~9.9 px/slot, so a 576 px drag moves ~58 slots and `MAX_DRAGS` drags walk ~700 of
+ * the ~5.640 slots to the left edge: no page is ever requested (measured: 12 drags, 0 requests).
+ * Positive `deltaY` zooms OUT until the span stops growing. */
+const ZOOM_OUT_STEP_DELTA = 200;
+const ZOOM_OUT_BURST = 5;
+const ZOOM_OUT_MAX_BURSTS = 40;
+/** The mount view is `VIEW_BARS` slots; a zoom-out that leaves the span under this did nothing. */
+const ZOOM_OUT_MIN_SPAN_SLOTS = 1_000;
 const PER_DRAG_TIMEOUT_MS = 10_000;
 /** How long to wait for a request after a drag that may not have reached the trigger zone. */
 const NO_REQUEST_WAIT_MS = 2_500;
@@ -192,6 +202,37 @@ async function dragRight(page: Page, deltaXPx: number): Promise<void> {
   await page.mouse.up();
 }
 
+/** `T-05.1` — zooms the view out to the library's floor before the walk. The cursor sits at 90% of
+ * the host's width so the span grows leftward, away from the right edge; the left edge stays
+ * thousands of slots from the seed's start, so no page is requested (asserted). */
+async function zoomOutToFloor(page: Page): Promise<number> {
+  const requestedBefore = (await probeCounts(page)).requested;
+  const box = await hostLocator(page).boundingBox();
+  if (box === null) throw new Error("the chart host has no bounding box — nothing mounted");
+  const mountRange = await readVisibleRange(page);
+  fact(SPEC, "mount_visible_span_slots", Number((mountRange.to - mountRange.from).toFixed(2)));
+  let span = mountRange.to - mountRange.from;
+  let bursts = 0;
+  for (; bursts < ZOOM_OUT_MAX_BURSTS; bursts += 1) {
+    await page.mouse.move(box.x + box.width * 0.9, box.y + PRICE_PANE_MID_Y_PX);
+    for (let i = 0; i < ZOOM_OUT_BURST; i += 1) await page.mouse.wheel(0, ZOOM_OUT_STEP_DELTA);
+    await page.waitForTimeout(250);
+    const range = await readVisibleRange(page);
+    const next = range.to - range.from;
+    if (Math.abs(next - span) < 1) break;
+    span = next;
+  }
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(250);
+  fact(SPEC, "prewalk_zoom_out_bursts_n", bursts);
+  fact(SPEC, "prewalk_zoomed_out_span_slots", Number(span.toFixed(2)));
+  expect(span, `o zoom-out parou em ${span.toFixed(0)} slots — a roda não afastou a vista`).toBeGreaterThanOrEqual(
+    ZOOM_OUT_MIN_SPAN_SLOTS,
+  );
+  expect((await probeCounts(page)).requested, "o zoom-out pediu página antes do arrasto").toBe(requestedBefore);
+  return span;
+}
+
 async function probeCounts(page: Page): Promise<{ readonly requested: number; readonly drawn: number }> {
   return page.evaluate(() => ({
     requested: window.__historyPageLatencyProbe?.requestedMs.length ?? 0,
@@ -224,6 +265,8 @@ test(`DoD-11(b): data-chart-mount-count continua 1 depois de >= ${MIN_PAGES} pá
     fact(SPEC, "chart_mount_count_before", mountBefore);
     expect(mountBefore, "um createChart na carga da página").toBe(1);
 
+    // `T-05.1`: the mount frames the last 120 bars; zoom out to the floor first (see `zoomOutToFloor`).
+    await zoomOutToFloor(page);
     await page.evaluate(() => window.__historyPageLatencyProbe?.reset());
     for (let i = 0; i < MAX_DRAGS; i += 1) {
       const counts = await probeCounts(page);

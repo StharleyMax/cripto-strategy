@@ -36,19 +36,16 @@ export interface AccumulatedWindow {
  * same discipline `time-axis-controller.ts`'s `DEFAULT_PAGE_TRIGGER_SLOTS` already follows. */
 export const DEFAULT_MAX_ACCUMULATED_SLOTS = 5_000;
 
-/**
- * `D-C3.5`'s own number for how many slots ONE page asks for — "~500 velas por página" is the
- * assumption the `~5.000`-slot / `~10`-page cap is sized against. `historyRequest`
- * (`time-axis-controller.ts`) takes this as a REQUIRED argument (its own docstring: "how much to
- * request per page is `D-C3.5`/`T-05.2` territory, not decided there") — this is where it is
- * finally decided, as a named constant rather than a literal at the call site.
+/*
+ * `DEFAULT_PAGE_SLOTS = 500` (`D-C3.5`'s "~500 velas por página") used to live here, as ONE-MINUTE
+ * slots in every timeframe. `paineis-de-fluxo` `T-05.1` moved the page width to bars per
+ * timeframe (`timeframe-window.ts`, `pageBars`); `1m` keeps its 500.
  */
-export const DEFAULT_PAGE_SLOTS = 500;
 
 /**
  * `paineis-de-fluxo` W1-FIX (`gates/W1-DESIGN-REVIEW.md` MF-A) — the cap the pager ACTUALLY applies:
- * never below the seed window plus one page. The seed window of every TF is `5.760` slots (4 days
- * of the `1m` grid), MORE than `D-C3.5`'s `~5.000`. With the raw cap, the deferred right-edge cut
+ * never below the seed window plus one page. The seed window of `1m` is `5.760` slots (4 days,
+ * `timeframe-window.ts`), MORE than `D-C3.5`'s `~5.000`; every other TF seeds fewer, and gets the raw cap. With the raw cap, the deferred right-edge cut
  * (`capWindowRightEdge`, applied on every pointer release) discarded `5.760 − 5.000 = 760` slots —
  * the 12 h 40 min most recent, the very edge on screen — on the FIRST release, with no page fetched
  * and no way back (there is no page toward the future). `D-C3.5`'s own intent is a SLIDING window

@@ -132,6 +132,7 @@ import { notFound } from "next/navigation";
 import {
   buildS2Panels,
   FIVE_MINUTES_MS,
+  lastGridInstant,
   S2_PRICE_USE,
   type S2Panels,
   type S2RawInputs,
@@ -149,13 +150,14 @@ import {
   seriesHistoryEndpointUrl,
   type SeriesHistoryRow,
 } from "../series-history-client.ts";
+import { recentBandSlots } from "../long-short-band.ts";
 import { oiCandleBundleOf } from "../oi-candle-pane.ts";
 import type { PanelStatus } from "../panel-status.ts";
 import type { OiCandlesWire } from "../series-history-envelope.ts";
 import type { PaneLegendSource, PaneLegendSources } from "../pane-legend.ts";
 import { resolveRouteWindow, type RouteWindow } from "../request-window.ts";
 import { seedIdentityKey } from "../seed-identity.ts";
-import { DEFAULT_TIMEFRAME, isSupportedTimeframe, SUPPORTED_TIMEFRAMES } from "../supported-timeframes.ts";
+import { DEFAULT_TIMEFRAME, isSupportedTimeframe, timeframeStepMs } from "../supported-timeframes.ts";
 import {
   SymbolClient,
   type CvdPaneData,
@@ -192,12 +194,11 @@ import {
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
   seriesValueStats,
-  slotsFrom,
-  summarizePartialCoverage,
   trailingAbsentSlots,
   type KlinesOhlcReduction,
   type ScaledCvdDeltaInput,
 } from "../view-model.ts";
+import { coverageGridMsOf, summarizeCoverageMagnitude, type CoverageGridMs } from "../coverage-magnitude.ts";
 
 export const metadata: Metadata = {
   title: "cripto-strategy — Símbolo",
@@ -510,18 +511,25 @@ export default async function SymbolPage({
   const requestedInterval = typeof requestedIntervalRaw === "string" ? requestedIntervalRaw : undefined;
   const selectedInterval =
     requestedInterval !== undefined && isSupportedTimeframe(requestedInterval) ? requestedInterval : DEFAULT_TIMEFRAME;
-  // `SUPPORTED_TIMEFRAMES` is a `readonly TimeframeOption[]`, never a `Record` keyed by
-  // `interval` — `isSupportedTimeframe` already proved `selectedInterval` is a member, so this
-  // `find` cannot miss; the `!` states that invariant rather than re-deriving `stepMs` by parsing
-  // the label (`"4h"` → `4 * 60 * 60_000`), which would be a SECOND place that number lives.
-  const selectedIntervalStepMs = SUPPORTED_TIMEFRAMES.find((option) => option.interval === selectedInterval)!.stepMs;
+  // `paineis-de-fluxo` `T-05.1` (`handoff/T-05.1-desenho.md` §1) — THE axis step of this render:
+  // the selected TF's width, read off `SUPPORTED_TIMEFRAMES` through `timeframeStepMs` (never by
+  // parsing the label, which would be a SECOND place that number lives). Every panel builder below
+  // receives it as a required argument; it used to be `S2_AXIS_STEP_MS`, one minute in every TF,
+  // the defect `D-A` of `handoff/FIX-uso-2026-10-02.md`. `isSupportedTimeframe` already proved
+  // `selectedInterval` is a member, so this cannot throw.
+  const axisStepMs = timeframeStepMs(selectedInterval);
 
   // The ONE clock reading of this render. `Date.now()` is I/O and therefore lives here, in
   // `web`, and nowhere else — `request-window.ts`/`resolveTrailingWindow` take it as an
-  // argument precisely so the window stays falsifiable at every instant. `selectedIntervalStepMs`
-  // is `T-03.11`'s own addition (`request-window.ts`'s own docstring on `requestIntervalMs`):
-  // the window's right edge now aligns to the REQUESTED grid, not just OI's native 5 minutes.
-  const routeWindow = resolveRouteWindow(Date.now(), selectedIntervalStepMs);
+  // argument precisely so the window stays falsifiable at every instant. The TF is `T-03.11`'s own
+  // addition (the window's right edge aligns to the REQUESTED grid, not just OI's native 5
+  // minutes), and since `T-05.1` it also sizes the span: `initialBars` of that TF
+  // (`timeframe-window.ts`), not 4 days in every TF.
+  const routeWindow = resolveRouteWindow(Date.now(), selectedInterval);
+  // The axis slot every "leitura atual" readout of this render queries — the last slot of the
+  // window on the AXIS grid. `routeWindow.windowEndMsInclusive` is the REQUEST's instant, on the
+  // `1m` grid in every TF (`request-window.ts`), and it is off the axis grid at `1h`/`4h`.
+  const lastAxisInstantMs = lastGridInstant(routeWindow.window, axisStepMs);
 
   let catalog: SeriesCatalogProjection;
   let catalogStatus: PanelStatus = { kind: "ok" };
@@ -649,6 +657,7 @@ export default async function SymbolPage({
 
   const rawInputs: S2RawInputs = {
     window: routeWindow.window,
+    axisStepMs,
     candles: candleAssembly.candles,
     // ⛔ UNCHANGED, AND THE OMISSION IS DELIBERATE (`SPEC-008` §2.1): `price_use` /
     // `price_source` are `ADR-007`/`PS-1`'s decision table, which this feature does not
@@ -710,26 +719,39 @@ export default async function SymbolPage({
   // `slots` is `[]`, `presentPoints` is `0` and the reading is `absent` — which the sub-axis
   // prints as `SEM_PONTO`. No branch anywhere here substitutes a `0` for a missing number, and
   // for this `FLOW` series that is a rule of TYPE, not of taste (`RN-1`).
+  // `paineis-de-fluxo` `T-05.4` — the native grid each regime-A warning multiplies missing facts by,
+  // off the SAME resolutions the fetches used (`coverage-magnitude.ts::coverageGridMsOf`: the
+  // catalog's `nativeGrid`, `"1min"` for all four today). Handed to the pager too, frozen like every
+  // other catalog fact (`panel-assembly.ts::AssemblyStaticContext.coverageGridMs`).
+  const coverageGridMs: CoverageGridMs = {
+    volume: coverageGridMsOf(resolvedEntry(volumeResolution)?.nativeGrid),
+    cvd: coverageGridMsOf(resolvedEntry(cvdResolution)?.nativeGrid),
+    liquidationLong: coverageGridMsOf(resolvedEntry(liquidationLongResolution)?.nativeGrid),
+    liquidationShort: coverageGridMsOf(resolvedEntry(liquidationShortResolution)?.nativeGrid),
+  };
   const volumeSlots = nonNegativeFlowSlotsFromHistoryRows(volumeResult.rows);
   const volume: VolumeSubAxisData = {
     slots: volumeSlots,
     // `W1-REVIEW-r2` BLOCKER-2: the legend reads the SAME rows on the route's canonical grid
     // (`ADR-044/D2`, slot `i` IS logical index `i`). The native vector above stays what the bars
     // draw — on a TF ≠ `1m` it has one slot per TF bucket, not one per grid minute.
-    legendSlots: nonNegativeFlowSlotsFromHistoryRows(volumeResult.rows, routeWindow.window),
+    legendSlots: nonNegativeFlowSlotsFromHistoryRows(volumeResult.rows, routeWindow.window, axisStepMs),
     presentPoints: countPresentSlots(volumeSlots),
     // The left end of the readable horizon, DECLARED on screen rather than left to look like a
     // dead market (`quant-architect`, wave `03`, C4). Derived from the same slots the sub-axis
     // draws, so the number the screen prints and the bars it draws cannot disagree.
     firstPresentMs: firstPresentSlotMs(volumeSlots),
-    // `windowEndMsInclusive` is the same instant `SymbolClient.tsx` derives as `lastInstantMs`
-    // for the other three readouts — one instant for the whole page, not a fourth one.
-    reading: resolveFlowReadingOrAbsent(volumeSlots, routeWindow.windowEndMsInclusive),
+    // `lastAxisInstantMs` is the same instant `SymbolClient.tsx` derives as `lastInstantMs` at the
+    // axis step for the other three readouts — one instant for the whole page, not a fourth one.
+    reading: resolveFlowReadingOrAbsent(volumeSlots, axisStepMs, lastAxisInstantMs),
     // `T-03.12` / `P-B` / `ADR-040/D3` regime A — `klines_volume` is a `FLOW` SUM, folded off the
     // SAME raw rows the slots above came from (not the slots themselves, which have already
     // dropped `coverage` — `ScalarSlot` carries only `{time, value}`, `ADR-003`'s canonical grid
     // is untouched by this task).
-    partialCoverage: summarizePartialCoverage(volumeResult.rows),
+    partialCoverage: summarizeCoverageMagnitude(volumeResult.rows, {
+      knowledgeTimeMs: routeWindow.knowledgeTimeMs,
+      nativeGridMs: coverageGridMs.volume,
+    }),
   };
 
   // ── The CVD panel's own declared facts (`T-02.5`) ─────────────────────────────────────────
@@ -748,7 +770,10 @@ export default async function SymbolPage({
     // `T-03.12` — `cvd_delta` is the other `FLOW` SUM this screen draws (regime A); the running
     // `cumulativeSlots` is a downstream VIEW of these same deltas (`buildCvdPanel`) and gets no
     // second, derived mark of its own — one honest count at the source, not two that could drift.
-    partialCoverage: summarizePartialCoverage(cvdResult.rows),
+    partialCoverage: summarizeCoverageMagnitude(cvdResult.rows, {
+      knowledgeTimeMs: routeWindow.knowledgeTimeMs,
+      nativeGridMs: coverageGridMs.cvd,
+    }),
   };
 
   // ── The OI pane's own declared facts (`T-03.5`) ───────────────────────────────────────────
@@ -821,20 +846,20 @@ export default async function SymbolPage({
   // `0` slots while `price`/`oi`/`cvd` stayed grid-padded at the full window — the six panes were
   // no longer "sobre exatamente a mesma grade" (plano `02` item `2.0`). See
   // `nonNegativeFlowSlotsFromHistoryRows`'s own docstring for the mechanism.
-  const liquidationCohortData = (rows: readonly SeriesHistoryRow[]): LiquidationCohortData => {
-    const slots = nonNegativeFlowSlotsFromHistoryRows(rows, routeWindow.window);
+  const liquidationCohortData = (rows: readonly SeriesHistoryRow[], nativeGridMs: number): LiquidationCohortData => {
+    const slots = nonNegativeFlowSlotsFromHistoryRows(rows, routeWindow.window, axisStepMs);
     return {
       slots,
       presentPoints: countPresentSlots(slots),
       zeroPoints: countZeroSlots(slots),
       firstPresentMs: firstPresentSlotMs(slots),
-      // `windowEndMsInclusive` — the SAME instant every other readout on this page uses. One
+      // `lastAxisInstantMs` — the SAME instant every other readout on this page uses. One
       // instant for the whole render, never a seventh one computed here.
-      reading: resolveFlowReadingOrAbsent(slots, routeWindow.windowEndMsInclusive),
+      reading: resolveFlowReadingOrAbsent(slots, axisStepMs, lastAxisInstantMs),
       // `T-03.12` — `sum_liquidation` is the third `FLOW` SUM (regime A), off the SAME raw `rows`
       // this closure already receives per cohort — long and short degrade independently, same as
       // every other fact on this pane.
-      partialCoverage: summarizePartialCoverage(rows),
+      partialCoverage: summarizeCoverageMagnitude(rows, { knowledgeTimeMs: routeWindow.knowledgeTimeMs, nativeGridMs }),
     };
   };
   // ⛔ `RS-5` IS RESOLVED FROM THE CATALOG ROW, NEVER SPELLED AS A LITERAL. A hardcoded "dado de
@@ -849,8 +874,8 @@ export default async function SymbolPage({
   // rather than left implied — if that ever stops holding, this line is where it breaks.
   const liquidationEntry = resolvedEntry(liquidationLongResolution);
   const liquidation: LiquidationPaneData = {
-    long: liquidationCohortData(liquidationLongResult.rows),
-    short: liquidationCohortData(liquidationShortResult.rows),
+    long: liquidationCohortData(liquidationLongResult.rows, coverageGridMs.liquidationLong),
+    short: liquidationCohortData(liquidationShortResult.rows, coverageGridMs.liquidationShort),
     provenance: resolveSeriesProvenance(liquidationEntry),
     // The `unit` term of the series' OWN identity (`USD`), printed beside the numeral — `W-1` of
     // `gates/design-01.md` failed the volume sub-axis for a numeral with no unit, and a literal
@@ -888,7 +913,7 @@ export default async function SymbolPage({
   // SIX of them, and the audit caught it only because it was exhaustive.
   // `routeWindow.window` passed for the same `CA-5a` reason as the liquidation pane above — see
   // `nonNegativeFlowSlotsFromHistoryRows`'s own docstring for the mechanism.
-  const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(longShortResult.rows, routeWindow.window);
+  const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(longShortResult.rows, routeWindow.window, axisStepMs);
   const longShortEntry = resolvedEntry(longShortResolution);
   // The `available_at` of the newest READABLE row — a PUBLICATION instant, the same one `RNF-2`
   // uses for OI (`lastReadableAvailableAtMs`, and its docstring explains why it is not `max`).
@@ -910,20 +935,20 @@ export default async function SymbolPage({
     ageMs: longShortObservedAtMs === null ? null : routeWindow.windowEndMsInclusive - longShortObservedAtMs,
     trailingAbsentSlots: trailingAbsentSlots(longShortSlots),
     windowStats: seriesValueStats(longShortSlots),
-    // The trailing band of the approved form. `windowEndMsInclusive - span` is a grid instant of
-    // this very window, so `slotsFrom` filters the SAME slots the chart draws — it never re-grids
-    // and never shrinks the window to fit the data (`M-2` of `gates/design-05.md`).
+    // The trailing band of the approved form, cut by `recentBandSlots` — the ONE function the
+    // band itself (`recentBandSlotRange`) and the pager (`panel-assembly.ts`) cut with: from the
+    // last AXIS slot, never from `windowEndMsInclusive`, which sits on the 1-minute grid and is
+    // off the axis on `1h`/`4h` (`W7-CODE-REVIEW` C-1). It filters the SAME slots the chart
+    // draws — never re-grids, never shrinks the window to fit (`M-2` of `gates/design-05.md`).
     recentSpanMs: LONG_SHORT_RECENT_SPAN_MS,
-    recentStats: seriesValueStats(
-      slotsFrom(longShortSlots, routeWindow.windowEndMsInclusive - LONG_SHORT_RECENT_SPAN_MS),
-    ),
+    recentStats: seriesValueStats(recentBandSlots(longShortSlots, LONG_SHORT_RECENT_SPAN_MS)),
     // `RS-5` resolved from the catalog row, never spelled as a literal — same call, same rule as the
     // liquidation pane above. For M3 the venue's own publisher IS the provider, so this resolves to
     // `origin` and the pane says so instead of leaving procedência unstated.
     provenance: resolveSeriesProvenance(longShortEntry),
-    // `windowEndMsInclusive` — the SAME instant every other readout on this page uses. One instant
+    // `lastAxisInstantMs` — the SAME instant every other readout on this page uses. One instant
     // for the whole render, never an eighth one computed here.
-    reading: resolveFlowReadingOrAbsent(longShortSlots, routeWindow.windowEndMsInclusive),
+    reading: resolveFlowReadingOrAbsent(longShortSlots, axisStepMs, lastAxisInstantMs),
     // The `unit` term of the series' own identity (`ratio`), printed beside the numeral — a literal
     // here would say the same thing while being free to drift from what the backend published.
     unit: longShortEntry?.key.unit ?? null,
@@ -1031,6 +1056,7 @@ export default async function SymbolPage({
         longShort: longShortResult.status,
       }}
       knowledgeTimeMs={routeWindow.knowledgeTimeMs}
+      coverageGridMs={coverageGridMs}
       liveUrls={liveUrls}
       selectedTimeframe={selectedInterval}
     />

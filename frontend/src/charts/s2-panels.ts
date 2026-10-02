@@ -40,7 +40,7 @@ import type { ChartSeries } from "./canonical-grid-chart-consumer.ts";
 import type { RawCandle } from "./canonical-grid.ts";
 import { buildScalarSeries } from "./s2-scalar-grid.ts";
 import type { ScalarPoint, ScalarSlot } from "./s2-scalar-grid.ts";
-import { cvdCumulativeScaled, unscale, CVD_BUCKET_WIDTH_MS } from "./s2-cvd.ts";
+import { cvdCumulativeScaled, unscale } from "./s2-cvd.ts";
 import type { ScaledCvdDelta } from "./s2-cvd.ts";
 import { resolvePriceSource } from "./s2-price-source.ts";
 import type { PriceSource, PriceUse } from "./s2-price-source.ts";
@@ -51,26 +51,31 @@ export const SYMBOL = "BTCUSDT";
 export const ONE_MINUTE_MS = 60_000;
 export const FIVE_MINUTES_MS = 5 * 60_000;
 
-/**
- * `T-02.1` / `D-C3.2` — THE grade canônica ÚNICA: the ONE axis step every S2 panel's `slots`
- * array is built at, `lossless com whitespace`. Before this constant existed, `buildOiPanel`
- * built its OWN grid at `FIVE_MINUTES_MS` while every other panel (price, CVD) built at
- * `ONE_MINUTE_MS` — two implementations of "the grid", disagreeing on what index `i` means
- * (minute `i` in Price, minute `5i` in OI) `[MEDIDO 2026-09-19: price_slots:5760 ·
+/*
+ * `T-02.1` / `D-C3.2` — THE grade canônica ÚNICA: every S2 panel's `slots` array is built at ONE
+ * axis step, `lossless com whitespace`. Before that, `buildOiPanel` built its OWN grid at
+ * `FIVE_MINUTES_MS` while every other panel built at `ONE_MINUTE_MS` — two implementations of
+ * "the grid", disagreeing on what index `i` means `[MEDIDO 2026-09-19: price_slots:5760 ·
  * cvd_slots:5760 · long_short_slots:5760 · liquidation_slots:5760 vs oi_slots:1152]`. Every
- * builder below now takes this SAME value for its `slots` grid — `buildOiPanel` no longer
- * excepted — so index-equal ⇒ instant-equal across every panel, by construction, not by
- * coincidence of two constants that happen to agree today.
+ * builder below takes the SAME `axisStepMs`, so index-equal ⇒ instant-equal across every panel.
  *
- * A series whose NATIVE cadence differs from this step (OI, 5 minutes) is not resampled or
- * interpolated onto it — its `slots` gain explicit `value: null` gaps between native
- * observations (`alignScalarPointsToGrid` never fabricates), and the series' own native
+ * ── `paineis-de-fluxo` `T-05.1` — THE STEP IS AN ARGUMENT NOW, AND IT USED TO BE A CONSTANT ──
+ *
+ * That ONE step used to be `S2_AXIS_STEP_MS = ONE_MINUTE_MS`, in EVERY timeframe
+ * (`handoff/FIX-uso-2026-10-02.md` §D-A): at `1h` the axis kept 5.760 one-minute slots and drew one
+ * candle every 60 of them, so the candle collapsed to a wick. The constant is gone, NOT demoted to
+ * a default — a one-minute default is exactly that defect, only less visible. The step is the
+ * timeframe's (`web`'s `timeframeStepMs(interval)`), and it reaches every builder as a REQUIRED
+ * argument, same `PS-1` discipline `priceUse` gets here.
+ *
+ * A series whose NATIVE cadence differs from the axis step (OI, 5 minutes, under a `1m` axis) is
+ * not resampled or interpolated onto it — its `slots` gain explicit `value: null` gaps between
+ * native observations (`alignScalarPointsToGrid` never fabricates), and the series' own native
  * cadence is carried SEPARATELY (`OiPanel.timeframeMs`) for consumers that need it (`D5.2`'s
  * held-value cap, `resolveStockReading`'s `nativeTimeframeMs` parameter) — collapsing the two
  * into one field is exactly how `GA-2`'s confusion between "grade nativa" and "grade do eixo"
  * was born (`JULGAMENTO-FRONTEND-ARCHITECT.md` §1).
  */
-export const S2_AXIS_STEP_MS = ONE_MINUTE_MS;
 
 /**
  * `T-05.5` / plan item `5.7`: this S2-mínima price panel is a VISUAL / STRUCTURE display —
@@ -90,7 +95,7 @@ export interface OiPanel {
    * (`countPresentSlots(slots)` — unaffected by the grid widening, since a native-cadence
    * point still lands on exactly one axis slot). */
   readonly timeframeMs: number;
-  /** THE shared axis grid (`S2_AXIS_STEP_MS`), same step and same `window` every other S2
+  /** THE shared axis grid (`axisStepMs`), same step and same `window` every other S2
    * panel's slots use — never OI's own `timeframeMs`. A native OI observation lands on the
    * one axis slot it belongs to; every other axis slot in between is an explicit `value:
    * null` gap (whitespace), never a fabricated hold — `resolveStockReading` is what turns
@@ -150,23 +155,24 @@ export function buildPricePanel(
   candles: readonly RawCandle[],
   priceUse: PriceUse,
   window: S2Window,
+  axisStepMs: number,
 ): PricePanel {
   return {
     priceSource: resolvePriceSource(priceUse),
     priceUse,
-    series: buildChartSeries(candles, ONE_MINUTE_MS, window.startMs, window.endMsExclusive),
+    series: buildChartSeries(candles, axisStepMs, window.startMs, window.endMsExclusive),
   };
 }
 
 /**
  * `points`/`missingDays` — already assembled (`assembleOiPoints`), never read from disk here.
  *
- * `T-02.1`/`D-C3.2`: `slots` is built at `S2_AXIS_STEP_MS` — THE shared axis grid, same as
+ * `T-02.1`/`D-C3.2`: `slots` is built at `axisStepMs` — THE shared axis grid, same as
  * every other panel — never at `FIVE_MINUTES_MS` internally (that was the divergence: `CA-5a`
  * measured `oi_slots:1152` beside `price_slots:5760`/`cvd_slots:5760` on the SAME window).
  * `points` still arrive at OI's native 5-minute cadence (the caller filters to it,
  * `scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS)`); every native timestamp is ALSO a
- * multiple of `S2_AXIS_STEP_MS`, so each one lands on exactly one axis slot and every slot in
+ * multiple of a `1m` axis step, so each one lands on exactly one axis slot and every slot in
  * between is an explicit gap — `alignScalarPointsToGrid` neither drops a point nor invents
  * one. `timeframeMs` keeps returning the NATIVE cadence, unchanged, for the reasons the
  * `OiPanel` docstring gives.
@@ -175,8 +181,9 @@ export function buildOiPanel(
   points: readonly ScalarPoint[],
   missingDays: readonly string[],
   window: S2Window,
+  axisStepMs: number,
 ): OiPanel {
-  const series = buildScalarSeries(points, S2_AXIS_STEP_MS, window.startMs, window.endMsExclusive);
+  const series = buildScalarSeries(points, axisStepMs, window.startMs, window.endMsExclusive);
   return { timeframeMs: FIVE_MINUTES_MS, slots: series.slots, missingDays };
 }
 
@@ -197,6 +204,7 @@ export function buildCvdPanel(
   missingDays: readonly string[],
   coveredDays: readonly string[],
   window: S2Window,
+  axisStepMs: number,
   anchorMs: number = window.startMs,
 ): CvdPanel {
   const cumulative = cvdCumulativeScaled(deltas, anchorMs);
@@ -205,20 +213,25 @@ export function buildCvdPanel(
   // reported (present, possibly zero) — NOT one per grid slot yet. The grid alignment
   // below is what turns "the buckets we have" into "one slot per canonical instant, gap
   // slots explicit" (`s2-scalar-grid.ts`), exactly the same shape the price/OI panels use.
+  //
+  // `T-05.1`: the grid is the AXIS step, not `CVD_BUCKET_WIDTH_MS`. Under `interval ≠ 1m` the delta
+  // `/series-history` serves is already the sum over the outer bucket, one row per TF bar, so the
+  // panel's own cadence IS the axis step. `s2-cvd.ts`'s `CVD_BUCKET_WIDTH_MS` stays what it is: the
+  // aggTrades → native `1m` path, which this function does not walk.
   const deltaSeries = buildScalarSeries(
     deltas.map((fact) => ({ timeMs: fact.bucketStartMs, value: unscale(fact.valueScaled) })),
-    CVD_BUCKET_WIDTH_MS,
+    axisStepMs,
     window.startMs,
     window.endMsExclusive,
   );
   const cumulativeSeries = buildScalarSeries(
     cumulative.map((point) => ({ timeMs: point.bucketStartMs, value: unscale(point.valueScaled) })),
-    CVD_BUCKET_WIDTH_MS,
+    axisStepMs,
     window.startMs,
     window.endMsExclusive,
   );
   return {
-    timeframeMs: CVD_BUCKET_WIDTH_MS,
+    timeframeMs: axisStepMs,
     deltaSlots: deltaSeries.slots,
     cumulativeSlots: cumulativeSeries.slots,
     missingDays,
@@ -239,6 +252,10 @@ export interface S2RawInputs {
    * never a constant of this module. See this file's header for the defect that made it a
    * required field instead of three exported constants. */
   readonly window: S2Window;
+  /** `T-05.1` — the axis step every panel is built at: the TIMEFRAME's width
+   * (`timeframeStepMs(interval)` in `web`). REQUIRED, no default — see this file's note on the
+   * removed `S2_AXIS_STEP_MS`. */
+  readonly axisStepMs: number;
   readonly candles: readonly RawCandle[];
   readonly priceUse: PriceUse;
   readonly oiPoints: readonly ScalarPoint[];
@@ -253,13 +270,14 @@ export function buildS2Panels(inputs: S2RawInputs): S2Panels {
   return {
     symbol: SYMBOL,
     window: inputs.window,
-    price: buildPricePanel(inputs.candles, inputs.priceUse, inputs.window),
-    oi: buildOiPanel(inputs.oiPoints, inputs.oiMissingDays, inputs.window),
+    price: buildPricePanel(inputs.candles, inputs.priceUse, inputs.window, inputs.axisStepMs),
+    oi: buildOiPanel(inputs.oiPoints, inputs.oiMissingDays, inputs.window, inputs.axisStepMs),
     cvd: buildCvdPanel(
       inputs.cvdDeltas,
       inputs.cvdMissingDays,
       inputs.cvdCoveredDays,
       inputs.window,
+      inputs.axisStepMs,
       inputs.cvdAnchorMs,
     ),
   };

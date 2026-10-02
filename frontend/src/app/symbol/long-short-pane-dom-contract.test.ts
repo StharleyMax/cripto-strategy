@@ -89,8 +89,9 @@ const PAGE_WIRE_POINTS = /wirePoints: countPresentSlots\(longShortSlots\)/;
 const PAGE_STATUS = /longShort: longShortResult\.status/;
 /** `page.tsx`: the ONE `RN-1` mapper, shared — and grid-padded by the route's own window since
  * the `CA-5a` fix (`gates/FASE-02-qa.md`), the same reason the liquidation pane's own anchor
- * carries `routeWindow.window` now. */
-const PAGE_MAPPER = /const longShortSlots = nonNegativeFlowSlotsFromHistoryRows\(longShortResult\.rows, routeWindow\.window\);/;
+ * carries `routeWindow.window` now — and, since `T-05.1`, the AXIS step (`axisStepMs`, the TF's),
+ * because the window alone no longer says which grid the slots sit on. */
+const PAGE_MAPPER = /const longShortSlots = nonNegativeFlowSlotsFromHistoryRows\(longShortResult\.rows, routeWindow\.window, axisStepMs\);/;
 
 // ── The stable handles `T-04.7` depends on ────────────────────────────────────────────────────
 

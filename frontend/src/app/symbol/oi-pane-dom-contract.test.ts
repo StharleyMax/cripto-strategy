@@ -68,9 +68,11 @@ const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
  * this was the bare `reading.kind === "absent" ? ABSENCE_TOKEN`, which matched the FIRST such branch in
  * the file — the OI's only because the price readout spelled its absence as a separate literal. Once
  * the price readout used `ABSENCE_TOKEN` too, the "OI absence rendered as 0" mutant below hit the
- * PRICE branch and survived: the guard had never been about OI. */
+ * PRICE branch and survived: the guard had never been about OI. ⚠️ `T-05.1`: the call now spans
+ * several lines (the axis step joined its arguments), so "the rest of the call" is `[^;]*\);` — it
+ * still cannot cross into another statement, which is what kept the anchor on the OI call. */
 const OI_ABSENT_BRANCH =
-  /resolveStockReading\(panels\.oi\.slots,[^\n]*\n\s*const readingText =\s*\n\s*reading\.kind === "absent"\s*\n?\s*\? ABSENCE_TOKEN/;
+  /resolveStockReading\(\s*panels\.oi\.slots,[^;]*\);\s*\n\s*const readingText =\s*\n\s*reading\.kind === "absent"\s*\n?\s*\? ABSENCE_TOKEN/;
 /** The two counts, as the e2e spells them. `native-bars` is the one `DoD-3` reads; `wire-points`
  * is the staircase, published beside it so the ratio is checkable from outside. */
 const NATIVE_BARS_ATTRIBUTE = /data-oi-native-bars=\{oi\.nativeBars\}/;
