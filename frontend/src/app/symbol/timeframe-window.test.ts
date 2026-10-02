@@ -144,6 +144,8 @@ function assembleOneHourRoute(axisStepMs: number) {
     {
       priceUse: S2_PRICE_USE,
       windowEndMsExclusive: window.endMsExclusive,
+      knowledgeTimeMs: route.knowledgeTimeMs,
+      coverageGridMs: { volume: ONE_MINUTE_MS, cvd: ONE_MINUTE_MS, liquidationLong: ONE_MINUTE_MS, liquidationShort: ONE_MINUTE_MS },
       cvdAnchorMs: window.startMs,
       windowEndMsInclusive: route.windowEndMsInclusive,
       longShortRecentSpanMs: 3 * ONE_MINUTE_MS,

@@ -42,6 +42,13 @@ function emptyBundle(): HistoryRowsBundle {
   };
 }
 
+/** `T-05.4` — the two coverage terms of the static context: knowledge four minutes past the window
+ * (`request-window.ts::KNOWLEDGE_TIME_LAG_MS`) and every regime-A series on the one-minute grid. */
+const COVERAGE_CONTEXT = {
+  knowledgeTimeMs: WINDOW.endMsExclusive + 4 * ONE_MINUTE_MS,
+  coverageGridMs: { volume: ONE_MINUTE_MS, cvd: ONE_MINUTE_MS, liquidationLong: ONE_MINUTE_MS, liquidationShort: ONE_MINUTE_MS },
+};
+
 test("CALA: a fully-present window draws every candle and every dynamic count agrees with the fixture", () => {
   const rows: HistoryRowsBundle = {
     ...emptyBundle(),
@@ -53,6 +60,7 @@ test("CALA: a fully-present window draws every candle and every dynamic count ag
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
+    ...COVERAGE_CONTEXT,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive: WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
@@ -74,6 +82,7 @@ test("MORDE CA-F2-3: a SEM_PONTO row in ONE of the four OHLC reductions draws NO
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
+    ...COVERAGE_CONTEXT,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive: WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
@@ -92,6 +101,7 @@ test("CALA: OI freshness reads the CALLER'S oiMaxStalenessMs, never a literal ba
   const fresh = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
+    ...COVERAGE_CONTEXT,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
@@ -102,6 +112,7 @@ test("CALA: OI freshness reads the CALLER'S oiMaxStalenessMs, never a literal ba
   const stale = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
+    ...COVERAGE_CONTEXT,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
@@ -118,6 +129,7 @@ test("CALA: cvdAnchorMs stays fixed across a call — the cumulative curve count
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
+    ...COVERAGE_CONTEXT,
     cvdAnchorMs: 0, // anchored at the window's own start
     windowEndMsInclusive: WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
@@ -138,6 +150,7 @@ test("CALA: long/short observedAtMs/ageMs are derived off the newest READABLE ro
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
+    ...COVERAGE_CONTEXT,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
@@ -152,6 +165,7 @@ test("MORDE: an upstream-failed series (empty rows) still comes back GRID-PADDED
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
+    ...COVERAGE_CONTEXT,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive: WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
@@ -180,6 +194,7 @@ function assembleFourHourVolume() {
   return assembleHistoryPage(rows, FOUR_HOUR_WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: FOUR_HOUR_WINDOW.endMsExclusive,
+    ...COVERAGE_CONTEXT,
     cvdAnchorMs: FOUR_HOUR_WINDOW.startMs,
     windowEndMsInclusive: FOUR_HOUR_WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,

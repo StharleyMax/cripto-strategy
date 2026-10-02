@@ -194,11 +194,11 @@ import {
   scaledCvdDeltasFromHistoryRows,
   seriesValueStats,
   slotsFrom,
-  summarizePartialCoverage,
   trailingAbsentSlots,
   type KlinesOhlcReduction,
   type ScaledCvdDeltaInput,
 } from "../view-model.ts";
+import { coverageGridMsOf, summarizeCoverageMagnitude, type CoverageGridMs } from "../coverage-magnitude.ts";
 
 export const metadata: Metadata = {
   title: "cripto-strategy — Símbolo",
@@ -719,6 +719,16 @@ export default async function SymbolPage({
   // `slots` is `[]`, `presentPoints` is `0` and the reading is `absent` — which the sub-axis
   // prints as `SEM_PONTO`. No branch anywhere here substitutes a `0` for a missing number, and
   // for this `FLOW` series that is a rule of TYPE, not of taste (`RN-1`).
+  // `paineis-de-fluxo` `T-05.4` — the native grid each regime-A warning multiplies missing facts by,
+  // off the SAME resolutions the fetches used (`coverage-magnitude.ts::coverageGridMsOf`: the
+  // catalog's `nativeGrid`, `"1min"` for all four today). Handed to the pager too, frozen like every
+  // other catalog fact (`panel-assembly.ts::AssemblyStaticContext.coverageGridMs`).
+  const coverageGridMs: CoverageGridMs = {
+    volume: coverageGridMsOf(resolvedEntry(volumeResolution)?.nativeGrid),
+    cvd: coverageGridMsOf(resolvedEntry(cvdResolution)?.nativeGrid),
+    liquidationLong: coverageGridMsOf(resolvedEntry(liquidationLongResolution)?.nativeGrid),
+    liquidationShort: coverageGridMsOf(resolvedEntry(liquidationShortResolution)?.nativeGrid),
+  };
   const volumeSlots = nonNegativeFlowSlotsFromHistoryRows(volumeResult.rows);
   const volume: VolumeSubAxisData = {
     slots: volumeSlots,
@@ -738,7 +748,10 @@ export default async function SymbolPage({
     // SAME raw rows the slots above came from (not the slots themselves, which have already
     // dropped `coverage` — `ScalarSlot` carries only `{time, value}`, `ADR-003`'s canonical grid
     // is untouched by this task).
-    partialCoverage: summarizePartialCoverage(volumeResult.rows),
+    partialCoverage: summarizeCoverageMagnitude(volumeResult.rows, {
+      knowledgeTimeMs: routeWindow.knowledgeTimeMs,
+      nativeGridMs: coverageGridMs.volume,
+    }),
   };
 
   // ── The CVD panel's own declared facts (`T-02.5`) ─────────────────────────────────────────
@@ -757,7 +770,10 @@ export default async function SymbolPage({
     // `T-03.12` — `cvd_delta` is the other `FLOW` SUM this screen draws (regime A); the running
     // `cumulativeSlots` is a downstream VIEW of these same deltas (`buildCvdPanel`) and gets no
     // second, derived mark of its own — one honest count at the source, not two that could drift.
-    partialCoverage: summarizePartialCoverage(cvdResult.rows),
+    partialCoverage: summarizeCoverageMagnitude(cvdResult.rows, {
+      knowledgeTimeMs: routeWindow.knowledgeTimeMs,
+      nativeGridMs: coverageGridMs.cvd,
+    }),
   };
 
   // ── The OI pane's own declared facts (`T-03.5`) ───────────────────────────────────────────
@@ -830,7 +846,7 @@ export default async function SymbolPage({
   // `0` slots while `price`/`oi`/`cvd` stayed grid-padded at the full window — the six panes were
   // no longer "sobre exatamente a mesma grade" (plano `02` item `2.0`). See
   // `nonNegativeFlowSlotsFromHistoryRows`'s own docstring for the mechanism.
-  const liquidationCohortData = (rows: readonly SeriesHistoryRow[]): LiquidationCohortData => {
+  const liquidationCohortData = (rows: readonly SeriesHistoryRow[], nativeGridMs: number): LiquidationCohortData => {
     const slots = nonNegativeFlowSlotsFromHistoryRows(rows, routeWindow.window, axisStepMs);
     return {
       slots,
@@ -843,7 +859,7 @@ export default async function SymbolPage({
       // `T-03.12` — `sum_liquidation` is the third `FLOW` SUM (regime A), off the SAME raw `rows`
       // this closure already receives per cohort — long and short degrade independently, same as
       // every other fact on this pane.
-      partialCoverage: summarizePartialCoverage(rows),
+      partialCoverage: summarizeCoverageMagnitude(rows, { knowledgeTimeMs: routeWindow.knowledgeTimeMs, nativeGridMs }),
     };
   };
   // ⛔ `RS-5` IS RESOLVED FROM THE CATALOG ROW, NEVER SPELLED AS A LITERAL. A hardcoded "dado de
@@ -858,8 +874,8 @@ export default async function SymbolPage({
   // rather than left implied — if that ever stops holding, this line is where it breaks.
   const liquidationEntry = resolvedEntry(liquidationLongResolution);
   const liquidation: LiquidationPaneData = {
-    long: liquidationCohortData(liquidationLongResult.rows),
-    short: liquidationCohortData(liquidationShortResult.rows),
+    long: liquidationCohortData(liquidationLongResult.rows, coverageGridMs.liquidationLong),
+    short: liquidationCohortData(liquidationShortResult.rows, coverageGridMs.liquidationShort),
     provenance: resolveSeriesProvenance(liquidationEntry),
     // The `unit` term of the series' OWN identity (`USD`), printed beside the numeral — `W-1` of
     // `gates/design-01.md` failed the volume sub-axis for a numeral with no unit, and a literal
@@ -1040,6 +1056,7 @@ export default async function SymbolPage({
         longShort: longShortResult.status,
       }}
       knowledgeTimeMs={routeWindow.knowledgeTimeMs}
+      coverageGridMs={coverageGridMs}
       liveUrls={liveUrls}
       selectedTimeframe={selectedInterval}
     />
