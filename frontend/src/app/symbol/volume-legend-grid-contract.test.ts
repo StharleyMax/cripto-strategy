@@ -36,12 +36,12 @@ test("MORDE: the volume <LegendValue> reads volume.legendSlots, never the native
 test("MORDE: the SSR legendSlots is built WITH the route window (canonical grid)", () => {
   assert.match(
     pageSource,
-    /legendSlots:\s*nonNegativeFlowSlotsFromHistoryRows\(\s*volumeResult\.rows,\s*routeWindow\.window\s*\)/,
+    /legendSlots:\s*nonNegativeFlowSlotsFromHistoryRows\(\s*volumeResult\.rows,\s*routeWindow\.window,\s*axisStepMs\s*\)/,
   );
 });
 
 test("MORDE: the paginator's legendSlots is built WITH the page window (canonical grid)", () => {
-  assert.match(assemblySource, /legendSlots:\s*nonNegativeFlowSlotsFromHistoryRows\(\s*rows\.volume,\s*s2Window\s*\)/);
+  assert.match(assemblySource, /legendSlots:\s*nonNegativeFlowSlotsFromHistoryRows\(\s*rows\.volume,\s*s2Window,\s*axisStepMs\s*\)/);
 });
 
 test("CALA: the regex bites — a legend pointed at the native vector is refused", () => {
