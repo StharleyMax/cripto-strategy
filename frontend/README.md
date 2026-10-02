@@ -1813,3 +1813,30 @@ contêiner — a área de plot mede `1208px` dentro de um host de `1254px` (o ei
 resto), e a fração sobre o elemento errado desenha uma faixa que **parece** alinhada. E a leitura vai
 **no frame seguinte** ao `fitContent()`: antes dele a escala ainda responde o intervalo anterior, e
 uma coordenada assim tem cara de medição sem ser uma.
+
+## 24. O eixo é do timeframe, e a janela conta em barras (`paineis-de-fluxo` `T-05.1`, 2026-10-02)
+
+Desenho: [`handoff/T-05.1-desenho.md`](../docs/context/paineis-de-fluxo/handoff/T-05.1-desenho.md). Relatório:
+[`gates/T-05.1-build.md`](../docs/context/paineis-de-fluxo/gates/T-05.1-build.md).
+
+- **O passo do eixo vem de um lugar só:** `timeframeStepMs(interval)` (`supported-timeframes.ts`), em
+  `[symbol]/page.tsx` e no pager (`use-history-pager.ts`, a partir de `seed.interval`). Todo construtor de slot
+  (`buildS2Panels`, `assembleHistoryPage`, `nonNegativeFlowSlotsFromHistoryRows(rows, window, axisStepMs)`,
+  `oiCandlePaneData`, `axisForWindow`) recebe o passo **como argumento obrigatório, sem default**.
+  `S2_AXIS_STEP_MS` e `S2_WINDOW_SPAN_MS` foram apagados: um default de 1 min era o próprio defeito.
+- **Janela, página e teto em barras:** `timeframe-window.ts::TIMEFRAME_WINDOW_BARS` (1m 5.760/500 · 5m 1.152/288 ·
+  15m 384/192 · 1h 168/168 · 4h 42/42). 1h e 4h abrem em 7 dias `[DECISÃO-OWNER: 2026-10-02, escolha entre
+  alternativas apresentadas]`. O teto acumulado continua 5.000 barras (1m: 6.260 efetivo).
+- **A vista inicial são as últimas `VIEW_BARS = 120` barras** (`initialViewRange`), e não mais o eixo inteiro.
+  Em 4h (42 barras) a vista é o eixo inteiro.
+- **`windowEndMsInclusive` continua na grade de 1 min, de propósito** — é o `window_end_ms` do pedido, e o backend
+  devolve as mesmas linhas para `end − 1 min` e `end − step` (`e2e/18`). A leitura do readout usa
+  `lastGridInstant(window, axisStepMs)`.
+- **⚠️ Gotcha — a montagem não pode paginar.** Depois do quadro de guarda da montagem, a biblioteca ainda reassenta
+  o layout e re-reporta a faixa uma fração de barra deslocada (`from = −0,07` em 4h). Em 4h a vista é o eixo inteiro,
+  e esse eco caía dentro do gatilho de página: a montagem pedia **10** `/series-history` sem gesto `[MEDIDO
+  2026-10-02, e2e/39]`. O host agora só leva uma mudança de faixa ao store **depois do primeiro `pointerdown` ou
+  `wheel` no gráfico**. Falsificador: `e2e/39` (`browser_history_requests_at_mount:4h` = 0, e o primeiro arrasto
+  em 4h pede página).
+- **Falsificador do eixo:** `e2e/39-axis-step-per-timeframe.spec.ts` — `gridSlots === initialBars` nos 5 TFs.
+  Com o passo trocado por 1 min nos dois pontos acima, 5m/15m/1h/4h reprovam (5.760/5.760/10.080/10.080) e 1m passa.
