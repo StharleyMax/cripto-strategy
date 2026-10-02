@@ -95,7 +95,7 @@ import {
 import type { PanelCoverage, SeriesHistoryRow } from "./series-history-envelope.ts";
 import { combineHistoryCoverage, type PanelCoverageBundle } from "./slot-coverage.ts";
 import { timeframeStepMs } from "./supported-timeframes.ts";
-import { timeframeWindowBars } from "./timeframe-window.ts";
+import { isLeftOfMountView, mountViewRange, timeframeWindowBars } from "./timeframe-window.ts";
 
 /** The `series_key_id` this route resolved for each of the ten `/series-history` fetches
  * `page.tsx` already makes — `null` for a panel whose catalog resolution failed or was
@@ -248,6 +248,10 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
   const inFlightRef = useRef(false);
   // `T-01.5` — see `HistoryPagerResult.holdRightEdgeCap`.
   const rightEdgeCapHeldRef = useRef(false);
+  // `T-05.1` (`handoff/T-05.1-revisao-ab29321.md` §4): the left edge the mount frames — same pure
+  // function and same axis as `axis-sync-provider.tsx` (it receives `pager.axis` and reads it once).
+  // Frozen at mount on purpose: a page widens the axis, never the framing the operator started from.
+  const mountViewFromMsRef = useRef(mountViewRange(axis).fromMs);
 
   const fetchPage = useCallback(
     async (req: { readonly fromMs: number; readonly toMs: number; readonly intervalMs: number }) => {
@@ -392,6 +396,11 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
         earliestBucketMs: declared.earliestBucketMs ?? coverageFloorMsRef.current,
         sourceFloorMs: null,
       };
+      // `T-05.1`: the mount framing, a layout echo of it, or a zoom-in is not a request for older
+      // history (`isLeftOfMountView`). Only bites at `4h`, where the view is born inside the trigger.
+      if (!isLeftOfMountView(range, mountViewFromMsRef.current, axisRef.current.stepMs)) {
+        return;
+      }
       const req = historyRequest(range, axisRef.current, coverage, pageSlots, triggerSlots);
       if (req === null) {
         return;

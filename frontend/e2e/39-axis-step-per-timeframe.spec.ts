@@ -169,7 +169,7 @@ for (const [interval, initialBars] of Object.entries(INITIAL_BARS)) {
 }
 
 /**
- * The other half of the mount assert above: at `4h` the gate that keeps the MOUNT from paging must
+ * The other half of the mount assert above: at `4h` the lock that keeps the MOUNT from paging must
  * not keep the OPERATOR from paging. The view is the whole 42-bar axis, so one drag toward the past
  * already crosses the trigger (`T-05.1-desenho.md` §3, "sob demanda") — and the page is asked for.
  */
@@ -207,4 +207,44 @@ test(`T-05.1: em 4h o primeiro arrasto para o passado pede página — sob deman
     .poll(() => browserHistoryRequests.length, { message: "o arrasto em 4h não pediu página", timeout: 15_000 })
     .toBeGreaterThan(0);
   fact(SPEC, "drag_4h_requests_after", browserHistoryRequests.length);
+});
+
+/**
+ * `handoff/T-05.1-revisao-ab29321.md` §5 item 3 — the case that SEPARATES the two fixes. At `4h` the
+ * view is born inside the paging trigger; a zoom-IN by the wheel asks to see LESS, and must not
+ * fetch 7 more days. The gesture gate of `ab29321` opened on the first `wheel` and then paged (10
+ * requests = 1 page); the position lock of the pager (`isLeftOfMountView`) keeps it at 0, because the
+ * zoom moves the left edge RIGHT of the mount framing. The range is asserted to have moved, so a
+ * wheel the chart ignored cannot pass as a lock that held.
+ */
+test(`T-05.1: em 4h o zoom-in pela roda não pede página (${SPEC})`, async ({ page }) => {
+  test.setTimeout(180_000);
+  const browserHistoryRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/series-history")) browserHistoryRequests.push(request.url());
+  });
+  const response = await page.goto(`${SYMBOL_PATH}?interval=4h`, { waitUntil: "load" });
+  expect(response?.ok()).toBe(true);
+  await page.waitForFunction(
+    () => Array.from(document.querySelectorAll("canvas")).some((c) => c.width > 0 && c.height > 0),
+    undefined,
+    { timeout: 120_000 },
+  );
+  await page.waitForTimeout(1_500);
+  expect(browserHistoryRequests, "a montagem em 4h pediu página sem gesto").toEqual([]);
+
+  const host = page.locator(`[data-testid="${CHART_HOST_TESTID}"]`);
+  const box = await host.boundingBox();
+  if (box === null) {
+    throw new Error("chart host: no bounding box — nothing mounted");
+  }
+  const fromBefore = Number(await host.getAttribute("data-visible-logical-from"));
+  await page.mouse.move(box.x + box.width * 0.5, box.y + Math.min(200, box.height * 0.3));
+  for (let i = 0; i < 3; i += 1) await page.mouse.wheel(0, -200);
+  await page.waitForTimeout(3_000);
+  const fromAfter = Number(await host.getAttribute("data-visible-logical-from"));
+  fact(SPEC, "zoom_in_4h_from", { before: fromBefore, after: fromAfter });
+  fact(SPEC, "zoom_in_4h_requests", browserHistoryRequests.length);
+  expect(fromAfter, "a roda não aproximou a vista — o teste não julgaria nada").toBeGreaterThan(fromBefore + 1);
+  expect(browserHistoryRequests, "o zoom-in em 4h pediu página (o operador pediu para ver menos)").toEqual([]);
 });

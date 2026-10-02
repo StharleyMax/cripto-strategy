@@ -18,7 +18,13 @@ import { EMPTY_OI_CANDLE_BUNDLE } from "./oi-candle-pane.ts";
 import { assembleHistoryPage, type HistoryRowsBundle } from "./panel-assembly.ts";
 import { resolveRouteWindow } from "./request-window.ts";
 import { SUPPORTED_TIMEFRAMES, timeframeStepMs } from "./supported-timeframes.ts";
-import { TIMEFRAME_WINDOW_BARS, VIEW_BARS, timeframeWindowBars } from "./timeframe-window.ts";
+import {
+  TIMEFRAME_WINDOW_BARS,
+  VIEW_BARS,
+  isLeftOfMountView,
+  mountViewRange,
+  timeframeWindowBars,
+} from "./timeframe-window.ts";
 
 const ONE_MINUTE_MS = 60_000;
 const FIVE_MINUTES_MS = 5 * ONE_MINUTE_MS;
@@ -153,4 +159,42 @@ test("MORDE D-A: the paginator's assembly of a 1h page puts the price panel on 1
   assert.equal(assembly.priceCandles.gridSlots, 168);
   // The same assembly at the step the defect used: 10.080 slots, 60 empty between two 1h candles.
   assert.equal(assembleOneHourRoute(ONE_MINUTE_MS).panels.price.series.slots.length, 10_080);
+});
+
+/** `handoff/T-05.1-revisao-ab29321.md` §5 item 4 — the paging lock, by position. At `4h` the 42-slot
+ * view IS the whole axis, so the mount framing sits at `axis.startMs`, inside the paging trigger. */
+function fourHourMount(): { readonly fromMs: number; readonly toMs: number; readonly stepMs: number } {
+  const axis = axisForWindow(resolveRouteWindow(NOW_MS, "4h").window, FOUR_HOURS_MS);
+  const framing = mountViewRange(axis);
+  assert.equal(axis.slotCount, 42);
+  assert.equal(framing.fromMs, axis.startMs, "at 4h the mount frames the whole axis");
+  return { ...framing, stepMs: axis.stepMs };
+}
+
+test("lock CALA: the 4h layout echo (from = -0,0717 bar, measured) does not ask for older history", () => {
+  const mount = fourHourMount();
+  const echo = { fromMs: mount.fromMs - 0.0717 * mount.stepMs, toMs: mount.toMs };
+  assert.equal(isLeftOfMountView(echo, mount.fromMs, mount.stepMs), false);
+  // The largest echo measured (0,20 bar at 15m) is also under the half bar.
+  assert.equal(isLeftOfMountView({ fromMs: mount.fromMs - 0.2 * mount.stepMs, toMs: mount.toMs }, mount.fromMs, mount.stepMs), false);
+});
+
+test("lock CALA: a 4h zoom-IN (from = mount + 3 bars) does not ask for older history", () => {
+  const mount = fourHourMount();
+  const zoomIn = { fromMs: mount.fromMs + 3 * mount.stepMs, toMs: mount.toMs };
+  assert.equal(isLeftOfMountView(zoomIn, mount.fromMs, mount.stepMs), false);
+  assert.equal(isLeftOfMountView({ fromMs: mount.fromMs, toMs: mount.toMs }, mount.fromMs, mount.stepMs), false);
+});
+
+test("lock MORDE: a 4h drag past half a bar (from = -0,6 bar) asks for older history", () => {
+  const mount = fourHourMount();
+  const drag = { fromMs: mount.fromMs - 0.6 * mount.stepMs, toMs: mount.toMs - 0.6 * mount.stepMs };
+  assert.equal(isLeftOfMountView(drag, mount.fromMs, mount.stepMs), true);
+});
+
+test("the provider and the pager read the SAME framing: mountViewRange is the last VIEW_BARS bars", () => {
+  const axis = axisForWindow(resolveRouteWindow(NOW_MS, "1m").window, ONE_MINUTE_MS);
+  const framing = mountViewRange(axis);
+  assert.equal((framing.toMs - framing.fromMs) / ONE_MINUTE_MS, VIEW_BARS);
+  assert.equal(framing.toMs, axis.startMs + axis.slotCount * ONE_MINUTE_MS);
 });

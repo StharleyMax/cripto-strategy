@@ -26,8 +26,8 @@ import {
   type AxisSyncStore,
 } from "./axis-sync.ts";
 import { recordAxisRangeApplied } from "./axis-latency-probe.ts";
-import { initialViewRange, type TimeAxis, type TimeRange } from "../../charts/index.ts";
-import { VIEW_BARS } from "./timeframe-window.ts";
+import type { TimeAxis, TimeRange } from "../../charts/index.ts";
+import { mountViewRange } from "./timeframe-window.ts";
 
 // `T-02.7` (`RNF-2`): the ONE extra wire this file carries. `createAxisSyncStore`'s optional
 // `onRangeApplied` hook is bound to `recordAxisRangeApplied` here, at the same place the store
@@ -65,7 +65,7 @@ export function AxisSyncProvider({
       // `paineis-de-fluxo` `T-05.1` (`handoff/T-05.1-desenho.md` §3) — the chart opens on the last
       // `VIEW_BARS` bars, not on the whole axis: framing 5.760 slots left ~0,2 px per `1m` bar.
       // Read once, at mount — since `T-01.5` a page no longer remounts, so this never re-frames.
-      initialRange: initialViewRange(axis, VIEW_BARS),
+      initialRange: mountViewRange(axis),
       onCandidateRange: (range) => onCandidateRangeRef.current?.(range),
     });
     const ablated = typeof window !== "undefined" && isAxisSyncAblationRequested(window.location.search);

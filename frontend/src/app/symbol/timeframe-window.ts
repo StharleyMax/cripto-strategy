@@ -33,6 +33,8 @@
  * rows per minute), re-measure; `4h` could then afford more bars (candidate: 84 = 14 days).
  */
 
+import { initialViewRange, type TimeAxis, type TimeRange } from "../../charts/index.ts";
+
 import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
 
 /** How many bars the route fetches at mount, and how many one history page adds. */
@@ -69,6 +71,29 @@ export const TIMEFRAME_WINDOW_BARS: Readonly<Record<string, TimeframeWindowBars>
  * holds fewer bars (`4h`, 42), the view is the whole window.
  */
 export const VIEW_BARS = 120;
+
+/**
+ * `T-05.1` (`handoff/T-05.1-revisao-ab29321.md` §4) — the range the chart frames at mount, spelled
+ * ONCE: `axis-sync-provider.tsx` opens the chart on it and `use-history-pager.ts` reads its left
+ * edge as the paging lock, from the same pure function and the same `axis`.
+ */
+export function mountViewRange(axis: TimeAxis): TimeRange {
+  return initialViewRange(axis, VIEW_BARS);
+}
+
+/**
+ * `T-05.1` — whether `range` asks for older history: its left edge moved MORE than half a bar left
+ * of the mount framing. A range that has not is the mount framing itself, a layout echo of it (the
+ * library re-reports it a fraction of a bar off after measuring its labels: `from = −0,07` at `4h`,
+ * `263,8` for `264` at `15m`, the largest `0,20` bar `[MEDIDO 2026-10-02, e2e/39, n=5 TFs]`) or a
+ * zoom-IN — never a request for more past. Only bites where the view is born inside the paging
+ * trigger (`4h`: 42 slots, the view is the whole axis); everywhere else the trigger already sits
+ * far left of it. Decided by position, not by the event's origin, so a keyboard or programmatic
+ * pan pages exactly like a drag.
+ */
+export function isLeftOfMountView(range: TimeRange, mountViewFromMs: number, stepMs: number): boolean {
+  return range.fromMs <= mountViewFromMs - stepMs / 2;
+}
 
 /** The row of `TIMEFRAME_WINDOW_BARS` for a served `interval`. Throws for any other: `page.tsx`
  * only ever hands a member of `SUPPORTED_TIMEFRAMES` down, so an outsider is a contract violation,
