@@ -46,9 +46,28 @@ _SELECT_WINDOW_SQL = (
 # request window (`_SELECT_WINDOW_SQL` above answers a different question). `MIN`/`MAX` over an
 # empty match both come back `NULL`, which `psycopg` hands back as `None` — the honest "the
 # store holds nothing for this series yet" answer, not a sentinel this module has to invent.
+#
+# `T-06.3` (`handoff/T-06.3-desenho.md` §1.2): the earliest end is NOT a plain `MIN(bucket_end)`.
+# The planner rewrites that `MIN` as `LIMIT 1` over `series_bucket_end_idx (bucket_end DESC)` with
+# `series_key_id`/`symbol` as a FILTER outside the index, so a series that started late walks
+# every row of every other series from the oldest chunk forward before it finds its first one —
+# measured on the local stack, 2026-10-02: 946 ms, 3,846,460 rows removed by filter, 1,167,369
+# shared buffers for the long-liquidation series. The primary key `(series_key_id, symbol,
+# source, bucket_end, observed_at)` already orders `bucket_end` INSIDE each `source`, so the
+# first `bucket_end` per `source` (`DISTINCT ON (source) ... ORDER BY source, bucket_end`) is a
+# TimescaleDB SkipScan on that key, per chunk: 1.08 ms, 109 rows removed, 186 buffers, no index
+# added. The minimum of those per-source minima IS the series' minimum, so the answer is the
+# same by construction (and measured equal on all 10 BTCUSDT series of the screen).
+# The `MAX` stays a plain aggregate on purpose: `DISTINCT ON ... DESC` does not get a SkipScan
+# and measured 850-1,060 ms (`T-06.3-desenho.md` §1.2). Declared risk: that `MAX` degrades in
+# mirror image for a DEAD series (one that stopped writing many chunks ago); none of the 10 is.
 _SELECT_EXTENT_SQL = (
-    "SELECT MIN(bucket_end), MAX(bucket_end) FROM md.series "
-    "WHERE series_key_id = %s AND symbol = %s"
+    "SELECT "
+    "(SELECT MIN(first_bucket_end) FROM ("
+    "SELECT DISTINCT ON (source) bucket_end AS first_bucket_end FROM md.series "
+    "WHERE series_key_id = %s AND symbol = %s ORDER BY source, bucket_end"
+    ") AS first_per_source), "
+    "(SELECT MAX(bucket_end) FROM md.series WHERE series_key_id = %s AND symbol = %s)"
 )
 
 
@@ -161,7 +180,7 @@ class PostgresSeriesWindowReader:
         it, to tell `beyond-coverage` apart from `not-loaded`.
         """
         with self._connection.cursor() as cursor:
-            cursor.execute(_SELECT_EXTENT_SQL, (series_key_id, symbol))
+            cursor.execute(_SELECT_EXTENT_SQL, (series_key_id, symbol, series_key_id, symbol))
             record = cursor.fetchone()
         if record is None:
             return (None, None)
