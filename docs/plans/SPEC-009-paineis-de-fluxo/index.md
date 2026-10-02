@@ -29,6 +29,7 @@ fronteira do `CLAUDE.md`) · qualquer regra, alvo de `make` ou allowlist **de id
 | `04` | [`04_liquidacao_num_pane.md`](04_liquidacao_num_pane.md) | short em cima, long embaixo, no mesmo pane | `web` · `charts` | `01`, e `02` por conta do arquivo (abaixo) |
 | `03a` | [`03_oi_candle.md`](03_oi_candle.md) | (dado) coletor de polling de 1 min até `md.series` | `sentimento` · `infra` | — **pode começar**: não toca `SymbolClient.tsx` |
 | `03b` | [`03_oi_candle.md`](03_oi_candle.md) | candle de OI colorido por contratos, em dois regimes | `sentimento` · `web` | `03a`, `01` e `04` (por conta do arquivo) |
+| `05` | [`05_correcoes_de_uso.md`](05_correcoes_de_uso.md) | (fix, 2026-10-02) o eixo segue o timeframe; a cobertura só avisa quando falta dado, e diz quanto | `web` · `charts` · `sentimento` | `01`–`04` fechadas |
 
 **Ordem:** `01` → `02` → `04` → `03b`. A `03a` **pode começar já** e andar em paralelo com `01`/`02`/`04`,
 porque não toca `SymbolClient.tsx`. Quanto mais cedo o coletor liga, mais história com pavio de 1 min
