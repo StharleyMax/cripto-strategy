@@ -59,3 +59,49 @@ desenhada, em 1h/4h). O resto é PLAUSIBLE, aceito por desenho, ou limpeza.
   ausente = espera (não crash), `stop_event` encerra a espera.
 - **Anti-lookahead do zero:** zero candidato obedece `is_settled_bucket` (mesma fronteira do não-zero)
   e `first_whole_bucket_start(from)`; `heapq.merge` preserva a recusa de ordem a jusante.
+
+## Re-validação @782291f
+
+- **Alvo:** `git diff 31fade6..782291f -- frontend backend` — 10 arquivos, +254/−69, só `frontend/`
+  `[MEDIDO 2026-10-02: git diff --stat 31fade6..782291f -- frontend backend | tail -1]`. Inclui o
+  conserto (`9fc401e`, T-05.1-R1, merge `acce0b3`) e os testes do QA (`782291f`).
+- **Instrumento:** skill `code-review`, nível `high`, sobre esse diff, mais leitura manual de cada
+  achado (só leitura; nenhum teste rodado por este gate — o verde é o de `W7-QA-FRONT.md` em `acce0b3`).
+
+### Veredito final da wave W7: **APPROVED**
+
+C-1 resolvido; nenhum achado CONFIRMED de severidade relevante no conserto.
+
+### (1) C-1 — resolvido nos dois sítios, com UMA regra
+
+- `long-short-band.ts` ganhou `recentBandSinceMs` (privada: `slots[last].time - spanMs`) e a usa
+  nas DUAS funções: `recentBandSlotRange` (a faixa, `SymbolClient.tsx:4056`) e `recentBandSlots`
+  (o rodapé).
+- `panel-assembly.ts:313` e `[symbol]/page.tsx:944` calculam `recentStats` com
+  `seriesValueStats(recentBandSlots(longShortSlots, …))`; a faixa recebe `slots: longShortSlots`
+  (`panel-assembly.ts:302`, `page.tsx:922`) ⇒ o mesmo array, o mesmo corte, no SSR e no pager.
+- O corte não depende mais de `windowEndMsInclusive` (grade de 1 min) em nenhum dos dois sítios.
+
+### (2) Defeito novo — nenhum CONFIRMED relevante
+
+- **`slotsFrom` removido de `view-model.ts`:** `grep -rn "slotsFrom\b" frontend backend` devolve só
+  3 menções em comentário de teste (`panel-assembly.test.ts:308`, `long-short-band.test.ts:32,53`),
+  nenhum chamador vivo `[MEDIDO 2026-10-02 @782291f]`. Os dois chamadores de produção migraram.
+- **1m:** o último slot da grade de 1 min é o próprio `windowEndMsInclusive` ⇒ `recentBandSlots`
+  devolve o mesmo conjunto que o `slotsFrom(windowEnd − 4h)` antigo (241 slots). Sem regressão.
+- **Troca de TF:** o cliente remonta (`seedIdentityKey` inclui `interval`, já verificado acima); o
+  corte é função pura dos slots de cada TF, sem estado entre TFs.
+- **Vazio:** `recentBandSlots([])` = `[]` ⇒ `seriesValueStats` ausente, como antes.
+
+### Achados da skill que NÃO bloqueiam
+
+| # | arquivo:linha | achado | status |
+|---|---|---|---|
+| R-1 | `long-short-band.ts:85` | o corte inclusivo à esquerda cobre `span + 1 passo` em tempo de abertura de barra (4h ⇒ 2 barras, 1h ⇒ 5, 1m ⇒ 241) | **Pré-existente e de desenho**: a régua da faixa é a mesma de antes do conserto (só foi extraída para `recentBandSinceMs`) e o `slotsFrom` removido justificava o `>=` no próprio docstring. O conserto fez o rodapé seguir a faixa, que é o que C-1 pedia. Semântica de "Últimas 4 h" em TF ≥ 4h é pergunta de design (relaciona-se com `N-1` do design-review), não defeito desta correção. |
+| R-2 | `e2e/14-long-short-dado-real.spec.ts:790` | `readableInBand >= 2` reprova (não pula) com dado esparso no Postgres | PLAUSIBLE, baixa: escolha deliberada de não deixar o teste passar sem discriminar; pode virar flake com base recém-limpa. |
+| R-3 | `e2e/14…:771` | o assert do fato da faixa fixa `span/step + 1` barras | Consequência de R-1; muda junto se R-1 for reaberto. |
+| R-4 | `page.tsx:944` / `panel-assembly.ts:313` | os fatos do long/short continuam montados em dois lugares (raiz de C-1) | Limpeza estrutural; a regra agora é uma só função, a duplicação de montagem é anterior. |
+| R-5 | `panel-assembly.test.ts:318` | teste fixa `page.tsx` por regex sobre o texto-fonte | Frágil a reformatação; baixa. |
+| R-6 | `long-short-band.ts:64,99` | `findIndex` e `filter` reaplicam o corte em duas implementações | Limpeza; o instante de corte já é único (`recentBandSinceMs`). |
+| R-7 | `panel-assembly.ts:311` | comentário novo mistura português ("faixa das 4 h") | Fere a linha 5 da tabela de idioma do `CLAUDE.md` — convenção, não portão. Limpeza. |
+| R-8 | `panel-assembly.ts:37` | `import` depois de `type PriceUse = …` | Cosmético. |
