@@ -128,7 +128,7 @@ import {
 import { createPanesBeforeSeries } from "./pane-scale-isolation.ts";
 import { unlabeledTickPriceFormat } from "./unlabeled-tick-format.ts";
 import { LIQUIDATION_PANE_FORM } from "./liquidation-pane-form.ts";
-import { recentBandSlotRange } from "./long-short-band.ts";
+import { bandEdgesFromBarCentres, clampBandToPlot, recentBandSlotRange } from "./long-short-band.ts";
 import { AxisSyncProvider, useAxisSync } from "./axis-sync-provider.tsx";
 import { recordHistoryPageApplied, recordHistoryPageDrawn } from "./history-page-latency-probe.ts";
 import {
@@ -163,6 +163,7 @@ import {
   LEGEND_MARK_TEXT,
   legendMarkWidthCh,
   legendNumeralWidthCh,
+  resolvePaneHeadings,
   resolvePaneLegends,
   type CrosshairSlotStore,
   type LegendSeriesId,
@@ -933,6 +934,9 @@ interface LegendFrame {
    * `1m` a bar is ONE point on the slot of its open, so the legend snaps the slot it reads to that
    * open (`charts::resolveLegendReading`'s `bucketMs`), instead of reading an empty minute. */
   readonly bucketMs: number;
+  /** `T-05.6` (`W7-DESIGN-REVIEW` N-2): each pane's heading terms, which name the page's TF beside
+   * the series' native cadence (`pane-legend.ts::resolvePaneHeadings`). `""` where no entry resolved. */
+  readonly headings: Readonly<Record<LegendSeriesId, string>>;
 }
 
 const LegendFrameContext = createContext<LegendFrame | null>(null);
@@ -957,11 +961,12 @@ function useSlotUnit(): string {
 const NO_CROSSHAIR_STORE: CrosshairSlotStore = createCrosshairSlotStore();
 const noCrosshairSnapshot = (): number | undefined => undefined;
 
-/** The identity terms of a pane's heading — `T-04.8`'s rule, now fed the legend the registry
- * derived from the catalog entry (`pane-legend.ts::paneIdentityLabel`): cadence then unit, in
+/** The identity terms of a pane's heading — `T-04.8`'s rule, fed the heading `pane-legend.ts`
+ * derived from the catalog entry and the page's TF (`paneHeadingLabel`): the active TF where it is
+ * not the series' own cadence (`T-05.6`, `W7-DESIGN-REVIEW` N-2), then cadence and unit, in
  * parentheses, and no parentheses at all where no entry resolved. */
-function identityTerms(legend: PaneLegendSpec | null): string {
-  return legend === null || legend.label.length === 0 ? "" : ` (${legend.label})`;
+function identityTerms(heading: string): string {
+  return heading.length === 0 ? "" : ` (${heading})`;
 }
 
 /**
@@ -1992,7 +1997,7 @@ function VolumeMarksLegend() {
 }
 
 function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData; readonly status: PanelStatus }) {
-  const { legends } = useLegendFrame();
+  const { headings } = useLegendFrame();
   const readingText =
     volume.reading.kind === "absent" || volume.reading.value === null ? ABSENCE_TOKEN : String(volume.reading.value);
   return (
@@ -2003,7 +2008,7 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
       data-volume-present-points={volume.presentPoints}
     >
       <PaneLegendLine>
-        <h3 className="font-label-caps text-label-caps text-on-surface">Volume{identityTerms(legends.volume)}</h3>
+        <h3 className="font-label-caps text-label-caps text-on-surface">Volume{identityTerms(headings.volume)}</h3>
         <LegendValue seriesId="volume" factKey="volume" slots={volume.legendSlots} />
         {/* `T-05.4` (§2.5): the coverage chip lives IN the line that names the series, never as a
             block under it — and BEFORE the scale note, because the last child is the one that
@@ -2173,7 +2178,7 @@ function PricePane({
       { series: absenceSeries, belowLegend: false, clearSeparator: true },
     ],
   });
-  const { legends, axisStepMs } = useLegendFrame();
+  const { headings, axisStepMs } = useLegendFrame();
   const priceSlots = panels.price.series.slots;
   const closeSlots = useMemo(
     () =>
@@ -2200,7 +2205,7 @@ function PricePane({
       <section aria-label="Preço" data-testid={PRICE_PANE_TESTID} data-price-candles={priceCandles.drawnCandles} className={PANE_LAYER_CLASS}>
         <PaneLegend>
           <PaneLegendLine>
-            <h2 className="font-label-caps text-label-caps text-on-surface">Preço{identityTerms(legends.price)}</h2>
+            <h2 className="font-label-caps text-label-caps text-on-surface">Preço{identityTerms(headings.price)}</h2>
             {/* `T-01.7`: the close of the candle under the crosshair (the last closed one without it). */}
             <LegendValue seriesId="price" factKey="price" slots={closeSlots} />
             <p className="text-sm text-provenance-weak">
@@ -2620,7 +2625,7 @@ function OiPane({
   const regime = useMemo(() => oiRegimeMarks(oiCandles.candles, oiCandles.sources), [oiCandles.candles, oiCandles.sources]);
   const gridStartMs = oiCandles.slots[0]?.time ?? null;
   // `T-05.1` — the step of the grid `gridStartMs` belongs to: the axis's, the TF's width.
-  const { legends, axisStepMs } = useLegendFrame();
+  const { headings, axisStepMs } = useLegendFrame();
   const canvasMarks = useMemo(
     () => ({
       bands: regime.bands,
@@ -2761,7 +2766,7 @@ function OiPane({
     >
       <PaneLegend>
         <PaneLegendLine>
-          <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest{identityTerms(legends.oi)}</h2>
+          <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest{identityTerms(headings.oi)}</h2>
           {/* `T-03.11`: O·H·L·C of the candle the crosshair is over, and its `DERIVADO` label. */}
           <OiCandleLegend oiCandles={oiCandles} />
           <OiProvenance oi={oi} />
@@ -2937,7 +2942,7 @@ function CvdPane({
       { series: cumulativeSeries, belowLegend: true, clearSeparator: false },
     ],
   });
-  const { legends, axisStepMs } = useLegendFrame();
+  const { headings, axisStepMs } = useLegendFrame();
   // `T-05.1` — `panels.cvd.timeframeMs` IS the axis step (`buildCvdPanel`), so the query is the
   // last slot of THAT grid.
   const deltaReading = resolveFlowReading(
@@ -2977,7 +2982,7 @@ function CvdPane({
     >
       <PaneLegend>
       <PaneLegendLine>
-        <h2 className="font-label-caps text-label-caps text-on-surface">CVD{identityTerms(legends.cvd)}</h2>
+        <h2 className="font-label-caps text-label-caps text-on-surface">CVD{identityTerms(headings.cvd)}</h2>
         {/* `T-01.7`: TWO values on one line — the reason `C-8`'s fixed column exists: without it the
             cumulative would walk every time the delta changes width. */}
         <LegendValue seriesId="cvd" factKey="cvd_delta" slots={panels.cvd.deltaSlots} prefix="delta" />
@@ -3395,7 +3400,7 @@ function LiquidationPane({
   readonly longStatus: PanelStatus;
   readonly shortStatus: PanelStatus;
 }) {
-  const { legends } = useLegendFrame();
+  const { headings } = useLegendFrame();
   // The registry's refs, or the ablation's. The server (and hydration) render the registry's; the
   // client re-renders with the URL's when they differ. `mount` reads the same cached value, so the DOM
   // order below and the pixels agree.
@@ -3524,7 +3529,7 @@ function LiquidationPane({
           {/* `T-01.7` (`RF-5`): the cadence and the unit come off the long entry's key — the legs differ
               only in `cohort`, so the long entry answers for both (`LiquidationPaneData.provenance`). */}
           <h2 className="font-label-caps text-label-caps text-on-surface">
-            Liquidações{identityTerms(legends.liquidation_long)}
+            Liquidações{identityTerms(headings.liquidation_long)}
           </h2>
           {/* `T-05.4` (§2.4/§2.5): ONE chip for the pane, not one per leg — both legs come from the
               same collector answer, so their coverage is usually identical — placed BEFORE the
@@ -3944,6 +3949,12 @@ interface RecentBandGeometry {
   readonly leftPx: number;
   readonly widthPx: number;
   readonly heightPx: number;
+  /** `T-05.6` (N-1): the plot's width (`timeScale.width()`) the band was clamped to — published so
+   * the e2e can check the tag against the price scale's edge, not against a guess. */
+  readonly plotWidthPx: number;
+  /** `T-05.6`: a side cut by the plot's edge draws no border (`clampBandToPlot`). */
+  readonly clippedLeft: boolean;
+  readonly clippedRight: boolean;
   readonly firstIndex: number;
   readonly lastIndex: number;
 }
@@ -3993,6 +4004,8 @@ function LongShortRecentBand({
       data-fact={`long_short_recent_band:${band.firstIndex}/${band.lastIndex}`}
       data-recent-band-left-px={Math.round(band.leftPx)}
       data-recent-band-width-px={Math.round(band.widthPx)}
+      data-recent-band-plot-width-px={Math.round(band.plotWidthPx)}
+      data-recent-band-clipped={`${band.clippedLeft ? "left" : ""}${band.clippedRight ? "right" : ""}`}
       // ⛔ `z-10` IS NOT DECORATION — WITHOUT IT THIS ELEMENT EXISTS IN THE DOM AND NOT ON THE
       // SCREEN, which is the worst failure available to a mark whose whole job is to be seen. The
       // first working version of this band had no `z-` class: every assertion passed (`toHaveCount(1)`,
@@ -4003,7 +4016,16 @@ function LongShortRecentBand({
       // BELOW them. `10` clears both with room for the library to add a layer.
       // `pointer-events-none`: the band must not eat the crosshair of the chart underneath it.
       className="pointer-events-none absolute z-10 border-l border-r border-provenance-weak"
-      style={{ left: `${band.leftPx}px`, top: 0, width: `${band.widthPx}px`, height: `${band.heightPx}px` }}
+      // `T-05.6`: a side the plot's edge cut draws NO border — the four hours continue off screen,
+      // and a border there would place their start (or end) where it is not.
+      style={{
+        left: `${band.leftPx}px`,
+        top: 0,
+        width: `${band.widthPx}px`,
+        height: `${band.heightPx}px`,
+        ...(band.clippedLeft ? { borderLeftWidth: 0 } : {}),
+        ...(band.clippedRight ? { borderRightWidth: 0 } : {}),
+      }}
     >
       {/* ⚠️ THE TAG NAMES THE BAND AND DOES NOT REPEAT ITS DOMAIN, WHICH THE STUDY DOES
           (*"Últimas 4h [1.4950 a 1.8098]"*) — and the reason is a width this migration measured and
@@ -4012,8 +4034,20 @@ function LongShortRecentBand({
           `long_short_recent_band_width_px=120` sobre `canvas=1208px`]`, in which the domain wraps to
           three lines and becomes a blob over the plot. The two numerals are not lost: they are the
           footer's *"Últimas 4 h: 1.495 a 1.5707 · …"*, 14px, one line below, which is the MORE
-          legible copy of the same fact. One fact, one place. */}
-      <span className="absolute left-2 top-1.5 whitespace-nowrap border border-provenance-weak bg-surface-lowest px-1.5 text-data-sm text-provenance-weak">
+          legible copy of the same fact. One fact, one place.
+
+          ⛔ `T-05.6` (`W7-DESIGN-REVIEW` N-1): THE TAG HANGS FROM THE BAND'S RIGHT BORDER, NEVER
+          ITS LEFT. Since the band is `span / step` bars it is ONE bar on `4h` (~28 px at 1280) and
+          four on `1h` (~30 px at 1024), narrower than the tag (~91 px): anchored at the left it ran
+          past the plot — cut to `Última` at the price scale on `4h`, over it to x=1000 against a
+          plot edge of 944 on `1024/1h`. Anchored at the right it grows LEFTWARD over the plot, and
+          the band's right border is clamped to the plot (`clampBandToPlot`), so the tag can never
+          reach the price scale, on any TF or width. `-right-px` lays the tag's right border ON the
+          band's, one line, so a tag wider than its band still reads as attached to it. */}
+      <span
+        data-recent-band-label=""
+        className="absolute -right-px top-1.5 whitespace-nowrap border border-provenance-weak bg-surface-lowest px-1.5 text-data-sm text-provenance-weak"
+      >
         Últimas {formatSpan(longShort.recentSpanMs)}
       </span>
     </div>
@@ -4079,20 +4113,36 @@ function LongShortPane({
         return;
       }
       const timeScale = chart.timeScale();
-      const leftPx = timeScale.logicalToCoordinate(bandRange.firstIndex as Logical);
-      const rightPx = timeScale.logicalToCoordinate(bandRange.lastIndex as Logical);
+      // `T-05.6` (N-1/R-1): from the LEFT EDGE of the first bar to the RIGHT EDGE of the last, so a
+      // one-bar band (`4h`) has the width of its bar instead of none, and the band spans `span` of
+      // axis on every TF. Built from the bars' CENTRES plus the spacing between the last two,
+      // because the library answers `0` for a fractional logical index (`bandEdgesFromBarCentres`).
+      const firstCentrePx = timeScale.logicalToCoordinate(bandRange.firstIndex as Logical);
+      const lastCentrePx = timeScale.logicalToCoordinate(bandRange.lastIndex as Logical);
+      const previousCentrePx = timeScale.logicalToCoordinate((bandRange.lastIndex - 1) as Logical);
       // `T-01.5`: this pane's own height inside the one chart, not the whole chart's.
       const paneHeightPx = chart.panes()[paneIndex]?.getHeight() ?? 0;
       // A coordinate outside the visible range comes back `null`, and a zero-width band would draw
       // two coincident borders over a window that is not zero wide. Either way: no band, never an
-      // invented one.
-      if (leftPx === null || rightPx === null || !(rightPx > leftPx) || !(paneHeightPx > 0)) {
+      // invented one. Clamped to the PLOT (`timeScale.width()` stops where the price scale starts),
+      // because the band's right border anchors its label (N-1).
+      const clamped =
+        firstCentrePx === null || lastCentrePx === null || previousCentrePx === null
+          ? null
+          : (() => {
+              const edges = bandEdgesFromBarCentres(firstCentrePx, lastCentrePx, lastCentrePx - previousCentrePx);
+              return clampBandToPlot(edges.leftPx, edges.rightPx, timeScale.width());
+            })();
+      if (clamped === null || !(paneHeightPx > 0)) {
         return;
       }
       setBand({
-        leftPx,
-        widthPx: rightPx - leftPx,
+        leftPx: clamped.leftPx,
+        widthPx: clamped.widthPx,
         heightPx: paneHeightPx,
+        plotWidthPx: timeScale.width(),
+        clippedLeft: clamped.clippedLeft,
+        clippedRight: clamped.clippedRight,
         firstIndex: bandRange.firstIndex,
         lastIndex: bandRange.lastIndex,
       });
@@ -4116,7 +4166,7 @@ function LongShortPane({
   // is the window's own statistic rather than a status or a count of rows: a pane with a healthy
   // transport and an empty time slice is the state the empty form exists for.
   const hasObservation = longShort.windowStats !== null;
-  const { legends } = useLegendFrame();
+  const { headings } = useLegendFrame();
   return (
     // `T-01.6`: THE CARD BECAME A LAYER. This section is the root of the long/short pane's layer,
     // portaled over the pane's own canvas — so it carries no background (it would hide the line)
@@ -4146,7 +4196,7 @@ function LongShortPane({
               HERE — the `/review` `[WARNING]` of `T-04.8`. Where the backend published neither term
               the parenthesis does not appear at all, rather than appearing empty. */}
           <h2 className="font-label-caps text-label-caps text-on-surface">
-            Long/short de contas{identityTerms(legends.long_short)}
+            Long/short de contas{identityTerms(headings.long_short)}
           </h2>
           {/* `T-01.7`: the value under the crosshair (`RATIO`: the slot's own, never carried). */}
           <LegendValue seriesId="long_short" factKey="long_short" slots={longShort.slots} />
@@ -4499,9 +4549,21 @@ export function SymbolClient({
   // entry through the registry's `resolvePaneLegend`, once per pane: the sources are static props, so
   // this runs once per mount of `SymbolClient`.
   const legends = useMemo(() => resolvePaneLegends(paneLegendSources), [paneLegendSources]);
+  // `T-05.6` (N-2) — the headings name the ACTIVE TF: `Preço (1h · nativo 1m, USDT)` on `1h`, never
+  // a bare `(1m, USDT)` beside the `1h` button.
+  const headings = useMemo(
+    () => resolvePaneHeadings(paneLegendSources, selectedTimeframe),
+    [paneLegendSources, selectedTimeframe],
+  );
   const legendFrame: LegendFrame = useMemo(
-    () => ({ legends, axisStepMs: axis.stepMs, asOfMs: knowledgeTimeMs, bucketMs: timeframeStepMs(selectedTimeframe) }),
-    [legends, axis.stepMs, knowledgeTimeMs, selectedTimeframe],
+    () => ({
+      legends,
+      headings,
+      axisStepMs: axis.stepMs,
+      asOfMs: knowledgeTimeMs,
+      bucketMs: timeframeStepMs(selectedTimeframe),
+    }),
+    [legends, headings, axis.stepMs, knowledgeTimeMs, selectedTimeframe],
   );
   // `T-05.2` — THE SIX PANES DRAW `pager.assembly`'s SLOTS FROM HERE ON, never `initialPanels`
   // directly: `panels`/`priceCandles`/`volume`/`cvd` merge the paginator's DYNAMIC facts

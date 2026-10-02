@@ -92,6 +92,37 @@ export function paneIdentityLabel(entry: SeriesCatalogEntry): string {
 }
 
 /**
+ * `T-05.6` (`W7-DESIGN-REVIEW` N-2) — the terms of a pane's HEADING: `paneIdentityLabel`, preceded
+ * by the page's active TF whenever it is not the series' own cadence. On `1h` the price pane said
+ * `Preço (1m, USDT)` beside the selected `1h` button: true of the series (the grid it is ingested
+ * on), false of the bars on screen, and the operator could not tell which. Now it says
+ * `Preço (1h · nativo 1m, USDT)`; on `1m` it stays `Preço (1m, USDT)`. The identity part is still a
+ * function of the key (`CA-5`); the TF is a function of the URL. The legend's own `label` — what
+ * invariant (iv) of the registry checks — is untouched.
+ */
+export function paneHeadingLabel(entry: SeriesCatalogEntry, timeframe: string): string {
+  const identity = paneIdentityLabel(entry);
+  if (timeframe.trim().length === 0 || entry.key.interval === timeframe) {
+    return identity;
+  }
+  return `${timeframe} · nativo ${identity}`;
+}
+
+/** Every pane's heading terms for the page's `timeframe` — `""` where the route resolved no entry,
+ * the same posture `resolvePaneLegends` takes with `null`. */
+export function resolvePaneHeadings(
+  sources: PaneLegendSources,
+  timeframe: string,
+): Readonly<Record<LegendSeriesId, string>> {
+  const headings = {} as Record<LegendSeriesId, string>;
+  for (const id of LEGEND_SERIES_IDS) {
+    const source = sources[id];
+    headings[id] = source === null ? "" : paneHeadingLabel(source.entry, timeframe);
+  }
+  return headings;
+}
+
+/**
  * The legend of every series, derived ONCE from its catalog entry through the registry's
  * `resolvePaneLegend` (`SPEC-009` §4: "chamada uma vez por pane, no registry"). `null` where the
  * route resolved no entry.

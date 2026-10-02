@@ -313,7 +313,7 @@ test("CALA: a design_gate NEEDS_FIX about colour, wording or order leaves the co
   // hosted-pane `mount`, and every edit is now checked ONE BY ONE, so the next move of any anchor
   // fails here instead of shrinking the CALA without a word.
   const edits: readonly (readonly [string | RegExp, string])[] = [
-    [/Long\/short de contas\{identityTerms\(legends\.long_short\)\}/, "Razão long\\/short{identityTerms(legends.long_short)}"],
+    [/Long\/short de contas\{identityTerms\(headings\.long_short\)\}/, "Razão long\\/short{identityTerms(headings.long_short)}"],
     [/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}"],
     [/\{longShort\.nativeBars\} observações nativas/, "{longShort.nativeBars} leituras"],
     [

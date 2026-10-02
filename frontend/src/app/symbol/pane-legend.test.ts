@@ -24,7 +24,9 @@ import {
   formatLegendReading,
   legendMarkWidthCh,
   legendNumeralWidthCh,
+  paneHeadingLabel,
   paneIdentityLabel,
+  resolvePaneHeadings,
   resolvePaneLegends,
   type LegendSeriesId,
   type PaneLegendSources,
@@ -200,9 +202,39 @@ test("paneIdentityLabel is cadence then unit, and SymbolClient renders every hea
   assert.equal(paneIdentityLabel(entry("klines_volume", "FLOW", { interval: "1m", unit: "BTC" })), "1m, BTC");
   // Each legend series of the page reads its derived label; no heading spells a cadence by hand.
   for (const id of ["price", "volume", "oi", "cvd", "liquidation_long", "long_short"] satisfies LegendSeriesId[]) {
-    assert.match(SOURCE, new RegExp(`identityTerms\\(legends\\.${id}\\)`), `the ${id} heading is not derived`);
+    assert.match(SOURCE, new RegExp(`identityTerms\\(headings\\.${id}\\)`), `the ${id} heading is not derived`);
   }
   assert.match(SOURCE, /resolvePaneLegends\(paneLegendSources\)/, "the legends are resolved through the registry");
+});
+
+// ── `T-05.6` (`W7-DESIGN-REVIEW` N-2) — the heading names the ACTIVE TF ─────────────────────────
+
+test("N-2 MORDE: on 1h every heading names 1h, beside the series' native cadence", () => {
+  const headings = resolvePaneHeadings(sources(), "1h");
+  assert.equal(headings.price, "1h · nativo 1m, USDT");
+  assert.equal(headings.volume, "1h · nativo 1m, BTC");
+  assert.equal(headings.liquidation_long, "1h · nativo 1m, USD");
+  assert.equal(headings.oi, "1h · nativo 5m, BTC");
+  assert.equal(headings.long_short, "1h · nativo 5m, ratio");
+  for (const id of LEGEND_SERIES_IDS) {
+    assert.ok(headings[id].startsWith("1h"), `the ${id} heading does not say the TF on screen: '${headings[id]}'`);
+  }
+});
+
+test("N-2 CALA: where the TF IS the native cadence the heading is unchanged from before T-05.6", () => {
+  const legends = resolvePaneLegends(sources());
+  const onOneMinute = resolvePaneHeadings(sources(), "1m");
+  assert.equal(onOneMinute.price, "1m, USDT");
+  assert.equal(onOneMinute.price, legends.price?.label, "on 1m the price heading is the legend's own label");
+  assert.equal(onOneMinute.oi, "1m · nativo 5m, BTC", "but OI is 5m-native, so on 1m it says so");
+  assert.equal(resolvePaneHeadings(sources(), "5m").oi, "5m, BTC");
+  assert.equal(paneHeadingLabel(entry("klines_ohlc", "STOCK"), ""), "1m, USDT", "no TF, no prefix");
+});
+
+test("N-2: an unresolved series has no heading terms, and the legend label (invariant iv) is untouched", () => {
+  assert.equal(resolvePaneHeadings(sources({ volume: null }), "4h").volume, "");
+  assert.equal(resolvePaneLegends(sources()).price?.label, "1m, USDT", "the registry-checked label carries no TF");
+  assert.match(SOURCE, /resolvePaneHeadings\(paneLegendSources, selectedTimeframe\)/, "the headings read the page's TF");
 });
 
 // ── `C-8` — a fixed column for the numerals ─────────────────────────────────────────────────
