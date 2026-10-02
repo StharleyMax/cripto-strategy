@@ -35,6 +35,7 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import { useClientFingerprintBoundaryRule } from "./eslint-rules/use-client-fingerprint-boundary.mjs";
+import { indicatorIsolationRule } from "./eslint-rules/indicator-isolation.mjs";
 
 export default tseslint.config(
   { ignores: ["node_modules/**", ".next/**", "out/**"] },
@@ -358,11 +359,58 @@ export default tseslint.config(
       local: {
         rules: {
           "use-client-fingerprint-boundary": useClientFingerprintBoundaryRule,
+          // `ADR-050/D6` (`T-00.2`): registered HERE, in the one `local` plugin object, because flat
+          // config refuses a second `local` object on the same file ("Cannot redefine plugin").
+          // It is switched on by its own block below, not by this one.
+          "indicator-isolation": indicatorIsolationRule,
         },
       },
     },
     rules: {
       "local/use-client-fingerprint-boundary": "error",
+    },
+  },
+
+  // ── `ADR-050/D6` + `SPEC-011 §5.2/§5.3`, made EXECUTABLE — `local/indicator-isolation`
+  //    (`T-00.2`) ──────────────────────────────────────────────────────────────────────────
+  //
+  // An indicator under `src/app/symbol/indicators/<kind>/` is an isolated module: P1 (no
+  // indicator imports another, the catalog or the selection), P2 (`chart/**` and `chrome/**`
+  // import nothing under `indicators/`) and P3 (only `indicators/catalog.ts` imports an
+  // indicator folder from outside it). The rule, its table and what it deliberately leaves out
+  // are documented in `./eslint-rules/indicator-isolation.mjs`.
+  //
+  // WHY ITS OWN RULE ID and not one more `no-restricted-imports` block: the `ADR-034/D8` block
+  // above REPLACES the general `web` options for `src/app/symbol/**` (last block wins), and a
+  // block for `indicators/**` would replace the barrel patterns in turn — silently. A distinct
+  // rule id adds to the merged config instead of overriding it; the rule test
+  // (`src/app/symbol/indicator-isolation-rule.test.ts`) proves the barrel still bites inside
+  // `indicators/<kind>/`.
+  //
+  // Universe: every `src/**` source file, not only `app/symbol/**`, because P3 also refuses a
+  // file OUTSIDE the route reaching into an indicator folder. Two blocks, because the `local`
+  // plugin object above is attached only to NON-test files: test files get the same rule
+  // through a block of their own (the indicator's tests live in its folder, so P1/P3 judge them
+  // like any other file there). The two `files` sets are disjoint on purpose — a test file that
+  // ever matched both `local` objects would fail loudly with "Cannot redefine plugin".
+  {
+    files: ["src/**/*.{ts,tsx,mts,cts}"],
+    ignores: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    rules: {
+      "local/indicator-isolation": "error",
+    },
+  },
+  {
+    files: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    plugins: {
+      local: {
+        rules: {
+          "indicator-isolation": indicatorIsolationRule,
+        },
+      },
+    },
+    rules: {
+      "local/indicator-isolation": "error",
     },
   },
 );
