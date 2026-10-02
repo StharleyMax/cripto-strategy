@@ -22,8 +22,8 @@
  *      1-minute density) that lives OUTSIDE `src/charts/` and therefore has to cross this
  *      same boundary, same as `page.tsx` does for the rest.
  *   2. composição de painéis       — `s2-panels.ts` (`buildS2Panels` and the panel shapes/
- *      constants it is built from: `SYMBOL` and the timeframe constants, incluindo
- *      `S2_AXIS_STEP_MS` — `T-02.1`/`D-C3.2`'s ONE shared axis grid step), mais a janela
+ *      constants it is built from: `SYMBOL` and the timeframe constants; the axis step is an
+ *      ARGUMENT of every builder since `T-05.1` of `paineis-de-fluxo`), mais a janela
  *      (`s2-window.ts`, categoria `2b` abaixo), que deixou de ser constante deste módulo.
  *   3. adaptador lightweight       — `s2-lightweight-adapter.ts`'s LOSSLESS mappings only
  *      (`candlestickSeriesLossless`/`lineSeriesLossless`). `naiveDropGapsLine` is
@@ -75,7 +75,6 @@ export {
   SYMBOL,
   ONE_MINUTE_MS,
   FIVE_MINUTES_MS,
-  S2_AXIS_STEP_MS,
   S2_PRICE_USE,
   buildPricePanel,
   buildOiPanel,
@@ -94,7 +93,7 @@ export type { OiPanel, CvdPanel, PricePanel, S2Panels, S2RawInputs } from "./s2-
 // ⛔ `s2-fixture-window.ts` (a janela das 4 dias de CSV em disco) NÃO é reexportada aqui, de
 // propósito — ver o docstring daquele módulo: é o que impede uma rota de voltar a ler uma
 // janela congelada (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, segundo defeito).
-export { ONE_DAY_MS, S2_WINDOW_SPAN_MS, lastGridInstant, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
+export { ONE_DAY_MS, lastGridInstant, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
 export type { S2Window, TrailingWindowRequest } from "./s2-window.ts";
 
 // ── `T-02.1`/`CA-5a` follow-up — THE SAME PRIMITIVE `buildOiPanel`/`buildCvdPanel` ALREADY GRID-
@@ -188,8 +187,22 @@ export type { SeriesNature, StockReading, FlowReading } from "./s2-absence-polic
 // `"**/charts/**"`) reprova QUALQUER caminho de `web` para dentro de `charts` que não seja este
 // barril — sem esta linha, `use-history-pager.ts` (`D-C3.5`) não teria como chamar a função que
 // `T-05.1` construiu especificamente para ele consumir. Omissão de `T-05.1`, fechada aqui.
-export { toLogicalRange, fromLogicalRange, historyRequest, DEFAULT_PAGE_TRIGGER_SLOTS } from "./time-axis-controller.ts";
-export type { TimeAxis, TimeRange, LogicalRange, HistoryCoverage, HistoryRequest } from "./time-axis-controller.ts";
+export {
+  toLogicalRange,
+  fromLogicalRange,
+  historyRequest,
+  DEFAULT_PAGE_TRIGGER_SLOTS,
+  axisForWindow,
+  initialViewRange,
+} from "./time-axis-controller.ts";
+export type {
+  TimeAxis,
+  TimeRange,
+  LogicalRange,
+  HistoryCoverage,
+  HistoryRequest,
+  AxisWindow,
+} from "./time-axis-controller.ts";
 export { createRangeDispatcher } from "./range-dispatch.ts";
 export type { RangeDispatcher, PanelWrite } from "./range-dispatch.ts";
 

@@ -16,7 +16,6 @@ import { test } from "node:test";
 import {
   buildS2Panels,
   resolveTrailingWindow,
-  S2_WINDOW_SPAN_MS,
   FIVE_MINUTES_MS,
   candlestickSeriesLossless,
   lineSeriesLossless,
@@ -26,6 +25,10 @@ import {
   type LineItem,
   type WhitespaceItem,
 } from "../../charts/index.ts";
+
+/** The 4-day fixture span — `S2_WINDOW_SPAN_MS` until `paineis-de-fluxo` `T-05.1` moved the route's
+ * span to bars per timeframe (`timeframe-window.ts`); at `1m` it is still 4 days (5.760 bars). */
+const FOUR_DAYS_MS = 4 * 24 * 60 * 60_000;
 import type { SeriesHistoryRow } from "./series-history-client.ts";
 import {
   computeSeriesKeyId,
@@ -58,7 +61,7 @@ const ONE_MINUTE_MS = 60_000;
 const FIXTURE_WINDOW = resolveTrailingWindow({
   nowMs: Date.UTC(2026, 7, 24, 0, 0, 0),
   lagMs: 0,
-  spanMs: S2_WINDOW_SPAN_MS,
+  spanMs: FOUR_DAYS_MS,
   alignmentMs: FIVE_MINUTES_MS,
 });
 // The 3 rows below land on REAL grid instants of the price panel built over that window.
@@ -85,6 +88,7 @@ test("CA-F2-3 (price/OI/CVD, end to end): a SEM_PONTO row becomes a bare Whitesp
   assert.equal(candles.length, 2, "the absent row must NOT become a candle");
   const pricePanel = buildS2Panels({
     window: FIXTURE_WINDOW,
+    axisStepMs: ONE_MINUTE_MS,
     candles,
     priceUse: S2_PRICE_USE,
     oiPoints: [],
@@ -157,6 +161,7 @@ test("CA-5a (QA · Fase 02 gate): an upstream fetch failure for long_short/liqui
   // count, so it cannot see this).
   const gridPanels = buildS2Panels({
     window: FIXTURE_WINDOW,
+    axisStepMs: ONE_MINUTE_MS,
     candles: [], // 0 real candles — the SAME "upstream gave nothing" shape `rows: []` is for long_short
     priceUse: S2_PRICE_USE,
     oiPoints: [],
@@ -173,7 +178,7 @@ test("CA-5a (QA · Fase 02 gate): an upstream fetch failure for long_short/liqui
   // `routeWindow.window` at its own `long_short`/`liquidation` call sites (`CA-5a` fix): the
   // grid-padding is a function of the WINDOW, never of how many rows the wire happened to
   // answer, so an empty row list on a real window must still answer the full grid length.
-  const longShortSlotCountOnFetchFailure = nonNegativeFlowSlotsFromHistoryRows([], FIXTURE_WINDOW).length;
+  const longShortSlotCountOnFetchFailure = nonNegativeFlowSlotsFromHistoryRows([], FIXTURE_WINDOW, ONE_MINUTE_MS).length;
   assert.equal(
     longShortSlotCountOnFetchFailure,
     priceSlotCount,
@@ -437,14 +442,14 @@ test("trailingAbsentSlots: the size of the tail the RATIO pane refuses to draw",
 
 test("resolveFlowReadingOrAbsent: a real bucket answers its own number, and absence never borrows a neighbour's", () => {
   const slots = nonNegativeFlowSlotsFromHistoryRows(rowsWithOneAbsentMinute());
-  assert.deepEqual(resolveFlowReadingOrAbsent(slots, RANGE_START_MS), { kind: "present", value: 111.5 });
+  assert.deepEqual(resolveFlowReadingOrAbsent(slots, ONE_MINUTE_MS, RANGE_START_MS), { kind: "present", value: 111.5 });
   // FLOW never carries forward: the absent minute stays absent even though the minute before it
   // has a real number (`resolveFlowReading`, reused from `charts` — no LOCF, ever).
-  assert.deepEqual(resolveFlowReadingOrAbsent(slots, RANGE_START_MS + ONE_MINUTE_MS), { kind: "absent", value: null });
+  assert.deepEqual(resolveFlowReadingOrAbsent(slots, ONE_MINUTE_MS, RANGE_START_MS + ONE_MINUTE_MS), { kind: "absent", value: null });
 });
 
 test("resolveFlowReadingOrAbsent on an EMPTY sub-axis answers absent instead of throwing — the /symbol crash guard", () => {
-  assert.deepEqual(resolveFlowReadingOrAbsent([], RANGE_START_MS), { kind: "absent", value: null });
+  assert.deepEqual(resolveFlowReadingOrAbsent([], ONE_MINUTE_MS, RANGE_START_MS), { kind: "absent", value: null });
   // MORDE, and it is what makes the guard load-bearing rather than decorative: the `charts`
   // function this delegates to DOES throw on an empty grid, and empty is the NORMAL state of
   // this sub-axis whenever the panel degraded (no catalog row, transport down, nothing ingested
@@ -508,6 +513,7 @@ test("RN-S1: 30 native buckets arrive as 150 readable rows, and the OI panel cou
 
   const panels = buildS2Panels({
     window: FIXTURE_WINDOW,
+    axisStepMs: ONE_MINUTE_MS,
     candles: [],
     priceUse: S2_PRICE_USE,
     oiPoints: points,

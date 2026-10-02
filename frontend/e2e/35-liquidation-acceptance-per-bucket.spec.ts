@@ -1152,8 +1152,36 @@ function zoomTarget(
   return { first: best, anchor, score: bestCounts };
 }
 
+/**
+ * `paineis-de-fluxo` `T-05.1` — since the mount frames the last `VIEW_BARS` (120) bars, `zoomTarget`
+ * would search only 2 h of real data for a bucket with both legs `> 0` and distinct, and found none
+ * (`INCONCLUSIVO … CA-9′ (c)`, `e2e-risk` run of 2026-10-02). The wheel zooms OUT first (positive
+ * `deltaY`, cursor at 90% of the width so the span grows leftward) until the span stops growing (the
+ * library's `minBarSpacing` floor, ~2.300 slots: the geometry the mount itself had before `T-05.1`),
+ * so the search runs over the same stretch it did, far from the paging trigger. Bounded (R9).
+ */
+async function zoomOutToFloor(page: Page): Promise<{ readonly bursts: number; readonly span: number }> {
+  const box = await paneCanvasBox(page);
+  let { from, to } = await visibleRange(page);
+  let span = to - from;
+  let bursts = 0;
+  for (; bursts < 40; bursts += 1) {
+    await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.75);
+    for (let i = 0; i < ZOOM_BURST; i += 1) await page.mouse.wheel(0, -ZOOM_STEP_DELTA);
+    await page.waitForTimeout(250);
+    ({ from, to } = await visibleRange(page));
+    if (Math.abs(to - from - span) < 1) break;
+    span = to - from;
+  }
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(250);
+  return { bursts, span };
+}
+
 /** Real data: zoom onto the stretch `zoomTarget` picks, sweep the whole pane, judge every criterion. */
 async function auditRealZoomed(page: Page, truth: Truth, tap: TapHandle) {
+  const zoomOut = await zoomOutToFloor(page);
+  fact(SPEC, "real_zoom_out_to_floor", zoomOut);
   const box = await paneCanvasBox(page);
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.75);
   const probe = await legendSnapshot(page);

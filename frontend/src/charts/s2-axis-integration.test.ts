@@ -105,9 +105,9 @@ const { deltas: cvdDeltas, missingDays: cvdMissingDays, coveredDays: cvdCoveredD
 // `T-05.5`: `buildPricePanel` now returns a `PricePanel` (`{priceSource, priceUse, series}`)
 // — `price` here stays the plain `ChartSeries` every assertion below already expects
 // (`.slots`), by pulling `.series` out at the one call site instead of touching each one.
-const price = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW).series;
-const oi = buildOiPanel(oiPoints, oiMissingDays, S2_FIXTURE_WINDOW);
-const cvd = buildCvdPanel(cvdDeltas, cvdMissingDays, cvdCoveredDays, S2_FIXTURE_WINDOW);
+const price = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW, ONE_MINUTE_MS).series;
+const oi = buildOiPanel(oiPoints, oiMissingDays, S2_FIXTURE_WINDOW, ONE_MINUTE_MS);
+const cvd = buildCvdPanel(cvdDeltas, cvdMissingDays, cvdCoveredDays, S2_FIXTURE_WINDOW, ONE_MINUTE_MS);
 
 // The number of axis slots OI actually FILLS: one per native (5-minute) bucket on a covered
 // day, zero on the missing one — unaffected by which axis step `buildOiPanel` builds `slots`

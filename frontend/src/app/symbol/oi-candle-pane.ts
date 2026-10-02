@@ -137,12 +137,19 @@ export interface OiCandlePaneData {
  * Places the served candles on the window's canonical grid. A candle whose `bucket_end_ms` is not
  * inside the window is left out (the pager's trim already did the same to the rows); one that is
  * inside but off the grid makes `buildScalarSeries` throw — never snapped to a neighbour.
+ *
+ * `axisStepMs` — `paineis-de-fluxo` `T-05.1` — the step of that grid, the timeframe's. It used to
+ * be a fixed `ONE_MINUTE_MS`, the defect `D-A` of `handoff/FIX-uso-2026-10-02.md`.
  */
-export function oiCandlePaneData(bundle: OiCandleBundle, window: AccumulatedWindow): OiCandlePaneData {
+export function oiCandlePaneData(
+  bundle: OiCandleBundle,
+  window: AccumulatedWindow,
+  axisStepMs: number,
+): OiCandlePaneData {
   const candles = trimOiCandlesToWindow(bundle, window).candles;
   const grid = buildScalarSeries(
     candles.map((candle) => ({ timeMs: candle.bucket_end_ms, value: candle.close })),
-    ONE_MINUTE_MS,
+    axisStepMs,
     window.startMs,
     window.endMsExclusive,
   ).slots;

@@ -25,7 +25,7 @@
  * what genuinely depends on `rows`/`window`.
  */
 
-import { buildS2Panels, FIVE_MINUTES_MS, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
+import { buildS2Panels, FIVE_MINUTES_MS, lastGridInstant, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
 import type { FlowReading } from "../../charts/index.ts";
 
 /** `PriceUse` itself is not re-exported by the `charts` barrel (`ADR-034/D8`: `web` reaches
@@ -91,9 +91,16 @@ export interface AssemblyStaticContext {
    * (`SymbolClient.tsx`'s own docstring on why the anchor never moves once chosen). */
   readonly cvdAnchorMs: number;
   /** The right edge of the ORIGINAL request — invariant under backward paging (only the LEFT
-   * edge ever moves, `D-C3.5`), so every "age"/"freshness"/"reading at the window's last
-   * instant" computation below reads the SAME instant `page.tsx` computed it against. */
+   * edge ever moves, `D-C3.5`), so every "age"/"freshness" computation below reads the SAME
+   * instant `page.tsx` computed it against. On the `1m` grid (`request-window.ts`), whatever the
+   * timeframe: it is a publication-time reference, not an axis slot. */
   readonly windowEndMsInclusive: number;
+  /** `paineis-de-fluxo` `T-05.1` — the EXCLUSIVE right edge of that same original request. The
+   * "reading at the window's last instant" is a lookup on the AXIS grid, whose step is the
+   * timeframe's; `windowEndMsInclusive` (one minute before this edge) is off that grid at
+   * `1h`/`4h`, and `resolveFlowReading` refuses an off-grid query. `lastGridInstant` of this edge
+   * at the axis step is the slot the readout queries — at `1m`, the same instant as before. */
+  readonly windowEndMsExclusive: number;
   readonly longShortRecentSpanMs: number;
   /** The OI catalog entry's OWN `max_staleness_ms` (`RNF-2`'s ceiling) — a property of the
    * SERIES, frozen from the initial SSR resolution, never re-derived here (this module reads no
@@ -109,7 +116,7 @@ export interface DynamicPriceFacts {
 
 export interface DynamicVolumeFacts {
   readonly slots: S2Panels["oi"]["slots"];
-  /** The same rows on the canonical 1-minute grid — what the legend reads (`ADR-044/D2`). */
+  /** The same rows on the canonical axis grid — what the legend reads (`ADR-044/D2`). */
   readonly legendSlots: S2Panels["oi"]["slots"];
   readonly presentPoints: number;
   readonly firstPresentMs: number | null;
@@ -173,13 +180,26 @@ export interface HistoryPageAssembly {
  * `page.tsx` makes at SSR time (lines ~554-855 there, at the time of `T-05.2`), reproduced as a
  * second, independent call site rather than imported, for the reason this module's own docstring
  * states.
+ *
+ * `axisStepMs` — `paineis-de-fluxo` `T-05.1` — the step of the axis every slot array below is
+ * built at: the TIMEFRAME's width. An EXPLICIT argument, not a field of `AssemblyStaticContext`:
+ * the pager derives it from `seed.interval` (`timeframeStepMs`), and a copy carried in the context
+ * could disagree with the axis the pager actually builds.
  */
 export function assembleHistoryPage(
   rows: HistoryRowsBundle,
   window: AssemblyWindow,
   context: AssemblyStaticContext,
+  axisStepMs: number,
 ): HistoryPageAssembly {
   const s2Window = { startMs: window.startMs, endMsExclusive: window.endMsExclusive, days: [] };
+  // The axis slot the "reading at the window's last instant" queries — see
+  // `AssemblyStaticContext.windowEndMsExclusive`. Built off the ORIGINAL right edge, so it stays put
+  // under backward paging, exactly like `windowEndMsInclusive` does.
+  const readingInstantMs = lastGridInstant(
+    { startMs: window.startMs, endMsExclusive: context.windowEndMsExclusive, days: [] },
+    axisStepMs,
+  );
 
   const candleAssembly = assembleOhlcCandles({
     open: rows.open,
@@ -190,6 +210,7 @@ export function assembleHistoryPage(
 
   const panels: S2Panels = buildS2Panels({
     window: s2Window,
+    axisStepMs,
     candles: candleAssembly.candles,
     priceUse: context.priceUse,
     oiPoints: scalarPointsFromHistoryRows(rows.oi, FIVE_MINUTES_MS),
@@ -221,10 +242,10 @@ export function assembleHistoryPage(
   const volumeSlots = nonNegativeFlowSlotsFromHistoryRows(rows.volume);
   const volume: DynamicVolumeFacts = {
     slots: volumeSlots,
-    legendSlots: nonNegativeFlowSlotsFromHistoryRows(rows.volume, s2Window),
+    legendSlots: nonNegativeFlowSlotsFromHistoryRows(rows.volume, s2Window, axisStepMs),
     presentPoints: countPresentSlots(volumeSlots),
     firstPresentMs: firstPresentSlotMs(volumeSlots),
-    reading: resolveFlowReadingOrAbsent(volumeSlots, context.windowEndMsInclusive),
+    reading: resolveFlowReadingOrAbsent(volumeSlots, axisStepMs, readingInstantMs),
     partialCoverage: summarizePartialCoverage(rows.volume),
   };
 
@@ -248,20 +269,20 @@ export function assembleHistoryPage(
   // fetch degrades to `[]` still comes back grid-padded to the SAME length as its five siblings
   // (`CA-5a`), rather than silently shrinking relative to them.
   const liquidationCohort = (rows_: readonly SeriesHistoryRow[]): DynamicLiquidationCohortFacts => {
-    const slots = nonNegativeFlowSlotsFromHistoryRows(rows_, s2Window);
+    const slots = nonNegativeFlowSlotsFromHistoryRows(rows_, s2Window, axisStepMs);
     return {
       slots,
       presentPoints: countPresentSlots(slots),
       zeroPoints: countZeroSlots(slots),
       firstPresentMs: firstPresentSlotMs(slots),
-      reading: resolveFlowReadingOrAbsent(slots, context.windowEndMsInclusive),
+      reading: resolveFlowReadingOrAbsent(slots, axisStepMs, readingInstantMs),
       partialCoverage: summarizePartialCoverage(rows_),
     };
   };
   const liquidationLong = liquidationCohort(rows.liquidationLong);
   const liquidationShort = liquidationCohort(rows.liquidationShort);
 
-  const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(rows.longShort, s2Window);
+  const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(rows.longShort, s2Window, axisStepMs);
   const longShortObservedAtMs = lastReadableAvailableAtMs(rows.longShort);
   const longShort: DynamicLongShortFacts = {
     slots: longShortSlots,
@@ -274,10 +295,10 @@ export function assembleHistoryPage(
     trailingAbsentSlots: trailingAbsentSlotsOf(longShortSlots),
     windowStats: seriesValueStats(longShortSlots),
     recentStats: seriesValueStats(slotsFrom(longShortSlots, context.windowEndMsInclusive - context.longShortRecentSpanMs)),
-    reading: resolveFlowReadingOrAbsent(longShortSlots, context.windowEndMsInclusive),
+    reading: resolveFlowReadingOrAbsent(longShortSlots, axisStepMs, readingInstantMs),
   };
 
-  const oiCandles = oiCandlePaneData(rows.oiCandles, window);
+  const oiCandles = oiCandlePaneData(rows.oiCandles, window, axisStepMs);
 
   return { panels, priceCandles, volume, cvd, oi, oiCandles, liquidationLong, liquidationShort, longShort };
 }

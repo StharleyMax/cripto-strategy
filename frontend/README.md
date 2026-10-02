@@ -1813,3 +1813,46 @@ contêiner — a área de plot mede `1208px` dentro de um host de `1254px` (o ei
 resto), e a fração sobre o elemento errado desenha uma faixa que **parece** alinhada. E a leitura vai
 **no frame seguinte** ao `fitContent()`: antes dele a escala ainda responde o intervalo anterior, e
 uma coordenada assim tem cara de medição sem ser uma.
+
+## 24. O eixo é do timeframe, e a janela conta em barras (`paineis-de-fluxo` `T-05.1`, 2026-10-02)
+
+Desenho: [`handoff/T-05.1-desenho.md`](../docs/context/paineis-de-fluxo/handoff/T-05.1-desenho.md). Relatório:
+[`gates/T-05.1-build.md`](../docs/context/paineis-de-fluxo/gates/T-05.1-build.md).
+
+- **O passo do eixo vem de um lugar só:** `timeframeStepMs(interval)` (`supported-timeframes.ts`), em
+  `[symbol]/page.tsx` e no pager (`use-history-pager.ts`, a partir de `seed.interval`). Todo construtor de slot
+  (`buildS2Panels`, `assembleHistoryPage`, `nonNegativeFlowSlotsFromHistoryRows(rows, window, axisStepMs)`,
+  `oiCandlePaneData`, `axisForWindow`) recebe o passo **como argumento obrigatório, sem default**.
+  `S2_AXIS_STEP_MS` e `S2_WINDOW_SPAN_MS` foram apagados: um default de 1 min era o próprio defeito.
+- **Janela, página e teto em barras:** `timeframe-window.ts::TIMEFRAME_WINDOW_BARS` (1m 5.760/500 · 5m 1.152/288 ·
+  15m 384/192 · 1h 168/168 · 4h 42/42). 1h e 4h abrem em 7 dias `[DECISÃO-OWNER: 2026-10-02, escolha entre
+  alternativas apresentadas]`. O teto acumulado continua 5.000 barras (1m: 6.260 efetivo).
+- **A vista inicial são as últimas `VIEW_BARS = 120` barras** (`initialViewRange`), e não mais o eixo inteiro.
+  Em 4h (42 barras) a vista é o eixo inteiro.
+- **`windowEndMsInclusive` continua na grade de 1 min, de propósito** — é o `window_end_ms` do pedido, e o backend
+  devolve as mesmas linhas para `end − 1 min` e `end − step` (`e2e/18`). A leitura do readout usa
+  `lastGridInstant(window, axisStepMs)`.
+- **⚠️ Gotcha — a montagem não pode paginar, e quem decide isso é a POSIÇÃO, no pager.** Depois do quadro de guarda
+  da montagem, a biblioteca ainda reassenta o layout e re-reporta a faixa uma fração de barra deslocada
+  (`from = −0,07` em 4h, `263,8` por `264` em 15m). Em 4h a vista é o eixo inteiro, nasce dentro do gatilho de
+  página, e esse eco fazia a montagem pedir **10** `/series-history` (1 página) sem gesto `[MEDIDO 2026-10-02,
+  e2e/39]`. O conserto é `isLeftOfMountView` (`timeframe-window.ts`), chamado em `use-history-pager.ts::onCandidateRange`:
+  não pagina enquanto `range.fromMs > mountViewFrom − step/2`, com `mountViewFrom` do **mesmo**
+  `mountViewRange(axis)` que o `axis-sync-provider.tsx` usa para enquadrar. Só morde em 4h; nos outros TFs o
+  gatilho já fica muito à esquerda da vista. O primeiro conserto (`ab29321`, um gate de gesto no host que calava
+  o `notifyPanelRangeChanged` até o 1º `pointerdown`/`wheel`) foi **revertido** pela revisão do
+  `frontend-architect` (`handoff/T-05.1-revisao-ab29321.md`): filtrava pela origem do evento (excluía teclado e
+  chamada programática) e, depois do 1º gesto, deixava o zoom-in em 4h paginar. Falsificadores: `e2e/39`
+  (montagem 4h = 0 pedidos; 1º arrasto em 4h pede página; **zoom-in pela roda em 4h = 0 pedidos**, que dá 10 sob
+  `ab29321`) e `timeframe-window.test.ts` (eco −0,0717 e zoom-in não paginam, −0,6 barra pagina; `step/2 → 0`
+  reprova 2).
+- **e2e que leem a vista na montagem:** com 120 barras, `e2e/20`, `22`, `35` (dado real) e `37` dão **zoom-out pela
+  roda** antes de agir (até o piso de `minBarSpacing`, ~2.400 slots em 1m: a geometria que a montagem tinha antes).
+  O `37` também passou a converter instante → slot pelo passo do TF (`5m` = 5 min). `e2e/29` e `33` fazem o mesmo
+  zoom-out (cursor na última barra); o `38` (OI em 5m) volta ao vão de ~600 barras antes de andar até a página antiga.
+- **Vela de 5m ocupa ~80% do espaçamento, e a vela de alta é OCA:** com o slot = barra do TF, o corpo deixou de ter
+  ~2 px. O `e2e/38` mede a fase da vela num trecho com zoom-in (≥ 30 px/balde, onde o vão entre corpos é mais largo
+  que a coluna de 3 px que ele lê) e a toma **meio espaçamento oposta ao centro do vão**, não pelo argmax: numa vela
+  oca o argmax cai na borda e o sondador de ¼ de barra cruza a fronteira da legenda.
+- **Falsificador do eixo:** `e2e/39-axis-step-per-timeframe.spec.ts` — `gridSlots === initialBars` nos 5 TFs.
+  Com o passo trocado por 1 min nos dois pontos acima, 5m/15m/1h/4h reprovam (5.760/5.760/10.080/10.080) e 1m passa.

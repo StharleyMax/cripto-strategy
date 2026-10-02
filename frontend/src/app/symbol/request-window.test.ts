@@ -23,6 +23,7 @@ import {
   resolveRouteWindow,
 } from "./request-window.ts";
 import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
+import { TIMEFRAME_WINDOW_BARS } from "./timeframe-window.ts";
 
 /** The literal window the defect was made of — the negative control, and the ONLY place in
  * this tree those four days still appear as a hardcoded pair. */
@@ -57,7 +58,7 @@ test("REPRO: the frozen window misses the data, the derived window does not", ()
     "negative control: a real row of `klines_volume` is OUTSIDE the frozen window — the defect",
   );
 
-  const resolved = resolveRouteWindow(realRowEventTimeMs + 30 * ONE_MINUTE_MS);
+  const resolved = resolveRouteWindow(realRowEventTimeMs + 30 * ONE_MINUTE_MS, "1m");
   assert.ok(
     realRowEventTimeMs >= resolved.window.startMs && realRowEventTimeMs < resolved.window.endMsExclusive,
     "the derived window must contain that same real row",
@@ -65,8 +66,8 @@ test("REPRO: the frozen window misses the data, the derived window does not", ()
 });
 
 test("the route's window TRACKS the clock — a replanted literal cannot pass this", () => {
-  const first = resolveRouteWindow(MEASURED_NOW_MS);
-  const second = resolveRouteWindow(MEASURED_NOW_MS + 7 * 24 * 60 * ONE_MINUTE_MS);
+  const first = resolveRouteWindow(MEASURED_NOW_MS, "1m");
+  const second = resolveRouteWindow(MEASURED_NOW_MS + 7 * 24 * 60 * ONE_MINUTE_MS, "1m");
 
   assert.notEqual(first.window.startMs, second.window.startMs, "two clock readings a week apart, two windows");
   assert.notEqual(first.window.endMsExclusive, second.window.endMsExclusive);
@@ -74,7 +75,7 @@ test("the route's window TRACKS the clock — a replanted literal cannot pass th
 });
 
 test("the route never asks for the future — every instant it sends is behind the clock reading", () => {
-  const { window, knowledgeTimeMs, windowEndMsInclusive } = resolveRouteWindow(MEASURED_NOW_MS);
+  const { window, knowledgeTimeMs, windowEndMsInclusive } = resolveRouteWindow(MEASURED_NOW_MS, "1m");
 
   assert.ok(window.endMsExclusive <= MEASURED_NOW_MS - RIGHT_EDGE_LAG_MS, "right edge is behind the lag");
   assert.ok(windowEndMsInclusive < window.endMsExclusive, "the inclusive end is a grid instant of the window");
@@ -89,7 +90,7 @@ test("the as-of margin covers the LIVE publication tail (n=804), not the n=3 sam
   // moves. The bar the page reads out closes at `windowEndMsInclusive`, so the tolerance the
   // request grants it is `knowledgeTimeMs - windowEndMsInclusive`. Against `n=804` that has to
   // cover 267s; at the previous `KNOWLEDGE_TIME_LAG_MS = 1 min` it was 120s and did not.
-  const { knowledgeTimeMs, windowEndMsInclusive } = resolveRouteWindow(MEASURED_NOW_MS);
+  const { knowledgeTimeMs, windowEndMsInclusive } = resolveRouteWindow(MEASURED_NOW_MS, "1m");
   const toleranceMs = knowledgeTimeMs - windowEndMsInclusive;
 
   assert.ok(
@@ -110,13 +111,13 @@ test("MORDE: the as-of margin cannot be widened past the right-edge lag — that
   // The worst case is a clock reading EXACTLY on the alignment boundary, where the floor takes
   // nothing away — the one instant a test picked at random would miss.
   const alignedNowMs = Date.UTC(2026, 8, 11, 12, 0, 0) + RIGHT_EDGE_LAG_MS;
-  const { knowledgeTimeMs } = resolveRouteWindow(alignedNowMs);
+  const { knowledgeTimeMs } = resolveRouteWindow(alignedNowMs, "1m");
   assert.ok(knowledgeTimeMs < alignedNowMs, "even at a perfectly aligned clock reading, the as-of stays in the past");
   assert.equal(alignedNowMs - knowledgeTimeMs, RIGHT_EDGE_LAG_MS - KNOWLEDGE_TIME_LAG_MS, "60s of skew headroom");
 });
 
 test("the derived window builds a request key the transport ACCEPTS", () => {
-  const { window, knowledgeTimeMs, windowEndMsInclusive } = resolveRouteWindow(MEASURED_NOW_MS);
+  const { window, knowledgeTimeMs, windowEndMsInclusive } = resolveRouteWindow(MEASURED_NOW_MS, "1m");
   const key: HistoryRequestKey = {
     series_key_id: "ef3033e6ad5a487330c9e669dd1ed3105a7a40ba274b78302b4d3eb624244e42",
     symbol: "BTCUSDT",
@@ -129,24 +130,34 @@ test("the derived window builds a request key the transport ACCEPTS", () => {
   assert.doesNotThrow(() => assertValidHistoryRequestKey(key));
 });
 
-// ── `T-03.11` (`CST-226`) — `requestIntervalMs` widens `alignmentMs` with the SELECTED TF ────
+// ── `T-03.11` (`CST-226`) — the SELECTED TF widens `alignmentMs`; `T-05.1` — and sizes the span ─
 
-test("resolveRouteWindow(nowMs) with ONE argument is byte-identical to the pre-T-03.11 behaviour", () => {
-  // Every existing caller above this line in the file calls with one argument — this is the
-  // backward-compatibility falsifier: the new second parameter's default (`ONE_MINUTE_MS`) must
-  // never change `alignmentMs` for a caller that never opted into a wider interval.
-  const oneArg = resolveRouteWindow(MEASURED_NOW_MS);
-  const explicitOneMinute = resolveRouteWindow(MEASURED_NOW_MS, ONE_MINUTE_MS);
-  assert.deepEqual(oneArg, explicitOneMinute, "the default must equal an explicit 1m interval");
+test("T-05.1: the span is `initialBars` of the selected TF, and `1m` keeps the 4 days (5.760 bars) it had", () => {
+  // `paineis-de-fluxo` `T-05.1` (`handoff/T-05.1-desenho.md` §2): the span used to be
+  // `S2_WINDOW_SPAN_MS` (4 days) in every TF, so `1h` fetched 96 bars and `4h` 24. The interval is a
+  // REQUIRED argument now — the one-minute default this function had is how that survived.
+  for (const option of SUPPORTED_TIMEFRAMES) {
+    const { window } = resolveRouteWindow(MEASURED_NOW_MS, option.interval);
+    const bars = (window.endMsExclusive - window.startMs) / option.stepMs;
+    assert.equal(bars, TIMEFRAME_WINDOW_BARS[option.interval]!.initialBars, `interval=${option.interval}`);
+  }
+  const oneMinute = resolveRouteWindow(MEASURED_NOW_MS, "1m").window;
+  assert.equal(oneMinute.endMsExclusive - oneMinute.startMs, 4 * 24 * 60 * ONE_MINUTE_MS, "1m: unchanged, 4 days");
+  const oneHour = resolveRouteWindow(MEASURED_NOW_MS, "1h").window;
+  assert.equal(oneHour.endMsExclusive - oneHour.startMs, 7 * 24 * 60 * ONE_MINUTE_MS, "1h: 7 days, the owner's choice");
+});
+
+test("MORDE: an interval outside the served set is refused, never read as `1m`", () => {
+  assert.throws(() => resolveRouteWindow(MEASURED_NOW_MS, "2h"), RangeError);
 });
 
 test("resolveRouteWindow never throws for any SUPPORTED_TIMEFRAMES member, and the right edge lands on ITS OWN boundary", () => {
   // `resolveTrailingWindow` refuses (`RangeError`) when `spanMs % alignmentMs !== 0` — this is
-  // the guard that a sixth TF wider than 4 days (or one that does not divide it evenly) would
-  // trip. All five entries divide `S2_WINDOW_SPAN_MS` (4 days) today; this test is what would
-  // catch the day that stops being true.
+  // the guard that a TF whose span (`initialBars · step`, `timeframe-window.ts`) does not divide
+  // into its alignment would trip. `timeframe-window.test.ts` checks the same property on the
+  // table; this test is what would catch it through the route's own call.
   for (const option of SUPPORTED_TIMEFRAMES) {
-    const { window } = resolveRouteWindow(MEASURED_NOW_MS, option.stepMs);
+    const { window } = resolveRouteWindow(MEASURED_NOW_MS, option.interval);
     assert.equal(
       window.endMsExclusive % option.stepMs,
       0,
@@ -161,8 +172,8 @@ test("MORDE: the interval-aware alignment is load-bearing — a 5-minute-only fl
   // module's own comment warned about (`quant-architect`, wave `03`, C1). If this assertion ever
   // fails because the two edges coincide, replace `MEASURED_NOW_MS` with an instant that does not
   // — a test that cannot tell the two code paths apart proves nothing about the fix.
-  const fiveMinuteAware = resolveRouteWindow(MEASURED_NOW_MS, ONE_MINUTE_MS); // alignmentMs floors to FIVE_MINUTES_MS regardless
-  const fourHourAware = resolveRouteWindow(MEASURED_NOW_MS, 4 * 60 * 60_000);
+  const fiveMinuteAware = resolveRouteWindow(MEASURED_NOW_MS, "1m"); // alignmentMs floors to FIVE_MINUTES_MS regardless
+  const fourHourAware = resolveRouteWindow(MEASURED_NOW_MS, "4h");
 
   assert.notEqual(
     fiveMinuteAware.window.endMsExclusive,
@@ -179,7 +190,7 @@ test("MORDE: the interval-aware alignment is load-bearing — a 5-minute-only fl
 });
 
 test("the day list the route passes to `daysWithPresence` is the window's own, not a literal", () => {
-  const { window } = resolveRouteWindow(MEASURED_NOW_MS);
+  const { window } = resolveRouteWindow(MEASURED_NOW_MS, "1m");
 
   assert.ok(window.days.includes("2026-09-11"), "the day of the clock reading must be covered");
   assert.ok(!window.days.includes("2026-08-20"), "and the frozen literal's days must not be");
@@ -194,14 +205,16 @@ test("the day list the route passes to `daysWithPresence` is the window's own, n
 
 // ── W1-FIX (`gates/W1-QA.md` BLOCKER-1): the predicate `e2e/18` branches on, proven exact ─────
 
-test("W1-FIX: the 1m and 4h windows coincide IFF the 1m edge (+1 min) is on a 4h boundary — 30 of 1440 minutes", () => {
+test("W1-FIX: the 1m and 4h RIGHT EDGES coincide IFF the 1m edge (+1 min) is on a 4h boundary — 30 of 1440 minutes", () => {
+  // `T-05.1`: only the right edge is compared — the spans differ since then (4 days at `1m`, 7 at
+  // `4h`), and the right edge (`windowEndMsInclusive`) is what `e2e/18` branches on.
   const FOUR_HOURS_MS = 4 * 60 * ONE_MINUTE_MS;
   const dayStartMs = Date.UTC(2026, 8, 25, 0, 0, 0);
   let coincident = 0;
   for (let minute = 0; minute < 1440; minute += 1) {
     const nowMs = dayStartMs + minute * ONE_MINUTE_MS + 17_000; // off-grid second, like a real clock
-    const oneMinute = resolveRouteWindow(nowMs, ONE_MINUTE_MS);
-    const fourHours = resolveRouteWindow(nowMs, FOUR_HOURS_MS);
+    const oneMinute = resolveRouteWindow(nowMs, "1m");
+    const fourHours = resolveRouteWindow(nowMs, "4h");
     const same = oneMinute.windowEndMsInclusive === fourHours.windowEndMsInclusive;
     const predicate = (oneMinute.windowEndMsInclusive + ONE_MINUTE_MS) % FOUR_HOURS_MS === 0;
     assert.equal(same, predicate, `minute ${minute}: identity ${same}, e2e/18 predicate ${predicate}`);

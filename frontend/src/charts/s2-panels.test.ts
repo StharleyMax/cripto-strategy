@@ -45,7 +45,7 @@ const METRICS_DIR = path.join(DATA_ROOT, "binance/metrics");
 test("buildPricePanel: 4 gapless days at 1-minute resolution, BTCUSDT", () => {
   const csvTexts = DAYS.map((day) => readFileSync(path.join(KLINES_DIR, `${SYMBOL}-1m-${day}.csv`), "utf8"));
   const candles = parseKlinesDays(csvTexts);
-  const panel = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW);
+  const panel = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW, ONE_MINUTE_MS);
   assert.equal(panel.series.timeframeMs, ONE_MINUTE_MS);
   assert.equal(panel.series.slots.length, (RANGE_END_MS_EXCLUSIVE - RANGE_START_MS) / ONE_MINUTE_MS);
   assert.ok(panel.series.slots.every((slot) => slot.candle !== null));
@@ -54,7 +54,7 @@ test("buildPricePanel: 4 gapless days at 1-minute resolution, BTCUSDT", () => {
 test("T-05.5/5.7: the price panel declares price_source AND price_use on the panel row", () => {
   const csvTexts = DAYS.map((day) => readFileSync(path.join(KLINES_DIR, `${SYMBOL}-1m-${day}.csv`), "utf8"));
   const candles = parseKlinesDays(csvTexts);
-  const panel = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW);
+  const panel = buildPricePanel(candles, S2_PRICE_USE, S2_FIXTURE_WINDOW, ONE_MINUTE_MS);
   assert.equal(panel.priceUse, "structure_detection");
   // ADR-007's table: structure_detection -> klines_last (negotiated price, not the 1 Hz mark).
   assert.equal(panel.priceSource, "klines_last");
@@ -71,7 +71,7 @@ test("buildOiPanel: 08-22 is reported as the missing day, slots explicit null th
     }
   }
   const { points, missingDays } = assembleOiPoints(DAYS, csvTextByDay);
-  const panel = buildOiPanel(points, missingDays, S2_FIXTURE_WINDOW);
+  const panel = buildOiPanel(points, missingDays, S2_FIXTURE_WINDOW, ONE_MINUTE_MS);
   assert.deepEqual(panel.missingDays, ["2026-08-22"]);
   // `timeframeMs` stays the series' NATIVE cadence (5 minutes) — it is `slots` that changed
   // (`T-02.1`/`D-C3.2`): `slots` now sits on the shared axis grid (`ONE_MINUTE_MS`), not on a

@@ -110,8 +110,9 @@ function buildBackendShapedRows(
 
 /** `page.tsx`'s own pair, mirrored over a window of `nativeBucketCount` native OI buckets
  * starting at `windowStartMs`: `nativeBars` off `scalarPointsFromHistoryRows(rows,
- * FIVE_MINUTES_MS)` placed onto the SAME shared 1-minute axis `buildOiPanel` uses
- * (`buildScalarSeries`, `s2-panels.ts`'s own `S2_AXIS_STEP_MS = ONE_MINUTE_MS`), then
+ * FIVE_MINUTES_MS)` placed onto the SAME shared axis `buildOiPanel` uses (`buildScalarSeries` at
+ * `axisStepMs` — a 1-minute axis in this fixture; since `paineis-de-fluxo` `T-05.1` the step is
+ * the TF's, passed in, and `S2_AXIS_STEP_MS` no longer exists), then
  * `countPresentSlots` — the exact pipeline `page.tsx` names for `oi.nativeBars`
  * (`oiGridSlots = panels.oi.slots`). `wirePoints` off the raw non-null row count
  * (`oi.wirePoints`). Calling the REAL `view-model.ts`/`charts` functions, not a

@@ -43,7 +43,8 @@ const METRICS_DIR = path.join(REPO_ROOT, "data/binance/metrics");
 
 const ONE_MINUTE_MS = 60_000;
 /** `T-02.1`/`D-C3.2`: `buildOiPanel`'s `slots` sits on this shared axis step, not on its own
- * `FIVE_MINUTES_MS` native cadence anymore — see `s2-panels.ts::S2_AXIS_STEP_MS`. */
+ * `FIVE_MINUTES_MS` native cadence anymore — `buildOiPanel(…, axisStepMs)`, the TF's step since
+ * `paineis-de-fluxo` `T-05.1` (`S2_AXIS_STEP_MS` is gone); one minute in this fixture. */
 const AXIS_STEP_MS = ONE_MINUTE_MS;
 
 function readOiDay(day: string): string {
@@ -61,7 +62,7 @@ function realOiPanel() {
     }
   }
   const { points, missingDays } = assembleOiPoints(DAYS, csvTextByDay);
-  return buildOiPanel(points, missingDays, S2_FIXTURE_WINDOW);
+  return buildOiPanel(points, missingDays, S2_FIXTURE_WINDOW, ONE_MINUTE_MS);
 }
 
 test("D5.1 — REAL FIXTURE: the printed stamp for the first OI point of 08-23 is its FECHO, not the raw label", () => {
@@ -139,7 +140,7 @@ test("D5.3 — REAL FIXTURE: a CVD bucket on the real missing day (2026-08-22, n
   // does (see that file's header note on the SAME whole-day gap).
   const { deltas, missingDays, coveredDays } = assembleCvdDeltas(["2026-08-22"], new Map());
   assert.deepEqual(missingDays, ["2026-08-22"]);
-  const panel = buildCvdPanel(deltas, missingDays, coveredDays, S2_FIXTURE_WINDOW);
+  const panel = buildCvdPanel(deltas, missingDays, coveredDays, S2_FIXTURE_WINDOW, ONE_MINUTE_MS);
   const reading = resolveFlowReading(panel.deltaSlots, panel.timeframeMs, Date.UTC(2026, 7, 22, 0, 0, 0));
   assert.equal(reading.kind, "absent");
   assert.equal(formatFlowValue(reading), "—");

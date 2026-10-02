@@ -170,7 +170,8 @@ const PER_DRAG_TIMEOUT_MS = 10_000;
  * (CDP-driven headless Chromium) that made `16 ms` unreachable in this exact test environment. */
 const PAN_FRAME_CEILING_MS = 160;
 
-/** `history-page-window.ts::DEFAULT_PAGE_SLOTS` — copied as a literal, not imported: this spec
+/** The `1m` page (`timeframe-window.ts::TIMEFRAME_WINDOW_BARS["1m"].pageBars`, `DEFAULT_PAGE_SLOTS`
+ * until `T-05.1`) — copied as a literal, not imported: this spec
  * only needs the VOCABULARY (how many grid slots one page widens by) to size a drag large enough
  * to cross the newly-widened edge with margin, never the pagination logic itself. */
 const PAGE_SLOTS = 500;
@@ -186,7 +187,8 @@ const OHLC_METRIC = "klines_ohlc";
 const OHLC_PROVIDER = "binance";
 const OHLC_REDUCTIONS = ["OPEN", "HIGH", "LOW", "CLOSE"] as const;
 
-/** `s2-panels.ts::S2_AXIS_STEP_MS` (`= ONE_MINUTE_MS`) — the grid step that converts the Price
+/** The `1m` axis step (`timeframeStepMs("1m")`; it was `s2-panels.ts::S2_AXIS_STEP_MS` until
+ * `paineis-de-fluxo` `T-05.1` made the step the TF's) — the grid step that converts the Price
  * pane's logical index into an instant. Copied as a literal for the same reason as `PAGE_SLOTS`:
  * the spec needs the vocabulary, not the module. This spec only drives the default `1m` TF. */
 const GRID_STEP_MS = ONE_MINUTE_MS;
@@ -495,9 +497,62 @@ const PREWALK_PARK_SLOTS = 200;
 /** A pre-walk drag never moves the mouse more than this fraction of the host's width from its
  * middle start point, so the pointer stays over the chart. */
 const PREWALK_MAX_WIDTH_FRACTION = 0.4;
-/** Upper bound on pre-walk drags: the mount view spans ~2.4k slots of the 5.76k-slot seed, so
- * ~6 drags reach the park; 12 only fails a run whose drags stopped moving the chart at all. */
+/** Upper bound on pre-walk drags: after `zoomOutToFloor` the view spans ~2.3k slots of the
+ * 5.76k-slot seed (the `minBarSpacing` floor — the geometry the mount itself had before `T-05.1`),
+ * so ~6 drags reach the park; 12 only fails a run whose drags stopped moving the chart at all. */
 const PREWALK_MAX_DRAGS = 12;
+
+/** `paineis-de-fluxo` `T-05.1` — the zoom-out before the pre-walk. Since `T-05.1` the mount frames
+ * the last `VIEW_BARS` (120) bars, not the whole seed: at ~9.6 px/slot a 40%-of-width drag moves
+ * ~48 slots, so reaching the left edge would take ~117 drags (`T-05.1-desenho.md` §4). The wheel
+ * zooms OUT (positive `deltaY`, the opposite sign of `35-*`'s zoom-in) until the visible span stops
+ * growing — the library's `minBarSpacing` floor — and only then the walk starts. */
+const ZOOM_OUT_STEP_DELTA = 200;
+const ZOOM_OUT_BURST = 5;
+const ZOOM_OUT_MAX_BURSTS = 40;
+/** The mount view is `VIEW_BARS` slots; a zoom-out that leaves the span under this did nothing. */
+const ZOOM_OUT_MIN_SPAN_SLOTS = 1_000;
+
+/**
+ * `T-05.1` — zooms the view out to the library's floor BEFORE `walkToLeftEdge`, without paging.
+ * The cursor sits at 90% of the host's width so the zoom grows the span mostly leftward, away from
+ * the right edge, and the left edge never comes within `DEFAULT_PAGE_TRIGGER_SLOTS` of the seed's
+ * start (guarded below by the request count, the same guard the walk uses).
+ */
+async function zoomOutToFloor(page: Page): Promise<number> {
+  const requestedBefore = (await probeCounts(page)).requested;
+  const box = await page.locator(`[data-testid="${CHART_HOST_TESTID}"]`).boundingBox();
+  if (box === null) {
+    throw new Error("chart host: no bounding box — nothing mounted");
+  }
+  const mountSpan = await readPriceRange(page);
+  fact(SPEC, "mount_visible_span_slots", Number((mountSpan.to - mountSpan.from).toFixed(2)));
+  let span = mountSpan.to - mountSpan.from;
+  let bursts = 0;
+  for (; bursts < ZOOM_OUT_MAX_BURSTS; bursts += 1) {
+    await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.3);
+    for (let i = 0; i < ZOOM_OUT_BURST; i += 1) await page.mouse.wheel(0, ZOOM_OUT_STEP_DELTA);
+    await page.waitForTimeout(250);
+    const range = await readPriceRange(page);
+    const next = range.to - range.from;
+    if (Math.abs(next - span) < 1) {
+      break;
+    }
+    span = next;
+  }
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(250);
+  fact(SPEC, "prewalk_zoom_out_bursts_n", bursts);
+  fact(SPEC, "prewalk_zoomed_out_span_slots", Number(span.toFixed(2)));
+  expect(span, `o zoom-out parou em ${span.toFixed(0)} slots — a roda não afastou a vista`).toBeGreaterThanOrEqual(
+    ZOOM_OUT_MIN_SPAN_SLOTS,
+  );
+  expect(
+    (await probeCounts(page)).requested,
+    "o zoom-out pediu página — o par requested/drawn atravessaria o reset()",
+  ).toBe(requestedBefore);
+  return span;
+}
 
 /**
  * `T-01.8` — walks the view to `PREWALK_PARK_SLOTS` from the left edge BEFORE the probe `reset()`,
@@ -763,6 +818,8 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     // somar um pedido "de graça" antes do loop — o `reset()` faz `requestedMs[i]`/`drawnMs[i]`
     // (MESMO índice, sem deslocamento) ser exclusivamente os `DRAG_COUNT` arrastos abaixo.
     // `T-01.8`: the pre-walk runs BEFORE the reset, so its drags are neither paired nor recorded.
+    // `T-05.1`: the mount now frames the last 120 bars; zoom out to the floor first (see `zoomOutToFloor`).
+    await zoomOutToFloor(page);
     await walkToLeftEdge(page);
     await page.evaluate(() => window.__historyPageLatencyProbe?.reset());
     // `T-01.8`: the axis probe is never reset; everything before this index is mount + pre-walk.
