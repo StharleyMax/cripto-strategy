@@ -206,6 +206,18 @@ import { HISTORY_BAR_POLICY } from "../history-transport.ts";
 import type { HistoryRowsBundle } from "./panel-assembly.ts";
 import { useHistoryPager, type HistoryPagingSeed, type HistorySeriesKeys } from "./use-history-pager.ts";
 import { panelWallState } from "./slot-coverage.ts";
+import {
+  coverageChipText,
+  coverageDataAttributes,
+  coverageHeadText,
+  coverageScreenReaderText,
+  formatCoverageSpan,
+  parseNativeGridMs,
+  warningLegs,
+  type CoverageGridMs,
+  type CoverageLeg,
+  type CoverageMagnitude,
+} from "./coverage-magnitude.ts";
 
 /** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
  * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
@@ -245,7 +257,7 @@ export interface VolumeSubAxisData {
   /** `T-03.12` / `P-B` / `ADR-040/D3` regime A — `klines_volume` is a `FLOW` SUM; a reaggregated
    * bucket short of its own `expected` native facts draws an UNDERCOUNT, silently, unless this
    * pane says so. `0/0` (no reaggregated bucket in the window) draws no mark at all. */
-  readonly partialCoverage: PartialCoverageSummary;
+  readonly partialCoverage: CoverageMagnitude;
 }
 
 /**
@@ -272,7 +284,7 @@ export interface CvdPaneData {
   /** `T-03.12` / `P-B` / `ADR-040/D3` regime A — `cvd_delta` is the other `FLOW` SUM this screen
    * draws. Folded off `cvdDeltaSlots`'s own raw rows, never off `cumulativeSlots` (a downstream
    * VIEW of the same deltas — one honest count at the source, `page.tsx`'s own comment). */
-  readonly partialCoverage: PartialCoverageSummary;
+  readonly partialCoverage: CoverageMagnitude;
 }
 
 /**
@@ -349,7 +361,7 @@ export interface LiquidationCohortData {
   /** `T-03.12` / `P-B` / `ADR-040/D3` regime A — `sum_liquidation` is a `FLOW` SUM per cohort;
    * long and short each carry their OWN count, degrading independently like every other fact on
    * this pane. */
-  readonly partialCoverage: PartialCoverageSummary;
+  readonly partialCoverage: CoverageMagnitude;
 }
 
 /**
@@ -507,6 +519,9 @@ export interface SymbolClientProps {
    * read API over exactly the window the server used — which is what lets `e2e/08` cross-check
    * DOM against `/series-history` without seeding anything (`[P-seed]`). */
   readonly knowledgeTimeMs: number;
+  /** `paineis-de-fluxo` `T-05.4` — the native grid of each regime-A series (`page.tsx`, off the catalog),
+   * frozen into the pager's static context: the coverage warning multiplies missing facts by it. */
+  readonly coverageGridMs: CoverageGridMs;
   readonly liveUrls: { readonly price: string | null; readonly oi: string | null; readonly cvd: string | null };
   /** `T-03.11` — the `interval` THIS render's ten fetches actually asked `/series-history` for
    * (`page.tsx`'s own `selectedInterval`, resolved from `?interval=` against
@@ -920,6 +935,15 @@ function useLegendFrame(): LegendFrame {
     throw new Error("useLegendFrame must be called within a LegendFrameContext provider");
   }
   return frame;
+}
+
+/** `paineis-de-fluxo` `T-05.4` (item extra of `gates/T-05.1-build.md` §6) — the width of ONE slot of
+ * the axis, in the words the panes print ("1 min", "15 min", "1 h", "4 h"). Since `T-05.1` the slot is
+ * the timeframe's bar, so the nine sentences that said "de 1 min" were false at every TF but `1m`
+ * ("Vela completa em 42 de 42 buckets de 1 min" at `4h`). Same duration format as the coverage
+ * warning (`coverage-magnitude.ts::formatCoverageSpan`), so the screen spells a span one way. */
+function useSlotUnit(): string {
+  return formatCoverageSpan(useLegendFrame().axisStepMs);
 }
 
 const NO_CROSSHAIR_STORE: CrosshairSlotStore = createCrosshairSlotStore();
@@ -1497,19 +1521,9 @@ const LONG_SHORT_PANE_TESTID = "long-short-pane";
  * `:absent`, and the legend keeps the enum in `data-legend-absence`. It is still never a number. */
 const ABSENCE_TOKEN = "ausente";
 
-/** `T-03.12` — the SAME shape `view-model.ts::PartialCoverageSummary` (`page.tsx`'s own return
- * type from `summarizePartialCoverage`) declares, DUPLICATED here rather than imported: this
- * file is a Client Component and `view-model.ts` pulls `node:crypto`
- * (`computeSeriesKeyId`) — `volume-subaxis-dom-contract.test.ts`'s own
- * `web-fullstack.browser-imports-server` scan forbids ANY import of `view-model.ts` from here,
- * type-only or not (the scan is a text regex over import specifiers, not TS-aware). Structural
- * typing makes the duplication safe: `page.tsx` assigns a `view-model.ts`-shaped object literal
- * straight into these props with no cast needed, and a shape drift between the two would fail
- * `tsc`, not pass silently. */
-interface PartialCoverageSummary {
-  readonly partialBuckets: number;
-  readonly totalReaggregatedBuckets: number;
-}
+// `paineis-de-fluxo` `T-05.4` — the coverage summary type is `coverage-magnitude.ts::CoverageMagnitude`,
+// IMPORTED: that module is browser-safe, so the duplicate this file used to carry (because
+// `view-model.ts` pulls `node:crypto`) is gone instead of growing three new fields.
 
 /** `T-03.12` — the SAME hollow-lozenge glyph `LongShortIntegrityGlyph` already carries, reused
  * rather than reinvented: `DESIGN_SYSTEM.md` §1.5 reserves exactly ONE glyph for "integridade do
@@ -1528,43 +1542,78 @@ function PartialCoverageGlyph() {
 }
 
 /**
- * `T-03.12` — the VISIBLE MARK `P-B`/`ADR-040/D3` requires when a regime-A (`Σ`/max/min) panel
- * serves a partial reaggregated bucket: glyph, WORD, and colour as the THIRD channel (never the
- * only one), same three-channel discipline `LongShortIntegrityBadge` already established on this
- * screen — reused, not reinvented, because both are the same role (`ADR-010/D-3`, `integridade do
- * dado`) applied to two different absences ("no observation" there, "fewer native facts than
- * claimed" here).
+ * `T-03.12` → `paineis-de-fluxo` `T-05.4` (`handoff/T-05.4-desenho.md` §2, gate
+ * `gates/T-05.4-design-critique.md` APPROVED_WITH_CONDITIONS 77/100) — the VISIBLE MARK `P-B`/`ADR-040/D3`
+ * requires when a regime-A (`Σ`) panel serves partial reaggregated buckets, now saying HOW MUCH is
+ * missing, in time: `◇ cobertura parcial — faltam 1 h 4 min de 4 d (1.1%)`.
  *
- * Renders NOTHING when `partialBuckets === 0` — either no reaggregation happened at all (the
- * window's rows never left their native grid, `series_history_report.py`'s own DEGENERATE case,
- * `totalReaggregatedBuckets === 0` too) or every reaggregated bucket answered its full `expected`
- * — in both cases there is nothing undercounted to warn about, and a badge reading "0 de N
- * buckets... subestimada" would be a false alarm about a sum that is, in fact, whole.
+ * Renders NOTHING when `missingFacts === 0` outside the head — the guard is on what is MISSING, not on
+ * whether any reaggregation happened. The `T-03.12` guard (`totalReaggregatedBuckets === 0`) promised
+ * this in its docstring and did the opposite: a whole window rendered "0 de N" (`FIX-uso` §D-C).
  *
- * Scope, stated rather than hidden: this counts buckets across the visible WINDOW, never a mark
- * painted on the individual bar inside the canvas — `lightweight-charts` paints to an OPAQUE
- * `<canvas>` (every other pane's own comment on this file, `DR-6`), so a per-bar mark painted
- * there would be invisible to every `data-fact` assertion this repo's DoD lines already run
- * (`grep -o 'data-fact=...'`). `panel.coverage`'s two WALLS (`T-03.6`, beyond-coverage vs
- * absent) are a DIFFERENT fact (`D-C3.7`) and stay out of this mark on purpose. */
-function PartialCoverageMark({
-  factKey,
-  summary,
-}: {
-  readonly factKey: string;
-  readonly summary: PartialCoverageSummary;
-}) {
-  if (summary.totalReaggregatedBuckets === 0) {
+ * FORM (§2.5), and every choice in it is the designer's with the gate's agreement, not a builder's:
+ * an inline `<span>` INSIDE the legend line that names the series, never a block of its own (the block
+ * with a border was what took 44 px of a 217 px liquidation pane, §1.1); no border, no bold, lower case
+ * — integrity is still the violet INK plus the hollow lozenge plus the WORD (`DESIGN_SYSTEM.md` §1.5),
+ * so the chip stays salient without shouting. The leading `·` is `CI-1` of the gate: on the volume line
+ * it separates the window-level chip from the one-bar value beside it.
+ *
+ * `C-2`: the long sentence is a REAL `sr-only` node, never `title`; the visible line is `aria-hidden`
+ * so a screen reader hears the full sentence once, not the short one and then the long one.
+ *
+ * `legs` has one member for volume and CVD, and the two cohorts for liquidation (ONE chip per pane,
+ * §2.4). `data-fact` (`<factKey>:<missingFacts>/<expectedFacts>`) and the `data-coverage-*` live on one
+ * empty carrier `<span>` per WARNING series inside the chip — for volume and CVD there is one, for
+ * liquidation one per leg that is short; a leg with nothing missing has no carrier, so
+ * `[data-fact^="<key>:"]` counts warnings (A-2). The chip is `closest("[data-coverage-chip]")`.
+ */
+/** One series of a coverage chip, with the `data-fact` key it publishes under. */
+type CoverageMarkLeg = CoverageLeg & { readonly factKey: string };
+
+function PartialCoverageMark({ legs }: { readonly legs: readonly CoverageMarkLeg[] }) {
+  const visible = coverageChipText(legs);
+  if (visible === null) {
     return null;
   }
   return (
-    <p
-      data-fact={`${factKey}:${summary.partialBuckets}/${summary.totalReaggregatedBuckets}`}
-      className="flex items-center gap-2 border border-integrity-ink px-2 py-0.5 text-sm font-bold text-integrity-ink"
+    <span
+      data-coverage-chip={legs.map((leg) => leg.factKey).join(" ")}
+      className="inline-flex items-center gap-1 whitespace-nowrap text-integrity-ink"
     >
+      <span aria-hidden="true" className="text-provenance-weak">
+        ·
+      </span>
       <PartialCoverageGlyph />
-      COBERTURA PARCIAL — {summary.partialBuckets} de {summary.totalReaggregatedBuckets} buckets reagregados
-      somam menos fatos nativos do que deveriam (soma subestimada).
+      <span aria-hidden="true" data-coverage-visible="">
+        {visible}
+      </span>
+      <span className="sr-only">{coverageScreenReaderText(legs)}</span>
+      {/* One empty carrier per WARNING series: the magnitude in native facts, plus the `data-coverage-*`
+          (§2.6). The `data-fact` stays a template literal so `data-fact-ascii-key-contract.test.ts`
+          still sees its key. */}
+      {warningLegs(legs).map((leg) => (
+        <span
+          key={leg.factKey}
+          data-fact={`${leg.factKey}:${leg.magnitude.missingFacts}/${leg.magnitude.expectedFacts}`}
+          {...coverageDataAttributes(leg.magnitude)}
+        />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * `T-05.4` (A-3 of `T-05.4-desenho.md` §6.3) — the coverage of ONE series, published whether or not the
+ * chip exists, in the pane's `sr-only` details: when the only shortfall is in the head, the chip is
+ * gone and `data-coverage-head-excluded-facts` still has to be readable, by a test and by a screen
+ * reader ("as barras mais recentes … não entram nesta conta"). No `data-fact` here, on purpose: the
+ * fact key counts WARNINGS, and this node exists for every window.
+ */
+function PartialCoverageLedger({ factKey, magnitude }: { readonly factKey: string; readonly magnitude: CoverageMagnitude }) {
+  const headText = coverageHeadText([{ label: factKey, magnitude }]);
+  return (
+    <p data-coverage-ledger={factKey} {...coverageDataAttributes(magnitude)}>
+      {headText ?? ""}
     </p>
   );
 }
@@ -1864,6 +1913,7 @@ function formatUtcMinute(instantMs: number): string {
  * `T-01.8`, not a design decision. The `data-fact`/`data-readable-since-ms` pair is the CONTRACT
  * half and must survive any restyling, same split the volume sub-axis already declares. */
 function ReadableHorizon({ volume }: { readonly volume: VolumeSubAxisData }) {
+  const slotUnit = useSlotUnit();
   const gridSlots = volume.slots.length;
   const sinceText =
     volume.firstPresentMs === null
@@ -1875,7 +1925,7 @@ function ReadableHorizon({ volume }: { readonly volume: VolumeSubAxisData }) {
       data-readable-since-ms={volume.firstPresentMs ?? ""}
       className="text-sm text-provenance-weak"
     >
-      {sinceText} — {volume.presentPoints}/{gridSlots} grades de 1 min na janela.
+      {sinceText} — {volume.presentPoints}/{gridSlots} grades de {slotUnit} na janela.
     </p>
   );
 }
@@ -1940,11 +1990,14 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
       <PaneLegendLine>
         <h3 className="font-label-caps text-label-caps text-on-surface">Volume{identityTerms(legends.volume)}</h3>
         <LegendValue seriesId="volume" factKey="volume" slots={volume.legendSlots} />
+        {/* `T-05.4` (§2.5): the coverage chip lives IN the line that names the series, never as a
+            block under it — and BEFORE the scale note, because the last child is the one that
+            truncates (`PaneLegendLine`), and the chip must never be what gets cut. */}
+        <PartialCoverageMark legs={[{ label: "volume", factKey: "volume_partial_coverage", magnitude: volume.partialCoverage }]} />
         {/* ⛔ STAYS VISIBLE: an overlay scale draws no numeral, so this line is the only place the
             scale is declared (`T-02.2`, gate §5.3: declare the scale, whichever it is). */}
         <VolumeScaleNote />
       </PaneLegendLine>
-      <PartialCoverageMark factKey="volume_partial_coverage" summary={volume.partialCoverage} />
       <AbsenceNote status={status} />
       <PaneDetails>
         {/* `T-01.7`: the static readout at the window's last instant left the painted legend — the
@@ -1954,6 +2007,7 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
         </p>
         <VolumeMarksLegend />
         <ReadableHorizon volume={volume} />
+        <PartialCoverageLedger factKey="volume_partial_coverage" magnitude={volume.partialCoverage} />
       </PaneDetails>
     </div>
   );
@@ -1985,13 +2039,14 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
  * nunca uma vela de altura zero".
  */
 function PriceCandleFacts({ priceCandles }: { readonly priceCandles: PriceCandleData }) {
+  const slotUnit = useSlotUnit();
   return (
     <p
       data-fact={`price_candles:${priceCandles.drawnCandles}/${priceCandles.gridSlots}`}
       data-price-partial-buckets={priceCandles.partialBuckets}
       className="text-sm text-provenance-weak"
     >
-      Vela completa em {priceCandles.drawnCandles} de {priceCandles.gridSlots} buckets de 1 min.{" "}
+      Vela completa em {priceCandles.drawnCandles} de {priceCandles.gridSlots} buckets de {slotUnit}.{" "}
       {priceCandles.partialBuckets} {priceCandles.partialBuckets === 1 ? "bucket" : "buckets"} com
       leitura incompleta {priceCandles.partialBuckets === 1 ? "fica" : "ficam"} em lacuna — nada
       desenhado, nunca uma vela de altura zero.
@@ -2763,6 +2818,7 @@ function OiPane({
  * copy is guarded from its own side. Same reasoning `08-symbol-dado-real.spec.ts` gives for
  * duplicating a selector instead of importing it. */
 function CvdReadableHorizon({ cvd, gridSlots }: { readonly cvd: CvdPaneData; readonly gridSlots: number }) {
+  const slotUnit = useSlotUnit();
   const sinceText =
     cvd.firstPresentMs === null
       ? "Nenhuma grade legível no período"
@@ -2773,7 +2829,7 @@ function CvdReadableHorizon({ cvd, gridSlots }: { readonly cvd: CvdPaneData; rea
       data-readable-since-ms={cvd.firstPresentMs ?? ""}
       className="text-sm text-provenance-weak"
     >
-      {sinceText} — {cvd.presentPoints}/{gridSlots} grades de 1 min na janela.
+      {sinceText} — {cvd.presentPoints}/{gridSlots} grades de {slotUnit} na janela.
     </p>
   );
 }
@@ -2911,6 +2967,8 @@ function CvdPane({
             cumulative would walk every time the delta changes width. */}
         <LegendValue seriesId="cvd" factKey="cvd_delta" slots={panels.cvd.deltaSlots} prefix="delta" />
         <LegendValue seriesId="cvd" factKey="cvd_cumulative" slots={panels.cvd.cumulativeSlots} prefix="acumulado" />
+        {/* `T-05.4` (§2.5): last child of the title line — it has room at 1280 px (prototype, §1.2). */}
+        <PartialCoverageMark legs={[{ label: "cvd", factKey: "cvd_partial_coverage", magnitude: cvd.partialCoverage }]} />
       </PaneLegendLine>
       <PaneLegendLine>
         <CvdLegend />
@@ -2922,7 +2980,6 @@ function CvdPane({
           Acumulado ancorado em {formatUtcMinute(cvd.anchorMs)}.
         </p>
       </PaneLegendLine>
-      <PartialCoverageMark factKey="cvd_partial_coverage" summary={cvd.partialCoverage} />
       <AbsenceNote status={status} />
       <PaneDetails>
       {/* `T-01.7`: the two static readouts left the painted legend; their facts stay. */}
@@ -2945,6 +3002,7 @@ function CvdPane({
         data-fact={`cvd_slots:${panels.cvd.deltaSlots.length}`}
       />
       <CvdReadableHorizon cvd={cvd} gridSlots={gridSlots} />
+      <PartialCoverageLedger factKey="cvd_partial_coverage" magnitude={cvd.partialCoverage} />
       </PaneDetails>
       </PaneLegend>
     </section>
@@ -3093,6 +3151,7 @@ function LiquidationReadableHorizon({
   readonly cohort: string;
   readonly data: LiquidationCohortData;
 }) {
+  const slotUnit = useSlotUnit();
   const gridSlots = data.slots.length;
   const sinceText =
     data.firstPresentMs === null
@@ -3104,7 +3163,7 @@ function LiquidationReadableHorizon({
       data-readable-since-ms={data.firstPresentMs ?? ""}
       className="text-sm text-provenance-weak"
     >
-      {sinceText} — {data.presentPoints}/{gridSlots} grades de 1 min observadas, das quais{" "}
+      {sinceText} — {data.presentPoints}/{gridSlots} grades de {slotUnit} observadas, das quais{" "}
       {data.zeroPoints} são zero do fornecedor.
     </p>
   );
@@ -3192,7 +3251,6 @@ function LiquidationLegGroup({
           lead={<LiquidationLegSwatch side={side} />}
         />
       </PaneLegendLine>
-      <PartialCoverageMark factKey={`liquidation_partial_coverage:${cohort}`} summary={data.partialCoverage} />
       <AbsenceNote status={status} />
       <PaneDetails>
         {/* `T-01.7`: the static readout left the painted legend; the fact stays. */}
@@ -3200,6 +3258,7 @@ function LiquidationLegGroup({
           Leitura atual: {readingText}
         </p>
         <LiquidationReadableHorizon cohort={cohort} data={data} />
+        <PartialCoverageLedger factKey={`liquidation_partial_coverage:${cohort}`} magnitude={data.partialCoverage} />
       </PaneDetails>
       {/* ⛔ `aria-hidden` — same criterion as `CvdPane`/`DR-6`: the readouts above ARE the textual
           alternative. Zero height, full width: `e2e/13` reads its `clientWidth` as the pane's
@@ -3452,19 +3511,36 @@ function LiquidationPane({
           <h2 className="font-label-caps text-label-caps text-on-surface">
             Liquidações{identityTerms(legends.liquidation_long)}
           </h2>
+          {/* `T-05.4` (§2.4/§2.5): ONE chip for the pane, not one per leg — both legs come from the
+              same collector answer, so their coverage is usually identical — placed BEFORE the
+              provenance, which is the last child and the one that truncates. */}
+          <PartialCoverageMark
+            legs={cohortsTopFirst.map((cohort) => ({
+              label: cohort,
+              factKey: `liquidation_partial_coverage:${cohort}`,
+              magnitude: liquidation[cohort].partialCoverage,
+            }))}
+          />
           {/* ⛔ STAYS VISIBLE (`RS-5`, `SPEC-007` §7): third-party data is never read without its label. */}
           <LiquidationProvenance provenance={liquidation.provenance} />
         </PaneLegendLine>
-        {cohortsTopFirst.map((cohort) => (
-          <LiquidationLegGroup
-            key={cohort}
-            cohort={cohort}
-            side={sides[cohort]}
-            data={liquidation[cohort]}
-            unit={liquidation.unit}
-            status={statusOf[cohort]}
-          />
-        ))}
+        {/* `T-05.4` (§2.5): the two legs SIDE BY SIDE — the legend goes from 6 lines to 3, and that
+            height is what the bars get back (`data-pane-height-px − data-reserved-scale-top-px`,
+            87 → 153 px in the prototype, §1.2). Each group keeps its role, label, testid and every
+            `data-*`; only the container changed. `flex-wrap` sends the second leg to the next line
+            when the pane is too narrow, still fewer lines than before. */}
+        <div data-liquidation-legs-row="" className="flex flex-row flex-wrap items-start gap-x-8 gap-y-0.5 self-stretch">
+          {cohortsTopFirst.map((cohort) => (
+            <LiquidationLegGroup
+              key={cohort}
+              cohort={cohort}
+              side={sides[cohort]}
+              data={liquidation[cohort]}
+              unit={liquidation.unit}
+              status={statusOf[cohort]}
+            />
+          ))}
+        </div>
         <PaneLegendLine>
           <LiquidationMarksKey />
         </PaneLegendLine>
@@ -3495,6 +3571,12 @@ function LiquidationPane({
  * (`T-04.6`, `CLAUDE.md` §"Design — autonomia delegada, com gate de validação"). What a builder
  * decides, and all that is decided here, is that the FACTS are on screen and machine-readable. */
 function LongShortReadableHorizon({ longShort }: { readonly longShort: LongShortPaneData }) {
+  const { axisStepMs } = useLegendFrame();
+  const slotUnit = formatCoverageSpan(axisStepMs);
+  // The ladder exists only while the slot is NARROWER than the native bar (`1m` slots over a `5min`
+  // series): from the native width up, one slot holds at most one observation and nothing repeats.
+  const nativeGridMs = parseNativeGridMs(longShort.nativeGrid);
+  const ladder = nativeGridMs !== null && axisStepMs < nativeGridMs;
   const gridSlots = longShort.slots.length;
   const sinceText =
     longShort.firstPresentMs === null
@@ -3509,7 +3591,8 @@ function LongShortReadableHorizon({ longShort }: { readonly longShort: LongShort
     >
       {sinceText} — {longShort.nativeBars} observações nativas
       {nativeGridSuffix(longShort.nativeGrid)}, servidas como {longShort.wirePoints}/{gridSlots} grades
-      de 1 min (a mesma observação repetida na escada).
+      de {slotUnit}
+      {ladder ? " (a mesma observação repetida na escada)" : ""}.
     </p>
   );
 }
@@ -3610,10 +3693,11 @@ function LongShortIdentity({
   readonly provenance: SeriesProvenance;
   readonly nativeGrid: string | null;
 }) {
+  const slotUnit = useSlotUnit();
   const publisher = provenance.kind === "unresolved" ? "fonte não identificada" : provenance.provider;
   return (
     <p data-fact={`long_short_identity:${symbol}`} className="text-sm text-provenance-weak">
-      {symbol} · {publisher} · nativa{nativeGridSuffix(nativeGrid)} servida na grade de 1 min
+      {symbol} · {publisher} · nativa{nativeGridSuffix(nativeGrid)} servida na grade de {slotUnit}
     </p>
   );
 }
@@ -3689,12 +3773,13 @@ function LongShortAgeStamp({ longShort }: { readonly longShort: LongShortPaneDat
  * The `0` case is printed too, and it is not noise: it is the assertion that the window's own last
  * instant IS observed, which is what makes the other branch falsifiable. */
 function LongShortTailNote({ longShort }: { readonly longShort: LongShortPaneData }) {
+  const slotUnit = useSlotUnit();
   const absent = longShort.trailingAbsentSlots;
   return (
     <p data-fact={`long_short_tail_absent:${absent}`} className="text-sm text-provenance-weak">
       {absent === 0
-        ? "Fecho da janela observado — cauda ausente: 0 grades de 1 min."
-        : `Fecho da janela sem ponto — cauda ausente: ${absent} grades de 1 min (nada é desenhado à direita da última observação).`}
+        ? `Fecho da janela observado — cauda ausente: 0 grades de ${slotUnit}.`
+        : `Fecho da janela sem ponto — cauda ausente: ${absent} grades de ${slotUnit} (nada é desenhado à direita da última observação).`}
     </p>
   );
 }
@@ -3817,6 +3902,7 @@ function LongShortEquilibriumNote({ stats }: { readonly stats: SeriesValueStats 
  * infer from an empty chart: that the emptiness is a property of the time slice, not of the series
  * or of the screen. */
 function LongShortEmptyState({ longShort }: { readonly longShort: LongShortPaneData }) {
+  const slotUnit = useSlotUnit();
   return (
     <div
       data-fact={`long_short_empty:0/${longShort.slots.length}`}
@@ -3828,7 +3914,7 @@ function LongShortEmptyState({ longShort }: { readonly longShort: LongShortPaneD
       </p>
       <p className="text-sm text-provenance-weak">
         0 observações nativas{nativeGridSuffix(longShort.nativeGrid)} na janela ({longShort.wirePoints}/
-        {longShort.slots.length} grades de 1 min legíveis). A série está cadastrada e íntegra; o que está
+        {longShort.slots.length} grades de {slotUnit} legíveis). A série está cadastrada e íntegra; o que está
         vazio é o corte temporal. Ausência não é interpolada nem substituída por zero.
       </p>
     </div>
@@ -4336,6 +4422,7 @@ export function SymbolClient({
   longShort: initialLongShort,
   panelStatus,
   knowledgeTimeMs,
+  coverageGridMs,
   liveUrls,
   historyPagingRows,
   historyBaseUrl,
@@ -4368,6 +4455,8 @@ export function SymbolClient({
         windowEndMsExclusive: initialPanels.window.endMsExclusive,
         longShortRecentSpanMs: initialLongShort.recentSpanMs,
         oiMaxStalenessMs: initialOi.maxStalenessMs,
+        knowledgeTimeMs,
+        coverageGridMs,
       },
     }),
     [
@@ -4380,6 +4469,7 @@ export function SymbolClient({
       initialCvd.anchorMs,
       initialLongShort.recentSpanMs,
       initialOi.maxStalenessMs,
+      coverageGridMs,
     ],
   );
   const pager = useHistoryPager(historyPagingSeed);

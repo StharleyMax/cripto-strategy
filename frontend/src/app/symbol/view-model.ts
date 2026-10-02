@@ -707,37 +707,11 @@ export function scaledCvdDeltasFromHistoryRows(rows: readonly SeriesHistoryRow[]
 // `0/0` — no mark — honestly, rather than a false `0/N` that would read as "N buckets, all
 // complete" when in truth none of them was ever a fraction of anything.
 
-/** One panel's worth of the `{present, expected}` pairs, folded into the two counts the mark on
- * screen needs: how many reaggregated buckets are short of their own `expected`, out of how
- * many were reaggregated at all. */
-export interface PartialCoverageSummary {
-  readonly partialBuckets: number;
-  readonly totalReaggregatedBuckets: number;
-}
-
-/** `true` exactly when this row's own pair says the bucket is short of the native facts it
- * claims to cover — the literal test `ADR-040/D3`'s regime A exists to make visible. */
-export function isPartialCoverageRow(row: SeriesHistoryRow): boolean {
-  return row.coverage !== null && row.coverage.present < row.coverage.expected;
-}
-
-/** Folds a panel's rows into `PartialCoverageSummary` — pure, no I/O, same tier as every other
- * function in this module (`ADR-003` FR-1). Order-independent: a caller may pass the FULL
- * window's rows or a sub-window (e.g. the trailing band `T-04.8` already carves out) and get
- * back the honest count for exactly the rows it passed. */
-export function summarizePartialCoverage(rows: readonly SeriesHistoryRow[]): PartialCoverageSummary {
-  let partialBuckets = 0;
-  let totalReaggregatedBuckets = 0;
-  for (const row of rows) {
-    if (row.coverage !== null) {
-      totalReaggregatedBuckets += 1;
-      if (row.coverage.present < row.coverage.expected) {
-        partialBuckets += 1;
-      }
-    }
-  }
-  return { partialBuckets, totalReaggregatedBuckets };
-}
+// `paineis-de-fluxo` `T-05.4` — the fold that used to live here (`summarizePartialCoverage`, two
+// BUCKET counts) moved to `coverage-magnitude.ts::summarizeCoverageMagnitude`, which counts the
+// MISSING native facts (time) and keeps the head out (`handoff/T-05.4-desenho.md` §2). It moved
+// rather than stayed because that module is browser-safe: `SymbolClient.tsx` imports its type and
+// formatters, and could never import this file (`node:crypto`).
 
 export { daysWithPresence };
 

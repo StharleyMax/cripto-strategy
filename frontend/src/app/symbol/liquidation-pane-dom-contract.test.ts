@@ -428,7 +428,7 @@ test("CALA: a design_gate NEEDS_FIX about wording, order or legend leaves the co
   const restyled = source
     .replace(/Liquidação de posições compradas \(long\)/, "Longs liquidados")
     .replace(/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}")
-    .replace(/grades de 1 min observadas/, "minutos observados")
+    .replace(/grades de \{slotUnit\} observadas/, "minutos observados")
     .replace(/⚠️ Dado de TERCEIRO/, "Fonte externa");
   assert.notEqual(restyled, source, "the form strings moved — re-anchor this CALA rather than dropping it");
   assert.ok(CLIENT_ASSERTS.every((holds) => holds(restyled)));

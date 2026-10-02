@@ -53,9 +53,9 @@ import {
   scaledCvdDeltasFromHistoryRows,
   seriesValueStats,
   slotsFrom,
-  summarizePartialCoverage,
   trailingAbsentSlots as trailingAbsentSlotsOf,
 } from "./view-model.ts";
+import { summarizeCoverageMagnitude, type CoverageGridMs, type CoverageMagnitude } from "./coverage-magnitude.ts";
 
 /** The ten row arrays a page (initial OR paginated) carries — one per `/series-history` fetch
  * `[symbol]/page.tsx` already makes (`T-01.8`'s four OHLC reductions, OI, CVD, volume, the two
@@ -106,7 +106,15 @@ export interface AssemblyStaticContext {
    * SERIES, frozen from the initial SSR resolution, never re-derived here (this module reads no
    * catalog). `null` when the initial render resolved no OI entry at all. */
   readonly oiMaxStalenessMs: number | null;
+  /** `paineis-de-fluxo` `T-05.4` — the instant the coverage warning's HEAD is measured from
+   * (`coverage-magnitude.ts::COVERAGE_HEAD_GRACE_MS`): `knowledge_time_ms` of the ORIGINAL request,
+   * the SAME one every page re-sends (`use-history-pager.ts`, "o cache É o knowledge_time"). */
+  readonly knowledgeTimeMs: number;
+  /** `T-05.4` — the native grid of each regime-A series, off its catalog entry (`nativeGrid`), frozen
+   * at the SSR resolution like every other catalog fact here: it multiplies missing facts into time. */
+  readonly coverageGridMs: CoverageGridMs;
 }
+
 
 export interface DynamicPriceFacts {
   readonly drawnCandles: number;
@@ -121,13 +129,13 @@ export interface DynamicVolumeFacts {
   readonly presentPoints: number;
   readonly firstPresentMs: number | null;
   readonly reading: FlowReading;
-  readonly partialCoverage: ReturnType<typeof summarizePartialCoverage>;
+  readonly partialCoverage: CoverageMagnitude;
 }
 
 export interface DynamicCvdFacts {
   readonly presentPoints: number;
   readonly firstPresentMs: number | null;
-  readonly partialCoverage: ReturnType<typeof summarizePartialCoverage>;
+  readonly partialCoverage: CoverageMagnitude;
 }
 
 export interface DynamicOiFacts {
@@ -144,7 +152,7 @@ export interface DynamicLiquidationCohortFacts {
   readonly zeroPoints: number;
   readonly firstPresentMs: number | null;
   readonly reading: FlowReading;
-  readonly partialCoverage: ReturnType<typeof summarizePartialCoverage>;
+  readonly partialCoverage: CoverageMagnitude;
 }
 
 export interface DynamicLongShortFacts {
@@ -246,14 +254,20 @@ export function assembleHistoryPage(
     presentPoints: countPresentSlots(volumeSlots),
     firstPresentMs: firstPresentSlotMs(volumeSlots),
     reading: resolveFlowReadingOrAbsent(volumeSlots, axisStepMs, readingInstantMs),
-    partialCoverage: summarizePartialCoverage(rows.volume),
+    partialCoverage: summarizeCoverageMagnitude(rows.volume, {
+      knowledgeTimeMs: context.knowledgeTimeMs,
+      nativeGridMs: context.coverageGridMs.volume,
+    }),
   };
 
   const cvdDeltaSlots = panels.cvd.deltaSlots;
   const cvd: DynamicCvdFacts = {
     presentPoints: countPresentSlots(cvdDeltaSlots),
     firstPresentMs: firstPresentSlotMs(cvdDeltaSlots),
-    partialCoverage: summarizePartialCoverage(rows.cvd),
+    partialCoverage: summarizeCoverageMagnitude(rows.cvd, {
+      knowledgeTimeMs: context.knowledgeTimeMs,
+      nativeGridMs: context.coverageGridMs.cvd,
+    }),
   };
 
   const oiGridSlots = panels.oi.slots;
@@ -268,7 +282,7 @@ export function assembleHistoryPage(
   // Liquidation/long-short: WITH `window` — same choice `page.tsx` makes, so a series whose page
   // fetch degrades to `[]` still comes back grid-padded to the SAME length as its five siblings
   // (`CA-5a`), rather than silently shrinking relative to them.
-  const liquidationCohort = (rows_: readonly SeriesHistoryRow[]): DynamicLiquidationCohortFacts => {
+  const liquidationCohort = (rows_: readonly SeriesHistoryRow[], nativeGridMs: number): DynamicLiquidationCohortFacts => {
     const slots = nonNegativeFlowSlotsFromHistoryRows(rows_, s2Window, axisStepMs);
     return {
       slots,
@@ -276,11 +290,11 @@ export function assembleHistoryPage(
       zeroPoints: countZeroSlots(slots),
       firstPresentMs: firstPresentSlotMs(slots),
       reading: resolveFlowReadingOrAbsent(slots, axisStepMs, readingInstantMs),
-      partialCoverage: summarizePartialCoverage(rows_),
+      partialCoverage: summarizeCoverageMagnitude(rows_, { knowledgeTimeMs: context.knowledgeTimeMs, nativeGridMs }),
     };
   };
-  const liquidationLong = liquidationCohort(rows.liquidationLong);
-  const liquidationShort = liquidationCohort(rows.liquidationShort);
+  const liquidationLong = liquidationCohort(rows.liquidationLong, context.coverageGridMs.liquidationLong);
+  const liquidationShort = liquidationCohort(rows.liquidationShort, context.coverageGridMs.liquidationShort);
 
   const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(rows.longShort, s2Window, axisStepMs);
   const longShortObservedAtMs = lastReadableAvailableAtMs(rows.longShort);
