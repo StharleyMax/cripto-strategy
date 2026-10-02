@@ -1876,7 +1876,13 @@ Desenho: [`handoff/T-05.4-desenho.md`](../docs/context/paineis-de-fluxo/handoff/
 - **Falsificador:** `e2e/40-coverage-magnitude-and-legend-room.spec.ts` — stub por `interval` (`full`, `mid-3`,
   `head-only` em 5m, `longest` em 1h) e o universo real em 5m/15m/1h/4h. As 5 ablações do §6.3 reprovam (ver o relatório).
   **A-4 da liquidação é pego pelo `≥ 140 px`, não pelo `≥ 0,6 ×`** (`C-5`).
-- **⚠️ Em aberto, a 1024×768 (`C-3`):** com o chip inline, `(escala linear)` sai da linha do volume **já com o texto real
-  de hoje** (0 de 105 px visíveis), e o texto mais longo corta `Dado de TERCEIRO` (38,9 de 112 px). A 1280 os dois ficam
-  inteiros. O comportamento abaixo do ponto de quebra (~1.177 px de viewport no 4h real) é decisão do `ui-designer`; o
-  teste a 1024 fica **vermelho** até ela existir.
+- **`C-3` — duas formas pintadas do mesmo chip, e o container query da legenda escolhe** (desenho §10): o
+  `[data-pane-legend]` é `@container/legend`, e o chip renderiza `[data-coverage-visible="full"]` e
+  `[data-coverage-visible="compact"]` (`coverageChipCompactText`: sem `cobertura parcial — `, sem denominador), ambos
+  `aria-hidden`; abaixo de **1140 px de largura de CONTEÚDO** da legenda (`@max-[1140px]/legend:`) pinta a compacta. O
+  `sr-only` fala a frase inteira nas duas larguras.
+- **⚠️ Gotcha — leia a forma PINTADA, não o primeiro `[data-coverage-visible]`:** as duas estão sempre no DOM; quem
+  quer o texto visível filtra por `getClientRects().length > 0`. E o limiar é sobre a caixa de conteúdo
+  (`clientWidth − padding`), não o `getBoundingClientRect().width`.
+- **⚠️ Gotcha — a largura da legenda depende do SÍMBOLO** (a escala de preço muda com os dígitos): a 1240×800 o
+  BTCUSDT tem 1144 px (completa) e ETH/LINK/SOL 1138/1132/1132 px (compacta) `[MEDIDO 2026-10-02, e2e/40 K-1]`.
