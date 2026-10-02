@@ -296,6 +296,16 @@ _LONG_SHORT_CYCLE_INTERVAL_S_VAR: Final[str] = "LONG_SHORT_CYCLE_INTERVAL_S"
 _OPEN_INTEREST_POLL_CYCLE_INTERVAL_S_VAR: Final[str] = "OPEN_INTEREST_POLL_CYCLE_INTERVAL_S"
 _LIQUIDATION_CYCLE_INTERVAL_S_VAR: Final[str] = "LIQUIDATION_CYCLE_INTERVAL_S"
 
+# `T-05.2` (`paineis-de-fluxo`), THE RE-POPULATION INSTRUMENT. How far back the FIRST liquidation
+# cycle after boot asks for — and only the first: every later cycle goes back to
+# `DEFAULT_LOOKBACK_SECONDS`. A consulted, empty minute is now written as `0`, and the minutes
+# consulted BEFORE that rule existed are holes no regime cycle will reach (its window is 3 h). One
+# boot with a wider first window recovers them, and the width costs nothing: one unit per symbol
+# whatever the span
+# `[DOC: collect_liquidation_history.DEFAULT_LOOKBACK_SECONDS, MEDICAO §4.2.3-§4.2.5]`.
+# The DEFAULT is the regime lookback, so an unset variable changes no behaviour at all.
+_LIQUIDATION_FIRST_CYCLE_LOOKBACK_S_VAR: Final[str] = "LIQUIDATION_FIRST_CYCLE_LOOKBACK_S"
+
 _DEFAULT_REDIS_HOST: Final[str] = "localhost"
 _DEFAULT_REDIS_PORT: Final[int] = 6379
 _DEFAULT_REDIS_STREAM: Final[str] = "md.series.write"
@@ -582,6 +592,7 @@ class BootConfig:
     open_interest_backfill_days: int = _DEFAULT_OPEN_INTEREST_BACKFILL_DAYS
     long_short_cycle_interval_s: float = _DEFAULT_LONG_SHORT_CYCLE_INTERVAL_S
     liquidation_cycle_interval_s: float = _DEFAULT_LIQUIDATION_CYCLE_INTERVAL_S
+    liquidation_first_cycle_lookback_s: int = DEFAULT_LOOKBACK_SECONDS
     open_interest_poll_cycle_interval_s: float = _DEFAULT_OPEN_INTEREST_POLL_CYCLE_INTERVAL_S
     redis_stream_group: str = DEFAULT_STREAM_GROUP
 
@@ -768,6 +779,9 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
             environ,
             _LIQUIDATION_CYCLE_INTERVAL_S_VAR,
             _DEFAULT_LIQUIDATION_CYCLE_INTERVAL_S,
+        ),
+        liquidation_first_cycle_lookback_s=_positive_int(
+            environ, _LIQUIDATION_FIRST_CYCLE_LOOKBACK_S_VAR, DEFAULT_LOOKBACK_SECONDS
         ),
         open_interest_poll_cycle_interval_s=_grid_multiple_cadence(
             environ,
@@ -2497,6 +2511,7 @@ def _run_liquidation_collector(
     record_gap: Callable[[IngestGap], None],
     symbols: Sequence[str],
     interval_s: float,
+    first_cycle_lookback_s: int = DEFAULT_LOOKBACK_SECONDS,
 ) -> None:
     """One `IngestRun` per pass over the symbol universe, spread across the cadence.
 
@@ -2528,6 +2543,9 @@ def _run_liquidation_collector(
     clock = _SystemCollectorClock(stop_event)
     heartbeats: deque[CycleHeartbeat] = deque(maxlen=_LIVENESS_HISTORY_CYCLES)
     cadence_ms = int(interval_s * 1000)
+    # `T-05.2`: the first cycle after boot may look further back (`LIQUIDATION_FIRST_CYCLE_
+    # LOOKBACK_S`); every cycle after it uses the regime window.
+    lookback_s = first_cycle_lookback_s
     while not stop_event.is_set():
         run_id = str(uuid.uuid4())
         started_at = _iso_now()
@@ -2554,7 +2572,7 @@ def _run_liquidation_collector(
         # difference is the whole design: recording the answered span would rebuild the rate
         # detector with extra steps.
         cycle_to_ms = _epoch_ms()
-        cycle_from_ms = cycle_to_ms - (DEFAULT_LOOKBACK_SECONDS * 1000)
+        cycle_from_ms = cycle_to_ms - (lookback_s * 1000)
         try:
             result = collect_liquidation_history_once(
                 symbols=symbols,
@@ -2565,7 +2583,9 @@ def _run_liquidation_collector(
                 publish=_publish,
                 ledger=ledger,
                 cycle_seconds=interval_s,
+                lookback_seconds=lookback_s,
             )
+            lookback_s = DEFAULT_LOOKBACK_SECONDS
         except _PUBLISH_FAILURE_EXCEPTIONS as failure:
             run = build_liquidation_history_run(
                 started_at=started_at,
@@ -2904,6 +2924,7 @@ def run(
             "record_gap": store.record_gap,
             "symbols": liquidation_symbols_,
             "interval_s": config.liquidation_cycle_interval_s,
+            "first_cycle_lookback_s": config.liquidation_first_cycle_lookback_s,
         },
     )
     open_interest_poll_thread = threading.Thread(

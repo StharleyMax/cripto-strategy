@@ -12,13 +12,21 @@ import json
 import threading
 import time
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
 
 from src.modules.sentimento.domain.ingest_record import IngestGap, IngestRun
 from src.modules.sentimento.infra.collectors_cli import (
     UNANSWERED_SYMBOL_GAP_CLASS,
+    CollectorBootConfigurationError,
     _run_liquidation_collector,
+    resolve_boot_config,
 )
-from src.modules.sentimento.use_cases.collect_liquidation_history import LiquidationFetch
+from src.modules.sentimento.use_cases.collect_liquidation_history import (
+    DEFAULT_LOOKBACK_SECONDS,
+    LiquidationFetch,
+)
 from src.modules.sentimento.use_cases.collector_run_mapping import (
     COINALYZE_SOURCE,
     LIQUIDATION_HISTORY_ENDPOINT,
@@ -118,6 +126,7 @@ def _drive(
     interval_s: float = 300.0,
     stop: _RecordingStopEvent | None = None,
     source: Any = None,
+    first_cycle_lookback_s: int = DEFAULT_LOOKBACK_SECONDS,
 ) -> tuple[list[IngestRun], list[IngestGap], list[int]]:
     """Run exactly `cycles` cycles of the thread and return what it recorded."""
     stop = stop if stop is not None else _RecordingStopEvent()
@@ -142,6 +151,7 @@ def _drive(
         record_gap=gaps.append,
         symbols=["BTCUSDT"],
         interval_s=interval_s,
+        first_cycle_lookback_s=first_cycle_lookback_s,
     )
     return runs, gaps, exit_code
 
@@ -295,3 +305,65 @@ def test_the_wait_between_cycles_discounts_the_time_the_cycle_already_spent() ->
         f"configured one, which is the RS-3.5 divergence"
     )
     assert final_wait <= interval_s - cost_s
+
+
+# ── `T-05.2` — THE FIRST-CYCLE LOOKBACK, THE RE-POPULATION INSTRUMENT ─────────────────────
+
+_FIVE_DAYS_S = 5 * 24 * 60 * 60
+
+
+class _PathRecordingSource(_ScriptedSource):
+    """A scripted source that also records the window each request asked for."""
+
+    def __init__(self, answers: list[LiquidationFetch]) -> None:
+        """Take the script; no window asked for yet."""
+        super().__init__(answers)
+        self.spans_s: list[int] = []
+
+    def fetch(self, path: str) -> LiquidationFetch:
+        """Record `to - from` of the request, then answer from the script."""
+        query = parse_qs(urlsplit(path).query)
+        self.spans_s.append(int(query["to"][0]) - int(query["from"][0]))
+        return super().fetch(path)
+
+
+def test_only_the_first_cycle_after_boot_uses_the_configured_lookback() -> None:
+    """The re-population window is spent ONCE: cycle 1 asks 5 days, cycle 2 the regime 3 h.
+
+    THE MUTATION: a lookback applied to every cycle would re-ask 5 days every 5 minutes — free
+    in quota, but each cycle would then re-walk 7.200 minutes per side for nothing.
+    """
+    source = _PathRecordingSource([LiquidationFetch(status=200, body=_body("BTCUSDT", []))])
+    runs, _, _ = _drive(
+        answers=[],
+        sink=_FakeSink(),
+        cycles=2,
+        interval_s=_FAST_CADENCE_S,
+        source=source,
+        first_cycle_lookback_s=_FIVE_DAYS_S,
+    )
+    assert len(runs) == 2
+    assert source.spans_s == [_FIVE_DAYS_S, DEFAULT_LOOKBACK_SECONDS]
+
+
+def test_the_default_first_cycle_lookback_changes_no_behaviour() -> None:
+    """CALA: with the variable unset, the boot value IS the regime lookback."""
+    assert resolve_boot_config({}).liquidation_first_cycle_lookback_s == DEFAULT_LOOKBACK_SECONDS
+    assert (
+        resolve_boot_config(
+            {"LIQUIDATION_FIRST_CYCLE_LOOKBACK_S": str(_FIVE_DAYS_S)}
+        ).liquidation_first_cycle_lookback_s
+        == _FIVE_DAYS_S
+    )
+
+
+@pytest.mark.parametrize("raw", ["0", "-60", "five-days"])
+def test_a_non_positive_first_cycle_lookback_is_refused_at_boot(raw: str) -> None:
+    """`RN-4` fail-fast: a typo is refused at boot, not at the first call.
+
+    `0` would request an empty window, which `liquidation_history_path` refuses only at the
+    FIRST CALL, minutes after boot and far from the typo.
+    """
+    with pytest.raises(CollectorBootConfigurationError) as excinfo:
+        resolve_boot_config({"LIQUIDATION_FIRST_CYCLE_LOOKBACK_S": raw})
+    assert excinfo.value.variable == "LIQUIDATION_FIRST_CYCLE_LOOKBACK_S"

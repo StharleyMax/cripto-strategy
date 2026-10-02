@@ -18,6 +18,7 @@ from src.modules.sentimento.domain.liquidation_collection import (
 )
 from src.modules.sentimento.domain.recoil_policy import RecoilPolicy
 from src.modules.sentimento.use_cases.collect_liquidation_history import (
+    DEFAULT_LOOKBACK_SECONDS,
     LiquidationCollectorState,
     LiquidationCycleResult,
     LiquidationFetch,
@@ -82,6 +83,7 @@ def _collect(
     state: LiquidationCollectorState | None = None,
     ledger: RetryLedger | None = None,
     cycle_seconds: float = 300.0,
+    lookback_seconds: int = DEFAULT_LOOKBACK_SECONDS,
 ) -> tuple[LiquidationCycleResult, list[tuple[str, str, int, str]], _FakeClock, _ScriptedSource]:
     """Run one cycle against scripted answers and collect everything it published."""
     clock = clock or _FakeClock()
@@ -98,6 +100,7 @@ def _collect(
         ),
         ledger=ledger,
         cycle_seconds=cycle_seconds,
+        lookback_seconds=lookback_seconds,
     )
     return result, published, clock, source
 
@@ -111,11 +114,13 @@ def test_a_settled_bucket_publishes_both_cohorts_as_two_rows() -> None:
     result, published, _, _ = _collect(
         symbols=["BTCUSDT"], answers=[LiquidationFetch(status=200, body=body)]
     )
-    assert sorted(published) == [
+    # `T-05.2`: the nine closed minutes AFTER the wire bucket were consulted and came back
+    # empty, so each side also writes them as `0` — 2 wire rows + 2 x 9 consulted zeros.
+    assert sorted(row for row in published if row[2] == _SETTLED_START) == [
         ("BTCUSDT", "long", _SETTLED_START, "231.85"),
         ("BTCUSDT", "short", _SETTLED_START, "1468.84"),
     ]
-    assert result.n_published == 2
+    assert result.n_published == 2 + 2 * 9
     assert result.notes is None
 
 
@@ -136,8 +141,9 @@ def test_the_unsettled_newest_bucket_is_not_published() -> None:
     _, published, _, _ = _collect(
         symbols=["BTCUSDT"], answers=[LiquidationFetch(status=200, body=body)]
     )
-    assert [row[2] for row in published] == [_SETTLED_START]
+    assert running_start not in {row[2] for row in published}
     assert all(row[3] != "999" for row in published)
+    assert max(row[2] for row in published) + 60 <= _NOW_MS // 1000
 
 
 def test_a_side_never_seen_operating_is_silent_and_not_a_zero() -> None:
@@ -150,7 +156,8 @@ def test_a_side_never_seen_operating_is_silent_and_not_a_zero() -> None:
     _, published, _, _ = _collect(
         symbols=["BTCUSDT"], answers=[LiquidationFetch(status=200, body=body)]
     )
-    assert [(row[1], row[3]) for row in published] == [("short", "42")]
+    assert [row for row in published if row[1] == "long"] == []
+    assert [(row[1], row[3]) for row in published if row[2] == _SETTLED_START] == [("short", "42")]
 
 
 def test_a_zero_after_that_side_proved_itself_is_a_real_observation() -> None:
@@ -166,7 +173,8 @@ def test_a_zero_after_that_side_proved_itself_is_a_real_observation() -> None:
         symbols=["BTCUSDT"], answers=[LiquidationFetch(status=200, body=body)]
     )
     longs = [row for row in published if row[1] == "long"]
-    assert [row[3] for row in longs] == ["7", "0"]
+    assert [row[3] for row in longs[:2]] == ["7", "0"]
+    assert [row[2] for row in longs[:2]] == [_SETTLED_START, _SETTLED_START + 60]
 
 
 def test_the_side_memory_survives_the_cycle_boundary() -> None:
@@ -292,7 +300,7 @@ def test_one_failing_symbol_does_not_cost_the_others_a_single_call() -> None:
     )
     assert len(source.paths) == 3
     assert result.n_calls == 3
-    assert [row[0] for row in published] == ["ETHUSDT"]
+    assert {row[0] for row in published} == {"ETHUSDT"}
 
 
 def test_a_transport_failure_is_named_in_the_cycle_notes() -> None:
@@ -341,3 +349,151 @@ def test_a_non_success_status_is_recorded_as_the_api_code() -> None:
     result, _, _, _ = _collect(symbols=["BTCUSDT"], answers=answers)
     assert result.api_code == 503
     assert "HTTP 503" in (result.notes or "")
+
+
+# ── `T-05.2` — THE CONSULTED, EMPTY MINUTE IS WRITTEN AS `0`, AND ONLY FROM EVIDENCE ──────
+
+# The window `m0..m9`, closed; `m10` is running (`now = m10 + 30 s`). The lookback is chosen so
+# the request's `from` is EXACTLY `m0`, which makes every count below exact.
+_M0 = 1_789_200_600
+_WINDOW_NOW_MS = (_M0 + 10 * 60 + 30) * 1000
+_WINDOW_LOOKBACK = (_WINDOW_NOW_MS // 1000) - _M0
+
+
+def _m(index: int) -> int:
+    """Return the start of minute `index` of the window."""
+    return _M0 + index * 60
+
+
+def _seeded_state() -> LiquidationCollectorState:
+    """Return a state where BOTH sides of BTCUSDT already proved they can report (`ZL-2`)."""
+    return LiquidationCollectorState(seen_nonzero={("BTCUSDT", "l"), ("BTCUSDT", "s")})
+
+
+def _window_cycle(
+    answers: list[LiquidationFetch],
+    *,
+    state: LiquidationCollectorState,
+    now_ms: int = _WINDOW_NOW_MS,
+) -> tuple[LiquidationCycleResult, list[tuple[str, str, int, str]]]:
+    """One cycle over the `m0..m9` window (shifted by `now_ms`), BTCUSDT only."""
+    result, published, _, _ = _collect(
+        symbols=["BTCUSDT"],
+        answers=answers,
+        clock=_FakeClock(now_ms),
+        state=state,
+        lookback_seconds=_WINDOW_LOOKBACK,
+    )
+    return result, published
+
+
+def _zeros(published: list[tuple[str, str, int, str]], cohort: str) -> list[int]:
+    """Return the minutes written as `0` for one cohort, in publication order."""
+    return [row[2] for row in published if row[1] == cohort and row[3] == "0"]
+
+
+def test_an_answered_window_writes_every_empty_closed_minute_as_zero_on_both_sides() -> None:
+    """MORDE 1: one point at `m3` ⇒ exactly 9 zeros per side, and `m3` keeps the wire value.
+
+    THE MUTATION: reverting `T-05.2` writes 1 row per side and leaves 9 holes the read path
+    shows as `SEM_PONTO` — the 100%-partial panel `FIX-uso-2026-10-02.md` §D-B measured.
+    """
+    body = _body("BTCUSDT", [{"t": _m(3), "l": 50.5, "s": 7}])
+    result, published = _window_cycle(
+        [LiquidationFetch(status=200, body=body)], state=_seeded_state()
+    )
+    expected_zeros = [_m(i) for i in range(10) if i != 3]
+    assert _zeros(published, "long") == expected_zeros
+    assert _zeros(published, "short") == expected_zeros
+    assert [row for row in published if row[2] == _m(3)] == [
+        ("BTCUSDT", "long", _m(3), "50.5"),
+        ("BTCUSDT", "short", _m(3), "7"),
+    ]
+    assert result.n_published == 2 * 10
+    # CALA: the zeros cost no call — the window was already being asked for.
+    assert result.n_calls == 1
+
+
+@pytest.mark.parametrize(
+    "fetch",
+    [
+        LiquidationFetch(status=200, body=b"[]"),
+        LiquidationFetch(status=200, body=_body("ETHUSDT", [{"t": _m(3), "l": 1, "s": 1}])),
+        LiquidationFetch(status=503, body=b""),
+        LiquidationFetch(transport_error="ConnectionResetError: peer went away"),
+        LiquidationFetch(status=200, body=b"{not json"),
+    ],
+    ids=["empty-array", "names-another-symbol", "http-5xx", "transport-error", "malformed"],
+)
+def test_without_an_answered_response_not_a_single_zero_is_written(
+    fetch: LiquidationFetch,
+) -> None:
+    """MORDE 2 — THE ABLATION OF THE EVIDENCE: no `answered`, no zero, whatever else holds.
+
+    The state is seeded, the window is closed and empty — every other condition for a zero is
+    met. Only the evidence is missing, and it is the evidence alone that decides.
+    """
+    _, published = _window_cycle([fetch], state=_seeded_state())
+    assert [row for row in published if row[3] == "0"] == []
+    assert published == []
+
+
+def test_a_side_not_yet_seen_operating_gets_no_zero_before_its_first_non_zero() -> None:
+    """MORDE 3 — `ZL-2` intact by construction: zeros only AFTER the side proved itself.
+
+    Fresh state, `l` first reports at `m5` ⇒ no zero in `m0..m4`, zeros in `m6..m9`. `s` never
+    reports a non-zero ⇒ not one zero, wire or candidate.
+    """
+    body = _body("BTCUSDT", [{"t": _m(5), "l": 9, "s": 0}])
+    _, published = _window_cycle(
+        [LiquidationFetch(status=200, body=body)], state=LiquidationCollectorState()
+    )
+    assert _zeros(published, "long") == [_m(i) for i in range(6, 10)]
+    assert [row for row in published if row[1] == "short"] == []
+
+
+def test_the_minute_in_progress_never_receives_a_zero() -> None:
+    """MORDE 4: `m10` is running at `now`, so it is neither a wire row nor a candidate zero."""
+    body = _body("BTCUSDT", [{"t": _m(3), "l": 1, "s": 1}])
+    _, published = _window_cycle([LiquidationFetch(status=200, body=body)], state=_seeded_state())
+    assert max(row[2] for row in published) == _m(9)
+    assert _m(10) not in {row[2] for row in published}
+
+
+def test_overlapping_windows_write_each_zero_exactly_once_per_process() -> None:
+    """MORDE 5a — condition 6: the second window re-covers `m2..m9` and rewrites none of them.
+
+    THE MUTATION: without `zero_published`, each zero is rewritten on every cycle whose window
+    still covers it — ~36x at the regime window, the multiplicity non-zero rows already pay.
+    """
+    state = _seeded_state()
+    body = _body("BTCUSDT", [{"t": _m(3), "l": 1, "s": 1}])
+    _, first = _window_cycle([LiquidationFetch(status=200, body=body)], state=state)
+    _, second = _window_cycle(
+        [LiquidationFetch(status=200, body=body)],
+        state=state,
+        now_ms=_WINDOW_NOW_MS + 120_000,
+    )
+    for cohort in ("long", "short"):
+        both = _zeros(first, cohort) + _zeros(second, cohort)
+        assert sorted(both) == sorted(set(both)), f"{cohort}: a zero was written twice"
+        assert _zeros(second, cohort) == [_m(10), _m(11)]
+    # and the memory is pruned to the current window — `m0`, `m1` slid out of it
+    assert all(key[2] >= _m(2) for key in state.zero_published)
+
+
+def test_the_cycle_after_a_side_proves_itself_writes_the_minutes_zl2_held() -> None:
+    """MORDE 5b: the minutes `ZL-2` demoted are not remembered, so the next cycle writes them.
+
+    Cycle 1 (fresh): `l` proves itself at `m5`, so `m0..m4` are held back. Cycle 2 (same
+    window): `l` is now `seen_nonzero`, so `m0..m4` are written — and `m6..m9`, already written,
+    are not. Cycle 3 writes no zero at all.
+    """
+    state = LiquidationCollectorState()
+    body = _body("BTCUSDT", [{"t": _m(5), "l": 9, "s": 0}])
+    _, first = _window_cycle([LiquidationFetch(status=200, body=body)], state=state)
+    _, second = _window_cycle([LiquidationFetch(status=200, body=body)], state=state)
+    _, third = _window_cycle([LiquidationFetch(status=200, body=body)], state=state)
+    assert _zeros(first, "long") == [_m(i) for i in range(6, 10)]
+    assert _zeros(second, "long") == [_m(i) for i in range(5)]
+    assert _zeros(third, "long") == []
