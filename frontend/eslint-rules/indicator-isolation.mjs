@@ -24,7 +24,8 @@
 // ── What THIS rule enforces: exactly the three prohibitions of `SPEC-011 §5.3` (`G-A`) ─────────
 //
 //   P1  from `indicators/<a>/**` to `indicators/<b>/**` (b ≠ a), `indicators/catalog.ts` or
-//       `indicators/selection/**`.
+//       `indicators/selection/**` — and, closing the root detour, to `indicators/` itself
+//       (`import ".."`) and to any other file at its root (`W-F0-QA` W3).
 //   P2  from `chart/**` or `chrome/**` to anything under `indicators/**`, `contract.ts` included
 //       (`G-R`: the core receives the definitions as an ARGUMENT, it never names them).
 //   P3  from any file OUTSIDE `indicators/<kind>/` that is not `indicators/catalog.ts` to
@@ -32,9 +33,10 @@
 //
 //   An indicator importing ANOTHER indicator is both P1 and P3; it is reported once, as P1.
 //
-// "Indicator folder" is EVERY direct child of `indicators/` except `contract`, `catalog` and
-// `selection` — `selection/` is the selection's infrastructure and imports the catalog, so the
-// exception is carried here BY NAME (`SPEC-011 §5.3`). Consequence, on purpose: a folder named
+// "Indicator folder" is EVERY direct SUBDIRECTORY of `indicators/` except `selection` — a loose
+// file at the root (`catalog.test.ts`, `index.ts`) is its own layer, still under P2 (the core may
+// not import it) and P3 (it may not import an indicator folder). `selection/` is the selection's
+// infrastructure and imports the catalog, so the exception is carried here BY NAME (`SPEC-011 §5.3`). Consequence, on purpose: a folder named
 // `indicators/_shared/` is just another indicator folder, so a second indicator importing it is
 // P1 — `RN-5` ("there is no `indicators/_shared/`") falls out of the rule instead of needing its own.
 //
@@ -71,6 +73,7 @@ const SOURCE_EXTENSION = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
  *   `{ layer: "core" }` / `{ layer: "chrome" }` — `chart/**`, `chrome/**`
  *   `{ layer: "contract" }` / `{ layer: "catalog" }` / `{ layer: "selection" }`
  *   `{ layer: "indicators-root" }`             — `indicators/` itself (a directory import)
+ *   `{ layer: "indicators-root-file" }`        — any other FILE directly in `indicators/`
  *   `{ layer: "indicator", kind }`              — `indicators/<kind>/**`
  *   `{ layer: "route" }`                        — anything else under `app/symbol/`
  */
@@ -102,6 +105,14 @@ function classify(absolutePath) {
   }
   if (child === "selection") {
     return { layer: "selection" };
+  }
+  // `SPEC-011 §5.3`: an indicator folder is a SUBDIRECTORY of `indicators/`. A loose FILE at the
+  // root (`indicators/catalog.test.ts`, `indicators/index.ts`) is not one — classifying it as an
+  // indicator made `catalog.test.ts -> ./catalog.ts` a false P1 (`W-F0-REVIEW` W-1). The path is
+  // lexical, so "file" means "two segments ending in a source extension"; an extension-less
+  // two-segment target (`./oi`) stays an indicator folder — the conservative reading.
+  if (segments.length === 2 && SOURCE_EXTENSION.test(segments[1])) {
+    return { layer: "indicators-root-file" };
   }
   // Every other direct child is an indicator folder — including `indicators/contract/…` or
   // `indicators/catalog/…` as a FOLDER, which is not the sanctioned file (conservative: isolated).
@@ -146,12 +157,17 @@ function violatedProhibition(source, target) {
     "catalog",
     "selection",
     "indicators-root",
+    "indicators-root-file",
     "indicator",
   ].includes(target.layer);
 
   if (source.layer === "indicator") {
     const crossesToOtherIndicator = target.layer === "indicator" && target.kind !== source.kind;
-    if (crossesToOtherIndicator || target.layer === "catalog" || target.layer === "selection") {
+    // `indicators-root` (`import ".."`, `W-F0-QA` W3) and `indicators-root-file` are P1 too: an
+    // indicator imports only the core, `contract.ts`, its own folder and the charts barrel, and a
+    // root barrel (`indicators/index.ts`) re-exporting the catalog would otherwise be the detour.
+    const reachesRoot = target.layer === "indicators-root" || target.layer === "indicators-root-file";
+    if (crossesToOtherIndicator || reachesRoot || target.layer === "catalog" || target.layer === "selection") {
       return "P1";
     }
   }
