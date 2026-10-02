@@ -21,3 +21,13 @@ Menu: (a) F11 desta feature · (b) F1 de `indicadores-smc`. O owner respondeu em
 de `indicadores-smc`**. Esta feature entrega o **mecanismo** de seleção (catálogo, estado da seleção acima do remonte, render e
 fetch guiados pelo conjunto ativo, F9–F10) com **todos os 5 injetados como selecionados**, sem controle na tela para desligar.
 Escopo desta feature: F0–F10.
+
+## Gate `spec` e `OWN-1` (SPEC-011 §13) — 2026-10-02
+
+O owner gravou `approve spec` no ledger (`2026-10-02T19:09:42Z`) e disse, literal:
+
+> *"spec aprovada, as emendas da a1-8 levamos depois"*
+
+`[PREMISSA-OWNER: 2026-10-02]`
+
+**Leitura adotada pelo orquestrador** `[INFERRED: aprovou a SPEC-011 tal como escrita, cujo plano é F0–F9 e cuja opção recomendada em OWN-1 é (a); não escolheu (b) nem (c) explicitamente]`: `OWN-1 = (a)`, ADR-050 aceita com as emendas E-1..E-4. As emendas A-1..A-8 à `ADR-048`/`SPEC-010` **não** são levadas à sessão de `indicadores-smc` agora; ficam na SPEC-011 §10 até o owner decidir o momento.
