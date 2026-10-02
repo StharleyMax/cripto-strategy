@@ -150,6 +150,7 @@ import {
   seriesHistoryEndpointUrl,
   type SeriesHistoryRow,
 } from "../series-history-client.ts";
+import { recentBandSlots } from "../long-short-band.ts";
 import { oiCandleBundleOf } from "../oi-candle-pane.ts";
 import type { PanelStatus } from "../panel-status.ts";
 import type { OiCandlesWire } from "../series-history-envelope.ts";
@@ -193,7 +194,6 @@ import {
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
   seriesValueStats,
-  slotsFrom,
   trailingAbsentSlots,
   type KlinesOhlcReduction,
   type ScaledCvdDeltaInput,
@@ -935,13 +935,13 @@ export default async function SymbolPage({
     ageMs: longShortObservedAtMs === null ? null : routeWindow.windowEndMsInclusive - longShortObservedAtMs,
     trailingAbsentSlots: trailingAbsentSlots(longShortSlots),
     windowStats: seriesValueStats(longShortSlots),
-    // The trailing band of the approved form. `windowEndMsInclusive - span` is a grid instant of
-    // this very window, so `slotsFrom` filters the SAME slots the chart draws — it never re-grids
-    // and never shrinks the window to fit the data (`M-2` of `gates/design-05.md`).
+    // The trailing band of the approved form, cut by `recentBandSlots` — the ONE function the
+    // band itself (`recentBandSlotRange`) and the pager (`panel-assembly.ts`) cut with: from the
+    // last AXIS slot, never from `windowEndMsInclusive`, which sits on the 1-minute grid and is
+    // off the axis on `1h`/`4h` (`W7-CODE-REVIEW` C-1). It filters the SAME slots the chart
+    // draws — never re-grids, never shrinks the window to fit (`M-2` of `gates/design-05.md`).
     recentSpanMs: LONG_SHORT_RECENT_SPAN_MS,
-    recentStats: seriesValueStats(
-      slotsFrom(longShortSlots, routeWindow.windowEndMsInclusive - LONG_SHORT_RECENT_SPAN_MS),
-    ),
+    recentStats: seriesValueStats(recentBandSlots(longShortSlots, LONG_SHORT_RECENT_SPAN_MS)),
     // `RS-5` resolved from the catalog row, never spelled as a literal — same call, same rule as the
     // liquidation pane above. For M3 the venue's own publisher IS the provider, so this resolves to
     // `origin` and the pane says so instead of leaving procedência unstated.

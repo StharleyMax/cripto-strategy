@@ -585,23 +585,6 @@ export function seriesValueStats(slots: readonly ScalarSlotShape[]): SeriesValue
 }
 
 /**
- * The slots at or after an instant — the TRAILING sub-window the approved screen puts a solid band
- * around (*"ÚLTIMAS 4 HORAS"*, `gates/design-04.md` §R2.2).
- *
- * ⛔ IT FILTERS, IT DOES NOT RE-GRID AND IT DOES NOT SHRINK TO FIT. The slots handed back are the
- * same objects, at the same instants, that the chart is drawn from; a sub-window computed over a
- * re-derived grid would be `M-2` of `gates/design-05.md` ("a janela declarada não é a janela
- * desenhada") reintroduced one pane later.
- *
- * `>=` is inclusive on the left because the caller's instant is itself a grid instant of the same
- * window (`windowEndMsInclusive - spanMs`), so excluding it would drop a real observation from a
- * span the screen then calls "4 h".
- */
-export function slotsFrom(slots: readonly ScalarSlotShape[], sinceMs: number): readonly ScalarSlotShape[] {
-  return slots.filter((slot) => slot.time >= sinceMs);
-}
-
-/**
  * How many slots at the RIGHT EDGE carry no value — the *"cauda ausente: 2 grades de 1m"* the
  * approved screen prints beside `SEM_PONTO` (`M-2`, `gates/design-04.md`).
  *

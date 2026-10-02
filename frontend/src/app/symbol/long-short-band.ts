@@ -32,8 +32,8 @@ export interface RecentBandSlotRange {
   readonly lastIndex: number;
 }
 
-/** The minimal shape this function reads off a slot — the same structural subset
- * `view-model.ts::slotsFrom` filters on. Declared here so the module never imports the server. */
+/** The minimal shape these functions read off a slot. Declared here so the module never imports the
+ * server. */
 interface TimedSlot {
   readonly time: number;
 }
@@ -41,12 +41,13 @@ interface TimedSlot {
 /**
  * The slots covered by the trailing band of `spanMs` that ENDS at the window's own last instant.
  *
- * ⛔ THE RULE IS `slotsFrom`'s, TO THE CHARACTER — `time >= last.time - spanMs` — and the identity
- * is the point, not a coincidence: `page.tsx` computes `recentStats` with
- * `slotsFrom(slots, windowEndMsInclusive - LONG_SHORT_RECENT_SPAN_MS)`, and the last slot of the
- * route's grid IS `windowEndMsInclusive`. A band drawn over a different set of slots than the one
- * the footer's numerals were computed over would be a second, silent answer to the same question —
- * the class of defect `M-1` of that gate exists to refuse.
+ * ⛔ THE CUT IS `recentBandSinceMs`, AND THE FOOTER USES THE SAME ONE: `page.tsx` and
+ * `panel-assembly.ts` compute `recentStats` over `recentBandSlots(slots, LONG_SHORT_RECENT_SPAN_MS)`,
+ * so the band and the numerals beside it are one set of slots BY CONSTRUCTION. A band drawn over a
+ * different set than the footer's would be a second, silent answer to the same question — the class
+ * of defect `M-1` of that gate exists to refuse, and the one `W7-CODE-REVIEW` C-1 found: the footer
+ * used to cut at `windowEndMsInclusive - span`, an instant on the 1-MINUTE grid, which is the last
+ * slot only on `1m` (on `4h` it printed `n = 1` beside a band of 2 bars).
  *
  * `null`, and never a fabricated rectangle, when:
  *   - there are no slots (nothing to date, and the empty state says so in words);
@@ -66,10 +67,37 @@ export function recentBandSlotRange(
     return null;
   }
   const lastIndex = slots.length - 1;
-  const sinceMs = slots[lastIndex]!.time - spanMs;
+  const sinceMs = recentBandSinceMs(slots, spanMs);
   const firstIndex = slots.findIndex((slot) => slot.time >= sinceMs);
   if (firstIndex === -1 || firstIndex >= lastIndex) {
     return null;
   }
   return { firstIndex, lastIndex };
+}
+
+/**
+ * The instant the trailing band starts: the LAST SLOT's own time minus `spanMs` — the last slot of
+ * the AXIS grid, whatever the TF. Never `windowEndMsInclusive`, which is on the 1-minute grid in
+ * every TF (`request-window.ts`) and so lies up to one axis step past the last slot on `1h`/`4h`.
+ * Only called on a non-empty `slots`.
+ */
+function recentBandSinceMs(slots: readonly TimedSlot[], spanMs: number): number {
+  return slots[slots.length - 1]!.time - spanMs;
+}
+
+/**
+ * The slots the trailing band covers — what the footer's `recentStats` are computed over, in both
+ * `page.tsx` (SSR) and `panel-assembly.ts` (the pager). Same objects, same order: it FILTERS, it
+ * does not re-grid and it does not shrink to fit (`M-2` of `gates/design-05.md`). Inclusive on the
+ * left, like `recentBandSlotRange`, because the cut is itself a slot instant of the same grid.
+ *
+ * Unlike `recentBandSlotRange` it never answers `null`: a band that collapses onto one slot is not
+ * drawn, but that one slot is still the last `spanMs` of data and the footer still describes it.
+ */
+export function recentBandSlots<T extends TimedSlot>(slots: readonly T[], spanMs: number): readonly T[] {
+  if (slots.length === 0) {
+    return [];
+  }
+  const sinceMs = recentBandSinceMs(slots, spanMs);
+  return slots.filter((slot) => slot.time >= sinceMs);
 }

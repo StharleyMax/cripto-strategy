@@ -34,6 +34,7 @@ import type { FlowReading } from "../../charts/index.ts";
  * technique `view-model.ts`'s own `ScalarSlotShape`/`RawCandleShape` already use against
  * `S2Panels`. */
 type PriceUse = S2RawInputs["priceUse"];
+import { recentBandSlots } from "./long-short-band.ts";
 import { oiCandlePaneData, type OiCandleBundle, type OiCandlePaneData } from "./oi-candle-pane.ts";
 import type { FreshnessVerdict, SeriesValueStats } from "./panel-status.ts";
 import type { SeriesHistoryRow } from "./series-history-envelope.ts";
@@ -52,7 +53,6 @@ import {
   scalarPointsFromHistoryRows,
   scaledCvdDeltasFromHistoryRows,
   seriesValueStats,
-  slotsFrom,
   trailingAbsentSlots as trailingAbsentSlotsOf,
 } from "./view-model.ts";
 import { summarizeCoverageMagnitude, type CoverageGridMs, type CoverageMagnitude } from "./coverage-magnitude.ts";
@@ -308,7 +308,9 @@ export function assembleHistoryPage(
     ageMs: longShortObservedAtMs === null ? null : context.windowEndMsInclusive - longShortObservedAtMs,
     trailingAbsentSlots: trailingAbsentSlotsOf(longShortSlots),
     windowStats: seriesValueStats(longShortSlots),
-    recentStats: seriesValueStats(slotsFrom(longShortSlots, context.windowEndMsInclusive - context.longShortRecentSpanMs)),
+    // The SAME slots the faixa das 4 h shades — cut at the last AXIS slot, never at the 1-minute
+    // `windowEndMsInclusive` (`W7-CODE-REVIEW` C-1).
+    recentStats: seriesValueStats(recentBandSlots(longShortSlots, context.longShortRecentSpanMs)),
     reading: resolveFlowReadingOrAbsent(longShortSlots, axisStepMs, readingInstantMs),
   };
 
