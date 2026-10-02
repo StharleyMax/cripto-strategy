@@ -796,3 +796,59 @@ refs = [
     "plano 05 DoD 6",
     "CA-12",
 ]
+
+# ── FASE 06 — VELOCIDADE DO CICLO (2026-10-02) ────────────────────────────────────
+# Origem: handoff/CICLO-2026-10-02.md. [DECISAO-OWNER: 2026-10-02, escolha entre alternativas
+# apresentadas] — 3 de 5 ajustes. 6.1 antes de 6.2 (sem o helper, verificar so o tocado empurra a
+# quebra para o gate da wave). Sem card no Jira.
+
+[[tasks]]
+id = "T-06.1"
+title = "[web] 06 · Helper de e2e que posiciona o eixo explicitamente + migracao dos specs que dependem da vista de montagem"
+components = ["web"]
+status = "todo"
+phase = "06"
+depends_on = []
+refs = [
+    "plano 06 item 6.1 + DoD 1",
+    "handoff/CICLO-2026-10-02.md",
+    "handoff/T-06.1-desenho.md (frontend-architect, antes do builder)",
+]
+
+[[tasks]]
+id = "T-06.2"
+title = "[infra] 06 · Verificacao por escopo para o builder (nao-e2e + e2e tocados + pixel); e2e completo so no gate da wave"
+components = ["infra"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1"]
+refs = [
+    "plano 06 item 6.2 + DoD 2",
+    "handoff/T-06.1-desenho.md (a selecao de specs e desenhada junto do helper)",
+    "NAO e SKIP_E2E: scripts/verify.sh §6 recusa essa porta por DR-11",
+]
+
+[[tasks]]
+id = "T-06.3"
+title = "[infra] 06 · API com mais de um worker e as 10 series da tela servidas em paralelo"
+components = ["infra"]
+status = "todo"
+phase = "06"
+depends_on = []
+refs = [
+    "plano 06 item 6.3 + DoD 3",
+    "handoff/T-06.3-desenho.md (infra-architect, antes do builder)",
+]
+
+[[tasks]]
+id = "T-06.4"
+title = "[sentimento] 06 · Parar as regravacoes (backfill de boot e re-poll de liquidacao) e decidir o destino das linhas duplicadas"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = []
+refs = [
+    "plano 06 item 6.4 + DoD 4",
+    "handoff/T-06.3-desenho.md §regravacoes (infra-architect)",
+    "apagar dado existente e decisao do owner, nao do builder",
+]
