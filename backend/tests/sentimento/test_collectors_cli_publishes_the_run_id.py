@@ -47,6 +47,7 @@ from src.modules.sentimento.use_cases.collector_series_mapping import (
     build_klines_to_rows,
     build_premium_index_to_rows,
 )
+from tests.helpers.drain_gate_doubles import OpenGate
 
 STREAM = "md.series.write"
 GROUP = "single_writer"
@@ -284,6 +285,7 @@ def test_the_klines_pass_publishes_rows_under_the_run_id_it_recorded(
         symbols=("BTCUSDT",),
         interval_s=60.0,
         backfill_days=1,
+        drain_gate=OpenGate(),
     )
 
     published = _drain_run_ids(queue)
@@ -354,6 +356,7 @@ def test_the_run_id_on_the_wire_is_the_envelope_field_not_a_seventeenth_row_colu
         symbols=("BTCUSDT",),
         interval_s=60.0,
         backfill_days=1,
+        drain_gate=OpenGate(),
     )
 
     queued = queue.read_new(10)

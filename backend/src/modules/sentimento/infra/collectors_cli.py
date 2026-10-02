@@ -174,6 +174,11 @@ from src.modules.sentimento.infra.redis_resp_client import (
     connect_resp2,
     open_tcp_socket,
 )
+from src.modules.sentimento.infra.redis_stream_backpressure import (
+    DEFAULT_STREAM_GROUP,
+    StreamDrainGate,
+    lag_ceiling_for,
+)
 from src.modules.sentimento.infra.redis_stream_bus import DEFAULT_STREAM_MAXLEN
 from src.modules.sentimento.infra.redis_stream_series_sink import (
     PremiumIndexReadingToRows,
@@ -248,6 +253,9 @@ _REDIS_HOST_VAR: Final[str] = "REDIS_HOST"
 _REDIS_PORT_VAR: Final[str] = "REDIS_PORT"
 _REDIS_STREAM_VAR: Final[str] = "REDIS_STREAM"
 _REDIS_STREAM_MAXLEN_VAR: Final[str] = "REDIS_STREAM_MAXLEN"
+# The consumer group the klines boot backfill waits on (`T-05.3`). Same variable, same default
+# as `single_writer_cli`: the gate has to watch the group that actually drains the stream.
+_REDIS_STREAM_GROUP_VAR: Final[str] = "REDIS_STREAM_GROUP"
 # `INGEST_RECORD_BACKEND_VAR`/`INGEST_HEALTH_STORE_PATH_VAR` are imported (not redefined) from
 # `ingest_record_store_composition` above — `T-02.4`'s whole point is that the var names and
 # the closed `sqlite`|`postgres` set live in exactly one place, shared by every composition
@@ -575,6 +583,7 @@ class BootConfig:
     long_short_cycle_interval_s: float = _DEFAULT_LONG_SHORT_CYCLE_INTERVAL_S
     liquidation_cycle_interval_s: float = _DEFAULT_LIQUIDATION_CYCLE_INTERVAL_S
     open_interest_poll_cycle_interval_s: float = _DEFAULT_OPEN_INTEREST_POLL_CYCLE_INTERVAL_S
+    redis_stream_group: str = DEFAULT_STREAM_GROUP
 
 
 def _parse_int(environ: Mapping[str, str], variable: str, default: int) -> int:
@@ -724,6 +733,7 @@ def resolve_boot_config(environ: Mapping[str, str]) -> BootConfig:
         redis_port=_parse_int(environ, _REDIS_PORT_VAR, _DEFAULT_REDIS_PORT),
         redis_stream=environ.get(_REDIS_STREAM_VAR, _DEFAULT_REDIS_STREAM),
         redis_stream_maxlen=_parse_int(environ, _REDIS_STREAM_MAXLEN_VAR, DEFAULT_STREAM_MAXLEN),
+        redis_stream_group=environ.get(_REDIS_STREAM_GROUP_VAR, DEFAULT_STREAM_GROUP),
         ingest_record_backend=backend,
         ingest_health_store_path=Path(
             environ.get(INGEST_HEALTH_STORE_PATH_VAR, DEFAULT_INGEST_HEALTH_STORE_PATH)
@@ -1151,6 +1161,20 @@ class KlinesClient(Protocol):
         ...
 
 
+class BackfillDrainGate(Protocol):
+    """Waits for the single writer before a bulk page is published — `StreamDrainGate` in prod.
+
+    `T-05.3`: the stream is capped by `XADD MAXLEN ~` and the trim does not care whether the
+    writer has read an entry, so a walk that publishes faster than the writer drains LOSES rows
+    without an error. A `Protocol` so the offline suite can stand a simulated capped stream in
+    for Redis and count what the trim would have eaten.
+    """
+
+    def wait(self, stop_event: threading.Event) -> int | None:
+        """Block until the writer is close enough behind; `None` means `stop_event` fired."""
+        ...
+
+
 @dataclass(frozen=True)
 class _KlinesPassTotals:
     """What one pass over the symbol universe measured — the operands of `build_klines_run`.
@@ -1190,6 +1214,33 @@ def _tail_limit(interval_s: float) -> int:
     """
     bars_per_cycle = int(interval_s // (KLINES_BUCKET_WIDTH_MS / 1000))
     return min(MAX_LIMIT, bars_per_cycle + _KLINES_TAIL_MARGIN_BARS)
+
+
+def _catch_up_cursor(seen_open_ms: int | None, tail_limit: int, now_ms: int) -> int | None:
+    """Return where a periodic cycle must WALK from, or `None` when the tail already reaches it.
+
+    The tail asks for the newest `tail_limit` bars and nothing else, so it only covers the bars
+    since the watermark when the watermark is recent. Any pass that takes longer than the tail
+    window breaks that — and the boot pass is one by construction since `T-05.3`: it now waits
+    for the writer between pages, so the walk of the LAST symbol can take minutes while the
+    FIRST symbol's newest bars close unread. Without this, the first tail cycle after the boot
+    would ask for three bars and leave every minute between the end of that symbol's walk and
+    "now" as a permanent hole — the same hole the backfill exists to close.
+
+    So the cycle walks from `watermark + 1 bar` whenever that bar is OLDER than the oldest bar
+    the tail would return; otherwise the tail is enough and the call stays the cheap one. The
+    oldest bar the tail returns is the open of the current minute minus `tail_limit - 1` bars,
+    because `/fapi/v1/klines` without `startTime` answers the newest `limit` bars INCLUDING the
+    one still open.
+    """
+    if seen_open_ms is None:
+        return None
+    next_open_ms = seen_open_ms + KLINES_BUCKET_WIDTH_MS
+    current_open_ms = now_ms - now_ms % KLINES_BUCKET_WIDTH_MS
+    oldest_tail_open_ms = current_open_ms - (tail_limit - 1) * KLINES_BUCKET_WIDTH_MS
+    if next_open_ms >= oldest_tail_open_ms:
+        return None
+    return next_open_ms
 
 
 def _publish_klines_page(
@@ -1248,6 +1299,7 @@ def _collect_klines_for_symbol(
     stop_event: threading.Event,
     backfill_from_ms: int | None,
     tail_limit: int,
+    drain_gate: BackfillDrainGate,
 ) -> _KlinesPassTotals:
     """Collect one symbol for one pass: the boot backfill when `backfill_from_ms` is given.
 
@@ -1261,9 +1313,24 @@ def _collect_klines_for_symbol(
     of `MAX_LIMIT` (the source has no more), the page comes back empty, or the source answered
     an error envelope. A `SIGTERM` mid-backfill also stops it — `stop_event` is checked between
     pages so a shutdown never waits out seven round trips per symbol.
+
+    ⛔ EVERY WALKED PAGE WAITS FOR THE WRITER BEFORE IT IS PUBLISHED (`T-05.3`). One full page
+    is `1.500 x 6 = 9.000` stream entries, and the boot walk is `27` of them against a stream
+    capped at `100.000`: published flat out, `XADD MAXLEN ~` trimmed what the writer had not
+    read and `BTCUSDT` — walked FIRST — kept `1.248` of its `60.480` rows at the boot of
+    `2026-10-01T20:11Z` `[MEDIDO 2026-10-02, gates/T-05.3-build.md]`. The tail cycle does not
+    wait: three bars a minute is not a burst, and a probe per cycle would be load for nothing.
+
+    A cycle that is BEHIND (`_catch_up_cursor`) walks from its watermark instead of asking for
+    the tail, so a pass that outlasted the tail window — the boot pass, above all — is followed
+    by one that closes the minutes it left open.
     """
     totals = _KlinesPassTotals()
-    cursor = backfill_from_ms
+    cursor = (
+        backfill_from_ms
+        if backfill_from_ms is not None
+        else _catch_up_cursor(watermark.get(symbol), tail_limit, _epoch_ms())
+    )
     while not stop_event.is_set():
         limit = MAX_LIMIT if cursor is not None else tail_limit
         page = client.klines(symbol, _KLINES_INTERVAL, limit, start_time_ms=cursor)
@@ -1282,6 +1349,8 @@ def _collect_klines_for_symbol(
             )
             break
         if not page.rows:
+            break
+        if cursor is not None and drain_gate.wait(stop_event) is None:
             break
         published = _publish_klines_page(
             page=page,
@@ -1313,6 +1382,7 @@ def _run_klines_collector(
     symbols: Sequence[str],
     interval_s: float,
     backfill_days: int,
+    drain_gate: BackfillDrainGate,
     offset_s: float = 0.0,
     wall_clock_s: Callable[[], float] = time.time,
 ) -> None:
@@ -1377,6 +1447,7 @@ def _run_klines_collector(
                         stop_event=stop_event,
                         backfill_from_ms=backfill_from_ms,
                         tail_limit=tail_limit,
+                        drain_gate=drain_gate,
                     )
                 )
         except _PUBLISH_FAILURE_EXCEPTIONS as failure:
@@ -2600,6 +2671,25 @@ def _run_liquidation_collector(
         stop_event.wait(max(0.0, remaining_s))
 
 
+def default_klines_drain_gate(config: BootConfig) -> StreamDrainGate:
+    """Build the gate the klines walk waits on in production (`T-05.3`).
+
+    It watches the group `single_writer_cli` drains (`REDIS_STREAM_GROUP`), with a ceiling
+    derived from the configured cap (`lag_ceiling_for`), on a connection of its OWN that is
+    opened lazily the first time a walked page has rows — see `StreamDrainGate` for why the
+    probe must not share the sink's `connection`. Named and public so the suite can pin the
+    wiring without starting seven threads.
+    """
+    return StreamDrainGate(
+        open_connection=lambda: connect_redis(config),
+        stream=config.redis_stream,
+        group=config.redis_stream_group,
+        max_lag=lag_ceiling_for(config.redis_stream_maxlen),
+        endpoint=KLINES_ENDPOINT,
+        log=logger,
+    )
+
+
 def run(
     *,
     config: BootConfig,
@@ -2622,6 +2712,7 @@ def run(
     klines_symbols: Sequence[str] | None = None,
     long_short_symbols: Sequence[str] | None = None,
     liquidation_symbols: Sequence[str] | None = None,
+    klines_drain_gate: BackfillDrainGate | None = None,
     stop_event: threading.Event | None = None,
 ) -> int:
     """Start the SEVEN collector threads, install `SIGTERM`, and wait for a clean/failed exit.
@@ -2676,6 +2767,7 @@ def run(
     )
 
     sink = RedisStreamSeriesSink(connection, config.redis_stream, config.redis_stream_maxlen)
+    klines_drain_gate_ = klines_drain_gate or default_klines_drain_gate(config)
     stop = stop_event or threading.Event()
     failure = threading.Event()
     exit_code: list[int] = [0]
@@ -2749,6 +2841,7 @@ def run(
             "interval_s": config.klines_cycle_interval_s,
             "offset_s": config.klines_cycle_offset_s,
             "backfill_days": config.klines_backfill_days,
+            "drain_gate": klines_drain_gate_,
         },
     )
     open_interest_thread = threading.Thread(
