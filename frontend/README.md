@@ -1848,6 +1848,11 @@ Desenho: [`handoff/T-05.1-desenho.md`](../docs/context/paineis-de-fluxo/handoff/
   reprova 2).
 - **e2e que leem a vista na montagem:** com 120 barras, `e2e/20`, `22`, `35` (dado real) e `37` dão **zoom-out pela
   roda** antes de agir (até o piso de `minBarSpacing`, ~2.400 slots em 1m: a geometria que a montagem tinha antes).
-  O `37` também passou a converter instante → slot pelo passo do TF (`5m` = 5 min).
+  O `37` também passou a converter instante → slot pelo passo do TF (`5m` = 5 min). `e2e/29` e `33` fazem o mesmo
+  zoom-out (cursor na última barra); o `38` (OI em 5m) volta ao vão de ~600 barras antes de andar até a página antiga.
+- **Vela de 5m ocupa ~80% do espaçamento, e a vela de alta é OCA:** com o slot = barra do TF, o corpo deixou de ter
+  ~2 px. O `e2e/38` mede a fase da vela num trecho com zoom-in (≥ 30 px/balde, onde o vão entre corpos é mais largo
+  que a coluna de 3 px que ele lê) e a toma **meio espaçamento oposta ao centro do vão**, não pelo argmax: numa vela
+  oca o argmax cai na borda e o sondador de ¼ de barra cruza a fronteira da legenda.
 - **Falsificador do eixo:** `e2e/39-axis-step-per-timeframe.spec.ts` — `gridSlots === initialBars` nos 5 TFs.
   Com o passo trocado por 1 min nos dois pontos acima, 5m/15m/1h/4h reprovam (5.760/5.760/10.080/10.080) e 1m passa.
