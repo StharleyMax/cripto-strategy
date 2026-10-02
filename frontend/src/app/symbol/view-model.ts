@@ -57,8 +57,6 @@
  */
 
 import {
-  ONE_MINUTE_MS,
-  S2_AXIS_STEP_MS,
   buildScalarSeries,
   resolveFlowReading,
   type FlowReading,
@@ -431,7 +429,7 @@ function parseNonNegativeFlowValue(row: SeriesHistoryRow): number | null {
  * WITH `window`, absent rows are dropped instead of turned into a `null` slot, the survivors
  * become `ScalarPoint`s, and the shared grid primitive `charts/s2-scalar-grid.ts::buildScalarSeries`
  * — the SAME one `buildOiPanel`/`buildCvdPanel` already call, not a second implementation
- * (`ADR-003` FR-2/FR-3) — aligns them onto `S2_AXIS_STEP_MS`. The result's LENGTH then depends
+ * (`ADR-003` FR-2/FR-3) — aligns them onto `axisStepMs`. The result's LENGTH then depends
  * only on `window`, never on how many rows the wire happened to answer: `0` real rows still
  * produce a full, `null`-filled grid, exactly like `buildOiPanel`/`buildCvdPanel` already do for
  * `oi`/`cvd` when `/series-history` fails (`T-02.1`/`D-C3.2`). Before this fix, `long_short`'s and
@@ -450,13 +448,27 @@ function parseNonNegativeFlowValue(row: SeriesHistoryRow): number | null {
  * vector has 24 slots and the legend read `ausente` in 24 of 24 crosshair positions
  * (`W1-QA-r2` §3). Both call sites now ALSO build `legendSlots` WITH the window; only the bars
  * keep the one-slot-per-row vector.
+ *
+ * `axisStepMs` — `paineis-de-fluxo` `T-05.1` — is REQUIRED whenever `window` is given: the grid is
+ * the timeframe's, and it used to be `S2_AXIS_STEP_MS` (1 minute) in every TF. The overloads make
+ * "a window without a step" a type error instead of a silent one-minute grid.
  */
+export function nonNegativeFlowSlotsFromHistoryRows(rows: readonly SeriesHistoryRow[]): readonly ScalarSlotShape[];
+export function nonNegativeFlowSlotsFromHistoryRows(
+  rows: readonly SeriesHistoryRow[],
+  window: S2Window,
+  axisStepMs: number,
+): readonly ScalarSlotShape[];
 export function nonNegativeFlowSlotsFromHistoryRows(
   rows: readonly SeriesHistoryRow[],
   window?: S2Window,
+  axisStepMs?: number,
 ): readonly ScalarSlotShape[] {
   if (window === undefined) {
     return rows.map((row) => ({ time: row.event_time, value: parseNonNegativeFlowValue(row) }));
+  }
+  if (axisStepMs === undefined) {
+    throw new RangeError("nonNegativeFlowSlotsFromHistoryRows: a window needs the axis step it is gridded at");
   }
   const points: ScalarPointShape[] = [];
   for (const row of rows) {
@@ -465,7 +477,7 @@ export function nonNegativeFlowSlotsFromHistoryRows(
       points.push({ timeMs: row.event_time, value });
     }
   }
-  return buildScalarSeries(points, S2_AXIS_STEP_MS, window.startMs, window.endMsExclusive).slots;
+  return buildScalarSeries(points, axisStepMs, window.startMs, window.endMsExclusive).slots;
 }
 
 /**
@@ -625,12 +637,20 @@ export function trailingAbsentSlots(slots: readonly ScalarSlotShape[]): number {
  * absence the page is designed to render, which is the failure class fase `04` of
  * `pagina-de-grafico-s2` already paid for once. Absence answers `absent`; it never throws and
  * it never becomes `0`.
+ *
+ * `axisStepMs` — `paineis-de-fluxo` `T-05.1` — the step `slots` sit at (the timeframe's), and
+ * `instantMs` must be a slot ON it (`lastGridInstant(window, axisStepMs)`). It used to be a fixed
+ * `ONE_MINUTE_MS`, true only while every TF was drawn on a one-minute grid.
  */
-export function resolveFlowReadingOrAbsent(slots: readonly ScalarSlotShape[], instantMs: number): FlowReading {
+export function resolveFlowReadingOrAbsent(
+  slots: readonly ScalarSlotShape[],
+  axisStepMs: number,
+  instantMs: number,
+): FlowReading {
   if (slots.length === 0) {
     return { kind: "absent", value: null };
   }
-  return resolveFlowReading(slots, ONE_MINUTE_MS, instantMs);
+  return resolveFlowReading(slots, axisStepMs, instantMs);
 }
 
 export class InvalidSignedDecimalError extends Error {}

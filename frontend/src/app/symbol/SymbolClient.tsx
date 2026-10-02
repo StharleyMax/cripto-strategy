@@ -285,7 +285,7 @@ export interface OiPaneData {
    * `N >= 30`, and the `RN-S1` divisor paid in the TYPE instead of in a `/5`.
    *
    * `page.tsx` derives it from `panels.oi.slots`, which since `T-02.1` (`D-C3.2`) is the ONE
-   * shared axis grid every panel's `slots` sits on (`ONE_MINUTE_MS`), NOT a 5-minute grid of
+   * shared axis grid every panel's `slots` sits on (the TF's step since `T-05.1`), NOT a 5-minute grid of
    * its own — `buildOiPanel` no longer builds one. The count still comes out to native buckets
    * because `oiPoints` only ever carries points at the native 5-minute cadence
    * (`scalarPointsFromHistoryRows(rows, FIVE_MINUTES_MS)`), so exactly one axis slot per native
@@ -587,9 +587,15 @@ function AbsenceNote({ status }: { readonly status: PanelStatus }) {
  * grade canônica"
  * `ADR-003` FR-2 names as the failure mode where the screen and the engine disagree about what
  * happened. `lastGridInstant` is that conversion, living in `charts` where geometry belongs
- * (`quant-architect`, wave `03`, C3). */
-function lastInstantMs(panels: S2Panels): number {
-  return lastGridInstant(panels.window, ONE_MINUTE_MS);
+ * (`quant-architect`, wave `03`, C3).
+ *
+ * `gridMs` — `paineis-de-fluxo` `T-05.1` — is EXPLICIT, because the page has two "last instants"
+ * now: a READOUT queries a slot of the AXIS grid (`axisStepMs`, the timeframe's — `1h` at `1h`),
+ * while the REQUEST and the "COMO EM T" reference stay on the `1m` grid `request-window.ts` sends
+ * (`window_end_ms`). Before `T-05.1` both were one minute, because the axis was one minute in
+ * every timeframe. */
+function lastInstantMs(panels: S2Panels, gridMs: number): number {
+  return lastGridInstant(panels.window, gridMs);
 }
 
 /** ⛔ NOT THE CHART HEIGHT ANY MORE (`T-01.6`), AND SINCE `T-04.2` NOTHING IN PRODUCTION READS IT.
@@ -639,7 +645,8 @@ const PANE_STACK = stackedPaneLayout({
  * this write never lands in the middle of a drag.
  *
  * `data-chart-mount-count` on the surface counts `createChart` calls — `e2e/22` asserts it stays
- * at `1` across paging. `data-visible-logical-from`/`-to` carry the range the chart shows, and
+ * at `1` across paging. `data-visible-logical-from`/`-to` carry the range the chart shows,
+ * `data-bar-spacing-px` the library's width of one bar (`T-05.1`, DoD 1), and
  * `data-axis-sync-write-count` counts dispatcher writes, which with `panelCount = 1` stays `0`.
  *
  * ── THE PER-PANE DOM LAYER (`T-01.6`, plan `01` item `1.5`, `[Q-DG-1]`) ─────────────────────────
@@ -1167,8 +1174,15 @@ function SymbolChartHost({
     // deferred frame (`T-05-FIX`: `setVisibleLogicalRange` notifies on the NEXT frame).
     const releaseMountGuard = store.guard.holdApplying();
     timeScale.setVisibleLogicalRange(store.initialLogicalRange);
+    // `paineis-de-fluxo` `T-05.1` (DoD 1) — the width the library gives ONE bar, published beside
+    // the visible range so the e2e reads an exact fact (`timeScale().options().barSpacing`), not a
+    // pixel estimate. Refreshed on every range change: zoom and the initial framing both move it.
+    const publishBarSpacing = () => {
+      container.dataset.barSpacingPx = String(timeScale.options().barSpacing);
+    };
     const mountGuardFrame = requestAnimationFrame(() => {
       releaseMountGuard();
+      publishBarSpacing();
     });
     container.dataset.visibleLogicalFrom = String(store.initialLogicalRange.from);
     container.dataset.visibleLogicalTo = String(store.initialLogicalRange.to);
@@ -1188,6 +1202,7 @@ function SymbolChartHost({
       }
       container.dataset.visibleLogicalFrom = String(range.from);
       container.dataset.visibleLogicalTo = String(range.to);
+      publishBarSpacing();
       axisSyncRef.current.notifyPanelRangeChanged(SINGLE_CHART_PANEL_INDEX, range);
     };
     timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
@@ -1409,7 +1424,7 @@ function SymbolChartHost({
  * absence policy: `panels.price.series.slots` (`GridSlot[]`, `candle: RawCandle | null`) is
  * mapped onto the exact `{ time, value }` shape `resolveStockReading` already takes for OI —
  * the SAME pure function, reused, not a price-specific reimplementation. `nativeTimeframeMs =
- * ONE_MINUTE_MS` because price's own native grid IS 1 minute (unlike OI's 5), so this always
+ * axisStepMs` because price's candles ARE the axis grid (the TF's, `T-05.1`), so this always
  * resolves `"exact"` or `"absent"`, never `"held"` — there is no coarser native grid to hold
  * across for this panel.
  */
@@ -2088,7 +2103,7 @@ function PricePane({
       { series: absenceSeries, belowLegend: false, clearSeparator: true },
     ],
   });
-  const { legends } = useLegendFrame();
+  const { legends, axisStepMs } = useLegendFrame();
   const priceSlots = panels.price.series.slots;
   const closeSlots = useMemo(
     () =>
@@ -2098,9 +2113,10 @@ function PricePane({
       })),
     [priceSlots],
   );
-  // Price's own native cadence IS the axis step (`ONE_MINUTE_MS`) — the two `resolveStockReading`
-  // parameters happen to be the same value here, unlike OI's call below (`T-02.1`).
-  const reading = resolveStockReading(closeSlots, ONE_MINUTE_MS, ONE_MINUTE_MS, lastInstantMs(panels));
+  // Price's own cadence IS the axis step — the TF's since `T-05.1` (it was `ONE_MINUTE_MS` in every
+  // TF before) — so the two `resolveStockReading` parameters are the same value here, unlike OI's
+  // call below (`T-02.1`).
+  const reading = resolveStockReading(closeSlots, axisStepMs, axisStepMs, lastInstantMs(panels, axisStepMs));
   const readingText =
     reading.kind === "absent"
       ? ABSENCE_TOKEN
@@ -2533,9 +2549,17 @@ function OiPane({
   const paintRegime = useSyncExternalStore(subscribeToNothing, mountedOiRegimeMarksPaint, serverOiRegimeMarksPaint);
   const regime = useMemo(() => oiRegimeMarks(oiCandles.candles, oiCandles.sources), [oiCandles.candles, oiCandles.sources]);
   const gridStartMs = oiCandles.slots[0]?.time ?? null;
+  // `T-05.1` — the step of the grid `gridStartMs` belongs to: the axis's, the TF's width.
+  const { legends, axisStepMs } = useLegendFrame();
   const canvasMarks = useMemo(
-    () => ({ bands: regime.bands, rules: regime.rules, gridStartMs, paint: paintRegime }),
-    [regime, gridStartMs, paintRegime],
+    () => ({
+      bands: regime.bands,
+      rules: regime.rules,
+      gridStartMs,
+      gridStepMs: gridStartMs === null ? null : axisStepMs,
+      paint: paintRegime,
+    }),
+    [regime, gridStartMs, axisStepMs, paintRegime],
   );
   const primitiveRef = useRef<OiRegimePanePrimitive | null>(null);
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -2618,11 +2642,17 @@ function OiPane({
     ],
     scales: ({ series }) => [{ series, belowLegend: true, clearSeparator: false }],
   });
-  // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (`ONE_MINUTE_MS`, `D-C3.2`),
+  // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (the TF's step, `D-C3.2`/`T-05.1`),
   // no longer OI's own native grid — `panels.oi.timeframeMs` (5 min) is passed SEPARATELY, as
   // the cap `resolveStockReading`'s held-value rule (`D5.2`) reads against.
-  const { legends } = useLegendFrame();
-  const reading = resolveStockReading(panels.oi.slots, ONE_MINUTE_MS, panels.oi.timeframeMs, lastInstantMs(panels));
+  // `T-05.1` — the series' cadence on THIS axis is the coarser of its native 5 minutes and the axis
+  // step: above `5m`, one OI point per axis slot. Same rule as `charts::resolveLegendReading`.
+  const reading = resolveStockReading(
+    panels.oi.slots,
+    axisStepMs,
+    Math.max(panels.oi.timeframeMs, axisStepMs),
+    lastInstantMs(panels, axisStepMs),
+  );
   const readingText =
     reading.kind === "absent"
       ? ABSENCE_TOKEN
@@ -2836,8 +2866,14 @@ function CvdPane({
       { series: cumulativeSeries, belowLegend: true, clearSeparator: false },
     ],
   });
-  const { legends } = useLegendFrame();
-  const deltaReading = resolveFlowReading(panels.cvd.deltaSlots, panels.cvd.timeframeMs, lastInstantMs(panels));
+  const { legends, axisStepMs } = useLegendFrame();
+  // `T-05.1` — `panels.cvd.timeframeMs` IS the axis step (`buildCvdPanel`), so the query is the
+  // last slot of THAT grid.
+  const deltaReading = resolveFlowReading(
+    panels.cvd.deltaSlots,
+    panels.cvd.timeframeMs,
+    lastInstantMs(panels, axisStepMs),
+  );
   // `DR-3`, second half: the pane drew TWO series and read exactly ONE. The screen went to the
   // trouble of naming the anchor of the cumulative curve (`D4.7`) and then never said what value
   // that anchor produced. Same function, same absence policy, same token as the delta — the
@@ -2847,7 +2883,7 @@ function CvdPane({
   const cumulativeReading = resolveFlowReading(
     panels.cvd.cumulativeSlots,
     panels.cvd.timeframeMs,
-    lastInstantMs(panels),
+    lastInstantMs(panels, axisStepMs),
   );
   // `RN-1` at the RENDERING layer, and for this series it is a rule of TYPE: a `FLOW` bucket with
   // no observation is NOT a bucket where buyers and sellers balanced out. A `0` there would be an
@@ -4312,7 +4348,7 @@ export function SymbolClient({
   // `seed.keys` identity to stay a stable callback across renders (the ref-based
   // stale-closure fix depends on `fetchPage`'s `useCallback` deps not churning every render).
   // Every field here comes off props THIS render already has — `windowEndMsInclusive` off
-  // `lastInstantMs(initialPanels)` (the SAME conversion the "leitura atual" readouts already use,
+  // `lastInstantMs(initialPanels, ONE_MINUTE_MS)` (the SAME conversion the request already uses,
   // `ADR-003` FR-2: not re-derived a second way), `cvdAnchorMs`/`oiMaxStalenessMs`/
   // `longShortRecentSpanMs` off the STATIC facts `page.tsx` already resolved once.
   const historyPagingSeed: HistoryPagingSeed = useMemo(
@@ -4328,7 +4364,8 @@ export function SymbolClient({
       staticContext: {
         priceUse: initialPanels.price.priceUse,
         cvdAnchorMs: initialCvd.anchorMs,
-        windowEndMsInclusive: lastInstantMs(initialPanels),
+        windowEndMsInclusive: lastInstantMs(initialPanels, ONE_MINUTE_MS),
+        windowEndMsExclusive: initialPanels.window.endMsExclusive,
         longShortRecentSpanMs: initialLongShort.recentSpanMs,
         oiMaxStalenessMs: initialOi.maxStalenessMs,
       },
@@ -4349,9 +4386,9 @@ export function SymbolClient({
   // `T-02.4` (`D-C3.1`) — the ONE `TimeAxis` every one of the six charts shares. `T-05.2`: THIS IS
   // NOW `pager.axis`, NOT a local `useMemo` off `initialPanels.window` — the paginator OWNS the
   // window from here on (it starts equal to `initialPanels.window`, `use-history-pager.ts`'s own
-  // `useState` initializer, and widens as pages arrive). `S2_AXIS_STEP_MS` is the SAME step
-  // `T-02.1` unified every panel's grid onto (`D-C3.2`) — `use-history-pager.ts` reuses it, not a
-  // second `60_000` literal.
+  // `useState` initializer, and widens as pages arrive). Its step is the TF's
+  // (`timeframeStepMs(seed.interval)` inside the pager, `T-05.1`) — the ONE step `T-02.1` unified
+  // every panel's grid onto (`D-C3.2`), no longer a one-minute constant in every TF.
   const axis: TimeAxis = pager.axis;
   // `T-01.7` (`RF-5`, `SPEC-009` §4) — every legend's name and reading policy, DERIVED from its catalog
   // entry through the registry's `resolvePaneLegend`, once per pane: the sources are static props, so
@@ -4430,14 +4467,14 @@ export function SymbolClient({
     // query against the read API instead of guessing the window from its own clock.
     <main
       data-window-start-ms={panels.window.startMs}
-      data-window-end-ms-inclusive={lastInstantMs(panels)}
+      data-window-end-ms-inclusive={lastInstantMs(panels, ONE_MINUTE_MS)}
       data-knowledge-time-ms={knowledgeTimeMs}
     >
       <h1 className="sr-only">
         {symbol} — Preço (com volume), Open Interest, CVD, Liquidações e Long/short
       </h1>
       <TimeframeBar selected={selectedTimeframe} onSelect={handleTimeframeSelect} />
-      <ChromeModeStamp referenceMs={lastInstantMs(panels)} />
+      <ChromeModeStamp referenceMs={lastInstantMs(panels, ONE_MINUTE_MS)} />
       <LegendFrameContext.Provider value={legendFrame}>
       <AxisSyncProvider axis={axis} onCandidateRange={pager.onCandidateRange}>
         <SymbolChartHost

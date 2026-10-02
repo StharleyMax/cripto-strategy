@@ -60,9 +60,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
+  axisForWindow,
   DEFAULT_PAGE_TRIGGER_SLOTS,
   historyRequest,
-  S2_AXIS_STEP_MS,
   type HistoryCoverage,
   type TimeAxis,
   type TimeRange,
@@ -73,7 +73,6 @@ import { recordHistoryPageRequested } from "./history-page-latency-probe.ts";
 import {
   capWindowRightEdge,
   DEFAULT_MAX_ACCUMULATED_SLOTS,
-  DEFAULT_PAGE_SLOTS,
   effectiveMaxAccumulatedSlots,
   mergeOlderPage,
   trimRowsToWindow,
@@ -95,6 +94,8 @@ import {
 } from "./oi-candle-pane.ts";
 import type { PanelCoverage, SeriesHistoryRow } from "./series-history-envelope.ts";
 import { combineHistoryCoverage, type PanelCoverageBundle } from "./slot-coverage.ts";
+import { timeframeStepMs } from "./supported-timeframes.ts";
+import { timeframeWindowBars } from "./timeframe-window.ts";
 
 /** The `series_key_id` this route resolved for each of the ten `/series-history` fetches
  * `page.tsx` already makes — `null` for a panel whose catalog resolution failed or was
@@ -142,7 +143,8 @@ export interface HistoryPagingSeed {
   readonly keys: HistorySeriesKeys;
   readonly rows: HistoryRowsBundle;
   readonly staticContext: AssemblyStaticContext;
-  /** `D-C3.5`'s own numbers — overridable only for a test; every real caller gets the defaults. */
+  /** `D-C3.5`'s own numbers — overridable only for a test; every real caller gets the defaults
+   * (`pageBars` of `interval`'s row in `timeframe-window.ts`, and `DEFAULT_MAX_ACCUMULATED_SLOTS`). */
   readonly pageSlots?: number;
   readonly maxAccumulatedSlots?: number;
   readonly triggerSlots?: number;
@@ -199,20 +201,17 @@ const EMPTY_PANEL_COVERAGE: PanelCoverageBundle = {
   longShort: null,
 };
 
-function axisFromWindow(window: AccumulatedWindow): TimeAxis {
-  return {
-    startMs: window.startMs,
-    stepMs: S2_AXIS_STEP_MS,
-    slotCount: (window.endMsExclusive - window.startMs) / S2_AXIS_STEP_MS,
-  };
-}
-
 export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
-  const pageSlots = seed.pageSlots ?? DEFAULT_PAGE_SLOTS;
+  // `paineis-de-fluxo` `T-05.1` (`handoff/T-05.1-desenho.md` §1) — THE axis step of this mount,
+  // derived from `seed.interval` and from nowhere else: no second field on the seed that could
+  // disagree with `interval`. It used to be `S2_AXIS_STEP_MS` (1 minute) in every timeframe, the
+  // defect `D-A` of `handoff/FIX-uso-2026-10-02.md`.
+  const stepMs = timeframeStepMs(seed.interval);
+  const pageSlots = seed.pageSlots ?? timeframeWindowBars(seed.interval).pageBars;
   // W1-FIX (MF-A): never below the seed window + one page — see `effectiveMaxAccumulatedSlots`.
   const maxSlots = effectiveMaxAccumulatedSlots(
     seed.window,
-    S2_AXIS_STEP_MS,
+    stepMs,
     pageSlots,
     seed.maxAccumulatedSlots ?? DEFAULT_MAX_ACCUMULATED_SLOTS,
   );
@@ -226,10 +225,13 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
   // own docstring for why this never starts seeded from the SSR envelope.
   const [panelCoverage, setPanelCoverage] = useState<PanelCoverageBundle>(EMPTY_PANEL_COVERAGE);
 
-  const axis = useMemo(() => axisFromWindow(windowState), [windowState.startMs, windowState.endMsExclusive]);
+  const axis = useMemo(
+    () => axisForWindow(windowState, stepMs),
+    [windowState.startMs, windowState.endMsExclusive, stepMs],
+  );
   const assembly = useMemo(
-    () => assembleHistoryPage(rows, windowState, seed.staticContext),
-    [rows, windowState, seed.staticContext],
+    () => assembleHistoryPage(rows, windowState, seed.staticContext, stepMs),
+    [rows, windowState, seed.staticContext, stepMs],
   );
 
   // See this module's own docstring, "WHY onCandidateRange READS EVERYTHING THROUGH REFS".
@@ -352,7 +354,7 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
         windowRef.current = widened;
         rowsRef.current = nextRows;
         panelCoverageRef.current = nextCoverage;
-        axisRef.current = axisFromWindow(widened);
+        axisRef.current = axisForWindow(widened, stepMs);
 
         setWindowState(widened);
         setRows(nextRows);
@@ -370,7 +372,7 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
         inFlightRef.current = false;
       }
     },
-    [seed.symbol, seed.interval, seed.knowledgeTimeMs, seed.barPolicy, seed.historyBaseUrl, seed.keys, maxSlots],
+    [seed.symbol, seed.interval, seed.knowledgeTimeMs, seed.barPolicy, seed.historyBaseUrl, seed.keys, maxSlots, stepMs],
   );
 
   const onCandidateRange = useCallback(
@@ -433,11 +435,11 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
       };
       windowRef.current = capped;
       rowsRef.current = nextRows;
-      axisRef.current = axisFromWindow(capped);
+      axisRef.current = axisForWindow(capped, stepMs);
       setWindowState(capped);
       setRows(nextRows);
     },
-    [maxSlots],
+    [maxSlots, stepMs],
   );
 
   return { axis, assembly, onCandidateRange, holdRightEdgeCap, window: windowState, panelCoverage };

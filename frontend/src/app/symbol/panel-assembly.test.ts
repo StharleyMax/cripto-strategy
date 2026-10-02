@@ -52,11 +52,12 @@ test("CALA: a fully-present window draws every candle and every dynamic count ag
   };
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
+    windowEndMsExclusive: WINDOW.endMsExclusive,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive: WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
     oiMaxStalenessMs: null,
-  });
+  }, ONE_MINUTE_MS);
   assert.equal(result.priceCandles.drawnCandles, 3);
   assert.equal(result.priceCandles.gridSlots, 3);
   assert.equal(result.priceCandles.partialBuckets, 0);
@@ -72,11 +73,12 @@ test("MORDE CA-F2-3: a SEM_PONTO row in ONE of the four OHLC reductions draws NO
   };
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
+    windowEndMsExclusive: WINDOW.endMsExclusive,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive: WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
     oiMaxStalenessMs: null,
-  });
+  }, ONE_MINUTE_MS);
   assert.equal(result.priceCandles.drawnCandles, 0, "three of four readings is NOT a candle, RN-1");
   assert.equal(result.priceCandles.partialBuckets, 1, "the hole must be COUNTED, not silently absorbed into the gap count");
 });
@@ -89,20 +91,22 @@ test("CALA: OI freshness reads the CALLER'S oiMaxStalenessMs, never a literal ba
   const windowEndMsInclusive = WINDOW.endMsExclusive - ONE_MINUTE_MS;
   const fresh = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
+    windowEndMsExclusive: WINDOW.endMsExclusive,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
     oiMaxStalenessMs: 10 * ONE_MINUTE_MS, // generous ceiling — the one observation is "fresh"
-  });
+  }, ONE_MINUTE_MS);
   assert.equal(fresh.oi.freshness.kind, "fresh");
 
   const stale = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
+    windowEndMsExclusive: WINDOW.endMsExclusive,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
     oiMaxStalenessMs: 1, // one millisecond ceiling — the SAME observation is now "old"
-  });
+  }, ONE_MINUTE_MS);
   assert.notEqual(stale.oi.freshness.kind, "fresh", "the SAME rows read as stale under a tighter ceiling — proves the ceiling is read, not ignored");
 });
 
@@ -113,11 +117,12 @@ test("CALA: cvdAnchorMs stays fixed across a call — the cumulative curve count
   };
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
+    windowEndMsExclusive: WINDOW.endMsExclusive,
     cvdAnchorMs: 0, // anchored at the window's own start
     windowEndMsInclusive: WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
     oiMaxStalenessMs: null,
-  });
+  }, ONE_MINUTE_MS);
   const cumulativeAtAnchor = result.panels.cvd.cumulativeSlots.find((slot) => slot.time === 0);
   assert.equal(cumulativeAtAnchor?.value, 10, "the cumulative value AT the anchor instant is exactly that bucket's own delta");
   assert.equal(result.cvd.presentPoints, 2);
@@ -132,11 +137,12 @@ test("CALA: long/short observedAtMs/ageMs are derived off the newest READABLE ro
   const windowEndMsInclusive = WINDOW.endMsExclusive - ONE_MINUTE_MS;
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
+    windowEndMsExclusive: WINDOW.endMsExclusive,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
     oiMaxStalenessMs: null,
-  });
+  }, ONE_MINUTE_MS);
   assert.equal(result.longShort.observedAtMs, observedAtMs);
   assert.equal(result.longShort.ageMs, windowEndMsInclusive - observedAtMs);
 });
@@ -145,11 +151,12 @@ test("MORDE: an upstream-failed series (empty rows) still comes back GRID-PADDED
   const rows: HistoryRowsBundle = { ...emptyBundle() }; // every series absent — simulates every fetch failing
   const result = assembleHistoryPage(rows, WINDOW, {
     priceUse: S2_PRICE_USE,
+    windowEndMsExclusive: WINDOW.endMsExclusive,
     cvdAnchorMs: WINDOW.startMs,
     windowEndMsInclusive: WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
     oiMaxStalenessMs: null,
-  });
+  }, ONE_MINUTE_MS);
   assert.equal(result.liquidationLong.slots.length, 3, "liquidation is grid-padded via the `window` argument");
   assert.equal(result.liquidationLong.presentPoints, 0);
   assert.equal(result.longShort.slots.length, 3, "long/short is grid-padded the same way");
@@ -172,11 +179,12 @@ function assembleFourHourVolume() {
   };
   return assembleHistoryPage(rows, FOUR_HOUR_WINDOW, {
     priceUse: S2_PRICE_USE,
+    windowEndMsExclusive: FOUR_HOUR_WINDOW.endMsExclusive,
     cvdAnchorMs: FOUR_HOUR_WINDOW.startMs,
     windowEndMsInclusive: FOUR_HOUR_WINDOW.endMsExclusive - ONE_MINUTE_MS,
     longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
     oiMaxStalenessMs: null,
-  }).volume;
+  }, ONE_MINUTE_MS).volume;
 }
 
 function readVolumeLegend(slots: ReturnType<typeof assembleFourHourVolume>["legendSlots"], logical: number | undefined) {

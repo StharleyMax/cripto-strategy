@@ -241,8 +241,70 @@ export function historyRequest(
   }
 
   const candidateFromMs = axis.startMs - pageSlots * axis.stepMs;
-  const fromMs = floorMs !== null ? Math.max(candidateFromMs, floorMs) : candidateFromMs;
-  return { fromMs, toMs: axis.startMs, intervalMs: axis.stepMs };
+  if (floorMs === null) {
+    return { fromMs: candidateFromMs, toMs: axis.startMs, intervalMs: axis.stepMs };
+  }
+  // `paineis-de-fluxo` `T-05.1` (`handoff/T-05.1-desenho.md` §1): the floor is rounded UP onto the
+  // axis's own grid before it clamps the page. `earliestBucketMs` comes aligned to the MINUTE, not
+  // to the timeframe, so on a `1h` axis an unrounded floor put `fromMs` off the grid, and
+  // `widenAndCapWindow` then produced a fractional `slotCount` that `buildScalarSeries` refuses.
+  // Rounding up (never down) is the backend's own rule for the first grid instant of a window
+  // (`_first_grid_instant`): the slot that starts before the floor holds no data we can serve.
+  const alignedFloorMs = firstAxisInstantAtOrAfter(axis, floorMs);
+  if (alignedFloorMs >= axis.startMs) {
+    // The floor sits inside the slot right before the loaded edge: no WHOLE slot is left to ask for.
+    return null;
+  }
+  return { fromMs: Math.max(candidateFromMs, alignedFloorMs), toMs: axis.startMs, intervalMs: axis.stepMs };
+}
+
+/** The first instant ON `axis`'s grid (`axis.startMs + k · stepMs`, any integer `k`) at or after
+ * `instantMs`. Relative to the axis's own origin, not to the epoch, so it holds for any grid. */
+function firstAxisInstantAtOrAfter(axis: TimeAxis, instantMs: number): number {
+  const slotsBack = Math.floor((axis.startMs - instantMs) / axis.stepMs);
+  return axis.startMs - slotsBack * axis.stepMs;
+}
+
+/** A half-open window over the canonical grid, epoch ms — the shape `S2Window` and the pager's
+ * accumulated window share. Declared structurally so this module imports neither. */
+export interface AxisWindow {
+  readonly startMs: number;
+  readonly endMsExclusive: number;
+}
+
+/**
+ * `paineis-de-fluxo` `T-05.1` (`handoff/T-05.1-desenho.md` §1, defect `D-A` of
+ * `handoff/FIX-uso-2026-10-02.md`) — the `TimeAxis` of a window, at the step of the TIMEFRAME the
+ * window was fetched at. `stepMs` is REQUIRED, with no default: the defect this closes was a
+ * one-minute default (`S2_AXIS_STEP_MS`) applied in every timeframe, which put 60 empty slots
+ * between two `1h` candles. A window that is not a whole number of steps is refused, never
+ * rounded: a fractional `slotCount` is a grid the panels cannot share.
+ */
+export function axisForWindow(window: AxisWindow, stepMs: number): TimeAxis {
+  assertPositiveStep(stepMs);
+  const slotCount = (window.endMsExclusive - window.startMs) / stepMs;
+  if (!Number.isInteger(slotCount) || slotCount <= 0) {
+    throw new RangeError(
+      `window [${window.startMs}, ${window.endMsExclusive}) is not a positive whole number of ${stepMs}ms slots`,
+    );
+  }
+  return { startMs: window.startMs, stepMs, slotCount };
+}
+
+/**
+ * `T-05.1` (`handoff/T-05.1-desenho.md` §3) — the range the chart opens on: the LAST
+ * `min(viewBars, slotCount)` slots of `axis`, ending one step past its last slot (the same
+ * `toMs` convention the whole-axis framing used, `logical.to = slotCount`). Before this, the
+ * mount framed the WHOLE axis: 5.760 slots at `1m`, ~0,2 px per bar, so no candle had a body.
+ */
+export function initialViewRange(axis: TimeAxis, viewBars: number): TimeRange {
+  assertPositiveStep(axis.stepMs);
+  if (!Number.isInteger(viewBars) || viewBars <= 0) {
+    throw new RangeError(`viewBars must be a positive integer, received ${viewBars}`);
+  }
+  const endMs = axis.startMs + axis.slotCount * axis.stepMs;
+  const bars = Math.min(viewBars, axis.slotCount);
+  return { fromMs: endMs - bars * axis.stepMs, toMs: endMs };
 }
 
 /**

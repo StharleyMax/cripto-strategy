@@ -68,6 +68,7 @@ const MARKS: OiRegimeCanvasMarks = {
   bands: [{ leftExclusiveMs: 5 * ONE_MINUTE_MS, rightInclusiveMs: 20 * ONE_MINUTE_MS, derivedFrom: "binance_point_5m", candles: 3 }],
   rules: [{ atMs: 20 * ONE_MINUTE_MS, from: "binance_point_5m", to: "binance_poll_1m" }],
   gridStartMs: 0,
+  gridStepMs: ONE_MINUTE_MS,
   paint: true,
 };
 
