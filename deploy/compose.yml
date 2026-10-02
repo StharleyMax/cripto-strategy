@@ -108,10 +108,26 @@ services:
     # regression to hunt, not the timeout "working". `PGAPPNAME` gives `pg_stat_activity` a
     # stable key (`application_name='cripto-api'`) — the container IP changed between
     # 2026-09-19 and 2026-09-27 and stopped identifying this service.
+    #
+    # `API_WORKERS`/`API_LIMIT_MAX_REQUESTS` (`T-06.3`, `handoff/T-06.3-desenho.md` §2, measured
+    # 2026-10-02 on the local stack): one process serialized the screen's 10 parallel series behind
+    # one psycopg connection and the GIL; 2 workers + the SkipScan extent measured 2.12 s (1m) and
+    # 3.15 s (1h) against 6.18 s / 7.42 s. Pinned HERE, never in `.env`, for the `PGOPTIONS`
+    # reason above (`writer`/`collector` share that `env_file`). 2, not 4: the VPS's free cores
+    # are unknown and 4 workers cost twice the RAM — raise it after measuring `nproc` there, no
+    # code deploy needed. `API_LIMIT_MAX_REQUESTS` recycles a worker after ~2000 requests (jitter
+    # 10%), because CPython keeps its high-water mark resident (HWM 1,837 MB on 1 worker).
+    # `mem_limit` turns "the VPS swaps" into "one worker is OOM-killed and the supervisor respawns
+    # it": 2 x ~350 MB HWM under the screen + one dense 7-day 1h page (407 MB) + supervisor and
+    # parent (~105 MB) is ~1.2 GB. Workers are child processes of the same `python -m src.main`
+    # (`ADR-027/D1`): no new container. Pinned by `test_compose_api_workers.py`.
     environment:
       APP_HOST: "0.0.0.0"
       PGOPTIONS: "-c idle_in_transaction_session_timeout=30s"
       PGAPPNAME: "cripto-api"
+      API_WORKERS: "2"
+      API_LIMIT_MAX_REQUESTS: "2000"
+    mem_limit: 1536m
     # `T-03.8` (`CA-E2E-1`) measured this: `create_app` ALWAYS wires a
     # `SqliteSeriesQuarantineStore` at `QUARANTINE_STORE_PATH` (default
     # `data/md/series_quarantine.sqlite3`, `src/main/__init__.py:64/240`) regardless of
