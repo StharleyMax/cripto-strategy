@@ -384,7 +384,19 @@ class _PendingRunCredits:
     unattributed: int = 0
 
     def record(self, item: QueuedSeriesRow, outcome: WriteOutcome) -> None:
-        """Count one written row against the run that produced it (`run_single_writer` hook)."""
+        """Count one written row against the run that produced it (`run_single_writer` hook).
+
+        `SKIPPED_IDENTICAL_FACT` (`T-06.4`) credits NOTHING — `ADR-035/D1` keeps `n_written`
+        as rows persisted, and crediting a repeat would let a collector stuck republishing old
+        buckets read `n_written > 0` on every run, blinding the falsifier of the `2026-09-11`
+        amendment (`T-06.4-prova.md` §2). But the writer HAS accounted for the row, so its run
+        is registered at `+0`: a run whose rows were all repeats CLOSES with `n_written = 0`
+        (`writer_accounted_at` stamped) instead of staying open for ever and silently leaving
+        both sides of `uptimePercent` (`collector_status.py`, "an open run enters neither").
+        """
+        if outcome is WriteOutcome.SKIPPED_IDENTICAL_FACT and item.run_id is not None:
+            self.by_run.setdefault(item.run_id, 0)
+            return
         if outcome is not WriteOutcome.ACCEPTED:
             return
         if item.run_id is None:
@@ -469,10 +481,15 @@ def run(
             sleep(poll_interval_s)
             continue
         n_accepted = sum(1 for outcome in outcomes if outcome is WriteOutcome.ACCEPTED)
-        n_rejected = len(outcomes) - n_accepted
+        n_skipped = sum(1 for outcome in outcomes if outcome is WriteOutcome.SKIPPED_IDENTICAL_FACT)
+        n_rejected = len(outcomes) - n_accepted - n_skipped
         logger.info(
             "writer_batch_acked",
-            extra={"n_accepted": n_accepted, "n_rejected": n_rejected},
+            extra={
+                "n_accepted": n_accepted,
+                "n_rejected": n_rejected,
+                "n_skipped_identical": n_skipped,
+            },
         )
         if creditor is not None:
             _credit_runs(credits, creditor, now())

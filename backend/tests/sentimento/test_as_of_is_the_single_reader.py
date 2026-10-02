@@ -183,8 +183,20 @@ DECLARED_TOUCHERS: dict[str, frozenset[str]] = {
     # `INSERT` tuple), the same "write it down" category as the two precedents above, never a
     # value read back out "as of" anything.
     "modules/sentimento/infra/postgres_series_sink.py": frozenset(
-        {"observed_already_present", "accept"}
+        {"observed_already_present", "accept", "immediate_predecessor"}
     ),
+    # `T-06.4` (`paineis-de-fluxo`, not the `funding_settlement.py` task of the same id above):
+    # WRITE-PATH DEDUPLICATION, the same category as `observed_already_present` beside it.
+    # `immediate_predecessor` reads `row.bucket_end`/`row.observed_at` only to key ONE stored row
+    # of the same bucket (greatest `observed_at` strictly below the candidate's), and
+    # `repeats_predecessor_fact` compares the candidate against THAT row to decide whether the
+    # writer persists it. Neither has a decision instant `t`, neither picks a winner among
+    # admitted rows, and the answer is a `bool` that gates an `INSERT`, never a value returned
+    # "as of" anything. `RecordedObservation.of` only projects a `SeriesRow` into that shape.
+    # Why dropping the row leaves every `as_of` answer unchanged is a PROOF, not this comment:
+    # `docs/context/paineis-de-fluxo/handoff/T-06.4-prova.md` §1 (dominance over this accessor's
+    # admission and `argmin` order), pinned by `test_writer_skips_repeated_fact.py`.
+    "modules/sentimento/domain/repeated_fact.py": frozenset({"of", "repeats_predecessor_fact"}),
     # `T-01.3` (`cinco-metricas-do-core`): PRODUCER BOOKKEEPING, and it is the same category as
     # `write_series_row.py` above rather than a new one. `_publish_klines_page` reads
     # `row.bucket_end` off the rows it JUST BUILT, to advance the klines collector's in-process
@@ -498,6 +510,12 @@ DECLARED_IMPORTERS = frozenset(
         # `row.bucket_end`, so `DECLARED_TOUCHERS` above still has nothing to declare for it.
         "modules/sentimento/use_cases/measure_oi_candle_falsifiers.py",
         "modules/sentimento/infra/csv_series_window_reader.py",
+        # `T-06.4` (`paineis-de-fluxo`): imports NOTHING from the accessor — the textual scan
+        # matches the docstring, which names `as_of_accessor.py` as the source of the dominance
+        # lemma its predicate rests on. The coupling is real even without an import: a change to
+        # the accessor's admission or `argmin` order voids `T-06.4-prova.md` §1, and this entry is
+        # what makes such a change land next to the predicate it would silently break.
+        "modules/sentimento/domain/repeated_fact.py",
     }
 )
 
