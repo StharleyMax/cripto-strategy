@@ -78,6 +78,7 @@ from src.modules.sentimento.domain.provenance import (
     Provenance,
     SeriesRow,
 )
+from src.modules.sentimento.domain.repeated_fact import RecordedObservation
 from src.modules.sentimento.infra.postgres_series_sink import PostgresSeriesSink, ensure_schema
 from src.modules.sentimento.infra.redis_resp_client import (
     RespConnection,
@@ -403,6 +404,18 @@ def test_restart_after_kill_minus_9_recovers_every_row_without_loss_or_duplicate
         _kill_and_wait(writer_two)
 
 
+class _AlwaysAbsentLookup:
+    """The store holds nothing: no observed claim, no predecessor — every row is written."""
+
+    def observed_already_present(self, row: SeriesRow) -> bool:
+        """Never observed."""
+        return False
+
+    def immediate_predecessor(self, row: SeriesRow) -> RecordedObservation | None:
+        """No earlier row in this fake's store: nothing is ever a repeat (`T-06.4`)."""
+        return None
+
+
 def test_ack_before_commit_would_have_lost_rows_on_restart() -> None:
     """Morde for `D2.4`: an `ack`-before-commit sink loses the in-flight row on a simulated crash.
 
@@ -428,10 +441,6 @@ def test_ack_before_commit_would_have_lost_rows_on_restart() -> None:
             if self._staged is not None:
                 self.durable.append(self._staged)
                 self._staged = None
-
-    class _AlwaysAbsentLookup:
-        def observed_already_present(self, row: SeriesRow) -> bool:
-            return False
 
     class _OneShotQueue:
         """Ten entries, `ack`ed immediately by the caller — this fake never re-delivers."""
@@ -494,10 +503,6 @@ def test_a_sink_without_upsert_noop_would_have_duplicated_a_redelivered_row() ->
 
         def accept(self, row: SeriesRow) -> None:
             self.written.append(row)
-
-    class _AlwaysAbsentLookup:
-        def observed_already_present(self, row: SeriesRow) -> bool:
-            return False
 
     candidate = _row()
     sink = _AppendOnlySink()

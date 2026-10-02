@@ -25,8 +25,10 @@ never regenerated here), so it collides on the primary key rather than appending
 from __future__ import annotations
 
 import psycopg
+from psycopg import sql
 
 from src.modules.sentimento.domain.provenance import Provenance, SeriesRow
+from src.modules.sentimento.domain.repeated_fact import FACT_COLUMNS, RecordedObservation
 
 # Transcribed 1:1 from `gates/F2-series-ddl.md` §2 — that gate file is the artifact the
 # `quant-architect` signed and verified against a real `timescale/timescaledb:2.17.2-pg15`
@@ -80,6 +82,17 @@ _OBSERVED_ALREADY_PRESENT_SQL = (
     "AND bucket_end = %s AND provenance = %s LIMIT 1"
 )
 
+# `T-06.4`: the immediate predecessor of a candidate, by the primary key — the four leading key
+# columns by equality, `observed_at` by a reverse range scan of ONE tuple. The SELECT list is
+# derived from `FACT_COLUMNS` (`domain/repeated_fact.py`) so the store can never answer with a
+# narrower fact than the predicate compares. Composed with `psycopg.sql`, identifiers quoted.
+_PREDECESSOR_COLUMNS = (*FACT_COLUMNS, "observed_at", "available_at")
+_IMMEDIATE_PREDECESSOR_SQL = sql.SQL(
+    "SELECT {columns} FROM md.series "
+    "WHERE series_key_id = %s AND symbol = %s AND source = %s AND bucket_end = %s "
+    "AND observed_at < %s ORDER BY observed_at DESC LIMIT 1"
+).format(columns=sql.SQL(", ").join(sql.Identifier(c) for c in _PREDECESSOR_COLUMNS))
+
 
 def ensure_schema(connection: psycopg.Connection) -> None:
     """Create the `timescaledb` extension, the `md` schema and `md.series` if not there yet.
@@ -95,7 +108,7 @@ def ensure_schema(connection: psycopg.Connection) -> None:
 
 
 class PostgresObservedLookup:
-    """`ObservedLookup` over `md.series`: whether an `OBSERVADO` row already claimed this bucket.
+    """`ObservedLookup` over `md.series`: the bucket's `OBSERVADO` claim and its latest row.
 
     Keyed on `(series_key_id, symbol, source, bucket_end)` — never `observed_at` — exactly the
     question `use_cases/write_series_row.ObservedLookup` docstring names: "does the BUCKET
@@ -120,6 +133,26 @@ class PostgresObservedLookup:
                 ),
             )
             return cursor.fetchone() is not None
+
+    def immediate_predecessor(self, row: SeriesRow) -> RecordedObservation | None:
+        """Read-only: the bucket's row with the greatest `observed_at` below `row`'s, or `None`.
+
+        The read transaction is CLOSED before returning. A skipped row is never followed by
+        `accept` (whose commit used to end the read), and a connection left `idle in
+        transaction` holds a lock that queues any `ALTER` behind it — the failure mode that
+        already stopped this pipeline once (`deploy/compose.yml`, `api`'s
+        `idle_in_transaction_session_timeout`).
+        """
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                _IMMEDIATE_PREDECESSOR_SQL,
+                (row.series_key_id, row.symbol, row.source, row.bucket_end, row.observed_at),
+            )
+            found = cursor.fetchone()
+        self._connection.commit()
+        if found is None:
+            return None
+        return RecordedObservation(**dict(zip(_PREDECESSOR_COLUMNS, found, strict=True)))
 
 
 class PostgresSeriesSink:

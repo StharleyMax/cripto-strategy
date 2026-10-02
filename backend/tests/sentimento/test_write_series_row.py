@@ -15,6 +15,7 @@ from src.modules.sentimento.domain.provenance import (
     Provenance,
     SeriesRow,
 )
+from src.modules.sentimento.domain.repeated_fact import RecordedObservation
 from src.modules.sentimento.use_cases.write_series_row import WriteOutcome, write_series_row
 
 BUCKET_END_MS = 1_787_443_499_999
@@ -53,6 +54,10 @@ class FakeObservedLookup:
     def observed_already_present(self, row: SeriesRow) -> bool:
         """Return the fixed, scripted answer."""
         return self.answer
+
+    def immediate_predecessor(self, row: SeriesRow) -> RecordedObservation | None:
+        """No earlier row in this fake's store: nothing is ever a repeat (`T-06.4`)."""
+        return None
 
 
 @dataclass
@@ -114,6 +119,10 @@ def test_the_lookup_is_consulted_before_the_sink_is_ever_touched() -> None:
         def observed_already_present(self, row: SeriesRow) -> bool:
             """Raise, unconditionally, before any write could happen."""
             raise RuntimeError("read failed")
+
+        def immediate_predecessor(self, row: SeriesRow) -> RecordedObservation | None:
+            """No earlier row in this fake's store: nothing is ever a repeat (`T-06.4`)."""
+            return None
 
     sink = FakeSeriesSink()
     try:
