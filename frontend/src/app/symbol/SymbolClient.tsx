@@ -1195,6 +1195,20 @@ function SymbolChartHost({
       container.dataset.visibleLogicalTo = String(logical.to);
       container.dataset.axisSyncWriteCount = String(Number(container.dataset.axisSyncWriteCount ?? "0") + 1);
     });
+    // `paineis-de-fluxo` `T-05.1` — a range change the OPERATOR did not cause never reaches the
+    // registered range, and therefore never reaches the pager. After the mount guard's frame the
+    // library still settles its own layout (the price scale measures its labels, the plot narrows)
+    // and re-reports the range a fraction of a bar off the framing: `from = −0,07` at `4h`, `263,8`
+    // instead of `264` at `15m` `[MEDIDO 2026-10-02, e2e/39 on the live stack]`. At `4h` the view IS
+    // the whole 42-bar axis, so that echo sat inside the paging trigger and the MOUNT fetched a page
+    // nobody asked for (10 browser `/series-history` requests, e2e/39). Paging is on demand
+    // (`T-05.1-desenho.md` §3): it waits for the first pointer or wheel input on the chart.
+    let operatorInputSeen = false;
+    const handleOperatorInput = () => {
+      operatorInputSeen = true;
+    };
+    container.addEventListener("pointerdown", handleOperatorInput, { capture: true, passive: true });
+    container.addEventListener("wheel", handleOperatorInput, { capture: true, passive: true });
     // "despacha": every range change of the one time scale is folded into the registered range.
     const handleRangeChange = (range: LibraryLogicalRange | null) => {
       if (range === null) {
@@ -1203,6 +1217,9 @@ function SymbolChartHost({
       container.dataset.visibleLogicalFrom = String(range.from);
       container.dataset.visibleLogicalTo = String(range.to);
       publishBarSpacing();
+      if (!operatorInputSeen) {
+        return;
+      }
       axisSyncRef.current.notifyPanelRangeChanged(SINGLE_CHART_PANEL_INDEX, range);
     };
     timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
@@ -1250,6 +1267,8 @@ function SymbolChartHost({
       cancelAnimationFrame(mountGuardFrame);
       releaseMountGuard();
       container.removeEventListener("pointerdown", handlePointerDown, { capture: true });
+      container.removeEventListener("pointerdown", handleOperatorInput, { capture: true });
+      container.removeEventListener("wheel", handleOperatorInput, { capture: true });
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
       window.removeEventListener("blur", handlePointerUp);
