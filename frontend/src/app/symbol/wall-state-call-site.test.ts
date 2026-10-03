@@ -31,8 +31,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_PATH = path.join(HERE, "SymbolClient.tsx");
 const clientSource = readFileSync(CLIENT_PATH, "utf8");
 
-/** Each pane that carries the wall badge, and the `pager.panelCoverage` member that is ITS series. */
-const EXPECTED_FEED = { OiPane: "oi", LongShortPane: "longShort" } as const;
+/** Each pane that carries the wall badge, and the `kind/slot` of ITS series in the history table
+ * (T-03.3: `pager.panelCoverage` is a record by slot, read through `tableSlotValue`). */
+const EXPECTED_FEED = { OiPane: "oi/oi", LongShortPane: "long_short/ratio" } as const;
 type WalledPane = keyof typeof EXPECTED_FEED;
 
 function parse(source: string): ts.SourceFile {
@@ -94,8 +95,9 @@ function resolveLocal(client: ts.FunctionDeclaration, expression: ts.Expression)
   return init;
 }
 
-/** THE PREDICATE UNDER TEST: the `panelCoverage` member the pane's verdict is computed from — i.e.
- * `"longShort"` for `panelWallState(pager.window, pager.panelCoverage.longShort)`. */
+/** THE PREDICATE UNDER TEST: the `kind/slot` of the coverage the pane's verdict is computed from — i.e.
+ * `"long_short/ratio"` for
+ * `panelWallState(pager.window, tableSlotValue(INDICATOR_CATALOG, pager.panelCoverage, "long_short", "ratio"))`. */
 function wallFeedOf(source: string, pane: WalledPane): string {
   const client = symbolClientOf(parse(source));
   const verdict = resolveLocal(client, wallStateExpressionOf(client, pane));
@@ -106,14 +108,18 @@ function wallFeedOf(source: string, pane: WalledPane): string {
   const [window, coverage] = verdict.arguments;
   assert.equal(window.getText(), "pager.window", "the verdict is measured against the pager's own fetched window");
   assert.ok(
-    ts.isPropertyAccessExpression(coverage) && coverage.expression.getText() === "pager.panelCoverage",
-    `the coverage must be a member of pager.panelCoverage, got \`${coverage.getText()}\``,
+    ts.isCallExpression(coverage) && coverage.expression.getText() === "tableSlotValue" && coverage.arguments.length === 4,
+    `the coverage must be one tableSlotValue(table, pager.panelCoverage, kind, slot) call, got \`${coverage.getText()}\``,
   );
-  return coverage.name.text;
+  const [table, record, kind, slot] = coverage.arguments;
+  assert.equal(table.getText(), "INDICATOR_CATALOG", "the slot is looked up in the declared catalog");
+  assert.equal(record.getText(), "pager.panelCoverage", "the coverage is the pager's own record");
+  assert.ok(ts.isStringLiteral(kind) && ts.isStringLiteral(slot), `kind and slot must be literals, got \`${coverage.getText()}\``);
+  return `${kind.text}/${slot.text}`;
 }
 
 for (const [pane, feed] of Object.entries(EXPECTED_FEED) as [WalledPane, string][]) {
-  test(`T-05.6 wiring: <${pane}> is fed the wall verdict of ITS OWN series (panelCoverage.${feed})`, () => {
+  test(`T-05.6 wiring: <${pane}> is fed the wall verdict of ITS OWN series (${feed})`, () => {
     assert.equal(wallFeedOf(clientSource, pane), feed);
   });
 }
@@ -147,6 +153,6 @@ test("negative control by SOURCE mutation: the predicate READS the swap it guard
     clientSource.slice(0, longShortExpression.getStart()) + oiExpressionText + clientSource.slice(longShortExpression.getEnd());
   // Equal to the MUTATED value, not merely different: a predicate that threw or answered `undefined`
   // would also be "different".
-  assert.equal(wallFeedOf(mutant, "LongShortPane"), "oi");
-  assert.equal(wallFeedOf(mutant, "OiPane"), "oi");
+  assert.equal(wallFeedOf(mutant, "LongShortPane"), "oi/oi");
+  assert.equal(wallFeedOf(mutant, "OiPane"), "oi/oi");
 });
