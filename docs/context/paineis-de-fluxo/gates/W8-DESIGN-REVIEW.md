@@ -185,3 +185,96 @@ privilegiam a ferramenta desktop de leitura densa.
   robustez de amanhã, e o e2e pedido deve usar o dado real.
 - `[INFERRED]` A leitura de "nó do valor de idade" no falsificador de `N-1b`, explicada acima.
 - Nenhum teste com usuário.
+
+---
+
+## Re-validação @4aee5f6 — **APPROVED, 76/100**
+
+O `B-1` foi corrigido: a 1024×768 a área de dado do OI ficou **igual à do master** nos 5 TFs. Nada regrediu a
+1280, e a procedência do OI não deixa rótulo órfão em nenhum dos 20 casos. O restante do veredito
+anterior continua valendo.
+
+- Gate independente: `ux-ui-mastery:design-review`, invocado via Skill em 2026-10-03.
+- Alvo: `wave/paineis-f06 @ 4aee5f6` (merge de `e28d3f8`). Referência: `master @ d2055d9`. Entre
+  `a67de6d` e `4aee5f6`, o `frontend/src` mudou só em `SymbolClient.tsx` (+45/−9) e no teste de contrato do OI
+  `[MEDIDO: git diff --stat a67de6d 4aee5f6 -- frontend/src]`.
+- Procedimento igual ao da primeira rodada: `git archive` das duas refs no scratchpad, `node_modules` por
+  hard link, `next build` (rc=0 nas duas) e `next start` em `:4391` (wave) e `:4392` (master), com
+  `INGEST_HEALTH_API_BASE_URL=http://127.0.0.1:8000`. No fim, os dois servidores foram derrubados por pid e
+  as portas ficaram livres. Não rodei `make verify` nem e2e.
+- Evidência no scratchpad, **não versionada**:
+  - scripts `rv-a4.mjs` (o `a4.mjs` anterior com `5m` acrescentado), `rv-prov.mjs`, `rv-h.mjs` e `rv-n1b.mjs`;
+  - recortes do pane OI `rv-shots/{wave,master}-{1024,1280}-<tf>-oi.png`.
+
+### A condição do `B-1`: área de dado do OI
+
+A régua é a de §3.2 de `handoff/T-05.4-desenho.md`: `data-pane-height-px − data-reserved-scale-top-px`
+`[MEDIDO 2026-10-03, rv-a4.mjs, n = 60 cargas]`.
+
+| viewport | ref | 1m | 5m | 15m | 1h | 4h |
+|---|---|---|---|---|---|---|
+| 1024×768 | wave @4aee5f6 | **72** | **72** | **72** | **59** | **59** |
+| 1024×768 | master | 72 | 72 | 72 | 59 | 59 |
+| 1024×1100 | wave = master | 72 | 72 | 72 | 59 | 59 |
+| 1280×800 | wave = master | 72 | 72 | 72 | 72 | 72 |
+
+- A condição escrita (≥ 72/72/72/59/59) **está cumprida, com igualdade**. Antes da correção eram 59/59/59/32/32.
+- Os outros panes não mudaram nas 60 cargas: price 234, liquidation 135 (1024) e 155 (1280), long-short 38 e
+  cvd 45.
+- A linha O·H·L·C do OI ocupa **1 linha** nos 20 casos da wave (o `top` dos 4 `data-legend-ohlc-part` é o
+  mesmo). A altura da legenda é igual à do master: 54 px, ou 70 px a 1024 em 1h e 4h, com a mesma reserva
+  `T-03.12` que o master já tinha `[MEDIDO: rv-prov.mjs]`.
+- Na tela (`wave-1024-1h-oi.png` contra `master-1024-1h-oi.png`), o plot e as marcas de escala são os mesmos
+  do master. A curva voltou a ter relevo.
+
+### A procedência nunca pinta rótulo órfão
+
+Para medir, li o texto visível da linha `oi_provenance`. Cada caractere de texto conta como visível se a borda
+direita dele fica dentro do recorte, descontados ~12 px de `…` quando a linha está truncada. Cada termo
+`inline-block` é tratado como atômico: ou aparece inteiro, ou some `[MEDIDO: rv-prov.mjs, n = 20 cargas por ref]`.
+
+| | 1024 (5 TFs) | 1280 (5 TFs) |
+|---|---|---|
+| wave | `Grandeza: contracts (BTC) ·…`; `Universo` e `Coorte` **ocultos inteiros** | `… · Universo: binance/usdm_futu…`; `Universo` inteiro, `Coorte` oculto |
+| master | `… · Universo: bin…` | `… · Universo: binance/usdm_futur…` |
+
+- Não há rótulo `Xxx:` visível sem valor em 20 de 20 casos da wave. O falsificador F-3 do gate da decisão
+  não disparou.
+- **Custo declarado:** a 1024, o master ainda mostrava `Universo: bin…` e a wave não mostra o `Universo`.
+  Esse é o custo que `gates/W8-OI-1024-DESIGN-GATE.md` aprovou: o termo inteiro some, em vez de aparecer
+  pela metade. O universo continua no `data-fact` e no `textContent`.
+  - Não bloqueia, porque o pane só tem um universo (`binance/usdm_futures`).
+  - Se o pane passar a ter mais de um universo, este ponto deve ser reaberto.
+
+### O resto do veredito anterior
+
+- **N-2 continua intacto** `[MEDIDO: rv-h.mjs, 4 headings × 5 TFs × 2 larguras]`:
+  - o heading do OI é `Open Interest <TF> (5m, BTC)`, com largura 195 a 202 px e `scrollWidth` igual a ela, ou
+    seja, sem truncar;
+  - o token do heading é igual ao do botão ativo em 10 de 10 casos;
+  - nenhum heading tem `aria-label`.
+- **N-1 continua intacto**: a etiqueta `Últimas 4 h` aparece com 91/91 px em 10 de 10 casos, e o valor da
+  idade nunca fica coberto `[MEDIDO: rv-n1b.mjs]`.
+- **WARNING-1** foi atendida: `1m` está no laço de `e2e/41` (`:39`, `:99`). **WARNING-4** também:
+  `docs/product/DESIGN_SYSTEM.md` §6.2 traz a gramática e a regra sem transformação de caixa.
+- **Não bloqueiam e seguem como follow-ups declarados:** N-1b (a oclusão continua igual: esconde a hora de
+  publicação a 1024 e `· nativa de 5m` a 1280), o `title` inerte e o RF-8.
+
+### Notas por domínio (só as que mudaram)
+
+| domínio | antes | agora | por quê |
+|---|---|---|---|
+| Desktop | 6 | **8** | a 1024 o OI está igual ao master; a 1280 nada mudou |
+| Arquitetura de sistema | 7 | **8** | o orçamento de largura a 1024 virou assert: F-1 por TF, F-3 de pintura, com ablações relatadas em `gates/W8-OI-1024-build.md` |
+
+As outras 8 notas não mudaram. **Ponderado: 76/100**. Conta: Σ(nota × peso) = 84, dividido por Σpeso = 11,
+vezes 10. A nota não chega a 80 por causa de N-1b, contraste `[NÃO MEDIDO]` e ao vivo `[NÃO MEDIDO]`, que
+estão fora do escopo desta wave.
+
+### Declarado
+
+- `[NÃO SEI]` (herdado) A folga da linha O·H·L·C depende do número de dígitos do OI. O grupo `nowrap`
+  garante que ela não quebra, mas não garante o que acontece com a procedência quando os numerais crescem.
+  O F-2 (sonda de 13ch no stub) é quem cobre esse caso, e eu não o rodei aqui.
+- `[INFERRED]` O desconto de ~12 px para o `…` em `rv-prov.mjs` é uma aproximação. Os termos atômicos
+  aparecem inteiros ou somem inteiros, e o que vi nos recortes PNG bate com a medida.
