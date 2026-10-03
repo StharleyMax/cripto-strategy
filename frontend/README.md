@@ -1921,7 +1921,7 @@ app/symbol/
 ├── chrome/               a moldura da página: TimeframeBar, LiveRow (+ useLiveReadout), ChromeModeStamp,
 │                         AttributionFooter e page-gutter.ts
 ├── chart/                o NÚCLEO. Não é indicador e não importa nada de indicators/**
-│   ├── host/             ChartHost.tsx · registrar.ts · indicator-binding.ts · pane-layer.tsx · pane-stack.ts
+│   ├── host/             ChartHost.tsx · registrar.ts · binding-table.ts · indicator-binding.ts · pane-layer.tsx · pane-stack.ts
 │   ├── legend/           PaneLegend.tsx · LegendValue.tsx · legend-frame.ts · pane-legend.ts
 │   ├── marks/            AbsenceNote.tsx · PartialCoverageMark.tsx · BeyondCoverageBadge.tsx
 │   ├── axis/             axis-sync*.ts(x) · supported-timeframes.ts · timeframe-window.ts

@@ -4,8 +4,9 @@
 // column indices, the sign convention, or the bucket arithmetic were wrong, this is where it
 // would show up as a mismatched total, not just "the code ran".
 //
-// Run with: npm --prefix frontend run test:charts (this file is the ~5-8s one — it parses
-// the 08-20 and 08-21 real aggTrades files, ~7.5M rows combined).
+// Run with: npm --prefix frontend run test:charts. The two awk cross-checks parse the 08-20
+// and 08-21 real aggTrades files once each; the zero-fill / missing-day test runs on a
+// synthetic fixture, and its real-data twin is opt-in (S2_CVD_REAL_AGGTRADES=1, see below).
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -82,22 +83,105 @@ test("REAL FIXTURE: 08-21 total signed delta matches an independent awk computat
   assert.equal(unscale(sum).toFixed(3), (11624.74).toFixed(3));
 });
 
+// SYNTHETIC FIXTURE (`T-10.6`): zero-fill and the missing day are properties of
+// `assembleCvdDeltas`, not of the real files, so they are proven over a minimal in-memory
+// day set instead of re-parsing ~7.5M real aggTrades rows (that took ~7.5 s, `duration_ms
+// 7472`, `docs/context/piramide-de-testes/gates/UNIT-FRONT-analise.md` §1). The shape mirrors
+// the real gap: 08-22 has no file. 08-23 is covered but QUIET (header only, zero trades), so
+// "covered with no trades" (1,440 explicit zeros) and "no file" (no bucket at all) sit side by
+// side and cannot be confused.
+const AGG_TRADES_CSV_HEADER =
+  "agg_trade_id,price,quantity,first_trade_id,last_trade_id,transact_time,is_buyer_maker";
+const MINUTES_PER_DAY = 1440;
+
+function utcDayStartMs(day: string): number {
+  const [year, month, dayOfMonth] = day.split("-").map(Number);
+  return Date.UTC(year, month - 1, dayOfMonth);
+}
+
+function syntheticDayCsv(trades: readonly { timeMs: number; quantity: string; isBuyerMaker: boolean }[]): string {
+  const rows = trades.map(
+    (trade, index) => `${index + 1},100,${trade.quantity},${index + 1},${index + 1},${trade.timeMs},${trade.isBuyerMaker}`,
+  );
+  return [AGG_TRADES_CSV_HEADER, ...rows].join("\n") + "\n";
+}
+
 test("assembleCvdDeltas: covered days are zero-filled to 1,440 buckets; the missing day contributes none", () => {
   const days = ["2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23"];
-  const csvTextByDay = new Map<string, string>();
-  for (const day of days) {
-    const filePath = path.join(AGGTRADES_DIR, `BTCUSDT-aggTrades-${day}.csv`);
-    try {
-      csvTextByDay.set(day, readFileSync(filePath, "utf8"));
-    } catch {
-      // 08-22 has no file — the real gap this test exercises; left absent from the map.
-    }
-  }
+  const day20 = utcDayStartMs("2026-08-20");
+  const day21 = utcDayStartMs("2026-08-21");
+  const day22 = utcDayStartMs("2026-08-22");
+  const day23 = utcDayStartMs("2026-08-23");
+  const csvTextByDay = new Map<string, string>([
+    [
+      "2026-08-20",
+      syntheticDayCsv([
+        { timeMs: day20 + 1_000, quantity: "1.5", isBuyerMaker: false }, // minute 0: +1.5
+        { timeMs: day20 + 2_000, quantity: "0.5", isBuyerMaker: true }, // minute 0: -0.5
+        { timeMs: day20 + 700 * CVD_BUCKET_WIDTH_MS + 30_000, quantity: "2", isBuyerMaker: true }, // minute 700: -2
+        { timeMs: day21 - 1, quantity: "0.25", isBuyerMaker: false }, // last ms of the day, minute 1439: +0.25
+      ]),
+    ],
+    ["2026-08-21", syntheticDayCsv([{ timeMs: day21, quantity: "0.004", isBuyerMaker: false }])], // first ms: +0.004
+    // 2026-08-22: no file — absent from the map, exactly how the caller reports a missing day.
+    ["2026-08-23", syntheticDayCsv([])], // covered, quiet: header only
+  ]);
+  const touched = new Map<number, bigint>([
+    [day20, parseQuantityToScaled("1.5") - parseQuantityToScaled("0.5")],
+    [day20 + 700 * CVD_BUCKET_WIDTH_MS, -parseQuantityToScaled("2")],
+    [day20 + 1439 * CVD_BUCKET_WIDTH_MS, parseQuantityToScaled("0.25")],
+    [day21, parseQuantityToScaled("0.004")],
+  ]);
+
   const { deltas, missingDays, coveredDays } = assembleCvdDeltas(days, csvTextByDay);
+
   assert.deepEqual(missingDays, ["2026-08-22"]);
   assert.deepEqual(coveredDays, ["2026-08-20", "2026-08-21", "2026-08-23"]);
-  assert.equal(deltas.length, 1440 * 3, "3 covered days x 1,440 one-minute buckets each, zero-filled");
+  assert.equal(deltas.length, MINUTES_PER_DAY * 3, "3 covered days x 1,440 one-minute buckets each, zero-filled");
+  assert.equal(
+    deltas.filter((delta) => delta.bucketStartMs >= day22 && delta.bucketStartMs < day23).length,
+    0,
+    "the day with no file contributes no bucket — an honest gap, never a fabricated zero",
+  );
+  const expected: { bucketStartMs: number; valueScaled: bigint }[] = [];
+  for (const dayStartMs of [day20, day21, day23]) {
+    for (let minute = 0; minute < MINUTES_PER_DAY; minute += 1) {
+      const bucketStartMs = dayStartMs + minute * CVD_BUCKET_WIDTH_MS;
+      expected.push({ bucketStartMs, valueScaled: touched.get(bucketStartMs) ?? 0n });
+    }
+  }
+  assert.deepEqual(deltas, expected, "every covered minute present, in order: traded sum or an explicit 0n");
 });
+
+// OPT-IN, REAL DATA — the coverage the synthetic fixture above does NOT carry, kept instead of
+// dropped (`T-10.6`). Over the real files this also proves (1) that 08-23 parses at all (no
+// other test reads it) and (2) that every real `transact_time` lands inside the UTC day its
+// file is named for, in milliseconds — a file in microseconds, or one leaking trades across
+// midnight, would push buckets outside the zero-filled range and break the 1,440 x 3 count.
+// Skipped by default (~7.5 s); visible as SKIP in the TAP, never silent. Run with:
+//   S2_CVD_REAL_AGGTRADES=1 node --test src/charts/s2-cvd.test.ts
+const RUN_REAL_AGGTRADES = process.env.S2_CVD_REAL_AGGTRADES === "1";
+
+test(
+  "REAL FIXTURE (opt-in): 08-20/21/23 real files zero-fill to 1,440 x 3 buckets around the real 08-22 gap",
+  { skip: RUN_REAL_AGGTRADES ? false : "opt-in: set S2_CVD_REAL_AGGTRADES=1 (re-reads ~7.5M real aggTrades rows)" },
+  () => {
+    const days = ["2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23"];
+    const csvTextByDay = new Map<string, string>();
+    for (const day of days) {
+      const filePath = path.join(AGGTRADES_DIR, `BTCUSDT-aggTrades-${day}.csv`);
+      try {
+        csvTextByDay.set(day, readFileSync(filePath, "utf8"));
+      } catch {
+        // 08-22 has no file — the real gap this test exercises; left absent from the map.
+      }
+    }
+    const { deltas, missingDays, coveredDays } = assembleCvdDeltas(days, csvTextByDay);
+    assert.deepEqual(missingDays, ["2026-08-22"]);
+    assert.deepEqual(coveredDays, ["2026-08-20", "2026-08-21", "2026-08-23"]);
+    assert.equal(deltas.length, 1440 * 3, "3 covered days x 1,440 one-minute buckets each, zero-filled");
+  },
+);
 
 test("cvdCumulativeScaled skips buckets before the anchor and accumulates the rest in order", () => {
   const deltas = [
