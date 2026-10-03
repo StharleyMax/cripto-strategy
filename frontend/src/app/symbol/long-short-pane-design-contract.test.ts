@@ -270,6 +270,11 @@ const BAND_FACT = /data-fact=\{`long_short_recent_band:\$\{band\.firstIndex\}\/\
 const BAND_BORDER = /className="pointer-events-none absolute z-10 border-l border-r border-provenance-weak"/;
 const BAND_RANGE_SHARED = /recentBandSlotRange\(longShort\.slots, longShort\.recentSpanMs\)/;
 const BAND_COORDINATES = /timeScale\.logicalToCoordinate\(bandRange\.(first|last)Index as Logical\)/;
+// `T-05.6` (N-1/R-1): the band spans whole bars (`bandEdgesFromBarCentres`) and is clamped to the plot,
+// whose right edge is where the price scale starts; its tag hangs from the band's RIGHT border.
+const BAND_EDGES = /bandEdgesFromBarCentres\(firstCentrePx, lastCentrePx, lastCentrePx - previousCentrePx\)/;
+const BAND_CLAMP = /clampBandToPlot\(edges\.leftPx, edges\.rightPx, timeScale\.width\(\)\)/;
+const BAND_LABEL_ANCHOR = /data-recent-band-label=""\s*\n\s*className="absolute -right-px top-1\.5 /;
 
 test("D-1: the pane DRAWS the four-hour band, and the band is carried by its BORDER", () => {
   // The finding, literal: *"O painel implementado não tem banda nenhuma: `LongShortPane` cria UMA
@@ -304,6 +309,15 @@ test("D-1: the geometry is READ OFF the time scale, never a proportion of the co
   assert.doesNotMatch(PANE, /clientWidth\s*\*/, "a fraction of the container's width is the misalignment defect");
 });
 
+test("N-1 (T-05.6): whole bars, clamped to the plot, and the tag hangs from the band's RIGHT border", () => {
+  assert.match(PANE, BAND_EDGES, "the band spans whole bars, not centre to centre");
+  assert.match(PANE, BAND_CLAMP, "the band is clamped to the plot — the price scale starts where the time scale ends");
+  assert.match(PANE, BAND_LABEL_ANCHOR, "the tag is anchored on the band's right border, so it grows over the plot");
+  assert.doesNotMatch(PANE, /className="absolute left-2 top-1\.5 whitespace-nowrap/, "a left-anchored tag runs into the price scale");
+  assert.match(PANE, /band\.clippedLeft \? \{ borderLeftWidth: 0 \}/, "a side cut by the plot's edge draws no border");
+  assert.match(PANE, /band\.clippedRight \? \{ borderRightWidth: 0 \}/);
+});
+
 test("D-1 `M-4`: the band adds NO fill and NO alpha — the divergence from the study is the fill only", () => {
   // The study's `.four-hour-window` has `background-color:#222634`; this one does not, because an
   // HTML overlay can only sit ON TOP of an opaque `<canvas>` and an opaque fill would hide the line
@@ -318,7 +332,7 @@ test("D-1 `M-4`: the band adds NO fill and NO alpha — the divergence from the 
   assert.doesNotMatch(band[0], /opacity|\/\d/, "and alpha is the forbidden way to have both");
 });
 
-test("D-1 MORDE: the 4 ways this band dies silently are each caught by an assert above", () => {
+test("D-1 MORDE: the 7 ways this band dies silently are each caught by an assert above", () => {
   const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
     { name: "the band is built but never rendered", mutate: (s) => s.replace(/<LongShortRecentBand [^>]*\/>/, "null") },
     {
@@ -348,6 +362,23 @@ test("D-1 MORDE: the 4 ways this band dies silently are each caught by an assert
       name: "the band loses its stacking order and paints under the canvas",
       mutate: (s) => s.replace(" absolute z-10 border-l", " absolute border-l"),
     },
+    {
+      // `T-05.6` (N-1): the W7 regression, replanted — the tag anchored on the LEFT border.
+      name: "the tag is anchored on the band's left border again",
+      mutate: (s) => s.replace('className="absolute -right-px top-1.5 ', 'className="absolute left-2 top-1.5 '),
+    },
+    {
+      name: "the band is drawn centre to centre again",
+      mutate: (s) =>
+        s.replace(
+          "bandEdgesFromBarCentres(firstCentrePx, lastCentrePx, lastCentrePx - previousCentrePx)",
+          "{ leftPx: firstCentrePx, rightPx: lastCentrePx }",
+        ),
+    },
+    {
+      name: "the band is no longer clamped to the plot",
+      mutate: (s) => s.replace("clampBandToPlot(edges.leftPx, edges.rightPx, timeScale.width())", "clampBandToPlot(edges.leftPx, edges.rightPx, Infinity)"),
+    },
   ];
   for (const mutant of mutants) {
     const mutated = mutant.mutate(PANE);
@@ -357,6 +388,9 @@ test("D-1 MORDE: the 4 ways this band dies silently are each caught by an assert
       BAND_FACT.test(mutated) &&
       BAND_BORDER.test(mutated) &&
       BAND_COORDINATES.test(mutated) &&
+      BAND_EDGES.test(mutated) &&
+      BAND_CLAMP.test(mutated) &&
+      BAND_LABEL_ANCHOR.test(mutated) &&
       /<LongShortRecentBand band=\{band\} longShort=\{longShort\} \/>/.test(mutated) &&
       (bandClass === null || !/\bbg-/.test(bandClass[0]));
     assert.ok(!survives, `the mutation "${mutant.name}" is NOT detected by the asserts above — the guard is vacuous`);
@@ -374,7 +408,7 @@ test("no hand-typed cadence on this pane: `5m`/`5 min` come off the catalog entr
   assert.doesNotMatch(prose, /\b5\s?m(in)?\b/, "a hand-typed native cadence is a second copy of a term the API owns");
   assert.match(PANE, /nativeGridSuffix\(longShort\.nativeGrid\)/, "the prose cadence must come from `nativeGrid`");
   // `T-01.7`: the heading reads the legend the registry derived from the catalog entry (cadence + unit).
-  assert.match(PANE, /identityTerms\(legends\.long_short\)/, "and the heading's from the entry's `interval` + `unit`");
+  assert.match(PANE, /identityTerms\(headings\.long_short\)/, "and the heading's from the entry's `interval` + `unit`");
 });
 
 test("MORDE: the literal, replanted exactly as it was, is REJECTED", () => {

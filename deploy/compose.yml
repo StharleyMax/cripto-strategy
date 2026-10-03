@@ -272,16 +272,16 @@ services:
   # the `REDIS_STREAM_MAXLEN` cap (default 100.000, `redis_stream_bus.py`). With four symbols
   # that is 241.920 entries, 242% of the cap.
   #
-  # ⚠️ CORRECAO, 2026-10-02 (`T-05.3` de `paineis-de-fluxo`). Este paragrafo dizia "40.320, 40%
-  # do teto" — a conta de UMA linha por barra, que deixou de valer quando a barra virou seis
-  # linhas, e ninguem refez. Publicado sem freio, o boot passava do teto e `XADD MAXLEN ~`
-  # descartava o que o escritor ainda nao tinha lido: no boot de 2026-10-01T20:11Z o `BTCUSDT`
-  # (o primeiro a ser andado) guardou 1.248 de 60.480 linhas
-  # `[MEDIDO 2026-10-02, docs/context/paineis-de-fluxo/gates/T-05.3-build.md]`. Desde `T-05.3`
-  # cada pagina do walk ESPERA o lag do grupo `REDIS_STREAM_GROUP` cair abaixo de 1/5 do teto
-  # (`redis_stream_backpressure.StreamDrainGate`), entao o boot fica mais lento — minutos, no
-  # ritmo do escritor — e nao perde linha; o ciclo seguinte anda a partir do watermark e fecha
-  # os minutos que o boot lento deixou para tras.
+  # ⚠️ CORRECTION, 2026-10-02 (`T-05.3` of `paineis-de-fluxo`). This paragraph used to say
+  # "40.320, 40% of the cap" — the count for ONE row per bar, which stopped holding when a bar
+  # became six rows, and nobody redid it. Published unthrottled, the boot went past the cap and
+  # `XADD MAXLEN ~` dropped what the writer had not read yet: in the boot of 2026-10-01T20:11Z
+  # `BTCUSDT` (the first one walked) kept 1.248 of 60.480 rows
+  # `[MEDIDO 2026-10-02, docs/context/paineis-de-fluxo/gates/T-05.3-build.md]`. Since `T-05.3`
+  # every page of the walk WAITS for the lag of the `REDIS_STREAM_GROUP` group to drop below 1/5
+  # of the cap (`redis_stream_backpressure.StreamDrainGate`), so the boot is slower — minutes, at
+  # the writer's pace — and loses no row; the next cycle walks from the watermark and closes the
+  # minutes the slow boot left behind.
   #
   # Open interest is CHEAP against that cap by a factor of five (5-minute grid, not 1-minute):
   # `7 x 288 x 4 = 8.064` entries at boot, 8% of the default cap, and 4 entries per 60 s cycle.

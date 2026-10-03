@@ -256,7 +256,8 @@ test("MORDE (control): the NATIVE vector read by param.logical is the defect —
 // The footer's `recentStats` used to cut at `windowEndMsInclusive - span`, an instant on the
 // 1-MINUTE grid, while the band (`long-short-band.ts::recentBandSlotRange`) cuts at the last slot
 // of the AXIS grid. On `1m` the two instants coincide; on `1h`/`4h` the footer lost the band's
-// first slot: `4h` printed `n = 1` beside a band of 2 bars, `1h` 4 slots beside 5 bars.
+// first slot: `4h` printed `n = 1` beside a band of 2 bars, `1h` 4 slots beside 5 bars. Since
+// `T-05.6` (R-1) the band itself is exclusive on the left — 1 bar on `4h`, 4 on `1h`.
 const ONE_HOUR_MS = 60 * ONE_MINUTE_MS;
 const RECENT_SPAN_MS = FOUR_HOURS_MS; // `LONG_SHORT_RECENT_SPAN_MS`
 
@@ -285,9 +286,10 @@ function bandBars(slots: readonly { readonly time: number }[]): number {
   return range!.lastIndex - range!.firstIndex + 1;
 }
 
+// `T-05.6` (R-1): the band is `span / step` bars — 1 on `4h`, 4 on `1h` — exclusive on the left.
 for (const [label, axisStepMs, slotCount, expectedBars] of [
-  ["4h", FOUR_HOURS_MS, 4, 2],
-  ["1h", ONE_HOUR_MS, 16, 5],
+  ["4h", FOUR_HOURS_MS, 4, 1],
+  ["1h", ONE_HOUR_MS, 16, 4],
 ] as const) {
   test(`MORDE C-1: on ${label} the footer's n is the band's bar count (${expectedBars}), every slot readable`, () => {
     const longShort = assembleLongShort(axisStepMs, slotCount);
@@ -301,15 +303,17 @@ for (const [label, axisStepMs, slotCount, expectedBars] of [
   });
 }
 
-test("CALA C-1: on 1m the footer is IDENTICAL to the pre-fix rule (cut at windowEndMsInclusive - span)", () => {
+test("MORDE C-1/R-1: on 1m the footer is the band's 240 bars, one fewer than the pre-fix 1-minute cut", () => {
   const slotCount = 300; // 5 h of 1m slots — the band is strictly inside the window
   const longShort = assembleLongShort(ONE_MINUTE_MS, slotCount);
   const windowEndMsInclusive = slotCount * ONE_MINUTE_MS - ONE_MINUTE_MS;
-  // The pre-fix expression, replanted: `slotsFrom(slots, windowEndMsInclusive - span)`.
+  // The pre-fix expression, replanted: `slotsFrom(slots, windowEndMsInclusive - span)`, inclusive —
+  // the bar that ENDS where the four hours begin was counted (`W7-CODE-REVIEW` R-1).
   const before = seriesValueStats(longShort.slots.filter((slot) => slot.time >= windowEndMsInclusive - RECENT_SPAN_MS));
-  assert.deepEqual(longShort.recentStats, before);
-  assert.equal(longShort.recentStats!.presentSlots, 241);
-  assert.equal(bandBars(longShort.slots), 241);
+  assert.equal(before!.presentSlots, 241);
+  assert.notDeepEqual(longShort.recentStats, before);
+  assert.equal(longShort.recentStats!.presentSlots, 240);
+  assert.equal(bandBars(longShort.slots), 240);
 });
 
 test("MORDE C-1: page.tsx (the SSR copy) derives recentStats through the SAME function the pager uses", () => {
