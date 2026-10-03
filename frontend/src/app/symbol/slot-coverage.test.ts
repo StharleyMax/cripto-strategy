@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { historyRequest, type TimeAxis } from "../../charts/index.ts";
+import type { PriceSlot } from "./chart/history/series-slots.ts";
+import type { PanelCoverage } from "./series-history-envelope.ts";
 import { classifySlotCoverage, combineHistoryCoverage, panelWallState, type PanelCoverageBundle } from "./slot-coverage.ts";
 
 const STEP_MS = 60_000; // 1m grid
@@ -9,18 +11,33 @@ const DAY_MS = 24 * 60 * 60_000;
 
 const WINDOW = { startMs: 0, endMsExclusive: 10 * DAY_MS };
 
+/** `T-03.3` — SHAPE CHANGE: the bundle is keyed by slot (`price.<reduction>`, then
+ * `indicators.<kind>.<slot>`), where it used to carry ten flat fields. */
 const NO_COVERAGE: PanelCoverageBundle = {
-  open: null,
-  high: null,
-  low: null,
-  close: null,
-  oi: null,
-  cvd: null,
-  volume: null,
-  liquidationLong: null,
-  liquidationShort: null,
-  longShort: null,
+  price: { open: null, high: null, low: null, close: null },
+  indicators: {
+    volume: { volume: null },
+    liquidation: { long: null, short: null },
+    oi: { oi: null },
+    long_short: { ratio: null },
+    cvd: { cvd: null },
+  },
 };
+
+type Coverage = PanelCoverage | null;
+
+/** `NO_COVERAGE` with some series declared, by slot. */
+function coverageWith(
+  price: Partial<Record<PriceSlot, Coverage>>,
+  indicators: Readonly<Record<string, Readonly<Record<string, Coverage>>>> = {},
+): PanelCoverageBundle {
+  return {
+    price: { ...NO_COVERAGE.price, ...price },
+    indicators: Object.fromEntries(
+      Object.entries(NO_COVERAGE.indicators).map(([kind, bySlot]) => [kind, { ...bySlot, ...indicators[kind] }]),
+    ),
+  };
+}
 
 test("MORDE: a slot before the fetched window's startMs is not-loaded, never absent", () => {
   const state = classifySlotCoverage(-STEP_MS, WINDOW, {
@@ -117,35 +134,33 @@ test("CALA: no series has declared anything yet — combined floor is null, not 
 });
 
 test("MORDE: the combined floor is the MINIMUM of the known walls, never the first or the maximum", () => {
-  const bundle: PanelCoverageBundle = {
-    ...NO_COVERAGE,
+  const bundle: PanelCoverageBundle = coverageWith(
     // price: only data back to day 5 (shallow — e.g. a series onboarded recently)
-    open: { earliest_bucket_ms: 5 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null },
+    { open: { earliest_bucket_ms: 5 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null } },
     // OI: data all the way back to day 0 — deeper, and the one a MAX (or first-hit) combine would
     // wrongly ignore once `open`'s floor is reached.
-    oi: { earliest_bucket_ms: 0, latest_bucket_ms: null, source_floor_ms: null },
-  };
+    { oi: { oi: { earliest_bucket_ms: 0, latest_bucket_ms: null, source_floor_ms: null } } },
+  );
   const combined = combineHistoryCoverage(bundle);
   assert.equal(combined.earliestBucketMs, 0, "OI's deeper floor must win — open's shallower one is not the wall");
 });
 
 test("MORDE: one unmeasured series does not veto the floor already known for the others", () => {
-  const bundle: PanelCoverageBundle = {
-    ...NO_COVERAGE,
-    open: { earliest_bucket_ms: 3 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null },
+  const bundle: PanelCoverageBundle = coverageWith(
+    { open: { earliest_bucket_ms: 3 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null } },
     // cvd never declared anything (both walls null) — must be EXCLUDED, not treated as "no floor
     // known anywhere", or a permanently-unmeasured series would let paging run forever.
-    cvd: { earliest_bucket_ms: null, latest_bucket_ms: null, source_floor_ms: null },
-  };
+    { cvd: { cvd: { earliest_bucket_ms: null, latest_bucket_ms: null, source_floor_ms: null } } },
+  );
   const combined = combineHistoryCoverage(bundle);
   assert.equal(combined.earliestBucketMs, 3 * DAY_MS);
 });
 
 test("CALA: a series falls back to source_floor_ms when its own store (earliest_bucket_ms) is empty", () => {
-  const bundle: PanelCoverageBundle = {
-    ...NO_COVERAGE,
-    volume: { earliest_bucket_ms: null, latest_bucket_ms: null, source_floor_ms: 2 * DAY_MS },
-  };
+  const bundle: PanelCoverageBundle = coverageWith(
+    {},
+    { volume: { volume: { earliest_bucket_ms: null, latest_bucket_ms: null, source_floor_ms: 2 * DAY_MS } } },
+  );
   const combined = combineHistoryCoverage(bundle);
   assert.equal(combined.earliestBucketMs, 2 * DAY_MS);
 });
@@ -156,11 +171,10 @@ test("CALA: a series falls back to source_floor_ms when its own store (earliest_
 // `historyRequest`, not a stand-in, so a regression in either function shows up here.
 test("MORDE: historyRequest refuses another page once axis.startMs reaches the combined floor", () => {
   const axis: TimeAxis = { startMs: 3 * DAY_MS, stepMs: STEP_MS, slotCount: 1_000 };
-  const bundle: PanelCoverageBundle = {
-    ...NO_COVERAGE,
-    open: { earliest_bucket_ms: 3 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null },
-    oi: { earliest_bucket_ms: 5 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null },
-  };
+  const bundle: PanelCoverageBundle = coverageWith(
+    { open: { earliest_bucket_ms: 3 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null } },
+    { oi: { oi: { earliest_bucket_ms: 5 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null } } },
+  );
   const coverage = combineHistoryCoverage(bundle);
   // The visible range sits right at the loaded edge — close enough to trigger a page if one were
   // still owed.
@@ -170,11 +184,10 @@ test("MORDE: historyRequest refuses another page once axis.startMs reaches the c
 
 test("CALA: historyRequest still pages when the combined floor has not been reached yet", () => {
   const axis: TimeAxis = { startMs: 4 * DAY_MS, stepMs: STEP_MS, slotCount: 1_000 };
-  const bundle: PanelCoverageBundle = {
-    ...NO_COVERAGE,
-    open: { earliest_bucket_ms: 3 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null },
-    oi: { earliest_bucket_ms: 0, latest_bucket_ms: null, source_floor_ms: null },
-  };
+  const bundle: PanelCoverageBundle = coverageWith(
+    { open: { earliest_bucket_ms: 3 * DAY_MS, latest_bucket_ms: null, source_floor_ms: null } },
+    { oi: { oi: { earliest_bucket_ms: 0, latest_bucket_ms: null, source_floor_ms: null } } },
+  );
   const coverage = combineHistoryCoverage(bundle);
   const req = historyRequest({ fromMs: axis.startMs, toMs: axis.startMs + 10 * STEP_MS }, axis, coverage, 500);
   assert.notEqual(req, null, "OI's floor (day 0) is still 4 days below the axis edge — a page is still owed");

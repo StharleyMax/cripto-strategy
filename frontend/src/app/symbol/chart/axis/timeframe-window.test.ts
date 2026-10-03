@@ -17,6 +17,7 @@ import { DEFAULT_MAX_ACCUMULATED_SLOTS, effectiveMaxAccumulatedSlots } from "../
 import { EMPTY_OI_CANDLE_BUNDLE } from "../../oi-candle-pane.ts";
 import { assembleHistoryPage, type HistoryRowsBundle } from "../../panel-assembly.ts";
 import { resolveRouteWindow } from "../history/request-window.ts";
+import { historyFetchPlan, slotRecordOf, type HistorySeriesTable } from "../history/series-slots.ts";
 import { SUPPORTED_TIMEFRAMES, timeframeStepMs } from "./supported-timeframes.ts";
 import {
   TIMEFRAME_WINDOW_BARS,
@@ -119,18 +120,19 @@ test("MORDE D-A: the 1h route window is a 168-slot axis at 1h", () => {
   assert.equal(axisForWindow(route.window, ONE_MINUTE_MS).slotCount, 10_080);
 });
 
+/** `T-03.3` — the table the assembly reads through, as the core sees it. A literal, not the catalog:
+ * this file is under `chart/**`, which does not import `indicators/**` (P2, `SPEC-011 §5.3`). */
+const TABLE: HistorySeriesTable = [
+  { kind: "volume", series: [{ slot: "volume" }] },
+  { kind: "liquidation", series: [{ slot: "long" }, { slot: "short" }] },
+  { kind: "oi", series: [{ slot: "oi" }] },
+  { kind: "long_short", series: [{ slot: "ratio" }] },
+  { kind: "cvd", series: [{ slot: "cvd" }] },
+];
+
 function emptyRows(): HistoryRowsBundle {
   return {
-    open: [],
-    high: [],
-    low: [],
-    close: [],
-    oi: [],
-    cvd: [],
-    volume: [],
-    liquidationLong: [],
-    liquidationShort: [],
-    longShort: [],
+    ...slotRecordOf(historyFetchPlan(TABLE), () => []),
     oiCandles: EMPTY_OI_CANDLE_BUNDLE,
   };
 }
@@ -139,6 +141,7 @@ function assembleOneHourRoute(axisStepMs: number) {
   const route = resolveRouteWindow(NOW_MS, "1h");
   const window = { startMs: route.window.startMs, endMsExclusive: route.window.endMsExclusive };
   return assembleHistoryPage(
+    TABLE,
     emptyRows(),
     window,
     {

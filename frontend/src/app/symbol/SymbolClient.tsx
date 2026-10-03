@@ -181,6 +181,8 @@ import { DEFAULT_TIMEFRAME, timeframeStepMs } from "./chart/axis/supported-timef
 import { HISTORY_BAR_POLICY } from "../history-transport.ts";
 import type { HistoryRowsBundle } from "./panel-assembly.ts";
 import { useHistoryPager, type HistoryPagingSeed, type HistorySeriesKeys } from "./chart/history/use-history-pager.ts";
+import { tableSlotValue } from "./chart/history/series-slots.ts";
+import { INDICATOR_CATALOG } from "./indicators/catalog.ts";
 import { panelWallState } from "./slot-coverage.ts";
 import {
   formatCoverageSpan,
@@ -506,7 +508,7 @@ export interface SymbolClientProps {
    * row arrays in hand (`openResult.rows`, …, `longShortResult.rows`) and all ten resolved keys
    * (`computeSeriesKeyId(entry.key)` at each of the ten `HistoryRequestKey` call sites); this
    * prop is those same values, carried one level further instead of discarded after the initial
-   * fetch. */
+   * fetch. `T-03.3`: both keyed by slot (`chart/history/series-slots.ts`). */
   readonly historyPagingRows: {
     readonly keys: HistorySeriesKeys;
     readonly rows: HistoryRowsBundle;
@@ -3291,7 +3293,9 @@ export function SymbolClient({
       coverageGridMs,
     ],
   );
-  const pager = useHistoryPager(historyPagingSeed);
+  // `estrutura-do-front` `T-03.3` (`SPEC-011 §3`, `G-R`) — the indicator table, BY PARAMETER: the
+  // pager is core and does not import the catalog (P2). A module constant, so a stable identity.
+  const pager = useHistoryPager(INDICATOR_CATALOG, historyPagingSeed);
   // `T-02.4` (`D-C3.1`) — the ONE `TimeAxis` every one of the six charts shares. `T-05.2`: THIS IS
   // NOW `pager.axis`, NOT a local `useMemo` off `initialPanels.window` — the paginator OWNS the
   // window from here on (it starts equal to `initialPanels.window`, `use-history-pager.ts`'s own
@@ -3357,8 +3361,8 @@ export function SymbolClient({
   // DoD's own "o painel de Preço continua com barras": OI and long/short are the two panels this
   // task's plan names as the shallower series, and a THIRD candidate here would be scope this task
   // does not own (the plan's own falsifier is `n=2` panels, not `n=3`).
-  const oiWallState = panelWallState(pager.window, pager.panelCoverage.oi);
-  const longShortWallState = panelWallState(pager.window, pager.panelCoverage.longShort);
+  const oiWallState = panelWallState(pager.window, tableSlotValue(INDICATOR_CATALOG, pager.panelCoverage, "oi", "oi"));
+  const longShortWallState = panelWallState(pager.window, tableSlotValue(INDICATOR_CATALOG, pager.panelCoverage, "long_short", "ratio"));
   // `T-03.11` — `selectedTimeframe` is now a PROP, resolved server-side by `page.tsx` off
   // `?interval=` (never a client `useState`): the URL is the single source of truth for which
   // TF the ten fetches this render answers were actually made with, so the bar's own highlight

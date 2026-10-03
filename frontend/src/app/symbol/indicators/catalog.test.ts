@@ -30,11 +30,12 @@ import type {
   SeriesKey,
   TsConvention,
 } from "../../../features/s3-inspector/series-catalog.ts";
+import { PRICE_SLOTS, historyFetchPlan, slotRecordOf, slotValueAt } from "../chart/history/series-slots.ts";
 import { coverageGridMsOf } from "../coverage-magnitude.ts";
 import { EMPTY_OI_CANDLE_BUNDLE } from "../oi-candle-pane.ts";
 import { assembleHistoryPage } from "../panel-assembly.ts";
 import type { SymbolClientProps } from "../SymbolClient.tsx";
-import { computeSeriesKeyId } from "../view-model.ts";
+import { computeSeriesKeyId } from "../series-key-id.ts";
 import { INDICATOR_CATALOG, type IndicatorTableEntry } from "./catalog.ts";
 
 const SYMBOL = "BTCUSDT";
@@ -129,21 +130,29 @@ function rowsOf(symbol: string): readonly NamedEntry[] {
 
 const NEIGHBOURS: readonly NamedEntry[] = [...rowsOf(SYMBOL), ...rowsOf(OTHER_SYMBOL)];
 
-/** What each series of the table must select, and where `page.tsx` publishes it today
- * (`paneLegendSources` key, `historyPagingRows` key — `T-03.3` turns the latter into a slot). */
-const EXPECTED: Readonly<Record<string, { readonly row: string; readonly legend: string; readonly bundle: string }>> = {
-  "volume/volume": { row: "klines_volume", legend: "volume", bundle: "volume" },
-  "liquidation/long": { row: "liquidation_long", legend: "liquidation_long", bundle: "liquidationLong" },
-  "liquidation/short": { row: "liquidation_short", legend: "liquidation_short", bundle: "liquidationShort" },
-  "oi/oi": { row: "oi_binance_point", legend: "oi", bundle: "oi" },
-  "long_short/ratio": { row: "long_short_binance", legend: "long_short", bundle: "longShort" },
-  "cvd/cvd": { row: "cvd_kline_takerbuy", legend: "cvd", bundle: "cvd" },
+/** What each series of the table must select, and the `paneLegendSources` key `page.tsx`
+ * publishes it under. `T-03.3`: the pager's key needs no mapping any more — `historyPagingRows.keys`
+ * is keyed by the table's own `kind/slot` (`chart/history/series-slots.ts`). */
+const EXPECTED: Readonly<Record<string, { readonly row: string; readonly legend: string }>> = {
+  "volume/volume": { row: "klines_volume", legend: "volume" },
+  "liquidation/long": { row: "liquidation_long", legend: "liquidation_long" },
+  "liquidation/short": { row: "liquidation_short", legend: "liquidation_short" },
+  "oi/oi": { row: "oi_binance_point", legend: "oi" },
+  "long_short/ratio": { row: "long_short_binance", legend: "long_short" },
+  "cvd/cvd": { row: "cvd_kline_takerbuy", legend: "cvd" },
 };
 
 const TABLE: readonly IndicatorTableEntry[] = INDICATOR_CATALOG;
 
-function seriesOfTable(): readonly { readonly id: string; readonly kind: string; readonly matches: IndicatorTableEntry["series"][number]["matches"] }[] {
-  return TABLE.flatMap((entry) => entry.series.map((series) => ({ id: `${entry.kind}/${series.slot}`, kind: entry.kind, matches: series.matches })));
+function seriesOfTable(): readonly {
+  readonly id: string;
+  readonly kind: string;
+  readonly slot: string;
+  readonly matches: IndicatorTableEntry["series"][number]["matches"];
+}[] {
+  return TABLE.flatMap((entry) =>
+    entry.series.map((series) => ({ id: `${entry.kind}/${series.slot}`, kind: entry.kind, slot: series.slot, matches: series.matches })),
+  );
 }
 
 function expectedRow(id: string, symbol: string): NamedEntry {
@@ -267,18 +276,22 @@ function routeProps(): Promise<SymbolClientProps> {
 test("RN-12 route: page.tsx resolves each of the six series to the row the table selects", async () => {
   const props = await routeProps();
   const legends = props.paneLegendSources as unknown as Record<string, { readonly seriesKeyId: string; readonly entry: SeriesCatalogEntry } | null>;
-  const keys = props.historyPagingRows.keys as unknown as Record<string, string | null>;
+  const keys = props.historyPagingRows.keys;
   for (const series of seriesOfTable()) {
     const expected = EXPECTED[series.id]!;
     const row = expectedRow(series.id, SYMBOL);
     const legend = legends[expected.legend];
     assert.ok(legend !== null && legend !== undefined, `${series.id}: the route resolved nothing (absent or ambiguous)`);
     assert.deepEqual(legend.entry.key, row.entry.key, `${series.id}: the route resolved another row`);
-    assert.equal(keys[expected.bundle], computeSeriesKeyId(row.entry.key), `${series.id}: the pager pages another series`);
+    assert.equal(
+      slotValueAt(keys, { group: "indicator", kind: series.kind, slot: series.slot }),
+      computeSeriesKeyId(row.entry.key),
+      `${series.id}: the pager pages another series`,
+    );
   }
   // The four candle readings are the core's, resolved the old way, and must still resolve too.
-  for (const reduction of ["open", "high", "low", "close"]) {
-    assert.ok(keys[reduction] !== null, `price ${reduction}: resolved`);
+  for (const reduction of PRICE_SLOTS) {
+    assert.ok(keys.price[reduction] !== null, `price ${reduction}: resolved`);
   }
   assert.ok(
     Object.values(props.panelStatus).every((status) => status.kind === "ok"),
@@ -293,19 +306,8 @@ test("derive: the pager facts the table names cover assembleHistoryPage's indica
   const endMsExclusive = startMs + 10 * 60_000;
   const grid = coverageGridMsOf(undefined);
   const assembly = assembleHistoryPage(
-    {
-      open: [],
-      high: [],
-      low: [],
-      close: [],
-      oi: [],
-      cvd: [],
-      volume: [],
-      liquidationLong: [],
-      liquidationShort: [],
-      longShort: [],
-      oiCandles: EMPTY_OI_CANDLE_BUNDLE,
-    },
+    TABLE,
+    { ...slotRecordOf(historyFetchPlan(TABLE), () => []), oiCandles: EMPTY_OI_CANDLE_BUNDLE },
     { startMs, endMsExclusive },
     {
       priceUse: S2_PRICE_USE,

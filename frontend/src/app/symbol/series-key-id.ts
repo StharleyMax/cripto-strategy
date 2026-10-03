@@ -14,7 +14,10 @@
  * of the same key fails SILENTLY, because a wrong id answers `200` with an all-absent grid
  * rather than an error. The one place this repository computes it stays one place.
  *
- * `view-model.ts` re-exports it, so every existing caller is unchanged.
+ * `estrutura-do-front` `T-03.3`: `view-model.ts` NO LONGER re-exports it. `view-model.ts` is reached
+ * by the client bundle (`SymbolClient.tsx`), and a re-export of a `node:crypto` module from there is
+ * one tree-shaking decision away from the browser. Every caller imports this module directly, and
+ * `client-import-graph.test.ts` proves the client's static graph never reaches it.
  */
 
 import { createHash } from "node:crypto";

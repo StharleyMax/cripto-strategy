@@ -94,25 +94,24 @@ import {
 } from "../../oi-candle-pane.ts";
 import type { PanelCoverage, SeriesHistoryRow } from "../../series-history-envelope.ts";
 import { combineHistoryCoverage, type PanelCoverageBundle } from "../../slot-coverage.ts";
+import {
+  historyFetchPlan,
+  mapSlotRecord,
+  SeriesSlotError,
+  slotRecordOf,
+  slotValueAt,
+  type HistorySeriesTable,
+  type SeriesAddress,
+  type SeriesSlotRecord,
+} from "./series-slots.ts";
 import { timeframeStepMs } from "../axis/supported-timeframes.ts";
 import { isLeftOfMountView, mountViewRange, timeframeWindowBars } from "../axis/timeframe-window.ts";
 
-/** The `series_key_id` this route resolved for each of the ten `/series-history` fetches
- * `page.tsx` already makes — `null` for a panel whose catalog resolution failed or was
- * ambiguous at the INITIAL render (`resolveCatalogEntry`'s own three-way result). A `null` key
- * is never retried: there is no series to page for it, at any window. */
-export interface HistorySeriesKeys {
-  readonly open: string | null;
-  readonly high: string | null;
-  readonly low: string | null;
-  readonly close: string | null;
-  readonly oi: string | null;
-  readonly cvd: string | null;
-  readonly volume: string | null;
-  readonly liquidationLong: string | null;
-  readonly liquidationShort: string | null;
-  readonly longShort: string | null;
-}
+/** The `series_key_id` this route resolved for each `/series-history` fetch `page.tsx` makes,
+ * keyed by slot (`T-03.3`, `series-slots.ts`) — `null` for a series whose catalog resolution
+ * failed or was ambiguous at the INITIAL render (`resolveCatalogEntry`'s own three-way result). A
+ * `null` key is never retried: there is no series to page for it, at any window. */
+export type HistorySeriesKeys = SeriesSlotRecord<string | null>;
 
 /**
  * Everything `use-history-pager` needs to start from — `page.tsx` builds this once, server-side,
@@ -173,7 +172,7 @@ export interface HistoryPagerResult {
    * `axis.startMs`/`stepMs`/`slotCount` a second way. */
   readonly window: AccumulatedWindow;
   /** `T-05.6` — the pager's latest belief about every series' own declared floor (`T-05.7`'s own
-   * state, `EMPTY_PANEL_COVERAGE` until the first successful page lands), exposed so a caller can
+   * state, `emptyPanelCoverage` until the first successful page lands), exposed so a caller can
    * ask, per panel, whether the fetched window has walked past that series' wall
    * (`slot-coverage.ts::panelWallState`) — the PIXEL this task adds. This hook itself never reads
    * that question; `combineHistoryCoverage` above already folds it for the paging DECISION, this
@@ -182,26 +181,26 @@ export interface HistoryPagerResult {
   readonly panelCoverage: PanelCoverageBundle;
 }
 
-/** The pager's initial belief about every series' own declared coverage: unmeasured, all ten —
+/** The pager's initial belief about every series' own declared coverage: unmeasured, every one —
  * `T-05.7`'s own scope is "a resposta MAIS RECENTE que o pager já tem", never the SSR-fetched
  * envelope `page.tsx` already discarded (`fetchPanelRows` there keeps only `{rows, status}`).
  * The very first `onCandidateRange` call of a mount therefore falls straight through to the
  * failure-freeze safety net, exactly like before this task, until the pager's OWN first
- * successful page lands and this bundle stops being all-`null`. */
-const EMPTY_PANEL_COVERAGE: PanelCoverageBundle = {
-  open: null,
-  high: null,
-  low: null,
-  close: null,
-  oi: null,
-  cvd: null,
-  volume: null,
-  liquidationLong: null,
-  liquidationShort: null,
-  longShort: null,
-};
+ * successful page lands and this bundle stops being all-`null`. `T-03.3`: built over the plan of
+ * the table, so its slots are the slots a page fetches. */
+function emptyPanelCoverage(plan: readonly SeriesAddress[]): PanelCoverageBundle {
+  return slotRecordOf(plan, () => null);
+}
 
-export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
+/**
+ * `table` — `estrutura-do-front` `T-03.3` (`SPEC-011 §3`, `G-R`) — the indicator table, BY
+ * PARAMETER from `SymbolClient.tsx`: this file is core (`chart/**`) and does not import the
+ * catalog (P2). A page fetches the four price reductions plus every series of `table`
+ * (`historyFetchPlan`), keyed by slot, and hands the same table to `assembleHistoryPage`. Its
+ * identity must be stable across renders (a module constant), like `seed`'s.
+ */
+export function useHistoryPager(table: HistorySeriesTable, seed: HistoryPagingSeed): HistoryPagerResult {
+  const plan = useMemo(() => historyFetchPlan(table), [table]);
   // `paineis-de-fluxo` `T-05.1` (`handoff/T-05.1-desenho.md` §1) — THE axis step of this mount,
   // derived from `seed.interval` and from nowhere else: no second field on the seed that could
   // disagree with `interval`. It used to be `S2_AXIS_STEP_MS` (1 minute) in every timeframe, the
@@ -221,17 +220,17 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
   const [rows, setRows] = useState<HistoryRowsBundle>(seed.rows);
   const [coverageFloorMs, setCoverageFloorMs] = useState<number | null>(null);
   // `T-05.7`/`D-C3.7` — the latest `panel.coverage` DECLARED for each of the ten series, from
-  // the most recent page THIS pager itself fetched successfully. See `EMPTY_PANEL_COVERAGE`'s
+  // the most recent page THIS pager itself fetched successfully. See `emptyPanelCoverage`'s
   // own docstring for why this never starts seeded from the SSR envelope.
-  const [panelCoverage, setPanelCoverage] = useState<PanelCoverageBundle>(EMPTY_PANEL_COVERAGE);
+  const [panelCoverage, setPanelCoverage] = useState<PanelCoverageBundle>(() => emptyPanelCoverage(plan));
 
   const axis = useMemo(
     () => axisForWindow(windowState, stepMs),
     [windowState.startMs, windowState.endMsExclusive, stepMs],
   );
   const assembly = useMemo(
-    () => assembleHistoryPage(rows, windowState, seed.staticContext, stepMs),
-    [rows, windowState, seed.staticContext, stepMs],
+    () => assembleHistoryPage(table, rows, windowState, seed.staticContext, stepMs),
+    [table, rows, windowState, seed.staticContext, stepMs],
   );
 
   // See this module's own docstring, "WHY onCandidateRange READS EVERYTHING THROUGH REFS".
@@ -273,31 +272,34 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
       interface FetchedSeries {
         readonly rows: readonly SeriesHistoryRow[];
         readonly coverage: PanelCoverage | null;
-        /** `T-03.11` — the page's `oi_candles` block; empty on every panel that is not OI. */
-        readonly oiCandles: OiCandleBundle;
+        /** `T-03.11` — the page's `oi_candles` block, `null` when the envelope served none (every
+         * series but open interest, `series_history.py::_oi_candle_report`). */
+        readonly oiCandles: OiCandleBundle | null;
       }
       const fetchOne = async (seriesKeyId: string | null): Promise<FetchedSeries> => {
         if (seriesKeyId === null) {
-          return { rows: [], coverage: null, oiCandles: EMPTY_OI_CANDLE_BUNDLE };
+          return { rows: [], coverage: null, oiCandles: null };
         }
         const envelope = await fetchSeriesHistoryFromBrowser(buildKey(seriesKeyId), seed.historyBaseUrl);
-        return { rows: envelope.rows, coverage: envelope.panel.coverage, oiCandles: oiCandleBundleOf(envelope.oi_candles) };
+        return {
+          rows: envelope.rows,
+          coverage: envelope.panel.coverage,
+          oiCandles: envelope.oi_candles === null ? null : oiCandleBundleOf(envelope.oi_candles),
+        };
       };
 
       try {
-        const [open, high, low, close, oi, cvd, volume, liquidationLong, liquidationShort, longShort] =
-          await Promise.all([
-            fetchOne(seed.keys.open),
-            fetchOne(seed.keys.high),
-            fetchOne(seed.keys.low),
-            fetchOne(seed.keys.close),
-            fetchOne(seed.keys.oi),
-            fetchOne(seed.keys.cvd),
-            fetchOne(seed.keys.volume),
-            fetchOne(seed.keys.liquidationLong),
-            fetchOne(seed.keys.liquidationShort),
-            fetchOne(seed.keys.longShort),
-          ]);
+        // `T-03.3` — one fetch per address of the plan: the four price reductions, then every
+        // series of the table, in table order (`ADR-050/D5`: ten over `INDICATOR_CATALOG`).
+        const fetched = await Promise.all(plan.map((address) => fetchOne(slotValueAt(seed.keys, address))));
+        // The `oi_candles` block rides the open-interest fetch only; the core does not name that
+        // series, it keeps the one block the page served. Two would mean two series claim the
+        // drawn OI candles, and keeping either would be a guess.
+        const servedCandles = fetched.flatMap((series) => (series.oiCandles === null ? [] : [series.oiCandles]));
+        if (servedCandles.length > 1) {
+          throw new SeriesSlotError(`history pager: ${servedCandles.length} series served an oi_candles block on one page`);
+        }
+        const pageCandles = servedCandles[0] ?? EMPTY_OI_CANDLE_BUNDLE;
 
         const widened = widenAndCapWindow(
           windowRef.current,
@@ -311,34 +313,14 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
           trimRowsToWindow(mergeOlderPage(older, existing), widened);
 
         const nextRows: HistoryRowsBundle = {
-          open: mergeAndTrim(open.rows, currentRows.open),
-          high: mergeAndTrim(high.rows, currentRows.high),
-          low: mergeAndTrim(low.rows, currentRows.low),
-          close: mergeAndTrim(close.rows, currentRows.close),
-          oi: mergeAndTrim(oi.rows, currentRows.oi),
-          cvd: mergeAndTrim(cvd.rows, currentRows.cvd),
-          volume: mergeAndTrim(volume.rows, currentRows.volume),
-          liquidationLong: mergeAndTrim(liquidationLong.rows, currentRows.liquidationLong),
-          liquidationShort: mergeAndTrim(liquidationShort.rows, currentRows.liquidationShort),
-          longShort: mergeAndTrim(longShort.rows, currentRows.longShort),
-          // `T-03.11` — the OI candles ride the SAME fetch as `oi` and follow the same merge-then-trim.
-          oiCandles: trimOiCandlesToWindow(mergeOlderOiCandles(oi.oiCandles, currentRows.oiCandles), widened),
+          ...slotRecordOf(plan, (address, index) => mergeAndTrim(fetched[index]!.rows, slotValueAt(currentRows, address))),
+          // `T-03.11` — the OI candles ride the SAME fetch as the OI rows and follow the same merge-then-trim.
+          oiCandles: trimOiCandlesToWindow(mergeOlderOiCandles(pageCandles, currentRows.oiCandles), widened),
         };
-        // `T-05.7`/`D-C3.7` — the walls THIS page's ten envelopes just declared, replacing
-        // whatever this pager previously knew for each series (the wire's own store only ever
-        // grows, so the latest declaration is always at least as informative as the last).
-        const nextCoverage: PanelCoverageBundle = {
-          open: open.coverage,
-          high: high.coverage,
-          low: low.coverage,
-          close: close.coverage,
-          oi: oi.coverage,
-          cvd: cvd.coverage,
-          volume: volume.coverage,
-          liquidationLong: liquidationLong.coverage,
-          liquidationShort: liquidationShort.coverage,
-          longShort: longShort.coverage,
-        };
+        // `T-05.7`/`D-C3.7` — the walls THIS page's envelopes just declared, replacing whatever
+        // this pager previously knew for each series (the wire's own store only ever grows, so
+        // the latest declaration is always at least as informative as the last).
+        const nextCoverage: PanelCoverageBundle = slotRecordOf(plan, (_address, index) => fetched[index]!.coverage);
 
         // `T-05.9` — refs are updated HERE, synchronously, in the same microtask this fetch
         // resolves in — never left to wait for the render `axisRef.current = axis;` line above
@@ -376,7 +358,7 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
         inFlightRef.current = false;
       }
     },
-    [seed.symbol, seed.interval, seed.knowledgeTimeMs, seed.barPolicy, seed.historyBaseUrl, seed.keys, maxSlots, stepMs],
+    [plan, seed.symbol, seed.interval, seed.knowledgeTimeMs, seed.barPolicy, seed.historyBaseUrl, seed.keys, maxSlots, stepMs],
   );
 
   const onCandidateRange = useCallback(
@@ -430,16 +412,7 @@ export function useHistoryPager(seed: HistoryPagingSeed): HistoryPagerResult {
       const current = rowsRef.current;
       const trim = (series: readonly SeriesHistoryRow[]) => trimRowsToWindow(series, capped);
       const nextRows: HistoryRowsBundle = {
-        open: trim(current.open),
-        high: trim(current.high),
-        low: trim(current.low),
-        close: trim(current.close),
-        oi: trim(current.oi),
-        cvd: trim(current.cvd),
-        volume: trim(current.volume),
-        liquidationLong: trim(current.liquidationLong),
-        liquidationShort: trim(current.liquidationShort),
-        longShort: trim(current.longShort),
+        ...mapSlotRecord(current, trim),
         oiCandles: trimOiCandlesToWindow(current.oiCandles, capped),
       };
       windowRef.current = capped;

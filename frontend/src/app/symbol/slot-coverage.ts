@@ -27,6 +27,7 @@
 
 import type { HistoryCoverage } from "../../charts/index.ts";
 import type { AccumulatedWindow } from "./chart/history/history-page-window.ts";
+import { slotRecordValues, type SeriesSlotRecord } from "./chart/history/series-slots.ts";
 import type { PanelCoverage } from "./series-history-envelope.ts";
 import type { SlotCoverageState } from "./panel-status.ts";
 
@@ -100,25 +101,14 @@ export function panelWallState(window: AccumulatedWindow, coverage: PanelCoverag
   return classifySlotCoverage(window.startMs, window, coverage);
 }
 
-/** One declared `panel.coverage` per series `use-history-pager.ts` pages — mirrors the same
- * ten-series shape `panel-assembly.ts`'s `HistoryRowsBundle` and `use-history-pager.ts`'s own
- * `HistorySeriesKeys` already carry (`open`/`high`/`low`/`close`/`oi`/`cvd`/`volume`/
- * `liquidationLong`/`liquidationShort`/`longShort`). `null` on a field means the pager has not
- * yet captured an envelope for that series — either its `series_key_id` never resolved
- * (`HistorySeriesKeys`' own `null`, no series to fetch, ever) or no page has landed for it yet —
- * never "zero"/"unlimited" (`PanelCoverage`'s own docstring, one level up). */
-export interface PanelCoverageBundle {
-  readonly open: PanelCoverage | null;
-  readonly high: PanelCoverage | null;
-  readonly low: PanelCoverage | null;
-  readonly close: PanelCoverage | null;
-  readonly oi: PanelCoverage | null;
-  readonly cvd: PanelCoverage | null;
-  readonly volume: PanelCoverage | null;
-  readonly liquidationLong: PanelCoverage | null;
-  readonly liquidationShort: PanelCoverage | null;
-  readonly longShort: PanelCoverage | null;
-}
+/** One declared `panel.coverage` per series `use-history-pager.ts` pages, keyed by slot exactly
+ * like `panel-assembly.ts`'s `HistoryRowsBundle` and `use-history-pager.ts`'s `HistorySeriesKeys`
+ * (`T-03.3`, `chart/history/series-slots.ts`): `price.open`…`price.close`, then `kind → slot` per
+ * series of the indicator table. `null` on a slot means the pager has not yet captured an
+ * envelope for that series — either its `series_key_id` never resolved (`HistorySeriesKeys`' own
+ * `null`, no series to fetch, ever) or no page has landed for it yet — never "zero"/"unlimited"
+ * (`PanelCoverage`'s own docstring, one level up). */
+export type PanelCoverageBundle = SeriesSlotRecord<PanelCoverage | null>;
 
 /** One series' own left wall — `earliest_bucket_ms ?? source_floor_ms`, the SAME fallback
  * `classifySlotCoverage` above and `historyRequest` (`time-axis-controller.ts`) already apply:
@@ -134,7 +124,7 @@ function seriesFloorMs(coverage: PanelCoverage | null): number | null {
 }
 
 /**
- * `T-05.7`/`D-C3.7` — folds the pager's TEN declared walls into the ONE `HistoryCoverage`
+ * `T-05.7`/`D-C3.7` — folds the pager's declared walls (ten over `INDICATOR_CATALOG`) into the ONE `HistoryCoverage`
  * `historyRequest` (`time-axis-controller.ts`) consumes to decide whether another backward page
  * is worth asking for. All ten series share exactly ONE fetched window
  * (`use-history-pager.ts`'s single `Promise.all` per page), so the combined wall may only stop
@@ -152,20 +142,7 @@ function seriesFloorMs(coverage: PanelCoverage | null): number | null {
  * function only ever reports what the wire actually declared.
  */
 export function combineHistoryCoverage(bundle: PanelCoverageBundle): HistoryCoverage {
-  const floors = (
-    [
-      bundle.open,
-      bundle.high,
-      bundle.low,
-      bundle.close,
-      bundle.oi,
-      bundle.cvd,
-      bundle.volume,
-      bundle.liquidationLong,
-      bundle.liquidationShort,
-      bundle.longShort,
-    ] as const
-  )
+  const floors = slotRecordValues(bundle)
     .map(seriesFloorMs)
     .filter((floorMs): floorMs is number => floorMs !== null);
 

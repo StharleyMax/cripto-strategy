@@ -79,10 +79,11 @@ import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 // only module both sides of the RSC boundary may import (see its own docstring for why).
 export type { FreshnessVerdict, OiProvenanceLabel, PublishedErrorFact, SeriesProvenance, SeriesValueStats };
 
-// Re-exported, not re-implemented: `computeSeriesKeyId` moved to its own module so a Playwright
-// spec can import it without evaluating the `charts` barrel (and, through it, `jsdom`). Every
-// caller of `view-model.ts` keeps working unchanged — see `series-key-id.ts` for the full why.
-export { computeSeriesKeyId } from "./series-key-id.ts";
+// `computeSeriesKeyId` lives in `series-key-id.ts` (`node:crypto`), and is imported from THERE —
+// `estrutura-do-front` `T-03.3` dropped the re-export this file carried. `indicators/catalog.ts`
+// imports the series predicates below, and `SymbolClient.tsx` imports the catalog: a re-export
+// here put `node:crypto` in the client's static import graph, kept out of the bundle only by
+// tree-shaking. `client-import-graph.test.ts` holds the graph free of `node:*`.
 
 /** `RawCandle`'s shape, read off the barrel's own `S2RawInputs.candles` element type rather
  * than importing `canonical-grid.ts` directly — `charts/index.ts` (`ADR-034/D8`) re-exports
@@ -694,7 +695,8 @@ export function scaledCvdDeltasFromHistoryRows(rows: readonly SeriesHistoryRow[]
 // BUCKET counts) moved to `coverage-magnitude.ts::summarizeCoverageMagnitude`, which counts the
 // MISSING native facts (time) and keeps the head out (`handoff/T-05.4-desenho.md` §2). It moved
 // rather than stayed because that module is browser-safe: `SymbolClient.tsx` imports its type and
-// formatters, and could never import this file (`node:crypto`).
+// formatters, and could never import this file (`node:crypto`, until `T-03.3` dropped the
+// `computeSeriesKeyId` re-export).
 
 export { daysWithPresence };
 

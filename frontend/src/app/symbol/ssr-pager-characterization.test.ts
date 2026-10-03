@@ -36,10 +36,11 @@ import { test } from "node:test";
 import { lastGridInstant } from "../../charts/index.ts";
 import type { SeriesCatalogEntry, SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 import { timeframeStepMs } from "./chart/axis/supported-timeframes.ts";
+import { INDICATOR_CATALOG } from "./indicators/catalog.ts";
 import { assembleHistoryPage, type AssemblyStaticContext, type HistoryPageAssembly } from "./panel-assembly.ts";
 import type { SeriesHistoryRow } from "./series-history-envelope.ts";
 import type { SymbolClientProps } from "./SymbolClient.tsx";
-import { computeSeriesKeyId } from "./view-model.ts";
+import { computeSeriesKeyId } from "./series-key-id.ts";
 
 const ONE_MINUTE_MS = 60_000;
 const FIVE_MINUTES_MS = 5 * ONE_MINUTE_MS;
@@ -337,6 +338,7 @@ function pagerSeedOf(props: SymbolClientProps): {
 function pagerAssemblyOf(props: SymbolClientProps): HistoryPageAssembly {
   const seed = pagerSeedOf(props);
   return assembleHistoryPage(
+    INDICATOR_CATALOG,
     props.historyPagingRows.rows,
     seed.window,
     seed.staticContext,

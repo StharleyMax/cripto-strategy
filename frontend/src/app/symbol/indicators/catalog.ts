@@ -13,9 +13,9 @@
  *     two into ONE pure `derive` per indicator is `F4`–`F8`'s, and each of those slices replaces its
  *     entry here with `./<kind>/definition` (`SPEC-011 §7.3`, `RN-7`).
  *
- * Who reads it today: `[symbol]/page.tsx` (the six indicator series). The pager and
- * `panel-assembly.ts` receive it BY PARAMETER from `SymbolClient.tsx` in `T-03.3` — no file of
- * `chart/**` imports this one (P2, `SPEC-011 §5.3`).
+ * Who reads it: `[symbol]/page.tsx` (the six indicator series, and the slot record of the pager's
+ * seed), and `SymbolClient.tsx`, which hands it BY PARAMETER to the pager and to
+ * `panel-assembly.ts` (`T-03.3`) — no file of `chart/**` imports this one (P2, `SPEC-011 §5.3`).
  *
  * ⛔ The price is NOT an indicator: its four `klines_ohlc` series and the `klines_last` live-stream
  * row stay resolved in `page.tsx` (core, `chart/price/` from `F8`). The `10` history fetches of a
@@ -126,6 +126,12 @@ export type IndicatorKind = (typeof INDICATOR_CATALOG)[number]["kind"];
 
 /** The slot names one indicator declares. */
 export type SlotOf<K extends IndicatorKind> = Extract<(typeof INDICATOR_CATALOG)[number], { readonly kind: K }>["series"][number]["slot"];
+
+/** One value per series of the table, typed off it (`T-03.3`): the `indicators` half of the
+ * core's `SeriesSlotRecord` (`chart/history/series-slots.ts`), as `[symbol]/page.tsx` builds it for
+ * the pager. A record that forgets a series, or names one the table does not declare, does not
+ * compile. */
+export type IndicatorSlotRecord<V> = { readonly [K in IndicatorKind]: { readonly [S in SlotOf<K>]: V } };
 
 /**
  * The requirement under `slot` of indicator `kind`. Both arguments are typed off the table, so a

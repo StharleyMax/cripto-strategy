@@ -41,7 +41,8 @@ test("MORDE: the SSR legendSlots is built WITH the route window (canonical grid)
 });
 
 test("MORDE: the paginator's legendSlots is built WITH the page window (canonical grid)", () => {
-  assert.match(assemblySource, /legendSlots:\s*nonNegativeFlowSlotsFromHistoryRows\(\s*rows\.volume,\s*s2Window,\s*axisStepMs\s*\)/);
+  // `T-03.3`: the volume rows are read by slot through the table (`volumeRows`), no longer `rows.volume`.
+  assert.match(assemblySource, /legendSlots:\s*nonNegativeFlowSlotsFromHistoryRows\(\s*volumeRows,\s*s2Window,\s*axisStepMs\s*\)/);
 });
 
 test("CALA: the regex bites — a legend pointed at the native vector is refused", () => {

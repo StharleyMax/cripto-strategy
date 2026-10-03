@@ -45,11 +45,11 @@
  *   1. `GET /series-catalog` (reused from `features/s3-inspector/series-catalog-query.ts` —
  *      the SAME query `/console` already makes; not duplicated here) — its wire carries the
  *      15 raw `SeriesKey` terms for every cataloged series, the route's symbol included, but
- *      no `series_key_id` of its own (`view-model.ts`'s own comment on `computeSeriesKeyId`).
+ *      no `series_key_id` of its own (`series-key-id.ts`'s own comment on `computeSeriesKeyId`).
  *   2. For each of the 3 panels PLUS the volume sub-axis of the price panel (`T-01.7`,
  *      `SPEC-007 §3.6` — `klines_volume`, `1m`, cataloged by `T-01.6`), find the ONE catalog
  *      entry that matches (symbol + a per-series selector, below), recompute its `series_key_id`
- *      (`view-model.ts::computeSeriesKeyId`), and fetch `GET /series-history` for it
+ *      (`series-key-id.ts::computeSeriesKeyId`), and fetch `GET /series-history` for it
  *      (`series-history-client.ts`) over the TRAILING 4-day window `resolveRouteWindow`
  *      derives from this request's own clock reading (`request-window.ts`; the geometry itself
  *      is `charts`' `resolveTrailingWindow`, reached through the `ADR-034/D8` barrel — this
@@ -168,9 +168,9 @@ import {
   type PriceCandleData,
   type VolumeSubAxisData,
 } from "../SymbolClient.tsx";
+import { computeSeriesKeyId } from "../series-key-id.ts";
 import {
   assembleOhlcCandles,
-  computeSeriesKeyId,
   countNativeBarsByPublication,
   countPresentCandleSlots,
   countPresentSlots,
@@ -195,7 +195,7 @@ import {
   type ScaledCvdDeltaInput,
 } from "../view-model.ts";
 import { coverageGridMsOf, summarizeCoverageMagnitude, type CoverageGridMs } from "../coverage-magnitude.ts";
-import { seriesRequirement } from "../indicators/catalog.ts";
+import { seriesRequirement, type IndicatorSlotRecord } from "../indicators/catalog.ts";
 
 export const metadata: Metadata = {
   title: "cripto-strategy — Símbolo",
@@ -987,29 +987,37 @@ export default async function SymbolPage({
   // this render already fetched. Built here, once, off values this function already computed —
   // never a second catalog lookup, never a second fetch.
   const historyPagingRows = {
+    // `T-03.3` — keyed by slot (`chart/history/series-slots.ts`): the core's four price reductions,
+    // then `kind → slot` for the six series of the table, typed off it (`IndicatorSlotRecord`).
     keys: {
-      open: seriesKeyIdOf(ohlcResolutions.open),
-      high: seriesKeyIdOf(ohlcResolutions.high),
-      low: seriesKeyIdOf(ohlcResolutions.low),
-      close: seriesKeyIdOf(ohlcResolutions.close),
-      oi: seriesKeyIdOf(oiResolution),
-      cvd: seriesKeyIdOf(cvdResolution),
-      volume: seriesKeyIdOf(volumeResolution),
-      liquidationLong: seriesKeyIdOf(liquidationLongResolution),
-      liquidationShort: seriesKeyIdOf(liquidationShortResolution),
-      longShort: seriesKeyIdOf(longShortResolution),
+      price: {
+        open: seriesKeyIdOf(ohlcResolutions.open),
+        high: seriesKeyIdOf(ohlcResolutions.high),
+        low: seriesKeyIdOf(ohlcResolutions.low),
+        close: seriesKeyIdOf(ohlcResolutions.close),
+      },
+      indicators: {
+        volume: { volume: seriesKeyIdOf(volumeResolution) },
+        liquidation: { long: seriesKeyIdOf(liquidationLongResolution), short: seriesKeyIdOf(liquidationShortResolution) },
+        oi: { oi: seriesKeyIdOf(oiResolution) },
+        long_short: { ratio: seriesKeyIdOf(longShortResolution) },
+        cvd: { cvd: seriesKeyIdOf(cvdResolution) },
+      } satisfies IndicatorSlotRecord<string | null>,
     },
     rows: {
-      open: extractRows(openResult),
-      high: extractRows(highResult),
-      low: extractRows(lowResult),
-      close: extractRows(closeResult),
-      oi: extractRows(oiResult),
-      cvd: extractRows(cvdResult),
-      volume: extractRows(volumeResult),
-      liquidationLong: extractRows(liquidationLongResult),
-      liquidationShort: extractRows(liquidationShortResult),
-      longShort: extractRows(longShortResult),
+      price: {
+        open: extractRows(openResult),
+        high: extractRows(highResult),
+        low: extractRows(lowResult),
+        close: extractRows(closeResult),
+      },
+      indicators: {
+        volume: { volume: extractRows(volumeResult) },
+        liquidation: { long: extractRows(liquidationLongResult), short: extractRows(liquidationShortResult) },
+        oi: { oi: extractRows(oiResult) },
+        long_short: { ratio: extractRows(longShortResult) },
+        cvd: { cvd: extractRows(cvdResult) },
+      } satisfies IndicatorSlotRecord<readonly SeriesHistoryRow[]>,
       // `T-03.11` — what the OI pane DRAWS, off the SAME fetch as `oi` (never a second request).
       oiCandles: oiCandleBundleOf(oiResult.oiCandles),
     },

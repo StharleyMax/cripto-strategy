@@ -38,6 +38,7 @@ import { recentBandSlots } from "./long-short-band.ts";
 import { oiCandlePaneData, type OiCandleBundle, type OiCandlePaneData } from "./oi-candle-pane.ts";
 import type { FreshnessVerdict, SeriesValueStats } from "./panel-status.ts";
 import type { SeriesHistoryRow } from "./series-history-envelope.ts";
+import { tableSlotValue, type HistorySeriesTable, type SeriesSlotRecord } from "./chart/history/series-slots.ts";
 import {
   assembleOhlcCandles,
   countNativeBarsByPublication,
@@ -57,24 +58,15 @@ import {
 } from "./view-model.ts";
 import { summarizeCoverageMagnitude, type CoverageGridMs, type CoverageMagnitude } from "./coverage-magnitude.ts";
 
-/** The ten row arrays a page (initial OR paginated) carries — one per `/series-history` fetch
- * `[symbol]/page.tsx` already makes (`T-01.8`'s four OHLC reductions, OI, CVD, volume, the two
- * liquidation cohorts, long/short). Mirrors `page.tsx`'s own local variable names exactly, so a
- * reader translating between the two files does not have to guess the correspondence. */
-export interface HistoryRowsBundle {
-  readonly open: readonly SeriesHistoryRow[];
-  readonly high: readonly SeriesHistoryRow[];
-  readonly low: readonly SeriesHistoryRow[];
-  readonly close: readonly SeriesHistoryRow[];
-  readonly oi: readonly SeriesHistoryRow[];
-  readonly cvd: readonly SeriesHistoryRow[];
-  readonly volume: readonly SeriesHistoryRow[];
-  readonly liquidationLong: readonly SeriesHistoryRow[];
-  readonly liquidationShort: readonly SeriesHistoryRow[];
-  readonly longShort: readonly SeriesHistoryRow[];
-  /** `T-03.11` — the `oi_candles` block of the OI fetch (`ADR-045/D2`), served BESIDE `rows.oi` by
-   * the same request: `oi` keeps feeding the pane's declared facts (native bars, freshness, the
-   * readable horizon), and these are what the pane DRAWS. */
+/** The row arrays a page (initial OR paginated) carries — one per `/series-history` fetch, keyed
+ * by slot (`T-03.3`, `chart/history/series-slots.ts`): the core's four OHLC reductions under
+ * `price`, and `kind → slot` for every series of the indicator table (`indicators.oi.oi`,
+ * `indicators.liquidation.long`, …). Ten arrays over `INDICATOR_CATALOG` (`ADR-050/D5`). */
+export interface HistoryRowsBundle extends SeriesSlotRecord<readonly SeriesHistoryRow[]> {
+  /** `T-03.11` — the `oi_candles` block served BESIDE the open-interest rows by the same request
+   * (`ADR-045/D2`): those rows keep feeding the pane's declared facts (native bars, freshness, the
+   * readable horizon), and these are what the pane DRAWS. The backend serves it for no other
+   * series (`series_history.py::_oi_candle_report`). */
   readonly oiCandles: OiCandleBundle;
 }
 
@@ -189,12 +181,18 @@ export interface HistoryPageAssembly {
  * second, independent call site rather than imported, for the reason this module's own docstring
  * states.
  *
+ * `table` — `estrutura-do-front` `T-03.3` (`SPEC-011 §3`, `G-R`) — the indicator table, BY
+ * PARAMETER from `SymbolClient.tsx` (this module does not import the catalog). Every indicator row
+ * array below is read through it (`tableSlotValue`): reading a series the table does not declare
+ * throws, because no page fetches it and the derivation would stay frozen at the SSR window.
+ *
  * `axisStepMs` — `paineis-de-fluxo` `T-05.1` — the step of the axis every slot array below is
  * built at: the TIMEFRAME's width. An EXPLICIT argument, not a field of `AssemblyStaticContext`:
  * the pager derives it from `seed.interval` (`timeframeStepMs`), and a copy carried in the context
  * could disagree with the axis the pager actually builds.
  */
 export function assembleHistoryPage(
+  table: HistorySeriesTable,
   rows: HistoryRowsBundle,
   window: AssemblyWindow,
   context: AssemblyStaticContext,
@@ -209,11 +207,20 @@ export function assembleHistoryPage(
     axisStepMs,
   );
 
+  // `T-03.3` — the indicator rows, read through the table (see this function's docstring).
+  const indicatorRows = (kind: string, slot: string): readonly SeriesHistoryRow[] => tableSlotValue(table, rows, kind, slot);
+  const oiRows = indicatorRows("oi", "oi");
+  const cvdRows = indicatorRows("cvd", "cvd");
+  const volumeRows = indicatorRows("volume", "volume");
+  const liquidationLongRows = indicatorRows("liquidation", "long");
+  const liquidationShortRows = indicatorRows("liquidation", "short");
+  const longShortRows = indicatorRows("long_short", "ratio");
+
   const candleAssembly = assembleOhlcCandles({
-    open: rows.open,
-    high: rows.high,
-    low: rows.low,
-    close: rows.close,
+    open: rows.price.open,
+    high: rows.price.high,
+    low: rows.price.low,
+    close: rows.price.close,
   });
 
   const panels: S2Panels = buildS2Panels({
@@ -221,9 +228,9 @@ export function assembleHistoryPage(
     axisStepMs,
     candles: candleAssembly.candles,
     priceUse: context.priceUse,
-    oiPoints: scalarPointsFromHistoryRows(rows.oi, FIVE_MINUTES_MS),
+    oiPoints: scalarPointsFromHistoryRows(oiRows, FIVE_MINUTES_MS),
     oiMissingDays: [],
-    cvdDeltas: scaledCvdDeltasFromHistoryRows(rows.cvd),
+    cvdDeltas: scaledCvdDeltasFromHistoryRows(cvdRows),
     cvdMissingDays: [],
     cvdCoveredDays: [],
     cvdAnchorMs: context.cvdAnchorMs,
@@ -247,14 +254,14 @@ export function assembleHistoryPage(
   // every position. `legendSlots` is the SAME rows aligned onto the window's 1-minute grid (the
   // shared primitive, like liquidation and long/short below); the bars keep the native vector,
   // so their pixels, `presentPoints` and `firstPresentMs` do not move.
-  const volumeSlots = nonNegativeFlowSlotsFromHistoryRows(rows.volume);
+  const volumeSlots = nonNegativeFlowSlotsFromHistoryRows(volumeRows);
   const volume: DynamicVolumeFacts = {
     slots: volumeSlots,
-    legendSlots: nonNegativeFlowSlotsFromHistoryRows(rows.volume, s2Window, axisStepMs),
+    legendSlots: nonNegativeFlowSlotsFromHistoryRows(volumeRows, s2Window, axisStepMs),
     presentPoints: countPresentSlots(volumeSlots),
     firstPresentMs: firstPresentSlotMs(volumeSlots),
     reading: resolveFlowReadingOrAbsent(volumeSlots, axisStepMs, readingInstantMs),
-    partialCoverage: summarizeCoverageMagnitude(rows.volume, {
+    partialCoverage: summarizeCoverageMagnitude(volumeRows, {
       knowledgeTimeMs: context.knowledgeTimeMs,
       nativeGridMs: context.coverageGridMs.volume,
     }),
@@ -264,7 +271,7 @@ export function assembleHistoryPage(
   const cvd: DynamicCvdFacts = {
     presentPoints: countPresentSlots(cvdDeltaSlots),
     firstPresentMs: firstPresentSlotMs(cvdDeltaSlots),
-    partialCoverage: summarizeCoverageMagnitude(rows.cvd, {
+    partialCoverage: summarizeCoverageMagnitude(cvdRows, {
       knowledgeTimeMs: context.knowledgeTimeMs,
       nativeGridMs: context.coverageGridMs.cvd,
     }),
@@ -273,10 +280,10 @@ export function assembleHistoryPage(
   const oiGridSlots = panels.oi.slots;
   const oi: DynamicOiFacts = {
     nativeBars: countPresentSlots(oiGridSlots),
-    wirePoints: rows.oi.filter((row) => row.value !== null).length,
+    wirePoints: oiRows.filter((row) => row.value !== null).length,
     firstPresentMs: firstPresentSlotMs(oiGridSlots),
     lastPresentMs: lastPresentSlotMs(oiGridSlots),
-    freshness: resolveFreshnessVerdict(rows.oi, context.windowEndMsInclusive, context.oiMaxStalenessMs),
+    freshness: resolveFreshnessVerdict(oiRows, context.windowEndMsInclusive, context.oiMaxStalenessMs),
   };
 
   // Liquidation/long-short: WITH `window` — same choice `page.tsx` makes, so a series whose page
@@ -293,14 +300,14 @@ export function assembleHistoryPage(
       partialCoverage: summarizeCoverageMagnitude(rows_, { knowledgeTimeMs: context.knowledgeTimeMs, nativeGridMs }),
     };
   };
-  const liquidationLong = liquidationCohort(rows.liquidationLong, context.coverageGridMs.liquidationLong);
-  const liquidationShort = liquidationCohort(rows.liquidationShort, context.coverageGridMs.liquidationShort);
+  const liquidationLong = liquidationCohort(liquidationLongRows, context.coverageGridMs.liquidationLong);
+  const liquidationShort = liquidationCohort(liquidationShortRows, context.coverageGridMs.liquidationShort);
 
-  const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(rows.longShort, s2Window, axisStepMs);
-  const longShortObservedAtMs = lastReadableAvailableAtMs(rows.longShort);
+  const longShortSlots = nonNegativeFlowSlotsFromHistoryRows(longShortRows, s2Window, axisStepMs);
+  const longShortObservedAtMs = lastReadableAvailableAtMs(longShortRows);
   const longShort: DynamicLongShortFacts = {
     slots: longShortSlots,
-    nativeBars: countNativeBarsByPublication(rows.longShort),
+    nativeBars: countNativeBarsByPublication(longShortRows),
     wirePoints: countPresentSlots(longShortSlots),
     firstPresentMs: firstPresentSlotMs(longShortSlots),
     lastPresentMs: lastPresentSlotMs(longShortSlots),

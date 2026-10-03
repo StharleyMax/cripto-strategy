@@ -30,8 +30,8 @@ import {
  * span to bars per timeframe (`timeframe-window.ts`); at `1m` it is still 4 days (5.760 bars). */
 const FOUR_DAYS_MS = 4 * 24 * 60 * 60_000;
 import type { SeriesHistoryRow } from "./chart/history/series-history-client.ts";
+import { computeSeriesKeyId } from "./series-key-id.ts";
 import {
-  computeSeriesKeyId,
   countPresentSlots,
   firstPresentSlotMs,
   daysWithPresence,
