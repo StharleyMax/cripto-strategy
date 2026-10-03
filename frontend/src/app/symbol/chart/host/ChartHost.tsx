@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { IChartApi, LogicalRange as LibraryLogicalRange } from "lightweight-charts";
 import { createChart, LineSeries, PriceScaleMode } from "lightweight-charts";
-import { paneScaleMargins, toLogicalRange, type ScaleMargins, type TimeAxis } from "../../../../charts/index.ts";
+import { paneScaleMargins, toLogicalRange, type TimeAxis } from "../../../../charts/index.ts";
 import { chartConstructorOptions, gridCarrierSeriesOptions } from "../../chart-options.ts";
 import { createPanesBeforeSeries } from "../../pane-scale-isolation.ts";
 import { recordHistoryPageApplied, recordHistoryPageDrawn } from "../../history-page-latency-probe.ts";
@@ -11,7 +11,9 @@ import { useAxisSync } from "../axis/axis-sync-provider.tsx";
 import { SINGLE_CHART_PANEL_INDEX } from "../axis/axis-sync.ts";
 import { legendBottomPx, paneLayerAnchorOf } from "./pane-layer.tsx";
 import { PANE_STACK } from "./pane-stack.ts";
-import { ChartHostContext, CrosshairSlotContext, PaneAnchorsContext, useChartHost, type AnyPaneBinding, type HostRegistrar, type HostSeries, type HostSeriesFeed, type PaneScaleBinding } from "./registrar.ts";
+import { createBindingTable } from "./binding-table.ts";
+import type { HostSeries, HostSeriesFeed } from "./indicator-binding.ts";
+import { ChartHostContext, CrosshairSlotContext, PaneAnchorsContext, paneIndexOfPlacement, useChartHost, type HostRegistrar } from "./registrar.ts";
 
 /**
  * ── THE SINGLE CHART HOST (`paineis-de-fluxo` `T-01.5`, plan `01` item `1.3`, `ADR-044/D1`) ──
@@ -21,6 +23,10 @@ import { ChartHostContext, CrosshairSlotContext, PaneAnchorsContext, useChartHos
  * components below still own what each pane DRAWS (series kind, style, scales, the lossless
  * mappings, the absence/zero marks), and they declare it through `useHostedPane`; the host owns the
  * one chart, the one `timeScale`, and the one conversation with `AxisSyncStore`.
+ *
+ * `estrutura-do-front` `T-02.1`: the bindings live in a table keyed by `instanceKey`
+ * (`binding-table.ts`), which mounts them when the chart exists and calls each one's `unmount` on
+ * unregister and before `chart.remove()` — the host no longer keeps handles of its own.
  *
  * ⛔ THE HOST SURVIVES A PAGE (`handoff/FIX-regressoes-fase05.md` §4.2 option A, §4.3). The mount
  * effect runs ONCE per mount of `SymbolClient` — its dependencies are the stable `registrar`
@@ -145,9 +151,6 @@ export function SymbolChartHost({
     readonly dense: boolean;
     /** `?e2ePageApplyBusyMs=N` — `F-C`'s busy-wait on every page, `0` otherwise. */
     readonly busyMs: number;
-    readonly handles: Map<number, unknown>;
-    /** `T-01.6` — per pane, its scales and the base margins read right after `mount`. */
-    readonly scales: Map<number, readonly { readonly binding: PaneScaleBinding; readonly base: ScaleMargins }[]>;
   } | null>(null);
   const appliedAxisRef = useRef<TimeAxis | null>(null);
   const mountCountRef = useRef(0);
@@ -156,28 +159,15 @@ export function SymbolChartHost({
   const appliedDataVersionRef = useRef<unknown>(undefined);
   const [paneAnchors, setPaneAnchors] = useState<readonly (HTMLElement | null)[]>([]);
   const [registrar] = useState<HostRegistrar>(() => {
-    const bindings = new Map<number, RefObject<AnyPaneBinding>>();
-    const surfaceRef: RefObject<HTMLDivElement | null> = { current: null };
+    // `T-02.1` — keyed by `instanceKey`; a binding that registers after the chart exists (not the
+    // case for the five fixed panes, which all render on the first commit) is mounted on arrival,
+    // and only its own feeds go in (the carrier already holds the grid).
+    const table = createBindingTable(paneIndexOfPlacement);
     return {
-      surfaceRef,
+      surfaceRef: { current: null },
       crosshairStore: createCrosshairSlotStore(),
-      bindings,
-      register(paneIndex, binding) {
-        bindings.set(paneIndex, binding);
-        const state = chartStateRef.current;
-        if (state !== null && !state.handles.has(paneIndex)) {
-          // A pane that registers after the chart exists (not the case for the six fixed panes of
-          // phase `01`, which all render on the first commit) is mounted on arrival.
-          state.handles.set(paneIndex, binding.current.mount(state.chart, paneIndex));
-          // The carrier already holds the grid, so only this pane's feeds go in.
-          feedSeries(paneSeriesFeeds(binding.current.apply(state.handles.get(paneIndex)), state.dense));
-        }
-        return () => {
-          if (bindings.get(paneIndex) === binding) {
-            bindings.delete(paneIndex);
-          }
-        };
-      },
+      table,
+      register: (instanceKey, placement, binding) => table.register(instanceKey, placement, binding),
     };
   });
 
@@ -190,7 +180,7 @@ export function SymbolChartHost({
       return;
     }
     const store = axisSyncRef.current;
-    const bindings = registrar.bindings;
+    const table = registrar.table;
     // ⛔ THE OPTIONS ARE NOT SPELLED HERE (`DR-1`, `chart-construction.test.ts`) — the separator
     // colour and `enableResize` included (`chart-options.ts`, `T-01.6`). The height is the stack's.
     const chart = createChart(container, chartConstructorOptions(container.clientWidth || 600, PANE_STACK.chartHeightPx));
@@ -208,14 +198,14 @@ export function SymbolChartHost({
     const dense = isDenseSeriesAblationRequested(search);
     const busyMs = requestedPageApplyBusyMs(search);
     container.dataset.seriesFeed = dense ? "dense" : "sparse";
-    const handles = new Map<number, unknown>();
-    const paneIndices = [...bindings.keys()].sort((a, b) => a - b);
-    for (const paneIndex of paneIndices) {
-      const binding = bindings.get(paneIndex)!.current;
-      handles.set(paneIndex, binding.mount(chart, paneIndex));
-    }
-    // `T-01.6` — the stretch factors (the panes exist once `addSeries(…, paneIndex)` ran), and the
-    // base margins of every declared scale, read back AFTER the pane's own `applyOptions`.
+    // `T-02.1` — every registered binding is mounted by the table (by `paneIndex`, then in
+    // registration order), which also reads each declared scale's base margins back right after
+    // the binding's own `applyOptions` (`T-01.6`).
+    const mounted = table.attach({
+      chart,
+      feedLateMount: (feeds) => feedSeries(paneSeriesFeeds(feeds, dense)),
+    });
+    // `T-01.6` — the stretch factors (the panes exist once `addSeries(…, paneIndex)` ran).
     const panes = chart.panes();
     for (const [paneIndex, pane] of panes.entries()) {
       const factor = PANE_STACK.stretchFactors[paneIndex];
@@ -223,27 +213,16 @@ export function SymbolChartHost({
         pane.setStretchFactor(factor);
       }
     }
-    const scales = new Map<number, readonly { readonly binding: PaneScaleBinding; readonly base: ScaleMargins }[]>();
-    for (const paneIndex of paneIndices) {
-      const declared = bindings.get(paneIndex)!.current.scales?.(handles.get(paneIndex)) ?? [];
-      scales.set(
-        paneIndex,
-        declared.map((binding) => {
-          const margins = binding.series.priceScale().options().scaleMargins;
-          return { binding, base: { top: margins.top, bottom: margins.bottom } };
-        }),
-      );
-    }
     // The carrier FIRST, then every pane (`host-series-feed.ts`).
     feedSeries(
       hostSeriesFeeds(
         carrier,
         store.axis,
-        paneIndices.flatMap((paneIndex) => bindings.get(paneIndex)!.current.apply(handles.get(paneIndex))),
+        mounted.flatMap(({ binding, handles }) => binding.current.apply(handles)),
         dense,
       ),
     );
-    chartStateRef.current = { chart, carrier, dense, busyMs, handles, scales };
+    chartStateRef.current = { chart, carrier, dense, busyMs };
     appliedAxisRef.current = store.axis;
     appliedDataVersionRef.current = latestDataVersionRef.current;
     // `T-05.9` (plan `05` DoD 7): the first `setData` is drawn here.
@@ -303,8 +282,8 @@ export function SymbolChartHost({
     // until the next click. Losing focus ends the gesture too.
     window.addEventListener("blur", handlePointerUp);
     const measureFrame = requestAnimationFrame(() => {
-      for (const paneIndex of paneIndices) {
-        bindings.get(paneIndex)?.current.measure?.(chart, paneIndex);
+      for (const { binding, paneIndex } of table.mounted()) {
+        binding.current.measure?.(chart, paneIndex);
       }
     });
     // `T-01.6` — the anchors of the per-pane layers, once the panes' DOM exists (host docstring,
@@ -339,6 +318,8 @@ export function SymbolChartHost({
       unregister();
       chartStateRef.current = null;
       setPaneAnchors([]);
+      // `T-02.1` (plan `02` item `2.3`) — every binding still mounted is unmounted BEFORE the chart goes.
+      table.detach();
       chart.remove();
     };
   }, [registrar]);
@@ -354,7 +335,7 @@ export function SymbolChartHost({
     }
     const layoutPaneScales = () => {
       const panes = state.chart.panes();
-      for (const [paneIndex, declared] of state.scales) {
+      for (const { paneIndex, binding: ownBindingRef, handles, scales: declared } of registrar.table.mounted()) {
         const pane = panes[paneIndex];
         const anchor = paneAnchors[paneIndex] ?? null;
         if (pane === undefined || anchor === null) {
@@ -366,15 +347,15 @@ export function SymbolChartHost({
         let reservedTopPx: number | null = null;
         let paneFacts: Readonly<Record<string, string>> = {};
         // `T-04.2` — a pane that lays out its own scales (the fused liquidation pane).
-        const ownBinding = registrar.bindings.get(paneIndex)?.current;
-        if (ownBinding?.layout !== undefined && state.handles.has(paneIndex)) {
-          const report = ownBinding.layout(state.handles.get(paneIndex), { paneHeightPx, legendBottomPx: legendBottom });
+        const ownBinding = ownBindingRef.current;
+        if (ownBinding.layout !== undefined) {
+          const report = ownBinding.layout(handles, { paneHeightPx, legendBottomPx: legendBottom });
           reserveKind = report.reserveKind;
           reservedTopPx = report.reservedTopPx;
           paneFacts = report.facts;
           if (report.refeed) {
             // The mark values moved with the layout: this pane's feeds again (the carrier holds the grid).
-            feedSeries(paneSeriesFeeds(ownBinding.apply(state.handles.get(paneIndex)), state.dense));
+            feedSeries(paneSeriesFeeds(ownBinding.apply(handles), state.dense));
           }
         }
         for (const { binding, base } of declared) {
@@ -434,7 +415,7 @@ export function SymbolChartHost({
     appliedDataVersionRef.current = dataVersion;
     const previousAxis = appliedAxisRef.current;
     const store = axisSyncRef.current;
-    const bindings = registrar.bindings;
+    const table = registrar.table;
     const releasePageGuard = store.guard.holdApplying();
     const isPage = axis.startMs !== previousAxis.startMs;
     if (isPage) {
@@ -449,7 +430,7 @@ export function SymbolChartHost({
       hostSeriesFeeds(
         state.carrier,
         axis,
-        [...state.handles].flatMap(([paneIndex, handles]) => bindings.get(paneIndex)?.current.apply(handles) ?? []),
+        table.mounted().flatMap(({ binding, handles }) => binding.current.apply(handles)),
         state.dense,
       ),
     );
@@ -476,8 +457,8 @@ export function SymbolChartHost({
     }
     const releaseFrame = requestAnimationFrame(() => {
       releasePageGuard();
-      for (const paneIndex of state.handles.keys()) {
-        bindings.get(paneIndex)?.current.measure?.(state.chart, paneIndex);
+      for (const { binding, paneIndex } of table.mounted()) {
+        binding.current.measure?.(state.chart, paneIndex);
       }
     });
     return () => {

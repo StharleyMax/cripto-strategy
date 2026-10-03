@@ -134,11 +134,13 @@ const HOST_SOURCE = readFileSync(path.join(path.dirname(fileURLToPath(import.met
 
 test("the host creates every pane of the registry before the first pane's mount", () => {
   const call = HOST_SOURCE.indexOf("createPanesBeforeSeries(chart, PANE_STACK.stretchFactors.length)");
-  const firstMount = HOST_SOURCE.indexOf("binding.mount(chart, paneIndex)");
+  // `estrutura-do-front` `T-02.1`: the host no longer calls `binding.mount` itself — the binding table
+  // mounts every registered binding inside `table.attach(…)` (`binding-table.ts`), so THAT is the first mount.
+  const firstMount = HOST_SOURCE.indexOf("table.attach({");
   // Anchored on the host's constructor options, not on the call's name: `chart-construction.test.ts`
   // scans every file for that name followed by a parenthesis.
   const createChartAt = HOST_SOURCE.indexOf("chartConstructorOptions(container.clientWidth");
   assert.ok(call > 0, "ChartHost.tsx no longer calls createPanesBeforeSeries with the registry's pane count");
-  assert.ok(firstMount > 0, "the anchor 'binding.mount(chart, paneIndex)' moved — re-read the host before trusting this");
+  assert.ok(firstMount > 0, "the anchor 'table.attach({' moved — re-read the host before trusting this");
   assert.ok(createChartAt > 0 && createChartAt < call && call < firstMount, "the panes must be created after the chart and before the first mount");
 });

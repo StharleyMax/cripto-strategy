@@ -2,17 +2,17 @@
  * `estrutura-do-front` `T-00.1` (`SPEC-011 §4.2`, `ADR-050/D3` + emenda `E-1`/`E-4`, `G-R`) — the
  * types the chart host CONSUMES from an indicator, declared by the host itself.
  *
- * TYPES ONLY: this file has no runtime value, and nothing imports it yet. It is born in `F0` so the
- * contract (`indicators/contract.ts`) can reuse it; the host that implements it moves here in `F1`
- * and switches to it in `F2`.
+ * TYPES ONLY: this file has no runtime value. It was born in `F0` so the contract
+ * (`indicators/contract.ts`) could reuse it; the host moved here in `F1` and, since `T-02.1`, is
+ * declared against it — `registrar.ts` no longer carries a copy of these types.
  *
  * Why the core owns these types and not `indicators/contract.ts`: the core (`chart/**`) is FORBIDDEN
  * from importing `indicators/**` (`SPEC-011 §5.3`, P2) — contract and catalog included. The
  * registrar is core, so the shape it accepts has to live in the core, and the contract re-uses it
  * (`G-R`). The direction of the dependency is `indicators -> chart`, never the other way.
  *
- * The shape is today's `HostedPaneBinding` (`SymbolClient.tsx`), widened by `ADR-050/D3`:
- *   - keyed by a STRING `instanceKey` (today: a numeric `paneIndex`) — the builtins use their `kind`;
+ * The shape is `F1`'s `HostedPaneBinding`, widened by `ADR-050/D3`:
+ *   - keyed by a STRING `instanceKey` (until `T-02.1`: a numeric `paneIndex`) — the builtins use their `kind`;
  *   - `unmount` is MANDATORY — after it, pane 0 holds the same number of series it held before
  *     `mount` (`CA-11`);
  *   - `refeed(instanceKey)` is the HOST's, not the binding's (`E-1`): the `indicator-endpoint` path.
@@ -31,7 +31,7 @@ export type HostSeries = ISeriesApi<SeriesType>;
 /** One `setData` the host will make on one of its series (`T-01.10`: the host owns the only loop). */
 export type HostSeriesFeed = SeriesFeed<HostSeries>;
 
-/** `T-01.6` — one price scale of a pane and its role in the stack (today's `PaneScaleBinding`). */
+/** `T-01.6` — one price scale of a pane and its role in the stack. */
 export interface PaneScaleBinding {
   readonly series: HostSeries;
   /** Draws near the top of the pane, so it is compressed below the legend. */
@@ -42,7 +42,7 @@ export interface PaneScaleBinding {
   readonly keepFloor?: boolean;
 }
 
-/** `T-04.2` — what a pane's own `layout` reports to the host (today's `PaneLayoutReport`). */
+/** `T-04.2` — what a pane's own `layout` reports to the host. */
 export interface PaneLayoutReport {
   readonly reserveKind: string;
   readonly reservedTopPx: number | null;
