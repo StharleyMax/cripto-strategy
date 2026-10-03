@@ -44,7 +44,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test test-fast boundaries natureza build verify api e2e compose-deploy compose-local
+.PHONY: help setup venv lint lint-agents lint-corpus lint-backend lint-frontend test test-fast boundaries natureza build verify verify-scope api e2e compose-deploy compose-local
 
 # Argumentos repassados ao pytest: `make test ARGS="-k nome --no-cov"`.
 ARGS ?=
@@ -56,6 +56,11 @@ ARGS ?=
 E2E_API_UP ?= 1
 E2E_API_PORT ?= 8811
 E2E_NEXT_PORT ?= 4311
+# `T-06.2`: the specs `make e2e` runs, as Playwright positional filters (`e2e/11-canvas-fundo.spec.ts …`).
+# EMPTY = every spec, which is what `make e2e` always did. `verify.sh --scope` fills it from the diff;
+# `verify.sh` (the wave gate) passes `E2E_SPECS=` on the COMMAND LINE, which beats the environment —
+# an `E2E_SPECS` exported in the operator's shell cannot shrink the wave's e2e.
+E2E_SPECS ?=
 
 help:
 	@printf '%s\n' \
@@ -81,12 +86,18 @@ help:
 	  '  make verify          OS OITO PORTOES numa chamada, veredito em ~14 linhas e a saida' \
 	  '                       bruta em arquivo (scripts/verify.sh). E o alvo para AGENTE rodar' \
 	  '                       (inclui as 4 suites node --test do front e o e2e de pixel)' \
+	  '                       E O PORTAO DA WAVE: roda UMA vez, sobre a branch da wave' \
+	  '  make verify-scope    o laco do BUILDER (T-06.2): lint x2, test-frontend, boundaries,' \
+	  '                       regras e validate inteiros; pytest so do componente tocado; e2e so' \
+	  '                       dos specs que o diff alcanca + o de pixel (e2e/11) + E2E_EXTRA.' \
+	  '                       Veredito VERDE-ESCOPO: NAO grava o cache e NAO fecha wave' \
 	  '  make api             sobe a API em processo, honrando .env (raiz) — dev por comando' \
 	  '                       versionado (T-01.7, ADR-029/D5). NAO entra em verify (M5)' \
 	  '  make e2e             API de teste sobre store efemero (>=1 run) + next build/start +' \
 	  '                       playwright test, derruba tudo ao final (T-01.8). DENTRO de verify' \
 	  '                       desde 2026-09-12 (DR-11: e o unico portao que le PIXEL, ~49 s).' \
-	  '                       E2E_API_UP=0 deixa a API deliberadamente NO CHAO (D1.11)' \
+	  '                       E2E_API_UP=0 deixa a API deliberadamente NO CHAO (D1.11).' \
+	  '                       E2E_SPECS="e2e/11-canvas-fundo.spec.ts" restringe (vazio = todos)' \
 	  '  make compose-deploy  docker compose do alvo de deploy (7 servicos, so' \
 	  '                       deploy/compose.yml). So concatena a flag; aceita ARGS' \
 	  '                       (T-03.5, ADR-032/D1). FORA de verify (nao implanta nada, R-E)' \
@@ -279,6 +290,13 @@ build:
 verify:
 	bash scripts/verify.sh
 
+# `T-06.2` (`SPEC-009` plan `06` item `6.2`). The builder's loop, NOT the gate: `scripts/verify.sh
+# --scope` reads the diff through `scripts/scope-resolve.sh`. Its verdict is `VERDE-ESCOPO`, which
+# never writes the tree cache — otherwise the wave's `make verify` over the same clean tree would
+# answer from a scoped run. `E2E_EXTRA="22 37"` passes through the environment and only ADDS specs.
+verify-scope:
+	bash scripts/verify.sh --scope
+
 # ── api ────────────────────────────────────────────────────────────────────────────────
 # `T-01.7` (`SPEC-003` s3.4/s3.5, `ADR-029/D5`, plano `01` itens `1.7`/`1.8`). Sobe a API em
 # processo, honrando `.env` (raiz, gitignored — `.env.example` documenta o formato e os
@@ -335,7 +353,7 @@ e2e:
 	if [ $$SETUP_RC -ne 0 ]; then exit $$SETUP_RC; fi; \
 	E2E_BASE_URL="$$(cat "$$STATE_DIR/base_url")" E2E_API_LOG_PATH="$$STATE_DIR/api.log" \
 	  E2E_SENTIMENTO_API_BASE_URL="$$(cat "$$STATE_DIR/api_base_url")" \
-	  frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts; RC=$$?; \
+	  frontend/node_modules/.bin/playwright test --config=frontend/playwright.config.ts $(E2E_SPECS); RC=$$?; \
 	bash scripts/e2e-env.sh down "$$STATE_DIR"; \
 	exit $$RC
 
