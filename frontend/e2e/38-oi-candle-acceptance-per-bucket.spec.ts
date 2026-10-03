@@ -71,7 +71,6 @@ const FIVE = 300_000;
 const MIN_PER_REGIME = 50;
 /** Buckets narrower than this are not read one by one (the body would be a line). */
 const MIN_SPACING_PX = 6;
-const SWEEP_STEPS_PER_BUCKET = 3;
 const INK_TOLERANCE = 12;
 /** Buckets of margin each side of a view, so the sweep's first and last bucket are inside the plot. */
 const VIEW_MARGIN_BUCKETS = 2;
@@ -499,34 +498,69 @@ async function readLegend(page: Page): Promise<LegendReading> {
   });
 }
 
-/** `bucketMs → x` as `x = a + b·(bucketMs / 5 min)`, from two crosshair readings far apart. */
-interface Mapping {
-  readonly a: number;
-  readonly b: number;
-  readonly leftMs: number;
-  readonly rightMs: number;
+/**
+ * `estrutura-do-front` `T-10.3` — THE PAGE'S TIME SCALE, READ, NOT SWEPT.
+ *
+ * The chart host publishes the library's own visible logical range and bar spacing
+ * (`data-visible-logical-from`/`-to`, `data-bar-spacing-px`: `ChartHost.tsx`, `handleRangeChange` and
+ * `publishBarSpacing`) and `<main>` the instant of slot 0 (`view.ts::readView`). `lightweight-charts@5`
+ * puts slot `i`'s centre at `width − (right − i + 0.5) · barSpacing − 1` (`_internal_indexToCoordinate`),
+ * the published `to` IS that `right` (`_updateVisibleRange`), and the crosshair snaps to the NEAREST
+ * slot (`_coordinateToFloatIndex`, rounded), so slot `i`'s legend region is `x(i) ± barSpacing / 2`.
+ *
+ * Before `T-10.3` the spec found this grid by sweeping the crosshair a third of a bucket per step, both
+ * ways, across the whole pane, and fitting a line through the legend groups: ~6 legend reads per bucket,
+ * 187,6 s for the file (`docs/context/piramide-de-testes/gates/E2E-analise.md` §1.1). Now the grid is
+ * the time scale's, every bucket is read ONCE with the pointer on its centre, and the sweep survives only
+ * as a short lag probe (`lagProbe`) that also checks the grid against the crosshair.
+ */
+interface TimeScale {
+  readonly fromLogical: number;
+  readonly toLogical: number;
+  readonly spacingPx: number;
+  readonly windowStartMs: number;
+  readonly stepMs: number;
+  /** The OI pane's main canvas, page CSS px: the time scale is as wide as the pane. */
+  readonly canvas: Box;
 }
 
-async function calibrate(page: Page): Promise<Mapping> {
-  const box = await oiCanvasBox(page);
-  const y = box.y + box.height * 0.6;
-  const named: { x: number; k: number }[] = [];
-  const misses: string[] = [];
-  for (const fraction of [0.1, 0.3, 0.5, 0.7, 0.9]) {
-    const x = box.x + box.width * fraction;
-    await page.mouse.move(x, y);
-    const legend = await readLegend(page);
-    if (legend.source === "crosshair" && legend.bucketMs !== null) named.push({ x, k: legend.bucketMs / FIVE });
-    else misses.push(`${fraction}:${legend.source}:${legend.bucketMs}`);
+async function readTimeScale(page: Page): Promise<TimeScale> {
+  const state = await readView(page);
+  const canvas = await oiCanvasBox(page);
+  return {
+    fromLogical: state.fromLogical,
+    toLogical: state.toLogical,
+    spacingPx: state.barSpacingPx,
+    windowStartMs: state.windowStartMs,
+    stepMs: state.stepMs,
+    canvas,
+  };
+}
+
+/** Slot `i`'s centre, page CSS px, by the library's own law (see `TimeScale`). */
+function slotX(scale: TimeScale, i: number): number {
+  return scale.canvas.x + scale.canvas.width - (scale.toLogical - i + 0.5) * scale.spacingPx - 1;
+}
+
+/** The slots whose whole legend region (`x ± spacing / 2`) is inside the pane, left to right. */
+function visibleSlots(scale: TimeScale): number[] {
+  const out: number[] = [];
+  for (let i = Math.floor(scale.fromLogical); i <= Math.ceil(scale.toLogical); i += 1) {
+    const x = slotX(scale, i);
+    if (x - scale.spacingPx / 2 >= scale.canvas.x && x + scale.spacingPx / 2 <= scale.canvas.x + scale.canvas.width) out.push(i);
   }
-  await page.mouse.move(2, 2);
-  const p = named[0];
-  const q = named[named.length - 1];
-  if (p === undefined || q === undefined || q.k === p.k) throw new Error(`calibration: the OI legend named too few buckets (${misses.join(", ")})`);
-  const b = (q.x - p.x) / (q.k - p.k);
-  const a = p.x - b * p.k;
-  const toMs = (x: number) => ((x - a) / b) * FIVE;
-  return { a, b, leftMs: toMs(box.x), rightMs: toMs(box.x + box.width) };
+  return out;
+}
+
+function sameScale(p: TimeScale, q: TimeScale): boolean {
+  return (
+    p.fromLogical === q.fromLogical &&
+    p.toLogical === q.toLogical &&
+    p.spacingPx === q.spacingPx &&
+    p.windowStartMs === q.windowStartMs &&
+    p.canvas.x === q.canvas.x &&
+    p.canvas.width === q.canvas.width
+  );
 }
 
 /** `paineis-de-fluxo` `T-06.1` — `[fromMs, toMs]` on screen, `VIEW_MARGIN_BUCKETS` of margin each side
@@ -534,9 +568,9 @@ async function calibrate(page: Page): Promise<Mapping> {
  * a closed loop, from WHEREVER the page is, so no view depends on the mount's framing (`VIEW_BARS`).
  * Paging is allowed: the older-page view sits before the SSR window, and a view near the window's left
  * edge may cross the trigger, as the walk before `T-06.1` could. `minSpacingPx`: the view is narrowed
- * around its centre until a bucket is that wide (`measurePhase`). Then `calibrate` maps ms → px from
- * the crosshair — it is the phase/legend instrument, not navigation. */
-async function calibratedView(page: Page, fromMs: number, toMs: number, minSpacingPx?: number): Promise<Mapping> {
+ * around its centre until a bucket is that wide (`measurePhase`). Navigation only: the instrument reads
+ * the time scale the view leaves on the page (`readTimeScale`). */
+async function showRange(page: Page, fromMs: number, toMs: number, minSpacingPx?: number): Promise<void> {
   const state = await readView(page);
   const axisEndMs = state.windowStartMs + state.slotCount * state.stepMs;
   const target = {
@@ -546,7 +580,6 @@ async function calibratedView(page: Page, fromMs: number, toMs: number, minSpaci
   };
   const view = await showView(page, target, { allowPaging: true, minBarSpacingPx: minSpacingPx });
   fact(SPEC, "show_range_trace", { fromMs, toMs, iterations: view.iterations, pages: view.pagesRequestedDuring, trace: view.trace });
-  return calibrate(page);
 }
 
 interface ColumnInk {
@@ -554,6 +587,8 @@ interface ColumnInk {
   readonly down: number;
   readonly neutral: number;
   readonly line: number;
+  /** The device rows of the line's ink in these columns (`judgeAblation` tells a line from a horizontal rule). */
+  readonly lineRows: readonly number[];
 }
 
 type InkClass = "up" | "down" | "neutral" | "none" | "mixed";
@@ -589,7 +624,7 @@ async function readColumns(page: Page, xs: readonly number[]): Promise<ColumnInk
         Math.abs(data[at]! - color[0]!) <= tol && Math.abs(data[at + 1]! - color[1]!) <= tol && Math.abs(data[at + 2]! - color[2]!) <= tol;
       return xs.map((pageX) => {
         const center = Math.round((pageX - rect.left) * dpr);
-        const ink = { up: 0, down: 0, neutral: 0, line: 0 };
+        const ink = { up: 0, down: 0, neutral: 0, line: 0, lineRows: [] as number[] };
         for (const image of images) {
           for (let x = center - 1; x <= center + 1; x += 1) {
             if (x < 0 || x >= image.width) continue;
@@ -599,7 +634,10 @@ async function readColumns(page: Page, xs: readonly number[]): Promise<ColumnInk
               if (near(image.data, at, inks.up)) ink.up += 1;
               else if (near(image.data, at, inks.down)) ink.down += 1;
               else if (near(image.data, at, inks.neutral)) ink.neutral += 1;
-              else if (near(image.data, at, inks.line)) ink.line += 1;
+              else if (near(image.data, at, inks.line)) {
+                ink.line += 1;
+                if (ink.lineRows[ink.lineRows.length - 1] !== y && !ink.lineRows.includes(y)) ink.lineRows.push(y);
+              }
             }
           }
         }
@@ -618,45 +656,37 @@ async function readColumns(page: Page, xs: readonly number[]): Promise<ColumnInk
 /** One bucket as the screen shows it: identity, candle centre, the legend read ON the candle, and the ink. */
 interface BucketReading {
   readonly bucketMs: number;
+  /** The view it was read in (`judgeAblation` judges the line per view). */
+  readonly view: string;
   readonly centerX: number;
+  /** The legend with the pointer on the candle's centre; `EMPTY_LEGEND` where the legend named no bucket. */
   readonly legend: LegendReading;
   readonly ink: ColumnInk;
 }
 
 interface ViewAudit {
   readonly spacingPx: number;
-  /** Worst distance of a legend group's centre from the least-squares line (half a bucket = unusable). */
+  /** Worst distance, over the lag probe, of a legend group's centre from the slot the time scale and
+   * the one-way pass put that bucket at (half a bucket = the identity is not trustworthy). */
   readonly fitResidualPx: number;
-  /** Half the gap between the forward and the backward sweep's centres: the legend's lag. */
+  /** Half the gap between the lag probe's forward and backward groups' centres: the legend's lag. */
   readonly lagPx: number;
-  /** Where the candles are, relative to the legend groups' centres (half a spacing from the scan's gap). */
+  /** Where the candles are, relative to the time scale's slot centres (`phaseFraction · spacing`). */
   readonly candlePhasePx: number;
-  /** The legend read on the LEFT and on the RIGHT quarter of probed candles: `self` / `previous` / `next`. */
-  readonly leftQuarter: Readonly<Record<string, number>>;
-  readonly rightQuarter: Readonly<Record<string, number>>;
+  /** The legend's bucket minus the slot's instant: ONE value for every bucket the legend named. */
+  readonly offsetMs: number;
+  /** Buckets the legend named on the one-way pass, and the ones it named none on (holes). */
+  readonly named: number;
+  readonly unnamed: number;
+  readonly probeGroups: number;
   readonly buckets: readonly BucketReading[];
 }
 
-/**
- * Finds every visible bucket's candle and reads it, in four moves:
- *
- *  1. sweeps the crosshair both ways a third of a bucket per step and groups the steps by the bucket the
- *     OI legend names; a least-squares line through the groups' centres gives the spacing `b` and a grid;
- *  2. scans the candle ink under `grid + δ`, `δ ∈ [−b/2, b/2]`, and takes the phase half a spacing from
- *     the empty gap between bodies (`candlePhaseOf`) — the candles' own
- *     x, found on the canvas, not assumed from the legend (`[MEDIDO 2026-09-27]`, on the 1-minute slot
- *     before `T-05.1`: they sat HALF A BUCKET off the legend groups' centres, `gates/T-03.13-builder.md` §4);
- *  3. names each candle by hovering its RIGHT quarter (inside the candle, and inside the legend region of
- *     the candle itself whichever way the legend's half-bar boundary falls), and asserts ONE integer shift
- *     between the grid and those names;
- *  4. parks the pointer and reads the canvas column under every candle centre.
- */
 interface PhaseScanStep {
   readonly delta: number;
-  /** Candle ink (up + down + doji) in the columns under `grid + delta`. */
+  /** Candle ink (up + down + doji) in the columns under `slot centre + delta`. */
   readonly ink: number;
 }
-
 /** A scan with a candle on the canvas has columns between the bodies with (almost) no candle ink. */
 const PHASE_SCAN_FLOOR_RATIO = 0.1;
 
@@ -701,17 +731,61 @@ function candlePhaseOf(scan: readonly PhaseScanStep[], spacingPx: number = scan.
 }
 
 /**
- * `phaseFraction` — the candle phase as a fraction of the spacing, measured on the candle page by a
- * previous `auditView`. The ablation passes it: there is no candle on its canvas to scan a phase on,
- * and the phase is a property of the time scale and the legend, not of the series drawn.
+ * `estrutura-do-front` `T-10.3` (DoD 1) — the candle phase, read on the screen as it stands: candle ink
+ * (up + down + doji) under every visible slot's `x + δ`, `δ ∈ [−b/2, b/2]` in 1-px steps, pointer
+ * parked. All the steps in ONE canvas read (it was one full-canvas `getImageData` per step, 65 of them
+ * at `b = 65.9`, E2E-analise §1.1). A flat scan throws: there is no candle to find a phase on.
  */
-async function auditView(page: Page, mapping: Mapping, phaseFraction?: number): Promise<ViewAudit> {
-  const box = await oiCanvasBox(page);
-  const y = box.y + box.height * 0.6;
-  const step = mapping.b / SWEEP_STEPS_PER_BUCKET;
-  const sweep = async (xs: readonly number[]) => {
+async function scanPhase(page: Page): Promise<{ readonly phasePx: number; readonly spacingPx: number }> {
+  await page.mouse.move(2, 2);
+  await waitForChartSettled(page);
+  const scale = await readTimeScale(page);
+  const b = scale.spacingPx;
+  const slots = visibleSlots(scale);
+  const half = Math.floor(b / 2);
+  const deltas: number[] = [];
+  for (let delta = -half; delta <= half; delta += 1) deltas.push(delta);
+  const inks = await readColumns(page, deltas.flatMap((delta) => slots.map((i) => slotX(scale, i) + delta)));
+  const scan: PhaseScanStep[] = deltas.map((delta, j) => ({
+    delta,
+    ink: inks.slice(j * slots.length, (j + 1) * slots.length).reduce((sum, ink) => sum + ink.up + ink.down + ink.neutral, 0),
+  }));
+  fact(SPEC, "phase_scan", { spacingPx: b, slots: slots.length, scan });
+  const found = candlePhaseOf(scan, b);
+  if (found === null) {
+    throw new Error(`scanPhase: the phase scan is flat — no candle on the canvas to find a phase on ${JSON.stringify(scan)}`);
+  }
+  return { phasePx: found, spacingPx: b };
+}
+
+/** The lag probe: this many slots in the middle of the view, swept both ways a third of a slot per step. */
+const LAG_PROBE_SLOTS = 10;
+const LAG_PROBE_STEPS_PER_SLOT = 3;
+/**
+ * `T-10.3` (DoD 3) — the one-way pass reads each bucket ONCE, moving left to right, so a legend one read
+ * late would name every bucket by its left neighbour, with ONE consistent shift: the offset check alone
+ * would not see it. The probe does: a late legend moves the forward groups right and the backward groups
+ * left by a whole probe step (`spacing / 3 ≥ 2 px` at `MIN_SPACING_PX`), so `lagPx` is 0 or ≥ 1.
+ * `lagPx = 0` in the 6 views of the last full run (`E2E-analise` §1.1, `[MEDIDO: facts gate*_view_*]`).
+ */
+const MAX_LAG_PX = 1;
+
+interface LagProbe {
+  readonly lagPx: number;
+  /** Each fully swept group: the bucket the legend named and the centre of its region (both sweeps' mean). */
+  readonly groups: readonly { readonly bucketMs: number; readonly centerX: number }[];
+}
+
+async function lagProbe(page: Page, scale: TimeScale, slots: readonly number[], y: number): Promise<LagProbe> {
+  const mid = Math.floor(slots.length / 2);
+  const stretch = slots.slice(Math.max(0, mid - LAG_PROBE_SLOTS / 2), mid + LAG_PROBE_SLOTS / 2);
+  const b = scale.spacingPx;
+  const step = b / LAG_PROBE_STEPS_PER_SLOT;
+  const xs: number[] = [];
+  for (let x = slotX(scale, stretch[0]!) - b / 2 + step / 2; x < slotX(scale, stretch[stretch.length - 1]!) + b / 2; x += step) xs.push(x);
+  const sweep = async (path: readonly number[]) => {
     const groups = new Map<number, number[]>();
-    for (const x of xs) {
+    for (const x of path) {
       await page.mouse.move(x, y);
       const legend = await readLegend(page);
       if (legend.source !== "crosshair" || legend.bucketMs === null) continue;
@@ -721,101 +795,104 @@ async function auditView(page: Page, mapping: Mapping, phaseFraction?: number): 
     }
     return groups;
   };
-  const xs: number[] = [];
-  for (let x = box.x + 4; x < box.x + box.width - 4; x += step) xs.push(x);
   const forward = await sweep(xs);
   const backward = await sweep([...xs].reverse());
   const centerOf = (group: readonly number[]) => (Math.min(...group) + Math.max(...group)) / 2;
-  // The first and last bucket of the sweep are cut by its ends: their centre is not measured.
+  // The first and last group of the probe may be cut by its ends: their centre is not measured.
   const ordered = [...forward.entries()]
     .filter(([ms]) => backward.has(ms))
     .sort((p, q) => p[0] - q[0])
     .slice(1, -1);
-  if (ordered.length < 3) throw new Error(`auditView: the legend named only ${ordered.length} buckets`);
+  if (ordered.length < 3) throw new Error(`lagProbe: the legend named only ${ordered.length} whole buckets`);
   const lags = ordered.map(([ms, group]) => (centerOf(group) - centerOf(backward.get(ms)!)) / 2);
-  const centers = ordered.map(([ms, group]) => (centerOf(group) + centerOf(backward.get(ms)!)) / 2);
-  const ks = ordered.map(([ms]) => ms / FIVE);
-  const meanK = ks.reduce((sum, k) => sum + k, 0) / ks.length;
-  const meanX = centers.reduce((sum, x) => sum + x, 0) / centers.length;
-  const b = ks.reduce((sum, k, i) => sum + (k - meanK) * (centers[i]! - meanX), 0) / ks.reduce((sum, k) => sum + (k - meanK) ** 2, 0);
-  const residual = ks.reduce((worst, k, i) => Math.max(worst, Math.abs(meanX + b * (k - meanK) - centers[i]!)), 0);
-  const groupX = (k: number) => meanX + b * (k - meanK);
-
-  // 2. The phase: parked pointer, candle ink (up + down + doji) under `grid + δ`, 1 px steps.
-  await page.mouse.move(2, 2);
-  await waitForChartSettled(page);
-  const firstK = ks[0]!;
-  const lastK = ks[ks.length - 1]!;
-  const allK: number[] = [];
-  for (let k = firstK; k <= lastK; k += 1) allK.push(k);
-  let phase: number;
-  if (phaseFraction === undefined) {
-    const scan: PhaseScanStep[] = [];
-    const half = Math.floor(b / 2);
-    for (let delta = -half; delta <= half; delta += 1) {
-      const inks = await readColumns(page, allK.map((k) => groupX(k) + delta));
-      scan.push({ delta, ink: inks.reduce((sum, ink) => sum + ink.up + ink.down + ink.neutral, 0) });
-    }
-    fact(SPEC, "phase_scan", { spacingPx: b, scan });
-    const found = candlePhaseOf(scan, b);
-    if (found === null) {
-      throw new Error(`auditView: the phase scan is flat — no candle on the canvas to find a phase on ${JSON.stringify(scan)}`);
-    }
-    phase = found;
-  } else {
-    phase = Math.round(phaseFraction * b);
-  }
-  const candleX = (k: number) => groupX(k) + phase;
-
-  // 3. The names: the legend on the right quarter of probed candles (and, for the record, the left quarter).
-  const inkAtGrid = await readColumns(page, allK.map(candleX));
-  const inked = allK.filter((_, i) => inkAtGrid[i]!.up + inkAtGrid[i]!.down + inkAtGrid[i]!.neutral > 0);
-  const probeKs = inked.filter((_, i) => i % Math.max(1, Math.floor(inked.length / 8)) === 0).slice(0, 8);
-  const shifts = new Set<number>();
-  const leftQuarter: Record<string, number> = {};
-  const rightQuarter: Record<string, number> = {};
-  const relation = (named: number | null, k: number) => (named === null ? "none" : named / FIVE === k ? "self" : named / FIVE === k - 1 ? "previous" : named / FIVE === k + 1 ? "next" : "other");
-  for (const k of probeKs) {
-    await page.mouse.move(candleX(k) + b / 4, y);
-    const right = await readLegend(page);
-    shifts.add(right.bucketMs === null ? Number.NaN : right.bucketMs / FIVE - k);
-    await page.mouse.move(candleX(k) - b / 4, y);
-    const left = await readLegend(page);
-    const r = relation(right.bucketMs, k);
-    const l = relation(left.bucketMs, k + (right.bucketMs === null ? 0 : right.bucketMs / FIVE - k));
-    rightQuarter[r] = (rightQuarter[r] ?? 0) + 1;
-    leftQuarter[l] = (leftQuarter[l] ?? 0) + 1;
-  }
-  if (shifts.size !== 1 || !Number.isInteger([...shifts][0]!)) {
-    throw new Error(`auditView: the candles do not map to ONE bucket shift of the grid (${[...shifts].join(",")})`);
-  }
-  const shift = [...shifts][0]!;
-
-  // 4. Every bucket of the grid, named `(k + shift) · 5 min`, read under its candle's centre, legend on its right quarter.
-  const buckets: BucketReading[] = [];
-  const inks = await readColumns(page, allK.map(candleX));
-  for (const [i, k] of allK.entries()) buckets.push({ bucketMs: (k + shift) * FIVE, centerX: candleX(k), legend: EMPTY_LEGEND, ink: inks[i]! });
-  await page.mouse.move(2, 2);
   return {
-    spacingPx: b,
-    fitResidualPx: residual,
     lagPx: lags.reduce((sum, lag) => sum + lag, 0) / lags.length,
-    candlePhasePx: phase,
-    leftQuarter,
-    rightQuarter,
-    buckets,
+    groups: ordered.map(([ms, group]) => ({ bucketMs: ms, centerX: (centerOf(group) + centerOf(backward.get(ms)!)) / 2 })),
   };
 }
 
 const EMPTY_LEGEND: LegendReading = { source: "", bucketMs: null, open: Number.NaN, high: Number.NaN, low: Number.NaN, close: Number.NaN, derivedFrom: "", fact: "" };
 
-/** The legend read with the pointer on the right quarter of the candle of `bucketMs`. */
-async function legendOnCandle(page: Page, bucket: BucketReading, spacingPx: number): Promise<LegendReading> {
-  const box = await oiCanvasBox(page);
-  await page.mouse.move(bucket.centerX + spacingPx / 4, box.y + box.height * 0.6);
-  const legend = await readLegend(page);
+/**
+ * Reads every visible bucket of the view, in four moves (`T-10.3`; before it, the crosshair sweep of
+ * `TimeScale`'s docstring):
+ *
+ *  1. ONE WAY, left to right: the pointer goes straight to each candle's centre — the time scale's slot
+ *     centre plus the phase (`phaseFraction`, measured ONCE per file on a zoomed stretch, `measurePhase`) —
+ *     and the OI legend names the bucket there. Every bucket the legend names must share ONE offset to the
+ *     slot's instant, and every slot with candle ink must be named;
+ *  2. the lag probe (`lagProbe`): a short stretch swept both ways; its `lagPx` goes to the report and is
+ *     asserted (`auditViews`), and its groups' centres are checked against the slots the time scale and
+ *     the one-way pass put those buckets at (`fitResidualPx`);
+ *  3. the pointer is parked and the canvas column under every candle centre is read in ONE canvas read;
+ *  4. the time scale is read again: a view that moved under the reading throws.
+ */
+async function auditView(page: Page, viewName: string, phaseFraction: number): Promise<ViewAudit> {
   await page.mouse.move(2, 2);
-  return legend;
+  await waitForChartSettled(page);
+  const scale = await readTimeScale(page);
+  if (scale.stepMs !== FIVE) throw new Error(`auditView: the page's step is ${scale.stepMs} ms, not 5 min`);
+  const b = scale.spacingPx;
+  const slots = visibleSlots(scale);
+  if (slots.length < 3) throw new Error(`auditView: only ${slots.length} whole slots on screen`);
+  const phase = Math.round(phaseFraction * b);
+  const candleX = (i: number) => slotX(scale, i) + phase;
+  const slotMs = (i: number) => scale.windowStartMs + i * scale.stepMs;
+  const y = scale.canvas.y + scale.canvas.height * 0.6;
+
+  // 1. One way: one legend read per bucket, on the candle's centre.
+  const legends: LegendReading[] = [];
+  for (const i of slots) {
+    await page.mouse.move(candleX(i), y);
+    legends.push(await readLegend(page));
+  }
+  // 2. The lag probe.
+  const probe = await lagProbe(page, scale, slots, y);
+  // 3. The ink, pointer parked.
+  await page.mouse.move(2, 2);
+  const inks = await readColumns(page, slots.map(candleX));
+  // 4. The grid did not move under the reading.
+  const after = await readTimeScale(page);
+  if (!sameScale(scale, after)) {
+    throw new Error(`auditView: the time scale moved under the reading (${JSON.stringify(scale)} → ${JSON.stringify(after)})`);
+  }
+
+  const isNamed = (legend: LegendReading) => legend.source === "crosshair" && legend.bucketMs !== null;
+  const offsets = new Set<number>();
+  for (const [j, i] of slots.entries()) if (isNamed(legends[j]!)) offsets.add(legends[j]!.bucketMs! - slotMs(i));
+  const named = legends.filter(isNamed).length;
+  if (named < 3) throw new Error(`auditView: the legend named only ${named} buckets`);
+  if (offsets.size !== 1) {
+    throw new Error(`auditView: the candles do not map to ONE bucket offset of the time scale (${[...offsets].join(",")} ms)`);
+  }
+  const offsetMs = [...offsets][0]!;
+  const inkedUnnamed = slots.filter((_, j) => !isNamed(legends[j]!) && inks[j]!.up + inks[j]!.down + inks[j]!.neutral > 0);
+  if (inkedUnnamed.length > 0) {
+    throw new Error(`auditView: candle ink under ${inkedUnnamed.length} slot(s) the legend named no bucket on (${inkedUnnamed.slice(0, 5).map(slotMs).join(",")})`);
+  }
+  const buckets: BucketReading[] = slots.map((i, j) => ({
+    bucketMs: slotMs(i) + offsetMs,
+    view: viewName,
+    centerX: candleX(i),
+    legend: isNamed(legends[j]!) ? legends[j]! : EMPTY_LEGEND,
+    ink: inks[j]!,
+  }));
+  // The probe's groups sit on the slots the time scale gives THE SAME buckets the one-way pass named.
+  const residual = probe.groups.reduce((worst, group) => {
+    const i = (group.bucketMs - offsetMs - scale.windowStartMs) / scale.stepMs;
+    return Math.max(worst, Math.abs(group.centerX - slotX(scale, i)));
+  }, 0);
+  return {
+    spacingPx: b,
+    fitResidualPx: residual,
+    lagPx: probe.lagPx,
+    candlePhasePx: phase,
+    offsetMs,
+    named,
+    unnamed: slots.length - named,
+    probeGroups: probe.groups.length,
+    buckets,
+  };
 }
 
 // ── The judges: pure ──────────────────────────────────────────────────────────────────────────────
@@ -960,19 +1037,56 @@ function judgeOneSeries(buckets: readonly BucketReading[], truth: Truth, hovered
   return { defects, inconclusive: judged === 0 ? "INCONCLUSIVO — no capture-start bucket with a candle on screen" : null, counts: { capture_buckets_judged: judged } };
 }
 
+/**
+ * `DoD-6` — under `?e2eOiLine=1` the candle ink is gone from every judged bucket, AND the line is drawn.
+ * `estrutura-do-front` `T-10.3` (DoD 4, `E2E-analise` §5 `C-9`, the precondition for cutting `e2e/36`,
+ * whose `PX-2` says the line APPEARS): the line's ink is read in the SAME columns where the candle
+ * vanished — every judged bucket must carry line ink (146 of 146 on the GATE stub, `gates/T-10.3-build.md`),
+ * and so must every view — not only "the page drew some line somewhere".
+ */
+/** Fewer distinct device rows of line ink than this, over a whole view, is a horizontal rule, not a line. */
+const LINE_MIN_ROWS = 10;
+
 function judgeAblation(buckets: readonly BucketReading[], truth: Truth): Verdict {
   const defects: string[] = [];
   let judged = 0;
   let lineInk = 0;
+  let judgedWithLine = 0;
+  const lineByView = new Map<string, number>();
+  const rowsByView = new Map<string, Set<number>>();
   for (const bucket of buckets) {
     lineInk += bucket.ink.line;
+    lineByView.set(bucket.view, (lineByView.get(bucket.view) ?? 0) + bucket.ink.line);
+    const rows = rowsByView.get(bucket.view) ?? new Set<number>();
+    for (const row of bucket.ink.lineRows) rows.add(row);
+    rowsByView.set(bucket.view, rows);
     const candle = truth.candles.get(bucket.bucketMs);
     if (candle === undefined || !candle.closed) continue;
     judged += 1;
+    if (bucket.ink.line > 0) judgedWithLine += 1;
+    else defects.push(`${bucket.bucketMs} (${bucket.view}): no line ink in the column where the candle vanished ${JSON.stringify(bucket.ink)}`);
     if (bucket.ink.up > 0 || bucket.ink.down > 0) defects.push(`${bucket.bucketMs}: candle ink survived the ablation ${JSON.stringify(bucket.ink)}`);
   }
   if (lineInk === 0) defects.push("the ablation's line drew nothing — the control is blind");
-  return { defects, inconclusive: judged < MIN_PER_REGIME ? `INCONCLUSIVO — only ${judged} candle buckets under the ablation` : null, counts: { judged, line_ink: lineInk } };
+  for (const [view, ink] of lineByView) if (ink === 0) defects.push(`view ${view}: the ablation's line drew nothing in the columns where the candle vanished`);
+  // The series' own last-value rule is dashed, horizontal and in the SAME token: with the line hidden
+  // (`lineVisible: false`) it alone left ink in 146 of 146 judged columns, on ONE band of rows
+  // (`gates/T-10.3-build.md` §4). A line that moves with the data, autoscaled to the pane, crosses
+  // many rows.
+  for (const [view, rows] of rowsByView) {
+    if (rows.size < LINE_MIN_ROWS) defects.push(`view ${view}: the line's ink sits on ${rows.size} device row(s) — a horizontal rule, not the series' line`);
+  }
+  return {
+    defects,
+    inconclusive: judged < MIN_PER_REGIME ? `INCONCLUSIVO — only ${judged} candle buckets under the ablation` : null,
+    counts: {
+      judged,
+      judged_with_line: judgedWithLine,
+      line_ink: lineInk,
+      ...Object.fromEntries([...lineByView].map(([view, ink]) => [`line_ink_${view}`, ink])),
+      ...Object.fromEntries([...rowsByView].map(([view, rows]) => [`line_rows_${view}`, rows.size])),
+    },
+  };
 }
 
 function expectGreen(name: string, verdict: Verdict): void {
@@ -1033,31 +1147,38 @@ async function auditViews(
   views: readonly View[],
   hoverMs: ReadonlySet<number>,
   label: string,
-  phaseFraction?: number,
+  phaseFraction: number,
 ): Promise<Acceptance> {
   const all = new Map<number, BucketReading>();
   const hovered = new Map<number, LegendReading>();
   for (const view of views) {
-    const mapping = await calibratedView(page, view.fromMs, view.toMs);
-    const audit = await auditView(page, mapping, phaseFraction);
+    await showRange(page, view.fromMs, view.toMs);
+    const audit = await auditView(page, view.name, phaseFraction);
     fact(SPEC, `${label}_view_${view.name}`, {
       view,
       spacingPx: audit.spacingPx,
       fitResidualPx: audit.fitResidualPx,
       lagPx: audit.lagPx,
       candlePhasePx: audit.candlePhasePx,
-      leftQuarter: audit.leftQuarter,
-      rightQuarter: audit.rightQuarter,
+      offsetMs: audit.offsetMs,
+      named: audit.named,
+      unnamed: audit.unnamed,
+      probeGroups: audit.probeGroups,
       buckets: audit.buckets.length,
       first: audit.buckets[0]?.bucketMs,
       last: audit.buckets[audit.buckets.length - 1]?.bucketMs,
     });
     expect(audit.spacingPx, `${view.name}: buckets too narrow to read one by one`).toBeGreaterThanOrEqual(MIN_SPACING_PX);
-    // Half a bucket: a skipped or doubled slot would put a centre a whole bucket off the line.
-    expect(audit.fitResidualPx, `${view.name}: the crosshair centres are not on a line (the identity is not trustworthy)`).toBeLessThan(audit.spacingPx / 2);
+    // Half a bucket: a skipped or doubled slot, or a probe that names a bucket the one-way pass put a
+    // slot away, puts a centre a whole bucket off the time scale.
+    expect(audit.fitResidualPx, `${view.name}: the crosshair centres are not on the time scale (the identity is not trustworthy)`).toBeLessThan(audit.spacingPx / 2);
+    // `T-10.3` (DoD 3): the one-way pass is only as good as a legend that is not late (`MAX_LAG_PX`).
+    expect(Math.abs(audit.lagPx), `${view.name}: the legend lags the pointer by ${audit.lagPx} px — the one-way pass would name each bucket by its neighbour`).toBeLessThan(MAX_LAG_PX);
     for (const bucket of audit.buckets) {
       if (!all.has(bucket.bucketMs)) all.set(bucket.bucketMs, bucket);
-      if (hoverMs.has(bucket.bucketMs) && !hovered.has(bucket.bucketMs)) hovered.set(bucket.bucketMs, await legendOnCandle(page, bucket, audit.spacingPx));
+      // The legend was read ON the candle by the one-way pass (`EMPTY_LEGEND` where it named nothing,
+      // which `judgeOneSeries` rejects like a wrong candle).
+      if (hoverMs.has(bucket.bucketMs) && !hovered.has(bucket.bucketMs)) hovered.set(bucket.bucketMs, bucket.legend);
     }
   }
   return { buckets: [...all.values()].sort((p, q) => p.bucketMs - q.bucketMs), hovered };
@@ -1100,14 +1221,45 @@ function phaseRange(truth: Truth, views: readonly View[]): View {
 
 async function measurePhase(page: Page, truth: Truth, views: readonly View[], label: string): Promise<number> {
   const range = phaseRange(truth, views);
-  const audit = await auditView(page, await calibratedView(page, range.fromMs, range.toMs, PHASE_MIN_SPACING_PX));
-  const phaseFraction = audit.candlePhasePx / audit.spacingPx;
-  fact(SPEC, `${label}_phase`, { view: range, candlePhasePx: audit.candlePhasePx, spacingPx: audit.spacingPx, phaseFraction });
-  expect(audit.spacingPx, "the phase stretch is not zoomed in enough for the gap between bodies to show").toBeGreaterThanOrEqual(PHASE_MIN_SPACING_PX);
+  await showRange(page, range.fromMs, range.toMs, PHASE_MIN_SPACING_PX);
+  const { phasePx, spacingPx } = await scanPhase(page);
+  const phaseFraction = phasePx / spacingPx;
+  fact(SPEC, `${label}_phase`, { view: range, candlePhasePx: phasePx, spacingPx, phaseFraction });
+  expect(spacingPx, "the phase stretch is not zoomed in enough for the gap between bodies to show").toBeGreaterThanOrEqual(PHASE_MIN_SPACING_PX);
   return phaseFraction;
 }
 
-async function acceptance(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string): Promise<void> {
+/**
+ * `estrutura-do-front` `T-10.3` (DoD 1) — THE PHASE IS MEASURED ONCE PER FILE (per universe: one stub
+ * and one `next start`), by the first test that needs it, and carried by the others. It was measured
+ * three times, with the same answer (`spacing 65.9`, phase `−1`, `E2E-analise` §1.1): it is a property of
+ * the time scale and the legend, not of the mount or of the series drawn — the ablation already carried
+ * it from the candle page to the line page as a fraction of the spacing. A test that runs alone
+ * (`--grep`), or after a failed one (a new worker, an empty cache), measures it itself.
+ */
+interface PhaseOnce {
+  fraction: number | undefined;
+}
+
+/** The phase: the cached one, or measured on a fresh CANDLE mount of `/symbol` (left zoomed in on it). */
+async function phaseOnCandlePage(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string, once: PhaseOnce): Promise<number> {
+  if (once.fraction !== undefined) {
+    fact(SPEC, `${label}_phase_reused`, { phaseFraction: once.fraction });
+    return once.fraction;
+  }
+  // The line leaves no candle to scan a phase on (`candlePhaseOf`), and naming the columns by a noise
+  // phase was `W6-QA-FRONT`'s flake: the phase comes from the CANDLE page.
+  const request = await openSymbol(page, baseUrl, INTERVAL_QUERY);
+  await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
+  const truth = await fetchTruth(apiBase, catalog, request);
+  const views = viewsOf(truth);
+  expect(views.length, "INCONCLUSIVO — no capture start in the window").toBeGreaterThan(0);
+  const fraction = await measurePhase(page, truth, views, label);
+  once.fraction = fraction;
+  return fraction;
+}
+
+async function acceptance(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string, once: PhaseOnce): Promise<void> {
   const request = await openSymbol(page, baseUrl, INTERVAL_QUERY);
   await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
   const truth = await fetchTruth(apiBase, catalog, request);
@@ -1121,22 +1273,19 @@ async function acceptance(page: Page, baseUrl: string, apiBase: string, catalog:
     views,
   });
   expect(views.length, "INCONCLUSIVO — no capture start in the window").toBeGreaterThan(0);
-  const phaseFraction = await measurePhase(page, truth, views, label);
+  let phaseFraction = once.fraction;
+  if (phaseFraction === undefined) {
+    phaseFraction = await measurePhase(page, truth, views, label);
+    once.fraction = phaseFraction;
+  } else fact(SPEC, `${label}_phase_reused`, { phaseFraction });
   const { buckets, hovered } = await auditViews(page, views, new Set(captureBuckets(truth)), label, phaseFraction);
   expectGreen(`${label}_ca7_colour`, judgeColour(buckets, truth));
   expectGreen(`${label}_ca8_hole`, judgeHoles(buckets, truth));
   expectGreen(`${label}_d2bis_one_series`, judgeOneSeries(buckets, truth, hovered));
 }
 
-async function ablation(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string): Promise<void> {
-  // The phase comes from the CANDLE page, on the first view: the line leaves no candle to scan
-  // a phase on (`candlePhaseOf`), and naming the columns by a noise phase was `W6-QA-FRONT`'s flake.
-  const candleRequest = await openSymbol(page, baseUrl, INTERVAL_QUERY);
-  await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
-  const candleTruth = await fetchTruth(apiBase, catalog, candleRequest);
-  const candleViews = viewsOf(candleTruth);
-  expect(candleViews.length, "INCONCLUSIVO — no capture start in the window").toBeGreaterThan(0);
-  const phaseFraction = await measurePhase(page, candleTruth, candleViews, `${label}_ablation`);
+async function ablation(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string, once: PhaseOnce): Promise<void> {
+  const phaseFraction = await phaseOnCandlePage(page, baseUrl, apiBase, catalog, `${label}_ablation`, once);
 
   const request = await openSymbol(page, baseUrl, `${INTERVAL_QUERY}&${ABLATION_QUERY}`);
   await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "line");
@@ -1179,12 +1328,9 @@ function judgeOlderPage(buckets: readonly BucketReading[], request: RenderedRequ
   return { defects, inconclusive: judged < MIN_PER_REGIME ? `INCONCLUSIVO — only ${judged} older-page candles on screen` : null, counts: { judged } };
 }
 
-async function olderPage(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string): Promise<void> {
+async function olderPage(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string, once: PhaseOnce): Promise<void> {
   // The phase, on the SSR window's candles (the pager plays no part in it), before the walk.
-  const candleRequest = await openSymbol(page, baseUrl, INTERVAL_QUERY);
-  await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
-  const candleTruth = await fetchTruth(apiBase, catalog, candleRequest);
-  const phaseFraction = await measurePhase(page, candleTruth, viewsOf(candleTruth), `${label}_older`);
+  const phaseFraction = await phaseOnCandlePage(page, baseUrl, apiBase, catalog, `${label}_older`, once);
 
   const request = await openSymbol(page, baseUrl, INTERVAL_QUERY);
   await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
@@ -1245,6 +1391,7 @@ test.describe(`T-03.13: aceite do candle de OI por balde — GATE (stub), ${SPEC
   let catalog: CatalogEnvelope;
   let stub: StubHandle;
   let instance: NextInstanceHandle | undefined;
+  const phase: PhaseOnce = { fraction: undefined };
 
   test.beforeAll(async () => {
     catalog = await fetchCatalog(sentimentoApiBaseUrl());
@@ -1260,15 +1407,15 @@ test.describe(`T-03.13: aceite do candle de OI por balde — GATE (stub), ${SPEC
   });
 
   test("CA-7 + CA-8′ + D2-bis: cor por contratos, buraco sem vela, uma vela uma série — por balde", async ({ page }) => {
-    await acceptance(page, instance!.baseUrl, `${stub.url}/api/v1`, catalog, "gate");
+    await acceptance(page, instance!.baseUrl, `${stub.url}/api/v1`, catalog, "gate", phase);
   });
 
   test("DoD-6: sob ?e2eOiLine=1 a vela some em todos os baldes julgados", async ({ page }) => {
-    await ablation(page, instance!.baseUrl, `${stub.url}/api/v1`, catalog, "gate");
+    await ablation(page, instance!.baseUrl, `${stub.url}/api/v1`, catalog, "gate", phase);
   });
 
   test("E5: as velas de OI da página ANTIGA chegam à tela — o pager não as descarta", async ({ page }) => {
-    await olderPage(page, instance!.baseUrl, `${stub.url}/api/v1`, catalog, "gate");
+    await olderPage(page, instance!.baseUrl, `${stub.url}/api/v1`, catalog, "gate", phase);
   });
 });
 
@@ -1276,6 +1423,7 @@ test.describe(`T-03.13: aceite do candle de OI por balde — REAL (md.series só
   test.describe.configure({ timeout: 600_000 });
   let catalog: CatalogEnvelope;
   let instance: NextInstanceHandle | undefined;
+  const phase: PhaseOnce = { fraction: undefined };
 
   test.beforeAll(async () => {
     if (REAL_API === "") return;
@@ -1289,11 +1437,11 @@ test.describe(`T-03.13: aceite do candle de OI por balde — REAL (md.series só
 
   test("REAL — CA-7 + CA-8′ + D2-bis por balde, sobre o dado real", async ({ page }) => {
     test.skip(REAL_API === "", "E2E_OI_REAL_API_BASE_URL not set: no read API serving oi_candles over real md.series");
-    await acceptance(page, instance!.baseUrl, REAL_API, catalog, "real");
+    await acceptance(page, instance!.baseUrl, REAL_API, catalog, "real", phase);
   });
 
   test("REAL — DoD-6: sob ?e2eOiLine=1 a vela some, sobre o dado real", async ({ page }) => {
     test.skip(REAL_API === "", "E2E_OI_REAL_API_BASE_URL not set: no read API serving oi_candles over real md.series");
-    await ablation(page, instance!.baseUrl, REAL_API, catalog, "real");
+    await ablation(page, instance!.baseUrl, REAL_API, catalog, "real", phase);
   });
 });

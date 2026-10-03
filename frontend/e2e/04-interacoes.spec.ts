@@ -86,9 +86,5 @@ test("filtro do catálogo (S3) é controlado e recomputa — as linhas reais da 
   expect(afterNoMatch, "non-matching filter text leaves a row — the filter is inert").toBe(0);
 });
 
-test("botão 'abrir' (Camada 2) foi removido — M3, tasks_review.md §1", async ({ page }) => {
-  const openButtons = page.getByRole("button", { name: "abrir" });
-  const count = await openButtons.count();
-  fact(SPEC, "abrir_buttons", count);
-  expect(count, "'abrir' still mounted — M3 removed it (openedSeriesId has no setter left)").toBe(0);
-});
+// `T-10.17`: the "botão 'abrir' removido" test (`M3`) is a step of `01-console-carrega.spec.ts`'s first
+// test now — same page, same at-rest read, one `goto` instead of two (`E2E-analise` §3/04).

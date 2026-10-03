@@ -1570,7 +1570,7 @@ function OiLegendHlUnmeasuredCell({ numeralWidthCh }: { readonly numeralWidthCh:
   );
 }
 
-function OiPane({
+export function OiPane({
   panels,
   status,
   oi,
@@ -3062,7 +3062,7 @@ function LongShortRecentBand({
  * the window's last instant is EXACT or it is `SEM_PONTO`, and there is no state in which a stale
  * number can sit on this pane pretending to be current.
  */
-function LongShortPane({
+export function LongShortPane({
   longShort,
   status,
   symbol,

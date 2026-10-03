@@ -11,15 +11,12 @@
  *
  * ⚠️ WHERE THE WIRING IN `SymbolClient` IS PROVEN — and where it is NOT (DoD 2):
  * - "price NEVER gets the badge": `price-pane-dom-contract.test.ts`, by rendering `PricePane`.
- * - "OI and long/short show the badge, guarded on the strict `beyond-coverage` verdict, fed by
- *   `panelWallState`": `e2e/21-arrasto-historia-parede-e-ablacao.spec.ts`, test
- *   `DoD-2/DoD-3: OI e long/short nomeiam "beyond"…` — ⛔ BUT ONLY when the series-window reader is
- *   present. In `make verify` it is NOT (`series_window_reader_present=false` in 6 of 6 logs read on
- *   2026-10-03, `gates/T-10.11-build.md`), and that branch asserts ABSENCE only. So today this half of
- *   the wiring has NO automatic proof, and that is declared here instead of lost in silence. What is
- *   left: `wallState` is a REQUIRED prop of `OiPane`/`LongShortPane`, so `tsc --strict` refuses a call
- *   site that drops it; it does not refuse one that passes the wrong verdict. The guard inside each pane
- *   is rendered by `T-10.13`/`T-10.14`, when those panes are exported.
+ * - "OI and long/short show the badge, guarded on the strict `beyond-coverage` verdict":
+ *   `wall-badge-pane-render.test.ts`, by rendering `OiPane`/`LongShortPane` (wave-2 QA `W-1`).
+ * - "each pane is fed the verdict of ITS OWN series by `panelWallState`":
+ *   `wall-state-call-site.test.ts`, by AST over `SymbolClient`'s call site (no pane render reaches it).
+ *   `e2e/21-arrasto-historia-parede-e-ablacao.spec.ts` still proves the whole chain on screen, but only
+ *   when the series-window reader is present — in `make verify` it is not (`gates/T-10.11-build.md` §4).
  *
  * Run with: npm --prefix frontend run test:app
  */
