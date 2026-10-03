@@ -142,3 +142,15 @@ Vale para os arquivos com linha própria, e o pager tem uma (`:35`). Os outros t
 - `scope-map.tsv`: o "sem mudança" foi justificado com uma premissa falsa (F-1).
 - SPEC, ADR e `STITCH_CONTEXT`: sem mudança, o que está correto. `series-slots.ts` aplica `SPEC-011 §3` e `ADR-050/D5/D6`, e não há mudança visual.
 - Não existe Playwright MCP nesta instalação, então não exigi prova ao vivo. O portão é a e2e versionada.
+
+---
+
+## Adendo do orquestrador (2026-10-03): os três achados, corrigidos e medidos (commit `ac501455`)
+
+| achado | correção | prova `[MEDIDO, n=1]` |
+|---|---|---|
+| **F-1**: a e2e/43 estava fora do mapa | `43` entra nas linhas 32–38 de `frontend/e2e/scope-map.tsv`, as linhas do eixo e do pager | Somei um comentário de sonda a `use-history-pager.ts` e rodei `VERIFY_BASE=HEAD bash scripts/scope-resolve.sh`: deu `e2e=ESCOPO`, e `e2e/43` aparece **1×** em `e2e_specs`. Revertido, `git status` limpo. |
+| **F-2**: horário no futuro no INDEX | As 3 linhas da F3 passam a ter o horário do commit, convertido para UTC: `1ce52ae7` 21:47Z, `3274594c` 22:01Z, `91ed58f0` 22:27Z | Nenhuma das 3 linhas está em `origin/master` (`git show origin/master:docs/INDEX.md \| grep -c …` → `0`), então a correção não reescreve linha publicada. |
+| **F-3**: o grafo do cliente não via builtin sem prefixo | Agora o filtro usa `isBuiltin` de `node:module` em vez de `startsWith("node:")` | Com `import "crypto";` em `panel-assembly.ts`, o teste dá **rc=1** e nomeia `crypto <- SymbolClient.tsx -> use-history-pager.ts -> panel-assembly.ts`. Na árvore limpa dá **rc=0**. Restaurado, `cmp` rc=0. |
+
+**Condição para o gate de QA:** com F-1, F-2 e F-3 fechados, o NEEDS_FIX vira APPROVED. Falta o `VERIFY_FORCE=1 make verify` da fase sobre a branch, já com o master mesclado, depois do merge da wave 2 da pirâmide.
