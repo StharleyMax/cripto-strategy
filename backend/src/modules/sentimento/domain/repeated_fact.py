@@ -1,29 +1,28 @@
-"""Whether a candidate row only REPEATS the fact its immediate predecessor already recorded.
+"""Whether a candidate row only repeats its immediate predecessor's fact."""
 
-`T-06.4` (`paineis-de-fluxo`, phase `06`): the single writer stops persisting an observation
-that says nothing the store does not already say. The proof that dropping such a row leaves
-every `as_of` answer unchanged is `docs/context/paineis-de-fluxo/handoff/T-06.4-prova.md` §1
-(the dominance lemma over `domain/as_of_accessor.py`'s admission and `argmin` order); this
-module is the predicate that proof licenses, and NOTHING wider.
-
-THE THREE TERMS, AND WHAT EACH ONE IS FOR (`T-06.4-prova.md` §1.2, §1.5):
-
-1. **same fact** — every column of `FACT_COLUMNS` equal, `None` equal to `None` (the
-   `IS NOT DISTINCT FROM` of the SQL side). `value_raw` is IN the fact: a value revision is
-   never a repeat, so it is always written (`§1.3`). The three observer columns are in it too:
-   a second observer of the same value is corroboration, not repetition (`§1.5`).
-2. **`predecessor.available_at <= candidate.available_at`** — without it the claim is FALSE:
-   `e = (observed_at 10, available_at 100)`, `r = (20, 30)`, same value; at `K = 50` only `r`
-   is admitted, so dropping `r` would change presence, bucket and projection (`§1.3`).
-3. **the IMMEDIATE predecessor, not any earlier equal fact** — both forms are safe for
-   `as_of`, but only this one keeps the order of every value change inside a bucket, so the
-   `X, 0, X` pattern `T-05.2`'s falsifier `F-1` accuses stays accusable (`§1.5`). The caller
-   supplies the predecessor; this function never searches for one.
-
-`observed_at` strictly increasing is the dominance condition's first term; the port contract
-(`ObservedLookup.immediate_predecessor`) already guarantees it, and it is re-checked here so a
-port that broke its contract cannot turn a same-instant redelivery into a silent drop.
-"""
+# `T-06.4` (`paineis-de-fluxo`, phase `06`): the single writer stops persisting an observation
+# that says nothing the store does not already say. The proof that dropping such a row leaves
+# every `as_of` answer unchanged is `docs/context/paineis-de-fluxo/handoff/T-06.4-prova.md` §1
+# (the dominance lemma over `domain/as_of_accessor.py`'s admission and `argmin` order); this
+# module is the predicate that proof licenses, and NOTHING wider.
+#
+# THE THREE TERMS, AND WHAT EACH ONE IS FOR (`T-06.4-prova.md` §1.2, §1.5):
+#
+# 1. **same fact** — every column of `FACT_COLUMNS` equal, `None` equal to `None` (the
+#    `IS NOT DISTINCT FROM` of the SQL side). `value_raw` is IN the fact: a value revision is
+#    never a repeat, so it is always written (`§1.3`). The three observer columns are in it too:
+#    a second observer of the same value is corroboration, not repetition (`§1.5`).
+# 2. **`predecessor.available_at <= candidate.available_at`** — without it the claim is FALSE:
+#    `e = (observed_at 10, available_at 100)`, `r = (20, 30)`, same value; at `K = 50` only `r`
+#    is admitted, so dropping `r` would change presence, bucket and projection (`§1.3`).
+# 3. **the IMMEDIATE predecessor, not any earlier equal fact** — both forms are safe for
+#    `as_of`, but only this one keeps the order of every value change inside a bucket, so the
+#    `X, 0, X` pattern `T-05.2`'s falsifier `F-1` accuses stays accusable (`§1.5`). The caller
+#    supplies the predecessor; this function never searches for one.
+#
+# `observed_at` strictly increasing is the dominance condition's first term; the port contract
+# (`ObservedLookup.immediate_predecessor`) already guarantees it, and it is re-checked here so a
+# port that broke its contract cannot turn a same-instant redelivery into a silent drop.
 
 from __future__ import annotations
 

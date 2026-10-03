@@ -1,38 +1,39 @@
 #!/usr/bin/env bash
-# T-06.4 (paineis-de-fluxo): compacta as duplicatas comprovadas de md.series — SÓ no Docker local.
+# T-06.4 (paineis-de-fluxo): compacts the proven duplicates of md.series — LOCAL Docker ONLY.
 #
-# Norma: docs/context/paineis-de-fluxo/handoff/T-06.4-prova.md (§3.2 o predicado, §4 o falsificador,
-# fim do arquivo a decisão do owner) e a emenda de 2026-10-02 em ADR-002 e ADR-041.
-# Escopo: "so local,, n tem nada na vps ais ainda" [PREMISSA-OWNER: 2026-10-02]. Este script fala
-# com o container local por `docker exec`; ele recusa um DOCKER_HOST/contexto remoto.
+# Norm: docs/context/paineis-de-fluxo/handoff/T-06.4-prova.md (§3.2 the predicate, §4 the falsifier,
+# end of file the owner's decision) and the 2026-10-02 amendment to ADR-002 and ADR-041.
+# Scope: "so local,, n tem nada na vps ais ainda" [PREMISSA-OWNER: 2026-10-02]. This script talks
+# to the local container through `docker exec`; it refuses a remote DOCKER_HOST/context.
 #
-# ORDEM (pré-condição: T-06.4 implantada no writer, senão o próximo boot regrava tudo). O universo
-# "congelado" (`ingested_at <= T_SNAP`) só é congelado com o PIPELINE PARADO: `ingested_at` é o
-# `received_at` do COLETOR, carimbado antes de a linha entrar no stream, e o `lag` do XINFO GROUPS
-# exclui o PEL (lote entregue ao escritor e ainda sem ack). Com o pipeline vivo, linhas com
-# `ingested_at <= T_SNAP` aterrissam depois do `count before`, e F-B reprova DEPOIS do DELETE sem
-# distinguir falso alarme de deleção errada (W8-CODE-REVIEW B-1). `snapshot` e `delete` recusam
-# (rc=2, antes de tocar o banco) se o pipeline não estiver parado — ver require_pipeline_stopped.
-#   0. docker stop deploy-collector-1           # pare os coletores: nada novo entra no stream
-#      aguarde lag 0 E pending 0 no grupo       # o escritor drena o stream e dá ack no PEL
-#      docker stop deploy-writer-1              # pare o escritor
-#   1. compact.sh snapshot  OUT                 # exige pipeline parado; grava OUT/t_snap
-#   2. compact.sh count     OUT before          # só leitura: por source, fingerprint, q1, F-1
-#   3. compact.sh envelopes OUT before          # F-A: 100 envelopes pela rota, sha256 de cada
-#   4. COMPACT_CONFIRM=delete-md-series-duplicates compact.sh delete OUT   # pipeline parado de novo;
-#                                                                         # um chunk por transação
+# ORDER (precondition: T-06.4 deployed in the writer, otherwise the next boot rewrites everything).
+# The "frozen" universe (`ingested_at <= T_SNAP`) is frozen only with the PIPELINE STOPPED:
+# `ingested_at` is the COLLECTOR's `received_at`, stamped before the row enters the stream, and the
+# `lag` of XINFO GROUPS excludes the PEL (a batch delivered to the writer and not yet acked). With
+# the pipeline alive, rows with `ingested_at <= T_SNAP` land after the `count before`, and F-B fails
+# AFTER the DELETE without telling a false alarm from a wrong deletion (W8-CODE-REVIEW B-1).
+# `snapshot` and `delete` refuse (rc=2, before touching the database) unless the pipeline is
+# stopped — see require_pipeline_stopped.
+#   0. docker stop deploy-collector-1           # stop the collectors: nothing new enters the stream
+#      wait for lag 0 AND pending 0 on the group # the writer drains the stream and acks the PEL
+#      docker stop deploy-writer-1              # stop the writer
+#   1. compact.sh snapshot  OUT                 # requires the pipeline stopped; writes OUT/t_snap
+#   2. compact.sh count     OUT before          # read-only: per source, fingerprint, q1, F-1
+#   3. compact.sh envelopes OUT before          # F-A: 100 envelopes through the route, sha256 of each
+#   4. COMPACT_CONFIRM=delete-md-series-duplicates compact.sh delete OUT   # pipeline stopped again;
+#                                                                         # one chunk per transaction
 #   5. compact.sh count     OUT after
 #   6. compact.sh envelopes OUT after
-#   7. compact.sh verify    OUT                 # rc=0 só se F-A e F-B passarem, todos os itens
-#   8. docker start deploy-writer-1 deploy-collector-1   # religue: escritor antes do coletor
+#   7. compact.sh verify    OUT                 # rc=0 only if F-A and F-B pass, every item
+#   8. docker start deploy-writer-1 deploy-collector-1   # restart: writer before collector
 #
-# Inspeção sem banco (o teste executa exatamente estes textos):
+# Inspection without a database (the test runs exactly these texts):
 #   compact.sh print-sql {flags|stats|chunks|delete-chunk} T_SNAP [LO HI]
 #
-# Variáveis: PG_CONTAINER (deploy-postgres-1), API_CONTAINER (deploy-api-1),
+# Variables: PG_CONTAINER (deploy-postgres-1), API_CONTAINER (deploy-api-1),
 #            REDIS_CONTAINER (deploy-redis-1), REDIS_STREAM (md.series.write),
-#            REDIS_STREAM_GROUP (single_writer), COLLECTOR_CONTAINERS (deploy-collector-1, lista
-#            separada por espaço), WRITER_CONTAINER (deploy-writer-1), SYMBOL (BTCUSDT).
+#            REDIS_STREAM_GROUP (single_writer), COLLECTOR_CONTAINERS (deploy-collector-1, a
+#            space-separated list), WRITER_CONTAINER (deploy-writer-1), SYMBOL (BTCUSDT).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,7 +52,7 @@ MAX_BIGINT="9223372036854775807"
 die() { echo "compact.sh: $*" >&2; exit 2; }
 
 require_int() {
-  [[ "$2" =~ ^-?[0-9]+$ ]] || die "$1 tem de ser inteiro (ms), veio '$2'"
+  [[ "$2" =~ ^-?[0-9]+$ ]] || die "$1 must be an integer (ms), got '$2'"
 }
 
 # ── SQL ─────────────────────────────────────────────────────────────────────────────────────────
@@ -133,10 +134,10 @@ SQL
 
 refuse_remote_docker() {
   if [[ -n "${DOCKER_HOST:-}" && "${DOCKER_HOST}" != unix://* ]]; then
-    die "DOCKER_HOST=${DOCKER_HOST} não é local; decisão do owner: só o Docker local"
+    die "DOCKER_HOST=${DOCKER_HOST} is not local; owner's decision: local Docker only"
   fi
   local ctx; ctx="$(docker context show 2>/dev/null || echo default)"
-  [[ "$ctx" == "default" ]] || die "contexto docker '$ctx' não é o local (default)"
+  [[ "$ctx" == "default" ]] || die "docker context '$ctx' is not the local one (default)"
 }
 
 psql_ro() {  # stdin = SQL; read-only session, TSV out
@@ -150,7 +151,7 @@ psql_rw() {  # stdin = SQL (with psql meta-commands)
 }
 
 t_snap_of() {
-  [[ -s "$1/t_snap" ]] || die "$1/t_snap ausente — rode 'compact.sh snapshot $1' antes"
+  [[ -s "$1/t_snap" ]] || die "$1/t_snap missing — run 'compact.sh snapshot $1' first"
   local t; t="$(cat "$1/t_snap")"; require_int T_SNAP "$t"; echo "$t"
 }
 
@@ -166,22 +167,25 @@ require_pipeline_stopped() {
   local c state
   for c in $COLLECTOR_CONTAINERS $WRITER_CONTAINER; do
     state="$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null)" \
-      || die "container '$c' não encontrado (ajuste COLLECTOR_CONTAINERS/WRITER_CONTAINER); nada foi tocado"
+      || die "container '$c' not found (set COLLECTOR_CONTAINERS/WRITER_CONTAINER); nothing was touched"
     case "$state" in
       exited|created|dead) ;;
-      *) die "container '$c' está '$state'; pare o pipeline antes (docker stop $c) — B-1, nada foi tocado" ;;
+      *) die "container '$c' is '$state'; stop the pipeline first (docker stop $c) — B-1, nothing was touched" ;;
     esac
   done
-  local running
-  running="$(docker ps --format '{{.Names}}' \
-               --filter label=com.docker.compose.service=collector \
-               --filter label=com.docker.compose.service=writer)" \
-    || die "docker ps falhou; não dá para provar o pipeline parado — nada foi tocado"
-  [[ -z "$running" ]] \
-    || die "coletor/escritor ainda rodando: $(tr '\n' ' ' <<< "$running")— pare-os antes; nada foi tocado"
+  # ONE `docker ps` PER SERVICE: repeated `label` filters are AND, not OR — a single call filtering
+  # on both services matches no container and always prints nothing (W8-CODE-REVIEW N-1, measured
+  # on Docker 24.0.4 with the live pipeline: AND → empty; `…=collector` → deploy-collector-1).
+  local svc running
+  for svc in collector writer; do
+    running="$(docker ps --format '{{.Names}}' --filter "label=com.docker.compose.service=$svc")" \
+      || die "docker ps failed; cannot prove the pipeline is stopped — nothing was touched"
+    [[ -z "$running" ]] \
+      || die "compose service '$svc' still running: $(tr '\n' ' ' <<< "$running")— stop it first; nothing was touched"
+  done
   local info
   info="$(docker exec "$REDIS_CONTAINER" redis-cli XINFO GROUPS "$REDIS_STREAM")" \
-    || die "XINFO GROUPS $REDIS_STREAM falhou (REDIS_CONTAINER=$REDIS_CONTAINER); nada foi tocado"
+    || die "XINFO GROUPS $REDIS_STREAM failed (REDIS_CONTAINER=$REDIS_CONTAINER); nothing was touched"
   # redis-cli (no TTY) prints the reply flattened, one element per line: key, value, key, value…
   local found lag pending
   read -r found lag pending <<< "$(awk -v g="$REDIS_STREAM_GROUP" '
@@ -191,11 +195,11 @@ require_pipeline_stopped() {
       cur == g && key == "pending" { pending = ($0 == "" ? "nil" : $0) }
       END { printf "%d %s %s", found, (lag == "" ? "?" : lag), (pending == "" ? "?" : pending) }' <<< "$info")"
   [[ "$found" == "1" ]] \
-    || die "grupo '$REDIS_STREAM_GROUP' ausente em XINFO GROUPS $REDIS_STREAM; nada foi tocado"
+    || die "group '$REDIS_STREAM_GROUP' missing from XINFO GROUPS $REDIS_STREAM; nothing was touched"
   [[ "$lag" == "0" ]] \
-    || die "lag do grupo '$REDIS_STREAM_GROUP' é '$lag', não 0 — religue só o escritor, drene e pare de novo; nada foi tocado"
+    || die "lag of group '$REDIS_STREAM_GROUP' is '$lag', not 0 — restart only the writer, drain, stop it again; nothing was touched"
   [[ "$pending" == "0" ]] \
-    || die "pending do grupo '$REDIS_STREAM_GROUP' é '$pending', não 0 (PEL sem ack) — religue só o escritor, drene e pare de novo; nada foi tocado"
+    || die "pending of group '$REDIS_STREAM_GROUP' is '$pending', not 0 (unacked PEL) — restart only the writer, drain, stop it again; nothing was touched"
 }
 
 # ── subcommands ─────────────────────────────────────────────────────────────────────────────────
@@ -207,7 +211,7 @@ cmd_snapshot() {
   local t; t="$(echo "SELECT (extract(epoch FROM clock_timestamp()) * 1000)::bigint" | psql_ro)"
   require_int T_SNAP "$t"
   echo "$t" > "$out/t_snap"
-  echo "T_SNAP=$t ($(date -u -d "@$((t / 1000))" +%FT%TZ)) pipeline parado, lag=0 pending=0 -> $out/t_snap"
+  echo "T_SNAP=$t ($(date -u -d "@$((t / 1000))" +%FT%TZ)) pipeline stopped, lag=0 pending=0 -> $out/t_snap"
 }
 
 cmd_count() {
@@ -215,7 +219,7 @@ cmd_count() {
   local t; t="$(t_snap_of "$out")"
   local started; started="$(date +%s)"
   sql_stats "$t" | psql_ro > "$out/stats-$phase.tsv"
-  echo "count $phase: $(wc -l < "$out/stats-$phase.tsv") linhas em $(( $(date +%s) - started )) s -> $out/stats-$phase.tsv"
+  echo "count $phase: $(wc -l < "$out/stats-$phase.tsv") lines in $(( $(date +%s) - started )) s -> $out/stats-$phase.tsv"
   cat "$out/stats-$phase.tsv"
 }
 
@@ -255,7 +259,7 @@ SQL
       local mid_k mid_lo mid_hi
       if [[ "$k_mid" == "-1" ]]; then  # no repeated bucket in 14 d: a third, declared horizon
         mid_k=$(( k_hist - day )); mid_lo=$(( mid_k - day )); mid_hi=$mid_k
-        echo "AVISO: $sid sem bucket repetido em 14 d; K_mid = K_hist - 1 d" >&2
+        echo "WARNING: $sid has no repeated bucket in 14 d; K_mid = K_hist - 1 d" >&2
       else
         mid_k=$k_mid; mid_lo=$(( ((bucket - day / 2) / four_h) * four_h )); mid_hi=$(( mid_lo + day ))
       fi
@@ -268,7 +272,7 @@ SQL
       done
       echo "$sid|1m|now|intrabar|$(( end_now - 4 * day ))|$(( end_now - 60000 ))|$k_now" >> "$plan"
     done < "$out/envelope-series.tsv"
-    echo "plano: $(wc -l < "$plan") pedidos -> $plan"
+    echo "plan: $(wc -l < "$plan") requests -> $plan"
   fi
   local started; started="$(date +%s)"
   docker exec -i -e SYMBOL="$SYMBOL" "$API_CONTAINER" python -c "$(cat "$HERE/envelopes.py")" \
@@ -276,18 +280,18 @@ SQL
   local n n200
   n="$(wc -l < "$out/envelopes-$phase.tsv")"
   n200="$(awk -F'\t' '$2==200' "$out/envelopes-$phase.tsv" | wc -l)"
-  echo "envelopes $phase: $n pedidos, $n200 com 200, em $(( $(date +%s) - started )) s -> $out/envelopes-$phase.tsv"
+  echo "envelopes $phase: $n requests, $n200 with 200, in $(( $(date +%s) - started )) s -> $out/envelopes-$phase.tsv"
 }
 
 cmd_delete() {
   local out="$1"; refuse_remote_docker
   [[ "${COMPACT_CONFIRM:-}" == "$CONFIRM_TOKEN" ]] \
-    || die "DELETE recusado: exporte COMPACT_CONFIRM=$CONFIRM_TOKEN (decisão do owner, só local)"
+    || die "DELETE refused: export COMPACT_CONFIRM=$CONFIRM_TOKEN (owner's decision, local only)"
   local t; t="$(t_snap_of "$out")"
-  [[ -s "$out/stats-before.tsv" ]] || die "rode 'compact.sh count $out before' antes do DELETE"
+  [[ -s "$out/stats-before.tsv" ]] || die "run 'compact.sh count $out before' before the DELETE"
   # F-A's "before" can only be taken before the DELETE; without it `verify` can never pass again.
   [[ -s "$out/envelopes-before.tsv" ]] \
-    || die "rode 'compact.sh envelopes $out before' antes do DELETE (F-A, prova §4)"
+    || die "run 'compact.sh envelopes $out before' before the DELETE (F-A, T-06.4-prova.md §4)"
   # B-1: the pipeline must STILL be stopped — restarted between snapshot and DELETE, rows with
   # `ingested_at <= T_SNAP` would land under the DELETE and break F-B after the irreversible step.
   require_pipeline_stopped
@@ -295,7 +299,7 @@ cmd_delete() {
   # invisible to `set -e`, and a failed listing would be reported as "0 rows deleted".
   local chunks
   chunks="$(sql_chunks | psql_ro)" \
-    || die "falha ao listar os chunks de md.series (PG_CONTAINER=$PG_CONTAINER); nada foi apagado"
+    || die "failed to list the chunks of md.series (PG_CONTAINER=$PG_CONTAINER); nothing was deleted"
   local log="$out/delete.log"; : > "$log"
   local total=0
   while IFS=$'\t' read -r lo hi; do
@@ -308,31 +312,31 @@ cmd_delete() {
               echo '\else'; echo 'ROLLBACK;'; echo '\echo :n_selected :n_deleted ROLLBACK'; echo '\endif'
             } | psql_rw )"
     echo "$lo	$hi	$res	$(( $(date +%s) - started ))s" | tee -a "$log"
-    [[ "$res" == *COMMIT ]] || die "chunk [$lo,$hi): selecionadas != apagadas — ROLLBACK; pare e investigue"
+    [[ "$res" == *COMMIT ]] || die "chunk [$lo,$hi): selected != deleted — ROLLBACK; stop and investigate"
     total=$(( total + $(awk '{print $2}' <<< "$res") ))
   done <<< "$chunks"
-  echo "apagadas no total: $total (log: $log)"
+  echo "deleted in total: $total (log: $log)"
 }
 
 cmd_verify() {
   local out="$1" fail=0
   local before="$out/stats-before.tsv" after="$out/stats-after.tsv"
-  [[ -s "$before" && -s "$after" ]] || die "faltam $before e/ou $after"
+  [[ -s "$before" && -s "$after" ]] || die "missing $before and/or $after"
   # F-B.1: per source, after.frozen == before.survivors and after.selected == 0.
   while IFS=$'\t' read -r kind key a b c; do
     [[ "$kind" == "source" ]] || continue
     local after_line; after_line="$(awk -F'\t' -v k="$key" '$1=="source" && $2==k' "$after")"
     local fa sa; fa="$(cut -f3 <<< "$after_line")"; sa="$(cut -f4 <<< "$after_line")"
     if [[ "$fa" == "$c" && "$sa" == "0" ]]; then
-      echo "F-B.1 OK   $key: antes $a, selecionadas $b, depois $fa"
+      echo "F-B.1 OK   $key: before $a, selected $b, after $fa"
     else
-      echo "F-B.1 FAIL $key: esperado depois=$c e selecionadas=0, veio depois=${fa:-?} selecionadas=${sa:-?}"; fail=1
+      echo "F-B.1 FAIL $key: expected after=$c and selected=0, got after=${fa:-?} selected=${sa:-?}"; fail=1
     fi
   done < "$before"
   # F-B.2 / F-B.3: the same line, byte for byte.
   for kind in fingerprint q1 f1; do
     local lb la; lb="$(awk -F'\t' -v k="$kind" '$1==k' "$before")"; la="$(awk -F'\t' -v k="$kind" '$1==k' "$after")"
-    if [[ -n "$lb" && "$lb" == "$la" ]]; then echo "F-B   OK   $lb"; else echo "F-B   FAIL antes '$lb' depois '$la'"; fail=1; fi
+    if [[ -n "$lb" && "$lb" == "$la" ]]; then echo "F-B   OK   $lb"; else echo "F-B   FAIL before '$lb' after '$la'"; fail=1; fi
   done
   # F-A: every envelope equal; latest_bucket_ms never goes back; at least 60 answered 200.
   local eb="$out/envelopes-before.tsv" ea="$out/envelopes-after.tsv"
@@ -346,14 +350,14 @@ cmd_verify() {
       END{printf "%d %d %d %d %d", n, eq, diff+miss, back, ok200}' "$eb" "$ea")"
     read -r n eq bad back ok200 <<< "$res"
     if [[ "$bad" == "0" && "$back" == "0" && "$ok200" -ge 60 ]]; then
-      echo "F-A   OK   $eq/$n envelopes iguais, $ok200 com 200, latest_bucket_ms nunca recuou"
+      echo "F-A   OK   $eq/$n envelopes equal, $ok200 with 200, latest_bucket_ms never went back"
     else
-      echo "F-A   FAIL $eq/$n iguais, $bad diferentes ou ausentes, $back recuos, $ok200 com 200 (mínimo 60)"; fail=1
+      echo "F-A   FAIL $eq/$n equal, $bad different or missing, $back went back, $ok200 with 200 (minimum 60)"; fail=1
     fi
   else
-    echo "F-A   FAIL faltam $eb e/ou $ea"; fail=1
+    echo "F-A   FAIL missing $eb and/or $ea"; fail=1
   fi
-  [[ "$fail" == "0" ]] && echo "VEREDITO: DELETE conferido (F-A e F-B)" || echo "VEREDITO: REPROVA — ver as linhas FAIL"
+  [[ "$fail" == "0" ]] && echo "VERDICT: DELETE verified (F-A and F-B)" || echo "VERDICT: FAIL — see the FAIL lines"
   return "$fail"
 }
 
@@ -371,13 +375,13 @@ cmd_print_sql() {
 main() {
   local cmd="${1:-}"; shift || true
   case "$cmd" in
-    snapshot)  [[ $# -eq 1 ]] || die "uso: snapshot OUT"; cmd_snapshot "$1" ;;
-    count)     [[ $# -eq 2 ]] || die "uso: count OUT {before|after}"; cmd_count "$1" "$2" ;;
-    envelopes) [[ $# -eq 2 ]] || die "uso: envelopes OUT {before|after}"; cmd_envelopes "$1" "$2" ;;
-    delete)    [[ $# -eq 1 ]] || die "uso: delete OUT"; cmd_delete "$1" ;;
-    verify)    [[ $# -eq 1 ]] || die "uso: verify OUT"; cmd_verify "$1" ;;
-    print-sql) [[ $# -ge 1 ]] || die "uso: print-sql WHAT [T_SNAP [LO HI]]"; cmd_print_sql "$@" ;;
-    *) die "uso: compact.sh {snapshot|count|envelopes|delete|verify|print-sql} ... (ver o cabeçalho)" ;;
+    snapshot)  [[ $# -eq 1 ]] || die "usage: snapshot OUT"; cmd_snapshot "$1" ;;
+    count)     [[ $# -eq 2 ]] || die "usage: count OUT {before|after}"; cmd_count "$1" "$2" ;;
+    envelopes) [[ $# -eq 2 ]] || die "usage: envelopes OUT {before|after}"; cmd_envelopes "$1" "$2" ;;
+    delete)    [[ $# -eq 1 ]] || die "usage: delete OUT"; cmd_delete "$1" ;;
+    verify)    [[ $# -eq 1 ]] || die "usage: verify OUT"; cmd_verify "$1" ;;
+    print-sql) [[ $# -ge 1 ]] || die "usage: print-sql WHAT [T_SNAP [LO HI]]"; cmd_print_sql "$@" ;;
+    *) die "usage: compact.sh {snapshot|count|envelopes|delete|verify|print-sql} ... (see the header)" ;;
   esac
 }
 

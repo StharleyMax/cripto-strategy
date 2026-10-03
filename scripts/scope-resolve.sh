@@ -55,7 +55,7 @@ expand() { # expand "13 20-22 08+" -> one NN per line. It runs inside `$( )`, so
     last="$(printf '%s\n' "${ALL_SPECS[@]}" | sed -E 's|^e2e/([0-9]+)-.*|\1|' | sort -n | tail -1)"
     for tok in $1; do
         case "$tok" in
-            *+) a="${tok%+}"   # the first number printed is `a` itself, so the caller's check refuses a missing base
+            *+) a="${tok%+}"   # `check_tokens` already proved `a` is a spec, so `a` is the first number printed
                 for ((i=10#$a; i<=10#$last; i++)); do printf '%02d\n' "$i"; done ;;
             *-*) a="${tok%-*}"; b="${tok#*-}"
                  for ((i=10#$a; i<=10#$b; i++)); do printf '%02d\n' "$i"; done ;;
@@ -72,6 +72,10 @@ check_tokens() { # check_tokens "<specs>" <prefix>. `expand` runs in a subshell 
             (( 10#${BASH_REMATCH[1]} <= 10#${BASH_REMATCH[2]} )) || recusa "$MAP: linha '$2': faixa invertida '$tok'"
         elif ! [[ "$tok" =~ ^[0-9]{2}\+?$ ]]; then
             recusa "$MAP: linha '$2': token '$tok' malformado (aceita NN, NN-MM com NN <= MM, NN+)"
+        elif [[ "$tok" == *+ ]]; then
+            # N-2 (`W8-CODE-REVIEW.md`): an `NN+` past the last spec makes `expand` print NOTHING, so
+            # the caller's per-NN check never sees it. The base is checked here, where a refusal exits.
+            spec_of "${tok%+}" >/dev/null
         fi
     done
 }

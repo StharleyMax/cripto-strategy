@@ -296,10 +296,22 @@ def test_documentation_markdown_runs_only_the_pixel_spec(repo: Path) -> None:
     assert _specs(keys) == {"11"}
 
 
-@pytest.mark.parametrize("token", ["ab+", "8-9", "13-12"])
+@pytest.mark.parametrize("token", ["ab+", "8-9", "13-12", "14+", "99+", "10 99+ 12"])
 def test_map_token_expand_cannot_read_refuses(repo: Path, token: str) -> None:
-    """M-3: a token `expand` cannot read, or an inverted range, used to vanish from its row."""
+    """M-3 / N-2: an unreadable token, an inverted range or a base past the last spec vanished.
+
+    `expand` prints nothing for an `NN+` whose `NN` is past the last spec: `'13 99+ 29'` became
+    `13 29`, and the row lost its open range in silence.
+    """
     map_path = repo / "frontend/e2e/scope-map.tsv"
     map_path.write_text(_MAP.replace("\t10\t", f"\t{token}\t"), encoding="utf-8")
     rc, _ = _resolve(repo)
     assert rc == 3
+
+
+def test_map_open_range_from_the_last_spec_is_accepted(repo: Path) -> None:
+    """The N-2 refusal stops at the boundary: `13+` with `13` the last spec is exactly `13`."""
+    map_path = repo / "frontend/e2e/scope-map.tsv"
+    map_path.write_text(_MAP.replace("\t10\t", "\t13+\t"), encoding="utf-8")
+    rc, _ = _resolve(repo)
+    assert rc == 0
