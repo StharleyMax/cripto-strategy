@@ -6,7 +6,7 @@ import { chartConstructorOptions, gridCarrierSeriesOptions } from "../../chart-o
 import { createPanesBeforeSeries } from "../../pane-scale-isolation.ts";
 import { recordHistoryPageApplied, recordHistoryPageDrawn } from "../../history-page-latency-probe.ts";
 import { busyWait, hostSeriesFeeds, isDenseSeriesAblationRequested, paneSeriesFeeds, requestedPageApplyBusyMs } from "../../host-series-feed.ts";
-import { createCrosshairSlotStore, crosshairMoveHandler } from "../../pane-legend.ts";
+import { createCrosshairSlotStore, crosshairMoveHandler } from "../legend/pane-legend.ts";
 import { useAxisSync } from "../axis/axis-sync-provider.tsx";
 import { SINGLE_CHART_PANEL_INDEX } from "../axis/axis-sync.ts";
 import { legendBottomPx, paneLayerAnchorOf } from "./pane-layer.tsx";

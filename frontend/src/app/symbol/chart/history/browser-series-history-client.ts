@@ -36,8 +36,8 @@
  * "no tick reaches the browser", two callers.
  */
 
-import { assertBucketSpacingWithinInterval, assertNoTickLevelFields, historyRequestUrl, type HistoryRequestKey } from "../history-transport.ts";
-import { parseSeriesHistoryEnvelope, type SeriesHistoryEnvelope } from "./series-history-envelope.ts";
+import { assertBucketSpacingWithinInterval, assertNoTickLevelFields, historyRequestUrl, type HistoryRequestKey } from "../../../history-transport.ts";
+import { parseSeriesHistoryEnvelope, type SeriesHistoryEnvelope } from "../../series-history-envelope.ts";
 
 /**
  * The one error class this module throws. Deliberately NOT `TransportError`

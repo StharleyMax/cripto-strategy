@@ -232,7 +232,20 @@ test("native grid: the catalog's `1min`/`5min` parse; anything else falls back t
 
 // ── item 8 — WHERE the chip is spelled (source scan) ───────────────────────────────────────────────
 
-const SYMBOL_CLIENT = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx"), "utf8");
+/** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
+ * `chart/legend/` and `chart/marks/`. The files are read together with it, so the universe this file scans
+ * is the one `SymbolClient.tsx` alone was before the move. */
+const LEGEND_AND_MARKS_FILES = [
+  "chart/legend/PaneLegend.tsx",
+  "chart/legend/legend-frame.ts",
+  "chart/legend/LegendValue.tsx",
+  "chart/marks/AbsenceNote.tsx",
+  "chart/marks/PartialCoverageMark.tsx",
+  "chart/marks/BeyondCoverageBadge.tsx",
+] as const;
+const SYMBOL_CLIENT = ["SymbolClient.tsx", ...LEGEND_AND_MARKS_FILES]
+  .map((file) => readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), file), "utf8"))
+  .join("\n");
 
 /** The body of `function <name>(` up to the next top-level `function `/`const ` declaration. */
 function componentSource(source: string, name: string): string {

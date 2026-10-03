@@ -9,7 +9,7 @@ import {
   trimRowsToWindow,
   widenAndCapWindow,
 } from "./history-page-window.ts";
-import { TIMEFRAME_WINDOW_BARS } from "./chart/axis/timeframe-window.ts";
+import { TIMEFRAME_WINDOW_BARS } from "../axis/timeframe-window.ts";
 
 /** The `1m` page width — `DEFAULT_PAGE_SLOTS` until `paineis-de-fluxo` `T-05.1` moved the page
  * width to bars per timeframe. The functions under test are pure; only the import moved. */

@@ -29,7 +29,7 @@ import {
 /** The 4-day fixture span — `S2_WINDOW_SPAN_MS` until `paineis-de-fluxo` `T-05.1` moved the route's
  * span to bars per timeframe (`timeframe-window.ts`); at `1m` it is still 4 days (5.760 bars). */
 const FOUR_DAYS_MS = 4 * 24 * 60 * 60_000;
-import type { SeriesHistoryRow } from "./series-history-client.ts";
+import type { SeriesHistoryRow } from "./chart/history/series-history-client.ts";
 import {
   computeSeriesKeyId,
   countPresentSlots,

@@ -31,9 +31,9 @@ import {
   lastGridInstant,
   resolveTrailingWindow,
   type S2Window,
-} from "../../charts/index.ts";
-import { timeframeStepMs } from "./chart/axis/supported-timeframes.ts";
-import { timeframeWindowBars } from "./chart/axis/timeframe-window.ts";
+} from "../../../../charts/index.ts";
+import { timeframeStepMs } from "../axis/supported-timeframes.ts";
+import { timeframeWindowBars } from "../axis/timeframe-window.ts";
 
 /**
  * THE MEASUREMENT BOTH CONSTANTS BELOW ARE SIZED AGAINST — one number, one command, one `n`.

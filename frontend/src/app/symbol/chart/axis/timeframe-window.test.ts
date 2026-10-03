@@ -13,10 +13,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { S2_PRICE_USE, axisForWindow } from "../../../../charts/index.ts";
-import { DEFAULT_MAX_ACCUMULATED_SLOTS, effectiveMaxAccumulatedSlots } from "../../history-page-window.ts";
+import { DEFAULT_MAX_ACCUMULATED_SLOTS, effectiveMaxAccumulatedSlots } from "../history/history-page-window.ts";
 import { EMPTY_OI_CANDLE_BUNDLE } from "../../oi-candle-pane.ts";
 import { assembleHistoryPage, type HistoryRowsBundle } from "../../panel-assembly.ts";
-import { resolveRouteWindow } from "../../request-window.ts";
+import { resolveRouteWindow } from "../history/request-window.ts";
 import { SUPPORTED_TIMEFRAMES, timeframeStepMs } from "./supported-timeframes.ts";
 import {
   TIMEFRAME_WINDOW_BARS,

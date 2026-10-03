@@ -11,8 +11,8 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 // `ADR-034/D8`: this route reaches `charts` only through the barrel.
-import { resolveLegendReading, type LegendReading } from "../../charts/index.ts";
-import type { Nature, SeriesCatalogEntry, SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
+import { resolveLegendReading, type LegendReading } from "../../../../charts/index.ts";
+import type { Nature, SeriesCatalogEntry, SeriesKey } from "../../../../features/s3-inspector/series-catalog.ts";
 import {
   ABSENCE_MICROCOPY,
   LEGEND_GRID_ABSENCE,
@@ -31,14 +31,27 @@ import {
   type LegendSeriesId,
   type PaneLegendSources,
 } from "./pane-legend.ts";
-import { F1_PANE_ORDER } from "./pane-registry.ts";
+import { F1_PANE_ORDER } from "../../pane-registry.ts";
 
-const SOURCE = readFileSync(fileURLToPath(new URL("./SymbolClient.tsx", import.meta.url)), "utf8");
+/** `estrutura-do-front` `T-01.3` — this test moved to `chart/legend/` with `pane-legend.ts`, and the legend
+ * and the absence/coverage marks left `SymbolClient.tsx` for `chart/legend/` and `chart/marks/`. The files are
+ * read together with it, so "SymbolClient" keeps the universe the one file had before the move. */
+const SOURCE = [
+  "../../SymbolClient.tsx",
+  "./PaneLegend.tsx",
+  "./legend-frame.ts",
+  "./LegendValue.tsx",
+  "../marks/AbsenceNote.tsx",
+  "../marks/PartialCoverageMark.tsx",
+  "../marks/BeyondCoverageBadge.tsx",
+]
+  .map((file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8"))
+  .join("\n");
 /** `estrutura-do-front` `T-01.2` — the host (and its crosshair subscription) left `SymbolClient.tsx` for
  * `chart/host/`. The four files are read together, so "anywhere in SymbolClient" keeps the universe
  * the one file had before the move. */
 const HOST_SOURCE = ["ChartHost.tsx", "pane-layer.tsx", "registrar.ts", "pane-stack.ts"]
-  .map((file) => readFileSync(fileURLToPath(new URL(`./chart/host/${file}`, import.meta.url)), "utf8"))
+  .map((file) => readFileSync(fileURLToPath(new URL(`../host/${file}`, import.meta.url)), "utf8"))
   .join("\n");
 
 function entry(metric: string, nature: Nature, overrides: Partial<SeriesKey> = {}): SeriesCatalogEntry {

@@ -30,7 +30,7 @@
  */
 
 import { buildScalarSeries, ONE_MINUTE_MS, type S2Panels, type S2RawInputs } from "../../charts/index.ts";
-import type { AccumulatedWindow } from "./history-page-window.ts";
+import type { AccumulatedWindow } from "./chart/history/history-page-window.ts";
 import type { OiCandleSource, OiCandleSourceWire, OiCandleWire, OiCandlesWire } from "./series-history-envelope.ts";
 
 /** `GridSlot` and `ScalarSlot`, read off the barrel's own `S2Panels` (`ADR-034/D8`: no deep import

@@ -45,7 +45,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { buildScalarSeries, FIVE_MINUTES_MS, ONE_MINUTE_MS } from "../../charts/index.ts";
-import type { SeriesHistoryRow } from "./series-history-client.ts";
+import type { SeriesHistoryRow } from "./chart/history/series-history-client.ts";
 import { SUPPORTED_TIMEFRAMES } from "./chart/axis/supported-timeframes.ts";
 import { countPresentSlots, scalarPointsFromHistoryRows } from "./view-model.ts";
 

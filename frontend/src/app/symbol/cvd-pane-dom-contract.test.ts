@@ -40,7 +40,20 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SYMBOL_CLIENT_PATH = path.join(HERE, "SymbolClient.tsx");
 const PAGE_PATH = path.join(HERE, "[symbol]", "page.tsx");
-const source = readFileSync(SYMBOL_CLIENT_PATH, "utf8");
+/** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
+ * `chart/legend/` and `chart/marks/`. The files are read together with it, so the universe this file scans
+ * is the one `SymbolClient.tsx` alone was before the move. */
+const LEGEND_AND_MARKS_FILES = [
+  "chart/legend/PaneLegend.tsx",
+  "chart/legend/legend-frame.ts",
+  "chart/legend/LegendValue.tsx",
+  "chart/marks/AbsenceNote.tsx",
+  "chart/marks/PartialCoverageMark.tsx",
+  "chart/marks/BeyondCoverageBadge.tsx",
+] as const;
+const source = [SYMBOL_CLIENT_PATH, ...LEGEND_AND_MARKS_FILES.map((file) => path.join(HERE, file))]
+  .map((file) => readFileSync(file, "utf8"))
+  .join("\n");
 const pageSource = readFileSync(PAGE_PATH, "utf8");
 
 /** `pageSource` with every comment removed — block first, then line.

@@ -14,7 +14,7 @@ import {
   seriesHistoryEndpointUrl,
   TransportError,
 } from "./series-history-client.ts";
-import type { HistoryRequestKey } from "../history-transport.ts";
+import type { HistoryRequestKey } from "../../../history-transport.ts";
 
 const KEY: HistoryRequestKey = {
   series_key_id: "abc123",

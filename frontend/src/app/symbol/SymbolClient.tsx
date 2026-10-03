@@ -49,7 +49,6 @@
  */
 
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -58,7 +57,6 @@ import {
   useState,
   useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type {
@@ -120,6 +118,12 @@ import { SymbolChartHost } from "./chart/host/ChartHost.tsx";
 import { PANE_LAYER_CLASS, PaneLayer } from "./chart/host/pane-layer.tsx";
 import { PANE_STACK } from "./chart/host/pane-stack.ts";
 import { CrosshairSlotContext, useHostedPane, type HostSeries } from "./chart/host/registrar.ts";
+import { LegendFrameContext, useLegendFrame, useSlotUnit, type LegendFrame } from "./chart/legend/legend-frame.ts";
+import { LegendValue, NO_CROSSHAIR_STORE, noCrosshairSnapshot, type VolumeSlot } from "./chart/legend/LegendValue.tsx";
+import { identityTerms, PaneDetails, PaneLegend, PaneLegendLine } from "./chart/legend/PaneLegend.tsx";
+import { ABSENCE_TOKEN, AbsenceNote, formatUtcMinute } from "./chart/marks/AbsenceNote.tsx";
+import { BeyondCoverageBadge } from "./chart/marks/BeyondCoverageBadge.tsx";
+import { PartialCoverageLedger, PartialCoverageMark } from "./chart/marks/PartialCoverageMark.tsx";
 import {
   LIQUIDATION_LEG_SCALE_REF,
   liquidationCohortsTopFirst,
@@ -128,24 +132,18 @@ import {
   swappedLiquidationLegScaleRefs,
   type LiquidationCohort,
   type OiPaneSeriesKind,
-  type PaneLegendSpec,
 } from "./pane-registry.ts";
 import {
   ABSENCE_MICROCOPY,
-  createCrosshairSlotStore,
   formatLegendNumeral,
-  formatLegendReading,
   LEGEND_GRID_ABSENCE,
   LEGEND_MARK_TEXT,
   legendMarkWidthCh,
   legendNumeralWidthCh,
   resolvePaneHeadings,
   resolvePaneLegends,
-  type CrosshairSlotStore,
-  type LegendSeriesId,
-  type PaneHeading,
   type PaneLegendSources,
-} from "./pane-legend.ts";
+} from "./chart/legend/pane-legend.ts";
 import { LIQUIDATION_SWATCH_FORM_BY_SIDE, liquidationSwatchStyle } from "./liquidation-legend-swatch.ts";
 import {
   oiCandleAt,
@@ -182,26 +180,14 @@ import {
 import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES, timeframeStepMs } from "./chart/axis/supported-timeframes.ts";
 import { HISTORY_BAR_POLICY } from "../history-transport.ts";
 import type { HistoryRowsBundle } from "./panel-assembly.ts";
-import { useHistoryPager, type HistoryPagingSeed, type HistorySeriesKeys } from "./use-history-pager.ts";
+import { useHistoryPager, type HistoryPagingSeed, type HistorySeriesKeys } from "./chart/history/use-history-pager.ts";
 import { panelWallState } from "./slot-coverage.ts";
 import {
-  coverageChipCompactText,
-  coverageChipText,
-  coverageDataAttributes,
-  coverageHeadText,
-  coverageScreenReaderText,
   formatCoverageSpan,
   parseNativeGridMs,
-  warningLegs,
   type CoverageGridMs,
-  type CoverageLeg,
   type CoverageMagnitude,
 } from "./coverage-magnitude.ts";
-
-/** `ScalarSlot`'s shape, read off the barrel's own `S2Panels` (`ADR-034/D8` — no deep import
- * into `charts`, and no import of `view-model.ts`, which is server-side: it pulls
- * `node:crypto`, and `web-fullstack.browser-imports-server` is a BLOQUEIO). */
-type VolumeSlot = S2Panels["oi"]["slots"][number];
 
 /**
  * `T-01.7` — everything the volume sub-axis needs, computed server-side (`page.tsx` +
@@ -537,36 +523,6 @@ export interface SymbolClientProps {
   readonly paneLegendSources: PaneLegendSources;
 }
 
-const ABSENCE_REASON_LABEL: Record<Exclude<PanelStatus, { kind: "ok" }>["reason"], string> = {
-  not_in_catalog: "sem série cadastrada no catálogo",
-  // `T-03.5`: the catalog answered with MORE THAN ONE candidate and the route refuses to choose
-  // by position. Said on screen because the alternative — drawing whichever row came first — is
-  // the defect that put this panel on an empty series for a whole phase.
-  ambiguous_in_catalog: "o catálogo tem mais de uma série candidata e a escolha seria por posição",
-  missing_base_url: "configuração de API ausente",
-  connection_refused: "API de leitura inacessível",
-  non_2xx: "API respondeu com erro",
-  malformed_envelope: "resposta em formato inválido",
-};
-
-function AbsenceNote({ status }: { readonly status: PanelStatus }) {
-  if (status.kind === "ok") {
-    return null;
-  }
-  return (
-    // ⛔ NO `role="status"`, and the removal is `T-05.10`'s `m-5` finding. A live region
-    // (`aria-live="polite"`) announces CHANGE; this note exists at the first paint (`status` comes
-    // from the server, per request) and never mutates on the client. A live region already present
-    // at load time is NOT announced by a screen reader ⇒ the role bought nothing and left a spurious
-    // live region competing with the ones that do change. The text stays reachable: it is a `<p>` in
-    // the flow.
-    <p data-fact={`panel_absent:${status.reason}`} className="text-sm text-provenance-weak">
-      Sem dado real neste painel — {ABSENCE_REASON_LABEL[status.reason]}. Nenhum número é mostrado no lugar
-      (nunca um zero fabricado).
-    </p>
-  );
-}
-
 /** The window's own last grid instant — the one the "leitura atual" readouts query, and the
  * same one `page.tsx` sends as `window_end_ms`.
  *
@@ -590,199 +546,6 @@ function AbsenceNote({ status }: { readonly status: PanelStatus }) {
  * every timeframe. */
 function lastInstantMs(panels: S2Panels, gridMs: number): number {
   return lastGridInstant(panels.window, gridMs);
-}
-
-/** The legend block of a layer: everything VISIBLE in it, measured by the host (`data-pane-legend`)
- * for the scale reserve. 12px (`DESIGN-LAYOUT.md` §6: "linha 1, `nowrap`, 12px") on every
- * descendant, whatever class the reused readout carries. */
-function PaneLegend({ children }: { readonly children: ReactNode }) {
-  return (
-    // `[&>*]:max-w-full` (`T-01.11-FIX`, `SF-2`): a wrapper between the legend and its lines (the
-    // liquidation header's `<section>`) would otherwise size to its nowrap content, and the lines'
-    // own `max-w-full` would be relative to THAT — the ellipsis would never trigger.
-    // `@container/legend` (`T-05.4-desenho.md` §10.5, `C-3`): the coverage chip picks its painted form
-    // by THIS block's content width. The block is as wide as the layer (`absolute inset-0`), never
-    // as wide as its content, so inline-size containment is safe; it touches width only, and the
-    // height the host measures for the scale reserve is unchanged.
-    <div
-      data-pane-legend=""
-      className="@container/legend flex flex-col items-start gap-0.5 px-2 pt-1 text-xs [&_*]:text-xs [&>*]:max-w-full"
-    >
-      {children}
-    </div>
-  );
-}
-
-/** One line of a legend: `nowrap`, clipped by the layer at the axis (`DESIGN-LAYOUT.md` §6: a line
- * that does not fit loses its tail, never its font size).
- *
- * `T-01.11-FIX` (`SF-2`): the tail is lost WITH an ellipsis. At 1280px the volume note, the
- * third-party warning of the liquidation pane and the long/short stamp were cut mid-word at the axis
- * with nothing saying so. The LAST item of the line is the one allowed to shrink (`min-w-0`) and it
- * truncates with `…`; the full text stays in the DOM, so a screen reader still reads all of it. The
- * line stays ONE line, so the legend's measured height — and the scale reserve under it — is unchanged. */
-function PaneLegendLine({ children }: { readonly children: ReactNode }) {
-  return (
-    <div className="flex max-w-full flex-nowrap items-baseline gap-x-3 whitespace-nowrap [&>*:last-child]:min-w-0 [&>*:last-child]:truncate">
-      {children}
-    </div>
-  );
-}
-
-/** The part of a pane's chrome that is NOT drawn over the canvas: still in the accessibility tree
- * and still machine-readable (every `data-fact` in it survives), but not painted. ⚠️ FORM — which
- * readout goes here and which stays in the legend is a builder's placeholder under the rule written
- * in `gates/T-01.6-builder.md` §2, submitted to the `ux-ui-mastery` verdict of `T-01.11`. */
-function PaneDetails({ children }: { readonly children: ReactNode }) {
-  return <div className="sr-only">{children}</div>;
-}
-
-// ── `T-01.7` — the crosshair → legend wiring (`pane-legend.ts`, `RF-4`, `RF-5`, `CA-3′`, `C-8`) ──
-
-/** What every legend reads besides its own slots: the names and reading policies DERIVED once from
- * the catalog (`resolvePaneLegends`), the grid step, and the instant a bucket counts as closed. */
-interface LegendFrame {
-  readonly legends: Readonly<Record<LegendSeriesId, PaneLegendSpec | null>>;
-  readonly axisStepMs: number;
-  /** `knowledge_time_ms` of the request: the page is "COMO EM T", so a bucket is closed iff it
-   * closed at T (`ChromeModeStamp`), never at the browser's clock. */
-  readonly asOfMs: number;
-  /** W1-FIX (`gates/W1-DESIGN-REVIEW.md` MF-B): the width of the served bar — the page's TF. Above
-   * `1m` a bar is ONE point on the slot of its open, so the legend snaps the slot it reads to that
-   * open (`charts::resolveLegendReading`'s `bucketMs`), instead of reading an empty minute. */
-  readonly bucketMs: number;
-  /** `T-05.6` (`W7-DESIGN-REVIEW` N-2): each pane's heading — the page's TF outside the parenthesis,
-   * the series' identity inside it (`pane-legend.ts::resolvePaneHeadings`). */
-  readonly headings: Readonly<Record<LegendSeriesId, PaneHeading>>;
-}
-
-const LegendFrameContext = createContext<LegendFrame | null>(null);
-
-function useLegendFrame(): LegendFrame {
-  const frame = useContext(LegendFrameContext);
-  if (frame === null) {
-    throw new Error("useLegendFrame must be called within a LegendFrameContext provider");
-  }
-  return frame;
-}
-
-/** `paineis-de-fluxo` `T-05.4` (item extra of `gates/T-05.1-build.md` §6) — the width of ONE slot of
- * the axis, in the words the panes print ("1 min", "15 min", "1 h", "4 h"). Since `T-05.1` the slot is
- * the timeframe's bar, so the nine sentences that said "de 1 min" were false at every TF but `1m`
- * ("Vela completa em 42 de 42 buckets de 1 min" at `4h`). Same duration format as the coverage
- * warning (`coverage-magnitude.ts::formatCoverageSpan`), so the screen spells a span one way. */
-function useSlotUnit(): string {
-  return formatCoverageSpan(useLegendFrame().axisStepMs);
-}
-
-const NO_CROSSHAIR_STORE: CrosshairSlotStore = createCrosshairSlotStore();
-const noCrosshairSnapshot = (): number | undefined => undefined;
-
-/** The terms of a pane's heading after its name — `T-04.8`'s rule, fed the heading `pane-legend.ts`
- * derived from the catalog entry and the page's TF (`paneHeadingLabel`): the active TF, then cadence
- * and unit in parentheses (`T-05.6`, `W7-DESIGN-REVIEW` N-2), nothing at all where no entry resolved.
- * The word "nativa" is a screen-reader-only node INSIDE the heading, never an `aria-label`: an
- * `aria-label` on `<h2>` REPLACES the accessible name, and the heading list would lose the pane's
- * name (`gates/T-05.6-DESIGN-GATE.md` §(b).4). The `title` (`Barras de 1h · série nativa de 1m,
- * USDT`) goes on the heading element itself. ⛔ Neither the heading nor the TF button may ever be
- * case-transformed: `1M` reads as MONTH. */
-function identityTerms(heading: PaneHeading): ReactNode {
-  if (heading.visible.length === 0) {
-    return null;
-  }
-  return (
-    <>
-      {` ${heading.visible}`}
-      {heading.screenReader.length > 0 ? <span className="sr-only">{heading.screenReader}</span> : null}
-    </>
-  );
-}
-
-/**
- * ONE legend value (`RF-4`): the slot under the crosshair, or — with no crosshair — the last closed
- * bucket, read by the series' `nature` (`charts::resolveLegendReading`, `ADR-044/D2`). It is the only
- * node that re-renders on a crosshair move: it subscribes to the store itself, so a move re-renders
- * these spans and nothing else of the page.
- *
- * `C-8`: the numeral is right-aligned in a column of fixed width, in `ch`, sized to every numeral the
- * pane can show; the held/forming mark has a fixed column of its own after it.
- *
- * The `data-legend-*` attributes are the CONTRACT half (`CA-3′`/`CA-4`, asserted against
- * `/series-history` by `T-01.9`); the classes and the mark words are FORM, submitted with the
- * screenshot of `T-01.11`.
- */
-function LegendValue({
-  seriesId,
-  factKey,
-  slots,
-  nativeTimeframeMs,
-  prefix,
-  lead,
-}: {
-  /** Which derived legend names and reads this value. */
-  readonly seriesId: LegendSeriesId;
-  /** ASCII key of the value (`cvd_delta` and `cvd_cumulative` share the `cvd` legend). */
-  readonly factKey: string;
-  /** The slots on the canonical grid — slot `i` IS logical index `i` (registry invariant (v)). */
-  readonly slots: readonly VolumeSlot[];
-  /** The series' own cadence, when coarser than the grid (OI's 5 min); the grid step otherwise. */
-  readonly nativeTimeframeMs?: number;
-  /** pt-BR word before the numeral, when a pane shows two values. */
-  readonly prefix?: string;
-  /** `T-04.3` — a mark drawn IMMEDIATELY before the numeral column (the liquidation leg's square,
-   * `SPEC-009` §7.3). Never text: the numeral stays the only number of this value. */
-  readonly lead?: ReactNode;
-}) {
-  const frame = useLegendFrame();
-  const store = useContext(CrosshairSlotContext) ?? NO_CROSSHAIR_STORE;
-  const logical = useSyncExternalStore(store.subscribe, store.getSnapshot, noCrosshairSnapshot);
-  const legend = frame.legends[seriesId];
-  // `T-01.11-FIX` (`MF-3`): the painted numeral of an absent slot is the pt-BR word, not the enum;
-  // the enum stays machine-readable in `data-legend-absence`.
-  const absenceText = ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE];
-  const numeralWidthCh = useMemo(() => legendNumeralWidthCh(slots, absenceText), [slots, absenceText]);
-  const reading =
-    legend === null
-      ? null
-      : resolveLegendReading({
-          logical,
-          slots,
-          nature: legend.readingPolicy,
-          axisStepMs: frame.axisStepMs,
-          nativeTimeframeMs: nativeTimeframeMs ?? frame.axisStepMs,
-          asOfMs: frame.asOfMs,
-          bucketMs: frame.bucketMs,
-        });
-  // No resolved entry ⇒ no series ⇒ nothing to read: the token, never a number.
-  const text =
-    reading === null ? { numeral: absenceText, mark: "none" as const, rawValue: null } : formatLegendReading(reading, absenceText);
-  const isAbsent = text.rawValue === null;
-  const markWidthCh = legend === null ? 0 : legendMarkWidthCh(legend.readingPolicy);
-  return (
-    <span
-      data-legend-value={factKey}
-      data-legend-kind={reading?.kind ?? "absent"}
-      data-legend-source={logical === undefined ? "last_closed" : "crosshair"}
-      data-legend-slot-index={reading?.slotIndex ?? ""}
-      data-legend-bucket-ms={reading?.bucketStartMs ?? ""}
-      data-legend-raw={text.rawValue ?? ""}
-      data-legend-absence={isAbsent ? LEGEND_GRID_ABSENCE : ""}
-      className="inline-flex items-baseline gap-x-1"
-    >
-      {prefix === undefined ? null : <span className="text-provenance-weak">{prefix}</span>}
-      {lead ?? null}
-      <span
-        data-legend-numeral=""
-        style={{ width: `${numeralWidthCh}ch` }}
-        className={`inline-block text-right font-data-sm tabular-nums ${isAbsent ? "text-provenance-weak" : "text-on-surface"}`}
-      >
-        {text.numeral}
-      </span>
-      <span data-legend-mark={text.mark} style={{ width: `${markWidthCh}ch` }} className="inline-block text-provenance-weak">
-        {LEGEND_MARK_TEXT[text.mark]}
-      </span>
-    </span>
-  );
 }
 
 /** `T-04.3` (`CA-F4-3`): a "leitura atual" readout for Preço, same shape `OiPane` already has
@@ -834,165 +597,6 @@ const OI_PANE_TESTID = "oi-pane";
 // the `ui-designer` may rewrite, and pinning a DATA assertion to UI TEXT is how a change of form
 // breaks a test about data.
 const LONG_SHORT_PANE_TESTID = "long-short-pane";
-
-/** `RN-1`'s literal token: absence is `SEM_PONTO`, and for a `FLOW` series rendering it as `0`
- * is an error of TYPE, not of taste. `DoD-3` asserts this exact string's ABSENCE from the CVD
- * pane once data is present, so it is as load-bearing as a testid.
- *
- * ⚠️ `T-02.5` MADE THE CVD READOUT USE IT TOO, and the previous version of this comment said the
- * opposite ("`formatFlowValue`'s `—` is the CVD readout's own wording and is deliberately NOT
- * reused here"). Why it changed: `formatFlowValue` (`D5.3`) is the CROSSHAIR wording and stays
- * exactly as it is inside `charts` — but on THIS screen it made CVD the only one of four
- * readouts spelling absence differently from the other three (Preço, OI and o sub-eixo de Volume
- * all print `SEM_PONTO`), and `DoD-3`'s "não diz `SEM_PONTO`" is unfalsifiable against a pane
- * that could never say it: a test that passes whether or not the data arrived proves nothing.
- * One token, four readouts, one thing for an operator to learn. ⛔ FORM SUBMITTED TO THE
- * `design_gate`, not decided here — `CLAUDE.md` §"Design — autonomia delegada, com gate de
- * validação"; what a builder decides is that absence is DISTINGUISHABLE and machine-readable.
- *
- * ⚠️ `T-01.R1` (`SF-9` of `gates/W1-DESIGN-REVIEW.md` §3, still open in r3 §4): THE TOKEN IS NOW
- * THE pt-BR WORD, NOT THE ENUM. Since `T-01.7` every readout using it lives in `PaneDetails`
- * (`sr-only`), so the ONLY audience of this string is a screen reader — and it heard
- * "Leitura atual: SEM_PONTO" while a sighted operator read `ausente` in the legend (`MF-3` of the
- * r1, moved to another channel). One word on both channels: this literal must equal
- * `ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE]`, which `absence-readout-microcopy.test.ts` pins (it is
- * spelled out rather than derived because five `*-dom-contract.test.ts` mutate this exact
- * declaration). The machine half is unchanged: every readout's `data-fact` still ends in
- * `:absent`, and the legend keeps the enum in `data-legend-absence`. It is still never a number. */
-const ABSENCE_TOKEN = "ausente";
-
-// `paineis-de-fluxo` `T-05.4` — the coverage summary type is `coverage-magnitude.ts::CoverageMagnitude`,
-// IMPORTED: that module is browser-safe, so the duplicate this file used to carry (because
-// `view-model.ts` pulls `node:crypto`) is gone instead of growing three new fields.
-
-/** `T-03.12` — the SAME hollow-lozenge glyph `LongShortIntegrityGlyph` already carries, reused
- * rather than reinvented: `DESIGN_SYSTEM.md` §1.5 reserves exactly ONE glyph for "integridade do
- * dado" ("losango vazado, sempre o mesmo, nunca triângulo nem círculo"), and a partial `FLOW` SUM
- * silently undercounting its own denominator is that class of signal, not a new one. `fill="none"`
- * is the rule, not a look — §9 item 4 of `STITCH_CONTEXT.md` forbids this mark from ever filling
- * an area, so it is never mistaken for a data mark. `aria-hidden` + `focusable="false"` because
- * the word beside it (`PartialCoverageMark`, below) carries the whole message, same criterion
- * `CvdLegend`/`VolumeMarksLegend`/`LongShortIntegrityGlyph` already apply to their own glyphs. */
-function PartialCoverageGlyph() {
-  return (
-    <svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 12 12">
-      <polygon points="6,1 11,6 6,11 1,6" fill="none" stroke={colorTokens().dataBrokenInk} strokeWidth="1.5" />
-    </svg>
-  );
-}
-
-/**
- * `T-03.12` → `paineis-de-fluxo` `T-05.4` (`handoff/T-05.4-desenho.md` §2, gate
- * `gates/T-05.4-design-critique.md` APPROVED_WITH_CONDITIONS 77/100) — the VISIBLE MARK `P-B`/`ADR-040/D3`
- * requires when a regime-A (`Σ`) panel serves partial reaggregated buckets, now saying HOW MUCH is
- * missing, in time: `◇ cobertura parcial — faltam 1 h 4 min de 4 d (1.1%)`.
- *
- * Renders NOTHING when `missingFacts === 0` outside the head — the guard is on what is MISSING, not on
- * whether any reaggregation happened. The `T-03.12` guard (`totalReaggregatedBuckets === 0`) promised
- * this in its docstring and did the opposite: a whole window rendered "0 de N" (`FIX-uso` §D-C).
- *
- * FORM (§2.5), and every choice in it is the designer's with the gate's agreement, not a builder's:
- * an inline `<span>` INSIDE the legend line that names the series, never a block of its own (the block
- * with a border was what took 44 px of a 217 px liquidation pane, §1.1); no border, no bold, lower case
- * — integrity is still the violet INK plus the hollow lozenge plus the WORD (`DESIGN_SYSTEM.md` §1.5),
- * so the chip stays salient without shouting. The leading `·` is `CI-1` of the gate: on the volume line
- * it separates the window-level chip from the one-bar value beside it.
- *
- * `C-2`: the long sentence is a REAL `sr-only` node, never `title`; the visible line is `aria-hidden`
- * so a screen reader hears the full sentence once, not the short one and then the long one.
- *
- * `legs` has one member for volume and CVD, and the two cohorts for liquidation (ONE chip per pane,
- * §2.4). `data-fact` (`<factKey>:<missingFacts>/<expectedFacts>`) and the `data-coverage-*` live on one
- * empty carrier `<span>` per WARNING series inside the chip — for volume and CVD there is one, for
- * liquidation one per leg that is short; a leg with nothing missing has no carrier, so
- * `[data-fact^="<key>:"]` counts warnings (A-2). The chip is `closest("[data-coverage-chip]")`.
- */
-/** One series of a coverage chip, with the `data-fact` key it publishes under. */
-type CoverageMarkLeg = CoverageLeg & { readonly factKey: string };
-
-function PartialCoverageMark({ legs }: { readonly legs: readonly CoverageMarkLeg[] }) {
-  const visible = coverageChipText(legs);
-  if (visible === null) {
-    return null;
-  }
-  return (
-    <span
-      data-coverage-chip={legs.map((leg) => leg.factKey).join(" ")}
-      className="inline-flex items-center gap-1 whitespace-nowrap text-integrity-ink"
-    >
-      <span aria-hidden="true" className="text-provenance-weak">
-        ·
-      </span>
-      <PartialCoverageGlyph />
-      {/* `C-3` (`T-05.4-desenho.md` §10.2): two painted forms of the SAME chip, and the legend's container
-          query picks one — the full form at a legend content width >= 1140 px, the compact one (no
-          `cobertura parcial — `, no denominator) below it. `display:none`, not `sr-only`: both are
-          `aria-hidden`, and the `sr-only` sentence below is what is spoken, at every width. */}
-      <span aria-hidden="true" data-coverage-visible="full" className="@max-[1140px]/legend:hidden">
-        {visible}
-      </span>
-      <span aria-hidden="true" data-coverage-visible="compact" className="hidden @max-[1140px]/legend:inline">
-        {coverageChipCompactText(legs)}
-      </span>
-      <span className="sr-only">{coverageScreenReaderText(legs)}</span>
-      {/* One empty carrier per WARNING series: the magnitude in native facts, plus the `data-coverage-*`
-          (§2.6). The `data-fact` stays a template literal so `data-fact-ascii-key-contract.test.ts`
-          still sees its key. */}
-      {warningLegs(legs).map((leg) => (
-        <span
-          key={leg.factKey}
-          data-fact={`${leg.factKey}:${leg.magnitude.missingFacts}/${leg.magnitude.expectedFacts}`}
-          {...coverageDataAttributes(leg.magnitude)}
-        />
-      ))}
-    </span>
-  );
-}
-
-/**
- * `T-05.4` (A-3 of `T-05.4-desenho.md` §6.3) — the coverage of ONE series, published whether or not the
- * chip exists, in the pane's `sr-only` details: when the only shortfall is in the head, the chip is
- * gone and `data-coverage-head-excluded-facts` still has to be readable, by a test and by a screen
- * reader ("as barras mais recentes … não entram nesta conta"). No `data-fact` here, on purpose: the
- * fact key counts WARNINGS, and this node exists for every window.
- */
-function PartialCoverageLedger({ factKey, magnitude }: { readonly factKey: string; readonly magnitude: CoverageMagnitude }) {
-  const headText = coverageHeadText([{ label: factKey, magnitude }]);
-  return (
-    <p data-coverage-ledger={factKey} {...coverageDataAttributes(magnitude)}>
-      {headText ?? ""}
-    </p>
-  );
-}
-
-/**
- * `T-05.6` (`D-C3.6`, plan `05` item `5.5`) — the NAMED STATE for a panel whose accumulated
- * window has widened past this SERIES' OWN declared floor (`beyond-coverage`,
- * `slot-coverage.ts::panelWallState`): the store/source has no history before this point, ever —
- * a WALL, distinct from `not-loaded` (the pager just hasn't paged there yet, `T-05.7` already
- * stops asking silently once the wall is known) and from `absent` (a real hole inside KNOWN
- * coverage). Reuses the SAME glyph/word/colour three-channel discipline
- * `PartialCoverageMark`/`LongShortIntegrityBadge` already established on this screen (`ADR-010/D-
- * 3`, "integridade do dado") — the SAME glyph too (`PartialCoverageGlyph`), not a fourth SVG for a
- * fourth flavour of "integrity", so an operator only ever has to learn ONE mark.
- *
- * ONE badge per PANEL, never per slot/bar (this task's own DoD): the caller decides ONE
- * `SlotCoverageState` for the whole panel (`panelWallState` against the window's own left edge,
- * never a scan of every slot) and this component only ever renders for `"beyond-coverage"` —
- * `"absent"`/`"not-loaded"` render nothing here, on purpose: neither is "this panel has hit a
- * wall it can never cross".
- */
-function BeyondCoverageBadge({ factKey }: { readonly factKey: string }) {
-  return (
-    <p
-      data-fact={`${factKey}:beyond`}
-      className="flex items-center gap-2 border border-integrity-ink px-2 py-0.5 text-sm font-bold text-integrity-ink"
-    >
-      <PartialCoverageGlyph />
-      LIMITE DA COBERTURA — sem histórico disponível além deste ponto.
-    </p>
-  );
-}
 
 // ⛔ FORM, NOT CONTRACT — every constant in this block belongs to the `ui-designer` WITH the
 // `ux-ui-mastery` verdict (`T-01.8`, `CLAUDE.md` §"Design — autonomia delegada, com gate de
@@ -1241,13 +845,6 @@ function liquidationPriceScaleMode(mode: LiquidationScaleMode): PriceScaleMode {
  * because `klines_volume` is `1m` native and nothing here is a ladder (`view-model.ts`
  * `countPresentSlots`).
  */
-/** `YYYY-MM-DD HH:MM UTC`, built off the epoch instant with no locale in the path: this string
- * is a FACT about the data (which instant), not a presentation choice, and a locale-dependent
- * rendering of it would make the same screen say different things to different readers. */
-function formatUtcMinute(instantMs: number): string {
-  return `${new Date(instantMs).toISOString().slice(0, 16).replace("T", " ")} UTC`;
-}
-
 /** The readable horizon, DECLARED rather than left to be inferred from a flat left edge — see
  * `VolumeSubAxisData.firstPresentMs` for the measurement that made this necessary. It reports
  * two numbers and one instant, all of them the route's own; it never hides, shortens or

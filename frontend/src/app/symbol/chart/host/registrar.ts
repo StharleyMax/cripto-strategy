@@ -3,7 +3,7 @@ import type { IChartApi, ISeriesApi, SeriesType } from "lightweight-charts";
 import type { PaneScaleMeasure } from "../../../../charts/index.ts";
 import type { SeriesFeed } from "../../host-series-feed.ts";
 import { F1_PANE_ORDER, type PaneId } from "../../pane-registry.ts";
-import type { CrosshairSlotStore } from "../../pane-legend.ts";
+import type { CrosshairSlotStore } from "../legend/pane-legend.ts";
 
 /** `T-01.6` — one price scale of a pane and its role in the stack. The host reads its BASE margins
  * from the library once, right after `mount` (so the pane's own `applyOptions` is the base), and
