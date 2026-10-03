@@ -7,6 +7,7 @@ import { colorTokens, OI_REGIME_BAND_SURFACE, SURFACE_BASE } from "../src/charts
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { readView, showView, type ViewTarget } from "./view.ts";
 
 /**
  * `paineis-de-fluxo` `T-03.12` (plan `03` item `3b.5`, `Q-OI-3`, `[Q-DG-3]`) — the regime marks of the
@@ -286,35 +287,27 @@ function edgeX(frame: Frame, ms: number): number {
   return frame.box.x + ((logical - frame.from) / (frame.to - frame.from)) * frame.box.width;
 }
 
-/** `paineis-de-fluxo` `T-05.1` — the mount now frames the last `VIEW_BARS` (120) bars of the timeframe
- * (2 h at `1m`, 10 h at `5m`), and the scenario reaches 30 h back. The wheel zooms OUT (positive
- * `deltaY`) with the cursor on the LAST bar, so the right edge stays where it was and the span grows
- * leftward only. `toFloor` (the `1m` tests): until the span stops growing — the library's
- * `minBarSpacing` floor, ~2.400 slots, the very geometry the mount had before `T-05.1` and that the
- * pixel tolerances of RM-2/RM-3 were measured on (two rules 3 min apart are 2 px apart there).
- * Otherwise (`5m`, whose 1.152-slot axis is shorter than the floor): only until the slot of `ms`
- * sits `marginSlots` inside the left edge, so the view never reaches the paging trigger. Bounded. */
-const ZOOM_OUT_STEP_DELTA = 100;
-const ZOOM_OUT_MAX_STEPS = 200;
-async function zoomOutUntilVisible(page: Page, ms: number, stepMs: number, marginSlots: number, toFloor: boolean): Promise<Frame> {
-  let frame = await frameOf(page, stepMs);
-  fact(SPEC, `mount_visible_span_slots_${stepMs}`, Number((frame.to - frame.from).toFixed(2)));
-  const target = (ms - frame.windowStartMs) / stepMs - marginSlots;
-  let steps = 0;
-  for (; steps < ZOOM_OUT_MAX_STEPS; steps += 1) {
-    if (!toFloor && frame.from <= target) break;
-    const span = frame.to - frame.from;
-    await page.mouse.move(frame.box.x + frame.box.width - 2, frame.box.y + frame.box.height * 0.5);
-    await page.mouse.wheel(0, ZOOM_OUT_STEP_DELTA);
-    await page.waitForTimeout(60);
-    frame = await frameOf(page, stepMs);
-    if (toFloor && Math.abs(frame.to - frame.from - span) < 0.5) break;
-  }
-  await page.mouse.move(2, 2);
-  await page.waitForTimeout(300);
-  frame = await frameOf(page, stepMs);
-  fact(SPEC, `zoomed_out_${stepMs}`, { steps, from: frame.from, to: frame.to, target, toFloor });
-  expect(frame.from, `o zoom-out não trouxe ${ms} para a vista (from ${frame.from}, alvo ${target})`).toBeLessThanOrEqual(target);
+/** `paineis-de-fluxo` `T-06.1` — every test puts its view on screen explicitly (`view.ts::showView`),
+ * not wherever the mount frames (`VIEW_BARS`, 2 h at `1m` and 10 h at `5m` since `T-05.1`, while the
+ * scenario reaches 30 h back). `1m`: the LAST `REGIME_VIEW_BARS_1M` slots — near the library's
+ * `minBarSpacing` floor, the geometry the mount had before `T-05.1` and that the pixel tolerances of
+ * RM-2/RM-3 were measured on (two rules 3 min apart are ~2 px apart there), under the floor of a
+ * 1280-px plot. `5m` (whose 1.152-slot axis is shorter than the floor): from `marginSlots` before `ms`
+ * to the right edge, so the view never reaches the paging trigger (`showView` throws on a page). */
+const REGIME_VIEW_BARS_1M = 2_200;
+
+async function showFrame(page: Page, ms: number, stepMs: number, marginSlots: number): Promise<Frame> {
+  const state = await readView(page);
+  const target: ViewTarget =
+    stepMs === MIN
+      ? { kind: "lastBars", bars: REGIME_VIEW_BARS_1M }
+      : { kind: "timeRange", fromMs: ms - marginSlots * stepMs, toMs: state.windowStartMs + state.slotCount * stepMs };
+  const view = await showView(page, target);
+  const frame = await frameOf(page, stepMs);
+  const wanted = (ms - frame.windowStartMs) / stepMs - marginSlots;
+  fact(SPEC, `view_${stepMs}`, { iterations: view.iterations, from: frame.from, to: frame.to, wanted, spacingPx: view.barSpacingPx });
+  // The tolerance of `showView` is 2% of the span: the margin, not the edge, is what must hold.
+  expect(frame.from, `a vista não trouxe ${ms} para a tela (from ${frame.from}, alvo ${wanted})`).toBeLessThanOrEqual(wanted + Math.max(1, 0.02 * (frame.to - frame.from)));
   return frame;
 }
 
@@ -494,7 +487,7 @@ test.describe(`T-03.12: marcas de regime do pane de OI (faixa, regra, rótulo, H
 
   test("RM-1..RM-4 (1m): bandas e regras derivadas do derived_from, faixa e regra no pixel, rótulos na faixa reservada", async ({ page }) => {
     await openSymbol(page, instance!.baseUrl);
-    await zoomOutUntilVisible(page, HOLE_FROM, MIN, 60, true);
+    await showFrame(page, HOLE_FROM, MIN, 60);
     const pane = page.locator(`[data-testid="${OI_PANE_TESTID}"]`);
     // RM-1 — the derivation, as the DOM publishes it.
     const facts = {
@@ -566,7 +559,7 @@ test.describe(`T-03.12: marcas de regime do pane de OI (faixa, regra, rótulo, H
 
     // ABLATION — `?e2eOiRegimeMarks=0`: nothing painted, the derivation still published.
     await openSymbol(page, instance!.baseUrl, "?e2eOiRegimeMarks=0");
-    await zoomOutUntilVisible(page, HOLE_FROM, MIN, 60, true);
+    await showFrame(page, HOLE_FROM, MIN, 60);
     expect(await pane.getAttribute("data-oi-regime-marks")).toBe("ablated");
     expect(Number(await pane.getAttribute("data-oi-regime-rules"))).toBe(3);
     const ablatedFrame = await frameOf(page);
@@ -583,7 +576,7 @@ test.describe(`T-03.12: marcas de regime do pane de OI (faixa, regra, rótulo, H
 
   test("RM-5 (1m, Q-4 (iv)): sobre uma vela de A e uma de B, a legenda diz 'H/L não medidos' e não mostra numeral de H/L", async ({ page }) => {
     await openSymbol(page, instance!.baseUrl);
-    const frame = await zoomOutUntilVisible(page, HOLE_TO, MIN, 60, true);
+    const frame = await showFrame(page, HOLE_TO, MIN, 60);
     const served = stub.served.get("1m")!;
     const seen = new Set<string>();
     for (const ms of [HOLE_TO + 2 * HOUR, CAPTURE_LAST_A + 3 * HOUR]) {
@@ -602,7 +595,7 @@ test.describe(`T-03.12: marcas de regime do pane de OI (faixa, regra, rótulo, H
 
   test("RM-6 (5m, Q-5 + Q-4 (iii)): 2 leituras → célula; 3 leituras com pavio → numerais; largura igual ± 1 px", async ({ page }) => {
     await openSymbol(page, instance!.baseUrl, "?interval=5m");
-    const frame = await zoomOutUntilVisible(page, CAPTURE_LAST_A, FIVE, 12, false);
+    const frame = await showFrame(page, CAPTURE_LAST_A, FIVE, 12);
     fact(SPEC, "frame_5m", frame);
     const lastA = await hoverLegend(page, frame, CAPTURE_LAST_A);
     const probe = await hoverLegend(page, frame, PROBE_B_5M);
