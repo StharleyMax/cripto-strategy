@@ -983,6 +983,7 @@ status = "todo"
 phase = "10"
 depends_on = ["T-10.11"]
 refs = [
+    "W-1 (gates/W-P2-QA.md, fechado em gates/W-P2-W1-fix.md): OI-NOBADGE ja reprova em wall-badge-pane-render.test.ts (OiPane exportado pela P1) e LS-WRONGFEED em wall-state-call-site.test.ts (AST do call site). A reescrita NAO pode perder essas mordidas; partir desses dois arquivos.",
     "fonte: UNIT-FRONT-analise §4 (F5 5.4, 3 arquivos; oi-pane-dom-contract e o arquivo mais mexido do front, 19 commits) e §5",
     "agente: frontend-builder",
     "ESCOPO: frontend/src/app/symbol/oi-pane-dom-contract.test.ts, oi-candle-dom-contract.test.ts, oi-regime-dom-contract.test.ts.",
@@ -1004,6 +1005,7 @@ status = "todo"
 phase = "10"
 depends_on = ["T-10.11"]
 refs = [
+    "W-1 (gates/W-P2-QA.md, fechado em gates/W-P2-W1-fix.md): LS-NOBADGE, a chave errada e o guard afrouxado do LongShortPane ja reprovam em wall-badge-pane-render.test.ts. A reescrita NAO pode perder essas mordidas.",
     "fonte: UNIT-FRONT-analise §4 (F6 6.4 e F7 7.4, 2 arquivos cada; long-short-pane-dom-contract 15 commits, liquidation-pane-dom-contract 13) e §3 (o 'D-1 MORDE: the 7 ways this band dies silently' do long-short-pane-design-contract)",
     "agente: frontend-builder",
     "ESCOPO: frontend/src/app/symbol/liquidation-pane-dom-contract.test.ts, liquidation-legend-swatch.test.ts, long-short-pane-dom-contract.test.ts, long-short-pane-design-contract.test.ts.",
