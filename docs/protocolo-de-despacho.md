@@ -126,11 +126,21 @@ verificação despejaram **~397 mil tokens de saída bruta** nos contextos — `
 chamadas / ~201k tokens · `harness rules` 332 / ~66k · `make lint` 221 / ~43k · `make test`
 263 / ~41k · `git status` 158 / ~35k · `make boundaries` 69 / ~10k.
 
-**Use `make verify`** (`scripts/verify.sh`): roda os seis portões numa chamada e imprime
-~10 linhas, deixando a saída bruta em arquivo. `[MEDIDO 2026-08-29: 5.915 bytes de log →
-591 bytes impressos, 10×, e uma chamada no lugar de seis]`. Ele não mede nada de novo e
-**nunca inventa número** — quando a extração não casa, imprime `(número não extraído)` e o
-`rc`.
+**Builder usa `make verify-scope`; o gate da wave usa `make verify`** (`scripts/verify.sh`, os oito
+portões numa chamada, ~12 linhas, saída bruta em arquivo, segundos por portão) — desde `T-06.2`,
+2026-10-03. O escopo roda inteiros os portões de lint, `test-frontend`, `boundaries`, `regras` e
+`validate`; o pytest só do componente tocado, **sem cobertura e sem piso**
+(`backend/scripts/test-scope.sh`; diff de front não roda pytest); e o e2e só dos specs que o diff
+alcança, **mais o de pixel, sempre**. Ele imprime `VERDE-ESCOPO`, não grava cache e **não é verde de
+portão** — mesma relação que `test-fast` tem com `make test` em R8. O completo roda **uma vez por
+wave, sozinho na máquina** (o `e2e/20` mede latência absoluta e reprova sob carga); quem o roda cita o
+log. Despacho de builder diz `make verify-scope` com `VERIFY_BASE=<branch da wave>` (e
+`E2E_EXTRA="NN …"` quando o orquestrador sabe de um spec que o diff não alcança); despacho de gate de
+wave diz `make verify`. Para ver **por que** o escopo escolheu o que escolheu:
+`VERIFY_BASE=<base> bash scripts/scope-resolve.sh` (uma linha `#` por caminho alterado).
+`[MEDIDO 2026-08-29: 5.915 bytes de log → 591 bytes impressos, 10×, e uma chamada no lugar de seis]`.
+Ele não mede nada de novo e **nunca inventa número** — quando a extração não casa, imprime
+`(número não extraído)` e o `rc`.
 
 E **não releia o que já leu**: foram medidos **62 casos** de um mesmo arquivo lido 3+ vezes
 **dentro do mesmo agente** — `PRD-001` **15×**, `CLAUDE.md` 9×. Leia uma vez; o que
@@ -157,6 +167,8 @@ n=34.763 chamadas de ferramenta em 543 transcripts: **53,33h**]`.
 **A regra:** durante o desenvolvimento, `make test-fast K=<filtro>`
 (`backend/scripts/test-fast.sh`) — **2,19s medidos** contra os 37,5s da suíte, ~17×. A suíte
 completa fica onde ela decide alguma coisa: `make test` e `make verify`.
+*O mesmo vale para o e2e e para o pytest desde `T-06.2`: `make verify-scope` é o laço do builder,
+`make verify` é o portão.*
 
 ⛔ **`test-fast` NÃO roda cobertura e NÃO chama `check-coverage-layers.sh`.** As duas recusas
 `rc=3` daquele script continuam existindo em `test.sh`, onde o portão mora. **Verde no

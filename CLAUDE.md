@@ -88,15 +88,40 @@ Vinculante para o loop principal e para todo subagente — R1–R9 em
 - **NUNCA `cat` nem `sed -n '1,300p'` de arquivo grande no loop principal** — `grep -n` com âncora,
   `--json` com filtro, ou delegue a leitura.
 - Todo comando que pode passar de ~50 linhas termina em `| head -N` ou `| tail -N`.
-- **Verificação é `make verify`** — os oito portões numa chamada, ~10 linhas, saída bruta em
-  arquivo. Nunca os comandos soltos: eles custaram ~397k tokens de saída bruta em 1.320
+- **Verificação tem dois modos, e eles não se confundem (desde `T-06.2`, 2026-10-03).** O **builder** roda
+  `make verify-scope`: lint ×2, `test-frontend`, `boundaries`, `regras` e `validate` **inteiros**; o
+  **pytest só do componente que o diff toca** (diff só de front **não roda pytest**; a varredura da
+  chave da Coinalyze roda sempre) — `[DECISÃO-OWNER: 2026-10-02, escolha entre alternativas
+  apresentadas]`; e o **e2e só dos specs que o diff alcança**, derivados por `scripts/scope-resolve.sh`
+  (grafo de import do front + `frontend/e2e/scope-map.tsv` + o fecho de import da API para o
+  backend), **mais** o de pixel (`e2e/11`) **sempre** e o que o despacho somar em `E2E_EXTRA` (só
+  soma, nunca tira). Caminho sem regra, **mapa alterado no próprio diff**, ou token malformado no mapa
+  ⇒ COMPLETO ou recusa (fail-closed; os dois últimos achados pelo QA da W8, `gates/W8-QA-INFRA.md` F-1,
+  e pelo code-review, M-3). O veredito dele é **`VERDE-ESCOPO`**, que **não grava o cache da árvore e
+  não fecha nada**. O **gate da wave** roda `make verify` **uma vez**, sobre a branch da wave: só
+  `veredito: VERDE —` com o e2e completo fecha wave, e é o log dele que o `gate-record` cita. ⛔ **Não
+  existe `SKIP_E2E`** nem variável que esvazie o e2e (`DR-11`), e um `E2E_SPECS` exportado no shell não
+  encolhe o completo. Despacho de builder em wave passa **`VERIFY_BASE=<branch da wave>`**.
+  `[MEDIDO 2026-10-03, n=1 cada, sem concorrência, em `0a98530`]`: completo **848 s** (e2e 42/42 em
+  573 s, pytest com cobertura 208 s); escopo de diff de backend **209 s** (0,25); escopo de diff de front
+  na linha de liquidação (14/42 specs) **464 s** (**0,55 — NÃO atinge o `≤ 1/3` do DoD 2**). A exceção
+  é aceita e declarada, não escondida `[INFERRED: decisão do orquestrador em 2026-10-03 — afinar o mapa
+  daria ~0,22 apostando que 8 specs que desenham o mesmo pane não veem a mudança; a alavanca honesta é
+  paralelizar o e2e, hoje `workers: 1` em `frontend/playwright.config.ts:18`, follow-up]`.
+  ⚠️ **O `e2e/20` mede latência absoluta e reprova sob carga** — 917,5 ms com outro verify rodando,
+  ≤ 100 ms sozinho `[MEDIDO 2026-10-03: gates/T-06.1-build.md, gates/W8-QA-INFRA.md]`. Dois `make verify`
+  em paralelo derrubaram pelo menos 4 verifies da fase 05/06: **o completo da wave roda sozinho na máquina.**
+- **Abaixo, o que continua valendo para os dois modos.** Os oito portões numa chamada, ~10 linhas,
+  saída bruta em arquivo. Nunca os comandos soltos: eles custaram ~397k tokens de saída bruta em 1.320
   chamadas `[MEDIDO 2026-08-29 sobre 105 transcripts de subagente]`. **Desde 2026-09-26 ele só
   mede o que precisa:** diff só de docs desde a base (`VERIFY_BASE`, senão o upstream, senão
   `origin/master`) roda apenas `regras`, `validate` e a varredura da chave Coinalyze, em **~4 s**;
   uma árvore limpa que já mediu verde devolve o veredito do cache (`.git/verify-cache/`,
-  compartilhado entre worktrees). `VERIFY_FORCE=1` mede tudo de novo. O completo leva **354 s**,
+  compartilhado entre worktrees). `VERIFY_FORCE=1` mede tudo de novo. O completo levava **354 s**,
   contra 506–894 s antes `[MEDIDO 2026-09-26: rc=0; baseline n=16 logs /tmp/verify-*.log de
-  2026-09-25]`. Rode-o com `run_in_background`, porque o teto do `Bash` é 600 s.
+  2026-09-25]` — ⚠️ **CORREÇÃO, 2026-10-03: hoje leva 842–875 s** (e2e cresceu para 42 specs / 125
+  testes) `[MEDIDO 2026-10-03, n=3: /tmp/verify-wave-paineis-f06-20261003T033510Z.log,
+  /tmp/verify-t06-2b-20261003T035939Z.log, /tmp/verify-t06-2b-20261003T041513Z.log]`. Rode-o com `run_in_background`, porque o teto do `Bash` é 600 s.
 - **O subagente morre cedo — e isto é PORTÃO, não doutrina (de verdade só desde 2026-09-26; ver a
   correção logo abaixo).** Passando de ~150
   turnos, escreva o estado em `docs/context/<feature>/handoff/<TASK>.md` e devolva — o workflow
