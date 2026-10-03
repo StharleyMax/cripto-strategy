@@ -6,20 +6,33 @@
 # Escopo: "so local,, n tem nada na vps ais ainda" [PREMISSA-OWNER: 2026-10-02]. Este script fala
 # com o container local por `docker exec`; ele recusa um DOCKER_HOST/contexto remoto.
 #
-# ORDEM (pré-condição: T-06.4 implantada no writer, senão o próximo boot regrava tudo):
-#   1. compact.sh snapshot  OUT                 # exige lag 0 em XINFO GROUPS; grava OUT/t_snap
+# ORDEM (pré-condição: T-06.4 implantada no writer, senão o próximo boot regrava tudo). O universo
+# "congelado" (`ingested_at <= T_SNAP`) só é congelado com o PIPELINE PARADO: `ingested_at` é o
+# `received_at` do COLETOR, carimbado antes de a linha entrar no stream, e o `lag` do XINFO GROUPS
+# exclui o PEL (lote entregue ao escritor e ainda sem ack). Com o pipeline vivo, linhas com
+# `ingested_at <= T_SNAP` aterrissam depois do `count before`, e F-B reprova DEPOIS do DELETE sem
+# distinguir falso alarme de deleção errada (W8-CODE-REVIEW B-1). `snapshot` e `delete` recusam
+# (rc=2, antes de tocar o banco) se o pipeline não estiver parado — ver require_pipeline_stopped.
+#   0. docker stop deploy-collector-1           # pare os coletores: nada novo entra no stream
+#      aguarde lag 0 E pending 0 no grupo       # o escritor drena o stream e dá ack no PEL
+#      docker stop deploy-writer-1              # pare o escritor
+#   1. compact.sh snapshot  OUT                 # exige pipeline parado; grava OUT/t_snap
 #   2. compact.sh count     OUT before          # só leitura: por source, fingerprint, q1, F-1
 #   3. compact.sh envelopes OUT before          # F-A: 100 envelopes pela rota, sha256 de cada
-#   4. COMPACT_CONFIRM=delete-md-series-duplicates compact.sh delete OUT   # um chunk por transação
+#   4. COMPACT_CONFIRM=delete-md-series-duplicates compact.sh delete OUT   # pipeline parado de novo;
+#                                                                         # um chunk por transação
 #   5. compact.sh count     OUT after
 #   6. compact.sh envelopes OUT after
 #   7. compact.sh verify    OUT                 # rc=0 só se F-A e F-B passarem, todos os itens
+#   8. docker start deploy-writer-1 deploy-collector-1   # religue: escritor antes do coletor
 #
 # Inspeção sem banco (o teste executa exatamente estes textos):
 #   compact.sh print-sql {flags|stats|chunks|delete-chunk} T_SNAP [LO HI]
 #
 # Variáveis: PG_CONTAINER (deploy-postgres-1), API_CONTAINER (deploy-api-1),
-#            REDIS_CONTAINER (deploy-redis-1), REDIS_STREAM (md.series.write), SYMBOL (BTCUSDT).
+#            REDIS_CONTAINER (deploy-redis-1), REDIS_STREAM (md.series.write),
+#            REDIS_STREAM_GROUP (single_writer), COLLECTOR_CONTAINERS (deploy-collector-1, lista
+#            separada por espaço), WRITER_CONTAINER (deploy-writer-1), SYMBOL (BTCUSDT).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,6 +40,9 @@ PG_CONTAINER="${PG_CONTAINER:-deploy-postgres-1}"
 API_CONTAINER="${API_CONTAINER:-deploy-api-1}"
 REDIS_CONTAINER="${REDIS_CONTAINER:-deploy-redis-1}"
 REDIS_STREAM="${REDIS_STREAM:-md.series.write}"
+REDIS_STREAM_GROUP="${REDIS_STREAM_GROUP:-single_writer}"
+COLLECTOR_CONTAINERS="${COLLECTOR_CONTAINERS:-deploy-collector-1}"
+WRITER_CONTAINER="${WRITER_CONTAINER:-deploy-writer-1}"
 SYMBOL="${SYMBOL:-BTCUSDT}"
 CONFIRM_TOKEN="delete-md-series-duplicates"
 MIN_BIGINT="-9223372036854775808"
@@ -138,18 +154,60 @@ t_snap_of() {
   local t; t="$(cat "$1/t_snap")"; require_int T_SNAP "$t"; echo "$t"
 }
 
+# B-1 (W8-CODE-REVIEW): the frozen universe is frozen only while NOTHING can still land a row with
+# `ingested_at <= T_SNAP`. Fail-closed on every check — a container that cannot be inspected, a
+# group that is not listed, or a `lag` Redis cannot compute (nil) all refuse, as a running one does.
+#   * every collector and the writer exist and are NOT running (exited/created/dead);
+#   * no container of compose service `collector` or `writer` runs under ANY name (a scaled
+#     replica, another project) — the named check alone would miss it;
+#   * the writer group has lag 0 (nothing undelivered) AND pending 0 (no PEL: nothing delivered and
+#     not yet acked, i.e. no batch half-written when the writer stopped).
+require_pipeline_stopped() {
+  local c state
+  for c in $COLLECTOR_CONTAINERS $WRITER_CONTAINER; do
+    state="$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null)" \
+      || die "container '$c' não encontrado (ajuste COLLECTOR_CONTAINERS/WRITER_CONTAINER); nada foi tocado"
+    case "$state" in
+      exited|created|dead) ;;
+      *) die "container '$c' está '$state'; pare o pipeline antes (docker stop $c) — B-1, nada foi tocado" ;;
+    esac
+  done
+  local running
+  running="$(docker ps --format '{{.Names}}' \
+               --filter label=com.docker.compose.service=collector \
+               --filter label=com.docker.compose.service=writer)" \
+    || die "docker ps falhou; não dá para provar o pipeline parado — nada foi tocado"
+  [[ -z "$running" ]] \
+    || die "coletor/escritor ainda rodando: $(tr '\n' ' ' <<< "$running")— pare-os antes; nada foi tocado"
+  local info
+  info="$(docker exec "$REDIS_CONTAINER" redis-cli XINFO GROUPS "$REDIS_STREAM")" \
+    || die "XINFO GROUPS $REDIS_STREAM falhou (REDIS_CONTAINER=$REDIS_CONTAINER); nada foi tocado"
+  # redis-cli (no TTY) prints the reply flattened, one element per line: key, value, key, value…
+  local found lag pending
+  read -r found lag pending <<< "$(awk -v g="$REDIS_STREAM_GROUP" '
+      NR % 2 == 1 { key = $0; next }
+      key == "name" { cur = $0; if (cur == g) found = 1 }
+      cur == g && key == "lag"     { lag = ($0 == "" ? "nil" : $0) }
+      cur == g && key == "pending" { pending = ($0 == "" ? "nil" : $0) }
+      END { printf "%d %s %s", found, (lag == "" ? "?" : lag), (pending == "" ? "?" : pending) }' <<< "$info")"
+  [[ "$found" == "1" ]] \
+    || die "grupo '$REDIS_STREAM_GROUP' ausente em XINFO GROUPS $REDIS_STREAM; nada foi tocado"
+  [[ "$lag" == "0" ]] \
+    || die "lag do grupo '$REDIS_STREAM_GROUP' é '$lag', não 0 — religue só o escritor, drene e pare de novo; nada foi tocado"
+  [[ "$pending" == "0" ]] \
+    || die "pending do grupo '$REDIS_STREAM_GROUP' é '$pending', não 0 (PEL sem ack) — religue só o escritor, drene e pare de novo; nada foi tocado"
+}
+
 # ── subcommands ─────────────────────────────────────────────────────────────────────────────────
 
 cmd_snapshot() {
-  local out="$1"; mkdir -p "$out"; refuse_remote_docker
-  local lag
-  lag="$(docker exec "$REDIS_CONTAINER" redis-cli XINFO GROUPS "$REDIS_STREAM" \
-         | awk 'prev=="lag"{print; exit} {prev=$0}')"
-  [[ "$lag" == "0" ]] || die "lag do grupo em $REDIS_STREAM é '${lag:-?}', não 0; espere o writer drenar"
+  local out="$1"; refuse_remote_docker
+  require_pipeline_stopped
+  mkdir -p "$out"
   local t; t="$(echo "SELECT (extract(epoch FROM clock_timestamp()) * 1000)::bigint" | psql_ro)"
   require_int T_SNAP "$t"
   echo "$t" > "$out/t_snap"
-  echo "T_SNAP=$t ($(date -u -d "@$((t / 1000))" +%FT%TZ)) lag=0 -> $out/t_snap"
+  echo "T_SNAP=$t ($(date -u -d "@$((t / 1000))" +%FT%TZ)) pipeline parado, lag=0 pending=0 -> $out/t_snap"
 }
 
 cmd_count() {
@@ -230,6 +288,9 @@ cmd_delete() {
   # F-A's "before" can only be taken before the DELETE; without it `verify` can never pass again.
   [[ -s "$out/envelopes-before.tsv" ]] \
     || die "rode 'compact.sh envelopes $out before' antes do DELETE (F-A, prova §4)"
+  # B-1: the pipeline must STILL be stopped — restarted between snapshot and DELETE, rows with
+  # `ingested_at <= T_SNAP` would land under the DELETE and break F-B after the irreversible step.
+  require_pipeline_stopped
   # The chunk list is captured, not read through `< <(…)`: a process substitution's exit status is
   # invisible to `set -e`, and a failed listing would be reported as "0 rows deleted".
   local chunks

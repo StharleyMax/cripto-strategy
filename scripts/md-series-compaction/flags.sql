@@ -5,6 +5,9 @@
 -- The 13 fact columns are domain/repeated_fact.py FACT_COLUMNS: the four PARTITION BY columns plus
 -- the nine lag() comparisons below. tests/sentimento/test_md_series_compaction_script.py fails if
 -- the two lists diverge. The window never crosses a chunk: md.series is partitioned by bucket_end.
+-- `ingested_at <= T_SNAP` freezes the universe ONLY with the pipeline stopped: ingested_at is the
+-- collector's received_at, stamped before the row enters the stream. compact.sh refuses snapshot
+-- and delete unless collectors and writer are down and the group has lag 0 AND pending 0 (B-1).
 -- Placeholders {{T_SNAP}}, {{LO}}, {{HI}} are substituted by compact.sh, integers only.
 WITH frozen AS (
   SELECT * FROM md.series
