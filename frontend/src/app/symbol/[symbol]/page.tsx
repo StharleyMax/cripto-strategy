@@ -157,7 +157,7 @@ import type { OiCandlesWire } from "../series-history-envelope.ts";
 import type { PaneLegendSource, PaneLegendSources } from "../pane-legend.ts";
 import { resolveRouteWindow, type RouteWindow } from "../request-window.ts";
 import { seedIdentityKey } from "../seed-identity.ts";
-import { DEFAULT_TIMEFRAME, isSupportedTimeframe, timeframeStepMs } from "../supported-timeframes.ts";
+import { DEFAULT_TIMEFRAME, isSupportedTimeframe, timeframeStepMs } from "../chart/axis/supported-timeframes.ts";
 import {
   SymbolClient,
   type CvdPaneData,

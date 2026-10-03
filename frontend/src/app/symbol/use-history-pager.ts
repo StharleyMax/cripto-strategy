@@ -94,8 +94,8 @@ import {
 } from "./oi-candle-pane.ts";
 import type { PanelCoverage, SeriesHistoryRow } from "./series-history-envelope.ts";
 import { combineHistoryCoverage, type PanelCoverageBundle } from "./slot-coverage.ts";
-import { timeframeStepMs } from "./supported-timeframes.ts";
-import { isLeftOfMountView, mountViewRange, timeframeWindowBars } from "./timeframe-window.ts";
+import { timeframeStepMs } from "./chart/axis/supported-timeframes.ts";
+import { isLeftOfMountView, mountViewRange, timeframeWindowBars } from "./chart/axis/timeframe-window.ts";
 
 /** The `series_key_id` this route resolved for each of the ten `/series-history` fetches
  * `page.tsx` already makes — `null` for a panel whose catalog resolution failed or was

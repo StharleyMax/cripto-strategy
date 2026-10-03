@@ -130,15 +130,15 @@ test("createPanesBeforeSeries refuses a count that is not a positive integer, an
 
 // ── The host calls it, and BEFORE any pane mounts ─────────────────────────────────────────────
 
-const SYMBOL_CLIENT = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx"), "utf8");
+const HOST_SOURCE = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "chart", "host", "ChartHost.tsx"), "utf8");
 
 test("the host creates every pane of the registry before the first pane's mount", () => {
-  const call = SYMBOL_CLIENT.indexOf("createPanesBeforeSeries(chart, PANE_STACK.stretchFactors.length)");
-  const firstMount = SYMBOL_CLIENT.indexOf("binding.mount(chart, paneIndex)");
+  const call = HOST_SOURCE.indexOf("createPanesBeforeSeries(chart, PANE_STACK.stretchFactors.length)");
+  const firstMount = HOST_SOURCE.indexOf("binding.mount(chart, paneIndex)");
   // Anchored on the host's constructor options, not on the call's name: `chart-construction.test.ts`
   // scans every file for that name followed by a parenthesis.
-  const createChartAt = SYMBOL_CLIENT.indexOf("chartConstructorOptions(container.clientWidth");
-  assert.ok(call > 0, "SymbolClient.tsx no longer calls createPanesBeforeSeries with the registry's pane count");
+  const createChartAt = HOST_SOURCE.indexOf("chartConstructorOptions(container.clientWidth");
+  assert.ok(call > 0, "ChartHost.tsx no longer calls createPanesBeforeSeries with the registry's pane count");
   assert.ok(firstMount > 0, "the anchor 'binding.mount(chart, paneIndex)' moved — re-read the host before trusting this");
   assert.ok(createChartAt > 0 && createChartAt < call && call < firstMount, "the panes must be created after the chart and before the first mount");
 });

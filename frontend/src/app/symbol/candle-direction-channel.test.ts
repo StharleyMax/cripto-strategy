@@ -116,7 +116,7 @@ import {
   HOLLOW_BODY_FILL,
 } from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
-import { VIEW_BARS } from "./timeframe-window.ts";
+import { VIEW_BARS } from "./chart/axis/timeframe-window.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -127,9 +127,9 @@ const MEASUREMENT_WIDTH_PX = 900;
  * `price-candle.test.ts`: a copy here would measure the pane THIS file chose instead of the
  * one the screen draws, and would keep measuring it after the screen changed. */
 const CHART_HEIGHT_PX = (() => {
-  const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
+  const source = readFileSync(path.join(HERE, "chart", "host", "pane-stack.ts"), "utf8");
   const match = /const CHART_HEIGHT_PX = (\d+);/.exec(source);
-  assert.ok(match !== null, "CHART_HEIGHT_PX was not found in SymbolClient.tsx — the anchor moved, fix this test");
+  assert.ok(match !== null, "CHART_HEIGHT_PX was not found in chart/host/pane-stack.ts — the anchor moved, fix this test");
   return Number(match[1]);
 })();
 

@@ -32,8 +32,8 @@ import {
   resolveTrailingWindow,
   type S2Window,
 } from "../../charts/index.ts";
-import { timeframeStepMs } from "./supported-timeframes.ts";
-import { timeframeWindowBars } from "./timeframe-window.ts";
+import { timeframeStepMs } from "./chart/axis/supported-timeframes.ts";
+import { timeframeWindowBars } from "./chart/axis/timeframe-window.ts";
 
 /**
  * THE MEASUREMENT BOTH CONSTANTS BELOW ARE SIZED AGAINST — one number, one command, one `n`.

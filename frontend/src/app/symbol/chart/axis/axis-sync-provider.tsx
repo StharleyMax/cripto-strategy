@@ -25,8 +25,8 @@ import {
   SINGLE_CHART_PANEL_COUNT,
   type AxisSyncStore,
 } from "./axis-sync.ts";
-import { recordAxisRangeApplied } from "./axis-latency-probe.ts";
-import type { TimeAxis, TimeRange } from "../../charts/index.ts";
+import { recordAxisRangeApplied } from "../../axis-latency-probe.ts";
+import type { TimeAxis, TimeRange } from "../../../../charts/index.ts";
 import { mountViewRange } from "./timeframe-window.ts";
 
 // `T-02.7` (`RNF-2`): the ONE extra wire this file carries. `createAxisSyncStore`'s optional

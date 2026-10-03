@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
+import { SUPPORTED_TIMEFRAMES } from "./chart/axis/supported-timeframes.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SYMBOL_CLIENT_PATH = path.join(HERE, "SymbolClient.tsx");
@@ -46,7 +46,7 @@ const BUTTON_LABEL_FROM_OPTION = /\{option\.interval\}\s*\n\s*<\/button>/;
 const BAR_MOUNTED = /<TimeframeBar selected=\{selectedTimeframe\} onSelect=\{handleTimeframeSelect\} \/>/;
 // W1-FIX: the import may carry other names of the same module (`timeframeStepMs`, MF-B); what the
 // contract pins is that `SUPPORTED_TIMEFRAMES` comes from `supported-timeframes.ts`.
-const IMPORTS_CANONICAL_ARRAY = /import \{[^}]*\bSUPPORTED_TIMEFRAMES\b[^}]*\} from "\.\/supported-timeframes\.ts";/;
+const IMPORTS_CANONICAL_ARRAY = /import \{[^}]*\bSUPPORTED_TIMEFRAMES\b[^}]*\} from "\.\/chart\/axis\/supported-timeframes\.ts";/;
 
 test("T-03.9 contract: TimeframeBar imports the canonical array, never redeclares it", () => {
   assert.match(

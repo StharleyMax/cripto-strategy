@@ -19,9 +19,11 @@ import { fileURLToPath } from "node:url";
 import { DEFAULT_TIMEFRAME, isSupportedTimeframe, SUPPORTED_TIMEFRAMES, timeframeStepMs } from "./supported-timeframes.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// `frontend/src/app/symbol` -> repo root is four levels up.
+// `frontend/src/app/symbol/chart/axis` -> repo root is six levels up.
 const BACKEND_SERIES_HISTORY_USE_CASE_PATH = path.join(
   HERE,
+  "..",
+  "..",
   "..",
   "..",
   "..",

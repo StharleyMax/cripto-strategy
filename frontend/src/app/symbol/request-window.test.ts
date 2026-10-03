@@ -22,8 +22,8 @@ import {
   RIGHT_EDGE_LAG_MS,
   resolveRouteWindow,
 } from "./request-window.ts";
-import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
-import { TIMEFRAME_WINDOW_BARS } from "./timeframe-window.ts";
+import { SUPPORTED_TIMEFRAMES } from "./chart/axis/supported-timeframes.ts";
+import { TIMEFRAME_WINDOW_BARS } from "./chart/axis/timeframe-window.ts";
 
 /** The literal window the defect was made of — the negative control, and the ONLY place in
  * this tree those four days still appear as a hardcoded pair. */

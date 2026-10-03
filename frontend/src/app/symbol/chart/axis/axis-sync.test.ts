@@ -18,7 +18,7 @@ import {
   SINGLE_CHART_PANEL_INDEX,
   withAxisSyncAblation,
 } from "./axis-sync.ts";
-import type { LogicalRange, TimeAxis, TimeRange } from "../../charts/index.ts";
+import type { LogicalRange, TimeAxis, TimeRange } from "../../../../charts/index.ts";
 
 const ONE_MINUTE_MS = 60_000;
 

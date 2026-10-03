@@ -22,7 +22,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { seedIdentityKey, type SeedIdentity } from "./seed-identity.ts";
-import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
+import { SUPPORTED_TIMEFRAMES } from "./chart/axis/supported-timeframes.ts";
 
 const BASE: SeedIdentity = { symbol: "BTCUSDT", interval: "1m", knowledgeTimeMs: 1_758_672_000_000 };
 

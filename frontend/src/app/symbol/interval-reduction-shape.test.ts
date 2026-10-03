@@ -46,7 +46,7 @@ import { test } from "node:test";
 
 import { buildScalarSeries, FIVE_MINUTES_MS, ONE_MINUTE_MS } from "../../charts/index.ts";
 import type { SeriesHistoryRow } from "./series-history-client.ts";
-import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
+import { SUPPORTED_TIMEFRAMES } from "./chart/axis/supported-timeframes.ts";
 import { countPresentSlots, scalarPointsFromHistoryRows } from "./view-model.ts";
 
 /** The series' own native cadence — OI's, the one `DoD 8`'s baseline was measured against

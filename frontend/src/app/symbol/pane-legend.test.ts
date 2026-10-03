@@ -34,6 +34,12 @@ import {
 import { F1_PANE_ORDER } from "./pane-registry.ts";
 
 const SOURCE = readFileSync(fileURLToPath(new URL("./SymbolClient.tsx", import.meta.url)), "utf8");
+/** `estrutura-do-front` `T-01.2` — the host (and its crosshair subscription) left `SymbolClient.tsx` for
+ * `chart/host/`. The four files are read together, so "anywhere in SymbolClient" keeps the universe
+ * the one file had before the move. */
+const HOST_SOURCE = ["ChartHost.tsx", "pane-layer.tsx", "registrar.ts", "pane-stack.ts"]
+  .map((file) => readFileSync(fileURLToPath(new URL(`./chart/host/${file}`, import.meta.url)), "utf8"))
+  .join("\n");
 
 function entry(metric: string, nature: Nature, overrides: Partial<SeriesKey> = {}): SeriesCatalogEntry {
   const key: SeriesKey = {
@@ -99,10 +105,10 @@ test("CA-3′ MORDE: a handler that filters by paneIndex is rejected by the asse
 });
 
 test("CA-3′: the chart is subscribed to THE handler of this module, with no paneIndex anywhere in SymbolClient", () => {
-  assert.match(SOURCE, /chart\.subscribeCrosshairMove\(handleCrosshairMove\)/);
-  assert.match(SOURCE, /const handleCrosshairMove = crosshairMoveHandler\(crosshairStore\)/);
-  assert.match(SOURCE, /chart\.unsubscribeCrosshairMove\(handleCrosshairMove\)/);
-  assert.doesNotMatch(SOURCE, /\.paneIndex\b/, "a legend that reads param.paneIndex is CA-3′'s mutation");
+  assert.match(HOST_SOURCE, /chart\.subscribeCrosshairMove\(handleCrosshairMove\)/);
+  assert.match(HOST_SOURCE, /const handleCrosshairMove = crosshairMoveHandler\(crosshairStore\)/);
+  assert.match(HOST_SOURCE, /chart\.unsubscribeCrosshairMove\(handleCrosshairMove\)/);
+  assert.doesNotMatch(SOURCE + HOST_SOURCE, /\.paneIndex\b/, "a legend that reads param.paneIndex is CA-3′'s mutation");
 });
 
 test("the crosshair store notifies only when the SLOT changes, and leaving the chart clears it", () => {
