@@ -66,6 +66,10 @@ const MAX_IDLE_GESTURES = 2;
 const DEFAULT_MAX_ITERATIONS = 12;
 /** `settledView`'s bound: ~2 frames per read, so ~0,3 s at 60 Hz before it gives up agreeing. */
 const SETTLE_MAX_READS = 10;
+/** Bound on wheel events in one zoom: `x0.05` at a quarter of 10% per event is ~120 events. */
+const MAX_WHEEL_EVENTS_PER_ZOOM = 400;
+/** A zoom stops once the published spacing is within 0.5% of the wanted one; the outer loop corrects the rest. */
+const WHEEL_SPACING_TOLERANCE = 0.005;
 
 export interface ViewState {
   /** `data-visible-logical-from`/`-to` of the chart host. */
@@ -266,15 +270,29 @@ async function nextFrames(page: Page): Promise<void> {
 
 /**
  * Wheel events, at `x`, that multiply the bar spacing by `ratio` (> 1 zooms in). Each event moves
- * it by at most 10%, so a big ratio is several events; the last one is partial.
+ * it by at most 10%, so a big ratio is several events.
+ *
+ * CLOSED LOOP PER EVENT — the event is sized from the spacing the host PUBLISHED after the previous
+ * one, never from a count computed up front. The `1 − d/1000` law above holds for the `deltaY` the
+ * library RECEIVES, and that is not always the one sent: under `deviceScaleFactor: 2` (`e2e/33`) a
+ * gesture asking `x0.060` from the 120-bar mount reached `[5523, 5760]`, i.e. `x0.51` — the same
+ * every run (`ln 0.51 / ln 0.06 ≈ 0.24`: about a quarter of each event arrived), and 12 gestures
+ * ended at `[3955, 5760]` of a wanted `[3760, 5760]`. Waiting for the new range before the next event
+ * also keeps Chromium from coalescing queued events into one whose `deltaY` is the sum, which the
+ * library's 10% clamp would cut. A wait that times out means nothing moves any more (the floor, or
+ * the ceiling); the outer loop re-reads and decides.
  */
 async function wheelZoom(page: Page, state: ViewState, x: number, ratio: number): Promise<void> {
   await page.mouse.move(x, state.plot.y + state.plot.height * 0.5);
-  let remaining = ratio;
-  for (let events = 0; events < 200 && Math.abs(remaining - 1) > 1e-4; events += 1) {
+  const wantedSpacing = state.barSpacingPx * ratio;
+  let current = state;
+  for (let events = 0; events < MAX_WHEEL_EVENTS_PER_ZOOM; events += 1) {
+    const remaining = wantedSpacing / current.barSpacingPx;
+    if (Math.abs(remaining - 1) <= WHEEL_SPACING_TOLERANCE) break;
     const factor = Math.min(1.1, Math.max(0.9, remaining));
     await page.mouse.wheel(0, -1_000 * (factor - 1));
-    remaining /= factor;
+    if (!(await waitForRangeChange(page, current))) break;
+    current = await readView(page);
   }
 }
 
