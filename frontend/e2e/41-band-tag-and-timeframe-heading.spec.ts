@@ -33,8 +33,10 @@ async function open(page: Page, interval: string): Promise<void> {
   await expect(page.locator("main[data-window-start-ms]")).toHaveCount(1);
 }
 
+// `1m` (`W8-QA-FRONT` WARNING-1): the one TF where 4 h of bars is wider than the loaded plot, so the
+// band is cut by the plot's LEFT edge — and a cut side draws no border (`band.clippedLeft`).
 for (const width of [1024, 1280] as const) {
-  for (const interval of ["1h", "4h"] as const) {
+  for (const interval of ["1m", "1h", "4h"] as const) {
     test(`N-1: at ${width}/${interval} the band's tag is whole and never crosses into the price scale (${SPEC})`, async ({
       page,
     }) => {
@@ -75,6 +77,8 @@ for (const width of [1024, 1280] as const) {
           tagClientWidth: tagEl.clientWidth,
           tagWidth: tagBox.width,
           tagVisibleWidth: Math.max(0, visibleRight - visibleLeft),
+          clipped: bandEl.getAttribute("data-recent-band-clipped") ?? "",
+          borderLeftWidth: getComputedStyle(bandEl).borderLeftWidth,
         };
       });
       for (const [key, value] of Object.entries(geometry)) {
@@ -92,6 +96,13 @@ for (const width of [1024, 1280] as const) {
       expect(geometry.tagVisibleWidth, "the whole tag is painted — no clipping ancestor cuts it").toBeGreaterThanOrEqual(
         geometry.tagWidth - 0.5,
       );
+      if (interval === "1m") {
+        expect(geometry.clipped, "in 1m the band is cut by the plot's left edge").toBe("left");
+        expect(geometry.borderLeftWidth, "a side cut by the plot's edge draws no border").toBe("0px");
+      } else {
+        expect(geometry.clipped, `in ${interval} the band's left side is inside the plot`).not.toContain("left");
+        expect(geometry.borderLeftWidth, "an uncut side keeps its border").not.toBe("0px");
+      }
       await pane.scrollIntoViewIfNeeded();
       await shot(page, `t05-6-n1-${width}-${interval}`);
     });

@@ -2363,14 +2363,42 @@ function OiProvenance({ oi }: { readonly oi: OiPaneData }) {
     provenance === null
       ? "oi_provenance:unresolved"
       : `oi_provenance:grandeza=${provenance.grandeza};universo=${provenance.universo};coorte=${provenance.coorte}`;
-  const text =
-    provenance === null
-      ? "Procedência não identificada — nenhuma série resolvida no catálogo."
-      : `Grandeza: ${provenance.grandeza} · Universo: ${provenance.universo} · Coorte: ${provenance.coorte}`;
   return (
     <p data-fact={fact} className="text-sm text-provenance-weak">
-      {text}
+      {provenance === null ? (
+        "Procedência não identificada — nenhuma série resolvida no catálogo."
+      ) : (
+        <>
+          {`Grandeza: ${provenance.grandeza}`}
+          <OiProvenanceTerm label="Universo" value={provenance.universo} />
+          <OiProvenanceTerm label="Coorte" value={provenance.coorte} />
+        </>
+      )}
     </p>
+  );
+}
+
+/**
+ * `B-1` (`gates/W8-OI-1024-DESIGN-GATE.md` §3) — one term after the first, painted as
+ * `· <Label>: <head><rest>`. `<Label>: <head>` is ATOMIC (`inline-block`): under the line's
+ * `text-overflow: ellipsis` an atomic inline that does not fit is hidden whole, never cut, so a
+ * term label is never painted without its value — the line ends in `· …` instead. `<head>` is the
+ * value up to its first `/` (excluded), or the whole value; `<rest>` still truncates per character,
+ * so at 1280 `Universo: binance/usdm_futur…` keeps its informative part.
+ *
+ * The `<p>`'s `textContent` is byte for byte the single string it was before (`· ` outside the
+ * span, no extra whitespace), so a screen reader and every text reader see the same sentence.
+ */
+function OiProvenanceTerm({ label, value }: { readonly label: string; readonly value: string }) {
+  const slash = value.indexOf("/");
+  const head = slash < 0 ? value : value.slice(0, slash);
+  const rest = slash < 0 ? "" : value.slice(slash);
+  return (
+    <>
+      {" · "}
+      <span data-provenance-term={label} className="inline-block">{`${label}: ${head}`}</span>
+      {rest}
+    </>
   );
 }
 
@@ -2482,6 +2510,12 @@ function OiCandleLegend({ oiCandles }: { readonly oiCandles: OiCandlePaneData })
       data-legend-samples={candle === null ? "" : `${candle.samples.present}/${candle.samples.expected}`}
       className="inline-flex flex-wrap items-baseline gap-x-2"
     >
+      {/* `B-1` (`handoff/W8-oi-1024-decisao.md` §4): O·H·L·C is ONE group that never wraps. Without it
+          this flex-wrap item's min-content is its widest single field, the line's overflow is shared
+          between it and the provenance, and at 1024px the `C` dropped to a second line — the legend
+          grew 16 px and the data area shrank. Now only the provenance (the line's LAST item) shrinks,
+          and only `DERIVADO (…)` may go to line 2. */}
+      <span data-legend-ohlc-row="" className="inline-flex flex-nowrap items-baseline gap-x-2">
       {OI_LEGEND_FIELDS.map(({ field, letter }) => {
         const value = candle === null ? null : candle[field];
         const numeralSpan = (
@@ -2529,6 +2563,7 @@ function OiCandleLegend({ oiCandles }: { readonly oiCandles: OiCandlePaneData })
           </span>
         );
       })}
+      </span>
       {provenance === null ? null : (
         <span data-fact={`oi_candle_provenance:${candle!.derived_from}`} className="text-sm text-on-surface">
           {provenance}
