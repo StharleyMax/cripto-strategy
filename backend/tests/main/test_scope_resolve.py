@@ -278,6 +278,23 @@ def test_editing_the_map_cannot_drop_a_spec_from_its_own_diff(repo: Path) -> Non
     )
 
 
+def test_editing_a_route_row_cannot_drop_its_spec_from_its_own_diff(repo: Path) -> None:
+    """F-1, the route rows: the map edit may narrow `@rota:console`, not only a prefix row.
+
+    A diff that rewrites `@rota:console` from `01` to `13` and touches a console-only file must
+    still run `e2e/01`, which the BASE map selected. A "fix" that re-reads only the symbol route's
+    rows on a map edit keeps `12` (under `08+`), passes the prefix-row test above, yet drops `01`.
+    """
+    narrowed = _MAP.replace("@rota:console\t01\t", "@rota:console\t13\t")
+    (repo / "frontend/e2e/scope-map.tsv").write_text(narrowed, encoding="utf-8")
+    _append(repo, "frontend/src/features/console-thing.ts")
+    rc, keys = _resolve(repo)
+    assert rc == 0
+    assert keys["e2e"] == "COMPLETO" or "01" in _specs(keys), (
+        f"the map edit dropped e2e/01 from its own diff's selection: {sorted(_specs(keys))}"
+    )
+
+
 def test_served_markdown_widens_e2e(repo: Path) -> None:
     """W-2: Next serves `frontend/public/*.md`: not documentation, so never "only 11"."""
     _append(repo, "frontend/public/notes.md", "# served\n")

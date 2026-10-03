@@ -45,7 +45,8 @@ _TOKEN: Final = "delete-md-series-duplicates"  # noqa: S105 - a confirmation wor
 # `ps` HONOURS its filters the way Docker 24 does: `$FAKE_DOCKER_PS` holds the running containers
 # as `name service` lines, and a name is printed only when its service matches EVERY
 # `--filter label=com.docker.compose.service=…` (repeated label filters are AND, never OR —
-# `W8-CODE-REVIEW` N-1, measured against the live pipeline); any other filter fails (rc 97);
+# `W8-CODE-REVIEW` N-1, measured against the live pipeline); any other filter fails (rc 97), and
+# `$FAKE_DOCKER_PS` set to `__FAIL__` makes `ps` itself fail (rc 1, a daemon that cannot answer);
 # `exec … redis-cli …` prints `$FAKE_XINFO`; any other `exec [-i] [-e K=V]… CONTAINER CMD…`
 # exports the `-e` pairs and runs CMD on the host, where `psql` reaches the test database through
 # the PG* variables the test sets. `FAKE_DOCKER_EXEC_FAILS=1` makes those psql `exec`s fail
@@ -60,6 +61,7 @@ case "$1" in
     exit $?
     ;;
   ps)
+    [[ "${FAKE_DOCKER_PS:-}" == "__FAIL__" ]] && exit 1
     shift
     want=()
     while [[ $# -gt 0 ]]; do
@@ -272,6 +274,24 @@ def test_delete_without_the_f_a_baseline_never_reaches_the_database(
     assert not [c for c in calls if c.startswith("exec")]
 
 
+def test_delete_with_an_empty_f_a_baseline_never_reaches_the_database(
+    tmp_path: Path, fake_docker: Path
+) -> None:
+    """An empty `envelopes-before.tsv` is no F-A baseline.
+
+    0 bytes is an `envelopes` run that died after creating the file: the irreversible step must
+    refuse it exactly as it refuses a missing one.
+    """
+    out = _out_dir(tmp_path, with_envelopes=False)
+    (out / "envelopes-before.tsv").write_text("", encoding="utf-8")
+
+    result, calls = _run_delete(out, fake_docker, confirm=True)
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "envelopes" in result.stderr
+    assert not [c for c in calls if c.startswith("exec")]
+
+
 def test_a_chunk_listing_that_fails_is_not_reported_as_zero_rows_deleted(
     tmp_path: Path, fake_docker: Path
 ) -> None:
@@ -388,6 +408,24 @@ _NOT_STOPPED: Final = [
     pytest.param(
         {}, _OTHERS_RUNNING, _xinfo(("audit", "0", "0")), "missing from XINFO", id="group-missing"
     ),
+    # W8 QA re-validation: `XINFO GROUPS` lists groups by name, so a drained group can come AFTER
+    # the writer's. The lag/pending read must be the writer group's, never the last group listed.
+    pytest.param(
+        {},
+        _OTHERS_RUNNING,
+        _xinfo(("single_writer", "0", "4"), ("single_writer_replay", "0", "0")),
+        "pending",
+        id="pending>0-before-a-drained-group",
+    ),
+    pytest.param(
+        {},
+        _OTHERS_RUNNING,
+        _xinfo(("single_writer", "12", "0"), ("single_writer_replay", "0", "0")),
+        "lag",
+        id="lag>0-before-a-drained-group",
+    ),
+    # Fail-closed: a `docker ps` that cannot answer proves nothing about replicas.
+    pytest.param({}, "__FAIL__", _DRAINED, "docker ps failed", id="docker-ps-fails"),
 ]
 
 
