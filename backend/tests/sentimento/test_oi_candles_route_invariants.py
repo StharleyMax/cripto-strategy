@@ -25,10 +25,12 @@ thresholds at their exact edge.
 
 from __future__ import annotations
 
+import functools
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from decimal import Decimal
+from types import MappingProxyType
 
 import pytest
 
@@ -76,7 +78,15 @@ HIST_LAG_MS = 35_000
 POLL_LAG_MS = 1_000
 SEEDS = range(6)
 
+# Speed (`T-10.7`): the seeded data, its observations and the two catalog entries are built once
+# and shared by every test that asks for them. Every cache is keyed by `seed` (or takes no
+# argument) and NEVER by `id(...)`: a prototype keyed `_observations` by `id(values)` and a
+# reused id served one pinned case another case's rows (one false red, `BACKEND-analise` §2).
+# What is cached is immutable (frozen dataclasses, tuples, `MappingProxyType`), so no test can
+# change what the next one reads.
 
+
+@functools.cache
 def _hist_entry() -> SeriesCatalogEntry:
     (entry,) = [
         e for e in open_interest_catalog_entries(SYMBOL).entries if e.key.provider == "binance"
@@ -84,6 +94,7 @@ def _hist_entry() -> SeriesCatalogEntry:
     return entry
 
 
+@functools.cache
 def _poll_entry() -> SeriesCatalogEntry:
     return binance_open_interest_poll_entry(SYMBOL)
 
@@ -99,12 +110,13 @@ def _classify(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGridVerdict:
 
 
 def _observations(
-    entry: SeriesCatalogEntry, values: dict[int, str], *, lag_ms: int
+    entry: SeriesCatalogEntry, values: Mapping[int, str], *, lag_ms: int
 ) -> tuple[Observation, ...]:
+    series_key_id = entry.key.series_key_id()
     return tuple(
         Observation(
             row=SeriesRow(
-                series_key_id=entry.key.series_key_id(),
+                series_key_id=series_key_id,
                 symbol=SYMBOL,
                 source="binance",
                 bucket_end=instant,
@@ -126,10 +138,23 @@ def _observations(
     )
 
 
+def _rows(
+    hist: Mapping[int, str], poll: Mapping[int, str], *, poll_lag_ms: int = POLL_LAG_MS
+) -> Mapping[str, tuple[Observation, ...]]:
+    """Return the stored rows of both series, by `series_key_id`, as the reader serves them."""
+    h, p = _hist_entry(), _poll_entry()
+    return MappingProxyType(
+        {
+            h.key.series_key_id(): _observations(h, hist, lag_ms=HIST_LAG_MS),
+            p.key.series_key_id(): _observations(p, poll, lag_ms=poll_lag_ms),
+        }
+    )
+
+
 class _ReaderBySeries:
     """A `SeriesWindowReader` answering each id with its own rows in `[start - lookback, end]`."""
 
-    def __init__(self, rows_by_id: dict[str, tuple[Observation, ...]]) -> None:
+    def __init__(self, rows_by_id: Mapping[str, tuple[Observation, ...]]) -> None:
         self._rows_by_id = rows_by_id
 
     def read_window(
@@ -173,33 +198,34 @@ def _random_values(
     return values
 
 
-def _data(seed: int) -> tuple[dict[int, str], dict[int, str]]:
+@functools.cache
+def _data(seed: int) -> tuple[Mapping[int, str], Mapping[int, str]]:
     rng = random.Random(seed)  # noqa: S311 (deterministic fixture)
     hist = _random_values(rng, grid_min=5, first_min=0, last_min=DATA_DAYS * 1440, hole_p=0.08)
     # Capture starts mid-series, on a minute that is NOT a 5-minute boundary most of the time.
     poll = _random_values(
         rng, grid_min=1, first_min=rng.randrange(300, 700), last_min=DATA_DAYS * 1440, hole_p=0.06
     )
-    return hist, poll
+    return MappingProxyType(hist), MappingProxyType(poll)
+
+
+@functools.cache
+def _seeded_observations(seed: int) -> Mapping[str, tuple[Observation, ...]]:
+    """Return `_rows` of `_data(seed)`, built once per seed: the key is the seed itself."""
+    hist, poll = _data(seed)
+    return _rows(hist, poll)
 
 
 def _served(
-    hist: dict[int, str],
-    poll: dict[int, str],
+    rows: Mapping[str, tuple[Observation, ...]],
     *,
     requested: SeriesCatalogEntry,
     interval: str,
     window: tuple[int, int],
     knowledge_time_ms: int = ORIGIN_MS + (DATA_DAYS + 1) * DAY_MS,
-    poll_lag_ms: int = POLL_LAG_MS,
 ) -> list[dict[str, object]]:
     h, p = _hist_entry(), _poll_entry()
-    reader = _ReaderBySeries(
-        {
-            h.key.series_key_id(): _observations(h, hist, lag_ms=HIST_LAG_MS),
-            p.key.series_key_id(): _observations(p, poll, lag_ms=poll_lag_ms),
-        }
-    )
+    reader = _ReaderBySeries(rows)
     report = build_series_history_report(
         SeriesCatalog((h, p)),
         reader,
@@ -230,12 +256,12 @@ def _window(rng: random.Random, interval_min: int) -> tuple[int, int]:
 
 
 def _oracle(
-    hist: dict[int, str], poll: dict[int, str], *, interval: str, window: tuple[int, int]
+    hist: Mapping[int, str], poll: Mapping[int, str], *, interval: str, window: tuple[int, int]
 ) -> list[dict[str, object]]:
     """Return the domain projection over the STORED readings, cut to each series' bucket range."""
     tf_ms = INTERVALS[interval] * MINUTE_MS
 
-    def regime(entry: SeriesCatalogEntry, values: dict[int, str]) -> OiRegimeReadings:
+    def regime(entry: SeriesCatalogEntry, values: Mapping[int, str]) -> OiRegimeReadings:
         bucket_ms = effective_timeframe_ms(tf_ms, entry.native_grid_ms)
         first_end = -(-window[0] // bucket_ms) * bucket_ms
         last_end = (window[1] // bucket_ms) * bucket_ms
@@ -252,9 +278,10 @@ def _oracle(
 
     # `D2-bis` on the left edge (`W6-QA-BACK-r2` D-1): the stored polled points from `T0` of the
     # first HISTORY bucket up to the polling's own first `T0` decide the rule, never a candle.
-    left = frozenset(
-        t for t in poll if first_anchor(_hist_entry()) <= t < first_anchor(_poll_entry())
-    )
+    # Both edges are computed once, outside the generator: inside it, they rebuilt the catalog
+    # once per polled point (3.453 times in `[4h-1]`, `BACKEND-analise` §2).
+    left_from, left_until = first_anchor(_hist_entry()), first_anchor(_poll_entry())
+    left = frozenset(t for t in poll if left_from <= t < left_until)
     report = project_one_series_per_bucket(
         poll=replace(regime(_poll_entry(), poll), anchor_only_instants_ms=left),
         hist=regime(_hist_entry(), hist),
@@ -268,11 +295,11 @@ def _oracle(
 @pytest.mark.parametrize("seed", SEEDS)
 def test_either_requested_id_serves_the_same_candles(interval: str, seed: int) -> None:
     """Invariant 1 of the module docstring, on every `SUPPORTED_INTERVALS` member."""
-    hist, poll = _data(seed)
+    rows = _seeded_observations(seed)
     window = _window(random.Random(seed * 7919 + 1), INTERVALS[interval])  # noqa: S311
 
-    by_hist = _served(hist, poll, requested=_hist_entry(), interval=interval, window=window)
-    by_poll = _served(hist, poll, requested=_poll_entry(), interval=interval, window=window)
+    by_hist = _served(rows, requested=_hist_entry(), interval=interval, window=window)
+    by_poll = _served(rows, requested=_poll_entry(), interval=interval, window=window)
 
     assert by_poll == by_hist
 
@@ -284,7 +311,9 @@ def test_the_route_reads_lose_no_reading_the_projection_would_use(interval: str,
     hist, poll = _data(seed)
     window = _window(random.Random(seed * 7919 + 2), INTERVALS[interval])  # noqa: S311
 
-    served = _served(hist, poll, requested=_hist_entry(), interval=interval, window=window)
+    served = _served(
+        _seeded_observations(seed), requested=_hist_entry(), interval=interval, window=window
+    )
 
     assert served == _oracle(hist, poll, interval=interval, window=window)
 
@@ -295,7 +324,7 @@ def test_a_bucket_ending_inside_two_windows_gets_the_same_candle_from_both(
     interval: str, seed: int
 ) -> None:
     """Invariant 3: a bucket's candle does not depend on where the window starts."""
-    hist, poll = _data(seed)
+    rows = _seeded_observations(seed)
     rng = random.Random(seed * 7919 + 3)  # noqa: S311 (deterministic fixture)
     interval_ms = INTERVALS[interval] * MINUTE_MS
     wide = _window(rng, INTERVALS[interval])
@@ -304,11 +333,11 @@ def test_a_bucket_ending_inside_two_windows_gets_the_same_candle_from_both(
 
     by_wide = {
         c["bucket_end_ms"]: c
-        for c in _served(hist, poll, requested=_hist_entry(), interval=interval, window=wide)
+        for c in _served(rows, requested=_hist_entry(), interval=interval, window=wide)
     }
     by_narrow = {
         c["bucket_end_ms"]: c
-        for c in _served(hist, poll, requested=_hist_entry(), interval=interval, window=narrow)
+        for c in _served(rows, requested=_hist_entry(), interval=interval, window=narrow)
     }
     ends = {end for end in (*by_wide, *by_narrow) if isinstance(end, int)}
     both = sorted(end for end in ends if end >= narrow[0] + interval_ms)
@@ -339,7 +368,7 @@ def test_in_1m_a_polled_anchor_left_of_the_window_still_owns_the_history_bucket(
     poll = {_at(m): f"{2000 + m:.3f}" for m in (5, *range(10, 16))}
 
     def at_10(start_minute: int) -> list[tuple[object, object]]:
-        candles = _served(hist, poll, requested=requested(), interval="1m",
+        candles = _served(_rows(hist, poll), requested=requested(), interval="1m",
                           window=(_at(start_minute), _at(15)))  # fmt: skip
         return [(c["derived_from"], c["open_at_ms"]) for c in candles
                 if c["bucket_end_ms"] == _at(10)]  # fmt: skip
@@ -360,7 +389,7 @@ def test_in_1m_the_history_still_serves_a_bucket_no_polled_anchor_claims() -> No
     poll = {_at(m): f"{2000 + m:.3f}" for m in range(11, 16)}
 
     for start_minute in range(4, 10):
-        candles = _served(hist, poll, requested=_hist_entry(), interval="1m",
+        candles = _served(_rows(hist, poll), requested=_hist_entry(), interval="1m",
                           window=(_at(start_minute), _at(15)))  # fmt: skip
         at_10 = [(c["derived_from"], c["open_at_ms"]) for c in candles
                  if c["bucket_end_ms"] == _at(10)]  # fmt: skip
@@ -382,7 +411,7 @@ def test_in_1m_a_polled_anchor_off_the_5_minute_grid_left_of_the_window_owns_the
     poll = {_at(m): f"{2000 + m:.3f}" for m in (6, *range(10, 16))}
 
     for start_minute in range(4, 10):
-        candles = _served(hist, poll, requested=requested(), interval="1m",
+        candles = _served(_rows(hist, poll), requested=requested(), interval="1m",
                           window=(_at(start_minute), _at(15)))  # fmt: skip
         at_10 = [(c["derived_from"], c["open_at_ms"]) for c in candles
                  if c["bucket_end_ms"] == _at(10)]  # fmt: skip
@@ -405,9 +434,9 @@ def test_in_1m_a_polled_anchor_not_yet_known_left_of_the_window_owns_nothing(
     poll = {_at(m): f"{2000 + m:.3f}" for m in (5, *range(10, 16))}
 
     for start_minute in range(4, 10):
-        candles = _served(hist, poll, requested=requested(), interval="1m",
-                          window=(_at(start_minute), _at(15)), knowledge_time_ms=_at(16),
-                          poll_lag_ms=20 * MINUTE_MS)  # fmt: skip
+        candles = _served(_rows(hist, poll, poll_lag_ms=20 * MINUTE_MS), requested=requested(),
+                          interval="1m", window=(_at(start_minute), _at(15)),
+                          knowledge_time_ms=_at(16))  # fmt: skip
         at_10 = [(c["derived_from"], c["open_at_ms"]) for c in candles
                  if c["bucket_end_ms"] == _at(10)]  # fmt: skip
         assert at_10 == [("binance_point_5m", _at(5))], start_minute
@@ -422,7 +451,7 @@ def test_the_in_progress_bucket_is_closed_false_by_the_request_s_knowledge_time(
     hist = {_at(m): f"{1000 + m:.3f}" for m in (0, 5, 10, 15)}
     poll = {_at(m): f"{2000 + m:.3f}" for m in range(7, 16)}
 
-    candles = _served(hist, poll, requested=_hist_entry(), interval="5m",
+    candles = _served(_rows(hist, poll), requested=_hist_entry(), interval="5m",
                       window=(_at(5), _at(15)), knowledge_time_ms=_at(13) + 2_000)  # fmt: skip
 
     last = candles[-1]
