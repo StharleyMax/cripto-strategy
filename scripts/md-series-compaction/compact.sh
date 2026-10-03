@@ -227,6 +227,14 @@ cmd_delete() {
     || die "DELETE recusado: exporte COMPACT_CONFIRM=$CONFIRM_TOKEN (decisão do owner, só local)"
   local t; t="$(t_snap_of "$out")"
   [[ -s "$out/stats-before.tsv" ]] || die "rode 'compact.sh count $out before' antes do DELETE"
+  # F-A's "before" can only be taken before the DELETE; without it `verify` can never pass again.
+  [[ -s "$out/envelopes-before.tsv" ]] \
+    || die "rode 'compact.sh envelopes $out before' antes do DELETE (F-A, prova §4)"
+  # The chunk list is captured, not read through `< <(…)`: a process substitution's exit status is
+  # invisible to `set -e`, and a failed listing would be reported as "0 rows deleted".
+  local chunks
+  chunks="$(sql_chunks | psql_ro)" \
+    || die "falha ao listar os chunks de md.series (PG_CONTAINER=$PG_CONTAINER); nada foi apagado"
   local log="$out/delete.log"; : > "$log"
   local total=0
   while IFS=$'\t' read -r lo hi; do
@@ -241,7 +249,7 @@ cmd_delete() {
     echo "$lo	$hi	$res	$(( $(date +%s) - started ))s" | tee -a "$log"
     [[ "$res" == *COMMIT ]] || die "chunk [$lo,$hi): selecionadas != apagadas — ROLLBACK; pare e investigue"
     total=$(( total + $(awk '{print $2}' <<< "$res") ))
-  done < <(sql_chunks | psql_ro)
+  done <<< "$chunks"
   echo "apagadas no total: $total (log: $log)"
 }
 
