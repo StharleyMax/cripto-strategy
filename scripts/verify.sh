@@ -51,9 +51,39 @@
 # `make` colapsa tudo em 2 e por isso este script chama os `.sh` direto, exatamente como o
 # cabeçalho do `Makefile` já declara para os comandos de DoD.
 #
+# ── DOIS MODOS, e eles não se confundem (`T-06.2`, `SPEC-009` plano `06` item `6.2`) ─────────
+#
+#   bash scripts/verify.sh           o PORTÃO DA WAVE. Tudo, sempre: os oito portões inteiros, o
+#                                    pytest com cobertura e piso por camada, e o e2e COMPLETO
+#                                    (`E2E_SPECS=` vai na linha de comando do `make`, que vence o
+#                                    ambiente). Veredito `VERDE — … e2e COMPLETO N/M specs`, e só
+#                                    ele grava o cache da árvore.
+#   bash scripts/verify.sh --scope   o LAÇO DO BUILDER (`make verify-scope`). `scripts/scope-resolve.sh`
+#                                    lê o diff e decide: o pytest só do componente tocado (front não
+#                                    roda pytest) — `[DECISÃO-OWNER: 2026-10-02, escolha entre
+#                                    alternativas apresentadas]` —, e o e2e só dos specs que o diff
+#                                    alcança, mais `e2e/11` (pixel) sempre e `E2E_EXTRA` (só soma).
+#                                    lint ×2, test-frontend, boundaries, regras e validate rodam
+#                                    inteiros. Veredito `VERDE-ESCOPO`, que NUNCA grava o cache:
+#                                    sem isso, o `make verify` da wave sobre a mesma árvore limpa
+#                                    responderia `VERDE (cache da árvore)` de uma rodada por escopo.
+#                                    Escopo que resolve COMPLETO nos dois (e2e e pytest) É o completo:
+#                                    imprime e grava como tal.
+#
+# ⛔ O escopo NÃO é `SKIP_E2E` (ver §6): o conjunto de e2e é sempre ⊇ {e2e/11}, e não existe variável
+# que tire spec dele. O rc é 0/1/3 nos dois modos — a diferença mora na PALAVRA do veredito, no
+# `N/M` e no cache, nunca no rc.
+#
 # Sem `set -e`: preciso do `rc` de CADA portão. Morrer no primeiro esconderia os outros —
 # o mesmo argumento que o `pre-push` do plugin já faz.
 set -uo pipefail
+
+MODO=completo
+case "${1:-}" in
+    "") ;;
+    --scope) MODO=escopo ;;
+    *) echo "RECUSA: argumento desconhecido '$1' (uso: verify.sh [--scope])" >&2; exit 3 ;;
+esac
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT" || exit 3
@@ -80,7 +110,15 @@ portao() { # portao <nome> <comando...>
 # Extrai um número do log DESTE portão. Devolve vazio quando não casa — quem imprime decide.
 extrai() { grep -aoE "$1" "$LOG" | tail -1; }
 
-echo "=== verify · $(basename "$ROOT") · $TS (UTC) ==="
+# Segundos de relógio por portão (`T-06.2`, desenho §2.4 item 5): é o instrumento do DoD 2
+# ("escopo ≤ 1/3 do completo"). Antes dele, o tempo de um verify só saía de `mtime − início`.
+seg() { printf '%ss' "$(( SECONDS - $1 ))"; }
+
+if [ "$MODO" = escopo ]; then
+    echo "=== verify --scope · $(basename "$ROOT") · $TS (UTC) ==="
+else
+    echo "=== verify · $(basename "$ROOT") · $TS (UTC) ==="
+fi
 
 # ── 0. só mede o que precisa ser medido ───────────────────────────────────────────────
 # Dois atalhos, e `VERIFY_FORCE=1` desliga os dois. `[MEDIDO 2026-09-26, sessão 6624939a]`: o
@@ -134,10 +172,41 @@ if [ "${VERIFY_FORCE:-0}" != 1 ]; then
     fi
 fi
 
+# ── 0b. escopo: o diff decide o pytest e o e2e (só em --scope) ────────────────────────
+# O completo NÃO chama o resolvedor: o portão da wave não depende de nenhuma regra de escopo.
+# `COMPLETO_DE_FATO=1` quando o modo é completo OU quando o escopo resolveu COMPLETO nos dois —
+# só então o veredito diz `VERDE —` e o cache é gravado.
+COMPLETO_DE_FATO=1
+ESC_E2E=COMPLETO; ESC_SPECS=""; ESC_ORIGEM=""; ESC_PYT=COMPLETO; ESC_ALVOS=""
+if [ "$MODO" = escopo ]; then
+    { echo; echo "########## escopo :: bash scripts/scope-resolve.sh ##########"; } >> "$LOG"
+    ESC_OUT="$(bash scripts/scope-resolve.sh 2>&1)"; RC_ESC=$?
+    printf '%s\n' "$ESC_OUT" >> "$LOG"
+    if [ "$RC_ESC" -ne 0 ]; then
+        printf '%s\n' "$ESC_OUT" | grep -a '^RECUSA' | head -3
+        echo "veredito: INDETERMINADO (escopo) — o escopo RECUSOU resolver (rc=$RC_ESC). Não é o mesmo que passar."
+        printf 'saída completa: %s\n' "$LOG"
+        exit 3
+    fi
+    chave() { printf '%s\n' "$ESC_OUT" | grep -a "^$1=" | head -1 | cut -d= -f2-; }
+    ESC_E2E="$(chave e2e)"; ESC_SPECS="$(chave e2e_specs)"; ESC_ORIGEM="$(chave e2e_origin)"
+    ESC_PYT="$(chave pytest)"; ESC_ALVOS="$(chave pytest_targets)"
+    case "$ESC_E2E:$ESC_PYT" in
+        COMPLETO:COMPLETO) COMPLETO_DE_FATO=1 ;;
+        ESCOPO:*|COMPLETO:ALVO|COMPLETO:PULADO) COMPLETO_DE_FATO=0 ;;
+        *) echo "veredito: INDETERMINADO (escopo) — saída do resolvedor sem e2e=/pytest= reconhecíveis (e2e='$ESC_E2E' pytest='$ESC_PYT')"
+           printf 'saída completa: %s\n' "$LOG"; exit 3 ;;
+    esac
+    printf '[%-9s] base %s · e2e %s%s · pytest %s%s\n' "ESCOPO" "$(chave base | cut -c1-40)" "$ESC_E2E" \
+        "$([ "$ESC_E2E" = COMPLETO ] && printf ' (%s)' "$(chave e2e_reason | cut -c1-90)" || printf ' %s/%s specs' "$(printf '%s\n' $ESC_SPECS | grep -c .)" "$(chave e2e_total)")" \
+        "$ESC_PYT" "$([ "$ESC_PYT" = ALVO ] && printf ' %s alvo(s)' "$(printf '%s\n' $ESC_ALVOS | grep -c .)" || { [ "$ESC_PYT" = COMPLETO ] && printf ' (%s)' "$(chave pytest_reason | cut -c1-70)"; })"
+fi
+
 # ── 1. lint ────────────────────────────────────────────────────────────────────────────
+T0=$SECONDS
 portao "lint-backend" bash backend/scripts/lint.sh; RC_LB=$?; falhou $RC_LB
 N_LB="$(extrai '[0-9]+ source files')"
-printf '[%-9s] lint-backend    rc=%s  %s\n' "$(rotulo $RC_LB)" "$RC_LB" "${N_LB:-(número não extraído)}"
+printf '[%-9s] lint-backend    rc=%s  %s · %s\n' "$(rotulo $RC_LB)" "$RC_LB" "${N_LB:-(número não extraído)}" "$(seg $T0)"
 
 # ── 1b. lint do frontend ───────────────────────────────────────────────────────────────
 # NÃO é opcional e NÃO pode ser esquecido: `ADR-011/D4` o declara portão, e a primeira versão
@@ -151,6 +220,7 @@ printf '[%-9s] lint-backend    rc=%s  %s\n' "$(rotulo $RC_LB)" "$RC_LB" "${N_LB:
 # rc=3 (recusou por ambiente ausente) que este script promete. `[QA T-05.11 rodada 1, BLOCKER]`:
 # antes desta forma, só o ESLint rodava aqui — um erro de `tsc` plantado passava `[OK] rc=0`
 # neste portão mesmo com `make lint-frontend`/pre-push reprovando-o corretamente.
+T0=$SECONDS
 if [ -d frontend/node_modules ]; then
     portao "lint-frontend" npm --prefix frontend run lint; RC_LF=$?
     if [ "$RC_LF" -eq 0 ]; then
@@ -162,7 +232,7 @@ else
 fi
 falhou $RC_LF
 [ "$RC_LF" -eq 3 ] && DET_LF="frontend/node_modules ausente — rode 'make setup'" || DET_LF="ESLint + tsc --noEmit --strict do projeto sobre frontend/src"
-printf '[%-9s] lint-frontend   rc=%s  %s\n' "$(rotulo $RC_LF)" "$RC_LF" "$DET_LF"
+printf '[%-9s] lint-frontend   rc=%s  %s · %s\n' "$(rotulo $RC_LF)" "$RC_LF" "$DET_LF" "$(seg $T0)"
 
 # ── 1c. suítes do frontend (`node --test`) ─────────────────────────────────────────────
 # `C1`. As quatro suítes que `frontend/package.json` declara, todas, sem lista de exclusão.
@@ -183,6 +253,7 @@ printf '[%-9s] lint-frontend   rc=%s  %s\n' "$(rotulo $RC_LF)" "$RC_LF" "$DET_LF
 # congelado o defeito com um motivo escrito ao lado.
 FRONTEND_FIXTURE_ROOTS="data/binance data/snapshots"
 FRONTEND_SUITES="app charts s1 s3"
+T0=$SECONDS
 if [ ! -d frontend/node_modules ]; then
     { echo; echo "########## test-frontend :: RECUSA (frontend/node_modules ausente) ##########"; } >> "$LOG"
     RC_TF=3; DET_TF="frontend/node_modules ausente — rode 'make setup'"
@@ -229,7 +300,7 @@ else
     fi
 fi
 falhou $RC_TF
-printf '[%-9s] test-frontend   rc=%s  %s\n' "$(rotulo $RC_TF)" "$RC_TF" "$DET_TF"
+printf '[%-9s] test-frontend   rc=%s  %s · %s\n' "$(rotulo $RC_TF)" "$RC_TF" "$DET_TF" "$(seg $T0)"
 
 # ── 2. suíte + piso de cobertura por camada ────────────────────────────────────────────
 # `R-G` (`docs/plans/SPEC-004-captura-em-producao/index.md`): "verificação é `make verify`
@@ -238,30 +309,64 @@ printf '[%-9s] test-frontend   rc=%s  %s\n' "$(rotulo $RC_TF)" "$RC_TF" "$DET_TF
 # portão por padrão, que foi o `[BLOCKER]` que o `/review` de `T-01.7` achou (a alegação de
 # "fora de verify" no plano/commit não tinha mecanismo real). Reverter (trazer para dentro do
 # portão) custa a linha abaixo (`tasks_review.md` §8) — ato do owner: apague o `-m …`.
-portao "test" bash backend/scripts/test.sh -m "not process_real"; RC_T=$?; falhou $RC_T
-N_T="$(extrai '[0-9]+ (passed|failed)')"
-N_C="$(extrai 'Total coverage: [0-9.]+%')"
-printf '[%-9s] test            rc=%s  %s · %s\n' "$(rotulo $RC_T)" "$RC_T" "${N_T:-(n não extraído)}" "${N_C:-(cobertura não extraída)}"
+#
+# EM --scope (`T-06.2`, `[DECISÃO-OWNER: 2026-10-02]`): `ALVO` roda `backend/scripts/test-scope.sh`
+# sobre os alvos que o resolvedor derivou — sem cobertura e sem piso, porque um piso medido sobre
+# parte da suíte é piso de nada; `PULADO` (diff sem caminho que alcance o pytest) não roda nada.
+# Nos dois, a varredura da chave da Coinalyze roda à parte, como no docs-only: ela percorre todo
+# `git ls-files`, e o diff de QUALQUER componente pode colar a chave.
+T0=$SECONDS
+case "$ESC_PYT" in
+    COMPLETO)
+        portao "test" bash backend/scripts/test.sh -m "not process_real"; RC_T=$?; falhou $RC_T
+        N_T="$(extrai '[0-9]+ (passed|failed)')"
+        N_C="$(extrai 'Total coverage: [0-9.]+%')"
+        printf '[%-9s] test            rc=%s  %s · %s · %s\n' "$(rotulo $RC_T)" "$RC_T" "${N_T:-(n não extraído)}" "${N_C:-(cobertura não extraída)}" "$(seg $T0)"
+        ;;
+    ALVO)
+        # shellcheck disable=SC2086  # alvos derivados, um por palavra, sem espaço (caminhos de tests/)
+        portao "test" bash backend/scripts/test-scope.sh -m "not process_real" $ESC_ALVOS; RC_T=$?
+        # rc=5 do pytest = "nenhum teste coletado": os alvos existem e não têm teste fora de
+        # `process_real`. Não há o que medir — e isso vai escrito, não vira FALHA nem OK mudo.
+        DET_T5=""; [ "$RC_T" -eq 5 ] && { RC_T=0; DET_T5=" (nenhum teste coletado nos alvos)"; }
+        falhou $RC_T
+        N_T="$(extrai '[0-9]+ (passed|failed)')"
+        printf '[%-9s] test            rc=%s  ALVO %s: %s%s · sem cobertura e sem piso (portão da wave) · %s\n' "$(rotulo $RC_T)" "$RC_T" \
+            "$(printf '%s\n' $ESC_ALVOS | sed 's|^tests/||' | head -4 | tr '\n' ' ' | sed 's/ $//')$([ "$(printf '%s\n' $ESC_ALVOS | grep -c .)" -gt 4 ] && printf ' …')" \
+            "${N_T:-(n não extraído)}" "$DET_T5" "$(seg $T0)"
+        ;;
+    PULADO)
+        printf '[%-9s] test            nenhum caminho do diff alcança o pytest (diff de front) — DECISÃO-OWNER 2026-10-02\n' "PULADO"
+        ;;
+esac
+if [ "$ESC_PYT" != COMPLETO ]; then
+    T0=$SECONDS
+    portao "chave-coinalyze" bash backend/scripts/test-fast.sh -k coinalyze_key_never_versioned; RC_K=$?; falhou $RC_K
+    printf '[%-9s] chave-coinalyze rc=%s  varredura de todo git ls-files · %s\n' "$(rotulo $RC_K)" "$RC_K" "$(seg $T0)"
+fi
 
 # ── 3. fronteira de módulo ─────────────────────────────────────────────────────────────
+T0=$SECONDS
 portao "boundaries" bash backend/scripts/boundaries.sh; RC_B=$?; falhou $RC_B
 N_B="$(extrai '[0-9]+ kept, [0-9]+ broken')"
-printf '[%-9s] boundaries      rc=%s  %s\n' "$(rotulo $RC_B)" "$RC_B" "${N_B:-(número não extraído)}"
+printf '[%-9s] boundaries      rc=%s  %s · %s\n' "$(rotulo $RC_B)" "$RC_B" "${N_B:-(número não extraído)}" "$(seg $T0)"
 
 # ── 4. regras em vigor, na mesma superfície do git-hook ────────────────────────────────
 # `--surface git-hook` e não o default: é a superfície que o `pre-push` usa, e medir noutra
 # responderia uma pergunta diferente daquela que vai reprovar o push.
+T0=$SECONDS
 portao "regras" bash .harness/mechanism rules --mode sweep --surface git-hook; RC_R=$?; falhou $RC_R
 # Conta DENTRO da seção de regras, nunca no log inteiro: `[AVISO]`/`[BLOQUEIO]` numa saída
 # anterior (pytest, eslint) inflaria o número, e este script existe para não mentir número.
 secao() { awk -v m="########## $1 ::" 'index($0,m){f=1;next} /^########## /{f=0} f' "$LOG"; }
 N_BLQ="$(secao regras | grep -ac '\[BLOQUEIO\]' || true)"
 N_AVI="$(secao regras | grep -ac '\[AVISO\]' || true)"
-printf '[%-9s] regras          rc=%s  %s bloqueio(s), %s aviso(s)\n' "$(rotulo $RC_R)" "$RC_R" "${N_BLQ:-?}" "${N_AVI:-?}"
+printf '[%-9s] regras          rc=%s  %s bloqueio(s), %s aviso(s) · %s\n' "$(rotulo $RC_R)" "$RC_R" "${N_BLQ:-?}" "${N_AVI:-?}" "$(seg $T0)"
 
 # ── 5. política e instalação ───────────────────────────────────────────────────────────
+T0=$SECONDS
 portao "validate" bash .harness/mechanism validate --strict; RC_V=$?; falhou $RC_V
-printf '[%-9s] política        rc=%s\n' "$(rotulo $RC_V)" "$RC_V"
+printf '[%-9s] política        rc=%s · %s\n' "$(rotulo $RC_V)" "$RC_V" "$(seg $T0)"
 
 # ── 6. e2e: o único portão que mede o que foi PINTADO ──────────────────────────────────
 # `DR-11`. Os outros sete portões leem TEXTO-FONTE ou rodam lógica sem tela; este abre um
@@ -285,11 +390,28 @@ printf '[%-9s] política        rc=%s\n' "$(rotulo $RC_V)" "$RC_V"
 # ⛔ SEM VARIÁVEL DE PULO. "Entrada de allowlist é indistinguível de bypass" (`CLAUDE.md`), e um
 # `SKIP_E2E=1` seria exatamente a porta que `DR-11` acabou de fechar, reaberta no nível do
 # portão. Ambiente ausente responde rc=3 ("NÃO MEDIU"), que não é passar.
+#
+# `T-06.2`: o completo passa `E2E_SPECS=` na LINHA DE COMANDO do `make` (vence o ambiente: um
+# `E2E_SPECS` exportado no shell não encolhe o portão da wave), e conta os specs que o reporter
+# NOMEOU contra `ls frontend/e2e/*.spec.ts`. `N < M` com Playwright verde NÃO é VERDE (rc=1): é a
+# prova de que o completo rodou completo, e não só de que o que rodou passou. No escopo, a mesma
+# conta é contra os specs selecionados.
+E2E_M="$(ls frontend/e2e/*.spec.ts 2>/dev/null | wc -l)"
+if [ "$ESC_E2E" = ESCOPO ]; then
+    E2E_ESPERADO="$(printf '%s\n' $ESC_SPECS | grep -c .)"
+else
+    E2E_ESPERADO="$E2E_M"
+fi
+T0=$SECONDS
 if [ ! -d frontend/node_modules ] || [ ! -x backend/.venv/bin/python ]; then
     { echo; echo "########## e2e :: RECUSA (frontend/node_modules ou backend/.venv ausente) ##########"; } >> "$LOG"
     RC_E=3; DET_E="frontend/node_modules ou backend/.venv ausente — rode 'make setup'"
 else
-    portao "e2e" make e2e; RC_MAKE_E2E=$?
+    if [ "$ESC_E2E" = ESCOPO ]; then
+        portao "e2e" make e2e E2E_SPECS="$ESC_SPECS"; RC_MAKE_E2E=$?
+    else
+        portao "e2e" make e2e E2E_SPECS=; RC_MAKE_E2E=$?
+    fi
     # `e2e-env.sh` imprime `RECUSA:` e devolve 3 quando o ambiente não permite medir (porta
     # ocupada, `next build` que não roda, venv incompleta). Isso NÃO é o Playwright reprovando,
     # e colapsar os dois em "FALHA" perderia a distinção que este script promete — ainda mais
@@ -321,10 +443,23 @@ else
                   | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
                   | grep -aoE '^ *[0-9]+ failed' | tail -1 | tr -s ' ')"
     DET_E="${N_E_PASS:-(número não extraído)}${N_E_FAIL:+, $N_E_FAIL}"
+    # Specs que o reporter `list` NOMEOU (`[chromium] › frontend/e2e/NN-….spec.ts:…`), únicos.
+    E2E_N="$(awk '/^########## e2e ::/{f=1;next} /^########## /{f=0} f' "$LOG" \
+               | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' \
+               | grep -aoE '› (frontend/)?e2e/[0-9]+-[^ :]+\.spec\.ts' | sort -u | wc -l)"
+    if [ "$ESC_E2E" = ESCOPO ]; then
+        DET_E="$DET_E · ESCOPO $E2E_N/$E2E_M specs ($ESC_ORIGEM)"
+    else
+        DET_E="$DET_E · COMPLETO $E2E_N/$E2E_M specs"
+    fi
+    if [ "$RC_E" -eq 0 ] && [ "$E2E_N" -lt "$E2E_ESPERADO" ]; then
+        RC_E=1
+        DET_E="$DET_E — rodou $E2E_N de $E2E_ESPERADO specs esperados: NÃO é verde"
+    fi
     [ "$RC_E" -eq 3 ] && DET_E="ambiente recusou medir — grep '^RECUSA:' no log"
 fi
 falhou $RC_E
-printf '[%-9s] e2e             rc=%s  %s\n' "$(rotulo $RC_E)" "$RC_E" "$DET_E"
+printf '[%-9s] e2e             rc=%s  %s · %s\n' "$(rotulo $RC_E)" "$RC_E" "$DET_E" "$(seg $T0)"
 
 # ── 7. o diff, como FORMA e não como conteúdo ──────────────────────────────────────────
 # `git diff` sozinho custou ~201k tokens nos 105 subagentes medidos, e quase sempre a
@@ -339,15 +474,33 @@ printf '[%-9s] diff            %s\n' "----" "${D_STAT:-sem mudança não-commita
 # continuaria dizendo 6 depois de `test-frontend` e `e2e` entrarem — um veredito que mente sobre
 # quantas coisas ele cobre é a forma mais barata de esconder um portão que caiu.
 N_PORTOES=8
-case "$PIOR" in
-    0) echo "veredito: VERDE — $N_PORTOES portões mediram e passaram";;
-    1) echo "veredito: VERMELHO — algum portão mediu e REPROVOU";;
-    3) echo "veredito: INDETERMINADO — algum portão RECUSOU medir (rc=3). Não é o mesmo que passar.";;
-esac
-printf 'saída completa: %s (%s)\n' "$LOG" "$(du -h "$LOG" 2>/dev/null | cut -f1)"
+# `T-06.2`: duas PALAVRAS, e `grep '^veredito: VERDE —'` não casa a do escopo. A do escopo diz o que
+# NÃO rodou inteiro, para que ninguém a cite como portão.
+if [ "$COMPLETO_DE_FATO" -eq 1 ]; then
+    case "$PIOR" in
+        0) echo "veredito: VERDE — $N_PORTOES portões mediram e passaram · e2e COMPLETO ${E2E_N:-?}/$E2E_M specs";;
+        1) echo "veredito: VERMELHO — algum portão mediu e REPROVOU";;
+        3) echo "veredito: INDETERMINADO — algum portão RECUSOU medir (rc=3). Não é o mesmo que passar.";;
+    esac
+else
+    case "$ESC_PYT" in
+        ALVO) D_PYT="pytest só de $(printf '%s\n' $ESC_ALVOS | grep -c .) alvo(s), sem cobertura nem piso" ;;
+        PULADO) D_PYT="pytest PULADO (diff de front)" ;;
+        *) D_PYT="pytest completo com piso" ;;
+    esac
+    if [ "$ESC_E2E" = ESCOPO ]; then D_E2E="e2e em ${E2E_N:-?}/$E2E_M specs ($ESC_ORIGEM)"; else D_E2E="e2e COMPLETO ${E2E_N:-?}/$E2E_M specs"; fi
+    case "$PIOR" in
+        0) echo "veredito: VERDE-ESCOPO — lint ×2, test-frontend, boundaries, regras e validate inteiros · $D_PYT · $D_E2E — NÃO é o verde da wave";;
+        1) echo "veredito: VERMELHO (escopo) — algum portão mediu e REPROVOU";;
+        3) echo "veredito: INDETERMINADO (escopo) — algum portão RECUSOU medir (rc=3). Não é o mesmo que passar.";;
+    esac
+fi
+printf 'duração: %ss · saída completa: %s (%s)\n' "$SECONDS" "$LOG" "$(du -h "$LOG" 2>/dev/null | cut -f1)"
 echo 'NÃO leia o log inteiro: grep o que precisar. Ele existe para ficar FORA do contexto.'
 # Grava o cache (seção 0a) só com árvore limpa e VERDE — a árvore medida é a que o SHA nomeia.
-if [ "$PIOR" -eq 0 ] && [ -z "$SUJO" ] && [ -n "$TREE" ] && mkdir -p "$VERIFY_CACHE_DIR" 2>/dev/null; then
+# ⛔ E SÓ DO COMPLETO (`T-06.2`): um VERDE-ESCOPO gravado aqui faria o `make verify` da wave sobre a
+# mesma árvore responder do cache sem ter rodado o e2e completo nem o pytest com piso.
+if [ "$PIOR" -eq 0 ] && [ "$COMPLETO_DE_FATO" -eq 1 ] && [ -z "$SUJO" ] && [ -n "$TREE" ] && mkdir -p "$VERIFY_CACHE_DIR" 2>/dev/null; then
     printf '%s · %s\n' "$TS" "$LOG" > "$VERIFY_CACHE_DIR/$TREE"
 fi
 exit "$PIOR"

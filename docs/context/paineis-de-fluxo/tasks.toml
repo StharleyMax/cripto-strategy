@@ -852,3 +852,15 @@ refs = [
     "handoff/T-06.3-desenho.md §regravacoes (infra-architect)",
     "apagar dado existente e decisao do owner, nao do builder",
 ]
+
+[[tasks]]
+id = "T-05.6"
+title = "[web][infra] 05 · Correcao curta dos achados nao bloqueantes da W7 (N-1, N-2, R-1, R-2, R-7, idioma do compose.yml)"
+components = ["web", "infra"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "handoff/T-05.6-escopo.md",
+    "gates/W7-DESIGN-REVIEW.md, gates/W7-CODE-REVIEW.md, gates/W7-REVIEW.md",
+]

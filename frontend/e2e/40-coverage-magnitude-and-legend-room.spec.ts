@@ -17,8 +17,11 @@
  *                     `5m` because it is the one TF where the head rule bites: the newest outer bucket
  *                     is `interval + 4 min` old (`KNOWLEDGE_TIME_LAG_MS`), 9 min in `5m`, 19/64/244 min
  *                     in `15m`/`1h`/`4h` (`handoff/T-05.4-estado.md`);
- *     - `longest`   — `C-3`: the LONGEST text §2.4 can produce on a real window, in `1h` (7 d loaded):
- *                     short `6 d 23 h`, long `23 h 59 min`, two legs different over one denominator.
+ *     - `longest`   — `C-3`: the LONGEST text §2.4 can produce on a real window, two legs different
+ *                     over one denominator: short loses the most whole hours short of the window, the others
+ *                     `23 h 59 min`. In `1h` (7 d loaded): short `6 d 23 h`; in `15m` (4 d loaded,
+ *                     `T-05.6`): short `3 d 23 h` — the same number of characters, so `15m` is the TF
+ *                     where the pane headings are longest (`Volume 15m (1m, BTC)`, one more glyph).
  *   Nothing is written to any database (memória `nao-seedar-teste-no-postgres-compartilhado`).
  *
  *   REAL — the app under test (`E2E_BASE_URL`) on the read API it was given
@@ -38,8 +41,15 @@
  * and that it is the one the measured width calls for; 1200/1240 bracket the threshold. `K-1`: the real
  * universe runs A-5 + A-7 at 1240/1280 in `4h` on the four `PILOT_SYMBOLS`.
  *
+ * `B-1` of `gates/W8-DESIGN-REVIEW.md` (the OI data area at 1024×768), with the falsifiers of
+ * `gates/W8-OI-1024-DESIGN-GATE.md` §4: F-1 — on REAL data, the OI area per TF (`1m` included) against
+ * `OI_AREA_FLOORS_1024`; F-2 — in the stub's `longest` cases at 1024, the O·H·L·C row stays on one line
+ * with its numerals widened by a probe (the stub now serves `oi_candles`, so there IS a row); F-3 — at
+ * 1024 and 1280, in both universes, a provenance term label is never painted without its value, read
+ * by geometry AND by paint (`paintsIn`).
+ *
  * Production-code ablations (rebuild per mutation) are run by hand and recorded in
- * `docs/context/paineis-de-fluxo/gates/T-05.4-build.md`.
+ * `docs/context/paineis-de-fluxo/gates/T-05.4-build.md` and, for `B-1`, `gates/W8-OI-1024-build.md`.
  */
 
 import http from "node:http";
@@ -95,10 +105,22 @@ const AREA_FLOORS_1024: readonly (readonly [string, number])[] = [
   // [MEDIDO 2026-10-02, facts of `e2e/40` (real 5m/15m/1h/4h + probe, stub `longest`), compact form painted]
   ["price-pane", 233.4], // 234.4 in every case
   ["liquidation-pane", 134], // 135.0 real (the legs wrap), 155.0 stub
-  ["oi-pane", 58.2], // 59.2 real 1h/4h and stub (the OI legend wraps; the OI has no chip), 72.0 real 5m/15m
+  // 59.2 real 1h/4h and stub, 72.0 real 5m/15m. On REAL data the OI is judged per TF instead
+  // (`OI_AREA_FLOORS_1024`); this one is the stub's, where the freshness line wraps at 1024 (its
+  // data is older than the real one) and the OI legend is one line taller for that reason alone.
+  ["oi-pane", 58.2],
   ["long-short-pane", 36.6], // 37.6 in every case
   ["cvd-pane", 43.65], // 44.65 in every case
 ];
+/**
+ * `B-1` (`gates/W8-DESIGN-REVIEW.md`; floor amended by `gates/W8-OI-1024-DESIGN-GATE.md` §4 F-1):
+ * the OI data area at 1024×768 per TF, `C-4` convention (master's measured − 1 px). Master measured
+ * 72.0 in 1m/5m/15m and 59.2 in 1h/4h (`handoff/W8-oi-1024-decisao.md` §1.2); the regression `B-1`
+ * exists to catch (59.2 and 32.0, the O·H·L·C row wrapping) fails by 12 px and 26 px. A floor with 0 px
+ * of margin would fail a sub-pixel and teach the next reader to ignore the test. ⚠️ The gate's own
+ * condition is the MEASURED value: below 72.0 / 59.2 `B-1` does not close even with this test green.
+ */
+const OI_AREA_FLOORS_1024: Readonly<Record<string, number>> = { "1m": 71, "5m": 71, "15m": 71, "1h": 58.2, "4h": 58.2 };
 /** §3.2: the liquidation data area is also `>= 0.6 ×` the pane's own height. */
 const LIQUIDATION_AREA_SHARE_FLOOR = 0.6;
 /** A-6: a chip is ONE line — its height `<= 1.5 ×` the line-height of the legend line. */
@@ -114,6 +136,26 @@ const LONGEST_SINGLE_TEXT = "cobertura parcial — faltam 23 h 59 min de 7 d (14
 /** The same two, in the COMPACT form (§10.2): without the prefix and without the denominator. */
 const LONGEST_LIQUIDATION_COMPACT = "short: faltam 6 d 23 h (99.4%) · long: faltam 23 h 59 min (14.3%)";
 const LONGEST_SINGLE_COMPACT = "faltam 23 h 59 min (14.3%)";
+
+/** `T-05.6` (`gates/T-05.6-DESIGN-GATE.md`, falsifier 1 of (b)): `C-3` runs in `15m` too, the TF whose
+ * pane headings are the longest. The stub's `longest` mode in `15m` (384 buckets × 15 min = 4 d): short
+ * loses 380 buckets (5 700 min → "3 d 23 h", 99.0%), the others 1 439 min ("23 h 59 min", 25.0%). Same
+ * glyph count as the `1h` strings, by hand: the chip is as long, only the headings grew. */
+const LONGEST_TEXTS: Readonly<Record<"1h" | "15m", readonly [full: string, compact: string][]>> = {
+  "1h": [
+    [LONGEST_LIQUIDATION_TEXT, LONGEST_LIQUIDATION_COMPACT],
+    [LONGEST_SINGLE_TEXT, LONGEST_SINGLE_COMPACT],
+    [LONGEST_SINGLE_TEXT, LONGEST_SINGLE_COMPACT],
+  ],
+  "15m": [
+    [
+      "cobertura parcial — short: faltam 3 d 23 h (99.0%) · long: faltam 23 h 59 min (25.0%), de 4 d",
+      "short: faltam 3 d 23 h (99.0%) · long: faltam 23 h 59 min (25.0%)",
+    ],
+    ["cobertura parcial — faltam 23 h 59 min de 4 d (25.0%)", "faltam 23 h 59 min (25.0%)"],
+    ["cobertura parcial — faltam 23 h 59 min de 4 d (25.0%)", "faltam 23 h 59 min (25.0%)"],
+  ],
+};
 
 type Family = "volume" | "cvd" | "liquidation_short" | "liquidation_long";
 const FAMILIES: readonly Family[] = ["volume", "cvd", "liquidation_short", "liquidation_long"];
@@ -182,14 +224,21 @@ function missingAt(mode: StubMode, family: Family | null, index: number, n: numb
     case "head-only":
       return index === n - 1 ? Math.min(3, perBucket) : 0;
     case "longest": {
-      // 1h, 168 rows × 60: short loses 167 whole buckets (10 020 min → "6 d 23 h", 99.4%); the
-      // others lose 1 439 min ("23 h 59 min", 14.3%): 23 whole buckets plus 59 of the 24th.
-      const target = family === "liquidation_short" ? 167 * perBucket : 23 * perBucket + (perBucket - 1);
+      // Short loses the most WHOLE HOURS short of the window (production rounds a missing span UP to
+      // the hour above a day, so 5 745 min would print "4 d", not the longer "3 d 23 h"); the others
+      // lose 1 439 min ("23 h 59 min").
+      // 1h, 168 rows × 60: short 167 h (10 020 min → "6 d 23 h", 99.4%), others 14.3%.
+      // 15m, 384 rows × 15 (`T-05.6`): short 95 h (5 700 min → "3 d 23 h", 99.0%), others 25.0%.
+      const target =
+        family === "liquidation_short" ? Math.floor(((n - 1) * perBucket) / 60) * 60 : LONGEST_OTHERS_MISSING_MIN;
       const before = index * perBucket;
       return Math.max(0, Math.min(perBucket, target - before));
     }
   }
 }
+
+/** `C-3`: what every family but the short leg loses in `longest` — one minute short of a day. */
+const LONGEST_OTHERS_MISSING_MIN = 24 * 60 - 1;
 
 function wave(minute: number, salt: number): number {
   return (((minute * 37 + salt * 101) % 997) + 997) % 997;
@@ -264,6 +313,7 @@ async function startStub(catalog: CatalogEnvelope): Promise<Stub> {
       return;
     }
     const rows: Record<string, unknown>[] = [];
+    const candles: Record<string, unknown>[] = [];
     const stepMs = INTERVAL_MS[interval];
     if (stepMs === undefined) {
       // `1m`: the native grid, no reaggregation, `coverage: null` (`series_history.py`, degenerate case).
@@ -288,7 +338,37 @@ async function startStub(catalog: CatalogEnvelope): Promise<Stub> {
       if (family !== null) {
         served.set(family, { rows: rows as unknown as CoverageRowWire[], knowledgeTimeMs, interval });
       }
+      if (key.metric === "sum_open_interest") {
+        // `B-1` F-2: the OI pane needs CANDLES for its O·H·L·C row to exist at all (without them the
+        // legend prints absences and F-2 would measure nothing). The shape is the real route's at an
+        // outer TF (`GET /series-history`, measured 2026-10-03 on BTCUSDT 1h): one candle per outer
+        // bucket end, `binance_poll_1m` with `bucket_interval_ms` = the TF, `samples` = the minutes.
+        ends.forEach((end) => {
+          const open = Number(stubValue(key, end - stepMs));
+          const close = Number(stubValue(key, end));
+          candles.push({
+            bucket_end_ms: end,
+            open,
+            high: Math.max(open, close) + 0.5,
+            low: Math.min(open, close) - 0.5,
+            close,
+            open_at_ms: end - stepMs,
+            close_at_ms: end,
+            samples: { present: perBucket, expected: perBucket },
+            closed: end <= knowledgeTimeMs,
+            derived_from: "binance_poll_1m",
+          });
+        });
+      }
     }
+    const oiCandles =
+      candles.length === 0
+        ? null
+        : {
+            timeframe_ms: stepMs,
+            sources: [{ derived_from: "binance_poll_1m", series_key_id: seriesKeyId, native_grid_ms: ONE_MINUTE_MS, bucket_interval_ms: stepMs }],
+            candles,
+          };
     response.writeHead(200, { "content-type": "application/json" });
     response.end(
       JSON.stringify({
@@ -303,7 +383,7 @@ async function startStub(catalog: CatalogEnvelope): Promise<Stub> {
         rows,
         knowledge_time: Number.isFinite(knowledgeTimeMs) ? knowledgeTimeMs : Date.now(),
         bar_policy: "final_only",
-        oi_candles: null,
+        oi_candles: oiCandles,
       }),
     );
   });
@@ -442,10 +522,16 @@ async function readAreas(page: Page): Promise<readonly PaneArea[]> {
   );
 }
 
-/** A-4 (§3.2 with `C-4`; at 1024 the `K-3` snapshot). */
-function judgeAreas(areas: readonly PaneArea[], floors: Exclude<AreaFloorSet, null> = "design"): string[] {
+/** A-4 (§3.2 with `C-4`; at 1024 the `K-3` snapshot, and the OI's per-TF floor of `B-1`). */
+function judgeAreas(areas: readonly PaneArea[], floors: Exclude<AreaFloorSet, null> = "design", realOiInterval?: string): string[] {
   const defects: string[] = [];
-  for (const [testId, floor] of floors === "design" ? AREA_FLOORS : AREA_FLOORS_1024) {
+  for (const [testId, snapshotFloor] of floors === "design" ? AREA_FLOORS : AREA_FLOORS_1024) {
+    const perTf = floors === "1024" && testId === "oi-pane" && realOiInterval !== undefined;
+    const floor = perTf ? OI_AREA_FLOORS_1024[realOiInterval] : snapshotFloor;
+    if (floor === undefined) {
+      defects.push(`${testId}: no floor declared for ${realOiInterval}`);
+      continue;
+    }
     const area = areas.find((a) => a.testId === testId);
     if (area === undefined || !Number.isFinite(area.areaPx)) {
       defects.push(`${testId}: area not published`);
@@ -525,6 +611,263 @@ async function judgeTruncation(page: Page): Promise<{ readonly readings: readonl
     else if (r.rightPx > r.paneRightPx + 0.5) defects.push(`"${r.needle}": ends at ${r.rightPx.toFixed(1)}, past the scale border ${r.paneRightPx.toFixed(1)}`);
   }
   return { readings, defects };
+}
+
+// ── `B-1`: the OI legend at 1024 (`gates/W8-OI-1024-DESIGN-GATE.md` §4) ───────────────────────
+
+/** F-2's probe width: ~3 digits more than the real OI, so the stub's shorter numbers cannot pass
+ * by having too few digits for anything to wrap (`handoff/W8-oi-1024-decisao.md` §5). */
+const OHLC_PROBE_NUMERAL_WIDTH = "13ch";
+
+interface OhlcRowProbe {
+  readonly oiCandles: number;
+  readonly parts: readonly { readonly part: string; readonly top: number }[];
+  readonly derivedTop: number | null;
+}
+
+/** F-2 — widens every O·H·L·C numeral to `OHLC_PROBE_NUMERAL_WIDTH` and reads where each part and
+ * the `DERIVADO` label land. ⚠️ MUTATES the DOM: run it after every other reading of the page. */
+async function probeOhlcRow(page: Page): Promise<OhlcRowProbe> {
+  return page.evaluate(async (width) => {
+    const pane = document.querySelector<HTMLElement>('[data-testid="oi-pane"]');
+    const root = pane?.querySelector<HTMLElement>('[data-legend-ohlc="oi"]') ?? null;
+    for (const numeral of root?.querySelectorAll<HTMLElement>("[data-legend-numeral]") ?? []) numeral.style.width = width;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return {
+      oiCandles: Number(pane?.dataset.oiCandles),
+      parts: [...(root?.querySelectorAll<HTMLElement>("[data-legend-ohlc-part]") ?? [])].map((part) => ({
+        part: part.dataset.legendOhlcPart ?? "",
+        top: part.getBoundingClientRect().top,
+      })),
+      derivedTop: root?.querySelector<HTMLElement>('[data-fact^="oi_candle_provenance:"]')?.getBoundingClientRect().top ?? null,
+    };
+  }, OHLC_PROBE_NUMERAL_WIDTH);
+}
+
+/** F-2: the O·H·L·C parts share ONE line, and `DERIVADO (…)` is below it. Never passes on nothing:
+ * without a candle there is no row to measure, and that is a defect of the case, not a green. */
+function judgeOhlcRow(probe: OhlcRowProbe): string[] {
+  if (!(probe.oiCandles > 0)) return [`sem vela, F-2 não mede (data-oi-candles=${probe.oiCandles})`];
+  const defects: string[] = [];
+  if (probe.parts.length < 3) defects.push(`only ${probe.parts.length} O·H·L·C parts in the legend`);
+  const first = probe.parts[0]?.top ?? Number.NaN;
+  for (const p of probe.parts) {
+    if (!(Math.abs(p.top - first) < 1)) defects.push(`part ${p.part} at top ${p.top.toFixed(1)} ≠ ${first.toFixed(1)}: the row wrapped`);
+  }
+  if (probe.derivedTop === null) defects.push("no DERIVADO label to place");
+  else if (!(probe.derivedTop > first + 1)) defects.push(`DERIVADO at top ${probe.derivedTop.toFixed(1)}, not below the row (${first.toFixed(1)})`);
+  return defects;
+}
+
+interface ProvenanceTermPaint {
+  readonly label: string;
+  readonly found: boolean;
+  /** The label's own `Range` ∩ the `<p>`'s box (the gate's "largura visível do rótulo"). */
+  readonly labelInBoxPx: number;
+  /** Whether hiding the element that holds the label changes a single pixel of that box. */
+  readonly painted: boolean | null;
+  readonly headText: string;
+  readonly headWidthPx: number;
+  /** The head's `Range` ∩ the `<p>`'s box minus the room of its `…` when it is truncated. */
+  readonly headVisiblePx: number;
+}
+
+interface ProvenanceReading {
+  readonly found: boolean;
+  readonly textContent: string;
+  readonly expectedText: string;
+  readonly truncated: boolean;
+  readonly firstTermWidthPx: number;
+  readonly firstTermVisiblePx: number;
+  /** Control of the pixel method: hiding the whole `<p>` changes the pixels of `Grandeza: …`. */
+  readonly controlPainted: boolean;
+  readonly terms: readonly ProvenanceTermPaint[];
+}
+
+type Box = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+
+/** Two screenshots of `box`, with the element `selector` toggled to `visibility: hidden` between
+ * them: `true` iff the element paints anything there. Re-shot until the unhidden baseline is stable
+ * (the canvas under the legend may repaint), so a moving chart is never read as paint. */
+async function paintsIn(page: Page, selector: string, box: Box): Promise<boolean> {
+  const clip = {
+    x: Math.floor(box.x),
+    y: Math.floor(box.y),
+    width: Math.max(1, Math.ceil(box.x + box.width) - Math.floor(box.x)),
+    height: Math.max(1, Math.ceil(box.y + box.height) - Math.floor(box.y)),
+  };
+  const toggle = (hidden: boolean) =>
+    page.evaluate(
+      async ({ selector, hidden }) => {
+        const element = document.querySelector<HTMLElement>(selector);
+        if (element === null) throw new Error(`paintsIn: ${selector} is not in the page`);
+        element.style.visibility = hidden ? "hidden" : "";
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      },
+      { selector, hidden },
+    );
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const shown = await page.screenshot({ clip });
+    await toggle(true);
+    const hidden = await page.screenshot({ clip });
+    await toggle(false);
+    const again = await page.screenshot({ clip });
+    if (shown.equals(again)) return !shown.equals(hidden);
+  }
+  throw new Error(`paintsIn: the pixels under ${selector} never settled`);
+}
+
+/** `B-1`, measured not judged: the height of each block of the OI legend (what the host reserves the
+ * scale top for), so a data area below the floor names WHICH block grew. */
+async function readOiLegendBlocks(page: Page): Promise<readonly { readonly tag: string; readonly text: string; readonly heightPx: number }[]> {
+  return page.evaluate(() =>
+    [...(document.querySelector('[data-testid="oi-pane"] [data-pane-legend]')?.children ?? [])].map((child) => ({
+      tag: child.tagName.toLowerCase(),
+      text: (child.textContent ?? "").slice(0, 60),
+      heightPx: child.getBoundingClientRect().height,
+    })),
+  );
+}
+
+const OI_PROVENANCE_SELECTOR = '[data-testid="oi-pane"] [data-pane-legend] [data-fact^="oi_provenance:"]';
+
+/** F-3: the OI provenance line, read by geometry AND by paint. Every term after the first is located
+ * by its label's text (`Universo:`, `Coorte:`), never by a class or attribute of the fix, so the
+ * reading is the same on the shape it judges and on its ablation. */
+async function readOiProvenance(page: Page): Promise<ProvenanceReading> {
+  const geometry = await page.evaluate(
+    ({ selector, ellipsisRoom }) => {
+      const p = document.querySelector<HTMLElement>(selector);
+      if (p === null) return null;
+      const fact = p.getAttribute("data-fact") ?? "";
+      const values = Object.fromEntries(
+        fact.replace(/^oi_provenance:/, "").split(";").map((pair) => pair.split("=") as [string, string]),
+      );
+      if (values.grandeza === undefined) return null;
+      const expectedText = `Grandeza: ${values.grandeza} · Universo: ${values.universo} · Coorte: ${values.coorte}`;
+      const box = p.getBoundingClientRect();
+      const truncated = p.scrollWidth > p.clientWidth + 0.5;
+      const edge = box.right - (truncated ? ellipsisRoom : 0);
+      const rectOf = (needle: string, after = "") => {
+        const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+          const text = node.nodeValue ?? "";
+          const at = text.indexOf(after + needle);
+          if (at < 0) continue;
+          const range = document.createRange();
+          range.setStart(node, at + after.length);
+          range.setEnd(node, at + after.length + needle.length);
+          return { rect: range.getBoundingClientRect(), holder: node.parentElement as HTMLElement };
+        }
+        return null;
+      };
+      const span = (r: DOMRect, right: number) => Math.max(0, Math.min(r.right, right) - Math.max(r.left, box.left));
+      const first = rectOf(`Grandeza: ${values.grandeza}`);
+      const terms = (
+        [
+          ["Universo", values.universo ?? ""],
+          ["Coorte", values.coorte ?? ""],
+        ] as const
+      ).map(([label, value]) => {
+        const head = value.includes("/") ? value.slice(0, value.indexOf("/")) : value;
+        const labelHit = rectOf(`${label}:`);
+        const headHit = rectOf(head, `${label}: `);
+        if (labelHit === null || headHit === null) {
+          return { label, found: false, labelInBoxPx: 0, headText: head, headWidthPx: 0, headVisiblePx: 0, holder: null, labelBox: null };
+        }
+        // Mark the element that holds the label, so the paint probe can toggle exactly it.
+        labelHit.holder.setAttribute("data-e2e-provenance-holder", label);
+        const lr = labelHit.rect;
+        const left = Math.max(lr.left, box.left);
+        const right = Math.min(lr.right, box.right);
+        return {
+          label,
+          found: true,
+          labelInBoxPx: span(lr, box.right),
+          headText: head,
+          headWidthPx: headHit.rect.width,
+          headVisiblePx: span(headHit.rect, edge),
+          holder: label,
+          labelBox: right > left ? { x: left, y: Math.max(lr.top, box.top), width: right - left, height: Math.min(lr.bottom, box.bottom) - Math.max(lr.top, box.top) } : null,
+        };
+      });
+      return {
+        textContent: p.textContent ?? "",
+        expectedText,
+        truncated,
+        firstTermWidthPx: first?.rect.width ?? 0,
+        firstTermVisiblePx: first === null ? 0 : span(first.rect, edge),
+        firstBox: first === null ? null : { x: first.rect.left, y: first.rect.top, width: first.rect.width, height: first.rect.height },
+        terms,
+      };
+    },
+    { selector: OI_PROVENANCE_SELECTOR, ellipsisRoom: ELLIPSIS_ROOM_PX },
+  );
+  if (geometry === null) {
+    return { found: false, textContent: "", expectedText: "", truncated: false, firstTermWidthPx: 0, firstTermVisiblePx: 0, controlPainted: false, terms: [] };
+  }
+  const controlPainted = geometry.firstBox === null ? false : await paintsIn(page, OI_PROVENANCE_SELECTOR, geometry.firstBox);
+  const terms: ProvenanceTermPaint[] = [];
+  for (const t of geometry.terms) {
+    const painted =
+      t.labelBox === null || t.labelInBoxPx <= 0
+        ? null
+        : await paintsIn(page, `${OI_PROVENANCE_SELECTOR} [data-e2e-provenance-holder="${t.label}"], ${OI_PROVENANCE_SELECTOR}[data-e2e-provenance-holder="${t.label}"]`, t.labelBox);
+    terms.push({
+      label: t.label,
+      found: t.found,
+      labelInBoxPx: t.labelInBoxPx,
+      painted,
+      headText: t.headText,
+      headWidthPx: t.headWidthPx,
+      headVisiblePx: t.headVisiblePx,
+    });
+  }
+  return {
+    found: true,
+    textContent: geometry.textContent,
+    expectedText: geometry.expectedText,
+    truncated: geometry.truncated,
+    firstTermWidthPx: geometry.firstTermWidthPx,
+    firstTermVisiblePx: geometry.firstTermVisiblePx,
+    controlPainted,
+    terms,
+  };
+}
+
+/**
+ * F-3 (`gates/W8-OI-1024-DESIGN-GATE.md` §4): a term label is never painted without its value.
+ * For `Universo:` and `Coorte:`: if the label shows inside the `<p>` AND paints, the head of its
+ * value (up to the first `/`) is wholly visible. `Grandeza: <valor>` is wholly visible. The `<p>`'s
+ * `textContent` is the one sentence the screen reader always read.
+ *
+ * `headAt1280`, the counter-ablation: at 1280×800 the `Universo` head paints, whole — the adjustment
+ * must not hide on the main viewport what it used to show (`binance`).
+ */
+function judgeOiProvenance(r: ProvenanceReading, headAt1280 = false): string[] {
+  if (!r.found) return ["the OI provenance line is not in the painted legend"];
+  const defects: string[] = [];
+  if (r.textContent !== r.expectedText) defects.push(`textContent ${JSON.stringify(r.textContent)} ≠ ${JSON.stringify(r.expectedText)}`);
+  if (!r.controlPainted) defects.push("control: hiding the <p> changed no pixel of `Grandeza: …` — the paint probe sees nothing");
+  if (r.firstTermVisiblePx < r.firstTermWidthPx - 0.5) {
+    defects.push(`Grandeza: only ${r.firstTermVisiblePx.toFixed(1)} of ${r.firstTermWidthPx.toFixed(1)} px visible`);
+  }
+  for (const t of r.terms) {
+    if (!t.found) {
+      defects.push(`${t.label}: label or head not found in the line`);
+      continue;
+    }
+    if (t.painted === true && t.headVisiblePx < t.headWidthPx - 0.5) {
+      defects.push(`${t.label}: label painted with its head "${t.headText}" at ${t.headVisiblePx.toFixed(1)} of ${t.headWidthPx.toFixed(1)} px`);
+    }
+  }
+  if (headAt1280) {
+    const universo = r.terms.find((t) => t.label === "Universo");
+    if (universo === undefined || universo.painted !== true || universo.headVisiblePx < universo.headWidthPx - 0.5) {
+      defects.push(`contra-ablação: at 1280 the Universo head is not painted whole (${JSON.stringify(universo)})`);
+    }
+  }
+  return defects;
 }
 
 interface ChipLine {
@@ -710,18 +1053,21 @@ test.describe(`T-05.4 gate: the coverage warning's magnitude, its absence, the h
     }
   });
 
-  for (const viewport of VIEWPORTS) {
+  // `T-05.6`: `15m` too — the TF whose pane headings are one glyph longer (`Volume 15m (1m, BTC)`).
+  const longestCases = (["1h", "15m"] as const).flatMap((interval) => VIEWPORTS.map((viewport) => [interval, viewport] as const));
+  for (const [interval, viewport] of longestCases) {
     const areaNote = viewport.areaFloors === "design" ? ", A-4 (C-4)" : viewport.areaFloors === "1024" ? ", A-4 (K-3 snapshot)" : " (A-4 measured, not judged)";
-    test(`C-3 at ${viewport.name}: the longest text (1h, two legs different) — A-1, A-5, A-6, A-7${areaNote}`, async ({ page }) => {
+    test(`C-3 at ${viewport.name} in ${interval}: the longest text (two legs different) — A-1, A-5, A-6, A-7${areaNote}`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       stub!.mode = "longest";
-      await openSymbol(page, instance!.baseUrl, "1h", `longest-${viewport.name}`);
+      await openSymbol(page, instance!.baseUrl, interval, `longest-${interval}-${viewport.name}`);
       const facts = await readChipFacts(page);
       const lines = await readChipLines(page);
       const areas = await readAreas(page);
       const truncation = await judgeTruncation(page);
       const forms = await readChipForms(page);
-      fact(SPEC, `gate_longest_${viewport.name}`, { facts, lines, areas, forms, truncation: truncation.readings });
+      const suffix = interval === "1h" ? "" : `_${interval}`;
+      fact(SPEC, `gate_longest_${viewport.name}${suffix}`, { facts, lines, areas, forms, truncation: truncation.readings });
 
       // The case IS the longest string: production wrote exactly what C-3 asked to measure — in BOTH
       // forms, since production always renders the two and the container query picks the painted one.
@@ -729,13 +1075,7 @@ test.describe(`T-05.4 gate: the coverage warning's magnitude, its absence, the h
       expect.soft(
         forms.map((f) => `${f.full} | ${f.compact}`).sort(),
         "the stub's longest mode must make production write the longest texts, full | compact",
-      ).toEqual(
-        [
-          `${LONGEST_LIQUIDATION_TEXT} | ${LONGEST_LIQUIDATION_COMPACT}`,
-          `${LONGEST_SINGLE_TEXT} | ${LONGEST_SINGLE_COMPACT}`,
-          `${LONGEST_SINGLE_TEXT} | ${LONGEST_SINGLE_COMPACT}`,
-        ].sort(),
-      );
+      ).toEqual(LONGEST_TEXTS[interval].map(([full, compact]) => `${full} | ${compact}`).sort());
       expect.soft(judgeForms(forms), "A-7").toEqual([]);
       expect.soft(judgeMagnitude(facts), "A-1").toEqual([]);
       for (const family of FAMILIES) {
@@ -746,6 +1086,19 @@ test.describe(`T-05.4 gate: the coverage warning's magnitude, its absence, the h
       expect.soft(truncation.defects, "A-5").toEqual([]);
       expect.soft(judgeOneLine(lines), "A-6").toEqual([]);
       if (viewport.areaFloors !== null) expect.soft(judgeAreas(areas, viewport.areaFloors), "A-4").toEqual([]);
+      // `B-1` F-3 at 1024 (and its counter-ablation at 1280) on the stub, so `make verify` sees it:
+      // the stub serves the REAL catalog, so the provenance sentence is the real one.
+      if (viewport.width === 1024 || viewport.width === 1280) {
+        const provenance = await readOiProvenance(page);
+        fact(SPEC, `gate_longest_oi_provenance_${viewport.name}${suffix}`, { ...provenance, blocks: await readOiLegendBlocks(page) });
+        expect.soft(judgeOiProvenance(provenance, viewport.width === 1280), `F-3 ${viewport.name}`).toEqual([]);
+      }
+      // `B-1` F-2 — LAST, because the probe rewrites the numerals' width.
+      if (viewport.width === 1024) {
+        const row = await probeOhlcRow(page);
+        fact(SPEC, `gate_longest_oi_ohlc_row_${viewport.name}${suffix}`, row);
+        expect.soft(judgeOhlcRow(row), `F-2 ${viewport.name}`).toEqual([]);
+      }
     });
   }
 });
@@ -828,11 +1181,31 @@ test(`T-05.4 real data: A-1 against the API, A-4, A-5, A-6, A-7 in 5m/15m/1h/4h 
           truth.missing >= 1 ? [`${truth.missing}/${truth.expected}`] : [],
         );
       }
-      if (viewport.areaFloors !== null) expect.soft(judgeAreas(areas, viewport.areaFloors), `A-4 ${at}`).toEqual([]);
+      if (viewport.areaFloors !== null) expect.soft(judgeAreas(areas, viewport.areaFloors, interval), `A-4 ${at}`).toEqual([]);
       expect.soft(truncation.defects, `A-5 ${at}`).toEqual([]);
       expect.soft(judgeOneLine(lines), `A-6 ${at}`).toEqual([]);
       expect.soft(judgeForms(forms), `A-7 ${at}`).toEqual([]);
+      // `B-1` F-3 on real data (and the counter-ablation at 1280).
+      const provenance = await readOiProvenance(page);
+      fact(SPEC, `real_oi_provenance_${interval}_${viewport.name}`, provenance);
+      expect.soft(judgeOiProvenance(provenance, viewport.width === 1280), `F-3 ${at}`).toEqual([]);
     }
+  }
+
+  // `B-1` F-1 + F-3 in `1m` at 1024×768: the OI's fifth TF, which `REAGGREGATED_TFS` (the coverage
+  // TFs — `1m` has no coverage) leaves out. Only the OI is judged here; A-1/A-5..A-7 are about chips.
+  {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await openSymbol(page, baseURL ?? "", "1m", "real-1m-1024x768");
+    const areas = await readAreas(page);
+    const provenance = await readOiProvenance(page);
+    fact(SPEC, "real_1m_1024x768", { areas, provenance });
+    const oi = areas.filter((a) => a.testId === "oi-pane");
+    expect.soft(
+      judgeAreas(oi, "1024", "1m").filter((d) => d.startsWith("oi-pane")),
+      "F-1 1m@1024x768",
+    ).toEqual([]);
+    expect.soft(judgeOiProvenance(provenance), "F-3 1m@1024x768").toEqual([]);
   }
 
   // C-3 on real data: the chips present are made to say the longest text — the full one in the full
@@ -876,7 +1249,7 @@ test(`T-05.4 real data: A-1 against the API, A-4, A-5, A-6, A-7 in 5m/15m/1h/4h 
     expect.soft(truncation.defects, `C-3 A-5 ${viewport.name}`).toEqual([]);
     expect.soft(judgeOneLine(lines), `C-3 A-6 ${viewport.name}`).toEqual([]);
     expect.soft(judgeForms(forms), `C-3 A-7 ${viewport.name}`).toEqual([]);
-    if (viewport.areaFloors !== null) expect.soft(judgeAreas(areas, viewport.areaFloors), `A-4 ${viewport.name}`).toEqual([]);
+    if (viewport.areaFloors !== null) expect.soft(judgeAreas(areas, viewport.areaFloors, "1h"), `A-4 ${viewport.name}`).toEqual([]);
   }
 });
 

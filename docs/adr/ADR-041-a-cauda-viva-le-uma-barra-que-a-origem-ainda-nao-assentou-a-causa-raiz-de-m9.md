@@ -270,3 +270,28 @@ errado não sobreviva em três arquivos** — é a mesma classe do defeito que o
   linha de código própria: as duas séries saem da mesma resposta HTTP.
 - O comentário de `_DEFAULT_KLINES_CYCLE_OFFSET_S` deixa de dizer *"not a measured optimum"*
   sobre a quantidade errada e passa a citar a medição da quantidade certa.
+
+---
+
+## ✅ Emenda 2026-10-02 — `D4`: compactar duplicata comprovada não é "reescrever o passado" (`T-06.4`, `paineis-de-fluxo`)
+
+**Acréscimo, nada acima foi reescrito.** `D4` diz que `md.series` é append-only e que limpar o dado
+contaminado não é decidido aqui. As duas frases continuam valendo. O que esta emenda acrescenta é uma
+exceção ao append-only, a mesma da emenda de 2026-10-02 em [`ADR-002`](ADR-002-motor-de-armazenamento.md):
+a linha que é **duplicata comprovada pelo predicado** de
+[`T-06.4-prova.md`](../context/paineis-de-fluxo/handoff/T-06.4-prova.md) §3.2 (mesmo fato que o
+predecessor imediato, `available_at` não anterior, bucket sem `available_at` descendo) pode ser
+compactada.
+
+**A condição é o `as_of` invariante** (`T-06.4-prova.md` §1, conferido pelo falsificador do §4). Por
+isso a compactação **não** é "limpar ou reescrever o passado" no sentido de `D4`:
+
+- a linha que `as_of` devolve é a 1ª observação do bucket (`D4.13`), e a 1ª de cada sequência de fato
+  igual **nunca** é apagada. O prefixo contaminado que `D4` descreve **continua lá**, e a proibição de
+  usá-lo em backtest continua valendo;
+- toda revisão de valor (a 1ª linha de um valor novo) fica. Sai só a **repetição** de um valor, revisado
+  ou não. As revisões continuam disponíveis para a auditoria que `D4` pressupõe.
+
+**Escopo: só o Postgres do Docker local.** Literal do owner: *"so local,, n tem nada na vps ais
+ainda"* `[PREMISSA-OWNER: 2026-10-02]`. Limpar o prefixo contaminado continua sendo trabalho com dono
+(`quant-architect`) e gatilho, como `D4` diz; esta emenda não o adianta.

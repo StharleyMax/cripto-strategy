@@ -668,7 +668,9 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
             (h) => h.textContent?.trim() ?? "",
           );
           return words.map((word) => {
-            const found = headings.filter((text) => text.startsWith(`${word} (`));
+            // `T-05.6` (N-2): the active TF sits between the word and the parenthesis — `Preço 1m (1m,
+            // USDT)` — so the derived part is found after ONE token, not right after the word.
+            const found = headings.filter((text) => text.startsWith(`${word} `) && /^\S+ \(/.test(text.slice(word.length + 1)));
             return { word, count: found.length, name: found[0] ?? "" };
           });
         },

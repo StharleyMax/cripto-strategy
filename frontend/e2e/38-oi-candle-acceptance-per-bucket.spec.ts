@@ -7,6 +7,7 @@ import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { readView, showView } from "./view.ts";
 
 /**
  * `paineis-de-fluxo` `T-03.13` (`CST-288`; plan `03` DoD-03b items 3-6; `SPEC-009` §9 `CA-7`, `CA-8′`;
@@ -72,7 +73,8 @@ const MIN_PER_REGIME = 50;
 const MIN_SPACING_PX = 6;
 const SWEEP_STEPS_PER_BUCKET = 3;
 const INK_TOLERANCE = 12;
-const MAX_VIEW_ITERATIONS = 12;
+/** Buckets of margin each side of a view, so the sweep's first and last bucket are inside the plot. */
+const VIEW_MARGIN_BUCKETS = 2;
 const TOKENS = colorTokens();
 const HIST: OiSource = "binance_point_5m";
 const POLL: OiSource = "binance_poll_1m";
@@ -527,53 +529,24 @@ async function calibrate(page: Page): Promise<Mapping> {
   return { a, b, leftMs: toMs(box.x), rightMs: toMs(box.x + box.width) };
 }
 
-/** Zooms (wheel) and pans (drag) until `[fromMs, toMs]` is on screen with `>= MIN_SPACING_PX` per
- * bucket. Bounded (R9): `MAX_VIEW_ITERATIONS`, then it throws with where it got. `zoomInBelowPx`: a
- * view wider than needed is zoomed in while the spacing is below it (`measurePhase` asks for more). */
-async function showRange(page: Page, fromMs: number, toMs: number, zoomInBelowPx: number = 3 * MIN_SPACING_PX): Promise<Mapping> {
-  const box = await oiCanvasBox(page);
-  const y = box.y + box.height * 0.6;
-  const wantSpan = toMs - fromMs;
-  let mapping = await calibrate(page);
-  const trace: unknown[] = [];
-  for (let i = 0; i < MAX_VIEW_ITERATIONS; i += 1) {
-    const haveSpan = mapping.rightMs - mapping.leftMs;
-    const margin = 2 * FIVE;
-    let action: string;
-    const targetMid = (fromMs + toMs) / 2;
-    const screenMid = (mapping.leftMs + mapping.rightMs) / 2;
-    const centred = Math.abs(targetMid - screenMid) < haveSpan * 0.1;
-    const midX = mapping.a + mapping.b * (targetMid / FIVE);
-    const tooNarrow = haveSpan < wantSpan + 2 * margin;
-    const tooWide = haveSpan > 1.8 * (wantSpan + 2 * margin) && mapping.b < zoomInBelowPx;
-    if (centred && tooNarrow) {
-      action = "zoom-out";
-      await page.mouse.move(midX, y);
-      for (let tick = 0; tick < 3; tick += 1) await page.mouse.wheel(0, 200);
-    } else if (centred && tooWide) {
-      action = "zoom-in";
-      await page.mouse.move(midX, y);
-      for (let tick = 0; tick < 3; tick += 1) await page.mouse.wheel(0, -200);
-    } else if (!centred || fromMs < mapping.leftMs + margin || toMs > mapping.rightMs - margin) {
-      const dx = ((screenMid - targetMid) / FIVE) * mapping.b;
-      const bounded = Math.max(-box.width * 0.8, Math.min(box.width * 0.8, dx));
-      action = `drag ${bounded.toFixed(0)}`;
-      const startX = box.x + box.width / 2 - bounded / 2;
-      await page.mouse.move(startX, y);
-      await page.mouse.down();
-      await page.mouse.move(startX + bounded, y, { steps: 30 });
-      await page.mouse.up();
-    } else {
-      fact(SPEC, "show_range_trace", { fromMs, toMs, trace });
-      return mapping;
-    }
-    trace.push({ action, leftMs: mapping.leftMs, rightMs: mapping.rightMs, b: mapping.b });
-    await page.mouse.move(2, 2);
-    await page.waitForTimeout(700);
-    mapping = await calibrate(page);
-  }
-  fact(SPEC, "show_range_trace", { fromMs, toMs, trace });
-  throw new Error(`showRange: [${fromMs}, ${toMs}] not reached, screen is [${mapping.leftMs}, ${mapping.rightMs}]`);
+/** `paineis-de-fluxo` `T-06.1` — `[fromMs, toMs]` on screen, `VIEW_MARGIN_BUCKETS` of margin each side
+ * (the right one only as far as the axis goes), put there by `view.ts::showView` — wheel and drag in
+ * a closed loop, from WHEREVER the page is, so no view depends on the mount's framing (`VIEW_BARS`).
+ * Paging is allowed: the older-page view sits before the SSR window, and a view near the window's left
+ * edge may cross the trigger, as the walk before `T-06.1` could. `minSpacingPx`: the view is narrowed
+ * around its centre until a bucket is that wide (`measurePhase`). Then `calibrate` maps ms → px from
+ * the crosshair — it is the phase/legend instrument, not navigation. */
+async function calibratedView(page: Page, fromMs: number, toMs: number, minSpacingPx?: number): Promise<Mapping> {
+  const state = await readView(page);
+  const axisEndMs = state.windowStartMs + state.slotCount * state.stepMs;
+  const target = {
+    kind: "timeRange" as const,
+    fromMs: fromMs - VIEW_MARGIN_BUCKETS * FIVE,
+    toMs: Math.min(axisEndMs, toMs + VIEW_MARGIN_BUCKETS * FIVE),
+  };
+  const view = await showView(page, target, { allowPaging: true, minBarSpacingPx: minSpacingPx });
+  fact(SPEC, "show_range_trace", { fromMs, toMs, iterations: view.iterations, pages: view.pagesRequestedDuring, trace: view.trace });
+  return calibrate(page);
 }
 
 interface ColumnInk {
@@ -1065,7 +1038,7 @@ async function auditViews(
   const all = new Map<number, BucketReading>();
   const hovered = new Map<number, LegendReading>();
   for (const view of views) {
-    const mapping = await showRange(page, view.fromMs, view.toMs);
+    const mapping = await calibratedView(page, view.fromMs, view.toMs);
     const audit = await auditView(page, mapping, phaseFraction);
     fact(SPEC, `${label}_view_${view.name}`, {
       view,
@@ -1127,7 +1100,7 @@ function phaseRange(truth: Truth, views: readonly View[]): View {
 
 async function measurePhase(page: Page, truth: Truth, views: readonly View[], label: string): Promise<number> {
   const range = phaseRange(truth, views);
-  const audit = await auditView(page, await showRange(page, range.fromMs, range.toMs, PHASE_MIN_SPACING_PX));
+  const audit = await auditView(page, await calibratedView(page, range.fromMs, range.toMs, PHASE_MIN_SPACING_PX));
   const phaseFraction = audit.candlePhasePx / audit.spacingPx;
   fact(SPEC, `${label}_phase`, { view: range, candlePhasePx: audit.candlePhasePx, spacingPx: audit.spacingPx, phaseFraction });
   expect(audit.spacingPx, "the phase stretch is not zoomed in enough for the gap between bodies to show").toBeGreaterThanOrEqual(PHASE_MIN_SPACING_PX);
@@ -1206,41 +1179,6 @@ function judgeOlderPage(buckets: readonly BucketReading[], request: RenderedRequ
   return { defects, inconclusive: judged < MIN_PER_REGIME ? `INCONCLUSIVO — only ${judged} older-page candles on screen` : null, counts: { judged } };
 }
 
-/**
- * `paineis-de-fluxo` `T-05.1` — the mount now frames the last `VIEW_BARS` (120) bars (10 h at `5m`), and
- * `showRange` walks to the older page with drags of at most 80% of the width: ~97 buckets each at the
- * mount's spacing, against ~490 at the ~611-bucket span the mount had before `T-05.1`. Twelve drags
- * (`MAX_VIEW_ITERATIONS`) stopped ONE bucket short of the older view (`make verify` of 2026-10-02:
- * screen `[…596462500, …]` for a view from `…593800000`). So the wheel first zooms OUT with the cursor
- * on the LAST bar (right edge put, span growing leftward, as in `e2e/37`) back to that pre-`T-05.1`
- * span, `OLDER_ZOOM_OUT_SLOTS`, and the walk starts from the geometry its bound was measured on.
- * Bounded (R9).
- */
-const OLDER_ZOOM_OUT_SLOTS = 600;
-const ZOOM_OUT_STEP_DELTA = 100;
-const ZOOM_OUT_MAX_STEPS = 200;
-
-async function zoomOutFromLastBar(page: Page, untilSpanSlots: number): Promise<void> {
-  const host = page.locator(`[data-testid="${CHART_HOST_TESTID}"]`);
-  const span = async () => Number(await host.getAttribute("data-visible-logical-to")) - Number(await host.getAttribute("data-visible-logical-from"));
-  const box = await oiCanvasBox(page);
-  const mountSpan = await span();
-  let now = mountSpan;
-  let steps = 0;
-  for (; steps < ZOOM_OUT_MAX_STEPS && now < untilSpanSlots; steps += 1) {
-    await page.mouse.move(box.x + box.width - 2, box.y + box.height * 0.5);
-    await page.mouse.wheel(0, ZOOM_OUT_STEP_DELTA);
-    await page.waitForTimeout(60);
-    const next = await span();
-    if (Math.abs(next - now) < 0.5) break;
-    now = next;
-  }
-  await page.mouse.move(2, 2);
-  await page.waitForTimeout(300);
-  fact(SPEC, "older_zoom_out", { mountSpan, steps, span: now, untilSpanSlots });
-  expect(now, "o zoom-out não afastou a vista da montagem de 120 barras").toBeGreaterThanOrEqual(untilSpanSlots);
-}
-
 async function olderPage(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string): Promise<void> {
   // The phase, on the SSR window's candles (the pager plays no part in it), before the walk.
   const candleRequest = await openSymbol(page, baseUrl, INTERVAL_QUERY);
@@ -1253,7 +1191,6 @@ async function olderPage(page: Page, baseUrl: string, apiBase: string, catalog: 
   const toMs = Math.floor(request.windowStartMs / FIVE) * FIVE - 2 * FIVE;
   const view: View = { name: "older", fromMs: toMs - OLDER_VIEW_BUCKETS * FIVE, toMs };
   fact(SPEC, `${label}_older_page_view`, { request, view });
-  await zoomOutFromLastBar(page, OLDER_ZOOM_OUT_SLOTS);
   const { buckets } = await auditViews(page, [view], new Set<number>(), `${label}_older`, phaseFraction);
   expectGreen(`${label}_e5_older_page`, judgeOlderPage(buckets, request));
 }

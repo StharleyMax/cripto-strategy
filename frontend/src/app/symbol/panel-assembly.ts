@@ -308,8 +308,8 @@ export function assembleHistoryPage(
     ageMs: longShortObservedAtMs === null ? null : context.windowEndMsInclusive - longShortObservedAtMs,
     trailingAbsentSlots: trailingAbsentSlotsOf(longShortSlots),
     windowStats: seriesValueStats(longShortSlots),
-    // The SAME slots the faixa das 4 h shades — cut at the last AXIS slot, never at the 1-minute
-    // `windowEndMsInclusive` (`W7-CODE-REVIEW` C-1).
+    // The SAME slots the four-hour band shades — cut from the last AXIS slot, never from the
+    // 1-minute `windowEndMsInclusive` (`W7-CODE-REVIEW` C-1), and exclusive on the left (R-1).
     recentStats: seriesValueStats(recentBandSlots(longShortSlots, context.longShortRecentSpanMs)),
     reading: resolveFlowReadingOrAbsent(longShortSlots, axisStepMs, readingInstantMs),
   };

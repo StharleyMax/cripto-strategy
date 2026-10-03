@@ -388,3 +388,48 @@ finalista de motor — torna-o um critério de `observer_region`, rastreado por 
 estão **todos com valor**; região está **`[NÃO MEDIDO]` por desenho declarado**, não por omissão
 desta task. `D9.4` fecha sobre o que é dele — o finalista de motor — sem fechar `[GAP G7]`, que
 não é seu escopo.
+
+---
+
+## ✅ Emenda 2026-10-02 — `D1` (append-only): a duplicata comprovada pode ser compactada (`T-06.4`, `paineis-de-fluxo`)
+
+**Acréscimo, nada acima foi reescrito.** Origem: [`T-06.4-prova.md`](../context/paineis-de-fluxo/handoff/T-06.4-prova.md)
+(a prova do `quant-architect`) e a decisão do owner registrada no fim dela.
+
+**O que muda em `D1`.** `md.series` continua append-only **para todo fato**. Ganha **uma** exceção
+declarada: a linha que é **duplicata comprovada pelo predicado** de `T-06.4-prova.md` §3.2 pode ser
+compactada (apagada). Duplicata comprovada = a linha cujo **predecessor imediato** no
+`(series_key_id, symbol, source, bucket_end)`, por `observed_at`, tem o **mesmo fato** (as 13 colunas de
+`domain/repeated_fact.py::FACT_COLUMNS`) e `available_at` menor ou igual, fora dos buckets com
+`available_at` descendo (§3.3, os 7.600 do `openInterestHist`). A 1ª observação de cada sequência e
+toda revisão de valor **nunca** saem.
+
+**A condição é o `as_of` invariante, e ela é provada, não suposta:** o teorema e o corolário de
+`T-06.4-prova.md` §1.2 mostram que remover uma linha dominada não muda nenhuma resposta de `as_of`,
+para todo `(t, K, bar_policy, purpose)`. Quem confere sem confiar na prova é o falsificador do §4:
+F-A (100 envelopes pela rota, sha256 antes e depois, 100/100 iguais) e F-B (contagem exata por
+`source`, fingerprint das sobreviventes, q1 e F-1 de `T-05.2` iguais). Qualquer diferença reprova o
+`DELETE`. O script é `scripts/md-series-compaction/compact.sh`, e o teste
+`backend/tests/sentimento/test_md_series_compaction_script.py` executa o SQL dele num banco
+descartável, com a ablação (apagar a 1ª observação em vez da 2ª move o fingerprint e o `as_of`).
+
+**Escopo: só o Postgres do Docker local.** Literal do owner: *"so local,, n tem nada na vps ais
+ainda"* `[PREMISSA-OWNER: 2026-10-02]`. A VPS **não** é compactada por esta emenda; reabrir isso pede
+nova decisão do owner e a mesma conferência (F-A, F-B) rodada lá.
+
+**Relação com `D5`.** O escritor único passa a não gravar a repetição do predecessor imediato
+(`WriteOutcome.SKIPPED_IDENTICAL_FACT`, `use_cases/write_series_row.py`). É o "ler antes de escrever"
+de `D5` com um segundo predicado, o mesmo da compactação: as duas pontas usam a mesma forma
+(`T-06.4-prova.md` §1.5), e por isso o `DELETE` é feito uma vez e não volta a ser necessário.
+
+**Relação com `D6`, declarada e não escondida.** `D6c` manda o escritor único incrementar
+`compaction_epoch` em toda operação de classe compactação. O `DELETE` local é feito por script, fora
+do escritor, e **não** incrementa nada, porque no Postgres local não existe `md.partition_registry`
+nem `backtest.run_registry` (`select to_regclass('md.partition_registry'),
+to_regclass('backtest.run_registry')` ⇒ `NULL | NULL` `[MEDIDO 2026-10-02 ~23:20Z, Docker local]`):
+não há epoch a incrementar nem run gravado a invalidar. Um hash de conteúdo calculado sobre as linhas
+cruas mudaria; o `as_of` não muda. Se um dia a compactação for considerada onde houver
+`run_registry`, ela passa por `D6` (epoch incrementado pelo escritor), não por esta emenda.
+
+**O que se perde, declarado:** a multiplicidade (quantas vezes o mesmo fato foi re-observado), que
+as consultas q1/q5 de `T-05.2` usaram como evidência (`T-06.4-prova.md` §3.3).

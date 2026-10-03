@@ -579,7 +579,8 @@ test(`the LongShortPane's bar count is the API's, over the SAME window (${SPEC})
     {
       const bandFact = (await bandLocator.getAttribute("data-fact"))!;
       const expectedLastIndex = domSlots - 1;
-      const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS;
+      // `T-05.6` (R-1): exclusive on the left - `span / step` bars, 240 on `1m`, never 241.
+      const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS + 1;
       expect(bandFact, "the band ends at the window's last slot and starts exactly one span earlier").toBe(
         `long_short_recent_band:${expectedFirstIndex}/${expectedLastIndex}`,
       );
@@ -671,7 +672,8 @@ test(`the LongShortPane's bar count is the API's, over the SAME window (${SPEC})
   fact(SPEC, "long_short_recent_band_width_px", bandWidthPx);
 
   const expectedLastIndex = domSlots - 1;
-  const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS;
+  // `T-05.6` (R-1): exclusive on the left - `span / step` bars, 240 on `1m`, never 241.
+  const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS + 1;
   expect(recentSpanMs, "the pane must publish the span its own numerals were computed over").toBeGreaterThan(0);
   expect(bandFact, "the band ends at the window's last slot and starts exactly one span earlier").toBe(
     `long_short_recent_band:${expectedFirstIndex}/${expectedLastIndex}`,
@@ -766,8 +768,9 @@ for (const interval of ["1h", "4h"] as const) {
     fact(SPEC, `c1_${interval}_recent_scale_fact`, scaleFact);
     fact(SPEC, `c1_${interval}_dom_slots`, domSlots);
 
-    // The band: the last axis slot and every slot up to one span before it - `span/step + 1` bars.
-    const bandBars = recentSpanMs / axisStepMs + 1;
+    // The band: `span / step` bars ending at the last axis slot (`T-05.6`, R-1: exclusive on the
+    // left - 4 bars on `1h`, 1 on `4h`; the inclusive cut was `span / step + 1`).
+    const bandBars = recentSpanMs / axisStepMs;
     expect(bandFact).toBe(`long_short_recent_band:${domSlots - bandBars}/${domSlots - 1}`);
 
     const entry = (await fetchCatalogEntries()).find(
@@ -786,11 +789,22 @@ for (const interval of ["1h", "4h"] as const) {
     // The slots the band shades are the LAST `bandBars` rows of the served grid.
     const readableInBand = rows.slice(rows.length - bandBars).filter((row) => row.value !== null).length;
     fact(SPEC, `c1_${interval}_readable_in_band`, readableInBand);
-    // Without >= 2 readable slots in the band the assert below cannot tell the two cuts apart (the
-    // old one keeps exactly the band's LAST slot), so the run would prove nothing about C-1.
-    expect(readableInBand, "the band must carry >= 2 readable slots for this assert to discriminate").toBeGreaterThanOrEqual(2);
+    // `T-05.6` (`W7-CODE-REVIEW` R-2): the equality below is the CONTRACT (the footer counts the
+    // band's readable slots) and holds on any data, so it is always asserted - including `0`, where
+    // the footer must say `absent`. What sparse data costs is only DISCRIMINATION against the
+    // inclusive cut (one bar more): when that extra bar is not readable the two cuts count the
+    // same, and the run says so in an annotation instead of failing on a property of the database.
+    // The band's own indices (asserted above, data-independent) already reject the inclusive cut.
+    const readableInInclusiveCut = rows.slice(rows.length - bandBars - 1).filter((row) => row.value !== null).length;
+    fact(SPEC, `c1_${interval}_readable_in_inclusive_cut`, readableInInclusiveCut);
+    if (readableInInclusiveCut === readableInBand) {
+      test.info().annotations.push({
+        type: "non-discriminating",
+        description: `${interval}: the bar before the band is not readable, so its count equals the inclusive cut's`,
+      });
+    }
     expect(scaleFact, "the footer's n must count the readable slots of the band it sits beside").toBe(
-      `long_short_recent_scale:${readableInBand}`,
+      `long_short_recent_scale:${readableInBand === 0 ? "absent" : readableInBand}`,
     );
   });
 }
