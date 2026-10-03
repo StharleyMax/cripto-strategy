@@ -378,10 +378,11 @@ test("CALA: a design_gate NEEDS_FIX about colour or wording leaves the OI contra
     .replace(/barras nativas de 5 min na janela/, "buckets de 5 min legíveis")
     .replace(/⚠️ Mais velha que o teto — o valor acima é DADO VELHO\./, "Atenção: leitura vencida.")
     // `T-04.1`: the ui-designer owns the SENTENCE, never the derived VALUES inside it (`RN-5`).
-    .replace(
-      /`Grandeza: \$\{provenance\.grandeza\} · Universo: \$\{provenance\.universo\} · Coorte: \$\{provenance\.coorte\}`/,
-      '`${provenance.grandeza} (grandeza) — ${provenance.universo} (universo) — ${provenance.coorte} (coorte)`',
-    );
+    // `B-1` (`gates/W8-OI-1024-DESIGN-GATE.md` §3): the sentence is now a first term plus one
+    // `OiProvenanceTerm` per later term; the reword moves the first term and the labels.
+    .replace(/`Grandeza: \$\{provenance\.grandeza\}`/, "`${provenance.grandeza} (grandeza)`")
+    .replace(/label="Universo"/, 'label="universo"')
+    .replace(/label="Coorte"/, 'label="coorte"');
   assert.notEqual(restyled, source, "the form constants moved — re-anchor this CALA rather than dropping it");
   assert.equal(TESTID_DECLARATION.exec(restyled)?.[1], EXPECTED_TESTID);
   assert.equal(ABSENCE_TOKEN_DECLARATION.exec(restyled)?.[1], EXPECTED_ABSENCE_TOKEN);
