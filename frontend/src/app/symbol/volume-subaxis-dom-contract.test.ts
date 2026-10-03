@@ -32,24 +32,9 @@ import { test } from "node:test";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { MOVED_OUT_FILES } from "./symbol-client-moved-out-files.ts";
 
 const SYMBOL_CLIENT_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx");
-/** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
- * `chart/legend/` and `chart/marks/`; `T-01.4` — the page chrome left it for `chrome/`. The files are read
- * together with it, so the universe this file scans is the one `SymbolClient.tsx` alone was before the move. */
-const MOVED_OUT_FILES = [
-  "chart/legend/PaneLegend.tsx",
-  "chart/legend/legend-frame.ts",
-  "chart/legend/LegendValue.tsx",
-  "chart/marks/AbsenceNote.tsx",
-  "chart/marks/PartialCoverageMark.tsx",
-  "chart/marks/BeyondCoverageBadge.tsx",
-  "chrome/AttributionFooter.tsx",
-  "chrome/ChromeModeStamp.tsx",
-  "chrome/LiveRow.tsx",
-  "chrome/page-gutter.ts",
-  "chrome/TimeframeBar.tsx",
-] as const;
 const source = [SYMBOL_CLIENT_PATH, ...MOVED_OUT_FILES.map((file) => path.join(path.dirname(SYMBOL_CLIENT_PATH), file))]
   .map((file) => readFileSync(file, "utf8"))
   .join("\n");
@@ -59,12 +44,9 @@ const source = [SYMBOL_CLIENT_PATH, ...MOVED_OUT_FILES.map((file) => path.join(p
  * itself along with the mutation it is supposed to catch. */
 const EXPECTED_TESTID = "price-pane-volume-subaxis";
 const EXPECTED_PRESENT_POINTS_ATTR = "data-volume-present-points";
-/** `RN-1`'s literal token. `DoD-3` asserts its ABSENCE from the screen when data is present, so
- * the string is as load-bearing as the testid. */
-const EXPECTED_ABSENCE_TOKEN = "ausente";
 
 const TESTID_DECLARATION = /const VOLUME_SUBAXIS_TESTID = "([^"]*)";/;
-const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
+const VOLUME_ABSENT_BRANCH = /volume\.reading\.kind === "absent" \|\| volume\.reading\.value === null \? ABSENCE_TOKEN :/;
 
 test("T-01.9 contract: the volume sub-axis carries the STABLE testid, spelled exactly", () => {
   const declaration = TESTID_DECLARATION.exec(source);
@@ -89,20 +71,13 @@ test("T-01.9 contract: the present-point count is a bare integer attribute on th
   assert.match(source, subAxisElement, "testid and present-point count must sit on the SAME element");
 });
 
-test("RN-1 at the RENDERING layer: absence prints `ausente`, and the token is never a number", () => {
-  const declaration = ABSENCE_TOKEN_DECLARATION.exec(source);
-  assert.ok(declaration !== null, "ABSENCE_TOKEN declaration not found — the anchor moved, fix this test");
-  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is `ausente` — for a FLOW series a number here is an error of TYPE");
-  assert.ok(
-    !/^-?\d+(\.\d+)?$/.test(declaration[1]!),
-    "the absence token must not be a number in any shape — 0, 0.0 and -0 are all the RN-1 defect",
-  );
+test("RN-1 at the RENDERING layer: the volume readout's absent branch resolves to ABSENCE_TOKEN", () => {
+  // `T-10.10`: WHICH word `ABSENCE_TOKEN` is (`ausente`, never a number) is pinned ONCE, in
+  // `absence-readout-microcopy.test.ts` — it was copied into five pane contracts, and the mutation
+  // `ABSENCE_TOKEN = "SEM_PONTO"` turned all six red for one defect (`UNIT-FRONT-analise` §2, F03).
+  // What stays HERE is the half only this pane has: its readout falls back to that token.
   // The token has to be what the readout actually falls back to, not a dead constant.
-  assert.match(
-    source,
-    /volume\.reading\.kind === "absent" \|\| volume\.reading\.value === null \? ABSENCE_TOKEN :/,
-    "the absent branch of the volume readout must resolve to ABSENCE_TOKEN",
-  );
+  assert.match(source, VOLUME_ABSENT_BRANCH, "the absent branch of the volume readout must resolve to ABSENCE_TOKEN");
 });
 
 // ── C4: the readable horizon is DECLARED on screen, not left to look like a dead market ──────
@@ -163,7 +138,10 @@ test("C4: the request this render was built from is on the root element, so the 
 test("MORDE: each of the 3 DOM-contract mutations that used to pass green is now caught", () => {
   const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
     { name: "testid renamed", mutate: (s) => s.replace(TESTID_DECLARATION, 'const VOLUME_SUBAXIS_TESTID = "renamed";') },
-    { name: "absence rendered as 0", mutate: (s) => s.replace(ABSENCE_TOKEN_DECLARATION, 'const ABSENCE_TOKEN = "0";') },
+    // `T-10.10`: this mutant used to plant `"0"` in the `ABSENCE_TOKEN` DECLARATION, which
+    // `absence-readout-microcopy.test.ts` now pins alone; the volume-only form of the same defect
+    // is its readout's absent branch printing a number.
+    { name: "absence rendered as 0", mutate: (s) => s.replace(VOLUME_ABSENT_BRANCH, (m) => m.replace("? ABSENCE_TOKEN :", '? "0" :')) },
     { name: "present-point attribute deleted", mutate: (s) => s.replace(/\s*data-volume-present-points=\{volume\.presentPoints\}/, "") },
   ];
   for (const mutant of mutants) {
@@ -171,7 +149,7 @@ test("MORDE: each of the 3 DOM-contract mutations that used to pass green is now
     assert.notEqual(mutated, source, `the mutation "${mutant.name}" found no anchor — update this test, do not delete it`);
     const survives =
       TESTID_DECLARATION.exec(mutated)?.[1] === EXPECTED_TESTID &&
-      ABSENCE_TOKEN_DECLARATION.exec(mutated)?.[1] === EXPECTED_ABSENCE_TOKEN &&
+      VOLUME_ABSENT_BRANCH.test(mutated) &&
       mutated.includes(`${EXPECTED_PRESENT_POINTS_ATTR}={volume.presentPoints}`);
     assert.ok(!survives, `the mutation "${mutant.name}" is NOT detected by the asserts above — the guard is vacuous`);
   }
@@ -329,7 +307,7 @@ test("CALA: a design_gate NEEDS_FIX about colour, height or scale leaves the con
     .replace(/color: colorTokens\(\)\.provenanceWeak,/, "color: colorTokens().provenanceStrong,");
   assert.notEqual(restyled, source, "the form constants moved — re-anchor this CALA rather than dropping it");
   assert.equal(TESTID_DECLARATION.exec(restyled)?.[1], EXPECTED_TESTID);
-  assert.equal(ABSENCE_TOKEN_DECLARATION.exec(restyled)?.[1], EXPECTED_ABSENCE_TOKEN);
+  assert.match(restyled, VOLUME_ABSENT_BRANCH);
   assert.ok(restyled.includes(`${EXPECTED_PRESENT_POINTS_ATTR}={volume.presentPoints}`));
   assert.match(restyled, /data-testid=\{VOLUME_SUBAXIS_TESTID\}/);
 });

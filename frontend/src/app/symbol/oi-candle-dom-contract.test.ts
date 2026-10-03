@@ -26,7 +26,9 @@ const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
 
 /** The body of one top-level `function <name>(` of the client, up to the next top-level function. */
 function functionBody(text: string, name: string): string {
-  const start = text.indexOf(`\nfunction ${name}(`);
+  // `export function` too: decision P1 (T-10.11) exports the panes a render test mounts.
+  const bare = text.indexOf(`\nfunction ${name}(`);
+  const start = bare >= 0 ? bare : text.indexOf(`\nexport function ${name}(`);
   assert.ok(start >= 0, `function ${name} not found — the anchor moved, fix this test`);
   const next = text.indexOf("\nfunction ", start + 1);
   const nextExport = text.indexOf("\nexport function ", start + 1);

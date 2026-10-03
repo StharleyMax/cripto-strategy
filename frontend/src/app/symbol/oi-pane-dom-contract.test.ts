@@ -45,24 +45,9 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { MOVED_OUT_FILES } from "./symbol-client-moved-out-files.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-/** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
- * `chart/legend/` and `chart/marks/`; `T-01.4` — the page chrome left it for `chrome/`. The files are read
- * together with it, so the universe this file scans is the one `SymbolClient.tsx` alone was before the move. */
-const MOVED_OUT_FILES = [
-  "chart/legend/PaneLegend.tsx",
-  "chart/legend/legend-frame.ts",
-  "chart/legend/LegendValue.tsx",
-  "chart/marks/AbsenceNote.tsx",
-  "chart/marks/PartialCoverageMark.tsx",
-  "chart/marks/BeyondCoverageBadge.tsx",
-  "chrome/AttributionFooter.tsx",
-  "chrome/ChromeModeStamp.tsx",
-  "chrome/LiveRow.tsx",
-  "chrome/page-gutter.ts",
-  "chrome/TimeframeBar.tsx",
-] as const;
 const source = ["SymbolClient.tsx", ...MOVED_OUT_FILES]
   .map((file) => readFileSync(path.join(HERE, file), "utf8"))
   .join("\n");
@@ -78,10 +63,8 @@ const pageCode = pageSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*
  * PURPOSE: a contract with another task is not guarded by importing the constant it is made of —
  * that would rename itself along with the mutation it is supposed to catch. */
 const EXPECTED_TESTID = "oi-pane";
-const EXPECTED_ABSENCE_TOKEN = "ausente";
 
 const TESTID_DECLARATION = /const OI_PANE_TESTID = "([^"]*)";/;
-const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
 /** Anchored on the OI reading itself (`resolveStockReading(panels.oi.slots, …)`). ⚠️ `T-01.R1`: before,
  * this was the bare `reading.kind === "absent" ? ABSENCE_TOKEN`, which matched the FIRST such branch in
  * the file — the OI's only because the price readout spelled its absence as a separate literal. Once
@@ -128,8 +111,11 @@ test("T-03.6 contract: the OI pane carries the STABLE testid, spelled exactly", 
   assert.match(source, /data-testid=\{OI_PANE_TESTID\}/, "the constant must be USED on the section, not merely declared");
 });
 
-test("RN-1: the OI readout says `ausente` where there is no observation, never a number", () => {
-  assert.equal(ABSENCE_TOKEN_DECLARATION.exec(source)?.[1], EXPECTED_ABSENCE_TOKEN);
+test("RN-1: the OI readout's absent branch resolves to ABSENCE_TOKEN where there is no observation", () => {
+  // `T-10.10`: WHICH word `ABSENCE_TOKEN` is (`ausente`, never a number) is pinned ONCE, in
+  // `absence-readout-microcopy.test.ts` — it was copied into five pane contracts, and the mutation
+  // `ABSENCE_TOKEN = "SEM_PONTO"` turned all six red for one defect (`UNIT-FRONT-analise` §2, F03).
+  // What stays HERE is the half only this pane has: its readout falls back to that token.
   assert.match(
     source,
     OI_ABSENT_BRANCH,
@@ -403,7 +389,6 @@ test("CALA: a design_gate NEEDS_FIX about colour or wording leaves the OI contra
     .replace(/label="Coorte"/, 'label="coorte"');
   assert.notEqual(restyled, source, "the form constants moved — re-anchor this CALA rather than dropping it");
   assert.equal(TESTID_DECLARATION.exec(restyled)?.[1], EXPECTED_TESTID);
-  assert.equal(ABSENCE_TOKEN_DECLARATION.exec(restyled)?.[1], EXPECTED_ABSENCE_TOKEN);
   assert.match(restyled, NATIVE_BARS_ATTRIBUTE);
   assert.match(restyled, WIRE_POINTS_ATTRIBUTE);
   assert.match(restyled, FRESHNESS_FACT);

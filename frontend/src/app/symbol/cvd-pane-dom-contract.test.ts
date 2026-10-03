@@ -36,26 +36,11 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { MOVED_OUT_FILES } from "./symbol-client-moved-out-files.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SYMBOL_CLIENT_PATH = path.join(HERE, "SymbolClient.tsx");
 const PAGE_PATH = path.join(HERE, "[symbol]", "page.tsx");
-/** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
- * `chart/legend/` and `chart/marks/`; `T-01.4` — the page chrome left it for `chrome/`. The files are read
- * together with it, so the universe this file scans is the one `SymbolClient.tsx` alone was before the move. */
-const MOVED_OUT_FILES = [
-  "chart/legend/PaneLegend.tsx",
-  "chart/legend/legend-frame.ts",
-  "chart/legend/LegendValue.tsx",
-  "chart/marks/AbsenceNote.tsx",
-  "chart/marks/PartialCoverageMark.tsx",
-  "chart/marks/BeyondCoverageBadge.tsx",
-  "chrome/AttributionFooter.tsx",
-  "chrome/ChromeModeStamp.tsx",
-  "chrome/LiveRow.tsx",
-  "chrome/page-gutter.ts",
-  "chrome/TimeframeBar.tsx",
-] as const;
 const source = [SYMBOL_CLIENT_PATH, ...MOVED_OUT_FILES.map((file) => path.join(HERE, file))]
   .map((file) => readFileSync(file, "utf8"))
   .join("\n");
@@ -75,12 +60,8 @@ const pageCode = pageSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*
  * a contract with another task is not guarded by importing the constant it is made of — that
  * would rename itself along with the mutation it is supposed to catch. */
 const EXPECTED_TESTID = "cvd-pane";
-/** `RN-1`'s literal token. `DoD-3` asserts its ABSENCE from this pane once data is present, so
- * the string is as load-bearing as the testid. */
-const EXPECTED_ABSENCE_TOKEN = "ausente";
 
 const TESTID_DECLARATION = /const CVD_PANE_TESTID = "([^"]*)";/;
-const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
 const CVD_ABSENT_BRANCH =
   /deltaReading\.kind === "absent" \|\| deltaReading\.value === null \? ABSENCE_TOKEN :/;
 /** `data-cvd-present-points`, as the e2e spells it — written out here rather than built from a
@@ -127,18 +108,11 @@ test("T-02.6 contract: the present-point count is a bare integer attribute on th
   );
 });
 
-test("RN-1 at the RENDERING layer: CVD absence prints `ausente`, and the token is never a number", () => {
-  const declaration = ABSENCE_TOKEN_DECLARATION.exec(source);
-  assert.ok(declaration !== null, "ABSENCE_TOKEN declaration not found — the anchor moved, fix this test");
-  assert.equal(
-    declaration[1],
-    EXPECTED_ABSENCE_TOKEN,
-    "absence is `ausente` — for a FLOW series a number here is an error of TYPE, not of taste",
-  );
-  assert.ok(
-    !/^-?\d+(\.\d+)?$/.test(declaration[1]!),
-    "the absence token must not be a number in any shape — 0, 0.0 and -0 are all the RN-1 defect",
-  );
+test("RN-1 at the RENDERING layer: the CVD readout's absent branch resolves to ABSENCE_TOKEN", () => {
+  // `T-10.10`: WHICH word `ABSENCE_TOKEN` is (`ausente`, never a number) is pinned ONCE, in
+  // `absence-readout-microcopy.test.ts` — it was copied into five pane contracts, and the mutation
+  // `ABSENCE_TOKEN = "SEM_PONTO"` turned all six red for one defect (`UNIT-FRONT-analise` §2, F03).
+  // What stays HERE is the half only this pane has: its readout falls back to that token.
   // The token has to be what the CVD readout actually falls back to, not a dead constant one
   // pane away. Before `T-02.5` this branch resolved to `formatFlowValue(deltaReading)` (`"—"`),
   // which made `DoD-3`'s "não diz SEM_PONTO" unfalsifiable: a pane that can never say the token
@@ -318,7 +292,6 @@ test("CALA: a design_gate NEEDS_FIX about colour or wording leaves the CVD contr
     .replace(/Acumulado \(linha tracejada\)/, "Soma corrida (tracejada)");
   assert.notEqual(restyled, source, "the form constants moved — re-anchor this CALA rather than dropping it");
   assert.equal(TESTID_DECLARATION.exec(restyled)?.[1], EXPECTED_TESTID);
-  assert.equal(ABSENCE_TOKEN_DECLARATION.exec(restyled)?.[1], EXPECTED_ABSENCE_TOKEN);
   assert.match(restyled, PRESENT_POINTS_ATTRIBUTE);
   assert.match(restyled, CVD_ABSENT_BRANCH);
   assert.match(restyled, /data-testid=\{CVD_PANE_TESTID\}/);

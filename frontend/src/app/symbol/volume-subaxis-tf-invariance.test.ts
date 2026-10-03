@@ -24,6 +24,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+// `T-10.11` harness — FIRST, so the `.tsx` below can be imported (`gates/T-10.11-padrao.md` §7). Nothing is
+// rendered here: it is what lets this file read production's constants by IMPORT (`T-10.10` DoD 1).
+import "../component-render.ts";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,18 +39,9 @@ import { F1_PANE_ORDER, F1_PANE_STRETCH } from "./pane-registry.ts";
 const SYMBOL_CLIENT_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx");
 const source = readFileSync(SYMBOL_CLIENT_PATH, "utf8");
 
-/** Same anchor-to-source discipline as `volume-subaxis-geometry.test.ts`. */
-function productionNumber(name: string): number {
-  const match = new RegExp(`const ${name} = (-?\\d+(?:\\.\\d+)?);`).exec(source);
-  assert.ok(match !== null, `${name} was not found in SymbolClient.tsx — the anchor moved, fix this test`);
-  return Number(match[1]);
-}
-
-const VOLUME_BAR_BASE = productionNumber("VOLUME_BAR_BASE");
-const MARGINS_DECLARATION = /const VOLUME_SCALE_MARGINS = \{ top: (\d+(?:\.\d+)?), bottom: (\d+(?:\.\d+)?) \} as const;/;
-const marginsMatch = MARGINS_DECLARATION.exec(source);
-assert.ok(marginsMatch !== null, "VOLUME_SCALE_MARGINS was not found in SymbolClient.tsx");
-const VOLUME_SCALE_MARGINS = { top: Number(marginsMatch[1]), bottom: Number(marginsMatch[2]) };
+// `T-10.10` DoD 1: the constants come by IMPORT. The scale MODE below is a JSX prop, not a constant:
+// it stays a residual scan (same as `volume-subaxis-geometry.test.ts`).
+const { VOLUME_BAR_BASE, VOLUME_SCALE_MARGINS } = await import("./SymbolClient.tsx");
 const PRODUCTION_MODE = /volumeSeries\.priceScale\(\)\.applyOptions\(\{\s*scaleMargins: VOLUME_SCALE_MARGINS,\s*mode: PriceScaleMode\.(\w+),/.exec(source)?.[1];
 
 /** The production price pane (`stackedPaneLayout` over `F1_PANE_STRETCH`) plus the time-axis row: a

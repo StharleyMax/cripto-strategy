@@ -40,7 +40,6 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +62,11 @@ import {
  * span to bars per timeframe (`timeframe-window.ts`); at `1m` it is still 4 days (5.760 bars). */
 const FOUR_DAYS_MS = 4 * 24 * 60 * 60_000;
 import { chartConstructorOptions } from "./chart-options.ts";
+// `CHART_HEIGHT_PX` is IMPORTED from production (`chart/host/pane-stack.ts`), never retyped: a copy
+// here would measure the pane THIS file chose instead of the one the screen draws. `T-10.10`: it used
+// to be scraped off the source text with a regex, which a line break around the literal broke; a
+// rename still fails, now at link time instead of at the regex.
+import { CHART_HEIGHT_PX } from "./chart/host/pane-stack.ts";
 import type { SeriesHistoryRow } from "./chart/history/series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 import {
@@ -88,16 +92,7 @@ const FIRST_BUCKET_MS = FIXTURE_WINDOW.startMs;
 /** Height of the pane the measurement happens in — read from production, not retyped, so a
  * change of pane height moves the measurement with the screen instead of away from it. */
 const MEASUREMENT_WIDTH_PX = 1_200;
-/** `CHART_HEIGHT_PX` READ FROM THE PRODUCTION COMPONENT, never retyped — same discipline (and
- * the same failure-on-rename) as `volume-subaxis-geometry.test.ts`'s `productionNumber`: a copy
- * here would measure the pane THIS file chose instead of the one the screen draws. */
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const CHART_HEIGHT_PX = (() => {
-  const source = readFileSync(path.join(HERE, "chart", "host", "pane-stack.ts"), "utf8");
-  const match = /const CHART_HEIGHT_PX = (\d+);/.exec(source);
-  assert.ok(match !== null, "CHART_HEIGHT_PX was not found in chart/host/pane-stack.ts — the anchor moved, fix this test");
-  return Number(match[1]);
-})();
 
 /** Three consecutive 1-minute buckets, carrying ONE real bar each (values below), with a real
  * body (`open !== close`) and a real range (`high > max(open, close)`, `low < min(open, close)`)
