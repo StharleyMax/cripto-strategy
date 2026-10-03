@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
-import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 
 /**
  * `paineis-de-fluxo` `T-01.10` — `F-D` of `handoff/T-01.10-desenho.md` §4, the INVISIBILITY of the
@@ -292,7 +292,7 @@ async function captureHost(page: Page, url: string): Promise<HostCapture> {
   expect(response?.ok(), `GET ${url} não respondeu ok`).toBe(true);
   const host = page.locator(`[data-testid="${CHART_HOST_TESTID}"]`);
   await expect(host).toHaveAttribute("data-pane-layers", "anchored", { timeout: 60_000 });
-  await page.waitForTimeout(1_000);
+  await waitForChartSettled(page);
   const raw = await page.evaluate(async (testId) => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     const hostElement = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;

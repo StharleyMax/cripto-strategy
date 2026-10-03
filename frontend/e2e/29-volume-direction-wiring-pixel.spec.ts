@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import { colorTokens } from "../src/charts/color-tokens.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 import { showView } from "./view.ts";
 
 /**
@@ -385,7 +385,7 @@ test(`T-02.3: no app real, a barra de volume toma a direção da vela da mesma c
         return Number(/^price_candles:(\d+)\//.exec(raw ?? "")?.[1] ?? 0);
       }, { timeout: 60_000 })
       .toBeGreaterThan(500);
-    await page.waitForTimeout(1_000);
+    await waitForChartSettled(page);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     expect(stub.unknownIds(), "the page asked for a series_key_id the stub does not know — the keys drifted").toBe(0);
     const view = await showView(page, { kind: "lastBars", bars: VOLUME_VIEW_BARS });

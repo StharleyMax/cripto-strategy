@@ -42,7 +42,11 @@ test("o browser nunca fala com a API — toda leitura acontece no servidor (ADR-
   page.on("websocket", (socket) => websockets.push(socket.url()));
 
   await page.goto(PANEL_PATH, { waitUntil: "networkidle" });
-  await page.waitForTimeout(1_000); // any client-side effect gets a chance to fire after hydration
+  // NEGATIVE WINDOW (`T-10.1`), the only one in this test: it proves an ABSENCE (no API-shaped request
+  // and no websocket after hydration), and an absence is only proven by waiting. 1 s is the value this
+  // test has carried since `T-01.9`; a client effect fires within a few frames of hydration, so it is
+  // ~60 frames of margin over the event it is watching for.
+  await page.waitForTimeout(1_000);
 
   const apiRequests = requests.filter(isApiLike);
   fact(SPEC, "requests_total", requests.length);

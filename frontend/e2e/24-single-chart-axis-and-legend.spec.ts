@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import { chartSurfaceTheme } from "../src/charts/chart-theme.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 
 /**
  * `paineis-de-fluxo` `T-01.9` (plan `01` DoD 2–5; `SPEC-009` §9 `CA-1′`, `CA-2′`, `CA-3′`; `PRD-009`
@@ -353,7 +353,7 @@ async function openSymbol(page: Page, baseUrl: string): Promise<void> {
   const response = await page.goto(`${baseUrl}${SYMBOL_PATH}`, { waitUntil: "load" });
   expect(response?.ok(), `GET ${SYMBOL_PATH} não respondeu ok`).toBe(true);
   await expect(page.locator(".tv-lightweight-charts").first()).toBeVisible({ timeout: 120_000 });
-  await page.waitForTimeout(2_000);
+  await waitForChartSettled(page);
 }
 
 interface LegendReadingDom {
@@ -627,7 +627,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
         page.locator('[data-legend-value="price"]'),
         `CA-3′: a legenda do Preço não acompanhou o crosshair sobre ${target.pane}`,
       ).toHaveAttribute("data-legend-source", "crosshair");
-      await page.waitForTimeout(150);
+      await waitForChartSettled(page);
       const legends = await readLegends(page);
       const slots = [...new Set(legends.map((l) => l.slotIndex))];
       const expectedLogical = from + ((x - target.box.x) / target.box.width) * (to - from);
@@ -839,7 +839,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
       expect(box, `${testId}: a camada do pane não tem caixa`).not.toBeNull();
       await page.mouse.move(box!.x + box!.width * 0.6, box!.y + box!.height * fraction);
       await expect(page.locator(`[data-testid="${testId}"] [data-legend-source="crosshair"]`).first()).toBeAttached();
-      await page.waitForTimeout(300);
+      await waitForChartSettled(page);
     };
 
     const readings: { testId: string; fraction: number; canvases: number; changed: number }[] = [];
@@ -850,7 +850,7 @@ test.describe(`T-01.9: um gráfico, um eixo, legenda == API (${SPEC})`, () => {
       ["liquidation-pane", 0.9],
     ] as const) {
       await page.mouse.move(2, 2);
-      await page.waitForTimeout(300);
+      await waitForChartSettled(page);
       const canvases = await snapshot(testId);
       await hoverAt(testId, fraction);
       readings.push({ testId, fraction, canvases, changed: await changedSinceSnapshot(testId) });

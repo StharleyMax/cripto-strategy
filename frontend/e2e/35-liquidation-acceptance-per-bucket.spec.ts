@@ -85,7 +85,7 @@ import { expect, test } from "@playwright/test";
 import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 import { showView, type ViewTarget } from "./view.ts";
 
 const SPEC = "35-liquidation-acceptance-per-bucket";
@@ -468,7 +468,7 @@ async function openSymbol(page: Page, baseUrl: string, query: string): Promise<R
   });
   await expect(page.locator(`[data-testid="${PANE_TESTID}"]`)).toHaveCount(1);
   await expect(page.locator(`[data-testid="${PANE_TESTID}"]`)).toHaveAttribute("data-liquidation-zero-line-px", /^\d/);
-  await page.waitForTimeout(1_000);
+  await waitForChartSettled(page);
   const main = page.locator("main[data-window-start-ms]");
   await expect(main, "the page does not declare its own request (data-window-start-ms)").toHaveCount(1);
   const num = async (name: string) => {
@@ -717,7 +717,7 @@ async function auditPane(page: Page, spacingPx: number, fromFraction: number, to
     else entry.xs.push(x);
   }
   await page.mouse.move(2, 2);
-  await page.waitForTimeout(400);
+  await waitForChartSettled(page);
   // The first and last bucket of the sweep are cut by its ends: their centre is not measured.
   const ordered = [...byBucket.entries()].sort((a, b) => a[0] - b[0]).slice(1, -1);
   const centers = ordered.map(([, entry]) => (Math.min(...entry.xs) + Math.max(...entry.xs)) / 2);
