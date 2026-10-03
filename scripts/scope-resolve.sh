@@ -165,14 +165,23 @@ while read -r P; do
     fi
 
     case "$P" in
-        # ── documentation, wherever it lives: never compiled, never served (the backend tests that
-        #    read one were already pulled by name above) ──
+        # ── what `public/` holds is SERVED by Next, `.md` included: a front file with no map row ──
+        frontend/public/*)
+            full_e2e "servido pela app (frontend/public), sem linha no mapa: $P" ;;
+
+        # ── documentation, wherever else it lives: never compiled, never served (the backend
+        #    tests that read one were already pulled by name above) ──
         *.md)
             echo "#   e2e: só 11 — documento" ;;
 
-        # ── e2e specs and their support files ──
+        # ── the map decides the selection as much as this script does, and it was ALREADY READ
+        #    from the working tree: an edited map would resolve its own diff (a task that narrows
+        #    a row and breaks that row's spec would drop the spec from its own run). Same answer as
+        #    an edit to scope-resolve.sh/scope-graph.mjs: COMPLETE (`W8-QA-INFRA.md`, F-1) ──
         frontend/e2e/scope-map.tsv)
-            echo "#   e2e: só 11 — o mapa é dado do escopo, não código da app" ;;
+            full_e2e "o mapa do escopo mudou no diff — ele não pode resolver a própria mudança: $P" ;;
+
+        # ── e2e specs and their support files ──
         frontend/e2e/[0-9]*.spec.ts)
             if [ "$EXISTS" -eq 1 ]; then add_spec "$(basename "$P" | cut -c1-2)" diff
             else echo "#   e2e: spec removido — nada a rodar dele"; fi ;;
