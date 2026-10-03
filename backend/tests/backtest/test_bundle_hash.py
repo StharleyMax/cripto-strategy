@@ -1,4 +1,18 @@
-"""`bundle_hash` determinism and sensitivity — `ADR-021`/D3, falsifier G3."""
+"""`bundle_hash` determinism and sensitivity — `ADR-021`/D3, falsifier G3.
+
+`ADR-021`'s own falsifier table, verbatim: G3 = "dois valores de `bundle_hash` diferentes para o
+MESMO bundle (mesmos bytes lógicos, ordem de campo diferente)" would refute D3 ("o serializador
+canônico não está sendo reusado, ou não é determinístico"). It is the ADR's criterion for
+itself, not a test-author invention.
+
+History: QA proved the defect in `T-08.4` (`45facbb3`) with a separate probe,
+`test_bundle_hash_determinism_qa.py`, that was red against the implementation of the time
+(`canonical_json` with insertion order) — see the "Emenda" at the end of
+`docs/adr/ADR-021-run-registry-reprodutibilidade-de-backtest.md`. That probe was removed in
+`T-10.28`: dropping the key sort (`sorted(payload)` -> `payload`) fails four tests in this file
+(`test_field_order_does_not_change_the_hash` with the same input, plus the nested, list-nested
+and `None`-valued variants), so it no longer caught anything on its own.
+"""
 
 from __future__ import annotations
 
@@ -30,8 +44,8 @@ def test_field_order_does_not_change_the_hash() -> None:
     `threshold-spec-bundle.ts`'s fixed `PARAM_ORDER`) before delegating to `canonical_json`,
     so the caller's insertion order can no longer affect the digest. See the "Emenda" at the
     end of `docs/adr/ADR-021-run-registry-reprodutibilidade-de-backtest.md` for the record of
-    this correction, and `test_bundle_hash_determinism_qa.py` for the QA-authored proof that
-    used to fail against the old implementation.
+    this correction, and the module docstring for the QA-authored probe that used to fail
+    against the old implementation.
     """
     ordered_one_way: dict[str, object] = {"a": 1, "b": 2}
     ordered_the_other_way: dict[str, object] = {"b": 2, "a": 1}

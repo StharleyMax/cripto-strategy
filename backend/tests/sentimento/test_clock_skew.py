@@ -1,10 +1,19 @@
-"""Pure arithmetic of `domain/clock_skew.py`: no clock, no socket, only the three ints."""
+"""Pure arithmetic of `domain/clock_skew.py`: no clock, no socket, only the three ints.
+
+`ServerTimeObservation` has no test in this file on purpose: it is a frozen dataclass with no
+`__post_init__`, so reading back what the constructor received tests `dataclasses`, not this
+module. Its contract is held where it is consumed (removed in `T-10.28`, mutation-checked): a
+renamed field breaks `mypy src tests` at every call site and fails collection of
+`test_persist_ntp_skew_run.py`; `weight_used=None` being a legal value is pinned by
+`test_binance_server_time_probe.py::test_a_response_with_no_weight_header_reports_weight_as_none`
+and `test_persist_ntp_skew_run.py::test_a_missing_weight_never_reaches_the_recorder`.
+"""
 
 from __future__ import annotations
 
 import pytest
 
-from src.modules.sentimento.domain.clock_skew import ClockSkewSample, ServerTimeObservation
+from src.modules.sentimento.domain.clock_skew import ClockSkewSample
 
 
 def test_positive_skew_means_local_clock_is_ahead() -> None:
@@ -71,27 +80,3 @@ def test_a_bracket_running_backwards_is_refused() -> None:
     """The falsifier: a round trip that supposedly ended before it started must raise, not lie."""
     with pytest.raises(ValueError, match="cannot finish before it starts"):
         ClockSkewSample(local_time_before_ms=1_000, local_time_after_ms=999, server_time_ms=0)
-
-
-def test_server_time_observation_is_a_plain_value() -> None:
-    """The DTO the probe hands upward carries exactly what `D3.10`'s row needs, nothing derived."""
-    observation = ServerTimeObservation(
-        server_time_ms=1_788_303_016_165,
-        http_status=200,
-        weight_used=2,
-        body_sha256="a" * 64,
-    )
-
-    assert observation.server_time_ms == 1_788_303_016_165
-    assert observation.http_status == 200
-    assert observation.weight_used == 2
-    assert observation.body_sha256 == "a" * 64
-
-
-def test_server_time_observation_allows_an_absent_weight() -> None:
-    """`weight_used=None` is a legitimate value: `D3.12` proved a Binance family omits it."""
-    observation = ServerTimeObservation(
-        server_time_ms=1, http_status=200, weight_used=None, body_sha256="0" * 64
-    )
-
-    assert observation.weight_used is None
