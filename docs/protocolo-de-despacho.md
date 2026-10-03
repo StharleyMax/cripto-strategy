@@ -136,7 +136,7 @@ portão** — mesma relação que `test-fast` tem com `make test` em R8. O compl
 wave, sozinho na máquina** (o `e2e/20` mede latência absoluta e reprova sob carga); quem o roda cita o
 log. Despacho de builder diz `make verify-scope` com `VERIFY_BASE=<branch da wave>` (e
 `E2E_EXTRA="NN …"` quando o orquestrador sabe de um spec que o diff não alcança); despacho de gate de
-wave diz `make verify`. Para ver **por que** o escopo escolheu o que escolheu:
+wave diz `VERIFY_FORCE=1 make verify` (um `--scope` que resolveu COMPLETO grava o cache). Para ver **por que** o escopo escolheu o que escolheu:
 `VERIFY_BASE=<base> bash scripts/scope-resolve.sh` (uma linha `#` por caminho alterado).
 `[MEDIDO 2026-08-29: 5.915 bytes de log → 591 bytes impressos, 10×, e uma chamada no lugar de seis]`.
 Ele não mede nada de novo e **nunca inventa número** — quando a extração não casa, imprime

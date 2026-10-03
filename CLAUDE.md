@@ -90,7 +90,7 @@ Vinculante para o loop principal e para todo subagente — R1–R9 em
 - Todo comando que pode passar de ~50 linhas termina em `| head -N` ou `| tail -N`.
 - **Verificação tem dois modos, e eles não se confundem (desde `T-06.2`, 2026-10-03).** O **builder** roda
   `make verify-scope`: lint ×2, `test-frontend`, `boundaries`, `regras` e `validate` **inteiros**; o
-  **pytest só do componente que o diff toca** (diff só de front **não roda pytest**; a varredura da
+  **pytest só do componente que o diff toca** (diff só de front **não roda o pytest do componente** — só o teste de backend que **nomeia** o arquivo alterado, se houver, `scope-resolve.sh:175`, desvio para o lado seguro; a varredura da
   chave da Coinalyze roda sempre) — `[DECISÃO-OWNER: 2026-10-02, escolha entre alternativas
   apresentadas]`; e o **e2e só dos specs que o diff alcança**, derivados por `scripts/scope-resolve.sh`
   (grafo de import do front + `frontend/e2e/scope-map.tsv` + o fecho de import da API para o
@@ -98,7 +98,7 @@ Vinculante para o loop principal e para todo subagente — R1–R9 em
   soma, nunca tira). Caminho sem regra, **mapa alterado no próprio diff**, ou token malformado no mapa
   ⇒ COMPLETO ou recusa (fail-closed; os dois últimos achados pelo QA da W8, `gates/W8-QA-INFRA.md` F-1,
   e pelo code-review, M-3). O veredito dele é **`VERDE-ESCOPO`**, que **não grava o cache da árvore e
-  não fecha nada**. O **gate da wave** roda `make verify` **uma vez**, sobre a branch da wave: só
+  não fecha nada**. O **gate da wave** roda `VERIFY_FORCE=1 make verify` **uma vez**, sobre a branch da wave (⚠️ um `--scope` que resolve COMPLETO nos dois lados grava o cache — `verify.sh:70,503` —, e sem `VERIFY_FORCE` o gate devolveria `VERDE (cache da árvore)`, que não fecha wave; achado do `W8-REVIEW` INFO-1): só
   `veredito: VERDE —` com o e2e completo fecha wave, e é o log dele que o `gate-record` cita. ⛔ **Não
   existe `SKIP_E2E`** nem variável que esvazie o e2e (`DR-11`), e um `E2E_SPECS` exportado no shell não
   encolhe o completo. Despacho de builder em wave passa **`VERIFY_BASE=<branch da wave>`**.
