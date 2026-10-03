@@ -43,7 +43,7 @@ import { expect, test } from "@playwright/test";
 import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 import { showView } from "./view.ts";
 
 const SPEC = "33-liquidation-legend-two-magnitudes";
@@ -292,7 +292,7 @@ async function openPage(page: Page, baseUrl: string): Promise<void> {
     timeout: 120_000,
   });
   await expect(page.locator(`[data-testid="${PANE_TESTID}"]`)).toHaveCount(1);
-  await page.waitForTimeout(1_000);
+  await waitForChartSettled(page);
 }
 
 function legValue(page: Page, cohort: Cohort): Locator {
@@ -564,7 +564,7 @@ test.describe(`T-04.3: the liquidation legend, two magnitudes led by the leg's s
     // ABLATION 1 — the filled square drawn with a background. Without forced colours it looks right …
     await page.emulateMedia({ forcedColors: "none" });
     const byBackground = await page.addStyleTag({ content: FILLED_BY_BACKGROUND_CSS });
-    await page.waitForTimeout(200);
+    await waitForChartSettled(page);
     const ablatedPlain = await read();
     fact(SPEC, "ablation_background_plain", ablatedPlain);
     expect(ablatedPlain.long.form, "the ablated square must pass the plain-colour reading").toBe("filled");
@@ -572,7 +572,7 @@ test.describe(`T-04.3: the liquidation legend, two magnitudes led by the leg's s
     // emulated palette repaints a background in its Canvas colour (white here) — the form may survive,
     // the leg's ink does not; under a dark palette the same fill would be dark on the dark plot.
     await page.emulateMedia({ forcedColors: "active" });
-    await page.waitForTimeout(200);
+    await waitForChartSettled(page);
     const ablatedForced = await read();
     fact(SPEC, "ablation_background_forced", ablatedForced);
     expect(verdict(ablatedForced), "MORDE: a background-filled square must be rejected under forced-colors").toMatch(/long: the square lost its leg's ink|filled square reads/);
@@ -584,7 +584,7 @@ test.describe(`T-04.3: the liquidation legend, two magnitudes led by the leg's s
     await page.emulateMedia({ forcedColors: "none" });
     await page.addStyleTag({ content: REPAINTED_INK_CSS });
     await page.emulateMedia({ forcedColors: "active" });
-    await page.waitForTimeout(200);
+    await waitForChartSettled(page);
     const repainted = await read();
     fact(SPEC, "ablation_repainted_ink_forced", repainted);
     // The system border (black in Chromium's palette) sits on the canvas's `#131722` at ~1.2:1: the

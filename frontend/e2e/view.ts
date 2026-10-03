@@ -32,6 +32,8 @@
  */
 import type { Page } from "@playwright/test";
 
+import { waitForChartSettled } from "./helpers.ts";
+
 // Type-only: brings `window.__historyPageLatencyProbe`'s declaration, erased at runtime.
 import type { HistoryPageLatencyProbe } from "../src/app/symbol/history-page-latency-probe.ts";
 import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES } from "../src/app/symbol/chart/axis/supported-timeframes.ts";
@@ -302,10 +304,11 @@ async function drag(page: Page, state: ViewState, dx: number): Promise<void> {
   const startX = state.plot.x + state.plot.width / 2 - dx / 2;
   await page.mouse.move(startX, y);
   await page.mouse.down();
-  // The library needs the pauses to see a drag, not a teleport (`e2e/16`, `e2e/22`).
-  await page.waitForTimeout(100);
+  // The library needs the press and the move in separate frames to see a drag, not a teleport
+  // (`e2e/16`, `e2e/22`). `T-10.1`: a settled chart (>= 6 frames) instead of a 100 ms pause.
+  await waitForChartSettled(page);
   await page.mouse.move(startX + dx, y, { steps: Math.max(5, Math.min(30, Math.round(Math.abs(dx) / 10))) });
-  await page.waitForTimeout(100);
+  await waitForChartSettled(page);
   await page.mouse.up();
 }
 

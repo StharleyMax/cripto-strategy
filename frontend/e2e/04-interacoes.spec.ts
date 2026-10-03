@@ -70,7 +70,8 @@ test("filtro do catálogo (S3) é controlado e recomputa — as linhas reais da 
 
   await input.fill("sum_open_interest");
   await expect(input).toHaveValue("sum_open_interest"); // controlled input echoes — RN-5
-  await page.waitForTimeout(300);
+  // `T-10.1`: no wait. The filter has no debounce (`s3-inspector/domain.ts`), so the render that
+  // echoes the value above is the render that filters the rows.
   const afterMatch = await catalogRows.count();
   fact(SPEC, "catalog_rows_after_matching_filter", afterMatch);
   expect(
@@ -80,7 +81,6 @@ test("filtro do catálogo (S3) é controlado e recomputa — as linhas reais da 
 
   await input.fill("zzz-nenhuma-serie-casa");
   await expect(input).toHaveValue("zzz-nenhuma-serie-casa");
-  await page.waitForTimeout(300);
   const afterNoMatch = await catalogRows.count();
   fact(SPEC, "catalog_rows_after_nonmatching_filter", afterNoMatch);
   expect(afterNoMatch, "non-matching filter text leaves a row — the filter is inert").toBe(0);

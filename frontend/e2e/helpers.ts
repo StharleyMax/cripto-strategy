@@ -361,3 +361,119 @@ export async function startSecondaryNextInstance(
       }),
   };
 }
+
+// ── `waitForChartSettled` — the ONE positive wait of the e2e (`T-10.1`) ────────────────────────────
+
+/** The chart host every `/symbol` page mounts (`ChartHost.tsx`, `data-pane-layers`). */
+export const SETTLE_HOST_TESTID = "symbol-chart-host";
+/** How many consecutive animation frames the page must read identical before it counts as settled.
+ * Five frames is ~83 ms at 60 Hz: past the library's own repaint (one `requestAnimationFrame` after
+ * any change), past the host's anchor and measure frames (`ChartHost.tsx`, one `requestAnimationFrame`
+ * each) and past a React commit scheduled from either of them. */
+const SETTLE_STABLE_FRAMES = 5;
+const SETTLE_TIMEOUT_MS = 60_000;
+/** One in-page evaluation never runs longer than this; the Node loop re-enters until the deadline. */
+const SETTLE_SLICE_MS = 5_000;
+/** The only browser-side request that changes what the chart draws (`use-history-pager.ts`). */
+const HISTORY_URL_MARK = "/series-history";
+
+const historyRequestsInFlight = new WeakMap<Page, Set<unknown>>();
+
+/** Counts the page's `/series-history` requests from the first call on: `request` adds, and
+ * `requestfinished` (any HTTP status) or `requestfailed` removes. A request already in flight before
+ * the first call is not seen here; the in-page fingerprint still reads the pager's own probe
+ * (`window.__historyPageLatencyProbe`), so a page that lands afterwards breaks the stable run. */
+function historyRequestsOf(page: Page): Set<unknown> {
+  const known = historyRequestsInFlight.get(page);
+  if (known !== undefined) return known;
+  const inFlight = new Set<unknown>();
+  historyRequestsInFlight.set(page, inFlight);
+  page.on("request", (request) => {
+    if (request.url().includes(HISTORY_URL_MARK)) inFlight.add(request);
+  });
+  page.on("requestfinished", (request) => inFlight.delete(request));
+  page.on("requestfailed", (request) => inFlight.delete(request));
+  return inFlight;
+}
+
+export interface ChartSettledOptions {
+  readonly hostTestId?: string;
+  readonly timeoutMs?: number;
+}
+
+/**
+ * Waits until the chart is SETTLED: the host is `data-pane-layers="anchored"`, no `/series-history`
+ * request is in flight, and what the page publishes about the chart reads the same for
+ * `SETTLE_STABLE_FRAMES` consecutive animation frames — the host's own `data-*` (visible range, bar
+ * spacing, mount count, page apply), every `data-testid` element's `data-*`, every `data-fact`, every
+ * legend value with its text, every canvas size inside the host, and the lengths of the history
+ * pager's probe. Throws, with the last reading, when that does not happen before the timeout; it
+ * never returns "almost settled".
+ *
+ * This replaces the fixed sleeps (`waitForTimeout` of 1_000…2_500 ms after a mount, 150…800 after a
+ * hover, a wheel, a style change or a drag) that only bet the page would be done by then
+ * (`E2E-analise.md` §6.2). It is the POSITIVE wait only: proving that NOTHING happens (no request,
+ * no move) still needs a negative window, and those stay as `waitForTimeout`, one per test, with
+ * the value and the reason written next to them.
+ */
+export async function waitForChartSettled(page: Page, options: ChartSettledOptions = {}): Promise<void> {
+  const hostTestId = options.hostTestId ?? SETTLE_HOST_TESTID;
+  const timeoutMs = options.timeoutMs ?? SETTLE_TIMEOUT_MS;
+  const inFlight = historyRequestsOf(page);
+  const deadline = Date.now() + timeoutMs;
+  let lastReading = "(nothing read)";
+  while (Date.now() < deadline) {
+    if (inFlight.size > 0) {
+      lastReading = `${inFlight.size} /series-history request(s) in flight`;
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+      continue;
+    }
+    const sliceMs = Math.min(SETTLE_SLICE_MS, Math.max(1, deadline - Date.now()));
+    const result = await page.evaluate(readUntilStable, { hostTestId, frames: SETTLE_STABLE_FRAMES, sliceMs });
+    if (result.settled && inFlight.size === 0) return;
+    lastReading = result.reading;
+  }
+  throw new Error(`waitForChartSettled: the chart did not settle in ${timeoutMs} ms — last reading: ${lastReading.slice(0, 600)}`);
+}
+
+/** Runs IN THE PAGE (serialised by `page.evaluate`, so it is self-contained). */
+function readUntilStable(args: { hostTestId: string; frames: number; sliceMs: number }): Promise<{ settled: boolean; reading: string }> {
+  const datasetOf = (element: HTMLElement) =>
+    Object.entries(element.dataset)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, value]) => `${key}=${value}`)
+      .join(";");
+  const read = (): string | null => {
+    const host = document.querySelector<HTMLElement>(`[data-testid="${args.hostTestId}"]`);
+    if (host === null) return null;
+    if (host.dataset.paneLayers !== "anchored") return null;
+    const parts: string[] = [`host:${datasetOf(host)}`];
+    for (const element of document.querySelectorAll<HTMLElement>("[data-testid]")) parts.push(`${element.dataset.testid}:${datasetOf(element)}`);
+    for (const element of document.querySelectorAll<HTMLElement>("[data-fact]")) parts.push(`fact:${element.dataset.fact}`);
+    for (const element of document.querySelectorAll<HTMLElement>("[data-legend-value]")) parts.push(`legend:${datasetOf(element)}:${element.textContent ?? ""}`);
+    for (const canvas of host.querySelectorAll("canvas")) parts.push(`canvas:${canvas.width}x${canvas.height}`);
+    const probe = (window as { __historyPageLatencyProbe?: { requestedMs: number[]; drawnMs: number[]; applyMs: number[] } }).__historyPageLatencyProbe;
+    if (probe !== undefined) parts.push(`probe:${probe.requestedMs.length}/${probe.drawnMs.length}/${probe.applyMs.length}`);
+    return parts.join("\n");
+  };
+  return new Promise((resolve) => {
+    const start = performance.now();
+    let previous: string | null = null;
+    let stable = 0;
+    const tick = () => {
+      const current = read();
+      stable = current !== null && current === previous ? stable + 1 : 0;
+      previous = current;
+      if (stable >= args.frames) {
+        resolve({ settled: true, reading: current ?? "" });
+        return;
+      }
+      if (performance.now() - start > args.sliceMs) {
+        resolve({ settled: false, reading: current ?? `host [data-testid="${args.hostTestId}"] absent or not anchored` });
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
