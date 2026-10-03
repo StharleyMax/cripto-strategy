@@ -4,19 +4,25 @@
 // an `aria-hidden` ancestor. One word on both channels is the fix, and this file is what fails
 // without it.
 //
-// WHY A SOURCE SCAN: same reason as the `*-dom-contract.test.ts` files beside it — no component
-// renderer in any suite, and `SymbolClient.tsx` imports `lightweight-charts`. The browser half is the
-// `e2e/08`-`e2e/13` readout assertions, which now expect the same word.
+// `estrutura-do-front` `T-10.10` DoD 2, closed with the `T-10.11` harness: the token itself is IMPORTED
+// from `chart/marks/AbsenceNote.tsx` and compared by value, in this one place. What is still a source
+// scan is the rest: the seven absent BRANCHES resolving to it, and the enum kept in the attributes —
+// those are rendered by the `*-dom-contract` rewrites (`T-10.12..T-10.14`), not here. The browser half
+// is the `e2e/08`-`e2e/13` readout assertions, which expect the same word.
 //
 // Run with: npm --prefix frontend run test:app
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
+// `T-10.11` harness — FIRST, so the `.tsx` below can be imported (`gates/T-10.11-padrao.md` §7).
+import "../component-render.ts";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { ABSENCE_MICROCOPY, LEGEND_GRID_ABSENCE } from "./chart/legend/pane-legend.ts";
 import { MOVED_OUT_FILES } from "./symbol-client-moved-out-files.ts";
+
+const { ABSENCE_TOKEN } = await import("./chart/marks/AbsenceNote.tsx");
 
 const SOURCE = ["SymbolClient.tsx", ...MOVED_OUT_FILES]
   .map((file) => readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), "utf8"))
@@ -24,23 +30,19 @@ const SOURCE = ["SymbolClient.tsx", ...MOVED_OUT_FILES]
 /** The code without its comments: the docstrings quote `SEM_PONTO` on purpose, the code may not. */
 const CODE = SOURCE.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
-
 /** Every `sr-only` readout of the six panes: price, volume, OI, CVD delta, CVD cumulative,
  * liquidation (one per cohort, same line) and long/short — 7 absent branches in the source. */
 const EXPECTED_ABSENT_BRANCHES = 7;
 
 test("SF-9: the readouts' absence token IS the legend's pt-BR word, not the enum", () => {
-  const declaration = ABSENCE_TOKEN_DECLARATION.exec(SOURCE);
-  assert.ok(declaration !== null, "ABSENCE_TOKEN declaration not found — the anchor moved, fix this test");
-  // The mutation this rejects: `const ABSENCE_TOKEN = "SEM_PONTO";`, the state the review measured.
+  // The mutation this rejects: `ABSENCE_TOKEN = "SEM_PONTO"`, the state the review measured.
   assert.equal(
-    declaration[1],
+    ABSENCE_TOKEN,
     ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE],
     "the sr-only readouts and the painted legend must say the same word for the same absence",
   );
-  assert.doesNotMatch(declaration[1]!, /[A-Z_]/, "the readout token still looks like an enum");
-  assert.doesNotMatch(declaration[1]!, /\d/, "an absence must never read as a number (RN-1)");
+  assert.doesNotMatch(ABSENCE_TOKEN, /[A-Z_]/, "the readout token still looks like an enum");
+  assert.doesNotMatch(ABSENCE_TOKEN, /\d/, "an absence must never read as a number (RN-1)");
 });
 
 test("SF-9: no readout spells the enum as its own literal", () => {
@@ -65,16 +67,16 @@ test("SF-9: the enum stays machine-readable where it always was", () => {
   }
 });
 
-test("MORDE: planting the enum back in either place is caught", () => {
+// `T-10.10`: the "token back to the enum" mutant left with the declaration regex — the token is now
+// compared by IMPORT (the first SF-9 test), and `T-10.8` row #2 measured that mutant as a duplicate of it.
+test("MORDE: planting the enum back as a readout literal is caught", () => {
   const mutants = [
-    { name: "token back to the enum", mutate: (s: string) => s.replace(ABSENCE_TOKEN_DECLARATION, 'const ABSENCE_TOKEN = "SEM_PONTO";') },
     { name: "price literal back", mutate: (s: string) => s.replace(/\?\s*ABSENCE_TOKEN\b/, '? "SEM_PONTO"') },
   ];
   for (const mutant of mutants) {
     const mutated = mutant.mutate(CODE);
     assert.notEqual(mutated, CODE, `the mutation "${mutant.name}" found no anchor — update this test`);
     const survives =
-      ABSENCE_TOKEN_DECLARATION.exec(mutated)?.[1] === ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE] &&
       !/"SEM_PONTO"/.test(mutated) &&
       (mutated.match(/\?\s*ABSENCE_TOKEN\b/g) ?? []).length === EXPECTED_ABSENT_BRANCHES;
     assert.ok(!survives, `the mutation "${mutant.name}" is NOT detected by the asserts above`);

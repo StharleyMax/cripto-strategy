@@ -37,6 +37,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+// `T-10.11` harness — FIRST, so the `.tsx` below can be imported (`gates/T-10.11-padrao.md` §7). Nothing is
+// rendered here: it is what lets this file read production's constants by IMPORT (`T-10.10` DoD 1).
+import "../component-render.ts";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,22 +61,9 @@ import { F1_PANE_ORDER, F1_PANE_STRETCH } from "./pane-registry.ts";
 const SYMBOL_CLIENT_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx");
 const source = readFileSync(SYMBOL_CLIENT_PATH, "utf8");
 
-/** Reads a numeric module constant from the production source. Fails instead of defaulting. */
-function productionNumber(name: string): number {
-  const match = new RegExp(`const ${name} = (-?\\d+(?:\\.\\d+)?);`).exec(source);
-  assert.ok(match !== null, `${name} was not found in SymbolClient.tsx — the anchor moved, fix this test`);
-  return Number(match[1]);
-}
-
 interface Margins {
   readonly top: number;
   readonly bottom: number;
-}
-
-function productionMargins(name: string): Margins {
-  const match = new RegExp(`const ${name} = \\{ top: (\\d+(?:\\.\\d+)?), bottom: (\\d+(?:\\.\\d+)?) \\} as const;`).exec(source);
-  assert.ok(match !== null, `${name} was not found in SymbolClient.tsx — the anchor moved, fix this test`);
-  return { top: Number(match[1]), bottom: Number(match[2]) };
 }
 
 interface ScaleRole {
@@ -94,12 +84,17 @@ function productionVolumeScaleMode(): string | null {
   return match === null ? null : match[1]!;
 }
 
-const VOLUME_BAR_BASE = productionNumber("VOLUME_BAR_BASE");
-const ABSENCE_MARK_PX = productionNumber("ABSENCE_MARK_PX");
-const ZERO_MARK_PX = productionNumber("ZERO_MARK_PX");
-const VOLUME_MARKS_BAND_PX = productionNumber("VOLUME_MARKS_BAND_PX");
-const VOLUME_SCALE_MARGINS = productionMargins("VOLUME_SCALE_MARGINS");
-const VOLUME_MARKS_SCALE_MARGINS = productionMargins("VOLUME_MARKS_SCALE_MARGINS");
+// `T-10.10` DoD 1: the constants come by IMPORT, not by a regex over the declaration (a prettier break
+// of the line no longer fails this file). The scale ROLES and MODE below are JSX props, not constants:
+// they stay a residual scan until a test captures the binding `PricePane` registers (`T-10.11` harness).
+const {
+  VOLUME_BAR_BASE,
+  ABSENCE_MARK_PX,
+  ZERO_MARK_PX,
+  VOLUME_MARKS_BAND_PX,
+  VOLUME_SCALE_MARGINS,
+  VOLUME_MARKS_SCALE_MARGINS,
+} = await import("./SymbolClient.tsx");
 const VOLUME_ROLE = productionScaleRole("volumeSeries");
 const MARKS_ROLE = productionScaleRole("absenceSeries");
 

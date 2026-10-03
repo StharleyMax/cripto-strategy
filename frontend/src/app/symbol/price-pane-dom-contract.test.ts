@@ -1,29 +1,32 @@
 /**
- * `T-01.8` — THE DOM/WIRING CONTRACT OF THE PRICE PANE, guarded. Sibling of
- * `volume-subaxis-dom-contract.test.ts` and `cvd-pane-dom-contract.test.ts`, and it exists for
- * the same measured reason those two state: `price-candle.test.ts` proves the CANDLE on the data
- * and geometry side, and NOTHING about the route that feeds it or the DOM that declares it.
+ * `T-01.8` — THE DOM/WIRING CONTRACT OF THE PRICE PANE. `price-candle.test.ts` proves the CANDLE
+ * on the data and geometry side; this file proves the route that feeds it and the DOM that declares
+ * it.
  *
- * MEASURED, NOT ASSUMED — this file absent, one mutation applied at a time,
- * `npm --prefix frontend run test:app` after each `[MEDIDO 2026-09-19, universo: 324 testes]`:
+ * `estrutura-do-front` `T-10.11` — the half about the DOM stopped reading `SymbolClient.tsx`. It
+ * RENDERS `PricePane` (exported for this, `gates/T-10.11-padrao.md` §5 option P1) with literal props
+ * under `../component-render.ts`, and asserts `data-testid`, `data-price-candles` and `data-fact` on
+ * the DOM. The in-memory MORDE that used to sit here is gone with the regexes it defended (DoD 3):
+ * its route mutant was a duplicate of the "each reduction is fetched SEPARATELY" test
+ * (`gates/T-10.8-build.md` row #35), and its two DOM mutants are what the render now fails on.
  *
- *   baseline (this file absent, nothing mutated)                      -> 324 pass / 0 fail
- *   - `open: openResult.rows` becomes `open: closeResult.rows`        -> 324 pass / 0 fail
- *   - `data-fact="price_candles:…"` renamed to `data-x`               -> 324 pass / 0 fail
- *   - `data-testid={PRICE_PANE_TESTID}` suffixed with `-v2`           -> 324 pass / 0 fail
+ * Measured before this file existed (`[MEDIDO 2026-09-19, universo: 324 testes]`), three mutations
+ * passed green: `open: openResult.rows` → `closeResult.rows` (a candle whose body collapses while
+ * every geometry assertion keeps passing), `data-fact="price_candles:…"` renamed, and the pane testid
+ * suffixed. The first is guarded by section 1 below; the other two by section 2.
  *
- * Three mutations, zero detections, and the first is the whole task silently undone: a candle
- * whose `open` is the `close` of the same bucket is HALF the degenerate `RN-2` retired — the
- * body collapses, the wick survives, and every geometry assertion keeps passing because the
- * fixture feeds each reduction its own numbers. The second and third empty `T-01.11`'s only
- * handles on the price pane, and `Number(null) === 0` means an e2e can keep "passing" against a
- * DOM with no contract left in it (the `BLOCKER-3` of wave `03`, twice paid).
+ * ⚠️ RESIDUAL SOURCE SCAN — section 1 still reads `[symbol]/page.tsx`. It is a Server Component with
+ * route-level side effects: no render pattern reaches it, and its regexes become value tests in
+ * `F3` (plan item 3.4, `UNIT-FRONT-analise.md` §4). Until then they stay, named as residual.
  *
- * WHY A SOURCE SCAN AND NOT A RENDER: verbatim the reason the two sibling files give — this repo
- * has no component renderer in any suite (`@testing-library` is not installed) and `page.tsx` is
- * a Server Component with route-level side effects, so it cannot be imported by a test at all.
- * This instrument proves the WIRING is spelled where the contract requires; the pixels are
- * `price-candle.test.ts`'s and the browser is `T-01.11`'s.
+ * ⚠️ WHERE THE WIRING IN `SymbolClient` IS PROVEN (DoD 2): that `SymbolClient` mounts `PricePane` and
+ * feeds it the route's count is `e2e/15-vela-e-ablacao.spec.ts`, test `CA-3: /symbol declara a leitura
+ * de preço, e ela é ausente só quando a API é` (`data-price-candles` on `[data-testid="price-pane"]`
+ * equals the candles the API serves for the page's own window). That price NEVER receives the wall badge
+ * is proven HERE, by render: `PricePane` has no `wallState` prop at all (a call site passing one
+ * fails `tsc --strict`), and its render carries no `[data-fact$=":beyond"]`.
+ *
+ * Run with: npm --prefix frontend run test:app
  */
 
 import assert from "node:assert/strict";
@@ -31,26 +34,27 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createElement, render } from "../component-render.ts";
+import { buildS2Panels, ONE_MINUTE_MS, S2_PRICE_USE } from "../../charts/index.ts";
+import type { CoverageMagnitude } from "./coverage-magnitude.ts";
+import type { PaneRegistrar } from "./chart/host/registrar.ts";
+import type { LegendFrame } from "./chart/legend/legend-frame.ts";
+import type { LegendSeriesId, PaneHeading } from "./chart/legend/pane-legend.ts";
+import type { PriceCandleData, VolumeSubAxisData } from "./SymbolClient.tsx";
+
+const { PricePane } = await import("./SymbolClient.tsx");
+const { ChartHostContext } = await import("./chart/host/registrar.ts");
+const { LegendFrameContext } = await import("./chart/legend/legend-frame.ts");
+const { createCrosshairSlotStore, EMPTY_PANE_HEADING } = await import("./chart/legend/pane-legend.ts");
+const { BeyondCoverageBadge } = await import("./chart/marks/BeyondCoverageBadge.tsx");
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
 const pageSource = readFileSync(path.join(HERE, "[symbol]", "page.tsx"), "utf8");
 
 /** `page.tsx` with every comment removed — the asserts below ask what the CODE does, and this
  * file's route documents the retired scalar price series in prose. Same crude stripper, same
  * justification, as `cvd-pane-dom-contract.test.ts`'s. */
 const pageCode = pageSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-
-/** The selector `T-01.11`'s e2e will `page.locator()` by. Duplicated here ON PURPOSE: a contract
- * with another task is not guarded by importing the constant it is made of — that would rename
- * itself along with the mutation it is supposed to catch. */
-const EXPECTED_TESTID = "price-pane";
-const TESTID_DECLARATION = /const PRICE_PANE_TESTID = "([^"]+)";/;
-/** The machine key of the candle count. ⛔ ASCII, and NOT derived from the pt-BR label beside it
- * (`SPEC-008`/`D7`, `RF-8`/`RN-5`) — the same rule `T-04.3` (`CST-230`) applied to `LiveRow`,
- * which used to publish `data-fact="live_preço:attempted"`, accent and all, before `factKey` was
- * split out of `label`. */
-const EXPECTED_CANDLES_FACT = "price_candles";
 
 // ── 1. THE ROUTE READS FOUR SERIES, EACH ONE ITS OWN ─────────────────────────────────────────
 
@@ -117,37 +121,6 @@ test("the retired scalar price series is NOT fetched any more — it only opens 
     "the degenerate mapping must not come back through the route either (RN-2)",
   );
 });
-
-// ── 2. WHAT THE PANE DECLARES ABOUT THE BARS IT DREW ─────────────────────────────────────────
-
-test("T-01.11 contract: the pane carries a stable testid and the drawn-candle count on it", () => {
-  const declaration = TESTID_DECLARATION.exec(source);
-  assert.ok(declaration !== null, "PRICE_PANE_TESTID declaration not found — the anchor moved, fix this test");
-  assert.equal(declaration[1], EXPECTED_TESTID, "the e2e finds the pane by this exact string");
-  assert.match(
-    source,
-    /data-testid=\{PRICE_PANE_TESTID\}\s*data-price-candles=\{priceCandles\.drawnCandles\}/,
-    "testid and drawn-candle count must sit on the SAME element — a sibling is invisible to getAttribute",
-  );
-});
-
-test("the candle facts are published as a machine key, in ASCII, with BOTH numbers", () => {
-  assert.match(
-    source,
-    new RegExp(`data-fact=\\{\`${EXPECTED_CANDLES_FACT}:\\$\\{priceCandles\\.drawnCandles\\}/\\$\\{priceCandles\\.gridSlots\\}\`\\}`),
-    "the fact must carry the pair — a bare count cannot say 812 OF WHAT",
-  );
-  assert.ok(
-    /^[\x20-\x7E]+$/.test(EXPECTED_CANDLES_FACT),
-    "a machine key an operator's grep cannot type is a key nobody queries (SPEC-008/D7)",
-  );
-  assert.match(
-    source,
-    /data-price-partial-buckets=\{priceCandles\.partialBuckets\}/,
-    "the partial buckets must reach the DOM: without their own number they read as plain absence",
-  );
-});
-
 test("the drawn-candle count is counted off the SLOTS the canvas gets, never off the raw rows", () => {
   assert.match(
     pageCode,
@@ -158,38 +131,153 @@ test("the drawn-candle count is counted off the SLOTS the canvas gets, never off
   assert.match(pageCode, /partialBuckets: candleAssembly\.partialBuckets/);
 });
 
-test("RN-1 in words: the pane says the lacuna is a lacuna, and names what it is NOT", () => {
-  // Microcopy is pt-BR and the `ui-designer` owns its form (`T-01.10`); what a builder guards is
-  // that the DISTINCTION is stated at all. The page's own vocabulary is reused, not reinvented —
-  // "lacuna" is the word `STITCH_CONTEXT.md` already uses for a slot nothing filled.
-  assert.match(source, /em lacuna/, "the incomplete bucket must be named on screen");
-  assert.match(
-    source,
-    /nunca uma vela de altura zero/,
-    "and the pane must say what it refuses to draw — a flat bar IS a market that did not move",
+// ── 2. WHAT THE PANE DECLARES ABOUT THE BARS IT DREW — rendered ──────────────────────────────
+
+/** The selector `T-01.11`'s e2e will `page.locator()` by. Written out ON PURPOSE: a contract with
+ * another task is not guarded by importing the constant it is made of. */
+const EXPECTED_TESTID = "price-pane";
+/** The machine key of the candle count. ⛔ ASCII, and NOT derived from the pt-BR label beside it
+ * (`SPEC-008`/`D7`, `RF-8`/`RN-5`). */
+const EXPECTED_CANDLES_FACT = "price_candles";
+
+// A three-minute window on the 1m grid, one candle on its LAST slot: the readout resolves `exact`.
+const WINDOW_START_MS = Date.UTC(2026, 9, 3, 0, 0);
+const WINDOW = { startMs: WINDOW_START_MS, endMsExclusive: WINDOW_START_MS + 3 * ONE_MINUTE_MS, days: ["2026-10-03"] };
+const PANELS = buildS2Panels({
+  window: WINDOW,
+  axisStepMs: ONE_MINUTE_MS,
+  candles: [{ openTimeMs: WINDOW_START_MS + 2 * ONE_MINUTE_MS, open: 10, high: 12, low: 9, close: 11, volume: 0 }],
+  priceUse: S2_PRICE_USE,
+  oiPoints: [],
+  oiMissingDays: [],
+  cvdDeltas: [],
+  cvdMissingDays: [],
+  cvdCoveredDays: [],
+});
+const NO_COVERAGE_GAP: CoverageMagnitude = {
+  partialBuckets: 0,
+  reaggregatedBuckets: 0,
+  missingFacts: 0,
+  expectedFacts: 0,
+  headExcludedFacts: 0,
+  nativeGridMs: ONE_MINUTE_MS,
+};
+const VOLUME: VolumeSubAxisData = {
+  slots: PANELS.oi.slots,
+  legendSlots: PANELS.oi.slots,
+  presentPoints: 0,
+  firstPresentMs: null,
+  reading: { kind: "absent", value: null },
+  partialCoverage: NO_COVERAGE_GAP,
+};
+const HEADINGS: Readonly<Record<LegendSeriesId, PaneHeading>> = {
+  price: EMPTY_PANE_HEADING,
+  volume: EMPTY_PANE_HEADING,
+  oi: EMPTY_PANE_HEADING,
+  cvd: EMPTY_PANE_HEADING,
+  liquidation_long: EMPTY_PANE_HEADING,
+  liquidation_short: EMPTY_PANE_HEADING,
+  long_short: EMPTY_PANE_HEADING,
+};
+const LEGEND_FRAME: LegendFrame = {
+  legends: { price: null, volume: null, oi: null, cvd: null, liquidation_long: null, liquidation_short: null, long_short: null },
+  axisStepMs: ONE_MINUTE_MS,
+  asOfMs: WINDOW.endMsExclusive,
+  bucketMs: ONE_MINUTE_MS,
+  headings: HEADINGS,
+};
+
+/** Renders `PricePane` inside the two contexts it reads — a chart host that only RECORDS which panes
+ * registered (no canvas: the series are `price-candle.test.ts`'s) and the legend frame. */
+async function renderPricePane(priceCandles: PriceCandleData) {
+  const registered: string[] = [];
+  const registrar: PaneRegistrar = {
+    surfaceRef: { current: null },
+    crosshairStore: createCrosshairSlotStore(),
+    register: (instanceKey) => {
+      registered.push(instanceKey);
+      return () => undefined;
+    },
+    refeed: () => undefined,
+  };
+  const pane = createElement(PricePane, {
+    panels: PANELS,
+    priceCandles,
+    status: { kind: "ok" },
+    volume: VOLUME,
+    volumeStatus: { kind: "ok" },
+  });
+  const rendered = await render(
+    createElement(ChartHostContext.Provider, { value: registrar }, createElement(LegendFrameContext.Provider, { value: LEGEND_FRAME }, pane)),
   );
+  return { ...rendered, registered };
+}
+
+/** The predicates under test — each one read by the positive render AND by its control. */
+function pricePaneOf(container: HTMLElement): HTMLElement | null {
+  return container.querySelector<HTMLElement>(`[data-testid="${EXPECTED_TESTID}"]`);
+}
+function candleFactOf(container: HTMLElement): string | null {
+  return pricePaneOf(container)?.querySelector(`[data-fact^="${EXPECTED_CANDLES_FACT}:"]`)?.getAttribute("data-fact") ?? null;
+}
+function wallBadgesIn(root: ParentNode): number {
+  return root.querySelectorAll('[data-fact$=":beyond"]').length;
+}
+
+test("T-01.11 contract: the pane carries the stable testid AND the drawn-candle count, on the SAME element", async () => {
+  const rendered = await renderPricePane({ drawnCandles: 7, gridSlots: 9, partialBuckets: 2 });
+  const pane = pricePaneOf(rendered.container);
+  assert.ok(pane !== null, `no [data-testid="${EXPECTED_TESTID}"] — the e2e finds the pane by this exact string`);
+  assert.equal(pane.getAttribute("aria-label"), "Preço");
+  assert.equal(pane.getAttribute("data-price-candles"), "7", "a sibling is invisible to getAttribute");
+  assert.deepEqual(rendered.registered, ["price"], "the pane declared itself to the chart host, once");
+  rendered.unmount();
 });
 
-// ── MORDE: the three mutations that were GREEN before this file existed ──────────────────────
+test("the candle facts are published as a machine key, in ASCII, with BOTH numbers and the partial buckets", async () => {
+  const rendered = await renderPricePane({ drawnCandles: 7, gridSlots: 9, partialBuckets: 2 });
+  const fact = candleFactOf(rendered.container);
+  assert.equal(fact, `${EXPECTED_CANDLES_FACT}:7/9`, "the fact must carry the pair — a bare count cannot say 7 OF WHAT");
+  assert.ok(/^[\x20-\x7E]+$/.test(fact), "a machine key an operator's grep cannot type is a key nobody queries (SPEC-008/D7)");
+  const factElement = pricePaneOf(rendered.container)?.querySelector(`[data-fact="${fact}"]`);
+  assert.equal(
+    factElement?.getAttribute("data-price-partial-buckets"),
+    "2",
+    "the partial buckets must reach the DOM: without their own number they read as plain absence",
+  );
+  rendered.unmount();
+});
 
-test("MORDE: each of the 3 mutations that used to pass green is now caught", () => {
-  const mutants: readonly {
-    readonly name: string;
-    readonly file: "client" | "page";
-    readonly mutate: (s: string) => string;
-  }[] = [
-    { name: "open read from the CLOSE series", file: "page", mutate: (s) => s.replace("open: openResult.rows,", "open: closeResult.rows,") },
-    { name: "the candle fact renamed out of `data-fact`", file: "client", mutate: (s) => s.replace("data-fact={`price_candles:", "data-x={`price_candles:") },
-    { name: "the pane testid suffixed", file: "client", mutate: (s) => s.replace(TESTID_DECLARATION, 'const PRICE_PANE_TESTID = "price-pane-v2";') },
-  ];
-  for (const mutant of mutants) {
-    const original = mutant.file === "client" ? source : pageCode;
-    const mutated = mutant.mutate(original);
-    assert.notEqual(mutated, original, `the mutation "${mutant.name}" found no anchor — update this test, do not delete it`);
-    const survives =
-      /open: openResult\.rows,/.test(mutant.file === "page" ? mutated : pageCode) &&
-      new RegExp(`data-fact=\\{\`${EXPECTED_CANDLES_FACT}:`).test(mutant.file === "client" ? mutated : source) &&
-      TESTID_DECLARATION.exec(mutant.file === "client" ? mutated : source)?.[1] === EXPECTED_TESTID;
-    assert.ok(!survives, `the mutation "${mutant.name}" is NOT detected by the asserts above — the guard is vacuous`);
-  }
+test("negative control by PROP mutation: the count, the fact and the partial buckets TRACK priceCandles", async () => {
+  const rendered = await renderPricePane({ drawnCandles: 3, gridSlots: 5, partialBuckets: 1 });
+  assert.equal(candleFactOf(rendered.container), `${EXPECTED_CANDLES_FACT}:3/5`);
+  assert.throws(() => assert.equal(candleFactOf(rendered.container), `${EXPECTED_CANDLES_FACT}:7/9`));
+  assert.equal(pricePaneOf(rendered.container)?.getAttribute("data-price-candles"), "3");
+  assert.equal(
+    pricePaneOf(rendered.container)?.querySelector("[data-price-partial-buckets]")?.getAttribute("data-price-partial-buckets"),
+    "1",
+  );
+  rendered.unmount();
+});
+
+test("RN-1 in words: the pane says the lacuna is a lacuna, and names what it is NOT", async () => {
+  // Microcopy is pt-BR and the `ui-designer` owns its form (`T-01.10`); what a builder guards is
+  // that the DISTINCTION is stated at all.
+  const rendered = await renderPricePane({ drawnCandles: 7, gridSlots: 9, partialBuckets: 2 });
+  const text = pricePaneOf(rendered.container)?.textContent ?? "";
+  assert.match(text, /em lacuna/, "the incomplete bucket must be named on screen");
+  assert.match(text, /nunca uma vela de altura zero/, "a flat bar IS a market that did not move");
+  rendered.unmount();
+});
+
+test("T-05.6 DoD item 2: price is structurally excluded from the wall badge — its render carries none", async () => {
+  // PRESENCE control first, same predicate: the selector does see a badge where there is one.
+  const badge = await render(createElement(BeyondCoverageBadge, { factKey: "oi_coverage" }));
+  assert.equal(wallBadgesIn(badge.container), 1, "the predicate must see the badge it is about to say is absent");
+  badge.unmount();
+  const rendered = await renderPricePane({ drawnCandles: 7, gridSlots: 9, partialBuckets: 2 });
+  const pane = pricePaneOf(rendered.container);
+  assert.ok(pane !== null, "anchor: the price pane rendered — an empty render would pass the absence below");
+  assert.equal(wallBadgesIn(pane), 0, "price must never name the wall: it keeps drawing bars past it");
+  rendered.unmount();
 });

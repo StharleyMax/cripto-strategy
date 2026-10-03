@@ -22,6 +22,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+// `T-10.11` harness — FIRST, so the `.tsx` below can be imported (`gates/T-10.11-padrao.md` §7). Nothing is
+// rendered here: it is what lets this file read production's constants by IMPORT (`T-10.10` DoD 1).
+import "../component-render.ts";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,12 +56,6 @@ interface ScaleRole {
   readonly keepFloor?: boolean;
 }
 
-function productionMargins(name: string): Margins {
-  const match = new RegExp(`const ${name} = \\{ top: (\\d+(?:\\.\\d+)?), bottom: (\\d+(?:\\.\\d+)?) \\} as const;`).exec(source);
-  assert.ok(match !== null, `${name} was not found in SymbolClient.tsx — the anchor moved, fix this test`);
-  return { top: Number(match[1]), bottom: Number(match[2]) };
-}
-
 /** The role `PricePane` declares for a scale, `keepFloor` included when present. */
 function productionScaleRole(seriesExpression: string): ScaleRole {
   const match = new RegExp(
@@ -72,8 +69,9 @@ function productionScaleRole(seriesExpression: string): ScaleRole {
   };
 }
 
-const PRICE_CANDLE_SCALE_MARGINS = productionMargins("PRICE_CANDLE_SCALE_MARGINS");
-const VOLUME_SCALE_MARGINS = productionMargins("VOLUME_SCALE_MARGINS");
+// `T-10.10` DoD 1: the margins come by IMPORT. The scale ROLES below are JSX props, not constants: they
+// stay a residual scan until a test captures the binding `PricePane` registers (`T-10.11` harness).
+const { PRICE_CANDLE_SCALE_MARGINS, VOLUME_SCALE_MARGINS } = await import("./SymbolClient.tsx");
 // `PricePane`'s candle binding is the only one written `{ series, belowLegend: … }` that ALSO sits
 // next to `volumeSeries` — anchored on the `scales` destructuring so the OI/CVD panes' `{ series, … }`
 // cannot answer for it.

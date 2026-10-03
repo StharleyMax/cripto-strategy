@@ -610,7 +610,7 @@ const VOLUME_PRICE_SCALE_ID = "volume";
 // strip belongs to the absence/zero marks (`VOLUME_MARKS_SCALE_MARGINS` below). The bars never
 // descend into it and no mark climbs out of it — the invariant that replaced the old ordering
 // `absence < zero < smallest bar` once the scale went linear (design gate §5.2).
-const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0.03 } as const;
+export const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0.03 } as const;
 // ⛔ `T-02.5` `MF-1` (`gates/T-02.5-design-review.md` §3): the CANDLES' floor sits ABOVE the volume
 // band's ceiling, so a candle and the bar under it never share a pixel row. Since `T-02.3` both carry
 // the SAME direction ink, and with the library's default `bottom: 0.1` a candle could descend to 90%
@@ -622,7 +622,7 @@ const VOLUME_SCALE_MARGINS = { top: 0.8, bottom: 0.03 } as const;
 // reserve that also compressed `bottom` walked this floor back into the band under a tall legend —
 // why the design review's `M3` (`bottom: 0.24` WITHOUT `keepFloor`) still fused in `15m`/`1h`/`4h`.
 // `price-volume-band-separation.test.ts` fails if either half moves.
-const PRICE_CANDLE_SCALE_MARGINS = { top: 0.2, bottom: 0.22 } as const;
+export const PRICE_CANDLE_SCALE_MARGINS = { top: 0.2, bottom: 0.22 } as const;
 
 // ⛔ LINEAR SCALE, BASE `0` — `T-02.2`, decided by the `ui-designer` WITH the `ux-ui-mastery` verdict
 // (`docs/context/paineis-de-fluxo/gates/T-02.2-design-gate.md` §4-§5, cycle 2 APPROVED in §8).
@@ -641,7 +641,7 @@ const PRICE_CANDLE_SCALE_MARGINS = { top: 0.2, bottom: 0.22 } as const;
 // the height is PROPORTIONAL to the volume — which is what `VolumeScaleNote` says on screen. Any
 // other base shifts every bar and the label lies. `volume-subaxis-tf-invariance.test.ts` is what
 // fails if it moves.
-const VOLUME_BAR_BASE = 0;
+export const VOLUME_BAR_BASE = 0;
 
 // ⛔ `BLOCKER-2`: A AUSÊNCIA NÃO TINHA MARCA, E A REGRA TRAVADA EXIGE UMA.
 // `STITCH_CONTEXT.md:1821-1825`, verbatim: *"Zero legitimo do fornecedor e uma MARCA desenhada na
@@ -664,17 +664,17 @@ const VOLUME_MARKS_PRICE_SCALE_ID = "volume_marks";
 // ⚠️ Declared deviation of FORM (gate §5.2): `STITCH_CONTEXT.md:224`'s `D5.3` says "dash on the 0
 // line"; the dash now sits just below it. The intent — the gap is drawn, not interpolated, not
 // zeroed — is unchanged.
-const VOLUME_MARKS_SCALE_MARGINS = { top: 0.97, bottom: 0 } as const;
+export const VOLUME_MARKS_SCALE_MARGINS = { top: 0.97, bottom: 0 } as const;
 // The strip's fixed range, in NOMINAL pixels of the strip (~`335 × 0.03 ≈ 10` on the price pane),
 // so that each mark's value reads as its height.
-const VOLUME_MARKS_BAND_PX = 10;
+export const VOLUME_MARKS_BAND_PX = 10;
 // ⚠️ NOMINAL, NÃO MEDIDO — `clearSeparator` (`charts/pane-stack-layout.ts`) lifts the strip's floor
 // `4 px` off the separator, so the real strip is ~6 px and the marks draw ~2 px (absence) and ~4 px
 // (zero), not 2 and 6 (gate §8.8 `N-1`). What holds is the ORDER, plus a gap of at least one empty
 // row between the zero mark (the taller) and the bars' base — measured against the real library,
 // with the real draw calls, in `volume-subaxis-geometry.test.ts`.
-const ABSENCE_MARK_PX = 2;
-const ZERO_MARK_PX = 6;
+export const ABSENCE_MARK_PX = 2;
+export const ZERO_MARK_PX = 6;
 // ⛔ `ADR-010` GOVERNS THE INK, AND BOTH MARKS ARE ON THE PROVENANCE RAMP (`D-4`: luminance, zero
 // hue). Not green/red: those are the `fill` of price DIRECTION, and since `T-02.3` the BARS carry
 // them (the candle's direction at the same instant) — a mark has no volume to carry a direction
@@ -998,7 +998,7 @@ function PriceCandleFacts({ priceCandles }: { readonly priceCandles: PriceCandle
   );
 }
 
-function PricePane({
+export function PricePane({
   panels,
   priceCandles,
   status,
