@@ -1,0 +1,43 @@
+--- a/frontend/src/app/symbol/indicator-isolation-rule.test.ts
++++ b/frontend/src/app/symbol/indicator-isolation-rule.test.ts
+@@ -244,3 +244,40 @@
+     );
+   }
+ });
++
++// ── `W-F0-REVIEW` W-1 + `W-F0-QA` W3: a loose FILE at the root of indicators/ is not an indicator ─
++
++test("SPEC-011 §5.3: a root file of indicators/ is not an indicator, yet stays under P2 and P3", async () => {
++  // W-1, the probe that must stay quiet: the catalog's own test, beside it at the root.
++  const catalogTest: Probe = {
++    file: "indicators/catalog.test.ts",
++    code: 'import { catalog } from "./catalog.ts";\nexport const probe = catalog;\n',
++  };
++  const quiet = await lintProbe(catalogTest);
++  assert.deepEqual(
++    ruleIds(quiet),
++    [],
++    `CALA "indicators/catalog.test.ts -> ./catalog.ts": a root file is not an indicator, got ` +
++      JSON.stringify(quiet.map((m) => [m.ruleId, m.message])),
++  );
++
++  const edges: readonly (Probe & { readonly prohibition: string | null })[] = [
++    { prohibition: null, file: "indicators/catalog.test.ts", code: 'export type { D } from "./contract.ts";\n' },
++    // still P3: only catalog.ts itself may reach into an indicator folder
++    { prohibition: "P3", file: "indicators/catalog.test.ts", code: 'export { d } from "./oi/definition.ts";\n' },
++    // still P2: the core may not import anything under indicators/, root files included
++    { prohibition: "P2", file: "chart/host/probe.ts", code: 'export { c } from "../../indicators/catalog.test.ts";\n' },
++    // W3: an indicator reaching the root — as a directory or as a root file — is P1
++    { prohibition: "P1", file: "indicators/oi/probe.ts", code: 'export { c } from "..";\n' },
++    { prohibition: "P1", file: "indicators/oi/probe.ts", code: 'export { c } from "../";\n' },
++    { prohibition: "P1", file: "indicators/oi/probe.ts", code: 'export { c } from "../index.ts";\n' },
++  ];
++  for (const probe of edges) {
++    const messages = await lintProbe(probe);
++    assert.deepEqual(
++      isolationHits(messages),
++      probe.prohibition === null ? [] : [probe.prohibition],
++      `${probe.file}: ${JSON.stringify(probe.code)} — expected ${probe.prohibition ?? "no report"}`,
++    );
++  }
++});

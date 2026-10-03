@@ -1,0 +1,679 @@
+# Doc de tasks de `estrutura-do-front` — o DADO DE MAQUINA da quebra.
+#
+# A narrativa e o racional vivem em `gates/TECH-LEAD-narrativa.md`. Este arquivo nao
+# argumenta, e aquele nao e lido por maquina. A chave da feature e o campo `feature`
+# ABAIXO, nunca o nome do diretorio.
+#
+# ── A FASE E REFATORACAO SEM MUDANCA VISIVEL (SPEC-011 §7.1) ───────────────────────
+#   DoD-1 nao-regressao de dado: as specs 08–14 dentro do `make e2e`
+#   DoD-2 a tela e a mesma: `make e2e` inteiro verde E `git diff --name-status
+#         $BASE..HEAD -- frontend/e2e/` sem M nem D em spec que ja existia em $BASE
+#   DoD-3 ⛔ ABLACAO: cada task nomeia a mutacao que tem de reprovar o criterio dela
+#   DoD-4 `make verify` verde, com run_in_background
+#   DoD-5 na PR: `wc -l SymbolClient.tsx`, B (SPEC-011 §7.4) e, de F1 a F8, N_fact
+#
+# ── O QUE TODA TASK DECLARA EM `refs` ─────────────────────────────────────────────
+#   agente:   frontend-builder (by_component.web.builder; charts nao declara builder)
+#   e2e:      o portao DoD-2 + as specs que medem primeiro na fase
+#   numstat:  `git diff --numstat $BASE..HEAD -- frontend/` gravado no relatorio e na
+#             PR, com o que se espera dele
+#   ablacao:  a mutacao que tem de reprovar
+#   G-2:      de F1 a F9 (dependencia de OUTRA feature; nao cabe em depends_on)
+#   $BASE = `git merge-base HEAD origin/master` no inicio da task.
+#
+# ── PARALELISMO ───────────────────────────────────────────────────────────────────
+# F0: as 3 em paralelo. F1–F4: serie. F5, F6, F7, F8: quatro cadeias paralelas, NO
+# MAXIMO 3 TASKS SIMULTANEAS; a C8 e a unica que edita chart/**. F9: T-09.4 corre ao
+# lado de T-09.2/T-09.3. Wave = fase, exceto F5–F8, que sao UMA wave.
+#
+# ── APROVACAO ─────────────────────────────────────────────────────────────────────
+# AINDA NAO APROVADO. A narrativa aguarda o owner; o ledger nao tem `approve tasks`.
+#
+# ── TRACKER ───────────────────────────────────────────────────────────────────────
+# `harness policy --key tracker` -> {kind=jira, project=CST, board_id=36,
+# parent_kind=Epic, child_kind=Tarefa} [MEDIDO 2026-10-02]. NENHUMA task tem `tracker`
+# nem `local_only`, de proposito: card so nasce depois da aprovacao da narrativa, e
+# ninguem decidiu NAO cardar. Sinal ambar consciente, ver `untracked_note`.
+
+schema_version = "1"
+feature = "estrutura-do-front"
+spec = "docs/specs/SPEC-011-estrutura-do-front.md"
+plan = "docs/plans/SPEC-011-estrutura-do-front"
+review = "docs/context/estrutura-do-front/gates/TECH-LEAD-narrativa.md"
+untracked_note = "2026-10-02: as 32 tasks estao SEM card e SEM local_only. Nao e decisao de nao cardar: a narrativa (gates/TECH-LEAD-narrativa.md) aguarda o owner, e card no Jira (CST, board 36) so nasce depois do `approve tasks`. Plano: 10 Epics (um por fase, F0–F9) e 32 Tarefas filhas, com `tracker` inline em cada task. Quem carda: o /tech-lead depois da aprovacao, ou o orquestrador se o conector Atlassian estiver fora (cadastro manual registrado aqui, com data)."
+
+# ══ FASE 00 — os trilhos antes do movimento (pode correr JA) ═════════════════════
+
+[[tasks]]
+id = "T-00.1"
+title = "[web] 00 · Contrato de indicador (contract.ts, so tipos) e os tipos que o nucleo consome, em chart/host/ e chart/history/"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-10-03T13:25:05Z @ d54e59bede2fa872776722e473b35ef56935045a
+phase = "00"
+depends_on = []
+refs = [
+    "plano 00 itens 0.1 e 0.1b",
+    "SPEC-011 §3, §4.1, §4.2, §4.3 · RF-1 · G-R · E-4",
+    "agente: frontend-builder",
+    "ESCOPO: arquivos NOVOS, so tipos: frontend/src/app/symbol/indicators/contract.ts (IndicatorDefinition generico em K extends string, Placement, DataSource, OverlayBandRequest); o binding em app/symbol/chart/host/ e o requisito de serie em app/symbol/chart/history/. contract.ts reusa os dois. NAO enumera kind (E-4: a uniao nasce do catalogo, na F9).",
+    "FRONTEIRA: nenhum dos 47 arquivos de frontend/ da wave/paineis-f05, nem frontend/README.md (G-M).",
+    "DoD: `make lint-frontend` e typecheck verdes; um teste de tipo (fonte em memoria ou `satisfies`) prova que um IndicatorDefinition<'x'> sintetico compila sem tocar contract.ts.",
+    "ablacao: enumerar kind como uniao literal em contract.ts => o indicador sintetico 'x' deixa de compilar => o teste reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify` E `git diff --name-status $BASE..HEAD -- frontend/e2e/` vazio (a fase nao toca e2e).",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` lista SO arquivos novos (coluna de remocao 0 em todas as linhas); `git diff --name-only $BASE..HEAD | grep -xFf <(git diff --name-only master...wave/paineis-f05)` vazio (DoD 5 do plano 00).",
+    "paralelo: com T-00.2 e T-00.3 (arquivos disjuntos).",
+]
+
+[[tasks]]
+id = "T-00.2"
+title = "[web] 00 · Regra local/indicator-isolation (P1, P2, P3) em eslint-rules/, com as 9 sondas e a sonda do barrel no teste da regra"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-10-03T13:25:05Z @ d54e59bede2fa872776722e473b35ef56935045a
+phase = "00"
+depends_on = []
+refs = [
+    "plano 00 item 0.2 · DoD 1 e 2",
+    "SPEC-011 §5.2, §5.3 · RF-6 · RN-5 · CA-2 · CA-3 · CA-6 · G-A",
+    "agente: frontend-builder",
+    "ESCOPO: frontend/eslint-rules/indicator-isolation.mjs (nome livre, ingles) + ligacao em frontend/eslint.config.mjs SEM mexer nos blocos de no-restricted-imports existentes. Resolve o caminho de import, export ... from, import() e require. O docstring da regra documenta a tabela de §5.1.",
+    "DoD: teste de regra no padrao de use-client-fingerprint-boundary (fingerprint-sync-boundary.test.ts) roda o ESLint sobre as 9 sondas de §5.3 como fonte em memoria com nome de arquivo virtual: as 5 que mordem (P1 por import, import() e require; P2; P3) reprovam com local/indicator-isolation; as 4 que calam (as 3 da tabela e indicators/selection/probe.ts -> ../catalog.ts) passam. Mais a sonda indicators/cvd/probe-deep.ts -> ../../../../charts/s2-panels.ts reprovando por no-restricted-imports. As sondas sao PERMANENTES.",
+    "ablacao (as 4 tem de reprovar o teste): apagar o ramo de require => a sonda por require passa; tirar chart/** do escopo => a sonda de P2 cala; tirar a P3 => app/symbol/probe.ts cala; a regra nova substituir as opcoes do bloco de no-restricted-imports => a sonda do barrel cala. Resultado de cada mutacao no relatorio.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify` E `git diff --name-status $BASE..HEAD -- frontend/e2e/` vazio.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` lista so eslint-rules/ (novo), o teste novo e eslint.config.mjs (so adicoes; remocao 0); intersecao com os 47 da wave vazia (mesmo grep de T-00.1).",
+    "paralelo: com T-00.1 e T-00.3.",
+]
+
+[[tasks]]
+id = "T-00.3"
+title = "[web] 00 · Teste de diretorio de topo de frontend/src e os 2 varredores (bucket-arithmetic, data-fact) alargados para app/symbol/**"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-10-03T13:25:05Z @ d54e59bede2fa872776722e473b35ef56935045a
+phase = "00"
+depends_on = []
+refs = [
+    "plano 00 itens 0.3, 0.4, 0.5 · DoD 3 e 4",
+    "SPEC-011 §5.4, §5.5 · RF-7 · CA-4 · CA-9",
+    "agente: frontend-builder",
+    "ESCOPO: teste novo sob frontend/src/app/ (o glob de test:app e src/app/**/*.test.ts): os diretorios de frontend/src/ ⊆ {app, charts, components, features}, lista FIXA no teste. bucket-arithmetic-boundary.test.ts varre app/symbol/** com recursao, testes fora. data-fact-ascii-key-contract.test.ts le a arvore app/symbol/** sem testes.",
+    "DoD: a sonda plantada frontend/src/indicators/x.ts reprova o teste de topo e a arvore real passa; a linha `Math.floor(ms / step) * step` plantada em app/symbol/indicators/oi/probe.ts reprova o varredor; o data-fact da 47 sobre a arvore de hoje (N_fact). Sondas plantadas, medidas e APAGADAS antes do commit; o resultado vai para a PR.",
+    "ablacao: o teste de topo ler a lista do disco => a sonda cala => reprova; voltar o readdirSync sem recursao => `pass 5, fail 0` com a sonda presente => reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify` E `git diff --name-status $BASE..HEAD -- frontend/e2e/` vazio.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` lista so o teste novo e os 2 varredores; nenhum arquivo de producao; intersecao com os 47 da wave vazia.",
+    "paralelo: com T-00.1 e T-00.2.",
+]
+
+# ══ FASE 01 — o nucleo sai do arquivo (movimento como esta) ══════════════════════
+
+[[tasks]]
+id = "T-01.1"
+title = "[web] 01 · Condicao de entrada G-2 medida e numeros de base L0, N_spec, N_fact, B0 no commit-base da F1"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-00.1", "T-00.2", "T-00.3"]
+refs = [
+    "plano 01 item 1.0 · DoD 1",
+    "SPEC-011 §8 · G-I · G-K",
+    "G-2 (PRD-011) / G-K (SPEC-011 §9): so comeca com a PR da wave/paineis-f05 mergeada em origin/master E T-05.1, T-05.4, T-05.5 status=\"done\" no tasks.toml de paineis-de-fluxo em origin/master.",
+    "agente: frontend-builder",
+    "DoD: (1) `git merge-base --is-ancestor <head da wave mergeada> origin/master` rc=0 e o grep das 3 tasks done no tasks.toml de paineis-de-fluxo em origin/master, saidas no relatorio; (2) no commit-base (origin/master apos o merge): L0 = `wc -l frontend/src/app/symbol/SymbolClient.tsx`; N_spec = `ls frontend/e2e/*.spec.ts | wc -l`; N_fact = total do data-fact-ascii-key-contract.test.ts; B0 pela receita de SPEC-011 §7.4 (rm -rf .next && npx next build; maior chunk com data-fact; gzip -c | wc -c), n=2 builds. Grava em docs/context/estrutura-do-front/gates/F1-base.md com o sha.",
+    "ablacao: se a condicao (1) der rc=1, a task PARA e devolve BLOQUEADA, sem medir nada. Referencia de hoje: L0 4.490, N_spec 38, N_fact 47, B0 84.577 B em eda7520 (pre-wave; os valores mudam com o merge, e o numero que vale e o do commit-base).",
+    "e2e: nao altera codigo; `make e2e` no commit-base verde e o N_spec registrado (e o universo de DoD-2 das fases seguintes).",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` VAZIO (so muda docs/context/).",
+]
+
+[[tasks]]
+id = "T-01.2"
+title = "[web] 01 · Host, registrar, PaneLayer e pane-stack para app/symbol/chart/host/; axis-sync*, supported-timeframes e timeframe-window para chart/axis/"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.1"]
+refs = [
+    "plano 01 itens 1.1 (host e axis) e 1.3 · DoD 2–6",
+    "SPEC-011 §3, §7.2 · RF-2 · RN-6 · RN-12 · CA-1 · CA-8 · CA-9 · estudo §4.1",
+    "G-2: herda de T-01.1 (wave/paineis-f05 mergeada + T-05.1/.4/.5 done).",
+    "agente: frontend-builder",
+    "ESCOPO: MOVIMENTO COMO ESTA, nenhuma logica muda. Os testes que leem o fonte de um bloco movido mudam de caminho NESTA task e vao para a pasta do dono (RN-12).",
+    "DoD: CA-8 com a receita do estudo §5 (norm sem import/export, sort, diff) sobre base = arquivos em $BASE e fatia = os mesmos + os novos: diff VAZIO. local/indicator-isolation verde (nenhum chart/** importa indicators/**). N_fact igual ao da T-01.1.",
+    "ablacao: qualquer linha de logica alterada aparece no diff do multiconjunto => reprova; um data-fact perdido no movimento baixa N_fact => reprova.",
+    "e2e: `make e2e` inteiro (N_spec da T-01.1) verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24, 25, 16.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` gravado; cada arquivo novo de chart/host/ e chart/axis/ tem +N e SymbolClient.tsx (ou o arquivo de origem) o -N correspondente; soma de adicoes - soma de remocoes explicada linha a linha (so imports). Registra wc -l SymbolClient.tsx e B (|ΔB| > 1% pede explicacao).",
+]
+
+[[tasks]]
+id = "T-01.3"
+title = "[web] 01 · Legenda para chart/legend/, marcas de ausencia e cobertura para chart/marks/, pager e clientes de historia para chart/history/"
+components = ["web"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.2"]
+refs = [
+    "plano 01 itens 1.1 (legenda, marcas, historia) e 1.3 · DoD 2–6",
+    "SPEC-011 §3, §7.2 · RF-2 · RN-6 · RN-12 · CA-1 · CA-8 · CA-9",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: MOVIMENTO COMO ESTA. Os testes de fonte dos blocos movidos vao junto (RN-12; 10 dos testes de fonte sao do nucleo, estudo §6.2, somando T-01.2 e esta).",
+    "DoD: CA-8 diff VAZIO (receita do estudo §5); local/indicator-isolation verde; N_fact mantido.",
+    "ablacao: linha de logica alterada aparece no diff do multiconjunto; data-fact perdido baixa N_fact.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24, 25, 16.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` gravado; pares +N/-N por arquivo movido, diferenca explicada (so imports). Registra wc -l SymbolClient.tsx e B.",
+]
+
+[[tasks]]
+id = "T-01.4"
+title = "[web][docs] 01 · Chrome (TimeframeBar, LiveRow + useLiveReadout, ChromeModeStamp, rodape de atribuicao) para app/symbol/chrome/, e frontend/README.md com a arvore nova e a regra de isolamento"
+components = ["web", "docs"]
+status = "todo"
+phase = "01"
+depends_on = ["T-01.3"]
+refs = [
+    "plano 01 itens 1.2, 1.3, 1.4 · DoD 2–6",
+    "SPEC-011 §3, §7.2 · RF-2 · RN-6 · RN-11 · RN-12 · CA-1 · CA-8 · CA-9",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: chrome = MOVIMENTO COMO ESTA. README: a arvore de SPEC-011 §3 e a regra local/indicator-isolation (P1–P3), em portugues (tabela de fronteira, linha 7).",
+    "DoD: CA-8 diff VAZIO; local/indicator-isolation verde; N_fact mantido; o README cita o nome da regra e os 4 diretorios de topo.",
+    "ablacao: linha de logica alterada aparece no diff do multiconjunto; data-fact perdido baixa N_fact.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24, 25, 16.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` gravado; pares +N/-N do chrome, e frontend/README.md declarado a parte (so docs). Registra wc -l SymbolClient.tsx e B; fecha a fase com o delta frente a L0 e B0.",
+]
+
+# ══ FASE 02 — o registrar por chave, com unmount e refeed (declara o diff) ═══════
+
+[[tasks]]
+id = "T-02.1"
+title = "[web] 02 · Registrar chaveado por instanceKey, chave repetida desmonta a anterior, e unmount(chart, handles) obrigatorio no tipo"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-01.4"]
+refs = [
+    "plano 02 itens 2.1 e 2.3 · DoD 1, 4, 5",
+    "SPEC-011 §4.2 · RF-3 · CA-11 · CA-1",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: so chart/host/. Os 5 panes passam a registrar pela chave nova, com o mesmo resultado. NAO e fatia de movimento: declara o diff.",
+    "DoD: unitario CA-11 com grafico real sob jsdom (padrao de price-candle.test.ts): overlay SINTETICO declarado no teste, 5 ciclos de registrar/desregistrar => chart.panes()[0].getSeries().length igual ao inicial.",
+    "ablacao: unmount vazio => a contagem sobe 5 => reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24, 31, 32.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o DIFF DECLARADO: cada arquivo com +/- explicado na PR. Registra wc -l SymbolClient.tsx e B.",
+]
+
+[[tasks]]
+id = "T-02.2"
+title = "[web] 02 · paneIndex derivado no mount: 0 para overlay, 1 + a posicao entre os panes ativos na ordem de F1_PANE_ORDER"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.1"]
+refs = [
+    "plano 02 item 2.2 · DoD 2, 4, 5",
+    "SPEC-011 §4.2 · RF-3",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "DoD: unitario com 4 panes sinteticos, um fora do conjunto => indices 1, 2, 3 na ordem dada, independente da ordem de registro.",
+    "ablacao: indice por posicao de registro => registrar na ordem invertida inverte os indices => reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24, 31, 32.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado, explicado por arquivo. Registra wc -l SymbolClient.tsx e B.",
+]
+
+[[tasks]]
+id = "T-02.3"
+title = "[web] 02 · refeed(instanceKey) exposto pelo host: roda o apply daquela chave fora de pagina, pelo mesmo laco de setData"
+components = ["web"]
+status = "todo"
+phase = "02"
+depends_on = ["T-02.2"]
+refs = [
+    "plano 02 item 2.4 · DoD 3, 4, 5",
+    "SPEC-011 §4.2 · G-E · emenda E-1 da ADR-050",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "DoD: unitario com um indicador sintetico de indicator-endpoint: refeed(key) leva a serie dele ao setData do host UMA vez e nao toca as outras.",
+    "ablacao: refeed que reaplica todos => as outras series recebem setData => reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24, 31, 32.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado, explicado por arquivo. Registra wc -l SymbolClient.tsx e B.",
+]
+
+# ══ FASE 03 — o dado por tabela, e a caracterizacao SSR = pager ══════════════════
+
+[[tasks]]
+id = "T-03.1"
+title = "[web] 03 · ⛔ Caracterizacao SSR = pager para os 5 indicadores, antes de qualquer outra linha da fase"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-02.3"]
+refs = [
+    "plano 03 item 3.1 · DoD 1",
+    "SPEC-011 §7.3 · CA-10 · G-C · G-D · Q-8",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: SO teste novo. 5 casos, um por indicador: a derivacao de [symbol]/page.tsx e a de panel-assembly.ts, chamadas sobre as mesmas linhas, dao o mesmo resultado.",
+    "⛔ PORTAO: se algum caso der diferente, a fase PARA. E defeito de hoje, mudanca de comportamento fora do RN-9: o caso medido vai ao owner (Q-8, SPEC-011 §12) e T-03.2 em diante ficam bloqueadas.",
+    "ablacao: trocar a janela de uma das duas derivacoes no teste => o caso reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` lista SO o(s) arquivo(s) de teste novo(s), remocao 0.",
+]
+
+[[tasks]]
+id = "T-03.2"
+title = "[web] 03 · catalog.ts nasce como tabela (series pedidas + derive, apontando para onde o codigo esta hoje); page.tsx le dela; testes de regex de predicado viram teste de valor"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.1"]
+refs = [
+    "plano 03 itens 3.2 e 3.4 · DoD 3, 5, 6",
+    "SPEC-011 §3, §6.1 · RF-4 · RF-8 · RN-12",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: app/symbol/indicators/catalog.ts com uma entrada por indicador (as series que pede, o predicado que hoje esta em page.tsx, e a funcao que deriva, no lugar ATUAL). A derivacao ainda NAO e unificada (F4–F8 fazem isso). Declara o diff.",
+    "DoD: o teste de valor substitui o de regex: o predicado do OI casa a chave do catalogo e recusa as vizinhas (idem para os 5). T-03.1 continua verde.",
+    "ablacao: o predicado do OI aceitar a chave vizinha => o teste de valor reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 18, 20, 21, 22, 26, 39.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado, explicado por arquivo (catalog.ts novo, page.tsx, os testes trocados). Registra wc -l SymbolClient.tsx e B.",
+]
+
+[[tasks]]
+id = "T-03.3"
+title = "[web] 03 · Pager e panel-assembly recebem a tabela por parametro de SymbolClient, chaves e linhas viram Record por slot, e a spec nova conta 10 pedidos"
+components = ["web"]
+status = "todo"
+phase = "03"
+depends_on = ["T-03.2"]
+refs = [
+    "plano 03 itens 3.2b e 3.3 · DoD 2–6",
+    "SPEC-011 §3, §8 (D_3) · RF-4 · RN-7 · G-R · ADR-050/D5",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: chart/history/use-history-pager.ts e panel-assembly.ts recebem a tabela POR PARAMETRO; NENHUM arquivo de chart/** importa o catalogo (P2). As assercoes de forma de panel-assembly.test.ts mudam e a PR declara isso (estudo §6.2).",
+    "DoD: spec NOVA de e2e conta os pedidos de historia por pagina com page.on('request') => 10; local/indicator-isolation verde; D_3 (o grep do estudo §1.3) registrado na PR.",
+    "ablacao: a tabela esquecer uma serie => 9 pedidos => a spec nova reprova; o pager importar o catalogo => P2 reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify` COM a spec nova (A, nao M, no name-status), sem M/D em spec antiga. Medem primeiro: 18, 20, 21, 22, 26, 39.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado, explicado por arquivo (inclui a mudanca de forma em panel-assembly.test.ts). Registra wc -l SymbolClient.tsx e B.",
+]
+
+# ══ FASE 04 — o CVD como piloto do molde ═════════════════════════════════════════
+
+[[tasks]]
+id = "T-04.1"
+title = "[web] 04 · Os genericos compartilhados sobem ao nucleo antes da fan-out: VolumeSlot e formatSpan (movimento)"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-03.3"]
+refs = [
+    "D-TL-1 da narrativa: antecipa plano 07 item 7.2 (formatSpan) e a parte de tipo do plano 08 item 8.4 (VolumeSlot), para nao haver corrida entre F5 e F7 nem um segundo editor de chart/** na fan-out",
+    "SPEC-011 §3 · RN-5 · CA-8",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: MOVIMENTO. VolumeSlot (hoje SymbolClient.tsx:213, tipo generico) e formatSpan (hoje SymbolClient.tsx:2234) para o nucleo (chart/legend/ ou chart/host/, decisao do builder dentro de SPEC-011 §3). Se a F1 ja levou formatSpan com a legenda, registra e fecha so com VolumeSlot. Inventaria qualquer outro helper usado por 2+ indicadores e o lista no relatorio (move so os dois nomeados; o resto vai ao orquestrador).",
+    "DoD: CA-8 diff VAZIO; local/indicator-isolation verde; `grep -n 'VolumeSlot\\b\\|function formatSpan' frontend/src/app/symbol/SymbolClient.tsx` sem definicao.",
+    "ablacao: deixar VolumeSlot em SymbolClient.tsx => a T-04.2 nao consegue importa-lo sem P3 (o relatorio registra a sonda que prova isso).",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: as da F4 (10, 23, 24, 35) e as do long/short (14, 21), que le formatSpan [INFERRED: escolha do tech-lead a partir das listas por indicador dos planos 04 e 07; o estudo §5 nao lista esta task].",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` com pares +N/-N; diferenca so de imports. Registra wc -l SymbolClient.tsx, B e N_fact.",
+]
+
+[[tasks]]
+id = "T-04.2"
+title = "[web] 04 · CVD para app/symbol/indicators/cvd/: pane, constantes, data.ts, derive (a copia de panel-assembly) e os testes do CVD (movimento)"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.1"]
+refs = [
+    "plano 04 itens 4.1 e 4.4 · DoD 1, 3, 4",
+    "SPEC-011 §7.2 · RF-5 · RN-6 · RN-12 · CA-2 · CA-8 · CA-9",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: MOVIMENTO COMO ESTA, e fixa o molde que F5–F8 repetem. O teste que le o fonte do pane do CVD (1, estudo §6.2) passa a ler o arquivo novo.",
+    "DoD: CA-8 com o universo de SPEC-011 §7.2 (definition.ts e page.tsx fora): diff VAZIO. CA-2: a sonda P1 de §5.3 plantada em indicators/cvd/ reprova (resultado na PR, sonda apagada). N_fact mantido.",
+    "ablacao: linha de logica alterada aparece no diff; data-fact perdido baixa N_fact.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 10, 23, 24, 35.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` com pares +N/-N (SymbolClient.tsx, view-model.ts, panel-assembly.ts -> indicators/cvd/); diferenca so de imports. Registra wc -l SymbolClient.tsx, B (|ΔB| > 1% pede explicacao) e N_fact.",
+]
+
+[[tasks]]
+id = "T-04.3"
+title = "[web] 04 · definition.ts do CVD e derive unico: a copia em page.tsx sai e a entrada do CVD em catalog.ts importa ./cvd/definition"
+components = ["web"]
+status = "todo"
+phase = "04"
+depends_on = ["T-04.2"]
+refs = [
+    "plano 04 itens 4.2 e 4.3 · DoD 2, 4, 5",
+    "SPEC-011 §4.1, §7.3 · RF-5 · RN-7 · CA-10",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: definition.ts (kind: \"cvd\", category: \"indicator\", cardinality: \"single\", placement: pane, data: series-history). A entrada do CVD em catalog.ts vira 1 linha de import; page.tsx e o pager chamam o derive da pasta pela tabela. Declara o diff (definition.ts e page.tsx).",
+    "DoD: unitario CA-10: o derive do CVD da o mesmo resultado chamado como SSR e como pager. O grep global do estudo §1.3 NAO sobe frente a D_3.",
+    "ablacao: reintroduzir a derivacao do CVD em page.tsx => o grep sobe => reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 10, 23, 24, 35.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado: definition.ts novo, page.tsx so com remocao do derive + chamada pela tabela, catalog.ts 1 linha. Registra wc -l SymbolClient.tsx, B, N_fact e o grep global.",
+]
+
+# ══ FASE 05 — o OI na pasta dele (cadeia C5 da fan-out) ══════════════════════════
+
+[[tasks]]
+id = "T-05.1"
+title = "[web] 05 · OI para app/symbol/indicators/oi/: pane, oi-candle-pane, oi-regime-*, data.ts, derive e os testes (movimento)"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-04.3"]
+refs = [
+    "plano 05 itens 5.1 e 5.4 · DoD 1–4",
+    "SPEC-011 §7.2 · RF-5 · RN-6 · RN-12 · CA-2 · CA-8 · CA-9",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: o molde da T-04.2 aplicado ao OI. Os 3 testes que leem o fonte do pane do OI (estudo §6.2) passam a ler o arquivo novo. NAO toca chart/** (o formatSpan ja subiu na T-04.1).",
+    "DoD: CA-8 diff VAZIO; CA-2 com a sonda P1 em indicators/oi/; N_fact mantido; ?e2eOiLine=1 e ?e2eOiRegimeMarks=0 continuam mudando o que as specs 36 e 37 medem.",
+    "ablacao: a leitura do parametro de ablacao se perder no movimento => o braco de ablacao da 36/37 desenha o normal => a spec reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 12, 19, 36, 37, 38.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` com pares +N/-N; diferenca so de imports. Registra wc -l SymbolClient.tsx, B e N_fact.",
+    "paralelo: cadeia C5, paralela a C6, C7 e C8; NO MAXIMO 3 tasks simultaneas na fan-out. Conflito esperado: blocos disjuntos de SymbolClient.tsx.",
+]
+
+[[tasks]]
+id = "T-05.2"
+title = "[web] 05 · definition.ts do OI e derive unico: a copia em page.tsx sai e a entrada do OI em catalog.ts importa ./oi/definition"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.1"]
+refs = [
+    "plano 05 itens 5.2 e 5.3 · DoD 1, 3, 4",
+    "SPEC-011 §4.1, §7.3 · RF-5 · RN-7 · CA-10",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: definition.ts (kind: \"oi\", single, pane, series-history). Declara o diff (definition.ts, page.tsx, 1 linha em catalog.ts).",
+    "DoD: unitario CA-10 (mesmo resultado como SSR e como pager); o grep global NAO sobe frente a fatia anterior mergeada.",
+    "ablacao: reintroduzir a derivacao do OI em page.tsx => o grep sobe => reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 12, 19, 36, 37, 38.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado. Registra wc -l SymbolClient.tsx, B, N_fact e o grep global.",
+    "paralelo: cadeia C5. Conflito esperado: 1 linha em catalog.ts com as irmas, que o git funde.",
+]
+
+# ══ FASE 06 — a liquidacao na pasta dela (cadeia C6) ═════════════════════════════
+
+[[tasks]]
+id = "T-06.1"
+title = "[web] 06 · Liquidacao para app/symbol/indicators/liquidation/: pane, liquidation-pane-form, liquidation-legend-swatch, data.ts, derive (long e short) e os testes (movimento)"
+components = ["web"]
+status = "todo"
+phase = "06"
+depends_on = ["T-04.3"]
+refs = [
+    "plano 06 itens 6.1 e 6.4 · DoD 1–4",
+    "SPEC-011 §7.2 · RF-5 · RN-6 · RN-12 · CA-2 · CA-8 · CA-9",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: o molde da T-04.2. Os 2 testes que leem o fonte do pane (estudo §6.2) passam a ler o arquivo novo. NAO toca chart/**.",
+    "DoD: CA-8 diff VAZIO; CA-2 com a sonda P1 em indicators/liquidation/; N_fact mantido; ?e2eSwapLiquidationSides=1 e ?e2eLiquidationLogScale=1 continuam mudando o que as specs 31–34 medem.",
+    "ablacao: a leitura do parametro se perder => o braco de ablacao desenha o normal => a spec reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 13, 31, 32, 33, 34, 35.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` com pares +N/-N; diferenca so de imports. Registra wc -l SymbolClient.tsx, B e N_fact.",
+    "paralelo: cadeia C6, paralela a C5, C7 e C8; NO MAXIMO 3 tasks simultaneas.",
+]
+
+[[tasks]]
+id = "T-06.2"
+title = "[web] 06 · definition.ts da liquidacao (2 series) e derive unico: a copia em page.tsx sai e a entrada em catalog.ts importa ./liquidation/definition"
+components = ["web"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1"]
+refs = [
+    "plano 06 itens 6.2 e 6.3 · DoD 1, 3, 4",
+    "SPEC-011 §4.1, §7.3 · RF-5 · RN-7 · CA-10",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: definition.ts (kind: \"liquidation\", single, pane, series-history com 2 series). Declara o diff.",
+    "DoD: unitario CA-10 para as 2 series; o grep global NAO sobe.",
+    "ablacao: reintroduzir a derivacao da liquidacao em page.tsx => o grep sobe => reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 13, 31, 32, 33, 34, 35.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado. Registra wc -l SymbolClient.tsx, B, N_fact e o grep global.",
+    "paralelo: cadeia C6.",
+]
+
+# ══ FASE 07 — o long/short na pasta dele (cadeia C7) ═════════════════════════════
+
+[[tasks]]
+id = "T-07.1"
+title = "[web] 07 · Long/short para app/symbol/indicators/long-short/: pane, long-short-band, ratio-format, data.ts, derive e os testes (movimento)"
+components = ["web"]
+status = "todo"
+phase = "07"
+depends_on = ["T-04.3"]
+refs = [
+    "plano 07 itens 7.1, 7.2 (so reapontar: a subida de formatSpan foi na T-04.1, D-TL-1) e 7.4 (testes) · DoD 1–4",
+    "SPEC-011 §7.2 · RF-5 · RN-5 · RN-6 · RN-12 · CA-2 · CA-8 · CA-9",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: a pasta e long-short/, e o kind sera long_short (chave de data-testid, estudo §4.1). formatSpan vem do nucleo, NUNCA de ../oi/. Os 2 testes de fonte do pane passam a ler o arquivo novo. NAO toca chart/**.",
+    "DoD: CA-8 diff VAZIO; CA-2 com a sonda P1 em indicators/long-short/; local/indicator-isolation verde com long-short/ e oi/ presentes; N_fact mantido.",
+    "ablacao: importar formatSpan de ../oi/ => P1 reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 14, 21, 35.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` com pares +N/-N; diferenca so de imports. Registra wc -l SymbolClient.tsx, B e N_fact.",
+    "paralelo: cadeia C7, paralela a C5, C6 e C8; NO MAXIMO 3 tasks simultaneas (recomendacao: C7 entra quando a primeira das outras fechar).",
+]
+
+[[tasks]]
+id = "T-07.2"
+title = "[web] 07 · definition.ts do long/short (kind long_short) e derive unico: a copia em page.tsx sai e a entrada em catalog.ts importa ./long-short/definition"
+components = ["web"]
+status = "todo"
+phase = "07"
+depends_on = ["T-07.1"]
+refs = [
+    "plano 07 itens 7.3 e 7.4 · DoD 1, 3, 4",
+    "SPEC-011 §4.1, §7.3 · RF-5 · RN-7 · CA-10",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: definition.ts (kind: \"long_short\", single, pane, series-history). Declara o diff.",
+    "DoD: unitario CA-10; o grep global NAO sobe.",
+    "ablacao: reintroduzir a derivacao do long/short em page.tsx => o grep sobe => reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 14, 21, 35.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado. Registra wc -l SymbolClient.tsx, B, N_fact e o grep global.",
+    "paralelo: cadeia C7.",
+]
+
+# ══ FASE 08 — o volume vira overlay do preco (cadeia C8, unico editor de chart/**) ═
+
+[[tasks]]
+id = "T-08.1"
+title = "[charts] 08 · pane-stack-layout: a margem de escala do pane 0 recebe a soma dos pedidos de faixa, exportada pelo barrel charts/index.ts"
+components = ["charts"]
+status = "todo"
+phase = "08"
+depends_on = ["T-04.3"]
+refs = [
+    "plano 08 item 8.1 · DoD 1",
+    "SPEC-011 §4.3 · RF-12 · ADR-003/FR-2 · D-TL-2 da narrativa (componente charts)",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder (by_component.charts nao declara builder; o arquivo e frontend/src/charts/). design_gate de charts: docs/gate-de-design.md, aqui como nao-regressao (tela identica).",
+    "ESCOPO: so frontend/src/charts/pane-stack-layout.ts, o teste dele e 1 linha de export em charts/index.ts (o item 1.6 de indicadores-smc tambem toca o barrel; conflito de 1 linha, SPEC-011 §9). Declara o diff.",
+    "DoD: unitario em charts: a soma vazia da a margem de um pane sem reserva; o pedido do volume da EXATAMENTE a margem de hoje.",
+    "ablacao: somar em vez de usar o pedido (ou ignorar o pedido) => a margem muda => reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 09, 15, 28, 29, 30, 08.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado (pane-stack-layout.ts, o teste, charts/index.ts +1). Registra wc -l SymbolClient.tsx, B e N_fact.",
+    "paralelo: cadeia C8, paralela a C5, C6, C7; NO MAXIMO 3 tasks simultaneas. Recomendacao: C8 primeiro (caminho critico, 4 tasks).",
+]
+
+[[tasks]]
+id = "T-08.2"
+title = "[web] 08 · PricePane e ohlc.ts para app/symbol/chart/price/; o pane 0 soma os pedidos dos overlays ativos e nao calcula margem"
+components = ["web"]
+status = "todo"
+phase = "08"
+depends_on = ["T-08.1"]
+refs = [
+    "plano 08 item 8.2 · DoD 5, 6",
+    "SPEC-011 §3, §4.3 · RF-12",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: edita chart/** (unico editor na fan-out). O movimento de PricePane/ohlc.ts e o troco da margem pela soma de pedidos vao em COMMITS separados, para o CA-8 do movimento ser legivel; a PR declara o diff do segundo.",
+    "DoD: CA-8 diff VAZIO no commit de movimento; com o volume ainda no binding, a margem do pane 0 e a de hoje (o unitario da T-08.1 continua verde).",
+    "ablacao: o pane 0 calcular a margem por conta propria => o unitario de geometria nao e exercitado e o e2e 09/15 detecta a vela invadindo a faixa.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 09, 15, 28, 29, 30, 08.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` por commit: pares +N/-N no movimento, diff declarado no segundo. Registra wc -l SymbolClient.tsx, B e N_fact.",
+    "paralelo: cadeia C8.",
+]
+
+[[tasks]]
+id = "T-08.3"
+title = "[web] 08 · app/symbol/indicators/volume/: VolumeOverlay.tsx, data.ts, derive, definition.ts (placement overlay com o pedido de faixa de hoje) e os testes do volume"
+components = ["web"]
+status = "todo"
+phase = "08"
+depends_on = ["T-08.2"]
+refs = [
+    "plano 08 item 8.3",
+    "SPEC-011 §4.1, §4.3 · RF-5",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: a pasta do volume (os 5 testes que leem o fonte, estudo §6.2, passam a ler o arquivo novo). definition.ts: kind \"volume\", single, placement overlay com o OverlayBandRequest de hoje. O volume AINDA entra pelo binding do PricePane (a troca e a T-08.4).",
+    "DoD: CA-8 diff VAZIO sobre os arquivos movidos (definition.ts fora); N_fact mantido; o pedido de faixa em definition.ts e igual ao numero que a T-08.1 fixou no unitario.",
+    "ablacao: um pedido de faixa diferente do de hoje em definition.ts => o unitario que compara com a T-08.1 reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 09, 15, 28, 29, 30, 08.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` com pares +N/-N do movimento e definition.ts declarado a parte. Registra wc -l SymbolClient.tsx, B e N_fact.",
+    "paralelo: cadeia C8.",
+]
+
+[[tasks]]
+id = "T-08.4"
+title = "[web] 08 · O volume sai do binding do PricePane e entra pelo registrar como overlay; catalog.ts importa ./volume/definition; CA-11 com volume, CA-10 global = 0 e CA-15"
+components = ["web"]
+status = "todo"
+phase = "08"
+depends_on = ["T-08.3"]
+refs = [
+    "plano 08 item 8.4 · DoD 2, 3, 4, 5, 6",
+    "SPEC-011 §7.3, §7.4 · RF-12 · RN-5 · CA-10 · CA-11 · CA-15",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: VolumeSlot ja mora no nucleo (T-04.1); aqui so se VERIFICA que nenhum indicador o importa de outro indicador. Declara o diff.",
+    "DoD: (a) CA-11: o unitario da T-02.1, agora com o VolumeOverlay: 5 ciclos deixam panes()[0].getSeries().length no inicial; (b) CA-10 global: o grep do estudo §1.3 da 0 linha comum entre page.tsx e panel-assembly.ts; (c) CA-15: B <= B0 x 1,04 (B0 da T-01.1).",
+    "ablacao: unmount do VolumeOverlay vazio => (a) sobe 5; deixar 1 derive duplicado em page.tsx => (b) > 0; ambos reprovam.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 09, 15, 28, 29, 30, 08.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado. Registra wc -l SymbolClient.tsx, B (contra o teto), N_fact e o grep global = 0.",
+    "paralelo: cadeia C8; fecha a fan-out junto das cadeias C5–C7.",
+]
+
+# ══ FASE 09 — a selecao: o host monta o que o catalogo e a selecao ativam ════════
+
+[[tasks]]
+id = "T-09.1"
+title = "[web] 09 · catalog.ts completo: INDICATOR_CATALOG na ordem de SPEC-011 §6.1, IndicatorKind derivado dele, absorve F1_PANE_ORDER e as invariantes (i)–(v) de pane-registry.ts"
+components = ["web"]
+status = "todo"
+phase = "09"
+depends_on = ["T-05.2", "T-06.2", "T-07.2", "T-08.4"]
+refs = [
+    "plano 09 item 9.1 · DoD 6(a)",
+    "SPEC-011 §4.1, §6.1 · RF-8 · RN-2 · E-4 · G-P",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: a uniao IndicatorKind nasce do catalogo, NAO de contract.ts. Declara o diff.",
+    "DoD: CA-7(a): unitario com um IndicatorDefinition sintetico num catalogo de teste, montado e desmontado pelo host; as invariantes (i)–(v) migradas viram teste sobre o catalogo.",
+    "ablacao: um switch sobre kind no host => (a) reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado. Registra wc -l SymbolClient.tsx e B.",
+]
+
+[[tasks]]
+id = "T-09.2"
+title = "[web] 09 · indicators/selection/: reducer puro (add, remove, reset e as recusas de §6.2) e o provider, com os 5 no seed"
+components = ["web"]
+status = "todo"
+phase = "09"
+depends_on = ["T-09.1"]
+refs = [
+    "plano 09 item 9.2 · DoD 1",
+    "SPEC-011 §4.4, §6.2 · RF-9 · RN-1 · RN-3 · RN-4 · CA-13 · O-1 (os 5 ligados)",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "DoD: CA-13: o estado inicial tem as 5 instancias na ordem do catalogo; as recusas de §6.2 devolvem a MESMA referencia; lista vazia e valida (RN-1).",
+    "ablacao: tirar um do seed => o unitario reprova (e o e2e/23 tambem, quando a T-09.3 ligar o provider).",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` lista so arquivos novos de indicators/selection/ e o teste.",
+    "paralelo: com T-09.4 (D-TL-4).",
+]
+
+[[tasks]]
+id = "T-09.3"
+title = "[web] 09 · app/symbol/layout.tsx monta o provider acima do key; SymbolClient compoe chrome, host e active.map(View) com <ChartHost key={paneSetSignature(active)}>"
+components = ["web"]
+status = "todo"
+phase = "09"
+depends_on = ["T-09.2"]
+refs = [
+    "plano 09 itens 9.3 e 9.4 · DoD 7 (CA-5)",
+    "SPEC-011 §4.5, §6.5 · RF-9 · RF-10 · CA-5",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: a primeira layout do segmento. O pager continua recebendo o CATALOGO INTEIRO, nao o ativo (§6.5). Declara o diff.",
+    "DoD: CA-5: `wc -l frontend/src/app/symbol/SymbolClient.tsx` <= 350. Tela identica com a selecao padrao (os 5).",
+    "ablacao: o provider montado ABAIXO do key => a selecao zera a cada remonte (o e2e da T-09.5 prova); o pager receber o ativo => §6.5 da T-09.5 reprova.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado. Registra wc -l SymbolClient.tsx (contra 350) e B.",
+]
+
+[[tasks]]
+id = "T-09.4"
+title = "[web] 09 · Mount do host: initialLogicalRange so no primeiro mount de um AxisSyncStore e currentRange nos seguintes; data-host-mount-ms e data-pane0-series-count"
+components = ["web"]
+status = "todo"
+phase = "09"
+depends_on = ["T-09.1"]
+refs = [
+    "plano 09 item 9.5 · DoD 7 (RNF-5)",
+    "SPEC-011 §6.3 · RN-10 · RNF-5 · Q-5 (so mede, sem limiar)",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: chart/host/. performance.mark em volta do mount, publicado em data-host-mount-ms; data-pane0-series-count na raiz do host. Declara o diff.",
+    "DoD: unitario: segundo mount no mesmo AxisSyncStore aplica currentRange, nao initialLogicalRange; os dois atributos existem no DOM do host.",
+    "ablacao: o mount aplicar sempre initialLogicalRange => o unitario reprova (e o CA-12 da T-09.5).",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado. Registra wc -l SymbolClient.tsx e B.",
+    "paralelo: com T-09.2 e T-09.3 (D-TL-4).",
+]
+
+[[tasks]]
+id = "T-09.5"
+title = "[web] 09 · Handle de e2e (window.__e2eIndicatorSelection, so com ?e2eIndicatorSelection=1) e a spec nova: CA-12, §6.5 e CA-11 real"
+components = ["web"]
+status = "todo"
+phase = "09"
+depends_on = ["T-09.3", "T-09.4"]
+refs = [
+    "plano 09 item 9.6 · DoD 2, 3, 4, 5",
+    "SPEC-011 §6.4, §6.5 · Q-1 · CA-11 · CA-12",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "ESCOPO: indicators/selection/e2e-handle.ts + spec NOVA de e2e. Nenhuma spec existente e editada.",
+    "DoD: (1) CA-12: arrastar a vista; remove(\"oi\") => [data-pane-legend] de 5 para 4; add(\"oi\") => 5, na ordem do e2e/23; data-visible-logical-from/-to a ±1 barra do valor antes de tirar. (2) §6.5: com o OI fora, uma pagina de historia faz 10 pedidos; religar o OI mostra pontos na janela carregada SEM pedido novo. (3) CA-11 real: 5 ciclos de remove(\"volume\")/add(\"volume\") => data-pane0-series-count no inicial. (4) sem o parametro, window.__e2eIndicatorSelection === undefined; add(\"oi\") com o OI ativo devolve false.",
+    "ablacao: mount sempre com initialLogicalRange => (1) reprova; filtrar o pager pela selecao => (2) o OI religado volta sem pontos; unmount do volume vazio => (3) sobe. Cada mutacao rodada e o resultado no relatorio.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify` COM a spec nova (A no name-status), sem M/D em spec antiga.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado (e2e-handle.ts, a spec nova, o fio no provider). Registra wc -l SymbolClient.tsx e B.",
+]
+
+[[tasks]]
+id = "T-09.6"
+title = "[web] 09 · Fechamento: ensaio CA-7(b) numa branch descartavel e os numeros finais CA-5, CA-15 e RNF-5 na PR"
+components = ["web"]
+status = "todo"
+phase = "09"
+depends_on = ["T-09.5"]
+refs = [
+    "plano 09 DoD 6(b), 7, 8, 9",
+    "SPEC-011 §7.4, §7.5 · CA-5 · CA-7 · CA-15 · RNF-5",
+    "G-2: herda de T-01.1.",
+    "agente: frontend-builder",
+    "DoD: (b) numa branch descartavel (NUNCA mergeada): indicators/probe/ + 1 linha em catalog.ts => `git diff --name-only` lista SO esses dois caminhos, e `make lint-frontend` e `make test-frontend` verdes. wc -l SymbolClient.tsx <= 350; B <= B0 x 1,04; data-host-mount-ms gravado na PR sem limiar (Q-5). Relatorio em docs/context/estrutura-do-front/gates/F9-fechamento.md.",
+    "ablacao: IndicatorKind enumerado em contract.ts => o ensaio lista contract.ts => reprova. Falsificador do teto (§7.4): B > +4% com o diff todo explicado por codigo de §4 => volta ao /architect, nao se ajusta o numero.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga, sobre a arvore da wave (nao a do ensaio).",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` da wave F9 inteira gravado no relatorio, e o numstat do ensaio (2 caminhos) a parte.",
+]

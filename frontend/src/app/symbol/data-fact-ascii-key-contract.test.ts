@@ -31,12 +31,39 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const rawSource = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
+
+/**
+ * The universe is the WHOLE `src/app/symbol/**` tree, tests excluded — since `SPEC-011` §5.5
+ * (`estrutura-do-front` `T-00.3`, `CA-9`). It used to be `SymbolClient.tsx` alone, which was the
+ * whole page while every pane lived in that one file. `SPEC-011` moves the panes out, into
+ * `chart/` and `indicators/<kind>/`; a scan pinned to one file name would then lose each moved
+ * pane's facts and keep passing on whatever stayed behind. Reading the tree means a moved
+ * `data-fact` keeps being counted wherever it lands, and a NEW one in a subfolder moves the count.
+ *
+ * Measured over this tree at the commit that widened it: still `47`, all of them in
+ * `SymbolClient.tsx` — the other production modules only quote `data-fact` inside comments,
+ * which the stripper removes [MEDIDO 2026-10-02, `docs/context/estrutura-do-front/gates/T-00.3-build.md`].
+ * Tests are excluded because they quote `data-fact` literals as fixtures.
+ */
+function productionFiles(): readonly string[] {
+  return readdirSync(HERE, { recursive: true, encoding: "utf8" })
+    .map((file) => file.split(path.sep).join("/"))
+    .filter((file) => (file.endsWith(".ts") || file.endsWith(".tsx")) && !file.includes(".test."))
+    .sort();
+}
+
+const PRODUCTION_FILES = productionFiles();
+
+/** Each file is comment-stripped ON ITS OWN before the files are joined, so a block comment can
+ * never be "closed" by text from the next file. The joined text is what every test below scans. */
+const rawSource = PRODUCTION_FILES.map((file) => stripComments(readFileSync(path.join(HERE, file), "utf8"))).join(
+  "\n",
+);
 
 /** Same crude stripper `price-pane-dom-contract.test.ts`/`cvd-pane-dom-contract.test.ts` use, and
  * for the identical reason here: the docstrings above `LiveRow` and `OiProvenance` quote the
@@ -81,6 +108,18 @@ function isAsciiPrintable(text: string): boolean {
 }
 
 // ── 1. THE EXTRACTOR ITSELF IS PROVEN LIVE, NOT SILENTLY BLIND ───────────────────────────────
+
+test("sanity: the universe is the tree, not one file — the walk reaches a subdirectory", () => {
+  // A count can stay at 47 while the walk silently goes flat again (every fact lives in
+  // `SymbolClient.tsx` today). `[symbol]/page.tsx` is the production module below `HERE`; if
+  // it leaves the universe, the scan stopped descending and this is what goes red.
+  assert.ok(PRODUCTION_FILES.includes("SymbolClient.tsx"), "SymbolClient.tsx left the universe");
+  assert.ok(
+    PRODUCTION_FILES.includes("[symbol]/page.tsx"),
+    `the scan no longer reaches subdirectories: ${JSON.stringify(PRODUCTION_FILES)}`,
+  );
+  assert.ok(PRODUCTION_FILES.every((file) => !file.includes(".test.")), "a test file entered the universe");
+});
 
 test("sanity: the scan finds the measured universe of data-fact expressions, not zero", () => {
   const expressions = extractDataFactExpressions(rawSource);

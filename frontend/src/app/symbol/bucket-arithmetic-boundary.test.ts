@@ -35,10 +35,20 @@ import { fileURLToPath } from "node:url";
 const SYMBOL_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 /** Every production module of the route — tests excluded, because a test is allowed to name the
- * arithmetic it forbids (this file is the proof of that). */
+ * arithmetic it forbids (this file is the proof of that).
+ *
+ * RECURSIVE since `SPEC-011` §5.5 (`estrutura-do-front` `T-00.3`, `CA-9`). The scan used to be a
+ * flat `readdirSync(SYMBOL_DIR)`, which never saw a subdirectory: `[symbol]/page.tsx` was already
+ * outside it, and the move of `SPEC-011` puts the core under `chart/` and every indicator under
+ * `indicators/<kind>/`. A flat scan over that tree would pass `pass 5, fail 0` with a grid floor
+ * planted in `indicators/oi/probe.ts` — the falsifier that proved the flat scan blind
+ * [MEDIDO 2026-10-02, recorded in `docs/context/estrutura-do-front/gates/T-00.3-build.md`].
+ * `file` is the path RELATIVE to `SYMBOL_DIR`, POSIX-separated, so an offender names its subfolder. */
 function productionSources(): readonly { readonly file: string; readonly source: string }[] {
-  return readdirSync(SYMBOL_DIR)
+  return readdirSync(SYMBOL_DIR, { recursive: true, encoding: "utf8" })
+    .map((file) => file.split(path.sep).join("/"))
     .filter((file) => (file.endsWith(".ts") || file.endsWith(".tsx")) && !file.includes(".test."))
+    .sort()
     .map((file) => ({ file, source: readFileSync(path.join(SYMBOL_DIR, file), "utf8") }));
 }
 
@@ -112,7 +122,7 @@ const FORBIDDEN_ARITHMETIC: readonly { readonly pattern: RegExp; readonly why: s
   { pattern: /alignToTimeframeStart/, why: "charts' own flooring, reached only through the barrel and never re-implemented" },
 ];
 
-test("FR-2: no module of `src/app/symbol/` computes bucket arithmetic — the gate's grep, as a gate", () => {
+test("FR-2: no module of `src/app/symbol/**` computes bucket arithmetic — the gate's grep, as a gate", () => {
   const offenders: string[] = [];
   for (const { file, source } of productionSources()) {
     for (const { pattern, why } of FORBIDDEN_ARITHMETIC) {
@@ -207,6 +217,19 @@ test("CALA: the sanctioned call does NOT trip the guard — otherwise the fix it
       `the guard rejects the sanctioned form ${JSON.stringify(line)} — it would force the arithmetic back inline`,
     );
   }
+});
+
+test("the walk DESCENDS — a subdirectory module is in the universe, or the scan above is flat again", () => {
+  // The absence scan cannot tell "no offender in the tree" from "never looked in the subfolder".
+  // `[symbol]/page.tsx` is the one production module that lives below `SYMBOL_DIR` today; if the
+  // walk stops recursing, it drops out of the universe and this assertion is what goes red, with
+  // no planted probe needed.
+  const files = productionSources().map(({ file }) => file);
+  assert.ok(files.includes("[symbol]/page.tsx"), `the scan no longer reaches subdirectories: ${JSON.stringify(files)}`);
+  assert.ok(
+    files.every((file) => !file.includes(".test.")),
+    "a test file entered the universe — tests may name the arithmetic they forbid",
+  );
 });
 
 test("the route still USES the charts conversion — an empty directory would pass the scan above", () => {
