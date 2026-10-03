@@ -17,7 +17,8 @@ selection to COMPLETE; it never narrows it"):
 * a new Next entry, a root-layout dependency and a deleted e2e helper widen e2e to COMPLETE;
 * a refining row narrows a `/symbol`-only file to its specs plus `e2e/11`; a lazy `import()` is
   an edge; a file no page imports runs only `e2e/11`;
-* `E2E_EXTRA` naming no spec, a map citing a deleted spec and a rotten prefix REFUSE (rc=3);
+* `E2E_EXTRA` naming no spec, a map citing a deleted spec and a rotten prefix REFUSE (rc=3), and
+  so do a malformed token and an inverted range in a row (`gates/W8-CODE-REVIEW.md`, M-3);
 * a diff that EDITS THE MAP cannot use the edit to drop, from its own selection, a spec the
   base map selected for the same source change (`gates/W8-QA-INFRA.md`, finding F-1);
 * a `.md` under `frontend/public` is SERVED, so it widens e2e like any front file without a row,
@@ -293,3 +294,12 @@ def test_documentation_markdown_runs_only_the_pixel_spec(repo: Path) -> None:
     assert rc == 0
     assert keys["e2e"] == "ESCOPO"
     assert _specs(keys) == {"11"}
+
+
+@pytest.mark.parametrize("token", ["ab+", "8-9", "13-12"])
+def test_map_token_expand_cannot_read_refuses(repo: Path, token: str) -> None:
+    """M-3: a token `expand` cannot read, or an inverted range, used to vanish from its row."""
+    map_path = repo / "frontend/e2e/scope-map.tsv"
+    map_path.write_text(_MAP.replace("\t10\t", f"\t{token}\t"), encoding="utf-8")
+    rc, _ = _resolve(repo)
+    assert rc == 3

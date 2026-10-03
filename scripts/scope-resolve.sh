@@ -63,6 +63,18 @@ expand() { # expand "13 20-22 08+" -> one NN per line. It runs inside `$( )`, so
         esac
     done
 }
+check_tokens() { # check_tokens "<specs>" <prefix>. `expand` runs in a subshell and cannot refuse, so a token
+                 # it cannot read (`ab+`, `8-9`) or an inverted range (`13-12`) printed NOTHING and the row
+                 # silently lost those specs (`W8-CODE-REVIEW.md`, M-3). The map is read here, outside `$( )`.
+    local tok
+    for tok in $1; do
+        if [[ "$tok" =~ ^([0-9]{2})-([0-9]{2})$ ]]; then
+            (( 10#${BASH_REMATCH[1]} <= 10#${BASH_REMATCH[2]} )) || recusa "$MAP: linha '$2': faixa invertida '$tok'"
+        elif ! [[ "$tok" =~ ^[0-9]{2}\+?$ ]]; then
+            recusa "$MAP: linha '$2': token '$tok' malformado (aceita NN, NN-MM com NN <= MM, NN+)"
+        fi
+    done
+}
 [ -f "$MAP" ] || recusa "$MAP ausente — sem o mapa o escopo não sabe o que cada caminho de frontend/src alcança"
 declare -A ROW=()            # prefix -> specs
 declare -a ROW_ORDER=()
@@ -72,6 +84,7 @@ while IFS=$'\t' read -r prefix specs _rest; do
     if [[ "$prefix" != @rota:* ]] && ! git ls-files -- "frontend/$prefix*" | grep -q .; then
         recusa "$MAP: prefixo '$prefix' não casa nenhum arquivo versionado (mapa podre — renomeie ou apague a linha)"
     fi
+    check_tokens "$specs" "$prefix"                                  # refuses on a token expand cannot read
     for n in $(expand "$specs"); do spec_of "$n" >/dev/null; done   # refuses on a missing spec
     ROW["$prefix"]="$specs"; ROW_ORDER+=("$prefix")
 done < "$MAP"
