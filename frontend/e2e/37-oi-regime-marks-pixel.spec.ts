@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import { colorTokens, OI_REGIME_BAND_SURFACE, SURFACE_BASE } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 import { readView, showView, type ViewTarget } from "./view.ts";
 
 /**
@@ -260,7 +260,7 @@ async function openSymbol(page: Page, baseUrl: string, query = ""): Promise<void
   const response = await page.goto(`${baseUrl}${SYMBOL_PATH}${query}`, { waitUntil: "load" });
   expect(response?.ok(), `GET ${SYMBOL_PATH}${query} não respondeu ok`).toBe(true);
   await expect(page.locator(".tv-lightweight-charts").first()).toBeVisible({ timeout: 120_000 });
-  await page.waitForTimeout(2_500);
+  await waitForChartSettled(page);
 }
 
 interface Frame {
@@ -461,7 +461,7 @@ async function readLegend(page: Page): Promise<LegendRead> {
 /** Hover the OI pane at the centre of the slot of `ms` and read the legend. */
 async function hoverLegend(page: Page, frame: Frame, ms: number): Promise<LegendRead> {
   await page.mouse.move(slotX(frame, ms), frame.box.y + frame.box.height * 0.6, { steps: 4 });
-  await page.waitForTimeout(200);
+  await waitForChartSettled(page);
   return readLegend(page);
 }
 

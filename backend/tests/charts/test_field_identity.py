@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from src.modules.charts.domain.field_identity import (
@@ -12,8 +14,13 @@ from src.modules.charts.domain.field_identity import (
 
 
 def test_field_identity_terms_match_the_dataclass_field_order() -> None:
-    """`FIELD_IDENTITY_TERMS` is the same order the dataclass itself declares."""
-    assert FIELD_IDENTITY_TERMS == ("metric", "unit", "denom")
+    """`FIELD_IDENTITY_TERMS` is the same order the dataclass itself declares.
+
+    Compared against `dataclasses.fields(FieldIdentity)`, not against a literal: a literal
+    only re-states the constant, so reordering the dataclass fields left it green. Same
+    pattern as `test_threshold_spec.py::_field_names`.
+    """
+    assert tuple(f.name for f in dataclasses.fields(FieldIdentity)) == FIELD_IDENTITY_TERMS
 
 
 def test_two_identical_triples_are_the_same_field() -> None:

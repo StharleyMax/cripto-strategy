@@ -3,7 +3,7 @@ import http from "node:http";
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
-import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 import { readView, showView, type ViewState } from "./view.ts";
 
 /**
@@ -144,7 +144,7 @@ async function legendAt(page: Page, state: ViewState, logical: number): Promise<
   await page.mouse.move(x, state.plot.y + state.plot.height * 0.5, { steps: 5 });
   const legend = page.locator('[data-legend-value="price"]');
   await expect(legend, "a legenda do Preço não acompanhou o crosshair").toHaveAttribute("data-legend-source", "crosshair");
-  await page.waitForTimeout(150);
+  await waitForChartSettled(page);
   const reading = {
     slotIndex: Number(await legend.getAttribute("data-legend-slot-index")),
     bucketMs: Number(await legend.getAttribute("data-legend-bucket-ms")),

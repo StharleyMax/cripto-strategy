@@ -547,29 +547,6 @@ def test_a_window_starting_beyond_the_90_day_ceiling_is_refused_with_422(tmp_pat
         assert json.loads(body).keys() == {"detail"}
 
 
-def test_a_window_starting_exactly_at_the_90_day_ceiling_is_served_with_200(
-    tmp_path: Path,
-) -> None:
-    """The boundary itself is still servable — `D5` declares 90 days AS the ceiling, not before."""
-    row = _row()
-    reader = _FakeReader((Observation(row=row, value=Decimal(row.value_raw)),))
-    app = _app_with_reader(tmp_path, reader)
-    knowledge_time_ms = BUCKET_END_MS
-    window_start_ms = knowledge_time_ms - 90 * 86_400_000
-
-    with _served(app) as port:
-        status, _ = _get(
-            port,
-            _valid_query(
-                window_start_ms=window_start_ms,
-                window_end_ms=window_start_ms,
-                knowledge_time_ms=knowledge_time_ms,
-            ),
-        )
-
-    assert status == 200
-
-
 def test_a_malformed_read_is_refused_with_a_named_500_never_served(tmp_path: Path) -> None:
     """`RN-9`: `AsOfReading` refused -> `500` named, never `200` with inconsistent data."""
     app = _app_with_reader(tmp_path, _RefusingReader())

@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 import { colorTokens, dojiItemColors } from "../src/charts/color-tokens.ts";
-import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 
 /**
  * `paineis-de-fluxo` `T-01.6` (plan `01` item `1.5`, `RF-4`, `CA-12`, `[Q-DG-1]`; gate r2 `C-4`,
@@ -228,7 +228,7 @@ test(`T-01.6: a camada de DOM por pane, o separador testado e a reserva da legen
     await expect(page.locator(`[data-testid="${CHART_HOST_TESTID}"]`)).toHaveAttribute("data-pane-layers", "anchored", {
       timeout: 120_000,
     });
-    await page.waitForTimeout(2_000);
+    await waitForChartSettled(page);
 
     // ── (a) one chart, six anchored layers, pointer-events none, the floor ────────────────────
     const chartCount = await page.locator(".tv-lightweight-charts").count();

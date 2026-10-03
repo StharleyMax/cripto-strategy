@@ -1231,6 +1231,7 @@ refs = [
     "ablacao: purgar __pycache__ antes de cada mutacao (memoria: cache obsoleto falseia mutacao).",
     "e2e: diff so de backend/tests; `make verify-scope` VERDE-ESCOPO.",
     "numstat: `git diff --numstat $BASE..HEAD -- backend/` no relatorio docs/context/estrutura-do-front/gates/T-10.25-build.md.",
+    "NOTA de W-PBE-QA (2026-10-03): a mordida 'tirar uma linha do catalogo => G7 reprova' e impossivel por construcao (o caso da linha some com ela); a remocao segue pega pelo G6 fundido e pelos *_is_registered_*. Texto da DoD corrigido por esta nota, sem reescrever a linha original.",
 ]
 
 [[tasks]]
@@ -1291,4 +1292,24 @@ refs = [
     "ablacao: cada mutacao rodada COM o teste cortado e SEM ele; purgar __pycache__ antes de cada rodada.",
     "e2e: diff so de backend/tests; `make verify-scope` VERDE-ESCOPO.",
     "numstat: `git diff --numstat $BASE..HEAD -- backend/` no relatorio docs/context/estrutura-do-front/gates/T-10.28-build.md.",
+]
+
+[[tasks]]
+id = "T-10.29"
+title = "[sentimento][charts][backtest] 10 · Backend: os cortes e fusoes que a T-10.9 provou por mutacao (C6, C8–C12) e o comentario de bundle_hash.py:26 que cita o arquivo apagado pela T-10.28"
+components = ["sentimento", "charts", "backtest"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.9", "T-10.28"]
+refs = [
+    "fonte: gates/T-10.9-build.md §4 (candidatos com mordida, REGRA-M antes de propor) e §3 (pares de BACKEND-analise §7.4); follow-ups de gates/W-PBE-QA.md",
+    "agente: harness-plugin:builder",
+    "ESCOPO: backend/tests/charts/test_scan.py, backend/tests/sentimento/test_liquidation_zero_legitimacy.py, backend/tests/sentimento/test_series_history_native_grid.py, backend/tests/sentimento/test_series_reduction.py, backend/tests/sentimento/test_history_ceiling.py, backend/tests/sentimento/test_series_history_oi_candles.py; e backend/src/modules/backtest/domain/bundle_hash.py SO comentario (linha 26), nenhuma linha logica.",
+    "DoD: C6 FUNDE (sai test_scan.py::test_insufficient_verdict_carries_no_value_field, fica o de test_observation.py); C8, C9, C10 CORTAM; C11 FUNDE test_the_ceiling_is_ninety_days em …ms_conversion…, levando a citacao do owner; C12 CORTA (prioridade baixa); bundle_hash.py:26 deixa de citar test_bundle_hash_determinism_qa.py.",
+    "FORA: C7 (test_panel_disc_layout::test_the_compact_reading…) NAO entra: nenhuma mutacao possivel, a decisao e de forma (prosa de ADR-026 em assert), nao de evidencia — fica para o owner/tech-lead, registrada aqui.",
+    "mordida (REGRA-M): para cada corte/fusao, a mutacao da tabela §4 da T-10.9 (M06, M07, M08, M09, M10/M11, M18) reprova DEPOIS num teste que fica, nomeado no relatorio; __pycache__ purgado por rodada.",
+    "tempo (REGRA-T): `make test-fast K=<filtro>` antes e depois (ganho esperado ~0: a task e de ruido, nao de tempo).",
+    "ablacao: restaurar cada teste cortado sob a sua mutacao => ele reprova junto (prova que era duplicado, nao cego).",
+    "e2e: diff so de backend/tests e 1 comentario em backend/src; `make verify-scope` VERDE-ESCOPO.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.29-build.md.",
 ]

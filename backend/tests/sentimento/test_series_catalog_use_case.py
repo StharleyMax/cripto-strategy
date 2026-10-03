@@ -53,7 +53,6 @@ from src.modules.sentimento.domain.liquidation_catalog import (
     NATIVE_GRID,
     NATIVE_GRID_MS,
     SHORT,
-    coinalyze_liquidation_key,
 )
 from src.modules.sentimento.domain.long_short_ratio_series import COUNT_LONG_SHORT_RATIO
 from src.modules.sentimento.domain.open_interest_catalog import (
@@ -113,39 +112,36 @@ def _classify_panel_grid(*, panel_grid_ms: int, native_grid_ms: int) -> PanelGri
     )
 
 
-def test_the_real_catalog_has_twenty_rows_not_seven() -> None:
-    """`3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines + 1 L/S + 2 liq + 4 ohlc + 1 oi-poll`.
+SERVED_ROWS_PER_INSTRUMENT: Final[int] = 20
+"""THE one place this file pins how many rows the route serves per instrument (`T-10.25`, G6).
 
-    `19` until `T-03.3` of `SPEC-009` appended the polled open-interest row (`open_interest`,
-    `1m`, `POINT`) at index 19.
+`3 cvd + 2 price + 5 oi + 1 volume + 1 cvd-from-klines + 1 L/S + 2 liq + 4 ohlc + 1 oi-poll`.
+History: `10` -> `11` (`T-01.6`, `klines_volume`) -> `12` (`T-02.4`, `kline_takerbuy`) -> `13`
+(`T-04.4`, `count_long_short_ratio`) -> `15` (`T-05.8`, BOTH `sum_liquidation` cohorts, which are
+two series because their sum would erase which leg was flushed) -> `19` (`SPEC-008` `T-01.6`, the
+FOUR `klines_ohlc` readings, four ids because `reduction` is a term of the key) -> `20`
+(`SPEC-009` `T-03.3`, the polled `open_interest` row). Until `T-10.25` the digit lived in THREE
+tests and every new metric had to edit all three; the next metric edits this constant only."""
 
-    Was `10` until `T-01.6` appended `klines_volume`, `11` until `T-02.4` appended
-    `cvd_source`/`kline_takerbuy`, `12` until `T-04.4` appended `count_long_short_ratio` and
-    `13` until `T-05.8` appended BOTH `sum_liquidation` cohorts (`SPEC-007` §4, rows M1, M5, M3
-    and M4). M4 moves the count by TWO because the two legs are two series and their sum would
-    erase which leg was flushed. Phases `02` and `04` forked from the same tree and each
-    wrote "the count is 12"; keeping only one of the two would DROP a real series, so the
-    integration keeps both and the number is 15, and `15` until `T-01.6` of `SPEC-008`
-    appended the FOUR `klines_ohlc` rows (`RF-2`, plan `01` item 1.7) — `OPEN`, `HIGH`, `LOW`
-    and `CLOSE` of the same `/fapi/v1/klines` bucket, which are four distinct `series_key_id`s
-    because `reduction` is a term of the key. Collapsing them into one row is the defect this
-    digit refuses: a candle served as a single series can only be picked by POSITION. The
-    reasoning
-    below is unchanged — the point of the test was never the digit, it is that `n_entries`
-    counts what the route SERVES rather than what a grep of call sites suggests.
 
-    `7` is the count of literal `SeriesCatalogEntry(` call SITES across the three modules
-    (`grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v test | wc -l`),
-    which `SPEC-003`/`tasks.toml` equate with `n_entries`. `open_interest_catalog_entries`
-    builds four of its five rows from ONE call site (a list comprehension over
-    `Reduction.OPEN/HIGH/LOW/CLOSE`), so the two numbers are not the same measurement — this
-    test is the falsifier: a change that collapsed the OI rows to match the literal-7 reading
-    would pass the grep-based DoD in `tasks.toml` while failing THIS assertion, which is the
-    one that actually counts what the route serves.
+def test_the_served_catalog_has_twenty_rows_per_instrument_and_eighty_over_the_pilot() -> None:
+    """`T-10.25` (G6): the three count tests fused into one, each keeping what was its own.
+
+    (1) `n_entries` counts what the route SERVES, not the `7` literal `SeriesCatalogEntry(` call
+    SITES a grep finds (`grep -rn 'SeriesCatalogEntry(' backend/src --include='*.py' | grep -v
+    test | wc -l`): `open_interest_catalog_entries` builds four of its five rows from ONE call
+    site, so a change that collapsed the OI rows (or the four candle readings) to match the grep
+    reading fails HERE. (2) The envelope moves only `n_entries` — its top-level fields are
+    `query`, `n_entries`, `entries`, in that order (`RS-1`). (3) Over the pilot universe the count
+    multiplies: every instrument the collector writes is served, every id distinct because
+    `instrument_id` is a term of the key.
+
+    MORDE (measured in `gates/T-10.25-build.md`): dropping any row of `list_series_catalog`
+    fails this test.
     """
     catalog = list_series_catalog()
 
-    assert len(catalog.entries) == 20
+    assert len(catalog.entries) == SERVED_ROWS_PER_INSTRUMENT
     ohlc_reductions = [
         entry.key.reduction for entry in catalog.entries if entry.key.metric == KLINES_OHLC_METRIC
     ]
@@ -156,6 +152,29 @@ def test_the_real_catalog_has_twenty_rows_not_seven() -> None:
         if entry.key.provider == "coinalyze" and entry.key.metric == "sum_open_interest"
     }
     assert oi_reductions == {Reduction.OPEN, Reduction.HIGH, Reduction.LOW, Reduction.CLOSE}
+
+    envelope = series_catalog_envelope(catalog)
+    assert list(envelope.keys()) == ["query", "n_entries", "entries"]
+    assert envelope["query"] == "series_catalog"
+    assert envelope["n_entries"] == SERVED_ROWS_PER_INSTRUMENT
+    entries = envelope["entries"]
+    assert isinstance(entries, list)
+    served_metrics = [entry["key"]["metric"] for entry in entries]
+    assert served_metrics.count(KLINES_VOLUME_METRIC) == 1
+    assert served_metrics.count(COUNT_LONG_SHORT_RATIO) == 1
+    assert served_metrics.count(LIQUIDATION_METRIC) == 2
+    assert served_metrics.count(KLINES_OHLC_METRIC) == 4
+    assert served_metrics.count(OPEN_INTEREST_POLL_METRIC) == 1
+
+    pilot = list_pilot_series_catalog()
+    pilot_rows = SERVED_ROWS_PER_INSTRUMENT * len(PILOT_INSTRUMENT_IDS)
+    assert pilot_rows == 80
+    assert len(pilot.entries) == pilot_rows
+    assert len({entry.key.series_key_id() for entry in pilot.entries}) == pilot_rows
+    pilot_ohlc = [entry for entry in pilot.entries if entry.key.metric == KLINES_OHLC_METRIC]
+    assert len(pilot_ohlc) == 4 * len(PILOT_INSTRUMENT_IDS)
+    assert {entry.key.instrument_id for entry in pilot_ohlc} == set(PILOT_INSTRUMENT_IDS)
+    assert {entry.key.instrument_id for entry in pilot.entries} == set(PILOT_INSTRUMENT_IDS)
 
 
 def test_the_catalog_has_no_duplicate_series_key_across_the_three_sources() -> None:
@@ -524,17 +543,39 @@ def test_klines_volume_is_registered_in_the_catalog_the_route_serves() -> None:
     assert entry.max_staleness_ms == KLINES_VOLUME_MAX_STALENESS_MS
 
 
-def test_series_history_no_longer_refuses_the_klines_volume_id_with_unknown_series_key() -> None:
-    """The DoD of `T-01.6`, asserted at the function that actually raises the `422`.
+SERVED_ENTRIES: Final[tuple[SeriesCatalogEntry, ...]] = list_pilot_series_catalog().entries
+"""Every row the route serves — `list_pilot_series_catalog()` is what `src.main.create_app`
+wires into `get_series_catalog_source` — read at collection time so `pytest` names each id."""
 
-    `SPEC-007` §4.5: "reusar não é não fazer nada" — before this registration,
-    `catalog.entry_for_id` returned `None` for this id and `build_series_history_report` raised
-    `UnknownSeriesKeyIdError`, which the route maps to `422`. Asserting `entry_for_id is not
-    None` would only test `entry_for_id`; this calls the real use case, through the real
-    refusal branch.
+
+def _served_entry_test_id(entry: SeriesCatalogEntry) -> str:
+    """Name the parametrized case by what a reader would search for, plus an id prefix."""
+    key = entry.key
+    return (
+        f"{key.instrument_id}-{key.metric}-{key.reduction.value}-{key.cohort}"
+        f"-{key.series_key_id()[:8]}"
+    )
+
+
+@pytest.mark.parametrize("entry", SERVED_ENTRIES, ids=_served_entry_test_id)
+def test_series_history_does_not_refuse_any_served_id(entry: SeriesCatalogEntry) -> None:
+    """`SPEC-007` §4.5 for EVERY served id, at the function that actually raises the `422`.
+
+    `T-10.25` (G7) fused the four `test_series_history_no_longer_refuses_*` tests (`klines_volume`
+    of `T-01.6`, `kline_takerbuy` of `T-02.4`, both liquidation cohorts of `T-05.8`, the four
+    `klines_ohlc` readings of `SPEC-008` `T-01.6`) into this one. Each repeated "the id is in the
+    catalog, so `build_series_history_report` does not raise `UnknownSeriesKeyIdError`" for one
+    metric of `BTCUSDT`; this covers every served row of every pilot instrument, including the
+    metric registered NEXT, which used to depend on someone remembering to write a fifth test.
+
+    Asserting `entry_for_id is not None` would only test `entry_for_id`; this calls the real use
+    case, through the real refusal branch. The panel fields are asserted against the served
+    row, so a report that projected the wrong row (wrong `nature`, `provider` or `unit`) fails.
+    What this test CANNOT see by construction is a row removed from the catalog — the case
+    simply disappears; that is pinned by the count test and the `*_is_registered_*` tests.
     """
-    catalog = list_series_catalog()
-    series_key_id = _klines_volume_entry_of(catalog).key.series_key_id()
+    catalog = list_pilot_series_catalog()
+    series_key_id = entry.key.series_key_id()
 
     report = build_series_history_report(
         catalog,
@@ -542,7 +583,7 @@ def test_series_history_no_longer_refuses_the_klines_volume_id_with_unknown_seri
         _classify_panel_grid,
         bounds_reader,
         series_key_id=series_key_id,
-        symbol="BTCUSDT",
+        symbol=entry.key.instrument_id,
         interval="1m",
         window_start_ms=1_700_000_000_000,
         window_end_ms=1_700_000_060_000,
@@ -551,15 +592,17 @@ def test_series_history_no_longer_refuses_the_klines_volume_id_with_unknown_seri
     )
 
     assert report.panel_series_key_id == series_key_id
-    assert report.panel_nature == Nature.FLOW.value
+    assert report.panel_nature == entry.key.nature.value
+    assert report.panel_source == entry.key.provider
+    assert report.panel_unit == entry.key.unit
 
 
 def test_an_unregistered_id_still_raises_unknown_series_key_id_error() -> None:
     """The companion that keeps the test above honest — the guard is still armed.
 
-    Without this, `test_series_history_no_longer_refuses_…` would also pass if someone deleted
-    the `entry_for_id is None` branch entirely: a use case that accepts EVERY id refuses none,
-    including the one this task registered. This test is the reason the one above measures
+    Without this, `test_series_history_does_not_refuse_any_served_id` would also pass if someone
+    deleted the `entry_for_id is None` branch entirely: a use case that accepts EVERY id refuses
+    none, including every served one. This test is the reason the one above measures
     registration rather than the absence of a check.
     """
     catalog = list_series_catalog()
@@ -670,23 +713,6 @@ def test_registering_the_new_rows_appended_and_did_not_reorder_the_pre_existing_
         "sum_open_interest",
         "sum_open_interest",
     ]
-
-
-def test_the_envelope_serves_twenty_entries_without_changing_its_top_level_fields() -> None:
-    """`RS-1` at the wire: `n_entries` moved 10 -> 11 -> 12 -> 13 -> 15 -> 19 -> 20, only that."""
-    envelope = series_catalog_envelope(list_series_catalog())
-
-    assert list(envelope.keys()) == ["query", "n_entries", "entries"]
-    assert envelope["query"] == "series_catalog"
-    assert envelope["n_entries"] == 20
-    entries = envelope["entries"]
-    assert isinstance(entries, list)
-    served_metrics = [entry["key"]["metric"] for entry in entries]
-    assert served_metrics.count(KLINES_VOLUME_METRIC) == 1
-    assert served_metrics.count(COUNT_LONG_SHORT_RATIO) == 1
-    assert served_metrics.count(LIQUIDATION_METRIC) == 2
-    assert served_metrics.count(KLINES_OHLC_METRIC) == 4
-    assert served_metrics.count(OPEN_INTEREST_POLL_METRIC) == 1
 
 
 # ── A1: `unit` IS DERIVED FROM THE INSTRUMENT, NOT A LITERAL `"BTC"` ────────────────────────
@@ -822,27 +848,6 @@ def test_the_pilot_universe_is_the_four_symbols_the_collector_writes() -> None:
     assert PILOT_INSTRUMENT_IDS[0] == "BTCUSDT"
 
 
-def test_the_served_catalog_has_twenty_rows_per_pilot_instrument() -> None:
-    """`20 x 4 = 80`, every id distinct — `instrument_id` is a term of the key.
-
-    Was `19 x 4 = 76` until `T-03.3` of `SPEC-009` appended the polled open-interest row.
-
-    Was `15 x 4 = 60` until `T-01.6` of `SPEC-008` registered the four `klines_ohlc` rows, and
-    the multiplication is the point: the candle is served for EVERY pilot instrument, not only
-    for the `BTCUSDT` the domain modules default to. Serving one instrument while the collector
-    wrote four is the finding this function's own docstring records.
-    """
-    catalog = list_pilot_series_catalog()
-
-    assert len(catalog.entries) == 80
-    ids = [entry.key.series_key_id() for entry in catalog.entries]
-    assert len(set(ids)) == 80
-    ohlc = [entry for entry in catalog.entries if entry.key.metric == KLINES_OHLC_METRIC]
-    assert len(ohlc) == 16
-    assert {entry.key.instrument_id for entry in ohlc} == set(PILOT_INSTRUMENT_IDS)
-    assert {entry.key.instrument_id for entry in catalog.entries} == set(PILOT_INSTRUMENT_IDS)
-
-
 def test_the_pilot_catalog_appends_and_never_reorders_the_btcusdt_prefix() -> None:
     """`RS-1`: order is FORM. The twenty `BTCUSDT` rows keep the indices they already had."""
     served = [entry.key.series_key_id() for entry in list_pilot_series_catalog().entries]
@@ -877,35 +882,6 @@ def test_kline_takerbuy_is_registered_in_the_catalog_the_route_serves() -> None:
     expected = build_kline_takerbuy_entry("BTCUSDT", unit="BTC")
 
     assert catalog.entry_for_id(expected.key.series_key_id()) == expected
-
-
-def test_series_history_no_longer_refuses_the_kline_takerbuy_id() -> None:
-    """`DoD 2`'s precondition, asserted at the function that actually raises the `422`.
-
-    Morde: drop the append in `list_series_catalog` and this raises `UnknownSeriesKeyIdError`
-    — which the route maps to `422`, and which a front end sees as an empty `CvdPane` with no
-    explanation of why. `test_an_unregistered_id_still_raises_unknown_series_key_id_error`
-    above is what keeps this from passing because the guard was deleted rather than satisfied.
-    """
-    catalog = list_series_catalog()
-    series_key_id = build_kline_takerbuy_entry("BTCUSDT", unit="BTC").key.series_key_id()
-
-    report = build_series_history_report(
-        catalog,
-        _EmptyWindowReader(),
-        _classify_panel_grid,
-        bounds_reader,
-        series_key_id=series_key_id,
-        symbol="BTCUSDT",
-        interval="1m",
-        window_start_ms=1_700_000_000_000,
-        window_end_ms=1_700_000_060_000,
-        knowledge_time_ms=1_700_000_120_000,
-        bar_policy=BarPolicy.FINAL_ONLY,
-    )
-
-    assert report.panel_series_key_id == series_key_id
-    assert report.panel_nature == Nature.FLOW.value
 
 
 def _klines_ohlc_ids(instrument_id: str) -> set[str]:
@@ -1006,40 +982,6 @@ def test_both_liquidation_cohorts_are_registered_in_the_catalog_the_route_serves
         assert entry.native_grid_ms == NATIVE_GRID_MS
         assert entry.max_staleness_ms == MAX_STALENESS_MS
     assert entries[0].key.series_key_id() != entries[1].key.series_key_id()
-
-
-@pytest.mark.parametrize("cohort", COHORTS)
-def test_series_history_no_longer_refuses_either_liquidation_id(cohort: str) -> None:
-    """`DoD-2` asks for the two cohorts SEPARATELY, so the refusal is tested SEPARATELY.
-
-    Parametrized rather than looped inside one test on purpose: with a loop, registering only
-    `long` would fail one assertion and report one failure, and the report would not say which
-    leg is missing. `pytest` names the cohort in the test id.
-
-    Asserted at `build_series_history_report`, the function that actually raises the `422`
-    (`series_history.py:119-121`) — `entry_for_id is not None` would only test `entry_for_id`.
-    """
-    catalog = list_series_catalog()
-    series_key_id = coinalyze_liquidation_key(cohort).series_key_id()
-
-    report = build_series_history_report(
-        catalog,
-        _EmptyWindowReader(),
-        _classify_panel_grid,
-        bounds_reader,
-        series_key_id=series_key_id,
-        symbol="BTCUSDT",
-        interval="1m",
-        window_start_ms=1_700_000_000_000,
-        window_end_ms=1_700_000_060_000,
-        knowledge_time_ms=1_700_000_120_000,
-        bar_policy=BarPolicy.FINAL_ONLY,
-    )
-
-    assert report.panel_series_key_id == series_key_id
-    assert report.panel_nature == Nature.FLOW.value
-    assert report.panel_source == "coinalyze"
-    assert report.panel_unit == "USD"
 
 
 def test_the_served_liquidation_rows_are_the_ones_the_collector_writes_under() -> None:
@@ -1155,44 +1097,6 @@ def test_the_four_served_klines_ohlc_rows_are_four_distinct_ids_and_never_one() 
     }
     assert len(last_ids) == 1
     assert set(ids).isdisjoint(last_ids)
-
-
-@pytest.mark.parametrize("reduction", list(KLINES_OHLC_REDUCTIONS))
-def test_series_history_no_longer_refuses_any_of_the_four_klines_ohlc_ids(
-    reduction: Reduction,
-) -> None:
-    """The DoD of this task, asserted at the function that actually raises the `422`.
-
-    Before this registration, `catalog.entry_for_id` returned `None` for all four ids and
-    `build_series_history_report` raised `UnknownSeriesKeyIdError`, which the route maps to
-    `422`. Asserting `entry_for_id is not None` would only test `entry_for_id`; this calls the
-    real use case, through the real refusal branch, once per reading — because registering
-    three of four would leave one leg of the candle refused and the other three green.
-
-    `panel_nature == STOCK` is the second half: a price is a LEVEL at an instant, and the
-    `FLOW` its `klines_volume` sibling carries off the same array would make `LOCF` over it a
-    type error. The read path branches on this value, so a wrong `nature` is a wrong drawing.
-    """
-    catalog = list_series_catalog()
-    entry = next(e for e in _klines_ohlc_entries_of(catalog) if e.key.reduction is reduction)
-    series_key_id = entry.key.series_key_id()
-
-    report = build_series_history_report(
-        catalog,
-        _EmptyWindowReader(),
-        _classify_panel_grid,
-        bounds_reader,
-        series_key_id=series_key_id,
-        symbol="BTCUSDT",
-        interval="1m",
-        window_start_ms=1_700_000_000_000,
-        window_end_ms=1_700_000_060_000,
-        knowledge_time_ms=1_700_000_120_000,
-        bar_policy=BarPolicy.FINAL_ONLY,
-    )
-
-    assert report.panel_series_key_id == series_key_id
-    assert report.panel_nature == Nature.STOCK.value
 
 
 def test_the_four_klines_ohlc_ids_are_served_for_every_pilot_instrument() -> None:

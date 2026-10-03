@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 import { colorTokens } from "../src/charts/color-tokens.ts";
-import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 
 /**
  * `paineis-de-fluxo` `T-02.2` — the volume sub-axis on the LINEAR base-0 scale, read off the
@@ -284,7 +284,7 @@ test(`T-02.2 F-2/F-3: no app real, rodapé linear — faixa de marcas separada e
     await expect
       .poll(async () => Number(await subAxis.getAttribute("data-volume-present-points")), { timeout: 60_000 })
       .toBeGreaterThan(1_000);
-    await page.waitForTimeout(1_000);
+    await waitForChartSettled(page);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
     // The DOM half: the scale is declared, in words, and the copy no longer says "linha de base".

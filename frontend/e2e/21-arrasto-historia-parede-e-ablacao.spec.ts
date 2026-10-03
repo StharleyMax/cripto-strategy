@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
-import { fact, sentimentoApiBaseUrl, shot } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl, shot, waitForChartSettled } from "./helpers.ts";
 
 /**
  * `T-05.8` (`CST-241`, plan `05` — `docs/plans/SPEC-008-candle-real-e-eixo-unico/05_historia_sob_demanda.md`,
@@ -110,20 +110,13 @@ async function readPriceCandles(page: Page): Promise<PriceCandlesReading> {
   return { drawn: Number(match[1]), grid: Number(match[2]) };
 }
 
-/** Polls `readPriceCandles` until two consecutive reads, `quietMs` apart, agree — bounded by
- * `maxRounds`, never an infinite wait. Mirrors `16-eixo-unico-pan-e-ablacao.spec.ts`'s
- * `waitForWriteCountsToSettle`, adapted to this file's own fact instead of the write counter. */
-async function waitForPriceCandlesToSettle(page: Page, quietMs = 700, maxRounds = 15): Promise<PriceCandlesReading> {
-  let previous = await readPriceCandles(page);
-  for (let round = 0; round < maxRounds; round += 1) {
-    await page.waitForTimeout(quietMs);
-    const current = await readPriceCandles(page);
-    if (current.drawn === previous.drawn && current.grid === previous.grid) {
-      return current;
-    }
-    previous = current;
-  }
-  return previous;
+/** Waits for the chart to settle and reads `readPriceCandles`. `T-10.1`: it used to poll two reads
+ * `quietMs` (700 ms) apart; `waitForChartSettled` waits instead for what moved the count — no
+ * `/series-history` request in flight and the page (`data-fact` included) frame-stable — and throws
+ * when that does not happen, where the old loop returned its last reading after `maxRounds`. */
+async function waitForPriceCandlesToSettle(page: Page): Promise<PriceCandlesReading> {
+  await waitForChartSettled(page);
+  return readPriceCandles(page);
 }
 
 /** Reads the coverage state suffix of `oi_coverage`/`long_short_coverage` (`"beyond"` or absent —
@@ -141,7 +134,8 @@ async function readCoverageBadgeState(page: Page, paneTestId: string, factPrefix
 }
 
 /**
- * One horizontal drag on the Price panel — same gesture, same 100ms pauses either side, same
+ * One horizontal drag on the Price panel — same gesture, a settled chart on either side of the
+ * move (`T-10.1`: it was a 100 ms pause each), same
  * positive-only direction pinned by `16-eixo-unico-pan-e-ablacao.spec.ts`'s own measurement
  * (`[MEDIDO 2026-09-21]`: negative delta never moved `data-visible-logical-from` on this exact
  * page — moving right, toward older history, does).
@@ -163,9 +157,9 @@ async function dragPricePanelBackward(page: Page, deltaXPx: number): Promise<voi
   const startY = box.y + box.height / 2;
   await page.mouse.move(startX, startY);
   await page.mouse.down();
-  await page.waitForTimeout(100);
+  await waitForChartSettled(page);
   await page.mouse.move(startX + deltaXPx, startY, { steps: 50 });
-  await page.waitForTimeout(100);
+  await waitForChartSettled(page);
   await page.mouse.up();
 }
 
@@ -249,7 +243,7 @@ test(`DoD-2/DoD-3: OI e long/short nomeiam "beyond" no mesmo instante que Preço
   let reachedAt = -1;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     await dragPricePanelBackward(page, 900);
-    await page.waitForTimeout(800);
+    await waitForChartSettled(page);
     const oiState = await readCoverageBadgeState(page, OI_PANE_TESTID, "oi_coverage");
     const longShortState = await readCoverageBadgeState(page, LONG_SHORT_PANE_TESTID, "long_short_coverage");
     fact(SPEC, `wall_probe_${attempt}`, JSON.stringify({ oi: oiState, longShort: longShortState }));

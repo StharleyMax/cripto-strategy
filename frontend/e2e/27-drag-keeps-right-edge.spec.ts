@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
-import { fact } from "./helpers.ts";
+import { fact, waitForChartSettled } from "./helpers.ts";
 
 /**
  * W1-FIX (`docs/context/paineis-de-fluxo/gates/W1-DESIGN-REVIEW.md` MF-A) — a drag must never
@@ -61,9 +61,9 @@ async function dragTowardPast(page: Page, deltaXPx: number): Promise<void> {
   const y = box.y + PRICE_PANE_Y_PX;
   await page.mouse.move(startX, y);
   await page.mouse.down();
-  await page.waitForTimeout(100);
+  await waitForChartSettled(page);
   await page.mouse.move(startX + deltaXPx, y, { steps: 40 });
-  await page.waitForTimeout(100);
+  await waitForChartSettled(page);
   await page.mouse.up();
   await page.mouse.move(5, 5);
 }
@@ -83,8 +83,8 @@ test(`MF-A: soltar o arrasto não descarta a borda direita servida (${SPEC})`, a
     await expect
       .poll(() => readVisibleFrom(page), { message: "o arrasto não moveu o gráfico", timeout: 10_000 })
       .not.toBe(fromBefore);
-    // Give the release's deferred cut (and a page, if one fired) time to land.
-    await page.waitForTimeout(1_500);
+    // Let the release's deferred cut (and a page, if one fired) land: no page in flight, the page stable.
+    await waitForChartSettled(page);
     const endAfter = await readWindowEnd(page);
     fact(SPEC, `window_end_after_release_${index}`, endAfter);
     fact(SPEC, `window_end_lost_minutes_${index}`, (servedEnd - endAfter) / 60_000);
