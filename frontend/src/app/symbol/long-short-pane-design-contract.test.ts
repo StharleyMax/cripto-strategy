@@ -33,12 +33,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
 const globalsCss = readFileSync(path.join(HERE, "..", "globals.css"), "utf8");
 
-/** The long/short pane's own slice of the file — from the first of its components to the live
- * readout hook that follows it. Several asserts below are about what must NOT appear, and over the
- * whole file they would be answering for four other panes. */
+/** The long/short pane's own slice of the file — from the first of its components to `SymbolClient`
+ * itself, which follows it since the page chrome (the live readout hook it used to end on) left for
+ * `chrome/` (`estrutura-do-front` `T-01.4`). Several asserts below are about what must NOT appear, and
+ * over the whole file they would be answering for four other panes. */
 function longShortSlice(text: string): string {
   const start = text.indexOf("function LongShortReadableHorizon");
-  const end = text.indexOf("function useLiveReadout");
+  const end = text.indexOf("export function SymbolClient(");
   assert.ok(start !== -1 && end > start, "the long/short block moved — re-anchor this file, do not delete it");
   return text.slice(start, end);
 }

@@ -63,7 +63,7 @@ import {
  * span to bars per timeframe (`timeframe-window.ts`); at `1m` it is still 4 days (5.760 bars). */
 const FOUR_DAYS_MS = 4 * 24 * 60 * 60_000;
 import { chartConstructorOptions } from "./chart-options.ts";
-import type { SeriesHistoryRow } from "./series-history-client.ts";
+import type { SeriesHistoryRow } from "./chart/history/series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 import {
   assembleOhlcCandles,
@@ -93,9 +93,9 @@ const MEASUREMENT_WIDTH_PX = 1_200;
  * here would measure the pane THIS file chose instead of the one the screen draws. */
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CHART_HEIGHT_PX = (() => {
-  const source = readFileSync(path.join(HERE, "SymbolClient.tsx"), "utf8");
+  const source = readFileSync(path.join(HERE, "chart", "host", "pane-stack.ts"), "utf8");
   const match = /const CHART_HEIGHT_PX = (\d+);/.exec(source);
-  assert.ok(match !== null, "CHART_HEIGHT_PX was not found in SymbolClient.tsx — the anchor moved, fix this test");
+  assert.ok(match !== null, "CHART_HEIGHT_PX was not found in chart/host/pane-stack.ts — the anchor moved, fix this test");
   return Number(match[1]);
 })();
 

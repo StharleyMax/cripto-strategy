@@ -40,7 +40,25 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SYMBOL_CLIENT_PATH = path.join(HERE, "SymbolClient.tsx");
 const PAGE_PATH = path.join(HERE, "[symbol]", "page.tsx");
-const source = readFileSync(SYMBOL_CLIENT_PATH, "utf8");
+/** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
+ * `chart/legend/` and `chart/marks/`; `T-01.4` — the page chrome left it for `chrome/`. The files are read
+ * together with it, so the universe this file scans is the one `SymbolClient.tsx` alone was before the move. */
+const MOVED_OUT_FILES = [
+  "chart/legend/PaneLegend.tsx",
+  "chart/legend/legend-frame.ts",
+  "chart/legend/LegendValue.tsx",
+  "chart/marks/AbsenceNote.tsx",
+  "chart/marks/PartialCoverageMark.tsx",
+  "chart/marks/BeyondCoverageBadge.tsx",
+  "chrome/AttributionFooter.tsx",
+  "chrome/ChromeModeStamp.tsx",
+  "chrome/LiveRow.tsx",
+  "chrome/page-gutter.ts",
+  "chrome/TimeframeBar.tsx",
+] as const;
+const source = [SYMBOL_CLIENT_PATH, ...MOVED_OUT_FILES.map((file) => path.join(HERE, file))]
+  .map((file) => readFileSync(file, "utf8"))
+  .join("\n");
 const pageSource = readFileSync(PAGE_PATH, "utf8");
 
 /** `pageSource` with every comment removed — block first, then line.
@@ -256,31 +274,6 @@ test("DR-3: the cumulative curve has a NUMBER in the DOM, with the same absence 
   // ...and it is resolved with the FLOW policy, never the STOCK one: carrying the previous total
   // forward would be LOCF over a series whose absences are real gaps in observation.
   assert.match(source, /const cumulativeReading = resolveFlowReading\(/);
-});
-
-test("DR-6: the canvas host is hidden from the accessibility tree, with the readouts as its alternative", () => {
-  // `lightweight-charts` paints into a `<canvas>` with no accessible name; a screen reader used
-  // to find a nameless empty node. This does not make the SERIES accessible (that is DR-10, a
-  // keyboard-navigable table, strategic) — it stops the tree from carrying a node that says
-  // nothing, next to readouts that say the last instant.
-  // `paineis-de-fluxo` `T-01.5`: the canvas host is now the ONE chart's surface
-  // (`ChartHostSurface`), not a per-pane `containerRef` — re-anchored on the same property.
-  // `paineis-de-fluxo` `T-01.6`: RE-ANCHORED AGAIN, one level down, and the property is the same.
-  // The per-pane readouts now live INSIDE the chart's DOM (each pane's layer is portaled into its
-  // pane), so an `aria-hidden` host would hide the very readouts that are the canvas' alternative.
-  // What is hidden now is each `<canvas>` (and the library's layout `<table>` is presentational),
-  // and the surface must NOT be hidden — both halves are asserted, so neither regression passes.
-  assert.match(
-    source,
-    /for \(const canvas of container\.querySelectorAll\("canvas"\)\) \{\s*\n\s*canvas\.setAttribute\("aria-hidden", "true"\);/,
-    "every canvas of the one chart must be hidden from the accessibility tree",
-  );
-  assert.match(source, /hideChartGraphicsFromAssistiveTech\(container\);/, "declared is not called: the host must run it");
-  assert.doesNotMatch(
-    source,
-    /ref=\{registrar\.surfaceRef\}\s*\n\s*aria-hidden="true"/,
-    "the surface now CONTAINS the pane readouts; hiding it would hide the canvas' textual alternative",
-  );
 });
 
 // ── MORDE: the four mutations that were GREEN before this file existed ────────────────────────

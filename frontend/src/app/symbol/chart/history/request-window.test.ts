@@ -14,16 +14,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ONE_MINUTE_MS } from "../../charts/index.ts";
-import { assertValidHistoryRequestKey, type HistoryRequestKey } from "../history-transport.ts";
+import { ONE_MINUTE_MS } from "../../../../charts/index.ts";
+import { assertValidHistoryRequestKey, type HistoryRequestKey } from "../../../history-transport.ts";
 import {
   KNOWLEDGE_TIME_LAG_MS,
   LIVE_PUBLICATION_LAG_MAX_MS,
   RIGHT_EDGE_LAG_MS,
   resolveRouteWindow,
 } from "./request-window.ts";
-import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
-import { TIMEFRAME_WINDOW_BARS } from "./timeframe-window.ts";
+import { SUPPORTED_TIMEFRAMES } from "../axis/supported-timeframes.ts";
+import { TIMEFRAME_WINDOW_BARS } from "../axis/timeframe-window.ts";
 
 /** The literal window the defect was made of — the negative control, and the ONLY place in
  * this tree those four days still appear as a hardcoded pair. */

@@ -35,10 +35,10 @@
  * font is monospaced (`globals.css`, JetBrains Mono, `tabular-nums`), so `1ch` is one character.
  */
 
-import type { LegendReading, ReadingNature } from "../../charts/index.ts";
-import type { SeriesCatalogEntry } from "../../features/s3-inspector/series-catalog.ts";
-import type { Absence } from "../history-transport.ts";
-import { resolvePaneLegend, type PaneLegendSpec, type ServedCatalog } from "./pane-registry.ts";
+import type { LegendReading, ReadingNature } from "../../../../charts/index.ts";
+import type { SeriesCatalogEntry } from "../../../../features/s3-inspector/series-catalog.ts";
+import type { Absence } from "../../../history-transport.ts";
+import { resolvePaneLegend, type PaneLegendSpec, type ServedCatalog } from "../../pane-registry.ts";
 
 // ── The name (`RF-5`, `CA-5`) ────────────────────────────────────────────────────────────
 

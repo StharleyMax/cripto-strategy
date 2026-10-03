@@ -3,11 +3,11 @@
  * servido remove o botão, sem tocar no componente."* `supported-timeframes.test.ts` already
  * proves `SUPPORTED_TIMEFRAMES` is kept honest against the backend's own served set (the sync
  * test). What THIS file proves is the OTHER half of the claim: that `TimeframeBar`
- * (`SymbolClient.tsx`) renders its buttons by MAPPING OVER that array — never one hand-written
- * `<button>` literal per timeframe. Together the two files make the DoD true by construction: a
- * member removed from the backend's set removes a member from `SUPPORTED_TIMEFRAMES` (sync test,
- * or the array would be caught drifting), which removes exactly one rendered button (this file),
- * with zero line touched inside `TimeframeBar` itself.
+ * (`chrome/TimeframeBar.tsx`, mounted by `SymbolClient.tsx`) renders its buttons by MAPPING OVER
+ * that array — never one hand-written `<button>` literal per timeframe. Together the two files
+ * make the DoD true by construction: a member removed from the backend's set removes a member
+ * from `SUPPORTED_TIMEFRAMES` (sync test, or the array would be caught drifting), which removes
+ * exactly one rendered button (this file), with zero line touched inside `TimeframeBar` itself.
  *
  * ⚠️ WHY A SOURCE SCAN AND NOT A RENDER: same reason every sibling `*-dom-contract.test.ts` in
  * this directory gives — this repo has no component renderer in any suite (`@testing-library` is
@@ -18,15 +18,31 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
+import { SUPPORTED_TIMEFRAMES } from "../chart/axis/supported-timeframes.ts";
 
+/** `estrutura-do-front` `T-01.4` — the bar left `SymbolClient.tsx` for `chrome/`, and this test came with it
+ * (`RN-12`: the test that reads a moved block's source lives with its owner). The universe is the one
+ * `SymbolClient.tsx` alone was before the move: the file itself (the mount, the navigation, the props) plus
+ * every production file under `chrome/`, recursively, so a chrome file added later enters without editing
+ * this. ⛔ It is NOT widened to `chart/**`: `chart/history/browser-series-history-client.ts` EXISTS to fetch
+ * `/series-history` from the browser (the pager, `D-C3.5`), so the "never a client fetch" control below
+ * would be false over it, and green only because that call is spelled `doFetch(url…)`. */
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SYMBOL_CLIENT_PATH = path.join(HERE, "SymbolClient.tsx");
-const source = readFileSync(SYMBOL_CLIENT_PATH, "utf8");
+const SYMBOL_CLIENT_PATH = path.join(HERE, "..", "SymbolClient.tsx");
+const CHROME_PRODUCTION_FILES = readdirSync(HERE, { recursive: true, encoding: "utf8" })
+  .filter((file) => /\.tsx?$/.test(file) && !file.includes(".test."))
+  .sort();
+const source = [SYMBOL_CLIENT_PATH, ...CHROME_PRODUCTION_FILES.map((file) => path.join(HERE, file))]
+  .map((file) => readFileSync(file, "utf8"))
+  .join("\n");
+
+test("the chrome/ scan reaches the bar — an empty universe would keep every negative control green", () => {
+  assert.ok(CHROME_PRODUCTION_FILES.includes("TimeframeBar.tsx"), JSON.stringify(CHROME_PRODUCTION_FILES));
+});
 
 /** The `.map()` call that turns `SUPPORTED_TIMEFRAMES` into buttons — the ONE line that has to
  * exist for the DoD to hold. Anchored on the array's own imported name, not on a string literal
@@ -46,13 +62,13 @@ const BUTTON_LABEL_FROM_OPTION = /\{option\.interval\}\s*\n\s*<\/button>/;
 const BAR_MOUNTED = /<TimeframeBar selected=\{selectedTimeframe\} onSelect=\{handleTimeframeSelect\} \/>/;
 // W1-FIX: the import may carry other names of the same module (`timeframeStepMs`, MF-B); what the
 // contract pins is that `SUPPORTED_TIMEFRAMES` comes from `supported-timeframes.ts`.
-const IMPORTS_CANONICAL_ARRAY = /import \{[^}]*\bSUPPORTED_TIMEFRAMES\b[^}]*\} from "\.\/supported-timeframes\.ts";/;
+const IMPORTS_CANONICAL_ARRAY = /import \{[^}]*\bSUPPORTED_TIMEFRAMES\b[^}]*\} from "\.\.\/chart\/axis\/supported-timeframes\.ts";/;
 
 test("T-03.9 contract: TimeframeBar imports the canonical array, never redeclares it", () => {
   assert.match(
     source,
     IMPORTS_CANONICAL_ARRAY,
-    "SymbolClient.tsx must import SUPPORTED_TIMEFRAMES from supported-timeframes.ts, not a second literal",
+    "chrome/TimeframeBar.tsx must import SUPPORTED_TIMEFRAMES from supported-timeframes.ts, not a second literal",
   );
   // ⛔ Negative control: an inline array of the SAME five labels, declared a second time inside
   // SymbolClient.tsx, is exactly the "escrito à mão no front" the task exists to forbid — even if
@@ -61,7 +77,7 @@ test("T-03.9 contract: TimeframeBar imports the canonical array, never redeclare
   assert.doesNotMatch(
     source,
     secondHandwrittenArray,
-    "a second, hand-typed timeframe list was found in SymbolClient.tsx — there must be exactly ONE",
+    "a second, hand-typed timeframe list was found in SymbolClient.tsx or chrome/ — there must be exactly ONE",
   );
 });
 
@@ -142,7 +158,7 @@ test("T-03.11 contract: selecting a TF navigates (router.push over the route's o
   assert.doesNotMatch(
     source,
     /fetch\(.*series-history/,
-    "SymbolClient (a Client Component) must never fetch /series-history itself — page.tsx does, server-side",
+    "SymbolClient and chrome/ (Client Components) must never fetch /series-history themselves — page.tsx does, server-side",
   );
 });
 

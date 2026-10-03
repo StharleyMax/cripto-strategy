@@ -236,7 +236,7 @@ test("the route still USES the charts conversion — an empty directory would pa
   // The scan is an absence proof, and an absence proof is satisfied by deleting the code. This
   // is its companion: the two call sites that used to hold the literals now call `charts`.
   const byFile = new Map(productionSources().map(({ file, source }) => [file, source]));
-  for (const file of ["request-window.ts", "SymbolClient.tsx"]) {
+  for (const file of ["chart/history/request-window.ts", "SymbolClient.tsx"]) {
     const source = byFile.get(file);
     assert.ok(source !== undefined, `${file} vanished — re-anchor this test rather than deleting it`);
     assert.match(source, /lastGridInstant\(/, `${file} must reach the conversion through charts, not inline it`);

@@ -37,7 +37,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { assertValidCatalogEntry, type SeriesCatalogEntry } from "../../features/s3-inspector/series-catalog.ts";
-import type { SeriesHistoryRow } from "./series-history-client.ts";
+import type { SeriesHistoryRow } from "./chart/history/series-history-client.ts";
 import {
   countNativeBarsByPublication,
   countPresentSlots,

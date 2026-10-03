@@ -26,7 +26,7 @@
  */
 
 import type { HistoryCoverage } from "../../charts/index.ts";
-import type { AccumulatedWindow } from "./history-page-window.ts";
+import type { AccumulatedWindow } from "./chart/history/history-page-window.ts";
 import type { PanelCoverage } from "./series-history-envelope.ts";
 import type { SlotCoverageState } from "./panel-status.ts";
 

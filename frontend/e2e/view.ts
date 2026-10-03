@@ -34,7 +34,7 @@ import type { Page } from "@playwright/test";
 
 // Type-only: brings `window.__historyPageLatencyProbe`'s declaration, erased at runtime.
 import type { HistoryPageLatencyProbe } from "../src/app/symbol/history-page-latency-probe.ts";
-import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES } from "../src/app/symbol/supported-timeframes.ts";
+import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES } from "../src/app/symbol/chart/axis/supported-timeframes.ts";
 
 export type { HistoryPageLatencyProbe };
 

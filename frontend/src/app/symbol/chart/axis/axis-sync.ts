@@ -32,7 +32,7 @@ import {
   type RangeDispatcher,
   type TimeAxis,
   type TimeRange,
-} from "../../charts/index.ts";
+} from "../../../../charts/index.ts";
 
 /**
  * `paineis-de-fluxo` `T-01.5` (plan `01` item `1.3`, `ADR-044/D1`) — the symbol page is ONE

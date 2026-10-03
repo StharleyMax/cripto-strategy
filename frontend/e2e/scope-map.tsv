@@ -30,7 +30,9 @@ src/app/symbol/oi-	08 12 14 15 19 21 23 24 32 33 34 35 36 37 38 40 41	cd fronten
 
 # the shared time axis and history paging (T-06.1-desenho §2.2: 16-27 39 ∪ R60 ∪ R240, plus every spec that positions or reads the view)
 src/app/symbol/axis-	16-27 29 30 33-39 42	16-27 39 (desenho) ∪ {20 34 35 37} (R60 ∪ R240, handoff/T-06.1-estado.md:16) ∪ grep -ailE 'data-visible-logical|showView|readView' [MEDIDO 2026-10-02]
-src/app/symbol/timeframe-window.ts	16-27 29 30 33-39 42	same evidence as the axis row
-src/app/symbol/use-history-pager.ts	16-27 29 30 33-39 42	same evidence as the axis row
+src/app/symbol/chart/axis/axis-	16-27 29 30 33-39 42	same evidence as the axis row
+src/app/symbol/chart/axis/timeframe-window.ts	16-27 29 30 33-39 42	same evidence as the axis row
+src/app/symbol/chart/history/use-history-pager.ts	16-27 29 30 33-39 42	same evidence as the axis row
 src/app/symbol/history-page-	16-27 29 30 33-39 42	same evidence as the axis row
+src/app/symbol/chart/history/history-page-	16-27 29 30 33-39 42	same evidence as the axis row
 src/charts/time-axis-controller.ts	16-27 29 30 33-39 42	same evidence as the axis row
