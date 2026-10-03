@@ -12,6 +12,13 @@ at 16, `encode(row)` with no run must stay byte-identical to what it produced be
 decision existed, and `decode` must keep refusing every unexpected key EXCEPT the one named
 envelope field — a `decode` that started tolerating anything would swallow a producer's typo,
 which is the same silence this decision exists to remove.
+
+The "no run => exactly the sixteen keys" half is pinned by
+`test_series_row_wire.py::test_encode_produces_exactly_the_16_named_string_keys` (same set
+comparison, plus `len == 16` and every value `str`) and, on this side, by
+`test_decode_run_id_is_none_when_the_producer_sent_no_run`. The copy this file used to carry
+was a literal subset of the first and was removed in `T-10.28` after both mutations it could
+catch (a key dropped from `encode`, a run id emitted unconditionally) were shown to fail there.
 """
 
 from __future__ import annotations
@@ -68,11 +75,6 @@ def test_run_id_is_not_one_of_the_sixteen_series_row_columns() -> None:
     """`RS-2`/`ADR-034/D7`: the row shape does not grow because the transport learned a fact."""
     assert RUN_ID_FIELD not in FIELD_NAMES
     assert len(FIELD_NAMES) == 16
-
-
-def test_encode_without_a_run_id_produces_exactly_the_sixteen_keys_it_always_did() -> None:
-    """A producer not yet wired to `ADR-035` publishes the same bytes it published before."""
-    assert set(encode(row()).keys()) == set(FIELD_NAMES)
 
 
 def test_encode_with_a_run_id_appends_it_and_changes_nothing_else() -> None:
