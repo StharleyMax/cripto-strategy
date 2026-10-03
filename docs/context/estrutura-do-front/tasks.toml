@@ -40,7 +40,7 @@ feature = "estrutura-do-front"
 spec = "docs/specs/SPEC-011-estrutura-do-front.md"
 plan = "docs/plans/SPEC-011-estrutura-do-front"
 review = "docs/context/estrutura-do-front/gates/TECH-LEAD-narrativa.md"
-untracked_note = "2026-10-02: as 32 tasks estao SEM card e SEM local_only. Nao e decisao de nao cardar: a narrativa (gates/TECH-LEAD-narrativa.md) aguarda o owner, e card no Jira (CST, board 36) so nasce depois do `approve tasks`. Plano: 10 Epics (um por fase, F0–F9) e 32 Tarefas filhas, com `tracker` inline em cada task. Quem carda: o /tech-lead depois da aprovacao, ou o orquestrador se o conector Atlassian estiver fora (cadastro manual registrado aqui, com data). 2026-10-03: T-00.4 acrescentada (DECISAO-OWNER, narrativa §9), tambem sem card e sem local_only: 33 tasks no ambar."
+untracked_note = "2026-10-02: as 32 tasks estao SEM card e SEM local_only. Nao e decisao de nao cardar: a narrativa (gates/TECH-LEAD-narrativa.md) aguarda o owner, e card no Jira (CST, board 36) so nasce depois do `approve tasks`. Plano: 10 Epics (um por fase, F0–F9) e 32 Tarefas filhas, com `tracker` inline em cada task. Quem carda: o /tech-lead depois da aprovacao, ou o orquestrador se o conector Atlassian estiver fora (cadastro manual registrado aqui, com data). 2026-10-03: T-00.4 acrescentada (DECISAO-OWNER, narrativa §9), tambem sem card e sem local_only: 33 tasks no ambar. 2026-10-03: fase 10 (T-10.1..T-10.28, narrativa §10) acrescentada, tambem sem card: 61 tasks no ambar; T-10.20 e T-10.21 passam a depender de T-00.4 no merge da T-00.E2E."
 
 # ══ FASE 00 — os trilhos antes do movimento (pode correr JA) ═════════════════════
 
@@ -269,7 +269,7 @@ title = "[web] 03 · ⛔ Caracterizacao SSR = pager para os 5 indicadores, antes
 components = ["web"]
 status = "todo"
 phase = "03"
-depends_on = ["T-02.3"]
+depends_on = ["T-02.3", "T-10.10", "T-10.11"]
 refs = [
     "plano 03 item 3.1 · DoD 1",
     "SPEC-011 §7.3 · CA-10 · G-C · G-D · Q-8",
@@ -347,7 +347,7 @@ title = "[web] 04 · CVD para app/symbol/indicators/cvd/: pane, constantes, data
 components = ["web"]
 status = "todo"
 phase = "04"
-depends_on = ["T-04.1"]
+depends_on = ["T-04.1", "T-10.12"]
 refs = [
     "plano 04 itens 4.1 e 4.4 · DoD 1, 3, 4",
     "SPEC-011 §7.2 · RF-5 · RN-6 · RN-12 · CA-2 · CA-8 · CA-9",
@@ -387,7 +387,7 @@ title = "[web] 05 · OI para app/symbol/indicators/oi/: pane, oi-candle-pane, oi
 components = ["web"]
 status = "todo"
 phase = "05"
-depends_on = ["T-04.3"]
+depends_on = ["T-04.3", "T-10.13"]
 refs = [
     "plano 05 itens 5.1 e 5.4 · DoD 1–4",
     "SPEC-011 §7.2 · RF-5 · RN-6 · RN-12 · CA-2 · CA-8 · CA-9",
@@ -429,7 +429,7 @@ title = "[web] 06 · Liquidacao para app/symbol/indicators/liquidation/: pane, l
 components = ["web"]
 status = "todo"
 phase = "06"
-depends_on = ["T-04.3"]
+depends_on = ["T-04.3", "T-10.14"]
 refs = [
     "plano 06 itens 6.1 e 6.4 · DoD 1–4",
     "SPEC-011 §7.2 · RF-5 · RN-6 · RN-12 · CA-2 · CA-8 · CA-9",
@@ -471,7 +471,7 @@ title = "[web] 07 · Long/short para app/symbol/indicators/long-short/: pane, lo
 components = ["web"]
 status = "todo"
 phase = "07"
-depends_on = ["T-04.3"]
+depends_on = ["T-04.3", "T-10.14"]
 refs = [
     "plano 07 itens 7.1, 7.2 (so reapontar: a subida de formatSpan foi na T-04.1, D-TL-1) e 7.4 (testes) · DoD 1–4",
     "SPEC-011 §7.2 · RF-5 · RN-5 · RN-6 · RN-12 · CA-2 · CA-8 · CA-9",
@@ -553,7 +553,7 @@ title = "[web] 08 · app/symbol/indicators/volume/: VolumeOverlay.tsx, data.ts, 
 components = ["web"]
 status = "todo"
 phase = "08"
-depends_on = ["T-08.2"]
+depends_on = ["T-08.2", "T-10.15"]
 refs = [
     "plano 08 item 8.3",
     "SPEC-011 §4.1, §4.3 · RF-5",
@@ -701,4 +701,592 @@ refs = [
     "ablacao: IndicatorKind enumerado em contract.ts => o ensaio lista contract.ts => reprova. Falsificador do teto (§7.4): B > +4% com o diff todo explicado por codigo de §4 => volta ao /architect, nao se ajusta o numero.",
     "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga, sobre a arvore da wave (nao a do ensaio).",
     "numstat: `git diff --numstat $BASE..HEAD -- frontend/` da wave F9 inteira gravado no relatorio, e o numstat do ensaio (2 caminhos) a parte.",
+]
+
+# ══ FASE 10 — a piramide de testes (adendo 2026-10-03, narrativa §10) ════════════
+#
+# Entrou DEPOIS da aprovacao da quebra, pelo mesmo caminho da T-00.4 (narrativa §9, na
+# branch task/T-00.E2E). Autorizacao: [PREMISSA-OWNER: 2026-10-03] "apos a analise ja pode
+# iniciar os ajustes e melhorias, dai pode entrar nessa memsa feature atual". Fontes, citadas
+# por secao e nunca coladas: docs/context/piramide-de-testes/gates/{E2E,UNIT-FRONT,BACKEND}-analise.md.
+#
+# ── TRES REGRAS QUE VALEM PARA TODA TASK DESTA FASE ───────────────────────────────
+#   REGRA-M (mordida): toda task que FUNDE, DESCE ou CORTA nomeia, por teste ou spec que sai
+#     do lugar, a mutacao de origem (linha "(origem)" de E2E-analise §3/<spec>, o `git log`
+#     do arquivo, ou o gate que a analise cita) e prova que ela AINDA reprova a suite depois
+#     da mudanca. Se nenhuma mutacao morder depois, o teste NAO sai: fica, e o relatorio diz.
+#   REGRA-T (tempo): antes e depois saem do MESMO comando, sozinho na maquina (um e2e por vez,
+#     sob scratchpad/e2e.lock; nenhum verify ao lado). Antes = em $BASE, no inicio da task.
+#     Ganho que nao foi medido nao fecha a task. No e2e, o tempo por spec e a soma das linhas
+#     `✓` com a unidade ms|s|m convertida (o parser de E2E-analise §0; `1.2m` nao e 1,2 s).
+#   REGRA-X (excecao ao DoD-2, task a task): M/D em frontend/e2e/ SO nos specs que a task
+#     nomeia em ESCOPO (o mesmo padrao da T-00.4). Qualquer outro M/D em frontend/e2e/ reprova.
+#
+# DoD-5 (wc -l SymbolClient.tsx, B, N_fact) e G-2 NAO se aplicam a esta fase: nenhuma task
+# move codigo de producao. A unica que toca producao e T-10.10, e so para acrescentar `export`;
+# ela registra wc -l SymbolClient.tsx.
+#
+# Paralelismo: o e2e e serial por construcao (e2e.lock), entao as tasks de e2e formam uma
+# cadeia; as de unitario do front e as de backend correm ao lado dela. Teto de 3 simultaneas.
+
+# ── GRUPO A: mecanico, nao mexe em assercao ───────────────────────────────────────
+
+[[tasks]]
+id = "T-10.1"
+title = "[web] 10 · e2e: os sonos fixos (waitForTimeout) viram espera por condicao num helper unico; janela negativa vira uma por teste, com valor justificado"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = []
+refs = [
+    "fonte: E2E-analise §6.2 (57 literais + 3 por variavel; recomendacao das duas classes de espera)",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/helpers.ts, frontend/e2e/view.ts e os specs 02, 04, 15, 21, 23, 24, 25, 27, 28, 29, 30, 33, 34, 35, 37, 38, 39, 40, 42. FORA, de proposito: 18 e 20 (T-00.4 em voo, ver T-10.20/T-10.21), e 16, 17, 22, 32, 36 (somem nas fusoes e cortes deste plano). Linhas com waitForTimeout( no escopo: 43 [MEDIDO 2026-10-03 em 5bc99643: grep -cE 'waitForTimeout\\(' frontend/e2e/*.ts].",
+    "DoD: (1) um helper waitForChartSettled(page) em helpers.ts para a espera POSITIVA (data-pane-layers=anchored, poll de data-price-candles, 2 requestAnimationFrame ou expect.poll; a escolha por spec vai no relatorio); (2) a janela NEGATIVA (provar que nada acontece) fica, uma por teste e nao uma por gesto, com o valor e o motivo no comentario; (3) em HEAD, `grep -nE 'waitForTimeout\\(' ` no escopo lista SO janelas negativas, cada uma com comentario; (4) nenhuma assercao muda: `git diff -U0 $BASE..HEAD -- frontend/e2e | grep -cE '^-.*expect(\\.soft|\\.poll)?\\('` = 0.",
+    "tempo (REGRA-T): `E2E_SPECS=\"<os 19 specs>\" make e2e`, antes e depois; tabela por spec no relatorio. Ganho esperado [INFERIDO]: parte dos 44,65 s de sono somado, que E2E §6.2 nao converte em ganho por spec.",
+    "ablacao: (a) para 24, 33, 37 e 39 (as maiores somas de sono), a mutacao de origem de E2E-analise §3/<spec> rodada DEPOIS da troca => o spec reprova; (b) waitForChartSettled trocado por no-op => registrar quais specs reprovam. Spec que fica verde sem espera nenhuma tem a espera REMOVIDA, nao trocada, e o relatorio diz quais.",
+    "e2e: `make verify-scope` (VERIFY_BASE=<branch da wave>) VERDE-ESCOPO, com os 19 specs em E2E_EXTRA, E `git diff --name-status $BASE..HEAD -- frontend/e2e/` com M so no escopo.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` no relatorio docs/context/estrutura-do-front/gates/T-10.1-build.md, cada linha explicada.",
+    "paralelo: com T-10.5, T-10.6, T-10.7, T-10.8, T-10.9 e com a F2 (nao toca frontend/src).",
+]
+
+[[tasks]]
+id = "T-10.2"
+title = "[web] 10 · e2e: o skip decidido antes da montagem (fixture universe de escopo de worker) em 15, 21, 30 e 39; o que morde no universo fraco vira teste proprio que passa"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.1"]
+refs = [
+    "fonte: E2E-analise §6.1 (8 skipped pagam a montagem; ≥ ~12 s fora da soma das linhas ✓) e §2 linha 21 (DESCE: decidir readerPresent antes dos arrastos)",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/helpers.ts e os specs 15, 21, 30, 39.",
+    "DoD: (1) fixture `universe` de escopo de worker em helpers.ts sonda /ready UMA vez (o padrao seriesWindowReaderPresent que 35 e 40 ja usam); (2) em todo teste que pula, test.skip e a primeira instrucao, antes de qualquer page.goto (o relatorio lista cada teste com a linha); (3) as assercoes do universo fraco que hoje rodam antes do skip (39 :158, a que pegou 4h pedindo 10 /series-history na montagem) viram teste PROPRIO, que passa e aparece como passed; (4) no 21, o universo fraco nao faz os 3 arrastos antes de saber que nao ha leitor.",
+    "mordida (REGRA-M, a parte que desce do 21 e o teste novo do 39): a mutacao de origem de cada um (E2E-analise §3/21 e §3/39, linha (origem)) reprova o teste depois da mudanca.",
+    "tempo (REGRA-T): `make e2e` inteiro, antes e depois; registrar `N passed (X m)` e a soma das linhas ✓. Falsificador de E2E §6.1: os 8 skipped-depois-da-montagem caem a 0 e (total do Playwright − soma das ✓) encolhe ≥ ~10 s.",
+    "ablacao: a fixture devolver universo forte num host fraco => os testes do universo forte montam e reprovam (prova que o skip le a fixture e nao uma constante).",
+    "e2e: `make verify-scope` VERDE-ESCOPO com 15, 21, 30, 39 em E2E_EXTRA, E name-status com M so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.2-build.md, cada linha explicada.",
+]
+
+[[tasks]]
+id = "T-10.3"
+title = "[web] 10 · e2e/38: o instrumento serial sai: fase medida 1x, ponteiro no centro do balde, varredura so de ida com sonda curta de atraso; a ablacao ganha a tinta da linha (pre-condicao do corte do 36)"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.1"]
+refs = [
+    "fonte: E2E-analise §1.1 (38 = 187,6 s; fase medida 3x igual; lagPx=0 nas 6 vistas), §6.4 e §5 C-9",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/38-oi-candle-acceptance-per-bucket.spec.ts e, se o instrumento virar helper reusavel pelo 35, frontend/e2e/view.ts ou helpers.ts.",
+    "DoD: (1) a fase e medida UMA vez por arquivo; (2) o ponteiro vai direto ao centro de cada balde, calculado pela escala de tempo da pagina, e nao px a px; (3) a varredura e so de ida, com a sonda de atraso num trecho curto, e o lagPx medido vai ao relatorio; (4) C-9: a ablacao (DoD-6) le a tinta da LINHA sob ?e2eOiLine=1 na mesma vista, alem de afirmar que a vela some; (5) o CA-7 mantem pelo menos um balde divergente por regime (o PX-3 do 36).",
+    "mordida (REGRA-M, o instrumento muda como cada balde e achado): cada teste do 38 reprova sob a sua mutacao de origem depois da mudanca, entre elas a do E5 (passar EMPTY_OI_CANDLE_BUNDLE no lugar da pagina antiga, commit a0734b98) e as de E2E-analise §3/38. E a linha: ?e2eOiLine=1 sem desenhar a linha => o teste de ablacao reprova (e o que torna o 36 cortavel em T-10.27).",
+    "tempo (REGRA-T): `E2E_SPECS=\"e2e/38-oi-candle-acceptance-per-bucket.spec.ts\" make e2e`, antes e depois. Base: 187,6 s [MEDIDO, E2E §0]; ganho esperado ~90–110 s [INFERIDO, E2E §2].",
+    "ablacao: a sonda de atraso forcar lagPx=2 => o teste que a le reprova (prova que a ida unica ainda detecta atraso de legenda).",
+    "e2e: `make verify-scope` VERDE-ESCOPO com o 38 em E2E_EXTRA, E name-status com M so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.3-build.md.",
+]
+
+[[tasks]]
+id = "T-10.4"
+title = "[web] 10 · e2e/35: o mesmo instrumento do 38; as 3 ablacoes varrem ~20 baldes e mantem as rejeicoes de diferenca e de soma"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.3"]
+refs = [
+    "fonte: E2E-analise §1.1 (35 = 61,3 s), §3/35 (proposta 1) e §5 C-8 (a condicao da reducao)",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/35-liquidation-acceptance-per-bucket.spec.ts; o helper do instrumento vem da T-10.3 (por isso depende dela, e nao por causa da trava do e2e).",
+    "DoD: (1) ponteiro no centro do balde e varredura de ida, como no 38; (2) as 3 ablacoes varrem ~20 baldes em vez de ~59; (3) C-8: as ablacoes de diferenca e de soma (35:1036-1068) seguem com pelo menos UMA rejeicao cada, contada no relatorio; (4) o CA-9′(b)(c) fica intacto, porque e ele que cobre o corte do 33 (d)+(e) em T-10.27.",
+    "mordida (REGRA-M): cada ablacao reprova sob a mutacao que ela existe para pegar (E2E-analise §3/35), depois da reducao a ~20 baldes.",
+    "tempo (REGRA-T): `E2E_SPECS=\"e2e/35-liquidation-acceptance-per-bucket.spec.ts\" make e2e`, antes e depois. Base 61,3 s [MEDIDO]; ganho esperado ~25–30 s [INFERIDO].",
+    "ablacao: a janela de ~20 baldes escolhida SEM o balde que a mutacao altera => a ablacao passa a nao rejeitar; o relatorio mostra que a janela escolhida contem esse balde por construcao, nao por sorte.",
+    "e2e: `make verify-scope` VERDE-ESCOPO com o 35 em E2E_EXTRA, E name-status com M so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.4-build.md.",
+]
+
+[[tasks]]
+id = "T-10.5"
+title = "[charts][web] 10 · eslint-boundary e fingerprint-sync-boundary lintam so os violadores plantados, numa rodada; o CALA da arvore real fica com o make lint-frontend"
+components = ["charts", "web"]
+status = "todo"
+phase = "10"
+depends_on = []
+refs = [
+    "fonte: UNIT-FRONT-analise §1 (eslint-boundary 43,05 s, 10 `eslint src` inteiros; fingerprint-sync-boundary 8,85 s e o falso vermelho por lint alheio na F06), §6 item 1",
+    "agente: frontend-builder",
+    "ESCOPO: frontend/src/charts/eslint-boundary.test.ts e frontend/src/features/s1-console/fingerprint-sync-boundary.test.ts. O segundo esta FORA dos prefixos da feature: precisa de `harness pipeline scope estrutura-do-front add frontend/src/features/s1-console/fingerprint-sync-boundary.test.ts` antes do despacho (narrativa §10.6).",
+    "DoD: (1) cada arquivo planta todos os seus violadores de uma vez e roda eslint UMA vez, so sobre os plantados; (2) o CALA (a arvore real fica verde) sai do teste: quem o prova e o `make lint-frontend` (`npm run lint` = `eslint src`, frontend/package.json:8), e o relatorio cita a linha do verify que o roda; (3) plantados com nome unico por execucao e removidos em finally.",
+    "mordida (REGRA-M, o CALA sai do teste): um arquivo REAL em src/ que viola a fronteira => `make lint-frontend` reprova. Rodado e registrado.",
+    "tempo (REGRA-T): `time npm --prefix frontend run test:charts` e `time npm --prefix frontend run test:s1`, sozinhos, antes e depois. Base 55,3 s e 11,6 s [MEDIDO, UNIT-FRONT §1]; ganho esperado ~45 s de 86,6 [INFERRED, mesma secao].",
+    "ablacao: (a) a regra de fronteira desligada no eslint.config.mjs => o MORDE dos dois arquivos reprova; (b) F06 (guarda de window em axis-latency-probe.ts => false) => fingerprint-sync-boundary fica VERDE (o falso vermelho por no-constant-condition sumiu) e `make lint-frontend` fica VERMELHO; (c) test:charts e test:s1 em paralelo, 3 vezes => 0 vermelho (a corrida registrada em cf8fb5db fechou).",
+    "e2e: diff so de teste unitario; `make verify-scope` VERDE-ESCOPO.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.5-build.md.",
+    "paralelo: com a F2 e com todo o grupo A (arquivos disjuntos).",
+]
+
+[[tasks]]
+id = "T-10.6"
+title = "[charts] 10 · s2-cvd teste 7: zero-fill e dia faltante provados com fixture sintetica, sem reler 3 dias de aggTrades"
+components = ["charts"]
+status = "todo"
+phase = "10"
+depends_on = []
+refs = [
+    "fonte: UNIT-FRONT-analise §1 (teste 7 = 7,5 s, duration_ms 7472) e §3 (os loaders de CSV so tem consumidor em teste)",
+    "agente: frontend-builder",
+    "ESCOPO: frontend/src/charts/s2-cvd.test.ts e uma fixture sintetica nova ao lado. Nenhum arquivo de producao.",
+    "DoD: o teste 7 prova zero-fill e dia faltante sobre uma fixture sintetica minima, e nao le mais 08-20 nem 08-21.",
+    "tempo (REGRA-T): `time npm --prefix frontend run test:charts`, sozinho, antes e depois, e o duration_ms do teste 7 no TAP.",
+    "ablacao: (a) o zero-fill desligado em s2-cvd.ts => o teste 7 reprova; (b) o tratamento do dia faltante desligado => o teste 7 reprova. As duas rodadas com o arquivo real, e as duas revertidas com cmp.",
+    "e2e: diff so de teste unitario; `make verify-scope` VERDE-ESCOPO.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.6-build.md.",
+    "⚠️ pendencia do owner P-3 (narrativa §10.8): se ele aposentar os loaders de CSV antes desta task, ela vira corte junto com o codigo e se fecha por esse motivo.",
+]
+
+[[tasks]]
+id = "T-10.7"
+title = "[sentimento] 10 · test_oi_candles_route_invariants: o oraculo cacheado por seed (first_anchor fora do gerador, _hist_entry/_poll_entry/_data/_observations memoizados); assercoes e universo de seeds intactos"
+components = ["sentimento"]
+status = "todo"
+phase = "10"
+depends_on = []
+refs = [
+    "fonte: BACKEND-analise §2, secao 'O gargalo' (117,3 s, 42% do listado; 1,035 s de 1,33 s em _oracle:255; 3.453 reconstrucoes do catalogo)",
+    "agente: harness-plugin:builder",
+    "ESCOPO: backend/tests/sentimento/test_oi_candles_route_invariants.py. Fora dos prefixos da feature: precisa de `harness pipeline scope estrutura-do-front add backend/tests/sentimento/test_oi_candles_route_invariants.py` (narrativa §10.6).",
+    "DoD: (1) first_anchor sai de dentro do gerador da linha 255; (2) functools.cache em _hist_entry/_poll_entry, _data e _observations, com a chave = seed e NUNCA id(...) (o prototipo usou id(values) e deu 1 vermelho falso num caso fixado); (3) os 99 casos (3 propriedades x 6 seeds x 5 TFs + 9 fixados) continuam coletados: `pytest --collect-only -q` com a mesma contagem antes e depois; (4) 3 execucoes seguidas, todas verdes.",
+    "tempo (REGRA-T): `pytest -o addopts=\"\" -q --cov=src --cov-report= tests/sentimento/test_oi_candles_route_invariants.py` e o mesmo sem --cov, sozinhos, antes e depois. Base 76,2 s e 28,8 s [MEDIDO, BACKEND §2]; o prototipo deu 25,9 s e 19,7 s [MEDIDO, com ruido de carga].",
+    "ablacao: reintroduzir o defeito D-1 (desfazer a correcao de 20e01b4a, D2-bis na borda esquerda da janela de 1m) => o oraculo reprova, com o MESMO conjunto de casos vermelhos antes e depois do cache (o cache nao pode esconder caso). Purgar __pycache__ antes de cada rodada.",
+    "e2e: diff so de backend/tests; `make verify-scope` VERDE-ESCOPO (o pytest do componente roda).",
+    "numstat: `git diff --numstat $BASE..HEAD -- backend/` no relatorio docs/context/estrutura-do-front/gates/T-10.7-build.md.",
+    "paralelo: com todo o grupo A e com a F2.",
+]
+
+# ── GRUPO P: as pendencias das analises PARCIAIS (so medicao, nenhum teste editado) ─
+
+[[tasks]]
+id = "T-10.8"
+title = "[web] 10 · Rodada 2 de mutacao do front, por TESTE: confirmar os 41 MORDE em memoria, nomear os testes que R01–R04 derrubam, e decidir o par axis-fidelity x s2-axis-integration"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = []
+refs = [
+    "fonte: UNIT-FRONT-analise §7 (a rodada 2 devolveu 0 por erro de caminho; o conserto do FILES= esta escrito la) e §3 (o argumento estrutural dos 41)",
+    "agente: frontend-builder",
+    "ESCOPO: SO medicao. Nenhum arquivo de frontend/ muda: `git status --short frontend` vazio ao fim de cada rodada, toda mutacao revertida com git checkout e cmp. Runner e mutacoes em scratchpad/unit/ da sessao a6300abb; se o scratchpad sumiu, reconstruir pela §7 e declarar.",
+    "DoD: (1) as 12 mutacoes de mutations2.txt rodadas por TESTE; (2) para cada um dos 41 MORDE em memoria: reprova SO junto com o teste principal do arquivo (confirma §3) ou reprova sozinho sob alguma mutacao (refuta, e o teste NAO e duplicado); (3) os testes exatos que R01, R02, R03 e R04 derrubam; (4) a mutacao de §7 em s2-lightweight-adapter.ts (lineSeriesLossless descarta o whitespace) => quais de axis-fidelity e s2-axis-integration reprovam.",
+    "saida: docs/context/estrutura-do-front/gates/T-10.8-mutacao-rodada-2.md, com a tabela teste x mutacao. E a entrada de T-10.10..T-10.16: um MORDE em memoria refutado aqui NAO e cortado na reescrita.",
+    "tempo: nao se aplica (nenhum teste muda); a duracao da rodada vai ao relatorio.",
+    "ablacao: a linha de base sem mutacao e 100% verde, e uma mutacao sabidamente mordida (F03) reprova os 6 arquivos medidos na rodada 1 (prova que o runner por teste enxerga o que o por arquivo enxergava).",
+    "e2e: nao se aplica; nenhum diff em frontend/.",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` VAZIO, gravado no relatorio.",
+    "paralelo: com tudo; nao edita arquivo do repositorio fora do relatorio.",
+]
+
+[[tasks]]
+id = "T-10.9"
+title = "[sentimento][charts][backtest] 10 · Classificar as 195 funcoes de teste do backend que executam 0 linha de src/, e ler os 2 pares candidatos de BACKEND §7.4"
+components = ["sentimento", "charts", "backtest"]
+status = "todo"
+phase = "10"
+depends_on = []
+refs = [
+    "fonte: BACKEND-analise §4 (1735 coletadas, 195 com 0 linha; 65 falhas e 5 erros por falta de .git na copia) e §7 itens 2 e 4",
+    "agente: harness-plugin:builder",
+    "ESCOPO: SO medicao, numa copia sob git worktree de rascunho (a copia sem .git e a causa das 65 falhas). Nenhum arquivo de backend/ muda no repositorio.",
+    "DoD: (1) refazer `--cov-context=test` com .git presente e recontar; (2) cada funcao de 0 linha numa classe: guarda estrutural (G10, 0 linha e o correto), tabela de dado versionado (JSON), falha de ambiente, ou candidato a corte/fusao; (3) cada candidato com o argumento e a mutacao rodada (REGRA-M aplicada ANTES de propor); (4) os 2 pares de §7.4 lidos e julgados com mutacao: test_series_history_oi_candles::test_requesting_the_polled_series_id_gives_the_same_candles x test_oi_candles_route_invariants::test_either_requested_id_serves_the_same_candles, e test_history_ceiling::test_the_ceiling_is_ninety_days x a fronteira de 90 dias da rota (G8).",
+    "saida: docs/context/estrutura-do-front/gates/T-10.9-backend-zero-linha.md. Candidato confirmado NAO e cortado aqui: vira task nova pelo /tech-lead, com aprovacao propria.",
+    "tempo: nao se aplica (nenhum teste muda).",
+    "ablacao: um teste sabidamente comportamental (ex.: um de test_bundle_hash.py) aparece com > 0 linha na recontagem; se aparecer com 0, o instrumento esta quebrado e a classificacao nao vale.",
+    "e2e: nao se aplica; nenhum diff em backend/.",
+    "numstat: `git diff --numstat $BASE..HEAD -- backend/` VAZIO, gravado no relatorio.",
+]
+
+# ── GRUPO B: fusoes e descidas ────────────────────────────────────────────────────
+# B1, unitario do front. ⛔ PRECEDE F3–F8: cada fatia de movimento quebrou 15, 20 e 13
+# arquivos de teste de fonte (T-01.2/3/4, UNIT-FRONT §4). T-03.1, T-04.2, T-05.1, T-06.1,
+# T-07.1 e T-08.3 ganharam depends_on nestas tasks. E elas dependem de T-02.3, porque
+# pane-stack.ts mora em chart/host/, que a F2 edita.
+
+[[tasks]]
+id = "T-10.10"
+title = "[web] 10 · Contratos de fonte, a parte pequena: as 5 raspagens de constante viram export + import, o pino ABSENCE_TOKEN vai de 6 regex para 1 assert, e a lista MOVED_OUT_FILES (9 copias) vira um modulo so"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-02.3", "T-10.8"]
+refs = [
+    "fonte: UNIT-FRONT-analise §2 (F03, o unico duplicado medido), §4 (classe 'raspagem de constante'; MOVED_OUT_FILES copiada em 9 arquivos) e §6 itens 3 e 4",
+    "agente: frontend-builder",
+    "ESCOPO: price-candle, candle-direction-channel, volume-subaxis-geometry, volume-subaxis-tf-invariance, price-volume-band-separation (.test.ts); os 5 contratos de pane e absence-readout-microcopy que pinam EXPECTED_ABSENCE_TOKEN; os 9 arquivos com MOVED_OUT_FILES e um modulo de apoio de teste novo. Producao: SO acrescentar `export` as constantes raspadas (pane-stack.ts em chart/host/, SymbolClient.tsx), nenhuma outra linha.",
+    "DoD: (1) nenhum dos 5 le constante pelo texto do fonte; (2) `assert.equal(ABSENCE_TOKEN, ABSENCE_MICROCOPY[LEGEND_GRID_ABSENCE])` num lugar so, e as 5 copias saem; (3) `grep -rn 'MOVED_OUT_FILES = ' frontend/src` devolve 1; (4) registra wc -l SymbolClient.tsx.",
+    "mordida (REGRA-M): F03 => reprova EXATAMENTE 1 arquivo (era 6); F02 => continua reprovando absence-readout-microcopy e pane-legend; mudar o VALOR de CHART_HEIGHT_PX e das margens => os 5 testes headless reprovam como antes.",
+    "tempo (REGRA-T): `time npm --prefix frontend run test:app`, sozinho, antes e depois (ganho esperado ~0: o motivo e manutencao, e o numero tem de dizer isso).",
+    "ablacao: R03 (quebra de linha antes de />, o que um prettier faz) e uma quebra de linha em volta de cada constante exportada => tudo VERDE (era vermelho: a fragilidade medida em UNIT-FRONT §2 sumiu nesta parte).",
+    "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.10-build.md, cada linha de producao justificada como `export`.",
+    "colisao: depende de T-02.3 porque pane-stack.ts (chart/host/) e SymbolClient.tsx sao editados pela F2.",
+]
+
+[[tasks]]
+id = "T-10.11"
+title = "[web] 10 · O padrao de teste de componente (react-dom/client + JSDOM, sem dependencia nova) e o piloto: beyond-coverage-badge, timeframe-bar e price-pane deixam de ler o fonte"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.10"]
+refs = [
+    "fonte: UNIT-FRONT-analise §4 (por que nasceram e por que a premissa caiu: jsdom ja e devDependency desde 083e1620; o que se perde ao reescrever) e §6 item 5",
+    "agente: frontend-builder. ⛔ CONSULTA OBRIGATORIA ao frontend-architect ANTES da primeira linha: ele decide o padrao (renderizador, installGlobals, onde mora o par morde/cala, controle negativo por mutacao de PROP) e o registra em docs/context/estrutura-do-front/gates/T-10.11-padrao.md, ou numa ADR curta se ele julgar que e padrao de repositorio. O builder implementa; nao decide o padrao.",
+    "ESCOPO: frontend/src/app/symbol/beyond-coverage-badge-dom-contract.test.ts, chrome/timeframe-bar-dom-contract.test.ts e price-pane-dom-contract.test.ts. `git diff $BASE..HEAD -- frontend/package.json` vazio (nenhuma dependencia nova).",
+    "DoD: (1) os 3 renderizam o subcomponente com props literais e afirmam data-fact/aria-* no DOM, sem readFileSync de .ts/.tsx; (2) cada contrato reescrito diz onde a LIGACAO em SymbolClient e provada (spec e2e + nome do teste, ou render de SymbolClient com cliente falso); onde nao houver prova, o relatorio diz e a ligacao nao se perde em silencio; (3) os MORDE em memoria desses 3 arquivos saem junto com o regex que defendem, exceto os refutados por T-10.8.",
+    "mordida (REGRA-M): F01 => beyond-coverage-badge reprova; F11 (some aria-pressed) => timeframe-bar reprova; dar o badge ao PricePane => price-pane reprova (o negativo virou 'o render do preco nao tem o badge').",
+    "tempo (REGRA-T): `time npm --prefix frontend run test:app`, sozinho, antes e depois.",
+    "ablacao: R01, R02, R03 e R04 (refatoracoes sem efeito) => os 3 arquivos ficam VERDES (eram vermelhos: o falso alarme medido em UNIT-FRONT §2 sumiu).",
+    "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.11-build.md.",
+]
+
+[[tasks]]
+id = "T-10.12"
+title = "[web] 10 · Contrato do CVD reescrito no padrao de render (cvd-pane-dom-contract), antes da F4 mover o pane"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.11"]
+refs = [
+    "fonte: UNIT-FRONT-analise §4 ('O que ainda vai quebrar': F4 4.4, 1 arquivo) e §5",
+    "agente: frontend-builder",
+    "ESCOPO: frontend/src/app/symbol/cvd-pane-dom-contract.test.ts. Nao edita o modulo de MOVED_OUT_FILES de T-10.10.",
+    "DoD: o padrao de T-10.11; a ligacao em SymbolClient com o lugar da prova declarado; os MORDE em memoria do arquivo saem, exceto os refutados por T-10.8.",
+    "mordida (REGRA-M): as mutacoes do historico do arquivo (`git log --oneline -- <f>`, a que cada commit de contrato registrou) reprovam o teste reescrito; o relatorio lista cada uma.",
+    "tempo (REGRA-T): `time npm --prefix frontend run test:app`, sozinho, antes e depois.",
+    "ablacao: renomear um handler ou reordenar props do CvdPane em SymbolClient.tsx (refatoracao sem efeito) => VERDE; tirar o data-fact do CvdPane => VERMELHO.",
+    "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.12-build.md.",
+    "paralelo: com T-10.13, T-10.14 e T-10.15 (arquivos disjuntos). Bloqueia T-04.2.",
+]
+
+[[tasks]]
+id = "T-10.13"
+title = "[web] 10 · Contratos do OI reescritos no padrao de render (oi-pane, oi-candle, oi-regime), antes da F5 mover o pane"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.11"]
+refs = [
+    "fonte: UNIT-FRONT-analise §4 (F5 5.4, 3 arquivos; oi-pane-dom-contract e o arquivo mais mexido do front, 19 commits) e §5",
+    "agente: frontend-builder",
+    "ESCOPO: frontend/src/app/symbol/oi-pane-dom-contract.test.ts, oi-candle-dom-contract.test.ts, oi-regime-dom-contract.test.ts.",
+    "DoD: o padrao de T-10.11; a ligacao em SymbolClient com o lugar da prova declarado; os MORDE em memoria saem, exceto os refutados por T-10.8.",
+    "mordida (REGRA-M): F12 (oi_freshness => oi_fresh) reprova oi-pane-dom-contract reescrito; as mutacoes do historico de cada arquivo, listadas no relatorio, reprovam.",
+    "tempo (REGRA-T): `time npm --prefix frontend run test:app`, sozinho, antes e depois.",
+    "ablacao: R01/R02 (ordem das props de <OiPane>, renomear oiWallState) => VERDE; tirar o atributo que cada contrato afirma => VERMELHO.",
+    "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.13-build.md.",
+    "paralelo: com T-10.12, T-10.14, T-10.15. Bloqueia T-05.1.",
+]
+
+[[tasks]]
+id = "T-10.14"
+title = "[web] 10 · Contratos de liquidacao e long/short reescritos no padrao de render (liquidation-pane, liquidation-legend-swatch, long-short-pane dom e design), antes da F6 e da F7"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.11"]
+refs = [
+    "fonte: UNIT-FRONT-analise §4 (F6 6.4 e F7 7.4, 2 arquivos cada; long-short-pane-dom-contract 15 commits, liquidation-pane-dom-contract 13) e §3 (o 'D-1 MORDE: the 7 ways this band dies silently' do long-short-pane-design-contract)",
+    "agente: frontend-builder",
+    "ESCOPO: frontend/src/app/symbol/liquidation-pane-dom-contract.test.ts, liquidation-legend-swatch.test.ts, long-short-pane-dom-contract.test.ts, long-short-pane-design-contract.test.ts.",
+    "DoD: o padrao de T-10.11; a ligacao em SymbolClient com o lugar da prova declarado; os MORDE em memoria saem, exceto os refutados por T-10.8; as 7 mortes silenciosas da faixa long/short viram 7 mutacoes de prop, cada uma reprovando.",
+    "mordida (REGRA-M): as mutacoes do historico de cada arquivo reprovam o teste reescrito; o relatorio lista cada uma por arquivo.",
+    "tempo (REGRA-T): `time npm --prefix frontend run test:app`, sozinho, antes e depois.",
+    "ablacao: refatoracao sem efeito no JSX de cada pane => VERDE; tirar o atributo afirmado => VERMELHO.",
+    "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.14-build.md.",
+    "paralelo: com T-10.12, T-10.13, T-10.15. Bloqueia T-06.1 e T-07.1.",
+]
+
+[[tasks]]
+id = "T-10.15"
+title = "[web] 10 · Os 9 contratos de ancora restantes reescritos (volume-subaxis, volume-legend-grid, chart-host, absence-readout, pane-legend, pane-chrome-options, unlabeled-tick-format, coverage-magnitude, seed-identity), antes da F8"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.11"]
+refs = [
+    "fonte: UNIT-FRONT-analise §4 (classe 'ancora de JSX/codigo', 20 arquivos; estes sao os 9 que T-10.11..T-10.14 nao cobrem) e §5",
+    "agente: frontend-builder",
+    "ESCOPO: frontend/src/app/symbol/volume-subaxis-dom-contract.test.ts, volume-legend-grid-contract.test.ts, chart/host/chart-host-dom-contract.test.ts, absence-readout-microcopy.test.ts, chart/legend/pane-legend.test.ts, pane-chrome-options.test.ts, unlabeled-tick-format.test.ts, coverage-magnitude.test.ts, seed-identity.test.ts. Nos 4 ultimos, SO a parte de ancora: o resto e comportamental e fica.",
+    "DoD: o padrao de T-10.11; os MORDE em memoria saem, exceto os refutados por T-10.8.",
+    "mordida (REGRA-M): F02 continua reprovando absence-readout-microcopy e pane-legend; as mutacoes do historico de cada arquivo reprovam; lista por arquivo no relatorio.",
+    "tempo (REGRA-T): `time npm --prefix frontend run test:app`, sozinho, antes e depois.",
+    "ablacao: refatoracao sem efeito no fonte que cada contrato lia => VERDE; tirar o atributo afirmado => VERMELHO.",
+    "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.15-build.md.",
+    "paralelo: com T-10.12, T-10.13, T-10.14. Bloqueia T-08.3 (o volume se move na F8; decisao do tech-lead, narrativa §10.5).",
+]
+
+[[tasks]]
+id = "T-10.16"
+title = "[charts][web] 10 · s2-axis-integration x axis-fidelity: funde SO se a mutacao de lineSeriesLossless reprovar os dois; senao fica, com a prova"
+components = ["charts", "web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.8"]
+refs = [
+    "fonte: UNIT-FRONT-analise §5 (FUNDE, [INFERRED] pelo cabecalho; ~8,5 s de parse de CSV no carregamento) e §7 (a mutacao que decide). A medicao vem de T-10.8.",
+    "agente: frontend-builder",
+    "ESCOPO: frontend/src/charts/s2-axis-integration.test.ts e frontend/src/app/symbol/axis-fidelity.test.ts.",
+    "DoD: se T-10.8 mediu que a mutacao reprova os DOIS: os casos que so o s2-axis-integration tem (o controle negativo naiveDropGapsLine, :271) entram no axis-fidelity e o s2-axis-integration sai. Se so UM reprova: nao funde, e a task fecha com a tabela de T-10.8 como evidencia (resultado legitimo).",
+    "mordida (REGRA-M, se fundir): a mutacao de lineSeriesLossless e naiveDropGapsLine reprovam o axis-fidelity depois da fusao.",
+    "tempo (REGRA-T): `time npm --prefix frontend run test:charts` e `test:app`, sozinhos, antes e depois.",
+    "ablacao: o controle negativo levado ao axis-fidelity reprova a serie que descarta o whitespace.",
+    "e2e: `make verify-scope` VERDE-ESCOPO.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.16-build.md.",
+    "⚠️ pendencia do owner P-3: se ele aposentar os loaders de CSV, o s2-axis-integration sai junto com eles e esta task se fecha por esse motivo.",
+]
+
+# B2, e2e. Cadeia serial (e2e.lock). Cada fusao entrega no relatorio o DE-PARA spec
+# antigo -> spec novo; o re-apontamento do "Medem primeiro" das T-02..T-09 e do DoD-1 do
+# cabecalho (specs 08–14) e ato do /tech-lead depois do merge, nao do builder.
+
+[[tasks]]
+id = "T-10.17"
+title = "[web] 10 · e2e /console: 02-B2, 04-t2, 05-t2, 06-1280 e 07-D3.5 entram no 01-t1; o 02-B6 atrasa so /collector-status"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.1"]
+refs = [
+    "fonte: E2E-analise §2 linhas 01–07 e §3/01..07 (as linhas (origem)); §6.3 (um anfitriao por pagina)",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/01, 02, 04, 05, 06, 07 e frontend/e2e/scope-map.tsv se alguma linha os cita.",
+    "DoD: (1) o 01-t1 recebe as assercoes, cada uma num test.step com expect.soft (a falha de uma nao esconde a seguinte); (2) ficam: 02 B1/B3–B5, 04 t1, 05 axe, 06 390, 07 D3.4; (3) o stub do 02-B6 atrasa SO /collector-status; (4) a contagem do api.log (E2E_API_LOG_PATH) do 01 e do 02 continua correta.",
+    "mordida (REGRA-M): para CADA teste movido, a mutacao de (origem) em E2E-analise §3/<spec> reprova o 01 depois da fusao; tabela teste-movido x mutacao x resultado no relatorio.",
+    "tempo (REGRA-T): `E2E_SPECS=\"e2e/01-…  e2e/07-…\" make e2e` com os 6 specs, antes e depois. Ganho esperado ~9 s [INFERIDO, soma da coluna de E2E §2].",
+    "ablacao: uma mutacao que derruba DUAS assercoes fundidas => o relatorio do Playwright mostra as DUAS (prova do expect.soft).",
+    "e2e: `make verify-scope` VERDE-ESCOPO com os 6 em E2E_EXTRA, E name-status com M so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.17-build.md, com o de-para.",
+]
+
+[[tasks]]
+id = "T-10.18"
+title = "[web] 10 · e2e /symbol: o 09 vira o anfitriao unico do goto padrao (absorve 08, 10-t2, o teste de pagina do 12, 13-t3, o principal do 14, 15 CA-3 e 19 CA-9/DoD-3/DoD-4); 08-t1, 14 C-1 e 15 CA-0 descem"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.2"]
+refs = [
+    "fonte: E2E-analise §2 linhas 08–15 e 19, §5 C-1 (anfitriao unico), C-4 (CA-10 fica no 19) e C-6 (CA-3 vai ao 09)",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/08, 09, 10, 12, 13, 14, 15, 19 e frontend/e2e/scope-map.tsv (a linha src/app/symbol/oi- cita o 08). D permitido no 08 e onde o spec inteiro se esvaziar. Os casos que descem entram em teste unitario comportamental; se o destino natural for um dos 20 contratos que T-10.10..T-10.15 reescrevem, a task espera a reescrita dele.",
+    "DoD: (1) cada painel num test.step com expect.soft no 09; (2) ficam no 12 os 2 testes sem browser, no 19 o CA-10, no 13 o t2 e o M-2 (vao para T-10.19); (3) DoD-1 da feature: o relatorio da o de-para das assercoes de 08–14, e elas continuam no make e2e; (4) scope-map.tsv re-apontado (alterar o mapa no diff forca o e2e COMPLETO no verify-scope, e isso e esperado).",
+    "mordida (REGRA-M): para cada teste movido ou descido, a mutacao de (origem) reprova o destino; para 08-t1, o teste que ja o cobre (E2E §3/08) e nomeado e a mutacao o reprova.",
+    "tempo (REGRA-T): `E2E_SPECS` com os 8 specs, antes e depois. Ganho esperado ~13 s [INFERIDO, E2E §2].",
+    "ablacao: derrubar o dado de dois paineis => o 09 mostra os dois vermelhos.",
+    "e2e: `make verify-scope` (COMPLETO, por causa do mapa) verde, E name-status com M/D so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.18-build.md, com o de-para.",
+]
+
+[[tasks]]
+id = "T-10.19"
+title = "[web] 10 · e2e liquidacao: o 32 e o 13-t2 entram no 35 (wrongSide === 0 no canvas inteiro, cohortGroupsInPage, layerRootsInAnchor == 1); o M-2 do 13 vai ao 23; o 13 sai"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.4", "T-10.18"]
+refs = [
+    "fonte: E2E-analise §2 linhas 13, 23, 32, 35 e §5 C-2 (a cadeia 13 -> 32 -> 35)",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/13 (D), 23, 32 (D), 35 e scope-map.tsv se os cita.",
+    "DoD: o teste de desenho do 35 que roda no portao recebe as tres afirmacoes; o 23 recebe a cobertura de ≤ 1 px do M-2; o 13 e o 32 saem.",
+    "mordida (REGRA-M): as mutacoes de (origem) de 13-t2, 13 M-2 e do 32 reprovam o 35 e o 23 depois da fusao.",
+    "tempo (REGRA-T): `E2E_SPECS` com 13, 23, 32, 35, antes e depois. Ganho esperado ~9 s [INFERIDO].",
+    "ablacao: pintar uma barra do lado errado => wrongSide > 0 => o 35 reprova.",
+    "e2e: `make verify-scope` VERDE-ESCOPO com 23 e 35 em E2E_EXTRA, E name-status com M/D so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.19-build.md, com o de-para.",
+]
+
+[[tasks]]
+id = "T-10.20"
+title = "[web] 10 · e2e/20 anfitriao do 17 e do 22, em ordem fixa: arrasto continuo do 17, o fluxo do 20, e no fim data-chart-mount-count == 1 hard"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.1", "T-00.4"]
+refs = [
+    "⛔ DEPENDENCIA DE OUTRA BRANCH: T-00.4 (origin/task/T-00.E2E) mexeu no 20 e ainda nao fez merge. Esta task SO e despachada depois desse merge, e entao o depends_on ganha \"T-00.4\" (o id ainda nao existe neste tasks.toml, e o validador recusaria).",
+    "fonte: E2E-analise §2 linhas 17, 20, 22 e §5 C-5",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/17 (D), 20, 22 (D) e scope-map.tsv se os cita. Os sonos de 17, 20 e 22 (fora da T-10.1) sao tratados aqui, com o helper dela.",
+    "DoD: (1) a ordem: o arrasto continuo do 17 (p95 e piso de ≥ 61 amostras) antes do pre-arrasto; o fluxo do 20; o mount-count == 1 hard, com mensagem propria; cada veredito num test.step; (2) os tetos de latencia NAO mudam (sao da T-00.4); (3) a janela negativa NO_REQUEST_WAIT_MS do 22 vira uma por teste.",
+    "mordida (REGRA-M): a mutacao de (origem) do 17 (latencia de eixo) e a do 22 (o host remonta ao paginar) reprovam o 20 depois da fusao.",
+    "tempo (REGRA-T): `E2E_SPECS` com 17, 20, 22, SOZINHO na maquina (o 20 reprova sob carga, CLAUDE.md), antes e depois. Ganho esperado ~23 s [INFERIDO, E2E §2 e §4.2].",
+    "ablacao: forcar uma remontagem do host durante a paginacao => o passo do mount-count reprova com a mensagem propria.",
+    "e2e: `make verify-scope` VERDE-ESCOPO com o 20 em E2E_EXTRA, E name-status com M/D so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.20-build.md, com o de-para.",
+]
+
+[[tasks]]
+id = "T-10.21"
+title = "[web] 10 · e2e/18 anfitriao do 26 (tag antes/depois no clique de 4h, mais um clique de 5m); os testes 1 e 2 do 18 entram no 3"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-00.4"]
+refs = [
+    "⛔ DEPENDENCIA DE OUTRA BRANCH: T-00.4 (origin/task/T-00.E2E) mexeu no 18 (a corrida contra a grade de 5 min) e ainda nao fez merge. Esta task SO e despachada depois desse merge, e entao o depends_on ganha \"T-00.4\".",
+    "fonte: E2E-analise §2 linhas 18 e 26, §5 'verificados e sem conflito' (o laco de retry do 18 rele hitsBefore E a tag na mesma tentativa)",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/18, 26 (D) e scope-map.tsv se os cita.",
+    "DoD: o 3 do 18 carrega o 1, o 2 e o 26; o laco de retry rele hitsBefore e a tag na mesma tentativa; o determinismo frente a fronteira de 5 min que a T-00.4 deu continua (o teste de travessia forcada dela segue verde).",
+    "mordida (REGRA-M): a mutacao de (origem) do 26 (o clique de TF nao troca a grade desenhada) e as dos testes 1 e 2 do 18 reprovam o 18 depois da fusao.",
+    "tempo (REGRA-T): `E2E_SPECS` com 18 e 26, antes e depois. Ganho esperado ~4 s [INFERIDO].",
+    "ablacao: a tag nao mudar no clique de 4h => o 18 reprova.",
+    "e2e: `make verify-scope` VERDE-ESCOPO com o 18 em E2E_EXTRA, E name-status com M/D so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.21-build.md, com o de-para.",
+]
+
+[[tasks]]
+id = "T-10.22"
+title = "[web] 10 · e2e/27 anfitriao do 16-t1 (data-axis-sync-write-count == 0 e 1 s de silencio sobre os 2 arrastos de 150 px); o 16-t2 desce para axis-sync.test.ts; o 16 sai"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.1"]
+refs = [
+    "fonte: E2E-analise §2 linhas 16 e 27 e §5 C-3 (o ciclo 27 -> 16 -> 27, resolvido com o 27 anfitriao; a perda declarada: write-count em 2 gestos, nao 3)",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/16 (D), 27, scope-map.tsv se os cita, e frontend/src/app/symbol/chart/axis/axis-sync.test.ts SO se o caso do 16-t2 ainda nao estiver la.",
+    "DoD: (1) o 27 afirma write-count == 0 e 1 s de silencio, sem perder o hard do MF-A (a 1a soltura cortava 760 slots); (2) o relatorio aponta o caso de axis-sync.test.ts que cobre o 16-t2, ou o acrescenta.",
+    "mordida (REGRA-M): a mutacao de (origem) do 16-t1 reprova o 27; a do 16-t2 reprova axis-sync.test.ts.",
+    "tempo (REGRA-T): `E2E_SPECS` com 16 e 27, antes e depois. Ganho esperado ~9 s [INFERIDO].",
+    "ablacao: uma escrita espuria no eixo ao soltar o arrasto => write-count > 0 => o 27 reprova.",
+    "e2e: `make verify-scope` VERDE-ESCOPO com o 27 em E2E_EXTRA, E name-status com M/D so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.22-build.md, com o de-para.",
+]
+
+[[tasks]]
+id = "T-10.23"
+title = "[web] 10 · e2e: montagem compartilhada dentro do arquivo no 24, 41 e 42 (so leitura em repouso); o 24 CA-5 e o 15m do 41 descem"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.1"]
+refs = [
+    "fonte: E2E-analise §2 linhas 24, 41, 42 e §6.3 (montagens repetidas; o que se paga ao compartilhar pagina); §5 'verificados': o 41 segue testemunha dos titulos derivados",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/24, 41, 42. Os casos que descem entram em teste unitario comportamental, fora dos 20 contratos de T-10.10..T-10.15 (ou a task espera a reescrita do destino).",
+    "DoD: (1) test.describe.serial com a pagina montada em beforeAll SO para leituras em repouso da mesma montagem, nunca entre gestos; (2) test.step + expect.soft preservam o 'one red criterion never hides the next' do 24 (L464); (3) 24: CA-1′, CA-2′ e T-01.11-FIX numa montagem; 41: N-2 dentro das montagens do N-1; 42: (d) na montagem do (e).",
+    "mordida (REGRA-M): a mutacao de (origem) de cada teste reagrupado ou descido reprova o destino; tabela no relatorio.",
+    "tempo (REGRA-T): `E2E_SPECS` com 24, 41, 42, antes e depois. Ganho esperado ~19 s [INFERIDO].",
+    "ablacao: uma mutacao que derruba CA-1′ => o relatorio mostra tambem o resultado de CA-2′ (o vermelho nao esconde o seguinte).",
+    "e2e: `make verify-scope` VERDE-ESCOPO com os 3 em E2E_EXTRA, E name-status com M so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.23-build.md.",
+]
+
+[[tasks]]
+id = "T-10.24"
+title = "[web] 10 · e2e: as descidas parciais: 28 (DOM de L291-295), 34-t2 (log10), 37 RM-5 e 40 (A-2 + A-1 e A-3)"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.1"]
+refs = [
+    "fonte: E2E-analise §2 linhas 28, 34, 37, 40 e §5 C-7 (o 34-t2 desce; perda declarada: a prova de que ?e2eLiquidationLogScale=1 chega a lib no app real)",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/28, 34, 37, 40, e os unitarios de destino (fora dos 20 contratos de T-10.10..T-10.15, ou espera a reescrita do destino). O log10 do 34-t2 ja esta em liquidation-pane-geometry.test.ts (2 modos x 3 janelas): provar, nao reescrever.",
+    "DoD: as 4 partes saem do e2e e cada uma tem destino nomeado; os 8 C-3 do 40 ficam.",
+    "mordida (REGRA-M): a mutacao de (origem) de cada parte descida reprova o unitario de destino; para o 34-t2, uma coordenada log errada reprova liquidation-pane-geometry.test.ts.",
+    "tempo (REGRA-T): `E2E_SPECS` com 28, 34, 37, 40, antes e depois; e `time npm --prefix frontend run test:app` antes e depois (o que desce custa algo no unitario). Ganho esperado ~15 s [INFERIDO].",
+    "ablacao: em cada unitario novo, a mutacao reprova e a refatoracao sem efeito passa.",
+    "e2e: `make verify-scope` VERDE-ESCOPO com os 4 em E2E_EXTRA, E name-status com M so no escopo.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.24-build.md.",
+    "alternativa ao owner (C-7): manter o 34-t2 no e2e custa ~3,6 s e preserva a prova no app real.",
+]
+
+# B3, backend.
+
+[[tasks]]
+id = "T-10.25"
+title = "[sentimento][infra] 10 · Backend: as 3 contagens do catalogo viram 1 (G6), os 4 'no longer refuses' viram 1 parametrizado sobre todo id servido (G7), e a fronteira de 90 dias da rota fica so com o 422 (G8)"
+components = ["sentimento", "infra"]
+status = "todo"
+phase = "10"
+depends_on = []
+refs = [
+    "fonte: BACKEND-analise §3 G6, G7, G8 e §7 item 1 (G6–G8 ainda nao provados por mutacao)",
+    "agente: harness-plugin:builder",
+    "ESCOPO: backend/tests/sentimento/test_series_catalog_use_case.py e backend/tests/api/test_series_history_route.py. Fora dos prefixos da feature: os dois entram em `harness pipeline scope estrutura-do-front add` (narrativa §10.6).",
+    "DoD: (1) G6: um teste pina o total (20, e 80 = 20x4) e carrega o que era proprio de cada um (chaves de topo do envelope; ids distintos x 4 instrumentos); (2) G7: um teste parametrizado sobre TODO id servido; (3) G8: fica um 422 de teto na rota; o caso de 200 na fronteira sai, porque test_series_history.py:527/556 a fixa com MAX_HISTORY_MS.",
+    "mordida (REGRA-M, as 3 provas que a analise nao fez): tirar uma linha do catalogo => o teste de G6 e o de G7 reprovam; registrar um id que build_series_history_report recusa => G7 reprova (cobertura NOVA de metrica futura); a rota traduzir HistoryWindowBeyondCeilingError em 200 => o 422 restante reprova; MAX_HISTORY_MS + 1 dia => test_series_history.py reprova. Cada uma com e sem a mudanca.",
+    "tempo (REGRA-T): `pytest -o addopts=\"\" -q <os 2 arquivos>`, sozinho, antes e depois (ganho esperado < 1 s [NAO MEDIDO, BACKEND §5]; o motivo e manutencao, e o numero diz isso).",
+    "ablacao: purgar __pycache__ antes de cada mutacao (memoria: cache obsoleto falseia mutacao).",
+    "e2e: diff so de backend/tests; `make verify-scope` VERDE-ESCOPO.",
+    "numstat: `git diff --numstat $BASE..HEAD -- backend/` no relatorio docs/context/estrutura-do-front/gates/T-10.25-build.md.",
+]
+
+[[tasks]]
+id = "T-10.26"
+title = "[charts] 10 · Backend G5: test_field_identity passa a comparar a constante com dataclasses.fields(FieldIdentity), e nao com um literal"
+components = ["charts"]
+status = "todo"
+phase = "10"
+depends_on = []
+refs = [
+    "fonte: BACKEND-analise §3 G5 (tautologico em relacao ao que promete; 0 linha de producao; o padrao certo em test_threshold_spec.py:31)",
+    "agente: harness-plugin:builder",
+    "ESCOPO: backend/tests/charts/test_field_identity.py (fora dos prefixos da feature, narrativa §10.6).",
+    "DoD: a assercao compara FIELD_IDENTITY_TERMS (ou o nome real da constante) com a ordem de dataclasses.fields(FieldIdentity).",
+    "mordida (REGRA-M): reordenar os campos da dataclass => o teste NOVO reprova e o ANTIGO ficava verde (as duas rodadas no relatorio: e o ganho da task).",
+    "tempo (REGRA-T): `pytest -o addopts=\"\" -q backend/tests/charts/test_field_identity.py`, antes e depois.",
+    "ablacao: a constante reordenada sem mexer na dataclass => reprova.",
+    "e2e: diff so de backend/tests; `make verify-scope` VERDE-ESCOPO.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.26-build.md.",
+]
+
+# ── GRUPO C: cortes. Depois das fusoes da mesma camada: a mordida da mutacao de um corte
+# e provada contra a suite JA fundida, senao a prova vale para uma suite que deixa de existir.
+
+[[tasks]]
+id = "T-10.27"
+title = "[web] 10 · e2e: os cortes: o 31 (coberto por liquidation-pane-geometry + 35/34), o 36 (coberto pelo 38 com a tinta da linha) e o (d)+(e) do 33 (coberto pelo 35 CA-9′)"
+components = ["web"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.3", "T-10.19", "T-10.24"]
+refs = [
+    "fonte: E2E-analise §2 linhas 31, 33, 36 e §5 C-7, C-8, C-9",
+    "agente: frontend-builder",
+    "ESCOPO (REGRA-X): frontend/e2e/31 (D), 36 (D), 33 e scope-map.tsv se os cita.",
+    "DoD: os tres saem SO com a mordida provada; C-8: o corte do 33 (d)+(e) vale enquanto o CA-9′ estiver no e2e (o relatorio confere que esta, no 35 de T-10.4).",
+    "mordida (REGRA-M): a mutacao de (origem) do 31 reprova liquidation-pane-geometry.test.ts ou o 35/34; as do 36 (PX-1, PX-2 incluindo 'a linha aparece sob ?e2eOiLine=1', PX-3) reprovam o 38 de T-10.3; a do 33 (d)+(e) reprova o 35 CA-9′(b)(c). Se alguma NAO reprovar, aquela parte FICA e o relatorio diz.",
+    "tempo (REGRA-T): `E2E_SPECS` com 31, 33, 35, 36, 38, antes e depois. Ganho esperado ~24 s [INFERIDO: 1,6 + 12,1 + ~10].",
+    "ablacao: as mutacoes acima, rodadas COM o spec cortado ainda presente e depois sem ele: o vermelho tem de vir do anfitriao nos dois casos.",
+    "e2e: `make verify-scope` VERDE-ESCOPO com 33, 35, 38 em E2E_EXTRA, E name-status com D so em 31 e 36 e M so no 33.",
+    "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.27-build.md, com o de-para.",
+]
+
+[[tasks]]
+id = "T-10.28"
+title = "[backtest][sentimento][charts] 10 · Backend: os cortes G1–G4 (bundle_hash de QA, o envelope sem run_id, os 2 DTOs do clock_skew, os 2 do panel_bar_progress), cada um so com a mordida provada"
+components = ["backtest", "sentimento", "charts"]
+status = "todo"
+phase = "10"
+depends_on = ["T-10.25", "T-10.26"]
+refs = [
+    "fonte: BACKEND-analise §3 G1–G4 e §6 (so o G1 provado por mutacao)",
+    "agente: harness-plugin:builder",
+    "ESCOPO: backend/tests/backtest/test_bundle_hash_determinism_qa.py (o teste G1 sai; a citacao do ADR-021 G3 vai para a docstring de backend/tests/backtest/test_bundle_hash.py), backend/tests/sentimento/test_series_row_wire_run_id_envelope.py, backend/tests/sentimento/test_clock_skew.py, backend/tests/charts/test_panel_bar_progress.py. Os 5 fora dos prefixos da feature (narrativa §10.6).",
+    "DoD: os 6 testes saem SO com a mordida provada; fica o test_falsifier_in_progress_bar_has_no_high_low_close_attribute (o falsificador do ADR-026).",
+    "mordida (REGRA-M): G1: M1 (sorted(payload) => payload) reprova 4 testes de test_bundle_hash.py sem o de QA [ja MEDIDO, refazer]; G2: tirar uma chave do encode => test_series_row_wire::test_encode_produces_exactly_the_16_named_string_keys reprova; G3: renomear um campo de ServerTimeObservation => o mypy do portao (lint) ou um teste chamador reprova, citado o comando; G4: InProgressBar(FinalBar) => o falsificador hasattr reprova. Se a mordida de algum NAO vier, ele FICA.",
+    "tempo (REGRA-T): `pytest -o addopts=\"\" -q <os 5 arquivos>`, antes e depois (ganho ~0 [BACKEND §5]; o motivo e o teste que mentia: a docstring do G1 diz 'expected to FAIL', o que e falso desde a emenda).",
+    "ablacao: cada mutacao rodada COM o teste cortado e SEM ele; purgar __pycache__ antes de cada rodada.",
+    "e2e: diff so de backend/tests; `make verify-scope` VERDE-ESCOPO.",
+    "numstat: `git diff --numstat $BASE..HEAD -- backend/` no relatorio docs/context/estrutura-do-front/gates/T-10.28-build.md.",
 ]

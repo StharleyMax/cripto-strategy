@@ -155,3 +155,116 @@ A task é a **`T-00.4`**, componente `web`, `frontend-builder`, sem dependência
 - **N = 10** rodadas sequenciais de `make e2e` inteiro sem vermelho nos dois specs. O motivo do 10 está nos `refs` da task.
 
 Tracker: a `T-00.4` fica **sem `tracker` e sem `local_only`**, no mesmo âmbar das outras 32 (§6). Ninguém decidiu não cardar.
+
+## 10. Adendo 2026-10-03: fase `10`, a pirâmide de testes (28 tasks)
+
+> O §9 (a `T-00.4`) vive só na branch `origin/task/T-00.E2E` até o merge dela. Este §10 foi escrito na branch `docs/piramide-de-testes`, e os dois
+> acrescentam texto no fim deste arquivo: **o merge das duas branches vai dar conflito textual aqui**, que se resolve mantendo §9 antes de §10.
+
+### 10.1 Origem e gate de entrada
+
+`[PREMISSA-OWNER: 2026-10-03]`, depois da análise: *"apos a analise já pode iniciar os ajustes e melhorias, daí pode entrar nessa memsa feature atual"*.
+A feature atual é `estrutura-do-front`, e a fase entra pelo mesmo caminho da `T-00.4`.
+
+- **Estado:** `harness pipeline state estrutura-do-front` → `BUILD_AUTHORIZED` `[MEDIDO 2026-10-03]`, e não `SPEC_APPROVED`. É adendo a uma quebra já
+  aprovada, como o §9. **A fala do owner autoriza começar; ela não aprova estas 28 tasks**, que ele não viu. Leitura minha `[INFERRED]`: o owner intervém por
+  exceção, e esta narrativa é o lugar onde ele pode vetar.
+- **Fontes:** `docs/context/piramide-de-testes/gates/{E2E,UNIT-FRONT,BACKEND}-analise.md`, no commit `5bc99643`. As tasks citam arquivo e seção, sem colar.
+- **Plano:** o validador exige `docs/plans/SPEC-011-estrutura-do-front/10_*.md` (`V-24`, 28 ERROR sem ele `[MEDIDO]`). Escrevi
+  [`10_piramide_de_testes.md`](../../../plans/SPEC-011-estrutura-do-front/10_piramide_de_testes.md) como **plano-índice**: aponta para as três análises e
+  não decide nada. Plano é artefato do `/architect`. Se ele quiser reescrevê-lo, as tasks não mudam. Não acrescentei a fase `10` ao `index.md` do plano.
+
+### 10.2 A quebra
+
+| grupo | tasks | o quê |
+|---|---|---|
+| **A**, mecânico, sem mexer em asserção | `T-10.1` sonos fixos · `T-10.2` skip antes da montagem (15, 21, 30, 39) · `T-10.3` instrumento do 38 · `T-10.4` instrumento do 35 · `T-10.5` lint só dos probes plantados · `T-10.6` fixture sintética do `s2-cvd` · `T-10.7` cache do oráculo do `oi_candles` | 7 |
+| **P**, as pendências das análises PARCIAIS (só medição) | `T-10.8` rodada 2 do front: os 41 MORDE em memória, R01–R04 por teste e o par `axis-fidelity` · `T-10.9` as 195 funções de backend com 0 linha, e os 2 pares de BACKEND §7.4 | 2 |
+| **B**, fusões e descidas | front unitário: `T-10.10` constantes, `ABSENCE_TOKEN` e `MOVED_OUT_FILES` · `T-10.11` padrão de render e piloto · `T-10.12` CVD · `T-10.13` OI · `T-10.14` liquidação e long/short · `T-10.15` os 9 restantes · `T-10.16` `s2-axis-integration` × `axis-fidelity`. e2e: `T-10.17` /console → 01 · `T-10.18` /symbol → 09 · `T-10.19` liquidação → 35/23 · `T-10.20` 17 e 22 → 20 · `T-10.21` 26 → 18 · `T-10.22` 16 → 27 · `T-10.23` montagem compartilhada em 24/41/42 · `T-10.24` descidas parciais 28/34/37/40. backend: `T-10.25` G6–G8 · `T-10.26` G5 | 17 |
+| **C**, cortes | `T-10.27` e2e 31, 36, 33 (d)+(e) · `T-10.28` backend G1–G4 | 2 |
+
+Total: 28. Com as 32 deste branch, o validador conta 60 `[MEDIDO: harness tasks validate estrutura-do-front → 60 task(s), 0 ERROR, 0 WARN]`. Com a
+`T-00.4` depois do merge, serão 61.
+
+**Toda task carrega DoD, ablação e e2e, no formato da `T-00.4`, mais três regras fixadas no cabeçalho da fase no `tasks.toml`:** `REGRA-M` (a mordida
+de cada teste que sai, provada depois da mudança; sem mordida ele fica), `REGRA-T` (tempo antes e depois do mesmo comando, sozinho na máquina; ganho não
+medido não fecha a task) e `REGRA-X` (exceção ao `DoD-2`, só nos specs que a task nomeia).
+
+### 10.3 Dependências críticas
+
+1. **F3 a F8 passam a esperar a reescrita dos contratos de fonte.** Cada fatia de movimento quebrou 15, 20 e 13 arquivos desses (`T-01.2/3/4`, UNIT-FRONT
+   §4). Acrescentei ao `depends_on`: `T-03.1` ← `T-10.10` + `T-10.11`; `T-04.2` ← `T-10.12`; `T-05.1` ← `T-10.13`; `T-06.1` e `T-07.1` ← `T-10.14`;
+   `T-08.3` ← `T-10.15`. **O caminho crítico da feature cresce:** a F3 agora espera `T-10.8` → `T-10.10` → `T-10.11`, além da F2.
+2. **A reescrita espera a F2.** `T-10.10` depende de `T-02.3`, porque as constantes que ela exporta moram em `chart/host/pane-stack.ts` e em
+   `SymbolClient.tsx`, que a F2 edita. Nenhuma task da fase `10` toca `chart/host/` antes disso. Conferi contra os `refs` de `T-02.1`..`T-02.3`.
+3. **`T-00.4` está em outra branch.** `T-10.20` (o 20) e `T-10.21` (o 18) dependem dela, mas o validador recusa a dependência:
+   `V-13 dependencia orfa: 'T-00.4' nao existe neste arquivo` `[MEDIDO 2026-10-03, com o depends_on posto e retirado]`. A dependência ficou nos `refs`
+   das duas, com ⛔, e o `depends_on` ganha `"T-00.4"` no merge. Quem despacha confere antes.
+4. **O e2e é uma cadeia serial**, porque só roda um e2e por vez (`e2e.lock`). `T-10.1` abre a cadeia, e as de e2e que mexem nos mesmos specs dependem dela.
+   A `T-10.21` (18 e 26, sem sono fixo) não depende. O unitário do front e o backend correm ao lado.
+5. **Os cortes vêm depois das fusões da mesma camada** (`T-10.27` ← `T-10.3`, `T-10.19`, `T-10.24`; `T-10.28` ← `T-10.25`, `T-10.26`). A mordida de um
+   corte é provada contra a suíte já fundida. Se fosse antes, a prova valeria para uma suíte que vai deixar de existir.
+
+Pode começar já, ao lado da F2: `T-10.1`, `T-10.5`, `T-10.6`, `T-10.7`, `T-10.8`, `T-10.9`, `T-10.25`, `T-10.26`, respeitando o teto de 3 simultâneas.
+
+### 10.4 Decisões do tech-lead (o owner pode vetar qualquer uma)
+
+- **`D-TL-10.1`, a F8 também espera (`T-08.3` ← `T-10.15`).** O handoff pedia F3–F7. A F8 move o volume, e `volume-subaxis-dom-contract` quebraria do
+  mesmo jeito. Alternativa: não declarar. Custo: a F8 re-aponta regex, como as fatias da F1 fizeram.
+- **`D-TL-10.2`, os 20 contratos de âncora em 5 tasks, uma por pane que a fatia move**, para que cada fase espere só a sua. Alternativa: uma task só.
+  Custo: a F3 esperaria os 20.
+- **`D-TL-10.3`, o padrão de render é decidido pelo `frontend-architect`, numa consulta obrigatória dentro de `T-10.11`.** O agente da task continua sendo
+  o `frontend-builder`, como pedido. Motivo: é padrão novo de teste (UNIT-FRONT §6 item 5), e o builder não decide estrutura.
+- **`D-TL-10.4`, o 21 entra na `T-10.2` (skip), e não numa task de descida.** A descida dele é decidir `readerPresent` antes dos arrastos, que é o mesmo
+  mecanismo de E2E §6.1.
+- **`D-TL-10.5`, a instância Next secundária como fixture de worker (E2E §6.3, item 3) NÃO virou task.** O custo por boot não foi medido (`≤ ~40 s`
+  `[NÃO MEDIDO por boot]`), e ela toca 21 specs que as fusões estão mudando. Volta a ser candidata depois do grupo B, quando sobram ~21 chamadas.
+- **`D-TL-10.6`, o laço do 33 (`:423-427`) não adota o instrumento novo nesta fase.** O ganho não foi somado (E2E §6.4), e o 33 perde (d)+(e) em `T-10.27`.
+- **O que muda nas tasks já aprovadas, e quem muda.** As fusões removem specs que o `DoD-1` do cabeçalho (`08`–`14`) e o "Medem primeiro" de
+  `T-01.2`..`T-09.5` citam. Cada task de fusão entrega o de-para spec antigo → spec novo. **O re-apontamento é do `/tech-lead`, depois do merge**, e não do
+  builder.
+- **Discrepância no handoff:** ele cita "UNIT-FRONT §8" para os contratos-âncora. A análise não tem §8. O conteúdo está em §4 (classes) e §6 item 5, e é
+  isso que as tasks citam.
+
+### 10.5 Escopo: o que o orquestrador acrescenta
+
+Os 10 prefixos de hoje não cobrem o teste de backend nem o `fingerprint-sync-boundary`. Hoje nenhuma feature **viva** reivindica esses caminhos:
+`harness pipeline require-code <caminho>` responde *"nenhuma feature VIVA reivindica"* para os cinco que testei, e só citou features encerradas
+`[MEDIDO 2026-10-03]`. `plataforma-dados` é a outra feature autorizada, e o escopo dela é só `docs/context/plataforma-dados` `[MEDIDO]`. Os caminhos
+exatos, um por arquivo, para não reivindicar diretório inteiro:
+
+```
+harness pipeline scope estrutura-do-front add \
+  frontend/src/features/s1-console/fingerprint-sync-boundary.test.ts \
+  backend/tests/sentimento/test_oi_candles_route_invariants.py \
+  backend/tests/sentimento/test_series_catalog_use_case.py \
+  backend/tests/sentimento/test_series_row_wire_run_id_envelope.py \
+  backend/tests/sentimento/test_clock_skew.py \
+  backend/tests/api/test_series_history_route.py \
+  backend/tests/backtest/test_bundle_hash_determinism_qa.py \
+  backend/tests/backtest/test_bundle_hash.py \
+  backend/tests/charts/test_panel_bar_progress.py \
+  backend/tests/charts/test_field_identity.py
+```
+
+`T-10.8` e `T-10.9` não escrevem no repositório fora do relatório, então não precisam de prefixo. Se `T-10.9` propuser cortes, a task nova traz o
+prefixo dela.
+
+### 10.6 Tracker
+
+Igual ao §6: as 28 ficam **sem `tracker` e sem `local_only`**, no âmbar. Ninguém decidiu não cardar. Não mexi no `untracked_note` porque a branch
+`task/T-00.E2E` muda a mesma linha, e os dois merges dariam conflito. **Quem fizer o segundo merge reescreve a nota com o total (61) e a data.**
+
+### 10.7 Pendências do owner, fora da fase 10
+
+| # | pendência | custo de cada lado |
+|---|---|---|
+| `P-1` | **`workers > 1` no Playwright** (E2E §1.3) | **ligar:** hipótese de ~305 s contra 551 s `[NÃO MEDIDO]`, com um projeto serial para {01, 02, 20, 21, 25, 40}. Com o swap a ~94 %, a inflação por contenção é provável, os specs de teto de latência reprovam sob carga (o 20 deu 917,5 ms contra ≤ 100 ms) e 01/02 contam incrementos num `api.log` compartilhado. **Não ligar:** o e2e fica serial, e o ganho desta fase (~247–272 s `[INFERIDO]`) é o único |
+| `P-2` | **o código de `charts/` e `backtest/` do backend que a produção não importa** (BACKEND §3 G11) | **aposentar:** saem 24 arquivos e 183 testes, que inflam a cobertura de 96,92 % com código que nada executa em produção. Perde-se o motor de backtest e o S4 (T-08.x, CST-72..80). **Manter:** custo de suíte e de leitura, e regras de render que o front implementa por conta própria em TS. A decisão é sobre o código, não sobre os testes |
+| `P-3` | **os loaders de CSV do front que só teste usa** (UNIT-FRONT §3: `s2-klines-loader`, `s2-oi-loader`, `s2-fixture-window` e o parse de aggTrades de `s2-cvd`) | **aposentar:** ~25 s de CPU de teste sobre código fora do produto. `T-10.6` e `T-10.16` se fecham pelo corte. **Manter:** como harness de dado real, e as duas tasks seguem |
+
+### 10.8 Ganho esperado, e o que ele ainda não é
+
+e2e ~247–272 s de 550,9 s `[INFERIDO, E2E §4.2]`; unitário do front ~45–50 s de 86,6 s `[INFERRED, UNIT-FRONT §1]`; backend ~50 s do portão
+`[MEDIDO no protótipo, INFERRED na versão final, BACKEND §2]`. **Nenhum desses números fecha task.** Fecha a medição antes/depois que a `REGRA-T` manda
+fazer em cada uma.
