@@ -139,3 +139,101 @@ Contagem: **1 bloqueante (MÉDIA-ALTA)** · **3 MÉDIA** (não bloqueiam) · **6
   coletor parado (ou margem de tempo), e um teste do script que reprove `pending > 0`.
 - M-1, M-2 e M-3 são consertos de uma a três linhas cada. Recomendo fazê-los na mesma passada, sem
   exigência deste gate.
+
+---
+
+## Re-validação @a451027
+
+Universo: `git diff 27fe3b4..a451027 -- scripts/md-series-compaction scripts/scope-resolve.sh frontend/e2e/scope-map.tsv backend/tests`
+(8 commits, `compact.sh` +81, `flags.sql` +3, `scope-resolve.sh` +30, testes +239). Lido à mão contra o
+código, com medição no Docker local (só leitura) onde a semântica de ferramenta decide. Não rodei
+`make verify` nem e2e, porque o despacho proíbe.
+
+### Veredito: **CHANGES_REQUESTED** (escopo estreito: N-1)
+
+O núcleo do B-1 está fechado. Mas o próprio conserto traz uma guarda que não existe no Docker real (N-1),
+e o teste a dá como verde por meio de um `docker` falso que não reproduz o filtro. Neste repositório,
+falso verde em portão de passo irreversível não passa. O conserto tem cerca de 3 linhas.
+
+### B-1 — **FECHADO** para a topologia documentada
+
+- `compact.sh:165-201` (`require_pipeline_stopped`), chamado em `snapshot` (`:205`, **antes** do `mkdir`
+  e do `clock_timestamp`) e de novo em `delete` (`:293`, antes de listar chunks).
+- Fail-closed conferido ramo a ramo: contêiner não achado → `die`. Estado ≠ `exited|created|dead`
+  (`running`, `paused`, `restarting`) → `die`. `XINFO` com erro → `die`. Grupo ausente (`found≠1`) → `die`.
+  `lag` nil (linha vazia), `?` ou ≠0 → `die`. `pending` ≠0 → `die`. Os testes cobrem `lag>0`,
+  `lag-nil`, `collector-running`, `writer-running`, `writer-paused`, `writer-not-found` e `group-missing`,
+  mais `pending>0` no `delete`.
+- **Parser contra o Redis real** `[MEDIDO 2026-10-03: docker exec deploy-redis-1 redis-cli XINFO GROUPS md.series.write | <awk de compact.sh>]`
+  → `1 0 0`. A saída real é `name|single_writer|consumers|1|pending|0|…|lag|0`: o par chave/valor por
+  `NR%2` vale, e o grupo padrão `single_writer` é o que existe.
+- **Ninguém além do escritor grava `md.series`.** `grep -rnE 'INSERT INTO md\.series' backend/src deploy scripts`
+  devolve só `postgres_series_sink.py:72`, usado só por `single_writer_cli.py`, e
+  `scripts/oi-poll-capture-bench.sh:130`, que grava no Postgres **do bench**, não no deploy. A rota de
+  quarentena da `api` só lê (nenhum `XADD`/publish em `routes/series_quarantine.py`).
+- **Restart policy não reabre o furo.** `writer` e `collector` são `unless-stopped`
+  (`deploy/compose.yml:164,308`), e um `docker stop` sobrevive ao restart do daemon. Mais forte: mesmo
+  que alguém religue o pipeline depois do `snapshot`, isso não injeta linha com `ingested_at <= T_SNAP`.
+  O stream estava vazio para o grupo (lag 0, pending 0), e o coletor carimba `received_at` no relógio
+  de parede da busca (`collectors_cli.py:1918`, mesmo kernel que o `clock_timestamp()` do Postgres).
+  Então toda linha nova nasce `> T_SNAP`. A recheca no `delete` é cinto e suspensório.
+- **Resíduo aceito (BAIXA):** existe TOCTOU entre a recheca de `delete` e o fim do laço de chunks. Pelo
+  argumento acima, ele não alcança o universo congelado.
+
+### N-1 — a varredura "qualquer nome" por label é **código morto no Docker real**. O teste a dá verde por um fake — **MÉDIA, bloqueia**
+
+- `compact.sh:176-178`:
+  `docker ps --filter label=com.docker.compose.service=collector --filter label=com.docker.compose.service=writer`.
+  No `docker ps`, filtros `label` repetidos são **AND** (o contêiner precisa ter todos), não OR. Nenhum
+  contêiner tem `service=collector` **e** `service=writer` ao mesmo tempo, então a saída é **sempre vazia**.
+- **Medido com o pipeline VIVO** `[MEDIDO 2026-10-03, Docker 24.0.4, deploy-collector-1 e deploy-writer-1 em execução]`:
+  o comando exato de `compact.sh` devolve `[]`. Com um filtro só (`…=collector`), devolve
+  `[deploy-collector-1]`. Controle: `--filter …=postgres --filter …=redis` também devolve vazio.
+- O comentário `:161-162` (*"a scaled replica, another project — the named check alone would miss it"*),
+  a tabela de `T-06.4-fix-B1.md:14` e a mutação **M4** (*"varredura `docker ps` neutralizada — 2 failed
+  (`scaled-replica`)"*, `:47`) afirmam uma guarda que não existe. O fake
+  (`test_md_series_compaction_delete_flow.py:59`, `ps) … echo "$FAKE_DOCKER_PS"`) ignora os argumentos e
+  devolve o nome. É o caso "a mutação reprova contra o dublê, não contra a ferramenta".
+- **Alcance real:** o furo exige réplica **não nomeada** do escritor **e** do coletor ao mesmo tempo.
+  Um coletor extra sem escritor só faz o lag subir, e a recheca do `delete` pega. Um escritor extra sem
+  coletor não tem o que gravar. Na topologia de escritor único (`ADR-009`) isso é improvável, e por isso
+  é MÉDIA e não ALTA. Bloqueia porque é um falso verde novo dentro do portão que protege o `DELETE`
+  irreversível.
+- **Correção:** um único `docker ps --filter label=com.docker.compose.service --format '{{.Names}} {{.Label "com.docker.compose.service"}}'`
+  com `awk '$2=="collector"||$2=="writer"{print $1}'`, ou dois `docker ps` (um por serviço). O fake
+  precisa **honrar os filtros**, por exemplo devolvendo o nome só quando o `--filter` pede o serviço
+  dele. Sem isso, o teste não morde a regressão que acabei de medir.
+
+### M-3 — **FECHADO** para os casos medidos. Fica um resíduo da mesma classe (N-2)
+
+- `scope-resolve.sh` `check_tokens` roda no shell principal (o `while … done < "$MAP"` não é pipe, então
+  `recusa` sai com rc=3), antes de `expand`. Ela recusa `ab+`, `8-9`, `13-12`, `16-2O`, `16-x` e `2O+`.
+  Os testes cobrem os três primeiros.
+- **N-2 (MÉDIA latente, pré-existente, não bloqueia):** `NN+` com `NN` **acima do último spec** é um
+  token bem formado. `check_tokens` o aceita, `expand` (`:59`, `for ((i=a; i<=last…))`) não imprime
+  nada e a linha encolhe em silêncio. `[MEDIDO 2026-10-03: cópia de expand no scratchpad, last=42]`:
+  `'13 99+ 29'` → `13 29`, `'13 43+ 29'` → `13 29`. É plausível quando os specs do fim são apagados
+  (uma linha `40+` com 40–42 removidos), e o comentário de `expand` (*"the first number printed is `a`
+  itself"*) está errado justamente nesse caso. O completo da wave é o anteparo. **Correção:** em
+  `check_tokens`, para `NN+` e `NN-MM`, chamar `spec_of` na base, que está no shell principal e recusa.
+
+### F-1 / W-2 — **FECHADOS**, sem falso verde novo
+
+- `frontend/e2e/scope-map.tsv` no diff → `full_e2e`. O mapa removido já recusava em `[ -f "$MAP" ]`.
+- `frontend/public/*` → `full_e2e`, posto **antes** do ramo `*.md`, então um `.md` servido não vira
+  documento. Também conferi: `git ls-files frontend/src frontend/e2e | grep -c '\.md$'` = `0`, logo o
+  ramo `*.md` não engole código de app hoje.
+- O alargamento é monotônico (só leva ao COMPLETO): nenhum caminho novo estreita a seleção.
+
+### Fora deste diff (continuam abertos, não bloqueiam)
+
+- **M-1** (`idle in transaction` no ramo rejeitado) e **M-2** (`ESCOPO:*` em `verify.sh:196`):
+  `git diff --stat 27fe3b4..a451027` não toca `write_series_row.py`, `postgres_series_sink.py` nem
+  `verify.sh`.
+
+### Para fechar (re-validação)
+
+- **N-1:** corrigir o filtro e fazer o fake honrar `--filter`. Prova: o comando corrigido, rodado com o
+  pipeline vivo, devolve `deploy-collector-1` e `deploy-writer-1`, e a mutação M4 reprova contra o fake
+  novo.
+- N-2 na mesma passada (uma linha), sem exigência deste gate.
