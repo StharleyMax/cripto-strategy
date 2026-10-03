@@ -80,8 +80,10 @@ const NATIVE_BARS_ATTRIBUTE = /data-oi-native-bars=\{oi\.nativeBars\}/;
 const WIRE_POINTS_ATTRIBUTE = /data-oi-wire-points=\{oi\.wirePoints\}/;
 const FRESHNESS_FACT = /data-fact=\{`oi_freshness:\$\{freshness\.kind\}`\}/;
 const FRESHNESS_RENDERED = /<OiFreshness oi=\{oi\} \/>/;
-/** `page.tsx`: the three-term predicate, CALLED. */
-const PAGE_OI_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesBinanceOpenInterest\(entry\.key\)\)/;
+// ⛔ `PAGE_OI_SELECTOR` (the regex "`page.tsx` calls `matchesBinanceOpenInterest(entry.key)`") LEFT
+// THIS FILE in `T-03.2`: the predicate now lives in `indicators/catalog.ts`, and
+// `indicators/catalog.test.ts` proves what it SELECTS — over the five `sum_open_interest` rows, and
+// through a real `SymbolPage` call — instead of how it is spelled.
 /** `page.tsx`: the native count comes off the PANEL's grid, never off the wire rows — since
  * `T-02.1` (`D-C3.2`) that grid is the SHARED axis grid, not a 5-minute grid of its own, but
  * `countPresentSlots` over it still counts native buckets exactly (see `s2-panels.ts`). */
@@ -251,8 +253,8 @@ test("V-1: the ` UTC` suffix is printed ONCE — the formatter owns it, no call 
 });
 
 test("the selector defect is GONE from the route, both halves of it", () => {
-  // Half one: the predicate the route calls is the three-term one.
-  assert.match(pageCode, PAGE_OI_SELECTOR, "the OI panel must select by identity, not by metric alone");
+  // Half one, by VALUE since `T-03.2`: `indicators/catalog.test.ts` (the OI requirement selects the
+  // Binance POINT among five rows, and the route resolves to it). What stays here is the retirement.
   assert.doesNotMatch(
     pageCode,
     /entry\.key\.metric === OI_METRIC/,
@@ -337,9 +339,13 @@ test("MORDE (T-04.1): hard-coding the label instead of interpolating `oi.provena
   );
 });
 
-// ── MORDE: the seven mutations that were GREEN before this file existed ───────────────────────
+// ── MORDE: the mutations that were GREEN before this file existed ─────────────────────────────
+//
+// SIX of the original seven: "selector back to metric alone" moved to `indicators/catalog.test.ts`
+// with the predicate (`T-03.2`), whose MORDE case shows the metric-alone selector matching all five
+// OI rows of its fixture (the replant on `page.tsx` itself is in `gates/T-03.2-build.md`).
 
-test("MORDE: each of the 7 OI DOM-contract mutations that used to pass green is now caught", () => {
+test("MORDE: each of the 6 OI DOM-contract mutations still guarded here is caught", () => {
   const mutants: readonly {
     readonly name: string;
     readonly file: "client" | "page";
@@ -350,7 +356,6 @@ test("MORDE: each of the 7 OI DOM-contract mutations that used to pass green is 
     { name: "native-bars attribute deleted", file: "client", mutate: (s) => s.replace(/\s*data-oi-native-bars=\{oi\.nativeBars\}/, "") },
     { name: "the STAIRCASE published as the native count", file: "client", mutate: (s) => s.replace(NATIVE_BARS_ATTRIBUTE, "data-oi-native-bars={oi.wirePoints}") },
     { name: "freshness line removed", file: "client", mutate: (s) => s.replace(FRESHNESS_RENDERED, "") },
-    { name: "selector back to metric alone", file: "page", mutate: (s) => s.replace(PAGE_OI_SELECTOR, 'resolveCatalogEntry(catalog, (entry) => entry.key.metric === OI_METRIC)') },
     { name: "ambiguity resolved by position again", file: "page", mutate: (s) => s.replace(PAGE_UNIQUE_MATCH, 'if (matches.length >= 1) {\n    return { kind: "found", entry: matches[0]! };') },
   ];
   for (const mutant of mutants) {
@@ -364,8 +369,7 @@ test("MORDE: each of the 7 OI DOM-contract mutations that used to pass green is 
           NATIVE_BARS_ATTRIBUTE.test(mutated) &&
           !/data-oi-native-bars=\{oi\.wirePoints\}/.test(mutated) &&
           FRESHNESS_RENDERED.test(mutated)
-        : PAGE_OI_SELECTOR.test(mutated) &&
-          PAGE_UNIQUE_MATCH.test(mutated) &&
+        : PAGE_UNIQUE_MATCH.test(mutated) &&
           !/entry\.key\.metric === OI_METRIC/.test(mutated);
     assert.ok(!survives, `the mutation "${mutant.name}" is NOT detected by the asserts above — the guard is vacuous`);
   }

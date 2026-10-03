@@ -29,10 +29,10 @@ src/charts/liquidation-pane-geometry.ts	13 14 23 24 31 32 33 34 35 36 37 38 40	s
 src/app/symbol/oi-	08 12 14 15 19 21 23 24 32 33 34 35 36 37 38 40 41	cd frontend/e2e && grep -ailE 'oi.?candle|oi.?regime|open.?interest|"oi"|oi pane|oi-pane' [0-9]*.spec.ts, minus the console block [MEDIDO 2026-10-02, n=17]
 
 # the shared time axis and history paging (T-06.1-desenho §2.2: 16-27 39 ∪ R60 ∪ R240, plus every spec that positions or reads the view)
-src/app/symbol/axis-	16 18-21 23-27 29 30 33-39 42	16-27 39 (desenho) ∪ {20 34 35 37} (R60 ∪ R240, handoff/T-06.1-estado.md:16) ∪ grep -ailE 'data-visible-logical|showView|readView' [MEDIDO 2026-10-02]; 17 and 22 folded into 20 (T-10.20)
-src/app/symbol/chart/axis/axis-	16 18-21 23-27 29 30 33-39 42	same evidence as the axis row
-src/app/symbol/chart/axis/timeframe-window.ts	16 18-21 23-27 29 30 33-39 42	same evidence as the axis row
-src/app/symbol/chart/history/use-history-pager.ts	16 18-21 23-27 29 30 33-39 42	same evidence as the axis row
-src/app/symbol/history-page-	16 18-21 23-27 29 30 33-39 42	same evidence as the axis row
-src/app/symbol/chart/history/history-page-	16 18-21 23-27 29 30 33-39 42	same evidence as the axis row
-src/charts/time-axis-controller.ts	16 18-21 23-27 29 30 33-39 42	same evidence as the axis row
+src/app/symbol/axis-	16 18-21 23-27 29 30 33-39 42 43	16-27 39 (desenho) ∪ {20 34 35 37} (R60 ∪ R240, handoff/T-06.1-estado.md:16) ∪ grep -ailE 'data-visible-logical|showView|readView' [MEDIDO 2026-10-02]; 17 and 22 folded into 20 (T-10.20)
+src/app/symbol/chart/axis/axis-	16 18-21 23-27 29 30 33-39 42 43	same evidence as the axis row
+src/app/symbol/chart/axis/timeframe-window.ts	16 18-21 23-27 29 30 33-39 42 43	same evidence as the axis row
+src/app/symbol/chart/history/use-history-pager.ts	16 18-21 23-27 29 30 33-39 42 43	same evidence as the axis row
+src/app/symbol/history-page-	16 18-21 23-27 29 30 33-39 42 43	same evidence as the axis row
+src/app/symbol/chart/history/history-page-	16 18-21 23-27 29 30 33-39 42 43	same evidence as the axis row
+src/charts/time-axis-controller.ts	16 18-21 23-27 29 30 33-39 42 43	same evidence as the axis row

@@ -45,11 +45,11 @@
  *   1. `GET /series-catalog` (reused from `features/s3-inspector/series-catalog-query.ts` —
  *      the SAME query `/console` already makes; not duplicated here) — its wire carries the
  *      15 raw `SeriesKey` terms for every cataloged series, the route's symbol included, but
- *      no `series_key_id` of its own (`view-model.ts`'s own comment on `computeSeriesKeyId`).
+ *      no `series_key_id` of its own (`series-key-id.ts`'s own comment on `computeSeriesKeyId`).
  *   2. For each of the 3 panels PLUS the volume sub-axis of the price panel (`T-01.7`,
  *      `SPEC-007 §3.6` — `klines_volume`, `1m`, cataloged by `T-01.6`), find the ONE catalog
  *      entry that matches (symbol + a per-series selector, below), recompute its `series_key_id`
- *      (`view-model.ts::computeSeriesKeyId`), and fetch `GET /series-history` for it
+ *      (`series-key-id.ts::computeSeriesKeyId`), and fetch `GET /series-history` for it
  *      (`series-history-client.ts`) over the TRAILING 4-day window `resolveRouteWindow`
  *      derives from this request's own clock reading (`request-window.ts`; the geometry itself
  *      is `charts`' `resolveTrailingWindow`, reached through the `ADR-034/D8` barrel — this
@@ -168,9 +168,9 @@ import {
   type PriceCandleData,
   type VolumeSubAxisData,
 } from "../SymbolClient.tsx";
+import { computeSeriesKeyId } from "../series-key-id.ts";
 import {
   assembleOhlcCandles,
-  computeSeriesKeyId,
   countNativeBarsByPublication,
   countPresentCandleSlots,
   countPresentSlots,
@@ -182,11 +182,7 @@ import {
   keyMatchesSymbol,
   lastPresentSlotMs,
   lastReadableAvailableAtMs,
-  matchesBinanceOpenInterest,
-  matchesCountLongShortRatio,
-  matchesKlineTakerBuyCvd,
   matchesKlinesOhlc,
-  matchesLiquidationCohort,
   nonNegativeFlowSlotsFromHistoryRows,
   resolveFlowReadingOrAbsent,
   resolveFreshnessVerdict,
@@ -199,6 +195,7 @@ import {
   type ScaledCvdDeltaInput,
 } from "../view-model.ts";
 import { coverageGridMsOf, summarizeCoverageMagnitude, type CoverageGridMs } from "../coverage-magnitude.ts";
+import { seriesRequirement, type IndicatorSlotRecord } from "../indicators/catalog.ts";
 
 export const metadata: Metadata = {
   title: "cripto-strategy — Símbolo",
@@ -231,12 +228,19 @@ function isPilotSymbol(candidate: string): candidate is PilotSymbol {
 // `view-model.ts::matchesBinanceOpenInterest`, where a `node --test` suite can execute them
 // against a fixture that carries all five rows of this metric. Leaving the constant here would
 // leave a second, weaker way to spell the same selection one import away.
-/** `T-01.7` / `SPEC-007 §4`, row M1 — the volume SUB-AXIS of the price panel (§3.6), whose
- * catalog entry `T-01.6` registered (`domain/klines_volume_catalog.py`, `metric` transcribed
- * here, not re-derived). Its `interval` is `1m` (§4.1), the grid `/series-history` serves
- * natively, so this request asks for exactly the same `interval` the other three do while the
- * series behind it is the only one of the four with no ladder. */
-const VOLUME_METRIC = "klines_volume";
+
+// `estrutura-do-front` `T-03.2` — the SIX indicator series are read off `INDICATOR_CATALOG`
+// (`indicators/catalog.ts`), each requirement carrying the predicate that used to be written at
+// its call site below (and, for volume, the `VOLUME_METRIC` constant that used to live here).
+// Each one still goes through `resolveCatalogEntry` — the unique-match refusal is this route's,
+// not the table's. The four `klines_ohlc` series and the live-stream price row are the core's,
+// not an indicator's, and stay resolved here.
+const VOLUME_SERIES = seriesRequirement("volume", "volume");
+const OI_SERIES = seriesRequirement("oi", "oi");
+const CVD_SERIES = seriesRequirement("cvd", "cvd");
+const LIQUIDATION_LONG_SERIES = seriesRequirement("liquidation", "long");
+const LIQUIDATION_SHORT_SERIES = seriesRequirement("liquidation", "short");
+const LONG_SHORT_SERIES = seriesRequirement("long_short", "ratio");
 
 /**
  * `T-04.8` — the TRAILING SUB-WINDOW the approved long/short form measures separately (*"ÚLTIMAS 4
@@ -571,7 +575,7 @@ export default async function SymbolPage({
   // in `md.series`: the measured defect of `handoff/T-03.5-T-03.6-FRONT.md` §2.
   const oiResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesBinanceOpenInterest(entry.key))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => OI_SERIES.matches(entry.key, routeSymbol))
       : CATALOG_UNAVAILABLE;
   // `T-02.5` — the CVD panel now reads a series that EXISTS: `cvd_source`/`binance`/`NA`, the
   // `kline_takerbuy` row `T-02.3`'s collector publishes off the same `/fapi/v1/klines` array
@@ -580,11 +584,11 @@ export default async function SymbolPage({
   // `metric === "cvd_source"` alone silently selects `aggtrade_q`, a series with no rows).
   const cvdResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesKlineTakerBuyCvd(entry.key))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => CVD_SERIES.matches(entry.key, routeSymbol))
       : CATALOG_UNAVAILABLE;
   const volumeResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => entry.key.metric === VOLUME_METRIC)
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => VOLUME_SERIES.matches(entry.key, routeSymbol))
       : CATALOG_UNAVAILABLE;
   // `T-05.9` — TWO resolutions, one per leg, and NEVER one that sums them. `cohort` is a term of
   // identity (`SPEC-001` §2.1) and `liquidation_catalog.py` publishes one row per leg on purpose:
@@ -593,11 +597,11 @@ export default async function SymbolPage({
   // predicate is `view-model.ts`'s (three terms, each named there with the sibling row it excludes).
   const liquidationLongResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesLiquidationCohort(entry.key, "long"))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => LIQUIDATION_LONG_SERIES.matches(entry.key, routeSymbol))
       : CATALOG_UNAVAILABLE;
   const liquidationShortResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesLiquidationCohort(entry.key, "short"))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => LIQUIDATION_SHORT_SERIES.matches(entry.key, routeSymbol))
       : CATALOG_UNAVAILABLE;
   // `T-04.5` — M3, the first NEW pane of this feature. TWO terms, both load-bearing, and the
   // predicate is `view-model.ts`'s (`metric` alone matches exactly 1 today, MEASURED there;
@@ -606,7 +610,7 @@ export default async function SymbolPage({
   // `series_key.FORBIDDEN_METRIC_NAMES` refuses the generic name in code.
   const longShortResolution =
     catalogStatus.kind === "ok"
-      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => matchesCountLongShortRatio(entry.key))
+      ? resolveCatalogEntry(catalog, routeSymbol, (entry) => LONG_SHORT_SERIES.matches(entry.key, routeSymbol))
       : CATALOG_UNAVAILABLE;
 
   const [
@@ -983,29 +987,37 @@ export default async function SymbolPage({
   // this render already fetched. Built here, once, off values this function already computed —
   // never a second catalog lookup, never a second fetch.
   const historyPagingRows = {
+    // `T-03.3` — keyed by slot (`chart/history/series-slots.ts`): the core's four price reductions,
+    // then `kind → slot` for the six series of the table, typed off it (`IndicatorSlotRecord`).
     keys: {
-      open: seriesKeyIdOf(ohlcResolutions.open),
-      high: seriesKeyIdOf(ohlcResolutions.high),
-      low: seriesKeyIdOf(ohlcResolutions.low),
-      close: seriesKeyIdOf(ohlcResolutions.close),
-      oi: seriesKeyIdOf(oiResolution),
-      cvd: seriesKeyIdOf(cvdResolution),
-      volume: seriesKeyIdOf(volumeResolution),
-      liquidationLong: seriesKeyIdOf(liquidationLongResolution),
-      liquidationShort: seriesKeyIdOf(liquidationShortResolution),
-      longShort: seriesKeyIdOf(longShortResolution),
+      price: {
+        open: seriesKeyIdOf(ohlcResolutions.open),
+        high: seriesKeyIdOf(ohlcResolutions.high),
+        low: seriesKeyIdOf(ohlcResolutions.low),
+        close: seriesKeyIdOf(ohlcResolutions.close),
+      },
+      indicators: {
+        volume: { volume: seriesKeyIdOf(volumeResolution) },
+        liquidation: { long: seriesKeyIdOf(liquidationLongResolution), short: seriesKeyIdOf(liquidationShortResolution) },
+        oi: { oi: seriesKeyIdOf(oiResolution) },
+        long_short: { ratio: seriesKeyIdOf(longShortResolution) },
+        cvd: { cvd: seriesKeyIdOf(cvdResolution) },
+      } satisfies IndicatorSlotRecord<string | null>,
     },
     rows: {
-      open: extractRows(openResult),
-      high: extractRows(highResult),
-      low: extractRows(lowResult),
-      close: extractRows(closeResult),
-      oi: extractRows(oiResult),
-      cvd: extractRows(cvdResult),
-      volume: extractRows(volumeResult),
-      liquidationLong: extractRows(liquidationLongResult),
-      liquidationShort: extractRows(liquidationShortResult),
-      longShort: extractRows(longShortResult),
+      price: {
+        open: extractRows(openResult),
+        high: extractRows(highResult),
+        low: extractRows(lowResult),
+        close: extractRows(closeResult),
+      },
+      indicators: {
+        volume: { volume: extractRows(volumeResult) },
+        liquidation: { long: extractRows(liquidationLongResult), short: extractRows(liquidationShortResult) },
+        oi: { oi: extractRows(oiResult) },
+        long_short: { ratio: extractRows(longShortResult) },
+        cvd: { cvd: extractRows(cvdResult) },
+      } satisfies IndicatorSlotRecord<readonly SeriesHistoryRow[]>,
       // `T-03.11` — what the OI pane DRAWS, off the SAME fetch as `oi` (never a second request).
       oiCandles: oiCandleBundleOf(oiResult.oiCandles),
     },

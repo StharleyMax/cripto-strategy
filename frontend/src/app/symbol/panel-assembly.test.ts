@@ -14,6 +14,8 @@ import { fileURLToPath } from "node:url";
 import { S2_PRICE_USE, resolveLegendReading } from "../../charts/index.ts";
 import { recentBandSlotRange } from "./long-short-band.ts";
 import { EMPTY_OI_CANDLE_BUNDLE } from "./oi-candle-pane.ts";
+import type { PriceSlot } from "./chart/history/series-slots.ts";
+import { INDICATOR_CATALOG } from "./indicators/catalog.ts";
 import { assembleHistoryPage, type AssemblyWindow, type HistoryRowsBundle } from "./panel-assembly.ts";
 import type { SeriesHistoryRow } from "./series-history-envelope.ts";
 import { seriesValueStats } from "./view-model.ts";
@@ -31,19 +33,39 @@ function scalarRow(eventTimeMs: number, value: string | null): SeriesHistoryRow 
   return ohlcRow(eventTimeMs, value);
 }
 
+/** `T-03.3` — the table the assembly reads its indicator rows through, as `SymbolClient.tsx` passes it. */
+const TABLE = INDICATOR_CATALOG;
+
+type Rows = readonly SeriesHistoryRow[];
+
+/** `T-03.3` — SHAPE CHANGE (`estudo §6.2`): the bundle is keyed by slot — `price.<reduction>`, then
+ * `indicators.<kind>.<slot>` — where it used to carry ten flat fields (`open`, …, `longShort`). */
 function emptyBundle(): HistoryRowsBundle {
   return {
-    open: [],
-    high: [],
-    low: [],
-    close: [],
-    oi: [],
-    cvd: [],
-    volume: [],
-    liquidationLong: [],
-    liquidationShort: [],
-    longShort: [],
+    price: { open: [], high: [], low: [], close: [] },
+    indicators: {
+      volume: { volume: [] },
+      liquidation: { long: [], short: [] },
+      oi: { oi: [] },
+      long_short: { ratio: [] },
+      cvd: { cvd: [] },
+    },
     oiCandles: EMPTY_OI_CANDLE_BUNDLE,
+  };
+}
+
+/** `emptyBundle` with some series replaced, by slot. */
+function bundleWith(
+  price: Partial<Record<PriceSlot, Rows>>,
+  indicators: Readonly<Record<string, Readonly<Record<string, Rows>>>> = {},
+): HistoryRowsBundle {
+  const empty = emptyBundle();
+  return {
+    ...empty,
+    price: { ...empty.price, ...price },
+    indicators: Object.fromEntries(
+      Object.entries(empty.indicators).map(([kind, bySlot]) => [kind, { ...bySlot, ...indicators[kind] }]),
+    ),
   };
 }
 
@@ -55,14 +77,13 @@ const COVERAGE_CONTEXT = {
 };
 
 test("CALA: a fully-present window draws every candle and every dynamic count agrees with the fixture", () => {
-  const rows: HistoryRowsBundle = {
-    ...emptyBundle(),
+  const rows: HistoryRowsBundle = bundleWith({
     open: [ohlcRow(0, "100"), ohlcRow(ONE_MINUTE_MS, "101"), ohlcRow(2 * ONE_MINUTE_MS, "102")],
     high: [ohlcRow(0, "105"), ohlcRow(ONE_MINUTE_MS, "106"), ohlcRow(2 * ONE_MINUTE_MS, "107")],
     low: [ohlcRow(0, "95"), ohlcRow(ONE_MINUTE_MS, "96"), ohlcRow(2 * ONE_MINUTE_MS, "97")],
     close: [ohlcRow(0, "104"), ohlcRow(ONE_MINUTE_MS, "105"), ohlcRow(2 * ONE_MINUTE_MS, "106")],
-  };
-  const result = assembleHistoryPage(rows, WINDOW, {
+  });
+  const result = assembleHistoryPage(TABLE, rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
     ...COVERAGE_CONTEXT,
@@ -77,14 +98,13 @@ test("CALA: a fully-present window draws every candle and every dynamic count ag
 });
 
 test("MORDE CA-F2-3: a SEM_PONTO row in ONE of the four OHLC reductions draws NO candle for that bucket, counted as partial", () => {
-  const rows: HistoryRowsBundle = {
-    ...emptyBundle(),
+  const rows: HistoryRowsBundle = bundleWith({
     open: [ohlcRow(0, "100")],
     high: [ohlcRow(0, "105")],
     low: [ohlcRow(0, "95")],
     close: [ohlcRow(0, null)], // the fourth reading is absent
-  };
-  const result = assembleHistoryPage(rows, WINDOW, {
+  });
+  const result = assembleHistoryPage(TABLE, rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
     ...COVERAGE_CONTEXT,
@@ -98,12 +118,9 @@ test("MORDE CA-F2-3: a SEM_PONTO row in ONE of the four OHLC reductions draws NO
 });
 
 test("CALA: OI freshness reads the CALLER'S oiMaxStalenessMs, never a literal baked into this module", () => {
-  const rows: HistoryRowsBundle = {
-    ...emptyBundle(),
-    oi: [scalarRow(0, "1234.5")],
-  };
+  const rows: HistoryRowsBundle = bundleWith({}, { oi: { oi: [scalarRow(0, "1234.5")] } });
   const windowEndMsInclusive = WINDOW.endMsExclusive - ONE_MINUTE_MS;
-  const fresh = assembleHistoryPage(rows, WINDOW, {
+  const fresh = assembleHistoryPage(TABLE, rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
     ...COVERAGE_CONTEXT,
@@ -114,7 +131,7 @@ test("CALA: OI freshness reads the CALLER'S oiMaxStalenessMs, never a literal ba
   }, ONE_MINUTE_MS);
   assert.equal(fresh.oi.freshness.kind, "fresh");
 
-  const stale = assembleHistoryPage(rows, WINDOW, {
+  const stale = assembleHistoryPage(TABLE, rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
     ...COVERAGE_CONTEXT,
@@ -127,11 +144,8 @@ test("CALA: OI freshness reads the CALLER'S oiMaxStalenessMs, never a literal ba
 });
 
 test("CALA: cvdAnchorMs stays fixed across a call — the cumulative curve counts from the SAME instant every page", () => {
-  const rows: HistoryRowsBundle = {
-    ...emptyBundle(),
-    cvd: [scalarRow(0, "10"), scalarRow(ONE_MINUTE_MS, "-3")],
-  };
-  const result = assembleHistoryPage(rows, WINDOW, {
+  const rows: HistoryRowsBundle = bundleWith({}, { cvd: { cvd: [scalarRow(0, "10"), scalarRow(ONE_MINUTE_MS, "-3")] } });
+  const result = assembleHistoryPage(TABLE, rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
     ...COVERAGE_CONTEXT,
@@ -147,12 +161,12 @@ test("CALA: cvdAnchorMs stays fixed across a call — the cumulative curve count
 
 test("CALA: long/short observedAtMs/ageMs are derived off the newest READABLE row, relative to windowEndMsInclusive", () => {
   const observedAtMs = ONE_MINUTE_MS + 500;
-  const rows: HistoryRowsBundle = {
-    ...emptyBundle(),
-    longShort: [{ event_time: ONE_MINUTE_MS, available_at: observedAtMs, value: "1.05", absence: null, coverage: null }],
-  };
+  const rows: HistoryRowsBundle = bundleWith(
+    {},
+    { long_short: { ratio: [{ event_time: ONE_MINUTE_MS, available_at: observedAtMs, value: "1.05", absence: null, coverage: null }] } },
+  );
   const windowEndMsInclusive = WINDOW.endMsExclusive - ONE_MINUTE_MS;
-  const result = assembleHistoryPage(rows, WINDOW, {
+  const result = assembleHistoryPage(TABLE, rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
     ...COVERAGE_CONTEXT,
@@ -166,8 +180,8 @@ test("CALA: long/short observedAtMs/ageMs are derived off the newest READABLE ro
 });
 
 test("MORDE: an upstream-failed series (empty rows) still comes back GRID-PADDED to the window, matching its siblings (CA-5a)", () => {
-  const rows: HistoryRowsBundle = { ...emptyBundle() }; // every series absent — simulates every fetch failing
-  const result = assembleHistoryPage(rows, WINDOW, {
+  const rows: HistoryRowsBundle = emptyBundle(); // every series absent — simulates every fetch failing
+  const result = assembleHistoryPage(TABLE, rows, WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: WINDOW.endMsExclusive,
     ...COVERAGE_CONTEXT,
@@ -191,12 +205,12 @@ const FOUR_HOURS_MS = 4 * 60 * ONE_MINUTE_MS;
 const FOUR_HOUR_WINDOW: AssemblyWindow = { startMs: 0, endMsExclusive: 2 * FOUR_HOURS_MS }; // 480 grid minutes
 
 function assembleFourHourVolume() {
-  const rows: HistoryRowsBundle = {
-    ...emptyBundle(),
+  const rows: HistoryRowsBundle = bundleWith(
+    {},
     // The values the QA read off the live API for two `4h` bars (`W1-QA-r2` §3).
-    volume: [scalarRow(0, "34200.456"), scalarRow(FOUR_HOURS_MS, "14515.595")],
-  };
-  return assembleHistoryPage(rows, FOUR_HOUR_WINDOW, {
+    { volume: { volume: [scalarRow(0, "34200.456"), scalarRow(FOUR_HOURS_MS, "14515.595")] } },
+  );
+  return assembleHistoryPage(TABLE, rows, FOUR_HOUR_WINDOW, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: FOUR_HOUR_WINDOW.endMsExclusive,
     ...COVERAGE_CONTEXT,
@@ -269,7 +283,7 @@ function assembleLongShort(axisStepMs: number, slotCount: number) {
   const longShort = Array.from({ length: slotCount }, (_unused, index) =>
     scalarRow(index * axisStepMs, (1 + (index % 7) / 100).toFixed(2)),
   );
-  return assembleHistoryPage({ ...emptyBundle(), longShort }, window, {
+  return assembleHistoryPage(TABLE, bundleWith({}, { long_short: { ratio: longShort } }), window, {
     priceUse: S2_PRICE_USE,
     windowEndMsExclusive: window.endMsExclusive,
     ...COVERAGE_CONTEXT,
@@ -322,4 +336,36 @@ test("MORDE C-1: page.tsx (the SSR copy) derives recentStats through the SAME fu
   const pageSource = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "[symbol]", "page.tsx"), "utf8");
   assert.match(pageSource, /recentStats: seriesValueStats\(recentBandSlots\(longShortSlots, LONG_SHORT_RECENT_SPAN_MS\)\)/);
   assert.doesNotMatch(pageSource, /windowEndMsInclusive - LONG_SHORT_RECENT_SPAN_MS/);
+});
+
+// ── `estrutura-do-front` `T-03.3` — the table arrives BY PARAMETER, and the assembly reads through it ──
+
+const TABLE_CONTEXT = {
+  priceUse: S2_PRICE_USE,
+  windowEndMsExclusive: WINDOW.endMsExclusive,
+  ...COVERAGE_CONTEXT,
+  cvdAnchorMs: WINDOW.startMs,
+  windowEndMsInclusive: WINDOW.endMsExclusive - ONE_MINUTE_MS,
+  longShortRecentSpanMs: 3 * ONE_MINUTE_MS,
+  oiMaxStalenessMs: null,
+};
+
+test("MORDE T-03.3: a table that does not declare a series the assembly reads is refused, by name", () => {
+  // No page would fetch the CVD under this table: deriving it anyway would freeze it at the SSR window.
+  const withoutCvd = TABLE.filter((entry) => entry.kind !== "cvd");
+  assert.throws(
+    () => assembleHistoryPage(withoutCvd, emptyBundle(), WINDOW, TABLE_CONTEXT, ONE_MINUTE_MS),
+    /no series "cvd" under kind "cvd"/,
+  );
+  // Control: the whole table assembles the same rows.
+  assert.doesNotThrow(() => assembleHistoryPage(TABLE, emptyBundle(), WINDOW, TABLE_CONTEXT, ONE_MINUTE_MS));
+});
+
+test("MORDE T-03.3: rows missing a slot the table declares are refused, never read as an empty series", () => {
+  const empty = emptyBundle();
+  const rows: HistoryRowsBundle = { ...empty, indicators: { ...empty.indicators, liquidation: { long: [] } } };
+  assert.throws(
+    () => assembleHistoryPage(TABLE, rows, WINDOW, TABLE_CONTEXT, ONE_MINUTE_MS),
+    /no value under liquidation\/short/,
+  );
 });
