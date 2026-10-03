@@ -1,4 +1,6 @@
+import fs from "node:fs";
 import http from "node:http";
+import { monitorEventLoopDelay, performance as nodePerformance } from "node:perf_hooks";
 
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
@@ -154,11 +156,32 @@ const CHART_HOST_TESTID = "symbol-chart-host";
 const LATENCY_CEILING_MS = 400;
 /** Plan `05` DoD 7, literal: "n >= 10 paginações". */
 const MIN_PAGES = 10;
-/** `T-05.9` — número de arrastos REAIS, sequenciais, este spec dirige. Acima de `MIN_PAGES` com
- * a mesma margem (`+2`) que a versão anterior deste spec usava para a cauda possivelmente em
- * voo (`pairCount`'s próprio docstring, abaixo) — só que agora a margem cobre o mesmo risco sob
- * gestos reais, não sob um laço de fundo. */
-const DRAG_COUNT = MIN_PAGES + 2;
+/**
+ * `T-00.4` (`estrutura-do-front`, achado A1) — the smallest `n` whose nearest-rank p95 is NOT the
+ * maximum. The index below is `ceil(0.95·n) − 1`, which is `n − 1` for every `n <= 19`: with the 15
+ * pages this spec used to draw, "p95 <= 400" was "max <= 400", and ONE page held by the host failed
+ * it. At `n >= 20` the p95 tolerates exactly one such page per run and still fails on two.
+ *
+ * Why one page is the host and not the product, MEASURED (`gates/T-00.4-build.md` §A1, the facts
+ * `history_page_latency_breakdown` below, 30 runs × 15 pages): on the 2 756 ms page the stub
+ * answered in 1,5 ms, the four responses reached the browser together 2,67 s later, and the host
+ * logged 2 585 ms of `io` FULL stall (every non-idle task waiting on I/O) and 20 swap-ins inside
+ * that one page. All 7 of 450 pages whose responses landed more than 50 ms late carried >= 36,8 ms
+ * of that stall; the other 443 carried p95 22,4 ms. The ceiling (`400`) does NOT move.
+ * `MIN_PAGES` stays the plan's literal floor; this is the floor of the statistic the plan names.
+ */
+const P95_MIN_PAGES = 20;
+/** `T-05.9` — número de arrastos REAIS, sequenciais, este spec dirige. Acima do piso com a mesma
+ * margem (`+2`) que a versão anterior deste spec usava para a cauda possivelmente em voo
+ * (`pairCount`'s próprio docstring, abaixo) — só que agora a margem cobre o mesmo risco sob gestos
+ * reais, não sob um laço de fundo. `T-00.4`: the floor is `P95_MIN_PAGES` now (12 drags drew 15
+ * pages in 74 of 74 logged runs, so 22 drags clear 20 with room). */
+const DRAG_COUNT = P95_MIN_PAGES + 2;
+/** `T-00.4` — the pan-frame ceiling (`160`, below) is a MAX over the intra-gesture intervals, so
+ * its exposure grows with the number of gestures. It keeps judging the 12 gestures it judged
+ * before `T-00.4` (the old `DRAG_COUNT`); the extra gestures exist for the latency sample only, and
+ * their intra-gesture maximum is reported as a `fact`. This task changes no exposure of `160`. */
+const PAN_FRAME_GESTURE_COUNT = 12;
 /** Teto de espera, por arrasto, para (a) a página que ELE disparou aparecer em `requestedMs` e
  * (b) essa mesma página ser DESENHADA (`drawnMs` alcançar `requestedMs`) antes do próximo arrasto
  * começar — bem acima do teto de `400 ms` que DoD 7 mede, para não confundir um timeout de
@@ -266,9 +289,33 @@ function syntheticCatalogEnvelope(): { readonly query: string; readonly n_entrie
  * de expô-lo (o laço pararia sozinho, cedo, e pareceria que nunca existiu) — deliberadamente
  * fora de escopo desta correção, ver o docstring de topo.
  */
-async function startSyntheticOhlcStub(): Promise<{ readonly url: string; close(): Promise<void> }> {
+/** `T-00.4` (A1) — one request as the STUB saw it, on the epoch clock (`timeOrigin + now()`, the
+ * same base the browser's `performance.timeOrigin + startTime` uses on this one host). */
+interface StubRequestLog {
+  readonly url: string;
+  readonly receivedAtEpochMs: number;
+  readonly respondedAtEpochMs: number;
+}
+
+async function startSyntheticOhlcStub(): Promise<{
+  readonly url: string;
+  readonly requests: readonly StubRequestLog[];
+  close(): Promise<void>;
+}> {
   const catalog = syntheticCatalogEnvelope();
+  const requests: StubRequestLog[] = [];
   const server = http.createServer((request, response) => {
+    const receivedAtEpochMs = nodePerformance.timeOrigin + nodePerformance.now();
+    response.on("finish", () => {
+      requests.push({
+        url: request.url ?? "",
+        receivedAtEpochMs,
+        respondedAtEpochMs: nodePerformance.timeOrigin + nodePerformance.now(),
+      });
+    });
+    // `T-00.4` (A1) — without this a cross-origin Resource Timing entry zeroes every phase but
+    // `startTime`/`responseEnd`, and the breakdown of an outlier below could not say WHERE it was.
+    response.setHeader("timing-allow-origin", "*");
     // `T-05.9`'s own achado, MEDIDO: `browser-series-history-client.ts` (`T-05.2-FIX-adr005`) is
     // a REAL cross-origin `fetch()` from the browser against this stub's own port — never the
     // Next server's Node `fetch` (that half is SSR-only, `page.tsx`'s ten initial fetches, which
@@ -339,6 +386,7 @@ async function startSyntheticOhlcStub(): Promise<{ readonly url: string; close()
   if (address === null || typeof address === "string") throw new Error("synthetic stub: sem porta");
   return {
     url: `http://127.0.0.1:${address.port}`,
+    requests,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }
@@ -738,6 +786,222 @@ function judgePagesDrawnMidGesture(
   return verdicts;
 }
 
+// ── `T-00.4` (A1) — WHERE a page's latency went, per page, emitted as `fact`s (never asserted) ──
+//
+// The achado that opened `T-00.4` (`gates/W-F0-e2e-instavel.md` §A1) was ONE sample of 1 053,3 ms
+// among 15 (the others 59,8–114,5) with nothing on the log saying which leg of the round trip held
+// it. These facts split every page into: the pager's own delay before the first fetch, the
+// browser's queue + connect, the stub's wait, the download, and what came after the last byte up
+// to the draw — plus the main-thread long tasks inside the page's interval and the Node event-loop
+// delay of THIS process, which hosts the stub. Cheap (one evaluate at the end), and it is what makes
+// the next outlier name its own cause.
+
+declare global {
+  interface Window {
+    __t004LongTasks?: { startMs: number; durationMs: number }[];
+  }
+}
+
+/** Installed before the first navigation: long tasks of the main thread, and a resource buffer
+ * large enough that no page fetch is dropped (the default is 250 entries; the mount alone loads the
+ * Next chunks). */
+function installMainThreadRecorder(): void {
+  performance.setResourceTimingBufferSize(10_000);
+  window.__t004LongTasks = [];
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        window.__t004LongTasks?.push({ startMs: entry.startTime, durationMs: entry.duration });
+      }
+    }).observe({ type: "longtask", buffered: true });
+  } catch {
+    // `longtask` is Chromium-only; the facts below then report `null` instead of zero.
+    window.__t004LongTasks = undefined;
+  }
+}
+
+/** `T-00.4` (A1) — the host's stall counters (Linux PSI, `/proc/pressure/*`, microseconds of stall
+ * accumulated since boot) and the swap-in page count (`/proc/vmstat` `pswpin`), sampled on a timer
+ * in this process. The counters are CUMULATIVE, so a delta between two samples is right even when
+ * this process itself was stalled in between. Off Linux, or without PSI, the facts say `null`. */
+interface PressureSample {
+  readonly epochMs: number;
+  readonly cpuSomeUs: number;
+  readonly memorySomeUs: number;
+  readonly memoryFullUs: number;
+  readonly ioSomeUs: number;
+  readonly ioFullUs: number;
+  readonly swapInPages: number;
+}
+
+const PRESSURE_SAMPLE_PERIOD_MS = 50;
+
+function readPsiTotals(resource: "cpu" | "memory" | "io"): { some: number; full: number } | null {
+  try {
+    const text = fs.readFileSync(`/proc/pressure/${resource}`, "utf8");
+    const total = (kind: string): number => Number(new RegExp(`^${kind} .*total=(\\d+)`, "m").exec(text)?.[1] ?? NaN);
+    return { some: total("some"), full: total("full") };
+  } catch {
+    return null;
+  }
+}
+
+function readPressureSample(): PressureSample | null {
+  const cpu = readPsiTotals("cpu");
+  const memory = readPsiTotals("memory");
+  const io = readPsiTotals("io");
+  if (cpu === null || memory === null || io === null) return null;
+  let swapInPages = NaN;
+  try {
+    swapInPages = Number(/^pswpin (\d+)$/m.exec(fs.readFileSync("/proc/vmstat", "utf8"))?.[1] ?? NaN);
+  } catch {
+    // `/proc/vmstat` missing: the swap delta below is reported as `null`.
+  }
+  return {
+    epochMs: nodePerformance.timeOrigin + nodePerformance.now(),
+    cpuSomeUs: cpu.some,
+    memorySomeUs: memory.some,
+    memoryFullUs: memory.full,
+    ioSomeUs: io.some,
+    ioFullUs: io.full,
+    swapInPages,
+  };
+}
+
+function startPressureSampler(): { readonly samples: PressureSample[]; stop(): void } {
+  const samples: PressureSample[] = [];
+  const take = (): void => {
+    const sample = readPressureSample();
+    if (sample !== null) samples.push(sample);
+  };
+  take();
+  const timer = setInterval(take, PRESSURE_SAMPLE_PERIOD_MS);
+  return {
+    samples,
+    stop: () => {
+      clearInterval(timer);
+      take();
+    },
+  };
+}
+
+/** Stall accumulated on the host between the last sample at or before `fromEpochMs` and the first
+ * at or after `toEpochMs` — a slight over-cover of the page's interval, never an under-cover. */
+function pressureDuring(samples: readonly PressureSample[], fromEpochMs: number, toEpochMs: number) {
+  const before = [...samples].reverse().find((x) => x.epochMs <= fromEpochMs);
+  const after = samples.find((x) => x.epochMs >= toEpochMs);
+  if (before === undefined || after === undefined) return null;
+  const ms = (a: number, b: number): number => round1((b - a) / 1000);
+  return {
+    cpuSomeMs: ms(before.cpuSomeUs, after.cpuSomeUs),
+    memorySomeMs: ms(before.memorySomeUs, after.memorySomeUs),
+    memoryFullMs: ms(before.memoryFullUs, after.memoryFullUs),
+    ioSomeMs: ms(before.ioSomeUs, after.ioSomeUs),
+    ioFullMs: ms(before.ioFullUs, after.ioFullUs),
+    swapInPages: Number.isNaN(after.swapInPages - before.swapInPages) ? null : after.swapInPages - before.swapInPages,
+  };
+}
+
+interface ResourceSample {
+  readonly name: string;
+  readonly startMs: number;
+  readonly requestStartMs: number;
+  readonly responseStartMs: number;
+  readonly responseEndMs: number;
+  readonly connectMs: number;
+}
+
+const round1 = (value: number): number => Number(value.toFixed(1));
+
+async function emitPageLatencyBreakdown(
+  page: Page,
+  stubUrl: string,
+  stubRequests: readonly StubRequestLog[],
+  requestedMs: readonly number[],
+  drawnMs: readonly number[],
+  pressure: readonly PressureSample[],
+): Promise<readonly { readonly page: number; readonly totalMs?: number }[]> {
+  const browser = await page.evaluate((origin) => {
+    const resources = performance
+      .getEntriesByType("resource")
+      .filter((e) => e.name.startsWith(origin) && e.name.includes("/series-history"))
+      .map((e) => {
+        const r = e as PerformanceResourceTiming;
+        return {
+          name: r.name,
+          startMs: r.startTime,
+          requestStartMs: r.requestStart,
+          responseStartMs: r.responseStart,
+          responseEndMs: r.responseEnd,
+          connectMs: r.connectEnd - r.connectStart,
+        };
+      });
+    return {
+      timeOriginMs: performance.timeOrigin,
+      resources,
+      longTasks: window.__t004LongTasks ?? null,
+    };
+  }, stubUrl);
+  const resources: ResourceSample[] = browser.resources;
+  const breakdown = requestedMs.map((requested, i) => {
+    const drawn = drawnMs[i];
+    const nextRequested = requestedMs[i + 1] ?? Number.POSITIVE_INFINITY;
+    const own = resources.filter((r) => r.startMs >= requested - 1 && r.startMs < nextRequested);
+    if (drawn === undefined || own.length === 0) {
+      return { page: i, fetches: own.length };
+    }
+    const firstStart = Math.min(...own.map((r) => r.startMs));
+    const lastEnd = Math.max(...own.map((r) => r.responseEndMs));
+    // The stub's own receive instant, moved onto the browser's timeline; matched by the full URL.
+    const stubLagMs = own.map((r) => {
+      const seen = stubRequests.find((q) => r.name.endsWith(q.url));
+      return seen === undefined ? null : seen.receivedAtEpochMs - browser.timeOriginMs - r.requestStartMs;
+    });
+    const stubServeMs = own.map((r) => {
+      const seen = stubRequests.find((q) => r.name.endsWith(q.url));
+      return seen === undefined ? null : seen.respondedAtEpochMs - seen.receivedAtEpochMs;
+    });
+    const longTaskMs =
+      browser.longTasks === null
+        ? null
+        : browser.longTasks
+            .filter((t) => t.startMs < drawn && t.startMs + t.durationMs > requested)
+            .reduce((sum, t) => sum + t.durationMs, 0);
+    return {
+      page: i,
+      fetches: own.length,
+      totalMs: round1(drawn - requested),
+      beforeFirstFetchMs: round1(firstStart - requested),
+      queueAndConnectMaxMs: round1(Math.max(...own.map((r) => r.requestStartMs - r.startMs))),
+      connectMaxMs: round1(Math.max(...own.map((r) => r.connectMs))),
+      waitMaxMs: round1(Math.max(...own.map((r) => r.responseStartMs - r.requestStartMs))),
+      downloadMaxMs: round1(Math.max(...own.map((r) => r.responseEndMs - r.responseStartMs))),
+      fetchSpanMs: round1(lastEnd - firstStart),
+      afterLastByteMs: round1(drawn - lastEnd),
+      stubReceiveLagMaxMs: stubLagMs.some((v) => v === null) ? null : round1(Math.max(...(stubLagMs as number[]))),
+      stubServeMaxMs: stubServeMs.some((v) => v === null) ? null : round1(Math.max(...(stubServeMs as number[]))),
+      longTaskMs: longTaskMs === null ? null : round1(longTaskMs),
+      // Per fetch, relative to the page's request: [requestStart, responseStart, responseEnd]. One
+      // stall that holds every socket at once shows as the same late instant on all of them.
+      fetchTimelineMs: own.map((r) => [
+        round1(r.requestStartMs - requested),
+        round1(r.responseStartMs - requested),
+        round1(r.responseEndMs - requested),
+      ]),
+      requestedEpochMs: Math.round(browser.timeOriginMs + requested),
+      hostStall: pressureDuring(pressure, browser.timeOriginMs + requested, browser.timeOriginMs + drawn),
+    };
+  });
+  fact(SPEC, "history_page_latency_breakdown", breakdown);
+  fact(SPEC, "history_page_resource_entries_n", resources.length);
+  fact(
+    SPEC,
+    "main_thread_long_tasks_ms",
+    browser.longTasks === null ? null : browser.longTasks.map((t) => [round1(t.startMs), round1(t.durationMs)]),
+  );
+  return breakdown;
+}
+
 test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a barra desenhada, sobre n >= ${MIN_PAGES} paginações disparadas por arrasto (${SPEC})`, async ({
   page,
 }) => {
@@ -745,6 +1009,7 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
   let instance: NextInstanceHandle | undefined;
   try {
     instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: stub.url });
+    await page.addInitScript(installMainThreadRecorder);
 
     fact(SPEC, "symbol_query", SYMBOL_QUERY);
     const response = await page.goto(`${instance.baseUrl}${SYMBOL_PATH}${SYMBOL_QUERY}`, { waitUntil: "load" });
@@ -789,7 +1054,19 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     // anterior ter sido desenhada antes do próximo começar. Ver `driveSequentialDrags`'s próprio
     // docstring para o porquê da espera por-arrasto (é o contrato serial de `D-C3.5` reaplicado
     // na cadência do gesto).
+    // `T-00.4` (A1) — the Node event loop that serves the stub, during exactly the measured drags.
+    const stubLoopDelay = monitorEventLoopDelay({ resolution: 10 });
+    stubLoopDelay.enable();
+    const pressureSampler = startPressureSampler();
     const gestures = await driveSequentialDrags(page, DRAG_COUNT);
+    pressureSampler.stop();
+    stubLoopDelay.disable();
+    fact(SPEC, "host_pressure_samples_n", pressureSampler.samples.length);
+    fact(SPEC, "stub_event_loop_delay_ms", {
+      max: round1(stubLoopDelay.max / 1e6),
+      p99: round1(stubLoopDelay.percentile(99) / 1e6),
+      mean: round1(stubLoopDelay.mean / 1e6),
+    });
 
     // `T-01.8` — NO CASCADE (`handoff/FIX-regressoes-fase05.md` §4.3 item 4): once the last page is
     // drawn, the page's own echo must not page again. `IDLE_AFTER_PAGING_MS` with no input, and the
@@ -839,8 +1116,9 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     fact(SPEC, "history_page_pair_n", pairCount);
     expect(
       pairCount,
-      `apenas ${pairCount} páginas disparadas por arrasto — esperado >= ${MIN_PAGES} (plan 05 DoD 7)`,
-    ).toBeGreaterThanOrEqual(MIN_PAGES);
+      `apenas ${pairCount} páginas disparadas por arrasto — esperado >= ${Math.max(MIN_PAGES, P95_MIN_PAGES)} ` +
+        `(plan 05 DoD 7: n >= ${MIN_PAGES}; T-00.4: n >= ${P95_MIN_PAGES} para o p95 não ser o máximo)`,
+    ).toBeGreaterThanOrEqual(Math.max(MIN_PAGES, P95_MIN_PAGES));
 
     // `T-01.8`: the range and boundary verdicts come BEFORE the latency block. They are the ones
     // `FIX` §4.3 names, and a remount per page (the ablation) also breaks the drawn/requested index
@@ -936,11 +1214,22 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     fact(SPEC, "history_page_latency_p50_ms", Number(p50.toFixed(2)));
     fact(SPEC, "history_page_latency_p95_ms", Number(p95.toFixed(2)));
     fact(SPEC, "history_page_latency_max_ms", Number(max.toFixed(2)));
+    const breakdown = await emitPageLatencyBreakdown(
+      page,
+      stub.url,
+      stub.requests,
+      probe.requestedMs,
+      probe.drawnMs,
+      pressureSampler.samples,
+    );
+    const slowest = breakdown.filter((b) => (b.totalMs ?? 0) > LATENCY_CEILING_MS);
+    fact(SPEC, "history_page_over_ceiling_n", slowest.length);
 
     expect(
       p95,
       `p95 da latência borda->desenho é ${p95.toFixed(2)} ms (max ${max.toFixed(2)} ms, p50 ` +
-        `${p50.toFixed(2)} ms, n=${latenciesMs.length}) — teto é ${LATENCY_CEILING_MS} ms (plan 05 DoD 7)`,
+        `${p50.toFixed(2)} ms, n=${latenciesMs.length}) — teto é ${LATENCY_CEILING_MS} ms (plan 05 DoD 7). ` +
+        `Páginas acima do teto, com onde o tempo ficou (T-00.4): ${JSON.stringify(slowest)}`,
     ).toBeLessThanOrEqual(LATENCY_CEILING_MS);
     // Nenhuma latência pode ser negativa — negativa seria evidência de que o pareamento por
     // índice (a invariante acima) quebrou, não um resultado válido rápido demais.
@@ -980,10 +1269,21 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     fact(SPEC, "axis_samples_during_paging_n", pagingSamplesMs.length);
     fact(SPEC, "axis_max_interval_during_paging_ms_incl_driver_idle", Number(legacyMaxIntervalMs.toFixed(2)));
 
-    const { intraMs, otherMs } = splitAxisIntervals(axisSamplesMs, gestures);
+    const panFrameGestures = gestures.slice(0, PAN_FRAME_GESTURE_COUNT);
+    const { intraMs, otherMs } = splitAxisIntervals(axisSamplesMs, panFrameGestures);
+    // `T-00.4` — the latency-only gestures, reported and never judged (see `PAN_FRAME_GESTURE_COUNT`).
+    // Their intervals also land in `otherMs` above, i.e. in `axis_other_interval_*`.
+    const latencyOnlyIntraMs = splitAxisIntervals(axisSamplesMs, gestures.slice(PAN_FRAME_GESTURE_COUNT)).intraMs;
+    fact(SPEC, "axis_intra_gesture_interval_judged_gestures_n", panFrameGestures.length);
+    fact(
+      SPEC,
+      "axis_intra_gesture_interval_max_ms_latency_only_gestures",
+      latencyOnlyIntraMs.length > 0 ? Number(Math.max(...latencyOnlyIntraMs).toFixed(2)) : null,
+    );
     const intraSorted = [...intraMs].sort((a, b) => a - b);
     const intraMaxMs = intraSorted.length > 0 ? intraSorted[intraSorted.length - 1]! : 0;
     fact(SPEC, "gesture_windows_n", gestures.length);
+    // `T-00.4`: judged by the `160` ceiling — the first `PAN_FRAME_GESTURE_COUNT` of them.
     fact(SPEC, "gesture_move_duration_ms", gestures.map((g) => Number((g.moveEndMs - g.moveStartMs).toFixed(1))));
     fact(SPEC, "axis_intra_gesture_interval_n", intraMs.length);
     fact(SPEC, "axis_intra_gesture_interval_max_ms", Number(intraMaxMs.toFixed(2)));
