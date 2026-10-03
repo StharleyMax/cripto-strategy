@@ -237,3 +237,87 @@ falso verde em portão de passo irreversível não passa. O conserto tem cerca d
   pipeline vivo, devolve `deploy-collector-1` e `deploy-writer-1`, e a mutação M4 reprova contra o fake
   novo.
 - N-2 na mesma passada (uma linha), sem exigência deste gate.
+
+## Re-validação @4aee5f6
+
+Universo: `git diff a451027..4aee5f6 -- scripts backend frontend/src frontend/e2e` (merges `22f76f7`,
+T-06.4-fix-N1, e `4aee5f6`, B-1 do OI a 1024): `compact.sh` ±142, `scope-resolve.sh` +6, testes +101,
+`repeated_fact.py` (só docstring/comentário), `SymbolClient.tsx` +45, `e2e/40` +362, `e2e/41` +13.
+Conferi à mão, contra o código e contra o Docker local (só leitura). Não rodei `make verify` nem e2e,
+porque o despacho proíbe.
+
+### Veredito: **APPROVED**
+
+N-1 e N-2 estão fechados e nenhum dos dois consertos traz falso verde novo. O diff do OI não tem achado
+≥ MÉDIA.
+
+### N-1 — **FECHADO**
+
+- `compact.sh:177-185`: há um `docker ps --filter "label=com.docker.compose.service=$svc"` **por serviço**
+  (`for svc in collector writer`). Cada um tem `|| die` próprio, e qualquer nome devolvido recusa com rc=2.
+  A recusa acontece antes do XINFO e antes de qualquer `psql`.
+- **Sintaxe medida no Docker real** `[MEDIDO 2026-10-03, Docker 24.0.4, pipeline vivo]`: o comando exato do
+  laço devolve `deploy-collector-1` para `collector` e `deploy-writer-1` para `writer`, ambos com rc=0.
+- **Dublê** (`test_md_series_compaction_delete_flow.py:62-82`): o nome só sai quando o serviço casa com
+  **todos** os `--filter` (AND, como no Docker). Filtro de outro tipo devolve rc 97, e sem filtro o dublê
+  lista tudo. O `ps` padrão passou a ter `postgres`/`redis`/`api` rodando, então um filtro removido reprova
+  o caminho feliz.
+- **Mutação refeita por mim, fora da worktree** `[MEDIDO 2026-10-03: o _FAKE_DOCKER do próprio teste
+  extraído para o scratchpad; compact.sh de a451027 contra o de 4aee5f6; subcomando snapshot; n=3 casos]`:
+  com `deploy-collector-2 collector` ou `other-writer-7 writer` rodando, o script ANTIGO passa da varredura
+  e só para adiante, no XINFO. O NOVO recusa na varredura (`compose service 'collector'|'writer' still
+  running: …`). Com só `postgres` rodando, os dois passam da varredura. Isso confirma o que o relatório do
+  builder diz (M5, "filtro AND de volta → 4 failed").
+
+### N-2 — **FECHADO**
+
+- `scope-resolve.sh:75-79`: para `NN+`, `check_tokens` chama `spec_of` na base. Ela roda no shell
+  principal (o laço é `done < "$MAP"`, sem pipe), então `recusa` sai do script com rc=3. `NN-MM` já estava
+  coberto, porque `expand` imprime a faixa inteira e o chamador checa cada `NN` com `spec_of`.
+- O comentário de `expand` (`:58`) foi corrigido. Testes: `14+`, `99+` e `10 99+ 12` recusam; `13+` (o
+  último spec) é aceito, o que serve de controle de fronteira contra recusa em excesso.
+
+### Tradução das mensagens de `die`/`echo` — **sem consumidor quebrado**
+
+- `grep -rnE '<os 12 textos PT antigos de compact.sh>' backend scripts Makefile frontend/e2e deploy`
+  devolve uma única linha (`scripts/validate_palette.js:523`, `VEREDITO: REPROVA.`), e ela é de outro
+  script. Nenhum chamador de `compact.sh` casa a saída (os únicos consumidores são os dois testes e os
+  documentos de `gates/`).
+- Asserções de texto nos testes: `test_md_series_compaction_script.py` não assere nenhuma mensagem. Em
+  `…_delete_flow.py` há 4 asserções reescritas (`failed to list the chunks`, `deleted in total`,
+  `not found`, `missing from XINFO`), e as que sobraram (`COMPACT_CONFIRM`, `envelopes`, `pending`, `lag`,
+  nome do contêiner) continuam substrings das mensagens novas. Conferi cada uma contra `compact.sh`.
+- Fica um resíduo que não é defeito: `T-06.4-fix-W8.md:6` cita `"apagadas no total"`. É texto histórico de
+  gate, e não se reescreve.
+- `repeated_fact.py`: a docstring foi encolhida para uma linha e o resto virou comentário. Nenhum teste lê
+  `__doc__` (`grep -rn __doc__ backend/tests | grep -i repeat` → vazio). Não há mudança de lógica.
+
+### Diff do OI (`4aee5f6`) — sem achado ≥ MÉDIA
+
+- `OiCandleLegend`: o grupo `inline-flex flex-nowrap` envolve só O·H·L·C, e o `DERIVADO` fica fora dele.
+  Os atributos `data-legend-*` estão intactos.
+- `OiProvenance`/`OiProvenanceTerm`: a concatenação `"Grandeza: g" + " · " + "Universo: head" + rest +
+  " · " + "Coorte: head" + rest` reproduz byte a byte a string de antes. Os separadores de texto do React
+  são comentários, que `textContent` ignora. O `e2e/40` assere isso (`textContent ≠ expectedText`). O `<p>`
+  é o último filho de `PaneLegendLine` (`SymbolClient.tsx:907`, `whitespace-nowrap` +
+  `[&>*:last-child]:truncate`), e é isso que faz o `inline-block` ser escondido inteiro pela elipse. O ramo
+  `null` e `data-fact` não mudaram.
+- `oi-pane-dom-contract.test.ts`: o CALA foi re-ancorado. A regex antiga viraria no-op, e o `notEqual(restyled, source)` pegaria isso.
+- `e2e/40` falha fechado nos ramos vazios: sem vela, o F-2 devolve defeito. Sem `<p>`, o F-3 dá `found:false`
+  e vira defeito. Sem piso declarado para o TF, a função devolve defeito. `paintsIn` lança erro se os pixels
+  não estabilizam em 4 tentativas, e o controle (esconder o `<p>` muda pixels) é obrigatório.
+- **INFO-1 (não bloqueia):** `e2e/41` agora tem o caso `1m` (`clipped=left`, `border-left 0px`) e asserções
+  novas no `else` para `1h`/`4h`. Nada disso **foi executado**. O builder parou no R6
+  (`handoff/W8-OI-1024-estado.md` itens 1–2), e o `make verify-scope` do merge `4aee5f6` também não
+  rodou. Não é falso verde, porque o spec corre no e2e completo e, se a premissa estiver errada, fica
+  vermelho. Mas a primeira execução dessas linhas será o `VERIFY_FORCE=1 make verify` do gate da wave, e
+  quem o rodar deve ler o resultado do `e2e/41` explicitamente.
+- **INFO-2:** a varredura de N-1 recusa qualquer contêiner de **qualquer** projeto compose com serviço
+  `collector`/`writer`. Hoje só existe o projeto `deploy`
+  (`docker ps --format '{{.Label "com.docker.compose.project"}}'`), e recusar a mais é fail-closed, o lado
+  seguro.
+
+### Fora deste diff (continuam abertos, não bloqueiam)
+
+- **M-1** e **M-2**, os mesmos de @a451027: `git diff --stat a451027..4aee5f6` não toca
+  `write_series_row.py`, `postgres_series_sink.py` nem `verify.sh`.
