@@ -33,7 +33,7 @@ from typing import Final
 from src.modules.sentimento.domain.provenance import SeriesRow
 
 # `T-06.4-prova.md` §1.5, "O fato, nas duas pontas" — 13 columns. The SAME list is the
-# `DELETE`'s predicate (`scripts/md-series-compaction/selected.sql`), and
+# `DELETE`'s predicate (`scripts/md-series-compaction/flags.sql`), and
 # `tests/sentimento/test_md_series_compaction_script.py` fails if the two ever diverge.
 FACT_COLUMNS: Final[tuple[str, ...]] = (
     "series_key_id",
