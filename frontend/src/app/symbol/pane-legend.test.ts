@@ -208,33 +208,72 @@ test("paneIdentityLabel is cadence then unit, and SymbolClient renders every hea
 });
 
 // ── `T-05.6` (`W7-DESIGN-REVIEW` N-2) — the heading names the ACTIVE TF ─────────────────────────
+// Norm: `gates/T-05.6-DESIGN-GATE.md` §(b).4 — `<nome> <TF> (<nativa>, <unidade>)` visible, the word
+// "nativa" only in a screen-reader-only suffix and in the `title`, never in the visible line.
 
-test("N-2 MORDE: on 1h every heading names 1h, beside the series' native cadence", () => {
+test("N-2 MORDE: on 1h every heading puts 1h OUTSIDE the parenthesis and the series inside it", () => {
   const headings = resolvePaneHeadings(sources(), "1h");
-  assert.equal(headings.price, "1h · nativo 1m, USDT");
-  assert.equal(headings.volume, "1h · nativo 1m, BTC");
-  assert.equal(headings.liquidation_long, "1h · nativo 1m, USD");
-  assert.equal(headings.oi, "1h · nativo 5m, BTC");
-  assert.equal(headings.long_short, "1h · nativo 5m, ratio");
+  assert.equal(headings.price.visible, "1h (1m, USDT)");
+  assert.equal(headings.volume.visible, "1h (1m, BTC)");
+  assert.equal(headings.liquidation_long.visible, "1h (1m, USD)");
+  assert.equal(headings.oi.visible, "1h (5m, BTC)");
+  assert.equal(headings.long_short.visible, "1h (5m, ratio)");
   for (const id of LEGEND_SERIES_IDS) {
-    assert.ok(headings[id].startsWith("1h"), `the ${id} heading does not say the TF on screen: '${headings[id]}'`);
+    assert.ok(headings[id].visible.startsWith("1h ("), `the ${id} heading does not say the TF on screen: '${headings[id].visible}'`);
+    assert.ok(!headings[id].visible.includes("nativ"), `the word "nativa" is off the visible line: '${headings[id].visible}'`);
   }
 });
 
-test("N-2 CALA: where the TF IS the native cadence the heading is unchanged from before T-05.6", () => {
-  const legends = resolvePaneLegends(sources());
-  const onOneMinute = resolvePaneHeadings(sources(), "1m");
-  assert.equal(onOneMinute.price, "1m, USDT");
-  assert.equal(onOneMinute.price, legends.price?.label, "on 1m the price heading is the legend's own label");
-  assert.equal(onOneMinute.oi, "1m · nativo 5m, BTC", "but OI is 5m-native, so on 1m it says so");
-  assert.equal(resolvePaneHeadings(sources(), "5m").oi, "5m, BTC");
-  assert.equal(paneHeadingLabel(entry("klines_ohlc", "STOCK"), ""), "1m, USDT", "no TF, no prefix");
+test("N-2: the screen-reader suffix and the title carry the word the line dropped, verbatim", () => {
+  const headings = resolvePaneHeadings(sources(), "1h");
+  assert.equal(headings.price.screenReader, " — barras de 1h, série nativa de 1m");
+  assert.equal(headings.price.title, "Barras de 1h · série nativa de 1m, USDT");
+  assert.equal(headings.oi.screenReader, " — barras de 1h, série nativa de 5m");
+  assert.equal(headings.oi.title, "Barras de 1h · série nativa de 5m, BTC");
+  const fifteen = resolvePaneHeadings(sources(), "15m");
+  assert.equal(fifteen.volume.visible, "15m (1m, BTC)");
+  assert.equal(fifteen.volume.screenReader, " — barras de 15m, série nativa de 1m");
+  assert.equal(fifteen.volume.title, "Barras de 15m · série nativa de 1m, BTC");
 });
 
-test("N-2: an unresolved series has no heading terms, and the legend label (invariant iv) is untouched", () => {
-  assert.equal(resolvePaneHeadings(sources({ volume: null }), "4h").volume, "");
+test("N-2: the TF token appears on EVERY TF — also where it IS the native cadence — and in the case it was given", () => {
+  const legends = resolvePaneLegends(sources());
+  const onOneMinute = resolvePaneHeadings(sources(), "1m");
+  // Dropping the token here would make the parenthesis mean the TF on `1m` and the series on `1h`.
+  assert.equal(onOneMinute.price.visible, "1m (1m, USDT)");
+  assert.equal(onOneMinute.long_short.visible, "1m (5m, ratio)");
+  assert.equal(onOneMinute.price.visible, `1m (${legends.price?.label})`, "the parenthesis is the legend's own label");
+  assert.equal(resolvePaneHeadings(sources(), "5m").oi.visible, "5m (5m, BTC)");
+  // The token is the button's glyph, never re-cased: `1M` is MONTH in TradingView's convention.
+  assert.equal(resolvePaneHeadings(sources(), "4h").price.visible, "4h (1m, USDT)");
+});
+
+test("N-2: no TF (defensive branch) ⇒ no token, no suffix, no title; unresolved series ⇒ nothing at all", () => {
+  assert.deepEqual(paneHeadingLabel(entry("klines_ohlc", "STOCK"), ""), {
+    visible: "(1m, USDT)",
+    screenReader: "",
+    title: undefined,
+  });
+  assert.deepEqual(resolvePaneHeadings(sources({ volume: null }), "4h").volume, {
+    visible: "",
+    screenReader: "",
+    title: undefined,
+  });
   assert.equal(resolvePaneLegends(sources()).price?.label, "1m, USDT", "the registry-checked label carries no TF");
   assert.match(SOURCE, /resolvePaneHeadings\(paneLegendSources, selectedTimeframe\)/, "the headings read the page's TF");
+});
+
+test("N-2: the heading carries a title and an sr-only suffix, and NEVER an aria-label (it would replace the name)", () => {
+  for (const id of ["price", "volume", "oi", "cvd", "liquidation_long", "long_short"] satisfies LegendSeriesId[]) {
+    assert.match(SOURCE, new RegExp(`title=\\{headings\\.${id}\\.title\\}`), `the ${id} heading has no title`);
+  }
+  assert.match(SOURCE, /<span className="sr-only">\{heading\.screenReader\}<\/span>/);
+  const headingTags = SOURCE.match(/<h[23] [^>]*>/g) ?? [];
+  assert.ok(headingTags.length >= 6, `expected the six pane headings, found ${headingTags.length}`);
+  for (const tag of headingTags) {
+    assert.ok(!/aria-label/.test(tag), `a heading carries an aria-label: ${tag}`);
+    assert.ok(!/\b(uppercase|lowercase|capitalize)\b/.test(tag), `a heading is case-transformed: ${tag}`);
+  }
 });
 
 // ── `C-8` — a fixed column for the numerals ─────────────────────────────────────────────────

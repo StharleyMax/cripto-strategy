@@ -167,6 +167,7 @@ import {
   resolvePaneLegends,
   type CrosshairSlotStore,
   type LegendSeriesId,
+  type PaneHeading,
   type PaneLegendSources,
 } from "./pane-legend.ts";
 import { LIQUIDATION_SWATCH_FORM_BY_SIDE, liquidationSwatchStyle } from "./liquidation-legend-swatch.ts";
@@ -934,9 +935,9 @@ interface LegendFrame {
    * `1m` a bar is ONE point on the slot of its open, so the legend snaps the slot it reads to that
    * open (`charts::resolveLegendReading`'s `bucketMs`), instead of reading an empty minute. */
   readonly bucketMs: number;
-  /** `T-05.6` (`W7-DESIGN-REVIEW` N-2): each pane's heading terms, which name the page's TF beside
-   * the series' native cadence (`pane-legend.ts::resolvePaneHeadings`). `""` where no entry resolved. */
-  readonly headings: Readonly<Record<LegendSeriesId, string>>;
+  /** `T-05.6` (`W7-DESIGN-REVIEW` N-2): each pane's heading — the page's TF outside the parenthesis,
+   * the series' identity inside it (`pane-legend.ts::resolvePaneHeadings`). */
+  readonly headings: Readonly<Record<LegendSeriesId, PaneHeading>>;
 }
 
 const LegendFrameContext = createContext<LegendFrame | null>(null);
@@ -961,12 +962,24 @@ function useSlotUnit(): string {
 const NO_CROSSHAIR_STORE: CrosshairSlotStore = createCrosshairSlotStore();
 const noCrosshairSnapshot = (): number | undefined => undefined;
 
-/** The identity terms of a pane's heading — `T-04.8`'s rule, fed the heading `pane-legend.ts`
- * derived from the catalog entry and the page's TF (`paneHeadingLabel`): the active TF where it is
- * not the series' own cadence (`T-05.6`, `W7-DESIGN-REVIEW` N-2), then cadence and unit, in
- * parentheses, and no parentheses at all where no entry resolved. */
-function identityTerms(heading: string): string {
-  return heading.length === 0 ? "" : ` (${heading})`;
+/** The terms of a pane's heading after its name — `T-04.8`'s rule, fed the heading `pane-legend.ts`
+ * derived from the catalog entry and the page's TF (`paneHeadingLabel`): the active TF, then cadence
+ * and unit in parentheses (`T-05.6`, `W7-DESIGN-REVIEW` N-2), nothing at all where no entry resolved.
+ * The word "nativa" is a screen-reader-only node INSIDE the heading, never an `aria-label`: an
+ * `aria-label` on `<h2>` REPLACES the accessible name, and the heading list would lose the pane's
+ * name (`gates/T-05.6-DESIGN-GATE.md` §(b).4). The `title` (`Barras de 1h · série nativa de 1m,
+ * USDT`) goes on the heading element itself. ⛔ Neither the heading nor the TF button may ever be
+ * case-transformed: `1M` reads as MONTH. */
+function identityTerms(heading: PaneHeading): ReactNode {
+  if (heading.visible.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {` ${heading.visible}`}
+      {heading.screenReader.length > 0 ? <span className="sr-only">{heading.screenReader}</span> : null}
+    </>
+  );
 }
 
 /**
@@ -2008,7 +2021,7 @@ function VolumeSubAxis({ volume, status }: { readonly volume: VolumeSubAxisData;
       data-volume-present-points={volume.presentPoints}
     >
       <PaneLegendLine>
-        <h3 className="font-label-caps text-label-caps text-on-surface">Volume{identityTerms(headings.volume)}</h3>
+        <h3 className="font-label-caps text-label-caps text-on-surface" title={headings.volume.title}>Volume{identityTerms(headings.volume)}</h3>
         <LegendValue seriesId="volume" factKey="volume" slots={volume.legendSlots} />
         {/* `T-05.4` (§2.5): the coverage chip lives IN the line that names the series, never as a
             block under it — and BEFORE the scale note, because the last child is the one that
@@ -2205,7 +2218,7 @@ function PricePane({
       <section aria-label="Preço" data-testid={PRICE_PANE_TESTID} data-price-candles={priceCandles.drawnCandles} className={PANE_LAYER_CLASS}>
         <PaneLegend>
           <PaneLegendLine>
-            <h2 className="font-label-caps text-label-caps text-on-surface">Preço{identityTerms(headings.price)}</h2>
+            <h2 className="font-label-caps text-label-caps text-on-surface" title={headings.price.title}>Preço{identityTerms(headings.price)}</h2>
             {/* `T-01.7`: the close of the candle under the crosshair (the last closed one without it). */}
             <LegendValue seriesId="price" factKey="price" slots={closeSlots} />
             <p className="text-sm text-provenance-weak">
@@ -2766,7 +2779,7 @@ function OiPane({
     >
       <PaneLegend>
         <PaneLegendLine>
-          <h2 className="font-label-caps text-label-caps text-on-surface">Open Interest{identityTerms(headings.oi)}</h2>
+          <h2 className="font-label-caps text-label-caps text-on-surface" title={headings.oi.title}>Open Interest{identityTerms(headings.oi)}</h2>
           {/* `T-03.11`: O·H·L·C of the candle the crosshair is over, and its `DERIVADO` label. */}
           <OiCandleLegend oiCandles={oiCandles} />
           <OiProvenance oi={oi} />
@@ -2982,7 +2995,7 @@ function CvdPane({
     >
       <PaneLegend>
       <PaneLegendLine>
-        <h2 className="font-label-caps text-label-caps text-on-surface">CVD{identityTerms(headings.cvd)}</h2>
+        <h2 className="font-label-caps text-label-caps text-on-surface" title={headings.cvd.title}>CVD{identityTerms(headings.cvd)}</h2>
         {/* `T-01.7`: TWO values on one line — the reason `C-8`'s fixed column exists: without it the
             cumulative would walk every time the delta changes width. */}
         <LegendValue seriesId="cvd" factKey="cvd_delta" slots={panels.cvd.deltaSlots} prefix="delta" />
@@ -3528,7 +3541,7 @@ function LiquidationPane({
         <PaneLegendLine>
           {/* `T-01.7` (`RF-5`): the cadence and the unit come off the long entry's key — the legs differ
               only in `cohort`, so the long entry answers for both (`LiquidationPaneData.provenance`). */}
-          <h2 className="font-label-caps text-label-caps text-on-surface">
+          <h2 className="font-label-caps text-label-caps text-on-surface" title={headings.liquidation_long.title}>
             Liquidações{identityTerms(headings.liquidation_long)}
           </h2>
           {/* `T-05.4` (§2.4/§2.5): ONE chip for the pane, not one per leg — both legs come from the
@@ -4195,7 +4208,7 @@ function LongShortPane({
           {/* ⛔ THE CADENCE AND THE UNIT ARE BOTH TERMS OF THE SERIES' KEY, AND NEITHER IS TYPED
               HERE — the `/review` `[WARNING]` of `T-04.8`. Where the backend published neither term
               the parenthesis does not appear at all, rather than appearing empty. */}
-          <h2 className="font-label-caps text-label-caps text-on-surface">
+          <h2 className="font-label-caps text-label-caps text-on-surface" title={headings.long_short.title}>
             Long/short de contas{identityTerms(headings.long_short)}
           </h2>
           {/* `T-01.7`: the value under the crosshair (`RATIO`: the slot's own, never carried). */}
@@ -4549,8 +4562,8 @@ export function SymbolClient({
   // entry through the registry's `resolvePaneLegend`, once per pane: the sources are static props, so
   // this runs once per mount of `SymbolClient`.
   const legends = useMemo(() => resolvePaneLegends(paneLegendSources), [paneLegendSources]);
-  // `T-05.6` (N-2) — the headings name the ACTIVE TF: `Preço (1h · nativo 1m, USDT)` on `1h`, never
-  // a bare `(1m, USDT)` beside the `1h` button.
+  // `T-05.6` (N-2) — the headings name the ACTIVE TF: `Preço 1h (1m, USDT)` on `1h`, never a bare
+  // `(1m, USDT)` beside the `1h` button.
   const headings = useMemo(
     () => resolvePaneHeadings(paneLegendSources, selectedTimeframe),
     [paneLegendSources, selectedTimeframe],

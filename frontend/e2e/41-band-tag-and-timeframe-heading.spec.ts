@@ -13,7 +13,10 @@ import { fact, shot } from "./helpers.ts";
  * the band to the plot. Measured at the two widths and the two TFs the review named.
  *
  * N-2 — the pane headings said `(1m, …)` beside the selected `1h` button. They now name the active
- * TF beside the native cadence: `Preço (1h · nativo 1m, USDT)`.
+ * TF outside the parenthesis and the series inside it: `Preço 1h (1m, USDT)` (norm:
+ * `gates/T-05.6-DESIGN-GATE.md` §(b).4). The word "nativa" is NOT on the visible line — it would cut
+ * `(escala linear)` at 1024 (`e2e/40` C-3) — but in a screen-reader-only suffix inside the heading and
+ * in its `title`, and NEVER in an `aria-label` (which would replace the heading's accessible name).
  *
  * Both are independent of how much data the database holds: the band is drawn over the axis grid
  * whether or not its slots are readable (`e2e/14`, weak universe), and the headings come off the
@@ -95,25 +98,79 @@ for (const width of [1024, 1280] as const) {
   }
 }
 
-for (const interval of ["1h", "4h"] as const) {
-  test(`N-2: on ${interval} every pane heading names ${interval}, beside the native cadence (${SPEC})`, async ({ page }) => {
+/** The pane names and, for the two the design handoff spells out, the exact series terms. The others
+ * are read off the catalog, so only the SHAPE is judged for them. */
+const PANE_NAMES = ["Preço", "Volume", "Open Interest", "CVD", "Liquidações", "Long/short de contas"] as const;
+const EXACT_SERIES: Readonly<Record<string, string>> = { Preço: "1m, USDT", Volume: "1m, BTC" };
+
+interface HeadingReading {
+  readonly visible: string;
+  readonly srOnly: string;
+  readonly title: string | null;
+  readonly ariaLabel: string | null;
+  readonly textTransform: string;
+}
+
+/** Every `h2`/`h3`: its VISIBLE text (the `sr-only` nodes taken out), the `sr-only` text, `title`,
+ * `aria-label` and computed `text-transform`. `innerText` alone cannot separate the two, because an
+ * `sr-only` node is rendered (clipped, not `display:none`) and its text is in `innerText`. */
+async function readHeadings(page: Page): Promise<HeadingReading[]> {
+  return page.locator("h2, h3").evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const clone = node.cloneNode(true) as HTMLElement;
+      const hidden = [...clone.querySelectorAll(".sr-only")];
+      const srOnly = hidden.map((el) => el.textContent ?? "").join("");
+      for (const el of hidden) el.remove();
+      return {
+        visible: (clone.textContent ?? "").replace(/\s+/g, " ").trim(),
+        srOnly,
+        title: node.getAttribute("title"),
+        ariaLabel: node.getAttribute("aria-label"),
+        textTransform: getComputedStyle(node).textTransform,
+      };
+    }),
+  );
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+}
+
+for (const interval of ["1m", "15m", "1h", "4h"] as const) {
+  test(`N-2: on ${interval} every pane heading reads '<name> ${interval} (<native>, <unit>)', the TF token is the active button's glyph, and "nativa" reaches the screen reader without an aria-label (${SPEC})`, async ({
+    page,
+  }) => {
     await open(page, interval);
-    const headings = await page.locator("h2, h3").allInnerTexts();
-    fact(SPEC, `n2_${interval}_headings`, headings.join(" | "));
-    for (const name of ["Preço", "Volume", "Open Interest", "CVD", "Liquidações", "Long/short de contas"]) {
-      const heading = headings.find((text) => text.trim().startsWith(`${name} (`));
+    const button = page.locator(`[data-testid="timeframe-button-${interval}"][aria-pressed="true"]`);
+    await expect(button, `the ${interval} button must be the pressed one`).toHaveCount(1);
+    // CASE-EXACT: the token after the name is compared with what the pressed button PRINTS, not with
+    // the URL — `toUpperCase()` on either side would make `1m` read `1M`, which is MONTH.
+    const buttonText = (await button.textContent())?.trim() ?? "";
+    expect(buttonText).toBe(interval);
+    const buttonTransform = await button.evaluate((el) => getComputedStyle(el).textTransform);
+    expect(buttonTransform, "the TF button is never case-transformed").toBe("none");
+
+    const headings = await readHeadings(page);
+    fact(SPEC, `n2_${interval}_headings`, headings.map((h) => `${h.visible} [sr:${h.srOnly}] [title:${h.title}]`).join(" | "));
+    for (const name of PANE_NAMES) {
+      const heading = headings.find((h) => h.visible.startsWith(`${name} `));
       expect(heading, `no heading for ${name}`).toBeDefined();
-      expect(heading!, `the ${name} heading must name the active TF`).toContain(`(${interval} · nativo `);
+      const match = new RegExp(`^${escapeRegExp(name)} (\\S+) \\(([^,()]+), ([^()]+)\\)$`).exec(heading!.visible);
+      expect(match, `the ${name} heading is not '<name> <TF> (<native>, <unit>)': '${heading!.visible}'`).not.toBeNull();
+      const [, token, native, unit] = match!;
+      expect(token, `the token after ${name} is the pressed button's text, case and all`).toBe(buttonText);
+      if (EXACT_SERIES[name] !== undefined) expect(`${native}, ${unit}`).toBe(EXACT_SERIES[name]);
+      expect(heading!.visible, `the word "nativa" is off the visible ${name} line`).not.toMatch(/nativ/);
+      expect(heading!.srOnly).toBe(` — barras de ${buttonText}, série nativa de ${native}`);
+      expect(heading!.title).toBe(`Barras de ${buttonText} · série nativa de ${native}, ${unit}`);
+      expect(heading!.ariaLabel, `an aria-label on the ${name} heading would REPLACE its accessible name`).toBeNull();
+      expect(heading!.textTransform, `the ${name} heading is never case-transformed`).toBe("none");
+      // The accessible name is the visible text FOLLOWED by the suffix — it starts with what is on
+      // screen (WCAG 2.5.3), and the heading list still says the pane's name.
+      await expect(
+        page.getByRole("heading", { name: `${heading!.visible}${heading!.srOnly}`, exact: true }),
+        `the ${name} heading's accessible name`,
+      ).toHaveCount(1);
     }
   });
 }
-
-test(`N-2 CALA: on 1m the price heading is unchanged — the TF IS its native cadence (${SPEC})`, async ({ page }) => {
-  await open(page, "1m");
-  const headings = await page.locator("h2, h3").allInnerTexts();
-  fact(SPEC, "n2_1m_headings", headings.join(" | "));
-  const price = headings.find((text) => text.trim().startsWith("Preço ("));
-  expect(price).toBeDefined();
-  expect(price!).toContain("Preço (1m, ");
-  expect(price!).not.toContain("nativo");
-});

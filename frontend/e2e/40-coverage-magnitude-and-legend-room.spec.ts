@@ -17,8 +17,11 @@
  *                     `5m` because it is the one TF where the head rule bites: the newest outer bucket
  *                     is `interval + 4 min` old (`KNOWLEDGE_TIME_LAG_MS`), 9 min in `5m`, 19/64/244 min
  *                     in `15m`/`1h`/`4h` (`handoff/T-05.4-estado.md`);
- *     - `longest`   — `C-3`: the LONGEST text §2.4 can produce on a real window, in `1h` (7 d loaded):
- *                     short `6 d 23 h`, long `23 h 59 min`, two legs different over one denominator.
+ *     - `longest`   — `C-3`: the LONGEST text §2.4 can produce on a real window, two legs different
+ *                     over one denominator: short loses the most whole hours short of the window, the others
+ *                     `23 h 59 min`. In `1h` (7 d loaded): short `6 d 23 h`; in `15m` (4 d loaded,
+ *                     `T-05.6`): short `3 d 23 h` — the same number of characters, so `15m` is the TF
+ *                     where the pane headings are longest (`Volume 15m (1m, BTC)`, one more glyph).
  *   Nothing is written to any database (memória `nao-seedar-teste-no-postgres-compartilhado`).
  *
  *   REAL — the app under test (`E2E_BASE_URL`) on the read API it was given
@@ -115,6 +118,26 @@ const LONGEST_SINGLE_TEXT = "cobertura parcial — faltam 23 h 59 min de 7 d (14
 const LONGEST_LIQUIDATION_COMPACT = "short: faltam 6 d 23 h (99.4%) · long: faltam 23 h 59 min (14.3%)";
 const LONGEST_SINGLE_COMPACT = "faltam 23 h 59 min (14.3%)";
 
+/** `T-05.6` (`gates/T-05.6-DESIGN-GATE.md`, falsifier 1 of (b)): `C-3` runs in `15m` too, the TF whose
+ * pane headings are the longest. The stub's `longest` mode in `15m` (384 buckets × 15 min = 4 d): short
+ * loses 380 buckets (5 700 min → "3 d 23 h", 99.0%), the others 1 439 min ("23 h 59 min", 25.0%). Same
+ * glyph count as the `1h` strings, by hand: the chip is as long, only the headings grew. */
+const LONGEST_TEXTS: Readonly<Record<"1h" | "15m", readonly [full: string, compact: string][]>> = {
+  "1h": [
+    [LONGEST_LIQUIDATION_TEXT, LONGEST_LIQUIDATION_COMPACT],
+    [LONGEST_SINGLE_TEXT, LONGEST_SINGLE_COMPACT],
+    [LONGEST_SINGLE_TEXT, LONGEST_SINGLE_COMPACT],
+  ],
+  "15m": [
+    [
+      "cobertura parcial — short: faltam 3 d 23 h (99.0%) · long: faltam 23 h 59 min (25.0%), de 4 d",
+      "short: faltam 3 d 23 h (99.0%) · long: faltam 23 h 59 min (25.0%)",
+    ],
+    ["cobertura parcial — faltam 23 h 59 min de 4 d (25.0%)", "faltam 23 h 59 min (25.0%)"],
+    ["cobertura parcial — faltam 23 h 59 min de 4 d (25.0%)", "faltam 23 h 59 min (25.0%)"],
+  ],
+};
+
 type Family = "volume" | "cvd" | "liquidation_short" | "liquidation_long";
 const FAMILIES: readonly Family[] = ["volume", "cvd", "liquidation_short", "liquidation_long"];
 const FACT_KEY: Readonly<Record<Family, string>> = {
@@ -182,14 +205,21 @@ function missingAt(mode: StubMode, family: Family | null, index: number, n: numb
     case "head-only":
       return index === n - 1 ? Math.min(3, perBucket) : 0;
     case "longest": {
-      // 1h, 168 rows × 60: short loses 167 whole buckets (10 020 min → "6 d 23 h", 99.4%); the
-      // others lose 1 439 min ("23 h 59 min", 14.3%): 23 whole buckets plus 59 of the 24th.
-      const target = family === "liquidation_short" ? 167 * perBucket : 23 * perBucket + (perBucket - 1);
+      // Short loses the most WHOLE HOURS short of the window (production rounds a missing span UP to
+      // the hour above a day, so 5 745 min would print "4 d", not the longer "3 d 23 h"); the others
+      // lose 1 439 min ("23 h 59 min").
+      // 1h, 168 rows × 60: short 167 h (10 020 min → "6 d 23 h", 99.4%), others 14.3%.
+      // 15m, 384 rows × 15 (`T-05.6`): short 95 h (5 700 min → "3 d 23 h", 99.0%), others 25.0%.
+      const target =
+        family === "liquidation_short" ? Math.floor(((n - 1) * perBucket) / 60) * 60 : LONGEST_OTHERS_MISSING_MIN;
       const before = index * perBucket;
       return Math.max(0, Math.min(perBucket, target - before));
     }
   }
 }
+
+/** `C-3`: what every family but the short leg loses in `longest` — one minute short of a day. */
+const LONGEST_OTHERS_MISSING_MIN = 24 * 60 - 1;
 
 function wave(minute: number, salt: number): number {
   return (((minute * 37 + salt * 101) % 997) + 997) % 997;
@@ -710,18 +740,21 @@ test.describe(`T-05.4 gate: the coverage warning's magnitude, its absence, the h
     }
   });
 
-  for (const viewport of VIEWPORTS) {
+  // `T-05.6`: `15m` too — the TF whose pane headings are one glyph longer (`Volume 15m (1m, BTC)`).
+  const longestCases = (["1h", "15m"] as const).flatMap((interval) => VIEWPORTS.map((viewport) => [interval, viewport] as const));
+  for (const [interval, viewport] of longestCases) {
     const areaNote = viewport.areaFloors === "design" ? ", A-4 (C-4)" : viewport.areaFloors === "1024" ? ", A-4 (K-3 snapshot)" : " (A-4 measured, not judged)";
-    test(`C-3 at ${viewport.name}: the longest text (1h, two legs different) — A-1, A-5, A-6, A-7${areaNote}`, async ({ page }) => {
+    test(`C-3 at ${viewport.name} in ${interval}: the longest text (two legs different) — A-1, A-5, A-6, A-7${areaNote}`, async ({ page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       stub!.mode = "longest";
-      await openSymbol(page, instance!.baseUrl, "1h", `longest-${viewport.name}`);
+      await openSymbol(page, instance!.baseUrl, interval, `longest-${interval}-${viewport.name}`);
       const facts = await readChipFacts(page);
       const lines = await readChipLines(page);
       const areas = await readAreas(page);
       const truncation = await judgeTruncation(page);
       const forms = await readChipForms(page);
-      fact(SPEC, `gate_longest_${viewport.name}`, { facts, lines, areas, forms, truncation: truncation.readings });
+      const suffix = interval === "1h" ? "" : `_${interval}`;
+      fact(SPEC, `gate_longest_${viewport.name}${suffix}`, { facts, lines, areas, forms, truncation: truncation.readings });
 
       // The case IS the longest string: production wrote exactly what C-3 asked to measure — in BOTH
       // forms, since production always renders the two and the container query picks the painted one.
@@ -729,13 +762,7 @@ test.describe(`T-05.4 gate: the coverage warning's magnitude, its absence, the h
       expect.soft(
         forms.map((f) => `${f.full} | ${f.compact}`).sort(),
         "the stub's longest mode must make production write the longest texts, full | compact",
-      ).toEqual(
-        [
-          `${LONGEST_LIQUIDATION_TEXT} | ${LONGEST_LIQUIDATION_COMPACT}`,
-          `${LONGEST_SINGLE_TEXT} | ${LONGEST_SINGLE_COMPACT}`,
-          `${LONGEST_SINGLE_TEXT} | ${LONGEST_SINGLE_COMPACT}`,
-        ].sort(),
-      );
+      ).toEqual(LONGEST_TEXTS[interval].map(([full, compact]) => `${full} | ${compact}`).sort());
       expect.soft(judgeForms(forms), "A-7").toEqual([]);
       expect.soft(judgeMagnitude(facts), "A-1").toEqual([]);
       for (const family of FAMILIES) {
