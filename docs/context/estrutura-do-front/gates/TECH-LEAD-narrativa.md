@@ -138,3 +138,20 @@ Com a aprovação: `harness pipeline approve estrutura-do-front tasks "<motivo>"
   2026-10-02]`, porque só feature autorizada conta e esta ainda não está em `BUILD_AUTHORIZED`. Depois do gate `build`, as duas features vivas disputam o
   prefixo `frontend/src/app/symbol`. **Como o portão decide essa disputa entre duas vivas, eu não medi** `[NÃO MEDIDO]`. Quem despachar a F0 confere com o mesmo
   comando antes.
+
+## 9. Adendo 2026-10-03: `T-00.4`, os dois specs e2e instáveis
+
+`[DECISÃO-OWNER: 2026-10-03, escolha entre alternativas apresentadas]`: no menu do orquestrador, o owner escolheu a opção **"Task curta antes da F1"**.
+Os specs instáveis `e2e/18` e `e2e/20` são consertados **nesta** feature, embora nenhum dos dois tenha nascido nela (`e2e/18` veio de `T-03.11`,
+`e2e/20` de `T-05.9` de `candle-real-e-eixo-unico`, conforme `gates/W-F0-e2e-instavel.md`). O rótulo é este, e não `[PREMISSA-OWNER]`, porque o owner
+escolheu uma opção e não ditou a frase.
+
+A task é a **`T-00.4`**, componente `web`, `frontend-builder`, sem dependência e sem bloquear a F1. É a única task da feature com exceção declarada ao
+`DoD-2`: ela tem `M` em duas specs que já existiam (`18` e `20`) e em nenhuma outra. O DoD separa os dois achados porque eles são diferentes:
+
+- **A2** (`e2e/18:232`) é uma corrida contra a grade de 5 min do `knowledgeTimeMs`. Fica provada por um teste que força a travessia da fronteira e passa.
+- **A1** (`e2e/20:728`) é o outlier de 1.053 ms com a suíte rodando sozinha. O diagnóstico vem **antes** de qualquer mexida no teto, e o teto só sobe com
+  número e motivo.
+- **N = 10** rodadas sequenciais de `make e2e` inteiro sem vermelho nos dois specs. O motivo do 10 está nos `refs` da task.
+
+Tracker: a `T-00.4` fica **sem `tracker` e sem `local_only`**, no mesmo âmbar das outras 32 (§6). Ninguém decidiu não cardar.
