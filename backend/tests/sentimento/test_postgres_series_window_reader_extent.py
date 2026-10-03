@@ -182,6 +182,41 @@ def test_two_sources_with_different_minima_match_the_old_statement(
     assert _new_extent(connection, _LATE_SERIES) == expected
 
 
+def test_another_symbol_of_the_same_series_never_widens_either_end(
+    connection: psycopg.Connection,
+) -> None:
+    """MORDE on a lost `symbol` filter, in EITHER arm of the rewrite (QA of wave W8).
+
+    The other seeds use one symbol, so dropping `symbol = %s` from the `DISTINCT ON` arm went
+    unnoticed (measured: that mutation passed every extent test). Here `ETHUSDT`, under the same
+    `series_key_id`, starts a chunk earlier AND ends later than `BTCUSDT`.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _SEED_SQL,
+            {
+                "series": _LATE_SERIES,
+                "symbol": "ETHUSDT",
+                "source": "binance",
+                "first": _BASE_MS + 60_000,
+                "last": _BASE_MS + 2 * _CHUNK_MS + 60_000,
+                "step": _CHUNK_MS,
+            },
+        )
+    connection.commit()
+    _seed(
+        connection,
+        series=_LATE_SERIES,
+        source="binance",
+        first=_BASE_MS + _CHUNK_MS,
+        count=10,
+        step=60_000,
+    )
+    expected = (_BASE_MS + _CHUNK_MS, _BASE_MS + _CHUNK_MS + 9 * 60_000)
+    assert _old_extent(connection, _LATE_SERIES) == expected
+    assert _new_extent(connection, _LATE_SERIES) == expected
+
+
 def _rows_removed_by_filter(node: dict[str, Any]) -> int:
     """Sum `Rows Removed by Filter` over a JSON plan node and all of its descendants."""
     own = int(node.get("Rows Removed by Filter", 0))
