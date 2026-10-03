@@ -1924,7 +1924,7 @@ app/symbol/
 │   ├── host/             ChartHost.tsx · registrar.ts · indicator-binding.ts · pane-layer.tsx · pane-stack.ts
 │   ├── legend/           PaneLegend.tsx · LegendValue.tsx · legend-frame.ts · pane-legend.ts
 │   ├── marks/            AbsenceNote.tsx · PartialCoverageMark.tsx · BeyondCoverageBadge.tsx
-│   ├── axis/             axis-sync*.ts · supported-timeframes.ts · timeframe-window.ts
+│   ├── axis/             axis-sync*.ts(x) · supported-timeframes.ts · timeframe-window.ts
 │   └── history/          use-history-pager.ts · history-page-window.ts · request-window.ts · *-client.ts ·
 │                         series-requirement.ts
 └── indicators/
