@@ -35,9 +35,9 @@ import { test } from "node:test";
 import { JSDOM } from "jsdom";
 
 import { createAxisSyncStore, type AxisSyncStore } from "./axis-sync.ts";
-import { chartConstructorOptions } from "./chart-options.ts";
-import { installGlobals, flushFrames } from "../../charts/index.ts";
-import type { TimeAxis } from "../../charts/index.ts";
+import { chartConstructorOptions } from "../../chart-options.ts";
+import { installGlobals, flushFrames } from "../../../../charts/index.ts";
+import type { TimeAxis } from "../../../../charts/index.ts";
 
 // `paineis-de-fluxo` `T-01.5`: production is ONE chart since the single mount, and no longer
 // exports six fixed indices. This file proves the grid ALGEBRA over six independent headless

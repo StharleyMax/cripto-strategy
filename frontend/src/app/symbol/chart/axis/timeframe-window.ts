@@ -33,7 +33,7 @@
  * rows per minute), re-measure; `4h` could then afford more bars (candidate: 84 = 14 days).
  */
 
-import { initialViewRange, type TimeAxis, type TimeRange } from "../../charts/index.ts";
+import { initialViewRange, type TimeAxis, type TimeRange } from "../../../../charts/index.ts";
 
 import { SUPPORTED_TIMEFRAMES } from "./supported-timeframes.ts";
 

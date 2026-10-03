@@ -71,7 +71,7 @@ import type {
   SeriesProvenance,
   SeriesValueStats,
 } from "./panel-status.ts";
-import type { SeriesHistoryRow } from "./series-history-client.ts";
+import type { SeriesHistoryRow } from "./chart/history/series-history-client.ts";
 import type { SeriesKey } from "../../features/s3-inspector/series-catalog.ts";
 
 // Re-exported so the server-side callers of `resolveFreshnessVerdict` get the function and its

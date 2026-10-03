@@ -31,15 +31,15 @@ import {
   assertNoTickLevelFields,
   historyRequestUrl,
   type HistoryRequestKey,
-} from "../history-transport.ts";
-import { TransportError, type TransportErrorKind } from "../../features/s1-console/ingest-health-query.ts";
-import { parseSeriesHistoryEnvelope } from "./series-history-envelope.ts";
+} from "../../../history-transport.ts";
+import { TransportError, type TransportErrorKind } from "../../../../features/s1-console/ingest-health-query.ts";
+import { parseSeriesHistoryEnvelope } from "../../series-history-envelope.ts";
 import type {
   BucketCoverage,
   PanelCoverage,
   SeriesHistoryEnvelope,
   SeriesHistoryRow,
-} from "./series-history-envelope.ts";
+} from "../../series-history-envelope.ts";
 
 export { TransportError, parseSeriesHistoryEnvelope };
 export type { TransportErrorKind, BucketCoverage, PanelCoverage, SeriesHistoryEnvelope, SeriesHistoryRow };

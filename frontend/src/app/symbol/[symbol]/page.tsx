@@ -149,15 +149,15 @@ import {
   fetchSeriesHistoryViaHttp,
   seriesHistoryEndpointUrl,
   type SeriesHistoryRow,
-} from "../series-history-client.ts";
+} from "../chart/history/series-history-client.ts";
 import { recentBandSlots } from "../long-short-band.ts";
 import { oiCandleBundleOf } from "../oi-candle-pane.ts";
 import type { PanelStatus } from "../panel-status.ts";
 import type { OiCandlesWire } from "../series-history-envelope.ts";
-import type { PaneLegendSource, PaneLegendSources } from "../pane-legend.ts";
-import { resolveRouteWindow, type RouteWindow } from "../request-window.ts";
+import type { PaneLegendSource, PaneLegendSources } from "../chart/legend/pane-legend.ts";
+import { resolveRouteWindow, type RouteWindow } from "../chart/history/request-window.ts";
 import { seedIdentityKey } from "../seed-identity.ts";
-import { DEFAULT_TIMEFRAME, isSupportedTimeframe, timeframeStepMs } from "../supported-timeframes.ts";
+import { DEFAULT_TIMEFRAME, isSupportedTimeframe, timeframeStepMs } from "../chart/axis/supported-timeframes.ts";
 import {
   SymbolClient,
   type CvdPaneData,

@@ -1886,3 +1886,96 @@ Desenho: [`handoff/T-05.4-desenho.md`](../docs/context/paineis-de-fluxo/handoff/
   (`clientWidth − padding`), não o `getBoundingClientRect().width`.
 - **⚠️ Gotcha — a largura da legenda depende do SÍMBOLO** (a escala de preço muda com os dígitos): a 1240×800 o
   BTCUSDT tem 1144 px (completa) e ETH/LINK/SOL 1138/1132/1132 px (compacta) `[MEDIDO 2026-10-02, e2e/40 K-1]`.
+
+## 26. A árvore de `src/app/symbol/` e a regra `local/indicator-isolation` (`estrutura-do-front`, `T-01.4`, 2026-10-03)
+
+Fonte: [`SPEC-011 §3`](../docs/specs/SPEC-011-estrutura-do-front.md) (a árvore e o dono de cada camada) e `§5` (o portão),
+que partem do estudo [`FRONTEND-ARCH-estudo.md §4`](../docs/context/estrutura-do-front/gates/FRONTEND-ARCH-estudo.md).
+A decisão de fundo é a [`ADR-050`](../docs/adr/ADR-050-indicador-como-modulo-isolado-nucleo-do-grafico-e-catalogo-por-selecao.md). Esta seção registra a regra e o estado da árvore no fim da fase `01`, e
+não substitui nenhum desses documentos.
+
+### Os 4 diretórios de topo de `src/`
+
+`src/` tem exatamente quatro diretórios: **`app`**, **`charts`**, **`components`** e **`features`**. A lista é **fixa** no
+teste `src/app/top-level-source-directories.test.ts` (`CA-4`), que não a lê do disco. Um quinto diretório reprova
+`test:app`. Arquivo solto no topo de `src/` fica fora desse universo, porque a `ADR-048/D8` prevê `src/proxy.ts`, que
+é convenção do Next.
+
+| diretório | o que mora ali |
+|---|---|
+| `app/` | rotas do Next e o código de tela delas. `app/symbol/` é a página de gráfico |
+| `charts/` | geometria pura, sem React (`ADR-003`). Entra-se pelo barrel `charts/index.ts` (`ADR-034/D8`) |
+| `components/` | primitivo de apresentação sem domínio e sem gráfico |
+| `features/` | módulo de domínio que não toca `charts` (`s1-console`, `s3-inspector`, `panel`) |
+
+⛔ **Não crie `src/indicators/`** nem nenhum outro diretório de topo. Os blocos `web` do ESLint casam só `src/app/**`
+e `src/features/**` `[DOC: estudo §4.1, eslint.config.mjs]`, e um diretório novo ali ficaria fora de toda regra de fronteira, o mesmo defeito do
+`frontend/app/` (§1).
+
+### A árvore de `app/symbol/`, por camada
+
+```
+app/symbol/
+├── [symbol]/page.tsx     Server Component da rota: lê a API e entrega props serializáveis
+├── SymbolClient.tsx      Client Component: compõe o chrome, o host e os panes
+├── chrome/               a moldura da página: TimeframeBar, LiveRow (+ useLiveReadout), ChromeModeStamp,
+│                         AttributionFooter e page-gutter.ts
+├── chart/                o NÚCLEO. Não é indicador e não importa nada de indicators/**
+│   ├── host/             ChartHost.tsx · registrar.ts · indicator-binding.ts · pane-layer.tsx · pane-stack.ts
+│   ├── legend/           PaneLegend.tsx · LegendValue.tsx · legend-frame.ts · pane-legend.ts
+│   ├── marks/            AbsenceNote.tsx · PartialCoverageMark.tsx · BeyondCoverageBadge.tsx
+│   ├── axis/             axis-sync*.ts(x) · supported-timeframes.ts · timeframe-window.ts
+│   └── history/          use-history-pager.ts · history-page-window.ts · request-window.ts · *-client.ts ·
+│                         series-requirement.ts
+└── indicators/
+    └── contract.ts       IndicatorDefinition e os tipos que o catálogo e os indicadores compartilham
+```
+
+Este é o estado **no fim da fase `01`** `[MEDIDO 2026-10-03: ls -R frontend/src/app/symbol]`. O que a SPEC ainda prevê
+e **não existe**: `chart/price/` e `chart/data/`, `indicators/catalog.ts`, `indicators/selection/`, uma pasta por
+indicador (`volume/`, `oi/`, `cvd/`, `liquidation/`, `long-short/`) e `app/symbol/layout.tsx`. Os panes ainda moram em
+`SymbolClient.tsx` e saem nas fases `04` a `07`.
+
+**Quem pode importar o quê** (`SPEC-011 §3`):
+
+| camada | caminho | quem pode importá-la |
+|---|---|---|
+| núcleo | `chart/**` | todos em `app/symbol/` |
+| chrome | `chrome/**` | `SymbolClient.tsx`, `page.tsx`, `layout.tsx` |
+| contrato | `indicators/contract.ts` | todos em `app/symbol/`, **menos** `chart/**` e `chrome/**` |
+| indicador | `indicators/<kind>/**` | **só** `indicators/catalog.ts` e a própria pasta |
+| catálogo | `indicators/catalog.ts` | `SymbolClient.tsx`, `page.tsx`, `layout.tsx`, `selection/**` |
+| seleção | `indicators/selection/**` | `layout.tsx`, `SymbolClient.tsx` |
+| geometria | `src/charts/`, pelo barrel | todos em `app/symbol/` |
+
+**O teste mora com o dono** (`RN-12`). O teste que lê o fonte de um bloco vai para a pasta do bloco quando ele se move.
+Exemplo: `chrome/timeframe-bar-dom-contract.test.ts` acompanhou o `TimeframeBar`. Os testes de contrato de pane que
+continuam na raiz leem `SymbolClient.tsx` junto com os arquivos que saíram dele (a lista `MOVED_OUT_FILES` de cada um).
+Assim o universo de cada teste continua sendo o que `SymbolClient.tsx` era antes do movimento.
+
+### A regra `local/indicator-isolation`
+
+Regra local de ESLint em `eslint-rules/indicator-isolation.mjs`, ligada em `eslint.config.mjs` para todo `src/**`
+(produção e teste, em dois blocos). Ela resolve o **caminho** de cada referência (`import`, `export … from`, `import()`,
+`require`, `import("…")` de tipo) e nunca compara a string. Por que não é `no-restricted-imports`: no flat config o
+último bloco substitui as opções e apagaria o barrel da `ADR-034/D8` (`ADR-050/D6`).
+
+As três proibições (`SPEC-011 §5.3`):
+
+| # | de | para |
+|---|---|---|
+| **P1** | `indicators/<a>/**` | `indicators/<b>/**`, `indicators/catalog.ts`, `indicators/selection/**` |
+| **P2** | `chart/**`, `chrome/**` | qualquer coisa em `indicators/**`, `contract.ts` incluído |
+| **P3** | qualquer arquivo fora de `indicators/<kind>/` que não seja `indicators/catalog.ts` | `indicators/<kind>/**` |
+
+"Pasta de indicador" é todo subdiretório de `indicators/` **menos `selection/`**, que é infraestrutura da seleção e
+importa o catálogo. Consequência: um `indicators/_shared/` seria só mais uma pasta de indicador, e importá-lo de outro
+indicador é P1 (`RN-5`).
+
+**O que a regra NÃO cobre, por decisão declarada** no cabeçalho do arquivo dela: quem pode importar `chrome/**` (a
+linha "chrome" da tabela acima é convenção, não portão), o barrel de `charts` (é o bloco da `ADR-034/D8`) e especificador
+montado em tempo de execução.
+
+**Portão e prova:** `npm --prefix frontend run lint` reprova a violação (`"local/indicator-isolation": "error"`). As
+sondas que mordem e as que calam, por proibição, estão em `src/app/symbol/indicator-isolation-rule.test.ts` (5 testes,
+`test:app`) `[MEDIDO 2026-10-03: grep -c '^test(' …]`.

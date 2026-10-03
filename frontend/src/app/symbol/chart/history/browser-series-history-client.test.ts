@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { fetchSeriesHistoryFromBrowser, HistoryPageFetchError } from "./browser-series-history-client.ts";
-import type { HistoryRequestKey } from "../history-transport.ts";
+import type { HistoryRequestKey } from "../../../history-transport.ts";
 
 const KEY: HistoryRequestKey = {
   series_key_id: "abc123",

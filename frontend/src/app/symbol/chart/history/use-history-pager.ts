@@ -66,10 +66,10 @@ import {
   type HistoryCoverage,
   type TimeAxis,
   type TimeRange,
-} from "../../charts/index.ts";
-import type { BarPolicy, HistoryRequestKey } from "../history-transport.ts";
+} from "../../../../charts/index.ts";
+import type { BarPolicy, HistoryRequestKey } from "../../../history-transport.ts";
 import { fetchSeriesHistoryFromBrowser, HistoryPageFetchError } from "./browser-series-history-client.ts";
-import { recordHistoryPageRequested } from "./history-page-latency-probe.ts";
+import { recordHistoryPageRequested } from "../../history-page-latency-probe.ts";
 import {
   capWindowRightEdge,
   DEFAULT_MAX_ACCUMULATED_SLOTS,
@@ -84,18 +84,18 @@ import {
   type AssemblyStaticContext,
   type HistoryPageAssembly,
   type HistoryRowsBundle,
-} from "./panel-assembly.ts";
+} from "../../panel-assembly.ts";
 import {
   EMPTY_OI_CANDLE_BUNDLE,
   mergeOlderOiCandles,
   oiCandleBundleOf,
   trimOiCandlesToWindow,
   type OiCandleBundle,
-} from "./oi-candle-pane.ts";
-import type { PanelCoverage, SeriesHistoryRow } from "./series-history-envelope.ts";
-import { combineHistoryCoverage, type PanelCoverageBundle } from "./slot-coverage.ts";
-import { timeframeStepMs } from "./supported-timeframes.ts";
-import { isLeftOfMountView, mountViewRange, timeframeWindowBars } from "./timeframe-window.ts";
+} from "../../oi-candle-pane.ts";
+import type { PanelCoverage, SeriesHistoryRow } from "../../series-history-envelope.ts";
+import { combineHistoryCoverage, type PanelCoverageBundle } from "../../slot-coverage.ts";
+import { timeframeStepMs } from "../axis/supported-timeframes.ts";
+import { isLeftOfMountView, mountViewRange, timeframeWindowBars } from "../axis/timeframe-window.ts";
 
 /** The `series_key_id` this route resolved for each of the ten `/series-history` fetches
  * `page.tsx` already makes — `null` for a panel whose catalog resolution failed or was
