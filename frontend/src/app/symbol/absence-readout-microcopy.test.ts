@@ -18,17 +18,22 @@ import { fileURLToPath } from "node:url";
 import { ABSENCE_MICROCOPY, LEGEND_GRID_ABSENCE } from "./chart/legend/pane-legend.ts";
 
 /** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
- * `chart/legend/` and `chart/marks/`. The files are read together with it, so the universe this file scans
- * is the one `SymbolClient.tsx` alone was before the move. */
-const LEGEND_AND_MARKS_FILES = [
+ * `chart/legend/` and `chart/marks/`; `T-01.4` — the page chrome left it for `chrome/`. The files are read
+ * together with it, so the universe this file scans is the one `SymbolClient.tsx` alone was before the move. */
+const MOVED_OUT_FILES = [
   "chart/legend/PaneLegend.tsx",
   "chart/legend/legend-frame.ts",
   "chart/legend/LegendValue.tsx",
   "chart/marks/AbsenceNote.tsx",
   "chart/marks/PartialCoverageMark.tsx",
   "chart/marks/BeyondCoverageBadge.tsx",
+  "chrome/AttributionFooter.tsx",
+  "chrome/ChromeModeStamp.tsx",
+  "chrome/LiveRow.tsx",
+  "chrome/page-gutter.ts",
+  "chrome/TimeframeBar.tsx",
 ] as const;
-const SOURCE = ["SymbolClient.tsx", ...LEGEND_AND_MARKS_FILES]
+const SOURCE = ["SymbolClient.tsx", ...MOVED_OUT_FILES]
   .map((file) => readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), "utf8"))
   .join("\n");
 /** The code without its comments: the docstrings quote `SEM_PONTO` on purpose, the code may not. */

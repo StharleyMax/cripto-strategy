@@ -30,17 +30,22 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
- * `chart/legend/` and `chart/marks/`. The files are read together with it, so the universe this file scans
- * is the one `SymbolClient.tsx` alone was before the move. */
-const LEGEND_AND_MARKS_FILES = [
+ * `chart/legend/` and `chart/marks/`; `T-01.4` — the page chrome left it for `chrome/`. The files are read
+ * together with it, so the universe this file scans is the one `SymbolClient.tsx` alone was before the move. */
+const MOVED_OUT_FILES = [
   "chart/legend/PaneLegend.tsx",
   "chart/legend/legend-frame.ts",
   "chart/legend/LegendValue.tsx",
   "chart/marks/AbsenceNote.tsx",
   "chart/marks/PartialCoverageMark.tsx",
   "chart/marks/BeyondCoverageBadge.tsx",
+  "chrome/AttributionFooter.tsx",
+  "chrome/ChromeModeStamp.tsx",
+  "chrome/LiveRow.tsx",
+  "chrome/page-gutter.ts",
+  "chrome/TimeframeBar.tsx",
 ] as const;
-const source = ["SymbolClient.tsx", ...LEGEND_AND_MARKS_FILES]
+const source = ["SymbolClient.tsx", ...MOVED_OUT_FILES]
   .map((file) => readFileSync(path.join(HERE, file), "utf8"))
   .join("\n");
 

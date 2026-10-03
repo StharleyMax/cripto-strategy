@@ -65,10 +65,15 @@ test("MORDE: options WITHOUT the panes override would render the library default
 
 test("SF-1: the logo is off, and the page renders the attribution link that replaces it", () => {
   assert.equal(chartConstructorOptions(1280, 910).layout?.attributionLogo, false);
-  const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx"), "utf8");
+  // `estrutura-do-front` `T-01.4`: the footer left `SymbolClient.tsx` for `chrome/AttributionFooter.tsx`. The
+  // component is read for its markup, and `SymbolClient.tsx` for the mount: a footer nobody renders replaces nothing.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const source = readFileSync(path.join(here, "chrome", "AttributionFooter.tsx"), "utf8");
+  const client = readFileSync(path.join(here, "SymbolClient.tsx"), "utf8");
+  assert.match(client, /<AttributionFooter \/>/, "SymbolClient.tsx no longer mounts the attribution footer");
   // The two go together: dropping the footer while the logo stays off reddens here.
   const footer = /<footer data-testid=\{CHART_ATTRIBUTION_TESTID\}[\s\S]*?<\/footer>/.exec(source);
-  assert.ok(footer !== null, "SymbolClient.tsx renders no attribution footer — the logo cannot be off without it");
+  assert.ok(footer !== null, "chrome/AttributionFooter.tsx renders no attribution footer — the logo cannot be off without it");
   assert.match(footer[0], /<a href=\{CHART_ATTRIBUTION_URL\}/);
   assert.equal(CHART_ATTRIBUTION_TESTID, "chart-attribution");
   assert.match(CHART_ATTRIBUTION_URL, /^https:\/\/www\.tradingview\.com\//);

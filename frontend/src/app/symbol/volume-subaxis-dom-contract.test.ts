@@ -35,17 +35,22 @@ import { fileURLToPath } from "node:url";
 
 const SYMBOL_CLIENT_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "SymbolClient.tsx");
 /** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
- * `chart/legend/` and `chart/marks/`. The files are read together with it, so the universe this file scans
- * is the one `SymbolClient.tsx` alone was before the move. */
-const LEGEND_AND_MARKS_FILES = [
+ * `chart/legend/` and `chart/marks/`; `T-01.4` — the page chrome left it for `chrome/`. The files are read
+ * together with it, so the universe this file scans is the one `SymbolClient.tsx` alone was before the move. */
+const MOVED_OUT_FILES = [
   "chart/legend/PaneLegend.tsx",
   "chart/legend/legend-frame.ts",
   "chart/legend/LegendValue.tsx",
   "chart/marks/AbsenceNote.tsx",
   "chart/marks/PartialCoverageMark.tsx",
   "chart/marks/BeyondCoverageBadge.tsx",
+  "chrome/AttributionFooter.tsx",
+  "chrome/ChromeModeStamp.tsx",
+  "chrome/LiveRow.tsx",
+  "chrome/page-gutter.ts",
+  "chrome/TimeframeBar.tsx",
 ] as const;
-const source = [SYMBOL_CLIENT_PATH, ...LEGEND_AND_MARKS_FILES.map((file) => path.join(path.dirname(SYMBOL_CLIENT_PATH), file))]
+const source = [SYMBOL_CLIENT_PATH, ...MOVED_OUT_FILES.map((file) => path.join(path.dirname(SYMBOL_CLIENT_PATH), file))]
   .map((file) => readFileSync(file, "utf8"))
   .join("\n");
 
@@ -334,18 +339,28 @@ test("CALA: a design_gate NEEDS_FIX about colour, height or scale leaves the con
 /** `estrutura-do-front` `T-01.3` — the boundary is the CLIENT bundle, and `chart/**` is code `SymbolClient.tsx`
  * pulled out of itself (`T-01.2`: the host and the axis; `T-01.3`: legend, marks, history). Scanning only the
  * one file would let a server-side import hide in a moved block, so the universe is `SymbolClient.tsx` plus
- * every production file under `chart/`, recursively — a sub-folder added later enters without editing this. */
+ * every production file under `chart/`, recursively — a sub-folder added later enters without editing this.
+ * `T-01.4`: and under `chrome/` (the TF bar, the live readout, the mode stamp, the footer), same reason. */
 const CHART_DIR = path.join(path.dirname(SYMBOL_CLIENT_PATH), "chart");
 const CHART_PRODUCTION_FILES = readdirSync(CHART_DIR, { recursive: true, encoding: "utf8" })
   .filter((file) => /\.tsx?$/.test(file) && !file.includes(".test."))
   .sort();
-const CLIENT_BOUNDARY_SOURCE = [source, ...CHART_PRODUCTION_FILES.map((file) => readFileSync(path.join(CHART_DIR, file), "utf8"))].join("\n");
+const CHROME_DIR = path.join(path.dirname(SYMBOL_CLIENT_PATH), "chrome");
+const CHROME_PRODUCTION_FILES = readdirSync(CHROME_DIR, { recursive: true, encoding: "utf8" })
+  .filter((file) => /\.tsx?$/.test(file) && !file.includes(".test."))
+  .sort();
+const CLIENT_BOUNDARY_SOURCE = [
+  source,
+  ...CHART_PRODUCTION_FILES.map((file) => readFileSync(path.join(CHART_DIR, file), "utf8")),
+  ...CHROME_PRODUCTION_FILES.map((file) => readFileSync(path.join(CHROME_DIR, file), "utf8")),
+].join("\n");
 
 test("SymbolClient.tsx imports nothing server-side — no node: builtin, no view-model.ts", () => {
   // The walk must reach the sub-folders: a non-recursive scan would see none of these and stay green.
   for (const anchor of ["host/ChartHost.tsx", "legend/LegendValue.tsx", "marks/AbsenceNote.tsx", "history/use-history-pager.ts"]) {
     assert.ok(CHART_PRODUCTION_FILES.includes(anchor), `the chart/ scan no longer reaches ${anchor}: ${JSON.stringify(CHART_PRODUCTION_FILES)}`);
   }
+  assert.ok(CHROME_PRODUCTION_FILES.includes("LiveRow.tsx"), `the chrome/ scan no longer reaches LiveRow.tsx: ${JSON.stringify(CHROME_PRODUCTION_FILES)}`);
   const importedFrom = [...CLIENT_BOUNDARY_SOURCE.matchAll(/^import[\s\S]*?from "([^"]+)";$/gm)].map((match) => match[1]!);
   assert.ok(importedFrom.length > 0, "no imports parsed — the scan is vacuous, fix the pattern");
   for (const specifier of importedFrom) {

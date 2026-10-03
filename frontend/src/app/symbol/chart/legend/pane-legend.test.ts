@@ -34,8 +34,9 @@ import {
 import { F1_PANE_ORDER } from "../../pane-registry.ts";
 
 /** `estrutura-do-front` `T-01.3` — this test moved to `chart/legend/` with `pane-legend.ts`, and the legend
- * and the absence/coverage marks left `SymbolClient.tsx` for `chart/legend/` and `chart/marks/`. The files are
- * read together with it, so "SymbolClient" keeps the universe the one file had before the move. */
+ * and the absence/coverage marks left `SymbolClient.tsx` for `chart/legend/` and `chart/marks/` (and the page
+ * chrome for `chrome/`, `T-01.4`). The files are read together with it, so "SymbolClient" keeps the universe
+ * the one file had before the move. */
 const SOURCE = [
   "../../SymbolClient.tsx",
   "./PaneLegend.tsx",
@@ -44,6 +45,11 @@ const SOURCE = [
   "../marks/AbsenceNote.tsx",
   "../marks/PartialCoverageMark.tsx",
   "../marks/BeyondCoverageBadge.tsx",
+  "../../chrome/AttributionFooter.tsx",
+  "../../chrome/ChromeModeStamp.tsx",
+  "../../chrome/LiveRow.tsx",
+  "../../chrome/page-gutter.ts",
+  "../../chrome/TimeframeBar.tsx",
 ]
   .map((file) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8"))
   .join("\n");

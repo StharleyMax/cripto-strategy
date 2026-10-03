@@ -56,7 +56,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type {
@@ -106,10 +105,6 @@ import {
   type S2Panels,
   type TimeAxis,
 } from "../../charts/index.ts";
-import {
-  CHART_ATTRIBUTION_TESTID,
-  CHART_ATTRIBUTION_URL,
-} from "./chart-options.ts";
 import { unlabeledTickPriceFormat } from "./unlabeled-tick-format.ts";
 import { LIQUIDATION_PANE_FORM } from "./liquidation-pane-form.ts";
 import { bandEdgesFromBarCentres, clampBandToPlot, recentBandSlotRange } from "./long-short-band.ts";
@@ -124,6 +119,11 @@ import { identityTerms, PaneDetails, PaneLegend, PaneLegendLine } from "./chart/
 import { ABSENCE_TOKEN, AbsenceNote, formatUtcMinute } from "./chart/marks/AbsenceNote.tsx";
 import { BeyondCoverageBadge } from "./chart/marks/BeyondCoverageBadge.tsx";
 import { PartialCoverageLedger, PartialCoverageMark } from "./chart/marks/PartialCoverageMark.tsx";
+import { AttributionFooter } from "./chrome/AttributionFooter.tsx";
+import { ChromeModeStamp } from "./chrome/ChromeModeStamp.tsx";
+import { LiveRow } from "./chrome/LiveRow.tsx";
+import { PAGE_GUTTER_CLASS } from "./chrome/page-gutter.ts";
+import { TimeframeBar } from "./chrome/TimeframeBar.tsx";
 import {
   LIQUIDATION_LEG_SCALE_REF,
   liquidationCohortsTopFirst,
@@ -161,7 +161,6 @@ import {
   type PlacedOiRegimeLabel,
 } from "./oi-regime-marks.ts";
 import { OiRegimePanePrimitive } from "./oi-regime-primitive.ts";
-import { decodeBucketEnvelope, type LiveBucketEnvelope } from "../live-transport.ts";
 import type {
   FreshnessVerdict,
   OiProvenanceLabel,
@@ -177,7 +176,7 @@ import {
   formatPercentPtBr,
   LONG_SHORT_EQUILIBRIUM,
 } from "./ratio-format.ts";
-import { DEFAULT_TIMEFRAME, SUPPORTED_TIMEFRAMES, timeframeStepMs } from "./chart/axis/supported-timeframes.ts";
+import { DEFAULT_TIMEFRAME, timeframeStepMs } from "./chart/axis/supported-timeframes.ts";
 import { HISTORY_BAR_POLICY } from "../history-transport.ts";
 import type { HistoryRowsBundle } from "./panel-assembly.ts";
 import { useHistoryPager, type HistoryPagingSeed, type HistorySeriesKeys } from "./chart/history/use-history-pager.ts";
@@ -3200,243 +3199,6 @@ function LongShortPane({
   );
 }
 
-/**
- * `C-4` of `gates/DESIGN-LAYOUT-ux-critique-r2.md` — THE MODE, EXPLICIT IN THE CHROME.
- *
- * The gate's finding: an age like "idade 42s" is only coherent in AO VIVO; in COMO EM T it has to
- * count against T, and the AO VIVO chip must not look active. On this route there is ONE mode today
- * — every age on the screen (`OiFreshness`, `LongShortAgeStamp`) is counted against the window's
- * own last instant (`view-model.ts::oiFreshnessVerdict`'s `referenceMs`, `panel-assembly.ts`'s
- * `windowEndMsInclusive - observedAt`), never against the clock — so the honest label is
- * COMO EM T, with T spelled, and the "Ao vivo" list at the foot of the page stays a separate,
- * self-labelled readout (it is not a mode chip and says "indisponível" while no producer exists).
- *
- * `data-mode-reference-ms` is the same instant the ages use, so an assertion can check the stamp
- * and the ages point at one T. ⚠️ Wording and placement are FORM, submitted with `T-01.11`.
- */
-/** `T-01.11-FIX` (`SF-5`) — the left gutter of the page's text blocks outside the chart (the chrome
- * stamp, "Ao vivo", the footer), which started at x=0. `px-2` = 8px, the same inset the pane legends
- * have inside the plot area (`PaneLegend`), so every left text edge lines up. The chart itself keeps
- * its full width: its geometry is `ADR-044`'s, not this gutter's. */
-const PAGE_GUTTER_CLASS = "px-2";
-
-function ChromeModeStamp({ referenceMs }: { readonly referenceMs: number }) {
-  return (
-    <p
-      data-fact="chrome_mode:as_of"
-      data-mode-reference-ms={referenceMs}
-      className={`${PAGE_GUTTER_CLASS} text-xs text-provenance-weak`}
-    >
-      <strong className="font-bold text-on-surface">COMO EM T</strong> · T = {formatUtcMinute(referenceMs)} · as
-      idades de cada painel contam contra T, não contra o relógio
-    </p>
-  );
-}
-
-/** One `EventSource`, decoded through `../live-transport.ts` — see this module's own docstring
- * for why this reads "ao vivo indisponível" in this phase (no real producer wired yet). */
-function useLiveReadout(url: string | null): string {
-  const [text, setText] = useState<string>(url === null ? "sem série resolvida" : "conectando…");
-
-  useEffect(() => {
-    if (url === null) {
-      return;
-    }
-    let cancelled = false;
-    const source = new EventSource(url);
-    source.onmessage = (event) => {
-      if (cancelled) {
-        return;
-      }
-      try {
-        const envelope: LiveBucketEnvelope = decodeBucketEnvelope(JSON.parse(event.data as string));
-        setText(`${envelope.last_price} @ ${envelope.bucket_open_ts} (seq ${envelope.seq})`);
-      } catch {
-        setText("ao vivo indisponível (envelope inválido)");
-      }
-    };
-    source.onerror = () => {
-      if (!cancelled) {
-        setText("ao vivo indisponível");
-      }
-    };
-    return () => {
-      cancelled = true;
-      source.close();
-    };
-  }, [url]);
-
-  return text;
-}
-
-/**
- * `T-04.3` (`CST-230`, `SPEC-008`/`D7`, `RF-8`/`RN-5`) — `factKey` and `label` are two DIFFERENT
- * strings on purpose. Before this task the machine key was built from `label` itself
- * (`` `live_${label}:…` ``), so the page published `data-fact="live_preço:attempted"` — an
- * operator's `grep -P '[^\x00-\x7F]'` mordeu on the accent, and worse, renaming the visible word
- * (the `ui-designer`'s call, gated by `ux-ui-mastery`, CLAUDE.md §Design) would have silently
- * renamed the CONTRACT a consumer greps for. `factKey` is ASCII and stable — the property name
- * `liveUrls` already carries (`price`/`oi`/`cvd`, `page.tsx:853-860`) — and never derived from
- * the pt-BR microcopy beside it.
- */
-function LiveRow({
-  label,
-  factKey,
-  url,
-}: {
-  readonly label: string;
-  readonly factKey: string;
-  readonly url: string | null;
-}) {
-  const text = useLiveReadout(url);
-  return (
-    <li data-fact={`live_${factKey}:${url === null ? "no_series" : "attempted"}`}>
-      {label}: {text}
-    </li>
-  );
-}
-
-/**
- * `T-03.9` (`RF-6`, plan `03` item `3.6`) — the TF bar. ONE `<button>` per entry of
- * `SUPPORTED_TIMEFRAMES` (`supported-timeframes.ts`), via `.map()` — never a hand-written
- * `<button>` per label. That is the DoD, literally: *"remover um TF do conjunto servido remove o
- * botão, sem tocar no componente"* — shrink the array (kept honest by that module's own sync
- * test against the backend) and this component's rendered output shrinks with it, with zero
- * edit here. `timeframe-bar-dom-contract.test.ts` is the source-scan that proves this component
- * actually maps rather than duplicating the list.
- *
- * Colour: the two GOVERNED roles `DESIGN_SYSTEM.md` §1.2 reserves for exactly this — `action`
- * (`--acao-fill`/`--acao-borda`/`--acao-on`, "Marca / ação", never yet consumed by any `.tsx`
- * before this task) for the SELECTED member, `surface`/`provenance` (already used everywhere
- * else on this screen) for the rest. No new hue (`NG-5`).
- *
- * `role="group"` + `aria-pressed` (a toggle-button group), NOT `role="radiogroup"` +
- * `aria-checked` — `T-03.12` DECIDES this, and it is the earlier docstring's "FORM decision this
- * task does not own" being finally owned. Kept, not flipped: a `radiogroup` asserts "one value
- * among mutually exclusive options, as if submitted by a form" (WAI-ARIA 1.2's own role
- * definition), and a screen reader announces each item as "radio button" — the WRONG semantic
- * for a VIEW control that reshapes what six charts already on screen draw, never a value bound
- * to any form. `role="group"` + `aria-pressed` is the correct reading: "a set of toggle
- * buttons", which is exactly what clicking one of these DOES (toggles which TF is active).
- *
- * What WAS missing, and is what this task actually adds: roving `tabIndex` + arrow-key
- * navigation, the WAI-ARIA APG "Toolbar" pattern (a horizontal cluster of related buttons,
- * `https://www.w3.org/WAI/ARIA/apg/patterns/toolbar/` — `[NÃO SEI]` the exact current wording of
- * that page; this environment has no web fetch, so the pattern is applied from its well-known
- * shape — one stop on `Tab`, `ArrowLeft`/`ArrowRight`/`Home`/`End` move the roving cursor,
- * `Enter`/`Space`/click activate — never from a live read of the page). Before this task, every
- * button was independently `Tab`-stoppable (5 stops to cross the bar); now the bar is ONE `Tab`
- * stop, consistent with every other multi-button cluster a keyboard user encounters on the web,
- * while `aria-pressed`'s semantics (and the DOM contract pinning `data-testid`/`key`/`onClick`/
- * the visible label, `timeframe-bar-dom-contract.test.ts`) are UNCHANGED.
- *
- * `T-03.11` (`CST-226`) — `onSelect` NOW TRIGGERS A REAL REFETCH, wired by `SymbolClient` below.
- * The two backend prerequisites `T-03.9`'s docstring named (`T-03.4`'s `{present, expected}`
- * marks, `T-03.6`'s `coverage` envelope field) are merged on this branch now, and the DoD this
- * task exists for (`plan 03` DoD 6/7/8) is the falsifier over the wire-grid/staircase counts
- * every panel already published — see `SymbolClient`'s own `handleTimeframeSelect` for the
- * mechanism (a URL search param, not an in-component fetch).
- */
-function TimeframeBar({
-  selected,
-  onSelect,
-}: {
-  readonly selected: string;
-  readonly onSelect: (interval: string) => void;
-}) {
-  // The roving cursor — WHICH button is the bar's one `Tab` stop right now. Starts, and
-  // re-syncs, on `selected`: after a real navigation (`onSelect` fired, `page.tsx` re-rendered
-  // with a new `selectedTimeframe`) the newly-active TF is also the sensible place `Tab` should
-  // land next time, same as a native radio group re-syncing its roving stop to whichever input
-  // is `checked`. Arrow-key browsing before a selection is made moves this WITHOUT touching
-  // `selected` — the two are related, never the same state.
-  const [activeInterval, setActiveInterval] = useState(selected);
-  useEffect(() => {
-    setActiveInterval(selected);
-  }, [selected]);
-
-  const buttonNodesByInterval = useRef(new Map<string, HTMLButtonElement>());
-  // ⛔ Parameter named `entry`, deliberately NOT `option` — `timeframe-bar-dom-contract.test.ts`'s
-  // `MAP_OVER_SUPPORTED_TIMEFRAMES` regex is anchored on the array's `.map` call spelled with an
-  // `option` parameter, singular, to prove there is exactly ONE such call (the render map,
-  // below). A second call spelled the same way would give the MORDE test two matches to strip
-  // instead of one, and the mutation it applies would silently miss the real render map.
-  const intervals = SUPPORTED_TIMEFRAMES.map((entry) => entry.interval);
-
-  const moveRovingFocus = useCallback((interval: string) => {
-    setActiveInterval(interval);
-    buttonNodesByInterval.current.get(interval)?.focus();
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      const currentIndex = intervals.indexOf(activeInterval);
-      if (currentIndex === -1) {
-        return;
-      }
-      switch (event.key) {
-        case "ArrowRight":
-          event.preventDefault();
-          moveRovingFocus(intervals[(currentIndex + 1) % intervals.length]!);
-          return;
-        case "ArrowLeft":
-          event.preventDefault();
-          moveRovingFocus(intervals[(currentIndex - 1 + intervals.length) % intervals.length]!);
-          return;
-        case "Home":
-          event.preventDefault();
-          moveRovingFocus(intervals[0]!);
-          return;
-        case "End":
-          event.preventDefault();
-          moveRovingFocus(intervals[intervals.length - 1]!);
-          return;
-        default:
-          return;
-      }
-    },
-    [activeInterval, intervals, moveRovingFocus],
-  );
-
-  return (
-    <div
-      role="group"
-      aria-label="Timeframe"
-      onKeyDown={handleKeyDown}
-      className="flex gap-1 border-b border-surface-border bg-surface-lowest px-3 py-2"
-    >
-      {SUPPORTED_TIMEFRAMES.map((option) => {
-        const isSelected = option.interval === selected;
-        return (
-          <button
-            key={option.interval}
-            ref={(node) => {
-              if (node === null) {
-                buttonNodesByInterval.current.delete(option.interval);
-              } else {
-                buttonNodesByInterval.current.set(option.interval, node);
-              }
-            }}
-            type="button"
-            aria-pressed={isSelected}
-            tabIndex={option.interval === activeInterval ? 0 : -1}
-            data-testid={`timeframe-button-${option.interval}`}
-            onClick={() => onSelect(option.interval)}
-            onFocus={() => setActiveInterval(option.interval)}
-            className={
-              isSelected
-                ? "border border-action-border bg-action-fill px-2 py-1 font-label-caps text-data-sm text-action-on"
-                : "border border-surface-border bg-surface-base px-2 py-1 font-label-caps text-data-sm text-provenance-weak"
-            }
-          >
-            {option.interval}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function SymbolClient({
   symbol,
   panels: initialPanels,
@@ -3642,12 +3404,7 @@ export function SymbolClient({
       </section>
       {/* `T-01.11-FIX` (`SF-1`): the library's attribution, as a link in the footer instead of the
           logo over the CVD pane (`chart-options.ts` turns the logo off). */}
-      <footer data-testid={CHART_ATTRIBUTION_TESTID} className={`${PAGE_GUTTER_CLASS} mt-2 text-xs text-provenance-weak`}>
-        Gráficos:{" "}
-        <a href={CHART_ATTRIBUTION_URL} target="_blank" rel="noopener noreferrer" className="underline">
-          TradingView Lightweight Charts
-        </a>
-      </footer>
+      <AttributionFooter />
     </main>
   );
 }
