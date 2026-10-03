@@ -174,11 +174,9 @@ test("D4.7: the cumulative anchor is CHOSEN by the route and PRINTED by the pane
 // ── The selector, which is the defect class this whole fase exists to close ───────────────────
 
 test("the CVD panel selects the kline_takerbuy row by TERM, never by metric alone or by position", () => {
-  assert.match(
-    pageCode,
-    /matchesKlineTakerBuyCvd\(entry\.key\)/,
-    "page.tsx must use the three-term predicate; `metric === 'cvd_source'` alone picks aggtrade_q",
-  );
+  // `T-03.2`: the regex "`page.tsx` calls `matchesKlineTakerBuyCvd(entry.key)`" left this test. The
+  // predicate lives in `indicators/catalog.ts`, and `indicators/catalog.test.ts` proves by VALUE that
+  // it selects `kline_takerbuy` among the four `cvd_source` rows and that the route resolves to it.
   // The retired selector must be GONE FROM THE CODE, not merely unused: `cvd_delta` is a metric no
   // builder in `backend/src/modules/sentimento/domain/` produces, so a panel asking for it is
   // absent by construction — which is what `/symbol` shipped with before this task. Measured over

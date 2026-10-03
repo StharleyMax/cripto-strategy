@@ -123,9 +123,10 @@ const PROVENANCE_DECLARED_FACT = /data-fact=\{`liquidation_provenance:declared:\
 const PUBLISHED_ERROR_ATTRIBUTE = /data-published-error=\{/;
 const PROVENANCE_RENDERED = /<LiquidationProvenance provenance=\{liquidation\.provenance\} \/>/;
 
-/** `page.tsx`: the two cohort selectors, CALLED, each with its own leg. */
-const PAGE_LONG_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesLiquidationCohort\(entry\.key, "long"\)\)/;
-const PAGE_SHORT_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesLiquidationCohort\(entry\.key, "short"\)\)/;
+// ⛔ `PAGE_LONG_SELECTOR`/`PAGE_SHORT_SELECTOR` (the regexes "`page.tsx` calls
+// `matchesLiquidationCohort(entry.key, …)`") left this file in `T-03.2`: the two predicates live in
+// `indicators/catalog.ts`, and `indicators/catalog.test.ts` proves by VALUE that each leg selects its
+// own cohort row and that the route resolves each to it.
 /** `page.tsx`: the provenance is RESOLVED from the catalog row, never spelled as a literal. */
 const PAGE_PROVENANCE = /provenance: resolveSeriesProvenance\(liquidationEntry\)/;
 /** `page.tsx`: the two statuses are two, so one live cohort cannot vouch for a dead one. */
@@ -274,8 +275,6 @@ test("RS-5: the pane declares WHOSE measurement it shows, and carries published_
 // ── The route side ────────────────────────────────────────────────────────────────────────────
 
 test("the route resolves TWO cohorts through the unique-match helper, and gives them TWO statuses", () => {
-  assert.match(pageCode, PAGE_LONG_SELECTOR, "the long leg must select by identity, cohort included");
-  assert.match(pageCode, PAGE_SHORT_SELECTOR, "the short leg must select by identity, cohort included");
   assert.doesNotMatch(pageCode, /catalog\.entries\.find\(/, "`Array.prototype.find` over the catalog is the defect");
   // ⛔ TWO STATUSES, NEVER ONE. They are fetched under two `series_key_id`s and fail independently;
   // a shared status would let a live cohort vouch for a dead one.
@@ -384,13 +383,10 @@ test("MORDE: each of the 19 liquidation-pane mutations is caught by an assert ab
   assert.ok(CLIENT_ASSERTS.every((holds) => holds(source)));
 });
 
-test("MORDE, route side: the 4 route mutations are caught", () => {
+// The fourth route mutation ("the short leg selected without its cohort") moved with the predicate
+// to `indicators/catalog.test.ts` (`T-03.2`).
+test("MORDE, route side: the 3 route mutations still guarded here are caught", () => {
   const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
-    {
-      name: "the short leg selected without its cohort (ambiguous, and silently so if `find` returned)",
-      mutate: (s) =>
-        s.replace(PAGE_SHORT_SELECTOR, 'resolveCatalogEntry(catalog, (entry) => entry.key.metric === "sum_liquidation")'),
-    },
     {
       name: "one status serving both legs",
       mutate: (s) => s.replace(PAGE_SHORT_STATUS, "liquidationShort: liquidationLongResult.status"),
@@ -408,8 +404,6 @@ test("MORDE, route side: the 4 route mutations are caught", () => {
     const mutated = mutant.mutate(pageCode);
     assert.notEqual(mutated, pageCode, `the mutation "${mutant.name}" found no anchor — update this test, do not delete it`);
     const survives =
-      PAGE_LONG_SELECTOR.test(mutated) &&
-      PAGE_SHORT_SELECTOR.test(mutated) &&
       PAGE_LONG_STATUS.test(mutated) &&
       PAGE_SHORT_STATUS.test(mutated) &&
       PAGE_PROVENANCE.test(mutated) &&

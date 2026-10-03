@@ -81,8 +81,9 @@ const PANE_RENDERED = /<LongShortPane longShort=\{longShort\} status=\{panelStat
 const ABSENCE_NOTE_RENDERED =
   /\{hasObservation \? <LongShortProvenance provenance=\{longShort\.provenance\} \/> : null\}\s*\n\s*<AbsenceNote status=\{status\} \/>/;
 
-/** `page.tsx`: the selector, CALLED through the unique-match helper. */
-const PAGE_SELECTOR = /resolveCatalogEntry\(catalog, routeSymbol, \(entry\) => matchesCountLongShortRatio\(entry\.key\)\)/;
+// ⛔ `PAGE_SELECTOR` (the regex "`page.tsx` calls `matchesCountLongShortRatio(entry.key)`") left this
+// file in `T-03.2`: the predicate lives in `indicators/catalog.ts`, and `indicators/catalog.test.ts`
+// proves by VALUE that it refuses the Coinalyze mirror and that the route resolves to the origin row.
 /** `page.tsx`: the headline count comes from the publication counter, never from a divisor. */
 const PAGE_NATIVE_BARS = /nativeBars: countNativeBarsByPublication\(longShortResult\.rows\)/;
 const PAGE_WIRE_POINTS = /wirePoints: countPresentSlots\(longShortSlots\)/;
@@ -173,7 +174,6 @@ test("RN-1 is written ONCE: the pane declares the case is MIXED, not all-absent"
 // ── The route side ────────────────────────────────────────────────────────────────────────────
 
 test("the route resolves the series through the unique-match helper and gives the pane its OWN status", () => {
-  assert.match(pageCode, PAGE_SELECTOR, "the pane must select by identity, through the helper that refuses ambiguity");
   assert.doesNotMatch(pageCode, /catalog\.entries\.find\(/, "`Array.prototype.find` over the catalog is the defect");
   assert.match(pageCode, PAGE_STATUS, "a shared status would let a live panel vouch for a dead one");
   assert.match(pageCode, PAGE_MAPPER, "the slots must come from the shared non-negative mapper — `RN-1` is written once");
@@ -257,13 +257,10 @@ test("MORDE: each of the 7 pane mutations is caught by an assert above", () => {
   }
 });
 
-test("MORDE, route side: the 4 route mutations are caught", () => {
+// The fourth route mutation ("the selector loses `provider`") moved with the predicate to
+// `indicators/catalog.test.ts` (`T-03.2`).
+test("MORDE, route side: the 3 route mutations still guarded here are caught", () => {
   const mutants: readonly { readonly name: string; readonly mutate: (s: string) => string }[] = [
-    {
-      name: "the selector loses `provider` and becomes ambiguous the day the mirror is cataloged",
-      mutate: (s) =>
-        s.replace(PAGE_SELECTOR, 'resolveCatalogEntry(catalog, (entry) => entry.key.metric === "count_long_short_ratio")'),
-    },
     {
       name: "the pane shares the OI status",
       mutate: (s) => s.replace(PAGE_STATUS, "longShort: oiResult.status"),
@@ -282,7 +279,6 @@ test("MORDE, route side: the 4 route mutations are caught", () => {
     const mutated = mutant.mutate(pageCode);
     assert.notEqual(mutated, pageCode, `the mutation "${mutant.name}" found no anchor — update this test, do not delete it`);
     const survives =
-      PAGE_SELECTOR.test(mutated) &&
       PAGE_STATUS.test(mutated) &&
       PAGE_NATIVE_BARS.test(mutated) &&
       PAGE_WIRE_POINTS.test(mutated) &&
