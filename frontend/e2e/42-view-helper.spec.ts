@@ -26,7 +26,7 @@ import { readView, showView, type ViewState } from "./view.ts";
  * warranted. A LOCAL `http.createServer`, no `INSERT`, no Postgres.
  */
 
-const SPEC = "41-view-helper";
+const SPEC = "42-view-helper";
 const SYMBOL = "BTCUSDT";
 const SYMBOL_PATH = `/symbol/${SYMBOL}`;
 const CHART_HOST_TESTID = "symbol-chart-host";
