@@ -13,6 +13,11 @@
  * The type half — a binding without `unmount` does not compile — is the `@ts-expect-error` at the
  * end, checked by `npm run typecheck`.
  *
+ * `T-02.2` (plan `02` DoD 2, `gates/T-02.2-build.md` §3): the `paneIndex` is derived AT MOUNT from the
+ * ACTIVE set — four synthetic panes, one off, land on `1, 2, 3` in the order given, whichever order
+ * they registered in. An index by registration position inverts them on the reversed registration,
+ * asserted below as the ablation pair.
+ *
  * Run with: npm --prefix frontend run test:app
  */
 
@@ -23,7 +28,14 @@ import type { IChartApi } from "lightweight-charts";
 
 import { flushFrames, installGlobals } from "../../../../charts/index.ts";
 import { chartConstructorOptions } from "../../chart-options.ts";
-import { createBindingTable, type BindingTable } from "./binding-table.ts";
+import {
+  createBindingTable,
+  derivePaneIndex,
+  F1_HOST_PANE_ORDER,
+  type BindingTable,
+  type PaneIndexDerivation,
+  type PaneOrder,
+} from "./binding-table.ts";
 import type { AnyIndicatorBinding, HostPlacement, HostSeries, IndicatorBinding } from "./indicator-binding.ts";
 
 const OVERLAY: HostPlacement = { kind: "overlay", on: "price" };
@@ -182,6 +194,106 @@ test("detach unmounts every binding still mounted, before the host removes the c
   assert.equal(seriesOnChart(chart), initial);
   assert.deepEqual(table.mounted(), []);
   chart.remove();
+});
+
+// ── `T-02.2` — the `paneIndex` derived at mount ─────────────────────────────────────────────
+
+/** Four SYNTHETIC pane indicators in a given order (`SPEC-011 §7.3`, F2); the core's pane is `core`. */
+const SYNTHETIC_ORDER: PaneOrder = { corePaneId: "core", indicatorPaneIds: ["pane_a", "pane_b", "pane_c", "pane_d"] };
+/** `pane_c` is OFF: it never registers. */
+const ACTIVE_SYNTHETIC = ["pane_a", "pane_b", "pane_d"] as const;
+
+function paneAt(paneId: string): HostPlacement {
+  return { kind: "pane", paneId };
+}
+
+const deriveSynthetic: PaneIndexDerivation = (placement, active) => derivePaneIndex(placement, active, SYNTHETIC_ORDER);
+
+/** The ablation's derivation: `1 +` the position among the panes in REGISTRATION order (the table
+ * hands `active` in that order), blind to the catalog's. */
+const deriveByRegistration: PaneIndexDerivation = (placement, active) => {
+  if (placement.kind === "overlay") {
+    return 0;
+  }
+  const panes = active.flatMap((other) => (other.kind === "pane" ? [other.paneId] : []));
+  return 1 + panes.indexOf(placement.paneId);
+};
+
+/** Registers the active synthetic panes in `registrationOrder` on a real chart, attaches, and reads
+ * back each pane's `paneIndex` AND the library's series count on panes 1..3. */
+async function mountSynthetic(
+  derive: PaneIndexDerivation,
+  registrationOrder: readonly string[],
+): Promise<{ readonly indices: Readonly<Record<string, number>>; readonly perPane: readonly number[] }> {
+  const { lc, chart } = await realChart();
+  const table = createBindingTable(derive);
+  for (const paneId of registrationOrder) {
+    table.register(paneId, paneAt(paneId), refOf(syntheticBinding(lc)));
+  }
+  const mounted = table.attach({ chart, feedLateMount: () => undefined });
+  const indices = Object.fromEntries(mounted.map(({ instanceKey, paneIndex }) => [instanceKey, paneIndex]));
+  const perPane = [1, 2, 3].map((paneIndex) => seriesOnPane(chart, paneIndex));
+  table.detach();
+  chart.remove();
+  return { indices, perPane };
+}
+
+const EXPECTED_SYNTHETIC = { pane_a: 1, pane_b: 2, pane_d: 3 };
+
+test("T-02.2: four synthetic panes, one off, land on 1, 2, 3 in the order given, whatever the registration order", async () => {
+  const forward = await mountSynthetic(deriveSynthetic, ACTIVE_SYNTHETIC);
+  const reversed = await mountSynthetic(deriveSynthetic, [...ACTIVE_SYNTHETIC].reverse());
+  assert.deepEqual(forward.indices, EXPECTED_SYNTHETIC);
+  assert.deepEqual(reversed.indices, EXPECTED_SYNTHETIC);
+  // Not vacuous: the library really holds one series on each of panes 1, 2 and 3.
+  assert.deepEqual(forward.perPane, [1, 1, 1]);
+  assert.deepEqual(reversed.perPane, [1, 1, 1]);
+});
+
+test("T-02.2 ablation: an index by registration position inverts the indices on the reversed registration", async () => {
+  const forward = await mountSynthetic(deriveByRegistration, ACTIVE_SYNTHETIC);
+  const reversed = await mountSynthetic(deriveByRegistration, [...ACTIVE_SYNTHETIC].reverse());
+  // Forward it happens to agree, which is why the reversed registration is the case that bites.
+  assert.deepEqual(forward.indices, EXPECTED_SYNTHETIC);
+  assert.deepEqual(reversed.indices, { pane_d: 1, pane_b: 2, pane_a: 3 });
+  assert.notDeepEqual(reversed.indices, EXPECTED_SYNTHETIC);
+});
+
+test("T-02.2: the index is read at MOUNT over the whole active set, not when each binding registered", async () => {
+  const { lc, chart } = await realChart();
+  const seen: { readonly paneId: string; readonly active: number }[] = [];
+  const table = createBindingTable((placement, active) => {
+    seen.push({ paneId: placement.kind === "pane" ? placement.paneId : "overlay", active: active.length });
+    return deriveSynthetic(placement, active);
+  });
+  for (const paneId of [...ACTIVE_SYNTHETIC].reverse()) {
+    table.register(paneId, paneAt(paneId), refOf(syntheticBinding(lc)));
+  }
+  assert.deepEqual(seen, [], "nothing is derived before the chart exists");
+  table.attach({ chart, feedLateMount: () => undefined });
+  assert.deepEqual(
+    seen.map(({ active }) => active),
+    [3, 3, 3],
+    "each index is derived over the three active panes",
+  );
+  table.detach();
+  chart.remove();
+});
+
+test("T-02.2: F1_PANE_ORDER — price and overlays on 0; with the five panes on, today's indices; a pane off moves the ones below up", () => {
+  const five = ["price", "liquidation", "oi", "long_short", "cvd"].map(paneAt);
+  const overlay: HostPlacement = { kind: "overlay", on: "price" };
+  assert.deepEqual(
+    five.map((placement) => derivePaneIndex(placement, [overlay, ...five], F1_HOST_PANE_ORDER)),
+    [0, 1, 2, 3, 4],
+  );
+  assert.equal(derivePaneIndex(overlay, five, F1_HOST_PANE_ORDER), 0);
+  const withoutOi = five.filter((placement) => placement.kind === "pane" && placement.paneId !== "oi");
+  assert.deepEqual(
+    withoutOi.map((placement) => derivePaneIndex(placement, withoutOi, F1_HOST_PANE_ORDER)),
+    [0, 1, 2, 3],
+  );
+  assert.throws(() => derivePaneIndex(paneAt("funding"), five, F1_HOST_PANE_ORDER), /not in the host's pane order/);
 });
 
 test("unmount is MANDATORY in the type (`ADR-050/D3`): a binding without it does not compile", () => {

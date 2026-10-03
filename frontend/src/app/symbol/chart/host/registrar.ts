@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, type RefObject } from "react";
 import { F1_PANE_ORDER, type PaneId } from "../../pane-registry.ts";
 import type { CrosshairSlotStore } from "../legend/pane-legend.ts";
-import type { BindingTable } from "./binding-table.ts";
+import { derivePaneIndex, F1_HOST_PANE_ORDER, type BindingTable } from "./binding-table.ts";
 import type { AnyIndicatorBinding, HostPlacement, IndicatorBinding, IndicatorRegistrar } from "./indicator-binding.ts";
 
 /**
@@ -46,19 +46,12 @@ export function paneIndexOfId(paneId: PaneId): number {
 }
 
 /**
- * `T-02.1` — the `paneIndex` a placement lands on, as the host resolves it until `T-02.2`: `0` for an
- * overlay on the price pane, and the pane registry's position for a pane — today's index, unchanged
- * for the five panes. `T-02.2` derives it from the ACTIVE set instead.
+ * `T-02.2` — the derivation the host hands its binding table: `binding-table.ts::derivePaneIndex`
+ * over `F1_PANE_ORDER` (price the core's pane, at `0`), read at MOUNT over the ACTIVE set. With the
+ * five panes on, it is each pane's position in `F1_PANE_ORDER` — today's index, unchanged.
  */
-export function paneIndexOfPlacement(placement: HostPlacement): number {
-  if (placement.kind === "overlay") {
-    return 0;
-  }
-  const paneId = F1_PANE_ORDER.find((id) => id === placement.paneId);
-  if (paneId === undefined) {
-    throw new Error(`pane ${placement.paneId} is not in F1_PANE_ORDER`);
-  }
-  return paneIndexOfId(paneId);
+export function paneIndexOfPlacement(placement: HostPlacement, active: readonly HostPlacement[]): number {
+  return derivePaneIndex(placement, active, F1_HOST_PANE_ORDER);
 }
 
 /**
