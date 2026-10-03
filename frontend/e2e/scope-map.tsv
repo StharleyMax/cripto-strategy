@@ -11,6 +11,8 @@
 # that import it. The rows below REFINE only files reached exclusively by the `/symbol` route; a
 # symbol file without a row runs `@rota:symbol`. A row is a HYPOTHESIS that the other symbol specs
 # cannot see the file's effect — the wave's full `make verify` is the backstop, not this file.
+# EDITING THIS FILE widens its own diff to COMPLETE: a map already edited cannot judge the change it
+# makes (a narrowed row would drop, from that same diff, the spec it breaks — `W8-QA-INFRA.md`, F-1).
 #
 # THE EVIDENCE COLUMN IS THE COMMAND. Re-run it before widening or narrowing a row (`-a`:
 # `e2e/14` is not UTF-8 and plain `grep` treats it as binary and stays silent).

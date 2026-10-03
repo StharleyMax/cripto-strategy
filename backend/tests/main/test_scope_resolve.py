@@ -17,9 +17,12 @@ selection to COMPLETE; it never narrows it"):
 * a new Next entry, a root-layout dependency and a deleted e2e helper widen e2e to COMPLETE;
 * a refining row narrows a `/symbol`-only file to its specs plus `e2e/11`; a lazy `import()` is
   an edge; a file no page imports runs only `e2e/11`;
-* `E2E_EXTRA` naming no spec, a map citing a deleted spec and a rotten prefix REFUSE (rc=3);
+* `E2E_EXTRA` naming no spec, a map citing a deleted spec and a rotten prefix REFUSE (rc=3), and
+  so do a malformed token and an inverted range in a row (`gates/W8-CODE-REVIEW.md`, M-3);
 * a diff that EDITS THE MAP cannot use the edit to drop, from its own selection, a spec the
-  base map selected for the same source change (`gates/W8-QA-INFRA.md`, finding F-1).
+  base map selected for the same source change (`gates/W8-QA-INFRA.md`, finding F-1);
+* a `.md` under `frontend/public` is SERVED, so it widens e2e like any front file without a row,
+  while a `.md` anywhere else stays "only `e2e/11`" (`gates/W8-QA-INFRA.md`, warning W-2).
 """
 
 from __future__ import annotations
@@ -273,3 +276,30 @@ def test_editing_the_map_cannot_drop_a_spec_from_its_own_diff(repo: Path) -> Non
     assert keys["e2e"] == "COMPLETO" or "12" in _specs(keys), (
         f"the map edit dropped e2e/12 from its own diff's selection: {sorted(_specs(keys))}"
     )
+
+
+def test_served_markdown_widens_e2e(repo: Path) -> None:
+    """W-2: Next serves `frontend/public/*.md`: not documentation, so never "only 11"."""
+    _append(repo, "frontend/public/notes.md", "# served\n")
+    rc, keys = _resolve(repo)
+    assert rc == 0
+    assert keys["e2e"] == "COMPLETO"
+    assert "frontend/public/notes.md" in keys["e2e_reason"]
+
+
+def test_documentation_markdown_runs_only_the_pixel_spec(repo: Path) -> None:
+    """The contrast of W-2: a `.md` outside `frontend/public` is never compiled nor served."""
+    _append(repo, "docs/note.md", "more\n")
+    rc, keys = _resolve(repo)
+    assert rc == 0
+    assert keys["e2e"] == "ESCOPO"
+    assert _specs(keys) == {"11"}
+
+
+@pytest.mark.parametrize("token", ["ab+", "8-9", "13-12"])
+def test_map_token_expand_cannot_read_refuses(repo: Path, token: str) -> None:
+    """M-3: a token `expand` cannot read, or an inverted range, used to vanish from its row."""
+    map_path = repo / "frontend/e2e/scope-map.tsv"
+    map_path.write_text(_MAP.replace("\t10\t", f"\t{token}\t"), encoding="utf-8")
+    rc, _ = _resolve(repo)
+    assert rc == 3

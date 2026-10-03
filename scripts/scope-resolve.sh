@@ -63,6 +63,18 @@ expand() { # expand "13 20-22 08+" -> one NN per line. It runs inside `$( )`, so
         esac
     done
 }
+check_tokens() { # check_tokens "<specs>" <prefix>. `expand` runs in a subshell and cannot refuse, so a token
+                 # it cannot read (`ab+`, `8-9`) or an inverted range (`13-12`) printed NOTHING and the row
+                 # silently lost those specs (`W8-CODE-REVIEW.md`, M-3). The map is read here, outside `$( )`.
+    local tok
+    for tok in $1; do
+        if [[ "$tok" =~ ^([0-9]{2})-([0-9]{2})$ ]]; then
+            (( 10#${BASH_REMATCH[1]} <= 10#${BASH_REMATCH[2]} )) || recusa "$MAP: linha '$2': faixa invertida '$tok'"
+        elif ! [[ "$tok" =~ ^[0-9]{2}\+?$ ]]; then
+            recusa "$MAP: linha '$2': token '$tok' malformado (aceita NN, NN-MM com NN <= MM, NN+)"
+        fi
+    done
+}
 [ -f "$MAP" ] || recusa "$MAP ausente — sem o mapa o escopo não sabe o que cada caminho de frontend/src alcança"
 declare -A ROW=()            # prefix -> specs
 declare -a ROW_ORDER=()
@@ -72,6 +84,7 @@ while IFS=$'\t' read -r prefix specs _rest; do
     if [[ "$prefix" != @rota:* ]] && ! git ls-files -- "frontend/$prefix*" | grep -q .; then
         recusa "$MAP: prefixo '$prefix' não casa nenhum arquivo versionado (mapa podre — renomeie ou apague a linha)"
     fi
+    check_tokens "$specs" "$prefix"                                  # refuses on a token expand cannot read
     for n in $(expand "$specs"); do spec_of "$n" >/dev/null; done   # refuses on a missing spec
     ROW["$prefix"]="$specs"; ROW_ORDER+=("$prefix")
 done < "$MAP"
@@ -165,14 +178,23 @@ while read -r P; do
     fi
 
     case "$P" in
-        # ── documentation, wherever it lives: never compiled, never served (the backend tests that
-        #    read one were already pulled by name above) ──
+        # ── what `public/` holds is SERVED by Next, `.md` included: a front file with no map row ──
+        frontend/public/*)
+            full_e2e "servido pela app (frontend/public), sem linha no mapa: $P" ;;
+
+        # ── documentation, wherever else it lives: never compiled, never served (the backend
+        #    tests that read one were already pulled by name above) ──
         *.md)
             echo "#   e2e: só 11 — documento" ;;
 
-        # ── e2e specs and their support files ──
+        # ── the map decides the selection as much as this script does, and it was ALREADY READ
+        #    from the working tree: an edited map would resolve its own diff (a task that narrows
+        #    a row and breaks that row's spec would drop the spec from its own run). Same answer as
+        #    an edit to scope-resolve.sh/scope-graph.mjs: COMPLETE (`W8-QA-INFRA.md`, F-1) ──
         frontend/e2e/scope-map.tsv)
-            echo "#   e2e: só 11 — o mapa é dado do escopo, não código da app" ;;
+            full_e2e "o mapa do escopo mudou no diff — ele não pode resolver a própria mudança: $P" ;;
+
+        # ── e2e specs and their support files ──
         frontend/e2e/[0-9]*.spec.ts)
             if [ "$EXISTS" -eq 1 ]; then add_spec "$(basename "$P" | cut -c1-2)" diff
             else echo "#   e2e: spec removido — nada a rodar dele"; fi ;;
