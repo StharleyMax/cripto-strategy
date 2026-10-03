@@ -42,7 +42,10 @@ _TOKEN: Final = "delete-md-series-duplicates"  # noqa: S105 - a confirmation wor
 
 # A `docker` stand-in: logs every call; `context show` answers `default`; `inspect` answers the
 # state written for that name in `$FAKE_DOCKER_STATES` (`name state` lines; absent name ⇒ rc 1);
-# `ps` prints `$FAKE_DOCKER_PS` (the names of running compose collector/writer containers);
+# `ps` HONOURS its filters the way Docker 24 does: `$FAKE_DOCKER_PS` holds the running containers
+# as `name service` lines, and a name is printed only when its service matches EVERY
+# `--filter label=com.docker.compose.service=…` (repeated label filters are AND, never OR —
+# `W8-CODE-REVIEW` N-1, measured against the live pipeline); any other filter fails (rc 97);
 # `exec … redis-cli …` prints `$FAKE_XINFO`; any other `exec [-i] [-e K=V]… CONTAINER CMD…`
 # exports the `-e` pairs and runs CMD on the host, where `psql` reaches the test database through
 # the PG* variables the test sets. `FAKE_DOCKER_EXEC_FAILS=1` makes those psql `exec`s fail
@@ -56,7 +59,27 @@ case "$1" in
     awk -v n="$name" '$1==n{print $2; f=1} END{exit !f}' "$FAKE_DOCKER_STATES"
     exit $?
     ;;
-  ps) [[ -n "${FAKE_DOCKER_PS:-}" ]] && echo "$FAKE_DOCKER_PS"; exit 0 ;;
+  ps)
+    shift
+    want=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --filter|--filter=*)
+          if [[ "$1" == --filter ]]; then f="$2"; shift 2; else f="${1#--filter=}"; shift; fi
+          [[ "$f" == label=com.docker.compose.service=* ]] || exit 97
+          want+=("${f#label=com.docker.compose.service=}") ;;
+        --format) shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    while read -r name svc; do
+      [[ -n "$name" ]] || continue
+      ok=1
+      for w in "${want[@]}"; do [[ "$svc" == "$w" ]] || ok=0; done
+      [[ "$ok" == 1 ]] && echo "$name"
+    done <<< "${FAKE_DOCKER_PS:-}"
+    exit 0
+    ;;
   exec)
     shift
     while [[ "$1" == -* ]]; do
@@ -75,6 +98,9 @@ exit 98
 """
 
 _STOPPED: Final = {"deploy-collector-1": "exited", "deploy-writer-1": "exited"}
+# What `docker ps` really shows with the pipeline stopped: the stores stay up. A refusal that fires
+# on ANY running container (the filter dropped) would refuse every happy path below.
+_OTHERS_RUNNING: Final = "deploy-postgres-1 postgres\ndeploy-redis-1 redis\ndeploy-api-1 api"
 
 
 def _xinfo(*groups: tuple[str, str, str]) -> str:
@@ -129,7 +155,7 @@ def _run(
     confirm: bool,
     database: PostgresDatabase | None = None,
     states: dict[str, str] | None = None,
-    running: str = "",
+    running: str = _OTHERS_RUNNING,
     xinfo: str = _DRAINED,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     calls = out.parent / "docker-calls.log"
@@ -179,7 +205,7 @@ def _run_delete(
     confirm: bool,
     database: PostgresDatabase | None = None,
     states: dict[str, str] | None = None,
-    running: str = "",
+    running: str = _OTHERS_RUNNING,
     xinfo: str = _DRAINED,
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     return _run(
@@ -253,7 +279,7 @@ def test_a_chunk_listing_that_fails_is_not_reported_as_zero_rows_deleted(
 
     The chunk list is read through `done < <(sql_chunks | psql_ro)`: a process substitution,
     whose exit status `set -e` never sees. The loop reads nothing and the script prints
-    "apagadas no total: 0" with rc 0 — a failure indistinguishable from "nothing to delete".
+    "deleted in total: 0" with rc 0 — a failure indistinguishable from "nothing to delete".
     """
     out = _out_dir(tmp_path, with_envelopes=True)
 
@@ -261,7 +287,7 @@ def test_a_chunk_listing_that_fails_is_not_reported_as_zero_rows_deleted(
 
     assert _psql_calls(calls), "the gates should have let it through"
     assert result.returncode != 0, result.stdout + result.stderr
-    assert "listar os chunks" in result.stderr
+    assert "failed to list the chunks" in result.stderr
 
 
 @pytest.mark.skipif(shutil.which("psql") is None, reason="psql client not installed")
@@ -281,7 +307,7 @@ def test_delete_commits_each_chunk_and_removes_exactly_the_selected_rows(
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("COMMIT") == 2  # two chunks hold the seed
     assert "ROLLBACK" not in result.stdout
-    assert f"apagadas no total: {len(selected)}" in result.stdout
+    assert f"deleted in total: {len(selected)}" in result.stdout
     assert _pks(seeded) == before - selected
 
 
@@ -316,25 +342,52 @@ def test_a_chunk_whose_deleted_count_differs_from_the_selected_is_rolled_back(
 # B-1: one case per way the pipeline can still land a row with `ingested_at <= T_SNAP`, plus the
 # fail-closed cases (cannot inspect, group not listed, nil lag). Each must refuse BEFORE any psql.
 _NOT_STOPPED: Final = [
-    pytest.param({}, "", _xinfo(("single_writer", "0", "4")), "pending", id="pending>0"),
-    pytest.param({}, "", _xinfo(("single_writer", "12", "0")), "lag", id="lag>0"),
-    pytest.param({}, "", _xinfo(("single_writer", "", "0")), "lag", id="lag-nil"),
+    pytest.param(
+        {}, _OTHERS_RUNNING, _xinfo(("single_writer", "0", "4")), "pending", id="pending>0"
+    ),
+    pytest.param({}, _OTHERS_RUNNING, _xinfo(("single_writer", "12", "0")), "lag", id="lag>0"),
+    pytest.param({}, _OTHERS_RUNNING, _xinfo(("single_writer", "", "0")), "lag", id="lag-nil"),
     pytest.param(
         {"deploy-collector-1": "running"},
-        "",
+        _OTHERS_RUNNING,
         _DRAINED,
         "deploy-collector-1",
         id="collector-running",
     ),
     pytest.param(
-        {"deploy-writer-1": "running"}, "", _DRAINED, "deploy-writer-1", id="writer-running"
+        {"deploy-writer-1": "running"},
+        _OTHERS_RUNNING,
+        _DRAINED,
+        "deploy-writer-1",
+        id="writer-running",
     ),
     pytest.param(
-        {"deploy-writer-1": "paused"}, "", _DRAINED, "deploy-writer-1", id="writer-paused"
+        {"deploy-writer-1": "paused"},
+        _OTHERS_RUNNING,
+        _DRAINED,
+        "deploy-writer-1",
+        id="writer-paused",
     ),
-    pytest.param({}, "deploy-collector-2", _DRAINED, "deploy-collector-2", id="scaled-replica"),
-    pytest.param({"deploy-writer-1": None}, "", _DRAINED, "não encontrado", id="writer-not-found"),
-    pytest.param({}, "", _xinfo(("audit", "0", "0")), "ausente", id="group-missing"),
+    pytest.param(
+        {},
+        f"{_OTHERS_RUNNING}\ndeploy-collector-2 collector",
+        _DRAINED,
+        "deploy-collector-2",
+        id="scaled-collector-replica",
+    ),
+    pytest.param(
+        {},
+        f"{_OTHERS_RUNNING}\nother-writer-7 writer",
+        _DRAINED,
+        "other-writer-7",
+        id="unnamed-writer-replica",
+    ),
+    pytest.param(
+        {"deploy-writer-1": None}, _OTHERS_RUNNING, _DRAINED, "not found", id="writer-not-found"
+    ),
+    pytest.param(
+        {}, _OTHERS_RUNNING, _xinfo(("audit", "0", "0")), "missing from XINFO", id="group-missing"
+    ),
 ]
 
 
