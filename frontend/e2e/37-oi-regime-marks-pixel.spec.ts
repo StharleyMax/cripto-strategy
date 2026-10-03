@@ -7,6 +7,7 @@ import { colorTokens, OI_REGIME_BAND_SURFACE, SURFACE_BASE } from "../src/charts
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { readView, showView, type ViewTarget } from "./view.ts";
 
 /**
  * `paineis-de-fluxo` `T-03.12` (plan `03` item `3b.5`, `Q-OI-3`, `[Q-DG-3]`) — the regime marks of the
@@ -266,22 +267,48 @@ interface Frame {
   readonly from: number;
   readonly to: number;
   readonly windowStartMs: number;
+  /** `T-05.1`: the axis slot is the timeframe's own bar (`5m` → 5 min), no longer always 1 min. */
+  readonly stepMs: number;
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
-async function frameOf(page: Page): Promise<Frame> {
+async function frameOf(page: Page, stepMs: number = MIN): Promise<Frame> {
   const host = page.locator(`[data-testid="${CHART_HOST_TESTID}"]`);
   const from = Number(await host.getAttribute("data-visible-logical-from"));
   const to = Number(await host.getAttribute("data-visible-logical-to"));
   const windowStartMs = Number(await page.locator("main[data-window-start-ms]").getAttribute("data-window-start-ms"));
   const box = (await page.locator(`[data-testid="${OI_PANE_TESTID}"]`).boundingBox())!;
-  return { from, to, windowStartMs, box };
+  return { from, to, windowStartMs, stepMs, box };
 }
 
 /** Page x of the RIGHT edge of the slot at `ms` — the same `index + 0.5` the primitive draws at. */
 function edgeX(frame: Frame, ms: number): number {
-  const logical = (ms - frame.windowStartMs) / MIN + 0.5;
+  const logical = (ms - frame.windowStartMs) / frame.stepMs + 0.5;
   return frame.box.x + ((logical - frame.from) / (frame.to - frame.from)) * frame.box.width;
+}
+
+/** `paineis-de-fluxo` `T-06.1` — every test puts its view on screen explicitly (`view.ts::showView`),
+ * not wherever the mount frames (`VIEW_BARS`, 2 h at `1m` and 10 h at `5m` since `T-05.1`, while the
+ * scenario reaches 30 h back). `1m`: the LAST `REGIME_VIEW_BARS_1M` slots — near the library's
+ * `minBarSpacing` floor, the geometry the mount had before `T-05.1` and that the pixel tolerances of
+ * RM-2/RM-3 were measured on (two rules 3 min apart are ~2 px apart there), under the floor of a
+ * 1280-px plot. `5m` (whose 1.152-slot axis is shorter than the floor): from `marginSlots` before `ms`
+ * to the right edge, so the view never reaches the paging trigger (`showView` throws on a page). */
+const REGIME_VIEW_BARS_1M = 2_200;
+
+async function showFrame(page: Page, ms: number, stepMs: number, marginSlots: number): Promise<Frame> {
+  const state = await readView(page);
+  const target: ViewTarget =
+    stepMs === MIN
+      ? { kind: "lastBars", bars: REGIME_VIEW_BARS_1M }
+      : { kind: "timeRange", fromMs: ms - marginSlots * stepMs, toMs: state.windowStartMs + state.slotCount * stepMs };
+  const view = await showView(page, target);
+  const frame = await frameOf(page, stepMs);
+  const wanted = (ms - frame.windowStartMs) / stepMs - marginSlots;
+  fact(SPEC, `view_${stepMs}`, { iterations: view.iterations, from: frame.from, to: frame.to, wanted, spacingPx: view.barSpacingPx });
+  // The tolerance of `showView` is 2% of the span: the margin, not the edge, is what must hold.
+  expect(frame.from, `a vista não trouxe ${ms} para a tela (from ${frame.from}, alvo ${wanted})`).toBeLessThanOrEqual(wanted + Math.max(1, 0.02 * (frame.to - frame.from)));
+  return frame;
 }
 
 /** Page x of the CENTRE of the slot at `ms`. */
@@ -460,6 +487,7 @@ test.describe(`T-03.12: marcas de regime do pane de OI (faixa, regra, rótulo, H
 
   test("RM-1..RM-4 (1m): bandas e regras derivadas do derived_from, faixa e regra no pixel, rótulos na faixa reservada", async ({ page }) => {
     await openSymbol(page, instance!.baseUrl);
+    await showFrame(page, HOLE_FROM, MIN, 60);
     const pane = page.locator(`[data-testid="${OI_PANE_TESTID}"]`);
     // RM-1 — the derivation, as the DOM publishes it.
     const facts = {
@@ -531,6 +559,7 @@ test.describe(`T-03.12: marcas de regime do pane de OI (faixa, regra, rótulo, H
 
     // ABLATION — `?e2eOiRegimeMarks=0`: nothing painted, the derivation still published.
     await openSymbol(page, instance!.baseUrl, "?e2eOiRegimeMarks=0");
+    await showFrame(page, HOLE_FROM, MIN, 60);
     expect(await pane.getAttribute("data-oi-regime-marks")).toBe("ablated");
     expect(Number(await pane.getAttribute("data-oi-regime-rules"))).toBe(3);
     const ablatedFrame = await frameOf(page);
@@ -547,7 +576,7 @@ test.describe(`T-03.12: marcas de regime do pane de OI (faixa, regra, rótulo, H
 
   test("RM-5 (1m, Q-4 (iv)): sobre uma vela de A e uma de B, a legenda diz 'H/L não medidos' e não mostra numeral de H/L", async ({ page }) => {
     await openSymbol(page, instance!.baseUrl);
-    const frame = await frameOf(page);
+    const frame = await showFrame(page, HOLE_TO, MIN, 60);
     const served = stub.served.get("1m")!;
     const seen = new Set<string>();
     for (const ms of [HOLE_TO + 2 * HOUR, CAPTURE_LAST_A + 3 * HOUR]) {
@@ -566,7 +595,7 @@ test.describe(`T-03.12: marcas de regime do pane de OI (faixa, regra, rótulo, H
 
   test("RM-6 (5m, Q-5 + Q-4 (iii)): 2 leituras → célula; 3 leituras com pavio → numerais; largura igual ± 1 px", async ({ page }) => {
     await openSymbol(page, instance!.baseUrl, "?interval=5m");
-    const frame = await frameOf(page);
+    const frame = await showFrame(page, CAPTURE_LAST_A, FIVE, 12);
     fact(SPEC, "frame_5m", frame);
     const lastA = await hoverLegend(page, frame, CAPTURE_LAST_A);
     const probe = await hoverLegend(page, frame, PROBE_B_5M);

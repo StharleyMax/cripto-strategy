@@ -68,8 +68,10 @@
  *
  * ── `bucketMs`: THE SERVED BAR ON A FINER GRID (W1-FIX, `gates/W1-DESIGN-REVIEW.md` MF-B) ────
  *
- * The page keeps ONE canonical grid of 1 minute for every TF (`S2_AXIS_STEP_MS`), and a TF above
- * `1m` is served as one point per bar, on the slot of the bar's OPEN. Read slot by slot, every
+ * The page kept ONE canonical grid of 1 minute for every TF (`S2_AXIS_STEP_MS`, removed by
+ * `paineis-de-fluxo` `T-05.1`: the axis step is the TF's now, so `bucketMs === axisStepMs` on the
+ * page and the snap below is the identity), and a TF above `1m` was served as one point per bar,
+ * on the slot of the bar's OPEN. Read slot by slot, every
  * other minute of a `4h` bar is empty: at rest the last closed MINUTE (`hh:59`) has no point, and
  * under the crosshair only the 1-px column of the open lands on one — the legend said `ausente`
  * next to the drawn bar in 4 of the 5 TFs. `bucketMs` is the served bar's width: the slot found

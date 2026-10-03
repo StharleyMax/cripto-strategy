@@ -7,6 +7,7 @@ import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import { colorTokens } from "../src/charts/color-tokens.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { showView } from "./view.ts";
 
 /**
  * `paineis-de-fluxo` `T-02.3` — the WIRING of plan `02` item `2.4`, read off the PIXELS of the real
@@ -312,6 +313,20 @@ async function readPane(page: Page): Promise<PaneReading> {
   );
 }
 
+/**
+ * `paineis-de-fluxo` `T-06.1` — the verdict reads the LAST `VOLUME_VIEW_BARS` slots of the axis, put
+ * there explicitly (`view.ts::showView`), not wherever the mount frames (`VIEW_BARS`). History:
+ * `T-05.1` moved the mount to 120 bars (2 h at `1m`), inside ONE of the stub's 240-minute runs, and the
+ * verdict went `INCONCLUSIVO: only 0 up-candle columns`; the fix was a private zoom-out to the
+ * library's floor (~2.400 slots), the geometry `MIN_COLUMNS_PER_DIRECTION`/`MIN_NEUTRAL_RUN_COLUMNS`
+ * were set on. 2.000 keeps that geometry (~0,6 px per slot), spans more than three stub cycles
+ * (`CYCLE_MINUTES` = 600), and sits under the floor of a 1280-px plot, so the target is reachable
+ * without paging (`showView` throws otherwise).
+ */
+const VOLUME_VIEW_BARS = 2_000;
+/** Below this the view would not leave one run, and the verdict would be blind. */
+const MIN_VIEW_SPAN_SLOTS = 2 * CYCLE_MINUTES;
+
 interface Verdict {
   readonly compared: number;
   readonly comparedUp: number;
@@ -373,6 +388,10 @@ test(`T-02.3: no app real, a barra de volume toma a direção da vela da mesma c
     await page.waitForTimeout(1_000);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     expect(stub.unknownIds(), "the page asked for a series_key_id the stub does not know — the keys drifted").toBe(0);
+    const view = await showView(page, { kind: "lastBars", bars: VOLUME_VIEW_BARS });
+    fact(SPEC, "view", { iterations: view.iterations, from: view.fromLogical, to: view.toLogical, spacingPx: view.barSpacingPx });
+    expect(view.toLogical - view.fromLogical, "a vista não saiu de um ciclo do stub").toBeGreaterThanOrEqual(MIN_VIEW_SPAN_SLOTS);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
     const reading = await readPane(page);
     const verdict = judge(reading.columns);

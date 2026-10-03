@@ -23,6 +23,7 @@ from src.modules.sentimento.domain.provenance import (
     Provenance,
     SeriesRow,
 )
+from src.modules.sentimento.domain.repeated_fact import RecordedObservation
 from src.modules.sentimento.infra import single_writer_cli
 from src.modules.sentimento.infra.series_row_wire import (
     InvalidWireFieldValueError,
@@ -89,6 +90,10 @@ class _FakeObservedLookup:
     def observed_already_present(self, row: SeriesRow) -> bool:
         """Return the fixed, scripted answer."""
         return self.answer
+
+    def immediate_predecessor(self, row: SeriesRow) -> RecordedObservation | None:
+        """No earlier row in this fake's store: nothing is ever a repeat (`T-06.4`)."""
+        return None
 
 
 @dataclass

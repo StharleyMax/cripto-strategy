@@ -108,10 +108,26 @@ services:
     # regression to hunt, not the timeout "working". `PGAPPNAME` gives `pg_stat_activity` a
     # stable key (`application_name='cripto-api'`) — the container IP changed between
     # 2026-09-19 and 2026-09-27 and stopped identifying this service.
+    #
+    # `API_WORKERS`/`API_LIMIT_MAX_REQUESTS` (`T-06.3`, `handoff/T-06.3-desenho.md` §2, measured
+    # 2026-10-02 on the local stack): one process serialized the screen's 10 parallel series behind
+    # one psycopg connection and the GIL; 2 workers + the SkipScan extent measured 2.12 s (1m) and
+    # 3.15 s (1h) against 6.18 s / 7.42 s. Pinned HERE, never in `.env`, for the `PGOPTIONS`
+    # reason above (`writer`/`collector` share that `env_file`). 2, not 4: the VPS's free cores
+    # are unknown and 4 workers cost twice the RAM — raise it after measuring `nproc` there, no
+    # code deploy needed. `API_LIMIT_MAX_REQUESTS` recycles a worker after ~2000 requests (jitter
+    # 10%), because CPython keeps its high-water mark resident (HWM 1,837 MB on 1 worker).
+    # `mem_limit` turns "the VPS swaps" into "one worker is OOM-killed and the supervisor respawns
+    # it": 2 x ~350 MB HWM under the screen + one dense 7-day 1h page (407 MB) + supervisor and
+    # parent (~105 MB) is ~1.2 GB. Workers are child processes of the same `python -m src.main`
+    # (`ADR-027/D1`): no new container. Pinned by `test_compose_api_workers.py`.
     environment:
       APP_HOST: "0.0.0.0"
       PGOPTIONS: "-c idle_in_transaction_session_timeout=30s"
       PGAPPNAME: "cripto-api"
+      API_WORKERS: "2"
+      API_LIMIT_MAX_REQUESTS: "2000"
+    mem_limit: 1536m
     # `T-03.8` (`CA-E2E-1`) measured this: `create_app` ALWAYS wires a
     # `SqliteSeriesQuarantineStore` at `QUARANTINE_STORE_PATH` (default
     # `data/md/series_quarantine.sqlite3`, `src/main/__init__.py:64/240`) regardless of
@@ -251,11 +267,21 @@ services:
   # The long/short thread spends 4 calls/min on `/futures/data/*`, a family that answers `200`
   # with ZERO `x-mbx-*` headers (`domain/clock_skew.py`, `T-03.7`) — so its weight is UNREADABLE
   # rather than zero, and its runs carry `WEIGHT_NOT_READABLE` instead of a derived number.
-  # The boot backfill publishes `7 x 1440 x |symbols|` entries onto the Redis stream, under the
-  # `REDIS_STREAM_MAXLEN` cap (default 100.000, `redis_stream_bus.py`); with the four-symbol
-  # universe that peak is 40.320, i.e. 40% of the cap. An operator who raises
-  # `KLINES_BACKFILL_DAYS` past ~17 days on four symbols must raise `REDIS_STREAM_MAXLEN` with
-  # it, or `XADD ... MAXLEN ~` will trim entries the writer has not drained yet.
+  # The boot backfill publishes `7 x 1440 x |symbols| x 6` entries onto the Redis stream — SIX
+  # rows per bar since `T-01.3` of `SPEC-008` (volume, CVD and the four OHLC readings) — under
+  # the `REDIS_STREAM_MAXLEN` cap (default 100.000, `redis_stream_bus.py`). With four symbols
+  # that is 241.920 entries, 242% of the cap.
+  #
+  # ⚠️ CORRECTION, 2026-10-02 (`T-05.3` of `paineis-de-fluxo`). This paragraph used to say
+  # "40.320, 40% of the cap" — the count for ONE row per bar, which stopped holding when a bar
+  # became six rows, and nobody redid it. Published unthrottled, the boot went past the cap and
+  # `XADD MAXLEN ~` dropped what the writer had not read yet: in the boot of 2026-10-01T20:11Z
+  # `BTCUSDT` (the first one walked) kept 1.248 of 60.480 rows
+  # `[MEDIDO 2026-10-02, docs/context/paineis-de-fluxo/gates/T-05.3-build.md]`. Since `T-05.3`
+  # every page of the walk WAITS for the lag of the `REDIS_STREAM_GROUP` group to drop below 1/5
+  # of the cap (`redis_stream_backpressure.StreamDrainGate`), so the boot is slower — minutes, at
+  # the writer's pace — and loses no row; the next cycle walks from the watermark and closes the
+  # minutes the slow boot left behind.
   #
   # Open interest is CHEAP against that cap by a factor of five (5-minute grid, not 1-minute):
   # `7 x 288 x 4 = 8.064` entries at boot, 8% of the default cap, and 4 entries per 60 s cycle.

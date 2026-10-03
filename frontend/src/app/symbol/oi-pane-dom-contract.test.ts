@@ -68,9 +68,11 @@ const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
  * this was the bare `reading.kind === "absent" ? ABSENCE_TOKEN`, which matched the FIRST such branch in
  * the file — the OI's only because the price readout spelled its absence as a separate literal. Once
  * the price readout used `ABSENCE_TOKEN` too, the "OI absence rendered as 0" mutant below hit the
- * PRICE branch and survived: the guard had never been about OI. */
+ * PRICE branch and survived: the guard had never been about OI. ⚠️ `T-05.1`: the call now spans
+ * several lines (the axis step joined its arguments), so "the rest of the call" is `[^;]*\);` — it
+ * still cannot cross into another statement, which is what kept the anchor on the OI call. */
 const OI_ABSENT_BRANCH =
-  /resolveStockReading\(panels\.oi\.slots,[^\n]*\n\s*const readingText =\s*\n\s*reading\.kind === "absent"\s*\n?\s*\? ABSENCE_TOKEN/;
+  /resolveStockReading\(\s*panels\.oi\.slots,[^;]*\);\s*\n\s*const readingText =\s*\n\s*reading\.kind === "absent"\s*\n?\s*\? ABSENCE_TOKEN/;
 /** The two counts, as the e2e spells them. `native-bars` is the one `DoD-3` reads; `wire-points`
  * is the staircase, published beside it so the ratio is checkable from outside. */
 const NATIVE_BARS_ATTRIBUTE = /data-oi-native-bars=\{oi\.nativeBars\}/;
@@ -370,16 +372,17 @@ test("MORDE: each of the 7 OI DOM-contract mutations that used to pass green is 
 test("CALA: a design_gate NEEDS_FIX about colour or wording leaves the OI contract intact", () => {
   const restyled = source
     .replace(/color: colorTokens\(\)\.provenanceStrong/, "color: colorTokens().provenanceWeak")
-    // `T-01.7`: the heading's cadence comes off the catalog entry now (`identityTerms(legends.oi)`).
-    .replace(/Open Interest\{identityTerms\(legends\.oi\)\}/, "Open Interest — contratos em aberto{identityTerms(legends.oi)}")
+    // `T-01.7`: the heading's cadence comes off the catalog entry now (`identityTerms(headings.oi)`).
+    .replace(/Open Interest\{identityTerms\(headings\.oi\)\}/, "Open Interest — contratos em aberto{identityTerms(headings.oi)}")
     .replace(/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}")
     .replace(/barras nativas de 5 min na janela/, "buckets de 5 min legíveis")
     .replace(/⚠️ Mais velha que o teto — o valor acima é DADO VELHO\./, "Atenção: leitura vencida.")
     // `T-04.1`: the ui-designer owns the SENTENCE, never the derived VALUES inside it (`RN-5`).
-    .replace(
-      /`Grandeza: \$\{provenance\.grandeza\} · Universo: \$\{provenance\.universo\} · Coorte: \$\{provenance\.coorte\}`/,
-      '`${provenance.grandeza} (grandeza) — ${provenance.universo} (universo) — ${provenance.coorte} (coorte)`',
-    );
+    // `B-1` (`gates/W8-OI-1024-DESIGN-GATE.md` §3): the sentence is now a first term plus one
+    // `OiProvenanceTerm` per later term; the reword moves the first term and the labels.
+    .replace(/`Grandeza: \$\{provenance\.grandeza\}`/, "`${provenance.grandeza} (grandeza)`")
+    .replace(/label="Universo"/, 'label="universo"')
+    .replace(/label="Coorte"/, 'label="coorte"');
   assert.notEqual(restyled, source, "the form constants moved — re-anchor this CALA rather than dropping it");
   assert.equal(TESTID_DECLARATION.exec(restyled)?.[1], EXPECTED_TESTID);
   assert.equal(ABSENCE_TOKEN_DECLARATION.exec(restyled)?.[1], EXPECTED_ABSENCE_TOKEN);

@@ -48,7 +48,7 @@ const PRICE_PANEL_INDEX = 0;
 
 const ONE_MINUTE_S = 60;
 /** 4 days of 1-minute slots — the same magnitude as `T-02.1`'s real canonical grid
- * (`s2-panels.ts`'s `S2_WINDOW_SPAN_MS`), not a smaller stand-in: `CA-5b`'s reference
+ * (the 1m route window: `S2_WINDOW_SPAN_MS` until `T-05.1`, `TIMEFRAME_WINDOW_BARS["1m"]` since), not a smaller stand-in: `CA-5b`'s reference
  * misalignment (`5.460 min`) was measured at this scale, and a materially smaller axis would
  * risk hiding a rounding-only "misalignment" behind a scale that happens to divide evenly.
  */

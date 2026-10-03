@@ -92,6 +92,73 @@ export function paneIdentityLabel(entry: SeriesCatalogEntry): string {
 }
 
 /**
+ * `T-05.6` (`W7-DESIGN-REVIEW` N-2) — what a pane's HEADING says after the pane's name. On `1h` the
+ * price pane said `Preço (1m, USDT)` beside the selected `1h` button: true of the series (the grid it
+ * is ingested on), false of the bars on screen, and the operator could not tell which.
+ *
+ * The rule (`handoff/T-05.6-n2-decisao.md`, approved WITH AN ADJUSTMENT by `gates/T-05.6-DESIGN-GATE.md`
+ * §(b).4): **outside the parenthesis the BARS, inside it the SERIES.** `Preço 1h (1m, USDT)`. The TF
+ * token is the active TF exactly as the TF button prints it (`option.interval`, lower case: `1M` would
+ * read as MONTH in TradingView's convention, so neither the heading nor the button may ever be
+ * case-transformed), and it appears on EVERY TF, including the series' own cadence (`Preço 1m (1m,
+ * USDT)`): if it vanished there, the parenthesis would mean the TF on `1m` and the series on `1h`,
+ * the N-2 defect moved elsewhere. The parenthesis is still `paneIdentityLabel` (`CA-5`: a function of
+ * the key); the TF is a function of the URL. The legend's own `label` — what invariant (iv) of the
+ * registry checks — is untouched.
+ *
+ * The word "nativa" does not fit the line (`e2e/40` `C-3`, A-5: `1h · nativo ` cut `(escala linear)` at
+ * 1024), so it lives in two places that take no width: a screen-reader-only suffix INSIDE the heading
+ * (never an `aria-label`, which would REPLACE the accessible name and drop the pane's name from the
+ * heading list — WCAG 2.5.3) and the heading's `title`.
+ */
+export interface PaneHeading {
+  /** The visible terms after the pane's name: `1h (1m, USDT)`. `""` where no entry resolved. */
+  readonly visible: string;
+  /** Screen-reader-only suffix, right after the parenthesis: ` — barras de 1h, série nativa de 1m`.
+   * `""` where there is no TF (a defensive branch: the route always has one, `DEFAULT_TIMEFRAME`). */
+  readonly screenReader: string;
+  /** The heading's `title`: `Barras de 1h · série nativa de 1m, USDT`. `undefined` where there is no TF. */
+  readonly title: string | undefined;
+}
+
+/** The heading of a pane whose series the route did not resolve: no terms, no suffix, no title. */
+export const EMPTY_PANE_HEADING: PaneHeading = { visible: "", screenReader: "", title: undefined };
+
+export function paneHeadingLabel(entry: SeriesCatalogEntry, timeframe: string): PaneHeading {
+  const bars = timeframe.trim();
+  const native = entry.key.interval.trim();
+  const unit = entry.key.unit.trim();
+  const identity = paneIdentityLabel(entry);
+  const visible = [bars, identity.length === 0 ? "" : `(${identity})`].filter(nonEmpty).join(" ");
+  if (bars.length === 0) {
+    return { visible, screenReader: "", title: undefined };
+  }
+  const nativeTerm = native.length === 0 ? "" : `série nativa de ${native}`;
+  const screenReader = ` — ${[`barras de ${bars}`, nativeTerm].filter(nonEmpty).join(", ")}`;
+  const series = [nativeTerm, unit].filter(nonEmpty).join(", ");
+  const title = [`Barras de ${bars}`, series].filter(nonEmpty).join(" · ");
+  return { visible, screenReader, title };
+}
+
+function nonEmpty(term: string): boolean {
+  return term.length > 0;
+}
+
+/** Every pane's heading for the page's `timeframe` — `EMPTY_PANE_HEADING` where the route resolved
+ * no entry, the same posture `resolvePaneLegends` takes with `null`. */
+export function resolvePaneHeadings(
+  sources: PaneLegendSources,
+  timeframe: string,
+): Readonly<Record<LegendSeriesId, PaneHeading>> {
+  const headings = {} as Record<LegendSeriesId, PaneHeading>;
+  for (const id of LEGEND_SERIES_IDS) {
+    const source = sources[id];
+    headings[id] = source === null ? EMPTY_PANE_HEADING : paneHeadingLabel(source.entry, timeframe);
+  }
+  return headings;
+}
+
+/**
  * The legend of every series, derived ONCE from its catalog entry through the registry's
  * `resolvePaneLegend` (`SPEC-009` §4: "chamada uma vez por pane, no registry"). `null` where the
  * route resolved no entry.

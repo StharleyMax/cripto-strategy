@@ -12,13 +12,21 @@ import json
 import threading
 import time
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
 
 from src.modules.sentimento.domain.ingest_record import IngestGap, IngestRun
 from src.modules.sentimento.infra.collectors_cli import (
     UNANSWERED_SYMBOL_GAP_CLASS,
+    CollectorBootConfigurationError,
     _run_liquidation_collector,
+    resolve_boot_config,
 )
-from src.modules.sentimento.use_cases.collect_liquidation_history import LiquidationFetch
+from src.modules.sentimento.use_cases.collect_liquidation_history import (
+    DEFAULT_LOOKBACK_SECONDS,
+    LiquidationFetch,
+)
 from src.modules.sentimento.use_cases.collector_run_mapping import (
     COINALYZE_SOURCE,
     LIQUIDATION_HISTORY_ENDPOINT,
@@ -118,6 +126,7 @@ def _drive(
     interval_s: float = 300.0,
     stop: _RecordingStopEvent | None = None,
     source: Any = None,
+    first_cycle_lookback_s: int = DEFAULT_LOOKBACK_SECONDS,
 ) -> tuple[list[IngestRun], list[IngestGap], list[int]]:
     """Run exactly `cycles` cycles of the thread and return what it recorded."""
     stop = stop if stop is not None else _RecordingStopEvent()
@@ -142,6 +151,7 @@ def _drive(
         record_gap=gaps.append,
         symbols=["BTCUSDT"],
         interval_s=interval_s,
+        first_cycle_lookback_s=first_cycle_lookback_s,
     )
     return runs, gaps, exit_code
 
@@ -295,3 +305,157 @@ def test_the_wait_between_cycles_discounts_the_time_the_cycle_already_spent() ->
         f"configured one, which is the RS-3.5 divergence"
     )
     assert final_wait <= interval_s - cost_s
+
+
+# ── `T-05.2` — THE FIRST-CYCLE LOOKBACK, THE RE-POPULATION INSTRUMENT ─────────────────────
+
+_FIVE_DAYS_S = 5 * 24 * 60 * 60
+
+
+class _PathRecordingSource(_ScriptedSource):
+    """A scripted source that also records the window each request asked for."""
+
+    def __init__(self, answers: list[LiquidationFetch]) -> None:
+        """Take the script; no window asked for yet."""
+        super().__init__(answers)
+        self.spans_s: list[int] = []
+
+    def fetch(self, path: str) -> LiquidationFetch:
+        """Record `to - from` of the request, then answer from the script."""
+        query = parse_qs(urlsplit(path).query)
+        self.spans_s.append(int(query["to"][0]) - int(query["from"][0]))
+        return super().fetch(path)
+
+
+def test_only_the_first_cycle_after_boot_uses_the_configured_lookback() -> None:
+    """The re-population window is spent ONCE: cycle 1 asks 5 days, cycle 2 the regime 3 h.
+
+    THE MUTATION: a lookback applied to every cycle would re-ask 5 days every 5 minutes — free
+    in quota, but each cycle would then re-walk 7.200 minutes per side for nothing.
+    """
+    source = _PathRecordingSource([LiquidationFetch(status=200, body=_body("BTCUSDT", []))])
+    runs, _, _ = _drive(
+        answers=[],
+        sink=_FakeSink(),
+        cycles=2,
+        interval_s=_FAST_CADENCE_S,
+        source=source,
+        first_cycle_lookback_s=_FIVE_DAYS_S,
+    )
+    assert len(runs) == 2
+    assert source.spans_s == [_FIVE_DAYS_S, DEFAULT_LOOKBACK_SECONDS]
+
+
+def test_the_default_first_cycle_lookback_changes_no_behaviour() -> None:
+    """CALA: with the variable unset, the boot value IS the regime lookback."""
+    assert resolve_boot_config({}).liquidation_first_cycle_lookback_s == DEFAULT_LOOKBACK_SECONDS
+    assert (
+        resolve_boot_config(
+            {"LIQUIDATION_FIRST_CYCLE_LOOKBACK_S": str(_FIVE_DAYS_S)}
+        ).liquidation_first_cycle_lookback_s
+        == _FIVE_DAYS_S
+    )
+
+
+@pytest.mark.parametrize("raw", ["0", "-60", "five-days"])
+def test_a_non_positive_first_cycle_lookback_is_refused_at_boot(raw: str) -> None:
+    """`RN-4` fail-fast: a typo is refused at boot, not at the first call.
+
+    `0` would request an empty window, which `liquidation_history_path` refuses only at the
+    FIRST CALL, minutes after boot and far from the typo.
+    """
+    with pytest.raises(CollectorBootConfigurationError) as excinfo:
+        resolve_boot_config({"LIQUIDATION_FIRST_CYCLE_LOOKBACK_S": raw})
+    assert excinfo.value.variable == "LIQUIDATION_FIRST_CYCLE_LOOKBACK_S"
+
+
+# ── W7-QA-BACK — the composition root of T-05.2 (QA mutations QA52-5, QA52-7) ──────────────
+
+
+class _RowSink:
+    """Keeps the whole `SeriesRow`, so the timestamps the thread stamped can be read back."""
+
+    def __init__(self) -> None:
+        """Start with nothing accepted."""
+        self.rows: list[Any] = []
+
+    def accept(self, row: Any, *, run_id: str) -> None:
+        """Record the row itself."""
+        self.rows.append(row)
+
+
+def test_a_consulted_zero_is_known_only_from_the_instant_it_was_written() -> None:
+    """Anti-lookahead at the root: a zero's `available_at` is the publish instant, never earlier.
+
+    A minute consulted now is NOT knowable at its own `bucket_end`: a replay at a
+    `knowledge_time` before the fetch must not see the zero (`R-1`). QA mutation `QA52-5` stamps
+    the row with its `bucket_end` instead of the clock and survived the T-05.2 suite — no test
+    read a liquidation row's timestamps.
+    """
+    sink = _RowSink()
+    before_ms = int(time.time() * 1000)
+    body = _body("BTCUSDT", [{"t": _SETTLED_START, "l": 5, "s": 3}])
+    _drive(answers=[LiquidationFetch(status=200, body=body)], sink=sink)
+    zeros = [row for row in sink.rows if row.value_raw == "0"]
+    assert zeros, "the 3-hour window after the non-zero is consulted and empty"
+    for row in sink.rows:
+        assert row.available_at >= before_ms, row
+        assert row.observed_at >= before_ms, row
+        assert row.bucket_end <= row.available_at, row
+
+
+def test_run_hands_the_configured_first_cycle_lookback_to_the_liquidation_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`LIQUIDATION_FIRST_CYCLE_LOOKBACK_S` must reach the thread `run()` starts.
+
+    It is the whole re-population instrument of DoD 2: if `run()` drops it, the boot asks for
+    3 h, nothing fails and the 4-day holes stay. QA mutation `QA52-7` deleted the kwarg and
+    survived — the T-05.2 tests drive `_run_liquidation_collector` directly, never `run()`.
+    """
+    from src.modules.sentimento.infra import collectors_cli
+    from tests.helpers.drain_gate_doubles import OpenGate
+
+    captured: dict[str, dict[str, Any]] = {}
+
+    def _recorder(name: str) -> Any:
+        def _fake(**kwargs: Any) -> None:
+            captured[name] = kwargs
+            kwargs["stop_event"].set()
+
+        return _fake
+
+    for name in (
+        "_run_force_order_collector",
+        "_run_premium_index_collector",
+        "_run_klines_collector",
+        "_run_open_interest_collector",
+        "_run_long_short_collector",
+        "_run_liquidation_collector",
+        "_run_open_interest_poll_collector",
+    ):
+        monkeypatch.setattr(collectors_cli, name, _recorder(name))
+
+    class _Store:
+        def record_run(self, run: Any) -> None:
+            """Never reached: every thread is a recorder."""
+
+        def record_gap(self, gap: Any) -> None:
+            """Never reached: every thread is a recorder."""
+
+    config = resolve_boot_config({"LIQUIDATION_FIRST_CYCLE_LOOKBACK_S": "432000"})
+    rc = collectors_cli.run(
+        config=config,
+        connection=object(),  # type: ignore[arg-type]
+        store=_Store(),  # type: ignore[arg-type]
+        force_order_source_factory=lambda: object(),  # type: ignore[arg-type,return-value]
+        premium_index_fetcher_factory=lambda: object(),  # type: ignore[arg-type,return-value]
+        klines_client_factory=lambda: object(),  # type: ignore[arg-type,return-value]
+        open_interest_client_factory=lambda: object(),  # type: ignore[arg-type,return-value]
+        long_short_client_factory=lambda: object(),  # type: ignore[arg-type,return-value]
+        liquidation_source_factory=lambda: object(),  # type: ignore[arg-type,return-value]
+        open_interest_poll_client_factory=lambda: object(),  # type: ignore[arg-type,return-value]
+        klines_drain_gate=OpenGate(),
+    )
+    assert rc == 0
+    assert captured["_run_liquidation_collector"]["first_cycle_lookback_s"] == 432_000

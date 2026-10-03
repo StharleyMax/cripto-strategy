@@ -86,6 +86,7 @@ import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { showView, type ViewTarget } from "./view.ts";
 
 const SPEC = "35-liquidation-acceptance-per-bucket";
 const SYMBOL = "BTCUSDT";
@@ -110,10 +111,13 @@ const ORDER_MIN_ROWS_DIFFERENCE = 2;
 
 /** Zoom until a bucket is this wide, so the column under the bar's centre is the bar's own. */
 const MIN_SPACING_PX = 8;
-const MIN_VISIBLE_SLOTS = 80;
-const ZOOM_STEP_DELTA = -200;
-const ZOOM_BURST = 5;
-const MAX_ZOOM_STEPS = 200;
+/** `paineis-de-fluxo` `T-06.1` — the GATE audit (stub) reads the LAST `GATE_VIEW_BARS` slots, put there
+ * explicitly (`view.ts::showView`) instead of the mount's framing: 120 is the view this audit was green
+ * on since `T-05.1` (~10 px per bucket, over `MIN_SPACING_PX`). */
+const GATE_VIEW_BARS = 120;
+/** The REAL audit searches `zoomTarget` over the LAST `REAL_SEARCH_BARS` slots (the stretch it searched
+ * before `T-05.1`, near the library's floor, under the floor of a 1280-px plot). */
+const REAL_SEARCH_BARS = 2_000;
 /** The crosshair sweep moves a quarter of a bucket per step. */
 const SWEEP_STEPS_PER_BUCKET = 4;
 
@@ -510,24 +514,13 @@ async function visibleRange(page: Page): Promise<{ from: number; to: number }> {
   return { from, to };
 }
 
-/** Wheel-zooms at `anchorFraction` of the pane until a bucket is `MIN_SPACING_PX` wide. Bounded (R9). */
-async function zoomToPerBucketSpacing(page: Page, anchorFraction: number): Promise<{ steps: number; spacingPx: number; from: number; to: number }> {
+/** `T-06.1` — `target` on screen with at least `MIN_SPACING_PX` per bucket, and the spacing the audit
+ * reads, measured as before (`pane width / visible span`). */
+async function showAuditView(page: Page, target: ViewTarget): Promise<{ steps: number; spacingPx: number; from: number; to: number }> {
+  const view = await showView(page, target, { minBarSpacingPx: MIN_SPACING_PX });
   const box = await paneCanvasBox(page);
-  const anchorX = box.x + box.width * anchorFraction;
-  const midY = box.y + box.height * 0.75;
-  let { from, to } = await visibleRange(page);
-  let steps = 0;
-  const spacing = () => box.width / (to - from);
-  while (steps < MAX_ZOOM_STEPS && spacing() < MIN_SPACING_PX && to - from > MIN_VISIBLE_SLOTS) {
-    await page.mouse.move(anchorX, midY);
-    for (let i = 0; i < ZOOM_BURST; i += 1) await page.mouse.wheel(0, ZOOM_STEP_DELTA);
-    steps += ZOOM_BURST;
-    await page.waitForTimeout(250);
-    ({ from, to } = await visibleRange(page));
-  }
-  await page.mouse.move(2, 2);
-  await page.waitForTimeout(500);
-  return { steps, spacingPx: spacing(), from, to };
+  const { from, to } = await visibleRange(page);
+  return { steps: view.iterations, spacingPx: box.width / (to - from), from, to };
 }
 
 interface LegReading {
@@ -1015,7 +1008,7 @@ test.describe(`T-04.6 gate: the fused liquidation pane, per bucket, with the abl
   async function auditGate(page: Page, query: string, ablation: TapAblation) {
     const tap = await installSetDataTap(page, ablation);
     const request = await openSymbol(page, instance!.baseUrl, query);
-    const zoom = await zoomToPerBucketSpacing(page, 0.8);
+    const zoom = await showAuditView(page, { kind: "lastBars", bars: GATE_VIEW_BARS });
     const audit = await auditPane(page, zoom.spacingPx, 0.45, 0.95);
     const truth = await fetchTruth(stub!.url, catalog!, request);
     return { tap, request, zoom, audit, truth, records: await readTap(page) };
@@ -1154,6 +1147,10 @@ function zoomTarget(
 
 /** Real data: zoom onto the stretch `zoomTarget` picks, sweep the whole pane, judge every criterion. */
 async function auditRealZoomed(page: Page, truth: Truth, tap: TapHandle) {
+  // `T-06.1`: the search runs over an explicit stretch, not the mount's 120 bars (2 h at `1m`), where
+  // `zoomTarget` found no bucket with both legs `> 0` and distinct (`T-05.1`, `e2e-risk` of 2026-10-02).
+  const searchView = await showView(page, { kind: "lastBars", bars: REAL_SEARCH_BARS });
+  fact(SPEC, "real_search_view", { iterations: searchView.iterations, from: searchView.fromLogical, to: searchView.toLogical });
   const box = await paneCanvasBox(page);
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.75);
   const probe = await legendSnapshot(page);
@@ -1162,15 +1159,13 @@ async function auditRealZoomed(page: Page, truth: Truth, tap: TapHandle) {
   if (probe.legs.short.slotIndex === null || probe.legs.short.bucketMs === null) {
     throw new Error("the crosshair named no slot — cannot map slots to time");
   }
-  const target = zoomTarget(
-    truth,
-    { slot: probe.legs.short.slotIndex, bucketMs: probe.legs.short.bucketMs },
-    from,
-    to,
-    Math.floor(box.width / MIN_SPACING_PX),
-  );
-  const anchor = Math.min(0.99, Math.max(0.01, (target.anchor + 0.5 - from) / (to - from)));
-  const zoom = await zoomToPerBucketSpacing(page, anchor);
+  const t0 = { slot: probe.legs.short.slotIndex, bucketMs: probe.legs.short.bucketMs };
+  const width = Math.floor(box.width / MIN_SPACING_PX);
+  const target = zoomTarget(truth, t0, from, to, width);
+  // The window `zoomTarget` picked, in instants (the legend's slot → bucket law), put on screen edge to edge.
+  const fromMs = t0.bucketMs + (target.first - t0.slot) * ONE_MINUTE_MS;
+  const view = { fromMs, toMs: fromMs + width * ONE_MINUTE_MS };
+  const zoom = await showAuditView(page, { kind: "timeRange", ...view });
   const audit = await auditPane(page, zoom.spacingPx, 0.01, 0.99);
   const records = await readTap(page);
   const verdicts = {
@@ -1180,7 +1175,7 @@ async function auditRealZoomed(page: Page, truth: Truth, tap: TapHandle) {
     legend: judgeLegend(audit, truth),
     absenceVsZero: judgeAbsenceVsZero(audit, truth),
   };
-  return { target, anchor, zoom, audit, verdicts };
+  return { target, view, zoom, audit, verdicts };
 }
 
 function verdictFacts(verdicts: Readonly<Record<string, Verdict>>): unknown {
@@ -1233,10 +1228,10 @@ test(`T-04.6 real data: every criterion of the phase on the real API, per bucket
   const withPoints = Object.values(panes.points).filter((n) => n > 0).length;
   expect.soft(withPoints, `CA-1′: panes with N > 0 (${JSON.stringify(panes.points)})`).toBe(5);
 
-  const { target, anchor, zoom, audit, verdicts } = await auditRealZoomed(page, truth, tap);
+  const { target, view, zoom, audit, verdicts } = await auditRealZoomed(page, truth, tap);
   fact(SPEC, "real_audit", {
     target,
-    anchor,
+    view,
     zoom,
     buckets: audit.buckets.length,
     firstBucketMs: audit.buckets[0]?.bucketMs ?? null,

@@ -21,6 +21,7 @@ one pair that failed, and a newest bucket that is still growing — have no home
 
 from __future__ import annotations
 
+import heapq
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -247,6 +248,82 @@ def is_settled_bucket(bucket_start_seconds: int, observed_at_ms: int) -> bool:
     inverted: a bucket published before it closed.
     """
     return (bucket_start_seconds + LIQUIDATION_BUCKET_SECONDS) * 1000 <= observed_at_ms
+
+
+# ── `T-05.2` (`paineis-de-fluxo`, `D3`) — A CONSULTED, EMPTY MINUTE IS AN OBSERVATION ────────
+
+# The provider's intraday retention is a POINT COUNT, "1500 a 2000 datapoints", not a span of
+# time `[DOC: docs/medicao-coinalyze.md §1.3]`. The floor of that range is the guard: a response
+# that brought this many points MAY have been cut at its oldest end, so no minute before the
+# oldest point it returned can be called "consulted and empty" — the provider may simply have
+# forgotten it. Below the floor, no retention cut fits inside the requested window, because a
+# cut inside it would leave at least this many points in it `[INFERRED: from the §1.3 mechanism]`.
+RETENTION_POINT_FLOOR: Final[int] = 1500
+
+
+def first_whole_bucket_start(window_from_epoch_seconds: int) -> int:
+    """Return the start of the first 1-minute bucket that begins AT or AFTER `from`.
+
+    `ceil_60(from)`, on the provider's own grid (`t` is the bucket START). Whether the API's
+    `from` is inclusive is `[NÃO SEI]`, and this cut makes the question irrelevant: the bucket
+    that straddles `from` is never claimed as consulted, whichever way the provider counts it.
+    """
+    return -(-window_from_epoch_seconds // LIQUIDATION_BUCKET_SECONDS) * LIQUIDATION_BUCKET_SECONDS
+
+
+def interleave_consulted_zeros(
+    settled: Sequence[SidePoint],
+    *,
+    window_from_epoch_seconds: int,
+    observed_at_ms: int,
+    n_points_in_response: int,
+) -> tuple[SidePoint, ...]:
+    """Return `settled` with a `SidePoint(t, "0")` for every consulted, settled, empty minute.
+
+    `T-05.2`, `D3` of `docs/context/paineis-de-fluxo/handoff/T-05.2-desenho.md`. The CALLER owns
+    condition 1 (the response was `answered` for this symbol) and condition 6 (not already
+    published by this process); this function holds the four that are a pure function of the
+    window and the response:
+
+    2. `t >= first_whole_bucket_start(from)` — the straddling bucket is never claimed;
+    3. `is_settled_bucket(t, observed_at_ms)` — the SAME boundary the non-zero is held to
+       (`RS-3.4`). No extra margin: the first successful run after a close captured 5.846 of
+       5.848 non-empty BTCUSDT buckets, and the 2 misses were our own pipeline losing a run's
+       output, not the provider publishing late `[MEDIDO 2026-10-02, desenho §1, q7]`;
+    4. `t` is not in the response — a minute the wire answered keeps the wire's value, and
+       `ZL-3` already decides a `0` side there;
+    5. when the response holds `>= RETENTION_POINT_FLOOR` points, no zero before the oldest
+       point returned — that span may be the provider's retention cut, not a quiet market.
+
+    ⛔ THE OUTPUT IS A MERGE, NOT A SORT. `classify_side_points` refuses a side that is not
+    strictly increasing, and that refusal is how a wire that came back out of order is caught.
+    Sorting here would repair the wire's order in silence; merging two ordered streams keeps a
+    disordered input disordered, so the refusal downstream still fires.
+
+    A zero produced here is a CANDIDATE, not yet a fact: it still goes through
+    `classify_side_points`, so `ZL-2` demotes it to `NO_SOURCE` on a side this process has not
+    seen operate — the zero never outruns the evidence that the side can report at all.
+    """
+    if n_points_in_response < len(settled):
+        raise ValueError(
+            f"n_points_in_response={n_points_in_response} < {len(settled)} settled points: the "
+            "settled points are a subset of the response, so the count cannot be smaller"
+        )
+    first = first_whole_bucket_start(window_from_epoch_seconds)
+    if n_points_in_response >= RETENTION_POINT_FLOOR:
+        if not settled:
+            return tuple(settled)
+        first = max(first, min(point.event_time for point in settled))
+    answered_times = {point.event_time for point in settled}
+    newest_closed = (
+        (observed_at_ms - LIQUIDATION_BUCKET_MS) // LIQUIDATION_BUCKET_MS
+    ) * LIQUIDATION_BUCKET_SECONDS
+    zeros = [
+        SidePoint(event_time=start, raw_quantity="0")
+        for start in range(first, newest_closed + 1, LIQUIDATION_BUCKET_SECONDS)
+        if start not in answered_times and is_settled_bucket(start, observed_at_ms)
+    ]
+    return tuple(heapq.merge(settled, zeros, key=lambda point: point.event_time))
 
 
 # ── THE WIRE POINTS, SPLIT INTO THE TWO INDEPENDENT SIDES (`ZL-1`) ─────────────────────────

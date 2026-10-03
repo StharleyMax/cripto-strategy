@@ -165,11 +165,12 @@ async function fetchCatalogEntries(): Promise<readonly CatalogEntryWire[]> {
 async function fetchSeriesHistory(
   seriesKeyId: string,
   request: RenderedRequest,
+  interval: string = "1m",
 ): Promise<{ readonly status: number; readonly rows: readonly HistoryRow[] }> {
   const query = new URLSearchParams({
     series_key_id: seriesKeyId,
     symbol: SYMBOL,
-    interval: "1m",
+    interval,
     window_start_ms: String(request.windowStartMs),
     window_end_ms: String(request.windowEndMsInclusive),
     knowledge_time_ms: String(request.knowledgeTimeMs),
@@ -265,8 +266,8 @@ async function seriesWindowReaderPresent(): Promise<boolean> {
   return !storePath.endsWith(".sqlite3");
 }
 
-async function loadRenderedRequest(page: Page): Promise<RenderedRequest> {
-  const response = await page.goto(SYMBOL_PATH, { waitUntil: "networkidle" });
+async function loadRenderedRequest(page: Page, routePath: string = SYMBOL_PATH): Promise<RenderedRequest> {
+  const response = await page.goto(routePath, { waitUntil: "networkidle" });
   fact(SPEC, "http_status", response?.status() ?? null);
   expect(response?.status()).toBe(200);
 
@@ -578,7 +579,8 @@ test(`the LongShortPane's bar count is the API's, over the SAME window (${SPEC})
     {
       const bandFact = (await bandLocator.getAttribute("data-fact"))!;
       const expectedLastIndex = domSlots - 1;
-      const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS;
+      // `T-05.6` (R-1): exclusive on the left - `span / step` bars, 240 on `1m`, never 241.
+      const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS + 1;
       expect(bandFact, "the band ends at the window's last slot and starts exactly one span earlier").toBe(
         `long_short_recent_band:${expectedFirstIndex}/${expectedLastIndex}`,
       );
@@ -670,7 +672,8 @@ test(`the LongShortPane's bar count is the API's, over the SAME window (${SPEC})
   fact(SPEC, "long_short_recent_band_width_px", bandWidthPx);
 
   const expectedLastIndex = domSlots - 1;
-  const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS;
+  // `T-05.6` (R-1): exclusive on the left - `span / step` bars, 240 on `1m`, never 241.
+  const expectedFirstIndex = expectedLastIndex - recentSpanMs / ONE_MINUTE_MS + 1;
   expect(recentSpanMs, "the pane must publish the span its own numerals were computed over").toBeGreaterThan(0);
   expect(bandFact, "the band ends at the window's last slot and starts exactly one span earlier").toBe(
     `long_short_recent_band:${expectedFirstIndex}/${expectedLastIndex}`,
@@ -736,3 +739,72 @@ test(`the LongShortPane's bar count is the API's, over the SAME window (${SPEC})
     expect(readoutText, "the numeral carries the unit the catalog declared").toContain(entry!.key.unit);
   }
 });
+
+// -- `W7-CODE-REVIEW` C-1: on `1h`/`4h` the footer's `n` describes the SAME slots the band shades --
+//
+// The footer's `recentStats` used to cut at `windowEndMsInclusive - 4h` - an instant on the 1-MINUTE
+// grid in every TF - while the band cuts at the last slot of the AXIS grid. On `1m` they coincide
+// (the test above); on `4h` the footer printed `n = 1` beside a band of 2 bars. Measured here
+// against the API the app reads, over the window the SERVER declared in `<main>`, never a clock.
+const AXIS_STEP_MS: Readonly<Record<string, number>> = { "1h": 60 * ONE_MINUTE_MS, "4h": 240 * ONE_MINUTE_MS };
+
+for (const interval of ["1h", "4h"] as const) {
+  test(`C-1: on ${interval} the footer's n is the count of readable slots INSIDE the faixa das 4 h (${SPEC})`, async ({
+    page,
+  }) => {
+    const axisStepMs = AXIS_STEP_MS[interval]!;
+    const request = await loadRenderedRequest(page, `${SYMBOL_PATH}?interval=${interval}`);
+    const pane = page.locator(`[data-testid="${LONG_SHORT_PANE_TESTID}"]`);
+    await expect(pane).toHaveCount(1);
+    const recentScale = pane.locator('[data-fact^="long_short_recent_scale:"]');
+    await expect(recentScale, "the footer's scale fact must be in the DOM").toHaveCount(1);
+    const recentSpanMs = Number(await recentScale.getAttribute("data-recent-span-ms"));
+    const domSlots = Number((await pane.locator('[data-fact^="long_short_slots:"]').getAttribute("data-fact"))!.split(":")[1]);
+    const bandLocator = pane.locator('[data-fact^="long_short_recent_band:"]');
+    await expect(bandLocator, `the faixa das 4 h must be drawn on ${interval}`).toHaveCount(1);
+    const bandFact = (await bandLocator.getAttribute("data-fact"))!;
+    const scaleFact = (await recentScale.getAttribute("data-fact"))!;
+    fact(SPEC, `c1_${interval}_band_fact`, bandFact);
+    fact(SPEC, `c1_${interval}_recent_scale_fact`, scaleFact);
+    fact(SPEC, `c1_${interval}_dom_slots`, domSlots);
+
+    // The band: `span / step` bars ending at the last axis slot (`T-05.6`, R-1: exclusive on the
+    // left - 4 bars on `1h`, 1 on `4h`; the inclusive cut was `span / step + 1`).
+    const bandBars = recentSpanMs / axisStepMs;
+    expect(bandFact).toBe(`long_short_recent_band:${domSlots - bandBars}/${domSlots - 1}`);
+
+    const entry = (await fetchCatalogEntries()).find(
+      (candidate) => candidate.key.instrumentId === SYMBOL && isBinanceCountLongShortRatio(candidate.key),
+    );
+    expect(entry).toBeDefined();
+    const { status, rows } = await fetchSeriesHistory(computeSeriesKeyId(entry!.key), request, interval);
+    fact(SPEC, `c1_${interval}_history_status`, status);
+    if (!(await seriesWindowReaderPresent())) {
+      // Weak universe: no reader, nothing readable - the footer must say so, never invent an `n`.
+      expect(scaleFact).toBe("long_short_recent_scale:absent");
+      return;
+    }
+    expect(status).toBe(200);
+    expect(rows.length, "the API serves one row per axis slot of the window the page declared").toBe(domSlots);
+    // The slots the band shades are the LAST `bandBars` rows of the served grid.
+    const readableInBand = rows.slice(rows.length - bandBars).filter((row) => row.value !== null).length;
+    fact(SPEC, `c1_${interval}_readable_in_band`, readableInBand);
+    // `T-05.6` (`W7-CODE-REVIEW` R-2): the equality below is the CONTRACT (the footer counts the
+    // band's readable slots) and holds on any data, so it is always asserted - including `0`, where
+    // the footer must say `absent`. What sparse data costs is only DISCRIMINATION against the
+    // inclusive cut (one bar more): when that extra bar is not readable the two cuts count the
+    // same, and the run says so in an annotation instead of failing on a property of the database.
+    // The band's own indices (asserted above, data-independent) already reject the inclusive cut.
+    const readableInInclusiveCut = rows.slice(rows.length - bandBars - 1).filter((row) => row.value !== null).length;
+    fact(SPEC, `c1_${interval}_readable_in_inclusive_cut`, readableInInclusiveCut);
+    if (readableInInclusiveCut === readableInBand) {
+      test.info().annotations.push({
+        type: "non-discriminating",
+        description: `${interval}: the bar before the band is not readable, so its count equals the inclusive cut's`,
+      });
+    }
+    expect(scaleFact, "the footer's n must count the readable slots of the band it sits beside").toBe(
+      `long_short_recent_scale:${readableInBand === 0 ? "absent" : readableInBand}`,
+    );
+  });
+}

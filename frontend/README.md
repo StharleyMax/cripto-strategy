@@ -1813,3 +1813,76 @@ contêiner — a área de plot mede `1208px` dentro de um host de `1254px` (o ei
 resto), e a fração sobre o elemento errado desenha uma faixa que **parece** alinhada. E a leitura vai
 **no frame seguinte** ao `fitContent()`: antes dele a escala ainda responde o intervalo anterior, e
 uma coordenada assim tem cara de medição sem ser uma.
+
+## 24. O eixo é do timeframe, e a janela conta em barras (`paineis-de-fluxo` `T-05.1`, 2026-10-02)
+
+Desenho: [`handoff/T-05.1-desenho.md`](../docs/context/paineis-de-fluxo/handoff/T-05.1-desenho.md). Relatório:
+[`gates/T-05.1-build.md`](../docs/context/paineis-de-fluxo/gates/T-05.1-build.md).
+
+- **O passo do eixo vem de um lugar só:** `timeframeStepMs(interval)` (`supported-timeframes.ts`), em
+  `[symbol]/page.tsx` e no pager (`use-history-pager.ts`, a partir de `seed.interval`). Todo construtor de slot
+  (`buildS2Panels`, `assembleHistoryPage`, `nonNegativeFlowSlotsFromHistoryRows(rows, window, axisStepMs)`,
+  `oiCandlePaneData`, `axisForWindow`) recebe o passo **como argumento obrigatório, sem default**.
+  `S2_AXIS_STEP_MS` e `S2_WINDOW_SPAN_MS` foram apagados: um default de 1 min era o próprio defeito.
+- **Janela, página e teto em barras:** `timeframe-window.ts::TIMEFRAME_WINDOW_BARS` (1m 5.760/500 · 5m 1.152/288 ·
+  15m 384/192 · 1h 168/168 · 4h 42/42). 1h e 4h abrem em 7 dias `[DECISÃO-OWNER: 2026-10-02, escolha entre
+  alternativas apresentadas]`. O teto acumulado continua 5.000 barras (1m: 6.260 efetivo).
+- **A vista inicial são as últimas `VIEW_BARS = 120` barras** (`initialViewRange`), e não mais o eixo inteiro.
+  Em 4h (42 barras) a vista é o eixo inteiro.
+- **`windowEndMsInclusive` continua na grade de 1 min, de propósito** — é o `window_end_ms` do pedido, e o backend
+  devolve as mesmas linhas para `end − 1 min` e `end − step` (`e2e/18`). A leitura do readout usa
+  `lastGridInstant(window, axisStepMs)`.
+- **⚠️ Gotcha — a montagem não pode paginar, e quem decide isso é a POSIÇÃO, no pager.** Depois do quadro de guarda
+  da montagem, a biblioteca ainda reassenta o layout e re-reporta a faixa uma fração de barra deslocada
+  (`from = −0,07` em 4h, `263,8` por `264` em 15m). Em 4h a vista é o eixo inteiro, nasce dentro do gatilho de
+  página, e esse eco fazia a montagem pedir **10** `/series-history` (1 página) sem gesto `[MEDIDO 2026-10-02,
+  e2e/39]`. O conserto é `isLeftOfMountView` (`timeframe-window.ts`), chamado em `use-history-pager.ts::onCandidateRange`:
+  não pagina enquanto `range.fromMs > mountViewFrom − step/2`, com `mountViewFrom` do **mesmo**
+  `mountViewRange(axis)` que o `axis-sync-provider.tsx` usa para enquadrar. Só morde em 4h; nos outros TFs o
+  gatilho já fica muito à esquerda da vista. O primeiro conserto (`ab29321`, um gate de gesto no host que calava
+  o `notifyPanelRangeChanged` até o 1º `pointerdown`/`wheel`) foi **revertido** pela revisão do
+  `frontend-architect` (`handoff/T-05.1-revisao-ab29321.md`): filtrava pela origem do evento (excluía teclado e
+  chamada programática) e, depois do 1º gesto, deixava o zoom-in em 4h paginar. Falsificadores: `e2e/39`
+  (montagem 4h = 0 pedidos; 1º arrasto em 4h pede página; **zoom-in pela roda em 4h = 0 pedidos**, que dá 10 sob
+  `ab29321`) e `timeframe-window.test.ts` (eco −0,0717 e zoom-in não paginam, −0,6 barra pagina; `step/2 → 0`
+  reprova 2).
+- **e2e que leem a vista na montagem:** com 120 barras, `e2e/20`, `22`, `35` (dado real) e `37` dão **zoom-out pela
+  roda** antes de agir (até o piso de `minBarSpacing`, ~2.400 slots em 1m: a geometria que a montagem tinha antes).
+  O `37` também passou a converter instante → slot pelo passo do TF (`5m` = 5 min). `e2e/29` e `33` fazem o mesmo
+  zoom-out (cursor na última barra); o `38` (OI em 5m) volta ao vão de ~600 barras antes de andar até a página antiga.
+- **Vela de 5m ocupa ~80% do espaçamento, e a vela de alta é OCA:** com o slot = barra do TF, o corpo deixou de ter
+  ~2 px. O `e2e/38` mede a fase da vela num trecho com zoom-in (≥ 30 px/balde, onde o vão entre corpos é mais largo
+  que a coluna de 3 px que ele lê) e a toma **meio espaçamento oposta ao centro do vão**, não pelo argmax: numa vela
+  oca o argmax cai na borda e o sondador de ¼ de barra cruza a fronteira da legenda.
+- **Falsificador do eixo:** `e2e/39-axis-step-per-timeframe.spec.ts` — `gridSlots === initialBars` nos 5 TFs.
+  Com o passo trocado por 1 min nos dois pontos acima, 5m/15m/1h/4h reprovam (5.760/5.760/10.080/10.080) e 1m passa.
+
+## 25. O aviso de cobertura diz QUANTO falta, e a legenda devolve altura aos dados (`paineis-de-fluxo` `T-05.4`, 2026-10-02)
+
+Desenho: [`handoff/T-05.4-desenho.md`](../docs/context/paineis-de-fluxo/handoff/T-05.4-desenho.md) (gate:
+[`gates/T-05.4-design-critique.md`](../docs/context/paineis-de-fluxo/gates/T-05.4-design-critique.md)). Relatório:
+[`gates/T-05.4-build.md`](../docs/context/paineis-de-fluxo/gates/T-05.4-build.md).
+
+- **O cálculo mora em `coverage-magnitude.ts`** (browser-safe): `summarizeCoverageMagnitude(rows, {knowledgeTimeMs,
+  nativeGridMs})` soma `expected − present` **fora da cabeça** (`COVERAGE_HEAD_GRACE_MS = 600_000`) e `expected` sobre a
+  janela inteira. O chip só existe com `missingFacts ≥ 1`; não há limiar percentual.
+- **O `data-fact` mudou de `buckets/buckets` para `fatos/fatos`** e vive num `<span>` carregador VAZIO dentro do chip
+  (`[data-coverage-chip]`), um por série com falta; os `data-coverage-*` vão junto. O nó `p[data-coverage-ledger=<factKey>]`
+  no `PaneDetails` existe **sempre**, com ou sem chip: é ele que publica `data-coverage-head-excluded-facts` (A-3).
+- **⚠️ Gotcha — a cabeça só morde em 5m.** A linha mais nova tem idade `interval + 4 min` (`KNOWLEDGE_TIME_LAG_MS`):
+  9 min em 5m, 19/64/244 min em 15m/1h/4h. Teste da cabeça tem de rodar em **5m**.
+- **⚠️ Gotcha — o `native_grid` do catálogo é `"1min"`/`"5min"`**, que `timeframeStepMs` não lê: use
+  `parseNativeGridMs`/`coverageGridMsOf`.
+- **Falsificador:** `e2e/40-coverage-magnitude-and-legend-room.spec.ts` — stub por `interval` (`full`, `mid-3`,
+  `head-only` em 5m, `longest` em 1h) e o universo real em 5m/15m/1h/4h. As 5 ablações do §6.3 reprovam (ver o relatório).
+  **A-4 da liquidação é pego pelo `≥ 140 px`, não pelo `≥ 0,6 ×`** (`C-5`).
+- **`C-3` — duas formas pintadas do mesmo chip, e o container query da legenda escolhe** (desenho §10): o
+  `[data-pane-legend]` é `@container/legend`, e o chip renderiza `[data-coverage-visible="full"]` e
+  `[data-coverage-visible="compact"]` (`coverageChipCompactText`: sem `cobertura parcial — `, sem denominador), ambos
+  `aria-hidden`; abaixo de **1140 px de largura de CONTEÚDO** da legenda (`@max-[1140px]/legend:`) pinta a compacta. O
+  `sr-only` fala a frase inteira nas duas larguras.
+- **⚠️ Gotcha — leia a forma PINTADA, não o primeiro `[data-coverage-visible]`:** as duas estão sempre no DOM; quem
+  quer o texto visível filtra por `getClientRects().length > 0`. E o limiar é sobre a caixa de conteúdo
+  (`clientWidth − padding`), não o `getBoundingClientRect().width`.
+- **⚠️ Gotcha — a largura da legenda depende do SÍMBOLO** (a escala de preço muda com os dígitos): a 1240×800 o
+  BTCUSDT tem 1144 px (completa) e ETH/LINK/SOL 1138/1132/1132 px (compacta) `[MEDIDO 2026-10-02, e2e/40 K-1]`.

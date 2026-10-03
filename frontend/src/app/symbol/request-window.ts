@@ -28,11 +28,12 @@
 import {
   FIVE_MINUTES_MS,
   ONE_MINUTE_MS,
-  S2_WINDOW_SPAN_MS,
   lastGridInstant,
   resolveTrailingWindow,
   type S2Window,
 } from "../../charts/index.ts";
+import { timeframeStepMs } from "./supported-timeframes.ts";
+import { timeframeWindowBars } from "./timeframe-window.ts";
 
 /**
  * THE MEASUREMENT BOTH CONSTANTS BELOW ARE SIZED AGAINST — one number, one command, one `n`.
@@ -132,23 +133,26 @@ export interface RouteWindow {
  * every instant (`request-window.test.ts`) instead of only on whatever day the suite runs.
  * `page.tsx` is the one place that reads the real clock.
  *
- * `requestIntervalMs` — `T-03.11` (`CST-226`) — is the width of the TF the render actually asked
- * `/series-history` for (`SUPPORTED_TIMEFRAMES[…].stepMs`, `supported-timeframes.ts`), defaulted
- * to `ONE_MINUTE_MS` (the pre-`T-03.11` behaviour, byte-for-byte, for every existing caller that
- * still passes one argument). ⚠️ THIS PARAMETER IS THE "THE DAY A 15M/1H/4H AGGREGATE IS DRAWN
- * OVER THIS SAME WINDOW" THIS MODULE'S OWN COMMENT ALREADY WARNED ABOUT (`quant-architect`, wave
- * `03`, C1) — that day is this task. Below, `alignmentMs` is the wider of `FIVE_MINUTES_MS` (OI's
- * native grid, unaffected) and `requestIntervalMs`, so the window's right edge lands on a
- * boundary the REQUESTED interval actually admits — at `interval=4h` an edge merely 5-minute
- * aligned lands on a `4h` boundary in only `2,1%` of clock readings `[MEDIDO 2026-09-11, n=1440,
- * gate WAVE-03-janela-deslizante-quant-architect.md §1]`, silently truncating the outermost bar.
+ * `timeframe` — `T-03.11` (`CST-226`) — is the TF the render actually asked `/series-history` for.
+ * Below, `alignmentMs` is the wider of `FIVE_MINUTES_MS` (OI's native grid, unaffected) and the
+ * TF's width, so the window's right edge lands on a boundary the REQUESTED interval actually admits
+ * — at `interval=4h` an edge merely 5-minute aligned lands on a `4h` boundary in only `2,1%` of
+ * clock readings `[MEDIDO 2026-09-11, n=1440, gate WAVE-03-janela-deslizante-quant-architect.md §1]`,
+ * silently truncating the outermost bar.
+ *
+ * `paineis-de-fluxo` `T-05.1` — the span is `initialBars` of THAT timeframe
+ * (`timeframe-window.ts`), not 4 days in every TF. It used to be `S2_WINDOW_SPAN_MS`, so `1h`
+ * fetched 96 bars and `4h` 24 (`handoff/FIX-uso-2026-10-02.md` §D-A). The argument is the
+ * interval itself, no longer a step with a one-minute default: there is no caller left that may
+ * omit it, and a default is how the one-minute grid survived in every TF.
  */
-export function resolveRouteWindow(nowMs: number, requestIntervalMs: number = ONE_MINUTE_MS): RouteWindow {
-  const alignmentMs = Math.max(FIVE_MINUTES_MS, requestIntervalMs);
+export function resolveRouteWindow(nowMs: number, timeframe: string): RouteWindow {
+  const stepMs = timeframeStepMs(timeframe);
+  const alignmentMs = Math.max(FIVE_MINUTES_MS, stepMs);
   const window = resolveTrailingWindow({
     nowMs,
     lagMs: RIGHT_EDGE_LAG_MS,
-    spanMs: S2_WINDOW_SPAN_MS,
+    spanMs: timeframeWindowBars(timeframe).initialBars * stepMs,
     alignmentMs,
   });
   return {
@@ -158,6 +162,12 @@ export function resolveRouteWindow(nowMs: number, requestIntervalMs: number = ON
     // the OUTER (requested) grid: `windowEndMsInclusive` feeds `native_instants` on the backend
     // (`series_history.py`'s own `first_native_instant`), a 1-minute-stepped sequence regardless
     // of `interval`, so this conversion stays unchanged by `T-03.11`.
+    //
+    // ⛔ AND IT STAYS UNCHANGED BY `T-05.1`, ON PURPOSE (`handoff/T-05.1-desenho.md` §1): the
+    // backend generates the outer buckets up to `<= window_end` (`series_history.py:359-360`), so
+    // `end − 1 min` and `end − step` answer the SAME rows, and `e2e/18` pins
+    // `endMsInclusive + 60_000 ≡ 0 mod 4h`. The instant a READOUT queries on the axis grid is a
+    // different one, `lastGridInstant(window, axisStepMs)`, taken where the readout is built.
     windowEndMsInclusive: lastGridInstant(window, ONE_MINUTE_MS),
     knowledgeTimeMs: window.endMsExclusive + KNOWLEDGE_TIME_LAG_MS,
   };

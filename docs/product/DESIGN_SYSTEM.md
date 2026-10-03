@@ -1131,6 +1131,39 @@ multi-símbolo ao vivo · dashboard de métricas financeiras · tela de curadori
 | `components.json` / registries | **RECONFIRMADO 2026-08-25 (4ª revisão)** | `get_project_registries` → **lista vazia** · `search_items_in_registries("badge chip status indicator")` → **nenhum item**. ⇒ nada instalável, e a busca por componente **não retorna nem o `@shadcn/badge`** porque sem `components.json` não há registro configurado para consultar. **Discovery continua sendo registro de intenção.** `[MEDIDO: mcp shadcn, 2026-08-25]` |
 
 
+### 6.2 Cabeçalho de pane — a gramática, e a caixa que ele nunca recebe
+
+Registrado em 2026-10-03 pelo `WARNING-4` de `docs/context/paineis-de-fluxo/gates/W8-QA-FRONT.md`, que
+achou a regra viva só no gate e no JSDoc. **A norma continua sendo
+[`T-05.6-DESIGN-GATE.md` §(b).4](../context/paineis-de-fluxo/gates/T-05.6-DESIGN-GATE.md); isto é a cópia
+durável dela, não uma segunda decisão.**
+
+- **Texto visível:** `<nome> <TF> (<nativa>, <unidade>)`. Exemplos: `Preço 1h (1m, USDT)`,
+  `Open Interest 15m (5m, BTC)`. O `<TF>` fica **fora** do parêntese e é o glifo do botão de TF ativo; o
+  parêntese diz a série, `<cadência nativa>, <unidade>`.
+- **A palavra `nativa` não vai na linha visível** (ela cortaria `(escala linear)` a 1024, `e2e/40` C-3).
+  Vai num `<span className="sr-only">` dentro do cabeçalho, com o texto ` — barras de <TF>, série nativa
+  de <nativa>`. **Nunca `aria-label`**: ele substitui o nome acessível do cabeçalho.
+- **Sem transformação de caixa no cabeçalho e no botão de TF.** `1M` em caixa alta é **mês** na convenção
+  do TradingView. Se um `uppercase` entrar porque a classe se chama `label-caps`, `1m` passa a dizer "mês".
+- Guardado por teste: `e2e/41` N-2 (1m/15m/1h/4h), que lê o texto visível, o `sr-only`, o `aria-label` e o
+  `text-transform` computado, e reprova o mutante `uppercase` (`MA2` de `W8-QA-FRONT.md`).
+
+### 6.3 Procedência do OI — um rótulo de termo nunca é pintado sem o valor
+
+Norma: [`W8-OI-1024-DESIGN-GATE.md` §3](../context/paineis-de-fluxo/gates/W8-OI-1024-DESIGN-GATE.md)
+(`ux-ui-mastery`, APROVADO COM AJUSTE, 2026-10-03).
+
+- A linha `Grandeza: <g> · Universo: <u> · Coorte: <c>` é o último filho da `PaneLegendLine` e trunca com
+  `…`. Cada termo depois do primeiro é pintado como `· <Rótulo>: <cabeça><resto>`, e o trecho
+  `<Rótulo>: <cabeça>` é **atômico** (`inline-block`): aparece inteiro ou não aparece, e então a linha
+  termina em `· …`. `<cabeça>` é o valor até o primeiro `/`; `<resto>` trunca por caractere.
+- O `textContent` do `<p>` é a frase inteira, byte a byte, para o leitor de tela.
+- **O `title` não é o caminho de recuperação aqui:** a camada do pane é `pointer-events-none`, e um `<p>`
+  dentro dela nunca recebe hover (`W8-OI-1024-DESIGN-GATE.md` §2.2, `[INFERRED]`, não medido).
+- Na mesma linha, os quatro campos O·H·L·C formam um grupo `nowrap`: só o último filho da linha encolhe
+  (`DESIGN-LAYOUT.md` §6). Guardado por `e2e/40` F-1/F-2/F-3.
+
 ---
 
 ## 7. Atribuição — obrigação de produto, não rodapé opcional

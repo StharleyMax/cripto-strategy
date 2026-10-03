@@ -220,54 +220,10 @@ test("MORDE: stripping aria-pressed and the roving tabIndex from the button brea
   assert.doesNotMatch(stripped, BUTTON_ROVING_TABINDEX, "MORDE: the mutated source must no longer satisfy the roving-tabIndex contract");
 });
 
-// ── `T-03.12` — `PartialCoverageMark` had NO contract of its own (design gate's own Future-
-// Readiness finding, same score). It renders NOTHING when `totalReaggregatedBuckets === 0` (no
-// reaggregation happened, or every bucket answered in full — nothing undercounted to warn about);
-// QA confirmed by mutation that breaking that guard (`=== 0` → `< 0`, a realistic off-by-one/typo
-// class of regression, never a count `md.series_history_report.py` can produce) still passes
-// `typecheck`/`lint`/`test:app`/`test:charts` clean — the exact silent-false-alarm regression
-// `ADR-040/D3`'s "nunca extrapola" clause exists to forbid the OPPOSITE of (a badge that lies by
-// APPEARING, not one that lies by omission, but a mark this repo's own operators must trust is
-// only as trustworthy as the guard that decides when it speaks).
-
-const PARTIAL_MARK_GUARD = /if \(summary\.totalReaggregatedBuckets === 0\) \{\s*\n\s*return null;\s*\n\s*\}/;
-const PARTIAL_MARK_DATA_FACT = /data-fact=\{`\$\{factKey\}:\$\{summary\.partialBuckets\}\/\$\{summary\.totalReaggregatedBuckets\}`\}/;
-const PARTIAL_MARK_GLYPH_MOUNTED = /<PartialCoverageGlyph \/>\s*\n\s*COBERTURA PARCIAL/;
-
-test("T-03.12 contract: PartialCoverageMark renders null exactly when totalReaggregatedBuckets is 0", () => {
-  assert.match(
-    source,
-    PARTIAL_MARK_GUARD,
-    "PartialCoverageMark must return null on totalReaggregatedBuckets === 0 — anything looser " +
-      "(e.g. < 0) would render a false COBERTURA PARCIAL badge for a fully-answered window",
-  );
-});
-
-test("T-03.12 contract: the mark's data-fact carries factKey:partialBuckets/totalReaggregatedBuckets, and the glyph leads the word", () => {
-  assert.match(
-    source,
-    PARTIAL_MARK_DATA_FACT,
-    "data-fact must be literally `${factKey}:${partialBuckets}/${totalReaggregatedBuckets}` — the " +
-      "shape every other data-fact assertion in this repo's e2e DoD lines already parses",
-  );
-  assert.match(
-    source,
-    PARTIAL_MARK_GLYPH_MOUNTED,
-    "PartialCoverageGlyph must be mounted immediately before the COBERTURA PARCIAL word — the " +
-      "three-channel discipline (glyph+word+colour) this component's own docstring claims",
-  );
-});
-
-test("MORDE: loosening the totalReaggregatedBuckets guard from === 0 to < 0 breaks the null-render contract", () => {
-  // The EXACT mutation QA applied by hand to `SymbolClient.tsx` on disk (and reverted) to prove
-  // this gap was live: with this change, EVERY window with totalReaggregatedBuckets >= 0 (i.e.
-  // every real window this backend can ever produce) renders a COBERTURA PARCIAL badge — even one
-  // where nothing was ever reaggregated, or every bucket answered in full — and nothing in
-  // typecheck/lint/test:app/test:charts caught it before this test existed.
-  const loosened = source.replace(
-    /if \(summary\.totalReaggregatedBuckets === 0\) \{/,
-    "if (summary.totalReaggregatedBuckets < 0) {",
-  );
-  assert.notEqual(loosened, source, "the replacement must actually change something — the anchor moved");
-  assert.doesNotMatch(loosened, PARTIAL_MARK_GUARD, "MORDE: the mutated source must no longer satisfy the null-render guard contract");
-});
+// ── `T-03.12` → `paineis-de-fluxo` `T-05.4` — `PartialCoverageMark`'s contract MOVED, it was not dropped.
+// The three tests that lived here pinned the `T-03.12` guard (`totalReaggregatedBuckets === 0`) and
+// the `partialBuckets/totalReaggregatedBuckets` data-fact. `T-05.4` replaces both ON PURPOSE
+// (`handoff/T-05.4-desenho.md` §2.3/§2.6): that guard rendered "0 de N" for a complete window, the
+// very defect of `FIX-uso-2026-10-02.md` §D-C. The null rule (nothing missing outside the head ⇒ no
+// chip), the magnitude data-fact, the glyph-before-word order and their MORDE companions now live in
+// `coverage-magnitude.test.ts`, beside the pure function that decides.

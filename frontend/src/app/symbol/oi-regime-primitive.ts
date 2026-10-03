@@ -16,8 +16,9 @@
  * labels sit between the legend's bottom and the reserved scale top, so the band still holds them.
  * While the legend is not measured yet, nothing is painted: `0` is exactly the defect.
  *
- * WHERE x COMES FROM: the canonical grid of the pane is `ONE_MINUTE_MS` in every TF (`S2_AXIS_STEP_MS`),
- * slot `i` at `gridStartMs + i · 1 min`, and each slot is one logical index — the same rule
+ * WHERE x COMES FROM: the canonical grid of the pane is the AXIS grid — step `gridStepMs`, the
+ * timeframe's since `paineis-de-fluxo` `T-05.1` (it used to be one minute in every TF) — slot `i` at
+ * `gridStartMs + i · gridStepMs`, and each slot is one logical index — the same rule
  * `LongShortPane` measures its band with. An interval `(leftExcl, rightIncl]` spans from the RIGHT edge
  * of the slot of `leftExcl` to the RIGHT edge of the slot of `rightIncl` (`gate §3 item 2`), i.e.
  * the centre of the slot plus half a bar spacing, on both ends.
@@ -33,7 +34,7 @@ import type {
   Time,
 } from "lightweight-charts";
 
-import { colorTokens, ONE_MINUTE_MS, OI_REGIME_BAND_SURFACE } from "../../charts/index.ts";
+import { colorTokens, OI_REGIME_BAND_SURFACE } from "../../charts/index.ts";
 import type { OiRegimeBand, OiRegimeRule } from "./oi-regime-marks.ts";
 
 type DrawTarget = Parameters<IPrimitivePaneRenderer["draw"]>[0];
@@ -44,11 +45,20 @@ export interface OiRegimeCanvasMarks {
   readonly rules: readonly OiRegimeRule[];
   /** `slots[0].time` of the pane's canonical grid; `null` when the pane has no grid yet. */
   readonly gridStartMs: number | null;
+  /** The step of that grid — the axis step, i.e. the timeframe's width (`T-05.1`). Carried WITH
+   * `gridStartMs` so the two can never come from different grids; `null` exactly when it is. */
+  readonly gridStepMs: number | null;
   /** `false` under the e2e ablation `?e2eOiRegimeMarks=0`: nothing is painted. */
   readonly paint: boolean;
 }
 
-export const NO_OI_REGIME_CANVAS_MARKS: OiRegimeCanvasMarks = { bands: [], rules: [], gridStartMs: null, paint: false };
+export const NO_OI_REGIME_CANVAS_MARKS: OiRegimeCanvasMarks = {
+  bands: [],
+  rules: [],
+  gridStartMs: null,
+  gridStepMs: null,
+  paint: false,
+};
 
 /** `DG-2`: the rule is 1 CSS px wide. */
 const RULE_WIDTH_CSS_PX = 1;
@@ -103,11 +113,11 @@ export class OiRegimePanePrimitive implements IPanePrimitive<Time> {
   /** The x (media px, from the plot's left edge) of the RIGHT edge of the slot at `ms`; `null`
    * while the chart or the grid is not there. */
   edgePx(ms: number): number | null {
-    const { gridStartMs } = this.marks;
-    if (this.chart === null || gridStartMs === null) {
+    const { gridStartMs, gridStepMs } = this.marks;
+    if (this.chart === null || gridStartMs === null || gridStepMs === null) {
       return null;
     }
-    const index = Math.round((ms - gridStartMs) / ONE_MINUTE_MS);
+    const index = Math.round((ms - gridStartMs) / gridStepMs);
     const timeScale = this.chart.timeScale();
     // ⚠️ `logicalToCoordinate` answers `0` for a NON-INTEGER logical (`indexToCoordinate`,
     // `lightweight-charts@5.2.1` `dist/lightweight-charts.development.mjs:6164`, `!isInteger(index)`),

@@ -32,6 +32,7 @@ from src.modules.sentimento.use_cases.collector_series_mapping import (
     KLINES_BUCKET_WIDTH_MS,
     build_klines_to_rows,
 )
+from tests.helpers.drain_gate_doubles import OpenGate
 
 _SYMBOL = "BTCUSDT"
 _INTERVAL_S = 60.0
@@ -162,6 +163,7 @@ def _drive(work_s: tuple[float, ...], passes: int) -> _ClockAdvancingStopEvent:
         interval_s=_INTERVAL_S,
         offset_s=_OFFSET_S,
         backfill_days=1,
+        drain_gate=OpenGate(),
         wall_clock_s=clock,
     )
     return stop

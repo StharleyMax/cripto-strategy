@@ -84,8 +84,8 @@ from src.modules.sentimento.infra.redis_resp_client import (
     RedisCommandError,
     RedisProtocolError,
     RespConnection,
-    RespValue,
 )
+from src.modules.sentimento.infra.redis_stream_backpressure import read_group_lag
 from src.modules.sentimento.infra.redis_stream_series_sink import RedisStreamSeriesSink
 from src.modules.sentimento.use_cases.collector_run_mapping import (
     KLINES_ENDPOINT,
@@ -135,17 +135,6 @@ _BACKFILL_DAYS_VAR: Final[str] = "KLINES_BACKFILL_ONE_SHOT_DAYS"
 _MAX_STREAM_LAG_VAR: Final[str] = "KLINES_BACKFILL_MAX_STREAM_LAG"
 _LAG_POLL_INTERVAL_S_VAR: Final[str] = "KLINES_BACKFILL_LAG_POLL_S"
 
-# Must be the SAME group `single_writer_cli` joins, and it is read from the same variable with
-# the same default for that reason: probing a group nobody consumes would report `lag = 0`
-# forever and turn the backpressure into decoration.
-_REDIS_STREAM_GROUP_VAR: Final[str] = "REDIS_STREAM_GROUP"
-_DEFAULT_REDIS_STREAM_GROUP: Final[str] = "single_writer"
-
-# `XINFO GROUPS` answers RESP2 as an array of flat `field value field value ...` arrays, one per
-# group. These are the two fields this module reads off that reply.
-_XINFO_GROUP_NAME_FIELD: Final[bytes] = b"name"
-_XINFO_GROUP_LAG_FIELD: Final[bytes] = b"lag"
-
 # The same closed tuple `collectors_cli` catches, for the same reason (`core.silent-except`):
 # everything a publish attempt can raise that means "our own queue is in trouble", and nothing
 # wider. A `KlineArityError` or a bug in the mapping is NOT in here and crashes loudly.
@@ -155,10 +144,6 @@ _PUBLISH_FAILURE_EXCEPTIONS: Final[tuple[type[Exception], ...]] = (
     OSError,
     ValueError,
 )
-
-
-class StreamGroupMissingError(RuntimeError):
-    """`XINFO GROUPS` did not list the consumer group the single writer is supposed to hold."""
 
 
 @dataclass(frozen=True)
@@ -288,55 +273,13 @@ def resolve_backfill_config(environ: Mapping[str, str]) -> BackfillConfig:
         days=resolve_backfill_days(environ),
         symbols=tuple(sorted(INITIAL_SYMBOLS)),
         stream=boot.redis_stream,
-        stream_group=environ.get(_REDIS_STREAM_GROUP_VAR, _DEFAULT_REDIS_STREAM_GROUP),
+        # Must be the SAME group `single_writer_cli` joins: probing a group nobody consumes
+        # would report it missing forever. `resolve_boot_config` reads it for the collector's
+        # own boot backfill gate (`T-05.3`), and this job reuses that one resolution.
+        stream_group=boot.redis_stream_group,
         max_stream_lag=max_stream_lag,
         lag_poll_interval_s=lag_poll_interval_s,
     )
-
-
-def read_group_lag(connection: RespConnection, stream: str, group: str) -> int:
-    """Return how many entries of `stream` the consumer `group` has not been delivered yet.
-
-    Read from `XINFO GROUPS`'s `lag` field, which is the only number here that means "work the
-    writer still owes". `XLEN` would be the wrong probe and the mistake is worth naming: a Redis
-    Stream does NOT drop an entry when it is acknowledged, so `XLEN` sits pinned at the `MAXLEN`
-    cap whether the writer is idle or hours behind — a backpressure loop reading it would either
-    never publish or never wait.
-
-    A missing group is an ERROR, not a zero: it means nothing is draining this stream, and
-    publishing three million entries into it would be publishing them into a trimmer.
-    """
-    reply = connection.command("XINFO", "GROUPS", stream)
-    if not isinstance(reply, list):
-        raise StreamGroupMissingError(
-            f"XINFO GROUPS {stream!r} answered {reply!r}, not the array of groups RESP2 promises"
-        )
-    for entry in reply:
-        fields = _flat_map(entry)
-        if fields.get(_XINFO_GROUP_NAME_FIELD) == group.encode("utf-8"):
-            lag = fields.get(_XINFO_GROUP_LAG_FIELD)
-            if not isinstance(lag, int):
-                raise StreamGroupMissingError(
-                    f"group {group!r} on {stream!r} reported lag={lag!r}, not an integer; the "
-                    f"server is older than the Redis 7 reply this backpressure depends on"
-                )
-            return lag
-    raise StreamGroupMissingError(
-        f"no consumer group named {group!r} on stream {stream!r}: nothing is draining it, so "
-        f"every entry this backfill publishes would be trimmed by MAXLEN unread"
-    )
-
-
-def _flat_map(entry: RespValue) -> dict[bytes, RespValue]:
-    """Turn one `field value field value ...` RESP2 array into a mapping keyed by field name."""
-    if not isinstance(entry, list):
-        return {}
-    pairs: dict[bytes, RespValue] = {}
-    for index in range(0, len(entry) - 1, 2):
-        name = entry[index]
-        if isinstance(name, bytes):
-            pairs[name] = entry[index + 1]
-    return pairs
 
 
 def wait_for_drain(

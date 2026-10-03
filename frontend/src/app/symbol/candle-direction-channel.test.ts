@@ -77,10 +77,15 @@
  * An assertion taken there would pass while proving nothing — the defect class `MEMORY.md`
  * records as *"assert de DOM não prova pixel"*.
  *
- * This file therefore asserts at `LEGIBLE_BAR_COUNT` bars, REFUSES the run if the resulting bar
- * spacing is under `INTERIOR_THRESHOLD_PX`, and pins the default-view number as a separate,
- * explicitly non-passing measurement. Choosing the default view's density is NOT this task's —
- * it is `T-05.3`+/chrome's, as `s2-headless-run.ts:101-111` already states.
+ * This file therefore asserts at `LEGIBLE_BAR_COUNT` bars and REFUSES the run if the resulting bar
+ * spacing is under `INTERIOR_THRESHOLD_PX`.
+ *
+ * ⚠️ `T-05.1` INVERTED THE DEFAULT-VIEW HALF OF `D1`. Until then the price panel opened on the whole
+ * 5.760-slot grid, and `D1` pinned that view as explicitly NON-legible. Since `T-05.1` the mount
+ * view frames the last `VIEW_BARS` bars (`timeframe-window.ts`, `initialViewRange`), so the default
+ * view IS the legible density and `D1` asserts the interior exists THERE — `VIEW_BARS` imported, not
+ * copied, so a change to it is measured here. The 5.760-slot whole-grid view stays as the ablation
+ * arm: it is what the screen was before, and it must still paint no interior.
  *
  * ⚠️ WHAT THIS FILE DOES NOT CLAIM: it does not rasterize. `jsdom` has no 2D backend, so what is
  * recorded is the sequence of drawing CALLS and the colors set on them — what the library asks
@@ -111,6 +116,7 @@ import {
   HOLLOW_BODY_FILL,
 } from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
+import { VIEW_BARS } from "./timeframe-window.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -141,8 +147,9 @@ const INTERIOR_THRESHOLD_PX = 3.5;
  * `3 px` wide rather than `1 px`. */
 const LEGIBLE_BAR_COUNT = 120;
 
-/** The grid the price panel actually opens on (`price_slots:5760`, plan `01_vela.md:34`). */
-const DEFAULT_VIEW_BAR_COUNT = 5_760;
+/** The ABLATION arm: the whole 1m grid, which the price panel opened on before `T-05.1`
+ * (`price_slots:5760`, plan `01_vela.md:34`). The default view is now `VIEW_BARS`. */
+const WHOLE_GRID_BAR_COUNT = 5_760;
 
 const ONE_MINUTE_MS = 60_000;
 const FIRST_BUCKET_MS = Date.UTC(2026, 7, 24, 0, 0, 0);
@@ -548,7 +555,7 @@ function distinctColorBlindClasses(runs: Record<Direction, PaintRun>): number {
 // ── D1. THE DENSITY GUARD (`[SERIOUS-2]`/`A4`) — refuse a measurement taken where the channel
 //        does not exist, and pin the default view as a number rather than as a hope ───────────
 
-test("D1: the hollow interior EXISTS at the measurement density and does NOT at the default view", async () => {
+test("D1: the hollow interior EXISTS at the default view (`VIEW_BARS`) and does NOT over the whole grid", async () => {
   const legible = await paint({ direction: "rise", bars: LEGIBLE_BAR_COUNT });
   assert.ok(
     legible.barSpacingPx >= INTERIOR_THRESHOLD_PX,
@@ -564,16 +571,25 @@ test("D1: the hollow interior EXISTS at the measurement density and does NOT at 
     `the interior is ${legible.hollowInteriors[0]?.args[2]} px wide; under 3 px it is a hairline, not a channel`,
   );
 
-  // And the other half of the same fact, stated so nobody reads D2/D3 as a claim about the
-  // screen the operator opens today: at `fitContent()` over the real grid there is NO interior.
-  // This is `A7`/`T-05.3`+'s to decide, NOT this task's — `s2-headless-run.ts:101-111`.
-  const defaultView = await paint({ direction: "rise", bars: DEFAULT_VIEW_BAR_COUNT });
+  // `T-05.1`: the screen the operator opens frames the last `VIEW_BARS` bars, so THAT is where the
+  // interior must exist — read from production, not from this file's own constant.
+  const defaultView = await paint({ direction: "rise", bars: VIEW_BARS });
   assert.ok(
-    defaultView.barSpacingPx < INTERIOR_THRESHOLD_PX,
-    "the default view got legible on its own — re-read A7 before trusting the number below",
+    defaultView.barSpacingPx >= INTERIOR_THRESHOLD_PX,
+    `the default view (${VIEW_BARS} bars) paints at ${defaultView.barSpacingPx.toFixed(3)} px/bar, under ` +
+      `${INTERIOR_THRESHOLD_PX} px — the mount view is illegible again`,
+  );
+  assert.ok(defaultView.hollowInteriors.length > 0, `no hollow interior at the default view of ${VIEW_BARS} bars`);
+
+  // The ablation arm: the whole 5.760-slot grid — the pre-`T-05.1` mount view. It must still paint
+  // NO interior, otherwise the threshold moved and the half above proves nothing about the change.
+  const wholeGrid = await paint({ direction: "rise", bars: WHOLE_GRID_BAR_COUNT });
+  assert.ok(
+    wholeGrid.barSpacingPx < INTERIOR_THRESHOLD_PX,
+    "the whole 5.760-slot grid got legible on its own — the threshold moved; re-measure this file's premise",
   );
   assert.equal(
-    defaultView.hollowInteriors.length,
+    wholeGrid.hollowInteriors.length,
     0,
     "a hollow interior appeared at 5.760 slots; the threshold moved and this file's premise needs re-measuring",
   );

@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { showView } from "./view.ts";
 
 /**
  * `T-05.9` (`CST-242`, plan `05` `docs/plans/SPEC-008-candle-real-e-eixo-unico/05_historia_sob_demanda.md`
@@ -170,7 +171,8 @@ const PER_DRAG_TIMEOUT_MS = 10_000;
  * (CDP-driven headless Chromium) that made `16 ms` unreachable in this exact test environment. */
 const PAN_FRAME_CEILING_MS = 160;
 
-/** `history-page-window.ts::DEFAULT_PAGE_SLOTS` — copied as a literal, not imported: this spec
+/** The `1m` page (`timeframe-window.ts::TIMEFRAME_WINDOW_BARS["1m"].pageBars`, `DEFAULT_PAGE_SLOTS`
+ * until `T-05.1`) — copied as a literal, not imported: this spec
  * only needs the VOCABULARY (how many grid slots one page widens by) to size a drag large enough
  * to cross the newly-widened edge with margin, never the pagination logic itself. */
 const PAGE_SLOTS = 500;
@@ -186,7 +188,8 @@ const OHLC_METRIC = "klines_ohlc";
 const OHLC_PROVIDER = "binance";
 const OHLC_REDUCTIONS = ["OPEN", "HIGH", "LOW", "CLOSE"] as const;
 
-/** `s2-panels.ts::S2_AXIS_STEP_MS` (`= ONE_MINUTE_MS`) — the grid step that converts the Price
+/** The `1m` axis step (`timeframeStepMs("1m")`; it was `s2-panels.ts::S2_AXIS_STEP_MS` until
+ * `paineis-de-fluxo` `T-05.1` made the step the TF's) — the grid step that converts the Price
  * pane's logical index into an instant. Copied as a literal for the same reason as `PAGE_SLOTS`:
  * the spec needs the vocabulary, not the module. This spec only drives the default `1m` TF. */
 const GRID_STEP_MS = ONE_MINUTE_MS;
@@ -495,9 +498,19 @@ const PREWALK_PARK_SLOTS = 200;
 /** A pre-walk drag never moves the mouse more than this fraction of the host's width from its
  * middle start point, so the pointer stays over the chart. */
 const PREWALK_MAX_WIDTH_FRACTION = 0.4;
-/** Upper bound on pre-walk drags: the mount view spans ~2.4k slots of the 5.76k-slot seed, so
- * ~6 drags reach the park; 12 only fails a run whose drags stopped moving the chart at all. */
+/** Upper bound on pre-walk drags: from `PREWALK_VIEW_BARS` the view spans 2k slots of the
+ * 5.76k-slot seed (near the `minBarSpacing` floor — the geometry the mount itself had before `T-05.1`),
+ * so ~6 drags reach the park; 12 only fails a run whose drags stopped moving the chart at all. */
 const PREWALK_MAX_DRAGS = 12;
+
+/** `paineis-de-fluxo` `T-06.1` — where the pre-walk starts, put there explicitly
+ * (`view.ts::showView`), not wherever the mount frames (`VIEW_BARS`). `T-05.1` made the mount 120 bars
+ * (~9,6 px/slot): a 40%-of-width drag moved ~48 slots, and reaching the left edge would take ~117
+ * drags (`T-05.1-desenho.md` §4); the fix then was a private zoom-out to the floor. 2.000 slots sit
+ * under the floor of a 1280-px plot (`showView` refuses past it) and keep the geometry
+ * `PREWALK_MAX_DRAGS` was set on. `showView` also throws if positioning asks for a page — the
+ * `requested`/`drawn` pair must not cross the `reset()` below. */
+const PREWALK_VIEW_BARS = 2_000;
 
 /**
  * `T-01.8` — walks the view to `PREWALK_PARK_SLOTS` from the left edge BEFORE the probe `reset()`,
@@ -763,6 +776,9 @@ test(`RNF-2/DoD-7: p95 <= ${LATENCY_CEILING_MS} ms da borda detectada até a bar
     // somar um pedido "de graça" antes do loop — o `reset()` faz `requestedMs[i]`/`drawnMs[i]`
     // (MESMO índice, sem deslocamento) ser exclusivamente os `DRAG_COUNT` arrastos abaixo.
     // `T-01.8`: the pre-walk runs BEFORE the reset, so its drags are neither paired nor recorded.
+    // `T-06.1`: the pre-walk starts from an explicit view, not from the mount's (see `PREWALK_VIEW_BARS`).
+    const view = await showView(page, { kind: "lastBars", bars: PREWALK_VIEW_BARS });
+    fact(SPEC, "prewalk_view", { iterations: view.iterations, from: view.fromLogical, to: view.toLogical, spacingPx: view.barSpacingPx });
     await walkToLeftEdge(page);
     await page.evaluate(() => window.__historyPageLatencyProbe?.reset());
     // `T-01.8`: the axis probe is never reset; everything before this index is mount + pre-walk.

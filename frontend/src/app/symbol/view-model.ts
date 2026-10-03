@@ -57,8 +57,6 @@
  */
 
 import {
-  ONE_MINUTE_MS,
-  S2_AXIS_STEP_MS,
   buildScalarSeries,
   resolveFlowReading,
   type FlowReading,
@@ -431,7 +429,7 @@ function parseNonNegativeFlowValue(row: SeriesHistoryRow): number | null {
  * WITH `window`, absent rows are dropped instead of turned into a `null` slot, the survivors
  * become `ScalarPoint`s, and the shared grid primitive `charts/s2-scalar-grid.ts::buildScalarSeries`
  * — the SAME one `buildOiPanel`/`buildCvdPanel` already call, not a second implementation
- * (`ADR-003` FR-2/FR-3) — aligns them onto `S2_AXIS_STEP_MS`. The result's LENGTH then depends
+ * (`ADR-003` FR-2/FR-3) — aligns them onto `axisStepMs`. The result's LENGTH then depends
  * only on `window`, never on how many rows the wire happened to answer: `0` real rows still
  * produce a full, `null`-filled grid, exactly like `buildOiPanel`/`buildCvdPanel` already do for
  * `oi`/`cvd` when `/series-history` fails (`T-02.1`/`D-C3.2`). Before this fix, `long_short`'s and
@@ -450,13 +448,27 @@ function parseNonNegativeFlowValue(row: SeriesHistoryRow): number | null {
  * vector has 24 slots and the legend read `ausente` in 24 of 24 crosshair positions
  * (`W1-QA-r2` §3). Both call sites now ALSO build `legendSlots` WITH the window; only the bars
  * keep the one-slot-per-row vector.
+ *
+ * `axisStepMs` — `paineis-de-fluxo` `T-05.1` — is REQUIRED whenever `window` is given: the grid is
+ * the timeframe's, and it used to be `S2_AXIS_STEP_MS` (1 minute) in every TF. The overloads make
+ * "a window without a step" a type error instead of a silent one-minute grid.
  */
+export function nonNegativeFlowSlotsFromHistoryRows(rows: readonly SeriesHistoryRow[]): readonly ScalarSlotShape[];
+export function nonNegativeFlowSlotsFromHistoryRows(
+  rows: readonly SeriesHistoryRow[],
+  window: S2Window,
+  axisStepMs: number,
+): readonly ScalarSlotShape[];
 export function nonNegativeFlowSlotsFromHistoryRows(
   rows: readonly SeriesHistoryRow[],
   window?: S2Window,
+  axisStepMs?: number,
 ): readonly ScalarSlotShape[] {
   if (window === undefined) {
     return rows.map((row) => ({ time: row.event_time, value: parseNonNegativeFlowValue(row) }));
+  }
+  if (axisStepMs === undefined) {
+    throw new RangeError("nonNegativeFlowSlotsFromHistoryRows: a window needs the axis step it is gridded at");
   }
   const points: ScalarPointShape[] = [];
   for (const row of rows) {
@@ -465,7 +477,7 @@ export function nonNegativeFlowSlotsFromHistoryRows(
       points.push({ timeMs: row.event_time, value });
     }
   }
-  return buildScalarSeries(points, S2_AXIS_STEP_MS, window.startMs, window.endMsExclusive).slots;
+  return buildScalarSeries(points, axisStepMs, window.startMs, window.endMsExclusive).slots;
 }
 
 /**
@@ -573,23 +585,6 @@ export function seriesValueStats(slots: readonly ScalarSlotShape[]): SeriesValue
 }
 
 /**
- * The slots at or after an instant — the TRAILING sub-window the approved screen puts a solid band
- * around (*"ÚLTIMAS 4 HORAS"*, `gates/design-04.md` §R2.2).
- *
- * ⛔ IT FILTERS, IT DOES NOT RE-GRID AND IT DOES NOT SHRINK TO FIT. The slots handed back are the
- * same objects, at the same instants, that the chart is drawn from; a sub-window computed over a
- * re-derived grid would be `M-2` of `gates/design-05.md` ("a janela declarada não é a janela
- * desenhada") reintroduced one pane later.
- *
- * `>=` is inclusive on the left because the caller's instant is itself a grid instant of the same
- * window (`windowEndMsInclusive - spanMs`), so excluding it would drop a real observation from a
- * span the screen then calls "4 h".
- */
-export function slotsFrom(slots: readonly ScalarSlotShape[], sinceMs: number): readonly ScalarSlotShape[] {
-  return slots.filter((slot) => slot.time >= sinceMs);
-}
-
-/**
  * How many slots at the RIGHT EDGE carry no value — the *"cauda ausente: 2 grades de 1m"* the
  * approved screen prints beside `SEM_PONTO` (`M-2`, `gates/design-04.md`).
  *
@@ -625,12 +620,20 @@ export function trailingAbsentSlots(slots: readonly ScalarSlotShape[]): number {
  * absence the page is designed to render, which is the failure class fase `04` of
  * `pagina-de-grafico-s2` already paid for once. Absence answers `absent`; it never throws and
  * it never becomes `0`.
+ *
+ * `axisStepMs` — `paineis-de-fluxo` `T-05.1` — the step `slots` sit at (the timeframe's), and
+ * `instantMs` must be a slot ON it (`lastGridInstant(window, axisStepMs)`). It used to be a fixed
+ * `ONE_MINUTE_MS`, true only while every TF was drawn on a one-minute grid.
  */
-export function resolveFlowReadingOrAbsent(slots: readonly ScalarSlotShape[], instantMs: number): FlowReading {
+export function resolveFlowReadingOrAbsent(
+  slots: readonly ScalarSlotShape[],
+  axisStepMs: number,
+  instantMs: number,
+): FlowReading {
   if (slots.length === 0) {
     return { kind: "absent", value: null };
   }
-  return resolveFlowReading(slots, ONE_MINUTE_MS, instantMs);
+  return resolveFlowReading(slots, axisStepMs, instantMs);
 }
 
 export class InvalidSignedDecimalError extends Error {}
@@ -687,37 +690,11 @@ export function scaledCvdDeltasFromHistoryRows(rows: readonly SeriesHistoryRow[]
 // `0/0` — no mark — honestly, rather than a false `0/N` that would read as "N buckets, all
 // complete" when in truth none of them was ever a fraction of anything.
 
-/** One panel's worth of the `{present, expected}` pairs, folded into the two counts the mark on
- * screen needs: how many reaggregated buckets are short of their own `expected`, out of how
- * many were reaggregated at all. */
-export interface PartialCoverageSummary {
-  readonly partialBuckets: number;
-  readonly totalReaggregatedBuckets: number;
-}
-
-/** `true` exactly when this row's own pair says the bucket is short of the native facts it
- * claims to cover — the literal test `ADR-040/D3`'s regime A exists to make visible. */
-export function isPartialCoverageRow(row: SeriesHistoryRow): boolean {
-  return row.coverage !== null && row.coverage.present < row.coverage.expected;
-}
-
-/** Folds a panel's rows into `PartialCoverageSummary` — pure, no I/O, same tier as every other
- * function in this module (`ADR-003` FR-1). Order-independent: a caller may pass the FULL
- * window's rows or a sub-window (e.g. the trailing band `T-04.8` already carves out) and get
- * back the honest count for exactly the rows it passed. */
-export function summarizePartialCoverage(rows: readonly SeriesHistoryRow[]): PartialCoverageSummary {
-  let partialBuckets = 0;
-  let totalReaggregatedBuckets = 0;
-  for (const row of rows) {
-    if (row.coverage !== null) {
-      totalReaggregatedBuckets += 1;
-      if (row.coverage.present < row.coverage.expected) {
-        partialBuckets += 1;
-      }
-    }
-  }
-  return { partialBuckets, totalReaggregatedBuckets };
-}
+// `paineis-de-fluxo` `T-05.4` — the fold that used to live here (`summarizePartialCoverage`, two
+// BUCKET counts) moved to `coverage-magnitude.ts::summarizeCoverageMagnitude`, which counts the
+// MISSING native facts (time) and keeps the head out (`handoff/T-05.4-desenho.md` §2). It moved
+// rather than stayed because that module is browser-safe: `SymbolClient.tsx` imports its type and
+// formatters, and could never import this file (`node:crypto`).
 
 export { daysWithPresence };
 

@@ -25,10 +25,12 @@ from src.modules.sentimento.infra.klines_backfill_cli import (
     MAX_BACKFILL_DAYS,
     MS_PER_DAY,
     BackfillConfig,
-    StreamGroupMissingError,
-    read_group_lag,
     resolve_backfill_days,
     run_backfill,
+)
+from src.modules.sentimento.infra.redis_stream_backpressure import (
+    StreamGroupMissingError,
+    read_group_lag,
 )
 from src.modules.sentimento.use_cases.collector_run_mapping import KLINES_WEIGHT_PER_CALL
 from src.modules.sentimento.use_cases.collector_series_mapping import (

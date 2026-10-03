@@ -4,12 +4,16 @@ import { test } from "node:test";
 import {
   capWindowRightEdge,
   DEFAULT_MAX_ACCUMULATED_SLOTS,
-  DEFAULT_PAGE_SLOTS,
   effectiveMaxAccumulatedSlots,
   mergeOlderPage,
   trimRowsToWindow,
   widenAndCapWindow,
 } from "./history-page-window.ts";
+import { TIMEFRAME_WINDOW_BARS } from "./timeframe-window.ts";
+
+/** The `1m` page width — `DEFAULT_PAGE_SLOTS` until `paineis-de-fluxo` `T-05.1` moved the page
+ * width to bars per timeframe. The functions under test are pure; only the import moved. */
+const DEFAULT_PAGE_SLOTS = TIMEFRAME_WINDOW_BARS["1m"]!.pageBars;
 
 const STEP_MS = 60_000; // 1m grid
 

@@ -16,7 +16,9 @@ import {
   DEFAULT_RANGE_EPSILON_MS,
   createTimeAxisController,
   fromLogicalRange,
+  axisForWindow,
   historyRequest,
+  initialViewRange,
   reduceRangeEvent,
   toLogicalRange,
 } from "./time-axis-controller.ts";
@@ -275,4 +277,91 @@ test("createTimeAxisController.historyRequest delegates to the free function bou
     controller.historyRequest(range, NO_COVERAGE, 500),
     historyRequest(range, AXIS, NO_COVERAGE, 500),
   );
+});
+
+// ── `paineis-de-fluxo` `T-05.1` — the axis is at the TIMEFRAME's step (`handoff/T-05.1-desenho.md`) ──
+
+const MINUTE_MS = 60 * 1000;
+const FOUR_HOURS_MS = 4 * HOUR_MS;
+
+test("T-05.1: a floor OFF the 1h grid is rounded UP onto it — never a fractional page", () => {
+  // `earliestBucketMs` comes aligned to the MINUTE, not to the timeframe. 200h and 17 minutes back
+  // is off the 1h grid; the slot that starts before it holds no data we can serve, so the page
+  // starts at the first WHOLE slot after it: 200h back. Unrounded, `fromMs` sat 17 min off the
+  // grid and `widenAndCapWindow` produced a fractional `slotCount` that `buildScalarSeries` refuses.
+  const floorMs = AXIS.startMs - 200 * HOUR_MS - 17 * MINUTE_MS;
+  const coverage: HistoryCoverage = { earliestBucketMs: floorMs, sourceFloorMs: null };
+  const range: TimeRange = { fromMs: AXIS.startMs + 5 * HOUR_MS, toMs: AXIS.startMs + 50 * HOUR_MS };
+  const request = historyRequest(range, AXIS, coverage, 500);
+  assert.deepEqual(request, { fromMs: AXIS.startMs - 200 * HOUR_MS, toMs: AXIS.startMs, intervalMs: HOUR_MS });
+  assert.ok(request !== null);
+  assert.equal((request.toMs - request.fromMs) % HOUR_MS, 0, "the page must be a whole number of 1h slots");
+});
+
+test("T-05.1: a floor already ON the grid is kept as-is (rounding up is not rounding away)", () => {
+  const floorMs = AXIS.startMs - 37 * HOUR_MS;
+  const coverage: HistoryCoverage = { earliestBucketMs: floorMs, sourceFloorMs: null };
+  const range: TimeRange = { fromMs: AXIS.startMs + 1 * HOUR_MS, toMs: AXIS.startMs + 50 * HOUR_MS };
+  assert.deepEqual(historyRequest(range, AXIS, coverage, 500), {
+    fromMs: floorMs,
+    toMs: AXIS.startMs,
+    intervalMs: HOUR_MS,
+  });
+});
+
+test("T-05.1: a floor inside the slot right before the edge leaves no WHOLE slot — null, not a sliver", () => {
+  // 1h axis, floor 23 minutes before `startMs`: rounding up lands ON `startMs`, so there is nothing
+  // to ask for. A sliver page of 23 minutes would be the fractional grid this rule exists to refuse.
+  const coverage: HistoryCoverage = { earliestBucketMs: AXIS.startMs - 23 * MINUTE_MS, sourceFloorMs: null };
+  const range: TimeRange = { fromMs: AXIS.startMs + 1 * HOUR_MS, toMs: AXIS.startMs + 50 * HOUR_MS };
+  assert.equal(historyRequest(range, AXIS, coverage, 500), null);
+});
+
+test("T-05.1: the floor is rounded on the AXIS's own grid, relative to axis.startMs, not to the epoch", () => {
+  // A 4h axis whose origin is NOT a multiple of 4h since the epoch (`+1h`): an epoch-relative ceil
+  // would land between two slots of THIS axis.
+  const axis4h: TimeAxis = { startMs: 1_000_000 * HOUR_MS + HOUR_MS, stepMs: FOUR_HOURS_MS, slotCount: 42 };
+  const coverage: HistoryCoverage = { earliestBucketMs: axis4h.startMs - 10 * HOUR_MS, sourceFloorMs: null };
+  const range: TimeRange = { fromMs: axis4h.startMs + 1 * HOUR_MS, toMs: axis4h.startMs + 50 * HOUR_MS };
+  const request = historyRequest(range, axis4h, coverage, 42);
+  assert.deepEqual(request, { fromMs: axis4h.startMs - 2 * FOUR_HOURS_MS, toMs: axis4h.startMs, intervalMs: FOUR_HOURS_MS });
+});
+
+test("T-05.1 MORDE: axisForWindow(7 days at 4h, 4h) is 42 slots — at a 1-minute step it would be 10.080", () => {
+  const window = { startMs: 1_000_000 * HOUR_MS, endMsExclusive: 1_000_000 * HOUR_MS + 42 * FOUR_HOURS_MS };
+  assert.deepEqual(axisForWindow(window, FOUR_HOURS_MS), { startMs: window.startMs, stepMs: FOUR_HOURS_MS, slotCount: 42 });
+  // The defect `D-A`, spelled as the number it produced: the same window on the 1-minute grid.
+  assert.equal(axisForWindow(window, MINUTE_MS).slotCount, 10_080);
+  assert.equal(axisForWindow(window, HOUR_MS).slotCount, 168);
+});
+
+test("T-05.1: axisForWindow REFUSES a window that is not a whole number of steps — never rounds", () => {
+  const start = 1_000_000 * HOUR_MS;
+  assert.throws(() => axisForWindow({ startMs: start, endMsExclusive: start + 90 * MINUTE_MS }, HOUR_MS), RangeError);
+  assert.throws(() => axisForWindow({ startMs: start, endMsExclusive: start }, HOUR_MS), RangeError);
+  assert.throws(() => axisForWindow({ startMs: start, endMsExclusive: start - HOUR_MS }, HOUR_MS), RangeError);
+  assert.throws(() => axisForWindow({ startMs: start, endMsExclusive: start + HOUR_MS }, 0), RangeError);
+});
+
+test("T-05.1: initialViewRange frames the LAST viewBars slots, ending one step past the last slot", () => {
+  const axis: TimeAxis = { startMs: 1_000_000 * HOUR_MS, stepMs: MINUTE_MS, slotCount: 5_760 };
+  const endMs = axis.startMs + 5_760 * MINUTE_MS;
+  assert.deepEqual(initialViewRange(axis, 120), { fromMs: endMs - 120 * MINUTE_MS, toMs: endMs });
+  // In logical terms: [slotCount − 120, slotCount] — the convention the whole-axis framing used.
+  assert.deepEqual(toLogicalRange(initialViewRange(axis, 120), axis), { from: 5_640, to: 5_760 });
+});
+
+test("T-05.1: initialViewRange is min(viewBars, slotCount) — a 42-bar 4h axis is framed whole, never padded", () => {
+  const axis: TimeAxis = { startMs: 1_000_000 * HOUR_MS, stepMs: FOUR_HOURS_MS, slotCount: 42 };
+  assert.deepEqual(initialViewRange(axis, 120), {
+    fromMs: axis.startMs,
+    toMs: axis.startMs + 42 * FOUR_HOURS_MS,
+  });
+});
+
+test("T-05.1: initialViewRange refuses a non-positive or non-integer viewBars", () => {
+  const axis: TimeAxis = { startMs: 0, stepMs: MINUTE_MS, slotCount: 10 };
+  assert.throws(() => initialViewRange(axis, 0), RangeError);
+  assert.throws(() => initialViewRange(axis, -1), RangeError);
+  assert.throws(() => initialViewRange(axis, 1.5), RangeError);
 });

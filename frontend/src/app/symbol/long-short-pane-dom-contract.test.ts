@@ -89,8 +89,9 @@ const PAGE_WIRE_POINTS = /wirePoints: countPresentSlots\(longShortSlots\)/;
 const PAGE_STATUS = /longShort: longShortResult\.status/;
 /** `page.tsx`: the ONE `RN-1` mapper, shared — and grid-padded by the route's own window since
  * the `CA-5a` fix (`gates/FASE-02-qa.md`), the same reason the liquidation pane's own anchor
- * carries `routeWindow.window` now. */
-const PAGE_MAPPER = /const longShortSlots = nonNegativeFlowSlotsFromHistoryRows\(longShortResult\.rows, routeWindow\.window\);/;
+ * carries `routeWindow.window` now — and, since `T-05.1`, the AXIS step (`axisStepMs`, the TF's),
+ * because the window alone no longer says which grid the slots sit on. */
+const PAGE_MAPPER = /const longShortSlots = nonNegativeFlowSlotsFromHistoryRows\(longShortResult\.rows, routeWindow\.window, axisStepMs\);/;
 
 // ── The stable handles `T-04.7` depends on ────────────────────────────────────────────────────
 
@@ -312,7 +313,7 @@ test("CALA: a design_gate NEEDS_FIX about colour, wording or order leaves the co
   // hosted-pane `mount`, and every edit is now checked ONE BY ONE, so the next move of any anchor
   // fails here instead of shrinking the CALA without a word.
   const edits: readonly (readonly [string | RegExp, string])[] = [
-    [/Long\/short de contas\{identityTerms\(legends\.long_short\)\}/, "Razão long\\/short{identityTerms(legends.long_short)}"],
+    [/Long\/short de contas\{identityTerms\(headings\.long_short\)\}/, "Razão long\\/short{identityTerms(headings.long_short)}"],
     [/Leitura atual: \{readingText\}/, "Último valor conhecido: {readingText}"],
     [/\{longShort\.nativeBars\} observações nativas/, "{longShort.nativeBars} leituras"],
     [

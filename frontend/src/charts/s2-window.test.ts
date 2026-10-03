@@ -14,7 +14,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ONE_DAY_MS, S2_WINDOW_SPAN_MS, lastGridInstant, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
+import { ONE_DAY_MS, lastGridInstant, resolveTrailingWindow, utcDaysCovered } from "./s2-window.ts";
 import { FIVE_MINUTES_MS, ONE_MINUTE_MS } from "./s2-panels.ts";
 
 /** The literal window this defect was made of — kept here, and ONLY here, as the negative
@@ -25,7 +25,11 @@ const FROZEN_END_MS_EXCLUSIVE = Date.UTC(2026, 7, 24, 0, 0, 0);
 /** The instant the defect was measured at (`ACHADO-SERIES-HISTORY-SEM-PONTO.md`, 11:58Z). */
 const MEASURED_NOW_MS = Date.UTC(2026, 8, 11, 11, 58, 17);
 
-function trailing(nowMs: number, spanMs: number = S2_WINDOW_SPAN_MS): ReturnType<typeof resolveTrailingWindow> {
+/** The 4-day span `PRD-006 §2`/item `5.1` named — a FIXTURE span since `paineis-de-fluxo` `T-05.1`
+ * moved the production span to bars per timeframe (`app/symbol/timeframe-window.ts`). */
+const FOUR_DAYS_MS = 4 * ONE_DAY_MS;
+
+function trailing(nowMs: number, spanMs: number = FOUR_DAYS_MS): ReturnType<typeof resolveTrailingWindow> {
   return resolveTrailingWindow({ nowMs, lagMs: FIVE_MINUTES_MS, spanMs, alignmentMs: FIVE_MINUTES_MS });
 }
 
@@ -49,7 +53,7 @@ test("resolveTrailingWindow: the window ends near the clock reading, never in th
   );
   assert.equal(window.endMsExclusive % FIVE_MINUTES_MS, 0, "the right edge lands on a bucket boundary");
   assert.equal(window.startMs % FIVE_MINUTES_MS, 0, "so does the left edge");
-  assert.equal(window.endMsExclusive - window.startMs, S2_WINDOW_SPAN_MS, "the span is exact");
+  assert.equal(window.endMsExclusive - window.startMs, FOUR_DAYS_MS, "the span is exact");
 });
 
 test("resolveTrailingWindow: CONTAINS the recent past — the property the frozen literal violated", () => {
@@ -99,21 +103,20 @@ test("utcDaysCovered: the EXCLUSIVE end does not drag in the next date", () => {
 });
 
 test("resolveTrailingWindow REFUSES a span that is not a whole number of alignment buckets", () => {
-  assert.throws(() => trailing(Date.UTC(2026, 8, 11, 12, 0, 0), S2_WINDOW_SPAN_MS + 1), { name: "RangeError" });
+  assert.throws(() => trailing(Date.UTC(2026, 8, 11, 12, 0, 0), FOUR_DAYS_MS + 1), { name: "RangeError" });
 });
 
 test("resolveTrailingWindow REFUSES a non-finite clock reading instead of producing a NaN window", () => {
   assert.throws(() => trailing(Number.NaN), { name: "RangeError" });
 });
 
-test("S2_WINDOW_SPAN_MS is the 4 days `PRD-006 §2`/item `5.1` names — the SPAN survived, only WHICH days changed", () => {
+test("the fixture span is the 4 days `PRD-006 §2`/item `5.1` named — the frozen window spans exactly that", () => {
   // ⚠️ The citation, not the number, is what changed here: this test and the module docstring
   // both used to attribute the span to `ADR-034/D8`, which is the `charts`↔`web` BOUNDARY
   // (`ADR-034:177`). The span is `PRD-006 §2`/item `5.1`, quoted inside `ADR-034:127` ("4 dias,
   // painéis Preço+OI+CVD"). A wrong citation is a broken audit trail, and it cost the
   // `quant-architect` gate of wave `03` (C4) a lookup to find out.
-  assert.equal(S2_WINDOW_SPAN_MS, 4 * ONE_DAY_MS);
-  assert.equal(FROZEN_END_MS_EXCLUSIVE - FROZEN_START_MS, S2_WINDOW_SPAN_MS);
+  assert.equal(FROZEN_END_MS_EXCLUSIVE - FROZEN_START_MS, FOUR_DAYS_MS);
 });
 
 // ── `lastGridInstant` (wave `03`, C3) ───────────────────────────────────────────────────────

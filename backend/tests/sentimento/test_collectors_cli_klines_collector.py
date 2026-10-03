@@ -37,6 +37,7 @@ from src.modules.sentimento.use_cases.collector_series_mapping import (
     KLINES_BUCKET_WIDTH_MS,
     build_klines_to_rows,
 )
+from tests.helpers.drain_gate_doubles import OpenGate
 
 _SYMBOL = "BTCUSDT"
 _T0 = 1_788_000_000_000
@@ -145,6 +146,7 @@ def _run_one_pass(
         symbols=symbols,
         interval_s=60.0,
         backfill_days=backfill_days,
+        drain_gate=OpenGate(),
     )
     return runs, exit_code
 
@@ -199,8 +201,15 @@ def test_the_backfill_runs_once_and_the_next_pass_asks_only_for_the_tail() -> No
 
     Morde: leave `backfill_from_ms` set and every cycle re-walks seven days — 10.080 bars a
     minute against a host whose premise is scarce resources.
+
+    The bar is the LAST CLOSED minute, not `_T0`, since `T-05.3`: a watermark weeks old is a
+    cycle that is BEHIND, and a cycle that is behind walks from its watermark rather than ask
+    for a tail that cannot reach it (`_catch_up_cursor`, pinned in
+    `test_collectors_cli_klines_backfill_backpressure.py`). This test is about the cycle that is
+    caught up, so its bar has to be one.
     """
-    bar = _kline(_T0)
+    now_ms = int(time.time() * 1000)
+    bar = _kline(now_ms - now_ms % KLINES_BUCKET_WIDTH_MS - KLINES_BUCKET_WIDTH_MS)
     client = _ScriptedKlinesClient([_page((bar,))])
     sink = _RecordingSink()
     stop = threading.Event()
@@ -222,6 +231,7 @@ def test_the_backfill_runs_once_and_the_next_pass_asks_only_for_the_tail() -> No
         symbols=(_SYMBOL,),
         interval_s=0.01,
         backfill_days=1,
+        drain_gate=OpenGate(),
     )
 
     assert len(runs) == 2
@@ -262,6 +272,7 @@ def test_a_bar_already_published_is_not_published_again_by_the_next_cycle() -> N
         symbols=(_SYMBOL,),
         interval_s=0.01,
         backfill_days=1,
+        drain_gate=OpenGate(),
     )
 
     assert {row.bucket_end for row in sink.rows} == {_T0 + KLINES_BUCKET_WIDTH_MS}, (
@@ -383,6 +394,7 @@ def test_a_publish_failure_rejects_the_pass_and_takes_the_process_down() -> None
         symbols=(_SYMBOL,),
         interval_s=60.0,
         backfill_days=1,
+        drain_gate=OpenGate(),
     )
 
     assert exit_code[0] == 1

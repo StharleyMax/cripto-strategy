@@ -727,3 +727,140 @@ refs = [
     "CA-12",
 ]
 tracker = { provider = "jira", id = "CST-289", url = "https://conversationhub.atlassian.net/browse/CST-289" }
+
+# ── FASE 05 — CORRECOES DE USO (2026-10-02) ───────────────────────────────────────
+# Origem: uso real do owner, handoff/FIX-uso-2026-10-02.md. [PREMISSA-OWNER: 2026-10-02]
+# "entra como fix da feature atual". Fase nova em vez de reabrir 01-04 (resolvidas), porque
+# `harness resolve` e atomico por fase. Sem card no Jira: cardar sob CST-246 e ato do orquestrador.
+
+[[tasks]]
+id = "T-05.1"
+title = "[web] 05 · FIX eixo por timeframe: passo do eixo = stepMs do TF; janela, pagina e teto em barras; vista inicial legivel"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "plano 05 item 5.1 + DoD 1",
+    "handoff/FIX-uso-2026-10-02.md D-A",
+    "handoff/T-05.1-desenho.md (julgamento do frontend-architect, antes do builder)",
+]
+
+[[tasks]]
+id = "T-05.2"
+title = "[sentimento] 05 · FIX cobertura de serie de EVENTO: minuto sem linha em janela consultada pelo coletor = zero legitimo"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "plano 05 item 5.2 + DoD 2",
+    "handoff/FIX-uso-2026-10-02.md D-B",
+    "handoff/T-05.2-desenho.md (julgamento do quant-architect, antes do builder)",
+    "ZL-2 de liquidation_zero_legitimacy.py continua valendo",
+]
+
+[[tasks]]
+id = "T-05.3"
+title = "[sentimento] 05 · FIX buracos de klines: o reparo no boot nao fecha os 11 buracos medidos (64 min em 4 dias)"
+components = ["sentimento"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "plano 05 item 5.3 + DoD 3",
+    "handoff/FIX-uso-2026-10-02.md D-C",
+]
+
+[[tasks]]
+id = "T-05.4"
+title = "[web] 05 · FIX aviso de cobertura com magnitude (sem o falso 0 de N) + altura do pane de liquidacao"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.1", "T-05.2"]
+refs = [
+    "plano 05 item 5.4 + DoD 4",
+    "handoff/FIX-uso-2026-10-02.md D-C, D-D",
+    "decisao de design: ui-designer + gate ux-ui-mastery",
+]
+
+[[tasks]]
+id = "T-05.5"
+title = "[web] 05 · Veredito do ux-ui-mastery sobre o screenshot real nos 5 TFs"
+components = ["web"]
+status = "todo"
+phase = "05"
+depends_on = ["T-05.3", "T-05.4"]
+refs = [
+    "plano 05 DoD 6",
+    "CA-12",
+]
+
+# ── FASE 06 — VELOCIDADE DO CICLO (2026-10-02) ────────────────────────────────────
+# Origem: handoff/CICLO-2026-10-02.md. [DECISAO-OWNER: 2026-10-02, escolha entre alternativas
+# apresentadas] — 3 de 5 ajustes. 6.1 antes de 6.2 (sem o helper, verificar so o tocado empurra a
+# quebra para o gate da wave). Sem card no Jira.
+
+[[tasks]]
+id = "T-06.1"
+title = "[web] 06 · Helper de e2e que posiciona o eixo explicitamente + migracao dos specs que dependem da vista de montagem"
+components = ["web"]
+status = "todo"
+phase = "06"
+depends_on = []
+refs = [
+    "plano 06 item 6.1 + DoD 1",
+    "handoff/CICLO-2026-10-02.md",
+    "handoff/T-06.1-desenho.md (frontend-architect, antes do builder)",
+]
+
+[[tasks]]
+id = "T-06.2"
+title = "[infra] 06 · Verificacao por escopo para o builder (nao-e2e + e2e tocados + pixel); e2e completo so no gate da wave"
+components = ["infra"]
+status = "todo"
+phase = "06"
+depends_on = ["T-06.1"]
+refs = [
+    "plano 06 item 6.2 + DoD 2",
+    "handoff/T-06.1-desenho.md (a selecao de specs e desenhada junto do helper)",
+    "NAO e SKIP_E2E: scripts/verify.sh §6 recusa essa porta por DR-11",
+]
+
+[[tasks]]
+id = "T-06.3"
+title = "[infra][sentimento] 06 · API com mais de um worker e as 10 series da tela servidas em paralelo"
+components = ["infra", "sentimento"]
+status = "todo"
+phase = "06"
+depends_on = []
+refs = [
+    "plano 06 item 6.3 + DoD 3",
+    "handoff/T-06.3-desenho.md (infra-architect, antes do builder)",
+]
+
+[[tasks]]
+id = "T-06.4"
+title = "[sentimento] 06 · Parar as regravacoes (backfill de boot e re-poll de liquidacao) e decidir o destino das linhas duplicadas"
+components = ["sentimento"]
+status = "todo"
+phase = "06"
+depends_on = []
+refs = [
+    "plano 06 item 6.4 + DoD 4",
+    "handoff/T-06.3-desenho.md §regravacoes (infra-architect)",
+    "apagar dado existente e decisao do owner, nao do builder",
+]
+
+[[tasks]]
+id = "T-05.6"
+title = "[web][infra] 05 · Correcao curta dos achados nao bloqueantes da W7 (N-1, N-2, R-1, R-2, R-7, idioma do compose.yml)"
+components = ["web", "infra"]
+status = "todo"
+phase = "05"
+depends_on = []
+refs = [
+    "handoff/T-05.6-escopo.md",
+    "gates/W7-DESIGN-REVIEW.md, gates/W7-CODE-REVIEW.md, gates/W7-REVIEW.md",
+]

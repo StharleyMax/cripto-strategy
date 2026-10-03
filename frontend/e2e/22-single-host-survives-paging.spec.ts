@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 import { fact, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { readView, showView } from "./view.ts";
 
 /**
  * `paineis-de-fluxo` `T-01.5` (plan `01` item `1.3′`, DoD `11(b)`;
@@ -45,9 +46,15 @@ const CHART_HOST_TESTID = "symbol-chart-host";
 /** Plan `01` DoD `11(b)`, literal: "depois de ≥ 2 páginas". */
 const MIN_PAGES = 2;
 /** Drags attempted before giving up on reaching `MIN_PAGES`. The first drags only WALK to the
- * left edge: at mount the library clamps the bar spacing to its minimum, so the visible range is
- * the RIGHT ~2.300 of the 5.760 slots, and a drag is capped at half the chart's width. */
+ * left edge: the walk starts from the RIGHT `WALK_VIEW_BARS` of the 5.760 slots, and a drag is capped
+ * at half the chart's width. */
 const MAX_DRAGS = 12;
+/** `paineis-de-fluxo` `T-06.1` — where the walk starts, put there explicitly (`view.ts::showView`),
+ * not wherever the mount frames (`VIEW_BARS`). `T-05.1` made the mount 120 bars (~9,9 px/slot): a
+ * 576-px drag moved ~58 slots and `MAX_DRAGS` drags walked ~700 of the ~5.640 slots to the left edge
+ * — no page ever requested. 2.000 slots (~0,6 px/slot, under the library's floor of a 1280-px plot)
+ * is the geometry the drag count was set on: ~900 slots per drag, the edge in ~4 drags. */
+const WALK_VIEW_BARS = 2_000;
 const PER_DRAG_TIMEOUT_MS = 10_000;
 /** How long to wait for a request after a drag that may not have reached the trigger zone. */
 const NO_REQUEST_WAIT_MS = 2_500;
@@ -163,18 +170,6 @@ async function readMountCount(page: Page): Promise<number> {
   return Number(raw);
 }
 
-async function readVisibleRange(page: Page): Promise<{ readonly from: number; readonly to: number }> {
-  const host = hostLocator(page);
-  const [from, to] = await Promise.all([
-    host.getAttribute("data-visible-logical-from"),
-    host.getAttribute("data-visible-logical-to"),
-  ]);
-  if (from === null || to === null) {
-    throw new Error("the chart host does not publish data-visible-logical-from/-to");
-  }
-  return { from: Number(from), to: Number(to) };
-}
-
 /** One drag to the RIGHT (reveals the past — `16-*.spec.ts`'s measured convention), in the middle
  * of the price pane, with the 100 ms pauses the library needs to see a drag, not a teleport. */
 async function dragRight(page: Page, deltaXPx: number): Promise<void> {
@@ -224,6 +219,9 @@ test(`DoD-11(b): data-chart-mount-count continua 1 depois de >= ${MIN_PAGES} pá
     fact(SPEC, "chart_mount_count_before", mountBefore);
     expect(mountBefore, "um createChart na carga da página").toBe(1);
 
+    // `T-06.1`: the walk starts from an explicit view, not from the mount's (see `WALK_VIEW_BARS`).
+    const view = await showView(page, { kind: "lastBars", bars: WALK_VIEW_BARS });
+    fact(SPEC, "prewalk_view", { iterations: view.iterations, from: view.fromLogical, to: view.toLogical, spacingPx: view.barSpacingPx });
     await page.evaluate(() => window.__historyPageLatencyProbe?.reset());
     for (let i = 0; i < MAX_DRAGS; i += 1) {
       const counts = await probeCounts(page);
@@ -232,10 +230,10 @@ test(`DoD-11(b): data-chart-mount-count continua 1 depois de >= ${MIN_PAGES} pá
       }
       const box = await hostLocator(page).boundingBox();
       if (box === null) throw new Error("the chart host has no bounding box — nothing mounted");
-      const range = await readVisibleRange(page);
-      const pxPerSlot = box.width / (range.to - range.from);
+      const range = await readView(page);
+      const pxPerSlot = box.width / (range.toLogical - range.fromLogical);
       // Aim just past the left edge of the loaded grid (logical 0), never more than half the width.
-      const deltaXPx = Math.min(box.width * 0.45, Math.max(10, pxPerSlot * (Math.max(range.from, 0) + EDGE_OVERSHOOT_SLOTS)));
+      const deltaXPx = Math.min(box.width * 0.45, Math.max(10, pxPerSlot * (Math.max(range.fromLogical, 0) + EDGE_OVERSHOOT_SLOTS)));
       fact(SPEC, `drag_delta_px:${i}`, Number(deltaXPx.toFixed(2)));
       await dragRight(page, deltaXPx);
       const requestedGrew = await page

@@ -7,6 +7,7 @@ import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { readView, showView } from "./view.ts";
 
 /**
  * `paineis-de-fluxo` `T-03.13` (`CST-288`; plan `03` DoD-03b items 3-6; `SPEC-009` §9 `CA-7`, `CA-8′`;
@@ -72,7 +73,8 @@ const MIN_PER_REGIME = 50;
 const MIN_SPACING_PX = 6;
 const SWEEP_STEPS_PER_BUCKET = 3;
 const INK_TOLERANCE = 12;
-const MAX_VIEW_ITERATIONS = 12;
+/** Buckets of margin each side of a view, so the sweep's first and last bucket are inside the plot. */
+const VIEW_MARGIN_BUCKETS = 2;
 const TOKENS = colorTokens();
 const HIST: OiSource = "binance_point_5m";
 const POLL: OiSource = "binance_poll_1m";
@@ -527,52 +529,24 @@ async function calibrate(page: Page): Promise<Mapping> {
   return { a, b, leftMs: toMs(box.x), rightMs: toMs(box.x + box.width) };
 }
 
-/** Zooms (wheel) and pans (drag) until `[fromMs, toMs]` is on screen with `>= MIN_SPACING_PX` per
- * bucket. Bounded (R9): `MAX_VIEW_ITERATIONS`, then it throws with where it got. */
-async function showRange(page: Page, fromMs: number, toMs: number): Promise<Mapping> {
-  const box = await oiCanvasBox(page);
-  const y = box.y + box.height * 0.6;
-  const wantSpan = toMs - fromMs;
-  let mapping = await calibrate(page);
-  const trace: unknown[] = [];
-  for (let i = 0; i < MAX_VIEW_ITERATIONS; i += 1) {
-    const haveSpan = mapping.rightMs - mapping.leftMs;
-    const margin = 2 * FIVE;
-    let action: string;
-    const targetMid = (fromMs + toMs) / 2;
-    const screenMid = (mapping.leftMs + mapping.rightMs) / 2;
-    const centred = Math.abs(targetMid - screenMid) < haveSpan * 0.1;
-    const midX = mapping.a + mapping.b * (targetMid / FIVE);
-    const tooNarrow = haveSpan < wantSpan + 2 * margin;
-    const tooWide = haveSpan > 1.8 * (wantSpan + 2 * margin) && mapping.b < 3 * MIN_SPACING_PX;
-    if (centred && tooNarrow) {
-      action = "zoom-out";
-      await page.mouse.move(midX, y);
-      for (let tick = 0; tick < 3; tick += 1) await page.mouse.wheel(0, 200);
-    } else if (centred && tooWide) {
-      action = "zoom-in";
-      await page.mouse.move(midX, y);
-      for (let tick = 0; tick < 3; tick += 1) await page.mouse.wheel(0, -200);
-    } else if (!centred || fromMs < mapping.leftMs + margin || toMs > mapping.rightMs - margin) {
-      const dx = ((screenMid - targetMid) / FIVE) * mapping.b;
-      const bounded = Math.max(-box.width * 0.8, Math.min(box.width * 0.8, dx));
-      action = `drag ${bounded.toFixed(0)}`;
-      const startX = box.x + box.width / 2 - bounded / 2;
-      await page.mouse.move(startX, y);
-      await page.mouse.down();
-      await page.mouse.move(startX + bounded, y, { steps: 30 });
-      await page.mouse.up();
-    } else {
-      fact(SPEC, "show_range_trace", { fromMs, toMs, trace });
-      return mapping;
-    }
-    trace.push({ action, leftMs: mapping.leftMs, rightMs: mapping.rightMs, b: mapping.b });
-    await page.mouse.move(2, 2);
-    await page.waitForTimeout(700);
-    mapping = await calibrate(page);
-  }
-  fact(SPEC, "show_range_trace", { fromMs, toMs, trace });
-  throw new Error(`showRange: [${fromMs}, ${toMs}] not reached, screen is [${mapping.leftMs}, ${mapping.rightMs}]`);
+/** `paineis-de-fluxo` `T-06.1` — `[fromMs, toMs]` on screen, `VIEW_MARGIN_BUCKETS` of margin each side
+ * (the right one only as far as the axis goes), put there by `view.ts::showView` — wheel and drag in
+ * a closed loop, from WHEREVER the page is, so no view depends on the mount's framing (`VIEW_BARS`).
+ * Paging is allowed: the older-page view sits before the SSR window, and a view near the window's left
+ * edge may cross the trigger, as the walk before `T-06.1` could. `minSpacingPx`: the view is narrowed
+ * around its centre until a bucket is that wide (`measurePhase`). Then `calibrate` maps ms → px from
+ * the crosshair — it is the phase/legend instrument, not navigation. */
+async function calibratedView(page: Page, fromMs: number, toMs: number, minSpacingPx?: number): Promise<Mapping> {
+  const state = await readView(page);
+  const axisEndMs = state.windowStartMs + state.slotCount * state.stepMs;
+  const target = {
+    kind: "timeRange" as const,
+    fromMs: fromMs - VIEW_MARGIN_BUCKETS * FIVE,
+    toMs: Math.min(axisEndMs, toMs + VIEW_MARGIN_BUCKETS * FIVE),
+  };
+  const view = await showView(page, target, { allowPaging: true, minBarSpacingPx: minSpacingPx });
+  fact(SPEC, "show_range_trace", { fromMs, toMs, iterations: view.iterations, pages: view.pagesRequestedDuring, trace: view.trace });
+  return calibrate(page);
 }
 
 interface ColumnInk {
@@ -655,7 +629,7 @@ interface ViewAudit {
   readonly fitResidualPx: number;
   /** Half the gap between the forward and the backward sweep's centres: the legend's lag. */
   readonly lagPx: number;
-  /** Where the candles are, relative to the legend groups' centres (the phase scan's argmax). */
+  /** Where the candles are, relative to the legend groups' centres (half a spacing from the scan's gap). */
   readonly candlePhasePx: number;
   /** The legend read on the LEFT and on the RIGHT quarter of probed candles: `self` / `previous` / `next`. */
   readonly leftQuarter: Readonly<Record<string, number>>;
@@ -668,9 +642,10 @@ interface ViewAudit {
  *
  *  1. sweeps the crosshair both ways a third of a bucket per step and groups the steps by the bucket the
  *     OI legend names; a least-squares line through the groups' centres gives the spacing `b` and a grid;
- *  2. scans the phase `δ ∈ [−b/2, b/2]` that puts the most candle ink under `grid + δ` — the candles' own
- *     x, found on the canvas, not assumed from the legend (`[MEDIDO 2026-09-27]`: they sit HALF A BUCKET
- *     off the legend groups' centres, see `gates/T-03.13-builder.md` §4);
+ *  2. scans the candle ink under `grid + δ`, `δ ∈ [−b/2, b/2]`, and takes the phase half a spacing from
+ *     the empty gap between bodies (`candlePhaseOf`) — the candles' own
+ *     x, found on the canvas, not assumed from the legend (`[MEDIDO 2026-09-27]`, on the 1-minute slot
+ *     before `T-05.1`: they sat HALF A BUCKET off the legend groups' centres, `gates/T-03.13-builder.md` §4);
  *  3. names each candle by hovering its RIGHT quarter (inside the candle, and inside the legend region of
  *     the candle itself whichever way the legend's half-bar boundary falls), and asserts ONE integer shift
  *     between the grid and those names;
@@ -686,22 +661,43 @@ interface PhaseScanStep {
 const PHASE_SCAN_FLOOR_RATIO = 0.1;
 
 /**
- * The candle phase off a phase scan: its argmax, or `null` when the scan is FLAT — no step below
+ * The candle phase off a phase scan, or `null` when the scan is FLAT — no step below
  * `PHASE_SCAN_FLOOR_RATIO` of the peak. A flat scan has no candle in it (the `?e2eOiLine=1` line
- * leaves ~100–400 px of anti-aliased stray ink on EVERY step, `[MEDIDO 2026-09-27]`), and its
- * argmax is noise: on the same stub it landed on −3, −5 and +2 in three runs, and a phase near
- * `+b/4` puts the right-quarter probe on the legend's half-bar boundary, which is the
+ * leaves ~100–400 px of anti-aliased stray ink on EVERY step, `[MEDIDO 2026-09-27]`), and any phase
+ * read off it is noise: on the same stub the argmax landed on −3, −5 and +2 in three runs, and a phase
+ * near `+b/4` puts the right-quarter probe on the legend's half-bar boundary, which is the
  * `ONE bucket shift of the grid (1,0)` of `W6-QA-FRONT`.
+ *
+ * `paineis-de-fluxo` `T-05.1` — the phase is HALF A SPACING FROM THE CENTRE OF THE GAP, no longer the
+ * argmax. The argmax was the centre while a body was ~2 px wide (a `5m` candle on one 1-minute slot of
+ * five). Since `T-05.1` the body takes ~80% of the spacing, and a RISING body is HOLLOW (`borderVisible`,
+ * `color-tokens.test.ts`): its ink is on its two vertical edges, so the argmax lands on an edge, ~b/2.6
+ * off the centre, and the right-quarter probe crossed the boundary — `(1,0)` again, in the first run
+ * after the zoom-in (`T-05.1` fechamento, 2026-10-02). The gap between two bodies is empty for every
+ * candle kind (filled, hollow, doji), and the floor steps — the very ones the guard demands — are it:
+ * their CIRCULAR mean (period `spacingPx`, the gap may straddle `±b/2`) is the gap's centre, and the
+ * candle's centre is the opposite point of the period.
  */
-function candlePhaseOf(scan: readonly PhaseScanStep[]): number | null {
+function candlePhaseOf(scan: readonly PhaseScanStep[], spacingPx: number = scan.length): number | null {
   if (scan.length === 0) return null;
-  let best = scan[0]!;
+  let peak = scan[0]!.ink;
   let floor = scan[0]!.ink;
   for (const step of scan) {
-    if (step.ink > best.ink) best = step;
+    peak = Math.max(peak, step.ink);
     floor = Math.min(floor, step.ink);
   }
-  return best.ink > 0 && floor <= PHASE_SCAN_FLOOR_RATIO * best.ink ? best.delta : null;
+  if (!(peak > 0 && floor <= PHASE_SCAN_FLOOR_RATIO * peak)) return null;
+  let cos = 0;
+  let sin = 0;
+  for (const step of scan) {
+    if (step.ink > PHASE_SCAN_FLOOR_RATIO * peak) continue;
+    const angle = (2 * Math.PI * step.delta) / spacingPx;
+    cos += Math.cos(angle);
+    sin += Math.sin(angle);
+  }
+  const gap = (Math.atan2(sin, cos) * spacingPx) / (2 * Math.PI);
+  const phase = ((((gap + spacingPx) % spacingPx) + spacingPx) % spacingPx) - spacingPx / 2;
+  return Math.round(phase) + 0;
 }
 
 /**
@@ -760,7 +756,8 @@ async function auditView(page: Page, mapping: Mapping, phaseFraction?: number): 
       const inks = await readColumns(page, allK.map((k) => groupX(k) + delta));
       scan.push({ delta, ink: inks.reduce((sum, ink) => sum + ink.up + ink.down + ink.neutral, 0) });
     }
-    const found = candlePhaseOf(scan);
+    fact(SPEC, "phase_scan", { spacingPx: b, scan });
+    const found = candlePhaseOf(scan, b);
     if (found === null) {
       throw new Error(`auditView: the phase scan is flat — no candle on the canvas to find a phase on ${JSON.stringify(scan)}`);
     }
@@ -1041,7 +1038,7 @@ async function auditViews(
   const all = new Map<number, BucketReading>();
   const hovered = new Map<number, LegendReading>();
   for (const view of views) {
-    const mapping = await showRange(page, view.fromMs, view.toMs);
+    const mapping = await calibratedView(page, view.fromMs, view.toMs);
     const audit = await auditView(page, mapping, phaseFraction);
     fact(SPEC, `${label}_view_${view.name}`, {
       view,
@@ -1066,6 +1063,50 @@ async function auditViews(
   return { buckets: [...all.values()].sort((p, q) => p.bucketMs - q.bucketMs), hovered };
 }
 
+/**
+ * `paineis-de-fluxo` `T-05.1` — THE PHASE IS MEASURED ON A ZOOMED-IN STRETCH, AND ONLY THERE.
+ *
+ * Since `T-05.1` the axis slot of `5m` is the 5-minute bar itself (it was a 1-minute slot, with the
+ * candle on one of five), so the candle body takes ~80% of the bucket's spacing instead of ~16%. At
+ * the spacing the views settle on (~12.7 px) the gap between two bodies is ~2.7 px, narrower than the
+ * 3-px column `readColumns` reads, and the phase scan never reached a step below
+ * `PHASE_SCAN_FLOOR_RATIO` of its peak: `1.261 / 5.290` (`make verify` of 2026-10-02) — `candlePhaseOf`
+ * read a canvas full of candles as flat. The scan is right to refuse that (the `?e2eOiLine=1` line
+ * gives the same ratio), so the criterion stays; what changes is WHERE it is read: a stretch of
+ * `PHASE_VIEW_BUCKETS` consecutive closed candles of the route, zoomed in to `>= PHASE_MIN_SPACING_PX`,
+ * where the gap (~6 px) is wider than the column. The phase is a property of the time scale and the
+ * legend, not of the zoom (the ablation already carried it across pages as a FRACTION of the spacing),
+ * so every view is then named with that fraction. The flat-scan guard still runs, on this stretch:
+ * a page with no candle throws here, as it threw before.
+ */
+const PHASE_VIEW_BUCKETS = 20;
+const PHASE_MIN_SPACING_PX = 30;
+
+function phaseRange(truth: Truth, views: readonly View[]): View {
+  for (const view of views) {
+    let runStart: number | null = null;
+    for (let t = Math.ceil(view.fromMs / FIVE) * FIVE; t <= view.toMs; t += FIVE) {
+      const candle = truth.candles.get(t);
+      if (candle === undefined || !candle.closed) {
+        runStart = null;
+        continue;
+      }
+      runStart ??= t;
+      if (t - runStart >= (PHASE_VIEW_BUCKETS - 1) * FIVE) return { name: `phase_${view.name}`, fromMs: runStart, toMs: t };
+    }
+  }
+  throw new Error(`INCONCLUSIVO — no run of ${PHASE_VIEW_BUCKETS} closed candles in the views to measure the phase on`);
+}
+
+async function measurePhase(page: Page, truth: Truth, views: readonly View[], label: string): Promise<number> {
+  const range = phaseRange(truth, views);
+  const audit = await auditView(page, await calibratedView(page, range.fromMs, range.toMs, PHASE_MIN_SPACING_PX));
+  const phaseFraction = audit.candlePhasePx / audit.spacingPx;
+  fact(SPEC, `${label}_phase`, { view: range, candlePhasePx: audit.candlePhasePx, spacingPx: audit.spacingPx, phaseFraction });
+  expect(audit.spacingPx, "the phase stretch is not zoomed in enough for the gap between bodies to show").toBeGreaterThanOrEqual(PHASE_MIN_SPACING_PX);
+  return phaseFraction;
+}
+
 async function acceptance(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string): Promise<void> {
   const request = await openSymbol(page, baseUrl, INTERVAL_QUERY);
   await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
@@ -1080,7 +1121,8 @@ async function acceptance(page: Page, baseUrl: string, apiBase: string, catalog:
     views,
   });
   expect(views.length, "INCONCLUSIVO — no capture start in the window").toBeGreaterThan(0);
-  const { buckets, hovered } = await auditViews(page, views, new Set(captureBuckets(truth)), label);
+  const phaseFraction = await measurePhase(page, truth, views, label);
+  const { buckets, hovered } = await auditViews(page, views, new Set(captureBuckets(truth)), label, phaseFraction);
   expectGreen(`${label}_ca7_colour`, judgeColour(buckets, truth));
   expectGreen(`${label}_ca8_hole`, judgeHoles(buckets, truth));
   expectGreen(`${label}_d2bis_one_series`, judgeOneSeries(buckets, truth, hovered));
@@ -1091,11 +1133,10 @@ async function ablation(page: Page, baseUrl: string, apiBase: string, catalog: C
   // a phase on (`candlePhaseOf`), and naming the columns by a noise phase was `W6-QA-FRONT`'s flake.
   const candleRequest = await openSymbol(page, baseUrl, INTERVAL_QUERY);
   await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
-  const candleViews = viewsOf(await fetchTruth(apiBase, catalog, candleRequest));
+  const candleTruth = await fetchTruth(apiBase, catalog, candleRequest);
+  const candleViews = viewsOf(candleTruth);
   expect(candleViews.length, "INCONCLUSIVO — no capture start in the window").toBeGreaterThan(0);
-  const phaseView = await auditView(page, await showRange(page, candleViews[0]!.fromMs, candleViews[0]!.toMs));
-  const phaseFraction = phaseView.candlePhasePx / phaseView.spacingPx;
-  fact(SPEC, `${label}_ablation_phase`, { view: candleViews[0]!.name, candlePhasePx: phaseView.candlePhasePx, spacingPx: phaseView.spacingPx, phaseFraction });
+  const phaseFraction = await measurePhase(page, candleTruth, candleViews, `${label}_ablation`);
 
   const request = await openSymbol(page, baseUrl, `${INTERVAL_QUERY}&${ABLATION_QUERY}`);
   await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "line");
@@ -1138,13 +1179,19 @@ function judgeOlderPage(buckets: readonly BucketReading[], request: RenderedRequ
   return { defects, inconclusive: judged < MIN_PER_REGIME ? `INCONCLUSIVO — only ${judged} older-page candles on screen` : null, counts: { judged } };
 }
 
-async function olderPage(page: Page, baseUrl: string, label: string): Promise<void> {
+async function olderPage(page: Page, baseUrl: string, apiBase: string, catalog: CatalogEnvelope, label: string): Promise<void> {
+  // The phase, on the SSR window's candles (the pager plays no part in it), before the walk.
+  const candleRequest = await openSymbol(page, baseUrl, INTERVAL_QUERY);
+  await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
+  const candleTruth = await fetchTruth(apiBase, catalog, candleRequest);
+  const phaseFraction = await measurePhase(page, candleTruth, viewsOf(candleTruth), `${label}_older`);
+
   const request = await openSymbol(page, baseUrl, INTERVAL_QUERY);
   await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveAttribute("data-oi-series-kind", "candlestick");
   const toMs = Math.floor(request.windowStartMs / FIVE) * FIVE - 2 * FIVE;
   const view: View = { name: "older", fromMs: toMs - OLDER_VIEW_BUCKETS * FIVE, toMs };
   fact(SPEC, `${label}_older_page_view`, { request, view });
-  const { buckets } = await auditViews(page, [view], new Set<number>(), `${label}_older`);
+  const { buckets } = await auditViews(page, [view], new Set<number>(), `${label}_older`, phaseFraction);
   expectGreen(`${label}_e5_older_page`, judgeOlderPage(buckets, request));
 }
 
@@ -1156,9 +1203,17 @@ test.describe(`T-03.13: o instrumento — a fase da vela, ${SPEC}`, () => {
     return inks.map((ink, i) => ({ delta: i - half, ink }));
   };
 
-  test("uma varredura com vela dá o argmax; a varredura plana da linha (?e2eOiLine=1) não dá fase", () => {
+  test("uma varredura com vela dá a fase oposta ao vão; a varredura plana da linha (?e2eOiLine=1) não dá fase", () => {
     // Recorded on the GATE stub, capture view (b = 10.13), `[MEDIDO 2026-09-27, W6-QA-FRONT fix]`.
-    expect(candlePhaseOf(scanOf([3209, 3318, 2048, 109, 0, 0, 0, 0, 0, 869, 3196])), "candles: the argmax").toBe(-4);
+    // The argmax said −4; since `T-05.1` the phase is the point opposite the gap's centre (+0,5 ⇒ −4,57).
+    expect(candlePhaseOf(scanOf([3209, 3318, 2048, 109, 0, 0, 0, 0, 0, 869, 3196]), 10.13), "candles: opposite the gap").toBe(-5);
+    // `T-05.1`: bodies at ~80% of b = 12.73 (the 120-bar mount's spacing at `5m`): the 3-px column never
+    // sits in the 2.7-px gap, no step under the floor ⇒ flat, which is why `measurePhase` zooms in first
+    // `[MEDIDO 2026-10-02, make verify]`.
+    expect(
+      candlePhaseOf(scanOf([1890, 3793, 5092, 5255, 4931, 4783, 4726, 4919, 5290, 4864, 3467, 1547, 1261]), 12.73),
+      "wide bodies at the mount's spacing: flat",
+    ).toBeNull();
     // The same view under the ablation, three runs: the argmax walked −2/−2/−2 here and −3/−5/+2 on
     // the hole view — noise, not a phase.
     expect(candlePhaseOf(scanOf([184, 291, 350, 392, 299, 268, 261, 283, 275, 235, 187])), "the line: flat").toBeNull();
@@ -1213,7 +1268,7 @@ test.describe(`T-03.13: aceite do candle de OI por balde — GATE (stub), ${SPEC
   });
 
   test("E5: as velas de OI da página ANTIGA chegam à tela — o pager não as descarta", async ({ page }) => {
-    await olderPage(page, instance!.baseUrl, "gate");
+    await olderPage(page, instance!.baseUrl, `${stub.url}/api/v1`, catalog, "gate");
   });
 });
 

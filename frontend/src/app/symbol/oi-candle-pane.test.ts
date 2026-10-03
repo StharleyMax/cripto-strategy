@@ -71,7 +71,7 @@ const WINDOW = { startMs: T0, endMsExclusive: T0 + 3 * FIVE };
 // ── oiCandlePaneData: the candle lands at bucket_end_ms, nothing else is invented ───────────
 
 test("oiCandlePaneData puts each served candle on the slot of its bucket_end_ms, and nothing on the others", () => {
-  const data = oiCandlePaneData(BUNDLE, WINDOW);
+  const data = oiCandlePaneData(BUNDLE, WINDOW, MINUTE);
   assert.equal(data.slots.length, 15, "one slot per minute of the 15-minute window");
   const drawn = data.slots.filter((slot) => slot.candle !== null);
   assert.deepEqual(
@@ -81,11 +81,11 @@ test("oiCandlePaneData puts each served candle on the slot of its bucket_end_ms,
   );
   assert.equal(data.drawnCandles, 2);
   assert.equal(data.slots[0]!.candle, null);
-  assert.equal(oiCandlePaneData(EMPTY_OI_CANDLE_BUNDLE, WINDOW).drawnCandles, 0);
+  assert.equal(oiCandlePaneData(EMPTY_OI_CANDLE_BUNDLE, WINDOW, MINUTE).drawnCandles, 0);
 });
 
 test("the four prices drawn are the SERVED ones — never re-derived in the browser (ADR-040/D1)", () => {
-  const data = oiCandlePaneData(BUNDLE, WINDOW);
+  const data = oiCandlePaneData(BUNDLE, WINDOW, MINUTE);
   const second = data.slots.find((slot) => slot.time === DOWN.bucket_end_ms)!.candle!;
   assert.deepEqual(
     { open: second.open, high: second.high, low: second.low, close: second.close },
@@ -97,9 +97,9 @@ test("the four prices drawn are the SERVED ones — never re-derived in the brow
 
 test("a candle outside the window is left out; one inside it but off the minute grid THROWS", () => {
   const outside: OiCandleBundle = { sources: [POINT_5M], candles: [candle(T0 - FIVE, { open: 1, high: 2, low: 1, close: 2 }), UP] };
-  assert.equal(oiCandlePaneData(outside, WINDOW).drawnCandles, 1);
+  assert.equal(oiCandlePaneData(outside, WINDOW, MINUTE).drawnCandles, 1);
   const offGrid: OiCandleBundle = { sources: [POINT_5M], candles: [candle(T0 + FIVE + 30_000, { open: 1, high: 2, low: 1, close: 2 })] };
-  assert.throws(() => oiCandlePaneData(offGrid, WINDOW), RangeError, "an off-grid candle is never snapped to a neighbour");
+  assert.throws(() => oiCandlePaneData(offGrid, WINDOW, MINUTE), RangeError, "an off-grid candle is never snapped to a neighbour");
 });
 
 test("oiCandleRegimeStepAt: the width of the regime of the candle a slot would be held from", () => {
@@ -112,7 +112,7 @@ test("oiCandleRegimeStepAt: the width of the regime of the candle a slot would b
       candle(capture + MINUTE, { open: 1, high: 2, low: 1, close: 2 }, "binance_poll_1m"),
     ],
   };
-  const data = oiCandlePaneData(mixed, WINDOW);
+  const data = oiCandlePaneData(mixed, WINDOW, MINUTE);
   assert.equal(oiCandleRegimeStepAt(data, T0), null, "no candle at or before the slot");
   assert.equal(oiCandleRegimeStepAt(data, T0 + FIVE), FIVE);
   assert.equal(oiCandleRegimeStepAt(data, T0 + FIVE + 4 * MINUTE), FIVE, "held inside the 5m regime");
@@ -130,7 +130,7 @@ test("oiCandleRegimeStepAt: the width of the regime of the candle a slot would b
 });
 
 test("oiCandleFieldSlots reads ONE field per slot, null where no candle is", () => {
-  const data = oiCandlePaneData(BUNDLE, WINDOW);
+  const data = oiCandlePaneData(BUNDLE, WINDOW, MINUTE);
   const highs = oiCandleFieldSlots(data.slots, "high").filter((slot) => slot.value !== null);
   assert.deepEqual(highs, [
     { time: UP.bucket_end_ms, value: 130 },

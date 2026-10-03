@@ -44,6 +44,7 @@ import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { showView } from "./view.ts";
 
 const SPEC = "33-liquidation-legend-two-magnitudes";
 const SYMBOL_PATH = "/symbol/BTCUSDT";
@@ -390,6 +391,25 @@ function legDefect(cohort: Cohort, leg: LegReading): string | null {
   return null;
 }
 
+/**
+ * `paineis-de-fluxo` `T-06.1` — the sweep below (70%..90% of the width) reads the LAST
+ * `SWEEP_VIEW_BARS` slots, put there explicitly (`view.ts::showView`), not wherever the mount frames
+ * (`VIEW_BARS`). `T-05.1` made the mount 120 bars (2 h at `1m`): the sweep crossed only ~25 buckets
+ * and the spec reported itself blind (`too few buckets under the sweep`, 25 < 40). The fix then was a
+ * private zoom-out to the library's floor (~2.400 slots, "~2 minutes per CSS px", the geometry
+ * `SWEEP_STEP_PX` was measured on); 2.000 keeps it (~1,7 minutes per px) under the floor of a 1280-px
+ * plot, far from the paging trigger (`showView` throws on a page).
+ */
+const SWEEP_VIEW_BARS = 2_000;
+/** Below this the view did not leave the 120-bar mount geometry. */
+const MIN_SWEEP_SPAN_SLOTS = 1_000;
+
+async function showSweepView(page: Page): Promise<void> {
+  const view = await showView(page, { kind: "lastBars", bars: SWEEP_VIEW_BARS });
+  fact(SPEC, "view", { iterations: view.iterations, from: view.fromLogical, to: view.toLogical, spacingPx: view.barSpacingPx });
+  expect(view.toLogical - view.fromLogical, "a vista da varredura é estreita demais").toBeGreaterThanOrEqual(MIN_SWEEP_SPAN_SLOTS);
+}
+
 /** Sweeps the crosshair over the liquidation pane and returns every snapshot taken. */
 async function sweep(page: Page): Promise<Snapshot[]> {
   const layer = page.locator(`[data-testid="${PANE_TESTID}"]`);
@@ -576,6 +596,7 @@ test.describe(`T-04.3: the liquidation legend, two magnitudes led by the leg's s
 
   test("(d)+(e): two magnitudes, each its own leg's, absence and zero per leg, and no third number", async ({ page }) => {
     await openPage(page, instance!.baseUrl);
+    await showSweepView(page);
     const shots = await sweep(page);
     const defects: string[] = [];
     const seen: Record<Cohort, { absent: number; zero: number; positive: number }> = {
