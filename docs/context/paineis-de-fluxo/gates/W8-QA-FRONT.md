@@ -163,3 +163,41 @@ Ações:
 3. (WARNING-4, não bloqueia) gramática do cabeçalho e "sem transformação de caixa" em `docs/product/DESIGN_SYSTEM.md`.
 
 Estado para quem continuar: `handoff/W8-QA-FRONT-estado.md`.
+
+---
+
+## Re-validação @e29fbef (código de produção = `4aee5f6`; QA, 2026-10-03)
+
+O único FAIL era o portão (`e2e/20` 177 ms > 160 sob carga). Desde então também entrou código de front:
+`W8-OI-1024-build.md` (B-1 do design-review: O·H·L·C num grupo `nowrap`, termo da procedência `inline-block`;
+`e2e/40` F-1/F-2/F-3; `e2e/41` com `1m`, que fecha o WARNING-1 deste gate). Por ordem do despacho, sem e2e
+nem `make verify` próprios: o portão é o do orquestrador e o OI é julgado por leitura do teste e da ablação.
+
+```
+## QA Gate (Front) — W8, re-validação
+- [OK] `make verify` — `VERIFY_FORCE=1` @4aee5f6, log /tmp/verify-wave-paineis-f06-20261003T054811Z.log
+       (árvore limpa: a seção `diff --stat HEAD` do log está vazia): e2e 127 passed, 14 skipped, 0 `✘`
+- [OK] `e2e/20` no mesmo log: `axis_intra_gesture_interval_max_ms=97.2` (teto 160),
+       `axis_intra_gesture_interval_over_ceiling_n=0`, `history_page_latency_max_ms=106.2`
+- [OK] Testes unitários rodados de novo — `npm --prefix frontend run test:app|test:charts|test:s1|test:s3`
+       → 706/0 · 353/0 · 105/0 · 111/0 (1275, 0 falha)
+- [OK] B-1 do OI a 1024 por leitura (abaixo); WARNING-1 (`1m` no `e2e/41` N-1) fechado: no log,
+       `41-…:40:5 N-1: at 1024/1m` e `at 1280/1m` ✓, e `N-2: on 1m` ✓
+- [OK] 8 regras bloqueantes — portão `regras` do mesmo verify; `harness rules --mode sweep --changed-only` → 0 linhas
+Veredito: APPROVED
+```
+
+**O OI a 1024, lido:** `SymbolClient.tsx:2518` (`data-legend-ohlc-row`, `inline-flex flex-nowrap`) e `:2392-2399`
+(`OiProvenanceTerm`, `<span data-provenance-term className="inline-block">`) são a forma que o gate de design
+aprovou. Os falsificadores estão ligados no stub, onde o `make verify` os vê (`e2e/40:1089-1101`): F-3 a 1024 e
+1280, F-2 a 1024, por último porque a sonda reescreve a largura. No log do portão, F-2 dá `tops 619/619/619/619`
+e `derivedTop 635` (a fileira não quebra), e F-3 dá `Universo painted=false` a 1024 (a linha termina em `· …`,
+sem rótulo órfão) e `painted=true` a 1280, com `controlPainted=true` nos dois. A ablação registrada em
+`W8-OI-1024-build.md` §3 (sem `nowrap` ⇒ F-1 5/5 e F-2 2/2 reprovam; sem `inline-block` ⇒ F-3 7/7; termo inteiro
+atômico ⇒ contra-ablação 4/4 no real) é coerente com o que os juízes do spec leem: `judgeOhlcRow` compara os
+`top`, e `judgeOiProvenance` lê pintura via `paintsIn`, não só geometria.
+
+**Declarado, não bloqueia:** o F-1 (área ≥ 71/58,2 por TF) só julga **dado real** (`e2e/40:1147` e `:1195`),
+e o teste de dado real é **pulado** no `make verify` (store SQLite: linha 125 do log, `-`). A área do OI no stub a
+1024/15m é 59,2 contra o piso K-3 de 58,2, porque a linha de frescor do stub quebra (declarado pelo builder,
+§5). Os 72/72/72/59,2/59,2 são `[MEDIDO pelo builder]`, não por este QA, e no portão o B-1 é mordido pelo F-2.

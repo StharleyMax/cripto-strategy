@@ -161,3 +161,47 @@ quem escolhe é o orquestrador/owner, não este QA.
   → `1 failed, 15 passed`.
 - Logs: `/tmp/verify-wave-paineis-f06-20261003T033510Z.log` (completo), `/tmp/claude-1002/w8qa-narrow.log`
   (linha estreita), `/tmp/verify-w8qa-scope-20261003T035446Z.log` (M6).
+
+---
+
+## Re-validação @e29fbef (código de produção = `4aee5f6`; QA, 2026-10-03)
+
+Entraram desde o NEEDS_FIX: `T-06.2-fix-W8.md` (F-1 ⇒ mapa no diff vira COMPLETO; W-2 `frontend/public/*`;
+M-3 `check_tokens`) e `T-06.4-fix-N1.md` §N-2 (`NN+` acima do último spec recusa). Medido revertendo cada fix
+no `scripts/scope-resolve.sh` real (mesmo runner de `W8-QA-BACK.md` §Re-validação, `make test-fast K=scope_resolve`,
+restauração conferida por `git status`).
+
+```
+## QA Gate — Fase 06 [infra] — T-06.2, re-validação
+- [OK] 8 regras bloqueantes — `harness rules --mode sweep --changed-only --format ndjson` → rc=0, 0 linhas
+- [OK] Testes existem e passam — `make test-fast K=scope_resolve` → 26 passed (16 do QA + 9 dos fixes + 1 novo)
+- [OK] Portão — `VERIFY_FORCE=1 make verify` @4aee5f6, log /tmp/verify-wave-paineis-f06-20261003T054811Z.log:
+       pytest 3593 passed, cobertura 96,92%; e2e 127 passed, 14 skipped (dado real), 0 reprovado
+- [OK] Cobertura 96,92% (o `.sh` segue fora do instrumento `[NÃO MEDIDO]`; o universo dele são as mutações abaixo)
+- [OK] DoD 2 — reprova quando a task quebra um spec que ela toca: F-1 fechado (mapa no diff ⇒ COMPLETO)
+Regras bloqueantes avaliadas: 8 de 8
+Veredito: APPROVED
+```
+
+### Mutações — 8 aplicadas, 7 reprovam, 1 equivalente declarado
+
+| id | fix | mutação | `make test-fast K=scope_resolve` |
+|---|---|---|---|
+| R-F1 | F-1 revertido | mapa no diff volta a `só 11` | **1 failed** / 25; **2 failed** / 26 com o teste novo |
+| N-F1a | mapa-no-diff, nova | padrão do `case` morto (`scope-map.tsv.orig`) | **1 failed** |
+| N-F1b | mapa-no-diff, nova | mapa no diff ⇒ só as linhas de `@rota:symbol` (meio-conserto) | 25 passed **antes**; **1 failed** com o teste novo |
+| R-N2 | N-2 revertido | sem a checagem da base de `NN+` | **3 failed** (`14+`, `99+`, `10 99+ 12`) |
+| N-N2 | NN+, nova | `spec_of` da base num subshell `( … )` (a recusa só sai do subshell) | **3 failed** |
+| N-T1 | token malformado, nova | faixa aceita 1 dígito (`^[0-9]{1,2}-[0-9]{1,2}$`) | **1 failed** (`8-9`) |
+| N-T2 | token malformado, nova | faixa invertida por um (`a <= b + 1`) | **1 failed** (`13-12`) |
+| N-T3 | token malformado, nova | `^[0-9a-z]{2}\+?$` | 25 passed — **equivalente**: `ab+` cai no ramo `NN+` e `spec_of ab` recusa com rc 3 |
+
+### Teste novo (só teste), em `backend/tests/main/test_scope_resolve.py`
+
+`test_editing_a_route_row_cannot_drop_its_spec_from_its_own_diff`: o diff reescreve `@rota:console` de `01` para
+`13` e toca um arquivo só do console; a seleção tem de ser COMPLETO ou conter `01`. O teste de F-1 anterior
+mexe numa linha de prefixo cujo spec (`12`) também está em `@rota:symbol` (`08+`), e por isso o meio-conserto
+N-F1b passava nele. `ruff`/`mypy` limpos. `[NÃO MEDIDO]` no `make verify` acima (é posterior a ele).
+
+⚠️ **Estado do teste novo:** o despacho limitou o commit aos 3 relatórios, então o(s) arquivo(s) de teste acima ficam
+**modificados e não commitados** na worktree `wave-paineis-f06`. Commitá-los muda a árvore e exige o `make verify` dela.

@@ -138,3 +138,63 @@ um chunk no extent.
 
 - `backend/tests/sentimento/test_md_series_compaction_delete_flow.py` (novo, 6 testes: 4 verdes, 2 vermelhos = D-1, D-2)
 - `backend/tests/sentimento/test_postgres_series_window_reader_extent.py` (+1 teste, mata Q2b)
+
+---
+
+## Re-validação @e29fbef (código de produção = `4aee5f6`; QA, 2026-10-03)
+
+Entraram desde o NEEDS_FIX: `T-06.4-fix-W8.md` (D-1/D-2), `T-06.4-fix-B1.md` (B-1 do code-review: pipeline
+parado), `T-06.4-fix-N1.md` (N-1: um `docker ps` por serviço). Os relatórios não foram aceitos como prova: cada
+fix foi revertido no `compact.sh` real e medido. Runner: `scratchpad/mut/run.sh` (aplica a mutação por troca
+exata de string, purga `__pycache__`, roda `make test-fast K=compaction`, restaura com `git checkout`,
+confere `git status` de `scripts/ backend/src frontend/src` = 0 linhas após cada uma).
+
+```
+## QA Gate — Fase 06 [sentimento + infra] — W8, re-validação
+- [OK] 8 regras bloqueantes — `harness rules --mode sweep --changed-only --format ndjson` → rc=0, 0 linhas
+- [OK] Testes existentes antes de qualquer novo — `make test-fast K="compaction or scope_resolve"` → 66 passed
+- [OK] Testes passam — `make test-fast K=compaction` → 48 passed (41 existentes + 7 novos deste QA)
+- [OK] Portão — `VERIFY_FORCE=1 make verify` @4aee5f6, log /tmp/verify-wave-paineis-f06-20261003T054811Z.log:
+       pytest 3593 passed, 1 skipped, 1 xfailed; `Total coverage: 96.92%` (piso 70); `Contracts: 7 kept, 0 broken`
+- [OK] Cobertura 96,92% contra 70 total / 90-80-70 por camada (ADR-009/D1) — mesmo log
+- [OK] DoD 6.4 — pré-condições do DELETE irreversível: D-1 e D-2 fechados, mutação revertida reprova (abaixo)
+- [anomalia, herdada e explicada] DoD 3 "DEPOIS" e DoD 4 "2 boots" dependem do deploy; impedem o FECHAMENTO
+  da fase até serem medidos, não este veredito de wave
+Regras bloqueantes avaliadas: 8 de 8
+Veredito: APPROVED
+```
+
+### Mutações — 12 aplicadas, 12 reprovam (3 só depois dos testes novos deste QA)
+
+| id | fix | mutação | `make test-fast K=compaction` |
+|---|---|---|---|
+| R-D1 | D-1 revertido | guarda `envelopes-before.tsv` removida | **2 failed** / 48 |
+| N-D1 | D-1, nova | `-s` → `-e` (arquivo de 0 byte aceito) | 41 passed **antes**; **1 failed** com o teste novo |
+| R-D2 | D-2 revertido | volta `done < <(sql_chunks \| psql_ro)` | **1 failed** |
+| N-D2 | D-2, nova | `chunks=…` com `\|\| true` no lugar do `die` | **1 failed** |
+| R-B1 | B-1 revertido | sem `require_pipeline_stopped` no `delete` | **14 failed** |
+| N-B1a | guarda do pipeline, nova | `paused` aceito como parado | **2 failed** |
+| N-B1b | guarda do pipeline, nova | `docker inspect` que falha vira `exited` | **2 failed** |
+| N-B1c | guarda do pipeline, nova | lag/pending lidos de QUALQUER grupo (sem `cur == g`) | 41 passed **antes**; **4 failed** com os testes novos |
+| R-N1 | N-1 revertido | um `docker ps` com os dois `--filter` (AND) | **4 failed** |
+| N-N1a | varredura por serviço, nova | ignora nomes `deploy-*` (`grep -v '^deploy-'`) | **4 failed** |
+| N-N1b | varredura por serviço, nova | só a 2ª linha do `docker ps` conta (`sed -n 2p`) | **4 failed** |
+| N-N1c | varredura por serviço, nova | `docker ps` que falha vira "nada rodando" | 41 passed **antes**; **2 failed** com o teste novo |
+
+Restaurado ⇒ `make test-fast K="compaction or scope_resolve"` → **74 passed** (com os 8 testes novos dos dois QAs).
+
+### Testes novos (só teste), em `backend/tests/sentimento/test_md_series_compaction_delete_flow.py`
+
+Três mutantes sobreviviam — o código estava certo, o teste não o fixava:
+- `test_delete_with_an_empty_f_a_baseline_never_reaches_the_database` — `envelopes-before.tsv` de 0 byte ⇒ rc 2,
+  nenhum `exec` (mata N-D1).
+- `_NOT_STOPPED` +3 casos (× `delete` e `snapshot` = 6 testes): `pending>0-before-a-drained-group` e
+  `lag>0-before-a-drained-group` (`XINFO GROUPS` lista por nome, um grupo drenado pode vir DEPOIS do escritor;
+  mata N-B1c), e `docker-ps-fails` (o dublê ganhou `FAKE_DOCKER_PS=__FAIL__` ⇒ `ps` rc 1; mata N-N1c).
+- `ruff check` / `ruff format --check` / `mypy` no arquivo → limpos.
+
+`[NÃO MEDIDO]` os 7 testes novos não estavam no `make verify` acima (são posteriores a ele); passam em
+`make test-fast`, e o próximo `make verify` da árvore os mede. Nada rodou contra o Postgres/Redis do deploy.
+
+⚠️ **Estado do teste novo:** o despacho limitou o commit aos 3 relatórios, então o(s) arquivo(s) de teste acima ficam
+**modificados e não commitados** na worktree `wave-paineis-f06`. Commitá-los muda a árvore e exige o `make verify` dela.
