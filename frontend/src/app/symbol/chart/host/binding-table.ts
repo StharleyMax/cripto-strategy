@@ -26,7 +26,12 @@ import type { AnyIndicatorBinding, HostPlacement, HostSeriesFeed, PaneScaleBindi
  * `T-02.2` (plan `02` item `2.2`) — the `paneIndex` is DERIVED AT MOUNT, never stored at register:
  * the table hands the derivation the binding's placement AND the placements of every binding
  * registered at that moment (the ACTIVE set), so a pane's index is its place among the panes that
- * are on, whatever order they registered in (`derivePaneIndex`). `refeed(instanceKey)` is `T-02.3`'s.
+ * are on, whatever order they registered in (`derivePaneIndex`).
+ *
+ * `T-02.3` (plan `02` item `2.4`, `SPEC-011 §4.2`, `ADR-050` emenda `E-1`) — `refeed(instanceKey)` runs
+ * `apply` of THAT key alone, outside a history page, and hands its feeds to the SAME function the host
+ * gives the table for a late mount (`BindingTableAttachment.feedOutsidePage`), which is the host's one
+ * `setData` loop. The table never calls `setData` itself.
  *
  * No React here (only the `RefObject` type): the table runs under `node --test` with a real chart, the
  * same way `price-candle.test.ts` measures the price pane.
@@ -51,8 +56,11 @@ export interface MountedBinding {
 /** What the host gives the table when the chart exists. */
 export interface BindingTableAttachment {
   readonly chart: IChartApi;
-  /** Feeds a binding mounted AFTER `attach` (the carrier already holds the grid). */
-  readonly feedLateMount: (feeds: readonly HostSeriesFeed[]) => void;
+  /**
+   * Feeds ONE binding outside a history page — a binding mounted AFTER `attach`, or a `refeed` — through
+   * the host's only `setData` loop (the carrier already holds the grid, so it is not fed again).
+   */
+  readonly feedOutsidePage: (feeds: readonly HostSeriesFeed[]) => void;
 }
 
 export interface BindingTable {
@@ -68,6 +76,12 @@ export interface BindingTable {
   detach(): void;
   /** The mounted bindings, in the order they were mounted. */
   mounted(): readonly MountedBinding[];
+  /**
+   * `T-02.3` (`E-1`) — runs `apply` of `instanceKey` ALONE, with its latest render, and hands its feeds
+   * to `feedOutsidePage`; no other binding is applied. Does nothing when the key is not mounted: before
+   * `attach` the mount applies the latest render anyway, and after an unregister there is nothing to feed.
+   */
+  refeed(instanceKey: string): void;
 }
 
 /**
@@ -167,7 +181,7 @@ export function createBindingTable(derive: PaneIndexDerivation): BindingTable {
       if (attachment !== null && !mounted.has(instanceKey)) {
         const late = mountOne(attachment.chart, instanceKey, entry, paneIndexAtMount(entry));
         mounted.set(instanceKey, late);
-        attachment.feedLateMount(binding.current.apply(late.handles));
+        attachment.feedOutsidePage(binding.current.apply(late.handles));
       }
       return () => {
         if (registered.get(instanceKey)?.binding !== binding) {
@@ -198,6 +212,13 @@ export function createBindingTable(derive: PaneIndexDerivation): BindingTable {
     },
     mounted() {
       return [...mounted.values()];
+    },
+    refeed(instanceKey) {
+      const entry = mounted.get(instanceKey);
+      if (entry === undefined || attachment === null) {
+        return;
+      }
+      attachment.feedOutsidePage(entry.binding.current.apply(entry.handles));
     },
   };
 }

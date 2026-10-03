@@ -18,6 +18,11 @@
  * they registered in. An index by registration position inverts them on the reversed registration,
  * asserted below as the ablation pair.
  *
+ * `T-02.3` (plan `02` DoD 3, `E-1`, `gates/T-02.3-build.md` §3): `refeed(key)` of a SYNTHETIC
+ * `indicator-endpoint` indicator runs that key's `apply` alone and hands its feed to the host's loop
+ * (`feedOutsidePage`) ONCE; no other series receives `setData`. A refeed that re-applies every
+ * binding feeds the others, asserted below as the ablation pair.
+ *
  * Run with: npm --prefix frontend run test:app
  */
 
@@ -36,7 +41,7 @@ import {
   type PaneIndexDerivation,
   type PaneOrder,
 } from "./binding-table.ts";
-import type { AnyIndicatorBinding, HostPlacement, HostSeries, IndicatorBinding } from "./indicator-binding.ts";
+import type { AnyIndicatorBinding, HostPlacement, HostSeries, HostSeriesFeed, IndicatorBinding } from "./indicator-binding.ts";
 
 const OVERLAY: HostPlacement = { kind: "overlay", on: "price" };
 const SYNTHETIC_PANE: HostPlacement = { kind: "pane", paneId: "synthetic_pane" };
@@ -98,7 +103,7 @@ function refOf(binding: IndicatorBinding<SyntheticHandles>): { readonly current:
 
 function attached(chart: IChartApi): BindingTable {
   const table = createBindingTable(resolvePaneIndex);
-  table.attach({ chart, feedLateMount: () => undefined });
+  table.attach({ chart, feedOutsidePage: () => undefined });
   return table;
 }
 
@@ -164,7 +169,7 @@ test("attach mounts by paneIndex then registration order; a late binding is moun
   table.register("synthetic_pane", SYNTHETIC_PANE, refOf(syntheticBinding(lc)));
   table.register("synthetic_overlay", OVERLAY, refOf(syntheticBinding(lc)));
   const fed: number[] = [];
-  const mounted = table.attach({ chart, feedLateMount: (feeds) => fed.push(feeds.length) });
+  const mounted = table.attach({ chart, feedOutsidePage: (feeds) => fed.push(feeds.length) });
   assert.deepEqual(
     mounted.map(({ instanceKey, paneIndex }) => [instanceKey, paneIndex]),
     [
@@ -188,7 +193,7 @@ test("detach unmounts every binding still mounted, before the host removes the c
   const table = createBindingTable(resolvePaneIndex);
   table.register("synthetic_pane", SYNTHETIC_PANE, refOf(syntheticBinding(lc)));
   table.register("synthetic_overlay", OVERLAY, refOf(syntheticBinding(lc)));
-  table.attach({ chart, feedLateMount: () => undefined });
+  table.attach({ chart, feedOutsidePage: () => undefined });
   assert.equal(seriesOnChart(chart), initial + 2);
   table.detach();
   assert.equal(seriesOnChart(chart), initial);
@@ -230,7 +235,7 @@ async function mountSynthetic(
   for (const paneId of registrationOrder) {
     table.register(paneId, paneAt(paneId), refOf(syntheticBinding(lc)));
   }
-  const mounted = table.attach({ chart, feedLateMount: () => undefined });
+  const mounted = table.attach({ chart, feedOutsidePage: () => undefined });
   const indices = Object.fromEntries(mounted.map(({ instanceKey, paneIndex }) => [instanceKey, paneIndex]));
   const perPane = [1, 2, 3].map((paneIndex) => seriesOnPane(chart, paneIndex));
   table.detach();
@@ -270,7 +275,7 @@ test("T-02.2: the index is read at MOUNT over the whole active set, not when eac
     table.register(paneId, paneAt(paneId), refOf(syntheticBinding(lc)));
   }
   assert.deepEqual(seen, [], "nothing is derived before the chart exists");
-  table.attach({ chart, feedLateMount: () => undefined });
+  table.attach({ chart, feedOutsidePage: () => undefined });
   assert.deepEqual(
     seen.map(({ active }) => active),
     [3, 3, 3],
@@ -294,6 +299,135 @@ test("T-02.2: F1_PANE_ORDER — price and overlays on 0; with the five panes on,
     [0, 1, 2, 3],
   );
   assert.throws(() => derivePaneIndex(paneAt("funding"), five, F1_HOST_PANE_ORDER), /not in the host's pane order/);
+});
+
+// ── `T-02.3` — `refeed(instanceKey)`, the `indicator-endpoint` path (`E-1`) ────────────────────
+
+const ENDPOINT_KEY = "synthetic_endpoint";
+const T0 = 1_700_000_000;
+
+/** Every `setData` that reached a series, by key, and every `apply` the table ran, by key. */
+interface FeedLog {
+  readonly setData: string[];
+  readonly apply: string[];
+  /** What went through the HOST's loop (the attachment's `feedOutsidePage`), by key. */
+  readonly throughHost: string[];
+}
+
+/**
+ * A synthetic binding whose `apply` returns `value` as the render it closes over — the shape of a
+ * `useHostedPane` binding, whose ref is re-pointed at every render. Its series counts its own
+ * `setData` calls, so a write that bypasses the host's loop is seen too.
+ */
+function loggedBinding(
+  lc: LightweightCharts,
+  key: string,
+  value: number,
+  log: FeedLog,
+  seriesKeys: Map<HostSeries, string>,
+): IndicatorBinding<SyntheticHandles> {
+  return {
+    mount: (chart, paneIndex) => {
+      const series = chart.addSeries(lc.LineSeries, {}, paneIndex);
+      const setData = series.setData.bind(series);
+      series.setData = (items) => {
+        log.setData.push(key);
+        setData(items);
+      };
+      seriesKeys.set(series, key);
+      return { series };
+    },
+    apply: ({ series }) => {
+      log.apply.push(key);
+      return [{ series, items: [{ time: T0 as never, value }] }];
+    },
+    unmount: (chart, { series }) => chart.removeSeries(series),
+  };
+}
+
+/** The host's loop as `ChartHost.tsx::feedSeries` runs it: each feed's `setData`, in order. */
+function hostLoop(log: FeedLog, seriesKeys: Map<HostSeries, string>): (feeds: readonly HostSeriesFeed[]) => void {
+  return (feeds) => {
+    for (const { series, items } of feeds) {
+      log.throughHost.push(seriesKeys.get(series) ?? "?");
+      series.setData(items as never);
+    }
+  };
+}
+
+function lastValue(series: HostSeries): number | undefined {
+  const data = series.data();
+  const last = data[data.length - 1] as { readonly value?: number } | undefined;
+  return last?.value;
+}
+
+/**
+ * Three bindings mounted and fed as the host's mount effect feeds them, then the endpoint's data
+ * "arrives": its ref is re-pointed at a render with `42`, and the logs are cleared.
+ */
+async function endpointScene() {
+  const { lc, chart } = await realChart();
+  const log: FeedLog = { setData: [], apply: [], throughHost: [] };
+  const seriesKeys = new Map<HostSeries, string>();
+  const table = createBindingTable(resolvePaneIndex);
+  const endpointRef: { current: AnyIndicatorBinding } = refOf(loggedBinding(lc, ENDPOINT_KEY, 1, log, seriesKeys));
+  table.register("synthetic_overlay", OVERLAY, refOf(loggedBinding(lc, "synthetic_overlay", 1, log, seriesKeys)));
+  table.register(ENDPOINT_KEY, OVERLAY, endpointRef);
+  table.register("synthetic_pane", SYNTHETIC_PANE, refOf(loggedBinding(lc, "synthetic_pane", 1, log, seriesKeys)));
+  const feed = hostLoop(log, seriesKeys);
+  const mounted = table.attach({ chart, feedOutsidePage: feed });
+  feed(mounted.flatMap(({ binding, handles }) => binding.current.apply(handles)));
+  // Not vacuous: the first render reached every series through the host's loop.
+  assert.deepEqual([...log.setData].sort(), ["synthetic_endpoint", "synthetic_overlay", "synthetic_pane"]);
+  // The fetch the indicator made on its own resolved: its next render carries the new value.
+  endpointRef.current = loggedBinding(lc, ENDPOINT_KEY, 42, log, seriesKeys) as AnyIndicatorBinding;
+  for (const entries of [log.setData, log.apply, log.throughHost]) {
+    entries.length = 0;
+  }
+  const seriesOf = (key: string): HostSeries => {
+    const series = [...seriesKeys].find(([, own]) => own === key)?.[0];
+    assert.ok(series !== undefined, `broken invariant: ${key} has no series`);
+    return series;
+  };
+  return { chart, table, log, feed, seriesOf };
+}
+
+test("T-02.3: refeed(key) of a synthetic indicator-endpoint runs ITS apply once, through the host's loop, and touches no other series", async () => {
+  const { chart, table, log, seriesOf } = await endpointScene();
+  table.refeed(ENDPOINT_KEY);
+  assert.deepEqual(log.apply, [ENDPOINT_KEY], "only the refed key is applied, once");
+  assert.deepEqual(log.throughHost, [ENDPOINT_KEY], "its feed goes through the host's setData loop, once");
+  assert.deepEqual(log.setData, [ENDPOINT_KEY], "no other series receives setData");
+  // Read off the library: the endpoint shows its LATEST render, the others keep theirs.
+  assert.equal(lastValue(seriesOf(ENDPOINT_KEY)), 42);
+  assert.equal(lastValue(seriesOf("synthetic_overlay")), 1);
+  assert.equal(lastValue(seriesOf("synthetic_pane")), 1);
+  chart.remove();
+});
+
+test("T-02.3 ablation: a refeed that re-applies EVERY binding feeds the other series — the instrument above can fail", async () => {
+  const { chart, table, log, feed } = await endpointScene();
+  // The mutation the DoD names, played here so it runs on every execution.
+  feed(table.mounted().flatMap(({ binding, handles }) => binding.current.apply(handles)));
+  assert.notDeepEqual(log.setData, [ENDPOINT_KEY]);
+  assert.deepEqual([...log.setData].sort(), ["synthetic_endpoint", "synthetic_overlay", "synthetic_pane"]);
+  chart.remove();
+});
+
+test("T-02.3: refeed feeds nothing for a key that is not mounted — before attach, unknown, or unregistered", async () => {
+  const { lc, chart } = await realChart();
+  const log: FeedLog = { setData: [], apply: [], throughHost: [] };
+  const seriesKeys = new Map<HostSeries, string>();
+  const table = createBindingTable(resolvePaneIndex);
+  const unregister = table.register(ENDPOINT_KEY, OVERLAY, refOf(loggedBinding(lc, ENDPOINT_KEY, 1, log, seriesKeys)));
+  table.refeed(ENDPOINT_KEY);
+  assert.deepEqual(log.apply, [], "before attach the mount applies the latest render itself");
+  table.attach({ chart, feedOutsidePage: hostLoop(log, seriesKeys) });
+  table.refeed("never_registered");
+  unregister();
+  table.refeed(ENDPOINT_KEY);
+  assert.deepEqual(log, { setData: [], apply: [], throughHost: [] });
+  chart.remove();
 });
 
 test("unmount is MANDATORY in the type (`ADR-050/D3`): a binding without it does not compile", () => {

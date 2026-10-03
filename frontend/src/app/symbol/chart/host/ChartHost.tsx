@@ -168,6 +168,8 @@ export function SymbolChartHost({
       crosshairStore: createCrosshairSlotStore(),
       table,
       register: (instanceKey, placement, binding) => table.register(instanceKey, placement, binding),
+      // `T-02.3` (`E-1`) — that key's `apply` alone, outside a page, through `feedOutsidePage` below.
+      refeed: (instanceKey) => table.refeed(instanceKey),
     };
   });
 
@@ -203,7 +205,8 @@ export function SymbolChartHost({
     // the binding's own `applyOptions` (`T-01.6`).
     const mounted = table.attach({
       chart,
-      feedLateMount: (feeds) => feedSeries(paneSeriesFeeds(feeds, dense)),
+      // A late mount and a `refeed` (`T-02.3`): one binding's feeds, through the ONE `setData` loop.
+      feedOutsidePage: (feeds) => feedSeries(paneSeriesFeeds(feeds, dense)),
     });
     // `T-01.6` — the stretch factors (the panes exist once `addSeries(…, paneIndex)` ran).
     const panes = chart.panes();

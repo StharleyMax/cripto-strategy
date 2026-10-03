@@ -7,10 +7,13 @@ import type { AnyIndicatorBinding, HostPlacement, IndicatorBinding, IndicatorReg
 /**
  * `T-02.1` — the pane-facing half of the registrar. The binding shape is `indicator-binding.ts`'s
  * (`IndicatorBinding`, `unmount` mandatory) and the host keys it by `instanceKey`; until `F1` this
- * file declared its own copy (`HostedPaneBinding`, keyed by `paneIndex`, no `unmount`). Only
- * `register` is taken from `IndicatorRegistrar` here: `refeed` arrives with `T-02.3`.
+ * file declared its own copy (`HostedPaneBinding`, keyed by `paneIndex`, no `unmount`).
+ *
+ * `T-02.3` — the whole `IndicatorRegistrar`, `refeed` included (`E-1`): the host runs `apply` of that
+ * key alone, outside a history page, through its one `setData` loop (`binding-table.ts::refeed`).
+ * No builtin calls it; it is the `indicator-endpoint` path.
  */
-export interface PaneRegistrar extends Pick<IndicatorRegistrar, "register"> {
+export interface PaneRegistrar extends IndicatorRegistrar {
   readonly surfaceRef: RefObject<HTMLDivElement | null>;
   /** `T-01.7` — the slot under the crosshair, one per host (`pane-legend.ts`). Lives on the
    * registrar so the mount effect keeps its single, stable dependency. */
