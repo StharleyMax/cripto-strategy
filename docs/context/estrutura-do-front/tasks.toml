@@ -40,7 +40,7 @@ feature = "estrutura-do-front"
 spec = "docs/specs/SPEC-011-estrutura-do-front.md"
 plan = "docs/plans/SPEC-011-estrutura-do-front"
 review = "docs/context/estrutura-do-front/gates/TECH-LEAD-narrativa.md"
-untracked_note = "2026-10-02: as 32 tasks estao SEM card e SEM local_only. Nao e decisao de nao cardar: a narrativa (gates/TECH-LEAD-narrativa.md) aguarda o owner, e card no Jira (CST, board 36) so nasce depois do `approve tasks`. Plano: 10 Epics (um por fase, F0–F9) e 32 Tarefas filhas, com `tracker` inline em cada task. Quem carda: o /tech-lead depois da aprovacao, ou o orquestrador se o conector Atlassian estiver fora (cadastro manual registrado aqui, com data)."
+untracked_note = "2026-10-02: as 32 tasks estao SEM card e SEM local_only. Nao e decisao de nao cardar: a narrativa (gates/TECH-LEAD-narrativa.md) aguarda o owner, e card no Jira (CST, board 36) so nasce depois do `approve tasks`. Plano: 10 Epics (um por fase, F0–F9) e 32 Tarefas filhas, com `tracker` inline em cada task. Quem carda: o /tech-lead depois da aprovacao, ou o orquestrador se o conector Atlassian estiver fora (cadastro manual registrado aqui, com data). 2026-10-03: T-00.4 acrescentada (DECISAO-OWNER, narrativa §9), tambem sem card e sem local_only: 33 tasks no ambar. 2026-10-03: fase 10 (T-10.1..T-10.28, narrativa §10) acrescentada, tambem sem card: 61 tasks no ambar; T-10.20 e T-10.21 passam a depender de T-00.4 no merge da T-00.E2E."
 
 # ══ FASE 00 — os trilhos antes do movimento (pode correr JA) ═════════════════════
 
@@ -48,7 +48,7 @@ untracked_note = "2026-10-02: as 32 tasks estao SEM card e SEM local_only. Nao e
 id = "T-00.1"
 title = "[web] 00 · Contrato de indicador (contract.ts, so tipos) e os tipos que o nucleo consome, em chart/host/ e chart/history/"
 components = ["web"]
-status = "done"  # resolve: QA APPROVED 2026-10-03T13:25:05Z @ d54e59bede2fa872776722e473b35ef56935045a
+status = "done"  # resolve: QA APPROVED 2026-10-03T18:57:46Z @ dd2f124c03ff6ffb309099c273b21afb58e58388
 phase = "00"
 depends_on = []
 refs = [
@@ -68,7 +68,7 @@ refs = [
 id = "T-00.2"
 title = "[web] 00 · Regra local/indicator-isolation (P1, P2, P3) em eslint-rules/, com as 9 sondas e a sonda do barrel no teste da regra"
 components = ["web"]
-status = "done"  # resolve: QA APPROVED 2026-10-03T13:25:05Z @ d54e59bede2fa872776722e473b35ef56935045a
+status = "done"  # resolve: QA APPROVED 2026-10-03T18:57:46Z @ dd2f124c03ff6ffb309099c273b21afb58e58388
 phase = "00"
 depends_on = []
 refs = [
@@ -87,7 +87,7 @@ refs = [
 id = "T-00.3"
 title = "[web] 00 · Teste de diretorio de topo de frontend/src e os 2 varredores (bucket-arithmetic, data-fact) alargados para app/symbol/**"
 components = ["web"]
-status = "done"  # resolve: QA APPROVED 2026-10-03T13:25:05Z @ d54e59bede2fa872776722e473b35ef56935045a
+status = "done"  # resolve: QA APPROVED 2026-10-03T18:57:46Z @ dd2f124c03ff6ffb309099c273b21afb58e58388
 phase = "00"
 depends_on = []
 refs = [
@@ -100,6 +100,31 @@ refs = [
     "e2e: `make e2e` inteiro verde dentro de `make verify` E `git diff --name-status $BASE..HEAD -- frontend/e2e/` vazio.",
     "numstat: `git diff --numstat $BASE..HEAD -- frontend/` lista so o teste novo e os 2 varredores; nenhum arquivo de producao; intersecao com os 47 da wave vazia.",
     "paralelo: com T-00.1 e T-00.2.",
+]
+
+# T-00.4 entrou em 2026-10-03, DEPOIS da aprovacao da quebra: DECISAO-OWNER de 2026-10-03
+# ("Task curta antes da F1", escolhida num menu do orquestrador). Racional no adendo §9 da
+# narrativa; o achado em gates/W-F0-e2e-instavel.md. Nao bloqueia F1 (T-01.1 nao depende dela).
+[[tasks]]
+id = "T-00.4"
+title = "[web] 00 · Estabilizar e2e/18 (corrida contra a grade de 5 min do knowledgeTimeMs) e e2e/20 (outlier de 1.053 ms no teto de latencia)"
+components = ["web"]
+status = "done"  # resolve: QA APPROVED 2026-10-03T18:57:46Z @ dd2f124c03ff6ffb309099c273b21afb58e58388
+phase = "00"
+depends_on = []
+refs = [
+    "achado: docs/context/estrutura-do-front/gates/W-F0-e2e-instavel.md (A1, A2)",
+    "decisao: DECISAO-OWNER 2026-10-03, opcao 'Task curta antes da F1' do menu do orquestrador; narrativa §9",
+    "agente: frontend-builder",
+    "ESCOPO: frontend/e2e/18-tf-refetch-e-ablacao.spec.ts e frontend/e2e/20-teto-latencia-historia-sob-demanda.spec.ts. Codigo de producao so se o diagnostico de A1 apontar defeito real nele, e entao declarado no relatorio com o numero que o justifica.",
+    "EXCECAO DECLARADA ao DoD-2 da feature: esta task tem M em DUAS specs que ja existiam em $BASE (as duas acima) e em nenhuma outra. Qualquer outro M/D em frontend/e2e/ reprova.",
+    "DoD-A2 (e2e/18:232): o spec fica deterministico frente a fronteira de 5 min do knowledgeTimeMs (grade com offset de 240 s, medida no achado). Prova: um teste que FORCA as duas cargas de pagina a cair dos dois lados de uma fronteira da grade, e passa. Conserto sugerido no achado: fixar o knowledgeTimeMs nas duas cargas, ou comparar depois de alinhar a mesma fronteira; a escolha e do builder, com o motivo no relatorio.",
+    "DoD-A1 (e2e/20:728): o outlier de 1.053,3 ms (make verify da wave, 2026-10-02T20:34Z, suite sozinha, teto <= 400) e DIAGNOSTICADO ANTES de qualquer mudanca de teto: causa nomeada com medicao (ordem da suite, aquecimento do next start, GC, pedido em fila, etc.), ou [NAO SEI] declarado com o que foi medido. Teto (<= 160 sob concorrencia, <= 400 sozinho) so SOBE com numero e motivo escritos no relatorio e no comentario do spec; teto nunca sobe para caber o outlier sem causa.",
+    "DoD-N: N = 10 rodadas SEQUENCIAIS de `make e2e` INTEIRO (E2E_SPECS vazio: a ordem da suite e suspeita em A1), sozinhas, sem vermelho em e2e/18 nem em e2e/20; a contagem de verdes e o p95 de history_page_latency_p95_ms de cada rodada vao no relatorio. Por que 10: o placar da wave foi 1 verde em 3; se o vermelho ainda tivesse taxa >= 1/3, 10 verdes seguidos teriam chance (2/3)^10 ~ 1,7% [INFERRED: aritmetica, supoe rodadas independentes]. Vermelho de OUTRO spec nas 10 rodadas e registrado, nao escondido, e nao conta contra este DoD.",
+    "ablacao: (A2) desfazer o conserto do e2e/18 mantendo o teste de travessia forcada => o teste reprova (prova que a travessia e de fato exercitada); (A1) se o conserto for de causa, reintroduzi-la => o outlier volta. Resultado de cada mutacao no relatorio.",
+    "e2e: `make e2e` inteiro verde dentro de `make verify` (run_in_background) E `git diff --name-status $BASE..HEAD -- frontend/e2e/` lista M SO nas 2 specs acima (mais A de helper novo, se houver).",
+    "numstat: `git diff --numstat $BASE..HEAD -- frontend/` gravado no relatorio (docs/context/estrutura-do-front/gates/T-00.4-build.md), cada linha explicada.",
+    "paralelo: independente de F1; nao toca frontend/src/app/symbol/**, logo nao colide com T-01.x.",
 ]
 
 # ══ FASE 01 — o nucleo sai do arquivo (movimento como esta) ══════════════════════
@@ -1093,7 +1118,7 @@ title = "[web] 10 · e2e/20 anfitriao do 17 e do 22, em ordem fixa: arrasto cont
 components = ["web"]
 status = "todo"
 phase = "10"
-depends_on = ["T-10.1"]
+depends_on = ["T-10.1", "T-00.4"]
 refs = [
     "⛔ DEPENDENCIA DE OUTRA BRANCH: T-00.4 (origin/task/T-00.E2E) mexeu no 20 e ainda nao fez merge. Esta task SO e despachada depois desse merge, e entao o depends_on ganha \"T-00.4\" (o id ainda nao existe neste tasks.toml, e o validador recusaria).",
     "fonte: E2E-analise §2 linhas 17, 20, 22 e §5 C-5",
@@ -1113,7 +1138,7 @@ title = "[web] 10 · e2e/18 anfitriao do 26 (tag antes/depois no clique de 4h, m
 components = ["web"]
 status = "todo"
 phase = "10"
-depends_on = []
+depends_on = ["T-00.4"]
 refs = [
     "⛔ DEPENDENCIA DE OUTRA BRANCH: T-00.4 (origin/task/T-00.E2E) mexeu no 18 (a corrida contra a grade de 5 min) e ainda nao fez merge. Esta task SO e despachada depois desse merge, e entao o depends_on ganha \"T-00.4\".",
     "fonte: E2E-analise §2 linhas 18 e 26, §5 'verificados e sem conflito' (o laco de retry do 18 rele hitsBefore E a tag na mesma tentativa)",

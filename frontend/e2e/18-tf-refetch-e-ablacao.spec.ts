@@ -77,6 +77,61 @@ function oneMinuteEdgeIsOnFourHourBoundary(window: RenderedWindow): boolean {
   return (window.endMsInclusive + 60_000) % FOUR_HOURS_MS === 0;
 }
 
+/**
+ * `T-00.4` (`estrutura-do-front`, achado A2 of `gates/W-F0-e2e-instavel.md`) — the clock grid every
+ * `1m` window moves on. `page.tsx` reads `Date.now()` once per render and `request-window.ts`
+ * aligns `now − 5 min` DOWN to 5 min, so the three `<main>` attributes are constant between two
+ * wall-clock multiples of 5 min and all jump by EXACTLY this much when the clock crosses one
+ * (`knowledgeTimeMs ≡ 240 s mod 300 s`, `endMsInclusive + 1 min ≡ 0 mod 300 s`). Measured on the
+ * failure that opened the task: `knowledgeTimeMs` 1790974440000 → 1790974740000, a 300 000 ms step.
+ */
+const CLOCK_GRID_MS = 5 * 60_000;
+
+/**
+ * `T-00.4` — the `1m` window `reference` would have rendered at `later`'s clock reading.
+ *
+ * Two page loads are two clock readings; between them the server clock may cross ONE boundary of
+ * the 5-minute grid (two would take 5 min, and each load here takes ~1 s). At `1m` the window is a
+ * pure translation of the clock (alignment 5 min, span fixed at `initialBars` = 5 760 min), so a
+ * crossing moves start, end and knowledge time by the SAME `CLOCK_GRID_MS` and nothing else. This
+ * aligns `reference` onto `later`'s boundary and refuses every other difference:
+ *   - a step that is not 0 or exactly one grid forward (backwards, or a fraction of the grid) is
+ *     not a clock crossing, and is returned untouched so the caller's `toEqual` fails on it;
+ *   - the shift is applied to the three fields alike, so a window whose START moved by a different
+ *     amount than its end (another TF's span) or whose end moved off the grid (another TF's
+ *     alignment) still differs after the shift.
+ * The old comparison was `toEqual(reference)` with no alignment, which failed whenever the two
+ * loads straddled a boundary — roughly (seconds between them)/300 of runs `[INFERRED: uniform clock
+ * phase]` — with the product correct (`gates/W-F0-e2e-instavel.md` §A2).
+ */
+function alignToSameClockBoundary(reference: RenderedWindow, later: RenderedWindow): RenderedWindow {
+  const stepMs = later.knowledgeTimeMs - reference.knowledgeTimeMs;
+  if (stepMs !== 0 && stepMs !== CLOCK_GRID_MS) {
+    return reference;
+  }
+  return {
+    startMs: reference.startMs + stepMs,
+    endMsInclusive: reference.endMsInclusive + stepMs,
+    knowledgeTimeMs: reference.knowledgeTimeMs + stepMs,
+  };
+}
+
+/**
+ * `T-00.4` — the assertion both the routine test and the forced-crossing test below make: the page
+ * served for `?interval=7m` is EXACTLY the default (`1m`) window, once both are read on the same
+ * clock boundary. `defaultWindow` must be the EARLIER of the two loads.
+ */
+function expectDegradedEqualsDefault(defaultWindow: RenderedWindow, degraded: RenderedWindow): void {
+  const crossedGrid = degraded.knowledgeTimeMs !== defaultWindow.knowledgeTimeMs;
+  fact(SPEC, "degraded_vs_default_clock_step_ms", degraded.knowledgeTimeMs - defaultWindow.knowledgeTimeMs);
+  fact(SPEC, "degraded_vs_default_crossed_grid", crossedGrid);
+  expect(
+    degraded,
+    "?interval=7m tem de degradar para EXATAMENTE a mesma janela do default (1m), lida na mesma fronteira " +
+      `da grade de 5 min do relógio (passo entre as duas cargas: ${degraded.knowledgeTimeMs - defaultWindow.knowledgeTimeMs} ms)`,
+  ).toEqual(alignToSameClockBoundary(defaultWindow, degraded));
+}
+
 async function readRenderedWindow(page: import("@playwright/test").Page): Promise<RenderedWindow> {
   const main = page.locator("main[data-window-start-ms]");
   await expect(main, "a página não declara o próprio request (data-window-start-ms)").toHaveCount(1);
@@ -248,9 +303,9 @@ test(`?interval= não reconhecido degrada para o TF default, sem alcançar a API
   const degraded = await readRenderedWindow(page);
   fact(SPEC, "window_with_unsupported_interval", degraded);
   fact(SPEC, "window_with_default_interval", defaultWindow);
-  expect(degraded, "?interval=7m tem de degradar para EXATAMENTE a mesma janela do default (1m)").toEqual(
-    defaultWindow,
-  );
+  // `T-00.4` — the two loads are two clock readings; `expectDegradedEqualsDefault` compares them on
+  // the same 5-minute boundary (the forced-crossing test below is what proves that it has to).
+  expectDegradedEqualsDefault(defaultWindow, degraded);
 
   const hitsAfter = countSeriesHistoryAccessLogHits("interval=7m");
   fact(SPEC, "series_history_interval_7m_hits", hitsAfter - hitsBefore);
@@ -259,4 +314,71 @@ test(`?interval= não reconhecido degrada para o TF default, sem alcançar a API
     "um interval não reconhecido nunca pode alcançar /series-history — isso seria um 422 " +
       "comprado pela tela em nome de um clique arbitrário na URL",
   ).toBe(hitsBefore);
+});
+
+/**
+ * `T-00.4` (DoD-A2) — the falsifier of the alignment above: it FORCES the two loads of the previous
+ * test onto the two sides of a boundary of the 5-minute clock grid, then makes the same assertion.
+ * Without `alignToSameClockBoundary` this test fails every time it runs (ablation in
+ * `gates/T-00.4-build.md`); the routine test only meets a crossing by chance.
+ *
+ * The server and this runner read the SAME host clock (`make e2e` starts Next on localhost), so the
+ * boundary is predictable from here: the window changes when `Date.now()` crosses a multiple of
+ * `CLOCK_GRID_MS`. The test does not trust that prediction, it measures it: the first load must
+ * land before the boundary and the second after it (`knowledgeTimeMs` one grid apart), or the test
+ * fails as "the crossing was not exercised" rather than passing on an unforced pair.
+ *
+ * ⛔ COST, and why it is opt-in: waiting for the next boundary costs 0–300 s (150 s on average) of
+ * wall clock, against a ~10-minute suite (`make e2e`, `n=8` wave logs of 2026-10-02/03). Run it with
+ * `E2E18_FORCE_GRID_CROSSING=1`. Without the variable it is SKIPPED and says so in a `fact` —
+ * a skip is not a green, it is a test that did not run.
+ */
+const FORCE_GRID_CROSSING = process.env.E2E18_FORCE_GRID_CROSSING === "1";
+/** Load the default page this long before the boundary: every test of this file, with one to three
+ * `networkidle` loads each, takes under 1,5 s in the wave logs, so 4 s leaves the load wholly before
+ * it — and the test measures that it did (`forced_default_load_ms_before_boundary`). */
+const LEAD_BEFORE_BOUNDARY_MS = 4_000;
+/** And the `?interval=7m` load this long after it, clear of any clock skew between processes. */
+const LAG_AFTER_BOUNDARY_MS = 1_000;
+
+test(`T-00.4: as duas cargas FORÇADAS a lados opostos de uma fronteira da grade de 5 min continuam iguais (${SPEC})`, async ({
+  page,
+}) => {
+  fact(SPEC, "force_grid_crossing_enabled", FORCE_GRID_CROSSING);
+  test.skip(!FORCE_GRID_CROSSING, "opt-in: E2E18_FORCE_GRID_CROSSING=1 (espera até 300 s pela próxima fronteira)");
+  test.setTimeout(CLOCK_GRID_MS + 60_000);
+
+  let boundaryMs = Math.ceil(Date.now() / CLOCK_GRID_MS) * CLOCK_GRID_MS;
+  if (boundaryMs - Date.now() < LEAD_BEFORE_BOUNDARY_MS) {
+    boundaryMs += CLOCK_GRID_MS;
+  }
+  fact(SPEC, "forced_boundary_ms", boundaryMs);
+  await page.waitForTimeout(Math.max(0, boundaryMs - LEAD_BEFORE_BOUNDARY_MS - Date.now()));
+
+  const loadedBeforeMs = Date.now();
+  const withDefault = await page.goto(SYMBOL_PATH, { waitUntil: "networkidle" });
+  expect(withDefault?.status()).toBe(200);
+  const defaultWindow = await readRenderedWindow(page);
+  const loadedBeforeEndMs = Date.now();
+  fact(SPEC, "forced_default_load_ms_before_boundary", boundaryMs - loadedBeforeEndMs);
+
+  await page.waitForTimeout(Math.max(0, boundaryMs + LAG_AFTER_BOUNDARY_MS - Date.now()));
+  const loadedAfterMs = Date.now();
+  const degradedResponse = await page.goto(`${SYMBOL_PATH}?interval=7m`, { waitUntil: "networkidle" });
+  expect(degradedResponse?.status()).toBe(200);
+  const degraded = await readRenderedWindow(page);
+  fact(SPEC, "forced_window_default", defaultWindow);
+  fact(SPEC, "forced_window_degraded", degraded);
+  fact(SPEC, "forced_load_instants_ms", { loadedBeforeMs, loadedBeforeEndMs, loadedAfterMs });
+
+  // The precondition, measured: the pair really straddles ONE boundary of the grid.
+  expect(loadedBeforeEndMs, "a carga do default terminou depois da fronteira — a travessia não foi forçada").toBeLessThan(
+    boundaryMs,
+  );
+  expect(
+    degraded.knowledgeTimeMs - defaultWindow.knowledgeTimeMs,
+    "as duas cargas não caíram em lados opostos de UMA fronteira da grade de 5 min — a travessia não foi exercitada",
+  ).toBe(CLOCK_GRID_MS);
+
+  expectDegradedEqualsDefault(defaultWindow, degraded);
 });
