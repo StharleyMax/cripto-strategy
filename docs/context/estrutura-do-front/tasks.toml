@@ -930,6 +930,7 @@ refs = [
     "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
     "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.10-build.md, cada linha de producao justificada como `export`.",
     "colisao: depende de T-02.3 porque pane-stack.ts (chart/host/) e SymbolClient.tsx sao editados pela F2.",
+    "FOLLOW-UP de W-P1-QA (2026-10-03): os comentarios de frontend/eslint.config.mjs:87-90,102 ainda descrevem o CALA da arvore real dentro do teste e o inventario removidos pela T-10.5; reescreve-los (redacao proposta em gates/W-P1-QA.md). ESCOPO: frontend/eslint.config.mjs, so comentario.",
 ]
 
 [[tasks]]
