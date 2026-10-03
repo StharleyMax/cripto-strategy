@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import http from "node:http";
 
 import { expect, test } from "@playwright/test";
 
@@ -6,7 +6,6 @@ import {
   PANEL_PATH,
   fact,
   isApiLike,
-  shot,
   startSecondaryNextInstance,
   startStubCollectorStatusApi,
 } from "./helpers.ts";
@@ -22,12 +21,8 @@ const SPEC = "02-rede-e-estados";
  * 1. The browser must make ZERO requests toward anything API-shaped — the exact INVERSE of
  *    what the suite this file replaces asked for (`ADR-028/D1`: the read moved server-side; a
  *    browser-side hit would mean the route regressed).
- * 2. `B2`: `<main>`'s bytes/sha256 are recorded as facts (not compared in-process — the
- *    falsifier is EXTERNAL, a diff between this run's `facts.jsonl` and a second `make e2e`
- *    invocation with the other `E2E_API_UP` value, same as `D1.4`'s own "servidor ausente"
- *    column says: "é a própria metade que morde"). The one thing asserted HERE, hard, is that
- *    a row actually rendered — which flips to red under `E2E_API_UP=0`, same falsifier as
- *    `01`'s `B1` test.
+ * 2. `B2` (the `<main>` fingerprint plus "a row rendered") moved to `01-console-carrega.spec.ts`'s
+ *    `B1` in `T-10.17` — it was the same de-pé/no-chão flip on its own `goto` of the same page.
  * 3. `B3`/`B4`/`B5`/`B6` and `D1.5(b)` — the four `TransportErrorKind` causes plus the "empty
  *    store" state — are each proven by a SECOND, disposable `next start` (reusing the `.next`
  *    build `make e2e` already produced, `helpers.ts`) pointed at either nothing, or a small
@@ -54,26 +49,6 @@ test("o browser nunca fala com a API — toda leitura acontece no servidor (ADR-
   fact(SPEC, "websockets", websockets);
   expect(apiRequests, "the browser itself reached an API-shaped path").toEqual([]);
   expect(websockets, "no websocket transport exists in F1").toEqual([]);
-});
-
-test("B2: <main> muda de conteúdo com a saúde da API — fact para diff entre invocações de make e2e", async ({
-  page,
-}) => {
-  await page.goto(PANEL_PATH, { waitUntil: "networkidle" });
-  const mainHtml = await page.locator("main").innerHTML();
-  const mainBytes = Buffer.byteLength(mainHtml, "utf8");
-  const mainSha256 = createHash("sha256").update(mainHtml).digest("hex");
-
-  fact(SPEC, "main_bytes", mainBytes);
-  fact(SPEC, "main_sha256", mainSha256);
-
-  // `D1.4`'s hard half, reusing `B1`'s own signal: a rendered row only exists "de pé" — this
-  // is EXPECTED to fail under `E2E_API_UP=0`, same flip as `01`'s `B1` test.
-  const rowCount = await page.locator("table tbody tr").count();
-  fact(SPEC, "table_row_count", rowCount);
-  expect(rowCount, "no <tr> rendered — <main> carries no data to fingerprint").toBeGreaterThan(0);
-
-  await shot(page, "02-painel-main-de-pe");
 });
 
 const CAUSES = [
@@ -157,10 +132,66 @@ test("B5: store com 0 runs (stub 200 vazio) ⇒ ui_state:empty, 0 <tr>, 0 error_
   }
 });
 
-test("B6: stub responde após 2 s ⇒ ui_state:loading visível antes de ui_state:ok", async ({ browser }) => {
+/** `B6`'s stub. `helpers.ts`'s `startStubCollectorStatusApi({ delayMs })` delays EVERY path, and
+ * `console/page.tsx` awaits three reads in series against the same base URL (`/collector-status`,
+ * `/series-catalog`, `/series-quarantine`) — so `B6` waited ~3 × 2 s for a fallback it can see in
+ * the first one (`E2E-analise` §3/02, 7.0 s measured). This proxy sits in front of an undelayed
+ * helper stub (same body, same status) and delays ONLY a path ending in `/collector-status` — the
+ * read `ui_state` hangs on. It records which paths it delayed, so the test can prove that it was
+ * that one path and only it. */
+async function startCollectorStatusOnlyDelay(options: {
+  readonly upstreamUrl: string;
+  readonly delayMs: number;
+}): Promise<{ url: string; delayedPaths: string[]; immediatePaths: string[]; close(): Promise<void> }> {
+  const delayedPaths: string[] = [];
+  const immediatePaths: string[] = [];
+  const server = http.createServer((request, response) => {
+    const requestPath = new URL(request.url ?? "/", "http://stub.invalid").pathname;
+    const forward = async () => {
+      const upstream = await fetch(`${options.upstreamUrl}${request.url ?? "/"}`);
+      response.writeHead(upstream.status, { "content-type": upstream.headers.get("content-type") ?? "application/json" });
+      response.end(await upstream.text());
+    };
+    const forwardOrFail = () => {
+      forward().catch((cause: unknown) => {
+        response.writeHead(502, { "content-type": "text/plain" });
+        response.end(`B6 delay proxy: upstream failed: ${String(cause)}`);
+      });
+    };
+    if (requestPath.endsWith("/collector-status")) {
+      delayedPaths.push(requestPath);
+      setTimeout(forwardOrFail, options.delayMs);
+    } else {
+      immediatePaths.push(requestPath);
+      forwardOrFail();
+    }
+  });
+  const port = await new Promise<number>((resolve, reject) => {
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        reject(new Error("startCollectorStatusOnlyDelay: could not allocate an ephemeral port"));
+        return;
+      }
+      resolve(address.port);
+    });
+  });
+  return {
+    url: `http://127.0.0.1:${port}`,
+    delayedPaths,
+    immediatePaths,
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+  };
+}
+
+test("B6: stub atrasa só /collector-status em 2 s ⇒ ui_state:loading visível antes de ui_state:ok", async ({
+  browser,
+}) => {
   test.setTimeout(60_000);
-  const stub = await startStubCollectorStatusApi({ status: 200, delayMs: 2_000, rowCount: 1 });
-  const instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: stub.url });
+  const stub = await startStubCollectorStatusApi({ status: 200, rowCount: 1 });
+  const proxy = await startCollectorStatusOnlyDelay({ upstreamUrl: stub.url, delayMs: 2_000 });
+  const instance = await startSecondaryNextInstance({ INGEST_HEALTH_API_BASE_URL: proxy.url });
   try {
     const page = await browser.newPage({ baseURL: instance.baseUrl });
     const navigation = page.goto(PANEL_PATH, { waitUntil: "networkidle" });
@@ -173,8 +204,20 @@ test("B6: stub responde após 2 s ⇒ ui_state:loading visível antes de ui_stat
     await expect(page.locator('main[data-fact="ui_state:ok"]')).toBeVisible();
     fact(SPEC, "b6_ok_after_loading", true);
     await page.close();
+
+    // DoD (3) of `T-10.17`, asserted rather than assumed: the delay landed on `/collector-status`
+    // (else the loading window above proved nothing about it) and on nothing else.
+    fact(SPEC, "b6_delayed_paths", proxy.delayedPaths);
+    fact(SPEC, "b6_immediate_paths", proxy.immediatePaths);
+    expect.soft(proxy.delayedPaths.length, "the proxy never delayed /collector-status").toBeGreaterThan(0);
+    expect.soft(
+      proxy.delayedPaths.filter((delayed) => !delayed.endsWith("/collector-status")),
+      "a path other than /collector-status was delayed",
+    ).toEqual([]);
+    expect.soft(proxy.immediatePaths.length, "the page's other reads never reached the stub").toBeGreaterThan(0);
   } finally {
     await instance.close();
+    await proxy.close();
     await stub.close();
   }
 });

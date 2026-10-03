@@ -15,29 +15,19 @@ const SPEC = "07-locale";
  * a soft, ambient-only check could stay green forever without ever exercising the single
  * formatter (`formatPtBrNumber`, `view-model.ts`) on a real decimal value.
  *
- * Two tests, two different "real data" halves of `D3.4`/`D3.5`:
- *   1. `D3.5` (label ≠ column) is STATIC markup (`S1Console.tsx`'s `<th>`) — true regardless of
- *      what the API returns, so it is checked against the ambient `make e2e` page directly.
- *   2. `D3.4` (one decimal mark) needs a decimal actually reaching the screen — the ambient
- *      seed does not provide one (declared above), so this file stands up its OWN stub
- *      `/collector-status` (real HTTP, same mechanism `02-rede-e-estados.spec.ts` already uses
- *      for B4/B5/B6 — `startSecondaryNextInstance`), with `uptimePercent: 99.8`, and asserts
- *      the HARD requirement the plan's `D3.4` names: `comma_decimal_hits = 0` **or**
- *      `dot_decimal_hits = 0` — never both `> 0` on the same screen.
+ * `T-10.17`: this file keeps ONE test, `D3.4`. The two that read the AMBIENT page — `D3.5`
+ * (`<th>` 'Janela de perda', STATIC markup of `S1Console.tsx`, true whatever the API returns) and
+ * the "ambiente" decimal-mark record (facts plus one soft check) — are steps of
+ * `01-console-carrega.spec.ts`'s first test now: same page, same at-rest read, one `goto`
+ * (`E2E-analise` §3/07).
+ *
+ * `D3.4` (one decimal mark) needs a decimal actually reaching the screen — the ambient seed does
+ * not provide one (declared above), so this file stands up its OWN stub `/collector-status` (real
+ * HTTP, same mechanism `02-rede-e-estados.spec.ts` already uses for B4/B5/B6 —
+ * `startSecondaryNextInstance`), with `uptimePercent: 99.8`, and asserts the HARD requirement the
+ * plan's `D3.4` names: `comma_decimal_hits = 0` **or** `dot_decimal_hits = 0` — never both `> 0`
+ * on the same screen.
  */
-
-test("D3.5: <th> mostra 'Janela de perda' (rótulo, linha 8), nunca 'JANELA_DE_PERDA' (coluna, linha 11)", async ({
-  page,
-}) => {
-  await page.goto(PANEL_PATH, { waitUntil: "networkidle" });
-  const header = page.locator("th", { hasText: "Janela de perda" });
-  fact(SPEC, "th_janela_de_perda_count", await header.count());
-  await expect(header).toHaveCount(1);
-
-  const shoutingColumnName = page.getByText("JANELA_DE_PERDA", { exact: false });
-  fact(SPEC, "th_shouting_column_name_count", await shoutingColumnName.count());
-  expect(await shoutingColumnName.count()).toBe(0);
-});
 
 /** Minimal stub, deliberately narrower than `helpers.ts`'s `startStubCollectorStatusApi`: this
  * file needs ONE row with a REAL fractional `uptimePercent` (`99.8`) — the one numeral
@@ -125,29 +115,4 @@ test("D3.4: uptimePercent fracionário (99.8) chega à tela como '99,8%' — 0 a
     await instance.close();
     await stub.close();
   }
-});
-
-/** Ambient page (whatever `make e2e` seeded) — kept as a FACT-only record, not a hard gate: the
- * seed today never produces a decimal at all (declared above), so `decimal_conventions_on_screen`
- * is expected to read `0`, and a soft assertion just keeps the number visible in `facts.jsonl`
- * without turning `make e2e` red the day the ambient seed changes shape. */
-test("ambiente: registra a(s) marca(s) decimal(is) realmente visível(is) na página seedada por make e2e", async ({
-  page,
-}) => {
-  await page.goto(PANEL_PATH, { waitUntil: "networkidle" });
-  const text = await page.locator("main").innerText();
-
-  const commaDecimal = text.match(/\d,\d/g) ?? [];
-  const dotDecimal = text.match(/\d\.\d(?!\d\d)/g) ?? [];
-  const dotThousands = text.match(/\d\.\d{3}(?!\d)/g) ?? []; // "2.016 pts"
-  const bareThousands = text.match(/\b\d{4,}\b/g) ?? []; // "1440/1440"
-
-  fact(SPEC, "ambient_comma_decimal_hits", commaDecimal);
-  fact(SPEC, "ambient_dot_decimal_hits", dotDecimal);
-  fact(SPEC, "ambient_dot_thousands_hits", dotThousands);
-  fact(SPEC, "ambient_bare_thousands_hits", bareThousands);
-
-  const decimalConventions = (commaDecimal.length > 0 ? 1 : 0) + (dotDecimal.length > 0 ? 1 : 0);
-  fact(SPEC, "ambient_decimal_conventions_on_screen", decimalConventions);
-  expect.soft(decimalConventions, "two decimal marks on one screen at once").toBeLessThanOrEqual(1);
 });
