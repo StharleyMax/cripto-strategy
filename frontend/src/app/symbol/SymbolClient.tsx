@@ -112,7 +112,8 @@ import { AxisSyncProvider } from "./chart/axis/axis-sync-provider.tsx";
 import { SymbolChartHost } from "./chart/host/ChartHost.tsx";
 import { PANE_LAYER_CLASS, PaneLayer } from "./chart/host/pane-layer.tsx";
 import { PANE_STACK } from "./chart/host/pane-stack.ts";
-import { CrosshairSlotContext, useHostedPane, type HostSeries } from "./chart/host/registrar.ts";
+import type { HostSeries } from "./chart/host/indicator-binding.ts";
+import { CrosshairSlotContext, useHostedPane } from "./chart/host/registrar.ts";
 import { LegendFrameContext, useLegendFrame, useSlotUnit, type LegendFrame } from "./chart/legend/legend-frame.ts";
 import { LegendValue, NO_CROSSHAIR_STORE, noCrosshairSnapshot, type VolumeSlot } from "./chart/legend/LegendValue.tsx";
 import { identityTerms, PaneDetails, PaneLegend, PaneLegendLine } from "./chart/legend/PaneLegend.tsx";
@@ -1090,6 +1091,12 @@ function PricePane({
       { series: absenceSeries, items: absenceMarkSeries(volume.slots, ABSENCE_MARK_PX) },
       { series: zeroSeries, items: zeroMarkSeries(volume.slots, ZERO_MARK_PX) },
     ],
+    // `estrutura-do-front` `T-02.1` (`CA-11`): every series `mount` added, and nothing else.
+    unmount: (chart, { series, volumeSeries, absenceSeries, zeroSeries }) => {
+      for (const added of [series, volumeSeries, absenceSeries, zeroSeries]) {
+        chart.removeSeries(added);
+      }
+    },
     // `T-01.6` — the candles draw near the top (compressed below the legend); the volume bars and
     // the two marks sit on the pane's floor, and their `#8b949e` keeps `C-6`'s 4px off the separator.
     // `zeroSeries` shares `absenceSeries`' scale (`VOLUME_MARKS_PRICE_SCALE_ID`), declared once.
@@ -1335,6 +1342,9 @@ function serverOiPaneSeriesKind(): OiPaneSeriesKind {
 interface OiPaneHandles {
   readonly kind: OiPaneSeriesKind;
   readonly series: HostSeries;
+  /** `T-02.1` — what `unmount` detaches: the band-and-rule primitive, and the pane it went on. */
+  readonly primitive: OiRegimePanePrimitive;
+  readonly paneIndex: number;
 }
 
 /** The four prices of the legend, in the order the SPEC writes them (`O·H·L·C`, `RF-8`). The letters
@@ -1661,11 +1671,11 @@ function OiPane({
         // colour means the same thing in both panes: direction of the pane's own quantity.
         const style: Partial<CandlestickSeriesOptions> = candlestickSeriesColors();
         const series: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, style, paneIndex);
-        return { kind, series };
+        return { kind, series, primitive, paneIndex };
       }
       const style: Partial<LineSeriesOptions> = { color: colorTokens().provenanceStrong };
       const series: ISeriesApi<"Line"> = chart.addSeries(LineSeries, style, paneIndex);
-      return { kind, series };
+      return { kind, series, primitive, paneIndex };
     },
     apply: ({ kind, series }) => [
       {
@@ -1673,6 +1683,14 @@ function OiPane({
         items: kind === "candlestick" ? candlestickSeriesLossless(oiCandles.slots) : lineSeriesLossless(panels.oi.slots),
       },
     ],
+    // `T-02.1` (`CA-11`): the series and the pane primitive `mount` attached.
+    unmount: (chart, { series, primitive, paneIndex }) => {
+      chart.panes()[paneIndex]?.detachPrimitive(primitive);
+      if (primitiveRef.current === primitive) {
+        primitiveRef.current = null;
+      }
+      chart.removeSeries(series);
+    },
     scales: ({ series }) => [{ series, belowLegend: true, clearSeparator: false }],
   });
   // `panels.oi.slots` sits on the SHARED axis grid since `T-02.1` (the TF's step, `D-C3.2`/`T-05.1`),
@@ -1892,6 +1910,11 @@ function CvdPane({
       { series: deltaSeries, items: lineSeriesLossless(panels.cvd.deltaSlots) },
       { series: cumulativeSeries, items: lineSeriesLossless(panels.cvd.cumulativeSlots) },
     ],
+    // `T-02.1` (`CA-11`): both series `mount` added.
+    unmount: (chart, { deltaSeries, cumulativeSeries }) => {
+      chart.removeSeries(deltaSeries);
+      chart.removeSeries(cumulativeSeries);
+    },
     // `T-01.6` — BOTH halves are compressed below the legend, so the delta/cumulative split keeps
     // its place in the part of the pane the legend leaves (`charts/pane-stack-layout.ts`, "why the
     // margins are compressed, not merely raised").
@@ -2445,6 +2468,14 @@ function LiquidationPane({
         series: handles.series[feed.side][feed.role],
         items: feed.items,
       }));
+    },
+    // `T-02.1` (`CA-11`): the six series `mount` added — bars and the two marks, on each side.
+    unmount: (chart, handles) => {
+      for (const side of [handles.series.up, handles.series.down]) {
+        chart.removeSeries(side.bars);
+        chart.removeSeries(side.absence_mark);
+        chart.removeSeries(side.zero_mark);
+      }
     },
     layout: (handles, measure) => {
       const layout = liquidationPaneLayout(handles.form, measure);
@@ -3060,6 +3091,8 @@ function LongShortPane({
       // legible long/short ratio (nobody long), so the fabricated value would not even look wrong.
       { series, items: lineSeriesLossless(longShort.slots) },
     ],
+    // `T-02.1` (`CA-11`): the one series `mount` added.
+    unmount: (chart, { series }) => chart.removeSeries(series),
     scales: ({ series }) => [{ series, belowLegend: true, clearSeparator: false }],
     measure: (chart, paneIndex) => {
       // ⛔ THE COORDINATES ARE THE LIBRARY'S, NOT A PROPORTION COMPUTED BESIDE IT. The plot area is
