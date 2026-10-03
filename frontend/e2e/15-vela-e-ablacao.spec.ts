@@ -13,6 +13,7 @@ import {
   sentimentoApiBaseUrl,
   shot,
   startSecondaryNextInstance,
+  waitForChartSettled,
   type NextInstanceHandle,
 } from "./helpers.ts";
 
@@ -305,7 +306,7 @@ async function waitForPaintedChart(page: Page): Promise<void> {
     { timeout: 120_000 },
   );
   // Os painÃ©is montam por `useEffect` e a sÃ©rie Ã© `setData`-ada depois do primeiro frame.
-  await page.waitForTimeout(2_000);
+  await waitForChartSettled(page);
 }
 
 async function readRenderedRequest(page: Page): Promise<RenderedRequest> {
@@ -651,10 +652,10 @@ async function zoomUntilCandlesAreWide(
     await page.mouse.move(box.x + Math.min(Math.max(anchorX, 2), box.width - 2), midY);
     for (let i = 0; i < ZOOM_BURST; i += 1) await page.mouse.wheel(0, ZOOM_STEP_DELTA);
     steps += ZOOM_BURST;
-    await page.waitForTimeout(250);
+    await waitForChartSettled(page);
     measurement = await measureCandleInk(page);
   }
-  await page.waitForTimeout(500);
+  await waitForChartSettled(page);
   measurement = await measureCandleInk(page);
   return { measurement, steps };
 }

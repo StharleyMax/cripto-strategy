@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 import { readView, showView } from "./view.ts";
 
 /**
@@ -433,7 +433,7 @@ async function openSymbol(page: Page, baseUrl: string, query: string): Promise<R
   expect(response?.ok(), `GET ${SYMBOL_PATH}?${query} did not answer ok`).toBe(true);
   await expect(page.locator(`[data-testid="${CHART_HOST_TESTID}"]`)).toHaveAttribute("data-pane-layers", "anchored", { timeout: 120_000 });
   await expect(page.locator(`[data-testid="${OI_PANE_TESTID}"]`)).toHaveCount(1);
-  await page.waitForTimeout(1_500);
+  await waitForChartSettled(page);
   const main = page.locator("main[data-window-start-ms]");
   const num = async (name: string) => {
     const raw = await main.getAttribute(name);
@@ -743,7 +743,7 @@ async function auditView(page: Page, mapping: Mapping, phaseFraction?: number): 
 
   // 2. The phase: parked pointer, candle ink (up + down + doji) under `grid + δ`, 1 px steps.
   await page.mouse.move(2, 2);
-  await page.waitForTimeout(400);
+  await waitForChartSettled(page);
   const firstK = ks[0]!;
   const lastK = ks[ks.length - 1]!;
   const allK: number[] = [];

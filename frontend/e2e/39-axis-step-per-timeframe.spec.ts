@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { fact } from "./helpers.ts";
+import { fact, waitForChartSettled } from "./helpers.ts";
 
 /**
  * `paineis-de-fluxo` `T-05.1` (`CST-?`, plan `05_correcoes_de_uso.md` item 5.1 + DoD 1,
@@ -124,7 +124,12 @@ for (const [interval, initialBars] of Object.entries(INITIAL_BARS)) {
       undefined,
       { timeout: 120_000 },
     );
-    // The host publishes the spacing on the mount's rAF; let the library settle its first frame.
+    // The host publishes the spacing on the mount's rAF: wait for the chart to settle (`T-10.1`).
+    await waitForChartSettled(page);
+    // NEGATIVE WINDOW (`T-10.1`), the only one in this test: "the mount asked for no page" is an
+    // ABSENCE, proven only by waiting. 1.5 s past a settled chart, the value under which the mount
+    // paging of `ab293210` (10 requests at 4h) and the lock ablation of `b7af6bca` were caught; the
+    // pager decides synchronously on the library's first range callback, a few frames after the mount.
     await page.waitForTimeout(1_500);
 
     const facts = await readMountFacts(page);
@@ -188,6 +193,10 @@ test(`T-05.1: em 4h o primeiro arrasto para o passado pede página — sob deman
     undefined,
     { timeout: 120_000 },
   );
+  await waitForChartSettled(page);
+  // NEGATIVE WINDOW (`T-10.1`), the only one in this test: the mount asked for no page, BEFORE the drag
+  // that must ask for one. 1.5 s past a settled chart, the same value and reason as the mount window
+  // of the per-timeframe tests above.
   await page.waitForTimeout(1_500);
   fact(SPEC, "drag_4h_requests_before", browserHistoryRequests.length);
   expect(browserHistoryRequests, "a montagem em 4h pediu página sem gesto").toEqual([]);
@@ -230,7 +239,9 @@ test(`T-05.1: em 4h o zoom-in pela roda não pede página (${SPEC})`, async ({ p
     undefined,
     { timeout: 120_000 },
   );
-  await page.waitForTimeout(1_500);
+  // `T-10.1`: a positive wait only. The mount-paging absence is still judged, cumulatively, by the
+  // negative window after the wheel below, the one window of this test.
+  await waitForChartSettled(page);
   expect(browserHistoryRequests, "a montagem em 4h pediu página sem gesto").toEqual([]);
 
   const host = page.locator(`[data-testid="${CHART_HOST_TESTID}"]`);
@@ -241,6 +252,9 @@ test(`T-05.1: em 4h o zoom-in pela roda não pede página (${SPEC})`, async ({ p
   const fromBefore = Number(await host.getAttribute("data-visible-logical-from"));
   await page.mouse.move(box.x + box.width * 0.5, box.y + Math.min(200, box.height * 0.3));
   for (let i = 0; i < 3; i += 1) await page.mouse.wheel(0, -200);
+  // NEGATIVE WINDOW (`T-10.1`), the only one in this test: "the zoom-in asked for no page" is an
+  // ABSENCE, proven only by waiting. 3 s, the value `b7af6bca` measured the 10-request page under (the
+  // gesture gate of `ab29321`); it also covers the mount, because `browserHistoryRequests` accumulates.
   await page.waitForTimeout(3_000);
   const fromAfter = Number(await host.getAttribute("data-visible-logical-from"));
   fact(SPEC, "zoom_in_4h_from", { before: fromBefore, after: fromAfter });

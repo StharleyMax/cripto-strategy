@@ -59,7 +59,7 @@ import { expect, test } from "@playwright/test";
 
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 
 const SPEC = "40-coverage-magnitude-and-legend-room";
 const SYMBOL = "BTCUSDT";
@@ -435,7 +435,8 @@ async function openSymbol(
 
 /** Waits until every pane's `data-pane-height-px`/`data-reserved-scale-top-px` stop moving: the host
  * re-lays the scales on a `ResizeObserver` of the legends, so a reading taken mid-layout is a reading of
- * nothing. Two equal readings 400 ms apart. */
+ * nothing. `T-10.1`: `waitForChartSettled` (the pane roots' `data-*` frame-stable) instead of two equal
+ * readings 400 ms apart, and then every value must be published. */
 async function settleLayout(page: Page): Promise<void> {
   const snapshot = () =>
     page.evaluate((ids) => ids.map((id) => {
@@ -444,7 +445,7 @@ async function settleLayout(page: Page): Promise<void> {
     }).join(","), AREA_FLOORS.map(([id]) => id));
   let previous = "";
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    await page.waitForTimeout(400);
+    await waitForChartSettled(page);
     const current = await snapshot();
     if (current === previous && !current.includes("?") && !current.includes("|,") && !current.endsWith("|")) return;
     previous = current;

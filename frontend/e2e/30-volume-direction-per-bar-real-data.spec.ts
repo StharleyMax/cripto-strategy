@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import { colorTokens } from "../src/charts/color-tokens.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact, sentimentoApiBaseUrl } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl, waitForChartSettled } from "./helpers.ts";
 
 /**
  * `paineis-de-fluxo` `T-02.4` — `CA-6` (plan `02` DoD 2-4): on BTCUSDT's REAL data, in the default TF
@@ -407,7 +407,7 @@ async function zoomToPerBarSpacing(page: Page): Promise<{ readonly steps: number
     await page.mouse.move(anchorX, midY);
     for (let i = 0; i < ZOOM_BURST; i += 1) await page.mouse.wheel(0, ZOOM_STEP_DELTA);
     steps += ZOOM_BURST;
-    await page.waitForTimeout(250);
+    await waitForChartSettled(page);
     ({ from, to } = await visibleRange(page));
   }
   return { steps, spacingPx: spacing() };
@@ -466,7 +466,7 @@ test(`CA-6: no dado real, a cor da barra de volume i no canvas é a direção da
   const box = await priceCanvasBox(page);
   fact(SPEC, "default_framing", { tf: "1m", slots: before.to - before.from, spacingPx: box.width / (before.to - before.from) });
   const zoom = await zoomToPerBarSpacing(page);
-  await page.waitForTimeout(500);
+  await waitForChartSettled(page);
   const { from, to } = await visibleRange(page);
   fact(SPEC, "zoom", { steps: zoom.steps, from, to, visibleSlots: to - from, spacingPx: zoom.spacingPx, canvasCssWidth: box.width });
   expect(zoom.spacingPx, `the zoom did not reach ${MIN_SPACING_PX} px per bar — no per-bar reading is possible`).toBeGreaterThanOrEqual(MIN_SPACING_PX);
@@ -512,7 +512,7 @@ test(`CA-6: no dado real, a cor da barra de volume i no canvas é a direção da
   }
   // The pointer leaves the chart; the screen must not have moved while the bars were identified.
   await page.mouse.move(2, 2, { steps: 5 });
-  await page.waitForTimeout(300);
+  await waitForChartSettled(page);
   const after = await visibleRange(page);
   expect(after.from, "the visible range moved while the bars were being identified").toBeCloseTo(from, 3);
   const screenAfter = await readBaseRowRuns(page);

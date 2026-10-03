@@ -50,7 +50,7 @@ import { chartSurfaceTheme } from "../src/charts/chart-theme.ts";
 import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
-import { fact, sentimentoApiBaseUrl, shot, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { fact, sentimentoApiBaseUrl, shot, startSecondaryNextInstance, waitForChartSettled, type NextInstanceHandle } from "./helpers.ts";
 import { showView } from "./view.ts";
 
 const SPEC = "34-liquidation-linear-scale-pixel";
@@ -256,7 +256,7 @@ async function openAndRead(page: Page, baseUrl: string, query: string): Promise<
   await expect(pane).toHaveCount(1);
   await expect(pane).toHaveAttribute("data-liquidation-zero-line-px", /^\d/);
   await expect(pane).toHaveAttribute("data-liquidation-bar-scales", /up:/);
-  await page.waitForTimeout(1_500);
+  await waitForChartSettled(page);
   const view = await showView(page, { kind: "lastBars", bars: LINEAR_VIEW_BARS });
   fact(SPEC, `view${query === "" ? "" : `_${query}`}`, { iterations: view.iterations, from: view.fromLogical, to: view.toLogical, spacingPx: view.barSpacingPx });
   const tokens = colorTokens();
