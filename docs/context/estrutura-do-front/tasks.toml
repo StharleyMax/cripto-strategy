@@ -185,7 +185,7 @@ refs = [
 id = "T-02.1"
 title = "[web] 02 · Registrar chaveado por instanceKey, chave repetida desmonta a anterior, e unmount(chart, handles) obrigatorio no tipo"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-10-03T19:45:02Z @ 19326b6e2dabb4cc3e0b4091d3b121318de4a75f
 phase = "02"
 depends_on = ["T-01.4"]
 refs = [
@@ -204,7 +204,7 @@ refs = [
 id = "T-02.2"
 title = "[web] 02 · paneIndex derivado no mount: 0 para overlay, 1 + a posicao entre os panes ativos na ordem de F1_PANE_ORDER"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-10-03T19:45:02Z @ 19326b6e2dabb4cc3e0b4091d3b121318de4a75f
 phase = "02"
 depends_on = ["T-02.1"]
 refs = [
@@ -222,7 +222,7 @@ refs = [
 id = "T-02.3"
 title = "[web] 02 · refeed(instanceKey) exposto pelo host: roda o apply daquela chave fora de pagina, pelo mesmo laco de setData"
 components = ["web"]
-status = "todo"
+status = "done"  # resolve: QA APPROVED 2026-10-03T19:45:02Z @ 19326b6e2dabb4cc3e0b4091d3b121318de4a75f
 phase = "02"
 depends_on = ["T-02.2"]
 refs = [
@@ -619,6 +619,7 @@ refs = [
     "ablacao: o provider montado ABAIXO do key => a selecao zera a cada remonte (o e2e da T-09.5 prova); o pager receber o ativo => §6.5 da T-09.5 reprova.",
     "e2e: `make e2e` inteiro verde dentro de `make verify`, sem M/D em spec antiga. Medem primeiro: 22, 23, 24.",
     "numstat: `git diff --numstat $BASE..HEAD -- frontend/` e o diff declarado. Registra wc -l SymbolClient.tsx (contra 350) e B.",
+    "FOLLOW-UP de W-F2-QA (2026-10-03), DoD acrescida: (1) ablacao 'sem key no host => pane que chega tarde colide no MESMO paneIndex => reprova' (medido em W-F2-QA: oi registrado depois do attach caiu no pane 2 do long_short); (2) o primeiro indicador com montagem tardia/indicator-endpoint so fecha com um teste que reprove `feedOutsidePage: () => undefined` em ChartHost.tsx:209 (hoje typecheck/lint/test:app ficam verdes sob essa mutacao, W-F2-QA).",
 ]
 
 [[tasks]]
