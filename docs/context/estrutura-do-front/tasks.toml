@@ -951,6 +951,7 @@ refs = [
     "ablacao: R01, R02, R03 e R04 (refatoracoes sem efeito) => os 3 arquivos ficam VERDES (eram vermelhos: o falso alarme medido em UNIT-FRONT §2 sumiu).",
     "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
     "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.11-build.md.",
+    "DECISAO do orquestrador (2026-10-03, opcao P1 de gates/T-10.11-padrao.md §5, recomendada pelo frontend-architect) [INFERRED: a F8 move o pane para modulo proprio, que o exporta de qualquer jeito]: o subcomponente que o contrato renderiza ganha `export` em SymbolClient.tsx (1 linha por componente, nenhuma linha logica). ESCOPO SOMADO: frontend/src/app/component-render.ts (o harness do padrao, codigo em T-10.11-padrao.md §3.1) e a linha `export` de PricePane em SymbolClient.tsx.",
 ]
 
 [[tasks]]
@@ -971,6 +972,7 @@ refs = [
     "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
     "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.12-build.md.",
     "paralelo: com T-10.13, T-10.14 e T-10.15 (arquivos disjuntos). Bloqueia T-04.2.",
+    "DECISAO P1 da T-10.11 vale aqui (2026-10-03): o pane que o contrato renderiza ganha `export` em SymbolClient.tsx (1 linha, nenhuma logica), e o render usa frontend/src/app/component-render.ts.",
 ]
 
 [[tasks]]
@@ -991,6 +993,7 @@ refs = [
     "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
     "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.13-build.md.",
     "paralelo: com T-10.12, T-10.14, T-10.15. Bloqueia T-05.1.",
+    "DECISAO P1 da T-10.11 vale aqui (2026-10-03): o pane que o contrato renderiza ganha `export` em SymbolClient.tsx (1 linha, nenhuma logica), e o render usa frontend/src/app/component-render.ts.",
 ]
 
 [[tasks]]
@@ -1011,6 +1014,7 @@ refs = [
     "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
     "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.14-build.md.",
     "paralelo: com T-10.12, T-10.13, T-10.15. Bloqueia T-06.1 e T-07.1.",
+    "DECISAO P1 da T-10.11 vale aqui (2026-10-03): o pane que o contrato renderiza ganha `export` em SymbolClient.tsx (1 linha, nenhuma logica), e o render usa frontend/src/app/component-render.ts.",
 ]
 
 [[tasks]]
@@ -1031,6 +1035,7 @@ refs = [
     "e2e: `make verify-scope` VERDE-ESCOPO; name-status de frontend/e2e/ vazio.",
     "numstat: no relatorio docs/context/estrutura-do-front/gates/T-10.15-build.md.",
     "paralelo: com T-10.12, T-10.13, T-10.14. Bloqueia T-08.3 (o volume se move na F8; decisao do tech-lead, narrativa §10.5).",
+    "DECISAO P1 da T-10.11 vale aqui (2026-10-03): o pane que o contrato renderiza ganha `export` em SymbolClient.tsx (1 linha, nenhuma logica), e o render usa frontend/src/app/component-render.ts.",
 ]
 
 [[tasks]]
