@@ -24,7 +24,7 @@
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { createRequire, isBuiltin } from "node:module";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -103,14 +103,14 @@ function walk(entry: string): Graph {
   return { files, external };
 }
 
-test("the client graph of SymbolClient.tsx reaches no node: builtin", () => {
+test("the client graph of SymbolClient.tsx reaches no Node builtin (node:-prefixed or bare)", () => {
   const graph = walk(ENTRY);
   // Anchors: the walk reaches the two paths that used to lead to `node:crypto`, so a green here is
   // not an empty walk.
   for (const anchor of ["app/symbol/indicators/catalog.ts", "app/symbol/panel-assembly.ts", "app/symbol/view-model.ts"]) {
     assert.ok(graph.files.has(anchor), `the walk no longer reaches ${anchor} (${graph.files.size} files)`);
   }
-  const builtins = [...graph.external].filter(([specifier]) => specifier.startsWith("node:"));
+  const builtins = [...graph.external].filter(([specifier]) => isBuiltin(specifier));
   assert.deepEqual(
     builtins.map(([specifier, chain]) => `${specifier} <- ${chain.join(" -> ")}`),
     [],
