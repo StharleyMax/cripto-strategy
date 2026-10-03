@@ -32,6 +32,7 @@ import {
   type CoverageMagnitude,
 } from "./coverage-magnitude.ts";
 import type { SeriesHistoryRow } from "./series-history-envelope.ts";
+import { MOVED_OUT_FILES } from "./symbol-client-moved-out-files.ts";
 
 const MINUTE_MS = 60_000;
 const QUARTER_HOUR_MS = 15 * MINUTE_MS;
@@ -232,22 +233,6 @@ test("native grid: the catalog's `1min`/`5min` parse; anything else falls back t
 
 // ── item 8 — WHERE the chip is spelled (source scan) ───────────────────────────────────────────────
 
-/** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
- * `chart/legend/` and `chart/marks/`; `T-01.4` — the page chrome left it for `chrome/`. The files are read
- * together with it, so the universe this file scans is the one `SymbolClient.tsx` alone was before the move. */
-const MOVED_OUT_FILES = [
-  "chart/legend/PaneLegend.tsx",
-  "chart/legend/legend-frame.ts",
-  "chart/legend/LegendValue.tsx",
-  "chart/marks/AbsenceNote.tsx",
-  "chart/marks/PartialCoverageMark.tsx",
-  "chart/marks/BeyondCoverageBadge.tsx",
-  "chrome/AttributionFooter.tsx",
-  "chrome/ChromeModeStamp.tsx",
-  "chrome/LiveRow.tsx",
-  "chrome/page-gutter.ts",
-  "chrome/TimeframeBar.tsx",
-] as const;
 const SYMBOL_CLIENT = ["SymbolClient.tsx", ...MOVED_OUT_FILES]
   .map((file) => readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), file), "utf8"))
   .join("\n");

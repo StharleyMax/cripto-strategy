@@ -85,8 +85,9 @@ export default tseslint.config(
   // silent re-attribution of ownership. `05_fatia_visivel.md:53` names this exact question
   // as the one `T-05.1` had to answer "com medicao" (with measurement) before `D5.12`
   // closes — the measurement is `eslint-boundary.test.ts`, which plants a
-  // real violator per direction and asserts `eslint` refuses it (MORDE), then removes them
-  // and asserts the real modules of both sides stay clean (CALA), in the SAME test run.
+  // real violator per direction and asserts `eslint` refuses it (MORDE). The CALA of the real
+  // tree (both sides' real modules stay clean) is NOT in that test any more (`T-10.5`): it is
+  // `make lint-frontend`, which lints all of `src/` (`scripts/verify.sh:225`).
   //
   // SYMMETRIC AND TOTAL, on purpose, for THIS task's scope: `T-05.1`'s handoff is explicit
   // that no chart is rendered yet ("Do NOT implement T-05.2+ ... no actual chart
@@ -98,9 +99,11 @@ export default tseslint.config(
   //
   // `web` = `src/app/**` + `src/features/**`, the exact universe `T-05.1`'s dispatch names
   // for the `cala` side. `src/components/**` is NOT in this universe yet — a known,
-  // declared gap (no existing file there imports either side today, verified by
-  // `eslint-boundary.test.ts`'s own inventory check), left for whoever next
-  // classifies that directory rather than silently folded into `web` by this task.
+  // declared gap, left for whoever next classifies that directory rather than silently folded
+  // into `web` by this task. No existing file there imports either side today — 1 file, 0
+  // import lines [MEASURED 2026-10-03, `T-10.10`: `grep -rn "from " src/components`]. That is a
+  // measurement, not a guard: the inventory check `eslint-boundary.test.ts` used to run left with
+  // `T-10.5`, and `make lint-frontend` does not apply the two rules below to `src/components/**`.
   {
     files: ["src/charts/**/*.{ts,tsx,mts,cts}"],
     rules: {

@@ -35,24 +35,9 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { MOVED_OUT_FILES } from "./symbol-client-moved-out-files.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-/** `estrutura-do-front` `T-01.3` — the legend and the absence/coverage marks left `SymbolClient.tsx` for
- * `chart/legend/` and `chart/marks/`; `T-01.4` — the page chrome left it for `chrome/`. The files are read
- * together with it, so the universe this file scans is the one `SymbolClient.tsx` alone was before the move. */
-const MOVED_OUT_FILES = [
-  "chart/legend/PaneLegend.tsx",
-  "chart/legend/legend-frame.ts",
-  "chart/legend/LegendValue.tsx",
-  "chart/marks/AbsenceNote.tsx",
-  "chart/marks/PartialCoverageMark.tsx",
-  "chart/marks/BeyondCoverageBadge.tsx",
-  "chrome/AttributionFooter.tsx",
-  "chrome/ChromeModeStamp.tsx",
-  "chrome/LiveRow.tsx",
-  "chrome/page-gutter.ts",
-  "chrome/TimeframeBar.tsx",
-] as const;
 const source = ["SymbolClient.tsx", ...MOVED_OUT_FILES]
   .map((file) => readFileSync(path.join(HERE, file), "utf8"))
   .join("\n");
@@ -67,11 +52,9 @@ const pageCode = pageSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*
  * with another task is not guarded by importing the constant it is made of — that would rename
  * itself along with the mutation it is supposed to catch. */
 const EXPECTED_PANE_TESTID = "long-short-pane";
-const EXPECTED_ABSENCE_TOKEN = "ausente";
 
 const PANE_TESTID_DECLARATION = /const LONG_SHORT_PANE_TESTID = "([^"]*)";/;
 const PANE_TESTID_RENDERED = /data-testid=\{LONG_SHORT_PANE_TESTID\}/;
-const ABSENCE_TOKEN_DECLARATION = /const ABSENCE_TOKEN = "([^"]*)";/;
 
 const NATIVE_BARS_ATTRIBUTE = /data-long-short-native-bars=\{longShort\.nativeBars\}/;
 const WIRE_POINTS_ATTRIBUTE = /data-long-short-wire-points=\{longShort\.wirePoints\}/;
@@ -153,14 +136,11 @@ test("T-04.7 contract: BOTH counts are bare integer attributes on the SAME eleme
 
 // ── `RN-1` — the rule this pane exists to not break ───────────────────────────────────────────
 
-test("RN-1: absence prints `ausente`, and for a RATIO a number there would not even look wrong", () => {
-  const declaration = ABSENCE_TOKEN_DECLARATION.exec(source);
-  assert.ok(declaration !== null, "ABSENCE_TOKEN declaration not found — the anchor moved, fix this test");
-  assert.equal(declaration[1], EXPECTED_ABSENCE_TOKEN, "absence is `ausente`, the same word the other four readouts use");
-  assert.ok(
-    !/^-?\d+(\.\d+)?$/.test(declaration[1]!),
-    "the absence token must not be a number in any shape — 0, 0.0 and -0 are all the RN-1 defect",
-  );
+test("RN-1: the long/short readout's absent branch resolves to ABSENCE_TOKEN — for a RATIO a number there would not even look wrong", () => {
+  // `T-10.10`: WHICH word `ABSENCE_TOKEN` is (`ausente`, never a number) is pinned ONCE, in
+  // `absence-readout-microcopy.test.ts` — it was copied into five pane contracts, and the mutation
+  // `ABSENCE_TOKEN = "SEM_PONTO"` turned all six red for one defect (`UNIT-FRONT-analise` §2, F03).
+  // What stays HERE is the half only this pane has: its readout falls back to that token.
   assert.match(
     source,
     ABSENT_BRANCH,

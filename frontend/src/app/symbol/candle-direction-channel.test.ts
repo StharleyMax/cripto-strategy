@@ -101,9 +101,6 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 
 import {
@@ -116,22 +113,15 @@ import {
   HOLLOW_BODY_FILL,
 } from "../../charts/index.ts";
 import { chartConstructorOptions } from "./chart-options.ts";
+// `CHART_HEIGHT_PX` is IMPORTED from production (`chart/host/pane-stack.ts`), never retyped — same
+// discipline as `price-candle.test.ts`: a copy here would measure the pane THIS file chose instead of
+// the one the screen draws, and would keep measuring it after the screen changed. `T-10.10`: imported,
+// no longer scraped off the source text.
+import { CHART_HEIGHT_PX } from "./chart/host/pane-stack.ts";
 import { VIEW_BARS } from "./chart/axis/timeframe-window.ts";
-
-const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** Width of the pane the measurement happens in — the same the `design_gate` measured on. */
 const MEASUREMENT_WIDTH_PX = 900;
-
-/** `CHART_HEIGHT_PX` READ FROM THE PRODUCTION COMPONENT, never retyped — same discipline as
- * `price-candle.test.ts`: a copy here would measure the pane THIS file chose instead of the
- * one the screen draws, and would keep measuring it after the screen changed. */
-const CHART_HEIGHT_PX = (() => {
-  const source = readFileSync(path.join(HERE, "chart", "host", "pane-stack.ts"), "utf8");
-  const match = /const CHART_HEIGHT_PX = (\d+);/.exec(source);
-  assert.ok(match !== null, "CHART_HEIGHT_PX was not found in chart/host/pane-stack.ts — the anchor moved, fix this test");
-  return Number(match[1]);
-})();
 
 /**
  * Below this bar spacing the library does not paint a candle BODY at all (`:14761`,
