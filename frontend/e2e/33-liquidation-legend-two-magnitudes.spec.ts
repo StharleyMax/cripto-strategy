@@ -44,6 +44,7 @@ import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { showView } from "./view.ts";
 
 const SPEC = "33-liquidation-legend-two-magnitudes";
 const SYMBOL_PATH = "/symbol/BTCUSDT";
@@ -391,46 +392,22 @@ function legDefect(cohort: Cohort, leg: LegReading): string | null {
 }
 
 /**
- * `paineis-de-fluxo` `T-05.1` — the mount now frames the last `VIEW_BARS` (120) bars (2 h at `1m`),
- * so the sweep below (70%..90% of the width) crossed only ~25 buckets and the spec reported itself
- * blind (`too few buckets under the sweep`, 25 < 40, `make verify` of 2026-10-02). The wheel zooms OUT
- * (positive `deltaY`) with the cursor on the LAST bar, so the right edge stays put and the span grows
- * leftward only, until it stops growing: the library's `minBarSpacing` floor, ~2.400 slots, the
- * "~2 minutes per CSS px" geometry `SWEEP_STEP_PX` was measured on (same recipe as `e2e/37`). The
- * 5.760-slot axis is longer than the floor, so the view never reaches the paging trigger. Bounded (R9).
+ * `paineis-de-fluxo` `T-06.1` — the sweep below (70%..90% of the width) reads the LAST
+ * `SWEEP_VIEW_BARS` slots, put there explicitly (`view.ts::showView`), not wherever the mount frames
+ * (`VIEW_BARS`). `T-05.1` made the mount 120 bars (2 h at `1m`): the sweep crossed only ~25 buckets
+ * and the spec reported itself blind (`too few buckets under the sweep`, 25 < 40). The fix then was a
+ * private zoom-out to the library's floor (~2.400 slots, "~2 minutes per CSS px", the geometry
+ * `SWEEP_STEP_PX` was measured on); 2.000 keeps it (~1,7 minutes per px) under the floor of a 1280-px
+ * plot, far from the paging trigger (`showView` throws on a page).
  */
-const ZOOM_OUT_STEP_DELTA = 100;
-const ZOOM_OUT_MAX_STEPS = 200;
-/** The floor is ~2.400 slots; below this the wheel did not take the view out of the 120-bar mount. */
-const ZOOM_OUT_MIN_SPAN_SLOTS = 1_000;
+const SWEEP_VIEW_BARS = 2_000;
+/** Below this the view did not leave the 120-bar mount geometry. */
+const MIN_SWEEP_SPAN_SLOTS = 1_000;
 
-async function visibleSpan(page: Page): Promise<{ readonly from: number; readonly to: number }> {
-  const host = page.locator(`[data-testid="${CHART_HOST_TESTID}"]`);
-  return {
-    from: Number(await host.getAttribute("data-visible-logical-from")),
-    to: Number(await host.getAttribute("data-visible-logical-to")),
-  };
-}
-
-async function zoomOutToFloor(page: Page): Promise<void> {
-  const box = await page.locator(`[data-testid="${PANE_TESTID}"]`).boundingBox();
-  if (box === null) throw new Error("zoomOutToFloor: the liquidation pane has no box");
-  let range = await visibleSpan(page);
-  fact(SPEC, "mount_visible_span_slots", Number((range.to - range.from).toFixed(2)));
-  let steps = 0;
-  for (; steps < ZOOM_OUT_MAX_STEPS; steps += 1) {
-    const span = range.to - range.from;
-    await page.mouse.move(box.x + box.width - 2, box.y + box.height * 0.5);
-    await page.mouse.wheel(0, ZOOM_OUT_STEP_DELTA);
-    await page.waitForTimeout(60);
-    range = await visibleSpan(page);
-    if (Math.abs(range.to - range.from - span) < 0.5) break;
-  }
-  await page.mouse.move(2, 2);
-  await page.waitForTimeout(300);
-  range = await visibleSpan(page);
-  fact(SPEC, "zoomed_out", { steps, from: range.from, to: range.to });
-  expect(range.to - range.from, "o zoom-out não afastou a vista da montagem de 120 barras").toBeGreaterThanOrEqual(ZOOM_OUT_MIN_SPAN_SLOTS);
+async function showSweepView(page: Page): Promise<void> {
+  const view = await showView(page, { kind: "lastBars", bars: SWEEP_VIEW_BARS });
+  fact(SPEC, "view", { iterations: view.iterations, from: view.fromLogical, to: view.toLogical, spacingPx: view.barSpacingPx });
+  expect(view.toLogical - view.fromLogical, "a vista da varredura é estreita demais").toBeGreaterThanOrEqual(MIN_SWEEP_SPAN_SLOTS);
 }
 
 /** Sweeps the crosshair over the liquidation pane and returns every snapshot taken. */
@@ -619,7 +596,7 @@ test.describe(`T-04.3: the liquidation legend, two magnitudes led by the leg's s
 
   test("(d)+(e): two magnitudes, each its own leg's, absence and zero per leg, and no third number", async ({ page }) => {
     await openPage(page, instance!.baseUrl);
-    await zoomOutToFloor(page);
+    await showSweepView(page);
     const shots = await sweep(page);
     const defects: string[] = [];
     const seen: Record<Cohort, { absent: number; zero: number; positive: number }> = {

@@ -51,6 +51,7 @@ import { colorTokens } from "../src/charts/color-tokens.ts";
 import { computeSeriesKeyId } from "../src/app/symbol/series-key-id.ts";
 import type { SeriesKey } from "../src/features/s3-inspector/series-catalog.ts";
 import { fact, sentimentoApiBaseUrl, shot, startSecondaryNextInstance, type NextInstanceHandle } from "./helpers.ts";
+import { showView } from "./view.ts";
 
 const SPEC = "34-liquidation-linear-scale-pixel";
 const SYMBOL_PATH = "/symbol/BTCUSDT";
@@ -76,6 +77,12 @@ const LONG_SPIKE_USD = 800_000;
 const SHORT_SPIKE_USD = 400_000;
 const ABSENT_FROM_K = 40;
 const ABSENT_TO_K = 69;
+/** `paineis-de-fluxo` `T-06.1` — the pane is read over the LAST `LINEAR_VIEW_BARS` slots, put there
+ * explicitly (`view.ts::showView`), not wherever the mount frames. With the mount at `VIEW_BARS = 60`
+ * `(b) F-1` read a peak of `1×` the median (`[MEDIDO 2026-10-02, inventory run R60 of T-06.1]`) —
+ * `[INFERRED: 60 slots are half a PERIOD_MIN, so the up leg's spike can be off screen]`. Two periods put
+ * every `k` of the stub's period on screen at least once, whatever the minute the page loads. */
+const LINEAR_VIEW_BARS = 2 * PERIOD_MIN;
 
 interface CatalogEnvelope {
   readonly query: string;
@@ -250,6 +257,8 @@ async function openAndRead(page: Page, baseUrl: string, query: string): Promise<
   await expect(pane).toHaveAttribute("data-liquidation-zero-line-px", /^\d/);
   await expect(pane).toHaveAttribute("data-liquidation-bar-scales", /up:/);
   await page.waitForTimeout(1_500);
+  const view = await showView(page, { kind: "lastBars", bars: LINEAR_VIEW_BARS });
+  fact(SPEC, `view${query === "" ? "" : `_${query}`}`, { iterations: view.iterations, from: view.fromLogical, to: view.toLogical, spacingPx: view.barSpacingPx });
   const tokens = colorTokens();
   return page.evaluate(
     ({ paneTestId, inks, tol, slack }) => {
